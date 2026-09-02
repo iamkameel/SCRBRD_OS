@@ -8,6 +8,7 @@
 import { spawnSync } from "node:child_process";
 
 const SUITES = [
+  ["authorize","packages/policy/test/authorize.test.mjs"],
   ["scoring",  "packages/scoring/test/replay.test.mjs"],
   ["handover", "services/api/handover/scoring-session.test.mjs"],
   ["rls",      "services/api/rls/rls.test.mjs"],
