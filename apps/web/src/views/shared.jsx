@@ -1,9 +1,9 @@
 import { useState, useMemo } from "react";
-import { COMPETITIONS, PLAYERS, SKILLS_MATRIX, STAFF } from "../data/mock.js";
+
 import { ROLES } from "../design/roles.js";
 import { D } from "../design/tokens.js";
 import { mulberry32, strSeed } from "../lib/rng.js";
-import { can, filterRecord } from "../rbac/index.js";
+import { can, filterRecord, scoped, scopedSkills } from "../rbac/index.js";
 import { BatsmanChart, BowlerChart, ManhattanChart, WormChart } from "../scorer/charts.jsx";
 import { seedCompletedMatch } from "../scorer/seed.js";
 import { Badge, Modal, Pill, SkillBar } from "../ui/primitives.jsx";
@@ -55,10 +55,15 @@ function WeatherChip({ w, compact }) {
 
 const OPP_POOL = ["T van Rooyen","K Naidoo","M Botha","S Mkhize","J Pretorius","L Govender","D Erasmus","A Zondi","R Pillay","W du Toit","N Cele","B Steyn","C Moodley","P Ngcobo","G Venter","F Hadebe","H Marais","U Dube"];
 
-function teamSquad(teamName){
+// `role` is required rather than optional: without it this returned real
+// player names to anyone, from a module-scope helper that no view had to
+// authorise. Omitting it now yields a fully synthetic squad — fail closed.
+function teamSquad(teamName, role){
   const token = (teamName.match(/U\d{2}[A-Z]?/)||[])[0];
   const isHilton = /Hilton/i.test(teamName);
-  const own = isHilton && token ? PLAYERS.filter(p=>p.team===token).map(p=>p.name) : [];
+  const own = (isHilton && token && role)
+    ? scoped("players", role).filter(p=>p.team===token).map(p=>p.name)
+    : [];
   const rng = mulberry32(strSeed(teamName));
   const pool = [...OPP_POOL].sort(()=>rng()-0.5);
   const out = [...own];
@@ -77,8 +82,11 @@ const fmtOvOS = b => `${Math.floor(b/6)}${b%6?"."+(b%6):""}`;
 //  Receives an RBAC-filtered record: stripped fields arrive
 //  null and are simply not rendered.
 // ══════════════════════════════════════════════════════
-function skillsFor(p){
-  if(SKILLS_MATRIX[p.id]) return { data:SKILLS_MATRIX[p.id], assessed:true };
+function skillsFor(p, role){
+  // Skill ratings sit behind player.development.read. Without a role the
+  // real assessment is not returned — the derived demo profile below is.
+  const matrix = role ? scopedSkills(role) : {};
+  if(matrix[p.id]) return { data:matrix[p.id], assessed:true };
   // Deterministic demo derivation from season stats until a real assessment exists
   const rng=(()=>{let s=strSeed(p.id);return()=>{s|=0;s=(s+0x6D2B79F5)|0;let t=Math.imul(s^(s>>>15),1|s);t=(t+Math.imul(t^(t>>>7),61|t))^t;return((t^(t>>>14))>>>0)/4294967296;};})();
   const j=(base)=>Math.max(30,Math.min(92,Math.round(base+rng()*14-7)));
@@ -94,7 +102,7 @@ function skillsFor(p){
 function PlayerProfileModal({ player, role, onClose, onFullProfile }){
   if(!player) return null;
   const stripped = can(role,"players","r").deny.length>0;
-  const sk = skillsFor(player);
+  const sk = skillsFor(player, role);
   const canFull = ROLES[role]?.nav.includes("profiles");
   const Stat = ({l,v,c}) => (
     <div style={{flex:1,minWidth:"70px",background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,padding:"8px 6px",textAlign:"center"}}>
@@ -207,7 +215,7 @@ function ScorecardModal({ match, onClose, role, onNavProfile }){
   // profile; roles without players-resource access get no links at all.
   const linkFor = name => {
     if(!can(role,"players","r").allowed) return null;
-    const p = PLAYERS.find(x=>x.name===name);
+    const p = scoped("players", role).find(x=>x.name===name);
     return p ? ()=>setProf(filterRecord(role,"players",p)) : null;
   };
   const { WormChart, ManhattanChart, BatsmanChart, BowlerChart } = ScorerApp.charts;
@@ -218,14 +226,14 @@ function ScorecardModal({ match, onClose, role, onNavProfile }){
     if(match.scorecard?.away) inns.push({...parseScore(match.scorecard.away.score), balls:parseBalls(match.scorecard.away.overs)});
     return ScorerApp.seedCompletedMatch({
       matchId: match.id, team1: match.homeTeam, team2: match.awayTeam,
-      squad1: teamSquad(match.homeTeam), squad2: teamSquad(match.awayTeam),
+      squad1: teamSquad(match.homeTeam, role), squad2: teamSquad(match.awayTeam, role),
       inns: inns.map(x=>({ runs:x.runs, wickets:x.wkts, balls:x.balls })),
       liveLast: isLive,
     });
   },[match.id,isLive]);
   const inn = seeded.innings[tab];
-  const comp = COMPETITIONS.find(c=>c.id===match.competition);
-  const scorerStaff = STAFF.find(s=>s.id===match.scorerId);
+  const comp = scoped("competitions", role).find(c=>c.id===match.competition);
+  const scorerStaff = scoped("staff", role).find(s=>s.id===match.scorerId);
   const extrasSum = i => Object.values(i.extras).reduce((a,b)=>a+b,0);
   const legal = i => i.ballLog.filter(b=>b.type!=="Wd"&&b.type!=="Nb");
   const topBat = i => [...i.batsmen].sort((a,b)=>b.runs-a.runs)[0];

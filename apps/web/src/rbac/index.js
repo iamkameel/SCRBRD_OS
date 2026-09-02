@@ -21,10 +21,13 @@
  * nineteen screens.
  */
 
-import { authorize, scopeFilter } from "@scrbrd/policy/authorize";
+import { authorize, scopeFilter, ANY_SCOPE } from "@scrbrd/policy/authorize";
 import { roleGrants, ROLE_CAPABILITIES } from "@scrbrd/policy/roles";
 import { TABLES } from "@scrbrd/policy/tables";
-import { COACHES, COMPETITIONS, INJURIES, MATCHES, PLAYERS, STAFF } from "../data/mock.js";
+import {
+  COACHES, COMPETITIONS, GROUNDS, INJURIES, MATCHES, NOTIFICATIONS,
+  PLAYERS, SKILLS_MATRIX, STAFF, TRAINING_SESSIONS, USERS_INITIAL, WEATHER,
+} from "../data/mock.js";
 
 // ── Legacy resource names → capabilities ────────────────
 // The views speak in resources ("injuries", "players"); the model speaks in
@@ -33,6 +36,7 @@ import { COACHES, COMPETITIONS, INJURIES, MATCHES, PLAYERS, STAFF } from "../dat
 // resource.
 const RESOURCE = {
   players:      { table: "player",      r: "player.profile.read",  c: "player.profile.manage", u: "player.profile.manage", d: "player.profile.manage" },
+  coaches:      { table: "coach",       r: "user.read",            c: "user.invite",           u: "user.role.assign",      d: "user.role.assign" },
   profiles:     { table: "coach",       r: "user.read",            c: "user.invite",           u: "user.role.assign",      d: "user.role.assign" },
   staff:        { table: "staff",       r: "user.read",            c: "user.invite",           u: "user.role.assign",      d: "user.role.assign" },
   // Reading an injury is reading AVAILABILITY. The diagnosis is masked below,
@@ -45,6 +49,14 @@ const RESOURCE = {
   logistics:    { table: null,          r: "transport.read",       c: "transport.manage",      u: "transport.manage",      d: "transport.manage" },
   fields:       { table: null,          r: "facility.read",        c: "facility.manage",       u: "facility.manage",       d: "facility.manage" },
   finance:      { table: null,          r: "invoice.read",         c: "invoice.manage",        u: "invoice.manage",        d: "invoice.manage" },
+  // Everything below was previously read straight from the mock constants by
+  // the views, with no scoping and no masking at all (handover §8.1 item 3).
+  grounds:      { table: null,          r: "facility.read",        c: "facility.manage",       u: "facility.manage",       d: "facility.manage" },
+  training:     { table: null,          r: "team.read",            c: "team.manage",           u: "team.manage",           d: "team.manage" },
+  skills:       { table: null,          r: "player.development.read", c: "player.development.write", u: "player.development.write", d: "player.development.write" },
+  notifications:{ table: null,          r: "news.read",            c: null,                    u: null,                    d: null },
+  users:        { table: null,          r: "user.read",            c: "user.invite",           u: "user.role.assign",      d: "user.role.assign" },
+  weather:      { table: null,          r: "fixture.read",         c: null,                    u: null,                    d: null },
 };
 
 const ACTION = { r: "r", read: "r", c: "c", create: "c", u: "u", update: "u", d: "d", delete: "d" };
@@ -166,10 +178,15 @@ export function canScore(role) {
 const SOURCE = {
   players: () => PLAYERS,
   profiles: () => [...COACHES, ...STAFF],
+  coaches: () => COACHES,
   staff: () => STAFF,
   injuries: () => INJURIES,
   matches: () => MATCHES,
   competitions: () => COMPETITIONS,
+  grounds: () => GROUNDS,
+  training: () => TRAINING_SESSIONS,
+  notifications: () => NOTIFICATIONS,
+  users: () => USERS_INITIAL,
 };
 
 /**
@@ -181,6 +198,7 @@ function anchorsOf(resource, row) {
   switch (resource) {
     case "players":
     case "profiles":
+    case "coaches":
     case "staff":
       return { school: row.school ?? DEMO_SCHOOL, team: row.team ?? null, person: row.id ?? null };
     case "injuries": {
@@ -196,6 +214,15 @@ function anchorsOf(resource, row) {
     }
     case "matches":
       return { school: row.school ?? DEMO_SCHOOL, team: row.team ?? null, fixture: row.id ?? null };
+    // School-level resources: a ground, a competition, a notice belongs to the
+    // institution, not to a team, so a team-scoped assignment still reaches
+    // them. Declared, never inferred — see ANY_SCOPE.
+    case "grounds":
+    case "competitions":
+    case "notifications":
+    case "weather":
+    case "fields":
+      return { school: row.school ?? DEMO_SCHOOL, team: ANY_SCOPE, fixture: ANY_SCOPE, person: ANY_SCOPE };
     default:
       return { school: row.school ?? DEMO_SCHOOL, team: row.team ?? null };
   }
@@ -262,6 +289,40 @@ export function grantedBy(resource, row, principal) {
     resource: anchorsOf(resource, row),
   });
   return via ? { role: via.role, school: via.school, team: via.team ?? null } : null;
+}
+
+// ── The accessor views use ──────────────────────────────
+/**
+ * `scoped(resource, role)` — the read a view performs instead of importing a
+ * mock constant.
+ *
+ * Views previously did `import { PLAYERS } from "../data/mock.js"` and
+ * filtered in the component, which meant every list, every count and every
+ * search result was computed over the whole dataset regardless of who was
+ * looking. Eighteen modules did this. Binding the same name from here instead
+ * keeps each view's body unchanged while putting the decision back in front of
+ * the data.
+ *
+ * `data/mock.js` is imported by this module and by nothing else; a test in
+ * rbac.test.mjs fails the build if that changes.
+ */
+export function scoped(resource, role) {
+  return getData(resource, principalForRole(role));
+}
+
+/**
+ * Skills are keyed by player id rather than being a list, so scoping means
+ * keeping only the entries for players this principal may read.
+ */
+export function scopedSkills(role) {
+  const visible = new Set(scoped("players", role).map((p) => p.id));
+  return Object.fromEntries(Object.entries(SKILLS_MATRIX).filter(([id]) => visible.has(id)));
+}
+
+/** Weather is keyed by match id, and carries no personal data. */
+export function scopedWeather(role) {
+  const visible = new Set(scoped("matches", role).map((m) => m.id));
+  return Object.fromEntries(Object.entries(WEATHER).filter(([id]) => visible.has(id)));
 }
 
 export { RESOURCE as RBAC_RESOURCES };

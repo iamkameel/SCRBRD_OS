@@ -1,4 +1,4 @@
-import { COMPETITIONS, INJURIES, MATCHES, NOTIFICATIONS, PLAYERS, TRAINING_SESSIONS } from "../data/mock.js";
+import { scoped } from "../rbac/index.js";
 import { ROLES } from "../design/roles.js";
 import { D } from "../design/tokens.js";
 import { dateStr, fitnessColor, today } from "../lib/format.js";
@@ -8,6 +8,14 @@ import { Avatar, Btn, Card, KPICard, Pill, StatusDot } from "../ui/primitives.js
 //  DASHBOARD VIEW
 // ══════════════════════════════════════════════════════
 function DashboardView({ role, onNav }) {
+  // Read through the choke point: row-scoped and column-masked for this
+  // principal. Importing the raw constant here would bypass both.
+  const COMPETITIONS = scoped("competitions", role);
+  const INJURIES = scoped("injuries", role);
+  const MATCHES = scoped("matches", role);
+  const NOTIFICATIONS = scoped("notifications", role);
+  const PLAYERS = scoped("players", role);
+  const TRAINING_SESSIONS = scoped("training", role);
   const rc = ROLES[role];
   const liveMatch = MATCHES.find(m=>m.status==="live");
   const upcomingMatches = MATCHES.filter(m=>m.status==="upcoming").slice(0,3);

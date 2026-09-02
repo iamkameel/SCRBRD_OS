@@ -1,5 +1,5 @@
+import { scoped, scopedSkills } from "../rbac/index.js";
 import { useState } from "react";
-import { PLAYERS, SKILLS_MATRIX } from "../data/mock.js";
 import { D } from "../design/tokens.js";
 import { fitnessColor, roleColor } from "../lib/format.js";
 import { SR } from "../scorer/format.js";
@@ -9,6 +9,10 @@ import { Avatar, Badge, Btn, Card, Input, Modal, RadarChart, SectionHeader, Sele
 //  SQUAD VIEW
 // ══════════════════════════════════════════════════════
 function SquadView({ role }) {
+  // Read through the choke point: row-scoped and column-masked for this
+  // principal. Importing the raw constant here would bypass both.
+  const PLAYERS = scoped("players", role);
+  const SKILLS_MATRIX = scopedSkills(role);
   const [team, setTeam]           = useState("U19A");
   const [selected, setSelected]   = useState(null);
   const [addModal, setAddModal]   = useState(false);

@@ -1,12 +1,18 @@
 import { useState } from "react";
-import { COMPETITIONS, GROUNDS, MATCHES, STAFF, WEATHER } from "../data/mock.js";
 import { D } from "../design/tokens.js";
-import { canScore } from "../rbac/index.js";
+import { canScore, scoped, scopedWeather } from "../rbac/index.js";
 import { SCRBRD } from "../scorer/engine.jsx";
 import { Badge, Btn, Card, Pill, SectionHeader, StatusDot } from "../ui/primitives.jsx";
 import { ScorecardModal, WeatherChip } from "./shared.jsx";
 
 function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
+  // Read through the choke point: row-scoped and column-masked for this
+  // principal. Importing the raw constant here would bypass both.
+  const COMPETITIONS = scoped("competitions", role);
+  const GROUNDS = scoped("grounds", role);
+  const MATCHES = scoped("matches", role);
+  const STAFF = scoped("staff", role);
+  const WEATHER = scopedWeather(role);
   const [filter, setFilter] = useState("all");
   const [selMatch, setSelMatch] = useState(null);
   const [cardM,    setCardM]    = useState(null);

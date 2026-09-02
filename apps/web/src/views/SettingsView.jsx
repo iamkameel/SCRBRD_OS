@@ -1,6 +1,6 @@
+import { scoped } from "../rbac/index.js";
 import { useState } from "react";
 import { SCHOOL } from "../data/institution.js";
-import { COACHES, PLAYERS, STAFF, USERS_INITIAL } from "../data/mock.js";
 import { ROLES } from "../design/roles.js";
 import { D } from "../design/tokens.js";
 import { SCRBRD } from "../scorer/engine.jsx";
@@ -10,6 +10,12 @@ import { Avatar, Badge, Btn, Card, Input, Modal, SectionHeader, Select } from ".
 //  SETTINGS VIEW — full user CRUD + RBAC + upgrades
 // ══════════════════════════════════════════════════════
 function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp }) {
+  // Read through the choke point: row-scoped and column-masked for this
+  // principal. Importing the raw constant here would bypass both.
+  const COACHES = scoped("coaches", role);
+  const PLAYERS = scoped("players", role);
+  const STAFF = scoped("staff", role);
+  const USERS_INITIAL = scoped("users", role);
   const [tab,       setTab]       = useState("users");
   const [usersLocal,setUsersLocal]= useState(USERS_INITIAL);
   // Use lifted state if provided, else local fallback

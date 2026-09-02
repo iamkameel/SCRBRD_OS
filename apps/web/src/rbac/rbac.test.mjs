@@ -7,7 +7,11 @@
  * these two ever disagree, the policy has been forked somewhere.
  */
 import { can, canScore, getData, filterRecord, countData, grantedBy, principalForRole } from "./index.js";
+// This suite is the one place outside rbac/ that may read the raw constants:
+// it needs the unscoped totals to prove that scoped reads are smaller.
 import { PLAYERS, INJURIES } from "../data/mock.js";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
@@ -117,6 +121,30 @@ group("F. Single records and provenance");
   const via = grantedBy("players", own, P("coach"));
   ok("provenance names the granting assignment", via?.role === "coach" && via?.team === "U19A");
   ok("provenance is null when denied",           grantedBy("players", other, P("coach")) === null);
+}
+
+// ── G. The choke point stays the only door ───────────────
+group("G. No module reaches around the choke point");
+{
+  // handover §8.1 item 3: eighteen views imported the mock constants directly,
+  // so every list, count and search result was computed over the whole dataset
+  // regardless of who was looking. This fails the build if that returns.
+  const root = new URL("../", import.meta.url).pathname;
+  const offenders = [];
+  const walk = (dir) => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, e.name);
+      if (e.isDirectory()) { walk(full); continue; }
+      if (!/\.(js|jsx|mjs)$/.test(e.name)) continue;
+      const rel = full.slice(root.length);
+      if (rel.startsWith("rbac/")) continue;           // the one legitimate importer
+      const src = readFileSync(full, "utf8");
+      if (/^import .*from "(\.\.\/)*data\/mock\.js"/m.test(src)) offenders.push(rel);
+    }
+  };
+  walk(root);
+  ok(`no module outside rbac/ imports the mock data${offenders.length ? " — " + offenders.join(", ") : ""}`,
+     offenders.length === 0);
 }
 
 console.log(`\n${"─".repeat(52)}\nCLIENT RBAC SUITE: ${pass} passed, ${fail} failed`);

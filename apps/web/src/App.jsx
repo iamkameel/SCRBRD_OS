@@ -87,7 +87,7 @@ export default function SCRBRD_OS() {
       setScorerResume(ScorerApp.seedLiveResume({
         matchId: m.id, team1: m.homeTeam, team2: m.awayTeam, overs: 20,
         runs, wickets: wkts, balls: parseBalls(m.scorecard.home.overs),
-        squad1: teamSquad(m.homeTeam), squad2: teamSquad(m.awayTeam),
+        squad1: teamSquad(m.homeTeam, role), squad2: teamSquad(m.awayTeam, role),
       }));
     } else setScorerResume(null);
     setScorerOpen(true);

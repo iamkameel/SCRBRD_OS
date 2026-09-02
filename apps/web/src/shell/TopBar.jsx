@@ -1,10 +1,13 @@
+import { scoped } from "../rbac/index.js";
 import { useState, useEffect } from "react";
-import { NOTIFICATIONS } from "../data/mock.js";
 import { ROLES } from "../design/roles.js";
 import { D } from "../design/tokens.js";
 import { GlobalSearch } from "./GlobalSearch.jsx";
 
 function TopBar({ role, onRoleChange, onNav, userName }) {
+  // Read through the choke point: row-scoped and column-masked for this
+  // principal. Importing the raw constant here would bypass both.
+  const NOTIFICATIONS = scoped("notifications", role);
   const [roleOpen, setRoleOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const unread = NOTIFICATIONS.filter(n=>!n.read).length;
@@ -18,7 +21,7 @@ function TopBar({ role, onRoleChange, onNav, userName }) {
 
   return (
     <>
-      {searchOpen&&<GlobalSearch onNav={onNav} onClose={()=>setSearchOpen(false)}/>}
+      {searchOpen&&<GlobalSearch role={role} onNav={onNav} onClose={()=>setSearchOpen(false)}/>}
       <div style={{height:"52px",background:D.surf0,borderBottom:`1px solid ${D.border}`,display:"flex",alignItems:"center",padding:"0 16px",gap:"10px",flexShrink:0,position:"sticky",top:0,zIndex:100}}>
 
         {/* Live match chip */}

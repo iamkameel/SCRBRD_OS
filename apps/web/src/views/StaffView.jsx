@@ -1,5 +1,5 @@
+import { scoped } from "../rbac/index.js";
 import { useState } from "react";
-import { GROUNDS, STAFF } from "../data/mock.js";
 import { ROLES } from "../design/roles.js";
 import { D } from "../design/tokens.js";
 import { roleColor } from "../lib/format.js";
@@ -9,6 +9,10 @@ import { Avatar, Badge, Btn, Card, Pill, SectionHeader } from "../ui/primitives.
 //  STAFF VIEW — scorers, medical, drivers, groundskeepers
 // ══════════════════════════════════════════════════════
 function StaffView({ role }) {
+  // Read through the choke point: row-scoped and column-masked for this
+  // principal. Importing the raw constant here would bypass both.
+  const GROUNDS = scoped("grounds", role);
+  const STAFF = scoped("staff", role);
   const [filter, setFilter] = useState("all");
   const [sel, setSel]       = useState(null);
   const canEdit = role==="superadmin"||role==="schooladmin";

@@ -1,14 +1,14 @@
 import { useState, useEffect, useRef } from "react";
 import { askStatGuru } from "../lib/ai.js";
 import { SCHOOLS_REGISTRY } from "../data/institution.js";
-import { COACHES, COMPETITIONS, MATCHES, PLAYERS, STAFF } from "../data/mock.js";
+import { scoped } from "../rbac/index.js";
 import { ROLES } from "../design/roles.js";
 import { D } from "../design/tokens.js";
 
 // ══════════════════════════════════════════════════════
 //  TOPBAR + GLOBAL SEARCH
 // ══════════════════════════════════════════════════════
-function GlobalSearch({ onNav, onClose }) {
+function GlobalSearch({ role, onNav, onClose }) {
   const [q, setQ] = useState("");
   const [aiMode, setAiMode] = useState(false);
   const [aiAnswer, setAiAnswer] = useState("");
@@ -17,8 +17,15 @@ function GlobalSearch({ onNav, onClose }) {
 
   useEffect(()=>{ inputRef.current?.focus(); },[]);
 
-  const ALL_PLAYERS = PLAYERS;
-  const ALL_STAFF   = STAFF.concat(COACHES.map(c=>({...c,role:"coach",name:c.name})));
+  // Search is a read like any other, and it used to be the widest hole in the
+  // app: it matched every player, coach and staff member at every institution
+  // regardless of who was searching. Scoped here, so a team coach finds their
+  // own squad and a spectator finds nobody.
+  const ALL_PLAYERS   = scoped("players", role);
+  const ALL_MATCHES   = scoped("matches", role);
+  const ALL_COMPS     = scoped("competitions", role);
+  const ALL_STAFF     = scoped("staff", role)
+    .concat(scoped("coaches", role).map(c=>({...c,role:"coach",name:c.name})));
 
   const results = q.length < 2 ? [] : [
     ...ALL_PLAYERS.filter(p=>p.name.toLowerCase().includes(q.toLowerCase())).slice(0,4).map(p=>({
@@ -31,12 +38,12 @@ function GlobalSearch({ onNav, onClose }) {
       label:s.name, sub:`${s.role} · ${s.school||"Hilton College"}`,
       action:()=>{ onNav("staff"); onClose(); },
     })),
-    ...MATCHES.filter(m=>(m.home+m.away+m.venue).toLowerCase().includes(q.toLowerCase())).slice(0,3).map(m=>({
+    ...ALL_MATCHES.filter(m=>(m.home+m.away+m.venue).toLowerCase().includes(q.toLowerCase())).slice(0,3).map(m=>({
       type:"match", icon:"🏏",
       label:`${m.home} vs ${m.away}`, sub:`${m.date} · ${m.format} · ${m.status}`,
       action:()=>{ onNav("matches"); onClose(); },
     })),
-    ...COMPETITIONS.filter(c=>c.name.toLowerCase().includes(q.toLowerCase())).slice(0,2).map(c=>({
+    ...ALL_COMPS.filter(c=>c.name.toLowerCase().includes(q.toLowerCase())).slice(0,2).map(c=>({
       type:"competition", icon:"🏆",
       label:c.name, sub:c.format,
       action:()=>{ onNav("competitions"); onClose(); },
@@ -54,8 +61,11 @@ function GlobalSearch({ onNav, onClose }) {
   const askGuru = async () => {
     if (!q.trim()) return;
     setAiLoading(true); setAiMode(true); setAiAnswer("");
-    const playerContext = PLAYERS.map(p=>`${p.name} (${p.role}, ${p.team}, ${p.school})`).join(", ");
-    const matchContext = MATCHES.slice(0,5).map(m=>`${m.home} vs ${m.away} ${m.date} ${m.result||m.status}`).join("; ");
+    // The prompt context is built from the SCOPED list. Sending the full roster
+    // to the model would exfiltrate exactly what the search filter withholds —
+    // a leak that never renders on screen and so is easy to miss.
+    const playerContext = ALL_PLAYERS.map(p=>`${p.name} (${p.role}, ${p.team}, ${p.school})`).join(", ");
+    const matchContext = ALL_MATCHES.slice(0,5).map(m=>`${m.home} vs ${m.away} ${m.date} ${m.result||m.status}`).join("; ");
     try {
       // Goes to our own service, which holds the credential. The browser has
       // no API key — see apps/web/src/lib/ai.js and services/api/ai/.

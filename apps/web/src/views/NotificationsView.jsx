@@ -1,9 +1,12 @@
+import { scoped } from "../rbac/index.js";
 import { useState } from "react";
-import { NOTIFICATIONS } from "../data/mock.js";
 import { D } from "../design/tokens.js";
 import { Badge, Btn, Card, SectionHeader } from "../ui/primitives.jsx";
 
 function NotificationsView({ role }) {
+  // Read through the choke point: row-scoped and column-masked for this
+  // principal. Importing the raw constant here would bypass both.
+  const NOTIFICATIONS = scoped("notifications", role);
   const [notifs, setNotifs] = useState(NOTIFICATIONS);
   const markAll = () => setNotifs(n=>n.map(x=>({...x,read:true})));
   const unread = notifs.filter(n=>!n.read).length;

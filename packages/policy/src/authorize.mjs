@@ -44,6 +44,30 @@ import { ROLE_CAPABILITIES, roleGrants } from "./roles.mjs";
 
 const DENY = Object.freeze({ allowed: false, via: null, reason: "no_matching_assignment" });
 
+/**
+ * "This resource has no such dimension."
+ *
+ * There are three distinct things a resource can say about its team, and
+ * collapsing any two of them is a bug:
+ *
+ *   "U16A"     — it belongs to that team.
+ *   null       — the dimension is ABSENT and that should narrow. A staff
+ *                record has no team, and a team-scoped coach must not get a
+ *                staff directory. This is also what a query that simply forgot
+ *                its anchor looks like, so it fails closed.
+ *   ANY_SCOPE  — the dimension does not APPLY. A ground belongs to the school,
+ *                not to a team, so a team-scoped coach reading it is correct:
+ *                their team constraint restricts whose data they see, and a
+ *                ground is nobody's.
+ *
+ * ANY_SCOPE must be set deliberately by the resource descriptor. It is never
+ * inferred, so forgetting an anchor can never silently widen access.
+ * Applies to `team`, `fixture` and `person` — a ground is not about a person
+ * either, so a player or a guardian must be able to read one. The tenant
+ * boundary (`school`) has no such escape.
+ */
+export const ANY_SCOPE = "*";
+
 /** Is the assignment in force at `at`? */
 export function isActive(a, at = new Date()) {
   if (a.active === false) return false;
@@ -67,21 +91,21 @@ export function covers(a, resource = {}) {
   if (a.school != null) {
     if (resource.school == null || resource.school !== a.school) return false;
   }
-  if (a.team != null) {
+  if (a.team != null && resource.team !== ANY_SCOPE) {
     if (resource.team == null || resource.team !== a.team) return false;
   }
   if (a.season != null && resource.season != null && resource.season !== a.season) return false;
-  if (a.fixture != null) {
+  if (a.fixture != null && resource.fixture !== ANY_SCOPE) {
     if (resource.fixture == null || resource.fixture !== a.fixture) return false;
   }
   // A guardian assignment reaches only its own children. This is checked
   // against the resource's subject, so a guardian never sees a team-wide row
   // simply because their child is in that team.
-  if (a.children?.length) {
+  if (a.children?.length && resource.person !== ANY_SCOPE) {
     if (resource.person == null || !a.children.includes(resource.person)) return false;
   }
   // A personal assignment (a player over themselves) reaches only themselves.
-  if (a.person != null) {
+  if (a.person != null && resource.person !== ANY_SCOPE) {
     if (resource.person == null || resource.person !== a.person) return false;
   }
   return true;

@@ -1,14 +1,16 @@
 import { useState } from "react";
-import { PLAYERS } from "../data/mock.js";
 import { D } from "../design/tokens.js";
 import { pctDays, severityColor, today } from "../lib/format.js";
-import { can, getData, principalForRole } from "../rbac/index.js";
+import { can, getData, principalForRole, scoped } from "../rbac/index.js";
 import { Avatar, Badge, Btn, Card, Input, KPICard, Modal, ProgressBar, SectionHeader, Select } from "../ui/primitives.jsx";
 
 // ══════════════════════════════════════════════════════
 //  INJURIES VIEW
 // ══════════════════════════════════════════════════════
 function InjuryView({ role }) {
+  // Read through the choke point: row-scoped and column-masked for this
+  // principal. Importing the raw constant here would bypass both.
+  const PLAYERS = scoped("players", role);
   const [addModal, setAddModal] = useState(false);
   const [sel, setSel] = useState(null);
   const canEdit = can(role,"injuries","update").allowed;

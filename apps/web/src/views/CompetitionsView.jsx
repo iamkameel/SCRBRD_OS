@@ -1,9 +1,14 @@
+import { scoped } from "../rbac/index.js";
 import { useState } from "react";
-import { COMPETITIONS, MATCHES, PLAYERS } from "../data/mock.js";
 import { D } from "../design/tokens.js";
 import { Avatar, Badge, Btn, Card, SectionHeader, StatusDot } from "../ui/primitives.jsx";
 
 function CompetitionsView({ role }) {
+  // Read through the choke point: row-scoped and column-masked for this
+  // principal. Importing the raw constant here would bypass both.
+  const COMPETITIONS = scoped("competitions", role);
+  const MATCHES = scoped("matches", role);
+  const PLAYERS = scoped("players", role);
   const [active, setActive] = useState("comp1");
   const comp = COMPETITIONS.find(c=>c.id===active);
   return (

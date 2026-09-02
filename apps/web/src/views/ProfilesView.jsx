@@ -1,10 +1,9 @@
 import { useState, useEffect } from "react";
 import { KZN_SCHOOLS } from "../data/institution.js";
-import { COACHES, INJURIES, PLAYERS, SKILLS_MATRIX, STAFF, TRAINING_SESSIONS } from "../data/mock.js";
 import { ROLES } from "../design/roles.js";
 import { D } from "../design/tokens.js";
 import { fitnessColor } from "../lib/format.js";
-import { can, filterRecord } from "../rbac/index.js";
+import { can, filterRecord, scoped, scopedSkills } from "../rbac/index.js";
 import { Avatar, Badge, Card, Pill, RadarChart, SectionHeader, Select } from "../ui/primitives.jsx";
 
 // ══════════════════════════════════════════════════════
@@ -19,6 +18,14 @@ import { Avatar, Badge, Card, Pill, RadarChart, SectionHeader, Select } from "..
 //  PROFILES VIEW  — universal rich profiles
 // ══════════════════════════════════════════════════════
 function ProfilesView({ role, profileTarget, onClearTarget }) {
+  // Read through the choke point: row-scoped and column-masked for this
+  // principal. Importing the raw constant here would bypass both.
+  const COACHES = scoped("coaches", role);
+  const INJURIES = scoped("injuries", role);
+  const PLAYERS = scoped("players", role);
+  const SKILLS_MATRIX = scopedSkills(role);
+  const STAFF = scoped("staff", role);
+  const TRAINING_SESSIONS = scoped("training", role);
   const [cat,     setCat]     = useState("players");   // players | coaches | staff
   const [selId,   setSelId]   = useState(profileTarget || null);
   const [tab,     setTab]     = useState("overview");

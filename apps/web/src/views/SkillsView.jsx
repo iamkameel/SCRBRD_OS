@@ -1,5 +1,5 @@
+import { scoped, scopedSkills } from "../rbac/index.js";
 import { useState } from "react";
-import { PLAYERS, SKILLS_MATRIX } from "../data/mock.js";
 import { D } from "../design/tokens.js";
 import { fitnessColor } from "../lib/format.js";
 import { Avatar, Badge, Btn, Card, RadarChart, SectionHeader } from "../ui/primitives.jsx";
@@ -8,6 +8,10 @@ import { Avatar, Badge, Btn, Card, RadarChart, SectionHeader } from "../ui/primi
 //  SKILLS MATRIX VIEW
 // ══════════════════════════════════════════════════════
 function SkillsView({ role }) {
+  // Read through the choke point: row-scoped and column-masked for this
+  // principal. Importing the raw constant here would bypass both.
+  const PLAYERS = scoped("players", role);
+  const SKILLS_MATRIX = scopedSkills(role);
   const [selPlayer, setSelPlayer] = useState(PLAYERS[0]);
   const [category, setCategory]   = useState("batting");
   const skills = SKILLS_MATRIX[selPlayer.id];

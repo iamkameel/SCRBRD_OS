@@ -22,7 +22,11 @@
 
 import { ALL_CAPABILITIES, isCapability } from "./capabilities.mjs";
 
-const READ_TEAM = ["team.read", "fixture.read", "player.profile.read", "news.read"];
+// The floor for anyone attached to a team. facility.read is here because
+// knowing WHERE a fixture is played is not sensitive — it is on the team
+// sheet — and withholding it left coaches, managers and assistants unable to
+// open the Fields view at all.
+const READ_TEAM = ["team.read", "fixture.read", "player.profile.read", "news.read", "facility.read", "competition.read"];
 
 export const ROLE_CAPABILITIES = {
   // ── Platform ──
@@ -95,7 +99,7 @@ export const ROLE_CAPABILITIES = {
 
   // ── The people the data is about ──
   player: [
-    "fixture.read", "team.read", "news.read",
+    "fixture.read", "team.read", "news.read", "facility.read", "competition.read",
     "player.profile.read", "player.performance.read", "player.development.read",
     "medical.status.read", "transport.read",
   ],
@@ -103,7 +107,7 @@ export const ROLE_CAPABILITIES = {
   // reaches only their own children — including at a different school, which
   // the previous single-school session could not express at all.
   guardian: [
-    "fixture.read", "team.read", "news.read",
+    "fixture.read", "team.read", "news.read", "facility.read", "competition.read",
     "player.profile.read", "player.pii.read", "player.performance.read",
     "medical.status.read", "transport.read", "invoice.read",
   ],

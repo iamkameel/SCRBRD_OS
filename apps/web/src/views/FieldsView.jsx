@@ -1,5 +1,5 @@
+import { scoped } from "../rbac/index.js";
 import { useState } from "react";
-import { GROUNDS, STAFF } from "../data/mock.js";
 import { D } from "../design/tokens.js";
 import { Avatar, Badge, Btn, Card, SectionHeader } from "../ui/primitives.jsx";
 
@@ -7,6 +7,10 @@ import { Avatar, Badge, Btn, Card, SectionHeader } from "../ui/primitives.jsx";
 //  FIELDS VIEW — rich ground & pitch profiles
 // ══════════════════════════════════════════════════════
 function FieldsView({ role }) {
+  // Read through the choke point: row-scoped and column-masked for this
+  // principal. Importing the raw constant here would bypass both.
+  const GROUNDS = scoped("grounds", role);
+  const STAFF = scoped("staff", role);
   const [selGround, setSelGround] = useState(GROUNDS[0]);
   const [selPitch,  setSelPitch]  = useState(0);
   const [tab, setTab]             = useState("overview");

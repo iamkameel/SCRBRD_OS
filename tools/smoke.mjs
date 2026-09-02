@@ -73,18 +73,60 @@ const checks = [
   ["no console errors", errors.length === 0],
 ];
 
-// Click into the app and land on the dashboard, which exercises the shell,
-// the nav, and at least one view module.
-let deep = [];
+// Walk the app. This matters more than it looks: the views were converted
+// from importing mock constants to reading through the rbac choke point, and
+// a name that failed to bind is a ReferenceError that only appears when the
+// view actually renders — invisible to both the compiler and the test suite.
+const deep = [];
 try {
-  const enter = page.locator("text=/enter|explore|launch|sign in|log in|demo/i").first();
-  if (await enter.count()) {
-    await enter.click({ timeout: 4000 });
-    await page.waitForTimeout(1200);
-    const after = await page.$eval("body", (el) => el.innerText);
-    deep = [["navigated past landing", after !== text && after.length > 200]];
+  await page.locator("button", { hasText: /Get Started|Log In/ }).first().click({ timeout: 4000 });
+  await page.waitForTimeout(800);
+
+  // The login screen offers demo accounts; picking one fills the form.
+  await page.locator("button", { hasText: "Head Coach" }).first().click({ timeout: 4000 });
+  await page.waitForTimeout(300);
+  await page.locator("button", { hasText: /^Sign In$/ }).first().click({ timeout: 4000 });
+  await page.waitForTimeout(1800);
+
+  const appText = await page.$eval("body", (el) => el.innerText);
+  deep.push(["signed in to the app shell", /Dashboard|Squad|Matches/i.test(appText)]);
+
+  // Every navigation destination this role can reach.
+  const nav = await page.locator("nav button").all();
+  const errsBeforeNav = errors.length;
+  let visited = 0;
+  for (const item of nav) {
+    try {
+      if (!(await item.isVisible())) continue;
+      await item.click({ timeout: 2500 });
+      await page.waitForTimeout(280);
+      const body = await page.$eval("#root", (el) => el.innerHTML.length);
+      if (body > 500) visited++;
+    } catch { /* not a destination */ }
   }
-} catch { /* landing may not have a matching control; the checks above still stand */ }
+  deep.push([`rendered ${visited} navigation destinations`, visited >= 10]);
+  deep.push(["no errors while walking the views", errors.length === errsBeforeNav]);
+
+  // Switching roles re-runs every view against a different scope, which is
+  // the authorization path this refactor changed.
+  const errsBeforeRole = errors.length;
+  let switched = 0;
+  for (const label of ["Super Admin", "Player", "Parent", "Medical", "Scorer"]) {
+    try {
+      await page.locator("button", { hasText: /▼$/ }).first().click({ timeout: 2000 });
+      await page.waitForTimeout(200);
+      const opt = page.locator("button", { hasText: label }).first();
+      if (!(await opt.count())) continue;
+      await opt.click({ timeout: 2000 });
+      await page.waitForTimeout(500);
+      switched++;
+    } catch { /* switcher shape differs for some roles */ }
+  }
+  deep.push([`switched through ${switched} roles`, switched >= 2]);
+  deep.push(["no errors while switching roles", errors.length === errsBeforeRole]);
+} catch (e) {
+  deep.push([`walk threw: ${e.message.slice(0, 70)}`, false]);
+}
 
 await browser.close();
 server.close();

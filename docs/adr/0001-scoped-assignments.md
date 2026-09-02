@@ -108,6 +108,7 @@ likewise not a licence to browse a school's records: `platformadmin` has no
 | Client choke point | `apps/web/src/rbac/index.js` | 45 assertions |
 | Generated SQL | `services/api/rls/generate-rls.mjs` → `db/02` | 86 assertions |
 | Postgres, live | `db/99_rls_verify.sql` | negative-controlled |
+| The running app | `tools/smoke.mjs` | signs in, renders 13 destinations, switches 5 roles |
 
 The old `policy.mjs` is deleted. There is one definition, and the client and
 the database are both generated from it.
@@ -134,7 +135,7 @@ two views with no role able to open them. Added with deliberately thin bundles
 (`spectator` cannot read a player record at all) and flagged here rather than
 resolved silently.
 
-## The open question: RLS under an assignment set
+## Decided: RLS under an assignment set
 
 Postgres RLS reads session settings. `app_role()` works because it is one
 value; an assignment *set* does not fit that shape. Two options:
@@ -148,20 +149,45 @@ value; an assignment *set* does not fit that shape. Two options:
    immediately, at the cost of a lookup per policy evaluation (cacheable within
    a transaction).
 
-**Recommendation: (2).** Revocation latency on a platform holding minors' data
-is a safeguarding property, not a performance one. Measure the lookup before
-optimising it away.
+**Chosen: (2), and implemented.** `app_can()` is a `STABLE SECURITY DEFINER`
+lookup, evaluated once per statement per argument set. Revocation latency on a
+platform holding minors' data is a safeguarding property, not a performance
+one, and `db/99_rls_verify.sql` asserts it directly: deactivating an assignment
+mid-transaction removes access on the very next statement.
 
-## Migration order
+Measure the lookup before optimising it away. If it ever needs to be faster,
+the first move is a per-transaction cache, not moving assignments into the
+session.
 
-1. Add `role_assignment` to the core schema; backfill one row per existing user
-   from their current single role.
-2. Move `getData()` onto `authorize()` / `scopeFilter()`, keeping the resource
-   names the 19 views already use. Views do not change.
-3. Regenerate RLS from capabilities, per the decision above.
-4. Close the direct-import bypasses (handover §8.1 item 3) — a view reading
-   `PLAYERS` directly is outside the choke point and outside this model.
-5. Retire `policy.mjs`.
+## Migration — complete
+
+1. ✅ `role_assignment` + `guardian_child` in the core schema.
+2. ✅ `getData()` onto `authorize()` / `scopeFilter()`. The 19 views kept their
+   call signatures and did not change.
+3. ✅ RLS regenerated from capabilities.
+4. ✅ Direct-import bypasses closed. **Twenty modules** imported the mock
+   constants directly (handover §8.1 item 3) — every list, count and search
+   result was computed over the whole dataset regardless of who was looking.
+   `data/mock.js` now has one importer, and a test fails the build if that
+   changes.
+5. ✅ `policy.mjs` deleted.
+
+### A third scope state was needed
+
+Closing the bypasses surfaced a gap in `covers()`. A resource can say three
+different things about its team, and the first version conflated two of them:
+
+| | meaning | effect |
+|---|---|---|
+| `"U16A"` | belongs to that team | matches a U16A assignment |
+| `null` | dimension ABSENT, and that should narrow | a team coach gets no staff directory — and a query that forgot its anchor fails closed |
+| `ANY_SCOPE` | dimension does not APPLY | a ground belongs to the school, not a team, so a team coach reads it |
+
+Without the third state a team-scoped coach could not read a ground, a
+competition or a notice, because those carry no team. `ANY_SCOPE` must be set
+deliberately by the resource descriptor — it is never inferred, so a forgotten
+anchor still fails closed. It applies to `team`, `fixture` and `person`; the
+tenant boundary (`school`) has no such escape.
 
 ## Consequence for the "17 roles" claim
 
