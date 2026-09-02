@@ -21,7 +21,7 @@
     "dev:web": "pnpm --filter @scrbrd/web dev",
     "dev:api": "node services/api/server.mjs",
     "check:imports": "node tools/check-imports.mjs",
-    "smoke": "node tools/smoke.mjs && node tools/smoke-scorer.mjs",
+    "smoke": "node tools/smoke.mjs && node tools/smoke-scorer.mjs && node tools/smoke-persist.mjs",
     "verify": "pnpm test && pnpm check:imports && pnpm build && pnpm smoke"
   },
   "devDependencies": {

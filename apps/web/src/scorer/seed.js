@@ -122,7 +122,8 @@ function seedLiveResume({matchId,team1,team2,overs,runs,wickets,balls,squad1,squ
   const rng=seedRng(matchId);
   const inn=seedInningsCore(rng,{team1,team2,runs,wickets,balls,squad1,squad2,complete:false});
   const inn2=initInn(team2,team1,squad2,null,team2,squad1,team1);
-  return { cfg:{team1,team2,overs,squad1,squad2,teamKey1:team1,teamKey2:team2}, innings:[inn,inn2], curIn:0 };
+  // matchId rides in cfg so the scorer can key its saved log by it.
+  return { cfg:{matchId,team1,team2,overs,squad1,squad2,teamKey1:team1,teamKey2:team2}, innings:[inn,inn2], curIn:0 };
 }
 
 // Full completed-match reconstruction — both innings from the summary card.

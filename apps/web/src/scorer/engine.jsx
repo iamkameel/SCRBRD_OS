@@ -4,6 +4,7 @@ import {
   ball as ballEvent, penalty as penaltyEvent, inningsEnd,
 } from "@scrbrd/scoring";
 import { D } from "../design/tokens.js";
+import { loadMatch, saveMatch, storageKind } from "../lib/persist.js";
 import { SEGS } from "./field.js";
 import { fmtOv } from "./format.js";
 import { ALL_SHOTS } from "./shots.js";
@@ -113,15 +114,55 @@ function SCRBRD({resume}={}){
 
   const inn=innings[curIn];
 
-  // Resume a live match handed over from ScrbrdOS Match Centre.
-  useEffect(()=>{
-    if(resume&&resume.cfg){
+  // ── Durability ──────────────────────────────────────────
+  // A phone locks, a battery dies, a browser reloads the tab. On a ground with
+  // no signal there is nowhere else the match exists, so the log goes to disk
+  // on every change and is rehydrated on return.
+  const [matchId, setMatchId] = useState(null);
+  const [saveState, setSaveState] = useState({ kind: null, restored: false, savedAt: null });
+  const hydratedRef = useRef(false);
+
+  // Resume a live match handed over from the Match Centre. A log already saved
+  // on this device WINS over the seeded reconstruction: it is what this scorer
+  // actually recorded, and the seed is only a stand-in for a match nobody here
+  // has scored yet.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!resume?.cfg) { hydratedRef.current = true; return; }
+      const id = resume.cfg.matchId ?? null;
       setMatch(resume.cfg);
-      setEvents(resume.events ?? (resume.innings||[]).map(i=>i?eventsFromInnings(i):[]));
-      setCurIn(resume.curIn||0);
+      setMatchId(id);
+
+      const saved = id ? await loadMatch(id) : null;
+      if (cancelled) return;
+      if (saved?.events?.some(e => e.length)) {
+        setEvents(saved.events);
+        setCurIn(saved.curIn ?? 0);
+        setSaveState({ kind: await storageKind(), restored: true, savedAt: saved.savedAt ?? null });
+      } else {
+        setEvents((resume.events ?? (resume.innings || []).map(i => (i ? eventsFromInnings(i) : []))));
+        setCurIn(resume.curIn || 0);
+        setSaveState({ kind: await storageKind(), restored: false, savedAt: null });
+      }
       setScreen("match");
-    }
-  },[]);
+      hydratedRef.current = true;
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Persist on every change to the log. Skipped until hydration has finished,
+  // or the empty initial state would overwrite the very log being restored.
+  useEffect(() => {
+    if (!hydratedRef.current || !matchId) return;
+    if (!events.some(e => e.length)) return;
+    let cancelled = false;
+    (async () => {
+      const ok = await saveMatch(matchId, { events, curIn, cfg: match });
+      if (!cancelled && ok) setSaveState(s => ({ ...s, savedAt: Date.now() }));
+    })();
+    return () => { cancelled = true; };
+  }, [events, curIn, matchId]);
 
   const startMatch=cfg=>{
     setMatch(cfg);
@@ -143,6 +184,10 @@ function SCRBRD({resume}={}){
       open1.push(bowlerEvent({innings:0,bowler:cfg.openBowler}));
     }
     setEvents([open1,open2]);
+    // A match started here has no fixture id yet; mint one so the log is
+    // durable from the first ball rather than from whenever it gets an id.
+    setMatchId(cfg.matchId ?? `local-${Date.now().toString(36)}`);
+    hydratedRef.current = true;
     setCurIn(0);setScreen("match");setModal(null);
   };
 

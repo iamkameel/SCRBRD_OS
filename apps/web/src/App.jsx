@@ -5,7 +5,7 @@
  * destinations to their view components. Views read data through getData() in
  * rbac/, never from the mock constants directly.
  */
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import ScorerApp from "./scorer/index.jsx";
 import { LandingPage } from "./auth/LandingPage.jsx";
 import { LoginPage } from "./auth/LoginPage.jsx";
@@ -13,7 +13,7 @@ import { OnboardingFlow } from "./auth/OnboardingFlow.jsx";
 import { NOTIFICATIONS, USERS_INITIAL } from "./data/mock.js";
 import { ROLES } from "./design/roles.js";
 import { D, GLOBAL_CSS } from "./design/tokens.js";
-import { canScore } from "./rbac/index.js";
+import { canScore, scoped } from "./rbac/index.js";
 import { MobileNav, useIsMobile } from "./shell/MobileNav.jsx";
 import { Sidebar } from "./shell/Sidebar.jsx";
 import { TopBar } from "./shell/TopBar.jsx";
@@ -37,6 +37,7 @@ import { SquadView } from "./views/SquadView.jsx";
 import { StaffView } from "./views/StaffView.jsx";
 import { TrainingView } from "./views/TrainingView.jsx";
 import { parseBalls, parseScore, teamSquad } from "./views/shared.jsx";
+import { loadSession, saveSession } from "./lib/persist.js";
 
 export default function SCRBRD_OS() {
   // ── App-level state ──
@@ -50,6 +51,11 @@ export default function SCRBRD_OS() {
   const [scorerOpen, setScorerOpen] = useState(false);
   const [profileTarget, setProfileTarget] = useState(null);
   const [scorerResume, setScorerResume] = useState(null);
+  // The fixture the scorer is on, kept separately from `scorerResume` so it can
+  // be persisted: the resume payload carries a whole seeded innings and has no
+  // business in storage, but its match id is all that's needed to rebuild it.
+  const [scorerMatchId, setScorerMatchId] = useState(null);
+  const restoredRef = useRef(false);
   const isMobile = useIsMobile();
 
   const handleRoleChange = (r) => {
@@ -80,18 +86,55 @@ export default function SCRBRD_OS() {
   };
 
   // Launch scorer — with full mid-match state when opened from a live match
-  const openScorer = (m) => {
-    if (!canScore(role)) return;   // RBAC: scoring is a write capability
+  // `asRole` exists for the session restore: setState is async, so a restore
+  // that sets the role and opens the scorer in the same pass would evaluate
+  // the capability against the PREVIOUS role. The default role is superadmin,
+  // which maps to platformadmin and cannot score, so the scorer silently
+  // failed to reopen after a reload.
+  const openScorer = (m, asRole = role) => {
+    if (!canScore(asRole)) return;   // RBAC: scoring is a write capability
     if (m && m.status === "live" && m.scorecard?.home) {
       const { runs, wkts } = parseScore(m.scorecard.home.score);
       setScorerResume(ScorerApp.seedLiveResume({
         matchId: m.id, team1: m.homeTeam, team2: m.awayTeam, overs: 20,
         runs, wickets: wkts, balls: parseBalls(m.scorecard.home.overs),
-        squad1: teamSquad(m.homeTeam, role), squad2: teamSquad(m.awayTeam, role),
+        squad1: teamSquad(m.homeTeam, asRole), squad2: teamSquad(m.awayTeam, asRole),
       }));
     } else setScorerResume(null);
+    setScorerMatchId(m?.id ?? null);
     setScorerOpen(true);
   };
+
+  // ── Session durability ──────────────────────────────────
+  // A reload mid-over must not drop the scorer back to the landing page. The
+  // match log itself is saved by the scorer; this is the far smaller matter of
+  // where the person was, so they land back on the pad instead of navigating
+  // in from scratch while play continues.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const s = await loadSession();
+      if (cancelled || !s) { restoredRef.current = true; return; }
+      if (s.appState) setAppState(s.appState);
+      if (s.role) setRole(s.role);
+      if (s.userName) setUserName(s.userName);
+      if (s.page) setPage(s.page);
+      if (s.scorerMatchId) {
+        // Through the choke point, and under the RESTORED role — a saved
+        // session must not become a way to reopen a fixture the person is no
+        // longer allowed to see.
+        const m = scoped("matches", s.role ?? role).find(x => x.id === s.scorerMatchId);
+        if (m) openScorer(m, s.role ?? role); else setScorerMatchId(s.scorerMatchId);
+      }
+      restoredRef.current = true;
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!restoredRef.current) return;
+    saveSession({ appState, role, userName, page, scorerMatchId: scorerOpen ? scorerMatchId : null });
+  }, [appState, role, userName, page, scorerOpen, scorerMatchId]);
 
   const unreadCount = NOTIFICATIONS.filter(n=>!n.read).length;
 
