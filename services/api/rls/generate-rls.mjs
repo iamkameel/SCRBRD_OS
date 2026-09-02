@@ -1,188 +1,192 @@
+#!/usr/bin/env node
 /**
- * SCRBRD — RLS generator
+ * Emits db/02_rls_policies.sql from the policy model. Never hand-edit the SQL;
+ * change packages/policy/ and run `pnpm rls:generate`.
  *
- * Emits rls_policies.sql from policy.mjs. Never hand-edit the SQL; change the
- * policy and regenerate. Run:  node rls/generate-rls.mjs > rls/rls_policies.sql
+ * What this emits
+ * ───────────────
+ *   1. role_capability rows            — the role→capability bundles
+ *   2. app_can(...)                    — THE authorization decision, in SQL
+ *   3. per-table RLS policies          — read/write, built on app_can
+ *   4. *_masked views                  — per-row column masking, on app_can
  *
- * What it generates:
- *   1. rbac_scope(role, resource)      — effective scope, from POLICY
- *   2. rbac_can_read(resource, school, team, owner) — row visibility (mirrors inScope)
- *   3. rbac_can_write(resource, action)             — capability for writes
- *   4. rbac_field_denied(resource, field)           — column mask decision
- *   5. per-table RLS SELECT/INSERT/UPDATE policies
- *   6. masking VIEWS that null denied columns per role
+ * The decision is a SECURITY DEFINER lookup over role_assignment rather than
+ * anything carried in the session. That is a deliberate choice (ADR 0001):
+ * an assignment SET does not fit a session GUC the way a single role did, and
+ * a lookup means revoking an assignment takes effect on the next statement
+ * instead of at the person's next login. On a platform holding minors' data,
+ * revocation latency is a safeguarding property, not a performance one.
  *
- * IMPORTANT — the RLS ÷ column split:
- *   Postgres RLS is ROW-level. Field/PII stripping is COLUMN-level and cannot be
- *   done by RLS with a single app role + session vars. So row visibility is RLS;
- *   column masking is done by the generated *_masked views. The API must read
- *   PII/clinical tables THROUGH those views, never the base tables.
+ * The function is STABLE, so Postgres evaluates it once per statement for a
+ * given argument set rather than once per row.
  */
-import { POLICY, ROLES, RESOURCE_TABLES, decide, canScore, maskableFields, SCOPE_RANK } from "./policy.mjs";
 
-const q = s => `'${s.replace(/'/g, "''")}'`;
-const banner = t => `-- ${"═".repeat(66)}\n--  ${t}\n-- ${"═".repeat(66)}`;
+import { ROLE_CAPABILITIES, ROLES, roleGrants, SCORING_ROLES, unknownCapabilities } from "@scrbrd/policy/roles";
+import { TABLES } from "@scrbrd/policy/tables";
+import { ALL_CAPABILITIES } from "@scrbrd/policy/capabilities";
 
-function scopeFn() {
-  // rbac_scope(role,resource) → effective scope string, straight from POLICY.
-  const lines = [];
-  for (const role of ROLES) {
-    for (const resource of new Set(Object.values(RESOURCE_TABLES).map(t => t.resource))) {
-      const d = decide(role, resource, "r");
-      const scope = d.allowed ? d.scope : "none";
-      lines.push(`    WHEN p_role = ${q(role)} AND p_resource = ${q(resource)} THEN ${q(scope)}`);
-    }
-  }
-  return `CREATE OR REPLACE FUNCTION rbac_scope(p_role text, p_resource text)
-RETURNS text AS $$
-  SELECT CASE
-    WHEN p_role = 'superadmin' THEN 'all'
-${lines.join("\n")}
-    ELSE 'none'
-  END
+const q = (s) => `'${String(s).replaceAll("'", "''")}'`;
+const banner = (t) => `\n-- ══════════════════════════════════════════════════════════════════\n--  ${t}\n-- ══════════════════════════════════════════════════════════════════`;
+
+/** Scope anchor expression for a table column, or NULL when the table has none. */
+const anchor = (table, def, key, cast) => {
+  const col = def.anchors?.[key];
+  if (!col) return `NULL::${cast}`;
+  return col.startsWith("(") ? col : `${table}.${col}`;
+};
+
+const callCan = (table, def, capability) => {
+  const args = [
+    q(capability),
+    anchor(table, def, "school", "uuid"),
+    anchor(table, def, "team", "text"),
+    anchor(table, def, "person", "uuid"),
+    anchor(table, def, "fixture", "uuid"),
+  ];
+  return `app_can(${args.join(", ")})`;
+};
+
+function decisionFunction() {
+  return `${banner("The authorization decision")}
+-- app_can(capability, school, team, person, fixture)
+--
+-- TRUE when ONE SINGLE assignment held by the current user both grants the
+-- capability and covers the resource. Never a union across assignments: a
+-- capability held through one assignment is only ever applied within that
+-- same assignment's scope.
+--
+-- Scope semantics, which are asymmetric on purpose:
+--   NULL on the ASSIGNMENT widens  — school_id NULL is platform-wide,
+--                                    team_code NULL is every team in the school.
+--   NULL on the RESOURCE narrows   — a row that does not state its school is
+--                                    NOT covered by a school-scoped assignment.
+-- The second half is what makes a query that forgot its scope fail closed
+-- instead of matching everything.
+--
+-- SECURITY DEFINER because role_assignment is itself RLS-protected: a person
+-- may not read other people's assignments, but the decision must read their
+-- own. STABLE so it is evaluated once per statement per argument set.
+CREATE OR REPLACE FUNCTION app_can(
+  p_capability text,
+  p_school     uuid DEFAULT NULL,
+  p_team       text DEFAULT NULL,
+  p_person     uuid DEFAULT NULL,
+  p_fixture    uuid DEFAULT NULL
+) RETURNS boolean AS $$
+  SELECT EXISTS (
+    SELECT 1
+      FROM role_assignment a
+      JOIN role_capability rc
+        ON rc.role = a.role
+       AND rc.capability = p_capability
+     WHERE a.person_id = app_user_id()
+       AND a.active
+       AND (a.valid_from  IS NULL OR a.valid_from  <= current_date)
+       AND (a.valid_until IS NULL OR a.valid_until >  current_date)
+       -- institution
+       AND (a.school_id IS NULL OR (p_school IS NOT NULL AND a.school_id = p_school))
+       -- team
+       AND (a.team_code IS NULL OR (p_team IS NOT NULL AND a.team_code = p_team))
+       -- single fixture (scorers, match officials)
+       AND (a.fixture_id IS NULL OR (p_fixture IS NOT NULL AND a.fixture_id = p_fixture))
+       -- guardian: an assignment listing children reaches ONLY those children
+       AND (
+         NOT EXISTS (SELECT 1 FROM guardian_child g WHERE g.assignment_id = a.id)
+         OR (p_person IS NOT NULL AND EXISTS (
+               SELECT 1 FROM guardian_child g
+                WHERE g.assignment_id = a.id AND g.player_id = p_person))
+       )
+  )
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION app_can(text, uuid, text, uuid, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app_can(text, uuid, text, uuid, uuid) TO PUBLIC;
+
+-- Live-scoring capability, for the ball_event policies in 01_schema_scoring.sql.
+-- Derived from the role bundles rather than listed, so a role can never
+-- acquire scoring rights without naming scoring.edit.
+CREATE OR REPLACE FUNCTION can_score(p_role text) RETURNS boolean AS $$
+  SELECT p_role IN (${SCORING_ROLES.map(q).join(", ")})
 $$ LANGUAGE sql IMMUTABLE;`;
 }
 
-function canReadFn() {
-  // Faithful SQL mirror of the app's inScope(): all|school|team|own|none.
-  return `CREATE OR REPLACE FUNCTION rbac_can_read(
-  p_resource text, p_school uuid, p_team text, p_owner uuid)
-RETURNS boolean AS $$
-DECLARE v_scope text := rbac_scope(app_role(), p_resource);
-BEGIN
-  RETURN CASE v_scope
-    WHEN 'all'    THEN true
-    WHEN 'school' THEN p_school = app_school_id()
-    WHEN 'team'   THEN p_team = ANY(app_teams())
-    WHEN 'own'    THEN p_owner = app_player_id() OR p_owner = ANY(app_child_ids())
-    ELSE false
-  END;
-END $$ LANGUAGE plpgsql STABLE;`;
+function capabilityRows() {
+  const rows = [];
+  for (const role of ROLES)
+    for (const cap of ROLE_CAPABILITIES[role]) rows.push(`  (${q(role)}, ${q(cap)})`);
+  return `${banner("Role → capability bundles")}
+-- Replaced wholesale on every regeneration.
+DELETE FROM role_capability;
+INSERT INTO role_capability (role, capability) VALUES
+${rows.join(",\n")};`;
 }
 
-function canWriteFn() {
-  // Capability (create/update/delete) per role+resource, from POLICY `can`.
-  const lines = [];
-  for (const role of ROLES) {
-    for (const resource of new Set(Object.values(RESOURCE_TABLES).map(t => t.resource))) {
-      for (const action of ["create", "update", "delete"]) {
-        const d = decide(role, resource, action);
-        if (d.allowed) lines.push(`    WHEN app_role() = ${q(role)} AND p_resource = ${q(resource)} AND p_action = ${q(action)} THEN true`);
-      }
-    }
-  }
-  return `CREATE OR REPLACE FUNCTION rbac_can_write(p_resource text, p_action text)
-RETURNS boolean AS $$
-  SELECT CASE
-    WHEN app_role() = 'superadmin' THEN true
-${lines.join("\n")}
-    ELSE false
-  END
-$$ LANGUAGE sql STABLE;`;
-}
-
-function fieldDeniedFn() {
-  // rbac_field_denied(resource,field) for the CURRENT role — drives masking.
-  const lines = [];
-  for (const role of ROLES) {
-    for (const { resource } of Object.values(RESOURCE_TABLES)) {
-      for (const field of maskableFields(resource)) {
-        if (decide(role, resource, "r").deny.includes(field))
-          lines.push(`    WHEN app_role() = ${q(role)} AND p_resource = ${q(resource)} AND p_field = ${q(field)} THEN true`);
-      }
-    }
-  }
-  return `CREATE OR REPLACE FUNCTION rbac_field_denied(p_resource text, p_field text)
-RETURNS boolean AS $$
-  SELECT CASE
-${lines.join("\n") || "    WHEN false THEN true"}
-    ELSE false
-  END
-$$ LANGUAGE sql STABLE;`;
-}
-
-function sessionHelpers() {
-  return `-- Principal helpers (set from the JWT on every request via set_config).
--- app_user_id / app_role / app_school_id already exist in schema_scoring.sql.
-CREATE OR REPLACE FUNCTION app_player_id() RETURNS uuid AS $$
-  SELECT nullif(current_setting('app.player_id', true), '')::uuid $$ LANGUAGE sql STABLE;
-CREATE OR REPLACE FUNCTION app_child_ids() RETURNS uuid[] AS $$
-  SELECT coalesce(string_to_array(nullif(current_setting('app.child_ids', true), ''), ',')::uuid[], '{}') $$ LANGUAGE sql STABLE;
-CREATE OR REPLACE FUNCTION app_teams() RETURNS text[] AS $$
-  SELECT coalesce(string_to_array(nullif(current_setting('app.teams', true), ''), ','), '{}') $$ LANGUAGE sql STABLE;`;
-}
-
-function tablePolicies(table, def) {
-  const { resource, school, team, owner } = def;
-  const teamExpr  = team  ? team  : "NULL::text";
-  const ownerExpr = owner ? owner : "NULL::uuid";
-
-  // For injuries the team/school anchors come from the linked player.
-  const injuryNote = table === "injury"
-    ? `\n-- injury row anchors resolve through the linked player (team + school).`
-    : "";
-  const schoolExpr = school;
-  const teamAnchor = table === "injury"
-    ? `(SELECT team_code FROM player WHERE player.id = injury.player_id)`
-    : teamExpr;
-
-  const read = `CREATE POLICY ${table}_rbac_read ON ${table}
-  FOR SELECT USING (
-    rbac_can_read(${q(resource)}, ${schoolExpr}, ${teamAnchor}, ${ownerExpr})
-  );`;
-
-  // Writes: capability + confined to the caller's school (conservative).
-  const canIns = ROLES.some(r => decide(r, resource, "create").allowed);
-  const canUpd = ROLES.some(r => decide(r, resource, "update").allowed);
-  const writes = [];
-  if (canIns) writes.push(`CREATE POLICY ${table}_rbac_insert ON ${table}
-  FOR INSERT WITH CHECK (
-    rbac_can_write(${q(resource)}, 'create') AND ${schoolExpr} = app_school_id()
-  );`);
-  if (canUpd) writes.push(`CREATE POLICY ${table}_rbac_update ON ${table}
-  FOR UPDATE USING (
-    rbac_can_write(${q(resource)}, 'update')
-    AND rbac_can_read(${q(resource)}, ${schoolExpr}, ${teamAnchor}, ${ownerExpr})
-  );`);
-
-  return `-- ${table} (lens: ${resource})${injuryNote}
+function tablePolicies() {
+  const out = [banner("Per-table row-level security")];
+  for (const [table, def] of Object.entries(TABLES)) {
+    out.push(`
+-- ${table} — read: ${def.read} · write: ${def.write}
 ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;
-${read}
-${writes.join("\n")}`;
+DROP POLICY IF EXISTS ${table}_read   ON ${table};
+DROP POLICY IF EXISTS ${table}_insert ON ${table};
+DROP POLICY IF EXISTS ${table}_update ON ${table};
+DROP POLICY IF EXISTS ${table}_delete ON ${table};
+
+CREATE POLICY ${table}_read ON ${table}
+  FOR SELECT USING (${callCan(table, def, def.read)});
+
+CREATE POLICY ${table}_insert ON ${table}
+  FOR INSERT WITH CHECK (${callCan(table, def, def.write)});
+
+CREATE POLICY ${table}_update ON ${table}
+  FOR UPDATE USING (${callCan(table, def, def.write)})
+           WITH CHECK (${callCan(table, def, def.write)});`);
+    // No DELETE policy anywhere: records about minors are deactivated, never
+    // removed, so that an audit trail survives.
+  }
+  return out.join("\n");
 }
 
-function maskView(table, def) {
-  // Build a *_masked view that nulls any column a role may not see.
-  //
-  // Columns come from the union of all resources' maskable fields for this
-  // table, intersected with the columns the table physically carries — a policy
-  // may deny a field group the table does not hold (see RESOURCE_TABLES.columns).
-  const present = new Set(def.columns ?? []);
-  const fields = [...new Set(def.mask.flatMap(maskableFields))].filter(f => present.has(f));
-  if (!fields.length) return null;
-  const lens = def.mask[0]; // primary lens for the mask decision
+function maskViews() {
+  const out = [banner("Column-masking views")];
+  for (const [table, def] of Object.entries(TABLES)) {
+    const masked = def.masked ?? {};
+    if (!Object.keys(masked).length) continue;
 
-  // The view is assembled at migration time from information_schema rather
-  // than written as `SELECT t.*, CASE … AS email`. That shorter form does not
-  // work: Postgres rejects a view with a duplicated output column name
-  // ("column \"email\" specified more than once"), so re-projecting a masked
-  // column after `*` never applied at all. Introspecting also means adding a
-  // column to the table does not require regenerating this file — the column
-  // appears in the view automatically, masked if the policy denies it.
-  const denied = fields.map(f => f.toLowerCase());
-  return `-- Read ${table} through this view; base-table PII is masked per role.
--- Assembled from information_schema so every column is listed explicitly.
+    // column → guarding capability
+    const guard = {};
+    for (const [cap, cols] of Object.entries(masked))
+      for (const c of cols) guard[c.toLowerCase()] = cap;
+
+    const pairs = Object.entries(guard)
+      .map(([col, cap]) => `(${q(col)}, ${q(cap)})`)
+      .join(", ");
+
+    out.push(`
+-- ${table}_masked — every column listed explicitly, each sensitive one gated
+-- by its own capability and evaluated PER ROW.
+--
+-- Built from information_schema rather than written as \`SELECT t.*, CASE …\`:
+-- Postgres rejects a view with a duplicated output column name, so the shorter
+-- form never applied at all. Introspecting also means adding a column to the
+-- table surfaces it here automatically, masked if the policy names it.
 DO $mask_${table}$
 DECLARE cols text;
 BEGIN
   SELECT string_agg(
-           CASE WHEN c.column_name = ANY (ARRAY[${denied.map(q).join(", ")}])
-                THEN format('CASE WHEN rbac_field_denied(%L, %L) THEN NULL ELSE %I END AS %I',
-                            ${q(lens)}, c.column_name, c.column_name, c.column_name)
+           CASE WHEN g.capability IS NOT NULL
+                THEN format('CASE WHEN app_can(%L, %s, %s, %s, NULL) THEN %I ELSE NULL END AS %I',
+                            g.capability,
+                            ${q(anchor(table, def, "school", "uuid"))},
+                            ${q(anchor(table, def, "team", "text"))},
+                            ${q(anchor(table, def, "person", "uuid"))},
+                            c.column_name, c.column_name)
                 ELSE format('%I', c.column_name)
            END, ', ' ORDER BY c.ordinal_position)
     INTO cols
     FROM information_schema.columns c
+    LEFT JOIN (VALUES ${pairs}) AS g(column_name, capability)
+           ON g.column_name = c.column_name
    WHERE c.table_schema = 'public' AND c.table_name = ${q(table)};
 
   IF cols IS NULL THEN
@@ -193,31 +197,71 @@ BEGIN
     'CREATE OR REPLACE VIEW ${table}_masked WITH (security_barrier = true) AS SELECT %s FROM ${table}',
     cols);
 END
-$mask_${table}$;`;
-}
-
-function main() {
-  const out = [];
-  out.push(`-- SCRBRD — Row-Level Security & column masking`);
-  out.push(`-- GENERATED from rls/policy.mjs by rls/generate-rls.mjs — DO NOT EDIT BY HAND.`);
-  out.push(`-- Regenerate after any policy change. Companion: schema_scoring.sql.\n`);
-  out.push(banner("Session principal helpers"));
-  out.push(sessionHelpers(), "");
-  out.push(banner("Policy functions (derived from POLICY)"));
-  out.push(scopeFn(), "", canReadFn(), "", canWriteFn(), "", fieldDeniedFn(), "");
-  out.push(banner("Per-table RLS policies"));
-  for (const [table, def] of Object.entries(RESOURCE_TABLES)) out.push(tablePolicies(table, def), "");
-  out.push(banner("Column-masking views (field/PII deny)"));
-  for (const [table, def] of Object.entries(RESOURCE_TABLES)) {
-    const v = maskView(table, def);
-    if (v) out.push(v, "");
+$mask_${table}$;`);
   }
-  out.push(banner("Scoring capability (mirrors canScore) — used by ball_event policies in schema_scoring.sql"));
-  out.push(`-- Roles that may score: ${ROLES.filter(canScore).concat("superadmin").filter((v,i,a)=>a.indexOf(v)===i).join(", ")}`);
   return out.join("\n");
 }
 
-// ESM entrypoint
-const sql = main();
-if (import.meta.url === `file://${process.argv[1]}`) process.stdout.write(sql + "\n");
-export { main };
+function assignmentPolicies() {
+  return `${banner("The assignment tables themselves")}
+-- A person may read their own assignments — the context switcher needs them —
+-- and nobody else's. Granting and revoking goes through user.role.assign.
+ALTER TABLE role_assignment ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS role_assignment_read  ON role_assignment;
+DROP POLICY IF EXISTS role_assignment_write ON role_assignment;
+
+CREATE POLICY role_assignment_read ON role_assignment
+  FOR SELECT USING (
+    person_id = app_user_id()
+    OR app_can('user.role.assign', school_id, team_code, NULL, NULL)
+  );
+CREATE POLICY role_assignment_write ON role_assignment
+  FOR INSERT WITH CHECK (app_can('user.role.assign', school_id, team_code, NULL, NULL));
+
+ALTER TABLE guardian_child ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS guardian_child_read ON guardian_child;
+CREATE POLICY guardian_child_read ON guardian_child
+  FOR SELECT USING (EXISTS (
+    SELECT 1 FROM role_assignment a
+     WHERE a.id = guardian_child.assignment_id
+       AND (a.person_id = app_user_id()
+            OR app_can('user.role.assign', a.school_id, a.team_code, NULL, NULL))
+  ));
+
+-- role_capability is generated reference data, readable by all, written only
+-- by the generator running as the migration user.
+ALTER TABLE role_capability ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS role_capability_read ON role_capability;
+CREATE POLICY role_capability_read ON role_capability FOR SELECT USING (true);`;
+}
+
+export function main() {
+  const bad = unknownCapabilities();
+  if (bad.length) {
+    console.error("Roles name capabilities that do not exist:\n  " + bad.join("\n  "));
+    process.exit(1);
+  }
+
+  return [
+    `-- SCRBRD — Row-Level Security & column masking`,
+    `-- GENERATED from packages/policy/ by services/api/rls/generate-rls.mjs — DO NOT EDIT BY HAND.`,
+    `-- Regenerate with \`pnpm rls:generate\`. Companion: db/00_schema_core.sql, db/01_schema_scoring.sql.`,
+    `--`,
+    `-- Model: capability + scoped assignment (docs/adr/0001-scoped-assignments.md).`,
+    `-- ${ALL_CAPABILITIES.length} capabilities across ${ROLES.length} roles.`,
+    `-- Roles that may score: ${SCORING_ROLES.join(", ")}`,
+    ``,
+    `-- Principal helpers. app_user_id() is set from the signed token on every`,
+    `-- request; everything else about a person's authority is looked up.`,
+    `CREATE OR REPLACE FUNCTION app_player_id() RETURNS uuid AS $$`,
+    `  SELECT nullif(current_setting('app.player_id', true), '')::uuid $$ LANGUAGE sql STABLE;`,
+    decisionFunction(),
+    capabilityRows(),
+    assignmentPolicies(),
+    tablePolicies(),
+    maskViews(),
+    ``,
+  ].join("\n");
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) process.stdout.write(main());

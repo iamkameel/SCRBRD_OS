@@ -217,3 +217,63 @@ CREATE TABLE competition (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX ON competition (school_id);
+
+-- ════════════════════════════════════════════════════════════════
+--  AUTHORIZATION — capability + scoped assignment
+--
+--  See docs/adr/0001-scoped-assignments.md. The short version:
+--  authority is a set of assignments, each naming a role (a bundle of
+--  capabilities) and a scope. A request is allowed if ONE SINGLE
+--  assignment both grants the capability and covers the resource —
+--  never a union across assignments.
+--
+--  app_user.role is retained for now as the legacy single-role field
+--  and is being retired; role_assignment is authoritative.
+-- ════════════════════════════════════════════════════════════════
+
+-- role → capability, generated from packages/policy/src/roles.mjs by
+-- services/api/rls/generate-rls.mjs. Never hand-edit; rows are replaced
+-- wholesale on regeneration.
+CREATE TABLE role_capability (
+  role       text NOT NULL,
+  capability text NOT NULL,
+  PRIMARY KEY (role, capability)
+);
+CREATE INDEX ON role_capability (capability);
+
+-- One row per (person, role, scope). A person holds as many as they need:
+-- Director of Sport at one school, coach of one team, guardian of a child at
+-- another school. Each is evaluated independently.
+CREATE TABLE role_assignment (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  person_id   uuid NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+  role        text NOT NULL,
+  -- Scope. NULL widens at that level: school_id NULL is platform-wide,
+  -- team_code NULL is every team in the school. A NULL on the RESOURCE is
+  -- never a wildcard — see app_can() in 02_rls_policies.sql.
+  school_id   uuid REFERENCES school(id) ON DELETE CASCADE,
+  team_code   text,
+  season      text,
+  fixture_id  uuid REFERENCES match(id) ON DELETE CASCADE,
+  -- Validity. Revocation is immediate: app_can() reads these on every
+  -- evaluation rather than trusting anything carried in the session.
+  active      boolean NOT NULL DEFAULT true,
+  valid_from  date,
+  valid_until date,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  created_by  uuid REFERENCES app_user(id),
+  CONSTRAINT assignment_dates CHECK (valid_from IS NULL OR valid_until IS NULL OR valid_from < valid_until)
+);
+CREATE INDEX ON role_assignment (person_id) WHERE active;
+CREATE INDEX ON role_assignment (school_id, team_code);
+CREATE INDEX ON role_assignment (role);
+
+-- Guardian relationships. An assignment with rows here reaches ONLY these
+-- children — which is what lets one person be a guardian at two institutions
+-- without either relationship reaching the other's records.
+CREATE TABLE guardian_child (
+  assignment_id uuid NOT NULL REFERENCES role_assignment(id) ON DELETE CASCADE,
+  player_id     uuid NOT NULL REFERENCES player(id) ON DELETE CASCADE,
+  PRIMARY KEY (assignment_id, player_id)
+);
+CREATE INDEX ON guardian_child (player_id);

@@ -3,7 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "SCRBRD RBAC/POPIA policy — the single source of truth for who may read/write what, at what scope, with which fields hidden.",
+  "description": "SCRBRD RBAC/POPIA policy \u2014 the single source of truth for who may read/write what, at what scope, with which fields hidden.",
   "main": "./src/policy.mjs",
-  "exports": { ".": "./src/policy.mjs" }
+  "exports": {
+    ".": "./src/policy.mjs",
+    "./capabilities": "./src/capabilities.mjs",
+    "./roles": "./src/roles.mjs",
+    "./authorize": "./src/authorize.mjs",
+    "./tables": "./src/tables.mjs"
+  }
 }
