@@ -1,0 +1,124 @@
+import { useState } from "react";
+import SCRBRD_LOGO from "../assets/scrbrd-logo.jpg";
+import { ROLES } from "../design/roles.js";
+import { SCRBRD } from "../scorer/engine.jsx";
+
+// ══════════════════════════════════════════════════════
+//  LOGIN PAGE  (mock auth — OAuth simulation)
+// ══════════════════════════════════════════════════════
+function LoginPage({ onLogin, onSignUp }) {
+  const [email,    setEmail]    = useState("");
+  const [password, setPassword] = useState("");
+  const [error,    setError]    = useState("");
+  const [loading,  setLoading]  = useState(false);
+  const [oauthLoading, setOauthLoading] = useState(false);
+
+  // Mock credentials map: email → {role, name}
+  const MOCK_USERS = {
+    "admin@hilton.co.za":       { role:"superadmin",    name:"Admin User",            pw:"admin123" },
+    "gsutherland@hilton.co.za": { role:"sportsmaster",  name:"Graham Sutherland",     pw:"sports123" },
+    "c.hendricks@hilton.co.za": { role:"coach",         name:"Craig Hendricks",       pw:"coach123" },
+    "james@hilton.co.za":       { role:"player",        name:"James Whitfield",       pw:"player123" },
+    "helen.w@gmail.com":        { role:"parent",        name:"Helen Whitfield",       pw:"parent123" },
+    "bwessels@hilton.co.za":    { role:"scorer",        name:"Brian Wessels",         pw:"scorer123" },
+    "emzimba@hilton.co.za":     { role:"groundskeeper", name:"Ernest Mzimba",         pw:"ground123" },
+    "skhumalo@hilton.co.za":    { role:"medical",       name:"Dr Khumalo",            pw:"medic123" },
+  };
+
+  const handleLogin = async () => {
+    setLoading(true); setError("");
+    await new Promise(r=>setTimeout(r,700));
+    const user = MOCK_USERS[email.toLowerCase()];
+    if (user && user.pw === password) {
+      onLogin(user.role, user.name);
+    } else if (user) {
+      setError("Incorrect password. Try: " + user.pw);
+    } else {
+      setError("No account found. Sign up or try a demo account below.");
+    }
+    setLoading(false);
+  };
+
+  const handleGoogleOAuth = async () => {
+    setOauthLoading(true);
+    await new Promise(r=>setTimeout(r,1200));
+    // Simulate Google OAuth — returns schooladmin for demo
+    onLogin("schooladmin","Demo User (Google)");
+    setOauthLoading(false);
+  };
+
+  const DEMO_ACCOUNTS = [
+    { role:"superadmin",   email:"admin@hilton.co.za",       pw:"admin123",   label:"Super Admin" },
+    { role:"coach",        email:"c.hendricks@hilton.co.za", pw:"coach123",   label:"Head Coach" },
+    { role:"player",       email:"james@hilton.co.za",       pw:"player123",  label:"Player" },
+    { role:"parent",       email:"helen.w@gmail.com",        pw:"parent123",  label:"Parent" },
+  ];
+
+  return (
+    <div style={{minHeight:"100vh",background:"#03050c",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px"}}>
+      <div style={{width:"100%",maxWidth:"420px"}}>
+        <div style={{textAlign:"center",marginBottom:"32px"}}>
+          <img src={SCRBRD_LOGO} alt="SCRBRD" style={{height:"30px",objectFit:"contain",filter:"brightness(1.15)",marginBottom:"16px"}}/>
+          <div style={{fontFamily:"'Syne',sans-serif",fontSize:"22px",fontWeight:800,color:"#fff",marginBottom:"6px"}}>Welcome back</div>
+          <div style={{fontFamily:"'DM Sans',sans-serif",fontSize:"13px",color:"rgba(255,255,255,0.45)"}}>Sign in to your SCRBRD account</div>
+        </div>
+
+        <div style={{borderRadius:"20px",border:"1px solid rgba(255,255,255,0.08)",background:"rgba(255,255,255,0.02)",padding:"28px",backdropFilter:"blur(20px)"}}>
+          {/* Google OAuth button */}
+          <button onClick={handleGoogleOAuth} disabled={oauthLoading} className="pressBtn" style={{width:"100%",padding:"12px",borderRadius:"12px",cursor:"pointer",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",display:"flex",alignItems:"center",justifyContent:"center",gap:"10px",marginBottom:"20px",transition:"all .2s"}}>
+            <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z"/><path fill="#FBBC05" d="M3.964 10.71c-.18-.54-.282-1.117-.282-1.71s.102-1.17.282-1.71V4.958H.957C.347 6.173 0 7.548 0 9s.348 2.827.957 4.042l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/></svg>
+            <span style={{fontFamily:"'Syne',sans-serif",fontSize:"13px",fontWeight:700,color:"rgba(255,255,255,0.85)"}}>{oauthLoading?"Connecting…":"Continue with Google"}</span>
+          </button>
+
+          <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"20px"}}>
+            <div style={{flex:1,height:"1px",background:"rgba(255,255,255,0.08)"}}/>
+            <span style={{fontFamily:"'DM Mono',monospace",fontSize:"10px",color:"rgba(255,255,255,0.3)"}}>or email</span>
+            <div style={{flex:1,height:"1px",background:"rgba(255,255,255,0.08)"}}/>
+          </div>
+
+          {/* Email + password */}
+          {[
+            { label:"Email", type:"email",    value:email,    onChange:setEmail,    placeholder:"you@school.co.za" },
+            { label:"Password", type:"password", value:password, onChange:setPassword, placeholder:"••••••••" },
+          ].map(f=>(
+            <div key={f.label} style={{marginBottom:"14px"}}>
+              <div style={{fontFamily:"'Syne',sans-serif",fontSize:"10px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",marginBottom:"6px"}}>{f.label}</div>
+              <input value={f.value} type={f.type} onChange={e=>f.onChange(e.target.value)}
+                onKeyDown={e=>e.key==="Enter"&&handleLogin()}
+                placeholder={f.placeholder}
+                style={{width:"100%",padding:"11px 14px",borderRadius:"10px",background:"rgba(255,255,255,0.05)",border:`1px solid ${error?"rgba(244,63,94,0.5)":"rgba(255,255,255,0.1)"}`,fontFamily:"'DM Sans',sans-serif",fontSize:"14px",color:"#fff",outline:"none",boxSizing:"border-box"}}/>
+            </div>
+          ))}
+
+          {error&&<div style={{fontFamily:"'DM Sans',sans-serif",fontSize:"12px",color:"#f87171",marginBottom:"12px",padding:"8px 12px",borderRadius:"8px",background:"rgba(244,63,94,0.1)",border:"1px solid rgba(244,63,94,0.2)"}}>{error}</div>}
+
+          <button onClick={handleLogin} disabled={loading} className="pressBtn" style={{width:"100%",padding:"12px",borderRadius:"12px",cursor:"pointer",background:"linear-gradient(135deg,#6366f1,#8b5cf6)",border:"none",fontFamily:"'Syne',sans-serif",fontSize:"13px",fontWeight:700,color:"#fff",marginBottom:"14px",boxShadow:"0 4px 20px rgba(99,102,241,0.35)"}}>
+            {loading?"Signing in…":"Sign In"}
+          </button>
+
+          <div style={{textAlign:"center"}}>
+            <button onClick={onSignUp} className="pressBtn" style={{background:"none",border:"none",cursor:"pointer",fontFamily:"'DM Sans',sans-serif",fontSize:"12px",color:"rgba(255,255,255,0.4)"}}>
+              New to SCRBRD? <span style={{color:"#a5b4fc",fontWeight:600}}>Create an account →</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Demo accounts */}
+        <div style={{marginTop:"20px",borderRadius:"14px",border:"1px solid rgba(99,102,241,0.2)",background:"rgba(99,102,241,0.05)",padding:"16px"}}>
+          <div style={{fontFamily:"'Syne',sans-serif",fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(99,102,241,0.7)",marginBottom:"10px"}}>✦ Demo Accounts — click to fill</div>
+          <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"6px"}}>
+            {DEMO_ACCOUNTS.map(d=>(
+              <button key={d.role} onClick={()=>{setEmail(d.email);setPassword(d.pw);setError("");}} className="pressBtn"
+                style={{padding:"7px 10px",borderRadius:"8px",cursor:"pointer",background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",textAlign:"left"}}>
+                <div style={{fontFamily:"'Syne',sans-serif",fontSize:"10px",fontWeight:700,color:"rgba(255,255,255,0.7)"}}>{ROLES[d.role]?.icon} {d.label}</div>
+                <div style={{fontFamily:"'DM Mono',monospace",fontSize:"9px",color:"rgba(255,255,255,0.3)",marginTop:"2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.email}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export { LoginPage };
