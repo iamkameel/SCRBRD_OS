@@ -1,6 +1,6 @@
 # ADR 0001 — Authorization is capability + scoped assignment
 
-**Status:** accepted, partially implemented
+**Status:** accepted, implemented
 **Date:** 2 September 2026
 
 ## Decision
@@ -98,21 +98,41 @@ likewise not a licence to browse a school's records: `platformadmin` has no
 `medical.details.read` and no `discipline.read`; support access goes through
 `platform.support.impersonate`, which is time-boxed and audited.
 
-## Status — what is and is not done
+## Status
 
-**Implemented and tested** (49 assertions, `packages/policy/test/`):
-`capabilities.mjs`, `roles.mjs`, `authorize.mjs`.
+**Implemented, and enforced on both surfaces.**
 
-**Not yet migrated. The old model is still live:**
+| Layer | Where | Proof |
+|---|---|---|
+| Model | `packages/policy/{capabilities,roles,authorize,tables}.mjs` | 49 assertions |
+| Client choke point | `apps/web/src/rbac/index.js` | 45 assertions |
+| Generated SQL | `services/api/rls/generate-rls.mjs` → `db/02` | 86 assertions |
+| Postgres, live | `db/99_rls_verify.sql` | negative-controlled |
 
-- `packages/policy/src/policy.mjs` still holds the role→scope POLICY map, and
-  `db/02_rls_policies.sql` is still generated from it.
-- The web client's `rbac/index.js` still calls the old `can()` / `getData()`.
-- The database session still carries `app_role()` and `app_school_id()`,
-  singular.
+The old `policy.mjs` is deleted. There is one definition, and the client and
+the database are both generated from it.
 
-Until those three move, **the new model decides nothing in production.** It is
-the target, not the current behaviour.
+### Behaviour that changed
+
+Two consequences are visible rather than internal, and both are intended:
+
+- **`superadmin` sees less than it used to.** Under the old model it read
+  everything. It now maps to `platformadmin`, which has no
+  `medical.details.read` and no `discipline.read`: operating the platform is
+  not a licence to browse a school's confidential records. Support access is
+  `platform.support.impersonate` — time-boxed and audited.
+- **A coach sees availability, not diagnosis**, on every surface at once,
+  because masking is now decided per row by capability rather than once per
+  role for the whole query.
+
+### Two roles added back
+
+`analyst` and `spectator` were in neither the September 2026 architecture note
+nor its notification annex, but the product has a screen for each — the
+Analytics module and the public match centre. Dropping them would leave those
+two views with no role able to open them. Added with deliberately thin bundles
+(`spectator` cannot read a player record at all) and flagged here rather than
+resolved silently.
 
 ## The open question: RLS under an assignment set
 

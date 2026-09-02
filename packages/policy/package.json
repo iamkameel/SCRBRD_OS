@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "SCRBRD RBAC/POPIA policy \u2014 the single source of truth for who may read/write what, at what scope, with which fields hidden.",
-  "main": "./src/policy.mjs",
+  "description": "SCRBRD authorization: capabilities, role bundles, and the scoped-assignment decision. One definition, shared by the web client and the generated Postgres RLS.",
+  "main": "./src/authorize.mjs",
   "exports": {
-    ".": "./src/policy.mjs",
+    ".": "./src/authorize.mjs",
     "./capabilities": "./src/capabilities.mjs",
     "./roles": "./src/roles.mjs",
     "./authorize": "./src/authorize.mjs",

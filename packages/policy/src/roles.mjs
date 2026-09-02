@@ -108,6 +108,20 @@ export const ROLE_CAPABILITIES = {
     "medical.status.read", "transport.read", "invoice.read",
   ],
 
+  // ── Read-only observers ──
+  // Not in the September 2026 architecture note, which listed neither. Both
+  // are retained because the product has a surface for each: an Analytics
+  // module, and a public match centre. Flagged for a decision rather than
+  // dropped silently — removing them would leave those two screens with no
+  // role that can open them.
+  analyst: [
+    "team.read", "fixture.read", "news.read", "player.profile.read",
+    "player.performance.read", "analytics.read", "competition.read",
+  ],
+  // Deliberately the thinnest bundle in the file. No player profiles, so a
+  // spectator never reaches a minor's record even in summary.
+  spectator: ["fixture.read", "news.read", "competition.read"],
+
   // ── Specialists ──
   medical: [
     "team.read", "fixture.read", "news.read", "player.profile.read",

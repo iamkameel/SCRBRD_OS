@@ -7,8 +7,8 @@ the client uses**, so authorization cannot drift between app and database.
 
 | File | Role |
 |---|---|
-| `policy.mjs` | **Single source of truth.** `POLICY`, field groups, resource→table map, and the `decide()`/`canScore()` brain. Byte-identical to the app's inline policy; the app should eventually import this. |
-| `generate-rls.mjs` | Generator. Emits SQL from `policy.mjs`. Never hand-edit the SQL. |
+| `@scrbrd/policy` | **Single source of truth**, in `packages/policy/`: `capabilities.mjs` (the verbs), `roles.mjs` (bundles), `authorize.mjs` (the decision), `tables.mjs` (physical tables → capabilities). The web client imports the same module, so the two cannot drift. See docs/adr/0001. |
+| `generate-rls.mjs` | Generator. Emits `app_can()`, the role→capability rows, the table policies and the masking views. Never hand-edit the SQL. |
 | `rls_policies.sql` | **Generated** RLS + masking migration. Apply after `schema_scoring.sql`. |
 | `rls.test.mjs` | Proves the brain reproduces every RBAC guarantee **and** the SQL faithfully reflects it (drift guard). 55 assertions. |
 | `rls_verify.sql` | Live-DB proof. Run against Postgres + seed data to confirm RLS actually fires. |
@@ -16,7 +16,7 @@ the client uses**, so authorization cannot drift between app and database.
 ## Workflow
 
 ```bash
-# 1. change policy.mjs (never the SQL)
+# 1. change packages/policy/ (never the SQL)
 # 2. regenerate
 node generate-rls.mjs > rls_policies.sql
 # 3. prove logic + faithfulness (no DB needed)
