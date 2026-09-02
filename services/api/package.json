@@ -6,6 +6,7 @@
   "description": "SCRBRD backend — authorization, auth, read/write paths, offline durability, realtime sync, scorer handover.",
   "main": "./index.mjs",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.123.0",
     "@scrbrd/policy": "workspace:*",
     "@scrbrd/scoring": "workspace:*"
   }

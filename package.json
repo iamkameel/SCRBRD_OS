@@ -3,11 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "SCRBRD — South African school sports management and match-intelligence platform. First vertical: CricketOS.",
-  "engines": { "node": ">=22" },
+  "description": "SCRBRD \u2014 South African school sports management and match-intelligence platform. First vertical: CricketOS.",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "test": "node tools/run-all-tests.mjs",
-    "dev": "pnpm --filter @scrbrd/web dev",
+    "dev": "node tools/dev.mjs",
     "build": "pnpm --filter @scrbrd/web build",
     "db:up": "docker compose up -d db && node tools/wait-for-db.mjs",
     "db:down": "docker compose down",
@@ -15,6 +17,8 @@
     "db:seed": "node tools/migrate.mjs --seed",
     "db:verify": "node tools/migrate.mjs --verify",
     "db:reset": "node tools/migrate.mjs --reset --seed",
-    "rls:generate": "node services/api/rls/generate-rls.mjs > db/02_rls_policies.sql"
+    "rls:generate": "node services/api/rls/generate-rls.mjs > db/02_rls_policies.sql",
+    "dev:web": "pnpm --filter @scrbrd/web dev",
+    "dev:api": "node services/api/server.mjs"
   }
 }
