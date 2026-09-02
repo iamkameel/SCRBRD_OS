@@ -12,7 +12,8 @@ CREATE OR REPLACE FUNCTION scoring_claim_handover(
 RETURNS TABLE (ok boolean, reason text) AS $$
 DECLARE s scoring_session%ROWTYPE;
 BEGIN
-  IF NOT can_score(app_role()) THEN
+  -- Capability against THIS match, from assignments — see db/01 and ADR 0001.
+  IF NOT app_can('scoring.start', (SELECT school_id FROM match WHERE id = p_match), NULL, NULL, p_match) THEN
     RETURN QUERY SELECT false, 'no_capability'; RETURN;
   END IF;
 

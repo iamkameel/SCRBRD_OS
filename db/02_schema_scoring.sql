@@ -15,6 +15,9 @@
 
 CREATE OR REPLACE FUNCTION app_user_id()   RETURNS uuid AS $$
   SELECT nullif(current_setting('app.user_id', true), '')::uuid $$ LANGUAGE sql STABLE;
+-- Retained for diagnostics and for 03_session_functions.sql. NOTHING in the
+-- authorization path reads it any more: authority comes from role_assignment
+-- via app_can(), so a session cannot assert a role it does not hold.
 CREATE OR REPLACE FUNCTION app_role()      RETURNS text AS $$
   SELECT coalesce(nullif(current_setting('app.role', true), ''), 'anonymous') $$ LANGUAGE sql STABLE;
 CREATE OR REPLACE FUNCTION app_school_id() RETURNS uuid AS $$
@@ -22,11 +25,11 @@ CREATE OR REPLACE FUNCTION app_school_id() RETURNS uuid AS $$
 CREATE OR REPLACE FUNCTION app_device_id() RETURNS text AS $$
   SELECT nullif(current_setting('app.device_id', true), '') $$ LANGUAGE sql STABLE;
 
--- Mirrors canScore() in the client RBAC layer. Single source of truth
--- for "may this role score at all" — the capability check.
-CREATE OR REPLACE FUNCTION can_score(p_role text) RETURNS boolean AS $$
-  SELECT p_role IN ('superadmin','sportsmaster','headcoach','coach','assistant','scorer')
-$$ LANGUAGE sql IMMUTABLE;
+-- can_score() is GENERATED into 02_rls_policies.sql from the role bundles in
+-- packages/policy. It was hardcoded here with its own role list, which is the
+-- exact drift this project keeps closing: two definitions of the same rule,
+-- one of which nobody remembers to update. Nothing in the policies calls it
+-- any more either — authority is app_can() over assignments.
 
 -- ── Scoring session: exactly one active token per match ──────────
 CREATE TYPE session_state AS ENUM ('idle','active','handover_pending','verifying');
@@ -137,19 +140,27 @@ ALTER TABLE scoring_session       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ball_event_quarantine ENABLE ROW LEVEL SECURITY;
 ALTER TABLE scoring_audit         ENABLE ROW LEVEL SECURITY;
 
--- Anyone in the school (incl. spectators/parents) may READ the ball log.
+-- Reading the ball log is reading a fixture: whoever may see the match may see
+-- how it is going. Scoped through app_can() like everything else, so a
+-- spectator sees their school's matches and nothing beyond them.
 CREATE POLICY ball_event_read ON ball_event
-  FOR SELECT USING (school_id = app_school_id());
+  FOR SELECT USING (
+    app_can('fixture.read', ball_event.school_id, NULL, NULL, ball_event.match_id)
+  );
 
 -- INSERT requires ALL of:
---   1. role capability            (can_score)
---   2. holder of the token        (device + user match the session)
---   3. matching epoch             (not a revoked token)
---   4. a live lease               (device is alive)
+--   1. the scoring capability, at a scope that covers THIS match
+--   2. holder of the token   (device + user match the session)
+--   3. matching epoch        (not a revoked token)
+--   4. a live lease          (device is alive)
+--
+-- (1) is app_can(), not can_score(app_role()). The old form trusted a role
+-- asserted by the session; authority now comes from the assignments the
+-- database looks up for app_user_id(), so a token cannot claim its way into
+-- scoring a match it has no assignment over. See docs/adr/0001.
 CREATE POLICY ball_event_insert ON ball_event
   FOR INSERT WITH CHECK (
-    can_score(app_role())
-    AND school_id = app_school_id()
+    app_can('scoring.edit', ball_event.school_id, NULL, NULL, ball_event.match_id)
     AND scorer_user_id = app_user_id()
     AND device_id = app_device_id()
     AND EXISTS (
@@ -165,21 +176,17 @@ CREATE POLICY ball_event_insert ON ball_event
 -- No UPDATE/DELETE policies exist → append-only at the RLS layer too.
 
 CREATE POLICY session_read ON scoring_session
-  FOR SELECT USING (school_id = app_school_id());
+  FOR SELECT USING (app_can('fixture.read', scoring_session.school_id, NULL, NULL, scoring_session.match_id));
 -- Session transitions go through SECURITY DEFINER functions below,
 -- so no direct INSERT/UPDATE policy is granted to application roles.
 
+-- Quarantined events are a human-reconciliation queue: whoever may correct a
+-- score may look at them.
 CREATE POLICY quarantine_read ON ball_event_quarantine
-  FOR SELECT USING (
-    school_id = app_school_id()
-    AND app_role() IN ('superadmin','sportsmaster','headcoach','schooladmin')
-  );
+  FOR SELECT USING (app_can('scoring.correct', ball_event_quarantine.school_id, NULL, NULL, ball_event_quarantine.match_id));
 
 CREATE POLICY audit_read ON scoring_audit
-  FOR SELECT USING (
-    school_id = app_school_id()
-    AND app_role() IN ('superadmin','sportsmaster','headcoach','schooladmin','headmaster')
-  );
+  FOR SELECT USING (app_can('audit.read', scoring_audit.school_id, NULL, NULL, NULL));
 
 -- ════════════════════════════════════════════════════════════════
 --  TOKEN OPERATIONS (SECURITY DEFINER — enforce the state machine)
@@ -188,7 +195,11 @@ CREATE OR REPLACE FUNCTION scoring_claim(p_match uuid, p_device text)
 RETURNS TABLE (ok boolean, reason text, epoch integer) AS $$
 DECLARE s scoring_session%ROWTYPE;
 BEGIN
-  IF NOT can_score(app_role()) THEN RETURN QUERY SELECT false,'no_capability',NULL::int; RETURN; END IF;
+  -- Capability against THIS match, from the caller's assignments — not a role
+  -- the session asserts about itself. A scorer assigned to one fixture cannot
+  -- claim the token on another.
+  IF NOT app_can('scoring.start', (SELECT school_id FROM match WHERE id = p_match), NULL, NULL, p_match)
+    THEN RETURN QUERY SELECT false,'no_capability',NULL::int; RETURN; END IF;
   SELECT * INTO s FROM scoring_session WHERE match_id = p_match FOR UPDATE;
   IF NOT FOUND THEN
     INSERT INTO scoring_session (match_id, school_id, state, epoch, holder_user_id, holder_device, lease_until)
@@ -240,7 +251,8 @@ CREATE OR REPLACE FUNCTION scoring_verify_takeover(
 RETURNS TABLE (ok boolean, reason text, epoch integer, exp_runs int, exp_wkts int, exp_balls int) AS $$
 DECLARE s scoring_session%ROWTYPE; t_runs int; t_wkts int; t_balls int;
 BEGIN
-  IF NOT can_score(app_role()) THEN RETURN QUERY SELECT false,'no_capability',NULL::int,NULL::int,NULL::int,NULL::int; RETURN; END IF;
+  IF NOT app_can('scoring.start', (SELECT school_id FROM match WHERE id = p_match), NULL, NULL, p_match)
+    THEN RETURN QUERY SELECT false,'no_capability',NULL::int,NULL::int,NULL::int,NULL::int; RETURN; END IF;
   SELECT * INTO s FROM scoring_session WHERE match_id = p_match FOR UPDATE;
   IF s.state <> 'verifying' OR s.claimant_device IS DISTINCT FROM p_device
     THEN RETURN QUERY SELECT false,'not_pending',NULL::int,NULL::int,NULL::int,NULL::int; RETURN; END IF;
@@ -276,7 +288,9 @@ CREATE OR REPLACE FUNCTION scoring_force_release(p_match uuid)
 RETURNS TABLE (ok boolean, reason text, epoch integer) AS $$
 DECLARE s scoring_session%ROWTYPE;
 BEGIN
-  IF app_role() NOT IN ('superadmin','sportsmaster','headcoach','schooladmin')
+  -- Force-releasing another device's token is a supervisory act; it maps to the
+  -- capability that also lets you correct a score.
+  IF NOT app_can('scoring.correct', (SELECT school_id FROM match WHERE id = p_match), NULL, NULL, p_match)
     THEN RETURN QUERY SELECT false,'no_capability',NULL::int; RETURN; END IF;
   SELECT * INTO s FROM scoring_session WHERE match_id = p_match FOR UPDATE;
   IF s.lease_until > now() + interval '30 seconds'

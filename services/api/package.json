@@ -8,6 +8,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.123.0",
     "@scrbrd/policy": "workspace:*",
-    "@scrbrd/scoring": "workspace:*"
+    "@scrbrd/scoring": "workspace:*",
+    "pg": "^8.23.0"
   }
 }

@@ -235,33 +235,63 @@ DROP POLICY IF EXISTS role_capability_read ON role_capability;
 CREATE POLICY role_capability_read ON role_capability FOR SELECT USING (true);`;
 }
 
-export function main() {
+/**
+ * The authorization half — principal helpers, the decision function, and the
+ * role→capability rows.
+ *
+ * Emitted SEPARATELY and applied FIRST, because the scoring policies in
+ * db/02 reference app_can(). A single generated file could not satisfy both
+ * orders: the tables the policies attach to must exist before the policies,
+ * and the decision function must exist before anything references it.
+ */
+export function authz() {
   const bad = unknownCapabilities();
   if (bad.length) {
     console.error("Roles name capabilities that do not exist:\n  " + bad.join("\n  "));
     process.exit(1);
   }
-
   return [
-    `-- SCRBRD — Row-Level Security & column masking`,
+    `-- SCRBRD — authorization: the decision function and the role bundles`,
     `-- GENERATED from packages/policy/ by services/api/rls/generate-rls.mjs — DO NOT EDIT BY HAND.`,
-    `-- Regenerate with \`pnpm rls:generate\`. Companion: db/00_schema_core.sql, db/01_schema_scoring.sql.`,
-    `--`,
-    `-- Model: capability + scoped assignment (docs/adr/0001-scoped-assignments.md).`,
+    `-- Regenerate with \`pnpm rls:generate\`. Applied BEFORE the scoring schema,`,
+    `-- which references app_can(). Model: docs/adr/0001-scoped-assignments.md.`,
     `-- ${ALL_CAPABILITIES.length} capabilities across ${ROLES.length} roles.`,
-    `-- Roles that may score: ${SCORING_ROLES.join(", ")}`,
     ``,
     `-- Principal helpers. app_user_id() is set from the signed token on every`,
     `-- request; everything else about a person's authority is looked up.`,
+    `CREATE OR REPLACE FUNCTION app_user_id() RETURNS uuid AS $$`,
+    `  SELECT nullif(current_setting('app.user_id', true), '')::uuid $$ LANGUAGE sql STABLE;`,
+    `CREATE OR REPLACE FUNCTION app_device_id() RETURNS text AS $$`,
+    `  SELECT nullif(current_setting('app.device_id', true), '') $$ LANGUAGE sql STABLE;`,
     `CREATE OR REPLACE FUNCTION app_player_id() RETURNS uuid AS $$`,
     `  SELECT nullif(current_setting('app.player_id', true), '')::uuid $$ LANGUAGE sql STABLE;`,
     decisionFunction(),
     capabilityRows(),
     assignmentPolicies(),
+    ``,
+  ].join("\n");
+}
+
+/** The table policies and masking views. Applied after the tables exist. */
+export function policies() {
+  return [
+    `-- SCRBRD — Row-Level Security & column masking`,
+    `-- GENERATED from packages/policy/ by services/api/rls/generate-rls.mjs — DO NOT EDIT BY HAND.`,
+    `-- Regenerate with \`pnpm rls:generate\`. Companion: db/01_authz.sql.`,
+    `-- Model: capability + scoped assignment (docs/adr/0001-scoped-assignments.md).`,
+    `-- Roles that may score: ${SCORING_ROLES.join(", ")}`,
     tablePolicies(),
     maskViews(),
     ``,
   ].join("\n");
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) process.stdout.write(main());
+/** Backwards-compatible single string, for the drift tests. */
+export function main() { return authz() + "\n" + policies(); }
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const { writeFileSync } = await import("node:fs");
+  writeFileSync("db/01_authz.sql", authz());
+  writeFileSync("db/03_rls_policies.sql", policies());
+  console.log("wrote db/01_authz.sql and db/03_rls_policies.sql");
+}

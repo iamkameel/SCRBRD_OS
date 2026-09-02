@@ -28,7 +28,12 @@ import { ALL_CAPABILITIES, isCapability } from "./capabilities.mjs";
 // open the Fields view at all.
 const READ_TEAM = ["team.read", "fixture.read", "player.profile.read", "news.read", "facility.read", "competition.read"];
 
-export const ROLE_CAPABILITIES = {
+// A bundle is written as a list because that reads well, but it MEANS a set:
+// spreading READ_TEAM and then naming one of its capabilities again is a
+// harmless authorial redundancy. It is deduplicated below rather than policed,
+// because the alternative is a duplicate-key error at migration time — the
+// failure is loud, but it is a long way from the line that caused it.
+const BUNDLES = {
   // ── Platform ──
   // Operating the platform is not a licence to read a school's confidential
   // records. Support access to those goes through
@@ -143,6 +148,10 @@ export const ROLE_CAPABILITIES = {
     "discipline.read", "scoring.correct", "news.publish.competition",
   ],
 };
+
+export const ROLE_CAPABILITIES = Object.freeze(
+  Object.fromEntries(Object.entries(BUNDLES).map(([r, caps]) => [r, Object.freeze([...new Set(caps)])])),
+);
 
 export const ROLES = Object.freeze(Object.keys(ROLE_CAPABILITIES));
 
