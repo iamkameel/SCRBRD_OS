@@ -77,7 +77,17 @@ ok("all role×resource scope rows faithful", scopeMismatch === 0);
 group("B. Masking views exist for PII/clinical tables");
 ok("player_masked view generated",  /CREATE OR REPLACE VIEW player_masked/.test(SQL));
 ok("injury_masked view generated",  /CREATE OR REPLACE VIEW injury_masked/.test(SQL));
-ok("mask view nulls a denied field",/CASE WHEN rbac_field_denied\('players', 'born'\) THEN NULL ELSE born END/.test(SQL));
+// The mask views are assembled at migration time from information_schema
+// (a static `SELECT t.*, CASE … AS email` is rejected by Postgres for
+// duplicating an output column name), so assert on the generator's shape.
+ok("mask view masks via rbac_field_denied", /format\('CASE WHEN rbac_field_denied\(%L, %L\) THEN NULL ELSE %I END AS %I'/.test(SQL));
+ok("mask view names the players lens",      /rbac_field_denied\(%L, %L\)[\s\S]{0,120}'players', c\.column_name/.test(SQL));
+ok("mask view lists denied columns",        /ARRAY\['email', 'phone', 'born',/.test(SQL));
+ok("mask view builds from information_schema", /FROM information_schema\.columns c/.test(SQL));
+ok("mask view fails loudly without the table", /RAISE EXCEPTION 'cannot build player_masked/.test(SQL));
+ok("mask view is a security barrier",       /CREATE OR REPLACE VIEW player_masked WITH \(security_barrier = true\)/.test(SQL));
+ok("injury mask carries clinical only",     /ARRAY\['notes', 'physio'\]/.test(SQL));
+ok("injury mask carries no PII columns",    !/'injuries'[\s\S]{0,200}ARRAY\[[^\]]*'guardian'/.test(SQL));
 
 group("B. Drift guards");
 ok("every POLICY role appears in rbac_scope", ROLES.every(r => new RegExp(`p_role = '${r}'`).test(SQL)));
