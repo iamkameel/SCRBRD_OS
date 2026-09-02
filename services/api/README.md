@@ -85,23 +85,46 @@ No dependencies to install — pure Node ESM.
 
 ## Honest status
 
-- **Proven here:** the logic. Authorization decisions, the transaction shape,
+- **Proven against fakes:** authorization decisions, the transaction shape,
   idempotency, seq ordering, quarantine routing, crash recovery, optimistic
-  replay, and the join/reconnect correctness are all unit-tested against fakes.
-- **NOT proven here:** behaviour against live Postgres, a real browser
-  (IndexedDB), or a real socket server. These are the gates that turn "tested
-  logic" into "working system":
-  1. `db/99_rls_verify.sql` green on live Postgres with seed data.
-  2. In-browser: score offline, hard-refresh mid-over, confirm nothing is lost.
-  3. End-to-end: an "airplane-mode over" — six balls offline, reconnect, log
-     reconciles, scorecard correct.
-  4. A live two-device handover.
-- **Before launch (flagged, not built):** token refresh, rate-limiting on login
-  endpoints, secrets moved to env, and — for multiple API instances — a fanout
-  bus (Redis / Postgres LISTEN-NOTIFY) behind the realtime hub.
-- **Frontend:** the existing `scrbrd_os.jsx` artifact is the product spec and UX
-  reference. Wiring this backend means graduating it into a real build (Vite,
-  files, IndexedDB, a socket client) — implementation, not redesign.
+  replay, and join/reconnect correctness. 494 assertions across 9 suites.
+- **Proven against a real database and a real HTTP server:**
+  1. ✅ **RLS live** — `db/99_rls_verify.sql` green on live Postgres with seed
+     data, as the same unprivileged role the API connects as.
+  2. ✅ **Offline durability** — `tools/smoke-persist.mjs`: score offline in a
+     real browser, hard-refresh mid-over, nothing is lost.
+  3. ✅ **The airplane-mode over** — `tools/smoke-sync.mjs`: six balls with the
+     network down, reconnect, the log reconciles, the scorecard is correct, a
+     retried batch is deduplicated, and a stale epoch is quarantined rather
+     than merged.
+  4. ⬜ **A live two-device handover.** Blocked, deliberately: see below.
+
+Gate 3 changed what the other three mean. Every suite above passed while the
+API connected as the schema owner — and row-level security does not apply to a
+table's owner. The policies were all present, all generated, all tested, and
+all inert. What caught it was a medical officer successfully appending a ball
+to a live match in gate 3, because that is the first test that puts a real
+request through a real connection. The fix is in `db/06_app_role.sql` and in
+`assertRlsApplies()`, which refuses to start the server on a connection RLS
+cannot restrain.
+
+### Before gate 4
+
+Two devices scoring one match needs the **undo/sync boundary** enforced first.
+Right now undo rewrites the local log freely, which is correct while the log
+exists only on one phone. Once the server has an event, a correction must be a
+compensating event instead — otherwise two devices can disagree about history
+and both be internally consistent. Documented in `apps/web/src/lib/persist.js`,
+not yet enforced. The handover routes are written and proven against fakes but
+are deliberately **not mounted** until it is.
+
+### Before launch (flagged, not built)
+
+`login_code` and the magic-link path (the pilot signs in through a dev-only
+route that mints a token without a code, gated on `ALLOW_DEV_LOGIN=1` and
+`NODE_ENV !== production`); token refresh; rate-limiting on login endpoints;
+secrets from a real store rather than env; and — for multiple API instances —
+a fanout bus (Redis / Postgres LISTEN-NOTIFY) behind the realtime hub.
 
 ## The one principle everything rests on
 

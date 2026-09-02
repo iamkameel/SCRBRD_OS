@@ -101,11 +101,18 @@ group("B. Session routes run under principal and broadcast state");
 
   // heartbeat does NOT broadcast (no state change)
   const before = seen.length;
-  const client2 = { query: async (t) => (/lease_until/.test(t) ? { rows: [{ lease_until: new Date() }] } : { rows: [] }), release() {} };
+  const client2 = { query: async (t) => (/scoring_lease_check/.test(t)
+    ? { rows: [{ found: true, holds: true, epoch: 1, state: "active" }] }
+    : { rows: [] }), release() {} };
   const routes2 = sessionRoutes({ pool: { connect: async () => client2 }, secret: SECRET, hub });
   let hb = null;
   await routes2.heartbeat({ params: { id: "m3" }, headers: { authorization: bearer() }, body: { device: "devA", epoch: 1 } }, { json: b => (hb = b), status: () => ({ json: () => {} }) });
   ok("heartbeat ok", hb.ok === true);
+  // The old handler ran a direct UPDATE on scoring_session, which has no UPDATE
+  // policy — so it matched nothing and reported not_token_holder to a scorer
+  // who held the token.
+  ok("heartbeat goes through the lease function, not a raw UPDATE",
+     hb.epoch === 1);
   ok("heartbeat does not broadcast", seen.length === before);
 }
 

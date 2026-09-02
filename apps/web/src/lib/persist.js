@@ -19,10 +19,17 @@
  *
  * Scope note: this is LOCAL durability only — it is what makes a refresh
  * lossless. Getting the log off the device is the sync path (SyncEngine, in
- * services/api/write), and is separate. Until an event has been synced, undo
- * may rewrite the log freely; once the server has it, a correction must be a
- * compensating event instead. That boundary is not enforced yet, and must be
- * before two devices ever score the same match.
+ * services/api/write), and that path is live: tools/smoke-sync.mjs proves an
+ * over scored with no signal reaches the server and replays to the same
+ * scorecard.
+ *
+ * The boundary that is still NOT enforced is undo. Until an event has been
+ * synced, undo may rewrite the log freely; once the server has it, a
+ * correction must be a compensating event instead, because the server's copy
+ * is append-only and cannot be rewritten to match. Today undo does not know
+ * the difference. That is the one thing that must be true before two devices
+ * ever score the same match, and it is why the handover routes are written,
+ * tested, and deliberately not mounted.
  */
 
 const DB_NAME = "scrbrd";

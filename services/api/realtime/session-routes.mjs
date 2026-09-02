@@ -48,14 +48,13 @@ export function sessionRoutes({ pool, secret, hub }) {
     heartbeat: async (req, res) => {
       const { id } = req.params, b = req.headers?.authorization;
       try {
-        const r = await runAsPrincipal(pool, secret, b, async client => {
-          const { rows } = await client.query(
-            `update scoring_session set lease_until = now() + interval '90 seconds'
-              where match_id = $1 and holder_device = $2 and epoch = $3 and state = 'active'
-              returning lease_until`, [id, req.body.device, req.body.epoch]);
-          return { ok: rows.length > 0, reason: rows.length ? null : "not_token_holder", leaseUntil: rows[0]?.lease_until };
-        });
-        res.json(r);
+        // Through scoring_lease_check, not a direct UPDATE: scoring_session
+        // has no UPDATE policy by design, so the old statement matched nothing
+        // and every heartbeat reported "not_token_holder" while the scorer was
+        // holding the token perfectly well.
+        const r = await callFn(pool, secret, b,
+          `select * from scoring_lease_check($1,$2,$3)`, [id, req.body.device, req.body.epoch]);
+        res.json({ ok: !!r.holds, reason: r.holds ? null : (r.found ? "not_token_holder" : "no_session"), epoch: r.epoch });
       } catch (e) { res.status(e.status || 500).json({ error: e.code || e.message }); }
     },
 

@@ -19,13 +19,18 @@ SET client_min_messages = warning;
 
 BEGIN;
 
--- The API connects as a NON-superuser role that RLS applies to. A superuser
--- bypasses RLS entirely, and so does a table's owner unless FORCE ROW LEVEL
--- SECURITY is set — which is why this creates a separate unprivileged role
--- rather than testing as the owner. Never run the application as either.
-CREATE ROLE scrbrd_app NOLOGIN;
-GRANT USAGE ON SCHEMA public TO scrbrd_app;
-GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO scrbrd_app;
+-- Everything below runs as scrbrd_app — the SAME role the API connects as,
+-- created and granted by db/05_app_role.sql rather than invented here. That
+-- matters: a verifier that builds its own lookalike role proves the policies
+-- are correct for a role nothing uses. A table's OWNER bypasses row-level
+-- security entirely, so testing as the owner would pass every assertion below
+-- while enforcing nothing.
+DO $role_exists$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'scrbrd_app') THEN
+    RAISE EXCEPTION 'scrbrd_app does not exist — apply db/05_app_role.sql first';
+  END IF;
+END $role_exists$;
 
 -- Postgres 16 no longer lets a CREATEROLE role SET ROLE to a role it created
 -- without an explicit membership carrying the SET option.

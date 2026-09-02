@@ -1,36 +1,128 @@
 #!/usr/bin/env node
 /**
- * SCRBRD — development API server.
+ * SCRBRD — API server.
  *
- * Deliberately small and dependency-light. Its job is to make the pieces
- * runnable together: the web client, the AI proxy, and a health check that
- * says plainly what is and is not wired.
+ * Small, dependency-light, and deliberately dumb about authorization: not one
+ * route in this file decides who may see or write anything. Every handler opens
+ * a transaction, sets the caller's identity, and runs a query — Postgres decides
+ * the rest from the caller's assignments. If a route looks like it is making a
+ * security decision, it is a bug.
  *
- * This is NOT the production API. Before launch it needs, at minimum: the
- * auth middleware from auth/ mounted so `withPrincipal()` wraps every query,
- * the read and write routes, rate limiting on anything unauthenticated, and
- * secrets from a real secret store. Those are listed in services/api/README.md
- * under "Honest status" and are tracked, not forgotten.
+ * What is mounted:
+ *   GET  /api/health
+ *   POST /api/auth/dev-login                      (development only)
+ *   GET  /api/session                             who am I, what am I assigned to
+ *   GET  /api/read/:resource                      the governed read path
+ *   POST /api/matches/:id/session/claim           take the scoring token
+ *   POST /api/matches/:id/session/heartbeat       keep the lease alive
+ *   POST /api/matches/:id/events                  append balls (the write path)
+ *   GET  /api/matches/:id/events?since=           incremental sync
+ *   POST /api/ai/statguru, /api/ai/commentary
+ *
+ * Handover (arm → claim → verify → force-release) is written and proven but is
+ * NOT mounted here yet: two devices scoring one match needs the undo/sync
+ * boundary enforced first — once the server has an event, a correction must be
+ * a compensating event rather than a rewrite of the log. See
+ * apps/web/src/lib/persist.js.
  *
  *   node services/api/server.mjs        # PORT=8787 by default
  */
 
 import { createServer } from "node:http";
+import pg from "pg";
 import { askStatGuru, describeDelivery, aiConfigured } from "./ai/ai-service.mjs";
+import { sessionProfile, runAsPrincipal } from "./auth/auth-db.mjs";
+import { signToken, AuthError } from "./auth/auth.mjs";
+import { readRoute, liveResources } from "./read/read-api.mjs";
+import { eventRoutes } from "./write/events-api.mjs";
+import { sessionRoutes } from "./realtime/session-routes.mjs";
+import { MatchHub } from "./realtime/realtime.mjs";
 
 const PORT = Number(process.env.PORT || 8787);
 const ORIGIN = process.env.WEB_ORIGIN || "http://localhost:5173";
-const MAX_BODY = 64 * 1024; // an AI prompt is small; anything larger is a mistake or an attack
+const MAX_BODY = 256 * 1024;   // a batch of an over's balls is a few KB
+const DEV = process.env.NODE_ENV !== "production";
 
+// The application connects as scrbrd_app, NOT as the schema owner. Row-level
+// security does not apply to a table's owner, so an owner connection runs with
+// every policy in db/ silently inert. assertRlsApplies() below refuses to start
+// on such a connection; see db/05_app_role.sql for how this was found.
+const DATABASE_URL = process.env.DATABASE_URL || "postgres://scrbrd_app:scrbrd_app@127.0.0.1:5432/scrbrd";
+const pool = new pg.Pool({ connectionString: DATABASE_URL, max: 10 });
+
+/**
+ * Refuse to serve on a connection that row-level security cannot restrain.
+ *
+ * Three ways a connection escapes RLS: the role is a superuser, the role has
+ * BYPASSRLS, or the role owns the table being queried. All three fail open —
+ * every query succeeds, every policy is ignored, and nothing anywhere reports
+ * a problem. The unit suites cannot see it (they run against fakes) and the
+ * live verifier cannot see it (it deliberately drops to an unprivileged role).
+ * A misread DATABASE_URL is all it takes.
+ *
+ * So the server asks the database what it is, and stops if the answer is wrong.
+ */
+async function assertRlsApplies() {
+  const { rows } = await pool.query(`
+    SELECT r.rolname, r.rolsuper, r.rolbypassrls,
+           (SELECT count(*) FROM pg_class c
+              JOIN pg_namespace n ON n.oid = c.relnamespace
+             WHERE n.nspname = 'public' AND c.relkind = 'r'
+               AND c.relrowsecurity AND NOT c.relforcerowsecurity
+               AND pg_has_role(r.oid, c.relowner, 'USAGE')) AS owned_governed_tables
+      FROM pg_roles r WHERE r.rolname = current_user`);
+  const me = rows[0];
+  const problems = [];
+  if (me.rolsuper) problems.push("it is a SUPERUSER");
+  if (me.rolbypassrls) problems.push("it has BYPASSRLS");
+  if (Number(me.owned_governed_tables) > 0)
+    problems.push(`it owns ${me.owned_governed_tables} of the tables it would query`);
+  if (problems.length) {
+    console.error(
+      `\nRefusing to start: row-level security would not apply to this connection.\n` +
+      `  connected as: ${me.rolname}\n` +
+      problems.map((p) => `  problem:      ${p}`).join("\n") +
+      `\n\nEvery policy in db/ would be inert and every request would be answered in\n` +
+      `full, with nothing reporting a fault. Point DATABASE_URL at scrbrd_app\n` +
+      `(see db/05_app_role.sql) rather than at the schema owner.\n`);
+    process.exit(1);
+  }
+}
+
+// A signing secret has no safe default. In development one is generated per
+// boot, which invalidates every token on restart — annoying, and far better
+// than a well-known constant that quietly ships.
+const SECRET = process.env.SESSION_SECRET || (() => {
+  if (!DEV) {
+    console.error("SESSION_SECRET is required outside development. Refusing to start.");
+    process.exit(1);
+  }
+  return `dev-only-${Math.random().toString(36).slice(2)}`;
+})();
+
+const hub = new MatchHub();
+
+// ── Tiny Express-shaped adapter ──────────────────────────────────
+// The route modules were written against (req, res) with req.params/body/query
+// and res.status().json(). Rather than rewrite them for node:http, this maps
+// one onto the other — the routes stay framework-agnostic and testable.
 const json = (res, status, body) => {
+  if (res.writableEnded) return;
   res.writeHead(status, {
     "content-type": "application/json",
     "access-control-allow-origin": ORIGIN,
-    "access-control-allow-headers": "content-type",
+    "access-control-allow-headers": "content-type, authorization",
+    "access-control-allow-methods": "GET, POST, OPTIONS",
     "vary": "origin",
   });
   res.end(JSON.stringify(body));
 };
+
+const shim = (res) => ({
+  _status: 200,
+  status(code) { this._status = code; return this; },
+  json(body) { json(res, this._status, body); return this; },
+});
 
 async function readJson(req) {
   const chunks = [];
@@ -45,43 +137,113 @@ async function readJson(req) {
   catch { throw Object.assign(new Error("invalid_json"), { status: 400 }); }
 }
 
-const ROUTES = {
-  "POST /api/ai/statguru": async (body) => ({
-    answer: await askStatGuru({ question: body.question, context: body.context }),
-  }),
-  "POST /api/ai/commentary": async (body) => ({
-    line: await describeDelivery({ situation: body.situation }),
-  }),
+// ── Routes ───────────────────────────────────────────────────────
+const events  = eventRoutes({ pool, secret: SECRET });
+const session = sessionRoutes({ pool, secret: SECRET, hub });
+const read    = readRoute({ pool, secret: SECRET });
+
+/**
+ * Development sign-in.
+ *
+ * Issues a token for a seeded address with no code exchange, because the pilot
+ * has no mail sender yet. It is gated three ways — not production, an explicit
+ * opt-in, and the account must exist and be active — and it is the ONLY place
+ * in the codebase that mints a token without proving possession of an inbox.
+ * The real path is requestMagicLink/redeemMagicLink in auth/auth-db.mjs, which
+ * needs the login_code table before it can be turned on.
+ */
+async function devLogin(body) {
+  if (!DEV || process.env.ALLOW_DEV_LOGIN !== "1")
+    throw Object.assign(new AuthError("dev_login_disabled"), { status: 403 });
+  const { email, deviceId } = body;
+  if (!email || !deviceId) throw new AuthError("email_and_device_required");
+  // Same narrow lookup the real login path uses — the application role cannot
+  // read app_user without an identity, and this route is not an exception.
+  const { rows } = await pool.query(`select auth_account_for_email($1) as id`, [email]);
+  if (!rows[0]?.id) throw new AuthError("no_such_user");
+  return { token: signToken({ userId: rows[0].id, deviceId }, SECRET) };
+}
+
+// Exact paths, then one pattern for the per-match routes. Kept as a table so
+// the mounted surface is readable at a glance.
+const EXACT = {
+  "POST /api/auth/dev-login": async (body) => devLogin(body),
+  "POST /api/ai/statguru":   async (body) => ({ answer: await askStatGuru({ question: body.question, context: body.context }) }),
+  "POST /api/ai/commentary": async (body) => ({ line: await describeDelivery({ situation: body.situation }) }),
 };
+
+const MATCH_ROUTES = [
+  [/^\/api\/matches\/([^/]+)\/session\/claim$/,     "POST", session.claim],
+  [/^\/api\/matches\/([^/]+)\/session\/heartbeat$/, "POST", session.heartbeat],
+  [/^\/api\/matches\/([^/]+)\/events$/,             "POST", events.append],
+  [/^\/api\/matches\/([^/]+)\/events$/,             "GET",  events.list],
+];
 
 const server = createServer(async (req, res) => {
   if (req.method === "OPTIONS") return json(res, 204, {});
 
-  const path = new URL(req.url, `http://${req.headers.host}`).pathname;
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const path = url.pathname;
 
   if (req.method === "GET" && path === "/api/health") {
+    let db = "unreachable";
+    try { await pool.query("select 1"); db = "ok"; } catch { /* reported as unreachable */ }
     return json(res, 200, {
-      ok: true,
+      ok: db === "ok",
+      db,
       ai: aiConfigured() ? "configured" : "no_credentials",
-      // Said out loud so nobody mistakes this server for the real API.
-      auth: "not_mounted",
-      read: "not_mounted",
-      write: "not_mounted",
+      auth: DEV && process.env.ALLOW_DEV_LOGIN === "1" ? "dev_login_enabled" : "token_only",
+      read: liveResources(),
+      write: "mounted",
+      handover: "not_mounted",   // see the file header
     });
   }
 
-  const route = ROUTES[`${req.method} ${path}`];
-  if (!route) return json(res, 404, { error: "not_found" });
-
   try {
-    return json(res, 200, await route(await readJson(req)));
+    if (req.method === "GET" && path === "/api/session")
+      return json(res, 200, await sessionProfile(pool, SECRET, req.headers.authorization));
+
+    if (req.method === "GET" && path.startsWith("/api/read/")) {
+      const shimmed = shim(res);
+      return read({
+        params: { resource: decodeURIComponent(path.slice("/api/read/".length)) },
+        query: Object.fromEntries(url.searchParams),
+        headers: req.headers,
+      }, shimmed);
+    }
+
+    for (const [pattern, method, handler] of MATCH_ROUTES) {
+      const m = req.method === method && pattern.exec(path);
+      if (!m) continue;
+      const body = req.method === "POST" ? await readJson(req) : {};
+      return handler({
+        params: { id: m[1] },
+        query: Object.fromEntries(url.searchParams),
+        body,
+        headers: req.headers,
+      }, shim(res));
+    }
+
+    const exact = EXACT[`${req.method} ${path}`];
+    if (exact) return json(res, 200, await exact(await readJson(req)));
+
+    return json(res, 404, { error: "not_found" });
   } catch (err) {
-    return json(res, err.status || 500, { error: err.message || "internal_error" });
+    // A bare SQLSTATE in a response is unhelpful and a stack trace in one is
+    // unsafe; the detail goes to the log, the code goes to the client.
+    if (!err.status) console.error(`${req.method} ${path} →`, err.code || "", err.message, err.detail || "");
+    return json(res, err.status || 500, { error: err.code || err.message || "internal_error" });
   }
 });
 
+await assertRlsApplies();
+
 server.listen(PORT, () => {
-  console.log(`SCRBRD dev API on http://localhost:${PORT}`);
-  console.log(`  AI: ${aiConfigured() ? "configured" : "NO CREDENTIALS — StatGuru and commentary will return null"}`);
-  console.log(`  auth/read/write routes are not mounted yet (see services/api/README.md)`);
+  console.log(`SCRBRD API on http://localhost:${PORT}`);
+  console.log(`  db:   ${DATABASE_URL.replace(/:[^:@]*@/, ":***@")} (row-level security applies)`);
+  console.log(`  ai:   ${aiConfigured() ? "configured" : "NO CREDENTIALS — StatGuru and commentary return null"}`);
+  if (!process.env.SESSION_SECRET) console.log("  auth: EPHEMERAL dev secret — tokens die on restart");
+  if (DEV && process.env.ALLOW_DEV_LOGIN === "1") console.log("  auth: DEV LOGIN ENABLED — /api/auth/dev-login mints tokens without a code");
 });
+
+export { server, pool };

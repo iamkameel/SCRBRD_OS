@@ -22,9 +22,14 @@
     "dev:api": "node services/api/server.mjs",
     "check:imports": "node tools/check-imports.mjs",
     "smoke": "node tools/smoke.mjs && node tools/smoke-scorer.mjs && node tools/smoke-persist.mjs",
-    "verify": "pnpm test && pnpm check:imports && pnpm build && pnpm smoke"
+    "verify": "pnpm test && pnpm check:imports && pnpm build && pnpm smoke && pnpm smoke:sync",
+    "smoke:sync": "node tools/migrate.mjs --reset --seed && node tools/smoke-sync.mjs"
   },
   "devDependencies": {
     "playwright-core": "^1.62.1"
+  },
+  "dependencies": {
+    "@scrbrd/policy": "workspace:*",
+    "@scrbrd/scoring": "workspace:*"
   }
 }

@@ -28,7 +28,17 @@ function fakeDb({ session, existingKeys = new Set(), maxSeq = 0 } = {}) {
     query: async (text, params) => {
       log.push({ text: text.replace(/\s+/g, " ").trim(), params });
       const t = text;
-      if (/for update/.test(t)) return { rows: session ? [session] : [] };
+      // The session row is read (and the lease refreshed) through
+      // scoring_lease_check, not a direct SELECT ... FOR UPDATE — Postgres will
+      // not lock a row the UPDATE policy does not admit, and scoring_session
+      // deliberately has no UPDATE policy.
+      if (/scoring_lease_check/.test(t)) {
+        if (!session) return { rows: [{ found: false, holds: false, epoch: null, state: null }] };
+        const holds = session.state === "active" && session.epoch === params[2]
+                      && session.holder_device === params[1]
+                      && new Date(session.lease_until) > new Date();
+        return { rows: [{ found: true, holds, epoch: session.epoch, state: session.state }] };
+      }
       if (/from ball_event where idempotency_key/.test(t))
         return { rows: existingKeys.has(params[0]) ? [{ seq: 1 }] : [] };
       if (/coalesce\(max\(seq\)/.test(t)) return { rows: [{ next: seq + 1 }] };
@@ -53,11 +63,16 @@ group("A. appendEvents runs under a principal transaction");
   const out = await appendEvents(db.pool, SECRET, bearer(), "m3", [ev(1), ev(2)]);
   const texts = db.log.map(l => l.text);
   ok("wrapped in BEGIN/COMMIT", texts.includes("BEGIN") && texts.includes("COMMIT"));
-  ok("locks the session row (serialised writes)", db.log.some(l => /for update/.test(l.text)));
+  ok("takes the session lock through scoring_lease_check",
+     db.log.some(l => /scoring_lease_check/.test(l.text)));
   ok("sets app.role before writing", db.log.findIndex(l => l.text.includes("app.role")) < db.log.findIndex(l => /insert into ball_event/.test(l.text)));
   ok("2 events accepted", out.accepted.length === 2);
   ok("contiguous seq assigned (1,2)", out.accepted[0].seq === 1 && out.accepted[1].seq === 2);
-  ok("lease refreshed after write", db.log.some(l => /update scoring_session set lease_until/.test(l.text)));
+  // Once per request, inside the lock, rather than once per ball — and inside
+  // scoring_lease_check, because the application role may not touch
+  // scoring_session directly.
+  ok("lease refreshed as part of taking the lock",
+     db.log.filter(l => /scoring_lease_check/.test(l.text)).length === 1);
 }
 
 group("A. Idempotency — retried balls are not double-inserted");

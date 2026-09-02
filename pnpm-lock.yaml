@@ -7,6 +7,13 @@ settings:
 importers:
 
   .:
+    dependencies:
+      '@scrbrd/policy':
+        specifier: workspace:*
+        version: link:packages/policy
+      '@scrbrd/scoring':
+        specifier: workspace:*
+        version: link:packages/scoring
     devDependencies:
       playwright-core:
         specifier: ^1.62.1

@@ -19,15 +19,14 @@ import {
 // ── Login: request a magic link ──
 // POST /api/auth/request-link { email }
 export async function requestMagicLink(db, sendEmail, { email }) {
-  const { rows } = await db.query(
-    `select id, active from app_user where lower(email) = lower($1) limit 1`, [email]);
-  const user = rows[0];
+  const { rows } = await db.query(`select auth_account_for_email($1) as id`, [email]);
+  const userId = rows[0]?.id || null;
   // Always return 200 with no user enumeration — only send if the account exists & is active.
-  if (user && user.active) {
+  if (userId) {
     const { raw, hash, expiresInSec } = newMagicCode();
     await db.query(
       `insert into login_code (user_id, code_hash, expires_at)
-       values ($1, $2, now() + ($3 || ' seconds')::interval)`, [user.id, hash, expiresInSec]);
+       values ($1, $2, now() + ($3 || ' seconds')::interval)`, [userId, hash, expiresInSec]);
     await sendEmail(email, raw);   // email a link like https://scrbrd.co.za/login?c=<raw>
   }
   return { ok: true };            // identical response whether or not the email exists
@@ -38,20 +37,18 @@ export async function requestMagicLink(db, sendEmail, { email }) {
 export async function redeemMagicLink(db, secret, { email, code, deviceId }) {
   if (!deviceId) throw new AuthError("missing_device");
   const { rows } = await db.query(
-    `select u.id, c.id as code_id
-       from app_user u
-       join login_code c on c.user_id = u.id
-      where lower(u.email) = lower($1)
-        and c.code_hash = $2
+    `select c.id as code_id, u.id as user_id
+       from login_code c
+       join lateral (select auth_account_for_email($1) as id) u on u.id = c.user_id
+      where c.code_hash = $2
         and c.used_at is null
         and c.expires_at > now()
-        and u.active
       order by c.expires_at desc
       limit 1`, [email, magicHash(code)]);
   const row = rows[0];
   if (!row) throw new AuthError("invalid_or_expired_code");
   await db.query(`update login_code set used_at = now() where id = $1`, [row.code_id]);
-  return { token: signToken({ userId: row.id, deviceId }, secret) };
+  return { token: signToken({ userId: row.user_id, deviceId }, secret) };
 }
 
 /**
