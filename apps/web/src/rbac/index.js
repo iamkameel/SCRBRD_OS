@@ -212,8 +212,19 @@ function anchorsOf(resource, row) {
       const p = pid ? PLAYERS.find((x) => x.id === pid) : null;
       return { school: p?.school ?? row.school ?? DEMO_SCHOOL, team: p?.team ?? null, person: pid };
     }
-    case "matches":
-      return { school: row.school ?? DEMO_SCHOOL, team: row.team ?? null, fixture: row.id ?? null };
+    case "matches": {
+      // A fixture belongs to the team playing it. The demo rows name the side
+      // in `homeTeam` ("Hilton U19A") rather than carrying a team code, so the
+      // anchor is parsed from it; the real `match` table has team_code.
+      // Without this the team anchor is null, and a null on the RESOURCE
+      // narrows — which left a coach, and a SCORER, seeing no fixtures at all.
+      const token = (String(row.homeTeam ?? row.team ?? "").match(/U\d{2}[A-Z]?/) || [])[0] ?? null;
+      // A fixture is not ABOUT a person, so a guardian's child-scoped
+      // assignment still reaches it — as it must, or a parent cannot see when
+      // their child plays. Spectators already see the full fixture list, so
+      // this discloses nothing new.
+      return { school: row.school ?? DEMO_SCHOOL, team: token, fixture: row.id ?? null, person: ANY_SCOPE };
+    }
     // School-level resources: a ground, a competition, a notice belongs to the
     // institution, not to a team, so a team-scoped assignment still reaches
     // them. Declared, never inferred — see ANY_SCOPE.

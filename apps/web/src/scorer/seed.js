@@ -1,6 +1,28 @@
-import { SCRBRD, initInn } from "./engine.jsx";
 import { SEGS } from "./field.js";
+import { INT_TEAMS } from "./teams.js";
 import { fmtOv } from "./format.js";
+
+// The mutable innings object the seeder builds into.
+//
+// This is the LAST place in the app that constructs an innings rather than
+// deriving one, and it lives here deliberately: the seeder is the demo-mode
+// stand-in for the production event stream, and the source comment has always
+// said it should be deleted when the real replay lands — not adapted. The live
+// scorer no longer uses it.
+const initInn=(bt,bw,squad,twelfthMan,teamKey,bowlingSquad,bowlingTeamKey)=>({
+  battingTeam:bt,bowlingTeam:bw,runs:0,wickets:0,balls:0,
+  extras:{wide:0,noBall:0,bye:0,legBye:0,penalty:0},
+  batsmen:[],bowlers:[],fow:[],ballLog:[],overLog:[],
+  partnerships:[], // [{bat1,bat2,runs,balls,startWicket}]
+  curPartner:{runs:0,balls:0,bat1:null,bat2:null}, // live partnership
+  striker:null,nonStriker:null,bowler:null,complete:false,
+  squad:squad||[],
+  twelfthMan:twelfthMan||null,
+  teamKey:teamKey||bt,
+  teamFlag:INT_TEAMS[teamKey]?.flag||"🏏",
+  bowlingSquad:bowlingSquad||[],
+  bowlingTeamKey:bowlingTeamKey||bw,
+});
 
 // ── Innings state seeder ───────────────────────────────
 // Reconstructs a complete, internally consistent innings (ball log,
@@ -123,6 +145,5 @@ function logBallSeed(i,ball){
   if(!last||last.over!==ov)i.overLog=[...i.overLog,{over:ov,balls:[ball]}];
   else{const ol=[...i.overLog];ol[ol.length-1]={...ol[ol.length-1],balls:[...ol[ol.length-1].balls,ball]};i.overLog=ol;}
 }
-SCRBRD.seedLiveResume=seedLiveResume;
 
 export { logBallSeed, seedCompletedMatch, seedInningsCore, seedLiveResume, seedRng };

@@ -32,7 +32,7 @@ const open = () => [
   batters({ striker: "p1", nonStriker: "p2" }),
   bowler({ bowler: "w1" }),
 ];
-const runs = (v, o = {}) => ball({ ballType: BALL_TYPE.RUN, value: v, ...o });
+const runs = (v, o = {}) => ball({ type: BALL_TYPE.RUN, value: v, ...o });
 
 // ── A. Aggregates the artifact maintained by hand ────────
 group("A. Derived aggregates");
@@ -56,10 +56,10 @@ group("A. Derived aggregates");
   // Extras: a wide, a no-ball with 2 off the bat, 3 byes, 1 leg bye.
   const inn = deriveInnings([
     ...open(),
-    ball({ ballType: BALL_TYPE.WIDE, value: 0 }),
-    ball({ ballType: BALL_TYPE.NO_BALL, value: 2 }),
-    ball({ ballType: BALL_TYPE.BYE, value: 3 }),
-    ball({ ballType: BALL_TYPE.LEG_BYE, value: 1 }),
+    ball({ type: BALL_TYPE.WIDE, value: 0 }),
+    ball({ type: BALL_TYPE.NO_BALL, value: 2 }),
+    ball({ type: BALL_TYPE.BYE, value: 3 }),
+    ball({ type: BALL_TYPE.LEG_BYE, value: 1 }),
   ]);
   ok("wide = 1 extra",          inn.extras.wide === 1);
   ok("no-ball penalty only",    inn.extras.noBall === 1);
@@ -74,7 +74,7 @@ group("A. Derived aggregates");
 {
   const inn = deriveInnings([
     ...open(), runs(1), runs(0), runs(0),
-    ball({ ballType: BALL_TYPE.WICKET, value: 0, dismissal: "caught", fielder: "K Botha" }),
+    ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: "caught", fielder: "K Botha" }),
     batters({ striker: "p3" }),
     runs(2),
   ]);
@@ -88,7 +88,7 @@ group("A. Derived aggregates");
 }
 {
   // Run out is not the bowler's wicket.
-  const inn = deriveInnings([...open(), ball({ ballType: BALL_TYPE.WICKET, value: 0, dismissal: "run out", fielder: "L Govender" })]);
+  const inn = deriveInnings([...open(), ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: "run out", fielder: "L Govender" })]);
   ok("run out counts as a wicket",     inn.wickets === 1);
   ok("run out NOT credited to bowler", inn.bowlers.find(b => b.id === "w1").wickets === 0);
 }
@@ -98,7 +98,7 @@ group("A. Derived aggregates");
   const inn = deriveInnings([
     ...open(), ...dots,
     bowler({ bowler: "w2" }),
-    ...Array.from({ length: 5 }, () => runs(0)), ball({ ballType: BALL_TYPE.LEG_BYE, value: 1 }),
+    ...Array.from({ length: 5 }, () => runs(0)), ball({ type: BALL_TYPE.LEG_BYE, value: 1 }),
   ]);
   ok("maiden over detected",        inn.bowlers.find(b => b.id === "w1").maidens === 1);
   ok("leg bye does not spoil maiden", inn.bowlers.find(b => b.id === "w2").maidens === 1);
@@ -106,7 +106,7 @@ group("A. Derived aggregates");
 {
   // A wide IS charged to the bowler, so an over containing one is never a maiden
   // even though the six legal balls were all dots.
-  const withWide = deriveInnings([...open(), ball({ ballType: BALL_TYPE.WIDE, value: 0 }), ...Array.from({ length: 6 }, () => runs(0))]);
+  const withWide = deriveInnings([...open(), ball({ type: BALL_TYPE.WIDE, value: 0 }), ...Array.from({ length: 6 }, () => runs(0))]);
   ok("over has 6 legal balls plus the wide", withWide.overLog[0].balls.length === 7 && withWide.balls === 6);
   ok("wide spoils the maiden",               withWide.bowlers.find(b => b.id === "w1").maidens === 0);
 }
@@ -140,18 +140,18 @@ group("C. Divergences from the artifact (documented in docs/SCORING_RULES.md)");
 {
   // 1. Odd runs off a no-ball rotate the strike. The artifact returned early
   //    from the no-ball path before its rotation call and never swapped.
-  const inn = deriveInnings([...open(), ball({ ballType: BALL_TYPE.NO_BALL, value: 1 })]);
+  const inn = deriveInnings([...open(), ball({ type: BALL_TYPE.NO_BALL, value: 1 })]);
   ok("odd runs off a no-ball rotate strike", inn.striker === "p2" && inn.nonStriker === "p1");
 }
 {
   // 2. Byes run off a wide rotate the strike, for the same reason.
-  const inn = deriveInnings([...open(), ball({ ballType: BALL_TYPE.WIDE, value: 1 })]);
+  const inn = deriveInnings([...open(), ball({ type: BALL_TYPE.WIDE, value: 1 })]);
   ok("odd byes off a wide rotate strike", inn.striker === "p2");
 }
 {
   // 3. A no-ball with no run off the bat is still a ball faced. The artifact
   //    guarded the increment behind `value > 0`.
-  const inn = deriveInnings([...open(), ball({ ballType: BALL_TYPE.NO_BALL, value: 0 })]);
+  const inn = deriveInnings([...open(), ball({ type: BALL_TYPE.NO_BALL, value: 0 })]);
   ok("no-ball with 0 runs is a ball faced", inn.batsmen.find(b => b.id === "p1").balls === 1);
 }
 {
@@ -162,14 +162,14 @@ group("C. Divergences from the artifact (documented in docs/SCORING_RULES.md)");
 {
   // 5. The fielder was dropped from the log entirely, so a caught dismissal
   //    could not name who took it after replay.
-  const inn = deriveInnings([...open(), ball({ ballType: BALL_TYPE.WICKET, dismissal: "caught", fielder: "K Botha" })]);
+  const inn = deriveInnings([...open(), ball({ type: BALL_TYPE.WICKET, dismissal: "caught", fielder: "K Botha" })]);
   ok("fielder survives replay", /K Botha/.test(inn.batsmen.find(b => b.id === "p1").dismissal));
 }
 {
   // 6. Free hit: a bowled dismissal off a free hit does not stand; a run out does.
-  const fh = [...open(), ball({ ballType: BALL_TYPE.NO_BALL, value: 0 })];
-  const saved = deriveInnings([...fh, ball({ ballType: BALL_TYPE.WICKET, dismissal: "bowled" })]);
-  const runOut = deriveInnings([...fh, ball({ ballType: BALL_TYPE.WICKET, dismissal: "run out" })]);
+  const fh = [...open(), ball({ type: BALL_TYPE.NO_BALL, value: 0 })];
+  const saved = deriveInnings([...fh, ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" })]);
+  const runOut = deriveInnings([...fh, ball({ type: BALL_TYPE.WICKET, dismissal: "run out" })]);
   ok("free hit saves a bowled batter",     saved.wickets === 0);
   ok("free hit does not save a run out",   runOut.wickets === 1);
   ok("free hit consumed by legal delivery", deriveInnings([...fh, runs(1)]).freeHit === false);
@@ -190,7 +190,7 @@ group("D. Strike rotation and innings end");
 {
   const allOut = deriveInnings([
     ...open(),
-    ...Array.from({ length: 4 }, () => ball({ ballType: BALL_TYPE.WICKET, dismissal: "bowled" })),
+    ...Array.from({ length: 4 }, () => ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" })),
   ]);
   ok("all out with a 5-man squad", allOut.complete === true && allOut.wickets === 4);
 }
@@ -232,7 +232,7 @@ group("E. Determinism, match derivation, wire round-trip");
   ok("result names a winner", m.result?.winner === "Westville Boys'");
 }
 {
-  const ev = ball({ ballType: BALL_TYPE.WICKET, value: 0, shot: "drive", seg: 4, zone: 2, dismissal: "caught", fielder: "K Botha", bowlerApproach: "over" });
+  const ev = ball({ type: BALL_TYPE.WICKET, value: 0, shot: "drive", seg: 4, zone: 2, dismissal: "caught", fielder: "K Botha", bowlerApproach: "over" });
   const back = fromRow({ ...toRow(ev), seq: 12 });
   ok("wire round-trip keeps shot",     back.shot === "drive");
   ok("wire round-trip keeps segment",  back.seg === 4);

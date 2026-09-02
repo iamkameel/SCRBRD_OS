@@ -35,7 +35,10 @@
 
 import { KIND, BALL_TYPE, isLegal } from "./events.mjs";
 
-const BAT_STATUS = { NOT_OUT: "not out", OUT: "out", RETIRED: "retired" };
+// The scoring UI renders on these values: a batter at the crease is "batting",
+// and a squad member who never came in is "dnb" (never produced here — a batter
+// only exists once they appear in the log).
+const BAT_STATUS = { NOT_OUT: "batting", OUT: "out", RETIRED: "retired" };
 
 /** Overs in cricket's odd base: 17 legal balls is 2.5 overs. */
 export const fmtOvers = (balls) => `${Math.floor(balls / 6)}.${balls % 6}`;
@@ -191,7 +194,7 @@ export function deriveInnings(events = [], ctx = {}) {
         break;
 
       case KIND.BALL: {
-        const type = ev.ballType ?? BALL_TYPE.RUN;
+        const type = ev.type ?? BALL_TYPE.RUN;
         const v = ev.value ?? 0;
         const legal = isLegal(type);
         const bat = batterFor(inn.striker);
@@ -332,11 +335,11 @@ function describeDismissal(ev, bowlerName) {
 function computeMaidens(inn) {
   for (const b of inn.bowlers) b.maidens = 0;
   for (const over of inn.overLog) {
-    const legalCount = over.balls.filter((b) => isLegal(b.ballType ?? BALL_TYPE.RUN)).length;
+    const legalCount = over.balls.filter((b) => isLegal(b.type ?? BALL_TYPE.RUN)).length;
     if (legalCount < 6) continue;
     const bowlerId = over.balls[0]?.bowlerId ?? over.balls[0]?.bowler ?? null;
     const charged = over.balls.reduce((sum, b) => {
-      const t = b.ballType ?? BALL_TYPE.RUN;
+      const t = b.type ?? BALL_TYPE.RUN;
       if (t === BALL_TYPE.BYE || t === BALL_TYPE.LEG_BYE) return sum;
       return sum + (isLegal(t) ? 0 : 1) + (b.value ?? 0);
     }, 0);

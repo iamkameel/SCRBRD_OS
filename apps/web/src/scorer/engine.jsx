@@ -1,5 +1,12 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
+import {
+  deriveInnings, inningsStart, batters as battersEvent, bowler as bowlerEvent,
+  ball as ballEvent, penalty as penaltyEvent, inningsEnd,
+} from "@scrbrd/scoring";
 import { D } from "../design/tokens.js";
+import { SEGS } from "./field.js";
+import { fmtOv } from "./format.js";
+import { ALL_SHOTS } from "./shots.js";
 import { AnalysisDashboard, ManhattanChart } from "./charts.jsx";
 import { DynamicBar, EventOverlay, FreeHitBanner, PartnershipCard, ScorecardPanel, buildEventCfg, detectMilestone } from "./panels.jsx";
 import { FocusPad, ScoringPanel } from "./scoring.jsx";
@@ -8,20 +15,45 @@ import { BattingOrderSheet, Innings2Sheet, NewOverSheet, NoBallSheet, PenaltyShe
 import { INT_TEAMS } from "./teams.js";
 import { BallDot, Btn, Card, GS, Glass, Lbl } from "./ui.jsx";
 
-const initInn=(bt,bw,squad,twelfthMan,teamKey,bowlingSquad,bowlingTeamKey)=>({
-  battingTeam:bt,bowlingTeam:bw,runs:0,wickets:0,balls:0,
-  extras:{wide:0,noBall:0,bye:0,legBye:0,penalty:0},
-  batsmen:[],bowlers:[],fow:[],ballLog:[],overLog:[],
-  partnerships:[], // [{bat1,bat2,runs,balls,startWicket}]
-  curPartner:{runs:0,balls:0,bat1:null,bat2:null}, // live partnership
-  striker:null,nonStriker:null,bowler:null,complete:false,
-  squad:squad||[],
-  twelfthMan:twelfthMan||null,
-  teamKey:teamKey||bt,
-  teamFlag:INT_TEAMS[teamKey]?.flag||"🏏",
-  bowlingSquad:bowlingSquad||[],
-  bowlingTeamKey:bowlingTeamKey||bw,
-});
+// Reconstruct an event log from a seeded innings object.
+//
+// The demo seeder (seed.js) still builds innings objects directly — it is the
+// stand-in for the production replay and is meant to be deleted when the real
+// event stream lands. Until then, resuming a seeded match converts its ball
+// log back into events so the live scorer runs on one representation only.
+// Batter and bowler changes are inferred from each ball's stamped striker and
+// bowler, which is exactly the information a delivery record carries.
+function eventsFromInnings(i){
+  if(!i) return [];
+  const ctx={ flagFor: k => INT_TEAMS[k]?.flag };
+  const evs=[inningsStart({battingTeam:i.battingTeam,bowlingTeam:i.bowlingTeam,
+    squad:i.squad,bowlingSquad:i.bowlingSquad,twelfthMan:i.twelfthMan,
+    teamKey:i.teamKey,bowlingTeamKey:i.bowlingTeamKey,overs:i.overs??20})];
+
+  // The openers are the first two batters the seeded innings recorded. Both
+  // ends must be named: the scorer refuses to accept a delivery unless it
+  // knows the striker AND the non-striker, so losing one here makes the first
+  // tap open the batting-order sheet instead of scoring.
+  const openers=(i.batsmen||[]).slice(0,2).map(b=>b.id).filter(Boolean);
+  if(openers.length===2) evs.push(battersEvent({striker:openers[0],nonStriker:openers[1]}));
+
+  for(const b of (i.ballLog||[])){
+    // Ask the replay who is on strike rather than tracking it here — strike
+    // rotation is its rule, and a second copy of that rule is exactly the
+    // duplication this whole refactor removed. The repeated fold is O(n²) over
+    // one innings, which is nothing for ~120 deliveries and runs once, on resume.
+    const st=deriveInnings(evs, ctx);
+    const s=b.strikerId??b.striker??null, bw=b.bowlerId??b.bowler??null;
+    // A striker who is neither of the current pair is a new arrival.
+    if(s&&s!==st.striker&&s!==st.nonStriker) evs.push(battersEvent({striker:s}));
+    // Replay clears the bowler at the end of each over, so this re-announces
+    // them exactly when a real over change would.
+    if(bw&&bw!==st.bowler) evs.push(bowlerEvent({bowler:bw}));
+    evs.push(ballEvent({type:b.type,value:b.value,shot:b.shot,seg:b.seg,zone:b.zone,
+      bowlerApproach:b.bowlerApproach,dismissal:b.dismissal,fielder:b.fielder}));
+  }
+  return evs;
+}
 
 /* ═══════════════════════════════════════════════════════
    MAIN APP
@@ -29,7 +61,11 @@ const initInn=(bt,bw,squad,twelfthMan,teamKey,bowlingSquad,bowlingTeamKey)=>({
 function SCRBRD({resume}={}){
   const[screen,setScreen]=useState("setup");
   const[match,setMatch]=useState(null);
-  const[innings,setInnings]=useState([null,null]);
+  // ── The event log is the state ──────────────────────────
+  // One log per innings. Everything the UI renders — score, scorecard, wagon
+  // wheel, worm, partnerships, fall of wickets — is a fold over these, so
+  // there is no second copy of the score to drift out of step with them.
+  const[events,setEvents]=useState([[],[]]);
   const[curIn,setCurIn]=useState(0);
   const[modal,setModal]=useState(null);
   const[modalCtx,setModalCtx]=useState({});
@@ -48,8 +84,7 @@ function SCRBRD({resume}={}){
   const[lastOverDCB,setLastOverDCB]=useState(null);
   // Free hit: true after a height/front-foot no-ball
   const[freeHit,setFreeHit]=useState(false);
-  // Undo stack — snapshots of [innings, curIn] before each legal delivery
-  const undoStackRef=useRef([]);
+  // Undo truncates the event log; there is no snapshot stack to keep.
   // Drag-to-reorder cards
   const[cardOrder,setCardOrder]=useState(["scoring","partnership","commentary"]);
   const cardDragRef=useRef(null);
@@ -58,13 +93,31 @@ function SCRBRD({resume}={}){
   const scoreKeyRef=useRef(0);
   const [uiMode,setUiMode]=useState("focus"); // focus = one-tap pad · pro = full shot capture
   const [focusQuick,setFocusQuick]=useState(false); // one-tap speed mode inside focus scoring
+  // ── Derivation ──────────────────────────────────────────
+  const scoringCtxRef = useRef({ flagFor: k => INT_TEAMS[k]?.flag });
+  const innings = useMemo(
+    () => events.map(evs => (evs.length ? deriveInnings(evs, scoringCtxRef.current) : null)),
+    [events],
+  );
+
+  /** Append to the current innings' log. This is the only way state changes. */
+  const emit = (...evs) => setEvents(prev => {
+    const cp = [...prev];
+    cp[curIn] = [...cp[curIn], ...evs.map(e => ({ ...e, innings: curIn }))];
+    return cp;
+  });
+
+  /** What the innings WOULD be with these extra events — used to decide what
+   *  happens next (over ended? innings ended?) without duplicating the rules. */
+  const project = (...evs) => deriveInnings([...events[curIn], ...evs], scoringCtxRef.current);
+
   const inn=innings[curIn];
 
   // Resume a live match handed over from ScrbrdOS Match Centre.
   useEffect(()=>{
     if(resume&&resume.cfg){
       setMatch(resume.cfg);
-      setInnings(resume.innings);
+      setEvents(resume.events ?? (resume.innings||[]).map(i=>i?eventsFromInnings(i):[]));
       setCurIn(resume.curIn||0);
       setScreen("match");
     }
@@ -76,45 +129,21 @@ function SCRBRD({resume}={}){
     const tk1=cfg.teamKey1||cfg.team1, tk2=cfg.teamKey2||cfg.team2;
     const bsq1=INT_TEAMS[tk2]?.players.map(p=>p.name)||sq2;
     const bsq2=INT_TEAMS[tk1]?.players.map(p=>p.name)||sq1;
-    const inn1=initInn(cfg.team1,cfg.team2,sq1,cfg.twelfth1||null,tk1,bsq1,tk2);
-    const inn2=initInn(cfg.team2,cfg.team1,sq2,cfg.twelfth2||null,tk2,bsq2,tk1);
-    // Pre-set openers and opening bowler from setup step 4
+
+    // Opening an innings is an event, not an object. Both innings are opened
+    // up front so the second already knows its squads when the chase begins.
+    const open1=[inningsStart({innings:0,battingTeam:cfg.team1,bowlingTeam:cfg.team2,
+      squad:sq1,bowlingSquad:bsq1,twelfthMan:cfg.twelfth1||null,teamKey:tk1,bowlingTeamKey:tk2,overs:cfg.overs||20})];
+    const open2=[inningsStart({innings:1,battingTeam:cfg.team2,bowlingTeam:cfg.team1,
+      squad:sq2,bowlingSquad:bsq2,twelfthMan:cfg.twelfth2||null,teamKey:tk2,bowlingTeamKey:tk1,overs:cfg.overs||20})];
+
+    // Openers and opening bowler chosen in setup step 4.
     if(cfg.opener1&&cfg.opener2&&cfg.openBowler){
-      // Striker
-      inn1.batsmen=[
-        {id:cfg.opener1,name:cfg.opener1,runs:0,balls:0,fours:0,sixes:0,status:"batting",dismissal:null},
-        {id:cfg.opener2,name:cfg.opener2,runs:0,balls:0,fours:0,sixes:0,status:"batting",dismissal:null},
-      ];
-      inn1.striker=cfg.opener1;
-      inn1.nonStriker=cfg.opener2;
-      // Bowler
-      inn1.bowlers=[{id:cfg.openBowler,name:cfg.openBowler,balls:0,runs:0,wickets:0,maidens:0,wides:0,noBalls:0}];
-      inn1.bowler=cfg.openBowler;
+      open1.push(battersEvent({innings:0,striker:cfg.opener1,nonStriker:cfg.opener2}));
+      open1.push(bowlerEvent({innings:0,bowler:cfg.openBowler}));
     }
-    setInnings([inn1,inn2]);
-    setCurIn(0);setScreen("match");setModal(null); // no opener modal needed
-  };
-
-  const updInn=fn=>setInnings(prev=>{
-    const cp=[
-      prev[0]?{...prev[0],batsmen:[...prev[0].batsmen],bowlers:[...prev[0].bowlers],
-        ballLog:[...prev[0].ballLog],overLog:[...prev[0].overLog],
-        fow:[...prev[0].fow],extras:{...prev[0].extras}}:null,
-      prev[1]?{...prev[1],batsmen:[...prev[1].batsmen],bowlers:[...prev[1].bowlers],
-        ballLog:[...prev[1].ballLog],overLog:[...prev[1].overLog],
-        fow:[...prev[1].fow],extras:{...prev[1].extras}}:null,
-    ];
-    fn(cp[curIn]);return cp;
-  });
-
-  const rotStrike=i=>{const t=i.striker;i.striker=i.nonStriker;i.nonStriker=t;};
-
-  const logBall=(i,ball)=>{
-    i.ballLog=[...i.ballLog,ball];
-    const ov=Math.floor(i.balls/6);
-    const last=i.overLog.length?i.overLog[i.overLog.length-1]:null;
-    if(!last||last.over!==ov)i.overLog=[...i.overLog,{over:ov,balls:[ball]}];
-    else{const ol=[...i.overLog];ol[ol.length-1]={...ol[ol.length-1],balls:[...ol[ol.length-1].balls,ball]};i.overLog=ol;}
+    setEvents([open1,open2]);
+    setCurIn(0);setScreen("match");setModal(null);
   };
 
   const toggleLine=k=>setHidden(prev=>{const n=new Set(prev);n.has(k)?n.delete(k):n.add(k);return n;});
@@ -238,34 +267,23 @@ function SCRBRD({resume}={}){
   //  EventOverlay's `suppressBlur` prop — mutating the event object here
   //  used to re-arm its dismiss timers and strand queued overlays.)
 
-  // Undo — restore previous innings snapshot
+  // ── Undo: truncate the log ──────────────────────────────
+  // The artifact kept a deep-copy snapshot stack capped at ten entries,
+  // because aggregates could not be recomputed — a scorer who spotted at ball
+  // 14 that ball 2 was wrong could not reach it. Dropping the last event and
+  // re-deriving is exact, and there is no depth limit.
   const undoLastBall=()=>{
-    const snap=undoStackRef.current.pop();
-    if(!snap)return;
-    setInnings(snap.innings);
-    setCurIn(snap.curIn);
+    setEvents(prev=>{
+      const log=prev[curIn];
+      // Never undo past the innings' opening events, or the screen loses the
+      // squads and there is nothing to score against.
+      const floor=log.findLastIndex(e=>e.kind==="innings_start"||e.kind==="batters"&&log.indexOf(e)<3);
+      if(log.length<=Math.max(1,floor+1))return prev;
+      const cp=[...prev];cp[curIn]=log.slice(0,-1);return cp;
+    });
     resetHub();
     setModal(null);
     scoreKeyRef.current++;
-  };
-
-  // Snapshot before committing (called at start of commitBall)
-  const snapshotForUndo=()=>{
-    const snap={
-      innings:innings.map(i=>i?{
-        ...i,
-        batsmen:i.batsmen.map(b=>({...b})),
-        bowlers:i.bowlers.map(b=>({...b})),
-        ballLog:[...i.ballLog],
-        overLog:i.overLog.map(o=>({...o,balls:[...o.balls]})),
-        fow:[...i.fow],
-        extras:{...i.extras},
-        partnerships:[...(i.partnerships||[])],
-        curPartner:i.curPartner?{...i.curPartner}:{runs:0,balls:0,bat1:null,bat2:null},
-      }:null),
-      curIn,
-    };
-    undoStackRef.current=[...undoStackRef.current.slice(-9),snap]; // keep last 10
   };
 
   // Legacy onScore kept for any remaining modal references
@@ -280,92 +298,45 @@ function SCRBRD({resume}={}){
   const onShotSelected=(shotId)=>{setSelShot(shotId);setModal(null);if(scoringCtx?.type==="W"){setModalCtx({shot:shotId});setModal("wicket");}};
   const onShotSkipped=()=>{setSelShot(null);setModal(null);if(scoringCtx?.type==="W"){setModalCtx({shot:null});setModal("wicket");}};
 
-  // Called once shot AND field are both known
+  // Called once shot AND field are both known.
+  //
+  // This used to be sixty lines of parallel bookkeeping: runs, extras, batter
+  // figures, bowler figures, partnership, maidens and strike rotation, each
+  // updated by hand on every branch. It is now one event. What happens next —
+  // did the over end, did the innings end — is read from the projection rather
+  // than recomputed here, so the rules live in exactly one place.
   const commitBall=(type,value,shot,seg,zone,approach)=>{
-    snapshotForUndo(); // snapshot BEFORE any state change
-    const maxBalls=(match?.overs||20)*6;
-    const curBalls=inn.balls;
-    const isLegal=type!=="Wd"&&type!=="Nb";
-    // Count legal deliveries in the CURRENT over (Wides/No-balls don't count)
-    const curOverNum=Math.floor(curBalls/6);
-    const curOverLog=inn.overLog.find(o=>o.over===curOverNum);
-    const legalInOver=(curOverLog?.balls||[]).filter(b=>b.type!=="Wd"&&b.type!=="Nb").length;
-    // Over ends when this legal ball makes 6 legal in the over
-    const willEndOver=isLegal&&(legalInOver+1)===6;
-    const newBalls=curBalls+(isLegal?1:0);
-    const willEndInnings=isLegal&&(newBalls>=maxBalls||inn.wickets>=10);
-    const ball={type,value,shot,seg,zone,bowlerApproach:approach||null,over:Math.floor(curBalls/6),ballInOver:curBalls%6,striker:inn?.striker,bowler:inn?.bowler};
-    const lastBowlerId=inn?.bowler||null; // captured before updInn zeroes bowler at over-end
-    updInn(i=>{
-      const bat=i.batsmen.find(b=>b.id===i.striker);
-      const bow=i.bowlers.find(b=>b.id===i.bowler);
-      if(type==="Wd"){
-        const total=1+value;
-        i.runs+=total;i.extras.wide+=total;
-        if(bow){bow.runs+=total;bow.wides=(bow.wides||0)+1;}
-        logBall(i,ball);return;
-      }
-      if(type==="Nb"){
-        // Already handled by NoBall sheet — value includes runs off bat, penalty=1 built in
-        const total=1+value; // 1 penalty + runs
-        i.runs+=total;i.extras.noBall+=1;i.extras.wide+=0;
-        if(bat&&value>0){bat.runs+=value;bat.balls++;if(value===4)bat.fours++;if(value===6)bat.sixes++;}
-        if(bow){bow.runs+=total;bow.noBalls=(bow.noBalls||0)+1;}
-        logBall(i,ball);
-        // No ball doesn't count as legal delivery - no over advancement
-        return;
-      }
-      if(type==="B"){i.runs+=value;i.extras.bye+=value;i.balls++;if(bow)bow.balls++;logBall(i,ball);if(value%2!==0)rotStrike(i);}
-      else if(type==="LB"){i.runs+=value;i.extras.legBye+=value;i.balls++;if(bow)bow.balls++;logBall(i,ball);if(value%2!==0)rotStrike(i);}
-      else{
-        i.runs+=value;i.balls++;
-        if(bat){bat.runs+=value;bat.balls++;if(value===4)bat.fours++;if(value===6)bat.sixes++;}
-        if(bow){bow.runs+=value;bow.balls++;}
-        logBall(i,ball);
-        if(value%2!==0)rotStrike(i);
-      }
-      // Partnership tracking — update live partnership on every legal delivery
-      if(type!=="Wd"&&type!=="Nb"){
-        if(!i.curPartner)i.curPartner={runs:0,balls:0,bat1:null,bat2:null};
-        i.curPartner.runs+=(value||0);
-        i.curPartner.balls+=1;
-        if(!i.curPartner.bat1)i.curPartner.bat1=i.striker;
-        if(!i.curPartner.bat2)i.curPartner.bat2=i.nonStriker;
-      }
-      // Check maiden: end of over, 0 runs from bowler this over
-      if(willEndOver){
-        const ovBalls=i.ballLog.filter(b=>b.over===Math.floor(curBalls/6));
-        const ovBowlerRuns=ovBalls.reduce((s,b)=>s+(b.type==="run"||b.type==="W"?0:(b.value||0)),0);
-        if(bow&&ovBowlerRuns===0&&ovBalls.filter(b=>b.type==="run"||b.type==="W"||b.type==="B"||b.type==="LB").every(b=>(b.value||0)===0))bow.maidens++;
-        rotStrike(i);i.bowler=null;
-      }
-      if(i.balls>=maxBalls||i.wickets>=10)i.complete=true;
-    });
+    const ev=ballEvent({type,value,shot,seg,zone,bowlerApproach:approach||null,freeHit});
+    const before=inn;
+    const after=project(ev);
+    const endedOver=after.balls>before.balls&&after.balls%6===0;
+    const endedInnings=after.complete;
+    const lastBowlerId=before?.bowler||null; // cleared by the projection at over end
+
+    emit(ev);
+
     setSelSeg(null);setSelShot(null);setScoringCtx(null);setHubStage(0);setHubShot(null);
     scoreKeyRef.current++;
-    // Track completed over for DCB
-    if(willEndOver){
-      const ovNum=Math.floor(inn.balls/6);
-      const ovLog=inn.overLog.find(o=>o.over===ovNum);
+    if(endedOver){
+      const ovLog=after.overLog[after.overLog.length-1];
       if(ovLog)setLastOverDCB(ovLog);
     }
-    const mile=detectMilestone(ball,inn);
+    const mile=detectMilestone({...ev,striker:before?.striker,bowler:before?.bowler},before);
     const showBallOverlay=type==="run"&&(value===4||value===6);
     const queue=[];
     if(showBallOverlay)queue.push(buildEventCfg(value,null));
     if(mile)queue.push(buildEventCfg(null,mile));
-    // If a modal is about to open (end of over/innings), mark overlays as non-blocking
-    // so the blur never covers the modal sheet underneath
-    const modalPending=willEndInnings||willEndOver;
+    // If a modal is about to open (end of over/innings), mark overlays as
+    // non-blocking so the blur never covers the sheet underneath.
+    const modalPending=endedInnings||endedOver;
     if(queue.length>0){
       const q=modalPending?queue.map(c=>({...c,noBlur:true})):queue;
       milestoneQRef.current=q.slice(1);
       setEventOverlay(q[0]);
     }
-    // Clear free-hit after this delivery
-    if(freeHit)setFreeHit(false);
-    if(willEndInnings){if(curIn===0){setCurIn(1);setModal("innings2");}else setScreen("result");}
-    else if(willEndOver){setModalCtx({lastBowlerId});setModal("newOver");}
+    setFreeHit(after.freeHit);
+    if(endedInnings){if(curIn===0){setCurIn(1);setModal("innings2");}else setScreen("result");}
+    else if(endedOver){setModalCtx({lastBowlerId});setModal("newOver");}
   };
 
   // After shot selected and field selected — commit the ball
@@ -382,88 +353,50 @@ function SCRBRD({resume}={}){
   };
 
   const confirmWicket=(mode,fielder)=>{
-    snapshotForUndo();
-    const shot=modalCtx?.shot||null;
-    const seg=modalCtx?.seg??null;const zone=modalCtx?.zone??null;
-    const maxBalls=(match?.overs||20)*6;
-    const cb=inn.balls,nw=(inn.wickets||0)+1;
-    const newBalls=cb+1;
-    const willEndOver=newBalls>0&&newBalls%6===0;
-    const willEndInnings=newBalls>=maxBalls||nw>=10;
-    updInn(i=>{
-      const bat=i.batsmen.find(b=>b.id===i.striker);
-      const bow=i.bowlers.find(b=>b.id===i.bowler);
-      if(bat){bat.status="out";bat.dismissal=`${mode}${fielder?` - ${fielder}`:""}${bow?` b. ${bow.name}`:""}`; bat.balls++;}
-      if(bow){bow.wickets++;bow.balls++;}
-      i.wickets++;i.balls++;
-      i.fow=[...i.fow,{runs:i.runs,wickets:i.wickets,batsman:bat?.name||"?",overs:fmtOv(i.balls)}];
-      const ball={type:"W",value:0,shot,seg,zone,over:Math.floor(cb/6),ballInOver:cb%6,striker:i.striker,bowler:i.bowler,dismissal:mode};
-      logBall(i,ball);
-      // Close current partnership
-      if(!i.partnerships)i.partnerships=[];
-      if(i.curPartner&&(i.curPartner.runs>0||i.curPartner.balls>0)){
-        const cp=i.curPartner;
-        const b1=i.batsmen.find(b=>b.id===cp.bat1);
-        const b2=i.batsmen.find(b=>b.id===cp.bat2);
-        i.partnerships=[...i.partnerships,{
-          bat1:b1?.name||"?",bat2:b2?.name||"?",
-          runs:cp.runs,balls:cp.balls,wicket:i.wickets
-        }];
-      }
-      i.curPartner={runs:0,balls:0,bat1:null,bat2:null};
-      i.striker=null;
-      if(willEndOver)i.bowler=null;
-      if(i.balls>=maxBalls||i.wickets>=10)i.complete=true;
-    });
-    setSelSeg(null);setSelShot(null);setScoringCtx(null);setModalCtx({});scoreKeyRef.current++;setHubStage(0);setHubShot(null);
-    {// Wicket overlay + milestone check.
-     // A wicket always opens a follow-up sheet (new batsman / new over /
-     // innings break), so every overlay in this chain is non-blocking.
+    // The dismissal, the fielder, whose wicket it is and whether the bowler is
+    // credited are all decided by the replay. The fielder in particular used to
+    // be dropped from the log entirely, so a replayed scorecard could never
+    // render "c Botha b Mkhize".
+    const ev=ballEvent({type:"W",value:0,shot:modalCtx?.shot||null,
+      seg:modalCtx?.seg??null,zone:modalCtx?.zone??null,
+      dismissal:mode,fielder:fielder||null,freeHit});
+    const before=inn;
+    const after=project(ev);
+    const endedOver=after.balls>before.balls&&after.balls%6===0;
+    const endedInnings=after.complete;
+    const stood=after.wickets>before.wickets; // a free hit can save the batter
+
+    emit(ev);
+
+    setSelSeg(null);setSelShot(null);setScoringCtx(null);setModalCtx({});
+    scoreKeyRef.current++;setHubStage(0);setHubShot(null);
+    {
+      // A wicket always opens a follow-up sheet (new batsman / new over /
+      // innings break), so every overlay in this chain is non-blocking.
       const wicketCfg={...buildEventCfg("W",null),noBlur:true};
-      const mile=detectMilestone({type:"W",value:0,striker:inn?.striker,bowler:inn?.bowler},inn);
-      const queue=mile?[mile]:[];
-      milestoneQRef.current=queue.map(m=>({...buildEventCfg(null,m),noBlur:true}));
+      const mile=detectMilestone({type:"W",value:0,striker:before?.striker,bowler:before?.bowler},before);
+      milestoneQRef.current=(mile?[mile]:[]).map(m=>({...buildEventCfg(null,m),noBlur:true}));
       setEventOverlay(wicketCfg);
     }
-    if(willEndInnings){if(curIn===0){setCurIn(1);setModal("innings2");}else setScreen("result");}
-    else if(willEndOver)setModal("newBatsmanThenOver");
+    setFreeHit(after.freeHit);
+    if(endedInnings){if(curIn===0){setCurIn(1);setModal("innings2");}else setScreen("result");}
+    else if(!stood){if(endedOver){setModalCtx({lastBowlerId:before?.bowler||null});setModal("newOver");}}
+    else if(endedOver)setModal("newBatsmanThenOver");
     else setModal("newBatsman");
   };
 
+  // A batter arriving and a bowler taking the ball are events, not mutations.
+  // Without them in the log the log could not stand alone: a delivery record
+  // says nothing about who walked in after the last wicket.
   const addBatsman=(name,isStriker)=>{
-    updInn(i=>{
-      let existing=i.batsmen.find(b=>b.name===name);
-      if(!existing){
-        const id=Date.now()+Math.random();
-        const teamInfo=INT_TEAMS[i.teamKey];
-        const pInfo=teamInfo?.players.find(p=>p.name===name);
-        existing={id,name,runs:0,balls:0,fours:0,sixes:0,status:"batting",dismissal:null,batHand:pInfo?.batHand||"R"};
-        i.batsmen=[...i.batsmen,existing];
-      } else {existing.status="batting";}
-      if(isStriker||i.striker===null)i.striker=existing.id;else i.nonStriker=existing.id;
-    });
+    const asStriker=isStriker||!inn?.striker;
+    emit(battersEvent(asStriker?{striker:name}:{nonStriker:name}));
   };
 
-  const addBowler=name=>{
-    updInn(i=>{
-      let bow=i.bowlers.find(b=>b.name.toLowerCase()===name.toLowerCase());
-      if(!bow){
-        const id=Date.now()+Math.random();
-        const bTeam=INT_TEAMS[i.bowlingTeamKey];
-        const pInfo=bTeam?.players.find(p=>p.name===name);
-        bow={id,name,balls:0,maidens:0,runs:0,wickets:0,wides:0,noBalls:0,bowlArm:pInfo?.bowlArm||"R",bowlStyle:pInfo?.bowlStyle||"F"};
-        i.bowlers=[...i.bowlers,bow];i.bowler=id;
-      } else i.bowler=bow.id;
-    });
-  };
+  const addBowler=name=>emit(bowlerEvent({bowler:name}));
 
   const awardPenalty=(runs,to,reason)=>{
-    updInn(i=>{
-      if(to==="batting"){i.runs+=runs;i.extras.penalty=(i.extras.penalty||0)+runs;}
-      // If bowling team awarded penalty, it's weird but track it
-      const ball={type:"Pen",value:runs,to,reason,over:Math.floor(i.balls/6),ballInOver:i.balls%6};
-      i.ballLog=[...i.ballLog,ball];
-    });
+    emit(penaltyEvent({runs,toBattingTeam:to==="batting",reason}));
     setModal(null);
   };
 
@@ -486,19 +419,11 @@ function SCRBRD({resume}={}){
     if(modal==="noBall")return (
       <NoBallSheet
         onConfirm={(nbType,runs)=>{
-          const ball={type:"Nb",value:runs,nbType,shot:selShot,seg:selSeg?.seg??null,zone:selSeg?.zone??null,
-            over:Math.floor((inn?.balls||0)/6),ballInOver:(inn?.balls||0)%6,striker:inn?.striker,bowler:inn?.bowler};
-          const total=1+runs;
-          updInn(i=>{
-            const bat=i.batsmen.find(b=>b.id===i.striker);
-            const bow=i.bowlers.find(b=>b.id===i.bowler);
-            i.runs+=total;i.extras.noBall+=1;
-            if(bat&&runs>0){bat.runs+=runs;bat.balls++;if(runs===4)bat.fours++;if(runs===6)bat.sixes++;}
-            if(bow){bow.runs+=total;bow.noBalls=(bow.noBalls||0)+1;}
-            logBall(i,ball);
-          });
+          emit(ballEvent({type:"Nb",value:runs,shot:selShot,
+            seg:selSeg?.seg??null,zone:selSeg?.zone??null,nbType}));
           setSelSeg(null);setModal(null);scoreKeyRef.current++;
-          // Free hit on height no-ball and beamer
+          // A height no-ball or a beamer earns a free hit. The replay also
+          // tracks this; setting it here keeps the banner immediate.
           if(nbType==="height"||nbType==="beamer")setFreeHit(true);
         }}
         onClose={()=>setModal(null)}/>
@@ -629,7 +554,7 @@ function SCRBRD({resume}={}){
             {[0,1].map(ii=>innings[ii]&&<ScorecardPanel key={ii} innings={innings} idx={ii}/>)}
           </div>
           <div style={{textAlign:"center"}}>
-            <Btn variant="primary" size="lg" onClick={()=>{setScreen("setup");setInnings([null,null]);setCurIn(0);setMatch(null);setSelSeg(null);}}>
+            <Btn variant="primary" size="lg" onClick={()=>{setScreen("setup");setEvents([[],[]]);setCurIn(0);setMatch(null);setSelSeg(null);}}>
               New Match
             </Btn>
           </div>
@@ -866,4 +791,4 @@ function SCRBRD({resume}={}){
   );
 }
 
-export { SCRBRD, initInn };
+export { SCRBRD };

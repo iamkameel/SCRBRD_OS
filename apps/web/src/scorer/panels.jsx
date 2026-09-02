@@ -2,8 +2,9 @@ import { useState, useEffect, useRef } from "react";
 import { D, px } from "../design/tokens.js";
 import { can } from "../rbac/index.js";
 import { CX, CY, LK_COLS, R_BND, R_IN, R_MID, R_PITCH, SEGS, heatColor, lineKey, pieSlice, ringArc, toXY, wagEnd } from "./field.js";
-import { RR, fmtOv } from "./format.js";
+import { RR, fmtOv, SR } from "./format.js";
 import { buildNarratives, buildSignals } from "./signals.js";
+import { ALL_SHOTS_FLAT } from "./shots.js";
 import { Badge, BallDot, Card, Lbl, SignalBar } from "./ui.jsx";
 
 /* ═══════════════════════════════════════════════════════

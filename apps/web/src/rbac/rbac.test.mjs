@@ -40,6 +40,23 @@ group("A. Row scoping");
      getData("players", P("nonsense-role")).length === 0);
 }
 
+// ── A2. Everyone who needs a fixture can see one ─────────
+group("A2. Fixtures reach the people who need them");
+{
+  // Regression: the demo rows name the side in `homeTeam` rather than carrying
+  // a team code, so the team anchor came out null — and a null on the resource
+  // narrows. That left a team coach, and a SCORER whose whole job is scoring a
+  // match, seeing no fixtures at all.
+  ok("coach sees their team's fixtures",   getData("matches", P("coach")).length > 0);
+  ok("scorer sees fixtures to score",      getData("matches", P("scorer")).length > 0);
+  ok("coach sees a live fixture",          getData("matches", P("coach")).some((m) => m.status === "live"));
+  ok("guardian sees their child's school fixtures", getData("matches", P("parent")).length > 0);
+  ok("director sees more than a team coach",
+     getData("matches", P("sportsmaster")).length > getData("matches", P("coach")).length);
+  ok("coach's fixtures are their own team's",
+     getData("matches", P("coach")).every((m) => /U19A/.test(m.homeTeam ?? "")));
+}
+
 // ── B. Aggregates use the same scope ─────────────────────
 group("B. Aggregates cannot exceed row scope");
 {

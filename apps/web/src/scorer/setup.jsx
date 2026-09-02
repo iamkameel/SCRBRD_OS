@@ -1,6 +1,5 @@
 import { useState, useRef } from "react";
 import { D } from "../design/tokens.js";
-import { SCRBRD } from "./engine.jsx";
 import { INT_TEAMS, ROLE_COLORS } from "./teams.js";
 import { Badge, Btn, GS, Glass, Lbl } from "./ui.jsx";
 import { Select } from "../ui/primitives.jsx";

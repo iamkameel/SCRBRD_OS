@@ -50,7 +50,7 @@ export const BALL_TYPE = {
 export const ILLEGAL = new Set([BALL_TYPE.WIDE, BALL_TYPE.NO_BALL]);
 
 /** Does this delivery consume a ball of the over? */
-export const isLegal = (ballType) => !ILLEGAL.has(ballType);
+export const isLegal = (type) => !ILLEGAL.has(type);
 
 /** Runs credited to the batter (as opposed to the extras column). */
 export const OFF_THE_BAT = new Set([BALL_TYPE.RUN, BALL_TYPE.WICKET, BALL_TYPE.NO_BALL]);
@@ -121,7 +121,10 @@ export const bowler = (o) => ({
  */
 export const ball = (o) => ({
   ...base(KIND.BALL, o),
-  ballType: o.ballType ?? BALL_TYPE.RUN,
+  // `type` is the delivery kind (run | W | Wd | Nb | B | LB). It is named to
+  // match both the ball_event.ball_type column and the log entries the scoring
+  // UI already reads, so a log entry needs no translation on either side.
+  type: o.type ?? BALL_TYPE.RUN,
   value: o.value ?? 0,
   shot: o.shot ?? null,
   seg: o.seg ?? null,
@@ -162,7 +165,7 @@ export function toRow(ev) {
     kind: ev.kind,
     innings: ev.innings ?? 0,
     client_ts: new Date(ev.clientTs ?? Date.now()).toISOString(),
-    ball_type: ev.ballType ?? null,
+    ball_type: ev.type ?? null,
     value: ev.value ?? null,
     striker_id: ev.striker ?? null,
     non_striker_id: ev.nonStriker ?? null,
@@ -173,7 +176,7 @@ export function toRow(ev) {
   // Everything the table has no column for rides in `payload` untouched, so
   // adding a captured dimension never needs a migration.
   for (const [k, v] of Object.entries(ev)) {
-    if (["kind", "innings", "clientTs", "ballType", "value", "striker", "nonStriker", "bowler", "seq", ...ROW_SCALARS].includes(k)) continue;
+    if (["kind", "innings", "clientTs", "type", "value", "striker", "nonStriker", "bowler", "seq", ...ROW_SCALARS].includes(k)) continue;
     row.payload[k] = v;
   }
   return row;
@@ -186,7 +189,7 @@ export function fromRow(row) {
     innings: row.innings ?? 0,
     seq: row.seq,
     clientTs: row.client_ts ? new Date(row.client_ts).getTime() : Date.now(),
-    ...(row.ball_type != null ? { ballType: row.ball_type } : {}),
+    ...(row.ball_type != null ? { type: row.ball_type } : {}),
     ...(row.value != null ? { value: row.value } : {}),
     ...(row.striker_id != null ? { striker: row.striker_id } : {}),
     ...(row.non_striker_id != null ? { nonStriker: row.non_striker_id } : {}),

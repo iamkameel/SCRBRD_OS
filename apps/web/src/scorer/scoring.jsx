@@ -1,7 +1,6 @@
 import { useState, Fragment } from "react";
 import { D } from "../design/tokens.js";
 import { BatsmanChart, BowlerChart, ManhattanChart, RunRateChart, WormChart } from "./charts.jsx";
-import { SCRBRD } from "./engine.jsx";
 import { SEGS } from "./field.js";
 import { RR, SR, fmtOv } from "./format.js";
 import { CommentaryCard, WagonWheel } from "./panels.jsx";
@@ -582,7 +581,5 @@ function FocusPad({inn,match,curIn,target,onCommitDetailed,onWicketCtx,onWide,on
   );
 }
 
-SCRBRD.seedCompletedMatch=seedCompletedMatch;
-SCRBRD.charts={WormChart,ManhattanChart,RunRateChart,BatsmanChart,BowlerChart};
 
 export { FocusPad, ScoringHub, ScoringPanel };
