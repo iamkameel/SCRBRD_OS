@@ -5,8 +5,12 @@
  * This is the check that matters most after the scorer moved onto the event
  * log. The unit suite proves `deriveInnings` folds correctly; this proves the
  * UI is actually wired to it — that tapping a run appends an event, that the
- * scoreboard is the fold of those events, and that undo truncates the log
+ * scoreboard is the fold of those events, and that undo works at any depth
  * rather than restoring a capped snapshot stack.
+ *
+ * Undo here takes the truncating path, because nothing in this walk has been
+ * synced. The other path — a `void` event, for a ball the server already holds
+ * — is proven in tools/smoke-sync.mjs and in the scoring suite.
  *
  *   pnpm build && node tools/smoke-scorer.mjs
  *   SCORER_DEBUG=1 node tools/smoke-scorer.mjs   # dump each surface

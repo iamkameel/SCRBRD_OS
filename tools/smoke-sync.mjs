@@ -19,7 +19,10 @@
  */
 import { spawn } from "node:child_process";
 import { SyncEngine, memoryStorage } from "../services/api/write/sync-engine.mjs";
-import { deriveInnings, fromRow, inningsStart, batters, bowler, ball, BALL_TYPE } from "@scrbrd/scoring";
+import {
+  deriveInnings, fromRow, inningsStart, batters, bowler, ball, BALL_TYPE,
+  undoLast, newEventId, KIND,
+} from "@scrbrd/scoring";
 
 const PORT = 8791;
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -204,17 +207,55 @@ try {
   const after = await api(`/api/matches/${MATCH}/events?since=0`, { token: scorerToken });
   ok("...and never reaches the log", (after.body?.events || []).length === 9);
 
+  // ── Undoing a ball the server already has ──────────────
+  group("Undo, after the ball has synced");
+  {
+    // Everything in the log has been acked, so undo cannot truncate: the
+    // server's copy is append-only and a second device may already have
+    // replayed it. The correction has to be an event of its own.
+    const local = engine.acked.map((e) => ({ ...e.payload, id: e.idempotencyKey }));
+    const scoreBefore = deriveInnings(local, {});
+    const u = undoLast(local, { isSynced: () => true });
+    ok("a synced ball is voided rather than dropped", u.action === "void");
+    ok("...and the void names the ball", u.events.at(-1).target === local.at(-1).id);
+
+    // Send the void the same way a ball goes.
+    const voidEv = u.events.at(-1);
+    const posted = await api(`/api/matches/${MATCH}/events`, {
+      method: "POST", token: scorerToken,
+      body: { events: [{ epoch, deviceId: DEVICE, idempotencyKey: newEventId(DEVICE, MATCH),
+                         clientSeq: 100, clientTs: Date.now(), innings: 0, payload: voidEv }] },
+    });
+    ok("the server accepts a void like any other event", posted.body?.accepted?.length === 1);
+
+    const reread = await api(`/api/matches/${MATCH}/events?since=0`, { token: scorerToken });
+    const rows = reread.body?.events || [];
+    ok("the log GREW — nothing was deleted", rows.length === 10);
+    ok("...and the append-only log still holds the voided ball",
+       rows.some((r) => r.kind === "ball" && r.seq === 9));
+
+    // The proof: replaying the server's log gives the score the scorer sees.
+    // Each event's identity comes back off idempotency_key, which is what the
+    // void names — see fromRow().
+    const rebuilt = deriveInnings(rows.map(fromRow), {});
+    ok(`the server replays to ${rebuilt.runs}/${rebuilt.wickets} off ${rebuilt.balls}`,
+       rebuilt.runs === scoreBefore.runs - 6 && rebuilt.balls === scoreBefore.balls - 1);
+    ok("...and reports the correction rather than hiding it", rebuilt.voided === 1);
+    ok("the void is in the log as an event", rows.some((r) => r.kind === KIND.VOID));
+  }
+
   // ── Who may read the log ───────────────────────────────────────
   group("Reading the log");
   const coachToken = await login(COACH);
+  const LOG_LENGTH = 10;   // nine scored events plus the void
   const coachRead = await api(`/api/matches/${MATCH}/events?since=0`, { token: coachToken });
-  ok("the coach of this team reads the log", (coachRead.body?.events || []).length === 9);
+  ok("the coach of this team reads the log", (coachRead.body?.events || []).length === LOG_LENGTH);
 
   // A physio follows the score like anyone else — reading a fixture is not a
   // medical disclosure, and fixture.read is in almost every bundle. What they
   // cannot do is write to it.
   const medicRead = await api(`/api/matches/${MATCH}/events?since=0`, { token: medicToken });
-  ok("the medical officer can follow the score", (medicRead.body?.events || []).length === 9);
+  ok("the medical officer can follow the score", (medicRead.body?.events || []).length === LOG_LENGTH);
 
   // The sharpest write control available: sign the medic's token to the SAME
   // device that holds the live lease, so every application-level gate passes
@@ -231,14 +272,14 @@ try {
   });
   ok("the medical officer cannot append a ball", medicWrite.status !== 200);
   const afterMedic = await api(`/api/matches/${MATCH}/events?since=0`, { token: scorerToken });
-  ok("...and the log is untouched", (afterMedic.body?.events || []).length === 9);
+  ok("...and the log is untouched", (afterMedic.body?.events || []).length === LOG_LENGTH);
 
   const anon = await api(`/api/matches/${MATCH}/events?since=0`);
   ok("an unauthenticated request is refused", anon.status === 401);
 
   // Incremental sync: a device that already has the over asks only for what
   // came after it.
-  const incremental = await api(`/api/matches/${MATCH}/events?since=9`, { token: scorerToken });
+  const incremental = await api(`/api/matches/${MATCH}/events?since=${LOG_LENGTH}`, { token: scorerToken });
   ok("since= returns only what is new", (incremental.body?.events || []).length === 0);
 } catch (e) {
   ok(`the airplane-mode over threw: ${e.message?.slice(0, 100)}`, false);

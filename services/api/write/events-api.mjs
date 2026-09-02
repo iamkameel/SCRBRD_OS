@@ -113,7 +113,7 @@ export async function readEvents(pool, secret, bearer, matchId, sinceSeq = 0) {
   return runAsPrincipal(pool, secret, bearer, async client => {
     const { rows } = await client.query(
       `select seq, epoch, innings, kind, ball_type, value, shot, seg, zone,
-              striker_id, non_striker_id, bowler_id, dismissal,
+              striker_id, non_striker_id, bowler_id, dismissal, idempotency_key,
               scorer_user_id, device_id, client_ts, server_ts, payload
          from ball_event
         where match_id = $1 and seq > $2

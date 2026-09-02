@@ -23,13 +23,11 @@
  * over scored with no signal reaches the server and replays to the same
  * scorecard.
  *
- * The boundary that is still NOT enforced is undo. Until an event has been
- * synced, undo may rewrite the log freely; once the server has it, a
- * correction must be a compensating event instead, because the server's copy
- * is append-only and cannot be rewritten to match. Today undo does not know
- * the difference. That is the one thing that must be true before two devices
- * ever score the same match, and it is why the handover routes are written,
- * tested, and deliberately not mounted.
+ * The undo/sync boundary IS enforced: until an event has synced, undo drops
+ * it; once the server has it, undo appends a `void` naming it, because the
+ * server's log is append-only and a second device may already have replayed
+ * it. The rule lives in packages/scoring/src/undo.mjs so that it is the same
+ * rule on both devices during a handover.
  */
 
 const DB_NAME = "scrbrd";

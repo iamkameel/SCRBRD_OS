@@ -97,7 +97,8 @@ No dependencies to install — pure Node ESM.
      network down, reconnect, the log reconciles, the scorecard is correct, a
      retried batch is deduplicated, and a stale epoch is quarantined rather
      than merged.
-  4. ⬜ **A live two-device handover.** Blocked, deliberately: see below.
+  4. ⬜ **A live two-device handover.** Not started; the pieces it needs are
+     listed below.
 
 Gate 3 changed what the other three mean. Every suite above passed while the
 API connected as the schema owner — and row-level security does not apply to a
@@ -110,13 +111,31 @@ cannot restrain.
 
 ### Before gate 4
 
-Two devices scoring one match needs the **undo/sync boundary** enforced first.
-Right now undo rewrites the local log freely, which is correct while the log
-exists only on one phone. Once the server has an event, a correction must be a
-compensating event instead — otherwise two devices can disagree about history
-and both be internally consistent. Documented in `apps/web/src/lib/persist.js`,
-not yet enforced. The handover routes are written and proven against fakes but
-are deliberately **not mounted** until it is.
+**The undo/sync boundary is now enforced.** Undo has two correct
+implementations and which applies depends on something the scorer cannot see:
+
+  - not synced → drop the event and re-derive. Exact, unlimited in depth, and
+    it leaves no trace, which is right — a mis-tap corrected two seconds later
+    is not part of the match's history.
+  - synced → append a `void` naming it. The server's log is append-only and a
+    second device may already have replayed the ball, so the correction has to
+    be evidence rather than an erasure.
+
+The rule lives in `packages/scoring/src/undo.mjs`, not in the scoring screen,
+because it will apply identically on the incoming device during a handover and
+two implementations of it would be one too many. Proven in the scoring suite,
+in the browser (`smoke-scorer`, the truncating path) and against the live
+server (`smoke-sync`, the void path — the log grows by one, the voided ball is
+still there, and replay gives the score the scorer sees).
+
+What gate 4 still needs:
+
+  - the handover routes mounted on `server.mjs` (written and proven against
+    fakes; `arm → claim → verify → force-release`),
+  - a client sync path — the browser scorer stamps every event with the id the
+    server dedupes on, but does not yet POST them; `SyncEngine` and the
+    transport exist and are exercised by `smoke-sync` from Node,
+  - a second browser context in the smoke harness to actually hand over.
 
 ### Before launch (flagged, not built)
 

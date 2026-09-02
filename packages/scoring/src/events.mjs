@@ -23,6 +23,24 @@
  * the log could not stand alone. Every kind below exists to close one of those
  * gaps, which is what makes `deriveInnings()` total: given the events, there is
  * exactly one correct innings state, and no counter to forget to increment.
+ *
+ * Undo, and why `void` exists
+ * ───────────────────────────
+ * While an event has only ever existed on one phone, undo can simply drop it:
+ * the log is private, and re-deriving from a shorter log is exact. Once the
+ * server has the event that stops being true. The server's log is append-only
+ * — no UPDATE, no DELETE, enforced by trigger and by the absence of a policy —
+ * and a second device may already have replayed it.
+ *
+ * So a correction to a synced event is itself an event: `void` names the event
+ * it undoes and is appended like any other. Replay honours it by skipping the
+ * target. Two devices that have both seen the void derive the same innings;
+ * one that has not yet seen it derives the innings as it stood, which is the
+ * correct answer for what it knows.
+ *
+ * This is not a nicety. Truncating a log the server has already accepted is how
+ * two devices end up disagreeing about history while each stays internally
+ * consistent, and there is no evidence left to reconcile them with.
  */
 
 // ── Event kinds ──────────────────────────────────────────
@@ -34,6 +52,7 @@ export const KIND = {
   PENALTY:       "penalty",       // penalty runs, no delivery bowled
   RETIRE:        "retire",        // batter leaves the crease without being dismissed
   INNINGS_END:   "innings_end",   // declaration, all out, overs complete, rain
+  VOID:          "void",          // undoes an earlier event that has already synced
 };
 
 /** Delivery types. Mirrors ball_event.ball_type. */
@@ -71,19 +90,32 @@ export const INNINGS_END_REASON = {
 
 let _monotonic = 0;
 /**
- * Client-side idempotency key. Stable per (device, match, counter) so that a
- * retried POST is recognised as the same ball rather than appended twice —
- * this is what makes the offline queue's retries free.
+ * An event's identity, minted on the device that recorded it.
+ *
+ * This is both the event id and the idempotency key, deliberately: they are the
+ * same concept seen from two sides. A retried POST is recognised as the same
+ * ball rather than appended twice, and a `void` can name its target using a
+ * value that means the same thing on the phone and in the database.
+ *
+ * Stable per (device, match, counter) and never reused, so two devices scoring
+ * the same match cannot collide.
  */
-export function newIdempotencyKey(deviceId, matchId) {
+export function newEventId(deviceId, matchId) {
   _monotonic += 1;
   return `${deviceId}:${matchId}:${Date.now().toString(36)}:${_monotonic.toString(36)}`;
 }
+
+/** Former name. The value was always the event's identity, not just a dedupe token. */
+export const newIdempotencyKey = newEventId;
 
 const base = (kind, o = {}) => ({
   kind,
   innings: o.innings ?? 0,
   clientTs: o.clientTs ?? Date.now(),
+  // `id` is the event's own identity, set by whatever records it. Optional
+  // here so the constructors stay pure and usable in tests; the scoring
+  // surface always supplies one, because without it an event cannot be voided.
+  ...(o.id !== undefined ? { id: o.id } : {}),
   ...(o.seq !== undefined ? { seq: o.seq } : {}),
 });
 
@@ -151,6 +183,22 @@ export const retire = (o) => ({
   reason: o.reason ?? RETIRE_REASON.HURT,
 });
 
+/**
+ * Undo an event the server already has.
+ *
+ * `target` is the earlier event's id — the same string the server dedupes on,
+ * so a void can be resolved against a log that came back from the API just as
+ * well as against the one in memory.
+ *
+ * A void is never itself voided. Undoing an undo means appending the original
+ * again, because the log is a record of what the scorer did, not a stack.
+ */
+export const voidEvent = (o) => ({
+  ...base(KIND.VOID, o),
+  target: o.target,
+  reason: o.reason ?? "scorer_undo",
+});
+
 export const inningsEnd = (o) => ({
   ...base(KIND.INNINGS_END, o),
   reason: o.reason ?? INNINGS_END_REASON.OVERS,
@@ -188,6 +236,12 @@ export function fromRow(row) {
     kind: row.kind,
     innings: row.innings ?? 0,
     seq: row.seq,
+    // The event's identity comes back off the idempotency_key column, because
+    // that IS its identity — see newEventId(). Without this a log fetched from
+    // the server has anonymous events, and a `void` in that same log names a
+    // target nothing matches: the correction would silently do nothing, and
+    // the two devices would disagree by exactly the ball that was undone.
+    ...(row.idempotency_key != null ? { id: row.idempotency_key } : {}),
     clientTs: row.client_ts ? new Date(row.client_ts).getTime() : Date.now(),
     ...(row.ball_type != null ? { type: row.ball_type } : {}),
     ...(row.value != null ? { value: row.value } : {}),

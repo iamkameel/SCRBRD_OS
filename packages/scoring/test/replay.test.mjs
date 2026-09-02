@@ -10,6 +10,7 @@ import {
   deriveInnings, deriveMatch, fmtOvers, confirmationState,
   inningsStart, batters, bowler, ball, penalty, retire, inningsEnd,
   BALL_TYPE, KIND, toRow, fromRow, isLegal,
+  voidEvent, undoLast, lastUndoableIndex, newEventId,
 } from "../src/index.mjs";
 
 let pass = 0, fail = 0;
@@ -249,6 +250,88 @@ group("E. Determinism, match derivation, wire round-trip");
      c.runs === 5 && c.wickets === 0 && c.balls === 2 && c.bowler === "w1");
   ok("isLegal agrees with the schema", isLegal("Wd") === false && isLegal("run") === true);
   ok("KIND is exported for the queue", KIND.BALL === "ball");
+}
+
+// ── F. The undo/sync boundary ────────────────────────────
+// Undo has two correct implementations and picking the wrong one is how a
+// scorecard ends up quietly wrong with no evidence of why. See src/undo.mjs.
+group("F. Undo before and after the server has it");
+{
+  const id = (n) => `dev:m1:${n}`;
+  const withIds = (evs) => evs.map((e, i) => ({ ...e, id: id(i) }));
+  const log = withIds([...open(), runs(4), runs(1), runs(6)]);
+  const before = deriveInnings(log);
+  ok("baseline", before.runs === 11 && before.balls === 3);
+
+  // Nothing has left the device: dropping the last event is exact.
+  const local = undoLast(log, { isSynced: () => false });
+  ok("an unsynced ball is truncated", local.action === "truncate" && local.events.length === log.length - 1);
+  ok("...and the log carries no trace of it",
+     !local.events.some(e => e.kind === KIND.VOID));
+  ok("...and re-derives exactly", deriveInnings(local.events).runs === 5);
+
+  // The server has it: the correction has to be appendable evidence.
+  const remote = undoLast(log, { isSynced: () => true });
+  ok("a synced ball is voided, not dropped", remote.action === "void");
+  ok("...the log grows rather than shrinks", remote.events.length === log.length + 1);
+  ok("...the void names the ball it undoes",
+     remote.events.at(-1).kind === KIND.VOID && remote.events.at(-1).target === log.at(-1).id);
+  ok("...and replay agrees with the truncated version",
+     deriveInnings(remote.events).runs === deriveInnings(local.events).runs);
+  ok("...down to the ball count and the striker",
+     deriveInnings(remote.events).balls === deriveInnings(local.events).balls &&
+     deriveInnings(remote.events).striker === deriveInnings(local.events).striker);
+  ok("...and the void is visible as a correction", deriveInnings(remote.events).voided === 1);
+
+  // The safe default. undoLast() with no isSynced treats the event as synced,
+  // because a void is always correct and truncation is the optimisation.
+  ok("the default is the safe one", undoLast(log).action === "void");
+
+  // Repeated undo walks back through the innings rather than undoing its own
+  // corrections — a void must not become the next undo's target.
+  let walk = log;
+  for (let i = 0; i < 3; i++) walk = undoLast(walk, { isSynced: () => true }).events;
+  const walked = deriveInnings(walk);
+  ok("three undos remove three balls", walked.runs === 0 && walked.balls === 0);
+  ok("...leaving three voids in the log",
+     walk.filter(e => e.kind === KIND.VOID).length === 3 && walked.voided === 3);
+
+  // A voided wicket must not leave the batter out. This is the case that
+  // decrementing a counter cannot fix: the next batter is already at the crease.
+  const wLog = withIds([...open(), runs(1), ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: "bowled" })]);
+  ok("wicket taken", deriveInnings(wLog).wickets === 1);
+  const undoneW = undoLast(wLog, { isSynced: () => true }).events;
+  ok("voiding a wicket un-takes it", deriveInnings(undoneW).wickets === 0);
+  ok("...and the batter is not out",
+     deriveInnings(undoneW).batsmen.find(b => b.id === "p2")?.status !== "out");
+
+  // Choosing the openers and the opening bowler ARE undoable — a scorer who
+  // taps the wrong name needs to fix it, and the screen simply asks again.
+  // What is not undoable is innings_start: without it there are no squads and
+  // nothing left to score against.
+  let strip = withIds(open());
+  ok("the opening bowler can be undone", undoLast(strip, { isSynced: () => false }).action === "truncate");
+  strip = undoLast(strip, { isSynced: () => false }).events;
+  strip = undoLast(strip, { isSynced: () => false }).events;
+  ok("...and so can the openers", strip.length === 1 && strip[0].kind === KIND.INNINGS_START);
+  ok("undo stops at the innings opening", undoLast(strip).action === "none");
+  ok("...and leaves the log untouched", undoLast(strip).events.length === 1);
+  ok("lastUndoableIndex agrees", lastUndoableIndex(strip) === -1);
+
+  // An event with no id cannot be named by a void, so it cannot be undone once
+  // it has synced. Reported, never silently skipped.
+  const anon = [...open(), runs(4)];
+  ok("an event with no id cannot be voided", undoLast(anon).action === "none");
+
+  // A void survives the wire, because a correction that only exists on one
+  // device is the problem it was invented to solve.
+  // id(3) is the first delivery, worth four.
+  const v = voidEvent({ target: id(3) });
+  ok("a void round-trips through the wire", fromRow(toRow(v)).target === id(3));
+  ok("...and still voids the right ball after the round trip",
+     deriveInnings([...log, fromRow(toRow(v))]).runs === 7);
+
+  ok("event ids are unique per device", newEventId("dev", "m1") !== newEventId("dev", "m1"));
 }
 
 console.log(`\n${"─".repeat(52)}\nSCORING SUITE: ${pass} passed, ${fail} failed`);

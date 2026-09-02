@@ -78,6 +78,7 @@ export function deriveInnings(events = [], ctx = {}) {
 
     striker: null, nonStriker: null, bowler: null,
     complete: false, endReason: null, freeHit: false,
+    voided: 0,   // how many earlier events this log undoes — see the fold below
   };
 
   // Name resolution comes from the squads carried on innings_start, so a
@@ -142,7 +143,26 @@ export function deriveInnings(events = [], ctx = {}) {
     return entry;
   };
 
+  // A `void` event undoes an earlier one. Collect the targets in one pass
+  // first, because a void necessarily appears AFTER the event it undoes and
+  // the fold below is single-pass and order-dependent — a ball that has been
+  // voided must never be counted, not counted and then subtracted. Subtracting
+  // is where the artifact's aggregates went wrong: a wicket cannot be
+  // un-taken by decrementing, because the batter who came in afterwards is
+  // already at the crease.
+  //
+  // Voiding a void does nothing on purpose. Undoing an undo means appending
+  // the original event again; the log records what the scorer did, in order,
+  // and is not a stack.
+  const voided = new Set();
   for (const ev of events) {
+    if (ev.kind === KIND.VOID && ev.target != null) voided.add(ev.target);
+  }
+  inn.voided = voided.size;
+
+  for (const ev of events) {
+    if (ev.kind === KIND.VOID) continue;
+    if (ev.id != null && voided.has(ev.id)) continue;
     switch (ev.kind) {
       case KIND.INNINGS_START: {
         Object.assign(inn, {

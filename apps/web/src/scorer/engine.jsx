@@ -2,8 +2,10 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import {
   deriveInnings, inningsStart, batters as battersEvent, bowler as bowlerEvent,
   ball as ballEvent, penalty as penaltyEvent, inningsEnd,
+  newEventId, undoLast,
 } from "@scrbrd/scoring";
 import { D } from "../design/tokens.js";
+import { deviceId } from "../lib/device.js";
 import { loadMatch, saveMatch, storageKind } from "../lib/persist.js";
 import { SEGS } from "./field.js";
 import { fmtOv } from "./format.js";
@@ -94,6 +96,17 @@ function SCRBRD({resume}={}){
   const scoreKeyRef=useRef(0);
   const [uiMode,setUiMode]=useState("focus"); // focus = one-tap pad · pro = full shot capture
   const [focusQuick,setFocusQuick]=useState(false); // one-tap speed mode inside focus scoring
+  // ── Identity of this device, and what the server has seen ──
+  // Both are refs rather than state: they are read while appending an event
+  // and must never trigger a re-render of the scoring pad mid-tap.
+  const deviceIdRef = useRef(deviceId());
+  const matchIdRef = useRef(null);
+  // Ids the server has acknowledged. Empty means nothing has been sent, which
+  // is the correct answer while the client sync path is not switched on — undo
+  // then truncates, exactly as it did before, and every event is still stamped
+  // with the id a void would need.
+  const syncedRef = useRef(new Set());
+
   // ── Derivation ──────────────────────────────────────────
   const scoringCtxRef = useRef({ flagFor: k => INT_TEAMS[k]?.flag });
   const innings = useMemo(
@@ -101,10 +114,22 @@ function SCRBRD({resume}={}){
     [events],
   );
 
-  /** Append to the current innings' log. This is the only way state changes. */
+  /**
+   * Append to the current innings' log. This is the only way state changes.
+   *
+   * Every event is stamped with an id here, and this is the only place that
+   * happens. The id is the event's identity everywhere afterwards: the server
+   * dedupes retries on it, and a `void` names its target with it. An event
+   * without one cannot be undone once it has left the device, so minting it at
+   * the single point of append is what keeps that from being possible.
+   */
   const emit = (...evs) => setEvents(prev => {
     const cp = [...prev];
-    cp[curIn] = [...cp[curIn], ...evs.map(e => ({ ...e, innings: curIn }))];
+    cp[curIn] = [...cp[curIn], ...evs.map(e => ({
+      ...e,
+      innings: curIn,
+      id: e.id ?? newEventId(deviceIdRef.current, matchIdRef.current ?? "local"),
+    }))];
     return cp;
   });
 
@@ -133,6 +158,7 @@ function SCRBRD({resume}={}){
       const id = resume.cfg.matchId ?? null;
       setMatch(resume.cfg);
       setMatchId(id);
+      matchIdRef.current = id;
 
       const saved = id ? await loadMatch(id) : null;
       if (cancelled) return;
@@ -312,19 +338,21 @@ function SCRBRD({resume}={}){
   //  EventOverlay's `suppressBlur` prop — mutating the event object here
   //  used to re-arm its dismiss timers and strand queued overlays.)
 
-  // ── Undo: truncate the log ──────────────────────────────
+  // ── Undo ────────────────────────────────────────────────
   // The artifact kept a deep-copy snapshot stack capped at ten entries,
   // because aggregates could not be recomputed — a scorer who spotted at ball
-  // 14 that ball 2 was wrong could not reach it. Dropping the last event and
-  // re-deriving is exact, and there is no depth limit.
+  // 14 that ball 2 was wrong could not reach it. Re-deriving from the log is
+  // exact and has no depth limit.
+  //
+  // WHICH undo applies depends on whether the server already has the event,
+  // and the rule lives in @scrbrd/scoring rather than here: it will apply
+  // identically on a second device during a handover, and two implementations
+  // of it would be one too many. See packages/scoring/src/undo.mjs.
   const undoLastBall=()=>{
     setEvents(prev=>{
-      const log=prev[curIn];
-      // Never undo past the innings' opening events, or the screen loses the
-      // squads and there is nothing to score against.
-      const floor=log.findLastIndex(e=>e.kind==="innings_start"||e.kind==="batters"&&log.indexOf(e)<3);
-      if(log.length<=Math.max(1,floor+1))return prev;
-      const cp=[...prev];cp[curIn]=log.slice(0,-1);return cp;
+      const cp=[...prev];
+      cp[curIn]=undoLast(prev[curIn],{isSynced:e=>syncedRef.current.has(e.id)}).events;
+      return cp;
     });
     resetHub();
     setModal(null);
