@@ -23,11 +23,27 @@ SET client_min_messages = warning;
 BEGIN;
 
 -- The API connects as a NON-superuser role that RLS applies to.
--- (superusers bypass RLS — never run the app as one.)
+-- (superusers bypass RLS — never run the app as one. A table's OWNER also
+-- bypasses RLS unless FORCE ROW LEVEL SECURITY is set, which is why this
+-- creates a separate unprivileged role rather than testing as the owner.)
 CREATE ROLE scrbrd_app NOLOGIN;
-SET ROLE scrbrd_app;
+GRANT USAGE ON SCHEMA public TO scrbrd_app;
+GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO scrbrd_app;
+-- Functions are left on the default PUBLIC EXECUTE grant. Granting on ALL
+-- FUNCTIONS would also target the pgcrypto functions this role has no business
+-- with, and emits a wall of "no privileges were granted" warnings.
+
+-- Postgres 16 no longer lets a CREATEROLE role SET ROLE to a role it created
+-- without an explicit membership carrying the SET option.
+DO $grant$
+BEGIN
+  EXECUTE format('GRANT scrbrd_app TO %I WITH SET TRUE', current_user);
+EXCEPTION WHEN duplicate_object OR invalid_grant_operation THEN NULL;
+END $grant$;
 
 -- ---- principals (edit UUIDs to match seed) ----
+-- NB: these helpers are created BEFORE switching role. scrbrd_app is
+-- deliberately unprivileged and has no CREATE on schema public.
 -- Convention: set_config mirrors what the API sets from the JWT.
 CREATE OR REPLACE FUNCTION _as(role text, school uuid, player uuid DEFAULT NULL,
                                 children text DEFAULT '', teams text DEFAULT '')
@@ -43,6 +59,15 @@ END $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION _assert(cond boolean, msg text) RETURNS void AS $$
 BEGIN IF NOT cond THEN RAISE EXCEPTION 'RLS ASSERT FAILED: %', msg; END IF; END $$ LANGUAGE plpgsql;
+
+-- From here on we are the unprivileged application role, so every read below
+-- is subject to RLS exactly as it would be through the API.
+SET ROLE scrbrd_app;
+
+-- Surface the closing NOTICE. Without this the file sets client_min_messages to
+-- warning and a fully green run prints nothing at all, which is indistinguishable
+-- from a run that silently did no work.
+SET client_min_messages = notice;
 
 DO $$
 DECLARE

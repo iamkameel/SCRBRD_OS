@@ -399,78 +399,104 @@ CREATE POLICY match_rbac_update ON match
 --  Column-masking views (field/PII deny)
 -- ══════════════════════════════════════════════════════════════════
 -- Read player through this view; base-table PII is masked per role.
-CREATE OR REPLACE VIEW player_masked
-WITH (security_barrier = true) AS
-SELECT
-  player.*,
-  CASE WHEN rbac_field_denied('players', 'email') THEN NULL ELSE email END AS email,
-  CASE WHEN rbac_field_denied('players', 'phone') THEN NULL ELSE phone END AS phone,
-  CASE WHEN rbac_field_denied('players', 'born') THEN NULL ELSE born END AS born,
-  CASE WHEN rbac_field_denied('players', 'hometown') THEN NULL ELSE hometown END AS hometown,
-  CASE WHEN rbac_field_denied('players', 'houseAtSchool') THEN NULL ELSE houseAtSchool END AS houseAtSchool,
-  CASE WHEN rbac_field_denied('players', 'address') THEN NULL ELSE address END AS address,
-  CASE WHEN rbac_field_denied('players', 'guardian') THEN NULL ELSE guardian END AS guardian,
-  CASE WHEN rbac_field_denied('players', 'height') THEN NULL ELSE height END AS height,
-  CASE WHEN rbac_field_denied('players', 'weight') THEN NULL ELSE weight END AS weight
-FROM player;
--- NB: SELECT list above intentionally re-projects masked columns AFTER *,
---     so the masked versions win. In production, list columns explicitly.
+-- Assembled from information_schema so every column is listed explicitly.
+DO $mask_player$
+DECLARE cols text;
+BEGIN
+  SELECT string_agg(
+           CASE WHEN c.column_name = ANY (ARRAY['email', 'phone', 'born', 'hometown', 'houseatschool', 'address', 'guardian', 'height', 'weight'])
+                THEN format('CASE WHEN rbac_field_denied(%L, %L) THEN NULL ELSE %I END AS %I',
+                            'players', c.column_name, c.column_name, c.column_name)
+                ELSE format('%I', c.column_name)
+           END, ', ' ORDER BY c.ordinal_position)
+    INTO cols
+    FROM information_schema.columns c
+   WHERE c.table_schema = 'public' AND c.table_name = 'player';
+
+  IF cols IS NULL THEN
+    RAISE EXCEPTION 'cannot build player_masked: table player not found (apply 00_schema_core.sql first)';
+  END IF;
+
+  EXECUTE format(
+    'CREATE OR REPLACE VIEW player_masked WITH (security_barrier = true) AS SELECT %s FROM player',
+    cols);
+END
+$mask_player$;
 
 -- Read coach through this view; base-table PII is masked per role.
-CREATE OR REPLACE VIEW coach_masked
-WITH (security_barrier = true) AS
-SELECT
-  coach.*,
-  CASE WHEN rbac_field_denied('profiles', 'email') THEN NULL ELSE email END AS email,
-  CASE WHEN rbac_field_denied('profiles', 'phone') THEN NULL ELSE phone END AS phone,
-  CASE WHEN rbac_field_denied('profiles', 'born') THEN NULL ELSE born END AS born,
-  CASE WHEN rbac_field_denied('profiles', 'hometown') THEN NULL ELSE hometown END AS hometown,
-  CASE WHEN rbac_field_denied('profiles', 'houseAtSchool') THEN NULL ELSE houseAtSchool END AS houseAtSchool,
-  CASE WHEN rbac_field_denied('profiles', 'address') THEN NULL ELSE address END AS address,
-  CASE WHEN rbac_field_denied('profiles', 'guardian') THEN NULL ELSE guardian END AS guardian,
-  CASE WHEN rbac_field_denied('profiles', 'height') THEN NULL ELSE height END AS height,
-  CASE WHEN rbac_field_denied('profiles', 'weight') THEN NULL ELSE weight END AS weight
-FROM coach;
--- NB: SELECT list above intentionally re-projects masked columns AFTER *,
---     so the masked versions win. In production, list columns explicitly.
+-- Assembled from information_schema so every column is listed explicitly.
+DO $mask_coach$
+DECLARE cols text;
+BEGIN
+  SELECT string_agg(
+           CASE WHEN c.column_name = ANY (ARRAY['email', 'phone', 'born', 'hometown', 'address'])
+                THEN format('CASE WHEN rbac_field_denied(%L, %L) THEN NULL ELSE %I END AS %I',
+                            'profiles', c.column_name, c.column_name, c.column_name)
+                ELSE format('%I', c.column_name)
+           END, ', ' ORDER BY c.ordinal_position)
+    INTO cols
+    FROM information_schema.columns c
+   WHERE c.table_schema = 'public' AND c.table_name = 'coach';
+
+  IF cols IS NULL THEN
+    RAISE EXCEPTION 'cannot build coach_masked: table coach not found (apply 00_schema_core.sql first)';
+  END IF;
+
+  EXECUTE format(
+    'CREATE OR REPLACE VIEW coach_masked WITH (security_barrier = true) AS SELECT %s FROM coach',
+    cols);
+END
+$mask_coach$;
 
 -- Read staff through this view; base-table PII is masked per role.
-CREATE OR REPLACE VIEW staff_masked
-WITH (security_barrier = true) AS
-SELECT
-  staff.*,
-  CASE WHEN rbac_field_denied('profiles', 'email') THEN NULL ELSE email END AS email,
-  CASE WHEN rbac_field_denied('profiles', 'phone') THEN NULL ELSE phone END AS phone,
-  CASE WHEN rbac_field_denied('profiles', 'born') THEN NULL ELSE born END AS born,
-  CASE WHEN rbac_field_denied('profiles', 'hometown') THEN NULL ELSE hometown END AS hometown,
-  CASE WHEN rbac_field_denied('profiles', 'houseAtSchool') THEN NULL ELSE houseAtSchool END AS houseAtSchool,
-  CASE WHEN rbac_field_denied('profiles', 'address') THEN NULL ELSE address END AS address,
-  CASE WHEN rbac_field_denied('profiles', 'guardian') THEN NULL ELSE guardian END AS guardian,
-  CASE WHEN rbac_field_denied('profiles', 'height') THEN NULL ELSE height END AS height,
-  CASE WHEN rbac_field_denied('profiles', 'weight') THEN NULL ELSE weight END AS weight
-FROM staff;
--- NB: SELECT list above intentionally re-projects masked columns AFTER *,
---     so the masked versions win. In production, list columns explicitly.
+-- Assembled from information_schema so every column is listed explicitly.
+DO $mask_staff$
+DECLARE cols text;
+BEGIN
+  SELECT string_agg(
+           CASE WHEN c.column_name = ANY (ARRAY['email', 'phone', 'born', 'hometown', 'address'])
+                THEN format('CASE WHEN rbac_field_denied(%L, %L) THEN NULL ELSE %I END AS %I',
+                            'profiles', c.column_name, c.column_name, c.column_name)
+                ELSE format('%I', c.column_name)
+           END, ', ' ORDER BY c.ordinal_position)
+    INTO cols
+    FROM information_schema.columns c
+   WHERE c.table_schema = 'public' AND c.table_name = 'staff';
+
+  IF cols IS NULL THEN
+    RAISE EXCEPTION 'cannot build staff_masked: table staff not found (apply 00_schema_core.sql first)';
+  END IF;
+
+  EXECUTE format(
+    'CREATE OR REPLACE VIEW staff_masked WITH (security_barrier = true) AS SELECT %s FROM staff',
+    cols);
+END
+$mask_staff$;
 
 -- Read injury through this view; base-table PII is masked per role.
-CREATE OR REPLACE VIEW injury_masked
-WITH (security_barrier = true) AS
-SELECT
-  injury.*,
-  CASE WHEN rbac_field_denied('injuries', 'email') THEN NULL ELSE email END AS email,
-  CASE WHEN rbac_field_denied('injuries', 'phone') THEN NULL ELSE phone END AS phone,
-  CASE WHEN rbac_field_denied('injuries', 'born') THEN NULL ELSE born END AS born,
-  CASE WHEN rbac_field_denied('injuries', 'hometown') THEN NULL ELSE hometown END AS hometown,
-  CASE WHEN rbac_field_denied('injuries', 'houseAtSchool') THEN NULL ELSE houseAtSchool END AS houseAtSchool,
-  CASE WHEN rbac_field_denied('injuries', 'address') THEN NULL ELSE address END AS address,
-  CASE WHEN rbac_field_denied('injuries', 'guardian') THEN NULL ELSE guardian END AS guardian,
-  CASE WHEN rbac_field_denied('injuries', 'height') THEN NULL ELSE height END AS height,
-  CASE WHEN rbac_field_denied('injuries', 'weight') THEN NULL ELSE weight END AS weight,
-  CASE WHEN rbac_field_denied('injuries', 'notes') THEN NULL ELSE notes END AS notes,
-  CASE WHEN rbac_field_denied('injuries', 'physio') THEN NULL ELSE physio END AS physio
-FROM injury;
--- NB: SELECT list above intentionally re-projects masked columns AFTER *,
---     so the masked versions win. In production, list columns explicitly.
+-- Assembled from information_schema so every column is listed explicitly.
+DO $mask_injury$
+DECLARE cols text;
+BEGIN
+  SELECT string_agg(
+           CASE WHEN c.column_name = ANY (ARRAY['notes', 'physio'])
+                THEN format('CASE WHEN rbac_field_denied(%L, %L) THEN NULL ELSE %I END AS %I',
+                            'injuries', c.column_name, c.column_name, c.column_name)
+                ELSE format('%I', c.column_name)
+           END, ', ' ORDER BY c.ordinal_position)
+    INTO cols
+    FROM information_schema.columns c
+   WHERE c.table_schema = 'public' AND c.table_name = 'injury';
+
+  IF cols IS NULL THEN
+    RAISE EXCEPTION 'cannot build injury_masked: table injury not found (apply 00_schema_core.sql first)';
+  END IF;
+
+  EXECUTE format(
+    'CREATE OR REPLACE VIEW injury_masked WITH (security_barrier = true) AS SELECT %s FROM injury',
+    cols);
+END
+$mask_injury$;
 
 -- ══════════════════════════════════════════════════════════════════
 --  Scoring capability (mirrors canScore) — used by ball_event policies in schema_scoring.sql

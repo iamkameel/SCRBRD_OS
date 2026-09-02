@@ -12,8 +12,9 @@
     "db:up": "docker compose up -d db && node tools/wait-for-db.mjs",
     "db:down": "docker compose down",
     "db:migrate": "node tools/migrate.mjs",
+    "db:seed": "node tools/migrate.mjs --seed",
     "db:verify": "node tools/migrate.mjs --verify",
-    "db:reset": "docker compose down -v && pnpm db:up && pnpm db:migrate",
+    "db:reset": "node tools/migrate.mjs --reset --seed",
     "rls:generate": "node services/api/rls/generate-rls.mjs > db/02_rls_policies.sql"
   }
 }

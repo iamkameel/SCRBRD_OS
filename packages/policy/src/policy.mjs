@@ -56,12 +56,24 @@ export const ROLES = Object.keys(POLICY);
  * Resources without a table (dashboard, analytics, settings, …) are API/derived
  * and are enforced at the query layer, not by RLS — listed in NON_TABLE below.
  */
+// `columns` lists the sensitive columns that physically exist on the table. A
+// policy may name a field group that a given table does not carry — `injuries`
+// denies the whole `pii` group because analysts and spectators must never see
+// PII anywhere, but an injury row holds no PII of its own: it links to a
+// player. Without this intersection the generator would emit a masking view
+// referencing columns that do not exist, and the migration would fail to apply.
+// Keeping PII off the injury table is also the POPIA-correct modelling — a
+// clinical record should not duplicate a minor's guardian details.
 export const RESOURCE_TABLES = {
-  player:  { resource: "players",  school: "school_id", team: "team_code", owner: "id",         mask: ["players","profiles"] },
-  coach:   { resource: "profiles", school: "school_id", team: "team_code", owner: "id",         mask: ["profiles"] },
-  staff:   { resource: "profiles", school: "school_id", team: null,        owner: "id",         mask: ["profiles"] },
-  injury:  { resource: "injuries", school: "school_id", team: "player_team",owner: "player_id", mask: ["injuries"] },
-  match:   { resource: "matches",  school: "school_id", team: "team_code", owner: null,          mask: [] },
+  player:  { resource: "players",  school: "school_id", team: "team_code", owner: "id",         mask: ["players","profiles"],
+             columns: ["email","phone","born","hometown","houseAtSchool","address","guardian","height","weight"] },
+  coach:   { resource: "profiles", school: "school_id", team: "team_code", owner: "id",         mask: ["profiles"],
+             columns: ["email","phone","born","hometown","address"] },
+  staff:   { resource: "profiles", school: "school_id", team: null,        owner: "id",         mask: ["profiles"],
+             columns: ["email","phone","born","hometown","address"] },
+  injury:  { resource: "injuries", school: "school_id", team: "player_team",owner: "player_id", mask: ["injuries"],
+             columns: ["notes","physio"] },
+  match:   { resource: "matches",  school: "school_id", team: "team_code", owner: null,          mask: [], columns: [] },
 };
 
 export const NON_TABLE = ["dashboard","analytics","settings","management","rulebook","finance","logistics","fields","calendar","notifications","competitions","leagues","squad","skills","training","scoring"];

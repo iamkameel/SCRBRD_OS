@@ -153,21 +153,47 @@ ${writes.join("\n")}`;
 
 function maskView(table, def) {
   // Build a *_masked view that nulls any column a role may not see.
-  // Columns come from the union of all resources' maskable fields for this table.
-  const fields = [...new Set(def.mask.flatMap(maskableFields))];
+  //
+  // Columns come from the union of all resources' maskable fields for this
+  // table, intersected with the columns the table physically carries — a policy
+  // may deny a field group the table does not hold (see RESOURCE_TABLES.columns).
+  const present = new Set(def.columns ?? []);
+  const fields = [...new Set(def.mask.flatMap(maskableFields))].filter(f => present.has(f));
   if (!fields.length) return null;
   const lens = def.mask[0]; // primary lens for the mask decision
-  const cols = fields.map(f =>
-    `  CASE WHEN rbac_field_denied(${q(lens)}, ${q(f)}) THEN NULL ELSE ${f} END AS ${f}`);
+
+  // The view is assembled at migration time from information_schema rather
+  // than written as `SELECT t.*, CASE … AS email`. That shorter form does not
+  // work: Postgres rejects a view with a duplicated output column name
+  // ("column \"email\" specified more than once"), so re-projecting a masked
+  // column after `*` never applied at all. Introspecting also means adding a
+  // column to the table does not require regenerating this file — the column
+  // appears in the view automatically, masked if the policy denies it.
+  const denied = fields.map(f => f.toLowerCase());
   return `-- Read ${table} through this view; base-table PII is masked per role.
-CREATE OR REPLACE VIEW ${table}_masked
-WITH (security_barrier = true) AS
-SELECT
-  ${table}.*,
-${cols.join(",\n")}
-FROM ${table};
--- NB: SELECT list above intentionally re-projects masked columns AFTER *,
---     so the masked versions win. In production, list columns explicitly.`;
+-- Assembled from information_schema so every column is listed explicitly.
+DO $mask_${table}$
+DECLARE cols text;
+BEGIN
+  SELECT string_agg(
+           CASE WHEN c.column_name = ANY (ARRAY[${denied.map(q).join(", ")}])
+                THEN format('CASE WHEN rbac_field_denied(%L, %L) THEN NULL ELSE %I END AS %I',
+                            ${q(lens)}, c.column_name, c.column_name, c.column_name)
+                ELSE format('%I', c.column_name)
+           END, ', ' ORDER BY c.ordinal_position)
+    INTO cols
+    FROM information_schema.columns c
+   WHERE c.table_schema = 'public' AND c.table_name = ${q(table)};
+
+  IF cols IS NULL THEN
+    RAISE EXCEPTION 'cannot build ${table}_masked: table ${table} not found (apply 00_schema_core.sql first)';
+  END IF;
+
+  EXECUTE format(
+    'CREATE OR REPLACE VIEW ${table}_masked WITH (security_barrier = true) AS SELECT %s FROM ${table}',
+    cols);
+END
+$mask_${table}$;`;
 }
 
 function main() {
