@@ -21,6 +21,39 @@
  */
 
 export const TABLES = {
+  // ── Tenancy and directory ────────────────────────────────────────────
+  school: {
+    // A tenant list. Nothing in here is confidential on its own — a school's
+    // name and province are public — but with RLS off the table answered
+    // "who else uses SCRBRD?" to anyone with a login, which is a commercial
+    // disclosure the platform has no business making.
+    read:  "school.read",
+    write: "school.manage",
+    // No team, person or fixture key: a school is not about any of them.
+    anchors: { school: "id" },
+    // Everyone attached to a school can see that school, whether or not they
+    // hold school.read: a guardian needs their child's school to have a name.
+    // Scoped to the assignments the person actually holds.
+    visibleWhen: `EXISTS (SELECT 1 FROM role_assignment a
+                           WHERE a.person_id = app_user_id() AND a.active
+                             AND (a.school_id IS NULL OR a.school_id = school.id))`,
+    masked: {},
+  },
+
+  app_user: {
+    // Names and email addresses for every person on the platform, minors
+    // included. With RLS off this was a cross-tenant directory: one login and
+    // the whole user table, every school.
+    read:  "user.read",
+    write: "user.role.assign",
+    anchors: { school: "school_id", team: null, person: "id" },
+    // You can always read yourself. Without this the session profile route
+    // could not fetch the signed-in person's own name, because user.read is a
+    // leadership capability and most people do not hold it.
+    visibleWhen: "id = app_user_id()",
+    masked: {},
+  },
+
   player: {
     read:  "player.profile.read",
     write: "player.profile.manage",
@@ -74,6 +107,42 @@ export const TABLES = {
     masked: {},
   },
 
+  ground: {
+    // Where a fixture is played. Not sensitive — it is on the team sheet —
+    // but it was one of four tables sitting with RLS switched off, which is a
+    // different thing from a table deliberately open. facility.read is in the
+    // floor bundle, so everyone attached to the school still sees it.
+    read:  "facility.read",
+    write: "facility.manage",
+    anchors: { school: "school_id" },
+    masked: {},
+  },
+
+  match_squad: {
+    // The team sheet: which named minors are in which match squad. Reading it
+    // is reading a list of children, and it had no policy at all.
+    //
+    // Governed by player.profile.read rather than fixture.read, because that
+    // is what it is: a roster of identified minors, not a fixture detail. The
+    // difference is a spectator, who holds fixture.read and should see the
+    // score without also receiving a list of children by name and school.
+    //
+    // Every anchor is derived from the match, because the row itself carries
+    // no school or team column. Deriving them is not optional under the
+    // asymmetric NULL rule — a resource that does not state its school is
+    // covered by no school-scoped assignment, so leaving them NULL would deny
+    // everyone rather than fail open, and the squad would simply never load.
+    read:  "player.profile.read",
+    write: "team.select",
+    anchors: {
+      school:  "(SELECT m.school_id FROM match m WHERE m.id = match_squad.match_id)",
+      team:    "(SELECT m.team_code FROM match m WHERE m.id = match_squad.match_id)",
+      person:  "player_id",
+      fixture: "match_id",
+    },
+    masked: {},
+  },
+
   competition: {
     // Previously ungoverned: `competitions` sat in NON_TABLE, so no policy was
     // generated and the read path carried no predicate — any authenticated
@@ -87,7 +156,7 @@ export const TABLES = {
     // must be created with school_id NULL, which makes it platform-scoped.
     read:  "competition.read",
     write: "competition.manage",
-    anchors: { school: "school_id", team: null },
+    anchors: { school: "school_id" },
     masked: {},
   },
 };

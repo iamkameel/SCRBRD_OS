@@ -99,7 +99,13 @@ const BUNDLES = {
   // ── Matchday ──
   // A scorer's assignment is normally narrowed to a single fixture, so
   // scoring one match never becomes standing access to a squad.
-  scorer: ["fixture.read", "team.read", "news.read", "scoring.start", "scoring.edit", "scoring.finalise", "scoring.correct"],
+  // player.profile.read is not incidental here: match_squad is governed by it,
+  // and a scorer who cannot read the squad cannot name a striker. A scorer
+  // still holds none of the sensitive splits — no PII, no medical, no
+  // discipline — so they see the team sheet and the sporting profile behind it
+  // and nothing else about the child.
+  scorer: ["fixture.read", "team.read", "news.read", "player.profile.read",
+           "scoring.start", "scoring.edit", "scoring.finalise", "scoring.correct"],
   official: ["fixture.read", "team.read", "news.read", "officiating.report", "discipline.write"],
 
   // ── The people the data is about ──

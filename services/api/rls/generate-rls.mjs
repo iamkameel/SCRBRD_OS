@@ -29,9 +29,34 @@ const q = (s) => `'${String(s).replaceAll("'", "''")}'`;
 const banner = (t) => `\n-- ══════════════════════════════════════════════════════════════════\n--  ${t}\n-- ══════════════════════════════════════════════════════════════════`;
 
 /** Scope anchor expression for a table column, or NULL when the table has none. */
+/**
+ * One scope argument to app_can(), in one of three states.
+ *
+ * The client model (authorize.mjs) has always had three; the SQL had two, and
+ * that missing third state was a real bug rather than a tidiness point. A
+ * guardian's assignment lists their children, so app_can() demands that the
+ * resource name one of them — and a FIXTURE names no person at all, so every
+ * guardian was denied every fixture. The guardian could not see when their own
+ * child was playing.
+ *
+ *   named column  → the row states this dimension; compare it.
+ *   ANY_SCOPE     → the dimension DOES NOT APPLY to this table (a fixture is
+ *                   not about one person). The assignment's constraint on that
+ *                   dimension is satisfied. Written by OMITTING the key.
+ *   NULL          → the dimension applies but the row does not state it, so
+ *                   nothing covers it. Fail closed. Written as an explicit
+ *                   `null`, and used deliberately — `staff: { team: null }`
+ *                   is how a coach is kept out of the staff directory.
+ *
+ * The sentinels mirror ANY_SCOPE in packages/policy/src/authorize.mjs: '*' for
+ * the text dimension, the nil UUID for the uuid ones. A nil UUID is not a
+ * legal id anywhere in the schema, so it cannot collide with a real row.
+ */
+const ANY = { uuid: "'00000000-0000-0000-0000-000000000000'::uuid", text: "'*'::text" };
 const anchor = (table, def, key, cast) => {
-  const col = def.anchors?.[key];
-  if (!col) return `NULL::${cast}`;
+  if (!(key in (def.anchors ?? {}))) return ANY[cast];   // dimension does not apply
+  const col = def.anchors[key];
+  if (!col) return `NULL::${cast}`;                       // stated as absent → narrows
   return col.startsWith("(") ? col : `${table}.${col}`;
 };
 
@@ -63,6 +88,14 @@ function decisionFunction() {
 -- The second half is what makes a query that forgot its scope fail closed
 -- instead of matching everything.
 --
+-- The third state is ANY_SCOPE ('*' for team, the nil UUID for the others),
+-- meaning the dimension DOES NOT APPLY to this kind of row. A fixture is not
+-- about one person, so a guardian assignment's child list has nothing to
+-- constrain and does not constrain it. Without this, every guardian was denied
+-- every fixture — they could not see when their own child was playing. It is
+-- passed by the generator only for dimensions a table omits entirely; a table
+-- that states a dimension as absent still narrows.
+--
 -- SECURITY DEFINER because role_assignment is itself RLS-protected: a person
 -- may not read other people's assignments, but the decision must read their
 -- own. STABLE so it is evaluated once per statement per argument set.
@@ -83,15 +116,20 @@ CREATE OR REPLACE FUNCTION app_can(
        AND a.active
        AND (a.valid_from  IS NULL OR a.valid_from  <= current_date)
        AND (a.valid_until IS NULL OR a.valid_until >  current_date)
-       -- institution
+       -- institution. There is no ANY_SCOPE for school: every governed row
+       -- belongs to a tenant, and one that does not state its tenant is one
+       -- nobody should reach.
        AND (a.school_id IS NULL OR (p_school IS NOT NULL AND a.school_id = p_school))
        -- team
-       AND (a.team_code IS NULL OR (p_team IS NOT NULL AND a.team_code = p_team))
+       AND (a.team_code IS NULL OR p_team = ${ANY.text}
+            OR (p_team IS NOT NULL AND a.team_code = p_team))
        -- single fixture (scorers, match officials)
-       AND (a.fixture_id IS NULL OR (p_fixture IS NOT NULL AND a.fixture_id = p_fixture))
+       AND (a.fixture_id IS NULL OR p_fixture = ${ANY.uuid}
+            OR (p_fixture IS NOT NULL AND a.fixture_id = p_fixture))
        -- guardian: an assignment listing children reaches ONLY those children
        AND (
          NOT EXISTS (SELECT 1 FROM guardian_child g WHERE g.assignment_id = a.id)
+         OR p_person = ${ANY.uuid}
          OR (p_person IS NOT NULL AND EXISTS (
                SELECT 1 FROM guardian_child g
                 WHERE g.assignment_id = a.id AND g.player_id = p_person))
@@ -102,12 +140,13 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER;
 REVOKE ALL ON FUNCTION app_can(text, uuid, text, uuid, uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION app_can(text, uuid, text, uuid, uuid) TO PUBLIC;
 
--- Live-scoring capability, for the ball_event policies in 01_schema_scoring.sql.
--- Derived from the role bundles rather than listed, so a role can never
--- acquire scoring rights without naming scoring.edit.
-CREATE OR REPLACE FUNCTION can_score(p_role text) RETURNS boolean AS $$
-  SELECT p_role IN (${SCORING_ROLES.map(q).join(", ")})
-$$ LANGUAGE sql IMMUTABLE;`;
+-- There is deliberately NO can_score(role) here. It existed, it was correct,
+-- and nothing called it after the scoring policies moved to app_can() — which
+-- makes it worse than useless: a role-shaped decision function sitting in the
+-- schema is an invitation to reach for it, and reaching for it reintroduces
+-- the exact hole ADR 0001 closed (a role the session asserts, evaluated
+-- without a scope). Scoring authority is app_can('scoring.edit', ...) against
+-- the assignments the database looks up, and there is no second way to ask.`;
 }
 
 function capabilityRows() {
@@ -121,11 +160,28 @@ INSERT INTO role_capability (role, capability) VALUES
 ${rows.join(",\n")};`;
 }
 
+/**
+ * The SELECT predicate: the capability check, plus any named exception.
+ *
+ * `visibleWhen` is an explicit escape hatch and is meant to be conspicuous.
+ * It exists because two rows are legitimately readable outside the capability
+ * model — your own user record, and the schools you are attached to — and the
+ * alternative was leaving those tables with row-level security switched off
+ * entirely, which is what was happening. Each one is written out in the
+ * generated SQL with its reason attached, so a reviewer reads the exception
+ * rather than discovering the absence.
+ */
+const readPredicate = (table, def) => {
+  const can = callCan(table, def, def.read);
+  if (!def.visibleWhen) return can;
+  return `${can}\n    OR (${def.visibleWhen.trim()})`;
+};
+
 function tablePolicies() {
   const out = [banner("Per-table row-level security")];
   for (const [table, def] of Object.entries(TABLES)) {
     out.push(`
--- ${table} — read: ${def.read} · write: ${def.write}
+-- ${table} — read: ${def.read} · write: ${def.write}${def.visibleWhen ? "\n-- plus a named exception on read — see readPredicate() in generate-rls.mjs" : ""}
 ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS ${table}_read   ON ${table};
 DROP POLICY IF EXISTS ${table}_insert ON ${table};
@@ -133,7 +189,7 @@ DROP POLICY IF EXISTS ${table}_update ON ${table};
 DROP POLICY IF EXISTS ${table}_delete ON ${table};
 
 CREATE POLICY ${table}_read ON ${table}
-  FOR SELECT USING (${callCan(table, def, def.read)});
+  FOR SELECT USING (${readPredicate(table, def)});
 
 CREATE POLICY ${table}_insert ON ${table}
   FOR INSERT WITH CHECK (${callCan(table, def, def.write)});

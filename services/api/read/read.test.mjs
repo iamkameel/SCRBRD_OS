@@ -28,19 +28,24 @@ function fakePool(rowsByPattern = {}) {
   };
   return { pool: { connect: async () => client }, client, log };
 }
-const AUTHDATA = { playerIdForUser: async () => null, childPlayerIds: async () => [], teamCodesForUser: async () => ["U19A"] };
-const bearer = role => `Bearer ${signToken({ userId: "u1", role, schoolId: "HIL" }, SECRET)}`;
+// A bearer for a given person. The token names WHO, never what they may do —
+// which is why the tests below that once varied the role now vary the user id
+// instead. What each of them may read is decided by the database from their
+// assignments, and is simulated here by the canned rows.
+const bearer = (userId = "u1") => `Bearer ${signToken({ userId, deviceId: "devA" }, SECRET)}`;
 
 // ── A. Server read layer ──
 group("A. Reads run under a principal transaction");
 {
   const { pool, client, log } = fakePool({ "from match": [{ id: "m1", home_team: "Hilton" }] });
-  const rows = await readResource(pool, AUTHDATA, SECRET, bearer("spectator"), "matches");
+  const rows = await readResource(pool, SECRET, bearer("uSpectator"), "matches");
   ok("returns rows", rows.length === 1 && rows[0].id === "m1");
   const texts = log.map(l => l.text);
   ok("wrapped in BEGIN/COMMIT", texts.includes("BEGIN") && texts.includes("COMMIT"));
-  ok("sets app.role before querying", log.findIndex(l => l.text.includes("app.role")) < log.findIndex(l => l.text.includes("from match")));
-  ok("app.role is the token's role (spectator)", log.find(l => l.text.includes("app.role")).params[0] === "spectator");
+  ok("sets identity before querying", log.findIndex(l => l.text.includes("app.user_id")) < log.findIndex(l => l.text.includes("from match")));
+  ok("app.user_id is the token's subject", log.find(l => l.text.includes("app.user_id")).params[0] === "uSpectator");
+  // The session states identity and nothing else; authority is looked up.
+  ok("no app.role is set at all", !log.some(l => l.text.includes("app.role")));
   ok("all config transaction-local", log.filter(l => l.text.includes("set_config")).every(l => /, true\)/.test(l.text)));
   ok("connection released back to pool", client.released === true);
 }
@@ -59,11 +64,11 @@ group("A. The handler does no RBAC of its own");
   // Same query text regardless of role — the DB decides what comes back.
   const spec = fakePool({ "injury_masked": [] });
   const med  = fakePool({ "injury_masked": [{ id: "i1", notes: "clinical" }] });
-  await readResource(spec.pool, AUTHDATA, SECRET, bearer("spectator"), "injuries");
-  await readResource(med.pool,  AUTHDATA, SECRET, bearer("medical"),   "injuries");
+  await readResource(spec.pool, SECRET, bearer("uSpectator"), "injuries");
+  await readResource(med.pool,  SECRET, bearer("uMedical"),   "injuries");
   const specQ = spec.log.find(l => l.text.includes("injury_masked")).text;
   const medQ  = med.log.find(l => l.text.includes("injury_masked")).text;
-  ok("identical SQL for spectator and medical", specQ === medQ);
+  ok("identical SQL for both callers", specQ === medQ);
   // (In the fake, RLS/mask is simulated by the canned rows; live DB does the real work.)
   ok("no role branching in handler code", true);
 }
@@ -71,19 +76,19 @@ group("A. The handler does no RBAC of its own");
 group("A. Params + errors");
 {
   const { pool, log } = fakePool({ "match_live_score": [{ match_id: "m3", runs: 142 }] });
-  const rows = await readResource(pool, AUTHDATA, SECRET, bearer("coach"), "live_score", { matchId: "m3" });
+  const rows = await readResource(pool, SECRET, bearer("uCoach"), "live_score", { matchId: "m3" });
   ok("live_score passes matchId param", log.find(l => l.text.includes("match_live_score")).params[0] === "m3" && rows[0].runs === 142);
 
   let threw = false;
-  try { await readResource(pool, AUTHDATA, SECRET, bearer("coach"), "live_score", {}); } catch (e) { threw = /missing_param/.test(e.message); }
+  try { await readResource(pool, SECRET, bearer("uCoach"), "live_score", {}); } catch (e) { threw = /missing_param/.test(e.message); }
   ok("missing required param → 400-class error", threw);
 
   let threw2 = false;
-  try { await readResource(pool, AUTHDATA, SECRET, bearer("coach"), "nonsense"); } catch (e) { threw2 = e.status === 404; }
+  try { await readResource(pool, SECRET, bearer("uCoach"), "nonsense"); } catch (e) { threw2 = e.status === 404; }
   ok("unknown resource → 404", threw2);
 
   let threw3 = false;
-  try { await readResource(pool, AUTHDATA, SECRET, "Bearer garbage", "matches"); } catch (e) { threw3 = !!e; }
+  try { await readResource(pool, SECRET, "Bearer garbage", "matches"); } catch (e) { threw3 = !!e; }
   ok("bad token → rejected before any query", threw3);
 
   ok("liveResources lists wired reads", liveResources().includes("matches") && liveResources().includes("injuries"));

@@ -31,6 +31,14 @@ CREATE OR REPLACE FUNCTION app_player_id() RETURNS uuid AS $$
 -- The second half is what makes a query that forgot its scope fail closed
 -- instead of matching everything.
 --
+-- The third state is ANY_SCOPE ('*' for team, the nil UUID for the others),
+-- meaning the dimension DOES NOT APPLY to this kind of row. A fixture is not
+-- about one person, so a guardian assignment's child list has nothing to
+-- constrain and does not constrain it. Without this, every guardian was denied
+-- every fixture — they could not see when their own child was playing. It is
+-- passed by the generator only for dimensions a table omits entirely; a table
+-- that states a dimension as absent still narrows.
+--
 -- SECURITY DEFINER because role_assignment is itself RLS-protected: a person
 -- may not read other people's assignments, but the decision must read their
 -- own. STABLE so it is evaluated once per statement per argument set.
@@ -51,15 +59,20 @@ CREATE OR REPLACE FUNCTION app_can(
        AND a.active
        AND (a.valid_from  IS NULL OR a.valid_from  <= current_date)
        AND (a.valid_until IS NULL OR a.valid_until >  current_date)
-       -- institution
+       -- institution. There is no ANY_SCOPE for school: every governed row
+       -- belongs to a tenant, and one that does not state its tenant is one
+       -- nobody should reach.
        AND (a.school_id IS NULL OR (p_school IS NOT NULL AND a.school_id = p_school))
        -- team
-       AND (a.team_code IS NULL OR (p_team IS NOT NULL AND a.team_code = p_team))
+       AND (a.team_code IS NULL OR p_team = '*'::text
+            OR (p_team IS NOT NULL AND a.team_code = p_team))
        -- single fixture (scorers, match officials)
-       AND (a.fixture_id IS NULL OR (p_fixture IS NOT NULL AND a.fixture_id = p_fixture))
+       AND (a.fixture_id IS NULL OR p_fixture = '00000000-0000-0000-0000-000000000000'::uuid
+            OR (p_fixture IS NOT NULL AND a.fixture_id = p_fixture))
        -- guardian: an assignment listing children reaches ONLY those children
        AND (
          NOT EXISTS (SELECT 1 FROM guardian_child g WHERE g.assignment_id = a.id)
+         OR p_person = '00000000-0000-0000-0000-000000000000'::uuid
          OR (p_person IS NOT NULL AND EXISTS (
                SELECT 1 FROM guardian_child g
                 WHERE g.assignment_id = a.id AND g.player_id = p_person))
@@ -70,12 +83,13 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER;
 REVOKE ALL ON FUNCTION app_can(text, uuid, text, uuid, uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION app_can(text, uuid, text, uuid, uuid) TO PUBLIC;
 
--- Live-scoring capability, for the ball_event policies in 01_schema_scoring.sql.
--- Derived from the role bundles rather than listed, so a role can never
--- acquire scoring rights without naming scoring.edit.
-CREATE OR REPLACE FUNCTION can_score(p_role text) RETURNS boolean AS $$
-  SELECT p_role IN ('directorofsport', 'sportsadmin', 'coach', 'assistantcoach', 'scorer')
-$$ LANGUAGE sql IMMUTABLE;
+-- There is deliberately NO can_score(role) here. It existed, it was correct,
+-- and nothing called it after the scoring policies moved to app_can() — which
+-- makes it worse than useless: a role-shaped decision function sitting in the
+-- schema is an invitation to reach for it, and reaching for it reintroduces
+-- the exact hole ADR 0001 closed (a role the session asserts, evaluated
+-- without a scope). Scoring authority is app_can('scoring.edit', ...) against
+-- the assignments the database looks up, and there is no second way to ask.
 
 -- ══════════════════════════════════════════════════════════════════
 --  Role → capability bundles
@@ -227,6 +241,7 @@ INSERT INTO role_capability (role, capability) VALUES
   ('scorer', 'fixture.read'),
   ('scorer', 'team.read'),
   ('scorer', 'news.read'),
+  ('scorer', 'player.profile.read'),
   ('scorer', 'scoring.start'),
   ('scorer', 'scoring.edit'),
   ('scorer', 'scoring.finalise'),

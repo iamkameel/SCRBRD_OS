@@ -58,11 +58,11 @@ function req(q, key) {
  * Read a resource under the caller's principal.
  * @returns rows already row-filtered (RLS) and column-masked (views).
  */
-export async function readResource(pool, authData, secret, bearer, resource, query = {}) {
+export async function readResource(pool, secret, bearer, resource, query = {}) {
   const def = READ_QUERIES[resource];
   if (!def) { const e = new Error("unknown_resource"); e.status = 404; throw e; }
   const params = def.params ? def.params(query) : [];
-  return runAsPrincipal(pool, authData, secret, bearer, async client => {
+  return runAsPrincipal(pool, secret, bearer, async client => {
     const { rows } = await client.query(def.text, params);
     return rows;
   });
@@ -72,10 +72,10 @@ export async function readResource(pool, authData, secret, bearer, resource, que
 export function liveResources() { return Object.keys(READ_QUERIES); }
 
 // ── Express/Fastify route: GET /read/:resource ──
-export function readRoute({ pool, authData, secret }) {
+export function readRoute({ pool, secret }) {
   return async (req, res) => {
     try {
-      const rows = await readResource(pool, authData, secret, req.headers?.authorization, req.params.resource, req.query || {});
+      const rows = await readResource(pool, secret, req.headers?.authorization, req.params.resource, req.query || {});
       res.json({ resource: req.params.resource, rows });
     } catch (e) {
       res.status(e.status || 500).json({ error: e.code || e.message });

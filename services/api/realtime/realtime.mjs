@@ -62,8 +62,8 @@ export class MatchHub {
  * Keeps events-api decoupled: the hub is injected here, not inside the writer.
  */
 export function makeCommitAndBroadcast(appendEvents, hub) {
-  return async (pool, authData, secret, bearer, matchId, events, deps) => {
-    const out = await appendEvents(pool, authData, secret, bearer, matchId, events, deps);
+  return async (pool, secret, bearer, matchId, events, deps) => {
+    const out = await appendEvents(pool, secret, bearer, matchId, events, deps);
     // Zip accepted seqs back onto the full request events for a rich broadcast.
     const bySeq = new Map(out.accepted.map(a => [a.idempotencyKey, a.seq]));
     const committed = events

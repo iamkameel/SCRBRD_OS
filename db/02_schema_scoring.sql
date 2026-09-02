@@ -8,28 +8,44 @@
 -- ════════════════════════════════════════════════════════════════
 
 -- ── Session context (set by the API on every request) ────────────
---   set_config('app.user_id',  <uuid>, true)
---   set_config('app.role',     <text>, true)
---   set_config('app.school_id',<uuid>, true)
---   set_config('app.device_id',<text>, true)
+--   set_config('app.user_id',  <uuid>, true)   -- from the signed token
+--   set_config('app.device_id',<text>, true)   -- from the signed token
+--   set_config('app.role',     <text>, true)   -- diagnostics only
+--
+-- There is deliberately no app.school_id. A school is never something the
+-- session tells the database; it is read from the row being touched.
 
-CREATE OR REPLACE FUNCTION app_user_id()   RETURNS uuid AS $$
-  SELECT nullif(current_setting('app.user_id', true), '')::uuid $$ LANGUAGE sql STABLE;
--- Retained for diagnostics and for 03_session_functions.sql. NOTHING in the
--- authorization path reads it any more: authority comes from role_assignment
--- via app_can(), so a session cannot assert a role it does not hold.
-CREATE OR REPLACE FUNCTION app_role()      RETURNS text AS $$
+-- app_user_id() and app_device_id() are defined in 01_authz.sql, alongside the
+-- decision function that reads them. They are the only two facts the session
+-- asserts about itself, and both are taken from a signed token.
+--
+-- app_role() is retained for diagnostics ONLY. Nothing in the authorization
+-- path reads it: authority comes from role_assignment via app_can(), so a
+-- session cannot assert a role it does not hold.
+CREATE OR REPLACE FUNCTION app_role() RETURNS text AS $$
   SELECT coalesce(nullif(current_setting('app.role', true), ''), 'anonymous') $$ LANGUAGE sql STABLE;
-CREATE OR REPLACE FUNCTION app_school_id() RETURNS uuid AS $$
-  SELECT nullif(current_setting('app.school_id', true), '')::uuid $$ LANGUAGE sql STABLE;
-CREATE OR REPLACE FUNCTION app_device_id() RETURNS text AS $$
-  SELECT nullif(current_setting('app.device_id', true), '') $$ LANGUAGE sql STABLE;
 
--- can_score() is GENERATED into 02_rls_policies.sql from the role bundles in
--- packages/policy. It was hardcoded here with its own role list, which is the
+-- Which school a match belongs to. Every row written on the scoring path is
+-- stamped with THIS, never with a school the session names for itself.
+--
+-- The distinction is not academic. The capability checks below already ask
+-- app_can() about the match's own school, so a session asserting the wrong one
+-- cannot write anything it could not otherwise write. But a scorer legitimately
+-- assigned at two schools would have stamped their rows with whichever school
+-- the token happened to carry, and a scoring_session row whose school_id
+-- disagrees with its match is invisible to session_read at one school and
+-- wrongly visible at the other. Deriving it closes that by construction.
+--
+-- SECURITY DEFINER because `match` is RLS-protected and this is called from
+-- INSERT ... VALUES lists where a policy on `match` would silently yield NULL.
+CREATE OR REPLACE FUNCTION match_school(p_match uuid) RETURNS uuid AS $$
+  SELECT school_id FROM match WHERE id = p_match $$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+-- This file used to define can_score() with its own hardcoded role list — the
 -- exact drift this project keeps closing: two definitions of the same rule,
--- one of which nobody remembers to update. Nothing in the policies calls it
--- any more either — authority is app_can() over assignments.
+-- one of which nobody remembers to update. It is gone, and so is the generated
+-- version: scoring authority is app_can('scoring.edit', ...) over assignments,
+-- and there is no second way to ask.
 
 -- ── Scoring session: exactly one active token per match ──────────
 CREATE TYPE session_state AS ENUM ('idle','active','handover_pending','verifying');
@@ -154,7 +170,7 @@ CREATE POLICY ball_event_read ON ball_event
 --   3. matching epoch        (not a revoked token)
 --   4. a live lease          (device is alive)
 --
--- (1) is app_can(), not can_score(app_role()). The old form trusted a role
+-- (1) is app_can(), not a role the session names. The old form trusted a role
 -- asserted by the session; authority now comes from the assignments the
 -- database looks up for app_user_id(), so a token cannot claim its way into
 -- scoring a match it has no assignment over. See docs/adr/0001.
@@ -203,9 +219,9 @@ BEGIN
   SELECT * INTO s FROM scoring_session WHERE match_id = p_match FOR UPDATE;
   IF NOT FOUND THEN
     INSERT INTO scoring_session (match_id, school_id, state, epoch, holder_user_id, holder_device, lease_until)
-    VALUES (p_match, app_school_id(), 'active', 1, app_user_id(), p_device, now() + interval '90 seconds');
+    VALUES (p_match, match_school(p_match), 'active', 1, app_user_id(), p_device, now() + interval '90 seconds');
     INSERT INTO scoring_audit (match_id, school_id, event, actor_id, epoch)
-    VALUES (p_match, app_school_id(), 'claim', app_user_id(), 1);
+    VALUES (p_match, match_school(p_match), 'claim', app_user_id(), 1);
     RETURN QUERY SELECT true, NULL::text, 1; RETURN;
   END IF;
   -- Someone else holds a live lease → refuse (use force_release instead).
@@ -219,7 +235,7 @@ BEGIN
     claimant_device = NULL, updated_at = now()
   WHERE match_id = p_match;
   INSERT INTO scoring_audit (match_id, school_id, event, actor_id, epoch)
-  VALUES (p_match, app_school_id(), 'claim', app_user_id(), s.epoch + 1);
+  VALUES (p_match, match_school(p_match), 'claim', app_user_id(), s.epoch + 1);
   RETURN QUERY SELECT true, NULL::text, s.epoch + 1;
 END $$ LANGUAGE plpgsql SECURITY DEFINER;
 
@@ -240,7 +256,7 @@ BEGIN
     handover_to=p_to, handover_armed_at=now(), updated_at=now()
   WHERE match_id = p_match;
   INSERT INTO scoring_audit (match_id, school_id, event, actor_id, from_user, to_user, epoch)
-  VALUES (p_match, app_school_id(), 'handover_armed', app_user_id(), s.holder_user_id, p_to, s.epoch);
+  VALUES (p_match, match_school(p_match), 'handover_armed', app_user_id(), s.holder_user_id, p_to, s.epoch);
   RETURN QUERY SELECT true, NULL::text, v_code;
 END $$ LANGUAGE plpgsql SECURITY DEFINER;
 
@@ -266,7 +282,7 @@ BEGIN
 
   IF (p_runs, p_wickets, p_balls) IS DISTINCT FROM (t_runs, t_wkts, t_balls) THEN
     INSERT INTO scoring_audit (match_id, school_id, event, actor_id, detail)
-    VALUES (p_match, app_school_id(), 'handover_verify_failed', app_user_id(),
+    VALUES (p_match, match_school(p_match), 'handover_verify_failed', app_user_id(),
             jsonb_build_object('got',jsonb_build_object('runs',p_runs,'wkts',p_wickets,'balls',p_balls),
                                'expected',jsonb_build_object('runs',t_runs,'wkts',t_wkts,'balls',t_balls)));
     RETURN QUERY SELECT false,'verify_mismatch',NULL::int, t_runs, t_wkts, t_balls; RETURN;
@@ -278,7 +294,7 @@ BEGIN
     handover_code=NULL, handover_to=NULL, claimant_user_id=NULL, claimant_device=NULL, updated_at=now()
   WHERE match_id = p_match;
   INSERT INTO scoring_audit (match_id, school_id, event, actor_id, from_user, to_user, epoch)
-  VALUES (p_match, app_school_id(), 'handover_complete', app_user_id(), s.holder_user_id, s.claimant_user_id, s.epoch + 1);
+  VALUES (p_match, match_school(p_match), 'handover_complete', app_user_id(), s.holder_user_id, s.claimant_user_id, s.epoch + 1);
   RETURN QUERY SELECT true, NULL::text, s.epoch + 1, t_runs, t_wkts, t_balls;
 END $$ LANGUAGE plpgsql SECURITY DEFINER;
 
@@ -300,7 +316,7 @@ BEGIN
     claimant_device=NULL, updated_at=now()
   WHERE match_id = p_match;
   INSERT INTO scoring_audit (match_id, school_id, event, actor_id, from_user, epoch)
-  VALUES (p_match, app_school_id(), 'force_release', app_user_id(), s.holder_user_id, s.epoch + 1);
+  VALUES (p_match, match_school(p_match), 'force_release', app_user_id(), s.holder_user_id, s.epoch + 1);
   RETURN QUERY SELECT true, NULL::text, s.epoch + 1;
 END $$ LANGUAGE plpgsql SECURITY DEFINER;
 

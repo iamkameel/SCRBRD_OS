@@ -15,8 +15,7 @@ let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
 const group = t => console.log("\n" + t);
 const SECRET = "step5-secret";
-const bearer = role => `Bearer ${signToken({ userId: "uS", role, schoolId: "HIL" }, SECRET)}`;
-const AUTHDATA = { playerIdForUser: async () => null, childPlayerIds: async () => [], teamCodesForUser: async () => ["U19A"] };
+const bearer = (userId = "uS", deviceId = "devA") => `Bearer ${signToken({ userId, deviceId }, SECRET)}`;
 const nextTick = () => new Promise(r => setTimeout(r, 0));
 
 // ── A. Hub ──
@@ -58,7 +57,7 @@ group("A. commit-and-broadcast wiring");
   const seen = [];
   hub.subscribe("m3", m => seen.push(m));
   // fake appendEvents: accept everything, assign seq = clientSeq
-  const fakeAppend = async (pool, ad, sec, br, mid, events) => ({
+  const fakeAppend = async (pool, sec, br, mid, events) => ({
     accepted: events.map(e => ({ idempotencyKey: e.idempotencyKey, seq: e.clientSeq })),
     duplicates: [], quarantined: [],
   });
@@ -67,7 +66,7 @@ group("A. commit-and-broadcast wiring");
     { idempotencyKey: "d:1:1", clientSeq: 1, epoch: 1, innings: 0, payload: { kind: "ball", value: 4 } },
     { idempotencyKey: "d:1:2", clientSeq: 2, epoch: 1, innings: 0, payload: { kind: "ball", value: 6 } },
   ];
-  await commit(null, null, null, bearer("scorer"), "m3", events);
+  await commit(null, null, bearer(), "m3", events);
   ok("committed balls broadcast with full payload", seen.length === 1 && seen[0].events.length === 2 && seen[0].events[0].payload.value === 4);
   ok("broadcast carries assigned seq", seen[0].events[1].seq === 2);
 }
@@ -91,11 +90,11 @@ group("B. Session routes run under principal and broadcast state");
     release() {},
   };
   const pool = { connect: async () => client };
-  const routes = sessionRoutes({ pool, authData: AUTHDATA, secret: SECRET, hub });
+  const routes = sessionRoutes({ pool, secret: SECRET, hub });
 
   let sent = null;
   const res = { json: b => (sent = b), status: () => res };
-  await routes.claim({ params: { id: "m3" }, headers: { authorization: bearer("scorer") }, body: { device: "devA" } }, res);
+  await routes.claim({ params: { id: "m3" }, headers: { authorization: bearer() }, body: { device: "devA" } }, res);
   ok("claim returns ok", sent.ok === true && sent.epoch === 1);
   ok("claim ran under a principal txn", log.includes("BEGIN") && log.includes("COMMIT"));
   ok("claim broadcast session state to watchers", seen.some(m => m.type === "session" && m.state === "active"));
@@ -103,9 +102,9 @@ group("B. Session routes run under principal and broadcast state");
   // heartbeat does NOT broadcast (no state change)
   const before = seen.length;
   const client2 = { query: async (t) => (/lease_until/.test(t) ? { rows: [{ lease_until: new Date() }] } : { rows: [] }), release() {} };
-  const routes2 = sessionRoutes({ pool: { connect: async () => client2 }, authData: AUTHDATA, secret: SECRET, hub });
+  const routes2 = sessionRoutes({ pool: { connect: async () => client2 }, secret: SECRET, hub });
   let hb = null;
-  await routes2.heartbeat({ params: { id: "m3" }, headers: { authorization: bearer("scorer") }, body: { device: "devA", epoch: 1 } }, { json: b => (hb = b), status: () => ({ json: () => {} }) });
+  await routes2.heartbeat({ params: { id: "m3" }, headers: { authorization: bearer() }, body: { device: "devA", epoch: 1 } }, { json: b => (hb = b), status: () => ({ json: () => {} }) });
   ok("heartbeat ok", hb.ok === true);
   ok("heartbeat does not broadcast", seen.length === before);
 }

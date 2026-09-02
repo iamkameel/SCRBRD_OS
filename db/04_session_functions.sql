@@ -37,7 +37,7 @@ BEGIN
    WHERE match_id = p_match;
 
   INSERT INTO scoring_audit (match_id, school_id, event, actor_id, epoch)
-  VALUES (p_match, app_school_id(), 'handover_claimed', app_user_id(), s.epoch);
+  VALUES (p_match, match_school(p_match), 'handover_claimed', app_user_id(), s.epoch);
 
   RETURN QUERY SELECT true, NULL::text;
 END $$ LANGUAGE plpgsql SECURITY DEFINER;

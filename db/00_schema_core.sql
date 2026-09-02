@@ -20,7 +20,7 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;   -- gen_random_uuid()
 -- ── Institution ─────────────────────────────────────────────────
 -- "Institution" is the defined term covering schools, clubs, academies,
 -- unions, federations, leagues and associations. The table is named
--- `school` because every RLS policy and app_school_id() references it by
+-- `school` because every RLS policy scopes through it, and each references it by
 -- that name; the `kind` column carries the distinction that matters,
 -- because schools and clubs sit under different POPIA consent
 -- frameworks (enrolment relationship vs. membership terms + s35
@@ -201,7 +201,7 @@ CREATE TABLE match_squad (
 -- This is left as-is deliberately rather than silently school-scoped,
 -- because the correct answer is a product decision, not a mechanical
 -- one: a KZN schools league is inherently multi-tenant — several client
--- schools share one competition — so `school_id = app_school_id()` would
+-- schools share one competition — so scoping it to a single school would
 -- be wrong for exactly the rows that matter most. Resolve it (probably a
 -- competition_entrant join table with visibility derived from
 -- participation) before a second school goes live.

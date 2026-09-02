@@ -38,9 +38,22 @@ group("A. Scope semantics are asymmetric on purpose");
 ok("school: assignment NULL widens, resource NULL narrows",
    /a\.school_id IS NULL OR \(p_school IS NOT NULL AND a\.school_id = p_school\)/.test(SQL));
 ok("team: same asymmetry",
-   /a\.team_code IS NULL OR \(p_team IS NOT NULL AND a\.team_code = p_team\)/.test(SQL));
+   /a\.team_code IS NULL OR p_team = '\*'::text\s*\n?\s*OR \(p_team IS NOT NULL AND a\.team_code = p_team\)/.test(SQL));
 ok("fixture: same asymmetry",
-   /a\.fixture_id IS NULL OR \(p_fixture IS NOT NULL AND a\.fixture_id = p_fixture\)/.test(SQL));
+   /a\.fixture_id IS NULL OR p_fixture = '0{8}-0{4}-0{4}-0{4}-0{12}'::uuid\s*\n?\s*OR \(p_fixture IS NOT NULL AND a\.fixture_id = p_fixture\)/.test(SQL));
+
+// The third state. A fixture is not about a person, so a guardian assignment's
+// child list must not constrain it — without this every guardian was denied
+// every fixture, and a parent could not see when their child was playing.
+ok("ANY_SCOPE satisfies the guardian clause",
+   /OR p_person = '0{8}-0{4}-0{4}-0{4}-0{12}'::uuid/.test(SQL));
+ok("there is no ANY_SCOPE for school (every row belongs to a tenant)",
+   !/p_school = '0{8}-/.test(SQL));
+ok("match passes ANY_SCOPE for person, not NULL",
+   /CREATE POLICY match_read[\s\S]{0,220}'0{8}-0{4}-0{4}-0{4}-0{12}'::uuid, match\.id/.test(SQL));
+// ...and a table that states a dimension as absent still narrows.
+ok("staff states team as absent, so it narrows",
+   /CREATE POLICY staff_read[\s\S]{0,200}NULL::text/.test(SQL));
 ok("guardian assignments reach only listed children",
    /guardian_child g[\s\S]{0,200}g\.player_id = p_person/.test(SQL));
 ok("a non-guardian assignment is not narrowed by children",
@@ -64,12 +77,15 @@ ok("rows are replaced wholesale", /DELETE FROM role_capability;/.test(SQL));
   ok("no ungranted capability is emitted", wrong === 0);
 }
 ok("all roles appear", ROLES.every((r) => SQL.includes(`('${r}', `)));
-ok("can_score is derived from the bundles",
-   SCORING_ROLES.every((r) => new RegExp(`can_score[\\s\\S]*'${r}'`).test(SQL)));
-ok("a non-scoring role is absent from can_score",
-   !/SELECT p_role IN \([^)]*'guardian'/.test(SQL));
-ok("can_score agrees with roleGrants",
+// No role-shaped decision function survives in the SQL. Scoring authority is
+// app_can('scoring.edit', ...) over assignments; a can_score(role) helper would
+// answer the question without a scope, which is how the old model leaked.
+ok("no can_score(role) function is emitted", !/FUNCTION can_score/.test(SQL));
+ok("no policy decides on an asserted role", !/can_score\(app_role\(\)\)/.test(SQL));
+ok("scoring roles are still derived, not listed",
    ROLES.every((r) => SCORING_ROLES.includes(r) === roleGrants(r, "scoring.edit")));
+ok("every scoring role reaches scoring.edit through its bundle",
+   SCORING_ROLES.every((r) => SQL.includes(`('${r}', 'scoring.edit')`)));
 
 // ── C. Per-table policies ────────────────────────────────
 group("C. Table policies");
@@ -80,12 +96,10 @@ for (const [table, def] of Object.entries(TABLES)) {
   ok(`${table}: write policy uses ${def.write}`,
      new RegExp(`CREATE POLICY ${table}_insert ON ${table}[\\s\\S]{0,200}app_can\\('${def.write.replace(/\./g, "\\.")}'`).test(SQL));
   ok(`${table}: update checks both ways`,
-     new RegExp(`CREATE POLICY ${table}_update[\\s\\S]{0,300}USING[\\s\\S]{0,200}WITH CHECK`).test(SQL));
+     new RegExp(`CREATE POLICY ${table}_update[\\s\\S]*?USING[\\s\\S]*?WITH CHECK`).test(SQL));
 }
 // Records about minors are deactivated, never deleted, so an audit trail survives.
 ok("no DELETE policy is granted anywhere", !/FOR DELETE/.test(SQL));
-ok("staff carry no team anchor (a coach gets no staff directory)",
-   /CREATE POLICY staff_read[\s\S]{0,200}NULL::text/.test(SQL));
 ok("injury anchors its team through the linked player",
    /SELECT p\.team_code FROM player p WHERE p\.id = injury\.player_id/.test(SQL));
 ok("competition is governed now (was ungoverned)",

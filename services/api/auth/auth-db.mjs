@@ -1,48 +1,29 @@
 /**
- * SCRBRD — Auth data access + login endpoints (adapter layer)
+ * SCRBRD — identity against Postgres.
  *
- * Wires auth.mjs to Postgres. `db.query(text, params)` is a thin pg pool wrapper.
- * These lookups run WITHOUT RLS context (they resolve identity before context
- * exists), so they must be scoped by hand and read only the columns they need.
- * Keep them minimal and audited.
+ * The narrow layer between a signed token and a query that runs under RLS.
+ * Everything about a person's AUTHORITY is deliberately missing from this
+ * file: authority is role_assignment rows the database reads for itself inside
+ * app_can(). What is here is login (proving who someone is) and connection
+ * handling (running their query with their identity set, transaction-locally).
+ *
+ * The lookups in the login path run WITHOUT RLS context — they resolve
+ * identity before context exists — so they are scoped by hand, read only the
+ * columns they need, and are the shortest queries in the codebase on purpose.
  */
 import {
-  signToken, resolvePrincipal, verifyToken, withPrincipal,
+  signToken, verifyToken, principalFromClaims, withPrincipal,
   newMagicCode, magicHash, AuthError,
 } from "./auth.mjs";
 
-// ── Linkage accessor injected into resolvePrincipal ──
-export function makeAuthData(db) {
-  return {
-    // The user's own player row (players link to a user via player.user_id).
-    async playerIdForUser(userId) {
-      const { rows } = await db.query(
-        `select id from player where user_id = $1 limit 1`, [userId]);
-      return rows[0]?.id || null;
-    },
-    // A parent's children (guardianship join).
-    async childPlayerIds(userId) {
-      const { rows } = await db.query(
-        `select player_id from guardian_of where guardian_user_id = $1`, [userId]);
-      return rows.map(r => r.player_id);
-    },
-    // Teams a coach/assistant is assigned to (coach_team join).
-    async teamCodesForUser(userId) {
-      const { rows } = await db.query(
-        `select team_code from coach_team where coach_user_id = $1`, [userId]);
-      return rows.map(r => r.team_code);
-    },
-  };
-}
-
 // ── Login: request a magic link ──
-// POST /auth/request-link { email }
+// POST /api/auth/request-link { email }
 export async function requestMagicLink(db, sendEmail, { email }) {
   const { rows } = await db.query(
-    `select id, role, school_id, status from app_user where lower(email) = lower($1) limit 1`, [email]);
+    `select id, active from app_user where lower(email) = lower($1) limit 1`, [email]);
   const user = rows[0];
   // Always return 200 with no user enumeration — only send if the account exists & is active.
-  if (user && user.status === "active") {
+  if (user && user.active) {
     const { raw, hash, expiresInSec } = newMagicCode();
     await db.query(
       `insert into login_code (user_id, code_hash, expires_at)
@@ -53,51 +34,95 @@ export async function requestMagicLink(db, sendEmail, { email }) {
 }
 
 // ── Login: redeem the code → issue a token ──
-// POST /auth/redeem { email, code }
-export async function redeemMagicLink(db, secret, { email, code }) {
+// POST /api/auth/redeem { email, code, deviceId }
+export async function redeemMagicLink(db, secret, { email, code, deviceId }) {
+  if (!deviceId) throw new AuthError("missing_device");
   const { rows } = await db.query(
-    `select u.id, u.role, u.school_id, c.id as code_id
+    `select u.id, c.id as code_id
        from app_user u
        join login_code c on c.user_id = u.id
       where lower(u.email) = lower($1)
         and c.code_hash = $2
         and c.used_at is null
         and c.expires_at > now()
+        and u.active
       order by c.expires_at desc
       limit 1`, [email, magicHash(code)]);
   const row = rows[0];
   if (!row) throw new AuthError("invalid_or_expired_code");
   await db.query(`update login_code set used_at = now() where id = $1`, [row.code_id]);
-  // role + school are captured at issue time from the DB → the trust boundary.
-  const token = signToken({ userId: row.id, role: row.role, schoolId: row.school_id }, secret);
-  return { token, role: row.role };
+  return { token: signToken({ userId: row.id, deviceId }, secret) };
 }
 
-// ── Per-request: verify token, resolve principal, run query under RLS ──
-// Use this from route handlers instead of touching the pool directly.
-export async function runAsPrincipal(pool, authData, secret, bearer, fn) {
+/**
+ * What the signed-in person may see, for the client to lay out a workspace.
+ *
+ * This is NOT an authorization answer and must never be used as one. It is the
+ * assignment list, returned so the browser can decide which navigation entries
+ * to draw and which cards to fetch. Every one of those fetches is authorised
+ * again, server-side, against the same assignments. The widget is presentation;
+ * the API is security.
+ *
+ * Read under the person's own RLS context, so it can only ever return their
+ * own rows: role_assignment's policy scopes SELECT to person_id = app_user_id()
+ * plus whoever holds user.role.assign over the same school.
+ */
+export async function sessionProfile(pool, secret, bearer) {
+  return runAsPrincipal(pool, secret, bearer, async (client, principal) => {
+    const { rows: me } = await client.query(
+      `select id, name, email from app_user where id = $1`, [principal.userId]);
+    const { rows: assignments } = await client.query(
+      `select a.id, a.role, a.school_id, s.name as school_name, a.team_code,
+              a.season, a.fixture_id, a.valid_from, a.valid_until,
+              coalesce(array_agg(g.player_id) filter (where g.player_id is not null), '{}') as children
+         from role_assignment a
+         left join school s on s.id = a.school_id
+         left join guardian_child g on g.assignment_id = a.id
+        where a.person_id = $1 and a.active
+          and (a.valid_from  is null or a.valid_from  <= current_date)
+          and (a.valid_until is null or a.valid_until >  current_date)
+        group by a.id, s.name
+        order by a.role`, [principal.userId]);
+    return {
+      user: me[0] ? { id: me[0].id, name: me[0].name, email: me[0].email } : null,
+      deviceId: principal.deviceId,
+      assignments: assignments.map(a => ({
+        id: a.id, role: a.role,
+        school: a.school_id, schoolName: a.school_name,
+        team: a.team_code, season: a.season, fixture: a.fixture_id,
+        from: a.valid_from, until: a.valid_until,
+        children: a.children,
+      })),
+    };
+  });
+}
+
+// ── Per-request: verify token, run the query under the person's identity ──
+/**
+ * Use this from route handlers instead of touching the pool directly.
+ *
+ * `fn` receives (client, principal). The connection is dedicated for the
+ * duration and returned to the pool with no lingering context, because
+ * withPrincipal sets everything transaction-locally and commits.
+ */
+export async function runAsPrincipal(pool, secret, bearer, fn) {
   const token = (bearer || "").startsWith("Bearer ") ? bearer.slice(7) : null;
   if (!token) throw new AuthError("missing_token");
-  const claims = verifyToken(token, secret);
-  const principal = await resolvePrincipal(claims, authData);
+  const principal = principalFromClaims(verifyToken(token, secret));
   const client = await pool.connect();          // one dedicated connection
   try {
-    return await withPrincipal(client, principal, fn);  // BEGIN → set LOCAL → fn → COMMIT
+    return await withPrincipal(client, principal, (c) => fn(c, principal));
   } finally {
-    client.release();                            // returned to pool with no lingering context
+    client.release();
   }
 }
 
 /*
--- ── Supporting tables (add to the schema) ──
-CREATE TABLE app_user (
-  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  email      citext UNIQUE NOT NULL,
-  role       text NOT NULL,
-  school_id  uuid NOT NULL REFERENCES school(id),
-  status     text NOT NULL DEFAULT 'active',   -- active | suspended
-  created_at timestamptz NOT NULL DEFAULT now()
-);
+-- ── Supporting table still to be added ──
+-- login_code is the only piece of the login path with no home in db/ yet;
+-- the pilot signs in through the dev route in server.mjs, which issues a token
+-- for a seeded address without a code at all and refuses to run outside
+-- development. Adding this table is what turns that into a real login.
 CREATE TABLE login_code (
   id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id    uuid NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
@@ -106,8 +131,4 @@ CREATE TABLE login_code (
   used_at    timestamptz
 );
 CREATE INDEX ON login_code (user_id) WHERE used_at IS NULL;
--- Linkage tables read by the accessor:
---   player.user_id                      (a player's login)
---   guardian_of(guardian_user_id, player_id)
---   coach_team(coach_user_id, team_code)
 */

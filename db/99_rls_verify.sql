@@ -194,7 +194,75 @@ BEGIN
   EXCEPTION WHEN insufficient_privilege OR check_violation THEN NULL;
   END;
 
-  -- ── 9. Revocation takes effect immediately ─────────────────────
+  -- ── 9. The four tables that had no policy at all ──────────────
+  -- school, app_user, ground and match_squad ran with row-level security
+  -- switched OFF. Nothing was misconfigured; they were simply never listed,
+  -- and an unlisted table is wide open rather than closed. These assertions
+  -- exist so that a table dropping out of the policy source is a failing
+  -- test rather than a silent disclosure.
+  PERFORM _assert(
+    (SELECT bool_and(relrowsecurity) FROM pg_class
+      WHERE relnamespace = 'public'::regnamespace AND relkind = 'r'),
+    'some table in public has row-level security disabled');
+
+  -- app_user was a cross-tenant directory: every name and email, one login.
+  PERFORM _as(U_COACH);
+  SELECT count(*) INTO n FROM app_user WHERE school_id = WES;
+  PERFORM _assert(n = 0, 'coach can read users at another school');
+  SELECT count(*) INTO n FROM app_user WHERE id = U_COACH;
+  PERFORM _assert(n = 1, 'a person cannot read their own user record');
+
+  -- ...and it stays closed for someone whose role does not include user.read.
+  PERFORM _as(U_SCORER);
+  SELECT count(*) INTO n FROM app_user WHERE id <> U_SCORER;
+  PERFORM _assert(n = 0, 'scorer can read other user records');
+
+  -- school: the tenant list. Attached schools only.
+  PERFORM _as(U_COACH);
+  SELECT count(*) INTO n FROM school WHERE id = WES;
+  PERFORM _assert(n = 0, 'coach can enumerate another tenant');
+  SELECT count(*) INTO n FROM school WHERE id = HIL;
+  PERFORM _assert(n = 1, 'coach cannot see their own school');
+  -- Sarah is a guardian at Westville as well, so she legitimately sees both.
+  PERFORM _as(U_SARAH);
+  SELECT count(*) INTO n FROM school;
+  PERFORM _assert(n = 2, 'a guardian at two schools cannot see both');
+
+  -- match_squad: a list of named minors, anchored through its match.
+  PERFORM _as(U_COACH);
+  SELECT count(*) INTO n FROM match_squad;
+  PERFORM _assert(n > 0, 'coach cannot read their own team sheet');
+
+  -- A scorer must be able to name a striker, so they read the squad too.
+  PERFORM _as(U_SCORER);
+  SELECT count(*) INTO n FROM match_squad;
+  PERFORM _assert(n > 0, 'scorer cannot read the squad they are scoring');
+
+  -- The sharpest case: a guardian's assignment lists their children, so the
+  -- person anchor narrows a whole team sheet down to the one row that is
+  -- theirs. Same table, same query, one row.
+  PERFORM _as(U_PARENT);
+  SELECT count(*) INTO n FROM match_squad;
+  PERFORM _assert(n = 1, 'guardian sees more of the team sheet than their own child');
+  SELECT count(*) INTO n FROM match_squad WHERE player_id = P_INJURED;
+  PERFORM _assert(n = 1, 'guardian cannot see their own child on the team sheet');
+
+  -- The ANY_SCOPE regression. A fixture names no person, so a guardian's
+  -- child list has nothing to constrain — and before app_can() could say
+  -- "this dimension does not apply", every guardian was denied every fixture.
+  -- A parent could not see when their own child was playing.
+  PERFORM _as(U_PARENT);
+  SELECT count(*) INTO n FROM match;
+  PERFORM _assert(n > 0, 'guardian cannot see any fixture');
+  SELECT count(*) INTO n FROM match WHERE school_id = WES;
+  PERFORM _assert(n = 0, 'guardian sees fixtures at a school they are not attached to');
+
+  -- ground: not sensitive, but scoped like everything else.
+  PERFORM _as(U_COACH);
+  SELECT count(*) INTO n FROM ground WHERE school_id = WES;
+  PERFORM _assert(n = 0, 'coach can read another school''s grounds');
+
+  -- ── 10. Revocation takes effect immediately ────────────────────
   -- This is the property the SECURITY DEFINER lookup was chosen for. Nothing
   -- about authority is carried in the session, so deactivating an assignment
   -- applies on the very next statement rather than at next login.

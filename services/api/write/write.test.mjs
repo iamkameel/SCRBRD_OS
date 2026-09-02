@@ -13,8 +13,10 @@ let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
 const group = t => console.log("\n" + t);
 const SECRET = "step4-secret";
-const bearer = role => `Bearer ${signToken({ userId: "uScorer", role, schoolId: "HIL" }, SECRET)}`;
-const AUTHDATA = { playerIdForUser: async () => null, childPlayerIds: async () => [], teamCodesForUser: async () => ["U19A"] };
+// The device is bound INTO the token, not sent alongside it: the ball_event
+// INSERT policy compares device_id against the live lease, so a device named in
+// a header would let a second device write under the first one's lease.
+const bearer = (userId = "uScorer", deviceId = "devA") => `Bearer ${signToken({ userId, deviceId }, SECRET)}`;
 
 // ── Fake Postgres tuned for the write path ──
 function fakeDb({ session, existingKeys = new Set(), maxSeq = 0 } = {}) {
@@ -48,7 +50,7 @@ const ev = (n, extra = {}) => ({ epoch: 3, deviceId: "devA", scorerId: "uScorer"
 group("A. appendEvents runs under a principal transaction");
 {
   const db = fakeDb({ session: liveSession });
-  const out = await appendEvents(db.pool, AUTHDATA, SECRET, bearer("scorer"), "m3", [ev(1), ev(2)]);
+  const out = await appendEvents(db.pool, SECRET, bearer(), "m3", [ev(1), ev(2)]);
   const texts = db.log.map(l => l.text);
   ok("wrapped in BEGIN/COMMIT", texts.includes("BEGIN") && texts.includes("COMMIT"));
   ok("locks the session row (serialised writes)", db.log.some(l => /for update/.test(l.text)));
@@ -61,7 +63,7 @@ group("A. appendEvents runs under a principal transaction");
 group("A. Idempotency — retried balls are not double-inserted");
 {
   const db = fakeDb({ session: liveSession, existingKeys: new Set(["devA:3:1"]) });
-  const out = await appendEvents(db.pool, AUTHDATA, SECRET, bearer("scorer"), "m3", [ev(1), ev(2)]);
+  const out = await appendEvents(db.pool, SECRET, bearer(), "m3", [ev(1), ev(2)]);
   ok("known key → duplicate (not re-inserted)", out.duplicates.length === 1 && out.duplicates[0].idempotencyKey === "devA:3:1");
   ok("new key → accepted", out.accepted.length === 1 && out.accepted[0].idempotencyKey === "devA:3:2");
   ok("only ONE ball_event insert happened", db.ballEvents.length === 1);
@@ -70,7 +72,7 @@ group("A. Idempotency — retried balls are not double-inserted");
 group("A. Stale epoch → QUARANTINE, never merged");
 {
   const db = fakeDb({ session: { ...liveSession, epoch: 5 } });   // token moved on
-  const out = await appendEvents(db.pool, AUTHDATA, SECRET, bearer("scorer"), "m3", [ev(1) /* epoch 3 */]);
+  const out = await appendEvents(db.pool, SECRET, bearer(), "m3", [ev(1) /* epoch 3 */]);
   ok("stale-epoch event quarantined", out.quarantined.length === 1 && out.quarantined[0].reason === "stale_epoch_or_lease");
   ok("nothing inserted into ball_event", db.ballEvents.length === 0);
   ok("row written to quarantine table", db.quarantine.length === 1);
@@ -79,15 +81,15 @@ group("A. Stale epoch → QUARANTINE, never merged");
 group("A. Wrong device / expired lease → quarantined");
 {
   const wrongDev = fakeDb({ session: { ...liveSession, holder_device: "devOther" } });
-  const o1 = await appendEvents(wrongDev.pool, AUTHDATA, SECRET, bearer("scorer"), "m3", [ev(1)]);
+  const o1 = await appendEvents(wrongDev.pool, SECRET, bearer(), "m3", [ev(1)]);
   ok("non-holder device quarantined", o1.quarantined.length === 1 && wrongDev.ballEvents.length === 0);
 
   const expired = fakeDb({ session: { ...liveSession, lease_until: new Date(Date.now() - 1000) } });
-  const o2 = await appendEvents(expired.pool, AUTHDATA, SECRET, bearer("scorer"), "m3", [ev(1)]);
+  const o2 = await appendEvents(expired.pool, SECRET, bearer(), "m3", [ev(1)]);
   ok("expired lease quarantined", o2.quarantined.length === 1 && expired.ballEvents.length === 0);
 
   const noSession = fakeDb({ session: null });
-  const o3 = await appendEvents(noSession.pool, AUTHDATA, SECRET, bearer("scorer"), "m3", [ev(1)]);
+  const o3 = await appendEvents(noSession.pool, SECRET, bearer(), "m3", [ev(1)]);
   ok("no session → quarantined with reason", o3.quarantined[0].reason === "no_session");
 }
 
@@ -95,10 +97,11 @@ group("A. Empty / read");
 {
   const db = fakeDb({ session: liveSession });
   let threw = false;
-  try { await appendEvents(db.pool, AUTHDATA, SECRET, bearer("scorer"), "m3", []); } catch (e) { threw = e.status === 400; }
+  try { await appendEvents(db.pool, SECRET, bearer(), "m3", []); } catch (e) { threw = e.status === 400; }
   ok("empty batch rejected", threw);
-  await readEvents(db.pool, AUTHDATA, SECRET, bearer("spectator"), "m3", 5);
-  ok("readEvents queries since seq under principal", db.log.some(l => /seq > \$2/.test(l.text)) && db.log.some(l => l.text.includes("app.role")));
+  await readEvents(db.pool, SECRET, bearer("uSpectator"), "m3", 5);
+  ok("readEvents queries since seq under principal",
+     db.log.some(l => /seq > \$2/.test(l.text)) && db.log.some(l => l.text.includes("app.user_id")));
 }
 
 // ── B. Client durable queue ──
