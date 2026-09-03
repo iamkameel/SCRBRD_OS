@@ -199,7 +199,33 @@ BEGIN
   EXCEPTION WHEN insufficient_privilege OR check_violation THEN NULL;
   END;
 
-  -- ── 9. The four tables that had no policy at all ──────────────
+  -- ── 9. Views do not smuggle rows past the policies ─────────────
+  -- A view runs with the permissions of its OWNER unless it says otherwise,
+  -- and the owner of these owns the tables underneath them — so row-level
+  -- security was evaluated as a role that bypasses it, and player_masked
+  -- returned EVERY player at EVERY school to anyone who could select from it.
+  -- Through the one object the read path is REQUIRED to use for personal
+  -- information, and invisibly: the leaked rows were still column-masked, so
+  -- each one looked exactly right.
+  PERFORM _assert(
+    (SELECT bool_and(reloptions::text LIKE '%security_invoker%')
+       FROM pg_class WHERE relkind = 'v' AND relnamespace = 'public'::regnamespace),
+    'a view in public runs as its owner and bypasses row-level security');
+
+  PERFORM _as(U_COACH);
+  SELECT count(*) INTO n FROM player_masked WHERE school_id = WES;
+  PERFORM _assert(n = 0, 'the masked view leaks another school''s players');
+  -- The view and the table it wraps must agree about WHICH rows exist; they
+  -- may only disagree about which columns are readable.
+  PERFORM _assert(
+    (SELECT count(*) FROM player_masked) = (SELECT count(*) FROM player),
+    'player_masked and player disagree about which rows exist');
+
+  PERFORM _as(U_SCOUT);
+  PERFORM _assert((SELECT count(*) FROM injury_masked) = (SELECT count(*) FROM injury),
+                  'injury_masked and injury disagree about which rows exist');
+
+  -- ── 10. The four tables that had no policy at all ──────────────
   -- school, app_user, ground and match_squad ran with row-level security
   -- switched OFF. Nothing was misconfigured; they were simply never listed,
   -- and an unlisted table is wide open rather than closed. These assertions
@@ -267,7 +293,7 @@ BEGIN
   SELECT count(*) INTO n FROM ground WHERE school_id = WES;
   PERFORM _assert(n = 0, 'coach can read another school''s grounds');
 
-  -- ── 10. Revocation takes effect immediately ────────────────────
+  -- ── 11. Revocation takes effect immediately ────────────────────
   -- This is the property the SECURITY DEFINER lookup was chosen for. Nothing
   -- about authority is carried in the session, so deactivating an assignment
   -- applies on the very next statement rather than at next login.

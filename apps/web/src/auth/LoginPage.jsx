@@ -1,17 +1,46 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import SCRBRD_LOGO from "../assets/scrbrd-logo.jpg";
 import { ROLES } from "../design/roles.js";
 import { SCRBRD } from "../scorer/engine.jsx";
+import { mode as apiMode, signIn } from "../lib/session.js";
 
 // ══════════════════════════════════════════════════════
-//  LOGIN PAGE  (mock auth — OAuth simulation)
+//  LOGIN PAGE
+//
+//  Two modes, and the difference is never hidden.
+//
+//  LIVE — an API is reachable. Sign-in is real: the token is minted server
+//    side and a failure is a failure. It does NOT fall back to the demo
+//    accounts below, because a person who typed the wrong thing and got in
+//    anyway has been told a lie about a permission decision, and every screen
+//    they see afterwards inherits that lie.
+//
+//  DEMO — no API. Mock accounts, mock data, and the page says so. This is a
+//    legitimate way to run SCRBRD: the product has to open on a laptop at a
+//    school with nothing behind it. What it must not do is look identical to
+//    the real thing.
 // ══════════════════════════════════════════════════════
+
+// The pilot's seeded people, mirroring db/98_seed_pilot.sql. A development
+// convenience, shown only when the server has dev login switched on — there is
+// deliberately no endpoint that lists accounts, because that is an enumeration
+// oracle, so this list is maintained by hand alongside the seed.
+const PILOT_ACCOUNTS = [
+  { email: "scorer@example.invalid",  label: "Scorer",         role: "scorer" },
+  { email: "coach@example.invalid",   label: "Head Coach",     role: "coach" },
+  { email: "sarah@example.invalid",   label: "Director of Sport", role: "directorofsport" },
+  { email: "parent@example.invalid",  label: "Parent",         role: "parent" },
+];
+
 function LoginPage({ onLogin, onSignUp }) {
   const [email,    setEmail]    = useState("");
   const [password, setPassword] = useState("");
   const [error,    setError]    = useState("");
   const [loading,  setLoading]  = useState(false);
   const [oauthLoading, setOauthLoading] = useState(false);
+  const [live,     setLive]     = useState(null);   // null = still asking
+
+  useEffect(() => { apiMode().then(m => setLive(m === "live")).catch(() => setLive(false)); }, []);
 
   // Mock credentials map: email → {role, name}
   const MOCK_USERS = {
@@ -27,6 +56,23 @@ function LoginPage({ onLogin, onSignUp }) {
 
   const handleLogin = async () => {
     setLoading(true); setError("");
+
+    // Live: the server decides. No fallback — see the header.
+    if (live) {
+      try {
+        const p = await signIn(email.trim());
+        onLogin(primaryRole(p), p?.user?.name || email, p);
+      } catch (e) {
+        setError(e.code === "no_such_user"
+          ? "No account for that address on this server."
+          : e.code === "dev_login_disabled"
+            ? "This server does not accept development sign-in."
+            : "Could not sign in. The server may be unreachable.");
+      }
+      setLoading(false);
+      return;
+    }
+
     await new Promise(r=>setTimeout(r,700));
     const user = MOCK_USERS[email.toLowerCase()];
     if (user && user.pw === password) {
@@ -37,6 +83,24 @@ function LoginPage({ onLogin, onSignUp }) {
       setError("No account found. Sign up or try a demo account below.");
     }
     setLoading(false);
+  };
+
+  /**
+   * Which role to draw the workspace with, when someone holds several.
+   *
+   * A placeholder for the real thing. The workspace is meant to be assembled
+   * from ALL of a person's assignments — Sarah is a director of sport at one
+   * school and a guardian at another, and neither view is the whole truth.
+   * Until the dashboard engine exists, the shell needs one role to lay out
+   * navigation, so this picks the widest. It affects presentation only: every
+   * request is authorised server-side against every assignment, so choosing
+   * wrong shows the wrong menu, never the wrong data.
+   */
+  const primaryRole = (p) => {
+    const RANK = ["platformadmin","directorofsport","schooladmin","sportsadmin","principal",
+                  "coach","assistantcoach","scorer","medical","guardian","player"];
+    const held = (p?.assignments ?? []).map(a => a.role);
+    return RANK.find(r => held.includes(r)) ?? held[0] ?? "spectator";
   };
 
   const handleGoogleOAuth = async () => {
@@ -103,17 +167,26 @@ function LoginPage({ onLogin, onSignUp }) {
           </div>
         </div>
 
-        {/* Demo accounts */}
+        {/* Accounts. Which list depends on whether there is a server. */}
         <div style={{marginTop:"20px",borderRadius:"14px",border:"1px solid rgba(99,102,241,0.2)",background:"rgba(99,102,241,0.05)",padding:"16px"}}>
-          <div style={{fontFamily:"'Syne',sans-serif",fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(99,102,241,0.7)",marginBottom:"10px"}}>✦ Demo Accounts — click to fill</div>
+          <div style={{fontFamily:"'Syne',sans-serif",fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(99,102,241,0.7)",marginBottom:"10px"}}>
+            {live ? "✦ Pilot accounts — click to fill" : "✦ Demo accounts — click to fill"}
+          </div>
           <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"6px"}}>
-            {DEMO_ACCOUNTS.map(d=>(
-              <button key={d.role} onClick={()=>{setEmail(d.email);setPassword(d.pw);setError("");}} className="pressBtn"
+            {(live ? PILOT_ACCOUNTS : DEMO_ACCOUNTS).map(d=>(
+              <button key={d.email} onClick={()=>{setEmail(d.email);setPassword(d.pw||"");setError("");}} className="pressBtn"
                 style={{padding:"7px 10px",borderRadius:"8px",cursor:"pointer",background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",textAlign:"left"}}>
                 <div style={{fontFamily:"'Syne',sans-serif",fontSize:"10px",fontWeight:700,color:"rgba(255,255,255,0.7)"}}>{ROLES[d.role]?.icon} {d.label}</div>
                 <div style={{fontFamily:"'DM Mono',monospace",fontSize:"9px",color:"rgba(255,255,255,0.3)",marginTop:"2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.email}</div>
               </button>
             ))}
+          </div>
+          {/* Said out loud, because a demo that looks like the product is how
+              someone comes to believe a roster on screen is their school's. */}
+          <div style={{fontFamily:"'DM Mono',monospace",fontSize:"9px",color:"rgba(255,255,255,0.32)",marginTop:"10px",lineHeight:1.5}}>
+            {live === null ? "Checking for a server…"
+              : live ? "Signed in against the live API. Data is real and permission-checked."
+                     : "No server reachable — demonstration data only. Nothing is saved beyond this device."}
           </div>
         </div>
       </div>

@@ -15,10 +15,22 @@ import { runAsPrincipal } from "../auth/auth-db.mjs";
 // query reads a masking view. `params` maps request query → SQL params.
 export const READ_QUERIES = {
   matches: {
-    text: `select id, home_team, away_team, venue, match_date, status, result,
-                  competition_id, school_id
-             from match
-            order by match_date desc`,
+    // These column names are the real ones. The query named home_team,
+    // away_team, venue, match_date, result and competition_id — six columns
+    // that have never existed on this table — so every call returned SQLSTATE
+    // 42703 and the fixture list could not load at all. Nothing caught it
+    // because the read suite runs against a fake pool that answers any query
+    // with canned rows: it proves the handler does no RBAC of its own, and is
+    // structurally incapable of noticing that the SQL is wrong.
+    //
+    // `opponent` is a free-text away side, because a fixture against a school
+    // that is not a SCRBRD tenant has no row to point at.
+    text: `select m.id, m.school_id, m.team_code, m.opponent, m.starts_at,
+                  m.format, m.overs, m.status, m.toss_won_by, m.toss_decision,
+                  g.name as ground
+             from match m
+             left join ground g on g.id = m.ground_id
+            order by m.starts_at desc`,
   },
   live_score: {
     text: `select match_id, innings, runs, wickets, legal_balls, last_seq, last_ball_at

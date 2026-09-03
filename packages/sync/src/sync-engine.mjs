@@ -1,5 +1,5 @@
 /**
- * SCRBRD — Scoring sync engine (Step 4, client)
+ * SCRBRD — the offline outbox.
  *
  * Wraps the queue with DURABILITY. Every ball is written to storage BEFORE it's
  * considered recorded, so a crash / dead battery / accidental refresh mid-over
@@ -13,7 +13,7 @@
  * (acked + pending) events, so the board updates on tap, independent of the
  * network. The server log stays the source of truth on reconcile.
  */
-import { replayEvents } from "../handover/scoring-session.mjs";
+import { deriveInnings } from "@scrbrd/scoring";
 
 const CHECKPOINT_EVERY = 6;               // sync at each over boundary
 const BACKOFF = [0, 1000, 2000, 5000, 15000, 30000]; // ms, capped
@@ -66,7 +66,15 @@ export class SyncEngine {
       matchId: this.matchId, deviceId: this.deviceId, scorerId: this.scorerId,
       epoch: this.epoch, innings: this.innings, clientSeq: this.clientSeq,
       clientTs: this.now(),
-      idempotencyKey: `${this.deviceId}:${this.epoch}:${this.clientSeq}`,
+      // An event that already knows its own id keeps it. The two used to be
+      // separate — the scorer minted `id` when it appended, the queue minted a
+      // key when it sent — and that is one identity too many: a `void` names
+      // its target by `id`, the server dedupes and returns `idempotency_key`,
+      // so after a round trip the correction pointed at nothing. They are the
+      // same concept seen from two sides (see newEventId), and now the same
+      // string. The fallback covers callers with no scoring surface behind
+      // them, and is unique per device, epoch and position.
+      idempotencyKey: payload?.id ?? `${this.deviceId}:${this.epoch}:${this.clientSeq}`,
       payload,
     };
     // Durability barrier: on disk before we consider it recorded.
@@ -124,12 +132,23 @@ export class SyncEngine {
   /** Delay before the next retry after a failure (exponential, capped). */
   get backoffMs() { return BACKOFF[this.attempt]; }
 
-  /** Optimistic score: replay everything the device knows (acked + pending). */
+  /**
+   * Optimistic score: replay everything the device knows (acked + pending).
+   *
+   * The same fold the scorer and the server use — deriveInnings() — because a
+   * queue that reported the score its own way is a queue that can disagree
+   * with the board it sits under. Pending events sort after acked ones, which
+   * is their real order: the server has not numbered them yet.
+   *
+   * Identity travels with each event, since that is what a `void` names. A
+   * correction the device has made but not yet sent still has to take its ball
+   * back off the board it is showing the scorer.
+   */
   score() {
     const all = [...this.acked, ...this.pending]
-      .map((e, i) => ({ seq: e.seq ?? 1e9 + i, payload: e.payload }))  // pending sort after acked
+      .map((e, i) => ({ ...e.payload, id: e.idempotencyKey, seq: e.seq ?? 1e9 + i }))
       .sort((a, b) => a.seq - b.seq);
-    return replayEvents(all);
+    return deriveInnings(all);
   }
 }
 

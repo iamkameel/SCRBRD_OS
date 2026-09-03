@@ -250,7 +250,17 @@ BEGIN
   END IF;
 
   EXECUTE format(
-    'CREATE OR REPLACE VIEW ${table}_masked WITH (security_barrier = true) AS SELECT %s FROM ${table}',
+    -- security_invoker is the load-bearing word here, and it is easy to read
+    -- past. A view runs with the permissions of its OWNER unless told
+    -- otherwise, and the owner of this one owns ${table} too — so row-level
+    -- security on ${table} was evaluated as a role that bypasses it, and this
+    -- view returned EVERY row in the table to anyone who could select from it.
+    -- Cross-school, cross-tenant, through the one object the read path is
+    -- required to use for personal information. Masking still applied, so a
+    -- leaked row had its sensitive columns nulled and looked entirely correct.
+    -- security_barrier alone does not help: it controls when predicates may be
+    -- pushed down, not whose policies apply.
+    'CREATE OR REPLACE VIEW ${table}_masked WITH (security_barrier = true, security_invoker = true) AS SELECT %s FROM ${table}',
     cols);
 END
 $mask_${table}$;`);

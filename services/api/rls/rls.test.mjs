@@ -111,8 +111,16 @@ for (const [table, def] of Object.entries(TABLES)) {
   const masked = def.masked ?? {};
   if (!Object.keys(masked).length) continue;
   ok(`${table}_masked is generated`, new RegExp(`VIEW ${table}_masked`).test(SQL));
-  ok(`${table}_masked is a security barrier`,
-     new RegExp(`VIEW ${table}_masked WITH \\(security_barrier = true\\)`).test(SQL));
+  // security_invoker is the one that decides WHOSE policies apply. Without it
+  // the view runs as its owner, who owns the table underneath and bypasses
+  // row-level security on it — so the view returned every row in the table,
+  // cross-school, still column-masked and therefore looking entirely correct.
+  // security_barrier is a different guarantee (predicate push-down) and does
+  // not substitute for it.
+  ok(`${table}_masked runs as the CALLER, not its owner`,
+     new RegExp(`VIEW ${table}_masked WITH \\([^)]*security_invoker = true`).test(SQL));
+  ok(`${table}_masked is also a security barrier`,
+     new RegExp(`VIEW ${table}_masked WITH \\(security_barrier = true`).test(SQL));
   ok(`${table}_masked builds from information_schema`,
      new RegExp(`\\$mask_${table}\\$[\\s\\S]*information_schema\\.columns`).test(SQL));
   ok(`${table}_masked fails loudly without its table`,

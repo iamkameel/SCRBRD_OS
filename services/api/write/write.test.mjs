@@ -6,7 +6,7 @@
  *      order, handles offline, optimistic score matches replay, checkpoints.
  */
 import { appendEvents, readEvents } from "./events-api.mjs";
-import { SyncEngine, memoryStorage } from "./sync-engine.mjs";
+import { SyncEngine, memoryStorage } from "@scrbrd/sync";
 import { signToken } from "../auth/auth.mjs";
 
 let pass = 0, fail = 0;
@@ -117,6 +117,22 @@ group("A. Empty / read");
   await readEvents(db.pool, SECRET, bearer("uSpectator"), "m3", 5);
   ok("readEvents queries since seq under principal",
      db.log.some(l => /seq > \$2/.test(l.text)) && db.log.some(l => l.text.includes("app.user_id")));
+}
+
+// ── A. One identity per event ──
+group("A. The queue dedupes on the event's OWN id");
+{
+  const e = new SyncEngine({ matchId: "m3", deviceId: "devA", scorerId: "u1", epoch: 3, storage: memoryStorage() });
+  const withId = await e.record({ kind: "ball", type: "run", value: 4, id: "devA:m3:xyz:1" });
+  ok("an event that knows its id keeps it", withId.idempotencyKey === "devA:m3:xyz:1");
+  // Two identities for one event is how a correction ends up pointing at
+  // nothing: a void names the id, the server returns the key.
+  ok("...so the void target and the dedupe key are the same string",
+     withId.idempotencyKey === withId.payload.id);
+
+  const anon = await e.record({ kind: "ball", type: "run", value: 1 });
+  ok("an event with no id still gets a unique key",
+     anon.idempotencyKey === "devA:3:2" && anon.idempotencyKey !== withId.idempotencyKey);
 }
 
 // ── B. Client durable queue ──

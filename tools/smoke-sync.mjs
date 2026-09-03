@@ -18,7 +18,7 @@
  *   node tools/smoke-sync.mjs
  */
 import { spawn } from "node:child_process";
-import { SyncEngine, memoryStorage } from "../services/api/write/sync-engine.mjs";
+import { SyncEngine, memoryStorage } from "@scrbrd/sync";
 import {
   deriveInnings, fromRow, inningsStart, batters, bowler, ball, BALL_TYPE,
   undoLast, newEventId, KIND,

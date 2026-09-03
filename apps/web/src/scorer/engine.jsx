@@ -7,6 +7,8 @@ import {
 import { D } from "../design/tokens.js";
 import { deviceId } from "../lib/device.js";
 import { loadMatch, saveMatch, storageKind } from "../lib/persist.js";
+import { profile } from "../lib/session.js";
+import { startSync } from "../lib/sync.js";
 import { SEGS } from "./field.js";
 import { fmtOv } from "./format.js";
 import { ALL_SHOTS } from "./shots.js";
@@ -58,6 +60,40 @@ function eventsFromInnings(i){
   return evs;
 }
 
+/**
+ * Has this over left the phone yet?
+ *
+ * The single most useful thing a scorer can know, and the artifact showed none
+ * of it. It matters most at the two moments where being wrong is expensive:
+ * before handing the phone to someone else (a handover with unsynced balls is
+ * refused, and the scorer should understand why), and at the end of a match on
+ * a ground with no signal, where walking away is how an innings is lost.
+ *
+ * "Saved" and "sent" are deliberately different words. Saved means the log is
+ * on this device and a reload will not lose it. Sent means the rest of the
+ * school can see it. A scorer offline all afternoon is fully saved and not at
+ * all sent, and telling them "saved" alone would be true and misleading.
+ */
+function SyncPill({ sync, storage }) {
+  const S = {
+    synced:  { dot: D.emerald, label: "Sent",   title: "Every ball is on the server" },
+    syncing: { dot: D.amber, label: `Sending ${sync.pending}`, title: "Balls still on their way" },
+    waiting: { dot: D.amber, label: `Held ${sync.pending}`, title: "No connection — balls are saved and will send when there is one" },
+    local:   { dot: D.textMuted, label: "On device", title: `Saved here only (${sync.reason ?? "no server"})` },
+    offline: { dot: D.textMuted, label: "On device", title: "Saved here only" },
+  }[sync.state] ?? { dot: D.textMuted, label: "On device", title: "Saved here only" };
+
+  return (
+    <div title={`${S.title}${storage ? ` · ${storage}` : ""}`}
+      aria-label={`Sync status: ${S.label}. ${S.title}`}
+      style={{display:"flex",alignItems:"center",gap:"6px",background:D.surf1,
+        border:`1px solid ${D.border}`,borderRadius:D.pill,padding:"4px 11px",flexShrink:0}}>
+      <div style={{width:"6px",height:"6px",borderRadius:"50%",background:S.dot}}/>
+      <span style={{fontFamily:D.mono,fontSize:"11px",color:D.textSecondary}}>{S.label}</span>
+    </div>
+  );
+}
+
 /* ═══════════════════════════════════════════════════════
    MAIN APP
 ═══════════════════════════════════════════════════════ */
@@ -101,11 +137,14 @@ function SCRBRD({resume}={}){
   // and must never trigger a re-render of the scoring pad mid-tap.
   const deviceIdRef = useRef(deviceId());
   const matchIdRef = useRef(null);
-  // Ids the server has acknowledged. Empty means nothing has been sent, which
-  // is the correct answer while the client sync path is not switched on — undo
-  // then truncates, exactly as it did before, and every event is still stamped
-  // with the id a void would need.
+  // Ids the server has acknowledged. Empty means nothing has left the device,
+  // which is both the truth and the safe answer: undo then truncates, and no
+  // correction is written for a ball nobody else has seen.
   const syncedRef = useRef(new Set());
+  // The outbox, once the match has been claimed. Null while offline-only —
+  // scoring never depends on it existing.
+  const syncRef = useRef(null);
+  const [sync, setSync] = useState({ state: "offline", pending: 0, reason: null });
 
   // ── Derivation ──────────────────────────────────────────
   const scoringCtxRef = useRef({ flagFor: k => INT_TEAMS[k]?.flag });
@@ -125,11 +164,19 @@ function SCRBRD({resume}={}){
    */
   const emit = (...evs) => setEvents(prev => {
     const cp = [...prev];
-    cp[curIn] = [...cp[curIn], ...evs.map(e => ({
+    const stamped = evs.map(e => ({
       ...e,
       innings: curIn,
       id: e.id ?? newEventId(deviceIdRef.current, matchIdRef.current ?? "local"),
-    }))];
+    }));
+    cp[curIn] = [...cp[curIn], ...stamped];
+    // Hand them to the outbox and do NOT wait. The queue writes to disk before
+    // it considers a ball recorded, and sends when there is a connection; the
+    // board must move on the tap either way. A throw here would be a scoring
+    // surface that stops working because the network did.
+    if (syncRef.current) {
+      for (const ev of stamped) syncRef.current.record(ev).catch(() => {});
+    }
     return cp;
   });
 
@@ -176,6 +223,46 @@ function SCRBRD({resume}={}){
     })();
     return () => { cancelled = true; };
   }, []);
+
+  // ── The outbox ──────────────────────────────────────────
+  // Claim the match and start syncing, once we know which match it is. Every
+  // outcome except success is survivable: no signal, not signed in, or a
+  // colleague already holding the token all leave the scorer working locally,
+  // which is the whole point of the offline design. Refusing to open the pad
+  // because sync is unavailable would be exactly the wrong failure.
+  useEffect(() => {
+    if (!matchId) return;
+    let stopped = false;
+    let handle = null;
+    (async () => {
+      const started = await startSync({
+        matchId,
+        userId: profile()?.user?.id,
+        onChange: (st) => {
+          if (stopped) return;
+          setSync({
+            state: st.pendingCount === 0 ? "synced" : (st.online ? "syncing" : "waiting"),
+            pending: st.pendingCount,
+            reason: st.lastError,
+          });
+          // The undo boundary reads this: an acknowledged ball can only be
+          // taken back with a compensating event.
+          syncedRef.current = handle ? handle.syncedIds() : syncedRef.current;
+        },
+      });
+      if (stopped) { started.ok && started.stop(); return; }
+      if (!started.ok) { setSync({ state: "local", pending: 0, reason: started.reason }); return; }
+      handle = started;
+      syncRef.current = started;
+      syncedRef.current = started.syncedIds();
+      setSync({ state: started.pending() ? "syncing" : "synced", pending: started.pending(), reason: null });
+    })();
+    return () => {
+      stopped = true;
+      syncRef.current?.stop();
+      syncRef.current = null;
+    };
+  }, [matchId]);
 
   // Persist on every change to the log. Skipped until hydration has finished,
   // or the empty initial state would overwrite the very log being restored.
@@ -696,6 +783,7 @@ function SCRBRD({resume}={}){
               <span style={{color:D.textMuted,fontSize:"11px",fontFamily:D.mono}}>{fmtOv(inn.balls)}</span>
             </div>
           )}
+          <SyncPill sync={sync} storage={saveState.kind}/>
         </div>
 
         {/* Dynamic Content Bar — always visible when match active */}

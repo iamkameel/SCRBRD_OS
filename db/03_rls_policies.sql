@@ -219,7 +219,17 @@ BEGIN
   END IF;
 
   EXECUTE format(
-    'CREATE OR REPLACE VIEW player_masked WITH (security_barrier = true) AS SELECT %s FROM player',
+    -- security_invoker is the load-bearing word here, and it is easy to read
+    -- past. A view runs with the permissions of its OWNER unless told
+    -- otherwise, and the owner of this one owns player too — so row-level
+    -- security on player was evaluated as a role that bypasses it, and this
+    -- view returned EVERY row in the table to anyone who could select from it.
+    -- Cross-school, cross-tenant, through the one object the read path is
+    -- required to use for personal information. Masking still applied, so a
+    -- leaked row had its sensitive columns nulled and looked entirely correct.
+    -- security_barrier alone does not help: it controls when predicates may be
+    -- pushed down, not whose policies apply.
+    'CREATE OR REPLACE VIEW player_masked WITH (security_barrier = true, security_invoker = true) AS SELECT %s FROM player',
     cols);
 END
 $mask_player$;
@@ -255,7 +265,17 @@ BEGIN
   END IF;
 
   EXECUTE format(
-    'CREATE OR REPLACE VIEW coach_masked WITH (security_barrier = true) AS SELECT %s FROM coach',
+    -- security_invoker is the load-bearing word here, and it is easy to read
+    -- past. A view runs with the permissions of its OWNER unless told
+    -- otherwise, and the owner of this one owns coach too — so row-level
+    -- security on coach was evaluated as a role that bypasses it, and this
+    -- view returned EVERY row in the table to anyone who could select from it.
+    -- Cross-school, cross-tenant, through the one object the read path is
+    -- required to use for personal information. Masking still applied, so a
+    -- leaked row had its sensitive columns nulled and looked entirely correct.
+    -- security_barrier alone does not help: it controls when predicates may be
+    -- pushed down, not whose policies apply.
+    'CREATE OR REPLACE VIEW coach_masked WITH (security_barrier = true, security_invoker = true) AS SELECT %s FROM coach',
     cols);
 END
 $mask_coach$;
@@ -291,7 +311,17 @@ BEGIN
   END IF;
 
   EXECUTE format(
-    'CREATE OR REPLACE VIEW staff_masked WITH (security_barrier = true) AS SELECT %s FROM staff',
+    -- security_invoker is the load-bearing word here, and it is easy to read
+    -- past. A view runs with the permissions of its OWNER unless told
+    -- otherwise, and the owner of this one owns staff too — so row-level
+    -- security on staff was evaluated as a role that bypasses it, and this
+    -- view returned EVERY row in the table to anyone who could select from it.
+    -- Cross-school, cross-tenant, through the one object the read path is
+    -- required to use for personal information. Masking still applied, so a
+    -- leaked row had its sensitive columns nulled and looked entirely correct.
+    -- security_barrier alone does not help: it controls when predicates may be
+    -- pushed down, not whose policies apply.
+    'CREATE OR REPLACE VIEW staff_masked WITH (security_barrier = true, security_invoker = true) AS SELECT %s FROM staff',
     cols);
 END
 $mask_staff$;
@@ -327,7 +357,17 @@ BEGIN
   END IF;
 
   EXECUTE format(
-    'CREATE OR REPLACE VIEW injury_masked WITH (security_barrier = true) AS SELECT %s FROM injury',
+    -- security_invoker is the load-bearing word here, and it is easy to read
+    -- past. A view runs with the permissions of its OWNER unless told
+    -- otherwise, and the owner of this one owns injury too — so row-level
+    -- security on injury was evaluated as a role that bypasses it, and this
+    -- view returned EVERY row in the table to anyone who could select from it.
+    -- Cross-school, cross-tenant, through the one object the read path is
+    -- required to use for personal information. Masking still applied, so a
+    -- leaked row had its sensitive columns nulled and looked entirely correct.
+    -- security_barrier alone does not help: it controls when predicates may be
+    -- pushed down, not whose policies apply.
+    'CREATE OR REPLACE VIEW injury_masked WITH (security_barrier = true, security_invoker = true) AS SELECT %s FROM injury',
     cols);
 END
 $mask_injury$;

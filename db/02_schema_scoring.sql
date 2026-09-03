@@ -415,7 +415,11 @@ BEGIN
 END $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- ── Derived read model (never stored) ────────────────────────────
-CREATE OR REPLACE VIEW match_live_score AS
+-- security_invoker: without it this view runs as its owner, who owns
+-- ball_event and therefore bypasses the row-level policy on it — the live
+-- score of every match at every school, through one SELECT. See the note in
+-- generate-rls.mjs; the same trap caught the masking views.
+CREATE OR REPLACE VIEW match_live_score WITH (security_invoker = true) AS
 SELECT
   match_id,
   innings,
