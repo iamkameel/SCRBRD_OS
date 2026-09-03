@@ -188,6 +188,48 @@ function asInjury(r) {
            restricted: r.restricted, notes: r.notes, physio: r.physio, live: true };
 }
 
+/**
+ * A career line, with the derived figures the squad screens draw.
+ *
+ * Averages and rates are computed here, from the counts the database returned,
+ * so the undefined cases stay undefined. A batter who has never been out has
+ * NO average — not an average equal to their run total, and certainly not
+ * zero — and a player who has not batted has no strike rate. Sending null
+ * rather than a number means a view renders "—" instead of stating something
+ * false with two decimal places on it.
+ *
+ * `matches` rides along because these figures are scoped: they cover the
+ * deliveries this reader may see, and a screen that shows a career average
+ * should be able to say what it was computed over.
+ */
+function asCareer(r) {
+  const runs = Number(r.runs), balls = Number(r.balls_faced);
+  const outs = Number(r.dismissals);
+  const conceded = Number(r.runs_conceded), bowled = Number(r.balls_bowled);
+  const wkts = Number(r.wickets);
+  const round2 = (n) => Math.round(n * 100) / 100;
+  return {
+    id: r.player_id,
+    name: r.full_name,
+    team: r.team_code,
+    school: r.school_id,
+    innings: Number(r.bat_matches),
+    runs, ballsFaced: balls, fours: Number(r.fours), sixes: Number(r.sixes),
+    dismissals: outs,
+    avg: outs > 0 ? round2(runs / outs) : null,
+    sr: balls > 0 ? round2((runs * 100) / balls) : null,
+    wkts,
+    ballsBowled: bowled, runsConceded: conceded,
+    econ: bowled > 0 ? round2((conceded * 6) / bowled) : null,
+    // Most recent innings first, at most eight. Always an array — a player
+    // who has not batted has an empty form guide, which a view can render as
+    // such; undefined would crash the .map() that draws it.
+    form: Array.isArray(r.form) ? r.form.map(Number) : [],
+    bowlAvg: wkts > 0 ? round2(conceded / wkts) : null,
+    live: true,
+  };
+}
+
 function asSkill(r) {
   return { playerId: r.player_id, name: r.full_name, team: r.team_code,
            assessedOn: r.assessed_on, category: r.category, metric: r.metric,
@@ -222,6 +264,7 @@ const ADAPT = {
   weather: asWeather,
   injuries: asInjury,
   skills: asSkill,
+  career: asCareer,
 };
 
 /** Resources the client knows how to read live. Used by the wiring tests. */
@@ -314,6 +357,28 @@ export function useWeather(role) {
   const { rows } = useLive("weather", role);
   if (!signedIn()) return scopedWeather(role);
   return Object.fromEntries(rows.map((w) => [w.matchId, w]));
+}
+
+/**
+ * Players with their career figures merged in.
+ *
+ * The squad screens were written against mock rows carrying avg, sr, wkts,
+ * econ and an eight-innings form array. None of those are columns — they are
+ * derived from the ball log — so after the read path went live those screens
+ * rendered blanks. This joins the two reads so the call site stays one line.
+ *
+ * A player with no career row keeps null figures rather than zeros: nobody has
+ * scored 0 at an average of 0. They have not batted.
+ */
+export function usePlayersWithCareer(role) {
+  const players = useRows("players", role);
+  const career = useRows("career", role);
+  if (!career.length) return players;
+  const byId = new Map(career.map((c) => [c.id, c]));
+  return players.map((p) => {
+    const c = byId.get(p.id);
+    return c ? { ...p, ...c, name: p.name ?? c.name } : p;
+  });
 }
 
 /** The common case: just the rows. Views that need the state use useLive(). */

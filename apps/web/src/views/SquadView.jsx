@@ -1,10 +1,10 @@
 
 import { useState } from "react";
 import { D } from "../design/tokens.js";
-import { fitnessColor, roleColor } from "../lib/format.js";
+import { fitnessColor, roleColor, stat } from "../lib/format.js";
 import { SR } from "../scorer/format.js";
 import { Avatar, Badge, Btn, Card, Input, Modal, RadarChart, SectionHeader, Select } from "../ui/primitives.jsx";
-import { useRows, useSkills } from "../lib/live.js";
+import { usePlayersWithCareer, useSkills } from "../lib/live.js";
 
 // ══════════════════════════════════════════════════════
 //  SQUAD VIEW
@@ -12,7 +12,7 @@ import { useRows, useSkills } from "../lib/live.js";
 function SquadView({ role }) {
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
-  const PLAYERS = useRows("players", role);
+  const PLAYERS = usePlayersWithCareer(role);
   const SKILLS_MATRIX = useSkills(role);
   const [team, setTeam]           = useState("U19A");
   const [selected, setSelected]   = useState(null);
@@ -62,17 +62,17 @@ function SquadView({ role }) {
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"4px"}}>
                   <div style={{textAlign:"center",padding:"5px",background:D.surf2,borderRadius:D.sm}}>
-                    <div style={{fontFamily:D.mono,fontSize:"13px",fontWeight:500,color:D.sky}}>{p.avg}</div>
+                    <div style={{fontFamily:D.mono,fontSize:"13px",fontWeight:500,color:D.sky}}>{stat(p.avg)}</div>
                     <div style={{fontFamily:D.body,fontSize:"8px",color:D.textMuted}}>avg</div>
                   </div>
                   {p.wkts>0?(
                     <div style={{textAlign:"center",padding:"5px",background:D.surf2,borderRadius:D.sm}}>
-                      <div style={{fontFamily:D.mono,fontSize:"13px",fontWeight:500,color:D.violetText}}>{p.wkts}</div>
+                      <div style={{fontFamily:D.mono,fontSize:"13px",fontWeight:500,color:D.violetText}}>{stat(p.wkts)}</div>
                       <div style={{fontFamily:D.body,fontSize:"8px",color:D.textMuted}}>wkts</div>
                     </div>
                   ):(
                     <div style={{textAlign:"center",padding:"5px",background:D.surf2,borderRadius:D.sm}}>
-                      <div style={{fontFamily:D.mono,fontSize:"13px",fontWeight:500,color:D.amber}}>{p.sr}</div>
+                      <div style={{fontFamily:D.mono,fontSize:"13px",fontWeight:500,color:D.amber}}>{stat(p.sr)}</div>
                       <div style={{fontFamily:D.body,fontSize:"8px",color:D.textMuted}}>SR</div>
                     </div>
                   )}
@@ -103,7 +103,7 @@ function SquadView({ role }) {
             <div style={{marginBottom:"14px"}}>
               <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"8px"}}>SEASON STATS</div>
               <div style={{display:"grid",gridTemplateColumns:"var(--g-3,1fr 1fr 1fr)",gap:"6px"}}>
-                {[["AVG",selected.avg,D.sky],["SR",selected.sr,D.amber],["WKTS",selected.wkts,D.violet],["ECON",selected.econ||"-",D.emerald],["AGE",selected.age,D.textMuted],[selected.cap?"ROLE":"",(selected.cap||"").toUpperCase()||"-",D.amber]].filter(([l])=>l).map(([l,v,c])=>(
+                {[["AVG",stat(selected.avg),D.sky],["SR",stat(selected.sr),D.amber],["WKTS",stat(selected.wkts),D.violet],["ECON",stat(selected.econ),D.emerald],["AGE",selected.age,D.textMuted],[selected.cap?"ROLE":"",(selected.cap||"").toUpperCase()||"-",D.amber]].filter(([l])=>l).map(([l,v,c])=>(
                   <div key={l} style={{textAlign:"center",padding:"7px 4px",background:D.surf2,borderRadius:D.sm}}>
                     <div style={{fontFamily:D.mono,fontSize:"14px",fontWeight:500,color:c}}>{v}</div>
                     <div style={{fontFamily:D.body,fontSize:"8px",color:D.textMuted,marginTop:"2px"}}>{l}</div>
@@ -114,7 +114,7 @@ function SquadView({ role }) {
             <div style={{marginBottom:"14px"}}>
               <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"8px"}}>RECENT FORM</div>
               <div style={{display:"flex",gap:"4px"}}>
-                {selected.form.map((v,i)=>{
+                {(selected.form ?? []).map((v,i)=>{
                   const bg = v===0?"rgba(244,63,94,.3)":v>=5?D.amber+"44":v>=3?D.emerald+"33":D.sky+"22";
                   const tc = v===0?D.rose:v>=5?D.amber:v>=3?D.emerald:D.sky;
                   return <div key={i} style={{flex:1,textAlign:"center",padding:"5px 2px",borderRadius:D.sm,background:bg}}>

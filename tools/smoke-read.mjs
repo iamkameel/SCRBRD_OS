@@ -84,7 +84,7 @@ try {
     "matches", "players", "injuries", "competitions",
     "coaches", "staff", "users", "grounds",
     "training", "training_attendance", "skills", "notifications",
-    "league", "weather",
+    "league", "weather", "career",
   ]) {
     let ran = true, err = null;
     try { await read(resource, medic); } catch (e) { ran = false; err = e.message; }
@@ -194,6 +194,29 @@ try {
      coachNotices.some((n) => n.team_code === null));
   ok("read state comes back per person, not per notice",
      watcherNotices.every((n) => n.read === false));
+
+  // ── Career figures are derived, and scoped like the rows ────────
+  // The aggregate reads ball_event_live, which is security_invoker, so it
+  // covers exactly the deliveries the reader may see. Two people getting
+  // different career totals for the same player is correct: an aggregate
+  // discloses as surely as a row, and a total computed over matches the reader
+  // cannot see would tell them those matches exist.
+  group("Career statistics are derived, never stored");
+  const coachCareer = await read("career", coach);
+  ok("every player comes back, batted or not", coachCareer.length > 0);
+  ok("a player who has not batted has no average rather than zero",
+     coachCareer.every((c) => Number(c.balls_faced) > 0 || Number(c.dismissals) === 0));
+  ok("the figures are counts, for the client to turn into rates",
+     coachCareer.every((c) => "runs" in c && "balls_faced" in c && "dismissals" in c));
+  ok("a form guide comes back as an array, empty when nobody has batted",
+     coachCareer.every((c) => Array.isArray(c.form)));
+  ok("no stored average column exists — nothing here is a stat SCRBRD wrote down",
+     coachCareer.every((c) => !("avg" in c) && !("strike_rate" in c)));
+
+  // Scoped like everything else: a guardian's career read covers their own
+  // child only, because the underlying player read does.
+  const guardianCareer = await read("career", guardian);
+  ok("a guardian's career read is their own child only", guardianCareer.length === 1);
 
   // ── The ladder is shared, the rest is not ───────────────────────
   group("Participation, not authorship, decides a league");

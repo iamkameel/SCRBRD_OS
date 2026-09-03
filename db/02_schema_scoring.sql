@@ -109,6 +109,13 @@ CREATE TABLE ball_event (
   striker_id      uuid REFERENCES player(id),
   non_striker_id  uuid REFERENCES player(id),
   bowler_id       uuid REFERENCES player(id),
+  -- WHO is out, when it is not the striker. A run out at the non-striker's end
+  -- dismisses the other batter, so attributing every wicket to whoever was on
+  -- strike overstates one player's dismissals and understates the other's —
+  -- which corrupts the batting average of both, permanently, in a way nothing
+  -- downstream can detect. It rode in `payload` before, where a uuid and a
+  -- typed opposition name were indistinguishable to SQL.
+  dismissed_id    uuid REFERENCES player(id),
   dismissal       text,
   payload         jsonb NOT NULL DEFAULT '{}'::jsonb,
   recovered       boolean NOT NULL DEFAULT false,  -- released from quarantine
@@ -485,3 +492,104 @@ SELECT
   max(server_ts)                                                          AS last_ball_at
 FROM ball_event_live
 GROUP BY match_id, innings;
+-- ── Career aggregates, derived (never stored) ────────────────────
+--
+-- SCOPE IS NOT INCIDENTAL HERE
+-- ────────────────────────────
+-- These read ball_event_live, which is security_invoker, so the aggregate is
+-- computed over exactly the deliveries the reader may see — and two people
+-- will legitimately get different career totals for the same player.
+--
+-- That is deliberate and it is the architecture's own rule: an aggregate leaks
+-- as surely as a row, and every dashboard query including counts must receive
+-- the same authorisation scope as a detailed record query. A "true" career
+-- average computed over matches the reader cannot see would disclose that
+-- those matches exist and how they went. So the number is scoped, and
+-- `innings` comes back with it so a screen can state what it was computed
+-- over rather than presenting a partial figure as a career.
+--
+-- Attribution comes from striker_id / bowler_id on the ball, which the scoring
+-- surface stamps from the crease at the moment of delivery. Rows with a NULL
+-- id are EXCLUDED, not guessed: an unattributed ball is a ball whose batter
+-- SCRBRD holds no row for (an opposition player at a school that is not a
+-- tenant), or one recorded before the columns were populated. Attributing it
+-- to anybody would be inventing a statistic.
+--
+-- The conventions below mirror deriveInnings() in packages/scoring exactly —
+-- see the BALL case there. Runs off the bat exclude the wide/no-ball penalty
+-- and all byes; balls faced exclude wides only. tools/smoke-fold.mjs asserts
+-- the two agree on real logs rather than trusting this comment.
+
+CREATE OR REPLACE VIEW player_batting_career WITH (security_invoker = true) AS
+SELECT
+  b.striker_id                                              AS player_id,
+  count(DISTINCT b.match_id)                                AS matches,
+  -- Runs off the bat. A wide scores nothing to the batter; the one-run penalty
+  -- on a wide or no-ball is the team's, not theirs; byes and leg byes are runs
+  -- the batter did not make.
+  coalesce(sum(CASE WHEN b.ball_type IN ('run','W','Nb')
+                    THEN coalesce(b.value,0) ELSE 0 END), 0) AS runs,
+  -- Balls faced. A no-ball IS faced even though it is not a legal delivery; a
+  -- wide is not. Byes and leg byes are faced.
+  coalesce(sum(CASE WHEN b.ball_type <> 'Wd' THEN 1 ELSE 0 END), 0) AS balls_faced,
+  coalesce(sum(CASE WHEN b.ball_type IN ('run','Nb') AND b.value = 4 THEN 1 ELSE 0 END), 0) AS fours,
+  coalesce(sum(CASE WHEN b.ball_type IN ('run','Nb') AND b.value = 6 THEN 1 ELSE 0 END), 0) AS sixes,
+  coalesce(max(b.server_ts), NULL)                           AS last_ball_at
+FROM ball_event_live b
+WHERE b.kind = 'ball' AND b.striker_id IS NOT NULL
+GROUP BY b.striker_id;
+
+CREATE OR REPLACE VIEW player_bowling_career WITH (security_invoker = true) AS
+SELECT
+  b.bowler_id                                               AS player_id,
+  count(DISTINCT b.match_id)                                AS matches,
+  -- Charged to the bowler: runs off the bat, plus the penalty and any runs run
+  -- off a wide or no-ball. Byes and leg byes are NOT charged.
+  coalesce(sum(CASE WHEN b.ball_type IN ('Wd','Nb') THEN 1 + coalesce(b.value,0)
+                    WHEN b.ball_type IN ('run','W')  THEN coalesce(b.value,0)
+                    ELSE 0 END), 0)                          AS runs_conceded,
+  coalesce(sum(CASE WHEN b.ball_type NOT IN ('Wd','Nb') THEN 1 ELSE 0 END), 0) AS legal_balls,
+  coalesce(sum(CASE WHEN b.ball_type = 'Wd' THEN 1 ELSE 0 END), 0) AS wides,
+  coalesce(sum(CASE WHEN b.ball_type = 'Nb' THEN 1 ELSE 0 END), 0) AS no_balls,
+  -- Wickets credited to the bowler. A run out is not the bowler's, which is
+  -- why the dismissal text is inspected rather than counting every 'W'.
+  coalesce(sum(CASE WHEN b.ball_type = 'W'
+                     AND coalesce(b.dismissal,'') !~* 'run ?out'
+                    THEN 1 ELSE 0 END), 0)                   AS wickets
+FROM ball_event_live b
+WHERE b.kind = 'ball' AND b.bowler_id IS NOT NULL
+GROUP BY b.bowler_id;
+
+-- Dismissals are their own aggregate because the player who is OUT is not
+-- always the striker — a run out at the non-striker's end dismisses the other
+-- batter, and `dismissed` names them. Attributing every wicket to the striker
+-- would overstate one player's dismissals and understate the other's, which
+-- corrupts the batting average of both.
+-- Per-innings batting, which is what a form guide is: the last N scores, not a
+-- rolling average. Kept separate from the career totals because it is a
+-- different grain — one row per player per innings they batted in — and
+-- flattening it into the career view would mean either an array column or a
+-- join that multiplies the totals.
+CREATE OR REPLACE VIEW player_innings WITH (security_invoker = true) AS
+SELECT
+  b.striker_id                              AS player_id,
+  b.match_id,
+  b.innings,
+  max(b.server_ts)                          AS ended_at,
+  coalesce(sum(CASE WHEN b.ball_type IN ('run','W','Nb')
+                    THEN coalesce(b.value,0) ELSE 0 END), 0) AS runs,
+  coalesce(sum(CASE WHEN b.ball_type <> 'Wd' THEN 1 ELSE 0 END), 0) AS balls_faced,
+  bool_or(b.ball_type = 'W' AND coalesce(b.dismissed_id, b.striker_id) = b.striker_id) AS out
+FROM ball_event_live b
+WHERE b.kind = 'ball' AND b.striker_id IS NOT NULL
+GROUP BY b.striker_id, b.match_id, b.innings;
+
+CREATE OR REPLACE VIEW player_dismissals WITH (security_invoker = true) AS
+SELECT
+  coalesce(b.dismissed_id, b.striker_id) AS player_id,
+  count(*)                               AS dismissals
+FROM ball_event_live b
+WHERE b.kind = 'ball' AND b.ball_type = 'W'
+  AND coalesce(b.dismissed_id, b.striker_id) IS NOT NULL
+GROUP BY coalesce(b.dismissed_id, b.striker_id);
+

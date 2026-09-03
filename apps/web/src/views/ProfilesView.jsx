@@ -5,7 +5,7 @@ import { D } from "../design/tokens.js";
 import { fitnessColor } from "../lib/format.js";
 import { can, filterRecord } from "../rbac/index.js";
 import { Avatar, Badge, Card, Pill, RadarChart, SectionHeader, Select } from "../ui/primitives.jsx";
-import { useRows, useSkills } from "../lib/live.js";
+import { usePlayersWithCareer, useRows, useSkills } from "../lib/live.js";
 
 // ══════════════════════════════════════════════════════
 //  SETTINGS / RBAC VIEW
@@ -23,7 +23,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
   // principal. Importing the raw constant here would bypass both.
   const COACHES = useRows("coaches", role);
   const INJURIES = useRows("injuries", role);
-  const PLAYERS = useRows("players", role);
+  const PLAYERS = usePlayersWithCareer(role);
   const SKILLS_MATRIX = useSkills(role);
   const STAFF = useRows("staff", role);
   const TRAINING_SESSIONS = useRows("training", role);

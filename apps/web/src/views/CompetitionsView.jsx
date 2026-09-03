@@ -2,14 +2,14 @@
 import { useState } from "react";
 import { D } from "../design/tokens.js";
 import { Avatar, Badge, Btn, Card, SectionHeader, StatusDot } from "../ui/primitives.jsx";
-import { useRows } from "../lib/live.js";
+import { usePlayersWithCareer, useRows } from "../lib/live.js";
 
 function CompetitionsView({ role }) {
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
   const COMPETITIONS = useRows("competitions", role);
   const MATCHES = useRows("matches", role);
-  const PLAYERS = useRows("players", role);
+  const PLAYERS = usePlayersWithCareer(role);
   const [active, setActive] = useState("comp1");
   const comp = COMPETITIONS.find(c=>c.id===active);
   return (

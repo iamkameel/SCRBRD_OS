@@ -130,8 +130,23 @@ try {
   // one and says so — which is how this walk found out it had been skipping the
   // step, rather than by producing a subtly wrong score.
   const stamp = (ev) => ({ ...ev, id: ev.id ?? newEventId(DEVICE, MATCH) });
+
+  // Attribution is stamped from the crease BEFORE the delivery, exactly as
+  // commitBall() does in the scoring surface: the striker who faced this ball
+  // is the one there before it rotated them. Mirrored here rather than
+  // shortcut, because a walk that attributes balls differently from the app is
+  // not testing the app.
+  const attribute = (raw) => {
+    if (raw.kind !== "ball") return raw;
+    const before = deriveInnings(log, {});
+    return { ...raw,
+             striker: raw.striker ?? before.striker ?? null,
+             nonStriker: raw.nonStriker ?? before.nonStriker ?? null,
+             bowler: raw.bowler ?? before.bowler ?? null };
+  };
+
   const record = async (raw) => {
-    const ev = stamp(raw);
+    const ev = stamp(attribute(raw));
     log.push(ev);
     await engine.record(ev);
     await engine.sync();
@@ -214,6 +229,67 @@ try {
      kept[0].n === live[0].n + 4);   // 2 voids + the 2 balls they undid
   ok("ball_event_live excludes exactly the voids and their targets",
      live[0].n === kept[0].n - 4);
+
+  group("Career figures come from the same log");
+  // Attribution now lives ON the ball — striker, non-striker and bowler stamped
+  // from the crease at the moment of delivery. It used to exist only as replay
+  // state, which meant a career average in SQL would have required
+  // re-implementing strike rotation as a window function: a third fold over the
+  // log, and by far the most intricate one.
+  //
+  // So this checks the same thing the live score check does, one level down:
+  // the per-batter figures the device computed, and the per-player figures the
+  // database derived, are the same numbers.
+  const careerRows = await dbq(
+    `select player_id, runs, balls_faced, dismissals, wickets, balls_bowled, runs_conceded
+       from (select p.id as player_id,
+                    coalesce(bat.runs,0) runs, coalesce(bat.balls_faced,0) balls_faced,
+                    coalesce(d.dismissals,0) dismissals,
+                    coalesce(bowl.wickets,0) wickets,
+                    coalesce(bowl.legal_balls,0) balls_bowled,
+                    coalesce(bowl.runs_conceded,0) runs_conceded
+               from player p
+               left join player_batting_career bat on bat.player_id = p.id
+               left join player_dismissals d on d.player_id = p.id
+               left join player_bowling_career bowl on bowl.player_id = p.id) x
+      where player_id = any($1::uuid[])`, [P]);
+  const career = Object.fromEntries(careerRows.map((r) => [r.player_id, r]));
+
+  ok("the database attributes balls to a batter at all",
+     careerRows.some((r) => Number(r.balls_faced) > 0));
+
+  // A producer that forgets to stamp the crease does not fail — its balls just
+  // quietly stop counting towards anybody's record, which is the same shape of
+  // silent wrongness as the voided ball that kept scoring. So it is asserted
+  // rather than assumed.
+  const unattributed = await dbq(
+    `select count(*)::int n from ball_event
+      where match_id = $1 and kind = 'ball' and striker_id is null`, [MATCH]);
+  ok(`every stored ball names who faced it (${unattributed[0].n} without)`,
+     unattributed[0].n === 0);
+
+  for (const bat of local.batsmen) {
+    const c = career[bat.id];
+    if (!c) continue;
+    ok(`${bat.name}: runs agree — device ${bat.runs}, database ${c.runs}`,
+       Number(c.runs) === bat.runs);
+    ok(`${bat.name}: balls faced agree — device ${bat.balls}, database ${c.balls_faced}`,
+       Number(c.balls_faced) === bat.balls);
+  }
+  for (const bow of local.bowlers) {
+    const c = career[bow.id];
+    if (!c) continue;
+    ok(`${bow.name}: runs conceded agree — device ${bow.runs}, database ${c.runs_conceded}`,
+       Number(c.runs_conceded) === bow.runs);
+    ok(`${bow.name}: legal balls bowled agree — device ${bow.balls}, database ${c.balls_bowled}`,
+       Number(c.balls_bowled) === bow.balls);
+  }
+
+  // The voided balls must be absent from the career figures too — the whole
+  // reason the aggregates read ball_event_live rather than ball_event.
+  const totalFaced = careerRows.reduce((a, r) => a + Number(r.balls_faced), 0);
+  ok(`a corrected ball is not in anyone's career record (${totalFaced} faced, ${local.balls} legal + 2 not legal)`,
+     totalFaced === local.batsmen.reduce((a, b) => a + b.balls, 0));
 
   group("The handover fold sees the same match");
   // scoring_verify_takeover reads ball_event_live too now. Asking it with the

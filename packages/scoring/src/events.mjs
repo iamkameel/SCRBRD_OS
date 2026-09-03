@@ -202,6 +202,28 @@ export const ball = (o) => ({
   // UI already reads, so a log entry needs no translation on either side.
   type: checkedType(o.type),
   value: o.value ?? 0,
+
+  // WHO WAS INVOLVED
+  // ────────────────
+  // The striker who faced it, the non-striker at the other end, and the bowler
+  // who sent it down. Recorded ON THE EVENT rather than left to replay state.
+  //
+  // deriveInnings() does not read these — it tracks the crease itself, from
+  // `batters` and `bowler` events plus strike rotation, and it must keep doing
+  // so or a log from an older device stops replaying. They exist because
+  // ATTRIBUTION has to be available to readers that are not the device: a
+  // career batting average in SQL, a heat map for one batter, a bowler's
+  // spell. The alternative was re-implementing strike rotation as a window
+  // function, which is a third fold over the log and by far the most intricate
+  // of them.
+  //
+  // Nullable, and readers must treat NULL as "not attributable" rather than
+  // guessing: balls recorded before this existed carry no striker, and a
+  // delivery faced by an opposition batter SCRBRD holds no row for carries a
+  // name in `payload` instead of an id. See asPlayerId.
+  striker: o.striker ?? null,
+  nonStriker: o.nonStriker ?? null,
+  bowler: o.bowler ?? null,
   shot: o.shot ?? null,
   seg: o.seg ?? null,
   zone: o.zone ?? null,
@@ -306,6 +328,7 @@ export function toRow(ev) {
     striker_id: asPlayerId(ev.striker),
     non_striker_id: asPlayerId(ev.nonStriker),
     bowler_id: asPlayerId(ev.bowler),
+    dismissed_id: asPlayerId(ev.dismissed),
     payload: {},
   };
   for (const k of ROW_SCALARS) if (ev[k] !== undefined) row[k] = ev[k];
@@ -321,6 +344,7 @@ export function toRow(ev) {
     if (k === "striker" && row.striker_id) continue;
     if (k === "nonStriker" && row.non_striker_id) continue;
     if (k === "bowler" && row.bowler_id) continue;
+    if (k === "dismissed" && row.dismissed_id) continue;
     row.payload[k] = v;
   }
   return row;
@@ -344,6 +368,7 @@ export function fromRow(row) {
     ...(row.striker_id != null ? { striker: row.striker_id } : {}),
     ...(row.non_striker_id != null ? { nonStriker: row.non_striker_id } : {}),
     ...(row.bowler_id != null ? { bowler: row.bowler_id } : {}),
+    ...(row.dismissed_id != null ? { dismissed: row.dismissed_id } : {}),
     ...Object.fromEntries(ROW_SCALARS.filter((k) => row[k] != null).map((k) => [k, row[k]])),
     ...Object.fromEntries(Object.entries(ROW_SNAKE)
       .filter(([, col]) => row[col] != null)

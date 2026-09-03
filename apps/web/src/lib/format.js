@@ -22,4 +22,19 @@ const fitnessColor  = (f) => f==="fit"?D.emerald:f==="injured"?D.rose:f==="rehab
 
 const roleColor = (r) => ROLES[r]?.color||D.textMuted;
 
-export { addDays, dateStr, fitnessColor, initials, pctDays, roleColor, severityColor, today };
+/**
+ * A derived figure, or an em dash when there isn't one.
+ *
+ * Career statistics are computed from the ball log, and several of them are
+ * genuinely undefined rather than zero: a batter who has never been dismissed
+ * has no average, a player who has not bowled has no economy rate. The read
+ * layer sends null for those on purpose.
+ *
+ * Rendering null directly puts an empty gap where a number goes, which reads
+ * as a layout bug rather than as "not applicable" — and `value || "—"` is
+ * worse, because it turns a legitimate 0 (a duck, a maiden) into a dash. Only
+ * null and undefined become the dash.
+ */
+const stat = (v, suffix = "") => (v === null || v === undefined ? "—" : `${v}${suffix}`);
+
+export { addDays, dateStr, fitnessColor, initials, pctDays, roleColor, severityColor, stat, today };

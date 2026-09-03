@@ -209,6 +209,58 @@ export const READ_QUERIES = {
              from match_weather`,
   },
 
+  /**
+   * Career figures, derived from the ball log and never stored.
+   *
+   * The scope is the point, not a caveat. These read ball_event_live, which is
+   * security_invoker, so the aggregate covers exactly the deliveries this
+   * person may see — and two people will legitimately get different career
+   * totals for the same player. That is the architecture's own rule: an
+   * aggregate leaks as surely as a row, and a "true" average computed over
+   * matches the reader cannot see would disclose that those matches exist and
+   * how they went.
+   *
+   * `matches` comes back so a screen can say what the number was computed
+   * over, rather than presenting a partial figure as a career.
+   *
+   * Averages and strike rates are computed HERE rather than in SQL, so the
+   * division-by-zero cases stay visible: a batter who has never been out has
+   * no average, which is not the same as an average of zero, and a bowler who
+   * has bowled no legal ball has no economy rate.
+   */
+  career: {
+    text: `select p.id                                   as player_id,
+                  p.full_name, p.team_code, p.school_id,
+                  coalesce(bat.matches, 0)               as bat_matches,
+                  coalesce(bat.runs, 0)                  as runs,
+                  coalesce(bat.balls_faced, 0)           as balls_faced,
+                  coalesce(bat.fours, 0)                 as fours,
+                  coalesce(bat.sixes, 0)                 as sixes,
+                  coalesce(d.dismissals, 0)              as dismissals,
+                  coalesce(bowl.matches, 0)              as bowl_matches,
+                  coalesce(bowl.runs_conceded, 0)        as runs_conceded,
+                  coalesce(bowl.legal_balls, 0)          as balls_bowled,
+                  coalesce(bowl.wickets, 0)              as wickets,
+                  coalesce(f.form, '{}')                 as form
+             from player p
+             left join player_batting_career bat on bat.player_id = p.id
+             left join player_dismissals      d   on d.player_id  = p.id
+             left join player_bowling_career  bowl on bowl.player_id = p.id
+             -- The form guide: the last eight innings, most recent first. A
+             -- LATERAL rather than a join, because it is a different grain —
+             -- one row per innings — and joining it would multiply the career
+             -- totals above by the number of innings played.
+             left join lateral (
+               select array_agg(x.runs order by x.ended_at desc) as form
+                 from (select i.runs, i.ended_at
+                         from player_innings i
+                        where i.player_id = p.id
+                        order by i.ended_at desc
+                        limit 8) x
+             ) f on true
+            order by p.full_name`,
+  },
+
   // The team sheet for a fixture: a roster of identified minors, governed by
   // player.profile.read rather than fixture.read. The difference is a
   // spectator, who should see the score without also receiving a list of

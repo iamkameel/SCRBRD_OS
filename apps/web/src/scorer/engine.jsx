@@ -549,8 +549,29 @@ function SCRBRD({resume}={}){
           // different fact from a scorer skipping the step.
           NO_CONTACT_SHOTS.has(shot) ? PLACEMENT_NULL.NO_CONTACT : PLACEMENT_NULL.NOT_REQUIRED,
           CAPTURE_PROFILE.QUICK));
-    const ev=ballEvent({type,value,shot,bowlerApproach:approach||null,freeHit,...place});
     const before=inn;
+    // WHO FACED IT, ON THE EVENT
+    // ──────────────────────────
+    // Until now a ball carried no striker and no bowler: attribution existed
+    // only as replay state, rebuilt by walking `batters` and `bowler` events
+    // and applying strike rotation. That is fine for a scorecard the device
+    // draws, and impossible for anything else — a career average in SQL would
+    // have meant re-implementing the whole rotation state machine as a window
+    // function, which is a third fold over the log and the most intricate one.
+    //
+    // The event should record what happened, and who was on strike is part of
+    // what happened. The columns already existed and were always NULL, which
+    // is why ball_event.striker_id sits unused in the shot_points query.
+    //
+    // Taken from `before`, not `after`: the striker who faced this delivery is
+    // the one at the crease before it rotated them.
+    const ev=ballEvent({
+      type,value,shot,bowlerApproach:approach||null,freeHit,
+      striker: before?.striker ?? null,
+      nonStriker: before?.nonStriker ?? null,
+      bowler: before?.bowler ?? null,
+      ...place,
+    });
     const after=project(ev);
     const endedOver=after.balls>before.balls&&after.balls%6===0;
     const endedInnings=after.complete;
@@ -564,7 +585,7 @@ function SCRBRD({resume}={}){
       const ovLog=after.overLog[after.overLog.length-1];
       if(ovLog)setLastOverDCB(ovLog);
     }
-    const mile=detectMilestone({...ev,striker:before?.striker,bowler:before?.bowler},before);
+    const mile=detectMilestone(ev,before);
     const showBallOverlay=type==="run"&&(value===4||value===6);
     const queue=[];
     if(showBallOverlay)queue.push(buildEventCfg(value,null));

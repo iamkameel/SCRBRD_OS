@@ -4,7 +4,7 @@ import { D } from "../design/tokens.js";
 import { SR } from "../scorer/format.js";
 import { Avatar, Badge, Btn, Card, Input, Modal, Pill, SectionHeader, Select } from "../ui/primitives.jsx";
 import { WeatherChip } from "./shared.jsx";
-import { useRows, useWeather } from "../lib/live.js";
+import { usePlayersWithCareer, useRows, useWeather } from "../lib/live.js";
 
 // ══════════════════════════════════════════════════════
 //  LEAGUE MANAGEMENT VIEW
@@ -14,7 +14,7 @@ function LeagueView({ role }) {
   // principal. Importing the raw constant here would bypass both.
   const COMPETITIONS = useRows("competitions", role);
   const MATCHES = useRows("matches", role);
-  const PLAYERS = useRows("players", role);
+  const PLAYERS = usePlayersWithCareer(role);
   const WEATHER = useWeather(role);
   const [selComp, setSelComp] = useState("comp1");
   const [tab,     setTab]     = useState("table");
