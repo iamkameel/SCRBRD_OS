@@ -82,6 +82,11 @@ DECLARE
   P_U16B    uuid := 'aaaaaaaa-0000-0000-0000-000000000006';  -- K Dlamini, U16B
   P_WES     uuid := 'bbbbbbbb-0000-0000-0000-000000000001';  -- D Mkhize, Westville
   P_WES2    uuid := 'bbbbbbbb-0000-0000-0000-000000000002';  -- K Botha, Westville
+  -- The falsifying principal for the notification capability gate. It has to
+  -- be a real spectator: the user seeded as spectator@example.invalid holds a
+  -- PLAYER assignment, and the player bundle includes medical.status.read, so
+  -- it would pass the assertion below for the wrong reason and prove nothing.
+  U_WATCHER uuid := '88888888-0000-0000-0000-000000000008';
   n int;
 BEGIN
   -- ── 1. Nobody is anybody by default ────────────────────────────
@@ -293,7 +298,134 @@ BEGIN
   SELECT count(*) INTO n FROM ground WHERE school_id = WES;
   PERFORM _assert(n = 0, 'coach can read another school''s grounds');
 
-  -- ── 11. Revocation takes effect immediately ────────────────────
+  -- ── 11. The programme tables ───────────────────────────────────
+  -- Five areas that existed in the product and not in the database, so the
+  -- browser was deciding all of them. Each assertion below is a decision that
+  -- used to be made in JavaScript.
+
+  -- training_session is a noticeboard fact, scoped to the team it is for.
+  PERFORM _as(U_COACH);
+  SELECT count(*) INTO n FROM training_session;
+  PERFORM _assert(n = 1, 'U19A coach should see exactly their own team''s session');
+  SELECT count(*) INTO n FROM training_session WHERE team_code = 'U16B';
+  PERFORM _assert(n = 0, 'U19A coach can read a U16B training session');
+
+  -- The register is the sensitive half, and it is governed separately. A
+  -- guardian holds player.profile.read but their assignment reaches only their
+  -- own children, so they get the row for R Pillay and not the one for
+  -- J Whitfield — from the same table, in the same session.
+  PERFORM _as(U_PARENT);
+  SELECT count(*) INTO n FROM training_attendance;
+  PERFORM _assert(n = 1, 'guardian should see exactly their own child''s attendance row');
+  SELECT count(*) INTO n FROM training_attendance WHERE player_id = P_INJURED;
+  PERFORM _assert(n = 1, 'guardian cannot see their own child''s attendance');
+
+  -- A guardian may read the SESSION (team.read, school-wide assignment) while
+  -- reading only one row of the REGISTER. That asymmetry is the entire reason
+  -- the two are separate tables.
+  SELECT count(*) INTO n FROM training_session;
+  PERFORM _assert(n > 1, 'guardian should still see the training schedule itself');
+
+  -- player_skill: a coach's assessment of a named child. The guardian holds no
+  -- player.development.read at all, so this is empty for them — a parent reads
+  -- their child's profile and availability, not a coaching judgement of them.
+  PERFORM _as(U_PARENT);
+  SELECT count(*) INTO n FROM player_skill;
+  PERFORM _assert(n = 0, 'guardian can read development assessments');
+
+  PERFORM _as(U_COACH);
+  SELECT count(*) INTO n FROM player_skill;
+  PERFORM _assert(n = 2, 'U19A coach should see their own squad''s assessments only');
+  SELECT count(*) INTO n FROM player_skill WHERE player_id = P_U16B;
+  PERFORM _assert(n = 0, 'U19A coach can read a U16B player''s assessment');
+
+  -- ── 11b. A notification is not permission ──────────────────────
+  -- The one that matters most. news.read is a floor capability; if it were the
+  -- only gate, the feed would be a side channel around every policy above.
+  -- Each row declares the capability its SUBJECT MATTER requires and the
+  -- policy demands both, in the same scope.
+
+  -- The player-role principal holds news.read and NOT medical.status.read.
+  PERFORM _as(U_WATCHER);
+  SELECT count(*) INTO n FROM notification WHERE id = '40170000-0000-0000-0000-000000000001';
+  PERFORM _assert(n = 1, 'a general school notice did not reach someone holding news.read');
+  SELECT count(*) INTO n FROM notification WHERE id = '40170000-0000-0000-0000-000000000002';
+  PERFORM _assert(n = 0,
+    'a MEDICAL notice reached a principal with no medical.status.read — the notification feed is a way around RLS');
+
+  -- The medical officer holds both, school-wide.
+  PERFORM _as(U_MEDICAL);
+  SELECT count(*) INTO n FROM notification WHERE id = '40170000-0000-0000-0000-000000000002';
+  PERFORM _assert(n = 1, 'the medical officer cannot read a medical notice');
+
+  -- Scope still applies on top of the capability: the U19A coach holds
+  -- medical.status.read and reads the U19A medical notice, but must not
+  -- receive the U16B team notice even though it only requires news.read.
+  PERFORM _as(U_COACH);
+  SELECT count(*) INTO n FROM notification WHERE id = '40170000-0000-0000-0000-000000000002';
+  PERFORM _assert(n = 1, 'U19A coach cannot read their own team''s medical notice');
+  SELECT count(*) INTO n FROM notification WHERE id = '40170000-0000-0000-0000-000000000003';
+  PERFORM _assert(n = 0, 'U19A coach received a U16B team notice');
+
+  -- A school-wide notice carries team_code NULL. A NULL on a resource NARROWS,
+  -- so without the COALESCE to ANY_SCOPE in the generated policy this would be
+  -- invisible to every team-scoped person in the school.
+  SELECT count(*) INTO n FROM notification WHERE id = '40170000-0000-0000-0000-000000000001';
+  PERFORM _assert(n = 1, 'a school-wide notice is invisible to a team-scoped coach');
+
+  -- Publishing is scope-shaped. The coach holds news.publish.team and not
+  -- news.publish.school, so a school-level notice must be refused.
+  BEGIN
+    INSERT INTO notification (school_id, team_code, scope_level, kind, title, body)
+    VALUES (HIL, NULL, 'school', 'system', 'Unauthorised', 'Should not commit');
+    PERFORM _assert(false, 'a coach published a SCHOOL notice holding only news.publish.team');
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+
+  -- ...and the team notice they may publish goes through.
+  INSERT INTO notification (school_id, team_code, scope_level, kind, title, body)
+  VALUES (HIL, 'U19A', 'team', 'training', 'Nets moved', 'Nets 1-3 at 14:30.');
+
+  -- The catalogue must not be writable by the application role: a row here
+  -- would let a notice declare a capability the model never defined.
+  BEGIN
+    INSERT INTO capability (name) VALUES ('invented.capability');
+    PERFORM _assert(false, 'the application role can write the capability catalogue');
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+
+  -- ── 11c. Participation, not authorship, decides a league ───────
+  -- The competition is seeded with school_id NULL because that was the only
+  -- way a shared league could be readable before competition_entrant existed.
+  -- What is new is that the ladder itself is scoped and readable whole: a
+  -- team-scoped coach must see BOTH entrants, or the log has one row in it.
+  PERFORM _as(U_COACH);
+  SELECT count(*) INTO n FROM competition_entrant
+   WHERE competition_id = '99999999-0000-0000-0000-000000000001';
+  PERFORM _assert(n = 2, 'a team-scoped coach cannot read the full league ladder');
+
+  -- Weather inherits the fixture's policy rather than being left open on the
+  -- grounds that rain is not confidential.
+  PERFORM _as(U_COACH);
+  SELECT count(*) INTO n FROM match_weather;
+  PERFORM _assert(n = 1, 'coach cannot read conditions for their own fixture');
+
+  -- ── 11d. Read state is per person and not a capability ─────────
+  PERFORM _as(U_COACH);
+  INSERT INTO notification_read (notification_id, person_id)
+  VALUES ('40170000-0000-0000-0000-000000000001', U_COACH);
+  BEGIN
+    INSERT INTO notification_read (notification_id, person_id)
+    VALUES ('40170000-0000-0000-0000-000000000001', U_MEDICAL);
+    PERFORM _assert(false, 'one person marked a notice read on another person''s behalf');
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+
+  PERFORM _as(U_MEDICAL);
+  SELECT count(*) INTO n FROM notification_read;
+  PERFORM _assert(n = 0, 'one person can see which notices another person has opened');
+
+  -- ── 12. Revocation takes effect immediately ────────────────────
   -- This is the property the SECURITY DEFINER lookup was chosen for. Nothing
   -- about authority is carried in the session, so deactivating an assignment
   -- applies on the very next statement rather than at next login.

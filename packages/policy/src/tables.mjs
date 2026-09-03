@@ -148,15 +148,148 @@ export const TABLES = {
     // generated and the read path carried no predicate — any authenticated
     // principal could read every institution's competitions.
     //
-    // It is governed now, but note the modelling limit: a competition organised
-    // by one school is readable by that school. A genuinely shared league (a
-    // KZN schools competition spanning several clients) needs a
-    // competition_entrant join table so visibility derives from participation
-    // rather than from who created the row. Until that exists, a shared league
-    // must be created with school_id NULL, which makes it platform-scoped.
+    // The modelling limit noted here — that a competition was readable only by
+    // the school that created the row, so a genuinely shared league had to be
+    // created platform-scoped with school_id NULL — is closed by
+    // competition_entrant below. Visibility now derives from PARTICIPATION:
+    // you can read a league you have a team in, evaluated in YOUR scope, not
+    // the organiser's. The exception is written as a capability check rather
+    // than bare existence, so entering a competition does not hand a person
+    // who holds no competition.read a competition they could not otherwise
+    // see — participation decides WHICH leagues are in reach, never WHETHER
+    // the person may read leagues at all.
     read:  "competition.read",
     write: "competition.manage",
     anchors: { school: "school_id" },
+    visibleWhen: "competition_visible(competition.id)",
+    masked: {},
+  },
+
+  competition_entrant: {
+    // Who is IN a league, and their standing in it. One row per team per
+    // competition; the log table the League screen's ladder is derived from.
+    //
+    // Read and write part company here, and that is the point of the table.
+    //
+    // WRITING a ladder row is a tenant act: only Westville may edit Westville's
+    // record, so the capability check is anchored to the row's own school.
+    // READING one is not — a log with one row in it is not a log. So the read
+    // side ORs in competition_visible(), which asks whether this person can
+    // reach the COMPETITION, through the organiser or through any entrant.
+    //
+    // Safe because a ladder row carries nothing personal: a school, a team
+    // code, and a points total. The row that WOULD be sensitive — the squad
+    // that played — is in match_squad behind player.profile.read.
+    read:  "competition.read",
+    write: "competition.manage",
+    visibleWhen: "competition_visible(competition_entrant.competition_id)",
+    anchors: { school: "school_id", team: "(COALESCE(competition_entrant.team_code, '*'::text))" },
+    masked: {},
+  },
+
+  training_session: {
+    // A scheduled session: when, where, which team, run by whom. Not personal
+    // data — it is on the noticeboard — which is why it is governed by
+    // team.read and separated from the attendance register below.
+    //
+    // The split matters. Merging the two would mean a parent could not learn
+    // that training moved to 06:30 without also being handed a list of every
+    // child who attended, and a coach could not see the schedule for a team
+    // they cover without the same. It is the same shape as injury: the
+    // AVAILABILITY fact is widely readable, the roster of named minors is not.
+    read:  "team.read",
+    write: "team.manage",
+    anchors: { school: "school_id", team: "team_code" },
+    masked: {},
+  },
+
+  training_attendance: {
+    // The register: which named minors were at which session. Reading it is
+    // reading a list of children, so it is governed by player.profile.read —
+    // not by team.read, which a spectator-adjacent role can hold.
+    //
+    // Anchors are derived from the session, because the row carries no school
+    // or team column of its own. Deriving them is not optional under the
+    // asymmetric NULL rule: a resource that does not state its school is
+    // covered by no school-scoped assignment, so leaving them NULL would deny
+    // everyone rather than fail open. Same reasoning as match_squad.
+    read:  "player.profile.read",
+    write: "team.manage",
+    anchors: {
+      school: "(SELECT t.school_id FROM training_session t WHERE t.id = training_attendance.session_id)",
+      team:   "(SELECT t.team_code FROM training_session t WHERE t.id = training_attendance.session_id)",
+      person: "player_id",
+    },
+    masked: {},
+  },
+
+  player_skill: {
+    // Development assessments — a coach's numeric judgement of a named child.
+    // Governed by its own capability, player.development.read, which neither
+    // spectator nor guardian holds: a parent reads their child's PROFILE and
+    // their availability, and a coaching assessment of their technique is not
+    // a document the platform hands over without the school choosing to.
+    //
+    // Anchors resolve through the player, so a team-scoped coach reaches their
+    // own squad's assessments and no further.
+    read:  "player.development.read",
+    write: "player.development.write",
+    anchors: {
+      school: "(SELECT p.school_id FROM player p WHERE p.id = player_skill.player_id)",
+      team:   "(SELECT p.team_code FROM player p WHERE p.id = player_skill.player_id)",
+      person: "player_id",
+    },
+    masked: {},
+  },
+
+  notification: {
+    // A notice, and the single hardest table in the schema to get right.
+    //
+    // The rule it exists to enforce: a notification can REDUCE what someone
+    // receives and must never EXPAND what they may know. A notice whose body
+    // reads "Theo Pretorius cleared for light training" is a medical
+    // disclosure wearing a bell icon, and news.read is a floor capability that
+    // very nearly everyone holds. Governing this table by news.read alone
+    // would mean the notification feed became a side channel around every
+    // other policy in this file — the exact thing the architecture note
+    // forbids when it says a school administrator cannot grant themselves
+    // notification access to information they cannot reach through RBAC.
+    //
+    // So each row DECLARES the capability its subject matter requires, and the
+    // read policy demands BOTH: news.read to receive notices at all, AND the
+    // row's own capability, evaluated in the SAME scope. A medical notice
+    // needs medical.status.read; a fixture notice needs fixture.read; a
+    // general one names news.read and adds nothing. required_capability is a
+    // foreign key onto the generated capability catalogue, so a typo cannot
+    // silently become a notice nobody can read.
+    //
+    // Publishing is scope-shaped for the same reason: the write capability is
+    // derived from the row's own scope_level, so news.publish.team lets a
+    // coach post to their team and does not let them post to the school.
+    read:  "news.read",
+    readAlso: "(notification.required_capability)",
+    write: "('news.publish.' || notification.scope_level)",
+    // A school-wide notice carries no team, and a NULL team narrows — which
+    // would hide every school notice from every team-scoped coach. It is
+    // ANY_SCOPE, declared, because a school notice genuinely is not about one
+    // team.
+    anchors: { school: "school_id", team: "(COALESCE(notification.team_code, '*'::text))" },
+    masked: {},
+  },
+
+  match_weather: {
+    // Conditions at a fixture. Carries nothing personal, but it is keyed to a
+    // match and must not be readable by someone who cannot read the match —
+    // otherwise the weather table quietly answers "does this school have a
+    // fixture on Saturday?" to anyone who asks. Anchors derive from the match,
+    // exactly as the fixture's own policy computes them.
+    read:  "fixture.read",
+    write: "fixture.update",
+    anchors: {
+      school:  "(SELECT m.school_id FROM match m WHERE m.id = match_weather.match_id)",
+      team:    "(SELECT m.team_code FROM match m WHERE m.id = match_weather.match_id)",
+      fixture: "match_id",
+    },
     masked: {},
   },
 };
@@ -167,11 +300,22 @@ export const MASKED_TABLES = Object.entries(TABLES)
   .map(([t]) => t);
 
 /** Every capability referenced here, for cross-checking against roles.mjs. */
+/**
+ * A capability slot is either a literal name or a SQL expression computing one
+ * at row level (written parenthesised, the same convention the anchors use).
+ * Only literals can be cross-checked against roles.mjs — an expression names
+ * whatever the row says, which is the point of it.
+ */
+export const isCapabilityExpression = (c) => typeof c === "string" && c.startsWith("(");
+
+/** Every capability NAMED here, for cross-checking against roles.mjs. */
 export function referencedCapabilities() {
   const out = new Set();
+  const add = (c) => { if (c && !isCapabilityExpression(c)) out.add(c); };
   for (const def of Object.values(TABLES)) {
-    if (def.read) out.add(def.read);
-    if (def.write) out.add(def.write);
+    add(def.read);
+    add(def.readAlso);
+    add(def.write);
     for (const c of Object.keys(def.masked ?? {})) out.add(c);
   }
   return [...out].sort();

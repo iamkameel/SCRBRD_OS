@@ -74,6 +74,15 @@ BEGIN
   END LOOP;
 END $grant_functions$;
 
+-- The capability catalogue is reference data, generated in 01_authz.sql from
+-- the policy model. The application reads it and must never write it: a row
+-- inserted here would make a notification's declared required_capability
+-- satisfiable through a name the model never defined, which is a way to
+-- publish a notice into a scope that holds no such grant. The blanket GRANT
+-- above reaches it because it is a table in public, so it is taken back
+-- explicitly rather than by carving an exception into the grant.
+REVOKE INSERT, UPDATE, DELETE ON capability FROM scrbrd_app;
+
 -- Anything added by a later migration is covered without a follow-up grant.
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
   GRANT SELECT, INSERT, UPDATE ON TABLES TO scrbrd_app;

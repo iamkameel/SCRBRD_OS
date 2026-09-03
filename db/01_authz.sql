@@ -92,6 +92,89 @@ GRANT EXECUTE ON FUNCTION app_can(text, uuid, text, uuid, uuid) TO PUBLIC;
 -- the assignments the database looks up, and there is no second way to ask.
 
 -- ══════════════════════════════════════════════════════════════════
+--  The capability catalogue
+-- ══════════════════════════════════════════════════════════════════
+-- Every capability the model defines, as rows, so a column that stores a
+-- capability NAME can have a foreign key onto it — notification.required_capability
+-- is the one that does. Without this, a typo in a published notice becomes a
+-- notification nobody can read, which fails closed but fails silently, and the
+-- person who published it has no way to discover that nobody received it.
+--
+-- Inserted, never deleted: rows here are referenced. A capability retired from
+-- the model leaves its row behind rather than breaking the references to it,
+-- and grants no authority on its own — authority comes from role_capability.
+CREATE TABLE IF NOT EXISTS capability (name text PRIMARY KEY);
+INSERT INTO capability (name) VALUES
+  ('school.read'),
+  ('school.manage'),
+  ('user.read'),
+  ('user.invite'),
+  ('user.role.assign'),
+  ('audit.read'),
+  ('team.read'),
+  ('team.manage'),
+  ('team.select'),
+  ('player.profile.read'),
+  ('player.profile.manage'),
+  ('player.pii.read'),
+  ('player.performance.read'),
+  ('player.performance.write'),
+  ('player.development.read'),
+  ('player.development.write'),
+  ('fixture.read'),
+  ('fixture.create'),
+  ('fixture.update'),
+  ('fixture.cancel'),
+  ('scoring.start'),
+  ('scoring.edit'),
+  ('scoring.finalise'),
+  ('scoring.correct'),
+  ('officiating.assign'),
+  ('officiating.report'),
+  ('medical.status.read'),
+  ('medical.details.read'),
+  ('medical.write'),
+  ('discipline.read'),
+  ('discipline.write'),
+  ('transport.read'),
+  ('transport.manage'),
+  ('transport.drive'),
+  ('facility.read'),
+  ('facility.manage'),
+  ('invoice.read'),
+  ('invoice.manage'),
+  ('competition.read'),
+  ('competition.manage'),
+  ('news.read'),
+  ('news.publish.team'),
+  ('news.publish.school'),
+  ('news.publish.competition'),
+  ('analytics.read'),
+  ('scouting.read'),
+  ('scouting.write'),
+  ('platform.health.read'),
+  ('platform.tenant.manage'),
+  ('platform.support.impersonate')
+ON CONFLICT (name) DO NOTHING;
+
+-- Readable by everyone, writable by nobody but a migration. The names are
+-- already in the client bundle, so there is nothing to protect by hiding them
+-- — but the catalogue must not be writable by the application, or a row could
+-- be added to make a notification's declared capability satisfiable by a role
+-- that was never granted it. RLS is enabled with an open read rather than left
+-- off, so the "no public table has row-level security disabled" assertion in
+-- db/99_rls_verify.sql stays a blanket rule with no exceptions list to drift.
+ALTER TABLE capability ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS capability_read ON capability;
+CREATE POLICY capability_read ON capability FOR SELECT USING (true);
+-- The matching REVOKE of write access lives in db/06_app_role.sql, not here:
+-- scrbrd_app is created there, and this file runs first. Revoking from a role
+-- that does not exist yet is an error on a fresh cluster — and it would not
+-- have been caught locally, because roles are cluster-level and survive the
+-- DROP SCHEMA that migrate --reset does.
+
+
+-- ══════════════════════════════════════════════════════════════════
 --  Role → capability bundles
 -- ══════════════════════════════════════════════════════════════════
 -- Replaced wholesale on every regeneration.

@@ -8,7 +8,7 @@
  * emits says the same thing the JS says.
  */
 import { ROLES, ROLE_CAPABILITIES, roleGrants, SCORING_ROLES } from "@scrbrd/policy/roles";
-import { TABLES, referencedCapabilities } from "@scrbrd/policy/tables";
+import { TABLES, referencedCapabilities, isCapabilityExpression } from "@scrbrd/policy/tables";
 import { ALL_CAPABILITIES, SENSITIVE, isCapability } from "@scrbrd/policy/capabilities";
 import { main } from "./generate-rls.mjs";
 
@@ -89,14 +89,31 @@ ok("every scoring role reaches scoring.edit through its bundle",
 
 // ── C. Per-table policies ────────────────────────────────
 group("C. Table policies");
+const rx = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// A capability slot is a literal name, or a parenthesised SQL expression that
+// computes one from the row (notification declares its own). Both end up as
+// the first argument to app_can(); only the quoting differs.
+const capArg = (c) => (isCapabilityExpression(c) ? rx(c) : `'${rx(c)}'`);
+
 for (const [table, def] of Object.entries(TABLES)) {
   ok(`${table}: RLS enabled`,      new RegExp(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY`).test(SQL));
   ok(`${table}: read policy uses ${def.read}`,
-     new RegExp(`CREATE POLICY ${table}_read ON ${table}[\\s\\S]{0,200}app_can\\('${def.read.replace(/\./g, "\\.")}'`).test(SQL));
+     new RegExp(`CREATE POLICY ${table}_read ON ${table}[\\s\\S]{0,300}app_can\\(${capArg(def.read)}`).test(SQL));
   ok(`${table}: write policy uses ${def.write}`,
-     new RegExp(`CREATE POLICY ${table}_insert ON ${table}[\\s\\S]{0,200}app_can\\('${def.write.replace(/\./g, "\\.")}'`).test(SQL));
+     new RegExp(`CREATE POLICY ${table}_insert ON ${table}[\\s\\S]{0,300}app_can\\(${capArg(def.write)}`).test(SQL));
   ok(`${table}: update checks both ways`,
      new RegExp(`CREATE POLICY ${table}_update[\\s\\S]*?USING[\\s\\S]*?WITH CHECK`).test(SQL));
+  // readAlso NARROWS — it is AND-ed. visibleWhen WIDENS — it is OR-ed. Get the
+  // precedence wrong and a named exception silently becomes a bypass of the
+  // extra requirement, which for `notification` would mean the feed handing
+  // out medical information to anyone holding news.read.
+  if (def.readAlso) {
+    const policy = SQL.match(new RegExp(`CREATE POLICY ${table}_read ON ${table}[\\s\\S]*?;`))?.[0] ?? "";
+    ok(`${table}: read ALSO requires ${def.readAlso}`,
+       new RegExp(`AND app_can\\(${capArg(def.readAlso)}`).test(policy));
+    ok(`${table}: the extra requirement is AND-ed, never OR-ed`,
+       !new RegExp(`OR\\s+app_can\\(${capArg(def.readAlso)}`).test(policy));
+  }
 }
 // Records about minors are deactivated, never deleted, so an audit trail survives.
 ok("no DELETE policy is granted anywhere", !/FOR DELETE/.test(SQL));

@@ -91,6 +91,9 @@ INSERT INTO app_user (id, school_id, email, name, role, player_id, child_ids, te
 INSERT INTO app_user (id, school_id, email, name, role, teams) VALUES
   ('88888888-0000-0000-0000-000000000007', '11111111-1111-1111-1111-111111111111', 'sarah@example.invalid', 'Sarah Mokoena', 'directorofsport', '{U16A}');
 
+INSERT INTO app_user (id, school_id, email, name, role, teams) VALUES
+  ('88888888-0000-0000-0000-000000000008', '11111111-1111-1111-1111-111111111111', 'watcher@example.invalid', 'A Watcher', 'spectator', '{}');
+
 INSERT INTO role_assignment (id, person_id, role, school_id, team_code) VALUES
   ('a5510000-0000-0000-0000-000000000001', '88888888-0000-0000-0000-000000000001', 'player',          '11111111-1111-1111-1111-111111111111', NULL),
   ('a5510000-0000-0000-0000-000000000002', '88888888-0000-0000-0000-000000000002', 'scout',           '11111111-1111-1111-1111-111111111111', NULL),
@@ -102,7 +105,15 @@ INSERT INTO role_assignment (id, person_id, role, school_id, team_code) VALUES
   ('a5510000-0000-0000-0000-000000000007', '88888888-0000-0000-0000-000000000007', 'directorofsport', '11111111-1111-1111-1111-111111111111', NULL),
   ('a5510000-0000-0000-0000-000000000008', '88888888-0000-0000-0000-000000000007', 'coach',           '11111111-1111-1111-1111-111111111111', 'U16B'),
   ('a5510000-0000-0000-0000-000000000009', '88888888-0000-0000-0000-000000000007', 'guardian',        '11111111-1111-1111-1111-111111111111', NULL),
-  ('a5510000-0000-0000-0000-00000000000a', '88888888-0000-0000-0000-000000000007', 'guardian',        '22222222-2222-2222-2222-222222222222', NULL);
+  ('a5510000-0000-0000-0000-00000000000a', '88888888-0000-0000-0000-000000000007', 'guardian',        '22222222-2222-2222-2222-222222222222', NULL),
+  -- A genuine spectator. The user seeded as spectator@example.invalid above
+  -- holds a PLAYER assignment, and the player bundle includes
+  -- medical.status.read — a pupil can see who is available — so it cannot
+  -- falsify a claim about medical information. The spectator bundle is
+  -- fixture.read, news.read and competition.read and nothing else, which makes
+  -- it the principal that proves the notification capability gate does
+  -- something: it holds news.read and must still not receive a medical notice.
+  ('a5510000-0000-0000-0000-00000000000b', '88888888-0000-0000-0000-000000000008', 'spectator',       '11111111-1111-1111-1111-111111111111', NULL);
 
 -- The parent's child, and Sarah's two children at two schools.
 INSERT INTO guardian_child (assignment_id, player_id) VALUES
@@ -111,3 +122,56 @@ INSERT INTO guardian_child (assignment_id, player_id) VALUES
   ('a5510000-0000-0000-0000-00000000000a', 'bbbbbbbb-0000-0000-0000-000000000001');  -- Sarah → D Mkhize (Westville)
 
 COMMIT;
+
+-- ── The programme: training, development, notices, ladder, weather ──
+-- Fixtures for db/99_rls_verify.sql. The notification rows in particular are
+-- chosen to make the capability gate falsifiable: one general notice everybody
+-- gets, one medical notice that must reach the medical officer and the coach's
+-- own team and NOT the spectator, and one U16B team notice the U19A coach must
+-- not receive.
+
+INSERT INTO competition_entrant (competition_id, school_id, team_code, display_name, played, won, lost, drawn, no_result, points) VALUES
+  ('99999999-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'U19A', 'Hilton U19A',    5, 4, 1, 0, 0, 8),
+  ('99999999-0000-0000-0000-000000000001', '22222222-2222-2222-2222-222222222222', 'U19A', 'Westville U19A', 5, 3, 2, 0, 0, 6);
+
+INSERT INTO training_session (id, school_id, team_code, title, starts_at, duration_min, venue, coach_id, session_type, drills, notes) VALUES
+  ('7a717000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'U19A',
+   'Pre-Match Prep', now() + interval '1 day', 90, 'Nets 1-3',
+   'dddddddd-0000-0000-0000-000000000001', 'match-prep',
+   '{"Throw-downs","Bowling loads","Catching"}', 'Top order against pace.'),
+  ('7a717000-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'U16B',
+   'U16B Batting', now() + interval '2 days', 75, 'Nets 6-7',
+   'dddddddd-0000-0000-0000-000000000002', 'batting',
+   '{"Front foot drive","Rotating strike"}', NULL);
+
+INSERT INTO training_attendance (session_id, player_id, status) VALUES
+  ('7a717000-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000001', 'present'),
+  ('7a717000-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000005', 'injured');
+
+INSERT INTO player_skill (player_id, assessed_on, category, metric, score) VALUES
+  ('aaaaaaaa-0000-0000-0000-000000000001', current_date - 30, 'batting', 'technique', 85),
+  ('aaaaaaaa-0000-0000-0000-000000000001', current_date - 30, 'batting', 'power',     78),
+  ('aaaaaaaa-0000-0000-0000-000000000006', current_date - 30, 'batting', 'technique', 61);
+
+INSERT INTO notification (id, school_id, team_code, scope_level, kind, urgency, title, body, required_capability, is_public, subject_kind) VALUES
+  -- General: news.read only. Everyone attached to Hilton receives it.
+  ('40170000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', NULL, 'school',
+   'system', 'low', 'Fixture list published',
+   'The 2026/27 fixture list is now available.', 'news.read', true, 'system'),
+  -- Medical: the body names a child's condition, so it demands
+  -- medical.status.read on top of news.read. A spectator holds news.read and
+  -- must NOT receive this one — that single row is the whole argument for the
+  -- readAlso mechanism.
+  ('40170000-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'U19A', 'team',
+   'injury', 'high', 'Injury update',
+   'R Pillay remains out with a hamstring strain; review in two weeks.',
+   'medical.status.read', false, 'injury'),
+  -- A U16B team notice. The U19A coach's assignment is team-scoped, so it must
+  -- not reach them even though they hold news.read at the same school.
+  ('40170000-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 'U16B', 'team',
+   'training', 'low', 'U16B training moved',
+   'U16B batting session moves to Nets 6-7.', 'news.read', false, 'training');
+
+INSERT INTO match_weather (match_id, condition, temp_c, humidity_pct, wind_kph, wind_dir, uv_index, rain_chance_pct, forecast, playable) VALUES
+  ('77777777-0000-0000-0000-000000000002', 'Partly cloudy', 22, 60, 16, 'SW', 7, 20,
+   'Pleasant Midlands morning. Isolated cloud.', true);

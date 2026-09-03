@@ -22,7 +22,7 @@
  */
 
 import { ROLE_CAPABILITIES, ROLES, roleGrants, SCORING_ROLES, unknownCapabilities } from "@scrbrd/policy/roles";
-import { TABLES } from "@scrbrd/policy/tables";
+import { TABLES, isCapabilityExpression } from "@scrbrd/policy/tables";
 import { ALL_CAPABILITIES } from "@scrbrd/policy/capabilities";
 
 const q = (s) => `'${String(s).replaceAll("'", "''")}'`;
@@ -60,9 +60,22 @@ const anchor = (table, def, key, cast) => {
   return col.startsWith("(") ? col : `${table}.${col}`;
 };
 
+/**
+ * A capability slot, as SQL.
+ *
+ * Usually a literal name. Sometimes the capability is a property OF THE ROW
+ * rather than of the table — a notification declares the capability its
+ * subject matter requires, and publishing one is gated by its own scope level
+ * — and then the slot is a parenthesised SQL expression, the same convention
+ * the anchors already use. Passing a column through here rather than
+ * inventing a second decision function keeps every authorization answer coming
+ * out of app_can().
+ */
+const capExpr = (c) => (isCapabilityExpression(c) ? c : q(c));
+
 const callCan = (table, def, capability) => {
   const args = [
-    q(capability),
+    capExpr(capability),
     anchor(table, def, "school", "uuid"),
     anchor(table, def, "team", "text"),
     anchor(table, def, "person", "uuid"),
@@ -153,7 +166,39 @@ function capabilityRows() {
   const rows = [];
   for (const role of ROLES)
     for (const cap of ROLE_CAPABILITIES[role]) rows.push(`  (${q(role)}, ${q(cap)})`);
-  return `${banner("Role → capability bundles")}
+  const catalogue = ALL_CAPABILITIES.map((c) => `  (${q(c)})`).join(",\n");
+  return `${banner("The capability catalogue")}
+-- Every capability the model defines, as rows, so a column that stores a
+-- capability NAME can have a foreign key onto it — notification.required_capability
+-- is the one that does. Without this, a typo in a published notice becomes a
+-- notification nobody can read, which fails closed but fails silently, and the
+-- person who published it has no way to discover that nobody received it.
+--
+-- Inserted, never deleted: rows here are referenced. A capability retired from
+-- the model leaves its row behind rather than breaking the references to it,
+-- and grants no authority on its own — authority comes from role_capability.
+CREATE TABLE IF NOT EXISTS capability (name text PRIMARY KEY);
+INSERT INTO capability (name) VALUES
+${catalogue}
+ON CONFLICT (name) DO NOTHING;
+
+-- Readable by everyone, writable by nobody but a migration. The names are
+-- already in the client bundle, so there is nothing to protect by hiding them
+-- — but the catalogue must not be writable by the application, or a row could
+-- be added to make a notification's declared capability satisfiable by a role
+-- that was never granted it. RLS is enabled with an open read rather than left
+-- off, so the "no public table has row-level security disabled" assertion in
+-- db/99_rls_verify.sql stays a blanket rule with no exceptions list to drift.
+ALTER TABLE capability ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS capability_read ON capability;
+CREATE POLICY capability_read ON capability FOR SELECT USING (true);
+-- The matching REVOKE of write access lives in db/06_app_role.sql, not here:
+-- scrbrd_app is created there, and this file runs first. Revoking from a role
+-- that does not exist yet is an error on a fresh cluster — and it would not
+-- have been caught locally, because roles are cluster-level and survive the
+-- DROP SCHEMA that migrate --reset does.
+
+${banner("Role → capability bundles")}
 -- Replaced wholesale on every regeneration.
 DELETE FROM role_capability;
 INSERT INTO role_capability (role, capability) VALUES
@@ -172,16 +217,25 @@ ${rows.join(",\n")};`;
  * rather than discovering the absence.
  */
 const readPredicate = (table, def) => {
-  const can = callCan(table, def, def.read);
+  // `readAlso` is AND-ed, and it is the opposite kind of thing from
+  // `visibleWhen`: an exception widens, a second requirement narrows. A
+  // notification needs news.read AND the capability the row itself declares,
+  // in the same scope, so the feed cannot become a way around every other
+  // policy here. Both together parenthesise as (required AND also) OR
+  // (exception) — get that precedence wrong and the exception silently
+  // becomes a bypass of the extra requirement.
+  const can = def.readAlso
+    ? `${callCan(table, def, def.read)}\n       AND ${callCan(table, def, def.readAlso)}`
+    : callCan(table, def, def.read);
   if (!def.visibleWhen) return can;
-  return `${can}\n    OR (${def.visibleWhen.trim()})`;
+  return `(${can})\n    OR (${def.visibleWhen.trim()})`;
 };
 
 function tablePolicies() {
   const out = [banner("Per-table row-level security")];
   for (const [table, def] of Object.entries(TABLES)) {
     out.push(`
--- ${table} — read: ${def.read} · write: ${def.write}${def.visibleWhen ? "\n-- plus a named exception on read — see readPredicate() in generate-rls.mjs" : ""}
+-- ${table} — read: ${def.read}${def.readAlso ? ` AND ${def.readAlso}` : ""} · write: ${def.write}${def.visibleWhen ? "\n-- plus a named exception on read — see readPredicate() in generate-rls.mjs" : ""}
 ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS ${table}_read   ON ${table};
 DROP POLICY IF EXISTS ${table}_insert ON ${table};
@@ -358,6 +412,6 @@ export function main() { return authz() + "\n" + policies(); }
 if (import.meta.url === `file://${process.argv[1]}`) {
   const { writeFileSync } = await import("node:fs");
   writeFileSync("db/01_authz.sql", authz());
-  writeFileSync("db/03_rls_policies.sql", policies());
-  console.log("wrote db/01_authz.sql and db/03_rls_policies.sql");
+  writeFileSync("db/09_rls_policies.sql", policies());
+  console.log("wrote db/01_authz.sql and db/09_rls_policies.sql");
 }
