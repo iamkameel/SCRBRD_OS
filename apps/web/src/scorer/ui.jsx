@@ -1,3 +1,4 @@
+import { useEffect, useId, useRef } from "react";
 import { D } from "../design/tokens.js";
 
 /* ═══════════════════════════════════════════════════════
@@ -156,27 +157,86 @@ const SignalBar = ({ label, value, pct, color, center }) => (
   </div>
 );
 
-/* ── Bottom Sheet ── */
-const Sheet = ({ children, title, accent, onClose }) => (
+/* ── Bottom Sheet ──────────────────────────────────────────────
+   Every blocking decision in the scorer comes through here: who is opening
+   the batting, who is bowling the next over, how a batter was dismissed. It
+   was a pair of divs — no dialog role, no name, no Escape, and nothing
+   stopping Tab from wandering out of it into the page underneath while the
+   scrim covered everything.
+
+   That last one is the sharp edge. A sheet is modal in appearance only, so a
+   keyboard user could tab to a button they cannot see, press it, and change
+   the match without any idea what they had done.
+
+   What this adds:
+     - role="dialog" + aria-modal, and aria-labelledby pointing at the title,
+       so it is announced as a dialog with a name rather than as loose text.
+     - Escape closes it, which is what every user of every dialog expects.
+     - Focus moves in on open and is returned to whatever had it on close;
+       otherwise dismissing a sheet drops focus to the top of the document
+       and the scorer starts tabbing from the beginning of the page.
+     - Tab is trapped, so the only things reachable are inside the sheet.
+*/
+const Sheet = ({ children, title, accent, onClose }) => {
+  const panel = useRef(null);
+  const titleId = useId();
+  const returnTo = useRef(null);
+
+  useEffect(() => {
+    returnTo.current = document.activeElement;
+    // Focus the panel rather than the first control: announcing the dialog
+    // and its name comes first, and a scorer who lands straight on a player
+    // button has not been told what they are answering.
+    panel.current?.focus();
+
+    const onKey = (e) => {
+      if (e.key === "Escape") { e.stopPropagation(); onClose?.(); return; }
+      if (e.key !== "Tab") return;
+      const focusables = panel.current?.querySelectorAll(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])');
+      if (!focusables?.length) return;
+      const first = focusables[0], last = focusables[focusables.length - 1];
+      // Wrap at both ends. Without this, Tab from the last control lands on
+      // the page behind the scrim — invisible, and still clickable.
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    };
+    document.addEventListener("keydown", onKey, true);
+    return () => {
+      document.removeEventListener("keydown", onKey, true);
+      // Only restore focus if it is still somewhere in this sheet; if the
+      // caller has already moved it deliberately, leave it alone.
+      if (panel.current?.contains(document.activeElement) || document.activeElement === document.body) {
+        returnTo.current?.focus?.();
+      }
+    };
+  }, [onClose]);
+
+  return (
   <div style={{position:"fixed",inset:0,zIndex:200,display:"flex",flexDirection:"column",justifyContent:"flex-end"}}>
-    <div onClick={onClose} style={{position:"absolute",inset:0,background:"rgba(3,5,12,.75)",backdropFilter:"blur(6px)",WebkitBackdropFilter:"blur(6px)"}}/>
-    <div className="slideUp" style={{position:"relative",background:D.glass,backdropFilter:"blur(28px) saturate(1.8)",
+    {/* The scrim is decorative and is not a control: a keyboard user closes
+        with Escape, and giving this a tab stop would just add a mystery one. */}
+    <div onClick={onClose} aria-hidden="true" style={{position:"absolute",inset:0,background:"rgba(3,5,12,.75)",backdropFilter:"blur(6px)",WebkitBackdropFilter:"blur(6px)"}}/>
+    <div ref={panel} className="slideUp" role="dialog" aria-modal="true" tabIndex={-1}
+      {...(title ? { "aria-labelledby": titleId } : {})}
+      style={{position:"relative",background:D.glass,backdropFilter:"blur(28px) saturate(1.8)",
       WebkitBackdropFilter:"blur(28px) saturate(1.8)",border:`1px solid ${D.borderMed}`,
       borderBottom:"none",borderRadius:`${D.xxl} ${D.xxl} 0 0`,
       boxShadow:"0 -32px 80px rgba(0,0,0,.65),inset 0 1px 0 rgba(255,255,255,.1)",
       maxHeight:"92vh",display:"flex",flexDirection:"column"}}>
-      <div style={{display:"flex",justifyContent:"center",paddingTop:"12px",paddingBottom:"4px",flexShrink:0}}>
+      <div aria-hidden="true" style={{display:"flex",justifyContent:"center",paddingTop:"12px",paddingBottom:"4px",flexShrink:0}}>
         <div style={{width:"36px",height:"4px",borderRadius:"2px",background:D.borderMed}}/>
       </div>
       {title&&(
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 24px 4px",flexShrink:0}}>
-          <div style={{fontFamily:D.head,fontSize:"18px",fontWeight:700,color:accent||D.textPrimary}}>{title}</div>
-          <button onClick={onClose} style={{background:"transparent",border:"none",color:D.textMuted,fontSize:"22px",cursor:"pointer",lineHeight:1,padding:"4px 6px"}}>&times;</button>
+          <h2 id={titleId} style={{fontFamily:D.head,fontSize:"18px",fontWeight:700,color:accent||D.textPrimary,margin:0}}>{title}</h2>
+          <button onClick={onClose} aria-label={`Close ${title}`} style={{background:"transparent",border:"none",color:D.textMuted,fontSize:"22px",cursor:"pointer",lineHeight:1,padding:"4px 6px"}}>&times;</button>
         </div>
       )}
       <div style={{overflow:"auto",padding:"0 24px 32px"}}>{children}</div>
     </div>
   </div>
-);
+  );
+};
 
 export { Badge, BallDot, Btn, Card, GS, Glass, Lbl, Sep, Sheet, SignalBar };

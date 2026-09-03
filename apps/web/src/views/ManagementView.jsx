@@ -113,7 +113,7 @@ function ManagementView({ role, users, setUsers }) {
                 <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:D.textMuted,marginBottom:"5px"}}>{f.label}</div>
                 <input value={u[f.key]||""} type={f.type} onChange={e=>setU(prev=>({...prev,[f.key]:e.target.value}))}
                   placeholder={f.placeholder}
-                  style={{width:"100%",padding:"10px 14px",borderRadius:D.md,background:D.surf2,border:`1px solid ${D.border}`,fontFamily:D.body,fontSize:"13px",color:D.textPrimary,outline:"none",boxSizing:"border-box"}}/>
+                  style={{width:"100%",padding:"10px 14px",borderRadius:D.md,background:D.surf2,border:`1px solid ${D.border}`,fontFamily:D.body,fontSize:"13px",color:D.textPrimary,boxSizing:"border-box"}}/>
               </div>
             ))}
 
@@ -214,18 +214,18 @@ function ManagementView({ role, users, setUsers }) {
             {/* Search */}
             <div style={{position:"relative",flex:1,minWidth:"180px"}}>
               <span style={{position:"absolute",left:"10px",top:"50%",transform:"translateY(-50%)",fontSize:"12px",color:D.textMuted}}>🔍</span>
-              <input value={searchQ} onChange={e=>setSearchQ(e.target.value)} placeholder="Search users…"
-                style={{width:"100%",padding:"8px 12px 8px 30px",borderRadius:D.pill,background:D.surf2,border:`1px solid ${D.border}`,fontFamily:D.body,fontSize:"12px",color:D.textPrimary,outline:"none",boxSizing:"border-box"}}/>
+              <input value={searchQ} onChange={e=>setSearchQ(e.target.value)} placeholder="Search users…" aria-label="Search users"
+                style={{width:"100%",padding:"8px 12px 8px 30px",borderRadius:D.pill,background:D.surf2,border:`1px solid ${D.border}`,fontFamily:D.body,fontSize:"12px",color:D.textPrimary,boxSizing:"border-box"}}/>
             </div>
             {/* Role filter */}
             <select value={filterRole} onChange={e=>setFilterRole(e.target.value)}
-              style={{padding:"7px 12px",borderRadius:D.pill,background:D.surf2,border:`1px solid ${D.border}`,fontFamily:D.body,fontSize:"11px",color:D.textSecondary,outline:"none",cursor:"pointer"}}>
+              style={{padding:"7px 12px",borderRadius:D.pill,background:D.surf2,border:`1px solid ${D.border}`,fontFamily:D.body,fontSize:"11px",color:D.textSecondary,cursor:"pointer"}}>
               <option value="all">All Roles</option>
               {Object.entries(ROLES).map(([r,rc])=><option key={r} value={r}>{rc.icon} {rc.label}</option>)}
             </select>
             {/* Status filter */}
             <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)}
-              style={{padding:"7px 12px",borderRadius:D.pill,background:D.surf2,border:`1px solid ${D.border}`,fontFamily:D.body,fontSize:"11px",color:D.textSecondary,outline:"none",cursor:"pointer"}}>
+              style={{padding:"7px 12px",borderRadius:D.pill,background:D.surf2,border:`1px solid ${D.border}`,fontFamily:D.body,fontSize:"11px",color:D.textSecondary,cursor:"pointer"}}>
               <option value="all">All Status</option>
               <option value="active">Active</option>
               <option value="suspended">Suspended</option>
@@ -283,7 +283,7 @@ function ManagementView({ role, users, setUsers }) {
                         <td style={{padding:"10px 14px"}}>
                           {canManageUsers ? (
                             <select value={u.role} onChange={e=>promoteRole(u.id,e.target.value)}
-                              style={{padding:"4px 8px",borderRadius:D.md,background:`${rc2.color||D.indigo}18`,border:`1px solid ${rc2.color||D.indigo}44`,fontFamily:D.head,fontSize:"9px",fontWeight:700,color:rc2.color||D.indigo,cursor:"pointer",outline:"none"}}>
+                              style={{padding:"4px 8px",borderRadius:D.md,background:`${rc2.color||D.indigo}18`,border:`1px solid ${rc2.color||D.indigo}44`,fontFamily:D.head,fontSize:"9px",fontWeight:700,color:rc2.color||D.indigo,cursor:"pointer"}}>
                               {Object.entries(ROLES).filter(([r])=>r!=="superadmin"||isSuperAdmin).map(([r,rc])=>(
                                 <option key={r} value={r}>{rc.icon} {rc.label}</option>
                               ))}

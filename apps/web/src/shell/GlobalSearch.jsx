@@ -83,10 +83,10 @@ function GlobalSearch({ role, onNav, onClose }) {
         {/* Input row */}
         <div style={{display:"flex",alignItems:"center",gap:"10px",padding:"14px 16px",borderBottom:`1px solid ${D.border}`}}>
           <span style={{fontSize:"16px",color:D.textMuted}}>🔍</span>
-          <input ref={inputRef} value={q} onChange={e=>{setQ(e.target.value);setAiMode(false);setAiAnswer("");}}
+          <input ref={inputRef} value={q} onChange={e=>{setQ(e.target.value);setAiMode(false);setAiAnswer("");}} aria-label="Search, or ask StatGuru"
             onKeyDown={e=>{if(e.key==="Escape")onClose();if(e.key==="Enter")askGuru();}}
             placeholder="Search players, matches, staff… or ask StatGuru anything"
-            style={{flex:1,background:"transparent",border:"none",outline:"none",fontFamily:D.body,fontSize:"14px",color:D.textPrimary,}}/>
+            style={{flex:1,background:"transparent",border:"none",fontFamily:D.body,fontSize:"14px",color:D.textPrimary,}}/>
           {looksLikeStat&&!aiMode&&(
             <button onClick={askGuru} className="pressBtn" style={{display:"flex",alignItems:"center",gap:"5px",padding:"5px 12px",borderRadius:D.pill,cursor:"pointer",background:`${D.violet}18`,border:`1px solid ${D.violet}44`,fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.violet,whiteSpace:"nowrap"}}>
               ✦ Ask StatGuru

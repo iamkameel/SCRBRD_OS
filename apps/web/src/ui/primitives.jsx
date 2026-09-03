@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { D, px } from "../design/tokens.js";
 import { initials } from "../lib/format.js";
 
@@ -116,25 +117,43 @@ const Modal = ({ title, children, onClose, width="520px" }) => (
   </div>
 );
 
-const Input = ({ label, value, onChange, type="text", placeholder, small }) => (
+/**
+ * A labelled text field.
+ *
+ * The label was a styled <div> — visible, and invisible to everything else.
+ * A screen reader announced "edit, blank"; clicking the word did not focus
+ * the field; and voice control had no name to say. A placeholder is not a
+ * substitute: it vanishes the moment someone types, which is exactly when a
+ * person who has lost their place needs it most.
+ *
+ * A real <label htmlFor> costs nothing visually and fixes all three.
+ */
+const Input = ({ label, value, onChange, type="text", placeholder, small }) => {
+  const id = useId();
+  return (
   <div style={{marginBottom:small?"0":"14px"}}>
-    {label&&<div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"5px"}}>{label}</div>}
-    <input type={type} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder}
+    {label&&<label htmlFor={id} style={{display:"block",fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"5px"}}>{label}</label>}
+    <input id={id} type={type} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder}
+      {...(label ? {} : { "aria-label": placeholder })}
       style={{width:"100%",padding:"9px 12px",background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,
-        color:D.textPrimary,fontFamily:D.body,fontSize:"13px",outline:"none"}}/>
+        color:D.textPrimary,fontFamily:D.body,fontSize:"13px"}}/>
   </div>
-);
+  );
+};
 
-const Select = ({ label, value, onChange, options }) => (
+const Select = ({ label, value, onChange, options }) => {
+  const id = useId();
+  return (
   <div style={{marginBottom:"14px"}}>
-    {label&&<div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"5px"}}>{label}</div>}
-    <select value={value} onChange={e=>onChange(e.target.value)}
+    {label&&<label htmlFor={id} style={{display:"block",fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"5px"}}>{label}</label>}
+    <select id={id} value={value} onChange={e=>onChange(e.target.value)}
       style={{width:"100%",padding:"9px 12px",background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,
-        color:D.textPrimary,fontFamily:D.body,fontSize:"13px",outline:"none"}}>
+        color:D.textPrimary,fontFamily:D.body,fontSize:"13px"}}>
       {options.map(o=><option key={o.value||o} value={o.value||o}>{o.label||o}</option>)}
     </select>
   </div>
-);
+  );
+};
 
 // ── RADAR / SPIDER CHART ───────────────────────────────
 function RadarChart({ data, color=D.indigo, size=160 }) {

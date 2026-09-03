@@ -217,10 +217,15 @@ export default function SCRBRD_OS() {
     <>
       <style>{GLOBAL_CSS}</style>
       <div className="os-shell" style={{display:"flex",minHeight:"100vh",background:D.bg}}>
+        {/* First in the document, so it is the first thing a keyboard reaches.
+            Without it, getting to the content means tabbing past every
+            navigation entry on every single page change — and the nav is up to
+            nineteen entries long. Invisible until focused. */}
+        <a href="#os-content" className="skip-link">Skip to content</a>
         {!isMobile&&<Sidebar role={role} active={page} onNav={setPage} collapsed={collapsed} onToggle={()=>setCollapsed(!collapsed)} notifCount={unreadCount}/>}
         <div style={{flex:1,display:"flex",flexDirection:"column",minWidth:0,overflow:"hidden"}}>
           <TopBar role={role} onRoleChange={handleRoleChange} onNav={setPage} userName={userName}/>
-          <main className="os-main" style={{flex:1,overflowY:"auto"}}>
+          <main id="os-content" tabIndex={-1} className="os-main" style={{flex:1,overflowY:"auto"}}>
             {VIEW_MAP[page] || VIEW_MAP.dashboard}
           </main>
         </div>

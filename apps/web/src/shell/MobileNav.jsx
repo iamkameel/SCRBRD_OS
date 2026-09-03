@@ -48,7 +48,7 @@ function SportSwitcher() {
               <span style={{fontFamily:D.body,fontSize:"12px",fontWeight:s.live?600:400,color:s.live?D.textPrimary:D.textSecondary}}>{s.label}</span>
               {s.live
                 ? <span style={{marginLeft:"auto",width:"6px",height:"6px",borderRadius:"50%",background:D.emerald}}/>
-                : <span style={{marginLeft:"auto",fontFamily:D.head,fontSize:"7px",fontWeight:700,letterSpacing:"0.1em",color:D.amber,background:D.amber+"16",border:`1px solid ${D.amber}30`,borderRadius:D.pill,padding:"2px 6px"}}>SOON</span>}
+                : <span style={{marginLeft:"auto",fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",color:D.amber,background:D.amber+"16",border:`1px solid ${D.amber}30`,borderRadius:D.pill,padding:"2px 6px"}}>SOON</span>}
             </button>
           ))}
         </div>
@@ -68,11 +68,18 @@ function MobileNav({ role, active, onNav, notifCount }) {
     const isActive = isMore ? moreActive : active===k;
     const isBell = k==="notifications";
     return (
-      <button onClick={()=>{ isMore ? setMoreOpen(true) : (setMoreOpen(false), onNav(k)); }} className="pressBtn" style={{
+      <button onClick={()=>{ isMore ? setMoreOpen(true) : (setMoreOpen(false), onNav(k)); }} className="pressBtn"
+        aria-current={isActive&&!isMore?"page":undefined}
+        aria-expanded={isMore?moreOpen:undefined}
+        // The 8px uppercase label under each icon is decorative reinforcement.
+        // Naming the button outright means it is announced once, properly,
+        // rather than as an emoji followed by a shouted abbreviation.
+        aria-label={isBell&&notifCount>0?`${m.label}, ${notifCount} unread`:m.label}
+        style={{
         flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:"3px",padding:"7px 2px",
         background:isActive?D.indigo+"16":"transparent",border:"none",borderRadius:D.md,cursor:"pointer",position:"relative",minHeight:"52px",justifyContent:"center"}}>
-        <span style={{fontSize:"17px",lineHeight:1,filter:isActive?"none":"grayscale(.5) opacity(.75)"}}>{m.icon}</span>
-        <span style={{fontFamily:D.head,fontSize:"8px",fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:isActive?D.textPrimary:D.textMuted}}>{m.label}</span>
+        <span aria-hidden="true" style={{fontSize:"17px",lineHeight:1,filter:isActive?"none":"grayscale(.5) opacity(.75)"}}>{m.icon}</span>
+        <span aria-hidden="true" style={{fontFamily:D.head,fontSize:"8px",fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:isActive?D.textPrimary:D.textSecondary}}>{m.label}</span>
         {isBell&&notifCount>0&&<span style={{position:"absolute",top:"4px",right:"calc(50% - 16px)",background:D.rose,color:"#fff",borderRadius:D.pill,padding:"0 4px",fontFamily:D.mono,fontSize:"8px",fontWeight:700,minWidth:"13px"}}>{notifCount}</span>}
       </button>
     );
@@ -89,7 +96,7 @@ function MobileNav({ role, active, onNav, notifCount }) {
               {SPORTS.map(s=>(
                 <span key={s.id} style={{display:"flex",alignItems:"center",gap:"5px",padding:"5px 10px",borderRadius:D.pill,fontFamily:D.head,fontSize:"9px",fontWeight:700,
                   background:s.live?D.emerald+"14":"transparent",border:`1px solid ${s.live?D.emerald+"33":D.border}`,color:s.live?D.emerald:D.textMuted}}>
-                  {s.icon} {s.label}{!s.live&&<span style={{fontSize:"7px",color:D.amber}}>SOON</span>}
+                  {s.icon} {s.label}{!s.live&&<span style={{fontSize:"9px",color:D.amber}}>SOON</span>}
                 </span>
               ))}
             </div>
@@ -111,10 +118,10 @@ function MobileNav({ role, active, onNav, notifCount }) {
           </div>
         </>
       )}
-      <div className="os-bottomnav">
+      <nav aria-label="Main" className="os-bottomnav">
         {primary.map(k=><Item key={k} k={k}/>)}
         {rest.length>0&&<Item k="__more" isMore/>}
-      </div>
+      </nav>
     </>
   );
 }

@@ -118,7 +118,7 @@ function LeagueView({ role }) {
                           {["P","W","L","NR"].map(k=>(
                             <td key={k} style={{padding:"11px 12px",textAlign:"center"}}>
                               {isEdit&&k!=="P"?(
-                                <input type="number" defaultValue={t[k]} onChange={e=>setTableEdit(prev=>({...prev,[t.team]:{...prev[t.team],[k]:Number(e.target.value)}}))}
+                                <input type="number" aria-label={`${t.team} — ${k}`} defaultValue={t[k]} onChange={e=>setTableEdit(prev=>({...prev,[t.team]:{...prev[t.team],[k]:Number(e.target.value)}}))}
                                   style={{width:"40px",background:D.surf2,border:`1px solid ${D.borderMed}`,borderRadius:D.sm,padding:"3px 6px",fontFamily:D.mono,fontSize:"11px",color:D.textPrimary,textAlign:"center"}}/>
                               ):(
                                 <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textSecondary}}>{t[k]}</span>
@@ -133,7 +133,7 @@ function LeagueView({ role }) {
                             <div style={{display:"flex",gap:"2px",justifyContent:"center"}}>
                               {Array.from({length:t.P},(_,j)=>j<t.W?"W":j<t.W+t.L?"L":"N").map((r,j)=>(
                                 <div key={j} style={{width:"12px",height:"12px",borderRadius:"2px",background:r==="W"?D.emerald+"44":r==="L"?D.rose+"44":D.amber+"44",display:"flex",alignItems:"center",justifyContent:"center"}}>
-                                  <span style={{fontFamily:D.mono,fontSize:"7px",fontWeight:700,color:r==="W"?D.emerald:r==="L"?D.rose:D.amber}}>{r}</span>
+                                  <span style={{fontFamily:D.mono,fontSize:"9px",fontWeight:700,color:r==="W"?D.emerald:r==="L"?D.rose:D.amber}}>{r}</span>
                                 </div>
                               ))}
                             </div>

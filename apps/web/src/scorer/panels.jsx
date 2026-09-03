@@ -131,13 +131,23 @@ function DynamicBar({inn,match,target,isChase,lastOver}){
             </div>
             <span style={{fontFamily:D.head,fontSize:"7.5px",fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:sig.pressureColor}}>{sig.pressureLabel}</span>
           </div>
-          {/* Card nav dots */}
+          {/* Card nav dots.
+              These were 5x5 buttons with no text, which is two failures at
+              once: nothing to announce, and a target a third the size anyone
+              can reliably hit — on a phone, one-handed, at a cricket ground.
+              The dot stays 5px because that is the design; the BUTTON around
+              it is padded out to a real target, which costs no layout because
+              the padding is transparent. */}
           {cards.length>1&&(
-            <div style={{display:"flex",flexDirection:"column",gap:"3px"}}>
-              {cards.slice(0,5).map((_,i)=>(
+            <div role="tablist" aria-label="Match insight cards" style={{display:"flex",flexDirection:"column",gap:"3px",margin:"-6px"}}>
+              {cards.slice(0,5).map((c,i)=>(
                 <button key={i} onClick={()=>{setCardIdx(i);setAnimKey(k=>k+1);}}
-                  style={{width:i===cardIdx?"14px":"5px",height:"5px",borderRadius:"4px",border:"none",padding:0,cursor:"pointer",
-                    background:i===cardIdx?(cards[i]?.accent||D.indigo):`${D.textMuted}30`,transition:"all .25s"}}>
+                  role="tab" aria-selected={i===cardIdx}
+                  aria-label={c?.hl ? `${c.hl}` : `Card ${i+1} of ${Math.min(cards.length,5)}`}
+                  style={{border:"none",padding:"6px",background:"transparent",cursor:"pointer",
+                    display:"flex",alignItems:"center",justifyContent:"center"}}>
+                  <span aria-hidden="true" style={{display:"block",width:i===cardIdx?"14px":"5px",height:"5px",borderRadius:"4px",
+                    background:i===cardIdx?(cards[i]?.accent||D.indigo):`${D.textMuted}55`,transition:"all .25s"}}/>
                 </button>
               ))}
             </div>
@@ -563,10 +573,10 @@ function CommentaryCard({inn}){
                 <span style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted,flexShrink:0}}>
                   {(b.over+1)}.{b.ballInOver+1}
                 </span>
-                {b.bowlerApproach&&<Badge color={D.amber} sx={{fontSize:"7px",padding:"1px 5px"}}>{b.bowlerApproach==="Around the wicket"?"Around":"Over"}</Badge>}
-                {isWkt&&<Badge color={D.rose} sx={{fontSize:"7px",padding:"1px 5px"}}>WICKET</Badge>}
-                {isSix&&<Badge color={D.amber} sx={{fontSize:"7px",padding:"1px 5px"}}>SIX</Badge>}
-                {isFour&&<Badge color={D.sky} sx={{fontSize:"7px",padding:"1px 5px"}}>FOUR</Badge>}
+                {b.bowlerApproach&&<Badge color={D.amber} sx={{fontSize:"9px",padding:"1px 5px"}}>{b.bowlerApproach==="Around the wicket"?"Around":"Over"}</Badge>}
+                {isWkt&&<Badge color={D.rose} sx={{fontSize:"9px",padding:"1px 5px"}}>WICKET</Badge>}
+                {isSix&&<Badge color={D.amber} sx={{fontSize:"9px",padding:"1px 5px"}}>SIX</Badge>}
+                {isFour&&<Badge color={D.sky} sx={{fontSize:"9px",padding:"1px 5px"}}>FOUR</Badge>}
               </div>
               {/* AI commentary line */}
               {aiLine&&(

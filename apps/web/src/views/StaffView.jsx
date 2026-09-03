@@ -53,7 +53,7 @@ function StaffView({ role }) {
                     <Avatar name={s.name} size={44} color={roleColor(s.role)}/>
                     <div style={{position:"absolute",bottom:-2,right:-2,width:"14px",height:"14px",borderRadius:"50%",
                       background:s.active?D.emerald:D.rose,border:`2px solid ${D.surf1}`,
-                      display:"flex",alignItems:"center",justifyContent:"center",fontSize:"7px"}}>
+                      display:"flex",alignItems:"center",justifyContent:"center",fontSize:"9px"}}>
                       {roleIcon(s.role)}
                     </div>
                   </div>

@@ -841,6 +841,20 @@ function SCRBRD({resume}={}){
             </div>
           )}
           <SyncPill sync={sync} storage={saveState.kind}/>
+          {/* The score, announced.
+              Tapping a key on the pad changes numbers in three places and
+              says nothing. For a screen-reader user that is the entire
+              feedback loop missing: press "4", hear silence, and have no way
+              to know whether the ball registered — on the one screen where
+              a missed delivery cannot be reconstructed later.
+              aria-live="polite" waits for a pause rather than interrupting,
+              and the text is written to be heard rather than read: "142 for
+              3, 14.2 overs" is what a scorer would say out loud. */}
+          {inn&&(
+            <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+              {`${inn.runs} for ${inn.wickets}, ${fmtOv(inn.balls)} overs`}
+            </div>
+          )}
         </div>
 
         {/* Dynamic Content Bar — always visible when match active */}

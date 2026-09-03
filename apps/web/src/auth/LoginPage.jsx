@@ -142,19 +142,29 @@ function LoginPage({ onLogin, onSignUp }) {
 
           {/* Email + password */}
           {[
-            { label:"Email", type:"email",    value:email,    onChange:setEmail,    placeholder:"you@school.co.za" },
-            { label:"Password", type:"password", value:password, onChange:setPassword, placeholder:"••••••••" },
+            { id:"login-email", label:"Email", type:"email", autoComplete:"email", value:email, onChange:setEmail, placeholder:"you@school.co.za" },
+            { id:"login-password", label:"Password", type:"password", autoComplete:"current-password", value:password, onChange:setPassword, placeholder:"••••••••" },
           ].map(f=>(
             <div key={f.label} style={{marginBottom:"14px"}}>
-              <div style={{fontFamily:"'Syne',sans-serif",fontSize:"10px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",marginBottom:"6px"}}>{f.label}</div>
-              <input value={f.value} type={f.type} onChange={e=>f.onChange(e.target.value)}
+              {/* A real <label htmlFor>, not a styled div. The div looked the
+                  same and did none of the work: no accessible name, no click
+                  target, nothing for voice control to say. */}
+              <label htmlFor={f.id} style={{display:"block",fontFamily:"'Syne',sans-serif",fontSize:"10px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",marginBottom:"6px"}}>{f.label}</label>
+              <input id={f.id} value={f.value} type={f.type} autoComplete={f.autoComplete}
+                onChange={e=>f.onChange(e.target.value)}
                 onKeyDown={e=>e.key==="Enter"&&handleLogin()}
                 placeholder={f.placeholder}
-                style={{width:"100%",padding:"11px 14px",borderRadius:"10px",background:"rgba(255,255,255,0.05)",border:`1px solid ${error?"rgba(244,63,94,0.5)":"rgba(255,255,255,0.1)"}`,fontFamily:"'DM Sans',sans-serif",fontSize:"14px",color:"#fff",outline:"none",boxSizing:"border-box"}}/>
+                aria-invalid={error?true:undefined}
+                aria-describedby={error?"login-error":undefined}
+                style={{width:"100%",padding:"11px 14px",borderRadius:"10px",background:"rgba(255,255,255,0.05)",border:`1px solid ${error?"rgba(244,63,94,0.5)":"rgba(255,255,255,0.1)"}`,fontFamily:"'DM Sans',sans-serif",fontSize:"14px",color:"#fff",boxSizing:"border-box"}}/>
             </div>
           ))}
 
-          {error&&<div style={{fontFamily:"'DM Sans',sans-serif",fontSize:"12px",color:"#f87171",marginBottom:"12px",padding:"8px 12px",borderRadius:"8px",background:"rgba(244,63,94,0.1)",border:"1px solid rgba(244,63,94,0.2)"}}>{error}</div>}
+          {/* role="alert" so a failed sign-in is announced. Without it the
+              only signal is a colour change, which someone using a screen
+              reader never learns about at all — they press Sign In and
+              nothing appears to happen. */}
+          {error&&<div id="login-error" role="alert" style={{fontFamily:"'DM Sans',sans-serif",fontSize:"12px",color:"#f87171",marginBottom:"12px",padding:"8px 12px",borderRadius:"8px",background:"rgba(244,63,94,0.1)",border:"1px solid rgba(244,63,94,0.2)"}}>{error}</div>}
 
           <button onClick={handleLogin} disabled={loading} className="pressBtn" style={{width:"100%",padding:"12px",borderRadius:"12px",cursor:"pointer",background:"linear-gradient(135deg,#6366f1,#8b5cf6)",border:"none",fontFamily:"'Syne',sans-serif",fontSize:"13px",fontWeight:700,color:"#fff",marginBottom:"14px",boxShadow:"0 4px 20px rgba(99,102,241,0.35)"}}>
             {loading?"Signing in…":"Sign In"}

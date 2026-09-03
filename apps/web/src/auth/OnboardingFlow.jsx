@@ -85,7 +85,7 @@ function OnboardingFlow({ onComplete }) {
   };
   const tourItems = TOUR_MAP[data.role] || TOUR_MAP.default;
 
-  const INP = { width:"100%",padding:"11px 14px",borderRadius:"10px",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",fontFamily:"'DM Sans',sans-serif",fontSize:"14px",color:"#fff",outline:"none",boxSizing:"border-box" };
+  const INP = { width:"100%",padding:"11px 14px",borderRadius:"10px",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",fontFamily:"'DM Sans',sans-serif",fontSize:"14px",color:"#fff",boxSizing:"border-box" };
 
   return (
     <div style={{minHeight:"100vh",background:"#03050c",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px",overflowY:"auto"}}>

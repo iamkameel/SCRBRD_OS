@@ -46,13 +46,20 @@ function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount }) {
       {!collapsed&&<SportSwitcher/>}
 
       {/* Nav */}
-      <nav style={{flex:1,padding:"8px 0",overflowY:"auto"}}>
+      <nav aria-label="Main" style={{flex:1,padding:"8px 0",overflowY:"auto"}}>
         {nav.map(key=>{
           const m = NAV_META[key];
           const isActive = active===key;
           const isBell = key==="notifications";
           return (
-            <button key={key} onClick={()=>onNav(key)} className="pressBtn" style={{
+            <button key={key} onClick={()=>onNav(key)} className="pressBtn"
+              // aria-current tells a screen reader which page it is ALREADY
+              // on. Without it the active state is a background tint and
+              // nothing else — every entry announces identically, so the only
+              // way to find out where you are is to navigate somewhere.
+              aria-current={isActive?"page":undefined}
+              aria-label={collapsed?m.label:undefined}
+              style={{
               width:"100%",padding:collapsed?"12px 0":"10px 14px",
               display:"flex",alignItems:"center",gap:"10px",cursor:"pointer",
               background:isActive?D.indigo+"18":"transparent",

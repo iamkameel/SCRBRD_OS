@@ -5,7 +5,18 @@ const D = {
   glass:"rgba(10,14,28,0.75)",
   border:"rgba(255,255,255,0.07)", borderMed:"rgba(255,255,255,0.12)",
   // ── Text ──
-  textPrimary:"#f0f4ff", textSecondary:"#8b9bc4", textMuted:"#4a5570",
+  textPrimary:"#f0f4ff", textSecondary:"#8b9bc4",
+  // textMuted was #4a5570 — 2.47:1 against the card surfaces, against a 4.5:1
+  // floor. It is the colour of nearly every small label in the app: the sub-
+  // labels on the scoring pad, the over count beside the score, field names,
+  // timestamps. Not decoration — the words that say what a number means.
+  //
+  // Raised to the lightest value that clears 4.5:1 on every surface here
+  // (4.53:1 on surf3, the worst case) while keeping the original hue and
+  // saturation, so it still reads as the same muted blue-grey rather than
+  // becoming a second secondary. Anything genuinely decorative should be
+  // aria-hidden and drawn some other way, not made unreadable.
+  textMuted:"#818dac",
   // ── Accent palette ──
   indigo:"#6366f1", sky:"#0ea5e9", emerald:"#10b981", amber:"#f59e0b",
   rose:"#f43f5e", orange:"#f97316", violet:"#8b5cf6", cyan:"#06b6d4",
@@ -48,6 +59,69 @@ body{background:${D.bg};color:${D.textPrimary};font-family:${D.body}}
 .skill-bar{transition:width .6s cubic-bezier(.34,1.56,.64,1)}
 .tab-active{position:relative}
 .tab-active::after{content:'';position:absolute;bottom:-1px;left:0;right:0;height:2px;background:${D.gradMain};border-radius:2px}
+
+/* ── Keyboard focus ─────────────────────────────────────────────
+   There were 164 buttons in this app and not one visible focus state,
+   because every one of them sets its own inline styles and none set an
+   outline. Tab through it and nothing moved.
+
+   That is not only an accessibility failure. A scorer working one-handed on
+   a phone in the rain, an administrator who lives on the keyboard, anyone
+   using switch access or voice control — all of them navigate by focus, and
+   an invisible focus ring means the app cannot be operated without a mouse
+   at all.
+
+   :focus-visible rather than :focus, so a mouse click does not leave a ring
+   behind; the browser decides when the interaction was keyboard-driven. The
+   offset keeps the ring clear of the element's own border, and the shadow
+   underneath it guarantees contrast against a dark surface where the accent
+   alone would be too close in value. */
+:focus-visible{
+  outline:2px solid ${D.sky};
+  outline-offset:2px;
+  border-radius:${D.sm};
+  box-shadow:0 0 0 4px rgba(2,6,15,.9);
+}
+/* Never remove the ring without replacing it. */
+:focus:not(:focus-visible){outline:none}
+
+/* Skip link — the first thing a keyboard reaches, invisible until focused.
+   Without it, reaching the scoring pad means tabbing through the whole of
+   the navigation on every page. */
+.skip-link{position:absolute;left:-9999px;top:0;z-index:10000;
+  padding:10px 16px;border-radius:0 0 ${D.md} 0;background:${D.sky};color:#02060f;
+  font-family:${D.head};font-size:12px;font-weight:700;text-decoration:none}
+.skip-link:focus{left:0}
+
+/* Visually hidden, but read aloud. For labels and live regions that would
+   otherwise have to be either invisible to a screen reader or visible to
+   everyone. */
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;
+  overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+
+/* ── Reduced motion ─────────────────────────────────────────────
+   This app animates a great deal: cards fade up on every page, the dynamic
+   bar rotates every seven seconds, milestone overlays sweep in over the
+   scoring pad, and the live dot pulses continuously. For someone with a
+   vestibular disorder that is not decoration, it is nausea — and the
+   scoring pad is the screen they cannot look away from.
+
+   The !important flags are load-bearing: animations here are set inline and in
+   component classes, and a preference the user has expressed at the OS
+   level must win over both. Durations go to 1ms rather than 0 so that
+   animationend / transitionend handlers still fire; several components
+   sequence state off those events, and killing them outright would leave
+   overlays stranded on screen. */
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{
+    animation-duration:1ms!important;
+    animation-iteration-count:1!important;
+    transition-duration:1ms!important;
+    scroll-behavior:auto!important;
+  }
+  .pressBtn:active{transform:none}
+  .card-hover:hover{transform:none}
+}
 
 /* ── ScrbrdOS responsive layer — mobile first ── */
 html{-webkit-text-size-adjust:100%}

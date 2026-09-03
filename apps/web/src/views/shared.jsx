@@ -107,7 +107,7 @@ function PlayerProfileModal({ player, role, onClose, onFullProfile }){
   const Stat = ({l,v,c}) => (
     <div style={{flex:1,minWidth:"70px",background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,padding:"8px 6px",textAlign:"center"}}>
       <div style={{fontFamily:D.mono,fontSize:"15px",fontWeight:700,color:c||D.textPrimary}}>{v??"–"}</div>
-      <div style={{fontFamily:D.head,fontSize:"7px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:D.textMuted,marginTop:"2px"}}>{l}</div>
+      <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:D.textMuted,marginTop:"2px"}}>{l}</div>
     </div>
   );
   const SkillBar = ({l,v}) => (
@@ -256,7 +256,7 @@ function ScorecardModal({ match, onClose, role, onNavProfile }){
   const Kpi = ({l,v,c}) => (
     <div style={{flex:1,minWidth:"86px",background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,padding:"8px 10px",textAlign:"center"}}>
       <div style={{fontFamily:D.mono,fontSize:"15px",fontWeight:700,color:c||D.textPrimary}}>{v}</div>
-      <div style={{fontFamily:D.head,fontSize:"7px",fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",color:D.textMuted,marginTop:"2px"}}>{l}</div>
+      <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",color:D.textMuted,marginTop:"2px"}}>{l}</div>
     </div>
   );
   const SecLbl = ({children}) => (

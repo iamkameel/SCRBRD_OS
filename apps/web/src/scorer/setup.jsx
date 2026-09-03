@@ -182,10 +182,10 @@ function OpeningSetupStep({batKey,bowlKey,batOrder,setBatOrder,bowlingSquad,bowl
             <Lbl sx={{color:D.rose}}>Opening Bowler</Lbl>
           </div>
           {/* Filter input */}
-          <input value={bowlerFilter} onChange={e=>setBowlerFilter(e.target.value)}
+          <input value={bowlerFilter} onChange={e=>setBowlerFilter(e.target.value)} aria-label="Search bowlers"
             placeholder="Filter bowlers…"
             style={{background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,
-              color:D.textPrimary,fontSize:"13px",fontFamily:D.body,padding:"8px 12px",outline:"none",width:"100%"}}/>
+              color:D.textPrimary,fontSize:"13px",fontFamily:D.body,padding:"8px 12px",width:"100%"}}/>
           <div style={{display:"flex",flexDirection:"column",gap:"3px",maxHeight:"300px",overflowY:"auto"}}>
             {bowlerCandidates.map(name=>{
               const p=getBowler(name);

@@ -439,13 +439,29 @@ function FocusPad({inn,match,curIn,target,onCommitDetailed,onWicketCtx,onWide,on
   );
 
   // ── Quick mode: one-tap pad (speed over detail) ──
-  const K=({label,sub,onClick,bg,fg,border,span,disabled})=>(
-    <button onClick={onClick} disabled={disabled} className="pressBtn" style={{
+  /**
+   * One key on the pad.
+   *
+   * `say` is the accessible name, and it is not optional dressing. Every key
+   * on this pad is one or two characters — "4", "·", "WD", "↩" — which a
+   * screen reader announces literally: "four", "middle dot", "W D", "leftwards
+   * arrow with hook". None of those is a cricket outcome. Worse, the sub-label
+   * that makes them legible to a sighted user is 7px, which is itself the
+   * contrast failure design.md flags.
+   *
+   * So the visible face stays terse — a scorer is glancing at it between
+   * deliveries — and the name says what actually happens.
+   */
+  const K=({label,sub,say,onClick,bg,fg,border,span,disabled})=>(
+    <button onClick={onClick} disabled={disabled} className="pressBtn"
+      aria-label={say ?? (sub ? `${label} — ${sub}` : label)} style={{
       gridColumn:span?`span ${span}`:"auto",minHeight:"60px",borderRadius:D.lg,cursor:disabled?"default":"pointer",opacity:disabled?.4:1,
       background:bg||D.surf2,border:`1px solid ${border||D.border}`,
       display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:"2px"}}>
-      <span style={{fontFamily:D.mono,fontSize:"21px",fontWeight:700,color:fg||D.textPrimary,lineHeight:1}}>{label}</span>
-      {sub&&<span style={{fontFamily:D.head,fontSize:"7px",fontWeight:700,letterSpacing:"0.12em",color:D.textMuted}}>{sub}</span>}
+      {/* aria-hidden on the face: the button already has a name, and without
+          this a screen reader reads the label, then the name, then the sub. */}
+      <span aria-hidden="true" style={{fontFamily:D.mono,fontSize:"21px",fontWeight:700,color:fg||D.textPrimary,lineHeight:1}}>{label}</span>
+      {sub&&<span aria-hidden="true" style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",color:D.textSecondary}}>{sub}</span>}
     </button>
   );
   if(quick){
@@ -453,19 +469,19 @@ function FocusPad({inn,match,curIn,target,onCommitDetailed,onWicketCtx,onWide,on
       <div style={{maxWidth:"560px",margin:"0 auto",display:"flex",flexDirection:"column",gap:"12px"}}>
         {ContextStrip}
         <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"8px"}}>
-          <K label="·" sub="DOT" onClick={()=>onCommitDetailed("run",0,null,null,null)}/>
-          <K label="1" onClick={()=>onCommitDetailed("run",1,null,null,null)}/>
-          <K label="2" onClick={()=>onCommitDetailed("run",2,null,null,null)}/>
-          <K label="3" onClick={()=>onCommitDetailed("run",3,null,null,null)}/>
-          <K label="4" onClick={()=>onCommitDetailed("run",4,null,null,null)} bg={D.indigo+"1c"} fg={D.indigo} border={D.indigo+"44"}/>
-          <K label="6" onClick={()=>onCommitDetailed("run",6,null,null,null)} bg={D.amber+"1c"} fg={D.amber} border={D.amber+"44"}/>
-          <K label="WD" sub="WIDE" onClick={onWide} bg={D.orange+"14"} fg={D.orange} border={D.orange+"33"}/>
-          <K label="NB" sub="NO BALL" onClick={onNoBall} bg={D.amber+"10"} fg={D.amber} border={D.amber+"2a"}/>
-          <K label="W" sub="WICKET" onClick={()=>onWicketCtx(null,null,null)} bg={D.rose+"1c"} fg={D.rose} border={D.rose+"44"}/>
-          <K label="↩" sub="UNDO" onClick={onUndo} span={2}/>
+          <K label="·" sub="DOT" say="Dot ball, no run" onClick={()=>onCommitDetailed("run",0,null,null,null)}/>
+          <K label="1" say="One run" onClick={()=>onCommitDetailed("run",1,null,null,null)}/>
+          <K label="2" say="Two runs" onClick={()=>onCommitDetailed("run",2,null,null,null)}/>
+          <K label="3" say="Three runs" onClick={()=>onCommitDetailed("run",3,null,null,null)}/>
+          <K label="4" say="Four, boundary" onClick={()=>onCommitDetailed("run",4,null,null,null)} bg={D.indigo+"1c"} fg={D.indigo} border={D.indigo+"44"}/>
+          <K label="6" say="Six, maximum" onClick={()=>onCommitDetailed("run",6,null,null,null)} bg={D.amber+"1c"} fg={D.amber} border={D.amber+"44"}/>
+          <K label="WD" sub="WIDE" say="Wide" onClick={onWide} bg={D.orange+"14"} fg={D.orange} border={D.orange+"33"}/>
+          <K label="NB" sub="NO BALL" say="No ball" onClick={onNoBall} bg={D.amber+"10"} fg={D.amber} border={D.amber+"2a"}/>
+          <K label="W" sub="WICKET" say="Wicket" onClick={()=>onWicketCtx(null,null,null)} bg={D.rose+"1c"} fg={D.rose} border={D.rose+"44"}/>
+          <K label="↩" sub="UNDO" say="Undo the last ball" onClick={onUndo} span={2}/>
           <button onClick={onToggleQuick} className="pressBtn" style={{minHeight:"60px",borderRadius:D.lg,cursor:"pointer",background:D.emerald+"12",border:`1px solid ${D.emerald}33`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:"3px"}}>
             <span style={{fontSize:"14px"}}>🧭</span>
-            <span style={{fontFamily:D.head,fontSize:"7px",fontWeight:700,letterSpacing:"0.1em",color:D.emerald}}>3-PHASE</span>
+            <span style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",color:D.emerald}}>3-PHASE</span>
           </button>
         </div>
         <button onClick={onPro} className="pressBtn" style={{padding:"9px",borderRadius:D.lg,cursor:"pointer",background:"transparent",border:`1px dashed ${D.borderMed}`,fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",color:D.textSecondary}}>🎯 PRO MODE — full capture</button>
@@ -481,7 +497,7 @@ function FocusPad({inn,match,curIn,target,onCommitDetailed,onWicketCtx,onWide,on
         padding:"7px 6px",borderRadius:D.md,cursor:done?"pointer":"default",
         background:active?D.indigo+"1c":done?D.emerald+"12":D.surf2,
         border:`1px solid ${active?D.indigo+"55":done?D.emerald+"33":D.border}`}}>
-        <span style={{fontFamily:D.head,fontSize:"7px",fontWeight:700,letterSpacing:"0.1em",color:active?D.indigo:done?D.emerald:D.textMuted}}>
+        <span style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",color:active?D.indigo:done?D.emerald:D.textMuted}}>
           {done?"✓ ":""}{n} · {label}
         </span>
         <span style={{fontFamily:D.body,fontSize:"11px",fontWeight:600,color:val?D.textPrimary:D.textMuted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:"100%"}}>{val||"—"}</span>
@@ -547,7 +563,7 @@ function FocusPad({inn,match,curIn,target,onCommitDetailed,onWicketCtx,onWide,on
                 border:`1px solid ${v===6?D.amber+"44":v===4?D.indigo+"44":v===0?D.border:D.emerald+"33"}`,
                 display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
                 <span style={{fontFamily:D.mono,fontSize:"22px",fontWeight:700,color:v===6?D.amber:v===4?D.indigo:v===0?D.textPrimary:D.emerald}}>{v===0?"·":v}</span>
-                {v===0&&<span style={{fontFamily:D.head,fontSize:"7px",fontWeight:700,letterSpacing:"0.12em",color:D.textMuted}}>DOT</span>}
+                {v===0&&<span style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",color:D.textSecondary}}>DOT</span>}
               </button>
             ))}
           </div>
@@ -564,9 +580,9 @@ function FocusPad({inn,match,curIn,target,onCommitDetailed,onWicketCtx,onWide,on
 
       {/* Extras strip — not shots, always available */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"8px"}}>
-        <K label="WD" sub="WIDE" onClick={onWide} bg={D.orange+"14"} fg={D.orange} border={D.orange+"33"}/>
-        <K label="NB" sub="NO BALL" onClick={onNoBall} bg={D.amber+"10"} fg={D.amber} border={D.amber+"2a"}/>
-        <K label="↩" sub="UNDO" onClick={()=>{ if(phase>1){reset();} else {onUndo();} }} bg={D.surf2}/>
+        <K label="WD" sub="WIDE" say="Wide" onClick={onWide} bg={D.orange+"14"} fg={D.orange} border={D.orange+"33"}/>
+        <K label="NB" sub="NO BALL" say="No ball" onClick={onNoBall} bg={D.amber+"10"} fg={D.amber} border={D.amber+"2a"}/>
+        <K label="↩" sub="UNDO" say="Undo the last ball" onClick={()=>{ if(phase>1){reset();} else {onUndo();} }} bg={D.surf2}/>
       </div>
 
       {/* Mode toggles */}

@@ -249,7 +249,7 @@ function AnalyticsView({ role }) {
                         <div style={{display:"flex",gap:"2px"}}>
                           {p.form.slice(-5).map((v,j)=>(
                             <div key={j} style={{width:"13px",height:"13px",borderRadius:"2px",background:v===0?D.rose+"55":v>=5?D.amber+"66":D.emerald+"44",display:"flex",alignItems:"center",justifyContent:"center"}}>
-                              <span style={{fontFamily:D.mono,fontSize:"7px",color:v===0?D.rose:v>=5?D.amber:D.emerald,fontWeight:700}}>{v===0?"W":v}</span>
+                              <span style={{fontFamily:D.mono,fontSize:"9px",color:v===0?D.rose:v>=5?D.amber:D.emerald,fontWeight:700}}>{v===0?"W":v}</span>
                             </div>
                           ))}
                         </div>
