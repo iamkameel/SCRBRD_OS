@@ -66,7 +66,7 @@ function SquadView({ role }) {
                   </div>
                   {p.wkts>0?(
                     <div style={{textAlign:"center",padding:"5px",background:D.surf2,borderRadius:D.sm}}>
-                      <div style={{fontFamily:D.mono,fontSize:"13px",fontWeight:500,color:D.violet}}>{p.wkts}</div>
+                      <div style={{fontFamily:D.mono,fontSize:"13px",fontWeight:500,color:D.violetText}}>{p.wkts}</div>
                       <div style={{fontFamily:D.body,fontSize:"8px",color:D.textMuted}}>wkts</div>
                     </div>
                   ):(

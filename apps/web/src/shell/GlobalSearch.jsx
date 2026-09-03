@@ -88,7 +88,7 @@ function GlobalSearch({ role, onNav, onClose }) {
             placeholder="Search players, matches, staff… or ask StatGuru anything"
             style={{flex:1,background:"transparent",border:"none",fontFamily:D.body,fontSize:"14px",color:D.textPrimary,}}/>
           {looksLikeStat&&!aiMode&&(
-            <button onClick={askGuru} className="pressBtn" style={{display:"flex",alignItems:"center",gap:"5px",padding:"5px 12px",borderRadius:D.pill,cursor:"pointer",background:`${D.violet}18`,border:`1px solid ${D.violet}44`,fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.violet,whiteSpace:"nowrap"}}>
+            <button onClick={askGuru} className="pressBtn" style={{display:"flex",alignItems:"center",gap:"5px",padding:"5px 12px",borderRadius:D.pill,cursor:"pointer",background:`${D.violet}18`,border:`1px solid ${D.violet}44`,fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.violetText,whiteSpace:"nowrap"}}>
               ✦ Ask StatGuru
             </button>
           )}
@@ -99,7 +99,7 @@ function GlobalSearch({ role, onNav, onClose }) {
         {aiMode&&(
           <div style={{padding:"14px 16px",borderBottom:`1px solid ${D.border}`,background:`${D.violet}0a`}}>
             <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"8px"}}>
-              <span style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.violet,letterSpacing:"0.06em"}}>✦ STATGURU</span>
+              <span style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.violetText,letterSpacing:"0.06em"}}>✦ STATGURU</span>
               {aiLoading&&<span style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>thinking…</span>}
             </div>
             {aiLoading
@@ -135,7 +135,7 @@ function GlobalSearch({ role, onNav, onClose }) {
               ))}
             </div>
             <div style={{marginTop:"14px",padding:"10px 14px",borderRadius:D.md,background:`${D.violet}08`,border:`1px solid ${D.violet}22`}}>
-              <span style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.violet}}>✦ StatGuru tip: </span>
+              <span style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.violetText}}>✦ StatGuru tip: </span>
               <span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>Try "What is James Whitfield's strike rate?" or "Who are the top bowlers this season?"</span>
             </div>
           </div>
@@ -145,7 +145,7 @@ function GlobalSearch({ role, onNav, onClose }) {
         {!aiMode&&q.length>=2&&results.length===0&&(
           <div style={{padding:"24px 16px",textAlign:"center"}}>
             <div style={{fontFamily:D.body,fontSize:"13px",color:D.textMuted,marginBottom:"10px"}}>No results for "{q}"</div>
-            <button onClick={askGuru} className="pressBtn" style={{padding:"8px 18px",borderRadius:D.pill,cursor:"pointer",background:`${D.violet}18`,border:`1px solid ${D.violet}44`,fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.violet}}>✦ Ask StatGuru instead</button>
+            <button onClick={askGuru} className="pressBtn" style={{padding:"8px 18px",borderRadius:D.pill,cursor:"pointer",background:`${D.violet}18`,border:`1px solid ${D.violet}44`,fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.violetText}}>✦ Ask StatGuru instead</button>
           </div>
         )}
 
@@ -153,7 +153,7 @@ function GlobalSearch({ role, onNav, onClose }) {
         <div style={{padding:"8px 16px",borderTop:`1px solid ${D.border}`,display:"flex",alignItems:"center",gap:"12px"}}>
           <span style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>↵ Enter to ask StatGuru</span>
           <span style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>Esc to close</span>
-          <span style={{marginLeft:"auto",fontFamily:D.head,fontSize:"8px",fontWeight:700,color:D.violet}}>✦ StatGuru powered by Claude</span>
+          <span style={{marginLeft:"auto",fontFamily:D.head,fontSize:"8px",fontWeight:700,color:D.violetText}}>✦ StatGuru powered by Claude</span>
         </div>
       </div>
     </div>

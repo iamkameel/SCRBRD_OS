@@ -18,9 +18,30 @@ const D = {
   // aria-hidden and drawn some other way, not made unreadable.
   textMuted:"#818dac",
   // ── Accent palette ──
-  indigo:"#6366f1", sky:"#0ea5e9", emerald:"#10b981", amber:"#f59e0b",
+  // sky is the website's #38bdf8 rather than the app's old #0ea5e9: the two
+  // surfaces were a shade apart for no reason, and the lighter one is a free
+  // contrast improvement (7.00:1 at worst, against 5.41 before).
+  indigo:"#6366f1", sky:"#38bdf8", emerald:"#10b981", amber:"#f59e0b",
   rose:"#f43f5e", orange:"#f97316", violet:"#8b5cf6", cyan:"#06b6d4",
   teal:"#14b8a6", lime:"#84cc16", pink:"#ec4899",
+
+  // ── Accents, as TEXT ──
+  // indigo is the brand colour and fails as body text on every surface
+  // (3.36-4.46:1). violet and rose fail on the darker ones. They are perfectly
+  // good as fills, borders and large display type — the failure is specific to
+  // running text, which is what they are currently used for.
+  //
+  // A token PAIR rather than a replacement, because the fill and the type want
+  // genuinely different values: lighten the fill and the brand goes pale.
+  // #a5b4fc already appeared ten times in the codebase before this existed —
+  // the lighter indigo was reached for instinctively wherever legibility
+  // actually mattered, and this formalises that instinct rather than inventing
+  // something.
+  //
+  // Rule: `indigo` for fills and borders, `indigoText` for anything read.
+  indigoText:"#a5b4fc",   // 7.52:1 at worst
+  violetText:"#c4b5fd",   // 8.12:1
+  roseText:"#fda4af",     // 7.93:1 — rose alone fails on surf3 (4.08)
   // ── Gradients (grad + gradMain aliased) ──
   grad:"linear-gradient(135deg,#6366f1,#0ea5e9)",
   gradMain:"linear-gradient(135deg,#6366f1,#0ea5e9)",
@@ -34,6 +55,29 @@ const D = {
 
 // ── UTILITY HELPERS ────────────────────────────────────
 const px = (n) => `${n}px`;
+
+const D_ACCENT_INDIGO = "#6366f1", D_ACCENT_VIOLET = "#8b5cf6", D_ACCENT_ROSE = "#f43f5e";
+
+/**
+ * The readable half of an accent.
+ *
+ * Three accents fail WCAG AA as body text on our surfaces — indigo (the brand
+ * colour) on all of them, violet and rose on the darker ones. They are fine as
+ * fills, borders and large display type; the failure is specific to running
+ * text, which is where they were being used.
+ *
+ * Pass any accent through this at the point it becomes TEXT. Anything with no
+ * readable pair comes back unchanged, so it is safe to apply everywhere rather
+ * than remembering which three are the problem — and a colour picked from data
+ * (a shot category, a role) can be styled without the call site knowing which
+ * value it received.
+ */
+const textOn = (accent) => ({
+  [D_ACCENT_INDIGO]: "#a5b4fc",
+  [D_ACCENT_VIOLET]: "#c4b5fd",
+  [D_ACCENT_ROSE]:   "#fda4af",
+}[accent] ?? accent);
+
 
 const clr = (hex, a) => hex + Math.round(a*255).toString(16).padStart(2,"0");
 
@@ -160,4 +204,4 @@ button{touch-action:manipulation}
 }
 `;
 
-export { D, GLOBAL_CSS, clr, px };
+export { D, GLOBAL_CSS, clr, px, textOn };

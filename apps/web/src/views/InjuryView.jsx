@@ -136,7 +136,7 @@ function InjuryView({ role }) {
           <Input label="Clinical Notes" value="" onChange={()=>{}} placeholder="Describe the injury and treatment plan..."/>
           <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"8px"}}>
             <Btn variant="ghost" onClick={()=>setAddModal(false)}>Cancel</Btn>
-            <Btn style={{background:D.rose+"18",border:`1px solid ${D.rose}33`,color:D.rose}} onClick={()=>setAddModal(false)}>Log Injury</Btn>
+            <Btn style={{background:D.rose+"18",border:`1px solid ${D.rose}33`,color:D.roseText}} onClick={()=>setAddModal(false)}>Log Injury</Btn>
           </div>
         </Modal>
       )}

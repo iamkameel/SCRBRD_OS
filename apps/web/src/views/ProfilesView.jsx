@@ -178,7 +178,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                   ))}
                   {inj&&(
                     <div style={{marginTop:"10px",padding:"8px 10px",background:D.rose+"0a",borderRadius:D.sm,border:`1px solid ${D.rose}22`}}>
-                      <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.rose,letterSpacing:"0.08em",marginBottom:"3px"}}>CURRENT INJURY</div>
+                      <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.roseText,letterSpacing:"0.08em",marginBottom:"3px"}}>CURRENT INJURY</div>
                       <div style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary}}>{inj.type} · {inj.phase}</div>
                       <div style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted,marginTop:"2px"}}>RTW: {inj.rtw}</div>
                     </div>
@@ -289,7 +289,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                             {s.runs!=null?<span style={{fontFamily:D.mono,fontSize:"13px",fontWeight:700,color:s.runs>=50?D.amber:s.runs>=25?D.sky:s.runs===0?D.rose:D.textPrimary}}>{s.runs}</span>:<span style={{color:D.textMuted,fontSize:"11px"}}>—</span>}
                           </td>
                           <td style={{padding:"9px 12px",textAlign:"center"}}>
-                            {s.wkts>0?<span style={{fontFamily:D.mono,fontSize:"13px",fontWeight:700,color:D.violet}}>{s.wkts}w</span>:<span style={{color:D.textMuted,fontSize:"11px"}}>—</span>}
+                            {s.wkts>0?<span style={{fontFamily:D.mono,fontSize:"13px",fontWeight:700,color:D.violetText}}>{s.wkts}w</span>:<span style={{color:D.textMuted,fontSize:"11px"}}>—</span>}
                           </td>
                           <td style={{padding:"9px 12px",textAlign:"center"}}>
                             {s.result&&<Badge color={s.result==="W"?D.emerald:s.result==="L"?D.rose:s.result==="NR"?D.amber:D.textMuted}>{s.result}</Badge>}

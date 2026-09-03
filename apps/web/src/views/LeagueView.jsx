@@ -270,7 +270,7 @@ function LeagueView({ role }) {
                       <div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>{p.team}</div>
                     </div>
                     <div style={{textAlign:"right"}}>
-                      <div style={{fontFamily:D.mono,fontSize:"14px",fontWeight:700,color:D.rose}}>{p.wkts}</div>
+                      <div style={{fontFamily:D.mono,fontSize:"14px",fontWeight:700,color:D.roseText}}>{p.wkts}</div>
                       <div style={{fontFamily:D.body,fontSize:"9px",color:D.textMuted}}>wkts</div>
                     </div>
                     <div style={{textAlign:"right"}}>

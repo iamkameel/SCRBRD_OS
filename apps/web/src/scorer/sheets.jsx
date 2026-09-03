@@ -277,7 +277,7 @@ function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose}){
                 <div key={b.id} style={{display:"flex",alignItems:"center",gap:"10px",padding:"6px 10px",
                   borderRadius:D.md,background:`${D.rose}08`,border:`1px solid ${D.rose}15`}}>
                   <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,flex:1}}>{b.name}</span>
-                  <span style={{fontFamily:D.mono,fontSize:"11px",color:D.rose}}>{b.runs}({b.balls})</span>
+                  <span style={{fontFamily:D.mono,fontSize:"11px",color:D.roseText}}>{b.runs}({b.balls})</span>
                 </div>
               ))}
             </div>
@@ -347,7 +347,7 @@ function WicketSheet({batName,fieldingSquad,onClose,onConfirm}){
       {isStumped&&(
         <div style={{marginBottom:"12px",padding:"10px 13px",borderRadius:D.md,
           background:D.violet+"0e",border:"1px solid "+D.violet+"33"}}>
-          <Lbl sx={{marginBottom:"4px",color:D.violet}}>Wicketkeeper</Lbl>
+          <Lbl sx={{marginBottom:"4px",color:D.violetText}}>Wicketkeeper</Lbl>
           <div style={{fontFamily:D.body,fontSize:"13px",color:D.textPrimary,fontWeight:500}}>
             {wkName||"—"}
             {wkName&&<span style={{color:D.textMuted,fontSize:"11px",marginLeft:"6px"}}>(auto-assigned)</span>}
@@ -453,7 +453,7 @@ function NewOverSheet({ovNum,prevBowlers,bowlingSquad,bowlingTeamKey,lastBowlerN
                     <div style={{flex:1}}>
                       <div style={{fontFamily:D.body,fontSize:"13px",fontWeight:500,
                         color:dis?D.textMuted:D.textPrimary}}>{b.name}</div>
-                      {dis&&<div style={{fontFamily:D.body,fontSize:"10px",color:D.rose,marginTop:"1px"}}>Cannot bowl consecutive overs</div>}
+                      {dis&&<div style={{fontFamily:D.body,fontSize:"10px",color:D.roseText,marginTop:"1px"}}>Cannot bowl consecutive overs</div>}
                     </div>
                     {ri&&<Badge color={ROLE_COLORS[ri.role]} sx={{fontSize:"8px"}}>{ri.role}</Badge>}
                     <div style={{display:"flex",gap:"12px",alignItems:"center"}}>

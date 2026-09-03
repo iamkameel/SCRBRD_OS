@@ -134,7 +134,7 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp }) 
                             <div style={{display:"flex",gap:"4px",justifyContent:"center"}}>
                               <button onClick={()=>setEditUser({...u})} style={{background:"none",border:`1px solid ${D.border}`,borderRadius:D.sm,padding:"3px 9px",cursor:"pointer",fontFamily:D.body,fontSize:"10px",color:D.textSecondary}}>Edit</button>
                               <button onClick={()=>toggleStatus(u.id)} style={{background:"none",border:`1px solid ${u.status==="active"?D.amber+"44":D.emerald+"44"}`,borderRadius:D.sm,padding:"3px 9px",cursor:"pointer",fontFamily:D.body,fontSize:"10px",color:u.status==="active"?D.amber:D.emerald}}>{u.status==="active"?"Suspend":"Restore"}</button>
-                              <button onClick={()=>setDelConf(u)} style={{background:"none",border:`1px solid ${D.rose}33`,borderRadius:D.sm,padding:"3px 9px",cursor:"pointer",fontFamily:D.body,fontSize:"10px",color:D.rose}}>Delete</button>
+                              <button onClick={()=>setDelConf(u)} style={{background:"none",border:`1px solid ${D.rose}33`,borderRadius:D.sm,padding:"3px 9px",cursor:"pointer",fontFamily:D.body,fontSize:"10px",color:D.roseText}}>Delete</button>
                             </div>
                           )}
                         </td>
@@ -189,7 +189,7 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp }) 
       {tab==="upgrades"&&(
         <div>
           <div style={{padding:"14px 16px",background:`linear-gradient(135deg,${D.violet}10,${D.surf2})`,borderRadius:D.lg,border:`1px solid ${D.violet}22`,marginBottom:"18px"}}>
-            <div style={{fontFamily:D.head,fontSize:"14px",fontWeight:700,color:D.violet,marginBottom:"4px"}}>🚀 SCRBRD Platform Roadmap</div>
+            <div style={{fontFamily:D.head,fontSize:"14px",fontWeight:700,color:D.violetText,marginBottom:"4px"}}>🚀 SCRBRD Platform Roadmap</div>
             <div style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,lineHeight:1.5}}>{UPGRADES.length} suggested upgrades across {[...new Set(UPGRADES.map(u=>u.category))].length} categories. Prioritised by impact.</div>
           </div>
           {["high","medium","low"].map(pri=>(
@@ -244,7 +244,7 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp }) 
           </p>
           <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"12px"}}>
             <Btn variant="ghost" onClick={()=>setDelConf(null)}>Cancel</Btn>
-            <Btn style={{background:D.rose+"18",border:`1px solid ${D.rose}33`,color:D.rose}} onClick={()=>deleteUser(delConf.id)}>Delete User</Btn>
+            <Btn style={{background:D.rose+"18",border:`1px solid ${D.rose}33`,color:D.roseText}} onClick={()=>deleteUser(delConf.id)}>Delete User</Btn>
           </div>
         </Modal>
       )}

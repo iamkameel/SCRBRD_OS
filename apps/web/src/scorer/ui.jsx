@@ -48,7 +48,7 @@ const GS = () => (
     .pressBtn:disabled{cursor:not-allowed!important;opacity:.38!important}
     .shotBtn{transition:all .15s ease;border:1px solid transparent}
     .shotBtn:hover{border-color:rgba(255,255,255,.15)!important}
-    .shotBtn.active{border-color:rgba(79,70,229,.7)!important;background:rgba(79,70,229,.2)!important}
+    .shotBtn.active{border-color:rgba(99,102,241,.7)!important;background:D.indigo+"33"!important}
   `}</style>
 );
 
@@ -120,7 +120,7 @@ const Btn = ({ children, onClick, disabled, variant="primary", size="md", full, 
   const pad = size==="xs"?"5px 10px":size==="sm"?"8px 14px":size==="lg"?"15px 28px":"11px 20px";
   const fs  = size==="xs"?"10px":size==="sm"?"12px":size==="lg"?"15px":"13px";
   const V = {
-    primary:{background:disabled?D.surf2:D.grad,color:disabled?D.textMuted:"#fff",border:"none",boxShadow:disabled?"none":"0 4px 24px rgba(79,70,229,.4)"},
+    primary:{background:disabled?D.surf2:D.grad,color:disabled?D.textMuted:"#fff",border:"none",boxShadow:disabled?"none":"0 4px 24px rgba(99,102,241,.4)"},
     danger: {background:disabled?D.surf2:`linear-gradient(135deg,${D.rose},#dc2626)`,color:disabled?D.textMuted:"#fff",border:"none",boxShadow:disabled?"none":`0 4px 20px ${D.rose}40`},
     ghost:  {background:"transparent",color:D.textSecondary,border:`1px solid ${D.border}`},
     tonal:  {background:D.surf2,color:D.textPrimary,border:`1px solid ${D.borderMed}`},

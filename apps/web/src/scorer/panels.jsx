@@ -207,8 +207,8 @@ function WagonWheel({ballLog=[],selSeg,onSel,onPlace,viewMode,onViewMode,hidden,
   const zoneFill=(id,zone)=>{
     const sel=isSel(id),hv=hov?.seg===id;
     if(viewMode==="heatmap")return heatColor(segRuns[id],maxR)||"transparent";
-    if(sel&&selSeg.zone===zone)return"rgba(79,70,229,.38)";
-    if(sel)return"rgba(79,70,229,.14)";
+    if(sel&&selSeg.zone===zone)return"rgba(99,102,241,.38)";
+    if(sel)return"rgba(99,102,241,.14)";
     if(hv)return"rgba(14,165,233,.12)";
     return"transparent";
   };
@@ -253,8 +253,8 @@ function WagonWheel({ballLog=[],selSeg,onSel,onPlace,viewMode,onViewMode,hidden,
           <circle cx={CX} cy={CY} r={R_BND+3} fill="url(#gOuter)"/>
           {SEGS.map(seg=>{
             const sel=isSel(seg.id),hv=hov?.seg===seg.id;
-            const fill=viewMode==="heatmap"?(heatColor(segRuns[seg.id],maxR)||`${D.amber}0d`):sel?`rgba(79,70,229,.42)`:hv?`rgba(14,165,233,.16)`:`${D.amber}0c`;
-            const stroke=sel?`rgba(79,70,229,.7)`:hv?`rgba(14,165,233,.4)`:`${D.amber}25`;
+            const fill=viewMode==="heatmap"?(heatColor(segRuns[seg.id],maxR)||`${D.amber}0d`):sel?`rgba(99,102,241,.42)`:hv?`rgba(14,165,233,.16)`:`${D.amber}0c`;
+            const stroke=sel?`rgba(99,102,241,.7)`:hv?`rgba(14,165,233,.4)`:`${D.amber}25`;
             return(<path key={`b${seg.id}`} d={ringArc(seg.angle,R_BND,R_MID)} fill={fill} stroke={stroke}
               strokeWidth={sel?"1.5":"0.5"} style={{cursor:onPlace?"crosshair":"pointer",pointerEvents:onPlace?"none":"auto"}}
               onClick={()=>onSel(sel&&selSeg?.zone==="boundary"?null:{seg:seg.id,zone:"boundary"})}
@@ -263,14 +263,14 @@ function WagonWheel({ballLog=[],selSeg,onSel,onPlace,viewMode,onViewMode,hidden,
           <circle cx={CX} cy={CY} r={R_MID} fill="none" stroke={`${D.amber}50`} strokeWidth="1.5" strokeDasharray="4 3"/>
           {SEGS.map(seg=>(
             <path key={`o${seg.id}`} d={ringArc(seg.angle,R_MID,R_IN)} fill={zoneFill(seg.id,"outer")}
-              stroke={isSel(seg.id)?"rgba(79,70,229,.35)":"rgba(255,255,255,.04)"} strokeWidth="0.4" style={{cursor:onPlace?"crosshair":"pointer",pointerEvents:onPlace?"none":"auto"}}
+              stroke={isSel(seg.id)?"rgba(99,102,241,.35)":"rgba(255,255,255,.04)"} strokeWidth="0.4" style={{cursor:onPlace?"crosshair":"pointer",pointerEvents:onPlace?"none":"auto"}}
               onClick={()=>onSel(isSel(seg.id)&&selSeg?.zone==="outer"?null:{seg:seg.id,zone:"outer"})}
               onMouseEnter={()=>setHov({seg:seg.id})} onMouseLeave={()=>setHov(null)}/>
           ))}
           <circle cx={CX} cy={CY} r={R_IN} fill="url(#gInner)" stroke="rgba(255,255,255,.1)" strokeWidth="1" strokeDasharray="3 4"/>
           {SEGS.map(seg=>(
             <path key={`i${seg.id}`} d={pieSlice(seg.angle,R_IN)} fill={zoneFill(seg.id,"inner")}
-              stroke={isSel(seg.id)?"rgba(79,70,229,.25)":"rgba(255,255,255,.03)"} strokeWidth="0.4"
+              stroke={isSel(seg.id)?"rgba(99,102,241,.25)":"rgba(255,255,255,.03)"} strokeWidth="0.4"
               style={{cursor:onPlace?"crosshair":"pointer",pointerEvents:onPlace?"none":"auto"}}
               onClick={()=>onSel(isSel(seg.id)&&selSeg?.zone==="inner"?null:{seg:seg.id,zone:"inner"})}
               onMouseEnter={()=>setHov({seg:seg.id})} onMouseLeave={()=>setHov(null)}/>
@@ -505,7 +505,7 @@ function ScorecardPanel({innings,idx}){
           <div style={{display:"flex",flexWrap:"wrap",gap:"6px"}}>
             {i.fow.map((f,ii)=>(
               <div key={ii} style={{background:`${D.rose}10`,border:`1px solid ${D.rose}28`,borderRadius:D.sm,padding:"4px 10px"}}>
-                <span style={{color:D.rose,fontFamily:D.mono,fontSize:"12px",fontWeight:500}}>{f.runs}/{f.wickets}</span>
+                <span style={{color:D.roseText,fontFamily:D.mono,fontSize:"12px",fontWeight:500}}>{f.runs}/{f.wickets}</span>
                 <span style={{color:D.textMuted,fontSize:"10px",fontFamily:D.body,marginLeft:"5px"}}>{f.batsman} ({f.overs})</span>
               </div>
             ))}
@@ -547,20 +547,20 @@ function detectMilestone(ball,inn){
   }
   if(bow&&ball.type==="W"){
     const wkts=(bow.wickets||0)+1; // including this dismissal
-    if(wkts===5)milestones.push({type:"fifer",label:"FIFER!",sub:bow.name+" takes 5 wickets",color:D.rose,icon:"🎯"});
+    if(wkts===5)milestones.push({type:"fifer",label:"FIFER!",sub:bow.name+" takes 5 wickets",color:D.roseText,icon:"🎯"});
     if(wkts>=3){
       const legal=(inn?.ballLog||[]).filter(b=>b.type!=="Wd"&&b.type!=="Nb").slice(-2);
       if(legal.length===2&&legal.every(b=>b.type==="W"&&b.bowler===bow.id))
-        milestones.push({type:"hattrick",label:"HAT-TRICK!",sub:bow.name+" — 3 in a row!",color:D.rose,icon:"🎩"});
+        milestones.push({type:"hattrick",label:"HAT-TRICK!",sub:bow.name+" — 3 in a row!",color:D.roseText,icon:"🎩"});
     }
-    if((inn?.wickets||0)+1>=10)milestones.push({type:"allout",label:"ALL OUT!",sub:(inn?.battingTeam||"")+" all out",color:D.rose,icon:"💀"});
+    if((inn?.wickets||0)+1>=10)milestones.push({type:"allout",label:"ALL OUT!",sub:(inn?.battingTeam||"")+" all out",color:D.roseText,icon:"💀"});
   }
   // Team milestones — total includes extras
   if(inn){
     const added=(ball.type==="Wd"||ball.type==="Nb")?1+(ball.value||0):(ball.value||0);
     const prevRuns=inn.runs, postRuns=inn.runs+added;
     [50,100,150,200,250,300,350,400].forEach(n=>{
-      if(prevRuns<n&&postRuns>=n)milestones.push({type:"team"+n,label:n+"!",sub:inn.battingTeam+" reach "+n,color:D.indigo,icon:"🏏"});
+      if(prevRuns<n&&postRuns>=n)milestones.push({type:"team"+n,label:n+"!",sub:inn.battingTeam+" reach "+n,color:D.indigoText,icon:"🏏"});
     });
   }
   return milestones.length>0?milestones[0]:null;
@@ -780,7 +780,7 @@ function buildEventCfg(ballValue,milestone){
   };
   if(ballValue===4)return{label:"FOUR!",sub:"Boundary",color:D.sky,glow:"rgba(14,165,233,.5)",bg:"rgba(14,165,233,.06)"};
   if(ballValue===6)return{label:"SIX!",sub:"Maximum!",color:D.amber,glow:"rgba(245,158,11,.6)",bg:"rgba(245,158,11,.06)"};
-  if(ballValue==="W")return{label:"WICKET!",sub:"Out",color:D.rose,glow:"rgba(244,63,94,.5)",bg:"rgba(244,63,94,.06)"};
+  if(ballValue==="W")return{label:"WICKET!",sub:"Out",color:D.roseText,glow:"rgba(244,63,94,.5)",bg:"rgba(244,63,94,.06)"};
   return null;
 }
 
@@ -862,7 +862,7 @@ function PartnershipCard({inn}){
             <div key={i} style={{marginBottom:"8px"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"3px"}}>
                 <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
-                  <span style={{fontFamily:D.mono,fontSize:"10px",color:D.rose,fontWeight:600}}>{p.wicket-1}/{p.wicket}</span>
+                  <span style={{fontFamily:D.mono,fontSize:"10px",color:D.roseText,fontWeight:600}}>{p.wicket-1}/{p.wicket}</span>
                   <span style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary}}>{p.bat1} & {p.bat2}</span>
                 </div>
                 <div style={{display:"flex",gap:"10px",alignItems:"baseline"}}>

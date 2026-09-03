@@ -53,9 +53,9 @@ function ManagementView({ role, users, setUsers }) {
   };
 
   const TABS_MAP = {
-    superadmin:    [{id:"users",icon:"👥",label:"User Management",color:D.violet},{id:"squad",icon:"🏏",label:"Squad Admin",color:D.sky},{id:"fixtures",icon:"📅",label:"Fixtures",color:D.amber},{id:"broadcast",icon:"📡",label:"Broadcast",color:D.rose},{id:"audit",icon:"🔍",label:"Audit Log",color:D.textMuted}],
-    schooladmin:   [{id:"users",icon:"👥",label:"Users",color:D.indigo},{id:"squad",icon:"🏏",label:"Squad Admin",color:D.sky},{id:"fixtures",icon:"📅",label:"Fixtures",color:D.amber},{id:"broadcast",icon:"📡",label:"Broadcast",color:D.rose}],
-    sportsmaster:  [{id:"squad",icon:"🏏",label:"Team Management",color:D.sky},{id:"fixtures",icon:"📅",label:"Fixture Admin",color:D.amber},{id:"broadcast",icon:"📡",label:"Announcements",color:D.rose}],
+    superadmin:    [{id:"users",icon:"👥",label:"User Management",color:D.violetText},{id:"squad",icon:"🏏",label:"Squad Admin",color:D.sky},{id:"fixtures",icon:"📅",label:"Fixtures",color:D.amber},{id:"broadcast",icon:"📡",label:"Broadcast",color:D.roseText},{id:"audit",icon:"🔍",label:"Audit Log",color:D.textMuted}],
+    schooladmin:   [{id:"users",icon:"👥",label:"Users",color:D.indigoText},{id:"squad",icon:"🏏",label:"Squad Admin",color:D.sky},{id:"fixtures",icon:"📅",label:"Fixtures",color:D.amber},{id:"broadcast",icon:"📡",label:"Broadcast",color:D.roseText}],
+    sportsmaster:  [{id:"squad",icon:"🏏",label:"Team Management",color:D.sky},{id:"fixtures",icon:"📅",label:"Fixture Admin",color:D.amber},{id:"broadcast",icon:"📡",label:"Announcements",color:D.roseText}],
     coach:         [{id:"squad",icon:"🏏",label:"Squad Tools",color:D.emerald}],
     groundskeeper: [{id:"grounds",icon:"🌿",label:"Ground Tasks",color:D.teal}],
   };
@@ -102,7 +102,7 @@ function ManagementView({ role, users, setUsers }) {
             {u.role&&<div style={{display:"flex",alignItems:"center",gap:"8px",padding:"8px 14px",borderRadius:D.md,background:`${ROLES[u.role]?.color||D.indigo}12`,border:`1px solid ${ROLES[u.role]?.color||D.indigo}33`}}>
               <span style={{fontSize:"16px"}}>{ROLES[u.role]?.icon}</span>
               <span style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:ROLES[u.role]?.color||D.indigo}}>{ROLES[u.role]?.label}</span>
-              {u.role==="superadmin"&&<span style={{marginLeft:"auto",fontFamily:D.head,fontSize:"8px",color:D.rose}}>⚠ Highest privilege</span>}
+              {u.role==="superadmin"&&<span style={{marginLeft:"auto",fontFamily:D.head,fontSize:"8px",color:D.roseText}}>⚠ Highest privilege</span>}
             </div>}
 
             {[
@@ -231,16 +231,16 @@ function ManagementView({ role, users, setUsers }) {
               <option value="suspended">Suspended</option>
             </select>
             {canManageUsers&&(
-              <button onClick={()=>{setAddOpen(true);setEditUser(null);}} className="pressBtn" style={{padding:"7px 16px",borderRadius:D.pill,cursor:"pointer",background:`${D.violet}18`,border:`1px solid ${D.violet}44`,fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.violet,whiteSpace:"nowrap"}}>+ Add User</button>
+              <button onClick={()=>{setAddOpen(true);setEditUser(null);}} className="pressBtn" style={{padding:"7px 16px",borderRadius:D.pill,cursor:"pointer",background:`${D.violet}18`,border:`1px solid ${D.violet}44`,fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.violetText,whiteSpace:"nowrap"}}>+ Add User</button>
             )}
           </div>
 
           {/* Stats row */}
           <div style={{display:"flex",gap:"10px",flexWrap:"wrap"}}>
             {[
-              {label:"Total",value:(users||USERS_INITIAL).length,color:D.violet},
+              {label:"Total",value:(users||USERS_INITIAL).length,color:D.violetText},
               {label:"Active",value:(users||USERS_INITIAL).filter(u=>u.status==="active").length,color:D.emerald},
-              {label:"Suspended",value:(users||USERS_INITIAL).filter(u=>u.status==="suspended").length,color:D.rose},
+              {label:"Suspended",value:(users||USERS_INITIAL).filter(u=>u.status==="suspended").length,color:D.roseText},
               {label:"Showing",value:filteredUsers.length,color:D.sky},
             ].map(s=>(
               <div key={s.label} style={{padding:"10px 16px",borderRadius:D.md,background:D.surf1,border:`1px solid ${D.border}`,display:"flex",alignItems:"center",gap:"8px"}}>
@@ -319,7 +319,7 @@ function ManagementView({ role, users, setUsers }) {
                                 <button onClick={()=>toggleStatus(u.id)} className="pressBtn" style={{padding:"4px 10px",borderRadius:D.md,cursor:"pointer",background:"transparent",border:`1px solid ${D.border}`,fontFamily:D.head,fontSize:"9px",fontWeight:700,color:u.status==="active"?D.amber:D.emerald}}>
                                   {u.status==="active"?"⏸ Suspend":"▶ Restore"}
                                 </button>
-                                {u.role!=="superadmin"&&<button onClick={()=>setDelConf(u.id)} className="pressBtn" style={{padding:"4px 10px",borderRadius:D.md,cursor:"pointer",background:"transparent",border:`1px solid ${D.rose}44`,fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.rose}}>🗑</button>}
+                                {u.role!=="superadmin"&&<button onClick={()=>setDelConf(u.id)} className="pressBtn" style={{padding:"4px 10px",borderRadius:D.md,cursor:"pointer",background:"transparent",border:`1px solid ${D.rose}44`,fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.roseText}}>🗑</button>}
                               </>
                             )}
                           </div>
@@ -345,7 +345,7 @@ function ManagementView({ role, users, setUsers }) {
                 <div style={{padding:"12px 18px",borderBottom:`1px solid ${D.border}`,background:`${D.indigo}08`,display:"flex",alignItems:"center",gap:"10px"}}>
                   <span style={{fontFamily:D.head,fontSize:"12px",fontWeight:800,color:D.textPrimary}}>🏏 Hilton {team}</span>
                   <span style={{fontFamily:D.mono,fontSize:"11px",color:D.textMuted}}>{players.length} players</span>
-                  {isAdmin&&<button className="pressBtn" style={{marginLeft:"auto",padding:"4px 12px",borderRadius:D.pill,cursor:"pointer",background:`${D.indigo}18`,border:`1px solid ${D.indigo}44`,fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.indigo}}>+ Add Player</button>}
+                  {isAdmin&&<button className="pressBtn" style={{marginLeft:"auto",padding:"4px 12px",borderRadius:D.pill,cursor:"pointer",background:`${D.indigo}18`,border:`1px solid ${D.indigo}44`,fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.indigoText}}>+ Add Player</button>}
                 </div>
                 {players.map(p=>(
                   <div key={p.id} style={{display:"flex",alignItems:"center",gap:"12px",padding:"8px 18px",borderBottom:`1px solid ${D.border}44`}}>
@@ -354,7 +354,7 @@ function ManagementView({ role, users, setUsers }) {
                       <div style={{fontFamily:D.body,fontSize:"13px",fontWeight:600,color:D.textPrimary}}>{p.name}{p.isCaptain&&<span style={{color:D.amber,fontSize:"10px",marginLeft:"6px"}}>© Cap</span>}</div>
                       <div style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>{p.role} · Age {p.age}</div>
                     </div>
-                    {p.injuryStatus&&<span style={{padding:"2px 8px",borderRadius:D.pill,background:`${D.rose}18`,border:`1px solid ${D.rose}33`,fontFamily:D.head,fontSize:"8px",fontWeight:700,color:D.rose}}>{p.injuryStatus==="injured"?"🏥 Injured":"🔄 Rehab"}</span>}
+                    {p.injuryStatus&&<span style={{padding:"2px 8px",borderRadius:D.pill,background:`${D.rose}18`,border:`1px solid ${D.rose}33`,fontFamily:D.head,fontSize:"8px",fontWeight:700,color:D.roseText}}>{p.injuryStatus==="injured"?"🏥 Injured":"🔄 Rehab"}</span>}
                     {isAdmin&&<button className="pressBtn" style={{padding:"3px 10px",borderRadius:D.pill,cursor:"pointer",background:"transparent",border:`1px solid ${D.border}`,fontFamily:D.head,fontSize:"9px",color:D.textMuted}}>Edit</button>}
                   </div>
                 ))}
@@ -369,7 +369,7 @@ function ManagementView({ role, users, setUsers }) {
         <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:"8px"}}>
             <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary}}>📅 Upcoming Fixtures</div>
-            {isAdmin&&<button className="pressBtn" style={{padding:"6px 14px",borderRadius:D.pill,cursor:"pointer",background:`${D.indigo}18`,border:`1px solid ${D.indigo}44`,fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.indigo}}>+ Add Fixture</button>}
+            {isAdmin&&<button className="pressBtn" style={{padding:"6px 14px",borderRadius:D.pill,cursor:"pointer",background:`${D.indigo}18`,border:`1px solid ${D.indigo}44`,fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.indigoText}}>+ Add Fixture</button>}
           </div>
           {MATCHES.filter(m=>m.status==="upcoming").map(m=>(
             <div key={m.id} style={{borderRadius:D.lg,border:`1px solid ${D.border}`,background:D.surf1,padding:"14px 18px",display:"flex",alignItems:"center",gap:"14px",flexWrap:"wrap"}}>
@@ -390,7 +390,7 @@ function ManagementView({ role, users, setUsers }) {
       {activeTab==="broadcast"&&(
         <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
           <div style={{borderRadius:D.lg,border:`1px solid ${D.rose}33`,background:`${D.rose}06`,padding:"18px 20px"}}>
-            <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.rose,marginBottom:"12px"}}>📡 Send Broadcast Alert</div>
+            <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.roseText,marginBottom:"12px"}}>📡 Send Broadcast Alert</div>
             <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
               <div>
                 <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:D.textMuted,marginBottom:"6px"}}>Recipients</div>

@@ -167,7 +167,7 @@ function AnalyticsView({ role }) {
                   <div>
                     <div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,marginBottom:"4px"}}>Conceded run rate</div>
                     <ProgressBar pct={Math.min(100,(ph.runsAgainst/8/12)*100)} color={D.rose}/>
-                    <div style={{fontFamily:D.mono,fontSize:"10px",color:D.rose,marginTop:"2px"}}>{(ph.runsAgainst/8).toFixed(1)} RPO</div>
+                    <div style={{fontFamily:D.mono,fontSize:"10px",color:D.roseText,marginTop:"2px"}}>{(ph.runsAgainst/8).toFixed(1)} RPO</div>
                   </div>
                 </div>
               </Card>
@@ -179,7 +179,7 @@ function AnalyticsView({ role }) {
       {subView==="h2h"&&(
         <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
           <Card sx={{padding:"14px 16px",background:`linear-gradient(135deg,${D.indigo}08,${D.surf1})`,border:`1px solid ${D.indigo}22`}}>
-            <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.indigo,marginBottom:"4px"}}>KZN Rivals — Head-to-Head Record ({teamFilter})</div>
+            <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.indigoText,marginBottom:"4px"}}>KZN Rivals — Head-to-Head Record ({teamFilter})</div>
             <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>All-time results vs KZN school opponents</div>
           </Card>
           {H2H.map(r=>{

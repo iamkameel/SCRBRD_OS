@@ -1,5 +1,5 @@
 import { useState, Fragment } from "react";
-import { D } from "../design/tokens.js";
+import { D, textOn } from "../design/tokens.js";
 import { BatsmanChart, BowlerChart, ManhattanChart, RunRateChart, WormChart } from "./charts.jsx";
 import { SEGS } from "./field.js";
 import { RR, SR, fmtOv } from "./format.js";
@@ -71,7 +71,7 @@ function ScoringHub({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selSeg
           <div style={{marginBottom:"14px"}}>
             <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"8px"}}>
               <Lbl>Bowler Approach</Lbl>
-              {!hubApproach&&<span style={{fontFamily:D.body,fontSize:"10px",color:D.rose,fontWeight:500}}>⚠ Required</span>}
+              {!hubApproach&&<span style={{fontFamily:D.body,fontSize:"10px",color:D.roseText,fontWeight:500}}>⚠ Required</span>}
               {hubApproach&&<span style={{fontFamily:D.body,fontSize:"10px",color:D.emerald,fontWeight:500}}>✓ Set</span>}
               <div style={{marginLeft:"auto",display:"flex",gap:"5px"}}>
                 <button onClick={onWide} className="pressBtn" style={{
@@ -143,7 +143,7 @@ function ScoringHub({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selSeg
               <div style={{display:"flex",alignItems:"center",gap:"5px",padding:"4px 10px",
                 borderRadius:D.md,background:shotInfo.color+"12",border:"1px solid "+shotInfo.color+"25"}}>
                 <span style={{fontSize:"14px"}}>{shotInfo.icon}</span>
-                <span style={{fontFamily:D.body,fontSize:"11px",color:shotInfo.color}}>{shotInfo.label}</span>
+                <span style={{fontFamily:D.body,fontSize:"11px",color:textOn(shotInfo.color)}}>{shotInfo.label}</span>
               </div>
             )}
             {!shotInfo&&<span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>No shot</span>}
@@ -183,7 +183,7 @@ function ScoringHub({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selSeg
               <div style={{display:"flex",alignItems:"center",gap:"5px",padding:"4px 10px",
                 borderRadius:D.md,background:shotInfo.color+"12",border:"1px solid "+shotInfo.color+"25"}}>
                 <span style={{fontSize:"13px"}}>{shotInfo.icon}</span>
-                <span style={{fontFamily:D.body,fontSize:"11px",color:shotInfo.color}}>{shotInfo.label}</span>
+                <span style={{fontFamily:D.body,fontSize:"11px",color:textOn(shotInfo.color)}}>{shotInfo.label}</span>
               </div>
             )}
             {segInfo&&(
@@ -216,14 +216,14 @@ function ScoringHub({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selSeg
               <button key={t} onClick={()=>t==="B"?onBye():onLegBye()} className="pressBtn" style={{
                 padding:"9px",borderRadius:D.md,cursor:"pointer",
                 border:"1px solid "+D.violet+"33",background:D.violet+"08",
-                color:D.violet,fontFamily:D.head,fontSize:"10px",fontWeight:700,
+                color:D.violetText,fontFamily:D.head,fontSize:"10px",fontWeight:700,
                 letterSpacing:"0.05em",textTransform:"uppercase"}}>{l}</button>
             ))}
           </div>
           <button onClick={onWicket} className="pressBtn" style={{
             width:"100%",padding:"13px",borderRadius:D.md,cursor:"pointer",
             border:"1px solid "+D.rose+"44",background:D.rose+"0e",
-            color:D.rose,fontFamily:D.head,fontSize:"13px",fontWeight:700,
+            color:D.roseText,fontFamily:D.head,fontSize:"13px",fontWeight:700,
             letterSpacing:"0.06em",textTransform:"uppercase",
             boxShadow:"0 4px 20px "+D.rose+"15",transition:"all .15s"}}>
             ⚡ Wicket
@@ -352,7 +352,7 @@ function ScoringPanel({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selS
               <span style={{color:D.orange,fontSize:"12px"}}>⚡</span>
               <span style={{color:D.textPrimary,fontSize:"13px",fontFamily:D.body,fontWeight:500}}>{bow.name}</span>
               {bow.bowlArm&&<span style={{fontFamily:D.mono,fontSize:"8px",fontWeight:700,padding:"1px 4px",borderRadius:D.pill,
-                background:`${D.violet}15`,border:`1px solid ${D.violet}33`,color:D.violet,flexShrink:0}}>
+                background:`${D.violet}15`,border:`1px solid ${D.violet}33`,color:D.violetText,flexShrink:0}}>
                 {bow.bowlArm==="L"?"LA":"RA"}{bow.bowlStyle==="S"?"S":bow.bowlStyle==="M"?"M":"F"}
               </span>}
             </div>
@@ -478,7 +478,21 @@ function FocusPad({inn,match,curIn,target,onCommitDetailed,onWicketCtx,onWide,on
       {/* aria-hidden on the face: the button already has a name, and without
           this a screen reader reads the label, then the name, then the sub. */}
       <span aria-hidden="true" style={{fontFamily:D.mono,fontSize:"21px",fontWeight:700,color:fg||D.textPrimary,lineHeight:1}}>{label}</span>
-      {sub&&<span aria-hidden="true" style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",color:D.textSecondary}}>{sub}</span>}
+      {/* §6.3 of the design audit, which calls this the single highest-priority
+          visual fix in the product — and it is right. These are read by an
+          untrained volunteer, outdoors, in direct sunlight, on a phone, under
+          time pressure, where a mistap is unrecoverable data loss. They were
+          simultaneously the smallest and lowest-contrast text in the system:
+          7px at 2.26:1.
+
+          WD and NB are two-letter tokens differentiated primarily by this
+          caption, with W sitting next to both. At 2.26:1 in sunlight the
+          caption is simply not there.
+
+          10px minimum, the key's own accent where it has one, and the 0.12em
+          tracking dropped — at this size it was costing legibility rather than
+          adding refinement. */}
+      {sub&&<span aria-hidden="true" style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:"0.02em",color:fg?textOn(fg):D.textSecondary}}>{sub}</span>}
     </button>
   );
   if(quick){
@@ -486,16 +500,16 @@ function FocusPad({inn,match,curIn,target,onCommitDetailed,onWicketCtx,onWide,on
       <div style={{maxWidth:"560px",margin:"0 auto",display:"flex",flexDirection:"column",gap:"12px"}}>
         {ContextStrip}
         <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"8px"}}>
-          <K label="·" sub="DOT" say="Dot ball, no run" onClick={()=>onCommitDetailed("run",0,null,null,null)}/>
+          <K label="·" sub="Dot" say="Dot ball, no run" onClick={()=>onCommitDetailed("run",0,null,null,null)}/>
           <K label="1" say="One run" onClick={()=>onCommitDetailed("run",1,null,null,null)}/>
           <K label="2" say="Two runs" onClick={()=>onCommitDetailed("run",2,null,null,null)}/>
           <K label="3" say="Three runs" onClick={()=>onCommitDetailed("run",3,null,null,null)}/>
           <K label="4" say="Four, boundary" onClick={()=>onCommitDetailed("run",4,null,null,null)} bg={D.indigo+"1c"} fg={D.indigo} border={D.indigo+"44"}/>
           <K label="6" say="Six, maximum" onClick={()=>onCommitDetailed("run",6,null,null,null)} bg={D.amber+"1c"} fg={D.amber} border={D.amber+"44"}/>
-          <K label="WD" sub="WIDE" say="Wide" onClick={onWide} bg={D.orange+"14"} fg={D.orange} border={D.orange+"33"}/>
-          <K label="NB" sub="NO BALL" say="No ball" onClick={onNoBall} bg={D.amber+"10"} fg={D.amber} border={D.amber+"2a"}/>
-          <K label="W" sub="WICKET" say="Wicket" onClick={()=>onWicketCtx(null,null,null)} bg={D.rose+"1c"} fg={D.rose} border={D.rose+"44"}/>
-          <K label="↩" sub="UNDO" say="Undo the last ball" onClick={onUndo} span={2}/>
+          <K label="WD" sub="Wide" say="Wide" onClick={onWide} bg={D.orange+"14"} fg={D.orange} border={D.orange+"33"}/>
+          <K label="NB" sub="No ball" say="No ball" onClick={onNoBall} bg={D.amber+"10"} fg={D.amber} border={D.amber+"2a"}/>
+          <K label="W" sub="Wicket" say="Wicket" onClick={()=>onWicketCtx(null,null,null)} bg={D.rose+"1c"} fg={D.rose} border={D.rose+"44"}/>
+          <K label="↩" sub="Undo" say="Undo the last ball" onClick={onUndo} span={2}/>
           <button onClick={onToggleQuick} className="pressBtn" style={{minHeight:"60px",borderRadius:D.lg,cursor:"pointer",background:D.emerald+"12",border:`1px solid ${D.emerald}33`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:"3px"}}>
             <span style={{fontSize:"14px"}}>🧭</span>
             <span style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",color:D.emerald}}>3-PHASE</span>
@@ -588,7 +602,7 @@ function FocusPad({inn,match,curIn,target,onCommitDetailed,onWicketCtx,onWide,on
           {(shot==="padded"||shot==="hit_body")&&<div style={{fontFamily:D.body,fontSize:"10px",color:D.orange,marginBottom:"8px",textAlign:"center"}}>Runs off the pads will be recorded as leg-byes.</div>}
           {shot==="missed"&&<div style={{fontFamily:D.body,fontSize:"10px",color:D.orange,marginBottom:"8px",textAlign:"center"}}>Runs after a miss will be recorded as byes.</div>}
           <button onClick={commitWkt} className="pressBtn" style={{width:"100%",padding:"14px",borderRadius:D.lg,cursor:"pointer",
-            background:D.rose+"1c",border:`1px solid ${D.rose}55`,color:D.rose,fontFamily:D.head,fontSize:"13px",fontWeight:800,letterSpacing:"0.08em",marginBottom:"8px"}}>
+            background:D.rose+"1c",border:`1px solid ${D.rose}55`,color:D.roseText,fontFamily:D.head,fontSize:"13px",fontWeight:800,letterSpacing:"0.08em",marginBottom:"8px"}}>
             🎯 WICKET
           </button>
           <button onClick={()=>setPhase(2)} className="pressBtn" style={{width:"100%",padding:"10px",borderRadius:D.lg,cursor:"pointer",background:D.surf2,border:`1px solid ${D.border}`,color:D.textSecondary,fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:"0.05em"}}>‹ AREA</button>
@@ -597,9 +611,9 @@ function FocusPad({inn,match,curIn,target,onCommitDetailed,onWicketCtx,onWide,on
 
       {/* Extras strip — not shots, always available */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"8px"}}>
-        <K label="WD" sub="WIDE" say="Wide" onClick={onWide} bg={D.orange+"14"} fg={D.orange} border={D.orange+"33"}/>
-        <K label="NB" sub="NO BALL" say="No ball" onClick={onNoBall} bg={D.amber+"10"} fg={D.amber} border={D.amber+"2a"}/>
-        <K label="↩" sub="UNDO" say="Undo the last ball" onClick={()=>{ if(phase>1){reset();} else {onUndo();} }} bg={D.surf2}/>
+        <K label="WD" sub="Wide" say="Wide" onClick={onWide} bg={D.orange+"14"} fg={D.orange} border={D.orange+"33"}/>
+        <K label="NB" sub="No ball" say="No ball" onClick={onNoBall} bg={D.amber+"10"} fg={D.amber} border={D.amber+"2a"}/>
+        <K label="↩" sub="Undo" say="Undo the last ball" onClick={()=>{ if(phase>1){reset();} else {onUndo();} }} bg={D.surf2}/>
       </div>
 
       {/* Mode toggles */}

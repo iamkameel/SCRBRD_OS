@@ -56,7 +56,7 @@ function PitchDeckView({ role }) {
         {
           name:"SCRBRD OS",
           desc:"Comprehensive school cricket management hub: squad, analytics, injuries, training, logistics, fields, staff, leagues, calendar and notifications.",
-          color:D.violet,
+          color:D.violetText,
           icon:"⚙️",
         },
       ],

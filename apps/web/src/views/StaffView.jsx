@@ -149,7 +149,7 @@ function StaffView({ role }) {
                   ))}
                   {sel.concussionProtocol&&(
                     <div style={{marginTop:"8px",background:D.rose+"10",borderRadius:D.sm,padding:"8px 10px",border:`1px solid ${D.rose}22`}}>
-                      <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.rose,letterSpacing:"0.08em",marginBottom:"4px"}}>CONCUSSION PROTOCOL</div>
+                      <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.roseText,letterSpacing:"0.08em",marginBottom:"4px"}}>CONCUSSION PROTOCOL</div>
                       <div style={{fontFamily:D.body,fontSize:"10px",color:D.textSecondary}}>{sel.concussionProtocol}</div>
                     </div>
                   )}

@@ -1036,7 +1036,7 @@ function SCRBRD({resume}={}){
                 display:"flex",flexDirection:"column",alignItems:"center",gap:"3px",
                 padding:"9px 22px",borderRadius:D.pill,cursor:"pointer",border:"none",
                 background:active?D.grad:"transparent",
-                boxShadow:active?"0 4px 20px rgba(79,70,229,.5),0 0 28px rgba(79,70,229,.35)":"none",
+                boxShadow:active?"0 4px 20px rgba(99,102,241,.5),0 0 28px rgba(99,102,241,.35)":"none",
                 transition:"all .3s cubic-bezier(.34,1.56,.64,1)"}}>
                 <span style={{fontSize:"16px",lineHeight:1,filter:active?"none":"grayscale(.6) opacity(.7)"}}>{n.icon}</span>
                 <span style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:active?"#fff":D.textMuted}}>{n.label}</span>

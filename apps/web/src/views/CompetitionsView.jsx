@@ -122,7 +122,7 @@ function CompetitionsView({ role }) {
                     <span style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted,width:"14px"}}>{i+1}</span>
                     <Avatar name={p.name} size={24} color={D.violet}/>
                     <span style={{flex:1,fontFamily:D.body,fontSize:"11px",color:D.textSecondary}}>{p.name.split(" ").pop()}</span>
-                    <span style={{fontFamily:D.mono,fontSize:"11px",color:D.violet,fontWeight:500}}>{p.wkts}wkts</span>
+                    <span style={{fontFamily:D.mono,fontSize:"11px",color:D.violetText,fontWeight:500}}>{p.wkts}wkts</span>
                   </div>
                 ))}
               </div>

@@ -179,7 +179,7 @@ function OpeningSetupStep({batKey,bowlKey,batOrder,setBatOrder,bowlingSquad,bowl
           <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
             <span style={{fontSize:"20px"}}>{bowlTeam?.flag}</span>
             <div style={{fontFamily:D.head,fontSize:"14px",fontWeight:700,color:D.textPrimary}}>{bowlKey}</div>
-            <Lbl sx={{color:D.rose}}>Opening Bowler</Lbl>
+            <Lbl sx={{color:D.roseText}}>Opening Bowler</Lbl>
           </div>
           {/* Filter input */}
           <input value={bowlerFilter} onChange={e=>setBowlerFilter(e.target.value)} aria-label="Search bowlers"
@@ -211,7 +211,7 @@ function OpeningSetupStep({batKey,bowlKey,batOrder,setBatOrder,bowlingSquad,bowl
                   {p&&(
                     <div style={{display:"flex",gap:"5px",alignItems:"center"}}>
                       {styleDesc&&<span style={{fontFamily:D.mono,fontSize:"9px",fontWeight:700,padding:"1px 5px",borderRadius:D.pill,
-                        background:`${D.violet}15`,border:`1px solid ${D.violet}33`,color:D.violet}}>{styleDesc}</span>}
+                        background:`${D.violet}15`,border:`1px solid ${D.violet}33`,color:D.violetText}}>{styleDesc}</span>}
                       <Badge color={rc} sx={{fontSize:"8px"}}>{p.role}</Badge>
                     </div>
                   )}
@@ -486,7 +486,7 @@ function SetupScreen({onStart}){
               <TeamSelector value={team1Key} onChange={setTeam1Key} accent={D.sky} label="Team 1"/>
               <TeamSelector value={team2Key} onChange={v=>{if(v!==team1Key)setTeam2Key(v);}} accent={D.emerald} label="Team 2"/>
               {team1Key&&team2Key&&team1Key===team2Key&&(
-                <div style={{color:D.rose,fontSize:"11px",fontFamily:D.body,textAlign:"center"}}>Teams must be different</div>
+                <div style={{color:D.roseText,fontSize:"11px",fontFamily:D.body,textAlign:"center"}}>Teams must be different</div>
               )}
               <div>
                 <Lbl sx={{marginBottom:"8px"}}>Overs Per Innings</Lbl>

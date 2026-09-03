@@ -23,7 +23,7 @@ function WeatherChip({ w, compact }) {
       <span style={{fontSize:"13px"}}>{w.icon}</span>
       <span style={{fontFamily:D.mono,fontSize:"10px",color:bc,fontWeight:600}}>{w.tempC}°C</span>
       <span style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted}}>{w.condition}</span>
-      {!w.playable && <span style={{fontFamily:D.head,fontSize:"9px",color:D.rose,fontWeight:700,letterSpacing:"0.05em"}}>⚠ NOT PLAYABLE</span>}
+      {!w.playable && <span style={{fontFamily:D.head,fontSize:"9px",color:D.roseText,fontWeight:700,letterSpacing:"0.05em"}}>⚠ NOT PLAYABLE</span>}
     </div>
   );
   return (
