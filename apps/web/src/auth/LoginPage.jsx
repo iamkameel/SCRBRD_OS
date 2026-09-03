@@ -97,9 +97,13 @@ function LoginPage({ onLogin, onSignUp }) {
    * wrong shows the wrong menu, never the wrong data.
    */
   const primaryRole = (p) => {
-    const RANK = ["platformadmin","directorofsport","schooladmin","sportsadmin","principal",
-                  "coach","assistantcoach","scorer","medical","guardian","player"];
-    const held = (p?.assignments ?? []).map(a => a.role);
+    const held = (p?.assignments ?? []).map(a => a.role).filter(r => ROLES[r]);
+    // Widest first. Every policy role has an identity now, so an unranked one
+    // still lands somewhere real rather than on ROLES[undefined] — which is
+    // what an empty shell looked like: signed in, no navigation, no name.
+    const RANK = ["platformadmin","principal","directorofsport","schooladmin","sportsadmin",
+                  "coach","assistantcoach","teammanager","analyst","scorer","medical",
+                  "guardian","player"];
     return RANK.find(r => held.includes(r)) ?? held[0] ?? "spectator";
   };
 

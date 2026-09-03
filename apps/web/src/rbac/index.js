@@ -24,6 +24,11 @@
 import { authorize, scopeFilter, ANY_SCOPE } from "@scrbrd/policy/authorize";
 import { roleGrants, ROLE_CAPABILITIES } from "@scrbrd/policy/roles";
 import { TABLES } from "@scrbrd/policy/tables";
+// The demonstration vocabulary lives in its own leaf module: design/roles.js
+// needs the same mapping, and declaring it in either of us makes the other
+// import it — a cycle that shows up as a TDZ error rather than anything
+// legible. See rbac/legacy-roles.js.
+import { LEGACY_ROLE, DEMO_SCHOOL, DEMO_TEAM, DEMO_CHILD } from "./legacy-roles.js";
 import {
   COACHES, COMPETITIONS, GROUNDS, INJURIES, MATCHES, NOTIFICATIONS,
   PLAYERS, SKILLS_MATRIX, STAFF, TRAINING_SESSIONS, USERS_INITIAL, WEATHER,
@@ -92,29 +97,7 @@ function maskMap(resource) {
  *   platformsupport → platformadmin; the distinction now lives in whether
  *                     platform.support.impersonate has been exercised.
  */
-const DEMO_SCHOOL = "HIL";
-const DEMO_TEAM = "U19A";
-const DEMO_CHILD = "p5";
 
-const LEGACY_ROLE = {
-  superadmin:      { role: "platformadmin",        school: null },
-  platformsupport: { role: "platformadmin",        school: null },
-  headmaster:      { role: "principal",            school: DEMO_SCHOOL },
-  sportsmaster:    { role: "directorofsport",      school: DEMO_SCHOOL },
-  schooladmin:     { role: "schooladmin",          school: DEMO_SCHOOL },
-  financeadmin:    { role: "finance",              school: DEMO_SCHOOL },
-  headcoach:       { role: "coach",                school: DEMO_SCHOOL },
-  coach:           { role: "coach",                school: DEMO_SCHOOL, team: DEMO_TEAM },
-  assistant:       { role: "assistantcoach",       school: DEMO_SCHOOL, team: DEMO_TEAM },
-  analyst:         { role: "analyst",              school: DEMO_SCHOOL },
-  scorer:          { role: "scorer",               school: DEMO_SCHOOL, team: DEMO_TEAM },
-  medical:         { role: "medical",              school: DEMO_SCHOOL },
-  groundskeeper:   { role: "facilities",           school: DEMO_SCHOOL },
-  driver:          { role: "driver",               school: DEMO_SCHOOL },
-  player:          { role: "player",               school: DEMO_SCHOOL, person: "p1" },
-  parent:          { role: "guardian",             school: DEMO_SCHOOL, children: [DEMO_CHILD] },
-  spectator:       { role: "spectator",            school: DEMO_SCHOOL },
-};
 
 /** Assignments for a role name — legacy or current. */
 export function assignmentsForRole(role) {

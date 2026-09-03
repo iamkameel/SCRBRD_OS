@@ -93,11 +93,101 @@ ok("textOn is used where accents become text", usesTextOn.length > 0);
 ok("the scoring surface routes its accents through it",
    usesTextOn.some((f) => /scoring\.jsx$/.test(f)));
 
+group("Role identity");
+// §5.3 found six colliding pairs across seventeen roles, every collision
+// between an original role and one added in a merge — the new ones were given
+// recycled colours. Super Admin and Headmaster were identical while having
+// materially different access to clinical records.
+//
+// Worse than the collisions: the UI named seventeen roles the authorization
+// model had never heard of, while fourteen roles that DO carry permissions had
+// no identity at all. Signing in as a director of sport gave ROLES[undefined]
+// and an empty shell.
+const { ROLE_IDENTITY, ROLES, NAV_CAPABILITY } = await import(join(SRC, "design/roles.js"));
+const { ROLES: POLICY_ROLES, roleGrants } = await import("@scrbrd/policy/roles");
+
+ok("every policy role has a visual identity",
+   POLICY_ROLES.every((r) => !!ROLE_IDENTITY[r]),
+   POLICY_ROLES.filter((r) => !ROLE_IDENTITY[r]).join(", "));
+ok("...and every identity is a real policy role",
+   Object.keys(ROLE_IDENTITY).every((r) => POLICY_ROLES.includes(r)),
+   Object.keys(ROLE_IDENTITY).filter((r) => !POLICY_ROLES.includes(r)).join(", "));
+ok("every role gets a navigation", POLICY_ROLES.every((r) => ROLES[r]?.nav?.length > 0));
+
+const colours = Object.entries(ROLE_IDENTITY).map(([r, id]) => [r, id.color.toLowerCase()]);
+const dupes = colours.filter(([, c], i) => colours.findIndex(([, d]) => d === c) !== i);
+ok("no two roles share a colour", dupes.length === 0, dupes.map(([r]) => r).join(", "));
+
+// Role colour is used as TEXT, so 4.5:1 is the bar, on the lightest surface.
+const dim = colours.filter(([, c]) => worst(c) < 4.5);
+ok("every role colour is readable on every surface", dim.length === 0,
+   dim.map(([r, c]) => `${r} ${worst(c).toFixed(2)}:1`).join(", "));
+
+// Distinct is not the same as distinguishable: two colours can differ in hex,
+// pass contrast, and still be the same colour to a person. dE76 over CIELAB is
+// the check that means something.
+const lab = (h) => {
+  let [r, g, b] = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255)
+    .map((x) => (x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4));
+  const X = (0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047;
+  const Y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  const Z = (0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883;
+  const f = (t) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+  const [fx, fy, fz] = [f(X), f(Y), f(Z)];
+  return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
+};
+const dE = (a, b) => Math.hypot(...lab(a).map((v, i) => v - lab(b)[i]));
+let closest = [Infinity, "", ""];
+for (let i = 0; i < colours.length; i++)
+  for (let j = i + 1; j < colours.length; j++) {
+    const d = dE(colours[i][1], colours[j][1]);
+    if (d < closest[0]) closest = [d, colours[i][0], colours[j][0]];
+  }
+ok(`the closest pair is ${closest[0].toFixed(1)} apart (${closest[1]}/${closest[2]})`, closest[0] >= 8);
+
+// Family is the other half of the signal: it says which domain of access a
+// role sits in, so a colour carries meaning in two dimensions rather than one.
+ok("every role declares a family", Object.values(ROLE_IDENTITY).every((id) => !!id.family));
+const sameFamily = (a, b) => ROLE_IDENTITY[a].family === ROLE_IDENTITY[b].family;
+ok("the closest pair is within one family or across adjacent ones",
+   sameFamily(closest[1], closest[2]) ||
+   ["platform", "governance"].every((f) => [ROLE_IDENTITY[closest[1]].family, ROLE_IDENTITY[closest[2]].family].includes(f)));
+
+// The bug this whole file exists to fix, stated as a property: the live login
+// picks the widest assignment a person holds and looks it up here. Sarah is a
+// director of sport at one school and a guardian at another; `directorofsport`
+// was a role the UI had never heard of, so signing in as her produced
+// ROLES[undefined] — a working session with no navigation and no name.
+for (const r of ["directorofsport", "principal", "teammanager", "official", "media", "scout"]) {
+  ok(`a ${r} can be signed in and shown something`,
+     !!ROLES[r]?.label && ROLES[r].nav.length > 0);
+}
+
+group("Navigation is derived, not hand-listed");
+// A hand-written nav per role is a second place for authority to live, and a
+// second place for it to drift: a role gains a capability and never gains the
+// entry, or keeps the entry long after the capability goes. Both had happened.
+ok("every destination names the capability that governs it",
+   Object.entries(NAV_CAPABILITY).every(([, cap]) => cap === null || typeof cap === "string"));
+ok("a role only sees what its capabilities reach",
+   POLICY_ROLES.every((r) => ROLES[r].nav.every((d) =>
+     NAV_CAPABILITY[d] === null || roleGrants(r, NAV_CAPABILITY[d]))));
+// The concrete case: a scorer holds no medical capability and must not be
+// offered the injuries screen, whatever a hand-written list once said.
+ok("a scorer is not offered injuries", !ROLES.scorer.nav.includes("injuries"));
+ok("a physio is", ROLES.medical.nav.includes("injuries"));
+ok("a driver sees logistics and little else",
+   ROLES.driver.nav.includes("logistics") && ROLES.driver.nav.length <= 6);
+
 group("The palette is closed");
 // A fixed palette only works if nothing invents a thirteenth accent.
 const adhoc = new Set();
+// Comments are stripped first: a hex named in a note ABOUT a colour — "the
+// off-palette #22d3ee is gone" — is documentation, not a use of it, and
+// counting it would make the check unable to describe its own history.
+const stripComments = (src) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 for (const f of files) {
-  for (const m of readFileSync(f, "utf8").matchAll(/#([0-9a-fA-F]{6})\b/g)) {
+  for (const m of stripComments(readFileSync(f, "utf8")).matchAll(/#([0-9a-fA-F]{6})\b/g)) {
     const hex = `#${m[1].toLowerCase()}`;
     if (!Object.values(HEX).map((h) => h.toLowerCase()).includes(hex)) adhoc.add(hex);
   }
@@ -106,6 +196,10 @@ for (const f of files) {
 // values and failing on all of them would just get the check disabled.
 console.log(`  (${adhoc.size} hex values outside the token object — §5.6/§5.7 territory)`);
 ok("the stale #4f46e5 indigo is gone", !adhoc.has("#4f46e5"));
+// The off-palette accent the audit called out by name: a twelfth hue
+// introduced ad-hoc for Coaching Assistant, which is the exact failure the
+// fixed-palette rule exists to prevent.
+ok("the off-palette #22d3ee is gone", !adhoc.has("#22d3ee"));
 
 console.log(`\n${"─".repeat(52)}\nDESIGN TOKENS: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

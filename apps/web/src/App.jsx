@@ -60,8 +60,11 @@ export default function SCRBRD_OS() {
 
   const handleRoleChange = (r) => {
     setRole(r);
+    // Fall back to the dashboard rather than to undefined: a role whose nav
+    // does not contain the current page used to set `page` to nav[0], and an
+    // unknown role made that undefined — a blank main area with no way back.
     const nav = ROLES[r]?.nav || [];
-    if (!nav.includes(page)) setPage(nav[0]);
+    if (!nav.includes(page)) setPage(nav[0] ?? "dashboard");
   };
 
   // Auth handlers
