@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { D } from "../design/tokens.js";
+import { useLiveRows } from "../lib/live.js";
 import { canScore, scoped, scopedWeather } from "../rbac/index.js";
 import { SCRBRD } from "../scorer/engine.jsx";
 import { Badge, Btn, Card, Pill, SectionHeader, StatusDot } from "../ui/primitives.jsx";
@@ -10,7 +11,10 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
   // principal. Importing the raw constant here would bypass both.
   const COMPETITIONS = scoped("competitions", role);
   const GROUNDS = scoped("grounds", role);
-  const MATCHES = scoped("matches", role);
+  // Fixtures come from the server when there is one — the same call site,
+  // scoped in Postgres rather than in the browser. Falls back to the demo
+  // fixtures otherwise, and says which it is showing.
+  const { rows: MATCHES, live: matchesAreLive } = useLiveRows("matches", scoped("matches", role));
   const STAFF = scoped("staff", role);
   const WEATHER = scopedWeather(role);
   const [filter, setFilter] = useState("all");
@@ -19,7 +23,9 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
   const filtered = MATCHES.filter(m=>filter==="all"||m.status===filter);
   return (
     <div className="os-page">
-      <SectionHeader title="Match Centre" sub="Live scores, results, fixtures & weather" color={D.emerald}
+      <SectionHeader title="Match Centre"
+        sub={matchesAreLive ? "Live scores, results, fixtures & weather" : "Demonstration fixtures — no server connected"}
+        color={D.emerald}
         actions={
           <>
             {(role==="superadmin"||role==="schooladmin"||role==="coach")&&<Btn size="sm" onClick={()=>{}}>+ Schedule Match</Btn>}
@@ -77,7 +83,15 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
                     <span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>📍 {m.venue}</span>
                     <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
                       {m.transport?.bus&&<Pill color={D.sky}>🚌 Bus {m.transport.depart}</Pill>}
-                      {isLive&&canScore(role)&&<Btn size="sm" variant="success" onClick={e=>{e.stopPropagation();onOpenScorer&&onOpenScorer(m);}}>Open Live Scorer →</Btn>}
+                      {/* A scheduled fixture is offered too, because that is
+                          when scoring actually begins — you open the pad at
+                          the toss, not once someone has already marked the
+                          match live. Whether this person MAY score it is
+                          decided by the database when the scorer claims it;
+                          canScore() only decides whether to offer the button,
+                          and being wrong here shows a button that then says
+                          no, never the wrong data. */}
+                      {(isLive||m.status==="upcoming")&&canScore(role)&&<Btn size="sm" variant="success" onClick={e=>{e.stopPropagation();onOpenScorer&&onOpenScorer(m);}}>{isLive?"Open Live Scorer →":"Start Scoring →"}</Btn>}
                       {m.scorecard?.home&&<Btn size="sm" variant="ghost" onClick={e=>{e.stopPropagation();setCardM(m);}}>{m.status==="complete"?"Scorecard":"Live Scorecard"}</Btn>}
                     </div>
                   </div>

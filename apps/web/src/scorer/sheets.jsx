@@ -180,10 +180,18 @@ function PenaltySheet({battingTeam,bowlingTeam,onConfirm,onClose}){
 /* ═══════════════════════════════════════════════════════
    BATTING ORDER MANAGER SHEET
 ═══════════════════════════════════════════════════════ */
+// A squad entry is {id, name}. The demonstration fixtures carry bare strings,
+// where the name IS the identity; a real one carries player UUIDs, because
+// ball_event.striker_id is a foreign key into `player` and a name is not
+// something a database can join on. Both shapes arrive here, so both are
+// normalised at the door rather than being tested for at every use.
+const entry = (p) => (typeof p === "string" ? { id: p, name: p } : { id: p?.id ?? p?.name, name: p?.name ?? p?.id });
+
 function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose}){
   const teamInfo=INT_TEAMS[teamKey]||null;
-  const available=squad.filter(name=>{
-    const played=batsmen.find(b=>b.name===name);
+  const roster=(squad||[]).map(entry);
+  const available=roster.filter(p=>{
+    const played=batsmen.find(b=>b.id===p.id);
     return !played||(played.status==="dnb");
   });
   const getRoleInfo=(name)=>{
@@ -216,11 +224,11 @@ function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose}){
         {/* Available */}
         <Lbl sx={{marginBottom:"7px"}}>Available to Bat</Lbl>
         <div style={{display:"flex",flexDirection:"column",gap:"4px",marginBottom:"12px"}}>
-          {available.map((name,i)=>{
-            const ri=getRoleInfo(name);
-            const pos=squad.indexOf(name)+1;
+          {available.map((p,i)=>{
+            const ri=getRoleInfo(p.name);
+            const pos=roster.findIndex(r=>r.id===p.id)+1;
             return (
-              <button key={name} onClick={()=>onSend(name)} className="pressBtn" style={{
+              <button key={p.id} onClick={()=>onSend(p.id)} className="pressBtn" style={{
                 display:"flex",alignItems:"center",gap:"10px",
                 padding:"9px 12px",borderRadius:D.md,cursor:"pointer",textAlign:"left",width:"100%",
                 border:`1px solid ${i===0?D.emerald+"44":D.border}`,
@@ -235,7 +243,7 @@ function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose}){
                   {pos}
                 </div>
                 <span style={{fontFamily:D.body,fontSize:"13px",fontWeight:i===0?600:400,
-                  color:i===0?D.textPrimary:D.textSecondary,flex:1}}>{name}</span>
+                  color:i===0?D.textPrimary:D.textSecondary,flex:1}}>{p.name}</span>
                 {ri&&<Badge color={ROLE_COLORS[ri.role]} sx={{fontSize:"8px"}}>{ri.role}</Badge>}
                 {i===0&&<Badge color={D.emerald} sx={{fontSize:"8px",marginLeft:"2px"}}>Next</Badge>}
               </button>
@@ -396,14 +404,18 @@ function NewOverSheet({ovNum,prevBowlers,bowlingSquad,bowlingTeamKey,lastBowlerN
   const[filter,setFilter]=useState("");
   const teamInfo=INT_TEAMS[bowlingTeamKey]||null;
   // Build full list: team bowlers first, then all-rounders, then others
+  // Same normalisation as the batting sheet: a demonstration squad is bare
+  // strings, a real one is {id, name} with player UUIDs, and what goes into the
+  // event has to be the id either way.
   const allBowlers=teamInfo
-    ? teamInfo.players.filter(p=>p.bowl)
-    : (bowlingSquad||[]).map(n=>({name:n,role:"BOWL"}));
+    ? teamInfo.players.filter(p=>p.bowl).map(p=>({...p,id:p.id??p.name}))
+    : (bowlingSquad||[]).map(n=>({...entry(n),role:"BOWL"}));
   const filtered=filter
     ? allBowlers.filter(p=>p.name.toLowerCase().includes(filter.toLowerCase()))
     : allBowlers;
   const prevNames=new Set(prevBowlers.map(b=>b.name));
-  // Can't bowl consecutive overs
+  // Can't bowl consecutive overs. Compared by NAME because that is what the
+  // caller has to hand for the previous bowler; ids are what get emitted.
   const canBowl=(pname)=>pname!==lastBowlerName;
   const prevBowlerMap={};
   prevBowlers.forEach(b=>{prevBowlerMap[b.name]=b;});
@@ -432,7 +444,7 @@ function NewOverSheet({ovNum,prevBowlers,bowlingSquad,bowlingTeamKey,lastBowlerN
                 const dis=!canBowl(b.name);
                 const ri=teamInfo?.players.find(p=>p.name===b.name);
                 return (
-                  <button key={b.id} onClick={()=>!dis&&onConfirm(b.name)} disabled={dis} className="pressBtn" style={{
+                  <button key={b.id} onClick={()=>!dis&&onConfirm(b.id)} disabled={dis} className="pressBtn" style={{
                     display:"flex",alignItems:"center",gap:"10px",padding:"9px 12px",
                     borderRadius:D.md,cursor:dis?"not-allowed":"pointer",textAlign:"left",width:"100%",
                     border:`1px solid ${dis?D.border:D.amber+"33"}`,
@@ -466,7 +478,7 @@ function NewOverSheet({ovNum,prevBowlers,bowlingSquad,bowlingTeamKey,lastBowlerN
             const dis=!canBowl(player.name);
             const rc=ROLE_COLORS[player.role]||D.orange;
             return (
-              <button key={player.name} onClick={()=>!dis&&onConfirm(player.name)} disabled={dis} className="pressBtn" style={{
+              <button key={player.id??player.name} onClick={()=>!dis&&onConfirm(player.id??player.name)} disabled={dis} className="pressBtn" style={{
                 display:"flex",alignItems:"center",gap:"10px",padding:"9px 12px",
                 borderRadius:D.md,cursor:dis?"not-allowed":"pointer",textAlign:"left",width:"100%",
                 border:`1px solid ${dis?D.border:alreadyBowled?D.amber+"22":D.border}`,

@@ -148,15 +148,45 @@ implementations and which applies depends on something the scorer cannot see:
 The rule lives in `packages/scoring/src/undo.mjs`, not in the scoring screen,
 because it applies identically on the incoming device.
 
-### Still to wire: the browser
+### The browser, end to end
 
-Every gate above is proven, but gates 3 and 4 drive the API from Node. The
-browser scorer stamps every event with the id the server dedupes on and
-enforces the undo boundary locally, but does not yet POST them: it has no login
-flow and no `SyncEngine` instance. That is the remaining work to make the
-proven paths reachable from a phone, and it is wiring rather than design —
-`SyncEngine`, the transport and the whole protocol are exercised end to end by
-`smoke-sync` and `smoke-handover`.
+`tools/smoke-browser-sync.mjs` is the one that proves a SCORER can do it, as
+opposed to a test harness: a real browser signs in against the real server,
+opens a real fixture, taps real buttons, and the balls are checked **by
+querying Postgres**, not by reading the page.
+
+That distinction keeps earning its keep. Everything below was live the whole
+time that 500-odd assertions were passing, and each one was found by pointing
+something real at something real:
+
+  - the masked views ran as their owner and returned every school's rows;
+  - the `matches` query named six columns that do not exist;
+  - the dashboard crashed for any role that cannot read competitions — a
+    scorer, for one — because a card read `[0].table` off a list the choke
+    point had correctly emptied;
+  - the outbox and the match log opened the same IndexedDB database at the
+    same version with different object stores, so whichever lost the race
+    threw inside the scorer;
+  - `ball_event.bowler_id` is a uuid, and the bowler for a fixture against a
+    school that is not a tenant is a typed name — so every ball of every over
+    bowled by an away bowler was rejected.
+
+What is wired: a token-carrying API client, a session that says WHO and never
+WHAT, a login page that signs in for real when a server is reachable and says
+plainly when it is not, live fixtures in the Match Centre, and an outbox in
+the scorer that claims the match, records every event to IndexedDB before it
+counts, and flushes on reconnect. The pad shows whether the over has left the
+phone — "Sent" and "Held" are different words on purpose.
+
+### Still mock
+
+The read path is live for fixtures, players, injuries and competitions; the
+rest of the views still read the demonstration constants through the client
+choke point, and the Match Centre says which it is showing. Two known gaps
+behind that: `competition` needs the `competition_entrant` join table before a
+shared league is visible to its entrants (today a platform-scoped competition
+is visible to nobody), and the live score panel still reads a seeded scorecard
+rather than `match_live_score`.
 
 ### Before launch (flagged, not built)
 

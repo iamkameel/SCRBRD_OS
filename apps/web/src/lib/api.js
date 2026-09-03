@@ -23,7 +23,13 @@
  * network down; sync is what needs it.
  */
 
-const BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8787";
+// `window.__SCRBRD_API_BASE__` lets a test point a BUILT bundle at a server on
+// an arbitrary port without rebuilding it. It is read once, at module load,
+// and only as a fallback behind the build-time variable — so a deployed build
+// with VITE_API_BASE set cannot be redirected by anything on the page.
+const BASE = import.meta.env.VITE_API_BASE
+  ?? (typeof window !== "undefined" ? window.__SCRBRD_API_BASE__ : null)
+  ?? "http://localhost:8787";
 
 // Token in module scope, not localStorage: a bearer token in storage is
 // readable by any script that gets injected into the page, and this one is

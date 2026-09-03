@@ -207,6 +207,28 @@ export const inningsEnd = (o) => ({
 // ── Wire translation (client camelCase ↔ ball_event snake_case) ──
 const ROW_SCALARS = ["shot", "seg", "zone", "dismissal"];
 
+/**
+ * Is this player reference something the database can store in a uuid column?
+ *
+ * Most of the time, no. ball_event.striker_id and bowler_id are foreign keys
+ * into `player`, and SCRBRD holds rows for its OWN schools' players — not for
+ * the opposition. A fixture against a school that is not a tenant has no away
+ * roster at all, so the scorer types the bowler's name, and that name is the
+ * only identity that will ever exist for them. The same goes for an unlisted
+ * batter pressed into a side at the last minute, which happens constantly at
+ * school level.
+ *
+ * Sending a typed name to a uuid column is a 22P02 that rejects the whole
+ * delivery — every ball of every over bowled by an opposition bowler, which is
+ * to say almost all of them.
+ *
+ * So a reference that is a real player id goes in the column and can be joined
+ * on; anything else rides in the payload as free text. Replay treats them
+ * identically, because it only ever compares ids for equality.
+ */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const asPlayerId = (v) => (typeof v === "string" && UUID.test(v) ? v : null);
+
 /** Client event → a `ball_event` row body for POST /matches/:id/events. */
 export function toRow(ev) {
   const row = {
@@ -215,16 +237,22 @@ export function toRow(ev) {
     client_ts: new Date(ev.clientTs ?? Date.now()).toISOString(),
     ball_type: ev.type ?? null,
     value: ev.value ?? null,
-    striker_id: ev.striker ?? null,
-    non_striker_id: ev.nonStriker ?? null,
-    bowler_id: ev.bowler ?? null,
+    striker_id: asPlayerId(ev.striker),
+    non_striker_id: asPlayerId(ev.nonStriker),
+    bowler_id: asPlayerId(ev.bowler),
     payload: {},
   };
   for (const k of ROW_SCALARS) if (ev[k] !== undefined) row[k] = ev[k];
   // Everything the table has no column for rides in `payload` untouched, so
-  // adding a captured dimension never needs a migration.
+  // adding a captured dimension never needs a migration. A player reference
+  // that is not a real id is carried here too — see asPlayerId — so nothing is
+  // lost when the column cannot hold it.
+  const MAPPED = ["kind", "innings", "clientTs", "type", "value", "seq", ...ROW_SCALARS];
   for (const [k, v] of Object.entries(ev)) {
-    if (["kind", "innings", "clientTs", "type", "value", "striker", "nonStriker", "bowler", "seq", ...ROW_SCALARS].includes(k)) continue;
+    if (MAPPED.includes(k)) continue;
+    if (k === "striker" && row.striker_id) continue;
+    if (k === "nonStriker" && row.non_striker_id) continue;
+    if (k === "bowler" && row.bowler_id) continue;
     row.payload[k] = v;
   }
   return row;

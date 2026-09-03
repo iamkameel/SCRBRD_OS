@@ -7,6 +7,7 @@ import {
 import { D } from "../design/tokens.js";
 import { deviceId } from "../lib/device.js";
 import { loadMatch, saveMatch, storageKind } from "../lib/persist.js";
+import { api, signedIn } from "../lib/api.js";
 import { profile } from "../lib/session.js";
 import { startSync } from "../lib/sync.js";
 import { SEGS } from "./field.js";
@@ -58,6 +59,25 @@ function eventsFromInnings(i){
       bowlerApproach:b.bowlerApproach,dismissal:b.dismissal,fielder:b.fielder}));
   }
   return evs;
+}
+
+/**
+ * The squad for a fixture, from the server.
+ *
+ * Returns null rather than throwing when there is no server or no team sheet:
+ * a scorer with a fixture and no roster still has to be able to score, naming
+ * players as they come in. Refusing to open the pad because a lookup failed
+ * would strand them at the moment play starts.
+ */
+async function liveSquad(cfg) {
+  if (!cfg?.matchId || !signedIn()) return null;
+  try {
+    const { rows } = await api("/api/read/players");
+    const team = rows.filter((p) => !cfg.teamCode || p.team_code === cfg.teamCode);
+    return (team.length ? team : rows).map((p) => ({ id: p.id, name: p.full_name }));
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -146,12 +166,39 @@ function SCRBRD({resume}={}){
   const syncRef = useRef(null);
   const [sync, setSync] = useState({ state: "offline", pending: 0, reason: null });
 
+
   // ── Derivation ──────────────────────────────────────────
   const scoringCtxRef = useRef({ flagFor: k => INT_TEAMS[k]?.flag });
   const innings = useMemo(
     () => events.map(evs => (evs.length ? deriveInnings(evs, scoringCtxRef.current) : null)),
     [events],
   );
+
+  /**
+   * Everything in the log that the server has not been offered yet goes to the
+   * outbox. One path, watching the log, rather than a call inside emit().
+   *
+   * emit() is not the only writer: the innings and its squad are written
+   * during hydration, and the outbox may not exist yet when they are — the
+   * claim is a round trip, and at a ground with no signal it may never
+   * complete at all. A scorer can be several overs in before the token lands.
+   * Watching the log covers every ordering; sending from emit() covered one.
+   *
+   * Nothing here is awaited. The queue writes to disk before it considers a
+   * ball recorded and sends when there is a connection; the board moves on the
+   * tap either way. A throw would be a scoring surface that stopped working
+   * because the network did.
+   */
+  const queuedRef = useRef(new Set());
+  useEffect(() => {
+    const outbox = syncRef.current;
+    if (!outbox) return;
+    for (const ev of events.flat()) {
+      if (!ev?.id || queuedRef.current.has(ev.id)) continue;
+      queuedRef.current.add(ev.id);
+      outbox.record(ev).catch(() => {});
+    }
+  }, [events, sync.state]);
 
   /**
    * Append to the current innings' log. This is the only way state changes.
@@ -170,13 +217,6 @@ function SCRBRD({resume}={}){
       id: e.id ?? newEventId(deviceIdRef.current, matchIdRef.current ?? "local"),
     }));
     cp[curIn] = [...cp[curIn], ...stamped];
-    // Hand them to the outbox and do NOT wait. The queue writes to disk before
-    // it considers a ball recorded, and sends when there is a connection; the
-    // board must move on the tap either way. A throw here would be a scoring
-    // surface that stops working because the network did.
-    if (syncRef.current) {
-      for (const ev of stamped) syncRef.current.record(ev).catch(() => {});
-    }
     return cp;
   });
 
@@ -213,9 +253,25 @@ function SCRBRD({resume}={}){
         setEvents(saved.events);
         setCurIn(saved.curIn ?? 0);
         setSaveState({ kind: await storageKind(), restored: true, savedAt: saved.savedAt ?? null });
-      } else {
+      } else if (resume.events || resume.innings) {
         setEvents((resume.events ?? (resume.innings || []).map(i => (i ? eventsFromInnings(i) : []))));
         setCurIn(resume.curIn || 0);
+        setSaveState({ kind: await storageKind(), restored: false, savedAt: null });
+      } else {
+        // A real fixture nobody has scored yet. The squad comes from the
+        // server, and goes into the log rather than beside it: innings_start
+        // carries the players, so the scorecard replays correctly later on a
+        // device that never loaded a roster — including the one taking over at
+        // a handover.
+        const squad = await liveSquad(resume.cfg);
+        if (cancelled) return;
+        setEvents([squad ? [inningsStart({
+          battingTeam: resume.cfg.team1, bowlingTeam: resume.cfg.team2,
+          teamKey: resume.cfg.teamKey1, bowlingTeamKey: resume.cfg.teamKey2,
+          squad, bowlingSquad: [], overs: resume.cfg.overs ?? 20,
+          id: newEventId(deviceIdRef.current, id ?? "local"),
+        })] : [], []]);
+        setCurIn(0);
         setSaveState({ kind: await storageKind(), restored: false, savedAt: null });
       }
       setScreen("match");
@@ -255,6 +311,7 @@ function SCRBRD({resume}={}){
       handle = started;
       syncRef.current = started;
       syncedRef.current = started.syncedIds();
+
       setSync({ state: started.pending() ? "syncing" : "synced", pending: started.pending(), reason: null });
     })();
     return () => {

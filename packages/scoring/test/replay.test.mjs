@@ -252,6 +252,42 @@ group("E. Determinism, match derivation, wire round-trip");
   ok("KIND is exported for the queue", KIND.BALL === "ball");
 }
 
+// ── E2. Player references the database cannot store ──────
+group("E. A bowler with no player row");
+{
+  const UUID = "aaaaaaaa-0000-0000-0000-000000000001";
+  // SCRBRD holds rows for its OWN schools' players. A fixture against a school
+  // that is not a tenant has no away roster, so the scorer types the bowler's
+  // name — and ball_event.bowler_id is a uuid foreign key. Sending a name to
+  // that column is a 22P02 that rejects the delivery: every ball of every over
+  // bowled by an opposition bowler, which is nearly all of them.
+  const typed = toRow(bowler({ bowler: "A Nel" }));
+  ok("a typed name does not go in the uuid column", typed.bowler_id === null);
+  ok("...it rides in the payload instead", typed.payload.bowler === "A Nel");
+  ok("...and comes back intact", fromRow({ ...typed, seq: 1 }).bowler === "A Nel");
+
+  // A real player still joins, so a scorecard can be attributed.
+  const mixed = toRow(batters({ striker: UUID, nonStriker: "Unlisted Kid" }));
+  ok("a real player id goes in the column", mixed.striker_id === UUID);
+  ok("...and is not duplicated into the payload", !("striker" in mixed.payload));
+  ok("an unlisted batter still rides in the payload", mixed.payload.nonStriker === "Unlisted Kid");
+  const back = fromRow({ ...mixed, seq: 2 });
+  ok("both come back the way they went in",
+     back.striker === UUID && back.nonStriker === "Unlisted Kid");
+
+  // Replay only ever compares ids for equality, so it does not care which is which.
+  const mixedLog = [
+    inningsStart({ battingTeam: "A", bowlingTeam: "B", squad: [{ id: UUID, name: "J Whitfield" }], overs: 20 }),
+    batters({ striker: UUID, nonStriker: "Unlisted Kid" }),
+    bowler({ bowler: "A Nel" }),
+    ball({ type: BALL_TYPE.RUN, value: 4 }),
+  ];
+  const inn = deriveInnings(mixedLog);
+  ok("replay handles a mixed log", inn.runs === 4 && inn.balls === 1);
+  ok("...naming the player it knows", inn.batsmen.find(b => b.id === UUID)?.name === "J Whitfield");
+  ok("...and the one it does not", inn.bowlers.find(b => b.id === "A Nel")?.name === "A Nel");
+}
+
 // ── F. The undo/sync boundary ────────────────────────────
 // Undo has two correct implementations and picking the wrong one is how a
 // scorecard ends up quietly wrong with no evidence of why. See src/undo.mjs.

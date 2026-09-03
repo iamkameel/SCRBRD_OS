@@ -93,6 +93,19 @@ export default function SCRBRD_OS() {
   // failed to reopen after a reload.
   const openScorer = (m, asRole = role) => {
     if (!canScore(asRole)) return;   // RBAC: scoring is a write capability
+    // A fixture that came from the server carries no seeded scorecard — there
+    // is no stored score to seed from, by design. It opens with its match id
+    // and the scorer builds the innings from the team sheet, which is what
+    // starting a real match looks like.
+    if (m && m.live && m.id) {
+      setScorerResume({ cfg: {
+        matchId: m.id, team1: m.homeTeam, team2: m.awayTeam,
+        teamCode: m.homeTeam, overs: m.overs ?? 20,
+      } });
+      setScorerMatchId(m.id);
+      setScorerOpen(true);
+      return;
+    }
     if (m && m.status === "live" && m.scorecard?.home) {
       const { runs, wkts } = parseScore(m.scorecard.home.score);
       setScorerResume(ScorerApp.seedLiveResume({
@@ -159,7 +172,18 @@ export default function SCRBRD_OS() {
   if (scorerOpen && canScore(role)) return (
     <>
       <style>{GLOBAL_CSS}</style>
-      <div className="scorer-shell"><ScorerApp key={scorerResume?scorerResume.cfg.team1+scorerResume.innings[0].balls:"new"} resume={scorerResume}/></div>
+      {/* The key forces a remount when the scorer is pointed at a different
+          match, so no state from the previous one survives. It used to be
+          built from scorerResume.innings[0].balls, which assumed every resume
+          carried a seeded innings — true for the demo fixtures and false for a
+          real one, where there is no stored score to seed from and the log
+          starts empty. Keying on the match id says what it means and works for
+          both. */}
+      <div className="scorer-shell">
+        <ScorerApp
+          key={scorerResume ? (scorerResume.cfg?.matchId ?? scorerResume.cfg?.team1 ?? "resume") : "new"}
+          resume={scorerResume}/>
+      </div>
       <button className="os-exit-scorer pressBtn" onClick={()=>{setScorerOpen(false);setScorerResume(null);}}>
         ‹ SCRBRD OS
       </button>

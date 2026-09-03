@@ -144,10 +144,22 @@ function DashboardView({ role, onNav }) {
         {/* Right column */}
         <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
 
-          {/* League table mini */}
+          {/* League table mini.
+              Rendered only when this person can actually read a competition
+              with standings in it. COMPETITIONS comes through the choke point,
+              so for a role without competition.read it is EMPTY — and reading
+              [0].table off an empty array threw, taking the whole dashboard
+              down. A scorer is exactly such a role, which is why nobody found
+              it until one signed in.
+
+              This is the shape of bug that scoped reads create: the data
+              correctly disappears, and a card written when it could not
+              disappear falls over. A card with nothing to show should render
+              nothing. */}
+          {COMPETITIONS[0]?.table?.length>0&&(
           <Card>
             <div style={{padding:"12px 14px",borderBottom:`1px solid ${D.border}`}}>
-              <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary}}>Gauteng T20 League</div>
+              <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary}}>{COMPETITIONS[0].name}</div>
               <div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted,marginTop:"2px"}}>TOP 6</div>
             </div>
             {COMPETITIONS[0].table.map((t,i)=>(
@@ -162,6 +174,7 @@ function DashboardView({ role, onNav }) {
               <button onClick={()=>onNav("competitions")} style={{background:"none",border:"none",cursor:"pointer",fontFamily:D.body,fontSize:"11px",color:D.sky}}>Full standings →</button>
             </div>
           </Card>
+          )}
 
           {/* Recent notifications */}
           <Card>

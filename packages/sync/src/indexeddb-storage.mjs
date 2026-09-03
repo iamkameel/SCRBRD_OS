@@ -9,7 +9,13 @@
  * Not exercised in node tests (no IndexedDB); the in-memory adapter proves the
  * SyncEngine logic. This adapter is a thin, boring wrapper — verify in-browser.
  */
-export function indexedDbStorage({ dbName = "scrbrd", matchId, deviceId }) {
+// A SEPARATE database from the one persist.js uses for the match log, not the
+// same one with a second store. Two openers of "scrbrd" at version 1 race:
+// whichever runs first creates its own object store, and the other finds the
+// database already at that version with its store missing — "One of the
+// specified object stores was not found", thrown from inside the scorer the
+// moment it starts syncing. Separate names cost nothing and cannot collide.
+export function indexedDbStorage({ dbName = "scrbrd-outbox", matchId, deviceId }) {
   const store = "queue";
   const ns = `${matchId}:${deviceId}:`;                 // namespace keys per match+device
 
