@@ -164,12 +164,43 @@ export const bowler = (o) => ({
  * anything needing a position. It is NEVER upgraded by synthesising a point
  * from its sector.
  */
+/** The delivery kinds a ball may be, for the guard below. */
+const BALL_TYPES = new Set(Object.values(BALL_TYPE));
+
+/**
+ * Reject a delivery kind the model does not define.
+ *
+ * An unrecognised type is NOT harmless: `type` defaults to a run, so a bad
+ * value becomes a legal delivery worth whatever `value` says, and both the
+ * device fold and the SQL fold agree on it — consistently, which is worse than
+ * disagreeing, because nothing anywhere reports a problem. The scorecard is
+ * simply wrong.
+ *
+ * What this catches: a literal typo, `type: "nb"` instead of BALL_TYPE.NO_BALL.
+ *
+ * What it CANNOT catch, and it is worth being honest about: a typo in the
+ * constant itself. `BALL_TYPE.NOBALL` (the export is NO_BALL) evaluates to
+ * undefined in the caller, before this function is reached, and undefined is
+ * indistinguishable from "not specified" — which legitimately means a run.
+ * That one is only ever caught by asserting the score independently, which is
+ * how it was found: tools/smoke-fold.mjs made exactly that mistake and the
+ * "both folds agree" assertion passed while the arithmetic one did not.
+ */
+const checkedType = (t) => {
+  if (t == null) return BALL_TYPE.RUN;
+  if (!BALL_TYPES.has(t)) {
+    throw new TypeError(
+      `unknown ball type ${JSON.stringify(t)} — expected one of ${[...BALL_TYPES].join(", ")}`);
+  }
+  return t;
+};
+
 export const ball = (o) => ({
   ...base(KIND.BALL, o),
   // `type` is the delivery kind (run | W | Wd | Nb | B | LB). It is named to
   // match both the ball_event.ball_type column and the log entries the scoring
   // UI already reads, so a log entry needs no translation on either side.
-  type: o.type ?? BALL_TYPE.RUN,
+  type: checkedType(o.type),
   value: o.value ?? 0,
   shot: o.shot ?? null,
   seg: o.seg ?? null,

@@ -293,6 +293,19 @@ CREATE OR REPLACE FUNCTION scoring_claim(p_match uuid, p_device text)
 RETURNS TABLE (ok boolean, reason text, epoch integer) AS $$
 DECLARE s scoring_session%ROWTYPE;
 BEGIN
+  -- A claim names the device that will hold the token. Without one the session
+  -- is created with holder_device NULL, the claim returns ok and an epoch, and
+  -- then EVERY ball that device sends is quarantined as 'stale_epoch_or_lease'
+  -- — because scoring_lease_check compares the sending device against a NULL
+  -- holder and can never match.
+  --
+  -- That is the worst shape a failure can take here: the scorer is told they
+  -- have the match, scores an over, and the balls go silently into quarantine.
+  -- Found by a smoke test that sent `deviceId` where the route reads `device`,
+  -- which is exactly the typo a client integration makes.
+  IF p_device IS NULL OR btrim(p_device) = ''
+    THEN RETURN QUERY SELECT false,'no_device',NULL::int; RETURN; END IF;
+
   -- Capability against THIS match, from the caller's assignments — not a role
   -- the session asserts about itself. A scorer assigned to one fixture cannot
   -- claim the token on another.
@@ -368,17 +381,17 @@ BEGIN
   -- itself. Without this, an over containing one correction makes the handover
   -- IMPOSSIBLE: the incoming device replays the log correctly, the server
   -- counts one ball more, and every verification attempt is a mismatch.
+  --
+  -- This used to spell that exclusion out inline, and match_live_score spelled
+  -- out the same arithmetic WITHOUT it. Both read ball_event_live now, so the
+  -- handover and the scoreboard cannot disagree about which balls happened.
   SELECT coalesce(sum(CASE WHEN ball_type IN ('Wd','Nb') THEN 1 + coalesce(value,0)
                            ELSE coalesce(value,0) END),0),
          coalesce(sum(CASE WHEN ball_type = 'W' THEN 1 ELSE 0 END),0),
          coalesce(sum(CASE WHEN kind='ball' AND ball_type NOT IN ('Wd','Nb') THEN 1 ELSE 0 END),0)
     INTO t_runs, t_wkts, t_balls
-  FROM ball_event
-  WHERE match_id = p_match
-    AND kind <> 'void'
-    AND idempotency_key NOT IN (
-      SELECT v.payload->>'target' FROM ball_event v
-       WHERE v.match_id = p_match AND v.kind = 'void' AND v.payload->>'target' IS NOT NULL);
+  FROM ball_event_live
+  WHERE match_id = p_match;
 
   IF (p_runs, p_wickets, p_balls) IS DISTINCT FROM (t_runs, t_wkts, t_balls) THEN
     INSERT INTO scoring_audit (match_id, school_id, event, actor_id, detail)
@@ -421,10 +434,45 @@ BEGIN
 END $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- ── Derived read model (never stored) ────────────────────────────
+--
+-- ONE DEFINITION OF "THE BALLS THAT COUNT"
+-- ────────────────────────────────────────
+-- The log is append-only, so a correction to a synced ball is a `void` event
+-- naming it rather than a deletion. Every reader of the log therefore has to
+-- exclude two things: the voided ball, and the void itself. That is not a
+-- detail — it is the difference between a scoreboard that reflects the
+-- scorer's corrections and one that does not.
+--
+-- It had been written out by hand in each place that needed it, and the count
+-- was wrong in one of them. `scoring_verify_takeover` excluded voids, because
+-- a handover fails outright without it and the failure is loud.
+-- `match_live_score` did not, because nothing fails — the score is simply
+-- wrong, by exactly the runs of every corrected ball, on the screen the public
+-- reads. A six undone by the scorer still read as six.
+--
+-- So the exclusion lives here, once, and both readers select from it. A fifth
+-- fold over the log is still possible, but it can no longer be a fold that
+-- silently disagrees about what a ball is.
+CREATE OR REPLACE VIEW ball_event_live WITH (security_invoker = true) AS
+SELECT b.*
+  FROM ball_event b
+ WHERE b.kind <> 'void'
+   -- NOT EXISTS rather than NOT IN: NOT IN against a subquery that yields even
+   -- one NULL evaluates to NULL for every row and silently returns nothing at
+   -- all, which here would empty every scorecard in the platform.
+   AND NOT EXISTS (
+         SELECT 1 FROM ball_event v
+          WHERE v.match_id = b.match_id
+            AND v.kind = 'void'
+            AND v.payload->>'target' = b.idempotency_key);
+
 -- security_invoker: without it this view runs as its owner, who owns
 -- ball_event and therefore bypasses the row-level policy on it — the live
 -- score of every match at every school, through one SELECT. See the note in
 -- generate-rls.mjs; the same trap caught the masking views.
+--
+-- It applies to ball_event_live too, and to this view reading it: a chain of
+-- views is only as invoker-scoped as its weakest link.
 CREATE OR REPLACE VIEW match_live_score WITH (security_invoker = true) AS
 SELECT
   match_id,
@@ -435,5 +483,5 @@ SELECT
   sum(CASE WHEN kind='ball' AND ball_type NOT IN ('Wd','Nb') THEN 1 ELSE 0 END) AS legal_balls,
   max(seq)                                                                AS last_seq,
   max(server_ts)                                                          AS last_ball_at
-FROM ball_event
+FROM ball_event_live
 GROUP BY match_id, innings;
