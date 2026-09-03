@@ -87,6 +87,10 @@ DECLARE
   -- PLAYER assignment, and the player bundle includes medical.status.read, so
   -- it would pass the assertion below for the wrong reason and prove nothing.
   U_WATCHER uuid := '88888888-0000-0000-0000-000000000008';
+  -- Seeded as spectator@example.invalid, but the ASSIGNMENT is role `player`
+  -- at Hilton — a pupil. The one principal that separates the availability
+  -- tier from the nature tier.
+  U_PUPIL   uuid := '88888888-0000-0000-0000-000000000001';
   n int;
 BEGIN
   -- ── 1. Nobody is anybody by default ────────────────────────────
@@ -121,9 +125,47 @@ BEGIN
   SELECT count(*) INTO n FROM injury_masked WHERE rtw_date IS NOT NULL;
   PERFORM _assert(n > 0, 'return-to-play date wrongly masked from the coach');
 
+  -- The coach picks a side, so they need to know it is a hamstring and how bad.
+  SELECT count(*) INTO n FROM injury_masked WHERE injury_type IS NOT NULL;
+  PERFORM _assert(n > 0, 'coach cannot read what the injury is — they cannot manage a load');
+  SELECT count(*) INTO n FROM injury_masked WHERE severity IS NOT NULL;
+  PERFORM _assert(n > 0, 'coach cannot read how severe an injury is');
+
   PERFORM _as(U_MEDICAL);
   SELECT count(*) INTO n FROM injury_masked WHERE notes IS NOT NULL;
   PERFORM _assert(n > 0, 'medical staff cannot read clinical notes');
+
+  -- ── 3b. A pupil knows WHO is out, not WHAT is wrong ─────────────
+  -- The tier that was missing. `injury_type` reads "Grade 2 hamstring strain"
+  -- — it IS the diagnosis — and it sat unmasked behind medical.status.read,
+  -- which the player bundle holds. A pupil could read what was wrong with a
+  -- teammate. Only notes and physio were protected, so the split meant to
+  -- separate availability from clinical information was letting the clinical
+  -- fact through in a column called "type".
+  PERFORM _as(U_PUPIL);
+  SELECT count(*) INTO n FROM injury_masked;
+  PERFORM _assert(n > 0, 'a pupil cannot see that a team mate is unavailable at all');
+  SELECT count(*) INTO n FROM injury_masked WHERE rtw_date IS NOT NULL;
+  PERFORM _assert(n > 0, 'a pupil cannot see when a team mate is expected back');
+  SELECT count(*) INTO n FROM injury_masked WHERE restricted IS NOT NULL;
+  PERFORM _assert(n > 0, 'a pupil cannot see that a team mate is restricted');
+
+  SELECT count(*) INTO n FROM injury_masked WHERE injury_type IS NOT NULL;
+  PERFORM _assert(n = 0, 'a pupil can read WHAT is wrong with a team mate');
+  SELECT count(*) INTO n FROM injury_masked WHERE severity IS NOT NULL;
+  PERFORM _assert(n = 0, 'a pupil can read how severe a team mate''s injury is');
+  SELECT count(*) INTO n FROM injury_masked WHERE phase IS NOT NULL;
+  PERFORM _assert(n = 0, 'a pupil can read a team mate''s rehabilitation stage');
+  SELECT count(*) INTO n FROM injury_masked WHERE notes IS NOT NULL;
+  PERFORM _assert(n = 0, 'a pupil can read clinical notes');
+
+  -- A parent needs to know what is wrong with their OWN child. Their
+  -- assignment names that child, so the capability reaches no further — the
+  -- same row, read by the same policy, answers differently for them than for
+  -- the pupil above.
+  PERFORM _as(U_PARENT);
+  SELECT count(*) INTO n FROM injury_masked WHERE injury_type IS NOT NULL;
+  PERFORM _assert(n = 1, 'a guardian cannot read what is wrong with their own child');
 
   -- ── 4. A minor's PII ───────────────────────────────────────────
   PERFORM _as(U_COACH);

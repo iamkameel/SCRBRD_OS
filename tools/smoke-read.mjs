@@ -145,6 +145,34 @@ try {
   ok("...but not the diagnosis behind it", coachInjuries.every((i) => i.notes == null));
   ok("the scorer reads no injuries at all", (await read("injuries", scorer)).length === 0);
 
+  // ── Three tiers, not two ────────────────────────────────────────
+  // `injury_type` reads "Grade 2 hamstring strain" — it IS the diagnosis — and
+  // it used to sit unmasked behind medical.status.read, which the player
+  // bundle holds. A pupil could read what was wrong with a team mate from a
+  // column called "type", while notes and physio were carefully protected.
+  const pupil = await login("spectator@example.invalid");   // assignment: player
+  const pupilInjuries = await read("injuries", pupil);
+  ok("a pupil sees that a team mate is unavailable", pupilInjuries.length > 0);
+  ok("...and when they are expected back",
+     pupilInjuries.every((i) => i.rtw_date != null));
+  ok("...and NOT what is wrong with them",
+     pupilInjuries.every((i) => i.injury_type == null));
+  ok("...nor how severe it is", pupilInjuries.every((i) => i.severity == null));
+  ok("...nor what stage of rehabilitation they are at",
+     pupilInjuries.every((i) => i.phase == null));
+
+  // A coach picks a side and manages a bowling load, so they need the nature.
+  ok("a coach reads what the injury is", coachInjuries.every((i) => i.injury_type != null));
+  ok("...and how severe", coachInjuries.every((i) => i.severity != null));
+
+  // A parent needs to know what is wrong with their OWN child — same row, same
+  // policy, different answer, because their assignment names that child.
+  const guardianInjuries = await read("injuries", guardian);
+  ok("a guardian reads their own child's injury type",
+     guardianInjuries.length === 1 && guardianInjuries[0].injury_type != null);
+  ok("...but still not the clinical notes behind it",
+     guardianInjuries.every((i) => i.notes == null));
+
   // ── The programme reads, scoped per person ──────────────────────
   // Each of these was, until now, a decision made in the browser against a
   // mock module. The claim is not that the query runs — that is the block

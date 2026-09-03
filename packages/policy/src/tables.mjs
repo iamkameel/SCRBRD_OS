@@ -87,9 +87,19 @@ export const TABLES = {
 
   injury: {
     // Reading an injury row is reading AVAILABILITY — that a player is out,
-    // and until when. The diagnosis lives behind medical.details.read and is
-    // masked below. This split is the reason a coach can pick a side without
+    // and until when. This split is the reason a coach can pick a side without
     // reading a child's clinical record.
+    //
+    // The split used to be two-way, and the boundary was in the wrong place.
+    // `injury_type` reads "Grade 2 hamstring strain" — it IS the diagnosis —
+    // and it sat unmasked behind medical.status.read, which the `player`
+    // bundle holds. A pupil could read what was wrong with a teammate. Only
+    // `notes` and `physio` were protected, so the tier that was supposed to
+    // separate availability from clinical information was letting the clinical
+    // fact through in a column called "type".
+    //
+    // Three tiers now. Unmasked here is availability alone: date_injured,
+    // rtw_date and restricted — that someone is out, and until when.
     read:  "medical.status.read",
     write: "medical.write",
     anchors: {
@@ -97,7 +107,16 @@ export const TABLES = {
       team:   "(SELECT p.team_code FROM player p WHERE p.id = injury.player_id)",
       person: "player_id",
     },
-    masked: { "medical.details.read": ["notes", "physio"] },
+    masked: {
+      // WHAT the injury is and how bad. Needed to manage a squad — bowling
+      // loads, selection, return-to-play — so everyone who picks or manages a
+      // side holds it, and a guardian holds it for their own children. A pupil
+      // does not.
+      "medical.nature.read": ["injury_type", "severity", "phase"],
+      // The clinical record itself. A minor's health information; the medical
+      // role and nobody else.
+      "medical.details.read": ["notes", "physio"],
+    },
   },
 
   match: {

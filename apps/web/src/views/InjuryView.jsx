@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { D } from "../design/tokens.js";
-import { pctDays, severityColor, today } from "../lib/format.js";
+import { pctDays, severityColor, today, withheld } from "../lib/format.js";
 import { can } from "../rbac/index.js";
 import { Avatar, Badge, Btn, Card, Input, KPICard, Modal, ProgressBar, SectionHeader, Select } from "../ui/primitives.jsx";
 import { useRows } from "../lib/live.js";
@@ -47,10 +47,10 @@ function InjuryView({ role }) {
                   <div style={{flex:1}}>
                     <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"4px"}}>
                       <span style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>{player?.name}</span>
-                      <Badge color={sc}>{inj.severity}</Badge>
+                      {inj.severity&&<Badge color={sc}>{inj.severity}</Badge>}
                       <Badge color={inj.restricted?D.rose:D.emerald}>{inj.restricted?"Restricted":"Cleared"}</Badge>
                     </div>
-                    <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:500,color:sc,marginBottom:"4px"}}>{inj.type}</div>
+                    <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:500,color:inj.type?sc:D.textMuted,marginBottom:"4px",fontStyle:inj.type?"normal":"italic"}}>{withheld(inj.type,"Details withheld")}</div>
                     <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginBottom:"8px"}}>
                       Phase: <span style={{color:D.textSecondary,fontWeight:500}}>{inj.phase}</span> · Physio: {inj.physio}
                     </div>
@@ -87,11 +87,11 @@ function InjuryView({ role }) {
               <div style={{textAlign:"center",padding:"16px",background:sc+"10",borderRadius:D.md,border:`1px solid ${sc}22`,marginBottom:"14px"}}>
                 <Avatar name={player?.name||"?"} size={56} color={sc}/>
                 <div style={{fontFamily:D.head,fontSize:"15px",fontWeight:700,color:D.textPrimary,marginTop:"10px"}}>{player?.name}</div>
-                <div style={{fontFamily:D.body,fontSize:"12px",color:sc,marginTop:"3px",fontWeight:500}}>{sel.type}</div>
-                <Badge color={sc} style={{marginTop:"6px"}}>{sel.severity}</Badge>
+                <div style={{fontFamily:D.body,fontSize:"12px",color:sel.type?sc:D.textMuted,marginTop:"3px",fontWeight:500,fontStyle:sel.type?"normal":"italic"}}>{withheld(sel.type,"Details withheld")}</div>
+                {sel.severity&&<Badge color={sc} style={{marginTop:"6px"}}>{sel.severity}</Badge>}
               </div>
 
-              {[["Phase",sel.phase],["Physio",sel.physio],["Date Injured",sel.dateInj],["Est. RTW",sel.rtw],["Days Remaining",`${daysLeft} days`]].map(([l,v])=>(
+              {[["Phase",withheld(sel.phase,"—")],["Physio",withheld(sel.physio,"—")],["Date Injured",sel.dateInj],["Est. RTW",sel.rtw],["Days Remaining",`${daysLeft} days`]].map(([l,v])=>(
                 <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:`1px solid ${D.border}`}}>
                   <span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>{l}</span>
                   <span style={{fontFamily:D.mono,fontSize:"11px",color:l==="Days Remaining"&&daysLeft<=3?D.emerald:D.textPrimary,fontWeight:500}}>{v}</span>

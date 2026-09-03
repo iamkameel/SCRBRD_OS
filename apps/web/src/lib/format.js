@@ -37,4 +37,20 @@ const roleColor = (r) => ROLES[r]?.color||D.textMuted;
  */
 const stat = (v, suffix = "") => (v === null || v === undefined ? "—" : `${v}${suffix}`);
 
-export { addDays, dateStr, fitnessColor, initials, pctDays, roleColor, severityColor, stat, today };
+/**
+ * A field the reader is not cleared for.
+ *
+ * Masked columns arrive as null — the database decided, per row, that this
+ * person may not have them — and rendering null puts a blank where a value
+ * goes. A blank reads as missing data: the coach thinks nobody has recorded
+ * the diagnosis and goes looking for the physio, when in fact it is recorded
+ * and simply not theirs to read.
+ *
+ * So a withheld field says so. This is not a security control — the value is
+ * already absent by the time it reaches the browser, and nothing here could
+ * put it back — it is honesty about WHY the space is empty.
+ */
+const withheld = (v, label = "Not shown at your access level") =>
+  (v === null || v === undefined ? label : v);
+
+export { addDays, dateStr, fitnessColor, initials, pctDays, roleColor, severityColor, stat, today, withheld };

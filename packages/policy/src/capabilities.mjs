@@ -22,8 +22,11 @@
  * Naming: `<domain>.<subject>.<action>`, action last. Where a domain has a
  * safe summary and a sensitive detail, they are separate capabilities —
  * `medical.status.read` (available / unavailable) is not
- * `medical.details.read` (the diagnosis). A coach gets the first and not the
- * second, and that separation is the reason this split exists at all.
+ * `medical.nature.read` (a hamstring strain) is not `medical.details.read`
+ * (the physio's clinical notes). A coach gets the first two and not the third;
+ * a pupil gets only the first. That separation is the reason this split exists
+ * at all, and getting the boundary wrong once — the diagnosis living in the
+ * availability tier — is what added the middle one.
  */
 
 export const CAPABILITIES = {
@@ -62,9 +65,20 @@ export const CAPABILITIES = {
   "officiating.report":          "File a match official's report",
 
   // ── Health ──
-  // The summary a coach needs to pick a side.
+  // THREE TIERS, not two. The split used to be availability vs the clinical
+  // record, and it put the diagnosis in the wrong half: `injury_type` reads
+  // "Grade 2 hamstring strain", and it sat behind medical.status.read, which
+  // the `player` bundle holds. A pupil could read what was wrong with a
+  // teammate.
+  //
+  //   status  — is this player available, and until when. What you need to
+  //             know that someone is not playing on Saturday.
+  //   nature  — WHAT the injury is and how bad. What you need to manage a
+  //             squad: bowling loads, selection, return-to-play planning.
+  //   details — the clinical record: the physio's notes and who is treating
+  //             them. A minor's health information, POPIA-sensitive.
   "medical.status.read":         "See whether a player is available",
-  // The clinical record. POPIA-sensitive; a minor's health information.
+  "medical.nature.read":         "See what the injury is and how severe",
   "medical.details.read":        "See diagnosis and clinical notes",
   "medical.write":               "Record injuries, rehab and clearance",
 
@@ -112,6 +126,9 @@ export const ALL_CAPABILITIES = Object.freeze(Object.keys(CAPABILITIES));
 /** Capabilities that expose a minor's sensitive information. */
 export const SENSITIVE = Object.freeze([
   "player.pii.read",
+  // The nature of a minor's injury is health information about a child, so it
+  // belongs here even though it is a tier below the clinical notes.
+  "medical.nature.read",
   "medical.details.read",
   "discipline.read",
   "discipline.write",

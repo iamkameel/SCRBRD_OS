@@ -455,7 +455,7 @@ BEGIN
            END, ', ' ORDER BY c.ordinal_position)
     INTO cols
     FROM information_schema.columns c
-    LEFT JOIN (VALUES ('notes', 'medical.details.read'), ('physio', 'medical.details.read')) AS g(column_name, capability)
+    LEFT JOIN (VALUES ('injury_type', 'medical.nature.read'), ('severity', 'medical.nature.read'), ('phase', 'medical.nature.read'), ('notes', 'medical.details.read'), ('physio', 'medical.details.read')) AS g(column_name, capability)
            ON g.column_name = c.column_name
    WHERE c.table_schema = 'public' AND c.table_name = 'injury';
 

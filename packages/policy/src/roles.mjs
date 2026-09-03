@@ -47,13 +47,13 @@ const BUNDLES = {
   principal: [
     ...READ_TEAM, "school.read", "user.read", "analytics.read",
     "competition.read", "discipline.read", "facility.read", "invoice.read",
-    "player.performance.read", "medical.status.read", "audit.read",
+    "player.performance.read", "medical.status.read", "medical.nature.read", "audit.read",
   ],
   directorofsport: [
     ...READ_TEAM, "school.read", "user.read", "user.invite",
     "team.manage", "team.select", "fixture.create", "fixture.update", "fixture.cancel",
     "player.profile.manage", "player.performance.read", "player.development.read",
-    "medical.status.read", "discipline.read", "discipline.write",
+    "medical.status.read", "medical.nature.read", "discipline.read", "discipline.write",
     "analytics.read", "competition.read", "facility.read", "facility.manage",
     "transport.read", "officiating.assign",
     "scoring.start", "scoring.edit", "scoring.finalise", "scoring.correct",
@@ -62,7 +62,7 @@ const BUNDLES = {
   schooladmin: [
     ...READ_TEAM, "school.read", "school.manage", "user.read", "user.invite", "user.role.assign",
     "team.manage", "fixture.create", "fixture.update", "fixture.cancel",
-    "player.profile.manage", "player.pii.read", "medical.status.read",
+    "player.profile.manage", "player.pii.read", "medical.status.read", "medical.nature.read",
     "discipline.read", "facility.read", "facility.manage",
     "transport.read", "transport.manage", "invoice.read",
     "competition.read", "news.publish.school", "audit.read",
@@ -70,7 +70,7 @@ const BUNDLES = {
   sportsadmin: [
     ...READ_TEAM, "user.read", "team.manage", "team.select",
     "fixture.create", "fixture.update", "fixture.cancel", "officiating.assign",
-    "player.profile.manage", "medical.status.read",
+    "player.profile.manage", "medical.status.read", "medical.nature.read",
     "facility.read", "facility.manage", "transport.read", "transport.manage",
     "competition.read", "news.publish.team", "news.publish.school",
     "scoring.start", "scoring.edit", "scoring.finalise",
@@ -82,17 +82,17 @@ const BUNDLES = {
     ...READ_TEAM, "team.select",
     "player.performance.read", "player.performance.write",
     "player.development.read", "player.development.write",
-    "medical.status.read", "analytics.read", "transport.read",
+    "medical.status.read", "medical.nature.read", "analytics.read", "transport.read",
     "scoring.start", "scoring.edit", "scoring.finalise",
     "news.publish.team",
   ],
   assistantcoach: [
     ...READ_TEAM, "player.performance.read", "player.development.read",
-    "medical.status.read", "transport.read",
+    "medical.status.read", "medical.nature.read", "transport.read",
     "scoring.start", "scoring.edit",
   ],
   teammanager: [
-    ...READ_TEAM, "team.select", "medical.status.read",
+    ...READ_TEAM, "team.select", "medical.status.read", "medical.nature.read",
     "transport.read", "news.publish.team",
   ],
 
@@ -109,6 +109,17 @@ const BUNDLES = {
   official: ["fixture.read", "team.read", "news.read", "officiating.report", "discipline.write"],
 
   // ── The people the data is about ──
+  // A pupil knows WHO is unavailable and until when — they need that to read a
+  // team sheet — and not what is wrong with them. medical.status.read without
+  // medical.nature.read is exactly that line: `injury_type` ("Grade 2
+  // hamstring strain"), `severity` and `phase` are masked, `rtw_date` and
+  // `restricted` are not.
+  //
+  // It costs a pupil sight of their OWN diagnosis too, because a capability is
+  // held at a scope and this model has no way for a player assignment to mean
+  // "myself only" — only guardian assignments carry a person list. A pupil
+  // learns their diagnosis from the physio rather than from the app, which is
+  // the safe side of that limitation to be on.
   player: [
     "fixture.read", "team.read", "news.read", "facility.read", "competition.read",
     "player.profile.read", "player.performance.read", "player.development.read",
@@ -120,7 +131,7 @@ const BUNDLES = {
   guardian: [
     "fixture.read", "team.read", "news.read", "facility.read", "competition.read",
     "player.profile.read", "player.pii.read", "player.performance.read",
-    "medical.status.read", "transport.read", "invoice.read",
+    "medical.status.read", "medical.nature.read", "transport.read", "invoice.read",
   ],
 
   // ── Read-only observers ──
@@ -140,7 +151,7 @@ const BUNDLES = {
   // ── Specialists ──
   medical: [
     "team.read", "fixture.read", "news.read", "player.profile.read",
-    "medical.status.read", "medical.details.read", "medical.write",
+    "medical.status.read", "medical.nature.read", "medical.details.read", "medical.write",
   ],
   finance: ["school.read", "news.read", "invoice.read", "invoice.manage", "user.read"],
   transportcoordinator: ["fixture.read", "team.read", "news.read", "transport.read", "transport.manage"],
