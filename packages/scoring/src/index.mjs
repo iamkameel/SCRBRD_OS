@@ -8,3 +8,4 @@
 export * from "./events.mjs";
 export * from "./replay.mjs";
 export * from "./undo.mjs";
+export * from "./placement.mjs";

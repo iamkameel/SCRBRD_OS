@@ -11,6 +11,10 @@ import {
   inningsStart, batters, bowler, ball, penalty, retire, inningsEnd,
   BALL_TYPE, KIND, toRow, fromRow, isLegal,
   voidEvent, undoLast, lastUndoableIndex, newEventId,
+  placementFromTap, noPlacement, screenAngle, thetaFromScreen,
+  zoneFromRadius, closePositionFor, hasPoint, heatMapEligible, batHandOf,
+  thetaFromClock, clockFromTheta, fieldingCircle, depthBand, positionName,
+  PLACEMENT_SOURCE, PLACEMENT_NULL, CLOSE_RADIUS,
 } from "../src/index.mjs";
 
 let pass = 0, fail = 0;
@@ -368,6 +372,116 @@ group("F. Undo before and after the server has it");
      deriveInnings([...log, fromRow(toRow(v))]).runs === 7);
 
   ok("event ids are unique per device", newEventId("dev", "m1") !== newEventId("dev", "m1"));
+}
+
+// ── G. Shot placement ────────────────────────────────────
+group("G. Where the ball went");
+{
+  // The frame is the clock coaches already speak in: theta is degrees
+  // CLOCKWISE FROM BEHIND THE BATTER, so 180 is straight down the ground and
+  // positive is the leg side for a right-hander. It is also exactly the angle
+  // the wheel draws at, which is why a right-hander needs no conversion at all.
+  ok("theta is clock_hour x 30", thetaFromClock(6) === 180 && thetaFromClock(3) === 90);
+  ok("...and reads back", clockFromTheta(180) === 6 && clockFromTheta(0) === 12);
+  ok("straight down the ground is 180", screenAngle(180, "R") === 180);
+  ok("a right-hander needs no conversion", thetaFromScreen(214, "R") === 214);
+
+  // The defect this replaces: a left-hander's placement was stored against
+  // fixed segment angles and was silently wrong for every ball they faced.
+  const rh = placementFromTap({ angle: 270, radius: 0.7, batHand: "R" });
+  const lh = placementFromTap({ angle: 270, radius: 0.7, batHand: "L" });
+  ok("the same spot is off side for a right-hander", rh.theta === 270);
+  ok("...and leg side for a left-hander", lh.theta === 90);
+  ok("...yet both draw in the same place", rh.seg === lh.seg);
+  ok("mirroring round-trips", screenAngle(thetaFromScreen(123, "L"), "L") === 123);
+
+  // seg and zone are DERIVED, so the sector-era read path keeps working
+  // unchanged and point capture ships without rewriting it.
+  const p = placementFromTap({ angle: 300, radius: 0.93, batHand: "R" });
+  ok("a point derives its sector", p.seg === 10);
+  ok("...and its zone", p.zone === "boundary");
+  ok("zone bands come from the ring radii, not round numbers",
+     zoneFromRadius(0.44) === "inner" && zoneFromRadius(0.5) === "outer" && zoneFromRadius(0.85) === "boundary");
+
+  // Quantise on write: float noise implies precision nobody has. The scorer is
+  // estimating from a boundary, not measuring.
+  const q = placementFromTap({ angle: 137.4821, radius: 0.61847, batHand: "R" });
+  ok("theta is whole degrees", Number.isInteger(q.theta));
+  ok("radius is two decimals", q.radius === 0.62);
+  ok("radius clamps at the rope",
+     placementFromTap({ angle: 180, radius: 1.8, batHand: "R" }).radius === 1);
+
+  // The fielding circle is VENUE-DERIVED. Because radius normalises to the
+  // rope, the 30-yard circle sits at a different normalised radius at every
+  // ground — and it carries fielding-restriction meaning, so a hardcoded band
+  // would be wrong somewhere every time.
+  ok("the circle is ~0.50 at a 55m boundary", Math.abs(fieldingCircle(55) - 0.50) < 0.01);
+  ok("...and ~0.40 at 68m", Math.abs(fieldingCircle(68) - 0.40) < 0.01);
+  ok("so the same ball is in the ring at one ground and deep at another",
+     depthBand(0.45, { boundaryM: 55 }) === "ring" && depthBand(0.45, { boundaryM: 68 }) === "deep");
+
+  // Position names are DERIVED, never stored, so the table can be corrected or
+  // localised later without touching a single ball.
+  ok("a cover drive to the rope is deep cover", positionName(235, 0.75) === "deep cover");
+  ok("...and inside the circle is just cover", positionName(235, 0.35) === "cover");
+  // The table is not regular, and the irregularities are the point.
+  ok("straight breaks the pattern: long on, not deep mid on", positionName(178, 0.9) === "long on");
+  ok("...and long off on the other side of it", positionName(190, 0.9) === "long off");
+  // 0.50 would be DEEP at the default ground — the circle is 0.44 there — so
+  // this asserts the family at a radius that is genuinely inside the ring.
+  ok("behind square on the off side is backward point",
+     positionName(295, 0.35) === "backward point");
+  ok("...and deep backward point outside the circle",
+     positionName(295, 0.5) === "deep backward point");
+  ok("off side behind square is `third`, not third man",
+     positionName(325, 0.8) === "deep third");
+
+  // The catching ring, where the outfield taxonomy means nothing.
+  ok("a ball at the batter's feet has somewhere to sit",
+     placementFromTap({ angle: 0, radius: 0.02, batHand: "R" }).closePosition === "at_feet");
+  ok("slips are ordinal, derived from theta within the cordon",
+     closePositionFor(340, 0.06) === "slip_2" && closePositionFor(350, 0.06) === "slip_1");
+  ok("the leg-side cordon is named too", closePositionFor(15, 0.06) === "leg_slip");
+  ok("nothing outside the ring gets a close position",
+     closePositionFor(230, CLOSE_RADIUS + 0.01) === null);
+
+  // Why there is no placement is recorded, because "no stroke was offered" and
+  // "the scorer skipped it" are different facts.
+  const missed = noPlacement(PLACEMENT_NULL.NO_CONTACT);
+  ok("a ball with no contact carries a reason", missed.placementNull === "no_contact");
+  ok("...and no source", missed.placementSource === null);
+  ok("...and no sector either", missed.seg === null && missed.zone === null);
+
+  // THE HARD RULE: a point is never synthesised from a sector.
+  const sectorEra = ball({ type: BALL_TYPE.RUN, value: 4, seg: 9, zone: "outer" });
+  ok("a sector-era ball has no point", sectorEra.theta === null && sectorEra.radius === null);
+  ok("...and is not mistaken for one", hasPoint(sectorEra) === false);
+  ok("...but keeps its sector", sectorEra.seg === 9);
+
+  const pointEra = ball({ type: BALL_TYPE.RUN, value: 4, ...p });
+  ok("a point-era ball is recognised", hasPoint(pointEra) === true);
+  const mixed = heatMapEligible([sectorEra, pointEra, pointEra, sectorEra, sectorEra]);
+  ok("a heat map can state what it excluded rather than dropping it quietly",
+     mixed.eligible.length === 2 && mixed.excludedCount === 3);
+
+  // The wire carries the point in its own columns, so the query layer can
+  // filter on placement_source and be indexed rather than trusting report code.
+  const row = toRow(pointEra);
+  ok("theta and radius get columns of their own",
+     row.theta === p.theta && row.radius === p.radius);
+  ok("as does the source the heat map filters on",
+     row.placement_source === PLACEMENT_SOURCE.POINT);
+  ok("none of it is duplicated into the payload",
+     !("theta" in row.payload) && !("placementSource" in row.payload));
+  const back = fromRow({ ...row, seq: 3 });
+  ok("the point survives the round trip",
+     back.theta === p.theta && back.radius === p.radius && hasPoint(back));
+
+  // Handedness comes off the squad. Missing handedness produces a right-handed
+  // placement, which is a roster problem rather than something to guess at.
+  const inn = { striker: "p1", squad: [{ id: "p1", name: "A", batHand: "L" }, { id: "p2", name: "B" }] };
+  ok("a left-hander is read from the squad", batHandOf(inn) === "L");
+  ok("...and an unmarked player defaults to right", batHandOf(inn, "p2") === "R");
 }
 
 console.log(`\n${"─".repeat(52)}\nSCORING SUITE: ${pass} passed, ${fail} failed`);

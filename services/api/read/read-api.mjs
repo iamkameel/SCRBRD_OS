@@ -53,6 +53,38 @@ export const READ_QUERIES = {
              from injury_masked
             order by date_injured desc`,
   },
+  /**
+   * Point-era balls for one match, for the continuous heat map.
+   *
+   * The placement_source filter is HERE, in the query layer, and not left to
+   * report code. A heat map built from sector-era balls would be plotting
+   * wedge centroids as if they were positions — and because the two eras will
+   * live in the same career view indefinitely, "the report remembers to
+   * filter" is not a property anyone can rely on. The excluded count comes
+   * back with it so a view can state what it left out rather than quietly
+   * dropping a third of an innings.
+   */
+  shot_points: {
+    text: `select b.seq, b.innings, b.ball_type, b.value, b.shot,
+                  b.theta, b.radius, b.close_position, b.capture_profile,
+                  b.striker_id, b.bowler_id
+             from ball_event b
+            where b.match_id = $1
+              and b.placement_source = 'point'
+              and b.capture_profile in ('full','standard')
+            order by b.seq`,
+    params: q => [req(q, "matchId")],
+  },
+  shot_point_coverage: {
+    text: `select count(*) filter (where placement_source = 'point')  as points,
+                  count(*) filter (where placement_source is distinct from 'point'
+                                     and seg is not null)              as sector_era,
+                  min(server_ts) filter (where placement_source = 'point') as first_point_at
+             from ball_event
+            where match_id = $1 and kind = 'ball'`,
+    params: q => [req(q, "matchId")],
+  },
+
   competitions: {
     text: `select id, name, comp_type, format, age_group, gender, school_id
              from competition

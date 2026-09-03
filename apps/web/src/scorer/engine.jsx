@@ -3,6 +3,7 @@ import {
   deriveInnings, inningsStart, batters as battersEvent, bowler as bowlerEvent,
   ball as ballEvent, penalty as penaltyEvent, inningsEnd,
   newEventId, undoLast,
+  noPlacement, NO_CONTACT_SHOTS, PLACEMENT_NULL, PLACEMENT_SOURCE, CAPTURE_PROFILE,
 } from "@scrbrd/scoring";
 import { D } from "../design/tokens.js";
 import { deviceId } from "../lib/device.js";
@@ -74,7 +75,12 @@ async function liveSquad(cfg) {
   try {
     const { rows } = await api("/api/read/players");
     const team = rows.filter((p) => !cfg.teamCode || p.team_code === cfg.teamCode);
-    return (team.length ? team : rows).map((p) => ({ id: p.id, name: p.full_name }));
+    // batHand travels with the squad because placement is stored
+    // batter-relative: without it every left-hander's innings is mirrored.
+    return (team.length ? team : rows).map((p) => ({
+      id: p.id, name: p.full_name,
+      batHand: /^l/i.test(p.batting_style || "") ? "L" : "R",
+    }));
   } catch {
     return null;
   }
@@ -392,9 +398,12 @@ function SCRBRD({resume}={}){
     setSelSeg(null);
   };
 
-  // Hub stage 1: field segment selected → advance to runs
-  const onFieldSel=(s)=>{
-    setSelSeg(s);
+  // Hub stage 1: the scorer taps where the ball went → advance to runs.
+  // `p` is a full placement (theta, radius and the seg/zone derived from
+  // them), not a sector index. It is held whole until commit so nothing has
+  // to reconstruct the point from the parts.
+  const onFieldSel=(p)=>{
+    setSelSeg(p);
     setHubStage(2);
   };
 
@@ -403,7 +412,7 @@ function SCRBRD({resume}={}){
     if(!inn||!selSeg)return;
     // Hit body → automatically leg-byes (ball didn't hit bat)
     const effectiveType=hubShot==="hit_body"?"LB":"run";
-    commitBall(effectiveType,value,hubShot,selSeg.seg,selSeg.zone,hubApproach);
+    commitBall(effectiveType,value,hubShot,null,null,hubApproach,selSeg);
   };
 
   // Focus-mode commits
@@ -425,12 +434,12 @@ function SCRBRD({resume}={}){
 
   const onBye=()=>{
     if(!inn||!selSeg)return;
-    commitBall("B",1,hubShot,selSeg.seg,selSeg.zone,hubApproach);
+    commitBall("B",1,hubShot,null,null,hubApproach,selSeg);
   };
 
   const onLegBye=()=>{
     if(!inn||!selSeg)return;
-    commitBall("LB",1,hubShot,selSeg.seg,selSeg.zone,hubApproach);
+    commitBall("LB",1,hubShot,null,null,hubApproach,selSeg);
   };
 
   // Hub stage 2: wicket
@@ -522,8 +531,25 @@ function SCRBRD({resume}={}){
   // updated by hand on every branch. It is now one event. What happens next —
   // did the over end, did the innings end — is read from the projection rather
   // than recomputed here, so the rules live in exactly one place.
-  const commitBall=(type,value,shot,seg,zone,approach)=>{
-    const ev=ballEvent({type,value,shot,seg,zone,bowlerApproach:approach||null,freeHit});
+  /**
+   * Record a delivery.
+   *
+   * `placement` is the whole set of shot-placement fields, built by
+   * placementFromTap() or noPlacement() — never assembled here. It carries its
+   * own derived seg and zone, which is what keeps the point and the sector it
+   * reduces to from drifting apart. Callers that pass a bare seg/zone (the
+   * one-tap pad, which never asks where the ball went) get an explicit
+   * "not required" rather than a silent blank.
+   */
+  const commitBall=(type,value,shot,seg,zone,approach,placement)=>{
+    const place=placement??(seg!=null
+      ? {seg,zone,placementSource:PLACEMENT_SOURCE.SECTOR,captureProfile:CAPTURE_PROFILE.STANDARD}
+      : noPlacement(
+          // A shot with no bat contact has nowhere to go, and that is a
+          // different fact from a scorer skipping the step.
+          NO_CONTACT_SHOTS.has(shot) ? PLACEMENT_NULL.NO_CONTACT : PLACEMENT_NULL.NOT_REQUIRED,
+          CAPTURE_PROFILE.QUICK));
+    const ev=ballEvent({type,value,shot,bowlerApproach:approach||null,freeHit,...place});
     const before=inn;
     const after=project(ev);
     const endedOver=after.balls>before.balls&&after.balls%6===0;

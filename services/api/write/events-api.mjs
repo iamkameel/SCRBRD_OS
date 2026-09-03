@@ -85,15 +85,19 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
         `insert into ball_event
            (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
             idempotency_key, client_seq, client_ts, kind, ball_type, value, shot, seg, zone,
-            striker_id, non_striker_id, bowler_id, dismissal, payload)
+            striker_id, non_striker_id, bowler_id, dismissal, payload,
+            theta, radius, placement_source, placement_null, close_position, capture_profile)
          values ($1, match_school($1), $2, $3, $4, app_user_id(), $5,
-                 $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
+                 $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19,
+                 $20, $21, $22, $23, $24, $25)`,
         [matchId, seq, ev.epoch, row.innings ?? ev.innings ?? 0, ev.deviceId,
          ev.idempotencyKey, ev.clientSeq, new Date(ev.clientTs ?? Date.now()),
          row.kind || "ball", row.ball_type ?? null, row.value ?? null,
          row.shot ?? null, row.seg ?? null, row.zone ?? null,
          row.striker_id ?? null, row.non_striker_id ?? null, row.bowler_id ?? null,
-         row.dismissal ?? null, JSON.stringify(row.payload ?? {})]);
+         row.dismissal ?? null, JSON.stringify(row.payload ?? {}),
+         row.theta ?? null, row.radius ?? null, row.placement_source ?? null,
+         row.placement_null ?? null, row.close_position ?? null, row.capture_profile ?? null]);
 
 
       result.accepted.push({ idempotencyKey: ev.idempotencyKey, seq });
@@ -112,7 +116,8 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
 export const EVENT_COLUMNS = `
   seq, epoch, innings, kind, ball_type, value, shot, seg, zone,
   striker_id, non_striker_id, bowler_id, dismissal, idempotency_key,
-  scorer_user_id, device_id, client_ts, server_ts, payload`;
+  scorer_user_id, device_id, client_ts, server_ts, payload,
+  theta, radius, placement_source, placement_null, close_position, capture_profile`;
 
 export async function readEvents(pool, secret, bearer, matchId, sinceSeq = 0) {
   return runAsPrincipal(pool, secret, bearer, async client => {

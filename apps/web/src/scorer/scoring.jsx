@@ -3,6 +3,7 @@ import { D } from "../design/tokens.js";
 import { BatsmanChart, BowlerChart, ManhattanChart, RunRateChart, WormChart } from "./charts.jsx";
 import { SEGS } from "./field.js";
 import { RR, SR, fmtOv } from "./format.js";
+import { batHandOf, positionName } from "@scrbrd/scoring";
 import { CommentaryCard, WagonWheel } from "./panels.jsx";
 import { seedCompletedMatch } from "./seed.js";
 import { ALL_SHOTS_FLAT, SHOT_CATS } from "./shots.js";
@@ -19,6 +20,10 @@ import { Select } from "../ui/primitives.jsx";
 function ScoringHub({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selSeg,
   fieldView,setFieldView,hidden,toggleLine,setModal,
   onApproach,onShot,onShotSkip,onFieldSel,onRun,onBye,onLegBye,onWicket,onWide,onNoBall,onReset,onBack}){
+  // Placement is stored batter-relative, so the mirror is applied at capture
+  // and at render — never to the stored value. This is what makes a
+  // left-hander's cover drive comparable with a right-hander's.
+  const batHand=batHandOf(inn);
   const shotInfo=hubShot?ALL_SHOTS_FLAT.find(s=>s.id===hubShot):null;
   const segInfo=selSeg!=null?SEGS[selSeg.seg]:null;
   const STAGE_LABELS=["Shot","Field","Runs"];
@@ -143,14 +148,26 @@ function ScoringHub({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selSeg
             )}
             {!shotInfo&&<span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>No shot</span>}
             {hubApproach&&<Badge color={D.amber} sx={{fontSize:"8px"}}>{hubApproach==="Around the wicket"?"Around":"Over"}</Badge>}
-            <span style={{fontFamily:D.body,fontSize:"11px",color:D.amber,fontWeight:500,marginLeft:"auto"}}>
-              📍 Tap field to place
+            {/* The derived name, echoed back on tap. The sector model gave
+                the scorer this reassurance for free — you pressed a wedge
+                labelled "Cover" — and point capture has to keep it, or the
+                interface feels like it lost something in exchange for
+                precision nobody can see. */}
+            <span style={{fontFamily:D.body,fontSize:"11px",color:selSeg?D.emerald:D.amber,fontWeight:500,marginLeft:"auto"}}>
+              {selSeg?.theta!=null
+                ? `📍 ${positionName(selSeg.theta,selSeg.radius) ?? "placed"}`
+                : "📍 Tap where it went"}
             </span>
           </div>
           <WagonWheel
             ballLog={inn?.ballLog||[]}
             selSeg={selSeg}
-            onSel={s=>{if(s)onFieldSel(s);}}
+            batHand={batHand}
+            // Point capture: the tap IS the placement. The sector guides stay
+            // drawn as scaffolding but are no longer targets — see §7 of the
+            // point-capture spec, and placement.mjs for why snapping would
+            // defeat the whole change.
+            onPlace={p=>onFieldSel(p)}
             viewMode={fieldView}
             onViewMode={setFieldView}
             hidden={hidden}

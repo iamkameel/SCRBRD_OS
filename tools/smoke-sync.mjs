@@ -21,7 +21,7 @@ import { spawn } from "node:child_process";
 import { SyncEngine, memoryStorage } from "@scrbrd/sync";
 import {
   deriveInnings, fromRow, inningsStart, batters, bowler, ball, BALL_TYPE,
-  undoLast, newEventId, KIND,
+  undoLast, newEventId, KIND, placementFromTap, positionName, hasPoint,
 } from "@scrbrd/scoring";
 
 const PORT = 8791;
@@ -244,10 +244,45 @@ try {
     ok("the void is in the log as an event", rows.some((r) => r.kind === KIND.VOID));
   }
 
+  // ── A captured point, through the real wire ────────────────────
+  group("Shot placement");
+  {
+    // A cover drive, placed where it actually went rather than reduced to one
+    // of thirty-six cells. This is the property the whole change exists for:
+    // a point can be reduced to a sector, and a sector can never be recovered
+    // as a point — so if it does not survive the wire it is gone for good.
+    const place = placementFromTap({ angle: 235, radius: 0.78, batHand: "R" });
+    const placed = ball({ type: BALL_TYPE.RUN, value: 4, shot: "cover_drive", ...place });
+    const r = await api(`/api/matches/${MATCH}/events`, {
+      method: "POST", token: scorerToken,
+      body: { events: [{ epoch, deviceId: DEVICE, idempotencyKey: newEventId(DEVICE, MATCH),
+                         clientSeq: 200, clientTs: Date.now(), innings: 0, payload: placed }] },
+    });
+    ok("a placed ball is accepted", r.body?.accepted?.length === 1);
+
+    const rows = await api(`/api/matches/${MATCH}/events?since=0`, { token: scorerToken });
+    const stored = (rows.body?.events || []).find((e) => e.shot === "cover_drive");
+    ok("theta reached its own column", stored?.theta === place.theta);
+    ok("radius did too", Number(stored?.radius) === place.radius);
+    ok("...and the source the heat map filters on", stored?.placement_source === "point");
+    ok("the derived sector is stored alongside it, so the old read path works",
+       stored?.seg === place.seg && stored?.zone === place.zone);
+
+    const back = fromRow(stored);
+    ok("the point survives the round trip", hasPoint(back));
+    ok(`...and still names the position (${positionName(back.theta, back.radius)})`,
+       positionName(back.theta, back.radius) === "deep cover");
+
+    // The hard rule, checked against the database rather than asserted.
+    const sectorEra = (rows.body?.events || []).filter((e) => e.kind === "ball" && e.shot !== "cover_drive");
+    ok("no other ball acquired a point it never had",
+       sectorEra.every((e) => e.theta === null && e.placement_source === null));
+  }
+
   // ── Who may read the log ───────────────────────────────────────
   group("Reading the log");
   const coachToken = await login(COACH);
-  const LOG_LENGTH = 10;   // nine scored events plus the void
+  const LOG_LENGTH = 11;   // nine scored events, the void, and the placed ball
   const coachRead = await api(`/api/matches/${MATCH}/events?since=0`, { token: coachToken });
   ok("the coach of this team reads the log", (coachRead.body?.events || []).length === LOG_LENGTH);
 

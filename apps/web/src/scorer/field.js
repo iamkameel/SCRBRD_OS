@@ -1,3 +1,4 @@
+import { screenAngle } from "@scrbrd/scoring";
 import { D } from "../design/tokens.js";
 
 /* ═══════════════════════════════════════════════════════
@@ -19,6 +20,19 @@ const pieSlice=(cDeg,ro)=>{
   const[ax,ay]=toXY(s,ro);const[bx,by]=toXY(e,ro);
   return `M${CX} ${CY} L${ax} ${ay} A${ro} ${ro} 0 0 1 ${bx} ${by} Z`;
 };
+
+/**
+ * The angle to DRAW a ball at.
+ *
+ * Point-era balls carry batter-relative theta and are mirrored for a
+ * left-hander here — the defect this replaces stored a left-hander's placement
+ * against fixed segment angles, and was silently wrong for every ball they
+ * faced. Sector-era balls have only `seg`, so they draw at its nominal angle.
+ */
+const ballAngle=(b,batHand="R")=>
+  b?.theta!=null&&b?.placementSource==="point"
+    ? screenAngle(b.theta,batHand)
+    : (SEGS[b?.seg]?.angle ?? 0);
 
 const SEGS=[
   {id:0,label:"Fine Leg",short:"FLG",angle:0,side:"leg"},
@@ -52,16 +66,38 @@ const heatColor=(v,mx)=>{
   return`rgba(244,63,94,${.5+t*.5})`;
 };
 
+/**
+ * Where a spoke ends.
+ *
+ * TWO ERAS, drawn differently and labelled honestly.
+ *
+ * POINT ERA — the line ends where the ball actually went. radius 1.00 is the
+ * rope; a six that cleared it is drawn just beyond. This is the only case
+ * where line length means distance.
+ *
+ * SECTOR ERA — there is no distance. There never was: length was synthesised
+ * from the run value, so a lofted single and a scampered single drew the same
+ * line, and a four along the ground and a four over cover drew the same line.
+ * That is acceptable in a demo and must not be presented as measurement, so
+ * these spokes are drawn at the SECTOR's nominal ring — inner, outer or
+ * boundary — which is genuinely all that was recorded. `synthetic` is returned
+ * with them so the render can mark them.
+ *
+ * What is NOT done: inventing a radius for a sector-era ball that looks like a
+ * measured one. A fabricated point is indistinguishable from a captured one
+ * downstream, which is exactly how a dataset stops being trustworthy.
+ */
 const wagEnd=(ang,b)=>{
-  let r;
-  if(b.type==="W")r=28;
-  else if(b.value===6)r=R_BND+13;
-  else if(b.value===4||b.zone==="boundary")r=R_BND-1;
-  else if(b.value===3)r=R_MID-10;
-  else if(b.value===2||b.zone==="outer")r=R_MID-24;
-  else if(b.value===1||b.zone==="inner")r=R_IN+10;
-  else r=R_IN-16;
-  return toXY(ang,r);
+  // Point era: the captured radius, in drawing units. 1.00 is the rope.
+  if(b.radius!=null&&b.placementSource==="point"){
+    const r=b.radius*R_BND;
+    // A six that cleared the rope is shown fractionally beyond it, because
+    // landing ON the boundary and landing over it are different balls.
+    return{xy:toXY(ang,b.value===6?Math.max(r,R_BND)+9:r),synthetic:false};
+  }
+  // Sector era: the band, and nothing finer. No run-value length.
+  const r=b.zone==="boundary"?R_BND-1:b.zone==="outer"?R_MID-14:R_IN-6;
+  return{xy:toXY(ang,r),synthetic:true};
 };
 
-export { CX, CY, LK_COLS, R_BND, R_IN, R_MID, R_PITCH, SEGS, heatColor, lineKey, pieSlice, ringArc, toXY, wagEnd };
+export { CX, CY, LK_COLS, R_BND, R_IN, R_MID, R_PITCH, SEGS, ballAngle, heatColor, lineKey, pieSlice, ringArc, toXY, wagEnd };

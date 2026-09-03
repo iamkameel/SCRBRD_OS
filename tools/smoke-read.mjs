@@ -83,6 +83,22 @@ try {
     ok(`${resource} returns rows rather than a SQL error${ran ? "" : ` — ${err}`}`, ran);
   }
 
+  // ── The heat map's filter lives in SQL, not in report code ──────
+  group("Shot placement");
+  const MATCH = "77777777-0000-0000-0000-000000000001";
+  let pointsRan = true, covRan = true;
+  try { await read(`shot_points?matchId=${MATCH}`, coach); } catch { pointsRan = false; }
+  try { await read(`shot_point_coverage?matchId=${MATCH}`, coach); } catch { covRan = false; }
+  ok("the point-era query runs", pointsRan);
+  ok("the coverage query runs", covRan);
+  const cov = covRan ? (await read(`shot_point_coverage?matchId=${MATCH}`, coach))[0] : null;
+  ok("coverage is reportable rather than inferred",
+     cov !== null && "points" in cov && "sector_era" in cov);
+  // Nothing has been captured as a point yet, and the seed carries no balls —
+  // so the honest answer is zero, not a synthesised one.
+  ok("a match with no point-era balls returns none, not fabricated ones",
+     (await read(`shot_points?matchId=${MATCH}`, coach)).length === 0);
+
   // ── The same query, different answers ───────────────────────────
   group("The same query, scoped per person");
   const coachMatches = await read("matches", coach);

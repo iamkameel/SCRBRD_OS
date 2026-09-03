@@ -98,8 +98,14 @@ CREATE TABLE ball_event (
   ball_type       text,                            -- run | W | Wd | Nb | B | LB
   value           smallint,
   shot            text,
-  seg             smallint,                        -- wagon-wheel segment
-  zone            smallint,
+  seg             smallint,                        -- wagon-wheel segment, 0-11
+  -- text, not smallint. The client has always written 'inner' / 'outer' /
+  -- 'boundary' here, and a smallint column rejected every one of them —
+  -- 22P02 on the whole delivery. It never surfaced because nothing in the
+  -- suite sent a zone: the fakes accept any value, and the live smokes scored
+  -- balls without placement. The first ball ever captured WITH a placement is
+  -- the one that would have failed, in front of a scorer, mid-over.
+  zone            text CHECK (zone IS NULL OR zone IN ('inner','outer','boundary')),
   striker_id      uuid REFERENCES player(id),
   non_striker_id  uuid REFERENCES player(id),
   bowler_id       uuid REFERENCES player(id),

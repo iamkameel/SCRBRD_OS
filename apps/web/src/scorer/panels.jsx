@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
+import { placementFromTap, screenAngle } from "@scrbrd/scoring";
 import { D, px } from "../design/tokens.js";
 import { can } from "../rbac/index.js";
-import { CX, CY, LK_COLS, R_BND, R_IN, R_MID, R_PITCH, SEGS, heatColor, lineKey, pieSlice, ringArc, toXY, wagEnd } from "./field.js";
+import { CX, CY, LK_COLS, R_BND, R_IN, R_MID, R_PITCH, SEGS, ballAngle, heatColor, lineKey, pieSlice, ringArc, toXY, wagEnd } from "./field.js";
 import { RR, fmtOv, SR } from "./format.js";
 import { buildNarratives, buildSignals } from "./signals.js";
 import { ALL_SHOTS_FLAT } from "./shots.js";
@@ -164,7 +165,40 @@ function DynamicBar({inn,match,target,isChase,lastOver}){
 /* ═══════════════════════════════════════════════════════
    WAGON WHEEL
 ═══════════════════════════════════════════════════════ */
-function WagonWheel({ballLog=[],selSeg,onSel,viewMode,onViewMode,hidden,onToggle}){
+/**
+ * @param batHand handedness of the batter these balls belong to. Point-era
+ *   placements are stored batter-relative, so the mirror happens at RENDER
+ *   time — one wheel can therefore show a left-hander's innings correctly
+ *   without any of the stored balls being rewritten.
+ */
+function WagonWheel({ballLog=[],selSeg,onSel,onPlace,viewMode,onViewMode,hidden,onToggle,batHand="R"}){
+  // A live point being placed, before commit. Drag refines it; release commits.
+  const [placing,setPlacing]=useState(null);
+  const svgRef=useRef(null);
+
+  /**
+   * A tap anywhere on the field becomes a point.
+   *
+   * NO SNAPPING. The sector guides stay drawn because they orient the scorer
+   * and keep the interface familiar, but they are scaffolding, not targets —
+   * snapping to a wedge centroid would destroy exactly the information this
+   * capture exists to record.
+   *
+   * A tap outside the rope is a six that cleared it, so radius clamps to 1.00.
+   */
+  const pointFromEvent=(e)=>{
+    const svg=svgRef.current;
+    if(!svg)return null;
+    const r=svg.getBoundingClientRect();
+    const t=e.touches?.[0]??e.changedTouches?.[0]??e;
+    // Client pixels → the SVG's own 300x300 user space.
+    const x=((t.clientX-r.left)/r.width)*300-CX;
+    const y=((t.clientY-r.top)/r.height)*300-CY;
+    // Inverse of toXY: x = r·sin(a), y = -r·cos(a).
+    const angle=(Math.atan2(x,-y)*180/Math.PI+360)%360;
+    const radius=Math.min(Math.hypot(x,y)/R_BND,1);
+    return placementFromTap({angle,radius,batHand});
+  };
   const[hov,setHov]=useState(null);
   const segRuns=Array(12).fill(0);
   ballLog.forEach(b=>{if(b.seg!=null)segRuns[b.seg]+=(b.value||0);});
@@ -178,7 +212,12 @@ function WagonWheel({ballLog=[],selSeg,onSel,viewMode,onViewMode,hidden,onToggle
     if(hv)return"rgba(14,165,233,.12)";
     return"transparent";
   };
-  const visLines=ballLog.filter(b=>b.seg!=null&&!hidden.has(lineKey(b)));
+  // A ball with neither a captured point nor a sector has no position at all
+  // — a leave, a ball that hit the pad — and belongs on no wheel.
+  const visLines=ballLog.filter(b=>(b.seg!=null||b.theta!=null)&&!hidden.has(lineKey(b)));
+  // How many of these were captured as points rather than sectors. Shown
+  // rather than hidden: a wheel mixing eras should say so.
+  const pointCount=visLines.filter(b=>b.placementSource==="point").length;
   return (
     <div style={{display:"flex",flexDirection:"column",gap:"11px"}}>
       <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
@@ -196,7 +235,11 @@ function WagonWheel({ballLog=[],selSeg,onSel,viewMode,onViewMode,hidden,onToggle
         </div>
       </div>
       <div style={{width:"100%",maxWidth:"272px",margin:"0 auto",aspectRatio:"1",userSelect:"none"}}>
-        <svg viewBox="0 0 300 300" style={{width:"100%",height:"100%",display:"block"}}>
+        <svg ref={svgRef} viewBox="0 0 300 300" style={{width:"100%",height:"100%",display:"block"}}
+          role={onPlace?"application":"img"}
+          aria-label={onPlace
+            ?"Field. Tap where the ball went."
+            :`Wagon wheel, ${visLines.length} balls${pointCount?`, ${pointCount} placed exactly`:""}`}>
           <defs>
             <radialGradient id="gOuter" cx="50%" cy="50%" r="50%">
               <stop offset="0%" stopColor="#0e1a10"/><stop offset="100%" stopColor="#060c08"/>
@@ -213,21 +256,22 @@ function WagonWheel({ballLog=[],selSeg,onSel,viewMode,onViewMode,hidden,onToggle
             const fill=viewMode==="heatmap"?(heatColor(segRuns[seg.id],maxR)||`${D.amber}0d`):sel?`rgba(79,70,229,.42)`:hv?`rgba(14,165,233,.16)`:`${D.amber}0c`;
             const stroke=sel?`rgba(79,70,229,.7)`:hv?`rgba(14,165,233,.4)`:`${D.amber}25`;
             return(<path key={`b${seg.id}`} d={ringArc(seg.angle,R_BND,R_MID)} fill={fill} stroke={stroke}
-              strokeWidth={sel?"1.5":"0.5"} style={{cursor:"pointer"}}
+              strokeWidth={sel?"1.5":"0.5"} style={{cursor:onPlace?"crosshair":"pointer",pointerEvents:onPlace?"none":"auto"}}
               onClick={()=>onSel(sel&&selSeg?.zone==="boundary"?null:{seg:seg.id,zone:"boundary"})}
               onMouseEnter={()=>setHov({seg:seg.id})} onMouseLeave={()=>setHov(null)}/>);
           })}
           <circle cx={CX} cy={CY} r={R_MID} fill="none" stroke={`${D.amber}50`} strokeWidth="1.5" strokeDasharray="4 3"/>
           {SEGS.map(seg=>(
             <path key={`o${seg.id}`} d={ringArc(seg.angle,R_MID,R_IN)} fill={zoneFill(seg.id,"outer")}
-              stroke={isSel(seg.id)?"rgba(79,70,229,.35)":"rgba(255,255,255,.04)"} strokeWidth="0.4" style={{cursor:"pointer"}}
+              stroke={isSel(seg.id)?"rgba(79,70,229,.35)":"rgba(255,255,255,.04)"} strokeWidth="0.4" style={{cursor:onPlace?"crosshair":"pointer",pointerEvents:onPlace?"none":"auto"}}
               onClick={()=>onSel(isSel(seg.id)&&selSeg?.zone==="outer"?null:{seg:seg.id,zone:"outer"})}
               onMouseEnter={()=>setHov({seg:seg.id})} onMouseLeave={()=>setHov(null)}/>
           ))}
           <circle cx={CX} cy={CY} r={R_IN} fill="url(#gInner)" stroke="rgba(255,255,255,.1)" strokeWidth="1" strokeDasharray="3 4"/>
           {SEGS.map(seg=>(
             <path key={`i${seg.id}`} d={pieSlice(seg.angle,R_IN)} fill={zoneFill(seg.id,"inner")}
-              stroke={isSel(seg.id)?"rgba(79,70,229,.25)":"rgba(255,255,255,.03)"} strokeWidth="0.4" style={{cursor:"pointer"}}
+              stroke={isSel(seg.id)?"rgba(79,70,229,.25)":"rgba(255,255,255,.03)"} strokeWidth="0.4"
+              style={{cursor:onPlace?"crosshair":"pointer",pointerEvents:onPlace?"none":"auto"}}
               onClick={()=>onSel(isSel(seg.id)&&selSeg?.zone==="inner"?null:{seg:seg.id,zone:"inner"})}
               onMouseEnter={()=>setHov({seg:seg.id})} onMouseLeave={()=>setHov(null)}/>
           ))}
@@ -235,18 +279,43 @@ function WagonWheel({ballLog=[],selSeg,onSel,viewMode,onViewMode,hidden,onToggle
             <line key={`sp${seg.id}`} x1={CX} y1={CY} x2={xo} y2={yo} stroke="rgba(255,255,255,.05)" strokeWidth="0.5" style={{pointerEvents:"none"}}/>
           );})}
           {viewMode==="wagon"&&visLines.map((b,i)=>{
-            const[ex,ey]=wagEnd(SEGS[b.seg].angle,b);
+            const{xy:[ex,ey],synthetic}=wagEnd(ballAngle(b,batHand),b);
             const col=LK_COLS[lineKey(b)];
             const w=b.value===6?2.5:b.value===4?2:1.2;
+            // Sector-era spokes are dashed. Their length is the band the ball
+            // was recorded in, not a distance anyone measured, and a solid
+            // line beside a captured one would claim otherwise.
             return(<line key={`wl${i}`} x1={CX} y1={CY} x2={ex} y2={ey} stroke={col} strokeWidth={w}
+              strokeDasharray={synthetic?"2 2":undefined}
               opacity={b.value===0?0.25:0.72} strokeLinecap="round" className="wagonLine" style={{animationDelay:`${i*.02}s`}}/>);
           })}
           {viewMode==="wagon"&&visLines.filter(b=>b.value>=4).map((b,i)=>{
-            const[ex,ey]=wagEnd(SEGS[b.seg].angle,b);
+            const{xy:[ex,ey]}=wagEnd(ballAngle(b,batHand),b);
             const col=LK_COLS[lineKey(b)];
             return(<circle key={`dt${i}`} cx={ex} cy={ey} r={b.value===6?5.5:4} fill={col} opacity="0.95"
               style={{pointerEvents:"none",filter:b.value===6?"url(#glow)":"none"}}/>);
           })}
+          {/* The capture surface. One transparent circle covering the whole
+              field including beyond the rope, so a tap anywhere lands — the
+              sector paths underneath keep their hover and selection behaviour
+              only when point capture is off. */}
+          {onPlace&&(
+            <circle cx={CX} cy={CY} r={150} fill="transparent" style={{cursor:"crosshair"}}
+              onPointerDown={(e)=>{e.currentTarget.setPointerCapture?.(e.pointerId);setPlacing(pointFromEvent(e));}}
+              onPointerMove={(e)=>{if(placing)setPlacing(pointFromEvent(e));}}
+              onPointerUp={(e)=>{const p=pointFromEvent(e)??placing;setPlacing(null);if(p)onPlace(p);}}
+              onPointerCancel={()=>setPlacing(null)}/>
+          )}
+          {/* The live point, and the line to it. Shown before commit so the
+              scorer can see what they are about to record and drag to refine. */}
+          {placing&&(
+            <g style={{pointerEvents:"none"}}>
+              <line x1={CX} y1={CY} {...(()=>{const[x,y]=toXY(screenAngle(placing.theta,batHand),placing.radius*R_BND);return{x2:x,y2:y};})()}
+                stroke={D.sky} strokeWidth="1.6" strokeLinecap="round" opacity="0.85"/>
+              <circle {...(()=>{const[x,y]=toXY(screenAngle(placing.theta,batHand),placing.radius*R_BND);return{cx:x,cy:y};})()}
+                r="5" fill={D.sky} opacity="0.95"/>
+            </g>
+          )}
           <rect x={CX-4.5} y={CY-R_PITCH} width={9} height={R_PITCH*2} rx="2.5" fill="#7c6e45" stroke={`${D.amber}60`} strokeWidth="0.7" style={{pointerEvents:"none"}}/>
           <line x1={CX-6} y1={CY-R_PITCH+3} x2={CX+6} y2={CY-R_PITCH+3} stroke="rgba(255,255,255,.55)" strokeWidth="0.8" style={{pointerEvents:"none"}}/>
           <line x1={CX-6} y1={CY+R_PITCH-3} x2={CX+6} y2={CY+R_PITCH-3} stroke="rgba(255,255,255,.55)" strokeWidth="0.8" style={{pointerEvents:"none"}}/>

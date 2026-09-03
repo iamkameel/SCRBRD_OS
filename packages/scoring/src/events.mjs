@@ -151,6 +151,19 @@ export const bowler = (o) => ({
  * and added during replay — never baked into `value`, so that the penalty can
  * never be double-counted by a caller that already added it.
  */
+/**
+ * A delivery.
+ *
+ * Placement (theta / radius / placementSource / …) is documented in
+ * placement.mjs and is built by placementFromTap() or noPlacement() rather
+ * than assembled here — the derived fields have to stay in step with the
+ * captured ones, and one constructor that can do it wrong is one too many.
+ *
+ * Defaults are the sector era: no point, no source. A ball that carries
+ * `seg`/`zone` but no `theta` is a sector-era ball and is excluded from
+ * anything needing a position. It is NEVER upgraded by synthesising a point
+ * from its sector.
+ */
 export const ball = (o) => ({
   ...base(KIND.BALL, o),
   // `type` is the delivery kind (run | W | Wd | Nb | B | LB). It is named to
@@ -168,6 +181,16 @@ export const ball = (o) => ({
   fielder: o.fielder ?? null,
   dismissed: o.dismissed ?? null, // player id; defaults to the striker at replay
   freeHit: o.freeHit ?? false,
+
+  // ── Shot placement ──
+  // Batter-relative polar coordinates. See placement.mjs for the frame and
+  // for why a point is never reconstructed from a sector.
+  theta: o.theta ?? null,                    // 0-359, leg-side positive from straight
+  radius: o.radius ?? null,                  // 0.00-1.00, fraction of the boundary
+  placementSource: o.placementSource ?? null, // "point" | "sector" | null
+  placementNull: o.placementNull ?? null,     // why there is no placement
+  closePosition: o.closePosition ?? null,     // set only inside the catching ring
+  captureProfile: o.captureProfile ?? null,   // "full" | "standard" | "quick"
 });
 
 export const penalty = (o) => ({
@@ -205,7 +228,19 @@ export const inningsEnd = (o) => ({
 });
 
 // ── Wire translation (client camelCase ↔ ball_event snake_case) ──
+// Fields that have a column of their own on ball_event. Placement joins them
+// because the query layer has to filter on placement_source — a heat map that
+// reads it out of a jsonb payload cannot be indexed, and a rule enforced by
+// convention in report code is not enforced.
 const ROW_SCALARS = ["shot", "seg", "zone", "dismissal"];
+const ROW_SNAKE = {
+  theta: "theta",
+  radius: "radius",
+  placementSource: "placement_source",
+  placementNull: "placement_null",
+  closePosition: "close_position",
+  captureProfile: "capture_profile",
+};
 
 /**
  * Is this player reference something the database can store in a uuid column?
@@ -243,11 +278,13 @@ export function toRow(ev) {
     payload: {},
   };
   for (const k of ROW_SCALARS) if (ev[k] !== undefined) row[k] = ev[k];
+  for (const [k, col] of Object.entries(ROW_SNAKE)) if (ev[k] !== undefined) row[col] = ev[k];
   // Everything the table has no column for rides in `payload` untouched, so
   // adding a captured dimension never needs a migration. A player reference
   // that is not a real id is carried here too — see asPlayerId — so nothing is
   // lost when the column cannot hold it.
-  const MAPPED = ["kind", "innings", "clientTs", "type", "value", "seq", ...ROW_SCALARS];
+  const MAPPED = ["kind", "innings", "clientTs", "type", "value", "seq",
+                  ...ROW_SCALARS, ...Object.keys(ROW_SNAKE)];
   for (const [k, v] of Object.entries(ev)) {
     if (MAPPED.includes(k)) continue;
     if (k === "striker" && row.striker_id) continue;
@@ -277,6 +314,10 @@ export function fromRow(row) {
     ...(row.non_striker_id != null ? { nonStriker: row.non_striker_id } : {}),
     ...(row.bowler_id != null ? { bowler: row.bowler_id } : {}),
     ...Object.fromEntries(ROW_SCALARS.filter((k) => row[k] != null).map((k) => [k, row[k]])),
+    ...Object.fromEntries(Object.entries(ROW_SNAKE)
+      .filter(([, col]) => row[col] != null)
+      // numeric(3,2) comes back from pg as a string; radius is a number.
+      .map(([k, col]) => [k, k === "radius" ? Number(row[col]) : row[col]])),
     ...(row.payload ?? {}),
   };
 }
