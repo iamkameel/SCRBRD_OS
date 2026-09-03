@@ -356,12 +356,23 @@ BEGIN
   IF s.state <> 'verifying' OR s.claimant_device IS DISTINCT FROM p_device
     THEN RETURN QUERY SELECT false,'not_pending',NULL::int,NULL::int,NULL::int,NULL::int; RETURN; END IF;
 
+  -- A voided ball is not part of the match. Undo on a synced event appends a
+  -- `void` naming it rather than deleting it — the log is append-only — so the
+  -- row is still here and must be excluded from the count, along with the void
+  -- itself. Without this, an over containing one correction makes the handover
+  -- IMPOSSIBLE: the incoming device replays the log correctly, the server
+  -- counts one ball more, and every verification attempt is a mismatch.
   SELECT coalesce(sum(CASE WHEN ball_type IN ('Wd','Nb') THEN 1 + coalesce(value,0)
                            ELSE coalesce(value,0) END),0),
          coalesce(sum(CASE WHEN ball_type = 'W' THEN 1 ELSE 0 END),0),
          coalesce(sum(CASE WHEN kind='ball' AND ball_type NOT IN ('Wd','Nb') THEN 1 ELSE 0 END),0)
     INTO t_runs, t_wkts, t_balls
-  FROM ball_event WHERE match_id = p_match;
+  FROM ball_event
+  WHERE match_id = p_match
+    AND kind <> 'void'
+    AND idempotency_key NOT IN (
+      SELECT v.payload->>'target' FROM ball_event v
+       WHERE v.match_id = p_match AND v.kind = 'void' AND v.payload->>'target' IS NOT NULL);
 
   IF (p_runs, p_wickets, p_balls) IS DISTINCT FROM (t_runs, t_wkts, t_balls) THEN
     INSERT INTO scoring_audit (match_id, school_id, event, actor_id, detail)

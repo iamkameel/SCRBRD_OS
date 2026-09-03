@@ -34,7 +34,8 @@
  */
 import { spawn } from "node:child_process";
 import {
-  deriveInnings, fromRow, inningsStart, batters, bowler, ball, BALL_TYPE, newEventId,
+  deriveInnings, fromRow, inningsStart, batters, bowler, ball, BALL_TYPE,
+  newEventId, undoLast,
 } from "@scrbrd/scoring";
 
 const PORT = 8792;
@@ -129,6 +130,28 @@ try {
   ok(`device A shows ${scoreA.runs}/${scoreA.wickets} off ${scoreA.balls}`,
      scoreA.runs === 13 && scoreA.wickets === 0 && scoreA.balls === 6);
 
+  // ── A correction, before the handover ──────────────────────────
+  group("An over with a correction in it");
+  // The case that makes a handover impossible if anything counts the log
+  // differently. Undo on a SYNCED ball appends a `void` naming it — the log is
+  // append-only, so the ball is still there — and every party that folds the
+  // log has to agree to skip it: the outgoing device, the incoming device, and
+  // the SQL that checks the confirmation. Miss it in one place and a corrected
+  // over can never be handed over, with both sides certain they are right.
+  const mistake = ball({ type: BALL_TYPE.RUN, value: 4 });
+  await post(tokenA, DEV_A, epochA, [mistake], 10);
+  const withMistake = deriveInnings((await readLog(tokenA)).map(fromRow), {});
+  ok("a wrong ball goes in like any other", withMistake.runs === 17);
+
+  const corrected = undoLast(
+    (await readLog(tokenA)).map(fromRow), { isSynced: () => true });
+  ok("undoing it produces a void, not a deletion", corrected.action === "void");
+  await post(tokenA, DEV_A, epochA, [corrected.events.at(-1)], 11);
+
+  const afterVoid = deriveInnings((await readLog(tokenA)).map(fromRow), {});
+  ok("the correction takes the runs back off", afterVoid.runs === 13);
+  ok("...without removing anything from the log", (await readLog(tokenA)).length === 11);
+
   // ── Arming: the unsynced gate ──────────────────────────────────
   group("Arming the handover");
   // The gate that matters. Those balls exist on one phone; once the token
@@ -181,7 +204,9 @@ try {
     method: "POST", token: tokenB, body: { device: DEV_B, code: arm.body.code },
   });
   ok("device B claims with the code", claimB.body?.ok === true);
-  ok("...and is handed the whole log to rebuild from", (claimB.body?.events || []).length === 9);
+  ok("...and is handed the whole log to rebuild from", (claimB.body?.events || []).length === 11);
+  ok("...including the correction, so it derives the same score",
+     deriveInnings((claimB.body.events || []).map(fromRow), {}).runs === 13);
 
   // Scoring is LOCKED between claim and verify: neither device may write.
   const lockedA = await post(tokenA, DEV_A, epochA, [ball({ type: BALL_TYPE.RUN, value: 4 })], 20);
@@ -197,7 +222,9 @@ try {
   });
   ok("a disagreement about the score stops the handover",
      bad.body?.ok === false && bad.body?.reason === "verify_mismatch");
-  ok("...and the server says what it expected", bad.body?.exp_runs === 13);
+  // The proof the SQL honours the void too: it expects 13, not the 17 it would
+  // report if it counted the ball that was taken back.
+  ok("the server's own count excludes the voided ball", bad.body?.exp_runs === 13);
 
   // Device B replays the log it was handed and states what it computed.
   const rebuilt = deriveInnings((claimB.body.events || []).map(fromRow), {});
@@ -226,13 +253,13 @@ try {
   ok("device B scores on", contB.body?.accepted?.length === 2);
 
   const finalLog = await readLog(tokenB);
-  ok("one continuous log, not two", finalLog.length === 11);
+  ok("one continuous log, not two", finalLog.length === 13);
   ok("seq stayed contiguous across the handover", finalLog.every((r, i) => r.seq === i + 1));
   ok("the log records which device entered each ball",
-     finalLog.filter((r) => r.device_id === DEV_A).length === 9 &&
+     finalLog.filter((r) => r.device_id === DEV_A).length === 11 &&
      finalLog.filter((r) => r.device_id === DEV_B).length === 2);
   ok("...and which epoch it was entered under",
-     finalLog.filter((r) => r.epoch === epochA).length === 9 &&
+     finalLog.filter((r) => r.epoch === epochA).length === 11 &&
      finalLog.filter((r) => r.epoch === epochB).length === 2);
 
   const final = deriveInnings(finalLog.map(fromRow), {});
@@ -249,7 +276,7 @@ try {
   // Device A reading the match still sees everything — losing the token is
   // not losing access to the fixture.
   const aStillReads = await readLog(tokenA);
-  ok("the outgoing scorer can still follow the match", aStillReads.length === 11);
+  ok("the outgoing scorer can still follow the match", aStillReads.length === 13);
 } catch (e) {
   ok(`the handover threw: ${e.message?.slice(0, 100)}`, false);
   console.log(e.stack?.split("\n").slice(0, 4).join("\n"));

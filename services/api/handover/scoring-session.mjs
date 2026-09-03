@@ -15,6 +15,8 @@
  *  Both are required to write a ball.
  */
 
+import { deriveInnings } from "@scrbrd/scoring";
+
 // ─────────────────────────────────────────────────────────
 //  Constants
 // ─────────────────────────────────────────────────────────
@@ -296,35 +298,36 @@ export class ScoringQueue {
 // ─────────────────────────────────────────────────────────
 //  Deterministic replay — derived state, never stored
 // ─────────────────────────────────────────────────────────
+/**
+ * The handover confirmation state, folded from the log.
+ *
+ * This used to be its own implementation of the Laws — a second fold beside
+ * deriveInnings(), counting runs and rotating strike in its own way. It was a
+ * cut-down copy and it had already fallen behind: it knew nothing about
+ * penalty runs, nothing about a retirement, and nothing about a `void`. That
+ * last one mattered. An over containing one correction replayed to a different
+ * total here than in the scorer, which is precisely the disagreement the
+ * handover handshake exists to detect — so a corrected over would have made a
+ * handover impossible, with both sides certain they were right.
+ *
+ * There is one fold now. This is a projection of it.
+ */
 export function replayEvents(events) {
-  const st = {
-    runs: 0, wickets: 0, balls: 0,
-    striker: null, nonStriker: null, bowler: null,
-    lastSeq: 0, ballCount: 0,
+  const ordered = [...events].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));
+  // Envelopes carry the event in `payload` and its identity in
+  // `idempotencyKey`; that identity is what a void names, so it has to travel
+  // into the fold or the correction matches nothing.
+  const inn = deriveInnings(ordered.map((e) => ({
+    ...(e.payload ?? e),
+    ...(e.idempotencyKey != null ? { id: e.idempotencyKey } : {}),
+    seq: e.seq,
+  })));
+  return {
+    runs: inn.runs, wickets: inn.wickets, balls: inn.balls,
+    striker: inn.striker, nonStriker: inn.nonStriker, bowler: inn.bowler,
+    lastSeq: ordered.length ? (ordered[ordered.length - 1].seq ?? 0) : 0,
+    ballCount: inn.ballLog.length,
   };
-  const ordered = [...events].sort((a, b) => a.seq - b.seq);
-  for (const e of ordered) {
-    const p = e.payload || {};
-    st.lastSeq = e.seq;
-    switch (p.kind) {
-      case "ball": {
-        const legal = p.type !== "Wd" && p.type !== "Nb";
-        const extra = legal ? 0 : 1;
-        st.runs += (p.value || 0) + extra;
-        if (legal) st.balls += 1;
-        if (p.type === "W") st.wickets += 1;
-        st.ballCount += 1;
-        // strike rotation: odd runs, and at over end
-        if (legal && (p.value || 0) % 2 === 1) [st.striker, st.nonStriker] = [st.nonStriker, st.striker];
-        if (legal && st.balls % 6 === 0)       [st.striker, st.nonStriker] = [st.nonStriker, st.striker];
-        break;
-      }
-      case "batters": st.striker = p.striker; st.nonStriker = p.nonStriker; break;
-      case "bowler":  st.bowler = p.bowler; break;
-      default: break;
-    }
-  }
-  return st;
 }
 
 // ─────────────────────────────────────────────────────────
