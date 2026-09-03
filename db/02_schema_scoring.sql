@@ -322,6 +322,13 @@ CREATE OR REPLACE FUNCTION scoring_arm_handover(
 RETURNS TABLE (ok boolean, reason text, code text) AS $$
 DECLARE s scoring_session%ROWTYPE; v_code text;
 BEGIN
+  -- Holding the token is not the same as still being allowed to score. An
+  -- assignment revoked mid-match takes effect on the next statement — that is
+  -- the property the SECURITY DEFINER lookup was chosen for — and without this
+  -- check a scorer whose access had just been withdrawn could still pass the
+  -- token to someone of their choosing. Capability first, then the token.
+  IF NOT app_can('scoring.edit', match_school(p_match), match_team(p_match), NULL, p_match)
+    THEN RETURN QUERY SELECT false,'no_capability',NULL::text; RETURN; END IF;
   SELECT * INTO s FROM scoring_session WHERE match_id = p_match FOR UPDATE;
   IF s.holder_device IS DISTINCT FROM p_device OR s.holder_user_id <> app_user_id()
     THEN RETURN QUERY SELECT false,'not_token_holder',NULL::text; RETURN; END IF;

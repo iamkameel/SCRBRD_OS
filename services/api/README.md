@@ -97,8 +97,11 @@ No dependencies to install — pure Node ESM.
      network down, reconnect, the log reconciles, the scorecard is correct, a
      retried batch is deduplicated, and a stale epoch is quarantined rather
      than merged.
-  4. ⬜ **A live two-device handover.** Not started; the pieces it needs are
-     listed below.
+  4. ✅ **A live two-device handover** — `tools/smoke-handover.mjs`: device A
+     scores an over and arms the handover, device B claims it with the code,
+     replays the log it was handed, states the score back, and takes over. The
+     epoch bumps, device A's next ball quarantines rather than merging, and
+     what remains is one continuous log with one scorecard.
 
 Gate 3 changed what the other three mean. Every suite above passed while the
 API connected as the schema owner — and row-level security does not apply to a
@@ -109,9 +112,30 @@ request through a real connection. The fix is in `db/06_app_role.sql` and in
 `assertRlsApplies()`, which refuses to start the server on a connection RLS
 cannot restrain.
 
-### Before gate 4
+### The handover, and what each step is for
 
-**The undo/sync boundary is now enforced.** Undo has two correct
+    ARM     the outgoing device offers the token and states how many balls it
+            has NOT yet sent. A handover with unsynced work is refused: those
+            balls exist on one phone, and once the token moves there is no way
+            to merge them that anyone could adjudicate.
+
+    CLAIM   the incoming device presents a code shown on the outgoing screen.
+            That is a human confirming they are standing next to each other,
+            not a security boundary — the capability check is separate and
+            comes first, and the right code does not help someone who may not
+            score. Scoring stays LOCKED here; neither device may write.
+
+    VERIFY  the incoming device replays the log it was handed and states the
+            score it computed. The server checks that against its OWN replay
+            of ball_event, never against a stored total. Agreement is what
+            proves both devices are looking at the same match; disagreement
+            stops the handover and is written to the audit trail.
+
+Only then does the epoch bump, and that is what makes the old device's
+in-flight balls quarantine instead of merging into a match it is no longer
+scoring.
+
+The **undo/sync boundary** underneath it is enforced. Undo has two correct
 implementations and which applies depends on something the scorer cannot see:
 
   - not synced → drop the event and re-derive. Exact, unlimited in depth, and
@@ -122,20 +146,17 @@ implementations and which applies depends on something the scorer cannot see:
     be evidence rather than an erasure.
 
 The rule lives in `packages/scoring/src/undo.mjs`, not in the scoring screen,
-because it will apply identically on the incoming device during a handover and
-two implementations of it would be one too many. Proven in the scoring suite,
-in the browser (`smoke-scorer`, the truncating path) and against the live
-server (`smoke-sync`, the void path — the log grows by one, the voided ball is
-still there, and replay gives the score the scorer sees).
+because it applies identically on the incoming device.
 
-What gate 4 still needs:
+### Still to wire: the browser
 
-  - the handover routes mounted on `server.mjs` (written and proven against
-    fakes; `arm → claim → verify → force-release`),
-  - a client sync path — the browser scorer stamps every event with the id the
-    server dedupes on, but does not yet POST them; `SyncEngine` and the
-    transport exist and are exercised by `smoke-sync` from Node,
-  - a second browser context in the smoke harness to actually hand over.
+Every gate above is proven, but gates 3 and 4 drive the API from Node. The
+browser scorer stamps every event with the id the server dedupes on and
+enforces the undo boundary locally, but does not yet POST them: it has no login
+flow and no `SyncEngine` instance. That is the remaining work to make the
+proven paths reachable from a phone, and it is wiring rather than design —
+`SyncEngine`, the transport and the whole protocol are exercised end to end by
+`smoke-sync` and `smoke-handover`.
 
 ### Before launch (flagged, not built)
 

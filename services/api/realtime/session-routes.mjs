@@ -11,6 +11,7 @@
  * scoring-session.test.mjs. This just exposes it and keeps the hub in sync.
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
+import { EVENT_COLUMNS } from "../write/events-api.mjs";
 
 async function callFn(pool, secret, bearer, sql, params) {
   return runAsPrincipal(pool, secret, bearer, async client => {
@@ -77,8 +78,13 @@ export function sessionRoutes({ pool, secret, hub }) {
           `select * from scoring_claim_handover($1,$2,$3)`, [id, req.body.device, req.body.code]);
         // On success, also return the event log so the incoming device rebuilds state.
         if (r.ok) {
+          // The SAME columns the sync path returns, not a shorter list. The
+          // incoming device rebuilds the innings from this and then states the
+          // score back for verification — hand it four columns and fromRow()
+          // produces events with no kind, no runs and no batter, so its replay
+          // says 0/0 and the handover fails verification every time.
           const evs = await runAsPrincipal(pool, secret, b, async client =>
-            client.query(`select seq, epoch, innings, payload from ball_event where match_id = $1 order by seq`, [id]));
+            client.query(`select ${EVENT_COLUMNS} from ball_event where match_id = $1 order by seq`, [id]));
           r.events = evs.rows;
           await broadcastState(pool, secret, b, hub, id);
         }

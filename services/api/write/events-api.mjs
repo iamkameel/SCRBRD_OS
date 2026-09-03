@@ -109,12 +109,15 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
  * @scrbrd/scoring — the inverse of the mapping used on the way in, and the
  * reason a log that made the round trip replays to the same scorecard.
  */
+export const EVENT_COLUMNS = `
+  seq, epoch, innings, kind, ball_type, value, shot, seg, zone,
+  striker_id, non_striker_id, bowler_id, dismissal, idempotency_key,
+  scorer_user_id, device_id, client_ts, server_ts, payload`;
+
 export async function readEvents(pool, secret, bearer, matchId, sinceSeq = 0) {
   return runAsPrincipal(pool, secret, bearer, async client => {
     const { rows } = await client.query(
-      `select seq, epoch, innings, kind, ball_type, value, shot, seg, zone,
-              striker_id, non_striker_id, bowler_id, dismissal, idempotency_key,
-              scorer_user_id, device_id, client_ts, server_ts, payload
+      `select ${EVENT_COLUMNS}
          from ball_event
         where match_id = $1 and seq > $2
         order by seq`, [matchId, sinceSeq]);

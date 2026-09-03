@@ -15,15 +15,13 @@
  *   GET  /api/read/:resource                      the governed read path
  *   POST /api/matches/:id/session/claim           take the scoring token
  *   POST /api/matches/:id/session/heartbeat       keep the lease alive
+ *   POST /api/matches/:id/session/handover/arm    offer the token (needs a synced log)
+ *   POST /api/matches/:id/session/handover/claim  the incoming device, with the code
+ *   POST /api/matches/:id/session/handover/verify confirm the score, then take over
+ *   POST /api/matches/:id/session/force-release   recover a dead device (supervisory)
  *   POST /api/matches/:id/events                  append balls (the write path)
  *   GET  /api/matches/:id/events?since=           incremental sync
  *   POST /api/ai/statguru, /api/ai/commentary
- *
- * Handover (arm → claim → verify → force-release) is written and proven but is
- * NOT mounted here yet: two devices scoring one match needs the undo/sync
- * boundary enforced first — once the server has an event, a correction must be
- * a compensating event rather than a rewrite of the log. See
- * apps/web/src/lib/persist.js.
  *
  *   node services/api/server.mjs        # PORT=8787 by default
  */
@@ -175,6 +173,13 @@ const EXACT = {
 const MATCH_ROUTES = [
   [/^\/api\/matches\/([^/]+)\/session\/claim$/,     "POST", session.claim],
   [/^\/api\/matches\/([^/]+)\/session\/heartbeat$/, "POST", session.heartbeat],
+  // Handover: arm → claim → verify, plus force-release for a dead device.
+  // Every transition is a SECURITY DEFINER function in the database; these
+  // handlers run it under the caller's identity and broadcast the new state.
+  [/^\/api\/matches\/([^/]+)\/session\/handover\/arm$/,     "POST", session.armHandover],
+  [/^\/api\/matches\/([^/]+)\/session\/handover\/claim$/,   "POST", session.claimHandover],
+  [/^\/api\/matches\/([^/]+)\/session\/handover\/verify$/,  "POST", session.verifyTakeover],
+  [/^\/api\/matches\/([^/]+)\/session\/force-release$/,      "POST", session.forceRelease],
   [/^\/api\/matches\/([^/]+)\/events$/,             "POST", events.append],
   [/^\/api\/matches\/([^/]+)\/events$/,             "GET",  events.list],
 ];
@@ -195,7 +200,7 @@ const server = createServer(async (req, res) => {
       auth: DEV && process.env.ALLOW_DEV_LOGIN === "1" ? "dev_login_enabled" : "token_only",
       read: liveResources(),
       write: "mounted",
-      handover: "not_mounted",   // see the file header
+      handover: "mounted",
     });
   }
 
