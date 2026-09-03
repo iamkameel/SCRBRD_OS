@@ -1,22 +1,23 @@
 import { useState } from "react";
 import { D } from "../design/tokens.js";
-import { useLiveRows } from "../lib/live.js";
-import { canScore, scoped, scopedWeather } from "../rbac/index.js";
+import { useLive } from "../lib/live.js";
+import { canScore } from "../rbac/index.js";
 import { SCRBRD } from "../scorer/engine.jsx";
 import { Badge, Btn, Card, Pill, SectionHeader, StatusDot } from "../ui/primitives.jsx";
 import { ScorecardModal, WeatherChip } from "./shared.jsx";
+import { useRows, useWeather } from "../lib/live.js";
 
 function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
-  const COMPETITIONS = scoped("competitions", role);
-  const GROUNDS = scoped("grounds", role);
+  const COMPETITIONS = useRows("competitions", role);
+  const GROUNDS = useRows("grounds", role);
   // Fixtures come from the server when there is one — the same call site,
   // scoped in Postgres rather than in the browser. Falls back to the demo
   // fixtures otherwise, and says which it is showing.
-  const { rows: MATCHES, live: matchesAreLive } = useLiveRows("matches", scoped("matches", role));
-  const STAFF = scoped("staff", role);
-  const WEATHER = scopedWeather(role);
+  const { rows: MATCHES, live: matchesAreLive } = useLive("matches", role);
+  const STAFF = useRows("staff", role);
+  const WEATHER = useWeather(role);
   const [filter, setFilter] = useState("all");
   const [selMatch, setSelMatch] = useState(null);
   const [cardM,    setCardM]    = useState(null);

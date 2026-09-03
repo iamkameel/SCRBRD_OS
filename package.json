@@ -23,7 +23,7 @@
     "check:imports": "node tools/check-imports.mjs",
     "smoke": "node tools/smoke.mjs && node tools/smoke-scorer.mjs && node tools/smoke-persist.mjs && node tools/smoke-a11y.mjs",
     "verify": "pnpm test && pnpm check:imports && pnpm build && pnpm smoke && pnpm smoke:api",
-    "smoke:api": "node tools/migrate.mjs --reset --seed && node tools/smoke-read.mjs && node tools/migrate.mjs --reset --seed && node tools/smoke-sync.mjs && node tools/migrate.mjs --reset --seed && node tools/smoke-handover.mjs && node tools/migrate.mjs --reset --seed && node tools/smoke-browser-sync.mjs"
+    "smoke:api": "node tools/migrate.mjs --reset --seed && node tools/smoke-read.mjs && node tools/migrate.mjs --reset --seed && node tools/smoke-sync.mjs && node tools/migrate.mjs --reset --seed && node tools/smoke-handover.mjs && node tools/migrate.mjs --reset --seed && node tools/smoke-browser-sync.mjs && node tools/migrate.mjs --reset --seed && node tools/smoke-browser-read.mjs"
   },
   "devDependencies": {
     "playwright-core": "^1.62.1",

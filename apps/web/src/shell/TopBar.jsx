@@ -1,13 +1,15 @@
-import { scoped } from "../rbac/index.js";
 import { useState, useEffect } from "react";
 import { ROLES } from "../design/roles.js";
 import { D } from "../design/tokens.js";
 import { GlobalSearch } from "./GlobalSearch.jsx";
+import { useRows } from "../lib/live.js";
 
 function TopBar({ role, onRoleChange, onNav, userName }) {
-  // Read through the choke point: row-scoped and column-masked for this
-  // principal. Importing the raw constant here would bypass both.
-  const NOTIFICATIONS = scoped("notifications", role);
+  // The unread badge is built from the notices the SERVER agreed to send.
+  // Counting client-side over rows the browser filtered would put a number in
+  // the chrome that no policy ever produced — and a count discloses as surely
+  // as a list does.
+  const NOTIFICATIONS = useRows("notifications", role);
   const [roleOpen, setRoleOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const unread = NOTIFICATIONS.filter(n=>!n.read).length;

@@ -86,9 +86,140 @@ export const READ_QUERIES = {
   },
 
   competitions: {
-    text: `select id, name, comp_type, format, age_group, gender, school_id
+    text: `select id, name, comp_type, format, age_group, gender, school_id, season
              from competition
             order by name`,
+  },
+
+  // ── The programme reads ─────────────────────────────────────────
+  // Everything below used to be served from a mock module in the browser,
+  // filtered by a client-side copy of authorize(). None of it had a query
+  // here because none of it had a table. Each one is a decision that has
+  // moved from JavaScript into Postgres.
+
+  // People. Read through the masking views, never the base tables: a coach
+  // reads a colleague's name and title, and their date of birth and home
+  // address come back NULL unless the reader holds player.pii.read in a scope
+  // that covers them. That is evaluated per row, so one query serves a person
+  // whose authority differs between two schools.
+  coaches: {
+    masked: true,
+    text: `select id, school_id, team_code, name, title,
+                  email, phone, born, hometown, address   -- masked per role
+             from coach_masked
+            order by name`,
+  },
+  staff: {
+    masked: true,
+    text: `select id, school_id, name, duty,
+                  email, phone, born, hometown, address   -- masked per role
+             from staff_masked
+            order by name`,
+  },
+
+  // The account directory. This table was one of four sitting with row-level
+  // security switched off — a cross-tenant list of every name and email on the
+  // platform, minors included, to anyone with a login. The policy that governs
+  // it now also lets a person read their own row, which is why the session
+  // route works for someone who holds no user.read at all.
+  users: {
+    text: `select id, school_id, email, name, role, active, last_seen_at, teams
+             from app_user
+            where active
+            order by name`,
+  },
+
+  grounds: {
+    text: `select id, school_id, name, surface
+             from ground
+            order by name`,
+  },
+
+  // Training splits in two, and the split is the security model rather than a
+  // normalisation preference: the SESSION is a noticeboard fact behind
+  // team.read, the REGISTER is a list of named minors behind
+  // player.profile.read. A parent can learn that training moved to 06:30
+  // without being handed every child who was there.
+  training: {
+    text: `select t.id, t.school_id, t.team_code, t.title, t.starts_at,
+                  t.duration_min, t.venue, t.session_type, t.drills, t.notes,
+                  t.cancelled, c.name as coach_name
+             from training_session t
+             left join coach c on c.id = t.coach_id
+            order by t.starts_at`,
+  },
+  training_attendance: {
+    text: `select a.session_id, a.player_id, a.status, p.full_name
+             from training_attendance a
+             join player p on p.id = a.player_id
+            where ($1::uuid is null or a.session_id = $1)
+            order by p.full_name`,
+    // Optional: the whole register this person may see, or one session's.
+    params: q => [q?.sessionId || null],
+  },
+
+  // Development assessments. Governed by player.development.read, which
+  // neither spectator nor guardian holds — a parent reads their child's
+  // profile and availability, and a coaching judgement of their technique is
+  // not a document the platform hands over on its own.
+  skills: {
+    text: `select s.player_id, s.assessed_on, s.category, s.metric, s.score,
+                  p.full_name, p.team_code
+             from player_skill s
+             join player p on p.id = s.player_id
+            order by s.assessed_on desc, p.full_name`,
+  },
+
+  // Notices. The read policy demands news.read AND the capability each row
+  // declares for its own subject matter, in the same scope — so this query
+  // needs no filter of its own beyond ordering, and MUST NOT grow one that
+  // looks like an authorization check. If a row comes back, the database
+  // decided this person may have it.
+  notifications: {
+    text: `select n.id, n.school_id, n.team_code, n.scope_level, n.kind,
+                  n.urgency, n.title, n.body, n.subject_kind, n.subject_id,
+                  n.published_at, n.is_public,
+                  (r.person_id is not null) as read
+             from notification n
+             left join notification_read r
+                    on r.notification_id = n.id and r.person_id = app_user_id()
+            where n.expires_at is null or n.expires_at > now()
+            order by n.published_at desc`,
+  },
+
+  // The league ladder. Readable whole by anyone who can reach the competition,
+  // through the organiser or through any entrant — a log with one row in it is
+  // not a log. Writing a row stays anchored to the entrant's own school.
+  league: {
+    text: `select e.competition_id, e.school_id, e.team_code, e.display_name,
+                  e.played, e.won, e.lost, e.drawn, e.no_result, e.points,
+                  e.net_run_rate
+             from competition_entrant e
+            where ($1::uuid is null or e.competition_id = $1)
+            order by e.points desc, e.net_run_rate desc nulls last, e.display_name`,
+    params: q => [q?.competitionId || null],
+  },
+
+  // Conditions, scoped through the fixture. Nothing here is personal, but a
+  // weather table readable by anyone would quietly answer "does this school
+  // have a fixture on Saturday?" to whoever asked.
+  weather: {
+    text: `select match_id, condition, temp_c, humidity_pct, wind_kph, wind_dir,
+                  uv_index, rain_chance_pct, forecast, playable, observed_at
+             from match_weather`,
+  },
+
+  // The team sheet for a fixture: a roster of identified minors, governed by
+  // player.profile.read rather than fixture.read. The difference is a
+  // spectator, who should see the score without also receiving a list of
+  // children by name and school.
+  match_squad: {
+    text: `select s.match_id, s.player_id, s.side, s.batting_no, p.full_name
+             from match_squad s
+             join player p on p.id = s.player_id
+            where s.match_id = $1
+            order by s.side, s.batting_no nulls last`,
+    params: q => [req(q, "matchId")],
   },
 };
 

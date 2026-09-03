@@ -1,8 +1,9 @@
-import { scoped } from "../rbac/index.js";
+
 import { useState } from "react";
 import { D, px } from "../design/tokens.js";
 import { dateStr, fitnessColor, today } from "../lib/format.js";
 import { Avatar, Badge, Card, ProgressBar, SectionHeader } from "../ui/primitives.jsx";
+import { useRows } from "../lib/live.js";
 
 // ══════════════════════════════════════════════════════
 //  ANALYTICS VIEW  — upgraded
@@ -10,7 +11,7 @@ import { Avatar, Badge, Card, ProgressBar, SectionHeader } from "../ui/primitive
 function AnalyticsView({ role }) {
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
-  const PLAYERS = scoped("players", role);
+  const PLAYERS = useRows("players", role);
   const [teamFilter, setTeamFilter] = useState("U19A");
   const [subView,    setSubView]    = useState("performance");
   const players = PLAYERS.filter(p=>p.team===teamFilter);

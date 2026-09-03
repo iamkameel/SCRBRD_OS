@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { ROLES } from "../design/roles.js";
 import { D } from "../design/tokens.js";
-import { can, scoped } from "../rbac/index.js";
+import { can } from "../rbac/index.js";
+import { useRows } from "../lib/live.js";
 
 // ══════════════════════════════════════════════════════
 //  MANAGEMENT VIEW
@@ -9,9 +10,9 @@ import { can, scoped } from "../rbac/index.js";
 function ManagementView({ role, users, setUsers }) {
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
-  const MATCHES = scoped("matches", role);
-  const PLAYERS = scoped("players", role);
-  const USERS_INITIAL = scoped("users", role);
+  const MATCHES = useRows("matches", role);
+  const PLAYERS = useRows("players", role);
+  const USERS_INITIAL = useRows("users", role);
   const [activeTab, setActiveTab] = useState("users");
   const [editUser,  setEditUser]  = useState(null);   // user obj being edited
   const [addOpen,   setAddOpen]   = useState(false);

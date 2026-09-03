@@ -1,8 +1,9 @@
-import { scoped } from "../rbac/index.js";
+
 import { useState } from "react";
 import { D } from "../design/tokens.js";
 import { dateStr, today } from "../lib/format.js";
 import { Avatar, Badge, Btn, Card, Input, Modal, Pill, SectionHeader, Select } from "../ui/primitives.jsx";
+import { useRows } from "../lib/live.js";
 
 // ══════════════════════════════════════════════════════
 //  TRAINING VIEW
@@ -10,9 +11,9 @@ import { Avatar, Badge, Btn, Card, Input, Modal, Pill, SectionHeader, Select } f
 function TrainingView({ role }) {
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
-  const COACHES = scoped("coaches", role);
-  const PLAYERS = scoped("players", role);
-  const TRAINING_SESSIONS = scoped("training", role);
+  const COACHES = useRows("coaches", role);
+  const PLAYERS = useRows("players", role);
+  const TRAINING_SESSIONS = useRows("training", role);
   const [view, setView] = useState("schedule");
   const [addModal, setAddModal] = useState(false);
   const canEdit = role==="superadmin"||role==="coach";

@@ -1,8 +1,9 @@
-import { scoped, scopedSkills } from "../rbac/index.js";
+
 import { useState } from "react";
 import { D } from "../design/tokens.js";
 import { fitnessColor } from "../lib/format.js";
-import { Avatar, Badge, Btn, Card, RadarChart, SectionHeader } from "../ui/primitives.jsx";
+import { Avatar, Badge, Btn, Card, EmptyState, RadarChart, SectionHeader } from "../ui/primitives.jsx";
+import { useLive, useSkills } from "../lib/live.js";
 
 // ══════════════════════════════════════════════════════
 //  SKILLS MATRIX VIEW
@@ -10,16 +11,27 @@ import { Avatar, Badge, Btn, Card, RadarChart, SectionHeader } from "../ui/primi
 function SkillsView({ role }) {
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
-  const PLAYERS = scoped("players", role);
-  const SKILLS_MATRIX = scopedSkills(role);
-  const [selPlayer, setSelPlayer] = useState(PLAYERS[0]);
+  const { rows: PLAYERS, loading, error } = useLive("players", role);
+  const SKILLS_MATRIX = useSkills(role);
+  // The selected PLAYER ID, not the player row — see FieldsView for the same
+  // change and the same reason: a row captured at first render belongs to a
+  // list that no longer exists once the server answers.
+  const [selId, setSelId]         = useState(null);
   const [category, setCategory]   = useState("batting");
-  const skills = SKILLS_MATRIX[selPlayer.id];
+  const selPlayer = PLAYERS.find(p => p.id === selId) ?? PLAYERS[0];
+  const skills = selPlayer ? SKILLS_MATRIX[selPlayer.id] : null;
   const canEdit = role==="superadmin"||role==="coach";
   const cats = skills ? Object.keys(skills) : [];
   const SKILL_COLORS = { batting:D.sky, bowling:D.violet, fielding:D.emerald, fitness:D.amber };
 
   const progressColorForScore = v => v>=80?D.emerald:v>=60?D.sky:v>=40?D.amber:D.rose;
+
+  if (!selPlayer) return (
+    <div className="os-page">
+      <SectionHeader title="Skills Matrix" sub="Player development tracking & assessment" color={D.violet}/>
+      <EmptyState loading={loading} error={error} icon="◎" message="No players are in scope for you." />
+    </div>
+  );
 
   return (
     <div className="os-page">
@@ -36,7 +48,7 @@ function SkillsView({ role }) {
               const s=SKILLS_MATRIX[p.id];
               const overall=Math.round(Object.values(s).flatMap(c=>Object.values(c)).reduce((a,b)=>a+b,0)/Object.values(s).flatMap(c=>Object.values(c)).length);
               return (
-                <button key={p.id} onClick={()=>setSelPlayer(p)} className="pressBtn" style={{
+                <button key={p.id} onClick={()=>setSelId(p.id)} className="pressBtn" style={{
                   width:"100%",padding:"10px 14px",display:"flex",alignItems:"center",gap:"9px",
                   background:selPlayer.id===p.id?D.violet+"12":"transparent",
                   border:`1px solid ${selPlayer.id===p.id?D.violet+"33":"transparent"}`,

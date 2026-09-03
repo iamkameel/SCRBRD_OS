@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import { askStatGuru } from "../lib/ai.js";
 import { SCHOOLS_REGISTRY } from "../data/institution.js";
-import { scoped } from "../rbac/index.js";
 import { ROLES } from "../design/roles.js";
 import { D } from "../design/tokens.js";
+import { useRows } from "../lib/live.js";
 
 // ══════════════════════════════════════════════════════
 //  TOPBAR + GLOBAL SEARCH
@@ -21,11 +21,12 @@ function GlobalSearch({ role, onNav, onClose }) {
   // app: it matched every player, coach and staff member at every institution
   // regardless of who was searching. Scoped here, so a team coach finds their
   // own squad and a spectator finds nobody.
-  const ALL_PLAYERS   = scoped("players", role);
-  const ALL_MATCHES   = scoped("matches", role);
-  const ALL_COMPS     = scoped("competitions", role);
-  const ALL_STAFF     = scoped("staff", role)
-    .concat(scoped("coaches", role).map(c=>({...c,role:"coach",name:c.name})));
+  const ALL_PLAYERS   = useRows("players", role);
+  const ALL_MATCHES   = useRows("matches", role);
+  const ALL_COMPS     = useRows("competitions", role);
+  const COACH_ROWS    = useRows("coaches", role);
+  const ALL_STAFF     = useRows("staff", role)
+    .concat(COACH_ROWS.map(c=>({...c,role:"coach",name:c.name})));
 
   const results = q.length < 2 ? [] : [
     ...ALL_PLAYERS.filter(p=>p.name.toLowerCase().includes(q.toLowerCase())).slice(0,4).map(p=>({

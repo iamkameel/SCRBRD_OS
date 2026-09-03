@@ -25,6 +25,7 @@
  */
 import { useEffect, useState } from "react";
 import { api, signedIn } from "./api.js";
+import { scoped, scopedSkills, scopedWeather } from "../rbac/index.js";
 
 /** DB fixture status → the vocabulary the views filter on. */
 const MATCH_STATUS = { scheduled: "upcoming", live: "live", complete: "complete", abandoned: "complete" };
@@ -59,10 +60,271 @@ function asMatch(r) {
   };
 }
 
-const ADAPT = { matches: asMatch };
+/**
+ * A person, in the shape the squad and profile screens draw.
+ *
+ * The masked columns arrive as NULL when the reader may not have them, and
+ * that is a decision Postgres already made per row. Nothing here re-checks it
+ * and nothing here supplies a default in their place: `born: null` means "you
+ * may not see this", and turning it into "—" is the view's job, not this
+ * function's. A fallback here would quietly convert a refusal into a value.
+ */
+function asPlayer(r) {
+  return {
+    id: r.id,
+    name: r.full_name,
+    team: r.team_code,
+    school: r.school_id,
+    squadNo: r.squad_no,
+    role: r.playing_role,
+    batHand: r.batting_style,
+    bowlStyle: r.bowling_style,
+    fitness: r.fitness,
+    born: r.born,
+    hometown: r.hometown,
+    houseAtSchool: r.houseatschool,
+    height: r.height,
+    weight: r.weight,
+    guardian: r.guardian,
+    email: r.email,
+    phone: r.phone,
+    // The mock carried avg, sr, wkts, econ, cap and an eight-innings form
+    // array. NONE of those are columns: they are derived from ball_event by
+    // replaying it, which is the whole premise of the schema. They are absent
+    // here rather than zeroed, because a batting average of 0 and an unknown
+    // batting average are different claims and only one of them is true.
+    live: true,
+  };
+}
+
+function asCoach(r) {
+  return { id: r.id, name: r.name, role: r.title, team: r.team_code, school: r.school_id,
+           email: r.email, phone: r.phone, born: r.born, hometown: r.hometown,
+           address: r.address, live: true };
+}
+
+function asStaff(r) {
+  return { id: r.id, name: r.name, role: r.duty, school: r.school_id,
+           email: r.email, phone: r.phone, born: r.born, hometown: r.hometown,
+           address: r.address, live: true };
+}
+
+function asUser(r) {
+  return { id: r.id, name: r.name, email: r.email, role: r.role, school: r.school_id,
+           status: r.active ? "active" : "inactive",
+           lastLogin: r.last_seen_at, teams: r.teams, live: true };
+}
+
+function asGround(r) {
+  return { id: r.id, name: r.name, shortName: r.name, school: r.school_id,
+           type: r.surface, available: true, live: true };
+}
+
+function asTraining(r) {
+  const t = r.starts_at ? new Date(r.starts_at) : null;
+  return {
+    id: r.id,
+    title: r.title,
+    team: r.team_code,
+    school: r.school_id,
+    date: t ? t.toISOString().slice(0, 10) : null,
+    time: t ? t.toISOString().slice(11, 16) : null,
+    duration: r.duration_min,
+    venue: r.venue,
+    coach: r.coach_name,
+    type: r.session_type,
+    drills: r.drills ?? [],
+    notes: r.notes,
+    cancelled: r.cancelled,
+    // The register is a SEPARATE read behind player.profile.read, because it
+    // is a list of named minors and this row is a noticeboard fact. Merging
+    // them here would undo the split the schema exists to make: a parent could
+    // not learn training moved without also receiving every child who was
+    // there. Views that need it read `training_attendance`.
+    attendance: undefined,
+    live: true,
+  };
+}
+
+function asNotification(r) {
+  return {
+    id: r.id, type: r.kind, urgency: r.urgency, title: r.title, body: r.body,
+    time: r.published_at, read: r.read, team: r.team_code, school: r.school_id,
+    isPublic: r.is_public,
+    // The mock carried a `roles: [...]` list, and it was never security — it
+    // was a filter the browser applied to rows it already held. The server
+    // does not send a notice this person may not have, so there is nothing
+    // left to filter and no list to carry.
+    live: true,
+  };
+}
+
+function asLadderRow(r) {
+  return { id: `${r.competition_id}:${r.school_id}:${r.team_code ?? ""}`,
+           name: r.display_name, school: r.school_id, team: r.team_code,
+           played: r.played, wins: r.won, losses: r.lost, draws: r.drawn,
+           noResult: r.no_result, points: r.points, nrr: r.net_run_rate, live: true };
+}
+
+function asCompetition(r) {
+  return { id: r.id, name: r.name, type: r.comp_type, format: r.format,
+           ageGroup: r.age_group, gender: r.gender, season: r.season,
+           school: r.school_id, active: true,
+           // The ladder is its own read (`league`), scoped by participation
+           // rather than by who created the competition row.
+           table: undefined, live: true };
+}
+
+function asWeather(r) {
+  return { matchId: r.match_id, condition: r.condition, tempC: r.temp_c,
+           humidity: r.humidity_pct, windKph: r.wind_kph, windDir: r.wind_dir,
+           uvIndex: r.uv_index, rainChancePct: r.rain_chance_pct,
+           forecast: r.forecast, playable: r.playable, live: true };
+}
+
+function asInjury(r) {
+  return { id: r.id, player: r.player_id, type: r.injury_type, severity: r.severity,
+           dateInj: r.date_injured, rtw: r.rtw_date, phase: r.phase,
+           restricted: r.restricted, notes: r.notes, physio: r.physio, live: true };
+}
+
+function asSkill(r) {
+  return { playerId: r.player_id, name: r.full_name, team: r.team_code,
+           assessedOn: r.assessed_on, category: r.category, metric: r.metric,
+           score: r.score, live: true };
+}
+
+function asAttendance(r) {
+  return { sessionId: r.session_id, playerId: r.player_id, name: r.full_name,
+           status: r.status, live: true };
+}
+
+/**
+ * resource → row adapter. A resource with no entry here is not wired for live
+ * reads, and useLive() says so rather than guessing: an adapter that passed
+ * unknown rows through unchanged would put raw column names in front of a view
+ * expecting the product's vocabulary, and the failure would look like missing
+ * data rather than a missing adapter.
+ */
+const ADAPT = {
+  matches: asMatch,
+  players: asPlayer,
+  coaches: asCoach,
+  profiles: asCoach,
+  staff: asStaff,
+  users: asUser,
+  grounds: asGround,
+  training: asTraining,
+  training_attendance: asAttendance,
+  notifications: asNotification,
+  league: asLadderRow,
+  competitions: asCompetition,
+  weather: asWeather,
+  injuries: asInjury,
+  skills: asSkill,
+};
+
+/** Resources the client knows how to read live. Used by the wiring tests. */
+export function liveResources() { return Object.keys(ADAPT); }
+
+/**
+ * Rows for a resource, from the server when there is one.
+ *
+ * THE RULE THIS ENFORCES
+ * ──────────────────────
+ * When signed in, the mock is never rendered. Not as a fallback, not while
+ * loading, not when the request fails. `scoped()` — which filters mock rows
+ * through a client-side copy of authorize() — is called ONLY when there is no
+ * session, and in that state the app is a demo and says so.
+ *
+ * That is the whole point of this function. A signed-in session that quietly
+ * fell back to client-scoped mock rows on a flaky connection would be showing
+ * a person data that no server ever agreed to give them, in a UI that looks
+ * identical to the real thing. An empty list with an error beside it is a
+ * worse screen and a true one.
+ *
+ * Returns { rows, live, loading, error } so a view can tell the three states
+ * apart. `loading` matters: an empty array during the first fetch is not the
+ * same statement as an empty array after it, and "no fixtures today" is a
+ * claim the UI should only make once the server has actually said so.
+ */
+export function useLive(resource, role) {
+  const demo = !signedIn();
+  const [state, setState] = useState(() =>
+    demo
+      ? { rows: scoped(resource, role), live: false, loading: false, error: null }
+      : { rows: [], live: false, loading: true, error: null });
+
+  useEffect(() => {
+    if (!signedIn()) {
+      setState({ rows: scoped(resource, role), live: false, loading: false, error: null });
+      return;
+    }
+    if (!ADAPT[resource]) {
+      setState({ rows: [], live: false, loading: false, error: "no_adapter" });
+      return;
+    }
+    let cancelled = false;
+    setState((s) => ({ ...s, loading: true }));
+    (async () => {
+      try {
+        const { rows } = await api(`/api/read/${resource}`);
+        if (!cancelled) setState({ rows: rows.map(ADAPT[resource]), live: true, loading: false, error: null });
+      } catch (e) {
+        // Deliberately NOT falling back to mock. See above.
+        if (!cancelled) setState({ rows: [], live: false, loading: false, error: e.code || "unreachable" });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [resource, role]);
+
+  return state;
+}
+
+/**
+ * Skills, in the nested shape the development screens draw:
+ *   { [playerId]: { batting: { technique: 85, … }, bowling: { … } } }
+ *
+ * The table is long-form — one row per player per metric per assessment date —
+ * because a blob cannot be masked, cannot be indexed by metric, and cannot
+ * record WHEN a judgement was made, and the point of a development record is
+ * the trend. The pivot happens here so the views keep the shape they were
+ * written against, and only the most recent assessment of each metric wins.
+ */
+export function useSkills(role) {
+  const { rows, live, loading, error } = useLive("skills", role);
+  const demo = !signedIn();
+  if (demo) return scopedSkills(role);
+  const out = {};
+  const seen = new Set();
+  // Rows arrive newest first (assessed_on desc), so the first one wins.
+  for (const r of rows) {
+    const key = `${r.playerId}:${r.category}:${r.metric}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    (out[r.playerId] ??= {})[r.category] ??= {};
+    out[r.playerId][r.category][r.metric] = r.score;
+  }
+  void live; void loading; void error;
+  return out;
+}
+
+/** Weather, keyed by match id — the shape the fixture screens index into. */
+export function useWeather(role) {
+  const { rows } = useLive("weather", role);
+  if (!signedIn()) return scopedWeather(role);
+  return Object.fromEntries(rows.map((w) => [w.matchId, w]));
+}
+
+/** The common case: just the rows. Views that need the state use useLive(). */
+export function useRows(resource, role) { return useLive(resource, role).rows; }
 
 /**
  * Live rows for a resource, falling back to what was passed in.
+ *
+ * Kept for the Match Centre, which passes its own fallback. New call sites
+ * should use useLive(), which owns the demo/live decision instead of taking a
+ * pre-computed fallback that has already run the client-side filter.
  *
  * Returns `mockRows` immediately so the page paints without waiting, then
  * swaps once the server answers. On failure it keeps the fallback and reports

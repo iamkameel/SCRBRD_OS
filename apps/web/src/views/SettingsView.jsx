@@ -1,10 +1,11 @@
-import { scoped } from "../rbac/index.js";
+
 import { useState } from "react";
 import { SCHOOL } from "../data/institution.js";
 import { ROLES } from "../design/roles.js";
 import { D } from "../design/tokens.js";
 import { SCRBRD } from "../scorer/engine.jsx";
 import { Avatar, Badge, Btn, Card, Input, Modal, SectionHeader, Select } from "../ui/primitives.jsx";
+import { useRows } from "../lib/live.js";
 
 // ══════════════════════════════════════════════════════
 //  SETTINGS VIEW — full user CRUD + RBAC + upgrades
@@ -12,14 +13,18 @@ import { Avatar, Badge, Btn, Card, Input, Modal, SectionHeader, Select } from ".
 function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp }) {
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
-  const COACHES = scoped("coaches", role);
-  const PLAYERS = scoped("players", role);
-  const STAFF = scoped("staff", role);
-  const USERS_INITIAL = scoped("users", role);
+  const COACHES = useRows("coaches", role);
+  const PLAYERS = useRows("players", role);
+  const STAFF = useRows("staff", role);
+  const USERS_INITIAL = useRows("users", role);
   const [tab,       setTab]       = useState("users");
-  const [usersLocal,setUsersLocal]= useState(USERS_INITIAL);
-  // Use lifted state if provided, else local fallback
-  const users    = usersFromApp    || usersLocal;
+  // `useState(USERS_INITIAL)` captured the directory on the first render,
+  // which is now the empty array before the read resolves — the same stale
+  // copy that blanked the notifications feed. Local edits are held separately
+  // so a re-fetch does not discard them.
+  const [usersLocal,setUsersLocal]= useState(null);
+  // Use lifted state if provided, else the server's rows, else local edits.
+  const users    = usersFromApp    || usersLocal || USERS_INITIAL;
   const setUsers = setUsersFromApp || setUsersLocal;
   const [editUser,  setEditUser]  = useState(null);
   const [addUser,   setAddUser]   = useState(false);

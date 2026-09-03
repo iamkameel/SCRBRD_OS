@@ -1,7 +1,8 @@
-import { scoped } from "../rbac/index.js";
+
 import { useState } from "react";
 import { D } from "../design/tokens.js";
-import { Avatar, Badge, Btn, Card, SectionHeader } from "../ui/primitives.jsx";
+import { Avatar, Badge, Btn, Card, EmptyState, SectionHeader } from "../ui/primitives.jsx";
+import { useLive, useRows } from "../lib/live.js";
 
 // ══════════════════════════════════════════════════════
 //  FIELDS VIEW — rich ground & pitch profiles
@@ -9,18 +10,23 @@ import { Avatar, Badge, Btn, Card, SectionHeader } from "../ui/primitives.jsx";
 function FieldsView({ role }) {
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
-  const GROUNDS = scoped("grounds", role);
-  const STAFF = scoped("staff", role);
-  const [selGround, setSelGround] = useState(GROUNDS[0]);
+  const { rows: GROUNDS, loading, error } = useLive("grounds", role);
+  const STAFF = useRows("staff", role);
+  // Hold the selected ID, not the row. Rows now arrive from the server, so
+  // seeding state with GROUNDS[0] captured an empty list on first render and
+  // then read `.name` off undefined the moment the fetch resolved. An id
+  // survives the list being replaced; a row object does not.
+  const [selId, setSelId]         = useState(null);
   const [selPitch,  setSelPitch]  = useState(0);
   const [tab, setTab]             = useState("overview");
   const canEdit = role==="superadmin"||role==="schooladmin"||role==="groundskeeper";
-  const gk = selGround.groundskeeper ? STAFF.find(s=>s.id===selGround.groundskeeper) : null;
+  const selGround = GROUNDS.find(g => g.id === selId) ?? GROUNDS[0];
+  const gk = selGround?.groundskeeper ? STAFF.find(s=>s.id===selGround.groundskeeper) : null;
 
   const condColor = c => c==="Excellent"||c==="Match-ready"?"emerald":c==="Good"?"sky":c==="Fair"||c==="Moderate"?"amber":"rose";
   const condC     = c => D[condColor(c)] || D.textMuted;
 
-  const pitch = selGround.pitches?.[selPitch];
+  const pitch = selGround?.pitches?.[selPitch];
 
   const PitchVisual = ({ p }) => {
     if (!p) return null;
@@ -83,6 +89,16 @@ function FieldsView({ role }) {
     );
   };
 
+  // No ground to show, for any of three different reasons. Rendering the
+  // detail panel against `undefined` is how this crashed before the rows
+  // became asynchronous.
+  if (!selGround) return (
+    <div className="os-page">
+      <SectionHeader title="Fields & Pitch Profiles" sub="Ground management, pitch preparation and surface data" color={D.teal}/>
+      <EmptyState loading={loading} error={error} icon="⬡" message="No grounds are in scope for you." />
+    </div>
+  );
+
   return (
     <div className="os-page">
       <SectionHeader title="Fields & Pitch Profiles" sub="Ground management, pitch preparation and surface data" color={D.teal}
@@ -92,7 +108,7 @@ function FieldsView({ role }) {
         {/* Ground list */}
         <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
           {GROUNDS.map(g=>(
-            <button key={g.id} onClick={()=>{setSelGround(g);setSelPitch(0);setTab("overview");}} className="pressBtn" style={{
+            <button key={g.id} onClick={()=>{setSelId(g.id);setSelPitch(0);setTab("overview");}} className="pressBtn" style={{
               width:"100%",padding:"10px 12px",borderRadius:D.md,cursor:"pointer",textAlign:"left",
               border:`1px solid ${selGround.id===g.id?D.teal+"55":D.border}`,
               background:selGround.id===g.id?D.teal+"10":D.surf1,

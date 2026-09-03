@@ -27,7 +27,12 @@
 // an arbitrary port without rebuilding it. It is read once, at module load,
 // and only as a fallback behind the build-time variable — so a deployed build
 // with VITE_API_BASE set cannot be redirected by anything on the page.
-const BASE = import.meta.env.VITE_API_BASE
+// `import.meta.env` is Vite's, and it is UNDEFINED under plain node — which
+// this module now reaches, because rbac/index.js imports signedIn() from here
+// to refuse client-side scoping in a live session. Optional chaining rather
+// than a bundler shim: the test runner is node, and a module the client and
+// the suites share has to load in both.
+const BASE = import.meta.env?.VITE_API_BASE
   ?? (typeof window !== "undefined" ? window.__SCRBRD_API_BASE__ : null)
   ?? "http://localhost:8787";
 

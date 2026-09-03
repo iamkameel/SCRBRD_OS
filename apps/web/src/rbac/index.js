@@ -29,6 +29,9 @@ import { TABLES } from "@scrbrd/policy/tables";
 // import it — a cycle that shows up as a TDZ error rather than anything
 // legible. See rbac/legacy-roles.js.
 import { LEGACY_ROLE, DEMO_SCHOOL, DEMO_TEAM, DEMO_CHILD } from "./legacy-roles.js";
+// Whether a session exists. NOT an authorization answer — it is the switch
+// between "this is a demo on mock data" and "a server is deciding".
+import { signedIn } from "../lib/api.js";
 import {
   COACHES, COMPETITIONS, GROUNDS, INJURIES, MATCHES, NOTIFICATIONS,
   PLAYERS, SKILLS_MATRIX, STAFF, TRAINING_SESSIONS, USERS_INITIAL, WEATHER,
@@ -238,12 +241,36 @@ function maskRow(resource, row, assignments) {
 }
 
 /**
- * The choke point. Row-scoped and column-masked, in that order.
+ * The choke point — and, in a live session, a closed door.
  *
- * In production the body becomes an authenticated call to read-api and the
- * signature does not change.
+ * This function filters MOCK rows through a client-side copy of authorize().
+ * That was the right thing while there was no server: the alternative was
+ * nineteen views each filtering the whole dataset in their own component. It
+ * is the wrong thing the moment a session exists, because a decision made here
+ * is a decision made in the browser, and the browser does not get to decide.
+ *
+ * So it refuses. When someone is signed in, this returns nothing at all and
+ * the rows come from lib/live.js, which asks the API, which asks Postgres,
+ * which applies the same policy this file is a copy of. The copy remains for
+ * exactly one purpose: the demo that has to open on a laptop with no backend.
+ *
+ * Returning [] rather than throwing is deliberate. A missed call site should
+ * degrade to an empty list — visibly wrong, trivially found — and not take
+ * down a screen a scorer is standing in a field holding. The console warning
+ * is how it gets found; the empty list is how nobody gets hurt while it is
+ * being found.
  */
 export function getData(resource, principal) {
+  if (signedIn()) {
+    if (typeof console !== "undefined" && !warned.has(resource)) {
+      warned.add(resource);
+      console.warn(
+        `[scrbrd] getData("${resource}") was called in a live session and refused. ` +
+        `Client-side scoping is demo-only — read through useLive("${resource}", role) ` +
+        `in lib/live.js so the server decides.`);
+    }
+    return [];
+  }
   const def = RESOURCE[resource];
   if (!def) return [];
   const assignments = assignmentsOf(principal);
@@ -252,6 +279,9 @@ export function getData(resource, principal) {
     .filter((row) => authorize({ assignments, capability: def.r, resource: anchorsOf(resource, row) }).allowed)
     .map((row) => maskRow(resource, row, assignments));
 }
+
+/** One warning per resource, not one per render. */
+const warned = new Set();
 
 /** Single-record variant. Returns null when the row may not be read at all. */
 export function filterRecord(role, resource, record) {
@@ -309,12 +339,20 @@ export function scoped(resource, role) {
  * keeping only the entries for players this principal may read.
  */
 export function scopedSkills(role) {
+  // Reads SKILLS_MATRIX directly rather than through getData(), so the guard
+  // above does not cover it — it needs its own. Live sessions read the
+  // `skills` resource, which is governed by player.development.read in
+  // Postgres and reaches a coach's own squad only.
+  if (signedIn()) return {};
   const visible = new Set(scoped("players", role).map((p) => p.id));
   return Object.fromEntries(Object.entries(SKILLS_MATRIX).filter(([id]) => visible.has(id)));
 }
 
 /** Weather is keyed by match id, and carries no personal data. */
 export function scopedWeather(role) {
+  // Same reasoning as scopedSkills: WEATHER is read straight from the mock, so
+  // the choke point never sees it.
+  if (signedIn()) return {};
   const visible = new Set(scoped("matches", role).map((m) => m.id));
   return Object.fromEntries(Object.entries(WEATHER).filter(([id]) => visible.has(id)));
 }

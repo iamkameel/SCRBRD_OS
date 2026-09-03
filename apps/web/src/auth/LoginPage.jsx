@@ -30,6 +30,12 @@ const PILOT_ACCOUNTS = [
   { email: "coach@example.invalid",   label: "Head Coach",     role: "coach" },
   { email: "sarah@example.invalid",   label: "Director of Sport", role: "directorofsport" },
   { email: "parent@example.invalid",  label: "Parent",         role: "parent" },
+  { email: "medical@example.invalid", label: "Medical",        role: "medical" },
+  // A genuine spectator. The account seeded as spectator@example.invalid holds
+  // a PLAYER assignment, and the player bundle includes medical.status.read —
+  // so it is the wrong account to demonstrate what a bystander can see, and
+  // the wrong one to test with.
+  { email: "watcher@example.invalid", label: "Spectator",      role: "spectator" },
 ];
 
 function LoginPage({ onLogin, onSignUp }) {

@@ -10,10 +10,11 @@ import ScorerApp from "./scorer/index.jsx";
 import { LandingPage } from "./auth/LandingPage.jsx";
 import { LoginPage } from "./auth/LoginPage.jsx";
 import { OnboardingFlow } from "./auth/OnboardingFlow.jsx";
-import { NOTIFICATIONS, USERS_INITIAL } from "./data/mock.js";
 import { ROLES } from "./design/roles.js";
 import { D, GLOBAL_CSS } from "./design/tokens.js";
 import { canScore, scoped } from "./rbac/index.js";
+import { api, signedIn } from "./lib/api.js";
+import { useRows } from "./lib/live.js";
 import { MobileNav, useIsMobile } from "./shell/MobileNav.jsx";
 import { Sidebar } from "./shell/Sidebar.jsx";
 import { TopBar } from "./shell/TopBar.jsx";
@@ -46,8 +47,19 @@ export default function SCRBRD_OS() {
   const [userName,  setUserName]  = useState("Super Admin");
   const [page,      setPage]      = useState("dashboard");
   const [collapsed, setCollapsed] = useState(false);
-  // Lifted users state so ManagementView + SettingsView share the same source of truth
-  const [users,     setUsers]     = useState(USERS_INITIAL);
+  // Lifted users state so ManagementView + SettingsView share the same source
+  // of truth. Seeded from the read path rather than from the mock module: this
+  // used to be `useState(USERS_INITIAL)`, which handed every screen the whole
+  // platform directory — every name and email at every school — regardless of
+  // who was signed in. The assertion that was supposed to prevent that had a
+  // regex that did not match "./data/mock.js".
+  const directory = useRows("users", role);
+  const [users,     setUsers]     = useState([]);
+  const [userEdits, setUserEdits] = useState(false);
+  // Local edits win once they exist, so a re-fetch does not discard what
+  // someone is in the middle of changing.
+  useEffect(() => { if (!userEdits) setUsers(directory); }, [directory, userEdits]);
+  const setUsersTracked = (next) => { setUserEdits(true); setUsers(next); };
   const [scorerOpen, setScorerOpen] = useState(false);
   const [profileTarget, setProfileTarget] = useState(null);
   const [scorerResume, setScorerResume] = useState(null);
@@ -114,7 +126,12 @@ export default function SCRBRD_OS() {
       setScorerResume(ScorerApp.seedLiveResume({
         matchId: m.id, team1: m.homeTeam, team2: m.awayTeam, overs: 20,
         runs, wickets: wkts, balls: parseBalls(m.scorecard.home.overs),
-        squad1: teamSquad(m.homeTeam, asRole), squad2: teamSquad(m.awayTeam, asRole),
+        // This branch seeds a scorer from a STORED scorecard, which only mock
+        // fixtures carry — a live match has no score column by design, because
+        // the score is derived from ball_event. So there is no roster to pass
+        // and the synthetic fallback is the correct answer here rather than a
+        // degradation.
+        squad1: teamSquad(m.homeTeam), squad2: teamSquad(m.awayTeam),
       }));
     } else setScorerResume(null);
     setScorerMatchId(m?.id ?? null);
@@ -136,10 +153,26 @@ export default function SCRBRD_OS() {
       if (s.userName) setUserName(s.userName);
       if (s.page) setPage(s.page);
       if (s.scorerMatchId) {
-        // Through the choke point, and under the RESTORED role — a saved
-        // session must not become a way to reopen a fixture the person is no
-        // longer allowed to see.
-        const m = scoped("matches", s.role ?? role).find(x => x.id === s.scorerMatchId);
+        // A saved session must not become a way to reopen a fixture the person
+        // is no longer allowed to see — so the fixture is re-fetched and the
+        // SERVER decides, rather than the browser re-deriving it from a role
+        // stored in the same session that named the match.
+        //
+        // Falling back to the client-side scoping only when there is no
+        // session at all, which is the demo.
+        let m = null;
+        if (signedIn()) {
+          try {
+            const { rows } = await api("/api/read/matches");
+            const r = rows.find((x) => x.id === s.scorerMatchId);
+            // The scorer wants the product's vocabulary, and asMatch lives in
+            // lib/live.js behind a hook. Only three fields are needed here.
+            if (r) m = { id: r.id, homeTeam: r.team_code, awayTeam: r.opponent,
+                         overs: r.overs, live: true, status: r.status };
+          } catch { /* offline: fall through and let the scorer resume by id */ }
+        } else {
+          m = scoped("matches", s.role ?? role).find(x => x.id === s.scorerMatchId);
+        }
         if (m) openScorer(m, s.role ?? role); else setScorerMatchId(s.scorerMatchId);
       }
       restoredRef.current = true;
@@ -152,7 +185,11 @@ export default function SCRBRD_OS() {
     saveSession({ appState, role, userName, page, scorerMatchId: scorerOpen ? scorerMatchId : null });
   }, [appState, role, userName, page, scorerOpen, scorerMatchId]);
 
-  const unreadCount = NOTIFICATIONS.filter(n=>!n.read).length;
+  // Counted over the notices the SERVER agreed to send this person. A badge is
+  // a disclosure: "3 unread" built from rows nobody authorised states a fact
+  // about data the reader may not have.
+  const notifications = useRows("notifications", role);
+  const unreadCount = notifications.filter(n=>!n.read).length;
 
   // ── Auth screens ──
   if (appState === "landing") return (
@@ -210,8 +247,8 @@ export default function SCRBRD_OS() {
     fields:       <FieldsView        role={role}/>,
     staff:        <StaffView         role={role}/>,
     notifications:<NotificationsView role={role}/>,
-    settings:     <SettingsView      role={role} users={users} setUsers={setUsers}/>,
-    management:   <ManagementView    role={role} users={users} setUsers={setUsers}/>,
+    settings:     <SettingsView      role={role} users={users} setUsers={setUsersTracked}/>,
+    management:   <ManagementView    role={role} users={users} setUsers={setUsersTracked}/>,
     rulebook:     <RulebookView      role={role}/>,
     pitchdeck:    <PitchDeckView     role={role}/>,
   };

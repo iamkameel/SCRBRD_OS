@@ -156,12 +156,74 @@ group("G. No module reaches around the choke point");
       const rel = full.slice(root.length);
       if (rel.startsWith("rbac/")) continue;           // the one legitimate importer
       const src = readFileSync(full, "utf8");
-      if (/^import .*from "(\.\.\/)*data\/mock\.js"/m.test(src)) offenders.push(rel);
+      // The previous pattern was /from "(\.\.\/)*data\/mock\.js"/ — which does
+      // not match "./data/mock.js", the form a module in the same directory
+      // level uses. App.jsx imported the mock that way and this assertion
+      // passed for months: the unread badge in the top bar was counting every
+      // notification in the dataset, for everyone, and the user directory was
+      // seeded from the whole mock list. A guard with a hole in it is worse
+      // than none, because it is cited as evidence.
+      if (/^import .*from "(\.{1,2}\/)+data\/mock\.js"/m.test(src)) offenders.push(rel);
     }
   };
   walk(root);
   ok(`no module outside rbac/ imports the mock data${offenders.length ? " — " + offenders.join(", ") : ""}`,
      offenders.length === 0);
+}
+
+// ── H. In a live session the client decides nothing ─────
+// Everything above proves the client-side copy of authorize() is CORRECT.
+// This proves it is not CONSULTED once there is a server, which is the
+// stronger claim and the one the architecture actually rests on: the backend
+// is authoritative, and a decision reached in the browser is not a decision.
+group("H. A live session does not scope in the browser");
+{
+  const { setToken } = await import("../lib/api.js");
+  const { useLive } = await import("../lib/live.js");
+
+  // Demo mode: mock rows, scoped client-side. This is legitimate — the app has
+  // to open on a laptop with no backend — and it is the ONLY state in which
+  // getData() may answer.
+  ok("with no session, the demo still serves scoped mock rows",
+     getData("players", principalForRole("coach")).length > 0);
+
+  setToken("a-token-standing-in-for-a-real-session");
+  // The refusal warns once per resource, which is what a developer who
+  // forgot to convert a view needs to see — and not what a passing suite
+  // should print. Silenced here only.
+  const realWarn = console.warn;
+  console.warn = () => {};
+  try {
+    for (const resource of ["players", "injuries", "matches", "notifications", "training", "users"]) {
+      ok(`getData("${resource}") refuses once a session exists`,
+         getData(resource, principalForRole("superadmin")).length === 0);
+    }
+    // countData feeds dashboard cards, and a count leaks as surely as a list —
+    // "3 injuries" is a disclosure about three children. It goes through
+    // getData(), so it must fall silent with it rather than counting mock rows
+    // that no server ever agreed to.
+    ok("countData falls silent too, so no card is built from mock rows",
+       countData("injuries", principalForRole("superadmin")) === 0);
+
+    const { scopedSkills, scopedWeather } = await import("./index.js");
+    // These two read the mock constants directly rather than through the choke
+    // point, so the guard on getData() does not cover them and they each need
+    // their own. Missing one is how a screen keeps showing demo data in a live
+    // session while every other screen is real.
+    ok("scopedSkills is gated as well — it bypasses the choke point",
+       Object.keys(scopedSkills("coach")).length === 0);
+    ok("scopedWeather is gated as well, for the same reason",
+       Object.keys(scopedWeather("coach")).length === 0);
+
+    ok("useLive is exported for the views to read through instead",
+       typeof useLive === "function");
+  } finally {
+    console.warn = realWarn;
+    setToken(null);
+  }
+
+  ok("clearing the session restores the demo",
+     getData("players", principalForRole("coach")).length > 0);
 }
 
 console.log(`\n${"─".repeat(52)}\nCLIENT RBAC SUITE: ${pass} passed, ${fail} failed`);

@@ -1,14 +1,25 @@
-import { scoped } from "../rbac/index.js";
+
 import { useState } from "react";
 import { D } from "../design/tokens.js";
 import { Badge, Btn, Card, SectionHeader } from "../ui/primitives.jsx";
+import { useRows } from "../lib/live.js";
 
 function NotificationsView({ role }) {
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
-  const NOTIFICATIONS = scoped("notifications", role);
-  const [notifs, setNotifs] = useState(NOTIFICATIONS);
-  const markAll = () => setNotifs(n=>n.map(x=>({...x,read:true})));
+  const NOTIFICATIONS = useRows("notifications", role);
+  // Hold only what this screen CHANGES — which notices have been opened — and
+  // derive the list from the server's rows every render.
+  //
+  // This was `useState(NOTIFICATIONS)`, which copied the list once. That was
+  // correct while the rows were a module constant available on the first
+  // render, and became a silent blank screen the moment they arrived over the
+  // network: the copy captured the empty array before the fetch resolved and
+  // nothing ever replaced it. The feed rendered zero notices for everybody,
+  // and looked exactly like a person with no notifications.
+  const [readIds, setReadIds] = useState(() => new Set());
+  const notifs = NOTIFICATIONS.map(n => (readIds.has(n.id) ? { ...n, read: true } : n));
+  const markAll = () => setReadIds(new Set(NOTIFICATIONS.map(n => n.id)));
   const unread = notifs.filter(n=>!n.read).length;
   const ic = t => t==="match"?"🏏":t==="injury"?"🏥":t==="training"?"💪":t==="transport"?"🚌":t==="skills"?"🎯":"📢";
   const uc = u => u==="high"?D.rose:u==="medium"?D.amber:D.textMuted;
@@ -19,7 +30,7 @@ function NotificationsView({ role }) {
       <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
         {notifs.map(n=>(
           <Card key={n.id} sx={{padding:"14px 16px",background:n.read?"transparent":D.indigo+"08",border:`1px solid ${n.read?D.border:D.indigo+"22"}`}}
-            onClick={()=>setNotifs(ns=>ns.map(x=>x.id===n.id?{...x,read:true}:x))}>
+            onClick={()=>setReadIds(prev=>new Set(prev).add(n.id))}>
             <div style={{display:"flex",gap:"12px",alignItems:"flex-start"}}>
               <div style={{width:"36px",height:"36px",borderRadius:D.md,background:uc(n.urgency)+"18",border:`1px solid ${uc(n.urgency)}22`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"16px",flexShrink:0}}>
                 {ic(n.type)}

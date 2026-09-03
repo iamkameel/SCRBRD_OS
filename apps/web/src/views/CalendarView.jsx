@@ -1,14 +1,14 @@
-import { scoped, scopedWeather } from "../rbac/index.js";
+
 import { useState } from "react";
 import { D } from "../design/tokens.js";
 import { dateStr, today } from "../lib/format.js";
 import { Badge, Card, SectionHeader } from "../ui/primitives.jsx";
 import { WeatherChip } from "./shared.jsx";
+import { useRows, useWeather } from "../lib/live.js";
 
 // ══════════════════════════════════════════════════════
 //  ANALYTICS VIEW
 // ══════════════════════════════════════════════════════
-
 
 // ══════════════════════════════════════════════════════
 //  FIXTURE CALENDAR VIEW
@@ -16,9 +16,9 @@ import { WeatherChip } from "./shared.jsx";
 function CalendarView({ role, onNav }) {
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
-  const MATCHES = scoped("matches", role);
-  const TRAINING_SESSIONS = scoped("training", role);
-  const WEATHER = scopedWeather(role);
+  const MATCHES = useRows("matches", role);
+  const TRAINING_SESSIONS = useRows("training", role);
+  const WEATHER = useWeather(role);
   const [monthOffset, setMonthOffset] = useState(0);
   const [selDay,      setSelDay]      = useState(null);
 

@@ -1,9 +1,10 @@
-import { scoped, scopedWeather } from "../rbac/index.js";
+
 import { useState } from "react";
 import { D } from "../design/tokens.js";
 import { dateStr, today } from "../lib/format.js";
 import { Avatar, Badge, Btn, Card, KPICard, SectionHeader } from "../ui/primitives.jsx";
 import { WeatherChip } from "./shared.jsx";
+import { useRows, useWeather } from "../lib/live.js";
 
 // ══════════════════════════════════════════════════════
 //  LOGISTICS VIEW  — full overhaul
@@ -11,13 +12,13 @@ import { WeatherChip } from "./shared.jsx";
 function LogisticsView({ role }) {
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
-  const COACHES = scoped("coaches", role);
-  const COMPETITIONS = scoped("competitions", role);
-  const GROUNDS = scoped("grounds", role);
-  const MATCHES = scoped("matches", role);
-  const PLAYERS = scoped("players", role);
-  const STAFF = scoped("staff", role);
-  const WEATHER = scopedWeather(role);
+  const COACHES = useRows("coaches", role);
+  const COMPETITIONS = useRows("competitions", role);
+  const GROUNDS = useRows("grounds", role);
+  const MATCHES = useRows("matches", role);
+  const PLAYERS = useRows("players", role);
+  const STAFF = useRows("staff", role);
+  const WEATHER = useWeather(role);
   const [tab,       setTab]       = useState("transport");
   const [manifest,  setManifest]  = useState(null);
   const canEdit = role==="superadmin"||role==="schooladmin"||role==="driver";

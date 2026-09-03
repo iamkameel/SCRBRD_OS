@@ -3,10 +3,11 @@ import { useState, useMemo } from "react";
 import { ROLES } from "../design/roles.js";
 import { D } from "../design/tokens.js";
 import { mulberry32, strSeed } from "../lib/rng.js";
-import { can, filterRecord, scoped, scopedSkills } from "../rbac/index.js";
+import { can, filterRecord } from "../rbac/index.js";
 import { BatsmanChart, BowlerChart, ManhattanChart, WormChart } from "../scorer/charts.jsx";
 import { seedCompletedMatch } from "../scorer/seed.js";
 import { Badge, Modal, Pill, SkillBar } from "../ui/primitives.jsx";
+import { useRows } from "../lib/live.js";
 
 // ══════════════════════════════════════════════════════
 //  MATCH CENTRE VIEW
@@ -55,14 +56,22 @@ function WeatherChip({ w, compact }) {
 
 const OPP_POOL = ["T van Rooyen","K Naidoo","M Botha","S Mkhize","J Pretorius","L Govender","D Erasmus","A Zondi","R Pillay","W du Toit","N Cele","B Steyn","C Moodley","P Ngcobo","G Venter","F Hadebe","H Marais","U Dube"];
 
-// `role` is required rather than optional: without it this returned real
-// player names to anyone, from a module-scope helper that no view had to
-// authorise. Omitting it now yields a fully synthetic squad — fail closed.
-function teamSquad(teamName, role){
+// Takes the roster it may use, rather than going and getting one.
+//
+// It used to call scoped() itself, which meant a module-scope helper reached
+// into the data layer and decided what a caller could see. That was already
+// the wrong shape, and once the server became authoritative it stopped working
+// at all: in a live session the client-side scoping layer refuses, so this
+// silently produced a fully synthetic XI on a screen that looked real.
+//
+// Passing `players` in makes the caller responsible for having authorised
+// them — which the caller can, because it is a component and can read through
+// the hooks. An empty list still fails closed to a synthetic squad.
+function teamSquad(teamName, players = []){
   const token = (teamName.match(/U\d{2}[A-Z]?/)||[])[0];
   const isHilton = /Hilton/i.test(teamName);
-  const own = (isHilton && token && role)
-    ? scoped("players", role).filter(p=>p.team===token).map(p=>p.name)
+  const own = (isHilton && token)
+    ? players.filter(p=>p.team===token).map(p=>p.name)
     : [];
   const rng = mulberry32(strSeed(teamName));
   const pool = [...OPP_POOL].sort(()=>rng()-0.5);
@@ -82,10 +91,13 @@ const fmtOvOS = b => `${Math.floor(b/6)}${b%6?"."+(b%6):""}`;
 //  Receives an RBAC-filtered record: stripped fields arrive
 //  null and are simply not rendered.
 // ══════════════════════════════════════════════════════
-function skillsFor(p, role){
-  // Skill ratings sit behind player.development.read. Without a role the
-  // real assessment is not returned — the derived demo profile below is.
-  const matrix = role ? scopedSkills(role) : {};
+// Same change as teamSquad, for the same reason: the assessment matrix is
+// passed in by a caller that has already read it under this principal, instead
+// of being fetched from a helper nobody authorised. An empty matrix falls
+// through to the derived demo profile, which is explicitly marked
+// `assessed:false` so a screen never presents a synthesised number as a
+// coach's judgement.
+function skillsFor(p, matrix = {}){
   if(matrix[p.id]) return { data:matrix[p.id], assessed:true };
   // Deterministic demo derivation from season stats until a real assessment exists
   const rng=(()=>{let s=strSeed(p.id);return()=>{s|=0;s=(s+0x6D2B79F5)|0;let t=Math.imul(s^(s>>>15),1|s);t=(t+Math.imul(t^(t>>>7),61|t))^t;return((t^(t>>>14))>>>0)/4294967296;};})();
@@ -99,10 +111,10 @@ function skillsFor(p, role){
   }};
 }
 
-function PlayerProfileModal({ player, role, onClose, onFullProfile }){
+function PlayerProfileModal({ player, role, skills = {}, onClose, onFullProfile }){
   if(!player) return null;
   const stripped = can(role,"players","r").deny.length>0;
-  const sk = skillsFor(player, role);
+  const sk = skillsFor(player, skills);
   const canFull = ROLES[role]?.nav.includes("profiles");
   const Stat = ({l,v,c}) => (
     <div style={{flex:1,minWidth:"70px",background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,padding:"8px 6px",textAlign:"center"}}>
@@ -211,11 +223,18 @@ function PlayerProfileModal({ player, role, onClose, onFullProfile }){
 function ScorecardModal({ match, onClose, role, onNavProfile }){
   const [tab, setTab] = useState(0);
   const [prof, setProf] = useState(null);
+  // Read here, in a component, where hooks are legal — then hand the rows to
+  // the helpers below. Every one of these was a scoped() call inside a plain
+  // function a moment ago, which is how a module-scope helper ended up making
+  // authorization decisions.
+  const PLAYERS      = useRows("players", role);
+  const COMPETITIONS = useRows("competitions", role);
+  const STAFF        = useRows("staff", role);
   // Name → RBAC-gated profile opener. Opponent (synthetic) names have no
   // profile; roles without players-resource access get no links at all.
   const linkFor = name => {
     if(!can(role,"players","r").allowed) return null;
-    const p = scoped("players", role).find(x=>x.name===name);
+    const p = PLAYERS.find(x=>x.name===name);
     return p ? ()=>setProf(filterRecord(role,"players",p)) : null;
   };
   const { WormChart, ManhattanChart, BatsmanChart, BowlerChart } = ScorerApp.charts;
@@ -226,14 +245,14 @@ function ScorecardModal({ match, onClose, role, onNavProfile }){
     if(match.scorecard?.away) inns.push({...parseScore(match.scorecard.away.score), balls:parseBalls(match.scorecard.away.overs)});
     return ScorerApp.seedCompletedMatch({
       matchId: match.id, team1: match.homeTeam, team2: match.awayTeam,
-      squad1: teamSquad(match.homeTeam, role), squad2: teamSquad(match.awayTeam, role),
+      squad1: teamSquad(match.homeTeam, PLAYERS), squad2: teamSquad(match.awayTeam, PLAYERS),
       inns: inns.map(x=>({ runs:x.runs, wickets:x.wkts, balls:x.balls })),
       liveLast: isLive,
     });
-  },[match.id,isLive]);
+  },[match.id,isLive,PLAYERS]);
   const inn = seeded.innings[tab];
-  const comp = scoped("competitions", role).find(c=>c.id===match.competition);
-  const scorerStaff = scoped("staff", role).find(s=>s.id===match.scorerId);
+  const comp = COMPETITIONS.find(c=>c.id===match.competition);
+  const scorerStaff = STAFF.find(s=>s.id===match.scorerId);
   const extrasSum = i => Object.values(i.extras).reduce((a,b)=>a+b,0);
   const legal = i => i.ballLog.filter(b=>b.type!=="Wd"&&b.type!=="Nb");
   const topBat = i => [...i.batsmen].sort((a,b)=>b.runs-a.runs)[0];

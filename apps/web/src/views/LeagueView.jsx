@@ -1,9 +1,10 @@
-import { scoped, scopedWeather } from "../rbac/index.js";
+
 import { useState } from "react";
 import { D } from "../design/tokens.js";
 import { SR } from "../scorer/format.js";
 import { Avatar, Badge, Btn, Card, Input, Modal, Pill, SectionHeader, Select } from "../ui/primitives.jsx";
 import { WeatherChip } from "./shared.jsx";
+import { useRows, useWeather } from "../lib/live.js";
 
 // ══════════════════════════════════════════════════════
 //  LEAGUE MANAGEMENT VIEW
@@ -11,10 +12,10 @@ import { WeatherChip } from "./shared.jsx";
 function LeagueView({ role }) {
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
-  const COMPETITIONS = scoped("competitions", role);
-  const MATCHES = scoped("matches", role);
-  const PLAYERS = scoped("players", role);
-  const WEATHER = scopedWeather(role);
+  const COMPETITIONS = useRows("competitions", role);
+  const MATCHES = useRows("matches", role);
+  const PLAYERS = useRows("players", role);
+  const WEATHER = useWeather(role);
   const [selComp, setSelComp] = useState("comp1");
   const [tab,     setTab]     = useState("table");
   const [editRow, setEditRow] = useState(null);  // team row being edited

@@ -191,4 +191,34 @@ function RadarChart({ data, color=D.indigo, size=160 }) {
   );
 }
 
-export { Avatar, Badge, Btn, Card, Input, KPICard, Modal, Pill, ProgressBar, RadarChart, SectionHeader, Select, SkillBar, StatusDot };
+/**
+ * Nothing to show — and WHICH nothing.
+ *
+ * Three states that look identical in a list and mean completely different
+ * things, so the component insists on being told which one it is:
+ *
+ *   loading — the server has not answered yet. Say nothing about the data.
+ *   error   — the request failed. This is NOT "no fixtures"; it is "we do not
+ *             know", and the difference matters to someone deciding whether to
+ *             get in a car.
+ *   empty   — the server answered, and the answer is none. The only one of the
+ *             three where a definitive statement is honest.
+ *
+ * The read path never falls back to mock rows in a live session, so an empty
+ * list is a real answer rather than a hidden failure — which is precisely why
+ * it has to be possible to tell an empty answer from an absent one.
+ */
+const EmptyState = ({ loading, error, message = "Nothing here yet", icon = "—" }) => (
+  <div style={{ padding: "32px 16px", textAlign: "center",
+                fontFamily: D.body, fontSize: "12px",
+                color: error ? D.rose : D.textMuted }}>
+    <div style={{ fontSize: "20px", marginBottom: "8px", opacity: 0.6 }} aria-hidden="true">
+      {loading ? "…" : error ? "!" : icon}
+    </div>
+    {loading ? "Loading…"
+     : error ? "Could not load this — the server did not answer. This is not the same as there being nothing."
+     : message}
+  </div>
+);
+
+export { Avatar, Badge, Btn, Card, EmptyState, Input, KPICard, Modal, Pill, ProgressBar, RadarChart, SectionHeader, Select, SkillBar, StatusDot };

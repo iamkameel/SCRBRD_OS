@@ -77,7 +77,15 @@ try {
 
   // ── Every query runs ────────────────────────────────────────────
   group("Every wired query actually runs");
-  for (const resource of ["matches", "players", "injuries", "competitions"]) {
+  // Named individually rather than looped over liveResources(), because two of
+  // them take a required parameter and a smoke that silently skipped those
+  // would be the same class of test as the fake pool: green, and blind.
+  for (const resource of [
+    "matches", "players", "injuries", "competitions",
+    "coaches", "staff", "users", "grounds",
+    "training", "training_attendance", "skills", "notifications",
+    "league", "weather",
+  ]) {
     let ran = true, err = null;
     try { await read(resource, medic); } catch (e) { ran = false; err = e.message; }
     ok(`${resource} returns rows rather than a SQL error${ran ? "" : ` — ${err}`}`, ran);
@@ -136,6 +144,66 @@ try {
   ok("the coach reads that a player is unavailable", coachInjuries.length > 0);
   ok("...but not the diagnosis behind it", coachInjuries.every((i) => i.notes == null));
   ok("the scorer reads no injuries at all", (await read("injuries", scorer)).length === 0);
+
+  // ── The programme reads, scoped per person ──────────────────────
+  // Each of these was, until now, a decision made in the browser against a
+  // mock module. The claim is not that the query runs — that is the block
+  // above — but that two people asking the same question get different
+  // answers, which is the only evidence that anything is being enforced.
+  group("The programme reads are scoped, not just wired");
+
+  const watcher = await login("watcher@example.invalid");  // a real spectator
+
+  const coachTraining = await read("training", coach);
+  ok("a U19A coach sees their own team's sessions",
+     coachTraining.length > 0 && coachTraining.every((t) => t.team_code === "U19A"));
+  ok("...and not another team's", !coachTraining.some((t) => t.team_code === "U16B"));
+
+  // The register is the sensitive half. A guardian reads the schedule in full
+  // and exactly one row of the attendance list — from two tables, in one
+  // session, because the split is the security model.
+  const guardianTraining = await read("training", guardian);
+  const guardianRegister = await read("training_attendance", guardian);
+  ok("a guardian still sees the training schedule", guardianTraining.length > 0);
+  ok("...but only their own child on the register", guardianRegister.length === 1);
+
+  ok("a guardian reads no development assessments at all",
+     (await read("skills", guardian)).length === 0);
+  const coachSkills = await read("skills", coach);
+  ok("a coach reads their own squad's assessments", coachSkills.length > 0);
+  ok("...and nobody else's", coachSkills.every((s) => s.team_code === "U19A"));
+
+  // ── A notification is not permission ────────────────────────────
+  // The sharpest read in the file. news.read is a floor capability; if it were
+  // the only gate, the feed would hand out everything every other policy
+  // refuses. A spectator holds news.read and must still not receive a notice
+  // whose body names a child's injury.
+  group("A cached notification is not permission");
+  const watcherNotices = await read("notifications", watcher);
+  const medicNotices   = await read("notifications", medic);
+  const coachNotices   = await read("notifications", coach);
+  ok("a spectator receives general school notices", watcherNotices.length > 0);
+  ok("a spectator does NOT receive a medical notice",
+     !watcherNotices.some((n) => n.kind === "injury"));
+  ok("the medical officer does", medicNotices.some((n) => n.kind === "injury"));
+  ok("so does the coach of the team it concerns",
+     coachNotices.some((n) => n.kind === "injury"));
+  ok("...and the coach does not receive another team's notice",
+     !coachNotices.some((n) => n.team_code === "U16B"));
+  ok("a school-wide notice reaches a team-scoped coach",
+     coachNotices.some((n) => n.team_code === null));
+  ok("read state comes back per person, not per notice",
+     watcherNotices.every((n) => n.read === false));
+
+  // ── The ladder is shared, the rest is not ───────────────────────
+  group("Participation, not authorship, decides a league");
+  const ladder = await read("league", coach);
+  ok("a team-scoped coach reads the whole ladder, not just their own row",
+     ladder.length === 2);
+  ok("...including the opposition's record",
+     ladder.some((r) => r.school_id === WES));
+  ok("the ladder comes back ordered by points",
+     ladder.every((r, i) => i === 0 || ladder[i - 1].points >= r.points));
 
   // ── Default deny ────────────────────────────────────────────────
   group("Default deny");
