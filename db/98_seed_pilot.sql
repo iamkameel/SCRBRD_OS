@@ -53,6 +53,17 @@ INSERT INTO injury (id, school_id, player_id, injury_type, severity, date_injure
    'Clinical: subacromial impingement. Bowling restricted, batting permitted.',
    'Physio: rotator cuff programme, review in two weeks.');
 
+-- A third injury, on a U16B player — a DIFFERENT side at the same school.
+-- Without it, "a coach reads no injury outside the side they coach" is
+-- vacuous: every injury in the fixture was U19A, so the assertion passed by
+-- having nothing to find. It is the assertion that keeps a coach's clinical
+-- access inside their own squad, so it had better be able to fail.
+INSERT INTO injury (id, school_id, player_id, injury_type, severity, date_injured, rtw_date, phase, restricted, notes, physio) VALUES
+  ('cccccccc-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 'aaaaaaaa-0000-0000-0000-000000000006',
+   'Wrist sprain', 'minor', current_date - 3, current_date + 11, 'rehab', true,
+   'Clinical: scapholunate ligament sprain, immobilised two weeks.',
+   'Physio: splint, grip work from week two.');
+
 -- ── Staff and coaches ───────────────────────────────────────────
 INSERT INTO coach (id, school_id, team_code, name, title, email, phone) VALUES
   ('dddddddd-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'U19A', 'Craig Hendricks', 'Head Coach',      'chendricks@example.invalid', '+27 82 100 0001'),

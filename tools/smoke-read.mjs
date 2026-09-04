@@ -142,7 +142,13 @@ try {
   const coachInjuries = await read("injuries", coach);
   ok("the physio reads clinical notes", medicInjuries.some((i) => i.notes));
   ok("the coach reads that a player is unavailable", coachInjuries.length > 0);
-  ok("...but not the diagnosis behind it", coachInjuries.every((i) => i.notes == null));
+  // The coach of the side holds the full record, clinical notes included.
+  // What keeps that safe is scope: a coach assignment must name a team, and
+  // the injury policy anchors through the player's current side.
+  ok("...and the clinical notes for the squad they coach",
+     coachInjuries.some((i) => i.notes != null));
+  ok("...for their own side only — the U16B injury is not among them",
+     coachInjuries.every((i) => i.id !== "cccccccc-0000-0000-0000-000000000003"));
   ok("the scorer reads no injuries at all", (await read("injuries", scorer)).length === 0);
 
   // ── Three tiers, not two ────────────────────────────────────────
@@ -187,14 +193,16 @@ try {
      theirs.every((i) => i.injury_type == null));
   ok("...and certainly not their clinical notes",
      theirs.every((i) => i.notes == null));
+  ok("a pupil's own record is the only one they read in full",
+     mine.length === 1 && theirs.every((i) => i.injury_type == null));
 
   // A parent needs to know what is wrong with their OWN child — same row, same
   // policy, different answer, because their assignment names that child.
   const guardianInjuries = await read("injuries", guardian);
   ok("a guardian reads their own child's injury type",
      guardianInjuries.length === 1 && guardianInjuries[0].injury_type != null);
-  ok("...but still not the clinical notes behind it",
-     guardianInjuries.every((i) => i.notes == null));
+  ok("...and the clinical notes for that child — the school would hand a parent the same letter",
+     guardianInjuries.every((i) => i.notes != null));
 
   // ── The programme reads, scoped per person ──────────────────────
   // Each of these was, until now, a decision made in the browser against a

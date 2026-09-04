@@ -87,10 +87,18 @@ group("C. Column masking");
   const coachInj = getData("injuries", P("coach"));
   const medInj = getData("injuries", P("medical"));
   ok("coach sees that a player is unavailable", coachInj.length > 0);
-  ok("coach cannot read clinical notes",        coachInj.every((i) => i.notes === null && i.physio === null));
+  // The coach of the side holds the whole record, clinical notes included.
+  // What bounds it is SCOPE, not tier: a coach assignment must name a team and
+  // the injury anchors resolve through the player's current side, so this is
+  // the notes for the children they actually coach. The scope half is asserted
+  // against the real database in db/99_rls_verify.sql, which is the only place
+  // it can be proved.
+  ok("coach reads the clinical notes for their own squad",
+     coachInj.some((i) => i.notes !== null));
   ok("coach CAN read return-to-play",           coachInj.every((i) => i.rtw));
   ok("medical staff read clinical notes",       medInj.some((i) => i.notes !== null));
-  ok("guardian cannot read clinical notes",     getData("injuries", P("parent")).every((i) => i.notes === null));
+  ok("guardian reads their own child's clinical notes",
+     getData("injuries", P("parent")).every((i) => i.notes !== null));
   ok("driver reaches no injuries at all",       getData("injuries", P("driver")).length === 0);
   ok("scorer reaches no injuries at all",       getData("injuries", P("scorer")).length === 0);
 }

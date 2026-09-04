@@ -23,10 +23,14 @@
  * safe summary and a sensitive detail, they are separate capabilities —
  * `medical.status.read` (available / unavailable) is not
  * `medical.nature.read` (a hamstring strain) is not `medical.details.read`
- * (the physio's clinical notes). A coach gets the first two and not the third;
- * a pupil gets only the first. That separation is the reason this split exists
- * at all, and getting the boundary wrong once — the diagnosis living in the
- * availability tier — is what added the middle one.
+ * (the physio's clinical notes). A pupil gets only the first about a team
+ * mate; a head of sport the first two; the coach of that child's own side, the
+ * child's parent, the child themselves and medical staff get all three.
+ *
+ * The tiers are what make that expressible. Getting the boundary wrong once —
+ * the diagnosis living in the availability tier, so a pupil read it — is what
+ * added the middle one, and being able to move a role between tiers without
+ * moving a column is what the split buys.
  */
 
 export const CAPABILITIES = {
@@ -76,7 +80,12 @@ export const CAPABILITIES = {
   //   nature  — WHAT the injury is and how bad. What you need to manage a
   //             squad: bowling loads, selection, return-to-play planning.
   //   details — the clinical record: the physio's notes and who is treating
-  //             them. A minor's health information, POPIA-sensitive.
+  //             them. A minor's health information, POPIA-sensitive. Held by
+  //             medical staff, the child, their parent, and the coach of the
+  //             side that child currently plays for — the last of those by
+  //             SCOPE rather than by tier: a coach assignment must name a
+  //             team, so it is the notes for the children they actually
+  //             coach.
   "medical.status.read":         "See whether a player is available",
   "medical.nature.read":         "See what the injury is and how severe",
   "medical.details.read":        "See diagnosis and clinical notes",

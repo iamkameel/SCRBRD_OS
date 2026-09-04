@@ -113,8 +113,11 @@ export const TABLES = {
       // side holds it, and a guardian holds it for their own children. A pupil
       // does not.
       "medical.nature.read": ["injury_type", "severity", "phase"],
-      // The clinical record itself. A minor's health information; the medical
-      // role and nobody else.
+      // The clinical record itself. A minor's health information. Medical
+      // staff, the child, their parent, and the coach of the side that child
+      // currently plays for — the last by scope: a coach assignment must name
+      // a team and the anchors below resolve through the player, so a coach
+      // reads the notes for their own squad and nobody else's.
       "medical.details.read": ["notes", "physio"],
     },
   },

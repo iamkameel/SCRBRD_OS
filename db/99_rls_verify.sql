@@ -95,6 +95,8 @@ DECLARE
   -- assignment naming their own player row.
   U_SELF    uuid := '88888888-0000-0000-0000-000000000009';
   P_OTHER   uuid := 'aaaaaaaa-0000-0000-0000-000000000002';  -- T Bekker, also injured
+  I_OWN     uuid := 'cccccccc-0000-0000-0000-000000000001';  -- R Pillay's injury, U19A
+  I_U16B    uuid := 'cccccccc-0000-0000-0000-000000000003';  -- K Dlamini's injury, U16B
   n int;
 BEGIN
   -- ── 1. Nobody is anybody by default ────────────────────────────
@@ -119,15 +121,37 @@ BEGIN
   PERFORM _assert(n = (SELECT count(*) FROM player WHERE team_code = 'U19A'),
                   'coach total count exceeds their team scope');
 
-  -- ── 3. Availability is not diagnosis ───────────────────────────
+  -- ── 3. The coach of the side holds the whole record ────────────
+  -- A coach reads the full medical record — clinical notes included — for the
+  -- children they coach. What keeps that safe is SCOPE, not tier: a coach
+  -- assignment must name a team, and the injury policy anchors through
+  -- player.team_code, so the reach is their own current squad and stops there.
+  -- Every assertion in this block is about that boundary.
   SELECT count(*) INTO n FROM injury;
   PERFORM _assert(n > 0, 'coach cannot see that a player is unavailable');
   SELECT count(*) INTO n FROM injury_masked WHERE notes IS NOT NULL;
-  PERFORM _assert(n = 0, 'coach can read clinical notes');
+  PERFORM _assert(n > 0, 'coach cannot read the clinical notes for their own squad');
   SELECT count(*) INTO n FROM injury_masked WHERE physio IS NOT NULL;
-  PERFORM _assert(n = 0, 'coach can read physio notes');
+  PERFORM _assert(n > 0, 'coach cannot see who is treating their own player');
   SELECT count(*) INTO n FROM injury_masked WHERE rtw_date IS NOT NULL;
   PERFORM _assert(n > 0, 'return-to-play date wrongly masked from the coach');
+
+  -- The line that matters now that the tier is open to them: their OWN side.
+  --
+  -- Addressed by injury id, NOT by joining to player and filtering on
+  -- team_code. That join was the first version of this assertion and it could
+  -- not fail: the coach's player policy already drops a U16B player, so the
+  -- join removed the row whatever the injury policy said. It was testing the
+  -- wrong policy, and widening the injury team anchor to ANY_SCOPE — which
+  -- really does hand the coach all three injuries — left it green.
+  SELECT count(*) INTO n FROM injury_masked WHERE id = I_U16B;
+  PERFORM _assert(n = 0, 'a coach reads an injury outside the side they coach');
+  SELECT count(*) INTO n FROM injury_masked WHERE id = I_U16B AND notes IS NOT NULL;
+  PERFORM _assert(n = 0, 'a coach reads clinical notes outside the side they coach');
+  -- …while their own side's notes are there, so this is a boundary and not a
+  -- blanket refusal.
+  SELECT count(*) INTO n FROM injury_masked WHERE id = I_OWN AND notes IS NOT NULL;
+  PERFORM _assert(n = 1, 'a coach cannot read the notes for a player they coach');
 
   -- The coach picks a side, so they need to know it is a hamstring and how bad.
   SELECT count(*) INTO n FROM injury_masked WHERE injury_type IS NOT NULL;
@@ -267,9 +291,12 @@ BEGIN
   -- A guardian may read their own child's PII, unlike the coach above.
   SELECT count(*) INTO n FROM player_masked WHERE born IS NOT NULL;
   PERFORM _assert(n = 1, 'guardian cannot read their own child date of birth');
-  -- …but not the clinical detail behind it.
+  -- …and the clinical detail behind it, for their own child. A parent reading
+  -- their child's physiotherapy report is the ordinary case, not an exception
+  -- — the school would hand them the same letter. Their assignment names that
+  -- child, so it goes no further, which the row count above already proved.
   SELECT count(*) INTO n FROM injury_masked WHERE notes IS NOT NULL;
-  PERFORM _assert(n = 0, 'guardian can read clinical notes');
+  PERFORM _assert(n = 1, 'a guardian cannot read their own child''s clinical notes');
 
   -- ── 6. Sarah: four assignments across two institutions ─────────
   -- The case the previous single-role, single-school session could not
@@ -421,15 +448,24 @@ BEGIN
   -- naming the player it is about. Nobody is listed as a recipient anywhere:
   -- the audience falls out of the capability model, and these assertions are
   -- how we know it lands where you would want it to.
+  -- Counted against the fixture rather than a fixed number, so adding an
+  -- injury to the seed cannot quietly make these pass for the wrong reason.
   PERFORM _as(U_COACH);
   SELECT count(*) INTO n FROM notification
    WHERE kind = 'injury' AND required_capability = 'medical.nature.read';
-  PERFORM _assert(n = 2, 'the coach of the side was not alerted to their players'' injuries');
+  PERFORM _assert(
+    n = (SELECT count(*) FROM injury i JOIN player p ON p.id = i.player_id
+          WHERE p.team_code = 'U19A'),
+    'the coach was not alerted to exactly their own side''s injuries');
+  -- Specifically: not the U16B one.
+  SELECT count(*) INTO n FROM notification
+   WHERE kind = 'injury' AND subject_person_id = P_U16B;
+  PERFORM _assert(n = 0, 'a coach was alerted about a player in another side');
 
   PERFORM _as(U_MEDICAL);
   SELECT count(*) INTO n FROM notification
    WHERE kind = 'injury' AND required_capability = 'medical.nature.read';
-  PERFORM _assert(n = 2, 'medical staff were not alerted');
+  PERFORM _assert(n = (SELECT count(*) FROM injury), 'medical staff were not alerted to every injury');
 
   -- The parent of ONE child. Their assignment names that child, so the person
   -- anchor on the notice has something to fail against — without it, a notice

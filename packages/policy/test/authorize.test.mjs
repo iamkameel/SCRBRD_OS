@@ -112,7 +112,11 @@ group("C. Aggregates are scoped, not filtered afterwards");
                                  capability: "platform.health.read" });
   ok("platform assignment is unrestricted", platform.unrestricted === true);
 
-  const none = scopeFilter({ assignments: SARAH, capability: "medical.details.read" });
+  // Was medical.details.read, until a coach was granted it — and Sarah coaches
+  // U16B, so she now holds it and the assertion tested nothing. Uses a
+  // capability no bundle of hers carries, so it stays about the SHAPE of a
+  // refusal: an empty scope set, never an unrestricted one.
+  const none = scopeFilter({ assignments: SARAH, capability: "platform.tenant.manage" });
   ok("no grant yields an empty scope set, not a wildcard",
      none.unrestricted === false && none.scopes.length === 0);
 
@@ -126,13 +130,23 @@ group("C. Aggregates are scoped, not filtered afterwards");
 }
 
 // ── D. Sensitive splits ──────────────────────────────────
-group("D. Availability is not diagnosis");
+group("D. Medical access is bounded by scope, not by tier");
 {
   const coach = [{ role: "coach", school: HIL, team: "U16A" }];
   const physio = [{ role: "medical", school: HIL }];
   const res = { school: HIL, team: "U16A", person: "p5" };
+  const otherSide = { school: HIL, team: "U19A", person: "p9" };
   ok("coach sees availability",        may({ assignments: coach, capability: "medical.status.read", resource: res }));
-  ok("coach does NOT see diagnosis",   !may({ assignments: coach, capability: "medical.details.read", resource: res }));
+  // The coach of a side holds the whole record for that side. The boundary is
+  // the TEAM, not the tier: the same capability against another side's player
+  // is refused, which is the assertion that has to hold for this to be safe.
+  ok("coach sees the diagnosis for their own side",
+     may({ assignments: coach, capability: "medical.details.read", resource: res }));
+  ok("coach does NOT see it for another side",
+     !may({ assignments: coach, capability: "medical.details.read", resource: otherSide }));
+  ok("a pupil never reaches the diagnosis of a team mate",
+     !may({ assignments: [{ role: "player", school: HIL, team: "U16A" }],
+            capability: "medical.nature.read", resource: res }));
   ok("physio sees diagnosis",          may({ assignments: physio, capability: "medical.details.read", resource: res }));
   ok("physio cannot select a side",    !may({ assignments: physio, capability: "team.select", resource: res }));
 

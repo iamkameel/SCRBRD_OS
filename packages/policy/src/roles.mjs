@@ -91,19 +91,33 @@ const BUNDLES = {
   ],
 
   // ── Coaching ──
-  // A coach sees availability, never the diagnosis.
+  //
+  // A coach holds the FULL medical record for the side they coach, clinical
+  // notes included, at your instruction. The model can express a narrower line
+  // — for a long time it drew one, on the reasoning that picking a team needs
+  // availability and not a physiotherapist's write-up — and the argument for
+  // the wider one is that a school coach IS the person managing a child's load
+  // week to week, and making them phone the physio to find out whether a
+  // shoulder may bowl is a worse outcome than them reading it.
+  //
+  // What keeps this safe is scope, not tier. A coach assignment must name a
+  // team (assignment_team_scoped), and the injury policy anchors on the
+  // player's CURRENT side — so this is the notes for the children they
+  // actually coach, this term, and nobody else's. It is not school-wide, and
+  // it stops the moment a player changes side.
   coach: [
     ...READ_TEAM, "team.select",
     "player.performance.read", "player.performance.write",
     "player.development.read", "player.development.write",
-    "medical.status.read", "medical.nature.read", "analytics.read", "transport.read",
+    "medical.status.read", "medical.nature.read", "medical.details.read",
+    "analytics.read", "transport.read",
     "scoring.start", "scoring.edit", "scoring.finalise",
     "news.publish.team",
   ],
   assistantcoach: [
     ...READ_TEAM, "player.performance.read", "player.development.read",
-    "medical.status.read", "medical.nature.read", "transport.read",
-    "scoring.start", "scoring.edit",
+    "medical.status.read", "medical.nature.read", "medical.details.read",
+    "transport.read", "scoring.start", "scoring.edit",
   ],
   teammanager: [
     ...READ_TEAM, "team.select", "medical.status.read", "medical.nature.read",
@@ -171,7 +185,11 @@ const BUNDLES = {
   guardian: [
     "fixture.read", "team.read", "news.read", "facility.read", "competition.read",
     "player.profile.read", "player.pii.read", "player.performance.read",
-    "medical.status.read", "medical.nature.read", "transport.read", "invoice.read",
+    // Their own children only — the assignment names them. A parent reading
+    // their child's physiotherapy report is the ordinary case, not an
+    // exception; the school would hand them the same letter.
+    "medical.status.read", "medical.nature.read", "medical.details.read",
+    "transport.read", "invoice.read",
   ],
 
   // ── Read-only observers ──
