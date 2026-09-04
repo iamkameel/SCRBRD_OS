@@ -112,6 +112,10 @@ export const CAPABILITIES = {
   // below.
   "player.roster.read":          "See every player at the school, in outline",
   "player.age.read":             "See a player's date of birth and age",
+  // Height and weight. Personal information about a child's body rather than a
+  // way to reach them, which is why it is not in the contact group: a strength
+  // and conditioning coach needs one and has no business with the other.
+  "player.biometric.read":       "See a player's height and weight",
   "player.identity.read":        "See a player's national ID number",
 
   // ── Asking another coach ──
@@ -167,6 +171,7 @@ export const ALL_CAPABILITIES = Object.freeze(Object.keys(CAPABILITIES));
 /** Capabilities that expose a minor's sensitive information. */
 export const SENSITIVE = Object.freeze([
   "player.pii.read",
+  "player.biometric.read",
   // The ID number of a minor. More sensitive than anything else here: a
   // diagnosis heals, an address changes, a South African ID number is issued
   // once and is useful to a fraudster for the rest of that child's life.

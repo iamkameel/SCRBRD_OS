@@ -302,6 +302,28 @@ export const READ_QUERIES = {
             order by next_birthday`,
   },
 
+  /**
+   * Who read what about a child.
+   *
+   * The answer to a parent asking, and to the Information Regulator. Governed
+   * by audit.read at the school, and deliberately NOT readable by the person
+   * who generated the entries — a log the reader can read tells them exactly
+   * what to avoid next time.
+   */
+  access_log: {
+    text: `select l.id, l.school_id, l.person_id, u.name as person_name,
+                  l.resource, l.record_ids, l.record_count, l.fields,
+                  l.device_id, l.occurred_at
+             from access_log l
+             left join app_user u on u.id = l.person_id
+            where ($1::uuid is null or l.record_ids @> array[$1::uuid])
+            order by l.occurred_at desc
+            limit 500`,
+    // Optional: everything read about ONE child, which is the question a
+    // parent actually asks.
+    params: q => [q?.playerId || null],
+  },
+
   // The team sheet for a fixture: a roster of identified minors, governed by
   // player.profile.read rather than fixture.read. The difference is a
   // spectator, who should see the score without also receiving a list of
@@ -326,12 +348,64 @@ function req(q, key) {
  * Read a resource under the caller's principal.
  * @returns rows already row-filtered (RLS) and column-masked (views).
  */
+/**
+ * The columns whose disclosure is worth a log entry, per resource.
+ *
+ * POPIA's "personal information", and for injuries "special personal
+ * information" under s. 26(b). A read that returns none of these is somebody
+ * opening a screen; a read that returns one is a disclosure about a child, and
+ * the difference is the whole point of logging.
+ *
+ * Listed here rather than derived from the policy model on purpose: the model
+ * says which capability GATES a column, and this says which columns are worth
+ * recording when they come back. They overlap heavily and are not the same
+ * question — a column can be masked for tidiness and a column can be sensitive
+ * without being masked from anyone who can already reach the row.
+ */
+export const RESTRICTED_FIELDS = Object.freeze({
+  players:  ["email", "phone", "born", "hometown", "houseatschool",
+             "address", "guardian", "height", "weight", "id_number"],
+  injuries: ["injury_type", "severity", "phase", "notes", "physio"],
+  career:   [],
+  skills:   ["score"],
+  users:    ["email"],
+});
+
+/** Which id column identifies the CHILD a row is about, for the log. */
+const SUBJECT_ID = { players: "id", injuries: "player_id", skills: "player_id", users: "id" };
+
+/** At most this many ids per entry. A log row is evidence, not a data export. */
+const MAX_LOGGED_IDS = 500;
+
+/**
+ * Read a resource under the caller's principal.
+ * @returns rows already row-filtered (RLS) and column-masked (views).
+ */
 export async function readResource(pool, secret, bearer, resource, query = {}) {
   const def = READ_QUERIES[resource];
   if (!def) { const e = new Error("unknown_resource"); e.status = 404; throw e; }
   const params = def.params ? def.params(query) : [];
   return runAsPrincipal(pool, secret, bearer, async client => {
     const { rows } = await client.query(def.text, params);
+
+    // Log what was ACTUALLY RECEIVED, not what was asked for. Masking is per
+    // row and per capability, so two people running this same query get
+    // different columns back — logging the query would record a disclosure
+    // that never happened for one of them.
+    const watched = RESTRICTED_FIELDS[resource];
+    if (watched?.length && rows.length) {
+      const disclosed = watched.filter((f) => rows.some((r) => r[f] != null));
+      if (disclosed.length) {
+        const idCol = SUBJECT_ID[resource];
+        const ids = idCol
+          ? [...new Set(rows.map((r) => r[idCol]).filter(Boolean))].slice(0, MAX_LOGGED_IDS)
+          : [];
+        const school = rows.find((r) => r.school_id)?.school_id ?? null;
+        await client.query(
+          `select log_restricted_read($1, $2::uuid[], $3::text[], $4::uuid)`,
+          [resource, ids, disclosed, school]);
+      }
+    }
     return rows;
   });
 }

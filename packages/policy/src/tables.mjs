@@ -126,10 +126,16 @@ export const TABLES = {
       // coaches. It is anchored like everything else and held by almost
       // nobody.
       "player.identity.read": ["id_number"],
+      // Contact and household. What a coach does not need to pick a team.
       "player.pii.read": [
-        "email", "phone", "hometown", "houseatschool",
-        "address", "guardian", "height", "weight",
+        "email", "phone", "hometown", "houseatschool", "address", "guardian",
       ],
+      // Height and weight, split out of the contact group. They are personal
+      // information about a child's body rather than a way to reach them, and
+      // the two were only ever together because one role denied them as a raw
+      // list. A role that needs a bowler's height for load management does not
+      // thereby need his home address.
+      "player.biometric.read": ["height", "weight"],
     },
   },
 

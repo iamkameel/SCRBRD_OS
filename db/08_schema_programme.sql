@@ -396,6 +396,102 @@ WHERE a.band_next_season > a.band
   AND a.next_birthday >= current_date
   AND a.next_birthday <= current_date + 30;
 
+-- ── Who read what about a child ─────────────────────────────────
+--
+-- This is the table SCRBRD produces to the Information Regulator, or to a
+-- parent who asks who has been reading their child's record. Append-only, and
+-- written by the system rather than by anything a person controls.
+--
+-- WHERE IT IS WRITTEN, AND WHY NOT WHERE THE SPEC SAYS
+-- ───────────────────────────────────────────────────
+-- The spec says "written inside getData()". getData() is in the BROWSER, and
+-- in this codebase it now refuses outright once a session exists — the choke
+-- point moved to the API and the row-level policies behind it. A log written
+-- in the browser would be a log the reader can switch off, which is not a log.
+--
+-- So it is written in the read path, on the server, after the rows come back:
+-- one place, on the far side of the policy that decided what those rows were.
+--
+-- WHAT IT RECORDS
+-- ───────────────
+-- Not "what the query asked for" — what the reader ACTUALLY RECEIVED. Masking
+-- is per row and per capability, so two people running the same query get
+-- different columns back, and logging the query would record a disclosure that
+-- never happened for one of them and miss the shape of the one that did.
+CREATE TABLE access_log (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id    uuid REFERENCES school(id),
+  person_id    uuid NOT NULL REFERENCES app_user(id),
+  resource     text NOT NULL,
+  -- The ids actually returned, capped. A roster read is a disclosure about
+  -- every child in it, and "they read the roster" without saying whose records
+  -- were in it is not an answer to a parent's question.
+  record_ids   uuid[] NOT NULL DEFAULT '{}',
+  record_count integer NOT NULL DEFAULT 0,
+  -- The restricted columns that came back non-null for at least one row. This
+  -- is the difference between "opened the injuries screen" and "read a child's
+  -- physiotherapy notes", and only the second is a disclosure worth the name.
+  fields       text[] NOT NULL DEFAULT '{}',
+  device_id    text,
+  occurred_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX ON access_log (person_id, occurred_at DESC);
+CREATE INDEX ON access_log (school_id, occurred_at DESC);
+-- The question a parent actually asks: who has read MY child's record.
+CREATE INDEX ON access_log USING gin (record_ids);
+
+ALTER TABLE access_log ENABLE ROW LEVEL SECURITY;
+
+-- Readable by whoever may audit, at their own school. NOT by the person who
+-- generated the entries: a log the subject can read is a log the subject can
+-- be pressured about, and a log the reader can read tells them exactly what to
+-- avoid next time.
+CREATE POLICY access_log_read ON access_log
+  FOR SELECT USING (
+    app_can('audit.read', access_log.school_id, '*'::text,
+            '00000000-0000-0000-0000-000000000000'::uuid,
+            '00000000-0000-0000-0000-000000000000'::uuid)
+  );
+
+-- No INSERT policy, no UPDATE policy, no DELETE policy. The application role
+-- cannot write this table at all; the only way a row appears is
+-- log_restricted_read() below, which runs as the owner. An audit log the
+-- audited party can append to is a diary.
+
+/**
+ * Record a restricted read.
+ *
+ * SECURITY DEFINER because access_log has no INSERT policy and the application
+ * role has no way to write it directly. That is the point: a log the reader
+ * can forge is worth nothing, and one they can suppress is worth less.
+ *
+ * Deliberately cannot fail the read it is logging. A logging failure must not
+ * turn into a coach being unable to see whether a boy is fit to play on a
+ * Saturday morning — the exception is swallowed and the read proceeds. That is
+ * a trade, and the right way round: an unlogged disclosure is a compliance
+ * problem, a blocked one is a safeguarding problem.
+ */
+CREATE OR REPLACE FUNCTION log_restricted_read(
+  p_resource text,
+  p_ids      uuid[],
+  p_fields   text[],
+  p_school   uuid DEFAULT NULL
+) RETURNS void AS $$
+BEGIN
+  IF app_user_id() IS NULL THEN RETURN; END IF;
+  INSERT INTO access_log (school_id, person_id, resource, record_ids, record_count,
+                          fields, device_id)
+  VALUES (p_school, app_user_id(), p_resource,
+          coalesce(p_ids, '{}'), coalesce(array_length(p_ids, 1), 0),
+          coalesce(p_fields, '{}'), app_device_id());
+EXCEPTION WHEN OTHERS THEN
+  -- See above. Never let the log break the read.
+  NULL;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION log_restricted_read(text, uuid[], text[], uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION log_restricted_read(text, uuid[], text[], uuid) TO PUBLIC;
+
 -- ── Asking another coach about one of their players ─────────────
 --
 -- A coach reaches a player through the side they coach. When a player is

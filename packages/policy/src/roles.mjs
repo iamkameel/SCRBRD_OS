@@ -78,7 +78,8 @@ const BUNDLES = {
   schooladmin: [
     ...READ_TEAM, "school.read", "school.manage", "user.read", "user.invite", "user.role.assign",
     "team.manage", "fixture.create", "fixture.update", "fixture.cancel",
-    "player.profile.manage", "player.pii.read", "player.age.read", "player.identity.read",
+    "player.profile.manage", "player.pii.read", "player.biometric.read",
+    "player.age.read", "player.identity.read",
     "player.roster.read",
     "medical.status.read", "medical.nature.read",
     "discipline.read", "facility.read", "facility.manage",
@@ -198,7 +199,7 @@ const BUNDLES = {
   // physiotherapy notes and will not show them to the child is on the wrong
   // side of that.
   selfaccess: [
-    "player.profile.read", "player.pii.read",
+    "player.profile.read", "player.pii.read", "player.biometric.read",
     "player.performance.read", "player.development.read",
     "medical.status.read", "medical.nature.read", "medical.details.read",
     "player.age.read", "player.identity.read",
@@ -210,7 +211,8 @@ const BUNDLES = {
   // the previous single-school session could not express at all.
   guardian: [
     "fixture.read", "team.read", "news.read", "facility.read", "competition.read",
-    "player.profile.read", "player.pii.read", "player.performance.read",
+    "player.profile.read", "player.pii.read", "player.biometric.read",
+    "player.performance.read",
     // Their own children only — the assignment names them. A parent reading
     // their child's physiotherapy report is the ordinary case, not an
     // exception; the school would hand them the same letter.
@@ -236,6 +238,9 @@ const BUNDLES = {
   // ── Specialists ──
   medical: [
     "team.read", "fixture.read", "news.read", "player.profile.read", "player.age.read",
+    // Height and weight are clinical inputs — a rehabilitation load is
+    // calculated from them.
+    "player.biometric.read",
     "medical.status.read", "medical.nature.read", "medical.details.read", "medical.write",
   ],
   finance: ["school.read", "news.read", "invoice.read", "invoice.manage", "user.read"],

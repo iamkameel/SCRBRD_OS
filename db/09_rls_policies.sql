@@ -339,7 +339,7 @@ BEGIN
            END, ', ' ORDER BY c.ordinal_position)
     INTO cols
     FROM information_schema.columns c
-    LEFT JOIN (VALUES ('id_number', 'player.identity.read', 'player.team_code'), ('email', 'player.pii.read', 'player.team_code'), ('phone', 'player.pii.read', 'player.team_code'), ('hometown', 'player.pii.read', 'player.team_code'), ('houseatschool', 'player.pii.read', 'player.team_code'), ('address', 'player.pii.read', 'player.team_code'), ('guardian', 'player.pii.read', 'player.team_code'), ('height', 'player.pii.read', 'player.team_code'), ('weight', 'player.pii.read', 'player.team_code'), ('born', 'player.age.read', '''*''::text')) AS g(column_name, capability, team_anchor)
+    LEFT JOIN (VALUES ('id_number', 'player.identity.read', 'player.team_code'), ('email', 'player.pii.read', 'player.team_code'), ('phone', 'player.pii.read', 'player.team_code'), ('hometown', 'player.pii.read', 'player.team_code'), ('houseatschool', 'player.pii.read', 'player.team_code'), ('address', 'player.pii.read', 'player.team_code'), ('guardian', 'player.pii.read', 'player.team_code'), ('height', 'player.biometric.read', 'player.team_code'), ('weight', 'player.biometric.read', 'player.team_code'), ('born', 'player.age.read', '''*''::text')) AS g(column_name, capability, team_anchor)
            ON g.column_name = c.column_name
    WHERE c.table_schema = 'public' AND c.table_name = 'player';
 

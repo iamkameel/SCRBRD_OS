@@ -2,7 +2,7 @@
 -- GENERATED from packages/policy/ by services/api/rls/generate-rls.mjs — DO NOT EDIT BY HAND.
 -- Regenerate with `pnpm rls:generate`. Applied BEFORE the scoring schema,
 -- which references app_can(). Model: docs/adr/0001-scoped-assignments.md.
--- 56 capabilities across 24 roles.
+-- 57 capabilities across 24 roles.
 
 -- Principal helpers. app_user_id() is set from the signed token on every
 -- request; everything else about a person's authority is looked up.
@@ -140,6 +140,7 @@ INSERT INTO capability (name) VALUES
   ('medical.write'),
   ('player.roster.read'),
   ('player.age.read'),
+  ('player.biometric.read'),
   ('player.identity.read'),
   ('player.access.request'),
   ('player.access.grant'),
@@ -265,6 +266,7 @@ INSERT INTO role_capability (role, capability) VALUES
   ('schooladmin', 'fixture.cancel'),
   ('schooladmin', 'player.profile.manage'),
   ('schooladmin', 'player.pii.read'),
+  ('schooladmin', 'player.biometric.read'),
   ('schooladmin', 'player.age.read'),
   ('schooladmin', 'player.identity.read'),
   ('schooladmin', 'player.roster.read'),
@@ -385,6 +387,7 @@ INSERT INTO role_capability (role, capability) VALUES
   ('enquiry', 'medical.status.read'),
   ('selfaccess', 'player.profile.read'),
   ('selfaccess', 'player.pii.read'),
+  ('selfaccess', 'player.biometric.read'),
   ('selfaccess', 'player.performance.read'),
   ('selfaccess', 'player.development.read'),
   ('selfaccess', 'medical.status.read'),
@@ -400,6 +403,7 @@ INSERT INTO role_capability (role, capability) VALUES
   ('guardian', 'competition.read'),
   ('guardian', 'player.profile.read'),
   ('guardian', 'player.pii.read'),
+  ('guardian', 'player.biometric.read'),
   ('guardian', 'player.performance.read'),
   ('guardian', 'medical.status.read'),
   ('guardian', 'medical.nature.read'),
@@ -423,6 +427,7 @@ INSERT INTO role_capability (role, capability) VALUES
   ('medical', 'news.read'),
   ('medical', 'player.profile.read'),
   ('medical', 'player.age.read'),
+  ('medical', 'player.biometric.read'),
   ('medical', 'medical.status.read'),
   ('medical', 'medical.nature.read'),
   ('medical', 'medical.details.read'),
