@@ -106,20 +106,65 @@ BEGIN
   SELECT count(*) INTO n FROM match;
   PERFORM _assert(n = 0, 'an unidentified session can read matches');
 
-  -- ── 2. A team coach is confined to their team ──────────────────
+  -- ── 2. The roster: rows widen to the school, columns do not ────
+  -- A coach used to see only their own squad, full stop. That made the
+  -- access-request workflow unusable — you cannot ask about a player you
+  -- cannot see exists — and made it impossible to be told a boy in the band
+  -- below is ageing up.
+  --
+  -- So ROW visibility widens to the whole school, and COLUMN visibility does
+  -- not. The boundary did not disappear; it moved to where it belongs.
   PERFORM _as(U_COACH);
-  SELECT count(*) INTO n FROM player WHERE team_code <> '1XI';
-  PERFORM _assert(n = 0, 'coach sees players outside their own team');
   SELECT count(*) INTO n FROM player WHERE team_code = '1XI';
   PERFORM _assert(n > 0, 'coach sees none of their own team');
+  SELECT count(*) INTO n FROM player WHERE team_code <> '1XI';
+  PERFORM _assert(n > 0, 'coach cannot see the rest of the school roster');
+
+  -- The tenant boundary is untouched, and this is the assertion that matters
+  -- most about the widening: a roster is school-wide, never platform-wide.
   SELECT count(*) INTO n FROM player WHERE school_id = WES;
   PERFORM _assert(n = 0, 'coach reaches across the tenant boundary');
 
-  -- The §36 case: an AGGREGATE must obey the same scope as a row read.
-  -- A count over the school shown to a team coach has already leaked.
+  -- Columns still answer to the team. Age is roster-tier and readable across
+  -- the school — a coach considering a trial needs it, and so does anyone
+  -- avoiding a fifteen-year-old in a U13 side.
+  SELECT count(*) INTO n FROM player_masked WHERE team_code <> '1XI' AND born IS NOT NULL;
+  PERFORM _assert(n > 0, 'age is not readable across the roster — trials and eligibility both need it');
+  -- Everything else is not.
+  SELECT count(*) INTO n FROM player_masked WHERE team_code <> '1XI' AND address IS NOT NULL;
+  PERFORM _assert(n = 0, 'a coach reads the home address of a child in another side');
+  SELECT count(*) INTO n FROM player_masked WHERE team_code <> '1XI' AND guardian IS NOT NULL;
+  PERFORM _assert(n = 0, 'a coach reads the guardian details of a child in another side');
+  SELECT count(*) INTO n FROM player_masked WHERE id_number IS NOT NULL;
+  PERFORM _assert(n = 0, 'a coach reads a national ID number');
+
+  -- And the roster does not become a way around the request workflow: seeing
+  -- that a child exists is not seeing whether they are fit to play.
+  SELECT count(*) INTO n FROM injury_masked i
+    JOIN player p ON p.id = i.player_id WHERE p.team_code <> '1XI';
+  PERFORM _assert(n = 0, 'the roster leaked another side''s medical information');
+
+  -- The §36 case: an AGGREGATE must obey the same scope as a row read. It
+  -- still does — what changed is the scope, not the rule. A coach's count is
+  -- now their SCHOOL, because the roster made the rows visible, and it must
+  -- still stop dead at the tenant boundary.
+  --
+  -- This assertion previously compared against their own team, and the roster
+  -- turned it red. That is the assertion working: a widening that no test
+  -- notices is a widening nobody reviewed.
   SELECT count(*) INTO n FROM player;
-  PERFORM _assert(n = (SELECT count(*) FROM player WHERE team_code = '1XI'),
-                  'coach total count exceeds their team scope');
+  PERFORM _assert(n = (SELECT count(*) FROM player WHERE school_id = HIL),
+                  'coach total count exceeds their school');
+  -- And the school is not the platform: Westville's players are outside it,
+  -- which the tenant assertion above already proved by row and this proves by
+  -- count. An aggregate leaks as surely as a row.
+  -- Derived from the fixture rather than a literal: the seed grows, and a
+  -- hardcoded 6 turns red the next time somebody adds a player, which trains
+  -- people to edit the number instead of reading the assertion.
+  PERFORM _assert(n = (SELECT count(*) FROM player WHERE school_id = HIL),
+                  'the coach''s count is not every Hilton player');
+  PERFORM _assert(n > (SELECT count(*) FROM player WHERE school_id = HIL AND team_code = '1XI'),
+                  'the roster is no wider than the coach''s own side');
 
   -- ── 3. The coach of the side holds the whole record ────────────
   -- A coach reads the full medical record — clinical notes included — for the
@@ -315,10 +360,20 @@ BEGIN
   -- Director of Sport reaches every Hilton player…
   -- Every Hilton player, including the U16B side she does not coach and the
   -- 1XI side she has no assignment over: Director of Sport is school-scoped.
-  SELECT count(*) INTO n FROM player WHERE school_id = HIL;
-  PERFORM _assert(n = 6, 'Director of Sport does not reach the whole school');
-  SELECT count(*) INTO n FROM player WHERE school_id = HIL AND team_code = '1XI';
-  PERFORM _assert(n = 5, 'Director of Sport misses a team she does not coach');
+  -- Counted against the fixture, not a literal, for the same reason as the
+  -- coach's roster above: the seed grows, and a hardcoded number trains people
+  -- to edit the count rather than read the claim.
+  -- Asserted on NAMED players rather than a count. The count version compared
+  -- a query against itself — both sides run under the same policy, so it was
+  -- true for every input including one where she saw nobody.
+  --
+  -- She coaches U16B and is Director of Sport. So: the U16B player she coaches,
+  -- AND a 1XI player she has no assignment over, both reachable — which is the
+  -- actual claim, that the school-scoped role reaches past the team-scoped one.
+  SELECT count(*) INTO n FROM player WHERE id = P_U16B;
+  PERFORM _assert(n = 1, 'Director of Sport cannot see the side she coaches');
+  SELECT count(*) INTO n FROM player WHERE id = P_INJURED;
+  PERFORM _assert(n = 1, 'Director of Sport does not reach a team she does not coach');
   -- …and guardianship reaches exactly one child at the OTHER school…
   SELECT count(*) INTO n FROM player WHERE school_id = WES;
   PERFORM _assert(n = 1, 'cross-school guardian scope is wrong');

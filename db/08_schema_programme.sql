@@ -180,7 +180,7 @@ CREATE TABLE notification (
   -- What the notice is ABOUT, when it is about something. Nullable and
   -- unenforced by design: a notice may reference a fixture that is later
   -- cancelled, and the notice should survive to say so.
-  subject_kind text CHECK (subject_kind IN ('match','injury','training','transport','facility','skills','system','competition')),
+  subject_kind text CHECK (subject_kind IN ('match','injury','training','transport','facility','skills','system','competition','selection')),
   subject_id   uuid,
   -- WHO the notice is about, when it is about a person.
   --
@@ -300,6 +300,126 @@ DROP TRIGGER IF EXISTS match_squad_is_age_eligible ON match_squad;
 CREATE TRIGGER match_squad_is_age_eligible
   BEFORE INSERT OR UPDATE ON match_squad
   FOR EACH ROW EXECUTE FUNCTION match_squad_age_eligible();
+
+-- ── A boy about to age up, and the coaches who should know ──────
+--
+-- A thirteen-year-old in the U13A side who turns fourteen before the next
+-- cut-off is a U14 player next season. Under the 1 January rule he stays
+-- eligible for the whole of THIS one — which is exactly why the notice has to
+-- go out ahead of the birthday. By the time he is ineligible, the U14 trials
+-- have happened and he has missed them.
+--
+-- WHO IS TOLD: the coaches of the side he should be trialled for, which is the
+-- next band up AT THE SAME MERIT LEVEL. A U13A player is not a U14 player in
+-- general; he is one of the best thirteen-year-olds at the school, and sending
+-- him to the U14C because that is where a space happens to be is how a good
+-- player is lost. The division letter is preserved.
+--
+-- U16 is the exception. He ages into the OPEN category, where sides are ranked
+-- rather than lettered and he is competing with seventeen- and
+-- eighteen-year-olds for the first time. No letter maps honestly to a rank, so
+-- every open side is told and the coaches sort it out — which is what happens
+-- in a school anyway.
+--
+-- Thirty days, per the product rule. Long enough to arrange a trial, short
+-- enough that the notice is about this season rather than a diary entry.
+CREATE OR REPLACE FUNCTION notify_band_changes(p_days integer DEFAULT 30)
+RETURNS integer AS $$
+DECLARE
+  r          record;
+  v_target   text;
+  v_turning  int;
+  v_written  int := 0;
+BEGIN
+  FOR r IN
+    SELECT p.id, p.school_id, p.full_name, p.team_code, p.born,
+           -- The next occurrence of their birthday.
+           (make_date(
+              CASE WHEN make_date(extract(year FROM current_date)::int,
+                                  extract(month FROM p.born)::int,
+                                  extract(day FROM p.born)::int) < current_date
+                   THEN extract(year FROM current_date)::int + 1
+                   ELSE extract(year FROM current_date)::int END,
+              extract(month FROM p.born)::int,
+              extract(day FROM p.born)::int)) AS next_birthday,
+           substring(p.team_code FROM '^U([0-9]{1,2})')::int AS band,
+           coalesce(substring(p.team_code FROM '^U[0-9]{1,2}([A-F])'), '') AS division
+      FROM player p
+     WHERE p.born IS NOT NULL
+       AND p.team_code ~ '^U[0-9]{1,2}'
+  LOOP
+    -- Only within the notice window.
+    CONTINUE WHEN r.next_birthday > current_date + make_interval(days => p_days);
+    CONTINUE WHEN r.next_birthday < current_date;
+
+    -- The age they turn on that birthday, for the message.
+    v_turning := extract(year FROM r.next_birthday)::int - extract(year FROM r.born)::int;
+
+    -- Does that birthday actually move them out of their band? Their age at
+    -- the cut-off AFTER the birthday, against the band they are in now.
+    CONTINUE WHEN (extract(year FROM r.next_birthday)::int + 1
+                   - extract(year FROM r.born)::int
+                   - CASE WHEN make_date(extract(year FROM r.next_birthday)::int + 1, 1, 1)
+                               < make_date(extract(year FROM r.next_birthday)::int + 1,
+                                           extract(month FROM r.born)::int,
+                                           extract(day FROM r.born)::int)
+                          THEN 1 ELSE 0 END) <= r.band;
+
+    -- The side up, at the same merit level. U16 has no letter-to-rank mapping,
+    -- so it goes to every open side.
+    IF r.band >= 16 THEN
+      FOR v_target IN SELECT unnest(ARRAY['1XI','2XI','3XI']) LOOP
+        IF _publish_band_change(r.id, r.school_id, r.full_name, r.team_code,
+                                v_target, r.next_birthday, v_turning)
+          THEN v_written := v_written + 1; END IF;
+      END LOOP;
+    ELSE
+      v_target := 'U' || (r.band + 1)::text || r.division;
+      IF _publish_band_change(r.id, r.school_id, r.full_name, r.team_code,
+                              v_target, r.next_birthday, v_turning)
+        THEN v_written := v_written + 1; END IF;
+    END IF;
+  END LOOP;
+  RETURN v_written;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+/**
+ * One notice, published idempotently.
+ *
+ * This function is expected to run on a schedule, and a daily job that creates
+ * a fresh notice every morning for thirty days is not a notification system,
+ * it is a denial of service against a coach's attention. The subject_kind and
+ * the birthday year make the key: one notice per player, per target side, per
+ * birthday, however many times the job runs.
+ */
+CREATE OR REPLACE FUNCTION _publish_band_change(
+  p_player uuid, p_school uuid, p_name text, p_from text, p_to text,
+  p_birthday date, p_turning integer
+) RETURNS boolean AS $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM notification
+     WHERE subject_kind = 'selection'
+       AND subject_person_id = p_player
+       AND team_code = p_to
+       AND body LIKE '%' || to_char(p_birthday, 'YYYY-MM-DD') || '%'
+  ) THEN RETURN false; END IF;
+
+  INSERT INTO notification
+    (school_id, team_code, scope_level, kind, urgency, title, body,
+     required_capability, is_public, subject_kind, subject_person_id)
+  VALUES
+    (p_school, p_to, 'team', 'selection', 'medium',
+     'Ageing up: consider for trials',
+     p_name || ' turns ' || p_turning::text || ' on ' || to_char(p_birthday, 'YYYY-MM-DD')
+       || ' and moves out of ' || p_from || ' for next season. '
+       || 'Consider them for ' || p_to || ' trials.',
+     -- The roster tier. A coach being asked to trial a boy needs to know he
+     -- exists and how old he is, which is exactly player.roster.read — not the
+     -- medical or development tiers, which stay with the side he plays for.
+     'player.roster.read', false, 'selection', p_player);
+  RETURN true;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- ── Asking another coach about one of their players ─────────────
 --

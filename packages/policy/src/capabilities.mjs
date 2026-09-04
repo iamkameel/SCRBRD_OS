@@ -104,6 +104,13 @@ export const CAPABILITIES = {
   //              union's paperwork, and by nobody else. It is the single most
   //              dangerous field about a child in the schema: it is durable,
   //              unique and useful to a fraudster for the rest of their life.
+  // The roster: that a child exists, which side they are in, what they play.
+  // Deliberately NOT a tier of personal information — it is row visibility, so
+  // a coach can find a player in another team to ask about, consider one for a
+  // trial, or be told one is ageing out of the band below. What they then see
+  // of that child is still decided per column, per row, by the capabilities
+  // below.
+  "player.roster.read":          "See every player at the school, in outline",
   "player.age.read":             "See a player's date of birth and age",
   "player.identity.read":        "See a player's national ID number",
 

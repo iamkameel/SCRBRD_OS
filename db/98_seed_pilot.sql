@@ -45,6 +45,12 @@ UPDATE player SET fitness = 'injured' WHERE id = 'aaaaaaaa-0000-0000-0000-000000
 -- These are structurally valid but deliberately not real: the date segment
 -- matches the player's seeded date of birth, the rest is sequential. Nobody's
 -- actual ID number belongs in a repository.
+-- Addresses, for the same reason as the ID numbers above: with the column
+-- empty everywhere, "a coach cannot read a home address" passes by having
+-- nothing to find. Removing `address` from the mask left the roster walk fully
+-- green, which is exactly the failure this line closes.
+UPDATE player SET address = '12 Example Road, Howick' WHERE school_id = '11111111-1111-1111-1111-111111111111';
+
 UPDATE player SET id_number = '0803145000081' WHERE id = 'aaaaaaaa-0000-0000-0000-000000000001';
 UPDATE player SET id_number = '0807025000082' WHERE id = 'aaaaaaaa-0000-0000-0000-000000000002';
 UPDATE player SET id_number = '0805305000085' WHERE id = 'aaaaaaaa-0000-0000-0000-000000000005';
@@ -75,6 +81,20 @@ INSERT INTO injury (id, school_id, player_id, injury_type, severity, date_injure
    'Wrist sprain', 'minor', current_date - 3, current_date + 11, 'rehab', true,
    'Clinical: scapholunate ligament sprain, immobilised two weeks.',
    'Physio: splint, grip work from week two.');
+
+-- Two U13A players and the U14A coach who should hear about one of them.
+-- L Mahlangu turns 14 within the notice window and ages out of U13 for next
+-- season; J Sithole turns 13 and stays. Without the second, "only the player
+-- who ages out is notified" passes by having nothing to reject.
+INSERT INTO player (id, school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+  ('aaaaaaaa-0000-0000-0000-000000000011', '11111111-1111-1111-1111-111111111111', 'U13A',
+   'L Mahlangu', 1, 'allrounder', (current_date + interval '20 days' - interval '14 years')::date),
+  ('aaaaaaaa-0000-0000-0000-000000000012', '11111111-1111-1111-1111-111111111111', 'U13A',
+   'J Sithole', 2, 'batter', (current_date + interval '20 days' - interval '13 years')::date);
+
+INSERT INTO app_user (id, school_id, email, name, role, teams) VALUES
+  ('88888888-0000-0000-0000-00000000000b', '11111111-1111-1111-1111-111111111111',
+   'u14coach@example.invalid', 'T Ndlovu', 'coach', '{U14A}');
 
 -- ── Staff and coaches ───────────────────────────────────────────
 INSERT INTO coach (id, school_id, team_code, name, title, email, phone) VALUES
@@ -170,7 +190,8 @@ INSERT INTO role_assignment (id, person_id, role, school_id, team_code) VALUES
   -- and these two need different scopes.
   ('a5510000-0000-0000-0000-00000000000c', '88888888-0000-0000-0000-000000000009', 'player',          '11111111-1111-1111-1111-111111111111', '1XI'),
   ('a5510000-0000-0000-0000-00000000000d', '88888888-0000-0000-0000-000000000009', 'selfaccess',      '11111111-1111-1111-1111-111111111111', NULL),
-  ('a5510000-0000-0000-0000-00000000000e', '88888888-0000-0000-0000-00000000000a', 'coach',           '11111111-1111-1111-1111-111111111111', '2XI');
+  ('a5510000-0000-0000-0000-00000000000e', '88888888-0000-0000-0000-00000000000a', 'coach',           '11111111-1111-1111-1111-111111111111', '2XI'),
+  ('a5510000-0000-0000-0000-00000000000f', '88888888-0000-0000-0000-00000000000b', 'coach',           '11111111-1111-1111-1111-111111111111', 'U14A');
 
 -- Who each assignment is about: the parent's child, Sarah's two children at
 -- two schools, and R Pillay's own record.

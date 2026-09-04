@@ -67,6 +67,7 @@ CREATE POLICY app_user_update ON app_user
            WITH CHECK (app_can('user.role.assign', app_user.school_id, NULL::text, app_user.id, '00000000-0000-0000-0000-000000000000'::uuid));
 
 -- player — read: player.profile.read · write: player.profile.manage
+-- plus a named exception on read — see readPredicate() in generate-rls.mjs
 ALTER TABLE player ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS player_read   ON player;
 DROP POLICY IF EXISTS player_insert ON player;
@@ -74,7 +75,10 @@ DROP POLICY IF EXISTS player_update ON player;
 DROP POLICY IF EXISTS player_delete ON player;
 
 CREATE POLICY player_read ON player
-  FOR SELECT USING (app_can('player.profile.read', player.school_id, player.team_code, player.id, '00000000-0000-0000-0000-000000000000'::uuid));
+  FOR SELECT USING ((app_can('player.profile.read', player.school_id, player.team_code, player.id, '00000000-0000-0000-0000-000000000000'::uuid))
+    OR (app_can('player.roster.read', player.school_id, '*'::text,
+                          '00000000-0000-0000-0000-000000000000'::uuid,
+                          '00000000-0000-0000-0000-000000000000'::uuid)));
 
 CREATE POLICY player_insert ON player
   FOR INSERT WITH CHECK (app_can('player.profile.manage', player.school_id, player.team_code, player.id, '00000000-0000-0000-0000-000000000000'::uuid));
@@ -328,14 +332,14 @@ BEGIN
                 THEN format('CASE WHEN app_can(%L, %s, %s, %s, NULL) THEN %I ELSE NULL END AS %I',
                             g.capability,
                             'player.school_id',
-                            'player.team_code',
+                            g.team_anchor,
                             'player.id',
                             c.column_name, c.column_name)
                 ELSE format('%I', c.column_name)
            END, ', ' ORDER BY c.ordinal_position)
     INTO cols
     FROM information_schema.columns c
-    LEFT JOIN (VALUES ('born', 'player.age.read'), ('id_number', 'player.identity.read'), ('email', 'player.pii.read'), ('phone', 'player.pii.read'), ('hometown', 'player.pii.read'), ('houseatschool', 'player.pii.read'), ('address', 'player.pii.read'), ('guardian', 'player.pii.read'), ('height', 'player.pii.read'), ('weight', 'player.pii.read')) AS g(column_name, capability)
+    LEFT JOIN (VALUES ('id_number', 'player.identity.read', 'player.team_code'), ('email', 'player.pii.read', 'player.team_code'), ('phone', 'player.pii.read', 'player.team_code'), ('hometown', 'player.pii.read', 'player.team_code'), ('houseatschool', 'player.pii.read', 'player.team_code'), ('address', 'player.pii.read', 'player.team_code'), ('guardian', 'player.pii.read', 'player.team_code'), ('height', 'player.pii.read', 'player.team_code'), ('weight', 'player.pii.read', 'player.team_code'), ('born', 'player.age.read', '''*''::text')) AS g(column_name, capability, team_anchor)
            ON g.column_name = c.column_name
    WHERE c.table_schema = 'public' AND c.table_name = 'player';
 
@@ -374,14 +378,14 @@ BEGIN
                 THEN format('CASE WHEN app_can(%L, %s, %s, %s, NULL) THEN %I ELSE NULL END AS %I',
                             g.capability,
                             'coach.school_id',
-                            'coach.team_code',
+                            g.team_anchor,
                             'coach.id',
                             c.column_name, c.column_name)
                 ELSE format('%I', c.column_name)
            END, ', ' ORDER BY c.ordinal_position)
     INTO cols
     FROM information_schema.columns c
-    LEFT JOIN (VALUES ('email', 'player.pii.read'), ('phone', 'player.pii.read'), ('born', 'player.pii.read'), ('hometown', 'player.pii.read'), ('address', 'player.pii.read')) AS g(column_name, capability)
+    LEFT JOIN (VALUES ('email', 'player.pii.read', 'coach.team_code'), ('phone', 'player.pii.read', 'coach.team_code'), ('born', 'player.pii.read', 'coach.team_code'), ('hometown', 'player.pii.read', 'coach.team_code'), ('address', 'player.pii.read', 'coach.team_code')) AS g(column_name, capability, team_anchor)
            ON g.column_name = c.column_name
    WHERE c.table_schema = 'public' AND c.table_name = 'coach';
 
@@ -420,14 +424,14 @@ BEGIN
                 THEN format('CASE WHEN app_can(%L, %s, %s, %s, NULL) THEN %I ELSE NULL END AS %I',
                             g.capability,
                             'staff.school_id',
-                            'NULL::text',
+                            g.team_anchor,
                             'staff.id',
                             c.column_name, c.column_name)
                 ELSE format('%I', c.column_name)
            END, ', ' ORDER BY c.ordinal_position)
     INTO cols
     FROM information_schema.columns c
-    LEFT JOIN (VALUES ('email', 'player.pii.read'), ('phone', 'player.pii.read'), ('born', 'player.pii.read'), ('hometown', 'player.pii.read'), ('address', 'player.pii.read')) AS g(column_name, capability)
+    LEFT JOIN (VALUES ('email', 'player.pii.read', 'NULL::text'), ('phone', 'player.pii.read', 'NULL::text'), ('born', 'player.pii.read', 'NULL::text'), ('hometown', 'player.pii.read', 'NULL::text'), ('address', 'player.pii.read', 'NULL::text')) AS g(column_name, capability, team_anchor)
            ON g.column_name = c.column_name
    WHERE c.table_schema = 'public' AND c.table_name = 'staff';
 
@@ -466,14 +470,14 @@ BEGIN
                 THEN format('CASE WHEN app_can(%L, %s, %s, %s, NULL) THEN %I ELSE NULL END AS %I',
                             g.capability,
                             'injury.school_id',
-                            '(SELECT p.team_code FROM player p WHERE p.id = injury.player_id)',
+                            g.team_anchor,
                             'injury.player_id',
                             c.column_name, c.column_name)
                 ELSE format('%I', c.column_name)
            END, ', ' ORDER BY c.ordinal_position)
     INTO cols
     FROM information_schema.columns c
-    LEFT JOIN (VALUES ('injury_type', 'medical.nature.read'), ('severity', 'medical.nature.read'), ('phase', 'medical.nature.read'), ('notes', 'medical.details.read'), ('physio', 'medical.details.read')) AS g(column_name, capability)
+    LEFT JOIN (VALUES ('injury_type', 'medical.nature.read', '(SELECT p.team_code FROM player p WHERE p.id = injury.player_id)'), ('severity', 'medical.nature.read', '(SELECT p.team_code FROM player p WHERE p.id = injury.player_id)'), ('phase', 'medical.nature.read', '(SELECT p.team_code FROM player p WHERE p.id = injury.player_id)'), ('notes', 'medical.details.read', '(SELECT p.team_code FROM player p WHERE p.id = injury.player_id)'), ('physio', 'medical.details.read', '(SELECT p.team_code FROM player p WHERE p.id = injury.player_id)')) AS g(column_name, capability, team_anchor)
            ON g.column_name = c.column_name
    WHERE c.table_schema = 'public' AND c.table_name = 'injury';
 

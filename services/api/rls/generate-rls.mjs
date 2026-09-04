@@ -313,15 +313,30 @@ function maskViews() {
   const out = [banner("Column-masking views")];
   for (const [table, def] of Object.entries(TABLES)) {
     const masked = def.masked ?? {};
-    if (!Object.keys(masked).length) continue;
+    const maskedAnyTeam = def.maskedAnyTeam ?? {};
+    if (!Object.keys(masked).length && !Object.keys(maskedAnyTeam).length) continue;
 
-    // column → guarding capability
+    // column → { capability, team anchor }
+    //
+    // The TEAM anchor varies per capability, which is what lets one table show
+    // more of a row to the people it belongs to and less to everyone else.
+    //
+    //   masked        — anchored to the row's own team. A coach unmasks their
+    //                   own squad and nothing else.
+    //   maskedAnyTeam — the team dimension does not apply. Anyone holding the
+    //                   capability anywhere in the school reads it, which is
+    //                   what a school-wide roster needs: every coach can see
+    //                   how old a boy is, and only his own coach can see his
+    //                   home address.
+    const teamAnchored = anchor(table, def, "team", "text");
     const guard = {};
     for (const [cap, cols] of Object.entries(masked))
-      for (const c of cols) guard[c.toLowerCase()] = cap;
+      for (const c of cols) guard[c.toLowerCase()] = { cap, team: teamAnchored };
+    for (const [cap, cols] of Object.entries(maskedAnyTeam))
+      for (const c of cols) guard[c.toLowerCase()] = { cap, team: ANY.text };
 
     const pairs = Object.entries(guard)
-      .map(([col, cap]) => `(${q(col)}, ${q(cap)})`)
+      .map(([col, g]) => `(${q(col)}, ${q(g.cap)}, ${q(g.team)})`)
       .join(", ");
 
     out.push(`
@@ -340,14 +355,14 @@ BEGIN
                 THEN format('CASE WHEN app_can(%L, %s, %s, %s, NULL) THEN %I ELSE NULL END AS %I',
                             g.capability,
                             ${q(anchor(table, def, "school", "uuid"))},
-                            ${q(anchor(table, def, "team", "text"))},
+                            g.team_anchor,
                             ${q(anchor(table, def, "person", "uuid"))},
                             c.column_name, c.column_name)
                 ELSE format('%I', c.column_name)
            END, ', ' ORDER BY c.ordinal_position)
     INTO cols
     FROM information_schema.columns c
-    LEFT JOIN (VALUES ${pairs}) AS g(column_name, capability)
+    LEFT JOIN (VALUES ${pairs}) AS g(column_name, capability, team_anchor)
            ON g.column_name = c.column_name
    WHERE c.table_schema = 'public' AND c.table_name = ${q(table)};
 

@@ -194,6 +194,68 @@ export function isEligible(age, code) {
   return t.kind === "open" ? true : age <= t.age;
 }
 
+/**
+ * The side a player moves to when they age out of this one — at the SAME MERIT
+ * LEVEL, which is the part that matters.
+ *
+ * A boy in the U13A side is not a U14 player in general; he is one of the best
+ * thirteen-year-olds at the school, and the side he should be trialled for is
+ * the U14A. Promoting him to U14C because that is where a space happens to be
+ * is how a good player is lost. So the division letter is preserved.
+ *
+ * The one place that breaks down is the top of the age groups. A U16 ages into
+ * the OPEN category, where sides are ranked rather than lettered, and a U16A is
+ * not automatically a 1st XI candidate — he is competing with seventeen- and
+ * eighteen-year-olds for the first time. There is no honest letter-to-rank
+ * mapping, so this returns EVERY open side and lets the coaches sort it out,
+ * which is what actually happens in a school.
+ *
+ * @returns {string[]} candidate team codes, or [] when there is no step up.
+ */
+export function nextBandUp(code, { openSides = 3 } = {}) {
+  const t = parseTeam(code);
+  if (!t || t.kind === "open") return [];          // an open side is the top
+  const bands = AGE_GROUPS.school;
+  const i = bands.indexOf(t.age);
+  if (i === -1) return [];
+  if (i === bands.length - 1) {
+    return Array.from({ length: openSides }, (_, r) => `${r + 1}XI`);
+  }
+  return [`U${bands[i + 1]}${t.division ?? ""}`];
+}
+
+/**
+ * Will this player's band change at the next cut-off, and on which birthday?
+ *
+ * A boy of 13 in a U13 side who turns 14 before the next 1 January is a U14
+ * player next season. He stays eligible for the rest of THIS one — that is the
+ * whole point of the 1 January rule — which is exactly why the notice has to go
+ * out ahead of the birthday rather than when he becomes ineligible. By the time
+ * he is ineligible, the trials have happened.
+ *
+ * @returns {{birthday:Date, currentBand:number, nextBand:number}|null}
+ */
+export function bandChangeAhead(born, team, from = new Date()) {
+  const t = parseTeam(team);
+  if (!t || t.kind === "open" || !born) return null;
+  const b = born instanceof Date ? born : new Date(born);
+  if (Number.isNaN(b.getTime())) return null;
+  const ref = from instanceof Date ? from : new Date(from);
+
+  let year = ref.getUTCFullYear();
+  let birthday = new Date(Date.UTC(year, b.getUTCMonth(), b.getUTCDate()));
+  if (birthday < ref) birthday = new Date(Date.UTC(++year, b.getUTCMonth(), b.getUTCDate()));
+
+  // Their band at the cut-off AFTER that birthday. If it exceeds the side they
+  // are in, they age out of it for the coming season.
+  const after = ageAtCutoff(b, new Date(Date.UTC(birthday.getUTCFullYear() + 1, 5, 1)));
+  if (after == null || after <= t.age) return null;
+  return { birthday, currentBand: t.age, nextBand: after };
+}
+
+/** How far ahead a coach is told. Thirty days, per the product rule. */
+export const BAND_CHANGE_NOTICE_DAYS = 30;
+
 /** Every code a level may legitimately field, in reading order. */
 export function teamsForLevel(level = "school", { divisions = ["A", "B", "C"], openSides = 3 } = {}) {
   const out = [];

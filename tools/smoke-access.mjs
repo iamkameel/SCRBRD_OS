@@ -70,8 +70,15 @@ try {
   const before = await read("injuries", second);
   ok("the 2nd XI coach sees no 1st XI injury",
      !before.some((i) => i.player_id === P_FIRST));
-  ok("...nor the player at all",
-     !(await read("players", second)).some((p) => p.id === P_FIRST));
+  // They CAN see the player exists — that is the roster, and it is what makes
+  // asking possible at all: you cannot request access to somebody you cannot
+  // find. What the roster does not carry is whether he is fit to play, which
+  // is exactly the question the request exists to answer.
+  const rosterBefore = await read("players", second);
+  ok("...but they can see the player exists, which is what lets them ask",
+     rosterBefore.some((p) => p.id === P_FIRST));
+  ok("...and the roster tells them nothing about his availability",
+     !before.some((i) => i.player_id === P_FIRST));
 
   group("So they ask");
   const asked = await ask(P_FIRST, second, {

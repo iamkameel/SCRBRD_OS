@@ -41,8 +41,22 @@ export const READ_QUERIES = {
   },
   players: {
     masked: true,
-    text: `select id, full_name, team_code, playing_role, batting_style, bowling_style,
-                  born, hometown, height, weight            -- masked per role
+    // The roster read. Every coach at the school sees every child in outline;
+    // what they see OF each one is decided per column, per row, by the masking
+    // view — a coach unmasks their own squad and reads a name, a side and an
+    // age for everybody else.
+    //
+    // address, guardian and id_number are selected DELIBERATELY. They were
+    // omitted, which meant an assertion that "a coach cannot read a home
+    // address" passed because the query never asked for one — the column list
+    // was doing the work and the mask was never exercised. A column list is
+    // not an access control: it is the same for everyone and cannot tell a
+    // school administrator from a coach. Asking and getting NULL is the mask
+    // being tested.
+    text: `select id, school_id, full_name, team_code, playing_role,
+                  batting_style, bowling_style, fitness,
+                  born, hometown, height, weight,           -- masked per role
+                  address, guardian, id_number              -- masked per role
              from player_masked
             order by full_name`,
   },

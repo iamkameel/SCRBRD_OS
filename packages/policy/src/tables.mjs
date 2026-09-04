@@ -80,6 +80,18 @@ export const TABLES = {
     read:  "player.profile.read",
     write: "player.profile.manage",
     anchors: { school: "school_id", team: "team_code", person: "id" },
+    // The roster. A named exception that widens WHICH ROWS a coach sees, from
+    // their own squad to every child at the school — and nothing about which
+    // columns, which the mask groups below still decide per row.
+    //
+    // Without it a coach cannot find a player in another side to ask about,
+    // cannot consider one for a trial, and cannot be told that a boy is about
+    // to age out of the band below them. The access-request workflow in
+    // particular had no starting point: you cannot request access to someone
+    // you cannot see exists.
+    visibleWhen: `app_can('player.roster.read', player.school_id, '*'::text,
+                          '00000000-0000-0000-0000-000000000000'::uuid,
+                          '00000000-0000-0000-0000-000000000000'::uuid)`,
     // A minor's personal information, in three tiers rather than one.
     //
     // `born` used to sit with the contact details, which meant a coach could
@@ -93,8 +105,26 @@ export const TABLES = {
     // useful to a fraudster for the rest of their life — and it is needed for
     // registration and a union's paperwork by nobody but the school office. A
     // coach does not see it.
-    masked: {
+    // A ROSTER, and the reason the two mask groups exist.
+    //
+    // Every coach at the school can see that a child exists, which team they
+    // are in, what they play and how old they are. That is what a coach needs
+    // to find a player to ask about, to consider one for a trial, and to avoid
+    // putting a fifteen-year-old in a U13 side.
+    //
+    // Everything else stays with the side that boy actually plays for. The
+    // difference is not a second table or a second query — it is the TEAM
+    // anchor on the mask: `masked` compares the row's team to the reader's
+    // assignment, `maskedAnyTeam` does not.
+    maskedAnyTeam: {
+      // Age is the roster tier: needed school-wide by anyone who selects or
+      // trials, which under the eligibility rules is every coach.
       "player.age.read": ["born"],
+    },
+    masked: {
+      // The ID number never widens, not even for the school office's own
+      // coaches. It is anchored like everything else and held by almost
+      // nobody.
       "player.identity.read": ["id_number"],
       "player.pii.read": [
         "email", "phone", "hometown", "houseatschool",
@@ -362,9 +392,27 @@ export const TABLES = {
   },
 };
 
+/**
+ * Every masked column on a table, whichever group it is in.
+ *
+ * Two groups exist because the TEAM anchor differs — `masked` compares the
+ * row's team to the reader's assignment, `maskedAnyTeam` does not — and that
+ * distinction matters only to whoever is building the app_can() call. To
+ * everybody else, "which columns are masked and behind what" is one question
+ * with one answer, and asking it in two places is how the client and the
+ * database came to disagree about `born` the moment the second group appeared.
+ */
+export function maskedColumns(def) {
+  const out = {};
+  for (const src of [def?.masked ?? {}, def?.maskedAnyTeam ?? {}])
+    for (const [cap, cols] of Object.entries(src)) out[cap] = [...(out[cap] ?? []), ...cols];
+  return out;
+}
+
 /** Tables whose rows a given capability can mask columns on. */
 export const MASKED_TABLES = Object.entries(TABLES)
-  .filter(([, def]) => Object.keys(def.masked ?? {}).length)
+  .filter(([, def]) => Object.keys(def.masked ?? {}).length
+                    || Object.keys(def.maskedAnyTeam ?? {}).length)
   .map(([t]) => t);
 
 /** Every capability referenced here, for cross-checking against roles.mjs. */
@@ -385,6 +433,7 @@ export function referencedCapabilities() {
     add(def.readAlso);
     add(def.write);
     for (const c of Object.keys(def.masked ?? {})) out.add(c);
+    for (const c of Object.keys(def.maskedAnyTeam ?? {})) out.add(c);
   }
   return [...out].sort();
 }

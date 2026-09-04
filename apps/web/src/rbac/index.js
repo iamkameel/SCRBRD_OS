@@ -23,7 +23,7 @@
 
 import { authorize, scopeFilter, ANY_SCOPE } from "@scrbrd/policy/authorize";
 import { roleGrants, ROLE_CAPABILITIES } from "@scrbrd/policy/roles";
-import { TABLES } from "@scrbrd/policy/tables";
+import { TABLES, maskedColumns } from "@scrbrd/policy/tables";
 import { teamCodeIn } from "@scrbrd/policy/teams";
 // The demonstration vocabulary lives in its own leaf module: design/roles.js
 // needs the same mapping, and declaring it in either of us makes the other
@@ -75,7 +75,10 @@ function maskMap(resource) {
   const def = RESOURCE[resource];
   const table = def?.table ? TABLES[def.table] : null;
   const out = {};
-  for (const [cap, cols] of Object.entries(table?.masked ?? {}))
+  // maskedColumns() rather than table.masked, because there are two mask
+  // groups now and reading only one of them is exactly how the browser stopped
+  // masking `born` while Postgres carried on doing it.
+  for (const [cap, cols] of Object.entries(table ? maskedColumns(table) : {}))
     for (const col of cols) out[col] = cap;
   // The mock data uses camelCase where the table uses lowercase.
   if (out.houseatschool) out.houseAtSchool = out.houseatschool;

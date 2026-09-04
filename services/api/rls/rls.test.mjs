@@ -8,7 +8,7 @@
  * emits says the same thing the JS says.
  */
 import { ROLES, ROLE_CAPABILITIES, roleGrants, SCORING_ROLES } from "@scrbrd/policy/roles";
-import { TABLES, referencedCapabilities, isCapabilityExpression } from "@scrbrd/policy/tables";
+import { TABLES, referencedCapabilities, isCapabilityExpression, maskedColumns } from "@scrbrd/policy/tables";
 import { ALL_CAPABILITIES, SENSITIVE, isCapability } from "@scrbrd/policy/capabilities";
 import { main } from "./generate-rls.mjs";
 
@@ -125,7 +125,7 @@ ok("competition is governed now (was ungoverned)",
 // ── D. Column masking ────────────────────────────────────
 group("D. Column masking, per row");
 for (const [table, def] of Object.entries(TABLES)) {
-  const masked = def.masked ?? {};
+  const masked = maskedColumns(def);
   if (!Object.keys(masked).length) continue;
   ok(`${table}_masked is generated`, new RegExp(`VIEW ${table}_masked`).test(SQL));
   // security_invoker is the one that decides WHOSE policies apply. Without it
@@ -144,15 +144,31 @@ for (const [table, def] of Object.entries(TABLES)) {
      new RegExp(`cannot build ${table}_masked`).test(SQL));
   for (const [cap, cols] of Object.entries(masked)) {
     ok(`${table}: ${cols.length} column(s) gated by ${cap}`,
-       cols.every((c) => new RegExp(`\\('${c.toLowerCase()}', '${cap.replace(/\./g, "\\.")}'\\)`).test(SQL)));
+       // The generated tuple carries a THIRD element now — the team anchor for
+       // that capability — because a column can be masked against the row's own
+       // team or against any team. The pattern matches the pair and leaves the
+       // anchor to the assertions below.
+       cols.every((c) => new RegExp(`\\('${c.toLowerCase()}', '${cap.replace(/\./g, "\\.")}', `).test(SQL)));
   }
 }
 // Masking is decided per row via app_can, not once per role for the query.
 ok("masking calls app_can per row", /app_can\(%L, %s, %s, %s, NULL\)/.test(SQL));
 ok("clinical notes are gated by medical.details.read",
-   /\('notes', 'medical\.details\.read'\)/.test(SQL) && /\('physio', 'medical\.details\.read'\)/.test(SQL));
+   /\('notes', 'medical\.details\.read', /.test(SQL) && /\('physio', 'medical\.details\.read', /.test(SQL));
 ok("guardian details are gated by player.pii.read",
-   /\('guardian', 'player\.pii\.read'\)/.test(SQL));
+   /\('guardian', 'player\.pii\.read', /.test(SQL));
+
+// The two mask groups, and the difference between them. A column in
+// `maskedAnyTeam` is evaluated with the team dimension switched off, which is
+// what lets every coach at the school read an age while only a boy's own coach
+// reads his address. Getting these two the wrong way round is invisible in the
+// generated SQL unless something checks.
+ok("age is masked against ANY team — the roster tier",
+   /\('born', 'player\.age\.read', '''\*''::text'\)/.test(SQL));
+ok("a home address is masked against the row's OWN team",
+   /\('address', 'player\.pii\.read', 'player\.team_code'\)/.test(SQL));
+ok("a national ID number is too — it never widens",
+   /\('id_number', 'player\.identity\.read', 'player\.team_code'\)/.test(SQL));
 ok("a player's name is NOT masked (over-masking guard)",
    !/\('full_name', /.test(SQL));
 
