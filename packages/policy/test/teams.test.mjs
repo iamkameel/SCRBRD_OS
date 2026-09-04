@@ -13,6 +13,7 @@
 import {
   parseTeam, isValidTeam, teamLabel, compareTeams, isEligible,
   teamsForLevel, teamCodeCheck, AGE_GROUPS, LEVELS,
+  ageAtCutoff, cutoffFor, CUTOFF_MONTH, CUTOFF_DAY,
 } from "../src/teams.mjs";
 
 let pass = 0, fail = 0;
@@ -84,6 +85,72 @@ ok("an open team has no age limit", isEligible(19, "1XI") === true);
 // birth must not be handed an eligibility answer computed from one.
 ok("an unknown age answers null, not false", isEligible(null, "U14A") === null);
 ok("an unparseable team answers null", isEligible(14, "rubbish") === null);
+
+// ── F2. The cut-off, and the calendar it depends on ──────
+//
+// Age is measured at 1 JANUARY of the year of the match. That is confirmed
+// convention, and this block exists because the rule is only safe given a fact
+// about the South African school calendar that is nowhere in the code:
+//
+//   THE SCHOOL YEAR IS THE CALENDAR YEAR. Four terms, January to December.
+//   Cricket is played in Term 1 (Jan–Mar) and Term 4 (Oct–Dec) OF THE SAME
+//   SCHOOL YEAR.
+//
+// So `the year of the match` and `the school year` are the same number, and a
+// side cannot change age band part-way through a season. In a country whose
+// season runs September to March the identical code would be wrong, and wrong
+// in the dangerous direction — every boy a year younger than he is for the
+// first half of the season.
+//
+// None of this was tested. The function the whole eligibility rule lives in
+// had no unit test at all; the only coverage was the database trigger, which
+// derives the same date by a different route and could have agreed with it
+// while both were wrong.
+group("F2. Age is measured at 1 January of the school year");
+{
+  const born = (s) => new Date(s + "T00:00:00Z");
+  const on   = (s) => new Date(s + "T00:00:00Z");
+
+  ok("the cut-off is the first of January",
+     CUTOFF_MONTH === 1 && CUTOFF_DAY === 1);
+  ok("cutoffFor names that date in the given year",
+     cutoffFor(2026).toISOString().startsWith("2026-01-01"));
+
+  // A boy who turns 14 in March is 13 on 1 January and plays U13 all year —
+  // in Term 1 BEFORE the birthday and in Term 4 after it. Two terms, one
+  // school year, one answer.
+  ok("Term 1, before the birthday: 13",
+     ageAtCutoff(born("2012-03-15"), on("2026-02-14")) === 13);
+  ok("Term 4, after the birthday: still 13",
+     ageAtCutoff(born("2012-03-15"), on("2026-10-10")) === 13);
+  ok("...so he is U13-eligible in both terms",
+     isEligible(ageAtCutoff(born("2012-03-15"), on("2026-02-14")), "U13A") === true &&
+     isEligible(ageAtCutoff(born("2012-03-15"), on("2026-10-10")), "U13A") === true);
+
+  // The band DOES change between school years, and that is the point of the
+  // thirty-day notice: Term 4 of one year and Term 1 of the next are different
+  // age groups, so the U14 coaches must have seen him before December.
+  ok("the next school year moves him up",
+     ageAtCutoff(born("2012-03-15"), on("2027-02-14")) === 14);
+  ok("...and out of the side he was in",
+     isEligible(ageAtCutoff(born("2012-03-15"), on("2027-02-14")), "U13A") === false);
+
+  // The boundaries of the cut-off itself.
+  ok("born ON the cut-off is that age exactly",
+     ageAtCutoff(born("2013-01-01"), on("2026-06-01")) === 13);
+  ok("born the day after is a year younger",
+     ageAtCutoff(born("2013-01-02"), on("2026-06-01")) === 12);
+  ok("born the day before is a year older",
+     ageAtCutoff(born("2012-12-31"), on("2026-06-01")) === 13);
+
+  // born is masked behind player.age.read. A caller without it gets NULL and
+  // must not be handed an age derived from nothing.
+  ok("an unknown date of birth answers null", ageAtCutoff(null, on("2026-06-01")) === null);
+  ok("an unparseable date of birth answers null",
+     ageAtCutoff(born("not-a-date"), on("2026-06-01")) === null);
+  ok("an unparseable match date answers null",
+     ageAtCutoff(born("2012-03-15"), new Date("rubbish")) === null);
+}
 
 // ── G. Enumerating a level ───────────────────────────────
 group("G. What a level may field");

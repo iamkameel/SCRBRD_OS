@@ -240,8 +240,17 @@ CREATE TABLE notification_read (
 -- AGE IS MEASURED AT 1 JANUARY of the year of the match, not on the day. A boy
 -- who turns 14 in March plays the whole year in the band he was in on 1
 -- January — otherwise a side is legal in February and illegal in April, and a
--- player changes age group mid-season. Same convention as CUTOFF_MONTH/DAY in
--- packages/policy/src/teams.mjs; change both together.
+-- player changes age group mid-season. Confirmed convention, not an assumption.
+--
+-- Taking the year off the MATCH DATE is only equivalent to taking it off the
+-- school year because the South African school year is the calendar year:
+-- four terms, January to December, cricket in Term 1 and Term 4 of the same
+-- one. Both cricket terms sit inside one January-to-December window, so a side
+-- cannot change band mid-season. Where a season straddles the new year the
+-- same line is wrong, and wrong towards letting an older boy play down.
+--
+-- Same convention as CUTOFF_MONTH/DAY in packages/policy/src/teams.mjs, which
+-- carries the longer note; change both together.
 --
 -- An UNKNOWN date of birth does not pass. A squad row for a child whose age
 -- nobody recorded is exactly the row this exists to stop, and defaulting to

@@ -133,7 +133,7 @@ export function compareTeams(a, b) {
 }
 
 /**
- * The date an age is measured on.
+ * The date an age is measured on. CONFIRMED CONVENTION, not an assumption.
  *
  * Age-group eligibility in South African schools cricket is judged as at
  * 1 JANUARY of the year of play, not on the day of the match. A boy who turns
@@ -141,9 +141,29 @@ export function compareTeams(a, b) {
  * otherwise a side would be legal in February and illegal in April, and a
  * player would move age group mid-season.
  *
- * Stated here as one constant rather than assumed at four call sites. If a
- * union or a league uses a different cut-off, this is the line to change; the
- * eligibility trigger in db/00_schema_core.sql derives its date the same way.
+ * WHY `THE YEAR OF PLAY` CAN SAFELY MEAN THE CALENDAR YEAR
+ * ───────────────────────────────────────────────────────
+ * Because in South Africa the school year IS the calendar year: four terms,
+ * January to December, with cricket played in TERM 1 (Jan–Mar) and TERM 4
+ * (Oct–Dec) of the same school year. Both cricket terms therefore fall inside
+ * one January-to-December window, so taking the year off the match date and
+ * taking it off the school year give the same number, and no side can change
+ * age band part-way through its season.
+ *
+ * That fact is load-bearing and it is not visible anywhere in the arithmetic.
+ * In a country whose season runs September to March — England, Australia — the
+ * identical code is WRONG, and wrong in the dangerous direction: for the first
+ * half of the season every boy computes a year younger than he is, so a
+ * fourteen-year-old passes an under-13 check in October. If SCRBRD follows a
+ * player into CLUB cricket, whose season need not respect a school calendar,
+ * this is the first thing to re-examine — not the constant below, but the
+ * assumption that a season sits inside one calendar year.
+ *
+ * Stated here as one constant rather than assumed at four call sites. The
+ * eligibility trigger in db/08_schema_programme.sql derives its date the same
+ * way; change both together. Pinned by packages/policy/test/teams.test.mjs
+ * group F2, which fails if the cut-off moves AND if a straddling season is
+ * assumed.
  */
 export const CUTOFF_MONTH = 1;
 export const CUTOFF_DAY = 1;

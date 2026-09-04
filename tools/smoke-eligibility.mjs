@@ -29,14 +29,14 @@ const pool = new pg.Pool({ connectionString: DB });
 const q = async (t, p) => (await pool.query(t, p)).rows;
 
 /** Try to select a player of this birth date into a team; did it stick? */
-async function select(born, team, matchYear = 2026) {
+async function select(born, team, matchYear = 2026, matchMonth = 6) {
   const c = await pool.connect();
   try {
     await c.query("begin");
     const [m] = (await c.query(
       `insert into match (school_id, team_code, opponent, starts_at, format, overs, status)
-       values ($1,$2,'Michaelhouse', make_date($3,6,1), 'T20', 20, 'scheduled') returning id`,
-      [HIL, team, matchYear])).rows;
+       values ($1,$2,'Michaelhouse', make_date($3,$4,1), 'T20', 20, 'scheduled') returning id`,
+      [HIL, team, matchYear, matchMonth])).rows;
     const [p] = (await c.query(
       `insert into player (school_id, team_code, full_name, born)
        values ($1,$2,'Test Player',$3::date) returning id`,
@@ -73,6 +73,34 @@ try {
   ok("a fourteen-year-old is refused a U13 match", tooOld.accepted === false);
   ok("...and the message names the player, the age and the limit",
      /is 14 on 1 January and cannot play U13A: the limit is 13/.test(tooOld.error ?? ""));
+
+  // ── Two cricket terms, one school year ───────────────────────
+  //
+  // The South African school year is the calendar year: four terms, January to
+  // December, cricket in TERM 1 (Jan–Mar) and TERM 4 (Oct–Dec) of the same one.
+  // That is what makes "the year of the match" a safe stand-in for "the school
+  // year", and it is the fact the arithmetic does not show.
+  //
+  // Asserted HERE as well as in the teams suite deliberately. The trigger
+  // derives the cut-off date by its own route, in SQL, from a different value
+  // — so the two could agree with each other while both were wrong, and only a
+  // case with a known right answer separates those.
+  group("Two cricket terms, one school year");
+  {
+    // Turns 14 in March 2026, so he is 13 on 1 January 2026 and U13 all year.
+    const B = "2012-03-15";
+    ok("Term 1, before his birthday, he is U13",
+       (await select(B, "U13A", 2026, 2)).accepted === true);
+    ok("Term 4, months after it, he is still U13",
+       (await select(B, "U13A", 2026, 10)).accepted === true);
+    // ...and the band DOES change between school years. This is the gap the
+    // thirty-day notice exists to cover: Term 4 and the following Term 1 are
+    // different age groups, so the U14 coaches must see him before December.
+    const nextYear = await select(B, "U13A", 2027, 2);
+    ok("the next school year moves him out of the side", nextYear.accepted === false);
+    ok("...and says so as an age, not as a date",
+       /is 14 on 1 January and cannot play U13A/.test(nextYear.error ?? ""));
+  }
 
   group("The boundaries, which is where an age rule goes wrong");
   // Age is measured at 1 JANUARY of the season, not on match day: otherwise a
