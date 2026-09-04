@@ -13,6 +13,7 @@ const SUITES = [
   ["design",   "apps/web/test/design.test.mjs"],
   ["teams",    "packages/policy/test/teams.test.mjs"],
   ["rating",   "packages/scoring/test/rating.test.mjs"],
+  ["rubric",   "packages/scoring/test/rubric.test.mjs"],
   ["client",   "apps/web/src/rbac/rbac.test.mjs"],
   ["handover", "services/api/handover/scoring-session.test.mjs"],
   ["rls",      "services/api/rls/rls.test.mjs"],
