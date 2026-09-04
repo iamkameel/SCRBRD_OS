@@ -2,7 +2,7 @@
 -- GENERATED from packages/policy/ by services/api/rls/generate-rls.mjs — DO NOT EDIT BY HAND.
 -- Regenerate with `pnpm rls:generate`. Applied BEFORE the scoring schema,
 -- which references app_can(). Model: docs/adr/0001-scoped-assignments.md.
--- 58 capabilities across 24 roles.
+-- 60 capabilities across 24 roles.
 
 -- Principal helpers. app_user_id() is set from the signed token on every
 -- request; everything else about a person's authority is looked up.
@@ -158,6 +158,8 @@ INSERT INTO capability (name) VALUES
   ('player.performance.write'),
   ('player.development.read'),
   ('player.development.write'),
+  ('player.note.read'),
+  ('player.note.write'),
   ('fixture.read'),
   ('fixture.create'),
   ('fixture.update'),
@@ -251,6 +253,7 @@ INSERT INTO role_capability (role, capability) VALUES
   ('principal', 'player.age.read'),
   ('principal', 'player.roster.read'),
   ('principal', 'guardian.link.manage'),
+  ('principal', 'player.note.read'),
   ('directorofsport', 'team.read'),
   ('directorofsport', 'fixture.read'),
   ('directorofsport', 'player.profile.read'),
@@ -268,6 +271,8 @@ INSERT INTO role_capability (role, capability) VALUES
   ('directorofsport', 'player.profile.manage'),
   ('directorofsport', 'player.performance.read'),
   ('directorofsport', 'player.development.read'),
+  ('directorofsport', 'player.note.read'),
+  ('directorofsport', 'player.note.write'),
   ('directorofsport', 'medical.status.read'),
   ('directorofsport', 'medical.nature.read'),
   ('directorofsport', 'player.age.read'),
@@ -353,6 +358,8 @@ INSERT INTO role_capability (role, capability) VALUES
   ('coach', 'player.performance.write'),
   ('coach', 'player.development.read'),
   ('coach', 'player.development.write'),
+  ('coach', 'player.note.read'),
+  ('coach', 'player.note.write'),
   ('coach', 'medical.status.read'),
   ('coach', 'medical.nature.read'),
   ('coach', 'medical.details.read'),
@@ -374,6 +381,8 @@ INSERT INTO role_capability (role, capability) VALUES
   ('assistantcoach', 'competition.read'),
   ('assistantcoach', 'player.performance.read'),
   ('assistantcoach', 'player.development.read'),
+  ('assistantcoach', 'player.note.read'),
+  ('assistantcoach', 'player.note.write'),
   ('assistantcoach', 'medical.status.read'),
   ('assistantcoach', 'medical.nature.read'),
   ('assistantcoach', 'medical.details.read'),

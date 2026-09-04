@@ -55,6 +55,27 @@ export const CAPABILITIES = {
   "player.performance.write":    "Record player performance",
   "player.development.read":     "See development notes and skill ratings",
   "player.development.write":    "Write development notes and skill ratings",
+  // A COACH'S OWN WRITING ABOUT A CHILD, and narrower than the ratings it sits
+  // beside. player.development.read is held by the pupil and by self-access —
+  // a boy may read his own attribute scores, which is right. A note is a
+  // different kind of record: prose, candid, and often about things the
+  // attribute set has no number for. "He has gone quiet since his father
+  // started coming to matches" is a legitimate coaching observation, is the
+  // reason a rating moved, and is not a sentence to hand a fourteen-year-old
+  // through a phone.
+  //
+  // Held by the coaches of the side a child currently plays for, and by
+  // leadership. Not the pupil, not the guardian.
+  //
+  // THAT ASYMMETRY IS A POLICY DECISION, NOT A TECHNICAL ONE, and it carries a
+  // POPIA exposure worth naming: a data subject, or the competent person
+  // acting for a minor, generally has a right of access to personal
+  // information held about them. A note store that is structurally invisible
+  // to both is a store that cannot answer a subject-access request without
+  // someone deciding, case by case, to open it. Every read of one is logged
+  // for exactly that reason.
+  "player.note.read":            "Read a coach's development notes on a player",
+  "player.note.write":           "Write development notes on a player",
 
   // ── Fixtures & scoring ──
   "fixture.read":                "See fixtures",
@@ -184,6 +205,7 @@ export const ALL_CAPABILITIES = Object.freeze(Object.keys(CAPABILITIES));
 
 /** Capabilities that expose a minor's sensitive information. */
 export const SENSITIVE = Object.freeze([
+  "player.note.read",
   "player.pii.read",
   "player.biometric.read",
   // The ID number of a minor. More sensitive than anything else here: a

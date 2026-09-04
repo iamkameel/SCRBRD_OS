@@ -1351,3 +1351,84 @@ CREATE POLICY notification_read_insert ON notification_read
 CREATE POLICY notification_read_update ON notification_read
   FOR UPDATE USING (person_id = app_user_id())
            WITH CHECK (person_id = app_user_id());
+
+-- ── A coach's own writing about a player ────────────────────────
+--
+-- The attribute set is 33 numbers and a child is not. "He has gone quiet since
+-- his father started coming to matches", "won't play the pull shot since he was
+-- hit", "runs the drinks without being asked" — none of that has a column, all
+-- of it is coaching, and the first two are the reason a rating moves.
+--
+-- WHO READS IT is deliberately narrower than who reads the ratings beside it.
+-- player_skill is readable by the pupil himself; a note is not. The asymmetry
+-- is a policy decision with a POPIA exposure named in
+-- packages/policy/src/capabilities.mjs, and every read of one is logged.
+--
+-- HOW IT REACHES THE ALGORITHM, and the part worth being careful about:
+-- NOTHING HERE PARSES THE PROSE. A system that read a coach's sentence and
+-- decided a number from it would be inventing a judgement and attributing it to
+-- a named person. So a note that is meant to move a rating carries the signal
+-- EXPLICITLY — which discipline, and by how much — and the prose stays what it
+-- is, the reasoning a human reads. The coach states the conclusion; the
+-- paragraph explains it.
+CREATE TABLE development_note (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  player_id   uuid NOT NULL REFERENCES player(id) ON DELETE CASCADE,
+  -- Denormalised from the player so the row states its own tenant. A policy
+  -- anchor that has to join to find its school is one that returns NULL for a
+  -- reader who cannot see the player, and a NULL anchor narrows — which would
+  -- be right by accident here and wrong the first time somebody reuses it.
+  school_id   uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  author_id   uuid NOT NULL REFERENCES app_user(id),
+  body        text NOT NULL CHECK (length(btrim(body)) > 0),
+  -- The structured signal, both nullable: a note that is purely narrative
+  -- moves nothing, which is the common case and the default.
+  about_discipline text CHECK (about_discipline IS NULL
+                    OR about_discipline IN ('batting','bowling','fielding','keeping')),
+  -- Bounded on purpose. A coach who wants to move a rating by more than this
+  -- has changed their mind about the player rather than observed one thing, and
+  -- the honest way to say that is a fresh assessment — which re-anchors, and
+  -- supersedes every note written before it.
+  adjustment  smallint CHECK (adjustment IS NULL OR adjustment BETWEEN -3 AND 3),
+  observed_on date NOT NULL DEFAULT current_date,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  updated_at  timestamptz,
+  CONSTRAINT adjustment_names_its_subject
+    CHECK (adjustment IS NULL OR about_discipline IS NOT NULL)
+);
+CREATE INDEX ON development_note (player_id, observed_on DESC);
+CREATE INDEX ON development_note (author_id);
+
+-- The author is WHOEVER IS WRITING, not whoever the payload says. A column
+-- recording authorship that the writer can set is a column that cannot be
+-- relied on in the one conversation it exists for.
+CREATE OR REPLACE FUNCTION development_note_author() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    NEW.author_id := coalesce(app_user_id(), NEW.author_id);
+  ELSE
+    -- A colleague who coaches the same side holds player.note.write and can
+    -- therefore reach this row through the policy. That is right for writing
+    -- their OWN note about the player and wrong for editing mine: a
+    -- development record whose author is fixed but whose text anybody can
+    -- rewrite records the wrong person's judgement under my name.
+    IF app_user_id() IS NOT NULL AND OLD.author_id <> app_user_id() THEN
+      -- SQLSTATE class 45 is unassigned by Postgres and by the standard, so it
+      -- is free for an application to mean something with. It has to be
+      -- distinct from 42501: that is what row-level security raises, and
+      -- "this is not your player" and "this is not your note" are different
+      -- refusals with different fixes. Mapped in
+      -- services/api/write/assessment-api.mjs.
+      RAISE EXCEPTION 'a development note may only be edited by the coach who wrote it'
+        USING ERRCODE = '45001';
+    END IF;
+    NEW.author_id := OLD.author_id;      -- authorship never changes hands
+    NEW.updated_at := now();
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS development_note_records_its_author ON development_note;
+CREATE TRIGGER development_note_records_its_author
+  BEFORE INSERT OR UPDATE ON development_note
+  FOR EACH ROW EXECUTE FUNCTION development_note_author();

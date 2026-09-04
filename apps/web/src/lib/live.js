@@ -266,6 +266,7 @@ const ADAPT = {
   skills: asSkill,
   career: asCareer,
   ratings: asRating,
+  notes: asNote,
 };
 
 /**
@@ -293,6 +294,23 @@ function asRating(r) {
   return {
     id: r.player_id, name: r.full_name, team: r.team_code, school: r.school_id,
     batting: side(r.batting), bowling: side(r.bowling),
+  };
+}
+
+/**
+ * A development note.
+ *
+ * The author's NAME is carried, not just their id: a candid sentence about a
+ * child is weighed by who wrote it, and a screen showing prose over a uuid
+ * gives a reader no way to do that.
+ */
+function asNote(r) {
+  return {
+    id: r.id, playerId: r.player_id, body: r.body,
+    discipline: r.about_discipline, adjustment: r.adjustment,
+    observedOn: r.observed_on ? String(r.observed_on).slice(0, 10) : null,
+    author: r.author_name || null, authorId: r.author_id,
+    revised: !!r.updated_at,
   };
 }
 
@@ -427,6 +445,18 @@ export function useRatings(role) {
   const byPlayer = {};
   for (const r of rows) byPlayer[r.id] = r;
   return { ratings: byPlayer, live, loading, error };
+}
+
+/**
+ * Notes for one player, newest first.
+ *
+ * No mock fallback: a development note is a named coach's writing about a named
+ * child, and a fabricated one on a demo screen would read exactly like a real
+ * one. Signed out this is empty.
+ */
+export function useNotes(role, playerId) {
+  const { rows, live, loading, error } = useLive("notes", role);
+  return { notes: rows.filter((n) => !playerId || n.playerId === playerId), live, loading, error };
 }
 
 export function useRows(resource, role) { return useLive(resource, role).rows; }

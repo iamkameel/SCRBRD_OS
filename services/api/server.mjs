@@ -36,7 +36,7 @@ import { sessionProfile, runAsPrincipal } from "./auth/auth-db.mjs";
 import { signToken, AuthError } from "./auth/auth.mjs";
 import { readRoute, liveResources } from "./read/read-api.mjs";
 import { eventRoutes } from "./write/events-api.mjs";
-import { assessmentRoutes, accessRequestRoutes } from "./write/assessment-api.mjs";
+import { assessmentRoutes, accessRequestRoutes, developmentNoteRoutes } from "./write/assessment-api.mjs";
 import { sessionRoutes } from "./realtime/session-routes.mjs";
 import { MatchHub } from "./realtime/realtime.mjs";
 
@@ -145,6 +145,7 @@ const session = sessionRoutes({ pool, secret: SECRET, hub });
 const read    = readRoute({ pool, secret: SECRET });
 const assess  = assessmentRoutes({ pool, secret: SECRET });
 const access  = accessRequestRoutes({ pool, secret: SECRET });
+const notes   = developmentNoteRoutes({ pool, secret: SECRET });
 
 /**
  * Development sign-in.
@@ -195,6 +196,8 @@ const PLAYER_ROUTES = [
   [/^\/api\/players\/([^/]+)\/assessment$/,     "POST", assess.record],
   [/^\/api\/players\/([^/]+)\/access-request$/, "POST", access.ask],
   [/^\/api\/access-requests\/([^/]+)\/decide$/, "POST", access.decide],
+  [/^\/api\/players\/([^/]+)\/notes$/,          "POST", notes.write],
+  [/^\/api\/notes\/([^/]+)$/,                    "PATCH", notes.revise],
 ];
 
 const server = createServer(async (req, res) => {
@@ -233,7 +236,7 @@ const server = createServer(async (req, res) => {
     for (const [pattern, method, handler] of [...MATCH_ROUTES, ...PLAYER_ROUTES]) {
       const m = req.method === method && pattern.exec(path);
       if (!m) continue;
-      const body = req.method === "POST" ? await readJson(req) : {};
+      const body = (req.method === "POST" || req.method === "PATCH") ? await readJson(req) : {};
       return handler({
         params: { id: m[1] },
         query: Object.fromEntries(url.searchParams),

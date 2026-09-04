@@ -315,6 +315,26 @@ export const TABLES = {
     masked: {},
   },
 
+  development_note: {
+    // A coach's own writing about a child, and narrower than the ratings it
+    // sits beside. player_skill is readable by the pupil — a boy may read his
+    // own attribute scores, which is right. A note is a different record:
+    // prose, candid, and frequently about things the attribute set has no
+    // number for. It is held by the coaches of the side that child CURRENTLY
+    // plays for, and by leadership, and by nobody else.
+    //
+    // Anchors resolve through the player, exactly as the assessments and the
+    // injury record do, so a team-scoped coach reaches their own squad's notes
+    // and stops there. A coach who loses the side loses the notes with it.
+    read:  "player.note.read",
+    write: "player.note.write",
+    anchors: {
+      school: "school_id",
+      team:   "(SELECT p.team_code FROM player p WHERE p.id = development_note.player_id)",
+      person: "player_id",
+    },
+  },
+
   player_skill: {
     // Development assessments — a coach's numeric judgement of a named child.
     // Governed by its own capability, player.development.read, which neither

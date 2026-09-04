@@ -12,10 +12,17 @@
 import { runAsPrincipal } from "../auth/auth-db.mjs";
 import {
   DISCIPLINES, battingIndex, bowlingIndex, coachIndex, adjustedRating,
+  SCALE_MIN, SCALE_MAX,
 } from "@scrbrd/scoring";
 
 // resource → query. `masked: true` documents (and lets tests assert) that the
 // query reads a masking view. `params` maps request query → SQL params.
+/**
+ * The four disciplines, in a fixed order, so the query's parameter positions
+ * and the composer's reading of them cannot drift apart.
+ */
+const DISCIPLINE_NAMES = Object.freeze(Object.keys(DISCIPLINES));
+
 export const READ_QUERIES = {
   matches: {
     // These column names are the real ones. The query named home_team,
@@ -212,49 +219,31 @@ export const READ_QUERIES = {
    * the rating is the performance index over everything on record.
    */
   ratings: {
-    text: `select p.id as player_id, p.full_name, p.team_code, p.school_id,
-                  bat_a.anchor        as batting_anchor,
-                  bat_a.scores        as batting_scores,
-                  coalesce(bs.runs, 0)         as runs,
-                  coalesce(bs.balls_faced, 0)  as balls_faced,
-                  coalesce(bd.dismissals, 0)   as dismissals,
-                  bowl_a.anchor       as bowling_anchor,
-                  bowl_a.scores       as bowling_scores,
-                  coalesce(ws.runs_conceded, 0) as runs_conceded,
-                  coalesce(ws.legal_balls, 0)   as balls_bowled,
-                  coalesce(ws.wickets, 0)       as wickets
-             from player p
-             left join lateral (
-               select max(x.assessed_on) as anchor,
-                      jsonb_object_agg(x.category || '.' || x.metric, x.score) as scores
-                 from (select distinct on (s.category, s.metric)
-                              s.category, s.metric, s.score, s.assessed_on
-                         from player_skill s
-                        where s.player_id = p.id
-                          and (s.category || '.' || s.metric) = any($1::text[])
-                        order by s.category, s.metric, s.assessed_on desc) x
-             ) bat_a on true
-             left join lateral (
-               select max(x.assessed_on) as anchor,
-                      jsonb_object_agg(x.category || '.' || x.metric, x.score) as scores
-                 from (select distinct on (s.category, s.metric)
-                              s.category, s.metric, s.score, s.assessed_on
-                         from player_skill s
-                        where s.player_id = p.id
-                          and (s.category || '.' || s.metric) = any($2::text[])
-                        order by s.category, s.metric, s.assessed_on desc) x
-             ) bowl_a on true
-             -- Evidence since the coach last looked. A date cast to timestamptz
-             -- is midnight, so a match on the afternoon of the assessment day
-             -- counts towards it — which is the right way round: the coach
-             -- rated him in the nets that morning.
-             left join lateral player_batting_since(p.id, bat_a.anchor::timestamptz) bs on true
-             left join lateral (select player_dismissals_since(p.id, bat_a.anchor::timestamptz)
-                                  as dismissals) bd on true
-             left join lateral player_bowling_since(p.id, bowl_a.anchor::timestamptz) ws on true
-            order by p.full_name`,
-    params: () => [DISCIPLINES.batting, DISCIPLINES.bowling],
+    text: ratingsQuery(),
+    params: () => DISCIPLINE_NAMES.map((d) => DISCIPLINES[d]),
     compose: composeRatings,
+  },
+
+  /**
+   * A coach's own writing about a player.
+   *
+   * Narrower than the ratings beside it: player.note.read, which the pupil and
+   * the guardian do not hold. The policy anchors through the player's CURRENT
+   * side, so a coach reads the notes of the children they actually coach.
+   *
+   * The author's NAME is joined in. A development note whose author is a uuid
+   * is a note nobody can weigh — "who said this" is most of what a reader needs
+   * before deciding what to do about it.
+   */
+  notes: {
+    text: `select n.id, n.player_id, n.school_id, n.body, n.about_discipline,
+                  n.adjustment, n.observed_on, n.created_at, n.updated_at,
+                  n.author_id, a.name as author_name,
+                  p.full_name, p.team_code
+             from development_note n
+             join player p on p.id = n.player_id
+             left join app_user a on a.id = n.author_id
+            order by n.observed_on desc, n.created_at desc`,
   },
 
   // Notices. The read policy demands news.read AND the capability each row
@@ -412,7 +401,75 @@ export const READ_QUERIES = {
 };
 
 /**
- * Turn one ratings row into two ratings, and their working.
+ * The ratings query, GENERATED over the disciplines rather than written out.
+ *
+ * It was hand-written for batting and bowling, which was fine until fielding
+ * and keeping needed the same treatment and the block had to be copied twice
+ * more. Four near-identical forty-line laterals is four places to fix a bug in.
+ *
+ * Each discipline gets, independently:
+ *   its own ANCHOR — the latest date any attribute it draws on was assessed.
+ *     A coach who re-rates bowling has not re-rated batting.
+ *   its own COACH SCORES — the latest score per attribute, so an assessment
+ *     covering four attributes revises those four and leaves the rest standing.
+ *   its own NOTE ADJUSTMENT — the sum of adjustments on notes written SINCE
+ *     that anchor. Notes older than the anchor are already inside the judgement
+ *     that superseded them, exactly as older deliveries are.
+ *
+ * Batting and bowling additionally get match evidence since their anchor.
+ * Fielding and keeping get none, because the ball log records neither, and
+ * their rating is the coach's number alone — which adjustedRating() already
+ * says correctly rather than inventing a half.
+ */
+function ratingsQuery() {
+  const cols = [], joins = [];
+  DISCIPLINE_NAMES.forEach((d, i) => {
+    const n = i + 1;
+    cols.push(`${d}_a.anchor as ${d}_anchor`, `${d}_a.scores as ${d}_scores`,
+              `coalesce(${d}_n.adjustment, 0) as ${d}_note_adjustment`,
+              `coalesce(${d}_n.notes, 0) as ${d}_note_count`);
+    joins.push(`
+             left join lateral (
+               select max(x.assessed_on) as anchor,
+                      jsonb_object_agg(x.category || '.' || x.metric, x.score) as scores
+                 from (select distinct on (s.category, s.metric)
+                              s.category, s.metric, s.score, s.assessed_on
+                         from player_skill s
+                        where s.player_id = p.id
+                          and (s.category || '.' || s.metric) = any($${n}::text[])
+                        order by s.category, s.metric, s.assessed_on desc) x
+             ) ${d}_a on true
+             left join lateral (
+               select sum(dn.adjustment)::int as adjustment, count(*)::int as notes
+                 from development_note dn
+                where dn.player_id = p.id
+                  and dn.about_discipline = '${d}'
+                  and dn.adjustment is not null
+                  and (${d}_a.anchor is null or dn.observed_on >= ${d}_a.anchor)
+             ) ${d}_n on true`);
+  });
+  return `select p.id as player_id, p.full_name, p.team_code, p.school_id,
+                  ${cols.join(",\n                  ")},
+                  coalesce(bs.runs, 0)          as runs,
+                  coalesce(bs.balls_faced, 0)   as balls_faced,
+                  coalesce(bd.dismissals, 0)    as dismissals,
+                  coalesce(ws.runs_conceded, 0) as runs_conceded,
+                  coalesce(ws.legal_balls, 0)   as balls_bowled,
+                  coalesce(ws.wickets, 0)       as wickets
+             from player p${joins.join("")}
+             -- Evidence since the coach last looked. A date cast to timestamptz
+             -- is midnight, so a match on the afternoon of the assessment day
+             -- counts towards it — which is the right way round: the coach
+             -- rated him in the nets that morning.
+             left join lateral player_batting_since(p.id, batting_a.anchor::timestamptz) bs on true
+             left join lateral (select player_dismissals_since(p.id, batting_a.anchor::timestamptz)
+                                  as dismissals) bd on true
+             left join lateral player_bowling_since(p.id, bowling_a.anchor::timestamptz) ws on true
+            order by p.full_name`;
+}
+
+/**
+ * Turn one ratings row into a rating per discipline, and their working.
  *
  * COMPOSED HERE RATHER THAN IN SQL, deliberately. The shrinkage, the anchor
  * tables and the sample floors are one implementation in
@@ -431,31 +488,48 @@ export const READ_QUERIES = {
  */
 function composeRatings(rows) {
   return rows.map((r) => {
-    const batPerf = battingIndex({
-      runs: Number(r.runs), ballsFaced: Number(r.balls_faced), dismissals: Number(r.dismissals),
-    });
-    const bowlPerf = bowlingIndex({
-      runsConceded: Number(r.runs_conceded), ballsBowled: Number(r.balls_bowled),
-      wickets: Number(r.wickets),
-    });
-    const batCoach = coachIndex(r.batting_scores ?? {});
-    const bowlCoach = coachIndex(r.bowling_scores ?? {});
-    return {
+    // The two disciplines the ball log can speak to. The others have no index
+    // and adjustedRating() reports "coach" rather than inventing a half.
+    const index = {
+      batting: battingIndex({
+        runs: Number(r.runs), ballsFaced: Number(r.balls_faced), dismissals: Number(r.dismissals),
+      }),
+      bowling: bowlingIndex({
+        runsConceded: Number(r.runs_conceded), ballsBowled: Number(r.balls_bowled),
+        wickets: Number(r.wickets),
+      }),
+    };
+    const sample = { batting: Number(r.balls_faced), bowling: Number(r.balls_bowled) };
+
+    const out = {
       player_id: r.player_id, full_name: r.full_name,
       team_code: r.team_code, school_id: r.school_id,
-      batting: {
-        anchoredOn: r.batting_anchor, attributes: batCoach.metrics,
-        ...adjustedRating({ coach: batCoach.value, performance: batPerf.value,
-                            sample: Number(r.balls_faced) }),
-        index: batPerf,
-      },
-      bowling: {
-        anchoredOn: r.bowling_anchor, attributes: bowlCoach.metrics,
-        ...adjustedRating({ coach: bowlCoach.value, performance: bowlPerf.value,
-                            sample: Number(r.balls_bowled) }),
-        index: bowlPerf,
-      },
     };
+    for (const d of DISCIPLINE_NAMES) {
+      const assessed = coachIndex(r[`${d}_scores`] ?? {});
+      const noteAdjustment = Number(r[`${d}_note_adjustment`] ?? 0);
+      // Notes move the COACH'S HALF, not a third term. They are that coach's
+      // judgement expressed between formal assessments, so they belong on the
+      // side of the rating a coach owns — and a fresh assessment supersedes
+      // them, because the SQL only sums notes written since the anchor.
+      //
+      // Clamped to the scale. Three notes at the cap must not be able to walk a
+      // rating past 20 or below 1, which are the two ends a written anchor
+      // defines.
+      const anchor = assessed.value == null ? null
+        : Math.min(SCALE_MAX, Math.max(SCALE_MIN, assessed.value + noteAdjustment));
+      out[d] = {
+        anchoredOn: r[`${d}_anchor`],
+        attributes: assessed.metrics,
+        coachAssessed: assessed.value,
+        noteAdjustment,
+        noteCount: Number(r[`${d}_note_count`] ?? 0),
+        ...adjustedRating({ coach: anchor, performance: index[d]?.value ?? null,
+                            sample: sample[d] ?? 0 }),
+        index: index[d] ?? null,
+      };
+    }
+    return out;
   });
 }
 
@@ -494,7 +568,12 @@ export const RESTRICTED_FIELDS = Object.freeze({
   // coach's judgement of a named child and the number it has moved to — which
   // is the development record, and as restricted as the assessment it is
   // derived from.
-  ratings:  ["batting.coach", "batting.value", "bowling.coach", "bowling.value"],
+  ratings:  ["batting.coach", "batting.value", "bowling.coach", "bowling.value",
+             "fielding.coach", "fielding.value", "keeping.coach", "keeping.value"],
+  // A note is a named coach's candid writing about a named child, and the
+  // group that may read it is deliberately narrow. Every read is logged, which
+  // is what makes the narrowness answerable rather than merely convenient.
+  notes:    ["body"],
 });
 
 /** Read a possibly-dotted path off a row. Flat names behave exactly as before. */
@@ -503,7 +582,7 @@ const pick = (row, path) =>
 
 /** Which id column identifies the CHILD a row is about, for the log. */
 const SUBJECT_ID = { players: "id", injuries: "player_id", skills: "player_id",
-                     users: "id", ratings: "player_id" };
+                     users: "id", ratings: "player_id", notes: "player_id" };
 
 /** At most this many ids per entry. A log row is evidence, not a data export. */
 const MAX_LOGGED_IDS = 500;

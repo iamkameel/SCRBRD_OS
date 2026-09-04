@@ -20,7 +20,7 @@
  * with no author is not a judgement anybody can stand behind.
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
-import { TREE, SCALE_MIN, SCALE_MAX } from "@scrbrd/scoring";
+import { TREE, SCALE_MIN, SCALE_MAX, DISCIPLINES } from "@scrbrd/scoring";
 
 /**
  * Groups and the attributes each may carry — TAKEN FROM THE RUBRIC, not
@@ -103,6 +103,102 @@ export async function recordAssessment(pool, secret, bearer, playerId, body) {
     if (written === 0) throw err("not_permitted", 403);
     return { playerId, assessedOn, recorded: written };
   });
+}
+
+/** The most a single note may move a rating. Mirrors the CHECK on the column. */
+export const NOTE_ADJUSTMENT_LIMIT = 3;
+
+/**
+ * Validate a development note.
+ *
+ * The prose is not inspected beyond being non-empty — it is a coach's writing
+ * and this is not the place to have opinions about it. The SIGNAL is inspected
+ * closely, because it is the part that moves a number attached to a child's
+ * name.
+ */
+export function validateNote(body) {
+  const text = typeof body?.body === "string" ? body.body.trim() : "";
+  if (!text) throw err("body_required");
+  if (text.length > 4000) throw err("body_too_long");
+
+  const discipline = body?.aboutDiscipline ?? null;
+  if (discipline !== null && !Object.hasOwn(DISCIPLINES, discipline))
+    throw err(`unknown_discipline:${discipline}`);
+
+  let adjustment = body?.adjustment ?? null;
+  if (adjustment !== null && adjustment !== undefined) {
+    adjustment = Number(adjustment);
+    if (!Number.isInteger(adjustment)) throw err("bad_adjustment");
+    if (Math.abs(adjustment) > NOTE_ADJUSTMENT_LIMIT) throw err("adjustment_too_large");
+    // An adjustment with nothing to adjust is a number with no subject. Refused
+    // rather than stored and ignored, because stored-and-ignored is how a coach
+    // comes to believe they moved a rating they did not move.
+    if (!discipline) throw err("adjustment_needs_a_discipline");
+    if (adjustment === 0) adjustment = null;
+  } else adjustment = null;
+
+  return { text, discipline, adjustment, observedOn: body?.observedOn || null };
+}
+
+/**
+ * Write one.
+ *
+ * school_id is taken from the PLAYER inside the statement rather than from the
+ * caller's payload. A row whose tenant the writer chooses is a row that can be
+ * filed against the wrong school, and the policy anchors on it.
+ */
+export async function recordNote(pool, secret, bearer, playerId, body) {
+  const n = validateNote(body);
+  return runAsPrincipal(pool, secret, bearer, async (client) => {
+    const { rows } = await client.query(
+      `insert into development_note
+         (player_id, school_id, author_id, body, about_discipline, adjustment, observed_on)
+       select $1, player_school($1), app_user_id(), $2, $3, $4,
+              coalesce($5::date, current_date)
+        where player_school($1) is not null
+       returning id, observed_on`,
+      [playerId, n.text, n.discipline, n.adjustment, n.observedOn]);
+    if (!rows.length) throw err("not_permitted", 403);
+    return { playerId, id: rows[0].id, observedOn: rows[0].observed_on };
+  });
+}
+
+/** Revise your own. The trigger refuses somebody else's. */
+export async function reviseNote(pool, secret, bearer, noteId, body) {
+  const n = validateNote(body);
+  return runAsPrincipal(pool, secret, bearer, async (client) => {
+    const { rows } = await client.query(
+      `update development_note
+          set body = $2, about_discipline = $3, adjustment = $4
+        where id = $1
+       returning id`,
+      [noteId, n.text, n.discipline, n.adjustment]);
+    if (!rows.length) throw err("not_permitted", 403);
+    return { id: rows[0].id };
+  });
+}
+
+export function developmentNoteRoutes({ pool, secret }) {
+  const handle = (fn) => async (req, res) => {
+    try { res.json(await fn(req)); }
+    catch (e) {
+      const status = (e.code === "42501" || e.code === "45001") ? 403 : (e.status || 500);
+      // 42501 is row-level security: this player is not yours. 45001 is the
+      // note trigger: the player is yours and the note is somebody else's.
+      const msg = e.code === "45001" ? "not_the_author"
+                : e.code === "42501" ? "not_permitted"
+                : (e.message || "error");
+      res.status(status).json({ error: msg });
+    }
+  };
+  return {
+    // POST /players/:id/notes { body, aboutDiscipline?, adjustment?, observedOn? }
+    write: handle((req) => recordNote(
+      pool, secret, req.headers?.authorization, req.params.id, req.body || {})),
+    // PATCH /notes/:id { body, aboutDiscipline?, adjustment? }
+    revise: handle((req) => reviseNote(
+      pool, secret, req.headers?.authorization, req.params.id, req.body || {})),
+  };
 }
 
 export function assessmentRoutes({ pool, secret }) {

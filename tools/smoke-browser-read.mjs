@@ -197,8 +197,34 @@ try {
     ok("...and the match data beside it", /MATCH DATA/.test(skillsText));
     ok("...and how many deliveries it rests on", /DELIVERIES/.test(skillsText));
     ok("...and it is on the 1-20 scale, not 0-100", /\/\s*20/.test(skillsText));
+    // The notes section, and the boundary around it.
+    ok("...and a coach sees the development notes", /DEVELOPMENT NOTES/.test(skillsText));
+    ok("...which say who wrote them", /Hendricks/.test(skillsText));
+    // Case- and space-tolerant: Badge sets text-transform: uppercase, and
+    // innerText reports rendered text, so the DOM string is "BATTING -2".
+    ok("...and show a note's signal where it carries one", /batting\s*-2/i.test(skillsText));
   } else {
     ok("the skills screen is reachable for a coach", false);
+  }
+
+  // The other side of that boundary, in a browser rather than through the API.
+  // A pupil reads his own attribute scores and must never read the prose.
+  group("A pupil never sees what was written about him");
+  {
+    const boy = await open();
+    // Matched on the seeded email, which is unique. The label is not: the
+    // offline demo list carries a "Player" too, and clicking that one would
+    // sign in against mock data and prove nothing.
+    if (await signIn(boy.page, /pillay@example\.invalid/)) {
+      await nav(boy.page, /Skills/);
+      const t = await text(boy.page);
+      ok("no development notes reach the pupil's screen", !/DEVELOPMENT NOTES/.test(t));
+      ok("...and none of their text either", !/Kearsney|Captaincy sits well/.test(t));
+    } else {
+      ok("a pupil can sign in", false);
+      ok("a pupil can sign in (notes)", false);
+    }
+    await boy.ctx.close().catch(() => {});
   }
 
   group("The screens render without errors");

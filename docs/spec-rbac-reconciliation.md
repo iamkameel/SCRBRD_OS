@@ -264,6 +264,66 @@ entirely, which is the better position and worth acting on.
 
 ---
 
+### D1 — development notes are narrower than the ratings, and that is a POPIA question
+
+**Built, as instructed.** A coach may write free prose about a player —
+observations the 33-attribute set has no number for. `development_note` is
+governed by `player.note.read` / `player.note.write`, held by the coaches of
+the side a child **currently** plays for and by leadership, and by nobody else.
+
+The asymmetry is deliberate and worth stating plainly, because it is the first
+place in this schema where a child can see *less* about himself than the school
+holds:
+
+| | pupil (`selfaccess`) | guardian | coach of that side | leadership |
+|---|---|---|---|---|
+| attribute scores (`player_skill`) | **reads** | — | reads | reads |
+| development notes | **never** | **never** | reads | reads |
+
+**The exposure.** Under POPIA a data subject — or the competent person acting
+for a minor — generally has a right of access to personal information held
+about them. A note store that is *structurally* invisible to both is one that
+cannot answer a subject-access request without somebody deciding, case by case,
+to open it. That is a policy position a school can hold, and it is not one the
+platform should adopt silently. Three things follow from it, all built:
+
+- **Every read is logged.** `notes` is in `RESTRICTED_FIELDS`, so who read whose
+  notes, and when, is answerable — which is what makes the narrowness
+  defensible rather than merely convenient.
+- **Nothing can be erased.** There is no DELETE policy, and the smoke asserts
+  it. A note that could vanish before a request is answered would be worse than
+  one that was never written.
+- **Authorship is fixed by the database, not the payload.** A trigger sets
+  `author_id` from the session and refuses to let anybody but the author revise
+  the text. A record whose author is settable is a record that cannot be relied
+  on in the one conversation it exists for.
+
+**Recommendation, not built:** before a pilot with real learner data, take a
+view on whether a guardian may request these notes and how a school answers.
+The mechanism to answer is there; the policy is not mine to write.
+
+### D2 — how prose reaches a numeric rating, and how it does not
+
+Notes feed the rating algorithm, and the honest part is what does **not**
+happen: **nothing parses the prose.** A system that read a coach's sentence and
+decided a number from it would be inventing a judgement and attributing it to a
+named person who never made it.
+
+So a note that is meant to move a rating carries the signal explicitly — which
+discipline, and by how much, bounded to ±3 — and the paragraph stays what it
+is: the reasoning a human reads. The coach states the conclusion; the prose
+explains it.
+
+Where it lands is the coach's half of the rating, not a third term: a note is
+that coach's judgement expressed between formal assessments. So it is windowed
+exactly as match evidence is — **a fresh assessment supersedes every note
+written before it**, because the coach has now looked again and their new
+number already contains what they wrote.
+
+Two refusals rather than silent ignores: an adjustment naming no discipline,
+and an adjustment beyond the cap. Stored-and-ignored is how a coach comes to
+believe they moved a rating they did not move.
+
 ## §12 hard rules, checked
 
 | # | Rule | State |

@@ -329,6 +329,20 @@ INSERT INTO player_skill (player_id, assessed_on, category, metric, score) VALUE
   ('aaaaaaaa-0000-0000-0000-000000000001', current_date - 30, 'mental',    'concentration', 15),
   ('aaaaaaaa-0000-0000-0000-000000000006', current_date - 30, 'technical', 'footwork',      12);
 
+-- A coach's own writing. Narrower than the assessments above: the pupil reads
+-- his own attribute scores and must not read this. One note carries an explicit
+-- signal, because a note that moves a rating says so itself — nothing here
+-- parses the prose.
+INSERT INTO development_note (player_id, school_id, author_id, body, about_discipline, adjustment, observed_on) VALUES
+  ('aaaaaaaa-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111',
+   '88888888-0000-0000-0000-000000000004',
+   'Captaincy sits well on him. Sets his own field without being asked and the younger players listen.',
+   NULL, NULL, current_date - 20),
+  ('aaaaaaaa-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111',
+   '88888888-0000-0000-0000-000000000004',
+   'Has not played the pull shot since he was hit at Kearsney. Working on it in the nets; treat the rating as provisional.',
+   'batting', -2, current_date - 5);
+
 INSERT INTO notification (id, school_id, team_code, scope_level, kind, urgency, title, body, required_capability, is_public, subject_kind) VALUES
   -- General: news.read only. Everyone attached to Hilton receives it.
   ('40170000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', NULL, 'school',

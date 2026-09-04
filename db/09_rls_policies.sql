@@ -261,6 +261,23 @@ CREATE POLICY training_attendance_update ON training_attendance
   FOR UPDATE USING (app_can('team.manage', (SELECT t.school_id FROM training_session t WHERE t.id = training_attendance.session_id), (SELECT t.team_code FROM training_session t WHERE t.id = training_attendance.session_id), training_attendance.player_id, '00000000-0000-0000-0000-000000000000'::uuid))
            WITH CHECK (app_can('team.manage', (SELECT t.school_id FROM training_session t WHERE t.id = training_attendance.session_id), (SELECT t.team_code FROM training_session t WHERE t.id = training_attendance.session_id), training_attendance.player_id, '00000000-0000-0000-0000-000000000000'::uuid));
 
+-- development_note — read: player.note.read · write: player.note.write
+ALTER TABLE development_note ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS development_note_read   ON development_note;
+DROP POLICY IF EXISTS development_note_insert ON development_note;
+DROP POLICY IF EXISTS development_note_update ON development_note;
+DROP POLICY IF EXISTS development_note_delete ON development_note;
+
+CREATE POLICY development_note_read ON development_note
+  FOR SELECT USING (app_can('player.note.read', development_note.school_id, (SELECT p.team_code FROM player p WHERE p.id = development_note.player_id), development_note.player_id, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY development_note_insert ON development_note
+  FOR INSERT WITH CHECK (app_can('player.note.write', development_note.school_id, (SELECT p.team_code FROM player p WHERE p.id = development_note.player_id), development_note.player_id, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY development_note_update ON development_note
+  FOR UPDATE USING (app_can('player.note.write', development_note.school_id, (SELECT p.team_code FROM player p WHERE p.id = development_note.player_id), development_note.player_id, '00000000-0000-0000-0000-000000000000'::uuid))
+           WITH CHECK (app_can('player.note.write', development_note.school_id, (SELECT p.team_code FROM player p WHERE p.id = development_note.player_id), development_note.player_id, '00000000-0000-0000-0000-000000000000'::uuid));
+
 -- player_skill — read: player.development.read · write: player.development.write
 ALTER TABLE player_skill ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS player_skill_read   ON player_skill;

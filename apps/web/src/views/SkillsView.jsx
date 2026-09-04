@@ -3,7 +3,7 @@ import { useState } from "react";
 import { D } from "../design/tokens.js";
 import { fitnessColor } from "../lib/format.js";
 import { Avatar, Badge, Btn, Card, EmptyState, RadarChart, SectionHeader } from "../ui/primitives.jsx";
-import { useLive, useRatings, useSkills } from "../lib/live.js";
+import { useLive, useNotes, useRatings, useSkills } from "../lib/live.js";
 
 // ══════════════════════════════════════════════════════
 //  SKILLS MATRIX VIEW
@@ -43,6 +43,11 @@ function SkillsView({ role }) {
   const SCALE_MAX = 20;
   const BATTING_OR_BOWLING = ["batting", "bowling"];
   const rating = selPlayer ? ratings[selPlayer.id] : null;
+  // Notes are read on their own capability, narrower than the ratings above.
+  // A reader without it gets an empty list and the section does not appear —
+  // which is the correct thing for it to do rather than an empty panel that
+  // implies nothing has been written.
+  const { notes } = useNotes(role, selPlayer?.id);
 
   if (!selPlayer) return (
     <div className="os-page">
@@ -167,6 +172,41 @@ function SkillsView({ role }) {
                     </div>
                   );
                 })}
+              </div>
+            </Card>
+          )}
+
+          {/* ── A coach's own writing ────────────────────────────
+              Narrower than everything above it: the pupil reads his own
+              attribute scores and never this. Shown only to a reader whose
+              capability returned rows at all. */}
+          {notes.length>0&&(
+            <Card sx={{padding:"16px",marginBottom:"14px"}}>
+              <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"12px"}}>
+                DEVELOPMENT NOTES · COACHING STAFF ONLY
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
+                {notes.map(n=>(
+                  <div key={n.id} style={{borderLeft:`2px solid ${n.adjustment?(n.adjustment>0?D.emerald:D.rose):D.border}`,paddingLeft:"12px"}}>
+                    <div style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,lineHeight:1.5}}>{n.body}</div>
+                    <div style={{display:"flex",alignItems:"center",gap:"8px",marginTop:"5px"}}>
+                      <span style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>
+                        {n.author||"—"} · {n.observedOn}{n.revised?" · REVISED":""}
+                      </span>
+                      {/* The signal, stated. The prose is never parsed: if a
+                          note moved a rating, it says so here because the
+                          coach said so, not because anything read the words. */}
+                      {n.adjustment!=null&&(
+                        <Badge color={n.adjustment>0?D.emerald:D.rose}>
+                          {n.discipline} {n.adjustment>0?"+":""}{n.adjustment}
+                        </Badge>
+                      )}
+                      {n.adjustment==null&&n.discipline&&(
+                        <Badge color={D.textMuted}>{n.discipline}</Badge>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
             </Card>
           )}
