@@ -292,7 +292,19 @@ export const TABLES = {
     // would hide every school notice from every team-scoped coach. It is
     // ANY_SCOPE, declared, because a school notice genuinely is not about one
     // team.
-    anchors: { school: "school_id", team: "(COALESCE(notification.team_code, '*'::text))" },
+    // A school-wide notice carries no team, and a notice about nobody in
+    // particular carries no person. Both are COALESCE'd to ANY_SCOPE rather
+    // than passed as NULL, because a NULL on a resource NARROWS — a school
+    // notice with a null team would be invisible to every team-scoped coach.
+    //
+    // The person anchor is what keeps an injury alert from reaching a guardian
+    // scoped to a different child: with it, their subject list has something
+    // to fail against.
+    anchors: {
+      school: "school_id",
+      team:   "(COALESCE(notification.team_code, '*'::text))",
+      person: "(COALESCE(notification.subject_person_id, '00000000-0000-0000-0000-000000000000'::uuid))",
+    },
     masked: {},
   },
 

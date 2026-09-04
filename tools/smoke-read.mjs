@@ -269,6 +269,45 @@ try {
   const guardianCareer = await read("career", guardian);
   ok("a guardian's career read is their own child only", guardianCareer.length === 1);
 
+  // ── An injury alerts the circle of care ─────────────────────────
+  // Recording an injury publishes a notice by trigger, not by a call the write
+  // path has to remember. Nobody is listed as a recipient: the notice declares
+  // medical.nature.read and names the player, and the notification policy
+  // lands it on coaches of that player's current side, school administration,
+  // medical staff, the parent OF THAT CHILD, and the player themselves.
+  group("An injury alerts the people who need to know");
+  const P_INJURED = "aaaaaaaa-0000-0000-0000-000000000005";
+  const injuryAlerts = (rows) => rows.filter((n) => n.kind === "injury");
+
+  const coachAlerts = injuryAlerts(await read("notifications", coach));
+  ok("the coach of the side is alerted", coachAlerts.length > 0);
+  ok("...and the alert names the player and the injury",
+     coachAlerts.some((n) => /Pillay/.test(n.body) && /hamstring/i.test(n.body)));
+
+  const parentAlerts = injuryAlerts(await read("notifications", guardian));
+  ok("the parent of that child is alerted",
+     parentAlerts.some((n) => n.subject_person_id === P_INJURED));
+  ok("...and about nobody else's child",
+     parentAlerts.every((n) => n.subject_person_id == null || n.subject_person_id === P_INJURED));
+
+  const selfAlerts = injuryAlerts(await read("notifications", self));
+  ok("the player themselves is told", selfAlerts.length > 0);
+  ok("...about their own injury only",
+     selfAlerts.every((n) => n.subject_person_id == null || n.subject_person_id === P_INJURED));
+
+  const medicAlerts = injuryAlerts(await read("notifications", medic));
+  ok("medical staff are alerted", medicAlerts.length > 0);
+
+  // A team mate learns that someone is unavailable and not what is wrong with
+  // them — the tier the notice declares decides who receives it, and the
+  // player bundle holds medical.status.read and not medical.nature.read.
+  const pupilAlerts = injuryAlerts(await read("notifications", pupil));
+  ok("a team mate is not alerted to the nature of an injury",
+     pupilAlerts.every((n) => !/hamstring|impingement/i.test(n.body)));
+
+  ok("a spectator receives no injury alert at all",
+     injuryAlerts(await read("notifications", watcher)).length === 0);
+
   // ── The ladder is shared, the rest is not ───────────────────────
   group("Participation, not authorship, decides a league");
   const ladder = await read("league", coach);

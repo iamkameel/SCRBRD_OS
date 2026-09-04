@@ -189,9 +189,15 @@ INSERT INTO notification (id, school_id, team_code, scope_level, kind, urgency, 
   -- medical.status.read on top of news.read. A spectator holds news.read and
   -- must NOT receive this one — that single row is the whole argument for the
   -- readAlso mechanism.
+  -- A STATUS-tier notice, and its body is written to match: it says the player
+  -- is unavailable and does not say why. The first draft of this fixture read
+  -- "remains out with a hamstring strain" while declaring only
+  -- medical.status.read — a notice exceeding its own tier, which is precisely
+  -- the leak required_capability exists to prevent. It was caught by reading
+  -- the rows the injury trigger produces next to the hand-written ones.
   ('40170000-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'U19A', 'team',
-   'injury', 'high', 'Injury update',
-   'R Pillay remains out with a hamstring strain; review in two weeks.',
+   'injury', 'high', 'Availability update',
+   'R Pillay is unavailable for selection. Review in two weeks.',
    'medical.status.read', false, 'injury'),
   -- A U16B team notice. The U19A coach's assignment is team-scoped, so it must
   -- not reach them even though they hold news.read at the same school.

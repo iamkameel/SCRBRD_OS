@@ -178,7 +178,7 @@ export const READ_QUERIES = {
   notifications: {
     text: `select n.id, n.school_id, n.team_code, n.scope_level, n.kind,
                   n.urgency, n.title, n.body, n.subject_kind, n.subject_id,
-                  n.published_at, n.is_public,
+                  n.published_at, n.is_public, n.subject_person_id,
                   (r.person_id is not null) as read
              from notification n
              left join notification_read r

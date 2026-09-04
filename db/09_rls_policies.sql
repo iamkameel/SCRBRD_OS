@@ -264,15 +264,15 @@ DROP POLICY IF EXISTS notification_update ON notification;
 DROP POLICY IF EXISTS notification_delete ON notification;
 
 CREATE POLICY notification_read ON notification
-  FOR SELECT USING (app_can('news.read', notification.school_id, (COALESCE(notification.team_code, '*'::text)), '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid)
-       AND app_can((notification.required_capability), notification.school_id, (COALESCE(notification.team_code, '*'::text)), '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+  FOR SELECT USING (app_can('news.read', notification.school_id, (COALESCE(notification.team_code, '*'::text)), (COALESCE(notification.subject_person_id, '00000000-0000-0000-0000-000000000000'::uuid)), '00000000-0000-0000-0000-000000000000'::uuid)
+       AND app_can((notification.required_capability), notification.school_id, (COALESCE(notification.team_code, '*'::text)), (COALESCE(notification.subject_person_id, '00000000-0000-0000-0000-000000000000'::uuid)), '00000000-0000-0000-0000-000000000000'::uuid));
 
 CREATE POLICY notification_insert ON notification
-  FOR INSERT WITH CHECK (app_can(('news.publish.' || notification.scope_level), notification.school_id, (COALESCE(notification.team_code, '*'::text)), '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+  FOR INSERT WITH CHECK (app_can(('news.publish.' || notification.scope_level), notification.school_id, (COALESCE(notification.team_code, '*'::text)), (COALESCE(notification.subject_person_id, '00000000-0000-0000-0000-000000000000'::uuid)), '00000000-0000-0000-0000-000000000000'::uuid));
 
 CREATE POLICY notification_update ON notification
-  FOR UPDATE USING (app_can(('news.publish.' || notification.scope_level), notification.school_id, (COALESCE(notification.team_code, '*'::text)), '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
-           WITH CHECK (app_can(('news.publish.' || notification.scope_level), notification.school_id, (COALESCE(notification.team_code, '*'::text)), '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+  FOR UPDATE USING (app_can(('news.publish.' || notification.scope_level), notification.school_id, (COALESCE(notification.team_code, '*'::text)), (COALESCE(notification.subject_person_id, '00000000-0000-0000-0000-000000000000'::uuid)), '00000000-0000-0000-0000-000000000000'::uuid))
+           WITH CHECK (app_can(('news.publish.' || notification.scope_level), notification.school_id, (COALESCE(notification.team_code, '*'::text)), (COALESCE(notification.subject_person_id, '00000000-0000-0000-0000-000000000000'::uuid)), '00000000-0000-0000-0000-000000000000'::uuid));
 
 -- match_weather — read: fixture.read · write: fixture.update
 ALTER TABLE match_weather ENABLE ROW LEVEL SECURITY;

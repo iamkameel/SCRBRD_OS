@@ -416,6 +416,59 @@ BEGIN
   SELECT count(*) INTO n FROM ground WHERE school_id = WES;
   PERFORM _assert(n = 0, 'coach can read another school''s grounds');
 
+  -- ── 10b. An injury alerts the circle of care, and only them ────
+  -- A trigger on `injury` publishes a notice declaring medical.nature.read and
+  -- naming the player it is about. Nobody is listed as a recipient anywhere:
+  -- the audience falls out of the capability model, and these assertions are
+  -- how we know it lands where you would want it to.
+  PERFORM _as(U_COACH);
+  SELECT count(*) INTO n FROM notification
+   WHERE kind = 'injury' AND required_capability = 'medical.nature.read';
+  PERFORM _assert(n = 2, 'the coach of the side was not alerted to their players'' injuries');
+
+  PERFORM _as(U_MEDICAL);
+  SELECT count(*) INTO n FROM notification
+   WHERE kind = 'injury' AND required_capability = 'medical.nature.read';
+  PERFORM _assert(n = 2, 'medical staff were not alerted');
+
+  -- The parent of ONE child. Their assignment names that child, so the person
+  -- anchor on the notice has something to fail against — without it, a notice
+  -- is about nobody in particular and every guardian in the team receives an
+  -- alert about somebody else's child.
+  PERFORM _as(U_PARENT);
+  SELECT count(*) INTO n FROM notification
+   WHERE kind = 'injury' AND subject_person_id = P_INJURED;
+  PERFORM _assert(n = 1, 'the guardian was not alerted about their own child');
+  SELECT count(*) INTO n FROM notification
+   WHERE kind = 'injury' AND subject_person_id = P_OTHER;
+  PERFORM _assert(n = 0, 'a guardian was alerted about somebody else''s child');
+
+  -- The player themselves, through self-access.
+  PERFORM _as(U_SELF);
+  SELECT count(*) INTO n FROM notification
+   WHERE kind = 'injury' AND subject_person_id = P_INJURED
+     AND required_capability = 'medical.nature.read';
+  PERFORM _assert(n = 1, 'a player was not told about their own injury');
+  SELECT count(*) INTO n FROM notification
+   WHERE kind = 'injury' AND subject_person_id = P_OTHER;
+  PERFORM _assert(n = 0, 'self-access received an alert about a team mate');
+
+  -- And NOT a team mate. The player bundle holds medical.status.read and not
+  -- medical.nature.read, so the nature-tier alert does not reach them — while
+  -- the status-tier availability notice does. The tier decides the audience.
+  PERFORM _as(U_PUPIL);
+  SELECT count(*) INTO n FROM notification
+   WHERE kind = 'injury' AND required_capability = 'medical.nature.read';
+  PERFORM _assert(n = 0, 'a team mate was alerted to what is wrong with a player');
+  SELECT count(*) INTO n FROM notification
+   WHERE kind = 'injury' AND required_capability = 'medical.status.read';
+  PERFORM _assert(n = 1, 'a team mate was not told the player is unavailable');
+
+  -- A spectator holds neither.
+  PERFORM _as(U_WATCHER);
+  SELECT count(*) INTO n FROM notification WHERE kind = 'injury';
+  PERFORM _assert(n = 0, 'a spectator received an injury alert');
+
   -- ── 11. The programme tables ───────────────────────────────────
   -- Five areas that existed in the product and not in the database, so the
   -- browser was deciding all of them. Each assertion below is a decision that

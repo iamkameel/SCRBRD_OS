@@ -182,6 +182,19 @@ CREATE TABLE notification (
   -- cancelled, and the notice should survive to say so.
   subject_kind text CHECK (subject_kind IN ('match','injury','training','transport','facility','skills','system','competition')),
   subject_id   uuid,
+  -- WHO the notice is about, when it is about a person.
+  --
+  -- This is a scope anchor, not a label. Without it a notice is about nobody
+  -- in particular, so the person dimension is ANY_SCOPE and every assignment
+  -- in the school and team receives it — which is right for "fixture list
+  -- published" and badly wrong for "R Pillay is out with a hamstring strain":
+  -- a guardian scoped to their own child would have received an alert about
+  -- somebody else's.
+  --
+  -- With it, the generated policy passes this as the person anchor, and a
+  -- guardian's assignment reaches it only if their subject list names this
+  -- player. Same mechanism that scopes the record itself.
+  subject_person_id uuid REFERENCES player(id) ON DELETE CASCADE,
   published_at timestamptz NOT NULL DEFAULT now(),
   published_by uuid REFERENCES app_user(id),
   expires_at   timestamptz,
@@ -194,6 +207,7 @@ CREATE TABLE notification (
 CREATE INDEX ON notification (school_id, published_at DESC);
 CREATE INDEX ON notification (school_id, team_code, published_at DESC);
 CREATE INDEX ON notification (published_at DESC) WHERE is_public;
+CREATE INDEX ON notification (subject_person_id) WHERE subject_person_id IS NOT NULL;
 
 -- Read state is PER PERSON, so it cannot live on the notice. Its own table,
 -- keyed by the reader, and deliberately NOT governed by a capability: marking
@@ -205,6 +219,80 @@ CREATE TABLE notification_read (
   read_at         timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (notification_id, person_id)
 );
+
+-- ── When something happens to a child, the right people hear ────
+--
+-- A trigger rather than a call in the write path, because "record the injury
+-- and remember to notify" is a rule someone eventually forgets, and the
+-- consequence of forgetting is a parent who was not told.
+--
+-- WHO RECEIVES IT is not decided here. The notice declares
+-- medical.nature.read and names the player it is about, and the read policy on
+-- notification does the rest — which lands on exactly the circle of care:
+--
+--   coaches of the team that player CURRENTLY plays for  (team anchor, and a
+--     coach assignment must name a team)
+--   school administration                                (school-scoped)
+--   the parent or guardian OF THAT CHILD                 (subject list matches)
+--   medical staff                                        (school-scoped)
+--   the player themselves                                (self-access names them)
+--
+-- and specifically NOT team mates, whose `player` bundle holds
+-- medical.status.read and not medical.nature.read, and not a guardian of a
+-- different child in the same side, whose subject list does not name this one.
+-- Nobody is listed anywhere; the audience falls out of the capability model.
+--
+-- SECURITY DEFINER because the notification INSERT policy requires
+-- news.publish.team and a physiotherapist does not hold it. The SYSTEM is
+-- publishing this, not the person who recorded the injury — and the row it
+-- writes is still read back through the ordinary policy, so this widens who is
+-- told and never who may know.
+--
+-- The body carries the NATURE and never the clinical notes. A notification
+-- must not exceed the tier it declares, or the feed becomes a way to read a
+-- record you could not open — which is the whole reason required_capability
+-- exists.
+CREATE OR REPLACE FUNCTION notify_injury() RETURNS trigger AS $$
+DECLARE
+  p        player%ROWTYPE;
+  v_title  text;
+  v_body   text;
+BEGIN
+  SELECT * INTO p FROM player WHERE id = NEW.player_id;
+  IF NOT FOUND THEN RETURN NEW; END IF;
+
+  IF TG_OP = 'INSERT' THEN
+    v_title := 'Injury recorded';
+    v_body  := p.full_name || ' has been recorded as injured: ' || NEW.injury_type
+               || coalesce(' (' || NEW.severity || ')', '')
+               || coalesce('. Expected return ' || NEW.rtw_date::text, '') || '.';
+  ELSIF NEW.phase = 'cleared' AND OLD.phase IS DISTINCT FROM 'cleared' THEN
+    v_title := 'Cleared to play';
+    v_body  := p.full_name || ' has been cleared following ' || NEW.injury_type || '.';
+  ELSIF NEW.rtw_date IS DISTINCT FROM OLD.rtw_date THEN
+    v_title := 'Return date updated';
+    v_body  := p.full_name || ' is now expected back on ' || NEW.rtw_date::text || '.';
+  ELSE
+    -- A clinical note edited is not an event anyone needs pushed at them.
+    RETURN NEW;
+  END IF;
+
+  INSERT INTO notification
+    (school_id, team_code, scope_level, kind, urgency, title, body,
+     required_capability, is_public, subject_kind, subject_id, subject_person_id)
+  VALUES
+    (NEW.school_id, p.team_code, 'team', 'injury',
+     CASE WHEN NEW.severity = 'severe' THEN 'high' ELSE 'medium' END,
+     v_title, v_body,
+     'medical.nature.read', false, 'injury', NEW.id, NEW.player_id);
+
+  RETURN NEW;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS injury_notifies ON injury;
+CREATE TRIGGER injury_notifies
+  AFTER INSERT OR UPDATE ON injury
+  FOR EACH ROW EXECUTE FUNCTION notify_injury();
 
 -- ── Conditions ──────────────────────────────────────────────────
 -- Keyed to a fixture and scoped through it. Nothing here is personal, but a
