@@ -154,7 +154,7 @@ try {
   ok("the fixture list came from the server", !/Demonstration fixtures/i.test(await text()));
 
   const before = (await dbq(`select count(*)::int n from ball_event`))[0].n;
-  // Deliberately the U19A fixture rather than whichever card is first: it is
+  // Deliberately the 1XI fixture rather than whichever card is first: it is
   // the one with a real squad in the seed, and naming it means the assertions
   // below are about a known match rather than whatever happened to be on top.
   const opened = await page.evaluate(() => {
@@ -174,7 +174,7 @@ try {
     }
     return false;
   });
-  ok("the U19A fixture offers the scorer", opened);
+  ok("the 1XI fixture offers the scorer", opened);
   await page.waitForTimeout(2500);
   await clearBlockers();
   if (!/\bDOT\b/i.test(await text())) await click(/QUICK MODE/i, 2500);

@@ -23,6 +23,7 @@
 
 import { ROLE_CAPABILITIES, ROLES, roleGrants, SCORING_ROLES, TEAM_SCOPED_ROLES, unknownCapabilities } from "@scrbrd/policy/roles";
 import { TABLES, isCapabilityExpression } from "@scrbrd/policy/tables";
+import { teamCodeCheck } from "@scrbrd/policy/teams";
 import { ALL_CAPABILITIES } from "@scrbrd/policy/capabilities";
 
 const q = (s) => `'${String(s).replaceAll("'", "''")}'`;
@@ -185,6 +186,32 @@ ALTER TABLE role_assignment DROP CONSTRAINT IF EXISTS assignment_team_scoped;
 ALTER TABLE role_assignment ADD CONSTRAINT assignment_team_scoped CHECK (
   role NOT IN (${list}) OR team_code IS NOT NULL
 );`;
+}
+
+/**
+ * Every team_code column, kept inside the vocabulary.
+ *
+ * A team code is a SCOPE ANCHOR — app_can() compares it for equality on every
+ * decision — so a typo does not fail loudly, it fails closed and silently: the
+ * assignment simply covers nothing, and a coach finds an empty screen with no
+ * error anywhere to explain it. A constraint turns that into a rejected write
+ * at the moment the mistake is made.
+ *
+ * Generated from packages/policy/src/teams.mjs so the database and the module
+ * cannot disagree about what a team is. The regex admits every age band ANY
+ * level uses, because a single CHECK cannot know whether a row belongs to a
+ * school or a province — U19 is legal here and refused for a school by
+ * isValidTeam(), which knows the level.
+ */
+function teamCodeConstraints() {
+  const cols = ["player", "coach", "match", "role_assignment",
+                "training_session", "competition_entrant", "notification"];
+  const out = [banner("Team codes are a closed vocabulary")];
+  for (const t of cols) {
+    out.push(`ALTER TABLE ${t} DROP CONSTRAINT IF EXISTS ${t}_team_code_known;
+ALTER TABLE ${t} ADD CONSTRAINT ${t}_team_code_known CHECK (${teamCodeCheck("team_code")});`);
+  }
+  return out.join("\n");
 }
 
 function capabilityRows() {
@@ -426,6 +453,11 @@ export function policies() {
     `-- Regenerate with \`pnpm rls:generate\`. Companion: db/01_authz.sql.`,
     `-- Model: capability + scoped assignment (docs/adr/0001-scoped-assignments.md).`,
     `-- Roles that may score: ${SCORING_ROLES.join(", ")}`,
+    // Emitted here rather than with the other generated constraints in
+    // 01_authz.sql, because these span tables created in 00 AND 08 — and 01
+    // runs before 08. Same invariant as the policies themselves: tables first,
+    // everything that references them last.
+    teamCodeConstraints(),
     tablePolicies(),
     maskViews(),
     ``,

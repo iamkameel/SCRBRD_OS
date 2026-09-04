@@ -107,7 +107,7 @@ function CompetitionsView({ role }) {
               <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary,marginBottom:"12px"}}>Top Performers</div>
               <div style={{marginBottom:"10px"}}>
                 <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"6px"}}>BATTING</div>
-                {PLAYERS.filter(p=>p.team==="U19A").sort((a,b)=>b.avg-a.avg).slice(0,3).map((p,i)=>(
+                {PLAYERS.filter(p=>p.team==="1XI").sort((a,b)=>b.avg-a.avg).slice(0,3).map((p,i)=>(
                   <div key={p.id} style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"6px"}}>
                     <span style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted,width:"14px"}}>{i+1}</span>
                     <Avatar name={p.name} size={24} color={D.sky}/>
@@ -118,7 +118,7 @@ function CompetitionsView({ role }) {
               </div>
               <div>
                 <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"6px"}}>BOWLING</div>
-                {PLAYERS.filter(p=>p.team==="U19A"&&p.wkts>0).sort((a,b)=>b.wkts-a.wkts).slice(0,3).map((p,i)=>(
+                {PLAYERS.filter(p=>p.team==="1XI"&&p.wkts>0).sort((a,b)=>b.wkts-a.wkts).slice(0,3).map((p,i)=>(
                   <div key={p.id} style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"6px"}}>
                     <span style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted,width:"14px"}}>{i+1}</span>
                     <Avatar name={p.name} size={24} color={D.violet}/>

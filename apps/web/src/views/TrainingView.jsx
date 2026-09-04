@@ -123,7 +123,7 @@ function TrainingView({ role }) {
         <Modal title="Schedule Training Session" onClose={()=>setAddModal(false)}>
           <Input label="Session Title" value="" onChange={()=>{}} placeholder="e.g. Pre-Match Batting Practice"/>
           <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"12px"}}>
-            <Select label="Team" value="U19A" onChange={()=>{}} options={["U19A","U15A","U13A"]}/>
+            <Select label="Team" value="1XI" onChange={()=>{}} options={["1XI","U15A","U13A"]}/>
             <Select label="Type" value="batting" onChange={()=>{}} options={["batting","bowling","fielding","fitness","skills","technical"]}/>
             <Input label="Date" value="" onChange={()=>{}} type="date"/>
             <Input label="Time" value="" onChange={()=>{}} type="time"/>

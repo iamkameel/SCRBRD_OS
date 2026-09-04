@@ -44,9 +44,9 @@ CREATE OR REPLACE FUNCTION match_school(p_match uuid) RETURNS uuid AS $$
 -- Which team a match belongs to, for the same reason and with the same care.
 --
 -- The scoring policies below passed NULL for the team dimension, and NULL on
--- the resource NARROWS: a coach assigned to U19A could not read the ball log
--- of their own U19A match. Anchoring to the match's team is both correct and
--- tighter than the alternative — a U19A coach reads U19A, and not the U16B
+-- the resource NARROWS: a coach assigned to 1XI could not read the ball log
+-- of their own 1XI match. Anchoring to the match's team is both correct and
+-- tighter than the alternative — a 1XI coach reads 1XI, and not the U16B
 -- game happening on the next field.
 CREATE OR REPLACE FUNCTION match_team(p_match uuid) RETURNS text AS $$
   SELECT team_code FROM match WHERE id = p_match $$ LANGUAGE sql STABLE SECURITY DEFINER;

@@ -31,7 +31,7 @@
  *
  * So when the caller cannot read the anchor's source row, the subquery yields
  * NULL — and a NULL on a resource narrows. The effect is defence in depth that
- * fails closed: a U19A coach is kept out of a U16B player's assessment twice
+ * fails closed: a 1XI coach is kept out of a U16B player's assessment twice
  * over, once because the team anchor does not match and once because they
  * cannot read the player row the anchor is derived from, so it never resolves
  * at all.

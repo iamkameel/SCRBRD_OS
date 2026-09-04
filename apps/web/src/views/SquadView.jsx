@@ -14,7 +14,7 @@ function SquadView({ role }) {
   // principal. Importing the raw constant here would bypass both.
   const PLAYERS = usePlayersWithCareer(role);
   const SKILLS_MATRIX = useSkills(role);
-  const [team, setTeam]           = useState("U19A");
+  const [team, setTeam]           = useState("1XI");
   const [selected, setSelected]   = useState(null);
   const [addModal, setAddModal]   = useState(false);
   const players = PLAYERS.filter(p=>p.team===team);
@@ -145,7 +145,7 @@ function SquadView({ role }) {
         <Modal title="Add Player" onClose={()=>setAddModal(false)}>
           <Input label="Full Name" value="" onChange={()=>{}} placeholder="First Last"/>
           <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"12px"}}>
-            <Select label="Team" value="U19A" onChange={()=>{}} options={["U19A","U15A","U13A"]}/>
+            <Select label="Team" value="1XI" onChange={()=>{}} options={["1XI","U15A","U13A"]}/>
             <Select label="Role" value="BAT" onChange={()=>{}} options={["BAT","BOWL","ALL","WK"]}/>
             <Select label="Batting Hand" value="R" onChange={()=>{}} options={[{value:"R",label:"Right"},{value:"L",label:"Left"}]}/>
             <Input label="Age" value="" onChange={()=>{}} type="number" placeholder="15"/>

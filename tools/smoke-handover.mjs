@@ -117,7 +117,7 @@ try {
 
   const squad = P.map((id, i) => ({ id, name: `Player ${i + 1}` }));
   const opening = [
-    inningsStart({ battingTeam: "Hilton U19A", bowlingTeam: "Michaelhouse", squad, overs: 20 }),
+    inningsStart({ battingTeam: "Hilton 1st XI", bowlingTeam: "Michaelhouse", squad, overs: 20 }),
     batters({ striker: P[0], nonStriker: P[1] }),
     bowler({ bowler: P[2] }),
     ...[1, 4, 0, 2, 0, 6].map((v) => ball({ type: BALL_TYPE.RUN, value: v })),

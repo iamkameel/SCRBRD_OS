@@ -1,12 +1,12 @@
 import { addDays, dateStr, today } from "../lib/format.js";
 
 const PLAYERS = [
-  // ── HILTON U19A ──
-  { id:"p1",  name:"James Whitfield",    team:"U19A", school:"HIL", role:"BAT",  batHand:"R", bowlArm:"R", bowlStyle:"M",  age:17, fitness:"fit",
+  // ── HILTON 1st XI ──
+  { id:"p1",  name:"James Whitfield",    team:"1XI", school:"HIL", role:"BAT",  batHand:"R", bowlArm:"R", bowlStyle:"M",  age:17, fitness:"fit",
     avg:48.2, sr:135.4, wkts:8,  econ:7.2,  cap:"c",  form:[4,2,6,3,5,4,6,3],
     born:"2007-04-12", hometown:"Hilton, KZN", houseAtSchool:"School House",
     height:"182cm", weight:"76kg", battingPos:1,
-    bio:"Captain of Hilton U19A. Opening batsman with exceptional technique and temperament. Right-hand top-order bat. Under-19 KZN provincial trialist 2024.",
+    bio:"Captain of Hilton 1st XI. Opening batsman with exceptional technique and temperament. Right-hand top-order bat. Under-19 KZN provincial trialist 2024.",
     careerTotals:{ innings:42, runs:1845, hs:112, fifties:14, hundreds:2, balls:0, wktsTotal:8, maidens:0 },
     seasonForm:[
       {opp:"Michaelhouse",  runs:67,  wkts:0, date:"2025-01-18", result:"W"},
@@ -19,11 +19,11 @@ const PLAYERS = [
     ],
     vsOpponents:{ Michaelhouse:{P:4,runs:198,avg:49.5}, DHS:{P:3,runs:142,avg:47.3}, Kearsney:{P:4,runs:241,avg:60.3}, "Westville":{P:2,runs:98,avg:49.0} },
   },
-  { id:"p2",  name:"Luca De Villiers",   team:"U19A", school:"HIL", role:"BOWL", batHand:"R", bowlArm:"R", bowlStyle:"F",  age:18, fitness:"fit",
+  { id:"p2",  name:"Luca De Villiers",   team:"1XI", school:"HIL", role:"BOWL", batHand:"R", bowlArm:"R", bowlStyle:"F",  age:18, fitness:"fit",
     avg:18.4, sr:95.1,  wkts:24, econ:6.8,  form:[2,1,3,0,2,1,4,2],
     born:"2006-08-23", hometown:"Pietermaritzburg, KZN", houseAtSchool:"Allott House",
     height:"188cm", weight:"82kg", battingPos:9,
-    bio:"Leading wicket-taker. Express right-arm fast bowler. Consistently clocks 125–130 km/h. KZN U19 squad member 2024.",
+    bio:"Leading wicket-taker. Express right-arm fast bowler. Consistently clocks 125–130 km/h. KZN 1st XI squad member 2024.",
     careerTotals:{ innings:38, runs:312, hs:34, fifties:0, hundreds:0, balls:2840, wktsTotal:68, maidens:12 },
     seasonForm:[
       {opp:"Michaelhouse",  runs:8,   wkts:3, date:"2025-01-18", result:"W"},
@@ -35,7 +35,7 @@ const PLAYERS = [
     ],
     vsOpponents:{ Michaelhouse:{P:4,wkts:11,avg:18.2}, DHS:{P:3,wkts:8,avg:22.1}, Kearsney:{P:4,wkts:14,avg:15.4}, "Westville":{P:2,wkts:7,avg:12.0} },
   },
-  { id:"p3",  name:"Ethan Solomons",     team:"U19A", school:"HIL", role:"ALL",  batHand:"L", bowlArm:"L", bowlStyle:"F",  age:17, fitness:"fit",
+  { id:"p3",  name:"Ethan Solomons",     team:"1XI", school:"HIL", role:"ALL",  batHand:"L", bowlArm:"L", bowlStyle:"F",  age:17, fitness:"fit",
     avg:32.1, sr:142.0, wkts:15, econ:7.5,  form:[3,5,4,6,2,3,5,4],
     born:"2007-11-05", hometown:"Durban, KZN", houseAtSchool:"Smith House",
     height:"180cm", weight:"74kg", battingPos:5,
@@ -51,7 +51,7 @@ const PLAYERS = [
     ],
     vsOpponents:{ Michaelhouse:{P:4,runs:142,avg:35.5,wkts:8}, DHS:{P:3,runs:118,avg:39.3,wkts:5}, Kearsney:{P:4,runs:164,avg:41.0,wkts:9} },
   },
-  { id:"p4",  name:"Marcus Ngcobo",      team:"U19A", school:"HIL", role:"WK",   batHand:"R", bowlArm:"R", bowlStyle:"M",  age:18, fitness:"fit",
+  { id:"p4",  name:"Marcus Ngcobo",      team:"1XI", school:"HIL", role:"WK",   batHand:"R", bowlArm:"R", bowlStyle:"M",  age:18, fitness:"fit",
     avg:29.8, sr:118.2, wkts:0,  econ:0,   form:[2,3,1,4,5,3,2,4],
     born:"2006-03-18", hometown:"Howick, KZN", houseAtSchool:"Day Boys",
     height:"175cm", weight:"70kg", battingPos:7,
@@ -66,7 +66,7 @@ const PLAYERS = [
       {opp:"Westville",     runs:12, wkts:0, date:"2025-02-22", result:"W"},
     ],
   },
-  { id:"p5",  name:"Theo Pretorius",     team:"U19A", school:"HIL", role:"BAT",  batHand:"R", bowlArm:"R", bowlStyle:"S",  age:17, fitness:"injured",
+  { id:"p5",  name:"Theo Pretorius",     team:"1XI", school:"HIL", role:"BAT",  batHand:"R", bowlArm:"R", bowlStyle:"S",  age:17, fitness:"injured",
     avg:21.4, sr:108.0, wkts:3,  econ:8.1,  form:[0,0,0,0,1,2,0,0],
     born:"2007-09-30", hometown:"Pietermaritzburg, KZN", houseAtSchool:"School House",
     height:"177cm", weight:"68kg", battingPos:3,
@@ -77,7 +77,7 @@ const PLAYERS = [
       {opp:"DHS",           runs:0,  wkts:0, date:"2025-01-25", result:"W"},
     ],
   },
-  { id:"p6",  name:"Aiden Petersen",     team:"U19A", school:"HIL", role:"BOWL", batHand:"R", bowlArm:"R", bowlStyle:"S",  age:18, fitness:"fit",
+  { id:"p6",  name:"Aiden Petersen",     team:"1XI", school:"HIL", role:"BOWL", batHand:"R", bowlArm:"R", bowlStyle:"S",  age:18, fitness:"fit",
     avg:14.2, sr:78.4,  wkts:19, econ:5.9,  form:[1,2,3,1,2,2,3,1],
     born:"2006-06-14", hometown:"Ballito, KZN", houseAtSchool:"Allott House",
     height:"183cm", weight:"78kg", battingPos:10,
@@ -92,7 +92,7 @@ const PLAYERS = [
     ],
     vsOpponents:{ Michaelhouse:{P:4,wkts:8,avg:21.3}, DHS:{P:3,wkts:7,avg:18.9}, Kearsney:{P:4,wkts:9,avg:17.2} },
   },
-  { id:"p7",  name:"Dylan Fortuin",      team:"U19A", school:"HIL", role:"ALL",  batHand:"L", bowlArm:"R", bowlStyle:"F",  age:17, fitness:"fit",
+  { id:"p7",  name:"Dylan Fortuin",      team:"1XI", school:"HIL", role:"ALL",  batHand:"L", bowlArm:"R", bowlStyle:"F",  age:17, fitness:"fit",
     avg:26.5, sr:128.3, wkts:11, econ:7.8,  form:[3,4,2,5,3,4,2,3],
     born:"2007-01-22", hometown:"Hilton, KZN", houseAtSchool:"Smith House",
     height:"181cm", weight:"75kg", battingPos:6,
@@ -107,7 +107,7 @@ const PLAYERS = [
       {opp:"Westville",     runs:27, wkts:1, date:"2025-02-22", result:"W"},
     ],
   },
-  { id:"p8",  name:"Connor Walsh",       team:"U19A", school:"HIL", role:"BAT",  batHand:"R", bowlArm:"R", bowlStyle:"M",  age:18, fitness:"rehab",
+  { id:"p8",  name:"Connor Walsh",       team:"1XI", school:"HIL", role:"BAT",  batHand:"R", bowlArm:"R", bowlStyle:"M",  age:18, fitness:"rehab",
     avg:38.7, sr:125.1, wkts:0,  econ:0,   form:[0,0,2,3,4,5,3,4],
     born:"2006-11-08", hometown:"Ballito, KZN", houseAtSchool:"School House",
     height:"179cm", weight:"73kg", battingPos:4,
@@ -218,12 +218,12 @@ const PLAYERS = [
     careerTotals:{ innings:14, runs:198, hs:32, fifties:0, hundreds:0, stumpings:8, catches:16 },
     seasonForm:[],
   },
-  // ── WESTVILLE BOYS' HIGH SCHOOL — U19A ──
-  { id:"w1",  name:"Jordan Naidoo",      team:"U19A", school:"WES", role:"BAT",  batHand:"R", bowlArm:"R", bowlStyle:"M",  age:18, fitness:"fit",
+  // ── WESTVILLE BOYS' HIGH SCHOOL — 1XI ──
+  { id:"w1",  name:"Jordan Naidoo",      team:"1XI", school:"WES", role:"BAT",  batHand:"R", bowlArm:"R", bowlStyle:"M",  age:18, fitness:"fit",
     avg:41.8, sr:128.4, wkts:0,  econ:0,   cap:"c",  form:[5,3,4,6,2,4,5,3],
     born:"2006-05-14", hometown:"Westville, KZN", houseAtSchool:"Castle House",
     height:"180cm", weight:"74kg", battingPos:1,
-    bio:"Westville captain. Elegant right-hand opener. KZN U19 squad 2024. One of the top schoolboy batsmen on the KZN coast.",
+    bio:"Westville captain. Elegant right-hand opener. KZN 1st XI squad 2024. One of the top schoolboy batsmen on the KZN coast.",
     careerTotals:{ innings:40, runs:1628, hs:108, fifties:12, hundreds:1, wktsTotal:0 },
     seasonForm:[
       {opp:"Glenwood",      runs:88, wkts:0, date:"2025-01-15", result:"W"},
@@ -231,7 +231,7 @@ const PLAYERS = [
       {opp:"Hilton",        runs:24, wkts:0, date:"2025-02-22", result:"L"},
     ],
   },
-  { id:"w2",  name:"Keenan Govender",    team:"U19A", school:"WES", role:"BOWL", batHand:"R", bowlArm:"R", bowlStyle:"F",  age:18, fitness:"fit",
+  { id:"w2",  name:"Keenan Govender",    team:"1XI", school:"WES", role:"BOWL", batHand:"R", bowlArm:"R", bowlStyle:"F",  age:18, fitness:"fit",
     avg:16.2, sr:90.1,  wkts:21, econ:7.1,  form:[2,1,3,2,1,3,2,1],
     born:"2006-09-08", hometown:"Westville, KZN", houseAtSchool:"Towers House",
     height:"185cm", weight:"80kg", battingPos:8,
@@ -243,7 +243,7 @@ const PLAYERS = [
       {opp:"Hilton",        runs:8,  wkts:2, date:"2025-02-22", result:"L"},
     ],
   },
-  { id:"w3",  name:"Sipho Zwane",        team:"U19A", school:"WES", role:"ALL",  batHand:"R", bowlArm:"R", bowlStyle:"S",  age:17, fitness:"fit",
+  { id:"w3",  name:"Sipho Zwane",        team:"1XI", school:"WES", role:"ALL",  batHand:"R", bowlArm:"R", bowlStyle:"S",  age:17, fitness:"fit",
     avg:28.4, sr:122.3, wkts:13, econ:7.4,  form:[3,4,2,3,4,2,3,4],
     born:"2007-03-21", hometown:"Pinetown, KZN", houseAtSchool:"Castle House",
     height:"176cm", weight:"71kg", battingPos:5,
@@ -280,16 +280,16 @@ const PLAYERS = [
 
 const COACHES = [
   {
-    id:"c1", name:"Mr Craig Hendricks",  role:"Head Coach",      team:"U19A",
+    id:"c1", name:"Mr Craig Hendricks",  role:"Head Coach",      team:"1XI",
     qual:"Level 3 CSA", phone:"+27 83 421 1234", email:"c.hendricks@hilton.co.za",
     born:"1978-03-14", hometown:"Pietermaritzburg, KZN",
     height:"178cm", photo:"CH",
-    bio:"Craig brings 18 years of coaching experience to Hilton College. Former KZN Inland first-class player (2000–2008, 42 matches). Appointed Head Coach U19A in 2018. Under his tenure, Hilton U19A have won 3 KZN Midlands league titles.",
+    bio:"Craig brings 18 years of coaching experience to Hilton College. Former KZN Inland first-class player (2000–2008, 42 matches). Appointed Head Coach 1st XI in 2018. Under his tenure, Hilton 1st XI have won 3 KZN Midlands league titles.",
     qualifications:["Level 3 CSA Coach","Strength & Conditioning Certificate (UP)","BokSmart Certified","Mental Performance Coaching (WBSC)"],
     coachingCareer:[
       {year:"2006–2012", role:"Assistant Coach", team:"Midlands Colts CC", level:"Club"},
       {year:"2012–2018", role:"Head Coach",      team:"Hilton U15A",        level:"School"},
-      {year:"2018–now",  role:"Head Coach",      team:"Hilton U19A",        level:"School"},
+      {year:"2018–now",  role:"Head Coach",      team:"Hilton 1st XI",        level:"School"},
     ],
     stats:{ matchesCoached:156, wins:112, losses:38, draws:6, winRate:71.8, playersPromoted:14 },
     specialisation:"Top-order batting, batting match plans, opposition analysis",
@@ -297,7 +297,7 @@ const COACHES = [
     notes:"Runs weekly video analysis sessions. Keen on using data to shape training.",
   },
   {
-    id:"c2", name:"Mr Dean Abrahams",    role:"Assistant Coach",  team:"U19A",
+    id:"c2", name:"Mr Dean Abrahams",    role:"Assistant Coach",  team:"1XI",
     qual:"Level 2 CSA", phone:"+27 72 334 5678", email:"d.abrahams@hilton.co.za",
     born:"1985-11-02", hometown:"Durban, KZN",
     height:"183cm", photo:"DA",
@@ -305,7 +305,7 @@ const COACHES = [
     qualifications:["Level 2 CSA Coach","Spin Bowling Specialist (SA Cricket)","Strength & Conditioning Level 1"],
     coachingCareer:[
       {year:"2010–2015", role:"Bowling Coach", team:"Westville CC",  level:"Club"},
-      {year:"2016–now",  role:"Asst Coach",    team:"Hilton U19A",   level:"School"},
+      {year:"2016–now",  role:"Asst Coach",    team:"Hilton 1st XI",   level:"School"},
     ],
     stats:{ matchesCoached:98, wins:71, losses:24, draws:3, winRate:72.4, playersPromoted:6 },
     specialisation:"Spin bowling development, death bowling, fielding drills",
@@ -326,7 +326,7 @@ const COACHES = [
     stats:{ matchesCoached:82, wins:52, losses:28, draws:2, winRate:63.4, playersPromoted:8 },
     specialisation:"Batting technique fundamentals, age-appropriate periodisation",
     availability:"Mon–Sat",
-    notes:"Strong record of developing U15 players who go on to succeed in U19.",
+    notes:"Strong record of developing U15 players who go on to succeed in 1XI.",
   },
   {
     id:"c4", name:"Ms Priya Naidoo",     role:"Head Coach",      team:"U13A",
@@ -354,7 +354,7 @@ const STAFF = [
     photo:"BW", active:true,
     qualifications:["CSA Certified Scorer (Level 2)","ECB Scoring Award"],
     experience:"22 years. CSA provincial scorer 2008–2015. Hilton 1st team scorer since 2012.",
-    teamsAssigned:["U19A","U15A"],
+    teamsAssigned:["1XI","U15A"],
     scoringSystem:"DRS Pro + manual backup",
     equipment:["HP Laptop","Dell Backup tablet","DRS Pro licence","Printed scorebooks"],
     languages:["English","Afrikaans"],
@@ -431,7 +431,7 @@ const STAFF = [
     age:58, phone:"+27 72 445 0087", email:"emzimba@hilton.co.za",
     photo:"EM", active:true,
     qualifications:["Turfgrass Management Certificate (UKZN)","Groundsmanship Level 2 (CSA)","Irrigation Systems Certificate"],
-    experience:"26 years. Has prepared pitches for 3 national U19 trials at Hilton.",
+    experience:"26 years. Has prepared pitches for 3 national 1XI trials at Hilton.",
     groundsAssigned:["g1","g2"],
     equipment:["Toro ride-on mower","Kubota tractor + roller","Scarifier","Sarel roller","Irrigation controller","Pitch covers (2 sets)"],
     pitchPreparation:"Starts preparation 5 days before match day. Uses heavy roller day 4–5.",
@@ -465,8 +465,8 @@ const STAFF = [
     age:26, phone:"+27 73 882 0014", email:"smaphumulo@hilton.co.za",
     photo:"SM", active:true,
     qualifications:["Level 1 CSA Coach","BA Sports Management (DUT)"],
-    experience:"2 years. Assists Craig Hendricks with U19A. Specialist fielding and fitness.",
-    teamsAssigned:["U19A"],
+    experience:"2 years. Assists Craig Hendricks with 1XI. Specialist fielding and fitness.",
+    teamsAssigned:["1XI"],
     specialisation:"Fielding drills, fitness conditioning, video analysis",
     notes:"Manages the squad WhatsApp and training attendance records.",
   },
@@ -512,21 +512,21 @@ const WEATHER = {
 };
 
 const MATCHES = [
-  { id:"m1", homeTeam:"Hilton U19A",  awayTeam:"Michaelhouse U19A",       venue:"Hilton No.1 Ground",       groundId:"g1", date:dateStr(addDays(today,-2)), result:"Hilton won by 34 runs",      status:"complete", competition:"comp1", scorecard:{home:{score:"186/6",overs:"20"},away:{score:"152/9",overs:"20"}},  scorerId:"st1" },
+  { id:"m1", homeTeam:"Hilton 1st XI",  awayTeam:"Michaelhouse 1st XI",       venue:"Hilton No.1 Ground",       groundId:"g1", date:dateStr(addDays(today,-2)), result:"Hilton won by 34 runs",      status:"complete", competition:"comp1", scorecard:{home:{score:"186/6",overs:"20"},away:{score:"152/9",overs:"20"}},  scorerId:"st1" },
   { id:"m2", homeTeam:"Hilton U15A",  awayTeam:"Maritzburg College U15A",  venue:"Hilton No.2 Ground",       groundId:"g2", date:dateStr(addDays(today,-1)), result:"College won by 6 wkts",      status:"complete", competition:"comp2", scorecard:{home:{score:"134/10",overs:"18.3"},away:{score:"135/4",overs:"16.1"}}, scorerId:"st2" },
-  { id:"m3", homeTeam:"Hilton U19A",  awayTeam:"Kearsney College U19A",    venue:"Hilton No.1 Ground",       groundId:"g1", date:dateStr(today),             result:"Hilton U19A batting",         status:"live",     competition:"comp1", scorecard:{home:{score:"142/3",overs:"14.2"},away:null}, scorerId:"st1" },
+  { id:"m3", homeTeam:"Hilton 1st XI",  awayTeam:"Kearsney College 1st XI",    venue:"Hilton No.1 Ground",       groundId:"g1", date:dateStr(today),             result:"Hilton 1st XI batting",         status:"live",     competition:"comp1", scorecard:{home:{score:"142/3",overs:"14.2"},away:null}, scorerId:"st1" },
   { id:"m4", homeTeam:"Hilton U13A",  awayTeam:"Michaelhouse Prep U13A",   venue:"Hilton No.3 Ground",       groundId:"g3", date:dateStr(addDays(today,2)),  result:null,                         status:"upcoming", competition:"comp3", transport:{bus:false} },
-  { id:"m5", homeTeam:"Hilton U19A",  awayTeam:"Durban High School U19A",  venue:"DHS Main Ground, Durban",  groundId:null, date:dateStr(addDays(today,5)),  result:null,                         status:"upcoming", competition:"comp1", transport:{bus:true,depart:"06:30",return:"18:30",driverId:"st5",vehicle:"KZN 771 MP",seats:30} },
+  { id:"m5", homeTeam:"Hilton 1st XI",  awayTeam:"Durban High School 1st XI",  venue:"DHS Main Ground, Durban",  groundId:null, date:dateStr(addDays(today,5)),  result:null,                         status:"upcoming", competition:"comp1", transport:{bus:true,depart:"06:30",return:"18:30",driverId:"st5",vehicle:"KZN 771 MP",seats:30} },
   { id:"m6", homeTeam:"Hilton U15A",  awayTeam:"Kearsney U15A",            venue:"Kearsney College Ground",  groundId:null, date:dateStr(addDays(today,7)),  result:null,                         status:"upcoming", competition:"comp2", transport:{bus:true,depart:"07:00",return:"16:30",driverId:"st5",vehicle:"KZN 482 GP",seats:22} },
-  { id:"m7", homeTeam:"Westville U19A",awayTeam:"Hilton U19A",             venue:"Westville CC Ground",      groundId:null, date:dateStr(addDays(today,-8)), result:"Hilton won by 72 runs",      status:"complete", competition:"comp1", scorecard:{home:{score:"118/10",overs:"18.2"},away:{score:"190/4",overs:"20"}}, scorerId:"st1" },
+  { id:"m7", homeTeam:"Westville 1st XI",awayTeam:"Hilton 1st XI",             venue:"Westville CC Ground",      groundId:null, date:dateStr(addDays(today,-8)), result:"Hilton won by 72 runs",      status:"complete", competition:"comp1", scorecard:{home:{score:"118/10",overs:"18.2"},away:{score:"190/4",overs:"20"}}, scorerId:"st1" },
   { id:"m8", homeTeam:"Hilton U15A",  awayTeam:"Westville U15A",           venue:"Hilton No.2 Ground",       groundId:"g2", date:dateStr(addDays(today,-5)), result:"Hilton won by 8 wkts",       status:"complete", competition:"comp2", scorecard:{home:{score:"88/2",overs:"12.4"},away:{score:"85/10",overs:"17.1"}}, scorerId:"st2" },
 ];
 
 const COMPETITIONS = [
-  { id:"comp1", name:"KZN Midlands Schools T20 League", type:"league", format:"T20",     teams:8,  gender:"M", ageGroup:"U19", active:true,
+  { id:"comp1", name:"KZN Midlands Schools T20 League", type:"league", format:"T20",     teams:8,  gender:"M", ageGroup:"1XI", active:true,
     region:"KwaZulu-Natal", organiser:"Cricket South Africa Schools",
     table:[
-      {team:"Hilton U19A",        P:6,W:5,L:1,NR:0,pts:10, nrr:+1.42},
+      {team:"Hilton 1st XI",        P:6,W:5,L:1,NR:0,pts:10, nrr:+1.42},
       {team:"Michaelhouse",       P:6,W:4,L:2,NR:0,pts:8,  nrr:+0.55},
       {team:"Maritzburg College", P:6,W:3,L:3,NR:0,pts:6,  nrr:+0.12},
       {team:"Kearsney College",   P:6,W:3,L:3,NR:0,pts:6,  nrr:-0.08},
@@ -573,7 +573,7 @@ const COMPETITIONS = [
 
 // ── LEAGUE MANAGEMENT DATA ─────────────────────────────
 const LEAGUE_TEAMS = [
-  { id:"lt1", name:"Hilton U19A",       school:"HIL", color:"#003366", wins:5, points:10 },
+  { id:"lt1", name:"Hilton 1st XI",       school:"HIL", color:"#003366", wins:5, points:10 },
   { id:"lt2", name:"Michaelhouse",      school:"MIC", color:"#8B0000", wins:4, points:8  },
   { id:"lt3", name:"Maritzburg College",school:"MCB", color:"#003366", wins:3, points:6  },
   { id:"lt4", name:"Kearsney College",  school:"KEA", color:"#003087", wins:3, points:6  },
@@ -591,10 +591,10 @@ const INJURIES = [
 ];
 
 const TRAINING_SESSIONS = [
-  { id:"t1", title:"Pre-Match Prep",       team:"U19A", date:dateStr(today),            time:"14:30", duration:90, venue:"Nets 1-3", coach:"c1", attendance:["p1","p3","p6","p7","p4"], type:"technical", drills:["Throw-downs","Bowling loads","Catching"], notes:"Focus on top-order against Kearsney pace attack." },
-  { id:"t2", title:"Spin Bowling Workshop", team:"U19A", date:dateStr(addDays(today,1)), time:"14:30", duration:60, venue:"Nets 4-5", coach:"c2", attendance:["p6","p2","p3"],           type:"skills",    drills:["Line & length","Variations","Video review"], notes:"Aiden to demonstrate wrist spin." },
+  { id:"t1", title:"Pre-Match Prep",       team:"1XI", date:dateStr(today),            time:"14:30", duration:90, venue:"Nets 1-3", coach:"c1", attendance:["p1","p3","p6","p7","p4"], type:"technical", drills:["Throw-downs","Bowling loads","Catching"], notes:"Focus on top-order against Kearsney pace attack." },
+  { id:"t2", title:"Spin Bowling Workshop", team:"1XI", date:dateStr(addDays(today,1)), time:"14:30", duration:60, venue:"Nets 4-5", coach:"c2", attendance:["p6","p2","p3"],           type:"skills",    drills:["Line & length","Variations","Video review"], notes:"Aiden to demonstrate wrist spin." },
   { id:"t3", title:"U15A Batting Session",  team:"U15A", date:dateStr(addDays(today,1)), time:"15:00", duration:75, venue:"Nets 6-7", coach:"c3", attendance:["p9","p11","p12"],          type:"batting",   drills:["Front foot drive","Pull shot","Rotating strike"], notes:"Sam to work on leg-side play." },
-  { id:"t4", title:"Fitness & Fielding",    team:"U19A", date:dateStr(addDays(today,2)), time:"06:30", duration:60, venue:"No.1 Ground", coach:"c1", attendance:["p1","p2","p3","p4","p6","p7"], type:"fitness", drills:["Reaction catches","Ground fielding","Sprints"], notes:"Pre-match sharpener before DHS away." },
+  { id:"t4", title:"Fitness & Fielding",    team:"1XI", date:dateStr(addDays(today,2)), time:"06:30", duration:60, venue:"No.1 Ground", coach:"c1", attendance:["p1","p2","p3","p4","p6","p7"], type:"fitness", drills:["Reaction catches","Ground fielding","Sprints"], notes:"Pre-match sharpener before DHS away." },
   { id:"t5", title:"U13A Development",      team:"U13A", date:dateStr(addDays(today,3)), time:"14:00", duration:90, venue:"Nets 8-9", coach:"c4", attendance:["p14","p15","p16","p17","p18"], type:"technical", drills:["Basic technique","Catching","Fun games"], notes:"Developmental focus. Keep it fun." },
 ];
 
@@ -606,10 +606,10 @@ const SKILLS_MATRIX = {
 };
 
 const NOTIFICATIONS = [
-  { id:"n1", type:"match",    urgency:"high",  time:"2m ago",  title:"Match Update",           body:"Hilton U19A vs Kearsney: 142/3 (14.2) — Hilton batting, in control", read:false, roles:["all"] },
+  { id:"n1", type:"match",    urgency:"high",  time:"2m ago",  title:"Match Update",           body:"Hilton 1st XI vs Kearsney: 142/3 (14.2) — Hilton batting, in control", read:false, roles:["all"] },
   { id:"n2", type:"injury",   urgency:"high",  time:"1h ago",  title:"Injury Alert",           body:"Theo Pretorius cleared for light training from Monday",    read:false, roles:["coach","schooladmin","parent","superadmin","medical"] },
   { id:"n3", type:"weather",  urgency:"low",   time:"2h ago",  title:"🌥️ Weather Update",       body:"Earlier storm cell cleared Hilton No.1 — covers off, play resumed. Conditions good.",read:false,roles:["all"] },
-  { id:"n4", type:"training", urgency:"low",   time:"3h ago",  title:"Training Reminder",      body:"U19A Pre-Match Prep today at 14:30 — Nets 1-3",           read:false, roles:["player","coach","superadmin"] },
+  { id:"n4", type:"training", urgency:"low",   time:"3h ago",  title:"Training Reminder",      body:"1XI Pre-Match Prep today at 14:30 — Nets 1-3",           read:false, roles:["player","coach","superadmin"] },
   { id:"n5", type:"match",    urgency:"medium",time:"1d ago",  title:"Fixture Confirmed",      body:"Hilton U13A vs Michaelhouse Prep — Saturday 08:00",       read:true,  roles:["all"] },
   { id:"n6", type:"transport",urgency:"medium",time:"1d ago",  title:"Transport Confirmed",    body:"Coaster departs 06:30 for DHS away fixture. 30 seats. Driver: Themba.",read:true,roles:["parent","player","schooladmin","superadmin","driver"] },
   { id:"n7", type:"field",    urgency:"medium",time:"1d ago",  title:"Pitch Report Ready",     body:"No.1 Ground pitch report submitted by Ernest Mzimba for Kearsney match.", read:true, roles:["coach","groundskeeper","superadmin"] },
@@ -643,7 +643,7 @@ const GROUNDS = [
     facilities:{ changeRooms:true, toilets:true, scorebox:true, scoreboard:"Electronic LED", pavilion:true, medicalRoom:true, refreshments:true },
     equipment:{ sightScreens:2, stumps:6, covers:"Full pitch covers × 2", boundaries:"Plastic rope" },
     groundskeeper:"st7",
-    homeTo:["U19A","1st XI trials"],
+    homeTo:["1XI","1st XI trials"],
     notes:"Premier ground. Used for all 1st team fixtures and CSA Schools trials. Altitude 1 080m — ball travels further.",
     prepSchedule:"Day -5: Scarify. Day -4: Light roll. Day -3: Water. Day -2: Heavy roll. Day -1: Light roll + mow. Match day: Inspect.",
   },

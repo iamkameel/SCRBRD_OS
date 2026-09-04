@@ -135,7 +135,7 @@ group("D. Medical access is bounded by scope, not by tier");
   const coach = [{ role: "coach", school: HIL, team: "U16A" }];
   const physio = [{ role: "medical", school: HIL }];
   const res = { school: HIL, team: "U16A", person: "p5" };
-  const otherSide = { school: HIL, team: "U19A", person: "p9" };
+  const otherSide = { school: HIL, team: "1XI", person: "p9" };
   ok("coach sees availability",        may({ assignments: coach, capability: "medical.status.read", resource: res }));
   // The coach of a side holds the whole record for that side. The boundary is
   // the TEAM, not the tier: the same capability against another side's player

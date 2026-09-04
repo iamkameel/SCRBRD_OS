@@ -76,7 +76,7 @@ function DashboardView({ role, onNav }) {
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
                   <div>
                     <div style={{fontFamily:D.head,fontSize:"28px",fontWeight:800,color:D.textPrimary}}>{liveMatch.scorecard.home.score}</div>
-                    <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>({liveMatch.scorecard.home.overs} overs) · Hilton U19A</div>
+                    <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>({liveMatch.scorecard.home.overs} overs) · Hilton 1st XI</div>
                   </div>
                   <div style={{textAlign:"right"}}>
                     <div style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,marginBottom:"6px"}}>Target: 187 to win</div>
@@ -116,11 +116,11 @@ function DashboardView({ role, onNav }) {
           {(role==="coach"||role==="superadmin"||role==="schooladmin")&&(
             <Card>
               <div style={{padding:"14px 16px",borderBottom:`1px solid ${D.border}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                <span style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>Squad Fitness — U19A</span>
+                <span style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>Squad Fitness — 1XI</span>
                 <button onClick={()=>onNav("injuries")} style={{background:"none",border:"none",cursor:"pointer",fontFamily:D.body,fontSize:"11px",color:D.sky}}>Injury log →</button>
               </div>
               <div style={{padding:"12px 16px",display:"flex",flexWrap:"wrap",gap:"10px"}}>
-                {PLAYERS.filter(p=>p.team==="U19A").map(p=>(
+                {PLAYERS.filter(p=>p.team==="1XI").map(p=>(
                   <div key={p.id} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"4px"}}>
                     <div style={{position:"relative"}}>
                       <Avatar name={p.name} size={36} color={fitnessColor(p.fitness)}/>
@@ -134,7 +134,7 @@ function DashboardView({ role, onNav }) {
                 {[["fit",D.emerald],["rehab",D.orange],["injured",D.rose]].map(([s,c])=>(
                   <div key={s} style={{display:"flex",alignItems:"center",gap:"5px"}}>
                     <div style={{width:"7px",height:"7px",borderRadius:"50%",background:c}}/>
-                    <span style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,textTransform:"capitalize"}}>{s}: {PLAYERS.filter(p=>p.team==="U19A"&&p.fitness===s).length}</span>
+                    <span style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,textTransform:"capitalize"}}>{s}: {PLAYERS.filter(p=>p.team==="1XI"&&p.fitness===s).length}</span>
                   </div>
                 ))}
               </div>

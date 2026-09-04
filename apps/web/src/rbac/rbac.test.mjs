@@ -10,6 +10,7 @@ import { can, canScore, getData, filterRecord, countData, grantedBy, principalFo
 // This suite is the one place outside rbac/ that may read the raw constants:
 // it needs the unscoped totals to prove that scoped reads are smaller.
 import { PLAYERS, INJURIES } from "../data/mock.js";
+import { teamCodeIn } from "@scrbrd/policy/teams";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -25,7 +26,7 @@ group("A. Row scoping");
   const coachRows = getData("players", P("coach"));
   const dosRows = getData("players", P("sportsmaster"));
   ok("coach sees only their own team",
-     coachRows.length > 0 && coachRows.every((p) => p.team === "U19A"));
+     coachRows.length > 0 && coachRows.every((p) => p.team === "1XI"));
   ok("director of sport sees the whole school",
      dosRows.length > coachRows.length && dosRows.every((p) => p.school === "HIL"));
   ok("neither reaches the other school",
@@ -53,8 +54,12 @@ group("A2. Fixtures reach the people who need them");
   ok("guardian sees their child's school fixtures", getData("matches", P("parent")).length > 0);
   ok("director sees more than a team coach",
      getData("matches", P("sportsmaster")).length > getData("matches", P("coach")).length);
+  // Asserted on the PARSED code, not on the display string. A fixture names
+  // its side in prose — "Hilton 1st XI" — and the anchor is the code inside
+  // it, so a regex over the raw name tests the wrong thing and breaks the
+  // moment the convention changes, which is exactly what just happened.
   ok("coach's fixtures are their own team's",
-     getData("matches", P("coach")).every((m) => /U19A/.test(m.homeTeam ?? "")));
+     getData("matches", P("coach")).every((m) => teamCodeIn(m.homeTeam ?? "") === "1XI"));
 }
 
 // ── B. Aggregates use the same scope ─────────────────────
@@ -136,7 +141,7 @@ group("E. Legacy surface still answers correctly");
 // ── F. filterRecord and provenance ───────────────────────
 group("F. Single records and provenance");
 {
-  const own = PLAYERS.find((p) => p.team === "U19A");
+  const own = PLAYERS.find((p) => p.team === "1XI");
   const other = PLAYERS.find((p) => p.school === "WES");
   ok("coach reads a row in their team",       filterRecord("coach", "players", own) !== null);
   ok("coach cannot read a row in another school", filterRecord("coach", "players", other) === null);
@@ -144,7 +149,7 @@ group("F. Single records and provenance");
   ok("null in, null out",                     filterRecord("coach", "players", null) === null);
 
   const via = grantedBy("players", own, P("coach"));
-  ok("provenance names the granting assignment", via?.role === "coach" && via?.team === "U19A");
+  ok("provenance names the granting assignment", via?.role === "coach" && via?.team === "1XI");
   ok("provenance is null when denied",           grantedBy("players", other, P("coach")) === null);
 }
 

@@ -21,7 +21,7 @@ import { battingIndex, bowlingIndex, coachIndex, composite } from "@scrbrd/scori
 const PORT = 8797;
 const BASE = `http://127.0.0.1:${PORT}`;
 const DB = process.env.DATABASE_URL || "postgres://scrbrd:scrbrd@127.0.0.1:5432/scrbrd";
-const P_OWN  = "aaaaaaaa-0000-0000-0000-000000000001";  // J Whitfield, U19A
+const P_OWN  = "aaaaaaaa-0000-0000-0000-000000000001";  // J Whitfield, 1XI
 const P_U16B = "aaaaaaaa-0000-0000-0000-000000000006";  // K Dlamini, U16B
 const P_WES  = "bbbbbbbb-0000-0000-0000-000000000001";  // D Mkhize, Westville
 
@@ -59,7 +59,7 @@ try {
     await new Promise((r) => setTimeout(r, 250));
   }
 
-  const coach   = await login("coach@example.invalid");     // U19A
+  const coach   = await login("coach@example.invalid");     // 1XI
   const medic   = await login("medical@example.invalid");
   const parent  = await login("parent@example.invalid");
   const pupil   = await login("pillay@example.invalid");
@@ -110,7 +110,7 @@ try {
   ok("...so the trend survives, which is the point of the record", history[0].n === 3);
 
   group("And nowhere else");
-  // The U19A coach does not coach U16B. Same request, same capability, and the
+  // The 1st XI coach does not coach U16B. Same request, same capability, and the
   // policy anchors resolve through the player's CURRENT side.
   const otherSide = await assess(P_U16B, coach, { scores: { batting: { technique: 70 } } });
   ok("a coach cannot assess a player in another side", otherSide.status === 403);

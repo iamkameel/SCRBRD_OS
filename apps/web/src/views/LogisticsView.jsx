@@ -145,7 +145,7 @@ function LogisticsView({ role }) {
 
                     {/* Passenger manifest */}
                     {isManifest&&(()=>{
-                      const team = m.homeTeam.includes("U19")?PLAYERS.filter(p=>p.team==="U19A"):m.homeTeam.includes("U15")?PLAYERS.filter(p=>p.team==="U15A"):PLAYERS.filter(p=>p.team==="U13A");
+                      const team = m.homeTeam.includes("1XI")?PLAYERS.filter(p=>p.team==="1XI"):m.homeTeam.includes("U15")?PLAYERS.filter(p=>p.team==="U15A"):PLAYERS.filter(p=>p.team==="U13A");
                       const teamCoaches = COACHES.filter(c=>team.some(p=>c.team===p.team));
                       const allPassengers = [...team.map(p=>({name:p.name,type:"Player",team:p.team})), ...teamCoaches.map(c=>({name:c.name,type:"Coach",team:c.team}))];
                       return (

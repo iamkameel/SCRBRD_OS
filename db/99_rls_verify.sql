@@ -72,13 +72,13 @@ DO $$
 DECLARE
   HIL       uuid := '11111111-1111-1111-1111-111111111111';
   WES       uuid := '22222222-2222-2222-2222-222222222222';
-  U_COACH   uuid := '88888888-0000-0000-0000-000000000004';  -- coach of U19A
+  U_COACH   uuid := '88888888-0000-0000-0000-000000000004';  -- coach of 1XI
   U_PARENT  uuid := '88888888-0000-0000-0000-000000000005';  -- guardian of R Pillay
   U_MEDICAL uuid := '88888888-0000-0000-0000-000000000003';
   U_SCOUT   uuid := '88888888-0000-0000-0000-000000000002';
   U_SCORER  uuid := '88888888-0000-0000-0000-000000000006';
   U_SARAH   uuid := '88888888-0000-0000-0000-000000000007';  -- 4 assignments, 2 schools
-  P_INJURED uuid := 'aaaaaaaa-0000-0000-0000-000000000005';  -- R Pillay, U19A
+  P_INJURED uuid := 'aaaaaaaa-0000-0000-0000-000000000005';  -- R Pillay, 1XI
   P_U16B    uuid := 'aaaaaaaa-0000-0000-0000-000000000006';  -- K Dlamini, U16B
   P_WES     uuid := 'bbbbbbbb-0000-0000-0000-000000000001';  -- D Mkhize, Westville
   P_WES2    uuid := 'bbbbbbbb-0000-0000-0000-000000000002';  -- K Botha, Westville
@@ -91,11 +91,11 @@ DECLARE
   -- at Hilton — a pupil. The one principal that separates the availability
   -- tier from the nature tier.
   U_PUPIL   uuid := '88888888-0000-0000-0000-000000000001';
-  -- R Pillay: the injured U19A player, with an account and a self-access
+  -- R Pillay: the injured 1XI player, with an account and a self-access
   -- assignment naming their own player row.
   U_SELF    uuid := '88888888-0000-0000-0000-000000000009';
   P_OTHER   uuid := 'aaaaaaaa-0000-0000-0000-000000000002';  -- T Bekker, also injured
-  I_OWN     uuid := 'cccccccc-0000-0000-0000-000000000001';  -- R Pillay's injury, U19A
+  I_OWN     uuid := 'cccccccc-0000-0000-0000-000000000001';  -- R Pillay's injury, 1XI
   I_U16B    uuid := 'cccccccc-0000-0000-0000-000000000003';  -- K Dlamini's injury, U16B
   n int;
 BEGIN
@@ -108,9 +108,9 @@ BEGIN
 
   -- ── 2. A team coach is confined to their team ──────────────────
   PERFORM _as(U_COACH);
-  SELECT count(*) INTO n FROM player WHERE team_code <> 'U19A';
+  SELECT count(*) INTO n FROM player WHERE team_code <> '1XI';
   PERFORM _assert(n = 0, 'coach sees players outside their own team');
-  SELECT count(*) INTO n FROM player WHERE team_code = 'U19A';
+  SELECT count(*) INTO n FROM player WHERE team_code = '1XI';
   PERFORM _assert(n > 0, 'coach sees none of their own team');
   SELECT count(*) INTO n FROM player WHERE school_id = WES;
   PERFORM _assert(n = 0, 'coach reaches across the tenant boundary');
@@ -118,7 +118,7 @@ BEGIN
   -- The §36 case: an AGGREGATE must obey the same scope as a row read.
   -- A count over the school shown to a team coach has already leaked.
   SELECT count(*) INTO n FROM player;
-  PERFORM _assert(n = (SELECT count(*) FROM player WHERE team_code = 'U19A'),
+  PERFORM _assert(n = (SELECT count(*) FROM player WHERE team_code = '1XI'),
                   'coach total count exceeds their team scope');
 
   -- ── 3. The coach of the side holds the whole record ────────────
@@ -304,10 +304,10 @@ BEGIN
   PERFORM _as(U_SARAH);
   -- Director of Sport reaches every Hilton player…
   -- Every Hilton player, including the U16B side she does not coach and the
-  -- U19A side she has no assignment over: Director of Sport is school-scoped.
+  -- 1XI side she has no assignment over: Director of Sport is school-scoped.
   SELECT count(*) INTO n FROM player WHERE school_id = HIL;
   PERFORM _assert(n = 6, 'Director of Sport does not reach the whole school');
-  SELECT count(*) INTO n FROM player WHERE school_id = HIL AND team_code = 'U19A';
+  SELECT count(*) INTO n FROM player WHERE school_id = HIL AND team_code = '1XI';
   PERFORM _assert(n = 5, 'Director of Sport misses a team she does not coach');
   -- …and guardianship reaches exactly one child at the OTHER school…
   SELECT count(*) INTO n FROM player WHERE school_id = WES;
@@ -336,7 +336,7 @@ BEGIN
   PERFORM _as(U_SCOUT);
   BEGIN
     INSERT INTO player (id, school_id, team_code, full_name)
-    VALUES (gen_random_uuid(), HIL, 'U19A', 'Injected');
+    VALUES (gen_random_uuid(), HIL, '1XI', 'Injected');
     PERFORM _assert(false, 'scout INSERT into player succeeded');
   EXCEPTION WHEN insufficient_privilege OR check_violation THEN NULL;
   END;
@@ -455,7 +455,7 @@ BEGIN
    WHERE kind = 'injury' AND required_capability = 'medical.nature.read';
   PERFORM _assert(
     n = (SELECT count(*) FROM injury i JOIN player p ON p.id = i.player_id
-          WHERE p.team_code = 'U19A'),
+          WHERE p.team_code = '1XI'),
     'the coach was not alerted to exactly their own side''s injuries');
   -- Specifically: not the U16B one.
   SELECT count(*) INTO n FROM notification
@@ -513,9 +513,9 @@ BEGIN
   -- training_session is a noticeboard fact, scoped to the team it is for.
   PERFORM _as(U_COACH);
   SELECT count(*) INTO n FROM training_session;
-  PERFORM _assert(n = 1, 'U19A coach should see exactly their own team''s session');
+  PERFORM _assert(n = 1, '1XI coach should see exactly their own team''s session');
   SELECT count(*) INTO n FROM training_session WHERE team_code = 'U16B';
-  PERFORM _assert(n = 0, 'U19A coach can read a U16B training session');
+  PERFORM _assert(n = 0, '1XI coach can read a U16B training session');
 
   -- The register is the sensitive half, and it is governed separately. A
   -- guardian holds player.profile.read but their assignment reaches only their
@@ -542,9 +542,9 @@ BEGIN
 
   PERFORM _as(U_COACH);
   SELECT count(*) INTO n FROM player_skill;
-  PERFORM _assert(n = 2, 'U19A coach should see their own squad''s assessments only');
+  PERFORM _assert(n = 2, '1XI coach should see their own squad''s assessments only');
   SELECT count(*) INTO n FROM player_skill WHERE player_id = P_U16B;
-  PERFORM _assert(n = 0, 'U19A coach can read a U16B player''s assessment');
+  PERFORM _assert(n = 0, '1XI coach can read a U16B player''s assessment');
 
   -- ── 11b. A notification is not permission ──────────────────────
   -- The one that matters most. news.read is a floor capability; if it were the
@@ -565,14 +565,14 @@ BEGIN
   SELECT count(*) INTO n FROM notification WHERE id = '40170000-0000-0000-0000-000000000002';
   PERFORM _assert(n = 1, 'the medical officer cannot read a medical notice');
 
-  -- Scope still applies on top of the capability: the U19A coach holds
-  -- medical.status.read and reads the U19A medical notice, but must not
+  -- Scope still applies on top of the capability: the 1XI coach holds
+  -- medical.status.read and reads the 1XI medical notice, but must not
   -- receive the U16B team notice even though it only requires news.read.
   PERFORM _as(U_COACH);
   SELECT count(*) INTO n FROM notification WHERE id = '40170000-0000-0000-0000-000000000002';
-  PERFORM _assert(n = 1, 'U19A coach cannot read their own team''s medical notice');
+  PERFORM _assert(n = 1, '1XI coach cannot read their own team''s medical notice');
   SELECT count(*) INTO n FROM notification WHERE id = '40170000-0000-0000-0000-000000000003';
-  PERFORM _assert(n = 0, 'U19A coach received a U16B team notice');
+  PERFORM _assert(n = 0, '1XI coach received a U16B team notice');
 
   -- A school-wide notice carries team_code NULL. A NULL on a resource NARROWS,
   -- so without the COALESCE to ANY_SCOPE in the generated policy this would be
@@ -591,7 +591,7 @@ BEGIN
 
   -- ...and the team notice they may publish goes through.
   INSERT INTO notification (school_id, team_code, scope_level, kind, title, body)
-  VALUES (HIL, 'U19A', 'team', 'training', 'Nets moved', 'Nets 1-3 at 14:30.');
+  VALUES (HIL, '1XI', 'team', 'training', 'Nets moved', 'Nets 1-3 at 14:30.');
 
   -- The catalogue must not be writable by the application role: a row here
   -- would let a notice declare a capability the model never defined.

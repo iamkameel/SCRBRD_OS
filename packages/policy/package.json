@@ -10,6 +10,7 @@
     "./capabilities": "./src/capabilities.mjs",
     "./roles": "./src/roles.mjs",
     "./authorize": "./src/authorize.mjs",
-    "./tables": "./src/tables.mjs"
+    "./tables": "./src/tables.mjs",
+    "./teams": "./src/teams.mjs"
   }
 }

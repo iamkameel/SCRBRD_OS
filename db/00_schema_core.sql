@@ -63,7 +63,7 @@ CREATE INDEX ON app_user (lower(email));
 CREATE TABLE player (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   school_id     uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
-  team_code     text,                          -- U19A, U16B … the team scope anchor
+  team_code     text,                          -- 1XI, U16B … the team scope anchor
   full_name     text NOT NULL,
   squad_no      smallint,
   playing_role  text,                          -- batter | bowler | allrounder | keeper

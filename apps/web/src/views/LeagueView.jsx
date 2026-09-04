@@ -288,8 +288,8 @@ function LeagueView({ role }) {
 
       {addFixture&&(
         <Modal title="Add Fixture" onClose={()=>setAddFixture(false)}>
-          <Input label="Home Team" value="" onChange={()=>{}} placeholder="e.g. Hilton U19A"/>
-          <Input label="Away Team" value="" onChange={()=>{}} placeholder="e.g. Michaelhouse U19A"/>
+          <Input label="Home Team" value="" onChange={()=>{}} placeholder="e.g. Hilton 1st XI"/>
+          <Input label="Away Team" value="" onChange={()=>{}} placeholder="e.g. Michaelhouse 1st XI"/>
           <Input label="Venue" value="" onChange={()=>{}} placeholder="Ground name"/>
           <Input label="Date" value="" onChange={()=>{}} type="date"/>
           <Select label="Competition" value={selComp} onChange={()=>{}} options={COMPETITIONS.map(c=>({value:c.id,label:c.name}))}/>

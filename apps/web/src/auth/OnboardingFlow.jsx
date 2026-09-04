@@ -217,7 +217,7 @@ function OnboardingFlow({ onComplete }) {
             <div>
               <div style={{fontFamily:"'Syne',sans-serif",fontSize:"20px",fontWeight:800,color:"#fff",textAlign:"center",marginBottom:"20px"}}>Player Details</div>
               {[
-                {label:"Team / Age Group",  key:"team",   placeholder:"e.g. U19A, U15B, 1st XI"},
+                {label:"Team / Age Group",  key:"team",   placeholder:"e.g. 1XI, U15B, 1st XI"},
                 {label:"Jersey Number",     key:"jersey", placeholder:"e.g. 7"},
               ].map(f=>(
                 <div key={f.key} style={{marginBottom:"14px"}}>

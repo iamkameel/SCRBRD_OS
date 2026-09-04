@@ -8,6 +8,7 @@ import { BatsmanChart, BowlerChart, ManhattanChart, WormChart } from "../scorer/
 import { seedCompletedMatch } from "../scorer/seed.js";
 import { Badge, Modal, Pill, SkillBar } from "../ui/primitives.jsx";
 import { useRows } from "../lib/live.js";
+import { teamCodeIn } from "@scrbrd/policy/teams";
 
 // ══════════════════════════════════════════════════════
 //  MATCH CENTRE VIEW
@@ -68,7 +69,7 @@ const OPP_POOL = ["T van Rooyen","K Naidoo","M Botha","S Mkhize","J Pretorius","
 // them — which the caller can, because it is a component and can read through
 // the hooks. An empty list still fails closed to a synthetic squad.
 function teamSquad(teamName, players = []){
-  const token = (teamName.match(/U\d{2}[A-Z]?/)||[])[0];
+  const token = teamCodeIn(teamName);
   const isHilton = /Hilton/i.test(teamName);
   const own = (isHilton && token)
     ? players.filter(p=>p.team===token).map(p=>p.name)

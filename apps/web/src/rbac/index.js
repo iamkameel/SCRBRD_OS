@@ -24,6 +24,7 @@
 import { authorize, scopeFilter, ANY_SCOPE } from "@scrbrd/policy/authorize";
 import { roleGrants, ROLE_CAPABILITIES } from "@scrbrd/policy/roles";
 import { TABLES } from "@scrbrd/policy/tables";
+import { teamCodeIn } from "@scrbrd/policy/teams";
 // The demonstration vocabulary lives in its own leaf module: design/roles.js
 // needs the same mapping, and declaring it in either of us makes the other
 // import it — a cycle that shows up as a TDZ error rather than anything
@@ -200,11 +201,11 @@ function anchorsOf(resource, row) {
     }
     case "matches": {
       // A fixture belongs to the team playing it. The demo rows name the side
-      // in `homeTeam` ("Hilton U19A") rather than carrying a team code, so the
+      // in `homeTeam` ("Hilton 1st XI") rather than carrying a team code, so the
       // anchor is parsed from it; the real `match` table has team_code.
       // Without this the team anchor is null, and a null on the RESOURCE
       // narrows — which left a coach, and a SCORER, seeing no fixtures at all.
-      const token = (String(row.homeTeam ?? row.team ?? "").match(/U\d{2}[A-Z]?/) || [])[0] ?? null;
+      const token = teamCodeIn(String(row.homeTeam ?? row.team ?? ""));
       // A fixture is not ABOUT a person, so a guardian's child-scoped
       // assignment still reaches it — as it must, or a parent cannot see when
       // their child plays. Spectators already see the full fixture list, so

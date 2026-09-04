@@ -12,7 +12,7 @@ function AnalyticsView({ role }) {
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
   const PLAYERS = usePlayersWithCareer(role);
-  const [teamFilter, setTeamFilter] = useState("U19A");
+  const [teamFilter, setTeamFilter] = useState("1XI");
   const [subView,    setSubView]    = useState("performance");
   const players = PLAYERS.filter(p=>p.team===teamFilter);
 
@@ -60,7 +60,7 @@ function AnalyticsView({ role }) {
       <SectionHeader title="Analytics" sub="Performance insights · KZN head-to-head · Phase analysis" color={D.sky}/>
       <div style={{display:"flex",gap:"6px",marginBottom:"16px",flexWrap:"wrap"}}>
         <div style={{display:"flex",gap:"6px"}}>
-          {["U19A","U15A","U13A"].map(t=>(
+          {["1XI","U15A","U13A"].map(t=>(
             <button key={t} onClick={()=>setTeamFilter(t)} className="pressBtn" style={{
               padding:"6px 16px",borderRadius:D.pill,border:`1px solid ${teamFilter===t?D.sky+"55":D.border}`,
               background:teamFilter===t?D.sky+"14":"transparent",cursor:"pointer",

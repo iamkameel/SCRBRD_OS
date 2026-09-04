@@ -99,7 +99,7 @@ function PitchDeckView({ role }) {
       title:"Hilton Pilot — Season Stats",
       icon:"🏆",
       stats:[
-        { value:"3",    label:"Teams",          sub:"U13A · U15A · U19A" },
+        { value:"3",    label:"Teams",          sub:"U13A · U15A · 1XI" },
         { value:"18",   label:"Players",        sub:"Hilton + Westville" },
         { value:"8",    label:"Matches",        sub:"This season" },
         { value:"15",   label:"Users",          sub:"Across all roles" },

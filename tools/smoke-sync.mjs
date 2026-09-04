@@ -26,13 +26,13 @@ import {
 
 const PORT = 8791;
 const BASE = `http://127.0.0.1:${PORT}`;
-const MATCH = "77777777-0000-0000-0000-000000000002";   // Hilton U19A v Michaelhouse, scheduled
+const MATCH = "77777777-0000-0000-0000-000000000002";   // Hilton 1st XI v Michaelhouse, scheduled
 const SCORER = "scorer@example.invalid";
 const COACH  = "coach@example.invalid";
 const MEDIC  = "medical@example.invalid";
 const DEVICE = "device-pavilion-01";
 
-// Seeded U19A players, so the FKs on striker/bowler resolve.
+// Seeded 1st XI players, so the FKs on striker/bowler resolve.
 const P = [
   "aaaaaaaa-0000-0000-0000-000000000001",
   "aaaaaaaa-0000-0000-0000-000000000002",
@@ -133,7 +133,7 @@ try {
   // and the squads names resolve from. Without these the log cannot stand
   // alone, which is the whole reason those event kinds exist.
   const squad = P.map((id, i) => ({ id, name: `Player ${i + 1}` }));
-  await engine.record(inningsStart({ battingTeam: "Hilton U19A", bowlingTeam: "Michaelhouse", squad, overs: 20 }));
+  await engine.record(inningsStart({ battingTeam: "Hilton 1st XI", bowlingTeam: "Michaelhouse", squad, overs: 20 }));
   await engine.record(batters({ striker: P[0], nonStriker: P[1] }));
   await engine.record(bowler({ bowler: P[2] }));
 

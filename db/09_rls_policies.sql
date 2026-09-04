@@ -5,6 +5,24 @@
 -- Roles that may score: directorofsport, sportsadmin, coach, assistantcoach, scorer
 
 -- ══════════════════════════════════════════════════════════════════
+--  Team codes are a closed vocabulary
+-- ══════════════════════════════════════════════════════════════════
+ALTER TABLE player DROP CONSTRAINT IF EXISTS player_team_code_known;
+ALTER TABLE player ADD CONSTRAINT player_team_code_known CHECK (team_code IS NULL OR team_code ~ '^(U(9|10|11|12|13|14|15|16|17|18|19)[A-F]?|([1-9]|1[0-9]|20)XI)$');
+ALTER TABLE coach DROP CONSTRAINT IF EXISTS coach_team_code_known;
+ALTER TABLE coach ADD CONSTRAINT coach_team_code_known CHECK (team_code IS NULL OR team_code ~ '^(U(9|10|11|12|13|14|15|16|17|18|19)[A-F]?|([1-9]|1[0-9]|20)XI)$');
+ALTER TABLE match DROP CONSTRAINT IF EXISTS match_team_code_known;
+ALTER TABLE match ADD CONSTRAINT match_team_code_known CHECK (team_code IS NULL OR team_code ~ '^(U(9|10|11|12|13|14|15|16|17|18|19)[A-F]?|([1-9]|1[0-9]|20)XI)$');
+ALTER TABLE role_assignment DROP CONSTRAINT IF EXISTS role_assignment_team_code_known;
+ALTER TABLE role_assignment ADD CONSTRAINT role_assignment_team_code_known CHECK (team_code IS NULL OR team_code ~ '^(U(9|10|11|12|13|14|15|16|17|18|19)[A-F]?|([1-9]|1[0-9]|20)XI)$');
+ALTER TABLE training_session DROP CONSTRAINT IF EXISTS training_session_team_code_known;
+ALTER TABLE training_session ADD CONSTRAINT training_session_team_code_known CHECK (team_code IS NULL OR team_code ~ '^(U(9|10|11|12|13|14|15|16|17|18|19)[A-F]?|([1-9]|1[0-9]|20)XI)$');
+ALTER TABLE competition_entrant DROP CONSTRAINT IF EXISTS competition_entrant_team_code_known;
+ALTER TABLE competition_entrant ADD CONSTRAINT competition_entrant_team_code_known CHECK (team_code IS NULL OR team_code ~ '^(U(9|10|11|12|13|14|15|16|17|18|19)[A-F]?|([1-9]|1[0-9]|20)XI)$');
+ALTER TABLE notification DROP CONSTRAINT IF EXISTS notification_team_code_known;
+ALTER TABLE notification ADD CONSTRAINT notification_team_code_known CHECK (team_code IS NULL OR team_code ~ '^(U(9|10|11|12|13|14|15|16|17|18|19)[A-F]?|([1-9]|1[0-9]|20)XI)$');
+
+-- ══════════════════════════════════════════════════════════════════
 --  Per-table row-level security
 -- ══════════════════════════════════════════════════════════════════
 

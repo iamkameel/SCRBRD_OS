@@ -22,7 +22,7 @@
 // data/mock.js, where a school is "HIL" and a player is "p5"; a live session
 // gets its assignments from the server and never reaches this file.
 export const DEMO_SCHOOL = "HIL";
-export const DEMO_TEAM = "U19A";
+export const DEMO_TEAM = "1XI";
 export const DEMO_CHILD = "p5";
 
 /** Legacy role name → the policy role it means, with its demonstration scope. */

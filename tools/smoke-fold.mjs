@@ -154,7 +154,7 @@ try {
   };
 
   const squad = P.map((id, i) => ({ id, name: `Player ${i + 1}` }));
-  await record(inningsStart({ battingTeam: "Hilton U19A", bowlingTeam: "Michaelhouse", squad, overs: 20 }));
+  await record(inningsStart({ battingTeam: "Hilton 1st XI", bowlingTeam: "Michaelhouse", squad, overs: 20 }));
   await record(batters({ striker: P[0], nonStriker: P[1] }));
   await record(bowler({ bowler: P[2] }));
 

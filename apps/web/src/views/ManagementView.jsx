@@ -66,13 +66,13 @@ function ManagementView({ role, users, setUsers }) {
     {time:"Today 09:14",user:"G. Sutherland",action:"Updated fixture — Hilton vs Michaelhouse (Sat)",type:"fixture"},
     {time:"Today 08:32",user:"C. Hendricks", action:"Added training session — Batting Nets 15:30",type:"training"},
     {time:"Yesterday",  user:"Super Admin",  action:"User u14 role changed: viewer → assistant",type:"user"},
-    {time:"2d ago",     user:"B. Wessels",   action:"Match scorecard submitted — Hilton U19A vs DHS",type:"match"},
+    {time:"2d ago",     user:"B. Wessels",   action:"Match scorecard submitted — Hilton 1st XI vs DHS",type:"match"},
     {time:"3d ago",     user:"Dr Khumalo",   action:"Medical clearance updated — T. Pretorius",type:"medical"},
     {time:"4d ago",     user:"Super Admin",  action:"New user created — L. Dube (Coaching Asst)",type:"user"},
   ];
 
   const GROUND_TASKS=[
-    {id:"g1",task:"Prepare Main Oval — U19A vs Michaelhouse",due:"Fri 13 Mar",priority:"high",  status:"in_progress",assignee:"E. Mzimba"},
+    {id:"g1",task:"Prepare Main Oval — 1XI vs Michaelhouse",due:"Fri 13 Mar",priority:"high",  status:"in_progress",assignee:"E. Mzimba"},
     {id:"g2",task:"Roll and mark Practice Net 1",            due:"Thu 12 Mar",priority:"medium",status:"pending",    assignee:"S. Hadebe"},
     {id:"g3",task:"Outfield mowing — full circuit",          due:"Wed 11 Mar",priority:"low",   status:"done",       assignee:"E. Mzimba"},
     {id:"g4",task:"Pitch report — match day assessment",     due:"Fri 13 Mar",priority:"high",  status:"pending",    assignee:"E. Mzimba"},
@@ -339,7 +339,7 @@ function ManagementView({ role, users, setUsers }) {
       {/* ── SQUAD ADMIN ── */}
       {activeTab==="squad"&&(
         <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
-          {["U19A","U15A","U13A"].map(team=>{
+          {["1XI","U15A","U13A"].map(team=>{
             const players=PLAYERS.filter(p=>p.school==="HIL"&&p.team===team);
             return(
               <div key={team} style={{borderRadius:D.lg,border:`1px solid ${D.border}`,background:D.surf1,overflow:"hidden"}}>

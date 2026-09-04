@@ -513,7 +513,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
             <div style={{display:"flex",flexDirection:"column",gap:"4px"}}>
               {/* Hilton */}
               <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",padding:"4px 8px",marginTop:"4px"}}>HILTON COLLEGE</div>
-              {["U19A","U15A","U13A"].map(team=>(
+              {["1XI","U15A","U13A"].map(team=>(
                 <div key={team}>
                   <div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted,padding:"3px 8px"}}>{team}</div>
                   {hiltonPlayers.filter(p=>p.team===team).map(p=>(
@@ -537,7 +537,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
               ))}
               {/* Westville */}
               <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",padding:"4px 8px",marginTop:"8px"}}>WESTVILLE BOYS' HIGH</div>
-              {["U19A","U15A"].map(team=>(
+              {["1XI","U15A"].map(team=>(
                 <div key={team}>
                   <div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted,padding:"3px 8px"}}>{team}</div>
                   {westvillePlayers.filter(p=>p.team===team).map(p=>(

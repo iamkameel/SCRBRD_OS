@@ -28,7 +28,7 @@ CREATE TABLE competition_entrant (
   competition_id uuid NOT NULL REFERENCES competition(id) ON DELETE CASCADE,
   school_id      uuid NOT NULL REFERENCES school(id),
   team_code      text,
-  -- A display name, because the entrant is "Hilton U19A" to a reader and a
+  -- A display name, because the entrant is "Hilton 1st XI" to a reader and a
   -- (school_id, team_code) pair to the schema. Free text, because a fixture
   -- list includes schools that are not SCRBRD tenants.
   display_name   text NOT NULL,

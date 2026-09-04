@@ -70,7 +70,7 @@ try {
     await new Promise((r) => setTimeout(r, 250));
   }
 
-  const coach = await login("coach@example.invalid");     // U19A only
+  const coach = await login("coach@example.invalid");     // 1XI only
   const scorer = await login("scorer@example.invalid");   // school-wide, no medical
   const medic = await login("medical@example.invalid");
   const guardian = await login("parent@example.invalid"); // one child
@@ -112,7 +112,7 @@ try {
   const coachMatches = await read("matches", coach);
   const scorerMatches = await read("matches", scorer);
   ok("a team-scoped coach sees only their team's fixtures",
-     coachMatches.length > 0 && coachMatches.every((m) => m.team_code === "U19A"));
+     coachMatches.length > 0 && coachMatches.every((m) => m.team_code === "1XI"));
   ok("a school-scoped scorer sees more of them", scorerMatches.length > coachMatches.length);
   ok("nobody sees another school's fixtures",
      [...coachMatches, ...scorerMatches].every((m) => m.school_id === HIL));
@@ -214,8 +214,8 @@ try {
   const watcher = await login("watcher@example.invalid");  // a real spectator
 
   const coachTraining = await read("training", coach);
-  ok("a U19A coach sees their own team's sessions",
-     coachTraining.length > 0 && coachTraining.every((t) => t.team_code === "U19A"));
+  ok("a 1XI coach sees their own team's sessions",
+     coachTraining.length > 0 && coachTraining.every((t) => t.team_code === "1XI"));
   ok("...and not another team's", !coachTraining.some((t) => t.team_code === "U16B"));
 
   // The register is the sensitive half. A guardian reads the schedule in full
@@ -230,7 +230,7 @@ try {
      (await read("skills", guardian)).length === 0);
   const coachSkills = await read("skills", coach);
   ok("a coach reads their own squad's assessments", coachSkills.length > 0);
-  ok("...and nobody else's", coachSkills.every((s) => s.team_code === "U19A"));
+  ok("...and nobody else's", coachSkills.every((s) => s.team_code === "1XI"));
 
   // ── A notification is not permission ────────────────────────────
   // The sharpest read in the file. news.read is a floor capability; if it were

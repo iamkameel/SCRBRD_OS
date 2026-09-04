@@ -1,7 +1,7 @@
 -- ════════════════════════════════════════════════════════════════
 --  SCRBRD — Pilot seed data
 --
---  The fixtures 99_rls_verify.sql asserts against: school HIL, a U19A
+--  The fixtures 99_rls_verify.sql asserts against: school HIL, a 1XI
 --  squad, one injured player, a second team so team-scoping has
 --  something to exclude, and a second school so school-scoping does too.
 --
@@ -19,21 +19,21 @@ INSERT INTO school (id, code, name, kind, province) VALUES
   ('11111111-1111-1111-1111-111111111111', 'HIL', 'Hilton College',        'school', 'KwaZulu-Natal'),
   ('22222222-2222-2222-2222-222222222222', 'WES', 'Westville Boys'' High',  'school', 'KwaZulu-Natal');
 
--- ── Hilton U19A ─────────────────────────────────────────────────
+-- ── Hilton 1st XI ─────────────────────────────────────────────────
 INSERT INTO player (id, school_id, team_code, full_name, squad_no, playing_role, born, hometown, houseAtSchool, height, weight, guardian) VALUES
-  ('aaaaaaaa-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'U19A', 'James Whitfield', 1, 'batter',     '2008-03-14', 'Howick',      'McKenzie', 181, 74, '{"name":"A Whitfield","relation":"father","phone":"+27 82 000 0001"}'),
-  ('aaaaaaaa-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'U19A', 'T Bekker',        2, 'allrounder', '2008-07-02', 'Pietermaritzburg', 'Falcon', 176, 70, '{"name":"M Bekker","relation":"mother","phone":"+27 82 000 0002"}'),
-  ('aaaaaaaa-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 'U19A', 'S Naidoo',        3, 'bowler',     '2008-11-21', 'Durban',      'Pearce',   179, 68, '{"name":"R Naidoo","relation":"father","phone":"+27 82 000 0003"}'),
-  ('aaaaaaaa-0000-0000-0000-000000000004', '11111111-1111-1111-1111-111111111111', 'U19A', 'M Cele',          4, 'keeper',     '2009-01-09', 'Pinetown',    'McKenzie', 172, 66, '{"name":"N Cele","relation":"mother","phone":"+27 82 000 0004"}'),
+  ('aaaaaaaa-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', '1XI', 'James Whitfield', 1, 'batter',     '2008-03-14', 'Howick',      'McKenzie', 181, 74, '{"name":"A Whitfield","relation":"father","phone":"+27 82 000 0001"}'),
+  ('aaaaaaaa-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', '1XI', 'T Bekker',        2, 'allrounder', '2008-07-02', 'Pietermaritzburg', 'Falcon', 176, 70, '{"name":"M Bekker","relation":"mother","phone":"+27 82 000 0002"}'),
+  ('aaaaaaaa-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', '1XI', 'S Naidoo',        3, 'bowler',     '2008-11-21', 'Durban',      'Pearce',   179, 68, '{"name":"R Naidoo","relation":"father","phone":"+27 82 000 0003"}'),
+  ('aaaaaaaa-0000-0000-0000-000000000004', '11111111-1111-1111-1111-111111111111', '1XI', 'M Cele',          4, 'keeper',     '2009-01-09', 'Pinetown',    'McKenzie', 172, 66, '{"name":"N Cele","relation":"mother","phone":"+27 82 000 0004"}'),
   -- p5 is the injured player 99_rls_verify.sql looks for.
-  ('aaaaaaaa-0000-0000-0000-000000000005', '11111111-1111-1111-1111-111111111111', 'U19A', 'R Pillay',        5, 'allrounder', '2008-05-30', 'Umhlanga',    'Falcon',   183, 77, '{"name":"D Pillay","relation":"father","phone":"+27 82 000 0005"}'),
+  ('aaaaaaaa-0000-0000-0000-000000000005', '11111111-1111-1111-1111-111111111111', '1XI', 'R Pillay',        5, 'allrounder', '2008-05-30', 'Umhlanga',    'Falcon',   183, 77, '{"name":"D Pillay","relation":"father","phone":"+27 82 000 0005"}'),
   -- A second team, so a team-scoped coach has something to be excluded from.
   ('aaaaaaaa-0000-0000-0000-000000000006', '11111111-1111-1111-1111-111111111111', 'U16B', 'K Dlamini',       7, 'batter',     '2011-02-18', 'Hilton',      'Pearce',   165, 55, '{"name":"S Dlamini","relation":"mother","phone":"+27 82 000 0006"}');
 
 -- A second school, so school scoping has something to exclude.
 INSERT INTO player (id, school_id, team_code, full_name, squad_no, playing_role, born) VALUES
-  ('bbbbbbbb-0000-0000-0000-000000000001', '22222222-2222-2222-2222-222222222222', 'U19A', 'D Mkhize',  1, 'bowler', '2008-09-12'),
-  ('bbbbbbbb-0000-0000-0000-000000000002', '22222222-2222-2222-2222-222222222222', 'U19A', 'K Botha',   2, 'batter', '2008-04-25');
+  ('bbbbbbbb-0000-0000-0000-000000000001', '22222222-2222-2222-2222-222222222222', '1XI', 'D Mkhize',  1, 'bowler', '2008-09-12'),
+  ('bbbbbbbb-0000-0000-0000-000000000002', '22222222-2222-2222-2222-222222222222', '1XI', 'K Botha',   2, 'batter', '2008-04-25');
 
 UPDATE player SET fitness = 'injured' WHERE id = 'aaaaaaaa-0000-0000-0000-000000000005';
 
@@ -43,7 +43,7 @@ INSERT INTO injury (id, school_id, player_id, injury_type, severity, date_injure
    'Clinical: grade 2 strain, biceps femoris. Managed conservatively.',   -- masked from coach/assistant/headmaster
    'Physio: eccentric loading from week 2, running progression week 3.'); -- masked likewise
 
--- A second injury, on a different U19A player. Without it, "a pupil reads
+-- A second injury, on a different 1XI player. Without it, "a pupil reads
 -- their own record and not another's" is unfalsifiable: there is only one
 -- injury in the fixture, so returning it and returning everything look
 -- identical.
@@ -55,7 +55,7 @@ INSERT INTO injury (id, school_id, player_id, injury_type, severity, date_injure
 
 -- A third injury, on a U16B player — a DIFFERENT side at the same school.
 -- Without it, "a coach reads no injury outside the side they coach" is
--- vacuous: every injury in the fixture was U19A, so the assertion passed by
+-- vacuous: every injury in the fixture was 1XI, so the assertion passed by
 -- having nothing to find. It is the assertion that keeps a coach's clinical
 -- access inside their own squad, so it had better be able to fail.
 INSERT INTO injury (id, school_id, player_id, injury_type, severity, date_injured, rtw_date, phase, restricted, notes, physio) VALUES
@@ -66,7 +66,7 @@ INSERT INTO injury (id, school_id, player_id, injury_type, severity, date_injure
 
 -- ── Staff and coaches ───────────────────────────────────────────
 INSERT INTO coach (id, school_id, team_code, name, title, email, phone) VALUES
-  ('dddddddd-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'U19A', 'Craig Hendricks', 'Head Coach',      'chendricks@example.invalid', '+27 82 100 0001'),
+  ('dddddddd-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', '1XI', 'Craig Hendricks', 'Head Coach',      'chendricks@example.invalid', '+27 82 100 0001'),
   ('dddddddd-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'U16B', 'P Moodley',       'Assistant Coach', 'pmoodley@example.invalid',   '+27 82 100 0002');
 
 INSERT INTO staff (id, school_id, name, duty, email, phone) VALUES
@@ -80,30 +80,30 @@ INSERT INTO ground (id, school_id, name, surface) VALUES
   ('ffffffff-0000-0000-0000-000000000002', '22222222-2222-2222-2222-222222222222', 'Westville Main',       'grass');
 
 INSERT INTO competition (id, school_id, name, comp_type, format, age_group, gender, season) VALUES
-  ('99999999-0000-0000-0000-000000000001', NULL, 'KZN Schools T20 League', 'league', 'T20', 'U19', 'boys', '2026/27');
+  ('99999999-0000-0000-0000-000000000001', NULL, 'KZN Schools T20 League', 'league', 'T20', '1XI', 'boys', '2026/27');
 
 -- Matches: one played, one scheduled. Neither carries a score column —
 -- the score is derived from ball_event.
 INSERT INTO match (id, school_id, team_code, opponent, ground_id, starts_at, format, overs, status, toss_won_by, toss_decision) VALUES
-  ('77777777-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'U19A', 'Westville Boys'' High',
+  ('77777777-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', '1XI', 'Westville Boys'' High',
    'ffffffff-0000-0000-0000-000000000001', now() - interval '7 days', 'T20', 20, 'complete', 'Hilton College', 'bat'),
-  ('77777777-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'U19A', 'Michaelhouse',
+  ('77777777-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', '1XI', 'Michaelhouse',
    'ffffffff-0000-0000-0000-000000000001', now() + interval '3 days',  'T20', 20, 'scheduled', NULL, NULL),
   ('77777777-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 'U16B', 'Kearsney College',
    'ffffffff-0000-0000-0000-000000000001', now() + interval '10 days', 'T20', 20, 'scheduled', NULL, NULL);
 
 INSERT INTO match_squad (match_id, player_id, side, batting_no) 
 SELECT '77777777-0000-0000-0000-000000000001', id, 'home', squad_no
-  FROM player WHERE school_id = '11111111-1111-1111-1111-111111111111' AND team_code = 'U19A';
+  FROM player WHERE school_id = '11111111-1111-1111-1111-111111111111' AND team_code = '1XI';
 
 -- ── Users (one per role under test) ─────────────────────────────
 INSERT INTO app_user (id, school_id, email, name, role, player_id, child_ids, teams) VALUES
   ('88888888-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'spectator@example.invalid', 'A Spectator', 'spectator', NULL, '{}', '{}'),
   ('88888888-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'analyst@example.invalid',   'An Analyst',  'analyst',   NULL, '{}', '{}'),
   ('88888888-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 'medical@example.invalid',   'L van Wyk',   'medical',   NULL, '{}', '{}'),
-  ('88888888-0000-0000-0000-000000000004', '11111111-1111-1111-1111-111111111111', 'coach@example.invalid',     'C Hendricks', 'coach',     NULL, '{}', '{U19A}'),
-  ('88888888-0000-0000-0000-000000000005', '11111111-1111-1111-1111-111111111111', 'parent@example.invalid',    'D Pillay',    'parent',    NULL, '{aaaaaaaa-0000-0000-0000-000000000005}', '{U19A}'),
-  ('88888888-0000-0000-0000-000000000006', '11111111-1111-1111-1111-111111111111', 'scorer@example.invalid',    'A Wessels',   'scorer',    NULL, '{}', '{U19A}');
+  ('88888888-0000-0000-0000-000000000004', '11111111-1111-1111-1111-111111111111', 'coach@example.invalid',     'C Hendricks', 'coach',     NULL, '{}', '{1XI}'),
+  ('88888888-0000-0000-0000-000000000005', '11111111-1111-1111-1111-111111111111', 'parent@example.invalid',    'D Pillay',    'parent',    NULL, '{aaaaaaaa-0000-0000-0000-000000000005}', '{1XI}'),
+  ('88888888-0000-0000-0000-000000000006', '11111111-1111-1111-1111-111111111111', 'scorer@example.invalid',    'A Wessels',   'scorer',    NULL, '{}', '{1XI}');
 
 -- ── Role assignments ────────────────────────────────────────────
 -- Authority is these rows, not app_user.role. Note Sarah: four assignments,
@@ -115,17 +115,17 @@ INSERT INTO app_user (id, school_id, email, name, role, teams) VALUES
 INSERT INTO app_user (id, school_id, email, name, role, teams) VALUES
   ('88888888-0000-0000-0000-000000000008', '11111111-1111-1111-1111-111111111111', 'watcher@example.invalid', 'A Watcher', 'spectator', '{}');
 
--- R Pillay: the injured U19A player, with an account of their own. The case
+-- R Pillay: the injured 1XI player, with an account of their own. The case
 -- self-access exists for — a pupil reading their own physiotherapy notes.
 INSERT INTO app_user (id, school_id, email, name, role, player_id, teams) VALUES
   ('88888888-0000-0000-0000-000000000009', '11111111-1111-1111-1111-111111111111',
-   'pillay@example.invalid', 'R Pillay', 'player', 'aaaaaaaa-0000-0000-0000-000000000005', '{U19A}');
+   'pillay@example.invalid', 'R Pillay', 'player', 'aaaaaaaa-0000-0000-0000-000000000005', '{1XI}');
 
 INSERT INTO role_assignment (id, person_id, role, school_id, team_code) VALUES
   ('a5510000-0000-0000-0000-000000000001', '88888888-0000-0000-0000-000000000001', 'player',          '11111111-1111-1111-1111-111111111111', NULL),
   ('a5510000-0000-0000-0000-000000000002', '88888888-0000-0000-0000-000000000002', 'scout',           '11111111-1111-1111-1111-111111111111', NULL),
   ('a5510000-0000-0000-0000-000000000003', '88888888-0000-0000-0000-000000000003', 'medical',         '11111111-1111-1111-1111-111111111111', NULL),
-  ('a5510000-0000-0000-0000-000000000004', '88888888-0000-0000-0000-000000000004', 'coach',           '11111111-1111-1111-1111-111111111111', 'U19A'),
+  ('a5510000-0000-0000-0000-000000000004', '88888888-0000-0000-0000-000000000004', 'coach',           '11111111-1111-1111-1111-111111111111', '1XI'),
   ('a5510000-0000-0000-0000-000000000005', '88888888-0000-0000-0000-000000000005', 'guardian',        '11111111-1111-1111-1111-111111111111', NULL),
   ('a5510000-0000-0000-0000-000000000006', '88888888-0000-0000-0000-000000000006', 'scorer',          '11111111-1111-1111-1111-111111111111', NULL),
   -- Sarah, four ways.
@@ -148,7 +148,7 @@ INSERT INTO role_assignment (id, person_id, role, school_id, team_code) VALUES
   -- carries those. Two assignments because the model's rule is that a
   -- capability applies only within the scope of the assignment granting it,
   -- and these two need different scopes.
-  ('a5510000-0000-0000-0000-00000000000c', '88888888-0000-0000-0000-000000000009', 'player',          '11111111-1111-1111-1111-111111111111', 'U19A'),
+  ('a5510000-0000-0000-0000-00000000000c', '88888888-0000-0000-0000-000000000009', 'player',          '11111111-1111-1111-1111-111111111111', '1XI'),
   ('a5510000-0000-0000-0000-00000000000d', '88888888-0000-0000-0000-000000000009', 'selfaccess',      '11111111-1111-1111-1111-111111111111', NULL);
 
 -- Who each assignment is about: the parent's child, Sarah's two children at
@@ -165,15 +165,15 @@ COMMIT;
 -- Fixtures for db/99_rls_verify.sql. The notification rows in particular are
 -- chosen to make the capability gate falsifiable: one general notice everybody
 -- gets, one medical notice that must reach the medical officer and the coach's
--- own team and NOT the spectator, and one U16B team notice the U19A coach must
+-- own team and NOT the spectator, and one U16B team notice the 1XI coach must
 -- not receive.
 
 INSERT INTO competition_entrant (competition_id, school_id, team_code, display_name, played, won, lost, drawn, no_result, points) VALUES
-  ('99999999-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'U19A', 'Hilton U19A',    5, 4, 1, 0, 0, 8),
-  ('99999999-0000-0000-0000-000000000001', '22222222-2222-2222-2222-222222222222', 'U19A', 'Westville U19A', 5, 3, 2, 0, 0, 6);
+  ('99999999-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', '1XI', 'Hilton 1st XI',    5, 4, 1, 0, 0, 8),
+  ('99999999-0000-0000-0000-000000000001', '22222222-2222-2222-2222-222222222222', '1XI', 'Westville 1st XI', 5, 3, 2, 0, 0, 6);
 
 INSERT INTO training_session (id, school_id, team_code, title, starts_at, duration_min, venue, coach_id, session_type, drills, notes) VALUES
-  ('7a717000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'U19A',
+  ('7a717000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', '1XI',
    'Pre-Match Prep', now() + interval '1 day', 90, 'Nets 1-3',
    'dddddddd-0000-0000-0000-000000000001', 'match-prep',
    '{"Throw-downs","Bowling loads","Catching"}', 'Top order against pace.'),
@@ -206,11 +206,11 @@ INSERT INTO notification (id, school_id, team_code, scope_level, kind, urgency, 
   -- medical.status.read — a notice exceeding its own tier, which is precisely
   -- the leak required_capability exists to prevent. It was caught by reading
   -- the rows the injury trigger produces next to the hand-written ones.
-  ('40170000-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'U19A', 'team',
+  ('40170000-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', '1XI', 'team',
    'injury', 'high', 'Availability update',
    'R Pillay is unavailable for selection. Review in two weeks.',
    'medical.status.read', false, 'injury'),
-  -- A U16B team notice. The U19A coach's assignment is team-scoped, so it must
+  -- A U16B team notice. The 1st XI coach's assignment is team-scoped, so it must
   -- not reach them even though they hold news.read at the same school.
   ('40170000-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 'U16B', 'team',
    'training', 'low', 'U16B training moved',
