@@ -242,15 +242,30 @@ CREATE TABLE notification_read (
 -- January — otherwise a side is legal in February and illegal in April, and a
 -- player changes age group mid-season. Confirmed convention, not an assumption.
 --
--- Taking the year off the MATCH DATE is only equivalent to taking it off the
--- school year because the South African school year is the calendar year:
--- four terms, January to December, cricket in Term 1 and Term 4 of the same
--- one. Both cricket terms sit inside one January-to-December window, so a side
--- cannot change band mid-season. Where a season straddles the new year the
--- same line is wrong, and wrong towards letting an older boy play down.
+-- THIS FUNCTION ANSWERS FOR SCHOOL CRICKET ONLY, and says so below rather than
+-- assuming it.
 --
--- Same convention as CUTOFF_MONTH/DAY in packages/policy/src/teams.mjs, which
--- carries the longer note; change both together.
+-- Taking the year off the MATCH DATE is only equivalent to taking it off the
+-- season because the South African school year is the calendar year: four
+-- terms, January to December, cricket in Term 1 and Term 4 of the same one.
+-- Both cricket terms sit inside one January-to-December window, so a side
+-- cannot change band mid-season.
+--
+-- Above school level that is false. Club, provincial and national cricket run
+-- the southern summer — the 2025/26 season, spring through autumn, with winter
+-- given to northern tours and county cricket — so the season straddles 1
+-- January and its cut-off is the January in its SECOND year. Using the line
+-- below for such a fixture makes every player a year young from September to
+-- December, which is a fourteen-year-old passing an under-13 check in October.
+--
+-- Every fixture in this schema belongs to a school, so the school rule is
+-- right today. What is NOT safe is the silence: the team-code CHECK admits
+-- U17, U18 and U19 because one constraint cannot know a row's level, so a
+-- representative fixture is insertable right now and would be answered with a
+-- school calendar. It is refused instead, until `match` carries a level.
+--
+-- Same convention as SEASON_SPANS_NEW_YEAR in packages/policy/src/teams.mjs,
+-- which carries the longer note; change both together.
 --
 -- An UNKNOWN date of birth does not pass. A squad row for a child whose age
 -- nobody recorded is exactly the row this exists to stop, and defaulting to
@@ -272,6 +287,18 @@ BEGIN
   -- Open teams (1XI, 2XI …) carry no age limit.
   v_limit := NULLIF(substring(v_team FROM '^U([0-9]{1,2})'), '')::int;
   IF v_limit IS NULL THEN RETURN NEW; END IF;
+
+  -- A band no South African school fields. U17, U18 and U19 exist only in
+  -- representative cricket, whose season straddles the new year — so the
+  -- calendar this function uses is the wrong one for it, and answering anyway
+  -- would let a boy through a check that had quietly been computed a year
+  -- young. Refuse until a fixture can state its level.
+  IF v_limit > 16 THEN
+    RAISE EXCEPTION
+      'cannot check eligibility for a % fixture: bands above U16 are representative cricket, whose season straddles 1 January, and this fixture does not say what level it is',
+      v_team
+      USING ERRCODE = 'check_violation';
+  END IF;
 
   -- The away side of a fixture against a school SCRBRD does not host has no
   -- player row and no date of birth we could check. Their eligibility is their

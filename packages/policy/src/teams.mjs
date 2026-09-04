@@ -135,59 +135,129 @@ export function compareTeams(a, b) {
 /**
  * The date an age is measured on. CONFIRMED CONVENTION, not an assumption.
  *
- * Age-group eligibility in South African schools cricket is judged as at
- * 1 JANUARY of the year of play, not on the day of the match. A boy who turns
- * 14 in March plays the whole year in the band he was in on 1 January —
- * otherwise a side would be legal in February and illegal in April, and a
- * player would move age group mid-season.
+ * Age-group eligibility is judged as at 1 JANUARY of the season, not on the
+ * day of the match. A boy who turns 14 in March plays the whole season in the
+ * band he was in on 1 January — otherwise a side is legal in February and
+ * illegal in April, and a player changes age group mid-season.
  *
- * WHY `THE YEAR OF PLAY` CAN SAFELY MEAN THE CALENDAR YEAR
- * ───────────────────────────────────────────────────────
- * Because in South Africa the school year IS the calendar year: four terms,
- * January to December, with cricket played in TERM 1 (Jan–Mar) and TERM 4
- * (Oct–Dec) of the same school year. Both cricket terms therefore fall inside
- * one January-to-December window, so taking the year off the match date and
- * taking it off the school year give the same number, and no side can change
- * age band part-way through its season.
+ * WHICH 1 JANUARY DEPENDS ON THE LEVEL, AND THAT IS THE WHOLE SUBTLETY
+ * ───────────────────────────────────────────────────────────────────
+ * The two halves of South African cricket keep time differently:
  *
- * That fact is load-bearing and it is not visible anywhere in the arithmetic.
- * In a country whose season runs September to March — England, Australia — the
- * identical code is WRONG, and wrong in the dangerous direction: for the first
- * half of the season every boy computes a year younger than he is, so a
- * fourteen-year-old passes an under-13 check in October. If SCRBRD follows a
- * player into CLUB cricket, whose season need not respect a school calendar,
- * this is the first thing to re-examine — not the constant below, but the
- * assumption that a season sits inside one calendar year.
+ *   SCHOOL — the school year IS the calendar year. Four terms, January to
+ *     December, cricket in TERM 1 (Jan–Mar) and TERM 4 (Oct–Dec) of the same
+ *     one. Both cricket terms sit inside one January-to-December window, so
+ *     the season is named for a single year and the cut-off is the 1 January
+ *     that opens it.
  *
- * Stated here as one constant rather than assumed at four call sites. The
- * eligibility trigger in db/08_schema_programme.sql derives its date the same
- * way; change both together. Pinned by packages/policy/test/teams.test.mjs
- * group F2, which fails if the cut-off moves AND if a straddling season is
- * assumed.
+ *   CLUB, PROVINCIAL, NATIONAL — the season is the SOUTHERN SUMMER and is
+ *     named for two: the 2025/26 season, spring through autumn. Winter is
+ *     given over to northern-hemisphere tours and county cricket. Such a
+ *     season contains exactly one 1 January — the one in its second year — and
+ *     that is the cut-off.
+ *
+ * Apply the school rule to a club season and every player computes a year
+ * young from September to December, so a fourteen-year-old passes an under-13
+ * check in October. Apply the club rule to a school season and a boy changes
+ * band between Term 1 and Term 4 of the same school year. Neither is a
+ * rounding difference; both put the wrong child on the field.
+ *
+ * WHICH 1 JANUARY, FOR A SEASON NAMED FOR TWO YEARS — a reading, not a
+ * confirmed rule. "2025/26" is taken to end in 2026, so the cut-off is 1
+ * January 2026: the one that falls INSIDE the season. It is also the stricter
+ * of the two candidate readings — players compute a year older than they would
+ * against the preceding January — which is the right direction for a boundary
+ * that exists to stop an older child playing down. If a union states
+ * otherwise, SEASON_END_OFFSET below is the line to change.
+ *
+ * The eligibility trigger in db/08_schema_programme.sql derives its date the
+ * same way and today assumes SCHOOL, because every fixture in the schema
+ * belongs to a school; it refuses a band a school does not field rather than
+ * quietly answering for a level it cannot see. Change both together. Pinned by
+ * packages/policy/test/teams.test.mjs group F2, which fails if the cut-off
+ * moves, if a school season is treated as straddling, or if a club season is
+ * not.
  */
 export const CUTOFF_MONTH = 1;
 export const CUTOFF_DAY = 1;
 
-/** The cut-off date for a season, as a Date. */
+/**
+ * Whether a level's season crosses the new year, and so is named for two.
+ *
+ * School cricket does not: it is bounded by a school year that is a calendar
+ * year. Everything above it does: the season is the southern summer, spring to
+ * autumn, and is spoken as "2025/26".
+ */
+export const SEASON_SPANS_NEW_YEAR = Object.freeze({
+  school: false, club: true, provincial: true, national: true,
+});
+
+/**
+ * The month a straddling season is deemed to begin in.
+ *
+ * July, which is midwinter here and the one part of the year southern
+ * hemisphere cricket is NOT played — the months given over to northern tours
+ * and county cricket. A boundary placed in the off-season cannot fall inside a
+ * fixture list, so no season is ever split by it.
+ */
+export const SEASON_START_MONTH = 7;
+
+/** For a season named for two years, the cut-off is in the second. */
+const SEASON_END_OFFSET = 1;
+
+/**
+ * The year whose 1 January governs a match played on this date at this level.
+ *
+ * For school, the year of the match: the school year is the calendar year.
+ * For every other level, the year the SEASON ENDS — so a fixture in October
+ * 2025 and one in February 2026 are the same 2025/26 season and answer to the
+ * same 1 January 2026.
+ */
+export function seasonYearFor(onDate, level = "school") {
+  const ref = onDate instanceof Date ? onDate : new Date(onDate);
+  if (Number.isNaN(ref.getTime())) return null;
+  const year = ref.getUTCFullYear();
+  if (!SEASON_SPANS_NEW_YEAR[level]) return year;
+  return ref.getUTCMonth() + 1 >= SEASON_START_MONTH ? year + SEASON_END_OFFSET : year;
+}
+
+/**
+ * How a season is written down, which differs by level for the same reason.
+ *
+ * `season` is a scope anchor on role_assignment, compared for equality, so the
+ * two vocabularies must not be invented twice — "2026" for a school and
+ * "2025/26" for a club are both correct and are not interchangeable.
+ */
+export function seasonLabel(onDate, level = "school") {
+  const end = seasonYearFor(onDate, level);
+  if (end == null) return null;
+  if (!SEASON_SPANS_NEW_YEAR[level]) return String(end);
+  return `${end - SEASON_END_OFFSET}/${String(end % 100).padStart(2, "0")}`;
+}
+
+/** The cut-off date for a season, as a Date. Takes the year, not a level. */
 export function cutoffFor(seasonYear) {
   return new Date(Date.UTC(seasonYear, CUTOFF_MONTH - 1, CUTOFF_DAY));
 }
 
 /**
- * A player's age on the cut-off date of the season a match falls in.
+ * A player's age on the cut-off date of the season a match falls in, which
+ * depends on the LEVEL — see CUTOFF_MONTH above.
  *
  * Returns null when the date of birth is unknown — which is a real state, not
  * an edge case: `born` is masked behind player.age.read, so a caller without
  * it receives NULL and must not be handed an eligibility answer computed from
  * nothing.
  */
-export function ageAtCutoff(born, onDate = new Date()) {
+export function ageAtCutoff(born, onDate = new Date(), level = "school") {
   if (!born) return null;
   const b = born instanceof Date ? born : new Date(born);
   if (Number.isNaN(b.getTime())) return null;
   const ref = onDate instanceof Date ? onDate : new Date(onDate);
   if (Number.isNaN(ref.getTime())) return null;
-  const cut = cutoffFor(ref.getUTCFullYear());
+  const seasonYear = seasonYearFor(ref, level);
+  if (seasonYear == null) return null;
+  const cut = cutoffFor(seasonYear);
   let age = cut.getUTCFullYear() - b.getUTCFullYear();
   const beforeBirthday =
     cut.getUTCMonth() < b.getUTCMonth() ||
@@ -268,7 +338,10 @@ export function bandChangeAhead(born, team, from = new Date()) {
 
   // Their band at the cut-off AFTER that birthday. If it exceeds the side they
   // are in, they age out of it for the coming season.
-  const after = ageAtCutoff(b, new Date(Date.UTC(birthday.getUTCFullYear() + 1, 5, 1)));
+  // "school" stated rather than defaulted: this notice is a school-roster
+  // feature, and a silent default is how it would follow a change made for
+  // club cricket into a place that must not move.
+  const after = ageAtCutoff(b, new Date(Date.UTC(birthday.getUTCFullYear() + 1, 5, 1)), "school");
   if (after == null || after <= t.age) return null;
   return { birthday, currentBand: t.age, nextBand: after };
 }

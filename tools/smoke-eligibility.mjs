@@ -102,6 +102,27 @@ try {
        /is 14 on 1 January and cannot play U13A/.test(nextYear.error ?? ""));
   }
 
+  // ── A level this fixture cannot speak for ────────────────────
+  //
+  // The team-code CHECK admits U17–U19, because one constraint cannot know
+  // whether a row belongs to a school or a province. So a representative
+  // fixture is insertable today — and representative cricket runs the southern
+  // summer, a 2025/26 season straddling 1 January, whose cut-off is the January
+  // in its SECOND year. The trigger's calendar is the school one.
+  //
+  // Answering anyway would compute every player a year young from September to
+  // December. It refuses instead, which is the difference between a check that
+  // is right and a check that is merely quiet.
+  group("A band the school calendar cannot speak for");
+  {
+    const rep = await select("2007-05-01", "U19A", 2026);
+    ok("a U19 fixture is refused, not answered", rep.accepted === false);
+    ok("...and says the level is what is missing, not the age",
+       /does not say what level it is/.test(rep.error ?? ""));
+    // The bands a school does field are unaffected.
+    ok("U16 still answers normally", (await select("2010-05-01", "U16A", 2026)).accepted === true);
+  }
+
   group("The boundaries, which is where an age rule goes wrong");
   // Age is measured at 1 JANUARY of the season, not on match day: otherwise a
   // side is legal in February and illegal in April, and a player changes age

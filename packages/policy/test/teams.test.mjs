@@ -14,6 +14,7 @@ import {
   parseTeam, isValidTeam, teamLabel, compareTeams, isEligible,
   teamsForLevel, teamCodeCheck, AGE_GROUPS, LEVELS,
   ageAtCutoff, cutoffFor, CUTOFF_MONTH, CUTOFF_DAY,
+  seasonYearFor, seasonLabel, SEASON_SPANS_NEW_YEAR, SEASON_START_MONTH,
 } from "../src/teams.mjs";
 
 let pass = 0, fail = 0;
@@ -150,6 +151,72 @@ group("F2. Age is measured at 1 January of the school year");
      ageAtCutoff(born("not-a-date"), on("2026-06-01")) === null);
   ok("an unparseable match date answers null",
      ageAtCutoff(born("2012-03-15"), new Date("rubbish")) === null);
+}
+
+// ── F3. A club season is named for two years, and keeps time differently ──
+//
+// Above school level the season is the southern summer — spring through
+// autumn, "the 2025/26 season" — and winter belongs to northern tours and
+// county cricket. Such a season straddles 1 January, so the year of the match
+// is NOT the year of the season, and taking one for the other is wrong in the
+// direction that matters: every player computes a year young from September to
+// December, and a fourteen-year-old passes an under-13 check in October.
+//
+// The same fixture dates therefore give different answers at different levels,
+// and that is correct rather than a contradiction. Both are asserted here
+// against each other, because a rule that is right at one level and silently
+// applied at another is the failure this whole block exists to catch.
+group("F3. Above school, the season straddles the new year");
+{
+  const born = (s) => new Date(s + "T00:00:00Z");
+  const on   = (s) => new Date(s + "T00:00:00Z");
+  const B = born("2011-03-15");             // turns 15 in March 2026
+
+  ok("school seasons do not straddle", SEASON_SPANS_NEW_YEAR.school === false);
+  ok("club, provincial and national seasons do",
+     SEASON_SPANS_NEW_YEAR.club && SEASON_SPANS_NEW_YEAR.provincial &&
+     SEASON_SPANS_NEW_YEAR.national);
+  // The boundary must sit in the off-season or it splits a fixture list.
+  ok("the season boundary is in midwinter", SEASON_START_MONTH === 7);
+
+  // October and February are ONE club season and answer to one 1 January.
+  ok("a spring fixture belongs to the season that ends next year",
+     seasonYearFor(on("2025-10-10"), "club") === 2026);
+  ok("...and a summer fixture in the new year to the same season",
+     seasonYearFor(on("2026-02-14"), "club") === 2026);
+  ok("...which is written the way people say it",
+     seasonLabel(on("2025-10-10"), "club") === "2025/26" &&
+     seasonLabel(on("2026-02-14"), "club") === "2025/26");
+  ok("a club player is the same age all season",
+     ageAtCutoff(B, on("2025-10-10"), "club") === 14 &&
+     ageAtCutoff(B, on("2026-02-14"), "club") === 14);
+
+  // The SAME two dates at school level are two different school years, and the
+  // boy is genuinely a different age in each.
+  ok("a school season is named for one year",
+     seasonLabel(on("2025-10-10"), "school") === "2025" &&
+     seasonLabel(on("2026-02-14"), "school") === "2026");
+  ok("...so the same dates split across two school years",
+     ageAtCutoff(B, on("2025-10-10"), "school") === 13 &&
+     ageAtCutoff(B, on("2026-02-14"), "school") === 14);
+  // Which is the point: the two levels disagree, on purpose.
+  ok("the levels disagree about October, and must",
+     ageAtCutoff(B, on("2025-10-10"), "school") !==
+     ageAtCutoff(B, on("2025-10-10"), "club"));
+
+  // The direction of the error, if a school rule were used for a club season.
+  ok("the school rule would let a 14-year-old pass an under-13 check in spring",
+     isEligible(ageAtCutoff(B, on("2025-10-10"), "school"), "U13A") === true &&
+     isEligible(ageAtCutoff(B, on("2025-10-10"), "club"),   "U13A") === false);
+
+  // A winter date is off-season, and falls to the season just ended.
+  ok("a June date belongs to the season ending that year",
+     seasonLabel(on("2026-06-01"), "club") === "2025/26");
+  ok("a July date has turned over to the next",
+     seasonLabel(on("2026-07-01"), "club") === "2026/27");
+
+  ok("an unparseable date has no season", seasonYearFor(new Date("rubbish"), "club") === null);
+  ok("...and no age", ageAtCutoff(B, new Date("rubbish"), "club") === null);
 }
 
 // ── G. Enumerating a level ───────────────────────────────
