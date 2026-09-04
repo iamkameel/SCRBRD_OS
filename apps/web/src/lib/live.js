@@ -326,7 +326,10 @@ export function useLive(resource, role) {
 
 /**
  * Skills, in the nested shape the development screens draw:
- *   { [playerId]: { batting: { technique: 85, … }, bowling: { … } } }
+ *   { [playerId]: { technical: { footwork: 14, … }, mental: { … }, physical: { … } } }
+ *
+ * Groups and attributes are the rubric's (packages/scoring/src/rubric.mjs) and
+ * scores are 1-20; this function only pivots, and asserts nothing about either.
  *
  * The table is long-form — one row per player per metric per assessment date —
  * because a blob cannot be masked, cannot be indexed by metric, and cannot

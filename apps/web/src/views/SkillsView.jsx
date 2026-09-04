@@ -17,14 +17,19 @@ function SkillsView({ role }) {
   // change and the same reason: a row captured at first render belongs to a
   // list that no longer exists once the server answers.
   const [selId, setSelId]         = useState(null);
-  const [category, setCategory]   = useState("batting");
+  const [category, setCategory]   = useState("technical");
   const selPlayer = PLAYERS.find(p => p.id === selId) ?? PLAYERS[0];
   const skills = selPlayer ? SKILLS_MATRIX[selPlayer.id] : null;
   const canEdit = role==="superadmin"||role==="coach";
   const cats = skills ? Object.keys(skills) : [];
-  const SKILL_COLORS = { batting:D.sky, bowling:D.violet, fielding:D.emerald, fitness:D.amber };
+  // Technical / mental / physical — the craft, the head, the body.
+  const SKILL_COLORS = { technical:D.sky, mental:D.violet, physical:D.emerald };
 
-  const progressColorForScore = v => v>=80?D.emerald:v>=60?D.sky:v>=40?D.amber:D.rose;
+  // The 1-20 scale, banded as the rubric bands it: 1-5 poor, 6-10 average,
+  // 11-15 good, 16-20 excellent. Kept in step with BANDS_OF_SCALE in
+  // packages/scoring/src/rubric.mjs.
+  const progressColorForScore = v => v>=16?D.emerald:v>=11?D.sky:v>=6?D.amber:D.rose;
+  const SCALE_MAX = 20;
 
   if (!selPlayer) return (
     <div className="os-page">
@@ -123,11 +128,11 @@ function SkillsView({ role }) {
                         <span style={{fontFamily:D.body,fontSize:"12px",fontWeight:500,color:D.textSecondary,textTransform:"capitalize"}}>{skill}</span>
                         <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
                           <span style={{fontFamily:D.mono,fontSize:"12px",color:progressColorForScore(val),fontWeight:600}}>{val}</span>
-                          <Badge color={progressColorForScore(val)}>{val>=80?"Elite":val>=65?"Good":val>=45?"Avg":"Dev"}</Badge>
+                          <Badge color={progressColorForScore(val)}>{val>=16?"Excellent":val>=11?"Good":val>=6?"Average":"Poor"}</Badge>
                         </div>
                       </div>
                       <div style={{width:"100%",height:"8px",background:D.surf3,borderRadius:"4px",overflow:"hidden"}}>
-                        <div className="skill-bar" style={{height:"100%",width:`${val}%`,background:`linear-gradient(90deg,${SKILL_COLORS[category]||D.indigo},${progressColorForScore(val)})`,borderRadius:"4px"}}/>
+                        <div className="skill-bar" style={{height:"100%",width:`${(val/SCALE_MAX)*100}%`,background:`linear-gradient(90deg,${SKILL_COLORS[category]||D.indigo},${progressColorForScore(val)})`,borderRadius:"4px"}}/>
                       </div>
                       <div style={{display:"flex",justifyContent:"space-between",marginTop:"3px"}}>
                         <span style={{fontFamily:D.mono,fontSize:"8px",color:D.textMuted}}>0</span>

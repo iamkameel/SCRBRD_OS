@@ -195,10 +195,11 @@ exist"*. That is respected.
 
 **Built:**
 
-- `packages/scoring/src/rubric.mjs` — the rubric as data: the skill tree (matching
-  what the write path already validates), the fixed ceiling written down, bands
-  including `OPEN`, provisional benchmarks flagged as provisional, and
-  `batting.footwork` anchored verbatim from §3.4 as the worked example.
+- `packages/scoring/src/rubric.mjs` — the rubric as data: the attribute set, the
+  fixed ceiling written down, bands including `OPEN`, provisional benchmarks
+  flagged as provisional, and `technical.footwork` anchored from §3.4 as the
+  worked example. The write path no longer keeps its own copy of the attribute
+  list — `ASSESSMENT_SHAPE` **is** `TREE`, so the two cannot diverge.
 - The gate, made executable. `unanchoredSkills()` reports what is unwritten, and
   a test fails if an assessment schema ever exists while that list is non-empty.
   A paragraph is easy to forget under deadline; a red build is not.
@@ -208,5 +209,41 @@ exist"*. That is respected.
 **Not built, deliberately:** `skill_assessment`, the immutability trigger, the
 carry-forward write path, the derived reads. All of it waits on the anchors.
 
-**Currently 1 of 18 skills anchored.** §11.1 asks who writes `cricket-v1` and by
-when. The form is ready for them.
+**Currently 1 of 33 attributes anchored.** §11.1 asks who writes `cricket-v1`
+and by when. The form is ready for them.
+
+## Two changes to the spec's model, by instruction
+
+**The scale is 1-20, not 0-100.** Twenty points on the Football Manager
+convention — 1-5 poor, 6-10 average, 11-15 good, 16-20 excellent. A 0-100
+slider invites a precision no coach can defend: nobody can justify a 63 against
+a 66, and at that resolution the disagreement between two coaches is larger
+than the signal. Since drift between coaches is indistinguishable from a player
+changing, false precision does not merely add noise to a longitudinal record —
+it makes the record unreadable. Twenty steps is about as fine as human
+judgement resolves, and it makes a one-point move mean something.
+
+The performance index moved with it. Both halves of a rating are compared and
+adjusted against each other, so an index on a different scale from an
+assessment is not a rating; it is a category error with a number on it.
+
+**Attributes are grouped TECHNICAL / MENTAL / PHYSICAL**, not by discipline.
+The craft, the head, the body — three things that improve differently, are
+coached differently and are observed differently. The four categories this
+replaced (batting, bowling, fielding, fitness) read naturally and hid the thing
+a development record exists for: a boy whose batting has stalled has either
+stopped improving technically or stopped concentrating, and those need opposite
+conversations. Grouping by discipline puts *technique* and *temperament* in one
+column and makes that distinction unaskable.
+
+The discipline view is not lost. `DISCIPLINES` cuts the same attributes the
+other way, and that is what the performance index argues with — the ball log
+knows runs off deliveries, not whether they came from footwork or timing, so it
+can only speak to a discipline as a whole. Attributes are **grouped** for
+coaching and **cross-cut** by discipline for evaluation. Neither grouping is
+derivable from the other, so both are written down.
+
+Some attributes appear in two disciplines (`mental.concentration` counts for
+batting and bowling), one sits in PHYSICAL but only matters for bowling
+(`physical.bowlingPace`), and `mental.leadership` belongs to no discipline at
+all — real, assessed, and never measurable from a scorecard.

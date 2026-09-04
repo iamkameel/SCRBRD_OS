@@ -102,13 +102,20 @@ function skillsFor(p, matrix = {}){
   if(matrix[p.id]) return { data:matrix[p.id], assessed:true };
   // Deterministic demo derivation from season stats until a real assessment exists
   const rng=(()=>{let s=strSeed(p.id);return()=>{s|=0;s=(s+0x6D2B79F5)|0;let t=Math.imul(s^(s>>>15),1|s);t=(t+Math.imul(t^(t>>>7),61|t))^t;return((t^(t>>>14))>>>0)/4294967296;};})();
-  const j=(base)=>Math.max(30,Math.min(92,Math.round(base+rng()*14-7)));
-  const batBase=Math.min(88,35+(p.avg||20)*0.9), bowlBase=p.wkts>5?70:40;
+  // 1-20, clamped inside the scale. Never 0 and never 20: a synthesised number
+  // must not be able to claim either end of a scale whose ends are defined by
+  // a coach's written anchors.
+  const j=(base)=>Math.max(4,Math.min(18,Math.round(base+rng()*3-1.5)));
+  const batBase=Math.min(17,7+(p.avg||20)*0.18), bowlBase=p.wkts>5?14:8;
   return { assessed:false, data:{
-    batting:{technique:j(batBase),power:j(batBase-4),footwork:j(batBase-2),running:j(batBase),temperament:j(batBase+2)},
-    bowling:{accuracy:j(bowlBase),line:j(bowlBase),variations:j(bowlBase-6),pace:j(bowlBase),stamina:j(bowlBase+2)},
-    fielding:{catching:j(66),groundwork:j(64),throwing:j(65),positioning:j(66)},
-    fitness:{speed:j(70),agility:j(70),endurance:j(68),strength:j(66)},
+    technical:{footwork:j(batBase),timing:j(batBase),power:j(batBase-1),shotRange:j(batBase-1),
+               defence:j(batBase),againstPace:j(batBase-1),againstSpin:j(batBase-1),
+               lineAndLength:j(bowlBase),seamAndSwing:j(bowlBase),spin:j(bowlBase-2),
+               variations:j(bowlBase-1),catching:j(13),groundFielding:j(12),throwing:j(13),glovework:j(9)},
+    mental:{concentration:j(13),composure:j(13),decisions:j(12),anticipation:j(12),determination:j(13),
+            bravery:j(12),leadership:j(11),teamwork:j(13),workRate:j(13),gameAwareness:j(12)},
+    physical:{pace:j(13),acceleration:j(13),agility:j(13),balance:j(13),stamina:j(12),
+              strength:j(11),naturalFitness:j(13),bowlingPace:j(bowlBase)},
   }};
 }
 

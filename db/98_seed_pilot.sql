@@ -320,10 +320,14 @@ INSERT INTO training_attendance (session_id, player_id, status) VALUES
   ('7a717000-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000001', 'present'),
   ('7a717000-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000005', 'injured');
 
+-- Assessments on the 1-20 scale, grouped technical / mental / physical. A
+-- PARTIAL assessment is the normal case, not an incomplete one: these are the
+-- things a coach actually watched, and the write path upserts per attribute.
 INSERT INTO player_skill (player_id, assessed_on, category, metric, score) VALUES
-  ('aaaaaaaa-0000-0000-0000-000000000001', current_date - 30, 'batting', 'technique', 85),
-  ('aaaaaaaa-0000-0000-0000-000000000001', current_date - 30, 'batting', 'power',     78),
-  ('aaaaaaaa-0000-0000-0000-000000000006', current_date - 30, 'batting', 'technique', 61);
+  ('aaaaaaaa-0000-0000-0000-000000000001', current_date - 30, 'technical', 'footwork',      17),
+  ('aaaaaaaa-0000-0000-0000-000000000001', current_date - 30, 'technical', 'timing',        16),
+  ('aaaaaaaa-0000-0000-0000-000000000001', current_date - 30, 'mental',    'concentration', 15),
+  ('aaaaaaaa-0000-0000-0000-000000000006', current_date - 30, 'technical', 'footwork',      12);
 
 INSERT INTO notification (id, school_id, team_code, scope_level, kind, urgency, title, body, required_capability, is_public, subject_kind) VALUES
   -- General: news.read only. Everyone attached to Hilton receives it.

@@ -15,7 +15,10 @@ import { join } from "node:path";
 import {
   TREE, ANCHORS, ANCHOR_POINTS, BANDS, BENCHMARKS, BENCHMARKS_ARE_PROVISIONAL,
   CEILING, RUBRIC_VERSION, allSkills, unanchoredSkills, rubricIsReady, ageRelative, rubric,
+  SCALE_MIN, SCALE_MAX, BANDS_OF_SCALE, scaleBand, DISCIPLINES,
+  DERIVABLE_DISCIPLINES, COACH_ONLY_DISCIPLINES,
 } from "../src/rubric.mjs";
+import { ASSESSMENT_SHAPE, validateAssessment } from "../../../services/api/write/assessment-api.mjs";
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
@@ -97,17 +100,46 @@ group("E. Unknown is not average");
 ok("an unknown band answers null", ageRelative(60, "U19") === null);
 ok("a missing score answers null", ageRelative(null, "U15") === null);
 ok("a band with no benchmark answers null", ageRelative(60, "NOPE") === null);
-ok("a real pairing answers a ratio", ageRelative(66, "U16") > 0.9 && ageRelative(66, "U16") < 1.0);
+// On the 1-20 scale: the U16 benchmark is 14, so 13 is just short of par.
+ok("a real pairing answers a ratio", ageRelative(13, "U16") > 0.9 && ageRelative(13, "U16") < 1.0);
+ok("...and a player at the benchmark is exactly par", ageRelative(BENCHMARKS.U16, "U16") === 1);
+ok("...and one above it is above par", ageRelative(BENCHMARKS.U16 + 3, "U16") > 1);
 
-// ── F. The tree matches what coaches are asked to rate ───
-group("F. The tree is the one already in use");
+// ── F. The write path has no attribute list of its own ───
+//
+// It used to keep a copy, and a copy of a vocabulary is a vocabulary that
+// diverges: the write path would go on accepting an attribute the rubric had
+// renamed, store it, and nothing would ever render it. This used to be checked
+// by regexing the API source for the same words, which could only ever prove
+// the two texts looked alike. Now there is one list and the check is that
+// there is still only one.
+group("F. One attribute set, not two");
 {
-  const api = readFileSync(new URL("../../../services/api/write/assessment-api.mjs", import.meta.url).pathname, "utf8");
-  for (const [cat, metrics] of Object.entries(TREE)) {
-    ok(`${cat} is a category the write path accepts`, new RegExp(`\\b${cat}:\\s*\\[`).test(api));
-    ok(`${cat}'s metrics match the write path`,
-       metrics.every((m) => new RegExp(`"${m}"`).test(api)));
-  }
+  ok("the write path's shape IS the rubric's tree", ASSESSMENT_SHAPE === TREE);
+
+  // ...and behaviourally, which is what actually protects a coach: a made-up
+  // attribute is refused, and a real one on the old scale is too.
+  const rejects = (scores) => {
+    try { validateAssessment({ scores }); return false; } catch { return true; }
+  };
+  ok("a real attribute at a real score is accepted",
+     rejects({ technical: { footwork: 14 } }) === false);
+  ok("an invented attribute is refused",
+     rejects({ technical: { swagger: 14 } }) === true);
+  ok("an attribute filed under the wrong group is refused",
+     rejects({ physical: { footwork: 14 } }) === true);
+  ok("a group nobody defined is refused",
+     rejects({ spiritual: { footwork: 14 } }) === true);
+
+  // The scale, enforced where the data enters rather than trusted.
+  ok("0 is refused: an attribute nobody has is not a thing",
+     rejects({ technical: { footwork: 0 } }) === true);
+  ok("21 is refused", rejects({ technical: { footwork: 21 } }) === true);
+  ok("1 and 20 are both accepted",
+     rejects({ technical: { footwork: 1 } }) === false &&
+     rejects({ technical: { footwork: 20 } }) === false);
+  ok("a fraction is refused, because a coach cannot defend 13.5 against 14",
+     rejects({ technical: { footwork: 13.5 } }) === true);
 }
 
 console.log(`\n${"─".repeat(52)}\nRUBRIC SUITE: ${pass} passed, ${fail} failed`);

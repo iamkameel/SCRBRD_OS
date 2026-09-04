@@ -134,9 +134,18 @@ CREATE TABLE player_skill (
   player_id   uuid NOT NULL REFERENCES player(id) ON DELETE CASCADE,
   assessed_on date NOT NULL DEFAULT current_date,
   assessed_by uuid REFERENCES app_user(id),
-  category    text NOT NULL CHECK (category IN ('batting','bowling','fielding','fitness')),
+  -- TECHNICAL / MENTAL / PHYSICAL — the craft, the head, the body. Grouped
+  -- this way rather than by discipline because a boy whose batting has stalled
+  -- has either stopped improving technically or stopped concentrating, and
+  -- those need opposite conversations. See TREE in packages/scoring/src/rubric.mjs,
+  -- which is the one place the attribute set is decided.
+  category    text NOT NULL CHECK (category IN ('technical','mental','physical')),
   metric      text NOT NULL,
-  score       smallint NOT NULL CHECK (score BETWEEN 0 AND 100),
+  -- 1-20, the Football Manager scale: 1-5 poor, 6-10 average, 11-15 good,
+  -- 16-20 excellent. Not 0-100, which invites a precision no coach can defend
+  -- — the difference between a 63 and a 66 is noise, and noise in a
+  -- longitudinal record is indistinguishable from a player changing.
+  score       smallint NOT NULL CHECK (score BETWEEN 1 AND 20),
   note        text,
   UNIQUE (player_id, assessed_on, category, metric)
 );

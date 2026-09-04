@@ -10,3 +10,4 @@ export * from "./replay.mjs";
 export * from "./undo.mjs";
 export * from "./placement.mjs";
 export * from "./rating.mjs";
+export * from "./rubric.mjs";

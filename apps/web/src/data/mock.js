@@ -598,11 +598,27 @@ const TRAINING_SESSIONS = [
   { id:"t5", title:"U13A Development",      team:"U13A", date:dateStr(addDays(today,3)), time:"14:00", duration:90, venue:"Nets 8-9", coach:"c4", attendance:["p14","p15","p16","p17","p18"], type:"technical", drills:["Basic technique","Catching","Fun games"], notes:"Developmental focus. Keep it fun." },
 ];
 
+// Demonstration assessments on the 1-20 scale, grouped technical / mental /
+// physical. Partial by design: these are attributes a coach actually watched,
+// not a complete 33-attribute sweep, which is what a real term's assessments
+// look like.
 const SKILLS_MATRIX = {
-  p1: { batting:{technique:85,power:78,footwork:82,running:79,temperament:88}, bowling:{accuracy:42,line:38,variations:35,pace:40,stamina:44}, fielding:{catching:80,groundwork:75,throwing:72,positioning:76}, fitness:{speed:78,agility:80,endurance:74,strength:72} },
-  p2: { batting:{technique:52,power:48,footwork:50,running:55,temperament:51}, bowling:{accuracy:84,line:88,variations:76,pace:82,stamina:86}, fielding:{catching:78,groundwork:82,throwing:85,positioning:80}, fitness:{speed:82,agility:78,endurance:85,strength:80} },
-  p3: { batting:{technique:74,power:82,footwork:71,running:80,temperament:75}, bowling:{accuracy:70,line:72,variations:65,pace:78,stamina:75}, fielding:{catching:85,groundwork:82,throwing:88,positioning:84}, fitness:{speed:85,agility:86,endurance:82,strength:80} },
-  p9: { batting:{technique:80,power:74,footwork:78,running:82,temperament:85}, bowling:{accuracy:40,line:38,variations:32,pace:36,stamina:42}, fielding:{catching:72,groundwork:70,throwing:68,positioning:74}, fitness:{speed:76,agility:74,endurance:72,strength:68} },
+  // A batter who cannot bowl, and knows the game.
+  p1: { technical:{footwork:17,timing:16,power:15,shotRange:16,defence:16,againstPace:15,againstSpin:14,lineAndLength:8,catching:15,groundFielding:14,throwing:13},
+        mental:{concentration:17,composure:16,decisions:15,anticipation:14,determination:17,bravery:15,leadership:14,teamwork:16,workRate:15,gameAwareness:15},
+        physical:{pace:14,acceleration:14,agility:15,balance:16,stamina:14,strength:13,naturalFitness:15,bowlingPace:6} },
+  // A seamer. The mirror image.
+  p2: { technical:{footwork:10,timing:9,power:9,defence:11,lineAndLength:17,seamAndSwing:16,variations:14,catching:14,groundFielding:16,throwing:17},
+        mental:{concentration:16,composure:14,decisions:13,anticipation:14,determination:17,bravery:13,leadership:11,teamwork:15,workRate:17,gameAwareness:14},
+        physical:{pace:16,acceleration:15,agility:15,balance:14,stamina:17,strength:16,naturalFitness:16,bowlingPace:16} },
+  // An all-rounder, and the school's best fielder.
+  p3: { technical:{footwork:14,timing:15,power:16,shotRange:14,defence:13,againstPace:14,againstSpin:13,lineAndLength:14,seamAndSwing:13,variations:12,catching:17,groundFielding:17,throwing:18},
+        mental:{concentration:14,composure:15,decisions:14,anticipation:16,determination:16,bravery:16,leadership:15,teamwork:17,workRate:16,gameAwareness:15},
+        physical:{pace:17,acceleration:17,agility:17,balance:16,stamina:16,strength:15,naturalFitness:16,bowlingPace:14} },
+  // A wicketkeeper-batter, still developing.
+  p9: { technical:{footwork:15,timing:14,power:12,shotRange:13,defence:15,againstPace:13,againstSpin:15,glovework:16,catching:16,groundFielding:13,throwing:12},
+        mental:{concentration:18,composure:15,decisions:13,anticipation:16,determination:15,bravery:14,leadership:12,teamwork:15,workRate:14,gameAwareness:14},
+        physical:{pace:13,acceleration:14,agility:16,balance:16,stamina:13,strength:11,naturalFitness:14,bowlingPace:4} },
 };
 
 const NOTIFICATIONS = [

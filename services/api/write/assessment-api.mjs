@@ -2,7 +2,7 @@
  * SCRBRD — recording a coach's assessment.
  *
  * The half of a player's rating that a ball log cannot produce. A coach rates
- * technique, temperament, footwork and the rest; the performance index in
+ * footwork, composure, natural fitness and the rest; the performance index in
  * packages/scoring/src/rating.mjs handles what the log does say, and the two
  * are kept apart on purpose.
  *
@@ -20,14 +20,18 @@
  * with no author is not a judgement anybody can stand behind.
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
+import { TREE, SCALE_MIN, SCALE_MAX } from "@scrbrd/scoring";
 
-/** Categories and the metrics each may carry. */
-export const ASSESSMENT_SHAPE = Object.freeze({
-  batting:  ["technique", "power", "footwork", "running", "temperament"],
-  bowling:  ["accuracy", "line", "variations", "pace", "stamina"],
-  fielding: ["catching", "groundwork", "throwing", "positioning"],
-  fitness:  ["speed", "agility", "endurance", "strength"],
-});
+/**
+ * Groups and the attributes each may carry — TAKEN FROM THE RUBRIC, not
+ * restated here.
+ *
+ * It used to be a copy, and a copy of a vocabulary is a vocabulary that
+ * diverges: the write path would accept an attribute the rubric had renamed,
+ * store it, and nothing would render it. The rubric is the one place the
+ * attribute set is decided.
+ */
+export const ASSESSMENT_SHAPE = TREE;
 
 const err = (code, status = 400) => Object.assign(new Error(code), { status });
 
@@ -51,8 +55,11 @@ export function validateAssessment(body) {
     if (!metrics || typeof metrics !== "object") throw err(`bad_category:${category}`);
     for (const [metric, raw] of Object.entries(metrics)) {
       if (!allowed.includes(metric)) throw err(`unknown_metric:${category}.${metric}`);
+      // 1-20, integers. Not 0: an attribute nobody has is not a thing, and
+      // not fractional: a coach who cannot defend 13 against 14 certainly
+      // cannot defend 13.5.
       const score = Number(raw);
-      if (!Number.isInteger(score) || score < 0 || score > 100)
+      if (!Number.isInteger(score) || score < SCALE_MIN || score > SCALE_MAX)
         throw err(`bad_score:${category}.${metric}`);
       rows.push({ category, metric, score });
     }
@@ -100,7 +107,7 @@ export async function recordAssessment(pool, secret, bearer, playerId, body) {
 
 export function assessmentRoutes({ pool, secret }) {
   return {
-    // POST /players/:id/assessment { assessedOn?, note?, scores: { batting: { technique: 80, … } } }
+    // POST /players/:id/assessment { assessedOn?, note?, scores: { technical: { footwork: 14, … } } }
     record: async (req, res) => {
       try {
         res.json(await recordAssessment(

@@ -137,10 +137,16 @@ try {
      !after.some((i) => i.player_id === P_MATE));
   ok("NOT a U16B player either",
      !after.some((i) => i.player_id === P_U16B));
-  ok("NOT the ability to assess them",
-     (await api(`/api/players/${P_FIRST}/assessment`, {
-       method: "POST", token: second,
-       body: { scores: { batting: { technique: 90 } } } })).status === 403);
+  // A WELL-FORMED assessment, deliberately. The body has to be valid on the
+  // current vocabulary or the request is refused at 400 for being malformed
+  // and the assertion passes without authorisation ever being consulted —
+  // which is precisely what happened when the attribute set changed under it.
+  const denied = await api(`/api/players/${P_FIRST}/assessment`, {
+    method: "POST", token: second,
+    body: { scores: { technical: { footwork: 14 } } } });
+  ok("NOT the ability to assess them", denied.status === 403);
+  ok("...refused on authority rather than on shape",
+     denied.body?.error === "not_permitted");
 
   group("Deciding twice, and deciding what is not yours");
   ok("the same request cannot be granted again",
