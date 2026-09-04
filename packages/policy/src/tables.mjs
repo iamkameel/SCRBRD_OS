@@ -20,6 +20,28 @@
  * the application choosing which view to read.
  */
 
+/**
+ * A NOTE ON DERIVED ANCHORS, because it is load-bearing and not obvious.
+ *
+ * Several tables here resolve a scope anchor through a subquery — an injury's
+ * team comes from `(SELECT p.team_code FROM player p WHERE p.id = …)`, and a
+ * skill assessment's school likewise. Those subqueries run inside a row-level
+ * policy, and they are THEMSELVES subject to row-level security on the table
+ * they read.
+ *
+ * So when the caller cannot read the anchor's source row, the subquery yields
+ * NULL — and a NULL on a resource narrows. The effect is defence in depth that
+ * fails closed: a U19A coach is kept out of a U16B player's assessment twice
+ * over, once because the team anchor does not match and once because they
+ * cannot read the player row the anchor is derived from, so it never resolves
+ * at all.
+ *
+ * Worth knowing when reading a falsification that does not fail. Widening the
+ * team anchor on player_skill alone leaves the refusal intact, because the
+ * player policy is still making the anchor NULL; both have to be widened
+ * before the write goes through. That is the correct behaviour and a confusing
+ * afternoon if you do not expect it.
+ */
 export const TABLES = {
   // ── Tenancy and directory ────────────────────────────────────────────
   school: {

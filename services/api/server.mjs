@@ -20,6 +20,7 @@
  *   POST /api/matches/:id/session/handover/verify confirm the score, then take over
  *   POST /api/matches/:id/session/force-release   recover a dead device (supervisory)
  *   POST /api/matches/:id/events                  append balls (the write path)
+ *   POST /api/players/:id/assessment              record a coach's skill assessment
  *   GET  /api/matches/:id/events?since=           incremental sync
  *   POST /api/ai/statguru, /api/ai/commentary
  *
@@ -33,6 +34,7 @@ import { sessionProfile, runAsPrincipal } from "./auth/auth-db.mjs";
 import { signToken, AuthError } from "./auth/auth.mjs";
 import { readRoute, liveResources } from "./read/read-api.mjs";
 import { eventRoutes } from "./write/events-api.mjs";
+import { assessmentRoutes } from "./write/assessment-api.mjs";
 import { sessionRoutes } from "./realtime/session-routes.mjs";
 import { MatchHub } from "./realtime/realtime.mjs";
 
@@ -139,6 +141,7 @@ async function readJson(req) {
 const events  = eventRoutes({ pool, secret: SECRET });
 const session = sessionRoutes({ pool, secret: SECRET, hub });
 const read    = readRoute({ pool, secret: SECRET });
+const assess  = assessmentRoutes({ pool, secret: SECRET });
 
 /**
  * Development sign-in.
@@ -184,6 +187,11 @@ const MATCH_ROUTES = [
   [/^\/api\/matches\/([^/]+)\/events$/,             "GET",  events.list],
 ];
 
+// Routes keyed on a player rather than a match. Same shape, same shim.
+const PLAYER_ROUTES = [
+  [/^\/api\/players\/([^/]+)\/assessment$/, "POST", assess.record],
+];
+
 const server = createServer(async (req, res) => {
   if (req.method === "OPTIONS") return json(res, 204, {});
 
@@ -217,7 +225,7 @@ const server = createServer(async (req, res) => {
       }, shimmed);
     }
 
-    for (const [pattern, method, handler] of MATCH_ROUTES) {
+    for (const [pattern, method, handler] of [...MATCH_ROUTES, ...PLAYER_ROUTES]) {
       const m = req.method === method && pattern.exec(path);
       if (!m) continue;
       const body = req.method === "POST" ? await readJson(req) : {};
