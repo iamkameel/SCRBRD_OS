@@ -265,7 +265,36 @@ const ADAPT = {
   injuries: asInjury,
   skills: asSkill,
   career: asCareer,
+  ratings: asRating,
 };
+
+/**
+ * A rating, already composed by the server.
+ *
+ * The arithmetic is NOT repeated here. The shrinkage, the anchor tables and the
+ * sample floors live in packages/scoring/src/rating.mjs and are applied once,
+ * in the read API, so every reader of a rating sees the same number. This
+ * adapter only renames fields into the shape the screens read.
+ *
+ * The COACH'S OWN NUMBER and the DRIFT are carried through deliberately. A
+ * screen that shows only the adjusted figure cannot answer the question a coach
+ * asks first, which is what moved it.
+ */
+function asRating(r) {
+  const side = (d) => ({
+    value: d.value, coach: d.coach, performance: d.performance,
+    drift: d.drift, basis: d.basis, sample: d.sample,
+    weight: d.performanceWeight, attributes: d.attributes,
+    anchoredOn: d.anchoredOn ? String(d.anchoredOn).slice(0, 10) : null,
+    explanation: d.explanation,
+    confidence: d.index?.confidence ?? "none",
+    why: d.index?.reason ?? null,
+  });
+  return {
+    id: r.player_id, name: r.full_name, team: r.team_code, school: r.school_id,
+    batting: side(r.batting), bowling: side(r.bowling),
+  };
+}
 
 /** Resources the client knows how to read live. Used by the wiring tests. */
 export function liveResources() { return Object.keys(ADAPT); }
@@ -385,6 +414,21 @@ export function usePlayersWithCareer(role) {
 }
 
 /** The common case: just the rows. Views that need the state use useLive(). */
+/**
+ * Ratings, keyed by player id so a screen can look one up beside a squad row.
+ *
+ * There is no mock fallback and no demo derivation: a rating is a coach's
+ * judgement about a named child combined with that child's match record, and
+ * inventing either half for a signed-out demo would put a fabricated number
+ * next to a real name. Signed out, this is empty and the screens say so.
+ */
+export function useRatings(role) {
+  const { rows, live, loading, error } = useLive("ratings", role);
+  const byPlayer = {};
+  for (const r of rows) byPlayer[r.id] = r;
+  return { ratings: byPlayer, live, loading, error };
+}
+
 export function useRows(resource, role) { return useLive(resource, role).rows; }
 
 /**

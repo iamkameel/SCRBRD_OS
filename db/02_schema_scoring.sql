@@ -593,3 +593,104 @@ WHERE b.kind = 'ball' AND b.ball_type = 'W'
   AND coalesce(b.dismissed_id, b.striker_id) IS NOT NULL
 GROUP BY coalesce(b.dismissed_id, b.striker_id);
 
+
+-- ══════════════════════════════════════════════════════════════════
+--  The same fold, windowed: career figures SINCE a date
+-- ══════════════════════════════════════════════════════════════════
+--
+-- A coach's assessment is an ANCHOR and match evidence moves the rating away
+-- from it (adjustedRating in packages/scoring/src/rating.mjs). The evidence
+-- that may legitimately move it is what has happened SINCE the coach last
+-- looked: a judgement made in September already contains everything its author
+-- saw before September, and feeding three seasons of old cricket back in
+-- dilutes the fresh judgement they just made.
+--
+-- Lifetime totals cannot answer that, so these functions can — and the
+-- conventions about what counts as a run and what counts as a ball faced are
+-- NOT restated here. They live in these functions, and the lifetime views
+-- below are redefined to call them with no window at all. One definition, two
+-- questions asked of it. The alternative was a second copy of the same CASE
+-- expressions, and this codebase has already shipped a bug where two folds over
+-- the same log disagreed about a voided ball.
+--
+-- SECURITY INVOKER (the default, stated by omission): they read
+-- ball_event_live, whose policies must apply to the caller exactly as they do
+-- through the views. A SECURITY DEFINER here would hand any caller the career
+-- figures of every child in the country.
+--
+-- p_from NULL means "no window", which is what makes one definition serve both.
+CREATE OR REPLACE FUNCTION player_batting_since(p_player uuid, p_from timestamptz)
+RETURNS TABLE (matches bigint, runs bigint, balls_faced bigint, fours bigint,
+               sixes bigint, last_ball_at timestamptz) AS $$
+  SELECT
+    count(DISTINCT b.match_id),
+    -- Runs off the bat. A wide scores nothing to the batter; the one-run
+    -- penalty on a wide or no-ball is the team's, not theirs; byes and leg byes
+    -- are runs the batter did not make.
+    coalesce(sum(CASE WHEN b.ball_type IN ('run','W','Nb')
+                      THEN coalesce(b.value,0) ELSE 0 END), 0),
+    -- Balls faced. A no-ball IS faced even though it is not a legal delivery;
+    -- a wide is not. Byes and leg byes are faced.
+    coalesce(sum(CASE WHEN b.ball_type <> 'Wd' THEN 1 ELSE 0 END), 0),
+    coalesce(sum(CASE WHEN b.ball_type IN ('run','Nb') AND b.value = 4 THEN 1 ELSE 0 END), 0),
+    coalesce(sum(CASE WHEN b.ball_type IN ('run','Nb') AND b.value = 6 THEN 1 ELSE 0 END), 0),
+    max(b.server_ts)
+  FROM ball_event_live b
+  WHERE b.kind = 'ball'
+    AND b.striker_id = p_player
+    AND (p_from IS NULL OR b.server_ts >= p_from)
+$$ LANGUAGE sql STABLE;
+
+CREATE OR REPLACE FUNCTION player_bowling_since(p_player uuid, p_from timestamptz)
+RETURNS TABLE (matches bigint, runs_conceded bigint, legal_balls bigint,
+               wides bigint, no_balls bigint, wickets bigint) AS $$
+  SELECT
+    count(DISTINCT b.match_id),
+    -- Charged to the bowler: runs off the bat, plus the penalty and any runs
+    -- run off a wide or no-ball. Byes and leg byes are NOT charged.
+    coalesce(sum(CASE WHEN b.ball_type IN ('Wd','Nb') THEN 1 + coalesce(b.value,0)
+                      WHEN b.ball_type IN ('run','W')  THEN coalesce(b.value,0)
+                      ELSE 0 END), 0),
+    coalesce(sum(CASE WHEN b.ball_type NOT IN ('Wd','Nb') THEN 1 ELSE 0 END), 0),
+    coalesce(sum(CASE WHEN b.ball_type = 'Wd' THEN 1 ELSE 0 END), 0),
+    coalesce(sum(CASE WHEN b.ball_type = 'Nb' THEN 1 ELSE 0 END), 0),
+    -- A run out is not the bowler's, which is why the dismissal text is
+    -- inspected rather than counting every 'W'.
+    coalesce(sum(CASE WHEN b.ball_type = 'W'
+                       AND coalesce(b.dismissal,'') !~* 'run ?out'
+                      THEN 1 ELSE 0 END), 0)
+  FROM ball_event_live b
+  WHERE b.kind = 'ball'
+    AND b.bowler_id = p_player
+    AND (p_from IS NULL OR b.server_ts >= p_from)
+$$ LANGUAGE sql STABLE;
+
+-- The player who is OUT is not always the striker: a run out at the
+-- non-striker's end dismisses the other batter, and `dismissed` names them.
+CREATE OR REPLACE FUNCTION player_dismissals_since(p_player uuid, p_from timestamptz)
+RETURNS bigint AS $$
+  SELECT count(*)
+    FROM ball_event_live b
+   WHERE b.kind = 'ball' AND b.ball_type = 'W'
+     AND coalesce(b.dismissed_id, b.striker_id) = p_player
+     AND (p_from IS NULL OR b.server_ts >= p_from)
+$$ LANGUAGE sql STABLE;
+
+-- The lifetime views, REDEFINED over the windowed functions with no window.
+-- `matches > 0` reproduces exactly the row set the GROUP BY produced: a row
+-- exists for a player who appears in the log and for nobody else.
+CREATE OR REPLACE VIEW player_batting_career WITH (security_invoker = true) AS
+SELECT p.id AS player_id, c.matches, c.runs, c.balls_faced, c.fours, c.sixes, c.last_ball_at
+  FROM player p CROSS JOIN LATERAL player_batting_since(p.id, NULL) c
+ WHERE c.matches > 0;
+
+CREATE OR REPLACE VIEW player_bowling_career WITH (security_invoker = true) AS
+SELECT p.id AS player_id, c.matches, c.runs_conceded, c.legal_balls,
+       c.wides, c.no_balls, c.wickets
+  FROM player p CROSS JOIN LATERAL player_bowling_since(p.id, NULL) c
+ WHERE c.matches > 0;
+
+CREATE OR REPLACE VIEW player_dismissals WITH (security_invoker = true) AS
+SELECT p.id AS player_id, player_dismissals_since(p.id, NULL) AS dismissals
+  FROM player p
+ WHERE player_dismissals_since(p.id, NULL) > 0;

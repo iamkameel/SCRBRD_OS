@@ -10,6 +10,9 @@
  * Rule: PII/clinical resources MUST read the *_masked views, never base tables.
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
+import {
+  DISCIPLINES, battingIndex, bowlingIndex, coachIndex, adjustedRating,
+} from "@scrbrd/scoring";
 
 // resource → query. `masked: true` documents (and lets tests assert) that the
 // query reads a masking view. `params` maps request query → SQL params.
@@ -184,6 +187,76 @@ export const READ_QUERIES = {
             order by s.assessed_on desc, p.full_name`,
   },
 
+  /**
+   * The rating: what the coach said, what the log says, and the gap.
+   *
+   * TWO PARAMETERS, AND THEY COME FROM THE RUBRIC. $1 and $2 are the attribute
+   * lists the batting and bowling disciplines draw on, passed in from
+   * DISCIPLINES rather than written here. A copy of that mapping in SQL is a
+   * copy that goes stale the first time an attribute is renamed, and the
+   * symptom would be a coach index quietly averaging fewer attributes than it
+   * claims to.
+   *
+   * THE ANCHOR DATE IS PER DISCIPLINE, not per player. A coach who re-rates
+   * someone's bowling in September has not re-rated their batting, and treating
+   * the later date as the anchor for both would throw away every ball faced
+   * since the batting assessment actually happened.
+   *
+   * `distinct on (category, metric) … order by assessed_on desc` takes the
+   * LATEST score for each attribute, so an assessment that only covered four
+   * attributes revises those four and leaves the rest standing.
+   *
+   * A NULL anchor — nobody has assessed this discipline — makes the window
+   * NULL, which player_batting_since() reads as no window at all. That is the
+   * right answer rather than a special case: with no judgement to anchor on,
+   * the rating is the performance index over everything on record.
+   */
+  ratings: {
+    text: `select p.id as player_id, p.full_name, p.team_code, p.school_id,
+                  bat_a.anchor        as batting_anchor,
+                  bat_a.scores        as batting_scores,
+                  coalesce(bs.runs, 0)         as runs,
+                  coalesce(bs.balls_faced, 0)  as balls_faced,
+                  coalesce(bd.dismissals, 0)   as dismissals,
+                  bowl_a.anchor       as bowling_anchor,
+                  bowl_a.scores       as bowling_scores,
+                  coalesce(ws.runs_conceded, 0) as runs_conceded,
+                  coalesce(ws.legal_balls, 0)   as balls_bowled,
+                  coalesce(ws.wickets, 0)       as wickets
+             from player p
+             left join lateral (
+               select max(x.assessed_on) as anchor,
+                      jsonb_object_agg(x.category || '.' || x.metric, x.score) as scores
+                 from (select distinct on (s.category, s.metric)
+                              s.category, s.metric, s.score, s.assessed_on
+                         from player_skill s
+                        where s.player_id = p.id
+                          and (s.category || '.' || s.metric) = any($1::text[])
+                        order by s.category, s.metric, s.assessed_on desc) x
+             ) bat_a on true
+             left join lateral (
+               select max(x.assessed_on) as anchor,
+                      jsonb_object_agg(x.category || '.' || x.metric, x.score) as scores
+                 from (select distinct on (s.category, s.metric)
+                              s.category, s.metric, s.score, s.assessed_on
+                         from player_skill s
+                        where s.player_id = p.id
+                          and (s.category || '.' || s.metric) = any($2::text[])
+                        order by s.category, s.metric, s.assessed_on desc) x
+             ) bowl_a on true
+             -- Evidence since the coach last looked. A date cast to timestamptz
+             -- is midnight, so a match on the afternoon of the assessment day
+             -- counts towards it — which is the right way round: the coach
+             -- rated him in the nets that morning.
+             left join lateral player_batting_since(p.id, bat_a.anchor::timestamptz) bs on true
+             left join lateral (select player_dismissals_since(p.id, bat_a.anchor::timestamptz)
+                                  as dismissals) bd on true
+             left join lateral player_bowling_since(p.id, bowl_a.anchor::timestamptz) ws on true
+            order by p.full_name`,
+    params: () => [DISCIPLINES.batting, DISCIPLINES.bowling],
+    compose: composeRatings,
+  },
+
   // Notices. The read policy demands news.read AND the capability each row
   // declares for its own subject matter, in the same scope — so this query
   // needs no filter of its own beyond ordering, and MUST NOT grow one that
@@ -338,6 +411,54 @@ export const READ_QUERIES = {
   },
 };
 
+/**
+ * Turn one ratings row into two ratings, and their working.
+ *
+ * COMPOSED HERE RATHER THAN IN SQL, deliberately. The shrinkage, the anchor
+ * tables and the sample floors are one implementation in
+ * packages/scoring/src/rating.mjs, tested there and shared with anything else
+ * that ever needs them. A second copy in SQL would be a second answer to "what
+ * is this boy's rating", and the two would disagree the first time either was
+ * tuned — which is the bug this codebase has already shipped once, over a
+ * voided ball, in two folds of the same log.
+ *
+ * SQL supplies facts; this supplies judgement about them.
+ *
+ * `sample` is the deliveries BEHIND the index, and it is the same window the
+ * index was computed over — balls faced since the batting anchor, balls bowled
+ * since the bowling one. Passing lifetime balls against a windowed index would
+ * overstate the confidence in evidence that is not there.
+ */
+function composeRatings(rows) {
+  return rows.map((r) => {
+    const batPerf = battingIndex({
+      runs: Number(r.runs), ballsFaced: Number(r.balls_faced), dismissals: Number(r.dismissals),
+    });
+    const bowlPerf = bowlingIndex({
+      runsConceded: Number(r.runs_conceded), ballsBowled: Number(r.balls_bowled),
+      wickets: Number(r.wickets),
+    });
+    const batCoach = coachIndex(r.batting_scores ?? {});
+    const bowlCoach = coachIndex(r.bowling_scores ?? {});
+    return {
+      player_id: r.player_id, full_name: r.full_name,
+      team_code: r.team_code, school_id: r.school_id,
+      batting: {
+        anchoredOn: r.batting_anchor, attributes: batCoach.metrics,
+        ...adjustedRating({ coach: batCoach.value, performance: batPerf.value,
+                            sample: Number(r.balls_faced) }),
+        index: batPerf,
+      },
+      bowling: {
+        anchoredOn: r.bowling_anchor, attributes: bowlCoach.metrics,
+        ...adjustedRating({ coach: bowlCoach.value, performance: bowlPerf.value,
+                            sample: Number(r.balls_bowled) }),
+        index: bowlPerf,
+      },
+    };
+  });
+}
+
 function req(q, key) {
   const v = q?.[key];
   if (v === undefined || v === null || v === "") { const e = new Error(`missing_param:${key}`); e.status = 400; throw e; }
@@ -369,10 +490,20 @@ export const RESTRICTED_FIELDS = Object.freeze({
   career:   [],
   skills:   ["score"],
   users:    ["email"],
+  // Dotted, because a rating is nested. What is disclosed here is a named
+  // coach's judgement of a named child and the number it has moved to — which
+  // is the development record, and as restricted as the assessment it is
+  // derived from.
+  ratings:  ["batting.coach", "batting.value", "bowling.coach", "bowling.value"],
 });
 
+/** Read a possibly-dotted path off a row. Flat names behave exactly as before. */
+const pick = (row, path) =>
+  path.split(".").reduce((v, k) => (v == null ? v : v[k]), row);
+
 /** Which id column identifies the CHILD a row is about, for the log. */
-const SUBJECT_ID = { players: "id", injuries: "player_id", skills: "player_id", users: "id" };
+const SUBJECT_ID = { players: "id", injuries: "player_id", skills: "player_id",
+                     users: "id", ratings: "player_id" };
 
 /** At most this many ids per entry. A log row is evidence, not a data export. */
 const MAX_LOGGED_IDS = 500;
@@ -386,7 +517,8 @@ export async function readResource(pool, secret, bearer, resource, query = {}) {
   if (!def) { const e = new Error("unknown_resource"); e.status = 404; throw e; }
   const params = def.params ? def.params(query) : [];
   return runAsPrincipal(pool, secret, bearer, async client => {
-    const { rows } = await client.query(def.text, params);
+    const { rows: raw } = await client.query(def.text, params);
+    const rows = def.compose ? def.compose(raw) : raw;
 
     // Log what was ACTUALLY RECEIVED, not what was asked for. Masking is per
     // row and per capability, so two people running this same query get
@@ -394,7 +526,7 @@ export async function readResource(pool, secret, bearer, resource, query = {}) {
     // that never happened for one of them.
     const watched = RESTRICTED_FIELDS[resource];
     if (watched?.length && rows.length) {
-      const disclosed = watched.filter((f) => rows.some((r) => r[f] != null));
+      const disclosed = watched.filter((f) => rows.some((r) => pick(r, f) != null));
       if (disclosed.length) {
         const idCol = SUBJECT_ID[resource];
         const ids = idCol

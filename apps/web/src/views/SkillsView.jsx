@@ -3,7 +3,7 @@ import { useState } from "react";
 import { D } from "../design/tokens.js";
 import { fitnessColor } from "../lib/format.js";
 import { Avatar, Badge, Btn, Card, EmptyState, RadarChart, SectionHeader } from "../ui/primitives.jsx";
-import { useLive, useSkills } from "../lib/live.js";
+import { useLive, useRatings, useSkills } from "../lib/live.js";
 
 // ══════════════════════════════════════════════════════
 //  SKILLS MATRIX VIEW
@@ -13,12 +13,23 @@ function SkillsView({ role }) {
   // principal. Importing the raw constant here would bypass both.
   const { rows: PLAYERS, loading, error } = useLive("players", role);
   const SKILLS_MATRIX = useSkills(role);
+  // The rating: the coach's anchor, the ball log's answer, and the gap. Read
+  // separately because it is a different question from "what did the coach say"
+  // — it is that answer argued with.
+  const { ratings } = useRatings(role);
   // The selected PLAYER ID, not the player row — see FieldsView for the same
   // change and the same reason: a row captured at first render belongs to a
   // list that no longer exists once the server answers.
   const [selId, setSelId]         = useState(null);
   const [category, setCategory]   = useState("technical");
-  const selPlayer = PLAYERS.find(p => p.id === selId) ?? PLAYERS[0];
+  // Default to the first player who HAS an assessment, not the first player.
+  // The list on the left is filtered to assessed players; defaulting to
+  // PLAYERS[0] meant the screen opened on somebody who is not in that list and
+  // greeted every coach with "no assessment available" while assessed players
+  // sat beside it. Falls back to the first player when nobody is assessed,
+  // which is the state the empty message is actually for.
+  const assessed = PLAYERS.filter(p => SKILLS_MATRIX[p.id]);
+  const selPlayer = PLAYERS.find(p => p.id === selId) ?? assessed[0] ?? PLAYERS[0];
   const skills = selPlayer ? SKILLS_MATRIX[selPlayer.id] : null;
   const canEdit = role==="superadmin"||role==="coach";
   const cats = skills ? Object.keys(skills) : [];
@@ -30,6 +41,8 @@ function SkillsView({ role }) {
   // packages/scoring/src/rubric.mjs.
   const progressColorForScore = v => v>=16?D.emerald:v>=11?D.sky:v>=6?D.amber:D.rose;
   const SCALE_MAX = 20;
+  const BATTING_OR_BOWLING = ["batting", "bowling"];
+  const rating = selPlayer ? ratings[selPlayer.id] : null;
 
   if (!selPlayer) return (
     <div className="os-page">
@@ -49,7 +62,7 @@ function SkillsView({ role }) {
             <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em"}}>SELECT PLAYER</div>
           </div>
           <div style={{maxHeight:"calc(100vh - 200px)",overflowY:"auto"}}>
-            {PLAYERS.filter(p=>SKILLS_MATRIX[p.id]).map(p=>{
+            {assessed.map(p=>{
               const s=SKILLS_MATRIX[p.id];
               const overall=Math.round(Object.values(s).flatMap(c=>Object.values(c)).reduce((a,b)=>a+b,0)/Object.values(s).flatMap(c=>Object.values(c)).length);
               return (
@@ -103,6 +116,60 @@ function SkillsView({ role }) {
               )}
             </div>
           </Card>
+
+          {/* ── The rating: what was said, what the log says, the gap ──
+              Both halves are always shown. A single adjusted number cannot
+              answer the question a coach asks first, in front of a parent,
+              which is what moved it. */}
+          {rating&&(BATTING_OR_BOWLING.some(d=>rating[d]?.value!=null))&&(
+            <Card sx={{padding:"16px",marginBottom:"14px"}}>
+              <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"12px"}}>RATING</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:"14px"}}>
+                {BATTING_OR_BOWLING.filter(d=>rating[d]?.value!=null).map(d=>{
+                  const r=rating[d];
+                  const drift=r.drift;
+                  const driftColor=drift==null||drift===0?D.textMuted:drift>0?D.emerald:D.rose;
+                  return (
+                    <div key={d} style={{border:`1px solid ${D.border}`,borderRadius:D.md,padding:"12px"}}>
+                      <div style={{display:"flex",alignItems:"baseline",gap:"8px",marginBottom:"8px"}}>
+                        <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,textTransform:"capitalize"}}>{d}</div>
+                        <div style={{fontFamily:D.mono,fontSize:"22px",fontWeight:700,color:progressColorForScore(r.value)}}>{r.value}</div>
+                        <div style={{fontFamily:D.mono,fontSize:"11px",color:D.textMuted}}>/ {SCALE_MAX}</div>
+                        {drift!=null&&drift!==0&&(
+                          <div style={{fontFamily:D.mono,fontSize:"12px",fontWeight:600,color:driftColor}}>
+                            {drift>0?"▲":"▼"}{Math.abs(drift)}
+                          </div>
+                        )}
+                      </div>
+                      <div style={{display:"flex",gap:"14px",marginBottom:"8px"}}>
+                        <div>
+                          <div style={{fontFamily:D.mono,fontSize:"13px",fontWeight:600,color:D.textSecondary}}>{r.coach??"—"}</div>
+                          <div style={{fontFamily:D.body,fontSize:"9px",color:D.textMuted}}>COACH</div>
+                        </div>
+                        <div>
+                          <div style={{fontFamily:D.mono,fontSize:"13px",fontWeight:600,color:D.textSecondary}}>{r.performance??"—"}</div>
+                          <div style={{fontFamily:D.body,fontSize:"9px",color:D.textMuted}}>MATCH DATA</div>
+                        </div>
+                        <div>
+                          <div style={{fontFamily:D.mono,fontSize:"13px",fontWeight:600,color:D.textSecondary}}>{r.sample||0}</div>
+                          <div style={{fontFamily:D.body,fontSize:"9px",color:D.textMuted}}>DELIVERIES</div>
+                        </div>
+                      </div>
+                      {/* Said in words as well as numbers. The explanation is
+                          composed on the server so every reader is told the
+                          same thing. */}
+                      <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,lineHeight:1.45}}>{r.explanation}</div>
+                      {r.anchoredOn&&(
+                        <div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted,marginTop:"6px"}}>
+                          ANCHORED {r.anchoredOn} · {r.attributes} ATTRIBUTE{r.attributes===1?"":"S"}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
+          )}
 
           {skills?(
             <>

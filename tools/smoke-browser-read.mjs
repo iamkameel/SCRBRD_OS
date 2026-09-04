@@ -180,6 +180,27 @@ try {
   }
 
   // ── Nothing threw ───────────────────────────────────────────────
+  // ── The rating, in a browser ────────────────────────────────────
+  //
+  // The last mile. The rating is composed on the server from a coach's
+  // assessment and the child's own ball log, and until this assertion existed
+  // the whole model was reachable only by curl. A number nobody can open is a
+  // number nobody will correct.
+  group("A coach can open a rating and see what moved it");
+  if (await nav(coach.page, /Skills/)) {
+    const skillsText = await text(coach.page);
+    if (DEBUG) console.log("[debug] skills:\n" + skillsText.slice(0, 900));
+    ok("the skills screen shows the rating block", /RATING/.test(skillsText));
+    // Both halves, always. A single adjusted number cannot answer the question
+    // a coach asks first, which is what moved it.
+    ok("...naming the coach's own number", /COACH/.test(skillsText));
+    ok("...and the match data beside it", /MATCH DATA/.test(skillsText));
+    ok("...and how many deliveries it rests on", /DELIVERIES/.test(skillsText));
+    ok("...and it is on the 1-20 scale, not 0-100", /\/\s*20/.test(skillsText));
+  } else {
+    ok("the skills screen is reachable for a coach", false);
+  }
+
   group("The screens render without errors");
   for (const [who, s] of [["coach", coach], ["guardian", parent], ["spectator", watcher], ["medic", medic]]) {
     ok(`${who}: no uncaught error${s.errors.length ? ` — ${s.errors[0].slice(0, 140)}` : ""}`,
