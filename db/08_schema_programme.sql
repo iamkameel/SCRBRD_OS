@@ -301,125 +301,100 @@ CREATE TRIGGER match_squad_is_age_eligible
   BEFORE INSERT OR UPDATE ON match_squad
   FOR EACH ROW EXECUTE FUNCTION match_squad_age_eligible();
 
--- ── A boy about to age up, and the coaches who should know ──────
+-- ── A boy about to age up ───────────────────────────────────────
 --
 -- A thirteen-year-old in the U13A side who turns fourteen before the next
 -- cut-off is a U14 player next season. Under the 1 January rule he stays
--- eligible for the whole of THIS one — which is exactly why the notice has to
--- go out ahead of the birthday. By the time he is ineligible, the U14 trials
+-- eligible for the whole of THIS one — which is exactly why the U14 coaches
+-- need to know ahead of the birthday. By the time he is ineligible, the trials
 -- have happened and he has missed them.
 --
--- WHO IS TOLD: the coaches of the side he should be trialled for, which is the
--- next band up AT THE SAME MERIT LEVEL. A U13A player is not a U14 player in
--- general; he is one of the best thirteen-year-olds at the school, and sending
--- him to the U14C because that is where a space happens to be is how a good
--- player is lost. The division letter is preserved.
+-- A VIEW, NOT A SCHEDULED JOB
+-- ──────────────────────────
+-- The first version of this published notification rows from a function
+-- something was expected to call every morning. That was the wrong shape, and
+-- wrong in the way this codebase is most careful about elsewhere: the live
+-- score is not a column, career figures are not columns, the ladder is not a
+-- column. Materialising a fact that can be derived is how the two drift.
+--
+-- "Who is ageing up in the next thirty days" is arithmetic on a date that was
+-- always there. As a view it is always current, cannot be missed, cannot fire
+-- twice, needs no idempotency guard — the guard the job needed existed only
+-- because the job could re-run — and cannot disagree with the data, because it
+-- IS the data.
+--
+-- An injury alert is genuinely different and stays an event: an injury HAPPENS
+-- at a moment, and nothing about the state of the world afterwards lets you
+-- derive that it was recorded on Tuesday. A birthday is not an event. It is a
+-- date that has been sitting in the row since the child was registered.
+--
+-- WHEN THE INBOX ARRIVES it reads this view and decides what to deliver. That
+-- keeps two different questions apart — what is TRUE, and who was TOLD — which
+-- want different lifetimes, different retention and different read models. A
+-- delivered message is not a fact about a player.
+--
+-- WHO IT REACHES: the next band up AT THE SAME MERIT LEVEL. A U13A player is
+-- not a U14 player in general; he is one of the best thirteen-year-olds at the
+-- school, and sending him to the U14C because that is where a space happens to
+-- be is how a good player is lost. The division letter is preserved.
 --
 -- U16 is the exception. He ages into the OPEN category, where sides are ranked
 -- rather than lettered and he is competing with seventeen- and
 -- eighteen-year-olds for the first time. No letter maps honestly to a rank, so
--- every open side is told and the coaches sort it out — which is what happens
--- in a school anyway.
+-- every open side is a candidate and the coaches sort it out.
 --
--- Thirty days, per the product rule. Long enough to arrange a trial, short
--- enough that the notice is about this season rather than a diary entry.
-CREATE OR REPLACE FUNCTION notify_band_changes(p_days integer DEFAULT 30)
-RETURNS integer AS $$
-DECLARE
-  r          record;
-  v_target   text;
-  v_turning  int;
-  v_written  int := 0;
-BEGIN
-  FOR r IN
-    SELECT p.id, p.school_id, p.full_name, p.team_code, p.born,
-           -- The next occurrence of their birthday.
-           (make_date(
-              CASE WHEN make_date(extract(year FROM current_date)::int,
-                                  extract(month FROM p.born)::int,
-                                  extract(day FROM p.born)::int) < current_date
-                   THEN extract(year FROM current_date)::int + 1
-                   ELSE extract(year FROM current_date)::int END,
-              extract(month FROM p.born)::int,
-              extract(day FROM p.born)::int)) AS next_birthday,
-           substring(p.team_code FROM '^U([0-9]{1,2})')::int AS band,
-           coalesce(substring(p.team_code FROM '^U[0-9]{1,2}([A-F])'), '') AS division
-      FROM player p
-     WHERE p.born IS NOT NULL
-       AND p.team_code ~ '^U[0-9]{1,2}'
-  LOOP
-    -- Only within the notice window.
-    CONTINUE WHEN r.next_birthday > current_date + make_interval(days => p_days);
-    CONTINUE WHEN r.next_birthday < current_date;
-
-    -- The age they turn on that birthday, for the message.
-    v_turning := extract(year FROM r.next_birthday)::int - extract(year FROM r.born)::int;
-
-    -- Does that birthday actually move them out of their band? Their age at
-    -- the cut-off AFTER the birthday, against the band they are in now.
-    CONTINUE WHEN (extract(year FROM r.next_birthday)::int + 1
-                   - extract(year FROM r.born)::int
-                   - CASE WHEN make_date(extract(year FROM r.next_birthday)::int + 1, 1, 1)
-                               < make_date(extract(year FROM r.next_birthday)::int + 1,
-                                           extract(month FROM r.born)::int,
-                                           extract(day FROM r.born)::int)
-                          THEN 1 ELSE 0 END) <= r.band;
-
-    -- The side up, at the same merit level. U16 has no letter-to-rank mapping,
-    -- so it goes to every open side.
-    IF r.band >= 16 THEN
-      FOR v_target IN SELECT unnest(ARRAY['1XI','2XI','3XI']) LOOP
-        IF _publish_band_change(r.id, r.school_id, r.full_name, r.team_code,
-                                v_target, r.next_birthday, v_turning)
-          THEN v_written := v_written + 1; END IF;
-      END LOOP;
-    ELSE
-      v_target := 'U' || (r.band + 1)::text || r.division;
-      IF _publish_band_change(r.id, r.school_id, r.full_name, r.team_code,
-                              v_target, r.next_birthday, v_turning)
-        THEN v_written := v_written + 1; END IF;
-    END IF;
-  END LOOP;
-  RETURN v_written;
-END $$ LANGUAGE plpgsql SECURITY DEFINER;
-
-/**
- * One notice, published idempotently.
- *
- * This function is expected to run on a schedule, and a daily job that creates
- * a fresh notice every morning for thirty days is not a notification system,
- * it is a denial of service against a coach's attention. The subject_kind and
- * the birthday year make the key: one notice per player, per target side, per
- * birthday, however many times the job runs.
- */
-CREATE OR REPLACE FUNCTION _publish_band_change(
-  p_player uuid, p_school uuid, p_name text, p_from text, p_to text,
-  p_birthday date, p_turning integer
-) RETURNS boolean AS $$
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM notification
-     WHERE subject_kind = 'selection'
-       AND subject_person_id = p_player
-       AND team_code = p_to
-       AND body LIKE '%' || to_char(p_birthday, 'YYYY-MM-DD') || '%'
-  ) THEN RETURN false; END IF;
-
-  INSERT INTO notification
-    (school_id, team_code, scope_level, kind, urgency, title, body,
-     required_capability, is_public, subject_kind, subject_person_id)
-  VALUES
-    (p_school, p_to, 'team', 'selection', 'medium',
-     'Ageing up: consider for trials',
-     p_name || ' turns ' || p_turning::text || ' on ' || to_char(p_birthday, 'YYYY-MM-DD')
-       || ' and moves out of ' || p_from || ' for next season. '
-       || 'Consider them for ' || p_to || ' trials.',
-     -- The roster tier. A coach being asked to trial a boy needs to know he
-     -- exists and how old he is, which is exactly player.roster.read — not the
-     -- medical or development tiers, which stay with the side he plays for.
-     'player.roster.read', false, 'selection', p_player);
-  RETURN true;
-END $$ LANGUAGE plpgsql SECURITY DEFINER;
+-- security_invoker, so a coach sees only the children they may see — which,
+-- with the roster, is every child at their own school and none anywhere else.
+CREATE OR REPLACE VIEW player_band_change_due
+  WITH (security_barrier = true, security_invoker = true) AS
+WITH upcoming AS (
+  SELECT
+    p.id AS player_id, p.school_id, p.full_name, p.team_code, p.born,
+    substring(p.team_code FROM '^U([0-9]{1,2})')::int AS band,
+    coalesce(substring(p.team_code FROM '^U[0-9]{1,2}([A-F])'), '') AS division,
+    make_date(
+      CASE WHEN make_date(extract(year FROM current_date)::int,
+                          extract(month FROM p.born)::int,
+                          extract(day FROM p.born)::int) < current_date
+           THEN extract(year FROM current_date)::int + 1
+           ELSE extract(year FROM current_date)::int END,
+      extract(month FROM p.born)::int,
+      extract(day FROM p.born)::int) AS next_birthday
+  FROM player p
+  WHERE p.born IS NOT NULL
+    AND p.team_code ~ '^U[0-9]{1,2}'
+),
+aged AS (
+  SELECT u.*,
+         extract(year FROM u.next_birthday)::int - extract(year FROM u.born)::int AS turning,
+         -- Their age at the cut-off AFTER that birthday. If it exceeds the band
+         -- they are in, they age out of it for the coming season.
+         (extract(year FROM u.next_birthday)::int + 1
+          - extract(year FROM u.born)::int
+          - CASE WHEN make_date(extract(year FROM u.next_birthday)::int + 1, 1, 1)
+                      < make_date(extract(year FROM u.next_birthday)::int + 1,
+                                  extract(month FROM u.born)::int,
+                                  extract(day FROM u.born)::int)
+                 THEN 1 ELSE 0 END) AS band_next_season
+    FROM upcoming u
+)
+SELECT
+  a.player_id, a.school_id, a.full_name,
+  a.team_code                              AS current_team,
+  a.band                                   AS current_band,
+  a.band_next_season                       AS next_band,
+  a.next_birthday,
+  a.turning,
+  (a.next_birthday - current_date)::int    AS days_until,
+  -- The side or sides to trial them for.
+  CASE WHEN a.band >= 16
+       THEN ARRAY['1XI','2XI','3XI']
+       ELSE ARRAY['U' || (a.band + 1)::text || a.division]
+  END                                      AS trial_for
+FROM aged a
+WHERE a.band_next_season > a.band
+  AND a.next_birthday >= current_date
+  AND a.next_birthday <= current_date + 30;
 
 -- ── Asking another coach about one of their players ─────────────
 --

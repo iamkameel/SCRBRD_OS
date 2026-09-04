@@ -90,7 +90,12 @@ INSERT INTO player (id, school_id, team_code, full_name, squad_no, playing_role,
   ('aaaaaaaa-0000-0000-0000-000000000011', '11111111-1111-1111-1111-111111111111', 'U13A',
    'L Mahlangu', 1, 'allrounder', (current_date + interval '20 days' - interval '14 years')::date),
   ('aaaaaaaa-0000-0000-0000-000000000012', '11111111-1111-1111-1111-111111111111', 'U13A',
-   'J Sithole', 2, 'batter', (current_date + interval '20 days' - interval '13 years')::date);
+   'J Sithole', 2, 'batter', (current_date + interval '20 days' - interval '13 years')::date),
+  -- Ages out, but not for another ninety days. Without him the thirty-day
+  -- window is unfalsifiable: widening it to a year changed nothing, because
+  -- there was no candidate between the two bounds to pull in.
+  ('aaaaaaaa-0000-0000-0000-000000000013', '11111111-1111-1111-1111-111111111111', 'U13A',
+   'B Khumalo', 3, 'bowler', (current_date + interval '90 days' - interval '14 years')::date);
 
 INSERT INTO app_user (id, school_id, email, name, role, teams) VALUES
   ('88888888-0000-0000-0000-00000000000b', '11111111-1111-1111-1111-111111111111',

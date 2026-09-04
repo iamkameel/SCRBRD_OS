@@ -275,6 +275,33 @@ export const READ_QUERIES = {
             order by p.full_name`,
   },
 
+  /**
+   * Who is about to age out of their side, and which side to trial them for.
+   *
+   * DERIVED, not delivered. There is no job publishing these and no row
+   * recording that anyone was told — it is arithmetic on a date that has been
+   * in the player row since the child was registered, and it is correct the
+   * moment it is asked.
+   *
+   * That is the same discipline as the live score and the career figures: a
+   * fact that can be derived is never materialised alongside the thing it is
+   * derived from, because the two then drift and nothing says which is right.
+   *
+   * An injury alert IS a notification, and stays one: an injury happens at a
+   * moment, and no amount of looking at the world afterwards tells you it was
+   * recorded on Tuesday. A birthday is not an event.
+   *
+   * Scoped by the same policy as everything else — the view is
+   * security_invoker, so a coach sees the children on their own school's
+   * roster and none anywhere else.
+   */
+  band_changes: {
+    text: `select player_id, school_id, full_name, current_team, current_band,
+                  next_band, next_birthday, turning, days_until, trial_for
+             from player_band_change_due
+            order by next_birthday`,
+  },
+
   // The team sheet for a fixture: a roster of identified minors, governed by
   // player.profile.read rather than fixture.read. The difference is a
   // spectator, who should see the score without also receiving a list of

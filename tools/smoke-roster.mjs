@@ -90,36 +90,50 @@ try {
   ok("a spectator reaches no roster at all", (await read("players", watcher)).length === 0);
   ok("a guardian still sees only their own child", (await read("players", parent)).length === 1);
 
-  group("A boy about to age up, and who hears about it");
-  const published = (await q(`select notify_band_changes() as n`))[0].n;
-  ok("the job publishes a notice", Number(published) === 1);
-  // A scheduled job that writes a fresh notice every morning for thirty days
-  // is not a notification system, it is a denial of service against a coach's
-  // attention.
-  const again = (await q(`select notify_band_changes() as n`))[0].n;
-  ok("running it again writes nothing", Number(again) === 0);
+  group("A boy about to age up — derived, not delivered");
+  // No job publishes this and no row records that anyone was told. It is
+  // arithmetic on a date that has been in the player row since the child was
+  // registered, and it is correct the moment it is asked. The first version
+  // was a scheduled function writing notification rows, which is the shape
+  // this codebase avoids everywhere else: a derived fact materialised beside
+  // the thing it is derived from is a fact that can drift.
+  const due = await read("band_changes", u14);
+  ok("the view names the boy who is ageing up", due.length === 1);
+  ok("...with the age he turns and when", Number(due[0]?.turning) === 14 && due[0]?.next_birthday);
+  ok("...inside the thirty-day window", Number(due[0]?.days_until) <= 30 && Number(due[0]?.days_until) >= 0);
+  ok("...and the side to trial him for", (due[0]?.trial_for ?? []).includes("U14A"));
 
-  const u14Notices = (await read("notifications", u14)).filter((n) => n.kind === "selection");
-  ok("the U14A coach is told", u14Notices.length === 1);
-  ok("...and the notice names the player, the age and the date",
-     /L Mahlangu turns 14 on \d{4}-\d{2}-\d{2}/.test(u14Notices[0]?.body ?? ""));
-  ok("...and says which side to trial them for", /U14A trials/.test(u14Notices[0]?.body ?? ""));
-
-  // Same merit level. A U13A player is not a U14 player in general — he is one
-  // of the best thirteen-year-olds at the school, and sending him to the U14C
-  // because that is where a space happens to be is how a good player is lost.
-  group("At the same merit level, and nowhere else");
-  ok("the notice went to U14A", u14Notices[0]?.team_code === "U14A");
-  const firstNotices = (await read("notifications", first)).filter((n) => n.kind === "selection");
-  ok("the 1st XI coach is not told about a thirteen-year-old", firstNotices.length === 0);
-  const secondNotices = (await read("notifications", second)).filter((n) => n.kind === "selection");
-  ok("nor the 2nd XI coach", secondNotices.length === 0);
+  // Same merit level. A U13A player is not a U14 player in general.
+  ok("the side named is A, not whichever has a space",
+     (due[0]?.trial_for ?? []).every((t) => /A$/.test(t)));
 
   // The seed carries a second U13A player who turns 13, not 14 — he stays in
-  // the band. Without him "only the player who ages out is notified" would
-  // pass by having nothing to reject.
-  ok("the boy who is NOT ageing out generates no notice",
-     !u14Notices.some((n) => /Sithole/.test(n.body ?? "")));
+  // the band. Without him "only the player ageing out appears" would pass by
+  // having nothing to reject.
+  ok("the boy who is NOT ageing out does not appear",
+     !due.some((d) => /Sithole/.test(d.full_name ?? "")));
+
+  // Asking twice is asking twice. There is no state to guard, which is the
+  // whole point: the idempotency machinery the job needed existed only because
+  // the job could re-run.
+  const again = await read("band_changes", u14);
+  ok("reading it again gives the same answer, with nothing accumulated",
+     again.length === due.length);
+  const notices = (await read("notifications", u14)).filter((n) => n.kind === "selection");
+  ok("and nothing was written to the notification table", notices.length === 0);
+
+  group("Scoped like every other read");
+  ok("a coach at the school sees it", (await read("band_changes", second)).length === 1);
+  ok("a spectator sees nothing", (await read("band_changes", watcher)).length === 0);
+  ok("a guardian sees only their own child, who is not ageing up",
+     (await read("band_changes", parent)).length === 0);
+
+  group("An injury is still an event, and still delivered");
+  // The distinction this whole change rests on: a birthday is arithmetic on
+  // state, an injury is something that HAPPENED. No amount of looking at the
+  // world afterwards tells you it was recorded on Tuesday, so it stays a row.
+  const injuryAlerts = (await read("notifications", first)).filter((n) => n.kind === "injury");
+  ok("an injury alert is still a notification row", injuryAlerts.length > 0);
 
   group("The client and the database agree about the step up");
   ok("U13A steps up to U14A", nextBandUp("U13A")[0] === "U14A");
