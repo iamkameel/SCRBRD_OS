@@ -62,12 +62,14 @@ const BUNDLES = {
     ...READ_TEAM, "school.read", "user.read", "analytics.read",
     "competition.read", "discipline.read", "facility.read", "invoice.read",
     "player.performance.read", "medical.status.read", "medical.nature.read", "audit.read",
+    "player.age.read",
   ],
   directorofsport: [
     ...READ_TEAM, "school.read", "user.read", "user.invite",
     "team.manage", "team.select", "fixture.create", "fixture.update", "fixture.cancel",
     "player.profile.manage", "player.performance.read", "player.development.read",
-    "medical.status.read", "medical.nature.read", "discipline.read", "discipline.write",
+    "medical.status.read", "medical.nature.read", "player.age.read",
+    "discipline.read", "discipline.write",
     "analytics.read", "competition.read", "facility.read", "facility.manage",
     "transport.read", "officiating.assign",
     "scoring.start", "scoring.edit", "scoring.finalise", "scoring.correct",
@@ -76,7 +78,8 @@ const BUNDLES = {
   schooladmin: [
     ...READ_TEAM, "school.read", "school.manage", "user.read", "user.invite", "user.role.assign",
     "team.manage", "fixture.create", "fixture.update", "fixture.cancel",
-    "player.profile.manage", "player.pii.read", "medical.status.read", "medical.nature.read",
+    "player.profile.manage", "player.pii.read", "player.age.read", "player.identity.read",
+    "medical.status.read", "medical.nature.read",
     "discipline.read", "facility.read", "facility.manage",
     "transport.read", "transport.manage", "invoice.read",
     "competition.read", "news.publish.school", "audit.read",
@@ -84,7 +87,7 @@ const BUNDLES = {
   sportsadmin: [
     ...READ_TEAM, "user.read", "team.manage", "team.select",
     "fixture.create", "fixture.update", "fixture.cancel", "officiating.assign",
-    "player.profile.manage", "medical.status.read", "medical.nature.read",
+    "player.profile.manage", "medical.status.read", "medical.nature.read", "player.age.read",
     "facility.read", "facility.manage", "transport.read", "transport.manage",
     "competition.read", "news.publish.team", "news.publish.school",
     "scoring.start", "scoring.edit", "scoring.finalise",
@@ -110,7 +113,7 @@ const BUNDLES = {
     "player.performance.read", "player.performance.write",
     "player.development.read", "player.development.write",
     "medical.status.read", "medical.nature.read", "medical.details.read",
-    "player.access.request", "player.access.grant",
+    "player.age.read", "player.access.request", "player.access.grant",
     "analytics.read", "transport.read",
     "scoring.start", "scoring.edit", "scoring.finalise",
     "news.publish.team",
@@ -118,11 +121,11 @@ const BUNDLES = {
   assistantcoach: [
     ...READ_TEAM, "player.performance.read", "player.development.read",
     "medical.status.read", "medical.nature.read", "medical.details.read",
-    "player.access.request", "player.access.grant",
+    "player.age.read", "player.access.request", "player.access.grant",
     "transport.read", "scoring.start", "scoring.edit",
   ],
   teammanager: [
-    ...READ_TEAM, "team.select", "medical.status.read", "medical.nature.read",
+    ...READ_TEAM, "team.select", "medical.status.read", "medical.nature.read", "player.age.read",
     "transport.read", "news.publish.team",
   ],
 
@@ -194,6 +197,7 @@ const BUNDLES = {
     "player.profile.read", "player.pii.read",
     "player.performance.read", "player.development.read",
     "medical.status.read", "medical.nature.read", "medical.details.read",
+    "player.age.read", "player.identity.read",
     "discipline.read",
   ],
 
@@ -207,6 +211,7 @@ const BUNDLES = {
     // their child's physiotherapy report is the ordinary case, not an
     // exception; the school would hand them the same letter.
     "medical.status.read", "medical.nature.read", "medical.details.read",
+    "player.age.read", "player.identity.read",
     "transport.read", "invoice.read",
   ],
 
@@ -226,7 +231,7 @@ const BUNDLES = {
 
   // ── Specialists ──
   medical: [
-    "team.read", "fixture.read", "news.read", "player.profile.read",
+    "team.read", "fixture.read", "news.read", "player.profile.read", "player.age.read",
     "medical.status.read", "medical.nature.read", "medical.details.read", "medical.write",
   ],
   finance: ["school.read", "news.read", "invoice.read", "invoice.manage", "user.read"],

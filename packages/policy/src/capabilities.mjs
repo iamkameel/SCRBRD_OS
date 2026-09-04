@@ -91,6 +91,22 @@ export const CAPABILITIES = {
   "medical.details.read":        "See diagnosis and clinical notes",
   "medical.write":               "Record injuries, rehab and clearance",
 
+  // ── A minor's identity, split three ways ──
+  // These were one capability, player.pii.read, and that was too coarse. Age
+  // and identity are different facts with different reasons to be seen:
+  //
+  //   age      — a coach picking a U13 side MUST know how old a boy is, or
+  //              they cannot avoid selecting a fifteen-year-old into it. This
+  //              is operational, not administrative.
+  //   pii      — contact details, address, guardian, physical measurements.
+  //              What a coach does not need to pick a team.
+  //   identity — the national ID number. Needed for registration and for a
+  //              union's paperwork, and by nobody else. It is the single most
+  //              dangerous field about a child in the schema: it is durable,
+  //              unique and useful to a fraudster for the rest of their life.
+  "player.age.read":             "See a player's date of birth and age",
+  "player.identity.read":        "See a player's national ID number",
+
   // ── Asking another coach ──
   // A coach reaches a player through the side they coach. When a player is
   // wanted for a different side — a promotion, or a fill-in on Saturday — the
@@ -144,6 +160,10 @@ export const ALL_CAPABILITIES = Object.freeze(Object.keys(CAPABILITIES));
 /** Capabilities that expose a minor's sensitive information. */
 export const SENSITIVE = Object.freeze([
   "player.pii.read",
+  // The ID number of a minor. More sensitive than anything else here: a
+  // diagnosis heals, an address changes, a South African ID number is issued
+  // once and is useful to a fraudster for the rest of that child's life.
+  "player.identity.read",
   // The nature of a minor's injury is health information about a child, so it
   // belongs here even though it is a tier below the clinical notes.
   "medical.nature.read",

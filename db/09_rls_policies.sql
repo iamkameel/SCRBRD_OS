@@ -335,7 +335,7 @@ BEGIN
            END, ', ' ORDER BY c.ordinal_position)
     INTO cols
     FROM information_schema.columns c
-    LEFT JOIN (VALUES ('email', 'player.pii.read'), ('phone', 'player.pii.read'), ('born', 'player.pii.read'), ('hometown', 'player.pii.read'), ('houseatschool', 'player.pii.read'), ('address', 'player.pii.read'), ('guardian', 'player.pii.read'), ('height', 'player.pii.read'), ('weight', 'player.pii.read')) AS g(column_name, capability)
+    LEFT JOIN (VALUES ('born', 'player.age.read'), ('id_number', 'player.identity.read'), ('email', 'player.pii.read'), ('phone', 'player.pii.read'), ('hometown', 'player.pii.read'), ('houseatschool', 'player.pii.read'), ('address', 'player.pii.read'), ('guardian', 'player.pii.read'), ('height', 'player.pii.read'), ('weight', 'player.pii.read')) AS g(column_name, capability)
            ON g.column_name = c.column_name
    WHERE c.table_schema = 'public' AND c.table_name = 'player';
 

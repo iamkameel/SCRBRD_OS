@@ -80,12 +80,24 @@ export const TABLES = {
     read:  "player.profile.read",
     write: "player.profile.manage",
     anchors: { school: "school_id", team: "team_code", person: "id" },
-    // A minor's personal information. A coach reads the sporting profile and
-    // none of this; a guardian reads it for their own children only, because
-    // their assignment's scope reaches no further.
+    // A minor's personal information, in three tiers rather than one.
+    //
+    // `born` used to sit with the contact details, which meant a coach could
+    // not see how old a boy was — and a coach picking a U13 side who cannot
+    // see an age cannot avoid selecting a fifteen-year-old into it. Age is
+    // operational information for anyone who selects a team, so it has its own
+    // capability and the people who pick sides hold it.
+    //
+    // The ID number is the opposite direction. It is the most dangerous field
+    // about a child anywhere in this schema — issued once, never changed, and
+    // useful to a fraudster for the rest of their life — and it is needed for
+    // registration and a union's paperwork by nobody but the school office. A
+    // coach does not see it.
     masked: {
+      "player.age.read": ["born"],
+      "player.identity.read": ["id_number"],
       "player.pii.read": [
-        "email", "phone", "born", "hometown", "houseatschool",
+        "email", "phone", "hometown", "houseatschool",
         "address", "guardian", "height", "weight",
       ],
     },

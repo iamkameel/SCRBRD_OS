@@ -81,8 +81,14 @@ group("C. Column masking");
   const asAdmin = getData("players", P("schooladmin"));
   const asGuardian = getData("players", P("parent"));
 
-  ok("coach cannot read a minor date of birth", asCoach.every((p) => p.born === null));
+  // A coach picking a U13 side who cannot see an age cannot avoid putting a
+  // fifteen-year-old in it, so date of birth has its own capability and they
+  // hold it. The tier above — contact details, address, ID number — is still
+  // shut.
+  ok("coach CAN read a date of birth, to check eligibility",
+     asCoach.some((p) => p.born != null));
   ok("coach cannot read guardian details",      asCoach.every((p) => p.height === null && p.weight === null));
+  ok("coach cannot read a home address",        asCoach.every((p) => p.address == null));
   ok("coach CAN read the sporting profile",     asCoach.every((p) => p.name && p.team));
   ok("school admin can read PII",               asAdmin.some((p) => p.born !== null));
   ok("guardian can read their own child's PII", asGuardian.every((p) => p.born !== null));
@@ -126,7 +132,11 @@ group("E. Legacy surface still answers correctly");
   ok("coach reads players at team scope", can("coach", "players", "r").scope === "team");
   ok("director reads at school scope",    can("sportsmaster", "players", "r").scope === "school");
   ok("player reads at own scope",         can("player", "players", "r").scope === "own");
-  ok("deny lists the masked fields",      can("coach", "players", "r").deny.includes("born"));
+  // `born` moved out of the coach's deny list when it moved tiers; height is
+  // still behind player.pii.read, which they do not hold.
+  ok("deny lists the masked fields",      can("coach", "players", "r").deny.includes("height"));
+  ok("...and no longer lists date of birth",
+     !can("coach", "players", "r").deny.includes("born"));
   ok("no deny where nothing is masked",   can("schooladmin", "players", "r").deny.length === 0);
   ok("unknown resource denies",           can("coach", "nonsense", "r").allowed === false);
 
@@ -145,7 +155,7 @@ group("F. Single records and provenance");
   const other = PLAYERS.find((p) => p.school === "WES");
   ok("coach reads a row in their team",       filterRecord("coach", "players", own) !== null);
   ok("coach cannot read a row in another school", filterRecord("coach", "players", other) === null);
-  ok("filterRecord masks as getData does",    filterRecord("coach", "players", own).born === null);
+  ok("filterRecord masks as getData does",    filterRecord("coach", "players", own).height === null);
   ok("null in, null out",                     filterRecord("coach", "players", null) === null);
 
   const via = grantedBy("players", own, P("coach"));

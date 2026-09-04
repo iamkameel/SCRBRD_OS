@@ -133,6 +133,50 @@ export function compareTeams(a, b) {
 }
 
 /**
+ * The date an age is measured on.
+ *
+ * Age-group eligibility in South African schools cricket is judged as at
+ * 1 JANUARY of the year of play, not on the day of the match. A boy who turns
+ * 14 in March plays the whole year in the band he was in on 1 January —
+ * otherwise a side would be legal in February and illegal in April, and a
+ * player would move age group mid-season.
+ *
+ * Stated here as one constant rather than assumed at four call sites. If a
+ * union or a league uses a different cut-off, this is the line to change; the
+ * eligibility trigger in db/00_schema_core.sql derives its date the same way.
+ */
+export const CUTOFF_MONTH = 1;
+export const CUTOFF_DAY = 1;
+
+/** The cut-off date for a season, as a Date. */
+export function cutoffFor(seasonYear) {
+  return new Date(Date.UTC(seasonYear, CUTOFF_MONTH - 1, CUTOFF_DAY));
+}
+
+/**
+ * A player's age on the cut-off date of the season a match falls in.
+ *
+ * Returns null when the date of birth is unknown — which is a real state, not
+ * an edge case: `born` is masked behind player.age.read, so a caller without
+ * it receives NULL and must not be handed an eligibility answer computed from
+ * nothing.
+ */
+export function ageAtCutoff(born, onDate = new Date()) {
+  if (!born) return null;
+  const b = born instanceof Date ? born : new Date(born);
+  if (Number.isNaN(b.getTime())) return null;
+  const ref = onDate instanceof Date ? onDate : new Date(onDate);
+  if (Number.isNaN(ref.getTime())) return null;
+  const cut = cutoffFor(ref.getUTCFullYear());
+  let age = cut.getUTCFullYear() - b.getUTCFullYear();
+  const beforeBirthday =
+    cut.getUTCMonth() < b.getUTCMonth() ||
+    (cut.getUTCMonth() === b.getUTCMonth() && cut.getUTCDate() < b.getUTCDate());
+  if (beforeBirthday) age -= 1;
+  return age;
+}
+
+/**
  * Is a player of this age eligible for this team?
  *
  * "U14" means fourteen and under, so eligibility is an upper bound and there is

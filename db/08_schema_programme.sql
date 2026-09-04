@@ -220,6 +220,87 @@ CREATE TABLE notification_read (
   PRIMARY KEY (notification_id, person_id)
 );
 
+-- ── A fifteen-year-old cannot be picked for a U13 match ─────────
+--
+-- "U13" means thirteen AND UNDER, so eligibility is an upper bound. Getting it
+-- wrong is not a data-quality problem: it is a fifteen-year-old bowling at
+-- thirteen-year-olds, which is a safeguarding failure before it is a
+-- competitive one, and it is the kind of thing a school is answerable for.
+--
+-- A TRIGGER, not a check in the selection screen. There are already three ways
+-- a squad row can be written — the API, a seed, an import — and "remember to
+-- check the age" is a rule that survives exactly as long as the person who
+-- knew about it. The database is the only place all three pass through.
+--
+-- SECURITY DEFINER because it reads player.born, which is masked behind
+-- player.age.read. The person picking the side holds that capability; a
+-- fixture importer running as the application role may not, and the check must
+-- not quietly pass because the trigger could not see a date of birth.
+--
+-- AGE IS MEASURED AT 1 JANUARY of the year of the match, not on the day. A boy
+-- who turns 14 in March plays the whole year in the band he was in on 1
+-- January — otherwise a side is legal in February and illegal in April, and a
+-- player changes age group mid-season. Same convention as CUTOFF_MONTH/DAY in
+-- packages/policy/src/teams.mjs; change both together.
+--
+-- An UNKNOWN date of birth does not pass. A squad row for a child whose age
+-- nobody recorded is exactly the row this exists to stop, and defaulting to
+-- "probably fine" is how a fifteen-year-old ends up in a U13 fixture with a
+-- clean audit trail behind him. Open teams have no age limit and are exempt.
+CREATE OR REPLACE FUNCTION match_squad_age_eligible() RETURNS trigger AS $$
+DECLARE
+  v_team   text;
+  v_starts timestamptz;
+  v_born   date;
+  v_limit  int;
+  v_age    int;
+  v_name   text;
+BEGIN
+  SELECT m.team_code, m.starts_at INTO v_team, v_starts
+    FROM match m WHERE m.id = NEW.match_id;
+  IF v_team IS NULL THEN RETURN NEW; END IF;
+
+  -- Open teams (1XI, 2XI …) carry no age limit.
+  v_limit := NULLIF(substring(v_team FROM '^U([0-9]{1,2})'), '')::int;
+  IF v_limit IS NULL THEN RETURN NEW; END IF;
+
+  -- The away side of a fixture against a school SCRBRD does not host has no
+  -- player row and no date of birth we could check. Their eligibility is their
+  -- own school's responsibility, and refusing the row would make it impossible
+  -- to record the match at all.
+  SELECT p.born, p.full_name INTO v_born, v_name FROM player p WHERE p.id = NEW.player_id;
+  IF NOT FOUND THEN RETURN NEW; END IF;
+
+  IF v_born IS NULL THEN
+    RAISE EXCEPTION
+      'cannot select % for a % match: no date of birth on record, so eligibility cannot be checked',
+      coalesce(v_name, NEW.player_id::text), v_team
+      USING ERRCODE = 'check_violation';
+  END IF;
+
+  v_age := extract(year FROM make_date(extract(year FROM v_starts)::int, 1, 1))
+         - extract(year FROM v_born)
+         - CASE WHEN make_date(extract(year FROM v_starts)::int, 1, 1)
+                     < make_date(extract(year FROM v_starts)::int,
+                                 extract(month FROM v_born)::int,
+                                 extract(day FROM v_born)::int)
+                THEN 1 ELSE 0 END;
+
+  IF v_age > v_limit THEN
+    RAISE EXCEPTION
+      '% is % on 1 January and cannot play %: the limit is %',
+      coalesce(v_name, NEW.player_id::text), v_age, v_team, v_limit
+      USING ERRCODE = 'check_violation';
+  END IF;
+
+  RETURN NEW;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS match_squad_is_age_eligible ON match_squad;
+CREATE TRIGGER match_squad_is_age_eligible
+  BEFORE INSERT OR UPDATE ON match_squad
+  FOR EACH ROW EXECUTE FUNCTION match_squad_age_eligible();
+
 -- ── Asking another coach about one of their players ─────────────
 --
 -- A coach reaches a player through the side they coach. When a player is

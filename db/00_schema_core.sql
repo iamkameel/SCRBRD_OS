@@ -71,10 +71,23 @@ CREATE TABLE player (
   bowling_style text,
   fitness       text NOT NULL DEFAULT 'fit'
                   CHECK (fitness IN ('fit','injured','rehab','unavailable')),
-  -- ── personal information (masked) ──
+  -- ── personal information (masked, in three tiers) ──
+  -- born is behind player.age.read, which everyone who selects a side holds:
+  -- a coach picking a U13 team who cannot see an age cannot avoid putting a
+  -- fifteen-year-old in it.
+  born          date,
+  -- The national ID number, behind player.identity.read and held by the school
+  -- office alone. The most dangerous field about a child in this schema:
+  -- issued once, never changed, and useful to a fraudster for the rest of
+  -- their life. A coach has no reason to see it and does not.
+  --
+  -- Format is checked but the number is NOT validated against its Luhn digit
+  -- here: a schema constraint that rejects a real child's real ID because it
+  -- was mistyped upstream blocks a registration at the worst moment. Validate
+  -- on the way in, store what the school gives you.
+  id_number     text CHECK (id_number IS NULL OR id_number ~ '^[0-9]{13}$'),
   email         text,
   phone         text,
-  born          date,
   hometown      text,
   houseAtSchool text,
   address       text,

@@ -37,6 +37,18 @@ INSERT INTO player (id, school_id, team_code, full_name, squad_no, playing_role,
 
 UPDATE player SET fitness = 'injured' WHERE id = 'aaaaaaaa-0000-0000-0000-000000000005';
 
+-- ID numbers, so "a coach cannot read one" is falsifiable. Without a value in
+-- the column the assertion passes by having nothing to find, which is the same
+-- vacuous shape as asserting a coach reads no U16B injury when every injury in
+-- the fixture is 1XI.
+--
+-- These are structurally valid but deliberately not real: the date segment
+-- matches the player's seeded date of birth, the rest is sequential. Nobody's
+-- actual ID number belongs in a repository.
+UPDATE player SET id_number = '0803145000081' WHERE id = 'aaaaaaaa-0000-0000-0000-000000000001';
+UPDATE player SET id_number = '0807025000082' WHERE id = 'aaaaaaaa-0000-0000-0000-000000000002';
+UPDATE player SET id_number = '0805305000085' WHERE id = 'aaaaaaaa-0000-0000-0000-000000000005';
+
 INSERT INTO injury (id, school_id, player_id, injury_type, severity, date_injured, rtw_date, phase, restricted, notes, physio) VALUES
   ('cccccccc-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'aaaaaaaa-0000-0000-0000-000000000005',
    'Grade 2 hamstring strain', 'moderate', current_date - 12, current_date + 16, 'rehab', true,

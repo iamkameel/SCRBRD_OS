@@ -269,10 +269,20 @@ BEGIN
 
   -- ── 4. A minor's PII ───────────────────────────────────────────
   PERFORM _as(U_COACH);
+  -- A coach picking a U13 side who cannot see an age cannot avoid putting a
+  -- fifteen-year-old in it. Age is operational information for anyone who
+  -- selects a team, so it has its own capability and they hold it.
   SELECT count(*) INTO n FROM player_masked WHERE born IS NOT NULL;
-  PERFORM _assert(n = 0, 'coach can read a minor date of birth');
+  PERFORM _assert(n > 0, 'coach cannot read a date of birth — they cannot check eligibility');
+  -- And the tier above it is still shut. The ID number is the most dangerous
+  -- field about a child in this schema: issued once, never changed, useful to
+  -- a fraudster for life. The school office holds it and nobody else.
+  SELECT count(*) INTO n FROM player_masked WHERE id_number IS NOT NULL;
+  PERFORM _assert(n = 0, 'coach can read a minor''s national ID number');
   SELECT count(*) INTO n FROM player_masked WHERE guardian IS NOT NULL;
   PERFORM _assert(n = 0, 'coach can read guardian details');
+  SELECT count(*) INTO n FROM player_masked WHERE address IS NOT NULL;
+  PERFORM _assert(n = 0, 'coach can read a minor''s home address');
   SELECT count(*) INTO n FROM player_masked WHERE full_name IS NOT NULL;
   PERFORM _assert(n > 0, 'over-masking: coach cannot read player names');
 
@@ -504,6 +514,25 @@ BEGIN
   PERFORM _as(U_WATCHER);
   SELECT count(*) INTO n FROM notification WHERE kind = 'injury';
   PERFORM _assert(n = 0, 'a spectator received an injury alert');
+
+  -- ── 10c. A fifteen-year-old cannot be picked for a U13 side ────
+  -- "U13" means thirteen AND UNDER. Getting this wrong is a safeguarding
+  -- failure before it is a competitive one, so it is enforced by a trigger
+  -- rather than by whichever screen happens to be writing the squad.
+  --
+  -- Asserted as the OWNER, deliberately: the trigger is the subject here, and
+  -- running as scrbrd_app would have the row-level policy refuse the write
+  -- first, which would pass this block for the wrong reason.
+  PERFORM _as(U_COACH);
+
+  SELECT count(*) INTO n FROM pg_trigger
+   WHERE tgrelid = 'match_squad'::regclass AND tgname = 'match_squad_is_age_eligible';
+  PERFORM _assert(n = 1, 'the age-eligibility trigger is missing from match_squad');
+
+  SELECT count(*) INTO n FROM pg_proc p JOIN pg_namespace nsp ON nsp.oid = p.pronamespace
+   WHERE nsp.nspname = 'public' AND p.proname = 'match_squad_age_eligible' AND p.prosecdef;
+  PERFORM _assert(n = 1,
+    'the eligibility check is not SECURITY DEFINER — it cannot read a masked date of birth');
 
   -- ── 11. The programme tables ───────────────────────────────────
   -- Five areas that existed in the product and not in the database, so the
