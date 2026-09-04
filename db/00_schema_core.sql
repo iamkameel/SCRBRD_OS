@@ -264,16 +264,30 @@ CREATE TABLE role_assignment (
   created_by  uuid REFERENCES app_user(id),
   CONSTRAINT assignment_dates CHECK (valid_from IS NULL OR valid_until IS NULL OR valid_from < valid_until)
 );
+-- The constraint that a coach assignment must name a team is NOT here: it is
+-- generated into db/01_authz.sql from TEAM_SCOPED_ROLES in
+-- packages/policy/src/roles.mjs, so the list cannot drift from the model. A
+-- copy here would be a second place to forget.
 CREATE INDEX ON role_assignment (person_id) WHERE active;
 CREATE INDEX ON role_assignment (school_id, team_code);
 CREATE INDEX ON role_assignment (role);
 
--- Guardian relationships. An assignment with rows here reaches ONLY these
--- children — which is what lets one person be a guardian at two institutions
--- without either relationship reaching the other's records.
-CREATE TABLE guardian_child (
+-- WHO an assignment is about.
+--
+-- An assignment with rows here reaches ONLY these people. It is what lets one
+-- person be a guardian at two institutions without either relationship
+-- reaching the other's records — and, since the same sentence is true of a
+-- pupil's access to their own file, it is what lets a player read their own
+-- medical record without reading anybody else's.
+--
+-- It was called guardian_child, which described one of its two uses and made
+-- the second look like a special case. It is not: the rule is "this assignment
+-- is about these named people", and a guardian's children and a pupil's own
+-- record are both instances of it. An assignment with NO rows here is about
+-- nobody in particular and is scoped by school and team alone.
+CREATE TABLE assignment_subject (
   assignment_id uuid NOT NULL REFERENCES role_assignment(id) ON DELETE CASCADE,
   player_id     uuid NOT NULL REFERENCES player(id) ON DELETE CASCADE,
   PRIMARY KEY (assignment_id, player_id)
 );
-CREATE INDEX ON guardian_child (player_id);
+CREATE INDEX ON assignment_subject (player_id);

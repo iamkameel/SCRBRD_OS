@@ -91,6 +91,10 @@ DECLARE
   -- at Hilton — a pupil. The one principal that separates the availability
   -- tier from the nature tier.
   U_PUPIL   uuid := '88888888-0000-0000-0000-000000000001';
+  -- R Pillay: the injured U19A player, with an account and a self-access
+  -- assignment naming their own player row.
+  U_SELF    uuid := '88888888-0000-0000-0000-000000000009';
+  P_OTHER   uuid := 'aaaaaaaa-0000-0000-0000-000000000002';  -- T Bekker, also injured
   n int;
 BEGIN
   -- ── 1. Nobody is anybody by default ────────────────────────────
@@ -166,6 +170,78 @@ BEGIN
   PERFORM _as(U_PARENT);
   SELECT count(*) INTO n FROM injury_masked WHERE injury_type IS NOT NULL;
   PERFORM _assert(n = 1, 'a guardian cannot read what is wrong with their own child');
+
+  -- ── 3c. Your own file ──────────────────────────────────────────
+  -- A pupil holds `player` for the things that are about the team, and that
+  -- assignment reaches every team mate — so it cannot carry the capabilities
+  -- that read a medical record. Self-access is its own assignment, named in
+  -- assignment_subject as being about exactly one person, and the model's
+  -- central rule does the rest: a capability applies only within the scope of
+  -- the assignment granting it.
+  PERFORM _as(U_SELF);
+
+  -- Their own record, in full — nature AND the physiotherapy notes. A person
+  -- reading their own health record is not a disclosure.
+  SELECT count(*) INTO n FROM injury_masked
+   WHERE player_id = P_INJURED AND injury_type IS NOT NULL;
+  PERFORM _assert(n = 1, 'a player cannot read what is wrong with themselves');
+  SELECT count(*) INTO n FROM injury_masked
+   WHERE player_id = P_INJURED AND notes IS NOT NULL;
+  PERFORM _assert(n = 1, 'a player cannot read their own clinical notes');
+  SELECT count(*) INTO n FROM injury_masked
+   WHERE player_id = P_INJURED AND physio IS NOT NULL;
+  PERFORM _assert(n = 1, 'a player cannot see who is treating them');
+
+  -- And nobody else's. This is the assertion the second seeded injury exists
+  -- for: with one injury in the fixture, "reads their own" and "reads
+  -- everything" are the same answer.
+  SELECT count(*) INTO n FROM injury_masked
+   WHERE player_id = P_OTHER AND injury_type IS NOT NULL;
+  PERFORM _assert(n = 0, 'self-access reads another player''s diagnosis');
+  SELECT count(*) INTO n FROM injury_masked
+   WHERE player_id = P_OTHER AND notes IS NOT NULL;
+  PERFORM _assert(n = 0, 'self-access reads another player''s clinical notes');
+
+  -- They still see that the other player is UNAVAILABLE, through their
+  -- separate `player` assignment. The two assignments are doing different
+  -- jobs at different scopes, in the same session, on the same table.
+  SELECT count(*) INTO n FROM injury_masked WHERE player_id = P_OTHER;
+  PERFORM _assert(n = 1, 'a player cannot see that a team mate is unavailable');
+
+  -- Their own PII, likewise: their date of birth is theirs.
+  SELECT count(*) INTO n FROM player_masked WHERE id = P_INJURED AND born IS NOT NULL;
+  PERFORM _assert(n = 1, 'a player cannot read their own date of birth');
+  SELECT count(*) INTO n FROM player_masked WHERE id = P_OTHER AND born IS NOT NULL;
+  PERFORM _assert(n = 0, 'self-access leaks a team mate''s date of birth');
+
+  -- ── 3d. A coach reaches the team they coach, not the school ────
+  -- A NULL team_code widens to every team in the school. Right for a head of
+  -- sport, wrong for a coach: a coach reaches a player's medical information
+  -- because they coach that player's CURRENT side. Enforced as a constraint
+  -- rather than a convention, so it cannot be got wrong when an assignment is
+  -- created at half past four on a Friday.
+  -- Asserted on the constraint itself rather than by attempting an insert:
+  -- scrbrd_app cannot write role_assignment anyway, so an insert here would be
+  -- refused for the wrong reason and the assertion would pass while the
+  -- constraint was missing.
+  SELECT count(*) INTO n
+    FROM pg_constraint
+   WHERE conrelid = 'role_assignment'::regclass
+     AND conname  = 'assignment_team_scoped';
+  PERFORM _assert(n = 1, 'the constraint keeping a coach inside their own team is missing');
+
+  SELECT count(*) INTO n
+    FROM pg_get_constraintdef(
+           (SELECT oid FROM pg_constraint
+             WHERE conrelid = 'role_assignment'::regclass
+               AND conname = 'assignment_team_scoped')) AS d(def)
+   WHERE d.def LIKE '%coach%' AND d.def LIKE '%team_code IS NOT NULL%';
+  PERFORM _assert(n = 1, 'the constraint exists but does not cover coaches');
+
+  -- And nothing in the data slipped through before it existed.
+  SELECT count(*) INTO n FROM role_assignment
+   WHERE role IN ('coach','assistantcoach','teammanager') AND team_code IS NULL;
+  PERFORM _assert(n = 0, 'a coach assignment with no team is present in the data');
 
   -- ── 4. A minor's PII ───────────────────────────────────────────
   PERFORM _as(U_COACH);

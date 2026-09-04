@@ -21,7 +21,7 @@
  * given argument set rather than once per row.
  */
 
-import { ROLE_CAPABILITIES, ROLES, roleGrants, SCORING_ROLES, unknownCapabilities } from "@scrbrd/policy/roles";
+import { ROLE_CAPABILITIES, ROLES, roleGrants, SCORING_ROLES, TEAM_SCOPED_ROLES, unknownCapabilities } from "@scrbrd/policy/roles";
 import { TABLES, isCapabilityExpression } from "@scrbrd/policy/tables";
 import { ALL_CAPABILITIES } from "@scrbrd/policy/capabilities";
 
@@ -139,12 +139,15 @@ CREATE OR REPLACE FUNCTION app_can(
        -- single fixture (scorers, match officials)
        AND (a.fixture_id IS NULL OR p_fixture = ${ANY.uuid}
             OR (p_fixture IS NOT NULL AND a.fixture_id = p_fixture))
-       -- guardian: an assignment listing children reaches ONLY those children
+       -- WHO the assignment is about. An assignment naming people reaches ONLY
+       -- those people: a guardian's children, and a pupil's own record. An
+       -- assignment naming nobody is about nobody in particular and is scoped
+       -- by school and team alone, which is how a coach reaches their squad.
        AND (
-         NOT EXISTS (SELECT 1 FROM guardian_child g WHERE g.assignment_id = a.id)
+         NOT EXISTS (SELECT 1 FROM assignment_subject g WHERE g.assignment_id = a.id)
          OR p_person = ${ANY.uuid}
          OR (p_person IS NOT NULL AND EXISTS (
-               SELECT 1 FROM guardian_child g
+               SELECT 1 FROM assignment_subject g
                 WHERE g.assignment_id = a.id AND g.player_id = p_person))
        )
   )
@@ -160,6 +163,28 @@ GRANT EXECUTE ON FUNCTION app_can(text, uuid, text, uuid, uuid) TO PUBLIC;
 -- the exact hole ADR 0001 closed (a role the session asserts, evaluated
 -- without a scope). Scoring authority is app_can('scoring.edit', ...) against
 -- the assignments the database looks up, and there is no second way to ask.`;
+}
+
+/**
+ * Roles whose assignment must name a team, as a constraint.
+ *
+ * Generated rather than written into 00_schema_core.sql by hand, so the list
+ * cannot drift from the policy model — a role added to TEAM_SCOPED_ROLES is
+ * enforced on the next migration without anyone remembering to edit SQL.
+ */
+function teamScopedConstraint() {
+  const list = TEAM_SCOPED_ROLES.map(q).join(", ");
+  return `${banner("Assignments that must name a team")}
+-- A NULL team_code widens to every team in the school. That is right for a
+-- head of sport and wrong for a coach: a coach reaches a player's medical
+-- information because they coach that player's CURRENT side, and an assignment
+-- with no team is a coach who reads every child at the school.
+--
+-- Dropped and recreated so the generated list is authoritative on every run.
+ALTER TABLE role_assignment DROP CONSTRAINT IF EXISTS assignment_team_scoped;
+ALTER TABLE role_assignment ADD CONSTRAINT assignment_team_scoped CHECK (
+  role NOT IN (${list}) OR team_code IS NOT NULL
+);`;
 }
 
 function capabilityRows() {
@@ -338,12 +363,12 @@ CREATE POLICY role_assignment_read ON role_assignment
 CREATE POLICY role_assignment_write ON role_assignment
   FOR INSERT WITH CHECK (app_can('user.role.assign', school_id, team_code, NULL, NULL));
 
-ALTER TABLE guardian_child ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS guardian_child_read ON guardian_child;
-CREATE POLICY guardian_child_read ON guardian_child
+ALTER TABLE assignment_subject ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS assignment_subject_read ON assignment_subject;
+CREATE POLICY assignment_subject_read ON assignment_subject
   FOR SELECT USING (EXISTS (
     SELECT 1 FROM role_assignment a
-     WHERE a.id = guardian_child.assignment_id
+     WHERE a.id = assignment_subject.assignment_id
        AND (a.person_id = app_user_id()
             OR app_can('user.role.assign', a.school_id, a.team_code, NULL, NULL))
   ));
@@ -387,6 +412,7 @@ export function authz() {
     `  SELECT nullif(current_setting('app.player_id', true), '')::uuid $$ LANGUAGE sql STABLE;`,
     decisionFunction(),
     capabilityRows(),
+    teamScopedConstraint(),
     assignmentPolicies(),
     ``,
   ].join("\n");

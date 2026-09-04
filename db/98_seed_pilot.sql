@@ -43,6 +43,16 @@ INSERT INTO injury (id, school_id, player_id, injury_type, severity, date_injure
    'Clinical: grade 2 strain, biceps femoris. Managed conservatively.',   -- masked from coach/assistant/headmaster
    'Physio: eccentric loading from week 2, running progression week 3.'); -- masked likewise
 
+-- A second injury, on a different U19A player. Without it, "a pupil reads
+-- their own record and not another's" is unfalsifiable: there is only one
+-- injury in the fixture, so returning it and returning everything look
+-- identical.
+INSERT INTO injury (id, school_id, player_id, injury_type, severity, date_injured, rtw_date, phase, restricted, notes, physio) VALUES
+  ('cccccccc-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'aaaaaaaa-0000-0000-0000-000000000002',
+   'Left shoulder impingement', 'minor', current_date - 5, current_date + 9, 'rehab', true,
+   'Clinical: subacromial impingement. Bowling restricted, batting permitted.',
+   'Physio: rotator cuff programme, review in two weeks.');
+
 -- ── Staff and coaches ───────────────────────────────────────────
 INSERT INTO coach (id, school_id, team_code, name, title, email, phone) VALUES
   ('dddddddd-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'U19A', 'Craig Hendricks', 'Head Coach',      'chendricks@example.invalid', '+27 82 100 0001'),
@@ -94,6 +104,12 @@ INSERT INTO app_user (id, school_id, email, name, role, teams) VALUES
 INSERT INTO app_user (id, school_id, email, name, role, teams) VALUES
   ('88888888-0000-0000-0000-000000000008', '11111111-1111-1111-1111-111111111111', 'watcher@example.invalid', 'A Watcher', 'spectator', '{}');
 
+-- R Pillay: the injured U19A player, with an account of their own. The case
+-- self-access exists for — a pupil reading their own physiotherapy notes.
+INSERT INTO app_user (id, school_id, email, name, role, player_id, teams) VALUES
+  ('88888888-0000-0000-0000-000000000009', '11111111-1111-1111-1111-111111111111',
+   'pillay@example.invalid', 'R Pillay', 'player', 'aaaaaaaa-0000-0000-0000-000000000005', '{U19A}');
+
 INSERT INTO role_assignment (id, person_id, role, school_id, team_code) VALUES
   ('a5510000-0000-0000-0000-000000000001', '88888888-0000-0000-0000-000000000001', 'player',          '11111111-1111-1111-1111-111111111111', NULL),
   ('a5510000-0000-0000-0000-000000000002', '88888888-0000-0000-0000-000000000002', 'scout',           '11111111-1111-1111-1111-111111111111', NULL),
@@ -113,13 +129,24 @@ INSERT INTO role_assignment (id, person_id, role, school_id, team_code) VALUES
   -- fixture.read, news.read and competition.read and nothing else, which makes
   -- it the principal that proves the notification capability gate does
   -- something: it holds news.read and must still not receive a medical notice.
-  ('a5510000-0000-0000-0000-00000000000b', '88888888-0000-0000-0000-000000000008', 'spectator',       '11111111-1111-1111-1111-111111111111', NULL);
+  ('a5510000-0000-0000-0000-00000000000b', '88888888-0000-0000-0000-000000000008', 'spectator',       '11111111-1111-1111-1111-111111111111', NULL),
+  -- R Pillay, twice. The `player` assignment is about the TEAM — the fixture
+  -- list, the squad, who is available on Saturday — and reaches every team
+  -- mate, so it cannot also carry the capabilities that read a medical record.
+  -- `selfaccess` is about ONE person, named in assignment_subject below, and
+  -- carries those. Two assignments because the model's rule is that a
+  -- capability applies only within the scope of the assignment granting it,
+  -- and these two need different scopes.
+  ('a5510000-0000-0000-0000-00000000000c', '88888888-0000-0000-0000-000000000009', 'player',          '11111111-1111-1111-1111-111111111111', 'U19A'),
+  ('a5510000-0000-0000-0000-00000000000d', '88888888-0000-0000-0000-000000000009', 'selfaccess',      '11111111-1111-1111-1111-111111111111', NULL);
 
--- The parent's child, and Sarah's two children at two schools.
-INSERT INTO guardian_child (assignment_id, player_id) VALUES
+-- Who each assignment is about: the parent's child, Sarah's two children at
+-- two schools, and R Pillay's own record.
+INSERT INTO assignment_subject (assignment_id, player_id) VALUES
   ('a5510000-0000-0000-0000-000000000005', 'aaaaaaaa-0000-0000-0000-000000000005'),  -- parent → R Pillay (injured)
   ('a5510000-0000-0000-0000-000000000009', 'aaaaaaaa-0000-0000-0000-000000000006'),  -- Sarah → K Dlamini (Hilton U16B)
-  ('a5510000-0000-0000-0000-00000000000a', 'bbbbbbbb-0000-0000-0000-000000000001');  -- Sarah → D Mkhize (Westville)
+  ('a5510000-0000-0000-0000-00000000000a', 'bbbbbbbb-0000-0000-0000-000000000001'),  -- Sarah → D Mkhize (Westville)
+  ('a5510000-0000-0000-0000-00000000000d', 'aaaaaaaa-0000-0000-0000-000000000005');  -- R Pillay → themselves
 
 COMMIT;
 

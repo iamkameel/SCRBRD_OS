@@ -2,7 +2,7 @@
 -- GENERATED from packages/policy/ by services/api/rls/generate-rls.mjs — DO NOT EDIT BY HAND.
 -- Regenerate with `pnpm rls:generate`. Applied BEFORE the scoring schema,
 -- which references app_can(). Model: docs/adr/0001-scoped-assignments.md.
--- 51 capabilities across 22 roles.
+-- 51 capabilities across 23 roles.
 
 -- Principal helpers. app_user_id() is set from the signed token on every
 -- request; everything else about a person's authority is looked up.
@@ -69,12 +69,15 @@ CREATE OR REPLACE FUNCTION app_can(
        -- single fixture (scorers, match officials)
        AND (a.fixture_id IS NULL OR p_fixture = '00000000-0000-0000-0000-000000000000'::uuid
             OR (p_fixture IS NOT NULL AND a.fixture_id = p_fixture))
-       -- guardian: an assignment listing children reaches ONLY those children
+       -- WHO the assignment is about. An assignment naming people reaches ONLY
+       -- those people: a guardian's children, and a pupil's own record. An
+       -- assignment naming nobody is about nobody in particular and is scoped
+       -- by school and team alone, which is how a coach reaches their squad.
        AND (
-         NOT EXISTS (SELECT 1 FROM guardian_child g WHERE g.assignment_id = a.id)
+         NOT EXISTS (SELECT 1 FROM assignment_subject g WHERE g.assignment_id = a.id)
          OR p_person = '00000000-0000-0000-0000-000000000000'::uuid
          OR (p_person IS NOT NULL AND EXISTS (
-               SELECT 1 FROM guardian_child g
+               SELECT 1 FROM assignment_subject g
                 WHERE g.assignment_id = a.id AND g.player_id = p_person))
        )
   )
@@ -352,6 +355,14 @@ INSERT INTO role_capability (role, capability) VALUES
   ('player', 'player.development.read'),
   ('player', 'medical.status.read'),
   ('player', 'transport.read'),
+  ('selfaccess', 'player.profile.read'),
+  ('selfaccess', 'player.pii.read'),
+  ('selfaccess', 'player.performance.read'),
+  ('selfaccess', 'player.development.read'),
+  ('selfaccess', 'medical.status.read'),
+  ('selfaccess', 'medical.nature.read'),
+  ('selfaccess', 'medical.details.read'),
+  ('selfaccess', 'discipline.read'),
   ('guardian', 'fixture.read'),
   ('guardian', 'team.read'),
   ('guardian', 'news.read'),
@@ -426,6 +437,20 @@ INSERT INTO role_capability (role, capability) VALUES
   ('competitionadmin', 'news.publish.competition');
 
 -- ══════════════════════════════════════════════════════════════════
+--  Assignments that must name a team
+-- ══════════════════════════════════════════════════════════════════
+-- A NULL team_code widens to every team in the school. That is right for a
+-- head of sport and wrong for a coach: a coach reaches a player's medical
+-- information because they coach that player's CURRENT side, and an assignment
+-- with no team is a coach who reads every child at the school.
+--
+-- Dropped and recreated so the generated list is authoritative on every run.
+ALTER TABLE role_assignment DROP CONSTRAINT IF EXISTS assignment_team_scoped;
+ALTER TABLE role_assignment ADD CONSTRAINT assignment_team_scoped CHECK (
+  role NOT IN ('coach', 'assistantcoach', 'teammanager') OR team_code IS NOT NULL
+);
+
+-- ══════════════════════════════════════════════════════════════════
 --  The assignment tables themselves
 -- ══════════════════════════════════════════════════════════════════
 -- A person may read their own assignments — the context switcher needs them —
@@ -442,12 +467,12 @@ CREATE POLICY role_assignment_read ON role_assignment
 CREATE POLICY role_assignment_write ON role_assignment
   FOR INSERT WITH CHECK (app_can('user.role.assign', school_id, team_code, NULL, NULL));
 
-ALTER TABLE guardian_child ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS guardian_child_read ON guardian_child;
-CREATE POLICY guardian_child_read ON guardian_child
+ALTER TABLE assignment_subject ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS assignment_subject_read ON assignment_subject;
+CREATE POLICY assignment_subject_read ON assignment_subject
   FOR SELECT USING (EXISTS (
     SELECT 1 FROM role_assignment a
-     WHERE a.id = guardian_child.assignment_id
+     WHERE a.id = assignment_subject.assignment_id
        AND (a.person_id = app_user_id()
             OR app_can('user.role.assign', a.school_id, a.team_code, NULL, NULL))
   ));

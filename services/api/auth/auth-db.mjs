@@ -71,10 +71,14 @@ export async function sessionProfile(pool, secret, bearer) {
     const { rows: assignments } = await client.query(
       `select a.id, a.role, a.school_id, s.name as school_name, a.team_code,
               a.season, a.fixture_id, a.valid_from, a.valid_until,
-              coalesce(array_agg(g.player_id) filter (where g.player_id is not null), '{}') as children
+              -- WHO this assignment is about: a guardian's children, or, for a
+              -- self-access assignment, the holder's own player row. It was
+              -- called children, back when the table was named for guardians,
+              -- which made the second case look like a guardian of themselves.
+              coalesce(array_agg(g.player_id) filter (where g.player_id is not null), '{}') as subjects
          from role_assignment a
          left join school s on s.id = a.school_id
-         left join guardian_child g on g.assignment_id = a.id
+         left join assignment_subject g on g.assignment_id = a.id
         where a.person_id = $1 and a.active
           and (a.valid_from  is null or a.valid_from  <= current_date)
           and (a.valid_until is null or a.valid_until >  current_date)
@@ -88,7 +92,10 @@ export async function sessionProfile(pool, secret, bearer) {
         school: a.school_id, schoolName: a.school_name,
         team: a.team_code, season: a.season, fixture: a.fixture_id,
         from: a.valid_from, until: a.valid_until,
-        children: a.children,
+        subjects: a.subjects,
+        // Kept while the demo vocabulary still says children. Both name the
+        // same rows; subjects is the one to read.
+        children: a.subjects,
       })),
     };
   });

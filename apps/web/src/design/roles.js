@@ -57,6 +57,12 @@ const ROLE_IDENTITY = {
   player:                 { label:"Player", icon:"🏏", color:"#08a3e8", family:"playing" },  // 5.29:1
   guardian:               { label:"Parent / Guardian", icon:"👪", color:"#3fbff8", family:"playing" },  // 7.15:1
   spectator:              { label:"Spectator", icon:"👁", color:"#8ed9fb", family:"playing" },  // 9.62:1
+  // Not a job — it is the pupil's own file. A `selfaccess` assignment names one
+  // person in assignment_subject and carries the capabilities that read their
+  // medical, PII and development records, scoped to that one player row. It
+  // rarely appears in a role switcher, but the model has 23 roles and every one
+  // of them needs an identity or the shell renders a blank for it.
+  selfaccess:             { label:"My Record", icon:"🪪", color:"#f472b6", family:"playing" },  // 6.00:1
   // match — officiating and recording a match
   scorer:                 { label:"Scorer", icon:"✍️", color:"#d88b09", family:"match" },  // 5.44:1
   official:               { label:"Match Official", icon:"🧭", color:"#f8b94f", family:"match" },  // 8.6:1

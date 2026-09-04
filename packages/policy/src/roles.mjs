@@ -22,6 +22,20 @@
 
 import { ALL_CAPABILITIES, isCapability } from "./capabilities.mjs";
 
+/**
+ * Roles whose assignment MUST name a team.
+ *
+ * A NULL team_code widens to every team in the school. That is correct for a
+ * head of sport and wrong for a coach: a coach reaches a player's medical
+ * information because they coach that player's current side — the injury
+ * policy derives its team anchor from player.team_code — so a coach assignment
+ * with no team is a coach who reads every child at the school.
+ *
+ * Emitted as a CHECK constraint on role_assignment, so it is enforced by the
+ * database rather than by whoever is creating assignments that day.
+ */
+export const TEAM_SCOPED_ROLES = Object.freeze(["coach", "assistantcoach", "teammanager"]);
+
 // The floor for anyone attached to a team. facility.read is here because
 // knowing WHERE a fixture is played is not sensitive — it is on the team
 // sheet — and withholding it left coaches, managers and assistants unable to
@@ -125,6 +139,32 @@ const BUNDLES = {
     "player.profile.read", "player.performance.read", "player.development.read",
     "medical.status.read", "transport.read",
   ],
+  // YOUR OWN FILE.
+  //
+  // A pupil holds `player` for the things that are about the team — the
+  // fixture list, the squad, who is available on Saturday — and that
+  // assignment is school- and team-scoped, so it reaches every team mate. It
+  // therefore cannot also carry the capabilities that read a medical record,
+  // or every pupil would read every other pupil's.
+  //
+  // So self-access is its OWN assignment, named in assignment_subject as being
+  // about exactly one person: the holder. The model's central rule does the
+  // rest — a capability held through one assignment is only ever applied
+  // within that same assignment's scope — so these capabilities reach that one
+  // player row and stop.
+  //
+  // It carries the clinical notes as well as the nature. A person reading
+  // their own health record is not a disclosure; under POPIA it is a data
+  // subject exercising a right of access, and a platform that holds a child's
+  // physiotherapy notes and will not show them to the child is on the wrong
+  // side of that.
+  selfaccess: [
+    "player.profile.read", "player.pii.read",
+    "player.performance.read", "player.development.read",
+    "medical.status.read", "medical.nature.read", "medical.details.read",
+    "discipline.read",
+  ],
+
   // A guardian's assignment carries `children`, so every capability here
   // reaches only their own children — including at a different school, which
   // the previous single-school session could not express at all.

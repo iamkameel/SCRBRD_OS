@@ -165,6 +165,29 @@ try {
   ok("a coach reads what the injury is", coachInjuries.every((i) => i.injury_type != null));
   ok("...and how severe", coachInjuries.every((i) => i.severity != null));
 
+  // ── Your own file ───────────────────────────────────────────────
+  // A pupil holds `player` for the things about the team, and that assignment
+  // reaches every team mate — so it cannot carry the capabilities that read a
+  // medical record. Self-access is its own assignment naming exactly one
+  // person, and the model's rule does the rest: a capability applies only
+  // within the scope of the assignment granting it.
+  const self = await login("pillay@example.invalid");   // R Pillay, injured
+  const own = await read("injuries", self);
+  const mine = own.filter((i) => i.player_id === "aaaaaaaa-0000-0000-0000-000000000005");
+  const theirs = own.filter((i) => i.player_id !== "aaaaaaaa-0000-0000-0000-000000000005");
+
+  ok("a player reads their own injury record", mine.length === 1);
+  ok("...including what it is", mine.every((i) => i.injury_type != null));
+  ok("...and their own clinical notes — reading your own record is not a disclosure",
+     mine.every((i) => i.notes != null));
+  ok("...and who is treating them", mine.every((i) => i.physio != null));
+
+  ok("a team mate's unavailability is still visible", theirs.length > 0);
+  ok("...but not what is wrong with them",
+     theirs.every((i) => i.injury_type == null));
+  ok("...and certainly not their clinical notes",
+     theirs.every((i) => i.notes == null));
+
   // A parent needs to know what is wrong with their OWN child — same row, same
   // policy, different answer, because their assignment names that child.
   const guardianInjuries = await read("injuries", guardian);

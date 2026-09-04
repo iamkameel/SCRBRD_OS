@@ -55,9 +55,9 @@ ok("match passes ANY_SCOPE for person, not NULL",
 ok("staff states team as absent, so it narrows",
    /CREATE POLICY staff_read[\s\S]{0,200}NULL::text/.test(SQL));
 ok("guardian assignments reach only listed children",
-   /guardian_child g[\s\S]{0,200}g\.player_id = p_person/.test(SQL));
+   /assignment_subject g[\s\S]{0,200}g\.player_id = p_person/.test(SQL));
 ok("a non-guardian assignment is not narrowed by children",
-   /NOT EXISTS \(SELECT 1 FROM guardian_child g WHERE g\.assignment_id = a\.id\)/.test(SQL));
+   /NOT EXISTS \(SELECT 1 FROM assignment_subject g WHERE g\.assignment_id = a\.id\)/.test(SQL));
 
 // ── B. Role bundles reach the database intact ────────────
 group("B. Role → capability rows");
@@ -162,7 +162,7 @@ ok("role_assignment has RLS",       /ALTER TABLE role_assignment ENABLE ROW LEVE
 ok("a person reads their own assignments", /person_id = app_user_id\(\)/.test(SQL));
 ok("granting requires user.role.assign",
    /CREATE POLICY role_assignment_write[\s\S]{0,200}app_can\('user\.role\.assign'/.test(SQL));
-ok("guardian_child has RLS",        /ALTER TABLE guardian_child ENABLE ROW LEVEL SECURITY/.test(SQL));
+ok("assignment_subject has RLS",        /ALTER TABLE assignment_subject ENABLE ROW LEVEL SECURITY/.test(SQL));
 ok("role_capability is readable reference data",
    /CREATE POLICY role_capability_read ON role_capability FOR SELECT USING \(true\)/.test(SQL));
 
