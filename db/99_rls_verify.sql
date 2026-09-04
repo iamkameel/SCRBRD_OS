@@ -589,6 +589,32 @@ BEGIN
   PERFORM _assert(n = 1,
     'the eligibility check is not SECURITY DEFINER — it cannot read a masked date of birth');
 
+  -- ── 10b. A minor with no verified guardian is not selected ─────
+  -- §12.2. The rule is enforced at selection because that is where a school
+  -- ACTS on a child's data, and it reads a DERIVED state rather than a flag:
+  -- a child is registered, or is not, according to the links that exist now.
+  SELECT count(*) INTO n FROM pg_trigger
+   WHERE tgrelid = 'match_squad'::regclass AND tgname = 'match_squad_is_registered';
+  PERFORM _assert(n = 1, 'the registration trigger is missing from match_squad');
+
+  SELECT count(*) INTO n FROM pg_views WHERE schemaname = 'public'
+     AND viewname = 'player_guardian_status';
+  PERFORM _assert(n = 1, 'player_guardian_status is missing');
+
+  -- A view runs as its OWNER unless told otherwise, and this one reads
+  -- `player`. Without security_invoker the office would see every child at
+  -- every school through it.
+  SELECT count(*) INTO n FROM pg_class
+   WHERE relname = 'player_guardian_status'
+     AND reloptions @> ARRAY['security_invoker=true'];
+  PERFORM _assert(n = 1, 'player_guardian_status is not security_invoker');
+
+  -- The link table has a read policy and NO write policy at all: every write
+  -- goes through a SECURITY DEFINER function that checks its own authority.
+  SELECT count(*) INTO n FROM pg_policy
+   WHERE polrelid = 'assignment_subject'::regclass AND polcmd <> 'r';
+  PERFORM _assert(n = 0, 'assignment_subject has a write policy — links must go through the functions');
+
   -- ── 11. The programme tables ───────────────────────────────────
   -- Five areas that existed in the product and not in the database, so the
   -- browser was deciding all of them. Each assertion below is a decision that

@@ -118,6 +118,20 @@ export const CAPABILITIES = {
   "player.biometric.read":       "See a player's height and weight",
   "player.identity.read":        "See a player's national ID number",
 
+  // ── The link between a child and the adult responsible for them ──
+  // POPIA does not let a school process a minor's information on the strength
+  // of somebody asserting they are the parent. The link is a record with a
+  // state: captured, then VERIFIED by the school against something — a birth
+  // certificate, an ID, an admission file — and separately CONSENTED to.
+  //
+  // One capability, not two, and that is a decision rather than an oversight:
+  // capture and verification are different acts and deserve different holders,
+  // but WHO verifies is a school's own governance and not something this model
+  // should invent. The states are separate, the acts are separate calls, and
+  // `verified_by` names a person — so splitting the capability later changes a
+  // grant and nothing else.
+  "guardian.link.manage":        "Record, verify and end a child's guardian links",
+
   // ── Asking another coach ──
   // A coach reaches a player through the side they coach. When a player is
   // wanted for a different side — a promotion, or a fill-in on Saturday — the

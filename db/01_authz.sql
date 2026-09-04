@@ -2,7 +2,7 @@
 -- GENERATED from packages/policy/ by services/api/rls/generate-rls.mjs — DO NOT EDIT BY HAND.
 -- Regenerate with `pnpm rls:generate`. Applied BEFORE the scoring schema,
 -- which references app_can(). Model: docs/adr/0001-scoped-assignments.md.
--- 57 capabilities across 24 roles.
+-- 58 capabilities across 24 roles.
 
 -- Principal helpers. app_user_id() is set from the signed token on every
 -- request; everything else about a person's authority is looked up.
@@ -72,14 +72,48 @@ CREATE OR REPLACE FUNCTION app_can(
        -- WHO the assignment is about. An assignment naming people reaches ONLY
        -- those people: a guardian's children, and a pupil's own record. An
        -- assignment naming nobody is about nobody in particular and is scoped
-       -- by school and team alone, which is how a coach reaches their squad.
-       AND (
-         NOT EXISTS (SELECT 1 FROM assignment_subject g WHERE g.assignment_id = a.id)
-         OR p_person = '00000000-0000-0000-0000-000000000000'::uuid
-         OR (p_person IS NOT NULL AND EXISTS (
-               SELECT 1 FROM assignment_subject g
-                WHERE g.assignment_id = a.id AND g.player_id = p_person))
-       )
+       -- by school and team alone, which is how a coach reaches their squad —
+       -- EXCEPT for the roles that only make sense about a person, which are
+       -- refused outright rather than widened (SUBJECT_SCOPED_ROLES).
+       --
+       -- A LIVE link is verified, started and not ended. Verification is what
+       -- turns a claimed relationship into a permission, and 'pending' is the
+       -- column default, so nothing reaches a child until somebody at the
+       -- school put their name to the link.
+       AND CASE WHEN a.role = ANY (ARRAY['guardian', 'selfaccess', 'enquiry']::text[]) THEN
+             -- A role that only means anything ABOUT SOMEBODY. It must name a
+             -- live person, and then reaches that person and rows with no
+             -- person dimension (a fixture: which is how a parent sees when
+             -- their child is playing). Name nobody live and it reaches
+             -- nothing at all — not the school, not a fixture.
+             EXISTS (SELECT 1 FROM assignment_subject g
+                      WHERE g.assignment_id = a.id
+                        AND g.verification_state = 'verified'
+                        AND g.valid_from <= current_date
+                        AND (g.valid_until IS NULL OR g.valid_until > current_date))
+             AND (p_person = '00000000-0000-0000-0000-000000000000'::uuid
+                  OR (p_person IS NOT NULL AND EXISTS (
+                        SELECT 1 FROM assignment_subject g
+                         WHERE g.assignment_id = a.id AND g.player_id = p_person
+                           AND g.verification_state = 'verified'
+                           AND g.valid_from <= current_date
+                           AND (g.valid_until IS NULL OR g.valid_until > current_date))))
+           ELSE
+             -- Everyone else. Naming nobody means "about nobody in
+             -- particular", scoped by school and team, which is how a coach
+             -- reaches their squad. The NOT EXISTS counts EVERY row, live or
+             -- not: filtering it to live links would mean that revoking the
+             -- last link turns a person-scoped assignment into a school-wide
+             -- one, so revocation would WIDEN access.
+             NOT EXISTS (SELECT 1 FROM assignment_subject g WHERE g.assignment_id = a.id)
+             OR p_person = '00000000-0000-0000-0000-000000000000'::uuid
+             OR (p_person IS NOT NULL AND EXISTS (
+                   SELECT 1 FROM assignment_subject g
+                    WHERE g.assignment_id = a.id AND g.player_id = p_person
+                      AND g.verification_state = 'verified'
+                      AND g.valid_from <= current_date
+                      AND (g.valid_until IS NULL OR g.valid_until > current_date)))
+           END
   )
 $$ LANGUAGE sql STABLE SECURITY DEFINER;
 
@@ -142,6 +176,7 @@ INSERT INTO capability (name) VALUES
   ('player.age.read'),
   ('player.biometric.read'),
   ('player.identity.read'),
+  ('guardian.link.manage'),
   ('player.access.request'),
   ('player.access.grant'),
   ('discipline.read'),
@@ -215,6 +250,7 @@ INSERT INTO role_capability (role, capability) VALUES
   ('principal', 'audit.read'),
   ('principal', 'player.age.read'),
   ('principal', 'player.roster.read'),
+  ('principal', 'guardian.link.manage'),
   ('directorofsport', 'team.read'),
   ('directorofsport', 'fixture.read'),
   ('directorofsport', 'player.profile.read'),
@@ -269,6 +305,7 @@ INSERT INTO role_capability (role, capability) VALUES
   ('schooladmin', 'player.biometric.read'),
   ('schooladmin', 'player.age.read'),
   ('schooladmin', 'player.identity.read'),
+  ('schooladmin', 'guardian.link.manage'),
   ('schooladmin', 'player.roster.read'),
   ('schooladmin', 'medical.status.read'),
   ('schooladmin', 'medical.nature.read'),
@@ -508,12 +545,17 @@ CREATE POLICY role_assignment_write ON role_assignment
 
 ALTER TABLE assignment_subject ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS assignment_subject_read ON assignment_subject;
+-- guardian.link.manage is here beside user.role.assign because the office
+-- has to be able to SEE a child's links to work them — to answer "who is
+-- allowed to read this boy's record", to spot the one with no verified link,
+-- to end the right one. It reads links; it never grants reach to a child.
 CREATE POLICY assignment_subject_read ON assignment_subject
   FOR SELECT USING (EXISTS (
     SELECT 1 FROM role_assignment a
      WHERE a.id = assignment_subject.assignment_id
        AND (a.person_id = app_user_id()
-            OR app_can('user.role.assign', a.school_id, a.team_code, NULL, NULL))
+            OR app_can('user.role.assign',    a.school_id, a.team_code, NULL, NULL)
+            OR app_can('guardian.link.manage', a.school_id, a.team_code, NULL, NULL))
   ));
 
 -- role_capability is generated reference data, readable by all, written only

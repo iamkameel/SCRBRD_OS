@@ -7,7 +7,7 @@
  * database. This file sits between them: it checks that what the generator
  * emits says the same thing the JS says.
  */
-import { ROLES, ROLE_CAPABILITIES, roleGrants, SCORING_ROLES } from "@scrbrd/policy/roles";
+import { ROLES, ROLE_CAPABILITIES, roleGrants, SCORING_ROLES, SUBJECT_SCOPED_ROLES } from "@scrbrd/policy/roles";
 import { TABLES, referencedCapabilities, isCapabilityExpression, maskedColumns } from "@scrbrd/policy/tables";
 import { ALL_CAPABILITIES, SENSITIVE, isCapability } from "@scrbrd/policy/capabilities";
 import { main } from "./generate-rls.mjs";
@@ -58,6 +58,18 @@ ok("guardian assignments reach only listed children",
    /assignment_subject g[\s\S]{0,200}g\.player_id = p_person/.test(SQL));
 ok("a non-guardian assignment is not narrowed by children",
    /NOT EXISTS \(SELECT 1 FROM assignment_subject g WHERE g\.assignment_id = a\.id\)/.test(SQL));
+// The link is a lifecycle, not a membership. Only a VERIFIED, unended link
+// grants reach — and the two halves of the test read it differently on
+// purpose, so both halves are asserted.
+ok("only a verified link reaches a child",
+   /g\.player_id = p_person\s*\n\s*AND g\.verification_state = 'verified'/.test(SQL));
+ok("...and only while it is unended",
+   /verification_state = 'verified'[\s\S]{0,160}g\.valid_until IS NULL OR g\.valid_until > current_date/.test(SQL));
+ok("the negative half counts EVERY link, so revocation cannot widen",
+   !/NOT EXISTS \(SELECT 1 FROM assignment_subject g WHERE g\.assignment_id = a\.id\s*\n?\s*AND/.test(SQL));
+for (const role of SUBJECT_SCOPED_ROLES)
+  ok(`${role} assignments are refused when they name nobody`,
+     new RegExp(`a\\.role = ANY \\(ARRAY\\[[^\\]]*'${role}'`).test(SQL));
 
 // ── B. Role bundles reach the database intact ────────────
 group("B. Role → capability rows");

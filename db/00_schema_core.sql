@@ -297,10 +297,74 @@ CREATE INDEX ON role_assignment (role);
 -- the second look like a special case. It is not: the rule is "this assignment
 -- is about these named people", and a guardian's children and a pupil's own
 -- record are both instances of it. An assignment with NO rows here is about
--- nobody in particular and is scoped by school and team alone.
+-- nobody in particular and is scoped by school and team alone — except for the
+-- roles that only mean anything ABOUT somebody (SUBJECT_SCOPED_ROLES in
+-- packages/policy/src/roles.mjs), which app_can() refuses outright rather than
+-- widening. A guardian naming no child is not a school-wide guardian.
+--
+-- IT IS ALSO THE GUARDIAN LINK, and there is deliberately no second table.
+-- A `guardian_link` alongside this one would be a second answer to the only
+-- question that matters — may this person reach this child — and the two would
+-- drift the first time somebody wrote to one and not the other. A revoked link
+-- with a live subject row is not a bug that gets noticed; it is a parent who
+-- still reads a record after the school revoked the relationship.
+--
+-- So the lifecycle lives here, on the link itself, and app_can() reads it.
 CREATE TABLE assignment_subject (
+  -- Surrogate, so a revoked link can be kept beside the one that replaced it.
+  -- The real rule — one OPEN link per person per child — is the partial unique
+  -- index below.
+  id            uuid NOT NULL DEFAULT gen_random_uuid(),
   assignment_id uuid NOT NULL REFERENCES role_assignment(id) ON DELETE CASCADE,
   player_id     uuid NOT NULL REFERENCES player(id) ON DELETE CASCADE,
-  PRIMARY KEY (assignment_id, player_id)
+  -- What the relationship IS. Not derivable from the role — `guardian` says
+  -- somebody is responsible for this child and not whether they are the
+  -- mother, an aunt or a court-appointed guardian, and the school verifying
+  -- the link is verifying a specific claim.
+  relationship  text CHECK (relationship IN
+                  ('parent','guardian','grandparent','sibling','self','enquiry','other')),
+  -- VERIFICATION — the school checked this claim against something.
+  --
+  -- 'pending' is the DEFAULT on purpose. A link nobody has verified grants
+  -- nothing, so a half-written registration, an import, or a workflow that
+  -- forgets to finish fails closed. The cost is that every path which
+  -- legitimately creates a live link must say so explicitly, which is the
+  -- point.
+  verification_state text NOT NULL DEFAULT 'pending'
+                  CHECK (verification_state IN ('pending','verified','rejected','revoked')),
+  verified_by   uuid REFERENCES app_user(id),
+  verified_at   timestamptz,
+  verified_note text,
+  -- CONSENT — separate from verification, because they are separate facts. A
+  -- school can be certain who a child's mother is and still not have her
+  -- consent to process his information. Verification governs ACCESS; consent
+  -- governs whether the child is processed at all (player_guardian_status).
+  consent_state text NOT NULL DEFAULT 'pending'
+                  CHECK (consent_state IN ('pending','granted','withdrawn')),
+  consent_version text,
+  consent_at    timestamptz,
+  -- END-DATED, NEVER DELETED. §12.9's rule about assignments is the same rule
+  -- here: a link that is gone cannot be audited, and "who was allowed to read
+  -- this child's record in March" is a question a school has to be able to
+  -- answer in September.
+  valid_from    date NOT NULL DEFAULT current_date,
+  valid_until   date,
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  created_by    uuid REFERENCES app_user(id),
+  PRIMARY KEY (assignment_id, player_id, id),
+  CONSTRAINT subject_verified_names_a_verifier
+    CHECK (verification_state <> 'verified'
+           OR (verified_by IS NOT NULL AND verified_at IS NOT NULL)),
+  CONSTRAINT subject_consent_names_a_version
+    CHECK (consent_state <> 'granted'
+           OR (consent_version IS NOT NULL AND consent_at IS NOT NULL)),
+  CONSTRAINT subject_dates CHECK (valid_until IS NULL OR valid_from <= valid_until)
 );
 CREATE INDEX ON assignment_subject (player_id);
+-- One OPEN link per person per child. `valid_until IS NULL` rather than a
+-- comparison against today, because an index predicate must be immutable; a
+-- link end-dated in the future therefore blocks a second one, which is the
+-- answer you want anyway.
+CREATE UNIQUE INDEX assignment_subject_one_open_link
+  ON assignment_subject (assignment_id, player_id)
+  WHERE verification_state IN ('pending','verified') AND valid_until IS NULL;

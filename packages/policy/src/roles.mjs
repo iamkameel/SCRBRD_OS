@@ -36,6 +36,23 @@ import { ALL_CAPABILITIES, isCapability } from "./capabilities.mjs";
  */
 export const TEAM_SCOPED_ROLES = Object.freeze(["coach", "assistantcoach", "teammanager"]);
 
+/**
+ * Roles whose assignment MUST name at least one person.
+ *
+ * The mirror image of the rule above, and it closes a hole that was open for
+ * as long as assignment_subject has existed. An assignment naming nobody is
+ * "about nobody in particular", which is correct for a coach — that is how
+ * they reach a squad — and catastrophic for a guardian: a guardian row with no
+ * subject rows is a parent who reads every child at the school.
+ *
+ * Not a CHECK constraint, because the fact lives in another table and a row
+ * has to exist before its subjects can. It is enforced where it cannot be
+ * skipped instead — inside app_can(), which refuses these roles outright when
+ * the assignment names nobody. A half-written guardian link therefore grants
+ * nothing rather than granting everything.
+ */
+export const SUBJECT_SCOPED_ROLES = Object.freeze(["guardian", "selfaccess", "enquiry"]);
+
 // The floor for anyone attached to a team. facility.read is here because
 // knowing WHERE a fixture is played is not sensitive — it is on the team
 // sheet — and withholding it left coaches, managers and assistants unable to
@@ -62,7 +79,7 @@ const BUNDLES = {
     ...READ_TEAM, "school.read", "user.read", "analytics.read",
     "competition.read", "discipline.read", "facility.read", "invoice.read",
     "player.performance.read", "medical.status.read", "medical.nature.read", "audit.read",
-    "player.age.read", "player.roster.read",
+    "player.age.read", "player.roster.read", "guardian.link.manage",
   ],
   directorofsport: [
     ...READ_TEAM, "school.read", "user.read", "user.invite",
@@ -79,7 +96,7 @@ const BUNDLES = {
     ...READ_TEAM, "school.read", "school.manage", "user.read", "user.invite", "user.role.assign",
     "team.manage", "fixture.create", "fixture.update", "fixture.cancel",
     "player.profile.manage", "player.pii.read", "player.biometric.read",
-    "player.age.read", "player.identity.read",
+    "player.age.read", "player.identity.read", "guardian.link.manage",
     "player.roster.read",
     "medical.status.read", "medical.nature.read",
     "discipline.read", "facility.read", "facility.manage",

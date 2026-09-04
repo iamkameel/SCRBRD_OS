@@ -687,8 +687,16 @@ BEGIN
           app_user_id())
   RETURNING id INTO v_assign;
 
-  INSERT INTO assignment_subject (assignment_id, player_id)
-  VALUES (v_assign, r.player_id);
+  -- Verified by construction, and by the person who decided. `enquiry` is
+  -- subject-scoped, so a link left pending would grant the requesting coach
+  -- nothing at all — the grant would silently be no grant. The DECISION is the
+  -- verification here: the coach who owns this player said yes, by name.
+  INSERT INTO assignment_subject
+    (assignment_id, player_id, relationship, verification_state,
+     verified_by, verified_at, created_by, valid_until)
+  VALUES (v_assign, r.player_id, 'enquiry', 'verified',
+          app_user_id(), now(), app_user_id(),
+          current_date + make_interval(days => greatest(1, p_days)));
 
   UPDATE access_request
      SET state = 'granted', decided_by = app_user_id(), decided_at = now(),
@@ -701,6 +709,477 @@ END $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 REVOKE ALL ON FUNCTION access_request_decide(uuid, boolean, text, integer) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION access_request_decide(uuid, boolean, text, integer) TO PUBLIC;
+
+-- ── The link between a child and the adult responsible for them ──
+--
+-- POPIA does not let a school process a minor's information because somebody
+-- said they were the parent. §12.2 of the permissions scope puts it as a hard
+-- rule: every minor has a VERIFIED guardian link. Until this section existed,
+-- assignment_subject carried the relationship and nothing carried the
+-- verification, so a link typed into a form was indistinguishable from one an
+-- administrator had checked against a birth certificate.
+--
+-- The lifecycle lives on the link itself (db/00_schema_core.sql) rather than in
+-- a second `guardian_links` table, for the reason given there: two tables would
+-- be two answers to "may this person reach this child", and a revoked link with
+-- a live subject row is not a bug anybody notices.
+--
+-- WHAT EACH STATE DOES, because they are easy to conflate:
+--
+--   verification  governs ACCESS. app_can() counts only verified, unended
+--                 links, so an unverified link reaches nothing at all.
+--   consent       governs PROCESSING. A school can be certain who a boy's
+--                 mother is and still not have her consent. Withdrawing it does
+--                 NOT blind her to her own child's record — that would punish
+--                 the parent for exercising the right — it makes the CHILD
+--                 unregistered, which is what stops him being selected.
+--
+-- ALL FOUR ACTS ARE FUNCTIONS, not policies, because assignment_subject has no
+-- INSERT, UPDATE or DELETE policy at all: there is no way to write a link from
+-- the application role except through these, and each one checks its own
+-- authority. A SECURITY DEFINER function that forgets to check is a hole with a
+-- nice name, so each check is written out rather than inherited.
+
+/**
+ * Record a claimed relationship. It is created PENDING and reaches nothing.
+ *
+ * Three refusals, in order:
+ *
+ *   1. The caller must hold guardian.link.manage at the CHILD'S school. Not
+ *      their own — a school office may not link a child at another school.
+ *   2. Nobody may create a link that grants THEMSELVES access. This is §12.11
+ *      (no role is self-assignable) applied to the one relationship where
+ *      self-assignment would be most useful and least visible.
+ *   3. A coach may not be linked to a child in a side they coach. §6.3's third
+ *      constraint, and the sharpest of the three: a coach who becomes the
+ *      "guardian" of a boy they already coach converts a scoped, term-limited,
+ *      revocable coaching relationship into a standing personal one over that
+ *      child's whole record. It is refused whoever asks, including the office.
+ */
+CREATE OR REPLACE FUNCTION guardian_link_establish(
+  p_guardian     uuid,
+  p_player       uuid,
+  p_relationship text DEFAULT 'parent'
+) RETURNS TABLE (ok boolean, reason text, assignment uuid) AS $$
+DECLARE
+  v_school uuid;
+  v_team   text;
+  v_assign uuid;
+BEGIN
+  v_school := player_school(p_player);
+  IF v_school IS NULL THEN RETURN QUERY SELECT false, 'no_such_player', NULL::uuid; RETURN; END IF;
+
+  IF NOT app_can('guardian.link.manage', v_school, '*'::text,
+                 '00000000-0000-0000-0000-000000000000'::uuid,
+                 '00000000-0000-0000-0000-000000000000'::uuid) THEN
+    RETURN QUERY SELECT false, 'not_permitted', NULL::uuid; RETURN;
+  END IF;
+
+  IF p_guardian = app_user_id() THEN
+    RETURN QUERY SELECT false, 'self_created', NULL::uuid; RETURN;
+  END IF;
+
+  v_team := player_team(p_player);
+  IF EXISTS (SELECT 1 FROM role_assignment a
+              WHERE a.person_id = p_guardian
+                AND a.active
+                AND a.role IN ('coach','assistantcoach','teammanager')
+                AND a.school_id = v_school
+                AND v_team IS NOT NULL AND a.team_code = v_team) THEN
+    RETURN QUERY SELECT false, 'coaches_this_player', NULL::uuid; RETURN;
+  END IF;
+
+  -- One guardian assignment per person per school, reused. A second would not
+  -- be wrong, but it would split one parent's children across two rows and make
+  -- "end this person's guardianship" two operations instead of one.
+  SELECT a.id INTO v_assign
+    FROM role_assignment a
+   WHERE a.person_id = p_guardian AND a.role = 'guardian'
+     AND a.school_id = v_school AND a.active
+   LIMIT 1;
+
+  IF v_assign IS NULL THEN
+    INSERT INTO role_assignment (person_id, role, school_id, created_by)
+    VALUES (p_guardian, 'guardian', v_school, app_user_id())
+    RETURNING id INTO v_assign;
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM assignment_subject g
+              WHERE g.assignment_id = v_assign AND g.player_id = p_player
+                AND g.verification_state IN ('pending','verified')
+                AND g.valid_until IS NULL) THEN
+    RETURN QUERY SELECT false, 'already_linked', v_assign; RETURN;
+  END IF;
+
+  INSERT INTO assignment_subject
+    (assignment_id, player_id, relationship, created_by)
+  VALUES (v_assign, p_player, p_relationship, app_user_id());
+
+  RETURN QUERY SELECT true, NULL::text, v_assign;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION guardian_link_establish(uuid, uuid, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION guardian_link_establish(uuid, uuid, text) TO PUBLIC;
+
+/**
+ * Verify a link — the act that turns a claim into a permission — and, when a
+ * consent version is given, record the consent taken at the same time.
+ *
+ * Consent is a separate argument rather than a separate state change because a
+ * school takes both off the same signed form; passing NULL records the identity
+ * check alone and leaves consent pending, which is the case where a form came
+ * back with the certificate attached and the consent box unticked.
+ *
+ * verified_by is app_user_id() and cannot be passed in. Who checked the
+ * paperwork is the entire value of the record.
+ */
+CREATE OR REPLACE FUNCTION guardian_link_verify(
+  p_guardian        uuid,
+  p_player          uuid,
+  p_consent_version text DEFAULT NULL,
+  p_note            text DEFAULT NULL
+) RETURNS TABLE (ok boolean, reason text) AS $$
+DECLARE
+  v_school uuid;
+  v_rows   int;
+BEGIN
+  v_school := player_school(p_player);
+  IF v_school IS NULL THEN RETURN QUERY SELECT false, 'no_such_player'; RETURN; END IF;
+
+  IF NOT app_can('guardian.link.manage', v_school, '*'::text,
+                 '00000000-0000-0000-0000-000000000000'::uuid,
+                 '00000000-0000-0000-0000-000000000000'::uuid) THEN
+    RETURN QUERY SELECT false, 'not_permitted'; RETURN;
+  END IF;
+
+  -- No check for a missing session: app_can() above compares app_user_id()
+  -- against role_assignment.person_id, and NULL matches nothing, so a
+  -- sessionless caller is already refused as 'not_permitted'.
+  IF p_guardian = app_user_id() THEN RETURN QUERY SELECT false, 'self_verified'; RETURN; END IF;
+
+  UPDATE assignment_subject g
+     SET verification_state = 'verified',
+         verified_by        = app_user_id(),
+         verified_at        = now(),
+         verified_note      = p_note,
+         consent_state      = CASE WHEN p_consent_version IS NULL
+                                   THEN g.consent_state ELSE 'granted' END,
+         consent_version    = coalesce(p_consent_version, g.consent_version),
+         consent_at         = CASE WHEN p_consent_version IS NULL
+                                   THEN g.consent_at ELSE now() END
+   WHERE g.player_id = p_player
+     AND g.valid_until IS NULL
+     AND g.verification_state = 'pending'
+     AND EXISTS (SELECT 1 FROM role_assignment a
+                  WHERE a.id = g.assignment_id
+                    AND a.person_id = p_guardian AND a.role = 'guardian');
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+
+  IF v_rows = 0 THEN RETURN QUERY SELECT false, 'no_pending_link'; RETURN; END IF;
+  RETURN QUERY SELECT true, NULL::text;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION guardian_link_verify(uuid, uuid, text, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION guardian_link_verify(uuid, uuid, text, text) TO PUBLIC;
+
+/**
+ * End a link. It is end-dated and marked revoked, never deleted: "who could
+ * read this child's record in March" is a question a school has to answer in
+ * September.
+ *
+ * §6.3's second constraint — THE LAST VERIFIED LINK OF A MINOR CANNOT BE
+ * REVOKED — is enforced here. Not because the relationship cannot end, but
+ * because ending the last one silently would leave a child on the system with
+ * nobody accountable for him and nothing to say so. Link the new guardian
+ * first; then this succeeds.
+ */
+CREATE OR REPLACE FUNCTION guardian_link_revoke(
+  p_guardian uuid,
+  p_player   uuid,
+  p_note     text DEFAULT NULL
+) RETURNS TABLE (ok boolean, reason text) AS $$
+DECLARE
+  v_school uuid;
+  v_minor  boolean;
+  v_live   int;
+  v_rows   int;
+BEGIN
+  v_school := player_school(p_player);
+  IF v_school IS NULL THEN RETURN QUERY SELECT false, 'no_such_player'; RETURN; END IF;
+
+  IF NOT app_can('guardian.link.manage', v_school, '*'::text,
+                 '00000000-0000-0000-0000-000000000000'::uuid,
+                 '00000000-0000-0000-0000-000000000000'::uuid) THEN
+    RETURN QUERY SELECT false, 'not_permitted'; RETURN;
+  END IF;
+
+  SELECT s.is_minor, s.live_links INTO v_minor, v_live
+    FROM player_guardian_status s WHERE s.player_id = p_player;
+
+  IF coalesce(v_minor, true) AND coalesce(v_live, 0) <= 1 THEN
+    RETURN QUERY SELECT false, 'last_verified_link'; RETURN;
+  END IF;
+
+  UPDATE assignment_subject g
+     SET verification_state = 'revoked',
+         valid_until        = current_date,
+         verified_note      = coalesce(p_note, g.verified_note)
+   WHERE g.player_id = p_player
+     AND g.valid_until IS NULL
+     AND g.verification_state IN ('pending','verified')
+     AND EXISTS (SELECT 1 FROM role_assignment a
+                  WHERE a.id = g.assignment_id
+                    AND a.person_id = p_guardian AND a.role = 'guardian');
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  IF v_rows = 0 THEN RETURN QUERY SELECT false, 'no_open_link'; RETURN; END IF;
+
+  -- A guardian assignment naming nobody live already reaches nothing —
+  -- app_can() refuses subject-scoped roles that name no live person — but
+  -- leaving it active would misrepresent the register. End it.
+  UPDATE role_assignment a
+     SET active = false, valid_until = current_date
+   WHERE a.person_id = p_guardian AND a.role = 'guardian'
+     AND a.school_id = v_school AND a.active
+     AND NOT EXISTS (SELECT 1 FROM assignment_subject g
+                      WHERE g.assignment_id = a.id
+                        AND g.verification_state = 'verified'
+                        AND g.valid_from <= current_date
+                        AND (g.valid_until IS NULL OR g.valid_until > current_date));
+
+  RETURN QUERY SELECT true, NULL::text;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION guardian_link_revoke(uuid, uuid, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION guardian_link_revoke(uuid, uuid, text) TO PUBLIC;
+
+/**
+ * Record consent, on a link that is already verified.
+ *
+ * Verification and consent arrive together on one form often enough that
+ * guardian_link_verify() takes both — and separately often enough that this
+ * exists. A certificate comes back with the consent box unticked, the office
+ * verifies the identity, and the signed consent follows a week later; without
+ * this the only way to record it would be to revoke the link and start again,
+ * which would blind the parent in the meantime for a paperwork reason.
+ *
+ * The guardian may record their own consent, for the same reason they may
+ * withdraw it: it is theirs.
+ */
+CREATE OR REPLACE FUNCTION guardian_consent_record(
+  p_guardian uuid,
+  p_player   uuid,
+  p_version  text
+) RETURNS TABLE (ok boolean, reason text) AS $$
+DECLARE
+  v_school uuid;
+  v_rows   int;
+BEGIN
+  IF p_version IS NULL OR btrim(p_version) = '' THEN
+    RETURN QUERY SELECT false, 'no_consent_version'; RETURN;
+  END IF;
+
+  v_school := player_school(p_player);
+  IF v_school IS NULL THEN RETURN QUERY SELECT false, 'no_such_player'; RETURN; END IF;
+
+  IF NOT (p_guardian = app_user_id()
+          OR app_can('guardian.link.manage', v_school, '*'::text,
+                     '00000000-0000-0000-0000-000000000000'::uuid,
+                     '00000000-0000-0000-0000-000000000000'::uuid)) THEN
+    RETURN QUERY SELECT false, 'not_permitted'; RETURN;
+  END IF;
+
+  UPDATE assignment_subject g
+     SET consent_state = 'granted', consent_version = p_version, consent_at = now()
+   WHERE g.player_id = p_player
+     AND g.valid_until IS NULL
+     AND g.verification_state = 'verified'
+     AND EXISTS (SELECT 1 FROM role_assignment a
+                  WHERE a.id = g.assignment_id
+                    AND a.person_id = p_guardian AND a.role = 'guardian');
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  IF v_rows = 0 THEN RETURN QUERY SELECT false, 'no_verified_link'; RETURN; END IF;
+  RETURN QUERY SELECT true, NULL::text;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION guardian_consent_record(uuid, uuid, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION guardian_consent_record(uuid, uuid, text) TO PUBLIC;
+
+/**
+ * Withdraw consent.
+ *
+ * The one act on a link a GUARDIAN may perform themselves, because it is their
+ * consent and a right that has to be asked for is not a right. The office may
+ * also record it, for the parent who telephones.
+ *
+ * It does not touch verification, so the parent keeps sight of their own
+ * child's record. What changes is the CHILD's registration state, and the
+ * consequence of that is that he cannot be selected until it is resolved —
+ * which is a conversation with the school, not a silent loss of access.
+ */
+CREATE OR REPLACE FUNCTION guardian_consent_withdraw(
+  p_guardian uuid,
+  p_player   uuid
+) RETURNS TABLE (ok boolean, reason text) AS $$
+DECLARE
+  v_school uuid;
+  v_rows   int;
+BEGIN
+  v_school := player_school(p_player);
+  IF v_school IS NULL THEN RETURN QUERY SELECT false, 'no_such_player'; RETURN; END IF;
+
+  IF NOT (p_guardian = app_user_id()
+          OR app_can('guardian.link.manage', v_school, '*'::text,
+                     '00000000-0000-0000-0000-000000000000'::uuid,
+                     '00000000-0000-0000-0000-000000000000'::uuid)) THEN
+    RETURN QUERY SELECT false, 'not_permitted'; RETURN;
+  END IF;
+
+  UPDATE assignment_subject g
+     SET consent_state = 'withdrawn'
+   WHERE g.player_id = p_player
+     AND g.valid_until IS NULL
+     AND g.consent_state = 'granted'
+     AND EXISTS (SELECT 1 FROM role_assignment a
+                  WHERE a.id = g.assignment_id
+                    AND a.person_id = p_guardian AND a.role = 'guardian');
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  IF v_rows = 0 THEN RETURN QUERY SELECT false, 'no_consent_to_withdraw'; RETURN; END IF;
+  RETURN QUERY SELECT true, NULL::text;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION guardian_consent_withdraw(uuid, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION guardian_consent_withdraw(uuid, uuid) TO PUBLIC;
+
+-- ── Whether a child is registered: DERIVED, not a flag ──────────
+--
+-- §12.2 says no minor may be ACTIVE without a verified guardian link. The
+-- obvious implementation is a boolean on `player` and a trigger that guards it,
+-- and this codebase has learned twice over what that costs: a stored fact that
+-- can be derived is a fact that will eventually disagree with what it was
+-- derived from. The live score is not a column, career figures are not columns,
+-- the ladder is not a column, and the ageing-up notice stopped being a
+-- scheduled job for the same reason.
+--
+-- So a child is not marked active. A child IS active, or is not, according to
+-- the links that exist right now:
+--
+--   active                — an adult, or a minor with a verified, consented
+--                           guardian link
+--   pending_consent       — verified, but nobody has consented to processing
+--   pending_verification  — somebody claimed the relationship; nobody checked
+--   unlinked              — no guardian at all
+--
+-- A REVOKED link counts for nothing here. The first draft counted every row
+-- ever written, which made a child whose only guardian had been revoked look
+-- like a child somebody had merely not got round to verifying — the mildest of
+-- the four states, for what is actually the worst of them.
+--
+-- MINOR means actual age today, not the 1 January cricket cut-off. The cut-off
+-- decides which side a boy plays for; it has nothing to do with whether the law
+-- treats him as a child.
+--
+-- An UNKNOWN date of birth counts as a minor. Same reasoning as the eligibility
+-- trigger: the child whose age nobody recorded is exactly the one this exists
+-- to protect.
+--
+-- security_invoker so the office sees the children they may read and no others.
+-- The counts, as a SECURITY DEFINER function rather than a join inside the
+-- view, and this is the whole reason the view has one.
+--
+-- security_invoker decides WHICH CHILDREN you see, which is the disclosure that
+-- matters and belongs to `player`'s own policy. It must not also decide whether
+-- the counts are right: `role_assignment` and `assignment_subject` are
+-- themselves RLS-protected, so an invoker who may see a child but not other
+-- people's assignments would read live_links = 0 for a child with two verified
+-- guardians. A view that answers "this child has no guardian" to some readers
+-- and "two" to others is worse than one that refuses — the zero looks like an
+-- answer.
+CREATE OR REPLACE FUNCTION player_guardian_link_counts(p_player uuid)
+RETURNS TABLE (open_links int, live_links int, consented_links int) AS $$
+  SELECT count(*) FILTER (
+           WHERE g.verification_state IN ('pending','verified')
+             AND g.valid_from <= current_date
+             AND (g.valid_until IS NULL OR g.valid_until > current_date))::int,
+         count(*) FILTER (
+           WHERE g.verification_state = 'verified'
+             AND g.valid_from <= current_date
+             AND (g.valid_until IS NULL OR g.valid_until > current_date))::int,
+         count(*) FILTER (
+           WHERE g.verification_state = 'verified'
+             AND g.consent_state = 'granted'
+             AND g.valid_from <= current_date
+             AND (g.valid_until IS NULL OR g.valid_until > current_date))::int
+    FROM assignment_subject g
+    JOIN role_assignment a ON a.id = g.assignment_id
+   WHERE g.player_id = p_player AND a.role = 'guardian'
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION player_guardian_link_counts(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION player_guardian_link_counts(uuid) TO PUBLIC;
+
+CREATE OR REPLACE VIEW player_guardian_status
+WITH (security_invoker = true) AS
+SELECT p.id AS player_id,
+       p.school_id,
+       p.team_code,
+       p.full_name,
+       (p.born IS NULL OR p.born > current_date - interval '18 years') AS is_minor,
+       coalesce(l.open_links,      0) AS open_links,
+       coalesce(l.live_links,      0) AS live_links,
+       coalesce(l.consented_links, 0) AS consented_links,
+       CASE
+         WHEN NOT (p.born IS NULL OR p.born > current_date - interval '18 years') THEN 'active'
+         WHEN coalesce(l.consented_links, 0) > 0 THEN 'active'
+         WHEN coalesce(l.live_links,      0) > 0 THEN 'pending_consent'
+         WHEN coalesce(l.open_links,      0) > 0 THEN 'pending_verification'
+         ELSE 'unlinked'
+       END AS registration_state
+  FROM player p
+  LEFT JOIN LATERAL player_guardian_link_counts(p.id) l ON true;
+
+GRANT SELECT ON player_guardian_status TO scrbrd_app;
+
+-- ── An unregistered child is not selected ───────────────────────
+--
+-- Where the derived state BITES. Without this the view is a report nobody
+-- reads, and §12.2 is a sentence in a document.
+--
+-- Selection is the right edge for it. It is the moment a school acts on a
+-- child's data in a way that puts him on a field, in a result, and in a
+-- published scorecard — and it is already the moment the database checks
+-- whether he is old enough, so the office is already used to a squad row being
+-- refused with a reason.
+--
+-- A SEPARATE trigger from the age check on purpose: two rules, two failures,
+-- two messages. Folding them together would mean a squad refusal that says
+-- "ineligible" when what is actually missing is a signature from a parent.
+CREATE OR REPLACE FUNCTION match_squad_is_registered() RETURNS trigger AS $$
+DECLARE
+  v_state text;
+  v_name  text;
+BEGIN
+  SELECT s.registration_state, s.full_name INTO v_state, v_name
+    FROM player_guardian_status s WHERE s.player_id = NEW.player_id;
+
+  -- No player row: the away side of a fixture against a school SCRBRD does not
+  -- host. Their registration is their own school's responsibility, exactly as
+  -- their eligibility is.
+  IF NOT FOUND THEN RETURN NEW; END IF;
+
+  IF v_state <> 'active' THEN
+    RAISE EXCEPTION
+      'cannot select %: not registered to play (%). A minor needs a verified guardian link and consent before he is selected',
+      coalesce(v_name, NEW.player_id::text), v_state
+      USING ERRCODE = 'check_violation';
+  END IF;
+
+  RETURN NEW;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS match_squad_is_registered ON match_squad;
+CREATE TRIGGER match_squad_is_registered
+  BEFORE INSERT OR UPDATE ON match_squad
+  FOR EACH ROW EXECUTE FUNCTION match_squad_is_registered();
 
 -- ── When something happens to a child, the right people hear ────
 --

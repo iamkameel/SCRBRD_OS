@@ -129,10 +129,6 @@ INSERT INTO match (id, school_id, team_code, opponent, ground_id, starts_at, for
   ('77777777-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 'U16B', 'Kearsney College',
    'ffffffff-0000-0000-0000-000000000001', now() + interval '10 days', 'T20', 20, 'scheduled', NULL, NULL);
 
-INSERT INTO match_squad (match_id, player_id, side, batting_no) 
-SELECT '77777777-0000-0000-0000-000000000001', id, 'home', squad_no
-  FROM player WHERE school_id = '11111111-1111-1111-1111-111111111111' AND team_code = '1XI';
-
 -- ── Users (one per role under test) ─────────────────────────────
 INSERT INTO app_user (id, school_id, email, name, role, player_id, child_ids, teams) VALUES
   ('88888888-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'spectator@example.invalid', 'A Spectator', 'spectator', NULL, '{}', '{}'),
@@ -159,6 +155,38 @@ INSERT INTO app_user (id, school_id, email, name, role, teams) VALUES
 INSERT INTO app_user (id, school_id, email, name, role, teams) VALUES
   ('88888888-0000-0000-0000-00000000000a', '11111111-1111-1111-1111-111111111111',
    'coach2@example.invalid', 'P Moodley', 'coach', '{2XI}');
+
+-- A parent for every other boy in the 1st XI.
+--
+-- Verbose, and the verbosity is the point: since §12.2 became enforceable a
+-- child cannot be SELECTED without a verified, consented guardian link, so a
+-- fixture that used to need five player rows now needs five families. That is
+-- what a school actually has to capture before it can field a side, and a seed
+-- that quietly skipped it would be testing a system nobody can run.
+-- The school office. Nobody in this fixture held guardian.link.manage until
+-- the links needed verifying, and that absence was itself informative: a
+-- demonstration database with coaches, a physio, parents and a head of sport
+-- but no registrar describes a school that cannot admit a pupil.
+INSERT INTO app_user (id, school_id, email, name, role, teams) VALUES
+  ('88888888-0000-0000-0000-00000000000c', '11111111-1111-1111-1111-111111111111',
+   'registrar@example.invalid', 'B Naicker', 'schooladmin', '{}'),
+  -- And one at Westville, because Sarah's second child is a Westville pupil and
+  -- a Hilton administrator has no business verifying his link. The functions
+  -- refuse it — guardian.link.manage is checked at the CHILD's school — so a
+  -- fixture that had the Hilton office verify him would have been asserting
+  -- something the code forbids.
+  ('88888888-0000-0000-0000-00000000000d', '22222222-2222-2222-2222-222222222222',
+   'registrar.wes@example.invalid', 'T Ndlovu', 'schooladmin', '{}');
+
+INSERT INTO app_user (id, school_id, email, name, role, teams) VALUES
+  ('88888888-0000-0000-0000-000000000010', '11111111-1111-1111-1111-111111111111',
+   'parent.whitfield@example.invalid', 'H Whitfield', 'parent', '{}'),
+  ('88888888-0000-0000-0000-000000000011', '11111111-1111-1111-1111-111111111111',
+   'parent.bekker@example.invalid',    'A Bekker',    'parent', '{}'),
+  ('88888888-0000-0000-0000-000000000012', '11111111-1111-1111-1111-111111111111',
+   'parent.naidoo@example.invalid',    'V Naidoo',    'parent', '{}'),
+  ('88888888-0000-0000-0000-000000000013', '11111111-1111-1111-1111-111111111111',
+   'parent.cele@example.invalid',      'N Cele',      'parent', '{}');
 
 -- R Pillay: the injured 1XI player, with an account of their own. The case
 -- self-access exists for — a pupil reading their own physiotherapy notes.
@@ -196,15 +224,74 @@ INSERT INTO role_assignment (id, person_id, role, school_id, team_code) VALUES
   ('a5510000-0000-0000-0000-00000000000c', '88888888-0000-0000-0000-000000000009', 'player',          '11111111-1111-1111-1111-111111111111', '1XI'),
   ('a5510000-0000-0000-0000-00000000000d', '88888888-0000-0000-0000-000000000009', 'selfaccess',      '11111111-1111-1111-1111-111111111111', NULL),
   ('a5510000-0000-0000-0000-00000000000e', '88888888-0000-0000-0000-00000000000a', 'coach',           '11111111-1111-1111-1111-111111111111', '2XI'),
-  ('a5510000-0000-0000-0000-00000000000f', '88888888-0000-0000-0000-00000000000b', 'coach',           '11111111-1111-1111-1111-111111111111', 'U14A');
+  ('a5510000-0000-0000-0000-00000000000f', '88888888-0000-0000-0000-00000000000b', 'coach',           '11111111-1111-1111-1111-111111111111', 'U14A'),
+  -- The four 1st XI families.
+  ('a5510000-0000-0000-0000-000000000014', '88888888-0000-0000-0000-00000000000c', 'schooladmin',      '11111111-1111-1111-1111-111111111111', NULL),
+  ('a5510000-0000-0000-0000-000000000015', '88888888-0000-0000-0000-00000000000d', 'schooladmin',      '22222222-2222-2222-2222-222222222222', NULL),
+  ('a5510000-0000-0000-0000-000000000010', '88888888-0000-0000-0000-000000000010', 'guardian',        '11111111-1111-1111-1111-111111111111', NULL),
+  ('a5510000-0000-0000-0000-000000000011', '88888888-0000-0000-0000-000000000011', 'guardian',        '11111111-1111-1111-1111-111111111111', NULL),
+  ('a5510000-0000-0000-0000-000000000012', '88888888-0000-0000-0000-000000000012', 'guardian',        '11111111-1111-1111-1111-111111111111', NULL),
+  ('a5510000-0000-0000-0000-000000000013', '88888888-0000-0000-0000-000000000013', 'guardian',        '11111111-1111-1111-1111-111111111111', NULL);
 
--- Who each assignment is about: the parent's child, Sarah's two children at
+-- Who each assignment is about: the parents' children, Sarah's two children at
 -- two schools, and R Pillay's own record.
-INSERT INTO assignment_subject (assignment_id, player_id) VALUES
-  ('a5510000-0000-0000-0000-000000000005', 'aaaaaaaa-0000-0000-0000-000000000005'),  -- parent → R Pillay (injured)
-  ('a5510000-0000-0000-0000-000000000009', 'aaaaaaaa-0000-0000-0000-000000000006'),  -- Sarah → K Dlamini (Hilton U16B)
-  ('a5510000-0000-0000-0000-00000000000a', 'bbbbbbbb-0000-0000-0000-000000000001'),  -- Sarah → D Mkhize (Westville)
-  ('a5510000-0000-0000-0000-00000000000d', 'aaaaaaaa-0000-0000-0000-000000000005');  -- R Pillay → themselves
+--
+-- EVERY ROW SAYS 'verified' EXPLICITLY, because the column default is
+-- 'pending' and a pending link reaches nothing. That is not seed ceremony: it
+-- is the fixture asserting, in the only place it can, that somebody at the
+-- school checked each of these against a document. A seed that let the default
+-- stand would produce a demonstration database in which no parent could see
+-- their own child, and the first person to hit it would "fix" the default.
+--
+-- verified_by is the school administrator. NOT the guardian: nobody verifies
+-- their own link, and the functions in db/08 refuse it.
+INSERT INTO assignment_subject
+  (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+   consent_state, consent_version, consent_at, created_by) VALUES
+  ('a5510000-0000-0000-0000-000000000005', 'aaaaaaaa-0000-0000-0000-000000000005', 'parent',
+   'verified', '88888888-0000-0000-0000-00000000000c', now(), 'granted', 'popia-2026-01', now(),
+   '88888888-0000-0000-0000-00000000000c'),  -- D Pillay → R Pillay (injured)
+  ('a5510000-0000-0000-0000-000000000009', 'aaaaaaaa-0000-0000-0000-000000000006', 'parent',
+   'verified', '88888888-0000-0000-0000-00000000000c', now(), 'granted', 'popia-2026-01', now(),
+   '88888888-0000-0000-0000-00000000000c'),  -- Sarah → K Dlamini (Hilton U16B)
+  ('a5510000-0000-0000-0000-00000000000a', 'bbbbbbbb-0000-0000-0000-000000000001', 'parent',
+   'verified', '88888888-0000-0000-0000-00000000000d', now(), 'granted', 'popia-2026-01', now(),
+   '88888888-0000-0000-0000-00000000000d'),  -- Sarah → D Mkhize (Westville)
+  -- A pupil's link to their OWN file is a link like any other, and it is
+  -- verified by the school: "this account belongs to this child" is exactly the
+  -- kind of claim that must not be self-asserted.
+  ('a5510000-0000-0000-0000-00000000000d', 'aaaaaaaa-0000-0000-0000-000000000005', 'self',
+   'verified', '88888888-0000-0000-0000-00000000000c', now(), 'granted', 'popia-2026-01', now(),
+   '88888888-0000-0000-0000-00000000000c'),  -- R Pillay → themselves
+  ('a5510000-0000-0000-0000-000000000010', 'aaaaaaaa-0000-0000-0000-000000000001', 'parent',
+   'verified', '88888888-0000-0000-0000-00000000000c', now(), 'granted', 'popia-2026-01', now(),
+   '88888888-0000-0000-0000-00000000000c'),  -- H Whitfield → James Whitfield
+  ('a5510000-0000-0000-0000-000000000011', 'aaaaaaaa-0000-0000-0000-000000000002', 'parent',
+   'verified', '88888888-0000-0000-0000-00000000000c', now(), 'granted', 'popia-2026-01', now(),
+   '88888888-0000-0000-0000-00000000000c'),  -- A Bekker → T Bekker
+  ('a5510000-0000-0000-0000-000000000012', 'aaaaaaaa-0000-0000-0000-000000000003', 'parent',
+   'verified', '88888888-0000-0000-0000-00000000000c', now(), 'granted', 'popia-2026-01', now(),
+   '88888888-0000-0000-0000-00000000000c'),  -- V Naidoo → S Naidoo
+  -- N Cele's link is VERIFIED BUT NOT CONSENTED, deliberately. M Cele is
+  -- therefore `pending_consent` and cannot be selected, which is the state the
+  -- registration rule exists to produce and the one a fixture that consented to
+  -- everything could never demonstrate.
+  ('a5510000-0000-0000-0000-000000000013', 'aaaaaaaa-0000-0000-0000-000000000004', 'parent',
+   'verified', '88888888-0000-0000-0000-00000000000c', now(), 'pending', NULL, NULL,
+   '88888888-0000-0000-0000-00000000000c');  -- N Cele → M Cele
+
+-- The squad, LAST, because a squad row is now refused for a child with no
+-- verified, consented guardian link — so the families have to exist first.
+-- M Cele is excluded by the same rule that would refuse him: his parent has not
+-- consented, so he is not registered to play, and the seed says so by asking
+-- for the registered players rather than by listing four names.
+INSERT INTO match_squad (match_id, player_id, side, batting_no)
+SELECT '77777777-0000-0000-0000-000000000001', p.id, 'home', p.squad_no
+  FROM player p
+  JOIN player_guardian_status s ON s.player_id = p.id
+ WHERE p.school_id = '11111111-1111-1111-1111-111111111111'
+   AND p.team_code = '1XI'
+   AND s.registration_state = 'active';
 
 COMMIT;
 

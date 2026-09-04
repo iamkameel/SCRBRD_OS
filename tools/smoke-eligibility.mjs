@@ -41,6 +41,22 @@ async function select(born, team, matchYear = 2026) {
       `insert into player (school_id, team_code, full_name, born)
        values ($1,$2,'Test Player',$3::date) returning id`,
       [HIL, team, born])).rows;
+    // A verified, consented guardian link, because a squad row is also refused
+    // for a child who has none. That rule is the subject of smoke-guardian;
+    // here it is scaffolding, and it has to be real scaffolding — the first run
+    // of this walk after the registration trigger landed failed eleven
+    // assertions, every one of them because a synthetic child had no parent.
+    const [g] = (await c.query(
+      `insert into role_assignment (person_id, role, school_id)
+       values ('88888888-0000-0000-0000-000000000005','guardian',$1) returning id`,
+      [HIL])).rows;
+    await c.query(
+      `insert into assignment_subject
+         (assignment_id, player_id, relationship, verification_state, verified_by,
+          verified_at, consent_state, consent_version, consent_at)
+       values ($1,$2,'parent','verified','88888888-0000-0000-0000-000000000007',
+               now(),'granted','popia-2026-01',now())`,
+      [g.id, p.id]);
     await c.query(`insert into match_squad (match_id, player_id, side) values ($1,$2,'home')`,
                   [m.id, p.id]);
     await c.query("rollback");
