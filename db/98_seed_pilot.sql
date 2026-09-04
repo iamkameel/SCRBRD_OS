@@ -115,6 +115,14 @@ INSERT INTO app_user (id, school_id, email, name, role, teams) VALUES
 INSERT INTO app_user (id, school_id, email, name, role, teams) VALUES
   ('88888888-0000-0000-0000-000000000008', '11111111-1111-1111-1111-111111111111', 'watcher@example.invalid', 'A Watcher', 'spectator', '{}');
 
+-- A 2nd XI coach. Deliberately holds ONE team-scoped coach assignment and
+-- nothing else: Sarah coaches U16B but is also director of sport, so she can
+-- already see every player at Hilton and cannot demonstrate a coach who has to
+-- ask. This is the coach who has to ask.
+INSERT INTO app_user (id, school_id, email, name, role, teams) VALUES
+  ('88888888-0000-0000-0000-00000000000a', '11111111-1111-1111-1111-111111111111',
+   'coach2@example.invalid', 'P Moodley', 'coach', '{2XI}');
+
 -- R Pillay: the injured 1XI player, with an account of their own. The case
 -- self-access exists for — a pupil reading their own physiotherapy notes.
 INSERT INTO app_user (id, school_id, email, name, role, player_id, teams) VALUES
@@ -149,7 +157,8 @@ INSERT INTO role_assignment (id, person_id, role, school_id, team_code) VALUES
   -- capability applies only within the scope of the assignment granting it,
   -- and these two need different scopes.
   ('a5510000-0000-0000-0000-00000000000c', '88888888-0000-0000-0000-000000000009', 'player',          '11111111-1111-1111-1111-111111111111', '1XI'),
-  ('a5510000-0000-0000-0000-00000000000d', '88888888-0000-0000-0000-000000000009', 'selfaccess',      '11111111-1111-1111-1111-111111111111', NULL);
+  ('a5510000-0000-0000-0000-00000000000d', '88888888-0000-0000-0000-000000000009', 'selfaccess',      '11111111-1111-1111-1111-111111111111', NULL),
+  ('a5510000-0000-0000-0000-00000000000e', '88888888-0000-0000-0000-00000000000a', 'coach',           '11111111-1111-1111-1111-111111111111', '2XI');
 
 -- Who each assignment is about: the parent's child, Sarah's two children at
 -- two schools, and R Pillay's own record.

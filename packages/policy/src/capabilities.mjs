@@ -91,6 +91,15 @@ export const CAPABILITIES = {
   "medical.details.read":        "See diagnosis and clinical notes",
   "medical.write":               "Record injuries, rehab and clearance",
 
+  // ── Asking another coach ──
+  // A coach reaches a player through the side they coach. When a player is
+  // wanted for a different side — a promotion, or a fill-in on Saturday — the
+  // requesting coach has no scope over them and the model correctly says no.
+  // These two capabilities are the way that "no" becomes "ask", rather than
+  // becoming a reason to widen everybody.
+  "player.access.request":       "Ask another coach about one of their players",
+  "player.access.grant":         "Decide such a request for your own side",
+
   // ── Conduct ──
   "discipline.read":             "See disciplinary matters",
   "discipline.write":            "Record and progress disciplinary matters",

@@ -220,6 +220,216 @@ CREATE TABLE notification_read (
   PRIMARY KEY (notification_id, person_id)
 );
 
+-- ── Asking another coach about one of their players ─────────────
+--
+-- A coach reaches a player through the side they coach. When a player is
+-- wanted for a DIFFERENT side — promoted to the 1st XI, or filling in on
+-- Saturday — the requesting coach has no scope over them and the model
+-- correctly refuses. The wrong fix is to widen every coach to the whole
+-- school. The right one is to make the refusal into a question.
+--
+-- The answer, when it is yes, is not a row in a workflow table that some read
+-- path has to remember to consult. It is an ASSIGNMENT: role `enquiry`, one
+-- named player in assignment_subject, and a valid_until. From that moment the
+-- ordinary machinery carries it — same app_can(), immediate revocation,
+-- automatic expiry — and nothing anywhere needs to know a request existed.
+-- Which school a player belongs to, for a caller who cannot read the player.
+--
+-- SECURITY DEFINER, and needed precisely because of the situation this whole
+-- section exists for: a 2nd XI coach asking about a 1st XI player cannot read
+-- that player's row, so an INSERT ... SELECT over `player` returns nothing and
+-- the request is silently refused. Mirrors match_school(), which solves the
+-- same problem for the scoring policies.
+--
+-- It discloses the school of a player id you already hold, which is not a
+-- disclosure about a child: you cannot enumerate ids through it, and knowing
+-- a uuid is not knowing a name.
+CREATE OR REPLACE FUNCTION player_school(p_player uuid) RETURNS uuid AS $$
+  SELECT school_id FROM player WHERE id = p_player
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION player_school(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION player_school(uuid) TO PUBLIC;
+
+-- Likewise the side they currently play for, which is what decides who may
+-- answer a request about them.
+CREATE OR REPLACE FUNCTION player_team(p_player uuid) RETURNS text AS $$
+  SELECT team_code FROM player WHERE id = p_player
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION player_team(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION player_team(uuid) TO PUBLIC;
+
+CREATE TABLE access_request (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  player_id     uuid NOT NULL REFERENCES player(id) ON DELETE CASCADE,
+  school_id     uuid NOT NULL REFERENCES school(id),
+  -- The side the player is wanted FOR, which is the requester's own. Recorded
+  -- because "can I have him for the 2nd XI on Saturday" and "I am thinking of
+  -- promoting him" are different questions and a coach deciding deserves to
+  -- know which one they are answering.
+  for_team      text NOT NULL,
+  requested_by  uuid NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+  reason        text NOT NULL CHECK (reason IN ('promotion','fill_in','selection','other')),
+  note          text,
+  state         text NOT NULL DEFAULT 'pending'
+                CHECK (state IN ('pending','granted','declined','withdrawn','expired')),
+  decided_by    uuid REFERENCES app_user(id),
+  decided_at    timestamptz,
+  decided_note  text,
+  -- The assignment a grant created, so revoking the answer is one UPDATE away
+  -- and the audit trail joins up.
+  assignment_id uuid REFERENCES role_assignment(id) ON DELETE SET NULL,
+  -- Every grant is time-boxed. A permission with no end is a permission
+  -- somebody has to remember to take away, and nobody does.
+  expires_at    timestamptz,
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT decided_rows_name_a_decider
+    CHECK (state = 'pending' OR state = 'withdrawn' OR decided_by IS NOT NULL)
+);
+CREATE INDEX ON access_request (player_id) WHERE state = 'pending';
+CREATE INDEX ON access_request (requested_by);
+-- One open request per coach per player: asking twice is nagging, not a
+-- second question, and two pending rows make "decline" ambiguous.
+CREATE UNIQUE INDEX ON access_request (player_id, requested_by) WHERE state = 'pending';
+
+-- Hand-written, like notification_read and the scoring tables, because the
+-- rule is not one capability against one anchor. Reading a request is
+-- governed by being either end of the conversation; writing one is governed
+-- at SCHOOL scope, since the whole point is that the requester has no scope
+-- over the player yet.
+ALTER TABLE access_request ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY access_request_read ON access_request
+  FOR SELECT USING (
+    -- The coach who asked.
+    requested_by = app_user_id()
+    -- Or a coach who could answer: authority over the player CURRENT side.
+    OR app_can('player.access.grant', player_school(access_request.player_id),
+               player_team(access_request.player_id),
+               access_request.player_id,
+               '00000000-0000-0000-0000-000000000000'::uuid)
+  );
+
+-- Asking is scoped to the SCHOOL, not to the player's team — that is the whole
+-- point. It still requires a coaching role at that school: a request is not a
+-- way for an unrelated person to start a conversation about a child.
+--
+-- `for_team` must be a side the requester actually holds, or "I want him for
+-- the 2nd XI" becomes a claim anybody can make about any team.
+CREATE POLICY access_request_insert ON access_request
+  FOR INSERT WITH CHECK (
+    requested_by = app_user_id()
+    AND state = 'pending'
+    AND app_can('player.access.request', access_request.school_id, access_request.for_team,
+                '00000000-0000-0000-0000-000000000000'::uuid,
+                '00000000-0000-0000-0000-000000000000'::uuid)
+  );
+
+-- Withdrawing your own request is the only UPDATE anyone does directly.
+-- Deciding one goes through access_request_decide() below, because a decision
+-- creates an assignment and creating assignments needs authority this policy
+-- deliberately does not confer.
+CREATE POLICY access_request_update ON access_request
+  FOR UPDATE USING (requested_by = app_user_id() AND state = 'pending')
+           WITH CHECK (requested_by = app_user_id() AND state = 'withdrawn');
+
+/**
+ * Decide a request.
+ *
+ * SECURITY DEFINER because granting creates a role_assignment, and
+ * user.role.assign is a leadership capability a coach does not hold — nor
+ * should. The authority being exercised here is narrower and different: not
+ * "I may assign roles at this school" but "this is my player, and I say yes".
+ *
+ * So the function checks that authority ITSELF, first, against the player's
+ * CURRENT side. Running as the owner means row-level security is not going to
+ * do it for us, and a SECURITY DEFINER function that forgets to check is just
+ * a hole with a nice name.
+ *
+ * Three properties it enforces, in order:
+ *
+ *   1. The decider must hold player.access.grant over this player's current
+ *      team. Not the school — the team. A 2nd XI coach cannot approve access
+ *      to a 1st XI player just because they are both coaches.
+ *
+ *   2. A grant cannot exceed the granter. The `enquiry` bundle is availability
+ *      and a name; this asserts the decider actually holds those for this
+ *      player, so approving can never hand over something the approver could
+ *      not see themselves.
+ *
+ *   3. Every grant expires. The default is 14 days — long enough to pick a
+ *      side, short enough that a season does not silently accumulate standing
+ *      access to other people's squads.
+ */
+CREATE OR REPLACE FUNCTION access_request_decide(
+  p_request uuid,
+  p_grant   boolean,
+  p_note    text DEFAULT NULL,
+  p_days    integer DEFAULT 14
+) RETURNS TABLE (ok boolean, reason text, assignment uuid) AS $$
+DECLARE
+  r        access_request%ROWTYPE;
+  v_team   text;
+  v_assign uuid;
+BEGIN
+  SELECT * INTO r FROM access_request WHERE id = p_request FOR UPDATE;
+  IF NOT FOUND THEN RETURN QUERY SELECT false, 'no_such_request', NULL::uuid; RETURN; END IF;
+  IF r.state <> 'pending' THEN
+    RETURN QUERY SELECT false, 'already_' || r.state, NULL::uuid; RETURN; END IF;
+
+  -- Derived from the player rather than read off the request row. A request
+  -- carries a school_id for indexing; the DECISION must not trust it, or a
+  -- request naming the wrong school would be answerable by a coach at that
+  -- other school.
+  v_team := player_team(r.player_id);
+  r.school_id := player_school(r.player_id);
+
+  -- (1) authority over THIS player's current side
+  IF NOT app_can('player.access.grant', r.school_id, v_team, r.player_id,
+                 '00000000-0000-0000-0000-000000000000'::uuid) THEN
+    RETURN QUERY SELECT false, 'not_their_player', NULL::uuid; RETURN;
+  END IF;
+
+  IF NOT p_grant THEN
+    UPDATE access_request
+       SET state = 'declined', decided_by = app_user_id(), decided_at = now(),
+           decided_note = p_note
+     WHERE id = p_request;
+    RETURN QUERY SELECT true, NULL::text, NULL::uuid; RETURN;
+  END IF;
+
+  -- (2) a grant cannot exceed the granter
+  IF NOT (app_can('medical.status.read', r.school_id, v_team, r.player_id,
+                  '00000000-0000-0000-0000-000000000000'::uuid)
+          AND app_can('player.profile.read', r.school_id, v_team, r.player_id,
+                      '00000000-0000-0000-0000-000000000000'::uuid)) THEN
+    RETURN QUERY SELECT false, 'granter_lacks_access', NULL::uuid; RETURN;
+  END IF;
+
+  -- (3) time-boxed, single-player, and narrow by construction
+  INSERT INTO role_assignment (person_id, role, school_id, team_code,
+                               valid_from, valid_until, created_by)
+  VALUES (r.requested_by, 'enquiry', r.school_id, NULL,
+          current_date, current_date + make_interval(days => greatest(1, p_days)),
+          app_user_id())
+  RETURNING id INTO v_assign;
+
+  INSERT INTO assignment_subject (assignment_id, player_id)
+  VALUES (v_assign, r.player_id);
+
+  UPDATE access_request
+     SET state = 'granted', decided_by = app_user_id(), decided_at = now(),
+         decided_note = p_note, assignment_id = v_assign,
+         expires_at = now() + make_interval(days => greatest(1, p_days))
+   WHERE id = p_request;
+
+  RETURN QUERY SELECT true, NULL::text, v_assign;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION access_request_decide(uuid, boolean, text, integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION access_request_decide(uuid, boolean, text, integer) TO PUBLIC;
+
 -- ── When something happens to a child, the right people hear ────
 --
 -- A trigger rather than a call in the write path, because "record the injury

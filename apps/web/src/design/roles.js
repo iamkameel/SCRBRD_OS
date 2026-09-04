@@ -63,6 +63,12 @@ const ROLE_IDENTITY = {
   // rarely appears in a role switcher, but the model has 23 roles and every one
   // of them needs an identity or the shell renders a blank for it.
   selfaccess:             { label:"My Record", icon:"🪪", color:"#f472b6", family:"playing" },  // 6.00:1
+  // A temporary, single-player grant from another coach — not a job anyone
+  // holds, but a role in the model, and every role in the model needs an
+  // identity or the shell renders a blank for it. Deliberately the greyest
+  // colour in the palette: it is borrowed access, and it should not look like
+  // a position at the school.
+  enquiry:                { label:"Enquiry Access", icon:"🔑", color:"#a1a1aa", family:"admin" },  // 6.20:1
   // match — officiating and recording a match
   scorer:                 { label:"Scorer", icon:"✍️", color:"#d88b09", family:"match" },  // 5.44:1
   official:               { label:"Match Official", icon:"🧭", color:"#f8b94f", family:"match" },  // 8.6:1

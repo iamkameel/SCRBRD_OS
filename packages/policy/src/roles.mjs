@@ -110,6 +110,7 @@ const BUNDLES = {
     "player.performance.read", "player.performance.write",
     "player.development.read", "player.development.write",
     "medical.status.read", "medical.nature.read", "medical.details.read",
+    "player.access.request", "player.access.grant",
     "analytics.read", "transport.read",
     "scoring.start", "scoring.edit", "scoring.finalise",
     "news.publish.team",
@@ -117,6 +118,7 @@ const BUNDLES = {
   assistantcoach: [
     ...READ_TEAM, "player.performance.read", "player.development.read",
     "medical.status.read", "medical.nature.read", "medical.details.read",
+    "player.access.request", "player.access.grant",
     "transport.read", "scoring.start", "scoring.edit",
   ],
   teammanager: [
@@ -153,6 +155,22 @@ const BUNDLES = {
     "player.profile.read", "player.performance.read", "player.development.read",
     "medical.status.read", "transport.read",
   ],
+  // WHAT A GRANTED REQUEST BUYS.
+  //
+  // When a coach asks another coach about a player and is told yes, the answer
+  // is not a note in a workflow table — it is an ASSIGNMENT, with this role, a
+  // single named player in assignment_subject, and a valid_until. Everything
+  // the model already does then applies: the scope is enforced by the same
+  // app_can() as everything else, revocation is immediate, and it expires on
+  // its own without anybody remembering to tidy up.
+  //
+  // The bundle is deliberately two capabilities. The question being answered
+  // is "is this boy available on Saturday" — availability and a name — and NOT
+  // what is wrong with him, which stays with the coach who actually coaches
+  // him. A granted enquiry can never carry medical.nature.read, because the
+  // role does not name it and a grant cannot exceed the role it grants.
+  enquiry: ["player.profile.read", "medical.status.read"],
+
   // YOUR OWN FILE.
   //
   // A pupil holds `player` for the things that are about the team — the

@@ -2,7 +2,7 @@
 -- GENERATED from packages/policy/ by services/api/rls/generate-rls.mjs — DO NOT EDIT BY HAND.
 -- Regenerate with `pnpm rls:generate`. Applied BEFORE the scoring schema,
 -- which references app_can(). Model: docs/adr/0001-scoped-assignments.md.
--- 51 capabilities across 23 roles.
+-- 53 capabilities across 24 roles.
 
 -- Principal helpers. app_user_id() is set from the signed token on every
 -- request; everything else about a person's authority is looked up.
@@ -138,6 +138,8 @@ INSERT INTO capability (name) VALUES
   ('medical.nature.read'),
   ('medical.details.read'),
   ('medical.write'),
+  ('player.access.request'),
+  ('player.access.grant'),
   ('discipline.read'),
   ('discipline.write'),
   ('transport.read'),
@@ -303,6 +305,8 @@ INSERT INTO role_capability (role, capability) VALUES
   ('coach', 'medical.status.read'),
   ('coach', 'medical.nature.read'),
   ('coach', 'medical.details.read'),
+  ('coach', 'player.access.request'),
+  ('coach', 'player.access.grant'),
   ('coach', 'analytics.read'),
   ('coach', 'transport.read'),
   ('coach', 'scoring.start'),
@@ -320,6 +324,8 @@ INSERT INTO role_capability (role, capability) VALUES
   ('assistantcoach', 'medical.status.read'),
   ('assistantcoach', 'medical.nature.read'),
   ('assistantcoach', 'medical.details.read'),
+  ('assistantcoach', 'player.access.request'),
+  ('assistantcoach', 'player.access.grant'),
   ('assistantcoach', 'transport.read'),
   ('assistantcoach', 'scoring.start'),
   ('assistantcoach', 'scoring.edit'),
@@ -357,6 +363,8 @@ INSERT INTO role_capability (role, capability) VALUES
   ('player', 'player.development.read'),
   ('player', 'medical.status.read'),
   ('player', 'transport.read'),
+  ('enquiry', 'player.profile.read'),
+  ('enquiry', 'medical.status.read'),
   ('selfaccess', 'player.profile.read'),
   ('selfaccess', 'player.pii.read'),
   ('selfaccess', 'player.performance.read'),

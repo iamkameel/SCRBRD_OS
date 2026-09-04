@@ -21,6 +21,8 @@
  *   POST /api/matches/:id/session/force-release   recover a dead device (supervisory)
  *   POST /api/matches/:id/events                  append balls (the write path)
  *   POST /api/players/:id/assessment              record a coach's skill assessment
+ *   POST /api/players/:id/access-request          ask that player's coach for access
+ *   POST /api/access-requests/:id/decide          answer such a request
  *   GET  /api/matches/:id/events?since=           incremental sync
  *   POST /api/ai/statguru, /api/ai/commentary
  *
@@ -34,7 +36,7 @@ import { sessionProfile, runAsPrincipal } from "./auth/auth-db.mjs";
 import { signToken, AuthError } from "./auth/auth.mjs";
 import { readRoute, liveResources } from "./read/read-api.mjs";
 import { eventRoutes } from "./write/events-api.mjs";
-import { assessmentRoutes } from "./write/assessment-api.mjs";
+import { assessmentRoutes, accessRequestRoutes } from "./write/assessment-api.mjs";
 import { sessionRoutes } from "./realtime/session-routes.mjs";
 import { MatchHub } from "./realtime/realtime.mjs";
 
@@ -142,6 +144,7 @@ const events  = eventRoutes({ pool, secret: SECRET });
 const session = sessionRoutes({ pool, secret: SECRET, hub });
 const read    = readRoute({ pool, secret: SECRET });
 const assess  = assessmentRoutes({ pool, secret: SECRET });
+const access  = accessRequestRoutes({ pool, secret: SECRET });
 
 /**
  * Development sign-in.
@@ -189,7 +192,9 @@ const MATCH_ROUTES = [
 
 // Routes keyed on a player rather than a match. Same shape, same shim.
 const PLAYER_ROUTES = [
-  [/^\/api\/players\/([^/]+)\/assessment$/, "POST", assess.record],
+  [/^\/api\/players\/([^/]+)\/assessment$/,     "POST", assess.record],
+  [/^\/api\/players\/([^/]+)\/access-request$/, "POST", access.ask],
+  [/^\/api\/access-requests\/([^/]+)\/decide$/, "POST", access.decide],
 ];
 
 const server = createServer(async (req, res) => {

@@ -113,3 +113,70 @@ export function assessmentRoutes({ pool, secret }) {
     },
   };
 }
+
+
+/**
+ * Asking another coach about one of their players, and answering.
+ *
+ * Both handlers do the same thing every other write path here does: nothing.
+ * The INSERT policy on access_request decides who may ask, and
+ * access_request_decide() checks the decider's authority over that player's
+ * current side before it creates anything. A check in JavaScript would be a
+ * second opinion that can drift from the one that actually runs.
+ */
+export function accessRequestRoutes({ pool, secret }) {
+  const REASONS = new Set(["promotion", "fill_in", "selection", "other"]);
+  return {
+    // POST /players/:id/access-request { forTeam, reason, note? }
+    ask: async (req, res) => {
+      try {
+        const { forTeam, reason, note } = req.body || {};
+        if (!forTeam) throw err("for_team_required");
+        if (!REASONS.has(reason)) throw err("bad_reason");
+        const out = await runAsPrincipal(pool, secret, req.headers?.authorization,
+          async (client) => {
+            const { rows } = await client.query(
+              // player_school() rather than a join, because the requester
+              // cannot read the player row — that is the entire reason they
+              // are asking. A join here returns no rows and the request is
+              // refused for a reason that has nothing to do with permission.
+              `insert into access_request
+                 (player_id, school_id, for_team, requested_by, reason, note)
+               values ($1, player_school($1), $2, app_user_id(), $3, $4)
+               returning id, state`,
+              [req.params.id, forTeam, reason, note ?? null]);
+            // No row and no error means the policy refused, or the player is
+            // one this caller cannot even see. Either way it is a refusal, and
+            // reporting it as a successful no-op would leave a coach waiting
+            // for an answer to a question nobody was asked.
+            if (!rows[0]) throw err("not_permitted", 403);
+            return rows[0];
+          });
+        res.json(out);
+      } catch (e) {
+        const status = e.code === "23505" ? 409 : e.code === "42501" ? 403 : (e.status || 500);
+        res.status(status).json({
+          error: e.code === "23505" ? "already_asked"
+               : e.code === "42501" ? "not_permitted" : (e.message || "error") });
+      }
+    },
+
+    // POST /access-requests/:id/decide { grant: true|false, note?, days? }
+    decide: async (req, res) => {
+      try {
+        const { grant, note, days } = req.body || {};
+        if (typeof grant !== "boolean") throw err("grant_required");
+        const out = await runAsPrincipal(pool, secret, req.headers?.authorization,
+          async (client) => {
+            const { rows } = await client.query(
+              `select * from access_request_decide($1, $2, $3, $4)`,
+              [req.params.id, grant, note ?? null, Number.isInteger(days) ? days : 14]);
+            return rows[0] || { ok: false, reason: "no_result" };
+          });
+        res.status(out.ok ? 200 : 403).json(out);
+      } catch (e) {
+        res.status(e.status || 500).json({ error: e.message || "error" });
+      }
+    },
+  };
+}
