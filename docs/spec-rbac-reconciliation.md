@@ -136,9 +136,27 @@ Thinner:
   (`idle → active → verifying → handover_pending`) which covers the parts §7
   cares about operationally, but `submitted`, `verified`, `locked` and
   `archived` do not exist.
-- There is no `amendments` table. A `void` records the correction and its
-  author; it does not record an **approver**. §7.3 and §7.4 — amendment after
-  lock, approved by sportsmaster or above — are not implemented.
+- ~~There is no `amendments` table.~~ **Built.** `scoring_amendment` +
+  `scoring_amendment_decide()`. §7.3 and §7.4 hold: a correction to a completed
+  match is requested by somebody holding `scoring.correct` and applied only when
+  somebody holding `scoring.amend.approve` — a separate capability, deliberately
+  **not** held by the scorer — approves it.
+
+  Two findings from building it. First, an amendment after lock was not merely
+  unapproved, it was **impossible**: `ball_event_insert` demands an active
+  session with a live lease and a completed match has none. That refusal is
+  correct and stays; the amendment function is a second door that checks its own
+  authority. Second, the approval had to be its own capability — `scoring.correct`
+  read "submit or approve", and the scorer holds it, so the approval it
+  described was one the scorer could give themselves.
+
+  The void is authored by the **requester** and carries the **approver** in its
+  payload, because who corrected and who authorised are different facts and
+  recording only one was the whole complaint. Nobody may approve their own,
+  whatever they hold.
+
+- Fixture status is still `scheduled | live | complete | abandoned` rather than
+  §7.2's eight states. `submitted`, `verified` and `archived` do not exist.
 
 ### G1 — guardian links are a verified relationship, with a lifecycle
 
@@ -346,7 +364,7 @@ believe they moved a rating they did not move.
 ## What is now the shortest path to a pilot with real learner data
 
 1. ~~`guardian_links` verification and consent (G1)~~ — **done**.
-2. **Amendment approval** (W1) — a void records who corrected, not who approved.
+2. ~~Amendment approval (W1)~~ — **done**.
 3. **Retire the `profiles` alias** (N1). Cosmetic, cheap.
 4. **§14.2 — scorer offline authority.** Already answered in part: a revoked
    scorer's queued events are quarantined on reconnection rather than merged,

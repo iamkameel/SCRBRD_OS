@@ -2,7 +2,7 @@
 -- GENERATED from packages/policy/ by services/api/rls/generate-rls.mjs — DO NOT EDIT BY HAND.
 -- Regenerate with `pnpm rls:generate`. Applied BEFORE the scoring schema,
 -- which references app_can(). Model: docs/adr/0001-scoped-assignments.md.
--- 60 capabilities across 24 roles.
+-- 61 capabilities across 24 roles.
 
 -- Principal helpers. app_user_id() is set from the signed token on every
 -- request; everything else about a person's authority is looked up.
@@ -168,6 +168,7 @@ INSERT INTO capability (name) VALUES
   ('scoring.edit'),
   ('scoring.finalise'),
   ('scoring.correct'),
+  ('scoring.amend.approve'),
   ('officiating.assign'),
   ('officiating.report'),
   ('medical.status.read'),
@@ -254,6 +255,7 @@ INSERT INTO role_capability (role, capability) VALUES
   ('principal', 'player.roster.read'),
   ('principal', 'guardian.link.manage'),
   ('principal', 'player.note.read'),
+  ('principal', 'scoring.amend.approve'),
   ('directorofsport', 'team.read'),
   ('directorofsport', 'fixture.read'),
   ('directorofsport', 'player.profile.read'),
@@ -287,6 +289,7 @@ INSERT INTO role_capability (role, capability) VALUES
   ('directorofsport', 'scoring.edit'),
   ('directorofsport', 'scoring.finalise'),
   ('directorofsport', 'scoring.correct'),
+  ('directorofsport', 'scoring.amend.approve'),
   ('directorofsport', 'news.publish.team'),
   ('directorofsport', 'news.publish.school'),
   ('directorofsport', 'audit.read'),
@@ -519,6 +522,7 @@ INSERT INTO role_capability (role, capability) VALUES
   ('competitionadmin', 'officiating.assign'),
   ('competitionadmin', 'discipline.read'),
   ('competitionadmin', 'scoring.correct'),
+  ('competitionadmin', 'scoring.amend.approve'),
   ('competitionadmin', 'news.publish.competition');
 
 -- ══════════════════════════════════════════════════════════════════

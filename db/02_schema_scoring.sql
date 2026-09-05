@@ -694,3 +694,182 @@ CREATE OR REPLACE VIEW player_dismissals WITH (security_invoker = true) AS
 SELECT p.id AS player_id, player_dismissals_since(p.id, NULL) AS dismissals
   FROM player p
  WHERE player_dismissals_since(p.id, NULL) > 0;
+
+-- ══════════════════════════════════════════════════════════════════
+--  Amending a completed match
+-- ══════════════════════════════════════════════════════════════════
+--
+-- The RBAC scope's §7.3 and §7.4 ask for an amendment after lock, approved by
+-- sportsmaster or above. Neither half existed. A `void` recorded WHO CORRECTED
+-- and never who approved, and in any case a correction to a finished match was
+-- not merely unapproved — it was impossible, because ball_event_insert demands
+-- an ACTIVE session with a live lease and a completed match has none.
+--
+-- So this is the path for a mistake found after the scorer has gone home: the
+-- wrong batter credited, an over counted twice, a wicket against the wrong
+-- name. It is deliberately slower than the undo button, because a published
+-- result that changes without an authority behind it is worse than a published
+-- result that is wrong.
+--
+-- SEPARATION OF DUTIES IS THE POINT. `scoring.correct` — request one — is held
+-- by the scorer, who is usually the person who spots the error. The approval is
+-- a different capability held by leadership and NOT by the scorer, and the
+-- function refuses an approver who is also the requester. An approval one
+-- person can give themselves is a formality with a column.
+CREATE TABLE scoring_amendment (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  match_id      uuid NOT NULL REFERENCES match(id) ON DELETE CASCADE,
+  school_id     uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  -- WHICH delivery. Named by idempotency_key rather than by the bigserial id,
+  -- because that is the handle a `void` uses to name its target and the two
+  -- must agree — a void that names something else voids nothing, silently.
+  target_key    text NOT NULL,
+  reason        text NOT NULL CHECK (length(btrim(reason)) > 0),
+  requested_by  uuid NOT NULL REFERENCES app_user(id),
+  requested_at  timestamptz NOT NULL DEFAULT now(),
+  state         text NOT NULL DEFAULT 'pending'
+                CHECK (state IN ('pending','approved','declined','withdrawn')),
+  decided_by    uuid REFERENCES app_user(id),
+  decided_at    timestamptz,
+  decided_note  text,
+  -- The void this created, so the log and the paperwork join up. A row that
+  -- says "approved" and names no event is an approval nobody applied.
+  applied_key   text,
+  CONSTRAINT decided_rows_name_a_decider
+    CHECK (state IN ('pending','withdrawn') OR decided_by IS NOT NULL),
+  CONSTRAINT approved_rows_name_their_event
+    CHECK (state <> 'approved' OR applied_key IS NOT NULL)
+);
+CREATE INDEX ON scoring_amendment (match_id) WHERE state = 'pending';
+CREATE INDEX ON scoring_amendment (requested_by);
+-- One open request per delivery. Two pending amendments against the same ball
+-- make "approve" ambiguous and could void it twice.
+CREATE UNIQUE INDEX ON scoring_amendment (match_id, target_key) WHERE state = 'pending';
+
+ALTER TABLE scoring_amendment ENABLE ROW LEVEL SECURITY;
+
+-- Hand-written, like access_request and the session tables: the rule is a state
+-- machine and a workflow, not one capability against one anchor.
+CREATE POLICY scoring_amendment_read ON scoring_amendment
+  FOR SELECT USING (
+    requested_by = app_user_id()
+    OR app_can('scoring.amend.approve', scoring_amendment.school_id,
+               match_team(scoring_amendment.match_id), NULL, scoring_amendment.match_id)
+    OR app_can('audit.read', scoring_amendment.school_id,
+               match_team(scoring_amendment.match_id), NULL, scoring_amendment.match_id)
+  );
+
+CREATE POLICY scoring_amendment_insert ON scoring_amendment
+  FOR INSERT WITH CHECK (
+    requested_by = app_user_id()
+    AND state = 'pending'
+    AND app_can('scoring.correct', scoring_amendment.school_id,
+                match_team(scoring_amendment.match_id), NULL, scoring_amendment.match_id)
+  );
+
+-- Withdrawing your own is the only direct UPDATE. Deciding one goes through the
+-- function below, because approving appends to an append-only log and that
+-- authority is not conferred here.
+CREATE POLICY scoring_amendment_update ON scoring_amendment
+  FOR UPDATE USING (requested_by = app_user_id() AND state = 'pending')
+           WITH CHECK (requested_by = app_user_id() AND state = 'withdrawn');
+
+/**
+ * Decide an amendment. Approving APPENDS THE VOID.
+ *
+ * SECURITY DEFINER because the void has to be written to a match with no live
+ * session, which ball_event_insert refuses by design and should go on refusing:
+ * the ordinary path must never be able to write to a finished match. This is
+ * the only door, and it checks its own authority rather than inheriting one.
+ *
+ * Four things it enforces, in order:
+ *
+ *   1. The decider holds scoring.amend.approve over THIS match.
+ *   2. The decider is not the requester. This is the entire reason the row
+ *      exists; without it the approval column records the same name twice.
+ *   3. The target is a real delivery in this match that is still live. Voiding
+ *      an already-voided ball would be a second void with nothing under it, and
+ *      the result would not change — an approval that silently did nothing.
+ *   4. The void is written under the REQUESTER's name, not the approver's.
+ *      Authorship of a correction and authority for it are different facts and
+ *      the whole complaint about the old model was that it recorded only one.
+ */
+CREATE OR REPLACE FUNCTION scoring_amendment_decide(
+  p_amendment uuid,
+  p_approve   boolean,
+  p_note      text DEFAULT NULL
+) RETURNS TABLE (ok boolean, reason text, void_key text) AS $$
+DECLARE
+  a         scoring_amendment%ROWTYPE;
+  v_team    text;
+  v_seq     integer;
+  v_epoch   integer;
+  v_innings smallint;
+  v_key     text;
+BEGIN
+  SELECT * INTO a FROM scoring_amendment WHERE id = p_amendment FOR UPDATE;
+  IF NOT FOUND THEN RETURN QUERY SELECT false, 'no_such_amendment', NULL::text; RETURN; END IF;
+  IF a.state <> 'pending' THEN
+    RETURN QUERY SELECT false, 'already_' || a.state, NULL::text; RETURN; END IF;
+
+  v_team := match_team(a.match_id);
+
+  -- (1) authority over this match
+  IF NOT app_can('scoring.amend.approve', a.school_id, v_team, NULL, a.match_id) THEN
+    RETURN QUERY SELECT false, 'not_permitted', NULL::text; RETURN;
+  END IF;
+
+  -- (2) not your own
+  IF a.requested_by = app_user_id() THEN
+    RETURN QUERY SELECT false, 'cannot_approve_your_own', NULL::text; RETURN;
+  END IF;
+
+  IF NOT p_approve THEN
+    UPDATE scoring_amendment
+       SET state = 'declined', decided_by = app_user_id(),
+           decided_at = now(), decided_note = p_note
+     WHERE id = p_amendment;
+    RETURN QUERY SELECT true, NULL::text, NULL::text; RETURN;
+  END IF;
+
+  -- (3) the target is a live delivery in this match
+  SELECT b.innings INTO v_innings
+    FROM ball_event_live b
+   WHERE b.match_id = a.match_id AND b.idempotency_key = a.target_key;
+  IF NOT FOUND THEN
+    RETURN QUERY SELECT false, 'no_such_live_delivery', NULL::text; RETURN;
+  END IF;
+
+  SELECT coalesce(max(seq), 0) + 1, coalesce(max(epoch), 1)
+    INTO v_seq, v_epoch
+    FROM ball_event WHERE match_id = a.match_id;
+
+  -- Derived from the amendment id, so the same approval cannot write two voids
+  -- even if this function is somehow called twice: the UNIQUE on
+  -- idempotency_key refuses the second.
+  v_key := 'amendment:' || a.id::text;
+
+  -- (4) authored by the requester, approved by the caller
+  INSERT INTO ball_event
+    (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+     idempotency_key, client_seq, client_ts, kind, payload)
+  VALUES
+    (a.match_id, a.school_id, v_seq, v_epoch, v_innings, a.requested_by,
+     -- Not a scoring device. A correction made at a desk days later did not
+     -- come from one, and recording a device that was never involved would put
+     -- a fiction in the provenance columns.
+     'amendment', v_key, v_seq, now(), 'void',
+     jsonb_build_object('target', a.target_key,
+                        'amendment', a.id,
+                        'approved_by', app_user_id()));
+
+  UPDATE scoring_amendment
+     SET state = 'approved', decided_by = app_user_id(),
+         decided_at = now(), decided_note = p_note, applied_key = v_key
+   WHERE id = p_amendment;
+
+  RETURN QUERY SELECT true, NULL::text, v_key;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION scoring_amendment_decide(uuid, boolean, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION scoring_amendment_decide(uuid, boolean, text) TO PUBLIC;

@@ -35,7 +35,7 @@ import { askStatGuru, describeDelivery, aiConfigured } from "./ai/ai-service.mjs
 import { sessionProfile, runAsPrincipal } from "./auth/auth-db.mjs";
 import { signToken, AuthError } from "./auth/auth.mjs";
 import { readRoute, liveResources } from "./read/read-api.mjs";
-import { eventRoutes } from "./write/events-api.mjs";
+import { eventRoutes, amendmentRoutes } from "./write/events-api.mjs";
 import { assessmentRoutes, accessRequestRoutes, developmentNoteRoutes } from "./write/assessment-api.mjs";
 import { sessionRoutes } from "./realtime/session-routes.mjs";
 import { MatchHub } from "./realtime/realtime.mjs";
@@ -146,6 +146,7 @@ const read    = readRoute({ pool, secret: SECRET });
 const assess  = assessmentRoutes({ pool, secret: SECRET });
 const access  = accessRequestRoutes({ pool, secret: SECRET });
 const notes   = developmentNoteRoutes({ pool, secret: SECRET });
+const amend   = amendmentRoutes({ pool, secret: SECRET });
 
 /**
  * Development sign-in.
@@ -189,6 +190,7 @@ const MATCH_ROUTES = [
   [/^\/api\/matches\/([^/]+)\/session\/force-release$/,      "POST", session.forceRelease],
   [/^\/api\/matches\/([^/]+)\/events$/,             "POST", events.append],
   [/^\/api\/matches\/([^/]+)\/events$/,             "GET",  events.list],
+  [/^\/api\/matches\/([^/]+)\/amendments$/,        "POST", amend.request],
 ];
 
 // Routes keyed on a player rather than a match. Same shape, same shim.
@@ -198,6 +200,7 @@ const PLAYER_ROUTES = [
   [/^\/api\/access-requests\/([^/]+)\/decide$/, "POST", access.decide],
   [/^\/api\/players\/([^/]+)\/notes$/,          "POST", notes.write],
   [/^\/api\/notes\/([^/]+)$/,                    "PATCH", notes.revise],
+  [/^\/api\/amendments\/([^/]+)\/decide$/,       "POST", amend.decide],
 ];
 
 const server = createServer(async (req, res) => {

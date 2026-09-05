@@ -152,3 +152,56 @@ export function eventRoutes({ pool, secret }) {
     },
   };
 }
+
+
+/**
+ * Amending a completed match.
+ *
+ * Both handlers do what every write path here does: as little as possible. The
+ * INSERT policy on scoring_amendment decides who may ask, and
+ * scoring_amendment_decide() checks the approver's authority — and that they
+ * are not the requester — before it appends anything. A check in JavaScript
+ * would be a second opinion that can drift from the one that runs.
+ */
+export function amendmentRoutes({ pool, secret }) {
+  const err = (code, status = 400) => Object.assign(new Error(code), { status });
+  const handle = (fn) => async (req, res) => {
+    try { res.json(await fn(req)); }
+    catch (e) {
+      const status = e.code === "42501" ? 403 : (e.status || 500);
+      res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
+    }
+  };
+  return {
+    // POST /matches/:id/amendments { targetKey, reason }
+    request: handle(async (req) => {
+      const targetKey = (req.body?.targetKey || "").trim();
+      const reason = (req.body?.reason || "").trim();
+      if (!targetKey) throw err("target_required");
+      if (!reason) throw err("reason_required");
+      return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+        // school_id comes from the MATCH, not the payload: the policy anchors
+        // on it, and a request that names its own tenant is one that can be
+        // filed against the wrong school.
+        const { rows } = await client.query(
+          `insert into scoring_amendment (match_id, school_id, target_key, reason, requested_by)
+           select $1, m.school_id, $2, $3, app_user_id()
+             from match m where m.id = $1
+           returning id, state`,
+          [req.params.id, targetKey, reason]);
+        if (!rows.length) throw err("not_permitted", 403);
+        return { id: rows[0].id, state: rows[0].state };
+      });
+    }),
+    // POST /amendments/:id/decide { approve, note? }
+    decide: handle(async (req) => {
+      const approve = req.body?.approve === true;
+      return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+        const { rows } = await client.query(
+          `select * from scoring_amendment_decide($1, $2, $3)`,
+          [req.params.id, approve, req.body?.note ?? null]);
+        return rows[0] ?? { ok: false, reason: "no_result" };
+      });
+    }),
+  };
+}

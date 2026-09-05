@@ -80,7 +80,7 @@ const BUNDLES = {
     "competition.read", "discipline.read", "facility.read", "invoice.read",
     "player.performance.read", "medical.status.read", "medical.nature.read", "audit.read",
     "player.age.read", "player.roster.read", "guardian.link.manage",
-    "player.note.read",
+    "player.note.read", "scoring.amend.approve",
   ],
   directorofsport: [
     ...READ_TEAM, "school.read", "user.read", "user.invite",
@@ -92,6 +92,7 @@ const BUNDLES = {
     "analytics.read", "competition.read", "facility.read", "facility.manage",
     "transport.read", "officiating.assign",
     "scoring.start", "scoring.edit", "scoring.finalise", "scoring.correct",
+    "scoring.amend.approve",
     "news.publish.team", "news.publish.school", "audit.read",
   ],
   schooladmin: [
@@ -273,7 +274,8 @@ const BUNDLES = {
   competitionadmin: [
     "fixture.read", "fixture.update", "fixture.cancel", "team.read", "news.read",
     "competition.read", "competition.manage", "officiating.assign",
-    "discipline.read", "scoring.correct", "news.publish.competition",
+    "discipline.read", "scoring.correct", "scoring.amend.approve",
+    "news.publish.competition",
   ],
 };
 

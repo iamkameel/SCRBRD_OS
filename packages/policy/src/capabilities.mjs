@@ -85,7 +85,12 @@ export const CAPABILITIES = {
   "scoring.start":               "Claim the scoring token for a match",
   "scoring.edit":                "Append ball events",
   "scoring.finalise":            "Close an innings or lock a match",
-  "scoring.correct":             "Submit or approve a scoring correction",
+  // TWO CAPABILITIES, because the spec asks for an approval and an approval one
+  // person can give themselves is a formality. `scoring.correct` is held by the
+  // scorer — they are the person who noticed the mistake — and the approval is
+  // deliberately not.
+  "scoring.correct":             "Request a correction to a completed match",
+  "scoring.amend.approve":       "Approve a correction to a completed match",
   "officiating.assign":          "Assign match officials",
   "officiating.report":          "File a match official's report",
 
