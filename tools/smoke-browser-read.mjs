@@ -24,6 +24,7 @@
  *   BROWSER_READ_DEBUG=1 node tools/smoke-browser-read.mjs
  */
 import { chromium } from "playwright-core";
+import { anchorFor } from "@scrbrd/scoring";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
@@ -205,6 +206,65 @@ try {
     ok("...and show a note's signal where it carries one", /batting\s*-2/i.test(skillsText));
   } else {
     ok("the skills screen is reachable for a coach", false);
+  }
+
+  // ── Writing one, in the browser ─────────────────────────────────
+  //
+  // The write APIs behind this were tested for several commits before anything
+  // called them: a coach could read a rating, its drift and the notes behind
+  // it, and record none of it. This drives the real form against the real API
+  // and then reads the result back, because a form that posts and does not
+  // refresh looks exactly like a form that failed.
+  group("A coach records an assessment from the screen");
+  {
+    const p = coach.page;
+    await p.locator("button", { hasText: /Run Assessment/ }).first().click();
+    await p.waitForTimeout(600);
+    const form = await text(p);
+    ok("the assessment form opens", /Assessment —/.test(form));
+    // The anchor is shown WHILE rating, and an unapproved one says so. Taken
+    // from the rubric rather than hardcoded: the seeded footwork score is 17,
+    // so the sentence on screen is the one for 16 and up — the first draft of
+    // this assertion looked for the 4 and 8 sentences and failed for a reason
+    // that had nothing to do with the form.
+    const shown = anchorFor("technical.footwork").points[16];
+    ok("...showing what a score is supposed to mean", form.includes(shown.slice(0, 40)));
+    ok("...and marking the unapproved sentences as drafts", /draft/i.test(form));
+
+    // Move one slider and save. Range inputs need a real interaction, so the
+    // value is set and an input event dispatched the way the browser would.
+    const slider = p.locator('input[type="range"]').first();
+    await slider.evaluate((el) => {
+      const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+      set.call(el, "19");
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await p.waitForTimeout(200);
+    const save = p.locator("button", { hasText: /^Save \d+ rating/ }).first();
+    ok("...and the save button counts what was actually moved", await save.count() > 0);
+    await save.click();
+    await p.waitForTimeout(2000);
+    const after = await text(p);
+    ok("the form closes on a successful save", !/Assessment —/.test(after));
+    // The read path re-runs, so the new number is on screen without a reload.
+    ok("...and the new rating is on screen without a reload", /19/.test(after));
+  }
+
+  group("A coach writes a development note from the screen");
+  {
+    const p = coach.page;
+    await p.locator("button", { hasText: /^\+ Note$/ }).first().click();
+    await p.waitForTimeout(600);
+    ok("the note composer opens", /Development note —/.test(await text(p)));
+    ok("...and says who will be able to read it",
+       /Not visible to the player or their parent/.test(await text(p)));
+    await p.locator("textarea").first().fill("Smoke: works hard in the nets without being asked.");
+    await p.waitForTimeout(150);
+    await p.locator("button", { hasText: /^Save note$/ }).first().click();
+    await p.waitForTimeout(2000);
+    const after = await text(p);
+    ok("the composer closes on a successful save", !/Development note —/.test(after));
+    ok("...and the note is on screen without a reload", /works hard in the nets/.test(after));
   }
 
   // The other side of that boundary, in a browser rather than through the API.

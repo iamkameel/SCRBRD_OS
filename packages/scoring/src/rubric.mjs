@@ -40,6 +40,8 @@
  * sources of truth for one fact.
  */
 
+import { DRAFT_ANCHORS, DRAFTED } from "./rubric-drafts.mjs";
+
 export const RUBRIC_VERSION = "cricket-v1";
 
 /**
@@ -218,6 +220,33 @@ export const ANCHORS = Object.freeze({
   }),
 });
 
+/**
+ * Drafts, kept deliberately apart from ANCHORS.
+ *
+ * 32 attributes have a first-pass anchor set written to be argued with, so the
+ * people who actually know have something to redline rather than a blank form.
+ * They do NOT close the gate and they are not consensus — see rubric-drafts.mjs.
+ *
+ * They are re-exported here so a caller has one place to ask, and so the two
+ * can never be confused for one another: anything that shows an anchor asks
+ * anchorFor(), which says which kind it got.
+ */
+export { DRAFT_ANCHORS, DRAFTED };
+
+/**
+ * The anchor set for one attribute, and its standing.
+ *
+ * Returns null when there is neither. `status` is the whole point: a screen
+ * that shows a draft is obliged to say so, because a coach who calibrates
+ * against an unapproved sentence produces drift, and drift is
+ * indistinguishable from a player changing.
+ */
+export function anchorFor(skill) {
+  if (ANCHORS[skill]) return { points: ANCHORS[skill], status: "authored" };
+  if (DRAFT_ANCHORS[skill]) return { points: DRAFT_ANCHORS[skill], status: "draft" };
+  return null;
+}
+
 export const ANCHOR_POINTS = Object.freeze([4, 8, 12, 16, 20]);
 
 /** Every attribute in the tree, as "group.attribute". */
@@ -235,6 +264,16 @@ export function allSkills() {
  */
 export function unanchoredSkills() {
   return allSkills().filter((s) => !ANCHORS[s]);
+}
+
+/** Attributes with a DRAFT anchor and no approved one — the redline queue. */
+export function draftedSkills() {
+  return allSkills().filter((s) => !ANCHORS[s] && DRAFT_ANCHORS[s]);
+}
+
+/** Attributes with neither. Nobody has even proposed a sentence for these. */
+export function unwrittenSkills() {
+  return allSkills().filter((s) => !ANCHORS[s] && !DRAFT_ANCHORS[s]);
 }
 
 /** Is this rubric complete enough to record assessments against? */
@@ -267,9 +306,12 @@ export function rubric() {
     tree: TREE,
     disciplines: DISCIPLINES,
     anchors: ANCHORS,
+    draftAnchors: DRAFT_ANCHORS,
     benchmarks: BENCHMARKS,
     benchmarksProvisional: BENCHMARKS_ARE_PROVISIONAL,
     ready: rubricIsReady(),
     unanchored: unanchoredSkills(),
+    drafted: draftedSkills(),
+    unwritten: unwrittenSkills(),
   };
 }

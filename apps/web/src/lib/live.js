@@ -320,6 +320,11 @@ export function liveResources() { return Object.keys(ADAPT); }
 /**
  * Rows for a resource, from the server when there is one.
  *
+ * `nonce` is how a screen re-reads after it has WRITTEN something. Bumping it
+ * re-runs the fetch. Without it a coach saves an assessment and the numbers on
+ * the screen stay where they were until a reload — which reads exactly like the
+ * save having failed, and is how somebody comes to save the same thing twice.
+ *
  * THE RULE THIS ENFORCES
  * ──────────────────────
  * When signed in, the mock is never rendered. Not as a fallback, not while
@@ -338,7 +343,7 @@ export function liveResources() { return Object.keys(ADAPT); }
  * same statement as an empty array after it, and "no fixtures today" is a
  * claim the UI should only make once the server has actually said so.
  */
-export function useLive(resource, role) {
+export function useLive(resource, role, nonce = 0) {
   const demo = !signedIn();
   const [state, setState] = useState(() =>
     demo
@@ -366,7 +371,7 @@ export function useLive(resource, role) {
       }
     })();
     return () => { cancelled = true; };
-  }, [resource, role]);
+  }, [resource, role, nonce]);
 
   return state;
 }
@@ -384,8 +389,8 @@ export function useLive(resource, role) {
  * the trend. The pivot happens here so the views keep the shape they were
  * written against, and only the most recent assessment of each metric wins.
  */
-export function useSkills(role) {
-  const { rows, live, loading, error } = useLive("skills", role);
+export function useSkills(role, nonce = 0) {
+  const { rows, live, loading, error } = useLive("skills", role, nonce);
   const demo = !signedIn();
   if (demo) return scopedSkills(role);
   const out = {};
@@ -440,8 +445,8 @@ export function usePlayersWithCareer(role) {
  * inventing either half for a signed-out demo would put a fabricated number
  * next to a real name. Signed out, this is empty and the screens say so.
  */
-export function useRatings(role) {
-  const { rows, live, loading, error } = useLive("ratings", role);
+export function useRatings(role, nonce = 0) {
+  const { rows, live, loading, error } = useLive("ratings", role, nonce);
   const byPlayer = {};
   for (const r of rows) byPlayer[r.id] = r;
   return { ratings: byPlayer, live, loading, error };
@@ -454,8 +459,8 @@ export function useRatings(role) {
  * child, and a fabricated one on a demo screen would read exactly like a real
  * one. Signed out this is empty.
  */
-export function useNotes(role, playerId) {
-  const { rows, live, loading, error } = useLive("notes", role);
+export function useNotes(role, playerId, nonce = 0) {
+  const { rows, live, loading, error } = useLive("notes", role, nonce);
   return { notes: rows.filter((n) => !playerId || n.playerId === playerId), live, loading, error };
 }
 

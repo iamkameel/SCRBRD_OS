@@ -17,6 +17,7 @@ import {
   CEILING, RUBRIC_VERSION, allSkills, unanchoredSkills, rubricIsReady, ageRelative, rubric,
   SCALE_MIN, SCALE_MAX, BANDS_OF_SCALE, scaleBand, DISCIPLINES,
   DERIVABLE_DISCIPLINES, COACH_ONLY_DISCIPLINES,
+  DRAFT_ANCHORS, anchorFor, draftedSkills, unwrittenSkills,
 } from "../src/rubric.mjs";
 import { ASSESSMENT_SHAPE, validateAssessment } from "../../../services/api/write/assessment-api.mjs";
 
@@ -140,6 +141,73 @@ group("F. One attribute set, not two");
      rejects({ technical: { footwork: 20 } }) === false);
   ok("a fraction is refused, because a coach cannot defend 13.5 against 14",
      rejects({ technical: { footwork: 13.5 } }) === true);
+}
+
+// ── H. Drafts do not close the gate ──────────────────────
+//
+// 32 attributes now carry a first-pass anchor set, written to be redlined
+// rather than believed. The whole value of that depends on ONE property: a
+// draft must not count as an anchor. rubric.mjs says a placeholder anchor is
+// worse than none — a coach reads it, calibrates against it, and the drift
+// that follows is indistinguishable from a player changing.
+//
+// So the assertions here are mostly about the seam between the two.
+group("H. A draft is not an anchor");
+{
+  const all = new Set(allSkills());
+  ok("every draft names an attribute that exists",
+     Object.keys(DRAFT_ANCHORS).every((k) => all.has(k)));
+  ok("every attribute now has either an anchor or a draft", unwrittenSkills().length === 0);
+  ok("...and exactly one of the two", draftedSkills().every((k) => !ANCHORS[k]));
+
+  // THE LOAD-BEARING ONE. A drafted attribute is still unanchored, so the gate
+  // counts it as outstanding work.
+  ok("a drafted attribute still counts as unanchored",
+     draftedSkills().every((k) => unanchoredSkills().includes(k)));
+  ok("...so the gate is still shut", rubricIsReady() === false);
+  ok("...and it is shut for a reason, not by accident", unanchoredSkills().length === 32);
+
+  // Anything showing an anchor is obliged to say which kind it got.
+  ok("an approved anchor reports itself as authored",
+     anchorFor("technical.footwork").status === "authored");
+  ok("a draft reports itself as a draft",
+     anchorFor("mental.bravery").status === "draft");
+  ok("an attribute that does not exist has no anchor at all",
+     anchorFor("technical.swagger") === null);
+
+  // Shape: the same five points, every one a real sentence.
+  for (const [skill, points] of Object.entries(DRAFT_ANCHORS)) {
+    const keys = Object.keys(points).map(Number).sort((a, b) => a - b);
+    ok(`${skill} is anchored at every point on the scale`,
+       keys.length === ANCHOR_POINTS.length && keys.every((k, i) => k === ANCHOR_POINTS[i]));
+  }
+  // Length is a poor proxy for substance and it fired on the best line in the
+  // set — "Works when watched." is nineteen characters and says more than most
+  // of the paragraph-long ones. What actually distinguishes a real anchor from
+  // a placeholder is that it was written for THIS attribute: a stub gets
+  // pasted, so a repeat across two attributes is the thing to look for.
+  ok("every draft sentence is a written sentence",
+     Object.values(DRAFT_ANCHORS).every((p) =>
+       Object.values(p).every((v) => typeof v === "string" && v.trim().endsWith(".")
+                                     && v.trim().length > 12)));
+  {
+    const seen = new Map();
+    let repeated = 0;
+    for (const [skill, points] of Object.entries(DRAFT_ANCHORS))
+      for (const v of Object.values(points)) {
+        const key = v.trim().toLowerCase();
+        if (seen.has(key) && seen.get(key) !== skill) repeated++;
+        seen.set(key, skill);
+      }
+    ok("...and no sentence was pasted from one attribute to another", repeated === 0);
+  }
+  // Five identical or near-identical sentences would satisfy the shape check
+  // and teach a coach nothing.
+  ok("...and the five differ from each other",
+     Object.values(DRAFT_ANCHORS).every((p) => new Set(Object.values(p)).size === 5));
+  // The top of every scale means the same thing, or the scale is not absolute.
+  ok("every 20 refers to the ceiling this rubric defines",
+     Object.values(DRAFT_ANCHORS).every((p) => /provincial/i.test(p[20])));
 }
 
 console.log(`\n${"─".repeat(52)}\nRUBRIC SUITE: ${pass} passed, ${fail} failed`);
