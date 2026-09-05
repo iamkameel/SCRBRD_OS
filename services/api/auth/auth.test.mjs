@@ -174,11 +174,32 @@ group("Auth middleware");
 // ── Magic link ──
 group("Magic-link login");
 {
-  const { raw, hash } = newMagicCode();
+  const SECRET = "a-server-secret";
+  const { raw, hash, expiresInSec } = newMagicCode(SECRET);
   ok("raw code is opaque + long", typeof raw === "string" && raw.length >= 24);
   ok("stored hash ≠ raw code", hash !== raw);
-  ok("hash verifies the raw code", magicHash(raw) === hash);
-  ok("wrong code fails", magicHash("wrong") !== hash);
+  ok("hash verifies the raw code", magicHash(raw, SECRET) === hash);
+  ok("wrong code fails", magicHash("wrong", SECRET) !== hash);
+
+  // KEYED WITH THE SERVER SECRET, not a constant in the source. It used to be
+  // HMAC'd with the literal "scrbrd-magic-link" — a public value in a public
+  // function, so the "hash" was a pure function anybody could compute. With
+  // 192-bit codes that was not exploitable and it was still the wrong shape.
+  ok("a different server produces a different hash for the same code",
+     magicHash(raw, "another-server-secret") !== hash);
+  ok("hashing without a secret is refused, not silently unkeyed", (() => {
+    try { magicHash(raw, ""); return false; } catch { return true; }
+  })());
+
+  // An office-issued code outlives an emailed one on purpose: it is written on
+  // an enrolment letter and set up that evening, not clicked within a minute.
+  ok("an office code lasts days, not minutes", expiresInSec >= 24 * 60 * 60);
+  ok("...and the caller can still ask for a short one",
+     newMagicCode(SECRET, 900).expiresInSec === 900);
+
+  // Two codes are never the same code.
+  ok("codes do not repeat",
+     new Set(Array.from({ length: 50 }, () => newMagicCode(SECRET).raw)).size === 50);
 }
 
 console.log(`\n${"─".repeat(52)}\nAUTH SUITE: ${pass} passed, ${fail} failed`);

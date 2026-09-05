@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import SCRBRD_LOGO from "../assets/scrbrd-logo.jpg";
 import { ROLES } from "../design/roles.js";
 import { SCRBRD } from "../scorer/engine.jsx";
-import { mode as apiMode, signIn } from "../lib/session.js";
+import { mode as apiMode, signIn, signInWithCode, devLoginAvailable } from "../lib/session.js";
 
 // ══════════════════════════════════════════════════════
 //  LOGIN PAGE
@@ -47,12 +47,15 @@ const PILOT_ACCOUNTS = [
 function LoginPage({ onLogin, onSignUp }) {
   const [email,    setEmail]    = useState("");
   const [password, setPassword] = useState("");
+  // Whether THIS SERVER accepts the development sign-in. Asked, not assumed.
+  const [devLogin, setDevLogin] = useState(false);
   const [error,    setError]    = useState("");
   const [loading,  setLoading]  = useState(false);
   const [oauthLoading, setOauthLoading] = useState(false);
   const [live,     setLive]     = useState(null);   // null = still asking
 
   useEffect(() => { apiMode().then(m => setLive(m === "live")).catch(() => setLive(false)); }, []);
+  useEffect(() => { devLoginAvailable().then(setDevLogin).catch(() => setDevLogin(false)); }, []);
 
   // Mock credentials map: email → {role, name}
   const MOCK_USERS = {
@@ -72,11 +75,29 @@ function LoginPage({ onLogin, onSignUp }) {
     // Live: the server decides. No fallback — see the header.
     if (live) {
       try {
-        const p = await signIn(email.trim());
+        // A CODE is the real path. SCRBRD sends no email, so the school office
+        // issues one and hands it over; this is the exchange that turns it into
+        // a session bound to this device.
+        //
+        // With the box empty, the seeded accounts sign in through the
+        // development route — but only where the SERVER says it accepts it,
+        // which is never in production. Offering it anywhere else would be a
+        // button that works on a laptop and errors in front of a school.
+        const code = password.trim();
+        const p = code
+          ? await signInWithCode(email.trim(), code)
+          : devLogin
+            ? await signIn(email.trim())
+            : (() => { throw Object.assign(new Error("code_required"), { code: "code_required" }); })();
         onLogin(primaryRole(p), p?.user?.name || email, p);
       } catch (e) {
-        setError(e.code === "no_such_user"
-          ? "No account for that address on this server."
+        setError(
+          e.code === "code_required"
+            ? "Enter the sign-in code your school office gave you."
+          : e.code === "invalid_or_expired_code"
+            ? "That code is not valid any more. Ask the office for a new one."
+          : e.code === "no_such_user"
+            ? "No account for that address on this server."
           : e.code === "dev_login_disabled"
             ? "This server does not accept development sign-in."
             : "Could not sign in. The server may be unreachable.");
@@ -159,7 +180,12 @@ function LoginPage({ onLogin, onSignUp }) {
           {/* Email + password */}
           {[
             { id:"login-email", label:"Email", type:"email", autoComplete:"email", value:email, onChange:setEmail, placeholder:"you@school.co.za" },
-            { id:"login-password", label:"Password", type:"password", autoComplete:"current-password", value:password, onChange:setPassword, placeholder:"••••••••" },
+            live
+              ? { id:"login-password", label:"Sign-in code", type:"password", autoComplete:"one-time-code",
+                  value:password, onChange:setPassword,
+                  placeholder: devLogin ? "from your school office — or leave blank for a demo account"
+                                        : "from your school office" }
+              : { id:"login-password", label:"Password", type:"password", autoComplete:"current-password", value:password, onChange:setPassword, placeholder:"••••••••" },
           ].map(f=>(
             <div key={f.label} style={{marginBottom:"14px"}}>
               {/* A real <label htmlFor>, not a styled div. The div looked the

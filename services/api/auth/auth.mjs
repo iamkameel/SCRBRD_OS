@@ -173,11 +173,37 @@ export function authMiddleware({ secret, now = Date.now, requireAuth = true }) {
 
 // ── Magic-link codes ──
 /** A single-use login code: long, opaque, and stored only as a hash. */
-export function newMagicCode() {
+/**
+ * How long an OFFICE-ISSUED code lives.
+ *
+ * Three days, not the fifteen minutes an emailed link would get. The two are
+ * different objects: an emailed link is clicked within a minute or it was not
+ * the person, while a code written on an enrolment letter is set up that
+ * evening, or on the weekend, by a parent who has to find their phone. Fifteen
+ * minutes would mean every code failing and the office re-issuing by hand.
+ *
+ * What keeps that safe is not the window. It is that the code is 192 bits of
+ * randomness, single-use, spent atomically on redemption, invalidated by the
+ * next issue, and handed to somebody an administrator has already identified.
+ */
+export const CODE_TTL_SEC = 3 * 24 * 60 * 60;
+
+export function newMagicCode(secret, ttlSec = CODE_TTL_SEC) {
   const raw = randomBytes(24).toString("base64url");
-  return { raw, hash: magicHash(raw), expiresInSec: 15 * 60 };
+  return { raw, hash: magicHash(raw, secret), expiresInSec: ttlSec };
 }
 
-export function magicHash(raw) {
-  return createHmac("sha256", "scrbrd-magic-link").update(raw).digest("hex");
+/**
+ * Keyed with the SERVER SECRET, not a constant in the source.
+ *
+ * It used to be HMAC'd with the literal "scrbrd-magic-link", which is a public
+ * value in a public function and therefore no key at all — the "hash" was a
+ * pure function anybody could compute. With 192-bit codes that was not
+ * exploitable, and it was still the wrong shape: a stolen copy of login_code
+ * plus this file is enough to check a guess, and there is no reason to allow
+ * that when the secret is already in hand at every call site.
+ */
+export function magicHash(raw, secret) {
+  if (!secret) throw new AuthError("missing_secret");
+  return createHmac("sha256", secret).update(String(raw)).digest("hex");
 }

@@ -22,6 +22,7 @@
  *   node tools/migrate.mjs --reset --seed
  *   node tools/smoke-guardian.mjs
  */
+import { spawn } from "node:child_process";
 import pg from "pg";
 
 const OWNER = process.env.DATABASE_URL || "postgres://scrbrd:scrbrd@127.0.0.1:5432/scrbrd";
@@ -46,6 +47,24 @@ const SECOND_GUA = "88888888-0000-0000-0000-0000000000f3";
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
 const group = (t) => console.log("\n" + t);
+
+const PORT = 8808;
+const BASE = `http://127.0.0.1:${PORT}`;
+const server = spawn(process.execPath, ["services/api/server.mjs"], {
+  env: { ...process.env, PORT: String(PORT), NODE_ENV: "development",
+         ALLOW_DEV_LOGIN: "1", SESSION_SECRET: "smoke-guardian-secret" },
+  stdio: ["ignore", "pipe", "pipe"],
+});
+const api = async (path, { method = "GET", token, body } = {}) => {
+  const res = await fetch(BASE + path, {
+    method,
+    headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  return { status: res.status, body: await res.json().catch(() => null) };
+};
+const devLogin = async (email) => (await api("/api/auth/dev-login", {
+  method: "POST", body: { email, deviceId: "device-guardian" } })).body?.token;
 
 const owner = new pg.Pool({ connectionString: OWNER });
 const app   = new pg.Pool({ connectionString: APP });
@@ -303,6 +322,54 @@ try {
   ok("...nor DELETE one, so a link cannot be made to have never existed",
      (await actErr(REGISTRAR, `delete from assignment_subject where player_id = $1`, [P_U13])) !== null);
 
+  // ── The same rules, over HTTP ───────────────────────────────────
+  //
+  // Everything above drives the functions directly. That proved the rules and
+  // proved nothing about whether a registrar can reach them: the five guardian
+  // functions were built, falsified and covered by every assertion in this file
+  // — and had NO ROUTE for two commits. The POPIA obligation they satisfy was
+  // unreachable by the only people who need it.
+  group("A registrar can actually reach them");
+  {
+    for (let i = 0; i < 60; i++) {
+      try { const r = await api("/api/health"); if (r.body?.db === "ok") break; } catch { /* not up */ }
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    const reg = await devLogin("registrar@example.invalid");
+    const cch = await devLogin("coach@example.invalid");
+    const HTTP_PARENT = "88888888-0000-0000-0000-0000000000f4";
+    const P_SITHOLE   = "aaaaaaaa-0000-0000-0000-000000000012";
+    await q(`insert into app_user (id, school_id, email, name, role)
+             values ($1,$2,'http.parent@example.invalid','J Sithole Snr','parent')`,
+            [HTTP_PARENT, HIL]);
+
+    const est = await api(`/api/players/${P_SITHOLE}/guardians`, {
+      method: "POST", token: reg, body: { guardianId: HTTP_PARENT, relationship: "parent" } });
+    ok("the office establishes a link over HTTP", est.status === 200 && est.body?.ok === true);
+    ok("a coach is refused over HTTP too",
+       (await api(`/api/players/${P_SITHOLE}/guardians`, { method: "POST", token: cch,
+          body: { guardianId: HTTP_PARENT } })).status === 403);
+    ok("...and the child is not yet registered", (await state(P_SITHOLE)) === "pending_verification");
+
+    const ver = await api(`/api/players/${P_SITHOLE}/guardians/verify`, {
+      method: "POST", token: reg, body: { guardianId: HTTP_PARENT, consentVersion: "popia-2026-01" } });
+    ok("the office verifies it over HTTP", ver.body?.ok === true);
+    ok("...and the child is registered", (await state(P_SITHOLE)) === "active");
+
+    // The rules travel with the function, not with the route.
+    ok("the last verified link of a minor still cannot be revoked",
+       (await api(`/api/players/${P_SITHOLE}/guardians/revoke`, { method: "POST", token: reg,
+          body: { guardianId: HTTP_PARENT } })).body?.error === "last_verified_link");
+    ok("consent can be withdrawn over HTTP",
+       (await api(`/api/players/${P_SITHOLE}/guardians/withdraw`, { method: "POST", token: reg,
+          body: { guardianId: HTTP_PARENT } })).body?.ok === true);
+    ok("...which unregisters the child", (await state(P_SITHOLE)) === "pending_consent");
+    ok("...and it can be recorded again",
+       (await api(`/api/players/${P_SITHOLE}/guardians/consent`, { method: "POST", token: reg,
+          body: { guardianId: HTTP_PARENT, consentVersion: "popia-2026-02" } })).body?.ok === true);
+    ok("...registering them again", (await state(P_SITHOLE)) === "active");
+  }
+
   group("Who may read a child's links");
   const regLinks = await act(REGISTRAR, `select count(*)::int n from assignment_subject`);
   ok("the office reads the links of the children it administers", regLinks[0].n > 0);
@@ -319,6 +386,7 @@ try {
   fail++;
   console.log("\n  ✗ the walk threw:", e.message);
 } finally {
+  server.kill("SIGTERM");
   await owner.end().catch(() => {});
   await app.end().catch(() => {});
 }

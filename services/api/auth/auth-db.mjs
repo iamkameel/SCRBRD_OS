@@ -13,17 +13,48 @@
  */
 import {
   signToken, verifyToken, principalFromClaims, withPrincipal,
-  newMagicCode, magicHash, AuthError,
+  newMagicCode, magicHash, AuthError, CODE_TTL_SEC,
 } from "./auth.mjs";
 
+// ── Login: issue a code, at the office ──
+//
+// SCRBRD sends no email and no SMS, so a code is issued BY somebody who already
+// holds `user.invite` at the recipient's school, and handed over the way a
+// school already hands things over. That is not a workaround for missing
+// infrastructure; for a platform holding children's data it is a stronger
+// enrolment story than a link emailed to whatever address was typed into a
+// form, because a person looked at the recipient first.
+//
+// The raw code is returned to the ISSUER and never stored. This is the only
+// moment it exists in readable form anywhere.
+//
+// POST /api/auth/invite { email }   (authenticated)
+export async function issueLoginCode(db, secret, { email }, ttlSec = CODE_TTL_SEC) {
+  if (!email) throw new AuthError("missing_email");
+  const { raw, hash, expiresInSec } = newMagicCode(secret, ttlSec);
+  const { rows } = await db.query(
+    `select * from login_code_issue($1, $2, $3)`, [email, hash, expiresInSec]);
+  const r = rows[0];
+  if (!r?.ok) throw new AuthError(r?.reason || "not_permitted");
+  return { ok: true, code: raw, expiresAt: r.expires_at };
+}
+
 // ── Login: request a magic link ──
+//
+// KEPT AND DELIBERATELY NOT WIRED. It is the same table and the same redeem
+// path as the office route, waiting only for a delivery channel — the day
+// SCRBRD can send an email, this is the self-service half and nothing else has
+// to change. Its no-enumeration property (identical answer whether or not the
+// address exists) is the reason to keep it written down rather than rebuild it
+// later under time pressure.
+//
 // POST /api/auth/request-link { email }
-export async function requestMagicLink(db, sendEmail, { email }) {
+export async function requestMagicLink(db, secret, sendEmail, { email }) {
   const { rows } = await db.query(`select auth_account_for_email($1) as id`, [email]);
   const userId = rows[0]?.id || null;
   // Always return 200 with no user enumeration — only send if the account exists & is active.
   if (userId) {
-    const { raw, hash, expiresInSec } = newMagicCode();
+    const { raw, hash, expiresInSec } = newMagicCode(secret, 15 * 60);
     await db.query(
       `insert into login_code (user_id, code_hash, expires_at)
        values ($1, $2, now() + ($3 || ' seconds')::interval)`, [userId, hash, expiresInSec]);
@@ -33,22 +64,20 @@ export async function requestMagicLink(db, sendEmail, { email }) {
 }
 
 // ── Login: redeem the code → issue a token ──
+//
+// Runs with NO identity, which is what a login is. The spend and the lookup are
+// one statement inside login_code_redeem(), so two devices racing on the same
+// code cannot both be given a session — the second UPDATE matches nothing.
+//
 // POST /api/auth/redeem { email, code, deviceId }
 export async function redeemMagicLink(db, secret, { email, code, deviceId }) {
   if (!deviceId) throw new AuthError("missing_device");
+  if (!email || !code) throw new AuthError("invalid_or_expired_code");
   const { rows } = await db.query(
-    `select c.id as code_id, u.id as user_id
-       from login_code c
-       join lateral (select auth_account_for_email($1) as id) u on u.id = c.user_id
-      where c.code_hash = $2
-        and c.used_at is null
-        and c.expires_at > now()
-      order by c.expires_at desc
-      limit 1`, [email, magicHash(code)]);
-  const row = rows[0];
-  if (!row) throw new AuthError("invalid_or_expired_code");
-  await db.query(`update login_code set used_at = now() where id = $1`, [row.code_id]);
-  return { token: signToken({ userId: row.user_id, deviceId }, secret) };
+    `select login_code_redeem($1, $2) as user_id`, [email, magicHash(code, secret)]);
+  const userId = rows[0]?.user_id || null;
+  if (!userId) throw new AuthError("invalid_or_expired_code");
+  return { token: signToken({ userId, deviceId }, secret) };
 }
 
 /**
@@ -121,18 +150,8 @@ export async function runAsPrincipal(pool, secret, bearer, fn) {
   }
 }
 
-/*
--- ── Supporting table still to be added ──
--- login_code is the only piece of the login path with no home in db/ yet;
--- the pilot signs in through the dev route in server.mjs, which issues a token
--- for a seeded address without a code at all and refuses to run outside
--- development. Adding this table is what turns that into a real login.
-CREATE TABLE login_code (
-  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id    uuid NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
-  code_hash  text NOT NULL,
-  expires_at timestamptz NOT NULL,
-  used_at    timestamptz
-);
-CREATE INDEX ON login_code (user_id) WHERE used_at IS NULL;
-*/
+// login_code, and the two functions that read and write it, now live in
+// db/05_auth.sql where the rest of the login lookup does. They were SQL inside
+// this comment for the whole life of the project, which meant the redeem path
+// above was written, correct, unit-tested — and could not run, because the
+// table it selects from was never created.

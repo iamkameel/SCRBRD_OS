@@ -342,6 +342,72 @@ Two refusals rather than silent ignores: an adjustment naming no discipline,
 and an adjustment beyond the cap. Stored-and-ignored is how a coach comes to
 believe they moved a rating they did not move.
 
+### L1 — there was no way into a deployed SCRBRD, and now the office is the door
+
+**Found while surveying what a pilot needs.** The magic-link exchange was
+written, correct, and unit-tested — and could not run. `login_code` existed as
+SQL *inside a comment* in `services/api/auth/auth-db.mjs` and was never
+created, so the redeem path selected from a table that did not exist. The only
+working sign-in was `/api/auth/dev-login`, which refuses to run outside
+development. **A deployed instance had a front door with no handle.**
+
+**The delivery decision.** SCRBRD sends no email and no SMS, so a magic *link*
+had nowhere to go. Rather than take a dependency on an email provider to
+unblock a pilot, the code is **issued by the school office** to somebody they
+can already identify, and handed over the way a school already hands things
+over — on the enrolment letter, at the staff meeting, in person.
+
+That is not a workaround for missing infrastructure. For a platform holding
+children's data it is a *stronger* enrolment story than a link emailed to
+whatever address was typed into a form, because somebody holding
+`user.invite` looked at the recipient first.
+
+`requestMagicLink()` is kept and deliberately **not wired**: same table, same
+redeem path, waiting only for a delivery channel. Its no-enumeration property
+is worth keeping written down rather than rebuilding later under time pressure.
+
+**Because issuing is now the whole of the security, it is where the checks
+are:**
+
+| Rule | Where |
+|---|---|
+| Only `user.invite`, at the recipient's school | `login_code_issue()` |
+| Nobody issues to themselves | same |
+| An unknown address answers identically to a refused one | same |
+| Issuing a second code spends the first | same |
+| A code is spent atomically on redemption | `login_code_redeem()` |
+| Nobody signed in may read a code | `login_code` has **no policy at all** |
+
+`login_code` is the second table in the schema with row-level security on and
+no policy whatsoever — the first being `access_log`. A person who can list
+login codes can become anybody at their school.
+
+**One weakness fixed on the way past.** `magicHash()` was HMAC'd with the
+literal string `"scrbrd-magic-link"` — a public value in a public function, so
+the "hash" was a pure function anybody could compute. With 192-bit codes it was
+not exploitable, and it was still the wrong shape: a stolen copy of the table
+plus the source is enough to check a guess. It is keyed with the server secret
+now, and hashing without one raises rather than silently producing an unkeyed
+digest.
+
+**Codes live for three days**, not the fifteen minutes an emailed link would
+get. The two are different objects: a link is clicked within a minute or it was
+not the person; a code written on an enrolment letter is set up that evening by
+a parent who has to find their phone. What keeps it safe is not the window —
+it is 192 bits, single-use, spent atomically, invalidated by the next issue,
+and handed to somebody an administrator identified.
+
+### L2 — the guardian-link functions had no route
+
+Built, falsified, 55 assertions — and unreachable. Five `SECURITY DEFINER`
+functions satisfying a POPIA obligation, with no HTTP path, so the registrar
+who needs them could not use any of it from the application. The hard half was
+done and never connected.
+
+Now mounted under `/api/players/:id/guardians`, and the guardian smoke drives
+the rules over HTTP as well as against the functions — because proving a rule
+holds says nothing about whether anybody can reach it.
+
 ## §12 hard rules, checked
 
 | # | Rule | State |

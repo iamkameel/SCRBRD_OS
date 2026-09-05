@@ -38,6 +38,42 @@ export async function signIn(email) {
   return _profile;
 }
 
+/**
+ * The real sign-in: an address and a code the school office issued.
+ *
+ * SCRBRD sends no email and no SMS, so the code was handed over the way a
+ * school already hands things over. The exchange is the same one an emailed
+ * link would use — only the delivery differs — and it binds the resulting
+ * session to THIS DEVICE, which is why a lost phone is re-issued rather than
+ * recovered.
+ *
+ * A failure here is a failure. It does not fall back to the development route,
+ * for the reason signIn's neighbours give: a person who typed the wrong code
+ * and got in anyway has been told a lie about a permission decision.
+ */
+export async function signInWithCode(email, code) {
+  const { token } = await api("/api/auth/redeem", {
+    method: "POST",
+    body: { email, code, deviceId: deviceId() },
+  });
+  setToken(token);
+  _profile = await api("/api/session");
+  return _profile;
+}
+
+/**
+ * Whether this server will accept the development sign-in.
+ *
+ * Read from /api/health rather than assumed, so the screen offers the seeded
+ * accounts only where they actually work. A button that mints a session on a
+ * developer's laptop and returns an error in production is worse than no
+ * button.
+ */
+export async function devLoginAvailable() {
+  const { health } = await apiStatus();
+  return health?.auth === "dev_login_enabled";
+}
+
 export function signOut() {
   _profile = null;
   resetApi();

@@ -283,3 +283,57 @@ export function accessRequestRoutes({ pool, secret }) {
     },
   };
 }
+
+
+/**
+ * Guardian links, over HTTP.
+ *
+ * The five functions behind these were built, falsified and covered by 55
+ * assertions — and had NO ROUTE. A registrar could not establish, verify or end
+ * a guardian link from the application at all, which made the POPIA obligation
+ * they satisfy unreachable by the only people who need it.
+ *
+ * Each handler does what every write path here does: nothing. Authority,
+ * self-creation, the coach-of-this-player rule and the last-verified-link rule
+ * are all checked inside the functions, under the caller's identity.
+ */
+export function guardianLinkRoutes({ pool, secret }) {
+  const call = (sql, params) => (req) => runAsPrincipal(
+    pool, secret, req.headers?.authorization,
+    async (client) => {
+      const { rows } = await client.query(sql, params(req));
+      const r = rows[0] ?? { ok: false, reason: "no_result" };
+      if (r.ok === false) { const e = err(r.reason || "refused", 403); throw e; }
+      return r;
+    });
+  const handle = (fn) => async (req, res) => {
+    try { res.json(await fn(req)); }
+    catch (e) {
+      const status = e.code === "42501" ? 403 : (e.status || 500);
+      res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
+    }
+  };
+  return {
+    // POST /players/:id/guardians { guardianId, relationship? }
+    establish: handle(call(
+      `select * from guardian_link_establish($1, $2, $3)`,
+      (req) => [req.body?.guardianId, req.params.id, req.body?.relationship || "parent"])),
+    // POST /players/:id/guardians/verify { guardianId, consentVersion?, note? }
+    verify: handle(call(
+      `select * from guardian_link_verify($1, $2, $3, $4)`,
+      (req) => [req.body?.guardianId, req.params.id,
+                req.body?.consentVersion || null, req.body?.note || null])),
+    // POST /players/:id/guardians/revoke { guardianId, note? }
+    revoke: handle(call(
+      `select * from guardian_link_revoke($1, $2, $3)`,
+      (req) => [req.body?.guardianId, req.params.id, req.body?.note || null])),
+    // POST /players/:id/guardians/consent { guardianId, consentVersion }
+    consent: handle(call(
+      `select * from guardian_consent_record($1, $2, $3)`,
+      (req) => [req.body?.guardianId, req.params.id, req.body?.consentVersion])),
+    // POST /players/:id/guardians/withdraw { guardianId }
+    withdraw: handle(call(
+      `select * from guardian_consent_withdraw($1, $2)`,
+      (req) => [req.body?.guardianId, req.params.id])),
+  };
+}

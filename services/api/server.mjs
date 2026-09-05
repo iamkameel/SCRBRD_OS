@@ -32,11 +32,11 @@
 import { createServer } from "node:http";
 import pg from "pg";
 import { askStatGuru, describeDelivery, aiConfigured } from "./ai/ai-service.mjs";
-import { sessionProfile, runAsPrincipal } from "./auth/auth-db.mjs";
+import { sessionProfile, runAsPrincipal, issueLoginCode, redeemMagicLink } from "./auth/auth-db.mjs";
 import { signToken, AuthError } from "./auth/auth.mjs";
 import { readRoute, liveResources } from "./read/read-api.mjs";
 import { eventRoutes, amendmentRoutes } from "./write/events-api.mjs";
-import { assessmentRoutes, accessRequestRoutes, developmentNoteRoutes } from "./write/assessment-api.mjs";
+import { assessmentRoutes, accessRequestRoutes, developmentNoteRoutes, guardianLinkRoutes } from "./write/assessment-api.mjs";
 import { sessionRoutes } from "./realtime/session-routes.mjs";
 import { MatchHub } from "./realtime/realtime.mjs";
 
@@ -147,6 +147,7 @@ const assess  = assessmentRoutes({ pool, secret: SECRET });
 const access  = accessRequestRoutes({ pool, secret: SECRET });
 const notes   = developmentNoteRoutes({ pool, secret: SECRET });
 const amend   = amendmentRoutes({ pool, secret: SECRET });
+const guard   = guardianLinkRoutes({ pool, secret: SECRET });
 
 /**
  * Development sign-in.
@@ -174,6 +175,21 @@ async function devLogin(body) {
 // the mounted surface is readable at a glance.
 const EXACT = {
   "POST /api/auth/dev-login": async (body) => devLogin(body),
+
+  // ── The real login, in two halves ──
+  //
+  // ISSUE is authenticated and authorised: login_code_issue() refuses anybody
+  // who does not hold user.invite at the recipient's school, and refuses a code
+  // issued to yourself. The raw code comes back to the ISSUER, once, and is
+  // never stored — this is the only moment it exists in readable form.
+  //
+  // REDEEM is unauthenticated by definition. It runs with no identity, spends
+  // the code atomically, and returns a session token for the named device.
+  "POST /api/auth/invite": async (body, req) => runAsPrincipal(
+    pool, SECRET, req.headers?.authorization,
+    (client) => issueLoginCode(client, SECRET, { email: body?.email })),
+  "POST /api/auth/redeem": async (body) => redeemMagicLink(
+    pool, SECRET, { email: body?.email, code: body?.code, deviceId: body?.deviceId }),
   "POST /api/ai/statguru":   async (body) => ({ answer: await askStatGuru({ question: body.question, context: body.context }) }),
   "POST /api/ai/commentary": async (body) => ({ line: await describeDelivery({ situation: body.situation }) }),
 };
@@ -199,6 +215,12 @@ const PLAYER_ROUTES = [
   [/^\/api\/players\/([^/]+)\/access-request$/, "POST", access.ask],
   [/^\/api\/access-requests\/([^/]+)\/decide$/, "POST", access.decide],
   [/^\/api\/players\/([^/]+)\/notes$/,          "POST", notes.write],
+  // The guardian link, which had no route at all until now.
+  [/^\/api\/players\/([^/]+)\/guardians$/,             "POST", guard.establish],
+  [/^\/api\/players\/([^/]+)\/guardians\/verify$/,     "POST", guard.verify],
+  [/^\/api\/players\/([^/]+)\/guardians\/revoke$/,     "POST", guard.revoke],
+  [/^\/api\/players\/([^/]+)\/guardians\/consent$/,    "POST", guard.consent],
+  [/^\/api\/players\/([^/]+)\/guardians\/withdraw$/,   "POST", guard.withdraw],
   [/^\/api\/notes\/([^/]+)$/,                    "PATCH", notes.revise],
   [/^\/api\/amendments\/([^/]+)\/decide$/,       "POST", amend.decide],
 ];
@@ -249,7 +271,10 @@ const server = createServer(async (req, res) => {
     }
 
     const exact = EXACT[`${req.method} ${path}`];
-    if (exact) return json(res, 200, await exact(await readJson(req)));
+    // The request is passed as well as the body: /api/auth/invite is an
+    // AUTHENTICATED route and needs the caller's identity to check that they
+    // may issue a code for the address they named.
+    if (exact) return json(res, 200, await exact(await readJson(req), req));
 
     return json(res, 404, { error: "not_found" });
   } catch (err) {
