@@ -205,3 +205,81 @@ export function amendmentRoutes({ pool, secret }) {
     }),
   };
 }
+
+
+/**
+ * Naming the side, which is where the safeguarding checks actually live.
+ *
+ * `match_squad` carries two BEFORE triggers — age eligibility and registration
+ * — and until this route existed NOTHING IN THE PRODUCT EVER WROTE THAT TABLE.
+ * The scorer's setup wizard kept the XI in React state and put it into an
+ * `innings_start` event, so a coach could pick a fifteen-year-old for a U13
+ * fixture, or a child with no verified guardian and no consent, and the app
+ * would score it happily. The rules were correct, tested, and bypassed.
+ *
+ * REPLACING A SQUAD IS NOT A DELETE. No table in this schema has a DELETE
+ * policy for any role, and this one is not the exception: the previous
+ * selection is withdrawn and the new one written, inside one transaction, so a
+ * squad that is refused half-way leaves the old side intact rather than a side
+ * of six.
+ *
+ * The trigger's own message is returned verbatim. It names the boy and the
+ * reason — "is 14 on 1 January and cannot play U13A: the limit is 13" — and a
+ * coach who is told only "invalid" has to guess which of eleven names is the
+ * problem.
+ */
+export function squadRoutes({ pool, secret }) {
+  const err = (code, status = 400) => Object.assign(new Error(code), { status });
+  return {
+    // POST /matches/:id/squad { side, players: [{ playerId, battingNo?, twelfth? }] }
+    select: async (req, res) => {
+      try {
+        const side = req.body?.side;
+        const players = req.body?.players;
+        if (side !== "home" && side !== "away") throw err("side_must_be_home_or_away");
+        if (!Array.isArray(players) || !players.length) throw err("players_required");
+        const ids = players.map((p) => p?.playerId);
+        if (ids.some((id) => !id)) throw err("player_id_required");
+        if (new Set(ids).size !== ids.length) throw err("duplicate_player");
+
+        const out = await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+          // Withdraw the side as it stands. UPDATE rather than DELETE, and the
+          // triggers let a withdrawal through unconditionally — a player who
+          // became ineligible AFTER selection has to be removable, or the check
+          // that should have stopped him getting in now refuses to let him out.
+          await client.query(
+            `update match_squad set withdrawn = true
+              where match_id = $1 and side = $2 and not withdrawn`,
+            [req.params.id, side]);
+
+          let written = 0;
+          for (const p of players) {
+            const r = await client.query(
+              `insert into match_squad
+                 (match_id, player_id, side, batting_no, twelfth, withdrawn, selected_by, selected_at)
+               values ($1, $2, $3, $4, $5, false, app_user_id(), now())
+               on conflict (match_id, player_id) do update
+                 set side = excluded.side, batting_no = excluded.batting_no,
+                     twelfth = excluded.twelfth, withdrawn = false,
+                     selected_by = excluded.selected_by, selected_at = excluded.selected_at
+               returning player_id`,
+              [req.params.id, p.playerId, side,
+               p.battingNo == null ? null : Number(p.battingNo), p.twelfth === true]);
+            written += r.rowCount;
+          }
+          // Zero rows with no error means the policy refused every insert.
+          // Reported as a refusal rather than a success with nothing in it.
+          if (written === 0) throw err("not_permitted", 403);
+          return { matchId: req.params.id, side, selected: written };
+        });
+        res.json(out);
+      } catch (e) {
+        // 23514 is one of the two triggers. Its message names the player and
+        // says why, which is the only useful thing to put in front of a coach.
+        if (e.code === "23514") return res.status(400).json({ error: "not_eligible", detail: e.message });
+        const status = e.code === "42501" ? 403 : (e.status || 500);
+        res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
+      }
+    },
+  };
+}

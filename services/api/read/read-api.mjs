@@ -391,10 +391,14 @@ export const READ_QUERIES = {
   // spectator, who should see the score without also receiving a list of
   // children by name and school.
   match_squad: {
-    text: `select s.match_id, s.player_id, s.side, s.batting_no, p.full_name
+    text: `select s.match_id, s.player_id, s.side, s.batting_no, s.twelfth, p.full_name
              from match_squad s
              join player p on p.id = s.player_id
             where s.match_id = $1
+              -- A withdrawn selection is kept, not deleted. Every read of a
+              -- squad has to say so, or a side that changed on Friday shows
+              -- thirteen names on Saturday.
+              and not s.withdrawn
             order by s.side, s.batting_no nulls last`,
     params: q => [req(q, "matchId")],
   },

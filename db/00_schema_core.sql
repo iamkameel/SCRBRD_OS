@@ -199,8 +199,20 @@ CREATE TABLE match_squad (
   side       text NOT NULL CHECK (side IN ('home','away')),
   batting_no smallint,
   twelfth    boolean NOT NULL DEFAULT false,
+  -- A boy taken OUT of the side is withdrawn, not deleted. No table in this
+  -- schema has a DELETE policy for any role (§12.5) and this one is not going
+  -- to be the exception: changing an XI is an ordinary Friday afternoon, and
+  -- the row that says he was picked and then pulled is the only record that a
+  -- selection happened at all.
+  --
+  -- It also keeps the two triggers below honest. Every read of a squad filters
+  -- on this; a reader that forgets shows a side of thirteen.
+  withdrawn  boolean NOT NULL DEFAULT false,
+  selected_by uuid REFERENCES app_user(id),
+  selected_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (match_id, player_id)
 );
+CREATE INDEX ON match_squad (match_id) WHERE NOT withdrawn;
 
 -- ── Competitions ────────────────────────────────────────────────
 -- Read by read-api.mjs's `competitions` query.

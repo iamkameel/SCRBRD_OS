@@ -289,6 +289,12 @@ DECLARE
   v_age    int;
   v_name   text;
 BEGIN
+  -- Taking a boy OUT is always allowed. Without this, a player who became
+  -- ineligible after selection — a birthday, a withdrawn consent — could not be
+  -- removed from the side, because the check that should have stopped him
+  -- getting in would now refuse to let him leave.
+  IF NEW.withdrawn THEN RETURN NEW; END IF;
+
   SELECT m.team_code, m.starts_at INTO v_team, v_starts
     FROM match m WHERE m.id = NEW.match_id;
   IF v_team IS NULL THEN RETURN NEW; END IF;
@@ -1203,6 +1209,12 @@ DECLARE
   v_state text;
   v_name  text;
 BEGIN
+  -- Taking a boy OUT is always allowed. Without this, a player who became
+  -- ineligible after selection — a birthday, a withdrawn consent — could not be
+  -- removed from the side, because the check that should have stopped him
+  -- getting in would now refuse to let him leave.
+  IF NEW.withdrawn THEN RETURN NEW; END IF;
+
   SELECT s.registration_state, s.full_name INTO v_state, v_name
     FROM player_guardian_status s WHERE s.player_id = NEW.player_id;
 

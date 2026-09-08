@@ -35,7 +35,7 @@ import { askStatGuru, describeDelivery, aiConfigured } from "./ai/ai-service.mjs
 import { sessionProfile, runAsPrincipal, issueLoginCode, redeemMagicLink } from "./auth/auth-db.mjs";
 import { signToken, AuthError } from "./auth/auth.mjs";
 import { readRoute, liveResources } from "./read/read-api.mjs";
-import { eventRoutes, amendmentRoutes } from "./write/events-api.mjs";
+import { eventRoutes, amendmentRoutes, squadRoutes } from "./write/events-api.mjs";
 import { assessmentRoutes, accessRequestRoutes, developmentNoteRoutes, guardianLinkRoutes } from "./write/assessment-api.mjs";
 import { sessionRoutes } from "./realtime/session-routes.mjs";
 import { MatchHub } from "./realtime/realtime.mjs";
@@ -148,6 +148,7 @@ const access  = accessRequestRoutes({ pool, secret: SECRET });
 const notes   = developmentNoteRoutes({ pool, secret: SECRET });
 const amend   = amendmentRoutes({ pool, secret: SECRET });
 const guard   = guardianLinkRoutes({ pool, secret: SECRET });
+const squad   = squadRoutes({ pool, secret: SECRET });
 
 /**
  * Development sign-in.
@@ -207,6 +208,9 @@ const MATCH_ROUTES = [
   [/^\/api\/matches\/([^/]+)\/events$/,             "POST", events.append],
   [/^\/api\/matches\/([^/]+)\/events$/,             "GET",  events.list],
   [/^\/api\/matches\/([^/]+)\/amendments$/,        "POST", amend.request],
+  // Naming the side. The two safeguarding triggers on match_squad fire here,
+  // and had no way to fire at all before this route existed.
+  [/^\/api\/matches\/([^/]+)\/squad$/,             "POST", squad.select],
 ];
 
 // Routes keyed on a player rather than a match. Same shape, same shim.
