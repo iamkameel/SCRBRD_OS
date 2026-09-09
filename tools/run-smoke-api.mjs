@@ -29,6 +29,8 @@ const WALKS = [
   // Pre-match: naming the side, calling the toss, and the conditions
   // both sides play in.
   "squad", "toss", "conditions",
+  // The dashboard's figures, and the scope they are counted over.
+  "summary",
 ];
 
 // Walks that need no database, run by `pnpm smoke` instead. Named here only so

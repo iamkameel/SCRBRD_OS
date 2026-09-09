@@ -25,7 +25,7 @@
  */
 import { useEffect, useState } from "react";
 import { api, signedIn } from "./api.js";
-import { scoped, scopedSkills, scopedWeather } from "../rbac/index.js";
+import { scoped, scopedSkills, scopedWeather, demoSummary } from "../rbac/index.js";
 
 /** DB fixture status → the vocabulary the views filter on. */
 const MATCH_STATUS = { scheduled: "upcoming", live: "live", complete: "complete", abandoned: "complete" };
@@ -248,6 +248,36 @@ function asAttendance(r) {
  * expecting the product's vocabulary, and the failure would look like missing
  * data rather than a missing adapter.
  */
+/**
+ * The dashboard's figures.
+ *
+ * `scopeMatches` and `scopePlayers` are carried through deliberately: a card
+ * that says "9" should be able to say what the 9 was counted over. A partial
+ * figure presented as a total is worse than an absent one, and two people
+ * legitimately seeing different numbers for the same school is the model
+ * working rather than a bug to explain away.
+ *
+ * `winRatePct` may be null — no matches played is not the same fact as having
+ * lost them all, and a card must be able to tell the difference.
+ */
+function asSummary(r) {
+  return {
+    activePlayers:    r.active_players,
+    injuriesActive:   r.injuries_active,
+    unreadAlerts:     r.unread_alerts,
+    sessionsThisWeek: r.sessions_this_week,
+    upcomingMatches:  r.upcoming_matches,
+    winRatePct:       r.win_rate_pct,
+    nextMatchAt:      r.next_match_at,
+    scopeMatches:     r.scope_matches,
+    scopePlayers:     r.scope_players,
+    // The viewer's own, null unless the account is linked to a player.
+    myRuns:           r.my_runs,
+    myBattingAverage: r.my_batting_average == null ? null : Number(r.my_batting_average),
+    myStrikeRate:     r.my_strike_rate == null ? null : Number(r.my_strike_rate),
+  };
+}
+
 const ADAPT = {
   matches: asMatch,
   players: asPlayer,
@@ -267,6 +297,11 @@ const ADAPT = {
   career: asCareer,
   ratings: asRating,
   notes: asNote,
+  // The dashboard's figures. One row, already scoped in Postgres — see the
+  // `summary` query in read-api.mjs for why the counting happens there and not
+  // here. The adapter only renames; it must never compute a figure the server
+  // did not send, because a number invented in this file has no scope at all.
+  summary: asSummary,
 };
 
 /**
@@ -372,6 +407,57 @@ export function useLive(resource, role, nonce = 0) {
     })();
     return () => { cancelled = true; };
   }, [resource, role, nonce]);
+
+  return state;
+}
+
+/**
+ * The dashboard's figures, from the server in a live session.
+ *
+ * WHY THIS IS NOT useLive("summary", role)
+ * ────────────────────────────────────────
+ * useLive falls back to the client-side copy of authorize() when nobody is
+ * signed in, which is right for row lists — the demo has to open on a laptop
+ * with no backend. But a SUMMARY computed in the browser is the exact thing
+ * the server-side query exists to replace, and the failure mode is silent: a
+ * card showing a number counted from whatever rows happened to be in memory
+ * looks identical to a card showing a number the database scoped.
+ *
+ * So the two paths are kept visibly apart. In a live session every figure
+ * comes from Postgres and nothing here computes one. In the demo, the figures
+ * are counted from the mock through the same client-side scoping the rest of
+ * the demo uses, and `live: false` says so — a card can mark itself.
+ *
+ * `null` for the summary while loading or on failure, deliberately: a card
+ * that renders 0 because a request failed has stated something false. Absent
+ * is honest; zero is not.
+ */
+export function useSummary(role, nonce = 0) {
+  const demo = !signedIn();
+  const [state, setState] = useState(() =>
+    demo ? { summary: demoSummary(role), live: false, loading: false, error: null }
+         : { summary: null, live: false, loading: true, error: null });
+
+  useEffect(() => {
+    if (!signedIn()) {
+      setState({ summary: demoSummary(role), live: false, loading: false, error: null });
+      return;
+    }
+    let cancelled = false;
+    setState((s) => ({ ...s, loading: true }));
+    (async () => {
+      try {
+        const { rows } = await api("/api/read/summary");
+        const row = rows?.[0] ? asSummary(rows[0]) : null;
+        if (!cancelled) setState({ summary: row, live: true, loading: false, error: null });
+      } catch (e) {
+        // No fallback to the demo figures. A signed-in person seeing numbers
+        // counted in their own browser is the bug this replaced.
+        if (!cancelled) setState({ summary: null, live: false, loading: false, error: e.code || "unreachable" });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [role, nonce]);
 
   return state;
 }

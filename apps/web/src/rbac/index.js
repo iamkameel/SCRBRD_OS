@@ -352,6 +352,52 @@ export function scopedSkills(role) {
   return Object.fromEntries(Object.entries(SKILLS_MATRIX).filter(([id]) => visible.has(id)));
 }
 
+/**
+ * The dashboard's figures, for the DEMO ONLY.
+ *
+ * In a live session this function is never the source of a number: lib/live.js
+ * calls /api/read/summary and every figure is a scalar subquery against the
+ * same masked view the detail query reads, so a count receives the identical
+ * authorisation scope as the records it counts. That is the whole point, and
+ * counting here instead would put the decision back in the browser.
+ *
+ * It returns null when signed in rather than an empty object, so a caller that
+ * wires this up by mistake renders nothing visible rather than a plausible
+ * zero. A wrong number that looks right is the failure this file exists to
+ * avoid; an obviously missing card gets found in a minute.
+ *
+ * Counting through scoped() rather than the mock constants keeps the demo
+ * honest too — a demo dashboard showing school-wide totals to a team coach
+ * would misrepresent the product to the person being shown it.
+ */
+export function demoSummary(role) {
+  if (signedIn()) return null;
+  const players = scoped("players", role);
+  const injuries = scoped("injuries", role);
+  const notifications = scoped("notifications", role);
+  const training = scoped("training", role);
+  const matches = scoped("matches", role);
+  const upcoming = matches.filter((m) => m.status === "upcoming");
+  return {
+    activePlayers:    players.length,
+    injuriesActive:   injuries.filter((i) => i.restricted).length,
+    unreadAlerts:     notifications.filter((n) => !n.read).length,
+    sessionsThisWeek: training.length,
+    upcomingMatches:  upcoming.length,
+    // The demo carries no results ladder, and inventing a win rate to fill the
+    // card would be exactly the fabrication the live query refuses to make.
+    winRatePct:       null,
+    nextMatchAt:      upcoming[0]?.date ?? null,
+    scopeMatches:     matches.length,
+    scopePlayers:     players.length,
+    // The demo has no ball log to derive a career from, and a plausible
+    // average is worse than an obviously absent one.
+    myRuns:           null,
+    myBattingAverage: null,
+    myStrikeRate:     null,
+  };
+}
+
 /** Weather is keyed by match id, and carries no personal data. */
 export function scopedWeather(role) {
   // Same reasoning as scopedSkills: WEATHER is read straight from the mock, so

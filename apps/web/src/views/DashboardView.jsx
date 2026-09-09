@@ -3,7 +3,7 @@ import { ROLES } from "../design/roles.js";
 import { D } from "../design/tokens.js";
 import { dateStr, fitnessColor, today } from "../lib/format.js";
 import { Avatar, Btn, Card, KPICard, Pill, StatusDot } from "../ui/primitives.jsx";
-import { useRows } from "../lib/live.js";
+import { useRows, useSummary } from "../lib/live.js";
 
 // ══════════════════════════════════════════════════════
 //  DASHBOARD VIEW
@@ -17,11 +17,20 @@ function DashboardView({ role, onNav }) {
   const NOTIFICATIONS = useRows("notifications", role);
   const PLAYERS = useRows("players", role);
   const TRAINING_SESSIONS = useRows("training", role);
+  // Every KPI figure below comes from here. In a live session that is one
+  // scoped query per number in Postgres; nothing on this screen counts
+  // anything. The cards used to be hard-coded literals ("53", "72%") that
+  // rendered identically for a superadmin and a team coach, and the two that
+  // were real were counted in the browser over whatever rows had been fetched.
+  const { summary, live: summaryLive } = useSummary(role);
   const rc = ROLES[role];
   const liveMatch = MATCHES.find(m=>m.status==="live");
   const upcomingMatches = MATCHES.filter(m=>m.status==="upcoming").slice(0,3);
   const injuries = INJURIES.filter(i=>i.restricted);
-  const unreadNotifs = NOTIFICATIONS.filter(n=>!n.read).length;
+  // An absent figure renders as an em dash, never as 0. A card showing zero
+  // because a request failed has stated something false about the school.
+  const kpi = (v) => (v == null ? "—" : String(v));
+  const pct = (v) => (v == null ? "—" : `${v}%`);
 
   return (
     <div className="os-page">
@@ -35,28 +44,40 @@ function DashboardView({ role, onNav }) {
       {/* KPI row */}
       {(role==="superadmin"||role==="schooladmin"||role==="coach")&&(
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:"12px",marginBottom:"24px"}}>
-          <KPICard label="Active Players" value="53"  icon="👥" color={D.sky}    trend={+5}  sub="Across 3 squads"/>
-          <KPICard label="League Position" value="1st" icon="🏆" color={D.amber}  sub="4W-1L · 8pts"    />
-          <KPICard label="Win Rate"        value="72%" icon="📈" color={D.emerald}trend={+8}  sub="Last 12 matches"/>
-          <KPICard label="Injuries"        value={injuries.length} icon="🏥" color={injuries.length>3?D.rose:D.orange} sub="Active restrictions"/>
-          <KPICard label="Sessions This Wk"value="4"  icon="💪" color={D.violet} sub="Next: Today 14:30"/>
-          <KPICard label="Alerts"          value={unreadNotifs} icon="🔔" color={D.rose} sub="Unread notifications"/>
+          <KPICard label="Active Players"  value={kpi(summary?.activePlayers)} icon="👥" color={D.sky}
+                   sub={summaryLive?"In your scope":"Demo data"}/>
+          <KPICard label="Upcoming"        value={kpi(summary?.upcomingMatches)} icon="🏆" color={D.amber}
+                   sub="Fixtures scheduled"/>
+          <KPICard label="Win Rate"        value={pct(summary?.winRatePct)} icon="📈" color={D.emerald}
+                   sub={summary?.winRatePct==null?"No completed matches":"Across your competitions"}/>
+          <KPICard label="Injuries"        value={kpi(summary?.injuriesActive)} icon="🏥"
+                   color={(summary?.injuriesActive??0)>3?D.rose:D.orange} sub="Active restrictions"/>
+          <KPICard label="Sessions This Wk"value={kpi(summary?.sessionsThisWeek)} icon="💪" color={D.violet}
+                   sub="Training scheduled"/>
+          <KPICard label="Alerts"          value={kpi(summary?.unreadAlerts)} icon="🔔" color={D.rose}
+                   sub="Unread notifications"/>
         </div>
       )}
       {role==="player"&&(
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:"12px",marginBottom:"24px"}}>
-          <KPICard label="Batting Avg"    value="48.2" icon="🏏" color={D.sky}     trend={+12} sub="Season"/>
-          <KPICard label="Strike Rate"    value="135"  icon="⚡" color={D.amber}    trend={+4}  sub="Season"/>
-          <KPICard label="Next Training"  value="Today" icon="💪" color={D.emerald} sub="14:30 — Nets 1-3"/>
-          <KPICard label="Next Match"     value="Sat"  icon="📅" color={D.violet}   sub="vs Kearsney College"/>
+          <KPICard label="Batting Avg"   value={kpi(summary?.myBattingAverage)} icon="🏏" color={D.sky}
+                   sub={summary?.myBattingAverage==null?"Not enough innings yet":"Career, from the ball log"}/>
+          <KPICard label="Strike Rate"   value={kpi(summary?.myStrikeRate)} icon="⚡" color={D.amber}
+                   sub={summary?.myStrikeRate==null?"No deliveries faced yet":"Career, from the ball log"}/>
+          <KPICard label="Runs"          value={kpi(summary?.myRuns)} icon="📈" color={D.emerald} sub="Career total"/>
+          <KPICard label="Upcoming"      value={kpi(summary?.upcomingMatches)} icon="📅" color={D.violet}
+                   sub="Fixtures scheduled"/>
         </div>
       )}
       {role==="parent"&&(
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:"12px",marginBottom:"24px"}}>
-          <KPICard label="Next Match"    value="Sat"   icon="📅" color={D.sky}    sub="vs Kearsney Away"/>
-          <KPICard label="Transport"     value="Bus ✓" icon="🚌" color={D.emerald} sub="Departs 08:00"/>
-          <KPICard label="Season Avg"    value="48.2"  icon="🏏" color={D.amber}   sub="James Whitfield"/>
-          <KPICard label="Alerts"        value={unreadNotifs} icon="🔔" color={D.rose} sub="Unread"/>
+          <KPICard label="Upcoming"      value={kpi(summary?.upcomingMatches)} icon="📅" color={D.sky}
+                   sub="Fixtures scheduled"/>
+          <KPICard label="Injuries"      value={kpi(summary?.injuriesActive)} icon="🏥" color={D.orange}
+                   sub="Active restrictions"/>
+          <KPICard label="Season Avg"    value={kpi(summary?.myBattingAverage)} icon="🏏" color={D.amber}
+                   sub={summary?.myBattingAverage==null?"Linked pupil accounts only":"Career, from the ball log"}/>
+          <KPICard label="Alerts"        value={kpi(summary?.unreadAlerts)} icon="🔔" color={D.rose} sub="Unread"/>
         </div>
       )}
 

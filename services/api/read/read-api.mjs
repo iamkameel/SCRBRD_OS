@@ -295,6 +295,86 @@ export const READ_QUERIES = {
              from match_weather`,
   },
 
+  /**
+   * The dashboard's figures, and the reason they are here rather than in the
+   * browser.
+   *
+   * Eleven KPI cards across the views were hard-coded string literals —
+   * value="53", value="72%", value="48.2" — rendering identically for a
+   * superadmin and a team coach because they were not computed from anything.
+   * The two that WERE computed (injuries, unread alerts) were counted in the
+   * browser with .filter().length over rows the server had already scoped.
+   *
+   * That second pattern is correct today and fragile by construction: it
+   * requires shipping every row to the client to count it, and the day anyone
+   * adds a LIMIT to a read query for performance, every badge silently becomes
+   * a smaller-but-plausible number. Nothing would fail. The card would just be
+   * wrong, and wrong in the direction that looks fine.
+   *
+   * So every figure is a scalar subquery HERE, against the same relation the
+   * detail query for that resource reads — player_masked, injury_masked, and
+   * so on, never the base tables. That is the whole point: an aggregate
+   * discloses as surely as a row, so a count must receive the identical
+   * authorisation scope as the records it counts. Two people will legitimately
+   * see different numbers for the same school, and that is correct.
+   *
+   * `scope_players` and `scope_matches` come back with the figures so a card
+   * can say what it was computed over. A partial figure presented as a total
+   * is a worse failure than an absent one.
+   */
+  summary: {
+    masked: true,
+    text: `select
+             (select count(*)::int from player_masked)                    as active_players,
+             (select count(*)::int from injury_masked where restricted)   as injuries_active,
+             (select count(*)::int from notification n
+                left join notification_read r
+                       on r.notification_id = n.id and r.person_id = app_user_id()
+               where r.person_id is null
+                 and (n.expires_at is null or n.expires_at > now()))      as unread_alerts,
+             (select count(*)::int from training_session
+               where starts_at >= date_trunc('week', now())
+                 and starts_at <  date_trunc('week', now()) + interval '7 days')
+                                                                          as sessions_this_week,
+             (select count(*)::int from match where status = 'scheduled') as upcoming_matches,
+             (select count(*)::int from match)                            as scope_matches,
+             (select count(*)::int from player_masked)                    as scope_players,
+             -- Played and won come from the same scoped rows, so the rate is
+             -- computed over exactly the competitions this reader may see.
+             -- NULL rather than zero when there is nothing to divide by: "no
+             -- matches played" and "lost every match" are different facts and
+             -- 0% cannot tell them apart.
+             (select case when coalesce(sum(e.played), 0) = 0 then null
+                          else round(100.0 * sum(e.won) / sum(e.played))::int end
+                from competition_entrant e)                               as win_rate_pct,
+             (select min(m.starts_at) from match m
+               where m.starts_at > now() and m.status = 'scheduled')      as next_match_at,
+             -- The viewer's OWN figures, when the viewer is a player. These
+             -- replaced hard-coded "48.2" and "135" on the player and parent
+             -- cards. Derived from ball_event_live through the career views,
+             -- which are security_invoker, so they cover exactly the
+             -- deliveries this person may see — the same rule as /read/career.
+             --
+             -- A guardian gets their child's figures the same way, because
+             -- app_user.player_id is set for a pupil account only; a parent
+             -- account resolves to NULL here and the card shows an em dash
+             -- rather than somebody else's average.
+             (select c.runs from player_batting_career c
+               where c.player_id = (select u.player_id from app_user u
+                                     where u.id = app_user_id()))         as my_runs,
+             (select case when coalesce(d.dismissals, 0) = 0 then null
+                          else round(c.runs::numeric / d.dismissals, 1) end
+                from player_batting_career c
+                left join player_dismissals d on d.player_id = c.player_id
+               where c.player_id = (select u.player_id from app_user u
+                                     where u.id = app_user_id()))         as my_batting_average,
+             (select case when coalesce(c.balls_faced, 0) = 0 then null
+                          else round(100.0 * c.runs / c.balls_faced) end
+                from player_batting_career c
+               where c.player_id = (select u.player_id from app_user u
+                                     where u.id = app_user_id()))         as my_strike_rate`,
+  },
+
   // The state of the square, scoped through the fixture exactly as weather is.
   // Nothing personal here, but a pitch-report table readable by anyone would
   // answer "does this school have a fixture on Saturday?" to whoever asked.
