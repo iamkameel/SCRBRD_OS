@@ -43,6 +43,8 @@ const WALKS = [
   // The head-to-head against a rival, derived from the fixtures rather than
   // stored beside them.
   "derby",
+  // Batter against bowler, and how much of the log a matchup can speak for.
+  "matchups",
 ];
 
 // Walks that drive a real browser AND need a database. They need two things

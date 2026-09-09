@@ -462,6 +462,94 @@ export const READ_QUERIES = {
   },
 
   /**
+   * Batter against bowler: the matchup, derived from the ball log.
+   *
+   * WHY THIS EXISTS AT ALL. ball_event.striker_id and bowler_id were added so
+   * that attribution would be available to readers that are not the scoring
+   * device — the column comment names "a career average in SQL, a heat map for
+   * one batter, a bowler's spell" as the reason. The first two were built. This
+   * is the third kind, and until now nothing asked the log the one question a
+   * coach asks out loud before a fixture: how has this boy gone against this
+   * bowler, and against bowling like his.
+   *
+   * The wicket rule is NOT restated here. `ball_type = 'W'` with a dismissal
+   * that is not a run out is exactly the predicate player_bowling_career uses
+   * (db/02_schema_scoring.sql), and two definitions of "wicket" that can drift
+   * apart is precisely what this schema keeps removing. The dismissed player is
+   * checked against the striker as well, because a run out at the far end
+   * dismisses the other batter and would otherwise be filed against the wrong
+   * matchup.
+   *
+   * `bowler_style` rides along so a screen can aggregate the pairs into what a
+   * coach actually plans against — left-arm orthodox, right-arm quick — rather
+   * than only naming individuals.
+   *
+   * SCOPE, as everywhere: ball_event_live is security_invoker, so this covers
+   * the deliveries the reader may see and no others.
+   */
+  matchups: {
+    text: `select b.striker_id                          as batter_id,
+                  bat.full_name                         as batter_name,
+                  b.bowler_id,
+                  bowl.full_name                        as bowler_name,
+                  bowl.bowling_style,
+                  count(*) filter (where b.ball_type not in ('Wd','Nb'))::int  as balls,
+                  -- Runs off the bat. Byes and leg byes are not the batter's,
+                  -- which is the same split runs_conceded makes on the bowling
+                  -- side of the same delivery.
+                  coalesce(sum(case when b.ball_type in ('run','W','Nb')
+                                    then coalesce(b.value,0) else 0 end), 0)::int as runs,
+                  -- A dot is a legal delivery worth nothing, which is the rule
+                  -- derivePhases already applies (packages/scoring/src/phases.mjs).
+                  -- Not "the batter scored nothing": two byes are a legal ball
+                  -- he did not score off, and counting it as a dot here would
+                  -- give a phase breakdown and a matchup two different dot
+                  -- counts for the same over. One definition, or neither means
+                  -- anything.
+                  count(*) filter (where b.ball_type not in ('Wd','Nb')
+                                     and coalesce(b.value,0) = 0)::int          as dots,
+                  count(*) filter (where b.value = 4)::int                     as fours,
+                  count(*) filter (where b.value = 6)::int                     as sixes,
+                  count(*) filter (
+                    where b.ball_type = 'W'
+                      and coalesce(b.dismissal,'') !~* 'run ?out'
+                      and coalesce(b.dismissed_id, b.striker_id) = b.striker_id
+                  )::int                                                       as dismissals
+             from ball_event_live b
+             join player bat  on bat.id  = b.striker_id
+             join player bowl on bowl.id = b.bowler_id
+            where b.kind = 'ball'
+              and ($1::uuid is null or b.striker_id = $1)
+              and ($2::uuid is null or b.bowler_id  = $2)
+            group by b.striker_id, bat.full_name, b.bowler_id, bowl.full_name, bowl.bowling_style
+            order by balls desc, bat.full_name`,
+    params: q => [q?.batterId || null, q?.bowlerId || null],
+  },
+
+  /**
+   * How much of the log a matchup can actually speak for.
+   *
+   * Most bowlers a school's batter faces are not SCRBRD players: a fixture
+   * against a school that is not a tenant has no away roster, so the scorer
+   * types a name and the delivery carries no bowler_id. Those balls are real
+   * and they are invisible to the matchup query above.
+   *
+   * A screen that showed "12 balls faced" without saying it was silently
+   * ignoring 300 others would be stating something false with a number on it.
+   * So the coverage is its own read, like shot_point_coverage, and a view is
+   * expected to say what it left out.
+   */
+  matchup_coverage: {
+    text: `select count(*) filter (where striker_id is not null and bowler_id is not null)::int as attributable,
+                  count(*) filter (where striker_id is null or bowler_id is null)::int         as unattributable,
+                  count(*)::int                                                                 as deliveries
+             from ball_event_live
+            where kind = 'ball'
+              and ($1::uuid is null or striker_id = $1)`,
+    params: q => [q?.batterId || null],
+  },
+
+  /**
    * The head-to-head against a school, derived from the fixtures.
    *
    * NOTHING HERE IS STORED. beta-2 kept winsA/winsB/draws on the rivalry row;
