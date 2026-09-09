@@ -44,6 +44,11 @@ const login = async (email) => (await api("/api/auth/dev-login", {
 const read = async (r, token) => (await api(`/api/read/${r}`, { token })).body?.rows ?? [];
 
 const pool = new pg.Pool({ connectionString: DB });
+// The application role, connected as the API connects. Its privileges are the
+// subject of the immutability assertions below, so they must not be inherited
+// from whoever ran the migrations.
+const APP = process.env.APP_DATABASE_URL || "postgres://scrbrd_app:scrbrd_app@127.0.0.1:5432/scrbrd";
+const appPool = new pg.Pool({ connectionString: APP });
 const q = async (t, p) => (await pool.query(t, p)).rows;
 
 try {
@@ -109,12 +114,25 @@ try {
     ["delete an entry", `delete from access_log`],
   ]) {
     let refused = false;
-    const c = await pool.connect();
+    // A REAL connection as scrbrd_app, not `set local role` from the owner's.
+    // The two are not equivalent: role-switching inside a session whose
+    // bootstrap user is a superuser left the UPDATE case passing vacuously on
+    // CI, where POSTGRES_USER is created SUPERUSER and cannot be demoted — the
+    // bootstrap user is forbidden from dropping the attribute. Connecting the
+    // way the API actually connects makes the assertion mean the same thing
+    // everywhere, and tests the path production uses rather than a proxy for it.
+    const c = await appPool.connect();
     try {
       await c.query("begin");
-      await c.query(`set local role scrbrd_app`);
       await c.query(`select set_config('app.user_id','88888888-0000-0000-0000-000000000004',true)`);
-      await c.query(sql);
+      const r = await c.query(sql);
+      // Refusal has TWO shapes and only one of them throws. A missing table
+      // privilege raises; a missing POLICY does not — row-level security just
+      // filters the statement down to nothing, and `UPDATE 0` comes back as an
+      // ordinary success. Asserting only on the exception let the UPDATE case
+      // pass for the wrong reason, so what is checked here is the property
+      // itself: the log is unaltered, however the database chose to say so.
+      refused = r.rowCount === 0;
       await c.query("rollback");
     } catch { refused = true; await c.query("rollback").catch(() => {}); }
     finally { c.release(); }
@@ -137,6 +155,7 @@ try {
 } finally {
   server.kill("SIGTERM");
   await pool.end().catch(() => {});
+  await appPool.end().catch(() => {});
 }
 
 if (fail && serverErr.length) {

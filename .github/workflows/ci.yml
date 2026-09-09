@@ -116,17 +116,6 @@ jobs:
       - name: Install psql
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
 
-      # The postgres image creates POSTGRES_USER as a SUPERUSER, and this
-      # schema's guarantees do not hold for one: RLS is not enforced against a
-      # superuser, so smoke-audit's proof that the application role cannot
-      # alter the access log passes vacuously. A developer machine and a real
-      # deployment both run migrations as an OWNER, not a superuser, so CI is
-      # made to match rather than the assertions weakened to suit CI.
-      #
-      # scrbrd demotes itself; there is no other superuser in this container
-      # and none is needed, because nothing in db/*.sql requires one.
-      - name: Migration role owns the schema, it does not rule the cluster
-        run: psql postgres://scrbrd:scrbrd@127.0.0.1:5432/scrbrd -v ON_ERROR_STOP=1 -c "ALTER ROLE scrbrd NOSUPERUSER;"
 
       # Eighteen walks, each against a freshly seeded database. The runner
       # resets between them and refuses to start if a smoke walk exists on disk
@@ -175,17 +164,6 @@ jobs:
       - name: Install psql
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
 
-      # The postgres image creates POSTGRES_USER as a SUPERUSER, and this
-      # schema's guarantees do not hold for one: RLS is not enforced against a
-      # superuser, so smoke-audit's proof that the application role cannot
-      # alter the access log passes vacuously. A developer machine and a real
-      # deployment both run migrations as an OWNER, not a superuser, so CI is
-      # made to match rather than the assertions weakened to suit CI.
-      #
-      # scrbrd demotes itself; there is no other superuser in this container
-      # and none is needed, because nothing in db/*.sql requires one.
-      - name: Migration role owns the schema, it does not rule the cluster
-        run: psql postgres://scrbrd:scrbrd@127.0.0.1:5432/scrbrd -v ON_ERROR_STOP=1 -c "ALTER ROLE scrbrd NOSUPERUSER;"
 
       # The repo depends on playwright-core, which drives a browser but does not
       # download one. The full package is pulled in here only to fetch Chromium
