@@ -222,6 +222,9 @@ const MATCH_ROUTES = [
   // changes, and that is the reason for recording it.
   [/^\/api\/matches\/([^/]+)\/weather$/,           "POST", cond.weather],
   [/^\/api\/matches\/([^/]+)\/pitch$/,             "POST", cond.pitch],
+  // The groundsman's standing record of a ground — the same capability as the
+  // pitch report, keyed on the ground rather than the fixture.
+  [/^\/api\/grounds\/([^/]+)\/condition$/,          "POST", cond.ground],
   // Appointing the officials. officiating.assign, which until now had nothing
   // it could be exercised on.
   [/^\/api\/matches\/([^/]+)\/officials$/,         "POST", officials.appoint],

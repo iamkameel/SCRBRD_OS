@@ -455,10 +455,25 @@ export const READ_QUERIES = {
   // answer "does this school have a fixture on Saturday?" to whoever asked.
   pitch_report: {
     text: `select match_id, surface, grass, bounce, pace, favours,
-                  covers_on, notes, reported_at
+                  covers_on, notes, bounce_rating, pace_rating, outfield, reported_at
              from match_pitch_report
             where ($1::uuid is null or match_id = $1)`,
     params: q => [q?.matchId || null],
+  },
+
+  /**
+   * The groundsman's record of a ground, as opposed to a square prepared for
+   * one fixture. Scoped by facility.read, which is in the floor bundle: a
+   * captain choosing between spin and seam and a parent asking whether
+   * Saturday will drain both legitimately want it, and it says nothing about
+   * a person.
+   */
+  ground_conditions: {
+    text: `select ground_id, moisture_pct, grass_mm, roller, outfield,
+                  drainage_min, last_rolled, last_mown, notes, reported_at
+             from ground_condition
+            where ($1::uuid is null or ground_id = $1)`,
+    params: q => [q?.groundId || null],
   },
 
   /**

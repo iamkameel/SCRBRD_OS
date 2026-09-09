@@ -330,6 +330,23 @@ CREATE POLICY match_toss_update ON match_toss
   FOR UPDATE USING (app_can('scoring.start', (SELECT m.school_id FROM match m WHERE m.id = match_toss.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_toss.match_id), '00000000-0000-0000-0000-000000000000'::uuid, match_toss.match_id))
            WITH CHECK (app_can('scoring.start', (SELECT m.school_id FROM match m WHERE m.id = match_toss.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_toss.match_id), '00000000-0000-0000-0000-000000000000'::uuid, match_toss.match_id));
 
+-- ground_condition — read: facility.read · write: facility.manage
+ALTER TABLE ground_condition ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS ground_condition_read   ON ground_condition;
+DROP POLICY IF EXISTS ground_condition_insert ON ground_condition;
+DROP POLICY IF EXISTS ground_condition_update ON ground_condition;
+DROP POLICY IF EXISTS ground_condition_delete ON ground_condition;
+
+CREATE POLICY ground_condition_read ON ground_condition
+  FOR SELECT USING (app_can('facility.read', (SELECT g.school_id FROM ground g WHERE g.id = ground_condition.ground_id), '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY ground_condition_insert ON ground_condition
+  FOR INSERT WITH CHECK (app_can('facility.manage', (SELECT g.school_id FROM ground g WHERE g.id = ground_condition.ground_id), '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY ground_condition_update ON ground_condition
+  FOR UPDATE USING (app_can('facility.manage', (SELECT g.school_id FROM ground g WHERE g.id = ground_condition.ground_id), '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
+           WITH CHECK (app_can('facility.manage', (SELECT g.school_id FROM ground g WHERE g.id = ground_condition.ground_id), '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
 -- match_official — read: fixture.read · write: officiating.assign
 ALTER TABLE match_official ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS match_official_read   ON match_official;

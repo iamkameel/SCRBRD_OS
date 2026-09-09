@@ -427,6 +427,26 @@ export const TABLES = {
     masked: {},
   },
 
+  ground_condition: {
+    // The groundsman's own record. facility.manage to write — the person who
+    // rolled the square is the one who can describe it, the same reasoning as
+    // the pitch report — and facility.read to see it, which is in the floor
+    // bundle: a captain deciding whether to bring spinners, and a parent
+    // asking whether Saturday will drain in time, both legitimately want it.
+    //
+    // Anchored through the ground rather than on its own school_id, though
+    // that column exists and is NOT NULL. The column makes a write against a
+    // ground that is not there fail loudly; the subquery is what the predicate
+    // uses, because a denormalised anchor can drift from the row it claims and
+    // an RLS predicate must not be able to.
+    read:  "facility.read",
+    write: "facility.manage",
+    anchors: {
+      school: "(SELECT g.school_id FROM ground g WHERE g.id = ground_condition.ground_id)",
+    },
+    masked: {},
+  },
+
   match_official: {
     // Who is standing. Read by anyone who can read the fixture: the umpires'
     // names are announced at the toss, printed on the scorecard and known to

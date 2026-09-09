@@ -516,6 +516,15 @@ export function conditionsRoutes({ pool, secret }) {
     return v;
   };
   const bool = (v) => (v == null ? null : v === true);
+  // A calendar date, or nothing. Rejected rather than coerced: `new Date()` of
+  // a typo yields Invalid Date, which Postgres refuses with a message about a
+  // type rather than about the field the groundsman got wrong.
+  const date = (v, field) => {
+    if (v == null || v === "") return null;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(v))) throw err(`${field}_must_be_yyyy_mm_dd`);
+    if (Number.isNaN(Date.parse(v))) throw err(`${field}_invalid`);
+    return v;
+  };
 
   return {
     // POST /matches/:id/weather
@@ -565,15 +574,19 @@ export function conditionsRoutes({ pool, secret }) {
     pitch: (req, res) => upsert(req, res, {
       sql: `insert into match_pitch_report
               (match_id, school_id, surface, grass, bounce, pace, favours,
-               covers_on, notes, reported_by, reported_at)
-            values ($1, match_school($1), $2, $3, $4, $5, $6, $7, $8, app_user_id(), now())
+               covers_on, notes, bounce_rating, pace_rating, outfield,
+               reported_by, reported_at)
+            values ($1, match_school($1), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+                    app_user_id(), now())
             on conflict (match_id) do update
               set surface = excluded.surface, grass = excluded.grass,
                   bounce = excluded.bounce, pace = excluded.pace,
                   favours = excluded.favours, covers_on = excluded.covers_on,
-                  notes = excluded.notes, reported_by = excluded.reported_by,
-                  reported_at = now()
-            returning surface, grass, bounce, pace, favours, covers_on, notes, reported_at`,
+                  notes = excluded.notes, bounce_rating = excluded.bounce_rating,
+                  pace_rating = excluded.pace_rating, outfield = excluded.outfield,
+                  reported_by = excluded.reported_by, reported_at = now()
+            returning surface, grass, bounce, pace, favours, covers_on, notes,
+                      bounce_rating, pace_rating, outfield, reported_at`,
       build: (r) => {
         const b = r.body || {};
         const v = {
@@ -584,13 +597,61 @@ export function conditionsRoutes({ pool, secret }) {
           favours: oneOf(b.favours, ["seam", "spin", "batting", "even"], "favours"),
           coversOn: bool(b.coversOn),
           notes: b.notes == null ? null : String(b.notes).slice(0, 2000),
+          // The degree beside the character — see the column comments. Either
+          // may be given without the other: a groundsman who says "two-paced"
+          // and declines to put a number on it has still said something.
+          bounceRating: num(b.bounceRating, 1, 10, "bounce_rating"),
+          paceRating:   num(b.paceRating,   1, 10, "pace_rating"),
+          outfield: oneOf(b.outfield, ["fast", "medium", "slow"], "outfield"),
         };
         // Every field is optional, but a report of nothing at all is a row that
         // says a groundsman filed a report when he did not.
         if (Object.values(v).every((x) => x == null)) throw err("empty_report");
         return v;
       },
-      params: (v) => [v.surface, v.grass, v.bounce, v.pace, v.favours, v.coversOn, v.notes],
+      params: (v) => [v.surface, v.grass, v.bounce, v.pace, v.favours, v.coversOn, v.notes,
+                      v.bounceRating, v.paceRating, v.outfield],
+    }),
+
+    // POST /grounds/:id/condition
+    //
+    // The groundsman's standing record of a ground, as opposed to the square
+    // prepared for one fixture. Same shape as the pitch report and the same
+    // capability, because it is the same person doing the same job — but keyed
+    // on the ground, because that is what the facts belong to.
+    ground: (req, res) => upsert(req, res, {
+      sql: `insert into ground_condition
+              (ground_id, school_id, moisture_pct, grass_mm, roller, outfield,
+               drainage_min, last_rolled, last_mown, notes, reported_by, reported_at)
+            select $1, g.school_id, $2, $3, $4, $5, $6, $7, $8, $9, app_user_id(), now()
+              from ground g where g.id = $1
+            on conflict (ground_id) do update
+              set moisture_pct = excluded.moisture_pct, grass_mm = excluded.grass_mm,
+                  roller = excluded.roller, outfield = excluded.outfield,
+                  drainage_min = excluded.drainage_min, last_rolled = excluded.last_rolled,
+                  last_mown = excluded.last_mown, notes = excluded.notes,
+                  reported_by = excluded.reported_by, reported_at = now()
+            returning moisture_pct, grass_mm, roller, outfield, drainage_min,
+                      last_rolled, last_mown, notes, reported_at`,
+      build: (r) => {
+        const b = r.body || {};
+        const v = {
+          moisture: num(b.moisturePct, 0, 100, "moisture_pct"),
+          grassMm:  num(b.grassMm, 0, 100, "grass_mm"),
+          roller:   oneOf(b.roller, ["none", "light", "heavy"], "roller"),
+          outfield: oneOf(b.outfield, ["fast", "medium", "slow"], "outfield"),
+          // The wet-morning question. Ten hours is the ceiling: past that the
+          // answer is "not today", which is a decision and not a measurement.
+          drainage: num(b.drainageMin, 0, 600, "drainage_min"),
+          lastRolled: date(b.lastRolled, "last_rolled"),
+          lastMown:   date(b.lastMown, "last_mown"),
+          notes: b.notes == null ? null : String(b.notes).slice(0, 2000),
+        };
+        if (Object.values(v).every((x) => x == null)) throw err("empty_report");
+        return v;
+      },
+      params: (v) => [v.moisture, v.grassMm, v.roller, v.outfield, v.drainage,
+                      v.lastRolled, v.lastMown, v.notes],
     }),
   };
 }

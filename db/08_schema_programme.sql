@@ -1336,6 +1336,46 @@ CREATE TRIGGER injury_notifies
 -- because a groundsman filling in three of eight boxes on a wet Friday is
 -- still worth more than nothing, and a form that demands all eight gets
 -- abandoned or invented.
+-- ── The curator's record of a ground ─────────────────────────────
+--
+-- match_pitch_report below describes the square PREPARED FOR ONE FIXTURE. This
+-- describes the ground itself, which is a different fact with a different
+-- author and a different lifetime: a groundsman rolls, mows and waters a
+-- square across a season, and the last time it was cut is not a property of
+-- Saturday's match.
+--
+-- The distinction matters practically. "How long after the rain stops before
+-- we can play?" is the single most asked question of a school groundsman on a
+-- wet morning, and the answer is a property of that ground's drainage — not
+-- of the fixture that happens to be scheduled on it. Recording it per match
+-- would mean storing the same number against every fixture at that venue and
+-- watching the copies drift.
+--
+-- One current record per ground, like the pitch report is one per match. A
+-- ground reported twice was reported once and corrected. Every field is
+-- nullable but the ground: a groundsman who measures moisture and nothing else
+-- is still worth more than an empty table, and a form demanding all seven gets
+-- abandoned or invented — the same reasoning as the pitch report.
+CREATE TABLE ground_condition (
+  ground_id     uuid PRIMARY KEY REFERENCES ground(id) ON DELETE CASCADE,
+  -- Derived at write time from the ground, never asserted by the caller.
+  school_id     uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  moisture_pct  smallint CHECK (moisture_pct IS NULL OR moisture_pct BETWEEN 0 AND 100),
+  grass_mm      smallint CHECK (grass_mm IS NULL OR grass_mm BETWEEN 0 AND 100),
+  roller        text CHECK (roller IS NULL OR roller IN ('none','light','heavy')),
+  outfield      text CHECK (outfield IS NULL OR outfield IN ('fast','medium','slow')),
+  -- Minutes from the rain stopping to the ground being playable. Ten hours is
+  -- the ceiling because beyond that the answer is "not today", which is a
+  -- decision rather than a drainage time.
+  drainage_min  smallint CHECK (drainage_min IS NULL OR drainage_min BETWEEN 0 AND 600),
+  last_rolled   date,
+  last_mown     date,
+  notes         text CHECK (notes IS NULL OR length(notes) <= 2000),
+  reported_by   uuid REFERENCES app_user(id),
+  reported_at   timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX ON ground_condition (school_id);
+
 CREATE TABLE match_pitch_report (
   match_id    uuid PRIMARY KEY REFERENCES match(id) ON DELETE CASCADE,
   -- Derived at write time from the match, never asserted by the caller: a row
@@ -1345,6 +1385,17 @@ CREATE TABLE match_pitch_report (
   grass       text CHECK (grass   IS NULL OR grass   IN ('bare','light','covered','green')),
   bounce      text CHECK (bounce  IS NULL OR bounce  IN ('low','even','variable','steep')),
   pace        text CHECK (pace    IS NULL OR pace    IN ('slow','medium','quick')),
+  -- The DEGREE, beside the character above. These are not the same fact twice:
+  -- 'variable' is not a point on a scale and cannot be written as a number,
+  -- while "steep" covers everything from awkward to unplayable and a season's
+  -- worth of squares cannot be compared on four words. A groundsman says
+  -- "two-paced" out loud; a director of sport asking which of five squares has
+  -- got slower since September needs the number. Either may be given alone.
+  bounce_rating smallint CHECK (bounce_rating IS NULL OR bounce_rating BETWEEN 1 AND 10),
+  pace_rating   smallint CHECK (pace_rating   IS NULL OR pace_rating   BETWEEN 1 AND 10),
+  -- How fast the outfield is running, which decides whether a well-timed shot
+  -- is two or four and is a different question from how the square plays.
+  outfield    text CHECK (outfield IS NULL OR outfield IN ('fast','medium','slow')),
   -- What the square is expected to reward. An estimate made before play, kept
   -- so it can be read back against what actually happened.
   favours     text CHECK (favours IS NULL OR favours IN ('seam','spin','batting','even')),
