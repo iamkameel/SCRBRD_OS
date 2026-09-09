@@ -1354,6 +1354,60 @@ CREATE TABLE match_pitch_report (
   reported_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- ── Who stood in the middle ──────────────────────────────────────
+--
+-- `officiating.assign` has existed since the first capability table and three
+-- roles hold it. There was nothing to assign: no table, so no appointment, so
+-- a capability that could never be exercised and an `official` role with
+-- nothing behind it. The scorecard's "scorer" pill read a mock-only field.
+--
+-- WHY THE NAME IS STORED AND NOT JOINED
+-- ─────────────────────────────────────
+-- `person_name` is NOT NULL and `person_id` is the optional link. Most school
+-- umpires have no account here at all — they come off a union panel and stand
+-- at four different schools in a season — so an appointment that could only
+-- name an app_user could not record the majority of real appointments.
+--
+-- Storing the name also means a read never joins app_user. That join would run
+-- under the reader's own row-level security, so a parent who may see the
+-- fixture but not the staff directory would get an appointment with a blank
+-- name rather than a refusal: the silent-empty-join failure this schema has
+-- been bitten by before. And the name as appointed is part of the record — an
+-- account renamed in 2027 must not quietly rewrite who umpired in 2026.
+--
+-- NOT CONSTRAINED TO TWO UMPIRES. A men's Test has two on-field umpires and a
+-- third; an U14 fixture on a wet Tuesday often has one, or a parent standing
+-- at square leg. A constraint asserting the professional shape would refuse
+-- the ordinary case, and the ordinary case is the one this product is for.
+CREATE TABLE match_official (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  match_id     uuid NOT NULL REFERENCES match(id) ON DELETE CASCADE,
+  -- Derived at write time from the match, never asserted by the caller —
+  -- the same rule as ball_event and match_pitch_report.
+  school_id    uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  duty         text NOT NULL CHECK (duty IN ('umpire','third_umpire','scorer','referee')),
+  person_name  text NOT NULL CHECK (length(btrim(person_name)) > 0),
+  -- Set when the official holds an account here, which is what lets them file
+  -- a report later under officiating.report. Null for everyone else.
+  person_id    uuid REFERENCES app_user(id) ON DELETE SET NULL,
+  panel        text,                            -- the union or association
+  -- Standing an official down is an UPDATE, never a DELETE. No table in this
+  -- schema has a DELETE policy for any role, and who was originally appointed
+  -- and later withdrawn is exactly the sort of thing a disputed fixture needs.
+  withdrawn    boolean NOT NULL DEFAULT false,
+  appointed_by uuid REFERENCES app_user(id),
+  appointed_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX ON match_official (match_id);
+CREATE INDEX ON match_official (school_id);
+-- The same person twice on the same duty is a mis-tick, in either identity
+-- form. Partial, because a withdrawn appointment must not block re-appointing
+-- the person it names.
+CREATE UNIQUE INDEX ON match_official (match_id, duty, person_id)
+  WHERE person_id IS NOT NULL AND NOT withdrawn;
+CREATE UNIQUE INDEX ON match_official (match_id, duty, lower(btrim(person_name)))
+  WHERE person_id IS NULL AND NOT withdrawn;
+
 CREATE TABLE match_weather (
   match_id      uuid PRIMARY KEY REFERENCES match(id) ON DELETE CASCADE,
   condition     text NOT NULL,

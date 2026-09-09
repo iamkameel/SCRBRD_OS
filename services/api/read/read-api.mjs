@@ -428,6 +428,28 @@ export const READ_QUERIES = {
     text: `select * from scouting_candidates()`,
   },
 
+  /**
+   * Who is standing, scoped through the fixture like weather and the pitch.
+   *
+   * No join to app_user, deliberately. `person_name` is stored on the
+   * appointment, so a reader who may see the fixture but not the staff
+   * directory gets the umpire's name rather than a blank — a join here would
+   * run under their own row-level security and quietly return nothing. See
+   * match_official in db/08 for the rest of the reasoning.
+   *
+   * Withdrawn appointments are excluded: this answers "who is standing", not
+   * "who was ever named". The rows are kept for the disputed-fixture case and
+   * a report that needs them can ask for them explicitly.
+   */
+  officials: {
+    text: `select match_id, duty, person_name, person_id, panel, appointed_at
+             from match_official
+            where not withdrawn
+              and ($1::uuid is null or match_id = $1)
+            order by duty, person_name`,
+    params: q => [q?.matchId || null],
+  },
+
   // The state of the square, scoped through the fixture exactly as weather is.
   // Nothing personal here, but a pitch-report table readable by anyone would
   // answer "does this school have a fixture on Saturday?" to whoever asked.

@@ -330,6 +330,23 @@ CREATE POLICY match_toss_update ON match_toss
   FOR UPDATE USING (app_can('scoring.start', (SELECT m.school_id FROM match m WHERE m.id = match_toss.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_toss.match_id), '00000000-0000-0000-0000-000000000000'::uuid, match_toss.match_id))
            WITH CHECK (app_can('scoring.start', (SELECT m.school_id FROM match m WHERE m.id = match_toss.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_toss.match_id), '00000000-0000-0000-0000-000000000000'::uuid, match_toss.match_id));
 
+-- match_official — read: fixture.read · write: officiating.assign
+ALTER TABLE match_official ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS match_official_read   ON match_official;
+DROP POLICY IF EXISTS match_official_insert ON match_official;
+DROP POLICY IF EXISTS match_official_update ON match_official;
+DROP POLICY IF EXISTS match_official_delete ON match_official;
+
+CREATE POLICY match_official_read ON match_official
+  FOR SELECT USING (app_can('fixture.read', (SELECT m.school_id FROM match m WHERE m.id = match_official.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_official.match_id), '00000000-0000-0000-0000-000000000000'::uuid, match_official.match_id));
+
+CREATE POLICY match_official_insert ON match_official
+  FOR INSERT WITH CHECK (app_can('officiating.assign', (SELECT m.school_id FROM match m WHERE m.id = match_official.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_official.match_id), '00000000-0000-0000-0000-000000000000'::uuid, match_official.match_id));
+
+CREATE POLICY match_official_update ON match_official
+  FOR UPDATE USING (app_can('officiating.assign', (SELECT m.school_id FROM match m WHERE m.id = match_official.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_official.match_id), '00000000-0000-0000-0000-000000000000'::uuid, match_official.match_id))
+           WITH CHECK (app_can('officiating.assign', (SELECT m.school_id FROM match m WHERE m.id = match_official.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_official.match_id), '00000000-0000-0000-0000-000000000000'::uuid, match_official.match_id));
+
 -- match_pitch_report — read: fixture.read · write: facility.manage
 ALTER TABLE match_pitch_report ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS match_pitch_report_read   ON match_pitch_report;

@@ -35,7 +35,7 @@ import { askStatGuru, describeDelivery, aiConfigured } from "./ai/ai-service.mjs
 import { sessionProfile, runAsPrincipal, issueLoginCode, redeemMagicLink } from "./auth/auth-db.mjs";
 import { signToken, AuthError } from "./auth/auth.mjs";
 import { readRoute, liveResources } from "./read/read-api.mjs";
-import { eventRoutes, amendmentRoutes, squadRoutes, tossRoutes, conditionsRoutes } from "./write/events-api.mjs";
+import { eventRoutes, amendmentRoutes, squadRoutes, tossRoutes, conditionsRoutes, officialRoutes } from "./write/events-api.mjs";
 import { scoutingRoutes } from "./write/scouting-api.mjs";
 import { assessmentRoutes, accessRequestRoutes, developmentNoteRoutes, guardianLinkRoutes } from "./write/assessment-api.mjs";
 import { sessionRoutes } from "./realtime/session-routes.mjs";
@@ -151,6 +151,7 @@ const amend   = amendmentRoutes({ pool, secret: SECRET });
 const guard   = guardianLinkRoutes({ pool, secret: SECRET });
 const squad   = squadRoutes({ pool, secret: SECRET });
 const toss    = tossRoutes({ pool, secret: SECRET });
+const officials = officialRoutes({ pool, secret: SECRET });
 const cond    = conditionsRoutes({ pool, secret: SECRET });
 const scouting = scoutingRoutes({ pool, secret: SECRET });
 
@@ -221,6 +222,9 @@ const MATCH_ROUTES = [
   // changes, and that is the reason for recording it.
   [/^\/api\/matches\/([^/]+)\/weather$/,           "POST", cond.weather],
   [/^\/api\/matches\/([^/]+)\/pitch$/,             "POST", cond.pitch],
+  // Appointing the officials. officiating.assign, which until now had nothing
+  // it could be exercised on.
+  [/^\/api\/matches\/([^/]+)\/officials$/,         "POST", officials.appoint],
 ];
 
 // Routes keyed on a player rather than a match. Same shape, same shim.

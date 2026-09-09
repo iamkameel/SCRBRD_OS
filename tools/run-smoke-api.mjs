@@ -38,6 +38,8 @@ const WALKS = [
   // The scorecard a viewer opens from Match Centre: the real replay, not a
   // seeded reconstruction of the final score.
   "scorecard",
+  // Appointing the officials: officiating.assign, which had nothing to act on.
+  "officials",
 ];
 
 // Walks that drive a real browser AND need a database. They need two things

@@ -263,8 +263,12 @@ function ScorecardModal({ match, onClose, role, onNavProfile }){
   // keep the seeded reconstruction below — a declared demo affordance, not a
   // claim about a real match.
   const [replay, setReplay] = useState(null);
+  // Who stood in the middle. A separate read from the ball log, and allowed to
+  // fail on its own: an unappointed panel is a blank line on the card, never a
+  // reason to withhold the scorecard.
+  const [officials, setOfficials] = useState([]);
   useEffect(() => {
-    if (!signedIn()) { setReplay(null); return; }
+    if (!signedIn()) { setReplay(null); setOfficials([]); return; }
     let cancelled = false;
     setReplay({ loading: true, error: null, innings: null });
     (async () => {
@@ -280,6 +284,12 @@ function ScorecardModal({ match, onClose, role, onNavProfile }){
       } catch (e) {
         if (!cancelled) setReplay({ loading: false, error: e.code || "unreachable", innings: null });
       }
+    })();
+    (async () => {
+      try {
+        const { rows } = await api(`/api/read/officials?matchId=${match.id}`);
+        if (!cancelled) setOfficials(rows || []);
+      } catch { if (!cancelled) setOfficials([]); }
     })();
     return () => { cancelled = true; };
   }, [match.id]);
@@ -321,7 +331,11 @@ function ScorecardModal({ match, onClose, role, onNavProfile }){
     </Modal>
   );
   const comp = COMPETITIONS.find(c=>c.id===match.competition);
+  // `match.scorerId` is a mock-only field — no live fixture has ever carried
+  // one — so the demo keeps its staff lookup and a real session uses the
+  // appointment sheet, which is where officials actually live now.
   const scorerStaff = STAFF.find(s=>s.id===match.scorerId);
+  const DUTY_LABEL = { umpire:"Umpire", third_umpire:"Third umpire", scorer:"Scorer", referee:"Referee" };
   const extrasSum = i => Object.values(i.extras).reduce((a,b)=>a+b,0);
   const legal = i => i.ballLog.filter(b=>b.type!=="Wd"&&b.type!=="Nb");
   const topBat = i => [...i.batsmen].sort((a,b)=>b.runs-a.runs)[0];
@@ -377,7 +391,13 @@ function ScorecardModal({ match, onClose, role, onNavProfile }){
         {comp&&<Pill color={D.violet}>🏆 {comp.name}</Pill>}
         <Pill color={D.sky}>📍 {match.venue}</Pill>
         <Pill color={D.textMuted}>📅 {match.date}</Pill>
-        {scorerStaff&&<Pill color={D.orange}>📋 {scorerStaff.name}</Pill>}
+        {officials.map((o)=>(
+          <Pill key={o.duty+o.person_name} color={o.duty==="scorer"?D.orange:D.sky}>
+            {o.duty==="scorer"?"📋":"🧑‍⚖️"} {o.person_name}
+            <span style={{color:D.textMuted}}> · {DUTY_LABEL[o.duty]??o.duty}</span>
+          </Pill>
+        ))}
+        {!officials.length&&scorerStaff&&<Pill color={D.orange}>📋 {scorerStaff.name}</Pill>}
       </div>
       {/* Match worm — both innings */}
       {innings.length>1&&(

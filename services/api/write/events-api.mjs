@@ -383,6 +383,83 @@ export function tossRoutes({ pool, secret }) {
 
 
 /**
+ * Appointing the officials.
+ *
+ * The sixth instance of the pattern this branch keeps closing, and the
+ * emptiest: `officiating.assign` has been in the capability table since the
+ * first migration and three roles hold it, but no table existed to assign
+ * anything in, so the capability could never once be exercised. The scorecard
+ * showed a scorer's name read from a mock-only field.
+ *
+ * REPLACING THE PANEL IS NOT A DELETE, for the same reason naming a squad is
+ * not: no table here has a DELETE policy for any role. The standing panel is
+ * withdrawn and the new one written inside one transaction, so an appointment
+ * sheet that is refused half way leaves the previous officials in place rather
+ * than a match with nobody standing.
+ */
+export function officialRoutes({ pool, secret }) {
+  const err = (code, status = 400) => Object.assign(new Error(code), { status });
+  const DUTIES = ["umpire", "third_umpire", "scorer", "referee"];
+  return {
+    // POST /matches/:id/officials { officials: [{ duty, name, personId?, panel? }] }
+    appoint: async (req, res) => {
+      try {
+        const officials = req.body?.officials;
+        if (!Array.isArray(officials) || !officials.length) throw err("officials_required");
+
+        for (const o of officials) {
+          if (!DUTIES.includes(o?.duty)) throw err("duty_must_be_umpire_third_umpire_scorer_or_referee");
+          // The name is required even when an account is named, because it is
+          // what every reader sees: the read never joins app_user, and a blank
+          // name on a scorecard is worse than a refusal here. See the table.
+          if (!o?.name || typeof o.name !== "string" || !o.name.trim()) throw err("name_required");
+        }
+        // The same person twice on one duty is a mis-tick. The database has
+        // partial unique indexes for this; catching it here names which one,
+        // before anything is written.
+        const seen = new Set();
+        for (const o of officials) {
+          const key = `${o.duty}:${(o.personId || o.name.trim().toLowerCase())}`;
+          if (seen.has(key)) throw err("duplicate_official");
+          seen.add(key);
+        }
+
+        const out = await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+          await client.query(
+            `update match_official set withdrawn = true
+              where match_id = $1 and not withdrawn`,
+            [req.params.id]);
+
+          let written = 0;
+          for (const o of officials) {
+            const r = await client.query(
+              `insert into match_official
+                 (match_id, school_id, duty, person_name, person_id, panel, appointed_by, appointed_at)
+               values ($1, match_school($1), $2, $3, $4, $5, app_user_id(), now())
+               returning id`,
+              [req.params.id, o.duty, o.name.trim(), o.personId ?? null,
+               o.panel == null ? null : String(o.panel).slice(0, 200)]);
+            written += r.rowCount;
+          }
+          // Zero rows and no error means the policy refused every insert.
+          if (written === 0) throw err("not_permitted", 403);
+          return { matchId: req.params.id, appointed: written };
+        });
+        res.json(out);
+      } catch (e) {
+        if (e.code === "23505") return res.status(409).json({ error: "duplicate_official" });
+        // 23502: match_school() came back NULL. 23503: the match_id foreign key
+        // found nothing. Both mean that match is not there, or not theirs.
+        if (e.code === "23502" || e.code === "23503") return res.status(404).json({ error: "no_such_match" });
+        const status = e.code === "42501" ? 403 : (e.status || 500);
+        res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
+      }
+    },
+  };
+}
+
+
+/**
  * Conditions: the weather, and the state of the square.
  *
  * Both tables existed with a read query and no way to write them — the fourth

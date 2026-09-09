@@ -427,6 +427,33 @@ export const TABLES = {
     masked: {},
   },
 
+  match_official: {
+    // Who is standing. Read by anyone who can read the fixture: the umpires'
+    // names are announced at the toss, printed on the scorecard and known to
+    // both sides — treating them as confidential would be a fiction, and the
+    // fixture scope already decides who may know the match exists at all.
+    //
+    // Written under officiating.assign, which three roles already hold and
+    // none could exercise until this table existed. Deliberately NOT
+    // fixture.update: appointing officials and rescheduling a fixture are
+    // different jobs, and a competition administrator who appoints panels
+    // across a league should not thereby be able to move other schools'
+    // matches.
+    //
+    // An official cannot appoint themselves — `official` carries
+    // officiating.report, not officiating.assign. Same reasoning as the pitch
+    // report above: closing that gap by widening either capability would hand
+    // one job to the holders of the other.
+    read:  "fixture.read",
+    write: "officiating.assign",
+    anchors: {
+      school:  "(SELECT m.school_id FROM match m WHERE m.id = match_official.match_id)",
+      team:    "(SELECT m.team_code FROM match m WHERE m.id = match_official.match_id)",
+      fixture: "match_id",
+    },
+    masked: {},
+  },
+
   match_pitch_report: {
     // The state of the square before play. Read by anyone who can read the
     // fixture — captains and coaches need it before the toss, and it discloses
