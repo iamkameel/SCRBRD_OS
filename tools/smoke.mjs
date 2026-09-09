@@ -10,6 +10,7 @@
  *   pnpm build && node tools/smoke.mjs
  */
 import { chromium } from "playwright-core";
+import { launchOptions } from "./chromium.mjs";
 import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { join, extname } from "node:path";
@@ -41,7 +42,7 @@ const server = createServer(async (req, res) => {
 
 await new Promise((r) => server.listen(PORT, r));
 
-const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome" });
+const browser = await chromium.launch({ ...launchOptions() });
 const page = await browser.newPage();
 
 const errors = [];

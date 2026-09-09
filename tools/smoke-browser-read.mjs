@@ -24,6 +24,7 @@
  *   BROWSER_READ_DEBUG=1 node tools/smoke-browser-read.mjs
  */
 import { chromium } from "playwright-core";
+import { launchOptions } from "./chromium.mjs";
 import { anchorFor } from "@scrbrd/scoring";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
@@ -65,10 +66,7 @@ const web = createServer(async (req, res) => {
 });
 await new Promise((r) => web.listen(WEB_PORT, r));
 
-const browser = await chromium.launch({
-  executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome",
-  args: ["--disable-background-networking", "--disable-sync", "--no-first-run"],
-});
+const browser = await chromium.launch({ ...launchOptions() });
 
 /** A fresh page per person: a session must not leak between them. */
 async function open() {

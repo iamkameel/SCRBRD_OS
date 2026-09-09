@@ -15,6 +15,7 @@
  *   PERSIST_DEBUG=1 node tools/smoke-persist.mjs
  */
 import { chromium } from "playwright-core";
+import { launchOptions } from "./chromium.mjs";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
@@ -39,10 +40,7 @@ const server = createServer(async (req, res) => {
 });
 await new Promise((r) => server.listen(PORT, r));
 
-const browser = await chromium.launch({
-  executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome",
-  args: ["--disable-background-networking", "--disable-sync", "--no-first-run"],
-});
+const browser = await chromium.launch({ ...launchOptions() });
 // One persistent context: IndexedDB must survive the reload, which means the
 // same origin and the same profile. A fresh page in the same context is exactly
 // what a scorer's browser does when it reloads the tab.

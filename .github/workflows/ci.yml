@@ -1,0 +1,173 @@
+# SCRBRD — continuous integration
+#
+# Until this file existed, nothing ran automatically. The suites were real —
+# 926 unit assertions and 745 across twenty API walks — and they only ever ran
+# because somebody typed the command. PR #1 carried fifty-two commits and forty
+# thousand lines toward `main` with zero checks against it, which meant "CI is
+# green" was a statement about nothing.
+#
+# That is the same shape as the defects those suites keep catching: a control
+# that exists, passes, and never runs. The toss shipped with its RLS policies
+# in a generated file and survived exactly as long as nobody regenerated;
+# smoke-squad sat un-executed for a week after it was written. Both were found
+# by hand. Neither should have needed to be.
+#
+# Three jobs, deliberately separate, so a failure says which layer broke rather
+# than "CI failed":
+#
+#   unit     — pure logic. No database, no browser. Fastest signal.
+#   walks    — the API against a real Postgres with RLS enforced.
+#   browser  — the client rendering real rows in real Chromium.
+#
+# They run in parallel; none gates another. A broken browser install must not
+# hide a failing authorisation test.
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+# A second push supersedes the first. The old run is telling you about a commit
+# nobody is looking at any more.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Matches docker-compose.yml and tools/migrate.mjs's default, so the same
+  # commands work here and on a laptop with no arguments changed.
+  DATABASE_URL: postgres://scrbrd:scrbrd@127.0.0.1:5432/scrbrd
+
+jobs:
+  unit:
+    name: Unit suites
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        # 10 to match the pnpm that maintains pnpm-lock.yaml. The lockfile is
+        # format 9.0, which both majors read, but --frozen-lockfile fails on any
+        # rewrite a different major would want to make.
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22          # package.json engines says >=22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # Authorisation, scoring, the design system, the rubric, the client's
+      # RBAC copy. No services, so this is the signal that arrives first.
+      - name: Tests
+        run: pnpm test
+
+      # data/mock.js may be imported by exactly one module. A view that reaches
+      # around the choke point renders correctly and has skipped every scoping
+      # and masking rule on the way.
+      - name: Import boundaries
+        run: pnpm check:imports
+
+      - name: Build
+        run: pnpm build
+
+  walks:
+    name: API walks
+    runs-on: ubuntu-latest
+    services:
+      # The version docker-compose.yml pins. RLS behaviour is the thing under
+      # test here, so the major version is not a detail to leave floating.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: scrbrd
+          POSTGRES_PASSWORD: scrbrd
+          POSTGRES_DB: scrbrd
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U scrbrd -d scrbrd"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        # 10 to match the pnpm that maintains pnpm-lock.yaml. The lockfile is
+        # format 9.0, which both majors read, but --frozen-lockfile fails on any
+        # rewrite a different major would want to make.
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # tools/migrate.mjs shells out to psql rather than using a driver, so the
+      # client is a real dependency of the migration path, not a convenience.
+      - name: Install psql
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
+
+      # Twenty walks, each against a freshly seeded database. The runner resets
+      # between them and refuses to start if a smoke walk exists on disk that
+      # nothing executes — which is how smoke-squad went unrun for a week.
+      - name: Walks
+        run: pnpm smoke:api
+
+      # Policy is generated from packages/policy/. A hand-edit to the generated
+      # file survives until someone regenerates and then silently disappears,
+      # which is exactly how match_toss lost row-level security. If regenerating
+      # changes anything, the committed output is stale.
+      - name: RLS output is current
+        run: |
+          pnpm rls:generate
+          git diff --exit-code db/01_authz.sql db/09_rls_policies.sql \
+            || { echo "::error::db/01_authz.sql or db/09_rls_policies.sql is stale — run 'pnpm rls:generate' and commit the result"; exit 1; }
+
+  browser:
+    name: Browser walks
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: scrbrd
+          POSTGRES_PASSWORD: scrbrd
+          POSTGRES_DB: scrbrd
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U scrbrd -d scrbrd"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        # 10 to match the pnpm that maintains pnpm-lock.yaml. The lockfile is
+        # format 9.0, which both majors read, but --frozen-lockfile fails on any
+        # rewrite a different major would want to make.
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install psql
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
+
+      # The repo depends on playwright-core, which drives a browser but does not
+      # download one. The full package is pulled in here only to fetch Chromium
+      # and its system libraries; tools/chromium.mjs then finds it through
+      # PLAYWRIGHT_BROWSERS_PATH without any path hard-coded in a walk.
+      - name: Install Chromium
+        run: npx --yes playwright@1.62.1 install --with-deps chromium
+
+      # Proves the CLIENT renders the rows the API returned — that no view is
+      # still filtering a mock in the browser, and that a guardian's screen
+      # contains their own child and nobody else's. A view can read through a
+      # correct API and still show mock data; only a browser catches that.
+      - name: Client against the API
+        run: |
+          node tools/migrate.mjs --reset --seed
+          node tools/smoke-browser-read.mjs
+          node tools/migrate.mjs --reset --seed
+          node tools/smoke-browser-sync.mjs
+
+      # Rendering, the scoring pad, persistence and the accessibility floor.
+      # No database between them, so they run as one step.
+      - name: Client on its own
+        run: pnpm smoke

@@ -16,6 +16,7 @@
  *   pnpm build && node tools/smoke-a11y.mjs
  */
 import { chromium } from "playwright-core";
+import { launchOptions } from "./chromium.mjs";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
@@ -43,10 +44,7 @@ const server = createServer(async (req, res) => {
 });
 await new Promise((r) => server.listen(PORT, r));
 
-const browser = await chromium.launch({
-  executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome",
-  args: ["--disable-background-networking", "--no-first-run"],
-});
+const browser = await chromium.launch({ ...launchOptions() });
 const page = await browser.newPage();
 
 const click = async (re, ms = 4000) => {

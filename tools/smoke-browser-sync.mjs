@@ -18,6 +18,7 @@
  *   BROWSER_SYNC_DEBUG=1 node tools/smoke-browser-sync.mjs
  */
 import { chromium } from "playwright-core";
+import { launchOptions } from "./chromium.mjs";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
@@ -66,10 +67,7 @@ await new Promise((r) => web.listen(WEB_PORT, r));
 const pool = new pg.Pool({ connectionString: DB });
 const dbq = async (text, params) => (await pool.query(text, params)).rows;
 
-const browser = await chromium.launch({
-  executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome",
-  args: ["--disable-background-networking", "--disable-sync", "--no-first-run"],
-});
+const browser = await chromium.launch({ ...launchOptions() });
 const page = await browser.newPage();
 
 const errors = [];

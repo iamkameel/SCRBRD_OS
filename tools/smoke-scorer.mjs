@@ -16,6 +16,7 @@
  *   SCORER_DEBUG=1 node tools/smoke-scorer.mjs   # dump each surface
  */
 import { chromium } from "playwright-core";
+import { launchOptions } from "./chromium.mjs";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
@@ -40,12 +41,7 @@ const server = createServer(async (req, res) => {
 });
 await new Promise((r) => server.listen(PORT, r));
 
-const browser = await chromium.launch({
-  executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome",
-  // Chromium phones home for autofill and account state; in a sandboxed
-  // network those hang and make the run look like an app failure.
-  args: ["--disable-background-networking", "--disable-sync", "--no-first-run"],
-});
+const browser = await chromium.launch({ ...launchOptions() });
 const page = await browser.newPage();
 
 const errors = [];
