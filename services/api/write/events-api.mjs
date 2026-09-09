@@ -283,3 +283,75 @@ export function squadRoutes({ pool, secret }) {
     },
   };
 }
+
+
+/**
+ * The toss.
+ *
+ * Third instance of the same disease as the squad: `match` has carried
+ * toss_won_by and toss_decision since the first migration, the scorer's setup
+ * wizard collects both on step 3, and nothing ever wrote them. The toss went
+ * into React state, decided the innings order for that one browser session,
+ * and was gone. A second scorer opening the same match got no toss at all;
+ * two devices could disagree about who was batting and neither was wrong,
+ * because there was nothing to be wrong against.
+ *
+ * `wonBy` is 'home' or 'away' — a side in this fixture, not a school's name.
+ * That is what makes the innings order derivable (bats_first() in SQL) rather
+ * than something the client works out and everyone downstream trusts.
+ *
+ * Correcting a mistyped toss before the first ball is just an edit. After the
+ * first ball the database refuses it, because reversing the innings order
+ * under a scorecard people have already read is not an edit — it goes through
+ * scoring_amendment, where it needs a second person.
+ */
+export function tossRoutes({ pool, secret }) {
+  const err = (code, status = 400) => Object.assign(new Error(code), { status });
+  return {
+    // POST /matches/:id/toss { wonBy: 'home'|'away', decision: 'bat'|'bowl' }
+    record: async (req, res) => {
+      try {
+        const wonBy = req.body?.wonBy;
+        const decision = req.body?.decision;
+        // Named sides, not school names. A fixture's away team is free text,
+        // so a name could never be checked against who is actually playing.
+        if (wonBy !== "home" && wonBy !== "away") throw err("won_by_must_be_home_or_away");
+        if (decision !== "bat" && decision !== "bowl") throw err("decision_must_be_bat_or_bowl");
+
+        const out = await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+          // school_id is derived via match_school(), never taken from the
+          // caller — same rule as ball_event. A row whose school disagrees
+          // with its match is invisible to the read policy.
+          const r = await client.query(
+            `insert into match_toss (match_id, school_id, won_by, decision, called_by, called_at)
+             values ($1, match_school($1), $2, $3, app_user_id(), now())
+             on conflict (match_id) do update
+               set won_by = excluded.won_by, decision = excluded.decision,
+                   called_by = excluded.called_by, called_at = excluded.called_at
+             returning won_by, decision,
+                       bats_first(won_by, decision) as bats_first, called_at`,
+            [req.params.id, wonBy, decision]);
+          // No row and no error means the policy refused it.
+          if (!r.rowCount) throw err("not_permitted", 403);
+          const t = r.rows[0];
+          return {
+            matchId: req.params.id, wonBy: t.won_by, decision: t.decision,
+            // The whole reason for the change: the server says who bats,
+            // rather than each client deciding for itself.
+            batsFirst: t.bats_first, calledAt: t.called_at,
+          };
+        });
+        res.json(out);
+      } catch (e) {
+        // 23514 is the freeze trigger — play has started. Its message says so
+        // and names the amendment route, which is the only way through.
+        if (e.code === "23514") return res.status(409).json({ error: "toss_locked", detail: e.message });
+        // 23502 = school_id came back NULL, i.e. match_school() found nothing:
+        // the match does not exist, or not for this principal.
+        if (e.code === "23502") return res.status(404).json({ error: "no_such_match" });
+        const status = e.code === "42501" ? 403 : (e.status || 500);
+        res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
+      }
+    },
+  };
+}

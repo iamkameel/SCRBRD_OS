@@ -35,7 +35,7 @@ import { askStatGuru, describeDelivery, aiConfigured } from "./ai/ai-service.mjs
 import { sessionProfile, runAsPrincipal, issueLoginCode, redeemMagicLink } from "./auth/auth-db.mjs";
 import { signToken, AuthError } from "./auth/auth.mjs";
 import { readRoute, liveResources } from "./read/read-api.mjs";
-import { eventRoutes, amendmentRoutes, squadRoutes } from "./write/events-api.mjs";
+import { eventRoutes, amendmentRoutes, squadRoutes, tossRoutes } from "./write/events-api.mjs";
 import { assessmentRoutes, accessRequestRoutes, developmentNoteRoutes, guardianLinkRoutes } from "./write/assessment-api.mjs";
 import { sessionRoutes } from "./realtime/session-routes.mjs";
 import { MatchHub } from "./realtime/realtime.mjs";
@@ -149,6 +149,7 @@ const notes   = developmentNoteRoutes({ pool, secret: SECRET });
 const amend   = amendmentRoutes({ pool, secret: SECRET });
 const guard   = guardianLinkRoutes({ pool, secret: SECRET });
 const squad   = squadRoutes({ pool, secret: SECRET });
+const toss    = tossRoutes({ pool, secret: SECRET });
 
 /**
  * Development sign-in.
@@ -211,6 +212,8 @@ const MATCH_ROUTES = [
   // Naming the side. The two safeguarding triggers on match_squad fire here,
   // and had no way to fire at all before this route existed.
   [/^\/api\/matches\/([^/]+)\/squad$/,             "POST", squad.select],
+  // The toss. Frozen by the database once a delivery exists.
+  [/^\/api\/matches\/([^/]+)\/toss$/,              "POST", toss.record],
 ];
 
 // Routes keyed on a player rather than a match. Same shape, same shim.

@@ -182,8 +182,12 @@ CREATE TABLE match (
   overs         smallint NOT NULL DEFAULT 20,
   status        text NOT NULL DEFAULT 'scheduled'
                   CHECK (status IN ('scheduled','live','complete','abandoned')),
-  toss_won_by   text,
-  toss_decision text CHECK (toss_decision IN ('bat','bowl')),
+  -- The toss is NOT here. It was — as `toss_won_by text` holding a school's
+  -- display name — and it moved to match_toss in 02_schema_scoring.sql. Two
+  -- reasons, both written up there: a free-text winner could not be tied to
+  -- either side actually playing, so who bats first was not computable; and
+  -- `match` is governed by fixture.update, which a scorer does not hold and
+  -- should not, though a scorer is exactly who watches the coin land.
   -- No score column, by design. The score is derived from ball_event —
   -- see db/01_schema_scoring.sql and packages/scoring/src/replay.mjs.
   created_at    timestamptz NOT NULL DEFAULT now()

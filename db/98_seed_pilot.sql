@@ -121,13 +121,20 @@ INSERT INTO competition (id, school_id, name, comp_type, format, age_group, gend
 
 -- Matches: one played, one scheduled. Neither carries a score column —
 -- the score is derived from ball_event.
-INSERT INTO match (id, school_id, team_code, opponent, ground_id, starts_at, format, overs, status, toss_won_by, toss_decision) VALUES
+INSERT INTO match (id, school_id, team_code, opponent, ground_id, starts_at, format, overs, status) VALUES
   ('77777777-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', '1XI', 'Westville Boys'' High',
-   'ffffffff-0000-0000-0000-000000000001', now() - interval '7 days', 'T20', 20, 'complete', 'Hilton College', 'bat'),
+   'ffffffff-0000-0000-0000-000000000001', now() - interval '7 days', 'T20', 20, 'complete'),
   ('77777777-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', '1XI', 'Michaelhouse',
-   'ffffffff-0000-0000-0000-000000000001', now() + interval '3 days',  'T20', 20, 'scheduled', NULL, NULL),
+   'ffffffff-0000-0000-0000-000000000001', now() + interval '3 days',  'T20', 20, 'scheduled'),
   ('77777777-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 'U16B', 'Kearsney College',
-   'ffffffff-0000-0000-0000-000000000001', now() + interval '10 days', 'T20', 20, 'scheduled', NULL, NULL);
+   'ffffffff-0000-0000-0000-000000000001', now() + interval '10 days', 'T20', 20, 'scheduled');
+
+-- The completed match had a toss; the two scheduled ones have not been played.
+-- 'home' rather than 'Hilton College': the winner is a side in this fixture,
+-- which is what makes bats_first() answerable. See match_toss.
+INSERT INTO match_toss (match_id, school_id, won_by, decision, called_at) VALUES
+  ('77777777-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111',
+   'home', 'bat', now() - interval '7 days');
 
 -- ── Users (one per role under test) ─────────────────────────────
 INSERT INTO app_user (id, school_id, email, name, role, player_id, child_ids, teams) VALUES

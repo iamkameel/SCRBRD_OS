@@ -873,3 +873,91 @@ END $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 REVOKE ALL ON FUNCTION scoring_amendment_decide(uuid, boolean, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION scoring_amendment_decide(uuid, boolean, text) TO PUBLIC;
+
+
+-- ════════════════════════════════════════════════════════════════
+--  THE TOSS
+-- ════════════════════════════════════════════════════════════════
+-- Who called it and what they chose. Two columns used to live on `match`
+-- (toss_won_by text, toss_decision text) and they were wrong in two ways.
+--
+-- FIRST, `toss_won_by` was free text holding a display name — the seed says
+-- 'Hilton College'. A fixture's away side is free text too (`match.opponent`),
+-- so nothing tied the toss winner to either team playing. You could write
+-- 'Kearsney' onto a Michaelhouse fixture and the database would take it. That
+-- means who bats first — the single fact the whole innings order rests on —
+-- could not be computed from the data. It had to be taken on trust from the
+-- browser that sent it, and this platform does not do that anywhere else.
+--
+-- SECOND, `match` is governed by fixture.update, which is the capability for
+-- rescheduling and renaming fixtures. A scorer does not hold it and should not:
+-- the person standing at the boundary with a phone has no business moving the
+-- match to another ground. But that same person is exactly who watches the coin
+-- land. Leaving the toss on `match` meant either the scorer could not record it
+-- or scorers got fixture-editing rights across the school. Neither is
+-- acceptable, and the choice only existed because the toss was filed as a
+-- property of the fixture rather than as the first act of the match.
+--
+-- So it is its own table, keyed on the two sides that are actually playing,
+-- governed by scoring.start, and frozen once a ball is bowled.
+CREATE TABLE match_toss (
+  -- One toss per match. The primary key says so; there is no history to keep
+  -- because a toss that happened twice did not happen.
+  match_id  uuid PRIMARY KEY REFERENCES match(id) ON DELETE CASCADE,
+  -- Denormalised for RLS, and derived rather than asserted by the caller —
+  -- same reasoning as ball_event.school_id.
+  school_id uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  -- 'home' | 'away', the same vocabulary as match_squad.side. This is the fix:
+  -- a side, not a name, so bats_first() below is arithmetic rather than a
+  -- string comparison against a school's letterhead.
+  won_by    text NOT NULL CHECK (won_by IN ('home','away')),
+  decision  text NOT NULL CHECK (decision IN ('bat','bowl')),
+  -- Who watched the coin land, and when they wrote it down. A toss nobody is
+  -- accountable for is the one that gets disputed at tea.
+  called_by uuid REFERENCES app_user(id),
+  called_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Who bats first, from the toss alone.
+--
+-- The winner bats if they chose to bat; otherwise the other side does. Trivial,
+-- and that is the point — it is trivial ONLY because won_by is a side. While it
+-- was a school name this could not be written at all, so every caller worked it
+-- out from whatever it had to hand and the scorer's browser was the only place
+-- the answer existed.
+CREATE OR REPLACE FUNCTION bats_first(p_won_by text, p_decision text)
+RETURNS text AS $$
+  SELECT CASE
+           WHEN p_won_by IS NULL OR p_decision IS NULL THEN NULL
+           WHEN p_decision = 'bat' THEN p_won_by
+           WHEN p_won_by = 'home' THEN 'away'
+           ELSE 'home'
+         END;
+$$ LANGUAGE sql IMMUTABLE;
+
+-- The toss is settled once play begins.
+--
+-- Before the first ball, a scorer who fat-fingers the toss should just fix it —
+-- that is a typo, not history. After the first ball, changing who won the toss
+-- silently reverses the innings order under a scorecard that has already been
+-- read by parents on the boundary, and no amount of care in the UI makes that
+-- an ordinary edit. It goes through scoring_amendment like every other
+-- correction to a match already in progress, where it needs a second person.
+--
+-- SECURITY DEFINER because this has to see EVERY ball on the match, not the
+-- ones the caller happens to be allowed to read. A check that can be defeated
+-- by not having permission to see the evidence is not a check.
+CREATE OR REPLACE FUNCTION match_toss_before_first_ball() RETURNS trigger AS $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM ball_event WHERE match_id = NEW.match_id) THEN
+    RAISE EXCEPTION
+      'The toss cannot be changed once play has started: this match already has deliveries recorded. Raise a scoring amendment instead.'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS trg_match_toss_frozen ON match_toss;
+CREATE TRIGGER trg_match_toss_frozen
+  BEFORE INSERT OR UPDATE ON match_toss
+  FOR EACH ROW EXECUTE FUNCTION match_toss_before_first_ball();

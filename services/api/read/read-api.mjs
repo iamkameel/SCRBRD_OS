@@ -35,10 +35,20 @@ export const READ_QUERIES = {
     //
     // `opponent` is a free-text away side, because a fixture against a school
     // that is not a SCRBRD tenant has no row to point at.
+    // The toss joins in from match_toss rather than sitting on `match`. The
+    // output names are unchanged, so nothing downstream had to move — but
+    // `bats_first` is new, and it is the point of the move: the innings order
+    // is now answered by the database instead of worked out in the browser
+    // from a school name that might have matched neither side.
     text: `select m.id, m.school_id, m.team_code, m.opponent, m.starts_at,
-                  m.format, m.overs, m.status, m.toss_won_by, m.toss_decision,
+                  m.format, m.overs, m.status,
+                  t.won_by   as toss_won_by,
+                  t.decision as toss_decision,
+                  bats_first(t.won_by, t.decision) as bats_first,
+                  t.called_at as toss_at,
                   g.name as ground
              from match m
+             left join match_toss t on t.match_id = m.id
              left join ground g on g.id = m.ground_id
             order by m.starts_at desc`,
   },

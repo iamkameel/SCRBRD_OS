@@ -155,6 +155,29 @@ CREATE POLICY match_update ON match
   FOR UPDATE USING (app_can('fixture.update', match.school_id, match.team_code, '00000000-0000-0000-0000-000000000000'::uuid, match.id))
            WITH CHECK (app_can('fixture.update', match.school_id, match.team_code, '00000000-0000-0000-0000-000000000000'::uuid, match.id));
 
+-- match_toss — read: fixture.read · write: scoring.start
+-- Read is fixture.read, not scoring.start: the toss is announced. Anyone who
+-- can see the fixture can see who won it, which includes every parent on the
+-- boundary. Writing needs scoring.start — the capability held by the person
+-- who opens the match, which is the person standing there when it is called.
+-- No DELETE policy, as everywhere else: a toss is corrected before the first
+-- ball or amended after it, never removed.
+ALTER TABLE match_toss ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS match_toss_read   ON match_toss;
+DROP POLICY IF EXISTS match_toss_insert ON match_toss;
+DROP POLICY IF EXISTS match_toss_update ON match_toss;
+DROP POLICY IF EXISTS match_toss_delete ON match_toss;
+
+CREATE POLICY match_toss_read ON match_toss
+  FOR SELECT USING (app_can('fixture.read', match_toss.school_id, match_team(match_toss.match_id), '00000000-0000-0000-0000-000000000000'::uuid, match_toss.match_id));
+
+CREATE POLICY match_toss_insert ON match_toss
+  FOR INSERT WITH CHECK (app_can('scoring.start', match_toss.school_id, match_team(match_toss.match_id), '00000000-0000-0000-0000-000000000000'::uuid, match_toss.match_id));
+
+CREATE POLICY match_toss_update ON match_toss
+  FOR UPDATE USING (app_can('scoring.start', match_toss.school_id, match_team(match_toss.match_id), '00000000-0000-0000-0000-000000000000'::uuid, match_toss.match_id))
+           WITH CHECK (app_can('scoring.start', match_toss.school_id, match_team(match_toss.match_id), '00000000-0000-0000-0000-000000000000'::uuid, match_toss.match_id));
+
 -- ground — read: facility.read · write: facility.manage
 ALTER TABLE ground ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS ground_read   ON ground;
