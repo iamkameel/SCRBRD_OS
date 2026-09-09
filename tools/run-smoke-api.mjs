@@ -23,7 +23,7 @@ import { readdirSync } from "node:fs";
 // Every walk here gets a reset first: they assert against seeded rows and a
 // previous walk's writes would make them pass or fail for the wrong reason.
 const WALKS = [
-  "read", "sync", "handover", "browser-sync", "browser-read", "fold",
+  "read", "sync", "handover", "fold",
   "assess", "access", "eligibility", "roster", "audit", "guardian",
   "rating", "notes", "amend", "login",
   // Pre-match: naming the side, calling the toss, and the conditions
@@ -33,6 +33,13 @@ const WALKS = [
   "summary",
 ];
 
+// Walks that drive a real browser AND need a database. They need two things
+// the API walks do not — a built client in apps/web/dist and a Chromium — so
+// they run under `--browser` rather than in the default set. Splitting them
+// out is not tidiness: CI's first run put them in the API job, which had
+// neither, and both jobs failed on a missing dist/index.html.
+const BROWSER_WALKS = ["browser-sync", "browser-read"];
+
 // Walks that need no database, run by `pnpm smoke` instead. Named here only so
 // the completeness check below knows they are accounted for.
 const NO_DB = ["", "scorer", "persist", "a11y"];
@@ -40,18 +47,26 @@ const NO_DB = ["", "scorer", "persist", "a11y"];
 const onDisk = readdirSync("tools")
   .filter((f) => /^smoke.*\.mjs$/.test(f))
   .map((f) => f.replace(/^smoke-?/, "").replace(/\.mjs$/, ""));
-const known = new Set([...WALKS, ...NO_DB]);
+const known = new Set([...WALKS, ...BROWSER_WALKS, ...NO_DB]);
 const unlisted = onDisk.filter((n) => !known.has(n));
 if (unlisted.length) {
   console.error(`\n✗ smoke walks exist that nothing runs: ${unlisted.map((n) => `smoke-${n}`).join(", ")}`);
-  console.error("  Add them to WALKS in tools/run-smoke-api.mjs (or to NO_DB if they need no database).");
+  console.error("  Add them to WALKS in tools/run-smoke-api.mjs (BROWSER_WALKS if they drive a browser, NO_DB if they need no database).");
   process.exit(1);
 }
 
-const only = process.argv.slice(2);
-const run = only.length ? WALKS.filter((w) => only.includes(w)) : WALKS;
+// `--browser` runs the browser set instead of the API set. Both are named
+// walks on the same runner, so a browser walk still gets its own reset and
+// still cannot go unlisted.
+// A bare "--" arrives when a package manager forwards arguments (pnpm keeps
+// the separator; npm eats it). It is noise from the caller, not a walk name.
+const args = process.argv.slice(2).filter((a) => a !== "--");
+const wantBrowser = args.includes("--browser");
+const only = args.filter((a) => a !== "--browser");
+const pool = wantBrowser ? BROWSER_WALKS : WALKS;
+const run = only.length ? pool.filter((w) => only.includes(w)) : pool;
 if (only.length && run.length !== only.length) {
-  console.error(`✗ unknown walk: ${only.filter((o) => !WALKS.includes(o)).join(", ")}`);
+  console.error(`✗ unknown walk: ${only.filter((o) => !pool.includes(o)).join(", ")}`);
   process.exit(1);
 }
 

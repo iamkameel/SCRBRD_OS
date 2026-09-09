@@ -104,9 +104,11 @@ jobs:
       - name: Install psql
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
 
-      # Twenty walks, each against a freshly seeded database. The runner resets
-      # between them and refuses to start if a smoke walk exists on disk that
-      # nothing executes — which is how smoke-squad went unrun for a week.
+      # Eighteen walks, each against a freshly seeded database. The runner
+      # resets between them and refuses to start if a smoke walk exists on disk
+      # that nothing executes — which is how smoke-squad went unrun for a week.
+      # The two browser walks moved to their own job: they need a built client
+      # and a Chromium, and this job has neither.
       - name: Walks
         run: pnpm smoke:api
 
@@ -156,16 +158,18 @@ jobs:
       - name: Install Chromium
         run: npx --yes playwright@1.62.1 install --with-deps chromium
 
+      # The walks serve apps/web/dist, so it has to exist. Locally it survives
+      # from a previous build and the need is invisible; on a clean runner the
+      # first CI run died on a missing dist/index.html.
+      - name: Build the client
+        run: pnpm build
+
       # Proves the CLIENT renders the rows the API returned — that no view is
       # still filtering a mock in the browser, and that a guardian's screen
       # contains their own child and nobody else's. A view can read through a
       # correct API and still show mock data; only a browser catches that.
       - name: Client against the API
-        run: |
-          node tools/migrate.mjs --reset --seed
-          node tools/smoke-browser-read.mjs
-          node tools/migrate.mjs --reset --seed
-          node tools/smoke-browser-sync.mjs
+        run: pnpm smoke:browser
 
       # Rendering, the scoring pad, persistence and the accessibility floor.
       # No database between them, so they run as one step.

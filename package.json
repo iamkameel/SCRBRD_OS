@@ -23,7 +23,8 @@
     "check:imports": "node tools/check-imports.mjs",
     "smoke": "node tools/smoke.mjs && node tools/smoke-scorer.mjs && node tools/smoke-persist.mjs && node tools/smoke-a11y.mjs",
     "verify": "pnpm test && pnpm check:imports && pnpm build && pnpm smoke && pnpm smoke:api",
-    "smoke:api": "node tools/run-smoke-api.mjs"
+    "smoke:api": "node tools/run-smoke-api.mjs",
+    "smoke:browser": "node tools/run-smoke-api.mjs --browser"
   },
   "devDependencies": {
     "playwright-core": "^1.62.1",
