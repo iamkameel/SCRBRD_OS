@@ -35,6 +35,9 @@ const WALKS = [
   "phases",
   // The scouting consent primitive: accreditation, consent, evidence.
   "scouting",
+  // The scorecard a viewer opens from Match Centre: the real replay, not a
+  // seeded reconstruction of the final score.
+  "scorecard",
 ];
 
 // Walks that drive a real browser AND need a database. They need two things

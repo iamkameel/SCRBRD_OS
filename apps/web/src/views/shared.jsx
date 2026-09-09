@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 
 import { ROLES } from "../design/roles.js";
 import { D } from "../design/tokens.js";
@@ -9,6 +9,8 @@ import { seedCompletedMatch } from "../scorer/seed.js";
 import { Badge, Modal, Pill, SkillBar } from "../ui/primitives.jsx";
 import { useRows } from "../lib/live.js";
 import { teamCodeIn } from "@scrbrd/policy/teams";
+import { api, signedIn } from "../lib/api.js";
+import { deriveInnings, fromRow } from "@scrbrd/scoring";
 
 // ══════════════════════════════════════════════════════
 //  MATCH CENTRE VIEW
@@ -245,20 +247,70 @@ function ScorecardModal({ match, onClose, role, onNavProfile }){
     const p = PLAYERS.find(x=>x.name===name);
     return p ? ()=>setProf(filterRecord(role,"players",p)) : null;
   };
-  const { WormChart, ManhattanChart, BatsmanChart, BowlerChart } = ScorerApp.charts;
   const isLive = match.status!=="complete";
+
+  // The real ball log, for a session that can actually read one. A signed-in
+  // session never sees a reconstruction of a real fixture — the same rule
+  // useRatings()/useNotes() (lib/live.js) already apply to a rating and a
+  // coach's note: no mock fallback once there is a session, because a
+  // fabricated number beside a real name reads exactly like a true one. Demo
+  // matches (signed out) have no ball_event rows anywhere to fetch, so they
+  // keep the seeded reconstruction below — a declared demo affordance, not a
+  // claim about a real match.
+  const [replay, setReplay] = useState(null);
+  useEffect(() => {
+    if (!signedIn()) { setReplay(null); return; }
+    let cancelled = false;
+    setReplay({ loading: true, error: null, innings: null });
+    (async () => {
+      try {
+        const { events: rows } = await api(`/api/matches/${match.id}/events`);
+        if (cancelled) return;
+        const evs = (rows || []).map(fromRow);
+        const innings = [0, 1]
+          .map((i) => evs.filter((e) => e.innings === i))
+          .filter((list) => list.length)
+          .map((list) => deriveInnings(list));
+        setReplay({ loading: false, error: null, innings });
+      } catch (e) {
+        if (!cancelled) setReplay({ loading: false, error: e.code || "unreachable", innings: null });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [match.id]);
+
   const seeded = useMemo(()=>{
+    if (replay) return null; // a real session renders from `replay` below
     const inns=[];
     if(match.scorecard?.home) inns.push({...parseScore(match.scorecard.home.score), balls:parseBalls(match.scorecard.home.overs)});
     if(match.scorecard?.away) inns.push({...parseScore(match.scorecard.away.score), balls:parseBalls(match.scorecard.away.overs)});
-    return ScorerApp.seedCompletedMatch({
+    return seedCompletedMatch({
       matchId: match.id, team1: match.homeTeam, team2: match.awayTeam,
       squad1: teamSquad(match.homeTeam, PLAYERS), squad2: teamSquad(match.awayTeam, PLAYERS),
       inns: inns.map(x=>({ runs:x.runs, wickets:x.wkts, balls:x.balls })),
       liveLast: isLive,
     });
-  },[match.id,isLive,PLAYERS]);
-  const inn = seeded.innings[tab];
+  },[match.id,isLive,PLAYERS,replay]);
+
+  const innings = replay ? (replay.innings || []) : (seeded?.innings || []);
+  const cfg = replay ? { overs: match.overs || innings[0]?.overs || 20 } : seeded?.cfg;
+  const inn = innings[tab];
+
+  if (replay?.loading) return (
+    <Modal title="Scorecard" onClose={onClose} width="720px">
+      <div style={{textAlign:"center",padding:"40px 0",color:D.textMuted,fontFamily:D.body,fontSize:"13px"}}>Loading scorecard…</div>
+    </Modal>
+  );
+  if (replay && replay.error) return (
+    <Modal title="Scorecard" onClose={onClose} width="720px">
+      <div style={{textAlign:"center",padding:"40px 0",color:D.textMuted,fontFamily:D.body,fontSize:"13px"}}>Could not load the scorecard ({replay.error}).</div>
+    </Modal>
+  );
+  if (replay && !replay.error && innings.length===0) return (
+    <Modal title="Scorecard" onClose={onClose} width="720px">
+      <div style={{textAlign:"center",padding:"40px 0",color:D.textMuted,fontFamily:D.body,fontSize:"13px"}}>Nothing has been scored yet.</div>
+    </Modal>
+  );
   const comp = COMPETITIONS.find(c=>c.id===match.competition);
   const scorerStaff = STAFF.find(s=>s.id===match.scorerId);
   const extrasSum = i => Object.values(i.extras).reduce((a,b)=>a+b,0);
@@ -319,15 +371,15 @@ function ScorecardModal({ match, onClose, role, onNavProfile }){
         {scorerStaff&&<Pill color={D.orange}>📋 {scorerStaff.name}</Pill>}
       </div>
       {/* Match worm — both innings */}
-      {seeded.innings.length>1&&(
+      {innings.length>1&&(
         <>
           <SecLbl>Match worm</SecLbl>
-          <WormChart innings={seeded.innings} curIn={seeded.innings.length-1} match={seeded.cfg}/>
+          <WormChart innings={innings} curIn={innings.length-1} match={cfg}/>
         </>
       )}
       {/* Innings tabs */}
       <div style={{display:"flex",gap:"6px",margin:"14px 0 10px"}}>
-        {seeded.innings.map((x,i)=>(
+        {innings.map((x,i)=>(
           <button key={i} onClick={()=>setTab(i)} className="pressBtn" style={{flex:1,padding:"7px 10px",borderRadius:D.md,cursor:"pointer",
             background:tab===i?D.indigo+"18":D.surf2,border:`1px solid ${tab===i?D.indigo+"44":D.border}`,
             fontFamily:D.head,fontSize:"10px",fontWeight:700,color:tab===i?D.textPrimary:D.textMuted}}>
@@ -345,7 +397,7 @@ function ScorecardModal({ match, onClose, role, onNavProfile }){
       </div>
       {/* Per-innings charts from the scorer engine */}
       <SecLbl>Runs per over</SecLbl>
-      <ManhattanChart inn={inn} match={seeded.cfg}/>
+      <ManhattanChart inn={inn} match={cfg}/>
       <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"10px",marginTop:"10px"}}>
         <div><SecLbl>Batting impact</SecLbl><BatsmanChart inn={inn}/></div>
         <div><SecLbl>Bowling economy</SecLbl><BowlerChart inn={inn}/></div>
