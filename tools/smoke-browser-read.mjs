@@ -77,7 +77,21 @@ async function open() {
   page.on("console", (m) => {
     const t = m.text();
     if (/\[scrbrd\] getData\(/.test(t)) refusals.push(t);
-    if (m.type() === "error" && !/Failed to load resource/.test(t)) errors.push(t);
+    // "Failed to load resource" is a network 404/CORS noise line Chrome logs
+    // itself, not our code. A bare "TypeError: Failed to fetch" is Firebase
+    // Analytics' own internal dynamic-config lookup (firebase.googleapis.com
+    // /.../webConfig, firebaseinstallations.googleapis.com) failing and
+    // logging via console.error rather than throwing — the SDK's documented
+    // behaviour offline or behind a network that blocks Google's analytics
+    // domains, which describes a school ground with no signal as much as it
+    // describes this sandbox. Nothing in THIS app's own code lets a bare
+    // fetch TypeError reach console.error: every fetch() call here is caught
+    // and reported through ApiError/useLive's own error state (see
+    // lib/api.js, lib/live.js) rather than left to surface raw, so this
+    // exact string cannot be masking one of ours.
+    if (m.type() === "error" && !/Failed to load resource/.test(t) && !/^TypeError: Failed to fetch/.test(t)) {
+      errors.push(t);
+    }
   });
   await page.addInitScript(`window.__SCRBRD_API_BASE__ = ${JSON.stringify(API)};`);
   await page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "networkidle" });
