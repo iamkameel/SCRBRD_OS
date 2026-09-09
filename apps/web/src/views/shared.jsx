@@ -4,7 +4,7 @@ import { ROLES } from "../design/roles.js";
 import { D } from "../design/tokens.js";
 import { mulberry32, strSeed } from "../lib/rng.js";
 import { can, filterRecord } from "../rbac/index.js";
-import { BatsmanChart, BowlerChart, ManhattanChart, WormChart } from "../scorer/charts.jsx";
+import { BatsmanChart, BowlerChart, ManhattanChart, ShotWheel, WormChart } from "../scorer/charts.jsx";
 import { seedCompletedMatch } from "../scorer/seed.js";
 import { Badge, Modal, Pill, SkillBar } from "../ui/primitives.jsx";
 import { useRows } from "../lib/live.js";
@@ -233,6 +233,11 @@ function PlayerProfileModal({ player, role, skills = {}, onClose, onFullProfile 
 function ScorecardModal({ match, onClose, role, onNavProfile }){
   const [tab, setTab] = useState(0);
   const [prof, setProf] = useState(null);
+  // Whose shots the wheel is showing; null is the whole innings. Cleared when
+  // the innings tab changes — a batter picked in the first innings did not bat
+  // in the second, and carrying the selection across would show an empty wheel
+  // that looks like a batter who never scored rather than one who never batted.
+  const [wheelOf, setWheelOf] = useState(null);
   // Read here, in a component, where hooks are legal — then hand the rows to
   // the helpers below. Every one of these was a scoped() call inside a plain
   // function a moment ago, which is how a module-scope helper ended up making
@@ -306,7 +311,11 @@ function ScorecardModal({ match, onClose, role, onNavProfile }){
       <div style={{textAlign:"center",padding:"40px 0",color:D.textMuted,fontFamily:D.body,fontSize:"13px"}}>Could not load the scorecard ({replay.error}).</div>
     </Modal>
   );
-  if (replay && !replay.error && innings.length===0) return (
+  // No innings, from either source. Said out loud rather than rendered as an
+  // empty modal: the Match Centre now offers this card for any match that is
+  // live or complete, so "opened too early" is a normal thing to land on and
+  // a blank sheet would read as the app being broken.
+  if (!replay?.error && innings.length===0) return (
     <Modal title="Scorecard" onClose={onClose} width="720px">
       <div style={{textAlign:"center",padding:"40px 0",color:D.textMuted,fontFamily:D.body,fontSize:"13px"}}>Nothing has been scored yet.</div>
     </Modal>
@@ -380,7 +389,7 @@ function ScorecardModal({ match, onClose, role, onNavProfile }){
       {/* Innings tabs */}
       <div style={{display:"flex",gap:"6px",margin:"14px 0 10px"}}>
         {innings.map((x,i)=>(
-          <button key={i} onClick={()=>setTab(i)} className="pressBtn" style={{flex:1,padding:"7px 10px",borderRadius:D.md,cursor:"pointer",
+          <button key={i} onClick={()=>{setTab(i);setWheelOf(null);}} className="pressBtn" style={{flex:1,padding:"7px 10px",borderRadius:D.md,cursor:"pointer",
             background:tab===i?D.indigo+"18":D.surf2,border:`1px solid ${tab===i?D.indigo+"44":D.border}`,
             fontFamily:D.head,fontSize:"10px",fontWeight:700,color:tab===i?D.textPrimary:D.textMuted}}>
             {i+1}ST INN · {x.battingTeam}{!x.complete&&<span style={{color:D.emerald}}> · LIVE</span>}
@@ -402,6 +411,24 @@ function ScorecardModal({ match, onClose, role, onNavProfile }){
         <div><SecLbl>Batting impact</SecLbl><BatsmanChart inn={inn}/></div>
         <div><SecLbl>Bowling economy</SecLbl><BowlerChart inn={inn}/></div>
       </div>
+      {/* Where the runs went. Whole innings by default; one batter when a
+          reader picks one — which is the question a parent actually opens
+          this modal to ask, and until now only the scorer could answer. */}
+      <SecLbl>Shot placement</SecLbl>
+      <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginBottom:"8px"}}>
+        {[{id:null,name:"Whole innings"},...inn.batsmen.filter(b=>b.balls>0)].map((b)=>(
+          <button key={b.id??"all"} onClick={()=>setWheelOf(b.id??null)} className="pressBtn" style={{
+            padding:"5px 11px",borderRadius:D.pill,cursor:"pointer",
+            background:wheelOf===(b.id??null)?D.indigo+"1e":D.surf2,
+            border:`1px solid ${wheelOf===(b.id??null)?D.indigo+"55":D.border}`,
+            fontFamily:D.body,fontSize:"11px",fontWeight:500,
+            color:wheelOf===(b.id??null)?D.textPrimary:D.textMuted}}>
+            {b.name}
+          </button>
+        ))}
+      </div>
+      <ShotWheel inn={inn} playerId={wheelOf}
+        title={wheelOf?(inn.batsmen.find(b=>b.id===wheelOf)?.name??"Wagon wheel"):"Wagon wheel"}/>
       {/* Batting card */}
       <SecLbl>Batting</SecLbl>
       <div style={{border:`1px solid ${D.border}`,borderRadius:D.lg,overflow:"hidden",marginBottom:"12px"}}>

@@ -163,6 +163,10 @@ function ScoringHub({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selSeg
             ballLog={inn?.ballLog||[]}
             selSeg={selSeg}
             batHand={batHand}
+            // Whose shot each drawn ball was — not whoever happens to be on
+            // strike now. Every ball carries the striker who faced it, so the
+            // mirror is resolved per ball rather than once for the innings.
+            handFor={b=>batHandOf(inn,b.strikerId)}
             // Point capture: the tap IS the placement. The sector guides stay
             // drawn as scaffolding but are no longer targets — see §7 of the
             // point-capture spec, and placement.mjs for why snapping would
@@ -575,6 +579,7 @@ function FocusPad({inn,match,curIn,target,onCommitDetailed,onWicketCtx,onWide,on
       {phase===2&&(
         <Card style={{padding:"14px"}}>
           <WagonWheel ballLog={inn.ballLog} selSeg={area} onSel={(s)=>{setArea(s);setPhase(3);}}
+            batHand={batHandOf(inn)} handFor={b=>batHandOf(inn,b.strikerId)}
             viewMode={wagonView} onViewMode={setWagonView} hidden={hidden} onToggle={()=>{}}/>
           <div style={{display:"flex",gap:"8px",marginTop:"12px"}}>
             <button onClick={()=>setPhase(1)} className="pressBtn" style={{flex:1,padding:"12px",borderRadius:D.lg,cursor:"pointer",background:D.surf2,border:`1px solid ${D.border}`,color:D.textSecondary,fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:"0.05em"}}>‹ SHOT</button>

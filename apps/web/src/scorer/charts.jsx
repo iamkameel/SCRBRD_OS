@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { D } from "../design/tokens.js";
+import { CX, CY, LK_COLS, R_BND, R_IN, R_MID, R_PITCH, SEGS, ballAngle, lineKey, toXY, wagEnd } from "./field.js";
 import { RR, SR } from "./format.js";
 import { IntelPanel } from "./panels.jsx";
 import { buildSignals } from "./signals.js";
 import { Badge, Card, Lbl, SignalBar } from "./ui.jsx";
+import { batHandOf, hasPoint, positionName } from "@scrbrd/scoring";
 
 /* ═══════════════════════════════════════════════════════
    INTEL DASHBOARD TAB
@@ -270,6 +272,115 @@ function BowlerChart({inn}){
   );
 }
 
+/**
+ * The wagon wheel, for people who are not the scorer.
+ *
+ * The scorer's own wheel (panels.jsx) is a capture surface: it takes taps,
+ * holds a selection, and belongs to the person with the phone. This one only
+ * reads. It exists because the wheel was, until now, the private property of
+ * whoever happened to be scoring — a coach reviewing Saturday, a parent
+ * looking at their son's innings and the boy himself had no way to see where
+ * a single ball went, though every one of those placements was recorded.
+ *
+ * WHAT IT REFUSES TO DO
+ * ─────────────────────
+ * Draw a ball it does not have a position for. A leave, a ball into the pad
+ * and a delivery scored on a QUICK profile carry no placement, and the count
+ * of them is REPORTED rather than quietly dropped — a wheel with eleven spokes
+ * over an innings of ninety is telling you about the scorer, not the batter,
+ * and it should say so.
+ *
+ * Sector-era balls are drawn dashed, at their band, exactly as the scorer's
+ * wheel draws them: their length is the ring they were recorded in, never a
+ * distance anyone measured. See wagEnd() in field.js.
+ *
+ * Handedness is resolved PER BALL from the striker each one carries, because
+ * an innings has two ends and a side has both kinds of batter.
+ */
+function ShotWheel({inn,playerId=null,title="Wagon wheel"}){
+  if(!inn)return null;
+  const log=inn.ballLog||[];
+  const mine=playerId?log.filter(b=>b.strikerId===playerId):log;
+  // A ball is drawable if it has a captured point or a sector. Anything else
+  // — a leave, a pad, an unassessed delivery — has no position at all.
+  const drawn=mine.filter(b=>b.theta!=null||b.seg!=null);
+  const exact=drawn.filter(hasPoint).length;
+  const missing=mine.length-drawn.length;
+  const runs=mine.reduce((s,b)=>s+(b.value||0),0);
+  return (
+    <Card style={{padding:"14px 16px"}}>
+      <div style={{display:"flex",alignItems:"baseline",gap:"8px",marginBottom:"10px"}}>
+        <Lbl>{title}</Lbl>
+        <span style={{marginLeft:"auto",fontFamily:D.mono,fontSize:"11px",color:D.textSecondary}}>
+          {runs} run{runs===1?"":"s"} · {drawn.length} shown
+        </span>
+      </div>
+      {drawn.length===0?(
+        <div style={{color:D.textMuted,fontFamily:D.body,fontSize:"13px",padding:"18px 0",textAlign:"center"}}>
+          {mine.length
+            ?`No placements recorded for ${mine.length} ball${mine.length===1?"":"s"}.`
+            :"No balls faced."}
+        </div>
+      ):(
+        <div style={{width:"100%",maxWidth:"260px",margin:"0 auto",aspectRatio:"1"}}>
+          <svg viewBox="0 0 300 300" style={{width:"100%",height:"100%",display:"block"}}
+            role="img"
+            aria-label={`Wagon wheel: ${drawn.length} shot${drawn.length===1?"":"s"}, ${exact} placed exactly, ${runs} runs`}>
+            <circle cx={CX} cy={CY} r={R_BND+3} fill="#070d09" stroke={`${D.amber}30`} strokeWidth="1"/>
+            <circle cx={CX} cy={CY} r={R_MID} fill="none" stroke={`${D.amber}30`} strokeWidth="1" strokeDasharray="4 3"/>
+            <circle cx={CX} cy={CY} r={R_IN} fill="none" stroke="rgba(255,255,255,.08)" strokeWidth="1" strokeDasharray="3 4"/>
+            {/* Sector guides, faint. Orientation only — the shots are the data. */}
+            {SEGS.map(s=>{const[x,y]=toXY(s.angle-15,R_BND);return(
+              <line key={`g${s.id}`} x1={CX} y1={CY} x2={x} y2={y} stroke="rgba(255,255,255,.05)" strokeWidth="0.5"/>);})}
+            {drawn.map((b,i)=>{
+              const{xy:[ex,ey],synthetic}=wagEnd(ballAngle(b,batHandOf(inn,b.strikerId)),b);
+              const col=LK_COLS[lineKey(b)];
+              // The fielding position, DERIVED from the point rather than
+              // stored on it — so the naming table can be corrected later
+              // without touching a single ball. Only a captured point has one;
+              // a sector-era ball knows its wedge, not its position.
+              const where=hasPoint(b)?positionName(b.theta,b.radius):null;
+              const over=b.over!=null?` (${b.over+1}.${(b.ballInOver??0)+1})`:"";
+              return(<line key={`l${i}`} x1={CX} y1={CY} x2={ex} y2={ey} stroke={col}
+                strokeWidth={b.value===6?2.5:b.value===4?2:1.2}
+                strokeDasharray={synthetic?"2 2":undefined}
+                opacity={b.value===0?0.25:0.72} strokeLinecap="round">
+                <title>{`${b.type==="W"?"Wicket":`${b.value||0} run${b.value===1?"":"s"}`}${where?` — ${where}`:""}${over}`}</title>
+              </line>);
+            })}
+            {drawn.filter(b=>b.value>=4).map((b,i)=>{
+              const{xy:[ex,ey]}=wagEnd(ballAngle(b,batHandOf(inn,b.strikerId)),b);
+              return(<circle key={`d${i}`} cx={ex} cy={ey} r={b.value===6?5:3.5} fill={LK_COLS[lineKey(b)]} opacity="0.95"/>);
+            })}
+            <rect x={CX-4.5} y={CY-R_PITCH} width={9} height={R_PITCH*2} rx="2.5" fill="#7c6e45" stroke={`${D.amber}60`} strokeWidth="0.7"/>
+          </svg>
+        </div>
+      )}
+      <div style={{display:"flex",gap:"10px",flexWrap:"wrap",marginTop:"10px",justifyContent:"center"}}>
+        {[{c:LK_COLS["6"],l:"6"},{c:LK_COLS["4"],l:"4"},{c:LK_COLS["1-3"],l:"1–3"},{c:LK_COLS["0"],l:"Dot"},{c:LK_COLS.W,l:"Wicket"}].map(({c,l})=>(
+          <div key={l} style={{display:"flex",alignItems:"center",gap:"4px"}}>
+            <div style={{width:"10px",height:"2px",background:c,borderRadius:"1px"}}/>
+            <span style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted}}>{l}</span>
+          </div>
+        ))}
+      </div>
+      {/* The provenance line. A wheel that mixes measured points with
+          sector-era bands, or that is missing half the innings, says so here
+          rather than looking complete. */}
+      {(drawn.length>0)&&(
+        <div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,marginTop:"8px",textAlign:"center",lineHeight:1.5}}>
+          {exact===drawn.length
+            ?"Every shot placed exactly."
+            :exact===0
+              ?"Sector-era: direction recorded, distance never was — dashed."
+              :`${exact} of ${drawn.length} placed exactly; the dashed spokes carry direction only.`}
+          {missing>0&&` ${missing} ball${missing===1?"":"s"} carried no placement.`}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function AnalysisDashboard({inn,match,curIn,innings}){
   const overs=match?.overs||20;
   const target=curIn===1?(innings[0]?.runs||0)+1:null;
@@ -353,4 +464,4 @@ function AnalysisDashboard({inn,match,curIn,innings}){
   );
 }
 
-export { AnalysisDashboard, BatsmanChart, BowlerChart, ManhattanChart, RunRateChart, WormChart };
+export { AnalysisDashboard, BatsmanChart, BowlerChart, ManhattanChart, RunRateChart, ShotWheel, WormChart };

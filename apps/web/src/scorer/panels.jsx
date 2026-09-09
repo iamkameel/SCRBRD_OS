@@ -166,12 +166,23 @@ function DynamicBar({inn,match,target,isChase,lastOver}){
    WAGON WHEEL
 ═══════════════════════════════════════════════════════ */
 /**
- * @param batHand handedness of the batter these balls belong to. Point-era
- *   placements are stored batter-relative, so the mirror happens at RENDER
- *   time — one wheel can therefore show a left-hander's innings correctly
- *   without any of the stored balls being rewritten.
+ * @param batHand handedness of the batter AT THE CREASE NOW. Used only for
+ *   capture: a tap belongs to whoever is facing, and its theta is stored
+ *   relative to them.
+ * @param handFor handedness of the batter who played a GIVEN ball, resolved
+ *   per ball. Defaults to `batHand` for every ball, which is correct only
+ *   while one batter has faced the whole log.
+ *
+ *   These are two different questions and conflating them was a real defect.
+ *   Placements are stored batter-relative and mirrored at render, so drawing a
+ *   whole innings with the current striker's handedness put every ball a
+ *   left-hander faced on the wrong side of the ground — and moved the
+ *   right-hander's shots across the field every time the strike rotated. The
+ *   stored value was right; the render re-introduced the very defect the
+ *   batter-relative frame exists to prevent. See placement.mjs.
  */
-function WagonWheel({ballLog=[],selSeg,onSel,onPlace,viewMode,onViewMode,hidden,onToggle,batHand="R"}){
+function WagonWheel({ballLog=[],selSeg,onSel,onPlace,viewMode,onViewMode,hidden,onToggle,batHand="R",handFor}){
+  const handOf=handFor??(()=>batHand);
   // A live point being placed, before commit. Drag refines it; release commits.
   const [placing,setPlacing]=useState(null);
   const svgRef=useRef(null);
@@ -279,7 +290,7 @@ function WagonWheel({ballLog=[],selSeg,onSel,onPlace,viewMode,onViewMode,hidden,
             <line key={`sp${seg.id}`} x1={CX} y1={CY} x2={xo} y2={yo} stroke="rgba(255,255,255,.05)" strokeWidth="0.5" style={{pointerEvents:"none"}}/>
           );})}
           {viewMode==="wagon"&&visLines.map((b,i)=>{
-            const{xy:[ex,ey],synthetic}=wagEnd(ballAngle(b,batHand),b);
+            const{xy:[ex,ey],synthetic}=wagEnd(ballAngle(b,handOf(b)),b);
             const col=LK_COLS[lineKey(b)];
             const w=b.value===6?2.5:b.value===4?2:1.2;
             // Sector-era spokes are dashed. Their length is the band the ball
@@ -290,7 +301,7 @@ function WagonWheel({ballLog=[],selSeg,onSel,onPlace,viewMode,onViewMode,hidden,
               opacity={b.value===0?0.25:0.72} strokeLinecap="round" className="wagonLine" style={{animationDelay:`${i*.02}s`}}/>);
           })}
           {viewMode==="wagon"&&visLines.filter(b=>b.value>=4).map((b,i)=>{
-            const{xy:[ex,ey]}=wagEnd(ballAngle(b,batHand),b);
+            const{xy:[ex,ey]}=wagEnd(ballAngle(b,handOf(b)),b);
             const col=LK_COLS[lineKey(b)];
             return(<circle key={`dt${i}`} cx={ex} cy={ey} r={b.value===6?5.5:4} fill={col} opacity="0.95"
               style={{pointerEvents:"none",filter:b.value===6?"url(#glow)":"none"}}/>);
