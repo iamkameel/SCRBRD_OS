@@ -31,6 +31,8 @@ const WALKS = [
   "squad", "toss", "conditions",
   // The dashboard's figures, and the scope they are counted over.
   "summary",
+  // An innings in three parts, and the scope the parts inherit.
+  "phases",
 ];
 
 // Walks that drive a real browser AND need a database. They need two things

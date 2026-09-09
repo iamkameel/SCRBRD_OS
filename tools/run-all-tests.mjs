@@ -14,6 +14,7 @@ const SUITES = [
   ["teams",    "packages/policy/test/teams.test.mjs"],
   ["rating",   "packages/scoring/test/rating.test.mjs"],
   ["rubric",   "packages/scoring/test/rubric.test.mjs"],
+  ["phases",   "packages/scoring/test/phases.test.mjs"],
   ["client",   "apps/web/src/rbac/rbac.test.mjs"],
   ["handover", "services/api/handover/scoring-session.test.mjs"],
   ["rls",      "services/api/rls/rls.test.mjs"],

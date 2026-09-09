@@ -13,6 +13,7 @@ import { runAsPrincipal } from "../auth/auth-db.mjs";
 import {
   DISCIPLINES, battingIndex, bowlingIndex, coachIndex, adjustedRating,
   SCALE_MIN, SCALE_MAX,
+  fromRow, deriveInnings, deriveMatchPhases,
 } from "@scrbrd/scoring";
 
 // resource → query. `masked: true` documents (and lets tests assert) that the
@@ -375,6 +376,41 @@ export const READ_QUERIES = {
                                      where u.id = app_user_id()))         as my_strike_rate`,
   },
 
+  /**
+   * An innings in three parts: powerplay, middle, death.
+   *
+   * A coach who only sees "142 for 6" cannot tell whether the side lost the
+   * powerplay or threw away the death, and those are different problems with
+   * different answers in the nets.
+   *
+   * Read from ball_event_live, which is security_invoker, so the breakdown
+   * covers exactly the deliveries this reader may see — the same rule as
+   * /read/career. Two people can legitimately get different phase figures for
+   * the same match, and that is the model working rather than a fault.
+   *
+   * Derived, never stored, folded through the same deriveInnings() the scorer's
+   * device runs. A phase breakdown that disagreed with the scorecard beside it
+   * would be worse than none: both look authoritative and nothing could say
+   * which was right.
+   */
+  phases: {
+    // `overs` is joined from the MATCH, not accepted from the caller. The phase
+    // boundaries are computed from it, so a client that could name its own
+    // over count could move the death overs and change what the numbers mean.
+    // It also survives an abandoned innings: a log that stops at over 12 does
+    // not make it a twelve-over match.
+    text: `select b.innings, b.seq, b.epoch, b.kind, b.ball_type, b.value, b.shot,
+                  b.striker_id, b.non_striker_id, b.bowler_id, b.dismissed_id,
+                  b.dismissal, b.payload,
+                  m.overs
+             from ball_event_live b
+             join match m on m.id = b.match_id
+            where b.match_id = $1
+            order by b.innings, b.seq`,
+    params: q => [req(q, "matchId")],
+    compose: composePhases,
+  },
+
   // The state of the square, scoped through the fixture exactly as weather is.
   // Nothing personal here, but a pitch-report table readable by anyone would
   // answer "does this school have a fixture on Saturday?" to whoever asked.
@@ -591,6 +627,39 @@ function ratingsQuery() {
  * since the bowling one. Passing lifetime balls against a windowed index would
  * overstate the confidence in evidence that is not there.
  */
+/**
+ * Ball rows to a phase breakdown, per innings.
+ *
+ * The rows arrive flat and ordered; they are split by innings and each half
+ * replayed. `fromRow()` is the only thing that turns a database row back into
+ * an event — doing the mapping here by hand would be a second copy of a
+ * vocabulary that has already drifted once in this codebase.
+ *
+ * The innings' over count comes from the match, joined in SQL, rather than
+ * from the log or the caller. A log that stops at over 12 does not make it a
+ * twelve-over match, and a caller who could name the figure could move the
+ * death overs and change what every number on the card means.
+ */
+function composePhases(rows) {
+  // Every row carries the match's over count, joined in SQL. Twenty is the
+  // fallback for a match with none recorded, not a default anyone can send.
+  const overs = Number.isFinite(rows[0]?.overs) ? rows[0].overs : 20;
+  const byInnings = new Map();
+  for (const r of rows) {
+    const n = r.innings ?? 1;
+    if (!byInnings.has(n)) byInnings.set(n, []);
+    byInnings.get(n).push(fromRow(r));
+  }
+  const innings = [...byInnings.keys()].sort((a, b) => a - b)
+    .map((n) => deriveInnings(
+      [{ kind: "innings_start", overs, squad: [], bowlingSquad: [] }, ...byInnings.get(n)]));
+  const { first, second } = deriveMatchPhases(innings);
+  // One row per innings, so the shape matches every other read: a list.
+  return [first, second]
+    .map((ph, i) => (ph ? { innings: i + 1, phases: ph } : null))
+    .filter(Boolean);
+}
+
 function composeRatings(rows) {
   return rows.map((r) => {
     // The two disciplines the ball log can speak to. The others have no index
