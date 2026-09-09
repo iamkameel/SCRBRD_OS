@@ -26,8 +26,9 @@ const WALKS = [
   "read", "sync", "handover", "browser-sync", "browser-read", "fold",
   "assess", "access", "eligibility", "roster", "audit", "guardian",
   "rating", "notes", "amend", "login",
-  // Pre-match: naming the side, and calling the toss.
-  "squad", "toss",
+  // Pre-match: naming the side, calling the toss, and the conditions
+  // both sides play in.
+  "squad", "toss", "conditions",
 ];
 
 // Walks that need no database, run by `pnpm smoke` instead. Named here only so

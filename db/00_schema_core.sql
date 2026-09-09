@@ -201,7 +201,20 @@ CREATE TABLE match_squad (
   match_id   uuid NOT NULL REFERENCES match(id) ON DELETE CASCADE,
   player_id  uuid NOT NULL REFERENCES player(id) ON DELETE CASCADE,
   side       text NOT NULL CHECK (side IN ('home','away')),
-  batting_no smallint,
+  -- The batting order, and it is an ORDER: 1 to 11, at most one boy per
+  -- position. Unconstrained this was a smallint, which let a coach name two
+  -- number threes, or a number 47, and the scorer's setup screen would then
+  -- pick whichever the sort happened to return first. The uniqueness is
+  -- enforced by an index below, because it only applies to the side as it
+  -- currently stands.
+  --
+  -- NULL is legitimate and means "in the squad, no position yet" — a reserve,
+  -- or a side named on Tuesday whose order is settled on Saturday morning.
+  --
+  -- The upper bound is 11 because every team code in this product names an XI.
+  -- A 12-a-side festival would need this raised deliberately, which is the
+  -- point of writing it down rather than leaving the column open.
+  batting_no smallint CHECK (batting_no IS NULL OR batting_no BETWEEN 1 AND 11),
   twelfth    boolean NOT NULL DEFAULT false,
   -- A boy taken OUT of the side is withdrawn, not deleted. No table in this
   -- schema has a DELETE policy for any role (§12.5) and this one is not going
@@ -217,6 +230,14 @@ CREATE TABLE match_squad (
   PRIMARY KEY (match_id, player_id)
 );
 CREATE INDEX ON match_squad (match_id) WHERE NOT withdrawn;
+-- One boy per position, per side, in the side as it currently stands.
+-- Partial on both counts: a withdrawn row keeps the number it had (that is the
+-- record of what the order WAS), and an unplaced squad member has no number to
+-- collide over. Without the WHERE, re-selecting a side would collide with its
+-- own withdrawn history and no coach could ever reorder anything.
+CREATE UNIQUE INDEX match_squad_batting_order
+  ON match_squad (match_id, side, batting_no)
+  WHERE NOT withdrawn AND batting_no IS NOT NULL;
 
 -- ── Competitions ────────────────────────────────────────────────
 -- Read by read-api.mjs's `competitions` query.

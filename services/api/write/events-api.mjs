@@ -242,6 +242,24 @@ export function squadRoutes({ pool, secret }) {
         if (ids.some((id) => !id)) throw err("player_id_required");
         if (new Set(ids).size !== ids.length) throw err("duplicate_player");
 
+        // The batting order. Checked here as well as in the database because
+        // the constraint violation names a column and an index; a coach needs
+        // to be told which position is doubled up, before anything is written.
+        const orders = [];
+        for (const p of players) {
+          if (p?.battingNo == null) continue;          // a reserve, or not placed yet
+          const n = Number(p.battingNo);
+          if (!Number.isInteger(n) || n < 1 || n > 11) throw err("batting_no_must_be_1_to_11");
+          orders.push(n);
+        }
+        if (new Set(orders).size !== orders.length) throw err("duplicate_batting_no");
+        // A twelfth man does not bat. Naming one at number six is a mis-tick
+        // rather than a plan, and it is cheaper to refuse than to explain later
+        // why the scorecard has twelve names in the order.
+        if (players.some((p) => p?.twelfth === true && p?.battingNo != null)) {
+          throw err("twelfth_man_has_no_batting_no");
+        }
+
         const out = await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
           // Withdraw the side as it stands. UPDATE rather than DELETE, and the
           // triggers let a withdrawal through unconditionally — a player who
@@ -277,6 +295,10 @@ export function squadRoutes({ pool, secret }) {
         // 23514 is one of the two triggers. Its message names the player and
         // says why, which is the only useful thing to put in front of a coach.
         if (e.code === "23514") return res.status(400).json({ error: "not_eligible", detail: e.message });
+        // 23505 on the batting-order index: two boys at the same position. The
+        // check above catches this for a single request; this catches the race
+        // between two coaches naming the same side at once.
+        if (e.code === "23505") return res.status(409).json({ error: "duplicate_batting_no" });
         const status = e.code === "42501" ? 403 : (e.status || 500);
         res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
       }
@@ -348,10 +370,150 @@ export function tossRoutes({ pool, secret }) {
         if (e.code === "23514") return res.status(409).json({ error: "toss_locked", detail: e.message });
         // 23502 = school_id came back NULL, i.e. match_school() found nothing:
         // the match does not exist, or not for this principal.
-        if (e.code === "23502") return res.status(404).json({ error: "no_such_match" });
+        // 23502: a derived school_id came back NULL. 23503: the match_id foreign
+      // key found nothing. Both mean the same thing to a caller — that match is
+      // not there, or not theirs.
+      if (e.code === "23502" || e.code === "23503") return res.status(404).json({ error: "no_such_match" });
         const status = e.code === "42501" ? 403 : (e.status || 500);
         res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
       }
     },
+  };
+}
+
+
+/**
+ * Conditions: the weather, and the state of the square.
+ *
+ * Both tables existed with a read query and no way to write them — the fourth
+ * and fifth instances of the pattern this branch keeps closing. The scorer's
+ * setup wizard showed a weather step that went nowhere.
+ *
+ * They are separate routes under one factory because they are separate facts
+ * with separate authors. Weather is fixture administration (fixture.update) —
+ * whoever is deciding whether Saturday goes ahead. The pitch report is the
+ * groundsman's (facility.manage) — the person who prepared the square is the
+ * one who can describe it. The database enforces both; this layer only maps
+ * refusals onto something a human can read.
+ *
+ * Neither freezes after the first ball, unlike the toss. Conditions CHANGE
+ * during a match — that is the whole point of recording them — and a scorer
+ * who cannot write "rain arrived at 3pm" because play has started has been
+ * given a worse tool than a notebook.
+ */
+export function conditionsRoutes({ pool, secret }) {
+  const err = (code, status = 400) => Object.assign(new Error(code), { status });
+
+  // Shared shape for both handlers: derive school from the match, upsert on
+  // match_id, report a policy refusal as a refusal rather than a silent no-op.
+  const upsert = async (req, res, { sql, params, build }) => {
+    try {
+      const values = build(req);
+      const out = await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+        const r = await client.query(sql, [req.params.id, ...params(values)]);
+        if (!r.rowCount) throw err("not_permitted", 403);
+        return { matchId: req.params.id, ...r.rows[0] };
+      });
+      res.json(out);
+    } catch (e) {
+      if (e.code === "23514") return res.status(400).json({ error: "invalid_value", detail: e.message });
+      // school_id came back NULL: match_school() found nothing, so the match
+      // does not exist or is not visible to this principal.
+      if (e.code === "23502") return res.status(404).json({ error: "no_such_match" });
+      const status = e.code === "42501" ? 403 : (e.status || 500);
+      res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
+    }
+  };
+
+  // Whole numbers only, within a range, or null. The database checks these too;
+  // doing it here means the message names the field rather than the constraint.
+  const num = (v, lo, hi, field) => {
+    if (v == null || v === "") return null;
+    const n = Number(v);
+    if (!Number.isInteger(n) || n < lo || n > hi) throw err(`${field}_out_of_range`);
+    return n;
+  };
+  const oneOf = (v, allowed, field) => {
+    if (v == null || v === "") return null;
+    if (!allowed.includes(v)) throw err(`${field}_invalid`);
+    return v;
+  };
+  const bool = (v) => (v == null ? null : v === true);
+
+  return {
+    // POST /matches/:id/weather
+    weather: (req, res) => upsert(req, res, {
+      // No school_id column here, unlike ball_event and the pitch report:
+      // match_weather's policy derives the school with a subquery on the match,
+      // so there is nothing to denormalise. It does mean a write against a
+      // match that does not exist fails the foreign key rather than a NOT NULL,
+      // which is why the error map below covers both.
+      sql: `insert into match_weather
+              (match_id, condition, temp_c, humidity_pct, wind_kph,
+               wind_dir, uv_index, rain_chance_pct, forecast, playable, observed_at)
+            values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())
+            on conflict (match_id) do update
+              set condition = excluded.condition, temp_c = excluded.temp_c,
+                  humidity_pct = excluded.humidity_pct, wind_kph = excluded.wind_kph,
+                  wind_dir = excluded.wind_dir, uv_index = excluded.uv_index,
+                  rain_chance_pct = excluded.rain_chance_pct, forecast = excluded.forecast,
+                  playable = excluded.playable, observed_at = now()
+            returning condition, temp_c, humidity_pct, wind_kph, wind_dir,
+                      uv_index, rain_chance_pct, forecast, playable, observed_at`,
+      build: (r) => {
+        const b = r.body || {};
+        // `condition` is the one required field: a weather row that does not
+        // say what the weather is has recorded nothing.
+        if (!b.condition || typeof b.condition !== "string") throw err("condition_required");
+        return {
+          condition: b.condition.slice(0, 120),
+          tempC: num(b.tempC, -20, 60, "temp_c"),
+          humidity: num(b.humidityPct, 0, 100, "humidity_pct"),
+          wind: num(b.windKph, 0, 200, "wind_kph"),
+          windDir: b.windDir == null ? null : String(b.windDir).slice(0, 8),
+          uv: num(b.uvIndex, 0, 15, "uv_index"),
+          rain: num(b.rainChancePct, 0, 100, "rain_chance_pct"),
+          forecast: b.forecast == null ? null : String(b.forecast).slice(0, 500),
+          // Defaults to playable. "Nobody said otherwise" and "somebody
+          // inspected it and called it off" are different, but the false case
+          // is the one that must be stated deliberately.
+          playable: b.playable === false ? false : true,
+        };
+      },
+      params: (v) => [v.condition, v.tempC, v.humidity, v.wind, v.windDir,
+                      v.uv, v.rain, v.forecast, v.playable],
+    }),
+
+    // POST /matches/:id/pitch
+    pitch: (req, res) => upsert(req, res, {
+      sql: `insert into match_pitch_report
+              (match_id, school_id, surface, grass, bounce, pace, favours,
+               covers_on, notes, reported_by, reported_at)
+            values ($1, match_school($1), $2, $3, $4, $5, $6, $7, $8, app_user_id(), now())
+            on conflict (match_id) do update
+              set surface = excluded.surface, grass = excluded.grass,
+                  bounce = excluded.bounce, pace = excluded.pace,
+                  favours = excluded.favours, covers_on = excluded.covers_on,
+                  notes = excluded.notes, reported_by = excluded.reported_by,
+                  reported_at = now()
+            returning surface, grass, bounce, pace, favours, covers_on, notes, reported_at`,
+      build: (r) => {
+        const b = r.body || {};
+        const v = {
+          surface: oneOf(b.surface, ["hard", "firm", "soft", "damp"], "surface"),
+          grass:   oneOf(b.grass,   ["bare", "light", "covered", "green"], "grass"),
+          bounce:  oneOf(b.bounce,  ["low", "even", "variable", "steep"], "bounce"),
+          pace:    oneOf(b.pace,    ["slow", "medium", "quick"], "pace"),
+          favours: oneOf(b.favours, ["seam", "spin", "batting", "even"], "favours"),
+          coversOn: bool(b.coversOn),
+          notes: b.notes == null ? null : String(b.notes).slice(0, 2000),
+        };
+        // Every field is optional, but a report of nothing at all is a row that
+        // says a groundsman filed a report when he did not.
+        if (Object.values(v).every((x) => x == null)) throw err("empty_report");
+        return v;
+      },
+      params: (v) => [v.surface, v.grass, v.bounce, v.pace, v.favours, v.coversOn, v.notes],
+    }),
   };
 }

@@ -1317,6 +1317,39 @@ CREATE TRIGGER injury_notifies
 -- weather table readable by anyone would quietly answer "does this school have
 -- a fixture on Saturday?", so it inherits the fixture's policy rather than
 -- being left open on the grounds that rain is not confidential.
+-- ── The pitch report ────────────────────────────────────────────
+-- What the square is like before a ball is bowled, written down by the person
+-- who prepared it. Captains read it before the toss; a coach reads it a season
+-- later to work out why their spinners went for nine an over.
+--
+-- Deliberately NOT carrying a "playable" flag. match_weather already has one,
+-- and whether a match goes ahead is the umpire's call under Law 2.7 — a
+-- groundsman's assessment feeds that decision and does not make it. Two tables
+-- both claiming to say whether play happens is how they end up disagreeing.
+--
+-- One report per match, like the toss: a pitch reported twice was reported
+-- once and corrected. Every field is nullable except the match it belongs to,
+-- because a groundsman filling in three of eight boxes on a wet Friday is
+-- still worth more than nothing, and a form that demands all eight gets
+-- abandoned or invented.
+CREATE TABLE match_pitch_report (
+  match_id    uuid PRIMARY KEY REFERENCES match(id) ON DELETE CASCADE,
+  -- Derived at write time from the match, never asserted by the caller: a row
+  -- whose school disagrees with its match is invisible to the read policy.
+  school_id   uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  surface     text CHECK (surface IS NULL OR surface IN ('hard','firm','soft','damp')),
+  grass       text CHECK (grass   IS NULL OR grass   IN ('bare','light','covered','green')),
+  bounce      text CHECK (bounce  IS NULL OR bounce  IN ('low','even','variable','steep')),
+  pace        text CHECK (pace    IS NULL OR pace    IN ('slow','medium','quick')),
+  -- What the square is expected to reward. An estimate made before play, kept
+  -- so it can be read back against what actually happened.
+  favours     text CHECK (favours IS NULL OR favours IN ('seam','spin','batting','even')),
+  covers_on   boolean,
+  notes       text CHECK (notes IS NULL OR length(notes) <= 2000),
+  reported_by uuid REFERENCES app_user(id),
+  reported_at timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE TABLE match_weather (
   match_id      uuid PRIMARY KEY REFERENCES match(id) ON DELETE CASCADE,
   condition     text NOT NULL,

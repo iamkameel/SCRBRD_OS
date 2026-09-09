@@ -295,6 +295,17 @@ export const READ_QUERIES = {
              from match_weather`,
   },
 
+  // The state of the square, scoped through the fixture exactly as weather is.
+  // Nothing personal here, but a pitch-report table readable by anyone would
+  // answer "does this school have a fixture on Saturday?" to whoever asked.
+  pitch_report: {
+    text: `select match_id, surface, grass, bounce, pace, favours,
+                  covers_on, notes, reported_at
+             from match_pitch_report
+            where ($1::uuid is null or match_id = $1)`,
+    params: q => [q?.matchId || null],
+  },
+
   /**
    * Career figures, derived from the ball log and never stored.
    *

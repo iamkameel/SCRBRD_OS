@@ -401,6 +401,60 @@ export const TABLES = {
     masked: {},
   },
 
+  match_toss: {
+    // Who won the toss and what they chose.
+    //
+    // This declaration is the fix for a real bug. The toss shipped with its
+    // policies HAND-WRITTEN into db/09_rls_policies.sql — a generated file
+    // whose header says not to — and they survived exactly as long as nobody
+    // ran `pnpm rls:generate`. The first regeneration silently dropped row
+    // security from match_toss altogether. Nothing but the "every table has
+    // row security on" assertion in smoke-toss would have noticed.
+    //
+    // Read is fixture.read because a toss is announced: everyone who can see
+    // the fixture can see who won it, parents on the boundary included.
+    // Writing is scoring.start — the capability held by whoever opens the
+    // match, which is the person standing there when the coin lands. It is
+    // deliberately NOT fixture.update: that is for rescheduling and renaming
+    // fixtures, and a scorer neither holds it nor should.
+    read:  "fixture.read",
+    write: "scoring.start",
+    anchors: {
+      school:  "(SELECT m.school_id FROM match m WHERE m.id = match_toss.match_id)",
+      team:    "(SELECT m.team_code FROM match m WHERE m.id = match_toss.match_id)",
+      fixture: "match_id",
+    },
+    masked: {},
+  },
+
+  match_pitch_report: {
+    // The state of the square before play. Read by anyone who can read the
+    // fixture — captains and coaches need it before the toss, and it discloses
+    // nothing about a person. Written under facility.manage, which is the
+    // grounds staff's capability: the groundsman prepared the pitch and is the
+    // one who can describe it.
+    //
+    // An umpire cannot file one. `official` carries officiating.report, not
+    // facility.manage, and widening either capability to close that gap would
+    // hand grounds management to officials or officiating to groundsmen. If
+    // umpires should file pitch reports, that is a third capability and a
+    // deliberate decision, not a quiet edit here.
+    //
+    // The school anchor is a subquery on the match, not the row's own
+    // school_id, even though that column exists and is NOT NULL. The column is
+    // there to make a write against a non-existent match fail loudly; the
+    // subquery is there because a denormalised anchor can drift from the match
+    // it claims and an RLS predicate must not be able to.
+    read:  "fixture.read",
+    write: "facility.manage",
+    anchors: {
+      school:  "(SELECT m.school_id FROM match m WHERE m.id = match_pitch_report.match_id)",
+      team:    "(SELECT m.team_code FROM match m WHERE m.id = match_pitch_report.match_id)",
+      fixture: "match_id",
+    },
+    masked: {},
+  },
+
   match_weather: {
     // Conditions at a fixture. Carries nothing personal, but it is keyed to a
     // match and must not be readable by someone who cannot read the match —
