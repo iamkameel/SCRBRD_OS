@@ -98,6 +98,30 @@ CREATE TABLE ball_event (
   ball_type       text,                            -- run | W | Wd | Nb | B | LB
   value           smallint,
   shot            text,
+  -- What the bat did, and the path off it.
+  --
+  -- Runs record the OUTCOME of a delivery; these record its QUALITY, and the
+  -- two come apart constantly. An edge for four and a cover drive for four are
+  -- the same row on a scorecard and opposite events in a net. A batter beaten
+  -- eleven times in a powerplay has told a coach more than his 24 not out has.
+  --
+  -- This is the evidence the attribute model was missing: technical.timing and
+  -- technical.againstPace are judged by eye today, and contact is the first
+  -- thing in the ball log that speaks to them directly.
+  --
+  -- Here rather than in 07_shot_placement.sql, which is about WHERE the ball
+  -- went, because these are about HOW it was struck. Also load-bearing: that
+  -- file runs after ball_event_live is created, and the view is SELECT b.*
+  -- expanded at creation time, so a column added there never reaches it. The
+  -- phases endpoint returned nothing at all until they moved here.
+  --
+  -- Both nullable. A QUICK capture profile records neither, and a delivery
+  -- logged before this existed carries neither. NULL means "not captured",
+  -- never "no contact" — that is what `beat` is for. Values and the rule that a
+  -- trajectory needs a bat are constrained in 07 with the rest of the ball's
+  -- descriptive vocabulary.
+  contact         text,
+  trajectory      text,
   seg             smallint,                        -- wagon-wheel segment, 0-11
   -- text, not smallint. The client has always written 'inner' / 'outer' /
   -- 'boundary' here, and a smallint column rejected every one of them —

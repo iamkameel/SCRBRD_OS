@@ -400,6 +400,7 @@ export const READ_QUERIES = {
     // It also survives an abandoned innings: a log that stops at over 12 does
     // not make it a twelve-over match.
     text: `select b.innings, b.seq, b.epoch, b.kind, b.ball_type, b.value, b.shot,
+                  b.contact, b.trajectory,
                   b.striker_id, b.non_striker_id, b.bowler_id, b.dismissed_id,
                   b.dismissal, b.payload,
                   m.overs

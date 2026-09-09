@@ -100,6 +100,11 @@ export function phaseRange(span) {
 
 const EMPTY = () => ({
   runs: 0, wickets: 0, balls: 0, dots: 0, singles: 0, fours: 0, sixes: 0,
+  // Deliveries where contact was recorded at all, and how they went. Counted
+  // separately from `balls` because contact is optional: a QUICK capture
+  // profile records none, and a percentage over deliveries nobody assessed
+  // would be a number about the scorer rather than the batter.
+  assessed: 0, middled: 0, beaten: 0,
 });
 
 /**
@@ -143,6 +148,17 @@ export function derivePhases(inn, { opposing = null } = {}) {
       if (value === 6) acc.sixes += 1;
     }
     if (b.dismissal) acc.wickets += 1;
+
+    // Control, which runs do not measure. An edge for four and a cover drive
+    // for four are the same row on a scorecard and opposite events in a net.
+    if (legal && b.contact) {
+      acc.assessed += 1;
+      if (b.contact === "middle") acc.middled += 1;
+      // Beaten is bat-missed-ball. Being hit on the pad is not the same failure
+      // and is not counted as one — an lbw shout and a play-and-miss are
+      // different things to work on.
+      if (b.contact === "beat") acc.beaten += 1;
+    }
   }
 
   const pct = (n, d) => (d > 0 ? Math.round((n / d) * 100) : null);
@@ -169,6 +185,17 @@ export function derivePhases(inn, { opposing = null } = {}) {
       // How often the strike turned over. The tactical attribute this pairs
       // with is tactical.strikeRotation, and this is the evidence for it.
       strikeRotationPct: pct(a.singles, a.balls),
+      // Control, over the deliveries where contact was actually recorded —
+      // never over every ball, or a phase scored on a QUICK profile would
+      // report a batter as out of touch when nobody was watching that closely.
+      // Null when none were assessed, which is the honest answer.
+      assessed: a.assessed,
+      // Counts beside the percentages, as with dots and boundaries: "beaten
+      // eleven times" is a thing a coach can picture, where "31%" is not.
+      middled: a.middled,
+      beaten: a.beaten,
+      controlPct: pct(a.middled, a.assessed),
+      beatenPct: pct(a.beaten, a.assessed),
       // What the other side made in the same phase, and the gap. Both null in
       // a first innings, because there is nothing yet to be level with.
       par: Number.isFinite(parRuns) ? parRuns : null,

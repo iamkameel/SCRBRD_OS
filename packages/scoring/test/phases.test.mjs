@@ -166,7 +166,48 @@ group("E. Par is what the opposition actually did");
      deriveMatchPhases([]).first === null && deriveMatchPhases([]).second === null);
 }
 
-group("F. The vocabulary is closed");
+group("F. Control, which runs do not measure");
+{
+  // An edge for four and a cover drive for four are the same row on a
+  // scorecard. This is the column that tells them apart.
+  const ev = [{ kind: "innings_start", overs: 20, squad: [], bowlingSquad: [] }];
+  let n = 0;
+  const faced = (value, contact) => ev.push({ kind: "ball", type: "run", value, contact, seq: ++n });
+  // A powerplay of six overs: middled half, beaten a third, edged the rest.
+  for (let i = 0; i < 18; i++) faced(1, "middle");
+  for (let i = 0; i < 12; i++) faced(0, "beat");
+  for (let i = 0; i < 6; i++)  faced(4, "outside_edge");
+  const ph = derivePhases(deriveInnings(ev));
+
+  ok("every assessed delivery is counted", ph.powerplay.assessed === 36);
+  ok("control is the share that was middled", ph.powerplay.controlPct === 50);
+  ok("...and beaten the share that missed the bat", ph.powerplay.beatenPct === Math.round((12 / 36) * 100));
+  // The whole point: six edged fours read as 24 runs and as a batter in trouble.
+  ok("an edge for four scores four and does not count as control",
+     ph.powerplay.runs === 18 + 24 && ph.powerplay.controlPct === 50);
+
+  // Contact is optional, and a percentage over deliveries nobody assessed
+  // would be a number about the scorer rather than the batter.
+  const quick = [{ kind: "innings_start", overs: 20, squad: [], bowlingSquad: [] }];
+  for (let i = 0; i < 6; i++) quick.push({ kind: "ball", type: "run", value: 1, seq: i });
+  const q = derivePhases(deriveInnings(quick));
+  ok("a phase scored without contact reports null control, not 0%",
+     q.powerplay.controlPct === null && q.powerplay.beatenPct === null);
+  ok("...and says how many deliveries were assessed, which is none",
+     q.powerplay.assessed === 0);
+  ok("...while its runs are still counted", q.powerplay.runs === 6);
+
+  // Being hit on the pad is a different failure from missing the ball, and an
+  // lbw shout is a different thing to work on from a play-and-miss.
+  const pads = [{ kind: "innings_start", overs: 20, squad: [], bowlingSquad: [] }];
+  pads.push({ kind: "ball", type: "run", value: 0, contact: "body", seq: 1 });
+  pads.push({ kind: "ball", type: "run", value: 0, contact: "beat", seq: 2 });
+  const pd = derivePhases(deriveInnings(pads));
+  ok("a ball into the pad is assessed but is not a play-and-miss",
+     pd.powerplay.assessed === 2 && pd.powerplay.beaten === 1);
+}
+
+group("G. The vocabulary is closed");
 {
   ok("three phases, named", PHASE_NAMES.length === 3);
   ok("every phase has a label a card can print",

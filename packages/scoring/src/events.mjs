@@ -225,6 +225,11 @@ export const ball = (o) => ({
   nonStriker: o.nonStriker ?? null,
   bowler: o.bowler ?? null,
   shot: o.shot ?? null,
+  // What the bat did, and the path off it. See db/07_shot_placement.sql: runs
+  // record what happened, these record how well. NULL is "not captured", never
+  // "no contact" — `beat` is the value that says the bat missed.
+  contact: o.contact ?? null,
+  trajectory: o.trajectory ?? null,
   seg: o.seg ?? null,
   zone: o.zone ?? null,
   bowlerApproach: o.bowlerApproach ?? null,
@@ -285,7 +290,7 @@ export const inningsEnd = (o) => ({
 // because the query layer has to filter on placement_source — a heat map that
 // reads it out of a jsonb payload cannot be indexed, and a rule enforced by
 // convention in report code is not enforced.
-const ROW_SCALARS = ["shot", "seg", "zone", "dismissal"];
+const ROW_SCALARS = ["shot", "contact", "trajectory", "seg", "zone", "dismissal"];
 const ROW_SNAKE = {
   theta: "theta",
   radius: "radius",

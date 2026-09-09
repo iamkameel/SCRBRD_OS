@@ -42,7 +42,10 @@ ALTER TABLE ball_event
   DROP CONSTRAINT IF EXISTS ball_event_placement_source,
   DROP CONSTRAINT IF EXISTS ball_event_placement_null,
   DROP CONSTRAINT IF EXISTS ball_event_capture_profile,
-  DROP CONSTRAINT IF EXISTS ball_event_point_is_complete;
+  DROP CONSTRAINT IF EXISTS ball_event_point_is_complete,
+  DROP CONSTRAINT IF EXISTS ball_event_contact,
+  DROP CONSTRAINT IF EXISTS ball_event_trajectory,
+  DROP CONSTRAINT IF EXISTS ball_event_trajectory_needs_contact;
 
 ALTER TABLE ball_event
   ADD CONSTRAINT ball_event_theta_range  CHECK (theta IS NULL OR (theta >= 0 AND theta <= 359)),
@@ -57,7 +60,20 @@ ALTER TABLE ball_event
   -- the heat map's filter is a promise rather than a guarantee, and one bad
   -- writer puts a positionless ball into a positional view.
   ADD CONSTRAINT ball_event_point_is_complete
-    CHECK (placement_source IS DISTINCT FROM 'point' OR (theta IS NOT NULL AND radius IS NOT NULL));
+    CHECK (placement_source IS DISTINCT FROM 'point' OR (theta IS NOT NULL AND radius IS NOT NULL)),
+  ADD CONSTRAINT ball_event_contact
+    CHECK (contact IS NULL OR contact IN
+      ('middle','outside_edge','inside_edge','top_edge','beat','body')),
+  ADD CONSTRAINT ball_event_trajectory
+    CHECK (trajectory IS NULL OR trajectory IN
+      ('ground','aerial','controlled_aerial','miscued')),
+  -- A trajectory is the path of a ball OFF THE BAT, so it needs the bat to have
+  -- been involved. `beat` means the bat missed and `body` means it hit the
+  -- player, and a row claiming a controlled aerial off a delivery that beat the
+  -- outside edge is not a scoring mistake — it is a contradiction, and it would
+  -- read as a shot in every chart built on this column.
+  ADD CONSTRAINT ball_event_trajectory_needs_contact
+    CHECK (trajectory IS NULL OR contact NOT IN ('beat','body'));
 
 -- The heat map reads point-era balls for one match or one player. Partial,
 -- because the sector era is permanent and will only ever grow as a proportion
