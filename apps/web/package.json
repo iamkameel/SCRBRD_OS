@@ -1,0 +1,23 @@
+{
+  "name": "@scrbrd/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "SCRBRD OS \u2014 the web client. CricketOS shell, scorer, and the 19 role-scoped modules.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@scrbrd/policy": "workspace:*",
+    "@scrbrd/scoring": "workspace:*",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "@scrbrd/sync": "workspace:*"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^6.0.7"
+  }
+}

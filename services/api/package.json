@@ -1,0 +1,15 @@
+{
+  "name": "@scrbrd/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "SCRBRD backend \u2014 authorization, auth, read/write paths, offline durability, realtime sync, scorer handover.",
+  "main": "./index.mjs",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.123.0",
+    "@scrbrd/policy": "workspace:*",
+    "@scrbrd/scoring": "workspace:*",
+    "pg": "^8.23.0",
+    "@scrbrd/sync": "workspace:*"
+  }
+}

@@ -1,0 +1,17 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: scrbrd-db
+    environment:
+      POSTGRES_USER: scrbrd
+      POSTGRES_PASSWORD: scrbrd
+      POSTGRES_DB: scrbrd
+    ports: ["5432:5432"]
+    volumes: ["scrbrd-pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scrbrd -d scrbrd"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+volumes:
+  scrbrd-pgdata:

@@ -1,0 +1,16 @@
+{
+  "name": "@scrbrd/policy",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "SCRBRD authorization: capabilities, role bundles, and the scoped-assignment decision. One definition, shared by the web client and the generated Postgres RLS.",
+  "main": "./src/authorize.mjs",
+  "exports": {
+    ".": "./src/authorize.mjs",
+    "./capabilities": "./src/capabilities.mjs",
+    "./roles": "./src/roles.mjs",
+    "./authorize": "./src/authorize.mjs",
+    "./tables": "./src/tables.mjs",
+    "./teams": "./src/teams.mjs"
+  }
+}

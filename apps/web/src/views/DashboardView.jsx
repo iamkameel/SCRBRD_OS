@@ -1,0 +1,251 @@
+
+import { ROLES } from "../design/roles.js";
+import { D } from "../design/tokens.js";
+import { dateStr, fitnessColor, today } from "../lib/format.js";
+import { Avatar, Btn, Card, KPICard, Pill, StatusDot } from "../ui/primitives.jsx";
+import { useRows, useSummary } from "../lib/live.js";
+
+// ══════════════════════════════════════════════════════
+//  DASHBOARD VIEW
+// ══════════════════════════════════════════════════════
+function DashboardView({ role, onNav }) {
+  // Read through the choke point: row-scoped and column-masked for this
+  // principal. Importing the raw constant here would bypass both.
+  const COMPETITIONS = useRows("competitions", role);
+  const INJURIES = useRows("injuries", role);
+  const MATCHES = useRows("matches", role);
+  const NOTIFICATIONS = useRows("notifications", role);
+  const PLAYERS = useRows("players", role);
+  const TRAINING_SESSIONS = useRows("training", role);
+  // Every KPI figure below comes from here. In a live session that is one
+  // scoped query per number in Postgres; nothing on this screen counts
+  // anything. The cards used to be hard-coded literals ("53", "72%") that
+  // rendered identically for a superadmin and a team coach, and the two that
+  // were real were counted in the browser over whatever rows had been fetched.
+  const { summary, live: summaryLive } = useSummary(role);
+  const rc = ROLES[role];
+  const liveMatch = MATCHES.find(m=>m.status==="live");
+  const upcomingMatches = MATCHES.filter(m=>m.status==="upcoming").slice(0,3);
+  const injuries = INJURIES.filter(i=>i.restricted);
+  // An absent figure renders as an em dash, never as 0. A card showing zero
+  // because a request failed has stated something false about the school.
+  const kpi = (v) => (v == null ? "—" : String(v));
+  const pct = (v) => (v == null ? "—" : `${v}%`);
+
+  return (
+    <div className="os-page">
+      <div style={{marginBottom:"20px"}}>
+        <h1 style={{fontFamily:D.head,fontSize:"22px",fontWeight:800,color:D.textPrimary,marginBottom:"3px"}}>
+          Welcome back, {rc.icon} <span style={{color:rc.color}}>{rc.label}</span>
+        </h1>
+        <p style={{fontFamily:D.body,fontSize:"13px",color:D.textMuted}}>Hilton College, KZN · {new Date().toLocaleDateString("en-ZA",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}</p>
+      </div>
+
+      {/* KPI row */}
+      {(role==="superadmin"||role==="schooladmin"||role==="coach")&&(
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:"12px",marginBottom:"24px"}}>
+          <KPICard label="Active Players"  value={kpi(summary?.activePlayers)} icon="👥" color={D.sky}
+                   sub={summaryLive?"In your scope":"Demo data"}/>
+          <KPICard label="Upcoming"        value={kpi(summary?.upcomingMatches)} icon="🏆" color={D.amber}
+                   sub="Fixtures scheduled"/>
+          <KPICard label="Win Rate"        value={pct(summary?.winRatePct)} icon="📈" color={D.emerald}
+                   sub={summary?.winRatePct==null?"No completed matches":"Across your competitions"}/>
+          <KPICard label="Injuries"        value={kpi(summary?.injuriesActive)} icon="🏥"
+                   color={(summary?.injuriesActive??0)>3?D.rose:D.orange} sub="Active restrictions"/>
+          <KPICard label="Sessions This Wk"value={kpi(summary?.sessionsThisWeek)} icon="💪" color={D.violet}
+                   sub="Training scheduled"/>
+          <KPICard label="Alerts"          value={kpi(summary?.unreadAlerts)} icon="🔔" color={D.rose}
+                   sub="Unread notifications"/>
+        </div>
+      )}
+      {role==="player"&&(
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:"12px",marginBottom:"24px"}}>
+          <KPICard label="Batting Avg"   value={kpi(summary?.myBattingAverage)} icon="🏏" color={D.sky}
+                   sub={summary?.myBattingAverage==null?"Not enough innings yet":"Career, from the ball log"}/>
+          <KPICard label="Strike Rate"   value={kpi(summary?.myStrikeRate)} icon="⚡" color={D.amber}
+                   sub={summary?.myStrikeRate==null?"No deliveries faced yet":"Career, from the ball log"}/>
+          <KPICard label="Runs"          value={kpi(summary?.myRuns)} icon="📈" color={D.emerald} sub="Career total"/>
+          <KPICard label="Upcoming"      value={kpi(summary?.upcomingMatches)} icon="📅" color={D.violet}
+                   sub="Fixtures scheduled"/>
+        </div>
+      )}
+      {role==="parent"&&(
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:"12px",marginBottom:"24px"}}>
+          <KPICard label="Upcoming"      value={kpi(summary?.upcomingMatches)} icon="📅" color={D.sky}
+                   sub="Fixtures scheduled"/>
+          <KPICard label="Injuries"      value={kpi(summary?.injuriesActive)} icon="🏥" color={D.orange}
+                   sub="Active restrictions"/>
+          <KPICard label="Season Avg"    value={kpi(summary?.myBattingAverage)} icon="🏏" color={D.amber}
+                   sub={summary?.myBattingAverage==null?"Linked pupil accounts only":"Career, from the ball log"}/>
+          <KPICard label="Alerts"        value={kpi(summary?.unreadAlerts)} icon="🔔" color={D.rose} sub="Unread"/>
+        </div>
+      )}
+
+      <div style={{display:"grid",gridTemplateColumns:"var(--g-side-r,1fr 340px)",gap:"16px",alignItems:"start"}}>
+        {/* Left column */}
+        <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
+
+          {/* Live match */}
+          {liveMatch&&(
+            <Card sx={{background:`linear-gradient(135deg,${D.emerald}0a,${D.surf1})`,border:`1px solid ${D.emerald}22`}}>
+              <div style={{padding:"14px 16px"}}>
+                <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"12px"}}>
+                  <div className="live-dot"/>
+                  <span style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.emerald,letterSpacing:"0.1em"}}>LIVE MATCH</span>
+                  <span style={{marginLeft:"auto",fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>Hilton vs Kearsney · T20</span>
+                </div>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                  <div>
+                    <div style={{fontFamily:D.head,fontSize:"28px",fontWeight:800,color:D.textPrimary}}>{liveMatch.scorecard.home.score}</div>
+                    <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>({liveMatch.scorecard.home.overs} overs) · Hilton 1st XI</div>
+                  </div>
+                  <div style={{textAlign:"right"}}>
+                    <div style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,marginBottom:"6px"}}>Target: 187 to win</div>
+                    <div style={{fontFamily:D.mono,fontSize:"12px",color:D.amber}}>CRR: 9.95 · RRR: 8.21</div>
+                  </div>
+                </div>
+                <div style={{marginTop:"12px"}}>
+                  <Btn onClick={()=>onNav("matches")} variant="success" size="sm">Open Match Centre →</Btn>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {/* Upcoming fixtures */}
+          <Card>
+            <div style={{padding:"14px 16px",borderBottom:`1px solid ${D.border}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+              <span style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>Upcoming Fixtures</span>
+              <button onClick={()=>onNav("logistics")} style={{background:"none",border:"none",cursor:"pointer",fontFamily:D.body,fontSize:"11px",color:D.sky}}>View all →</button>
+            </div>
+            {upcomingMatches.map(m=>(
+              <div key={m.id} style={{padding:"12px 16px",borderBottom:`1px solid ${D.border}`,display:"flex",alignItems:"center",gap:"12px"}}>
+                <div style={{width:"42px",textAlign:"center",flexShrink:0}}>
+                  <div style={{fontFamily:D.mono,fontSize:"16px",fontWeight:700,color:D.textPrimary}}>{new Date(m.date).getDate()}</div>
+                  <div style={{fontFamily:D.body,fontSize:"9px",color:D.textMuted,textTransform:"uppercase"}}>{new Date(m.date).toLocaleString("en",{month:"short"})}</div>
+                </div>
+                <div style={{flex:1}}>
+                  <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:600,color:D.textPrimary,marginBottom:"2px"}}>{m.homeTeam} vs {m.awayTeam}</div>
+                  <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>📍 {m.venue}</div>
+                </div>
+                {m.transport?.bus&&<Pill color={D.sky}>🚌 Bus</Pill>}
+                <StatusDot status={m.status}/>
+              </div>
+            ))}
+          </Card>
+
+          {/* Squad fitness overview */}
+          {(role==="coach"||role==="superadmin"||role==="schooladmin")&&(
+            <Card>
+              <div style={{padding:"14px 16px",borderBottom:`1px solid ${D.border}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                <span style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>Squad Fitness — 1XI</span>
+                <button onClick={()=>onNav("injuries")} style={{background:"none",border:"none",cursor:"pointer",fontFamily:D.body,fontSize:"11px",color:D.sky}}>Injury log →</button>
+              </div>
+              <div style={{padding:"12px 16px",display:"flex",flexWrap:"wrap",gap:"10px"}}>
+                {PLAYERS.filter(p=>p.team==="1XI").map(p=>(
+                  <div key={p.id} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"4px"}}>
+                    <div style={{position:"relative"}}>
+                      <Avatar name={p.name} size={36} color={fitnessColor(p.fitness)}/>
+                      <div style={{position:"absolute",bottom:-2,right:-2,width:"10px",height:"10px",borderRadius:"50%",background:fitnessColor(p.fitness),border:`1.5px solid ${D.surf1}`}}/>
+                    </div>
+                    <span style={{fontFamily:D.mono,fontSize:"8px",color:D.textMuted}}>{p.name.split(" ").pop()}</span>
+                  </div>
+                ))}
+              </div>
+              <div style={{padding:"8px 16px",borderTop:`1px solid ${D.border}`,display:"flex",gap:"16px"}}>
+                {[["fit",D.emerald],["rehab",D.orange],["injured",D.rose]].map(([s,c])=>(
+                  <div key={s} style={{display:"flex",alignItems:"center",gap:"5px"}}>
+                    <div style={{width:"7px",height:"7px",borderRadius:"50%",background:c}}/>
+                    <span style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,textTransform:"capitalize"}}>{s}: {PLAYERS.filter(p=>p.team==="1XI"&&p.fitness===s).length}</span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+        </div>
+
+        {/* Right column */}
+        <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
+
+          {/* League table mini.
+              Rendered only when this person can actually read a competition
+              with standings in it. COMPETITIONS comes through the choke point,
+              so for a role without competition.read it is EMPTY — and reading
+              [0].table off an empty array threw, taking the whole dashboard
+              down. A scorer is exactly such a role, which is why nobody found
+              it until one signed in.
+
+              This is the shape of bug that scoped reads create: the data
+              correctly disappears, and a card written when it could not
+              disappear falls over. A card with nothing to show should render
+              nothing. */}
+          {COMPETITIONS[0]?.table?.length>0&&(
+          <Card>
+            <div style={{padding:"12px 14px",borderBottom:`1px solid ${D.border}`}}>
+              <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary}}>{COMPETITIONS[0].name}</div>
+              <div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted,marginTop:"2px"}}>TOP 6</div>
+            </div>
+            {COMPETITIONS[0].table.map((t,i)=>(
+              <div key={t.team} style={{padding:"8px 14px",borderBottom:`1px solid ${D.border}`,display:"flex",alignItems:"center",gap:"8px",background:t.team.includes("Hilton")?D.indigo+"0a":"transparent"}}>
+                <span style={{fontFamily:D.mono,fontSize:"11px",fontWeight:700,color:i===0?D.amber:D.textMuted,width:"14px"}}>{i+1}</span>
+                <span style={{flex:1,fontFamily:D.body,fontSize:"11px",fontWeight:t.team.includes("Hilton")?600:400,color:t.team.includes("Hilton")?D.textPrimary:D.textSecondary}}>{t.team}</span>
+                <span style={{fontFamily:D.mono,fontSize:"11px",color:D.textMuted}}>{t.W}W</span>
+                <span style={{fontFamily:D.mono,fontSize:"11px",fontWeight:700,color:t.team.includes("Hilton")?D.emerald:D.textSecondary}}>{t.pts}</span>
+              </div>
+            ))}
+            <div style={{padding:"8px 14px"}}>
+              <button onClick={()=>onNav("competitions")} style={{background:"none",border:"none",cursor:"pointer",fontFamily:D.body,fontSize:"11px",color:D.sky}}>Full standings →</button>
+            </div>
+          </Card>
+          )}
+
+          {/* Recent notifications */}
+          <Card>
+            <div style={{padding:"12px 14px",borderBottom:`1px solid ${D.border}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+              <span style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary}}>Recent Alerts</span>
+              <button onClick={()=>onNav("notifications")} style={{background:"none",border:"none",cursor:"pointer",fontFamily:D.body,fontSize:"11px",color:D.sky}}>All →</button>
+            </div>
+            {NOTIFICATIONS.slice(0,4).map(n=>{
+              const ic = n.type==="match"?"🏏":n.type==="injury"?"🏥":n.type==="training"?"💪":n.type==="transport"?"🚌":"📢";
+              const uc = n.urgency==="high"?D.rose:n.urgency==="medium"?D.amber:D.textMuted;
+              return (
+                <div key={n.id} style={{padding:"9px 14px",borderBottom:`1px solid ${D.border}`,background:n.read?"transparent":D.indigo+"06"}}>
+                  <div style={{display:"flex",gap:"8px",alignItems:"flex-start"}}>
+                    <span style={{fontSize:"13px",flexShrink:0,marginTop:"1px"}}>{ic}</span>
+                    <div style={{flex:1}}>
+                      <div style={{display:"flex",justifyContent:"space-between",marginBottom:"2px"}}>
+                        <span style={{fontFamily:D.body,fontSize:"11px",fontWeight:n.read?400:600,color:D.textPrimary}}>{n.title}</span>
+                        {!n.read&&<div style={{width:"5px",height:"5px",borderRadius:"50%",background:uc,flexShrink:0,marginTop:"3px"}}/>}
+                      </div>
+                      <span style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted}}>{n.body}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </Card>
+
+          {/* Today's training */}
+          <Card>
+            <div style={{padding:"12px 14px",borderBottom:`1px solid ${D.border}`}}>
+              <span style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary}}>Today's Sessions</span>
+            </div>
+            {TRAINING_SESSIONS.filter(s=>s.date===dateStr(today)).map(s=>(
+              <div key={s.id} style={{padding:"10px 14px",borderBottom:`1px solid ${D.border}`}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:"3px"}}>
+                  <span style={{fontFamily:D.body,fontSize:"12px",fontWeight:600,color:D.textPrimary}}>{s.title}</span>
+                  <span style={{fontFamily:D.mono,fontSize:"11px",color:D.amber}}>{s.time}</span>
+                </div>
+                <div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted}}>{s.team} · {s.venue} · {s.duration}min</div>
+              </div>
+            ))}
+            <div style={{padding:"8px 14px"}}>
+              <button onClick={()=>onNav("training")} style={{background:"none",border:"none",cursor:"pointer",fontFamily:D.body,fontSize:"11px",color:D.sky}}>Full schedule →</button>
+            </div>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export { DashboardView };
