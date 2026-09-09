@@ -71,6 +71,7 @@ const BUNDLES = {
   // platform.support.impersonate, which is time-boxed and audited.
   platformadmin: [
     "platform.health.read", "platform.tenant.manage", "platform.support.impersonate",
+    "scouting.accredit",
     "school.read", "user.read", "audit.read", "competition.read", "news.read",
   ],
 
@@ -270,7 +271,17 @@ const BUNDLES = {
   driver: ["news.read", "transport.read", "transport.drive"],
   facilities: ["fixture.read", "news.read", "facility.read", "facility.manage"],
   media: ["fixture.read", "team.read", "news.read", "player.profile.read", "player.performance.read", "news.publish.school", "news.publish.team"],
-  scout: ["fixture.read", "team.read", "news.read", "player.profile.read", "player.performance.read", "scouting.read", "scouting.write"],
+  // NOT player.profile.read or player.performance.read. Those are scoped to a
+  // role_assignment's own school/team — and a scout's assignment is typically
+  // school=NULL to reach across schools at all, which is the whole point of
+  // the role. Held alongside those two capabilities, a school=NULL scout would
+  // read every child's full profile at every school, consent or not: the exact
+  // loophole this pairing of capabilities existed to look like it prevented
+  // while doing nothing of the kind. What a scout may see instead is
+  // scouting_candidates() — name, team, career figures — for players who have
+  // been explicitly, individually opted in by a guardian, and only once the
+  // scout's OWN accreditation has been verified. See db/08_schema_programme.sql.
+  scout: ["fixture.read", "team.read", "news.read", "scouting.read", "scouting.write"],
   competitionadmin: [
     "fixture.read", "fixture.update", "fixture.cancel", "team.read", "news.read",
     "competition.read", "competition.manage", "officiating.assign",

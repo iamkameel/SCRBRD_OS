@@ -201,6 +201,13 @@ INSERT INTO app_user (id, school_id, email, name, role, player_id, teams) VALUES
   ('88888888-0000-0000-0000-000000000009', '11111111-1111-1111-1111-111111111111',
    'pillay@example.invalid', 'R Pillay', 'player', 'aaaaaaaa-0000-0000-0000-000000000005', '{1XI}');
 
+-- The platform account. Not scoped to a school at all — this is what
+-- verifies a scout's accreditation, and accrediting an external organisation
+-- is not a claim about any one school's roster.
+INSERT INTO app_user (id, school_id, email, name, role) VALUES
+  ('88888888-0000-0000-0000-000000000014', '11111111-1111-1111-1111-111111111111',
+   'platform@example.invalid', 'Platform Ops', 'platformadmin');
+
 INSERT INTO role_assignment (id, person_id, role, school_id, team_code) VALUES
   ('a5510000-0000-0000-0000-000000000001', '88888888-0000-0000-0000-000000000001', 'player',          '11111111-1111-1111-1111-111111111111', NULL),
   ('a5510000-0000-0000-0000-000000000002', '88888888-0000-0000-0000-000000000002', 'scout',           '11111111-1111-1111-1111-111111111111', NULL),
@@ -238,7 +245,10 @@ INSERT INTO role_assignment (id, person_id, role, school_id, team_code) VALUES
   ('a5510000-0000-0000-0000-000000000010', '88888888-0000-0000-0000-000000000010', 'guardian',        '11111111-1111-1111-1111-111111111111', NULL),
   ('a5510000-0000-0000-0000-000000000011', '88888888-0000-0000-0000-000000000011', 'guardian',        '11111111-1111-1111-1111-111111111111', NULL),
   ('a5510000-0000-0000-0000-000000000012', '88888888-0000-0000-0000-000000000012', 'guardian',        '11111111-1111-1111-1111-111111111111', NULL),
-  ('a5510000-0000-0000-0000-000000000013', '88888888-0000-0000-0000-000000000013', 'guardian',        '11111111-1111-1111-1111-111111111111', NULL);
+  ('a5510000-0000-0000-0000-000000000013', '88888888-0000-0000-0000-000000000013', 'guardian',        '11111111-1111-1111-1111-111111111111', NULL),
+  -- school_id NULL, honestly: platform administration is not a claim about
+  -- any one school, and nothing in scouting.accredit's check looks at scope.
+  ('a5510000-0000-0000-0000-000000000016', '88888888-0000-0000-0000-000000000014', 'platformadmin',   NULL, NULL);
 
 -- Who each assignment is about: the parents' children, Sarah's two children at
 -- two schools, and R Pillay's own record.

@@ -36,6 +36,7 @@ import { sessionProfile, runAsPrincipal, issueLoginCode, redeemMagicLink } from 
 import { signToken, AuthError } from "./auth/auth.mjs";
 import { readRoute, liveResources } from "./read/read-api.mjs";
 import { eventRoutes, amendmentRoutes, squadRoutes, tossRoutes, conditionsRoutes } from "./write/events-api.mjs";
+import { scoutingRoutes } from "./write/scouting-api.mjs";
 import { assessmentRoutes, accessRequestRoutes, developmentNoteRoutes, guardianLinkRoutes } from "./write/assessment-api.mjs";
 import { sessionRoutes } from "./realtime/session-routes.mjs";
 import { MatchHub } from "./realtime/realtime.mjs";
@@ -151,6 +152,7 @@ const guard   = guardianLinkRoutes({ pool, secret: SECRET });
 const squad   = squadRoutes({ pool, secret: SECRET });
 const toss    = tossRoutes({ pool, secret: SECRET });
 const cond    = conditionsRoutes({ pool, secret: SECRET });
+const scouting = scoutingRoutes({ pool, secret: SECRET });
 
 /**
  * Development sign-in.
@@ -227,6 +229,9 @@ const PLAYER_ROUTES = [
   [/^\/api\/players\/([^/]+)\/access-request$/, "POST", access.ask],
   [/^\/api\/access-requests\/([^/]+)\/decide$/, "POST", access.decide],
   [/^\/api\/players\/([^/]+)\/notes$/,          "POST", notes.write],
+  // Scouting: a guardian's own decision about their own child, and nobody
+  // else's — no administrative override exists in scouting_consent_set().
+  [/^\/api\/players\/([^/]+)\/scouting-consent$/,  "POST", scouting.consent],
   // The guardian link, which had no route at all until now.
   [/^\/api\/players\/([^/]+)\/guardians$/,             "POST", guard.establish],
   [/^\/api\/players\/([^/]+)\/guardians\/verify$/,     "POST", guard.verify],
@@ -235,6 +240,15 @@ const PLAYER_ROUTES = [
   [/^\/api\/players\/([^/]+)\/guardians\/withdraw$/,   "POST", guard.withdraw],
   [/^\/api\/notes\/([^/]+)$/,                    "PATCH", notes.revise],
   [/^\/api\/amendments\/([^/]+)\/decide$/,       "POST", amend.decide],
+];
+
+// Scouting: keyed on the scout, not on a match or a child. Registration takes
+// no id at all — it always means "me" — so its capture group is simply
+// absent; the dispatcher's params.id comes back undefined and the handler
+// never looks at it.
+const SCOUT_ROUTES = [
+  [/^\/api\/scouts\/accreditation$/,                      "POST", scouting.registerAccreditation],
+  [/^\/api\/scouts\/([^/]+)\/accreditation\/decide$/,   "POST", scouting.decideAccreditation],
 ];
 
 const server = createServer(async (req, res) => {
@@ -270,7 +284,7 @@ const server = createServer(async (req, res) => {
       }, shimmed);
     }
 
-    for (const [pattern, method, handler] of [...MATCH_ROUTES, ...PLAYER_ROUTES]) {
+    for (const [pattern, method, handler] of [...MATCH_ROUTES, ...PLAYER_ROUTES, ...SCOUT_ROUTES]) {
       const m = req.method === method && pattern.exec(path);
       if (!m) continue;
       const body = (req.method === "POST" || req.method === "PATCH") ? await readJson(req) : {};

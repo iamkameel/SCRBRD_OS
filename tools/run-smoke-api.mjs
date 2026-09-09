@@ -33,6 +33,8 @@ const WALKS = [
   "summary",
   // An innings in three parts, and the scope the parts inherit.
   "phases",
+  // The scouting consent primitive: accreditation, consent, evidence.
+  "scouting",
 ];
 
 // Walks that drive a real browser AND need a database. They need two things

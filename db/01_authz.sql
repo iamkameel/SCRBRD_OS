@@ -2,7 +2,7 @@
 -- GENERATED from packages/policy/ by services/api/rls/generate-rls.mjs — DO NOT EDIT BY HAND.
 -- Regenerate with `pnpm rls:generate`. Applied BEFORE the scoring schema,
 -- which references app_can(). Model: docs/adr/0001-scoped-assignments.md.
--- 61 capabilities across 24 roles.
+-- 62 capabilities across 24 roles.
 
 -- Principal helpers. app_user_id() is set from the signed token on every
 -- request; everything else about a person's authority is looked up.
@@ -202,6 +202,7 @@ INSERT INTO capability (name) VALUES
   ('scouting.write'),
   ('platform.health.read'),
   ('platform.tenant.manage'),
+  ('scouting.accredit'),
   ('platform.support.impersonate')
 ON CONFLICT (name) DO NOTHING;
 
@@ -231,6 +232,7 @@ INSERT INTO role_capability (role, capability) VALUES
   ('platformadmin', 'platform.health.read'),
   ('platformadmin', 'platform.tenant.manage'),
   ('platformadmin', 'platform.support.impersonate'),
+  ('platformadmin', 'scouting.accredit'),
   ('platformadmin', 'school.read'),
   ('platformadmin', 'user.read'),
   ('platformadmin', 'audit.read'),
@@ -508,8 +510,6 @@ INSERT INTO role_capability (role, capability) VALUES
   ('scout', 'fixture.read'),
   ('scout', 'team.read'),
   ('scout', 'news.read'),
-  ('scout', 'player.profile.read'),
-  ('scout', 'player.performance.read'),
   ('scout', 'scouting.read'),
   ('scout', 'scouting.write'),
   ('competitionadmin', 'fixture.read'),

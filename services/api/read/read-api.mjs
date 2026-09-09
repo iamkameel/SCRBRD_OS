@@ -412,6 +412,22 @@ export const READ_QUERIES = {
     compose: composePhases,
   },
 
+  /**
+   * Scouting candidates, for an accredited scout.
+   *
+   * Everything about who may see what lives in scouting_candidates() in the
+   * database — accreditation, per-player consent, and an evidence floor, all
+   * checked by that function itself. This entry exists only to expose it; the
+   * SELECT has no WHERE clause of its own to get wrong, and no query parameter
+   * to widen it with. An unaccredited scout, or anyone without scouting.read
+   * at all, gets back zero rows rather than an error — the same shape as
+   * every other resource here, so a client cannot tell "not verified yet"
+   * from "no candidates today" and go looking for a workaround.
+   */
+  scouting_candidates: {
+    text: `select * from scouting_candidates()`,
+  },
+
   // The state of the square, scoped through the fixture exactly as weather is.
   // Nothing personal here, but a pitch-report table readable by anyone would
   // answer "does this school have a fixture on Saturday?" to whoever asked.

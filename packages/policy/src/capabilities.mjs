@@ -203,6 +203,11 @@ export const CAPABILITIES = {
   // those is granted explicitly, time-boxed, and audited.
   "platform.health.read":        "See platform health and error rates",
   "platform.tenant.manage":      "Onboard and configure tenants",
+  // A scout account claims an organisation on registration; this is what lets
+  // that claim be checked before it means anything. Deliberately separate
+  // from scouting.read/write, which the scout role holds for itself — nobody
+  // should be able to verify their OWN accreditation.
+  "scouting.accredit":           "Verify or suspend a scout's accreditation",
   "platform.support.impersonate":"Time-boxed, audited support access",
 };
 

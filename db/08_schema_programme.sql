@@ -1481,3 +1481,316 @@ DROP TRIGGER IF EXISTS development_note_records_its_author ON development_note;
 CREATE TRIGGER development_note_records_its_author
   BEFORE INSERT OR UPDATE ON development_note
   FOR EACH ROW EXECUTE FUNCTION development_note_author();
+
+
+-- ════════════════════════════════════════════════════════════════
+--  Scouting: a primitive, not a feature
+-- ════════════════════════════════════════════════════════════════
+-- Two tables and one gated read. Everything here answers one question: what
+-- does a real accredited scout — a provincial union, a university programme,
+-- a franchise academy — get to see, and who decided they may see it.
+--
+-- THE ANSWER, in one sentence: nobody, of anybody, until that specific
+-- child's guardian has said so, and even then only to a scout whose
+-- organisation has been checked. Not the school. Not a subscription tier.
+-- The guardian, and only the guardian — see scouting_consent_set() below for
+-- why that is not negotiable.
+--
+-- "Subscriptions can reduce the information someone receives. They can never
+-- expand what someone may know" governs a pay-gate the same way it governs a
+-- notification filter: an organisation paying for scouting access buys a
+-- NARROWER view of what consent already permits, never a wider one. There is
+-- no code path anywhere in this section that a payment status could widen —
+-- entitlement, if it is ever built, is a further AND on scouting_candidates(),
+-- intersected with everything here, never a replacement for any of it.
+
+-- Who is allowed to look, from the outside.
+--
+-- The `scout` role (packages/policy/src/roles.mjs) holds scouting.read and
+-- scouting.write, and neither means anything on its own: they say a person
+-- may act AS a scout, not that any particular organisation vouches for them.
+-- This table is that vouching, and it is what scouting_candidates() actually
+-- checks — a person holding the role but not verified here sees nothing,
+-- which is the ordinary case for a brand-new registration.
+CREATE TABLE scout_accreditation (
+  -- One accreditation per person. A scout who changes organisation is a new
+  -- fact, recorded by updating this row and re-verifying — not a second row,
+  -- which would let an old, unrevoked accreditation quietly keep working.
+  person_id           uuid PRIMARY KEY REFERENCES app_user(id) ON DELETE CASCADE,
+  organisation        text NOT NULL CHECK (length(btrim(organisation)) > 0),
+  scout_role          text CHECK (scout_role IS NULL OR scout_role IN
+                        ('regional_selector','high_performance_scout',
+                         'university_recruiter','provincial_coach','other')),
+  -- 'pending' is the default for the same reason verification_state defaults
+  -- to 'pending' on a guardian link: a claim nobody has checked grants
+  -- nothing, so a self-registration that never gets looked at fails closed
+  -- rather than quietly working.
+  verification_status text NOT NULL DEFAULT 'pending'
+                        CHECK (verification_status IN ('pending','verified','suspended')),
+  verified_by          uuid REFERENCES app_user(id),
+  verified_at          timestamptz,
+  verified_note        text,
+  created_at           timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT scout_verified_names_a_verifier
+    CHECK (verification_status <> 'verified'
+           OR (verified_by IS NOT NULL AND verified_at IS NOT NULL))
+);
+
+-- RLS is hand-written here, not generated, and deliberately so — the same
+-- reason login_code and access_log are. "May I see my own accreditation" and
+-- "may I verify somebody else's" are not a capability held at a school/team
+-- scope; app_can()'s four dimensions have nothing to anchor to for a claim
+-- about an external organisation. Regenerating packages/policy never touches
+-- this file, so there is nothing here for `pnpm rls:generate` to overwrite —
+-- unlike the toss's policies, which WERE the ordinary generated shape and
+-- were lost for exactly that reason.
+ALTER TABLE scout_accreditation ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS scout_accreditation_read ON scout_accreditation;
+CREATE POLICY scout_accreditation_read ON scout_accreditation
+  FOR SELECT USING (
+    person_id = app_user_id()
+    OR EXISTS (SELECT 1 FROM role_assignment a JOIN role_capability rc ON rc.role = a.role
+                WHERE a.person_id = app_user_id() AND rc.capability = 'scouting.accredit'
+                  AND (a.valid_from  IS NULL OR a.valid_from  <= current_date)
+                  AND (a.valid_until IS NULL OR a.valid_until > current_date))
+  );
+-- No INSERT/UPDATE/DELETE policy. Every write goes through one of the two
+-- functions below, which run SECURITY DEFINER and therefore bypass RLS
+-- regardless — the absence of a policy here is documentation, not the
+-- mechanism, and it is what stops scrbrd_app from writing the table any other
+-- way if a future route ever tried to.
+
+-- A scout claims an organisation. Always lands 'pending' — this function
+-- cannot verify itself, on purpose, so there is no argument to leave out to
+-- accidentally skip the check.
+CREATE OR REPLACE FUNCTION scout_accreditation_register(
+  p_organisation text,
+  p_scout_role   text DEFAULT NULL
+) RETURNS TABLE (ok boolean, reason text) AS $$
+BEGIN
+  -- Hand-written, not app_can(). "Does this person hold scouting.write AT
+  -- ALL" has no resource to anchor against — there is no player, no school,
+  -- no fixture, nothing app_can()'s four dimensions compare a scope to. This
+  -- is the same shape as the scouting.accredit check below it and the read
+  -- policy on scout_accreditation above: a claim about the whole platform,
+  -- not about one governed row. A fake NIL school as a stand-in resource was
+  -- tried first and failed for exactly the reason "there is no ANY_SCOPE for
+  -- school" documents — a scout's own assignment IS scoped to a real school,
+  -- and a nil resource does not widen against it.
+  -- Hand-written, not app_can(). "Does this person hold scouting.write AT
+  -- ALL" has no resource to anchor against — no player, no school, no
+  -- fixture — nothing app_can()'s four dimensions compare a scope to. Same
+  -- shape as the scouting.accredit checks below and the read policy above: a
+  -- claim about the whole platform, not one governed row.
+  --
+  -- valid_from checked as NULL-open, matching role_assignment's own column
+  -- (which allows an open start, unlike assignment_subject's NOT NULL
+  -- default): `valid_from <= current_date` against a NULL evaluates to NULL,
+  -- which is false in a WHERE clause, and the first version of this refused
+  -- every ordinary open-ended assignment in the seed — nobody could register
+  -- at all, silently, because the comparison itself never fires.
+  IF NOT EXISTS (
+    SELECT 1 FROM role_assignment a JOIN role_capability rc ON rc.role = a.role
+     WHERE a.person_id = app_user_id() AND rc.capability = 'scouting.write'
+       AND (a.valid_from  IS NULL OR a.valid_from  <= current_date)
+       AND (a.valid_until IS NULL OR a.valid_until > current_date)
+  ) THEN
+    RETURN QUERY SELECT false, 'not_permitted'; RETURN;
+  END IF;
+  IF p_organisation IS NULL OR btrim(p_organisation) = '' THEN
+    RETURN QUERY SELECT false, 'organisation_required'; RETURN;
+  END IF;
+  INSERT INTO scout_accreditation (person_id, organisation, scout_role)
+       VALUES (app_user_id(), btrim(p_organisation), p_scout_role)
+  ON CONFLICT (person_id) DO UPDATE
+       -- A re-registration is a CHANGE of organisation, and it re-opens the
+       -- gate: whatever verification existed for the old claim does not carry
+       -- over to a new one nobody has checked.
+       SET organisation = excluded.organisation, scout_role = excluded.scout_role,
+           verification_status = 'pending', verified_by = NULL, verified_at = NULL,
+           verified_note = NULL;
+  RETURN QUERY SELECT true, NULL::text;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION scout_accreditation_register(text, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION scout_accreditation_register(text, text) TO PUBLIC;
+
+-- The platform checks the claim. `p_verified = false` suspends rather than
+-- deletes — the school-wide rule that nothing here is ever removed applies to
+-- an external actor's record just as much as to a child's.
+CREATE OR REPLACE FUNCTION scout_accreditation_decide(
+  p_scout    uuid,
+  p_verified boolean,
+  p_note     text DEFAULT NULL
+) RETURNS TABLE (ok boolean, reason text) AS $$
+DECLARE
+  v_rows int;
+BEGIN
+  -- Hand-written rather than app_can(), for the same reason the read policy
+  -- above is: accrediting a scout is not a claim about any school, and
+  -- app_can() has no dimension for "the whole platform, no anchor at all."
+  IF NOT EXISTS (
+    SELECT 1 FROM role_assignment a JOIN role_capability rc ON rc.role = a.role
+     WHERE a.person_id = app_user_id() AND rc.capability = 'scouting.accredit'
+       AND (a.valid_from  IS NULL OR a.valid_from  <= current_date)
+       AND (a.valid_until IS NULL OR a.valid_until > current_date)
+  ) THEN
+    RETURN QUERY SELECT false, 'not_permitted'; RETURN;
+  END IF;
+
+  UPDATE scout_accreditation
+     SET verification_status = CASE WHEN p_verified THEN 'verified' ELSE 'suspended' END,
+         verified_by = app_user_id(), verified_at = now(), verified_note = p_note
+   WHERE person_id = p_scout;
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  IF v_rows = 0 THEN RETURN QUERY SELECT false, 'no_such_scout'; RETURN; END IF;
+  RETURN QUERY SELECT true, NULL::text;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION scout_accreditation_decide(uuid, boolean, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION scout_accreditation_decide(uuid, boolean, text) TO PUBLIC;
+
+-- Whether a specific child may be surfaced to scouts at all.
+--
+-- Absence of a row means what it says: not consented, not discoverable, full
+-- stop. There is no default that reaches 'granted' — not a subscription, not
+-- a school setting, not an import. `withdrawn` is a state, never a delete: a
+-- family who changes their mind has a right to be forgotten going FORWARD,
+-- and a right to their own history of having once said yes.
+CREATE TABLE player_scouting_consent (
+  player_id    uuid PRIMARY KEY REFERENCES player(id) ON DELETE CASCADE,
+  consent_state text NOT NULL CHECK (consent_state IN ('granted','withdrawn')),
+  decided_by   uuid REFERENCES app_user(id),
+  decided_at   timestamptz NOT NULL DEFAULT now()
+);
+
+-- Read is the ordinary capability a school already uses to see this child's
+-- profile at all — the same people who can already see a name, a birth date
+-- behind masking, a batting style. Whether a family has opted a child into
+-- external scouting is not a bigger disclosure than that, and a director of
+-- sport has a legitimate reason to know it: to support the family, or to
+-- follow up when a scout does show interest.
+--
+-- What must NOT happen, and does not: nobody with player.profile.read can
+-- WRITE this table. There is no INSERT/UPDATE policy at all, hand-written for
+-- the same reason as scout_accreditation above — the only path to 'granted'
+-- is scouting_consent_set(), and its check is guardian-only, deliberately
+-- with no administrative override. See that function for why.
+ALTER TABLE player_scouting_consent ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS player_scouting_consent_read ON player_scouting_consent;
+CREATE POLICY player_scouting_consent_read ON player_scouting_consent
+  FOR SELECT USING (
+    app_can('player.profile.read', player_school(player_scouting_consent.player_id),
+            player_team(player_scouting_consent.player_id),
+            player_scouting_consent.player_id,
+            '00000000-0000-0000-0000-000000000000'::uuid)
+  );
+
+-- The one act on this table a family may perform, and the only path to it.
+--
+-- guardian_consent_record() above lets the SCHOOL OFFICE record processing
+-- consent on a parent's behalf, for the parent who telephones — that is right
+-- for "may SCRBRD process my son's attendance and scores" and wrong here.
+-- Deciding whether a child is put in front of external scouting organisations
+-- is a materially larger decision than platform processing consent, and it is
+-- not the office's to make, record, or nudge. There is deliberately no
+-- `OR app_can('guardian.link.manage', ...)` escape hatch in the check below —
+-- a school administrator cannot grant this on a family's behalf, full stop,
+-- the same rule that already governs a notification subscription: an
+-- administrative role does not get to expand what a family has not agreed to.
+--
+-- SECURITY DEFINER because player_scouting_consent has no ordinary write
+-- policy for anybody, by design.
+CREATE OR REPLACE FUNCTION scouting_consent_set(
+  p_player  uuid,
+  p_granted boolean
+) RETURNS TABLE (ok boolean, reason text) AS $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM assignment_subject g
+      JOIN role_assignment a ON a.id = g.assignment_id
+     WHERE g.player_id = p_player
+       AND a.person_id = app_user_id()
+       AND a.role = 'guardian'
+       AND g.verification_state = 'verified'
+       -- Consent to being scouted rests on top of consent to be processed at
+       -- all — never ahead of it. A family cannot opt a child into external
+       -- scouting while withholding basic platform consent; that would be the
+       -- narrower decision outrunning the broader one it depends on.
+       AND g.consent_state = 'granted'
+       AND g.valid_from <= current_date
+       AND (g.valid_until IS NULL OR g.valid_until > current_date)
+  ) THEN
+    RETURN QUERY SELECT false, 'not_a_consented_guardian'; RETURN;
+  END IF;
+
+  INSERT INTO player_scouting_consent (player_id, consent_state, decided_by, decided_at)
+       VALUES (p_player, CASE WHEN p_granted THEN 'granted' ELSE 'withdrawn' END,
+               app_user_id(), now())
+  ON CONFLICT (player_id) DO UPDATE
+       SET consent_state = excluded.consent_state,
+           decided_by = excluded.decided_by, decided_at = excluded.decided_at;
+  RETURN QUERY SELECT true, NULL::text;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION scouting_consent_set(uuid, boolean) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION scouting_consent_set(uuid, boolean) TO PUBLIC;
+
+-- A single afternoon is not a body of work. Written as one number in one
+-- place, the same reasoning as COACH_PRIOR_BALLS in packages/scoring: not a
+-- claim that three is the RIGHT number, a documented placeholder a director
+-- of sport can argue with and raise without touching the query that uses it.
+CREATE OR REPLACE FUNCTION scouting_evidence_threshold() RETURNS int AS $$
+  SELECT 3
+$$ LANGUAGE sql IMMUTABLE;
+
+-- What an accredited scout actually sees.
+--
+-- Every one of the following must hold, for every row returned:
+--   1. app_can('scouting.read', ...) — the caller holds the role at all.
+--   2. scout_accreditation.verification_status = 'verified' for THIS caller —
+--      holding the role is not enough; the platform checked who they are.
+--   3. player_scouting_consent.consent_state = 'granted' for THIS player —
+--      a guardian said yes, specifically, and has not since said otherwise.
+--   4. matches recorded >= scouting_evidence_threshold() — enough of a body
+--      of work to be worth anyone's trial, batting or bowling.
+--
+-- SECURITY DEFINER, and deliberately NOT a security_invoker view over
+-- `player`. A security_invoker view joined to player would be filtered by
+-- player's OWN read policy (player.profile.read), which the scout role no
+-- longer holds — see the comment on the `scout` role in
+-- packages/policy/src/roles.mjs for why that capability was removed from it.
+-- This function is the one and only door, and it checks everything itself
+-- rather than depending on a capability a scout is not meant to hold.
+--
+-- Returns figures only, never the fields a school masks even from its own
+-- coaches: no date of birth, no id number, no medical or disciplinary
+-- anything. A scout sees exactly what a scorecard shows a spectator, plus the
+-- career totals every reader of /read/career already gets for a match they
+-- may see — nothing a consenting family has not effectively already made
+-- public by having their son's name on a scoreboard.
+CREATE OR REPLACE FUNCTION scouting_candidates()
+RETURNS TABLE (
+  player_id uuid, full_name text, school_id uuid, team_code text,
+  playing_role text, batting_style text, bowling_style text,
+  batting_matches bigint, runs bigint, balls_faced bigint,
+  bowling_matches bigint, wickets bigint, runs_conceded bigint, legal_balls bigint
+) AS $$
+  SELECT p.id, p.full_name, p.school_id, p.team_code,
+         p.playing_role, p.batting_style, p.bowling_style,
+         coalesce(bc.matches, 0), bc.runs, bc.balls_faced,
+         coalesce(bw.matches, 0), bw.wickets, bw.runs_conceded, bw.legal_balls
+    FROM player p
+    JOIN player_scouting_consent c ON c.player_id = p.id AND c.consent_state = 'granted'
+    LEFT JOIN player_batting_career bc ON bc.player_id = p.id
+    LEFT JOIN player_bowling_career bw ON bw.player_id = p.id
+   WHERE app_can('scouting.read', p.school_id, '*'::text, p.id,
+                 '00000000-0000-0000-0000-000000000000'::uuid)
+     AND EXISTS (SELECT 1 FROM scout_accreditation sa
+                  WHERE sa.person_id = app_user_id()
+                    AND sa.verification_status = 'verified')
+     AND (coalesce(bc.matches, 0) + coalesce(bw.matches, 0)) >= scouting_evidence_threshold()
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION scouting_candidates() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION scouting_candidates() TO PUBLIC;
