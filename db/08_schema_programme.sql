@@ -139,7 +139,11 @@ CREATE TABLE player_skill (
   -- has either stopped improving technically or stopped concentrating, and
   -- those need opposite conversations. See TREE in packages/scoring/src/rubric.mjs,
   -- which is the one place the attribute set is decided.
-  category    text NOT NULL CHECK (category IN ('technical','mental','physical')),
+  -- Four groups, not the three Football Manager uses. Cricket's game-craft —
+  -- rotating strike, setting a field, bowling at the death — is coachable skill
+  -- rather than disposition, and folding it into `mental` lost the distinction
+  -- a coach actually selects on. See TREE in packages/scoring/src/rubric.mjs.
+  category    text NOT NULL CHECK (category IN ('technical','mental','tactical','physical')),
   metric      text NOT NULL,
   -- 1-20, the Football Manager scale: 1-5 poor, 6-10 average, 11-15 good,
   -- 16-20 excellent. Not 0-100, which invites a precision no coach can defend

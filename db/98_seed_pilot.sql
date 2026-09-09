@@ -327,14 +327,18 @@ INSERT INTO training_attendance (session_id, player_id, status) VALUES
   ('7a717000-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000001', 'present'),
   ('7a717000-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000005', 'injured');
 
--- Assessments on the 1-20 scale, grouped technical / mental / physical. A
--- PARTIAL assessment is the normal case, not an incomplete one: these are the
--- things a coach actually watched, and the write path upserts per attribute.
+-- Assessments on the 1-20 scale, grouped technical / mental / tactical /
+-- physical. A PARTIAL assessment is the normal case, not an incomplete one:
+-- these are the things a coach actually watched, and the write path upserts per
+-- attribute.
 INSERT INTO player_skill (player_id, assessed_on, category, metric, score) VALUES
-  ('aaaaaaaa-0000-0000-0000-000000000001', current_date - 30, 'technical', 'footwork',      17),
-  ('aaaaaaaa-0000-0000-0000-000000000001', current_date - 30, 'technical', 'timing',        16),
-  ('aaaaaaaa-0000-0000-0000-000000000001', current_date - 30, 'mental',    'concentration', 15),
-  ('aaaaaaaa-0000-0000-0000-000000000006', current_date - 30, 'technical', 'footwork',      12);
+  ('aaaaaaaa-0000-0000-0000-000000000001', current_date - 30, 'technical', 'footwork',       17),
+  ('aaaaaaaa-0000-0000-0000-000000000001', current_date - 30, 'technical', 'timing',         16),
+  ('aaaaaaaa-0000-0000-0000-000000000001', current_date - 30, 'mental',    'concentration',  15),
+  -- Game-craft, judged over a season rather than in a net, which is why there
+  -- is one of these where there are two of everything else.
+  ('aaaaaaaa-0000-0000-0000-000000000001', current_date - 30, 'tactical',  'strikeRotation', 16),
+  ('aaaaaaaa-0000-0000-0000-000000000006', current_date - 30, 'technical', 'footwork',       12);
 
 -- A coach's own writing. Narrower than the assessments above: the pupil reads
 -- his own attribute scores and must not read this. One note carries an explicit
