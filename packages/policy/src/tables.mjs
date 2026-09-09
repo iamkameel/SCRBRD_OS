@@ -427,6 +427,19 @@ export const TABLES = {
     masked: {},
   },
 
+  derby: {
+    // The NAME of a rivalry, not its record — the tally is derived. Read by
+    // anyone who can read a fixture, since a derby's name is the least private
+    // thing a school owns: it is on the blazer. Written under fixture.update,
+    // the capability of the people who schedule and manage fixtures, because
+    // naming the annual match against Michaelhouse is fixture administration
+    // and not a competition-wide or platform decision.
+    read:  "fixture.read",
+    write: "fixture.update",
+    anchors: { school: "school_id" },
+    masked: {},
+  },
+
   ground_condition: {
     // The groundsman's own record. facility.manage to write — the person who
     // rolled the square is the one who can describe it, the same reasoning as

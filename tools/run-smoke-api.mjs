@@ -40,6 +40,9 @@ const WALKS = [
   "scorecard",
   // Appointing the officials: officiating.assign, which had nothing to act on.
   "officials",
+  // The head-to-head against a rival, derived from the fixtures rather than
+  // stored beside them.
+  "derby",
 ];
 
 // Walks that drive a real browser AND need a database. They need two things

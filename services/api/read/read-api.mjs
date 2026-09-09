@@ -462,6 +462,83 @@ export const READ_QUERIES = {
   },
 
   /**
+   * The head-to-head against a school, derived from the fixtures.
+   *
+   * NOTHING HERE IS STORED. beta-2 kept winsA/winsB/draws on the rivalry row;
+   * a scorecard corrected in March would leave that tally wrong for ever with
+   * nothing able to say which number was right. The `derby` table holds only
+   * the name and the founding year — the parts no query could produce.
+   *
+   * SCOPE, AGAIN, IS THE POINT. This reads `match` and match_live_score, both
+   * of which apply the reader's own row-level security, so the record covers
+   * exactly the fixtures this person may see. Two people will legitimately get
+   * different totals for the same rivalry. An "accurate" record computed over
+   * matches the reader cannot see would disclose that those matches exist.
+   *
+   * WHO WON IS DERIVED FROM THE TOSS, NOT GUESSED. The innings order is
+   * bats_first(), so a match whose toss was never recorded cannot be
+   * attributed to either side — its scores are known and its winner is not.
+   * Those are counted as `undecided` and reported rather than dropped or
+   * assigned to whoever looks likelier: a rivalry that reads "won 6" when two
+   * more were played and nobody knows how they went is a lie of omission.
+   *
+   * The first/second innings are taken by ORDER rather than by index, because
+   * the log has carried both 0-based and 1-based innings numbers and the
+   * ordering is true under either.
+   */
+  derby_record: {
+    text: `
+      with judged as (
+        select m.school_id, m.opponent, m.team_code, m.starts_at,
+               bats_first(t.won_by, t.decision) as bats_first,
+               (select ls.runs from match_live_score ls
+                 where ls.match_id = m.id order by ls.innings asc  limit 1) as first_runs,
+               (select ls.runs from match_live_score ls
+                 where ls.match_id = m.id order by ls.innings desc limit 1) as second_runs,
+               (select count(*) from match_live_score ls where ls.match_id = m.id) as innings_played
+          from match m
+          left join match_toss t on t.match_id = m.id
+         where m.status = 'complete'
+           and ($2::text is null or m.team_code = $2)
+      ),
+      outcome as (
+        select j.*,
+               case
+                 when innings_played < 2 or bats_first is null then 'undecided'
+                 when first_runs = second_runs                 then 'tied'
+                 -- The side batting first won exactly when it scored more;
+                 -- whether that side is us is what bats_first answers.
+                 when (first_runs > second_runs) = (bats_first = 'home') then 'won'
+                 else 'lost'
+               end as result
+          from judged j
+      )
+      select o.school_id, o.opponent, d.title, d.since_year,
+             count(*)::int                                        as played,
+             count(*) filter (where o.result = 'won')::int         as won,
+             count(*) filter (where o.result = 'lost')::int        as lost,
+             count(*) filter (where o.result = 'tied')::int        as tied,
+             count(*) filter (where o.result = 'undecided')::int   as undecided,
+             max(o.starts_at)                                      as last_played,
+             (select json_agg(r) from (
+                select e.starts_at, e.team_code, e.result, e.first_runs, e.second_runs
+                  from outcome e
+                 where e.school_id = o.school_id and e.opponent = o.opponent
+                 order by e.starts_at desc limit 5) r)             as recent
+        from outcome o
+        left join derby d
+          on d.school_id = o.school_id
+         and lower(btrim(d.opponent)) = lower(btrim(o.opponent))
+       where ($1::text is null or lower(btrim(o.opponent)) = lower(btrim($1)))
+       -- Grouped by school as well as opponent: someone assigned at two
+       -- schools must not have their two records against the same rival
+       -- silently added together.
+       group by o.school_id, o.opponent, d.title, d.since_year
+       order by played desc, o.opponent`,
+    params: q => [q?.opponent || null, q?.teamCode || null],
+  },
+
+  /**
    * The groundsman's record of a ground, as opposed to a square prepared for
    * one fixture. Scoped by facility.read, which is in the floor bundle: a
    * captain choosing between spin and seam and a parent asking whether

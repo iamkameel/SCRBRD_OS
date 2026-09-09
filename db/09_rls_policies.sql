@@ -330,6 +330,23 @@ CREATE POLICY match_toss_update ON match_toss
   FOR UPDATE USING (app_can('scoring.start', (SELECT m.school_id FROM match m WHERE m.id = match_toss.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_toss.match_id), '00000000-0000-0000-0000-000000000000'::uuid, match_toss.match_id))
            WITH CHECK (app_can('scoring.start', (SELECT m.school_id FROM match m WHERE m.id = match_toss.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_toss.match_id), '00000000-0000-0000-0000-000000000000'::uuid, match_toss.match_id));
 
+-- derby — read: fixture.read · write: fixture.update
+ALTER TABLE derby ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS derby_read   ON derby;
+DROP POLICY IF EXISTS derby_insert ON derby;
+DROP POLICY IF EXISTS derby_update ON derby;
+DROP POLICY IF EXISTS derby_delete ON derby;
+
+CREATE POLICY derby_read ON derby
+  FOR SELECT USING (app_can('fixture.read', derby.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY derby_insert ON derby
+  FOR INSERT WITH CHECK (app_can('fixture.update', derby.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY derby_update ON derby
+  FOR UPDATE USING (app_can('fixture.update', derby.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
+           WITH CHECK (app_can('fixture.update', derby.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
 -- ground_condition — read: facility.read · write: facility.manage
 ALTER TABLE ground_condition ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS ground_condition_read   ON ground_condition;

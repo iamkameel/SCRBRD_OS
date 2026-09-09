@@ -1336,6 +1336,44 @@ CREATE TRIGGER injury_notifies
 -- because a groundsman filling in three of eight boxes on a wet Friday is
 -- still worth more than nothing, and a form that demands all eight gets
 -- abandoned or invented.
+-- ── The derby ────────────────────────────────────────────────────
+--
+-- WHAT IS STORED HERE, AND WHAT IS DELIBERATELY NOT
+-- ─────────────────────────────────────────────────
+-- scrbrd-beta-2 carried a DerbyRecord holding totalClashes, winsA, winsB and
+-- draws. Those are counts of rows that exist, kept beside the rows they count,
+-- which is the same shape as every stored aggregate this codebase has removed:
+-- a scorecard corrected in March silently leaves the tally wrong for ever, and
+-- nothing in the product can say which of the two numbers is right.
+--
+-- So the tally is not here. It is derived from the fixtures at read time (see
+-- `derby_record` in read-api.mjs) and inherits the reader's own scope, exactly
+-- as career figures and phase breakdowns do — two people may legitimately see
+-- different totals for the same rivalry, because they may see different
+-- matches, and that is the model working.
+--
+-- What IS here is the part no query could ever produce: that this fixture is
+-- called The Michaelhouse Derby and has been played since 1892. Nobody can
+-- compute a name or a founding year from a list of matches.
+--
+-- The opponent is free text because it must be: a school SCRBRD does not host
+-- has no row to point at, which is the same reason match.opponent is text.
+CREATE TABLE derby (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id   uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  opponent    text NOT NULL CHECK (length(btrim(opponent)) > 0),
+  title       text NOT NULL CHECK (length(btrim(title)) > 0),
+  -- Nullable: plenty of rivalries are real and nobody remembers when they
+  -- started. A guessed year is worse than an absent one.
+  since_year  smallint CHECK (since_year IS NULL OR since_year BETWEEN 1800 AND 2200),
+  notes       text CHECK (notes IS NULL OR length(notes) <= 2000),
+  created_by  uuid REFERENCES app_user(id),
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+-- One name per rivalry. Case-insensitive because "Michaelhouse" and
+-- "michaelhouse" are the same school and a second row would split the record.
+CREATE UNIQUE INDEX ON derby (school_id, lower(btrim(opponent)));
+
 -- ── The curator's record of a ground ─────────────────────────────
 --
 -- match_pitch_report below describes the square PREPARED FOR ONE FIXTURE. This
