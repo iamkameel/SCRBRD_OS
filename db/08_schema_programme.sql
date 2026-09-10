@@ -2102,3 +2102,155 @@ $$ LANGUAGE plpgsql;
 
 CREATE TRIGGER drs_review_gate BEFORE INSERT OR UPDATE ON drs_review
   FOR EACH ROW EXECUTE FUNCTION drs_review_feature_gate();
+
+
+-- ═══════════════════════════════════════════════════════════════
+--  BROADCAST
+-- ═══════════════════════════════════════════════════════════════
+--
+-- WHAT THIS IS NOT: a second scoring engine. scrbrd-beta-2 carried a
+-- 4,172-line BroadcastScorer that kept its own idea of the score, and porting
+-- it would have meant two implementations of an innings that can disagree
+-- while each stays internally consistent. The overlay is PRESENTATION over the
+-- same replay every other surface reads. Nothing here stores a score.
+--
+-- WHAT IT IS: a per-fixture decision to put a match on a screen the public can
+-- watch, and a statement of what that screen may show.
+--
+-- WHY THAT DECISION HAS A TABLE
+-- ─────────────────────────────
+-- A scoreboard at the boundary and a stream overlay are different in kind. The
+-- first is seen by people who walked to the ground; the second is permanent,
+-- copyable, and reaches an audience nobody at the match chose. Both show
+-- children's names. So broadcasting is OPT-IN PER FIXTURE, under its own
+-- capability, and it says how much of a child's name goes on the screen.
+--
+-- `name_display` defaults to 'initials', which is the conservative answer and
+-- the one a school that has thought about nothing in particular should get.
+-- Somebody deciding otherwise is making a decision, and the row records who.
+CREATE TABLE match_broadcast (
+  match_id     uuid PRIMARY KEY REFERENCES match(id) ON DELETE CASCADE,
+  -- Derived at write time from the match, never asserted — as everywhere.
+  school_id    uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  -- Off until somebody turns it on. A fixture that has never been considered
+  -- is a fixture that is not being broadcast.
+  published    boolean NOT NULL DEFAULT false,
+  -- How much of a player's name the overlay may carry.
+  --   initials — "T Mahlangu". The default.
+  --   full     — the whole name. A deliberate choice, recorded as one.
+  --   none     — positions only, for an age group a school will not name.
+  name_display text NOT NULL DEFAULT 'initials'
+               CHECK (name_display IN ('initials','full','none')),
+  -- Officials are adults doing a public job and are named by default; a school
+  -- may still turn it off.
+  show_officials boolean NOT NULL DEFAULT true,
+  -- A caption for the overlay: the competition, the occasion, the sponsor line
+  -- a school wants under the score.
+  strapline    text CHECK (strapline IS NULL OR length(strapline) <= 200),
+  published_by uuid REFERENCES app_user(id),
+  published_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX ON match_broadcast (school_id);
+
+/**
+ * The overlay's data, and the ONLY way it should ever be obtained.
+ *
+ * THE MASKING HAPPENS HERE, IN SQL, and that is the whole point of this
+ * function. If a school has said initials, the browser never receives the full
+ * name — not in a field it chooses not to render, not in a payload a developer
+ * console can open, not in a response somebody screenshots. A widget that is
+ * handed a full name and asked politely to show initials is a widget that
+ * leaks the first time somebody renders the wrong field.
+ *
+ * SECURITY DEFINER, and it checks publication itself. An overlay is watched by
+ * people with no account, so this cannot depend on the caller's own row-level
+ * security the way the rest of the read path does. What makes that safe is
+ * that it returns NOTHING for a fixture nobody has published, and only ever
+ * the handful of columns below for one that is — no identifiers, no dates of
+ * birth, no contact details, nothing that is not already being announced over
+ * a public address system at the ground.
+ */
+CREATE OR REPLACE FUNCTION broadcast_name(p_name text, p_display text)
+RETURNS text AS $$
+  SELECT CASE
+           WHEN p_name IS NULL OR p_display = 'none' THEN NULL
+           WHEN p_display = 'full' THEN p_name
+           -- Initials: every word but the last reduced to its first letter.
+           -- "Thandeka Mahlangu" → "T Mahlangu"; a single-word name is left
+           -- alone, because reducing it would leave a letter and nothing else.
+           WHEN position(' ' IN btrim(p_name)) = 0 THEN btrim(p_name)
+           ELSE (
+             SELECT string_agg(
+                      CASE WHEN ord = cnt THEN word ELSE left(word, 1) END,
+                      ' ' ORDER BY ord)
+               FROM (
+                 SELECT word, row_number() OVER () AS ord,
+                        count(*) OVER () AS cnt
+                   FROM regexp_split_to_table(btrim(p_name), '\s+') AS word
+               ) parts
+           )
+         END
+$$ LANGUAGE sql IMMUTABLE;
+
+REVOKE ALL ON FUNCTION broadcast_name(text, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION broadcast_name(text, text) TO PUBLIC;
+
+CREATE OR REPLACE FUNCTION broadcast_state(p_match uuid)
+RETURNS TABLE (
+  match_id uuid, home_team text, away_team text, strapline text,
+  innings smallint, runs bigint, wickets bigint, legal_balls bigint,
+  overs text, run_rate numeric, target bigint,
+  striker text, non_striker text, bowler text,
+  officials text, name_display text
+) AS $$
+  WITH b AS (
+    SELECT * FROM match_broadcast WHERE match_id = p_match AND published
+  ),
+  m AS (
+    SELECT mt.* FROM match mt JOIN b ON b.match_id = mt.id
+  ),
+  -- The innings being played is the highest one the log has reached.
+  cur AS (
+    SELECT ls.* FROM match_live_score ls JOIN b ON b.match_id = ls.match_id
+     ORDER BY ls.innings DESC LIMIT 1
+  ),
+  -- A chase has a target: what the previous innings made, plus one.
+  prev AS (
+    SELECT ls.runs FROM match_live_score ls JOIN cur ON cur.match_id = ls.match_id
+     WHERE ls.innings < cur.innings ORDER BY ls.innings DESC LIMIT 1
+  ),
+  -- Who is at the crease, taken from the last delivery bowled rather than
+  -- replayed: ball_event stamps the striker and the bowler on every ball, and
+  -- an overlay wants the state at the last ball by definition.
+  last_ball AS (
+    SELECT e.striker_id, e.non_striker_id, e.bowler_id
+      FROM ball_event e JOIN cur ON cur.match_id = e.match_id AND cur.innings = e.innings
+     WHERE e.kind = 'ball'
+     ORDER BY e.seq DESC LIMIT 1
+  )
+  SELECT m.id,
+         m.team_code, m.opponent,
+         b.strapline,
+         cur.innings, cur.runs, cur.wickets, cur.legal_balls,
+         (cur.legal_balls / 6)::text || '.' || (cur.legal_balls % 6)::text,
+         CASE WHEN cur.legal_balls > 0
+              THEN round((cur.runs::numeric * 6) / cur.legal_balls, 2) END,
+         (SELECT runs + 1 FROM prev),
+         -- Every name goes through the masker. There is no branch here that
+         -- returns an unmasked one.
+         broadcast_name((SELECT full_name FROM player WHERE id = (SELECT striker_id FROM last_ball)), b.name_display),
+         broadcast_name((SELECT full_name FROM player WHERE id = (SELECT non_striker_id FROM last_ball)), b.name_display),
+         broadcast_name((SELECT full_name FROM player WHERE id = (SELECT bowler_id FROM last_ball)), b.name_display),
+         -- Officials are adults doing a public job, so they are named in full
+         -- when shown at all — but only when the school said to show them.
+         CASE WHEN b.show_officials THEN (
+           SELECT string_agg(o.person_name, ' · ' ORDER BY o.duty, o.person_name)
+             FROM match_official o
+            WHERE o.match_id = m.id AND NOT o.withdrawn AND o.duty IN ('umpire','third_umpire')
+         ) END,
+         b.name_display
+    FROM b JOIN m ON m.id = b.match_id LEFT JOIN cur ON cur.match_id = b.match_id
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION broadcast_state(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION broadcast_state(uuid) TO PUBLIC;

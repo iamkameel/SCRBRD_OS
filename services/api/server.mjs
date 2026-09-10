@@ -36,7 +36,7 @@ import { sessionProfile, runAsPrincipal, issueLoginCode, redeemMagicLink } from 
 import { signToken, AuthError } from "./auth/auth.mjs";
 import { readRoute, liveResources } from "./read/read-api.mjs";
 import { eventRoutes, amendmentRoutes, squadRoutes, tossRoutes, conditionsRoutes, officialRoutes } from "./write/events-api.mjs";
-import { scoutingRoutes, featureRoutes, drsRoutes } from "./write/scouting-api.mjs";
+import { scoutingRoutes, featureRoutes, drsRoutes, broadcastRoutes } from "./write/scouting-api.mjs";
 import { assessmentRoutes, accessRequestRoutes, developmentNoteRoutes, guardianLinkRoutes } from "./write/assessment-api.mjs";
 import { sessionRoutes } from "./realtime/session-routes.mjs";
 import { MatchHub } from "./realtime/realtime.mjs";
@@ -156,6 +156,7 @@ const cond    = conditionsRoutes({ pool, secret: SECRET });
 const scouting = scoutingRoutes({ pool, secret: SECRET });
 const features = featureRoutes({ pool, secret: SECRET });
 const drs      = drsRoutes({ pool, secret: SECRET });
+const bcast    = broadcastRoutes({ pool, secret: SECRET });
 
 /**
  * Development sign-in.
@@ -232,6 +233,9 @@ const MATCH_ROUTES = [
   // here — see db/08_schema_programme.sql.
   [/^\/api\/matches\/([^/]+)\/drs$/,               "POST", drs.record],
   [/^\/api\/admin\/features\/([^/]+)$/,            "POST", features.set],
+  // Putting a fixture on a public screen, and saying how much of a child's
+  // name may go on it.
+  [/^\/api\/matches\/([^/]+)\/broadcast$/,          "POST", bcast.publish],
   // Appointing the officials. officiating.assign, which until now had nothing
   // it could be exercised on.
   [/^\/api\/matches\/([^/]+)\/officials$/,         "POST", officials.appoint],

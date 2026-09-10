@@ -330,6 +330,23 @@ CREATE POLICY match_toss_update ON match_toss
   FOR UPDATE USING (app_can('scoring.start', (SELECT m.school_id FROM match m WHERE m.id = match_toss.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_toss.match_id), '00000000-0000-0000-0000-000000000000'::uuid, match_toss.match_id))
            WITH CHECK (app_can('scoring.start', (SELECT m.school_id FROM match m WHERE m.id = match_toss.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_toss.match_id), '00000000-0000-0000-0000-000000000000'::uuid, match_toss.match_id));
 
+-- match_broadcast — read: fixture.read · write: broadcast.publish
+ALTER TABLE match_broadcast ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS match_broadcast_read   ON match_broadcast;
+DROP POLICY IF EXISTS match_broadcast_insert ON match_broadcast;
+DROP POLICY IF EXISTS match_broadcast_update ON match_broadcast;
+DROP POLICY IF EXISTS match_broadcast_delete ON match_broadcast;
+
+CREATE POLICY match_broadcast_read ON match_broadcast
+  FOR SELECT USING (app_can('fixture.read', (SELECT m.school_id FROM match m WHERE m.id = match_broadcast.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_broadcast.match_id), '00000000-0000-0000-0000-000000000000'::uuid, match_broadcast.match_id));
+
+CREATE POLICY match_broadcast_insert ON match_broadcast
+  FOR INSERT WITH CHECK (app_can('broadcast.publish', (SELECT m.school_id FROM match m WHERE m.id = match_broadcast.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_broadcast.match_id), '00000000-0000-0000-0000-000000000000'::uuid, match_broadcast.match_id));
+
+CREATE POLICY match_broadcast_update ON match_broadcast
+  FOR UPDATE USING (app_can('broadcast.publish', (SELECT m.school_id FROM match m WHERE m.id = match_broadcast.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_broadcast.match_id), '00000000-0000-0000-0000-000000000000'::uuid, match_broadcast.match_id))
+           WITH CHECK (app_can('broadcast.publish', (SELECT m.school_id FROM match m WHERE m.id = match_broadcast.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_broadcast.match_id), '00000000-0000-0000-0000-000000000000'::uuid, match_broadcast.match_id));
+
 -- drs_review — read: fixture.read · write: scoring.correct
 ALTER TABLE drs_review ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS drs_review_read   ON drs_review;

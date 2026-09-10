@@ -164,6 +164,55 @@ export function drsRoutes({ pool, secret }) {
   };
 }
 
+/**
+ * Putting a fixture on a public screen.
+ *
+ * The route does nothing clever. Whether the caller may publish is the INSERT
+ * policy's decision (broadcast.publish), and what the overlay then shows is
+ * broadcast_state()'s — this only shapes the request.
+ */
+export function broadcastRoutes({ pool, secret }) {
+  const err = (code, status = 400) => Object.assign(new Error(code), { status });
+  return {
+    // POST /matches/:id/broadcast { published, nameDisplay?, showOfficials?, strapline? }
+    publish: async (req, res) => {
+      try {
+        const b = req.body || {};
+        if (typeof b.published !== "boolean") throw err("published_must_be_boolean");
+        const nameDisplay = b.nameDisplay ?? "initials";
+        if (!["initials", "full", "none"].includes(nameDisplay)) throw err("name_display_invalid");
+        // Naming children in full on a public stream is a decision, so it is
+        // made explicitly or not at all. The default is initials and stays
+        // initials unless somebody says otherwise in the request.
+        const showOfficials = b.showOfficials === false ? false : true;
+        const strapline = b.strapline == null ? null : String(b.strapline).slice(0, 200);
+
+        const out = await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+          const r = await client.query(
+            `insert into match_broadcast
+               (match_id, school_id, published, name_display, show_officials, strapline,
+                published_by, published_at)
+             values ($1, match_school($1), $2, $3, $4, $5, app_user_id(), now())
+             on conflict (match_id) do update
+               set published = excluded.published, name_display = excluded.name_display,
+                   show_officials = excluded.show_officials, strapline = excluded.strapline,
+                   published_by = excluded.published_by, published_at = now()
+             returning match_id, published, name_display, show_officials, strapline, published_at`,
+            [req.params.id, b.published, nameDisplay, showOfficials, strapline]);
+          if (!r.rowCount) throw err("not_permitted", 403);
+          return r.rows[0];
+        });
+        res.json(out);
+      } catch (e) {
+        if (e.code === "23514") return res.status(400).json({ error: "invalid_value", detail: e.message });
+        if (e.code === "23502" || e.code === "23503") return res.status(404).json({ error: "no_such_match" });
+        const status = e.code === "42501" ? 403 : (e.status || 500);
+        res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
+      }
+    },
+  };
+}
+
 export function scoutingRoutes({ pool, secret }) {
   const call = (sql, params) => (req) => runAsPrincipal(
     pool, secret, req.headers?.authorization,

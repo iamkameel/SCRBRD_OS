@@ -92,7 +92,7 @@ const BUNDLES = {
     "medical.status.read", "medical.nature.read", "player.age.read", "player.roster.read",
     "discipline.read", "discipline.write",
     "analytics.read", "competition.read", "facility.read", "facility.manage",
-    "transport.read", "officiating.assign",
+    "transport.read", "officiating.assign", "broadcast.publish",
     "scoring.start", "scoring.edit", "scoring.finalise", "scoring.correct",
     "scoring.amend.approve",
     "news.publish.team", "news.publish.school", "audit.read",
@@ -111,6 +111,7 @@ const BUNDLES = {
   sportsadmin: [
     ...READ_TEAM, "user.read", "team.manage", "team.select",
     "fixture.create", "fixture.update", "fixture.cancel", "officiating.assign",
+    "broadcast.publish",
     "player.profile.manage", "medical.status.read", "medical.nature.read", "player.age.read",
     "player.roster.read", "facility.read", "facility.manage", "transport.read", "transport.manage",
     "competition.read", "news.publish.team", "news.publish.school",

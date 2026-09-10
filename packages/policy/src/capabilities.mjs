@@ -191,6 +191,11 @@ export const CAPABILITIES = {
   "news.publish.team":           "Publish to a team",
   "news.publish.school":         "Publish to an institution",
   "news.publish.competition":    "Publish to a competition",
+  // Putting a fixture on a screen the public can watch. Deliberately its own
+  // capability and NOT fixture.update: scheduling a match and broadcasting one
+  // are different acts with different consequences, and the second one puts
+  // children in front of an audience that is not at the ground.
+  "broadcast.publish":           "Put a fixture on a public broadcast overlay",
 
   // ── Analysis ──
   "analytics.read":              "See aggregate analysis",

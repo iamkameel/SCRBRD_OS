@@ -48,6 +48,8 @@ const WALKS = [
   // DRS, and the platform switch that holds it off until there is
   // ball-tracking to feed it.
   "drs",
+  // The public overlay, and the names that do not go on it.
+  "broadcast",
 ];
 
 // Walks that drive a real browser AND need a database. They need two things

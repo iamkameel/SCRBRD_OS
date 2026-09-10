@@ -427,6 +427,26 @@ export const TABLES = {
     masked: {},
   },
 
+  match_broadcast: {
+    // The decision to broadcast, and what the overlay may show. Read under
+    // fixture.read so a coach can see whether Saturday is going out; written
+    // under broadcast.publish, which is nobody's by default.
+    //
+    // The OVERLAY itself does not read this table — it calls broadcast_state(),
+    // which is SECURITY DEFINER and returns nothing for an unpublished
+    // fixture. That is deliberate: an overlay is watched by people with no
+    // account, and a screen at a ground cannot depend on somebody's row-level
+    // security. The publication row is what stands in for their permission.
+    read:  "fixture.read",
+    write: "broadcast.publish",
+    anchors: {
+      school:  "(SELECT m.school_id FROM match m WHERE m.id = match_broadcast.match_id)",
+      team:    "(SELECT m.team_code FROM match m WHERE m.id = match_broadcast.match_id)",
+      fixture: "match_id",
+    },
+    masked: {},
+  },
+
   drs_review: {
     // A review of a delivery. Read by anyone who can read the fixture — the
     // decision is announced on the ground and belongs on the scorecard beside

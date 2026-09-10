@@ -462,6 +462,24 @@ export const READ_QUERIES = {
   },
 
   /**
+   * The overlay's state, already masked.
+   *
+   * Everything a broadcast screen shows, and nothing else. The function is
+   * SECURITY DEFINER and returns no rows for a fixture nobody has published,
+   * so the publication row stands in for the viewer's permission — an overlay
+   * is watched by people with no account and cannot lean on theirs.
+   *
+   * Names arrive ALREADY REDUCED to whatever the school chose. If a fixture is
+   * set to initials, no full name is in this payload: not in a field the
+   * widget declines to render, not in a console, not in a screenshot of a
+   * network tab. The widget is presentation; this is the security.
+   */
+  broadcast_state: {
+    text: `select * from broadcast_state($1)`,
+    params: q => [req(q, "matchId")],
+  },
+
+  /**
    * Which product features are on.
    *
    * Readable by anyone signed in, because a client has to know what to render
