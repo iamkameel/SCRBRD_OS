@@ -15,11 +15,18 @@ const group = t => console.log("\n" + t);
 const SECRET = "read-test-secret";
 
 // Fake pool/connection recording every statement.
-function fakePool(rowsByPattern = {}) {
+//
+// The module gate is answered ON by default. Every test in this file is about
+// something else — masking, params, principal transactions — and a fake that
+// answered the gate with "no rows" would refuse half of them for a reason none
+// of them is asking about. Group A-modules below overrides it deliberately,
+// which is the only place the answer should be interesting.
+function fakePool(rowsByPattern = {}, { moduleOn = true } = {}) {
   const log = [];
   const client = {
     query: async (text, params) => {
       log.push({ text: text.trim().replace(/\s+/g, " "), params });
+      if (text.includes("my_feature_enabled")) return { rows: [{ on: moduleOn }] };
       const hit = Object.entries(rowsByPattern).find(([pat]) => text.includes(pat));
       return { rows: hit ? hit[1] : [] };
     },
@@ -71,6 +78,35 @@ group("A. The handler does no RBAC of its own");
   ok("identical SQL for both callers", specQ === medQ);
   // (In the fake, RLS/mask is simulated by the canned rows; live DB does the real work.)
   ok("no role branching in handler code", true);
+}
+
+group("A. The module gate refuses before the query runs");
+{
+  // A switched-off module must not merely hide a screen. If the read still
+  // answered, anybody with a fetch call would have the data and the setting
+  // would be a lie — so the assertion is that the resource's OWN QUERY never
+  // executed, not that the caller received nothing.
+  const off = fakePool({ "injury_masked": [{ id: "i1", notes: "clinical" }] }, { moduleOn: false });
+  let refused = null;
+  try { await readResource(off.pool, SECRET, bearer("uMedical"), "injuries"); }
+  catch (e) { refused = e; }
+  ok("a module-owned read is refused when the module is off", refused?.code === "module_disabled");
+  ok("...with a 403, not a 404 — the resource exists", refused?.status === 403);
+  ok("...naming the module, so a client can say which", refused?.module === "injuries");
+  ok("THE QUERY NEVER RAN", !off.log.some((l) => l.text.includes("injury_masked")));
+  ok("...and the gate was asked under the caller's identity",
+     off.log.findIndex((l) => l.text.includes("app.user_id"))
+       < off.log.findIndex((l) => l.text.includes("my_feature_enabled")));
+
+  // The other half, and the one that would make this whole mechanism a
+  // liability if it were wrong: a module being off must not affect a read it
+  // does not own. Match Centre, the squad and the dashboard keep working when
+  // a school switches off Analytics.
+  const shared = fakePool({ "from match": [{ id: "m1" }] }, { moduleOn: false });
+  const rows = await readResource(shared.pool, SECRET, bearer("uCoach"), "matches");
+  ok("an unowned read is not gated at all", rows.length === 1);
+  ok("...and is not even asked about",
+     !shared.log.some((l) => l.text.includes("my_feature_enabled")));
 }
 
 group("A. Params + errors");

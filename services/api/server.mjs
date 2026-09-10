@@ -36,7 +36,7 @@ import { sessionProfile, runAsPrincipal, issueLoginCode, redeemMagicLink } from 
 import { signToken, AuthError } from "./auth/auth.mjs";
 import { readRoute, liveResources } from "./read/read-api.mjs";
 import { eventRoutes, amendmentRoutes, squadRoutes, tossRoutes, conditionsRoutes, officialRoutes } from "./write/events-api.mjs";
-import { scoutingRoutes, featureRoutes, drsRoutes, broadcastRoutes, sponsorRoutes } from "./write/scouting-api.mjs";
+import { scoutingRoutes, featureRoutes, drsRoutes, broadcastRoutes, sponsorRoutes, moduleAdminRoutes } from "./write/scouting-api.mjs";
 import { assessmentRoutes, accessRequestRoutes, developmentNoteRoutes, guardianLinkRoutes } from "./write/assessment-api.mjs";
 import { sessionRoutes } from "./realtime/session-routes.mjs";
 import { MatchHub } from "./realtime/realtime.mjs";
@@ -158,6 +158,7 @@ const features = featureRoutes({ pool, secret: SECRET });
 const drs      = drsRoutes({ pool, secret: SECRET });
 const bcast    = broadcastRoutes({ pool, secret: SECRET });
 const sponsors = sponsorRoutes({ pool, secret: SECRET });
+const modAdmin = moduleAdminRoutes({ pool, secret: SECRET });
 
 /**
  * Development sign-in.
@@ -225,21 +226,43 @@ const MATCH_ROUTES = [
   // Conditions. Unlike the toss, these stay writable during play — weather
   // changes, and that is the reason for recording it.
   [/^\/api\/matches\/([^/]+)\/weather$/,           "POST", cond.weather],
-  [/^\/api\/matches\/([^/]+)\/pitch$/,             "POST", cond.pitch],
+  [/^\/api\/matches\/([^/]+)\/pitch$/,             "POST", cond.pitch,    "fields"],
   // The groundsman's standing record of a ground — the same capability as the
   // pitch report, keyed on the ground rather than the fixture.
-  [/^\/api\/grounds\/([^/]+)\/condition$/,          "POST", cond.ground],
-  // The DRS review, and the platform switch that decides whether it may be
-  // recorded at all. The switch is enforced by a trigger on the table, not
-  // here — see db/08_schema_programme.sql.
+  [/^\/api\/grounds\/([^/]+)\/condition$/,          "POST", cond.ground,   "fields"],
+  // A FOURTH ELEMENT, on the routes a module owns: the switch that must be on
+  // for the route to be reachable at all. Checked once in the dispatcher, so
+  // no handler has to remember — and so the read gate and the write gate ask
+  // the same function about the same key.
+  //
+  // Routes with no module here are deliberately ungated. Scoring a match,
+  // recording an amendment and naming a squad are the product, not a module
+  // somebody may switch off, and a fixture that could not be scored because a
+  // menu setting was wrong is a Saturday afternoon nobody recovers.
+  //
+  // A feature whose writes are already gated in the DATABASE is deliberately
+  // not tagged here — see the DRS route below.
+  // NOT tagged, though DRS is a switchable feature. Its write is gated by the
+  // trigger on drs_review instead, which is strictly stronger — it catches a
+  // queued offline write and a direct SQL insert, neither of which reaches
+  // this dispatcher — and which raises a message naming the flag and who can
+  // move it. Tagging it here as well would only mean the dispatcher's generic
+  // "module_disabled" arrived first and replaced the useful sentence with a
+  // useless one. Where a feature's writes already have a database gate, this
+  // table stays out of the way.
   [/^\/api\/matches\/([^/]+)\/drs$/,               "POST", drs.record],
   [/^\/api\/admin\/features\/([^/]+)$/,            "POST", features.set],
+  // The two levels below the platform switch. NEVER module-gated themselves —
+  // a switch you can turn off and then cannot reach is a switch nobody can
+  // turn back on.
+  [/^\/api\/admin\/modules\/([^/]+)\/grant$/,     "POST", modAdmin.grant],
+  [/^\/api\/admin\/modules\/([^/]+)\/suppress$/,  "POST", modAdmin.suppress],
   // Putting a fixture on a public screen, and saying how much of a child's
   // name may go on it.
-  [/^\/api\/matches\/([^/]+)\/broadcast$/,          "POST", bcast.publish],
+  [/^\/api\/matches\/([^/]+)\/broadcast$/,          "POST", bcast.publish, "broadcast"],
   // Appointing the officials. officiating.assign, which until now had nothing
   // it could be exercised on.
-  [/^\/api\/matches\/([^/]+)\/officials$/,         "POST", officials.appoint],
+  [/^\/api\/matches\/([^/]+)\/officials$/,         "POST", officials.appoint, "officials"],
 ];
 
 // Routes keyed on a player rather than a match. Same shape, same shim.
@@ -250,6 +273,12 @@ const PLAYER_ROUTES = [
   [/^\/api\/players\/([^/]+)\/notes$/,          "POST", notes.write],
   // Scouting: a guardian's own decision about their own child, and nobody
   // else's — no administrative override exists in scouting_consent_set().
+  // NOT gated by the scouting module, deliberately, though everything else
+  // about scouting is. This route is where a guardian GRANTS AND WITHDRAWS
+  // consent for their own child, and a withdrawal that a school could disable
+  // by switching off a module is not a withdrawal. Consent is the parent's,
+  // not the product's; the module decides whether scouts may look, never
+  // whether a family may say no.
   [/^\/api\/players\/([^/]+)\/scouting-consent$/,  "POST", scouting.consent],
   // The guardian link, which had no route at all until now.
   [/^\/api\/players\/([^/]+)\/guardians$/,             "POST", guard.establish],
@@ -266,14 +295,38 @@ const PLAYER_ROUTES = [
 // absent; the dispatcher's params.id comes back undefined and the handler
 // never looks at it.
 const SCOUT_ROUTES = [
-  [/^\/api\/scouts\/accreditation$/,                      "POST", scouting.registerAccreditation],
-  [/^\/api\/scouts\/([^/]+)\/accreditation\/decide$/,   "POST", scouting.decideAccreditation],
+  [/^\/api\/scouts\/accreditation$/,                      "POST", scouting.registerAccreditation, "scouting"],
+  [/^\/api\/scouts\/([^/]+)\/accreditation\/decide$/,   "POST", scouting.decideAccreditation, "scouting"],
   // Commercial. Neither takes an id: a sponsor is created under a school named
   // in the body, and a placement under a sponsor named in the body, so both
   // capture groups are absent exactly as registration's is above.
-  [/^\/api\/sponsors$/,                                    "POST", sponsors.create],
-  [/^\/api\/sponsorships$/,                                "POST", sponsors.place],
+  [/^\/api\/sponsors$/,                                    "POST", sponsors.create, "sponsors"],
+  [/^\/api\/sponsorships$/,                                "POST", sponsors.place,  "sponsors"],
 ];
+
+/**
+ * Is this module on for the caller?
+ *
+ * Asked under the caller's own identity, through the same SECURITY DEFINER
+ * function the read path uses, so the write gate and the read gate can never
+ * disagree about a module. An unauthenticated caller gets false — but that is
+ * not what refuses them: the handler's own authorization does, immediately
+ * afterwards and for the right reason. This only ever narrows.
+ */
+async function moduleOn(bearer, key) {
+  try {
+    return await runAsPrincipal(pool, SECRET, bearer, async (client) => {
+      const { rows } = await client.query(`select my_feature_enabled($1) as on`, [key]);
+      return rows[0]?.on === true;
+    });
+  } catch {
+    // A principal that cannot be established is not a switched-off module.
+    // Returning false here would answer "module_disabled" to somebody whose
+    // real problem is an expired token, and send them to a school
+    // administrator to fix a sign-in.
+    return true;
+  }
+}
 
 const server = createServer(async (req, res) => {
   if (req.method === "OPTIONS") return json(res, 204, {});
@@ -308,9 +361,25 @@ const server = createServer(async (req, res) => {
       }, shimmed);
     }
 
-    for (const [pattern, method, handler] of [...MATCH_ROUTES, ...PLAYER_ROUTES, ...SCOUT_ROUTES]) {
+    for (const [pattern, method, handler, module] of [...MATCH_ROUTES, ...PLAYER_ROUTES, ...SCOUT_ROUTES]) {
       const m = req.method === method && pattern.exec(path);
       if (!m) continue;
+      // The write side of the module gate, in the one place every write route
+      // is dispatched.
+      //
+      // The read path closes the door on the way out; this closes it on the
+      // way in. Without it a school that switched off Officials would stop
+      // being able to READ appointments while still being able to make them,
+      // which is a setting that half works — the worst kind, because the half
+      // that works is the half nobody checks.
+      //
+      // A refusal only. my_feature_enabled() resolves the caller's own
+      // schools, and the handler's own authorization runs afterwards exactly
+      // as before: nothing here lets anybody write anything they could not
+      // already write.
+      if (module && !(await moduleOn(req.headers?.authorization, module))) {
+        return json(res, 403, { error: "module_disabled", module });
+      }
       const body = (req.method === "POST" || req.method === "PATCH") ? await readJson(req) : {};
       return handler({
         params: { id: m[1] },

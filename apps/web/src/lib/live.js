@@ -247,6 +247,33 @@ function asSponsorship(r) {
            agreedAt: r.agreed_at, running: r.is_running === true, live: true };
 }
 
+/**
+ * One switchable thing, with its three levels reported separately.
+ *
+ * Nothing is collapsed here. `resolved` is the server's own answer and the
+ * only one a screen should act on; platformDefault, schoolGranted and the
+ * suppressions are how it came to be that way, and an administrator staring at
+ * one boolean cannot tell which conversation they are in.
+ */
+function asModuleSetting(r) {
+  return { key: r.key, kind: r.kind, label: r.label,
+           platform_default: r.platform_default, locked: r.locked, reason: r.reason,
+           school_granted: r.school_granted, grantNote: r.grant_note,
+           school_hidden: r.school_hidden, people_hidden: r.people_hidden,
+           resolved: r.resolved, changedAt: r.changed_at, live: true };
+}
+
+/** Who a module is hidden from at one school, and why. */
+function asModuleSuppression(r) {
+  return { key: r.key, school: r.school_id, personId: r.person_id,
+           personName: r.person_name, reason: r.reason, hiddenAt: r.hidden_at, live: true };
+}
+
+/** What is on for THIS session, already resolved across every school they belong to. */
+function asMyFeature(r) {
+  return { key: r.key, kind: r.kind, label: r.label, enabled: r.enabled === true, live: true };
+}
+
 function asInjury(r) {
   return { id: r.id, player: r.player_id, type: r.injury_type, severity: r.severity,
            dateInj: r.date_injured, rtw: r.rtw_date, phase: r.phase,
@@ -359,6 +386,9 @@ const ADAPT = {
   weather: asWeather,
   officials: asOfficial,
   ground_conditions: asGroundCondition,
+  module_settings: asModuleSetting,
+  module_suppressions: asModuleSuppression,
+  my_features: asMyFeature,
   sponsors: asSponsor,
   sponsor_categories: asSponsorCategory,
   sponsorships: asSponsorship,
@@ -472,7 +502,23 @@ export function useLive(resource, role, nonce = 0) {
         if (!cancelled) setState({ rows: rows.map(ADAPT[resource]), live: true, loading: false, error: null });
       } catch (e) {
         // Deliberately NOT falling back to mock. See above.
-        if (!cancelled) setState({ rows: [], live: false, loading: false, error: e.code || "unreachable" });
+        //
+        // A SWITCHED-OFF MODULE IS NOT A FAILURE, and reporting it as one is
+        // how a setting becomes a support ticket. The API answers 403
+        // module_disabled and names the module; that arrives here as
+        // `disabled` with `error` left null, so every view that already draws
+        // an empty state draws one — and a view that wants to say which module
+        // is off has the key to say it with.
+        //
+        // `live: true` on this branch, deliberately: the server answered. This
+        // is not a session that fell back to the demo fixture, and a screen
+        // that said "sign in to see your school's data" here would be wrong.
+        if (cancelled) return;
+        if (e.status === 403 && e.code === "module_disabled") {
+          setState({ rows: [], live: true, loading: false, error: null, disabled: resource });
+          return;
+        }
+        setState({ rows: [], live: false, loading: false, error: e.code || "unreachable" });
       }
     })();
     return () => { cancelled = true; };

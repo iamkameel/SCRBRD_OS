@@ -1956,6 +1956,24 @@ GRANT EXECUTE ON FUNCTION scouting_candidates() TO PUBLIC;
 -- fetch call still has. See the trigger below.
 CREATE TABLE feature_flag (
   key        text PRIMARY KEY CHECK (key ~ '^[a-z][a-z0-9_]{2,49}$'),
+  -- module or feature. A module has a doorway somebody can be sent to; a
+  -- feature is something the product does inside one. The distinction changes
+  -- nothing about how the switch resolves and everything about how an
+  -- administrator's screen reads, which is the only reason it is here.
+  kind       text NOT NULL DEFAULT 'feature' CHECK (kind IN ('module','feature')),
+  -- What to call it on that screen. In the database rather than only in
+  -- packages/policy/src/modules.mjs so that a row is legible to somebody
+  -- reading the table directly during an incident.
+  label      text,
+  -- NOBODY MAY DEVIATE. Not a stronger `enabled` — an independent statement
+  -- that this switch is the platform's to hold, so a school grant is ignored
+  -- entirely while it stands. DRS is the case it was added for: the feature is
+  -- built, and no commercial conversation should be able to turn it on before
+  -- there is ball-tracking to feed it.
+  --
+  -- Suppressions still apply on top. Locking sets the ceiling; it never forces
+  -- a school to show something.
+  locked     boolean NOT NULL DEFAULT false,
   -- Default false, deliberately. A feature that arrives switched on the moment
   -- its migration lands has not been decided about; it has been forgotten
   -- about. Turning it on is a person's act and this table records whose.
@@ -2011,14 +2029,272 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER;
 REVOKE ALL ON FUNCTION feature_enabled(text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION feature_enabled(text) TO PUBLIC;
 
-INSERT INTO feature_flag (key, enabled, reason) VALUES
-  ('drs_review', false,
+
+-- ── The commercial level: what a school's plan includes ──────────
+--
+-- Written ONLY under platform.feature.manage. This is the lever that lets a
+-- module be off by default and on for the schools that pay for it, and it can
+-- go either way — granted, or revoked when a plan lapses — because it is the
+-- platform's own decision about its own product.
+--
+-- A row here is an OVERRIDE of feature_flag.enabled for one school, so
+-- `granted` is a boolean and not merely the row's existence: revoking has to
+-- be distinguishable from never having granted, or the note explaining why a
+-- school lost a module has nowhere to live.
+CREATE TABLE feature_grant (
+  key        text NOT NULL REFERENCES feature_flag(key) ON DELETE CASCADE,
+  school_id  uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  granted    boolean NOT NULL,
+  note       text CHECK (note IS NULL OR length(note) <= 1000),
+  changed_by uuid REFERENCES app_user(id),
+  changed_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (key, school_id)
+);
+ALTER TABLE feature_grant ENABLE ROW LEVEL SECURITY;
+
+-- Hand-written for the same reason feature_flag's are: this is not an ordinary
+-- tenant table. It HAS a school, but the person who may write it is not
+-- scoped to that school at all — a platform administrator holds no assignment
+-- anywhere, so every anchor the generator builds would refuse them.
+--
+-- Readable by anyone signed in. What a school's plan includes is not a secret
+-- from that school, and hiding it would only mean a client guessed.
+CREATE POLICY feature_grant_read ON feature_grant
+  FOR SELECT USING (app_user_id() IS NOT NULL);
+CREATE POLICY feature_grant_insert ON feature_grant
+  FOR INSERT WITH CHECK (app_holds('platform.feature.manage'));
+CREATE POLICY feature_grant_update ON feature_grant
+  FOR UPDATE USING (app_holds('platform.feature.manage'))
+           WITH CHECK (app_holds('platform.feature.manage'));
+
+
+-- ── The school's own level, and the shape that makes it safe ─────
+--
+-- THIS TABLE HAS NO COLUMN THAT COULD MEAN "ON".
+--
+-- That sentence is the entire design of school-side module management. A
+-- school administrator can hide a module from their school, or from one person
+-- at it, and cannot grant themselves a module the platform did not grant them
+-- — not because a policy forbids setting a boolean to true, but because there
+-- is no boolean. The safe property is structural, so a future edit to a policy
+-- or a route cannot quietly reverse it. Same reasoning as "a cached
+-- notification is not permission".
+--
+-- person_id NULL means the whole school. A row naming a person means that one
+-- person, and it narrows further rather than replacing the school-wide row —
+-- both are checked, and either is enough to switch the module off.
+--
+-- UN-HIDING IS A LIFT, NOT A DELETE, and that is not a stylistic choice: this
+-- database grants scrbrd_app no DELETE privilege on anything (db/06_app_role),
+-- because records are deactivated rather than removed so an audit trail
+-- survives. A suppression is a setting rather than a record about a child, but
+-- carving a privilege exception for it would be the wrong way round — and the
+-- append-only version turns out to be the better one anyway, because "who
+-- turned Injuries back on, and when" is a question a school will eventually
+-- ask.
+--
+-- Lifting does NOT weaken the guarantee above. A lifted suppression returns
+-- the answer to whatever the platform said and no further; there is still no
+-- column here whose value can exceed the platform's grant. The one-position
+-- switch is intact — what a lift does is take the switch out of the circuit.
+CREATE TABLE feature_suppression (
+  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  key        text NOT NULL REFERENCES feature_flag(key) ON DELETE CASCADE,
+  school_id  uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  person_id  uuid REFERENCES app_user(id) ON DELETE CASCADE,
+  reason     text CHECK (reason IS NULL OR length(reason) <= 1000),
+  hidden_by  uuid REFERENCES app_user(id),
+  hidden_at  timestamptz NOT NULL DEFAULT now(),
+  -- When set, this suppression no longer applies. Re-hiding writes a NEW row,
+  -- so the table reads as a history of a school's decisions rather than as
+  -- their current state, and the current state is a WHERE clause.
+  lifted_at  timestamptz,
+  lifted_by  uuid REFERENCES app_user(id),
+  CONSTRAINT lifted_has_a_lifter CHECK ((lifted_at IS NULL) = (lifted_by IS NULL))
+);
+-- Two indexes rather than a composite primary key: person_id is nullable, and
+-- a NULL in a key column would let the same school-wide suppression be written
+-- twice. Both are partial on lifted_at so that a lifted row does not block the
+-- school from hiding the module again later.
+CREATE UNIQUE INDEX ON feature_suppression (key, school_id)
+  WHERE person_id IS NULL AND lifted_at IS NULL;
+CREATE UNIQUE INDEX ON feature_suppression (key, school_id, person_id)
+  WHERE person_id IS NOT NULL AND lifted_at IS NULL;
+ALTER TABLE feature_suppression ENABLE ROW LEVEL SECURITY;
+
+/**
+ * Whoever writes a suppression must hold school.feature.manage AT THAT SCHOOL.
+ *
+ * app_can() rather than app_holds(): unlike the platform switch, this one IS a
+ * claim about a tenant, and a school administrator at Westville must not be
+ * able to hide a module from Hilton. The person dimension is deliberately
+ * passed as NULL — hiding a module from somebody is not reading anything about
+ * them, and requiring a person-scoped assignment would mean an administrator
+ * could only hide modules from people they were individually assigned to.
+ */
+CREATE POLICY feature_suppression_read ON feature_suppression
+  FOR SELECT USING (app_user_id() IS NOT NULL);
+CREATE POLICY feature_suppression_insert ON feature_suppression
+  FOR INSERT WITH CHECK (app_can('school.feature.manage', school_id, NULL, NULL, NULL));
+-- The only UPDATE this table accepts is a lift, and the policy says so in both
+-- directions: the row must be unlifted going in and lifted coming out. A
+-- school cannot un-lift a suppression back into force, because re-hiding is an
+-- insert — which keeps the history honest.
+CREATE POLICY feature_suppression_update ON feature_suppression
+  FOR UPDATE USING     (app_can('school.feature.manage', school_id, NULL, NULL, NULL)
+                        AND lifted_at IS NULL)
+           WITH CHECK  (app_can('school.feature.manage', school_id, NULL, NULL, NULL)
+                        AND lifted_at IS NOT NULL);
+-- No DELETE policy, and no DELETE privilege either — see db/06_app_role.sql.
+
+/**
+ * An UPDATE may set the lift and nothing else.
+ *
+ * The policy above governs WHO and in which direction; it cannot stop the same
+ * statement from also rewriting key, school_id or person_id, which would turn
+ * one school's lifted suppression into another school's live one. Structural
+ * rules get triggers here — the same reasoning as ball_event's append-only
+ * guard.
+ */
+CREATE OR REPLACE FUNCTION feature_suppression_lift_only() RETURNS trigger AS $$
+BEGIN
+  IF NEW.key       IS DISTINCT FROM OLD.key
+  OR NEW.school_id IS DISTINCT FROM OLD.school_id
+  OR NEW.person_id IS DISTINCT FROM OLD.person_id
+  OR NEW.hidden_by IS DISTINCT FROM OLD.hidden_by
+  OR NEW.hidden_at IS DISTINCT FROM OLD.hidden_at
+  OR NEW.reason    IS DISTINCT FROM OLD.reason THEN
+    RAISE EXCEPTION 'a suppression may only be lifted; to change what is hidden, '
+                    'lift this one and write the one you meant'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER feature_suppression_lift_guard BEFORE UPDATE ON feature_suppression
+  FOR EACH ROW EXECUTE FUNCTION feature_suppression_lift_only();
+
+/**
+ * Is this module on, for one school, for one person?
+ *
+ *     platform default, or the school's grant if the flag is not locked
+ *     AND NOT suppressed for the school
+ *     AND NOT suppressed for this person at that school
+ *
+ * An AND at every level, which is what makes the whole mechanism unable to
+ * widen anything. There is no branch in here that returns true because of a
+ * row somebody at a school wrote.
+ *
+ * SECURITY DEFINER, so the answer does not depend on the caller being able to
+ * read these tables — an administrator and a coach must get the same answer or
+ * the gate is not a gate.
+ */
+CREATE OR REPLACE FUNCTION feature_enabled(p_key text, p_school uuid, p_person uuid)
+RETURNS boolean AS $$
+  -- The outer coalesce is what makes an UNKNOWN KEY OFF rather than NULL: no
+  -- feature_flag row means the inner SELECT returns nothing at all, and a
+  -- three-valued answer to "may this be shown" is one a caller will get wrong.
+  -- Same rule as the one-argument form above.
+  SELECT coalesce((
+    SELECT CASE
+             WHEN EXISTS (
+               SELECT 1 FROM feature_suppression s
+                WHERE s.key = p_key AND s.school_id = p_school
+                  AND s.lifted_at IS NULL
+                  AND (s.person_id IS NULL OR s.person_id = p_person)
+             ) THEN false
+             WHEN f.locked THEN f.enabled
+             ELSE coalesce(
+                    (SELECT g.granted FROM feature_grant g
+                      WHERE g.key = p_key AND g.school_id = p_school),
+                    f.enabled)
+           END
+      FROM feature_flag f WHERE f.key = p_key), false)
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION feature_enabled(text, uuid, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION feature_enabled(text, uuid, uuid) TO PUBLIC;
+
+/**
+ * The same question for the SIGNED-IN caller, across everywhere they belong.
+ *
+ * A person can hold assignments at more than one school, and a module can be
+ * on at one and hidden at the other. The API refuses a read once, for the
+ * whole request, so it has to collapse that into a single answer — and the
+ * direction it collapses in is the codebase's standing one: OFF AT ANY SCHOOL
+ * YOU BELONG TO IS OFF.
+ *
+ * That over-refuses for the rare person assigned at two schools, and it
+ * over-refuses in the safe direction. The alternative — on if on anywhere —
+ * would mean a school that hid a module from a particular coach could be
+ * defeated by that coach holding an assignment somewhere else, which is a
+ * setting that does not do what its name says.
+ *
+ * Somebody with no school at all is a platform account, and gets the platform
+ * default: no grants and no suppressions can apply to a person no school has.
+ */
+CREATE OR REPLACE FUNCTION my_feature_enabled(p_key text) RETURNS boolean AS $$
+  SELECT CASE
+           WHEN app_user_id() IS NULL THEN false
+           WHEN NOT EXISTS (
+             SELECT 1 FROM role_assignment a
+              WHERE a.person_id = app_user_id() AND a.active AND a.school_id IS NOT NULL
+           ) THEN feature_enabled(p_key)
+           ELSE coalesce((
+             SELECT bool_and(feature_enabled(p_key, s.school_id, app_user_id()))
+               FROM (SELECT DISTINCT a.school_id FROM role_assignment a
+                      WHERE a.person_id = app_user_id() AND a.active
+                        AND a.school_id IS NOT NULL) s
+           ), false)
+         END
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION my_feature_enabled(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION my_feature_enabled(text) TO PUBLIC;
+
+-- ── The switchable things themselves ─────────────────────────────
+--
+-- Kept in step with packages/policy/src/modules.mjs by a test that fails the
+-- build when the two disagree, the same way the RLS generator's output is kept
+-- in step with tables.mjs. Two lists of what the product offers would drift,
+-- and the symptom would be a module nobody can switch because the row it needs
+-- was never inserted.
+--
+-- MODULES ARRIVE ON. The column default is false and stays false, because a
+-- FEATURE that arrives switched on has not been decided about. A MODULE is
+-- different: it is part of the product a school already bought, and shipping
+-- this migration with everything off would take Analytics away from every
+-- school on the platform at the moment it applied.
+INSERT INTO feature_flag (key, kind, label, enabled, reason) VALUES
+  ('competitions', 'module', 'Competitions', true, NULL),
+  ('leagues',      'module', 'Leagues',      true, NULL),
+  ('analytics',    'module', 'Analytics',    true, NULL),
+  ('skills',       'module', 'Skills',       true, NULL),
+  ('training',     'module', 'Training',     true, NULL),
+  ('injuries',     'module', 'Injuries',     true, NULL),
+  ('logistics',    'module', 'Logistics',    true, NULL),
+  ('fields',       'module', 'Fields',       true, NULL),
+  ('officials',    'module', 'Officials',    true, NULL),
+  ('sponsors',     'module', 'Sponsors',     true, NULL),
+  ('staff',        'module', 'Staff',        true, NULL),
+  ('broadcast',    'feature','Broadcast overlay', true, NULL),
+  ('scouting',     'feature','Scouting',     true, NULL)
+ON CONFLICT (key) DO NOTHING;
+
+INSERT INTO feature_flag (key, kind, label, enabled, locked, reason) VALUES
+  ('drs_review', 'feature', 'DRS / LBW review', false, true,
    'Built and held off. The panel records a review correctly, but pitching, '
    'impact and wickets are ball-tracking outputs, and until there are cameras '
    'on the ground every value entered would be an umpire''s judgement rendered '
    'as if it were measured. Turn on per the evidence_source the technology '
    'actually supports.')
 ON CONFLICT (key) DO NOTHING;
+-- LOCKED, which is the difference between this row and every other one above.
+-- A school cannot be granted DRS while it stands, whatever a commercial
+-- conversation concludes, because the objection is not commercial: there is no
+-- instrument on the ground capable of producing the numbers the screen would
+-- render.
 
 
 -- ── The review itself ────────────────────────────────────────────
@@ -2090,10 +2366,20 @@ CREATE UNIQUE INDEX ON drs_review (match_id, ball_seq);
  */
 CREATE OR REPLACE FUNCTION drs_review_feature_gate() RETURNS trigger AS $$
 BEGIN
-  IF NOT feature_enabled('drs_review') THEN
-    RAISE EXCEPTION 'the DRS review feature is switched off platform-wide '
+  -- Resolved for THE ROW'S SCHOOL, not platform-wide, since school grants and
+  -- school suppressions exist. The writer is passed as the person so that a
+  -- school which hid DRS from one scorer refuses that scorer's write and
+  -- nobody else's.
+  --
+  -- The row's own school_id is safe to use here where an RLS predicate would
+  -- not be: it is derived at write time by match_school() in the same
+  -- statement, and this trigger is a product gate rather than an access
+  -- decision. Nothing about who may READ a review passes through here.
+  IF NOT feature_enabled('drs_review', NEW.school_id, app_user_id()) THEN
+    RAISE EXCEPTION 'the DRS review feature is switched off '
                     '(feature_flag.drs_review); a platform administrator holding '
-                    'platform.feature.manage can enable it'
+                    'platform.feature.manage can enable it, unless a school has '
+                    'hidden it for itself'
       USING ERRCODE = 'check_violation';
   END IF;
   RETURN NEW;

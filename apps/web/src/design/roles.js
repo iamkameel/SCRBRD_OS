@@ -132,6 +132,12 @@ const NAV_CAPABILITY = {
   notifications: null,
   settings:      null,
   management:    "user.role.assign",
+  // The modules screen. Gated by the capability that can HIDE a module rather
+  // than the one that can grant one, because that is the wider of the two — a
+  // platform administrator holds both. Not itself a switchable module: a
+  // destination you can turn off and then cannot reach to turn back on is a
+  // destination nobody can recover.
+  modules:       "school.feature.manage",
   rulebook:      null,
   pitchdeck:     "platform.tenant.manage",
 };
@@ -199,6 +205,7 @@ const NAV_META = {
   notifications:{ icon:"🔔",  label:"Alerts"       },
   settings:     { icon:"⚙️",  label:"Settings"     },
   management:   { icon:"🛠️",  label:"Management"   },
+  modules:      { icon:"🎛",  label:"Modules"      },
   rulebook:     { icon:"📖",  label:"Rulebook"     },
   pitchdeck:    { icon:"📐",  label:"Pitch Deck"   },
 };

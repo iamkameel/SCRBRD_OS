@@ -4,7 +4,7 @@ import { D } from "../design/tokens.js";
 import { Badge, Btn, Card, EmptyState, Input, Modal, Pill, SectionHeader } from "../ui/primitives.jsx";
 import { api } from "../lib/api.js";
 import { useLive } from "../lib/live.js";
-import { profile } from "../lib/session.js";
+import { schoolsWhere } from "../lib/session.js";
 
 // ══════════════════════════════════════════════════════
 //  SPONSORS — the boards a school sells, and the terms behind them
@@ -30,29 +30,6 @@ const PLACEMENTS = {
   ground_board:      { label: "Ground board",      icon: "🏟", color: D.emerald,
                        sub: "At the boundary" },
 };
-
-/**
- * The schools this person could sign a sponsor FOR.
- *
- * Derived from their own assignments, and used to fill in a field the route
- * requires — not to decide anything. `sponsor` is anchored on school_id and
- * the INSERT policy evaluates sponsorship.manage against it, so naming the
- * wrong school here produces a refusal rather than a sponsor on somebody
- * else's scoreboard. What this avoids is a form that cannot be submitted
- * because the client had no school to put in it.
- *
- * A list rather than a value because people hold assignments at more than one
- * school — Sarah is a director of sport at Hilton and a parent at Westville —
- * and a form that silently picked the first would be guessing on their behalf.
- */
-function manageableSchools() {
-  const seen = new Map();
-  for (const a of profile()?.assignments ?? []) {
-    if (!a.school || !roleGrants(a.role, "sponsorship.manage")) continue;
-    if (!seen.has(a.school)) seen.set(a.school, { id: a.school, name: a.schoolName || "This school" });
-  }
-  return [...seen.values()];
-}
 
 const rand = (n) =>
   "R" + Math.round(n).toLocaleString("en-ZA").replace(/,/g, " ");
@@ -90,7 +67,7 @@ function SponsorsView({ role }) {
   // Computed once per render from the session, not from `role`: the role
   // picker in the top bar changes what a demo shows, and a real write has to
   // name a school this person is actually assigned to.
-  const schools = useMemo(manageableSchools, [nonce]);
+  const schools = useMemo(() => schoolsWhere("sponsorship.manage"), [nonce]);
   const money = (v) =>
     v != null ? rand(v) : (entitledToTerms ? "Not recorded" : "Confidential");
 

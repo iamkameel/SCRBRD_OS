@@ -10,6 +10,7 @@
  * Rule: PII/clinical resources MUST read the *_masked views, never base tables.
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
+import { OWNER_OF_READ } from "@scrbrd/policy/modules";
 import {
   DISCIPLINES, battingIndex, bowlingIndex, coachIndex, adjustedRating,
   SCALE_MIN, SCALE_MAX,
@@ -543,6 +544,83 @@ export const READ_QUERIES = {
    */
   feature_flags: {
     text: `select key, enabled, reason, changed_at from feature_flag order by key`,
+  },
+
+  /**
+   * WHAT IS ON FOR ME — one row per switchable thing, already resolved.
+   *
+   * The client needs this to lay out a menu, and it must not compute the answer
+   * itself: the resolution is three levels deep, and a browser that got it
+   * wrong would either draw a destination that then refuses every read, or hide
+   * one the school is paying for.
+   *
+   * This is NOT what enforces anything. readResource() refuses a switched-off
+   * module's reads and the dispatcher refuses its writes, both by asking the
+   * same function this does. If a client ignored every row here, it would gain
+   * nothing but error messages.
+   *
+   * Never module-gated itself, for the obvious reason.
+   */
+  my_features: {
+    text: `select f.key, f.kind, f.label, my_feature_enabled(f.key) as enabled
+             from feature_flag f order by f.kind, f.key`,
+  },
+
+  /**
+   * The same switches with their reasons shown, for an administrator's screen.
+   *
+   * Three levels reported SEPARATELY rather than collapsed. "Analytics is off"
+   * is not an answer somebody can act on; "the platform default is on, your
+   * school was not granted it, and somebody here hid it from two people" is
+   * three different conversations, and an administrator staring at one boolean
+   * cannot tell which they are in.
+   *
+   * Readable by anyone signed in, like feature_flag itself. What the product
+   * offers and whether a school has it is not a secret from that school —
+   * the suppression rows name people, and naming somebody a module was hidden
+   * from discloses nothing about them that the person who hid it did not
+   * already know.
+   */
+  module_settings: {
+    text: `select f.key, f.kind, f.label, f.enabled as platform_default,
+                  f.locked, f.reason, f.changed_at,
+                  g.granted as school_granted, g.note as grant_note,
+                  -- Suppressions counted rather than listed here: the school-wide
+                  -- one is a yes/no, and the per-person ones are a number the
+                  -- screen can expand into names with the query below.
+                  exists (select 1 from feature_suppression s
+                           where s.key = f.key and s.school_id = $1
+                             and s.person_id is null
+                             and s.lifted_at is null)          as school_hidden,
+                  (select count(*)::int from feature_suppression s
+                    where s.key = f.key and s.school_id = $1
+                      and s.person_id is not null
+                      and s.lifted_at is null)                 as people_hidden,
+                  feature_enabled(f.key, $1::uuid, null)       as resolved
+             from feature_flag f
+             left join feature_grant g on g.key = f.key and g.school_id = $1
+            order by f.kind, f.key`,
+    params: q => [req(q, "schoolId")],
+  },
+
+  /**
+   * Who a module has been hidden from at one school.
+   *
+   * Separate from module_settings because it is a list of NAMED PEOPLE and the
+   * settings screen is a list of switches — folding them together would mean
+   * every render of the switch list carried every person any module was ever
+   * hidden from.
+   */
+  module_suppressions: {
+    text: `select s.key, s.school_id, s.person_id, u.name as person_name,
+                  s.reason, s.hidden_at
+             from feature_suppression s
+             left join app_user u on u.id = s.person_id
+            where s.school_id = $1
+              and s.lifted_at is null
+              and ($2::text is null or s.key = $2)
+            order by s.key, u.name nulls first`,
+    params: q => [req(q, "schoolId"), q?.key || null],
   },
 
   /**
@@ -1090,7 +1168,35 @@ export async function readResource(pool, secret, bearer, resource, query = {}) {
   const def = READ_QUERIES[resource];
   if (!def) { const e = new Error("unknown_resource"); e.status = 404; throw e; }
   const params = def.params ? def.params(query) : [];
+  const module = OWNER_OF_READ[resource];
   return runAsPrincipal(pool, secret, bearer, async client => {
+    // THE MODULE GATE, and it is here because this is the only door.
+    //
+    // Every governed read in the product goes through this function, so a
+    // module switched off for a school genuinely stops delivering its rows —
+    // not merely stops drawing its screen. A gate that only hid a menu entry
+    // would be a setting whose name lies: anybody with a fetch call still had
+    // the data, and a school administrator who thought they had turned
+    // Injuries off would be wrong.
+    //
+    // AN AND, NEVER AN OR. This runs AFTER the caller's identity is set and
+    // BEFORE the query, and it can only refuse. Row-level security decides
+    // what comes back when it does not refuse; nothing here can hand anybody a
+    // row they could not already read. That is what makes it safe to let a
+    // school administrator throw these switches.
+    //
+    // 403 rather than 404: the resource exists, and telling somebody their
+    // school has switched a module off is not a disclosure — they can see the
+    // setting.
+    if (module) {
+      const { rows: [gate] } = await client.query(
+        `select my_feature_enabled($1) as on`, [module]);
+      if (!gate?.on) {
+        const e = new Error("module_disabled");
+        e.status = 403; e.code = "module_disabled"; e.module = module;
+        throw e;
+      }
+    }
     const { rows: raw } = await client.query(def.text, params);
     const rows = def.compose ? def.compose(raw) : raw;
 
@@ -1126,7 +1232,12 @@ export function readRoute({ pool, secret }) {
       const rows = await readResource(pool, secret, req.headers?.authorization, req.params.resource, req.query || {});
       res.json({ resource: req.params.resource, rows });
     } catch (e) {
-      res.status(e.status || 500).json({ error: e.code || e.message });
+      // `module` rides along on a module refusal so a client can say WHICH
+      // one is off instead of rendering "could not load" — a screen that
+      // reports a switched-off module as a failure sends somebody looking for
+      // an outage that is a setting.
+      res.status(e.status || 500).json({
+        error: e.code || e.message, ...(e.module ? { module: e.module } : {}) });
     }
   };
 }

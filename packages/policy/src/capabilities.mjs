@@ -227,6 +227,18 @@ export const CAPABILITIES = {
   // product currently offers anybody. DRS is the first of these — the review
   // panel is built, and stays off until there is ball-tracking to feed it.
   "platform.feature.manage":     "Enable or disable a product feature platform-wide",
+  // Turn a module off for this school, or for one person at it.
+  //
+  // ONE DIRECTION ONLY, and the constraint is structural rather than written
+  // down here: the table this capability writes (feature_suppression) has no
+  // column that could mean "on". So a school administrator can hide Analytics
+  // from a coach and cannot grant themselves a module the platform did not
+  // grant them, whatever a future edit to a policy might allow.
+  //
+  // Not an authorization capability despite how it reads. Suppressing a module
+  // removes information from somebody who was already entitled to it; it can
+  // never hand anybody a row they could not already read.
+  "school.feature.manage":       "Turn a module off for this school, or for one of its people",
 };
 
 export const ALL_CAPABILITIES = Object.freeze(Object.keys(CAPABILITIES));

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { NAV_META, ROLES } from "../design/roles.js";
+import { NAV_META } from "../design/roles.js";
+import { useNav } from "../lib/features.js";
 import { D } from "../design/tokens.js";
 
 // ══════════════════════════════════════════════════════
@@ -59,7 +60,10 @@ function SportSwitcher() {
 
 function MobileNav({ role, active, onNav, notifCount }) {
   const [moreOpen, setMoreOpen] = useState(false);
-  const nav = ROLES[role]?.nav || [];
+  // Same list the sidebar draws, from the same place. Two components computing
+  // a menu two ways is how a destination comes to exist on a phone and not on
+  // a laptop.
+  const nav = useNav(role);
   const primary = nav.slice(0, 4);
   const rest = nav.slice(4);
   const moreActive = rest.includes(active);

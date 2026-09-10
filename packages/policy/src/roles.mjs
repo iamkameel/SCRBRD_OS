@@ -72,12 +72,19 @@ const BUNDLES = {
   platformadmin: [
     "platform.health.read", "platform.tenant.manage", "platform.support.impersonate",
     "platform.feature.manage",
+    // Also the school-side one, which sounds like a widening and is the
+    // opposite: school.feature.manage can only HIDE, and somebody who may
+    // grant a school a module can certainly hide one. Without it the platform
+    // account cannot reach the modules screen at all, since that destination
+    // is gated on the wider of the two capabilities.
+    "school.feature.manage",
     "scouting.accredit",
     "school.read", "user.read", "audit.read", "competition.read", "news.read",
   ],
 
   // ── Institution leadership ──
   principal: [
+    "school.feature.manage",
     ...READ_TEAM, "school.read", "user.read", "analytics.read",
     "competition.read", "discipline.read", "facility.read", "invoice.read",
     "player.performance.read", "medical.status.read", "medical.nature.read", "audit.read",
@@ -99,6 +106,10 @@ const BUNDLES = {
     "news.publish.team", "news.publish.school", "audit.read",
   ],
   schooladmin: [
+    // school.feature.manage: hiding a module from this school or from one of
+    // its people. It sits beside school.manage because it is the same job —
+    // configuring the institution — and it can only ever take something away.
+    "school.feature.manage",
     ...READ_TEAM, "school.read", "school.manage", "user.read", "user.invite", "user.role.assign",
     "team.manage", "fixture.create", "fixture.update", "fixture.cancel",
     "sponsorship.read", "sponsorship.manage",

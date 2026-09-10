@@ -79,6 +79,117 @@ export function featureRoutes({ pool, secret }) {
 }
 
 /**
+ * The two levels below the platform switch.
+ *
+ * Both are refusals-only from where the caller sits, and for different
+ * reasons. A GRANT is written under platform.feature.manage and may go either
+ * way, because deciding what a school's plan includes is the platform's own
+ * business. A SUPPRESSION is written under school.feature.manage and has no
+ * direction to choose: the table has no column that could mean "on", so the
+ * only acts available here are hide and un-hide.
+ *
+ * Neither route checks a capability. The policies on feature_grant and
+ * feature_suppression do, under the caller's own identity, and a second check
+ * here would be a copy that can drift from the one that decides.
+ */
+export function moduleAdminRoutes({ pool, secret }) {
+  const err = (code, status = 400) => Object.assign(new Error(code), { status });
+  const handle = (fn) => async (req, res) => {
+    try { res.json(await fn(req)); }
+    catch (e) {
+      if (e.code === "23503") return res.status(404).json({ error: "no_such_module_or_school" });
+      const status = e.code === "42501" ? 403 : (e.status || 500);
+      res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
+    }
+  };
+
+  return {
+    // POST /admin/modules/:key/grant { schoolId, granted, note? }
+    grant: handle(async (req) => {
+      const key = req.params?.id;                 // params.id, see featureRoutes
+      if (!key) throw err("module_key_required");
+      const b = req.body || {};
+      if (!b.schoolId) throw err("school_required");
+      if (typeof b.granted !== "boolean") throw err("granted_must_be_boolean");
+
+      return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+        // A LOCKED flag refuses the grant here rather than silently accepting a
+        // row the resolver will ignore. A stored grant that does nothing is
+        // worse than a refusal: an administrator reads it back, sees the school
+        // listed, and concludes the module is on.
+        const { rows: [f] } = await client.query(
+          `select locked from feature_flag where key = $1`, [key]);
+        if (!f) throw err("no_such_module", 404);
+        if (f.locked && b.granted) throw err("feature_locked", 409);
+
+        const r = await client.query(
+          `insert into feature_grant (key, school_id, granted, note, changed_by, changed_at)
+           values ($1, $2, $3, $4, app_user_id(), now())
+           on conflict (key, school_id) do update
+             set granted = excluded.granted, note = excluded.note,
+                 changed_by = excluded.changed_by, changed_at = now()
+           returning key, school_id, granted, note, changed_at`,
+          [key, b.schoolId, b.granted, b.note == null ? null : String(b.note).slice(0, 1000)]);
+        if (!r.rowCount) throw err("not_permitted", 403);
+        return r.rows[0];
+      });
+    }),
+
+    // POST /admin/modules/:key/suppress { schoolId, personId?, hidden, reason? }
+    //
+    // `hidden` says which act this is, not what to store: true writes a
+    // suppression, false lifts the one in force. There is no third value and
+    // no column for one — see feature_suppression in db/08 for why un-hiding
+    // is a lift rather than a delete.
+    suppress: handle(async (req) => {
+      const key = req.params?.id;
+      if (!key) throw err("module_key_required");
+      const b = req.body || {};
+      if (!b.schoolId) throw err("school_required");
+      if (typeof b.hidden !== "boolean") throw err("hidden_must_be_boolean");
+      const person = b.personId || null;
+
+      return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+        if (!b.hidden) {
+          const r = await client.query(
+            `update feature_suppression
+                set lifted_at = now(), lifted_by = app_user_id()
+              where key = $1 and school_id = $2
+                and person_id is not distinct from $3
+                and lifted_at is null
+             returning key, school_id, person_id, lifted_at`,
+            [key, b.schoolId, person]);
+          // Nothing updated is ambiguous — no suppression was in force, or the
+          // policy refused — and it is not worth distinguishing: both mean the
+          // caller changed nothing, and saying which would confirm whether a
+          // suppression exists to somebody who may not manage it.
+          return { key, schoolId: b.schoolId, personId: person, hidden: false,
+                   lifted: r.rowCount > 0 };
+        }
+        const r = await client.query(
+          `insert into feature_suppression (key, school_id, person_id, reason, hidden_by)
+           values ($1, $2, $3, $4, app_user_id())
+           on conflict do nothing
+           returning key, school_id, person_id, hidden_at`,
+          [key, b.schoolId, person, b.reason == null ? null : String(b.reason).slice(0, 1000)]);
+        // ON CONFLICT DO NOTHING means an existing suppression also returns no
+        // row, so a re-hide has to be distinguished from a refusal by asking.
+        if (!r.rowCount) {
+          const { rows } = await client.query(
+            `select 1 from feature_suppression
+              where key = $1 and school_id = $2 and person_id is not distinct from $3
+                and lifted_at is null`,
+            [key, b.schoolId, person]);
+          if (!rows.length) throw err("not_permitted", 403);
+          return { key, schoolId: b.schoolId, personId: person, hidden: true, already: true };
+        }
+        return { key, schoolId: b.schoolId, personId: person, hidden: true, ...r.rows[0] };
+      });
+    }),
+  };
+}
+
+/**
  * Recording a review.
  *
  * Every field the caller may set is validated here for the same reason the
@@ -150,7 +261,13 @@ export function drsRoutes({ pool, secret }) {
         // flattened — a scorer told only "invalid" would go looking for a bug
         // in a feature that is working exactly as intended.
         if (e.code === "23514") {
-          const gated = /switched off platform-wide/.test(e.message || "");
+          // Matched on the flag NAME rather than on a phrase from the
+          // sentence. The message changed once — "switched off platform-wide"
+          // became "switched off", once a school could hide the feature too —
+          // and the old pattern silently stopped matching, so a scorer was
+          // told "invalid_value" about a feature working exactly as intended.
+          // The flag name is the part of that message that cannot drift.
+          const gated = /feature_flag\.drs_review/.test(e.message || "");
           return res.status(gated ? 409 : 400)
                     .json({ error: gated ? "feature_disabled" : "invalid_value", detail: e.message });
         }

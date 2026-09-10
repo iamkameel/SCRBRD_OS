@@ -53,6 +53,9 @@ const WALKS = [
   // Sponsorship: which brands may be on a child's scoreboard, and what stays
   // between the school and the sponsor.
   "commercial",
+  // Module access: three levels, one direction each, and the assertion that
+  // switching everything on grants nobody a single row.
+  "modules",
 ];
 
 // Walks that drive a real browser AND need a database. They need two things

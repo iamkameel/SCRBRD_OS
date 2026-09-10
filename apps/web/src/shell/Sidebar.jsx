@@ -1,5 +1,6 @@
 import SCRBRD_LOGO from "../assets/scrbrd-logo.jpg";
 import { NAV_META, ROLES } from "../design/roles.js";
+import { useNav } from "../lib/features.js";
 import { D } from "../design/tokens.js";
 import { SportSwitcher } from "./MobileNav.jsx";
 
@@ -7,7 +8,9 @@ import { SportSwitcher } from "./MobileNav.jsx";
 //  SIDEBAR
 // ══════════════════════════════════════════════════════
 function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount }) {
-  const nav = ROLES[role]?.nav || [];
+  // The role's destinations, narrowed by the modules this school has on.
+  // Narrowed only — useNav() cannot add a destination the role did not hold.
+  const nav = useNav(role);
   const rc  = ROLES[role];
   return (
     <div style={{

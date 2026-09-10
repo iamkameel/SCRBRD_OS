@@ -434,6 +434,50 @@ try {
     await fin.ctx.close().catch(() => {});
   }
 
+  // ── A module switched off, in a browser ─────────────────────────
+  //
+  // The API walk proves the reads and writes are refused. What it cannot prove
+  // is that the SHELL agrees: a destination that stays in the menu after its
+  // module is switched off is a door that opens onto a refusal, and a school
+  // administrator who turned Injuries off would reasonably conclude the
+  // setting did not work.
+  //
+  // Asserted in both directions on the same session, because "the menu does
+  // not contain Injuries" is also true of a broken build.
+  group("A school switches a module off and the destination goes with it");
+  {
+    const tok = await (await fetch(`${API}/api/auth/dev-login`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "registrar@example.invalid", deviceId: "browser-read" }),
+    })).json().then((j) => j.token);
+    const H = { "content-type": "application/json", authorization: `Bearer ${tok}` };
+    const HILTON = "11111111-1111-1111-1111-111111111111";
+    const hide = (hidden) => fetch(`${API}/api/admin/modules/injuries/suppress`, {
+      method: "POST", headers: H,
+      body: JSON.stringify({ schoolId: HILTON, hidden, reason: "Browser walk." }) });
+
+    const before = await open();
+    ok("the medic signs in (modules)", await signIn(before.page, /medical@example\.invalid|Medical/));
+    const navBefore = await before.page.locator("nav button").allTextContents();
+    ok("Injuries is in the menu while the module is on",
+       navBefore.some((t) => /Injuries/i.test(t)));
+    await before.ctx.close().catch(() => {});
+
+    ok("a school administrator switches it off", (await hide(true)).ok);
+
+    const after = await open();
+    ok("the medic signs in again", await signIn(after.page, /medical@example\.invalid|Medical/));
+    const navAfter = await after.page.locator("nav button").allTextContents();
+    ok("...and Injuries is gone from the menu", !navAfter.some((t) => /Injuries/i.test(t)));
+    // The blast-radius assertion. One switch must not take the shell with it.
+    ok("...while the rest of the menu is intact", navAfter.length >= navBefore.length - 1);
+    ok("no uncaught error with a module switched off", after.errors.length === 0);
+    await after.ctx.close().catch(() => {});
+
+    // Put it back, so a later walk on this database is not surprised.
+    ok("it can be switched back on", (await hide(false)).ok);
+  }
+
   group("The screens render without errors");
   for (const [who, s] of [["coach", coach], ["guardian", parent], ["spectator", watcher], ["medic", medic]]) {
     ok(`${who}: no uncaught error${s.errors.length ? ` — ${s.errors[0].slice(0, 140)}` : ""}`,

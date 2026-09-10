@@ -58,8 +58,13 @@ const setFlag = (key, token, body) =>
   api(`/api/admin/features/${key}`, { method: "POST", token, body });
 const review = (matchId, token, body) =>
   api(`/api/matches/${matchId}/drs`, { method: "POST", token, body });
+// The raw response as well as the rows: asserting that a read is REFUSED
+// needs the status, and a helper that returns [] for both "no reviews" and
+// "the feature is off" cannot tell those apart.
+const reviewsRaw = (matchId, token) =>
+  api(`/api/read/drs_reviews?matchId=${matchId}`, { token });
 const reviews = async (matchId, token) =>
-  (await api(`/api/read/drs_reviews?matchId=${matchId}`, { token })).body?.rows || [];
+  (await reviewsRaw(matchId, token)).body?.rows || [];
 const flags = async (token) =>
   (await api("/api/read/feature_flags", { token })).body?.rows || [];
 
@@ -182,10 +187,27 @@ try {
   // A flag governs what may be recorded, never what was. Deleting history
   // because a feature was withdrawn would be a worse fabrication than the one
   // the flag exists to prevent.
+  //
+  // WHAT "WITHOUT ERASING" MEANS CHANGED, and this assertion changed with it.
+  // Reviews used to stay READABLE with the feature off, because a flag then
+  // gated only writes. Modules and features now gate their reads too — that is
+  // what "switch off Injuries" has to mean if the setting is to be worth
+  // anything — so a school that turns DRS off stops seeing DRS panels on old
+  // scorecards as well as new ones. That is not erasure and the difference is
+  // the whole point: the rows are untouched, and switching it back on brings
+  // them back exactly as they were. Asserted both ways below, which is a
+  // stronger statement of the original principle than "still readable" was.
   ok("the platform administrator switches it off",
      (await setFlag("drs_review", platform, { enabled: false, reason: "Cameras removed for winter." })).status === 200);
   ok("a new review is refused again", (await review(m, head, { ...A_REVIEW, ballSeq: 1 })).status === 409);
-  ok("...and the review already recorded is still readable", (await reviews(m, head)).length === 1);
+  ok("...and the reviews stop being served", (await reviewsRaw(m, head)).status === 403);
+  ok("...but NOTHING WAS DELETED",
+     (await q(`select count(*)::int c from drs_review where match_id = $1`, [m]))[0].c === 1);
+  ok("...and switching it on again brings the record back untouched",
+     (await setFlag("drs_review", platform, { enabled: true, reason: "Cameras back." })).status === 200
+       && (await reviews(m, head)).length === 1
+       && (await reviews(m, head))[0]?.outcome === "upheld");
+  await setFlag("drs_review", platform, { enabled: false, reason: "Cameras removed for winter." });
 
   group("An unknown feature is off, not on");
   // A typo in a flag name must never switch something on for the platform.
