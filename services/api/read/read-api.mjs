@@ -572,6 +572,55 @@ export const READ_QUERIES = {
   },
 
   /**
+   * The fleet. Read in the floor bundle, because a parent asking which bus
+   * their son is on is the point of the screen.
+   *
+   * next_service_on is here so the Logistics screen can count what is due.
+   * That figure used to be computed in the browser over a mock array hung on
+   * the staff record, which meant it was the same number for every reader and
+   * true for none of them.
+   */
+  vehicles: {
+    text: `select id, registration, description, kind, capacity, condition,
+                  next_service_on, active, notes, school_id
+             from vehicle
+            where ($1::boolean is null or active = $1)
+            order by active desc, registration`,
+    params: q => [q?.active == null ? null : q.active === "true"],
+  },
+
+  /**
+   * Trips to fixtures, with the vehicle and driver resolved.
+   *
+   * Scoped through the fixture like the officials and the conditions, so a
+   * team-scoped coach sees their own side's transport. The driver's name comes
+   * through a join to app_user, which is itself row-scoped — a reader who may
+   * not see the driver's account gets the trip without the name rather than no
+   * trip, because knowing a bus is arranged is the useful half.
+   */
+  trips: {
+    text: `select t.id, t.match_id, t.school_id,
+                  t.vehicle_id, v.registration, v.description as vehicle_description,
+                  v.capacity, v.kind,
+                  t.driver_id, du.name as driver_name,
+                  t.depart_at, t.return_at, t.pickup, t.seats_taken, t.notes,
+                  t.departed_at, t.arrived_at, t.cancelled_at,
+                  t.arranged_at,
+                  -- Where the bus is, as one word, so a screen does not have to
+                  -- re-derive it from three timestamps and get it wrong.
+                  case when t.cancelled_at is not null then 'cancelled'
+                       when t.arrived_at   is not null then 'arrived'
+                       when t.departed_at  is not null then 'under_way'
+                       else 'scheduled' end            as state
+             from trip t
+             left join vehicle v  on v.id = t.vehicle_id
+             left join app_user du on du.id = t.driver_id
+            where ($1::uuid is null or t.match_id = $1)
+            order by t.depart_at nulls last`,
+    params: q => [q?.matchId || null],
+  },
+
+  /**
    * Who can play on Saturday — INCLUDING WHO HAS NOT ANSWERED.
    *
    * The rows that do not exist are the point of this query. A team manager

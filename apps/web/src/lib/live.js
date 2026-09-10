@@ -276,6 +276,45 @@ function asMyFeature(r) {
   return { key: r.key, kind: r.kind, label: r.label, enabled: r.enabled === true, live: true };
 }
 
+/**
+ * A vehicle in the school's fleet.
+ *
+ * Absent fields stay absent. A bus with no recorded service date has no
+ * service date — not one in 1970, and not "due", which is what a zero would
+ * have read as on the Logistics screen.
+ */
+function asVehicle(r) {
+  return { id: r.id, reg: r.registration, description: r.description, kind: r.kind,
+           capacity: r.capacity, condition: r.condition, active: r.active,
+           nextService: r.next_service_on ? String(r.next_service_on).slice(0, 10) : null,
+           notes: r.notes, school: r.school_id, live: true };
+}
+
+/**
+ * A trip to a fixture. `state` is the server's single word for where the bus
+ * is, derived once in SQL rather than re-derived from three timestamps by
+ * every screen that draws it.
+ */
+function asTrip(r) {
+  return { id: r.id, matchId: r.match_id, school: r.school_id,
+           vehicleId: r.vehicle_id, reg: r.registration,
+           vehicleDescription: r.vehicle_description, capacity: r.capacity, kind: r.kind,
+           driverId: r.driver_id, driverName: r.driver_name,
+           departAt: r.depart_at, returnAt: r.return_at,
+           pickup: r.pickup, seatsTaken: r.seats_taken, notes: r.notes,
+           departedAt: r.departed_at, arrivedAt: r.arrived_at,
+           state: r.state, live: true };
+}
+
+/** One boy's answer about one fixture, and null status means he has not answered. */
+function asAvailability(r) {
+  return { playerId: r.player_id, name: r.full_name, team: r.team_code,
+           status: r.status, reasonKind: r.reason_kind, note: r.note,
+           declaredAt: r.declared_at, selfDeclared: r.self_declared === true,
+           declaredByName: r.declared_by_name,
+           clinicallyRestricted: r.clinically_restricted === true, live: true };
+}
+
 function asInjury(r) {
   return { id: r.id, player: r.player_id, type: r.injury_type, severity: r.severity,
            dateInj: r.date_injured, rtw: r.rtw_date, phase: r.phase,
@@ -388,6 +427,9 @@ const ADAPT = {
   weather: asWeather,
   officials: asOfficial,
   ground_conditions: asGroundCondition,
+  vehicles: asVehicle,
+  trips: asTrip,
+  availability: asAvailability,
   module_settings: asModuleSetting,
   module_suppressions: asModuleSuppression,
   my_features: asMyFeature,

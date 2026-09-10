@@ -455,6 +455,110 @@ export function availabilityRoutes({ pool, secret }) {
   };
 }
 
+/**
+ * Buses, trips, and the driver's two marks.
+ *
+ * Three routes for three different kinds of act, and they are deliberately not
+ * one. Adding a vehicle is fleet administration; arranging a trip is fixture
+ * logistics; saying the bus has left is a report from the road. The first two
+ * are ordinary policy-governed writes. The third goes through trip_mark(),
+ * because transport.drive is a capability to REPORT on a trip and not to
+ * change one — a driver who could update the row could re-time the departure
+ * or swap the vehicle.
+ */
+export function transportRoutes({ pool, secret }) {
+  const err = (code, status = 400) => Object.assign(new Error(code), { status });
+  const handle = (fn) => async (req, res) => {
+    try { res.json(await fn(req)); }
+    catch (e) {
+      // 23514 is one of the safety checks on the trip — a bus that seats
+      // fourteen carrying fifteen, or another school's vehicle. The message
+      // names the vehicle and the numbers, so it is passed through.
+      if (e.code === "23514") return res.status(422).json({ error: "invalid_trip", detail: e.message });
+      if (e.code === "23505") return res.status(409).json({ error: "vehicle_already_on_this_fixture" });
+      if (e.code === "23502" || e.code === "23503") return res.status(404).json({ error: "no_such_match_or_vehicle" });
+      const status = e.code === "42501" ? 403 : (e.status || 500);
+      res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
+    }
+  };
+
+  return {
+    // POST /vehicles { schoolId, registration, description, kind, capacity, ... }
+    vehicle: handle(async (req) => {
+      const b = req.body || {};
+      if (!b.schoolId) throw err("school_required");
+      if (!b.registration || !String(b.registration).trim()) throw err("registration_required");
+      if (!b.description || !String(b.description).trim()) throw err("description_required");
+      const cap = Number(b.capacity);
+      if (!Number.isInteger(cap) || cap < 1 || cap > 80) throw err("capacity_invalid");
+      const kind = b.kind ?? "minibus";
+      if (!["bus", "minibus", "van", "car"].includes(kind)) throw err("kind_invalid");
+      const cond = b.condition == null || b.condition === "" ? null : String(b.condition);
+      if (cond && !["excellent", "good", "fair", "poor", "off_road"].includes(cond)) {
+        throw err("condition_invalid");
+      }
+      return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+        const r = await client.query(
+          `insert into vehicle (school_id, registration, description, kind, capacity,
+                                condition, next_service_on, active, notes)
+           values ($1, btrim($2), btrim($3), $4, $5, $6, $7, $8, $9)
+           on conflict (school_id, upper(btrim(registration))) do update
+             set description = excluded.description, kind = excluded.kind,
+                 capacity = excluded.capacity, condition = excluded.condition,
+                 next_service_on = excluded.next_service_on,
+                 active = excluded.active, notes = excluded.notes
+           returning id, registration, description, kind, capacity, condition,
+                     next_service_on, active`,
+          [b.schoolId, String(b.registration), String(b.description), kind, cap, cond,
+           b.nextServiceOn || null, b.active === false ? false : true,
+           b.notes == null ? null : String(b.notes).slice(0, 500)]);
+        if (!r.rowCount) throw err("not_permitted", 403);
+        return r.rows[0];
+      });
+    }),
+
+    // POST /matches/:id/trip { vehicleId?, driverId?, departAt?, returnAt?, pickup?, seatsTaken? }
+    //
+    // school_id comes from the MATCH via match_school(), never from the
+    // request, exactly as the toss and the pitch report do.
+    trip: handle(async (req) => {
+      const b = req.body || {};
+      const seats = b.seatsTaken == null || b.seatsTaken === "" ? null : Number(b.seatsTaken);
+      if (seats != null && (!Number.isInteger(seats) || seats < 0)) throw err("seats_invalid");
+
+      return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+        const r = await client.query(
+          `insert into trip (match_id, school_id, vehicle_id, driver_id, depart_at,
+                             return_at, pickup, seats_taken, notes, arranged_by, arranged_at)
+           values ($1, match_school($1), $2, $3, $4, $5, $6, $7, $8, app_user_id(), now())
+           returning id, match_id, vehicle_id, driver_id, depart_at, return_at,
+                     pickup, seats_taken, arranged_at`,
+          [req.params.id, b.vehicleId || null, b.driverId || null,
+           b.departAt || null, b.returnAt || null,
+           b.pickup == null ? null : String(b.pickup).slice(0, 200),
+           seats, b.notes == null ? null : String(b.notes).slice(0, 500)]);
+        if (!r.rowCount) throw err("not_permitted", 403);
+        return r.rows[0];
+      });
+    }),
+
+    // POST /trips/:id/mark { event: "departed" | "arrived" }
+    mark: handle(async (req) => {
+      const event = req.body?.event;
+      if (!["departed", "arrived"].includes(event)) throw err("event_invalid");
+      return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+        const { rows } = await client.query(`select * from trip_mark($1, $2)`,
+                                            [req.params.id, event]);
+        const r = rows[0] ?? { ok: false, reason: "no_result" };
+        // The function's own reason, not a flattened refusal: "already
+        // departed" and "not this driver" send a person to different places.
+        if (r.ok === false) throw err(r.reason || "refused", r.reason === "no_such_trip" ? 404 : 403);
+        return { tripId: req.params.id, event };
+      });
+    }),
+  };
+}
+
 export function officialRoutes({ pool, secret }) {
   const err = (code, status = 400) => Object.assign(new Error(code), { status });
   const DUTIES = ["umpire", "third_umpire", "scorer", "referee"];

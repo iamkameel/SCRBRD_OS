@@ -35,7 +35,7 @@ import { askStatGuru, describeDelivery, aiConfigured } from "./ai/ai-service.mjs
 import { sessionProfile, runAsPrincipal, issueLoginCode, redeemMagicLink } from "./auth/auth-db.mjs";
 import { signToken, AuthError } from "./auth/auth.mjs";
 import { readRoute, liveResources } from "./read/read-api.mjs";
-import { eventRoutes, amendmentRoutes, squadRoutes, tossRoutes, conditionsRoutes, officialRoutes, availabilityRoutes } from "./write/events-api.mjs";
+import { eventRoutes, amendmentRoutes, squadRoutes, tossRoutes, conditionsRoutes, officialRoutes, availabilityRoutes, transportRoutes } from "./write/events-api.mjs";
 import { scoutingRoutes, featureRoutes, drsRoutes, broadcastRoutes, sponsorRoutes, moduleAdminRoutes } from "./write/scouting-api.mjs";
 import { assessmentRoutes, accessRequestRoutes, developmentNoteRoutes, guardianLinkRoutes } from "./write/assessment-api.mjs";
 import { sessionRoutes } from "./realtime/session-routes.mjs";
@@ -153,6 +153,7 @@ const squad   = squadRoutes({ pool, secret: SECRET });
 const toss    = tossRoutes({ pool, secret: SECRET });
 const officials = officialRoutes({ pool, secret: SECRET });
 const avail    = availabilityRoutes({ pool, secret: SECRET });
+const trips    = transportRoutes({ pool, secret: SECRET });
 const cond    = conditionsRoutes({ pool, secret: SECRET });
 const scouting = scoutingRoutes({ pool, secret: SECRET });
 const features = featureRoutes({ pool, secret: SECRET });
@@ -226,6 +227,10 @@ const MATCH_ROUTES = [
   // NOT module-gated: a side is picked from availability, and a school that
   // could not collect it would be picking blind.
   [/^\/api\/matches\/([^/]+)\/availability$/,     "POST", avail.declare],
+  // Getting the side there. Module-gated on logistics: a school that does not
+  // run its transport through SCRBRD should not be asked to.
+  [/^\/api\/matches\/([^/]+)\/trip$/,             "POST", trips.trip, "logistics"],
+  [/^\/api\/trips\/([^/]+)\/mark$/,               "POST", trips.mark, "logistics"],
   // The toss. Frozen by the database once a delivery exists.
   [/^\/api\/matches\/([^/]+)\/toss$/,              "POST", toss.record],
   // Conditions. Unlike the toss, these stay writable during play — weather
@@ -305,6 +310,7 @@ const SCOUT_ROUTES = [
   // Commercial. Neither takes an id: a sponsor is created under a school named
   // in the body, and a placement under a sponsor named in the body, so both
   // capture groups are absent exactly as registration's is above.
+  [/^\/api\/vehicles$/,                                    "POST", trips.vehicle, "logistics"],
   [/^\/api\/sponsors$/,                                    "POST", sponsors.create, "sponsors"],
   [/^\/api\/sponsorships$/,                                "POST", sponsors.place,  "sponsors"],
 ];

@@ -211,6 +211,32 @@ INSERT INTO app_user (id, school_id, email, name, role) VALUES
   ('88888888-0000-0000-0000-000000000015', '11111111-1111-1111-1111-111111111111',
    'bursar@example.invalid', 'M du Toit', 'finance');
 
+-- The driver, with an account. B Ngcobo has existed as a STAFF row since the
+-- first seed and could never sign in, so transport.drive — the capability that
+-- says who may report a bus as departed — had no principal that held it. The
+-- same gap as the bursar and the head below: a capability nobody can exercise
+-- can only ever be observed refusing.
+INSERT INTO app_user (id, school_id, email, name, role) VALUES
+  ('88888888-0000-0000-0000-000000000017', '11111111-1111-1111-1111-111111111111',
+   'driver@example.invalid', 'B Ngcobo', 'driver');
+
+-- A fleet, because three transport capabilities gated a screen drawn entirely
+-- from mock arrays and the database had never heard of a bus. The registrations
+-- and seat counts match what the mock carried, so the Logistics screen shows
+-- the same fixture it always did — from rows this time.
+INSERT INTO vehicle (id, school_id, registration, description, kind, capacity,
+                     condition, next_service_on, notes) VALUES
+  ('4e111111-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111',
+   'KZN 482 GP', 'Toyota Quantum 22-seater', 'minibus', 22, 'excellent',
+   current_date + 18, 'Passengers must be seated and belted before departure.'),
+  ('4e111111-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111',
+   'KZN 119 KP', 'Toyota Quantum 14-seater', 'minibus', 14, 'good',
+   current_date + 45, NULL),
+  ('4e111111-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111',
+   'KZN 771 MP', 'Toyota Coaster 30-seater', 'bus', 30, 'good',
+   current_date + 12, 'Used primarily for longer trips.')
+ON CONFLICT DO NOTHING;
+
 -- The head. A school with sponsors and no principal is the same gap the
 -- bursar comment above describes, and a sharper one: sponsorship.exclusivity.waive
 -- is held by this role and by nothing else, so without an account carrying it
@@ -266,6 +292,7 @@ INSERT INTO role_assignment (id, person_id, role, school_id, team_code) VALUES
   ('a5510000-0000-0000-0000-000000000013', '88888888-0000-0000-0000-000000000013', 'guardian',        '11111111-1111-1111-1111-111111111111', NULL),
   ('a5510000-0000-0000-0000-000000000017', '88888888-0000-0000-0000-000000000015', 'finance',         '11111111-1111-1111-1111-111111111111', NULL),
   ('a5510000-0000-0000-0000-000000000018', '88888888-0000-0000-0000-000000000016', 'principal',       '11111111-1111-1111-1111-111111111111', NULL),
+  ('a5510000-0000-0000-0000-000000000019', '88888888-0000-0000-0000-000000000017', 'driver',          '11111111-1111-1111-1111-111111111111', NULL),
   -- school_id NULL, honestly: platform administration is not a claim about
   -- any one school, and nothing in scouting.accredit's check looks at scope.
   ('a5510000-0000-0000-0000-000000000016', '88888888-0000-0000-0000-000000000014', 'platformadmin',   NULL, NULL);

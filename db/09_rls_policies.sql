@@ -432,6 +432,40 @@ CREATE POLICY match_pitch_report_update ON match_pitch_report
   FOR UPDATE USING (app_can('facility.manage', (SELECT m.school_id FROM match m WHERE m.id = match_pitch_report.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_pitch_report.match_id), '00000000-0000-0000-0000-000000000000'::uuid, match_pitch_report.match_id))
            WITH CHECK (app_can('facility.manage', (SELECT m.school_id FROM match m WHERE m.id = match_pitch_report.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_pitch_report.match_id), '00000000-0000-0000-0000-000000000000'::uuid, match_pitch_report.match_id));
 
+-- vehicle — read: transport.read · write: transport.manage
+ALTER TABLE vehicle ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS vehicle_read   ON vehicle;
+DROP POLICY IF EXISTS vehicle_insert ON vehicle;
+DROP POLICY IF EXISTS vehicle_update ON vehicle;
+DROP POLICY IF EXISTS vehicle_delete ON vehicle;
+
+CREATE POLICY vehicle_read ON vehicle
+  FOR SELECT USING (app_can('transport.read', vehicle.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY vehicle_insert ON vehicle
+  FOR INSERT WITH CHECK (app_can('transport.manage', vehicle.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY vehicle_update ON vehicle
+  FOR UPDATE USING (app_can('transport.manage', vehicle.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
+           WITH CHECK (app_can('transport.manage', vehicle.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+-- trip — read: transport.read · write: transport.manage
+ALTER TABLE trip ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS trip_read   ON trip;
+DROP POLICY IF EXISTS trip_insert ON trip;
+DROP POLICY IF EXISTS trip_update ON trip;
+DROP POLICY IF EXISTS trip_delete ON trip;
+
+CREATE POLICY trip_read ON trip
+  FOR SELECT USING (app_can('transport.read', (SELECT m.school_id FROM match m WHERE m.id = trip.match_id), (SELECT m.team_code FROM match m WHERE m.id = trip.match_id), '00000000-0000-0000-0000-000000000000'::uuid, trip.match_id));
+
+CREATE POLICY trip_insert ON trip
+  FOR INSERT WITH CHECK (app_can('transport.manage', (SELECT m.school_id FROM match m WHERE m.id = trip.match_id), (SELECT m.team_code FROM match m WHERE m.id = trip.match_id), '00000000-0000-0000-0000-000000000000'::uuid, trip.match_id));
+
+CREATE POLICY trip_update ON trip
+  FOR UPDATE USING (app_can('transport.manage', (SELECT m.school_id FROM match m WHERE m.id = trip.match_id), (SELECT m.team_code FROM match m WHERE m.id = trip.match_id), '00000000-0000-0000-0000-000000000000'::uuid, trip.match_id))
+           WITH CHECK (app_can('transport.manage', (SELECT m.school_id FROM match m WHERE m.id = trip.match_id), (SELECT m.team_code FROM match m WHERE m.id = trip.match_id), '00000000-0000-0000-0000-000000000000'::uuid, trip.match_id));
+
 -- match_availability — read: availability.read · write: availability.declare
 ALTER TABLE match_availability ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS match_availability_read   ON match_availability;

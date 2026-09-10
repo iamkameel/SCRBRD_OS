@@ -478,6 +478,58 @@ try {
     ok("it can be switched back on", (await hide(false)).ok);
   }
 
+  // ── Logistics, off the mock ─────────────────────────────────────
+  //
+  // Every figure on that screen used to be computed in the browser over a mock
+  // array hung on the staff record. The API walk proves the rows exist and are
+  // scoped; only a browser can prove the SCREEN reads them, because a view
+  // that kept its mock would look identical and pass every API assertion.
+  //
+  // A seeded registration is the tell: KZN 482 GP is in the database and was
+  // in the mock, so the assertion pairs it with a trip arranged through the
+  // API just now — a number the mock could not have known.
+  group("The Logistics screen draws real vehicles and real trips");
+  {
+    const tok = await (await fetch(`${API}/api/auth/dev-login`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "registrar@example.invalid", deviceId: "browser-read" }),
+    })).json().then((j) => j.token);
+    const H = { "content-type": "application/json", authorization: `Bearer ${tok}` };
+
+    const fleet = await (await fetch(`${API}/api/read/vehicles`, { headers: H })).json();
+    const bus = fleet?.rows?.find((v) => v.capacity === 30);
+    const fixtures = await (await fetch(`${API}/api/read/matches`, { headers: H })).json();
+    const fixture = fixtures?.rows?.find((m) => m.status === "upcoming") ?? fixtures?.rows?.[0];
+
+    const SEATS = 17;   // Distinctive: no mock row carries it.
+    const arranged = bus && fixture && (await fetch(`${API}/api/matches/${fixture.id}/trip`, {
+      method: "POST", headers: H,
+      body: JSON.stringify({ vehicleId: bus.id, seatsTaken: SEATS,
+                             departAt: new Date(Date.now() + 36e5).toISOString(),
+                             pickup: "Top gate" }),
+    })).ok;
+    ok("a trip is arranged through the API", !!arranged);
+
+    const s = await open();
+    // Signed in as the director of sport, who holds transport.read and IS a
+    // demo account — the registrar arranges the trip through the API above but
+    // has no entry on the sign-in screen.
+    ok("the director of sport signs in (logistics)", await signIn(s.page, /sarah@example\.invalid|Director/));
+    if (await nav(s.page, /Logistics/)) {
+      const t = await text(s.page);
+      if (DEBUG) console.log("[debug] logistics:\n" + t.slice(0, 900));
+      ok("the seeded vehicle is on the screen", /KZN\s?482\s?GP|KZN\s?771\s?MP/.test(t));
+      // The number that proves it is the DATABASE's trip and not a mock one.
+      ok("...and the seat count just written through the API", t.includes(String(SEATS)));
+      ok("no uncaught error on the logistics screen", s.errors.length === 0);
+    } else {
+      ok("the logistics screen opens", false);
+      ok("the logistics screen opens (seats)", false);
+      ok("the logistics screen opens (errors)", false);
+    }
+    await s.ctx.close().catch(() => {});
+  }
+
   group("The screens render without errors");
   for (const [who, s] of [["coach", coach], ["guardian", parent], ["spectator", watcher], ["medic", medic]]) {
     ok(`${who}: no uncaught error${s.errors.length ? ` — ${s.errors[0].slice(0, 140)}` : ""}`,

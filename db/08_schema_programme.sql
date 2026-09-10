@@ -2391,6 +2391,182 @@ CREATE TRIGGER drs_review_gate BEFORE INSERT OR UPDATE ON drs_review
 
 
 -- ═══════════════════════════════════════════════════════════════
+--  TRANSPORT
+-- ═══════════════════════════════════════════════════════════════
+--
+-- THREE CAPABILITIES THAT HAD NOTHING TO ACT ON. transport.read,
+-- transport.manage and transport.drive were declared, bundled into ten roles,
+-- and gated a Logistics destination whose vehicles came off a mock array hung
+-- on the staff record and whose trips came off a mock field on the match.
+-- Nothing in the database had ever heard of a bus.
+--
+-- That is the same shape this codebase keeps closing — a control that exists
+-- and nothing exercises it — and it is worse here than most, because a
+-- capability in the role directory is a claim the platform makes about what a
+-- transport coordinator can do.
+--
+-- WHAT A TRIP IS ANCHORED ON, and it is the interesting decision. A trip
+-- belongs to a FIXTURE: a bus goes to Michaelhouse on Saturday because there
+-- is a match there. Anchoring on the fixture means a driver assigned to that
+-- fixture reaches that trip and no other, which is what transport.drive has
+-- always needed and never had — the older build reached for a whole extra
+-- scope dimension (TRIP) to express it, and the fixture already does.
+CREATE TABLE vehicle (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id    uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  registration text NOT NULL,
+  description  text NOT NULL,                      -- Quantum 22-seater
+  kind         text NOT NULL DEFAULT 'minibus'
+                 CHECK (kind IN ('bus','minibus','van','car')),
+  -- Seats, and it is load-bearing rather than decorative: naming more
+  -- passengers than a vehicle holds is the check below, and a school putting
+  -- fifteen boys in a fourteen-seater is a safety failure, not a rounding
+  -- error.
+  capacity     smallint NOT NULL CHECK (capacity BETWEEN 1 AND 80),
+  condition    text CHECK (condition IS NULL OR condition IN
+                 ('excellent','good','fair','poor','off_road')),
+  next_service_on date,
+  active       boolean NOT NULL DEFAULT true,
+  notes        text CHECK (notes IS NULL OR length(notes) <= 500),
+  created_at   timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX ON vehicle (school_id);
+-- A unique INDEX, not a table constraint: a constraint cannot be built on an
+-- expression, and the registration has to match regardless of how somebody
+-- typed the spaces and the case.
+CREATE UNIQUE INDEX ON vehicle (school_id, upper(btrim(registration)));
+
+CREATE TABLE trip (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  match_id    uuid NOT NULL REFERENCES match(id) ON DELETE CASCADE,
+  -- Derived from the match at write time, never asserted.
+  school_id   uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  vehicle_id  uuid REFERENCES vehicle(id),
+  -- The driver as a PERSON, not as free text. A name typed into a box is a
+  -- name nobody can scope a permission to, and transport.drive has to reach
+  -- this row for exactly one person.
+  driver_id   uuid REFERENCES app_user(id),
+  depart_at   timestamptz,
+  return_at   timestamptz,
+  pickup      text CHECK (pickup IS NULL OR length(pickup) <= 200),
+  seats_taken smallint CHECK (seats_taken IS NULL OR seats_taken >= 0),
+  notes       text CHECK (notes IS NULL OR length(notes) <= 500),
+  -- The driver's own marks. Not a status column somebody sets to anything:
+  -- these are two timestamps that only ever go from null to a time, written
+  -- through trip_mark() under transport.drive.
+  departed_at timestamptz,
+  arrived_at  timestamptz,
+  cancelled_at timestamptz,
+  arranged_by uuid REFERENCES app_user(id),
+  arranged_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT trip_returns_after_departure
+    CHECK (return_at IS NULL OR depart_at IS NULL OR return_at >= depart_at),
+  CONSTRAINT trip_arrives_after_departing
+    CHECK (arrived_at IS NULL OR departed_at IS NOT NULL)
+);
+CREATE INDEX ON trip (school_id);
+CREATE INDEX ON trip (match_id);
+CREATE INDEX ON trip (driver_id) WHERE driver_id IS NOT NULL;
+-- One trip per vehicle per fixture. A bus double-booked for the same match is
+-- always a mistake, and it is the mistake a transport coordinator makes at
+-- five o'clock on a Friday.
+CREATE UNIQUE INDEX ON trip (match_id, vehicle_id) WHERE vehicle_id IS NOT NULL;
+
+/**
+ * A trip cannot carry more boys than the bus holds, or use somebody else's bus.
+ *
+ * Both are the kind of thing a screen usually checks and a database usually
+ * does not, which means they hold until the first import, the first offline
+ * queue, or the first person with psql. Overloading a minibus is a safety
+ * matter; borrowing another school's vehicle is a tenancy one.
+ */
+CREATE OR REPLACE FUNCTION trip_vehicle_fits() RETURNS trigger AS $$
+DECLARE v record;
+BEGIN
+  IF NEW.vehicle_id IS NULL THEN RETURN NEW; END IF;
+  SELECT school_id, capacity, active, registration INTO v FROM vehicle WHERE id = NEW.vehicle_id;
+  IF v.school_id IS DISTINCT FROM NEW.school_id THEN
+    RAISE EXCEPTION 'that vehicle belongs to another school'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  IF NOT v.active THEN
+    RAISE EXCEPTION 'vehicle % is not in service', v.registration
+      USING ERRCODE = 'check_violation';
+  END IF;
+  IF NEW.seats_taken IS NOT NULL AND NEW.seats_taken > v.capacity THEN
+    RAISE EXCEPTION 'vehicle % seats %, and this trip names % passengers',
+                    v.registration, v.capacity, NEW.seats_taken
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql
+-- SECURITY DEFINER for the reason availability_player_belongs() is: without
+-- it this reads vehicle under the caller's row-level security, and a caller
+-- who cannot see the vehicle gets "belongs to another school" about one that
+-- does not. The refusal would be correct and its reason invented.
+SECURITY DEFINER;
+
+CREATE TRIGGER trip_vehicle_check BEFORE INSERT OR UPDATE ON trip
+  FOR EACH ROW EXECUTE FUNCTION trip_vehicle_fits();
+
+/**
+ * The driver's own two acts: we have left, and we have arrived.
+ *
+ * A FUNCTION RATHER THAN A WRITE POLICY, because transport.drive is not a
+ * capability to change a trip — it is a capability to report on one. A driver
+ * must not be able to re-time the departure, swap the vehicle or cancel the
+ * fixture's transport; they mark what happened, and only forwards.
+ *
+ * Scoped on the FIXTURE, which is what gives transport.drive somewhere to
+ * live. A driver assigned to Saturday's match reaches Saturday's trip. Being
+ * named as this trip's driver is accepted too — a school that assigns the
+ * driver on the trip row should not also have to write a fixture-scoped role
+ * assignment for them.
+ *
+ * SECURITY DEFINER, so the marks land without granting a driver UPDATE on the
+ * table generally. Same reasoning as the scoring session's state machine.
+ */
+CREATE OR REPLACE FUNCTION trip_mark(p_trip uuid, p_event text)
+RETURNS TABLE (ok boolean, reason text) AS $$
+DECLARE t record;
+BEGIN
+  SELECT tr.*, m.team_code INTO t
+    FROM trip tr JOIN match m ON m.id = tr.match_id WHERE tr.id = p_trip;
+  IF NOT FOUND THEN RETURN QUERY SELECT false, 'no_such_trip'; RETURN; END IF;
+
+  IF NOT (t.driver_id = app_user_id()
+          OR app_can('transport.drive',  t.school_id, t.team_code, NULL, t.match_id)
+          OR app_can('transport.manage', t.school_id, t.team_code, NULL, t.match_id)) THEN
+    RETURN QUERY SELECT false, 'not_this_driver'; RETURN;
+  END IF;
+
+  IF t.cancelled_at IS NOT NULL THEN
+    RETURN QUERY SELECT false, 'trip_cancelled'; RETURN;
+  END IF;
+
+  IF p_event = 'departed' THEN
+    IF t.departed_at IS NOT NULL THEN RETURN QUERY SELECT false, 'already_departed'; RETURN; END IF;
+    UPDATE trip SET departed_at = now() WHERE id = p_trip;
+  ELSIF p_event = 'arrived' THEN
+    -- Arriving without having left is not a clock correction, it is a sign
+    -- somebody is marking the wrong trip.
+    IF t.departed_at IS NULL THEN RETURN QUERY SELECT false, 'not_departed'; RETURN; END IF;
+    IF t.arrived_at IS NOT NULL THEN RETURN QUERY SELECT false, 'already_arrived'; RETURN; END IF;
+    UPDATE trip SET arrived_at = now() WHERE id = p_trip;
+  ELSE
+    RETURN QUERY SELECT false, 'unknown_event'; RETURN;
+  END IF;
+
+  RETURN QUERY SELECT true, NULL::text;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION trip_mark(uuid, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION trip_mark(uuid, text) TO PUBLIC;
+
+
+-- ═══════════════════════════════════════════════════════════════
 --  AVAILABILITY
 -- ═══════════════════════════════════════════════════════════════
 --

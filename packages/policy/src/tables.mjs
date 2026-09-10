@@ -560,6 +560,39 @@ export const TABLES = {
     masked: {},
   },
 
+  vehicle: {
+    // The school's own fleet. Read in the floor bundle under transport.read —
+    // a parent seeing which bus their son is on is the point of the screen —
+    // and written under transport.manage, which three roles hold.
+    read:  "transport.read",
+    write: "transport.manage",
+    anchors: { school: "school_id" },
+    masked: {},
+  },
+
+  trip: {
+    // A bus to a fixture, anchored on the fixture.
+    //
+    // That anchor is what finally gives transport.drive somewhere to live: a
+    // driver assigned to Saturday's match reaches Saturday's trip and no
+    // other. The older build reached for an extra scope dimension to express
+    // this; the fixture already does.
+    //
+    // The driver's own marks — departed, arrived — do NOT go through this
+    // write capability. transport.drive is a capability to report on a trip,
+    // not to change one, so it goes through trip_mark() in db/08 and a driver
+    // never holds UPDATE on the row. Otherwise the person who drives the bus
+    // could re-time it, swap the vehicle, or cancel it.
+    read:  "transport.read",
+    write: "transport.manage",
+    anchors: {
+      school:  "(SELECT m.school_id FROM match m WHERE m.id = trip.match_id)",
+      team:    "(SELECT m.team_code FROM match m WHERE m.id = trip.match_id)",
+      fixture: "match_id",
+    },
+    masked: {},
+  },
+
   match_availability: {
     // A family's statement about one Saturday.
     //
