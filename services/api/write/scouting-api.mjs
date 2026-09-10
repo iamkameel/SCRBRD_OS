@@ -213,6 +213,117 @@ export function broadcastRoutes({ pool, secret }) {
   };
 }
 
+/**
+ * Signing a sponsor, and placing them.
+ *
+ * Two routes because they are two decisions a school makes at different times:
+ * agreeing that a brand may appear at all, and then selling a surface to them
+ * for a season or a fixture.
+ *
+ * NEITHER ROUTE DECIDES WHETHER A CATEGORY IS ALLOWED. sponsor_category_gate
+ * in db/08 does, and it raises with the category's own note. Validating the
+ * list here as well would be a second copy of a safeguarding decision that can
+ * drift from the first — and it is the database's copy that a direct SQL
+ * insert, a future import script and a queued offline write all still meet.
+ *
+ * `schoolId` comes from the caller and is not resolved here. That looks
+ * permissive and is not: the INSERT policy evaluates sponsorship.manage
+ * against the school on the row, so naming somebody else's school produces a
+ * refusal rather than a sponsor on their scoreboard.
+ */
+export function sponsorRoutes({ pool, secret }) {
+  const err = (code, status = 400) => Object.assign(new Error(code), { status });
+  const handle = (fn) => async (req, res) => {
+    try { res.json(await fn(req)); }
+    catch (e) {
+      // 23514 here is the category gate almost every time, and its message is
+      // the reason a school office needs to read. Passed through rather than
+      // flattened to "invalid": "you may not advertise betting to children"
+      // and "that hex colour is malformed" are not the same conversation.
+      if (e.code === "23514") return res.status(422).json({ error: "category_refused", detail: e.message });
+      if (e.code === "23503") return res.status(404).json({ error: "no_such_row", detail: e.message });
+      const status = e.code === "42501" ? 403 : (e.status || 500);
+      res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
+    }
+  };
+
+  return {
+    // POST /sponsors { schoolId, name, category, logoText?, logoBg?, active? }
+    create: handle(async (req) => {
+      const b = req.body || {};
+      if (!b.schoolId) throw err("school_required");
+      if (!b.name || !String(b.name).trim()) throw err("name_required");
+      if (!b.category || !String(b.category).trim()) throw err("category_required");
+      if (b.logoBg != null && !/^#[0-9a-fA-F]{6}$/.test(String(b.logoBg))) throw err("logo_bg_invalid");
+
+      return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+        const r = await client.query(
+          `insert into sponsor (school_id, name, category, logo_text, logo_bg, active, created_by)
+           values ($1, btrim($2), $3, $4, $5, $6, app_user_id())
+           on conflict (school_id, lower(btrim(name))) do update
+             set category = excluded.category, logo_text = excluded.logo_text,
+                 logo_bg = excluded.logo_bg, active = excluded.active
+           returning id, name, category, logo_text, logo_bg, active`,
+          [b.schoolId, String(b.name), String(b.category),
+           b.logoText == null ? null : String(b.logoText).slice(0, 24),
+           b.logoBg == null ? null : String(b.logoBg),
+           b.active === false ? false : true]);
+        if (!r.rowCount) throw err("not_permitted", 403);
+        return r.rows[0];
+      });
+    }),
+
+    // POST /sponsorships { sponsorId, placement, startsOn, endsOn, matchId?,
+    //                      contractValueZar?, schoolSharePct? }
+    //
+    // The school is taken from the SPONSOR, not from the request. A placement
+    // that claimed a different school than the brand it places would be a row
+    // whose two halves disagree about whose board it is, and the masking view
+    // anchors on exactly that column.
+    place: handle(async (req) => {
+      const b = req.body || {};
+      const PLACEMENTS = ["broadcast_overlay", "scorecard_footer", "fixture_list", "ground_board"];
+      if (!b.sponsorId) throw err("sponsor_required");
+      if (!PLACEMENTS.includes(b.placement)) throw err("placement_invalid");
+      const date = (v, f) => {
+        if (!v || !/^\d{4}-\d{2}-\d{2}$/.test(String(v))) throw err(`${f}_required`);
+        return String(v);
+      };
+      const starts = date(b.startsOn, "starts_on");
+      const ends   = date(b.endsOn, "ends_on");
+      if (ends < starts) throw err("ends_before_starts");
+      const money = (v, f) => {
+        if (v == null || v === "") return null;
+        const n = Number(v);
+        if (!Number.isFinite(n) || n < 0) throw err(`${f}_invalid`);
+        return n;
+      };
+      const value = money(b.contractValueZar, "contract_value_zar");
+      const share = b.schoolSharePct == null || b.schoolSharePct === "" ? null : Number(b.schoolSharePct);
+      if (share != null && (!Number.isInteger(share) || share < 0 || share > 100)) {
+        throw err("school_share_pct_invalid");
+      }
+
+      return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+        const r = await client.query(
+          `insert into sponsorship
+             (school_id, sponsor_id, placement, match_id, starts_on, ends_on,
+              contract_value_zar, school_share_pct, agreed_by, agreed_at)
+           select sp.school_id, sp.id, $2, $3, $4::date, $5::date, $6, $7, app_user_id(), now()
+             from sponsor sp where sp.id = $1
+           returning id, sponsor_id, placement, match_id, starts_on, ends_on, agreed_at`,
+          [b.sponsorId, b.placement, b.matchId || null, starts, ends, value, share]);
+        // No row means one of two things and both are the same answer: either
+        // the sponsor is not visible to this caller, or the policy refused the
+        // insert. Neither is worth distinguishing to the caller — telling them
+        // WHICH would confirm the sponsor exists.
+        if (!r.rowCount) throw err("not_permitted", 403);
+        return r.rows[0];
+      });
+    }),
+  };
+}
+
 export function scoutingRoutes({ pool, secret }) {
   const call = (sql, params) => (req) => runAsPrincipal(
     pool, secret, req.headers?.authorization,

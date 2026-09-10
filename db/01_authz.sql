@@ -2,7 +2,7 @@
 -- GENERATED from packages/policy/ by services/api/rls/generate-rls.mjs — DO NOT EDIT BY HAND.
 -- Regenerate with `pnpm rls:generate`. Applied BEFORE the scoring schema,
 -- which references app_can(). Model: docs/adr/0001-scoped-assignments.md.
--- 64 capabilities across 24 roles.
+-- 67 capabilities across 24 roles.
 
 -- Principal helpers. app_user_id() is set from the signed token on every
 -- request; everything else about a person's authority is looked up.
@@ -227,6 +227,9 @@ INSERT INTO capability (name) VALUES
   ('facility.manage'),
   ('invoice.read'),
   ('invoice.manage'),
+  ('sponsorship.read'),
+  ('sponsorship.manage'),
+  ('sponsorship.finance.read'),
   ('competition.read'),
   ('competition.manage'),
   ('news.read'),
@@ -327,6 +330,7 @@ INSERT INTO role_capability (role, capability) VALUES
   ('directorofsport', 'transport.read'),
   ('directorofsport', 'officiating.assign'),
   ('directorofsport', 'broadcast.publish'),
+  ('directorofsport', 'sponsorship.read'),
   ('directorofsport', 'scoring.start'),
   ('directorofsport', 'scoring.edit'),
   ('directorofsport', 'scoring.finalise'),
@@ -350,6 +354,8 @@ INSERT INTO role_capability (role, capability) VALUES
   ('schooladmin', 'fixture.create'),
   ('schooladmin', 'fixture.update'),
   ('schooladmin', 'fixture.cancel'),
+  ('schooladmin', 'sponsorship.read'),
+  ('schooladmin', 'sponsorship.manage'),
   ('schooladmin', 'player.profile.manage'),
   ('schooladmin', 'player.pii.read'),
   ('schooladmin', 'player.biometric.read'),
@@ -529,6 +535,9 @@ INSERT INTO role_capability (role, capability) VALUES
   ('finance', 'invoice.read'),
   ('finance', 'invoice.manage'),
   ('finance', 'user.read'),
+  ('finance', 'sponsorship.read'),
+  ('finance', 'sponsorship.manage'),
+  ('finance', 'sponsorship.finance.read'),
   ('transportcoordinator', 'fixture.read'),
   ('transportcoordinator', 'team.read'),
   ('transportcoordinator', 'news.read'),

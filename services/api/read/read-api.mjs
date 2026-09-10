@@ -480,6 +480,56 @@ export const READ_QUERIES = {
   },
 
   /**
+   * The school's sponsors, and what may be advertised at all.
+   *
+   * Read under sponsorship.read via the table's own policy — a school office
+   * sees its own sponsors and nobody else's, and a coach sees none, because a
+   * list of who a school is negotiating with is commercial information about
+   * the school even though the logos end up on a boundary board.
+   */
+  sponsors: {
+    text: `select s.id, s.name, s.category, s.logo_text, s.logo_bg, s.active,
+                  c.permitted as category_permitted, c.note as category_note
+             from sponsor s join sponsor_category c on c.name = s.category
+            order by s.active desc, lower(s.name)`,
+  },
+
+  /**
+   * The vocabulary itself, permitted and prohibited alike.
+   *
+   * The refused categories ARE returned, with the note that says why. A form
+   * that simply omits alcohol and betting teaches a school office nothing and
+   * leaves them to discover the refusal by being refused; a form that shows
+   * them greyed out with a reason has already had the conversation.
+   */
+  sponsor_categories: {
+    text: `select name, permitted, note from sponsor_category order by permitted desc, name`,
+  },
+
+  /**
+   * Placements, WITH THE TERMS MASKED.
+   *
+   * sponsorship_masked, never the base table — the rule at the top of this
+   * file, and this is the case it was written for. contract_value_zar and
+   * school_share_pct come back NULL for anybody without
+   * sponsorship.finance.read, decided per row inside the view rather than by
+   * this query choosing which columns to name. A query that omitted the
+   * columns instead would be one edit away from a leak; the view is not.
+   */
+  sponsorships: {
+    text: `select sm.id, sm.sponsor_id, sp.name as sponsor_name, sp.category,
+                  sp.logo_text, sp.logo_bg,
+                  sm.placement, sm.match_id, sm.starts_on, sm.ends_on,
+                  sm.contract_value_zar, sm.school_share_pct, sm.agreed_at,
+                  (current_date between sm.starts_on and sm.ends_on) as live
+             from sponsorship_masked sm
+             join sponsor sp on sp.id = sm.sponsor_id
+            where ($1::uuid is null or sm.match_id = $1 or sm.match_id is null)
+            order by sm.starts_on desc`,
+    params: q => [q?.matchId || null],
+  },
+
+  /**
    * Which product features are on.
    *
    * Readable by anyone signed in, because a client has to know what to render

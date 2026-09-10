@@ -2105,6 +2105,145 @@ CREATE TRIGGER drs_review_gate BEFORE INSERT OR UPDATE ON drs_review
 
 
 -- ═══════════════════════════════════════════════════════════════
+--  COMMERCIAL
+-- ═══════════════════════════════════════════════════════════════
+--
+-- School sport in South Africa runs on sponsorship — a boundary board, a logo
+-- on the scoreboard, a name under the fixture list. This is that, and the two
+-- decisions in it that scrbrd-beta-2's model did not make.
+--
+-- FIRST: WHICH BRANDS MAY BE ON A CHILD'S SCOREBOARD AT ALL.
+--
+-- beta-2's brandCategory list was Automotive, Banking, Sportswear, Nutrition,
+-- Education and Telecom. Alcohol, gambling and tobacco are not on it — and
+-- they are not on it by ABSENCE, which is not a safeguard. A list that simply
+-- fails to mention betting is a list somebody widens in a year without ever
+-- confronting the question, because there is nothing there to argue with.
+--
+-- So the prohibited categories are PRESENT here and marked prohibited, with a
+-- note saying why, and a trigger refuses the placement rather than a dropdown
+-- omitting the option. Everything this platform holds is school sport; there
+-- is no context inside it where a betting brand belongs.
+--
+-- SECOND: WHAT IS COUNTED.
+--
+-- beta-2 carried impressions, viewableImpressions and clickThroughs on the
+-- campaign. Delivery counting against a placement is ordinary commercial
+-- reporting; the danger is the shape it invites, which is per-viewer tracking
+-- on a platform whose viewers are children and their families. Nothing here
+-- records who saw anything. A sponsorship knows its dates and its terms; it
+-- does not know its audience.
+CREATE TABLE sponsor_category (
+  name       text PRIMARY KEY CHECK (name ~ '^[a-z][a-z0-9_]{2,39}$'),
+  -- The decision, stated once, where a person can find it and argue with it.
+  permitted  boolean NOT NULL,
+  note       text
+);
+
+INSERT INTO sponsor_category (name, permitted, note) VALUES
+  ('automotive',    true,  NULL),
+  ('banking',       true,  NULL),
+  ('insurance',     true,  NULL),
+  ('sportswear',    true,  NULL),
+  ('nutrition',     true,  NULL),
+  ('education',     true,  NULL),
+  ('telecom',       true,  NULL),
+  ('retail',        true,  NULL),
+  ('agriculture',   true,  NULL),
+  ('health',        true,  NULL),
+  -- Present, and refused. These are here so that turning one on is a visible
+  -- act with a name on it rather than an edit to a list of allowed values.
+  ('alcohol',       false, 'Advertising alcohol on youth sport. Restricted under South African '
+                           'advertising codes and not something this platform places against '
+                           'fixtures played by children.'),
+  ('gambling',      false, 'Betting brands against school fixtures, including odds and free-bet '
+                           'promotions. Refused outright.'),
+  ('tobacco_vaping',false, 'Tobacco, vaping and nicotine products. Refused outright.'),
+  ('political',     false, 'Party-political messaging on a school scoreboard. Not a safeguarding '
+                           'question but an institutional-neutrality one, and a school that wants '
+                           'it should have to decide so explicitly rather than by picking from a list.')
+ON CONFLICT (name) DO NOTHING;
+
+ALTER TABLE sponsor_category ENABLE ROW LEVEL SECURITY;
+-- Hand-written, like feature_flag and for the same reason: the vocabulary
+-- belongs to no tenant. Readable by anyone signed in; written by nobody
+-- through the API at all — changing what may be advertised to children is a
+-- migration somebody reviews, not a form somebody fills in.
+CREATE POLICY sponsor_category_read ON sponsor_category
+  FOR SELECT USING (app_user_id() IS NOT NULL);
+
+CREATE TABLE sponsor (
+  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  -- A sponsor belongs to the school that signed them. A platform-wide sponsor
+  -- would be a different row per school, which is the honest shape: each
+  -- school agrees its own terms.
+  school_id  uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  name       text NOT NULL CHECK (length(btrim(name)) > 0),
+  category   text NOT NULL REFERENCES sponsor_category(name),
+  -- What goes on the board. Deliberately text and a colour rather than an
+  -- uploaded asset: an overlay needs something it can render at any size, and
+  -- an image pipeline is a different piece of work.
+  logo_text  text CHECK (logo_text IS NULL OR length(logo_text) <= 24),
+  logo_bg    text CHECK (logo_bg IS NULL OR logo_bg ~ '^#[0-9a-fA-F]{6}$'),
+  active     boolean NOT NULL DEFAULT true,
+  created_by uuid REFERENCES app_user(id),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX ON sponsor (school_id);
+CREATE UNIQUE INDEX ON sponsor (school_id, lower(btrim(name)));
+
+-- Where a sponsor appears, for how long, and on what terms.
+CREATE TABLE sponsorship (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id   uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  sponsor_id  uuid NOT NULL REFERENCES sponsor(id) ON DELETE CASCADE,
+  -- The surface. Named for what a person would call it rather than for a
+  -- component, so a slot surviving a redesign keeps its meaning.
+  placement   text NOT NULL CHECK (placement IN
+                ('broadcast_overlay','scorecard_footer','fixture_list','ground_board')),
+  -- A placement may be the school's in general, or tied to one fixture.
+  match_id    uuid REFERENCES match(id) ON DELETE CASCADE,
+  starts_on   date NOT NULL,
+  ends_on     date NOT NULL,
+  -- The commercial terms. Masked: see tables.mjs. A boundary board is meant to
+  -- be seen; what was paid for it is not.
+  contract_value_zar numeric(12,2) CHECK (contract_value_zar IS NULL OR contract_value_zar >= 0),
+  school_share_pct   smallint CHECK (school_share_pct IS NULL OR school_share_pct BETWEEN 0 AND 100),
+  agreed_by   uuid REFERENCES app_user(id),
+  agreed_at   timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT sponsorship_runs_forwards CHECK (ends_on >= starts_on)
+);
+CREATE INDEX ON sponsorship (school_id);
+CREATE INDEX ON sponsorship (sponsor_id);
+CREATE INDEX ON sponsorship (match_id) WHERE match_id IS NOT NULL;
+
+/**
+ * A prohibited category never reaches a screen.
+ *
+ * On the SPONSOR rather than only on the placement, so a brand that may not be
+ * advertised to children cannot be created and left waiting for somebody to
+ * place it. The message quotes the note from the category table, because
+ * "not_permitted" tells a school office nothing and the note tells them why.
+ */
+CREATE OR REPLACE FUNCTION sponsor_category_permitted() RETURNS trigger AS $$
+DECLARE v_ok boolean; v_note text;
+BEGIN
+  SELECT permitted, note INTO v_ok, v_note FROM sponsor_category WHERE name = NEW.category;
+  IF v_ok IS NOT TRUE THEN
+    RAISE EXCEPTION 'the % category may not be placed on school sport: %',
+                    NEW.category, coalesce(v_note, 'refused')
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER sponsor_category_gate BEFORE INSERT OR UPDATE ON sponsor
+  FOR EACH ROW EXECUTE FUNCTION sponsor_category_permitted();
+
+
+
+-- ═══════════════════════════════════════════════════════════════
 --  BROADCAST
 -- ═══════════════════════════════════════════════════════════════
 --
@@ -2195,13 +2334,21 @@ $$ LANGUAGE sql IMMUTABLE;
 REVOKE ALL ON FUNCTION broadcast_name(text, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION broadcast_name(text, text) TO PUBLIC;
 
+-- Dropped rather than replaced: the sponsor columns below were added after
+-- this function already existed, and CREATE OR REPLACE cannot change a
+-- function's return type. Without this, applying the file over an older
+-- database fails on the signature instead of on anything meaningful.
+DROP FUNCTION IF EXISTS broadcast_state(uuid);
+
 CREATE OR REPLACE FUNCTION broadcast_state(p_match uuid)
 RETURNS TABLE (
   match_id uuid, home_team text, away_team text, strapline text,
   innings smallint, runs bigint, wickets bigint, legal_balls bigint,
   overs text, run_rate numeric, target bigint,
   striker text, non_striker text, bowler text,
-  officials text, name_display text
+  officials text, name_display text,
+  -- The board, and nothing behind it. See the sponsor CTE below.
+  sponsor_name text, sponsor_logo text, sponsor_bg text
 ) AS $$
   WITH b AS (
     SELECT * FROM match_broadcast WHERE match_id = p_match AND published
@@ -2227,6 +2374,30 @@ RETURNS TABLE (
       FROM ball_event e JOIN cur ON cur.match_id = e.match_id AND cur.innings = e.innings
      WHERE e.kind = 'ball'
      ORDER BY e.seq DESC LIMIT 1
+  ),
+  -- The sponsor whose board this is, if the school sold the surface.
+  --
+  -- THREE COLUMNS AND NO MORE. contract_value_zar and school_share_pct are on
+  -- the same row and are not selected here, and this function is SECURITY
+  -- DEFINER — so the masking view that keeps them from a coach would not have
+  -- kept them from a spectator. What a sponsor pays is between the sponsor and
+  -- the school; what a sponsor buys is a name on a screen, and that is all
+  -- that leaves.
+  --
+  -- A placement tied to THIS fixture wins over the school's standing one:
+  -- ordering match_id first with NULLS LAST puts the specific agreement ahead
+  -- of the general one, which is what a school selling a one-off derby board
+  -- on top of a season deal expects.
+  sponsor AS (
+    SELECT sp.name, sp.logo_text, sp.logo_bg
+      FROM sponsorship s
+      JOIN sponsor sp ON sp.id = s.sponsor_id AND sp.active
+      JOIN m ON m.school_id = s.school_id
+     WHERE s.placement = 'broadcast_overlay'
+       AND (s.match_id IS NULL OR s.match_id = m.id)
+       AND current_date BETWEEN s.starts_on AND s.ends_on
+     ORDER BY s.match_id NULLS LAST, s.agreed_at DESC
+     LIMIT 1
   )
   SELECT m.id,
          m.team_code, m.opponent,
@@ -2248,7 +2419,8 @@ RETURNS TABLE (
              FROM match_official o
             WHERE o.match_id = m.id AND NOT o.withdrawn AND o.duty IN ('umpire','third_umpire')
          ) END,
-         b.name_display
+         b.name_display,
+         (SELECT name FROM sponsor), (SELECT logo_text FROM sponsor), (SELECT logo_bg FROM sponsor)
     FROM b JOIN m ON m.id = b.match_id LEFT JOIN cur ON cur.match_id = b.match_id
 $$ LANGUAGE sql STABLE SECURITY DEFINER;
 

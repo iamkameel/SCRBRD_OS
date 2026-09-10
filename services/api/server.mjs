@@ -36,7 +36,7 @@ import { sessionProfile, runAsPrincipal, issueLoginCode, redeemMagicLink } from 
 import { signToken, AuthError } from "./auth/auth.mjs";
 import { readRoute, liveResources } from "./read/read-api.mjs";
 import { eventRoutes, amendmentRoutes, squadRoutes, tossRoutes, conditionsRoutes, officialRoutes } from "./write/events-api.mjs";
-import { scoutingRoutes, featureRoutes, drsRoutes, broadcastRoutes } from "./write/scouting-api.mjs";
+import { scoutingRoutes, featureRoutes, drsRoutes, broadcastRoutes, sponsorRoutes } from "./write/scouting-api.mjs";
 import { assessmentRoutes, accessRequestRoutes, developmentNoteRoutes, guardianLinkRoutes } from "./write/assessment-api.mjs";
 import { sessionRoutes } from "./realtime/session-routes.mjs";
 import { MatchHub } from "./realtime/realtime.mjs";
@@ -157,6 +157,7 @@ const scouting = scoutingRoutes({ pool, secret: SECRET });
 const features = featureRoutes({ pool, secret: SECRET });
 const drs      = drsRoutes({ pool, secret: SECRET });
 const bcast    = broadcastRoutes({ pool, secret: SECRET });
+const sponsors = sponsorRoutes({ pool, secret: SECRET });
 
 /**
  * Development sign-in.
@@ -267,6 +268,11 @@ const PLAYER_ROUTES = [
 const SCOUT_ROUTES = [
   [/^\/api\/scouts\/accreditation$/,                      "POST", scouting.registerAccreditation],
   [/^\/api\/scouts\/([^/]+)\/accreditation\/decide$/,   "POST", scouting.decideAccreditation],
+  // Commercial. Neither takes an id: a sponsor is created under a school named
+  // in the body, and a placement under a sponsor named in the body, so both
+  // capture groups are absent exactly as registration's is above.
+  [/^\/api\/sponsors$/,                                    "POST", sponsors.create],
+  [/^\/api\/sponsorships$/,                                "POST", sponsors.place],
 ];
 
 const server = createServer(async (req, res) => {

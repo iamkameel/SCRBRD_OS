@@ -560,6 +560,61 @@ export const TABLES = {
     masked: {},
   },
 
+  sponsor: {
+    // A brand the school has signed. Read under sponsorship.read, which sits
+    // with the people who run the school's commercial relationships — and NOT
+    // in the floor bundle, because a list of who a school is negotiating with
+    // is competitive information about the school even though the logo ends up
+    // on a boundary board for everyone to see.
+    //
+    // The board is not this table. What reaches a public overlay comes out of
+    // broadcast_state(), which is SECURITY DEFINER and returns the name and
+    // colours of an ACTIVE placement only. A spectator reads a sponsor's name
+    // there without ever being able to select from here.
+    //
+    // Nothing in this policy decides whether a category may be advertised to
+    // children. That is sponsor_category_permitted() in db/08, a trigger, for
+    // the same reason the DRS gate is a trigger: it is a product decision
+    // about what may exist, not an authorisation decision about who may see
+    // what, and the two must not be able to be mistaken for each other.
+    read:  "sponsorship.read",
+    write: "sponsorship.manage",
+    anchors: { school: "school_id" },
+    masked: {},
+  },
+
+  sponsorship: {
+    // The placement: which sponsor, on which surface, between which dates, on
+    // what terms. Read and written with the sponsor it places.
+    //
+    // THE TERMS ARE MASKED, and this is the whole reason the table is split
+    // from `sponsor` at all. A sponsor's name and logo are meant to be seen —
+    // that is what the sponsor is paying for. What they PAID is commercially
+    // confidential: a director of sport planning next season's fixtures needs
+    // to know that the 1st XI scoreboard is committed to a bank until October,
+    // and has no business seeing the rand value of the contract or the split
+    // the school negotiated. sponsorship.finance.read is a separate capability
+    // held by finance, and by nobody else in the floor bundle.
+    //
+    // maskedAnyTeam rather than masked: a contract is a school-level
+    // agreement, so the team dimension does not apply to it. Anchoring the
+    // mask to the row's team would mean the 1XI coach could read the value of
+    // a placement tied to a 1XI fixture, which is exactly the disclosure the
+    // mask exists to prevent.
+    read:  "sponsorship.read",
+    write: "sponsorship.manage",
+    anchors: {
+      school:  "school_id",
+      // Deliberately NO fixture anchor, though match_id is here. A placement
+      // scoped to one fixture is still the school's commercial arrangement;
+      // anchoring on the fixture would mean anyone who may read the match may
+      // read the contract behind the board at it, which is every parent.
+    },
+    maskedAnyTeam: {
+      "sponsorship.finance.read": ["contract_value_zar", "school_share_pct"],
+    },
+  },
+
   match_weather: {
     // Conditions at a fixture. Carries nothing personal, but it is keyed to a
     // match and must not be readable by someone who cannot read the match —

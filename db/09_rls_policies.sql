@@ -432,6 +432,40 @@ CREATE POLICY match_pitch_report_update ON match_pitch_report
   FOR UPDATE USING (app_can('facility.manage', (SELECT m.school_id FROM match m WHERE m.id = match_pitch_report.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_pitch_report.match_id), '00000000-0000-0000-0000-000000000000'::uuid, match_pitch_report.match_id))
            WITH CHECK (app_can('facility.manage', (SELECT m.school_id FROM match m WHERE m.id = match_pitch_report.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_pitch_report.match_id), '00000000-0000-0000-0000-000000000000'::uuid, match_pitch_report.match_id));
 
+-- sponsor — read: sponsorship.read · write: sponsorship.manage
+ALTER TABLE sponsor ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS sponsor_read   ON sponsor;
+DROP POLICY IF EXISTS sponsor_insert ON sponsor;
+DROP POLICY IF EXISTS sponsor_update ON sponsor;
+DROP POLICY IF EXISTS sponsor_delete ON sponsor;
+
+CREATE POLICY sponsor_read ON sponsor
+  FOR SELECT USING (app_can('sponsorship.read', sponsor.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY sponsor_insert ON sponsor
+  FOR INSERT WITH CHECK (app_can('sponsorship.manage', sponsor.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY sponsor_update ON sponsor
+  FOR UPDATE USING (app_can('sponsorship.manage', sponsor.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
+           WITH CHECK (app_can('sponsorship.manage', sponsor.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+-- sponsorship — read: sponsorship.read · write: sponsorship.manage
+ALTER TABLE sponsorship ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS sponsorship_read   ON sponsorship;
+DROP POLICY IF EXISTS sponsorship_insert ON sponsorship;
+DROP POLICY IF EXISTS sponsorship_update ON sponsorship;
+DROP POLICY IF EXISTS sponsorship_delete ON sponsorship;
+
+CREATE POLICY sponsorship_read ON sponsorship
+  FOR SELECT USING (app_can('sponsorship.read', sponsorship.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY sponsorship_insert ON sponsorship
+  FOR INSERT WITH CHECK (app_can('sponsorship.manage', sponsorship.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY sponsorship_update ON sponsorship
+  FOR UPDATE USING (app_can('sponsorship.manage', sponsorship.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
+           WITH CHECK (app_can('sponsorship.manage', sponsorship.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
 -- match_weather — read: fixture.read · write: fixture.update
 ALTER TABLE match_weather ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS match_weather_read   ON match_weather;
@@ -636,3 +670,49 @@ BEGIN
     cols);
 END
 $mask_injury$;
+
+-- sponsorship_masked — every column listed explicitly, each sensitive one gated
+-- by its own capability and evaluated PER ROW.
+--
+-- Built from information_schema rather than written as `SELECT t.*, CASE …`:
+-- Postgres rejects a view with a duplicated output column name, so the shorter
+-- form never applied at all. Introspecting also means adding a column to the
+-- table surfaces it here automatically, masked if the policy names it.
+DO $mask_sponsorship$
+DECLARE cols text;
+BEGIN
+  SELECT string_agg(
+           CASE WHEN g.capability IS NOT NULL
+                THEN format('CASE WHEN app_can(%L, %s, %s, %s, NULL) THEN %I ELSE NULL END AS %I',
+                            g.capability,
+                            'sponsorship.school_id',
+                            g.team_anchor,
+                            '''00000000-0000-0000-0000-000000000000''::uuid',
+                            c.column_name, c.column_name)
+                ELSE format('%I', c.column_name)
+           END, ', ' ORDER BY c.ordinal_position)
+    INTO cols
+    FROM information_schema.columns c
+    LEFT JOIN (VALUES ('contract_value_zar', 'sponsorship.finance.read', '''*''::text'), ('school_share_pct', 'sponsorship.finance.read', '''*''::text')) AS g(column_name, capability, team_anchor)
+           ON g.column_name = c.column_name
+   WHERE c.table_schema = 'public' AND c.table_name = 'sponsorship';
+
+  IF cols IS NULL THEN
+    RAISE EXCEPTION 'cannot build sponsorship_masked: table sponsorship not found (apply 00_schema_core.sql first)';
+  END IF;
+
+  EXECUTE format(
+    -- security_invoker is the load-bearing word here, and it is easy to read
+    -- past. A view runs with the permissions of its OWNER unless told
+    -- otherwise, and the owner of this one owns sponsorship too — so row-level
+    -- security on sponsorship was evaluated as a role that bypasses it, and this
+    -- view returned EVERY row in the table to anyone who could select from it.
+    -- Cross-school, cross-tenant, through the one object the read path is
+    -- required to use for personal information. Masking still applied, so a
+    -- leaked row had its sensitive columns nulled and looked entirely correct.
+    -- security_barrier alone does not help: it controls when predicates may be
+    -- pushed down, not whose policies apply.
+    'CREATE OR REPLACE VIEW sponsorship_masked WITH (security_barrier = true, security_invoker = true) AS SELECT %s FROM sponsorship',
+    cols);
+END
+$mask_sponsorship$;

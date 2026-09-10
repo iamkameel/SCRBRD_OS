@@ -181,6 +181,14 @@ export const CAPABILITIES = {
   // ── Money ──
   "invoice.read":                "See invoices",
   "invoice.manage":              "Raise and reconcile invoices",
+  // Sponsorship, split three ways because the three facts have different
+  // audiences. A sponsor's name and logo are meant to be seen — that is what
+  // the sponsor is paying for. What they PAID is commercially confidential,
+  // and a coach who can see a boundary board has no business seeing the
+  // contract behind it.
+  "sponsorship.read":            "See who is sponsoring what",
+  "sponsorship.manage":          "Agree and place sponsorships",
+  "sponsorship.finance.read":    "See sponsorship contract values and revenue share",
 
   // ── Competition ──
   "competition.read":            "See competitions and standings",

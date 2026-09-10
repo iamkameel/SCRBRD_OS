@@ -50,6 +50,9 @@ const WALKS = [
   "drs",
   // The public overlay, and the names that do not go on it.
   "broadcast",
+  // Sponsorship: which brands may be on a child's scoreboard, and what stays
+  // between the school and the sponsor.
+  "commercial",
 ];
 
 // Walks that drive a real browser AND need a database. They need two things
