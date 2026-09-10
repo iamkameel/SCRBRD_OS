@@ -2391,6 +2391,131 @@ CREATE TRIGGER drs_review_gate BEFORE INSERT OR UPDATE ON drs_review
 
 
 -- ═══════════════════════════════════════════════════════════════
+--  AVAILABILITY
+-- ═══════════════════════════════════════════════════════════════
+--
+-- WHOSE STATEMENT THIS IS, and it is the whole design.
+--
+-- The schema already knows whether a boy is FIT. That is the physio's
+-- judgement, it lives on injury, and it is read through the medical tiers. It
+-- has never known whether he is AVAILABLE, which is a different fact belonging
+-- to a different person: a perfectly fit fourteen-year-old can be at his
+-- grandmother's funeral, writing a rewrite, or away with his family, and none
+-- of that is a clinical matter or the school's to assert on his behalf.
+--
+-- So availability is DECLARED, by the boy or by his guardian, and a coach
+-- recording it is recording what he was told. declared_by is on every row for
+-- exactly that reason — "unavailable, said so himself" and "unavailable,
+-- according to the coach" are different degrees of certainty on a Friday
+-- afternoon, and a selector deserves to see which one they have.
+--
+-- NOTHING HERE TOUCHES injury, in either direction. A boy declaring himself
+-- unavailable does not become injured, and a physio marking him unfit does not
+-- write a declaration in his name. The squad screen reads both and shows both,
+-- because a side is picked from the intersection — but the two facts stay
+-- separate rows owned by separate people, and merging them would mean either
+-- a coach could overwrite a clinical record or a physio could speak for a
+-- family.
+--
+-- SILENCE IS NOT A YES. There is no default status and no row until somebody
+-- declares one. The absence of a row means "has not answered", which is the
+-- state a team manager actually needs to chase, and defaulting it to available
+-- would turn a boy who never saw the message into a boy who is picked and does
+-- not arrive.
+CREATE TABLE match_availability (
+  match_id    uuid NOT NULL REFERENCES match(id) ON DELETE CASCADE,
+  player_id   uuid NOT NULL REFERENCES player(id) ON DELETE CASCADE,
+  -- Derived from the match at write time, never asserted, as everywhere.
+  school_id   uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  status      text NOT NULL CHECK (status IN ('available','unavailable','doubtful')),
+  -- WHY, in a fixed vocabulary rather than free text alone. A team manager
+  -- planning a Saturday needs to know that three boys are away on a school
+  -- trip and one is at a funeral, and cannot read that out of prose at a
+  -- glance. 'other' exists so nobody is forced into a wrong box.
+  reason_kind text CHECK (reason_kind IS NULL OR reason_kind IN
+                ('illness','family','academic','travel','religious','other_sport','other')),
+  -- The prose, optional and short. Kept deliberately modest: this is a note to
+  -- a coach about one Saturday, not a place to write about a child's home
+  -- circumstances, and a 280-character ceiling says so without a policy
+  -- document.
+  note        text CHECK (note IS NULL OR length(note) <= 280),
+  -- Who said it, and it is not always the player. Recorded rather than
+  -- inferred: the person who typed it is the person the platform can stand
+  -- behind, and a selector reading "declared by the coach" knows to check.
+  declared_by uuid REFERENCES app_user(id),
+  declared_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (match_id, player_id)
+);
+CREATE INDEX ON match_availability (school_id);
+CREATE INDEX ON match_availability (player_id);
+
+/**
+ * A declaration is about a fixture the player could actually be picked for.
+ *
+ * Without this a boy at one school could be marked available for another
+ * school's fixture — harmless-looking, and it would put his name on a team
+ * manager's screen at a school that has no business holding it. The school
+ * comes from the match, so the check is that the player belongs to it.
+ */
+CREATE OR REPLACE FUNCTION availability_player_belongs() RETURNS trigger AS $$
+DECLARE v_school uuid;
+BEGIN
+  SELECT school_id INTO v_school FROM player WHERE id = NEW.player_id;
+  IF v_school IS DISTINCT FROM NEW.school_id THEN
+    RAISE EXCEPTION 'that player is not at the school playing this fixture'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql
+-- SECURITY DEFINER, and it took a failing walk to see why.
+--
+-- Without it this reads `player` under the CALLER's row-level security, so a
+-- guardian writing about a boy who is not their child found no row, v_school
+-- came back NULL, and the trigger raised "that player is not at the school
+-- playing this fixture" — about a boy who is. The refusal was correct and its
+-- reason was a fabrication, which is worse than a bare refusal: a school
+-- office reading that message would go looking for a data error that does not
+-- exist.
+--
+-- A BEFORE trigger runs ahead of the RLS check, so the wrong answer arrived
+-- first and the right one never ran. As a definer this answers the question it
+-- claims to answer — does this player belong to this school — and the policy
+-- is then left to answer the separate question of whether the caller may say
+-- anything about him at all. It discloses nothing either way: the only thing
+-- that leaves is a fixed sentence.
+SECURITY DEFINER;
+
+/**
+ * Who made a declaration, for a reader who cannot read the app_user table.
+ *
+ * The obvious version of this joined app_user twice — once to find the boy's
+ * own account, once for the declarant's name — and both came back NULL for a
+ * coach, because app_user is row-scoped and a coach may not read a pupil's
+ * login or a parent's. So "said so himself" and "we could not tell" rendered
+ * identically, which is the distinction the column exists to draw.
+ *
+ * SECURITY DEFINER and deliberately narrow: it answers about ONE declaration
+ * the caller is already reading, and returns a name and a boolean. It cannot
+ * be used to enumerate accounts, and it discloses only who told the school a
+ * child cannot play on Saturday — which is the person a team manager has to
+ * ring back.
+ */
+CREATE OR REPLACE FUNCTION availability_declarant(p_player uuid, p_declared_by uuid)
+RETURNS TABLE (name text, is_self boolean) AS $$
+  SELECT u.name,
+         coalesce(u.player_id = p_player, false)
+    FROM app_user u WHERE u.id = p_declared_by
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION availability_declarant(uuid, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION availability_declarant(uuid, uuid) TO PUBLIC;
+
+CREATE TRIGGER availability_belongs BEFORE INSERT OR UPDATE ON match_availability
+  FOR EACH ROW EXECUTE FUNCTION availability_player_belongs();
+
+
+-- ═══════════════════════════════════════════════════════════════
 --  COMMERCIAL
 -- ═══════════════════════════════════════════════════════════════
 --

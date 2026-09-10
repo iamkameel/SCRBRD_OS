@@ -115,6 +115,7 @@ const BUNDLES = {
     "player.note.read", "scoring.amend.approve",
   ],
   directorofsport: [
+    "availability.read", "availability.declare",
     // Same reasoning as the principal above: the person who runs a school's
     // sport appoints its coaching and medical staff. Bounded by
     // GRANTABLE_ROLES, which does not include schooladmin or principal — a
@@ -134,6 +135,7 @@ const BUNDLES = {
     "news.publish.team", "news.publish.school", "audit.read",
   ],
   schooladmin: [
+    "availability.read", "availability.declare",
     // school.feature.manage: hiding a module from this school or from one of
     // its people. It sits beside school.manage because it is the same job —
     // configuring the institution — and it can only ever take something away.
@@ -150,6 +152,7 @@ const BUNDLES = {
     "competition.read", "news.publish.school", "audit.read",
   ],
   sportsadmin: [
+    "availability.read", "availability.declare",
     ...READ_TEAM, "user.read", "team.manage", "team.select",
     "fixture.create", "fixture.update", "fixture.cancel", "officiating.assign",
     "broadcast.publish",
@@ -175,6 +178,7 @@ const BUNDLES = {
   // actually coach, this term, and nobody else's. It is not school-wide, and
   // it stops the moment a player changes side.
   coach: [
+    "availability.read", "availability.declare",
     ...READ_TEAM, "team.select",
     "player.performance.read", "player.performance.write",
     "player.development.read", "player.development.write",
@@ -187,6 +191,7 @@ const BUNDLES = {
     "news.publish.team",
   ],
   assistantcoach: [
+    "availability.read", "availability.declare",
     ...READ_TEAM, "player.performance.read", "player.development.read",
     "player.note.read", "player.note.write",
     "medical.status.read", "medical.nature.read", "medical.details.read",
@@ -195,6 +200,7 @@ const BUNDLES = {
     "transport.read", "scoring.start", "scoring.edit",
   ],
   teammanager: [
+    "availability.read", "availability.declare",
     ...READ_TEAM, "team.select", "medical.status.read", "medical.nature.read",
     "player.age.read", "player.roster.read",
     "transport.read", "news.publish.team",
@@ -225,6 +231,7 @@ const BUNDLES = {
   // learns their diagnosis from the physio rather than from the app, which is
   // the safe side of that limitation to be on.
   player: [
+    "availability.declare",
     "fixture.read", "team.read", "news.read", "facility.read", "competition.read",
     "player.profile.read", "player.performance.read", "player.development.read",
     "medical.status.read", "transport.read",
@@ -265,6 +272,7 @@ const BUNDLES = {
   // physiotherapy notes and will not show them to the child is on the wrong
   // side of that.
   selfaccess: [
+    "availability.read", "availability.declare",
     "player.profile.read", "player.pii.read", "player.biometric.read",
     "player.performance.read", "player.development.read",
     "medical.status.read", "medical.nature.read", "medical.details.read",
@@ -276,6 +284,7 @@ const BUNDLES = {
   // reaches only their own children — including at a different school, which
   // the previous single-school session could not express at all.
   guardian: [
+    "availability.read", "availability.declare",
     "fixture.read", "team.read", "news.read", "facility.read", "competition.read",
     "player.profile.read", "player.pii.read", "player.biometric.read",
     "player.performance.read",

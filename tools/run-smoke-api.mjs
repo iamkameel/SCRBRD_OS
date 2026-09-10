@@ -26,9 +26,9 @@ const WALKS = [
   "read", "sync", "handover", "fold",
   "assess", "access", "eligibility", "roster", "audit", "guardian",
   "rating", "notes", "amend", "login",
-  // Pre-match: naming the side, calling the toss, and the conditions
-  // both sides play in.
-  "squad", "toss", "conditions",
+  // Pre-match: who can play, naming the side, calling the toss, and the
+  // conditions both sides play in.
+  "availability", "squad", "toss", "conditions",
   // The dashboard's figures, and the scope they are counted over.
   "summary",
   // An innings in three parts, and the scope the parts inherit.

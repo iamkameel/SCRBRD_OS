@@ -46,6 +46,18 @@ export const CAPABILITIES = {
   "team.read":                   "See teams and squads",
   "team.manage":                 "Create and change teams",
   "team.select":                 "Pick a matchday squad",
+  // AVAILABILITY, and deliberately not medical.status.read.
+  //
+  // Whether a boy is FIT is the physio's judgement. Whether he is AVAILABLE is
+  // his family's statement, and a fit boy can be at a funeral. Reusing the
+  // medical tier for it would mean either a coach writing into a clinical
+  // record or a physio speaking for a family, and both are wrong.
+  //
+  // The read is narrower than team.read on purpose: "unavailable, family" is a
+  // small window into a child's home life, and it belongs to the people
+  // picking the side rather than to everyone who can see a team sheet.
+  "availability.read":           "See who has said they are available",
+  "availability.declare":       "Say whether a player is available for a fixture",
   "player.profile.read":         "See a player's sporting profile",
   "player.profile.manage":       "Change a player's sporting profile",
   // Personal information about a minor: date of birth, guardian, address,

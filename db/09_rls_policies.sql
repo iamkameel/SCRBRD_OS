@@ -432,6 +432,23 @@ CREATE POLICY match_pitch_report_update ON match_pitch_report
   FOR UPDATE USING (app_can('facility.manage', (SELECT m.school_id FROM match m WHERE m.id = match_pitch_report.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_pitch_report.match_id), '00000000-0000-0000-0000-000000000000'::uuid, match_pitch_report.match_id))
            WITH CHECK (app_can('facility.manage', (SELECT m.school_id FROM match m WHERE m.id = match_pitch_report.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_pitch_report.match_id), '00000000-0000-0000-0000-000000000000'::uuid, match_pitch_report.match_id));
 
+-- match_availability — read: availability.read · write: availability.declare
+ALTER TABLE match_availability ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS match_availability_read   ON match_availability;
+DROP POLICY IF EXISTS match_availability_insert ON match_availability;
+DROP POLICY IF EXISTS match_availability_update ON match_availability;
+DROP POLICY IF EXISTS match_availability_delete ON match_availability;
+
+CREATE POLICY match_availability_read ON match_availability
+  FOR SELECT USING (app_can('availability.read', (SELECT m.school_id FROM match m WHERE m.id = match_availability.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_availability.match_id), match_availability.player_id, match_availability.match_id));
+
+CREATE POLICY match_availability_insert ON match_availability
+  FOR INSERT WITH CHECK (app_can('availability.declare', (SELECT m.school_id FROM match m WHERE m.id = match_availability.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_availability.match_id), match_availability.player_id, match_availability.match_id));
+
+CREATE POLICY match_availability_update ON match_availability
+  FOR UPDATE USING (app_can('availability.declare', (SELECT m.school_id FROM match m WHERE m.id = match_availability.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_availability.match_id), match_availability.player_id, match_availability.match_id))
+           WITH CHECK (app_can('availability.declare', (SELECT m.school_id FROM match m WHERE m.id = match_availability.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_availability.match_id), match_availability.player_id, match_availability.match_id));
+
 -- sponsor — read: sponsorship.read · write: sponsorship.manage
 ALTER TABLE sponsor ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS sponsor_read   ON sponsor;

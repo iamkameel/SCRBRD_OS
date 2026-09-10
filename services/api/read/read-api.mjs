@@ -572,6 +572,61 @@ export const READ_QUERIES = {
   },
 
   /**
+   * Who can play on Saturday — INCLUDING WHO HAS NOT ANSWERED.
+   *
+   * The rows that do not exist are the point of this query. A team manager
+   * chasing a side needs the boys who have said nothing, and a read that
+   * returned only declarations would leave them counting the squad by hand and
+   * subtracting. So it starts from the ROSTER for the fixture's team and left
+   * joins the declarations onto it; silence comes back as status null, which
+   * the client renders as "no answer" and never as available.
+   *
+   * The roster comes from `player`, which is itself row-scoped — so the list a
+   * coach gets is the boys they may read, and a coach scoped to one side does
+   * not learn who is in another. The availability join is scoped again by its
+   * own policy on top of that.
+   *
+   * fit_note carries the OTHER half of the picture and is deliberately thin:
+   * whether the physio has this boy restricted, and nothing about why. A
+   * selector needs to know he is unavailable on clinical grounds; the
+   * diagnosis is behind medical.nature.read and does not belong in a squad
+   * list. Where the reader lacks even medical.status.read the masked view
+   * returns nothing and this is null, which is correct — they simply see the
+   * family's answer.
+   */
+  availability: {
+    text: `select p.id                as player_id,
+                  p.full_name,
+                  p.team_code,
+                  a.status,
+                  a.reason_kind,
+                  a.note,
+                  a.declared_at,
+                  -- Who said it. A selector reading "declared by the coach"
+                  -- knows to check on a Friday; "declared by the player" they
+                  -- can take at face value.
+                  -- Through a SECURITY DEFINER helper, not a join. app_user
+                  -- is row-scoped, so a coach reading a parent's declaration
+                  -- joined to NULL and "said so himself" became
+                  -- indistinguishable from "we could not tell" — which is the
+                  -- one distinction this column exists to draw.
+                  coalesce(d.is_self, false) as self_declared,
+                  d.name               as declared_by_name,
+                  exists (select 1 from injury_masked i
+                           where i.player_id = p.id and i.restricted) as clinically_restricted
+             from match m
+             join player p
+               on p.school_id = m.school_id
+              and p.team_code = m.team_code
+             left join match_availability a
+               on a.match_id = m.id and a.player_id = p.id
+             left join lateral availability_declarant(p.id, a.declared_by) d on true
+            where m.id = $1
+            order by (a.status is null) desc, p.full_name`,
+    params: q => [req(q, "matchId")],
+  },
+
+  /**
    * WHAT IS ON FOR ME — one row per switchable thing, already resolved.
    *
    * The client needs this to lay out a menu, and it must not compute the answer

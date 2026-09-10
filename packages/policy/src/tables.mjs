@@ -560,6 +560,38 @@ export const TABLES = {
     masked: {},
   },
 
+  match_availability: {
+    // A family's statement about one Saturday.
+    //
+    // Read under availability.read, which is narrower than team.read on
+    // purpose — "unavailable, family" is a small window into a child's home
+    // life and belongs to the people picking the side, not to everyone who can
+    // see a team sheet. Written under availability.declare, which the player,
+    // their guardian and the coaching staff all hold: a boy tells his coach at
+    // practice as often as he fills in a form, and declared_by on the row is
+    // what keeps those two apart.
+    //
+    // FOUR ANCHORS, and the person one is load-bearing. school and team come
+    // from the MATCH, so a team-scoped coach reaches their own fixtures;
+    // person resolves to the player, which is what lets a guardian reach their
+    // own child's declaration and no other. Without it a guardian holding
+    // availability.declare at a school could answer for every boy in it.
+    //
+    // The team anchor deliberately comes from the match rather than from the
+    // player: a U15A boy named in a 2XI fixture is answering about THAT
+    // fixture, and anchoring on his usual side would put the row outside the
+    // reach of the coach who is actually picking.
+    read:  "availability.read",
+    write: "availability.declare",
+    anchors: {
+      school:  "(SELECT m.school_id FROM match m WHERE m.id = match_availability.match_id)",
+      team:    "(SELECT m.team_code FROM match m WHERE m.id = match_availability.match_id)",
+      person:  "player_id",
+      fixture: "match_id",
+    },
+    masked: {},
+  },
+
   sponsor: {
     // A brand the school has signed. Read under sponsorship.read, which sits
     // with the people who run the school's commercial relationships — and NOT

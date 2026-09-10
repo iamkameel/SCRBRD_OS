@@ -397,6 +397,64 @@ export function tossRoutes({ pool, secret }) {
  * sheet that is refused half way leaves the previous officials in place rather
  * than a match with nobody standing.
  */
+/**
+ * Saying whether a boy can play on Saturday.
+ *
+ * The route validates the vocabulary and derives the school; everything about
+ * WHO may answer for WHOM is the INSERT policy's decision, evaluated against
+ * the caller's own assignments. A guardian reaches their child through the
+ * person anchor and nobody else's child at all.
+ *
+ * declared_by is app_user_id() and is never taken from the request. A coach
+ * recording what a boy told them at practice is recording it in their own
+ * name — "unavailable, said so himself" and "unavailable, according to the
+ * coach" are different degrees of certainty, and letting the caller name
+ * somebody else would erase the difference.
+ */
+export function availabilityRoutes({ pool, secret }) {
+  const err = (code, status = 400) => Object.assign(new Error(code), { status });
+  const STATUS = ["available", "unavailable", "doubtful"];
+  const KINDS = ["illness", "family", "academic", "travel", "religious", "other_sport", "other"];
+
+  return {
+    // POST /matches/:id/availability { playerId, status, reasonKind?, note? }
+    declare: async (req, res) => {
+      try {
+        const b = req.body || {};
+        if (!b.playerId) throw err("player_required");
+        if (!STATUS.includes(b.status)) throw err("status_invalid");
+        const kind = b.reasonKind == null || b.reasonKind === "" ? null : String(b.reasonKind);
+        if (kind && !KINDS.includes(kind)) throw err("reason_kind_invalid");
+        const note = b.note == null || String(b.note).trim() === ""
+          ? null : String(b.note).trim().slice(0, 280);
+
+        const out = await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+          const r = await client.query(
+            `insert into match_availability
+               (match_id, player_id, school_id, status, reason_kind, note, declared_by, declared_at)
+             values ($1, $2, match_school($1), $3, $4, $5, app_user_id(), now())
+             on conflict (match_id, player_id) do update
+               set status = excluded.status, reason_kind = excluded.reason_kind,
+                   note = excluded.note, declared_by = excluded.declared_by,
+                   declared_at = now()
+             returning match_id, player_id, status, reason_kind, declared_at`,
+            [req.params.id, b.playerId, b.status, kind, note]);
+          if (!r.rowCount) throw err("not_permitted", 403);
+          return r.rows[0];
+        });
+        res.json(out);
+      } catch (e) {
+        // 23514 is the belongs-to-this-school trigger almost every time, and
+        // its message says which question was actually asked.
+        if (e.code === "23514") return res.status(422).json({ error: "wrong_school", detail: e.message });
+        if (e.code === "23502" || e.code === "23503") return res.status(404).json({ error: "no_such_match_or_player" });
+        const status = e.code === "42501" ? 403 : (e.status || 500);
+        res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
+      }
+    },
+  };
+}
+
 export function officialRoutes({ pool, secret }) {
   const err = (code, status = 400) => Object.assign(new Error(code), { status });
   const DUTIES = ["umpire", "third_umpire", "scorer", "referee"];

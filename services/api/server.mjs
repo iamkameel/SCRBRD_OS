@@ -35,7 +35,7 @@ import { askStatGuru, describeDelivery, aiConfigured } from "./ai/ai-service.mjs
 import { sessionProfile, runAsPrincipal, issueLoginCode, redeemMagicLink } from "./auth/auth-db.mjs";
 import { signToken, AuthError } from "./auth/auth.mjs";
 import { readRoute, liveResources } from "./read/read-api.mjs";
-import { eventRoutes, amendmentRoutes, squadRoutes, tossRoutes, conditionsRoutes, officialRoutes } from "./write/events-api.mjs";
+import { eventRoutes, amendmentRoutes, squadRoutes, tossRoutes, conditionsRoutes, officialRoutes, availabilityRoutes } from "./write/events-api.mjs";
 import { scoutingRoutes, featureRoutes, drsRoutes, broadcastRoutes, sponsorRoutes, moduleAdminRoutes } from "./write/scouting-api.mjs";
 import { assessmentRoutes, accessRequestRoutes, developmentNoteRoutes, guardianLinkRoutes } from "./write/assessment-api.mjs";
 import { sessionRoutes } from "./realtime/session-routes.mjs";
@@ -152,6 +152,7 @@ const guard   = guardianLinkRoutes({ pool, secret: SECRET });
 const squad   = squadRoutes({ pool, secret: SECRET });
 const toss    = tossRoutes({ pool, secret: SECRET });
 const officials = officialRoutes({ pool, secret: SECRET });
+const avail    = availabilityRoutes({ pool, secret: SECRET });
 const cond    = conditionsRoutes({ pool, secret: SECRET });
 const scouting = scoutingRoutes({ pool, secret: SECRET });
 const features = featureRoutes({ pool, secret: SECRET });
@@ -221,6 +222,10 @@ const MATCH_ROUTES = [
   // Naming the side. The two safeguarding triggers on match_squad fire here,
   // and had no way to fire at all before this route existed.
   [/^\/api\/matches\/([^/]+)\/squad$/,             "POST", squad.select],
+  // Whether a boy can play, said by his family or recorded by his coach.
+  // NOT module-gated: a side is picked from availability, and a school that
+  // could not collect it would be picking blind.
+  [/^\/api\/matches\/([^/]+)\/availability$/,     "POST", avail.declare],
   // The toss. Frozen by the database once a delivery exists.
   [/^\/api\/matches\/([^/]+)\/toss$/,              "POST", toss.record],
   // Conditions. Unlike the toss, these stay writable during play — weather
