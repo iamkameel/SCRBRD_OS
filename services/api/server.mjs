@@ -34,7 +34,8 @@ import pg from "pg";
 import { askStatGuru, describeDelivery, aiConfigured } from "./ai/ai-service.mjs";
 import { sessionProfile, runAsPrincipal, issueLoginCode, redeemMagicLink } from "./auth/auth-db.mjs";
 import { signToken, AuthError } from "./auth/auth.mjs";
-import { readRoute, liveResources } from "./read/read-api.mjs";
+import { readRoute, exportRoute, liveResources } from "./read/read-api.mjs";
+import { importRoutes, IMPORTS } from "./io/import-api.mjs";
 import { eventRoutes, amendmentRoutes, squadRoutes, tossRoutes, conditionsRoutes, officialRoutes, availabilityRoutes, transportRoutes } from "./write/events-api.mjs";
 import { scoutingRoutes, featureRoutes, drsRoutes, broadcastRoutes, sponsorRoutes, moduleAdminRoutes } from "./write/scouting-api.mjs";
 import { assessmentRoutes, accessRequestRoutes, developmentNoteRoutes, guardianLinkRoutes } from "./write/assessment-api.mjs";
@@ -43,7 +44,12 @@ import { MatchHub } from "./realtime/realtime.mjs";
 
 const PORT = Number(process.env.PORT || 8787);
 const ORIGIN = process.env.WEB_ORIGIN || "http://localhost:5173";
-const MAX_BODY = 256 * 1024;   // a batch of an over's balls is a few KB
+// A batch of an over's balls is a few KB. A CSV roster is the biggest thing
+// that arrives here: four hundred boys with ten columns is about 40 KB, so
+// 256 KB carries a large school with room to spare — and a school sending
+// something ten times that size has sent the wrong file, which is worth
+// refusing rather than parsing.
+const MAX_BODY = 256 * 1024;
 const DEV = process.env.NODE_ENV !== "production";
 
 // The application connects as scrbrd_app, NOT as the schema owner. Row-level
@@ -109,15 +115,23 @@ const hub = new MatchHub();
 // The route modules were written against (req, res) with req.params/body/query
 // and res.status().json(). Rather than rewrite them for node:http, this maps
 // one onto the other — the routes stay framework-agnostic and testable.
+// Named once, because a file response needs the same set and a second copy
+// would be the one that goes stale — a download that works in development and
+// is blocked by the browser in production.
+const CORS = {
+  "access-control-allow-origin": ORIGIN,
+  "access-control-allow-headers": "content-type, authorization",
+  "access-control-allow-methods": "GET, POST, OPTIONS",
+  // The row count and the filename have to be readable by the page that asked
+  // for the download, and a cross-origin response exposes no custom header
+  // unless it says so.
+  "access-control-expose-headers": "content-disposition, x-scrbrd-rows",
+  "vary": "origin",
+};
+
 const json = (res, status, body) => {
   if (res.writableEnded) return;
-  res.writeHead(status, {
-    "content-type": "application/json",
-    "access-control-allow-origin": ORIGIN,
-    "access-control-allow-headers": "content-type, authorization",
-    "access-control-allow-methods": "GET, POST, OPTIONS",
-    "vary": "origin",
-  });
+  res.writeHead(status, { "content-type": "application/json", ...CORS });
   res.end(JSON.stringify(body));
 };
 
@@ -125,6 +139,23 @@ const shim = (res) => ({
   _status: 200,
   status(code) { this._status = code; return this; },
   json(body) { json(res, this._status, body); return this; },
+});
+
+/**
+ * The shim, plus the two methods a file response needs.
+ *
+ * The CSV routes set their own content-type and content-disposition and end
+ * with bytes rather than JSON, so they cannot use the plain shim — it has
+ * status() and json() and nothing else. Handed the plain one they throw on
+ * writeHead, which is exactly how this was found.
+ */
+const rawRes = (res) => ({
+  ...shim(res),
+  _status: 200,
+  status(code) { this._status = code; return this; },
+  json(body) { json(res, this._status, body); return this; },
+  writeHead(code, headers) { res.writeHead(code, { ...CORS, ...headers }); return this; },
+  end(body) { res.end(body); return this; },
 });
 
 async function readJson(req) {
@@ -154,6 +185,8 @@ const toss    = tossRoutes({ pool, secret: SECRET });
 const officials = officialRoutes({ pool, secret: SECRET });
 const avail    = availabilityRoutes({ pool, secret: SECRET });
 const trips    = transportRoutes({ pool, secret: SECRET });
+const bulk     = importRoutes({ pool, secret: SECRET });
+const exporter = exportRoute({ pool, secret: SECRET });
 const cond    = conditionsRoutes({ pool, secret: SECRET });
 const scouting = scoutingRoutes({ pool, secret: SECRET });
 const features = featureRoutes({ pool, secret: SECRET });
@@ -310,6 +343,10 @@ const SCOUT_ROUTES = [
   // Commercial. Neither takes an id: a sponsor is created under a school named
   // in the body, and a placement under a sponsor named in the body, so both
   // capture groups are absent exactly as registration's is above.
+  // Bulk import. NOT module-gated: getting four hundred boys into the system
+  // is how a school starts, and a school cannot switch off the thing it needs
+  // before it has any data to switch anything off with.
+  [/^\/api\/import\/([^/]+)$/,                             "POST", bulk.run],
   [/^\/api\/vehicles$/,                                    "POST", trips.vehicle, "logistics"],
   [/^\/api\/sponsors$/,                                    "POST", sponsors.create, "sponsors"],
   [/^\/api\/sponsorships$/,                                "POST", sponsors.place,  "sponsors"],
@@ -362,6 +399,27 @@ const server = createServer(async (req, res) => {
   try {
     if (req.method === "GET" && path === "/api/session")
       return json(res, 200, await sessionProfile(pool, SECRET, req.headers.authorization));
+
+    // A file, from the same read. Every guarantee — row-level security, the
+    // masking views, the module gate, the access_log entry — comes from
+    // readResource() inside exportResource(); this only sets the headers.
+    // The template a school fills in, given rather than documented: a school
+    // told to send "full_name, team_code, born" will send "Name, Team, DOB".
+    {
+      const m = req.method === "GET" && /^\/api\/import\/([^/]+)\/template$/.exec(path);
+      // The RAW response, not the JSON shim: these two write their own
+      // content-type and content-disposition and end with bytes. Handed the
+      // shim they would throw on writeHead, which is how this was found.
+      if (m) return bulk.template({ params: { id: m[1] } }, rawRes(res));
+    }
+
+    if (req.method === "GET" && path.startsWith("/api/export/")) {
+      return exporter({
+        params: { resource: decodeURIComponent(path.slice("/api/export/".length)) },
+        query: Object.fromEntries(url.searchParams),
+        headers: req.headers,
+      }, rawRes(res));
+    }
 
     if (req.method === "GET" && path.startsWith("/api/read/")) {
       const shimmed = shim(res);

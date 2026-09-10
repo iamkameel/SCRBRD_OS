@@ -61,6 +61,8 @@ const WALKS = [
   // The two ways an authorization model dies: nobody appoints themselves
   // upward, and nobody gets locked out.
   "escalation",
+  // Getting four hundred boys in, and the data back out.
+  "csv",
 ];
 
 // Walks that drive a real browser AND need a database. They need two things

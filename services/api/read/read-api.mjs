@@ -11,6 +11,7 @@
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
 import { OWNER_OF_READ } from "@scrbrd/policy/modules";
+import { toCsv } from "../io/csv.mjs";
 import {
   DISCIPLINES, battingIndex, bowlingIndex, coachIndex, adjustedRating,
   SCALE_MIN, SCALE_MAX,
@@ -1353,6 +1354,95 @@ export async function readResource(pool, secret, bearer, resource, query = {}) {
 
 /** Which resources are wired for live reads (for the client's feature flags / a health check). */
 export function liveResources() { return Object.keys(READ_QUERIES); }
+
+/**
+ * The same read, as a file.
+ *
+ * EVERY GUARANTEE COMES FROM readResource() AND NONE FROM HERE. Row-level
+ * security, the column masking views, the module gate and the restricted-read
+ * entry in access_log all happen inside it, so an export is one ordinary read
+ * that happens to be serialised differently. A school administrator
+ * downloading a roster gets exactly the rows and exactly the columns the
+ * screen would have shown them, and the disclosure is logged the same way.
+ *
+ * That is worth stating because the tempting implementation is a second query
+ * — a fast path that selects straight from the table because it is "just an
+ * export". That path would bypass the masking views, and the first person to
+ * notice would be a coach with a spreadsheet of every pupil's home address.
+ *
+ * The column order is the FIRST ROW's key order, which is the query's own
+ * SELECT order, so a term's exports diff against each other.
+ */
+export async function exportResource(pool, secret, bearer, resource, query = {}) {
+  const rows = await readResource(pool, secret, bearer, resource, query);
+  const columns = rows.length
+    ? Object.keys(rows[0])
+    // An empty result still needs a header, or the file a school opens is a
+    // blank page rather than a roster with nobody in it. The columns come from
+    // the query's own text in that case, which is the only place they exist.
+    : columnsOf(resource);
+  return { csv: toCsv(rows, columns), rows: rows.length, columns };
+}
+
+/**
+ * The column names a resource returns, read off its SQL.
+ *
+ * Only ever used for an EMPTY export, so a file with no rows still carries a
+ * header. Deliberately crude — the aliases in the SELECT list — and if it
+ * cannot work them out it returns nothing rather than guessing, which produces
+ * a headerless empty file instead of a file with invented columns.
+ */
+function columnsOf(resource) {
+  const text = READ_QUERIES[resource]?.text ?? "";
+  const select = text.match(/select\s+([\s\S]*?)\s+from\s/i)?.[1];
+  if (!select) return [];
+  // Split on commas that are not inside brackets: the SELECT lists contain
+  // subqueries and function calls with commas of their own.
+  const parts = [];
+  let depth = 0, cur = "";
+  for (const c of select) {
+    if (c === "(") depth++;
+    if (c === ")") depth--;
+    if (c === "," && depth === 0) { parts.push(cur); cur = ""; continue; }
+    cur += c;
+  }
+  parts.push(cur);
+  return parts
+    .map((p) => p.replace(/--[^\n]*/g, "").trim())
+    .map((p) => (p.match(/\bas\s+([a-z_][a-z0-9_]*)\s*$/i)?.[1]
+                 ?? p.match(/([a-z_][a-z0-9_]*)\s*$/i)?.[1] ?? "").toLowerCase())
+    .filter(Boolean);
+}
+
+// ── Express/Fastify route: GET /export/:resource ──
+//
+// A separate route rather than a query parameter on the read, because the two
+// have different response shapes and different headers, and a client that
+// forgot the parameter should get JSON rather than a download.
+export function exportRoute({ pool, secret }) {
+  return async (req, res) => {
+    try {
+      const resource = req.params.resource;
+      const { csv, rows } = await exportResource(
+        pool, secret, req.headers?.authorization, resource, req.query || {});
+      // A filename with the day in it, because a school will download the same
+      // roster in March and again in October and needs to tell them apart in
+      // a downloads folder.
+      const name = `scrbrd-${resource}-${new Date().toISOString().slice(0, 10)}.csv`;
+      res.writeHead(200, {
+        "content-type": "text/csv; charset=utf-8",
+        "content-disposition": `attachment; filename="${name}"`,
+        // The row count as a header, so a caller can tell "no rows you may
+        // see" from "the download failed" without parsing the body.
+        "x-scrbrd-rows": String(rows),
+      });
+      res.end(csv);
+    } catch (e) {
+      res.status(e.status || 500).json({
+        error: e.code || e.message, ...(e.module ? { module: e.module } : {}) });
+    }
+  };
+}
 
 // ── Express/Fastify route: GET /read/:resource ──
 export function readRoute({ pool, secret }) {

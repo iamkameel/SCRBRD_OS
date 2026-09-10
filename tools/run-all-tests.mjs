@@ -22,6 +22,7 @@ const SUITES = [
   ["rls",      "services/api/rls/rls.test.mjs"],
   ["auth",     "services/api/auth/auth.test.mjs"],
   ["read",     "services/api/read/read.test.mjs"],
+  ["csv",      "services/api/io/csv.test.mjs"],
   ["write",    "services/api/write/write.test.mjs"],
   ["realtime", "services/api/realtime/realtime.test.mjs"],
 ];

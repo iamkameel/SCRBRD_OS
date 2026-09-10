@@ -66,7 +66,12 @@ CREATE TABLE player (
   team_code     text,                          -- 1XI, U16B … the team scope anchor
   full_name     text NOT NULL,
   squad_no      smallint,
-  playing_role  text,                          -- batter | bowler | allrounder | keeper
+  -- The vocabulary was a COMMENT and nothing enforced it, which the CSV
+  -- import found the hard way: it is the first thing that reads these values
+  -- back in, and it guessed a fifth spelling nobody else uses. A documented
+  -- rule with nothing behind it is the pattern this schema keeps closing.
+  playing_role  text CHECK (playing_role IS NULL OR playing_role IN
+                  ('batter','bowler','allrounder','keeper')),
   batting_style text,
   bowling_style text,
   fitness       text NOT NULL DEFAULT 'fit'
