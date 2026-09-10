@@ -241,6 +241,45 @@ export const CAPABILITIES = {
   "school.feature.manage":       "Turn a module off for this school, or for one of its people",
 };
 
+/**
+ * Capabilities that belong to NO TENANT, and may only be held through an
+ * assignment that belongs to no tenant either.
+ *
+ * THIS EXISTS BECAUSE OF A REAL ESCALATION, found by probing rather than by
+ * reading. app_holds() answers "does this person hold this capability
+ * anywhere", with the scope arms deliberately removed — which is correct for a
+ * decision that has no tenant to compare against. What it did not do was ask
+ * whether the ASSIGNMENT carrying the capability had a tenant. So a school
+ * administrator, who holds user.role.assign at their own school, could insert
+ * one row:
+ *
+ *     role_assignment(themselves, 'platformadmin', school_id = their school)
+ *
+ * and app_holds('platform.feature.manage') then returned true, because it
+ * never looked at school_id. From there they could unlock a feature the
+ * platform had locked, across every school on the platform.
+ *
+ * A platform capability held through a school-scoped assignment is a
+ * contradiction: the assignment says "at this school" and the capability says
+ * "there is no school". Naming them here makes app_holds() refuse that
+ * combination, which closes the amplifier at its source rather than at each of
+ * the eight call sites.
+ *
+ * scouting.write is deliberately NOT here even though it goes through
+ * app_holds: a scout IS attached to a school, and requiring a tenant-less
+ * assignment would stop scouting working entirely. The test is whether the
+ * DECISION has a tenant, not whether the call site is convenient.
+ */
+export const PLATFORM_ONLY = Object.freeze([
+  "platform.health.read",
+  "platform.tenant.manage",
+  "platform.support.impersonate",
+  "platform.feature.manage",
+  // Accrediting an external scouting organisation is not a claim about any one
+  // school's roster — see scout_accreditation_decide() in db/08.
+  "scouting.accredit",
+]);
+
 export const ALL_CAPABILITIES = Object.freeze(Object.keys(CAPABILITIES));
 
 /** Capabilities that expose a minor's sensitive information. */

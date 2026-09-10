@@ -83,6 +83,15 @@ END $grant_functions$;
 -- explicitly rather than by carving an exception into the grant.
 REVOKE INSERT, UPDATE, DELETE ON capability FROM scrbrd_app;
 
+-- And role_capability, for the same reason and one more. Row-level security
+-- already denies writes to it — there is a read policy and no other — so this
+-- changes nothing today. It is here because the blanket GRANT above kept
+-- handing the application INSERT and UPDATE on the table that decides what
+-- every role can do, and a table protected by exactly one policy is one
+-- generator bug away from being protected by none. Two layers, deliberately.
+REVOKE INSERT, UPDATE, DELETE ON role_capability FROM scrbrd_app;
+REVOKE INSERT, UPDATE, DELETE ON role_grantable FROM scrbrd_app;
+
 -- Anything added by a later migration is covered without a follow-up grant.
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
   GRANT SELECT, INSERT, UPDATE ON TABLES TO scrbrd_app;

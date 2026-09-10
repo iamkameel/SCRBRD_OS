@@ -56,6 +56,9 @@ const WALKS = [
   // Module access: three levels, one direction each, and the assertion that
   // switching everything on grants nobody a single row.
   "modules",
+  // The two ways an authorization model dies: nobody appoints themselves
+  // upward, and nobody gets locked out.
+  "escalation",
 ];
 
 // Walks that drive a real browser AND need a database. They need two things
