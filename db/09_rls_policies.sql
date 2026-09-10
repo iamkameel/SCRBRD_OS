@@ -330,6 +330,23 @@ CREATE POLICY match_toss_update ON match_toss
   FOR UPDATE USING (app_can('scoring.start', (SELECT m.school_id FROM match m WHERE m.id = match_toss.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_toss.match_id), '00000000-0000-0000-0000-000000000000'::uuid, match_toss.match_id))
            WITH CHECK (app_can('scoring.start', (SELECT m.school_id FROM match m WHERE m.id = match_toss.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_toss.match_id), '00000000-0000-0000-0000-000000000000'::uuid, match_toss.match_id));
 
+-- drs_review — read: fixture.read · write: scoring.correct
+ALTER TABLE drs_review ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS drs_review_read   ON drs_review;
+DROP POLICY IF EXISTS drs_review_insert ON drs_review;
+DROP POLICY IF EXISTS drs_review_update ON drs_review;
+DROP POLICY IF EXISTS drs_review_delete ON drs_review;
+
+CREATE POLICY drs_review_read ON drs_review
+  FOR SELECT USING (app_can('fixture.read', (SELECT m.school_id FROM match m WHERE m.id = drs_review.match_id), (SELECT m.team_code FROM match m WHERE m.id = drs_review.match_id), '00000000-0000-0000-0000-000000000000'::uuid, drs_review.match_id));
+
+CREATE POLICY drs_review_insert ON drs_review
+  FOR INSERT WITH CHECK (app_can('scoring.correct', (SELECT m.school_id FROM match m WHERE m.id = drs_review.match_id), (SELECT m.team_code FROM match m WHERE m.id = drs_review.match_id), '00000000-0000-0000-0000-000000000000'::uuid, drs_review.match_id));
+
+CREATE POLICY drs_review_update ON drs_review
+  FOR UPDATE USING (app_can('scoring.correct', (SELECT m.school_id FROM match m WHERE m.id = drs_review.match_id), (SELECT m.team_code FROM match m WHERE m.id = drs_review.match_id), '00000000-0000-0000-0000-000000000000'::uuid, drs_review.match_id))
+           WITH CHECK (app_can('scoring.correct', (SELECT m.school_id FROM match m WHERE m.id = drs_review.match_id), (SELECT m.team_code FROM match m WHERE m.id = drs_review.match_id), '00000000-0000-0000-0000-000000000000'::uuid, drs_review.match_id));
+
 -- derby — read: fixture.read · write: fixture.update
 ALTER TABLE derby ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS derby_read   ON derby;

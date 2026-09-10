@@ -36,7 +36,7 @@ import { sessionProfile, runAsPrincipal, issueLoginCode, redeemMagicLink } from 
 import { signToken, AuthError } from "./auth/auth.mjs";
 import { readRoute, liveResources } from "./read/read-api.mjs";
 import { eventRoutes, amendmentRoutes, squadRoutes, tossRoutes, conditionsRoutes, officialRoutes } from "./write/events-api.mjs";
-import { scoutingRoutes } from "./write/scouting-api.mjs";
+import { scoutingRoutes, featureRoutes, drsRoutes } from "./write/scouting-api.mjs";
 import { assessmentRoutes, accessRequestRoutes, developmentNoteRoutes, guardianLinkRoutes } from "./write/assessment-api.mjs";
 import { sessionRoutes } from "./realtime/session-routes.mjs";
 import { MatchHub } from "./realtime/realtime.mjs";
@@ -154,6 +154,8 @@ const toss    = tossRoutes({ pool, secret: SECRET });
 const officials = officialRoutes({ pool, secret: SECRET });
 const cond    = conditionsRoutes({ pool, secret: SECRET });
 const scouting = scoutingRoutes({ pool, secret: SECRET });
+const features = featureRoutes({ pool, secret: SECRET });
+const drs      = drsRoutes({ pool, secret: SECRET });
 
 /**
  * Development sign-in.
@@ -225,6 +227,11 @@ const MATCH_ROUTES = [
   // The groundsman's standing record of a ground — the same capability as the
   // pitch report, keyed on the ground rather than the fixture.
   [/^\/api\/grounds\/([^/]+)\/condition$/,          "POST", cond.ground],
+  // The DRS review, and the platform switch that decides whether it may be
+  // recorded at all. The switch is enforced by a trigger on the table, not
+  // here — see db/08_schema_programme.sql.
+  [/^\/api\/matches\/([^/]+)\/drs$/,               "POST", drs.record],
+  [/^\/api\/admin\/features\/([^/]+)$/,            "POST", features.set],
   // Appointing the officials. officiating.assign, which until now had nothing
   // it could be exercised on.
   [/^\/api\/matches\/([^/]+)\/officials$/,         "POST", officials.appoint],

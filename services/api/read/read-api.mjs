@@ -462,6 +462,35 @@ export const READ_QUERIES = {
   },
 
   /**
+   * Which product features are on.
+   *
+   * Readable by anyone signed in, because a client has to know what to render
+   * and a client that has to guess will guess wrong. It discloses nothing: a
+   * flag says what the product offers, never who may see what.
+   */
+  feature_flags: {
+    text: `select key, enabled, reason, changed_at from feature_flag order by key`,
+  },
+
+  /**
+   * Reviews for a match, scoped through the fixture like the officials and the
+   * conditions.
+   *
+   * `evidence_source` is selected first among the descriptive columns because
+   * it is the one a screen must not omit. A review rendered without saying
+   * whether a person judged it or a camera measured it is the fabrication this
+   * feature is switched off to avoid.
+   */
+  drs_reviews: {
+    text: `select match_id, ball_seq, evidence_source, called_by, on_field, outcome,
+                  pitching, impact, wickets, shot_offered, notes, reviewed_at
+             from drs_review
+            where ($1::uuid is null or match_id = $1)
+            order by ball_seq`,
+    params: q => [q?.matchId || null],
+  },
+
+  /**
    * Batter against bowler: the matchup, derived from the ball log.
    *
    * WHY THIS EXISTS AT ALL. ball_event.striker_id and bowler_id were added so

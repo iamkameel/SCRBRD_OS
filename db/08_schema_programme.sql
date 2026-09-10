@@ -1692,10 +1692,7 @@ DROP POLICY IF EXISTS scout_accreditation_read ON scout_accreditation;
 CREATE POLICY scout_accreditation_read ON scout_accreditation
   FOR SELECT USING (
     person_id = app_user_id()
-    OR EXISTS (SELECT 1 FROM role_assignment a JOIN role_capability rc ON rc.role = a.role
-                WHERE a.person_id = app_user_id() AND rc.capability = 'scouting.accredit'
-                  AND (a.valid_from  IS NULL OR a.valid_from  <= current_date)
-                  AND (a.valid_until IS NULL OR a.valid_until > current_date))
+    OR app_holds('scouting.accredit')
   );
 -- No INSERT/UPDATE/DELETE policy. Every write goes through one of the two
 -- functions below, which run SECURITY DEFINER and therefore bypass RLS
@@ -1732,12 +1729,7 @@ BEGIN
   -- which is false in a WHERE clause, and the first version of this refused
   -- every ordinary open-ended assignment in the seed — nobody could register
   -- at all, silently, because the comparison itself never fires.
-  IF NOT EXISTS (
-    SELECT 1 FROM role_assignment a JOIN role_capability rc ON rc.role = a.role
-     WHERE a.person_id = app_user_id() AND rc.capability = 'scouting.write'
-       AND (a.valid_from  IS NULL OR a.valid_from  <= current_date)
-       AND (a.valid_until IS NULL OR a.valid_until > current_date)
-  ) THEN
+  IF NOT app_holds('scouting.write') THEN
     RETURN QUERY SELECT false, 'not_permitted'; RETURN;
   END IF;
   IF p_organisation IS NULL OR btrim(p_organisation) = '' THEN
@@ -1772,12 +1764,7 @@ BEGIN
   -- Hand-written rather than app_can(), for the same reason the read policy
   -- above is: accrediting a scout is not a claim about any school, and
   -- app_can() has no dimension for "the whole platform, no anchor at all."
-  IF NOT EXISTS (
-    SELECT 1 FROM role_assignment a JOIN role_capability rc ON rc.role = a.role
-     WHERE a.person_id = app_user_id() AND rc.capability = 'scouting.accredit'
-       AND (a.valid_from  IS NULL OR a.valid_from  <= current_date)
-       AND (a.valid_until IS NULL OR a.valid_until > current_date)
-  ) THEN
+  IF NOT app_holds('scouting.accredit') THEN
     RETURN QUERY SELECT false, 'not_permitted'; RETURN;
   END IF;
 
@@ -1937,3 +1924,181 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER;
 
 REVOKE ALL ON FUNCTION scouting_candidates() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION scouting_candidates() TO PUBLIC;
+
+
+-- ═══════════════════════════════════════════════════════════════
+--  FEATURE FLAGS, AND THE FIRST FEATURE THAT NEEDS ONE
+-- ═══════════════════════════════════════════════════════════════
+--
+-- A switch a platform administrator can throw to turn a product feature off
+-- for everybody. There is exactly one reason for this table to exist and it is
+-- worth stating plainly, because a flag system is otherwise an invitation to
+-- half-ship things: SOME FEATURES ARE CORRECT AND NOT YET TRUSTWORTHY.
+--
+-- DRS is the case. The review panel below models a decision perfectly well.
+-- What it cannot do is measure: "pitching in line" and "would have hit leg
+-- stump" are outputs of ball-tracking, and until there are cameras on the
+-- ground every value a school could enter is a person's judgement. Shipping it
+-- switched on would put a Hawk-Eye-shaped screen in front of a parent over a
+-- number an umpire guessed, which is the fabrication this codebase keeps
+-- deleting — the seeded scorecard, the invented par score, the stored derby
+-- tally. Building it and holding it off is the honest version.
+--
+-- WHAT A FLAG IS NOT
+-- ──────────────────
+-- It is not authorisation. It says what the product currently offers, never
+-- who may see what — those stay in capabilities and RLS, where they can be
+-- reasoned about. So a flag never appears in a read policy, and turning DRS on
+-- grants nobody a single row they could not already read.
+--
+-- And it is ENFORCED IN THE DATABASE, not by hiding a button. A disabled
+-- feature whose only guard is a hidden control is a feature anybody with a
+-- fetch call still has. See the trigger below.
+CREATE TABLE feature_flag (
+  key        text PRIMARY KEY CHECK (key ~ '^[a-z][a-z0-9_]{2,49}$'),
+  -- Default false, deliberately. A feature that arrives switched on the moment
+  -- its migration lands has not been decided about; it has been forgotten
+  -- about. Turning it on is a person's act and this table records whose.
+  enabled    boolean NOT NULL DEFAULT false,
+  -- Why it is in the state it is in. Free text, and the most valuable column
+  -- here: "off until we have ball-tracking" is the difference between a switch
+  -- somebody can reason about in a year and one nobody dares touch.
+  reason     text CHECK (reason IS NULL OR length(reason) <= 1000),
+  changed_by uuid REFERENCES app_user(id),
+  changed_at timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE feature_flag ENABLE ROW LEVEL SECURITY;
+
+-- Hand-written rather than declared in packages/policy/src/tables.mjs, and for
+-- the reason that file's generated policies cannot express: this table has NO
+-- SCHOOL. Every anchor the generator builds is a tenant comparison, and a
+-- platform-wide switch belongs to no tenant. Same class as login_code and
+-- access_log, which are hand-written here for the same reason.
+--
+-- Readable by anyone signed in. Which features exist and whether they are on
+-- is not a secret — a client has to know what to render, and hiding it would
+-- only mean the client guessed.
+CREATE POLICY feature_flag_read ON feature_flag
+  FOR SELECT USING (app_user_id() IS NOT NULL);
+
+-- Written only by a platform capability, through app_holds() because there is
+-- no tenant to anchor on. NOT platform.tenant.manage: configuring a school and
+-- deciding what the product does for everybody are different jobs.
+CREATE POLICY feature_flag_insert ON feature_flag
+  FOR INSERT WITH CHECK (app_holds('platform.feature.manage'));
+CREATE POLICY feature_flag_update ON feature_flag
+  FOR UPDATE USING (app_holds('platform.feature.manage'))
+           WITH CHECK (app_holds('platform.feature.manage'));
+-- No DELETE policy. A flag that disappears reads as a feature that was never
+-- gated, which is the opposite of what a removed row would mean.
+
+/**
+ * Is a feature on right now?
+ *
+ * Unknown key means OFF. A feature nobody has declared is one nobody has
+ * decided about, and defaulting an unrecognised name to `true` would make a
+ * typo in a trigger switch a feature on for the platform.
+ *
+ * SECURITY DEFINER so the answer does not depend on the caller being able to
+ * read feature_flag — the trigger below must get the same answer for a scorer
+ * as for a platform administrator, or the gate is not a gate.
+ */
+CREATE OR REPLACE FUNCTION feature_enabled(p_key text) RETURNS boolean AS $$
+  SELECT coalesce((SELECT enabled FROM feature_flag WHERE key = p_key), false)
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION feature_enabled(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION feature_enabled(text) TO PUBLIC;
+
+INSERT INTO feature_flag (key, enabled, reason) VALUES
+  ('drs_review', false,
+   'Built and held off. The panel records a review correctly, but pitching, '
+   'impact and wickets are ball-tracking outputs, and until there are cameras '
+   'on the ground every value entered would be an umpire''s judgement rendered '
+   'as if it were measured. Turn on per the evidence_source the technology '
+   'actually supports.')
+ON CONFLICT (key) DO NOTHING;
+
+
+-- ── The review itself ────────────────────────────────────────────
+--
+-- Law 36 has four questions — where it pitched, where it struck, whether it
+-- was going on to hit, and whether a shot was offered — and under real DRS
+-- three of them come off ball-tracking. Here they come off whatever the ground
+-- actually has, so EVERY REVIEW STATES HOW IT WAS KNOWN.
+--
+-- `evidence_source` is NOT NULL and has NO DEFAULT. That is the whole design.
+-- A row cannot be written without saying whether a person judged it, a replay
+-- showed it, or a tracking system computed it, and a screen can therefore
+-- never render an umpire's opinion in the visual language of a measurement.
+-- It is the same rule as placement_source on ball_event: a sector-era ball is
+-- never upgraded by synthesising a point from its wedge, and an eye-judged
+-- review is never dressed up as a tracked one.
+--
+-- The delivery is referenced by (match_id, seq), which is a real foreign key
+-- into the ball log rather than a loose number: a review of a ball that was
+-- never bowled cannot be recorded.
+CREATE TABLE drs_review (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  match_id      uuid NOT NULL REFERENCES match(id) ON DELETE CASCADE,
+  -- Derived at write time from the match, never asserted — as everywhere.
+  school_id     uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  ball_seq      integer NOT NULL,
+  FOREIGN KEY (match_id, ball_seq) REFERENCES ball_event (match_id, seq) ON DELETE CASCADE,
+
+  -- Who called for it. A review is not always a player's: an umpire may refer
+  -- a decision upward without either side asking.
+  called_by     text NOT NULL CHECK (called_by IN ('batting','fielding','umpire')),
+  -- What the on-field umpire had given before the review.
+  on_field      text NOT NULL CHECK (on_field IN ('out','not_out')),
+  -- What the review did to it.
+  outcome       text NOT NULL CHECK (outcome IN ('upheld','overturned','umpires_call')),
+
+  -- The Law 36 components. All nullable, because a review of a caught-behind
+  -- has none of them and a form that demanded them would be filled in with
+  -- invention — the same reasoning as the pitch report's optional fields.
+  pitching      text CHECK (pitching IS NULL OR pitching IN ('in_line','outside_off','outside_leg')),
+  impact        text CHECK (impact   IS NULL OR impact   IN ('in_line','outside_off')),
+  wickets       text CHECK (wickets  IS NULL OR wickets  IN ('hitting','missing','umpires_call')),
+  shot_offered  boolean,
+
+  -- HOW IT WAS KNOWN. No default: see above.
+  evidence_source text NOT NULL
+                  CHECK (evidence_source IN ('umpire_eye','video_replay','ball_tracking')),
+  notes         text CHECK (notes IS NULL OR length(notes) <= 2000),
+  reviewed_by   uuid REFERENCES app_user(id),
+  reviewed_at   timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX ON drs_review (match_id);
+CREATE INDEX ON drs_review (school_id);
+-- One review per delivery. A ball reviewed twice was reviewed once and
+-- corrected, like the toss and the pitch report.
+CREATE UNIQUE INDEX ON drs_review (match_id, ball_seq);
+
+/**
+ * The gate, in the database.
+ *
+ * A feature switched off in the UI is switched off for people who use the UI.
+ * This is what makes it off for everybody: the row is refused at the table, so
+ * a stale client, a queued offline write and somebody with a fetch call all
+ * get the same answer.
+ *
+ * The message names the flag and who can change it, because the alternative is
+ * a scorer at a ground being told "not permitted" for a feature that is
+ * working exactly as intended.
+ */
+CREATE OR REPLACE FUNCTION drs_review_feature_gate() RETURNS trigger AS $$
+BEGIN
+  IF NOT feature_enabled('drs_review') THEN
+    RAISE EXCEPTION 'the DRS review feature is switched off platform-wide '
+                    '(feature_flag.drs_review); a platform administrator holding '
+                    'platform.feature.manage can enable it'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER drs_review_gate BEFORE INSERT OR UPDATE ON drs_review
+  FOR EACH ROW EXECUTE FUNCTION drs_review_feature_gate();

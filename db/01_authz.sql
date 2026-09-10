@@ -2,7 +2,7 @@
 -- GENERATED from packages/policy/ by services/api/rls/generate-rls.mjs — DO NOT EDIT BY HAND.
 -- Regenerate with `pnpm rls:generate`. Applied BEFORE the scoring schema,
 -- which references app_can(). Model: docs/adr/0001-scoped-assignments.md.
--- 62 capabilities across 24 roles.
+-- 63 capabilities across 24 roles.
 
 -- Principal helpers. app_user_id() is set from the signed token on every
 -- request; everything else about a person's authority is looked up.
@@ -120,6 +120,42 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER;
 REVOKE ALL ON FUNCTION app_can(text, uuid, text, uuid, uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION app_can(text, uuid, text, uuid, uuid) TO PUBLIC;
 
+-- app_holds(capability) — does this person hold the capability AT ALL?
+--
+-- app_can() asks whether someone may act on a particular ROW, and every
+-- governed row belongs to a tenant. A few decisions have no row and no tenant:
+-- verifying a scout's accreditation, or turning a product feature off across
+-- the whole platform. There is no ANY_SCOPE for school, so handing app_can() a
+-- placeholder anchor does not widen it — it refuses everyone, silently, which
+-- is exactly what happened the first time the scouting register tried it.
+--
+-- This is that same existence check with the scope arms removed, and it has a
+-- name because it had already been written out by hand three times. Each copy
+-- repeated the valid_from IS NULL comparison that silently refused every
+-- open-ended assignment until it was found, and every copy omitted a.active
+-- — so a deactivated assignment still passed them. One of those is a bug that
+-- was caught; the other was not, and that is the argument for one definition.
+--
+-- NOT a bypass. Holding a capability somewhere is not permission to touch a
+-- particular school's rows: anything with a tenant still goes through
+-- app_can(), and this answers only the tenant-less question.
+CREATE OR REPLACE FUNCTION app_holds(p_capability text) RETURNS boolean AS $$
+  SELECT EXISTS (
+    SELECT 1
+      FROM role_assignment a
+      JOIN role_capability rc
+        ON rc.role = a.role
+       AND rc.capability = p_capability
+     WHERE a.person_id = app_user_id()
+       AND a.active
+       AND (a.valid_from  IS NULL OR a.valid_from  <= current_date)
+       AND (a.valid_until IS NULL OR a.valid_until >  current_date)
+  )
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION app_holds(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app_holds(text) TO PUBLIC;
+
 -- There is deliberately NO can_score(role) here. It existed, it was correct,
 -- and nothing called it after the scoring policies moved to app_can() — which
 -- makes it worse than useless: a role-shaped decision function sitting in the
@@ -203,7 +239,8 @@ INSERT INTO capability (name) VALUES
   ('platform.health.read'),
   ('platform.tenant.manage'),
   ('scouting.accredit'),
-  ('platform.support.impersonate')
+  ('platform.support.impersonate'),
+  ('platform.feature.manage')
 ON CONFLICT (name) DO NOTHING;
 
 -- Readable by everyone, writable by nobody but a migration. The names are
@@ -232,6 +269,7 @@ INSERT INTO role_capability (role, capability) VALUES
   ('platformadmin', 'platform.health.read'),
   ('platformadmin', 'platform.tenant.manage'),
   ('platformadmin', 'platform.support.impersonate'),
+  ('platformadmin', 'platform.feature.manage'),
   ('platformadmin', 'scouting.accredit'),
   ('platformadmin', 'school.read'),
   ('platformadmin', 'user.read'),

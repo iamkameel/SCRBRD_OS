@@ -45,6 +45,9 @@ const WALKS = [
   "derby",
   // Batter against bowler, and how much of the log a matchup can speak for.
   "matchups",
+  // DRS, and the platform switch that holds it off until there is
+  // ball-tracking to feed it.
+  "drs",
 ];
 
 // Walks that drive a real browser AND need a database. They need two things

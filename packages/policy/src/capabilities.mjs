@@ -209,6 +209,11 @@ export const CAPABILITIES = {
   // should be able to verify their OWN accreditation.
   "scouting.accredit":           "Verify or suspend a scout's accreditation",
   "platform.support.impersonate":"Time-boxed, audited support access",
+  // Turn a product feature on or off across the platform. Separate from
+  // tenant.manage because it is not a claim about any tenant: it says what the
+  // product currently offers anybody. DRS is the first of these — the review
+  // panel is built, and stays off until there is ball-tracking to feed it.
+  "platform.feature.manage":     "Enable or disable a product feature platform-wide",
 };
 
 export const ALL_CAPABILITIES = Object.freeze(Object.keys(CAPABILITIES));

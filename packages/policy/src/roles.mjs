@@ -71,6 +71,7 @@ const BUNDLES = {
   // platform.support.impersonate, which is time-boxed and audited.
   platformadmin: [
     "platform.health.read", "platform.tenant.manage", "platform.support.impersonate",
+    "platform.feature.manage",
     "scouting.accredit",
     "school.read", "user.read", "audit.read", "competition.read", "news.read",
   ],

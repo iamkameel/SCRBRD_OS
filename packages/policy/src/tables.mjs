@@ -427,6 +427,31 @@ export const TABLES = {
     masked: {},
   },
 
+  drs_review: {
+    // A review of a delivery. Read by anyone who can read the fixture — the
+    // decision is announced on the ground and belongs on the scorecard beside
+    // the wicket it did or did not produce.
+    //
+    // Written under scoring.correct, not scoring.edit: recording that a
+    // decision was reviewed and overturned is an amendment to what the log
+    // already says happened, and the people trusted to correct a scorecard are
+    // the people who should be trusted with it. An umpire holding
+    // officiating.report files a report; that is a different document.
+    //
+    // The feature flag is NOT in this policy, deliberately. A flag says what
+    // the product offers and a policy says who may see what; putting one in
+    // the other would mean turning DRS on quietly widened somebody's read.
+    // The gate is a trigger in db/08 — see drs_review_feature_gate().
+    read:  "fixture.read",
+    write: "scoring.correct",
+    anchors: {
+      school:  "(SELECT m.school_id FROM match m WHERE m.id = drs_review.match_id)",
+      team:    "(SELECT m.team_code FROM match m WHERE m.id = drs_review.match_id)",
+      fixture: "match_id",
+    },
+    masked: {},
+  },
+
   derby: {
     // The NAME of a rivalry, not its record — the tally is derived. Read by
     // anyone who can read a fixture, since a derby's name is the least private
