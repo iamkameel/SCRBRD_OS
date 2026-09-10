@@ -328,16 +328,32 @@ export const READ_QUERIES = {
     masked: true,
     text: `select
              (select count(*)::int from player_masked)                    as active_players,
-             (select count(*)::int from injury_masked where restricted)   as injuries_active,
+             -- NULL WHEN THE MODULE IS OFF, not zero.
+             --
+             -- The summary read is claimed by no module on purpose — a dozen
+             -- screens depend on it, and refusing the whole read would take the
+             -- dashboard down to switch off one card. But the FIGURES inside it
+             -- still belong to modules, and a school that turned Injuries off
+             -- and then read "3 active restrictions" on its own dashboard would
+             -- be right to say the setting does not work.
+             --
+             -- Null rather than 0 for the reason stated about win_rate_pct
+             -- below, which is the same reason: "no injuries" and "we do not
+             -- run that module" are different facts, and 0 cannot tell them
+             -- apart. The client renders an absent figure as an em dash.
+             (case when my_feature_enabled('injuries')
+                   then (select count(*)::int from injury_masked where restricted)
+              end)                                                        as injuries_active,
              (select count(*)::int from notification n
                 left join notification_read r
                        on r.notification_id = n.id and r.person_id = app_user_id()
                where r.person_id is null
                  and (n.expires_at is null or n.expires_at > now()))      as unread_alerts,
-             (select count(*)::int from training_session
-               where starts_at >= date_trunc('week', now())
-                 and starts_at <  date_trunc('week', now()) + interval '7 days')
-                                                                          as sessions_this_week,
+             (case when my_feature_enabled('training')
+                   then (select count(*)::int from training_session
+                          where starts_at >= date_trunc('week', now())
+                            and starts_at <  date_trunc('week', now()) + interval '7 days')
+              end)                                                        as sessions_this_week,
              (select count(*)::int from match where status = 'scheduled') as upcoming_matches,
              (select count(*)::int from match)                            as scope_matches,
              (select count(*)::int from player_masked)                    as scope_players,

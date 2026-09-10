@@ -104,6 +104,25 @@ try {
   ok("the squad still reads", (await read("players", coach)).status === 200);
   ok("the dashboard still reads", (await read("summary", head)).status === 200);
 
+  group("A figure on a shared read belongs to its module too");
+  {
+    // The summary read is claimed by no module — a dozen screens depend on it,
+    // and refusing the whole thing to switch off one card would take the
+    // dashboard down. So the card has to go dark from the inside, and a school
+    // that turned Injuries off must not read "3 active restrictions" on its own
+    // dashboard.
+    const s = (await read("summary", head)).body?.rows?.[0];
+    ok("the dashboard still answers with Injuries off", !!s);
+    // NULL, not 0. "No injuries" and "we do not run that module" are different
+    // facts, and 0 cannot tell them apart — the same rule this query already
+    // applies to a win rate with nothing to divide by.
+    ok("...but the injuries figure is absent, not zero", s?.injuries_active === null);
+    ok("...while the figures that are nobody's module are intact",
+       typeof s?.active_players === "number" && typeof s?.upcoming_matches === "number");
+    ok("...including one from a module that is still on",
+       typeof s?.sessions_this_week === "number");
+  }
+
   group("A module hidden at one school is untouched at another");
   ok("Westville is unaffected",
      (await read("injuries", await login("parent.whitfield@example.invalid"))).status !== 500);

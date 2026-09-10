@@ -4,6 +4,7 @@ import { D } from "../design/tokens.js";
 import { dateStr, fitnessColor, today } from "../lib/format.js";
 import { Avatar, Btn, Card, KPICard, Pill, StatusDot } from "../ui/primitives.jsx";
 import { useRows, useSummary } from "../lib/live.js";
+import { featureOn, useFeatures } from "../lib/features.js";
 
 // ══════════════════════════════════════════════════════
 //  DASHBOARD VIEW
@@ -23,6 +24,10 @@ function DashboardView({ role, onNav }) {
   // rendered identically for a superadmin and a team coach, and the two that
   // were real were counted in the browser over whatever rows had been fetched.
   const { summary, live: summaryLive } = useSummary(role);
+  // Called for the fetch, not the value: featureOn() below reads the same
+  // module-level map this hook fills, and without something mounting the hook
+  // it would answer "on" for everything forever.
+  useFeatures();
   const rc = ROLES[role];
   const liveMatch = MATCHES.find(m=>m.status==="live");
   const upcomingMatches = MATCHES.filter(m=>m.status==="upcoming").slice(0,3);
@@ -30,6 +35,13 @@ function DashboardView({ role, onNav }) {
   // An absent figure renders as an em dash, never as 0. A card showing zero
   // because a request failed has stated something false about the school.
   const kpi = (v) => (v == null ? "—" : String(v));
+  // A card for a module this school switched off is not an em dash — it is
+  // absent. The server already returns null for those figures, so the dash
+  // would be correct and useless: "—" beside "Active restrictions" reads as a
+  // number that failed to load, and somebody rings the school office about an
+  // outage that is a setting. Presentation only; the figure is already gone by
+  // the time it reaches here.
+  const shows = (module) => featureOn(module);
   const pct = (v) => (v == null ? "—" : `${v}%`);
 
   return (
@@ -50,10 +62,14 @@ function DashboardView({ role, onNav }) {
                    sub="Fixtures scheduled"/>
           <KPICard label="Win Rate"        value={pct(summary?.winRatePct)} icon="📈" color={D.emerald}
                    sub={summary?.winRatePct==null?"No completed matches":"Across your competitions"}/>
-          <KPICard label="Injuries"        value={kpi(summary?.injuriesActive)} icon="🏥"
-                   color={(summary?.injuriesActive??0)>3?D.rose:D.orange} sub="Active restrictions"/>
-          <KPICard label="Sessions This Wk"value={kpi(summary?.sessionsThisWeek)} icon="💪" color={D.violet}
-                   sub="Training scheduled"/>
+          {shows("injuries")&&(
+            <KPICard label="Injuries"        value={kpi(summary?.injuriesActive)} icon="🏥"
+                     color={(summary?.injuriesActive??0)>3?D.rose:D.orange} sub="Active restrictions"/>
+          )}
+          {shows("training")&&(
+            <KPICard label="Sessions This Wk"value={kpi(summary?.sessionsThisWeek)} icon="💪" color={D.violet}
+                     sub="Training scheduled"/>
+          )}
           <KPICard label="Alerts"          value={kpi(summary?.unreadAlerts)} icon="🔔" color={D.rose}
                    sub="Unread notifications"/>
         </div>
@@ -73,8 +89,10 @@ function DashboardView({ role, onNav }) {
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:"12px",marginBottom:"24px"}}>
           <KPICard label="Upcoming"      value={kpi(summary?.upcomingMatches)} icon="📅" color={D.sky}
                    sub="Fixtures scheduled"/>
-          <KPICard label="Injuries"      value={kpi(summary?.injuriesActive)} icon="🏥" color={D.orange}
-                   sub="Active restrictions"/>
+          {shows("injuries")&&(
+            <KPICard label="Injuries"      value={kpi(summary?.injuriesActive)} icon="🏥" color={D.orange}
+                     sub="Active restrictions"/>
+          )}
           <KPICard label="Season Avg"    value={kpi(summary?.myBattingAverage)} icon="🏏" color={D.amber}
                    sub={summary?.myBattingAverage==null?"Linked pupil accounts only":"Career, from the ball log"}/>
           <KPICard label="Alerts"        value={kpi(summary?.unreadAlerts)} icon="🔔" color={D.rose} sub="Unread"/>
