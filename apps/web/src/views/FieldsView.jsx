@@ -12,6 +12,12 @@ function FieldsView({ role }) {
   // principal. Importing the raw constant here would bypass both.
   const { rows: GROUNDS, loading, error } = useLive("grounds", role);
   const STAFF = useRows("staff", role);
+  // The groundsman's own record, per ground. Everything below this line that
+  // is NOT drawn from it — orientation, dimensions, lights, the pitch strips —
+  // exists only in the demo's mock: no table carries them, so in a live
+  // session those blocks are simply absent rather than blank. This is the part
+  // a groundskeeper actually files, and it is the part that is real.
+  const CONDITIONS = useRows("ground_conditions", role);
   // Hold the selected ID, not the row. Rows now arrive from the server, so
   // seeding state with GROUNDS[0] captured an empty list on first render and
   // then read `.name` off undefined the moment the fetch resolved. An id
@@ -153,9 +159,65 @@ function FieldsView({ role }) {
             </div>
           </Card>
 
+          {/* ── What the groundsman recorded ──────────────────────────
+              Real rows from ground_condition, which is why this block states
+              its date and its author's absence honestly. A field nobody
+              measured shows a dash, never a zero: 0% moisture is a claim that
+              the square is bone dry, and "not measured" is a different fact. */}
+          {(() => {
+            const gc = CONDITIONS.find(c => c.groundId === selGround.id);
+            if (!gc) return null;
+            const row = (l, v, unit = "") =>
+              <div key={l} style={{padding:"7px 0",borderBottom:`1px solid ${D.border}`}}>
+                <div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,marginBottom:"2px"}}>{l}</div>
+                <div style={{fontFamily:D.mono,fontSize:"12px",color:v==null?D.textMuted:D.textPrimary}}>
+                  {v == null ? "— not measured" : `${v}${unit}`}
+                </div>
+              </div>;
+            return (
+              <Card sx={{padding:"14px 16px",marginBottom:"14px"}}>
+                <div style={{display:"flex",alignItems:"baseline",gap:"9px",marginBottom:"10px",flexWrap:"wrap"}}>
+                  <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em"}}>
+                    GROUND CONDITION
+                  </div>
+                  <span style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted}}>
+                    recorded {gc.reportedAt ? String(gc.reportedAt).slice(0,10) : "—"}
+                  </span>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"0 18px"}}>
+                  {/* The wet-morning question first, because it is the one
+                      that gets asked. */}
+                  {row("Drains in", gc.drainageMin, " min")}
+                  {row("Outfield", gc.outfield)}
+                  {row("Moisture", gc.moisturePct, "%")}
+                  {row("Grass height", gc.grassMm, " mm")}
+                  {row("Roller", gc.roller)}
+                  {row("Last rolled", gc.lastRolled)}
+                  {row("Last mown", gc.lastMown)}
+                </div>
+                {gc.notes && (
+                  <div style={{marginTop:"10px",padding:"9px 11px",background:D.surf2,borderRadius:D.md,
+                    border:`1px solid ${D.border}`,fontFamily:D.body,fontSize:"11px",color:D.textSecondary,lineHeight:1.5}}>
+                    {gc.notes}
+                  </div>
+                )}
+              </Card>
+            );
+          })()}
+
           {/* Tabs */}
           <div style={{display:"flex",gap:"6px",marginBottom:"14px"}}>
-            {["overview","pitches","facilities","prep"].filter(t=>selGround.type!=="nets"||["overview","pitches"].includes(t)).map(t=>(
+            {["overview","pitches","facilities","prep"]
+              .filter(t=>selGround.type!=="nets"||["overview","pitches"].includes(t))
+              // A tab that opens onto nothing is worse than an absent tab: the
+              // first reads as a broken screen, the second as a ground nobody
+              // has filed strip data for. All three of these render from the
+              // demo mock only.
+              .filter(t=>t==="overview"
+                || (t==="pitches"    && selGround.pitches?.length)
+                || (t==="facilities" && selGround.facilities)
+                || (t==="prep"       && selGround.prep))
+              .map(t=>(
               <button key={t} onClick={()=>setTab(t)} className="pressBtn" style={{
                 padding:"6px 16px",borderRadius:D.pill,cursor:"pointer",textTransform:"capitalize",
                 border:`1px solid ${tab===t?D.teal+"55":D.border}`,
@@ -166,30 +228,58 @@ function FieldsView({ role }) {
             ))}
           </div>
 
-          {tab==="overview"&&(
-            <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"12px"}}>
-              <Card sx={{padding:"14px"}}>
-                <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"10px"}}>SURFACE</div>
-                {[["Type",selGround.surfaceType||"—"],["Outfield Grade",selGround.outfieldGrade||"N/A"],["Mow Height",selGround.outfieldMowHeight||"N/A"],["Drainage",selGround.drainage||"—"]].map(([l,v])=>(
-                  <div key={l} style={{padding:"6px 0",borderBottom:`1px solid ${D.border}`}}>
-                    <div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,marginBottom:"2px"}}>{l}</div>
-                    <div style={{fontFamily:D.body,fontSize:"12px",color:D.textPrimary}}>{v}</div>
-                  </div>
-                ))}
-              </Card>
-              <Card sx={{padding:"14px"}}>
-                <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"10px"}}>PITCH SUMMARY</div>
-                {selGround.pitches?.map((p,i)=>(
-                  <div key={i} style={{padding:"7px 0",borderBottom:`1px solid ${D.border}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                    <span style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary}}>Strip {p.num} — {p.surface}</span>
-                    <Badge color={condC(p.condition)}>{p.condition}</Badge>
-                  </div>
-                ))}
-                {selGround.capacity&&<div style={{marginTop:"8px",fontFamily:D.mono,fontSize:"11px",color:D.textMuted}}>Capacity: {selGround.capacity.toLocaleString()} spectators</div>}
-                {selGround.notes&&<div style={{marginTop:"8px",fontFamily:D.body,fontSize:"10px",color:D.textMuted,fontStyle:"italic"}}>{selGround.notes}</div>}
-              </Card>
-            </div>
-          )}
+          {/* An empty card with a heading is scaffolding pretending to be
+              content. surfaceType, outfieldGrade, mowHeight, drainage, the
+              pitch strips and capacity live only in the demo's mock — no table
+              carries any of them — so in a live session these blocks would
+              render as a column of dashes and a card with nothing under its
+              title. They are omitted entirely instead, and when every block is
+              empty the tab says so in one line. The GROUND CONDITION panel
+              above is the part that is real. */}
+          {tab==="overview"&&(() => {
+            const surface = [["Type",selGround.surfaceType],["Outfield Grade",selGround.outfieldGrade],
+                             ["Mow Height",selGround.outfieldMowHeight],["Drainage",selGround.drainage]]
+                            .filter(([,v]) => v != null && v !== "");
+            const strips = selGround.pitches ?? [];
+            const summary = strips.length || selGround.capacity || selGround.notes;
+            if (!surface.length && !summary) {
+              return (
+                <Card sx={{padding:"22px",textAlign:"center"}}>
+                  <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>
+                    Nothing recorded for this ground beyond its condition report.
+                  </span>
+                </Card>
+              );
+            }
+            return (
+              <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"12px"}}>
+                {surface.length>0&&(
+                  <Card sx={{padding:"14px"}}>
+                    <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"10px"}}>SURFACE</div>
+                    {surface.map(([l,v])=>(
+                      <div key={l} style={{padding:"6px 0",borderBottom:`1px solid ${D.border}`}}>
+                        <div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,marginBottom:"2px"}}>{l}</div>
+                        <div style={{fontFamily:D.body,fontSize:"12px",color:D.textPrimary}}>{v}</div>
+                      </div>
+                    ))}
+                  </Card>
+                )}
+                {!!summary&&(
+                  <Card sx={{padding:"14px"}}>
+                    <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"10px"}}>PITCH SUMMARY</div>
+                    {strips.map((p,i)=>(
+                      <div key={i} style={{padding:"7px 0",borderBottom:`1px solid ${D.border}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                        <span style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary}}>Strip {p.num} — {p.surface}</span>
+                        <Badge color={condC(p.condition)}>{p.condition}</Badge>
+                      </div>
+                    ))}
+                    {selGround.capacity&&<div style={{marginTop:"8px",fontFamily:D.mono,fontSize:"11px",color:D.textMuted}}>Capacity: {selGround.capacity.toLocaleString()} spectators</div>}
+                    {selGround.notes&&<div style={{marginTop:"8px",fontFamily:D.body,fontSize:"10px",color:D.textMuted,fontStyle:"italic"}}>{selGround.notes}</div>}
+                  </Card>
+                )}
+              </div>
+            );
+          })()}
 
           {tab==="pitches"&&selGround.pitches&&(
             <div>

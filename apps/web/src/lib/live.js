@@ -182,6 +182,31 @@ function asWeather(r) {
            forecast: r.forecast, playable: r.playable, live: true };
 }
 
+/**
+ * An appointment: who stood, at which fixture, in what duty.
+ *
+ * `person_name` is the name AS APPOINTED and is stored on the row rather than
+ * joined — see match_official in db/08. So a directory built from these needs
+ * no second read and cannot show a blank where an umpire should be.
+ */
+function asOfficial(r) {
+  return { matchId: r.match_id, duty: r.duty, name: r.person_name,
+           personId: r.person_id, panel: r.panel, appointedAt: r.appointed_at, live: true };
+}
+
+/**
+ * The groundsman's record of a ground. Absent fields are absent, never zeroed:
+ * a square nobody measured has no moisture reading, and 0% would be a claim
+ * that it is bone dry.
+ */
+function asGroundCondition(r) {
+  return { groundId: r.ground_id, moisturePct: r.moisture_pct, grassMm: r.grass_mm,
+           roller: r.roller, outfield: r.outfield, drainageMin: r.drainage_min,
+           lastRolled: r.last_rolled ? String(r.last_rolled).slice(0, 10) : null,
+           lastMown: r.last_mown ? String(r.last_mown).slice(0, 10) : null,
+           notes: r.notes, reportedAt: r.reported_at, live: true };
+}
+
 function asInjury(r) {
   return { id: r.id, player: r.player_id, type: r.injury_type, severity: r.severity,
            dateInj: r.date_injured, rtw: r.rtw_date, phase: r.phase,
@@ -292,6 +317,8 @@ const ADAPT = {
   league: asLadderRow,
   competitions: asCompetition,
   weather: asWeather,
+  officials: asOfficial,
+  ground_conditions: asGroundCondition,
   injuries: asInjury,
   skills: asSkill,
   career: asCareer,

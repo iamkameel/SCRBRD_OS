@@ -117,6 +117,11 @@ const NAV_CAPABILITY = {
   logistics:     "transport.read",
   calendar:      "fixture.read",
   fields:        "facility.read",
+  // The same capability the appointments themselves are read under. Nav mirrors
+  // the API; the API is the security — a destination that appears for somebody
+  // who may not read a fixture would show them an empty screen, not a leak,
+  // but it would still be the browser making a claim about authority.
+  officials:     "fixture.read",
   staff:         "user.read",
   notifications: null,
   settings:      null,
@@ -182,6 +187,7 @@ const NAV_META = {
   logistics:    { icon:"🚌",  label:"Logistics"    },
   calendar:     { icon:"📅",  label:"Calendar"     },
   fields:       { icon:"🌿",  label:"Fields"       },
+  officials:    { icon:"🧑‍⚖️", label:"Officials"    },
   staff:        { icon:"🔧",  label:"Staff"        },
   notifications:{ icon:"🔔",  label:"Alerts"       },
   settings:     { icon:"⚙️",  label:"Settings"     },

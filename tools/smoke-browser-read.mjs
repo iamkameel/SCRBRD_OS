@@ -299,6 +299,53 @@ try {
     await boy.ctx.close().catch(() => {});
   }
 
+  // ── The officials directory ─────────────────────────────────────
+  //
+  // The screen is DERIVED from appointments — there is no roster table — so
+  // the only way to know it renders real rows is to appoint somebody through
+  // the API and then look for their name in the browser. A directory built
+  // from a mock would show different names entirely, and would pass any
+  // assertion made against the API alone.
+  group("An appointed umpire reaches the officials screen");
+  {
+    const tok = await (await fetch(`${API}/api/auth/dev-login`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "sarah@example.invalid", deviceId: "browser-read" }),
+    })).json().then((j) => j.token);
+
+    const fixtures = await (await fetch(`${API}/api/read/matches`, {
+      headers: { authorization: `Bearer ${tok}` },
+    })).json();
+    const fixture = fixtures?.rows?.[0]?.id;
+
+    const UMPIRE = "Thandeka Mahlangu";
+    const appointed = fixture && (await fetch(`${API}/api/matches/${fixture}/officials`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${tok}` },
+      body: JSON.stringify({ officials: [
+        { duty: "umpire", name: UMPIRE, panel: "KZN Cricket Umpires" },
+        { duty: "scorer", name: "Bongani Khumalo" },
+      ] }),
+    })).ok;
+    ok("an umpire is appointed through the API", !!appointed);
+
+    const head = await open();
+    ok("the director of sport signs in", await signIn(head.page, /sarah@example\.invalid|Director/));
+    if (await nav(head.page, /Officials/)) {
+      const t = await text(head.page);
+      if (DEBUG) console.log("[debug] officials:\n" + t.slice(0, 700));
+      ok("the appointed umpire is on the screen", t.includes(UMPIRE));
+      ok("...and the scorer beside them", t.includes("Bongani Khumalo"));
+      ok("...with the panel they came off", /KZN Cricket Umpires/.test(t));
+      ok("the screen did not fall back to a mock name",
+         !/D Naidoo|P van Wyk|M Cele/.test(t));
+      ok("no uncaught error on the officials screen", head.errors.length === 0);
+    } else {
+      ok("the officials screen opens for the director of sport", false);
+    }
+    await head.ctx.close().catch(() => {});
+  }
+
   group("The screens render without errors");
   for (const [who, s] of [["coach", coach], ["guardian", parent], ["spectator", watcher], ["medic", medic]]) {
     ok(`${who}: no uncaught error${s.errors.length ? ` — ${s.errors[0].slice(0, 140)}` : ""}`,
