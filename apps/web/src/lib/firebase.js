@@ -8,8 +8,11 @@
  * Firestore or Auth import without deciding on purpose to keep a second copy
  * of data this project already scopes carefully in one place.
  *
- * A fresh project (scrbrd-os), not the one scrbrd-beta-2 used — this has no
- * history to inherit and starts with nothing collected.
+ * ONE PROJECT, scrbrd-os, and it is the only Firebase this repository knows
+ * about. The earlier prototypes had their own projects and their own
+ * Firestore rules; none of that is inherited, referenced, or deployed to from
+ * here, and nothing in this build should ever point at another project id.
+ * This one starts with nothing collected.
  *
  * Firebase Analytics collects its own generic technical events (session_start
  * and the like) automatically once initialised. Nothing here calls

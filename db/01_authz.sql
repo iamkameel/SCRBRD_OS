@@ -2,7 +2,7 @@
 -- GENERATED from packages/policy/ by services/api/rls/generate-rls.mjs — DO NOT EDIT BY HAND.
 -- Regenerate with `pnpm rls:generate`. Applied BEFORE the scoring schema,
 -- which references app_can(). Model: docs/adr/0001-scoped-assignments.md.
--- 68 capabilities across 24 roles.
+-- 69 capabilities across 24 roles.
 
 -- Principal helpers. app_user_id() is set from the signed token on every
 -- request; everything else about a person's authority is looked up.
@@ -81,6 +81,7 @@ INSERT INTO capability (name) VALUES
   ('invoice.manage'),
   ('sponsorship.read'),
   ('sponsorship.manage'),
+  ('sponsorship.exclusivity.waive'),
   ('sponsorship.finance.read'),
   ('competition.read'),
   ('competition.manage'),
@@ -139,6 +140,9 @@ INSERT INTO role_capability (role, capability) VALUES
   ('platformadmin', 'competition.read'),
   ('platformadmin', 'news.read'),
   ('principal', 'school.feature.manage'),
+  ('principal', 'sponsorship.exclusivity.waive'),
+  ('principal', 'sponsorship.read'),
+  ('principal', 'sponsorship.manage'),
   ('principal', 'user.role.assign'),
   ('principal', 'team.read'),
   ('principal', 'fixture.read'),

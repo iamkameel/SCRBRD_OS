@@ -538,6 +538,15 @@ export const READ_QUERIES = {
                   sp.logo_text, sp.logo_bg,
                   sm.placement, sm.match_id, sm.starts_on, sm.ends_on,
                   sm.contract_value_zar, sm.school_share_pct, sm.agreed_at,
+                  -- Exclusivity is NOT masked, unlike the money beside it. A
+                  -- promise that this category is spoken for is the thing
+                  -- everybody placing a board needs to know BEFORE they try;
+                  -- keeping it behind the finance capability would mean the
+                  -- people most likely to breach it are the ones who cannot
+                  -- see it. What was PAID stays confidential; what was
+                  -- PROMISED does not.
+                  sm.exclusive, sm.exclusive_scope, sm.competition_id,
+                  sm.waiver_note is not null as waived,
                   -- Named is_running rather than live: every adapter in
                   -- apps/web/src/lib/live.js sets live: true to mean "this row
                   -- came from the server rather than the mock", and a column

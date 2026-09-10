@@ -240,6 +240,8 @@ function asSponsorship(r) {
   return { id: r.id, sponsorId: r.sponsor_id, sponsorName: r.sponsor_name,
            category: r.category, logoText: r.logo_text, logoBg: r.logo_bg,
            placement: r.placement, matchId: r.match_id,
+           exclusive: r.exclusive === true, exclusiveScope: r.exclusive_scope,
+           competitionId: r.competition_id, waived: r.waived === true,
            startsOn: r.starts_on ? String(r.starts_on).slice(0, 10) : null,
            endsOn:   r.ends_on   ? String(r.ends_on).slice(0, 10)   : null,
            contractValueZar: r.contract_value_zar == null ? null : Number(r.contract_value_zar),

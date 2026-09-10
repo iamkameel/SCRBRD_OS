@@ -357,7 +357,18 @@ export function sponsorRoutes({ pool, secret }) {
       // the reason a school office needs to read. Passed through rather than
       // flattened to "invalid": "you may not advertise betting to children"
       // and "that hex colour is malformed" are not the same conversation.
-      if (e.code === "23514") return res.status(422).json({ error: "category_refused", detail: e.message });
+      if (e.code === "23514") {
+        // Two different conversations behind one SQLSTATE. A category refusal
+        // is "this brand may not be advertised to children"; an exclusivity
+        // refusal is "somebody else has already bought this slot, here is
+        // who". Flattening them into one message sends a school office to the
+        // wrong person.
+        const m = e.message || "";
+        if (/category exclusivity|waiver of category exclusivity/.test(m)) {
+          return res.status(409).json({ error: "exclusivity_conflict", detail: m });
+        }
+        return res.status(422).json({ error: "category_refused", detail: m });
+      }
       if (e.code === "23503") return res.status(404).json({ error: "no_such_row", detail: e.message });
       const status = e.code === "42501" ? 403 : (e.status || 500);
       res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
@@ -415,6 +426,24 @@ export function sponsorRoutes({ pool, secret }) {
         if (!Number.isFinite(n) || n < 0) throw err(`${f}_invalid`);
         return n;
       };
+      // Exclusivity: a shape and, for a competition, the one it names. The
+      // trigger decides whether the placement may proceed; this only shapes
+      // the request, as everywhere.
+      const SCOPES = ["school", "province", "competition", "platform"];
+      const exclusive = b.exclusive === true;
+      const scope = exclusive ? (b.exclusiveScope ?? "school") : null;
+      if (exclusive && !SCOPES.includes(scope)) throw err("exclusive_scope_invalid");
+      if (exclusive && scope === "competition" && !b.competitionId) {
+        throw err("competition_required_for_competition_scope");
+      }
+      const competitionId = scope === "competition" ? b.competitionId : null;
+      // A waiver has a length floor in the database too. Checked here as well
+      // so the caller is told "say more" rather than being handed a constraint
+      // name, and because a one-word waiver is the shape of a box being ticked.
+      const waiver = b.waiverNote == null || String(b.waiverNote).trim() === ""
+        ? null : String(b.waiverNote).trim().slice(0, 1000);
+      if (waiver && waiver.length < 20) throw err("waiver_note_too_short");
+
       const value = money(b.contractValueZar, "contract_value_zar");
       const share = b.schoolSharePct == null || b.schoolSharePct === "" ? null : Number(b.schoolSharePct);
       if (share != null && (!Number.isInteger(share) || share < 0 || share > 100)) {
@@ -425,11 +454,15 @@ export function sponsorRoutes({ pool, secret }) {
         const r = await client.query(
           `insert into sponsorship
              (school_id, sponsor_id, placement, match_id, starts_on, ends_on,
-              contract_value_zar, school_share_pct, agreed_by, agreed_at)
-           select sp.school_id, sp.id, $2, $3, $4::date, $5::date, $6, $7, app_user_id(), now()
+              contract_value_zar, school_share_pct, agreed_by, agreed_at,
+              exclusive, exclusive_scope, competition_id, waiver_note)
+           select sp.school_id, sp.id, $2, $3, $4::date, $5::date, $6, $7, app_user_id(), now(),
+                  $8, $9, $10, $11
              from sponsor sp where sp.id = $1
-           returning id, sponsor_id, placement, match_id, starts_on, ends_on, agreed_at`,
-          [b.sponsorId, b.placement, b.matchId || null, starts, ends, value, share]);
+           returning id, sponsor_id, placement, match_id, starts_on, ends_on, agreed_at,
+                     exclusive, exclusive_scope, competition_id, waived_by`,
+          [b.sponsorId, b.placement, b.matchId || null, starts, ends, value, share,
+           exclusive, scope, competitionId, waiver]);
         // No row means one of two things and both are the same answer: either
         // the sponsor is not visible to this caller, or the policy refused the
         // insert. Neither is worth distinguishing to the caller — telling them

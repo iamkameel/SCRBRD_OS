@@ -145,6 +145,117 @@ try {
   ok("the placement inherits the sponsor's school",
      (await q(`select school_id from sponsorship where id = $1`, [season.body.id]))[0].school_id === HIL);
 
+  group("A category somebody paid to own");
+  {
+    // beta-2 had this and our first sponsorship schema did not: a sponsor who
+    // paid to be the only bank on a scoreboard has bought something, and
+    // without exclusivity that promise lived in a signed contract and nowhere
+    // in the system that draws the boards.
+    const rival = await sign(office, {
+      schoolId: HIL, name: "Umgeni Mutual", category: "banking", logoText: "UMGENI" });
+    ok("a second bank can be signed — signing is not placing", rival.status === 200);
+
+    // The season deal placed above is not yet exclusive, so this is allowed.
+    const before = await place(office, {
+      sponsorId: rival.body.id, placement: "fixture_list",
+      startsOn: today, endsOn: nextYear });
+    ok("...and placed, while nobody has claimed the category", before.status === 200);
+
+    // Now Ridgeway takes exclusivity at the school. THE REVERSE DIRECTION,
+    // which beta-2 never tested: a school must not be able to sell exclusivity
+    // it has already given away, or the promise is broken the moment it is
+    // made.
+    const overSold = await place(office, {
+      sponsorId: bank.body.id, placement: "scorecard_footer",
+      startsOn: today, endsOn: nextYear, exclusive: true, exclusiveScope: "school" });
+    ok("exclusivity cannot be sold over a rival already there", overSold.status === 409);
+    ok("...and the refusal names who is in the way",
+       /Umgeni Mutual/.test(overSold.body?.detail ?? ""));
+    ok("...and the category", /banking/.test(overSold.body?.detail ?? ""));
+
+    // Clear the rival, then take exclusivity properly.
+    await q(`update sponsorship set starts_on = current_date - 30, ends_on = current_date - 1
+              where sponsor_id = $1`, [rival.body.id]);
+    const exclusive = await place(office, {
+      sponsorId: bank.body.id, placement: "scorecard_footer",
+      startsOn: today, endsOn: nextYear, exclusive: true, exclusiveScope: "school",
+      contractValueZar: 240000 });
+    ok("with the field clear, exclusivity is granted", exclusive.status === 200);
+    ok("...and recorded as exclusive at a named scope",
+       exclusive.body?.exclusive === true && exclusive.body?.exclusive_scope === "school");
+
+    // And now the direction beta-2 did test.
+    const blocked = await place(office, {
+      sponsorId: rival.body.id, placement: "ground_board",
+      startsOn: today, endsOn: nextYear });
+    ok("a rival in the same category is now refused", blocked.status === 409);
+    ok("...naming the standing deal rather than saying not_permitted",
+       /Ridgeway Bank/.test(blocked.body?.detail ?? ""));
+    ok("...and until when", /\d{4}-\d{2}-\d{2}/.test(blocked.body?.detail ?? ""));
+
+    // A different category is not blocked. Exclusivity is a claim on banking,
+    // not on the scoreboard.
+    const outfitter = await sign(office, {
+      schoolId: HIL, name: "Midlands Outfitters", category: "sportswear" });
+    ok("another category places freely",
+       (await place(office, { sponsorId: outfitter.body.id, placement: "ground_board",
+                              startsOn: today, endsOn: nextYear })).status === 200);
+    // Dates that never overlap are not a conflict — this is what lets a school
+    // line up next season's bank while this season's runs.
+    const nextSeasonStart = new Date(Date.now() + 400 * 864e5).toISOString().slice(0, 10);
+    const nextSeasonEnd   = new Date(Date.now() + 600 * 864e5).toISOString().slice(0, 10);
+    ok("a deal that starts after this one ends is fine",
+       (await place(office, { sponsorId: rival.body.id, placement: "ground_board",
+                              startsOn: nextSeasonStart, endsOn: nextSeasonEnd })).status === 200);
+
+    group("Breaking a promise takes a signature");
+    ok("the office cannot waive an exclusivity it is bound by",
+       (await place(office, { sponsorId: rival.body.id, placement: "fixture_list",
+                              startsOn: today, endsOn: nextYear,
+                              waiverNote: "The board agreed this at the October meeting." })).status === 409);
+    ok("...nor can the director of sport",
+       (await place(head, { sponsorId: rival.body.id, placement: "fixture_list",
+                            startsOn: today, endsOn: nextYear,
+                            waiverNote: "The board agreed this at the October meeting." })).status === 409);
+    // A waiver is prose. "ok" is the shape of a box being ticked.
+    const principal = await login("principal@example.invalid");
+    ok("a one-word waiver is refused before it reaches the database",
+       (await place(principal, { sponsorId: rival.body.id, placement: "fixture_list",
+                                 startsOn: today, endsOn: nextYear, waiverNote: "ok" })).status === 400);
+    const waived = await place(principal, {
+      sponsorId: rival.body.id, placement: "fixture_list",
+      startsOn: today, endsOn: nextYear,
+      waiverNote: "Board minute 2026/14: Ridgeway consented in writing to Umgeni on the fixture list only." });
+    ok("the principal can waive it, in writing", waived.status === 200);
+    ok("...and the row carries who signed",
+       !!(await q(`select waived_by from sponsorship where id = $1`, [waived.body.id]))[0]?.waived_by);
+    ok("...and when", !!(await q(`select waived_at from sponsorship where id = $1`, [waived.body.id]))[0]?.waived_at);
+
+    // A waiver on a placement nothing blocked would imply a decision nobody
+    // had to take.
+    const unblocked = await place(principal, {
+      sponsorId: outfitter.body.id, placement: "scorecard_footer",
+      startsOn: today, endsOn: nextYear,
+      waiverNote: "Board minute 2026/15: not actually needed for this one." });
+    ok("a waiver where nothing was blocked is dropped",
+       (await q(`select waiver_note from sponsorship where id = $1`, [unblocked.body.id]))[0]
+         ?.waiver_note === null);
+
+    group("Exclusivity is not confidential the way money is");
+    const seen = (await read("sponsorships", head)).body?.rows ?? [];
+    const ex = seen.find((r) => r.exclusive === true);
+    ok("a director of sport can see the category is spoken for", !!ex);
+    ok("...at what scope", ex?.exclusive_scope === "school");
+    ok("...and still not what it cost", ex?.contract_value_zar === null);
+    ok("...and that a waiver exists without reading its terms",
+       seen.some((r) => r.waived === true) && !JSON.stringify(seen).includes("Board minute"));
+
+    // Tidy up so the later groups see the fixture they expect.
+    await q(`delete from sponsorship where sponsor_id in ($1,$2)`,
+            [rival.body.id, outfitter.body.id]);
+    await q(`delete from sponsorship where exclusive`);
+  }
+
   group("What a board costs is not what a board says");
   const forBursar = (await read("sponsorships", bursar)).body?.rows ?? [];
   const forHead   = (await read("sponsorships", head)).body?.rows ?? [];

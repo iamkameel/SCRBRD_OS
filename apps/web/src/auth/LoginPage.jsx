@@ -47,6 +47,10 @@ const PILOT_ACCOUNTS = [
   // every other account here sees a placement with its contract value blanked,
   // which on its own is indistinguishable from a value nobody recorded.
   { email: "bursar@example.invalid",  label: "Finance",        role: "finance" },
+  // The head. The only demo account holding sponsorship.exclusivity.waive —
+  // the one decision the commercial roles deliberately cannot take for
+  // themselves — so it is the only one that can show the waiver working.
+  { email: "principal@example.invalid", label: "Principal",    role: "principal" },
 ];
 
 function LoginPage({ onLogin, onSignUp }) {

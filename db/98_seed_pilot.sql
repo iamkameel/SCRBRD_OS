@@ -211,6 +211,14 @@ INSERT INTO app_user (id, school_id, email, name, role) VALUES
   ('88888888-0000-0000-0000-000000000015', '11111111-1111-1111-1111-111111111111',
    'bursar@example.invalid', 'M du Toit', 'finance');
 
+-- The head. A school with sponsors and no principal is the same gap the
+-- bursar comment above describes, and a sharper one: sponsorship.exclusivity.waive
+-- is held by this role and by nothing else, so without an account carrying it
+-- the waiver path could only ever be observed failing.
+INSERT INTO app_user (id, school_id, email, name, role) VALUES
+  ('88888888-0000-0000-0000-000000000016', '11111111-1111-1111-1111-111111111111',
+   'principal@example.invalid', 'Dr N Mkhize', 'principal');
+
 -- The platform account. Not scoped to a school at all — this is what
 -- verifies a scout's accreditation, and accrediting an external organisation
 -- is not a claim about any one school's roster.
@@ -257,6 +265,7 @@ INSERT INTO role_assignment (id, person_id, role, school_id, team_code) VALUES
   ('a5510000-0000-0000-0000-000000000012', '88888888-0000-0000-0000-000000000012', 'guardian',        '11111111-1111-1111-1111-111111111111', NULL),
   ('a5510000-0000-0000-0000-000000000013', '88888888-0000-0000-0000-000000000013', 'guardian',        '11111111-1111-1111-1111-111111111111', NULL),
   ('a5510000-0000-0000-0000-000000000017', '88888888-0000-0000-0000-000000000015', 'finance',         '11111111-1111-1111-1111-111111111111', NULL),
+  ('a5510000-0000-0000-0000-000000000018', '88888888-0000-0000-0000-000000000016', 'principal',       '11111111-1111-1111-1111-111111111111', NULL),
   -- school_id NULL, honestly: platform administration is not a claim about
   -- any one school, and nothing in scouting.accredit's check looks at scope.
   ('a5510000-0000-0000-0000-000000000016', '88888888-0000-0000-0000-000000000014', 'platformadmin',   NULL, NULL);

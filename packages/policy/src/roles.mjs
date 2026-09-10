@@ -90,6 +90,17 @@ const BUNDLES = {
   // ── Institution leadership ──
   principal: [
     "school.feature.manage",
+    // The waiver, and nobody else at a school holds it — see the capability's
+    // own note for why it is kept away from the people who place the boards.
+    //
+    // With sponsorship.manage beside it, because a waiver attaches to the
+    // placement it permits: without the ability to write one, the head could
+    // authorise a conflicting board and have nowhere to record it. That does
+    // put both halves in one pair of hands, and deliberately — the control is
+    // not that the signer is powerless, it is that the signature is theirs,
+    // in prose, on the row. The office and the director of sport, who are the
+    // ones under commercial pressure to place the board, still cannot.
+    "sponsorship.exclusivity.waive", "sponsorship.read", "sponsorship.manage",
     // Appointments. A head who cannot appoint a physiotherapist has to ask the
     // platform to do it, which is a support ticket for a routine hire — and
     // GRANTABLE_ROLES below deliberately keeps the clinical and commercial

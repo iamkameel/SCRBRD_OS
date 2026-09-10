@@ -188,6 +188,15 @@ export const CAPABILITIES = {
   // contract behind it.
   "sponsorship.read":            "See who is sponsoring what",
   "sponsorship.manage":          "Agree and place sponsorships",
+  // Overriding a category exclusivity somebody was sold.
+  //
+  // Deliberately NOT held by sponsorship.manage. The people who place boards
+  // are the people under pressure to place this one, and a promise that the
+  // person who wants to break it can also waive is not a promise. beta-2's
+  // model called this a school board waiver, which is the right instinct: it
+  // belongs to whoever answers for the school, not to whoever runs its
+  // commercial diary.
+  "sponsorship.exclusivity.waive": "Waive a sponsor's category exclusivity, in writing",
   "sponsorship.finance.read":    "See sponsorship contract values and revenue share",
 
   // ── Competition ──

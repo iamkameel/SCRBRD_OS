@@ -2497,8 +2497,51 @@ CREATE TABLE sponsorship (
   school_share_pct   smallint CHECK (school_share_pct IS NULL OR school_share_pct BETWEEN 0 AND 100),
   agreed_by   uuid REFERENCES app_user(id),
   agreed_at   timestamptz NOT NULL DEFAULT now(),
+
+  -- ── CATEGORY EXCLUSIVITY ──────────────────────────────────────
+  --
+  -- A sponsor who has paid to be the only bank on a scoreboard has bought
+  -- something the schema has to be able to keep. Without this, the promise
+  -- lives in a signed contract and nowhere in the system that draws the
+  -- boards, and the first breach is discovered by the sponsor.
+  --
+  -- The SCOPE is the whole point and it is wider than one school. A bank
+  -- taking exclusivity across a competition has bought silence from every
+  -- school in it, which is a claim no single school's row can express — so
+  -- the scope names the shape and sponsorship_covers() below resolves it to
+  -- the actual schools.
+  exclusive       boolean NOT NULL DEFAULT false,
+  exclusive_scope text CHECK (exclusive_scope IS NULL OR exclusive_scope IN
+                    ('school','province','competition','platform')),
+  -- Both or neither. An exclusive placement with no scope is a promise with
+  -- no boundary, and a scope on a non-exclusive one is a scope that does
+  -- nothing — either would read as protection that is not there.
+  CONSTRAINT exclusivity_has_a_scope CHECK (exclusive = (exclusive_scope IS NOT NULL)),
+
+  -- Named when the scope is a competition, and only then.
+  competition_id uuid REFERENCES competition(id) ON DELETE CASCADE,
+  CONSTRAINT competition_scope_names_one CHECK (
+    (exclusive_scope = 'competition') = (competition_id IS NOT NULL)),
+
+  -- ── THE WAIVER ────────────────────────────────────────────────
+  --
+  -- A conflicting placement is refused, and a school that has genuinely
+  -- agreed one with both parties needs a way through. It is prose and a
+  -- name, never a flag: "somebody ticked a box" is not a record anyone can
+  -- act on when the exclusive sponsor asks how this happened. The trigger
+  -- requires the person writing it to hold the waiver capability and stamps
+  -- them, so the name on the row is the person who actually decided.
+  waiver_note text CHECK (waiver_note IS NULL OR length(btrim(waiver_note)) >= 20),
+  waived_by   uuid REFERENCES app_user(id),
+  waived_at   timestamptz,
+  CONSTRAINT waiver_is_signed CHECK (
+    (waiver_note IS NULL) = (waived_by IS NULL)
+    AND (waived_by IS NULL) = (waived_at IS NULL)),
+
   CONSTRAINT sponsorship_runs_forwards CHECK (ends_on >= starts_on)
 );
+CREATE INDEX ON sponsorship (competition_id) WHERE competition_id IS NOT NULL;
+CREATE INDEX ON sponsorship (exclusive) WHERE exclusive;
 CREATE INDEX ON sponsorship (school_id);
 CREATE INDEX ON sponsorship (sponsor_id);
 CREATE INDEX ON sponsorship (match_id) WHERE match_id IS NOT NULL;
@@ -2526,6 +2569,138 @@ $$ LANGUAGE plpgsql;
 
 CREATE TRIGGER sponsor_category_gate BEFORE INSERT OR UPDATE ON sponsor
   FOR EACH ROW EXECUTE FUNCTION sponsor_category_permitted();
+
+
+/**
+ * Which schools a placement's exclusivity actually covers.
+ *
+ * The scope names a shape; this resolves it to the set of schools the promise
+ * reaches, so a conflict is a plain question about whether two sets intersect
+ * rather than a matrix of scope-against-scope special cases. Four shapes and
+ * one rule each:
+ *
+ *   school       the school that signed it
+ *   province     every school in the same province — a regional deal
+ *   competition  every school entered in it, from competition_entrant, so a
+ *                league deal reaches the schools actually playing rather
+ *                than the ones somebody remembered to list
+ *   platform     everything
+ *
+ * SECURITY DEFINER, because the trigger that calls it must see conflicts at
+ * schools the writer cannot read. A school administrator signing a bank has no
+ * business reading another school's sponsor list — and must still be refused
+ * when that school's bank holds a competition-wide exclusivity. Resolving this
+ * under the caller's own row-level security would return an empty set and let
+ * the conflicting placement straight through, which is precisely the kind of
+ * silent hole a security_invoker view creates elsewhere in this schema.
+ */
+CREATE OR REPLACE FUNCTION sponsorship_covers(
+  p_scope text, p_school uuid, p_competition uuid)
+RETURNS TABLE (school_id uuid) AS $$
+  SELECT s.id FROM school s
+   WHERE CASE p_scope
+           WHEN 'school'      THEN s.id = p_school
+           WHEN 'province'    THEN s.province IS NOT NULL
+                                   AND s.province = (SELECT province FROM school
+                                                      WHERE id = p_school)
+           WHEN 'competition' THEN EXISTS (SELECT 1 FROM competition_entrant e
+                                            WHERE e.competition_id = p_competition
+                                              AND e.school_id = s.id)
+           WHEN 'platform'    THEN true
+           -- A placement that claims no exclusivity covers nobody, which is
+           -- what makes the conflict test below symmetric without a branch.
+           ELSE false
+         END
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION sponsorship_covers(text, uuid, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION sponsorship_covers(text, uuid, uuid) TO PUBLIC;
+
+/**
+ * A category exclusivity is kept, or waived by somebody who signs for it.
+ *
+ * TESTED IN BOTH DIRECTIONS, which beta-2's version was not. It refused a new
+ * placement that walked into an existing exclusivity, and said nothing about a
+ * new EXCLUSIVE placement written over sponsors already there — so a school
+ * could sell exclusivity it had already given away, and the promise was broken
+ * at the moment it was made. Here a conflict is any overlap in category, dates
+ * and covered schools where EITHER side claims exclusivity.
+ *
+ * The message names the blocker: which sponsor, which category, which scope,
+ * and until when. "not_permitted" tells a school office to ring somebody;
+ * naming the standing deal tells them who to ring.
+ */
+CREATE OR REPLACE FUNCTION sponsorship_exclusivity_gate() RETURNS trigger AS $$
+DECLARE v_category text; v_blocker record;
+BEGIN
+  SELECT category INTO v_category FROM sponsor WHERE id = NEW.sponsor_id;
+
+  SELECT sp.name, other.exclusive_scope, other.ends_on, other.exclusive, sc.name AS school_name
+    INTO v_blocker
+    FROM sponsorship other
+    JOIN sponsor sp ON sp.id = other.sponsor_id AND sp.category = v_category
+    JOIN school  sc ON sc.id = other.school_id
+   WHERE other.id IS DISTINCT FROM NEW.id
+     AND sp.id IS DISTINCT FROM NEW.sponsor_id      -- a sponsor never blocks itself
+     AND sp.active
+     -- Overlapping terms. Two deals that never run at once do not conflict,
+     -- which is what lets a school line up next season's bank in advance.
+     AND other.starts_on <= NEW.ends_on
+     AND other.ends_on   >= NEW.starts_on
+     AND (other.exclusive OR NEW.exclusive)
+     AND EXISTS (
+       SELECT 1
+         FROM sponsorship_covers(coalesce(other.exclusive_scope, 'school'),
+                                 other.school_id, other.competition_id) a
+         JOIN sponsorship_covers(coalesce(NEW.exclusive_scope, 'school'),
+                                 NEW.school_id, NEW.competition_id) b
+           ON a.school_id = b.school_id)
+   ORDER BY other.exclusive DESC, other.ends_on DESC
+   LIMIT 1;
+
+  -- FOUND, not v_blocker IS NOT NULL. A composite is IS NOT NULL only when
+  -- EVERY field is non-null, and a blocker that is merely in the way rather
+  -- than exclusive has a NULL exclusive_scope — so the record tested false and
+  -- the conflict passed straight through. It cost an hour and it is the reason
+  -- the walk tests both directions rather than trusting the symmetric-looking
+  -- query above.
+  IF FOUND THEN
+    IF NEW.waiver_note IS NULL THEN
+      RAISE EXCEPTION
+        'category exclusivity: % holds % exclusivity at scope % until % (%). '
+        'This placement cannot proceed without a written waiver from somebody '
+        'holding sponsorship.exclusivity.waive',
+        v_blocker.name, v_category,
+        coalesce(v_blocker.exclusive_scope, 'school'),
+        v_blocker.ends_on, v_blocker.school_name
+        USING ERRCODE = 'check_violation';
+    END IF;
+
+    -- A waiver is a decision, so it is made by the person making it. Accepting
+    -- a waived_by naming somebody else would let the office write the
+    -- principal's name on a decision the principal never took.
+    IF NOT app_can('sponsorship.exclusivity.waive', NEW.school_id, NULL, NULL, NULL) THEN
+      RAISE EXCEPTION
+        'a waiver of category exclusivity must be signed by somebody holding '
+        'sponsorship.exclusivity.waive at this school'
+        USING ERRCODE = 'check_violation';
+    END IF;
+    NEW.waived_by := app_user_id();
+    NEW.waived_at := now();
+  ELSE
+    -- No conflict, no waiver. A waiver on a placement nothing blocked would
+    -- sit in the record implying a decision nobody had to take.
+    NEW.waiver_note := NULL;
+    NEW.waived_by   := NULL;
+    NEW.waived_at   := NULL;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER sponsorship_exclusivity BEFORE INSERT OR UPDATE ON sponsorship
+  FOR EACH ROW EXECUTE FUNCTION sponsorship_exclusivity_gate();
 
 
 
