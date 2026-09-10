@@ -166,6 +166,41 @@ export const READ_QUERIES = {
             order by name`,
   },
 
+  /**
+   * Appointments, and WHO MADE EACH ONE.
+   *
+   * role_assignment is readable by the person it is about and by anyone
+   * holding user.role.assign at its scope, so this needs no capability of its
+   * own — the table's policy already decides, and a coach sees their own
+   * appointments and nobody else's.
+   *
+   * The granter and the revoker are joined by NAME rather than returned as
+   * ids, because "B Naicker appointed this coach on 3 March" is the sentence
+   * somebody actually needs, and an administrator holding a pair of uuids has
+   * to go and look both up. app_user is itself row-scoped, so a name the
+   * reader may not see comes back null and the row still says WHEN — the
+   * useful half survives.
+   *
+   * Withdrawn assignments are INCLUDED, deliberately. This is the audit
+   * surface: "who used to be able to do this and who took it away" is the
+   * question it exists to answer, and filtering to live rows would leave it
+   * answering only the easy half.
+   */
+  assignments: {
+    text: `select a.id, a.person_id, p.name as person_name,
+                  a.role, a.school_id, a.team_code, a.fixture_id,
+                  a.active, a.valid_from, a.valid_until,
+                  a.created_at, a.created_by, g.name as granted_by_name,
+                  a.revoked_at, a.revoked_by, r.name as revoked_by_name
+             from role_assignment a
+             left join app_user p on p.id = a.person_id
+             left join app_user g on g.id = a.created_by
+             left join app_user r on r.id = a.revoked_by
+            where ($1::uuid is null or a.person_id = $1)
+            order by a.active desc, a.created_at desc`,
+    params: q => [q?.personId || null],
+  },
+
   grounds: {
     text: `select id, school_id, name, surface
              from ground

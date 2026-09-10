@@ -316,7 +316,30 @@ CREATE TABLE role_assignment (
   valid_from  date,
   valid_until date,
   created_at  timestamptz NOT NULL DEFAULT now(),
+  -- WHO MADE THIS APPOINTMENT. Present since this table was written and never
+  -- once populated — see role_assignment_stamp_granter() in db/01_authz.sql,
+  -- which now forces it, and why a trigger rather than a default.
   created_by  uuid REFERENCES app_user(id),
+  -- And who took it back. Withdrawing is an UPDATE setting active false, and
+  -- until these columns existed the row recorded that it had happened and not
+  -- by whom — the mirror of the gap above, on the more consequential side.
+  -- ASYMMETRIC ON PURPOSE, exactly as created_at and created_by are. The time
+  -- is always stamped; the person is stamped when there is one. A withdrawal
+  -- made by a migration or a maintenance script has no person behind it, and
+  -- "revoked_at set, revoked_by null" says so — the same sentence created_by
+  -- null already says about a seeded appointment.
+  --
+  -- There WAS a CHECK pairing them, and it broke the access walk: withdrawing
+  -- as the migration user stamps now() and a NULL actor, which the pair
+  -- refused. Requiring both would have meant either refusing platform
+  -- withdrawals or inventing an actor for them, and inventing one is the
+  -- fabrication this codebase keeps deleting.
+  revoked_by  uuid REFERENCES app_user(id),
+  revoked_at  timestamptz,
+  -- An active assignment has not been withdrawn. Stated as a constraint
+  -- because the two are otherwise free to disagree, and a row that is active
+  -- and carries a withdrawal is one nobody can interpret.
+  CONSTRAINT active_is_not_revoked CHECK (active = false OR revoked_at IS NULL),
   CONSTRAINT assignment_dates CHECK (valid_from IS NULL OR valid_until IS NULL OR valid_from < valid_until)
 );
 -- The constraint that a coach assignment must name a team is NOT here: it is

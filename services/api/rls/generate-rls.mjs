@@ -596,6 +596,30 @@ BEGIN
                     'withdraw this one and make the appointment you meant'
       USING ERRCODE = 'check_violation';
   END IF;
+  -- The provenance is part of the record, not part of the row's editable
+  -- state. Letting an update move created_by would make the audit trail
+  -- writable by the people it is about.
+  IF NEW.created_by IS DISTINCT FROM OLD.created_by
+  OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+    RAISE EXCEPTION 'who made an appointment and when are not editable'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  -- WITHDRAWING CARRIES A NAME TOO, stamped here rather than supplied. The
+  -- gap this closes is the mirror of the one below: an appointment could be
+  -- taken back and the row would not say by whom.
+  IF OLD.active AND NOT NEW.active THEN
+    NEW.revoked_by := app_user_id();
+    NEW.revoked_at := now();
+  ELSIF NOT OLD.active AND NEW.active THEN
+    -- Reactivating is a new appointment wearing an old one's provenance. The
+    -- policy already only permits the true-to-false direction; this is the
+    -- structural half.
+    RAISE EXCEPTION 'a withdrawn assignment is not reactivated; make the appointment again'
+      USING ERRCODE = 'check_violation';
+  ELSE
+    NEW.revoked_by := OLD.revoked_by;
+    NEW.revoked_at := OLD.revoked_at;
+  END IF;
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
@@ -603,6 +627,41 @@ $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS role_assignment_revoke_guard ON role_assignment;
 CREATE TRIGGER role_assignment_revoke_guard BEFORE UPDATE ON role_assignment
   FOR EACH ROW EXECUTE FUNCTION role_assignment_revoke_only();
+
+/**
+ * WHO MADE THIS APPOINTMENT — stamped, never supplied.
+ *
+ * created_by has been on this table since it was written and NOTHING HAS EVER
+ * WRITTEN IT: twenty-five seeded assignments, none with a granter named. A
+ * column that exists and is never populated is the same shape as a capability
+ * nobody can exercise, and this is the worst place in the schema for it.
+ * Every other decision here carries a name — who published a broadcast, who
+ * hid a module, who waived an exclusivity, who said a boy could not play — and
+ * the appointment that GRANTS ALL OF THOSE POWERS did not.
+ *
+ * A TRIGGER RATHER THAN A DEFAULT OR A ROUTE, and the difference is the point.
+ * A default can be overridden by naming the column; a route can be bypassed by
+ * another route, an import, or psql. Forced here, the row cannot claim
+ * somebody else made the appointment no matter who writes it or how.
+ *
+ * NULL stays meaningful: the seed and the migrations insert as the migration
+ * user, where app_user_id() is NULL, and "no granter" is the honest answer for
+ * a row the platform created rather than a person.
+ */
+CREATE OR REPLACE FUNCTION role_assignment_stamp_granter() RETURNS trigger AS $$
+BEGIN
+  NEW.created_by := app_user_id();
+  NEW.created_at := now();
+  -- A fresh appointment is not withdrawn, whatever the insert claimed.
+  NEW.revoked_by := NULL;
+  NEW.revoked_at := NULL;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS role_assignment_granter ON role_assignment;
+CREATE TRIGGER role_assignment_granter BEFORE INSERT ON role_assignment
+  FOR EACH ROW EXECUTE FUNCTION role_assignment_stamp_granter();
 
 ALTER TABLE assignment_subject ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS assignment_subject_read ON assignment_subject;

@@ -60,6 +60,32 @@ async function asPerson(personId, sql, params = []) {
   } finally { c.release(); }
 }
 
+/**
+ * Several statements, one principal, one transaction — result of the last.
+ *
+ * asPerson() runs a single query and rolls back, which makes a lifecycle
+ * (appoint, then withdraw, then read it back) impossible to express: each call
+ * undoes the one before. Wrapping them in a data-modifying CTE does not work
+ * either, and for a reason worth writing down — every CTE in one statement
+ * sees the SAME SNAPSHOT, so an UPDATE cannot find the row an INSERT beside it
+ * has just written. It returned nought rows and looked like a policy refusal.
+ */
+async function asPersonSeq(personId, statements) {
+  const c = await pool.connect();
+  try {
+    await c.query("BEGIN");
+    await c.query("SET LOCAL ROLE scrbrd_app");
+    await c.query("SELECT set_config('app.user_id', $1, true)", [personId]);
+    let last = { rows: [], rowCount: 0 };
+    for (const [sql, params] of statements) last = await c.query(sql, params ?? []);
+    await c.query("ROLLBACK");
+    return { ok: true, rows: last.rows, count: last.rowCount };
+  } catch (e) {
+    await c.query("ROLLBACK").catch(() => {});
+    return { ok: false, code: e.code, message: e.message };
+  } finally { c.release(); }
+}
+
 const REFUSED = (r) => r.ok === false || r.count === 0;
 const ALLOWED = (r) => r.ok === true && r.count > 0;
 
@@ -218,6 +244,90 @@ try {
         where not exists (select 1 from role_grantable g where g.role = r.role)`);
     ok("no role in the model is unappointable",
        orphaned.length === 0 || (console.log("     unappointable:", orphaned.map(o=>o.role).join(", ")), false));
+  }
+
+  group("Every appointment carries the name of whoever made it");
+  {
+    // created_by has been on role_assignment since it was written and NOTHING
+    // HAD EVER WRITTEN IT — twenty-five seeded assignments, none with a
+    // granter. A column that exists and is never populated is the same shape
+    // as a capability nobody can exercise, and this was the worst place in the
+    // schema for it: the appointment that grants every other power was the one
+    // decision with no name on it.
+    const made = (await q(
+      `insert into role_assignment (person_id, role, school_id) values ($1,'spectator',$2)
+       returning id`, [who.coach, HIL]))[0].id;
+    try {
+      // Seeded and migration-written rows have no granter, and that is the
+      // honest answer rather than a gap: app_user_id() is NULL for the
+      // migration user, and the platform did make those appointments.
+      ok("a row the platform seeded names no granter",
+         (await q(`select created_by from role_assignment where id = $1`, [made]))[0]
+           .created_by === null);
+    } finally { await q(`delete from role_assignment where id = $1`, [made]); }
+
+    const byOffice = await asPerson(who.registrar,
+      `insert into role_assignment (person_id, role, school_id, team_code)
+       values ($1,'coach',$2,'U15A') returning created_by, created_at`, [who.parent, HIL]);
+    ok("an appointment made by a person names them",
+       byOffice.rows?.[0]?.created_by === who.registrar);
+    ok("...and stamps when", !!byOffice.rows?.[0]?.created_at);
+
+    // STAMPED, NEVER SUPPLIED. A default could be overridden by naming the
+    // column; a route could be bypassed by another route, an import, or psql.
+    const spoofed = await asPerson(who.registrar,
+      `insert into role_assignment (person_id, role, school_id, team_code, created_by)
+       values ($1,'coach',$2,'U15B',$3) returning created_by`,
+      [who.parent, HIL, who.coach]);
+    ok("naming somebody else as the granter does not work",
+       spoofed.rows?.[0]?.created_by === who.registrar);
+
+    // Withdrawing is the more consequential half and had no name at all.
+    //
+    // ONE TRANSACTION, because asPerson() rolls back — chaining separate calls
+    // undoes each statement before the next runs, so the "reactivation" test
+    // was setting active true on a row that had never gone false and the
+    // "granter's name" test was reading rows that had been rolled away. Both
+    // reported bugs in code that was correct.
+    const life = await asPersonSeq(who.registrar, [
+      [`insert into role_assignment (person_id, role, school_id, team_code)
+        values ($1,'coach',$2,'U16A')`, [who.parent, HIL]],
+      [`update role_assignment set active = false
+         where person_id = $1 and role = 'coach' and team_code = 'U16A'`, [who.parent]],
+      [`select a.created_by, a.revoked_by, a.revoked_at is not null as stamped,
+               g.name as granted_by_name, r.name as revoked_by_name
+          from role_assignment a
+          left join app_user g on g.id = a.created_by
+          left join app_user r on r.id = a.revoked_by
+         where a.person_id = $1 and a.role = 'coach' and a.team_code = 'U16A'`, [who.parent]],
+    ]);
+    ok("an appointment and its withdrawal both land",
+       life.ok === true && life.rows.length === 1);
+    ok("...the appointment names its granter", life.rows?.[0]?.created_by === who.registrar);
+    ok("...the withdrawal names who took it back", life.rows?.[0]?.revoked_by === who.registrar);
+    ok("...and stamps when", life.rows?.[0]?.stamped === true);
+    // Reachable, not merely stored: a name rather than a pair of uuids.
+    ok("the read surfaces the granter's name, not an id",
+       life.rows?.[0]?.granted_by_name === "B Naicker");
+    ok("...and the revoker's", life.rows?.[0]?.revoked_by_name === "B Naicker");
+
+    const id = (await q(
+      `insert into role_assignment (person_id, role, school_id, team_code)
+       values ($1,'coach',$2,'U14B') returning id`, [who.parent, HIL]))[0].id;
+    try {
+      ok("the provenance is not editable",
+         REFUSED(await asPerson(who.registrar,
+           `update role_assignment set created_by = $2 where id = $1 returning id`,
+           [id, who.coach])));
+      // A withdrawn appointment is not reactivated: that would be a new
+      // appointment wearing an old one's provenance. Both statements in one
+      // transaction, for the reason above.
+      ok("...and a withdrawn appointment is not reactivated",
+         REFUSED(await asPersonSeq(who.registrar, [
+           [`update role_assignment set active = false where id = $1`, [id]],
+           [`update role_assignment set active = true where id = $1 returning id`, [id]],
+         ])));
+    } finally { await q(`delete from role_assignment where id = $1`, [id]); }
   }
 
   group("The catalogue cannot rot, and cannot be rewritten");

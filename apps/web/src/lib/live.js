@@ -315,6 +315,30 @@ function asAvailability(r) {
            clinicallyRestricted: r.clinically_restricted === true, live: true };
 }
 
+/**
+ * An appointment, with the person who made it named.
+ *
+ * granterName is null in two different situations and a screen has to tell
+ * them apart: a row the platform seeded has no granter at all, and a row whose
+ * granter this reader may not look up has one they cannot see. Both arrive as
+ * null; granterId carries the id, so "granted by someone" and "granted by
+ * nobody" stay distinguishable.
+ *
+ * Named granterId rather than grantedBy because rbac/index.js already exports
+ * a grantedBy, and the import checker catches the collision — the same trap a
+ * local named signedIn walked into earlier.
+ */
+function asAssignment(r) {
+  return { id: r.id, personId: r.person_id, personName: r.person_name,
+           role: r.role, school: r.school_id, team: r.team_code, fixture: r.fixture_id,
+           active: r.active === true,
+           validFrom: r.valid_from ? String(r.valid_from).slice(0, 10) : null,
+           validUntil: r.valid_until ? String(r.valid_until).slice(0, 10) : null,
+           grantedAt: r.created_at, granterId: r.created_by, granterName: r.granted_by_name,
+           revokedAt: r.revoked_at, revokerId: r.revoked_by, revokerName: r.revoked_by_name,
+           live: true };
+}
+
 function asInjury(r) {
   return { id: r.id, player: r.player_id, type: r.injury_type, severity: r.severity,
            dateInj: r.date_injured, rtw: r.rtw_date, phase: r.phase,
@@ -427,6 +451,7 @@ const ADAPT = {
   weather: asWeather,
   officials: asOfficial,
   ground_conditions: asGroundCondition,
+  assignments: asAssignment,
   vehicles: asVehicle,
   trips: asTrip,
   availability: asAvailability,
