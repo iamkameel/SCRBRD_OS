@@ -63,6 +63,9 @@ const WALKS = [
   "escalation",
   // Getting four hundred boys in, and the data back out.
   "csv",
+  // The intersection three people own: the family's answer, the physio's
+  // restriction and the coach's XI, which nothing joined until now.
+  "readiness",
 ];
 
 // Walks that drive a real browser AND need a database. They need two things

@@ -312,7 +312,33 @@ function asAvailability(r) {
            status: r.status, reasonKind: r.reason_kind, note: r.note,
            declaredAt: r.declared_at, selfDeclared: r.self_declared === true,
            declaredByName: r.declared_by_name,
-           clinicallyRestricted: r.clinically_restricted === true, live: true };
+           // Deliberately NOT coerced to a boolean. Null is a third answer
+           // here — the school does not run the Injuries module, so no
+           // clinical opinion is being collected — and `=== true` turned that
+           // into "cleared", which is the one reading nothing asserted.
+           clinicallyRestricted: r.clinically_restricted ?? null, live: true };
+}
+
+/**
+ * One boy, one fixture, and the three people who have a say.
+ *
+ * `state` is the resolved answer and the components stay beside it, because a
+ * screen has to show which half said no: a restriction is the physio's to lift
+ * and a family's answer is not the coach's to appeal. Nothing in this file
+ * recomputes the state — the resolution happens in Postgres, where the scope
+ * is, and a state invented here would be a fourth opinion.
+ */
+function asReadiness(r) {
+  return { playerId: r.player_id, name: r.full_name, team: r.team_code,
+           state: r.state,
+           declaredStatus: r.declared_status, reasonKind: r.reason_kind,
+           selfDeclared: r.self_declared === true,
+           declaredByName: r.declared_by_name,
+           // Tri-state, as above: true restricted, false cleared, null not asked.
+           clinicallyRestricted: r.clinically_restricted ?? null,
+           returnDate: r.rtw_date ? String(r.rtw_date).slice(0, 10) : null,
+           selected: r.selected === true, side: r.selected_side, battingNo: r.batting_no,
+           conflict: r.conflict, live: true };
 }
 
 /**
@@ -455,6 +481,7 @@ const ADAPT = {
   vehicles: asVehicle,
   trips: asTrip,
   availability: asAvailability,
+  readiness: asReadiness,
   module_settings: asModuleSetting,
   module_suppressions: asModuleSuppression,
   my_features: asMyFeature,

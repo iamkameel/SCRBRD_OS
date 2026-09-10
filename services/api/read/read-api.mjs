@@ -697,8 +697,21 @@ export const READ_QUERIES = {
                   -- one distinction this column exists to draw.
                   coalesce(d.is_self, false) as self_declared,
                   d.name               as declared_by_name,
-                  exists (select 1 from injury_masked i
-                           where i.player_id = p.id and i.restricted) as clinically_restricted
+                  -- Gated on the Injuries module, exactly as the dashboard's
+                  -- injuries_active figure is. This read belongs to no module
+                  -- — chasing a side is not an Injuries feature — but the
+                  -- clinical HALF of it does, and a school that switched
+                  -- Injuries off and still saw restrictions on its squad
+                  -- screen would be right to say the setting does not work.
+                  --
+                  -- Null, not false. "Nobody is restricted" and "we do not run
+                  -- that module" are different facts and false cannot tell
+                  -- them apart; a selector reading false would take it as a
+                  -- clinical all-clear that nothing in the system asserted.
+                  (case when my_feature_enabled('injuries')
+                        then exists (select 1 from injury_masked i
+                                      where i.player_id = p.id and i.restricted)
+                   end)                 as clinically_restricted
              from match m
              join player p
                on p.school_id = m.school_id
@@ -708,6 +721,133 @@ export const READ_QUERIES = {
              left join lateral availability_declarant(p.id, a.declared_by) d on true
             where m.id = $1
             order by (a.status is null) desc, p.full_name`,
+    params: q => [req(q, "matchId")],
+  },
+
+  /**
+   * THE INTERSECTION, which a coach has until now done in his head.
+   *
+   * Three facts about one boy and one Saturday live in three tables owned by
+   * three different people: the family says whether he is coming, the physio
+   * says whether he is cleared, and the coach says whether he is picked. Every
+   * one of them was readable on its own and nothing joined them, so the check
+   * that a picked XI is actually a fit and willing XI happened on a Friday
+   * afternoon by flicking between two screens. It is the kind of check that
+   * works until the week somebody is busy.
+   *
+   * NOT A SCORE. The obvious shape for this is one number per boy — 0 to 100,
+   * sort descending, pick the top eleven — and it is the wrong shape, for a
+   * reason that is not about precision. A clinical restriction is the physio's
+   * to lift and nobody else's; a family's declaration is not the coach's to
+   * appeal. Those two have OPPOSITE consequences for what a selector should do
+   * next, and a single number cannot say which one said no. So this returns a
+   * resolved state AND both components, and the client shows the component
+   * that decided.
+   *
+   * WORST WINS. `state` is the least favourable thing anybody has said, in the
+   * order: restricted, unavailable, unanswered, doubtful, available. Silence
+   * ranks below a doubtful answer deliberately — a boy who has not replied has
+   * told us nothing, and the nothing is what needs chasing.
+   *
+   * NOTHING HERE READS player.fitness. That column is written by no route in
+   * this product and already disagrees with the injury records it purports to
+   * summarise; a fourth unmaintained opinion is not an input, it is a bug
+   * waiting for somebody to trust it. The clinical answer comes from the
+   * injury rows the physio actually maintains, and the readiness walk asserts
+   * that changing fitness changes nothing here.
+   *
+   * The diagnosis stays behind its tier for free: this reads injury_masked,
+   * which is security_invoker, so a coach at the availability tier gets
+   * `restricted` and `rtw_date` and no injury_type, severity or phase. The
+   * derivation deliberately does not depend on `phase` for exactly that
+   * reason — phase is masked at that tier, and a state that quietly changed
+   * according to who was asking would be worse than no state at all.
+   */
+  readiness: {
+    text: `with clinical as (
+                  -- Gated on Injuries like the availability read above and for
+                  -- the same reason. When the module is off this side is
+                  -- simply absent: the column comes back null and the state
+                  -- falls back to the declaration alone. That is the school's
+                  -- choice and not a bypass — no injury row changed, and the
+                  -- physio's own screen still holds it.
+                  select i.player_id,
+                         bool_or(i.restricted)                              as restricted,
+                         min(i.rtw_date) filter (where i.restricted)        as rtw_date
+                    from injury_masked i
+                   where my_feature_enabled('injuries')
+                   group by i.player_id
+                )
+           select p.id                       as player_id,
+                  p.full_name,
+                  p.team_code,
+                  -- THE FAMILY'S HALF, and its provenance, as the availability
+                  -- read gives it. Same SECURITY DEFINER declarant helper for
+                  -- the same reason: app_user is row-scoped, so joining it
+                  -- would collapse "he said so himself" into "we could not
+                  -- tell".
+                  a.status                    as declared_status,
+                  a.reason_kind,
+                  coalesce(d.is_self, false)  as self_declared,
+                  d.name                      as declared_by_name,
+                  -- THE PHYSIO'S HALF, and null means ONE thing here: the
+                  -- Injuries module is off, so no clinical opinion is being
+                  -- collected at all. False means one was and it says he is
+                  -- clear — no restricted injury row that this reader can see.
+                  --
+                  -- Keeping those two apart is the whole reason for the
+                  -- coalesce. Left-joined raw, a boy with no injury history
+                  -- came back null, indistinguishable from a school that had
+                  -- switched the module off, and the one column a selector
+                  -- would act on could not tell "cleared" from "not asked".
+                  (case when my_feature_enabled('injuries')
+                        then coalesce(c.restricted, false)
+                   end)                        as clinically_restricted,
+                  c.rtw_date,
+                  -- THE COACH'S HALF. A withdrawn selection is not a selection
+                  -- (every read of a squad has to say so), so it comes back
+                  -- unpicked here.
+                  (s.player_id is not null)   as selected,
+                  s.side                      as selected_side,
+                  s.batting_no,
+                  case when c.restricted            then 'restricted'
+                       when a.status = 'unavailable' then 'unavailable'
+                       when a.status is null         then 'unanswered'
+                       when a.status = 'doubtful'    then 'doubtful'
+                       else                               'available'
+                  end                         as state,
+                  -- The row a selector needs to see first: somebody is in the
+                  -- side who should not be. Derived from two columns of this
+                  -- same row, so a client computing it could not get it wrong
+                  -- — it is here because doing the join is the whole point of
+                  -- the read, and leaving the conclusion to the caller would
+                  -- put us back to flicking between screens.
+                  case when s.player_id is null then null
+                       when c.restricted             then 'selected_while_restricted'
+                       when a.status = 'unavailable' then 'selected_while_unavailable'
+                       when a.status is null         then 'selected_without_answer'
+                  end                         as conflict
+             from match m
+             join player p
+               on p.school_id = m.school_id
+              and p.team_code = m.team_code
+             left join match_availability a
+               on a.match_id = m.id and a.player_id = p.id
+             left join lateral availability_declarant(p.id, a.declared_by) d on true
+             left join clinical c on c.player_id = p.id
+             left join match_squad s
+               on s.match_id = m.id and s.player_id = p.id and not s.withdrawn
+            where m.id = $1
+            -- Conflicts first, then the worst news, then alphabetically.
+            order by (case when s.player_id is not null
+                            and (c.restricted or a.status is distinct from 'available')
+                           then 0 else 1 end),
+                     (case when c.restricted            then 0
+                           when a.status = 'unavailable' then 1
+                           when a.status is null         then 2
+                           when a.status = 'doubtful'    then 3
+                           else                               4 end),
+                     p.full_name`,
     params: q => [req(q, "matchId")],
   },
 
