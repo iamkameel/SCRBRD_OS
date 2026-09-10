@@ -123,6 +123,12 @@ const NAV_CAPABILITY = {
   // but it would still be the browser making a claim about authority.
   officials:     "fixture.read",
   staff:         "user.read",
+  // The read capability the sponsors themselves are read under, not the manage
+  // one: a director of sport who may see which boards are committed but may
+  // not sign a brand still needs the destination. What they can DO once there
+  // is decided by the same capability twice — once for the button, once, and
+  // authoritatively, by the INSERT policy.
+  sponsors:      "sponsorship.read",
   notifications: null,
   settings:      null,
   management:    "user.role.assign",
@@ -189,6 +195,7 @@ const NAV_META = {
   fields:       { icon:"🌿",  label:"Fields"       },
   officials:    { icon:"🧑‍⚖️", label:"Officials"    },
   staff:        { icon:"🔧",  label:"Staff"        },
+  sponsors:     { icon:"🤝",  label:"Sponsors"     },
   notifications:{ icon:"🔔",  label:"Alerts"       },
   settings:     { icon:"⚙️",  label:"Settings"     },
   management:   { icon:"🛠️",  label:"Management"   },

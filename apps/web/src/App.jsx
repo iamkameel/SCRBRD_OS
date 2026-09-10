@@ -30,6 +30,7 @@ import { ManagementView } from "./views/ManagementView.jsx";
 import { MatchCentreView } from "./views/MatchCentreView.jsx";
 import { NotificationsView } from "./views/NotificationsView.jsx";
 import { OfficialsView } from "./views/OfficialsView.jsx";
+import { SponsorsView } from "./views/SponsorsView.jsx";
 import { PitchDeckView } from "./views/PitchDeckView.jsx";
 import { ProfilesView } from "./views/ProfilesView.jsx";
 import { RulebookView } from "./views/RulebookView.jsx";
@@ -248,6 +249,7 @@ export default function SCRBRD_OS() {
     fields:       <FieldsView        role={role}/>,
     staff:        <StaffView         role={role}/>,
     officials:    <OfficialsView     role={role}/>,
+    sponsors:     <SponsorsView      role={role}/>,
     notifications:<NotificationsView role={role}/>,
     settings:     <SettingsView      role={role} users={users} setUsers={setUsersTracked}/>,
     management:   <ManagementView    role={role} users={users} setUsers={setUsersTracked}/>,

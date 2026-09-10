@@ -346,6 +346,94 @@ try {
     await head.ctx.close().catch(() => {});
   }
 
+  // ── The commercial mask, in a browser ───────────────────────────
+  //
+  // THE ONE ASSERTION THIS WALK EXISTS FOR. Every other check on sponsorship
+  // is against the API, where it is easy to be sure what left the server. This
+  // one is about a rendered page: a screen holds the row AND the reader, and a
+  // component that received a null and drew a dash proves nothing about
+  // whether the number was ever sent. So the value is written through the API
+  // and then looked for in the text of the page — first for a reader who may
+  // not have it, then for the one who may.
+  group("A contract value reaches the finance office and nobody else");
+  {
+    const tok = await (await fetch(`${API}/api/auth/dev-login`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "bursar@example.invalid", deviceId: "browser-read" }),
+    })).json().then((j) => j.token);
+    const H = (t) => ({ "content-type": "application/json", authorization: `Bearer ${t}` });
+
+    const VALUE = "764321";   // Distinctive on purpose: a number that could not
+                              // appear on the page by coincidence.
+    // Grouped by a space, a comma, a full stop or nothing: which separator a
+    // locale picks is not something this assertion should depend on.
+    const MONEY = /764[\s,.]?321/;
+    const brand = await (await fetch(`${API}/api/sponsors`, {
+      method: "POST", headers: H(tok),
+      body: JSON.stringify({ schoolId: "11111111-1111-1111-1111-111111111111",
+                             name: "Ridgeway Bank", category: "banking",
+                             logoText: "RIDGEWAY", logoBg: "#0b3d2e" }),
+    })).json();
+    const today = new Date().toISOString().slice(0, 10);
+    const later = new Date(Date.now() + 300 * 864e5).toISOString().slice(0, 10);
+    const placed = brand?.id && (await fetch(`${API}/api/sponsorships`, {
+      method: "POST", headers: H(tok),
+      body: JSON.stringify({ sponsorId: brand.id, placement: "ground_board",
+                             startsOn: today, endsOn: later,
+                             contractValueZar: Number(VALUE), schoolSharePct: 70 }),
+    })).ok;
+    ok("a sponsor is signed and placed through the API", !!placed);
+
+    const head = await open();
+    ok("the director of sport signs in (sponsors)", await signIn(head.page, /sarah@example\.invalid|Director/));
+    if (await nav(head.page, /Sponsors/)) {
+      await head.page.locator("button", { hasText: "Ridgeway Bank" }).first()
+        .click({ timeout: 4000 }).catch(() => {});
+      await head.page.waitForTimeout(600);
+      const t = await text(head.page);
+      if (DEBUG) console.log("[debug] sponsors (head):\n" + t.slice(0, 900));
+      ok("the sponsor is on the screen", t.includes("Ridgeway Bank"));
+      ok("...and the surface it was sold for", /Ground board/i.test(t));
+      // Matched on every form the number could take on a page, not on the raw
+      // digits. The first version of this assertion looked for "764321" and
+      // passed while the value WAS on screen, because the screen formats it as
+      // "R764 321" — so falsifying the mask left it green. A negative
+      // assertion has to know how the thing it is looking for is written.
+      ok("but the contract value is not rendered anywhere", !MONEY.test(t));
+      // The distinction the screen has to make for itself: a masked value and
+      // an unrecorded one both arrive null, and printing one dash for both
+      // would tell a school its contracts are empty.
+      ok("...and it says confidential rather than showing a blank", /Confidential/i.test(t));
+      ok("no uncaught error on the sponsors screen", head.errors.length === 0);
+    } else {
+      ok("the sponsors screen opens for the director of sport", false);
+      ok("the sponsors screen opens (value)", false);
+      ok("the sponsors screen opens (label)", false);
+      ok("the sponsors screen opens (surface)", false);
+      ok("the sponsors screen opens (errors)", false);
+    }
+    await head.ctx.close().catch(() => {});
+
+    const fin = await open();
+    ok("the bursar signs in", await signIn(fin.page, /bursar@example\.invalid|Finance/));
+    if (await nav(fin.page, /Sponsors/)) {
+      await fin.page.locator("button", { hasText: "Ridgeway Bank" }).first()
+        .click({ timeout: 4000 }).catch(() => {});
+      await fin.page.waitForTimeout(600);
+      const t = await text(fin.page);
+      if (DEBUG) console.log("[debug] sponsors (finance):\n" + t.slice(0, 900));
+      // Formatted for reading, so the raw digits are not what to look for.
+      ok("the finance office sees the contract value", MONEY.test(t));
+      ok("...and the school's share", /70%/.test(t));
+      ok("no uncaught error on the finance view", fin.errors.length === 0);
+    } else {
+      ok("the sponsors screen opens for the bursar", false);
+      ok("the sponsors screen opens for the bursar (share)", false);
+      ok("the sponsors screen opens for the bursar (errors)", false);
+    }
+    await fin.ctx.close().catch(() => {});
+  }
+
   group("The screens render without errors");
   for (const [who, s] of [["coach", coach], ["guardian", parent], ["spectator", watcher], ["medic", medic]]) {
     ok(`${who}: no uncaught error${s.errors.length ? ` — ${s.errors[0].slice(0, 140)}` : ""}`,

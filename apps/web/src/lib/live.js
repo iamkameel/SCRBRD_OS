@@ -207,6 +207,46 @@ function asGroundCondition(r) {
            notes: r.notes, reportedAt: r.reported_at, live: true };
 }
 
+/**
+ * A sponsor, as the school office signed them.
+ *
+ * `categoryPermitted` and `categoryNote` ride along from the join. They are
+ * not decoration: a brand signed under a category that is later prohibited
+ * stays on the row, and a screen that showed it without saying so would be
+ * telling a school everything is fine.
+ */
+function asSponsor(r) {
+  return { id: r.id, name: r.name, category: r.category,
+           logoText: r.logo_text, logoBg: r.logo_bg, active: r.active,
+           categoryPermitted: r.category_permitted, categoryNote: r.category_note,
+           live: true };
+}
+
+/** The vocabulary, permitted and refused alike — the refused ones carry why. */
+function asSponsorCategory(r) {
+  return { name: r.name, permitted: r.permitted, note: r.note, live: true };
+}
+
+/**
+ * A placement, WITH THE TERMS POSSIBLY ABSENT.
+ *
+ * contractValueZar and schoolSharePct arrive null for anybody without
+ * sponsorship.finance.read, masked per row inside sponsorship_masked. This
+ * adapter does NOT substitute a zero or a dash for them, and the distinction
+ * it cannot make — masked from this reader, versus never recorded — is one the
+ * screen has to make for itself. See SponsorsView for how.
+ */
+function asSponsorship(r) {
+  return { id: r.id, sponsorId: r.sponsor_id, sponsorName: r.sponsor_name,
+           category: r.category, logoText: r.logo_text, logoBg: r.logo_bg,
+           placement: r.placement, matchId: r.match_id,
+           startsOn: r.starts_on ? String(r.starts_on).slice(0, 10) : null,
+           endsOn:   r.ends_on   ? String(r.ends_on).slice(0, 10)   : null,
+           contractValueZar: r.contract_value_zar == null ? null : Number(r.contract_value_zar),
+           schoolSharePct:   r.school_share_pct   == null ? null : Number(r.school_share_pct),
+           agreedAt: r.agreed_at, running: r.is_running === true, live: true };
+}
+
 function asInjury(r) {
   return { id: r.id, player: r.player_id, type: r.injury_type, severity: r.severity,
            dateInj: r.date_injured, rtw: r.rtw_date, phase: r.phase,
@@ -319,6 +359,9 @@ const ADAPT = {
   weather: asWeather,
   officials: asOfficial,
   ground_conditions: asGroundCondition,
+  sponsors: asSponsor,
+  sponsor_categories: asSponsorCategory,
+  sponsorships: asSponsorship,
   injuries: asInjury,
   skills: asSkill,
   career: asCareer,

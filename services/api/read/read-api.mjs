@@ -521,7 +521,12 @@ export const READ_QUERIES = {
                   sp.logo_text, sp.logo_bg,
                   sm.placement, sm.match_id, sm.starts_on, sm.ends_on,
                   sm.contract_value_zar, sm.school_share_pct, sm.agreed_at,
-                  (current_date between sm.starts_on and sm.ends_on) as live
+                  -- Named is_running rather than live: every adapter in
+                  -- apps/web/src/lib/live.js sets live: true to mean "this row
+                  -- came from the server rather than the mock", and a column
+                  -- called live would land in that same field and quietly
+                  -- become the flag.
+                  (current_date between sm.starts_on and sm.ends_on) as is_running
              from sponsorship_masked sm
              join sponsor sp on sp.id = sm.sponsor_id
             where ($1::uuid is null or sm.match_id = $1 or sm.match_id is null)

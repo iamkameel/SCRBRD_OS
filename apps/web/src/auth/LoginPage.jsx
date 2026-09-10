@@ -42,6 +42,11 @@ const PILOT_ACCOUNTS = [
   // so it is the wrong account to demonstrate what a bystander can see, and
   // the wrong one to test with.
   { email: "watcher@example.invalid", label: "Spectator",      role: "spectator" },
+  // The bursar. The only demo account holding sponsorship.finance.read, and
+  // therefore the only one that can show the commercial mask doing anything:
+  // every other account here sees a placement with its contract value blanked,
+  // which on its own is indistinguishable from a value nobody recorded.
+  { email: "bursar@example.invalid",  label: "Finance",        role: "finance" },
 ];
 
 function LoginPage({ onLogin, onSignUp }) {
