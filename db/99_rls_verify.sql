@@ -650,9 +650,21 @@ BEGIN
   SELECT count(*) INTO n FROM player_skill;
   PERFORM _assert(n = 0, 'guardian can read development assessments');
 
+  -- Asserted as the PROPERTY rather than as a count. This read `n = 2`, which
+  -- was true of the seed on the day it was written and stopped being true when
+  -- the seed gained two more attribute rows for the same 1XI boy — so a
+  -- verifier meant to catch a scope leak failed for a reason that had nothing
+  -- to do with scope, and the only way to keep it passing was to keep editing
+  -- a number. What it is actually for is: every row this coach can see belongs
+  -- to a team they coach, and there is at least one, so an empty result cannot
+  -- pass for a clean one.
   PERFORM _as(U_COACH);
   SELECT count(*) INTO n FROM player_skill;
-  PERFORM _assert(n = 2, '1XI coach should see their own squad''s assessments only');
+  PERFORM _assert(n > 0, '1XI coach sees no assessments at all');
+  SELECT count(*) INTO n
+    FROM player_skill s JOIN player p ON p.id = s.player_id
+   WHERE p.team_code <> '1XI';
+  PERFORM _assert(n = 0, '1XI coach should see their own squad''s assessments only');
   SELECT count(*) INTO n FROM player_skill WHERE player_id = P_U16B;
   PERFORM _assert(n = 0, '1XI coach can read a U16B player''s assessment');
 

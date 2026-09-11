@@ -106,6 +106,31 @@ if (only.length && run.length !== only.length) {
 }
 
 const sh = (cmd, args) => spawnSync(cmd, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+
+// ── The live RLS verifier, once, before any walk ────────────────
+//
+// db/99_rls_verify.sql asserts the policies against a real connection as real
+// principals, and it is the only thing in the project that can catch a policy
+// that is correct in the model and inert in the database. It ran only when
+// somebody typed `--verify`, and so it sat red: an assertion written as a row
+// COUNT had stopped matching a seed that grew, and the failure went unseen
+// through several sessions of work — a verifier nothing runs is a document,
+// which is the failure mode this project keeps naming in other people's repos.
+//
+// It runs here because this is the one entry point that already has a database
+// and already refuses to start when something is missing. Hard exit rather
+// than a failed line in the summary: if the policies do not hold, what the
+// walks go on to prove about the routes is not worth reading.
+{
+  const v = sh("node", ["tools/migrate.mjs", "--reset", "--seed", "--verify"]);
+  if (v.status !== 0) {
+    console.error("\n✗ the live RLS verifier failed — not running the walks");
+    console.error((v.stdout + v.stderr).split("\n").filter((l) => /ASSERT|ERROR|✗/.test(l)).slice(0, 8).join("\n"));
+    process.exit(1);
+  }
+  console.log("✓ rls-verify      live policy assertions hold");
+}
+
 let allPass = true;
 const summary = [];
 
