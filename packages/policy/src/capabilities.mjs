@@ -248,6 +248,12 @@ export const CAPABILITIES = {
   // product currently offers anybody. DRS is the first of these — the review
   // panel is built, and stays off until there is ball-tracking to feed it.
   "platform.feature.manage":     "Enable or disable a product feature platform-wide",
+  // The coefficients of the rewards algorithm. A PLATFORM capability and not a
+  // school one, because the algorithm is the platform's and the same everywhere
+  // — a school that could set its own weights could inflate its own boys'
+  // standing in a comparison that spans schools, which is the one thing the
+  // figure is for.
+  "platform.reward.manage":      "Set the coefficients of the rewards algorithm",
   // Turn a module off for this school, or for one person at it.
   //
   // ONE DIRECTION ONLY, and the constraint is structural rather than written
@@ -299,6 +305,8 @@ export const PLATFORM_ONLY = Object.freeze([
   // Accrediting an external scouting organisation is not a claim about any one
   // school's roster — see scout_accreditation_decide() in db/08.
   "scouting.accredit",
+  // Same test applied: "what is the growth coefficient" has no tenant in it.
+  "platform.reward.manage",
 ]);
 
 export const ALL_CAPABILITIES = Object.freeze(Object.keys(CAPABILITIES));

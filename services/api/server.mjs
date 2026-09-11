@@ -41,6 +41,7 @@ import { scoutingRoutes, featureRoutes, drsRoutes, broadcastRoutes, sponsorRoute
 import { assessmentRoutes, accessRequestRoutes, developmentNoteRoutes, guardianLinkRoutes } from "./write/assessment-api.mjs";
 import { sessionRoutes } from "./realtime/session-routes.mjs";
 import { deviceRoutes, notificationRoutes, transportFor } from "./notify/push-api.mjs";
+import { rewardWeightRoutes } from "./rewards/weights-api.mjs";
 import { MatchHub } from "./realtime/realtime.mjs";
 
 const PORT = Number(process.env.PORT || 8787);
@@ -201,6 +202,9 @@ const modAdmin = moduleAdminRoutes({ pool, secret: SECRET });
 const pushOut  = transportFor();
 const devices  = deviceRoutes({ pool, secret: SECRET });
 const notices  = notificationRoutes({ pool, secret: SECRET, transport: pushOut });
+// The rewards algorithm's coefficients. Write-only by design — see
+// services/api/rewards/weights-api.mjs for why there is no matching read.
+const rewards  = rewardWeightRoutes({ pool, secret: SECRET });
 
 /**
  * Development sign-in.
@@ -307,6 +311,10 @@ const MATCH_ROUTES = [
   // turn back on.
   [/^\/api\/admin\/modules\/([^/]+)\/grant$/,     "POST", modAdmin.grant],
   [/^\/api\/admin\/modules\/([^/]+)\/suppress$/,  "POST", modAdmin.suppress],
+  // Setting a rewards coefficient. Platform-only through the table's own
+  // policy, and never module-gated: the algorithm is the platform's and is not
+  // a thing a school switches off.
+  [/^\/api\/admin\/reward-weights\/([^/]+)$/,   "POST", rewards.set],
   // Putting a fixture on a public screen, and saying how much of a child's
   // name may go on it.
   [/^\/api\/matches\/([^/]+)\/broadcast$/,          "POST", bcast.publish, "broadcast"],

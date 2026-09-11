@@ -22,9 +22,10 @@
     "dev:api": "node services/api/server.mjs",
     "check:imports": "node tools/check-imports.mjs",
     "smoke": "node tools/smoke.mjs && node tools/smoke-scorer.mjs && node tools/smoke-persist.mjs && node tools/smoke-a11y.mjs",
-    "verify": "pnpm test && pnpm check:imports && pnpm build && pnpm smoke && pnpm smoke:api",
+    "verify": "pnpm test && pnpm check:imports && pnpm build && pnpm check:bundle && pnpm smoke && pnpm smoke:api",
     "smoke:api": "node tools/run-smoke-api.mjs",
-    "smoke:browser": "node tools/run-smoke-api.mjs --browser"
+    "smoke:browser": "node tools/run-smoke-api.mjs --browser",
+    "check:bundle": "node tools/check-bundle.mjs"
   },
   "devDependencies": {
     "playwright-core": "^1.62.1",

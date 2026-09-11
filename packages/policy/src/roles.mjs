@@ -72,6 +72,7 @@ const BUNDLES = {
   platformadmin: [
     "platform.health.read", "platform.tenant.manage", "platform.support.impersonate",
     "platform.feature.manage",
+    "platform.reward.manage",
     // The recovery path needs a key. Without user.role.assign the platform
     // account can see a school that has locked itself out and do nothing about
     // it — see GRANTABLE_ROLES at the foot of this file for why that matters

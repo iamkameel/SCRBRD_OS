@@ -2,7 +2,7 @@
 -- GENERATED from packages/policy/ by services/api/rls/generate-rls.mjs — DO NOT EDIT BY HAND.
 -- Regenerate with `pnpm rls:generate`. Applied BEFORE the scoring schema,
 -- which references app_can(). Model: docs/adr/0001-scoped-assignments.md.
--- 71 capabilities across 24 roles.
+-- 72 capabilities across 24 roles.
 
 -- Principal helpers. app_user_id() is set from the signed token on every
 -- request; everything else about a person's authority is looked up.
@@ -100,11 +100,12 @@ INSERT INTO capability (name) VALUES
   ('scouting.accredit'),
   ('platform.support.impersonate'),
   ('platform.feature.manage'),
+  ('platform.reward.manage'),
   ('school.feature.manage')
 ON CONFLICT (name) DO NOTHING;
 -- Set every regeneration, in both directions, so removing a name from
 -- PLATFORM_ONLY actually relaxes the rule rather than leaving a stale true.
-UPDATE capability SET platform_only = (name IN ('platform.health.read', 'platform.tenant.manage', 'platform.support.impersonate', 'platform.feature.manage', 'scouting.accredit'));
+UPDATE capability SET platform_only = (name IN ('platform.health.read', 'platform.tenant.manage', 'platform.support.impersonate', 'platform.feature.manage', 'scouting.accredit', 'platform.reward.manage'));
 
 -- Readable by everyone, writable by nobody but a migration. The names are
 -- already in the client bundle, so there is nothing to protect by hiding them
@@ -133,6 +134,7 @@ INSERT INTO role_capability (role, capability) VALUES
   ('platformadmin', 'platform.tenant.manage'),
   ('platformadmin', 'platform.support.impersonate'),
   ('platformadmin', 'platform.feature.manage'),
+  ('platformadmin', 'platform.reward.manage'),
   ('platformadmin', 'user.role.assign'),
   ('platformadmin', 'school.feature.manage'),
   ('platformadmin', 'scouting.accredit'),

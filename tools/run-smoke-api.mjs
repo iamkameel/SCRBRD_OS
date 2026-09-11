@@ -69,6 +69,9 @@ const WALKS = [
   // The notification system's missing half: publishing a notice, and getting
   // it onto a phone without re-deciding who may have it.
   "push",
+  // The rewards algorithm's coefficients, and the fact that nobody can read
+  // them — including the people whose boys the figure is about.
+  "rewards",
 ];
 
 // Walks that drive a real browser AND need a database. They need two things

@@ -3391,3 +3391,156 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER;
 -- enumeration is how a helper becomes a directory.
 REVOKE ALL ON FUNCTION push_candidates(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION push_candidates(uuid) TO scrbrd_app;
+
+-- ── The coefficients of the rewards algorithm, kept where a browser cannot reach ──
+--
+-- The rewards figure is a weighted composite of four things: impact-adjusted
+-- performance, current rating on the absolute rubric, the breadth and freshness
+-- of the evidence behind that rating, and GROWTH — the change in rating over
+-- elapsed time, which is the term that makes a weak player's improvement worth
+-- more than a strong player's plateau. The weights are the product decision,
+-- and they are deliberately not public.
+--
+-- WHY THEY LIVE IN THE DATABASE RATHER THAN IN CODE. Anything in packages/ can
+-- be imported by the web app, and anything the web app imports is in the
+-- bundle, which is a text file on a stranger's laptop. A constant named
+-- GROWTH_WEIGHT in a shared module is a published constant with extra steps.
+-- In a table, behind a platform capability, with no read route and no read
+-- resource, the only way to it is a server process holding the application
+-- role — which is the boundary we actually control.
+--
+-- WHY THEY ARE VERSIONED. Every aggregate in this product is derived and none
+-- is stored, the rewards figure included. Derive last term's award with this
+-- term's coefficients and you get a different answer for a term that has
+-- already been awarded — so the award cannot be re-derived, which is the one
+-- property that makes deriving safe. Keeping the coefficients that were in
+-- force, rather than the answers they produced, is the same choice as keeping
+-- the ball log rather than the scorecard.
+--
+-- THERE IS NO READ ROUTE AND NO READ RESOURCE, on purpose. An endpoint that
+-- returns a coefficient is an endpoint that publishes the algorithm to anyone
+-- who can call it, and a platform administrator who needs to see the current
+-- values has a database. What the API returns about a reward is the figure and
+-- its components' RANKS AND BANDS, never their weights or contributions:
+-- publishing a weight beside a contribution is publishing the coefficient, by
+-- algebra, to anybody who can divide.
+CREATE TABLE reward_weight (
+  id   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  -- The coefficient's name. Deliberately not an enum: the algorithm will gain
+  -- and lose terms, and a CHECK listing them would put the shape of the
+  -- algorithm in the schema, which ships to anybody who can read a migration.
+  key  text NOT NULL CHECK (length(btrim(key)) BETWEEN 3 AND 80),
+  value numeric NOT NULL,
+  -- From when. A row is never edited: a new coefficient is a new row with a
+  -- later date, and the old one stays because a past term was awarded with it.
+  effective_from date NOT NULL,
+  -- Why it moved. The most useful column here in two years' time, when
+  -- somebody asks why the growth weight doubled in 2027.
+  note   text CHECK (note IS NULL OR length(note) <= 500),
+  set_by uuid REFERENCES app_user(id),
+  set_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (key, effective_from)
+);
+CREATE INDEX ON reward_weight (key, effective_from DESC);
+
+ALTER TABLE reward_weight ENABLE ROW LEVEL SECURITY;
+
+-- Hand-written, like feature_flag's and for the same reason: this table has NO
+-- SCHOOL. Every anchor the policy generator builds is a tenant comparison, and
+-- the platform's algorithm belongs to no tenant.
+--
+-- READ IS AS NARROW AS WRITE, which is unusual in this schema and is the point.
+-- Everywhere else a capability to read is wider than a capability to write,
+-- because reading is the ordinary case. Here the value IS the secret, so
+-- reading it is the sensitive act, and there is no role at a school — not a
+-- principal, not a director of sport — that has any business holding it.
+CREATE POLICY reward_weight_read ON reward_weight
+  FOR SELECT USING (app_holds('platform.reward.manage'));
+
+CREATE POLICY reward_weight_insert ON reward_weight
+  FOR INSERT WITH CHECK (app_holds('platform.reward.manage'));
+
+-- UPDATE exists only so a note can be corrected. The value and the date are
+-- frozen by the trigger below: changing a coefficient that was already in
+-- force would silently re-write what a past term was awarded on.
+CREATE POLICY reward_weight_update ON reward_weight
+  FOR UPDATE USING (app_holds('platform.reward.manage'))
+           WITH CHECK (app_holds('platform.reward.manage'));
+
+/**
+ * A coefficient in force is a matter of record.
+ *
+ * Same reasoning as the toss freezing once a delivery exists. An award is
+ * derived, not stored, so the only thing standing between a past term's figures
+ * and silent revision is that the inputs cannot move. A correction is a new row
+ * with a later effective_from; this refuses the edit rather than trusting
+ * everyone to remember that.
+ */
+CREATE OR REPLACE FUNCTION reward_weight_is_immutable() RETURNS trigger AS $$
+BEGIN
+  IF NEW.value IS DISTINCT FROM OLD.value
+     OR NEW.effective_from IS DISTINCT FROM OLD.effective_from
+     OR NEW.key IS DISTINCT FROM OLD.key THEN
+    RAISE EXCEPTION
+      'a coefficient already in force cannot be changed; insert a new row with a later effective_from'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  NEW.set_by := OLD.set_by;
+  NEW.set_at := OLD.set_at;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS reward_weight_stays_put ON reward_weight;
+CREATE TRIGGER reward_weight_stays_put
+  BEFORE UPDATE ON reward_weight
+  FOR EACH ROW EXECUTE FUNCTION reward_weight_is_immutable();
+
+/**
+ * Who set it, taken from the session rather than the request.
+ *
+ * The same stamp as role_assignment's granter and match_availability's
+ * declarant, for the same reason: the person who typed it is the person the
+ * platform can stand behind, and no route, import or psql session gets to
+ * claim somebody else moved the algorithm.
+ */
+CREATE OR REPLACE FUNCTION reward_weight_stamp_setter() RETURNS trigger AS $$
+BEGIN
+  NEW.set_by := app_user_id();
+  NEW.set_at := now();
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS reward_weight_stamps_setter ON reward_weight;
+CREATE TRIGGER reward_weight_stamps_setter
+  BEFORE INSERT ON reward_weight
+  FOR EACH ROW EXECUTE FUNCTION reward_weight_stamp_setter();
+
+/**
+ * The coefficient in force on a date, for the computation to use.
+ *
+ * SECURITY DEFINER because the computation runs as the COACH who asked for a
+ * player's figure, and a coach may not read this table — correctly, since the
+ * value is the secret. This is the same case as every other definer function
+ * here: a question the caller cannot answer about data they cannot see, where
+ * running under the caller's own policy would return nothing and the figure
+ * would silently come out as though the weight were zero.
+ *
+ * REVOKEd from PUBLIC and granted only to the application role, so it is
+ * reachable from this codebase's own server processes and from nothing a person
+ * holds. That is a narrower door than the table's own policy, which is the
+ * right way round: the table is for the platform to manage, this is for the
+ * algorithm to run.
+ *
+ * It returns ONE value and takes ONE key. No function here returns the set,
+ * because a function that returns the set is the algorithm in one call.
+ */
+CREATE OR REPLACE FUNCTION reward_weight_at(p_key text, p_on date DEFAULT current_date)
+RETURNS numeric AS $$
+  SELECT w.value FROM reward_weight w
+   WHERE w.key = p_key AND w.effective_from <= p_on
+   ORDER BY w.effective_from DESC
+   LIMIT 1
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION reward_weight_at(text, date) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION reward_weight_at(text, date) TO scrbrd_app;

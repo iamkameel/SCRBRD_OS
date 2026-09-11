@@ -82,6 +82,13 @@ jobs:
       - name: Build
         run: pnpm build
 
+      # Runs against the BUILT client, which is why it lives after the build
+      # and not with the unit suites. It fails if the rewards algorithm's
+      # coefficients — or their names, which describe the shape of it — are
+      # reachable from anything the browser downloads.
+      - name: Nothing confidential in the bundle
+        run: pnpm check:bundle
+
   walks:
     name: API walks
     runs-on: ubuntu-latest
@@ -177,6 +184,9 @@ jobs:
       # first CI run died on a missing dist/index.html.
       - name: Build the client
         run: pnpm build
+
+      - name: Nothing confidential in the bundle
+        run: pnpm check:bundle
 
       # Proves the CLIENT renders the rows the API returned — that no view is
       # still filtering a mock in the browser, and that a guardian's screen
