@@ -2,7 +2,7 @@
 -- GENERATED from packages/policy/ by services/api/rls/generate-rls.mjs — DO NOT EDIT BY HAND.
 -- Regenerate with `pnpm rls:generate`. Applied BEFORE the scoring schema,
 -- which references app_can(). Model: docs/adr/0001-scoped-assignments.md.
--- 72 capabilities across 24 roles.
+-- 73 capabilities across 24 roles.
 
 -- Principal helpers. app_user_id() is set from the signed token on every
 -- request; everything else about a person's authority is looked up.
@@ -93,6 +93,7 @@ INSERT INTO capability (name) VALUES
   ('news.publish.competition'),
   ('broadcast.publish'),
   ('analytics.read'),
+  ('opposition.read'),
   ('scouting.read'),
   ('scouting.write'),
   ('platform.health.read'),
@@ -210,6 +211,7 @@ INSERT INTO role_capability (role, capability) VALUES
   ('directorofsport', 'news.publish.team'),
   ('directorofsport', 'news.publish.school'),
   ('directorofsport', 'audit.read'),
+  ('directorofsport', 'opposition.read'),
   ('schooladmin', 'availability.read'),
   ('schooladmin', 'availability.declare'),
   ('schooladmin', 'school.feature.manage'),
@@ -303,6 +305,7 @@ INSERT INTO role_capability (role, capability) VALUES
   ('coach', 'scoring.edit'),
   ('coach', 'scoring.finalise'),
   ('coach', 'news.publish.team'),
+  ('coach', 'opposition.read'),
   ('assistantcoach', 'availability.read'),
   ('assistantcoach', 'availability.declare'),
   ('assistantcoach', 'team.read'),
@@ -325,6 +328,7 @@ INSERT INTO role_capability (role, capability) VALUES
   ('assistantcoach', 'transport.read'),
   ('assistantcoach', 'scoring.start'),
   ('assistantcoach', 'scoring.edit'),
+  ('assistantcoach', 'opposition.read'),
   ('teammanager', 'availability.read'),
   ('teammanager', 'availability.declare'),
   ('teammanager', 'team.read'),
@@ -404,6 +408,7 @@ INSERT INTO role_capability (role, capability) VALUES
   ('analyst', 'player.performance.read'),
   ('analyst', 'analytics.read'),
   ('analyst', 'competition.read'),
+  ('analyst', 'opposition.read'),
   ('spectator', 'fixture.read'),
   ('spectator', 'news.read'),
   ('spectator', 'competition.read'),

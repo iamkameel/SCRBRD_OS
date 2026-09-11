@@ -149,6 +149,15 @@ export const FEATURES = {
     kind: "feature", label: "Scouting",
     reads: ["scouting_candidates"],
   },
+  // Not scouting — see capabilities.mjs. A FEATURE rather than a module for
+  // now because there is no destination yet, only two reads; when the analyst
+  // cockpit gets a screen it becomes a module and claims a nav. OFF by default
+  // platform-wide: it discloses another school's children to this one, and
+  // that is switched on per school by the platform, never assumed.
+  opposition: {
+    kind: "feature", label: "Opposition intelligence",
+    reads: ["opposition_context", "opposition_squad"],
+  },
 };
 
 /**

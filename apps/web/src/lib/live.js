@@ -337,6 +337,40 @@ function asSport(r) {
 }
 
 /**
+ * The header of an opposition brief. `open` false with a `reason` is a real
+ * state to render — "opens on the 5th", "the match has started" — not an
+ * error; no row at all means this reader has no standing and the screen
+ * should say nothing.
+ */
+function asOppositionContext(r) {
+  return { matchId: r.match_id, mySide: r.my_side, theirSchool: r.their_school,
+           theirLabel: r.their_label, theirTeam: r.their_team,
+           opensAt: r.opens_at, closesAt: r.closes_at, open: r.open === true,
+           reason: r.reason, gamesAnalysed: r.games_analysed,
+           deliveriesAnalysed: r.deliveries_analysed, dataCutoff: r.data_cutoff, live: true };
+}
+
+/**
+ * One opposition player and the evidence behind each figure. A null
+ * strikeRate is not missing data — it is the floor: fewer than thirty balls
+ * and the number is withheld, with `battingEvidence` saying so. Render an em
+ * dash and the label, never a fallback figure.
+ */
+function asOppositionPlayer(r) {
+  return { playerId: r.player_id, school: r.school_id, name: r.full_name, team: r.team_code,
+           role: r.playing_role, battingStyle: r.batting_style, bowlingStyle: r.bowling_style,
+           batting: { innings: r.innings, balls: r.balls, runs: r.runs, dismissals: r.dismissals,
+                      fours: r.fours, sixes: r.sixes, dots: r.dots,
+                      strikeRate: r.strike_rate == null ? null : Number(r.strike_rate),
+                      dotPct: r.dot_pct == null ? null : Number(r.dot_pct),
+                      evidence: r.batting_evidence },
+           bowling: { balls: r.balls_bowled, runsConceded: r.runs_conceded, wickets: r.wickets,
+                      economy: r.economy == null ? null : Number(r.economy),
+                      evidence: r.bowling_evidence },
+           live: true };
+}
+
+/**
  * One chapter of where a boy has played. `current` marks the side he is in
  * now; everything else is history, closed by the move that ended it and
  * editable by nobody.
@@ -532,6 +566,8 @@ const ADAPT = {
   readiness: asReadiness,
   my_devices: asDevice,
   memberships: asMembership,
+  opposition_context: asOppositionContext,
+  opposition_squad: asOppositionPlayer,
   sports: asSport,
   module_settings: asModuleSetting,
   module_suppressions: asModuleSuppression,

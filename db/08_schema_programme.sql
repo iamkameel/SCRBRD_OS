@@ -2316,6 +2316,16 @@ INSERT INTO feature_flag (key, kind, label, enabled, reason) VALUES
   ('sport_swimming',  'sport', 'Swimming',  false, 'As athletics: a gala is not a fixture.')
 ON CONFLICT (key) DO NOTHING;
 
+-- Reading another school's players ahead of a fixture. Off until the platform
+-- turns it on for a school: this is a disclosure about children who are not
+-- that school's, bounded in db/08 by a fixture and a window, and the decision
+-- to make it at all is the platform's — see opposition_window() below.
+INSERT INTO feature_flag (key, kind, label, enabled, reason) VALUES
+  ('opposition', 'feature', 'Opposition intelligence', false,
+   'Cross-tenant by nature. Granted per school once the fixture window and the '
+   'cricket-only column rule have been walked through with them.')
+ON CONFLICT (key) DO NOTHING;
+
 INSERT INTO feature_flag (key, kind, label, enabled, locked, reason) VALUES
   ('drs_review', 'feature', 'DRS / LBW review', false, true,
    'Built and held off. The panel records a review correctly, but pitching, '
@@ -4016,3 +4026,220 @@ DROP TRIGGER IF EXISTS player_moves_are_recorded ON player;
 CREATE TRIGGER player_moves_are_recorded
   AFTER INSERT OR UPDATE ON player
   FOR EACH ROW EXECUTE FUNCTION player_team_membership_log();
+
+-- ── Opposition intelligence: another school's record, ahead of a fixture ──
+--
+-- A school preparing for Saturday wants to know how the other side bats and
+-- bowls. The other side are children at a school that is not this one, and
+-- every policy in this schema exists to stop exactly that read. So this is the
+-- one place the tenant boundary is crossed on purpose, and the crossing is
+-- bounded three ways, in this order, in the functions below:
+--
+--   1. A HEAD-TO-HEAD FIXTURE the reader's team is actually in. Not "a school
+--      we might play", not "a school in our league" — a scheduled row in
+--      match naming both sides as tenants. The fixture is the legitimate
+--      purpose, and without one there is nothing to read.
+--   2. A WINDOW before it. Intelligence opens opposition_window_days() before
+--      the start and closes when the match begins; after that the reader has
+--      their own fixture's ball log, which is their own record. There is no
+--      standing access to another school's players between fixtures.
+--   3. CRICKET COLUMNS AND AGGREGATES ONLY. A name, a role, a style, and what
+--      the log says they did. Never a date of birth, an address, a fitness
+--      state, an injury, a note. The functions name their columns explicitly
+--      so nothing arrives by default, and every read is logged in access_log
+--      as a restricted read of THAT school's minors.
+--
+-- SECURITY DEFINER, and deliberately not a widening of player's or ball_event's
+-- own policies. Widening those would put the other school's boys on every
+-- roster read, every injury join and every note lookup in the platform; here
+-- the disclosure has exactly two doors, each of which checks all three bounds
+-- before it opens. The authorisation is INSIDE the function, evaluated with the
+-- caller's own session, so a spectator, a parent and a coach at neither school
+-- get nothing at all — not a refusal with a reason, nothing.
+--
+-- The window is a function rather than a constant so the number has a name
+-- and a note. Fourteen days is a first cut: long enough to prepare, short
+-- enough that a rival's record is not simply available all season.
+CREATE OR REPLACE FUNCTION opposition_window_days() RETURNS integer AS $$
+  SELECT 14
+$$ LANGUAGE sql IMMUTABLE;
+
+/**
+ * Which side of this fixture the caller stands on, and whether the window is
+ * open. Returns NOTHING when the caller has no standing — no row, no reason —
+ * because a reason is a confirmation that the fixture exists.
+ */
+CREATE OR REPLACE FUNCTION opposition_side(p_match uuid)
+RETURNS TABLE (my_school uuid, my_team text, their_school uuid, their_team text,
+               opens_at timestamptz, closes_at timestamptz, open boolean, reason text) AS $$
+DECLARE m match%ROWTYPE; v_home boolean; v_away boolean;
+BEGIN
+  SELECT * INTO m FROM match WHERE id = p_match;
+  IF NOT FOUND THEN RETURN; END IF;
+
+  v_home := app_can('opposition.read', m.school_id, m.team_code,
+                    '00000000-0000-0000-0000-000000000000'::uuid, m.id);
+  v_away := m.away_school_id IS NOT NULL
+            AND app_can('opposition.read', m.away_school_id, m.away_team_code,
+                        '00000000-0000-0000-0000-000000000000'::uuid, m.id);
+  IF NOT (v_home OR v_away) THEN RETURN; END IF;
+
+  IF v_home THEN
+    my_school := m.school_id;      my_team := m.team_code;
+    their_school := m.away_school_id; their_team := m.away_team_code;
+  ELSE
+    my_school := m.away_school_id; my_team := m.away_team_code;
+    their_school := m.school_id;   their_team := m.team_code;
+  END IF;
+
+  opens_at  := m.starts_at - make_interval(days => opposition_window_days());
+  closes_at := m.starts_at;
+
+  -- The reader's own school must have the feature. Checked here as well as at
+  -- the API's module gate, because this function is reachable from a psql
+  -- session too and a gate in one door covers one door.
+  IF NOT feature_enabled('opposition', my_school, NULL) THEN
+    open := false; reason := 'feature_off'; RETURN NEXT; RETURN;
+  END IF;
+  IF their_school IS NULL THEN
+    open := false; reason := 'opponent_not_on_scrbrd'; RETURN NEXT; RETURN;
+  END IF;
+  IF m.status <> 'scheduled' OR now() >= closes_at THEN
+    open := false; reason := 'fixture_started'; RETURN NEXT; RETURN;
+  END IF;
+  IF now() < opens_at THEN
+    open := false; reason := 'not_yet_open'; RETURN NEXT; RETURN;
+  END IF;
+  open := true; reason := 'open'; RETURN NEXT;
+END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION opposition_side(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION opposition_side(uuid) TO scrbrd_app;
+
+/**
+ * How much evidence is behind a figure, in words the reader will act on.
+ *
+ * First-cut thresholds, stated once so every opposition figure grades the same
+ * way. Below thirty legal deliveries nothing is said at all: a strike rate off
+ * eleven balls is a coin toss with decimals, and a coach who reads "SR 145"
+ * off it will set a field for a batter who does not exist.
+ */
+CREATE OR REPLACE FUNCTION evidence_label(p_n bigint) RETURNS text AS $$
+  SELECT CASE
+           WHEN p_n IS NULL OR p_n = 0 THEN 'none'
+           WHEN p_n < 30  THEN 'insufficient'
+           WHEN p_n < 100 THEN 'low'
+           WHEN p_n < 250 THEN 'moderate'
+           ELSE 'high'
+         END
+$$ LANGUAGE sql IMMUTABLE;
+
+/**
+ * The header of a dossier: who, when the window opens and closes, and how much
+ * log there is to work from. One row, or none if the caller has no standing.
+ */
+CREATE OR REPLACE FUNCTION opposition_context(p_match uuid)
+RETURNS TABLE (match_id uuid, my_side text, their_school uuid, their_label text,
+               their_team text, opens_at timestamptz, closes_at timestamptz,
+               open boolean, reason text, games_analysed integer,
+               deliveries_analysed integer, data_cutoff timestamptz) AS $$
+  SELECT p_match,
+         CASE WHEN s.my_school = m.school_id THEN 'home' ELSE 'away' END,
+         s.their_school,
+         fixture_side_label(s.their_school, s.their_team),
+         s.their_team, s.opens_at, s.closes_at, s.open, s.reason,
+         -- Only counted once the window is open. A closed window says how
+         -- much there WOULD be to read, which is a disclosure by another name.
+         CASE WHEN s.open THEN (
+           SELECT count(DISTINCT b.match_id)::int FROM ball_event_live b
+             JOIN player p ON p.id IN (b.striker_id, b.bowler_id)
+            WHERE p.school_id = s.their_school AND p.team_code = s.their_team) END,
+         CASE WHEN s.open THEN (
+           SELECT count(*)::int FROM ball_event_live b
+             JOIN player p ON p.id IN (b.striker_id, b.bowler_id)
+            WHERE p.school_id = s.their_school AND p.team_code = s.their_team
+              AND b.kind = 'ball') END,
+         now()
+    FROM opposition_side(p_match) s
+    JOIN match m ON m.id = p_match
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION opposition_context(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION opposition_context(uuid) TO scrbrd_app;
+
+/**
+ * The other side's players and what the log says about each — and nothing
+ * else about them.
+ *
+ * EVERY COLUMN IS NAMED. No SELECT p.*, no view: full_name, playing_role and
+ * the two styles are the cricket half of a player row, and the rest — born,
+ * id_number, address, guardian, height, weight, fitness — is a child's
+ * personal and medical information and is not here. fitness in particular
+ * looks like a cricket column and is not: 'rehab' is a clinical state.
+ *
+ * Aggregates are over the player's WHOLE log, every fixture, not only the
+ * ones against the reader — that is the grant as decided, and the window is
+ * what makes it a preparation rather than a standing file. Empty rows are
+ * kept: a boy in the side with no deliveries logged is a fact the reader
+ * needs ("we know nothing about their number seven"), and evidence_label says
+ * 'none' rather than the row quietly not appearing.
+ */
+CREATE OR REPLACE FUNCTION opposition_squad(p_match uuid)
+RETURNS TABLE (player_id uuid, school_id uuid, full_name text, team_code text,
+               playing_role text, batting_style text, bowling_style text,
+               innings integer, balls integer, runs integer, dismissals integer,
+               fours integer, sixes integer, dots integer,
+               strike_rate numeric, dot_pct numeric, batting_evidence text,
+               balls_bowled integer, runs_conceded integer, wickets integer,
+               economy numeric, bowling_evidence text) AS $$
+  WITH s AS (SELECT * FROM opposition_side(p_match) WHERE open),
+  squad AS (
+    SELECT p.id, p.school_id, p.full_name, p.team_code, p.playing_role,
+           p.batting_style, p.bowling_style
+      FROM player p JOIN s ON p.school_id = s.their_school AND p.team_code = s.their_team
+  ),
+  bat AS (
+    SELECT b.striker_id AS pid,
+           count(DISTINCT b.match_id)::int AS innings,
+           count(*) FILTER (WHERE b.ball_type NOT IN ('Wd','Nb'))::int AS balls,
+           coalesce(sum(CASE WHEN b.ball_type IN ('run','W','Nb') THEN coalesce(b.value,0) ELSE 0 END),0)::int AS runs,
+           count(*) FILTER (WHERE b.ball_type = 'W'
+                              AND coalesce(b.dismissal,'') !~* 'run ?out'
+                              AND coalesce(b.dismissed_id, b.striker_id) = b.striker_id)::int AS dismissals,
+           count(*) FILTER (WHERE b.value = 4)::int AS fours,
+           count(*) FILTER (WHERE b.value = 6)::int AS sixes,
+           count(*) FILTER (WHERE b.ball_type NOT IN ('Wd','Nb') AND coalesce(b.value,0) = 0)::int AS dots
+      FROM ball_event_live b JOIN squad q ON q.id = b.striker_id
+     WHERE b.kind = 'ball'
+     GROUP BY b.striker_id
+  ),
+  bowl AS (
+    SELECT b.bowler_id AS pid,
+           count(*) FILTER (WHERE b.ball_type NOT IN ('Wd','Nb'))::int AS balls_bowled,
+           -- What the bowler conceded: runs, wides and no-balls. Byes and leg
+           -- byes are not his, which is the same split the matchups read makes.
+           coalesce(sum(CASE WHEN b.ball_type IN ('run','Wd','Nb','W') THEN coalesce(b.value,0) ELSE 0 END),0)::int AS runs_conceded,
+           count(*) FILTER (WHERE b.ball_type = 'W' AND coalesce(b.dismissal,'') !~* 'run ?out')::int AS wickets
+      FROM ball_event_live b JOIN squad q ON q.id = b.bowler_id
+     WHERE b.kind = 'ball'
+     GROUP BY b.bowler_id
+  )
+  SELECT q.id, q.school_id, q.full_name, q.team_code, q.playing_role, q.batting_style, q.bowling_style,
+         coalesce(bat.innings,0), coalesce(bat.balls,0), coalesce(bat.runs,0), coalesce(bat.dismissals,0),
+         coalesce(bat.fours,0), coalesce(bat.sixes,0), coalesce(bat.dots,0),
+         -- NULL below the evidence floor, not a number. The label beside it
+         -- says why, and a screen renders an em dash.
+         CASE WHEN coalesce(bat.balls,0) >= 30 THEN round(bat.runs * 100.0 / bat.balls, 1) END,
+         CASE WHEN coalesce(bat.balls,0) >= 30 THEN round(bat.dots * 100.0 / bat.balls, 1) END,
+         evidence_label(bat.balls),
+         coalesce(bowl.balls_bowled,0), coalesce(bowl.runs_conceded,0), coalesce(bowl.wickets,0),
+         CASE WHEN coalesce(bowl.balls_bowled,0) >= 30 THEN round(bowl.runs_conceded * 6.0 / bowl.balls_bowled, 2) END,
+         evidence_label(bowl.balls_bowled)
+    FROM squad q
+    LEFT JOIN bat  ON bat.pid  = q.id
+    LEFT JOIN bowl ON bowl.pid = q.id
+   ORDER BY coalesce(bat.runs,0) DESC, q.full_name
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION opposition_squad(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION opposition_squad(uuid) TO scrbrd_app;

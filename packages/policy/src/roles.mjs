@@ -134,6 +134,7 @@ const BUNDLES = {
     "scoring.start", "scoring.edit", "scoring.finalise", "scoring.correct",
     "scoring.amend.approve",
     "news.publish.team", "news.publish.school", "audit.read",
+    "opposition.read",
   ],
   schooladmin: [
     "availability.read", "availability.declare",
@@ -189,7 +190,7 @@ const BUNDLES = {
     "player.access.request", "player.access.grant",
     "analytics.read", "transport.read",
     "scoring.start", "scoring.edit", "scoring.finalise",
-    "news.publish.team",
+    "news.publish.team", "opposition.read",
   ],
   assistantcoach: [
     "availability.read", "availability.declare",
@@ -198,7 +199,7 @@ const BUNDLES = {
     "medical.status.read", "medical.nature.read", "medical.details.read",
     "player.age.read", "player.roster.read",
     "player.access.request", "player.access.grant",
-    "transport.read", "scoring.start", "scoring.edit",
+    "transport.read", "scoring.start", "scoring.edit", "opposition.read",
   ],
   teammanager: [
     "availability.read", "availability.declare",
@@ -306,6 +307,8 @@ const BUNDLES = {
   analyst: [
     "team.read", "fixture.read", "news.read", "player.profile.read",
     "player.performance.read", "analytics.read", "competition.read",
+    // The performance analyst is who the opposition dossier is FOR.
+    "opposition.read",
   ],
   // Deliberately the thinnest bundle in the file. No player profiles, so a
   // spectator never reaches a minor's record even in summary.

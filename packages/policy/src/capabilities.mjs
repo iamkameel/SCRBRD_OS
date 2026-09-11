@@ -228,6 +228,14 @@ export const CAPABILITIES = {
 
   // ── Analysis ──
   "analytics.read":              "See aggregate analysis",
+  // OPPOSITION, which is not scouting. Scouting is talent identification with
+  // a guardian's consent and an accredited scout; this is the other thing — a
+  // school reading what another school's players did, so its coaches can plan
+  // a fixture. The subject never consented and never will, which is why every
+  // grant of it is bounded three ways in db/08: to a HEAD-TO-HEAD FIXTURE the
+  // reader's team is actually in, to a WINDOW before that fixture opens, and
+  // to CRICKET COLUMNS AND AGGREGATES — a name and a record, never a person.
+  "opposition.read":             "Read the opposition's playing record ahead of a fixture you are in",
   "scouting.read":               "See scouting reports and watchlists",
   "scouting.write":              "Write scouting reports",
 

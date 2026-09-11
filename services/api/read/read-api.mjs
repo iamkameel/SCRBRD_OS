@@ -932,6 +932,34 @@ export const READ_QUERIES = {
   },
 
   /**
+   * OPPOSITION INTELLIGENCE, the one deliberate crossing of the tenant line.
+   *
+   * Both reads are thin wrappers over SECURITY DEFINER functions in db/08 that
+   * check three things before returning a row: the caller holds
+   * opposition.read at THEIR side of this exact fixture, the fixture is a
+   * head-to-head between two tenants, and the window before it is open. No
+   * standing means no rows — not a refusal with a reason, because a reason
+   * confirms the fixture exists.
+   *
+   * Nothing here filters, and nothing here must: the functions name every
+   * column they return, and the cricket half of a player row is all that is in
+   * them. What this file adds is the LOG. full_name is registered as a
+   * restricted field below, so every squad that comes back is written to
+   * access_log against the OTHER school — the school whose children were read
+   * — with the ids of every boy in it. A parent at that school asking "who has
+   * looked at my son's record" gets an answer that names the reader, the
+   * fixture, and the day.
+   */
+  opposition_context: {
+    text: `select * from opposition_context($1)`,
+    params: q => [req(q, "matchId")],
+  },
+  opposition_squad: {
+    text: `select * from opposition_squad($1)`,
+    params: q => [req(q, "matchId")],
+  },
+
+  /**
    * WHERE A BOY HAS PLAYED, which until now was overwritten rather than kept.
    *
    * Derived rows only: nothing writes this table except the trigger on
@@ -1580,6 +1608,10 @@ export const RESTRICTED_FIELDS = Object.freeze({
   // group that may read it is deliberately narrow. Every read is logged, which
   // is what makes the narrowness answerable rather than merely convenient.
   notes:    ["body"],
+  // Another school's children, by name, read for a fixture. Logged against
+  // the school that was read — school_id on every row is theirs, not the
+  // reader's — so the disclosure lands in the right school's log.
+  opposition_squad: ["full_name"],
 });
 
 /** Read a possibly-dotted path off a row. Flat names behave exactly as before. */
@@ -1588,7 +1620,8 @@ const pick = (row, path) =>
 
 /** Which id column identifies the CHILD a row is about, for the log. */
 const SUBJECT_ID = { players: "id", injuries: "player_id", skills: "player_id",
-                     users: "id", ratings: "player_id", notes: "player_id" };
+                     users: "id", ratings: "player_id", notes: "player_id",
+                     opposition_squad: "player_id" };
 
 /** At most this many ids per entry. A log row is evidence, not a data export. */
 const MAX_LOGGED_IDS = 500;

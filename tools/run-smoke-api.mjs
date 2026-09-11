@@ -82,6 +82,9 @@ const WALKS = [
   // Where a boy has played: derived from team_code writes, forgeable by
   // nobody, and the end of a promotion overwriting a season.
   "membership",
+  // Reading the other side ahead of a fixture: the one deliberate crossing of
+  // the tenant line, bounded by a fixture, a window and a column list.
+  "opposition",
 ];
 
 // Walks that drive a real browser AND need a database. They need two things
