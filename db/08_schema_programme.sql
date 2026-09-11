@@ -2470,6 +2470,13 @@ CREATE TABLE vehicle (
   condition    text CHECK (condition IS NULL OR condition IN
                  ('excellent','good','fair','poor','off_road')),
   next_service_on date,
+  -- The two dates a minibus of children turns on, and the transport module
+  -- could not see either. NULL means "not recorded" and is surfaced as
+  -- unknown rather than treated as fine — a school that has not typed its
+  -- insurance date in is not thereby uninsured. A KNOWN date in the past is
+  -- different: a trip on that vehicle is refused, by trip_vehicle_fits().
+  insurance_expires_on  date,
+  roadworthy_expires_on date,
   active       boolean NOT NULL DEFAULT true,
   notes        text CHECK (notes IS NULL OR length(notes) <= 500),
   created_at   timestamptz NOT NULL DEFAULT now()
@@ -2528,7 +2535,9 @@ CREATE OR REPLACE FUNCTION trip_vehicle_fits() RETURNS trigger AS $$
 DECLARE v record;
 BEGIN
   IF NEW.vehicle_id IS NULL THEN RETURN NEW; END IF;
-  SELECT school_id, capacity, active, registration INTO v FROM vehicle WHERE id = NEW.vehicle_id;
+  SELECT school_id, capacity, active, registration,
+         insurance_expires_on, roadworthy_expires_on
+    INTO v FROM vehicle WHERE id = NEW.vehicle_id;
   IF v.school_id IS DISTINCT FROM NEW.school_id THEN
     RAISE EXCEPTION 'that vehicle belongs to another school'
       USING ERRCODE = 'check_violation';
@@ -2541,6 +2550,30 @@ BEGIN
     RAISE EXCEPTION 'vehicle % seats %, and this trip names % passengers',
                     v.registration, v.capacity, NEW.seats_taken
       USING ERRCODE = 'check_violation';
+  END IF;
+
+  -- COVER. Checked when a trip is arranged or re-arranged — the vehicle or the
+  -- departure changes — and NOT when a driver marks it departed or arrived:
+  -- a refusal at "we have left" is too late to be useful and would only stop
+  -- the record of what happened. A known lapsed date refuses; an unrecorded
+  -- one does not, because the absence of a date is a gap in the office's
+  -- records, not a fact about the vehicle, and the vehicles read says
+  -- "unknown" where that is the case.
+  IF TG_OP = 'INSERT'
+     OR NEW.vehicle_id IS DISTINCT FROM OLD.vehicle_id
+     OR NEW.depart_at  IS DISTINCT FROM OLD.depart_at THEN
+    IF v.insurance_expires_on IS NOT NULL
+       AND v.insurance_expires_on < coalesce(NEW.depart_at::date, current_date) THEN
+      RAISE EXCEPTION 'vehicle %: insurance expired on %. Renew it, or record the renewal, before it carries a side',
+                      v.registration, v.insurance_expires_on
+        USING ERRCODE = 'check_violation';
+    END IF;
+    IF v.roadworthy_expires_on IS NOT NULL
+       AND v.roadworthy_expires_on < coalesce(NEW.depart_at::date, current_date) THEN
+      RAISE EXCEPTION 'vehicle %: roadworthy certificate expired on %',
+                      v.registration, v.roadworthy_expires_on
+        USING ERRCODE = 'check_violation';
+    END IF;
   END IF;
   RETURN NEW;
 END;
@@ -4283,3 +4316,150 @@ RETURNS TABLE (player_id uuid, team_code text, joined_on date, left_on date) AS 
    WHERE m.school_id = p_school AND m.sport = p_sport AND m.team_code = p_team
      AND m.joined_on <= p_on AND (m.left_on IS NULL OR m.left_on > p_on)
 $$ LANGUAGE sql STABLE;
+
+-- ── Who to ring when something happens to a child ───────────────
+--
+-- A minibus leaves for an away fixture and nobody aboard can reach a parent.
+-- That was the state of this schema: the only contact a child had was a
+-- single JSON blob on the player row, behind player.pii.read — a capability
+-- the coach, the team manager, the physio and the driver do not hold, and
+-- rightly, because it is the capability for the child's FILE: address, ID
+-- number, the office's business. The people around the child on a Saturday
+-- need one thing from that file, and it is the thing that cannot wait for
+-- the office to open on Monday.
+--
+-- So it is its own table and its own capability. Up to three contacts in
+-- order, kept by the family and the office, read by the people on the day,
+-- and never deleted — a number that was replaced is retired, because "which
+-- number did we have in March" is a question a school is eventually asked.
+CREATE TABLE emergency_contact (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  player_id    uuid NOT NULL REFERENCES player(id) ON DELETE CASCADE,
+  -- Derived from the player at write time by the trigger below, never
+  -- asserted by a caller, as everywhere a row carries its child's school.
+  school_id    uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  -- Who to try first. Three is enough: past three the list is a directory,
+  -- and a coach with a phone in one hand and a boy in the other needs an
+  -- order, not options.
+  priority     smallint NOT NULL CHECK (priority BETWEEN 1 AND 3),
+  name         text NOT NULL CHECK (length(btrim(name)) BETWEEN 2 AND 80),
+  relationship text NOT NULL CHECK (relationship IN
+                 ('mother','father','guardian','grandparent','sibling','family','other')),
+  -- Digits, spaces and a leading plus. Not a full E.164 parse: a number typed
+  -- by a parent is dialled by a coach, and a check that rejects "082 000 0005"
+  -- because it lacks a country code is a check that leaves a child with no
+  -- contact at all.
+  phone        text NOT NULL CHECK (phone ~ '^\+?[0-9][0-9 ]{6,19}$'),
+  phone_alt    text CHECK (phone_alt IS NULL OR phone_alt ~ '^\+?[0-9][0-9 ]{6,19}$'),
+  email        text CHECK (email IS NULL OR email ~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$'),
+  -- "Works nights — try after seven." Short, operational, and not a place for
+  -- anything about the family's circumstances.
+  note         text CHECK (note IS NULL OR length(note) <= 200),
+  active       boolean NOT NULL DEFAULT true,
+  retired_at   timestamptz,
+  retired_by   uuid REFERENCES app_user(id),
+  created_by   uuid REFERENCES app_user(id),
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT retired_is_inactive CHECK ((retired_at IS NULL) = active)
+);
+-- One live contact per position. Partial, because the retired ones are the
+-- history and there are meant to be several.
+CREATE UNIQUE INDEX emergency_contact_priority ON emergency_contact (player_id, priority) WHERE active;
+CREATE INDEX ON emergency_contact (player_id) WHERE active;
+
+/**
+ * The school comes from the child, and the provenance from the session.
+ *
+ * SECURITY DEFINER to read the player row: the caller is somebody allowed to
+ * keep this child's contacts, which is not the same as somebody allowed to
+ * read every column of the child — a guardian holds player.emergency.manage
+ * for their own child and should not need the roster capability to save a
+ * phone number. Reading one school_id with definer rights is the whole of
+ * what this borrows.
+ */
+CREATE OR REPLACE FUNCTION emergency_contact_stamp() RETURNS trigger AS $$
+DECLARE v_school uuid;
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    SELECT p.school_id INTO v_school FROM player p WHERE p.id = NEW.player_id;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'no such player: %', NEW.player_id USING ERRCODE = 'foreign_key_violation';
+    END IF;
+    NEW.school_id  := v_school;
+    NEW.created_by := app_user_id();
+    NEW.created_at := now();
+    NEW.retired_at := NULL; NEW.retired_by := NULL; NEW.active := true;
+  ELSIF NEW.active = false AND OLD.active = true THEN
+    NEW.retired_at := now();
+    NEW.retired_by := app_user_id();
+  ELSIF NEW.active = true AND OLD.active = false THEN
+    -- A retired number is not brought back; a new row is added. Otherwise the
+    -- history would show a number retired and then never retired.
+    RAISE EXCEPTION 'a retired contact is not reactivated — add it again'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS emergency_contact_is_stamped ON emergency_contact;
+CREATE TRIGGER emergency_contact_is_stamped
+  BEFORE INSERT OR UPDATE ON emergency_contact
+  FOR EACH ROW EXECUTE FUNCTION emergency_contact_stamp();
+
+/**
+ * The manifest: every child on a trip, and who to ring for each.
+ *
+ * THE DRIVER IS REACHED THROUGH THE TRIP, NOT THROUGH A CAPABILITY ON THE
+ * CHILD. A driver's assignment is school-wide, so giving drivers
+ * player.emergency.read would hand every driver every child's numbers all
+ * year. What a driver needs is the parents of the children on his bus, on
+ * the day. So transport.drive on the fixture, inside a window around the
+ * departure — the day before to the day after — reaches the manifest, and
+ * outside that window the same driver reads nothing. A scheduled trip a
+ * fortnight away is not yet his business.
+ *
+ * Everyone else is checked PER CHILD with player.emergency.read, so a guardian
+ * reading the manifest of a bus their child is on sees their own child and
+ * nobody else's — the person anchor doing exactly what it does everywhere.
+ *
+ * SECURITY DEFINER because the driver holds no capability on emergency_contact
+ * and would otherwise read nothing through its policy. The decision is made
+ * here, in one place, with the same app_can() everything else uses.
+ */
+CREATE OR REPLACE FUNCTION trip_contacts(p_trip uuid)
+RETURNS TABLE (player_id uuid, full_name text, priority smallint, name text,
+               relationship text, phone text, phone_alt text, email text,
+               note text, school_id uuid) AS $$
+DECLARE
+  t trip%ROWTYPE;
+  m match%ROWTYPE;
+  v_driver boolean := false;
+  v_from date; v_to date;
+BEGIN
+  SELECT * INTO t FROM trip WHERE id = p_trip;
+  IF NOT FOUND THEN RETURN; END IF;
+  SELECT * INTO m FROM match WHERE id = t.match_id;
+  IF NOT FOUND THEN RETURN; END IF;
+
+  v_from := coalesce(t.depart_at::date, m.starts_at::date) - 1;
+  v_to   := coalesce(t.return_at::date, t.depart_at::date, m.starts_at::date) + 1;
+  v_driver := t.cancelled_at IS NULL
+              AND current_date BETWEEN v_from AND v_to
+              AND app_can('transport.drive', t.school_id, coalesce(m.team_code, '*'),
+                          '00000000-0000-0000-0000-000000000000'::uuid, m.id);
+
+  RETURN QUERY
+    SELECT p.id, p.full_name, c.priority, c.name, c.relationship,
+           c.phone, c.phone_alt, c.email, c.note, p.school_id
+      FROM match_squad s
+      JOIN player p ON p.id = s.player_id
+      JOIN emergency_contact c ON c.player_id = p.id AND c.active
+     WHERE s.match_id = m.id AND NOT s.withdrawn
+       AND p.school_id = t.school_id
+       AND (v_driver OR app_can('player.emergency.read', p.school_id, p.team_code, p.id,
+                                '00000000-0000-0000-0000-000000000000'::uuid))
+     ORDER BY p.full_name, c.priority;
+END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION trip_contacts(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION trip_contacts(uuid) TO PUBLIC;

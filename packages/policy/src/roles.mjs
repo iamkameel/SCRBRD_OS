@@ -126,7 +126,7 @@ const BUNDLES = {
     "team.manage", "team.select", "fixture.create", "fixture.update", "fixture.cancel",
     "player.profile.manage", "player.performance.read", "player.development.read",
     "player.note.read", "player.note.write",
-    "medical.status.read", "medical.nature.read", "player.age.read", "player.roster.read",
+    "medical.status.read", "medical.nature.read", "player.age.read", "player.roster.read", "player.emergency.read", "player.emergency.manage",
     "discipline.read", "discipline.write",
     "analytics.read", "competition.read", "facility.read", "facility.manage",
     "transport.read", "officiating.assign", "broadcast.publish",
@@ -147,7 +147,7 @@ const BUNDLES = {
     "sponsorship.read", "sponsorship.manage",
     "player.profile.manage", "player.pii.read", "player.biometric.read",
     "player.age.read", "player.identity.read", "guardian.link.manage",
-    "player.roster.read",
+    "player.roster.read", "player.emergency.read", "player.emergency.manage",
     "medical.status.read", "medical.nature.read",
     "discipline.read", "facility.read", "facility.manage",
     "transport.read", "transport.manage", "invoice.read",
@@ -186,7 +186,7 @@ const BUNDLES = {
     "player.development.read", "player.development.write",
     "player.note.read", "player.note.write",
     "medical.status.read", "medical.nature.read", "medical.details.read",
-    "player.age.read", "player.roster.read",
+    "player.age.read", "player.roster.read", "player.emergency.read",
     "player.access.request", "player.access.grant",
     "analytics.read", "transport.read",
     "scoring.start", "scoring.edit", "scoring.finalise",
@@ -197,14 +197,14 @@ const BUNDLES = {
     ...READ_TEAM, "player.performance.read", "player.development.read",
     "player.note.read", "player.note.write",
     "medical.status.read", "medical.nature.read", "medical.details.read",
-    "player.age.read", "player.roster.read",
+    "player.age.read", "player.roster.read", "player.emergency.read",
     "player.access.request", "player.access.grant",
     "transport.read", "scoring.start", "scoring.edit", "opposition.read",
   ],
   teammanager: [
     "availability.read", "availability.declare",
     ...READ_TEAM, "team.select", "medical.status.read", "medical.nature.read",
-    "player.age.read", "player.roster.read",
+    "player.age.read", "player.roster.read", "player.emergency.read",
     "transport.read", "news.publish.team",
   ],
 
@@ -288,7 +288,7 @@ const BUNDLES = {
   guardian: [
     "availability.read", "availability.declare",
     "fixture.read", "team.read", "news.read", "facility.read", "competition.read",
-    "player.profile.read", "player.pii.read", "player.biometric.read",
+    "player.profile.read", "player.pii.read", "player.emergency.read", "player.emergency.manage", "player.biometric.read",
     "player.performance.read",
     // Their own children only — the assignment names them. A parent reading
     // their child's physiotherapy report is the ordinary case, not an
@@ -316,7 +316,7 @@ const BUNDLES = {
 
   // ── Specialists ──
   medical: [
-    "team.read", "fixture.read", "news.read", "player.profile.read", "player.age.read",
+    "team.read", "fixture.read", "news.read", "player.profile.read", "player.age.read", "player.emergency.read",
     // Height and weight are clinical inputs — a rehabilitation load is
     // calculated from them.
     "player.biometric.read",
@@ -324,7 +324,7 @@ const BUNDLES = {
   ],
   finance: ["school.read", "news.read", "invoice.read", "invoice.manage", "user.read",
             "sponsorship.read", "sponsorship.manage", "sponsorship.finance.read"],
-  transportcoordinator: ["fixture.read", "team.read", "news.read", "transport.read", "transport.manage"],
+  transportcoordinator: ["fixture.read", "team.read", "news.read", "transport.read", "transport.manage", "player.emergency.read"],
   driver: ["news.read", "transport.read", "transport.drive"],
   facilities: ["fixture.read", "news.read", "facility.read", "facility.manage"],
   media: ["fixture.read", "team.read", "news.read", "player.profile.read", "player.performance.read", "news.publish.school", "news.publish.team"],

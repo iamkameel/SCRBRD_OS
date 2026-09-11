@@ -2,7 +2,7 @@
 -- GENERATED from packages/policy/ by services/api/rls/generate-rls.mjs — DO NOT EDIT BY HAND.
 -- Regenerate with `pnpm rls:generate`. Applied BEFORE the scoring schema,
 -- which references app_can(). Model: docs/adr/0001-scoped-assignments.md.
--- 73 capabilities across 24 roles.
+-- 75 capabilities across 24 roles.
 
 -- Principal helpers. app_user_id() is set from the signed token on every
 -- request; everything else about a person's authority is looked up.
@@ -44,6 +44,8 @@ INSERT INTO capability (name) VALUES
   ('player.profile.read'),
   ('player.profile.manage'),
   ('player.pii.read'),
+  ('player.emergency.read'),
+  ('player.emergency.manage'),
   ('player.performance.read'),
   ('player.performance.write'),
   ('player.development.read'),
@@ -195,6 +197,8 @@ INSERT INTO role_capability (role, capability) VALUES
   ('directorofsport', 'medical.nature.read'),
   ('directorofsport', 'player.age.read'),
   ('directorofsport', 'player.roster.read'),
+  ('directorofsport', 'player.emergency.read'),
+  ('directorofsport', 'player.emergency.manage'),
   ('directorofsport', 'discipline.read'),
   ('directorofsport', 'discipline.write'),
   ('directorofsport', 'analytics.read'),
@@ -239,6 +243,8 @@ INSERT INTO role_capability (role, capability) VALUES
   ('schooladmin', 'player.identity.read'),
   ('schooladmin', 'guardian.link.manage'),
   ('schooladmin', 'player.roster.read'),
+  ('schooladmin', 'player.emergency.read'),
+  ('schooladmin', 'player.emergency.manage'),
   ('schooladmin', 'medical.status.read'),
   ('schooladmin', 'medical.nature.read'),
   ('schooladmin', 'discipline.read'),
@@ -297,6 +303,7 @@ INSERT INTO role_capability (role, capability) VALUES
   ('coach', 'medical.details.read'),
   ('coach', 'player.age.read'),
   ('coach', 'player.roster.read'),
+  ('coach', 'player.emergency.read'),
   ('coach', 'player.access.request'),
   ('coach', 'player.access.grant'),
   ('coach', 'analytics.read'),
@@ -323,6 +330,7 @@ INSERT INTO role_capability (role, capability) VALUES
   ('assistantcoach', 'medical.details.read'),
   ('assistantcoach', 'player.age.read'),
   ('assistantcoach', 'player.roster.read'),
+  ('assistantcoach', 'player.emergency.read'),
   ('assistantcoach', 'player.access.request'),
   ('assistantcoach', 'player.access.grant'),
   ('assistantcoach', 'transport.read'),
@@ -342,6 +350,7 @@ INSERT INTO role_capability (role, capability) VALUES
   ('teammanager', 'medical.nature.read'),
   ('teammanager', 'player.age.read'),
   ('teammanager', 'player.roster.read'),
+  ('teammanager', 'player.emergency.read'),
   ('teammanager', 'transport.read'),
   ('teammanager', 'news.publish.team'),
   ('scorer', 'fixture.read'),
@@ -392,6 +401,8 @@ INSERT INTO role_capability (role, capability) VALUES
   ('guardian', 'competition.read'),
   ('guardian', 'player.profile.read'),
   ('guardian', 'player.pii.read'),
+  ('guardian', 'player.emergency.read'),
+  ('guardian', 'player.emergency.manage'),
   ('guardian', 'player.biometric.read'),
   ('guardian', 'player.performance.read'),
   ('guardian', 'medical.status.read'),
@@ -417,6 +428,7 @@ INSERT INTO role_capability (role, capability) VALUES
   ('medical', 'news.read'),
   ('medical', 'player.profile.read'),
   ('medical', 'player.age.read'),
+  ('medical', 'player.emergency.read'),
   ('medical', 'player.biometric.read'),
   ('medical', 'medical.status.read'),
   ('medical', 'medical.nature.read'),
@@ -435,6 +447,7 @@ INSERT INTO role_capability (role, capability) VALUES
   ('transportcoordinator', 'news.read'),
   ('transportcoordinator', 'transport.read'),
   ('transportcoordinator', 'transport.manage'),
+  ('transportcoordinator', 'player.emergency.read'),
   ('driver', 'news.read'),
   ('driver', 'transport.read'),
   ('driver', 'transport.drive'),

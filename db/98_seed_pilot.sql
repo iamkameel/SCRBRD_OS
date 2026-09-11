@@ -256,6 +256,19 @@ INSERT INTO vehicle (id, school_id, registration, description, kind, capacity,
    current_date + 12, 'Used primarily for longer trips.')
 ON CONFLICT DO NOTHING;
 
+-- Cover recorded and current for every pilot vehicle. The walks that need a
+-- lapsed one set the date themselves; a seed that shipped an expired minibus
+-- would break every transport walk that picks the first vehicle it finds.
+UPDATE vehicle SET insurance_expires_on = '2027-03-31', roadworthy_expires_on = '2027-01-31';
+
+-- Who to ring. The trigger derives school_id from the child and stamps
+-- created_by from the session — NULL here, because a seed is nobody's act.
+INSERT INTO emergency_contact (player_id, priority, name, relationship, phone, phone_alt, email, note) VALUES
+  ('aaaaaaaa-0000-0000-0000-000000000005', 1, 'D Pillay',     'mother',      '+27 82 000 0005', NULL, 'd.pillay@example.invalid', NULL),
+  ('aaaaaaaa-0000-0000-0000-000000000005', 2, 'S Pillay',     'grandparent', '+27 31 000 0055', NULL, NULL, 'Works nights — try after seven'),
+  ('aaaaaaaa-0000-0000-0000-000000000001', 1, 'A Whitfield',  'father',      '+27 82 000 0001', '+27 33 000 0011', NULL, NULL),
+  ('bbbbbbbb-0000-0000-0000-000000000002', 1, 'M Botha',      'mother',      '+27 82 000 0202', NULL, NULL, NULL);
+
 -- The head. A school with sponsors and no principal is the same gap the
 -- bursar comment above describes, and a sharper one: sponsorship.exclusivity.waive
 -- is held by this role and by nothing else, so without an account carrying it

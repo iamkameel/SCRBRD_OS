@@ -63,6 +63,15 @@ export const CAPABILITIES = {
   // Personal information about a minor: date of birth, guardian, address,
   // height, weight, house. Separate from the profile on purpose.
   "player.pii.read":             "See a player's personal information",
+  // NOT part of player.pii.read, and the split is the point. The people who
+  // need a parent's number are the ones AROUND the child on a Saturday — the
+  // coach on the bus, the team manager, the physio — and none of them holds
+  // the child's file, nor should they: an address and an ID number are the
+  // office's. Before this, a coach at an away fixture could not reach a
+  // parent, because the only number was inside a capability he was rightly
+  // refused.
+  "player.emergency.read":       "Reach a player's emergency contacts",
+  "player.emergency.manage":     "Keep a player's emergency contacts",
   "player.performance.read":     "See a player's match figures",
   "player.performance.write":    "Record player performance",
   "player.development.read":     "See development notes and skill ratings",
@@ -323,6 +332,8 @@ export const ALL_CAPABILITIES = Object.freeze(Object.keys(CAPABILITIES));
 export const SENSITIVE = Object.freeze([
   "player.note.read",
   "player.pii.read",
+  // An adult's name and number, tied to a named minor. Logged like the rest.
+  "player.emergency.read",
   "player.biometric.read",
   // The ID number of a minor. More sensitive than anything else here: a
   // diagnosis heals, an address changes, a South African ID number is issued

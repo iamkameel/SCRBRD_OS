@@ -646,7 +646,16 @@ export const READ_QUERIES = {
    */
   vehicles: {
     text: `select id, registration, description, kind, capacity, condition,
-                  next_service_on, active, notes, school_id
+                  next_service_on, active, notes, school_id,
+                  insurance_expires_on, roadworthy_expires_on,
+                  -- One word a screen can act on, derived here rather than in
+                  -- six components. 'unknown' is a gap in the records and is
+                  -- not the same as 'current'; a coordinator's list should show
+                  -- the gap, not paper over it.
+                  case when insurance_expires_on is null or roadworthy_expires_on is null then 'unknown'
+                       when least(insurance_expires_on, roadworthy_expires_on) < current_date then 'expired'
+                       when least(insurance_expires_on, roadworthy_expires_on) < current_date + 30 then 'expiring'
+                       else 'current' end as cover_state
              from vehicle
             where ($1::boolean is null or active = $1)
             order by active desc, registration`,
@@ -806,6 +815,41 @@ export const READ_QUERIES = {
              join player p on p.id = r.player_id
             order by p.full_name`,
     params: q => [req(q, "schoolId"), req(q, "teamCode"), req(q, "on"), q?.sport || null],
+  },
+
+  /**
+   * WHO TO RING FOR ONE CHILD, in order.
+   *
+   * Live rows only: a retired number is history, and a coach with a phone in
+   * one hand does not need it. Governed by player.emergency.read, which the
+   * people around the child on a Saturday hold and the office's file
+   * capability does not imply — see the note on the table in db/08.
+   */
+  emergency_contacts: {
+    text: `select c.id, c.player_id, p.full_name, c.school_id, c.priority,
+                  c.name, c.relationship, c.phone, c.phone_alt, c.email, c.note,
+                  c.created_at
+             from emergency_contact c
+             join player p on p.id = c.player_id
+            where c.player_id = $1 and c.active
+            order by c.priority`,
+    params: q => [req(q, "playerId")],
+  },
+
+  /**
+   * THE MANIFEST: every child on a trip and who to ring for each.
+   *
+   * Through trip_contacts() in db/08, which is where the decision lives — the
+   * driver reaches it through transport.drive on the fixture inside a window
+   * around departure, everyone else per child through player.emergency.read.
+   * Nothing here is filtered a second time; if a row comes back, the function
+   * decided this person may have it.
+   */
+  trip_contacts: {
+    text: `select player_id, full_name, priority, name, relationship,
+                  phone, phone_alt, email, note, school_id
+             from trip_contacts($1::uuid)`,
+    params: q => [req(q, "tripId")],
   },
 
   readiness: {
@@ -1612,6 +1656,8 @@ export const RESTRICTED_FIELDS = Object.freeze({
   players:  ["email", "phone", "born", "hometown", "houseatschool",
              "address", "guardian", "height", "weight", "id_number"],
   injuries: ["injury_type", "severity", "phase", "notes", "physio"],
+  emergency_contacts: ["phone", "phone_alt", "email"],
+  trip_contacts:      ["phone", "phone_alt", "email"],
   career:   [],
   skills:   ["score"],
   users:    ["email"],
@@ -1637,6 +1683,7 @@ const pick = (row, path) =>
 
 /** Which id column identifies the CHILD a row is about, for the log. */
 const SUBJECT_ID = { players: "id", injuries: "player_id", skills: "player_id",
+                     emergency_contacts: "player_id", trip_contacts: "player_id",
                      users: "id", ratings: "player_id", notes: "player_id",
                      opposition_squad: "player_id" };
 

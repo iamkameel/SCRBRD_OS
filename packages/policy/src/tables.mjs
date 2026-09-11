@@ -155,6 +155,22 @@ export const TABLES = {
     masked: { "player.pii.read": ["email", "phone", "born", "hometown", "address"] },
   },
 
+  emergency_contact: {
+    // Who to ring when something happens to a child. Read by the people around
+    // him on the day, kept by his family and the office. Anchored through the
+    // player's CURRENT side, as the injury row is: the coach who has him now
+    // is the coach who needs the number. The driver is deliberately absent —
+    // see trip_contacts() in db/08, which reaches him through the trip.
+    read:  "player.emergency.read",
+    write: "player.emergency.manage",
+    anchors: {
+      school: "school_id",
+      team:   "(SELECT p.team_code FROM player p WHERE p.id = emergency_contact.player_id)",
+      person: "player_id",
+    },
+    masked: {},
+  },
+
   injury: {
     // Reading an injury row is reading AVAILABILITY — that a player is out,
     // and until when. This split is the reason a coach can pick a side without

@@ -121,6 +121,23 @@ CREATE POLICY staff_update ON staff
   FOR UPDATE USING (app_can('user.role.assign', staff.school_id, NULL::text, staff.id, '00000000-0000-0000-0000-000000000000'::uuid))
            WITH CHECK (app_can('user.role.assign', staff.school_id, NULL::text, staff.id, '00000000-0000-0000-0000-000000000000'::uuid));
 
+-- emergency_contact — read: player.emergency.read · write: player.emergency.manage
+ALTER TABLE emergency_contact ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS emergency_contact_read   ON emergency_contact;
+DROP POLICY IF EXISTS emergency_contact_insert ON emergency_contact;
+DROP POLICY IF EXISTS emergency_contact_update ON emergency_contact;
+DROP POLICY IF EXISTS emergency_contact_delete ON emergency_contact;
+
+CREATE POLICY emergency_contact_read ON emergency_contact
+  FOR SELECT USING (app_can('player.emergency.read', emergency_contact.school_id, (SELECT p.team_code FROM player p WHERE p.id = emergency_contact.player_id), emergency_contact.player_id, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY emergency_contact_insert ON emergency_contact
+  FOR INSERT WITH CHECK (app_can('player.emergency.manage', emergency_contact.school_id, (SELECT p.team_code FROM player p WHERE p.id = emergency_contact.player_id), emergency_contact.player_id, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY emergency_contact_update ON emergency_contact
+  FOR UPDATE USING (app_can('player.emergency.manage', emergency_contact.school_id, (SELECT p.team_code FROM player p WHERE p.id = emergency_contact.player_id), emergency_contact.player_id, '00000000-0000-0000-0000-000000000000'::uuid))
+           WITH CHECK (app_can('player.emergency.manage', emergency_contact.school_id, (SELECT p.team_code FROM player p WHERE p.id = emergency_contact.player_id), emergency_contact.player_id, '00000000-0000-0000-0000-000000000000'::uuid));
+
 -- injury — read: medical.status.read · write: medical.write
 ALTER TABLE injury ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS injury_read   ON injury;

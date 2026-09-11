@@ -287,7 +287,9 @@ function asVehicle(r) {
   return { id: r.id, reg: r.registration, description: r.description, kind: r.kind,
            capacity: r.capacity, condition: r.condition, active: r.active,
            nextService: r.next_service_on ? String(r.next_service_on).slice(0, 10) : null,
-           notes: r.notes, school: r.school_id, live: true };
+           notes: r.notes, school: r.school_id, insuranceExpiresOn: r.insurance_expires_on ? String(r.insurance_expires_on).slice(0, 10) : null,
+           roadworthyExpiresOn: r.roadworthy_expires_on ? String(r.roadworthy_expires_on).slice(0, 10) : null,
+           coverState: r.cover_state ?? "unknown", live: true };
 }
 
 /**
@@ -399,6 +401,16 @@ function asDevice(r) {
            registeredAt: r.registered_at, lastSeenAt: r.last_seen_at,
            retiredAt: r.retired_at, retiredReason: r.retired_reason,
            tokenTail: r.token_tail, active: r.retired_at == null, live: true };
+}
+
+/**
+ * Who to ring for a child, one row per contact in priority order. The same
+ * shape serves the manifest read, where rows carry the child's name too.
+ */
+function asContact(r) {
+  return { id: r.id ?? null, playerId: r.player_id, playerName: r.full_name, school: r.school_id,
+           priority: r.priority, name: r.name, relationship: r.relationship,
+           phone: r.phone, phoneAlt: r.phone_alt, email: r.email, note: r.note, live: true };
 }
 
 /** A side as it stood on a date — nothing here is computed in the browser. */
@@ -571,6 +583,8 @@ const ADAPT = {
   trips: asTrip,
   availability: asAvailability,
   readiness: asReadiness,
+  emergency_contacts: asContact,
+  trip_contacts: asContact,
   roster_on: asRosterOn,
   my_devices: asDevice,
   memberships: asMembership,
