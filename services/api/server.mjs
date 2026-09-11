@@ -40,6 +40,7 @@ import { eventRoutes, amendmentRoutes, squadRoutes, tossRoutes, conditionsRoutes
 import { scoutingRoutes, featureRoutes, drsRoutes, broadcastRoutes, sponsorRoutes, moduleAdminRoutes } from "./write/scouting-api.mjs";
 import { assessmentRoutes, accessRequestRoutes, developmentNoteRoutes, guardianLinkRoutes } from "./write/assessment-api.mjs";
 import { sessionRoutes } from "./realtime/session-routes.mjs";
+import { deviceRoutes, notificationRoutes, transportFor } from "./notify/push-api.mjs";
 import { MatchHub } from "./realtime/realtime.mjs";
 
 const PORT = Number(process.env.PORT || 8787);
@@ -194,6 +195,12 @@ const drs      = drsRoutes({ pool, secret: SECRET });
 const bcast    = broadcastRoutes({ pool, secret: SECRET });
 const sponsors = sponsorRoutes({ pool, secret: SECRET });
 const modAdmin = moduleAdminRoutes({ pool, secret: SECRET });
+// Push delivery. The transport is resolved once at boot so an unconfigured
+// deployment answers "not configured" on the fan-out rather than discovering
+// it per request — and so a walk can read back what a dev transport sent.
+const pushOut  = transportFor();
+const devices  = deviceRoutes({ pool, secret: SECRET });
+const notices  = notificationRoutes({ pool, secret: SECRET, transport: pushOut });
 
 /**
  * Development sign-in.
@@ -306,6 +313,9 @@ const MATCH_ROUTES = [
   // Appointing the officials. officiating.assign, which until now had nothing
   // it could be exercised on.
   [/^\/api\/matches\/([^/]+)\/officials$/,         "POST", officials.appoint, "officials"],
+  // Putting a published notice in front of people. Keyed on the notice, so it
+  // rides the id-bearing table rather than SCOUT_ROUTES.
+  [/^\/api\/notifications\/([^/]+)\/push$/,       "POST", notices.push],
 ];
 
 // Routes keyed on a player rather than a match. Same shape, same shim.
@@ -348,6 +358,13 @@ const SCOUT_ROUTES = [
   // before it has any data to switch anything off with.
   [/^\/api\/import\/([^/]+)$/,                             "POST", bulk.run],
   [/^\/api\/vehicles$/,                                    "POST", trips.vehicle, "logistics"],
+  // A person's own phone. No id: it always means "me", so the capture group
+  // is absent exactly as scout registration's is. NOT module-gated — a
+  // notice about a child in hospital is not a module somebody may switch off.
+  [/^\/api\/devices$/,                                     "POST", devices.register],
+  [/^\/api\/devices\/retire$/,                             "POST", devices.retire],
+  // Publishing a notice, which until now had a policy and no route at all.
+  [/^\/api\/notifications$/,                               "POST", notices.publish],
   [/^\/api\/sponsors$/,                                    "POST", sponsors.create, "sponsors"],
   [/^\/api\/sponsorships$/,                                "POST", sponsors.place,  "sponsors"],
 ];

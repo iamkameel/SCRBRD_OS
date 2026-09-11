@@ -320,6 +320,24 @@ function asAvailability(r) {
 }
 
 /**
+ * One of my own phones. Never anybody else's — see the my_devices read.
+ *
+ * `live` is the registration's state, not a connection: a retired row is kept
+ * because "signed out on the iPad in March" is the answer to "why did I stop
+ * getting alerts", and a settings screen showing only live rows cannot give it.
+ */
+function asDevice(r) {
+  // sessionDeviceId, not deviceId: lib/device.js already exports a deviceId
+  // and the import checker catches the collision — the third time that trap
+  // has been walked into here, after a local named signedIn and an adapter
+  // key named grantedBy.
+  return { id: r.id, platform: r.platform, label: r.label, sessionDeviceId: r.device_id,
+           registeredAt: r.registered_at, lastSeenAt: r.last_seen_at,
+           retiredAt: r.retired_at, retiredReason: r.retired_reason,
+           tokenTail: r.token_tail, active: r.retired_at == null, live: true };
+}
+
+/**
  * One boy, one fixture, and the three people who have a say.
  *
  * `state` is the resolved answer and the components stay beside it, because a
@@ -482,6 +500,7 @@ const ADAPT = {
   trips: asTrip,
   availability: asAvailability,
   readiness: asReadiness,
+  my_devices: asDevice,
   module_settings: asModuleSetting,
   module_suppressions: asModuleSuppression,
   my_features: asMyFeature,

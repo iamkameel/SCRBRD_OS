@@ -872,6 +872,33 @@ export const READ_QUERIES = {
   },
 
   /**
+   * MY PHONES, and there is no version of this read for anybody else.
+   *
+   * Every row comes from device_push_token, whose policy is `person_id =
+   * app_user_id()` with no capability anywhere near it — so this returns the
+   * caller's own devices and cannot be widened by a role. That is not
+   * consistency for its own sake: a list of somebody's devices with the times
+   * each was last seen is a movement trail, and no role in this product has a
+   * reason to hold one.
+   *
+   * Retired rows are INCLUDED, because "signed out on the iPad in March" is
+   * the answer to "why did I stop getting alerts" — and a settings screen that
+   * showed only live registrations could not answer it.
+   */
+  my_devices: {
+    text: `select t.id, t.platform, t.label, t.device_id,
+                  t.registered_at, t.last_seen_at,
+                  t.retired_at, t.retired_reason,
+                  -- Never the token itself. It is the bearer credential for
+                  -- pushing to that phone, it is useless to a person reading
+                  -- their own settings, and a token in a JSON response is a
+                  -- token in a browser cache and a proxy log.
+                  right(t.token, 6) as token_tail
+             from device_push_token t
+            order by (t.retired_at is null) desc, t.last_seen_at desc`,
+  },
+
+  /**
    * The same switches with their reasons shown, for an administrator's screen.
    *
    * Three levels reported SEPARATELY rather than collapsed. "Analytics is off"
