@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { NAV_META } from "../design/roles.js";
-import { useNav } from "../lib/features.js";
+import { useNav, useSports, sportBadge } from "../lib/features.js";
 import { D } from "../design/tokens.js";
 
 // ══════════════════════════════════════════════════════
@@ -24,34 +24,49 @@ function useIsMobile(bp = 880) {
   return mobile;
 }
 
-const SPORTS = [
-  { id:"cricket",  label:"CricketOS",  icon:"🏏", live:true  },
-  { id:"football", label:"FootballOS", icon:"⚽",        live:false },
-  { id:"rugby",    label:"RugbyOS",    icon:"🏉", live:false },
-  { id:"hockey",   label:"HockeyOS",   icon:"🏑", live:false },
-];
+// Icons only. This was the whole list — four sports with `live: true | false`
+// beside them — which made a product decision about what the platform
+// supports into a constant in a navigation component, and forced every
+// partly-built sport into "SOON" even where its fixture half is finished and
+// granted. The sports themselves now come from the database through
+// useSports(); what stays here is presentation, which is what a component is
+// for.
+const SPORT_ICON = {
+  cricket:"🏏", football:"⚽", rugby:"🏉", hockey:"🏑",
+  netball:"🏐", athletics:"🏃", swimming:"🏊",
+};
+const BADGE_TONE = { emerald:D.emerald, sky:D.sky, amber:D.amber };
 
 function SportSwitcher() {
   const [open, setOpen] = useState(false);
+  const { sports } = useSports();
+  // The one on the button is the sport that is both granted and scorable —
+  // the one whose scorer's screen exists. Falls back to the first granted
+  // sport, then to cricket, so the button is never blank while the read is in
+  // flight.
+  const current = sports.find(s => s.enabled && s.scorable)
+               ?? sports.find(s => s.enabled)
+               ?? { code:"cricket", label:"Cricket" };
   return (
     <div style={{padding:"10px 14px",borderBottom:`1px solid ${D.border}`,position:"relative"}}>
       <div style={{fontFamily:D.head,fontSize:"8px",fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",color:D.textMuted,marginBottom:"6px"}}>ScrbrdOS · Sport</div>
       <button onClick={()=>setOpen(!open)} className="pressBtn" style={{width:"100%",display:"flex",alignItems:"center",gap:"8px",padding:"7px 10px",borderRadius:D.md,background:D.emerald+"10",border:`1px solid ${D.emerald}28`,cursor:"pointer"}}>
-        <span style={{fontSize:"14px"}}>🏏</span>
-        <span style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.emerald}}>CricketOS</span>
+        <span style={{fontSize:"14px"}}>{SPORT_ICON[current.code] ?? "🎽"}</span>
+        <span style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.emerald}}>{current.label}</span>
         <span style={{marginLeft:"auto",fontSize:"9px",color:D.textMuted}}>{open?"▴":"▾"}</span>
       </button>
       {open&&(
         <div style={{position:"absolute",left:"14px",right:"14px",top:"calc(100% - 4px)",zIndex:300,background:D.surf2,border:`1px solid ${D.borderMed}`,borderRadius:D.lg,overflow:"hidden",boxShadow:"0 12px 40px rgba(0,0,0,.5)"}}>
-          {SPORTS.map(s=>(
-            <button key={s.id} disabled={!s.live} onClick={()=>setOpen(false)} className="pressBtn" style={{width:"100%",display:"flex",alignItems:"center",gap:"8px",padding:"9px 12px",background:s.live?D.emerald+"10":"transparent",border:"none",cursor:s.live?"pointer":"default",opacity:s.live?1:.55}}>
-              <span style={{fontSize:"13px"}}>{s.icon}</span>
-              <span style={{fontFamily:D.body,fontSize:"12px",fontWeight:s.live?600:400,color:s.live?D.textPrimary:D.textSecondary}}>{s.label}</span>
-              {s.live
-                ? <span style={{marginLeft:"auto",width:"6px",height:"6px",borderRadius:"50%",background:D.emerald}}/>
-                : <span style={{marginLeft:"auto",fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",color:D.amber,background:D.amber+"16",border:`1px solid ${D.amber}30`,borderRadius:D.pill,padding:"2px 6px"}}>SOON</span>}
-            </button>
-          ))}
+          {sports.map(s=>{
+            const b = sportBadge(s);
+            const tone = BADGE_TONE[b.tone] ?? D.textMuted;
+            return (
+            <button key={s.code} disabled={!s.enabled} onClick={()=>setOpen(false)} className="pressBtn" style={{width:"100%",display:"flex",alignItems:"center",gap:"8px",padding:"9px 12px",background:s.enabled?tone+"10":"transparent",border:"none",cursor:s.enabled?"pointer":"default",opacity:s.enabled?1:.55}}>
+              <span style={{fontSize:"13px"}}>{SPORT_ICON[s.code] ?? "🎽"}</span>
+              <span style={{fontFamily:D.body,fontSize:"12px",fontWeight:s.enabled?600:400,color:s.enabled?D.textPrimary:D.textSecondary}}>{s.label}</span>
+              <span style={{marginLeft:"auto",fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",color:tone,background:tone+"16",border:`1px solid ${tone}30`,borderRadius:D.pill,padding:"2px 6px"}}>{b.text}</span>
+            </button>);
+          })}
         </div>
       )}
     </div>
@@ -60,6 +75,7 @@ function SportSwitcher() {
 
 function MobileNav({ role, active, onNav, notifCount }) {
   const [moreOpen, setMoreOpen] = useState(false);
+  const { sports } = useSports();
   // Same list the sidebar draws, from the same place. Two components computing
   // a menu two ways is how a destination comes to exist on a phone and not on
   // a laptop.
@@ -97,12 +113,16 @@ function MobileNav({ role, active, onNav, notifCount }) {
             <div style={{width:"36px",height:"4px",borderRadius:D.pill,background:D.borderMed,margin:"0 auto 12px"}}/>
             <div style={{fontFamily:D.head,fontSize:"8px",fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",color:D.textMuted,margin:"2px 4px 8px"}}>ScrbrdOS · Sport</div>
             <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginBottom:"14px"}}>
-              {SPORTS.map(s=>(
-                <span key={s.id} style={{display:"flex",alignItems:"center",gap:"5px",padding:"5px 10px",borderRadius:D.pill,fontFamily:D.head,fontSize:"9px",fontWeight:700,
-                  background:s.live?D.emerald+"14":"transparent",border:`1px solid ${s.live?D.emerald+"33":D.border}`,color:s.live?D.emerald:D.textMuted}}>
-                  {s.icon} {s.label}{!s.live&&<span style={{fontSize:"9px",color:D.amber}}>SOON</span>}
-                </span>
-              ))}
+              {sports.map(s=>{
+                const b = sportBadge(s);
+                const tone = BADGE_TONE[b.tone] ?? D.textMuted;
+                return (
+                <span key={s.code} style={{display:"flex",alignItems:"center",gap:"5px",padding:"5px 10px",borderRadius:D.pill,fontFamily:D.head,fontSize:"9px",fontWeight:700,
+                  background:s.enabled?tone+"14":"transparent",border:`1px solid ${s.enabled?tone+"33":D.border}`,color:s.enabled?tone:D.textMuted}}>
+                  {SPORT_ICON[s.code] ?? "🎽"} {s.label}
+                  <span style={{fontSize:"9px",color:tone}}>{b.text}</span>
+                </span>);
+              })}
             </div>
             <div style={{fontFamily:D.head,fontSize:"8px",fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",color:D.textMuted,margin:"2px 4px 8px"}}>All modules</div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(96px,1fr))",gap:"8px"}}>
@@ -130,4 +150,4 @@ function MobileNav({ role, active, onNav, notifCount }) {
   );
 }
 
-export { MobileNav, SPORTS, SportSwitcher, useIsMobile };
+export { MobileNav, SPORT_ICON, SportSwitcher, useIsMobile };

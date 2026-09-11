@@ -151,8 +151,47 @@ export const FEATURES = {
   },
 };
 
-/** Everything switchable, module and feature alike, keyed the way the flag table is. */
-export const SWITCHABLE = { ...MODULES, ...FEATURES };
+/**
+ * The sports, which gate MACHINERY rather than a destination or a behaviour.
+ *
+ * SCRBRD OS is a school-sport platform and Cricket OS is one sport inside it.
+ * A sport is not a tenant — the tenant is the school and stays the school —
+ * and it is not a module either, because switching hockey on does not add a
+ * doorway: it makes every existing doorway accept a hockey fixture.
+ *
+ * `engine` is the honest half, and it is in the database too (db/00, on
+ * `sport`). Most of this product turned out to be sport-agnostic already:
+ * squad selection, availability, readiness, transport, officials, fields,
+ * notifications, sponsors and the module system care about a fixture and a
+ * roster, not about which game. Only the ball log, the toss, DRS and the
+ * analytics that replay them are cricket's. So a sport at 'fixtures' is
+ * genuinely useful on the day it is switched on, and saying "live" when only
+ * that half exists is the mock-screen failure this project keeps finding in
+ * other builds.
+ *
+ * None of these claims a read. A sport does not own `matches` — a school
+ * running cricket and hockey needs both on one fixture list, and a switch that
+ * blanked the shared reads would take the other sport's fixtures down with it.
+ * The gate is on the WRITE, in the database, where match_sport_is_enabled()
+ * refuses a fixture in a sport the school has not been granted. History
+ * survives a sport being switched off, deliberately: a school that stops
+ * running hockey keeps last season's hockey fixtures.
+ */
+export const SPORTS = {
+  sport_cricket:   { kind: "sport", label: "Cricket",   engine: "scoring",  reads: [] },
+  sport_rugby:     { kind: "sport", label: "Rugby",     engine: "fixtures", reads: [] },
+  sport_hockey:    { kind: "sport", label: "Hockey",    engine: "fixtures", reads: [] },
+  sport_netball:   { kind: "sport", label: "Netball",   engine: "fixtures", reads: [] },
+  sport_football:  { kind: "sport", label: "Football",  engine: "fixtures", reads: [] },
+  sport_athletics: { kind: "sport", label: "Athletics", engine: "none",     reads: [] },
+  sport_swimming:  { kind: "sport", label: "Swimming",  engine: "none",     reads: [] },
+};
+
+/** A sport's flag key, from its code. Mirrors the generated column in db/00. */
+export const sportFlagKey = (code) => `sport_${code}`;
+
+/** Everything switchable — module, feature and sport — keyed the way the flag table is. */
+export const SWITCHABLE = { ...MODULES, ...FEATURES, ...SPORTS };
 
 /**
  * resource → the module or feature that owns it.

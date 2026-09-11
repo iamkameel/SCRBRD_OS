@@ -13,7 +13,7 @@
  *   node packages/policy/test/modules.test.mjs
  */
 import { readFileSync } from "node:fs";
-import { MODULES, FEATURES, SWITCHABLE, OWNER_OF_READ, MODULE_OF_NAV } from "../src/modules.mjs";
+import { MODULES, FEATURES, SPORTS, SWITCHABLE, OWNER_OF_READ, MODULE_OF_NAV, sportFlagKey } from "../src/modules.mjs";
 import { ALL_CAPABILITIES } from "../src/capabilities.mjs";
 
 let pass = 0, fail = 0;
@@ -21,10 +21,14 @@ const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } 
 const group = (t) => console.log("\n" + t);
 
 const SCHEMA = readFileSync(new URL("../../../db/08_schema_programme.sql", import.meta.url), "utf8");
+// The sport catalogue lives in db/00, because `match` references it and that
+// file runs first. Read separately so the two-way drift check below can see
+// both halves: a sport with no switch, and a switch with no sport.
+const CORE = readFileSync(new URL("../../../db/00_schema_core.sql", import.meta.url), "utf8");
 // The seeded rows, as the migration actually writes them. Parsed rather than
 // duplicated: a copy of the list in this file would be a third place to drift.
 const seeded = new Set(
-  [...SCHEMA.matchAll(/^\s*\('([a-z_]+)',\s*'(module|feature)'/gm)].map((m) => m[1]));
+  [...SCHEMA.matchAll(/^\s*\('([a-z_]+)',\s*'(module|feature|sport)'/gm)].map((m) => m[1]));
 
 group("A. Every switch has a row to switch");
 for (const key of Object.keys(SWITCHABLE)) {
@@ -44,7 +48,7 @@ for (const key of seeded) {
 group("C. A module's kind and its table agree");
 {
   const kindInSql = Object.fromEntries(
-    [...SCHEMA.matchAll(/^\s*\('([a-z_]+)',\s*'(module|feature)'/gm)].map((m) => [m[1], m[2]]));
+    [...SCHEMA.matchAll(/^\s*\('([a-z_]+)',\s*'(module|feature|sport)'/gm)].map((m) => [m[1], m[2]]));
   for (const [key, def] of Object.entries(SWITCHABLE)) {
     ok(`${key} is a ${def.kind} in both places`, kindInSql[key] === def.kind);
   }
@@ -52,6 +56,37 @@ group("C. A module's kind and its table agree");
      Object.values(MODULES).every((d) => d.kind === "module"));
   ok("every feature declares kind feature",
      Object.values(FEATURES).every((d) => d.kind === "feature"));
+  ok("every sport declares kind sport",
+     Object.values(SPORTS).every((d) => d.kind === "sport"));
+
+  // ── The sport catalogue and its switches, in both directions ──
+  //
+  // Two lists in two files, which is the drift this whole suite exists for.
+  // A sport with no flag row is a sport nobody can be granted; a flag row with
+  // no sport is a switch that gates nothing — and because the key is derived
+  // from the code by a generated column in db/00, a mismatch means somebody
+  // typed one of them by hand.
+  const catalogued = [...CORE.matchAll(/^\s*\('([a-z_]+)',\s*'[^']+',\s*'(none|fixtures|scoring)'/gm)]
+    .map((m) => ({ code: m[1], engine: m[2] }));
+  ok("the sport catalogue in db/00 was found", catalogued.length > 0);
+  for (const { code, engine } of catalogued) {
+    const key = sportFlagKey(code);
+    ok(`${code} has a switch to be granted by`, seeded.has(key));
+    ok(`${code} is declared in modules.mjs`, !!SPORTS[key]);
+    // The engine is a product claim — "this sport works this much" — and it
+    // has to say the same thing in both places or a screen will promise
+    // something the database refuses.
+    ok(`${code} claims the same engine in both places`, SPORTS[key]?.engine === engine);
+  }
+  for (const key of Object.keys(SPORTS)) {
+    ok(`${key} has a row in the sport catalogue`,
+       catalogued.some((c) => sportFlagKey(c.code) === key));
+  }
+  // Exactly one sport has a scoring engine today, and it is cricket. Asserted
+  // because the day a second one does is a day somebody should have to come
+  // here and say so deliberately.
+  ok("cricket is the only sport with a scoring engine",
+     catalogued.filter((c) => c.engine === "scoring").map((c) => c.code).join() === "cricket");
 }
 
 group("D. Modules name capabilities that exist");

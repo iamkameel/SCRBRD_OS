@@ -72,6 +72,10 @@ const WALKS = [
   // The rewards algorithm's coefficients, and the fact that nobody can read
   // them — including the people whose boys the figure is about.
   "rewards",
+  // School sport rather than cricket: a sport is a dimension, most of the
+  // product turns out to be sport-agnostic, and cricket's machinery is
+  // cricket's.
+  "sport",
 ];
 
 // Walks that drive a real browser AND need a database. They need two things

@@ -1960,7 +1960,13 @@ CREATE TABLE feature_flag (
   -- feature is something the product does inside one. The distinction changes
   -- nothing about how the switch resolves and everything about how an
   -- administrator's screen reads, which is the only reason it is here.
-  kind       text NOT NULL DEFAULT 'feature' CHECK (kind IN ('module','feature')),
+  -- module, feature or sport. A module has a doorway somebody can be sent to;
+  -- a feature is something the product does inside one; a SPORT is which game
+  -- a fixture is, and it gates the machinery rather than a screen. All three
+  -- resolve through exactly the same three levels — the distinction changes
+  -- nothing about how a switch behaves and everything about how an
+  -- administrator's screen groups them, which is the only reason it is here.
+  kind       text NOT NULL DEFAULT 'feature' CHECK (kind IN ('module','feature','sport')),
   -- What to call it on that screen. In the database rather than only in
   -- packages/policy/src/modules.mjs so that a row is legible to somebody
   -- reading the table directly during an incident.
@@ -2280,6 +2286,34 @@ INSERT INTO feature_flag (key, kind, label, enabled, reason) VALUES
   ('staff',        'module', 'Staff',        true, NULL),
   ('broadcast',    'feature','Broadcast overlay', true, NULL),
   ('scouting',     'feature','Scouting',     true, NULL)
+ON CONFLICT (key) DO NOTHING;
+
+-- THE SPORTS, and only one of them is on.
+--
+-- Keys are derived from sport.code by the generated flag_key column in db/00,
+-- so these cannot drift from the catalogue —
+-- packages/policy/test/modules.test.mjs fails if a sport has no row or a row
+-- has no sport.
+--
+-- Cricket on, everything else off, and off here means off for EVERY school
+-- until the platform grants it. That is the same direction as every other
+-- switch in this table: the platform grants, a school may only reduce. A
+-- school cannot decide to start running rugby through SCRBRD by flipping
+-- something at their end, because "rugby works" is a statement about what we
+-- have built and tested, not a preference.
+INSERT INTO feature_flag (key, kind, label, enabled, reason) VALUES
+  ('sport_cricket',   'sport', 'Cricket',   true,  NULL),
+  ('sport_rugby',     'sport', 'Rugby',     false,
+   'Fixture engine only — schedule, squad, availability, transport, officials. '
+   'No scoring engine. Grant per school when they want the fixture half.'),
+  ('sport_hockey',    'sport', 'Hockey',    false, 'As rugby: fixture engine only.'),
+  ('sport_netball',   'sport', 'Netball',   false, 'As rugby: fixture engine only.'),
+  ('sport_football',  'sport', 'Football',  false, 'As rugby: fixture engine only.'),
+  ('sport_athletics', 'sport', 'Athletics', false,
+   'Listed, not built. A meet is heats and lanes and marks, which is a '
+   'different shape from a fixture between two sides, and pretending otherwise '
+   'would give a school a fixture list it cannot use.'),
+  ('sport_swimming',  'sport', 'Swimming',  false, 'As athletics: a gala is not a fixture.')
 ON CONFLICT (key) DO NOTHING;
 
 INSERT INTO feature_flag (key, kind, label, enabled, locked, reason) VALUES
@@ -3544,3 +3578,157 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER;
 
 REVOKE ALL ON FUNCTION reward_weight_at(text, date) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION reward_weight_at(text, date) TO scrbrd_app;
+
+-- ── The sport catalogue's policies, and the gate on cricket's machinery ──
+--
+-- The table is in db/00 because `match` references it and that file runs
+-- first; the policies are here because app_holds() does not exist until
+-- db/01_authz.sql. Same split as school and app_user, whose policies are in
+-- db/09 for the same reason.
+ALTER TABLE sport ENABLE ROW LEVEL SECURITY;
+
+-- Readable by anyone signed in, exactly as feature_flag is. Which sports exist
+-- and how much of each works is not a secret — a client has to know what to
+-- draw, and hiding it would only mean the client hard-coded a list, which is
+-- the state this replaces.
+CREATE POLICY sport_read ON sport
+  FOR SELECT USING (app_user_id() IS NOT NULL);
+
+-- Written only by the platform, through app_holds() because there is no tenant
+-- to anchor on. NOT a new capability: deciding which sports the product
+-- supports is precisely "enable or disable a product feature platform-wide",
+-- and inventing sport.manage would be a second name for the same authority.
+CREATE POLICY sport_insert ON sport
+  FOR INSERT WITH CHECK (app_holds('platform.feature.manage'));
+CREATE POLICY sport_update ON sport
+  FOR UPDATE USING (app_holds('platform.feature.manage'))
+           WITH CHECK (app_holds('platform.feature.manage'));
+
+/**
+ * A fixture may only be in a sport this school actually runs.
+ *
+ * Asked through feature_enabled(key, school, NULL) — the same function the
+ * module gate and the read path use — so a sport resolves through the three
+ * levels every other switch does and cannot acquire its own rules. The
+ * platform grants; a school may reduce.
+ *
+ * SECURITY DEFINER because it reads feature_grant and feature_suppression,
+ * which a coach cannot see. Under the caller's own policies the lookup would
+ * find nothing and every fixture would be refused with a sentence about a
+ * sport the school does run — a refusal whose stated reason is a fabrication,
+ * which this codebase has now hit twice and is not doing a third time.
+ *
+ * The message names the sport and says who can change it, because the person
+ * who hits this is a sportsmaster typing a hockey fixture into a product that
+ * has not been given hockey, and "not permitted" would send them to their own
+ * IT department.
+ */
+CREATE OR REPLACE FUNCTION match_sport_is_enabled() RETURNS trigger AS $$
+DECLARE v_label text; v_key text;
+BEGIN
+  -- An UPDATE that does not touch the sport is left alone. Without this, a
+  -- school that stopped running hockey could not correct a typo in the venue
+  -- of a hockey fixture it already has — and the history is precisely what
+  -- switching a sport off must not destroy.
+  IF TG_OP = 'UPDATE' AND NEW.sport IS NOT DISTINCT FROM OLD.sport THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT s.label, s.flag_key INTO v_label, v_key FROM sport s WHERE s.code = NEW.sport;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'no such sport: %', NEW.sport USING ERRCODE = 'check_violation';
+  END IF;
+
+  IF NOT feature_enabled(v_key, NEW.school_id, NULL) THEN
+    RAISE EXCEPTION
+      '% is not switched on for this school. A sport is granted by the platform, not enabled locally — ask SCRBRD to add it to your plan',
+      v_label
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS match_sport_is_granted ON match;
+CREATE TRIGGER match_sport_is_granted
+  BEFORE INSERT OR UPDATE ON match
+  FOR EACH ROW EXECUTE FUNCTION match_sport_is_enabled();
+
+/**
+ * The ball log, the toss and DRS belong to cricket and to nothing else.
+ *
+ * One function on four tables rather than four functions, so the refusal reads
+ * the same wherever somebody meets it, and so a fifth cricket table added later
+ * needs a trigger rather than a copy.
+ *
+ * ON ball_event TOO, which is the hot path. A per-delivery primary-key lookup
+ * at school-cricket volumes — a few hundred balls a match — is not a cost
+ * worth reasoning about, and the alternative is trusting that nothing ever
+ * writes a delivery except through a route that checked. There are already
+ * three ways a row reaches this schema (the API, a seed, an import) and
+ * "remember to check the sport" survives exactly as long as the person who
+ * knew about it.
+ *
+ * SECURITY DEFINER for the reason the availability and trip checks are: a
+ * check that cannot see the row it is checking passes, and a silent pass is
+ * worse than a refusal.
+ */
+CREATE OR REPLACE FUNCTION requires_cricket() RETURNS trigger AS $$
+DECLARE v_sport text; v_label text;
+BEGIN
+  SELECT m.sport INTO v_sport FROM match m WHERE m.id = NEW.match_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'no such fixture: %', NEW.match_id USING ERRCODE = 'foreign_key_violation';
+  END IF;
+  IF v_sport <> 'cricket' THEN
+    SELECT s.label INTO v_label FROM sport s WHERE s.code = v_sport;
+    RAISE EXCEPTION
+      '% cannot carry a %: that is part of the cricket scoring engine, and this fixture is a % fixture',
+      TG_TABLE_NAME, TG_TABLE_NAME, coalesce(v_label, v_sport)
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS ball_event_is_cricket ON ball_event;
+CREATE TRIGGER ball_event_is_cricket
+  BEFORE INSERT ON ball_event
+  FOR EACH ROW EXECUTE FUNCTION requires_cricket();
+
+DROP TRIGGER IF EXISTS match_toss_is_cricket ON match_toss;
+CREATE TRIGGER match_toss_is_cricket
+  BEFORE INSERT OR UPDATE ON match_toss
+  FOR EACH ROW EXECUTE FUNCTION requires_cricket();
+
+DROP TRIGGER IF EXISTS scoring_session_is_cricket ON scoring_session;
+CREATE TRIGGER scoring_session_is_cricket
+  BEFORE INSERT ON scoring_session
+  FOR EACH ROW EXECUTE FUNCTION requires_cricket();
+
+DROP TRIGGER IF EXISTS drs_review_is_cricket ON drs_review;
+CREATE TRIGGER drs_review_is_cricket
+  BEFORE INSERT ON drs_review
+  FOR EACH ROW EXECUTE FUNCTION requires_cricket();
+
+/**
+ * A fixture's sport is frozen once its scoring machinery has anything in it.
+ *
+ * Same reasoning as the toss freezing once a delivery exists. Changing a
+ * scored cricket fixture to hockey would leave a ball log attached to a
+ * fixture whose sport says those deliveries cannot exist — and every replay
+ * over it would be deriving a cricket innings from a hockey match.
+ */
+CREATE OR REPLACE FUNCTION match_sport_is_frozen_once_played() RETURNS trigger AS $$
+BEGIN
+  IF NEW.sport IS NOT DISTINCT FROM OLD.sport THEN RETURN NEW; END IF;
+  IF EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = NEW.id) THEN
+    RAISE EXCEPTION
+      'this fixture already has a ball log; its sport cannot change'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS match_sport_stays_put ON match;
+CREATE TRIGGER match_sport_stays_put
+  BEFORE UPDATE ON match
+  FOR EACH ROW EXECUTE FUNCTION match_sport_is_frozen_once_played();

@@ -45,6 +45,11 @@ export const READ_QUERIES = {
     // from a school name that might have matched neither side.
     text: `select m.id, m.school_id, m.team_code, m.opponent, m.starts_at,
                   m.format, m.overs, m.status,
+                  -- WHICH GAME. On the shared fixture read rather than behind a
+                  -- per-sport one, because a school running cricket and hockey
+                  -- needs both on one list — and a client that had to ask per
+                  -- sport would be assembling the fixture list itself.
+                  m.sport,
                   t.won_by   as toss_won_by,
                   t.decision as toss_decision,
                   bats_first(t.won_by, t.decision) as bats_first,
@@ -869,6 +874,38 @@ export const READ_QUERIES = {
   my_features: {
     text: `select f.key, f.kind, f.label, my_feature_enabled(f.key) as enabled
              from feature_flag f order by f.kind, f.key`,
+  },
+
+  /**
+   * WHICH SPORTS THIS PERSON'S SCHOOLS RUN, and how much of each works.
+   *
+   * The shell drew this from a hard-coded array — CricketOS, FootballOS,
+   * RugbyOS, HockeyOS, three of them marked `live: false` — which is a product
+   * decision living in a component constant. It comes from the database now,
+   * so a sport granted to a school appears without a deploy.
+   *
+   * TWO SEPARATE FACTS PER ROW, and collapsing them is what made the hard-coded
+   * version misleading. `enabled` is whether this school has been granted the
+   * sport; `engine` is how much of the product exists for it — 'scoring' means
+   * the ball log, replay and analytics; 'fixtures' means everything
+   * sport-agnostic (schedule, squad, availability, transport, officials) and no
+   * scoring engine; 'none' means listed and not built. A school can be granted
+   * a 'fixtures' sport and get real use out of it the same day, and the client
+   * must be able to say so rather than implying a scorer's screen exists.
+   *
+   * Never module-gated, for the obvious reason: this is the catalogue that says
+   * what is switched on.
+   */
+  sports: {
+    text: `select s.code, s.label, s.engine, s.flag_key,
+                  my_feature_enabled(s.flag_key) as enabled,
+                  -- How many fixtures this reader can actually see in it,
+                  -- through their own row scope. A sport that is on and empty
+                  -- and a sport that is on and in use are different things to
+                  -- a sportsmaster deciding whether anybody adopted it.
+                  (select count(*)::int from match m where m.sport = s.code) as fixtures
+             from sport s
+            order by s.sort_order, s.label`,
   },
 
   /**

@@ -176,6 +176,72 @@ CREATE TABLE ground (
 );
 CREATE INDEX ON ground (school_id);
 
+-- ── The sports SCRBRD OS runs, and how much of each actually works ──
+--
+-- SCRBRD OS is a school-sport platform and Cricket OS is one sport inside it.
+-- That sentence had no representation in the schema at all: `match` meant a
+-- cricket match, `overs` was NOT NULL with a T20 default, and the shell's
+-- mobile navigation carried a hard-coded CricketOS / RugbyOS / HockeyOS list
+-- with `live: false` beside three of them — a product decision living in a
+-- component's constant.
+--
+-- SPORT IS A DIMENSION, NOT A TENANT. The tenant is the school and stays the
+-- school: every policy in this schema anchors on school_id and none of that
+-- changes. A sport is a property of a fixture, and what it decides is which
+-- MACHINERY applies.
+--
+-- WHICH IS WORTH STATING PRECISELY, because most of this product is already
+-- sport-agnostic and nobody had noticed. Squad selection, availability,
+-- readiness, transport, officials, fields, notifications, sponsors, staff,
+-- injuries and the whole module system care about a fixture and a roster and
+-- not at all about what game is being played. Only the ball log, the toss, DRS
+-- and the analytics that replay them are cricket.
+--
+-- So `engine` records the honest answer per sport rather than a boolean that
+-- would have to lie one way or the other:
+--
+--   'scoring'   the ball-by-ball engine works: toss, deliveries, replay,
+--               scorecards, analytics. Cricket, today, and only cricket.
+--   'fixtures'  everything sport-agnostic works — schedule a fixture, name a
+--               side, collect availability, put a bus on it, appoint
+--               officials, book a field, alert the parents. No scoring engine.
+--   'none'      listed so a school can see it is coming, and nothing more.
+--
+-- A school with a hockey programme gets real value at 'fixtures' on the day
+-- this lands, which is why the distinction is in the table rather than in a
+-- roadmap document. Claiming a sport is "live" when only its fixture half
+-- exists is the mock-screen failure this project keeps finding elsewhere.
+CREATE TABLE sport (
+  code  text PRIMARY KEY CHECK (code ~ '^[a-z][a-z_]{2,29}$'),
+  label text NOT NULL,
+  -- The switch that governs it, DERIVED so the two cannot drift. A sport is
+  -- switchable through exactly the same three levels as every module — the
+  -- platform grants, a school may only reduce — and giving it its own
+  -- parallel mechanism would be a second authorization model for the same
+  -- question.
+  flag_key text GENERATED ALWAYS AS ('sport_' || code) STORED,
+  engine text NOT NULL CHECK (engine IN ('none','fixtures','scoring')),
+  sort_order smallint NOT NULL DEFAULT 100
+);
+
+-- Reference data, not demonstration data, so it is here rather than in the
+-- pilot seed: these rows are part of what the product IS. The feature_flag
+-- rows that switch them are in db/08, where that table lives, and
+-- packages/policy/test/modules.test.mjs fails if the two lists ever disagree.
+INSERT INTO sport (code, label, engine, sort_order) VALUES
+  ('cricket',   'Cricket',   'scoring',   10),
+  -- Every one of these can hold a fixture list, a squad, availability,
+  -- transport and officials the day a school switches it on. None has a
+  -- scoring engine, and the table says so rather than a screen implying
+  -- otherwise.
+  ('rugby',     'Rugby',     'fixtures',  20),
+  ('hockey',    'Hockey',    'fixtures',  30),
+  ('netball',   'Netball',   'fixtures',  40),
+  ('football',  'Football',  'fixtures',  50),
+  ('athletics', 'Athletics', 'none',      60),
+  ('swimming',  'Swimming',  'none',      70)
+ON CONFLICT (code) DO NOTHING;
+
 CREATE TABLE match (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   school_id     uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
@@ -183,8 +249,19 @@ CREATE TABLE match (
   opponent      text NOT NULL,
   ground_id     uuid REFERENCES ground(id) ON DELETE SET NULL,
   starts_at     timestamptz NOT NULL,
-  format        text NOT NULL DEFAULT 'T20',
-  overs         smallint NOT NULL DEFAULT 20,
+  -- WHICH GAME. Defaulted to cricket rather than left to the caller, because
+  -- every fixture that existed before this column was a cricket fixture and
+  -- guessing would have been the alternative. New sports are stated.
+  sport         text NOT NULL DEFAULT 'cricket' REFERENCES sport(code),
+  -- Cricket's own two columns, and they no longer pretend to be universal.
+  --
+  -- `format` was NOT NULL DEFAULT 'T20' and `overs` NOT NULL DEFAULT 20, which
+  -- meant a hockey fixture inserted without thinking about it became a
+  -- twenty-over hockey match. Both defaults are gone and both are now
+  -- constrained by the sport: cricket states its format, and an over is a
+  -- cricket unit that nothing else may carry.
+  format        text,
+  overs         smallint,
   status        text NOT NULL DEFAULT 'scheduled'
                   CHECK (status IN ('scheduled','live','complete','abandoned')),
   -- The toss is NOT here. It was — as `toss_won_by text` holding a school's
@@ -195,10 +272,18 @@ CREATE TABLE match (
   -- should not, though a scorer is exactly who watches the coin land.
   -- No score column, by design. The score is derived from ball_event —
   -- see db/01_schema_scoring.sql and packages/scoring/src/replay.mjs.
-  created_at    timestamptz NOT NULL DEFAULT now()
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  -- Cricket says what it is; everything else says nothing about overs. Written
+  -- as two one-directional rules rather than one biconditional on purpose:
+  -- multi-day cricket legitimately has no over limit, so "cricket implies
+  -- overs" would be false. What is always false is a hockey match with an
+  -- over count.
+  CONSTRAINT cricket_states_its_format CHECK (sport <> 'cricket' OR format IS NOT NULL),
+  CONSTRAINT overs_are_a_cricket_unit  CHECK (sport =  'cricket' OR overs  IS NULL)
 );
 CREATE INDEX ON match (school_id);
 CREATE INDEX ON match (school_id, starts_at DESC);
+CREATE INDEX ON match (school_id, sport, starts_at DESC);
 
 -- Which players are in a match squad. The scoring event log references
 -- players directly, so this is the team sheet, not a scoring structure.

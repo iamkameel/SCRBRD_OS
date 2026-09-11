@@ -320,6 +320,23 @@ function asAvailability(r) {
 }
 
 /**
+ * One sport, with the two facts the shell's hard-coded list conflated.
+ *
+ * `enabled` is whether this school has been granted it. `engine` is how much
+ * of the product exists for it, and the client must show them separately: a
+ * sport can be on with a fixture engine and no scorer, and a badge reading
+ * "live" over that is the promise the old constant was making.
+ */
+function asSport(r) {
+  return { code: r.code, label: r.label, engine: r.engine,
+           enabled: r.enabled === true, fixtures: r.fixtures ?? 0,
+           // Convenience for the shell, derived here rather than in six
+           // components: scoring is the only engine that puts a scorer's
+           // screen behind a sport.
+           scorable: r.engine === "scoring", live: true };
+}
+
+/**
  * One of my own phones. Never anybody else's — see the my_devices read.
  *
  * `live` is the registration's state, not a connection: a retired row is kept
@@ -501,6 +518,7 @@ const ADAPT = {
   availability: asAvailability,
   readiness: asReadiness,
   my_devices: asDevice,
+  sports: asSport,
   module_settings: asModuleSetting,
   module_suppressions: asModuleSuppression,
   my_features: asMyFeature,

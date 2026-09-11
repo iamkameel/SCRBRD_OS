@@ -98,3 +98,72 @@ export function useNav(role) {
     return !module || features[module] !== false;
   });
 }
+
+// ── The sports this session's schools run ──
+//
+// Separate from the feature map above even though a sport IS a feature_flag
+// row, because the shell needs more than the boolean: which sports exist, what
+// each is called, and how much of the product works for it. my_features
+// carries only key and enabled, and a switcher drawn from that could say a
+// school has hockey without being able to say whether hockey has a scorer.
+let _sports = null;
+let _sportsInflight = null;
+
+/** Forget them on sign-out, for the same reason the feature map is forgotten. */
+export function resetSports() { _sports = null; _sportsInflight = null; }
+
+async function loadSports() {
+  if (_sports) return _sports;
+  if (_sportsInflight) return _sportsInflight;
+  _sportsInflight = (async () => {
+    try {
+      const { rows } = await api("/api/read/sports");
+      _sports = rows;
+    } catch {
+      // No list rather than a guessed one. The switcher renders nothing, which
+      // is honest — the alternative is the hard-coded array this replaced,
+      // which claimed three sports were coming and one was live whatever the
+      // school had actually been granted.
+      _sports = [];
+    } finally {
+      _sportsInflight = null;
+    }
+    return _sports;
+  })();
+  return _sportsInflight;
+}
+
+/**
+ * `{ sports, ready }`, fetched once for the whole shell.
+ *
+ * Each row carries `enabled` and `engine` SEPARATELY, and a caller must keep
+ * them apart. A sport can be granted with a fixture engine and no scoring one,
+ * and that is a useful state — schedule, squad, availability, transport and
+ * officials all work — so rendering it as "live" promises a scorer's screen
+ * that does not exist, while rendering it as "soon" hides something the school
+ * is already paying for.
+ */
+export function useSports() {
+  const [state, setState] = useState(() => ({ sports: _sports ?? [], ready: !!_sports }));
+  useEffect(() => {
+    if (!signedIn()) { setState({ sports: [], ready: true }); return; }
+    let cancelled = false;
+    loadSports().then((s) => { if (!cancelled) setState({ sports: s, ready: true }); });
+    return () => { cancelled = true; };
+  }, []);
+  return state;
+}
+
+/**
+ * How a sport should read on a badge. Three states, not two.
+ *
+ * The list this replaced had `live: true | false`, which forced every
+ * not-fully-built sport into "SOON" — including the ones whose fixture half is
+ * finished and switched on. That is the distinction the whole sport catalogue
+ * exists to carry, so it is not going to be flattened here.
+ */
+export function sportBadge(s) {
+  if (!s?.enabled) return { text: "SOON", tone: "amber" };
+  if (s.engine === "scoring") return { text: "LIVE", tone: "emerald" };
+  return { text: "FIXTURES", tone: "sky" };
+}
