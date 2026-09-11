@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { SCHOOL } from "../data/institution.js";
 import { ROLES } from "../design/roles.js";
-import { D } from "../design/tokens.js";
+import { D, textOn } from "../design/tokens.js";
 import { SCRBRD } from "../scorer/engine.jsx";
 import { Avatar, Badge, Btn, Card, EmptyState, Input, Modal, SectionHeader, Select } from "../ui/primitives.jsx";
 import { useLive, useRows } from "../lib/live.js";
@@ -296,7 +296,7 @@ function MyClearancesTab({ role }) {
               <div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted}}>{r.schoolName} · issued {r.issuedOn} · {r.status==="revoked"?"revoked":`lapses ${r.expiresOn}`}</div>
             </div>
             <span style={{fontFamily:D.mono,fontSize:"9px",textTransform:"uppercase",padding:"3px 8px",borderRadius:D.pill,
-                          background:tone[r.status]+"14",border:`1px solid ${tone[r.status]}33`,color:tone[r.status]}}>{r.status}</span>
+                          background:tone[r.status]+"14",border:`1px solid ${tone[r.status]}33`,color:textOn(tone[r.status])}}>{r.status}</span>
           </div>
         ))}
     </Card>

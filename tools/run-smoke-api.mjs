@@ -86,6 +86,7 @@ const WALKS = [
   // insured to carry him.
   "contacts",
   "clearance",
+  "workload",
   // Where a boy has played: derived from team_code writes, forgeable by
   // nobody, and the end of a promotion overwriting a season.
   "membership",

@@ -4704,3 +4704,303 @@ END $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 CREATE TRIGGER trip_driver_check BEFORE INSERT OR UPDATE ON trip
   FOR EACH ROW EXECUTE FUNCTION trip_driver_cleared();
+
+-- ═══════════════════════════════════════════════════════════════════
+--  BOWLING AND TRAINING WORKLOAD — how much a boy has bowled, and whether
+--  anyone should have taken him off
+-- ═══════════════════════════════════════════════════════════════════
+--
+-- A fourteen-year-old's back does not care that the match was close. Junior
+-- cricket has had fast-bowling directives for decades — so many overs in a
+-- spell, so many in a day, by age — and they are broken most often not by
+-- coaches who disagree with them but by scorers who lost count. Nothing here
+-- refuses a ball. THE LOG RECORDS WHAT HAPPENED; a delivery that was bowled
+-- was bowled, and a scoring system that refused to write it down would only
+-- make the breach invisible. What this does instead is derive the overs and
+-- the spells from the log, compare them to the directive for the boy's age,
+-- write the breach down as a FACT the moment it happens, and tell the people
+-- responsible for him.
+--
+-- Everything is DERIVED from ball_event. No over count is stored, no spell
+-- is stored; both are folds over the log, like the score is, and a voided
+-- ball drops out of them the way it drops out of the scorecard.
+
+-- The day it is where the cricket is played. The database runs in UTC and a
+-- Saturday fixture that starts at nine in Durban is still Friday there for
+-- the first two hours of a walk run late at night; a window that ends at
+-- current_date would drop today's overs until midnight in Greenwich.
+CREATE OR REPLACE FUNCTION sa_today() RETURNS date AS $$
+  SELECT (now() AT TIME ZONE 'Africa/Johannesburg')::date $$ LANGUAGE sql STABLE;
+
+-- ── Age on the season cut-off ────────────────────────────────────
+-- Age-group cricket is played by age on a date, not age today, or a boy
+-- would change age group mid-season. The South African season turns over on
+-- 1 September; a boy is "under 13" for the season if he was under 13 then.
+CREATE OR REPLACE FUNCTION season_cutoff(p_on date DEFAULT sa_today()) RETURNS date AS $$
+  SELECT CASE WHEN extract(month FROM p_on) >= 9
+              THEN make_date(extract(year FROM p_on)::int, 9, 1)
+              ELSE make_date(extract(year FROM p_on)::int - 1, 9, 1) END;
+$$ LANGUAGE sql IMMUTABLE;
+
+CREATE OR REPLACE FUNCTION age_band(p_born date, p_on date DEFAULT sa_today()) RETURNS text AS $$
+  SELECT CASE WHEN p_born IS NULL THEN 'unknown'
+              WHEN a < 13 THEN 'U13' WHEN a < 15 THEN 'U15'
+              WHEN a < 17 THEN 'U17' WHEN a < 19 THEN 'U19'
+              ELSE 'open' END
+    FROM (SELECT extract(year FROM age(season_cutoff(p_on), p_born))::int AS a) x;
+$$ LANGUAGE sql IMMUTABLE;
+
+-- ── The directive ────────────────────────────────────────────────
+-- Overs per spell and per day for a pace bowler, by age band. Platform
+-- reference data: a school reads it and cannot loosen it. The numbers follow
+-- the ECB fast bowling directives, which are the ones most South African
+-- schools have adopted in the absence of a published CSA schedule; when CSA
+-- publishes one this table is where it goes. NULL means no limit applies —
+-- an adult, or a boy whose date of birth the school has not recorded, whom
+-- the workload read names as 'unknown' rather than quietly treating as open.
+CREATE TABLE bowling_directive (
+  age_band            text PRIMARY KEY,
+  max_overs_per_spell smallint,
+  max_overs_per_day   smallint
+);
+ALTER TABLE bowling_directive ENABLE ROW LEVEL SECURITY;
+CREATE POLICY bowling_directive_read ON bowling_directive
+  FOR SELECT USING (app_user_id() IS NOT NULL);
+INSERT INTO bowling_directive VALUES
+  ('U13', 5, 10), ('U15', 6, 12), ('U17', 7, 18), ('U19', 7, 18),
+  ('open', NULL, NULL), ('unknown', NULL, NULL);
+
+-- Which boys the directive applies to: pace. A spinner has no over limit in
+-- any junior directive. A boy whose style nobody has recorded is treated as
+-- pace, because the cost of being wrong that way is a spinner taken off an
+-- over early, and the cost of being wrong the other way is a stress fracture.
+CREATE OR REPLACE FUNCTION bowling_directive_for(p_player uuid)
+RETURNS TABLE (age_band text, pace boolean, max_overs_per_spell smallint, max_overs_per_day smallint) AS $$
+  SELECT age_band(p.born) AS age_band,
+         (p.bowling_style IS NULL OR p.bowling_style !~* 'spin|slow') AS pace,
+         CASE WHEN (p.bowling_style IS NULL OR p.bowling_style !~* 'spin|slow') THEN d.max_overs_per_spell END,
+         CASE WHEN (p.bowling_style IS NULL OR p.bowling_style !~* 'spin|slow') THEN d.max_overs_per_day END
+    FROM player p
+    LEFT JOIN bowling_directive d ON d.age_band = age_band(p.born)
+   WHERE p.id = p_player;
+$$ LANGUAGE sql STABLE;
+
+-- ── Overs, from the log ──────────────────────────────────────────
+-- An over is six LEGAL balls; a wide or a no-ball does not advance it. The
+-- over a ball belongs to is the number of legal balls before it in the
+-- innings, divided by six — counted over every ball, including the ones
+-- with no bowler attributed, or an unattributed delivery would shift every
+-- over after it. Dated by the FIXTURE, not by when the row arrived: a
+-- scorer's phone may sync the second innings on Sunday night, and a day
+-- limit is about the day the boy bowled.
+CREATE OR REPLACE VIEW bowler_over WITH (security_invoker = true) AS
+WITH balls AS (
+  SELECT b.match_id, b.innings, b.bowler_id, b.school_id, b.seq, b.ball_type,
+         coalesce(count(*) FILTER (WHERE b.ball_type NOT IN ('Wd','Nb'))
+                    OVER (PARTITION BY b.match_id, b.innings ORDER BY b.seq
+                          ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) / 6 AS over_no
+    FROM ball_event_live b
+   WHERE b.kind = 'ball')
+SELECT x.match_id, x.innings, x.bowler_id, x.school_id, x.over_no::int AS over_no,
+       (m.starts_at AT TIME ZONE 'Africa/Johannesburg')::date AS bowled_on,
+       count(*) FILTER (WHERE x.ball_type NOT IN ('Wd','Nb'))::int AS legal_balls,
+       count(*)::int AS deliveries
+  FROM balls x
+  JOIN match m ON m.id = x.match_id
+ WHERE x.bowler_id IS NOT NULL
+ GROUP BY x.match_id, x.innings, x.bowler_id, x.school_id, x.over_no, m.starts_at;
+
+-- A SPELL is unbroken bowling from one end. Ends alternate, so a bowler in a
+-- spell bowls every second over: over numbers two apart are the same spell.
+-- A gap of three or more means he missed his turn at that end — he was
+-- rested — and what he bowls next is a new spell. The directive counts
+-- spells, and counts them this way.
+CREATE OR REPLACE VIEW bowler_spell WITH (security_invoker = true) AS
+WITH o AS (
+  SELECT *, lag(over_no) OVER (PARTITION BY match_id, innings, bowler_id ORDER BY over_no) AS prev_over
+    FROM bowler_over),
+marked AS (
+  SELECT *, CASE WHEN prev_over IS NULL OR over_no - prev_over > 2 THEN 1 ELSE 0 END AS starts FROM o),
+numbered AS (
+  SELECT *, sum(starts) OVER (PARTITION BY match_id, innings, bowler_id ORDER BY over_no) AS spell_no FROM marked)
+SELECT match_id, innings, bowler_id, school_id, bowled_on, spell_no::int AS spell_no,
+       min(over_no)::int AS first_over, max(over_no)::int AS last_over,
+       count(*)::int AS overs, sum(legal_balls)::int AS legal_balls
+  FROM numbered
+ GROUP BY match_id, innings, bowler_id, school_id, bowled_on, spell_no;
+
+-- ── The breach, as a fact ────────────────────────────────────────
+-- Written the moment the log shows it and never removed: a boy who bowled a
+-- seventh over of a spell bowled it, and the row says so, with the limit he
+-- was under and the band that set it. One row per spell or per day, however
+-- many balls were bowled past the line.
+CREATE TABLE bowling_breach (
+  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  match_id   uuid NOT NULL REFERENCES match(id) ON DELETE CASCADE,
+  innings    smallint NOT NULL,
+  bowler_id  uuid NOT NULL REFERENCES player(id) ON DELETE CASCADE,
+  school_id  uuid NOT NULL REFERENCES school(id),
+  kind       text NOT NULL CHECK (kind IN ('spell', 'day')),
+  -- Which spell (its first over) or which day (0): the identity of the breach.
+  key        integer NOT NULL,
+  overs      smallint NOT NULL,
+  allowed    smallint NOT NULL,
+  age_band   text NOT NULL,
+  bowled_on  date NOT NULL,
+  noticed_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (match_id, innings, bowler_id, kind, key)
+);
+CREATE UNIQUE INDEX bowling_breach_one_per_day ON bowling_breach (bowler_id, bowled_on) WHERE kind = 'day';
+ALTER TABLE bowling_breach ENABLE ROW LEVEL SECURITY;
+-- Read under player.workload.read — coaching staff, the physio, the boy
+-- himself through self-access; written only by the trigger below, so no
+-- insert policy.
+CREATE POLICY bowling_breach_read ON bowling_breach
+  FOR SELECT USING (app_can('player.workload.read', bowling_breach.school_id,
+    (SELECT p.team_code FROM player p WHERE p.id = bowling_breach.bowler_id),
+    bowling_breach.bowler_id, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE OR REPLACE FUNCTION bowling_breach_watch() RETURNS trigger AS $$
+DECLARE
+  d record; s record; p player%ROWTYPE;
+  v_day date; v_day_overs int;
+BEGIN
+  SELECT * INTO p FROM player WHERE id = NEW.bowler_id;
+  IF NOT FOUND THEN RETURN NEW; END IF;
+  SELECT * INTO d FROM bowling_directive_for(NEW.bowler_id);
+  IF d.max_overs_per_spell IS NULL AND d.max_overs_per_day IS NULL THEN RETURN NEW; END IF;
+
+  -- The spell this ball is part of.
+  SELECT * INTO s FROM bowler_spell
+   WHERE match_id = NEW.match_id AND innings = NEW.innings AND bowler_id = NEW.bowler_id
+   ORDER BY spell_no DESC LIMIT 1;
+  IF FOUND AND d.max_overs_per_spell IS NOT NULL AND s.overs > d.max_overs_per_spell THEN
+    INSERT INTO bowling_breach (match_id, innings, bowler_id, school_id, kind, key, overs, allowed, age_band, bowled_on)
+    VALUES (NEW.match_id, NEW.innings, NEW.bowler_id, p.school_id, 'spell', s.first_over, s.overs, d.max_overs_per_spell, d.age_band, s.bowled_on)
+    ON CONFLICT DO NOTHING;
+    IF FOUND THEN
+      INSERT INTO notification (school_id, team_code, scope_level, kind, urgency, title, body,
+                                required_capability, is_public, subject_kind, subject_id, subject_person_id)
+      VALUES (p.school_id, p.team_code, 'team', 'welfare', 'high',
+              'Bowling directive exceeded',
+              p.full_name || ' (' || d.age_band || ') is ' || s.overs || ' overs into a spell; the directive allows '
+                || d.max_overs_per_spell || '. Take him off.',
+              'player.workload.read', false, 'match', NEW.match_id, NEW.bowler_id);
+    END IF;
+  END IF;
+
+  -- The day: every over he has bowled on the fixture's date, in any match.
+  SELECT o.bowled_on, count(*) INTO v_day, v_day_overs
+    FROM bowler_over o
+   WHERE o.bowler_id = NEW.bowler_id
+     AND o.bowled_on = (SELECT (m.starts_at AT TIME ZONE 'Africa/Johannesburg')::date FROM match m WHERE m.id = NEW.match_id)
+   GROUP BY o.bowled_on;
+  IF FOUND AND d.max_overs_per_day IS NOT NULL AND v_day_overs > d.max_overs_per_day THEN
+    INSERT INTO bowling_breach (match_id, innings, bowler_id, school_id, kind, key, overs, allowed, age_band, bowled_on)
+    VALUES (NEW.match_id, NEW.innings, NEW.bowler_id, p.school_id, 'day', 0, v_day_overs, d.max_overs_per_day, d.age_band, v_day)
+    ON CONFLICT DO NOTHING;
+    IF FOUND THEN
+      INSERT INTO notification (school_id, team_code, scope_level, kind, urgency, title, body,
+                                required_capability, is_public, subject_kind, subject_id, subject_person_id)
+      VALUES (p.school_id, p.team_code, 'team', 'welfare', 'high',
+              'Bowling directive exceeded',
+              p.full_name || ' (' || d.age_band || ') has bowled ' || v_day_overs || ' overs today; the directive allows '
+                || d.max_overs_per_day || ' in a day. He does not bowl again today.',
+              'player.workload.read', false, 'match', NEW.match_id, NEW.bowler_id);
+    END IF;
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- AFTER, and only for a delivery with a bowler on it. Definer rights: the
+-- scorer writing the ball holds scoring capabilities, not the boy's
+-- development record, and the breach has to be written and the coach told
+-- whoever is holding the phone.
+CREATE TRIGGER ball_event_bowling_breach AFTER INSERT ON ball_event
+  FOR EACH ROW WHEN (NEW.kind = 'ball' AND NEW.bowler_id IS NOT NULL)
+  EXECUTE FUNCTION bowling_breach_watch();
+
+-- ── Workload ─────────────────────────────────────────────────────
+-- One row per boy the reader may read the development record of: what he
+-- bowled in the last week and the last four, his longest spell, the breaches
+-- on his name, and what training he was at. The acute:chronic ratio is the
+-- standard one — this week against the average of the last four — and the
+-- word beside it is the server's, not a screen's:
+--   no bowling — nothing in four weeks
+--   rested     — bowled this month, not this week
+--   light      — under 0.8
+--   steady     — 0.8 to 1.2
+--   rising     — 1.2 to 1.5
+--   spike      — over 1.5, the range the injury literature keeps finding
+-- Under player.workload.read per row, because this is a reading of a named
+-- child's body, not a scorecard — the overs are public, the meaning is not.
+-- Not player.development.read: the pupil ROLE holds that across a side, and
+-- a boy does not get a team-mate's load for playing in the same XI. Definer rights so the per-row check is the only gate and three
+-- tables' policies do not each subtract from the answer differently.
+CREATE OR REPLACE FUNCTION workload(p_team text DEFAULT NULL)
+RETURNS TABLE (player_id uuid, full_name text, team_code text, school_id uuid,
+               age_band text, pace boolean, max_overs_per_spell smallint, max_overs_per_day smallint,
+               overs_7d int, overs_28d int, longest_spell_7d int, breaches_28d int, last_bowled_on date,
+               sessions_7d int, minutes_7d int, sessions_28d int, minutes_28d int,
+               acwr numeric, load_state text) AS $$
+  WITH boys AS (
+    SELECT p.id, p.full_name, p.team_code, p.school_id, p.born, p.bowling_style
+      FROM player p
+     WHERE (p_team IS NULL OR p.team_code = p_team)
+       AND app_can('player.workload.read', p.school_id, p.team_code, p.id,
+                   '00000000-0000-0000-0000-000000000000'::uuid)),
+  bowl AS (
+    SELECT o.bowler_id,
+           count(*) FILTER (WHERE o.bowled_on > sa_today() - 7)::int  AS overs_7d,
+           count(*) FILTER (WHERE o.bowled_on > sa_today() - 28)::int AS overs_28d,
+           max(o.bowled_on) AS last_bowled_on
+      FROM bowler_over o JOIN boys b ON b.id = o.bowler_id
+     WHERE o.bowled_on <= sa_today()
+     GROUP BY o.bowler_id),
+  spells AS (
+    SELECT s.bowler_id, max(s.overs)::int AS longest_spell_7d
+      FROM bowler_spell s JOIN boys b ON b.id = s.bowler_id
+     WHERE s.bowled_on > sa_today() - 7 AND s.bowled_on <= sa_today()
+     GROUP BY s.bowler_id),
+  breaches AS (
+    SELECT x.bowler_id, count(*)::int AS breaches_28d
+      FROM bowling_breach x JOIN boys b ON b.id = x.bowler_id
+     WHERE x.bowled_on > sa_today() - 28
+     GROUP BY x.bowler_id),
+  train AS (
+    SELECT a.player_id,
+           count(*) FILTER (WHERE t.starts_at > now() - interval '7 days')::int            AS sessions_7d,
+           coalesce(sum(t.duration_min) FILTER (WHERE t.starts_at > now() - interval '7 days'), 0)::int  AS minutes_7d,
+           count(*)::int AS sessions_28d,
+           coalesce(sum(t.duration_min), 0)::int AS minutes_28d
+      FROM training_attendance a
+      JOIN training_session t ON t.id = a.session_id
+      JOIN boys b ON b.id = a.player_id
+     WHERE a.status IN ('present', 'late') AND NOT t.cancelled
+       AND t.starts_at > now() - interval '28 days' AND t.starts_at <= now()
+     GROUP BY a.player_id)
+  SELECT b.id, b.full_name, b.team_code, b.school_id,
+         d.age_band, d.pace, d.max_overs_per_spell, d.max_overs_per_day,
+         coalesce(w.overs_7d, 0), coalesce(w.overs_28d, 0), coalesce(sp.longest_spell_7d, 0),
+         coalesce(br.breaches_28d, 0), w.last_bowled_on,
+         coalesce(tr.sessions_7d, 0), coalesce(tr.minutes_7d, 0), coalesce(tr.sessions_28d, 0), coalesce(tr.minutes_28d, 0),
+         CASE WHEN coalesce(w.overs_28d, 0) > 0
+              THEN round(coalesce(w.overs_7d, 0) / (w.overs_28d / 4.0), 2) END AS acwr,
+         CASE WHEN coalesce(w.overs_28d, 0) = 0 THEN 'no bowling'
+              WHEN coalesce(w.overs_7d, 0) = 0 THEN 'rested'
+              WHEN w.overs_7d / (w.overs_28d / 4.0) > 1.5 THEN 'spike'
+              WHEN w.overs_7d / (w.overs_28d / 4.0) >= 1.2 THEN 'rising'
+              WHEN w.overs_7d / (w.overs_28d / 4.0) < 0.8 THEN 'light'
+              ELSE 'steady' END AS load_state
+    FROM boys b
+    CROSS JOIN LATERAL bowling_directive_for(b.id) d
+    LEFT JOIN bowl w ON w.bowler_id = b.id
+    LEFT JOIN spells sp ON sp.bowler_id = b.id
+    LEFT JOIN breaches br ON br.bowler_id = b.id
+    LEFT JOIN train tr ON tr.player_id = b.id
+   ORDER BY CASE WHEN coalesce(br.breaches_28d, 0) > 0 THEN 0 ELSE 1 END,
+            CASE WHEN coalesce(w.overs_28d, 0) > 0 AND w.overs_7d / (w.overs_28d / 4.0) > 1.5 THEN 0 ELSE 1 END,
+            coalesce(w.overs_7d, 0) DESC, b.full_name;
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+REVOKE ALL ON FUNCTION workload(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION workload(text) TO PUBLIC;

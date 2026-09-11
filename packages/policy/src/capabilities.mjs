@@ -76,6 +76,13 @@ export const CAPABILITIES = {
   // check runs out. The register names adults, not children, but it states
   // which adults the school has NOT checked, which is not for a coach to read
   // about a colleague — so it is not part of the staff floor.
+  // How much a boy has bowled and trained, against the directive for his
+  // age, and the breaches on his name. Narrower than player.development.read
+  // on purpose: that one is held by the pupil ROLE across a side, and a
+  // reading of a team-mate's body is not a thing to hand a fourteen-year-old
+  // because he plays in the same XI. The boy reaches his own through
+  // self-access; the physio holds it because this is injury prevention.
+  "player.workload.read":        "See a player's bowling and training load",
   "clearance.read":              "See whether an adult's clearances are current",
   "clearance.manage":            "Record and revoke an adult's clearances",
   "player.performance.read":     "See a player's match figures",

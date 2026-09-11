@@ -115,7 +115,7 @@ const BUNDLES = {
     "player.age.read", "player.roster.read", "guardian.link.manage",
     "player.note.read", "scoring.amend.approve",
   ],
-  directorofsport: ["clearance.read", "clearance.manage",
+  directorofsport: ["player.workload.read", "clearance.read", "clearance.manage",
     "availability.read", "availability.declare",
     // Same reasoning as the principal above: the person who runs a school's
     // sport appoints its coaching and medical staff. Bounded by
@@ -179,7 +179,7 @@ const BUNDLES = {
   // player's CURRENT side — so this is the notes for the children they
   // actually coach, this term, and nobody else's. It is not school-wide, and
   // it stops the moment a player changes side.
-  coach: [
+  coach: ["player.workload.read",
     "availability.read", "availability.declare",
     ...READ_TEAM, "team.select",
     "player.performance.read", "player.performance.write",
@@ -192,7 +192,7 @@ const BUNDLES = {
     "scoring.start", "scoring.edit", "scoring.finalise",
     "news.publish.team", "opposition.read",
   ],
-  assistantcoach: [
+  assistantcoach: ["player.workload.read",
     "availability.read", "availability.declare",
     ...READ_TEAM, "player.performance.read", "player.development.read",
     "player.note.read", "player.note.write",
@@ -273,7 +273,7 @@ const BUNDLES = {
   // subject exercising a right of access, and a platform that holds a child's
   // physiotherapy notes and will not show them to the child is on the wrong
   // side of that.
-  selfaccess: [
+  selfaccess: ["player.workload.read",
     "availability.read", "availability.declare",
     "player.profile.read", "player.pii.read", "player.biometric.read",
     "player.performance.read", "player.development.read",
@@ -315,7 +315,7 @@ const BUNDLES = {
   spectator: ["fixture.read", "news.read", "competition.read"],
 
   // ── Specialists ──
-  medical: [
+  medical: ["player.workload.read",
     "team.read", "fixture.read", "news.read", "player.profile.read", "player.age.read", "player.emergency.read",
     // Height and weight are clinical inputs — a rehabilitation load is
     // calculated from them.

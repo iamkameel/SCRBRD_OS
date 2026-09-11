@@ -1,6 +1,6 @@
 
 import { useState } from "react";
-import { D } from "../design/tokens.js";
+import { D, textOn } from "../design/tokens.js";
 import { dateStr, today } from "../lib/format.js";
 import { Avatar, Badge, Btn, Card, Input, Modal, Pill, SectionHeader, Select } from "../ui/primitives.jsx";
 import { useRows } from "../lib/live.js";
@@ -21,6 +21,10 @@ function TrainingView({ role }) {
   // which for that parent is nothing, and the card says nobody is attending
   // rather than crashing on a register it was never given.
   const REGISTER = useRows("training_attendance", role);
+  // Each boy's load, with the server's word for it. Empty for anyone the
+  // server does not hand it to (player.workload.read), and the panel is not
+  // drawn; nothing here derives a state from a number.
+  const LOAD = useRows("workload", role);
   const attending = (s) => REGISTER.filter((a) => a.sessionId === s.id && a.status !== "absent").map((a) => a.playerId);
   const [view, setView] = useState("schedule");
   const [addModal, setAddModal] = useState(false);
@@ -59,6 +63,8 @@ function TrainingView({ role }) {
             {canEdit&&<Btn size="sm" onClick={()=>setAddModal(true)}>+ Session</Btn>}
           </div>
         }/>
+
+      {view==="schedule"&&LOAD.length>0&&<LoadPanel rows={LOAD}/>}
 
       {view==="schedule"&&(
         <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
@@ -148,6 +154,41 @@ function TrainingView({ role }) {
         </Modal>
       )}
     </div>
+  );
+}
+
+// One row per boy, the breaches and spikes first because the server put
+// them there. The word is the server's; the colour is ours.
+const LOAD_TONE = { spike:D.rose, rising:D.amber, steady:D.emerald, light:D.sky, rested:D.textMuted, "no bowling":D.textMuted };
+function LoadPanel({ rows }) {
+  const flagged = rows.filter(r=>r.breaches28d>0||r.loadState==="spike").length;
+  return (
+    <Card sx={{padding:"16px",marginBottom:"14px"}} data-testid="load-panel">
+      <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"10px"}}>
+        <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>Bowling & training load</div>
+        <Badge color={flagged?D.rose:D.emerald}>{flagged?`${flagged} to look at`:"nothing flagged"}</Badge>
+        <span style={{marginLeft:"auto",fontFamily:D.body,fontSize:"10px",color:D.textMuted}}>overs this week · this month · longest spell · sessions</span>
+      </div>
+      <div style={{overflowX:"auto"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontFamily:D.body,fontSize:"11px"}}>
+          <tbody>
+            {rows.map(r=>(
+              <tr key={r.playerId} data-testid={`load-row-${r.playerId}`} style={{borderTop:`1px solid ${D.border}`}}>
+                <td style={{padding:"6px 8px",color:D.textPrimary,fontWeight:600,whiteSpace:"nowrap"}}>{r.name}
+                  <span style={{marginLeft:"6px",fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>{r.ageBand}{r.pace&&r.maxSpell?` · ${r.maxSpell}/${r.maxDay}`:""}</span></td>
+                <td style={{padding:"6px 8px",fontFamily:D.mono,color:D.textSecondary,whiteSpace:"nowrap"}}>{r.overs7d} · {r.overs28d} · {r.longestSpell7d}</td>
+                <td style={{padding:"6px 8px",fontFamily:D.mono,color:D.textSecondary,whiteSpace:"nowrap"}}>{r.sessions7d} ({r.minutes7d}m)</td>
+                <td style={{padding:"6px 8px"}}>
+                  <span style={{fontFamily:D.mono,fontSize:"9px",textTransform:"uppercase",padding:"2px 7px",borderRadius:D.pill,
+                    background:(LOAD_TONE[r.loadState]??D.textMuted)+"14",border:`1px solid ${(LOAD_TONE[r.loadState]??D.textMuted)}33`,color:textOn(LOAD_TONE[r.loadState]??D.textMuted)}}>{r.loadState}{r.acwr!=null?` ${r.acwr}`:""}</span>
+                  {r.breaches28d>0&&<span style={{marginLeft:"6px",fontFamily:D.mono,fontSize:"9px",color:D.roseText}}>{r.breaches28d} directive breach{r.breaches28d>1?"es":""}</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
   );
 }
 

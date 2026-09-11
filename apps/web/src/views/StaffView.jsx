@@ -1,7 +1,7 @@
 
 import { useState } from "react";
 import { ROLES } from "../design/roles.js";
-import { D } from "../design/tokens.js";
+import { D, textOn } from "../design/tokens.js";
 import { roleColor } from "../lib/format.js";
 import { Avatar, Badge, Btn, Card, Pill, SectionHeader } from "../ui/primitives.jsx";
 import { useRows } from "../lib/live.js";
@@ -253,7 +253,7 @@ function ClearanceRegister({ rows }) {
                       {p.checks.map(c=>(
                         <span key={c.kind} title={c.expiresOn?`${c.status} · lapses ${c.expiresOn}`:c.status}
                           style={{display:"inline-flex",gap:"5px",alignItems:"center",padding:"3px 8px",borderRadius:D.pill,
-                                  background:STATUS_TONE[c.status]+"14",border:`1px solid ${STATUS_TONE[c.status]}33`,color:STATUS_TONE[c.status]}}>
+                                  background:STATUS_TONE[c.status]+"14",border:`1px solid ${STATUS_TONE[c.status]}33`,color:textOn(STATUS_TONE[c.status])}}>
                           {c.kindLabel}<span style={{fontFamily:D.mono,fontSize:"9px",textTransform:"uppercase"}}>{c.status}</span>
                         </span>
                       ))}

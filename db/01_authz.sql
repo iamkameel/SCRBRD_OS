@@ -2,7 +2,7 @@
 -- GENERATED from packages/policy/ by services/api/rls/generate-rls.mjs — DO NOT EDIT BY HAND.
 -- Regenerate with `pnpm rls:generate`. Applied BEFORE the scoring schema,
 -- which references app_can(). Model: docs/adr/0001-scoped-assignments.md.
--- 77 capabilities across 24 roles.
+-- 78 capabilities across 24 roles.
 
 -- Principal helpers. app_user_id() is set from the signed token on every
 -- request; everything else about a person's authority is looked up.
@@ -46,6 +46,7 @@ INSERT INTO capability (name) VALUES
   ('player.pii.read'),
   ('player.emergency.read'),
   ('player.emergency.manage'),
+  ('player.workload.read'),
   ('clearance.read'),
   ('clearance.manage'),
   ('player.performance.read'),
@@ -175,6 +176,7 @@ INSERT INTO role_capability (role, capability) VALUES
   ('principal', 'guardian.link.manage'),
   ('principal', 'player.note.read'),
   ('principal', 'scoring.amend.approve'),
+  ('directorofsport', 'player.workload.read'),
   ('directorofsport', 'clearance.read'),
   ('directorofsport', 'clearance.manage'),
   ('directorofsport', 'availability.read'),
@@ -292,6 +294,7 @@ INSERT INTO role_capability (role, capability) VALUES
   ('sportsadmin', 'scoring.start'),
   ('sportsadmin', 'scoring.edit'),
   ('sportsadmin', 'scoring.finalise'),
+  ('coach', 'player.workload.read'),
   ('coach', 'availability.read'),
   ('coach', 'availability.declare'),
   ('coach', 'team.read'),
@@ -322,6 +325,7 @@ INSERT INTO role_capability (role, capability) VALUES
   ('coach', 'scoring.finalise'),
   ('coach', 'news.publish.team'),
   ('coach', 'opposition.read'),
+  ('assistantcoach', 'player.workload.read'),
   ('assistantcoach', 'availability.read'),
   ('assistantcoach', 'availability.declare'),
   ('assistantcoach', 'team.read'),
@@ -388,6 +392,7 @@ INSERT INTO role_capability (role, capability) VALUES
   ('player', 'transport.read'),
   ('enquiry', 'player.profile.read'),
   ('enquiry', 'medical.status.read'),
+  ('selfaccess', 'player.workload.read'),
   ('selfaccess', 'availability.read'),
   ('selfaccess', 'availability.declare'),
   ('selfaccess', 'player.profile.read'),
@@ -432,6 +437,7 @@ INSERT INTO role_capability (role, capability) VALUES
   ('spectator', 'fixture.read'),
   ('spectator', 'news.read'),
   ('spectator', 'competition.read'),
+  ('medical', 'player.workload.read'),
   ('medical', 'team.read'),
   ('medical', 'fixture.read'),
   ('medical', 'news.read'),

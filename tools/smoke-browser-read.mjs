@@ -556,6 +556,27 @@ try {
     await coach.ctx.close();
   }
 
+  // ── The load panel ──────────────────────────────────────────────
+  group("The load panel is on the coach's training screen and not the parent's");
+  {
+    const c = await open();
+    await signIn(c.page, /Coach/);
+    await c.page.locator('[data-testid="nav-training"]').click({ timeout: 6000 }); await c.page.waitForTimeout(1500);
+    ok("the coach sees his side's load", await c.page.locator('[data-testid="load-panel"]').count() === 1);
+    const body = await c.page.locator('[data-testid="load-panel"]').innerText();
+    ok("...one row per boy, with the server's word", /S Naidoo/.test(body) && /no bowling|rested|steady|light|rising|spike/i.test(body));
+    ok("...and the band beside each", /U19|open/.test(body));
+    await c.ctx.close();
+    const p = await open();
+    await signIn(p.page, /Parent/);
+    if (await p.page.locator('[data-testid="nav-training"]').count()) {
+      await p.page.locator('[data-testid="nav-training"]').click({ timeout: 6000 }); await p.page.waitForTimeout(1200);
+      ok("a parent's training screen has no load panel", await p.page.locator('[data-testid="load-panel"]').count() === 0);
+    } else ok("a parent is not offered the training screen at all", true);
+    ok("no console errors", c.errors.length === 0 && p.errors.length === 0);
+    await p.ctx.close();
+  }
+
   // ── The shell, by id ────────────────────────────────────────────
   // Every walk above found its way around by button text, which is a test
   // that breaks when a label is reworded and passes when a button is drawn

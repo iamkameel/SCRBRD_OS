@@ -907,6 +907,55 @@ export const READ_QUERIES = {
             order by c.school_id, c.kind, c.expires_on desc`,
   },
 
+  /*
+   * WORKLOAD: what each boy bowled and trained, with the server's word for
+   * where his load sits. Through workload() in db/08, per row under
+   * player.development.read. An optional team narrows; nothing widens.
+   */
+  workload: {
+    text: `select * from workload($1::text)`,
+    params: q => [q?.teamCode || null],
+  },
+
+  /*
+   * ONE MATCH'S SPELLS, per bowler, from the log, with the directive that
+   * applied to each boy beside it. The scorer's screen and the coach's both
+   * read this; neither computes a spell of its own.
+   */
+  bowling_spells: {
+    text: `select s.match_id, s.innings, s.bowler_id, p.full_name, s.spell_no, s.first_over, s.last_over,
+                  s.overs, s.legal_balls, s.bowled_on,
+                  d.age_band, d.pace, d.max_overs_per_spell, d.max_overs_per_day,
+                  (d.max_overs_per_spell is not null and s.overs > d.max_overs_per_spell) as over_spell_limit,
+                  exists (select 1 from bowling_breach x
+                           where x.match_id = s.match_id and x.innings = s.innings
+                             and x.bowler_id = s.bowler_id and x.kind = 'spell' and x.key = s.first_over) as breach_recorded
+             from bowler_spell s
+             join player p on p.id = s.bowler_id
+             cross join lateral bowling_directive_for(s.bowler_id) d
+            where s.match_id = $1
+            order by s.innings, s.bowler_id, s.spell_no`,
+    params: q => [req(q, "matchId")],
+  },
+
+  /* Breaches on record, most recent first. Per row under player.development.read. */
+  bowling_breaches: {
+    text: `select x.id, x.match_id, m.opponent, x.innings, x.bowler_id, p.full_name, p.team_code,
+                  x.kind, x.overs, x.allowed, x.age_band, x.bowled_on, x.noticed_at
+             from bowling_breach x
+             join player p on p.id = x.bowler_id
+             join match m on m.id = x.match_id
+            where ($1::text is null or p.team_code = $1)
+            order by x.bowled_on desc, x.noticed_at desc`,
+    params: q => [q?.teamCode || null],
+  },
+
+  /* The directive itself. Platform reference data. */
+  bowling_directives: {
+    text: `select age_band, max_overs_per_spell, max_overs_per_day from bowling_directive
+            order by case age_band when 'U13' then 1 when 'U15' then 2 when 'U17' then 3 when 'U19' then 4 when 'open' then 5 else 6 end`,
+  },
+
   /* Which roles must hold which checks. Platform reference data. */
   clearance_requirements: {
     text: `select role, kind, clearance_kind_label(kind) as kind_label

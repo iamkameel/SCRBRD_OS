@@ -423,6 +423,29 @@ function asClearance(r) {
            verifiedBy: r.verified_by_name ?? null, verifiedAt: r.verified_at ?? null,
            revokedAt: r.revoked_at ?? null, revokedReason: r.revoked_reason ?? null, live: true };
 }
+/** One boy's workload. Every word and number is the server's. */
+function asWorkload(r) {
+  return { playerId: r.player_id, name: r.full_name, team: r.team_code, school: r.school_id,
+           ageBand: r.age_band, pace: r.pace, maxSpell: r.max_overs_per_spell, maxDay: r.max_overs_per_day,
+           overs7d: r.overs_7d, overs28d: r.overs_28d, longestSpell7d: r.longest_spell_7d,
+           breaches28d: r.breaches_28d, lastBowledOn: r.last_bowled_on ? String(r.last_bowled_on).slice(0, 10) : null,
+           sessions7d: r.sessions_7d, minutes7d: r.minutes_7d, sessions28d: r.sessions_28d, minutes28d: r.minutes_28d,
+           acwr: r.acwr == null ? null : Number(r.acwr), loadState: r.load_state, live: true };
+}
+function asSpell(r) {
+  return { matchId: r.match_id, innings: r.innings, bowlerId: r.bowler_id, name: r.full_name,
+           spellNo: r.spell_no, firstOver: r.first_over, lastOver: r.last_over, overs: r.overs,
+           legalBalls: r.legal_balls, bowledOn: r.bowled_on ? String(r.bowled_on).slice(0, 10) : null,
+           ageBand: r.age_band, pace: r.pace, maxSpell: r.max_overs_per_spell, maxDay: r.max_overs_per_day,
+           overSpellLimit: r.over_spell_limit, breachRecorded: r.breach_recorded, live: true };
+}
+function asBreach(r) {
+  return { id: r.id, matchId: r.match_id, opponent: r.opponent, innings: r.innings, bowlerId: r.bowler_id,
+           name: r.full_name, team: r.team_code, kind: r.kind, overs: r.overs, allowed: r.allowed,
+           ageBand: r.age_band, bowledOn: r.bowled_on ? String(r.bowled_on).slice(0, 10) : null,
+           noticedAt: r.noticed_at, live: true };
+}
+function asDirective(r) { return { ageBand: r.age_band, maxSpell: r.max_overs_per_spell, maxDay: r.max_overs_per_day, live: true }; }
 function asRequirement(r) { return { role: r.role, kind: r.kind, kindLabel: r.kind_label, live: true }; }
 
 /** A side as it stood on a date — nothing here is computed in the browser. */
@@ -601,6 +624,10 @@ const ADAPT = {
   clearances: asClearance,
   my_clearances: asClearance,
   clearance_requirements: asRequirement,
+  workload: asWorkload,
+  bowling_spells: asSpell,
+  bowling_breaches: asBreach,
+  bowling_directives: asDirective,
   roster_on: asRosterOn,
   my_devices: asDevice,
   memberships: asMembership,
