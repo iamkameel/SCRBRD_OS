@@ -79,6 +79,9 @@ const WALKS = [
   // One fixture, two schools — and a route to arrange one, which the product
   // had never had.
   "fixture",
+  // Where a boy has played: derived from team_code writes, forgeable by
+  // nobody, and the end of a promotion overwriting a season.
+  "membership",
 ];
 
 // Walks that drive a real browser AND need a database. They need two things

@@ -932,6 +932,32 @@ export const READ_QUERIES = {
   },
 
   /**
+   * WHERE A BOY HAS PLAYED, which until now was overwritten rather than kept.
+   *
+   * Derived rows only: nothing writes this table except the trigger on
+   * player, so what comes back is the movement history exactly as the column
+   * writes produced it. left_on null is the side he is in now.
+   *
+   * Row-scoped through the boy — the policy anchors the team dimension on his
+   * CURRENT side, so the coach who may read him may read the rows that
+   * explain him, and a guardian scoped to their own child gets that child's
+   * history and no other's. moved_by resolves through the same masked user
+   * read discipline as everywhere: the id travels, the name only when the
+   * reader could see that person anyway.
+   */
+  memberships: {
+    text: `select m.id, m.player_id, p.full_name, m.school_id, m.sport,
+                  m.team_code, m.joined_on, m.left_on, m.reason,
+                  m.moved_by,
+                  (m.left_on is null) as current
+             from team_membership m
+             join player p on p.id = m.player_id
+            where ($1::uuid is null or m.player_id = $1)
+            order by m.joined_on desc, m.created_at desc`,
+    params: q => [q?.playerId || null],
+  },
+
+  /**
    * MY PHONES, and there is no version of this read for anybody else.
    *
    * Every row comes from device_push_token, whose policy is `person_id =

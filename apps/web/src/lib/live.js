@@ -337,6 +337,19 @@ function asSport(r) {
 }
 
 /**
+ * One chapter of where a boy has played. `current` marks the side he is in
+ * now; everything else is history, closed by the move that ended it and
+ * editable by nobody.
+ */
+function asMembership(r) {
+  return { id: r.id, playerId: r.player_id, name: r.full_name,
+           school: r.school_id, sport: r.sport, team: r.team_code,
+           joinedOn: r.joined_on ? String(r.joined_on).slice(0, 10) : null,
+           leftOn: r.left_on ? String(r.left_on).slice(0, 10) : null,
+           reason: r.reason, current: r.current === true, live: true };
+}
+
+/**
  * One of my own phones. Never anybody else's — see the my_devices read.
  *
  * `live` is the registration's state, not a connection: a retired row is kept
@@ -518,6 +531,7 @@ const ADAPT = {
   availability: asAvailability,
   readiness: asReadiness,
   my_devices: asDevice,
+  memberships: asMembership,
   sports: asSport,
   module_settings: asModuleSetting,
   module_suppressions: asModuleSuppression,

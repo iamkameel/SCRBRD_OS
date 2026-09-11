@@ -3890,3 +3890,129 @@ BEGIN
   NEW.opponent := v_label;
   RETURN NEW;
 END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ── Which sides a boy has been in, which was being overwritten ───
+--
+-- player.team_code is a single mutable column, and it is the scope anchor half
+-- the policies in this schema hang off — so it stays exactly what it is: the
+-- CURRENT side. What was missing is everything before it. A boy promoted from
+-- the 2XI to the 1XI in March was overwritten, not recorded: last season's
+-- side could not be reconstructed, "when did he move up" had no answer, and a
+-- career that is mostly a story of moving through teams had no rows to tell it
+-- with. The CSV import moves team_code today (coalesce($3, team_code)), so
+-- this is not a future hazard — history has been lost through a real route
+-- since the import landed.
+--
+-- THE HISTORY IS DERIVED, NEVER ASSERTED. Nobody writes a membership row;
+-- writing player.team_code writes one, through the trigger below, exactly as
+-- the ball log derives the scorecard. That is also what makes the history
+-- trustworthy: there is no INSERT or UPDATE policy on this table AT ALL, so
+-- the application role cannot forge a membership or quietly edit one, and the
+-- record of where a boy played is as tamper-evident as the appointments and
+-- the coefficients are.
+--
+-- `sport` is here even though player.team_code is implicitly cricket today:
+-- the catalogue landed this week, a boy will eventually hold a side per sport,
+-- and a history table is the one place a missing dimension cannot be
+-- retrofitted — the old rows would not know which game they were about.
+CREATE TABLE team_membership (
+  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  player_id  uuid NOT NULL REFERENCES player(id) ON DELETE CASCADE,
+  -- Copied from the player AT THE TIME, not joined at read time: a boy who
+  -- changes schools keeps his old school on his old rows, which is the point
+  -- of a history.
+  school_id  uuid NOT NULL REFERENCES school(id),
+  sport      text NOT NULL DEFAULT 'cricket' REFERENCES sport(code),
+  team_code  text NOT NULL,
+  joined_on  date NOT NULL DEFAULT current_date,
+  -- NULL means this is where he is now. A row is closed by the next move,
+  -- never edited by a person.
+  left_on    date,
+  -- How the row came to exist, in the only vocabulary the trigger can honestly
+  -- derive: 'joined' is a first side, 'moved' is a change. Richer words —
+  -- promoted, dropped, aged up — are judgements about direction that a column
+  -- write does not carry, and guessing them here would put an opinion in a
+  -- table whose whole value is that it holds none.
+  reason     text NOT NULL DEFAULT 'moved' CHECK (reason IN ('joined','moved')),
+  -- Who made the move, stamped from the session as every provenance column
+  -- here is. NULL is a migration or an import running as the owner, which is
+  -- itself information.
+  moved_by   uuid REFERENCES app_user(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT membership_leaves_after_joining CHECK (left_on IS NULL OR left_on >= joined_on)
+);
+-- One open membership per boy per sport. Partial, because closed rows are the
+-- history and there are meant to be many of them.
+CREATE UNIQUE INDEX team_membership_current ON team_membership (player_id, sport)
+  WHERE left_on IS NULL;
+CREATE INDEX ON team_membership (school_id, sport, team_code, joined_on DESC);
+
+ALTER TABLE team_membership ENABLE ROW LEVEL SECURITY;
+
+-- READ follows the BOY, not the old team. A 1XI coach reading a boy now in
+-- his side needs the U15A and U16B rows that explain him, and anchoring the
+-- team dimension on each row's historical code would hide exactly those. So
+-- the team anchor is the player's CURRENT side — the same question as "may
+-- you read this boy's roster row", asked with the same capability — and the
+-- school anchor stays on the row, so a boy who moves schools does not carry
+-- his old school's rows to staff at the new one. Whether a history should
+-- travel between schools is the passport question, and it is a consent
+-- decision for later, not a default to slip in here.
+CREATE POLICY team_membership_read ON team_membership
+  FOR SELECT USING (app_can('player.profile.read',
+    team_membership.school_id,
+    (SELECT p.team_code FROM player p WHERE p.id = team_membership.player_id),
+    team_membership.player_id,
+    '00000000-0000-0000-0000-000000000000'::uuid));
+
+-- NO INSERT, UPDATE OR DELETE POLICY, deliberately. Default deny is the whole
+-- write model for this table: rows arrive through the SECURITY DEFINER
+-- trigger below and through nothing else, so the history cannot be forged by
+-- any principal, however senior. The trigger is the one door and the write it
+-- records was already authorised — on player, by player's own policy.
+
+/**
+ * Writing player.team_code writes the history.
+ *
+ * A TRIGGER RATHER THAN A ROUTE CONVENTION, for the reason the age check is:
+ * there are already three ways a player row changes — the API, a seed, the
+ * CSV import — and "remember to record the move" survives exactly as long as
+ * the person who knew about it. The import is the one that made this urgent:
+ * it updates team_code today, so every bulk roster correction has been
+ * silently discarding where boys were.
+ *
+ * SECURITY DEFINER because the caller has no rights on team_membership at all
+ * — see above — and must not need any: the history must be written even, and
+ * especially, by callers who could never touch it directly.
+ *
+ * Same-day churn is kept, not collapsed. A boy moved to the 1XI at nine and
+ * back at noon leaves two rows with joined_on = left_on, which is the honest
+ * record of a Tuesday that actually happened.
+ */
+CREATE OR REPLACE FUNCTION player_team_membership_log() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'UPDATE'
+     AND NEW.team_code IS NOT DISTINCT FROM OLD.team_code
+     AND NEW.school_id IS NOT DISTINCT FROM OLD.school_id THEN
+    RETURN NEW;
+  END IF;
+
+  -- Close whatever was open. left_on, not deletion: the row that says he WAS
+  -- in the 2XI is the entire purpose of this table.
+  UPDATE team_membership
+     SET left_on = current_date
+   WHERE player_id = NEW.id AND sport = 'cricket' AND left_on IS NULL;
+
+  IF NEW.team_code IS NOT NULL THEN
+    INSERT INTO team_membership (player_id, school_id, sport, team_code, joined_on, reason, moved_by)
+    VALUES (NEW.id, NEW.school_id, 'cricket', NEW.team_code, current_date,
+            CASE WHEN TG_OP = 'INSERT' THEN 'joined' ELSE 'moved' END,
+            app_user_id());
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS player_moves_are_recorded ON player;
+CREATE TRIGGER player_moves_are_recorded
+  AFTER INSERT OR UPDATE ON player
+  FOR EACH ROW EXECUTE FUNCTION player_team_membership_log();
