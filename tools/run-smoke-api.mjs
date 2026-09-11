@@ -85,6 +85,7 @@ const WALKS = [
   // Who to ring when something happens to a child, and whether the bus is
   // insured to carry him.
   "contacts",
+  "clearance",
   // Where a boy has played: derived from team_code writes, forgeable by
   // nobody, and the end of a promotion overwriting a season.
   "membership",

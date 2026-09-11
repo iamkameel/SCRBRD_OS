@@ -413,6 +413,18 @@ function asContact(r) {
            phone: r.phone, phoneAlt: r.phone_alt, email: r.email, note: r.note, live: true };
 }
 
+/** One row of the clearance register, or one adult's clearance. The word is the server's. */
+function asClearance(r) {
+  const d = (v) => (v ? String(v).slice(0, 10) : null);
+  return { id: r.id ?? r.clearance_id ?? null, personId: r.person_id ?? null, name: r.name ?? null,
+           role: r.role ?? null, school: r.school_id, schoolName: r.school_name ?? null,
+           kind: r.kind, kindLabel: r.kind_label, status: r.status, reference: r.reference ?? null,
+           issuedOn: d(r.issued_on), expiresOn: d(r.expires_on), note: r.note ?? null,
+           verifiedBy: r.verified_by_name ?? null, verifiedAt: r.verified_at ?? null,
+           revokedAt: r.revoked_at ?? null, revokedReason: r.revoked_reason ?? null, live: true };
+}
+function asRequirement(r) { return { role: r.role, kind: r.kind, kindLabel: r.kind_label, live: true }; }
+
 /** A side as it stood on a date — nothing here is computed in the browser. */
 function asRosterOn(r) {
   return { playerId: r.player_id, name: r.full_name, team: r.team_code,
@@ -585,6 +597,10 @@ const ADAPT = {
   readiness: asReadiness,
   emergency_contacts: asContact,
   trip_contacts: asContact,
+  clearance_register: asClearance,
+  clearances: asClearance,
+  my_clearances: asClearance,
+  clearance_requirements: asRequirement,
   roster_on: asRosterOn,
   my_devices: asDevice,
   memberships: asMembership,

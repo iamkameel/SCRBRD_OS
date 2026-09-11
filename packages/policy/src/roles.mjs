@@ -89,7 +89,7 @@ const BUNDLES = {
   ],
 
   // ── Institution leadership ──
-  principal: [
+  principal: ["clearance.read", "clearance.manage",
     "school.feature.manage",
     // The waiver, and nobody else at a school holds it — see the capability's
     // own note for why it is kept away from the people who place the boards.
@@ -115,7 +115,7 @@ const BUNDLES = {
     "player.age.read", "player.roster.read", "guardian.link.manage",
     "player.note.read", "scoring.amend.approve",
   ],
-  directorofsport: [
+  directorofsport: ["clearance.read", "clearance.manage",
     "availability.read", "availability.declare",
     // Same reasoning as the principal above: the person who runs a school's
     // sport appoints its coaching and medical staff. Bounded by
@@ -136,7 +136,7 @@ const BUNDLES = {
     "news.publish.team", "news.publish.school", "audit.read",
     "opposition.read",
   ],
-  schooladmin: [
+  schooladmin: ["clearance.read", "clearance.manage",
     "availability.read", "availability.declare",
     // school.feature.manage: hiding a module from this school or from one of
     // its people. It sits beside school.manage because it is the same job —
@@ -153,7 +153,7 @@ const BUNDLES = {
     "transport.read", "transport.manage", "invoice.read",
     "competition.read", "news.publish.school", "audit.read",
   ],
-  sportsadmin: [
+  sportsadmin: ["clearance.read",
     "availability.read", "availability.declare",
     ...READ_TEAM, "user.read", "team.manage", "team.select",
     "fixture.create", "fixture.update", "fixture.cancel", "officiating.assign",
@@ -324,7 +324,7 @@ const BUNDLES = {
   ],
   finance: ["school.read", "news.read", "invoice.read", "invoice.manage", "user.read",
             "sponsorship.read", "sponsorship.manage", "sponsorship.finance.read"],
-  transportcoordinator: ["fixture.read", "team.read", "news.read", "transport.read", "transport.manage", "player.emergency.read"],
+  transportcoordinator: ["clearance.read", "fixture.read", "team.read", "news.read", "transport.read", "transport.manage", "player.emergency.read"],
   driver: ["news.read", "transport.read", "transport.drive"],
   facilities: ["fixture.read", "news.read", "facility.read", "facility.manage"],
   media: ["fixture.read", "team.read", "news.read", "player.profile.read", "player.performance.read", "news.publish.school", "news.publish.team"],

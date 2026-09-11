@@ -852,6 +852,67 @@ export const READ_QUERIES = {
     params: q => [req(q, "tripId")],
   },
 
+  /*
+   * THE CLEARANCE REGISTER: every adult with a live appointment at the school
+   * whose role requires a check, against every check it requires, with one
+   * word each. Through clearance_register() in db/08, which is where the
+   * decision lives — clearance.read at the school or nothing. The gaps are
+   * the point and come first.
+   */
+  clearance_register: {
+    text: `select person_id, name, role, kind, clearance_kind_label(kind) as kind_label,
+                  status, expires_on, clearance_id, reference, school_id
+             -- No school named means the reader's own: the screen has no other
+             -- school to ask about, and the function refuses any it may not read.
+             from clearance_register(coalesce($1::uuid, (select school_id from app_user where id = app_user_id())))
+            order by case status when 'missing' then 0 when 'expired' then 1 when 'revoked' then 2
+                                 when 'expiring' then 3 else 4 end, name, kind`,
+    params: q => [q?.schoolId || null],
+  },
+
+  /*
+   * ONE ADULT'S CLEARANCES at whatever schools the reader may see them for:
+   * the office through clearance.read, the person through the identity
+   * policy. History included — a revoked row stays, with its reason — because
+   * "what did we hold on him in March" is the question an enquiry asks.
+   */
+  clearances: {
+    text: `select c.id, c.person_id, u.name, c.school_id, c.kind, clearance_kind_label(c.kind) as kind_label,
+                  c.reference, c.issued_on, c.expires_on, c.note,
+                  c.verified_by, v.name as verified_by_name, c.verified_at,
+                  c.revoked_at, c.revoked_reason,
+                  case when c.revoked_at is not null then 'revoked'
+                       when c.expires_on < current_date then 'expired'
+                       when c.expires_on <= current_date + 60 then 'expiring'
+                       else 'current' end as status
+             from adult_clearance c
+             join app_user u on u.id = c.person_id
+             left join app_user v on v.id = c.verified_by
+            where c.person_id = $1
+            order by c.kind, c.expires_on desc, c.verified_at desc`,
+    params: q => [req(q, "personId")],
+  },
+
+  /* The reader's own, for their settings screen. The policy is the identity one. */
+  my_clearances: {
+    text: `select c.id, c.school_id, s.name as school_name, c.kind, clearance_kind_label(c.kind) as kind_label,
+                  c.issued_on, c.expires_on, c.revoked_at,
+                  case when c.revoked_at is not null then 'revoked'
+                       when c.expires_on < current_date then 'expired'
+                       when c.expires_on <= current_date + 60 then 'expiring'
+                       else 'current' end as status
+             from adult_clearance c
+             join school s on s.id = c.school_id
+            where c.person_id = app_user_id()
+            order by c.school_id, c.kind, c.expires_on desc`,
+  },
+
+  /* Which roles must hold which checks. Platform reference data. */
+  clearance_requirements: {
+    text: `select role, kind, clearance_kind_label(kind) as kind_label
+             from clearance_requirement order by role, kind`,
+  },
+
   readiness: {
     text: `with clinical as (
                   -- Gated on Injuries like the availability read above and for
@@ -1658,6 +1719,10 @@ export const RESTRICTED_FIELDS = Object.freeze({
   injuries: ["injury_type", "severity", "phase", "notes", "physio"],
   emergency_contacts: ["phone", "phone_alt", "email"],
   trip_contacts:      ["phone", "phone_alt", "email"],
+  // A certificate's own number is enough to impersonate its holder at the
+  // next school that asks for it. Logged like a phone number is.
+  clearance_register: ["reference"],
+  clearances:         ["reference"],
   career:   [],
   skills:   ["score"],
   users:    ["email"],
@@ -1684,6 +1749,7 @@ const pick = (row, path) =>
 /** Which id column identifies the CHILD a row is about, for the log. */
 const SUBJECT_ID = { players: "id", injuries: "player_id", skills: "player_id",
                      emergency_contacts: "player_id", trip_contacts: "player_id",
+                     clearance_register: "person_id", clearances: "person_id",
                      users: "id", ratings: "player_id", notes: "player_id",
                      opposition_squad: "player_id" };
 

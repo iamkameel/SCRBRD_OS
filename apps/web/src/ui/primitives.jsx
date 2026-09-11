@@ -6,8 +6,10 @@ import { initials } from "../lib/format.js";
 //  PRIMITIVE COMPONENTS
 // ══════════════════════════════════════════════════════
 
-const Card = ({ children, sx, className="card-hover", onClick }) => (
-  <div onClick={onClick} className={className} style={{
+// `rest` carries data-* and aria-* attributes through to the element, so a
+// card can be found by a stable id or named for a screen reader.
+const Card = ({ children, sx, className="card-hover", onClick, ...rest }) => (
+  <div onClick={onClick} className={className} {...rest} style={{
     background:D.surf1, border:`1px solid ${D.border}`,
     borderRadius:D.lg, overflow:"hidden", ...sx
   }}>{children}</div>

@@ -2,7 +2,7 @@
 -- GENERATED from packages/policy/ by services/api/rls/generate-rls.mjs — DO NOT EDIT BY HAND.
 -- Regenerate with `pnpm rls:generate`. Applied BEFORE the scoring schema,
 -- which references app_can(). Model: docs/adr/0001-scoped-assignments.md.
--- 75 capabilities across 24 roles.
+-- 77 capabilities across 24 roles.
 
 -- Principal helpers. app_user_id() is set from the signed token on every
 -- request; everything else about a person's authority is looked up.
@@ -46,6 +46,8 @@ INSERT INTO capability (name) VALUES
   ('player.pii.read'),
   ('player.emergency.read'),
   ('player.emergency.manage'),
+  ('clearance.read'),
+  ('clearance.manage'),
   ('player.performance.read'),
   ('player.performance.write'),
   ('player.development.read'),
@@ -146,6 +148,8 @@ INSERT INTO role_capability (role, capability) VALUES
   ('platformadmin', 'audit.read'),
   ('platformadmin', 'competition.read'),
   ('platformadmin', 'news.read'),
+  ('principal', 'clearance.read'),
+  ('principal', 'clearance.manage'),
   ('principal', 'school.feature.manage'),
   ('principal', 'sponsorship.exclusivity.waive'),
   ('principal', 'sponsorship.read'),
@@ -171,6 +175,8 @@ INSERT INTO role_capability (role, capability) VALUES
   ('principal', 'guardian.link.manage'),
   ('principal', 'player.note.read'),
   ('principal', 'scoring.amend.approve'),
+  ('directorofsport', 'clearance.read'),
+  ('directorofsport', 'clearance.manage'),
   ('directorofsport', 'availability.read'),
   ('directorofsport', 'availability.declare'),
   ('directorofsport', 'user.role.assign'),
@@ -216,6 +222,8 @@ INSERT INTO role_capability (role, capability) VALUES
   ('directorofsport', 'news.publish.school'),
   ('directorofsport', 'audit.read'),
   ('directorofsport', 'opposition.read'),
+  ('schooladmin', 'clearance.read'),
+  ('schooladmin', 'clearance.manage'),
   ('schooladmin', 'availability.read'),
   ('schooladmin', 'availability.declare'),
   ('schooladmin', 'school.feature.manage'),
@@ -254,6 +262,7 @@ INSERT INTO role_capability (role, capability) VALUES
   ('schooladmin', 'invoice.read'),
   ('schooladmin', 'news.publish.school'),
   ('schooladmin', 'audit.read'),
+  ('sportsadmin', 'clearance.read'),
   ('sportsadmin', 'availability.read'),
   ('sportsadmin', 'availability.declare'),
   ('sportsadmin', 'team.read'),
@@ -442,6 +451,7 @@ INSERT INTO role_capability (role, capability) VALUES
   ('finance', 'sponsorship.read'),
   ('finance', 'sponsorship.manage'),
   ('finance', 'sponsorship.finance.read'),
+  ('transportcoordinator', 'clearance.read'),
   ('transportcoordinator', 'fixture.read'),
   ('transportcoordinator', 'team.read'),
   ('transportcoordinator', 'news.read'),

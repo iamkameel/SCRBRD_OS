@@ -155,6 +155,19 @@ export const TABLES = {
     masked: { "player.pii.read": ["email", "phone", "born", "hometown", "address"] },
   },
 
+  adult_clearance: {
+    // A school's record that it checked an adult: police clearance, the
+    // Children's Act register, first aid, the driving permit. Anchored on the
+    // school that did the checking, and only there — a check Hilton made is
+    // not a check WES may lean on, and whether one should travel with the
+    // person is the passport question, a consent decision for later. The
+    // person's OWN rows are readable through a hand-written identity policy
+    // in db/08; this entry is the school's side.
+    read:  "clearance.read",
+    write: "clearance.manage",
+    anchors: { school: "school_id" },
+    masked: {},
+  },
   emergency_contact: {
     // Who to ring when something happens to a child. Read by the people around
     // him on the day, kept by his family and the office. Anchored through the

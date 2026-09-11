@@ -121,6 +121,23 @@ CREATE POLICY staff_update ON staff
   FOR UPDATE USING (app_can('user.role.assign', staff.school_id, NULL::text, staff.id, '00000000-0000-0000-0000-000000000000'::uuid))
            WITH CHECK (app_can('user.role.assign', staff.school_id, NULL::text, staff.id, '00000000-0000-0000-0000-000000000000'::uuid));
 
+-- adult_clearance — read: clearance.read · write: clearance.manage
+ALTER TABLE adult_clearance ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS adult_clearance_read   ON adult_clearance;
+DROP POLICY IF EXISTS adult_clearance_insert ON adult_clearance;
+DROP POLICY IF EXISTS adult_clearance_update ON adult_clearance;
+DROP POLICY IF EXISTS adult_clearance_delete ON adult_clearance;
+
+CREATE POLICY adult_clearance_read ON adult_clearance
+  FOR SELECT USING (app_can('clearance.read', adult_clearance.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY adult_clearance_insert ON adult_clearance
+  FOR INSERT WITH CHECK (app_can('clearance.manage', adult_clearance.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY adult_clearance_update ON adult_clearance
+  FOR UPDATE USING (app_can('clearance.manage', adult_clearance.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
+           WITH CHECK (app_can('clearance.manage', adult_clearance.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
 -- emergency_contact — read: player.emergency.read · write: player.emergency.manage
 ALTER TABLE emergency_contact ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS emergency_contact_read   ON emergency_contact;

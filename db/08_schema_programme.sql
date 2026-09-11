@@ -4463,3 +4463,244 @@ END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
 
 REVOKE ALL ON FUNCTION trip_contacts(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION trip_contacts(uuid) TO PUBLIC;
+
+-- ═══════════════════════════════════════════════════════════════════
+--  ADULT CLEARANCES — has this adult been checked, and when does it lapse
+-- ═══════════════════════════════════════════════════════════════════
+--
+-- Every adult the platform puts near a child — coach, manager, physio,
+-- driver, official — is somebody a school is answerable for having checked:
+-- a police clearance certificate, the Children's Act register, a first aid
+-- certificate, a professional driving permit. The checks exist. What did not
+-- exist was anywhere to write down that they were done and when they run
+-- out, so the answer to "is the man driving the U14s on Saturday cleared?"
+-- lived in a filing cabinet, or in nobody's head.
+--
+-- WHAT IS RECORDED: that a named person at the school SAW a document, its
+-- reference, its issue date and the date the school will re-check. Not the
+-- document. A scan of a police clearance is exactly the kind of thing this
+-- codebase declines to hold: the reference number is enough to re-verify,
+-- and it is a restricted field, logged on every read.
+--
+-- A CLEARANCE BELONGS TO THE SCHOOL THAT MADE IT. Hilton's check on a coach
+-- is Hilton's; WES, where he also coaches, makes its own. Whether a check
+-- should travel with the person is the passport question, and it is a
+-- consent decision for later, not a default to slip in here.
+--
+-- A CLEARANCE WITHOUT A RE-CHECK DATE IS NOT A CLEARANCE. expires_on is
+-- required, because "checked once, years ago" is the state this table
+-- exists to make visible, and an open-ended row would hide it.
+--
+-- NEVER EDITED. A verified row is a statement by a named person on a date.
+-- If it was wrong it is revoked, with a reason, and a new one recorded; the
+-- register then shows both. Fixing it in place would show a check that was
+-- never made.
+
+CREATE TABLE clearance_requirement (
+  role text NOT NULL,
+  kind text NOT NULL,
+  PRIMARY KEY (role, kind)
+);
+ALTER TABLE clearance_requirement ENABLE ROW LEVEL SECURITY;
+-- Platform reference data, like the sports. Readable by anybody signed in —
+-- a coach is entitled to know what he is expected to hold — and written by
+-- nobody through the API.
+CREATE POLICY clearance_requirement_read ON clearance_requirement
+  FOR SELECT USING (app_user_id() IS NOT NULL);
+
+-- Which adults need which checks. The Children's Act register applies to
+-- everyone who works with children at all; the police clearance to everyone
+-- in a position of trust; first aid to whoever is alone with a side on a
+-- field; the permit to whoever drives them.
+INSERT INTO clearance_requirement (role, kind) VALUES
+  ('coach',                'police_clearance'), ('coach',                'child_protection'), ('coach', 'first_aid'),
+  ('assistantcoach',       'police_clearance'), ('assistantcoach',       'child_protection'), ('assistantcoach', 'first_aid'),
+  ('teammanager',          'police_clearance'), ('teammanager',          'child_protection'),
+  ('medical',              'police_clearance'), ('medical',              'child_protection'),
+  ('driver',               'police_clearance'), ('driver',               'child_protection'), ('driver', 'driving_permit'),
+  ('transportcoordinator', 'police_clearance'), ('transportcoordinator', 'child_protection'),
+  ('official',             'child_protection'),
+  ('scorer',               'child_protection'),
+  ('facilities',           'police_clearance');
+
+CREATE TABLE adult_clearance (
+  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  person_id      uuid NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+  school_id      uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  kind           text NOT NULL CHECK (kind IN ('police_clearance', 'child_protection', 'first_aid',
+                                               'driving_permit', 'coaching_accreditation')),
+  -- The certificate's own number, enough to re-verify it. Restricted: read
+  -- through the API it is logged like a phone number is.
+  reference      text CHECK (reference IS NULL OR length(reference) BETWEEN 3 AND 60),
+  issued_on      date NOT NULL,
+  expires_on     date NOT NULL,
+  note           text CHECK (note IS NULL OR length(note) <= 200),
+  -- Who saw the document. Stamped from the session; NULL means a seeded or
+  -- migrated row, the same sentence created_by NULL says everywhere else.
+  verified_by    uuid REFERENCES app_user(id),
+  verified_at    timestamptz NOT NULL DEFAULT now(),
+  revoked_at     timestamptz,
+  revoked_by     uuid REFERENCES app_user(id),
+  revoked_reason text CHECK (revoked_reason IS NULL OR length(revoked_reason) BETWEEN 3 AND 200),
+  CONSTRAINT clearance_expires_after_issue   CHECK (expires_on > issued_on),
+  -- Five years is the longest anything here is issued for. A longer span is a
+  -- typo in the year, and a typo in the year is a check that never lapses.
+  CONSTRAINT clearance_expiry_within_reason  CHECK (expires_on <= issued_on + 1827),
+  CONSTRAINT clearance_revocation_has_reason CHECK ((revoked_at IS NULL) = (revoked_reason IS NULL))
+);
+CREATE INDEX ON adult_clearance (person_id, kind) WHERE revoked_at IS NULL;
+CREATE INDEX ON adult_clearance (school_id) WHERE revoked_at IS NULL;
+ALTER TABLE adult_clearance ENABLE ROW LEVEL SECURITY;
+
+-- The person's own rows. The school's side — clearance.read at the school —
+-- is generated from packages/policy; this is the identity half, and the two
+-- OR together as every permissive policy does. A coach may see what Hilton
+-- holds on him and when it lapses. He may not see his colleague's, and he
+-- may not write his own: there is no identity write policy, on purpose.
+CREATE POLICY adult_clearance_own_read ON adult_clearance
+  FOR SELECT USING (person_id = app_user_id());
+
+CREATE OR REPLACE FUNCTION adult_clearance_stamp() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    NEW.verified_by := app_user_id();
+    NEW.verified_at := now();
+    NEW.revoked_at := NULL; NEW.revoked_by := NULL; NEW.revoked_reason := NULL;
+    RETURN NEW;
+  END IF;
+  IF OLD.revoked_at IS NOT NULL THEN
+    RAISE EXCEPTION 'a revoked clearance is not edited — record a new one'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  IF NEW.person_id IS DISTINCT FROM OLD.person_id OR NEW.school_id IS DISTINCT FROM OLD.school_id
+     OR NEW.kind IS DISTINCT FROM OLD.kind OR NEW.reference IS DISTINCT FROM OLD.reference
+     OR NEW.issued_on IS DISTINCT FROM OLD.issued_on OR NEW.expires_on IS DISTINCT FROM OLD.expires_on
+     OR NEW.note IS DISTINCT FROM OLD.note
+     OR NEW.verified_by IS DISTINCT FROM OLD.verified_by OR NEW.verified_at IS DISTINCT FROM OLD.verified_at THEN
+    RAISE EXCEPTION 'a clearance is not edited after verification — revoke it and record a new one'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  IF NEW.revoked_at IS NOT NULL THEN
+    NEW.revoked_at := now();
+    NEW.revoked_by := app_user_id();
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+
+CREATE TRIGGER adult_clearance_stamp BEFORE INSERT OR UPDATE ON adult_clearance
+  FOR EACH ROW EXECUTE FUNCTION adult_clearance_stamp();
+
+CREATE OR REPLACE FUNCTION clearance_kind_label(p_kind text) RETURNS text AS $$
+  SELECT CASE p_kind
+    WHEN 'police_clearance'       THEN 'police clearance'
+    WHEN 'child_protection'       THEN 'Children''s Act register clearance'
+    WHEN 'first_aid'              THEN 'first aid certificate'
+    WHEN 'driving_permit'         THEN 'professional driving permit'
+    WHEN 'coaching_accreditation' THEN 'coaching accreditation'
+    ELSE p_kind END;
+$$ LANGUAGE sql IMMUTABLE;
+
+-- ONE WORD for where a person stands on one check at one school, derived
+-- here once rather than by every screen from three dates:
+--   current   — a live clearance, more than sixty days left
+--   expiring  — a live clearance, sixty days or fewer left
+--   expired   — the latest live clearance has lapsed
+--   revoked   — nothing live, and the last one was withdrawn
+--   missing   — nothing recorded at all
+-- "unknown" does not appear: a check the school never recorded is missing,
+-- and missing is the loud state. Definer rights because the trip guard below
+-- asks it about a driver whose rows the office may not hold clearance.read
+-- on; not granted to callers, who reach it through the register.
+CREATE OR REPLACE FUNCTION clearance_status(p_person uuid, p_school uuid, p_kind text)
+RETURNS TABLE (status text, expires_on date, clearance_id uuid, reference text) AS $$
+DECLARE c record;
+BEGIN
+  SELECT ac.id, ac.expires_on, ac.reference INTO c
+    FROM adult_clearance ac
+   WHERE ac.person_id = p_person AND ac.school_id = p_school AND ac.kind = p_kind
+     AND ac.revoked_at IS NULL
+   ORDER BY ac.expires_on DESC, ac.verified_at DESC
+   LIMIT 1;
+  IF FOUND THEN
+    RETURN QUERY SELECT
+      CASE WHEN c.expires_on < current_date THEN 'expired'
+           WHEN c.expires_on <= current_date + 60 THEN 'expiring'
+           ELSE 'current' END,
+      c.expires_on, c.id, c.reference;
+    RETURN;
+  END IF;
+  IF EXISTS (SELECT 1 FROM adult_clearance ac
+              WHERE ac.person_id = p_person AND ac.school_id = p_school AND ac.kind = p_kind) THEN
+    RETURN QUERY SELECT 'revoked'::text, NULL::date, NULL::uuid, NULL::text;
+    RETURN;
+  END IF;
+  RETURN QUERY SELECT 'missing'::text, NULL::date, NULL::uuid, NULL::text;
+END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
+REVOKE ALL ON FUNCTION clearance_status(uuid, uuid, text) FROM PUBLIC;
+
+-- THE REGISTER: every adult with a live appointment at the school whose role
+-- requires a check, against every check it requires. One row per person, role
+-- and kind, with the one word above. The gaps are the point: an adult who
+-- appears with nothing recorded is the row the office needs to see first, so
+-- the order puts missing before expired before revoked before expiring.
+--
+-- Guarded whole, at the school: clearance.read there or nothing. Definer
+-- rights because the rows behind it — the appointments, the users, the
+-- clearances — are three tables with three policies, and the register is a
+-- question about the school rather than about any of them.
+CREATE OR REPLACE FUNCTION clearance_register(p_school uuid)
+RETURNS TABLE (person_id uuid, name text, role text, kind text, status text,
+               expires_on date, clearance_id uuid, reference text, school_id uuid) AS $$
+BEGIN
+  IF NOT app_can('clearance.read', p_school, '*',
+                 '00000000-0000-0000-0000-000000000000'::uuid,
+                 '00000000-0000-0000-0000-000000000000'::uuid) THEN
+    RETURN;
+  END IF;
+  RETURN QUERY
+    SELECT DISTINCT ON (u.id, ra.role, cr.kind)
+           u.id, u.name, ra.role, cr.kind, cs.status, cs.expires_on, cs.clearance_id, cs.reference, p_school
+      FROM role_assignment ra
+      JOIN app_user u ON u.id = ra.person_id
+      JOIN clearance_requirement cr ON cr.role = ra.role
+      CROSS JOIN LATERAL clearance_status(ra.person_id, p_school, cr.kind) cs
+     WHERE ra.school_id = p_school AND ra.active AND u.active
+       AND (ra.valid_from IS NULL OR ra.valid_from <= current_date)
+       AND (ra.valid_until IS NULL OR ra.valid_until > current_date)
+     ORDER BY u.id, ra.role, cr.kind;
+END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
+REVOKE ALL ON FUNCTION clearance_register(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION clearance_register(uuid) TO PUBLIC;
+
+-- A DRIVER WHOSE CHECK HAS LAPSED DOES NOT TAKE A SIDE. Checked when a driver
+-- is put on a trip, or swapped, against everything a driver must hold: a
+-- KNOWN expired or revoked check refuses, naming the person, the check and
+-- the date. A check nobody recorded does not refuse — as with the vehicle's
+-- cover, the absence of a record is a gap in the office's records, and the
+-- register makes that gap loud rather than this trigger making it silent by
+-- refusing every trip until the paperwork is typed in. Definer rights: the
+-- office arranging the trip may not hold clearance.read, and a refusal it
+-- cannot see the reason for is a refusal with a fabricated reason.
+CREATE OR REPLACE FUNCTION trip_driver_cleared() RETURNS trigger AS $$
+DECLARE req record; cs record; v_name text;
+BEGIN
+  IF NEW.driver_id IS NULL THEN RETURN NEW; END IF;
+  IF TG_OP = 'UPDATE' AND NEW.driver_id IS NOT DISTINCT FROM OLD.driver_id THEN RETURN NEW; END IF;
+  SELECT name INTO v_name FROM app_user WHERE id = NEW.driver_id;
+  FOR req IN SELECT kind FROM clearance_requirement WHERE role = 'driver' ORDER BY kind LOOP
+    SELECT * INTO cs FROM clearance_status(NEW.driver_id, NEW.school_id, req.kind);
+    IF cs.status = 'expired' THEN
+      RAISE EXCEPTION 'driver %: % expired on %. Record the renewal before he carries a side',
+                      v_name, clearance_kind_label(req.kind), cs.expires_on
+        USING ERRCODE = 'check_violation';
+    ELSIF cs.status = 'revoked' THEN
+      RAISE EXCEPTION 'driver %: % was revoked. Record a new one before he carries a side',
+                      v_name, clearance_kind_label(req.kind)
+        USING ERRCODE = 'check_violation';
+    END IF;
+  END LOOP;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE TRIGGER trip_driver_check BEFORE INSERT OR UPDATE ON trip
+  FOR EACH ROW EXECUTE FUNCTION trip_driver_cleared();

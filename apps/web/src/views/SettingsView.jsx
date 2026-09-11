@@ -87,12 +87,12 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp }) 
       <SectionHeader title="Settings & Access Control" sub="Users · RBAC · School config · Platform upgrades" color={D.violet}/>
 
       <div style={{display:"flex",gap:"6px",marginBottom:"20px",flexWrap:"wrap"}}>
-        {["users","roles","alerts","school","upgrades"].map(t=>(
+        {["users","roles","alerts","clearances","school","upgrades"].map(t=>(
           <button key={t} onClick={()=>setTab(t)} className="pressBtn" style={{
             padding:"6px 18px",borderRadius:D.pill,cursor:"pointer",textTransform:"capitalize",
             border:`1px solid ${tab===t?D.violet+"55":D.border}`,background:tab===t?D.violet+"14":"transparent",
             fontFamily:D.body,fontSize:"11px",fontWeight:tab===t?700:400,color:tab===t?D.violet:D.textMuted,
-          }}>{t==="upgrades"?"🚀 Upgrades":t==="alerts"?"🔔 Alerts":t}</button>
+          }}>{t==="upgrades"?"🚀 Upgrades":t==="alerts"?"🔔 Alerts":t==="clearances"?"🪪 My clearances":t}</button>
         ))}
       </div>
 
@@ -195,6 +195,7 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp }) 
       {/* ── UPGRADES ── */}
       {/* ── ALERTS: this phone, and the others I have registered ── */}
       {tab==="alerts"&&<AlertsTab role={role}/>}
+      {tab==="clearances"&&<MyClearancesTab role={role}/>}
 
       {tab==="upgrades"&&(
         <div>
@@ -275,6 +276,33 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp }) 
  * only reduce what somebody receives; what they may receive is re-asked
  * server-side, as them, at send time.
  */
+// What each school holds on ME and when it lapses. Read under the identity
+// policy: these rows are mine, and nobody else's appear here whatever my role.
+function MyClearancesTab({ role }) {
+  const rows = useLive("my_clearances", role).rows;
+  const tone = { missing:D.rose, expired:D.rose, revoked:D.amber, expiring:D.amber, current:D.emerald };
+  return (
+    <Card sx={{padding:"16px"}} data-testid="my-clearances">
+      <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary,marginBottom:"4px"}}>My clearances</div>
+      <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginBottom:"12px"}}>
+        What the school has on record that it checked, and the date it will ask again. The office records these; if one is wrong, ask them.
+      </div>
+      {rows.length===0
+        ? <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>Nothing recorded for you.</div>
+        : rows.map(r=>(
+          <div key={r.id} style={{display:"flex",alignItems:"center",gap:"10px",padding:"8px 0",borderTop:`1px solid ${D.border}`}}>
+            <div style={{flex:1}}>
+              <div style={{fontFamily:D.body,fontSize:"12px",color:D.textPrimary,fontWeight:600}}>{r.kindLabel}</div>
+              <div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted}}>{r.schoolName} · issued {r.issuedOn} · {r.status==="revoked"?"revoked":`lapses ${r.expiresOn}`}</div>
+            </div>
+            <span style={{fontFamily:D.mono,fontSize:"9px",textTransform:"uppercase",padding:"3px 8px",borderRadius:D.pill,
+                          background:tone[r.status]+"14",border:`1px solid ${tone[r.status]}33`,color:tone[r.status]}}>{r.status}</span>
+          </div>
+        ))}
+    </Card>
+  );
+}
+
 function AlertsTab({ role }) {
   const [nudge, setNudge] = useState(0);
   // useLive rather than useRows, for its third argument: turning alerts on or

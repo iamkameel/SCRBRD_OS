@@ -528,6 +528,34 @@ try {
     ok(`${who}: no uncaught error${s.errors.length ? ` — ${s.errors[0].slice(0, 140)}` : ""}`,
        s.errors.length === 0);
   }
+  // ── The clearance register ──────────────────────────────────────
+  group("The clearance register is on the office's staff screen and nobody else's");
+  {
+    const head = await open();
+    await signIn(head.page, /Director of Sport/);
+    await head.page.locator('[data-testid="nav-staff"]').click({ timeout: 6000 }); await head.page.waitForTimeout(1500);
+    const reg = head.page.locator('[data-testid="clearance-register"]');
+    ok("the director of sport sees the register on the staff screen", await reg.count() === 1);
+    const body = await text(head.page);
+    ok("...with the gaps named", /missing/i.test(body) && /expired/i.test(body));
+    ok("...and the unchecked coach on it", /P Moodley/.test(body));
+    ok("...but no reference numbers on the screen", !/PCC-2026|NRSO-11/.test(body));
+    await head.ctx.close();
+
+    const coach = await open();
+    await signIn(coach.page, /Coach/);
+    // A coach is not offered the staff screen at all (user.read); the register
+    // behind it is refused by the function regardless, which the API walk holds.
+    ok("a coach is not offered the staff screen", await coach.page.locator('[data-testid="nav-staff"]').count() === 0);
+    await coach.page.locator('[data-testid="nav-settings"]').click({ timeout: 6000 }); await coach.page.waitForTimeout(600);
+    await coach.page.locator("button", { hasText: /My clearances/ }).first().click({ timeout: 4000 }); await coach.page.waitForTimeout(1200);
+    const mine = await coach.page.locator('[data-testid="my-clearances"]').innerText().catch(() => "");
+    ok("...but he sees his own in settings", /first aid certificate/i.test(mine) && /expiring/i.test(mine));
+    ok("...and only his own", !/P Moodley|B Ngcobo/.test(mine));
+    ok("no console errors", coach.errors.length === 0 && head.errors.length === 0);
+    await coach.ctx.close();
+  }
+
   // ── The shell, by id ────────────────────────────────────────────
   // Every walk above found its way around by button text, which is a test
   // that breaks when a label is reworded and passes when a button is drawn

@@ -45,6 +45,7 @@ import { rewardWeightRoutes } from "./rewards/weights-api.mjs";
 import { fixtureRoutes } from "./write/fixture-api.mjs";
 import { rosterRoutes } from "./write/roster-api.mjs";
 import { contactRoutes } from "./write/contacts-api.mjs";
+import { clearanceRoutes } from "./write/clearance-api.mjs";
 import { MatchHub } from "./realtime/realtime.mjs";
 
 const PORT = Number(process.env.PORT || 8787);
@@ -216,6 +217,7 @@ const roster   = rosterRoutes({ pool, secret: SECRET });
 // Who to ring for a child. Kept by the family and the office; the driver
 // reaches the manifest through the trip, see trip_contacts() in db/08.
 const contacts = contactRoutes({ pool, secret: SECRET });
+const clearances = clearanceRoutes({ pool, secret: SECRET });
 
 /**
  * Development sign-in.
@@ -345,6 +347,8 @@ const PLAYER_ROUTES = [
   [/^\/api\/players\/([^/]+)\/team$/,           "POST", roster.move],
   [/^\/api\/players\/([^/]+)\/emergency-contacts$/, "POST", contacts.add],
   [/^\/api\/emergency-contacts\/([^/]+)\/retire$/,   "POST", contacts.retire],
+  [/^\/api\/clearances$/,                           "POST", clearances.record],
+  [/^\/api\/clearances\/([^/]+)\/revoke$/,          "POST", clearances.revoke],
   [/^\/api\/players\/([^/]+)\/assessment$/,     "POST", assess.record],
   [/^\/api\/players\/([^/]+)\/access-request$/, "POST", access.ask],
   [/^\/api\/access-requests\/([^/]+)\/decide$/, "POST", access.decide],

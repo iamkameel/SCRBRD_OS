@@ -14,6 +14,11 @@ function StaffView({ role }) {
   // principal. Importing the raw constant here would bypass both.
   const GROUNDS = useRows("grounds", role);
   const STAFF = useRows("staff", role);
+  // The clearance register, for the reader's own school. Empty for anybody
+  // the server did not hand it to, and the panel is not drawn: whether the
+  // office may see who is unchecked is decided in clearance_register(), and
+  // this screen only draws the answer.
+  const REGISTER = useRows("clearance_register", role);
   const [filter, setFilter] = useState("all");
   const [sel, setSel]       = useState(null);
   const canEdit = role==="superadmin"||role==="schooladmin";
@@ -38,6 +43,8 @@ function StaffView({ role }) {
           }}>{f==="all"?"All Staff":`${roleIcon(f)} ${f.charAt(0).toUpperCase()+f.slice(1)}s`}</button>
         ))}
       </div>
+
+      {REGISTER.length>0&&<ClearanceRegister rows={REGISTER}/>}
 
       <div style={{display:"grid",gridTemplateColumns:sel?"1fr 360px":"repeat(auto-fill,minmax(260px,1fr))",gap:"14px",alignItems:"start"}}>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:"12px"}}>
@@ -213,6 +220,52 @@ function StaffView({ role }) {
         })()}
       </div>
     </div>
+  );
+}
+
+// One word per check, the server's word, in the server's order: the gaps
+// first. Nothing here derives a status from a date.
+const STATUS_TONE = { missing:D.rose, expired:D.rose, revoked:D.amber, expiring:D.amber, current:D.emerald };
+function ClearanceRegister({ rows }) {
+  const [open, setOpen] = useState(true);
+  const gaps = rows.filter(r=>r.status!=="current").length;
+  const byPerson = rows.reduce((acc,r)=>{ (acc[r.personId] ??= { name:r.name, role:r.role, checks:[] }).checks.push(r); return acc; }, {});
+  return (
+    <Card sx={{padding:"16px",marginBottom:"20px"}} data-testid="clearance-register">
+      <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:open?"12px":0}}>
+        <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>Clearance register</div>
+        <Badge color={gaps?D.rose:D.emerald}>{gaps?`${gaps} to chase`:"all current"}</Badge>
+        <button onClick={()=>setOpen(!open)} className="pressBtn" aria-expanded={open} style={{marginLeft:"auto",background:"none",border:"none",cursor:"pointer",color:D.textMuted,fontSize:"12px"}}>{open?"Hide":"Show"}</button>
+      </div>
+      {open&&(
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontFamily:D.body,fontSize:"11px"}}>
+            <thead><tr style={{color:D.textMuted,textAlign:"left"}}>
+              <th style={{padding:"4px 8px"}}>Adult</th><th style={{padding:"4px 8px"}}>Role</th><th style={{padding:"4px 8px"}}>Checks</th>
+            </tr></thead>
+            <tbody>
+              {Object.entries(byPerson).map(([id,p])=>(
+                <tr key={id} data-testid={`clearance-row-${id}`} style={{borderTop:`1px solid ${D.border}`}}>
+                  <td style={{padding:"7px 8px",color:D.textPrimary,fontWeight:600,whiteSpace:"nowrap"}}>{p.name}</td>
+                  <td style={{padding:"7px 8px",color:D.textSecondary,textTransform:"capitalize"}}>{ROLES[p.role]?.label ?? p.role}</td>
+                  <td style={{padding:"7px 8px"}}>
+                    <div style={{display:"flex",gap:"5px",flexWrap:"wrap"}}>
+                      {p.checks.map(c=>(
+                        <span key={c.kind} title={c.expiresOn?`${c.status} · lapses ${c.expiresOn}`:c.status}
+                          style={{display:"inline-flex",gap:"5px",alignItems:"center",padding:"3px 8px",borderRadius:D.pill,
+                                  background:STATUS_TONE[c.status]+"14",border:`1px solid ${STATUS_TONE[c.status]}33`,color:STATUS_TONE[c.status]}}>
+                          {c.kindLabel}<span style={{fontFamily:D.mono,fontSize:"9px",textTransform:"uppercase"}}>{c.status}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
   );
 }
 

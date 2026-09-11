@@ -72,6 +72,12 @@ export const CAPABILITIES = {
   // refused.
   "player.emergency.read":       "Reach a player's emergency contacts",
   "player.emergency.manage":     "Keep a player's emergency contacts",
+  // Whether an adult who works with children has been checked, and when the
+  // check runs out. The register names adults, not children, but it states
+  // which adults the school has NOT checked, which is not for a coach to read
+  // about a colleague — so it is not part of the staff floor.
+  "clearance.read":              "See whether an adult's clearances are current",
+  "clearance.manage":            "Record and revoke an adult's clearances",
   "player.performance.read":     "See a player's match figures",
   "player.performance.write":    "Record player performance",
   "player.development.read":     "See development notes and skill ratings",
