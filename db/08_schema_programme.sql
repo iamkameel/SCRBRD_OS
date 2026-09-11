@@ -3188,3 +3188,206 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER;
 
 REVOKE ALL ON FUNCTION broadcast_state(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION broadcast_state(uuid) TO PUBLIC;
+
+-- ── The half of the notification system that was missing ────────
+--
+-- `notification` and `notification_read` have been here since the start, with
+-- a capability-gated publish policy and a feed the dashboard reads. What there
+-- has never been is DELIVERY. A notice sits in the database until somebody
+-- opens the app, which for "your son has been taken to hospital" is not a
+-- notification system at all.
+--
+-- THE RULE THAT SHAPES EVERY LINE BELOW: a cached notification is not
+-- permission. A device that once received a notice has no standing to receive
+-- the next one, and a push that went out last week says nothing about who may
+-- read anything today. So nothing here decides who receives what. The
+-- notification's own policy already does — news.read AND the capability the
+-- row declares, in the row's scope — and the fan-out RE-ASKS IT, per person,
+-- at send time, through the same policy. A role withdrawn an hour ago means
+-- the phone stays silent, with no cache to invalidate and no subscription list
+-- to reconcile.
+--
+-- WHAT GOES ON THE WIRE IS A SECOND QUESTION, and the answer is: as little as
+-- possible. A push payload is stored by Google, rendered on a lock screen, and
+-- read by whoever is holding the phone — which at a school gate on a Saturday
+-- is not necessarily the parent. "R Pillay is out with a hamstring strain" on
+-- a lock screen is a disclosure of a child's medical information to a bystander,
+-- and it is a disclosure this platform's whole masking apparatus exists to
+-- prevent one screen earlier. So the full text travels ONLY for a notice the
+-- school has already marked public — which the existing
+-- notification_public_is_general CHECK guarantees requires nothing beyond
+-- news.read. Everything else travels as a pointer: a generic line and an id,
+-- with the real content fetched through the governed read when the app opens
+-- and the person is authenticated again.
+
+-- A phone, and the token FCM will accept for it.
+--
+-- Governed by IDENTITY, not by capability, exactly as notification_read is.
+-- "Which devices are mine" is a question only I can answer about myself, and
+-- there is no scope, role or assignment in it. Forcing it through the
+-- capability model would be worse than inconsistent: the list of a person's
+-- devices, with the times each was last seen, is a movement and behaviour
+-- trail, and no role in this product has a reason to hold somebody else's.
+CREATE TABLE device_push_token (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  person_id   uuid NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+  -- What FCM hands the browser. Opaque, long, and it rotates — which is why
+  -- the row is keyed on its own id and the token is merely unique, rather than
+  -- the token being the key.
+  token       text NOT NULL CHECK (length(btrim(token)) BETWEEN 16 AND 4096),
+  platform    text NOT NULL CHECK (platform IN ('web','android','ios')),
+  -- The device id the session token already carries, so a person signing out
+  -- of one phone retires that phone's registration and not their other one.
+  device_id   text,
+  -- "Dad's phone". The person's own words, for their own settings screen.
+  label       text CHECK (label IS NULL OR length(label) <= 60),
+  registered_at timestamptz NOT NULL DEFAULT now(),
+  last_seen_at  timestamptz NOT NULL DEFAULT now(),
+  -- RETIRED, never deleted. This database grants no DELETE anywhere, and the
+  -- row that says a device was registered and then signed out is the record
+  -- that a registration happened at all.
+  retired_at    timestamptz,
+  retired_reason text CHECK (retired_reason IS NULL OR retired_reason IN
+                   ('signed_out','rejected','replaced','stale')),
+  CONSTRAINT retired_has_a_reason CHECK ((retired_at IS NULL) = (retired_reason IS NULL))
+);
+-- One live registration per token. Partial, because a retired row keeps the
+-- token it had — that is the record of which device it was.
+CREATE UNIQUE INDEX device_push_token_live ON device_push_token (token)
+  WHERE retired_at IS NULL;
+CREATE INDEX ON device_push_token (person_id) WHERE retired_at IS NULL;
+
+/**
+ * A phone that changes hands must stop receiving the last person's alerts.
+ *
+ * The hazard is ordinary and the consequence is not: a parent signs in on a
+ * shared family tablet, a second parent signs in on the same tablet, and FCM
+ * hands the browser THE SAME registration token. Without this, both rows are
+ * live, the fan-out finds both, and the tablet receives alerts about a child
+ * whose family the current user does not belong to.
+ *
+ * So registering a token retires any live row that holds it for somebody else.
+ * SECURITY DEFINER because that row belongs to another person and the caller
+ * cannot see it — this is the case where definer rights are the requirement
+ * rather than a convenience: under the caller's own policy the UPDATE would
+ * match nothing, the registration would succeed, and the stale row would
+ * quietly survive. A refusal we never see is worse than one we do.
+ *
+ * It retires rather than reassigns. Who held a device and when is not
+ * something to overwrite.
+ */
+CREATE OR REPLACE FUNCTION device_push_token_claim() RETURNS trigger AS $$
+BEGIN
+  IF NEW.retired_at IS NOT NULL THEN RETURN NEW; END IF;
+  UPDATE device_push_token
+     SET retired_at = now(), retired_reason = 'replaced'
+   WHERE token = NEW.token
+     AND retired_at IS NULL
+     AND id IS DISTINCT FROM NEW.id
+     AND person_id IS DISTINCT FROM NEW.person_id;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS device_push_token_claims_the_device ON device_push_token;
+CREATE TRIGGER device_push_token_claims_the_device
+  BEFORE INSERT OR UPDATE ON device_push_token
+  FOR EACH ROW EXECUTE FUNCTION device_push_token_claim();
+
+ALTER TABLE device_push_token ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY device_push_token_read ON device_push_token
+  FOR SELECT USING (person_id = app_user_id());
+
+-- You may register a device AS YOURSELF and no other way. There is no
+-- administrative override: nobody enrols somebody else's phone.
+CREATE POLICY device_push_token_insert ON device_push_token
+  FOR INSERT WITH CHECK (person_id = app_user_id());
+
+CREATE POLICY device_push_token_update ON device_push_token
+  FOR UPDATE USING (person_id = app_user_id())
+           WITH CHECK (person_id = app_user_id());
+
+-- What was actually put on the wire, per notice per device.
+--
+-- Evidence, and a de-duplicator: the primary key is the pair, so a fan-out run
+-- twice sends once. payload_kind records WHICH payload went — a 'pointer' row
+-- is the proof that a restricted notice did not travel in clear text, which is
+-- the kind of thing a school is eventually asked to show.
+--
+-- Written BY THE RECIPIENT, under their own principal, inside the same
+-- per-person step that checked visibility. That is not an implementation
+-- detail: it means the sender is structurally incapable of recording a
+-- delivery to somebody who could not read the notice, because the insert would
+-- be refused by the same policy that refused them the row.
+CREATE TABLE notification_delivery (
+  notification_id uuid NOT NULL REFERENCES notification(id) ON DELETE CASCADE,
+  token_id     uuid NOT NULL REFERENCES device_push_token(id) ON DELETE CASCADE,
+  person_id    uuid NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+  payload_kind text NOT NULL CHECK (payload_kind IN ('full','pointer')),
+  state        text NOT NULL CHECK (state IN ('sent','failed','rejected')),
+  detail       text,
+  attempts     smallint NOT NULL DEFAULT 1 CHECK (attempts BETWEEN 1 AND 100),
+  attempted_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (notification_id, token_id)
+);
+CREATE INDEX ON notification_delivery (person_id, attempted_at DESC);
+
+ALTER TABLE notification_delivery ENABLE ROW LEVEL SECURITY;
+
+-- Your own delivery history and nobody else's. A publisher asking "did it
+-- reach the parents" is asking a reasonable question with an unreasonable
+-- answer attached — which families have the app installed, on how many
+-- devices, last seen when. That is not a reporting line this product offers.
+CREATE POLICY notification_delivery_read ON notification_delivery
+  FOR SELECT USING (person_id = app_user_id());
+
+CREATE POLICY notification_delivery_insert ON notification_delivery
+  FOR INSERT WITH CHECK (
+    person_id = app_user_id()
+    -- Re-enters the notification policy rather than trusting the id handed
+    -- in, exactly as notification_read does, so this table cannot be used to
+    -- probe which notification ids exist.
+    AND EXISTS (SELECT 1 FROM notification n WHERE n.id = notification_delivery.notification_id)
+  );
+
+CREATE POLICY notification_delivery_update ON notification_delivery
+  FOR UPDATE USING (person_id = app_user_id())
+           WITH CHECK (person_id = app_user_id());
+
+/**
+ * Who might be reachable, which is not the same question as who may receive.
+ *
+ * A fan-out has to start from a list of devices, and no principal in this
+ * product may read another person's device rows — correctly, since that list
+ * is a movement trail. So this enumeration is SECURITY DEFINER, and it is
+ * carefully the WEAKEST thing that works: every live token belonging to
+ * somebody with an active assignment at the notice's school.
+ *
+ * IT DECIDES NOTHING. Every row it returns is handed straight back to the
+ * notification's own policy, as that person, and a person who may not read the
+ * notice receives nothing however many devices they have registered. Read it
+ * as an address book, not as a permission — the temptation to add a capability
+ * filter here is the temptation to answer the authorization question twice, in
+ * two places, one of which will drift.
+ *
+ * Scoped to the school because a tenant is the widest an enumeration ever
+ * needs to be, and a cross-tenant one is exactly the shape of the failure
+ * this codebase spent its whole life removing.
+ */
+CREATE OR REPLACE FUNCTION push_candidates(p_school uuid)
+RETURNS TABLE (token_id uuid, person_id uuid, token text, platform text) AS $$
+  SELECT DISTINCT t.id, t.person_id, t.token, t.platform
+    FROM device_push_token t
+    JOIN role_assignment a ON a.person_id = t.person_id
+   WHERE t.retired_at IS NULL
+     AND a.active
+     AND (a.school_id IS NULL OR a.school_id = p_school)
+     AND (a.valid_from  IS NULL OR a.valid_from  <= current_date)
+     AND (a.valid_until IS NULL OR a.valid_until >  current_date)
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+-- Reachable only from this application's own code. A person holding a session
+-- has no business calling it directly, and PUBLIC execute on a DEFINER
+-- enumeration is how a helper becomes a directory.
+REVOKE ALL ON FUNCTION push_candidates(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION push_candidates(uuid) TO scrbrd_app;
