@@ -279,10 +279,24 @@ export function deviceRoutes({ pool, secret }) {
       });
     }),
 
-    // POST /api/devices/retire { token }
+    // POST /api/devices/retire { token } | { id }
+    //
+    // TWO WAYS IN, because there are two situations and only one of them has a
+    // token to hand. A phone signing itself out knows its own registration
+    // token. A person whose phone was LOST OR STOLEN is on a different device
+    // and has only the row in their settings list — and without an id path
+    // that phone keeps receiving the school's alerts until the token happens
+    // to be rejected by FCM. Which is exactly the situation a retire button
+    // exists for.
+    //
+    // Both are safe for the same reason: the UPDATE is bounded by the table's
+    // policy (person_id = app_user_id()), so neither form can reach a
+    // registration that is not the caller's own. The id is not a capability.
     retire: handle(async (req) => {
       const token = String(req.body?.token ?? "").trim();
-      if (!token) throw err("token_required");
+      const id = String(req.body?.id ?? "").trim();
+      if (!token && !id) throw err("token_or_id_required");
+      if (token && id) throw err("name_the_device_once");
       return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
         // Retired, not deleted — this database grants no DELETE anywhere, and
         // the row saying a device was registered and then signed out is the
@@ -290,11 +304,15 @@ export function deviceRoutes({ pool, secret }) {
         const { rowCount } = await client.query(
           `update device_push_token
               set retired_at = now(), retired_reason = 'signed_out'
-            where token = $1 and retired_at is null`, [token]);
+            where retired_at is null
+              and ($1::text is null or token = $1)
+              and ($2::uuid is null or id = $2)`,
+          [token || null, id || null]);
         // Not an error when nothing matched. A sign-out on a phone whose
         // registration somebody already retired is a successful sign-out, and
-        // saying "no such token" would answer whether a token exists to
-        // whoever asked.
+        // saying "no such device" would answer whether one exists to whoever
+        // asked — which for the id form would be a way to probe other
+        // people's registrations one uuid at a time.
         return { retired: rowCount };
       });
     }),

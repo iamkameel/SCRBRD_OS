@@ -62,6 +62,8 @@ const register = (token, tok, extra = {}) =>
                         body: { token, platform: "web", ...extra } });
 const retire = (token, tok) =>
   api("/api/devices/retire", { method: "POST", token: tok, body: { token } });
+const retireById = (id, tok) =>
+  api("/api/devices/retire", { method: "POST", token: tok, body: { id } });
 const publish = (tok, body) => api("/api/notifications", { method: "POST", token: tok, body });
 const push = (id, tok) => api(`/api/notifications/${id}/push`, { method: "POST", token: tok });
 const myDevices = async (tok) => (await api("/api/read/my_devices", { token: tok })).body?.rows ?? [];
@@ -384,6 +386,44 @@ try {
     ok("...and their registration is untouched",
        (await q(`select retired_at from device_push_token where token = $1`,
                 [tk("parent")]))[0].retired_at === null);
+    // ── THE LOST PHONE. ──
+    //
+    // A person whose phone was lost or stolen is on a different device and has
+    // only the row in their settings list, not the registration token — so
+    // without an id path that phone keeps receiving the school's alerts until
+    // FCM happens to reject it, which may be never. Which is exactly the
+    // situation a sign-out button exists for.
+    const mine = (await q(
+      `select t.id from device_push_token t join app_user u on u.id = t.person_id
+        where u.email = 'parent@example.invalid' and t.retired_at is null limit 1`))[0];
+    ok("there is a live registration to lose", !!mine);
+    ok("a person can sign out a device they are not holding",
+       (await retireById(mine.id, parent)).body?.retired === 1);
+    ok("...and it is retired, not removed",
+       (await q(`select retired_reason from device_push_token where id = $1`,
+                [mine.id]))[0].retired_reason === "signed_out");
+
+    // An id is not a capability: the UPDATE is bounded by the table's own
+    // policy, so naming somebody else's row reaches nothing.
+    await register(tk("watcher2"), watcher);
+    const theirs = (await q(
+      `select t.id from device_push_token t join app_user u on u.id = t.person_id
+        where u.email = 'watcher@example.invalid' and t.retired_at is null limit 1`))[0];
+    ok("one person cannot sign out another person's device",
+       (await retireById(theirs.id, parent)).body?.retired === 0);
+    ok("...and it is still live",
+       (await q(`select retired_at from device_push_token where id = $1`,
+                [theirs.id]))[0].retired_at === null);
+    // Saying "no such device" would let somebody probe other people's
+    // registrations one uuid at a time.
+    ok("...and the refusal is indistinguishable from nothing to do",
+       (await retireById("00000000-0000-0000-0000-000000000000", parent)).body?.retired === 0);
+    ok("naming a device two ways at once is refused",
+       (await api("/api/devices/retire", { method: "POST", token: parent,
+          body: { id: theirs.id, token: tk("parent") } })).status === 400);
+    ok("naming it no way at all is refused",
+       (await api("/api/devices/retire", { method: "POST", token: parent, body: {} })).status === 400);
+
     // A retired phone is not in the address book any more.
     const n = (await publish(head, {
       schoolId: HIL, scopeLevel: "school", kind: "fixture",
