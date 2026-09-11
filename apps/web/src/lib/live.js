@@ -401,6 +401,13 @@ function asDevice(r) {
            tokenTail: r.token_tail, active: r.retired_at == null, live: true };
 }
 
+/** A side as it stood on a date — nothing here is computed in the browser. */
+function asRosterOn(r) {
+  return { playerId: r.player_id, name: r.full_name, team: r.team_code,
+           joinedOn: r.joined_on ? String(r.joined_on).slice(0, 10) : null,
+           leftOn:   r.left_on   ? String(r.left_on).slice(0, 10)   : null, live: true };
+}
+
 /**
  * One boy, one fixture, and the three people who have a say.
  *
@@ -564,6 +571,7 @@ const ADAPT = {
   trips: asTrip,
   availability: asAvailability,
   readiness: asReadiness,
+  roster_on: asRosterOn,
   my_devices: asDevice,
   memberships: asMembership,
   opposition_context: asOppositionContext,

@@ -791,6 +791,23 @@ export const READ_QUERIES = {
    * reason — phase is masked at that tier, and a state that quietly changed
    * according to who was asking would be worse than no state at all.
    */
+  /**
+   * WHO WAS IN A SIDE ON A DATE. The question the column could not answer.
+   *
+   * A ladder for last season, a cap for a debut, an honours board, a scout
+   * asking who played in March — all of them want the side as it stood then,
+   * and until now the answer was whoever happened to be in it today. Through
+   * roster_on() in db/08 under the caller's own policies: it is the roster
+   * they already hold, asked about another day.
+   */
+  roster_on: {
+    text: `select r.player_id, p.full_name, r.team_code, r.joined_on, r.left_on
+             from roster_on($1::uuid, $2::text, $3::date, coalesce($4::text, 'cricket')) r
+             join player p on p.id = r.player_id
+            order by p.full_name`,
+    params: q => [req(q, "schoolId"), req(q, "teamCode"), req(q, "on"), q?.sport || null],
+  },
+
   readiness: {
     text: `with clinical as (
                   -- Gated on Injuries like the availability read above and for

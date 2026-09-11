@@ -43,6 +43,7 @@ import { sessionRoutes } from "./realtime/session-routes.mjs";
 import { deviceRoutes, notificationRoutes, transportFor } from "./notify/push-api.mjs";
 import { rewardWeightRoutes } from "./rewards/weights-api.mjs";
 import { fixtureRoutes } from "./write/fixture-api.mjs";
+import { rosterRoutes } from "./write/roster-api.mjs";
 import { MatchHub } from "./realtime/realtime.mjs";
 
 const PORT = Number(process.env.PORT || 8787);
@@ -209,6 +210,8 @@ const rewards  = rewardWeightRoutes({ pool, secret: SECRET });
 // Arranging a fixture, which had no route at all — fixture.update was a
 // capability in five roles with nothing it could act on.
 const fixtures = fixtureRoutes({ pool, secret: SECRET });
+// Moving a boy between sides, dated. The history row is the trigger's.
+const roster   = rosterRoutes({ pool, secret: SECRET });
 
 /**
  * Development sign-in.
@@ -333,6 +336,9 @@ const MATCH_ROUTES = [
 
 // Routes keyed on a player rather than a match. Same shape, same shim.
 const PLAYER_ROUTES = [
+  // Which side he is in, from a date. Writes only player.team_code; the
+  // membership history is recorded by the trigger on that column.
+  [/^\/api\/players\/([^/]+)\/team$/,           "POST", roster.move],
   [/^\/api\/players\/([^/]+)\/assessment$/,     "POST", assess.record],
   [/^\/api\/players\/([^/]+)\/access-request$/, "POST", access.ask],
   [/^\/api\/access-requests\/([^/]+)\/decide$/, "POST", access.decide],

@@ -20,6 +20,12 @@ INSERT INTO school (id, code, name, kind, province) VALUES
   ('22222222-2222-2222-2222-222222222222', 'WES', 'Westville Boys'' High',  'school', 'KwaZulu-Natal');
 
 -- ── Hilton 1st XI ─────────────────────────────────────────────────
+-- The pilot's sides were named at the start of the season, not on the day the
+-- seed happened to run. The membership history trigger reads this and dates
+-- every first membership accordingly; it is cleared again below so nothing
+-- later in the seed inherits a January effective date.
+SELECT set_config('app.effective_on', '2026-01-15', false);
+
 INSERT INTO player (id, school_id, team_code, full_name, squad_no, playing_role, born, hometown, houseAtSchool, height, weight, guardian) VALUES
   ('aaaaaaaa-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', '1XI', 'James Whitfield', 1, 'batter',     '2008-03-14', 'Howick',      'McKenzie', 181, 74, '{"name":"A Whitfield","relation":"father","phone":"+27 82 000 0001"}'),
   ('aaaaaaaa-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', '1XI', 'T Bekker',        2, 'allrounder', '2008-07-02', 'Pietermaritzburg', 'Falcon', 176, 70, '{"name":"M Bekker","relation":"mother","phone":"+27 82 000 0002"}'),
@@ -96,6 +102,11 @@ INSERT INTO player (id, school_id, team_code, full_name, squad_no, playing_role,
   -- there was no candidate between the two bounds to pull in.
   ('aaaaaaaa-0000-0000-0000-000000000013', '11111111-1111-1111-1111-111111111111', 'U13A',
    'B Khumalo', 3, 'bowler', (current_date + interval '90 days' - interval '14 years')::date);
+
+-- Cleared only after the LAST player insert: three boys are seeded further
+-- down than the first two blocks, and a reset placed after the second block
+-- dated their first memberships to the day the seed ran.
+SELECT set_config('app.effective_on', '', false);
 
 INSERT INTO app_user (id, school_id, email, name, role, teams) VALUES
   ('88888888-0000-0000-0000-00000000000b', '11111111-1111-1111-1111-111111111111',

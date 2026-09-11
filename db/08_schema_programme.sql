@@ -4000,6 +4000,9 @@ CREATE POLICY team_membership_read ON team_membership
  * record of a Tuesday that actually happened.
  */
 CREATE OR REPLACE FUNCTION player_team_membership_log() RETURNS trigger AS $$
+DECLARE
+  v_on   date;
+  v_open team_membership%ROWTYPE;
 BEGIN
   IF TG_OP = 'UPDATE'
      AND NEW.team_code IS NOT DISTINCT FROM OLD.team_code
@@ -4007,15 +4010,36 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  -- Close whatever was open. left_on, not deletion: the row that says he WAS
-  -- in the 2XI is the entire purpose of this table.
-  UPDATE team_membership
-     SET left_on = current_date
+  -- WHEN it took effect. Every move used to be dated the day it was typed,
+  -- which for a decision made on Saturday and entered on Tuesday is wrong by
+  -- three days, and for the seed meant every first membership began on the
+  -- demo's birthday. A transaction-local setting carries the real date — the
+  -- move route and the seed both use it — and absent, today. It cannot reach
+  -- before the membership it closes: that would be two sides true at once.
+  v_on := coalesce(nullif(current_setting('app.effective_on', true), '')::date, current_date);
+
+  SELECT * INTO v_open FROM team_membership
    WHERE player_id = NEW.id AND sport = 'cricket' AND left_on IS NULL;
+  IF FOUND THEN
+    -- Already recorded — a re-applied seed, or an import that changed nothing.
+    IF v_open.team_code IS NOT DISTINCT FROM NEW.team_code
+       AND v_open.school_id IS NOT DISTINCT FROM NEW.school_id THEN
+      RETURN NEW;
+    END IF;
+    IF v_on < v_open.joined_on THEN
+      RAISE EXCEPTION
+        'a move cannot take effect on %: his current side (%) only began on %',
+        v_on, v_open.team_code, v_open.joined_on
+        USING ERRCODE = 'check_violation';
+    END IF;
+    -- Close whatever was open. left_on, not deletion: the row that says he WAS
+    -- in the 2XI is the entire purpose of this table.
+    UPDATE team_membership SET left_on = v_on WHERE id = v_open.id;
+  END IF;
 
   IF NEW.team_code IS NOT NULL THEN
     INSERT INTO team_membership (player_id, school_id, sport, team_code, joined_on, reason, moved_by)
-    VALUES (NEW.id, NEW.school_id, 'cricket', NEW.team_code, current_date,
+    VALUES (NEW.id, NEW.school_id, 'cricket', NEW.team_code, v_on,
             CASE WHEN TG_OP = 'INSERT' THEN 'joined' ELSE 'moved' END,
             app_user_id());
   END IF;
@@ -4243,3 +4267,19 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER;
 
 REVOKE ALL ON FUNCTION opposition_squad(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION opposition_squad(uuid) TO scrbrd_app;
+
+/**
+ * Who was in a side on a date. The question the column could not answer.
+ *
+ * Plain SQL over the history, under the caller's own policies — no definer
+ * rights, because nothing here is a fact the caller may not see: it is the
+ * roster read they already hold, asked about a day other than today. A read
+ * resource wraps it; a ladder, a cap or an honours board can call it directly.
+ */
+CREATE OR REPLACE FUNCTION roster_on(p_school uuid, p_team text, p_on date, p_sport text DEFAULT 'cricket')
+RETURNS TABLE (player_id uuid, team_code text, joined_on date, left_on date) AS $$
+  SELECT m.player_id, m.team_code, m.joined_on, m.left_on
+    FROM team_membership m
+   WHERE m.school_id = p_school AND m.sport = p_sport AND m.team_code = p_team
+     AND m.joined_on <= p_on AND (m.left_on IS NULL OR m.left_on > p_on)
+$$ LANGUAGE sql STABLE;
