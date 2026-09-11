@@ -4742,10 +4742,14 @@ CREATE OR REPLACE FUNCTION season_cutoff(p_on date DEFAULT sa_today()) RETURNS d
               ELSE make_date(extract(year FROM p_on)::int - 1, 9, 1) END;
 $$ LANGUAGE sql IMMUTABLE;
 
+-- The bands are the South African high-school ones: U13, U14, U15, U16, and
+-- Open from sixteen on the cut-off — a boy in Grade 10 to 12 plays Open
+-- cricket, whatever his birthday says, and is not "U17" or "U18" to anyone
+-- at a school. Open carries no directive, as the game treats him.
 CREATE OR REPLACE FUNCTION age_band(p_born date, p_on date DEFAULT sa_today()) RETURNS text AS $$
   SELECT CASE WHEN p_born IS NULL THEN 'unknown'
-              WHEN a < 13 THEN 'U13' WHEN a < 15 THEN 'U15'
-              WHEN a < 17 THEN 'U17' WHEN a < 19 THEN 'U19'
+              WHEN a < 13 THEN 'U13' WHEN a < 14 THEN 'U14'
+              WHEN a < 15 THEN 'U15' WHEN a < 16 THEN 'U16'
               ELSE 'open' END
     FROM (SELECT extract(year FROM age(season_cutoff(p_on), p_born))::int AS a) x;
 $$ LANGUAGE sql IMMUTABLE;
@@ -4753,11 +4757,13 @@ $$ LANGUAGE sql IMMUTABLE;
 -- ── The directive ────────────────────────────────────────────────
 -- Overs per spell and per day for a pace bowler, by age band. Platform
 -- reference data: a school reads it and cannot loosen it. The numbers follow
--- the ECB fast bowling directives, which are the ones most South African
--- schools have adopted in the absence of a published CSA schedule; when CSA
--- publishes one this table is where it goes. NULL means no limit applies —
--- an adult, or a boy whose date of birth the school has not recorded, whom
--- the workload read names as 'unknown' rather than quietly treating as open.
+-- the ECB fast bowling directives, mapped onto the school bands (U14 and
+-- U15 sit in the ECB's U15 band, U16 in its U17), which is what most South
+-- African schools apply in the absence of a published CSA schedule; when
+-- CSA publishes one this table is where it goes. NULL means no limit
+-- applies — an Open player, or a boy whose date of birth the school has not
+-- recorded, whom the workload read names as 'unknown' rather than quietly
+-- treating as Open.
 CREATE TABLE bowling_directive (
   age_band            text PRIMARY KEY,
   max_overs_per_spell smallint,
@@ -4767,7 +4773,7 @@ ALTER TABLE bowling_directive ENABLE ROW LEVEL SECURITY;
 CREATE POLICY bowling_directive_read ON bowling_directive
   FOR SELECT USING (app_user_id() IS NOT NULL);
 INSERT INTO bowling_directive VALUES
-  ('U13', 5, 10), ('U15', 6, 12), ('U17', 7, 18), ('U19', 7, 18),
+  ('U13', 5, 10), ('U14', 6, 12), ('U15', 6, 12), ('U16', 7, 18),
   ('open', NULL, NULL), ('unknown', NULL, NULL);
 
 -- Which boys the directive applies to: pace. A spinner has no over limit in

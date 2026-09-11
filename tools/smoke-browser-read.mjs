@@ -565,7 +565,7 @@ try {
     ok("the coach sees his side's load", await c.page.locator('[data-testid="load-panel"]').count() === 1);
     const body = await c.page.locator('[data-testid="load-panel"]').innerText();
     ok("...one row per boy, with the server's word", /S Naidoo/.test(body) && /no bowling|rested|steady|light|rising|spike/i.test(body));
-    ok("...and the band beside each", /U19|open/.test(body));
+    ok("...and the band beside each — a 1XI boy is Open", /open/.test(body) && !/U1[789]/.test(body));
     await c.ctx.close();
     const p = await open();
     await signIn(p.page, /Parent/);

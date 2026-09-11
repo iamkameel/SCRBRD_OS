@@ -953,7 +953,7 @@ export const READ_QUERIES = {
   /* The directive itself. Platform reference data. */
   bowling_directives: {
     text: `select age_band, max_overs_per_spell, max_overs_per_day from bowling_directive
-            order by case age_band when 'U13' then 1 when 'U15' then 2 when 'U17' then 3 when 'U19' then 4 when 'open' then 5 else 6 end`,
+            order by case age_band when 'U13' then 1 when 'U14' then 2 when 'U15' then 3 when 'U16' then 4 when 'open' then 5 else 6 end`,
   },
 
   /* Which roles must hold which checks. Platform reference data. */
