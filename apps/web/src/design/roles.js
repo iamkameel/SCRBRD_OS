@@ -142,8 +142,43 @@ const NAV_CAPABILITY = {
   pitchdeck:     "platform.tenant.manage",
 };
 
-/** The order destinations appear in. Dashboard first, settings last. */
-const NAV_ORDER = Object.keys(NAV_CAPABILITY);
+/* ── Grouping ───────────────────────────────────────────────────────
+   Twenty-two destinations in one column is a list to be read, not a menu to
+   be scanned. Each belongs to one group, and the groups are ordered by how
+   often the person at the ground needs them: the fixture first, the people
+   in it, their development, what it takes to get them there, then the
+   administration, then the person's own screens last.
+
+   This is the ONLY ordered structure. NAV_ORDER is derived from it, so a
+   destination cannot be in the capability map and missing from the menu, or
+   drawn twice: the design test checks both directions. Grouping is
+   presentation — a group with nothing in it for this role is not drawn, and
+   nothing here adds a destination the capability map withheld.
+*/
+const NAV_GROUPS = [
+  { key:"play",    label:"Play",       items:["dashboard","matches","calendar","competitions","leagues","officials"] },
+  { key:"people",  label:"People",     items:["squad","profiles","injuries","staff"] },
+  { key:"develop", label:"Develop",    items:["analytics","skills","training"] },
+  { key:"operate", label:"Operate",    items:["logistics","fields","sponsors"] },
+  { key:"admin",   label:"Administer", items:["management","modules","pitchdeck"] },
+  { key:"you",     label:"You",        items:["notifications","settings","rulebook"] },
+];
+
+/** destination → group key */
+const NAV_GROUP = Object.fromEntries(NAV_GROUPS.flatMap((g) => g.items.map((k) => [k, g.key])));
+
+/** The order destinations appear in: group by group, dashboard first. */
+const NAV_ORDER = NAV_GROUPS.flatMap((g) => g.items);
+
+/**
+ * A role's (already-narrowed) destinations, arranged for drawing:
+ * `[{ key, label, items }]` in group order, empty groups left out. The order
+ * within a group is the group's, not the caller's, so two shells that pass
+ * the same keys draw the same menu.
+ */
+const groupNav = (keys) =>
+  NAV_GROUPS.map((g) => ({ key: g.key, label: g.label, items: g.items.filter((k) => keys.includes(k)) }))
+            .filter((g) => g.items.length > 0);
 
 const navFor = (role) =>
   NAV_ORDER.filter((k) => {
@@ -210,4 +245,4 @@ const NAV_META = {
   pitchdeck:    { icon:"📐",  label:"Pitch Deck"   },
 };
 
-export { NAV_META, ROLES, ROLE_IDENTITY, ROLE_FAMILIES, NAV_CAPABILITY, canonicalRole, navFor };
+export { NAV_META, NAV_GROUPS, NAV_GROUP, NAV_ORDER, ROLES, ROLE_IDENTITY, ROLE_FAMILIES, NAV_CAPABILITY, canonicalRole, groupNav, navFor };

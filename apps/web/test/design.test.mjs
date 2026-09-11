@@ -103,7 +103,7 @@ group("Role identity");
 // model had never heard of, while fourteen roles that DO carry permissions had
 // no identity at all. Signing in as a director of sport gave ROLES[undefined]
 // and an empty shell.
-const { ROLE_IDENTITY, ROLES, NAV_CAPABILITY } = await import(join(SRC, "design/roles.js"));
+const { ROLE_IDENTITY, ROLES, NAV_CAPABILITY, NAV_GROUPS, NAV_GROUP, NAV_ORDER, groupNav } = await import(join(SRC, "design/roles.js"));
 const { ROLES: POLICY_ROLES, roleGrants } = await import("@scrbrd/policy/roles");
 
 ok("every policy role has a visual identity",
@@ -178,6 +178,37 @@ ok("a scorer is not offered injuries", !ROLES.scorer.nav.includes("injuries"));
 ok("a physio is", ROLES.medical.nav.includes("injuries"));
 ok("a driver sees logistics and little else",
    ROLES.driver.nav.includes("logistics") && ROLES.driver.nav.length <= 6);
+
+group("Navigation is grouped, and the grouping adds nothing");
+// One ordered structure. The capability map says what a destination NEEDS;
+// the groups say where it is DRAWN. Every destination must be in exactly one
+// group, or a role could hold the capability and find no menu entry — the
+// hand-listed drift this file already refuses, back through a side door.
+const grouped = NAV_GROUPS.flatMap((g) => g.items);
+ok("every destination is in exactly one group",
+   Object.keys(NAV_CAPABILITY).every((k) => grouped.filter((g) => g === k).length === 1),
+   Object.keys(NAV_CAPABILITY).filter((k) => grouped.filter((g) => g === k).length !== 1).join(", "));
+ok("...and no group names a destination the capability map lacks",
+   grouped.every((k) => k in NAV_CAPABILITY), grouped.filter((k) => !(k in NAV_CAPABILITY)).join(", "));
+ok("the flat order is the grouped order", NAV_ORDER.join() === grouped.join());
+ok("every group has a key and a label",
+   NAV_GROUPS.every((g) => /^[a-z]+$/.test(g.key) && g.label.length > 1));
+ok("group keys are distinct", new Set(NAV_GROUPS.map((g) => g.key)).size === NAV_GROUPS.length);
+ok("the dashboard is first and the person's own screens are last",
+   NAV_ORDER[0] === "dashboard" && NAV_GROUPS.at(-1).key === "you" && NAV_GROUP.settings === "you");
+// The property that matters: grouping a role's nav yields the same set of
+// destinations, in the same relative order, with no empty headings.
+for (const r of POLICY_ROLES) {
+  const gs = groupNav(ROLES[r].nav);
+  const flat = gs.flatMap((g) => g.items);
+  ok(`grouping the ${r} nav loses nothing and adds nothing`,
+     flat.length === ROLES[r].nav.length && flat.every((k) => ROLES[r].nav.includes(k)));
+  ok(`...draws no empty group for the ${r}`, gs.every((g) => g.items.length > 0));
+}
+ok("a stranger's key is dropped, not drawn",
+   groupNav(["dashboard", "not-a-screen"]).flatMap((g) => g.items).join() === "dashboard");
+ok("a driver gets three sections, not a wall",
+   groupNav(ROLES.driver.nav).map((g) => g.key).join() === "play,operate,you");
 
 group("The palette is closed");
 // A fixed palette only works if nothing invents a thirteenth accent.

@@ -14,6 +14,14 @@ function TrainingView({ role }) {
   const COACHES = useRows("coaches", role);
   const PLAYERS = useRows("players", role);
   const TRAINING_SESSIONS = useRows("training", role);
+  // The register is its own read, behind player.profile.read, because it is a
+  // list of named minors and the session row is a noticeboard fact. A parent
+  // who may read "training moved to four" must not receive every child who
+  // was there. Joined here, per session, from whatever this person was sent —
+  // which for that parent is nothing, and the card says nobody is attending
+  // rather than crashing on a register it was never given.
+  const REGISTER = useRows("training_attendance", role);
+  const attending = (s) => REGISTER.filter((a) => a.sessionId === s.id && a.status !== "absent").map((a) => a.playerId);
   const [view, setView] = useState("schedule");
   const [addModal, setAddModal] = useState(false);
   const canEdit = role==="superadmin"||role==="coach";
@@ -55,7 +63,9 @@ function TrainingView({ role }) {
       {view==="schedule"&&(
         <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
           {TRAINING_SESSIONS.map(s=>{
-            const coach = COACHES.find(c=>c.id===s.coach);
+            // Live rows carry the coach's name; the demo carried an id.
+            const coach = COACHES.find(c=>c.id===s.coach) ?? (s.coach ? { name: s.coach } : null);
+            const roll = s.attendance ?? attending(s);
             const typeCol = s.type==="batting"?D.sky:s.type==="bowling"||s.type==="skills"?D.violet:s.type==="fitness"?D.amber:D.emerald;
             const isToday = s.date===dateStr(today);
             return (
@@ -77,18 +87,18 @@ function TrainingView({ role }) {
                       </div>
                     </div>
                     <div style={{textAlign:"center"}}>
-                      <div style={{fontFamily:D.mono,fontSize:"16px",fontWeight:700,color:D.amber}}>{s.attendance.length}</div>
+                      <div style={{fontFamily:D.mono,fontSize:"16px",fontWeight:700,color:D.amber}}>{roll.length}</div>
                       <div style={{fontFamily:D.body,fontSize:"9px",color:D.textMuted}}>attending</div>
                     </div>
                   </div>
                   <div style={{display:"flex",gap:"5px",flexWrap:"wrap",marginBottom:"8px"}}>
-                    {s.drills.map(d=><Pill key={d} color={typeCol}>{d}</Pill>)}
+                    {(s.drills??[]).map(d=><Pill key={d} color={typeCol}>{d}</Pill>)}
                   </div>
                   {s.notes&&<div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,fontStyle:"italic",background:D.surf2,padding:"7px 10px",borderRadius:D.sm}}>📝 {s.notes}</div>}
                   <div style={{display:"flex",gap:"4px",marginTop:"10px"}}>
-                    {s.attendance.map(pid=>{
-                      const p=PLAYERS.find(pl=>pl.id===pid);
-                      return p?<div key={pid} title={p.name}><Avatar name={p.name} size={24} color={D.emerald}/></div>:null;
+                    {roll.map(pid=>{
+                      const p=PLAYERS.find(pl=>pl.id===pid) ?? { name: REGISTER.find(a=>a.playerId===pid)?.name };
+                      return p?.name?<div key={pid} title={p.name}><Avatar name={p.name} size={24} color={D.emerald}/></div>:null;
                     })}
                     {canEdit&&<button style={{width:"24px",height:"24px",borderRadius:"50%",background:D.surf3,border:`1px dashed ${D.border}`,cursor:"pointer",color:D.textMuted,fontSize:"12px",display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>}
                   </div>

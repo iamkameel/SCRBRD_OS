@@ -19,6 +19,7 @@
  */
 import { chromium } from "playwright-core";
 import { launchOptions } from "./chromium.mjs";
+import { offline, isFirebaseOfflineNoise } from "./offline-browser.mjs";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
@@ -69,13 +70,14 @@ const dbq = async (text, params) => (await pool.query(text, params)).rows;
 
 const browser = await chromium.launch({ ...launchOptions() });
 const page = await browser.newPage();
+await offline(page.context());
 
 const errors = [];
-page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
+page.on("pageerror", (e) => { if (!isFirebaseOfflineNoise(e.message)) errors.push(`pageerror: ${e.message}`); });
 page.on("console", (m) => {
   if (m.type() !== "error") return;
   const t = m.text();
-  if (/Failed to load resource/.test(t)) return;
+  if (/Failed to load resource/.test(t) || isFirebaseOfflineNoise(t)) return;
   errors.push(`console.error: ${t}`);
 });
 

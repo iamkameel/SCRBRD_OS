@@ -25,6 +25,7 @@
  */
 import { chromium } from "playwright-core";
 import { launchOptions } from "./chromium.mjs";
+import { offline, isFirebaseOfflineNoise } from "./offline-browser.mjs";
 import { anchorFor } from "@scrbrd/scoring";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
@@ -71,25 +72,17 @@ const browser = await chromium.launch({ ...launchOptions() });
 /** A fresh page per person: a session must not leak between them. */
 async function open() {
   const ctx = await browser.newContext();
+  await offline(ctx);
   const page = await ctx.newPage();
   const refusals = [], errors = [];
-  page.on("pageerror", (e) => errors.push(e.message));
+  page.on("pageerror", (e) => { if (!isFirebaseOfflineNoise(e.message)) errors.push(e.message); });
   page.on("console", (m) => {
     const t = m.text();
     if (/\[scrbrd\] getData\(/.test(t)) refusals.push(t);
-    // "Failed to load resource" is a network 404/CORS noise line Chrome logs
-    // itself, not our code. A bare "TypeError: Failed to fetch" is Firebase
-    // Analytics' own internal dynamic-config lookup (firebase.googleapis.com
-    // /.../webConfig, firebaseinstallations.googleapis.com) failing and
-    // logging via console.error rather than throwing — the SDK's documented
-    // behaviour offline or behind a network that blocks Google's analytics
-    // domains, which describes a school ground with no signal as much as it
-    // describes this sandbox. Nothing in THIS app's own code lets a bare
-    // fetch TypeError reach console.error: every fetch() call here is caught
-    // and reported through ApiError/useLive's own error state (see
-    // lib/api.js, lib/live.js) rather than left to surface raw, so this
-    // exact string cannot be masking one of ours.
-    if (m.type() === "error" && !/Failed to load resource/.test(t) && !/^TypeError: Failed to fetch/.test(t)) {
+    // "Failed to load resource" is Chrome's own line for a 404 or an aborted
+    // request. The Firebase SDK's offline chatter is filtered by one shared
+    // rule, with its rationale, in tools/offline-browser.mjs.
+    if (m.type() === "error" && !/Failed to load resource/.test(t) && !isFirebaseOfflineNoise(t)) {
       errors.push(t);
     }
   });
@@ -535,6 +528,86 @@ try {
     ok(`${who}: no uncaught error${s.errors.length ? ` — ${s.errors[0].slice(0, 140)}` : ""}`,
        s.errors.length === 0);
   }
+  // ── The shell, by id ────────────────────────────────────────────
+  // Every walk above found its way around by button text, which is a test
+  // that breaks when a label is reworded and passes when a button is drawn
+  // twice. The shell now carries stable ids: nav-<key> in the sidebar,
+  // mnav-<key> on the phone bar, drawer-<key> in the phone drawer, and
+  // os-main[data-page] for where the person is. This walk uses only those.
+  group("The shell is grouped, and reachable by id on a laptop and a phone");
+  {
+    const c = await open();
+    await signIn(c.page, /Coach/);
+    const tid = (id) => c.page.locator(`[data-testid="${id}"]`);
+    ok("the sidebar draws its groups", await tid("nav-group-play").count() === 1 && await tid("nav-group-people").count() === 1);
+    ok("...with a heading a screen reader can name",
+       await c.page.$eval('[data-testid="nav-group-people"]', (el) => el.getAttribute("role") === "group" && !!el.getAttribute("aria-labelledby")));
+    ok("...and no group a coach holds nothing in", await tid("nav-group-admin").count() === 0);
+    ok("the coach starts on the dashboard", await tid("os-main").getAttribute("data-page") === "dashboard");
+    await tid("nav-squad").click({ timeout: 6000 }); await c.page.waitForTimeout(800);
+    ok("clicking the squad entry lands on the squad", await tid("os-main").getAttribute("data-page") === "squad");
+    ok("...and the entry says so", await tid("nav-squad").getAttribute("aria-current") === "page");
+    ok("the phone bar is not drawn on a laptop", await tid("mnav").isVisible().catch(() => false) === false);
+    await tid("sidebar-toggle").click({ timeout: 4000 }); await c.page.waitForTimeout(400);
+    ok("the sidebar collapses", await tid("sidebar").getAttribute("data-collapsed") === "true");
+    ok("...and the entries keep their names", await tid("nav-profiles").getAttribute("aria-label") === "Profiles");
+    ok("the top bar's controls are addressable",
+       await tid("topbar-search").count() === 1 && await tid("topbar-alerts").count() === 1 && await tid("topbar-role").count() === 1);
+    ok("no console errors on the laptop", c.errors.length === 0, c.errors.join(" | "));
+    await c.ctx.close();
+
+    // Every destination a role is offered must open. Until the drawer walk
+    // below existed nothing had opened Training live, and it crashed on a
+    // register the server had deliberately not sent. So: each screen, for
+    // three very different navs, and the page must still be standing after.
+    for (const [who, label] of [[/Coach/, "coach"], [/Parent|Guardian/, "guardian"], [/Director of Sport/, "director of sport"]]) {
+      const s = await open();
+      if (!(await signIn(s.page, who))) { ok(`the ${label} signs in for the sweep`, false); await s.ctx.close(); continue; }
+      const keys = await s.page.$$eval('[data-testid^="nav-"]:not([data-testid^="nav-group-"]):not([data-testid="nav-alerts-badge"])',
+                                       (els) => els.map((e) => e.getAttribute("data-testid").slice(4)));
+      ok(`the ${label} is offered a menu`, keys.length >= 3);
+      const broken = [];
+      for (const k of keys) {
+        const before = s.errors.length;
+        await s.page.locator(`[data-testid="nav-${k}"]`).click({ timeout: 6000 }).catch(() => broken.push(`${k}: no click`));
+        await s.page.waitForTimeout(700);
+        const at = await s.page.locator('[data-testid="os-main"]').getAttribute("data-page", { timeout: 3000 }).catch(() => null);
+        if (at !== k) broken.push(`${k}: landed on ${at}`);
+        if (s.errors.length > before) broken.push(`${k}: ${s.errors.slice(before).join("; ").slice(0, 120)}`);
+        // A crashed React root takes the menu down with it; every click after
+        // that waits its full timeout for a button that is not coming back.
+        if (at === null) break;
+      }
+      ok(`every screen the ${label} is offered opens and stands (${keys.length})`, broken.length === 0);
+      if (broken.length) console.log("    " + broken.join("\n    "));
+      await s.ctx.close();
+    }
+
+    // The same person on a phone: the bar shows the first four, the drawer
+    // shows the rest in the same groups the sidebar drew.
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    await offline(ctx);
+    const page = await ctx.newPage();
+    const errors = []; page.on("pageerror", (e) => { if (!isFirebaseOfflineNoise(e.message)) errors.push(e.message); });
+    await page.addInitScript(`window.__SCRBRD_API_BASE__ = ${JSON.stringify(API)};`);
+    await page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "networkidle" });
+    await signIn(page, /Coach/);
+    const mid = (id) => page.locator(`[data-testid="${id}"]`);
+    ok("the phone bar is drawn", await mid("mnav").isVisible());
+    ok("...with the dashboard and the match centre on it", await mid("mnav-dashboard").count() === 1 && await mid("mnav-matches").count() === 1);
+    ok("...and a More button for the rest", await mid("mnav-more").count() === 1);
+    ok("the sidebar is not", await mid("sidebar").count() === 0);
+    await mid("mnav-more").click({ timeout: 4000 }); await page.waitForTimeout(500);
+    ok("More opens the drawer", await mid("drawer").isVisible());
+    ok("...grouped the same way", await mid("drawer-group-people").count() === 1 && await mid("drawer-group-develop").count() === 1);
+    await mid("drawer-training").click({ timeout: 4000 }); await page.waitForTimeout(800);
+    ok("a drawer entry navigates and closes the drawer",
+       await mid("os-main").getAttribute("data-page") === "training" && await mid("drawer").count() === 0);
+    ok("...and More now reads as the active place", await mid("mnav-more").getAttribute("aria-expanded") === "false");
+    ok("no console errors on the phone", errors.length === 0, errors.join(" | "));
+    await ctx.close();
+  }
+
 } catch (e) {
   ok(`the browser read walk threw: ${e.message?.slice(0, 160)}`, false);
 } finally {
