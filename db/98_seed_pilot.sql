@@ -183,7 +183,15 @@ INSERT INTO app_user (id, school_id, email, name, role, teams) VALUES
   -- fixture that had the Hilton office verify him would have been asserting
   -- something the code forbids.
   ('88888888-0000-0000-0000-00000000000d', '22222222-2222-2222-2222-222222222222',
-   'registrar.wes@example.invalid', 'T Ndlovu', 'schooladmin', '{}');
+   'registrar.wes@example.invalid', 'T Ndlovu', 'schooladmin', '{}'),
+  -- A COACH AT THE SECOND SCHOOL, and the fixture that needs one is the whole
+  -- point of a shared fixture: a match between two tenants is one row, and the
+  -- away side has to have somebody who can read it and name their own XI. Until
+  -- this row existed Westville was a school with an administrator and nobody
+  -- who does any cricket, so the away half of every policy was untestable —
+  -- which is why it had never been tested.
+  ('88888888-0000-0000-0000-00000000001a', '22222222-2222-2222-2222-222222222222',
+   'coach.wes@example.invalid', 'S Pillay', 'coach', '{1XI}');
 
 INSERT INTO app_user (id, school_id, email, name, role, teams) VALUES
   ('88888888-0000-0000-0000-000000000010', '11111111-1111-1111-1111-111111111111',
@@ -293,6 +301,10 @@ INSERT INTO role_assignment (id, person_id, role, school_id, team_code) VALUES
   ('a5510000-0000-0000-0000-000000000017', '88888888-0000-0000-0000-000000000015', 'finance',         '11111111-1111-1111-1111-111111111111', NULL),
   ('a5510000-0000-0000-0000-000000000018', '88888888-0000-0000-0000-000000000016', 'principal',       '11111111-1111-1111-1111-111111111111', NULL),
   ('a5510000-0000-0000-0000-000000000019', '88888888-0000-0000-0000-000000000017', 'driver',          '11111111-1111-1111-1111-111111111111', NULL),
+  -- The Westville 1XI coach. Scoped to Westville and to 1XI exactly as the
+  -- Hilton coach is scoped to Hilton and 1XI — which is what makes the shared
+  -- fixture assertions mean something: neither can reach the other's side.
+  ('a5510000-0000-0000-0000-00000000001a', '88888888-0000-0000-0000-00000000001a', 'coach',           '22222222-2222-2222-2222-222222222222', '1XI'),
   -- school_id NULL, honestly: platform administration is not a claim about
   -- any one school, and nothing in scouting.accredit's check looks at scope.
   ('a5510000-0000-0000-0000-000000000016', '88888888-0000-0000-0000-000000000014', 'platformadmin',   NULL, NULL);

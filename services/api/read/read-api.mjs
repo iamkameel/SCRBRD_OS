@@ -50,6 +50,29 @@ export const READ_QUERIES = {
                   -- needs both on one list — and a client that had to ask per
                   -- sport would be assembling the fixture list itself.
                   m.sport,
+                  -- THE AWAY SIDE, when it is a school on SCRBRD. Null for the
+                  -- ordinary case, where the opponent text is all there is.
+                  m.away_school_id, m.away_team_code,
+                  -- BOTH SIDES, NAMED, from either end of the fixture.
+                  --
+                  -- A shared row is read by two schools and school_id means
+                  -- "the host" rather than "us" — so an away reader whose
+                  -- client rendered school_id as itself would have every
+                  -- fixture backwards. Through fixture_side_label(), which is
+                  -- SECURITY DEFINER because the away school's coaches are not
+                  -- attached to the host and so cannot read its row in the
+                  -- school table. It returns a name and nothing else.
+                  fixture_side_label(m.school_id, m.team_code)           as home_label,
+                  fixture_side_label(m.away_school_id, m.away_team_code) as away_label,
+                  -- WHICH END THIS READER IS AT, answered by the same decision
+                  -- function the policy used to hand them the row. A reader who
+                  -- holds fixture.read over the home side is at home; one who
+                  -- got the row through the away scope is away. A platform
+                  -- reader holds both and comes back 'home', which is correct
+                  -- in the only sense available: they are not a participant.
+                  (case when app_can('fixture.read', m.school_id, m.team_code,
+                                     '00000000-0000-0000-0000-000000000000'::uuid, m.id)
+                        then 'home' else 'away' end)                     as my_side,
                   t.won_by   as toss_won_by,
                   t.decision as toss_decision,
                   bats_first(t.won_by, t.decision) as bats_first,
@@ -1127,6 +1150,16 @@ export const READ_QUERIES = {
     text: `
       with judged as (
         select m.school_id, m.opponent, m.team_code, m.starts_at,
+               -- THE RIVAL'S IDENTITY, not its spelling.
+               --
+               -- This grouped on the opponent STRING alone, which meant a school that
+               -- renamed itself, or an office that typed "Michaelhouse College"
+               -- one term and "Michaelhouse" the next, became two rivals with
+               -- half a record each. Where the away side is a tenant its id is
+               -- the identity and the string is only a label; where it is not,
+               -- the string is all there is and behaves exactly as before.
+               coalesce(m.away_school_id::text, m.opponent) as rival_key,
+               m.away_school_id,
                bats_first(t.won_by, t.decision) as bats_first,
                (select ls.runs from match_live_score ls
                  where ls.match_id = m.id order by ls.innings asc  limit 1) as first_runs,
@@ -1150,7 +1183,8 @@ export const READ_QUERIES = {
                end as result
           from judged j
       )
-      select o.school_id, o.opponent, d.title, d.since_year,
+      select o.school_id, o.opponent, o.rival_key, o.away_school_id,
+             d.title, d.since_year,
              count(*)::int                                        as played,
              count(*) filter (where o.result = 'won')::int         as won,
              count(*) filter (where o.result = 'lost')::int        as lost,
@@ -1160,7 +1194,7 @@ export const READ_QUERIES = {
              (select json_agg(r) from (
                 select e.starts_at, e.team_code, e.result, e.first_runs, e.second_runs
                   from outcome e
-                 where e.school_id = o.school_id and e.opponent = o.opponent
+                 where e.school_id = o.school_id and e.rival_key = o.rival_key
                  order by e.starts_at desc limit 5) r)             as recent
         from outcome o
         left join derby d
@@ -1170,7 +1204,11 @@ export const READ_QUERIES = {
        -- Grouped by school as well as opponent: someone assigned at two
        -- schools must not have their two records against the same rival
        -- silently added together.
-       group by o.school_id, o.opponent, d.title, d.since_year
+       -- Grouped on the identity, with the label carried along. Where the
+       -- rival is a tenant, two spellings of its name collapse into one
+       -- record — which is the point of the column.
+       group by o.school_id, o.rival_key, o.opponent, o.away_school_id,
+                d.title, d.since_year
        order by played desc, o.opponent`,
     params: q => [q?.opponent || null, q?.teamCode || null],
   },

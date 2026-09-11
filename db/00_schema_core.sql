@@ -246,6 +246,34 @@ CREATE TABLE match (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   school_id     uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
   team_code     text,                          -- the home team's scope anchor
+  -- THE AWAY SIDE, AND WHY IT IS THREE COLUMNS RATHER THAN ONE.
+  --
+  -- `opponent` was the whole of it: free text, "Michaelhouse". That works for a
+  -- fixture against a school SCRBRD does not host, and it quietly breaks
+  -- everything the moment BOTH schools are tenants — because then one fixture
+  -- is two unrelated rows, one at each school, and nothing joins them. No
+  -- shared ladder. No real head-to-head: `derby_record` groups on a string, so
+  -- "Michaelhouse" and "Michaelhouse College" are different rivals. No away
+  -- side's availability, no away team sheet, and both schools typing the same
+  -- Saturday in twice.
+  --
+  -- It is also the precondition for anything positional. A passport that can
+  -- say "top decile of U15 batters in KZN against pace" needs fixtures that
+  -- span tenants; one that can only see its own school's rows can say nothing
+  -- of the kind, however good the arithmetic is.
+  --
+  -- So: when the away side IS a tenant, it is named by school and team, and the
+  -- fixture is ONE row that both schools read. When it is not — most fixtures,
+  -- today — those stay NULL and `opponent` carries the name exactly as before.
+  -- Nothing about the existing path changes, which is what makes this safe to
+  -- land before there is a second school on the platform.
+  away_school_id uuid REFERENCES school(id),
+  away_team_code text,
+  -- Still NOT NULL, and still what every read displays. Stamped from the away
+  -- school when that school is known (see match_away_side_label in db/08) so
+  -- the fixture list, the scorecard header, the broadcast overlay and the
+  -- derby read all keep working untouched — none of them had to learn about
+  -- tenancy to benefit from it.
   opponent      text NOT NULL,
   ground_id     uuid REFERENCES ground(id) ON DELETE SET NULL,
   starts_at     timestamptz NOT NULL,
@@ -279,11 +307,25 @@ CREATE TABLE match (
   -- overs" would be false. What is always false is a hockey match with an
   -- over count.
   CONSTRAINT cricket_states_its_format CHECK (sport <> 'cricket' OR format IS NOT NULL),
-  CONSTRAINT overs_are_a_cricket_unit  CHECK (sport =  'cricket' OR overs  IS NULL)
+  CONSTRAINT overs_are_a_cricket_unit  CHECK (sport =  'cricket' OR overs  IS NULL),
+  -- Both halves of the away side or neither. A school with no team named is
+  -- not a side — it would anchor the away read at a school and a NULL team,
+  -- and under the asymmetric NULL rule a NULL team on a RESOURCE narrows, so
+  -- every away coach would silently read nothing while the row looked right.
+  CONSTRAINT away_side_is_named_in_full CHECK ((away_school_id IS NULL) = (away_team_code IS NULL)),
+  -- A fixture against yourself. Cheap to write and it has to be here: the away
+  -- read anchors would otherwise make the home team's own assignment satisfy
+  -- both sides, and a coach could name the opposition's XI.
+  CONSTRAINT not_playing_yourself CHECK (
+    away_school_id IS NULL OR away_school_id <> school_id OR away_team_code IS DISTINCT FROM team_code)
 );
 CREATE INDEX ON match (school_id);
 CREATE INDEX ON match (school_id, starts_at DESC);
 CREATE INDEX ON match (school_id, sport, starts_at DESC);
+-- The away side's own fixture list, which is a read as common as the home
+-- one once both schools are on the platform.
+CREATE INDEX ON match (away_school_id, away_team_code, starts_at DESC)
+  WHERE away_school_id IS NOT NULL;
 
 -- Which players are in a match squad. The scoring event log references
 -- players directly, so this is the team sheet, not a scoring structure.

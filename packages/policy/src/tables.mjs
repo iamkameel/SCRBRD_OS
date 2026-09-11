@@ -196,6 +196,29 @@ export const TABLES = {
     read:  "fixture.read",
     write: "fixture.update",
     anchors: { school: "school_id", team: "team_code", fixture: "id" },
+    // BOTH SCHOOLS READ ONE FIXTURE.
+    //
+    // The same capability, asked at the away side's scope. A fixture between
+    // two tenants is a single row, and the away school's coaches, parents and
+    // scorer need it on their fixture list exactly as the home school's do —
+    // without it, the second school on the platform cannot see the match it is
+    // playing, which would push everyone straight back to keeping their own
+    // copy.
+    //
+    // The question asked of the away anchors is identical to the one asked of
+    // the home anchors: does this person hold fixture.read over THAT school and
+    // team? So nothing is widened for anybody — an away school whose coaches
+    // hold no fixture.read still sees nothing — and the predicate stays a
+    // disjunction of scoped capability checks rather than an SQL exception.
+    // See readPredicate() in generate-rls.mjs.
+    //
+    // Only the read has a second scope. WRITE stays anchored on the home side
+    // alone: whoever hosts owns the fixture record, and an away school that
+    // could edit it could move the venue or the time of somebody else's
+    // Saturday. Asking to change it is a conversation, not a permission.
+    readAnchors: [
+      { school: "away_school_id", team: "away_team_code", fixture: "id" },
+    ],
     masked: {},
   },
 
@@ -226,9 +249,24 @@ export const TABLES = {
     // everyone rather than fail open, and the squad would simply never load.
     read:  "player.profile.read",
     write: "team.select",
+    // THE ANCHOR FOLLOWS THE SIDE, which it has to now that a fixture can have
+    // two tenant sides. A home squad row belongs to the home school and team; an
+    // away squad row belongs to the away school and team. Anchoring both on the
+    // home side would mean an away coach could not name their own XI on the
+    // shared fixture — and, worse, that a home coach holding team.select could
+    // name the opposition's.
+    //
+    // Written as a CASE inside the anchor expression rather than as two
+    // policies, because the anchors are what app_can() is asked about and the
+    // row itself says which side it is on. For a fixture whose away side is not
+    // a tenant, away_school_id is NULL and an away row therefore anchors at a
+    // NULL school — which NARROWS under the asymmetric NULL rule, so nobody can
+    // write a team sheet for a school SCRBRD does not host. That is the right
+    // answer: their roster is their own school's business, exactly as their
+    // registration and eligibility are.
     anchors: {
-      school:  "(SELECT m.school_id FROM match m WHERE m.id = match_squad.match_id)",
-      team:    "(SELECT m.team_code FROM match m WHERE m.id = match_squad.match_id)",
+      school:  "(SELECT CASE WHEN match_squad.side = 'away' THEN m.away_school_id ELSE m.school_id END FROM match m WHERE m.id = match_squad.match_id)",
+      team:    "(SELECT CASE WHEN match_squad.side = 'away' THEN m.away_team_code ELSE m.team_code END FROM match m WHERE m.id = match_squad.match_id)",
       person:  "player_id",
       fixture: "match_id",
     },

@@ -138,7 +138,7 @@ CREATE POLICY injury_update ON injury
   FOR UPDATE USING (app_can('medical.write', injury.school_id, (SELECT p.team_code FROM player p WHERE p.id = injury.player_id), injury.player_id, '00000000-0000-0000-0000-000000000000'::uuid))
            WITH CHECK (app_can('medical.write', injury.school_id, (SELECT p.team_code FROM player p WHERE p.id = injury.player_id), injury.player_id, '00000000-0000-0000-0000-000000000000'::uuid));
 
--- match — read: fixture.read · write: fixture.update
+-- match — read: fixture.read (from 2 scopes) · write: fixture.update
 ALTER TABLE match ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS match_read   ON match;
 DROP POLICY IF EXISTS match_insert ON match;
@@ -146,7 +146,8 @@ DROP POLICY IF EXISTS match_update ON match;
 DROP POLICY IF EXISTS match_delete ON match;
 
 CREATE POLICY match_read ON match
-  FOR SELECT USING (app_can('fixture.read', match.school_id, match.team_code, '00000000-0000-0000-0000-000000000000'::uuid, match.id));
+  FOR SELECT USING ((app_can('fixture.read', match.school_id, match.team_code, '00000000-0000-0000-0000-000000000000'::uuid, match.id))
+    OR app_can('fixture.read', match.away_school_id, match.away_team_code, '00000000-0000-0000-0000-000000000000'::uuid, match.id));
 
 CREATE POLICY match_insert ON match
   FOR INSERT WITH CHECK (app_can('fixture.update', match.school_id, match.team_code, '00000000-0000-0000-0000-000000000000'::uuid, match.id));
@@ -180,14 +181,14 @@ DROP POLICY IF EXISTS match_squad_update ON match_squad;
 DROP POLICY IF EXISTS match_squad_delete ON match_squad;
 
 CREATE POLICY match_squad_read ON match_squad
-  FOR SELECT USING (app_can('player.profile.read', (SELECT m.school_id FROM match m WHERE m.id = match_squad.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_squad.match_id), match_squad.player_id, match_squad.match_id));
+  FOR SELECT USING (app_can('player.profile.read', (SELECT CASE WHEN match_squad.side = 'away' THEN m.away_school_id ELSE m.school_id END FROM match m WHERE m.id = match_squad.match_id), (SELECT CASE WHEN match_squad.side = 'away' THEN m.away_team_code ELSE m.team_code END FROM match m WHERE m.id = match_squad.match_id), match_squad.player_id, match_squad.match_id));
 
 CREATE POLICY match_squad_insert ON match_squad
-  FOR INSERT WITH CHECK (app_can('team.select', (SELECT m.school_id FROM match m WHERE m.id = match_squad.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_squad.match_id), match_squad.player_id, match_squad.match_id));
+  FOR INSERT WITH CHECK (app_can('team.select', (SELECT CASE WHEN match_squad.side = 'away' THEN m.away_school_id ELSE m.school_id END FROM match m WHERE m.id = match_squad.match_id), (SELECT CASE WHEN match_squad.side = 'away' THEN m.away_team_code ELSE m.team_code END FROM match m WHERE m.id = match_squad.match_id), match_squad.player_id, match_squad.match_id));
 
 CREATE POLICY match_squad_update ON match_squad
-  FOR UPDATE USING (app_can('team.select', (SELECT m.school_id FROM match m WHERE m.id = match_squad.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_squad.match_id), match_squad.player_id, match_squad.match_id))
-           WITH CHECK (app_can('team.select', (SELECT m.school_id FROM match m WHERE m.id = match_squad.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_squad.match_id), match_squad.player_id, match_squad.match_id));
+  FOR UPDATE USING (app_can('team.select', (SELECT CASE WHEN match_squad.side = 'away' THEN m.away_school_id ELSE m.school_id END FROM match m WHERE m.id = match_squad.match_id), (SELECT CASE WHEN match_squad.side = 'away' THEN m.away_team_code ELSE m.team_code END FROM match m WHERE m.id = match_squad.match_id), match_squad.player_id, match_squad.match_id))
+           WITH CHECK (app_can('team.select', (SELECT CASE WHEN match_squad.side = 'away' THEN m.away_school_id ELSE m.school_id END FROM match m WHERE m.id = match_squad.match_id), (SELECT CASE WHEN match_squad.side = 'away' THEN m.away_team_code ELSE m.team_code END FROM match m WHERE m.id = match_squad.match_id), match_squad.player_id, match_squad.match_id));
 
 -- competition — read: competition.read · write: competition.manage
 -- plus a named exception on read — see readPredicate() in generate-rls.mjs

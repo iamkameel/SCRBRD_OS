@@ -74,13 +74,14 @@ const anchor = (table, def, key, cast) => {
  */
 const capExpr = (c) => (isCapabilityExpression(c) ? c : q(c));
 
-const callCan = (table, def, capability) => {
+const callCan = (table, def, capability, anchors = def.anchors) => {
+  const at = { ...def, anchors };
   const args = [
     capExpr(capability),
-    anchor(table, def, "school", "uuid"),
-    anchor(table, def, "team", "text"),
-    anchor(table, def, "person", "uuid"),
-    anchor(table, def, "fixture", "uuid"),
+    anchor(table, at, "school", "uuid"),
+    anchor(table, at, "team", "text"),
+    anchor(table, at, "person", "uuid"),
+    anchor(table, at, "fixture", "uuid"),
   ];
   return `app_can(${args.join(", ")})`;
 };
@@ -426,15 +427,35 @@ const readPredicate = (table, def) => {
   const can = def.readAlso
     ? `${callCan(table, def, def.read)}\n       AND ${callCan(table, def, def.readAlso)}`
     : callCan(table, def, def.read);
-  if (!def.visibleWhen) return can;
-  return `(${can})\n    OR (${def.visibleWhen.trim()})`;
+
+  // `readAnchors` — THE SAME CAPABILITY, ASKED AT A SECOND SCOPE.
+  //
+  // A fixture between two SCRBRD schools is one row, and both schools must be
+  // able to read it. The home side's anchors are on the row; the away side's
+  // are different columns of the same row, and the question asked of them is
+  // identical: does this person hold fixture.read over THAT school and team?
+  //
+  // Deliberately not `visibleWhen`, which takes raw SQL and can widen a policy
+  // to anything its author writes. This can only ever ask app_can() again, at
+  // anchors declared the same way the first set is — so a second side cannot
+  // become a bypass, and the whole predicate is still nothing but a disjunction
+  // of scoped capability checks. An away school with no fixture.read over its
+  // own team sees nothing.
+  //
+  // OR-ed, and parenthesised around the AND above, because getting that
+  // precedence wrong would let a second scope bypass a readAlso requirement.
+  const sides = (def.readAnchors ?? []).map((a) => callCan(table, def, def.read, a));
+  const scoped = sides.length ? `(${can})\n    OR ${sides.join("\n    OR ")}` : can;
+
+  if (!def.visibleWhen) return scoped;
+  return `(${scoped})\n    OR (${def.visibleWhen.trim()})`;
 };
 
 function tablePolicies() {
   const out = [banner("Per-table row-level security")];
   for (const [table, def] of Object.entries(TABLES)) {
     out.push(`
--- ${table} — read: ${def.read}${def.readAlso ? ` AND ${def.readAlso}` : ""} · write: ${def.write}${def.visibleWhen ? "\n-- plus a named exception on read — see readPredicate() in generate-rls.mjs" : ""}
+-- ${table} — read: ${def.read}${def.readAlso ? ` AND ${def.readAlso}` : ""}${def.readAnchors ? ` (from ${def.readAnchors.length + 1} scopes)` : ""} · write: ${def.write}${def.visibleWhen ? "\n-- plus a named exception on read — see readPredicate() in generate-rls.mjs" : ""}
 ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS ${table}_read   ON ${table};
 DROP POLICY IF EXISTS ${table}_insert ON ${table};

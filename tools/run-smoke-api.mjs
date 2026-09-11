@@ -76,6 +76,9 @@ const WALKS = [
   // product turns out to be sport-agnostic, and cricket's machinery is
   // cricket's.
   "sport",
+  // One fixture, two schools — and a route to arrange one, which the product
+  // had never had.
+  "fixture",
 ];
 
 // Walks that drive a real browser AND need a database. They need two things

@@ -3732,3 +3732,161 @@ DROP TRIGGER IF EXISTS match_sport_stays_put ON match;
 CREATE TRIGGER match_sport_stays_put
   BEFORE UPDATE ON match
   FOR EACH ROW EXECUTE FUNCTION match_sport_is_frozen_once_played();
+
+-- ── One fixture, two schools ─────────────────────────────────────
+--
+-- `match.away_school_id` / `away_team_code` name the away side when it is a
+-- SCRBRD tenant; `opponent` carries the name either way. The read policy is
+-- generated and asks fixture.read at BOTH sides' scopes — see the note on
+-- `readAnchors` in packages/policy/src/tables.mjs. What is left for this file
+-- is keeping the display name honest and stopping the two halves diverging.
+
+/**
+ * When the away side is a tenant, its name is not typed — it is stamped.
+ *
+ * `opponent` stays NOT NULL and stays the thing every read displays, which is
+ * what let this land without touching the fixture list, the scorecard header,
+ * the broadcast overlay or the derby record. But a typed name beside a school
+ * id is two sources of truth for one fact, and the typed one will drift: a
+ * school renames itself, somebody abbreviates, and the derby read — which
+ * groups on the string — starts counting one rival as two.
+ *
+ * So when away_school_id is set, opponent is DERIVED and any supplied value is
+ * replaced. Not refused: a route that sent both a school id and the name it
+ * knew is not making a mistake worth failing a Saturday over, and the stamp
+ * makes the argument moot.
+ *
+ * SECURITY DEFINER because it reads `school`, which is scoped to the tenants
+ * the caller is attached to. A sportsmaster arranging a fixture against a
+ * school they have no assignment at cannot see that school's row — so under
+ * the caller's own policies the lookup would find nothing, the name would come
+ * out NULL, and the NOT NULL would refuse a perfectly legitimate fixture with
+ * a message about a missing opponent.
+ */
+CREATE OR REPLACE FUNCTION match_away_side_label() RETURNS trigger AS $$
+DECLARE v_name text;
+BEGIN
+  IF NEW.away_school_id IS NULL THEN RETURN NEW; END IF;
+  SELECT s.name INTO v_name FROM school s WHERE s.id = NEW.away_school_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'no such school: %', NEW.away_school_id
+      USING ERRCODE = 'foreign_key_violation';
+  END IF;
+  -- "Michaelhouse 1XI" rather than "Michaelhouse": the fixture is against a
+  -- named side, and a school fields eleven of them on a Saturday.
+  NEW.opponent := v_name || ' ' || NEW.away_team_code;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS match_away_side_is_named ON match;
+CREATE TRIGGER match_away_side_is_named
+  BEFORE INSERT OR UPDATE ON match
+  FOR EACH ROW EXECUTE FUNCTION match_away_side_label();
+
+/**
+ * The away side of a played fixture is frozen, like its sport.
+ *
+ * Once there is a ball log, every derived figure — the scorecard, the ladder,
+ * the head-to-head, a boy's average against that school — was computed against
+ * whoever the away side was. Re-pointing it afterwards silently re-attributes
+ * a season's cricket to a school that never played it.
+ *
+ * The home side is already immutable in practice, because school_id and
+ * team_code are the fixture's own scope anchors and changing them would move
+ * the row out from under the assignment that may write it. This says the same
+ * thing about the other half, out loud.
+ */
+CREATE OR REPLACE FUNCTION match_away_side_is_frozen_once_played() RETURNS trigger AS $$
+BEGIN
+  IF NEW.away_school_id IS NOT DISTINCT FROM OLD.away_school_id
+     AND NEW.away_team_code IS NOT DISTINCT FROM OLD.away_team_code THEN
+    RETURN NEW;
+  END IF;
+  IF EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = NEW.id) THEN
+    RAISE EXCEPTION
+      'this fixture already has a ball log; the side it was played against cannot change'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS match_away_side_stays_put ON match;
+CREATE TRIGGER match_away_side_stays_put
+  BEFORE UPDATE ON match
+  FOR EACH ROW EXECUTE FUNCTION match_away_side_is_frozen_once_played();
+
+/**
+ * A squad row's side must be a side this fixture actually has.
+ *
+ * match_squad.side is 'home' or 'away' and its anchors now follow it (see
+ * tables.mjs). For a fixture whose away side is not a tenant, an away row
+ * anchors at a NULL school and the policy refuses it — which is correct, and
+ * is a refusal whose REASON is worth stating rather than leaving as
+ * "not permitted": the opposition's team sheet belongs to the opposition.
+ *
+ * SECURITY DEFINER for the reason every check here is: a check that cannot see
+ * the fixture it is checking passes, and a silent pass is worse than a refusal.
+ */
+CREATE OR REPLACE FUNCTION match_squad_side_exists() RETURNS trigger AS $$
+DECLARE v_away uuid;
+BEGIN
+  IF NEW.withdrawn THEN RETURN NEW; END IF;
+  IF NEW.side <> 'away' THEN RETURN NEW; END IF;
+  SELECT m.away_school_id INTO v_away FROM match m WHERE m.id = NEW.match_id;
+  IF v_away IS NULL THEN
+    RAISE EXCEPTION
+      'this fixture''s away side is not a school on SCRBRD, so its team sheet is not ours to name'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS match_squad_side_is_real ON match_squad;
+CREATE TRIGGER match_squad_side_is_real
+  BEFORE INSERT OR UPDATE ON match_squad
+  FOR EACH ROW EXECUTE FUNCTION match_squad_side_exists();
+
+/**
+ * How a side is written on a fixture list, from either end of it.
+ *
+ * A SHARED FIXTURE CREATES A PROBLEM THE OLD ONE DID NOT HAVE. `school` is
+ * scoped to the tenants a person is attached to — correctly; the tenant list is
+ * not public — and the away school's coaches are attached to their own school,
+ * not to the host's. So the moment a Westville coach can read a
+ * Hilton-hosted fixture, they can read a row naming a school they cannot
+ * resolve, and their fixture list says "a match against Westville 1XI" with no
+ * indication of who is hosting.
+ *
+ * SECURITY DEFINER, returning THE NAME AND NOTHING ELSE. That is the whole
+ * disclosure: a school's name and the side it has fielded, which is already on
+ * every team sheet, every league ladder and every public scoreboard this
+ * product draws. It does not return the tenant list, and it answers only about
+ * an id the caller already holds — which they only hold by having read a
+ * fixture that names it.
+ */
+CREATE OR REPLACE FUNCTION fixture_side_label(p_school uuid, p_team text)
+RETURNS text AS $$
+  SELECT CASE
+           WHEN p_school IS NULL THEN NULL
+           WHEN p_team IS NULL THEN (SELECT s.name FROM school s WHERE s.id = p_school)
+           ELSE (SELECT s.name || ' ' || p_team FROM school s WHERE s.id = p_school)
+         END
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION fixture_side_label(uuid, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION fixture_side_label(uuid, text) TO PUBLIC;
+
+-- Stamped through the same function the reads display, so the derived name and
+-- the displayed name cannot come out differently.
+CREATE OR REPLACE FUNCTION match_away_side_label() RETURNS trigger AS $$
+DECLARE v_label text;
+BEGIN
+  IF NEW.away_school_id IS NULL THEN RETURN NEW; END IF;
+  v_label := fixture_side_label(NEW.away_school_id, NEW.away_team_code);
+  IF v_label IS NULL THEN
+    RAISE EXCEPTION 'no such school: %', NEW.away_school_id
+      USING ERRCODE = 'foreign_key_violation';
+  END IF;
+  NEW.opponent := v_label;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;

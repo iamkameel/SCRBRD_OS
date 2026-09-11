@@ -42,6 +42,7 @@ import { assessmentRoutes, accessRequestRoutes, developmentNoteRoutes, guardianL
 import { sessionRoutes } from "./realtime/session-routes.mjs";
 import { deviceRoutes, notificationRoutes, transportFor } from "./notify/push-api.mjs";
 import { rewardWeightRoutes } from "./rewards/weights-api.mjs";
+import { fixtureRoutes } from "./write/fixture-api.mjs";
 import { MatchHub } from "./realtime/realtime.mjs";
 
 const PORT = Number(process.env.PORT || 8787);
@@ -205,6 +206,9 @@ const notices  = notificationRoutes({ pool, secret: SECRET, transport: pushOut }
 // The rewards algorithm's coefficients. Write-only by design — see
 // services/api/rewards/weights-api.mjs for why there is no matching read.
 const rewards  = rewardWeightRoutes({ pool, secret: SECRET });
+// Arranging a fixture, which had no route at all — fixture.update was a
+// capability in five roles with nothing it could act on.
+const fixtures = fixtureRoutes({ pool, secret: SECRET });
 
 /**
  * Development sign-in.
@@ -324,6 +328,7 @@ const MATCH_ROUTES = [
   // Putting a published notice in front of people. Keyed on the notice, so it
   // rides the id-bearing table rather than SCOUT_ROUTES.
   [/^\/api\/notifications\/([^/]+)\/push$/,       "POST", notices.push],
+  [/^\/api\/fixtures\/([^/]+)$/,                  "POST", fixtures.amend],
 ];
 
 // Routes keyed on a player rather than a match. Same shape, same shim.
@@ -373,6 +378,10 @@ const SCOUT_ROUTES = [
   [/^\/api\/devices\/retire$/,                             "POST", devices.retire],
   // Publishing a notice, which until now had a policy and no route at all.
   [/^\/api\/notifications$/,                               "POST", notices.publish],
+  // The fixture itself. NOT module-gated: arranging a match is the product,
+  // not a module somebody may switch off — and the sport it is in is gated in
+  // the database, which catches a seed and an import too.
+  [/^\/api\/fixtures$/,                                    "POST", fixtures.create],
   [/^\/api\/sponsors$/,                                    "POST", sponsors.create, "sponsors"],
   [/^\/api\/sponsorships$/,                                "POST", sponsors.place,  "sponsors"],
 ];
