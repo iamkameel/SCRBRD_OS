@@ -117,10 +117,27 @@ const NAV_CAPABILITY = {
   logistics:     "transport.read",
   calendar:      "fixture.read",
   fields:        "facility.read",
+  // The same capability the appointments themselves are read under. Nav mirrors
+  // the API; the API is the security — a destination that appears for somebody
+  // who may not read a fixture would show them an empty screen, not a leak,
+  // but it would still be the browser making a claim about authority.
+  officials:     "fixture.read",
   staff:         "user.read",
+  // The read capability the sponsors themselves are read under, not the manage
+  // one: a director of sport who may see which boards are committed but may
+  // not sign a brand still needs the destination. What they can DO once there
+  // is decided by the same capability twice — once for the button, once, and
+  // authoritatively, by the INSERT policy.
+  sponsors:      "sponsorship.read",
   notifications: null,
   settings:      null,
   management:    "user.role.assign",
+  // The modules screen. Gated by the capability that can HIDE a module rather
+  // than the one that can grant one, because that is the wider of the two — a
+  // platform administrator holds both. Not itself a switchable module: a
+  // destination you can turn off and then cannot reach to turn back on is a
+  // destination nobody can recover.
+  modules:       "school.feature.manage",
   rulebook:      null,
   pitchdeck:     "platform.tenant.manage",
 };
@@ -182,10 +199,13 @@ const NAV_META = {
   logistics:    { icon:"🚌",  label:"Logistics"    },
   calendar:     { icon:"📅",  label:"Calendar"     },
   fields:       { icon:"🌿",  label:"Fields"       },
+  officials:    { icon:"🧑‍⚖️", label:"Officials"    },
   staff:        { icon:"🔧",  label:"Staff"        },
+  sponsors:     { icon:"🤝",  label:"Sponsors"     },
   notifications:{ icon:"🔔",  label:"Alerts"       },
   settings:     { icon:"⚙️",  label:"Settings"     },
   management:   { icon:"🛠️",  label:"Management"   },
+  modules:      { icon:"🎛",  label:"Modules"      },
   rulebook:     { icon:"📖",  label:"Rulebook"     },
   pitchdeck:    { icon:"📐",  label:"Pitch Deck"   },
 };

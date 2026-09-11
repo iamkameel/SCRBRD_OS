@@ -147,6 +147,33 @@ export const TREE = Object.freeze({
     "concentration", "composure", "decisions", "anticipation", "determination",
     "bravery", "leadership", "teamwork", "workRate", "gameAwareness",
   ],
+  // A FOURTH group, where Football Manager has three.
+  //
+  // FM folds game-craft into `mental`, and for football that holds. Cricket is
+  // more tactical than the model allows for: a batter who rotates strike well
+  // and one who is merely composed are different players, and a coach who can
+  // only say "his mentality is good" has lost the distinction that decides
+  // whether he bats at four.
+  //
+  // `mental` was also already the largest and least coherent group — ten
+  // attributes spanning concentration, courage and leadership. Adding four more
+  // would have made it fourteen and vaguer still. Splitting game-craft out
+  // improves what is left behind as much as it adds anything.
+  //
+  // `gameAwareness` deliberately STAYS in mental. It is a disposition — does he
+  // read a game — where these four are executable skills that can be coached
+  // and drilled. Keeping it also means no assessment already recorded has to
+  // move groups, which is a data migration this change does not need.
+  tactical: [
+    // With the bat: turning ones into twos, and knowing when not to.
+    "strikeRotation",
+    // Reading who you are up against, before and during.
+    "oppositionAnalysis",
+    // Setting a field to a plan, and bowling to the field you set.
+    "fieldPlacement",
+    // The last five overs are their own game, at both ends.
+    "deathOversExecution",
+  ],
   physical: [
     "pace", "acceleration", "agility", "balance", "stamina", "strength",
     "naturalFitness", "bowlingPace",
@@ -173,15 +200,18 @@ export const DISCIPLINES = Object.freeze({
     "technical.footwork", "technical.timing", "technical.power", "technical.shotRange",
     "technical.defence", "technical.againstPace", "technical.againstSpin",
     "mental.concentration", "mental.composure", "mental.decisions", "mental.bravery",
+    "tactical.strikeRotation", "tactical.oppositionAnalysis", "tactical.deathOversExecution",
   ]),
   bowling: Object.freeze([
     "technical.lineAndLength", "technical.seamAndSwing", "technical.spin",
     "technical.variations", "physical.bowlingPace", "physical.stamina",
     "mental.concentration", "mental.composure",
+    "tactical.oppositionAnalysis", "tactical.fieldPlacement", "tactical.deathOversExecution",
   ]),
   fielding: Object.freeze([
     "technical.catching", "technical.groundFielding", "technical.throwing",
     "mental.anticipation", "physical.agility", "physical.acceleration",
+    "tactical.fieldPlacement",
   ]),
   keeping: Object.freeze([
     "technical.glovework", "technical.catching",

@@ -165,7 +165,12 @@ group("H. A draft is not an anchor");
   ok("a drafted attribute still counts as unanchored",
      draftedSkills().every((k) => unanchoredSkills().includes(k)));
   ok("...so the gate is still shut", rubricIsReady() === false);
-  ok("...and it is shut for a reason, not by accident", unanchoredSkills().length === 32);
+  // Derived, not a magic number. The count was hard-coded at 32 and adding the
+  // tactical group made it wrong — which is a test failing because the model
+  // grew, not because anything broke. What the assertion means is that every
+  // attribute is accounted for exactly once: anchored, or outstanding.
+  ok("...and it is shut for a reason, not by accident",
+     unanchoredSkills().length === allSkills().length - Object.keys(ANCHORS).length);
 
   // Anything showing an anchor is obliged to say which kind it got.
   ok("an approved anchor reports itself as authored",

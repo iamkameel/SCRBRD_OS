@@ -182,6 +182,271 @@ function asWeather(r) {
            forecast: r.forecast, playable: r.playable, live: true };
 }
 
+/**
+ * An appointment: who stood, at which fixture, in what duty.
+ *
+ * `person_name` is the name AS APPOINTED and is stored on the row rather than
+ * joined — see match_official in db/08. So a directory built from these needs
+ * no second read and cannot show a blank where an umpire should be.
+ */
+function asOfficial(r) {
+  return { matchId: r.match_id, duty: r.duty, name: r.person_name,
+           personId: r.person_id, panel: r.panel, appointedAt: r.appointed_at, live: true };
+}
+
+/**
+ * The groundsman's record of a ground. Absent fields are absent, never zeroed:
+ * a square nobody measured has no moisture reading, and 0% would be a claim
+ * that it is bone dry.
+ */
+function asGroundCondition(r) {
+  return { groundId: r.ground_id, moisturePct: r.moisture_pct, grassMm: r.grass_mm,
+           roller: r.roller, outfield: r.outfield, drainageMin: r.drainage_min,
+           lastRolled: r.last_rolled ? String(r.last_rolled).slice(0, 10) : null,
+           lastMown: r.last_mown ? String(r.last_mown).slice(0, 10) : null,
+           notes: r.notes, reportedAt: r.reported_at, live: true };
+}
+
+/**
+ * A sponsor, as the school office signed them.
+ *
+ * `categoryPermitted` and `categoryNote` ride along from the join. They are
+ * not decoration: a brand signed under a category that is later prohibited
+ * stays on the row, and a screen that showed it without saying so would be
+ * telling a school everything is fine.
+ */
+function asSponsor(r) {
+  return { id: r.id, name: r.name, category: r.category,
+           logoText: r.logo_text, logoBg: r.logo_bg, active: r.active,
+           categoryPermitted: r.category_permitted, categoryNote: r.category_note,
+           live: true };
+}
+
+/** The vocabulary, permitted and refused alike — the refused ones carry why. */
+function asSponsorCategory(r) {
+  return { name: r.name, permitted: r.permitted, note: r.note, live: true };
+}
+
+/**
+ * A placement, WITH THE TERMS POSSIBLY ABSENT.
+ *
+ * contractValueZar and schoolSharePct arrive null for anybody without
+ * sponsorship.finance.read, masked per row inside sponsorship_masked. This
+ * adapter does NOT substitute a zero or a dash for them, and the distinction
+ * it cannot make — masked from this reader, versus never recorded — is one the
+ * screen has to make for itself. See SponsorsView for how.
+ */
+function asSponsorship(r) {
+  return { id: r.id, sponsorId: r.sponsor_id, sponsorName: r.sponsor_name,
+           category: r.category, logoText: r.logo_text, logoBg: r.logo_bg,
+           placement: r.placement, matchId: r.match_id,
+           exclusive: r.exclusive === true, exclusiveScope: r.exclusive_scope,
+           competitionId: r.competition_id, waived: r.waived === true,
+           startsOn: r.starts_on ? String(r.starts_on).slice(0, 10) : null,
+           endsOn:   r.ends_on   ? String(r.ends_on).slice(0, 10)   : null,
+           contractValueZar: r.contract_value_zar == null ? null : Number(r.contract_value_zar),
+           schoolSharePct:   r.school_share_pct   == null ? null : Number(r.school_share_pct),
+           agreedAt: r.agreed_at, running: r.is_running === true, live: true };
+}
+
+/**
+ * One switchable thing, with its three levels reported separately.
+ *
+ * Nothing is collapsed here. `resolved` is the server's own answer and the
+ * only one a screen should act on; platformDefault, schoolGranted and the
+ * suppressions are how it came to be that way, and an administrator staring at
+ * one boolean cannot tell which conversation they are in.
+ */
+function asModuleSetting(r) {
+  return { key: r.key, kind: r.kind, label: r.label,
+           platform_default: r.platform_default, locked: r.locked, reason: r.reason,
+           school_granted: r.school_granted, grantNote: r.grant_note,
+           school_hidden: r.school_hidden, people_hidden: r.people_hidden,
+           resolved: r.resolved, changedAt: r.changed_at, live: true };
+}
+
+/** Who a module is hidden from at one school, and why. */
+function asModuleSuppression(r) {
+  return { key: r.key, school: r.school_id, personId: r.person_id,
+           personName: r.person_name, reason: r.reason, hiddenAt: r.hidden_at, live: true };
+}
+
+/** What is on for THIS session, already resolved across every school they belong to. */
+function asMyFeature(r) {
+  return { key: r.key, kind: r.kind, label: r.label, enabled: r.enabled === true, live: true };
+}
+
+/**
+ * A vehicle in the school's fleet.
+ *
+ * Absent fields stay absent. A bus with no recorded service date has no
+ * service date — not one in 1970, and not "due", which is what a zero would
+ * have read as on the Logistics screen.
+ */
+function asVehicle(r) {
+  return { id: r.id, reg: r.registration, description: r.description, kind: r.kind,
+           capacity: r.capacity, condition: r.condition, active: r.active,
+           nextService: r.next_service_on ? String(r.next_service_on).slice(0, 10) : null,
+           notes: r.notes, school: r.school_id, live: true };
+}
+
+/**
+ * A trip to a fixture. `state` is the server's single word for where the bus
+ * is, derived once in SQL rather than re-derived from three timestamps by
+ * every screen that draws it.
+ */
+function asTrip(r) {
+  return { id: r.id, matchId: r.match_id, school: r.school_id,
+           vehicleId: r.vehicle_id, reg: r.registration,
+           vehicleDescription: r.vehicle_description, capacity: r.capacity, kind: r.kind,
+           driverId: r.driver_id, driverName: r.driver_name,
+           departAt: r.depart_at, returnAt: r.return_at,
+           pickup: r.pickup, seatsTaken: r.seats_taken, notes: r.notes,
+           departedAt: r.departed_at, arrivedAt: r.arrived_at,
+           state: r.state, live: true };
+}
+
+/** One boy's answer about one fixture, and null status means he has not answered. */
+function asAvailability(r) {
+  return { playerId: r.player_id, name: r.full_name, team: r.team_code,
+           status: r.status, reasonKind: r.reason_kind, note: r.note,
+           declaredAt: r.declared_at, selfDeclared: r.self_declared === true,
+           declaredByName: r.declared_by_name,
+           // Deliberately NOT coerced to a boolean. Null is a third answer
+           // here — the school does not run the Injuries module, so no
+           // clinical opinion is being collected — and `=== true` turned that
+           // into "cleared", which is the one reading nothing asserted.
+           clinicallyRestricted: r.clinically_restricted ?? null, live: true };
+}
+
+/**
+ * One sport, with the two facts the shell's hard-coded list conflated.
+ *
+ * `enabled` is whether this school has been granted it. `engine` is how much
+ * of the product exists for it, and the client must show them separately: a
+ * sport can be on with a fixture engine and no scorer, and a badge reading
+ * "live" over that is the promise the old constant was making.
+ */
+function asSport(r) {
+  return { code: r.code, label: r.label, engine: r.engine,
+           enabled: r.enabled === true, fixtures: r.fixtures ?? 0,
+           // Convenience for the shell, derived here rather than in six
+           // components: scoring is the only engine that puts a scorer's
+           // screen behind a sport.
+           scorable: r.engine === "scoring", live: true };
+}
+
+/**
+ * The header of an opposition brief. `open` false with a `reason` is a real
+ * state to render — "opens on the 5th", "the match has started" — not an
+ * error; no row at all means this reader has no standing and the screen
+ * should say nothing.
+ */
+function asOppositionContext(r) {
+  return { matchId: r.match_id, mySide: r.my_side, theirSchool: r.their_school,
+           theirLabel: r.their_label, theirTeam: r.their_team,
+           opensAt: r.opens_at, closesAt: r.closes_at, open: r.open === true,
+           reason: r.reason, gamesAnalysed: r.games_analysed,
+           deliveriesAnalysed: r.deliveries_analysed, dataCutoff: r.data_cutoff, live: true };
+}
+
+/**
+ * One opposition player and the evidence behind each figure. A null
+ * strikeRate is not missing data — it is the floor: fewer than thirty balls
+ * and the number is withheld, with `battingEvidence` saying so. Render an em
+ * dash and the label, never a fallback figure.
+ */
+function asOppositionPlayer(r) {
+  return { playerId: r.player_id, school: r.school_id, name: r.full_name, team: r.team_code,
+           role: r.playing_role, battingStyle: r.batting_style, bowlingStyle: r.bowling_style,
+           batting: { innings: r.innings, balls: r.balls, runs: r.runs, dismissals: r.dismissals,
+                      fours: r.fours, sixes: r.sixes, dots: r.dots,
+                      strikeRate: r.strike_rate == null ? null : Number(r.strike_rate),
+                      dotPct: r.dot_pct == null ? null : Number(r.dot_pct),
+                      evidence: r.batting_evidence },
+           bowling: { balls: r.balls_bowled, runsConceded: r.runs_conceded, wickets: r.wickets,
+                      economy: r.economy == null ? null : Number(r.economy),
+                      evidence: r.bowling_evidence },
+           live: true };
+}
+
+/**
+ * One chapter of where a boy has played. `current` marks the side he is in
+ * now; everything else is history, closed by the move that ended it and
+ * editable by nobody.
+ */
+function asMembership(r) {
+  return { id: r.id, playerId: r.player_id, name: r.full_name,
+           school: r.school_id, sport: r.sport, team: r.team_code,
+           joinedOn: r.joined_on ? String(r.joined_on).slice(0, 10) : null,
+           leftOn: r.left_on ? String(r.left_on).slice(0, 10) : null,
+           reason: r.reason, current: r.current === true, live: true };
+}
+
+/**
+ * One of my own phones. Never anybody else's — see the my_devices read.
+ *
+ * `live` is the registration's state, not a connection: a retired row is kept
+ * because "signed out on the iPad in March" is the answer to "why did I stop
+ * getting alerts", and a settings screen showing only live rows cannot give it.
+ */
+function asDevice(r) {
+  // sessionDeviceId, not deviceId: lib/device.js already exports a deviceId
+  // and the import checker catches the collision — the third time that trap
+  // has been walked into here, after a local named signedIn and an adapter
+  // key named grantedBy.
+  return { id: r.id, platform: r.platform, label: r.label, sessionDeviceId: r.device_id,
+           registeredAt: r.registered_at, lastSeenAt: r.last_seen_at,
+           retiredAt: r.retired_at, retiredReason: r.retired_reason,
+           tokenTail: r.token_tail, active: r.retired_at == null, live: true };
+}
+
+/**
+ * One boy, one fixture, and the three people who have a say.
+ *
+ * `state` is the resolved answer and the components stay beside it, because a
+ * screen has to show which half said no: a restriction is the physio's to lift
+ * and a family's answer is not the coach's to appeal. Nothing in this file
+ * recomputes the state — the resolution happens in Postgres, where the scope
+ * is, and a state invented here would be a fourth opinion.
+ */
+function asReadiness(r) {
+  return { playerId: r.player_id, name: r.full_name, team: r.team_code,
+           state: r.state,
+           declaredStatus: r.declared_status, reasonKind: r.reason_kind,
+           selfDeclared: r.self_declared === true,
+           declaredByName: r.declared_by_name,
+           // Tri-state, as above: true restricted, false cleared, null not asked.
+           clinicallyRestricted: r.clinically_restricted ?? null,
+           returnDate: r.rtw_date ? String(r.rtw_date).slice(0, 10) : null,
+           selected: r.selected === true, side: r.selected_side, battingNo: r.batting_no,
+           conflict: r.conflict, live: true };
+}
+
+/**
+ * An appointment, with the person who made it named.
+ *
+ * granterName is null in two different situations and a screen has to tell
+ * them apart: a row the platform seeded has no granter at all, and a row whose
+ * granter this reader may not look up has one they cannot see. Both arrive as
+ * null; granterId carries the id, so "granted by someone" and "granted by
+ * nobody" stay distinguishable.
+ *
+ * Named granterId rather than grantedBy because rbac/index.js already exports
+ * a grantedBy, and the import checker catches the collision — the same trap a
+ * local named signedIn walked into earlier.
+ */
+function asAssignment(r) {
+  return { id: r.id, personId: r.person_id, personName: r.person_name,
+           role: r.role, school: r.school_id, team: r.team_code, fixture: r.fixture_id,
+           active: r.active === true,
+           validFrom: r.valid_from ? String(r.valid_from).slice(0, 10) : null,
+           validUntil: r.valid_until ? String(r.valid_until).slice(0, 10) : null,
+           grantedAt: r.created_at, granterId: r.created_by, granterName: r.granted_by_name,
+           revokedAt: r.revoked_at, revokerId: r.revoked_by, revokerName: r.revoked_by_name,
+           live: true };
+}
+
 function asInjury(r) {
   return { id: r.id, player: r.player_id, type: r.injury_type, severity: r.severity,
            dateInj: r.date_injured, rtw: r.rtw_date, phase: r.phase,
@@ -292,6 +557,24 @@ const ADAPT = {
   league: asLadderRow,
   competitions: asCompetition,
   weather: asWeather,
+  officials: asOfficial,
+  ground_conditions: asGroundCondition,
+  assignments: asAssignment,
+  vehicles: asVehicle,
+  trips: asTrip,
+  availability: asAvailability,
+  readiness: asReadiness,
+  my_devices: asDevice,
+  memberships: asMembership,
+  opposition_context: asOppositionContext,
+  opposition_squad: asOppositionPlayer,
+  sports: asSport,
+  module_settings: asModuleSetting,
+  module_suppressions: asModuleSuppression,
+  my_features: asMyFeature,
+  sponsors: asSponsor,
+  sponsor_categories: asSponsorCategory,
+  sponsorships: asSponsorship,
   injuries: asInjury,
   skills: asSkill,
   career: asCareer,
@@ -402,7 +685,23 @@ export function useLive(resource, role, nonce = 0) {
         if (!cancelled) setState({ rows: rows.map(ADAPT[resource]), live: true, loading: false, error: null });
       } catch (e) {
         // Deliberately NOT falling back to mock. See above.
-        if (!cancelled) setState({ rows: [], live: false, loading: false, error: e.code || "unreachable" });
+        //
+        // A SWITCHED-OFF MODULE IS NOT A FAILURE, and reporting it as one is
+        // how a setting becomes a support ticket. The API answers 403
+        // module_disabled and names the module; that arrives here as
+        // `disabled` with `error` left null, so every view that already draws
+        // an empty state draws one — and a view that wants to say which module
+        // is off has the key to say it with.
+        //
+        // `live: true` on this branch, deliberately: the server answered. This
+        // is not a session that fell back to the demo fixture, and a screen
+        // that said "sign in to see your school's data" here would be wrong.
+        if (cancelled) return;
+        if (e.status === 403 && e.code === "module_disabled") {
+          setState({ rows: [], live: true, loading: false, error: null, disabled: resource });
+          return;
+        }
+        setState({ rows: [], live: false, loading: false, error: e.code || "unreachable" });
       }
     })();
     return () => { cancelled = true; };

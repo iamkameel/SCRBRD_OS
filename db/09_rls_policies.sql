@@ -138,7 +138,7 @@ CREATE POLICY injury_update ON injury
   FOR UPDATE USING (app_can('medical.write', injury.school_id, (SELECT p.team_code FROM player p WHERE p.id = injury.player_id), injury.player_id, '00000000-0000-0000-0000-000000000000'::uuid))
            WITH CHECK (app_can('medical.write', injury.school_id, (SELECT p.team_code FROM player p WHERE p.id = injury.player_id), injury.player_id, '00000000-0000-0000-0000-000000000000'::uuid));
 
--- match — read: fixture.read · write: fixture.update
+-- match — read: fixture.read (from 2 scopes) · write: fixture.update
 ALTER TABLE match ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS match_read   ON match;
 DROP POLICY IF EXISTS match_insert ON match;
@@ -146,7 +146,8 @@ DROP POLICY IF EXISTS match_update ON match;
 DROP POLICY IF EXISTS match_delete ON match;
 
 CREATE POLICY match_read ON match
-  FOR SELECT USING (app_can('fixture.read', match.school_id, match.team_code, '00000000-0000-0000-0000-000000000000'::uuid, match.id));
+  FOR SELECT USING ((app_can('fixture.read', match.school_id, match.team_code, '00000000-0000-0000-0000-000000000000'::uuid, match.id))
+    OR app_can('fixture.read', match.away_school_id, match.away_team_code, '00000000-0000-0000-0000-000000000000'::uuid, match.id));
 
 CREATE POLICY match_insert ON match
   FOR INSERT WITH CHECK (app_can('fixture.update', match.school_id, match.team_code, '00000000-0000-0000-0000-000000000000'::uuid, match.id));
@@ -180,14 +181,14 @@ DROP POLICY IF EXISTS match_squad_update ON match_squad;
 DROP POLICY IF EXISTS match_squad_delete ON match_squad;
 
 CREATE POLICY match_squad_read ON match_squad
-  FOR SELECT USING (app_can('player.profile.read', (SELECT m.school_id FROM match m WHERE m.id = match_squad.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_squad.match_id), match_squad.player_id, match_squad.match_id));
+  FOR SELECT USING (app_can('player.profile.read', (SELECT CASE WHEN match_squad.side = 'away' THEN m.away_school_id ELSE m.school_id END FROM match m WHERE m.id = match_squad.match_id), (SELECT CASE WHEN match_squad.side = 'away' THEN m.away_team_code ELSE m.team_code END FROM match m WHERE m.id = match_squad.match_id), match_squad.player_id, match_squad.match_id));
 
 CREATE POLICY match_squad_insert ON match_squad
-  FOR INSERT WITH CHECK (app_can('team.select', (SELECT m.school_id FROM match m WHERE m.id = match_squad.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_squad.match_id), match_squad.player_id, match_squad.match_id));
+  FOR INSERT WITH CHECK (app_can('team.select', (SELECT CASE WHEN match_squad.side = 'away' THEN m.away_school_id ELSE m.school_id END FROM match m WHERE m.id = match_squad.match_id), (SELECT CASE WHEN match_squad.side = 'away' THEN m.away_team_code ELSE m.team_code END FROM match m WHERE m.id = match_squad.match_id), match_squad.player_id, match_squad.match_id));
 
 CREATE POLICY match_squad_update ON match_squad
-  FOR UPDATE USING (app_can('team.select', (SELECT m.school_id FROM match m WHERE m.id = match_squad.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_squad.match_id), match_squad.player_id, match_squad.match_id))
-           WITH CHECK (app_can('team.select', (SELECT m.school_id FROM match m WHERE m.id = match_squad.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_squad.match_id), match_squad.player_id, match_squad.match_id));
+  FOR UPDATE USING (app_can('team.select', (SELECT CASE WHEN match_squad.side = 'away' THEN m.away_school_id ELSE m.school_id END FROM match m WHERE m.id = match_squad.match_id), (SELECT CASE WHEN match_squad.side = 'away' THEN m.away_team_code ELSE m.team_code END FROM match m WHERE m.id = match_squad.match_id), match_squad.player_id, match_squad.match_id))
+           WITH CHECK (app_can('team.select', (SELECT CASE WHEN match_squad.side = 'away' THEN m.away_school_id ELSE m.school_id END FROM match m WHERE m.id = match_squad.match_id), (SELECT CASE WHEN match_squad.side = 'away' THEN m.away_team_code ELSE m.team_code END FROM match m WHERE m.id = match_squad.match_id), match_squad.player_id, match_squad.match_id));
 
 -- competition — read: competition.read · write: competition.manage
 -- plus a named exception on read — see readPredicate() in generate-rls.mjs
@@ -330,6 +331,91 @@ CREATE POLICY match_toss_update ON match_toss
   FOR UPDATE USING (app_can('scoring.start', (SELECT m.school_id FROM match m WHERE m.id = match_toss.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_toss.match_id), '00000000-0000-0000-0000-000000000000'::uuid, match_toss.match_id))
            WITH CHECK (app_can('scoring.start', (SELECT m.school_id FROM match m WHERE m.id = match_toss.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_toss.match_id), '00000000-0000-0000-0000-000000000000'::uuid, match_toss.match_id));
 
+-- match_broadcast — read: fixture.read · write: broadcast.publish
+ALTER TABLE match_broadcast ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS match_broadcast_read   ON match_broadcast;
+DROP POLICY IF EXISTS match_broadcast_insert ON match_broadcast;
+DROP POLICY IF EXISTS match_broadcast_update ON match_broadcast;
+DROP POLICY IF EXISTS match_broadcast_delete ON match_broadcast;
+
+CREATE POLICY match_broadcast_read ON match_broadcast
+  FOR SELECT USING (app_can('fixture.read', (SELECT m.school_id FROM match m WHERE m.id = match_broadcast.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_broadcast.match_id), '00000000-0000-0000-0000-000000000000'::uuid, match_broadcast.match_id));
+
+CREATE POLICY match_broadcast_insert ON match_broadcast
+  FOR INSERT WITH CHECK (app_can('broadcast.publish', (SELECT m.school_id FROM match m WHERE m.id = match_broadcast.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_broadcast.match_id), '00000000-0000-0000-0000-000000000000'::uuid, match_broadcast.match_id));
+
+CREATE POLICY match_broadcast_update ON match_broadcast
+  FOR UPDATE USING (app_can('broadcast.publish', (SELECT m.school_id FROM match m WHERE m.id = match_broadcast.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_broadcast.match_id), '00000000-0000-0000-0000-000000000000'::uuid, match_broadcast.match_id))
+           WITH CHECK (app_can('broadcast.publish', (SELECT m.school_id FROM match m WHERE m.id = match_broadcast.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_broadcast.match_id), '00000000-0000-0000-0000-000000000000'::uuid, match_broadcast.match_id));
+
+-- drs_review — read: fixture.read · write: scoring.correct
+ALTER TABLE drs_review ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS drs_review_read   ON drs_review;
+DROP POLICY IF EXISTS drs_review_insert ON drs_review;
+DROP POLICY IF EXISTS drs_review_update ON drs_review;
+DROP POLICY IF EXISTS drs_review_delete ON drs_review;
+
+CREATE POLICY drs_review_read ON drs_review
+  FOR SELECT USING (app_can('fixture.read', (SELECT m.school_id FROM match m WHERE m.id = drs_review.match_id), (SELECT m.team_code FROM match m WHERE m.id = drs_review.match_id), '00000000-0000-0000-0000-000000000000'::uuid, drs_review.match_id));
+
+CREATE POLICY drs_review_insert ON drs_review
+  FOR INSERT WITH CHECK (app_can('scoring.correct', (SELECT m.school_id FROM match m WHERE m.id = drs_review.match_id), (SELECT m.team_code FROM match m WHERE m.id = drs_review.match_id), '00000000-0000-0000-0000-000000000000'::uuid, drs_review.match_id));
+
+CREATE POLICY drs_review_update ON drs_review
+  FOR UPDATE USING (app_can('scoring.correct', (SELECT m.school_id FROM match m WHERE m.id = drs_review.match_id), (SELECT m.team_code FROM match m WHERE m.id = drs_review.match_id), '00000000-0000-0000-0000-000000000000'::uuid, drs_review.match_id))
+           WITH CHECK (app_can('scoring.correct', (SELECT m.school_id FROM match m WHERE m.id = drs_review.match_id), (SELECT m.team_code FROM match m WHERE m.id = drs_review.match_id), '00000000-0000-0000-0000-000000000000'::uuid, drs_review.match_id));
+
+-- derby — read: fixture.read · write: fixture.update
+ALTER TABLE derby ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS derby_read   ON derby;
+DROP POLICY IF EXISTS derby_insert ON derby;
+DROP POLICY IF EXISTS derby_update ON derby;
+DROP POLICY IF EXISTS derby_delete ON derby;
+
+CREATE POLICY derby_read ON derby
+  FOR SELECT USING (app_can('fixture.read', derby.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY derby_insert ON derby
+  FOR INSERT WITH CHECK (app_can('fixture.update', derby.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY derby_update ON derby
+  FOR UPDATE USING (app_can('fixture.update', derby.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
+           WITH CHECK (app_can('fixture.update', derby.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+-- ground_condition — read: facility.read · write: facility.manage
+ALTER TABLE ground_condition ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS ground_condition_read   ON ground_condition;
+DROP POLICY IF EXISTS ground_condition_insert ON ground_condition;
+DROP POLICY IF EXISTS ground_condition_update ON ground_condition;
+DROP POLICY IF EXISTS ground_condition_delete ON ground_condition;
+
+CREATE POLICY ground_condition_read ON ground_condition
+  FOR SELECT USING (app_can('facility.read', (SELECT g.school_id FROM ground g WHERE g.id = ground_condition.ground_id), '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY ground_condition_insert ON ground_condition
+  FOR INSERT WITH CHECK (app_can('facility.manage', (SELECT g.school_id FROM ground g WHERE g.id = ground_condition.ground_id), '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY ground_condition_update ON ground_condition
+  FOR UPDATE USING (app_can('facility.manage', (SELECT g.school_id FROM ground g WHERE g.id = ground_condition.ground_id), '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
+           WITH CHECK (app_can('facility.manage', (SELECT g.school_id FROM ground g WHERE g.id = ground_condition.ground_id), '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+-- match_official — read: fixture.read · write: officiating.assign
+ALTER TABLE match_official ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS match_official_read   ON match_official;
+DROP POLICY IF EXISTS match_official_insert ON match_official;
+DROP POLICY IF EXISTS match_official_update ON match_official;
+DROP POLICY IF EXISTS match_official_delete ON match_official;
+
+CREATE POLICY match_official_read ON match_official
+  FOR SELECT USING (app_can('fixture.read', (SELECT m.school_id FROM match m WHERE m.id = match_official.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_official.match_id), '00000000-0000-0000-0000-000000000000'::uuid, match_official.match_id));
+
+CREATE POLICY match_official_insert ON match_official
+  FOR INSERT WITH CHECK (app_can('officiating.assign', (SELECT m.school_id FROM match m WHERE m.id = match_official.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_official.match_id), '00000000-0000-0000-0000-000000000000'::uuid, match_official.match_id));
+
+CREATE POLICY match_official_update ON match_official
+  FOR UPDATE USING (app_can('officiating.assign', (SELECT m.school_id FROM match m WHERE m.id = match_official.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_official.match_id), '00000000-0000-0000-0000-000000000000'::uuid, match_official.match_id))
+           WITH CHECK (app_can('officiating.assign', (SELECT m.school_id FROM match m WHERE m.id = match_official.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_official.match_id), '00000000-0000-0000-0000-000000000000'::uuid, match_official.match_id));
+
 -- match_pitch_report — read: fixture.read · write: facility.manage
 ALTER TABLE match_pitch_report ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS match_pitch_report_read   ON match_pitch_report;
@@ -346,6 +432,91 @@ CREATE POLICY match_pitch_report_insert ON match_pitch_report
 CREATE POLICY match_pitch_report_update ON match_pitch_report
   FOR UPDATE USING (app_can('facility.manage', (SELECT m.school_id FROM match m WHERE m.id = match_pitch_report.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_pitch_report.match_id), '00000000-0000-0000-0000-000000000000'::uuid, match_pitch_report.match_id))
            WITH CHECK (app_can('facility.manage', (SELECT m.school_id FROM match m WHERE m.id = match_pitch_report.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_pitch_report.match_id), '00000000-0000-0000-0000-000000000000'::uuid, match_pitch_report.match_id));
+
+-- vehicle — read: transport.read · write: transport.manage
+ALTER TABLE vehicle ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS vehicle_read   ON vehicle;
+DROP POLICY IF EXISTS vehicle_insert ON vehicle;
+DROP POLICY IF EXISTS vehicle_update ON vehicle;
+DROP POLICY IF EXISTS vehicle_delete ON vehicle;
+
+CREATE POLICY vehicle_read ON vehicle
+  FOR SELECT USING (app_can('transport.read', vehicle.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY vehicle_insert ON vehicle
+  FOR INSERT WITH CHECK (app_can('transport.manage', vehicle.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY vehicle_update ON vehicle
+  FOR UPDATE USING (app_can('transport.manage', vehicle.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
+           WITH CHECK (app_can('transport.manage', vehicle.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+-- trip — read: transport.read · write: transport.manage
+ALTER TABLE trip ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS trip_read   ON trip;
+DROP POLICY IF EXISTS trip_insert ON trip;
+DROP POLICY IF EXISTS trip_update ON trip;
+DROP POLICY IF EXISTS trip_delete ON trip;
+
+CREATE POLICY trip_read ON trip
+  FOR SELECT USING (app_can('transport.read', (SELECT m.school_id FROM match m WHERE m.id = trip.match_id), (SELECT m.team_code FROM match m WHERE m.id = trip.match_id), '00000000-0000-0000-0000-000000000000'::uuid, trip.match_id));
+
+CREATE POLICY trip_insert ON trip
+  FOR INSERT WITH CHECK (app_can('transport.manage', (SELECT m.school_id FROM match m WHERE m.id = trip.match_id), (SELECT m.team_code FROM match m WHERE m.id = trip.match_id), '00000000-0000-0000-0000-000000000000'::uuid, trip.match_id));
+
+CREATE POLICY trip_update ON trip
+  FOR UPDATE USING (app_can('transport.manage', (SELECT m.school_id FROM match m WHERE m.id = trip.match_id), (SELECT m.team_code FROM match m WHERE m.id = trip.match_id), '00000000-0000-0000-0000-000000000000'::uuid, trip.match_id))
+           WITH CHECK (app_can('transport.manage', (SELECT m.school_id FROM match m WHERE m.id = trip.match_id), (SELECT m.team_code FROM match m WHERE m.id = trip.match_id), '00000000-0000-0000-0000-000000000000'::uuid, trip.match_id));
+
+-- match_availability — read: availability.read · write: availability.declare
+ALTER TABLE match_availability ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS match_availability_read   ON match_availability;
+DROP POLICY IF EXISTS match_availability_insert ON match_availability;
+DROP POLICY IF EXISTS match_availability_update ON match_availability;
+DROP POLICY IF EXISTS match_availability_delete ON match_availability;
+
+CREATE POLICY match_availability_read ON match_availability
+  FOR SELECT USING (app_can('availability.read', (SELECT m.school_id FROM match m WHERE m.id = match_availability.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_availability.match_id), match_availability.player_id, match_availability.match_id));
+
+CREATE POLICY match_availability_insert ON match_availability
+  FOR INSERT WITH CHECK (app_can('availability.declare', (SELECT m.school_id FROM match m WHERE m.id = match_availability.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_availability.match_id), match_availability.player_id, match_availability.match_id));
+
+CREATE POLICY match_availability_update ON match_availability
+  FOR UPDATE USING (app_can('availability.declare', (SELECT m.school_id FROM match m WHERE m.id = match_availability.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_availability.match_id), match_availability.player_id, match_availability.match_id))
+           WITH CHECK (app_can('availability.declare', (SELECT m.school_id FROM match m WHERE m.id = match_availability.match_id), (SELECT m.team_code FROM match m WHERE m.id = match_availability.match_id), match_availability.player_id, match_availability.match_id));
+
+-- sponsor — read: sponsorship.read · write: sponsorship.manage
+ALTER TABLE sponsor ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS sponsor_read   ON sponsor;
+DROP POLICY IF EXISTS sponsor_insert ON sponsor;
+DROP POLICY IF EXISTS sponsor_update ON sponsor;
+DROP POLICY IF EXISTS sponsor_delete ON sponsor;
+
+CREATE POLICY sponsor_read ON sponsor
+  FOR SELECT USING (app_can('sponsorship.read', sponsor.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY sponsor_insert ON sponsor
+  FOR INSERT WITH CHECK (app_can('sponsorship.manage', sponsor.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY sponsor_update ON sponsor
+  FOR UPDATE USING (app_can('sponsorship.manage', sponsor.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
+           WITH CHECK (app_can('sponsorship.manage', sponsor.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+-- sponsorship — read: sponsorship.read · write: sponsorship.manage
+ALTER TABLE sponsorship ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS sponsorship_read   ON sponsorship;
+DROP POLICY IF EXISTS sponsorship_insert ON sponsorship;
+DROP POLICY IF EXISTS sponsorship_update ON sponsorship;
+DROP POLICY IF EXISTS sponsorship_delete ON sponsorship;
+
+CREATE POLICY sponsorship_read ON sponsorship
+  FOR SELECT USING (app_can('sponsorship.read', sponsorship.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY sponsorship_insert ON sponsorship
+  FOR INSERT WITH CHECK (app_can('sponsorship.manage', sponsorship.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY sponsorship_update ON sponsorship
+  FOR UPDATE USING (app_can('sponsorship.manage', sponsorship.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
+           WITH CHECK (app_can('sponsorship.manage', sponsorship.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
 
 -- match_weather — read: fixture.read · write: fixture.update
 ALTER TABLE match_weather ENABLE ROW LEVEL SECURITY;
@@ -551,3 +722,49 @@ BEGIN
     cols);
 END
 $mask_injury$;
+
+-- sponsorship_masked — every column listed explicitly, each sensitive one gated
+-- by its own capability and evaluated PER ROW.
+--
+-- Built from information_schema rather than written as `SELECT t.*, CASE …`:
+-- Postgres rejects a view with a duplicated output column name, so the shorter
+-- form never applied at all. Introspecting also means adding a column to the
+-- table surfaces it here automatically, masked if the policy names it.
+DO $mask_sponsorship$
+DECLARE cols text;
+BEGIN
+  SELECT string_agg(
+           CASE WHEN g.capability IS NOT NULL
+                THEN format('CASE WHEN app_can(%L, %s, %s, %s, NULL) THEN %I ELSE NULL END AS %I',
+                            g.capability,
+                            'sponsorship.school_id',
+                            g.team_anchor,
+                            '''00000000-0000-0000-0000-000000000000''::uuid',
+                            c.column_name, c.column_name)
+                ELSE format('%I', c.column_name)
+           END, ', ' ORDER BY c.ordinal_position)
+    INTO cols
+    FROM information_schema.columns c
+    LEFT JOIN (VALUES ('contract_value_zar', 'sponsorship.finance.read', '''*''::text'), ('school_share_pct', 'sponsorship.finance.read', '''*''::text')) AS g(column_name, capability, team_anchor)
+           ON g.column_name = c.column_name
+   WHERE c.table_schema = 'public' AND c.table_name = 'sponsorship';
+
+  IF cols IS NULL THEN
+    RAISE EXCEPTION 'cannot build sponsorship_masked: table sponsorship not found (apply 00_schema_core.sql first)';
+  END IF;
+
+  EXECUTE format(
+    -- security_invoker is the load-bearing word here, and it is easy to read
+    -- past. A view runs with the permissions of its OWNER unless told
+    -- otherwise, and the owner of this one owns sponsorship too — so row-level
+    -- security on sponsorship was evaluated as a role that bypasses it, and this
+    -- view returned EVERY row in the table to anyone who could select from it.
+    -- Cross-school, cross-tenant, through the one object the read path is
+    -- required to use for personal information. Masking still applied, so a
+    -- leaked row had its sensitive columns nulled and looked entirely correct.
+    -- security_barrier alone does not help: it controls when predicates may be
+    -- pushed down, not whose policies apply.
+    'CREATE OR REPLACE VIEW sponsorship_masked WITH (security_barrier = true, security_invoker = true) AS SELECT %s FROM sponsorship',
+    cols);
+END
+$mask_sponsorship$;

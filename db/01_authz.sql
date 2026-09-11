@@ -2,7 +2,7 @@
 -- GENERATED from packages/policy/ by services/api/rls/generate-rls.mjs — DO NOT EDIT BY HAND.
 -- Regenerate with `pnpm rls:generate`. Applied BEFORE the scoring schema,
 -- which references app_can(). Model: docs/adr/0001-scoped-assignments.md.
--- 61 capabilities across 24 roles.
+-- 73 capabilities across 24 roles.
 
 -- Principal helpers. app_user_id() is set from the signed token on every
 -- request; everything else about a person's authority is looked up.
@@ -12,6 +12,585 @@ CREATE OR REPLACE FUNCTION app_device_id() RETURNS text AS $$
   SELECT nullif(current_setting('app.device_id', true), '') $$ LANGUAGE sql STABLE;
 CREATE OR REPLACE FUNCTION app_player_id() RETURNS uuid AS $$
   SELECT nullif(current_setting('app.player_id', true), '')::uuid $$ LANGUAGE sql STABLE;
+
+-- ══════════════════════════════════════════════════════════════════
+--  The capability catalogue
+-- ══════════════════════════════════════════════════════════════════
+-- Every capability the model defines, as rows, so a column that stores a
+-- capability NAME can have a foreign key onto it — notification.required_capability
+-- is the one that does. Without this, a typo in a published notice becomes a
+-- notification nobody can read, which fails closed but fails silently, and the
+-- person who published it has no way to discover that nobody received it.
+--
+-- Inserted, never deleted: rows here are referenced. A capability retired from
+-- the model leaves its row behind rather than breaking the references to it,
+-- and grants no authority on its own — authority comes from role_capability.
+CREATE TABLE IF NOT EXISTS capability (name text PRIMARY KEY);
+-- Which capabilities belong to no tenant. See PLATFORM_ONLY in
+-- packages/policy/src/capabilities.mjs for the escalation that put this here.
+ALTER TABLE capability ADD COLUMN IF NOT EXISTS platform_only boolean NOT NULL DEFAULT false;
+INSERT INTO capability (name) VALUES
+  ('school.read'),
+  ('school.manage'),
+  ('user.read'),
+  ('user.invite'),
+  ('user.role.assign'),
+  ('audit.read'),
+  ('team.read'),
+  ('team.manage'),
+  ('team.select'),
+  ('availability.read'),
+  ('availability.declare'),
+  ('player.profile.read'),
+  ('player.profile.manage'),
+  ('player.pii.read'),
+  ('player.performance.read'),
+  ('player.performance.write'),
+  ('player.development.read'),
+  ('player.development.write'),
+  ('player.note.read'),
+  ('player.note.write'),
+  ('fixture.read'),
+  ('fixture.create'),
+  ('fixture.update'),
+  ('fixture.cancel'),
+  ('scoring.start'),
+  ('scoring.edit'),
+  ('scoring.finalise'),
+  ('scoring.correct'),
+  ('scoring.amend.approve'),
+  ('officiating.assign'),
+  ('officiating.report'),
+  ('medical.status.read'),
+  ('medical.nature.read'),
+  ('medical.details.read'),
+  ('medical.write'),
+  ('player.roster.read'),
+  ('player.age.read'),
+  ('player.biometric.read'),
+  ('player.identity.read'),
+  ('guardian.link.manage'),
+  ('player.access.request'),
+  ('player.access.grant'),
+  ('discipline.read'),
+  ('discipline.write'),
+  ('transport.read'),
+  ('transport.manage'),
+  ('transport.drive'),
+  ('facility.read'),
+  ('facility.manage'),
+  ('invoice.read'),
+  ('invoice.manage'),
+  ('sponsorship.read'),
+  ('sponsorship.manage'),
+  ('sponsorship.exclusivity.waive'),
+  ('sponsorship.finance.read'),
+  ('competition.read'),
+  ('competition.manage'),
+  ('news.read'),
+  ('news.publish.team'),
+  ('news.publish.school'),
+  ('news.publish.competition'),
+  ('broadcast.publish'),
+  ('analytics.read'),
+  ('opposition.read'),
+  ('scouting.read'),
+  ('scouting.write'),
+  ('platform.health.read'),
+  ('platform.tenant.manage'),
+  ('scouting.accredit'),
+  ('platform.support.impersonate'),
+  ('platform.feature.manage'),
+  ('platform.reward.manage'),
+  ('school.feature.manage')
+ON CONFLICT (name) DO NOTHING;
+-- Set every regeneration, in both directions, so removing a name from
+-- PLATFORM_ONLY actually relaxes the rule rather than leaving a stale true.
+UPDATE capability SET platform_only = (name IN ('platform.health.read', 'platform.tenant.manage', 'platform.support.impersonate', 'platform.feature.manage', 'scouting.accredit', 'platform.reward.manage'));
+
+-- Readable by everyone, writable by nobody but a migration. The names are
+-- already in the client bundle, so there is nothing to protect by hiding them
+-- — but the catalogue must not be writable by the application, or a row could
+-- be added to make a notification's declared capability satisfiable by a role
+-- that was never granted it. RLS is enabled with an open read rather than left
+-- off, so the "no public table has row-level security disabled" assertion in
+-- db/99_rls_verify.sql stays a blanket rule with no exceptions list to drift.
+ALTER TABLE capability ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS capability_read ON capability;
+CREATE POLICY capability_read ON capability FOR SELECT USING (true);
+-- The matching REVOKE of write access lives in db/06_app_role.sql, not here:
+-- scrbrd_app is created there, and this file runs first. Revoking from a role
+-- that does not exist yet is an error on a fresh cluster — and it would not
+-- have been caught locally, because roles are cluster-level and survive the
+-- DROP SCHEMA that migrate --reset does.
+
+
+-- ══════════════════════════════════════════════════════════════════
+--  Role → capability bundles
+-- ══════════════════════════════════════════════════════════════════
+-- Replaced wholesale on every regeneration.
+DELETE FROM role_capability;
+INSERT INTO role_capability (role, capability) VALUES
+  ('platformadmin', 'platform.health.read'),
+  ('platformadmin', 'platform.tenant.manage'),
+  ('platformadmin', 'platform.support.impersonate'),
+  ('platformadmin', 'platform.feature.manage'),
+  ('platformadmin', 'platform.reward.manage'),
+  ('platformadmin', 'user.role.assign'),
+  ('platformadmin', 'school.feature.manage'),
+  ('platformadmin', 'scouting.accredit'),
+  ('platformadmin', 'school.read'),
+  ('platformadmin', 'user.read'),
+  ('platformadmin', 'audit.read'),
+  ('platformadmin', 'competition.read'),
+  ('platformadmin', 'news.read'),
+  ('principal', 'school.feature.manage'),
+  ('principal', 'sponsorship.exclusivity.waive'),
+  ('principal', 'sponsorship.read'),
+  ('principal', 'sponsorship.manage'),
+  ('principal', 'user.role.assign'),
+  ('principal', 'team.read'),
+  ('principal', 'fixture.read'),
+  ('principal', 'player.profile.read'),
+  ('principal', 'news.read'),
+  ('principal', 'facility.read'),
+  ('principal', 'competition.read'),
+  ('principal', 'school.read'),
+  ('principal', 'user.read'),
+  ('principal', 'analytics.read'),
+  ('principal', 'discipline.read'),
+  ('principal', 'invoice.read'),
+  ('principal', 'player.performance.read'),
+  ('principal', 'medical.status.read'),
+  ('principal', 'medical.nature.read'),
+  ('principal', 'audit.read'),
+  ('principal', 'player.age.read'),
+  ('principal', 'player.roster.read'),
+  ('principal', 'guardian.link.manage'),
+  ('principal', 'player.note.read'),
+  ('principal', 'scoring.amend.approve'),
+  ('directorofsport', 'availability.read'),
+  ('directorofsport', 'availability.declare'),
+  ('directorofsport', 'user.role.assign'),
+  ('directorofsport', 'team.read'),
+  ('directorofsport', 'fixture.read'),
+  ('directorofsport', 'player.profile.read'),
+  ('directorofsport', 'news.read'),
+  ('directorofsport', 'facility.read'),
+  ('directorofsport', 'competition.read'),
+  ('directorofsport', 'school.read'),
+  ('directorofsport', 'user.read'),
+  ('directorofsport', 'user.invite'),
+  ('directorofsport', 'team.manage'),
+  ('directorofsport', 'team.select'),
+  ('directorofsport', 'fixture.create'),
+  ('directorofsport', 'fixture.update'),
+  ('directorofsport', 'fixture.cancel'),
+  ('directorofsport', 'player.profile.manage'),
+  ('directorofsport', 'player.performance.read'),
+  ('directorofsport', 'player.development.read'),
+  ('directorofsport', 'player.note.read'),
+  ('directorofsport', 'player.note.write'),
+  ('directorofsport', 'medical.status.read'),
+  ('directorofsport', 'medical.nature.read'),
+  ('directorofsport', 'player.age.read'),
+  ('directorofsport', 'player.roster.read'),
+  ('directorofsport', 'discipline.read'),
+  ('directorofsport', 'discipline.write'),
+  ('directorofsport', 'analytics.read'),
+  ('directorofsport', 'facility.manage'),
+  ('directorofsport', 'transport.read'),
+  ('directorofsport', 'officiating.assign'),
+  ('directorofsport', 'broadcast.publish'),
+  ('directorofsport', 'sponsorship.read'),
+  ('directorofsport', 'scoring.start'),
+  ('directorofsport', 'scoring.edit'),
+  ('directorofsport', 'scoring.finalise'),
+  ('directorofsport', 'scoring.correct'),
+  ('directorofsport', 'scoring.amend.approve'),
+  ('directorofsport', 'news.publish.team'),
+  ('directorofsport', 'news.publish.school'),
+  ('directorofsport', 'audit.read'),
+  ('directorofsport', 'opposition.read'),
+  ('schooladmin', 'availability.read'),
+  ('schooladmin', 'availability.declare'),
+  ('schooladmin', 'school.feature.manage'),
+  ('schooladmin', 'team.read'),
+  ('schooladmin', 'fixture.read'),
+  ('schooladmin', 'player.profile.read'),
+  ('schooladmin', 'news.read'),
+  ('schooladmin', 'facility.read'),
+  ('schooladmin', 'competition.read'),
+  ('schooladmin', 'school.read'),
+  ('schooladmin', 'school.manage'),
+  ('schooladmin', 'user.read'),
+  ('schooladmin', 'user.invite'),
+  ('schooladmin', 'user.role.assign'),
+  ('schooladmin', 'team.manage'),
+  ('schooladmin', 'fixture.create'),
+  ('schooladmin', 'fixture.update'),
+  ('schooladmin', 'fixture.cancel'),
+  ('schooladmin', 'sponsorship.read'),
+  ('schooladmin', 'sponsorship.manage'),
+  ('schooladmin', 'player.profile.manage'),
+  ('schooladmin', 'player.pii.read'),
+  ('schooladmin', 'player.biometric.read'),
+  ('schooladmin', 'player.age.read'),
+  ('schooladmin', 'player.identity.read'),
+  ('schooladmin', 'guardian.link.manage'),
+  ('schooladmin', 'player.roster.read'),
+  ('schooladmin', 'medical.status.read'),
+  ('schooladmin', 'medical.nature.read'),
+  ('schooladmin', 'discipline.read'),
+  ('schooladmin', 'facility.manage'),
+  ('schooladmin', 'transport.read'),
+  ('schooladmin', 'transport.manage'),
+  ('schooladmin', 'invoice.read'),
+  ('schooladmin', 'news.publish.school'),
+  ('schooladmin', 'audit.read'),
+  ('sportsadmin', 'availability.read'),
+  ('sportsadmin', 'availability.declare'),
+  ('sportsadmin', 'team.read'),
+  ('sportsadmin', 'fixture.read'),
+  ('sportsadmin', 'player.profile.read'),
+  ('sportsadmin', 'news.read'),
+  ('sportsadmin', 'facility.read'),
+  ('sportsadmin', 'competition.read'),
+  ('sportsadmin', 'user.read'),
+  ('sportsadmin', 'team.manage'),
+  ('sportsadmin', 'team.select'),
+  ('sportsadmin', 'fixture.create'),
+  ('sportsadmin', 'fixture.update'),
+  ('sportsadmin', 'fixture.cancel'),
+  ('sportsadmin', 'officiating.assign'),
+  ('sportsadmin', 'broadcast.publish'),
+  ('sportsadmin', 'player.profile.manage'),
+  ('sportsadmin', 'medical.status.read'),
+  ('sportsadmin', 'medical.nature.read'),
+  ('sportsadmin', 'player.age.read'),
+  ('sportsadmin', 'player.roster.read'),
+  ('sportsadmin', 'facility.manage'),
+  ('sportsadmin', 'transport.read'),
+  ('sportsadmin', 'transport.manage'),
+  ('sportsadmin', 'news.publish.team'),
+  ('sportsadmin', 'news.publish.school'),
+  ('sportsadmin', 'scoring.start'),
+  ('sportsadmin', 'scoring.edit'),
+  ('sportsadmin', 'scoring.finalise'),
+  ('coach', 'availability.read'),
+  ('coach', 'availability.declare'),
+  ('coach', 'team.read'),
+  ('coach', 'fixture.read'),
+  ('coach', 'player.profile.read'),
+  ('coach', 'news.read'),
+  ('coach', 'facility.read'),
+  ('coach', 'competition.read'),
+  ('coach', 'team.select'),
+  ('coach', 'player.performance.read'),
+  ('coach', 'player.performance.write'),
+  ('coach', 'player.development.read'),
+  ('coach', 'player.development.write'),
+  ('coach', 'player.note.read'),
+  ('coach', 'player.note.write'),
+  ('coach', 'medical.status.read'),
+  ('coach', 'medical.nature.read'),
+  ('coach', 'medical.details.read'),
+  ('coach', 'player.age.read'),
+  ('coach', 'player.roster.read'),
+  ('coach', 'player.access.request'),
+  ('coach', 'player.access.grant'),
+  ('coach', 'analytics.read'),
+  ('coach', 'transport.read'),
+  ('coach', 'scoring.start'),
+  ('coach', 'scoring.edit'),
+  ('coach', 'scoring.finalise'),
+  ('coach', 'news.publish.team'),
+  ('coach', 'opposition.read'),
+  ('assistantcoach', 'availability.read'),
+  ('assistantcoach', 'availability.declare'),
+  ('assistantcoach', 'team.read'),
+  ('assistantcoach', 'fixture.read'),
+  ('assistantcoach', 'player.profile.read'),
+  ('assistantcoach', 'news.read'),
+  ('assistantcoach', 'facility.read'),
+  ('assistantcoach', 'competition.read'),
+  ('assistantcoach', 'player.performance.read'),
+  ('assistantcoach', 'player.development.read'),
+  ('assistantcoach', 'player.note.read'),
+  ('assistantcoach', 'player.note.write'),
+  ('assistantcoach', 'medical.status.read'),
+  ('assistantcoach', 'medical.nature.read'),
+  ('assistantcoach', 'medical.details.read'),
+  ('assistantcoach', 'player.age.read'),
+  ('assistantcoach', 'player.roster.read'),
+  ('assistantcoach', 'player.access.request'),
+  ('assistantcoach', 'player.access.grant'),
+  ('assistantcoach', 'transport.read'),
+  ('assistantcoach', 'scoring.start'),
+  ('assistantcoach', 'scoring.edit'),
+  ('assistantcoach', 'opposition.read'),
+  ('teammanager', 'availability.read'),
+  ('teammanager', 'availability.declare'),
+  ('teammanager', 'team.read'),
+  ('teammanager', 'fixture.read'),
+  ('teammanager', 'player.profile.read'),
+  ('teammanager', 'news.read'),
+  ('teammanager', 'facility.read'),
+  ('teammanager', 'competition.read'),
+  ('teammanager', 'team.select'),
+  ('teammanager', 'medical.status.read'),
+  ('teammanager', 'medical.nature.read'),
+  ('teammanager', 'player.age.read'),
+  ('teammanager', 'player.roster.read'),
+  ('teammanager', 'transport.read'),
+  ('teammanager', 'news.publish.team'),
+  ('scorer', 'fixture.read'),
+  ('scorer', 'team.read'),
+  ('scorer', 'news.read'),
+  ('scorer', 'player.profile.read'),
+  ('scorer', 'scoring.start'),
+  ('scorer', 'scoring.edit'),
+  ('scorer', 'scoring.finalise'),
+  ('scorer', 'scoring.correct'),
+  ('official', 'fixture.read'),
+  ('official', 'team.read'),
+  ('official', 'news.read'),
+  ('official', 'officiating.report'),
+  ('official', 'discipline.write'),
+  ('player', 'availability.declare'),
+  ('player', 'fixture.read'),
+  ('player', 'team.read'),
+  ('player', 'news.read'),
+  ('player', 'facility.read'),
+  ('player', 'competition.read'),
+  ('player', 'player.profile.read'),
+  ('player', 'player.performance.read'),
+  ('player', 'player.development.read'),
+  ('player', 'medical.status.read'),
+  ('player', 'transport.read'),
+  ('enquiry', 'player.profile.read'),
+  ('enquiry', 'medical.status.read'),
+  ('selfaccess', 'availability.read'),
+  ('selfaccess', 'availability.declare'),
+  ('selfaccess', 'player.profile.read'),
+  ('selfaccess', 'player.pii.read'),
+  ('selfaccess', 'player.biometric.read'),
+  ('selfaccess', 'player.performance.read'),
+  ('selfaccess', 'player.development.read'),
+  ('selfaccess', 'medical.status.read'),
+  ('selfaccess', 'medical.nature.read'),
+  ('selfaccess', 'medical.details.read'),
+  ('selfaccess', 'player.age.read'),
+  ('selfaccess', 'player.identity.read'),
+  ('selfaccess', 'discipline.read'),
+  ('guardian', 'availability.read'),
+  ('guardian', 'availability.declare'),
+  ('guardian', 'fixture.read'),
+  ('guardian', 'team.read'),
+  ('guardian', 'news.read'),
+  ('guardian', 'facility.read'),
+  ('guardian', 'competition.read'),
+  ('guardian', 'player.profile.read'),
+  ('guardian', 'player.pii.read'),
+  ('guardian', 'player.biometric.read'),
+  ('guardian', 'player.performance.read'),
+  ('guardian', 'medical.status.read'),
+  ('guardian', 'medical.nature.read'),
+  ('guardian', 'medical.details.read'),
+  ('guardian', 'player.age.read'),
+  ('guardian', 'player.identity.read'),
+  ('guardian', 'transport.read'),
+  ('guardian', 'invoice.read'),
+  ('analyst', 'team.read'),
+  ('analyst', 'fixture.read'),
+  ('analyst', 'news.read'),
+  ('analyst', 'player.profile.read'),
+  ('analyst', 'player.performance.read'),
+  ('analyst', 'analytics.read'),
+  ('analyst', 'competition.read'),
+  ('analyst', 'opposition.read'),
+  ('spectator', 'fixture.read'),
+  ('spectator', 'news.read'),
+  ('spectator', 'competition.read'),
+  ('medical', 'team.read'),
+  ('medical', 'fixture.read'),
+  ('medical', 'news.read'),
+  ('medical', 'player.profile.read'),
+  ('medical', 'player.age.read'),
+  ('medical', 'player.biometric.read'),
+  ('medical', 'medical.status.read'),
+  ('medical', 'medical.nature.read'),
+  ('medical', 'medical.details.read'),
+  ('medical', 'medical.write'),
+  ('finance', 'school.read'),
+  ('finance', 'news.read'),
+  ('finance', 'invoice.read'),
+  ('finance', 'invoice.manage'),
+  ('finance', 'user.read'),
+  ('finance', 'sponsorship.read'),
+  ('finance', 'sponsorship.manage'),
+  ('finance', 'sponsorship.finance.read'),
+  ('transportcoordinator', 'fixture.read'),
+  ('transportcoordinator', 'team.read'),
+  ('transportcoordinator', 'news.read'),
+  ('transportcoordinator', 'transport.read'),
+  ('transportcoordinator', 'transport.manage'),
+  ('driver', 'news.read'),
+  ('driver', 'transport.read'),
+  ('driver', 'transport.drive'),
+  ('facilities', 'fixture.read'),
+  ('facilities', 'news.read'),
+  ('facilities', 'facility.read'),
+  ('facilities', 'facility.manage'),
+  ('media', 'fixture.read'),
+  ('media', 'team.read'),
+  ('media', 'news.read'),
+  ('media', 'player.profile.read'),
+  ('media', 'player.performance.read'),
+  ('media', 'news.publish.school'),
+  ('media', 'news.publish.team'),
+  ('scout', 'fixture.read'),
+  ('scout', 'team.read'),
+  ('scout', 'news.read'),
+  ('scout', 'scouting.read'),
+  ('scout', 'scouting.write'),
+  ('competitionadmin', 'fixture.read'),
+  ('competitionadmin', 'fixture.update'),
+  ('competitionadmin', 'fixture.cancel'),
+  ('competitionadmin', 'team.read'),
+  ('competitionadmin', 'news.read'),
+  ('competitionadmin', 'competition.read'),
+  ('competitionadmin', 'competition.manage'),
+  ('competitionadmin', 'officiating.assign'),
+  ('competitionadmin', 'discipline.read'),
+  ('competitionadmin', 'scoring.correct'),
+  ('competitionadmin', 'scoring.amend.approve'),
+  ('competitionadmin', 'news.publish.competition');
+
+-- A FOREIGN KEY ONTO THE CATALOGUE, added here rather than in the schema
+-- because capability is created here and this file runs first.
+--
+-- This is the single cheapest guard against the way the previous build was
+-- lost. There, the permission check compared role LABELS while the data stored
+-- role CODES, so every check was permanently false, every write was denied,
+-- and the account that could have repaired it was gated behind the same check.
+-- A misspelt capability here fails the same way: it grants nothing, silently,
+-- and the symptom is a role that has stopped working for reasons nobody can
+-- see. With the key in place the MIGRATION fails instead, loudly, before
+-- anybody is locked out of anything.
+DO $rc_fk$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'role_capability_capability_fkey') THEN
+    ALTER TABLE role_capability
+      ADD CONSTRAINT role_capability_capability_fkey
+      FOREIGN KEY (capability) REFERENCES capability(name);
+  END IF;
+END
+$rc_fk$;
+
+
+-- ══════════════════════════════════════════════════════════════════
+--  Who may appoint whom
+-- ══════════════════════════════════════════════════════════════════
+-- Generated from GRANTABLE_ROLES in packages/policy/src/roles.mjs, which is
+-- where the reasoning lives. user.role.assign says a person may make
+-- appointments; this says which ones, and without it a school administrator
+-- could appoint themselves to any role in the model.
+CREATE TABLE IF NOT EXISTS role_grantable (
+  granter text NOT NULL,
+  role    text NOT NULL,
+  PRIMARY KEY (granter, role)
+);
+ALTER TABLE role_grantable ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS role_grantable_read ON role_grantable;
+CREATE POLICY role_grantable_read ON role_grantable FOR SELECT USING (true);
+DELETE FROM role_grantable;
+INSERT INTO role_grantable (granter, role) VALUES
+  ('schooladmin', 'coach'),
+  ('schooladmin', 'assistantcoach'),
+  ('schooladmin', 'teammanager'),
+  ('schooladmin', 'scorer'),
+  ('schooladmin', 'official'),
+  ('schooladmin', 'player'),
+  ('schooladmin', 'guardian'),
+  ('schooladmin', 'selfaccess'),
+  ('schooladmin', 'spectator'),
+  ('schooladmin', 'enquiry'),
+  ('schooladmin', 'transportcoordinator'),
+  ('schooladmin', 'driver'),
+  ('schooladmin', 'facilities'),
+  ('schooladmin', 'media'),
+  ('schooladmin', 'analyst'),
+  ('principal', 'directorofsport'),
+  ('principal', 'sportsadmin'),
+  ('principal', 'schooladmin'),
+  ('principal', 'medical'),
+  ('principal', 'finance'),
+  ('principal', 'coach'),
+  ('principal', 'assistantcoach'),
+  ('principal', 'teammanager'),
+  ('principal', 'facilities'),
+  ('directorofsport', 'coach'),
+  ('directorofsport', 'assistantcoach'),
+  ('directorofsport', 'teammanager'),
+  ('directorofsport', 'scorer'),
+  ('directorofsport', 'official'),
+  ('directorofsport', 'medical'),
+  ('directorofsport', 'player'),
+  ('directorofsport', 'analyst'),
+  ('directorofsport', 'facilities'),
+  ('directorofsport', 'media'),
+  ('platformadmin', 'platformadmin'),
+  ('platformadmin', 'principal'),
+  ('platformadmin', 'directorofsport'),
+  ('platformadmin', 'schooladmin'),
+  ('platformadmin', 'sportsadmin'),
+  ('platformadmin', 'coach'),
+  ('platformadmin', 'assistantcoach'),
+  ('platformadmin', 'teammanager'),
+  ('platformadmin', 'scorer'),
+  ('platformadmin', 'official'),
+  ('platformadmin', 'player'),
+  ('platformadmin', 'enquiry'),
+  ('platformadmin', 'selfaccess'),
+  ('platformadmin', 'guardian'),
+  ('platformadmin', 'analyst'),
+  ('platformadmin', 'spectator'),
+  ('platformadmin', 'medical'),
+  ('platformadmin', 'finance'),
+  ('platformadmin', 'transportcoordinator'),
+  ('platformadmin', 'driver'),
+  ('platformadmin', 'facilities'),
+  ('platformadmin', 'media'),
+  ('platformadmin', 'scout'),
+  ('platformadmin', 'competitionadmin');
+
+-- app_may_grant(role) — may the caller appoint somebody to this role?
+--
+-- Two questions, both of which have to answer yes. Whether the caller's own
+-- roles list this one as grantable, and — for a role carrying a tenant-less
+-- capability — whether the caller's assignment is itself tenant-less. The
+-- second is what stops a school-scoped grant of a platform role.
+CREATE OR REPLACE FUNCTION app_may_grant(p_role text) RETURNS boolean AS $$
+  SELECT EXISTS (
+    SELECT 1
+      FROM role_assignment a
+      JOIN role_grantable g ON g.granter = a.role AND g.role = p_role
+     WHERE a.person_id = app_user_id()
+       AND a.active
+       AND (a.valid_from  IS NULL OR a.valid_from  <= current_date)
+       AND (a.valid_until IS NULL OR a.valid_until >  current_date)
+       -- A role carrying a platform capability may only be handed out by
+       -- somebody whose own assignment belongs to no school.
+       AND (a.school_id IS NULL OR NOT EXISTS (
+              SELECT 1 FROM role_capability rc
+                JOIN capability c ON c.name = rc.capability AND c.platform_only
+               WHERE rc.role = p_role))
+  )
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION app_may_grant(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app_may_grant(text) TO PUBLIC;
 
 -- ══════════════════════════════════════════════════════════════════
 --  The authorization decision
@@ -120,6 +699,45 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER;
 REVOKE ALL ON FUNCTION app_can(text, uuid, text, uuid, uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION app_can(text, uuid, text, uuid, uuid) TO PUBLIC;
 
+-- app_holds(capability) — does this person hold the capability AT ALL?
+--
+-- app_can() asks whether someone may act on a particular ROW, and every
+-- governed row belongs to a tenant. A few decisions have no row and no tenant:
+-- verifying a scout's accreditation, or turning a product feature off across
+-- the whole platform. There is no ANY_SCOPE for school, so handing app_can() a
+-- placeholder anchor does not widen it — it refuses everyone, silently, which
+-- is exactly what happened the first time the scouting register tried it.
+--
+-- This is that same existence check with the scope arms removed, and it has a
+-- name because it had already been written out by hand three times. Each copy
+-- repeated the valid_from IS NULL comparison that silently refused every
+-- open-ended assignment until it was found, and every copy omitted a.active
+-- — so a deactivated assignment still passed them. One of those is a bug that
+-- was caught; the other was not, and that is the argument for one definition.
+--
+-- NOT a bypass. Holding a capability somewhere is not permission to touch a
+-- particular school's rows: anything with a tenant still goes through
+-- app_can(), and this answers only the tenant-less question.
+CREATE OR REPLACE FUNCTION app_holds(p_capability text) RETURNS boolean AS $$
+  SELECT EXISTS (
+    SELECT 1
+      FROM role_assignment a
+      JOIN role_capability rc
+        ON rc.role = a.role
+       AND rc.capability = p_capability
+      JOIN capability c
+        ON c.name = rc.capability
+     WHERE a.person_id = app_user_id()
+       AND a.active
+       AND (NOT c.platform_only OR a.school_id IS NULL)
+       AND (a.valid_from  IS NULL OR a.valid_from  <= current_date)
+       AND (a.valid_until IS NULL OR a.valid_until >  current_date)
+  )
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION app_holds(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app_holds(text) TO PUBLIC;
+
 -- There is deliberately NO can_score(role) here. It existed, it was correct,
 -- and nothing called it after the scoring policies moved to app_can() — which
 -- makes it worse than useless: a role-shaped decision function sitting in the
@@ -127,403 +745,6 @@ GRANT EXECUTE ON FUNCTION app_can(text, uuid, text, uuid, uuid) TO PUBLIC;
 -- the exact hole ADR 0001 closed (a role the session asserts, evaluated
 -- without a scope). Scoring authority is app_can('scoring.edit', ...) against
 -- the assignments the database looks up, and there is no second way to ask.
-
--- ══════════════════════════════════════════════════════════════════
---  The capability catalogue
--- ══════════════════════════════════════════════════════════════════
--- Every capability the model defines, as rows, so a column that stores a
--- capability NAME can have a foreign key onto it — notification.required_capability
--- is the one that does. Without this, a typo in a published notice becomes a
--- notification nobody can read, which fails closed but fails silently, and the
--- person who published it has no way to discover that nobody received it.
---
--- Inserted, never deleted: rows here are referenced. A capability retired from
--- the model leaves its row behind rather than breaking the references to it,
--- and grants no authority on its own — authority comes from role_capability.
-CREATE TABLE IF NOT EXISTS capability (name text PRIMARY KEY);
-INSERT INTO capability (name) VALUES
-  ('school.read'),
-  ('school.manage'),
-  ('user.read'),
-  ('user.invite'),
-  ('user.role.assign'),
-  ('audit.read'),
-  ('team.read'),
-  ('team.manage'),
-  ('team.select'),
-  ('player.profile.read'),
-  ('player.profile.manage'),
-  ('player.pii.read'),
-  ('player.performance.read'),
-  ('player.performance.write'),
-  ('player.development.read'),
-  ('player.development.write'),
-  ('player.note.read'),
-  ('player.note.write'),
-  ('fixture.read'),
-  ('fixture.create'),
-  ('fixture.update'),
-  ('fixture.cancel'),
-  ('scoring.start'),
-  ('scoring.edit'),
-  ('scoring.finalise'),
-  ('scoring.correct'),
-  ('scoring.amend.approve'),
-  ('officiating.assign'),
-  ('officiating.report'),
-  ('medical.status.read'),
-  ('medical.nature.read'),
-  ('medical.details.read'),
-  ('medical.write'),
-  ('player.roster.read'),
-  ('player.age.read'),
-  ('player.biometric.read'),
-  ('player.identity.read'),
-  ('guardian.link.manage'),
-  ('player.access.request'),
-  ('player.access.grant'),
-  ('discipline.read'),
-  ('discipline.write'),
-  ('transport.read'),
-  ('transport.manage'),
-  ('transport.drive'),
-  ('facility.read'),
-  ('facility.manage'),
-  ('invoice.read'),
-  ('invoice.manage'),
-  ('competition.read'),
-  ('competition.manage'),
-  ('news.read'),
-  ('news.publish.team'),
-  ('news.publish.school'),
-  ('news.publish.competition'),
-  ('analytics.read'),
-  ('scouting.read'),
-  ('scouting.write'),
-  ('platform.health.read'),
-  ('platform.tenant.manage'),
-  ('platform.support.impersonate')
-ON CONFLICT (name) DO NOTHING;
-
--- Readable by everyone, writable by nobody but a migration. The names are
--- already in the client bundle, so there is nothing to protect by hiding them
--- — but the catalogue must not be writable by the application, or a row could
--- be added to make a notification's declared capability satisfiable by a role
--- that was never granted it. RLS is enabled with an open read rather than left
--- off, so the "no public table has row-level security disabled" assertion in
--- db/99_rls_verify.sql stays a blanket rule with no exceptions list to drift.
-ALTER TABLE capability ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS capability_read ON capability;
-CREATE POLICY capability_read ON capability FOR SELECT USING (true);
--- The matching REVOKE of write access lives in db/06_app_role.sql, not here:
--- scrbrd_app is created there, and this file runs first. Revoking from a role
--- that does not exist yet is an error on a fresh cluster — and it would not
--- have been caught locally, because roles are cluster-level and survive the
--- DROP SCHEMA that migrate --reset does.
-
-
--- ══════════════════════════════════════════════════════════════════
---  Role → capability bundles
--- ══════════════════════════════════════════════════════════════════
--- Replaced wholesale on every regeneration.
-DELETE FROM role_capability;
-INSERT INTO role_capability (role, capability) VALUES
-  ('platformadmin', 'platform.health.read'),
-  ('platformadmin', 'platform.tenant.manage'),
-  ('platformadmin', 'platform.support.impersonate'),
-  ('platformadmin', 'school.read'),
-  ('platformadmin', 'user.read'),
-  ('platformadmin', 'audit.read'),
-  ('platformadmin', 'competition.read'),
-  ('platformadmin', 'news.read'),
-  ('principal', 'team.read'),
-  ('principal', 'fixture.read'),
-  ('principal', 'player.profile.read'),
-  ('principal', 'news.read'),
-  ('principal', 'facility.read'),
-  ('principal', 'competition.read'),
-  ('principal', 'school.read'),
-  ('principal', 'user.read'),
-  ('principal', 'analytics.read'),
-  ('principal', 'discipline.read'),
-  ('principal', 'invoice.read'),
-  ('principal', 'player.performance.read'),
-  ('principal', 'medical.status.read'),
-  ('principal', 'medical.nature.read'),
-  ('principal', 'audit.read'),
-  ('principal', 'player.age.read'),
-  ('principal', 'player.roster.read'),
-  ('principal', 'guardian.link.manage'),
-  ('principal', 'player.note.read'),
-  ('principal', 'scoring.amend.approve'),
-  ('directorofsport', 'team.read'),
-  ('directorofsport', 'fixture.read'),
-  ('directorofsport', 'player.profile.read'),
-  ('directorofsport', 'news.read'),
-  ('directorofsport', 'facility.read'),
-  ('directorofsport', 'competition.read'),
-  ('directorofsport', 'school.read'),
-  ('directorofsport', 'user.read'),
-  ('directorofsport', 'user.invite'),
-  ('directorofsport', 'team.manage'),
-  ('directorofsport', 'team.select'),
-  ('directorofsport', 'fixture.create'),
-  ('directorofsport', 'fixture.update'),
-  ('directorofsport', 'fixture.cancel'),
-  ('directorofsport', 'player.profile.manage'),
-  ('directorofsport', 'player.performance.read'),
-  ('directorofsport', 'player.development.read'),
-  ('directorofsport', 'player.note.read'),
-  ('directorofsport', 'player.note.write'),
-  ('directorofsport', 'medical.status.read'),
-  ('directorofsport', 'medical.nature.read'),
-  ('directorofsport', 'player.age.read'),
-  ('directorofsport', 'player.roster.read'),
-  ('directorofsport', 'discipline.read'),
-  ('directorofsport', 'discipline.write'),
-  ('directorofsport', 'analytics.read'),
-  ('directorofsport', 'facility.manage'),
-  ('directorofsport', 'transport.read'),
-  ('directorofsport', 'officiating.assign'),
-  ('directorofsport', 'scoring.start'),
-  ('directorofsport', 'scoring.edit'),
-  ('directorofsport', 'scoring.finalise'),
-  ('directorofsport', 'scoring.correct'),
-  ('directorofsport', 'scoring.amend.approve'),
-  ('directorofsport', 'news.publish.team'),
-  ('directorofsport', 'news.publish.school'),
-  ('directorofsport', 'audit.read'),
-  ('schooladmin', 'team.read'),
-  ('schooladmin', 'fixture.read'),
-  ('schooladmin', 'player.profile.read'),
-  ('schooladmin', 'news.read'),
-  ('schooladmin', 'facility.read'),
-  ('schooladmin', 'competition.read'),
-  ('schooladmin', 'school.read'),
-  ('schooladmin', 'school.manage'),
-  ('schooladmin', 'user.read'),
-  ('schooladmin', 'user.invite'),
-  ('schooladmin', 'user.role.assign'),
-  ('schooladmin', 'team.manage'),
-  ('schooladmin', 'fixture.create'),
-  ('schooladmin', 'fixture.update'),
-  ('schooladmin', 'fixture.cancel'),
-  ('schooladmin', 'player.profile.manage'),
-  ('schooladmin', 'player.pii.read'),
-  ('schooladmin', 'player.biometric.read'),
-  ('schooladmin', 'player.age.read'),
-  ('schooladmin', 'player.identity.read'),
-  ('schooladmin', 'guardian.link.manage'),
-  ('schooladmin', 'player.roster.read'),
-  ('schooladmin', 'medical.status.read'),
-  ('schooladmin', 'medical.nature.read'),
-  ('schooladmin', 'discipline.read'),
-  ('schooladmin', 'facility.manage'),
-  ('schooladmin', 'transport.read'),
-  ('schooladmin', 'transport.manage'),
-  ('schooladmin', 'invoice.read'),
-  ('schooladmin', 'news.publish.school'),
-  ('schooladmin', 'audit.read'),
-  ('sportsadmin', 'team.read'),
-  ('sportsadmin', 'fixture.read'),
-  ('sportsadmin', 'player.profile.read'),
-  ('sportsadmin', 'news.read'),
-  ('sportsadmin', 'facility.read'),
-  ('sportsadmin', 'competition.read'),
-  ('sportsadmin', 'user.read'),
-  ('sportsadmin', 'team.manage'),
-  ('sportsadmin', 'team.select'),
-  ('sportsadmin', 'fixture.create'),
-  ('sportsadmin', 'fixture.update'),
-  ('sportsadmin', 'fixture.cancel'),
-  ('sportsadmin', 'officiating.assign'),
-  ('sportsadmin', 'player.profile.manage'),
-  ('sportsadmin', 'medical.status.read'),
-  ('sportsadmin', 'medical.nature.read'),
-  ('sportsadmin', 'player.age.read'),
-  ('sportsadmin', 'player.roster.read'),
-  ('sportsadmin', 'facility.manage'),
-  ('sportsadmin', 'transport.read'),
-  ('sportsadmin', 'transport.manage'),
-  ('sportsadmin', 'news.publish.team'),
-  ('sportsadmin', 'news.publish.school'),
-  ('sportsadmin', 'scoring.start'),
-  ('sportsadmin', 'scoring.edit'),
-  ('sportsadmin', 'scoring.finalise'),
-  ('coach', 'team.read'),
-  ('coach', 'fixture.read'),
-  ('coach', 'player.profile.read'),
-  ('coach', 'news.read'),
-  ('coach', 'facility.read'),
-  ('coach', 'competition.read'),
-  ('coach', 'team.select'),
-  ('coach', 'player.performance.read'),
-  ('coach', 'player.performance.write'),
-  ('coach', 'player.development.read'),
-  ('coach', 'player.development.write'),
-  ('coach', 'player.note.read'),
-  ('coach', 'player.note.write'),
-  ('coach', 'medical.status.read'),
-  ('coach', 'medical.nature.read'),
-  ('coach', 'medical.details.read'),
-  ('coach', 'player.age.read'),
-  ('coach', 'player.roster.read'),
-  ('coach', 'player.access.request'),
-  ('coach', 'player.access.grant'),
-  ('coach', 'analytics.read'),
-  ('coach', 'transport.read'),
-  ('coach', 'scoring.start'),
-  ('coach', 'scoring.edit'),
-  ('coach', 'scoring.finalise'),
-  ('coach', 'news.publish.team'),
-  ('assistantcoach', 'team.read'),
-  ('assistantcoach', 'fixture.read'),
-  ('assistantcoach', 'player.profile.read'),
-  ('assistantcoach', 'news.read'),
-  ('assistantcoach', 'facility.read'),
-  ('assistantcoach', 'competition.read'),
-  ('assistantcoach', 'player.performance.read'),
-  ('assistantcoach', 'player.development.read'),
-  ('assistantcoach', 'player.note.read'),
-  ('assistantcoach', 'player.note.write'),
-  ('assistantcoach', 'medical.status.read'),
-  ('assistantcoach', 'medical.nature.read'),
-  ('assistantcoach', 'medical.details.read'),
-  ('assistantcoach', 'player.age.read'),
-  ('assistantcoach', 'player.roster.read'),
-  ('assistantcoach', 'player.access.request'),
-  ('assistantcoach', 'player.access.grant'),
-  ('assistantcoach', 'transport.read'),
-  ('assistantcoach', 'scoring.start'),
-  ('assistantcoach', 'scoring.edit'),
-  ('teammanager', 'team.read'),
-  ('teammanager', 'fixture.read'),
-  ('teammanager', 'player.profile.read'),
-  ('teammanager', 'news.read'),
-  ('teammanager', 'facility.read'),
-  ('teammanager', 'competition.read'),
-  ('teammanager', 'team.select'),
-  ('teammanager', 'medical.status.read'),
-  ('teammanager', 'medical.nature.read'),
-  ('teammanager', 'player.age.read'),
-  ('teammanager', 'player.roster.read'),
-  ('teammanager', 'transport.read'),
-  ('teammanager', 'news.publish.team'),
-  ('scorer', 'fixture.read'),
-  ('scorer', 'team.read'),
-  ('scorer', 'news.read'),
-  ('scorer', 'player.profile.read'),
-  ('scorer', 'scoring.start'),
-  ('scorer', 'scoring.edit'),
-  ('scorer', 'scoring.finalise'),
-  ('scorer', 'scoring.correct'),
-  ('official', 'fixture.read'),
-  ('official', 'team.read'),
-  ('official', 'news.read'),
-  ('official', 'officiating.report'),
-  ('official', 'discipline.write'),
-  ('player', 'fixture.read'),
-  ('player', 'team.read'),
-  ('player', 'news.read'),
-  ('player', 'facility.read'),
-  ('player', 'competition.read'),
-  ('player', 'player.profile.read'),
-  ('player', 'player.performance.read'),
-  ('player', 'player.development.read'),
-  ('player', 'medical.status.read'),
-  ('player', 'transport.read'),
-  ('enquiry', 'player.profile.read'),
-  ('enquiry', 'medical.status.read'),
-  ('selfaccess', 'player.profile.read'),
-  ('selfaccess', 'player.pii.read'),
-  ('selfaccess', 'player.biometric.read'),
-  ('selfaccess', 'player.performance.read'),
-  ('selfaccess', 'player.development.read'),
-  ('selfaccess', 'medical.status.read'),
-  ('selfaccess', 'medical.nature.read'),
-  ('selfaccess', 'medical.details.read'),
-  ('selfaccess', 'player.age.read'),
-  ('selfaccess', 'player.identity.read'),
-  ('selfaccess', 'discipline.read'),
-  ('guardian', 'fixture.read'),
-  ('guardian', 'team.read'),
-  ('guardian', 'news.read'),
-  ('guardian', 'facility.read'),
-  ('guardian', 'competition.read'),
-  ('guardian', 'player.profile.read'),
-  ('guardian', 'player.pii.read'),
-  ('guardian', 'player.biometric.read'),
-  ('guardian', 'player.performance.read'),
-  ('guardian', 'medical.status.read'),
-  ('guardian', 'medical.nature.read'),
-  ('guardian', 'medical.details.read'),
-  ('guardian', 'player.age.read'),
-  ('guardian', 'player.identity.read'),
-  ('guardian', 'transport.read'),
-  ('guardian', 'invoice.read'),
-  ('analyst', 'team.read'),
-  ('analyst', 'fixture.read'),
-  ('analyst', 'news.read'),
-  ('analyst', 'player.profile.read'),
-  ('analyst', 'player.performance.read'),
-  ('analyst', 'analytics.read'),
-  ('analyst', 'competition.read'),
-  ('spectator', 'fixture.read'),
-  ('spectator', 'news.read'),
-  ('spectator', 'competition.read'),
-  ('medical', 'team.read'),
-  ('medical', 'fixture.read'),
-  ('medical', 'news.read'),
-  ('medical', 'player.profile.read'),
-  ('medical', 'player.age.read'),
-  ('medical', 'player.biometric.read'),
-  ('medical', 'medical.status.read'),
-  ('medical', 'medical.nature.read'),
-  ('medical', 'medical.details.read'),
-  ('medical', 'medical.write'),
-  ('finance', 'school.read'),
-  ('finance', 'news.read'),
-  ('finance', 'invoice.read'),
-  ('finance', 'invoice.manage'),
-  ('finance', 'user.read'),
-  ('transportcoordinator', 'fixture.read'),
-  ('transportcoordinator', 'team.read'),
-  ('transportcoordinator', 'news.read'),
-  ('transportcoordinator', 'transport.read'),
-  ('transportcoordinator', 'transport.manage'),
-  ('driver', 'news.read'),
-  ('driver', 'transport.read'),
-  ('driver', 'transport.drive'),
-  ('facilities', 'fixture.read'),
-  ('facilities', 'news.read'),
-  ('facilities', 'facility.read'),
-  ('facilities', 'facility.manage'),
-  ('media', 'fixture.read'),
-  ('media', 'team.read'),
-  ('media', 'news.read'),
-  ('media', 'player.profile.read'),
-  ('media', 'player.performance.read'),
-  ('media', 'news.publish.school'),
-  ('media', 'news.publish.team'),
-  ('scout', 'fixture.read'),
-  ('scout', 'team.read'),
-  ('scout', 'news.read'),
-  ('scout', 'player.profile.read'),
-  ('scout', 'player.performance.read'),
-  ('scout', 'scouting.read'),
-  ('scout', 'scouting.write'),
-  ('competitionadmin', 'fixture.read'),
-  ('competitionadmin', 'fixture.update'),
-  ('competitionadmin', 'fixture.cancel'),
-  ('competitionadmin', 'team.read'),
-  ('competitionadmin', 'news.read'),
-  ('competitionadmin', 'competition.read'),
-  ('competitionadmin', 'competition.manage'),
-  ('competitionadmin', 'officiating.assign'),
-  ('competitionadmin', 'discipline.read'),
-  ('competitionadmin', 'scoring.correct'),
-  ('competitionadmin', 'scoring.amend.approve'),
-  ('competitionadmin', 'news.publish.competition');
 
 -- ══════════════════════════════════════════════════════════════════
 --  Assignments that must name a team
@@ -545,16 +766,127 @@ ALTER TABLE role_assignment ADD CONSTRAINT assignment_team_scoped CHECK (
 -- A person may read their own assignments — the context switcher needs them —
 -- and nobody else's. Granting and revoking goes through user.role.assign.
 ALTER TABLE role_assignment ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS role_assignment_read  ON role_assignment;
-DROP POLICY IF EXISTS role_assignment_write ON role_assignment;
+DROP POLICY IF EXISTS role_assignment_read   ON role_assignment;
+DROP POLICY IF EXISTS role_assignment_write  ON role_assignment;
+DROP POLICY IF EXISTS role_assignment_revoke ON role_assignment;
 
 CREATE POLICY role_assignment_read ON role_assignment
   FOR SELECT USING (
     person_id = app_user_id()
     OR app_can('user.role.assign', school_id, team_code, NULL, NULL)
   );
+
+-- TWO QUESTIONS ON A GRANT, NOT ONE.
+--
+-- app_can() asks whether this person may appoint anybody AT THIS SCOPE.
+-- app_may_grant() asks whether they may appoint somebody to THIS ROLE. Only
+-- the first was ever asked, and the gap was an escalation reachable with a
+-- single INSERT: a school administrator holds user.role.assign at their own
+-- school, so the check passed for any role at all. They could appoint
+-- themselves 'medical' and read their pupils' clinical notes, or appoint
+-- themselves 'platformadmin' and — because app_holds() did not look at the
+-- assignment's tenant either — move a platform-wide feature switch.
+--
+-- Both halves are now closed, and deliberately in different places: which
+-- roles a granter may hand out is a tenant-level policy question answered by
+-- GRANTABLE_ROLES, and whether a platform capability may be held through a
+-- school-scoped assignment is a model question answered by PLATFORM_ONLY.
+-- Either alone leaves a way round.
 CREATE POLICY role_assignment_write ON role_assignment
-  FOR INSERT WITH CHECK (app_can('user.role.assign', school_id, team_code, NULL, NULL));
+  FOR INSERT WITH CHECK (
+    app_can('user.role.assign', school_id, team_code, NULL, NULL)
+    AND app_may_grant(role)
+  );
+
+-- REVOKING, which had no policy at all and therefore could not be done.
+--
+-- That is the quieter half of the same failure. A build you cannot get INTO is
+-- the famous kind; a build where a mistaken appointment can be made and never
+-- withdrawn is the same shape, and it had been sitting here since the
+-- assignment table was written. The only column this may change is the active
+-- flag: re-pointing an assignment at a different person or school would be a
+-- new appointment wearing an old one's audit trail, so it is refused by the
+-- trigger below, and a fresh row is the honest way to do it.
+CREATE POLICY role_assignment_revoke ON role_assignment
+  FOR UPDATE USING (app_can('user.role.assign', school_id, team_code, NULL, NULL))
+           WITH CHECK (app_can('user.role.assign', school_id, team_code, NULL, NULL));
+
+CREATE OR REPLACE FUNCTION role_assignment_revoke_only() RETURNS trigger AS $$
+BEGIN
+  IF NEW.person_id IS DISTINCT FROM OLD.person_id
+  OR NEW.role      IS DISTINCT FROM OLD.role
+  OR NEW.school_id IS DISTINCT FROM OLD.school_id
+  OR NEW.team_code IS DISTINCT FROM OLD.team_code THEN
+    RAISE EXCEPTION 'an assignment may be deactivated, not re-pointed; '
+                    'withdraw this one and make the appointment you meant'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  -- The provenance is part of the record, not part of the row's editable
+  -- state. Letting an update move created_by would make the audit trail
+  -- writable by the people it is about.
+  IF NEW.created_by IS DISTINCT FROM OLD.created_by
+  OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+    RAISE EXCEPTION 'who made an appointment and when are not editable'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  -- WITHDRAWING CARRIES A NAME TOO, stamped here rather than supplied. The
+  -- gap this closes is the mirror of the one below: an appointment could be
+  -- taken back and the row would not say by whom.
+  IF OLD.active AND NOT NEW.active THEN
+    NEW.revoked_by := app_user_id();
+    NEW.revoked_at := now();
+  ELSIF NOT OLD.active AND NEW.active THEN
+    -- Reactivating is a new appointment wearing an old one's provenance. The
+    -- policy already only permits the true-to-false direction; this is the
+    -- structural half.
+    RAISE EXCEPTION 'a withdrawn assignment is not reactivated; make the appointment again'
+      USING ERRCODE = 'check_violation';
+  ELSE
+    NEW.revoked_by := OLD.revoked_by;
+    NEW.revoked_at := OLD.revoked_at;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS role_assignment_revoke_guard ON role_assignment;
+CREATE TRIGGER role_assignment_revoke_guard BEFORE UPDATE ON role_assignment
+  FOR EACH ROW EXECUTE FUNCTION role_assignment_revoke_only();
+
+/**
+ * WHO MADE THIS APPOINTMENT — stamped, never supplied.
+ *
+ * created_by has been on this table since it was written and NOTHING HAS EVER
+ * WRITTEN IT: twenty-five seeded assignments, none with a granter named. A
+ * column that exists and is never populated is the same shape as a capability
+ * nobody can exercise, and this is the worst place in the schema for it.
+ * Every other decision here carries a name — who published a broadcast, who
+ * hid a module, who waived an exclusivity, who said a boy could not play — and
+ * the appointment that GRANTS ALL OF THOSE POWERS did not.
+ *
+ * A TRIGGER RATHER THAN A DEFAULT OR A ROUTE, and the difference is the point.
+ * A default can be overridden by naming the column; a route can be bypassed by
+ * another route, an import, or psql. Forced here, the row cannot claim
+ * somebody else made the appointment no matter who writes it or how.
+ *
+ * NULL stays meaningful: the seed and the migrations insert as the migration
+ * user, where app_user_id() is NULL, and "no granter" is the honest answer for
+ * a row the platform created rather than a person.
+ */
+CREATE OR REPLACE FUNCTION role_assignment_stamp_granter() RETURNS trigger AS $$
+BEGIN
+  NEW.created_by := app_user_id();
+  NEW.created_at := now();
+  -- A fresh appointment is not withdrawn, whatever the insert claimed.
+  NEW.revoked_by := NULL;
+  NEW.revoked_at := NULL;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS role_assignment_granter ON role_assignment;
+CREATE TRIGGER role_assignment_granter BEFORE INSERT ON role_assignment
+  FOR EACH ROW EXECUTE FUNCTION role_assignment_stamp_granter();
 
 ALTER TABLE assignment_subject ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS assignment_subject_read ON assignment_subject;

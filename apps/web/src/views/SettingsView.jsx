@@ -1,11 +1,13 @@
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { SCHOOL } from "../data/institution.js";
 import { ROLES } from "../design/roles.js";
 import { D } from "../design/tokens.js";
 import { SCRBRD } from "../scorer/engine.jsx";
-import { Avatar, Badge, Btn, Card, Input, Modal, SectionHeader, Select } from "../ui/primitives.jsx";
-import { useRows } from "../lib/live.js";
+import { Avatar, Badge, Btn, Card, EmptyState, Input, Modal, SectionHeader, Select } from "../ui/primitives.jsx";
+import { useLive, useRows } from "../lib/live.js";
+import { api } from "../lib/api.js";
+import { disablePush, enablePush, pushSupported } from "../lib/push.js";
 
 // ══════════════════════════════════════════════════════
 //  SETTINGS VIEW — full user CRUD + RBAC + upgrades
@@ -85,12 +87,12 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp }) 
       <SectionHeader title="Settings & Access Control" sub="Users · RBAC · School config · Platform upgrades" color={D.violet}/>
 
       <div style={{display:"flex",gap:"6px",marginBottom:"20px",flexWrap:"wrap"}}>
-        {["users","roles","school","upgrades"].map(t=>(
+        {["users","roles","alerts","school","upgrades"].map(t=>(
           <button key={t} onClick={()=>setTab(t)} className="pressBtn" style={{
             padding:"6px 18px",borderRadius:D.pill,cursor:"pointer",textTransform:"capitalize",
             border:`1px solid ${tab===t?D.violet+"55":D.border}`,background:tab===t?D.violet+"14":"transparent",
             fontFamily:D.body,fontSize:"11px",fontWeight:tab===t?700:400,color:tab===t?D.violet:D.textMuted,
-          }}>{t==="upgrades"?"🚀 Upgrades":t}</button>
+          }}>{t==="upgrades"?"🚀 Upgrades":t==="alerts"?"🔔 Alerts":t}</button>
         ))}
       </div>
 
@@ -191,6 +193,9 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp }) 
       )}
 
       {/* ── UPGRADES ── */}
+      {/* ── ALERTS: this phone, and the others I have registered ── */}
+      {tab==="alerts"&&<AlertsTab role={role}/>}
+
       {tab==="upgrades"&&(
         <div>
           <div style={{padding:"14px 16px",background:`linear-gradient(135deg,${D.violet}10,${D.surf2})`,borderRadius:D.lg,border:`1px solid ${D.violet}22`,marginBottom:"18px"}}>
@@ -253,6 +258,164 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp }) 
           </div>
         </Modal>
       )}
+    </div>
+  );
+}
+
+/**
+ * Turning alerts on for THIS device, and signing the others out.
+ *
+ * The notify path has been complete server-side for a while — the tables, the
+ * fan-out that re-asks the notification's policy per person, the payload rule,
+ * the delivery log — and apps/web/src/lib/push.js has been sitting there with
+ * nothing importing it. A feature nobody can reach is not delivered, so this
+ * is the twenty minutes that makes the other work real.
+ *
+ * IT DECIDES NOTHING, like the rest of the client. Registering a device can
+ * only reduce what somebody receives; what they may receive is re-asked
+ * server-side, as them, at send time.
+ */
+function AlertsTab({ role }) {
+  const [nudge, setNudge] = useState(0);
+  // useLive rather than useRows, for its third argument: turning alerts on or
+  // signing a device out has to change what this table shows, and useRows
+  // fetches once on mount. A first draft bumped a counter and rendered it into
+  // a hidden span, which refreshed nothing and would have shown a stale list
+  // after every action on this screen.
+  const devices = useLive("my_devices", role, nudge).rows;
+  const [support, setSupport] = useState(null);        // null = still asking
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState(null);
+
+  useEffect(() => { let off = false; pushSupported().then((s) => { if (!off) setSupport(s); }); return () => { off = true; }; }, []);
+
+  // THREE DIFFERENT NOES NEED THREE DIFFERENT SENTENCES. Collapsing them into
+  // "could not enable notifications" is how somebody spends ten minutes in
+  // their browser settings for a deployment that simply has no VAPID key.
+  const WHY = {
+    unsupported:    "This browser cannot do push notifications. On an iPhone, add SCRBRD to your home screen first.",
+    not_configured: "Push is not switched on for this deployment yet — nothing to do at your end.",
+    declined:       "Your browser blocked notifications. You would need to allow them in its site settings.",
+    no_token:       "The browser did not return a registration. Try again, or reload the page.",
+  };
+
+  const enable = async () => {
+    setBusy(true); setSaid(null);
+    const r = await enablePush({ label: navigator.platform || null });
+    setBusy(false);
+    setSaid(r.ok
+      ? { ok: true,  text: "This device will now receive alerts." }
+      : { ok: false, text: WHY[r.reason] ?? `Could not register this device (${r.reason}).` });
+    if (r.ok) setNudge((n) => n + 1);
+  };
+
+  const disable = async () => {
+    setBusy(true); setSaid(null);
+    const r = await disablePush();
+    setBusy(false);
+    setSaid({ ok: true, text: r.retired
+      ? "This device will no longer receive alerts."
+      : "This device was not registered." });
+    setNudge((n) => n + 1);
+  };
+
+  // Signing out one of the OTHERS, by row id rather than by token, because a
+  // phone that has been lost is not the phone you are holding — and it keeps
+  // receiving the school's alerts until somebody says otherwise. Bounded by
+  // the table's own policy, so an id is not a capability.
+  const retireOne = async (id) => {
+    setBusy(true); setSaid(null);
+    try {
+      const r = await api("/api/devices/retire", { method: "POST", body: { id } });
+      setSaid({ ok: true, text: r?.retired ? "That device has been signed out."
+                                           : "That device was already signed out." });
+    } catch { setSaid({ ok: false, text: "Could not sign that device out." }); }
+    setBusy(false); setNudge((n) => n + 1);
+  };
+
+  const ordered = [...devices.filter((d) => d.active), ...devices.filter((d) => !d.active)];
+  const when = (t) => (t ? new Date(t).toLocaleDateString("en-ZA", { day: "numeric", month: "short" }) : "—");
+  const stateOf = (d) => d.active ? "Active"
+    : d.retiredReason === "rejected" ? "Unreachable"
+    : d.retiredReason === "replaced" ? "Taken over"
+    : "Signed out";
+
+  return (
+    <div>
+      <Card>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"12px",flexWrap:"wrap"}}>
+          <div>
+            <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>Alerts on this device</div>
+            {/* WHAT A PUSH ACTUALLY IS, said plainly. Somebody who thinks the
+                notification is the message will not open the app — and the
+                notification is deliberately almost empty, because a lock
+                screen is read by whoever is holding the phone. */}
+            <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginTop:"5px",maxWidth:"54ch",lineHeight:1.5}}>
+              A notice arrives as a prompt, not as the message itself. Open SCRBRD to read it —
+              anything about a child stays behind your sign-in rather than on a lock screen.
+            </div>
+          </div>
+          {support === null
+            ? <Badge color={D.textMuted}>Checking</Badge>
+            : support
+              ? <div style={{display:"flex",gap:"8px",flexShrink:0}}>
+                  <Btn size="sm" disabled={busy} onClick={enable}>Turn on here</Btn>
+                  <Btn size="sm" variant="ghost" disabled={busy} onClick={disable}>Turn off</Btn>
+                </div>
+              : <Badge color={D.amber}>Not supported</Badge>}
+        </div>
+        {said && (
+          <div style={{marginTop:"12px",padding:"9px 12px",borderRadius:D.md,fontFamily:D.body,fontSize:"11px",lineHeight:1.5,
+            background:(said.ok?D.emerald:D.amber)+"12",
+            border:`1px solid ${(said.ok?D.emerald:D.amber)}33`,
+            color:said.ok?D.emerald:D.amber}}>{said.text}</div>
+        )}
+      </Card>
+
+      <div style={{height:"16px"}}/>
+
+      <Card>
+        <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:D.textMuted,marginBottom:"10px"}}>
+          My devices
+        </div>
+        {ordered.length === 0
+          ? <EmptyState icon="📱" message="No devices registered yet. Turn alerts on above and this one will appear here."/>
+          : (
+            <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse"}}>
+                <thead><tr style={{background:D.surf2}}>
+                  {["Device","Registered","Last seen","State",""].map((h,i)=>(
+                    <th key={h+i} style={{padding:"9px 12px",fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase",textAlign:i===0?"left":"center",whiteSpace:"nowrap"}}>{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {ordered.map((d)=>(
+                    <tr key={d.id} style={{borderTop:`1px solid ${D.border}`,opacity:d.active?1:0.55}}>
+                      <td style={{padding:"10px 12px",fontFamily:D.body,fontSize:"12px",color:D.textPrimary}}>
+                        {d.label || d.platform}
+                        {/* The last six characters, never the token: it is the
+                            bearer credential for pushing to that phone. */}
+                        <span style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted,marginLeft:"8px"}}>…{d.tokenTail}</span>
+                      </td>
+                      <td style={{padding:"10px 12px",textAlign:"center",fontFamily:D.mono,fontSize:"11px",color:D.textSecondary}}>{when(d.registeredAt)}</td>
+                      <td style={{padding:"10px 12px",textAlign:"center",fontFamily:D.mono,fontSize:"11px",color:D.textSecondary}}>{when(d.lastSeenAt)}</td>
+                      <td style={{padding:"10px 12px",textAlign:"center"}}>
+                        <Badge color={d.active?D.emerald:D.textMuted}>{stateOf(d)}</Badge>
+                      </td>
+                      <td style={{padding:"10px 12px",textAlign:"center"}}>
+                        {d.active && <Btn size="sm" variant="ghost" disabled={busy}
+                          onClick={()=>retireOne(d.id)}>Sign out</Btn>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        {/* Retired rows are kept and shown, because "signed out on the iPad in
+            March" is the answer to "why did I stop getting alerts", and a list
+            of only live registrations cannot give it. */}
+      </Card>
     </div>
   );
 }

@@ -26,11 +26,65 @@ const WALKS = [
   "read", "sync", "handover", "fold",
   "assess", "access", "eligibility", "roster", "audit", "guardian",
   "rating", "notes", "amend", "login",
-  // Pre-match: naming the side, calling the toss, and the conditions
-  // both sides play in.
-  "squad", "toss", "conditions",
+  // Pre-match: who can play, naming the side, calling the toss, and the
+  // conditions both sides play in.
+  "availability", "squad", "toss", "conditions",
+  // Getting the side there: three capabilities that had nothing to act on.
+  "transport",
   // The dashboard's figures, and the scope they are counted over.
   "summary",
+  // An innings in three parts, and the scope the parts inherit.
+  "phases",
+  // The scouting consent primitive: accreditation, consent, evidence.
+  "scouting",
+  // The scorecard a viewer opens from Match Centre: the real replay, not a
+  // seeded reconstruction of the final score.
+  "scorecard",
+  // Appointing the officials: officiating.assign, which had nothing to act on.
+  "officials",
+  // The head-to-head against a rival, derived from the fixtures rather than
+  // stored beside them.
+  "derby",
+  // Batter against bowler, and how much of the log a matchup can speak for.
+  "matchups",
+  // DRS, and the platform switch that holds it off until there is
+  // ball-tracking to feed it.
+  "drs",
+  // The public overlay, and the names that do not go on it.
+  "broadcast",
+  // Sponsorship: which brands may be on a child's scoreboard, and what stays
+  // between the school and the sponsor.
+  "commercial",
+  // Module access: three levels, one direction each, and the assertion that
+  // switching everything on grants nobody a single row.
+  "modules",
+  // The two ways an authorization model dies: nobody appoints themselves
+  // upward, and nobody gets locked out.
+  "escalation",
+  // Getting four hundred boys in, and the data back out.
+  "csv",
+  // The intersection three people own: the family's answer, the physio's
+  // restriction and the coach's XI, which nothing joined until now.
+  "readiness",
+  // The notification system's missing half: publishing a notice, and getting
+  // it onto a phone without re-deciding who may have it.
+  "push",
+  // The rewards algorithm's coefficients, and the fact that nobody can read
+  // them — including the people whose boys the figure is about.
+  "rewards",
+  // School sport rather than cricket: a sport is a dimension, most of the
+  // product turns out to be sport-agnostic, and cricket's machinery is
+  // cricket's.
+  "sport",
+  // One fixture, two schools — and a route to arrange one, which the product
+  // had never had.
+  "fixture",
+  // Where a boy has played: derived from team_code writes, forgeable by
+  // nobody, and the end of a promotion overwriting a season.
+  "membership",
+  // Reading the other side ahead of a fixture: the one deliberate crossing of
+  // the tenant line, bounded by a fixture, a window and a column list.
+  "opposition",
 ];
 
 // Walks that drive a real browser AND need a database. They need two things
@@ -71,6 +125,31 @@ if (only.length && run.length !== only.length) {
 }
 
 const sh = (cmd, args) => spawnSync(cmd, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+
+// ── The live RLS verifier, once, before any walk ────────────────
+//
+// db/99_rls_verify.sql asserts the policies against a real connection as real
+// principals, and it is the only thing in the project that can catch a policy
+// that is correct in the model and inert in the database. It ran only when
+// somebody typed `--verify`, and so it sat red: an assertion written as a row
+// COUNT had stopped matching a seed that grew, and the failure went unseen
+// through several sessions of work — a verifier nothing runs is a document,
+// which is the failure mode this project keeps naming in other people's repos.
+//
+// It runs here because this is the one entry point that already has a database
+// and already refuses to start when something is missing. Hard exit rather
+// than a failed line in the summary: if the policies do not hold, what the
+// walks go on to prove about the routes is not worth reading.
+{
+  const v = sh("node", ["tools/migrate.mjs", "--reset", "--seed", "--verify"]);
+  if (v.status !== 0) {
+    console.error("\n✗ the live RLS verifier failed — not running the walks");
+    console.error((v.stdout + v.stderr).split("\n").filter((l) => /ASSERT|ERROR|✗/.test(l)).slice(0, 8).join("\n"));
+    process.exit(1);
+  }
+  console.log("✓ rls-verify      live policy assertions hold");
+}
+
 let allPass = true;
 const summary = [];
 

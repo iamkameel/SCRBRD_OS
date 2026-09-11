@@ -46,6 +46,18 @@ export const CAPABILITIES = {
   "team.read":                   "See teams and squads",
   "team.manage":                 "Create and change teams",
   "team.select":                 "Pick a matchday squad",
+  // AVAILABILITY, and deliberately not medical.status.read.
+  //
+  // Whether a boy is FIT is the physio's judgement. Whether he is AVAILABLE is
+  // his family's statement, and a fit boy can be at a funeral. Reusing the
+  // medical tier for it would mean either a coach writing into a clinical
+  // record or a physio speaking for a family, and both are wrong.
+  //
+  // The read is narrower than team.read on purpose: "unavailable, family" is a
+  // small window into a child's home life, and it belongs to the people
+  // picking the side rather than to everyone who can see a team sheet.
+  "availability.read":           "See who has said they are available",
+  "availability.declare":       "Say whether a player is available for a fixture",
   "player.profile.read":         "See a player's sporting profile",
   "player.profile.manage":       "Change a player's sporting profile",
   // Personal information about a minor: date of birth, guardian, address,
@@ -181,6 +193,23 @@ export const CAPABILITIES = {
   // ── Money ──
   "invoice.read":                "See invoices",
   "invoice.manage":              "Raise and reconcile invoices",
+  // Sponsorship, split three ways because the three facts have different
+  // audiences. A sponsor's name and logo are meant to be seen — that is what
+  // the sponsor is paying for. What they PAID is commercially confidential,
+  // and a coach who can see a boundary board has no business seeing the
+  // contract behind it.
+  "sponsorship.read":            "See who is sponsoring what",
+  "sponsorship.manage":          "Agree and place sponsorships",
+  // Overriding a category exclusivity somebody was sold.
+  //
+  // Deliberately NOT held by sponsorship.manage. The people who place boards
+  // are the people under pressure to place this one, and a promise that the
+  // person who wants to break it can also waive is not a promise. beta-2's
+  // model called this a school board waiver, which is the right instinct: it
+  // belongs to whoever answers for the school, not to whoever runs its
+  // commercial diary.
+  "sponsorship.exclusivity.waive": "Waive a sponsor's category exclusivity, in writing",
+  "sponsorship.finance.read":    "See sponsorship contract values and revenue share",
 
   // ── Competition ──
   "competition.read":            "See competitions and standings",
@@ -191,9 +220,22 @@ export const CAPABILITIES = {
   "news.publish.team":           "Publish to a team",
   "news.publish.school":         "Publish to an institution",
   "news.publish.competition":    "Publish to a competition",
+  // Putting a fixture on a screen the public can watch. Deliberately its own
+  // capability and NOT fixture.update: scheduling a match and broadcasting one
+  // are different acts with different consequences, and the second one puts
+  // children in front of an audience that is not at the ground.
+  "broadcast.publish":           "Put a fixture on a public broadcast overlay",
 
   // ── Analysis ──
   "analytics.read":              "See aggregate analysis",
+  // OPPOSITION, which is not scouting. Scouting is talent identification with
+  // a guardian's consent and an accredited scout; this is the other thing — a
+  // school reading what another school's players did, so its coaches can plan
+  // a fixture. The subject never consented and never will, which is why every
+  // grant of it is bounded three ways in db/08: to a HEAD-TO-HEAD FIXTURE the
+  // reader's team is actually in, to a WINDOW before that fixture opens, and
+  // to CRICKET COLUMNS AND AGGREGATES — a name and a record, never a person.
+  "opposition.read":             "Read the opposition's playing record ahead of a fixture you are in",
   "scouting.read":               "See scouting reports and watchlists",
   "scouting.write":              "Write scouting reports",
 
@@ -203,8 +245,77 @@ export const CAPABILITIES = {
   // those is granted explicitly, time-boxed, and audited.
   "platform.health.read":        "See platform health and error rates",
   "platform.tenant.manage":      "Onboard and configure tenants",
+  // A scout account claims an organisation on registration; this is what lets
+  // that claim be checked before it means anything. Deliberately separate
+  // from scouting.read/write, which the scout role holds for itself — nobody
+  // should be able to verify their OWN accreditation.
+  "scouting.accredit":           "Verify or suspend a scout's accreditation",
   "platform.support.impersonate":"Time-boxed, audited support access",
+  // Turn a product feature on or off across the platform. Separate from
+  // tenant.manage because it is not a claim about any tenant: it says what the
+  // product currently offers anybody. DRS is the first of these — the review
+  // panel is built, and stays off until there is ball-tracking to feed it.
+  "platform.feature.manage":     "Enable or disable a product feature platform-wide",
+  // The coefficients of the rewards algorithm. A PLATFORM capability and not a
+  // school one, because the algorithm is the platform's and the same everywhere
+  // — a school that could set its own weights could inflate its own boys'
+  // standing in a comparison that spans schools, which is the one thing the
+  // figure is for.
+  "platform.reward.manage":      "Set the coefficients of the rewards algorithm",
+  // Turn a module off for this school, or for one person at it.
+  //
+  // ONE DIRECTION ONLY, and the constraint is structural rather than written
+  // down here: the table this capability writes (feature_suppression) has no
+  // column that could mean "on". So a school administrator can hide Analytics
+  // from a coach and cannot grant themselves a module the platform did not
+  // grant them, whatever a future edit to a policy might allow.
+  //
+  // Not an authorization capability despite how it reads. Suppressing a module
+  // removes information from somebody who was already entitled to it; it can
+  // never hand anybody a row they could not already read.
+  "school.feature.manage":       "Turn a module off for this school, or for one of its people",
 };
+
+/**
+ * Capabilities that belong to NO TENANT, and may only be held through an
+ * assignment that belongs to no tenant either.
+ *
+ * THIS EXISTS BECAUSE OF A REAL ESCALATION, found by probing rather than by
+ * reading. app_holds() answers "does this person hold this capability
+ * anywhere", with the scope arms deliberately removed — which is correct for a
+ * decision that has no tenant to compare against. What it did not do was ask
+ * whether the ASSIGNMENT carrying the capability had a tenant. So a school
+ * administrator, who holds user.role.assign at their own school, could insert
+ * one row:
+ *
+ *     role_assignment(themselves, 'platformadmin', school_id = their school)
+ *
+ * and app_holds('platform.feature.manage') then returned true, because it
+ * never looked at school_id. From there they could unlock a feature the
+ * platform had locked, across every school on the platform.
+ *
+ * A platform capability held through a school-scoped assignment is a
+ * contradiction: the assignment says "at this school" and the capability says
+ * "there is no school". Naming them here makes app_holds() refuse that
+ * combination, which closes the amplifier at its source rather than at each of
+ * the eight call sites.
+ *
+ * scouting.write is deliberately NOT here even though it goes through
+ * app_holds: a scout IS attached to a school, and requiring a tenant-less
+ * assignment would stop scouting working entirely. The test is whether the
+ * DECISION has a tenant, not whether the call site is convenient.
+ */
+export const PLATFORM_ONLY = Object.freeze([
+  "platform.health.read",
+  "platform.tenant.manage",
+  "platform.support.impersonate",
+  "platform.feature.manage",
+  // Accrediting an external scouting organisation is not a claim about any one
+  // school's roster — see scout_accreditation_decide() in db/08.
+  "scouting.accredit",
+  // Same test applied: "what is the growth coefficient" has no tenant in it.
+  "platform.reward.manage",
+]);
 
 export const ALL_CAPABILITIES = Object.freeze(Object.keys(CAPABILITIES));
 

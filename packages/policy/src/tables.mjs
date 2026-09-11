@@ -196,6 +196,29 @@ export const TABLES = {
     read:  "fixture.read",
     write: "fixture.update",
     anchors: { school: "school_id", team: "team_code", fixture: "id" },
+    // BOTH SCHOOLS READ ONE FIXTURE.
+    //
+    // The same capability, asked at the away side's scope. A fixture between
+    // two tenants is a single row, and the away school's coaches, parents and
+    // scorer need it on their fixture list exactly as the home school's do —
+    // without it, the second school on the platform cannot see the match it is
+    // playing, which would push everyone straight back to keeping their own
+    // copy.
+    //
+    // The question asked of the away anchors is identical to the one asked of
+    // the home anchors: does this person hold fixture.read over THAT school and
+    // team? So nothing is widened for anybody — an away school whose coaches
+    // hold no fixture.read still sees nothing — and the predicate stays a
+    // disjunction of scoped capability checks rather than an SQL exception.
+    // See readPredicate() in generate-rls.mjs.
+    //
+    // Only the read has a second scope. WRITE stays anchored on the home side
+    // alone: whoever hosts owns the fixture record, and an away school that
+    // could edit it could move the venue or the time of somebody else's
+    // Saturday. Asking to change it is a conversation, not a permission.
+    readAnchors: [
+      { school: "away_school_id", team: "away_team_code", fixture: "id" },
+    ],
     masked: {},
   },
 
@@ -226,9 +249,24 @@ export const TABLES = {
     // everyone rather than fail open, and the squad would simply never load.
     read:  "player.profile.read",
     write: "team.select",
+    // THE ANCHOR FOLLOWS THE SIDE, which it has to now that a fixture can have
+    // two tenant sides. A home squad row belongs to the home school and team; an
+    // away squad row belongs to the away school and team. Anchoring both on the
+    // home side would mean an away coach could not name their own XI on the
+    // shared fixture — and, worse, that a home coach holding team.select could
+    // name the opposition's.
+    //
+    // Written as a CASE inside the anchor expression rather than as two
+    // policies, because the anchors are what app_can() is asked about and the
+    // row itself says which side it is on. For a fixture whose away side is not
+    // a tenant, away_school_id is NULL and an away row therefore anchors at a
+    // NULL school — which NARROWS under the asymmetric NULL rule, so nobody can
+    // write a team sheet for a school SCRBRD does not host. That is the right
+    // answer: their roster is their own school's business, exactly as their
+    // registration and eligibility are.
     anchors: {
-      school:  "(SELECT m.school_id FROM match m WHERE m.id = match_squad.match_id)",
-      team:    "(SELECT m.team_code FROM match m WHERE m.id = match_squad.match_id)",
+      school:  "(SELECT CASE WHEN match_squad.side = 'away' THEN m.away_school_id ELSE m.school_id END FROM match m WHERE m.id = match_squad.match_id)",
+      team:    "(SELECT CASE WHEN match_squad.side = 'away' THEN m.away_team_code ELSE m.team_code END FROM match m WHERE m.id = match_squad.match_id)",
       person:  "player_id",
       fixture: "match_id",
     },
@@ -427,6 +465,111 @@ export const TABLES = {
     masked: {},
   },
 
+  match_broadcast: {
+    // The decision to broadcast, and what the overlay may show. Read under
+    // fixture.read so a coach can see whether Saturday is going out; written
+    // under broadcast.publish, which is nobody's by default.
+    //
+    // The OVERLAY itself does not read this table — it calls broadcast_state(),
+    // which is SECURITY DEFINER and returns nothing for an unpublished
+    // fixture. That is deliberate: an overlay is watched by people with no
+    // account, and a screen at a ground cannot depend on somebody's row-level
+    // security. The publication row is what stands in for their permission.
+    read:  "fixture.read",
+    write: "broadcast.publish",
+    anchors: {
+      school:  "(SELECT m.school_id FROM match m WHERE m.id = match_broadcast.match_id)",
+      team:    "(SELECT m.team_code FROM match m WHERE m.id = match_broadcast.match_id)",
+      fixture: "match_id",
+    },
+    masked: {},
+  },
+
+  drs_review: {
+    // A review of a delivery. Read by anyone who can read the fixture — the
+    // decision is announced on the ground and belongs on the scorecard beside
+    // the wicket it did or did not produce.
+    //
+    // Written under scoring.correct, not scoring.edit: recording that a
+    // decision was reviewed and overturned is an amendment to what the log
+    // already says happened, and the people trusted to correct a scorecard are
+    // the people who should be trusted with it. An umpire holding
+    // officiating.report files a report; that is a different document.
+    //
+    // The feature flag is NOT in this policy, deliberately. A flag says what
+    // the product offers and a policy says who may see what; putting one in
+    // the other would mean turning DRS on quietly widened somebody's read.
+    // The gate is a trigger in db/08 — see drs_review_feature_gate().
+    read:  "fixture.read",
+    write: "scoring.correct",
+    anchors: {
+      school:  "(SELECT m.school_id FROM match m WHERE m.id = drs_review.match_id)",
+      team:    "(SELECT m.team_code FROM match m WHERE m.id = drs_review.match_id)",
+      fixture: "match_id",
+    },
+    masked: {},
+  },
+
+  derby: {
+    // The NAME of a rivalry, not its record — the tally is derived. Read by
+    // anyone who can read a fixture, since a derby's name is the least private
+    // thing a school owns: it is on the blazer. Written under fixture.update,
+    // the capability of the people who schedule and manage fixtures, because
+    // naming the annual match against Michaelhouse is fixture administration
+    // and not a competition-wide or platform decision.
+    read:  "fixture.read",
+    write: "fixture.update",
+    anchors: { school: "school_id" },
+    masked: {},
+  },
+
+  ground_condition: {
+    // The groundsman's own record. facility.manage to write — the person who
+    // rolled the square is the one who can describe it, the same reasoning as
+    // the pitch report — and facility.read to see it, which is in the floor
+    // bundle: a captain deciding whether to bring spinners, and a parent
+    // asking whether Saturday will drain in time, both legitimately want it.
+    //
+    // Anchored through the ground rather than on its own school_id, though
+    // that column exists and is NOT NULL. The column makes a write against a
+    // ground that is not there fail loudly; the subquery is what the predicate
+    // uses, because a denormalised anchor can drift from the row it claims and
+    // an RLS predicate must not be able to.
+    read:  "facility.read",
+    write: "facility.manage",
+    anchors: {
+      school: "(SELECT g.school_id FROM ground g WHERE g.id = ground_condition.ground_id)",
+    },
+    masked: {},
+  },
+
+  match_official: {
+    // Who is standing. Read by anyone who can read the fixture: the umpires'
+    // names are announced at the toss, printed on the scorecard and known to
+    // both sides — treating them as confidential would be a fiction, and the
+    // fixture scope already decides who may know the match exists at all.
+    //
+    // Written under officiating.assign, which three roles already hold and
+    // none could exercise until this table existed. Deliberately NOT
+    // fixture.update: appointing officials and rescheduling a fixture are
+    // different jobs, and a competition administrator who appoints panels
+    // across a league should not thereby be able to move other schools'
+    // matches.
+    //
+    // An official cannot appoint themselves — `official` carries
+    // officiating.report, not officiating.assign. Same reasoning as the pitch
+    // report above: closing that gap by widening either capability would hand
+    // one job to the holders of the other.
+    read:  "fixture.read",
+    write: "officiating.assign",
+    anchors: {
+      school:  "(SELECT m.school_id FROM match m WHERE m.id = match_official.match_id)",
+      team:    "(SELECT m.team_code FROM match m WHERE m.id = match_official.match_id)",
+      fixture: "match_id",
+    },
+    masked: {},
+  },
+
   match_pitch_report: {
     // The state of the square before play. Read by anyone who can read the
     // fixture — captains and coaches need it before the toss, and it discloses
@@ -453,6 +596,126 @@ export const TABLES = {
       fixture: "match_id",
     },
     masked: {},
+  },
+
+  vehicle: {
+    // The school's own fleet. Read in the floor bundle under transport.read —
+    // a parent seeing which bus their son is on is the point of the screen —
+    // and written under transport.manage, which three roles hold.
+    read:  "transport.read",
+    write: "transport.manage",
+    anchors: { school: "school_id" },
+    masked: {},
+  },
+
+  trip: {
+    // A bus to a fixture, anchored on the fixture.
+    //
+    // That anchor is what finally gives transport.drive somewhere to live: a
+    // driver assigned to Saturday's match reaches Saturday's trip and no
+    // other. The older build reached for an extra scope dimension to express
+    // this; the fixture already does.
+    //
+    // The driver's own marks — departed, arrived — do NOT go through this
+    // write capability. transport.drive is a capability to report on a trip,
+    // not to change one, so it goes through trip_mark() in db/08 and a driver
+    // never holds UPDATE on the row. Otherwise the person who drives the bus
+    // could re-time it, swap the vehicle, or cancel it.
+    read:  "transport.read",
+    write: "transport.manage",
+    anchors: {
+      school:  "(SELECT m.school_id FROM match m WHERE m.id = trip.match_id)",
+      team:    "(SELECT m.team_code FROM match m WHERE m.id = trip.match_id)",
+      fixture: "match_id",
+    },
+    masked: {},
+  },
+
+  match_availability: {
+    // A family's statement about one Saturday.
+    //
+    // Read under availability.read, which is narrower than team.read on
+    // purpose — "unavailable, family" is a small window into a child's home
+    // life and belongs to the people picking the side, not to everyone who can
+    // see a team sheet. Written under availability.declare, which the player,
+    // their guardian and the coaching staff all hold: a boy tells his coach at
+    // practice as often as he fills in a form, and declared_by on the row is
+    // what keeps those two apart.
+    //
+    // FOUR ANCHORS, and the person one is load-bearing. school and team come
+    // from the MATCH, so a team-scoped coach reaches their own fixtures;
+    // person resolves to the player, which is what lets a guardian reach their
+    // own child's declaration and no other. Without it a guardian holding
+    // availability.declare at a school could answer for every boy in it.
+    //
+    // The team anchor deliberately comes from the match rather than from the
+    // player: a U15A boy named in a 2XI fixture is answering about THAT
+    // fixture, and anchoring on his usual side would put the row outside the
+    // reach of the coach who is actually picking.
+    read:  "availability.read",
+    write: "availability.declare",
+    anchors: {
+      school:  "(SELECT m.school_id FROM match m WHERE m.id = match_availability.match_id)",
+      team:    "(SELECT m.team_code FROM match m WHERE m.id = match_availability.match_id)",
+      person:  "player_id",
+      fixture: "match_id",
+    },
+    masked: {},
+  },
+
+  sponsor: {
+    // A brand the school has signed. Read under sponsorship.read, which sits
+    // with the people who run the school's commercial relationships — and NOT
+    // in the floor bundle, because a list of who a school is negotiating with
+    // is competitive information about the school even though the logo ends up
+    // on a boundary board for everyone to see.
+    //
+    // The board is not this table. What reaches a public overlay comes out of
+    // broadcast_state(), which is SECURITY DEFINER and returns the name and
+    // colours of an ACTIVE placement only. A spectator reads a sponsor's name
+    // there without ever being able to select from here.
+    //
+    // Nothing in this policy decides whether a category may be advertised to
+    // children. That is sponsor_category_permitted() in db/08, a trigger, for
+    // the same reason the DRS gate is a trigger: it is a product decision
+    // about what may exist, not an authorisation decision about who may see
+    // what, and the two must not be able to be mistaken for each other.
+    read:  "sponsorship.read",
+    write: "sponsorship.manage",
+    anchors: { school: "school_id" },
+    masked: {},
+  },
+
+  sponsorship: {
+    // The placement: which sponsor, on which surface, between which dates, on
+    // what terms. Read and written with the sponsor it places.
+    //
+    // THE TERMS ARE MASKED, and this is the whole reason the table is split
+    // from `sponsor` at all. A sponsor's name and logo are meant to be seen —
+    // that is what the sponsor is paying for. What they PAID is commercially
+    // confidential: a director of sport planning next season's fixtures needs
+    // to know that the 1st XI scoreboard is committed to a bank until October,
+    // and has no business seeing the rand value of the contract or the split
+    // the school negotiated. sponsorship.finance.read is a separate capability
+    // held by finance, and by nobody else in the floor bundle.
+    //
+    // maskedAnyTeam rather than masked: a contract is a school-level
+    // agreement, so the team dimension does not apply to it. Anchoring the
+    // mask to the row's team would mean the 1XI coach could read the value of
+    // a placement tied to a 1XI fixture, which is exactly the disclosure the
+    // mask exists to prevent.
+    read:  "sponsorship.read",
+    write: "sponsorship.manage",
+    anchors: {
+      school:  "school_id",
+      // Deliberately NO fixture anchor, though match_id is here. A placement
+      // scoped to one fixture is still the school's commercial arrangement;
+      // anchoring on the fixture would mean anyone who may read the match may
+      // read the contract behind the board at it, which is every parent.
+    },
+    maskedAnyTeam: {
+      "sponsorship.finance.read": ["contract_value_zar", "school_share_pct"],
+    },
   },
 
   match_weather: {

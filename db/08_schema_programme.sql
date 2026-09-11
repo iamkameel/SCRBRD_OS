@@ -139,7 +139,11 @@ CREATE TABLE player_skill (
   -- has either stopped improving technically or stopped concentrating, and
   -- those need opposite conversations. See TREE in packages/scoring/src/rubric.mjs,
   -- which is the one place the attribute set is decided.
-  category    text NOT NULL CHECK (category IN ('technical','mental','physical')),
+  -- Four groups, not the three Football Manager uses. Cricket's game-craft —
+  -- rotating strike, setting a field, bowling at the death — is coachable skill
+  -- rather than disposition, and folding it into `mental` lost the distinction
+  -- a coach actually selects on. See TREE in packages/scoring/src/rubric.mjs.
+  category    text NOT NULL CHECK (category IN ('technical','mental','tactical','physical')),
   metric      text NOT NULL,
   -- 1-20, the Football Manager scale: 1-5 poor, 6-10 average, 11-15 good,
   -- 16-20 excellent. Not 0-100, which invites a precision no coach can defend
@@ -1332,6 +1336,84 @@ CREATE TRIGGER injury_notifies
 -- because a groundsman filling in three of eight boxes on a wet Friday is
 -- still worth more than nothing, and a form that demands all eight gets
 -- abandoned or invented.
+-- ── The derby ────────────────────────────────────────────────────
+--
+-- WHAT IS STORED HERE, AND WHAT IS DELIBERATELY NOT
+-- ─────────────────────────────────────────────────
+-- scrbrd-beta-2 carried a DerbyRecord holding totalClashes, winsA, winsB and
+-- draws. Those are counts of rows that exist, kept beside the rows they count,
+-- which is the same shape as every stored aggregate this codebase has removed:
+-- a scorecard corrected in March silently leaves the tally wrong for ever, and
+-- nothing in the product can say which of the two numbers is right.
+--
+-- So the tally is not here. It is derived from the fixtures at read time (see
+-- `derby_record` in read-api.mjs) and inherits the reader's own scope, exactly
+-- as career figures and phase breakdowns do — two people may legitimately see
+-- different totals for the same rivalry, because they may see different
+-- matches, and that is the model working.
+--
+-- What IS here is the part no query could ever produce: that this fixture is
+-- called The Michaelhouse Derby and has been played since 1892. Nobody can
+-- compute a name or a founding year from a list of matches.
+--
+-- The opponent is free text because it must be: a school SCRBRD does not host
+-- has no row to point at, which is the same reason match.opponent is text.
+CREATE TABLE derby (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id   uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  opponent    text NOT NULL CHECK (length(btrim(opponent)) > 0),
+  title       text NOT NULL CHECK (length(btrim(title)) > 0),
+  -- Nullable: plenty of rivalries are real and nobody remembers when they
+  -- started. A guessed year is worse than an absent one.
+  since_year  smallint CHECK (since_year IS NULL OR since_year BETWEEN 1800 AND 2200),
+  notes       text CHECK (notes IS NULL OR length(notes) <= 2000),
+  created_by  uuid REFERENCES app_user(id),
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+-- One name per rivalry. Case-insensitive because "Michaelhouse" and
+-- "michaelhouse" are the same school and a second row would split the record.
+CREATE UNIQUE INDEX ON derby (school_id, lower(btrim(opponent)));
+
+-- ── The curator's record of a ground ─────────────────────────────
+--
+-- match_pitch_report below describes the square PREPARED FOR ONE FIXTURE. This
+-- describes the ground itself, which is a different fact with a different
+-- author and a different lifetime: a groundsman rolls, mows and waters a
+-- square across a season, and the last time it was cut is not a property of
+-- Saturday's match.
+--
+-- The distinction matters practically. "How long after the rain stops before
+-- we can play?" is the single most asked question of a school groundsman on a
+-- wet morning, and the answer is a property of that ground's drainage — not
+-- of the fixture that happens to be scheduled on it. Recording it per match
+-- would mean storing the same number against every fixture at that venue and
+-- watching the copies drift.
+--
+-- One current record per ground, like the pitch report is one per match. A
+-- ground reported twice was reported once and corrected. Every field is
+-- nullable but the ground: a groundsman who measures moisture and nothing else
+-- is still worth more than an empty table, and a form demanding all seven gets
+-- abandoned or invented — the same reasoning as the pitch report.
+CREATE TABLE ground_condition (
+  ground_id     uuid PRIMARY KEY REFERENCES ground(id) ON DELETE CASCADE,
+  -- Derived at write time from the ground, never asserted by the caller.
+  school_id     uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  moisture_pct  smallint CHECK (moisture_pct IS NULL OR moisture_pct BETWEEN 0 AND 100),
+  grass_mm      smallint CHECK (grass_mm IS NULL OR grass_mm BETWEEN 0 AND 100),
+  roller        text CHECK (roller IS NULL OR roller IN ('none','light','heavy')),
+  outfield      text CHECK (outfield IS NULL OR outfield IN ('fast','medium','slow')),
+  -- Minutes from the rain stopping to the ground being playable. Ten hours is
+  -- the ceiling because beyond that the answer is "not today", which is a
+  -- decision rather than a drainage time.
+  drainage_min  smallint CHECK (drainage_min IS NULL OR drainage_min BETWEEN 0 AND 600),
+  last_rolled   date,
+  last_mown     date,
+  notes         text CHECK (notes IS NULL OR length(notes) <= 2000),
+  reported_by   uuid REFERENCES app_user(id),
+  reported_at   timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX ON ground_condition (school_id);
+
 CREATE TABLE match_pitch_report (
   match_id    uuid PRIMARY KEY REFERENCES match(id) ON DELETE CASCADE,
   -- Derived at write time from the match, never asserted by the caller: a row
@@ -1341,6 +1423,17 @@ CREATE TABLE match_pitch_report (
   grass       text CHECK (grass   IS NULL OR grass   IN ('bare','light','covered','green')),
   bounce      text CHECK (bounce  IS NULL OR bounce  IN ('low','even','variable','steep')),
   pace        text CHECK (pace    IS NULL OR pace    IN ('slow','medium','quick')),
+  -- The DEGREE, beside the character above. These are not the same fact twice:
+  -- 'variable' is not a point on a scale and cannot be written as a number,
+  -- while "steep" covers everything from awkward to unplayable and a season's
+  -- worth of squares cannot be compared on four words. A groundsman says
+  -- "two-paced" out loud; a director of sport asking which of five squares has
+  -- got slower since September needs the number. Either may be given alone.
+  bounce_rating smallint CHECK (bounce_rating IS NULL OR bounce_rating BETWEEN 1 AND 10),
+  pace_rating   smallint CHECK (pace_rating   IS NULL OR pace_rating   BETWEEN 1 AND 10),
+  -- How fast the outfield is running, which decides whether a well-timed shot
+  -- is two or four and is a different question from how the square plays.
+  outfield    text CHECK (outfield IS NULL OR outfield IN ('fast','medium','slow')),
   -- What the square is expected to reward. An estimate made before play, kept
   -- so it can be read back against what actually happened.
   favours     text CHECK (favours IS NULL OR favours IN ('seam','spin','batting','even')),
@@ -1349,6 +1442,60 @@ CREATE TABLE match_pitch_report (
   reported_by uuid REFERENCES app_user(id),
   reported_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- ── Who stood in the middle ──────────────────────────────────────
+--
+-- `officiating.assign` has existed since the first capability table and three
+-- roles hold it. There was nothing to assign: no table, so no appointment, so
+-- a capability that could never be exercised and an `official` role with
+-- nothing behind it. The scorecard's "scorer" pill read a mock-only field.
+--
+-- WHY THE NAME IS STORED AND NOT JOINED
+-- ─────────────────────────────────────
+-- `person_name` is NOT NULL and `person_id` is the optional link. Most school
+-- umpires have no account here at all — they come off a union panel and stand
+-- at four different schools in a season — so an appointment that could only
+-- name an app_user could not record the majority of real appointments.
+--
+-- Storing the name also means a read never joins app_user. That join would run
+-- under the reader's own row-level security, so a parent who may see the
+-- fixture but not the staff directory would get an appointment with a blank
+-- name rather than a refusal: the silent-empty-join failure this schema has
+-- been bitten by before. And the name as appointed is part of the record — an
+-- account renamed in 2027 must not quietly rewrite who umpired in 2026.
+--
+-- NOT CONSTRAINED TO TWO UMPIRES. A men's Test has two on-field umpires and a
+-- third; an U14 fixture on a wet Tuesday often has one, or a parent standing
+-- at square leg. A constraint asserting the professional shape would refuse
+-- the ordinary case, and the ordinary case is the one this product is for.
+CREATE TABLE match_official (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  match_id     uuid NOT NULL REFERENCES match(id) ON DELETE CASCADE,
+  -- Derived at write time from the match, never asserted by the caller —
+  -- the same rule as ball_event and match_pitch_report.
+  school_id    uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  duty         text NOT NULL CHECK (duty IN ('umpire','third_umpire','scorer','referee')),
+  person_name  text NOT NULL CHECK (length(btrim(person_name)) > 0),
+  -- Set when the official holds an account here, which is what lets them file
+  -- a report later under officiating.report. Null for everyone else.
+  person_id    uuid REFERENCES app_user(id) ON DELETE SET NULL,
+  panel        text,                            -- the union or association
+  -- Standing an official down is an UPDATE, never a DELETE. No table in this
+  -- schema has a DELETE policy for any role, and who was originally appointed
+  -- and later withdrawn is exactly the sort of thing a disputed fixture needs.
+  withdrawn    boolean NOT NULL DEFAULT false,
+  appointed_by uuid REFERENCES app_user(id),
+  appointed_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX ON match_official (match_id);
+CREATE INDEX ON match_official (school_id);
+-- The same person twice on the same duty is a mis-tick, in either identity
+-- form. Partial, because a withdrawn appointment must not block re-appointing
+-- the person it names.
+CREATE UNIQUE INDEX ON match_official (match_id, duty, person_id)
+  WHERE person_id IS NOT NULL AND NOT withdrawn;
+CREATE UNIQUE INDEX ON match_official (match_id, duty, lower(btrim(person_name)))
+  WHERE person_id IS NULL AND NOT withdrawn;
 
 CREATE TABLE match_weather (
   match_id      uuid PRIMARY KEY REFERENCES match(id) ON DELETE CASCADE,
@@ -1477,3 +1624,2622 @@ DROP TRIGGER IF EXISTS development_note_records_its_author ON development_note;
 CREATE TRIGGER development_note_records_its_author
   BEFORE INSERT OR UPDATE ON development_note
   FOR EACH ROW EXECUTE FUNCTION development_note_author();
+
+
+-- ════════════════════════════════════════════════════════════════
+--  Scouting: a primitive, not a feature
+-- ════════════════════════════════════════════════════════════════
+-- Two tables and one gated read. Everything here answers one question: what
+-- does a real accredited scout — a provincial union, a university programme,
+-- a franchise academy — get to see, and who decided they may see it.
+--
+-- THE ANSWER, in one sentence: nobody, of anybody, until that specific
+-- child's guardian has said so, and even then only to a scout whose
+-- organisation has been checked. Not the school. Not a subscription tier.
+-- The guardian, and only the guardian — see scouting_consent_set() below for
+-- why that is not negotiable.
+--
+-- "Subscriptions can reduce the information someone receives. They can never
+-- expand what someone may know" governs a pay-gate the same way it governs a
+-- notification filter: an organisation paying for scouting access buys a
+-- NARROWER view of what consent already permits, never a wider one. There is
+-- no code path anywhere in this section that a payment status could widen —
+-- entitlement, if it is ever built, is a further AND on scouting_candidates(),
+-- intersected with everything here, never a replacement for any of it.
+
+-- Who is allowed to look, from the outside.
+--
+-- The `scout` role (packages/policy/src/roles.mjs) holds scouting.read and
+-- scouting.write, and neither means anything on its own: they say a person
+-- may act AS a scout, not that any particular organisation vouches for them.
+-- This table is that vouching, and it is what scouting_candidates() actually
+-- checks — a person holding the role but not verified here sees nothing,
+-- which is the ordinary case for a brand-new registration.
+CREATE TABLE scout_accreditation (
+  -- One accreditation per person. A scout who changes organisation is a new
+  -- fact, recorded by updating this row and re-verifying — not a second row,
+  -- which would let an old, unrevoked accreditation quietly keep working.
+  person_id           uuid PRIMARY KEY REFERENCES app_user(id) ON DELETE CASCADE,
+  organisation        text NOT NULL CHECK (length(btrim(organisation)) > 0),
+  scout_role          text CHECK (scout_role IS NULL OR scout_role IN
+                        ('regional_selector','high_performance_scout',
+                         'university_recruiter','provincial_coach','other')),
+  -- 'pending' is the default for the same reason verification_state defaults
+  -- to 'pending' on a guardian link: a claim nobody has checked grants
+  -- nothing, so a self-registration that never gets looked at fails closed
+  -- rather than quietly working.
+  verification_status text NOT NULL DEFAULT 'pending'
+                        CHECK (verification_status IN ('pending','verified','suspended')),
+  verified_by          uuid REFERENCES app_user(id),
+  verified_at          timestamptz,
+  verified_note        text,
+  created_at           timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT scout_verified_names_a_verifier
+    CHECK (verification_status <> 'verified'
+           OR (verified_by IS NOT NULL AND verified_at IS NOT NULL))
+);
+
+-- RLS is hand-written here, not generated, and deliberately so — the same
+-- reason login_code and access_log are. "May I see my own accreditation" and
+-- "may I verify somebody else's" are not a capability held at a school/team
+-- scope; app_can()'s four dimensions have nothing to anchor to for a claim
+-- about an external organisation. Regenerating packages/policy never touches
+-- this file, so there is nothing here for `pnpm rls:generate` to overwrite —
+-- unlike the toss's policies, which WERE the ordinary generated shape and
+-- were lost for exactly that reason.
+ALTER TABLE scout_accreditation ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS scout_accreditation_read ON scout_accreditation;
+CREATE POLICY scout_accreditation_read ON scout_accreditation
+  FOR SELECT USING (
+    person_id = app_user_id()
+    OR app_holds('scouting.accredit')
+  );
+-- No INSERT/UPDATE/DELETE policy. Every write goes through one of the two
+-- functions below, which run SECURITY DEFINER and therefore bypass RLS
+-- regardless — the absence of a policy here is documentation, not the
+-- mechanism, and it is what stops scrbrd_app from writing the table any other
+-- way if a future route ever tried to.
+
+-- A scout claims an organisation. Always lands 'pending' — this function
+-- cannot verify itself, on purpose, so there is no argument to leave out to
+-- accidentally skip the check.
+CREATE OR REPLACE FUNCTION scout_accreditation_register(
+  p_organisation text,
+  p_scout_role   text DEFAULT NULL
+) RETURNS TABLE (ok boolean, reason text) AS $$
+BEGIN
+  -- Hand-written, not app_can(). "Does this person hold scouting.write AT
+  -- ALL" has no resource to anchor against — there is no player, no school,
+  -- no fixture, nothing app_can()'s four dimensions compare a scope to. This
+  -- is the same shape as the scouting.accredit check below it and the read
+  -- policy on scout_accreditation above: a claim about the whole platform,
+  -- not about one governed row. A fake NIL school as a stand-in resource was
+  -- tried first and failed for exactly the reason "there is no ANY_SCOPE for
+  -- school" documents — a scout's own assignment IS scoped to a real school,
+  -- and a nil resource does not widen against it.
+  -- Hand-written, not app_can(). "Does this person hold scouting.write AT
+  -- ALL" has no resource to anchor against — no player, no school, no
+  -- fixture — nothing app_can()'s four dimensions compare a scope to. Same
+  -- shape as the scouting.accredit checks below and the read policy above: a
+  -- claim about the whole platform, not one governed row.
+  --
+  -- valid_from checked as NULL-open, matching role_assignment's own column
+  -- (which allows an open start, unlike assignment_subject's NOT NULL
+  -- default): `valid_from <= current_date` against a NULL evaluates to NULL,
+  -- which is false in a WHERE clause, and the first version of this refused
+  -- every ordinary open-ended assignment in the seed — nobody could register
+  -- at all, silently, because the comparison itself never fires.
+  IF NOT app_holds('scouting.write') THEN
+    RETURN QUERY SELECT false, 'not_permitted'; RETURN;
+  END IF;
+  IF p_organisation IS NULL OR btrim(p_organisation) = '' THEN
+    RETURN QUERY SELECT false, 'organisation_required'; RETURN;
+  END IF;
+  INSERT INTO scout_accreditation (person_id, organisation, scout_role)
+       VALUES (app_user_id(), btrim(p_organisation), p_scout_role)
+  ON CONFLICT (person_id) DO UPDATE
+       -- A re-registration is a CHANGE of organisation, and it re-opens the
+       -- gate: whatever verification existed for the old claim does not carry
+       -- over to a new one nobody has checked.
+       SET organisation = excluded.organisation, scout_role = excluded.scout_role,
+           verification_status = 'pending', verified_by = NULL, verified_at = NULL,
+           verified_note = NULL;
+  RETURN QUERY SELECT true, NULL::text;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION scout_accreditation_register(text, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION scout_accreditation_register(text, text) TO PUBLIC;
+
+-- The platform checks the claim. `p_verified = false` suspends rather than
+-- deletes — the school-wide rule that nothing here is ever removed applies to
+-- an external actor's record just as much as to a child's.
+CREATE OR REPLACE FUNCTION scout_accreditation_decide(
+  p_scout    uuid,
+  p_verified boolean,
+  p_note     text DEFAULT NULL
+) RETURNS TABLE (ok boolean, reason text) AS $$
+DECLARE
+  v_rows int;
+BEGIN
+  -- Hand-written rather than app_can(), for the same reason the read policy
+  -- above is: accrediting a scout is not a claim about any school, and
+  -- app_can() has no dimension for "the whole platform, no anchor at all."
+  IF NOT app_holds('scouting.accredit') THEN
+    RETURN QUERY SELECT false, 'not_permitted'; RETURN;
+  END IF;
+
+  UPDATE scout_accreditation
+     SET verification_status = CASE WHEN p_verified THEN 'verified' ELSE 'suspended' END,
+         verified_by = app_user_id(), verified_at = now(), verified_note = p_note
+   WHERE person_id = p_scout;
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  IF v_rows = 0 THEN RETURN QUERY SELECT false, 'no_such_scout'; RETURN; END IF;
+  RETURN QUERY SELECT true, NULL::text;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION scout_accreditation_decide(uuid, boolean, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION scout_accreditation_decide(uuid, boolean, text) TO PUBLIC;
+
+-- Whether a specific child may be surfaced to scouts at all.
+--
+-- Absence of a row means what it says: not consented, not discoverable, full
+-- stop. There is no default that reaches 'granted' — not a subscription, not
+-- a school setting, not an import. `withdrawn` is a state, never a delete: a
+-- family who changes their mind has a right to be forgotten going FORWARD,
+-- and a right to their own history of having once said yes.
+CREATE TABLE player_scouting_consent (
+  player_id    uuid PRIMARY KEY REFERENCES player(id) ON DELETE CASCADE,
+  consent_state text NOT NULL CHECK (consent_state IN ('granted','withdrawn')),
+  decided_by   uuid REFERENCES app_user(id),
+  decided_at   timestamptz NOT NULL DEFAULT now()
+);
+
+-- Read is the ordinary capability a school already uses to see this child's
+-- profile at all — the same people who can already see a name, a birth date
+-- behind masking, a batting style. Whether a family has opted a child into
+-- external scouting is not a bigger disclosure than that, and a director of
+-- sport has a legitimate reason to know it: to support the family, or to
+-- follow up when a scout does show interest.
+--
+-- What must NOT happen, and does not: nobody with player.profile.read can
+-- WRITE this table. There is no INSERT/UPDATE policy at all, hand-written for
+-- the same reason as scout_accreditation above — the only path to 'granted'
+-- is scouting_consent_set(), and its check is guardian-only, deliberately
+-- with no administrative override. See that function for why.
+ALTER TABLE player_scouting_consent ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS player_scouting_consent_read ON player_scouting_consent;
+CREATE POLICY player_scouting_consent_read ON player_scouting_consent
+  FOR SELECT USING (
+    app_can('player.profile.read', player_school(player_scouting_consent.player_id),
+            player_team(player_scouting_consent.player_id),
+            player_scouting_consent.player_id,
+            '00000000-0000-0000-0000-000000000000'::uuid)
+  );
+
+-- The one act on this table a family may perform, and the only path to it.
+--
+-- guardian_consent_record() above lets the SCHOOL OFFICE record processing
+-- consent on a parent's behalf, for the parent who telephones — that is right
+-- for "may SCRBRD process my son's attendance and scores" and wrong here.
+-- Deciding whether a child is put in front of external scouting organisations
+-- is a materially larger decision than platform processing consent, and it is
+-- not the office's to make, record, or nudge. There is deliberately no
+-- `OR app_can('guardian.link.manage', ...)` escape hatch in the check below —
+-- a school administrator cannot grant this on a family's behalf, full stop,
+-- the same rule that already governs a notification subscription: an
+-- administrative role does not get to expand what a family has not agreed to.
+--
+-- SECURITY DEFINER because player_scouting_consent has no ordinary write
+-- policy for anybody, by design.
+CREATE OR REPLACE FUNCTION scouting_consent_set(
+  p_player  uuid,
+  p_granted boolean
+) RETURNS TABLE (ok boolean, reason text) AS $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM assignment_subject g
+      JOIN role_assignment a ON a.id = g.assignment_id
+     WHERE g.player_id = p_player
+       AND a.person_id = app_user_id()
+       AND a.role = 'guardian'
+       AND g.verification_state = 'verified'
+       -- Consent to being scouted rests on top of consent to be processed at
+       -- all — never ahead of it. A family cannot opt a child into external
+       -- scouting while withholding basic platform consent; that would be the
+       -- narrower decision outrunning the broader one it depends on.
+       AND g.consent_state = 'granted'
+       AND g.valid_from <= current_date
+       AND (g.valid_until IS NULL OR g.valid_until > current_date)
+  ) THEN
+    RETURN QUERY SELECT false, 'not_a_consented_guardian'; RETURN;
+  END IF;
+
+  INSERT INTO player_scouting_consent (player_id, consent_state, decided_by, decided_at)
+       VALUES (p_player, CASE WHEN p_granted THEN 'granted' ELSE 'withdrawn' END,
+               app_user_id(), now())
+  ON CONFLICT (player_id) DO UPDATE
+       SET consent_state = excluded.consent_state,
+           decided_by = excluded.decided_by, decided_at = excluded.decided_at;
+  RETURN QUERY SELECT true, NULL::text;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION scouting_consent_set(uuid, boolean) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION scouting_consent_set(uuid, boolean) TO PUBLIC;
+
+-- A single afternoon is not a body of work. Written as one number in one
+-- place, the same reasoning as COACH_PRIOR_BALLS in packages/scoring: not a
+-- claim that three is the RIGHT number, a documented placeholder a director
+-- of sport can argue with and raise without touching the query that uses it.
+CREATE OR REPLACE FUNCTION scouting_evidence_threshold() RETURNS int AS $$
+  SELECT 3
+$$ LANGUAGE sql IMMUTABLE;
+
+-- What an accredited scout actually sees.
+--
+-- Every one of the following must hold, for every row returned:
+--   1. app_can('scouting.read', ...) — the caller holds the role at all.
+--   2. scout_accreditation.verification_status = 'verified' for THIS caller —
+--      holding the role is not enough; the platform checked who they are.
+--   3. player_scouting_consent.consent_state = 'granted' for THIS player —
+--      a guardian said yes, specifically, and has not since said otherwise.
+--   4. matches recorded >= scouting_evidence_threshold() — enough of a body
+--      of work to be worth anyone's trial, batting or bowling.
+--
+-- SECURITY DEFINER, and deliberately NOT a security_invoker view over
+-- `player`. A security_invoker view joined to player would be filtered by
+-- player's OWN read policy (player.profile.read), which the scout role no
+-- longer holds — see the comment on the `scout` role in
+-- packages/policy/src/roles.mjs for why that capability was removed from it.
+-- This function is the one and only door, and it checks everything itself
+-- rather than depending on a capability a scout is not meant to hold.
+--
+-- Returns figures only, never the fields a school masks even from its own
+-- coaches: no date of birth, no id number, no medical or disciplinary
+-- anything. A scout sees exactly what a scorecard shows a spectator, plus the
+-- career totals every reader of /read/career already gets for a match they
+-- may see — nothing a consenting family has not effectively already made
+-- public by having their son's name on a scoreboard.
+CREATE OR REPLACE FUNCTION scouting_candidates()
+RETURNS TABLE (
+  player_id uuid, full_name text, school_id uuid, team_code text,
+  playing_role text, batting_style text, bowling_style text,
+  batting_matches bigint, runs bigint, balls_faced bigint,
+  bowling_matches bigint, wickets bigint, runs_conceded bigint, legal_balls bigint
+) AS $$
+  SELECT p.id, p.full_name, p.school_id, p.team_code,
+         p.playing_role, p.batting_style, p.bowling_style,
+         coalesce(bc.matches, 0), bc.runs, bc.balls_faced,
+         coalesce(bw.matches, 0), bw.wickets, bw.runs_conceded, bw.legal_balls
+    FROM player p
+    JOIN player_scouting_consent c ON c.player_id = p.id AND c.consent_state = 'granted'
+    LEFT JOIN player_batting_career bc ON bc.player_id = p.id
+    LEFT JOIN player_bowling_career bw ON bw.player_id = p.id
+   WHERE app_can('scouting.read', p.school_id, '*'::text, p.id,
+                 '00000000-0000-0000-0000-000000000000'::uuid)
+     AND EXISTS (SELECT 1 FROM scout_accreditation sa
+                  WHERE sa.person_id = app_user_id()
+                    AND sa.verification_status = 'verified')
+     AND (coalesce(bc.matches, 0) + coalesce(bw.matches, 0)) >= scouting_evidence_threshold()
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION scouting_candidates() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION scouting_candidates() TO PUBLIC;
+
+
+-- ═══════════════════════════════════════════════════════════════
+--  FEATURE FLAGS, AND THE FIRST FEATURE THAT NEEDS ONE
+-- ═══════════════════════════════════════════════════════════════
+--
+-- A switch a platform administrator can throw to turn a product feature off
+-- for everybody. There is exactly one reason for this table to exist and it is
+-- worth stating plainly, because a flag system is otherwise an invitation to
+-- half-ship things: SOME FEATURES ARE CORRECT AND NOT YET TRUSTWORTHY.
+--
+-- DRS is the case. The review panel below models a decision perfectly well.
+-- What it cannot do is measure: "pitching in line" and "would have hit leg
+-- stump" are outputs of ball-tracking, and until there are cameras on the
+-- ground every value a school could enter is a person's judgement. Shipping it
+-- switched on would put a Hawk-Eye-shaped screen in front of a parent over a
+-- number an umpire guessed, which is the fabrication this codebase keeps
+-- deleting — the seeded scorecard, the invented par score, the stored derby
+-- tally. Building it and holding it off is the honest version.
+--
+-- WHAT A FLAG IS NOT
+-- ──────────────────
+-- It is not authorisation. It says what the product currently offers, never
+-- who may see what — those stay in capabilities and RLS, where they can be
+-- reasoned about. So a flag never appears in a read policy, and turning DRS on
+-- grants nobody a single row they could not already read.
+--
+-- And it is ENFORCED IN THE DATABASE, not by hiding a button. A disabled
+-- feature whose only guard is a hidden control is a feature anybody with a
+-- fetch call still has. See the trigger below.
+CREATE TABLE feature_flag (
+  key        text PRIMARY KEY CHECK (key ~ '^[a-z][a-z0-9_]{2,49}$'),
+  -- module or feature. A module has a doorway somebody can be sent to; a
+  -- feature is something the product does inside one. The distinction changes
+  -- nothing about how the switch resolves and everything about how an
+  -- administrator's screen reads, which is the only reason it is here.
+  -- module, feature or sport. A module has a doorway somebody can be sent to;
+  -- a feature is something the product does inside one; a SPORT is which game
+  -- a fixture is, and it gates the machinery rather than a screen. All three
+  -- resolve through exactly the same three levels — the distinction changes
+  -- nothing about how a switch behaves and everything about how an
+  -- administrator's screen groups them, which is the only reason it is here.
+  kind       text NOT NULL DEFAULT 'feature' CHECK (kind IN ('module','feature','sport')),
+  -- What to call it on that screen. In the database rather than only in
+  -- packages/policy/src/modules.mjs so that a row is legible to somebody
+  -- reading the table directly during an incident.
+  label      text,
+  -- NOBODY MAY DEVIATE. Not a stronger `enabled` — an independent statement
+  -- that this switch is the platform's to hold, so a school grant is ignored
+  -- entirely while it stands. DRS is the case it was added for: the feature is
+  -- built, and no commercial conversation should be able to turn it on before
+  -- there is ball-tracking to feed it.
+  --
+  -- Suppressions still apply on top. Locking sets the ceiling; it never forces
+  -- a school to show something.
+  locked     boolean NOT NULL DEFAULT false,
+  -- Default false, deliberately. A feature that arrives switched on the moment
+  -- its migration lands has not been decided about; it has been forgotten
+  -- about. Turning it on is a person's act and this table records whose.
+  enabled    boolean NOT NULL DEFAULT false,
+  -- Why it is in the state it is in. Free text, and the most valuable column
+  -- here: "off until we have ball-tracking" is the difference between a switch
+  -- somebody can reason about in a year and one nobody dares touch.
+  reason     text CHECK (reason IS NULL OR length(reason) <= 1000),
+  changed_by uuid REFERENCES app_user(id),
+  changed_at timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE feature_flag ENABLE ROW LEVEL SECURITY;
+
+-- Hand-written rather than declared in packages/policy/src/tables.mjs, and for
+-- the reason that file's generated policies cannot express: this table has NO
+-- SCHOOL. Every anchor the generator builds is a tenant comparison, and a
+-- platform-wide switch belongs to no tenant. Same class as login_code and
+-- access_log, which are hand-written here for the same reason.
+--
+-- Readable by anyone signed in. Which features exist and whether they are on
+-- is not a secret — a client has to know what to render, and hiding it would
+-- only mean the client guessed.
+CREATE POLICY feature_flag_read ON feature_flag
+  FOR SELECT USING (app_user_id() IS NOT NULL);
+
+-- Written only by a platform capability, through app_holds() because there is
+-- no tenant to anchor on. NOT platform.tenant.manage: configuring a school and
+-- deciding what the product does for everybody are different jobs.
+CREATE POLICY feature_flag_insert ON feature_flag
+  FOR INSERT WITH CHECK (app_holds('platform.feature.manage'));
+CREATE POLICY feature_flag_update ON feature_flag
+  FOR UPDATE USING (app_holds('platform.feature.manage'))
+           WITH CHECK (app_holds('platform.feature.manage'));
+-- No DELETE policy. A flag that disappears reads as a feature that was never
+-- gated, which is the opposite of what a removed row would mean.
+
+/**
+ * Is a feature on right now?
+ *
+ * Unknown key means OFF. A feature nobody has declared is one nobody has
+ * decided about, and defaulting an unrecognised name to `true` would make a
+ * typo in a trigger switch a feature on for the platform.
+ *
+ * SECURITY DEFINER so the answer does not depend on the caller being able to
+ * read feature_flag — the trigger below must get the same answer for a scorer
+ * as for a platform administrator, or the gate is not a gate.
+ */
+CREATE OR REPLACE FUNCTION feature_enabled(p_key text) RETURNS boolean AS $$
+  SELECT coalesce((SELECT enabled FROM feature_flag WHERE key = p_key), false)
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION feature_enabled(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION feature_enabled(text) TO PUBLIC;
+
+
+-- ── The commercial level: what a school's plan includes ──────────
+--
+-- Written ONLY under platform.feature.manage. This is the lever that lets a
+-- module be off by default and on for the schools that pay for it, and it can
+-- go either way — granted, or revoked when a plan lapses — because it is the
+-- platform's own decision about its own product.
+--
+-- A row here is an OVERRIDE of feature_flag.enabled for one school, so
+-- `granted` is a boolean and not merely the row's existence: revoking has to
+-- be distinguishable from never having granted, or the note explaining why a
+-- school lost a module has nowhere to live.
+CREATE TABLE feature_grant (
+  key        text NOT NULL REFERENCES feature_flag(key) ON DELETE CASCADE,
+  school_id  uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  granted    boolean NOT NULL,
+  note       text CHECK (note IS NULL OR length(note) <= 1000),
+  changed_by uuid REFERENCES app_user(id),
+  changed_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (key, school_id)
+);
+ALTER TABLE feature_grant ENABLE ROW LEVEL SECURITY;
+
+-- Hand-written for the same reason feature_flag's are: this is not an ordinary
+-- tenant table. It HAS a school, but the person who may write it is not
+-- scoped to that school at all — a platform administrator holds no assignment
+-- anywhere, so every anchor the generator builds would refuse them.
+--
+-- Readable by anyone signed in. What a school's plan includes is not a secret
+-- from that school, and hiding it would only mean a client guessed.
+CREATE POLICY feature_grant_read ON feature_grant
+  FOR SELECT USING (app_user_id() IS NOT NULL);
+CREATE POLICY feature_grant_insert ON feature_grant
+  FOR INSERT WITH CHECK (app_holds('platform.feature.manage'));
+CREATE POLICY feature_grant_update ON feature_grant
+  FOR UPDATE USING (app_holds('platform.feature.manage'))
+           WITH CHECK (app_holds('platform.feature.manage'));
+
+
+-- ── The school's own level, and the shape that makes it safe ─────
+--
+-- THIS TABLE HAS NO COLUMN THAT COULD MEAN "ON".
+--
+-- That sentence is the entire design of school-side module management. A
+-- school administrator can hide a module from their school, or from one person
+-- at it, and cannot grant themselves a module the platform did not grant them
+-- — not because a policy forbids setting a boolean to true, but because there
+-- is no boolean. The safe property is structural, so a future edit to a policy
+-- or a route cannot quietly reverse it. Same reasoning as "a cached
+-- notification is not permission".
+--
+-- person_id NULL means the whole school. A row naming a person means that one
+-- person, and it narrows further rather than replacing the school-wide row —
+-- both are checked, and either is enough to switch the module off.
+--
+-- UN-HIDING IS A LIFT, NOT A DELETE, and that is not a stylistic choice: this
+-- database grants scrbrd_app no DELETE privilege on anything (db/06_app_role),
+-- because records are deactivated rather than removed so an audit trail
+-- survives. A suppression is a setting rather than a record about a child, but
+-- carving a privilege exception for it would be the wrong way round — and the
+-- append-only version turns out to be the better one anyway, because "who
+-- turned Injuries back on, and when" is a question a school will eventually
+-- ask.
+--
+-- Lifting does NOT weaken the guarantee above. A lifted suppression returns
+-- the answer to whatever the platform said and no further; there is still no
+-- column here whose value can exceed the platform's grant. The one-position
+-- switch is intact — what a lift does is take the switch out of the circuit.
+CREATE TABLE feature_suppression (
+  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  key        text NOT NULL REFERENCES feature_flag(key) ON DELETE CASCADE,
+  school_id  uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  person_id  uuid REFERENCES app_user(id) ON DELETE CASCADE,
+  reason     text CHECK (reason IS NULL OR length(reason) <= 1000),
+  hidden_by  uuid REFERENCES app_user(id),
+  hidden_at  timestamptz NOT NULL DEFAULT now(),
+  -- When set, this suppression no longer applies. Re-hiding writes a NEW row,
+  -- so the table reads as a history of a school's decisions rather than as
+  -- their current state, and the current state is a WHERE clause.
+  lifted_at  timestamptz,
+  lifted_by  uuid REFERENCES app_user(id),
+  CONSTRAINT lifted_has_a_lifter CHECK ((lifted_at IS NULL) = (lifted_by IS NULL))
+);
+-- Two indexes rather than a composite primary key: person_id is nullable, and
+-- a NULL in a key column would let the same school-wide suppression be written
+-- twice. Both are partial on lifted_at so that a lifted row does not block the
+-- school from hiding the module again later.
+CREATE UNIQUE INDEX ON feature_suppression (key, school_id)
+  WHERE person_id IS NULL AND lifted_at IS NULL;
+CREATE UNIQUE INDEX ON feature_suppression (key, school_id, person_id)
+  WHERE person_id IS NOT NULL AND lifted_at IS NULL;
+ALTER TABLE feature_suppression ENABLE ROW LEVEL SECURITY;
+
+/**
+ * Whoever writes a suppression must hold school.feature.manage AT THAT SCHOOL.
+ *
+ * app_can() rather than app_holds(): unlike the platform switch, this one IS a
+ * claim about a tenant, and a school administrator at Westville must not be
+ * able to hide a module from Hilton. The person dimension is deliberately
+ * passed as NULL — hiding a module from somebody is not reading anything about
+ * them, and requiring a person-scoped assignment would mean an administrator
+ * could only hide modules from people they were individually assigned to.
+ */
+CREATE POLICY feature_suppression_read ON feature_suppression
+  FOR SELECT USING (app_user_id() IS NOT NULL);
+CREATE POLICY feature_suppression_insert ON feature_suppression
+  FOR INSERT WITH CHECK (app_can('school.feature.manage', school_id, NULL, NULL, NULL));
+-- The only UPDATE this table accepts is a lift, and the policy says so in both
+-- directions: the row must be unlifted going in and lifted coming out. A
+-- school cannot un-lift a suppression back into force, because re-hiding is an
+-- insert — which keeps the history honest.
+CREATE POLICY feature_suppression_update ON feature_suppression
+  FOR UPDATE USING     (app_can('school.feature.manage', school_id, NULL, NULL, NULL)
+                        AND lifted_at IS NULL)
+           WITH CHECK  (app_can('school.feature.manage', school_id, NULL, NULL, NULL)
+                        AND lifted_at IS NOT NULL);
+-- No DELETE policy, and no DELETE privilege either — see db/06_app_role.sql.
+
+/**
+ * An UPDATE may set the lift and nothing else.
+ *
+ * The policy above governs WHO and in which direction; it cannot stop the same
+ * statement from also rewriting key, school_id or person_id, which would turn
+ * one school's lifted suppression into another school's live one. Structural
+ * rules get triggers here — the same reasoning as ball_event's append-only
+ * guard.
+ */
+CREATE OR REPLACE FUNCTION feature_suppression_lift_only() RETURNS trigger AS $$
+BEGIN
+  IF NEW.key       IS DISTINCT FROM OLD.key
+  OR NEW.school_id IS DISTINCT FROM OLD.school_id
+  OR NEW.person_id IS DISTINCT FROM OLD.person_id
+  OR NEW.hidden_by IS DISTINCT FROM OLD.hidden_by
+  OR NEW.hidden_at IS DISTINCT FROM OLD.hidden_at
+  OR NEW.reason    IS DISTINCT FROM OLD.reason THEN
+    RAISE EXCEPTION 'a suppression may only be lifted; to change what is hidden, '
+                    'lift this one and write the one you meant'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER feature_suppression_lift_guard BEFORE UPDATE ON feature_suppression
+  FOR EACH ROW EXECUTE FUNCTION feature_suppression_lift_only();
+
+/**
+ * Is this module on, for one school, for one person?
+ *
+ *     platform default, or the school's grant if the flag is not locked
+ *     AND NOT suppressed for the school
+ *     AND NOT suppressed for this person at that school
+ *
+ * An AND at every level, which is what makes the whole mechanism unable to
+ * widen anything. There is no branch in here that returns true because of a
+ * row somebody at a school wrote.
+ *
+ * SECURITY DEFINER, so the answer does not depend on the caller being able to
+ * read these tables — an administrator and a coach must get the same answer or
+ * the gate is not a gate.
+ */
+CREATE OR REPLACE FUNCTION feature_enabled(p_key text, p_school uuid, p_person uuid)
+RETURNS boolean AS $$
+  -- The outer coalesce is what makes an UNKNOWN KEY OFF rather than NULL: no
+  -- feature_flag row means the inner SELECT returns nothing at all, and a
+  -- three-valued answer to "may this be shown" is one a caller will get wrong.
+  -- Same rule as the one-argument form above.
+  SELECT coalesce((
+    SELECT CASE
+             WHEN EXISTS (
+               SELECT 1 FROM feature_suppression s
+                WHERE s.key = p_key AND s.school_id = p_school
+                  AND s.lifted_at IS NULL
+                  AND (s.person_id IS NULL OR s.person_id = p_person)
+             ) THEN false
+             WHEN f.locked THEN f.enabled
+             ELSE coalesce(
+                    (SELECT g.granted FROM feature_grant g
+                      WHERE g.key = p_key AND g.school_id = p_school),
+                    f.enabled)
+           END
+      FROM feature_flag f WHERE f.key = p_key), false)
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION feature_enabled(text, uuid, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION feature_enabled(text, uuid, uuid) TO PUBLIC;
+
+/**
+ * The same question for the SIGNED-IN caller, across everywhere they belong.
+ *
+ * A person can hold assignments at more than one school, and a module can be
+ * on at one and hidden at the other. The API refuses a read once, for the
+ * whole request, so it has to collapse that into a single answer — and the
+ * direction it collapses in is the codebase's standing one: OFF AT ANY SCHOOL
+ * YOU BELONG TO IS OFF.
+ *
+ * That over-refuses for the rare person assigned at two schools, and it
+ * over-refuses in the safe direction. The alternative — on if on anywhere —
+ * would mean a school that hid a module from a particular coach could be
+ * defeated by that coach holding an assignment somewhere else, which is a
+ * setting that does not do what its name says.
+ *
+ * Somebody with no school at all is a platform account, and gets the platform
+ * default: no grants and no suppressions can apply to a person no school has.
+ */
+CREATE OR REPLACE FUNCTION my_feature_enabled(p_key text) RETURNS boolean AS $$
+  SELECT CASE
+           WHEN app_user_id() IS NULL THEN false
+           WHEN NOT EXISTS (
+             SELECT 1 FROM role_assignment a
+              WHERE a.person_id = app_user_id() AND a.active AND a.school_id IS NOT NULL
+           ) THEN feature_enabled(p_key)
+           ELSE coalesce((
+             SELECT bool_and(feature_enabled(p_key, s.school_id, app_user_id()))
+               FROM (SELECT DISTINCT a.school_id FROM role_assignment a
+                      WHERE a.person_id = app_user_id() AND a.active
+                        AND a.school_id IS NOT NULL) s
+           ), false)
+         END
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION my_feature_enabled(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION my_feature_enabled(text) TO PUBLIC;
+
+-- ── The switchable things themselves ─────────────────────────────
+--
+-- Kept in step with packages/policy/src/modules.mjs by a test that fails the
+-- build when the two disagree, the same way the RLS generator's output is kept
+-- in step with tables.mjs. Two lists of what the product offers would drift,
+-- and the symptom would be a module nobody can switch because the row it needs
+-- was never inserted.
+--
+-- MODULES ARRIVE ON. The column default is false and stays false, because a
+-- FEATURE that arrives switched on has not been decided about. A MODULE is
+-- different: it is part of the product a school already bought, and shipping
+-- this migration with everything off would take Analytics away from every
+-- school on the platform at the moment it applied.
+INSERT INTO feature_flag (key, kind, label, enabled, reason) VALUES
+  ('competitions', 'module', 'Competitions', true, NULL),
+  ('leagues',      'module', 'Leagues',      true, NULL),
+  ('analytics',    'module', 'Analytics',    true, NULL),
+  ('skills',       'module', 'Skills',       true, NULL),
+  ('training',     'module', 'Training',     true, NULL),
+  ('injuries',     'module', 'Injuries',     true, NULL),
+  ('logistics',    'module', 'Logistics',    true, NULL),
+  ('fields',       'module', 'Fields',       true, NULL),
+  ('officials',    'module', 'Officials',    true, NULL),
+  ('sponsors',     'module', 'Sponsors',     true, NULL),
+  ('staff',        'module', 'Staff',        true, NULL),
+  ('broadcast',    'feature','Broadcast overlay', true, NULL),
+  ('scouting',     'feature','Scouting',     true, NULL)
+ON CONFLICT (key) DO NOTHING;
+
+-- THE SPORTS, and only one of them is on.
+--
+-- Keys are derived from sport.code by the generated flag_key column in db/00,
+-- so these cannot drift from the catalogue —
+-- packages/policy/test/modules.test.mjs fails if a sport has no row or a row
+-- has no sport.
+--
+-- Cricket on, everything else off, and off here means off for EVERY school
+-- until the platform grants it. That is the same direction as every other
+-- switch in this table: the platform grants, a school may only reduce. A
+-- school cannot decide to start running rugby through SCRBRD by flipping
+-- something at their end, because "rugby works" is a statement about what we
+-- have built and tested, not a preference.
+INSERT INTO feature_flag (key, kind, label, enabled, reason) VALUES
+  ('sport_cricket',   'sport', 'Cricket',   true,  NULL),
+  ('sport_rugby',     'sport', 'Rugby',     false,
+   'Fixture engine only — schedule, squad, availability, transport, officials. '
+   'No scoring engine. Grant per school when they want the fixture half.'),
+  ('sport_hockey',    'sport', 'Hockey',    false, 'As rugby: fixture engine only.'),
+  ('sport_netball',   'sport', 'Netball',   false, 'As rugby: fixture engine only.'),
+  ('sport_football',  'sport', 'Football',  false, 'As rugby: fixture engine only.'),
+  ('sport_athletics', 'sport', 'Athletics', false,
+   'Listed, not built. A meet is heats and lanes and marks, which is a '
+   'different shape from a fixture between two sides, and pretending otherwise '
+   'would give a school a fixture list it cannot use.'),
+  ('sport_swimming',  'sport', 'Swimming',  false, 'As athletics: a gala is not a fixture.')
+ON CONFLICT (key) DO NOTHING;
+
+-- Reading another school's players ahead of a fixture. Off until the platform
+-- turns it on for a school: this is a disclosure about children who are not
+-- that school's, bounded in db/08 by a fixture and a window, and the decision
+-- to make it at all is the platform's — see opposition_window() below.
+INSERT INTO feature_flag (key, kind, label, enabled, reason) VALUES
+  ('opposition', 'feature', 'Opposition intelligence', false,
+   'Cross-tenant by nature. Granted per school once the fixture window and the '
+   'cricket-only column rule have been walked through with them.')
+ON CONFLICT (key) DO NOTHING;
+
+INSERT INTO feature_flag (key, kind, label, enabled, locked, reason) VALUES
+  ('drs_review', 'feature', 'DRS / LBW review', false, true,
+   'Built and held off. The panel records a review correctly, but pitching, '
+   'impact and wickets are ball-tracking outputs, and until there are cameras '
+   'on the ground every value entered would be an umpire''s judgement rendered '
+   'as if it were measured. Turn on per the evidence_source the technology '
+   'actually supports.')
+ON CONFLICT (key) DO NOTHING;
+-- LOCKED, which is the difference between this row and every other one above.
+-- A school cannot be granted DRS while it stands, whatever a commercial
+-- conversation concludes, because the objection is not commercial: there is no
+-- instrument on the ground capable of producing the numbers the screen would
+-- render.
+
+
+-- ── The review itself ────────────────────────────────────────────
+--
+-- Law 36 has four questions — where it pitched, where it struck, whether it
+-- was going on to hit, and whether a shot was offered — and under real DRS
+-- three of them come off ball-tracking. Here they come off whatever the ground
+-- actually has, so EVERY REVIEW STATES HOW IT WAS KNOWN.
+--
+-- `evidence_source` is NOT NULL and has NO DEFAULT. That is the whole design.
+-- A row cannot be written without saying whether a person judged it, a replay
+-- showed it, or a tracking system computed it, and a screen can therefore
+-- never render an umpire's opinion in the visual language of a measurement.
+-- It is the same rule as placement_source on ball_event: a sector-era ball is
+-- never upgraded by synthesising a point from its wedge, and an eye-judged
+-- review is never dressed up as a tracked one.
+--
+-- The delivery is referenced by (match_id, seq), which is a real foreign key
+-- into the ball log rather than a loose number: a review of a ball that was
+-- never bowled cannot be recorded.
+CREATE TABLE drs_review (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  match_id      uuid NOT NULL REFERENCES match(id) ON DELETE CASCADE,
+  -- Derived at write time from the match, never asserted — as everywhere.
+  school_id     uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  ball_seq      integer NOT NULL,
+  FOREIGN KEY (match_id, ball_seq) REFERENCES ball_event (match_id, seq) ON DELETE CASCADE,
+
+  -- Who called for it. A review is not always a player's: an umpire may refer
+  -- a decision upward without either side asking.
+  called_by     text NOT NULL CHECK (called_by IN ('batting','fielding','umpire')),
+  -- What the on-field umpire had given before the review.
+  on_field      text NOT NULL CHECK (on_field IN ('out','not_out')),
+  -- What the review did to it.
+  outcome       text NOT NULL CHECK (outcome IN ('upheld','overturned','umpires_call')),
+
+  -- The Law 36 components. All nullable, because a review of a caught-behind
+  -- has none of them and a form that demanded them would be filled in with
+  -- invention — the same reasoning as the pitch report's optional fields.
+  pitching      text CHECK (pitching IS NULL OR pitching IN ('in_line','outside_off','outside_leg')),
+  impact        text CHECK (impact   IS NULL OR impact   IN ('in_line','outside_off')),
+  wickets       text CHECK (wickets  IS NULL OR wickets  IN ('hitting','missing','umpires_call')),
+  shot_offered  boolean,
+
+  -- HOW IT WAS KNOWN. No default: see above.
+  evidence_source text NOT NULL
+                  CHECK (evidence_source IN ('umpire_eye','video_replay','ball_tracking')),
+  notes         text CHECK (notes IS NULL OR length(notes) <= 2000),
+  reviewed_by   uuid REFERENCES app_user(id),
+  reviewed_at   timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX ON drs_review (match_id);
+CREATE INDEX ON drs_review (school_id);
+-- One review per delivery. A ball reviewed twice was reviewed once and
+-- corrected, like the toss and the pitch report.
+CREATE UNIQUE INDEX ON drs_review (match_id, ball_seq);
+
+/**
+ * The gate, in the database.
+ *
+ * A feature switched off in the UI is switched off for people who use the UI.
+ * This is what makes it off for everybody: the row is refused at the table, so
+ * a stale client, a queued offline write and somebody with a fetch call all
+ * get the same answer.
+ *
+ * The message names the flag and who can change it, because the alternative is
+ * a scorer at a ground being told "not permitted" for a feature that is
+ * working exactly as intended.
+ */
+CREATE OR REPLACE FUNCTION drs_review_feature_gate() RETURNS trigger AS $$
+BEGIN
+  -- Resolved for THE ROW'S SCHOOL, not platform-wide, since school grants and
+  -- school suppressions exist. The writer is passed as the person so that a
+  -- school which hid DRS from one scorer refuses that scorer's write and
+  -- nobody else's.
+  --
+  -- The row's own school_id is safe to use here where an RLS predicate would
+  -- not be: it is derived at write time by match_school() in the same
+  -- statement, and this trigger is a product gate rather than an access
+  -- decision. Nothing about who may READ a review passes through here.
+  IF NOT feature_enabled('drs_review', NEW.school_id, app_user_id()) THEN
+    RAISE EXCEPTION 'the DRS review feature is switched off '
+                    '(feature_flag.drs_review); a platform administrator holding '
+                    'platform.feature.manage can enable it, unless a school has '
+                    'hidden it for itself'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER drs_review_gate BEFORE INSERT OR UPDATE ON drs_review
+  FOR EACH ROW EXECUTE FUNCTION drs_review_feature_gate();
+
+
+-- ═══════════════════════════════════════════════════════════════
+--  TRANSPORT
+-- ═══════════════════════════════════════════════════════════════
+--
+-- THREE CAPABILITIES THAT HAD NOTHING TO ACT ON. transport.read,
+-- transport.manage and transport.drive were declared, bundled into ten roles,
+-- and gated a Logistics destination whose vehicles came off a mock array hung
+-- on the staff record and whose trips came off a mock field on the match.
+-- Nothing in the database had ever heard of a bus.
+--
+-- That is the same shape this codebase keeps closing — a control that exists
+-- and nothing exercises it — and it is worse here than most, because a
+-- capability in the role directory is a claim the platform makes about what a
+-- transport coordinator can do.
+--
+-- WHAT A TRIP IS ANCHORED ON, and it is the interesting decision. A trip
+-- belongs to a FIXTURE: a bus goes to Michaelhouse on Saturday because there
+-- is a match there. Anchoring on the fixture means a driver assigned to that
+-- fixture reaches that trip and no other, which is what transport.drive has
+-- always needed and never had — the older build reached for a whole extra
+-- scope dimension (TRIP) to express it, and the fixture already does.
+CREATE TABLE vehicle (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id    uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  registration text NOT NULL,
+  description  text NOT NULL,                      -- Quantum 22-seater
+  kind         text NOT NULL DEFAULT 'minibus'
+                 CHECK (kind IN ('bus','minibus','van','car')),
+  -- Seats, and it is load-bearing rather than decorative: naming more
+  -- passengers than a vehicle holds is the check below, and a school putting
+  -- fifteen boys in a fourteen-seater is a safety failure, not a rounding
+  -- error.
+  capacity     smallint NOT NULL CHECK (capacity BETWEEN 1 AND 80),
+  condition    text CHECK (condition IS NULL OR condition IN
+                 ('excellent','good','fair','poor','off_road')),
+  next_service_on date,
+  active       boolean NOT NULL DEFAULT true,
+  notes        text CHECK (notes IS NULL OR length(notes) <= 500),
+  created_at   timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX ON vehicle (school_id);
+-- A unique INDEX, not a table constraint: a constraint cannot be built on an
+-- expression, and the registration has to match regardless of how somebody
+-- typed the spaces and the case.
+CREATE UNIQUE INDEX ON vehicle (school_id, upper(btrim(registration)));
+
+CREATE TABLE trip (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  match_id    uuid NOT NULL REFERENCES match(id) ON DELETE CASCADE,
+  -- Derived from the match at write time, never asserted.
+  school_id   uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  vehicle_id  uuid REFERENCES vehicle(id),
+  -- The driver as a PERSON, not as free text. A name typed into a box is a
+  -- name nobody can scope a permission to, and transport.drive has to reach
+  -- this row for exactly one person.
+  driver_id   uuid REFERENCES app_user(id),
+  depart_at   timestamptz,
+  return_at   timestamptz,
+  pickup      text CHECK (pickup IS NULL OR length(pickup) <= 200),
+  seats_taken smallint CHECK (seats_taken IS NULL OR seats_taken >= 0),
+  notes       text CHECK (notes IS NULL OR length(notes) <= 500),
+  -- The driver's own marks. Not a status column somebody sets to anything:
+  -- these are two timestamps that only ever go from null to a time, written
+  -- through trip_mark() under transport.drive.
+  departed_at timestamptz,
+  arrived_at  timestamptz,
+  cancelled_at timestamptz,
+  arranged_by uuid REFERENCES app_user(id),
+  arranged_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT trip_returns_after_departure
+    CHECK (return_at IS NULL OR depart_at IS NULL OR return_at >= depart_at),
+  CONSTRAINT trip_arrives_after_departing
+    CHECK (arrived_at IS NULL OR departed_at IS NOT NULL)
+);
+CREATE INDEX ON trip (school_id);
+CREATE INDEX ON trip (match_id);
+CREATE INDEX ON trip (driver_id) WHERE driver_id IS NOT NULL;
+-- One trip per vehicle per fixture. A bus double-booked for the same match is
+-- always a mistake, and it is the mistake a transport coordinator makes at
+-- five o'clock on a Friday.
+CREATE UNIQUE INDEX ON trip (match_id, vehicle_id) WHERE vehicle_id IS NOT NULL;
+
+/**
+ * A trip cannot carry more boys than the bus holds, or use somebody else's bus.
+ *
+ * Both are the kind of thing a screen usually checks and a database usually
+ * does not, which means they hold until the first import, the first offline
+ * queue, or the first person with psql. Overloading a minibus is a safety
+ * matter; borrowing another school's vehicle is a tenancy one.
+ */
+CREATE OR REPLACE FUNCTION trip_vehicle_fits() RETURNS trigger AS $$
+DECLARE v record;
+BEGIN
+  IF NEW.vehicle_id IS NULL THEN RETURN NEW; END IF;
+  SELECT school_id, capacity, active, registration INTO v FROM vehicle WHERE id = NEW.vehicle_id;
+  IF v.school_id IS DISTINCT FROM NEW.school_id THEN
+    RAISE EXCEPTION 'that vehicle belongs to another school'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  IF NOT v.active THEN
+    RAISE EXCEPTION 'vehicle % is not in service', v.registration
+      USING ERRCODE = 'check_violation';
+  END IF;
+  IF NEW.seats_taken IS NOT NULL AND NEW.seats_taken > v.capacity THEN
+    RAISE EXCEPTION 'vehicle % seats %, and this trip names % passengers',
+                    v.registration, v.capacity, NEW.seats_taken
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql
+-- SECURITY DEFINER for the reason availability_player_belongs() is: without
+-- it this reads vehicle under the caller's row-level security, and a caller
+-- who cannot see the vehicle gets "belongs to another school" about one that
+-- does not. The refusal would be correct and its reason invented.
+SECURITY DEFINER;
+
+CREATE TRIGGER trip_vehicle_check BEFORE INSERT OR UPDATE ON trip
+  FOR EACH ROW EXECUTE FUNCTION trip_vehicle_fits();
+
+/**
+ * The driver's own two acts: we have left, and we have arrived.
+ *
+ * A FUNCTION RATHER THAN A WRITE POLICY, because transport.drive is not a
+ * capability to change a trip — it is a capability to report on one. A driver
+ * must not be able to re-time the departure, swap the vehicle or cancel the
+ * fixture's transport; they mark what happened, and only forwards.
+ *
+ * Scoped on the FIXTURE, which is what gives transport.drive somewhere to
+ * live. A driver assigned to Saturday's match reaches Saturday's trip. Being
+ * named as this trip's driver is accepted too — a school that assigns the
+ * driver on the trip row should not also have to write a fixture-scoped role
+ * assignment for them.
+ *
+ * SECURITY DEFINER, so the marks land without granting a driver UPDATE on the
+ * table generally. Same reasoning as the scoring session's state machine.
+ */
+CREATE OR REPLACE FUNCTION trip_mark(p_trip uuid, p_event text)
+RETURNS TABLE (ok boolean, reason text) AS $$
+DECLARE t record;
+BEGIN
+  SELECT tr.*, m.team_code INTO t
+    FROM trip tr JOIN match m ON m.id = tr.match_id WHERE tr.id = p_trip;
+  IF NOT FOUND THEN RETURN QUERY SELECT false, 'no_such_trip'; RETURN; END IF;
+
+  IF NOT (t.driver_id = app_user_id()
+          OR app_can('transport.drive',  t.school_id, t.team_code, NULL, t.match_id)
+          OR app_can('transport.manage', t.school_id, t.team_code, NULL, t.match_id)) THEN
+    RETURN QUERY SELECT false, 'not_this_driver'; RETURN;
+  END IF;
+
+  IF t.cancelled_at IS NOT NULL THEN
+    RETURN QUERY SELECT false, 'trip_cancelled'; RETURN;
+  END IF;
+
+  IF p_event = 'departed' THEN
+    IF t.departed_at IS NOT NULL THEN RETURN QUERY SELECT false, 'already_departed'; RETURN; END IF;
+    UPDATE trip SET departed_at = now() WHERE id = p_trip;
+  ELSIF p_event = 'arrived' THEN
+    -- Arriving without having left is not a clock correction, it is a sign
+    -- somebody is marking the wrong trip.
+    IF t.departed_at IS NULL THEN RETURN QUERY SELECT false, 'not_departed'; RETURN; END IF;
+    IF t.arrived_at IS NOT NULL THEN RETURN QUERY SELECT false, 'already_arrived'; RETURN; END IF;
+    UPDATE trip SET arrived_at = now() WHERE id = p_trip;
+  ELSE
+    RETURN QUERY SELECT false, 'unknown_event'; RETURN;
+  END IF;
+
+  RETURN QUERY SELECT true, NULL::text;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION trip_mark(uuid, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION trip_mark(uuid, text) TO PUBLIC;
+
+
+-- ═══════════════════════════════════════════════════════════════
+--  AVAILABILITY
+-- ═══════════════════════════════════════════════════════════════
+--
+-- WHOSE STATEMENT THIS IS, and it is the whole design.
+--
+-- The schema already knows whether a boy is FIT. That is the physio's
+-- judgement, it lives on injury, and it is read through the medical tiers. It
+-- has never known whether he is AVAILABLE, which is a different fact belonging
+-- to a different person: a perfectly fit fourteen-year-old can be at his
+-- grandmother's funeral, writing a rewrite, or away with his family, and none
+-- of that is a clinical matter or the school's to assert on his behalf.
+--
+-- So availability is DECLARED, by the boy or by his guardian, and a coach
+-- recording it is recording what he was told. declared_by is on every row for
+-- exactly that reason — "unavailable, said so himself" and "unavailable,
+-- according to the coach" are different degrees of certainty on a Friday
+-- afternoon, and a selector deserves to see which one they have.
+--
+-- NOTHING HERE TOUCHES injury, in either direction. A boy declaring himself
+-- unavailable does not become injured, and a physio marking him unfit does not
+-- write a declaration in his name. The squad screen reads both and shows both,
+-- because a side is picked from the intersection — but the two facts stay
+-- separate rows owned by separate people, and merging them would mean either
+-- a coach could overwrite a clinical record or a physio could speak for a
+-- family.
+--
+-- SILENCE IS NOT A YES. There is no default status and no row until somebody
+-- declares one. The absence of a row means "has not answered", which is the
+-- state a team manager actually needs to chase, and defaulting it to available
+-- would turn a boy who never saw the message into a boy who is picked and does
+-- not arrive.
+CREATE TABLE match_availability (
+  match_id    uuid NOT NULL REFERENCES match(id) ON DELETE CASCADE,
+  player_id   uuid NOT NULL REFERENCES player(id) ON DELETE CASCADE,
+  -- Derived from the match at write time, never asserted, as everywhere.
+  school_id   uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  status      text NOT NULL CHECK (status IN ('available','unavailable','doubtful')),
+  -- WHY, in a fixed vocabulary rather than free text alone. A team manager
+  -- planning a Saturday needs to know that three boys are away on a school
+  -- trip and one is at a funeral, and cannot read that out of prose at a
+  -- glance. 'other' exists so nobody is forced into a wrong box.
+  reason_kind text CHECK (reason_kind IS NULL OR reason_kind IN
+                ('illness','family','academic','travel','religious','other_sport','other')),
+  -- The prose, optional and short. Kept deliberately modest: this is a note to
+  -- a coach about one Saturday, not a place to write about a child's home
+  -- circumstances, and a 280-character ceiling says so without a policy
+  -- document.
+  note        text CHECK (note IS NULL OR length(note) <= 280),
+  -- Who said it, and it is not always the player. Recorded rather than
+  -- inferred: the person who typed it is the person the platform can stand
+  -- behind, and a selector reading "declared by the coach" knows to check.
+  declared_by uuid REFERENCES app_user(id),
+  declared_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (match_id, player_id)
+);
+CREATE INDEX ON match_availability (school_id);
+CREATE INDEX ON match_availability (player_id);
+
+/**
+ * A declaration is about a fixture the player could actually be picked for.
+ *
+ * Without this a boy at one school could be marked available for another
+ * school's fixture — harmless-looking, and it would put his name on a team
+ * manager's screen at a school that has no business holding it. The school
+ * comes from the match, so the check is that the player belongs to it.
+ */
+CREATE OR REPLACE FUNCTION availability_player_belongs() RETURNS trigger AS $$
+DECLARE v_school uuid;
+BEGIN
+  SELECT school_id INTO v_school FROM player WHERE id = NEW.player_id;
+  IF v_school IS DISTINCT FROM NEW.school_id THEN
+    RAISE EXCEPTION 'that player is not at the school playing this fixture'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql
+-- SECURITY DEFINER, and it took a failing walk to see why.
+--
+-- Without it this reads `player` under the CALLER's row-level security, so a
+-- guardian writing about a boy who is not their child found no row, v_school
+-- came back NULL, and the trigger raised "that player is not at the school
+-- playing this fixture" — about a boy who is. The refusal was correct and its
+-- reason was a fabrication, which is worse than a bare refusal: a school
+-- office reading that message would go looking for a data error that does not
+-- exist.
+--
+-- A BEFORE trigger runs ahead of the RLS check, so the wrong answer arrived
+-- first and the right one never ran. As a definer this answers the question it
+-- claims to answer — does this player belong to this school — and the policy
+-- is then left to answer the separate question of whether the caller may say
+-- anything about him at all. It discloses nothing either way: the only thing
+-- that leaves is a fixed sentence.
+SECURITY DEFINER;
+
+/**
+ * Who made a declaration, for a reader who cannot read the app_user table.
+ *
+ * The obvious version of this joined app_user twice — once to find the boy's
+ * own account, once for the declarant's name — and both came back NULL for a
+ * coach, because app_user is row-scoped and a coach may not read a pupil's
+ * login or a parent's. So "said so himself" and "we could not tell" rendered
+ * identically, which is the distinction the column exists to draw.
+ *
+ * SECURITY DEFINER and deliberately narrow: it answers about ONE declaration
+ * the caller is already reading, and returns a name and a boolean. It cannot
+ * be used to enumerate accounts, and it discloses only who told the school a
+ * child cannot play on Saturday — which is the person a team manager has to
+ * ring back.
+ */
+CREATE OR REPLACE FUNCTION availability_declarant(p_player uuid, p_declared_by uuid)
+RETURNS TABLE (name text, is_self boolean) AS $$
+  SELECT u.name,
+         coalesce(u.player_id = p_player, false)
+    FROM app_user u WHERE u.id = p_declared_by
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION availability_declarant(uuid, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION availability_declarant(uuid, uuid) TO PUBLIC;
+
+CREATE TRIGGER availability_belongs BEFORE INSERT OR UPDATE ON match_availability
+  FOR EACH ROW EXECUTE FUNCTION availability_player_belongs();
+
+
+-- ═══════════════════════════════════════════════════════════════
+--  COMMERCIAL
+-- ═══════════════════════════════════════════════════════════════
+--
+-- School sport in South Africa runs on sponsorship — a boundary board, a logo
+-- on the scoreboard, a name under the fixture list. This is that, and the two
+-- decisions in it that scrbrd-beta-2's model did not make.
+--
+-- FIRST: WHICH BRANDS MAY BE ON A CHILD'S SCOREBOARD AT ALL.
+--
+-- beta-2's brandCategory list was Automotive, Banking, Sportswear, Nutrition,
+-- Education and Telecom. Alcohol, gambling and tobacco are not on it — and
+-- they are not on it by ABSENCE, which is not a safeguard. A list that simply
+-- fails to mention betting is a list somebody widens in a year without ever
+-- confronting the question, because there is nothing there to argue with.
+--
+-- So the prohibited categories are PRESENT here and marked prohibited, with a
+-- note saying why, and a trigger refuses the placement rather than a dropdown
+-- omitting the option. Everything this platform holds is school sport; there
+-- is no context inside it where a betting brand belongs.
+--
+-- SECOND: WHAT IS COUNTED.
+--
+-- beta-2 carried impressions, viewableImpressions and clickThroughs on the
+-- campaign. Delivery counting against a placement is ordinary commercial
+-- reporting; the danger is the shape it invites, which is per-viewer tracking
+-- on a platform whose viewers are children and their families. Nothing here
+-- records who saw anything. A sponsorship knows its dates and its terms; it
+-- does not know its audience.
+CREATE TABLE sponsor_category (
+  name       text PRIMARY KEY CHECK (name ~ '^[a-z][a-z0-9_]{2,39}$'),
+  -- The decision, stated once, where a person can find it and argue with it.
+  permitted  boolean NOT NULL,
+  note       text
+);
+
+INSERT INTO sponsor_category (name, permitted, note) VALUES
+  ('automotive',    true,  NULL),
+  ('banking',       true,  NULL),
+  ('insurance',     true,  NULL),
+  ('sportswear',    true,  NULL),
+  ('nutrition',     true,  NULL),
+  ('education',     true,  NULL),
+  ('telecom',       true,  NULL),
+  ('retail',        true,  NULL),
+  ('agriculture',   true,  NULL),
+  ('health',        true,  NULL),
+  -- Present, and refused. These are here so that turning one on is a visible
+  -- act with a name on it rather than an edit to a list of allowed values.
+  ('alcohol',       false, 'Advertising alcohol on youth sport. Restricted under South African '
+                           'advertising codes and not something this platform places against '
+                           'fixtures played by children.'),
+  ('gambling',      false, 'Betting brands against school fixtures, including odds and free-bet '
+                           'promotions. Refused outright.'),
+  ('tobacco_vaping',false, 'Tobacco, vaping and nicotine products. Refused outright.'),
+  ('political',     false, 'Party-political messaging on a school scoreboard. Not a safeguarding '
+                           'question but an institutional-neutrality one, and a school that wants '
+                           'it should have to decide so explicitly rather than by picking from a list.')
+ON CONFLICT (name) DO NOTHING;
+
+ALTER TABLE sponsor_category ENABLE ROW LEVEL SECURITY;
+-- Hand-written, like feature_flag and for the same reason: the vocabulary
+-- belongs to no tenant. Readable by anyone signed in; written by nobody
+-- through the API at all — changing what may be advertised to children is a
+-- migration somebody reviews, not a form somebody fills in.
+CREATE POLICY sponsor_category_read ON sponsor_category
+  FOR SELECT USING (app_user_id() IS NOT NULL);
+
+CREATE TABLE sponsor (
+  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  -- A sponsor belongs to the school that signed them. A platform-wide sponsor
+  -- would be a different row per school, which is the honest shape: each
+  -- school agrees its own terms.
+  school_id  uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  name       text NOT NULL CHECK (length(btrim(name)) > 0),
+  category   text NOT NULL REFERENCES sponsor_category(name),
+  -- What goes on the board. Deliberately text and a colour rather than an
+  -- uploaded asset: an overlay needs something it can render at any size, and
+  -- an image pipeline is a different piece of work.
+  logo_text  text CHECK (logo_text IS NULL OR length(logo_text) <= 24),
+  logo_bg    text CHECK (logo_bg IS NULL OR logo_bg ~ '^#[0-9a-fA-F]{6}$'),
+  active     boolean NOT NULL DEFAULT true,
+  created_by uuid REFERENCES app_user(id),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX ON sponsor (school_id);
+CREATE UNIQUE INDEX ON sponsor (school_id, lower(btrim(name)));
+
+-- Where a sponsor appears, for how long, and on what terms.
+CREATE TABLE sponsorship (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id   uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  sponsor_id  uuid NOT NULL REFERENCES sponsor(id) ON DELETE CASCADE,
+  -- The surface. Named for what a person would call it rather than for a
+  -- component, so a slot surviving a redesign keeps its meaning.
+  placement   text NOT NULL CHECK (placement IN
+                ('broadcast_overlay','scorecard_footer','fixture_list','ground_board')),
+  -- A placement may be the school's in general, or tied to one fixture.
+  match_id    uuid REFERENCES match(id) ON DELETE CASCADE,
+  starts_on   date NOT NULL,
+  ends_on     date NOT NULL,
+  -- The commercial terms. Masked: see tables.mjs. A boundary board is meant to
+  -- be seen; what was paid for it is not.
+  contract_value_zar numeric(12,2) CHECK (contract_value_zar IS NULL OR contract_value_zar >= 0),
+  school_share_pct   smallint CHECK (school_share_pct IS NULL OR school_share_pct BETWEEN 0 AND 100),
+  agreed_by   uuid REFERENCES app_user(id),
+  agreed_at   timestamptz NOT NULL DEFAULT now(),
+
+  -- ── CATEGORY EXCLUSIVITY ──────────────────────────────────────
+  --
+  -- A sponsor who has paid to be the only bank on a scoreboard has bought
+  -- something the schema has to be able to keep. Without this, the promise
+  -- lives in a signed contract and nowhere in the system that draws the
+  -- boards, and the first breach is discovered by the sponsor.
+  --
+  -- The SCOPE is the whole point and it is wider than one school. A bank
+  -- taking exclusivity across a competition has bought silence from every
+  -- school in it, which is a claim no single school's row can express — so
+  -- the scope names the shape and sponsorship_covers() below resolves it to
+  -- the actual schools.
+  exclusive       boolean NOT NULL DEFAULT false,
+  exclusive_scope text CHECK (exclusive_scope IS NULL OR exclusive_scope IN
+                    ('school','province','competition','platform')),
+  -- Both or neither. An exclusive placement with no scope is a promise with
+  -- no boundary, and a scope on a non-exclusive one is a scope that does
+  -- nothing — either would read as protection that is not there.
+  CONSTRAINT exclusivity_has_a_scope CHECK (exclusive = (exclusive_scope IS NOT NULL)),
+
+  -- Named when the scope is a competition, and only then.
+  competition_id uuid REFERENCES competition(id) ON DELETE CASCADE,
+  CONSTRAINT competition_scope_names_one CHECK (
+    (exclusive_scope = 'competition') = (competition_id IS NOT NULL)),
+
+  -- ── THE WAIVER ────────────────────────────────────────────────
+  --
+  -- A conflicting placement is refused, and a school that has genuinely
+  -- agreed one with both parties needs a way through. It is prose and a
+  -- name, never a flag: "somebody ticked a box" is not a record anyone can
+  -- act on when the exclusive sponsor asks how this happened. The trigger
+  -- requires the person writing it to hold the waiver capability and stamps
+  -- them, so the name on the row is the person who actually decided.
+  waiver_note text CHECK (waiver_note IS NULL OR length(btrim(waiver_note)) >= 20),
+  waived_by   uuid REFERENCES app_user(id),
+  waived_at   timestamptz,
+  CONSTRAINT waiver_is_signed CHECK (
+    (waiver_note IS NULL) = (waived_by IS NULL)
+    AND (waived_by IS NULL) = (waived_at IS NULL)),
+
+  CONSTRAINT sponsorship_runs_forwards CHECK (ends_on >= starts_on)
+);
+CREATE INDEX ON sponsorship (competition_id) WHERE competition_id IS NOT NULL;
+CREATE INDEX ON sponsorship (exclusive) WHERE exclusive;
+CREATE INDEX ON sponsorship (school_id);
+CREATE INDEX ON sponsorship (sponsor_id);
+CREATE INDEX ON sponsorship (match_id) WHERE match_id IS NOT NULL;
+
+/**
+ * A prohibited category never reaches a screen.
+ *
+ * On the SPONSOR rather than only on the placement, so a brand that may not be
+ * advertised to children cannot be created and left waiting for somebody to
+ * place it. The message quotes the note from the category table, because
+ * "not_permitted" tells a school office nothing and the note tells them why.
+ */
+CREATE OR REPLACE FUNCTION sponsor_category_permitted() RETURNS trigger AS $$
+DECLARE v_ok boolean; v_note text;
+BEGIN
+  SELECT permitted, note INTO v_ok, v_note FROM sponsor_category WHERE name = NEW.category;
+  IF v_ok IS NOT TRUE THEN
+    RAISE EXCEPTION 'the % category may not be placed on school sport: %',
+                    NEW.category, coalesce(v_note, 'refused')
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER sponsor_category_gate BEFORE INSERT OR UPDATE ON sponsor
+  FOR EACH ROW EXECUTE FUNCTION sponsor_category_permitted();
+
+
+/**
+ * Which schools a placement's exclusivity actually covers.
+ *
+ * The scope names a shape; this resolves it to the set of schools the promise
+ * reaches, so a conflict is a plain question about whether two sets intersect
+ * rather than a matrix of scope-against-scope special cases. Four shapes and
+ * one rule each:
+ *
+ *   school       the school that signed it
+ *   province     every school in the same province — a regional deal
+ *   competition  every school entered in it, from competition_entrant, so a
+ *                league deal reaches the schools actually playing rather
+ *                than the ones somebody remembered to list
+ *   platform     everything
+ *
+ * SECURITY DEFINER, because the trigger that calls it must see conflicts at
+ * schools the writer cannot read. A school administrator signing a bank has no
+ * business reading another school's sponsor list — and must still be refused
+ * when that school's bank holds a competition-wide exclusivity. Resolving this
+ * under the caller's own row-level security would return an empty set and let
+ * the conflicting placement straight through, which is precisely the kind of
+ * silent hole a security_invoker view creates elsewhere in this schema.
+ */
+CREATE OR REPLACE FUNCTION sponsorship_covers(
+  p_scope text, p_school uuid, p_competition uuid)
+RETURNS TABLE (school_id uuid) AS $$
+  SELECT s.id FROM school s
+   WHERE CASE p_scope
+           WHEN 'school'      THEN s.id = p_school
+           WHEN 'province'    THEN s.province IS NOT NULL
+                                   AND s.province = (SELECT province FROM school
+                                                      WHERE id = p_school)
+           WHEN 'competition' THEN EXISTS (SELECT 1 FROM competition_entrant e
+                                            WHERE e.competition_id = p_competition
+                                              AND e.school_id = s.id)
+           WHEN 'platform'    THEN true
+           -- A placement that claims no exclusivity covers nobody, which is
+           -- what makes the conflict test below symmetric without a branch.
+           ELSE false
+         END
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION sponsorship_covers(text, uuid, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION sponsorship_covers(text, uuid, uuid) TO PUBLIC;
+
+/**
+ * A category exclusivity is kept, or waived by somebody who signs for it.
+ *
+ * TESTED IN BOTH DIRECTIONS, which beta-2's version was not. It refused a new
+ * placement that walked into an existing exclusivity, and said nothing about a
+ * new EXCLUSIVE placement written over sponsors already there — so a school
+ * could sell exclusivity it had already given away, and the promise was broken
+ * at the moment it was made. Here a conflict is any overlap in category, dates
+ * and covered schools where EITHER side claims exclusivity.
+ *
+ * The message names the blocker: which sponsor, which category, which scope,
+ * and until when. "not_permitted" tells a school office to ring somebody;
+ * naming the standing deal tells them who to ring.
+ */
+CREATE OR REPLACE FUNCTION sponsorship_exclusivity_gate() RETURNS trigger AS $$
+DECLARE v_category text; v_blocker record;
+BEGIN
+  SELECT category INTO v_category FROM sponsor WHERE id = NEW.sponsor_id;
+
+  SELECT sp.name, other.exclusive_scope, other.ends_on, other.exclusive, sc.name AS school_name
+    INTO v_blocker
+    FROM sponsorship other
+    JOIN sponsor sp ON sp.id = other.sponsor_id AND sp.category = v_category
+    JOIN school  sc ON sc.id = other.school_id
+   WHERE other.id IS DISTINCT FROM NEW.id
+     AND sp.id IS DISTINCT FROM NEW.sponsor_id      -- a sponsor never blocks itself
+     AND sp.active
+     -- Overlapping terms. Two deals that never run at once do not conflict,
+     -- which is what lets a school line up next season's bank in advance.
+     AND other.starts_on <= NEW.ends_on
+     AND other.ends_on   >= NEW.starts_on
+     AND (other.exclusive OR NEW.exclusive)
+     AND EXISTS (
+       SELECT 1
+         FROM sponsorship_covers(coalesce(other.exclusive_scope, 'school'),
+                                 other.school_id, other.competition_id) a
+         JOIN sponsorship_covers(coalesce(NEW.exclusive_scope, 'school'),
+                                 NEW.school_id, NEW.competition_id) b
+           ON a.school_id = b.school_id)
+   ORDER BY other.exclusive DESC, other.ends_on DESC
+   LIMIT 1;
+
+  -- FOUND, not v_blocker IS NOT NULL. A composite is IS NOT NULL only when
+  -- EVERY field is non-null, and a blocker that is merely in the way rather
+  -- than exclusive has a NULL exclusive_scope — so the record tested false and
+  -- the conflict passed straight through. It cost an hour and it is the reason
+  -- the walk tests both directions rather than trusting the symmetric-looking
+  -- query above.
+  IF FOUND THEN
+    IF NEW.waiver_note IS NULL THEN
+      RAISE EXCEPTION
+        'category exclusivity: % holds % exclusivity at scope % until % (%). '
+        'This placement cannot proceed without a written waiver from somebody '
+        'holding sponsorship.exclusivity.waive',
+        v_blocker.name, v_category,
+        coalesce(v_blocker.exclusive_scope, 'school'),
+        v_blocker.ends_on, v_blocker.school_name
+        USING ERRCODE = 'check_violation';
+    END IF;
+
+    -- A waiver is a decision, so it is made by the person making it. Accepting
+    -- a waived_by naming somebody else would let the office write the
+    -- principal's name on a decision the principal never took.
+    IF NOT app_can('sponsorship.exclusivity.waive', NEW.school_id, NULL, NULL, NULL) THEN
+      RAISE EXCEPTION
+        'a waiver of category exclusivity must be signed by somebody holding '
+        'sponsorship.exclusivity.waive at this school'
+        USING ERRCODE = 'check_violation';
+    END IF;
+    NEW.waived_by := app_user_id();
+    NEW.waived_at := now();
+  ELSE
+    -- No conflict, no waiver. A waiver on a placement nothing blocked would
+    -- sit in the record implying a decision nobody had to take.
+    NEW.waiver_note := NULL;
+    NEW.waived_by   := NULL;
+    NEW.waived_at   := NULL;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER sponsorship_exclusivity BEFORE INSERT OR UPDATE ON sponsorship
+  FOR EACH ROW EXECUTE FUNCTION sponsorship_exclusivity_gate();
+
+
+
+-- ═══════════════════════════════════════════════════════════════
+--  BROADCAST
+-- ═══════════════════════════════════════════════════════════════
+--
+-- WHAT THIS IS NOT: a second scoring engine. scrbrd-beta-2 carried a
+-- 4,172-line BroadcastScorer that kept its own idea of the score, and porting
+-- it would have meant two implementations of an innings that can disagree
+-- while each stays internally consistent. The overlay is PRESENTATION over the
+-- same replay every other surface reads. Nothing here stores a score.
+--
+-- WHAT IT IS: a per-fixture decision to put a match on a screen the public can
+-- watch, and a statement of what that screen may show.
+--
+-- WHY THAT DECISION HAS A TABLE
+-- ─────────────────────────────
+-- A scoreboard at the boundary and a stream overlay are different in kind. The
+-- first is seen by people who walked to the ground; the second is permanent,
+-- copyable, and reaches an audience nobody at the match chose. Both show
+-- children's names. So broadcasting is OPT-IN PER FIXTURE, under its own
+-- capability, and it says how much of a child's name goes on the screen.
+--
+-- `name_display` defaults to 'initials', which is the conservative answer and
+-- the one a school that has thought about nothing in particular should get.
+-- Somebody deciding otherwise is making a decision, and the row records who.
+CREATE TABLE match_broadcast (
+  match_id     uuid PRIMARY KEY REFERENCES match(id) ON DELETE CASCADE,
+  -- Derived at write time from the match, never asserted — as everywhere.
+  school_id    uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  -- Off until somebody turns it on. A fixture that has never been considered
+  -- is a fixture that is not being broadcast.
+  published    boolean NOT NULL DEFAULT false,
+  -- How much of a player's name the overlay may carry.
+  --   initials — "T Mahlangu". The default.
+  --   full     — the whole name. A deliberate choice, recorded as one.
+  --   none     — positions only, for an age group a school will not name.
+  name_display text NOT NULL DEFAULT 'initials'
+               CHECK (name_display IN ('initials','full','none')),
+  -- Officials are adults doing a public job and are named by default; a school
+  -- may still turn it off.
+  show_officials boolean NOT NULL DEFAULT true,
+  -- A caption for the overlay: the competition, the occasion, the sponsor line
+  -- a school wants under the score.
+  strapline    text CHECK (strapline IS NULL OR length(strapline) <= 200),
+  published_by uuid REFERENCES app_user(id),
+  published_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX ON match_broadcast (school_id);
+
+/**
+ * The overlay's data, and the ONLY way it should ever be obtained.
+ *
+ * THE MASKING HAPPENS HERE, IN SQL, and that is the whole point of this
+ * function. If a school has said initials, the browser never receives the full
+ * name — not in a field it chooses not to render, not in a payload a developer
+ * console can open, not in a response somebody screenshots. A widget that is
+ * handed a full name and asked politely to show initials is a widget that
+ * leaks the first time somebody renders the wrong field.
+ *
+ * SECURITY DEFINER, and it checks publication itself. An overlay is watched by
+ * people with no account, so this cannot depend on the caller's own row-level
+ * security the way the rest of the read path does. What makes that safe is
+ * that it returns NOTHING for a fixture nobody has published, and only ever
+ * the handful of columns below for one that is — no identifiers, no dates of
+ * birth, no contact details, nothing that is not already being announced over
+ * a public address system at the ground.
+ */
+CREATE OR REPLACE FUNCTION broadcast_name(p_name text, p_display text)
+RETURNS text AS $$
+  SELECT CASE
+           WHEN p_name IS NULL OR p_display = 'none' THEN NULL
+           WHEN p_display = 'full' THEN p_name
+           -- Initials: every word but the last reduced to its first letter.
+           -- "Thandeka Mahlangu" → "T Mahlangu"; a single-word name is left
+           -- alone, because reducing it would leave a letter and nothing else.
+           WHEN position(' ' IN btrim(p_name)) = 0 THEN btrim(p_name)
+           ELSE (
+             SELECT string_agg(
+                      CASE WHEN ord = cnt THEN word ELSE left(word, 1) END,
+                      ' ' ORDER BY ord)
+               FROM (
+                 SELECT word, row_number() OVER () AS ord,
+                        count(*) OVER () AS cnt
+                   FROM regexp_split_to_table(btrim(p_name), '\s+') AS word
+               ) parts
+           )
+         END
+$$ LANGUAGE sql IMMUTABLE;
+
+REVOKE ALL ON FUNCTION broadcast_name(text, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION broadcast_name(text, text) TO PUBLIC;
+
+-- Dropped rather than replaced: the sponsor columns below were added after
+-- this function already existed, and CREATE OR REPLACE cannot change a
+-- function's return type. Without this, applying the file over an older
+-- database fails on the signature instead of on anything meaningful.
+DROP FUNCTION IF EXISTS broadcast_state(uuid);
+
+CREATE OR REPLACE FUNCTION broadcast_state(p_match uuid)
+RETURNS TABLE (
+  match_id uuid, home_team text, away_team text, strapline text,
+  innings smallint, runs bigint, wickets bigint, legal_balls bigint,
+  overs text, run_rate numeric, target bigint,
+  striker text, non_striker text, bowler text,
+  officials text, name_display text,
+  -- The board, and nothing behind it. See the sponsor CTE below.
+  sponsor_name text, sponsor_logo text, sponsor_bg text
+) AS $$
+  WITH b AS (
+    SELECT * FROM match_broadcast WHERE match_id = p_match AND published
+  ),
+  m AS (
+    SELECT mt.* FROM match mt JOIN b ON b.match_id = mt.id
+  ),
+  -- The innings being played is the highest one the log has reached.
+  cur AS (
+    SELECT ls.* FROM match_live_score ls JOIN b ON b.match_id = ls.match_id
+     ORDER BY ls.innings DESC LIMIT 1
+  ),
+  -- A chase has a target: what the previous innings made, plus one.
+  prev AS (
+    SELECT ls.runs FROM match_live_score ls JOIN cur ON cur.match_id = ls.match_id
+     WHERE ls.innings < cur.innings ORDER BY ls.innings DESC LIMIT 1
+  ),
+  -- Who is at the crease, taken from the last delivery bowled rather than
+  -- replayed: ball_event stamps the striker and the bowler on every ball, and
+  -- an overlay wants the state at the last ball by definition.
+  last_ball AS (
+    SELECT e.striker_id, e.non_striker_id, e.bowler_id
+      FROM ball_event e JOIN cur ON cur.match_id = e.match_id AND cur.innings = e.innings
+     WHERE e.kind = 'ball'
+     ORDER BY e.seq DESC LIMIT 1
+  ),
+  -- The sponsor whose board this is, if the school sold the surface.
+  --
+  -- THREE COLUMNS AND NO MORE. contract_value_zar and school_share_pct are on
+  -- the same row and are not selected here, and this function is SECURITY
+  -- DEFINER — so the masking view that keeps them from a coach would not have
+  -- kept them from a spectator. What a sponsor pays is between the sponsor and
+  -- the school; what a sponsor buys is a name on a screen, and that is all
+  -- that leaves.
+  --
+  -- A placement tied to THIS fixture wins over the school's standing one:
+  -- ordering match_id first with NULLS LAST puts the specific agreement ahead
+  -- of the general one, which is what a school selling a one-off derby board
+  -- on top of a season deal expects.
+  sponsor AS (
+    SELECT sp.name, sp.logo_text, sp.logo_bg
+      FROM sponsorship s
+      JOIN sponsor sp ON sp.id = s.sponsor_id AND sp.active
+      JOIN m ON m.school_id = s.school_id
+     WHERE s.placement = 'broadcast_overlay'
+       AND (s.match_id IS NULL OR s.match_id = m.id)
+       AND current_date BETWEEN s.starts_on AND s.ends_on
+     ORDER BY s.match_id NULLS LAST, s.agreed_at DESC
+     LIMIT 1
+  )
+  SELECT m.id,
+         m.team_code, m.opponent,
+         b.strapline,
+         cur.innings, cur.runs, cur.wickets, cur.legal_balls,
+         (cur.legal_balls / 6)::text || '.' || (cur.legal_balls % 6)::text,
+         CASE WHEN cur.legal_balls > 0
+              THEN round((cur.runs::numeric * 6) / cur.legal_balls, 2) END,
+         (SELECT runs + 1 FROM prev),
+         -- Every name goes through the masker. There is no branch here that
+         -- returns an unmasked one.
+         broadcast_name((SELECT full_name FROM player WHERE id = (SELECT striker_id FROM last_ball)), b.name_display),
+         broadcast_name((SELECT full_name FROM player WHERE id = (SELECT non_striker_id FROM last_ball)), b.name_display),
+         broadcast_name((SELECT full_name FROM player WHERE id = (SELECT bowler_id FROM last_ball)), b.name_display),
+         -- Officials are adults doing a public job, so they are named in full
+         -- when shown at all — but only when the school said to show them.
+         CASE WHEN b.show_officials THEN (
+           SELECT string_agg(o.person_name, ' · ' ORDER BY o.duty, o.person_name)
+             FROM match_official o
+            WHERE o.match_id = m.id AND NOT o.withdrawn AND o.duty IN ('umpire','third_umpire')
+         ) END,
+         b.name_display,
+         (SELECT name FROM sponsor), (SELECT logo_text FROM sponsor), (SELECT logo_bg FROM sponsor)
+    FROM b JOIN m ON m.id = b.match_id LEFT JOIN cur ON cur.match_id = b.match_id
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION broadcast_state(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION broadcast_state(uuid) TO PUBLIC;
+
+-- ── The half of the notification system that was missing ────────
+--
+-- `notification` and `notification_read` have been here since the start, with
+-- a capability-gated publish policy and a feed the dashboard reads. What there
+-- has never been is DELIVERY. A notice sits in the database until somebody
+-- opens the app, which for "your son has been taken to hospital" is not a
+-- notification system at all.
+--
+-- THE RULE THAT SHAPES EVERY LINE BELOW: a cached notification is not
+-- permission. A device that once received a notice has no standing to receive
+-- the next one, and a push that went out last week says nothing about who may
+-- read anything today. So nothing here decides who receives what. The
+-- notification's own policy already does — news.read AND the capability the
+-- row declares, in the row's scope — and the fan-out RE-ASKS IT, per person,
+-- at send time, through the same policy. A role withdrawn an hour ago means
+-- the phone stays silent, with no cache to invalidate and no subscription list
+-- to reconcile.
+--
+-- WHAT GOES ON THE WIRE IS A SECOND QUESTION, and the answer is: as little as
+-- possible. A push payload is stored by Google, rendered on a lock screen, and
+-- read by whoever is holding the phone — which at a school gate on a Saturday
+-- is not necessarily the parent. "R Pillay is out with a hamstring strain" on
+-- a lock screen is a disclosure of a child's medical information to a bystander,
+-- and it is a disclosure this platform's whole masking apparatus exists to
+-- prevent one screen earlier. So the full text travels ONLY for a notice the
+-- school has already marked public — which the existing
+-- notification_public_is_general CHECK guarantees requires nothing beyond
+-- news.read. Everything else travels as a pointer: a generic line and an id,
+-- with the real content fetched through the governed read when the app opens
+-- and the person is authenticated again.
+
+-- A phone, and the token FCM will accept for it.
+--
+-- Governed by IDENTITY, not by capability, exactly as notification_read is.
+-- "Which devices are mine" is a question only I can answer about myself, and
+-- there is no scope, role or assignment in it. Forcing it through the
+-- capability model would be worse than inconsistent: the list of a person's
+-- devices, with the times each was last seen, is a movement and behaviour
+-- trail, and no role in this product has a reason to hold somebody else's.
+CREATE TABLE device_push_token (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  person_id   uuid NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+  -- What FCM hands the browser. Opaque, long, and it rotates — which is why
+  -- the row is keyed on its own id and the token is merely unique, rather than
+  -- the token being the key.
+  token       text NOT NULL CHECK (length(btrim(token)) BETWEEN 16 AND 4096),
+  platform    text NOT NULL CHECK (platform IN ('web','android','ios')),
+  -- The device id the session token already carries, so a person signing out
+  -- of one phone retires that phone's registration and not their other one.
+  device_id   text,
+  -- "Dad's phone". The person's own words, for their own settings screen.
+  label       text CHECK (label IS NULL OR length(label) <= 60),
+  registered_at timestamptz NOT NULL DEFAULT now(),
+  last_seen_at  timestamptz NOT NULL DEFAULT now(),
+  -- RETIRED, never deleted. This database grants no DELETE anywhere, and the
+  -- row that says a device was registered and then signed out is the record
+  -- that a registration happened at all.
+  retired_at    timestamptz,
+  retired_reason text CHECK (retired_reason IS NULL OR retired_reason IN
+                   ('signed_out','rejected','replaced','stale')),
+  CONSTRAINT retired_has_a_reason CHECK ((retired_at IS NULL) = (retired_reason IS NULL))
+);
+-- One live registration per token. Partial, because a retired row keeps the
+-- token it had — that is the record of which device it was.
+CREATE UNIQUE INDEX device_push_token_live ON device_push_token (token)
+  WHERE retired_at IS NULL;
+CREATE INDEX ON device_push_token (person_id) WHERE retired_at IS NULL;
+
+/**
+ * A phone that changes hands must stop receiving the last person's alerts.
+ *
+ * The hazard is ordinary and the consequence is not: a parent signs in on a
+ * shared family tablet, a second parent signs in on the same tablet, and FCM
+ * hands the browser THE SAME registration token. Without this, both rows are
+ * live, the fan-out finds both, and the tablet receives alerts about a child
+ * whose family the current user does not belong to.
+ *
+ * So registering a token retires any live row that holds it for somebody else.
+ * SECURITY DEFINER because that row belongs to another person and the caller
+ * cannot see it — this is the case where definer rights are the requirement
+ * rather than a convenience: under the caller's own policy the UPDATE would
+ * match nothing, the registration would succeed, and the stale row would
+ * quietly survive. A refusal we never see is worse than one we do.
+ *
+ * It retires rather than reassigns. Who held a device and when is not
+ * something to overwrite.
+ */
+CREATE OR REPLACE FUNCTION device_push_token_claim() RETURNS trigger AS $$
+BEGIN
+  IF NEW.retired_at IS NOT NULL THEN RETURN NEW; END IF;
+  UPDATE device_push_token
+     SET retired_at = now(), retired_reason = 'replaced'
+   WHERE token = NEW.token
+     AND retired_at IS NULL
+     AND id IS DISTINCT FROM NEW.id
+     AND person_id IS DISTINCT FROM NEW.person_id;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS device_push_token_claims_the_device ON device_push_token;
+CREATE TRIGGER device_push_token_claims_the_device
+  BEFORE INSERT OR UPDATE ON device_push_token
+  FOR EACH ROW EXECUTE FUNCTION device_push_token_claim();
+
+ALTER TABLE device_push_token ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY device_push_token_read ON device_push_token
+  FOR SELECT USING (person_id = app_user_id());
+
+-- You may register a device AS YOURSELF and no other way. There is no
+-- administrative override: nobody enrols somebody else's phone.
+CREATE POLICY device_push_token_insert ON device_push_token
+  FOR INSERT WITH CHECK (person_id = app_user_id());
+
+CREATE POLICY device_push_token_update ON device_push_token
+  FOR UPDATE USING (person_id = app_user_id())
+           WITH CHECK (person_id = app_user_id());
+
+-- What was actually put on the wire, per notice per device.
+--
+-- Evidence, and a de-duplicator: the primary key is the pair, so a fan-out run
+-- twice sends once. payload_kind records WHICH payload went — a 'pointer' row
+-- is the proof that a restricted notice did not travel in clear text, which is
+-- the kind of thing a school is eventually asked to show.
+--
+-- Written BY THE RECIPIENT, under their own principal, inside the same
+-- per-person step that checked visibility. That is not an implementation
+-- detail: it means the sender is structurally incapable of recording a
+-- delivery to somebody who could not read the notice, because the insert would
+-- be refused by the same policy that refused them the row.
+CREATE TABLE notification_delivery (
+  notification_id uuid NOT NULL REFERENCES notification(id) ON DELETE CASCADE,
+  token_id     uuid NOT NULL REFERENCES device_push_token(id) ON DELETE CASCADE,
+  person_id    uuid NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+  payload_kind text NOT NULL CHECK (payload_kind IN ('full','pointer')),
+  state        text NOT NULL CHECK (state IN ('sent','failed','rejected')),
+  detail       text,
+  attempts     smallint NOT NULL DEFAULT 1 CHECK (attempts BETWEEN 1 AND 100),
+  attempted_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (notification_id, token_id)
+);
+CREATE INDEX ON notification_delivery (person_id, attempted_at DESC);
+
+ALTER TABLE notification_delivery ENABLE ROW LEVEL SECURITY;
+
+-- Your own delivery history and nobody else's. A publisher asking "did it
+-- reach the parents" is asking a reasonable question with an unreasonable
+-- answer attached — which families have the app installed, on how many
+-- devices, last seen when. That is not a reporting line this product offers.
+CREATE POLICY notification_delivery_read ON notification_delivery
+  FOR SELECT USING (person_id = app_user_id());
+
+CREATE POLICY notification_delivery_insert ON notification_delivery
+  FOR INSERT WITH CHECK (
+    person_id = app_user_id()
+    -- Re-enters the notification policy rather than trusting the id handed
+    -- in, exactly as notification_read does, so this table cannot be used to
+    -- probe which notification ids exist.
+    AND EXISTS (SELECT 1 FROM notification n WHERE n.id = notification_delivery.notification_id)
+  );
+
+CREATE POLICY notification_delivery_update ON notification_delivery
+  FOR UPDATE USING (person_id = app_user_id())
+           WITH CHECK (person_id = app_user_id());
+
+/**
+ * Who might be reachable, which is not the same question as who may receive.
+ *
+ * A fan-out has to start from a list of devices, and no principal in this
+ * product may read another person's device rows — correctly, since that list
+ * is a movement trail. So this enumeration is SECURITY DEFINER, and it is
+ * carefully the WEAKEST thing that works: every live token belonging to
+ * somebody with an active assignment at the notice's school.
+ *
+ * IT DECIDES NOTHING. Every row it returns is handed straight back to the
+ * notification's own policy, as that person, and a person who may not read the
+ * notice receives nothing however many devices they have registered. Read it
+ * as an address book, not as a permission — the temptation to add a capability
+ * filter here is the temptation to answer the authorization question twice, in
+ * two places, one of which will drift.
+ *
+ * Scoped to the school because a tenant is the widest an enumeration ever
+ * needs to be, and a cross-tenant one is exactly the shape of the failure
+ * this codebase spent its whole life removing.
+ */
+CREATE OR REPLACE FUNCTION push_candidates(p_school uuid)
+RETURNS TABLE (token_id uuid, person_id uuid, token text, platform text) AS $$
+  SELECT DISTINCT t.id, t.person_id, t.token, t.platform
+    FROM device_push_token t
+    JOIN role_assignment a ON a.person_id = t.person_id
+   WHERE t.retired_at IS NULL
+     AND a.active
+     AND (a.school_id IS NULL OR a.school_id = p_school)
+     AND (a.valid_from  IS NULL OR a.valid_from  <= current_date)
+     AND (a.valid_until IS NULL OR a.valid_until >  current_date)
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+-- Reachable only from this application's own code. A person holding a session
+-- has no business calling it directly, and PUBLIC execute on a DEFINER
+-- enumeration is how a helper becomes a directory.
+REVOKE ALL ON FUNCTION push_candidates(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION push_candidates(uuid) TO scrbrd_app;
+
+-- ── The coefficients of the rewards algorithm, kept where a browser cannot reach ──
+--
+-- The rewards figure is a weighted composite of four things: impact-adjusted
+-- performance, current rating on the absolute rubric, the breadth and freshness
+-- of the evidence behind that rating, and GROWTH — the change in rating over
+-- elapsed time, which is the term that makes a weak player's improvement worth
+-- more than a strong player's plateau. The weights are the product decision,
+-- and they are deliberately not public.
+--
+-- WHY THEY LIVE IN THE DATABASE RATHER THAN IN CODE. Anything in packages/ can
+-- be imported by the web app, and anything the web app imports is in the
+-- bundle, which is a text file on a stranger's laptop. A constant named
+-- GROWTH_WEIGHT in a shared module is a published constant with extra steps.
+-- In a table, behind a platform capability, with no read route and no read
+-- resource, the only way to it is a server process holding the application
+-- role — which is the boundary we actually control.
+--
+-- WHY THEY ARE VERSIONED. Every aggregate in this product is derived and none
+-- is stored, the rewards figure included. Derive last term's award with this
+-- term's coefficients and you get a different answer for a term that has
+-- already been awarded — so the award cannot be re-derived, which is the one
+-- property that makes deriving safe. Keeping the coefficients that were in
+-- force, rather than the answers they produced, is the same choice as keeping
+-- the ball log rather than the scorecard.
+--
+-- THERE IS NO READ ROUTE AND NO READ RESOURCE, on purpose. An endpoint that
+-- returns a coefficient is an endpoint that publishes the algorithm to anyone
+-- who can call it, and a platform administrator who needs to see the current
+-- values has a database. What the API returns about a reward is the figure and
+-- its components' RANKS AND BANDS, never their weights or contributions:
+-- publishing a weight beside a contribution is publishing the coefficient, by
+-- algebra, to anybody who can divide.
+CREATE TABLE reward_weight (
+  id   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  -- The coefficient's name. Deliberately not an enum: the algorithm will gain
+  -- and lose terms, and a CHECK listing them would put the shape of the
+  -- algorithm in the schema, which ships to anybody who can read a migration.
+  key  text NOT NULL CHECK (length(btrim(key)) BETWEEN 3 AND 80),
+  value numeric NOT NULL,
+  -- From when. A row is never edited: a new coefficient is a new row with a
+  -- later date, and the old one stays because a past term was awarded with it.
+  effective_from date NOT NULL,
+  -- Why it moved. The most useful column here in two years' time, when
+  -- somebody asks why the growth weight doubled in 2027.
+  note   text CHECK (note IS NULL OR length(note) <= 500),
+  set_by uuid REFERENCES app_user(id),
+  set_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (key, effective_from)
+);
+CREATE INDEX ON reward_weight (key, effective_from DESC);
+
+ALTER TABLE reward_weight ENABLE ROW LEVEL SECURITY;
+
+-- Hand-written, like feature_flag's and for the same reason: this table has NO
+-- SCHOOL. Every anchor the policy generator builds is a tenant comparison, and
+-- the platform's algorithm belongs to no tenant.
+--
+-- READ IS AS NARROW AS WRITE, which is unusual in this schema and is the point.
+-- Everywhere else a capability to read is wider than a capability to write,
+-- because reading is the ordinary case. Here the value IS the secret, so
+-- reading it is the sensitive act, and there is no role at a school — not a
+-- principal, not a director of sport — that has any business holding it.
+CREATE POLICY reward_weight_read ON reward_weight
+  FOR SELECT USING (app_holds('platform.reward.manage'));
+
+CREATE POLICY reward_weight_insert ON reward_weight
+  FOR INSERT WITH CHECK (app_holds('platform.reward.manage'));
+
+-- UPDATE exists only so a note can be corrected. The value and the date are
+-- frozen by the trigger below: changing a coefficient that was already in
+-- force would silently re-write what a past term was awarded on.
+CREATE POLICY reward_weight_update ON reward_weight
+  FOR UPDATE USING (app_holds('platform.reward.manage'))
+           WITH CHECK (app_holds('platform.reward.manage'));
+
+/**
+ * A coefficient in force is a matter of record.
+ *
+ * Same reasoning as the toss freezing once a delivery exists. An award is
+ * derived, not stored, so the only thing standing between a past term's figures
+ * and silent revision is that the inputs cannot move. A correction is a new row
+ * with a later effective_from; this refuses the edit rather than trusting
+ * everyone to remember that.
+ */
+CREATE OR REPLACE FUNCTION reward_weight_is_immutable() RETURNS trigger AS $$
+BEGIN
+  IF NEW.value IS DISTINCT FROM OLD.value
+     OR NEW.effective_from IS DISTINCT FROM OLD.effective_from
+     OR NEW.key IS DISTINCT FROM OLD.key THEN
+    RAISE EXCEPTION
+      'a coefficient already in force cannot be changed; insert a new row with a later effective_from'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  NEW.set_by := OLD.set_by;
+  NEW.set_at := OLD.set_at;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS reward_weight_stays_put ON reward_weight;
+CREATE TRIGGER reward_weight_stays_put
+  BEFORE UPDATE ON reward_weight
+  FOR EACH ROW EXECUTE FUNCTION reward_weight_is_immutable();
+
+/**
+ * Who set it, taken from the session rather than the request.
+ *
+ * The same stamp as role_assignment's granter and match_availability's
+ * declarant, for the same reason: the person who typed it is the person the
+ * platform can stand behind, and no route, import or psql session gets to
+ * claim somebody else moved the algorithm.
+ */
+CREATE OR REPLACE FUNCTION reward_weight_stamp_setter() RETURNS trigger AS $$
+BEGIN
+  NEW.set_by := app_user_id();
+  NEW.set_at := now();
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS reward_weight_stamps_setter ON reward_weight;
+CREATE TRIGGER reward_weight_stamps_setter
+  BEFORE INSERT ON reward_weight
+  FOR EACH ROW EXECUTE FUNCTION reward_weight_stamp_setter();
+
+/**
+ * The coefficient in force on a date, for the computation to use.
+ *
+ * SECURITY DEFINER because the computation runs as the COACH who asked for a
+ * player's figure, and a coach may not read this table — correctly, since the
+ * value is the secret. This is the same case as every other definer function
+ * here: a question the caller cannot answer about data they cannot see, where
+ * running under the caller's own policy would return nothing and the figure
+ * would silently come out as though the weight were zero.
+ *
+ * REVOKEd from PUBLIC and granted only to the application role, so it is
+ * reachable from this codebase's own server processes and from nothing a person
+ * holds. That is a narrower door than the table's own policy, which is the
+ * right way round: the table is for the platform to manage, this is for the
+ * algorithm to run.
+ *
+ * It returns ONE value and takes ONE key. No function here returns the set,
+ * because a function that returns the set is the algorithm in one call.
+ */
+CREATE OR REPLACE FUNCTION reward_weight_at(p_key text, p_on date DEFAULT current_date)
+RETURNS numeric AS $$
+  SELECT w.value FROM reward_weight w
+   WHERE w.key = p_key AND w.effective_from <= p_on
+   ORDER BY w.effective_from DESC
+   LIMIT 1
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION reward_weight_at(text, date) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION reward_weight_at(text, date) TO scrbrd_app;
+
+-- ── The sport catalogue's policies, and the gate on cricket's machinery ──
+--
+-- The table is in db/00 because `match` references it and that file runs
+-- first; the policies are here because app_holds() does not exist until
+-- db/01_authz.sql. Same split as school and app_user, whose policies are in
+-- db/09 for the same reason.
+ALTER TABLE sport ENABLE ROW LEVEL SECURITY;
+
+-- Readable by anyone signed in, exactly as feature_flag is. Which sports exist
+-- and how much of each works is not a secret — a client has to know what to
+-- draw, and hiding it would only mean the client hard-coded a list, which is
+-- the state this replaces.
+CREATE POLICY sport_read ON sport
+  FOR SELECT USING (app_user_id() IS NOT NULL);
+
+-- Written only by the platform, through app_holds() because there is no tenant
+-- to anchor on. NOT a new capability: deciding which sports the product
+-- supports is precisely "enable or disable a product feature platform-wide",
+-- and inventing sport.manage would be a second name for the same authority.
+CREATE POLICY sport_insert ON sport
+  FOR INSERT WITH CHECK (app_holds('platform.feature.manage'));
+CREATE POLICY sport_update ON sport
+  FOR UPDATE USING (app_holds('platform.feature.manage'))
+           WITH CHECK (app_holds('platform.feature.manage'));
+
+/**
+ * A fixture may only be in a sport this school actually runs.
+ *
+ * Asked through feature_enabled(key, school, NULL) — the same function the
+ * module gate and the read path use — so a sport resolves through the three
+ * levels every other switch does and cannot acquire its own rules. The
+ * platform grants; a school may reduce.
+ *
+ * SECURITY DEFINER because it reads feature_grant and feature_suppression,
+ * which a coach cannot see. Under the caller's own policies the lookup would
+ * find nothing and every fixture would be refused with a sentence about a
+ * sport the school does run — a refusal whose stated reason is a fabrication,
+ * which this codebase has now hit twice and is not doing a third time.
+ *
+ * The message names the sport and says who can change it, because the person
+ * who hits this is a sportsmaster typing a hockey fixture into a product that
+ * has not been given hockey, and "not permitted" would send them to their own
+ * IT department.
+ */
+CREATE OR REPLACE FUNCTION match_sport_is_enabled() RETURNS trigger AS $$
+DECLARE v_label text; v_key text;
+BEGIN
+  -- An UPDATE that does not touch the sport is left alone. Without this, a
+  -- school that stopped running hockey could not correct a typo in the venue
+  -- of a hockey fixture it already has — and the history is precisely what
+  -- switching a sport off must not destroy.
+  IF TG_OP = 'UPDATE' AND NEW.sport IS NOT DISTINCT FROM OLD.sport THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT s.label, s.flag_key INTO v_label, v_key FROM sport s WHERE s.code = NEW.sport;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'no such sport: %', NEW.sport USING ERRCODE = 'check_violation';
+  END IF;
+
+  IF NOT feature_enabled(v_key, NEW.school_id, NULL) THEN
+    RAISE EXCEPTION
+      '% is not switched on for this school. A sport is granted by the platform, not enabled locally — ask SCRBRD to add it to your plan',
+      v_label
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS match_sport_is_granted ON match;
+CREATE TRIGGER match_sport_is_granted
+  BEFORE INSERT OR UPDATE ON match
+  FOR EACH ROW EXECUTE FUNCTION match_sport_is_enabled();
+
+/**
+ * The ball log, the toss and DRS belong to cricket and to nothing else.
+ *
+ * One function on four tables rather than four functions, so the refusal reads
+ * the same wherever somebody meets it, and so a fifth cricket table added later
+ * needs a trigger rather than a copy.
+ *
+ * ON ball_event TOO, which is the hot path. A per-delivery primary-key lookup
+ * at school-cricket volumes — a few hundred balls a match — is not a cost
+ * worth reasoning about, and the alternative is trusting that nothing ever
+ * writes a delivery except through a route that checked. There are already
+ * three ways a row reaches this schema (the API, a seed, an import) and
+ * "remember to check the sport" survives exactly as long as the person who
+ * knew about it.
+ *
+ * SECURITY DEFINER for the reason the availability and trip checks are: a
+ * check that cannot see the row it is checking passes, and a silent pass is
+ * worse than a refusal.
+ */
+CREATE OR REPLACE FUNCTION requires_cricket() RETURNS trigger AS $$
+DECLARE v_sport text; v_label text;
+BEGIN
+  SELECT m.sport INTO v_sport FROM match m WHERE m.id = NEW.match_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'no such fixture: %', NEW.match_id USING ERRCODE = 'foreign_key_violation';
+  END IF;
+  IF v_sport <> 'cricket' THEN
+    SELECT s.label INTO v_label FROM sport s WHERE s.code = v_sport;
+    RAISE EXCEPTION
+      '% cannot carry a %: that is part of the cricket scoring engine, and this fixture is a % fixture',
+      TG_TABLE_NAME, TG_TABLE_NAME, coalesce(v_label, v_sport)
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS ball_event_is_cricket ON ball_event;
+CREATE TRIGGER ball_event_is_cricket
+  BEFORE INSERT ON ball_event
+  FOR EACH ROW EXECUTE FUNCTION requires_cricket();
+
+DROP TRIGGER IF EXISTS match_toss_is_cricket ON match_toss;
+CREATE TRIGGER match_toss_is_cricket
+  BEFORE INSERT OR UPDATE ON match_toss
+  FOR EACH ROW EXECUTE FUNCTION requires_cricket();
+
+DROP TRIGGER IF EXISTS scoring_session_is_cricket ON scoring_session;
+CREATE TRIGGER scoring_session_is_cricket
+  BEFORE INSERT ON scoring_session
+  FOR EACH ROW EXECUTE FUNCTION requires_cricket();
+
+DROP TRIGGER IF EXISTS drs_review_is_cricket ON drs_review;
+CREATE TRIGGER drs_review_is_cricket
+  BEFORE INSERT ON drs_review
+  FOR EACH ROW EXECUTE FUNCTION requires_cricket();
+
+/**
+ * A fixture's sport is frozen once its scoring machinery has anything in it.
+ *
+ * Same reasoning as the toss freezing once a delivery exists. Changing a
+ * scored cricket fixture to hockey would leave a ball log attached to a
+ * fixture whose sport says those deliveries cannot exist — and every replay
+ * over it would be deriving a cricket innings from a hockey match.
+ */
+CREATE OR REPLACE FUNCTION match_sport_is_frozen_once_played() RETURNS trigger AS $$
+BEGIN
+  IF NEW.sport IS NOT DISTINCT FROM OLD.sport THEN RETURN NEW; END IF;
+  IF EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = NEW.id) THEN
+    RAISE EXCEPTION
+      'this fixture already has a ball log; its sport cannot change'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS match_sport_stays_put ON match;
+CREATE TRIGGER match_sport_stays_put
+  BEFORE UPDATE ON match
+  FOR EACH ROW EXECUTE FUNCTION match_sport_is_frozen_once_played();
+
+-- ── One fixture, two schools ─────────────────────────────────────
+--
+-- `match.away_school_id` / `away_team_code` name the away side when it is a
+-- SCRBRD tenant; `opponent` carries the name either way. The read policy is
+-- generated and asks fixture.read at BOTH sides' scopes — see the note on
+-- `readAnchors` in packages/policy/src/tables.mjs. What is left for this file
+-- is keeping the display name honest and stopping the two halves diverging.
+
+/**
+ * When the away side is a tenant, its name is not typed — it is stamped.
+ *
+ * `opponent` stays NOT NULL and stays the thing every read displays, which is
+ * what let this land without touching the fixture list, the scorecard header,
+ * the broadcast overlay or the derby record. But a typed name beside a school
+ * id is two sources of truth for one fact, and the typed one will drift: a
+ * school renames itself, somebody abbreviates, and the derby read — which
+ * groups on the string — starts counting one rival as two.
+ *
+ * So when away_school_id is set, opponent is DERIVED and any supplied value is
+ * replaced. Not refused: a route that sent both a school id and the name it
+ * knew is not making a mistake worth failing a Saturday over, and the stamp
+ * makes the argument moot.
+ *
+ * SECURITY DEFINER because it reads `school`, which is scoped to the tenants
+ * the caller is attached to. A sportsmaster arranging a fixture against a
+ * school they have no assignment at cannot see that school's row — so under
+ * the caller's own policies the lookup would find nothing, the name would come
+ * out NULL, and the NOT NULL would refuse a perfectly legitimate fixture with
+ * a message about a missing opponent.
+ */
+CREATE OR REPLACE FUNCTION match_away_side_label() RETURNS trigger AS $$
+DECLARE v_name text;
+BEGIN
+  IF NEW.away_school_id IS NULL THEN RETURN NEW; END IF;
+  SELECT s.name INTO v_name FROM school s WHERE s.id = NEW.away_school_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'no such school: %', NEW.away_school_id
+      USING ERRCODE = 'foreign_key_violation';
+  END IF;
+  -- "Michaelhouse 1XI" rather than "Michaelhouse": the fixture is against a
+  -- named side, and a school fields eleven of them on a Saturday.
+  NEW.opponent := v_name || ' ' || NEW.away_team_code;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS match_away_side_is_named ON match;
+CREATE TRIGGER match_away_side_is_named
+  BEFORE INSERT OR UPDATE ON match
+  FOR EACH ROW EXECUTE FUNCTION match_away_side_label();
+
+/**
+ * The away side of a played fixture is frozen, like its sport.
+ *
+ * Once there is a ball log, every derived figure — the scorecard, the ladder,
+ * the head-to-head, a boy's average against that school — was computed against
+ * whoever the away side was. Re-pointing it afterwards silently re-attributes
+ * a season's cricket to a school that never played it.
+ *
+ * The home side is already immutable in practice, because school_id and
+ * team_code are the fixture's own scope anchors and changing them would move
+ * the row out from under the assignment that may write it. This says the same
+ * thing about the other half, out loud.
+ */
+CREATE OR REPLACE FUNCTION match_away_side_is_frozen_once_played() RETURNS trigger AS $$
+BEGIN
+  IF NEW.away_school_id IS NOT DISTINCT FROM OLD.away_school_id
+     AND NEW.away_team_code IS NOT DISTINCT FROM OLD.away_team_code THEN
+    RETURN NEW;
+  END IF;
+  IF EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = NEW.id) THEN
+    RAISE EXCEPTION
+      'this fixture already has a ball log; the side it was played against cannot change'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS match_away_side_stays_put ON match;
+CREATE TRIGGER match_away_side_stays_put
+  BEFORE UPDATE ON match
+  FOR EACH ROW EXECUTE FUNCTION match_away_side_is_frozen_once_played();
+
+/**
+ * A squad row's side must be a side this fixture actually has.
+ *
+ * match_squad.side is 'home' or 'away' and its anchors now follow it (see
+ * tables.mjs). For a fixture whose away side is not a tenant, an away row
+ * anchors at a NULL school and the policy refuses it — which is correct, and
+ * is a refusal whose REASON is worth stating rather than leaving as
+ * "not permitted": the opposition's team sheet belongs to the opposition.
+ *
+ * SECURITY DEFINER for the reason every check here is: a check that cannot see
+ * the fixture it is checking passes, and a silent pass is worse than a refusal.
+ */
+CREATE OR REPLACE FUNCTION match_squad_side_exists() RETURNS trigger AS $$
+DECLARE v_away uuid;
+BEGIN
+  IF NEW.withdrawn THEN RETURN NEW; END IF;
+  IF NEW.side <> 'away' THEN RETURN NEW; END IF;
+  SELECT m.away_school_id INTO v_away FROM match m WHERE m.id = NEW.match_id;
+  IF v_away IS NULL THEN
+    RAISE EXCEPTION
+      'this fixture''s away side is not a school on SCRBRD, so its team sheet is not ours to name'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS match_squad_side_is_real ON match_squad;
+CREATE TRIGGER match_squad_side_is_real
+  BEFORE INSERT OR UPDATE ON match_squad
+  FOR EACH ROW EXECUTE FUNCTION match_squad_side_exists();
+
+/**
+ * How a side is written on a fixture list, from either end of it.
+ *
+ * A SHARED FIXTURE CREATES A PROBLEM THE OLD ONE DID NOT HAVE. `school` is
+ * scoped to the tenants a person is attached to — correctly; the tenant list is
+ * not public — and the away school's coaches are attached to their own school,
+ * not to the host's. So the moment a Westville coach can read a
+ * Hilton-hosted fixture, they can read a row naming a school they cannot
+ * resolve, and their fixture list says "a match against Westville 1XI" with no
+ * indication of who is hosting.
+ *
+ * SECURITY DEFINER, returning THE NAME AND NOTHING ELSE. That is the whole
+ * disclosure: a school's name and the side it has fielded, which is already on
+ * every team sheet, every league ladder and every public scoreboard this
+ * product draws. It does not return the tenant list, and it answers only about
+ * an id the caller already holds — which they only hold by having read a
+ * fixture that names it.
+ */
+CREATE OR REPLACE FUNCTION fixture_side_label(p_school uuid, p_team text)
+RETURNS text AS $$
+  SELECT CASE
+           WHEN p_school IS NULL THEN NULL
+           WHEN p_team IS NULL THEN (SELECT s.name FROM school s WHERE s.id = p_school)
+           ELSE (SELECT s.name || ' ' || p_team FROM school s WHERE s.id = p_school)
+         END
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION fixture_side_label(uuid, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION fixture_side_label(uuid, text) TO PUBLIC;
+
+-- Stamped through the same function the reads display, so the derived name and
+-- the displayed name cannot come out differently.
+CREATE OR REPLACE FUNCTION match_away_side_label() RETURNS trigger AS $$
+DECLARE v_label text;
+BEGIN
+  IF NEW.away_school_id IS NULL THEN RETURN NEW; END IF;
+  v_label := fixture_side_label(NEW.away_school_id, NEW.away_team_code);
+  IF v_label IS NULL THEN
+    RAISE EXCEPTION 'no such school: %', NEW.away_school_id
+      USING ERRCODE = 'foreign_key_violation';
+  END IF;
+  NEW.opponent := v_label;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ── Which sides a boy has been in, which was being overwritten ───
+--
+-- player.team_code is a single mutable column, and it is the scope anchor half
+-- the policies in this schema hang off — so it stays exactly what it is: the
+-- CURRENT side. What was missing is everything before it. A boy promoted from
+-- the 2XI to the 1XI in March was overwritten, not recorded: last season's
+-- side could not be reconstructed, "when did he move up" had no answer, and a
+-- career that is mostly a story of moving through teams had no rows to tell it
+-- with. The CSV import moves team_code today (coalesce($3, team_code)), so
+-- this is not a future hazard — history has been lost through a real route
+-- since the import landed.
+--
+-- THE HISTORY IS DERIVED, NEVER ASSERTED. Nobody writes a membership row;
+-- writing player.team_code writes one, through the trigger below, exactly as
+-- the ball log derives the scorecard. That is also what makes the history
+-- trustworthy: there is no INSERT or UPDATE policy on this table AT ALL, so
+-- the application role cannot forge a membership or quietly edit one, and the
+-- record of where a boy played is as tamper-evident as the appointments and
+-- the coefficients are.
+--
+-- `sport` is here even though player.team_code is implicitly cricket today:
+-- the catalogue landed this week, a boy will eventually hold a side per sport,
+-- and a history table is the one place a missing dimension cannot be
+-- retrofitted — the old rows would not know which game they were about.
+CREATE TABLE team_membership (
+  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  player_id  uuid NOT NULL REFERENCES player(id) ON DELETE CASCADE,
+  -- Copied from the player AT THE TIME, not joined at read time: a boy who
+  -- changes schools keeps his old school on his old rows, which is the point
+  -- of a history.
+  school_id  uuid NOT NULL REFERENCES school(id),
+  sport      text NOT NULL DEFAULT 'cricket' REFERENCES sport(code),
+  team_code  text NOT NULL,
+  joined_on  date NOT NULL DEFAULT current_date,
+  -- NULL means this is where he is now. A row is closed by the next move,
+  -- never edited by a person.
+  left_on    date,
+  -- How the row came to exist, in the only vocabulary the trigger can honestly
+  -- derive: 'joined' is a first side, 'moved' is a change. Richer words —
+  -- promoted, dropped, aged up — are judgements about direction that a column
+  -- write does not carry, and guessing them here would put an opinion in a
+  -- table whose whole value is that it holds none.
+  reason     text NOT NULL DEFAULT 'moved' CHECK (reason IN ('joined','moved')),
+  -- Who made the move, stamped from the session as every provenance column
+  -- here is. NULL is a migration or an import running as the owner, which is
+  -- itself information.
+  moved_by   uuid REFERENCES app_user(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT membership_leaves_after_joining CHECK (left_on IS NULL OR left_on >= joined_on)
+);
+-- One open membership per boy per sport. Partial, because closed rows are the
+-- history and there are meant to be many of them.
+CREATE UNIQUE INDEX team_membership_current ON team_membership (player_id, sport)
+  WHERE left_on IS NULL;
+CREATE INDEX ON team_membership (school_id, sport, team_code, joined_on DESC);
+
+ALTER TABLE team_membership ENABLE ROW LEVEL SECURITY;
+
+-- READ follows the BOY, not the old team. A 1XI coach reading a boy now in
+-- his side needs the U15A and U16B rows that explain him, and anchoring the
+-- team dimension on each row's historical code would hide exactly those. So
+-- the team anchor is the player's CURRENT side — the same question as "may
+-- you read this boy's roster row", asked with the same capability — and the
+-- school anchor stays on the row, so a boy who moves schools does not carry
+-- his old school's rows to staff at the new one. Whether a history should
+-- travel between schools is the passport question, and it is a consent
+-- decision for later, not a default to slip in here.
+CREATE POLICY team_membership_read ON team_membership
+  FOR SELECT USING (app_can('player.profile.read',
+    team_membership.school_id,
+    (SELECT p.team_code FROM player p WHERE p.id = team_membership.player_id),
+    team_membership.player_id,
+    '00000000-0000-0000-0000-000000000000'::uuid));
+
+-- NO INSERT, UPDATE OR DELETE POLICY, deliberately. Default deny is the whole
+-- write model for this table: rows arrive through the SECURITY DEFINER
+-- trigger below and through nothing else, so the history cannot be forged by
+-- any principal, however senior. The trigger is the one door and the write it
+-- records was already authorised — on player, by player's own policy.
+
+/**
+ * Writing player.team_code writes the history.
+ *
+ * A TRIGGER RATHER THAN A ROUTE CONVENTION, for the reason the age check is:
+ * there are already three ways a player row changes — the API, a seed, the
+ * CSV import — and "remember to record the move" survives exactly as long as
+ * the person who knew about it. The import is the one that made this urgent:
+ * it updates team_code today, so every bulk roster correction has been
+ * silently discarding where boys were.
+ *
+ * SECURITY DEFINER because the caller has no rights on team_membership at all
+ * — see above — and must not need any: the history must be written even, and
+ * especially, by callers who could never touch it directly.
+ *
+ * Same-day churn is kept, not collapsed. A boy moved to the 1XI at nine and
+ * back at noon leaves two rows with joined_on = left_on, which is the honest
+ * record of a Tuesday that actually happened.
+ */
+CREATE OR REPLACE FUNCTION player_team_membership_log() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'UPDATE'
+     AND NEW.team_code IS NOT DISTINCT FROM OLD.team_code
+     AND NEW.school_id IS NOT DISTINCT FROM OLD.school_id THEN
+    RETURN NEW;
+  END IF;
+
+  -- Close whatever was open. left_on, not deletion: the row that says he WAS
+  -- in the 2XI is the entire purpose of this table.
+  UPDATE team_membership
+     SET left_on = current_date
+   WHERE player_id = NEW.id AND sport = 'cricket' AND left_on IS NULL;
+
+  IF NEW.team_code IS NOT NULL THEN
+    INSERT INTO team_membership (player_id, school_id, sport, team_code, joined_on, reason, moved_by)
+    VALUES (NEW.id, NEW.school_id, 'cricket', NEW.team_code, current_date,
+            CASE WHEN TG_OP = 'INSERT' THEN 'joined' ELSE 'moved' END,
+            app_user_id());
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS player_moves_are_recorded ON player;
+CREATE TRIGGER player_moves_are_recorded
+  AFTER INSERT OR UPDATE ON player
+  FOR EACH ROW EXECUTE FUNCTION player_team_membership_log();
+
+-- ── Opposition intelligence: another school's record, ahead of a fixture ──
+--
+-- A school preparing for Saturday wants to know how the other side bats and
+-- bowls. The other side are children at a school that is not this one, and
+-- every policy in this schema exists to stop exactly that read. So this is the
+-- one place the tenant boundary is crossed on purpose, and the crossing is
+-- bounded three ways, in this order, in the functions below:
+--
+--   1. A HEAD-TO-HEAD FIXTURE the reader's team is actually in. Not "a school
+--      we might play", not "a school in our league" — a scheduled row in
+--      match naming both sides as tenants. The fixture is the legitimate
+--      purpose, and without one there is nothing to read.
+--   2. A WINDOW before it. Intelligence opens opposition_window_days() before
+--      the start and closes when the match begins; after that the reader has
+--      their own fixture's ball log, which is their own record. There is no
+--      standing access to another school's players between fixtures.
+--   3. CRICKET COLUMNS AND AGGREGATES ONLY. A name, a role, a style, and what
+--      the log says they did. Never a date of birth, an address, a fitness
+--      state, an injury, a note. The functions name their columns explicitly
+--      so nothing arrives by default, and every read is logged in access_log
+--      as a restricted read of THAT school's minors.
+--
+-- SECURITY DEFINER, and deliberately not a widening of player's or ball_event's
+-- own policies. Widening those would put the other school's boys on every
+-- roster read, every injury join and every note lookup in the platform; here
+-- the disclosure has exactly two doors, each of which checks all three bounds
+-- before it opens. The authorisation is INSIDE the function, evaluated with the
+-- caller's own session, so a spectator, a parent and a coach at neither school
+-- get nothing at all — not a refusal with a reason, nothing.
+--
+-- The window is a function rather than a constant so the number has a name
+-- and a note. Fourteen days is a first cut: long enough to prepare, short
+-- enough that a rival's record is not simply available all season.
+CREATE OR REPLACE FUNCTION opposition_window_days() RETURNS integer AS $$
+  SELECT 14
+$$ LANGUAGE sql IMMUTABLE;
+
+/**
+ * Which side of this fixture the caller stands on, and whether the window is
+ * open. Returns NOTHING when the caller has no standing — no row, no reason —
+ * because a reason is a confirmation that the fixture exists.
+ */
+CREATE OR REPLACE FUNCTION opposition_side(p_match uuid)
+RETURNS TABLE (my_school uuid, my_team text, their_school uuid, their_team text,
+               opens_at timestamptz, closes_at timestamptz, open boolean, reason text) AS $$
+DECLARE m match%ROWTYPE; v_home boolean; v_away boolean;
+BEGIN
+  SELECT * INTO m FROM match WHERE id = p_match;
+  IF NOT FOUND THEN RETURN; END IF;
+
+  v_home := app_can('opposition.read', m.school_id, m.team_code,
+                    '00000000-0000-0000-0000-000000000000'::uuid, m.id);
+  v_away := m.away_school_id IS NOT NULL
+            AND app_can('opposition.read', m.away_school_id, m.away_team_code,
+                        '00000000-0000-0000-0000-000000000000'::uuid, m.id);
+  IF NOT (v_home OR v_away) THEN RETURN; END IF;
+
+  IF v_home THEN
+    my_school := m.school_id;      my_team := m.team_code;
+    their_school := m.away_school_id; their_team := m.away_team_code;
+  ELSE
+    my_school := m.away_school_id; my_team := m.away_team_code;
+    their_school := m.school_id;   their_team := m.team_code;
+  END IF;
+
+  opens_at  := m.starts_at - make_interval(days => opposition_window_days());
+  closes_at := m.starts_at;
+
+  -- The reader's own school must have the feature. Checked here as well as at
+  -- the API's module gate, because this function is reachable from a psql
+  -- session too and a gate in one door covers one door.
+  IF NOT feature_enabled('opposition', my_school, NULL) THEN
+    open := false; reason := 'feature_off'; RETURN NEXT; RETURN;
+  END IF;
+  IF their_school IS NULL THEN
+    open := false; reason := 'opponent_not_on_scrbrd'; RETURN NEXT; RETURN;
+  END IF;
+  IF m.status <> 'scheduled' OR now() >= closes_at THEN
+    open := false; reason := 'fixture_started'; RETURN NEXT; RETURN;
+  END IF;
+  IF now() < opens_at THEN
+    open := false; reason := 'not_yet_open'; RETURN NEXT; RETURN;
+  END IF;
+  open := true; reason := 'open'; RETURN NEXT;
+END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION opposition_side(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION opposition_side(uuid) TO scrbrd_app;
+
+/**
+ * How much evidence is behind a figure, in words the reader will act on.
+ *
+ * First-cut thresholds, stated once so every opposition figure grades the same
+ * way. Below thirty legal deliveries nothing is said at all: a strike rate off
+ * eleven balls is a coin toss with decimals, and a coach who reads "SR 145"
+ * off it will set a field for a batter who does not exist.
+ */
+CREATE OR REPLACE FUNCTION evidence_label(p_n bigint) RETURNS text AS $$
+  SELECT CASE
+           WHEN p_n IS NULL OR p_n = 0 THEN 'none'
+           WHEN p_n < 30  THEN 'insufficient'
+           WHEN p_n < 100 THEN 'low'
+           WHEN p_n < 250 THEN 'moderate'
+           ELSE 'high'
+         END
+$$ LANGUAGE sql IMMUTABLE;
+
+/**
+ * The header of a dossier: who, when the window opens and closes, and how much
+ * log there is to work from. One row, or none if the caller has no standing.
+ */
+CREATE OR REPLACE FUNCTION opposition_context(p_match uuid)
+RETURNS TABLE (match_id uuid, my_side text, their_school uuid, their_label text,
+               their_team text, opens_at timestamptz, closes_at timestamptz,
+               open boolean, reason text, games_analysed integer,
+               deliveries_analysed integer, data_cutoff timestamptz) AS $$
+  SELECT p_match,
+         CASE WHEN s.my_school = m.school_id THEN 'home' ELSE 'away' END,
+         s.their_school,
+         fixture_side_label(s.their_school, s.their_team),
+         s.their_team, s.opens_at, s.closes_at, s.open, s.reason,
+         -- Only counted once the window is open. A closed window says how
+         -- much there WOULD be to read, which is a disclosure by another name.
+         CASE WHEN s.open THEN (
+           SELECT count(DISTINCT b.match_id)::int FROM ball_event_live b
+             JOIN player p ON p.id IN (b.striker_id, b.bowler_id)
+            WHERE p.school_id = s.their_school AND p.team_code = s.their_team) END,
+         CASE WHEN s.open THEN (
+           SELECT count(*)::int FROM ball_event_live b
+             JOIN player p ON p.id IN (b.striker_id, b.bowler_id)
+            WHERE p.school_id = s.their_school AND p.team_code = s.their_team
+              AND b.kind = 'ball') END,
+         now()
+    FROM opposition_side(p_match) s
+    JOIN match m ON m.id = p_match
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION opposition_context(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION opposition_context(uuid) TO scrbrd_app;
+
+/**
+ * The other side's players and what the log says about each — and nothing
+ * else about them.
+ *
+ * EVERY COLUMN IS NAMED. No SELECT p.*, no view: full_name, playing_role and
+ * the two styles are the cricket half of a player row, and the rest — born,
+ * id_number, address, guardian, height, weight, fitness — is a child's
+ * personal and medical information and is not here. fitness in particular
+ * looks like a cricket column and is not: 'rehab' is a clinical state.
+ *
+ * Aggregates are over the player's WHOLE log, every fixture, not only the
+ * ones against the reader — that is the grant as decided, and the window is
+ * what makes it a preparation rather than a standing file. Empty rows are
+ * kept: a boy in the side with no deliveries logged is a fact the reader
+ * needs ("we know nothing about their number seven"), and evidence_label says
+ * 'none' rather than the row quietly not appearing.
+ */
+CREATE OR REPLACE FUNCTION opposition_squad(p_match uuid)
+RETURNS TABLE (player_id uuid, school_id uuid, full_name text, team_code text,
+               playing_role text, batting_style text, bowling_style text,
+               innings integer, balls integer, runs integer, dismissals integer,
+               fours integer, sixes integer, dots integer,
+               strike_rate numeric, dot_pct numeric, batting_evidence text,
+               balls_bowled integer, runs_conceded integer, wickets integer,
+               economy numeric, bowling_evidence text) AS $$
+  WITH s AS (SELECT * FROM opposition_side(p_match) WHERE open),
+  squad AS (
+    SELECT p.id, p.school_id, p.full_name, p.team_code, p.playing_role,
+           p.batting_style, p.bowling_style
+      FROM player p JOIN s ON p.school_id = s.their_school AND p.team_code = s.their_team
+  ),
+  bat AS (
+    SELECT b.striker_id AS pid,
+           count(DISTINCT b.match_id)::int AS innings,
+           count(*) FILTER (WHERE b.ball_type NOT IN ('Wd','Nb'))::int AS balls,
+           coalesce(sum(CASE WHEN b.ball_type IN ('run','W','Nb') THEN coalesce(b.value,0) ELSE 0 END),0)::int AS runs,
+           count(*) FILTER (WHERE b.ball_type = 'W'
+                              AND coalesce(b.dismissal,'') !~* 'run ?out'
+                              AND coalesce(b.dismissed_id, b.striker_id) = b.striker_id)::int AS dismissals,
+           count(*) FILTER (WHERE b.value = 4)::int AS fours,
+           count(*) FILTER (WHERE b.value = 6)::int AS sixes,
+           count(*) FILTER (WHERE b.ball_type NOT IN ('Wd','Nb') AND coalesce(b.value,0) = 0)::int AS dots
+      FROM ball_event_live b JOIN squad q ON q.id = b.striker_id
+     WHERE b.kind = 'ball'
+     GROUP BY b.striker_id
+  ),
+  bowl AS (
+    SELECT b.bowler_id AS pid,
+           count(*) FILTER (WHERE b.ball_type NOT IN ('Wd','Nb'))::int AS balls_bowled,
+           -- What the bowler conceded: runs, wides and no-balls. Byes and leg
+           -- byes are not his, which is the same split the matchups read makes.
+           coalesce(sum(CASE WHEN b.ball_type IN ('run','Wd','Nb','W') THEN coalesce(b.value,0) ELSE 0 END),0)::int AS runs_conceded,
+           count(*) FILTER (WHERE b.ball_type = 'W' AND coalesce(b.dismissal,'') !~* 'run ?out')::int AS wickets
+      FROM ball_event_live b JOIN squad q ON q.id = b.bowler_id
+     WHERE b.kind = 'ball'
+     GROUP BY b.bowler_id
+  )
+  SELECT q.id, q.school_id, q.full_name, q.team_code, q.playing_role, q.batting_style, q.bowling_style,
+         coalesce(bat.innings,0), coalesce(bat.balls,0), coalesce(bat.runs,0), coalesce(bat.dismissals,0),
+         coalesce(bat.fours,0), coalesce(bat.sixes,0), coalesce(bat.dots,0),
+         -- NULL below the evidence floor, not a number. The label beside it
+         -- says why, and a screen renders an em dash.
+         CASE WHEN coalesce(bat.balls,0) >= 30 THEN round(bat.runs * 100.0 / bat.balls, 1) END,
+         CASE WHEN coalesce(bat.balls,0) >= 30 THEN round(bat.dots * 100.0 / bat.balls, 1) END,
+         evidence_label(bat.balls),
+         coalesce(bowl.balls_bowled,0), coalesce(bowl.runs_conceded,0), coalesce(bowl.wickets,0),
+         CASE WHEN coalesce(bowl.balls_bowled,0) >= 30 THEN round(bowl.runs_conceded * 6.0 / bowl.balls_bowled, 2) END,
+         evidence_label(bowl.balls_bowled)
+    FROM squad q
+    LEFT JOIN bat  ON bat.pid  = q.id
+    LEFT JOIN bowl ON bowl.pid = q.id
+   ORDER BY coalesce(bat.runs,0) DESC, q.full_name
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION opposition_squad(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION opposition_squad(uuid) TO scrbrd_app;

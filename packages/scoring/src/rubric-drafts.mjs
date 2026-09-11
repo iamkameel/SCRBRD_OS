@@ -4,7 +4,7 @@
  * Every entry here was written to be argued with. They are a first pass at what
  * a 4, 8, 12, 16 and 20 should look like for each attribute, so that the people
  * who actually know — a head coach, a director of sport — have something to
- * redline instead of a blank form. Filling in a blank form for 33 attributes is
+ * redline instead of a blank form. Filling in a blank form for 37 attributes is
  * a job nobody starts; correcting somebody else's wrong sentence takes a
  * minute and produces a better sentence.
  *
@@ -17,7 +17,7 @@
  * approved.
  *
  * So they live here, `rubricIsReady()` still returns false, `unanchoredSkills()`
- * still lists all 32, and anything that displays one is obliged to say it is a
+ * still lists all 36, and anything that displays one is obliged to say it is a
  * draft. What they buy is a starting point, not a shipped rubric.
  *
  * HOW TO APPROVE ONE
@@ -213,6 +213,45 @@ export const DRAFT_ANCHORS = Object.freeze({
     12: "Plays the situation: rotates in a chase, blocks out an over, protects a partner.",
     16: "Reads a game two or three overs ahead and positions himself for it.",
     20: "Understands a provincial match as a whole, including conditions, and plays accordingly.",
+  }),
+
+  // ── TACTICAL ──
+  // Game-craft, which cricket has more of than football and which the three-
+  // group model had nowhere to put. These are the hardest to anchor honestly,
+  // because they are judged over a season rather than in a net — a coach sees
+  // strike rotation across twenty innings, not in one afternoon. Written to be
+  // argued with, like everything else here.
+
+  "tactical.strikeRotation": Object.freeze({
+    4:  "Plays out dot balls without noticing; his partner does the running.",
+    8:  "Takes the obvious single; misses the second run and the tight one.",
+    12: "Turns the strike over reliably against ordinary bowling; calls clearly.",
+    16: "Manufactures a single when the field is set to stop it, and runs twos others walk.",
+    20: "Controls who is on strike for a whole partnership by design; would hold up at a provincial trial.",
+  }),
+
+  "tactical.oppositionAnalysis": Object.freeze({
+    4:  "Cannot say who bowled at him last week, or what with.",
+    8:  "Notices a bowler's stock ball after several overs of it.",
+    12: "Comes to the crease with a plan for the bowlers he expects to face.",
+    16: "Spots a weakness in the field or an action mid-over and plays at it.",
+    20: "Briefs a side accurately on an opposition he has watched, to provincial trial standard.",
+  }),
+
+  "tactical.fieldPlacement": Object.freeze({
+    4:  "Stands where he is put and does not move.",
+    8:  "Sets a textbook field regardless of bowler, batter or conditions.",
+    12: "Sets a field to his own plan and bowls to the field he set.",
+    16: "Adjusts a field ball by ball, and saves runs nobody notices being saved.",
+    20: "Sets fields for other bowlers that make them better than they are; provincial captaincy standard.",
+  }),
+
+  "tactical.deathOversExecution": Object.freeze({
+    4:  "Bowls his stock ball at the death, or swings at everything.",
+    8:  "Attempts a yorker or a hit and executes it perhaps one time in three.",
+    12: "Reliable under pressure: hits the length he intended more often than not.",
+    16: "Changes plan between deliveries and lands it; wins a tight last over.",
+    20: "The player a provincial captain gives the ball to, or the pads, when it is close.",
   }),
 
   // ── PHYSICAL ──

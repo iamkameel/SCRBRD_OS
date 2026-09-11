@@ -599,21 +599,25 @@ const TRAINING_SESSIONS = [
 ];
 
 // Demonstration assessments on the 1-20 scale, grouped technical / mental /
-// physical. Partial by design: these are attributes a coach actually watched,
-// not a complete 33-attribute sweep, which is what a real term's assessments
-// look like.
+// tactical / physical. Partial by design: these are attributes a coach actually
+// watched, not a complete 37-attribute sweep, which is what a real term's
+// assessments look like — and the tactical group is sparser still, because
+// game-craft is judged over a season rather than in a net.
 const SKILLS_MATRIX = {
   // A batter who cannot bowl, and knows the game.
   p1: { technical:{footwork:17,timing:16,power:15,shotRange:16,defence:16,againstPace:15,againstSpin:14,lineAndLength:8,catching:15,groundFielding:14,throwing:13},
         mental:{concentration:17,composure:16,decisions:15,anticipation:14,determination:17,bravery:15,leadership:14,teamwork:16,workRate:15,gameAwareness:15},
+        tactical:{strikeRotation:16,oppositionAnalysis:14,deathOversExecution:13},
         physical:{pace:14,acceleration:14,agility:15,balance:16,stamina:14,strength:13,naturalFitness:15,bowlingPace:6} },
   // A seamer. The mirror image.
   p2: { technical:{footwork:10,timing:9,power:9,defence:11,lineAndLength:17,seamAndSwing:16,variations:14,catching:14,groundFielding:16,throwing:17},
         mental:{concentration:16,composure:14,decisions:13,anticipation:14,determination:17,bravery:13,leadership:11,teamwork:15,workRate:17,gameAwareness:14},
+        tactical:{oppositionAnalysis:15,fieldPlacement:13,deathOversExecution:16},
         physical:{pace:16,acceleration:15,agility:15,balance:14,stamina:17,strength:16,naturalFitness:16,bowlingPace:16} },
   // An all-rounder, and the school's best fielder.
   p3: { technical:{footwork:14,timing:15,power:16,shotRange:14,defence:13,againstPace:14,againstSpin:13,lineAndLength:14,seamAndSwing:13,variations:12,catching:17,groundFielding:17,throwing:18},
         mental:{concentration:14,composure:15,decisions:14,anticipation:16,determination:16,bravery:16,leadership:15,teamwork:17,workRate:16,gameAwareness:15},
+        tactical:{strikeRotation:15,oppositionAnalysis:14,fieldPlacement:15,deathOversExecution:14},
         physical:{pace:17,acceleration:17,agility:17,balance:16,stamina:16,strength:15,naturalFitness:16,bowlingPace:14} },
   // A wicketkeeper-batter, still developing.
   p9: { technical:{footwork:15,timing:14,power:12,shotRange:13,defence:15,againstPace:13,againstSpin:15,glovework:16,catching:16,groundFielding:13,throwing:12},

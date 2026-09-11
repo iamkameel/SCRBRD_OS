@@ -93,7 +93,16 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
                           and being wrong here shows a button that then says
                           no, never the wrong data. */}
                       {(isLive||m.status==="upcoming")&&canScore(role)&&<Btn size="sm" variant="success" onClick={e=>{e.stopPropagation();onOpenScorer&&onOpenScorer(m);}}>{isLive?"Open Live Scorer →":"Start Scoring →"}</Btn>}
-                      {m.scorecard?.home&&<Btn size="sm" variant="ghost" onClick={e=>{e.stopPropagation();setCardM(m);}}>{m.status==="complete"?"Scorecard":"Live Scorecard"}</Btn>}
+                      {/* Offered for any match that has been played or is being
+                          played — NOT gated on `m.scorecard`, which is a mock-only
+                          field: asMatch() sets it null for every live row because
+                          a score is derived from the ball log rather than stored.
+                          Gating on it meant that in a signed-in session the button
+                          never appeared at all, so the real scorecard was
+                          unreachable for every real fixture. The modal reads the
+                          log itself and says so honestly when a match has not been
+                          scored yet, which is the right answer to give here. */}
+                      {(isLive||m.status==="complete")&&<Btn size="sm" variant="ghost" onClick={e=>{e.stopPropagation();setCardM(m);}}>{m.status==="complete"?"Scorecard":"Live Scorecard"}</Btn>}
                     </div>
                   </div>
                 </div>

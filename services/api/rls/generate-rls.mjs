@@ -21,10 +21,10 @@
  * given argument set rather than once per row.
  */
 
-import { ROLE_CAPABILITIES, ROLES, roleGrants, SCORING_ROLES, SUBJECT_SCOPED_ROLES, TEAM_SCOPED_ROLES, unknownCapabilities } from "@scrbrd/policy/roles";
+import { GRANTABLE_ROLES, ROLE_CAPABILITIES, ROLES, roleGrants, SCORING_ROLES, SUBJECT_SCOPED_ROLES, TEAM_SCOPED_ROLES, ungrantableRoles, unknownCapabilities } from "@scrbrd/policy/roles";
 import { TABLES, isCapabilityExpression } from "@scrbrd/policy/tables";
 import { teamCodeCheck } from "@scrbrd/policy/teams";
-import { ALL_CAPABILITIES } from "@scrbrd/policy/capabilities";
+import { ALL_CAPABILITIES, PLATFORM_ONLY } from "@scrbrd/policy/capabilities";
 
 const q = (s) => `'${String(s).replaceAll("'", "''")}'`;
 const banner = (t) => `\n-- ══════════════════════════════════════════════════════════════════\n--  ${t}\n-- ══════════════════════════════════════════════════════════════════`;
@@ -74,13 +74,14 @@ const anchor = (table, def, key, cast) => {
  */
 const capExpr = (c) => (isCapabilityExpression(c) ? c : q(c));
 
-const callCan = (table, def, capability) => {
+const callCan = (table, def, capability, anchors = def.anchors) => {
+  const at = { ...def, anchors };
   const args = [
     capExpr(capability),
-    anchor(table, def, "school", "uuid"),
-    anchor(table, def, "team", "text"),
-    anchor(table, def, "person", "uuid"),
-    anchor(table, def, "fixture", "uuid"),
+    anchor(table, at, "school", "uuid"),
+    anchor(table, at, "team", "text"),
+    anchor(table, at, "person", "uuid"),
+    anchor(table, at, "fixture", "uuid"),
   ];
   return `app_can(${args.join(", ")})`;
 };
@@ -191,6 +192,45 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER;
 REVOKE ALL ON FUNCTION app_can(text, uuid, text, uuid, uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION app_can(text, uuid, text, uuid, uuid) TO PUBLIC;
 
+-- app_holds(capability) — does this person hold the capability AT ALL?
+--
+-- app_can() asks whether someone may act on a particular ROW, and every
+-- governed row belongs to a tenant. A few decisions have no row and no tenant:
+-- verifying a scout's accreditation, or turning a product feature off across
+-- the whole platform. There is no ANY_SCOPE for school, so handing app_can() a
+-- placeholder anchor does not widen it — it refuses everyone, silently, which
+-- is exactly what happened the first time the scouting register tried it.
+--
+-- This is that same existence check with the scope arms removed, and it has a
+-- name because it had already been written out by hand three times. Each copy
+-- repeated the valid_from IS NULL comparison that silently refused every
+-- open-ended assignment until it was found, and every copy omitted a.active
+-- — so a deactivated assignment still passed them. One of those is a bug that
+-- was caught; the other was not, and that is the argument for one definition.
+--
+-- NOT a bypass. Holding a capability somewhere is not permission to touch a
+-- particular school's rows: anything with a tenant still goes through
+-- app_can(), and this answers only the tenant-less question.
+CREATE OR REPLACE FUNCTION app_holds(p_capability text) RETURNS boolean AS $$
+  SELECT EXISTS (
+    SELECT 1
+      FROM role_assignment a
+      JOIN role_capability rc
+        ON rc.role = a.role
+       AND rc.capability = p_capability
+      JOIN capability c
+        ON c.name = rc.capability
+     WHERE a.person_id = app_user_id()
+       AND a.active
+       AND (NOT c.platform_only OR a.school_id IS NULL)
+       AND (a.valid_from  IS NULL OR a.valid_from  <= current_date)
+       AND (a.valid_until IS NULL OR a.valid_until >  current_date)
+  )
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION app_holds(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app_holds(text) TO PUBLIC;
+
 -- There is deliberately NO can_score(role) here. It existed, it was correct,
 -- and nothing called it after the scoring policies moved to app_can() — which
 -- makes it worse than useless: a role-shaped decision function sitting in the
@@ -253,6 +293,9 @@ function capabilityRows() {
   for (const role of ROLES)
     for (const cap of ROLE_CAPABILITIES[role]) rows.push(`  (${q(role)}, ${q(cap)})`);
   const catalogue = ALL_CAPABILITIES.map((c) => `  (${q(c)})`).join(",\n");
+  const grantRows = [];
+  for (const [granter, granted] of Object.entries(GRANTABLE_ROLES))
+    for (const r of granted) grantRows.push(`  (${q(granter)}, ${q(r)})`);
   return `${banner("The capability catalogue")}
 -- Every capability the model defines, as rows, so a column that stores a
 -- capability NAME can have a foreign key onto it — notification.required_capability
@@ -264,9 +307,15 @@ function capabilityRows() {
 -- the model leaves its row behind rather than breaking the references to it,
 -- and grants no authority on its own — authority comes from role_capability.
 CREATE TABLE IF NOT EXISTS capability (name text PRIMARY KEY);
+-- Which capabilities belong to no tenant. See PLATFORM_ONLY in
+-- packages/policy/src/capabilities.mjs for the escalation that put this here.
+ALTER TABLE capability ADD COLUMN IF NOT EXISTS platform_only boolean NOT NULL DEFAULT false;
 INSERT INTO capability (name) VALUES
 ${catalogue}
 ON CONFLICT (name) DO NOTHING;
+-- Set every regeneration, in both directions, so removing a name from
+-- PLATFORM_ONLY actually relaxes the rule rather than leaving a stale true.
+UPDATE capability SET platform_only = (name IN (${PLATFORM_ONLY.map(q).join(", ")}));
 
 -- Readable by everyone, writable by nobody but a migration. The names are
 -- already in the client bundle, so there is nothing to protect by hiding them
@@ -288,7 +337,72 @@ ${banner("Role → capability bundles")}
 -- Replaced wholesale on every regeneration.
 DELETE FROM role_capability;
 INSERT INTO role_capability (role, capability) VALUES
-${rows.join(",\n")};`;
+${rows.join(",\n")};
+
+-- A FOREIGN KEY ONTO THE CATALOGUE, added here rather than in the schema
+-- because capability is created here and this file runs first.
+--
+-- This is the single cheapest guard against the way the previous build was
+-- lost. There, the permission check compared role LABELS while the data stored
+-- role CODES, so every check was permanently false, every write was denied,
+-- and the account that could have repaired it was gated behind the same check.
+-- A misspelt capability here fails the same way: it grants nothing, silently,
+-- and the symptom is a role that has stopped working for reasons nobody can
+-- see. With the key in place the MIGRATION fails instead, loudly, before
+-- anybody is locked out of anything.
+DO $rc_fk$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'role_capability_capability_fkey') THEN
+    ALTER TABLE role_capability
+      ADD CONSTRAINT role_capability_capability_fkey
+      FOREIGN KEY (capability) REFERENCES capability(name);
+  END IF;
+END
+$rc_fk$;
+
+${banner("Who may appoint whom")}
+-- Generated from GRANTABLE_ROLES in packages/policy/src/roles.mjs, which is
+-- where the reasoning lives. user.role.assign says a person may make
+-- appointments; this says which ones, and without it a school administrator
+-- could appoint themselves to any role in the model.
+CREATE TABLE IF NOT EXISTS role_grantable (
+  granter text NOT NULL,
+  role    text NOT NULL,
+  PRIMARY KEY (granter, role)
+);
+ALTER TABLE role_grantable ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS role_grantable_read ON role_grantable;
+CREATE POLICY role_grantable_read ON role_grantable FOR SELECT USING (true);
+DELETE FROM role_grantable;
+INSERT INTO role_grantable (granter, role) VALUES
+${grantRows.join(",\n")};
+
+-- app_may_grant(role) — may the caller appoint somebody to this role?
+--
+-- Two questions, both of which have to answer yes. Whether the caller's own
+-- roles list this one as grantable, and — for a role carrying a tenant-less
+-- capability — whether the caller's assignment is itself tenant-less. The
+-- second is what stops a school-scoped grant of a platform role.
+CREATE OR REPLACE FUNCTION app_may_grant(p_role text) RETURNS boolean AS $$
+  SELECT EXISTS (
+    SELECT 1
+      FROM role_assignment a
+      JOIN role_grantable g ON g.granter = a.role AND g.role = p_role
+     WHERE a.person_id = app_user_id()
+       AND a.active
+       AND (a.valid_from  IS NULL OR a.valid_from  <= current_date)
+       AND (a.valid_until IS NULL OR a.valid_until >  current_date)
+       -- A role carrying a platform capability may only be handed out by
+       -- somebody whose own assignment belongs to no school.
+       AND (a.school_id IS NULL OR NOT EXISTS (
+              SELECT 1 FROM role_capability rc
+                JOIN capability c ON c.name = rc.capability AND c.platform_only
+               WHERE rc.role = p_role))
+  )
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION app_may_grant(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app_may_grant(text) TO PUBLIC;`;
 }
 
 /**
@@ -313,15 +427,35 @@ const readPredicate = (table, def) => {
   const can = def.readAlso
     ? `${callCan(table, def, def.read)}\n       AND ${callCan(table, def, def.readAlso)}`
     : callCan(table, def, def.read);
-  if (!def.visibleWhen) return can;
-  return `(${can})\n    OR (${def.visibleWhen.trim()})`;
+
+  // `readAnchors` — THE SAME CAPABILITY, ASKED AT A SECOND SCOPE.
+  //
+  // A fixture between two SCRBRD schools is one row, and both schools must be
+  // able to read it. The home side's anchors are on the row; the away side's
+  // are different columns of the same row, and the question asked of them is
+  // identical: does this person hold fixture.read over THAT school and team?
+  //
+  // Deliberately not `visibleWhen`, which takes raw SQL and can widen a policy
+  // to anything its author writes. This can only ever ask app_can() again, at
+  // anchors declared the same way the first set is — so a second side cannot
+  // become a bypass, and the whole predicate is still nothing but a disjunction
+  // of scoped capability checks. An away school with no fixture.read over its
+  // own team sees nothing.
+  //
+  // OR-ed, and parenthesised around the AND above, because getting that
+  // precedence wrong would let a second scope bypass a readAlso requirement.
+  const sides = (def.readAnchors ?? []).map((a) => callCan(table, def, def.read, a));
+  const scoped = sides.length ? `(${can})\n    OR ${sides.join("\n    OR ")}` : can;
+
+  if (!def.visibleWhen) return scoped;
+  return `(${scoped})\n    OR (${def.visibleWhen.trim()})`;
 };
 
 function tablePolicies() {
   const out = [banner("Per-table row-level security")];
   for (const [table, def] of Object.entries(TABLES)) {
     out.push(`
--- ${table} — read: ${def.read}${def.readAlso ? ` AND ${def.readAlso}` : ""} · write: ${def.write}${def.visibleWhen ? "\n-- plus a named exception on read — see readPredicate() in generate-rls.mjs" : ""}
+-- ${table} — read: ${def.read}${def.readAlso ? ` AND ${def.readAlso}` : ""}${def.readAnchors ? ` (from ${def.readAnchors.length + 1} scopes)` : ""} · write: ${def.write}${def.visibleWhen ? "\n-- plus a named exception on read — see readPredicate() in generate-rls.mjs" : ""}
 ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS ${table}_read   ON ${table};
 DROP POLICY IF EXISTS ${table}_insert ON ${table};
@@ -428,16 +562,127 @@ function assignmentPolicies() {
 -- A person may read their own assignments — the context switcher needs them —
 -- and nobody else's. Granting and revoking goes through user.role.assign.
 ALTER TABLE role_assignment ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS role_assignment_read  ON role_assignment;
-DROP POLICY IF EXISTS role_assignment_write ON role_assignment;
+DROP POLICY IF EXISTS role_assignment_read   ON role_assignment;
+DROP POLICY IF EXISTS role_assignment_write  ON role_assignment;
+DROP POLICY IF EXISTS role_assignment_revoke ON role_assignment;
 
 CREATE POLICY role_assignment_read ON role_assignment
   FOR SELECT USING (
     person_id = app_user_id()
     OR app_can('user.role.assign', school_id, team_code, NULL, NULL)
   );
+
+-- TWO QUESTIONS ON A GRANT, NOT ONE.
+--
+-- app_can() asks whether this person may appoint anybody AT THIS SCOPE.
+-- app_may_grant() asks whether they may appoint somebody to THIS ROLE. Only
+-- the first was ever asked, and the gap was an escalation reachable with a
+-- single INSERT: a school administrator holds user.role.assign at their own
+-- school, so the check passed for any role at all. They could appoint
+-- themselves 'medical' and read their pupils' clinical notes, or appoint
+-- themselves 'platformadmin' and — because app_holds() did not look at the
+-- assignment's tenant either — move a platform-wide feature switch.
+--
+-- Both halves are now closed, and deliberately in different places: which
+-- roles a granter may hand out is a tenant-level policy question answered by
+-- GRANTABLE_ROLES, and whether a platform capability may be held through a
+-- school-scoped assignment is a model question answered by PLATFORM_ONLY.
+-- Either alone leaves a way round.
 CREATE POLICY role_assignment_write ON role_assignment
-  FOR INSERT WITH CHECK (app_can('user.role.assign', school_id, team_code, NULL, NULL));
+  FOR INSERT WITH CHECK (
+    app_can('user.role.assign', school_id, team_code, NULL, NULL)
+    AND app_may_grant(role)
+  );
+
+-- REVOKING, which had no policy at all and therefore could not be done.
+--
+-- That is the quieter half of the same failure. A build you cannot get INTO is
+-- the famous kind; a build where a mistaken appointment can be made and never
+-- withdrawn is the same shape, and it had been sitting here since the
+-- assignment table was written. The only column this may change is the active
+-- flag: re-pointing an assignment at a different person or school would be a
+-- new appointment wearing an old one's audit trail, so it is refused by the
+-- trigger below, and a fresh row is the honest way to do it.
+CREATE POLICY role_assignment_revoke ON role_assignment
+  FOR UPDATE USING (app_can('user.role.assign', school_id, team_code, NULL, NULL))
+           WITH CHECK (app_can('user.role.assign', school_id, team_code, NULL, NULL));
+
+CREATE OR REPLACE FUNCTION role_assignment_revoke_only() RETURNS trigger AS $$
+BEGIN
+  IF NEW.person_id IS DISTINCT FROM OLD.person_id
+  OR NEW.role      IS DISTINCT FROM OLD.role
+  OR NEW.school_id IS DISTINCT FROM OLD.school_id
+  OR NEW.team_code IS DISTINCT FROM OLD.team_code THEN
+    RAISE EXCEPTION 'an assignment may be deactivated, not re-pointed; '
+                    'withdraw this one and make the appointment you meant'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  -- The provenance is part of the record, not part of the row's editable
+  -- state. Letting an update move created_by would make the audit trail
+  -- writable by the people it is about.
+  IF NEW.created_by IS DISTINCT FROM OLD.created_by
+  OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+    RAISE EXCEPTION 'who made an appointment and when are not editable'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  -- WITHDRAWING CARRIES A NAME TOO, stamped here rather than supplied. The
+  -- gap this closes is the mirror of the one below: an appointment could be
+  -- taken back and the row would not say by whom.
+  IF OLD.active AND NOT NEW.active THEN
+    NEW.revoked_by := app_user_id();
+    NEW.revoked_at := now();
+  ELSIF NOT OLD.active AND NEW.active THEN
+    -- Reactivating is a new appointment wearing an old one's provenance. The
+    -- policy already only permits the true-to-false direction; this is the
+    -- structural half.
+    RAISE EXCEPTION 'a withdrawn assignment is not reactivated; make the appointment again'
+      USING ERRCODE = 'check_violation';
+  ELSE
+    NEW.revoked_by := OLD.revoked_by;
+    NEW.revoked_at := OLD.revoked_at;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS role_assignment_revoke_guard ON role_assignment;
+CREATE TRIGGER role_assignment_revoke_guard BEFORE UPDATE ON role_assignment
+  FOR EACH ROW EXECUTE FUNCTION role_assignment_revoke_only();
+
+/**
+ * WHO MADE THIS APPOINTMENT — stamped, never supplied.
+ *
+ * created_by has been on this table since it was written and NOTHING HAS EVER
+ * WRITTEN IT: twenty-five seeded assignments, none with a granter named. A
+ * column that exists and is never populated is the same shape as a capability
+ * nobody can exercise, and this is the worst place in the schema for it.
+ * Every other decision here carries a name — who published a broadcast, who
+ * hid a module, who waived an exclusivity, who said a boy could not play — and
+ * the appointment that GRANTS ALL OF THOSE POWERS did not.
+ *
+ * A TRIGGER RATHER THAN A DEFAULT OR A ROUTE, and the difference is the point.
+ * A default can be overridden by naming the column; a route can be bypassed by
+ * another route, an import, or psql. Forced here, the row cannot claim
+ * somebody else made the appointment no matter who writes it or how.
+ *
+ * NULL stays meaningful: the seed and the migrations insert as the migration
+ * user, where app_user_id() is NULL, and "no granter" is the honest answer for
+ * a row the platform created rather than a person.
+ */
+CREATE OR REPLACE FUNCTION role_assignment_stamp_granter() RETURNS trigger AS $$
+BEGIN
+  NEW.created_by := app_user_id();
+  NEW.created_at := now();
+  -- A fresh appointment is not withdrawn, whatever the insert claimed.
+  NEW.revoked_by := NULL;
+  NEW.revoked_at := NULL;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS role_assignment_granter ON role_assignment;
+CREATE TRIGGER role_assignment_granter BEFORE INSERT ON role_assignment
+  FOR EACH ROW EXECUTE FUNCTION role_assignment_stamp_granter();
 
 ALTER TABLE assignment_subject ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS assignment_subject_read ON assignment_subject;
@@ -491,8 +736,12 @@ export function authz() {
     `  SELECT nullif(current_setting('app.device_id', true), '') $$ LANGUAGE sql STABLE;`,
     `CREATE OR REPLACE FUNCTION app_player_id() RETURNS uuid AS $$`,
     `  SELECT nullif(current_setting('app.player_id', true), '')::uuid $$ LANGUAGE sql STABLE;`,
-    decisionFunction(),
+    // The catalogue FIRST. app_holds() joins capability to find out whether a
+    // capability belongs to a tenant, and Postgres validates a function body
+    // against the tables it names at creation time — so emitting the decision
+    // functions before the table they read fails the migration outright.
     capabilityRows(),
+    decisionFunction(),
     teamScopedConstraint(),
     assignmentPolicies(),
     ``,

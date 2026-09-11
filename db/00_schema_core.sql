@@ -66,7 +66,12 @@ CREATE TABLE player (
   team_code     text,                          -- 1XI, U16B … the team scope anchor
   full_name     text NOT NULL,
   squad_no      smallint,
-  playing_role  text,                          -- batter | bowler | allrounder | keeper
+  -- The vocabulary was a COMMENT and nothing enforced it, which the CSV
+  -- import found the hard way: it is the first thing that reads these values
+  -- back in, and it guessed a fifth spelling nobody else uses. A documented
+  -- rule with nothing behind it is the pattern this schema keeps closing.
+  playing_role  text CHECK (playing_role IS NULL OR playing_role IN
+                  ('batter','bowler','allrounder','keeper')),
   batting_style text,
   bowling_style text,
   fitness       text NOT NULL DEFAULT 'fit'
@@ -171,15 +176,120 @@ CREATE TABLE ground (
 );
 CREATE INDEX ON ground (school_id);
 
+-- ── The sports SCRBRD OS runs, and how much of each actually works ──
+--
+-- SCRBRD OS is a school-sport platform and Cricket OS is one sport inside it.
+-- That sentence had no representation in the schema at all: `match` meant a
+-- cricket match, `overs` was NOT NULL with a T20 default, and the shell's
+-- mobile navigation carried a hard-coded CricketOS / RugbyOS / HockeyOS list
+-- with `live: false` beside three of them — a product decision living in a
+-- component's constant.
+--
+-- SPORT IS A DIMENSION, NOT A TENANT. The tenant is the school and stays the
+-- school: every policy in this schema anchors on school_id and none of that
+-- changes. A sport is a property of a fixture, and what it decides is which
+-- MACHINERY applies.
+--
+-- WHICH IS WORTH STATING PRECISELY, because most of this product is already
+-- sport-agnostic and nobody had noticed. Squad selection, availability,
+-- readiness, transport, officials, fields, notifications, sponsors, staff,
+-- injuries and the whole module system care about a fixture and a roster and
+-- not at all about what game is being played. Only the ball log, the toss, DRS
+-- and the analytics that replay them are cricket.
+--
+-- So `engine` records the honest answer per sport rather than a boolean that
+-- would have to lie one way or the other:
+--
+--   'scoring'   the ball-by-ball engine works: toss, deliveries, replay,
+--               scorecards, analytics. Cricket, today, and only cricket.
+--   'fixtures'  everything sport-agnostic works — schedule a fixture, name a
+--               side, collect availability, put a bus on it, appoint
+--               officials, book a field, alert the parents. No scoring engine.
+--   'none'      listed so a school can see it is coming, and nothing more.
+--
+-- A school with a hockey programme gets real value at 'fixtures' on the day
+-- this lands, which is why the distinction is in the table rather than in a
+-- roadmap document. Claiming a sport is "live" when only its fixture half
+-- exists is the mock-screen failure this project keeps finding elsewhere.
+CREATE TABLE sport (
+  code  text PRIMARY KEY CHECK (code ~ '^[a-z][a-z_]{2,29}$'),
+  label text NOT NULL,
+  -- The switch that governs it, DERIVED so the two cannot drift. A sport is
+  -- switchable through exactly the same three levels as every module — the
+  -- platform grants, a school may only reduce — and giving it its own
+  -- parallel mechanism would be a second authorization model for the same
+  -- question.
+  flag_key text GENERATED ALWAYS AS ('sport_' || code) STORED,
+  engine text NOT NULL CHECK (engine IN ('none','fixtures','scoring')),
+  sort_order smallint NOT NULL DEFAULT 100
+);
+
+-- Reference data, not demonstration data, so it is here rather than in the
+-- pilot seed: these rows are part of what the product IS. The feature_flag
+-- rows that switch them are in db/08, where that table lives, and
+-- packages/policy/test/modules.test.mjs fails if the two lists ever disagree.
+INSERT INTO sport (code, label, engine, sort_order) VALUES
+  ('cricket',   'Cricket',   'scoring',   10),
+  -- Every one of these can hold a fixture list, a squad, availability,
+  -- transport and officials the day a school switches it on. None has a
+  -- scoring engine, and the table says so rather than a screen implying
+  -- otherwise.
+  ('rugby',     'Rugby',     'fixtures',  20),
+  ('hockey',    'Hockey',    'fixtures',  30),
+  ('netball',   'Netball',   'fixtures',  40),
+  ('football',  'Football',  'fixtures',  50),
+  ('athletics', 'Athletics', 'none',      60),
+  ('swimming',  'Swimming',  'none',      70)
+ON CONFLICT (code) DO NOTHING;
+
 CREATE TABLE match (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   school_id     uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
   team_code     text,                          -- the home team's scope anchor
+  -- THE AWAY SIDE, AND WHY IT IS THREE COLUMNS RATHER THAN ONE.
+  --
+  -- `opponent` was the whole of it: free text, "Michaelhouse". That works for a
+  -- fixture against a school SCRBRD does not host, and it quietly breaks
+  -- everything the moment BOTH schools are tenants — because then one fixture
+  -- is two unrelated rows, one at each school, and nothing joins them. No
+  -- shared ladder. No real head-to-head: `derby_record` groups on a string, so
+  -- "Michaelhouse" and "Michaelhouse College" are different rivals. No away
+  -- side's availability, no away team sheet, and both schools typing the same
+  -- Saturday in twice.
+  --
+  -- It is also the precondition for anything positional. A passport that can
+  -- say "top decile of U15 batters in KZN against pace" needs fixtures that
+  -- span tenants; one that can only see its own school's rows can say nothing
+  -- of the kind, however good the arithmetic is.
+  --
+  -- So: when the away side IS a tenant, it is named by school and team, and the
+  -- fixture is ONE row that both schools read. When it is not — most fixtures,
+  -- today — those stay NULL and `opponent` carries the name exactly as before.
+  -- Nothing about the existing path changes, which is what makes this safe to
+  -- land before there is a second school on the platform.
+  away_school_id uuid REFERENCES school(id),
+  away_team_code text,
+  -- Still NOT NULL, and still what every read displays. Stamped from the away
+  -- school when that school is known (see match_away_side_label in db/08) so
+  -- the fixture list, the scorecard header, the broadcast overlay and the
+  -- derby read all keep working untouched — none of them had to learn about
+  -- tenancy to benefit from it.
   opponent      text NOT NULL,
   ground_id     uuid REFERENCES ground(id) ON DELETE SET NULL,
   starts_at     timestamptz NOT NULL,
-  format        text NOT NULL DEFAULT 'T20',
-  overs         smallint NOT NULL DEFAULT 20,
+  -- WHICH GAME. Defaulted to cricket rather than left to the caller, because
+  -- every fixture that existed before this column was a cricket fixture and
+  -- guessing would have been the alternative. New sports are stated.
+  sport         text NOT NULL DEFAULT 'cricket' REFERENCES sport(code),
+  -- Cricket's own two columns, and they no longer pretend to be universal.
+  --
+  -- `format` was NOT NULL DEFAULT 'T20' and `overs` NOT NULL DEFAULT 20, which
+  -- meant a hockey fixture inserted without thinking about it became a
+  -- twenty-over hockey match. Both defaults are gone and both are now
+  -- constrained by the sport: cricket states its format, and an over is a
+  -- cricket unit that nothing else may carry.
+  format        text,
+  overs         smallint,
   status        text NOT NULL DEFAULT 'scheduled'
                   CHECK (status IN ('scheduled','live','complete','abandoned')),
   -- The toss is NOT here. It was — as `toss_won_by text` holding a school's
@@ -190,10 +300,32 @@ CREATE TABLE match (
   -- should not, though a scorer is exactly who watches the coin land.
   -- No score column, by design. The score is derived from ball_event —
   -- see db/01_schema_scoring.sql and packages/scoring/src/replay.mjs.
-  created_at    timestamptz NOT NULL DEFAULT now()
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  -- Cricket says what it is; everything else says nothing about overs. Written
+  -- as two one-directional rules rather than one biconditional on purpose:
+  -- multi-day cricket legitimately has no over limit, so "cricket implies
+  -- overs" would be false. What is always false is a hockey match with an
+  -- over count.
+  CONSTRAINT cricket_states_its_format CHECK (sport <> 'cricket' OR format IS NOT NULL),
+  CONSTRAINT overs_are_a_cricket_unit  CHECK (sport =  'cricket' OR overs  IS NULL),
+  -- Both halves of the away side or neither. A school with no team named is
+  -- not a side — it would anchor the away read at a school and a NULL team,
+  -- and under the asymmetric NULL rule a NULL team on a RESOURCE narrows, so
+  -- every away coach would silently read nothing while the row looked right.
+  CONSTRAINT away_side_is_named_in_full CHECK ((away_school_id IS NULL) = (away_team_code IS NULL)),
+  -- A fixture against yourself. Cheap to write and it has to be here: the away
+  -- read anchors would otherwise make the home team's own assignment satisfy
+  -- both sides, and a coach could name the opposition's XI.
+  CONSTRAINT not_playing_yourself CHECK (
+    away_school_id IS NULL OR away_school_id <> school_id OR away_team_code IS DISTINCT FROM team_code)
 );
 CREATE INDEX ON match (school_id);
 CREATE INDEX ON match (school_id, starts_at DESC);
+CREATE INDEX ON match (school_id, sport, starts_at DESC);
+-- The away side's own fixture list, which is a read as common as the home
+-- one once both schools are on the platform.
+CREATE INDEX ON match (away_school_id, away_team_code, starts_at DESC)
+  WHERE away_school_id IS NOT NULL;
 
 -- Which players are in a match squad. The scoring event log references
 -- players directly, so this is the team sheet, not a scoring structure.
@@ -311,7 +443,30 @@ CREATE TABLE role_assignment (
   valid_from  date,
   valid_until date,
   created_at  timestamptz NOT NULL DEFAULT now(),
+  -- WHO MADE THIS APPOINTMENT. Present since this table was written and never
+  -- once populated — see role_assignment_stamp_granter() in db/01_authz.sql,
+  -- which now forces it, and why a trigger rather than a default.
   created_by  uuid REFERENCES app_user(id),
+  -- And who took it back. Withdrawing is an UPDATE setting active false, and
+  -- until these columns existed the row recorded that it had happened and not
+  -- by whom — the mirror of the gap above, on the more consequential side.
+  -- ASYMMETRIC ON PURPOSE, exactly as created_at and created_by are. The time
+  -- is always stamped; the person is stamped when there is one. A withdrawal
+  -- made by a migration or a maintenance script has no person behind it, and
+  -- "revoked_at set, revoked_by null" says so — the same sentence created_by
+  -- null already says about a seeded appointment.
+  --
+  -- There WAS a CHECK pairing them, and it broke the access walk: withdrawing
+  -- as the migration user stamps now() and a NULL actor, which the pair
+  -- refused. Requiring both would have meant either refusing platform
+  -- withdrawals or inventing an actor for them, and inventing one is the
+  -- fabrication this codebase keeps deleting.
+  revoked_by  uuid REFERENCES app_user(id),
+  revoked_at  timestamptz,
+  -- An active assignment has not been withdrawn. Stated as a constraint
+  -- because the two are otherwise free to disagree, and a row that is active
+  -- and carries a withdrawal is one nobody can interpret.
+  CONSTRAINT active_is_not_revoked CHECK (active = false OR revoked_at IS NULL),
   CONSTRAINT assignment_dates CHECK (valid_from IS NULL OR valid_until IS NULL OR valid_from < valid_until)
 );
 -- The constraint that a coach assignment must name a team is NOT here: it is

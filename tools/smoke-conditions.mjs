@@ -67,6 +67,8 @@ try {
   const head   = await login("sarah@example.invalid");     // directorofsport
   const scorer = await login("scorer@example.invalid");    // scoring.start, no facility.manage
   const parent = await login("parent@example.invalid");
+  // facility.read without facility.manage — the boundary the ground record sits on.
+  const coach  = await login("coach@example.invalid");
 
   const newMatch = async (team = "1XI") => (await q(
     `insert into match (school_id, team_code, opponent, starts_at, format, overs, status)
@@ -205,6 +207,57 @@ try {
   ok("the pitch report reads back", read.body?.rows?.[0]?.surface === "damp");
   const wx = await api("/api/read/weather", { token: head });
   ok("the weather reads back", wx.body?.rows?.some((r) => r.match_id === m && r.condition === "Rain"));
+
+  group("The degree, beside the character");
+  // 'variable' is not a point on a scale and cannot be written as a number;
+  // "steep" covers everything from awkward to unplayable. Neither vocabulary
+  // replaces the other, so both are recorded and either may stand alone.
+  ok("a rating rides alongside the word",
+     (await pitch(m, head, { bounce: "variable", bounceRating: 8, paceRating: 4, outfield: "slow" })).status === 200);
+  const rated = (await api(`/api/read/pitch_report?matchId=${m}`, { token: head })).body?.rows?.[0];
+  ok("...and both come back", rated?.bounce === "variable" && rated?.bounce_rating === 8);
+  ok("the outfield is its own question from how the square plays", rated?.outfield === "slow");
+  ok("a rating outside 1-10 is refused by name",
+     (await pitch(m, head, { bounceRating: 11 })).status === 400);
+  ok("...and so is a fractional one — these are whole-number judgements",
+     (await pitch(m, head, { paceRating: 6.5 })).status === 400);
+  ok("a word with no number is still a report",
+     (await pitch(m, head, { bounce: "steep" })).status === 200);
+
+  group("The ground, as opposed to the square prepared on it");
+  // How long after the rain before we can play is a property of the GROUND's
+  // drainage, not of whichever fixture happens to be scheduled on it.
+  const g = (await q(`select id from ground where school_id = $1 limit 1`, [HIL]))[0].id;
+  const condition = (token, body) =>
+    api(`/api/grounds/${g}/condition`, { method: "POST", token, body });
+
+  // The negative actor is a COACH, deliberately, not the scorer: a scorer
+  // holds neither facility capability, so refusing them proves only that they
+  // are not grounds staff. A coach holds facility.read and not facility.manage,
+  // which is exactly the boundary this row is governed by — reading what the
+  // groundsman recorded is not being able to record it.
+  ok("a coach cannot file one — facility.read is not facility.manage",
+     [403, 401].includes((await condition(coach, { drainageMin: 40 })).status));
+  ok("a scorer cannot either, holding neither facility capability",
+     [403, 401].includes((await condition(scorer, { drainageMin: 40 })).status));
+  ok("the groundsman can", (await condition(head, {
+       moisturePct: 22, grassMm: 12, roller: "heavy", outfield: "fast",
+       drainageMin: 45, lastMown: "2026-09-05", notes: "Rolled Thursday.",
+     })).status === 200);
+  const gc = (await api(`/api/read/ground_conditions?groundId=${g}`, { token: head })).body?.rows?.[0];
+  ok("the wet-morning answer reads back", gc?.drainage_min === 45);
+  ok("...with the rest of the curator's record", gc?.moisture_pct === 22 && gc?.roller === "heavy");
+  ok("a drainage time beyond ten hours is a decision, not a measurement",
+     (await condition(head, { drainageMin: 601 })).status === 400);
+  ok("a mistyped date is refused by name rather than by type",
+     (await condition(head, { lastMown: "05/09/2026" })).status === 400);
+  ok("an empty report is not a report",
+     (await condition(head, {})).status === 400);
+  ok("a second report corrects the first rather than adding to it",
+     (await condition(head, { drainageMin: 30 })).status === 200 &&
+     (await q(`select count(*)::int as n from ground_condition where ground_id = $1`, [g]))[0].n === 1);
+  ok("a parent may read it — it says nothing about a person",
+     (await api(`/api/read/ground_conditions?groundId=${g}`, { token: parent })).status === 200);
 
 } catch (e) {
   fail++; console.log("\n  ✗ threw:", e.message);

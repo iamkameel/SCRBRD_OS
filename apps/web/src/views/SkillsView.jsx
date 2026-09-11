@@ -100,7 +100,7 @@ function SkillsView({ role }) {
   const canEdit = role==="superadmin"||role==="coach";
   const cats = skills ? Object.keys(skills) : [];
   // Technical / mental / physical — the craft, the head, the body.
-  const SKILL_COLORS = { technical:D.sky, mental:D.violet, physical:D.emerald };
+  const SKILL_COLORS = { technical:D.sky, mental:D.violet, tactical:D.amber, physical:D.emerald };
 
   // The 1-20 scale, banded as the rubric bands it: 1-5 poor, 6-10 average,
   // 11-15 good, 16-20 excellent. Kept in step with BANDS_OF_SCALE in

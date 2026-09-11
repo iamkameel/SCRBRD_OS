@@ -183,7 +183,15 @@ INSERT INTO app_user (id, school_id, email, name, role, teams) VALUES
   -- fixture that had the Hilton office verify him would have been asserting
   -- something the code forbids.
   ('88888888-0000-0000-0000-00000000000d', '22222222-2222-2222-2222-222222222222',
-   'registrar.wes@example.invalid', 'T Ndlovu', 'schooladmin', '{}');
+   'registrar.wes@example.invalid', 'T Ndlovu', 'schooladmin', '{}'),
+  -- A COACH AT THE SECOND SCHOOL, and the fixture that needs one is the whole
+  -- point of a shared fixture: a match between two tenants is one row, and the
+  -- away side has to have somebody who can read it and name their own XI. Until
+  -- this row existed Westville was a school with an administrator and nobody
+  -- who does any cricket, so the away half of every policy was untestable —
+  -- which is why it had never been tested.
+  ('88888888-0000-0000-0000-00000000001a', '22222222-2222-2222-2222-222222222222',
+   'coach.wes@example.invalid', 'S Pillay', 'coach', '{1XI}');
 
 INSERT INTO app_user (id, school_id, email, name, role, teams) VALUES
   ('88888888-0000-0000-0000-000000000010', '11111111-1111-1111-1111-111111111111',
@@ -200,6 +208,57 @@ INSERT INTO app_user (id, school_id, email, name, role, teams) VALUES
 INSERT INTO app_user (id, school_id, email, name, role, player_id, teams) VALUES
   ('88888888-0000-0000-0000-000000000009', '11111111-1111-1111-1111-111111111111',
    'pillay@example.invalid', 'R Pillay', 'player', 'aaaaaaaa-0000-0000-0000-000000000005', '{1XI}');
+
+-- The bursar. A school with sponsors and no finance account is the same gap
+-- the registrar comment above describes: sponsorship.finance.read is held by
+-- this role and by nothing else in the floor bundle, so without an account
+-- carrying it, the masking on a contract's value could only ever be observed
+-- from the outside — every reader masked, none unmasked, which proves the
+-- column is absent rather than that it is guarded.
+INSERT INTO app_user (id, school_id, email, name, role) VALUES
+  ('88888888-0000-0000-0000-000000000015', '11111111-1111-1111-1111-111111111111',
+   'bursar@example.invalid', 'M du Toit', 'finance');
+
+-- The driver, with an account. B Ngcobo has existed as a STAFF row since the
+-- first seed and could never sign in, so transport.drive — the capability that
+-- says who may report a bus as departed — had no principal that held it. The
+-- same gap as the bursar and the head below: a capability nobody can exercise
+-- can only ever be observed refusing.
+INSERT INTO app_user (id, school_id, email, name, role) VALUES
+  ('88888888-0000-0000-0000-000000000017', '11111111-1111-1111-1111-111111111111',
+   'driver@example.invalid', 'B Ngcobo', 'driver');
+
+-- A fleet, because three transport capabilities gated a screen drawn entirely
+-- from mock arrays and the database had never heard of a bus. The registrations
+-- and seat counts match what the mock carried, so the Logistics screen shows
+-- the same fixture it always did — from rows this time.
+INSERT INTO vehicle (id, school_id, registration, description, kind, capacity,
+                     condition, next_service_on, notes) VALUES
+  ('4e111111-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111',
+   'KZN 482 GP', 'Toyota Quantum 22-seater', 'minibus', 22, 'excellent',
+   current_date + 18, 'Passengers must be seated and belted before departure.'),
+  ('4e111111-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111',
+   'KZN 119 KP', 'Toyota Quantum 14-seater', 'minibus', 14, 'good',
+   current_date + 45, NULL),
+  ('4e111111-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111',
+   'KZN 771 MP', 'Toyota Coaster 30-seater', 'bus', 30, 'good',
+   current_date + 12, 'Used primarily for longer trips.')
+ON CONFLICT DO NOTHING;
+
+-- The head. A school with sponsors and no principal is the same gap the
+-- bursar comment above describes, and a sharper one: sponsorship.exclusivity.waive
+-- is held by this role and by nothing else, so without an account carrying it
+-- the waiver path could only ever be observed failing.
+INSERT INTO app_user (id, school_id, email, name, role) VALUES
+  ('88888888-0000-0000-0000-000000000016', '11111111-1111-1111-1111-111111111111',
+   'principal@example.invalid', 'Dr N Mkhize', 'principal');
+
+-- The platform account. Not scoped to a school at all — this is what
+-- verifies a scout's accreditation, and accrediting an external organisation
+-- is not a claim about any one school's roster.
+INSERT INTO app_user (id, school_id, email, name, role) VALUES
+  ('88888888-0000-0000-0000-000000000014', '11111111-1111-1111-1111-111111111111',
+   'platform@example.invalid', 'Platform Ops', 'platformadmin');
 
 INSERT INTO role_assignment (id, person_id, role, school_id, team_code) VALUES
   ('a5510000-0000-0000-0000-000000000001', '88888888-0000-0000-0000-000000000001', 'player',          '11111111-1111-1111-1111-111111111111', NULL),
@@ -238,7 +297,17 @@ INSERT INTO role_assignment (id, person_id, role, school_id, team_code) VALUES
   ('a5510000-0000-0000-0000-000000000010', '88888888-0000-0000-0000-000000000010', 'guardian',        '11111111-1111-1111-1111-111111111111', NULL),
   ('a5510000-0000-0000-0000-000000000011', '88888888-0000-0000-0000-000000000011', 'guardian',        '11111111-1111-1111-1111-111111111111', NULL),
   ('a5510000-0000-0000-0000-000000000012', '88888888-0000-0000-0000-000000000012', 'guardian',        '11111111-1111-1111-1111-111111111111', NULL),
-  ('a5510000-0000-0000-0000-000000000013', '88888888-0000-0000-0000-000000000013', 'guardian',        '11111111-1111-1111-1111-111111111111', NULL);
+  ('a5510000-0000-0000-0000-000000000013', '88888888-0000-0000-0000-000000000013', 'guardian',        '11111111-1111-1111-1111-111111111111', NULL),
+  ('a5510000-0000-0000-0000-000000000017', '88888888-0000-0000-0000-000000000015', 'finance',         '11111111-1111-1111-1111-111111111111', NULL),
+  ('a5510000-0000-0000-0000-000000000018', '88888888-0000-0000-0000-000000000016', 'principal',       '11111111-1111-1111-1111-111111111111', NULL),
+  ('a5510000-0000-0000-0000-000000000019', '88888888-0000-0000-0000-000000000017', 'driver',          '11111111-1111-1111-1111-111111111111', NULL),
+  -- The Westville 1XI coach. Scoped to Westville and to 1XI exactly as the
+  -- Hilton coach is scoped to Hilton and 1XI — which is what makes the shared
+  -- fixture assertions mean something: neither can reach the other's side.
+  ('a5510000-0000-0000-0000-00000000001a', '88888888-0000-0000-0000-00000000001a', 'coach',           '22222222-2222-2222-2222-222222222222', '1XI'),
+  -- school_id NULL, honestly: platform administration is not a claim about
+  -- any one school, and nothing in scouting.accredit's check looks at scope.
+  ('a5510000-0000-0000-0000-000000000016', '88888888-0000-0000-0000-000000000014', 'platformadmin',   NULL, NULL);
 
 -- Who each assignment is about: the parents' children, Sarah's two children at
 -- two schools, and R Pillay's own record.
@@ -327,14 +396,18 @@ INSERT INTO training_attendance (session_id, player_id, status) VALUES
   ('7a717000-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000001', 'present'),
   ('7a717000-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000005', 'injured');
 
--- Assessments on the 1-20 scale, grouped technical / mental / physical. A
--- PARTIAL assessment is the normal case, not an incomplete one: these are the
--- things a coach actually watched, and the write path upserts per attribute.
+-- Assessments on the 1-20 scale, grouped technical / mental / tactical /
+-- physical. A PARTIAL assessment is the normal case, not an incomplete one:
+-- these are the things a coach actually watched, and the write path upserts per
+-- attribute.
 INSERT INTO player_skill (player_id, assessed_on, category, metric, score) VALUES
-  ('aaaaaaaa-0000-0000-0000-000000000001', current_date - 30, 'technical', 'footwork',      17),
-  ('aaaaaaaa-0000-0000-0000-000000000001', current_date - 30, 'technical', 'timing',        16),
-  ('aaaaaaaa-0000-0000-0000-000000000001', current_date - 30, 'mental',    'concentration', 15),
-  ('aaaaaaaa-0000-0000-0000-000000000006', current_date - 30, 'technical', 'footwork',      12);
+  ('aaaaaaaa-0000-0000-0000-000000000001', current_date - 30, 'technical', 'footwork',       17),
+  ('aaaaaaaa-0000-0000-0000-000000000001', current_date - 30, 'technical', 'timing',         16),
+  ('aaaaaaaa-0000-0000-0000-000000000001', current_date - 30, 'mental',    'concentration',  15),
+  -- Game-craft, judged over a season rather than in a net, which is why there
+  -- is one of these where there are two of everything else.
+  ('aaaaaaaa-0000-0000-0000-000000000001', current_date - 30, 'tactical',  'strikeRotation', 16),
+  ('aaaaaaaa-0000-0000-0000-000000000006', current_date - 30, 'technical', 'footwork',       12);
 
 -- A coach's own writing. Narrower than the assessments above: the pupil reads
 -- his own attribute scores and must not read this. One note carries an explicit

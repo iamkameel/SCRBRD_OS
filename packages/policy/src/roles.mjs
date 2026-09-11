@@ -71,11 +71,44 @@ const BUNDLES = {
   // platform.support.impersonate, which is time-boxed and audited.
   platformadmin: [
     "platform.health.read", "platform.tenant.manage", "platform.support.impersonate",
+    "platform.feature.manage",
+    "platform.reward.manage",
+    // The recovery path needs a key. Without user.role.assign the platform
+    // account can see a school that has locked itself out and do nothing about
+    // it — see GRANTABLE_ROLES at the foot of this file for why that matters
+    // more than the extra surface it adds.
+    "user.role.assign",
+    // Also the school-side one, which sounds like a widening and is the
+    // opposite: school.feature.manage can only HIDE, and somebody who may
+    // grant a school a module can certainly hide one. Without it the platform
+    // account cannot reach the modules screen at all, since that destination
+    // is gated on the wider of the two capabilities.
+    "school.feature.manage",
+    "scouting.accredit",
     "school.read", "user.read", "audit.read", "competition.read", "news.read",
   ],
 
   // ── Institution leadership ──
   principal: [
+    "school.feature.manage",
+    // The waiver, and nobody else at a school holds it — see the capability's
+    // own note for why it is kept away from the people who place the boards.
+    //
+    // With sponsorship.manage beside it, because a waiver attaches to the
+    // placement it permits: without the ability to write one, the head could
+    // authorise a conflicting board and have nowhere to record it. That does
+    // put both halves in one pair of hands, and deliberately — the control is
+    // not that the signer is powerless, it is that the signature is theirs,
+    // in prose, on the row. The office and the director of sport, who are the
+    // ones under commercial pressure to place the board, still cannot.
+    "sponsorship.exclusivity.waive", "sponsorship.read", "sponsorship.manage",
+    // Appointments. A head who cannot appoint a physiotherapist has to ask the
+    // platform to do it, which is a support ticket for a routine hire — and
+    // GRANTABLE_ROLES below deliberately keeps the clinical and commercial
+    // appointments away from the school office, so somebody at the school has
+    // to be able to make them. Which roles this reaches is that list's answer,
+    // not this line's.
+    "user.role.assign",
     ...READ_TEAM, "school.read", "user.read", "analytics.read",
     "competition.read", "discipline.read", "facility.read", "invoice.read",
     "player.performance.read", "medical.status.read", "medical.nature.read", "audit.read",
@@ -83,6 +116,12 @@ const BUNDLES = {
     "player.note.read", "scoring.amend.approve",
   ],
   directorofsport: [
+    "availability.read", "availability.declare",
+    // Same reasoning as the principal above: the person who runs a school's
+    // sport appoints its coaching and medical staff. Bounded by
+    // GRANTABLE_ROLES, which does not include schooladmin or principal — a
+    // director of sport cannot appoint their own supervisor.
+    "user.role.assign",
     ...READ_TEAM, "school.read", "user.read", "user.invite",
     "team.manage", "team.select", "fixture.create", "fixture.update", "fixture.cancel",
     "player.profile.manage", "player.performance.read", "player.development.read",
@@ -90,14 +129,22 @@ const BUNDLES = {
     "medical.status.read", "medical.nature.read", "player.age.read", "player.roster.read",
     "discipline.read", "discipline.write",
     "analytics.read", "competition.read", "facility.read", "facility.manage",
-    "transport.read", "officiating.assign",
+    "transport.read", "officiating.assign", "broadcast.publish",
+    "sponsorship.read",
     "scoring.start", "scoring.edit", "scoring.finalise", "scoring.correct",
     "scoring.amend.approve",
     "news.publish.team", "news.publish.school", "audit.read",
+    "opposition.read",
   ],
   schooladmin: [
+    "availability.read", "availability.declare",
+    // school.feature.manage: hiding a module from this school or from one of
+    // its people. It sits beside school.manage because it is the same job —
+    // configuring the institution — and it can only ever take something away.
+    "school.feature.manage",
     ...READ_TEAM, "school.read", "school.manage", "user.read", "user.invite", "user.role.assign",
     "team.manage", "fixture.create", "fixture.update", "fixture.cancel",
+    "sponsorship.read", "sponsorship.manage",
     "player.profile.manage", "player.pii.read", "player.biometric.read",
     "player.age.read", "player.identity.read", "guardian.link.manage",
     "player.roster.read",
@@ -107,8 +154,10 @@ const BUNDLES = {
     "competition.read", "news.publish.school", "audit.read",
   ],
   sportsadmin: [
+    "availability.read", "availability.declare",
     ...READ_TEAM, "user.read", "team.manage", "team.select",
     "fixture.create", "fixture.update", "fixture.cancel", "officiating.assign",
+    "broadcast.publish",
     "player.profile.manage", "medical.status.read", "medical.nature.read", "player.age.read",
     "player.roster.read", "facility.read", "facility.manage", "transport.read", "transport.manage",
     "competition.read", "news.publish.team", "news.publish.school",
@@ -131,6 +180,7 @@ const BUNDLES = {
   // actually coach, this term, and nobody else's. It is not school-wide, and
   // it stops the moment a player changes side.
   coach: [
+    "availability.read", "availability.declare",
     ...READ_TEAM, "team.select",
     "player.performance.read", "player.performance.write",
     "player.development.read", "player.development.write",
@@ -140,17 +190,19 @@ const BUNDLES = {
     "player.access.request", "player.access.grant",
     "analytics.read", "transport.read",
     "scoring.start", "scoring.edit", "scoring.finalise",
-    "news.publish.team",
+    "news.publish.team", "opposition.read",
   ],
   assistantcoach: [
+    "availability.read", "availability.declare",
     ...READ_TEAM, "player.performance.read", "player.development.read",
     "player.note.read", "player.note.write",
     "medical.status.read", "medical.nature.read", "medical.details.read",
     "player.age.read", "player.roster.read",
     "player.access.request", "player.access.grant",
-    "transport.read", "scoring.start", "scoring.edit",
+    "transport.read", "scoring.start", "scoring.edit", "opposition.read",
   ],
   teammanager: [
+    "availability.read", "availability.declare",
     ...READ_TEAM, "team.select", "medical.status.read", "medical.nature.read",
     "player.age.read", "player.roster.read",
     "transport.read", "news.publish.team",
@@ -181,6 +233,7 @@ const BUNDLES = {
   // learns their diagnosis from the physio rather than from the app, which is
   // the safe side of that limitation to be on.
   player: [
+    "availability.declare",
     "fixture.read", "team.read", "news.read", "facility.read", "competition.read",
     "player.profile.read", "player.performance.read", "player.development.read",
     "medical.status.read", "transport.read",
@@ -221,6 +274,7 @@ const BUNDLES = {
   // physiotherapy notes and will not show them to the child is on the wrong
   // side of that.
   selfaccess: [
+    "availability.read", "availability.declare",
     "player.profile.read", "player.pii.read", "player.biometric.read",
     "player.performance.read", "player.development.read",
     "medical.status.read", "medical.nature.read", "medical.details.read",
@@ -232,6 +286,7 @@ const BUNDLES = {
   // reaches only their own children — including at a different school, which
   // the previous single-school session could not express at all.
   guardian: [
+    "availability.read", "availability.declare",
     "fixture.read", "team.read", "news.read", "facility.read", "competition.read",
     "player.profile.read", "player.pii.read", "player.biometric.read",
     "player.performance.read",
@@ -252,6 +307,8 @@ const BUNDLES = {
   analyst: [
     "team.read", "fixture.read", "news.read", "player.profile.read",
     "player.performance.read", "analytics.read", "competition.read",
+    // The performance analyst is who the opposition dossier is FOR.
+    "opposition.read",
   ],
   // Deliberately the thinnest bundle in the file. No player profiles, so a
   // spectator never reaches a minor's record even in summary.
@@ -265,12 +322,23 @@ const BUNDLES = {
     "player.biometric.read",
     "medical.status.read", "medical.nature.read", "medical.details.read", "medical.write",
   ],
-  finance: ["school.read", "news.read", "invoice.read", "invoice.manage", "user.read"],
+  finance: ["school.read", "news.read", "invoice.read", "invoice.manage", "user.read",
+            "sponsorship.read", "sponsorship.manage", "sponsorship.finance.read"],
   transportcoordinator: ["fixture.read", "team.read", "news.read", "transport.read", "transport.manage"],
   driver: ["news.read", "transport.read", "transport.drive"],
   facilities: ["fixture.read", "news.read", "facility.read", "facility.manage"],
   media: ["fixture.read", "team.read", "news.read", "player.profile.read", "player.performance.read", "news.publish.school", "news.publish.team"],
-  scout: ["fixture.read", "team.read", "news.read", "player.profile.read", "player.performance.read", "scouting.read", "scouting.write"],
+  // NOT player.profile.read or player.performance.read. Those are scoped to a
+  // role_assignment's own school/team — and a scout's assignment is typically
+  // school=NULL to reach across schools at all, which is the whole point of
+  // the role. Held alongside those two capabilities, a school=NULL scout would
+  // read every child's full profile at every school, consent or not: the exact
+  // loophole this pairing of capabilities existed to look like it prevented
+  // while doing nothing of the kind. What a scout may see instead is
+  // scouting_candidates() — name, team, career figures — for players who have
+  // been explicitly, individually opted in by a guardian, and only once the
+  // scout's OWN accreditation has been verified. See db/08_schema_programme.sql.
+  scout: ["fixture.read", "team.read", "news.read", "scouting.read", "scouting.write"],
   competitionadmin: [
     "fixture.read", "fixture.update", "fixture.cancel", "team.read", "news.read",
     "competition.read", "competition.manage", "officiating.assign",
@@ -310,4 +378,86 @@ export function unknownCapabilities() {
 export function ungrantedCapabilities() {
   const granted = new Set(Object.values(ROLE_CAPABILITIES).flat());
   return ALL_CAPABILITIES.filter((c) => !granted.has(c));
+}
+
+/**
+ * WHICH ROLES EACH GRANTER MAY HAND OUT.
+ *
+ * user.role.assign says a person may make appointments. It never said WHICH
+ * appointments, and that gap was a privilege escalation: a school
+ * administrator could appoint themselves `medical` and read their pupils'
+ * physiotherapy notes, or appoint themselves `platformadmin` and — because
+ * app_holds() did not look at the assignment's tenant — move a platform-wide
+ * feature switch. Both were reachable with one INSERT that the policy allowed,
+ * because the policy asked only whether they could appoint anybody at all.
+ *
+ * WHY A LIST AND NOT A RULE. The obvious rule is "a granter cannot grant a
+ * capability they do not themselves hold". It was measured before being
+ * written, and it is unusable: under it a school administrator could not
+ * appoint a COACH, which is the single most common thing they do. A safeguard
+ * that stops the platform working is not a safeguard — it is the other half of
+ * the failure this is guarding against, where the check is permanently false
+ * and the person who could fix it is locked out behind the same check.
+ *
+ * So the answer is a declaration: explicit, reviewable in one place, and
+ * impossible to widen by accident. "Who can appoint a physiotherapist?" is
+ * answered by reading this, and changing the answer is a diff somebody sees.
+ *
+ * THE FLOOR, AND WHY IT IS NOT EMPTY. Nobody may grant a role carrying a
+ * platform capability except from a platform-scoped assignment — that is
+ * enforced separately, by PLATFORM_ONLY in capabilities.mjs. This list is the
+ * tenant-level question sitting on top of it.
+ */
+export const GRANTABLE_ROLES = Object.freeze({
+  // The school office. Appointments that run a school's cricket: coaching
+  // staff, team management, the people who score and officiate, pupils and
+  // their families.
+  //
+  // NOT `medical` — a physiotherapist's appointment reaches a child's clinical
+  // notes, and the person who signs that off should be the one accountable for
+  // clinical access, not the office that manages logins. NOT `finance`, which
+  // reaches contract values. NOT `principal` or `directorofsport`, which are
+  // appointments a school makes rather than a system administrator. And never
+  // `platformadmin`.
+  schooladmin: [
+    "coach", "assistantcoach", "teammanager", "scorer", "official",
+    "player", "guardian", "selfaccess", "spectator", "enquiry",
+    "transportcoordinator", "driver", "facilities", "media", "analyst",
+  ],
+
+  // Leadership appoints leadership, and the clinical and commercial roles the
+  // school office deliberately cannot. A director of sport hiring a
+  // physiotherapist is a real appointment made by a real person; a school
+  // administrator quietly adding it to their own account is not.
+  principal: [
+    "directorofsport", "sportsadmin", "schooladmin", "medical", "finance",
+    "coach", "assistantcoach", "teammanager", "facilities",
+  ],
+  directorofsport: [
+    "coach", "assistantcoach", "teammanager", "scorer", "official",
+    "medical", "player", "analyst", "facilities", "media",
+  ],
+
+  // THE RECOVERY PATH, and the reason it exists at all.
+  //
+  // A platform with no way back in is one bad appointment away from being
+  // unreachable — which is exactly how the previous build was lost: its
+  // permission check compared role LABELS against stored role CODES, so the
+  // check was permanently false, and the only account that could have repaired
+  // it was gated behind the same check. Somebody has to be able to reach in
+  // from outside a school and fix it, and that somebody is the platform
+  // account, holding a tenant-less assignment nobody inside a school can
+  // create.
+  platformadmin: Object.keys(ROLE_CAPABILITIES),
+});
+
+/** May `granter` appoint somebody to `role`? Default deny, as everywhere. */
+export function mayGrantRole(granter, role) {
+  return (GRANTABLE_ROLES[granter] ?? []).includes(role);
+}
+
+/** Roles nobody can appoint. A role that exists and cannot be given is a lockout. */
+export function ungrantableRoles() {
+  const grantable = new Set(Object.values(GRANTABLE_ROLES).flat());
+  return ROLES.filter((r) => !grantable.has(r));
 }

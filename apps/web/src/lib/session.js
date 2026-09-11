@@ -12,6 +12,8 @@
  * for the person's own benefit — the server refuses regardless.
  */
 import { api, setToken, apiStatus, resetApi } from "./api.js";
+import { resetFeatures } from "./features.js";
+import { roleGrants } from "@scrbrd/policy/roles";
 import { deviceId } from "./device.js";
 
 let _profile = null;
@@ -77,10 +79,36 @@ export async function devLoginAvailable() {
 export function signOut() {
   _profile = null;
   resetApi();
+  // The module switches too. They are one school's settings, and a shared
+  // device that kept them would draw the previous person's menu.
+  resetFeatures();
 }
 
 /** The signed-in person, or null. Never an authorization answer. */
 export function profile() { return _profile; }
+
+/**
+ * The schools where this person holds a capability, for filling in a form.
+ *
+ * NOT an authorization answer, and the distinction is the same one couldScore()
+ * makes below: this decides which school to PUT IN A REQUEST, never whether the
+ * request succeeds. Every route that takes a school id checks it again,
+ * server-side, against these same assignments — so a wrong answer here produces
+ * a refusal, and the thing it actually prevents is a form that cannot be
+ * submitted because the client had no school to name.
+ *
+ * A list rather than a value: people hold assignments at more than one school —
+ * a director of sport at one and a parent at another — and a form that silently
+ * picked the first would be guessing on their behalf.
+ */
+export function schoolsWhere(capability) {
+  const seen = new Map();
+  for (const a of _profile?.assignments ?? []) {
+    if (!a.school || !roleGrants(a.role, capability)) continue;
+    if (!seen.has(a.school)) seen.set(a.school, { id: a.school, name: a.schoolName || "This school" });
+  }
+  return [...seen.values()];
+}
 
 /**
  * Which of this person's assignments could score this match.

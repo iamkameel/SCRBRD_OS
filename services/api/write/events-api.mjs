@@ -383,6 +383,245 @@ export function tossRoutes({ pool, secret }) {
 
 
 /**
+ * Appointing the officials.
+ *
+ * The sixth instance of the pattern this branch keeps closing, and the
+ * emptiest: `officiating.assign` has been in the capability table since the
+ * first migration and three roles hold it, but no table existed to assign
+ * anything in, so the capability could never once be exercised. The scorecard
+ * showed a scorer's name read from a mock-only field.
+ *
+ * REPLACING THE PANEL IS NOT A DELETE, for the same reason naming a squad is
+ * not: no table here has a DELETE policy for any role. The standing panel is
+ * withdrawn and the new one written inside one transaction, so an appointment
+ * sheet that is refused half way leaves the previous officials in place rather
+ * than a match with nobody standing.
+ */
+/**
+ * Saying whether a boy can play on Saturday.
+ *
+ * The route validates the vocabulary and derives the school; everything about
+ * WHO may answer for WHOM is the INSERT policy's decision, evaluated against
+ * the caller's own assignments. A guardian reaches their child through the
+ * person anchor and nobody else's child at all.
+ *
+ * declared_by is app_user_id() and is never taken from the request. A coach
+ * recording what a boy told them at practice is recording it in their own
+ * name — "unavailable, said so himself" and "unavailable, according to the
+ * coach" are different degrees of certainty, and letting the caller name
+ * somebody else would erase the difference.
+ */
+export function availabilityRoutes({ pool, secret }) {
+  const err = (code, status = 400) => Object.assign(new Error(code), { status });
+  const STATUS = ["available", "unavailable", "doubtful"];
+  const KINDS = ["illness", "family", "academic", "travel", "religious", "other_sport", "other"];
+
+  return {
+    // POST /matches/:id/availability { playerId, status, reasonKind?, note? }
+    declare: async (req, res) => {
+      try {
+        const b = req.body || {};
+        if (!b.playerId) throw err("player_required");
+        if (!STATUS.includes(b.status)) throw err("status_invalid");
+        const kind = b.reasonKind == null || b.reasonKind === "" ? null : String(b.reasonKind);
+        if (kind && !KINDS.includes(kind)) throw err("reason_kind_invalid");
+        const note = b.note == null || String(b.note).trim() === ""
+          ? null : String(b.note).trim().slice(0, 280);
+
+        const out = await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+          const r = await client.query(
+            `insert into match_availability
+               (match_id, player_id, school_id, status, reason_kind, note, declared_by, declared_at)
+             values ($1, $2, match_school($1), $3, $4, $5, app_user_id(), now())
+             on conflict (match_id, player_id) do update
+               set status = excluded.status, reason_kind = excluded.reason_kind,
+                   note = excluded.note, declared_by = excluded.declared_by,
+                   declared_at = now()
+             returning match_id, player_id, status, reason_kind, declared_at`,
+            [req.params.id, b.playerId, b.status, kind, note]);
+          if (!r.rowCount) throw err("not_permitted", 403);
+          return r.rows[0];
+        });
+        res.json(out);
+      } catch (e) {
+        // 23514 is the belongs-to-this-school trigger almost every time, and
+        // its message says which question was actually asked.
+        if (e.code === "23514") return res.status(422).json({ error: "wrong_school", detail: e.message });
+        if (e.code === "23502" || e.code === "23503") return res.status(404).json({ error: "no_such_match_or_player" });
+        const status = e.code === "42501" ? 403 : (e.status || 500);
+        res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
+      }
+    },
+  };
+}
+
+/**
+ * Buses, trips, and the driver's two marks.
+ *
+ * Three routes for three different kinds of act, and they are deliberately not
+ * one. Adding a vehicle is fleet administration; arranging a trip is fixture
+ * logistics; saying the bus has left is a report from the road. The first two
+ * are ordinary policy-governed writes. The third goes through trip_mark(),
+ * because transport.drive is a capability to REPORT on a trip and not to
+ * change one — a driver who could update the row could re-time the departure
+ * or swap the vehicle.
+ */
+export function transportRoutes({ pool, secret }) {
+  const err = (code, status = 400) => Object.assign(new Error(code), { status });
+  const handle = (fn) => async (req, res) => {
+    try { res.json(await fn(req)); }
+    catch (e) {
+      // 23514 is one of the safety checks on the trip — a bus that seats
+      // fourteen carrying fifteen, or another school's vehicle. The message
+      // names the vehicle and the numbers, so it is passed through.
+      if (e.code === "23514") return res.status(422).json({ error: "invalid_trip", detail: e.message });
+      if (e.code === "23505") return res.status(409).json({ error: "vehicle_already_on_this_fixture" });
+      if (e.code === "23502" || e.code === "23503") return res.status(404).json({ error: "no_such_match_or_vehicle" });
+      const status = e.code === "42501" ? 403 : (e.status || 500);
+      res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
+    }
+  };
+
+  return {
+    // POST /vehicles { schoolId, registration, description, kind, capacity, ... }
+    vehicle: handle(async (req) => {
+      const b = req.body || {};
+      if (!b.schoolId) throw err("school_required");
+      if (!b.registration || !String(b.registration).trim()) throw err("registration_required");
+      if (!b.description || !String(b.description).trim()) throw err("description_required");
+      const cap = Number(b.capacity);
+      if (!Number.isInteger(cap) || cap < 1 || cap > 80) throw err("capacity_invalid");
+      const kind = b.kind ?? "minibus";
+      if (!["bus", "minibus", "van", "car"].includes(kind)) throw err("kind_invalid");
+      const cond = b.condition == null || b.condition === "" ? null : String(b.condition);
+      if (cond && !["excellent", "good", "fair", "poor", "off_road"].includes(cond)) {
+        throw err("condition_invalid");
+      }
+      return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+        const r = await client.query(
+          `insert into vehicle (school_id, registration, description, kind, capacity,
+                                condition, next_service_on, active, notes)
+           values ($1, btrim($2), btrim($3), $4, $5, $6, $7, $8, $9)
+           on conflict (school_id, upper(btrim(registration))) do update
+             set description = excluded.description, kind = excluded.kind,
+                 capacity = excluded.capacity, condition = excluded.condition,
+                 next_service_on = excluded.next_service_on,
+                 active = excluded.active, notes = excluded.notes
+           returning id, registration, description, kind, capacity, condition,
+                     next_service_on, active`,
+          [b.schoolId, String(b.registration), String(b.description), kind, cap, cond,
+           b.nextServiceOn || null, b.active === false ? false : true,
+           b.notes == null ? null : String(b.notes).slice(0, 500)]);
+        if (!r.rowCount) throw err("not_permitted", 403);
+        return r.rows[0];
+      });
+    }),
+
+    // POST /matches/:id/trip { vehicleId?, driverId?, departAt?, returnAt?, pickup?, seatsTaken? }
+    //
+    // school_id comes from the MATCH via match_school(), never from the
+    // request, exactly as the toss and the pitch report do.
+    trip: handle(async (req) => {
+      const b = req.body || {};
+      const seats = b.seatsTaken == null || b.seatsTaken === "" ? null : Number(b.seatsTaken);
+      if (seats != null && (!Number.isInteger(seats) || seats < 0)) throw err("seats_invalid");
+
+      return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+        const r = await client.query(
+          `insert into trip (match_id, school_id, vehicle_id, driver_id, depart_at,
+                             return_at, pickup, seats_taken, notes, arranged_by, arranged_at)
+           values ($1, match_school($1), $2, $3, $4, $5, $6, $7, $8, app_user_id(), now())
+           returning id, match_id, vehicle_id, driver_id, depart_at, return_at,
+                     pickup, seats_taken, arranged_at`,
+          [req.params.id, b.vehicleId || null, b.driverId || null,
+           b.departAt || null, b.returnAt || null,
+           b.pickup == null ? null : String(b.pickup).slice(0, 200),
+           seats, b.notes == null ? null : String(b.notes).slice(0, 500)]);
+        if (!r.rowCount) throw err("not_permitted", 403);
+        return r.rows[0];
+      });
+    }),
+
+    // POST /trips/:id/mark { event: "departed" | "arrived" }
+    mark: handle(async (req) => {
+      const event = req.body?.event;
+      if (!["departed", "arrived"].includes(event)) throw err("event_invalid");
+      return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+        const { rows } = await client.query(`select * from trip_mark($1, $2)`,
+                                            [req.params.id, event]);
+        const r = rows[0] ?? { ok: false, reason: "no_result" };
+        // The function's own reason, not a flattened refusal: "already
+        // departed" and "not this driver" send a person to different places.
+        if (r.ok === false) throw err(r.reason || "refused", r.reason === "no_such_trip" ? 404 : 403);
+        return { tripId: req.params.id, event };
+      });
+    }),
+  };
+}
+
+export function officialRoutes({ pool, secret }) {
+  const err = (code, status = 400) => Object.assign(new Error(code), { status });
+  const DUTIES = ["umpire", "third_umpire", "scorer", "referee"];
+  return {
+    // POST /matches/:id/officials { officials: [{ duty, name, personId?, panel? }] }
+    appoint: async (req, res) => {
+      try {
+        const officials = req.body?.officials;
+        if (!Array.isArray(officials) || !officials.length) throw err("officials_required");
+
+        for (const o of officials) {
+          if (!DUTIES.includes(o?.duty)) throw err("duty_must_be_umpire_third_umpire_scorer_or_referee");
+          // The name is required even when an account is named, because it is
+          // what every reader sees: the read never joins app_user, and a blank
+          // name on a scorecard is worse than a refusal here. See the table.
+          if (!o?.name || typeof o.name !== "string" || !o.name.trim()) throw err("name_required");
+        }
+        // The same person twice on one duty is a mis-tick. The database has
+        // partial unique indexes for this; catching it here names which one,
+        // before anything is written.
+        const seen = new Set();
+        for (const o of officials) {
+          const key = `${o.duty}:${(o.personId || o.name.trim().toLowerCase())}`;
+          if (seen.has(key)) throw err("duplicate_official");
+          seen.add(key);
+        }
+
+        const out = await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+          await client.query(
+            `update match_official set withdrawn = true
+              where match_id = $1 and not withdrawn`,
+            [req.params.id]);
+
+          let written = 0;
+          for (const o of officials) {
+            const r = await client.query(
+              `insert into match_official
+                 (match_id, school_id, duty, person_name, person_id, panel, appointed_by, appointed_at)
+               values ($1, match_school($1), $2, $3, $4, $5, app_user_id(), now())
+               returning id`,
+              [req.params.id, o.duty, o.name.trim(), o.personId ?? null,
+               o.panel == null ? null : String(o.panel).slice(0, 200)]);
+            written += r.rowCount;
+          }
+          // Zero rows and no error means the policy refused every insert.
+          if (written === 0) throw err("not_permitted", 403);
+          return { matchId: req.params.id, appointed: written };
+        });
+        res.json(out);
+      } catch (e) {
+        if (e.code === "23505") return res.status(409).json({ error: "duplicate_official" });
+        // 23502: match_school() came back NULL. 23503: the match_id foreign key
+        // found nothing. Both mean that match is not there, or not theirs.
+        if (e.code === "23502" || e.code === "23503") return res.status(404).json({ error: "no_such_match" });
+        const status = e.code === "42501" ? 403 : (e.status || 500);
+        res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
+      }
+    },
+  };
+}
+
+
+/**
  * Conditions: the weather, and the state of the square.
  *
  * Both tables existed with a read query and no way to write them — the fourth
@@ -439,6 +678,15 @@ export function conditionsRoutes({ pool, secret }) {
     return v;
   };
   const bool = (v) => (v == null ? null : v === true);
+  // A calendar date, or nothing. Rejected rather than coerced: `new Date()` of
+  // a typo yields Invalid Date, which Postgres refuses with a message about a
+  // type rather than about the field the groundsman got wrong.
+  const date = (v, field) => {
+    if (v == null || v === "") return null;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(v))) throw err(`${field}_must_be_yyyy_mm_dd`);
+    if (Number.isNaN(Date.parse(v))) throw err(`${field}_invalid`);
+    return v;
+  };
 
   return {
     // POST /matches/:id/weather
@@ -488,15 +736,19 @@ export function conditionsRoutes({ pool, secret }) {
     pitch: (req, res) => upsert(req, res, {
       sql: `insert into match_pitch_report
               (match_id, school_id, surface, grass, bounce, pace, favours,
-               covers_on, notes, reported_by, reported_at)
-            values ($1, match_school($1), $2, $3, $4, $5, $6, $7, $8, app_user_id(), now())
+               covers_on, notes, bounce_rating, pace_rating, outfield,
+               reported_by, reported_at)
+            values ($1, match_school($1), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+                    app_user_id(), now())
             on conflict (match_id) do update
               set surface = excluded.surface, grass = excluded.grass,
                   bounce = excluded.bounce, pace = excluded.pace,
                   favours = excluded.favours, covers_on = excluded.covers_on,
-                  notes = excluded.notes, reported_by = excluded.reported_by,
-                  reported_at = now()
-            returning surface, grass, bounce, pace, favours, covers_on, notes, reported_at`,
+                  notes = excluded.notes, bounce_rating = excluded.bounce_rating,
+                  pace_rating = excluded.pace_rating, outfield = excluded.outfield,
+                  reported_by = excluded.reported_by, reported_at = now()
+            returning surface, grass, bounce, pace, favours, covers_on, notes,
+                      bounce_rating, pace_rating, outfield, reported_at`,
       build: (r) => {
         const b = r.body || {};
         const v = {
@@ -507,13 +759,61 @@ export function conditionsRoutes({ pool, secret }) {
           favours: oneOf(b.favours, ["seam", "spin", "batting", "even"], "favours"),
           coversOn: bool(b.coversOn),
           notes: b.notes == null ? null : String(b.notes).slice(0, 2000),
+          // The degree beside the character — see the column comments. Either
+          // may be given without the other: a groundsman who says "two-paced"
+          // and declines to put a number on it has still said something.
+          bounceRating: num(b.bounceRating, 1, 10, "bounce_rating"),
+          paceRating:   num(b.paceRating,   1, 10, "pace_rating"),
+          outfield: oneOf(b.outfield, ["fast", "medium", "slow"], "outfield"),
         };
         // Every field is optional, but a report of nothing at all is a row that
         // says a groundsman filed a report when he did not.
         if (Object.values(v).every((x) => x == null)) throw err("empty_report");
         return v;
       },
-      params: (v) => [v.surface, v.grass, v.bounce, v.pace, v.favours, v.coversOn, v.notes],
+      params: (v) => [v.surface, v.grass, v.bounce, v.pace, v.favours, v.coversOn, v.notes,
+                      v.bounceRating, v.paceRating, v.outfield],
+    }),
+
+    // POST /grounds/:id/condition
+    //
+    // The groundsman's standing record of a ground, as opposed to the square
+    // prepared for one fixture. Same shape as the pitch report and the same
+    // capability, because it is the same person doing the same job — but keyed
+    // on the ground, because that is what the facts belong to.
+    ground: (req, res) => upsert(req, res, {
+      sql: `insert into ground_condition
+              (ground_id, school_id, moisture_pct, grass_mm, roller, outfield,
+               drainage_min, last_rolled, last_mown, notes, reported_by, reported_at)
+            select $1, g.school_id, $2, $3, $4, $5, $6, $7, $8, $9, app_user_id(), now()
+              from ground g where g.id = $1
+            on conflict (ground_id) do update
+              set moisture_pct = excluded.moisture_pct, grass_mm = excluded.grass_mm,
+                  roller = excluded.roller, outfield = excluded.outfield,
+                  drainage_min = excluded.drainage_min, last_rolled = excluded.last_rolled,
+                  last_mown = excluded.last_mown, notes = excluded.notes,
+                  reported_by = excluded.reported_by, reported_at = now()
+            returning moisture_pct, grass_mm, roller, outfield, drainage_min,
+                      last_rolled, last_mown, notes, reported_at`,
+      build: (r) => {
+        const b = r.body || {};
+        const v = {
+          moisture: num(b.moisturePct, 0, 100, "moisture_pct"),
+          grassMm:  num(b.grassMm, 0, 100, "grass_mm"),
+          roller:   oneOf(b.roller, ["none", "light", "heavy"], "roller"),
+          outfield: oneOf(b.outfield, ["fast", "medium", "slow"], "outfield"),
+          // The wet-morning question. Ten hours is the ceiling: past that the
+          // answer is "not today", which is a decision and not a measurement.
+          drainage: num(b.drainageMin, 0, 600, "drainage_min"),
+          lastRolled: date(b.lastRolled, "last_rolled"),
+          lastMown:   date(b.lastMown, "last_mown"),
+          notes: b.notes == null ? null : String(b.notes).slice(0, 2000),
+        };
+        if (Object.values(v).every((x) => x == null)) throw err("empty_report");
+        return v;
+      },
+      params: (v) => [v.moisture, v.grassMm, v.roller, v.outfield, v.drainage,
+                      v.lastRolled, v.lastMown, v.notes],
     }),
   };
 }

@@ -11,6 +11,7 @@
     "./roles": "./src/roles.mjs",
     "./authorize": "./src/authorize.mjs",
     "./tables": "./src/tables.mjs",
-    "./teams": "./src/teams.mjs"
+    "./teams": "./src/teams.mjs",
+    "./modules": "./src/modules.mjs"
   }
 }

@@ -77,7 +77,21 @@ async function open() {
   page.on("console", (m) => {
     const t = m.text();
     if (/\[scrbrd\] getData\(/.test(t)) refusals.push(t);
-    if (m.type() === "error" && !/Failed to load resource/.test(t)) errors.push(t);
+    // "Failed to load resource" is a network 404/CORS noise line Chrome logs
+    // itself, not our code. A bare "TypeError: Failed to fetch" is Firebase
+    // Analytics' own internal dynamic-config lookup (firebase.googleapis.com
+    // /.../webConfig, firebaseinstallations.googleapis.com) failing and
+    // logging via console.error rather than throwing — the SDK's documented
+    // behaviour offline or behind a network that blocks Google's analytics
+    // domains, which describes a school ground with no signal as much as it
+    // describes this sandbox. Nothing in THIS app's own code lets a bare
+    // fetch TypeError reach console.error: every fetch() call here is caught
+    // and reported through ApiError/useLive's own error state (see
+    // lib/api.js, lib/live.js) rather than left to surface raw, so this
+    // exact string cannot be masking one of ours.
+    if (m.type() === "error" && !/Failed to load resource/.test(t) && !/^TypeError: Failed to fetch/.test(t)) {
+      errors.push(t);
+    }
   });
   await page.addInitScript(`window.__SCRBRD_API_BASE__ = ${JSON.stringify(API)};`);
   await page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "networkidle" });
@@ -283,6 +297,237 @@ try {
       ok("a pupil can sign in (notes)", false);
     }
     await boy.ctx.close().catch(() => {});
+  }
+
+  // ── The officials directory ─────────────────────────────────────
+  //
+  // The screen is DERIVED from appointments — there is no roster table — so
+  // the only way to know it renders real rows is to appoint somebody through
+  // the API and then look for their name in the browser. A directory built
+  // from a mock would show different names entirely, and would pass any
+  // assertion made against the API alone.
+  group("An appointed umpire reaches the officials screen");
+  {
+    const tok = await (await fetch(`${API}/api/auth/dev-login`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "sarah@example.invalid", deviceId: "browser-read" }),
+    })).json().then((j) => j.token);
+
+    const fixtures = await (await fetch(`${API}/api/read/matches`, {
+      headers: { authorization: `Bearer ${tok}` },
+    })).json();
+    const fixture = fixtures?.rows?.[0]?.id;
+
+    const UMPIRE = "Thandeka Mahlangu";
+    const appointed = fixture && (await fetch(`${API}/api/matches/${fixture}/officials`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${tok}` },
+      body: JSON.stringify({ officials: [
+        { duty: "umpire", name: UMPIRE, panel: "KZN Cricket Umpires" },
+        { duty: "scorer", name: "Bongani Khumalo" },
+      ] }),
+    })).ok;
+    ok("an umpire is appointed through the API", !!appointed);
+
+    const head = await open();
+    ok("the director of sport signs in", await signIn(head.page, /sarah@example\.invalid|Director/));
+    if (await nav(head.page, /Officials/)) {
+      const t = await text(head.page);
+      if (DEBUG) console.log("[debug] officials:\n" + t.slice(0, 700));
+      ok("the appointed umpire is on the screen", t.includes(UMPIRE));
+      ok("...and the scorer beside them", t.includes("Bongani Khumalo"));
+      ok("...with the panel they came off", /KZN Cricket Umpires/.test(t));
+      ok("the screen did not fall back to a mock name",
+         !/D Naidoo|P van Wyk|M Cele/.test(t));
+      ok("no uncaught error on the officials screen", head.errors.length === 0);
+    } else {
+      ok("the officials screen opens for the director of sport", false);
+    }
+    await head.ctx.close().catch(() => {});
+  }
+
+  // ── The commercial mask, in a browser ───────────────────────────
+  //
+  // THE ONE ASSERTION THIS WALK EXISTS FOR. Every other check on sponsorship
+  // is against the API, where it is easy to be sure what left the server. This
+  // one is about a rendered page: a screen holds the row AND the reader, and a
+  // component that received a null and drew a dash proves nothing about
+  // whether the number was ever sent. So the value is written through the API
+  // and then looked for in the text of the page — first for a reader who may
+  // not have it, then for the one who may.
+  group("A contract value reaches the finance office and nobody else");
+  {
+    const tok = await (await fetch(`${API}/api/auth/dev-login`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "bursar@example.invalid", deviceId: "browser-read" }),
+    })).json().then((j) => j.token);
+    const H = (t) => ({ "content-type": "application/json", authorization: `Bearer ${t}` });
+
+    const VALUE = "764321";   // Distinctive on purpose: a number that could not
+                              // appear on the page by coincidence.
+    // Grouped by a space, a comma, a full stop or nothing: which separator a
+    // locale picks is not something this assertion should depend on.
+    const MONEY = /764[\s,.]?321/;
+    const brand = await (await fetch(`${API}/api/sponsors`, {
+      method: "POST", headers: H(tok),
+      body: JSON.stringify({ schoolId: "11111111-1111-1111-1111-111111111111",
+                             name: "Ridgeway Bank", category: "banking",
+                             logoText: "RIDGEWAY", logoBg: "#0b3d2e" }),
+    })).json();
+    const today = new Date().toISOString().slice(0, 10);
+    const later = new Date(Date.now() + 300 * 864e5).toISOString().slice(0, 10);
+    const placed = brand?.id && (await fetch(`${API}/api/sponsorships`, {
+      method: "POST", headers: H(tok),
+      body: JSON.stringify({ sponsorId: brand.id, placement: "ground_board",
+                             startsOn: today, endsOn: later,
+                             contractValueZar: Number(VALUE), schoolSharePct: 70 }),
+    })).ok;
+    ok("a sponsor is signed and placed through the API", !!placed);
+
+    const head = await open();
+    ok("the director of sport signs in (sponsors)", await signIn(head.page, /sarah@example\.invalid|Director/));
+    if (await nav(head.page, /Sponsors/)) {
+      await head.page.locator("button", { hasText: "Ridgeway Bank" }).first()
+        .click({ timeout: 4000 }).catch(() => {});
+      await head.page.waitForTimeout(600);
+      const t = await text(head.page);
+      if (DEBUG) console.log("[debug] sponsors (head):\n" + t.slice(0, 900));
+      ok("the sponsor is on the screen", t.includes("Ridgeway Bank"));
+      ok("...and the surface it was sold for", /Ground board/i.test(t));
+      // Matched on every form the number could take on a page, not on the raw
+      // digits. The first version of this assertion looked for "764321" and
+      // passed while the value WAS on screen, because the screen formats it as
+      // "R764 321" — so falsifying the mask left it green. A negative
+      // assertion has to know how the thing it is looking for is written.
+      ok("but the contract value is not rendered anywhere", !MONEY.test(t));
+      // The distinction the screen has to make for itself: a masked value and
+      // an unrecorded one both arrive null, and printing one dash for both
+      // would tell a school its contracts are empty.
+      ok("...and it says confidential rather than showing a blank", /Confidential/i.test(t));
+      ok("no uncaught error on the sponsors screen", head.errors.length === 0);
+    } else {
+      ok("the sponsors screen opens for the director of sport", false);
+      ok("the sponsors screen opens (value)", false);
+      ok("the sponsors screen opens (label)", false);
+      ok("the sponsors screen opens (surface)", false);
+      ok("the sponsors screen opens (errors)", false);
+    }
+    await head.ctx.close().catch(() => {});
+
+    const fin = await open();
+    ok("the bursar signs in", await signIn(fin.page, /bursar@example\.invalid|Finance/));
+    if (await nav(fin.page, /Sponsors/)) {
+      await fin.page.locator("button", { hasText: "Ridgeway Bank" }).first()
+        .click({ timeout: 4000 }).catch(() => {});
+      await fin.page.waitForTimeout(600);
+      const t = await text(fin.page);
+      if (DEBUG) console.log("[debug] sponsors (finance):\n" + t.slice(0, 900));
+      // Formatted for reading, so the raw digits are not what to look for.
+      ok("the finance office sees the contract value", MONEY.test(t));
+      ok("...and the school's share", /70%/.test(t));
+      ok("no uncaught error on the finance view", fin.errors.length === 0);
+    } else {
+      ok("the sponsors screen opens for the bursar", false);
+      ok("the sponsors screen opens for the bursar (share)", false);
+      ok("the sponsors screen opens for the bursar (errors)", false);
+    }
+    await fin.ctx.close().catch(() => {});
+  }
+
+  // ── A module switched off, in a browser ─────────────────────────
+  //
+  // The API walk proves the reads and writes are refused. What it cannot prove
+  // is that the SHELL agrees: a destination that stays in the menu after its
+  // module is switched off is a door that opens onto a refusal, and a school
+  // administrator who turned Injuries off would reasonably conclude the
+  // setting did not work.
+  //
+  // Asserted in both directions on the same session, because "the menu does
+  // not contain Injuries" is also true of a broken build.
+  group("A school switches a module off and the destination goes with it");
+  {
+    const tok = await (await fetch(`${API}/api/auth/dev-login`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "registrar@example.invalid", deviceId: "browser-read" }),
+    })).json().then((j) => j.token);
+    const H = { "content-type": "application/json", authorization: `Bearer ${tok}` };
+    const HILTON = "11111111-1111-1111-1111-111111111111";
+    const hide = (hidden) => fetch(`${API}/api/admin/modules/injuries/suppress`, {
+      method: "POST", headers: H,
+      body: JSON.stringify({ schoolId: HILTON, hidden, reason: "Browser walk." }) });
+
+    const before = await open();
+    ok("the medic signs in (modules)", await signIn(before.page, /medical@example\.invalid|Medical/));
+    const navBefore = await before.page.locator("nav button").allTextContents();
+    ok("Injuries is in the menu while the module is on",
+       navBefore.some((t) => /Injuries/i.test(t)));
+    await before.ctx.close().catch(() => {});
+
+    ok("a school administrator switches it off", (await hide(true)).ok);
+
+    const after = await open();
+    ok("the medic signs in again", await signIn(after.page, /medical@example\.invalid|Medical/));
+    const navAfter = await after.page.locator("nav button").allTextContents();
+    ok("...and Injuries is gone from the menu", !navAfter.some((t) => /Injuries/i.test(t)));
+    // The blast-radius assertion. One switch must not take the shell with it.
+    ok("...while the rest of the menu is intact", navAfter.length >= navBefore.length - 1);
+    ok("no uncaught error with a module switched off", after.errors.length === 0);
+    await after.ctx.close().catch(() => {});
+
+    // Put it back, so a later walk on this database is not surprised.
+    ok("it can be switched back on", (await hide(false)).ok);
+  }
+
+  // ── Logistics, off the mock ─────────────────────────────────────
+  //
+  // Every figure on that screen used to be computed in the browser over a mock
+  // array hung on the staff record. The API walk proves the rows exist and are
+  // scoped; only a browser can prove the SCREEN reads them, because a view
+  // that kept its mock would look identical and pass every API assertion.
+  //
+  // A seeded registration is the tell: KZN 482 GP is in the database and was
+  // in the mock, so the assertion pairs it with a trip arranged through the
+  // API just now — a number the mock could not have known.
+  group("The Logistics screen draws real vehicles and real trips");
+  {
+    const tok = await (await fetch(`${API}/api/auth/dev-login`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "registrar@example.invalid", deviceId: "browser-read" }),
+    })).json().then((j) => j.token);
+    const H = { "content-type": "application/json", authorization: `Bearer ${tok}` };
+
+    const fleet = await (await fetch(`${API}/api/read/vehicles`, { headers: H })).json();
+    const bus = fleet?.rows?.find((v) => v.capacity === 30);
+    const fixtures = await (await fetch(`${API}/api/read/matches`, { headers: H })).json();
+    const fixture = fixtures?.rows?.find((m) => m.status === "upcoming") ?? fixtures?.rows?.[0];
+
+    const SEATS = 17;   // Distinctive: no mock row carries it.
+    const arranged = bus && fixture && (await fetch(`${API}/api/matches/${fixture.id}/trip`, {
+      method: "POST", headers: H,
+      body: JSON.stringify({ vehicleId: bus.id, seatsTaken: SEATS,
+                             departAt: new Date(Date.now() + 36e5).toISOString(),
+                             pickup: "Top gate" }),
+    })).ok;
+    ok("a trip is arranged through the API", !!arranged);
+
+    const s = await open();
+    // Signed in as the director of sport, who holds transport.read and IS a
+    // demo account — the registrar arranges the trip through the API above but
+    // has no entry on the sign-in screen.
+    ok("the director of sport signs in (logistics)", await signIn(s.page, /sarah@example\.invalid|Director/));
+    if (await nav(s.page, /Logistics/)) {
+      const t = await text(s.page);
+      if (DEBUG) console.log("[debug] logistics:\n" + t.slice(0, 900));
+      ok("the seeded vehicle is on the screen", /KZN\s?482\s?GP|KZN\s?771\s?MP/.test(t));
+      // The number that proves it is the DATABASE's trip and not a mock one.
+      ok("...and the seat count just written through the API", t.includes(String(SEATS)));
+      ok("no uncaught error on the logistics screen", s.errors.length === 0);
+    } else {
+      ok("the logistics screen opens", false);
+      ok("the logistics screen opens (seats)", false);
+      ok("the logistics screen opens (errors)", false);
+    }
+    await s.ctx.close().catch(() => {});
   }
 
   group("The screens render without errors");

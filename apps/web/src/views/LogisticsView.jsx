@@ -6,6 +6,17 @@ import { Avatar, Badge, Btn, Card, KPICard, SectionHeader } from "../ui/primitiv
 import { WeatherChip } from "./shared.jsx";
 import { useRows, useWeather } from "../lib/live.js";
 
+// A timestamp as a departure time. Absent renders as an em dash, never as a
+// time: a trip with no departure recorded has none, and "00:00" would be a
+// claim that the bus leaves at midnight.
+const clock = (ts) => {
+  if (!ts) return "—";
+  const d = new Date(ts);
+  return Number.isNaN(d.getTime())
+    ? "—"
+    : `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+};
+
 // ══════════════════════════════════════════════════════
 //  LOGISTICS VIEW  — full overhaul
 // ══════════════════════════════════════════════════════
@@ -20,6 +31,17 @@ function LogisticsView({ role }) {
   const STAFF = useRows("staff", role);
   const WEATHER = useWeather(role);
   const [tab,       setTab]       = useState("transport");
+  // The fleet and the trips, from the database.
+  //
+  // Every figure on this tab used to be computed in the browser over a mock
+  // array hung on the staff record — s.vehicles — and a mock field on the
+  // match — m.transport. That meant each one was the same number for every
+  // reader and true for none of them: a parent, a coach and a transport
+  // coordinator all saw an identical "Total Seats" that belonged to nobody's
+  // school. These two reads are row-scoped like every other, so the numbers
+  // are this reader's.
+  const VEHICLES = useRows("vehicles", role);
+  const TRIPS    = useRows("trips", role);
   const [manifest,  setManifest]  = useState(null);
   const canEdit = role==="superadmin"||role==="schooladmin"||role==="driver";
 
@@ -47,7 +69,10 @@ function LogisticsView({ role }) {
   const catColor = c => c==="Cricket"?D.sky:c==="Protective"?D.rose:c==="Ground"?D.teal:c==="Training"?D.violet:D.amber;
   const condColor = c => c==="Excellent"||c==="Stocked"||c==="Certified"?D.emerald:c==="Good"?D.sky:c==="Mixed"||c==="Fair"?D.amber:D.rose;
 
-  const upcomingTransport = MATCHES.filter(m=>m.status==="upcoming"&&m.transport?.bus);
+  // Fixtures with a trip arranged, joined on the fixture rather than read off
+  // a field the match never had.
+  const tripFor = (id) => TRIPS.find(t=>t.matchId===id) ?? null;
+  const upcomingTransport = MATCHES.filter(m=>tripFor(m.id));
 
   return (
     <div className="os-page">
@@ -71,14 +96,26 @@ function LogisticsView({ role }) {
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:"12px",marginBottom:"20px"}}>
             <KPICard label="Upcoming Away Trips" value={upcomingTransport.length} icon="🚌" color={D.sky}/>
             <KPICard label="Drivers Available"   value={STAFF.filter(s=>s.role==="driver"&&s.active).length} icon="🚌" color={D.lime}/>
-            <KPICard label="Total Seats"         value={STAFF.filter(s=>s.role==="driver").flatMap(s=>s.vehicles).reduce((a,v)=>a+v.capacity,0)} icon="💺" color={D.violet}/>
-            <KPICard label="Services Due"        value={STAFF.filter(s=>s.role==="driver").flatMap(s=>s.vehicles).filter(v=>{const d=(new Date(v.nextService)-today)/(86400000);return d<=14;}).length} icon="🔧" color={D.amber} sub="Within 14 days"/>
+            <KPICard label="Vehicles In Service" value={VEHICLES.filter(v=>v.active).length} icon="🚐" color={D.teal}/>
+            <KPICard label="Total Seats"         value={VEHICLES.filter(v=>v.active).reduce((a,v)=>a+(v.capacity||0),0)} icon="💺" color={D.violet}/>
+            {/* Only vehicles with a recorded service date can be counted. A bus
+                nobody has booked in is not "due today" — it is unknown, and the
+                mock version counted it as due because an absent date parsed to
+                the epoch. */}
+            <KPICard label="Services Due"        value={VEHICLES.filter(v=>v.nextService&&(new Date(v.nextService)-today)/86400000<=14).length} icon="🔧" color={D.amber} sub="Within 14 days"/>
           </div>
 
           <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
             {upcomingTransport.map(m=>{
-              const driver   = m.transport?.driverId ? STAFF.find(s=>s.id===m.transport.driverId) : null;
-              const vehicle  = driver?.vehicles?.find(v=>v.reg===m.transport?.vehicle);
+              const trip     = tripFor(m.id);
+              // The driver's name comes from the trip row, resolved server-side
+              // — a reader who may not see the driver's account gets the trip
+              // without the name rather than no trip at all.
+              const driver   = trip?.driverId ? STAFF.find(s=>s.id===trip.driverId) : null;
+              const vehicle  = trip?.vehicleId
+                ? VEHICLES.find(v=>v.id===trip.vehicleId) ?? {
+                    reg: trip.reg, description: trip.vehicleDescription, capacity: trip.capacity }
+                : null;
               const comp     = COMPETITIONS.find(c=>c.id===m.competition);
               const w        = WEATHER[m.id];
               const isManifest = manifest?.id===m.id;
@@ -102,35 +139,45 @@ function LogisticsView({ role }) {
                       <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
                         <div style={{padding:"10px 14px",background:D.surf2,borderRadius:D.md,border:`1px solid ${D.border}`,textAlign:"center",minWidth:"70px"}}>
                           <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"4px"}}>DEPARTS</div>
-                          <div style={{fontFamily:D.mono,fontSize:"16px",fontWeight:700,color:D.sky}}>{m.transport.depart}</div>
+                          <div style={{fontFamily:D.mono,fontSize:"16px",fontWeight:700,color:D.sky}}>{clock(trip?.departAt)}</div>
                         </div>
                         <div style={{padding:"10px 14px",background:D.surf2,borderRadius:D.md,border:`1px solid ${D.border}`,textAlign:"center",minWidth:"70px"}}>
                           <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"4px"}}>RETURNS</div>
-                          <div style={{fontFamily:D.mono,fontSize:"16px",fontWeight:700,color:D.emerald}}>{m.transport.return}</div>
+                          <div style={{fontFamily:D.mono,fontSize:"16px",fontWeight:700,color:D.emerald}}>{clock(trip?.returnAt)}</div>
                         </div>
                         <div style={{padding:"10px 14px",background:D.surf2,borderRadius:D.md,border:`1px solid ${D.border}`,textAlign:"center",minWidth:"70px"}}>
                           <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"4px"}}>SEATS</div>
-                          <div style={{fontFamily:D.mono,fontSize:"16px",fontWeight:700,color:D.amber}}>{m.transport.seats||"?"}</div>
+                          <div style={{fontFamily:D.mono,fontSize:"16px",fontWeight:700,color:D.amber}}>{trip?.seatsTaken??"—"}</div>
                         </div>
                       </div>
                     </div>
 
-                    {/* Driver + vehicle strip */}
-                    {driver&&(
+                    {/* Driver + vehicle strip. Shown for any arranged trip:
+                        a bus with no driver named yet is exactly the row a
+                        transport coordinator is looking for. */}
+                    {trip&&(
                       <div style={{marginTop:"12px",padding:"10px 14px",background:D.surf2,borderRadius:D.md,display:"flex",gap:"14px",alignItems:"center",flexWrap:"wrap"}}>
                         <div style={{display:"flex",gap:"9px",alignItems:"center"}}>
-                          <Avatar name={driver.name} size={32} color={D.lime}/>
+                          <Avatar name={driver?.name??trip.driverName??"?"} size={32} color={D.lime}/>
                           <div>
-                            <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:600,color:D.textPrimary}}>{driver.name}</div>
-                            <div style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>{driver.phone}</div>
+                            <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:600,color:D.textPrimary}}>
+                              {driver?.name??trip.driverName??"No driver named yet"}
+                            </div>
+                            <div style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>{driver?.phone??""}</div>
                           </div>
                         </div>
+                        {/* Where the bus is, in the server's own word. */}
+                        {trip.state!=="scheduled"&&(
+                          <Badge color={trip.state==="arrived"?D.emerald:trip.state==="under_way"?D.sky:D.textMuted}>
+                            {trip.state==="under_way"?"On the road":trip.state==="arrived"?"Arrived":"Cancelled"}
+                          </Badge>
+                        )}
                         {vehicle&&(
                           <>
                             <div style={{width:"1px",height:"32px",background:D.border}}/>
                             <div>
                               <div style={{fontFamily:D.mono,fontSize:"12px",fontWeight:700,color:D.lime}}>{vehicle.reg}</div>
-                              <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>{vehicle.type} · {vehicle.capacity} seats · <span style={{color:condColor(vehicle.condition)}}>{vehicle.condition}</span></div>
+                              <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>{vehicle.description} · {vehicle.capacity} seats{vehicle.condition?<> · <span style={{color:condColor(vehicle.condition)}}>{vehicle.condition}</span></>:null}</div>
                             </div>
                           </>
                         )}
@@ -148,11 +195,19 @@ function LogisticsView({ role }) {
                       const team = m.homeTeam.includes("1XI")?PLAYERS.filter(p=>p.team==="1XI"):m.homeTeam.includes("U15")?PLAYERS.filter(p=>p.team==="U15A"):PLAYERS.filter(p=>p.team==="U13A");
                       const teamCoaches = COACHES.filter(c=>team.some(p=>c.team===p.team));
                       const allPassengers = [...team.map(p=>({name:p.name,type:"Player",team:p.team})), ...teamCoaches.map(c=>({name:c.name,type:"Coach",team:c.team}))];
+                      const cap = vehicle?.capacity ?? null;
                       return (
                         <div style={{marginTop:"12px",padding:"14px",background:D.surf2,borderRadius:D.md,border:`1px solid ${D.teal}22`}}>
                           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"12px"}}>
                             <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.teal,letterSpacing:"0.08em"}}>TRAVEL MANIFEST — {allPassengers.length} PASSENGERS</div>
-                            <Badge color={allPassengers.length<=(m.transport.seats||99)?D.emerald:D.rose}>{allPassengers.length}/{m.transport.seats||"?"} seats</Badge>
+                            {/* Against the VEHICLE's capacity, not against a
+                                seat count somebody typed. The bus holds what
+                                the bus holds, and the database refuses a trip
+                                that names more passengers than that — this is
+                                the same fact drawn early enough to be useful. */}
+                            <Badge color={cap==null?D.textMuted:allPassengers.length<=cap?D.emerald:D.rose}>
+                              {allPassengers.length}/{cap??"?"} seats
+                            </Badge>
                           </div>
                           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:"6px"}}>
                             {allPassengers.map((p,i)=>(
