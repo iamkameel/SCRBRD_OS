@@ -198,7 +198,9 @@ try {
   // choice (login_code is exactly that) but never an accidental one. These are
   // the tables where that was decided on purpose; anything else joining them
   // is a new decision that should be made deliberately, not discovered later.
-  const DELIBERATELY_NO_POLICY = new Set(["login_code"]);
+  // schema_migration is the migrator's ledger (tools/migrate.mjs): the owner
+  // writes and reads it, and the application role has no business with it.
+  const DELIBERATELY_NO_POLICY = new Set(["login_code", "schema_migration"]);
   const policyless = (await q(
     `select c.relname, count(p.polname)::int as policies
        from pg_class c

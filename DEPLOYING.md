@@ -53,10 +53,12 @@ DATABASE_URL=postgres://scrbrd:<owner secret>@127.0.0.1:5432/scrbrd node tools/m
 the real instance. The pilot seed is fixture data with development sign-ins in
 it and never goes near this database.
 
-**Known gap.** There is no migration ledger: `db/0*.sql` applies from nothing.
-A schema change after go-live is applied as a hand-written `ALTER`, reviewed
-against the diff of `db/`, by the owner role, before the code that needs it is
-deployed. A ledger is an open decision, not a thing to improvise on the day.
+The migrator keeps a ledger, `schema_migration`: each `db/NN_*.sql` is
+recorded with its hash when applied, skipped when unchanged, and **refused**
+if it changed after it ran. So a schema change after go-live is a new file
+with a higher number — `db/10_….sql` with the `ALTER`s — applied by the same
+command, by the owner role, before the code that needs it is deployed. Editing
+a file that has already run is not a migration path; the migrator says so.
 
 ### 3 · The first person
 
