@@ -636,6 +636,7 @@ try {
                                        (els) => els.map((e) => e.getAttribute("data-testid").slice(4)));
       ok(`the ${label} is offered a menu`, keys.length >= 3);
       const broken = [];
+      let pokes = 0;
       for (const k of keys) {
         const before = s.errors.length;
         await s.page.locator(`[data-testid="nav-${k}"]`).click({ timeout: 6000 }).catch(() => broken.push(`${k}: no click`));
@@ -646,8 +647,39 @@ try {
         // A crashed React root takes the menu down with it; every click after
         // that waits its full timeout for a button that is not coming back.
         if (at === null) break;
+        // ONE LEVEL DOWN. Opening a screen proves the list renders; the two
+        // profile bugs the recognition card exposed lived in the record behind
+        // the list, which nothing had opened. So poke a few buttons on each
+        // screen — a player, a fixture, a tab — and require the page to stand
+        // after each. Skipped: anything that reads like a write or a takeover.
+        const SKIP = /save|submit|delete|retire|revoke|withdraw|publish|send|sign out|log out|remove|cancel|approve|reject|start|scor|declare|record|add |new |\+/i;
+        // First, middle and last of the candidates, not the first three: a
+        // screen's first buttons are its tabs and filters, and the records
+        // are further down. The first draft poked "players / coaches / staff"
+        // on the Profiles screen and never opened a profile.
+        const buttons = s.page.locator('[data-testid="os-main"] button:not([disabled])');
+        const count = Math.min(await buttons.count().catch(() => 0), 60);
+        const candidates = [];
+        for (let i = 0; i < count; i++) {
+          const t = ((await buttons.nth(i).innerText().catch(() => "")) || "").trim().replace(/\s+/g, " ");
+          if (t.length >= 4 && !SKIP.test(t)) candidates.push([i, t]);
+        }
+        const picks = [...new Set([0, Math.floor(candidates.length / 2), candidates.length - 1])]
+          .filter((i) => i >= 0 && i < candidates.length).map((i) => candidates[i]);
+        let poked = 0;
+        for (const [i, t] of picks) {
+          const b0 = s.errors.length;
+          await buttons.nth(i).click({ timeout: 2500 }).catch(() => {});
+          await s.page.waitForTimeout(600);
+          await s.page.keyboard.press("Escape").catch(() => {});
+          poked++; pokes++;
+          if (s.errors.length > b0) broken.push(`${k} › "${t.slice(0, 32)}": ${s.errors.slice(b0).join("; ").slice(0, 120)}`);
+          if (!(await s.page.locator('[data-testid="os-main"]').count())) { broken.push(`${k} › "${t.slice(0, 32)}": page gone`); break; }
+        }
+        if (!(await s.page.locator('[data-testid="os-main"]').count())) break;
       }
-      ok(`every screen the ${label} is offered opens and stands (${keys.length})`, broken.length === 0);
+      ok(`every screen the ${label} is offered opens, and stands when poked (${keys.length} screens, ${pokes} pokes)`, broken.length === 0);
+      ok(`...and the sweep actually reached records for the ${label}`, pokes >= keys.length);
       if (broken.length) console.log("    " + broken.join("\n    "));
       await s.ctx.close();
     }
