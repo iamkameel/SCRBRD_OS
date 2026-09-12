@@ -143,6 +143,15 @@ try {
   ok("no mock player appears anywhere on the screen",
      !/Luca De Villiers|Ethan Solomons|Theo Pretorius|Aiden Petersen/.test(squad));
 
+  // A boy's passport sits on his profile for his own coach: each line with
+  // where it came from and how sure the record is.
+  ok("the profiles screen opens", await nav(coach.page, /Profiles/));
+  await coach.page.locator('[data-testid="roster-player-aaaaaaaa-0000-0000-0000-000000000005"]').first().click({ timeout: 4000 }).catch(() => {});
+  await coach.page.waitForTimeout(1500);
+  const passportCard = coach.page.locator('[data-testid="passport-card"]');
+  ok("the boy's passport is on his profile", await passportCard.count() === 1);
+  ok("...every line derived, verified, asserted or seeded", await passportCard.count() === 1 && /derived|verified|asserted|seeded/i.test(await passportCard.innerText()));
+
   ok("no screen asked the browser to scope for it" +
      (coach.refusals.length ? ` — ${coach.refusals[0].slice(0, 120)}` : ""),
      coach.refusals.length === 0);
@@ -158,6 +167,25 @@ try {
   if (DEBUG) console.log("[debug] guardian squad:\n" + pSquad.slice(0, 700));
   ok("their own child is on it", /Pillay/.test(pSquad));
   ok("...and no other child is", !/Bekker|Naidoo|Cele|Whitfield/.test(pSquad));
+
+  // The passport: the family names a school from Settings, and takes it
+  // back. The gate itself is walked at the API (tools/smoke-passport.mjs);
+  // this is the screen doing exactly what the family asked, nothing more.
+  ok("the settings screen opens for them", await nav(parent.page, /Settings/));
+  ok("...with a passport tab", await click(parent.page, /Passport/));
+  await parent.page.waitForTimeout(800);
+  ok("no school is named yet", /No school has been named/.test(await text(parent.page)));
+  await parent.page.selectOption('select[aria-label="Which player"]', { index: 1 });
+  const wesOption = await parent.page.$eval('select[aria-label="Which school"]', (el) => [...el.options].find((o) => /Westville/.test(o.text))?.value);
+  ok("Westville is offered from the server's list", !!wesOption);
+  if (wesOption) await parent.page.selectOption('select[aria-label="Which school"]', wesOption);
+  ok("they name it", await click(parent.page, /Name this school/));
+  await parent.page.waitForTimeout(1500);
+  const named = await text(parent.page);
+  ok("the grant appears, naming the boy and the school", /Pillay/.test(named) && /Westville/.test(named) && !/No school has been named/.test(named));
+  ok("they take it back", await click(parent.page, /^Withdraw$/));
+  await parent.page.waitForTimeout(1500);
+  ok("...and the row says withdrawn", /withdrawn/i.test(await text(parent.page)));
   ok("the guardian's session raised no scoping refusals", parent.refusals.length === 0);
 
   // ── A notification is not permission ────────────────────────────

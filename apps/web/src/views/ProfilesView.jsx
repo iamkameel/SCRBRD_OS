@@ -123,6 +123,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
             Read per boy under player.profile.read; empty means nothing, or
             nothing the reader may see, and either way no card. */}
         <RecognitionCard playerId={p.id} role={role}/>
+        <PassportCard playerId={p.id} role={role}/>
 
         {/* Tab nav */}
         <div style={{display:"flex",gap:"4px",padding:"10px 16px",borderBottom:`1px solid ${D.border}`,overflowX:"auto"}}>
@@ -645,6 +646,35 @@ function RecognitionCard({ playerId, role }) {
             </span>
           ))}
         </div>
+      </Card>
+    </div>
+  );
+}
+
+// His cricket record with its provenance on every line: where it was
+// recorded, by whom, and how sure the record is. Read through passport(),
+// which is the family's, his own school's, and a school the family named.
+const CONFIDENCE_TONE = { derived: D.emerald, verified: D.emerald, asserted: D.amber, seeded: D.textMuted };
+function PassportCard({ playerId, role }) {
+  const rows = useLive("passport", role, 0, { playerId }).rows;
+  if (!rows.length) return null;
+  return (
+    <div style={{padding:"0 24px"}}>
+      <Card sx={{padding:"14px",marginTop:"16px"}} data-testid="passport-card">
+        <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary,marginBottom:"8px"}}>Passport</div>
+        {rows.map((r,i)=>(
+          <div key={`${r.family}-${r.label}-${i}`} data-testid={`passport-${r.family}`}
+            style={{display:"flex",alignItems:"baseline",gap:"10px",padding:"6px 0",borderTop:i?`1px solid ${D.border}`:"none",flexWrap:"wrap"}}>
+            <div style={{flex:1,minWidth:"160px"}}>
+              <span style={{fontFamily:D.body,fontSize:"12px",fontWeight:600,color:D.textPrimary}}>{r.label}</span>
+              <span style={{fontFamily:D.body,fontSize:"12px",color:D.textPrimary,marginLeft:"8px"}}>{r.value}</span>
+            </div>
+            <span style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>{[r.on, r.source, r.recordedBy].filter(Boolean).join(" · ")}</span>
+            <span style={{fontFamily:D.mono,fontSize:"9px",textTransform:"uppercase",padding:"2px 8px",borderRadius:D.pill,
+                          background:(CONFIDENCE_TONE[r.confidence]??D.textMuted)+"14",border:`1px solid ${(CONFIDENCE_TONE[r.confidence]??D.textMuted)}33`,
+                          color:textOn(CONFIDENCE_TONE[r.confidence]??D.textMuted)}}>{r.confidence}</span>
+          </div>
+        ))}
       </Card>
     </div>
   );

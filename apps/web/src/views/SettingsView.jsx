@@ -87,12 +87,12 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp }) 
       <SectionHeader title="Settings & Access Control" sub="Users · RBAC · School config · Platform upgrades" color={D.violet}/>
 
       <div style={{display:"flex",gap:"6px",marginBottom:"20px",flexWrap:"wrap"}}>
-        {["users","roles","alerts","clearances","school","upgrades"].map(t=>(
+        {["users","roles","alerts","clearances","passport","school","upgrades"].map(t=>(
           <button key={t} onClick={()=>setTab(t)} className="pressBtn" style={{
             padding:"6px 18px",borderRadius:D.pill,cursor:"pointer",textTransform:"capitalize",
             border:`1px solid ${tab===t?D.violet+"55":D.border}`,background:tab===t?D.violet+"14":"transparent",
             fontFamily:D.body,fontSize:"11px",fontWeight:tab===t?700:400,color:tab===t?D.violet:D.textMuted,
-          }}>{t==="upgrades"?"🚀 Upgrades":t==="alerts"?"🔔 Alerts":t==="clearances"?"🪪 My clearances":t}</button>
+          }}>{t==="upgrades"?"🚀 Upgrades":t==="alerts"?"🔔 Alerts":t==="clearances"?"🪪 My clearances":t==="passport"?"🛂 Passport":t}</button>
         ))}
       </div>
 
@@ -196,6 +196,7 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp }) 
       {/* ── ALERTS: this phone, and the others I have registered ── */}
       {tab==="alerts"&&<AlertsTab role={role}/>}
       {tab==="clearances"&&<MyClearancesTab role={role}/>}
+      {tab==="passport"&&<PassportTab role={role}/>}
 
       {tab==="upgrades"&&(
         <div>
@@ -297,6 +298,65 @@ function MyClearancesTab({ role }) {
             </div>
             <span style={{fontFamily:D.mono,fontSize:"9px",textTransform:"uppercase",padding:"3px 8px",borderRadius:D.pill,
                           background:tone[r.status]+"14",border:`1px solid ${tone[r.status]}33`,color:textOn(tone[r.status])}}>{r.status}</span>
+          </div>
+        ))}
+    </Card>
+  );
+}
+
+// A boy's record goes to another school only when his family names it.
+// The list is what the server lets this person see — their own grants, or
+// the ones naming their school — and the form is refused by the API for
+// anyone who is not his family; the message below says so in its words.
+function PassportTab({ role }) {
+  const [nudge, setNudge] = useState(0);
+  const [schools, setSchools] = useState([]);
+  const [playerId, setPlayerId] = useState("");
+  const [schoolId, setSchoolId] = useState("");
+  const [said, setSaid] = useState("");
+  const players = useRows("players", role);
+  const rows = useLive("passport_consents", role, nudge).rows;
+  useEffect(() => { let off = false; api("/api/schools").then((r) => { if (!off && r?.rows) setSchools(r.rows); }).catch(() => {}); return () => { off = true; }; }, []);
+  const grant = async () => {
+    setSaid("");
+    try { await api("/api/passport/consent", { method: "POST", body: { playerId, schoolId } }); setSchoolId(""); setNudge((n) => n + 1); }
+    catch (e) { setSaid(e.message || "Refused."); }
+  };
+  const withdraw = async (id) => {
+    setSaid("");
+    try { await api(`/api/passport/consent/${id}/withdraw`, { method: "POST" }); setNudge((n) => n + 1); }
+    catch (e) { setSaid(e.message || "Refused."); }
+  };
+  const sel = {background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.sm,padding:"6px 8px",fontFamily:D.body,fontSize:"11px",color:D.textPrimary};
+  return (
+    <Card sx={{padding:"16px"}} data-testid="passport-tab">
+      <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary,marginBottom:"4px"}}>Passport</div>
+      <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginBottom:"12px"}}>
+        A boy's cricket record stays with his school until his family names another. Only his cricket record travels: nothing medical, no files, no notes. A family can take a name back at any time.
+      </div>
+      <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center",marginBottom:"12px"}}>
+        <select value={playerId} onChange={(e)=>setPlayerId(e.target.value)} aria-label="Which player" style={sel}>
+          <option value="">Which player?</option>
+          {players.map((p)=><option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+        <select value={schoolId} onChange={(e)=>setSchoolId(e.target.value)} aria-label="Which school" style={sel}>
+          <option value="">Which school?</option>
+          {schools.map((s)=><option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+        <Btn onClick={grant} disabled={!playerId||!schoolId} >Name this school</Btn>
+      </div>
+      {said&&<div role="alert" style={{fontFamily:D.body,fontSize:"11px",color:textOn(D.rose),marginBottom:"8px"}}>{said}</div>}
+      {rows.length===0
+        ? <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>No school has been named.</div>
+        : rows.map(r=>(
+          <div key={r.id} data-testid={`passport-consent-${r.id}`} style={{display:"flex",alignItems:"center",gap:"10px",padding:"8px 0",borderTop:`1px solid ${D.border}`}}>
+            <div style={{flex:1}}>
+              <div style={{fontFamily:D.body,fontSize:"12px",color:D.textPrimary,fontWeight:600}}>{r.name} → {r.toSchoolName??"a school"}</div>
+              <div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted}}>named {String(r.grantedAt).slice(0,10)}{r.withdrawnAt?` · withdrawn ${String(r.withdrawnAt).slice(0,10)}`:""}</div>
+            </div>
+            {r.withdrawnAt
+              ? <span style={{fontFamily:D.mono,fontSize:"9px",textTransform:"uppercase",color:D.textMuted}}>withdrawn</span>
+              : <Btn variant="ghost" onClick={()=>withdraw(r.id)}>Withdraw</Btn>}
           </div>
         ))}
     </Card>
