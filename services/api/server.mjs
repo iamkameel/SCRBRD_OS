@@ -377,6 +377,8 @@ const PLAYER_ROUTES = [
   [/^\/api\/equipment$/,                            "POST", kit.equipment],
   [/^\/api\/equipment\/([^/]+)\/issue$/,             "POST", kit.issue],
   [/^\/api\/equipment-issues\/([^/]+)\/return$/,     "POST", kit.giveBack],
+  [/^\/api\/passport\/consent$/,                     "POST", kit.consent],
+  [/^\/api\/passport\/consent\/([^/]+)\/withdraw$/,   "POST", kit.withdrawConsent],
   // A competition's tiers, and who sits in which. competition.manage at the
   // organiser, which for a shared league is a platform-wide administrator.
   [/^\/api\/competitions\/([^/]+)\/divisions$/,      "POST", competitions.division],

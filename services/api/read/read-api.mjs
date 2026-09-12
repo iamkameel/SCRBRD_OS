@@ -1082,6 +1082,22 @@ export const READ_QUERIES = {
     params: q => [q?.all === "1"],
   },
 
+  /*
+   * THE PASSPORT: a boy's cricket record with provenance and confidence on
+   * every line, for his family, his own school, and a school the family has
+   * named. The gate is passport() in db/08.
+   */
+  passport: {
+    text: `select family, label, value, on_date, source_school, recorded_by, confidence from passport($1::uuid)`,
+    params: q => [req(q, "playerId")],
+  },
+  passport_consents: {
+    text: `select c.id, c.player_id, passport_name(c.player_id) as full_name, c.to_school_id, s.name as to_school, c.granted_at, c.withdrawn_at
+             from passport_consent c
+             left join lateral (select ps.name from public_schools() ps where ps.id = c.to_school_id) s on true
+            order by c.withdrawn_at nulls first, c.granted_at desc`,
+  },
+
   /* Which roles must hold which checks. Platform reference data. */
   clearance_requirements: {
     text: `select role, kind, clearance_kind_label(kind) as kind_label

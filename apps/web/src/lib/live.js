@@ -493,6 +493,14 @@ function asIssue(r) {
   return { id: r.id, equipmentId: r.equipment_id, label: r.label, kind: r.kind, playerId: r.player_id, name: r.full_name,
            team: r.team_code, issuedOn: String(r.issued_on).slice(0, 10), returnedOn: r.returned_on ? String(r.returned_on).slice(0, 10) : null, live: true };
 }
+function asPassportLine(r) {
+  return { family: r.family, label: r.label, value: r.value, on: r.on_date ? String(r.on_date).slice(0, 10) : null,
+           source: r.source_school, recordedBy: r.recorded_by, confidence: r.confidence, live: true };
+}
+function asPassportConsent(r) {
+  return { id: r.id, playerId: r.player_id, name: r.full_name, toSchool: r.to_school_id, toSchoolName: r.to_school,
+           grantedAt: r.granted_at, withdrawnAt: r.withdrawn_at, live: true };
+}
 function asRequirement(r) { return { role: r.role, kind: r.kind, kindLabel: r.kind_label, live: true }; }
 
 /** A side as it stood on a date — nothing here is computed in the browser. */
@@ -675,6 +683,8 @@ const ADAPT = {
   clearance_requirements: asRequirement,
   role_requests: asRoleRequest,
   drills: asDrill,
+  passport: asPassportLine,
+  passport_consents: asPassportConsent,
   equipment: asEquipment,
   equipment_issues: asIssue,
   recognition: asRecognition,

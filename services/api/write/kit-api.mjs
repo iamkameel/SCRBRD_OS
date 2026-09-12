@@ -12,6 +12,7 @@ export function kitRoutes({ pool, secret }) {
     try { res.json(await fn(req)); }
     catch (e) {
       if (e.code === "23514") return res.status(422).json({ error: "refused", detail: e.message });
+      if (e.code === "23505") return res.status(422).json({ error: "already_granted" });
       if (e.code === "23503") return res.status(404).json({ error: "not_found" });
       const status = e.code === "42501" ? 403 : (e.status || 500);
       res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
@@ -58,6 +59,21 @@ export function kitRoutes({ pool, secret }) {
         return { id: rows[0].id, issuedOn: String(rows[0].issued_on).slice(0, 10) };
       });
     }),
+    // POST /api/passport/consent { playerId, schoolId } — the family names a school
+    consent: handle(async (req) => {
+      const b = req.body || {};
+      if (!UUID.test(String(b.playerId ?? "")) || !UUID.test(String(b.schoolId ?? ""))) throw err("player_and_school_required");
+      return asPrincipal(req, async (c) => {
+        const { rows } = await c.query(`insert into passport_consent (player_id, to_school_id) values ($1, $2) returning id`, [b.playerId, b.schoolId]);
+        if (!rows.length) throw err("not_permitted", 403);
+        return { id: rows[0].id };
+      });
+    }),
+    // POST /api/passport/consent/:id/withdraw
+    withdrawConsent: handle(async (req) => asPrincipal(req, async (c) => {
+      const { rowCount } = await c.query(`update passport_consent set withdrawn_at = now() where id = $1 and withdrawn_at is null`, [req.params.id]);
+      return { withdrawn: rowCount };
+    })),
     // POST /api/equipment-issues/:id/return
     giveBack: handle(async (req) => asPrincipal(req, async (c) => {
       const { rowCount } = await c.query(`update equipment_issue set returned_on = sa_today() where id = $1 and returned_on is null`, [req.params.id]);

@@ -5743,3 +5743,133 @@ BEGIN
 END $$ LANGUAGE plpgsql SECURITY DEFINER;
 CREATE TRIGGER equipment_issue_check BEFORE INSERT OR UPDATE ON equipment_issue
   FOR EACH ROW EXECUTE FUNCTION equipment_issue_fits();
+
+-- ═══════════════════════════════════════════════════════════════════
+--  THE PASSPORT — a boy's cricket record, travelling on the family's say-so
+-- ═══════════════════════════════════════════════════════════════════
+--
+-- Everything in this schema anchors on the school that recorded it, and a
+-- boy who moves schools leaves his record behind: clearances, honours and
+-- the caps ledger all said so and deferred the question. This is the
+-- answer. THE FAMILY DECIDES: a verified guardian, or the boy himself
+-- through self-access, consents to share his CRICKET record with one named
+-- school, and may withdraw it. Nothing medical, nothing from his file, no
+-- coaching note ever travels — the passport is figures, honours, caps,
+-- milestones and ratings, and each line says where it came from and how
+-- sure anyone should be of it:
+--   derived   — a fold over the ball log; nobody typed it
+--   verified  — signed by a named person on a date (an honour)
+--   asserted  — a coach's judgement (a rating), named and dated
+--   seeded    — on record with no person behind it
+
+CREATE TABLE passport_consent (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  player_id    uuid NOT NULL REFERENCES player(id) ON DELETE CASCADE,
+  to_school_id uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  granted_by   uuid REFERENCES app_user(id),
+  granted_at   timestamptz NOT NULL DEFAULT now(),
+  withdrawn_at timestamptz,
+  withdrawn_by uuid REFERENCES app_user(id)
+);
+CREATE UNIQUE INDEX passport_consent_live ON passport_consent (player_id, to_school_id) WHERE withdrawn_at IS NULL;
+ALTER TABLE passport_consent ENABLE ROW LEVEL SECURITY;
+
+-- Is the caller this boy's family: a verified guardian, or the boy himself.
+CREATE OR REPLACE FUNCTION is_family_of(p_player uuid) RETURNS boolean AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM role_assignment a
+    JOIN assignment_subject s ON s.assignment_id = a.id
+   WHERE a.person_id = app_user_id() AND a.active
+     AND a.role IN ('guardian', 'selfaccess')
+     AND s.player_id = p_player AND s.verification_state = 'verified')
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+REVOKE ALL ON FUNCTION is_family_of(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION is_family_of(uuid) TO PUBLIC;
+
+-- Read by the family and by the school it was granted to; written by the
+-- family only. The receiving school never writes one for itself.
+CREATE POLICY passport_consent_read ON passport_consent FOR SELECT USING (
+  is_family_of(player_id)
+  OR app_can('player.profile.read', to_school_id, '*', '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+CREATE POLICY passport_consent_insert ON passport_consent FOR INSERT WITH CHECK (is_family_of(player_id) AND withdrawn_at IS NULL);
+CREATE POLICY passport_consent_update ON passport_consent FOR UPDATE USING (is_family_of(player_id) AND withdrawn_at IS NULL)
+  WITH CHECK (is_family_of(player_id) AND withdrawn_at IS NOT NULL);
+CREATE OR REPLACE FUNCTION passport_consent_stamp() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN NEW.granted_by := app_user_id(); NEW.granted_at := now(); NEW.withdrawn_at := NULL; NEW.withdrawn_by := NULL;
+  ELSIF NEW.withdrawn_at IS NOT NULL AND OLD.withdrawn_at IS NULL THEN NEW.withdrawn_at := now(); NEW.withdrawn_by := app_user_id();
+  ELSIF OLD.withdrawn_at IS NOT NULL THEN RAISE EXCEPTION 'a withdrawn consent is not revived — grant it again' USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+CREATE TRIGGER passport_consent_stamp BEFORE INSERT OR UPDATE ON passport_consent FOR EACH ROW EXECUTE FUNCTION passport_consent_stamp();
+
+-- The passport itself. Readable by the family, by the boy's own school
+-- (which holds the record anyway), and by a school the family has named.
+-- Definer rights: the receiving school holds nothing on the boy, so every
+-- policy behind these rows would refuse it; the consent row is the gate.
+CREATE OR REPLACE FUNCTION passport_open(p_player uuid) RETURNS boolean AS $$
+  SELECT is_family_of(p_player)
+      OR EXISTS (SELECT 1 FROM player p WHERE p.id = p_player
+                    AND app_can('player.profile.read', p.school_id, p.team_code, p.id, '00000000-0000-0000-0000-000000000000'::uuid))
+      OR EXISTS (SELECT 1 FROM passport_consent c
+                  WHERE c.player_id = p_player AND c.withdrawn_at IS NULL
+                    AND app_can('player.profile.read', c.to_school_id, '*', '00000000-0000-0000-0000-000000000000'::uuid,
+                                '00000000-0000-0000-0000-000000000000'::uuid))
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+REVOKE ALL ON FUNCTION passport_open(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION passport_open(uuid) TO PUBLIC;
+
+-- The boy's name, to whoever the passport is open to: the receiving school
+-- cannot read his player row, but a consent naming it is the family's word.
+CREATE OR REPLACE FUNCTION passport_name(p_player uuid) RETURNS text AS $$
+  SELECT full_name FROM player WHERE id = p_player AND passport_open(p_player)
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+REVOKE ALL ON FUNCTION passport_name(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION passport_name(uuid) TO PUBLIC;
+
+CREATE OR REPLACE FUNCTION passport(p_player uuid)
+RETURNS TABLE (family text, label text, value text, on_date date, source_school text,
+               recorded_by text, confidence text) AS $$
+DECLARE p player%ROWTYPE;
+BEGIN
+  SELECT * INTO p FROM player WHERE id = p_player;
+  IF NOT FOUND OR NOT passport_open(p_player) THEN RETURN; END IF;
+  RETURN QUERY
+    SELECT 'career', 'Batting', b.runs || ' runs in ' || b.innings || ' innings' || coalesce(', average ' || round(b.average, 1), ''),
+           NULL::date, (SELECT name FROM school WHERE id = p.school_id), 'the ball log', 'derived'
+      FROM (SELECT count(*)::int AS innings, coalesce(sum(i.runs), 0)::int AS runs,
+                   CASE WHEN count(*) FILTER (WHERE i.out) > 0 THEN sum(i.runs)::numeric / count(*) FILTER (WHERE i.out) END AS average
+              FROM player_innings i WHERE i.player_id = p_player) b WHERE b.innings > 0
+    UNION ALL
+    SELECT 'career', 'Bowling', w.wickets || ' wickets, ' || w.runs || ' runs conceded', NULL, (SELECT name FROM school WHERE id = p.school_id), 'the ball log', 'derived'
+      FROM (SELECT coalesce(sum(f.wickets), 0)::int AS wickets, coalesce(sum(f.runs_conceded), 0)::int AS runs, count(*)::int AS n
+              FROM bowler_innings_figures f WHERE f.player_id = p_player) w WHERE w.n > 0
+    UNION ALL
+    SELECT 'honour', honour_kind_label(h.kind, h.name), (SELECT sn.label FROM season sn WHERE sn.id = h.season_id), h.awarded_on,
+           (SELECT name FROM school WHERE id = h.school_id),
+           coalesce((SELECT u.name FROM app_user u WHERE u.id = h.awarded_by), 'nobody on record'),
+           CASE WHEN h.awarded_by IS NULL THEN 'seeded' ELSE 'verified' END
+      FROM honour h WHERE h.player_id = p_player AND h.withdrawn_at IS NULL
+    UNION ALL
+    SELECT 'cap', c.team_code || ' cap #' || c.cap_no, c.appearances || ' appearance' || CASE WHEN c.appearances = 1 THEN '' ELSE 's' END,
+           c.first_on, (SELECT name FROM school WHERE id = c.school_id), 'the team sheets', 'derived'
+      FROM team_cap c WHERE c.player_id = p_player
+    UNION ALL
+    SELECT 'milestone', milestone_label(m.kind, m.value), 'v ' || coalesce(m.opponent, '?'), m.played_on,
+           (SELECT name FROM school WHERE id = p.school_id), 'the ball log', 'derived'
+      FROM player_milestone m WHERE m.player_id = p_player
+    UNION ALL
+    SELECT 'rating', initcap(r.category), round(r.score, 1)::text || ' of 20', r.assessed_on,
+           (SELECT name FROM school WHERE id = p.school_id),
+           coalesce((SELECT u.name FROM app_user u WHERE u.id = r.assessed_by), 'nobody on record'),
+           CASE WHEN r.assessed_by IS NULL THEN 'seeded' ELSE 'asserted' END
+      FROM (SELECT x.category, avg(x.score) AS score, max(x.assessed_on) AS assessed_on,
+                   (array_agg(x.assessed_by ORDER BY x.assessed_on DESC))[1] AS assessed_by
+              FROM (SELECT DISTINCT ON (category, metric) category, metric, score, assessed_on, assessed_by
+                      FROM player_skill WHERE player_id = p_player ORDER BY category, metric, assessed_on DESC) x
+             GROUP BY x.category) r
+    ORDER BY 1, 4 DESC NULLS LAST, 2;
+END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
+REVOKE ALL ON FUNCTION passport(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION passport(uuid) TO PUBLIC;

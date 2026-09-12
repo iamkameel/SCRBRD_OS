@@ -11,6 +11,7 @@
  */
 import { chromium } from "playwright-core";
 import { launchOptions } from "./chromium.mjs";
+import { offline, isFirebaseOfflineNoise } from "./offline-browser.mjs";
 import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { join, extname } from "node:path";
@@ -44,11 +45,12 @@ await new Promise((r) => server.listen(PORT, r));
 
 const browser = await chromium.launch({ ...launchOptions() });
 const page = await browser.newPage();
+await offline(page.context());
 
 const errors = [];
-// Requests to third-party hosts (the Google Fonts stylesheet) fail in a
-// sandboxed CI network and are not app faults. Record them separately so a
-// real application error is never hidden among them.
+// Requests to third-party hosts (the Google Fonts stylesheet, Firebase) are
+// aborted: a sandboxed CI network is not an app fault. Record them separately
+// so a real application error is never hidden among them.
 const external = [];
 page.on("requestfailed", (r) => {
   const u = r.url();
@@ -57,10 +59,10 @@ page.on("requestfailed", (r) => {
 page.on("console", (m) => {
   if (m.type() !== "error") return;
   const t = m.text();
-  if (/Failed to load resource/.test(t)) return; // covered by requestfailed, with the URL
+  if (/Failed to load resource/.test(t) || isFirebaseOfflineNoise(t)) return; // covered by requestfailed, with the URL
   errors.push(`console.error: ${t}`);
 });
-page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
+page.on("pageerror", (e) => { if (!isFirebaseOfflineNoise(e.message)) errors.push(`pageerror: ${e.message}`); });
 
 await page.goto(`http://localhost:${PORT}/`, { waitUntil: "networkidle" });
 
