@@ -14,11 +14,27 @@
  * boundary.
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
+import { rewardFigures } from "./score.mjs";
 
 const err = (code, status = 400) => Object.assign(new Error(code), { status });
 
 export function rewardWeightRoutes({ pool, secret }) {
   return {
+    // GET /api/rewards?teamCode=   the figures, for the boys this person may read.
+    // 409 when the algorithm is incomplete — and it does not say which term,
+    // because the list of terms is the shape of the algorithm.
+    figures: async (req, res) => {
+      try {
+        const out = await runAsPrincipal(pool, secret, req.headers?.authorization, (client) =>
+          rewardFigures(client, { teamCode: req.query?.teamCode || null }));
+        if (!out.ok) return res.status(409).json({ error: "algorithm_incomplete" });
+        res.json({ rows: out.rows });
+      } catch (e) {
+        const status = e.code === "42501" ? 403 : (e.status || 500);
+        res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
+      }
+    },
+
     // POST /api/admin/reward-weights/:key { value, effectiveFrom?, note? }
     set: async (req, res) => {
       try {

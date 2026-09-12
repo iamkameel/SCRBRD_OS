@@ -359,6 +359,9 @@ const PLAYER_ROUTES = [
   [/^\/api\/honours\/([^/]+)\/withdraw$/,           "POST", recognition.withdraw],
   [/^\/api\/honours\/([^/]+)\/public$/,             "POST", recognition.setPublic],
   [/^\/api\/cap-baselines$/,                        "POST", recognition.baseline],
+  // The rewards figure. A GET on the id-bearing table, keyed on nothing: the
+  // rows are whoever the principal may read, narrowed by ?teamCode.
+  [/^\/api\/rewards$/,                              "GET",  rewards.figures],
   // A competition's tiers, and who sits in which. competition.manage at the
   // organiser, which for a shared league is a platform-wide administrator.
   [/^\/api\/competitions\/([^/]+)\/divisions$/,      "POST", competitions.division],
