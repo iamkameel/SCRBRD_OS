@@ -380,6 +380,26 @@ export const TABLES = {
     masked: {},
   },
 
+  equipment: {
+    // The school's kit: what it has, how many, in what state. Read by
+    // whoever reads a side, kept by whoever manages one.
+    read:  "team.read",
+    write: "team.manage",
+    anchors: { school: "school_id" },
+    masked: {},
+  },
+  equipment_issue: {
+    // Who has the school's kit. A named boy holding a bat is a fact about
+    // him, so it reads under his profile — his coach, his family, the office
+    // — and is written by whoever manages the side.
+    read:  "player.profile.read",
+    write: "team.manage",
+    anchors: { school: "(SELECT e.school_id FROM equipment e WHERE e.id = equipment_issue.equipment_id)",
+               team: "(SELECT p.team_code FROM player p WHERE p.id = equipment_issue.player_id)",
+               person: "player_id" },
+    masked: {},
+  },
+
   training_session: {
     // A scheduled session: when, where, which team, run by whom. Not personal
     // data — it is on the noticeboard — which is why it is governed by

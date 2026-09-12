@@ -5651,3 +5651,95 @@ CREATE OR REPLACE FUNCTION public_schools() RETURNS TABLE (id uuid, name text) A
 $$ LANGUAGE sql STABLE SECURITY DEFINER;
 REVOKE ALL ON FUNCTION public_schools() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public_schools() TO PUBLIC;
+
+-- ═══════════════════════════════════════════════════════════════════
+--  DRILLS AND KIT
+-- ═══════════════════════════════════════════════════════════════════
+
+-- The drill library. Platform drills (school NULL) are everyone's; a
+-- school's own are its own. Written under team.manage at the school; a
+-- platform drill is reference data nobody writes through the API.
+CREATE TABLE drill (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id    uuid REFERENCES school(id) ON DELETE CASCADE,
+  name         text NOT NULL CHECK (length(name) BETWEEN 3 AND 80),
+  category     text NOT NULL CHECK (category IN ('batting', 'bowling', 'fielding', 'keeping', 'fitness', 'tactical')),
+  duration_min smallint NOT NULL CHECK (duration_min BETWEEN 5 AND 180),
+  description  text CHECK (description IS NULL OR length(description) <= 500),
+  created_by   uuid REFERENCES app_user(id),
+  retired      boolean NOT NULL DEFAULT false
+);
+ALTER TABLE drill ENABLE ROW LEVEL SECURITY;
+CREATE POLICY drill_read ON drill FOR SELECT USING (
+  (school_id IS NULL AND app_user_id() IS NOT NULL)
+  OR app_can('team.read', school_id, '*', '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+CREATE POLICY drill_insert ON drill FOR INSERT WITH CHECK (
+  school_id IS NOT NULL AND app_can('team.manage', school_id, '*', '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+CREATE POLICY drill_update ON drill FOR UPDATE
+  USING (school_id IS NOT NULL AND app_can('team.manage', school_id, '*', '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
+  WITH CHECK (school_id IS NOT NULL AND app_can('team.manage', school_id, '*', '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+CREATE OR REPLACE FUNCTION drill_stamp() RETURNS trigger AS $$
+BEGIN IF TG_OP = 'INSERT' THEN NEW.created_by := app_user_id(); END IF; RETURN NEW; END $$ LANGUAGE plpgsql;
+CREATE TRIGGER drill_stamp BEFORE INSERT ON drill FOR EACH ROW EXECUTE FUNCTION drill_stamp();
+
+INSERT INTO drill (name, category, duration_min, description) VALUES
+  ('Throw-downs', 'batting', 20, 'Coach delivers throw-downs to batters; front-foot drives.'),
+  ('Short-pitch defence', 'batting', 15, 'Back-foot technique against the short ball.'),
+  ('Running between wickets', 'batting', 15, 'Calling, turning, sliding; a team drill.'),
+  ('Target bowling', 'bowling', 25, 'Cones on a good length; bowlers aim for corridors.'),
+  ('Wrist-spin variation', 'bowling', 30, 'Leg-break, googly, flipper: identification and execution.'),
+  ('Reaction catches', 'fielding', 15, 'Random feeds; fielders react.'),
+  ('Long barrier', 'fielding', 20, 'Sliding long barrier on the outfield.'),
+  ('Slips cordon', 'fielding', 20, 'Edges off the catching cradle.'),
+  ('12-3-6 sprints', 'fitness', 20, '12 sprints, 3 sets, 6 seconds each.'),
+  ('Strength and conditioning', 'fitness', 45, 'Full programme, gym or field.');
+
+-- The school's kit, and who has it.
+CREATE TABLE equipment (
+  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id  uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  kind       text NOT NULL CHECK (kind IN ('bat', 'ball', 'pads', 'gloves', 'helmet', 'kit', 'stumps', 'net', 'bowling_machine', 'other')),
+  label      text NOT NULL CHECK (length(label) BETWEEN 2 AND 80),
+  quantity   integer NOT NULL CHECK (quantity >= 0),
+  condition  text NOT NULL DEFAULT 'good' CHECK (condition IN ('good', 'fair', 'poor', 'retired')),
+  notes      text CHECK (notes IS NULL OR length(notes) <= 300),
+  updated_by uuid REFERENCES app_user(id),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE equipment ENABLE ROW LEVEL SECURITY;
+CREATE OR REPLACE FUNCTION equipment_stamp() RETURNS trigger AS $$
+BEGIN NEW.updated_by := app_user_id(); NEW.updated_at := now(); RETURN NEW; END $$ LANGUAGE plpgsql;
+CREATE TRIGGER equipment_stamp BEFORE INSERT OR UPDATE ON equipment FOR EACH ROW EXECUTE FUNCTION equipment_stamp();
+
+CREATE TABLE equipment_issue (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  equipment_id uuid NOT NULL REFERENCES equipment(id) ON DELETE CASCADE,
+  player_id    uuid NOT NULL REFERENCES player(id) ON DELETE CASCADE,
+  issued_on    date NOT NULL DEFAULT sa_today(),
+  issued_by    uuid REFERENCES app_user(id),
+  returned_on  date,
+  CONSTRAINT issue_returns_after_issue CHECK (returned_on IS NULL OR returned_on >= issued_on)
+);
+CREATE INDEX ON equipment_issue (equipment_id) WHERE returned_on IS NULL;
+ALTER TABLE equipment_issue ENABLE ROW LEVEL SECURITY;
+
+-- Kit is issued to a boy of the same school, and never more of it than the
+-- school has. Definer rights: the count needs every open issue, including
+-- ones the caller may not read.
+CREATE OR REPLACE FUNCTION equipment_issue_fits() RETURNS trigger AS $$
+DECLARE v_qty int; v_out int; v_school uuid;
+BEGIN
+  IF TG_OP = 'INSERT' THEN NEW.issued_by := app_user_id(); END IF;
+  IF TG_OP = 'UPDATE' THEN RETURN NEW; END IF;
+  SELECT quantity, school_id INTO v_qty, v_school FROM equipment WHERE id = NEW.equipment_id;
+  IF NOT EXISTS (SELECT 1 FROM player p WHERE p.id = NEW.player_id AND p.school_id = v_school) THEN
+    RAISE EXCEPTION 'kit is issued to a boy of the same school' USING ERRCODE = 'check_violation';
+  END IF;
+  SELECT count(*) INTO v_out FROM equipment_issue WHERE equipment_id = NEW.equipment_id AND returned_on IS NULL;
+  IF v_out >= v_qty THEN
+    RAISE EXCEPTION 'all % of that item are already out', v_qty USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+CREATE TRIGGER equipment_issue_check BEFORE INSERT OR UPDATE ON equipment_issue
+  FOR EACH ROW EXECUTE FUNCTION equipment_issue_fits();

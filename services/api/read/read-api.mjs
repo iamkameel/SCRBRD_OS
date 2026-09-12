@@ -1057,6 +1057,31 @@ export const READ_QUERIES = {
             order by case r.state when 'pending' then 0 else 1 end, r.requested_at desc`,
   },
 
+  /* The drill library: the platform's, and this reader's schools'. */
+  drills: {
+    text: `select d.id, d.school_id, d.name, d.category, d.duration_min, d.description, d.retired
+             from drill d where not d.retired
+            order by d.school_id nulls first, d.category, d.name`,
+  },
+
+  /* The kit, with how many are out. */
+  equipment: {
+    text: `select e.id, e.school_id, e.kind, e.label, e.quantity, e.condition, e.notes, e.updated_at,
+                  (select count(*)::int from equipment_issue i where i.equipment_id = e.id and i.returned_on is null) as out
+             from equipment e order by e.kind, e.label`,
+  },
+
+  /* Who has what. Open issues unless ?all=1. */
+  equipment_issues: {
+    text: `select i.id, i.equipment_id, e.label, e.kind, i.player_id, p.full_name, p.team_code, i.issued_on, i.returned_on
+             from equipment_issue i
+             join equipment e on e.id = i.equipment_id
+             join player p on p.id = i.player_id
+            where ($1::boolean or i.returned_on is null)
+            order by i.returned_on nulls first, i.issued_on desc`,
+    params: q => [q?.all === "1"],
+  },
+
   /* Which roles must hold which checks. Platform reference data. */
   clearance_requirements: {
     text: `select role, kind, clearance_kind_label(kind) as kind_label

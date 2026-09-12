@@ -483,6 +483,16 @@ function asRoleRequest(r) {
            requestedAt: r.requested_at, decidedAt: r.decided_at, decidedNote: r.decided_note, decidedBy: r.decided_by_name,
            mine: r.mine === true, decidable: r.decidable === true, live: true };
 }
+function asDrill(r) {
+  return { id: r.id, school: r.school_id, name: r.name, category: r.category, duration: r.duration_min, desc: r.description, live: true };
+}
+function asEquipment(r) {
+  return { id: r.id, school: r.school_id, kind: r.kind, label: r.label, quantity: r.quantity, condition: r.condition, notes: r.notes, out: r.out, live: true };
+}
+function asIssue(r) {
+  return { id: r.id, equipmentId: r.equipment_id, label: r.label, kind: r.kind, playerId: r.player_id, name: r.full_name,
+           team: r.team_code, issuedOn: String(r.issued_on).slice(0, 10), returnedOn: r.returned_on ? String(r.returned_on).slice(0, 10) : null, live: true };
+}
 function asRequirement(r) { return { role: r.role, kind: r.kind, kindLabel: r.kind_label, live: true }; }
 
 /** A side as it stood on a date — nothing here is computed in the browser. */
@@ -664,6 +674,9 @@ const ADAPT = {
   my_clearances: asClearance,
   clearance_requirements: asRequirement,
   role_requests: asRoleRequest,
+  drills: asDrill,
+  equipment: asEquipment,
+  equipment_issues: asIssue,
   recognition: asRecognition,
   caps: asCap,
   honours: asHonour,

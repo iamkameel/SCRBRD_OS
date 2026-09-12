@@ -49,6 +49,7 @@ import { clearanceRoutes } from "./write/clearance-api.mjs";
 import { recognitionRoutes } from "./write/recognition-api.mjs";
 import { competitionRoutes } from "./write/competitions-api.mjs";
 import { requestRoutes } from "./write/requests-api.mjs";
+import { kitRoutes } from "./write/kit-api.mjs";
 import { MatchHub } from "./realtime/realtime.mjs";
 
 const PORT = Number(process.env.PORT || 8787);
@@ -224,6 +225,7 @@ const clearances = clearanceRoutes({ pool, secret: SECRET });
 const recognition = recognitionRoutes({ pool, secret: SECRET });
 const competitions = competitionRoutes({ pool, secret: SECRET });
 const requests = requestRoutes({ pool, secret: SECRET });
+const kit = kitRoutes({ pool, secret: SECRET });
 
 /**
  * Development sign-in.
@@ -371,6 +373,10 @@ const PLAYER_ROUTES = [
   [/^\/api\/requests$/,                             "POST", requests.request],
   [/^\/api\/requests\/([^/]+)\/withdraw$/,           "POST", requests.withdraw],
   [/^\/api\/requests\/([^/]+)\/decide$/,             "POST", requests.decide],
+  [/^\/api\/drills$/,                               "POST", kit.drill],
+  [/^\/api\/equipment$/,                            "POST", kit.equipment],
+  [/^\/api\/equipment\/([^/]+)\/issue$/,             "POST", kit.issue],
+  [/^\/api\/equipment-issues\/([^/]+)\/return$/,     "POST", kit.giveBack],
   // A competition's tiers, and who sits in which. competition.manage at the
   // organiser, which for a shared league is a platform-wide administrator.
   [/^\/api\/competitions\/([^/]+)\/divisions$/,      "POST", competitions.division],

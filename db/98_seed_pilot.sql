@@ -526,3 +526,11 @@ INSERT INTO cap_baseline (school_id, team_code, caps_before, as_of, note) VALUES
 INSERT INTO honour (player_id, kind, season_id, citation, awarded_on, is_public) VALUES
   ('aaaaaaaa-0000-0000-0000-000000000001', 'colours', season_named('2025', 'school'), 'Led the batting all season.', '2025-11-20', true),
   ('aaaaaaaa-0000-0000-0000-000000000003', 'captain', season_named('2026', 'school'), NULL, '2026-08-15', false);
+
+-- ── Kit ────────────────────────────────────────────────────────────
+INSERT INTO equipment (id, school_id, kind, label, quantity, condition) VALUES
+  ('e0170000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'bat', 'GM Diamond, 1XI pool', 3, 'good'),
+  ('e0170000-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'helmet', 'Masuri, junior', 8, 'fair'),
+  ('e0170000-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 'bowling_machine', 'BOLA Professional', 1, 'good');
+INSERT INTO drill (school_id, name, category, duration_min, description) VALUES
+  ('11111111-1111-1111-1111-111111111111', 'Pavilion end yorkers', 'bowling', 20, 'Death bowling into the shoes with the tape line.');

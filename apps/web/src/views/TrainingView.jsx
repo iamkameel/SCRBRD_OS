@@ -3,7 +3,7 @@ import { useState } from "react";
 import { D, textOn } from "../design/tokens.js";
 import { dateStr, today } from "../lib/format.js";
 import { Avatar, Badge, Btn, Card, Input, Modal, Pill, SectionHeader, Select } from "../ui/primitives.jsx";
-import { useRows } from "../lib/live.js";
+import { useLive, useRows } from "../lib/live.js";
 
 // ══════════════════════════════════════════════════════
 //  TRAINING VIEW
@@ -25,6 +25,8 @@ function TrainingView({ role }) {
   // server does not hand it to (player.workload.read), and the panel is not
   // drawn; nothing here derives a state from a number.
   const LOAD = useRows("workload", role);
+  // The drill library from the server; the constant below is the demo's.
+  const { rows: LIVE_DRILLS, live: drillsLive } = useLive("drills", role);
   const attending = (s) => REGISTER.filter((a) => a.sessionId === s.id && a.status !== "absent").map((a) => a.playerId);
   const [view, setView] = useState("schedule");
   const [addModal, setAddModal] = useState(false);
@@ -118,7 +120,7 @@ function TrainingView({ role }) {
       {view==="drills"&&(
         <div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:"12px"}}>
-            {DRILLS_LIBRARY.map(d=>(
+            {(drillsLive ? LIVE_DRILLS : DRILLS_LIBRARY).map(d=>(
               <Card key={d.id} sx={{padding:"14px"}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"8px"}}>
                   <span style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>{d.name}</span>

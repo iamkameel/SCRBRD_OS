@@ -315,6 +315,40 @@ CREATE POLICY competition_division_update ON competition_division
   FOR UPDATE USING (app_can('competition.manage', (SELECT c.school_id FROM competition c WHERE c.id = competition_division.competition_id), '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
            WITH CHECK (app_can('competition.manage', (SELECT c.school_id FROM competition c WHERE c.id = competition_division.competition_id), '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
 
+-- equipment — read: team.read · write: team.manage
+ALTER TABLE equipment ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS equipment_read   ON equipment;
+DROP POLICY IF EXISTS equipment_insert ON equipment;
+DROP POLICY IF EXISTS equipment_update ON equipment;
+DROP POLICY IF EXISTS equipment_delete ON equipment;
+
+CREATE POLICY equipment_read ON equipment
+  FOR SELECT USING (app_can('team.read', equipment.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY equipment_insert ON equipment
+  FOR INSERT WITH CHECK (app_can('team.manage', equipment.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY equipment_update ON equipment
+  FOR UPDATE USING (app_can('team.manage', equipment.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
+           WITH CHECK (app_can('team.manage', equipment.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+-- equipment_issue — read: player.profile.read · write: team.manage
+ALTER TABLE equipment_issue ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS equipment_issue_read   ON equipment_issue;
+DROP POLICY IF EXISTS equipment_issue_insert ON equipment_issue;
+DROP POLICY IF EXISTS equipment_issue_update ON equipment_issue;
+DROP POLICY IF EXISTS equipment_issue_delete ON equipment_issue;
+
+CREATE POLICY equipment_issue_read ON equipment_issue
+  FOR SELECT USING (app_can('player.profile.read', (SELECT e.school_id FROM equipment e WHERE e.id = equipment_issue.equipment_id), (SELECT p.team_code FROM player p WHERE p.id = equipment_issue.player_id), equipment_issue.player_id, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY equipment_issue_insert ON equipment_issue
+  FOR INSERT WITH CHECK (app_can('team.manage', (SELECT e.school_id FROM equipment e WHERE e.id = equipment_issue.equipment_id), (SELECT p.team_code FROM player p WHERE p.id = equipment_issue.player_id), equipment_issue.player_id, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY equipment_issue_update ON equipment_issue
+  FOR UPDATE USING (app_can('team.manage', (SELECT e.school_id FROM equipment e WHERE e.id = equipment_issue.equipment_id), (SELECT p.team_code FROM player p WHERE p.id = equipment_issue.player_id), equipment_issue.player_id, '00000000-0000-0000-0000-000000000000'::uuid))
+           WITH CHECK (app_can('team.manage', (SELECT e.school_id FROM equipment e WHERE e.id = equipment_issue.equipment_id), (SELECT p.team_code FROM player p WHERE p.id = equipment_issue.player_id), equipment_issue.player_id, '00000000-0000-0000-0000-000000000000'::uuid));
+
 -- training_session — read: team.read · write: team.manage
 ALTER TABLE training_session ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS training_session_read   ON training_session;
