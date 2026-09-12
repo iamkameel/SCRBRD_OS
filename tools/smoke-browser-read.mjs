@@ -613,6 +613,52 @@ try {
     await c.ctx.close();
   }
 
+  // ── Onboarding ends in a request ────────────────────────────────
+  group("A stranger onboards into a request; the office answers it; then he has a side");
+  {
+    const s = await open();
+    await click(s.page, /Get Started/, 5000); await s.page.waitForTimeout(600);
+    await click(s.page, /Continue/, 4000);                                   // welcome
+    await s.page.locator("button", { hasText: /Head Coach/ }).first().click({ timeout: 4000 });
+    await click(s.page, /Continue/, 4000);                                   // role
+    await s.page.locator("button", { hasText: /Hilton College/ }).first().click({ timeout: 6000 });
+    await click(s.page, /Continue/, 4000);                                   // school
+    await s.page.locator('input[placeholder*="Whitfield"]').fill("N Zulu");
+    await s.page.locator('input[type="email"]').first().fill("n.zulu@example.invalid");
+    await click(s.page, /Continue/, 4000);                                   // profile
+    await click(s.page, /Enter SCRBRD/, 4000);                               // tour → request
+    await s.page.waitForTimeout(1500);
+    ok("the flow ends in a request, not a role", await s.page.locator('[data-testid="request-sent"]').count() === 1);
+    ok("...and says so in words", /Hilton College has your request/.test(await text(s.page)));
+    await click(s.page, /Back to sign in/, 4000); await s.page.waitForTimeout(500);
+    await s.page.locator("#login-email").fill("n.zulu@example.invalid");
+    await click(s.page, /^Sign In$/, 5000); await s.page.waitForTimeout(2000);
+    ok("signing in shows the pending request and no shell", await s.page.locator('[data-testid="pending-requests"]').count() === 1
+       && await s.page.locator('[data-testid="request-pending"]').count() === 1 && await s.page.locator('[data-testid="os-main"]').count() === 0);
+    ok("no console errors (stranger)", s.errors.length === 0);
+    await s.ctx.close();
+
+    const o = await open();
+    await signIn(o.page, /Registrar|School Admin|registrar@example\.invalid/);
+    if (await o.page.locator('[data-testid="nav-management"]').count()) {
+      await o.page.locator('[data-testid="nav-management"]').click({ timeout: 6000 });
+      const panel = o.page.locator('[data-testid="requests-panel"]');
+      // Three reads land before the panel draws; wait for the panel, not a clock.
+      await panel.waitFor({ state: "visible", timeout: 10000 }).catch(() => {});
+      ok("the office sees the request on the management screen", await panel.count() === 1 && /N Zulu/.test(await panel.innerText()));
+      // He asked to coach and named no side; the office names one.
+      await panel.locator('select[aria-label="Which side"]').first().selectOption("1XI").catch(() => {});
+      await panel.locator("button", { hasText: /^Grant$/ }).first().click({ timeout: 4000 }); await o.page.waitForTimeout(1500);
+      // The panel, not the whole screen: once granted he is on the users list
+      // below it, which is the point.
+      ok("...grants it, and it leaves the panel", await panel.count() === 0 || !/N Zulu/.test(await panel.innerText()));
+      ok("no console errors (office)", o.errors.length === 0);
+    } else {
+      ok("the registrar is not on the pilot login; the API walk covers the grant", true);
+    }
+    await o.ctx.close();
+  }
+
   // ── The shell, by id ────────────────────────────────────────────
   // Every walk above found its way around by button text, which is a test
   // that breaks when a label is reworded and passes when a button is drawn

@@ -14,7 +14,7 @@ import { ROLES } from "./design/roles.js";
 import { D, GLOBAL_CSS } from "./design/tokens.js";
 import { canScore, scoped } from "./rbac/index.js";
 import { api, signedIn } from "./lib/api.js";
-import { useRows } from "./lib/live.js";
+import { useLive, useRows } from "./lib/live.js";
 import { MobileNav, useIsMobile } from "./shell/MobileNav.jsx";
 import { Sidebar } from "./shell/Sidebar.jsx";
 import { TopBar } from "./shell/TopBar.jsx";
@@ -42,6 +42,36 @@ import { StaffView } from "./views/StaffView.jsx";
 import { TrainingView } from "./views/TrainingView.jsx";
 import { parseBalls, parseScore, teamSquad } from "./views/shared.jsx";
 import { loadSession, saveSession } from "./lib/persist.js";
+import { signOut } from "./lib/session.js";
+
+// What a person with no assignments sees: their requests, each with its
+// state, and nothing of the school's. Rows come from the server under the
+// request's own policy (mine, or ones I could answer — and they can answer
+// none).
+function PendingRequests({ name, onSignOut }) {
+  const [nudge, setNudge] = useState(0);
+  const rows = useLive("role_requests", "spectator", nudge).rows;
+  const withdraw = async (id) => { await api(`/api/requests/${id}/withdraw`, { method: "POST" }).catch(() => {}); setNudge((n) => n + 1); };
+  return (
+    <div data-testid="pending-requests" style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px",background:D.bg}}>
+      <div style={{maxWidth:"480px",width:"100%"}}>
+        <div style={{fontFamily:D.head,fontSize:"20px",fontWeight:800,color:D.textPrimary,marginBottom:"4px"}}>Hello {name}</div>
+        <div style={{fontFamily:D.body,fontSize:"13px",color:D.textMuted,marginBottom:"16px"}}>Your account has no role yet. Requests are answered by the school.</div>
+        {rows.length===0&&<div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>No requests on record.</div>}
+        {rows.map((r)=>(
+          <div key={r.id} data-testid={`request-${r.state}`} style={{display:"flex",alignItems:"center",gap:"10px",padding:"10px 12px",border:`1px solid ${D.border}`,borderRadius:D.md,background:D.surf1,marginBottom:"8px"}}>
+            <div style={{flex:1}}>
+              <div style={{fontFamily:D.body,fontSize:"13px",color:D.textPrimary,fontWeight:600}}>{ROLES[r.role]?.label ?? r.role}{r.team?` · ${r.team}`:""}</div>
+              <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>{r.schoolName ?? "School"} · {r.state}{r.decidedNote?` — ${r.decidedNote}`:""}</div>
+            </div>
+            {r.state==="pending"&&<button onClick={()=>withdraw(r.id)} className="pressBtn" style={{background:"none",border:`1px solid ${D.border}`,borderRadius:D.pill,padding:"4px 10px",cursor:"pointer",color:D.textMuted,fontFamily:D.body,fontSize:"11px"}}>Withdraw</button>}
+          </div>
+        ))}
+        <button onClick={onSignOut} className="pressBtn" style={{marginTop:"10px",background:"none",border:"none",cursor:"pointer",color:D.textMuted,fontFamily:D.body,fontSize:"12px"}}>Sign out</button>
+      </div>
+    </div>
+  );
+}
 
 export default function SCRBRD_OS() {
   // ── App-level state ──
@@ -86,7 +116,12 @@ export default function SCRBRD_OS() {
   const handleLandingEnter = () => setAppState("onboarding");
   const handleLandingLogin  = () => setAppState("login");
 
-  const handleLogin = (r, n) => {
+  const handleLogin = (r, n, p) => {
+    // Signed in with nothing: an account whose requests are still with the
+    // school. No role, no shell; the requests, and a way out.
+    if (p && Array.isArray(p.assignments) && p.assignments.length === 0) {
+      setUserName(n || "User"); setAppState("pending"); return;
+    }
     setRole(r); setUserName(n || ROLES[r]?.label || "User");
     const nav = ROLES[r]?.nav || [];
     setPage(nav[0] || "dashboard");
@@ -95,7 +130,8 @@ export default function SCRBRD_OS() {
 
   const handleLoginSignUp = () => setAppState("onboarding");
 
-  const handleOnboardComplete = (r, n, schoolId) => {
+  const handleOnboardComplete = (r, n, schoolId, meta) => {
+    if (meta?.requested) { setAppState("login"); return; }
     setRole(r || "player");
     setUserName(n || ROLES[r]?.label || "User");
     const nav = ROLES[r]?.nav || [];
@@ -203,6 +239,11 @@ export default function SCRBRD_OS() {
   if (appState === "login") return (
     <><style>{GLOBAL_CSS}</style>
       <LoginPage onLogin={handleLogin} onSignUp={handleLoginSignUp}/>
+    </>
+  );
+  if (appState === "pending") return (
+    <><style>{GLOBAL_CSS}</style>
+      <PendingRequests name={userName} onSignOut={()=>{ signOut(); setAppState("landing"); }}/>
     </>
   );
   if (appState === "onboarding") return (

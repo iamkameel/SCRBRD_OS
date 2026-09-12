@@ -477,6 +477,12 @@ function asMilestone(r) {
   return { playerId: r.player_id, name: r.full_name, team: r.team_code, kind: r.kind, label: r.label, value: r.value,
            matchId: r.match_id, innings: r.innings, opponent: r.opponent, on: d10(r.played_on), live: true };
 }
+function asRoleRequest(r) {
+  return { id: r.id, personId: r.person_id, name: r.name, email: r.email, role: r.role, school: r.school_id,
+           schoolName: r.school_name, team: r.team_code, playerId: r.player_id, note: r.note, state: r.state,
+           requestedAt: r.requested_at, decidedAt: r.decided_at, decidedNote: r.decided_note, decidedBy: r.decided_by_name,
+           mine: r.mine === true, decidable: r.decidable === true, live: true };
+}
 function asRequirement(r) { return { role: r.role, kind: r.kind, kindLabel: r.kind_label, live: true }; }
 
 /** A side as it stood on a date — nothing here is computed in the browser. */
@@ -657,6 +663,7 @@ const ADAPT = {
   clearances: asClearance,
   my_clearances: asClearance,
   clearance_requirements: asRequirement,
+  role_requests: asRoleRequest,
   recognition: asRecognition,
   caps: asCap,
   honours: asHonour,

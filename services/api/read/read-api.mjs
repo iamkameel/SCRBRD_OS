@@ -1034,6 +1034,29 @@ export const READ_QUERIES = {
     params: q => [q?.teamCode || null, q?.playerId || null],
   },
 
+  /*
+   * ROLE REQUESTS: mine, and the ones I could answer. `decidable` is the
+   * server's word — the same two checks decide_role_request() makes — so a
+   * screen draws a Grant button only where a grant would succeed.
+   */
+  role_requests: {
+    text: `select r.id, r.person_id, u.name, u.email, r.role, r.school_id, s.name as school_name, r.team_code,
+                  r.player_id, r.note, r.state, r.requested_at, r.decided_at, r.decided_note, d.name as decided_by_name,
+                  r.person_id = app_user_id() as mine,
+                  (r.state = 'pending'
+                   and app_can('user.role.assign', r.school_id, '*', '00000000-0000-0000-0000-000000000000'::uuid,
+                               '00000000-0000-0000-0000-000000000000'::uuid)
+                   and app_may_grant(r.role)) as decidable
+             from role_request r
+             join app_user u on u.id = r.person_id
+             -- The school's name from the public list: a stranger with no
+             -- assignments may not read the school row and must still see
+             -- which school his request is with.
+             left join lateral (select ps.name from public_schools() ps where ps.id = r.school_id) s on true
+             left join app_user d on d.id = r.decided_by
+            order by case r.state when 'pending' then 0 else 1 end, r.requested_at desc`,
+  },
+
   /* Which roles must hold which checks. Platform reference data. */
   clearance_requirements: {
     text: `select role, kind, clearance_kind_label(kind) as kind_label

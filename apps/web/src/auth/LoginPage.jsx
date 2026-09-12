@@ -51,6 +51,10 @@ const PILOT_ACCOUNTS = [
   // the one decision the commercial roles deliberately cannot take for
   // themselves — so it is the only one that can show the waiver working.
   { email: "principal@example.invalid", label: "Principal",    role: "principal" },
+  // The office. Answers requests and keeps the clearance register; without
+  // an account on this list the whole onboarding path could only be walked
+  // through the API.
+  { email: "registrar@example.invalid", label: "Registrar",    role: "schooladmin" },
 ];
 
 function LoginPage({ onLogin, onSignUp }) {

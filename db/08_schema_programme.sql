@@ -5488,3 +5488,166 @@ BEGIN
 END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
 REVOKE ALL ON FUNCTION recognition(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION recognition(uuid) TO PUBLIC;
+
+-- ═══════════════════════════════════════════════════════════════════
+--  ROLE REQUESTS — nobody assigns themselves anything
+-- ═══════════════════════════════════════════════════════════════════
+--
+-- The earlier build let any signed-in person make themselves System
+-- Architect, and it locked its own author out. The rule here is the
+-- opposite and has no exception: a person ASKS for a role, and somebody
+-- who may grant that role at that school ANSWERS. Onboarding ends in a
+-- pending request, not a role. Until it is answered the person has an
+-- account with nothing in it, which is exactly what a stranger should
+-- have.
+--
+-- A request carries no authority. Reading one is for the person who made
+-- it and for the people who could answer it. Granting goes through
+-- decide_role_request(), which checks the decider's authority itself and
+-- writes the assignment — and, for a pupil, the self-access pair, because
+-- a pupil holds both and the client draws his menu from both.
+
+CREATE TABLE role_request (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  person_id    uuid NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+  role         text NOT NULL,
+  school_id    uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  team_code    text,
+  -- The child, for a guardian; the boy himself, for a pupil, once the office
+  -- has matched him to a roster row (it may be left for the decider to set).
+  player_id    uuid REFERENCES player(id) ON DELETE SET NULL,
+  note         text CHECK (note IS NULL OR length(note) <= 300),
+  state        text NOT NULL DEFAULT 'pending' CHECK (state IN ('pending', 'granted', 'declined', 'withdrawn')),
+  requested_at timestamptz NOT NULL DEFAULT now(),
+  decided_by   uuid REFERENCES app_user(id),
+  decided_at   timestamptz,
+  decided_note text CHECK (decided_note IS NULL OR length(decided_note) <= 300),
+  assignment_id uuid REFERENCES role_assignment(id) ON DELETE SET NULL,
+  CONSTRAINT decided_requests_name_a_decider CHECK (state IN ('pending', 'withdrawn') OR decided_by IS NOT NULL)
+);
+-- Asking twice is nagging, not a second request.
+CREATE UNIQUE INDEX role_request_one_open ON role_request (person_id, role, school_id, coalesce(team_code, '*')) WHERE state = 'pending';
+CREATE INDEX ON role_request (school_id) WHERE state = 'pending';
+ALTER TABLE role_request ENABLE ROW LEVEL SECURITY;
+
+-- Only a role somebody could grant may be asked for. A request for a role
+-- no granter exists for would sit pending forever and tell the requester
+-- nothing.
+CREATE OR REPLACE FUNCTION role_request_is_grantable() RETURNS trigger AS $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM role_grantable g WHERE g.role = NEW.role) THEN
+    RAISE EXCEPTION 'nobody may grant the role %', NEW.role USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+CREATE TRIGGER role_request_grantable BEFORE INSERT ON role_request
+  FOR EACH ROW EXECUTE FUNCTION role_request_is_grantable();
+
+-- Mine, or one I could answer: user.role.assign at that school AND the
+-- granter table says my role may hand out that one.
+CREATE POLICY role_request_read ON role_request
+  FOR SELECT USING (
+    person_id = app_user_id()
+    OR (app_can('user.role.assign', role_request.school_id, '*', '00000000-0000-0000-0000-000000000000'::uuid,
+                '00000000-0000-0000-0000-000000000000'::uuid)
+        AND app_may_grant(role_request.role)));
+CREATE POLICY role_request_insert ON role_request
+  FOR INSERT WITH CHECK (person_id = app_user_id() AND state = 'pending');
+-- The only update the requester makes is taking it back.
+CREATE POLICY role_request_update ON role_request
+  FOR UPDATE USING (person_id = app_user_id() AND state = 'pending')
+           WITH CHECK (person_id = app_user_id() AND state = 'withdrawn');
+
+-- ONBOARDING. Unauthenticated by definition: a stranger with an email
+-- address and a name gets an account with no assignments and a pending
+-- request, and nothing else. Definer rights because app_user's insert
+-- policy needs user.role.assign, which a stranger rightly lacks. An email
+-- already on the books gets the request and no second account; a request
+-- already open is left as it is. Nothing here says whether the email was
+-- known — the answer is the same either way.
+CREATE OR REPLACE FUNCTION onboard_request(p_email text, p_name text, p_role text, p_school uuid, p_team text, p_note text)
+RETURNS uuid AS $$
+DECLARE v_user uuid; v_req uuid;
+BEGIN
+  IF p_email !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' THEN RAISE EXCEPTION 'email_invalid' USING ERRCODE = 'check_violation'; END IF;
+  IF length(btrim(p_name)) < 2 THEN RAISE EXCEPTION 'name_required' USING ERRCODE = 'check_violation'; END IF;
+  SELECT id INTO v_user FROM app_user WHERE lower(email) = lower(p_email);
+  IF v_user IS NULL THEN
+    INSERT INTO app_user (school_id, email, name, role) VALUES (p_school, lower(p_email), btrim(p_name), p_role)
+    RETURNING id INTO v_user;
+  END IF;
+  INSERT INTO role_request (person_id, role, school_id, team_code, note)
+  VALUES (v_user, p_role, p_school, nullif(btrim(coalesce(p_team, '')), ''), p_note)
+  ON CONFLICT DO NOTHING
+  RETURNING id INTO v_req;
+  RETURN coalesce(v_req, (SELECT id FROM role_request WHERE person_id = v_user AND role = p_role AND school_id = p_school AND state = 'pending' LIMIT 1));
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+REVOKE ALL ON FUNCTION onboard_request(text, text, text, uuid, text, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION onboard_request(text, text, text, uuid, text, text) TO PUBLIC;
+
+-- ANSWERING. The decider must hold user.role.assign at the request's school
+-- and be a granter of that role; the function checks both itself, because
+-- writing the assignment needs definer rights and the caller's own policy
+-- would otherwise be the only gate. A grant writes the assignment (the
+-- granter trigger stamps created_by from the session); a guardian's or a
+-- pupil's names its subject, verified by the decider, consent still the
+-- family's to give; a pupil also gets his self-access pair and his roster
+-- link. A decline records why.
+CREATE OR REPLACE FUNCTION decide_role_request(p_request uuid, p_grant boolean, p_note text, p_player uuid DEFAULT NULL, p_team text DEFAULT NULL)
+RETURNS TABLE (ok boolean, reason text, assignment_id uuid) AS $$
+DECLARE r role_request%ROWTYPE; v_asg uuid; v_self uuid; v_player uuid; v_team text;
+BEGIN
+  SELECT * INTO r FROM role_request WHERE id = p_request;
+  IF NOT FOUND THEN RETURN QUERY SELECT false, 'no_such_request', NULL::uuid; RETURN; END IF;
+  IF r.state <> 'pending' THEN RETURN QUERY SELECT false, 'already_decided', NULL::uuid; RETURN; END IF;
+  IF NOT (app_can('user.role.assign', r.school_id, '*', '00000000-0000-0000-0000-000000000000'::uuid,
+                  '00000000-0000-0000-0000-000000000000'::uuid) AND app_may_grant(r.role)) THEN
+    RETURN QUERY SELECT false, 'not_permitted', NULL::uuid; RETURN;
+  END IF;
+  IF NOT p_grant THEN
+    UPDATE role_request SET state = 'declined', decided_by = app_user_id(), decided_at = now(), decided_note = p_note WHERE id = p_request;
+    RETURN QUERY SELECT true, NULL::text, NULL::uuid; RETURN;
+  END IF;
+  v_player := coalesce(p_player, r.player_id);
+  -- A coach is a coach OF A SIDE (assignment_team_scoped): the request names
+  -- one, or the decider does, or it is not granted. Said by name rather than
+  -- left to the constraint, so the office knows what to supply.
+  v_team := coalesce(nullif(btrim(coalesce(p_team, '')), ''), r.team_code);
+  IF r.role IN ('coach', 'assistantcoach', 'teammanager') AND v_team IS NULL THEN
+    RETURN QUERY SELECT false, 'team_required', NULL::uuid; RETURN;
+  END IF;
+  IF v_player IS NOT NULL AND NOT EXISTS (SELECT 1 FROM player p WHERE p.id = v_player AND p.school_id = r.school_id) THEN
+    RETURN QUERY SELECT false, 'player_not_at_that_school', NULL::uuid; RETURN;
+  END IF;
+  IF r.role IN ('guardian', 'selfaccess', 'enquiry') AND v_player IS NULL THEN
+    RETURN QUERY SELECT false, 'player_required', NULL::uuid; RETURN;
+  END IF;
+  INSERT INTO role_assignment (person_id, role, school_id, team_code)
+  VALUES (r.person_id, r.role, r.school_id, v_team) RETURNING id INTO v_asg;
+  IF r.role IN ('guardian', 'enquiry') THEN
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at, consent_state, created_by)
+    VALUES (v_asg, v_player, CASE r.role WHEN 'guardian' THEN 'parent' ELSE 'enquiry' END, 'verified', app_user_id(), now(), 'pending', app_user_id());
+  ELSIF r.role = 'selfaccess' THEN
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at, consent_state, consent_version, consent_at, created_by)
+    VALUES (v_asg, v_player, 'self', 'verified', app_user_id(), now(), 'granted', 'popia-2026-01', now(), app_user_id());
+  ELSIF r.role = 'player' AND v_player IS NOT NULL THEN
+    -- A pupil holds both: the team role and his own record.
+    UPDATE app_user SET player_id = v_player WHERE id = r.person_id;
+    INSERT INTO role_assignment (person_id, role, school_id) VALUES (r.person_id, 'selfaccess', r.school_id) RETURNING id INTO v_self;
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at, consent_state, consent_version, consent_at, created_by)
+    VALUES (v_self, v_player, 'self', 'verified', app_user_id(), now(), 'granted', 'popia-2026-01', now(), app_user_id());
+  END IF;
+  UPDATE role_request SET state = 'granted', decided_by = app_user_id(), decided_at = now(), decided_note = p_note,
+                          assignment_id = v_asg, player_id = v_player, team_code = v_team WHERE id = p_request;
+  RETURN QUERY SELECT true, NULL::text, v_asg;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+REVOKE ALL ON FUNCTION decide_role_request(uuid, boolean, text, uuid, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION decide_role_request(uuid, boolean, text, uuid, text) TO PUBLIC;
+
+-- The schools, by name, for a stranger choosing one on the onboarding
+-- screen. A school's name is a public fact; nothing else about it is here.
+CREATE OR REPLACE FUNCTION public_schools() RETURNS TABLE (id uuid, name text) AS $$
+  SELECT s.id, s.name FROM school s ORDER BY s.name
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+REVOKE ALL ON FUNCTION public_schools() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public_schools() TO PUBLIC;

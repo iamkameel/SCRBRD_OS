@@ -48,6 +48,7 @@ import { contactRoutes } from "./write/contacts-api.mjs";
 import { clearanceRoutes } from "./write/clearance-api.mjs";
 import { recognitionRoutes } from "./write/recognition-api.mjs";
 import { competitionRoutes } from "./write/competitions-api.mjs";
+import { requestRoutes } from "./write/requests-api.mjs";
 import { MatchHub } from "./realtime/realtime.mjs";
 
 const PORT = Number(process.env.PORT || 8787);
@@ -222,6 +223,7 @@ const contacts = contactRoutes({ pool, secret: SECRET });
 const clearances = clearanceRoutes({ pool, secret: SECRET });
 const recognition = recognitionRoutes({ pool, secret: SECRET });
 const competitions = competitionRoutes({ pool, secret: SECRET });
+const requests = requestRoutes({ pool, secret: SECRET });
 
 /**
  * Development sign-in.
@@ -362,6 +364,13 @@ const PLAYER_ROUTES = [
   // The rewards figure. A GET on the id-bearing table, keyed on nothing: the
   // rows are whoever the principal may read, narrowed by ?teamCode.
   [/^\/api\/rewards$/,                              "GET",  rewards.figures],
+  // Asking for a role, and answering. /api/onboard and /api/schools carry no
+  // principal: a stranger gets an account with nothing in it and a request.
+  [/^\/api\/schools$/,                              "GET",  requests.schools],
+  [/^\/api\/onboard$/,                              "POST", requests.onboard],
+  [/^\/api\/requests$/,                             "POST", requests.request],
+  [/^\/api\/requests\/([^/]+)\/withdraw$/,           "POST", requests.withdraw],
+  [/^\/api\/requests\/([^/]+)\/decide$/,             "POST", requests.decide],
   // A competition's tiers, and who sits in which. competition.manage at the
   // organiser, which for a shared league is a platform-wide administrator.
   [/^\/api\/competitions\/([^/]+)\/divisions$/,      "POST", competitions.division],
