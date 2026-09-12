@@ -198,6 +198,12 @@ This is the setting working, not an error.
 **My data vanished** — `pnpm db:reset` and `pnpm smoke:api` both drop the
 schema. Local data is fixture data; keep anything real elsewhere.
 
+## Deploying
+
+Not from here. `DEPLOYING.md` covers the one Firebase project (scrbrd-os),
+Cloud Run for the API, Cloud SQL for Postgres, and the first person on an
+empty database (`tools/bootstrap.mjs`).
+
 ## What a local run does not include
 
 - **Push to a real phone.** The whole delivery path runs, but without FCM
