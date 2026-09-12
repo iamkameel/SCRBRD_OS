@@ -103,7 +103,7 @@ group("Role identity");
 // model had never heard of, while fourteen roles that DO carry permissions had
 // no identity at all. Signing in as a director of sport gave ROLES[undefined]
 // and an empty shell.
-const { ROLE_IDENTITY, ROLES, NAV_CAPABILITY, NAV_GROUPS, NAV_GROUP, NAV_ORDER, groupNav } = await import(join(SRC, "design/roles.js"));
+const { ROLE_IDENTITY, ROLES, NAV_CAPABILITY, NAV_GROUPS, NAV_GROUP, NAV_ORDER, groupNav, navForRoles } = await import(join(SRC, "design/roles.js"));
 const { ROLES: POLICY_ROLES, roleGrants } = await import("@scrbrd/policy/roles");
 
 ok("every policy role has a visual identity",
@@ -169,9 +169,21 @@ group("Navigation is derived, not hand-listed");
 // entry, or keeps the entry long after the capability goes. Both had happened.
 ok("every destination names the capability that governs it",
    Object.entries(NAV_CAPABILITY).every(([, cap]) => cap === null || typeof cap === "string"));
+// A persona is its role plus the roles it always comes with (`also`): the
+// pupil is player AND selfaccess. The menu may reach what any of them holds.
+const heldBy = (r) => [r, ...(ROLE_IDENTITY[r]?.also ?? [])];
 ok("a role only sees what its capabilities reach",
    POLICY_ROLES.every((r) => ROLES[r].nav.every((d) =>
-     NAV_CAPABILITY[d] === null || roleGrants(r, NAV_CAPABILITY[d]))));
+     NAV_CAPABILITY[d] === null || heldBy(r).some((h) => roleGrants(h, NAV_CAPABILITY[d])))));
+ok("...and `also` names only real policy roles",
+   Object.values(ROLE_IDENTITY).every((id) => (id.also ?? []).every((r) => POLICY_ROLES.includes(r))));
+// The team role does not read a team-mate's ratings; the boy's own screens
+// come through self-access, and the persona still shows them.
+ok("the player role holds no development read across the side", !roleGrants("player", "player.development.read"));
+ok("...so on its own it is not offered the skills screen", !navForRoles(["player"]).includes("skills"));
+ok("...and with self-access it is", navForRoles(["player", "selfaccess"]).includes("skills") && ROLES.player.nav.includes("skills"));
+ok("a coach who is also a parent gets both menus",
+   navForRoles(["coach", "guardian"]).includes("skills") && navForRoles(["guardian"]).length < navForRoles(["coach", "guardian"]).length);
 // The concrete case: a scorer holds no medical capability and must not be
 // offered the injuries screen, whatever a hand-written list once said.
 ok("a scorer is not offered injuries", !ROLES.scorer.nav.includes("injuries"));

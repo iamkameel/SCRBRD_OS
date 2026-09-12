@@ -54,7 +54,11 @@ const ROLE_IDENTITY = {
   assistantcoach:         { label:"Assistant Coach", icon:"🤝", color:"#11ca8d", family:"coaching" },  // 7.04:1
   teammanager:            { label:"Team Manager", icon:"📣", color:"#14eba4", family:"coaching" },  // 9.6:1
   // playing — playing, or belonging to someone who does
-  player:                 { label:"Player", icon:"🏏", color:"#08a3e8", family:"playing" },  // 5.29:1
+  // A pupil holds `player` for the things about the team and `selfaccess`
+  // for his own record; the two together are the pupil. `also` says so, so
+  // the persona's menu (and the demo's) carries his own screens without the
+  // team role having to hold a capability across the side.
+  player:                 { label:"Player", icon:"🏏", color:"#08a3e8", family:"playing", also:["selfaccess"] },  // 5.29:1
   guardian:               { label:"Parent / Guardian", icon:"👪", color:"#3fbff8", family:"playing" },  // 7.15:1
   spectator:              { label:"Spectator", icon:"👁", color:"#8ed9fb", family:"playing" },  // 9.62:1
   // Not a job — it is the pupil's own file. A `selfaccess` assignment names one
@@ -180,11 +184,15 @@ const groupNav = (keys) =>
   NAV_GROUPS.map((g) => ({ key: g.key, label: g.label, items: g.items.filter((k) => keys.includes(k)) }))
             .filter((g) => g.items.length > 0);
 
-const navFor = (role) =>
+/** The destinations a SET of roles reaches: what any of them holds. */
+const navForRoles = (roles) =>
   NAV_ORDER.filter((k) => {
     const cap = NAV_CAPABILITY[k];
-    return cap === null || roleGrants(role, cap);
+    return cap === null || roles.some((r) => roleGrants(r, cap));
   });
+
+/** A persona's destinations: its role, plus the roles it always comes with. */
+const navFor = (role) => navForRoles([role, ...(ROLE_IDENTITY[role]?.also ?? [])]);
 
 /* ── Legacy names ───────────────────────────────────────────────────
    The demonstration accounts and the seeded fixtures still speak the old
@@ -245,4 +253,4 @@ const NAV_META = {
   pitchdeck:    { icon:"📐",  label:"Pitch Deck"   },
 };
 
-export { NAV_META, NAV_GROUPS, NAV_GROUP, NAV_ORDER, ROLES, ROLE_IDENTITY, ROLE_FAMILIES, NAV_CAPABILITY, canonicalRole, groupNav, navFor };
+export { NAV_META, NAV_GROUPS, NAV_GROUP, NAV_ORDER, ROLES, ROLE_IDENTITY, ROLE_FAMILIES, NAV_CAPABILITY, canonicalRole, groupNav, navFor, navForRoles };

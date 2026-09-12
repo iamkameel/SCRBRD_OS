@@ -130,6 +130,16 @@ try {
      (await assess(P_OWN, medic, { scores: { technical: { footwork: 10 } } })).status === 403);
   ok("a parent cannot rate their own child",
      (await assess(P_OWN, parent, { scores: { technical: { footwork: 19 } } })).status === 403);
+  // The boundary this whole role split exists for: a boy reads his own
+  // attribute scores through self-access and nobody else's, and a boy who
+  // holds only the team role (the account seeded as spectator@ does) reads none.
+  ok("the coach rates the pupil too, so there is something of his own to read",
+     (await assess("aaaaaaaa-0000-0000-0000-000000000005", coach, { scores: { technical: { footwork: 12 } } })).status === 200);
+  const mineOnly = (await api("/api/read/skills", { token: pupil })).body?.rows ?? [];
+  ok("a pupil reads his own ratings", mineOnly.length > 0);
+  ok("...and not a team-mate's", mineOnly.every((r) => r.player_id === "aaaaaaaa-0000-0000-0000-000000000005"));   // R Pillay, himself
+  const teamOnly = await login("spectator@example.invalid");   // holds `player` and nothing about himself
+  ok("the team role alone reads no ratings at all", ((await api("/api/read/skills", { token: teamOnly })).body?.rows ?? []).length === 0);
   ok("a pupil cannot rate themselves",
      (await assess(P_OWN, pupil, { scores: { technical: { footwork: 19 } } })).status === 403);
   ok("an unauthenticated request is refused",

@@ -131,10 +131,16 @@ try {
 
   group("The audience is narrower than the ratings beside it");
   await write(P_SELF, coach, { body: "Struggling with the short ball; nervous against pace." });
+  // Rated as well as written about, so there is a number of his OWN to read.
+  // This used to pass on a team-mate's ratings, back when the player role
+  // read development records across the side; it does not, and the seed has
+  // no ratings for him.
+  await api(`/api/players/${P_SELF}/assessment`, { method: "POST", token: coach,
+    body: { scores: { technical: { footwork: 11 } } } });
   const pupilSkills = await read("skills", pupil);
   const pupilNotes  = await read("notes", pupil);
   // The asymmetry, from both sides. A pupil MAY read his own numbers.
-  ok("a pupil reads his own attribute scores", pupilSkills.length > 0);
+  ok("a pupil reads his own attribute scores", pupilSkills.length > 0 && pupilSkills.every((r) => r.player_id === P_SELF));
   ok("...and none of the prose written about him", pupilNotes.length === 0);
   ok("a guardian reads no notes about their child", (await read("notes", parent)).length === 0);
   ok("the coach of that side does", (await read("notes", coach)).some((n) => n.player_id === P_SELF));

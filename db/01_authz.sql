@@ -391,7 +391,6 @@ INSERT INTO role_capability (role, capability) VALUES
   ('player', 'competition.read'),
   ('player', 'player.profile.read'),
   ('player', 'player.performance.read'),
-  ('player', 'player.development.read'),
   ('player', 'medical.status.read'),
   ('player', 'transport.read'),
   ('enquiry', 'player.profile.read'),

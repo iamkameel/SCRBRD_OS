@@ -232,10 +232,15 @@ const BUNDLES = {
   // "myself only" — only guardian assignments carry a person list. A pupil
   // learns their diagnosis from the physio rather than from the app, which is
   // the safe side of that limitation to be on.
+  // THE THINGS ABOUT THE TEAM. Not player.development.read: this role is
+  // held across a side, and a boy does not read a team-mate's attribute
+  // scores for playing in the same XI. His own come through selfaccess,
+  // which names him and nobody else — every pupil holds both, and the
+  // client draws his menu from both.
   player: [
     "availability.declare",
     "fixture.read", "team.read", "news.read", "facility.read", "competition.read",
-    "player.profile.read", "player.performance.read", "player.development.read",
+    "player.profile.read", "player.performance.read",
     "medical.status.read", "transport.read",
   ],
   // WHAT A GRANTED REQUEST BUYS.
