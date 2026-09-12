@@ -31,7 +31,7 @@ const PACE = "aaaaaaaa-0000-0000-0000-0000000000a1";   // U13 pace, seeded below
 const SPIN = "aaaaaaaa-0000-0000-0000-0000000000a2";   // U13 leg spin
 const BAT  = "aaaaaaaa-0000-0000-0000-0000000000a3";   // a batter to face them
 const OPEN  = "aaaaaaaa-0000-0000-0000-000000000003";  // S Naidoo, 1XI, born 2008: Open
-const U16   = "aaaaaaaa-0000-0000-0000-0000000000a4";  // a fifteen-year-old, seeded below: U16
+const U15   = "aaaaaaaa-0000-0000-0000-0000000000a4";  // fifteen on the cut-off, seeded below: U15
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
@@ -94,7 +94,7 @@ try {
             ($1, $4, 'U14A', 'L Zondi', 21, 'bowler', '2014-01-15', 'right-arm fast'),
             ($2, $4, 'U14A', 'A Govender', 22, 'bowler', '2014-03-02', 'leg spin'),
             ($3, $4, 'U14A', 'N Mthembu', 23, 'batter', '2013-11-30', null),
-            ($5, $4, 'U16B', 'J Steyn', 24, 'bowler', '2010-10-01', 'right-arm fast')`, [PACE, SPIN, BAT, HIL, U16]);
+            ($5, $4, 'U16B', 'J Steyn', 24, 'bowler', '2010-10-01', 'right-arm fast')`, [PACE, SPIN, BAT, HIL, U15]);
 
   const u14   = await login("u14coach@example.invalid");   // coach, U14A
   const coach = await login("coach@example.invalid");      // coach, 1XI
@@ -109,13 +109,15 @@ try {
     // A boy of sixteen or over on the cut-off plays Open at a high school —
     // there is no U17 or U18 — and Open carries no directive.
     ok("...one born in late 2008 is Open, seventeen on the cut-off", (await q(`select age_band('2008-11-21') b`))[0].b === "open");
-    ok("...one born in October 2010 is U16", (await q(`select age_band('2010-10-01') b`))[0].b === "U16");
+    ok("...one born in October 2010, fifteen on the cut-off, is U15", (await q(`select age_band('2010-10-01') b`))[0].b === "U15");
+    ok("...and thirteen on the cut-off is still U13, as the eligibility rule has it", (await q(`select age_band('2013-01-01') b`))[0].b === "U13");
     ok("...and the bands run U13, U14, U15, U16, then Open",
        (await rows("/api/read/bowling_directives", watcher)).map((d) => d.age_band).join() === "U13,U14,U15,U16,open,unknown");
-    // Born 15 August 2013: twelve on 1 September 2025, thirteen on 1 September
-    // 2026. U13 all of last season, U14 from the day this one turned over.
-    ok("the band is fixed for the season and turns over on 1 September",
-       (await q(`select age_band('2013-08-15', '2026-08-31') a, age_band('2013-08-15', '2026-09-01') b`)).map((r) => `${r.a}/${r.b}`)[0] === "U13/U14");
+    // Born 15 August 2013: thirteen on 1 January 2027, fourteen on 1 January
+    // 2028. U13 through 2027, U14 from the day 2028 begins — the same date
+    // the eligibility trigger measures on.
+    ok("the band is fixed for the school year and turns over on 1 January",
+       (await q(`select age_band('2013-08-15', '2027-12-31') a, age_band('2013-08-15', '2028-01-01') b`)).map((r) => `${r.a}/${r.b}`)[0] === "U13/U14");
     ok("a boy with no date of birth is unknown, not open", (await q(`select age_band(null) b`))[0].b === "unknown");
     const dir = await rows("/api/read/bowling_directives", watcher);
     ok("anyone signed in reads the directive", dir.find((d) => d.age_band === "U13")?.max_overs_per_spell === 5
@@ -192,14 +194,14 @@ try {
     ok("the spinner bowled twelve overs in a day and breached nothing", (await q(`select count(*)::int c from bowling_breach where bowler_id = $1`, [SPIN]))[0].c === 0);
   }
 
-  group("An Open player is not under the directive; a U16 still is");
+  group("An Open player is not under the directive; a U15 still is");
   {
     const m = await fixture("1XI", 1);
-    await feed(m, 0, Array.from({ length: 16 }, (_, i) => six(i % 2 ? U16 : OPEN)));
+    await feed(m, 0, Array.from({ length: 16 }, (_, i) => six(i % 2 ? U15 : OPEN)));
     ok("eight overs on the trot from a seventeen-year-old is just bowling", (await q(`select count(*)::int c from bowling_breach where bowler_id = $1`, [OPEN]))[0].c === 0);
     ok("...and his spell reads Open, no limit", (await spells(m, coach)).find((r) => r.bowler_id === OPEN)?.age_band === "open" && (await spells(m, coach)).find((r) => r.bowler_id === OPEN)?.max_overs_per_spell === null);
-    ok("the same eight from a U16 is one over too many", (await q(`select overs, allowed from bowling_breach where bowler_id = $1 and kind = 'spell'`, [U16]))
-       .some((b) => b.overs === 8 && b.allowed === 7));
+    ok("the same eight from a U15 is two overs too many", (await q(`select overs, allowed from bowling_breach where bowler_id = $1 and kind = 'spell'`, [U15]))
+       .some((b) => b.overs === 7 && b.allowed === 6));
   }
 
   group("The workload read says one word per boy, to those who may read him");

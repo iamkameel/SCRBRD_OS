@@ -47,6 +47,56 @@ CREATE TABLE competition_entrant (
 CREATE INDEX ON competition_entrant (competition_id);
 CREATE INDEX ON competition_entrant (school_id, team_code);
 
+-- ── Divisions ──────────────────────────────────────────────────
+-- A tier within a competition: Division 1 and 2 of a league, Pool A and B
+-- of a festival. An entrant sits in at most one, and the ladder is read
+-- per division. Placing an entrant is the COMPETITION'S act, not the
+-- school's — a school does not promote itself — so it goes through
+-- place_entrant() below under competition.manage at the organiser, while a
+-- school still edits its own entrant's record (played, won, points) under
+-- its own scope as before.
+CREATE TABLE competition_division (
+  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  competition_id uuid NOT NULL REFERENCES competition(id) ON DELETE CASCADE,
+  code           text NOT NULL CHECK (code ~ '^[A-Za-z0-9 ]{1,12}$'),
+  name           text NOT NULL CHECK (length(name) BETWEEN 2 AND 60),
+  rank           smallint NOT NULL DEFAULT 1 CHECK (rank BETWEEN 1 AND 20),
+  UNIQUE (competition_id, code),
+  UNIQUE (competition_id, rank)
+);
+ALTER TABLE competition_entrant ADD COLUMN division_id uuid REFERENCES competition_division(id) ON DELETE SET NULL;
+
+-- An entrant's division belongs to the entrant's competition. The foreign
+-- key alone would let Division 1 of one league be named on an entrant in
+-- another.
+CREATE OR REPLACE FUNCTION competition_entrant_division_fits() RETURNS trigger AS $$
+BEGIN
+  IF NEW.division_id IS NOT NULL AND NOT EXISTS (
+       SELECT 1 FROM competition_division d WHERE d.id = NEW.division_id AND d.competition_id = NEW.competition_id) THEN
+    RAISE EXCEPTION 'that division belongs to another competition' USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+CREATE TRIGGER competition_entrant_division_check BEFORE INSERT OR UPDATE OF division_id ON competition_entrant
+  FOR EACH ROW EXECUTE FUNCTION competition_entrant_division_fits();
+
+CREATE OR REPLACE FUNCTION place_entrant(p_entrant uuid, p_division uuid)
+RETURNS TABLE (ok boolean, reason text) AS $$
+DECLARE e competition_entrant%ROWTYPE; v_org uuid;
+BEGIN
+  SELECT * INTO e FROM competition_entrant WHERE id = p_entrant;
+  IF NOT FOUND THEN RETURN QUERY SELECT false, 'no_such_entrant'; RETURN; END IF;
+  SELECT c.school_id INTO v_org FROM competition c WHERE c.id = e.competition_id;
+  IF NOT app_can('competition.manage', v_org, '*', '00000000-0000-0000-0000-000000000000'::uuid,
+                 '00000000-0000-0000-0000-000000000000'::uuid) THEN
+    RETURN QUERY SELECT false, 'not_permitted'; RETURN;
+  END IF;
+  UPDATE competition_entrant SET division_id = p_division WHERE id = p_entrant;
+  RETURN QUERY SELECT true, NULL::text;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+REVOKE ALL ON FUNCTION place_entrant(uuid, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION place_entrant(uuid, uuid) TO PUBLIC;
+
 -- Is this competition in reach at all?
 --
 -- A league table is a SHARED record. Anchoring an entrant row to its own
@@ -4732,27 +4782,95 @@ CREATE TRIGGER trip_driver_check BEFORE INSERT OR UPDATE ON trip
 CREATE OR REPLACE FUNCTION sa_today() RETURNS date AS $$
   SELECT (now() AT TIME ZONE 'Africa/Johannesburg')::date $$ LANGUAGE sql STABLE;
 
+-- ── Seasons ──────────────────────────────────────────────────────
+-- A season is a fact of the calendar, not a school's setting. School
+-- cricket runs on the school year, which is the calendar year, and is
+-- named for one year: "2026". Club, provincial and national cricket run
+-- through the southern summer, July to June, and are named for two:
+-- "2025/26". Either way the age cut-off is 1 January of the year the
+-- season is named for (the second year, for a straddling one). This is the
+-- convention teams.mjs carries and the eligibility trigger enforces; the
+-- table is where fixtures, competitions and honours anchor, and the rule
+-- below is how a date finds its row.
+CREATE TABLE season (
+  id        uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  level     text NOT NULL CHECK (level IN ('school', 'club', 'provincial', 'national')),
+  label     text NOT NULL CHECK (label ~ '^\d{4}(/\d{2})?$'),
+  starts_on date NOT NULL,
+  ends_on   date NOT NULL,
+  cutoff_on date NOT NULL,
+  UNIQUE (level, label),
+  CONSTRAINT season_is_a_span CHECK (ends_on > starts_on),
+  CONSTRAINT season_cutoff_is_first_of_january CHECK (extract(month FROM cutoff_on) = 1 AND extract(day FROM cutoff_on) = 1)
+);
+ALTER TABLE season ENABLE ROW LEVEL SECURITY;
+CREATE POLICY season_read ON season FOR SELECT USING (app_user_id() IS NOT NULL);
+-- Written by the platform, like the sports: the calendar is nobody's tenant.
+CREATE POLICY season_insert ON season FOR INSERT WITH CHECK (app_holds('platform.feature.manage'));
+CREATE POLICY season_update ON season FOR UPDATE USING (app_holds('platform.feature.manage'))
+  WITH CHECK (app_holds('platform.feature.manage'));
+
+-- The seasons themselves, 2024 to 2030, so a date in any of them finds a
+-- row. A date outside them still gets a label from season_for(); it just
+-- has no row to anchor to, which is what the NULL id says.
+INSERT INTO season (level, label, starts_on, ends_on, cutoff_on)
+SELECT 'school', y::text, make_date(y, 1, 1), make_date(y, 12, 31), make_date(y, 1, 1)
+  FROM generate_series(2024, 2030) y;
+INSERT INTO season (level, label, starts_on, ends_on, cutoff_on)
+SELECT l, (y - 1)::text || '/' || lpad((y % 100)::text, 2, '0'), make_date(y - 1, 7, 1), make_date(y, 6, 30), make_date(y, 1, 1)
+  FROM generate_series(2025, 2031) y, unnest(ARRAY['club', 'provincial', 'national']) l;
+
+-- Which season a date is in, at a level: the rule, with the row when there is one.
+CREATE OR REPLACE FUNCTION season_for(p_on date DEFAULT sa_today(), p_level text DEFAULT 'school')
+RETURNS TABLE (id uuid, level text, label text, starts_on date, ends_on date, cutoff_on date) AS $$
+  WITH rule AS (
+    SELECT CASE WHEN p_level = 'school' THEN extract(year FROM p_on)::int
+                WHEN extract(month FROM p_on) >= 7 THEN extract(year FROM p_on)::int + 1
+                ELSE extract(year FROM p_on)::int END AS end_year)
+  SELECT s.id, p_level,
+         CASE WHEN p_level = 'school' THEN r.end_year::text
+              ELSE (r.end_year - 1)::text || '/' || lpad((r.end_year % 100)::text, 2, '0') END,
+         coalesce(s.starts_on, CASE WHEN p_level = 'school' THEN make_date(r.end_year, 1, 1) ELSE make_date(r.end_year - 1, 7, 1) END),
+         coalesce(s.ends_on,   CASE WHEN p_level = 'school' THEN make_date(r.end_year, 12, 31) ELSE make_date(r.end_year, 6, 30) END),
+         make_date(r.end_year, 1, 1)
+    FROM rule r
+    LEFT JOIN season s ON s.level = p_level
+     AND s.label = CASE WHEN p_level = 'school' THEN r.end_year::text
+                        ELSE (r.end_year - 1)::text || '/' || lpad((r.end_year % 100)::text, 2, '0') END;
+$$ LANGUAGE sql STABLE;
+
+-- The season named on a label, at a level, or nothing: "2026/27" is not a
+-- school season and does not become one by being typed.
+CREATE OR REPLACE FUNCTION season_named(p_label text, p_level text DEFAULT 'school') RETURNS uuid AS $$
+  SELECT id FROM season WHERE level = p_level AND label = p_label;
+$$ LANGUAGE sql STABLE;
+
+ALTER TABLE competition ADD CONSTRAINT competition_season_fk FOREIGN KEY (season_id) REFERENCES season(id);
+
 -- ── Age on the season cut-off ────────────────────────────────────
 -- Age-group cricket is played by age on a date, not age today, or a boy
--- would change age group mid-season. The South African season turns over on
--- 1 September; a boy is "under 13" for the season if he was under 13 then.
+-- would change age group mid-season. The date is the season's cut-off —
+-- 1 January of the year the season is named for, at every level — which
+-- is the same rule match_squad_age_eligible() applies and teams.mjs pins.
+-- The first draft of this used 1 September, which no South African
+-- schools body uses, and disagreed with the eligibility trigger by a whole
+-- band for boys born between January and August. season_for() below is
+-- the one place the rule lives now.
 CREATE OR REPLACE FUNCTION season_cutoff(p_on date DEFAULT sa_today()) RETURNS date AS $$
-  SELECT CASE WHEN extract(month FROM p_on) >= 9
-              THEN make_date(extract(year FROM p_on)::int, 9, 1)
-              ELSE make_date(extract(year FROM p_on)::int - 1, 9, 1) END;
-$$ LANGUAGE sql IMMUTABLE;
+  SELECT cutoff_on FROM season_for(p_on, 'school');
+$$ LANGUAGE sql STABLE;
 
--- The bands are the South African high-school ones: U13, U14, U15, U16, and
--- Open from sixteen on the cut-off — a boy in Grade 10 to 12 plays Open
--- cricket, whatever his birthday says, and is not "U17" or "U18" to anyone
--- at a school. Open carries no directive, as the game treats him.
+-- "U13" is a boy who is thirteen or younger on the cut-off — the same
+-- comparison isEligible() in teams.mjs and match_squad_age_eligible()
+-- make, so the band a boy is named by and the side he may be picked for
+-- never disagree. A first draft used strict less-than, and was a year out.
 CREATE OR REPLACE FUNCTION age_band(p_born date, p_on date DEFAULT sa_today()) RETURNS text AS $$
   SELECT CASE WHEN p_born IS NULL THEN 'unknown'
-              WHEN a < 13 THEN 'U13' WHEN a < 14 THEN 'U14'
-              WHEN a < 15 THEN 'U15' WHEN a < 16 THEN 'U16'
+              WHEN a <= 13 THEN 'U13' WHEN a <= 14 THEN 'U14'
+              WHEN a <= 15 THEN 'U15' WHEN a <= 16 THEN 'U16'
               ELSE 'open' END
     FROM (SELECT extract(year FROM age(season_cutoff(p_on), p_born))::int AS a) x;
-$$ LANGUAGE sql IMMUTABLE;
+$$ LANGUAGE sql STABLE;
 
 -- ── The directive ────────────────────────────────────────────────
 -- Overs per spell and per day for a pace bowler, by age band. Platform
@@ -5045,7 +5163,9 @@ CREATE TABLE honour (
   -- Required for an 'award' (which is whatever the school calls it — "Fielder
   -- of the Year"); optional otherwise.
   name         text CHECK (name IS NULL OR length(name) BETWEEN 3 AND 80),
-  season       text NOT NULL CHECK (season ~ '^\d{4}(/\d{2})?$'),
+  -- The school season it belongs to — a row, so "2026/27" cannot be typed
+  -- onto a school honour and two spellings of one season cannot both exist.
+  season_id    uuid NOT NULL REFERENCES season(id),
   citation     text CHECK (citation IS NULL OR length(citation) <= 300),
   awarded_on   date NOT NULL DEFAULT sa_today(),
   awarded_by   uuid REFERENCES app_user(id),
@@ -5061,9 +5181,9 @@ CREATE TABLE honour (
 );
 -- One of each kind per boy per season, live. Awards are free-named and may
 -- be several.
-CREATE UNIQUE INDEX honour_once_a_season ON honour (player_id, kind, season)
+CREATE UNIQUE INDEX honour_once_a_season ON honour (player_id, kind, season_id)
   WHERE withdrawn_at IS NULL AND kind <> 'award';
-CREATE INDEX ON honour (school_id, season) WHERE withdrawn_at IS NULL;
+CREATE INDEX ON honour (school_id, season_id) WHERE withdrawn_at IS NULL;
 
 CREATE OR REPLACE FUNCTION honour_stamp() RETURNS trigger AS $$
 BEGIN
@@ -5082,7 +5202,7 @@ BEGIN
   END IF;
   IF NEW.player_id IS DISTINCT FROM OLD.player_id OR NEW.school_id IS DISTINCT FROM OLD.school_id
      OR NEW.team_code IS DISTINCT FROM OLD.team_code OR NEW.kind IS DISTINCT FROM OLD.kind
-     OR NEW.name IS DISTINCT FROM OLD.name OR NEW.season IS DISTINCT FROM OLD.season
+     OR NEW.name IS DISTINCT FROM OLD.name OR NEW.season_id IS DISTINCT FROM OLD.season_id
      OR NEW.citation IS DISTINCT FROM OLD.citation OR NEW.awarded_on IS DISTINCT FROM OLD.awarded_on
      OR NEW.awarded_by IS DISTINCT FROM OLD.awarded_by OR NEW.awarded_at IS DISTINCT FROM OLD.awarded_at THEN
     RAISE EXCEPTION 'an honour is not edited after it is awarded — withdraw it and award it again'
@@ -5352,7 +5472,7 @@ BEGIN
     RETURN;
   END IF;
   RETURN QUERY
-    SELECT 'honour'::text, h.kind, honour_kind_label(h.kind, h.name), NULL::int, h.season, h.awarded_on,
+    SELECT 'honour'::text, h.kind, honour_kind_label(h.kind, h.name), NULL::int, (SELECT sn.label FROM season sn WHERE sn.id = h.season_id), h.awarded_on,
            NULL::uuid, NULL::text, h.is_public, h.citation, h.id
       FROM honour h WHERE h.player_id = p_player AND h.withdrawn_at IS NULL
     UNION ALL

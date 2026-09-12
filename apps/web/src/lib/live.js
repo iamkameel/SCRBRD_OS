@@ -161,15 +161,25 @@ function asNotification(r) {
 }
 
 function asLadderRow(r) {
-  return { id: `${r.competition_id}:${r.school_id}:${r.team_code ?? ""}`,
+  return { id: r.id ?? `${r.competition_id}:${r.school_id}:${r.team_code ?? ""}`,
+           competition: r.competition_id,
            name: r.display_name, school: r.school_id, team: r.team_code,
            played: r.played, wins: r.won, losses: r.lost, draws: r.drawn,
-           noResult: r.no_result, points: r.points, nrr: r.net_run_rate, live: true };
+           noResult: r.no_result, points: r.points, nrr: r.net_run_rate,
+           division: r.division_id ? { id: r.division_id, code: r.division_code, name: r.division_name, rank: r.division_rank } : null,
+           live: true };
+}
+function asSeason(r) {
+  return { id: r.id, level: r.level, label: r.label, startsOn: String(r.starts_on).slice(0, 10),
+           endsOn: String(r.ends_on).slice(0, 10), cutoffOn: String(r.cutoff_on).slice(0, 10), current: r.current === true, live: true };
+}
+function asDivision(r) {
+  return { id: r.id, competition: r.competition_id, code: r.code, name: r.name, rank: r.rank, entrants: r.entrants, live: true };
 }
 
 function asCompetition(r) {
   return { id: r.id, name: r.name, type: r.comp_type, format: r.format,
-           ageGroup: r.age_group, gender: r.gender, season: r.season,
+           ageGroup: r.age_group, gender: r.gender, season: r.season, level: r.level, divisions: r.divisions ?? 0,
            school: r.school_id, active: true,
            // The ladder is its own read (`league`), scoped by participation
            // rather than by who created the competition row.
@@ -631,6 +641,8 @@ const ADAPT = {
   notifications: asNotification,
   league: asLadderRow,
   competitions: asCompetition,
+  seasons: asSeason,
+  competition_divisions: asDivision,
   weather: asWeather,
   officials: asOfficial,
   ground_conditions: asGroundCondition,

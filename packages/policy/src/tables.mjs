@@ -367,6 +367,19 @@ export const TABLES = {
     masked: {},
   },
 
+  competition_division: {
+    // A tier within a competition — Division 1, Pool B. Read by whoever can
+    // reach the competition, through the organiser or through any entrant,
+    // and written by whoever administers the competition: competition.manage
+    // at the organiser's school, which for a shared league (organiser NULL)
+    // is only a platform-wide competition administrator.
+    read:  "competition.read",
+    write: "competition.manage",
+    visibleWhen: "competition_visible(competition_division.competition_id)",
+    anchors: { school: "(SELECT c.school_id FROM competition c WHERE c.id = competition_division.competition_id)" },
+    masked: {},
+  },
+
   training_session: {
     // A scheduled session: when, where, which team, run by whom. Not personal
     // data — it is on the noticeboard — which is why it is governed by

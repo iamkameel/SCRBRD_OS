@@ -597,6 +597,22 @@ try {
     await c.ctx.close();
   }
 
+  // ── The ladder, per division ────────────────────────────────────
+  group("The league screen draws the live ladder, per division");
+  {
+    const c = await open();
+    await signIn(c.page, /Coach/);
+    await c.page.locator('[data-testid="nav-leagues"]').click({ timeout: 6000 }); await c.page.waitForTimeout(1800);
+    const ladder = c.page.locator('[data-testid="live-ladder"]');
+    ok("the coach sees a ladder from the server", await ladder.count() === 1);
+    const t = await ladder.innerText().catch(() => "");
+    ok("...under its division", /division 1/i.test(t));   // innerText carries the CSS upper-casing
+    ok("...with both pilot sides in it", /Hilton 1st XI/.test(t) && /Westville 1st XI/.test(t));
+    ok("...and the season the competition belongs to", /2026/.test(t) && !/2026\/27/.test(t));
+    ok("no console errors", c.errors.length === 0);
+    await c.ctx.close();
+  }
+
   // ── The shell, by id ────────────────────────────────────────────
   // Every walk above found its way around by button text, which is a test
   // that breaks when a label is reworded and passes when a button is drawn

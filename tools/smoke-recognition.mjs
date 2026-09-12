@@ -103,23 +103,26 @@ try {
   {
     const r = await recog(WHITFIELD, coach);
     ok("the coach reads his player's recognition", r.length > 0);
-    ok("...with the seeded colours on it", r.some((x) => x.family === "honour" && x.kind === "colours" && x.season === "2025/26" && x.is_public === true));
+    ok("...with the seeded colours on it", r.some((x) => x.family === "honour" && x.kind === "colours" && x.season === "2025" && x.is_public === true));
     ok("...and a label, not a code", r.find((x) => x.kind === "colours")?.label === "Full colours");
-    const a = await award(head, { playerId: BEKKER, kind: "half_colours", season: "2026/27", citation: "Forty wickets." });
+    const a = await award(head, { playerId: BEKKER, kind: "half_colours", season: "2026", citation: "Forty wickets." });
     ok("the director of sport awards half colours", a.status === 200 && a.body?.kind === "half_colours");
     ok("...stamped from the session", a.body?.awardedBy === await idOf("sarah@example.invalid"));
     ok("...with the school and side from the boy, not the request", a.body?.schoolId === HIL && a.body?.teamCode === "1XI");
     ok("...not public until somebody says so", a.body?.isPublic === false);
-    ok("the office can", (await award(registrar, { playerId: CELE, kind: "vice_captain", season: "2026/27" })).status === 200);
-    ok("the principal can", (await award(principal, { playerId: PILLAY, kind: "award", name: "Fielder of the Year", season: "2026/27" })).status === 200);
-    ok("a coach cannot", [403, 401].includes((await award(coach, { playerId: BEKKER, kind: "colours", season: "2026/27" })).status));
-    ok("another school's coach cannot", [403, 401].includes((await award(wesCoach, { playerId: BEKKER, kind: "colours", season: "2026/27" })).status));
-    ok("one of each kind a season", (await award(head, { playerId: BEKKER, kind: "half_colours", season: "2026/27" })).status === 422);
-    ok("...but two named awards are two awards", (await award(head, { playerId: PILLAY, kind: "award", name: "Most Improved", season: "2026/27" })).status === 200);
-    ok("an award without a name is refused", (await award(head, { playerId: BEKKER, kind: "award", season: "2026/27" })).status === 400);
-    ok("a kind outside the vocabulary is refused", (await award(head, { playerId: BEKKER, kind: "legend", season: "2026/27" })).status === 400);
+    ok("the office can", (await award(registrar, { playerId: CELE, kind: "vice_captain", season: "2026" })).status === 200);
+    ok("the principal can", (await award(principal, { playerId: PILLAY, kind: "award", name: "Fielder of the Year", season: "2026" })).status === 200);
+    ok("a coach cannot", [403, 401].includes((await award(coach, { playerId: BEKKER, kind: "colours", season: "2026" })).status));
+    ok("another school's coach cannot", [403, 401].includes((await award(wesCoach, { playerId: BEKKER, kind: "colours", season: "2026" })).status));
+    ok("one of each kind a season", (await award(head, { playerId: BEKKER, kind: "half_colours", season: "2026" })).status === 422);
+    ok("...but two named awards are two awards", (await award(head, { playerId: PILLAY, kind: "award", name: "Most Improved", season: "2026" })).status === 200);
+    ok("an award without a name is refused", (await award(head, { playerId: BEKKER, kind: "award", season: "2026" })).status === 400);
+    ok("a kind outside the vocabulary is refused", (await award(head, { playerId: BEKKER, kind: "legend", season: "2026" })).status === 400);
     ok("a season that is not a season is refused", (await award(head, { playerId: BEKKER, kind: "honours", season: "next year" })).status === 400);
-    ok("a boy who does not exist is a 404", (await award(head, { playerId: "00000000-0000-0000-0000-00000000dead", kind: "honours", season: "2026/27" })).status === 404);
+    ok("a club season is not a school season, however it is typed",
+       (await award(head, { playerId: BEKKER, kind: "honours", season: "2026/27" })).body?.error === "season_unknown_at_school_level");
+    ok("...nor is a year the calendar does not hold", (await award(head, { playerId: BEKKER, kind: "honours", season: "2041" })).status === 400);
+    ok("a boy who does not exist is a 404", (await award(head, { playerId: "00000000-0000-0000-0000-00000000dead", kind: "honours", season: "2026" })).status === 404);
     ok("the citation cannot be edited after",
        !(await q(`update honour set citation = 'Fifty wickets.' where id = $1`, [a.body.id]).then(() => true).catch(() => false)));
     ok("a coach cannot withdraw", (await withdraw(a.body.id, coach)).body?.withdrawn === 0);
@@ -130,7 +133,7 @@ try {
     ok("...and it leaves the boy's recognition", !(await recog(BEKKER, coach)).some((x) => x.id === a.body.id));
     ok("...but not the table", (await q(`select count(*)::int c from honour where id = $1`, [a.body.id]))[0].c === 1);
     ok("...and is not un-withdrawn", !(await q(`update honour set withdrawn_at = null, withdrawn_reason = null where id = $1`, [a.body.id]).then(() => true).catch(() => false)));
-    ok("it can be awarded again", (await award(head, { playerId: BEKKER, kind: "half_colours", season: "2026/27" })).status === 200);
+    ok("it can be awarded again", (await award(head, { playerId: BEKKER, kind: "half_colours", season: "2026" })).status === 200);
     const pub = (await q(`select id from honour where player_id = $1 and kind = 'vice_captain'`, [CELE]))[0].id;
     ok("putting a name on the board is the director's call", (await api(`/api/honours/${pub}/public`, { method: "POST", token: head, body: { isPublic: true } })).body?.updated === 1
        && (await recog(CELE, coach)).find((x) => x.kind === "vice_captain")?.is_public === true);

@@ -127,8 +127,14 @@ INSERT INTO ground (id, school_id, name, surface) VALUES
   ('ffffffff-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'Gordon Sherwood Oval', 'grass'),
   ('ffffffff-0000-0000-0000-000000000002', '22222222-2222-2222-2222-222222222222', 'Westville Main',       'grass');
 
-INSERT INTO competition (id, school_id, name, comp_type, format, age_group, gender, season) VALUES
-  ('99999999-0000-0000-0000-000000000001', NULL, 'KZN Schools T20 League', 'league', 'T20', '1XI', 'boys', '2026/27');
+-- A schools league: school level, so it runs on the calendar year and is
+-- named for one — "2026", not the club's "2026/27".
+INSERT INTO competition (id, school_id, name, comp_type, format, age_group, gender, level, season_id) VALUES
+  ('99999999-0000-0000-0000-000000000001', NULL, 'KZN Schools T20 League', 'league', 'T20', '1XI', 'boys', 'school', season_named('2026', 'school'));
+-- Its divisions. Both pilot sides are in the top one.
+INSERT INTO competition_division (id, competition_id, code, name, rank) VALUES
+  ('d1710000-0000-0000-0000-000000000001', '99999999-0000-0000-0000-000000000001', 'D1', 'Division 1', 1),
+  ('d1710000-0000-0000-0000-000000000002', '99999999-0000-0000-0000-000000000001', 'D2', 'Division 2', 2);
 
 -- Matches: one played, one scheduled. Neither carries a score column —
 -- the score is derived from ball_event.
@@ -277,6 +283,13 @@ INSERT INTO app_user (id, school_id, email, name, role) VALUES
   ('88888888-0000-0000-0000-000000000016', '11111111-1111-1111-1111-111111111111',
    'principal@example.invalid', 'Dr N Mkhize', 'principal');
 
+-- Somebody who runs the shared league. competition.manage at no school at
+-- all, which is what a competition with no organising school answers to;
+-- without this account a division could only ever be observed refused.
+INSERT INTO app_user (id, school_id, email, name, role) VALUES
+  ('88888888-0000-0000-0000-000000000021', NULL,
+   'league@example.invalid', 'K Naidu', 'competitionadmin');
+
 -- The platform account. Not scoped to a school at all — this is what
 -- verifies a scout's accreditation, and accrediting an external organisation
 -- is not a claim about any one school's roster.
@@ -313,6 +326,7 @@ INSERT INTO role_assignment (id, person_id, role, school_id, team_code) VALUES
   -- and these two need different scopes.
   ('a5510000-0000-0000-0000-00000000000c', '88888888-0000-0000-0000-000000000009', 'player',          '11111111-1111-1111-1111-111111111111', '1XI'),
   ('a5510000-0000-0000-0000-00000000000d', '88888888-0000-0000-0000-000000000009', 'selfaccess',      '11111111-1111-1111-1111-111111111111', NULL),
+  ('a5510000-0000-0000-0000-000000000021', '88888888-0000-0000-0000-000000000021', 'competitionadmin', NULL, NULL),
   ('a5510000-0000-0000-0000-00000000000e', '88888888-0000-0000-0000-00000000000a', 'coach',           '11111111-1111-1111-1111-111111111111', '2XI'),
   ('a5510000-0000-0000-0000-00000000000f', '88888888-0000-0000-0000-00000000000b', 'coach',           '11111111-1111-1111-1111-111111111111', 'U14A'),
   -- The four 1st XI families.
@@ -402,9 +416,9 @@ COMMIT;
 -- own team and NOT the spectator, and one U16B team notice the 1XI coach must
 -- not receive.
 
-INSERT INTO competition_entrant (competition_id, school_id, team_code, display_name, played, won, lost, drawn, no_result, points) VALUES
-  ('99999999-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', '1XI', 'Hilton 1st XI',    5, 4, 1, 0, 0, 8),
-  ('99999999-0000-0000-0000-000000000001', '22222222-2222-2222-2222-222222222222', '1XI', 'Westville 1st XI', 5, 3, 2, 0, 0, 6);
+INSERT INTO competition_entrant (competition_id, school_id, team_code, display_name, played, won, lost, drawn, no_result, points, division_id) VALUES
+  ('99999999-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', '1XI', 'Hilton 1st XI',    5, 4, 1, 0, 0, 8, 'd1710000-0000-0000-0000-000000000001'),
+  ('99999999-0000-0000-0000-000000000001', '22222222-2222-2222-2222-222222222222', '1XI', 'Westville 1st XI', 5, 3, 2, 0, 0, 6, 'd1710000-0000-0000-0000-000000000001');
 
 INSERT INTO training_session (id, school_id, team_code, title, starts_at, duration_min, venue, coach_id, session_type, drills, notes) VALUES
   ('7a717000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', '1XI',
@@ -509,6 +523,6 @@ INSERT INTO adult_clearance (person_id, school_id, kind, reference, issued_on, e
 -- this one. awarded_by NULL throughout: seeded, not signed.
 INSERT INTO cap_baseline (school_id, team_code, caps_before, as_of, note) VALUES
   ('11111111-1111-1111-1111-111111111111', '1XI', 411, '2025-12-31', 'From the honours board in the pavilion.');
-INSERT INTO honour (player_id, kind, season, citation, awarded_on, is_public) VALUES
-  ('aaaaaaaa-0000-0000-0000-000000000001', 'colours', '2025/26', 'Led the batting all season.', '2025-11-20', true),
-  ('aaaaaaaa-0000-0000-0000-000000000003', 'captain', '2026/27', NULL, '2026-08-15', false);
+INSERT INTO honour (player_id, kind, season_id, citation, awarded_on, is_public) VALUES
+  ('aaaaaaaa-0000-0000-0000-000000000001', 'colours', season_named('2025', 'school'), 'Led the batting all season.', '2025-11-20', true),
+  ('aaaaaaaa-0000-0000-0000-000000000003', 'captain', season_named('2026', 'school'), NULL, '2026-08-15', false);

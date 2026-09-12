@@ -45,6 +45,9 @@ export const READ_QUERIES = {
     // from a school name that might have matched neither side.
     text: `select m.id, m.school_id, m.team_code, m.opponent, m.starts_at,
                   m.format, m.overs, m.status,
+                  -- The school season the fixture falls in, by the calendar's
+                  -- rule, so a screen never derives a season from a date.
+                  (select label from season_for((m.starts_at at time zone 'Africa/Johannesburg')::date, 'school')) as season,
                   -- WHICH GAME. On the shared fixture read rather than behind a
                   -- per-sport one, because a school running cricket and hockey
                   -- needs both on one list — and a client that had to ask per
@@ -152,9 +155,30 @@ export const READ_QUERIES = {
   },
 
   competitions: {
-    text: `select id, name, comp_type, format, age_group, gender, school_id, season
-             from competition
-            order by name`,
+    text: `select c.id, c.name, c.comp_type, c.format, c.age_group, c.gender, c.school_id,
+                  c.level, s.label as season,
+                  (select count(*)::int from competition_division d where d.competition_id = c.id) as divisions
+             from competition c
+             left join season s on s.id = c.season_id
+            order by c.name`,
+  },
+
+  /* The calendar. Platform reference data: which seasons exist, at which level. */
+  seasons: {
+    text: `select id, level, label, starts_on, ends_on, cutoff_on,
+                  sa_today() between starts_on and ends_on as current
+             from season
+            order by level, starts_on`,
+  },
+
+  /* A competition's tiers, in rank order. Reachable by whoever can reach the competition. */
+  competition_divisions: {
+    text: `select d.id, d.competition_id, d.code, d.name, d.rank,
+                  (select count(*)::int from competition_entrant e where e.division_id = d.id) as entrants
+             from competition_division d
+            where d.competition_id = $1
+            order by d.rank`,
+    params: q => [req(q, "competitionId")],
   },
 
   // ── The programme reads ─────────────────────────────────────────
@@ -344,12 +368,16 @@ export const READ_QUERIES = {
   // through the organiser or through any entrant — a log with one row in it is
   // not a log. Writing a row stays anchored to the entrant's own school.
   league: {
-    text: `select e.competition_id, e.school_id, e.team_code, e.display_name,
+    text: `select e.id, e.competition_id, e.school_id, e.team_code, e.display_name,
                   e.played, e.won, e.lost, e.drawn, e.no_result, e.points,
-                  e.net_run_rate
+                  e.net_run_rate,
+                  -- The tier, when the competition has them. An entrant nobody
+                  -- has placed sits after every division, not in a made-up one.
+                  d.id as division_id, d.code as division_code, d.name as division_name, d.rank as division_rank
              from competition_entrant e
+             left join competition_division d on d.id = e.division_id
             where ($1::uuid is null or e.competition_id = $1)
-            order by e.points desc, e.net_run_rate desc nulls last, e.display_name`,
+            order by e.competition_id, d.rank nulls last, e.points desc, e.net_run_rate desc nulls last, e.display_name`,
     params: q => [q?.competitionId || null],
   },
 
@@ -981,14 +1009,15 @@ export const READ_QUERIES = {
   /* Live honours, newest first, optionally one side's or one season's. */
   honours: {
     text: `select h.id, h.player_id, p.full_name, h.school_id, h.team_code, h.kind, h.name,
-                  honour_kind_label(h.kind, h.name) as label, h.season, h.citation, h.awarded_on,
+                  honour_kind_label(h.kind, h.name) as label, s.label as season, h.citation, h.awarded_on,
                   h.is_public, u.name as awarded_by_name
              from honour h
              join player p on p.id = h.player_id
+             join season s on s.id = h.season_id
              left join app_user u on u.id = h.awarded_by
             where h.withdrawn_at is null
               and ($1::text is null or h.team_code = $1)
-              and ($2::text is null or h.season = $2)
+              and ($2::text is null or s.label = $2)
             order by h.awarded_on desc, p.full_name`,
     params: q => [q?.teamCode || null, q?.season || null],
   },

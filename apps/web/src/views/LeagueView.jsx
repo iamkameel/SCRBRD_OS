@@ -4,7 +4,7 @@ import { D } from "../design/tokens.js";
 import { SR } from "../scorer/format.js";
 import { Avatar, Badge, Btn, Card, Input, Modal, Pill, SectionHeader, Select } from "../ui/primitives.jsx";
 import { WeatherChip } from "./shared.jsx";
-import { usePlayersWithCareer, useRows, useWeather } from "../lib/live.js";
+import { useLive, usePlayersWithCareer, useRows, useWeather } from "../lib/live.js";
 
 // ══════════════════════════════════════════════════════
 //  LEAGUE MANAGEMENT VIEW
@@ -20,7 +20,11 @@ function LeagueView({ role }) {
   const [tab,     setTab]     = useState("table");
   const [editRow, setEditRow] = useState(null);  // team row being edited
   const [addFixture, setAddFixture] = useState(false);
-  const comp = COMPETITIONS.find(c=>c.id===selComp);
+  const comp = COMPETITIONS.find(c=>c.id===selComp) ?? COMPETITIONS[0];
+  // The ladder, from the server, for the competition on screen. The demo
+  // carries its table on the competition row; a live competition has none
+  // there and this read is where it comes from — with its divisions.
+  const LADDER = useLive("league", role, 0, comp?.live ? { competitionId: comp.id } : null).rows;
   const canEdit = role==="superadmin"||role==="schooladmin";
 
   // Editable table row state
@@ -79,7 +83,10 @@ function LeagueView({ role }) {
           </div>
 
           {/* ── TABLE ── */}
-          {tab==="table"&&(comp.table?(
+          {tab==="table"&&comp.live&&(LADDER.length?<LiveLadder rows={LADDER} comp={comp}/>:(
+            <div style={{textAlign:"center",padding:"40px",color:D.textMuted,fontFamily:D.body,fontSize:"13px"}}>No standings yet.</div>
+          ))}
+          {tab==="table"&&!comp.live&&(comp.table?(
             <Card>
               <div style={{padding:"14px 16px",borderBottom:`1px solid ${D.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <div>
@@ -300,6 +307,53 @@ function LeagueView({ role }) {
         </Modal>
       )}
     </div>
+  );
+}
+
+// One table per division, in rank order; entrants nobody has placed come
+// last under their own heading. Rows arrive in the server's order.
+function LiveLadder({ rows, comp }) {
+  const groups = [];
+  for (const r of rows) {
+    const key = r.division?.id ?? "none";
+    let g = groups.find(x=>x.key===key);
+    if (!g) { g = { key, label: r.division ? `${r.division.name}` : (groups.length||rows.some(x=>x.division) ? "Not yet placed" : "Standings"), rows: [] }; groups.push(g); }
+    g.rows.push(r);
+  }
+  return (
+    <Card data-testid="live-ladder">
+      <div style={{padding:"14px 16px",borderBottom:`1px solid ${D.border}`}}>
+        <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>{comp.name}</div>
+        <div style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>{rows.length} teams · {comp.format} · {comp.season ?? ""}{comp.divisions?` · ${comp.divisions} division${comp.divisions>1?"s":""}`:""}</div>
+      </div>
+      {groups.map(g=>(
+        <div key={g.key} data-testid={`ladder-${g.key}`}>
+          <div style={{padding:"8px 16px",background:D.surf2,fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:D.textMuted}}>{g.label}</div>
+          <div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse"}}>
+              <thead><tr>
+                {["#","Team","P","W","L","D","NR","Pts","NRR"].map(h=>(
+                  <th key={h} style={{padding:"8px 12px",fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase",textAlign:h==="Team"?"left":"center"}}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {g.rows.map((t,i)=>(
+                  <tr key={t.id} style={{borderTop:`1px solid ${D.border}`}}>
+                    <td style={{padding:"9px 12px",textAlign:"center",fontFamily:D.mono,fontSize:"11px",fontWeight:700,color:i===0?D.amber:D.textMuted}}>{i+1}</td>
+                    <td style={{padding:"9px 12px",fontFamily:D.body,fontSize:"12px",color:D.textPrimary}}>{t.name}</td>
+                    {[t.played,t.wins,t.losses,t.draws,t.noResult].map((v,j)=>(
+                      <td key={j} style={{padding:"9px 12px",textAlign:"center",fontFamily:D.mono,fontSize:"12px",color:D.textSecondary}}>{v}</td>
+                    ))}
+                    <td style={{padding:"9px 12px",textAlign:"center",fontFamily:D.mono,fontSize:"14px",fontWeight:700,color:D.textPrimary}}>{t.points}</td>
+                    <td style={{padding:"9px 12px",textAlign:"center",fontFamily:D.mono,fontSize:"11px",color:D.textSecondary}}>{t.nrr==null?"—":Number(t.nrr).toFixed(3)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
+    </Card>
   );
 }
 

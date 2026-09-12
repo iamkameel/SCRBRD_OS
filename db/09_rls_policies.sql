@@ -296,6 +296,25 @@ CREATE POLICY competition_entrant_update ON competition_entrant
   FOR UPDATE USING (app_can('competition.manage', competition_entrant.school_id, (COALESCE(competition_entrant.team_code, '*'::text)), '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
            WITH CHECK (app_can('competition.manage', competition_entrant.school_id, (COALESCE(competition_entrant.team_code, '*'::text)), '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
 
+-- competition_division — read: competition.read · write: competition.manage
+-- plus a named exception on read — see readPredicate() in generate-rls.mjs
+ALTER TABLE competition_division ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS competition_division_read   ON competition_division;
+DROP POLICY IF EXISTS competition_division_insert ON competition_division;
+DROP POLICY IF EXISTS competition_division_update ON competition_division;
+DROP POLICY IF EXISTS competition_division_delete ON competition_division;
+
+CREATE POLICY competition_division_read ON competition_division
+  FOR SELECT USING ((app_can('competition.read', (SELECT c.school_id FROM competition c WHERE c.id = competition_division.competition_id), '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
+    OR (competition_visible(competition_division.competition_id)));
+
+CREATE POLICY competition_division_insert ON competition_division
+  FOR INSERT WITH CHECK (app_can('competition.manage', (SELECT c.school_id FROM competition c WHERE c.id = competition_division.competition_id), '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY competition_division_update ON competition_division
+  FOR UPDATE USING (app_can('competition.manage', (SELECT c.school_id FROM competition c WHERE c.id = competition_division.competition_id), '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
+           WITH CHECK (app_can('competition.manage', (SELECT c.school_id FROM competition c WHERE c.id = competition_division.competition_id), '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
 -- training_session — read: team.read · write: team.manage
 ALTER TABLE training_session ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS training_session_read   ON training_session;

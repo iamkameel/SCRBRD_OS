@@ -50,6 +50,8 @@ export function recognitionRoutes({ pool, secret }) {
       const name = b.name == null || String(b.name).trim() === "" ? null : String(b.name).trim();
       if (b.kind === "award" && !name) throw err("award_needs_a_name");
       if (name && (name.length < 3 || name.length > 80)) throw err("name_invalid");
+      // A school season is named for one year. "2026/27" is a club season and
+      // does not become a school one by being typed; the row decides.
       const season = String(b.season ?? "").trim();
       if (!SEASON.test(season)) throw err("season_must_be_yyyy_or_yyyy_slash_yy");
       const citation = b.citation == null || String(b.citation).trim() === "" ? null : String(b.citation).trim().slice(0, 300);
@@ -57,15 +59,17 @@ export function recognitionRoutes({ pool, secret }) {
       const isPublic = b.isPublic === true;
 
       return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+        const { rows: sr } = await client.query(`select season_named($1, 'school') as id`, [season]);
+        if (!sr[0]?.id) throw err("season_unknown_at_school_level");
         const { rows } = await client.query(
-          `insert into honour (player_id, kind, name, season, citation, awarded_on, is_public)
+          `insert into honour (player_id, kind, name, season_id, citation, awarded_on, is_public)
            values ($1, $2, $3, $4, $5, coalesce($6::date, sa_today()), $7)
-           returning id, player_id, school_id, team_code, kind, name, season, citation, awarded_on, is_public, awarded_by`,
-          [b.playerId, b.kind, name, season, citation, awardedOn, isPublic]);
+           returning id, player_id, school_id, team_code, kind, name, citation, awarded_on, is_public, awarded_by`,
+          [b.playerId, b.kind, name, sr[0].id, citation, awardedOn, isPublic]);
         if (!rows.length) throw err("not_permitted", 403);
         const h = rows[0];
         return { id: h.id, playerId: h.player_id, schoolId: h.school_id, teamCode: h.team_code, kind: h.kind,
-                 name: h.name, season: h.season, citation: h.citation, awardedOn: String(h.awarded_on).slice(0, 10),
+                 name: h.name, season, citation: h.citation, awardedOn: String(h.awarded_on).slice(0, 10),
                  isPublic: h.is_public, awardedBy: h.awarded_by };
       });
     }),
