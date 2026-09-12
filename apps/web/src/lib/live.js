@@ -75,6 +75,7 @@ function asPlayer(r) {
     name: r.full_name,
     team: r.team_code,
     school: r.school_id,
+    schoolName: r.school_name ?? null,
     squadNo: r.squad_no,
     role: r.playing_role,
     batHand: r.batting_style,
@@ -446,6 +447,26 @@ function asBreach(r) {
            noticedAt: r.noticed_at, live: true };
 }
 function asDirective(r) { return { ageBand: r.age_band, maxSpell: r.max_overs_per_spell, maxDay: r.max_overs_per_day, live: true }; }
+const d10 = (v) => (v ? String(v).slice(0, 10) : null);
+/** One line of a boy's recognition: an honour, a cap, or a milestone. The label is the server's. */
+function asRecognition(r) {
+  return { family: r.family, kind: r.kind, label: r.label, value: r.value, season: r.season, on: d10(r.on_date),
+           matchId: r.match_id, opponent: r.opponent, isPublic: r.is_public, citation: r.citation, id: r.ref_id, live: true };
+}
+function asCap(r) {
+  return { school: r.school_id, team: r.team_code, playerId: r.player_id, name: r.full_name, capNo: r.cap_no,
+           appearances: r.appearances, firstOn: d10(r.first_on), lastOn: d10(r.last_on), firstMatchId: r.first_match_id,
+           baselineSet: r.baseline_set, live: true };
+}
+function asHonour(r) {
+  return { id: r.id, playerId: r.player_id, name: r.full_name, school: r.school_id, team: r.team_code, kind: r.kind,
+           awardName: r.name, label: r.label, season: r.season, citation: r.citation, awardedOn: d10(r.awarded_on),
+           isPublic: r.is_public, awardedBy: r.awarded_by_name, live: true };
+}
+function asMilestone(r) {
+  return { playerId: r.player_id, name: r.full_name, team: r.team_code, kind: r.kind, label: r.label, value: r.value,
+           matchId: r.match_id, innings: r.innings, opponent: r.opponent, on: d10(r.played_on), live: true };
+}
 function asRequirement(r) { return { role: r.role, kind: r.kind, kindLabel: r.kind_label, live: true }; }
 
 /** A side as it stood on a date — nothing here is computed in the browser. */
@@ -624,6 +645,10 @@ const ADAPT = {
   clearances: asClearance,
   my_clearances: asClearance,
   clearance_requirements: asRequirement,
+  recognition: asRecognition,
+  caps: asCap,
+  honours: asHonour,
+  milestones: asMilestone,
   workload: asWorkload,
   bowling_spells: asSpell,
   bowling_breaches: asBreach,
@@ -726,8 +751,14 @@ export function liveResources() { return Object.keys(ADAPT); }
  * same statement as an empty array after it, and "no fixtures today" is a
  * claim the UI should only make once the server has actually said so.
  */
-export function useLive(resource, role, nonce = 0) {
+export function useLive(resource, role, nonce = 0, params = null) {
   const demo = !signedIn();
+  // `params` narrows a read — one boy's recognition, one side's caps — and
+  // is serialised into the effect's dependencies so a new object with the
+  // same keys does not refetch, and a changed value does.
+  const query = params && Object.keys(params).length
+    ? "?" + new URLSearchParams(Object.entries(params).filter(([, v]) => v != null && v !== "")).toString()
+    : "";
   const [state, setState] = useState(() =>
     demo
       ? { rows: scoped(resource, role), live: false, loading: false, error: null }
@@ -746,7 +777,7 @@ export function useLive(resource, role, nonce = 0) {
     setState((s) => ({ ...s, loading: true }));
     (async () => {
       try {
-        const { rows } = await api(`/api/read/${resource}`);
+        const { rows } = await api(`/api/read/${resource}${query}`);
         if (!cancelled) setState({ rows: rows.map(ADAPT[resource]), live: true, loading: false, error: null });
       } catch (e) {
         // Deliberately NOT falling back to mock. See above.
@@ -770,7 +801,7 @@ export function useLive(resource, role, nonce = 0) {
       }
     })();
     return () => { cancelled = true; };
-  }, [resource, role, nonce]);
+  }, [resource, role, nonce, query]);
 
   return state;
 }

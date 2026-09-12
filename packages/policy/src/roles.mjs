@@ -89,7 +89,7 @@ const BUNDLES = {
   ],
 
   // ── Institution leadership ──
-  principal: ["clearance.read", "clearance.manage",
+  principal: ["recognition.manage", "clearance.read", "clearance.manage",
     "school.feature.manage",
     // The waiver, and nobody else at a school holds it — see the capability's
     // own note for why it is kept away from the people who place the boards.
@@ -115,7 +115,7 @@ const BUNDLES = {
     "player.age.read", "player.roster.read", "guardian.link.manage",
     "player.note.read", "scoring.amend.approve",
   ],
-  directorofsport: ["player.workload.read", "clearance.read", "clearance.manage",
+  directorofsport: ["recognition.manage", "player.workload.read", "clearance.read", "clearance.manage",
     "availability.read", "availability.declare",
     // Same reasoning as the principal above: the person who runs a school's
     // sport appoints its coaching and medical staff. Bounded by
@@ -136,7 +136,7 @@ const BUNDLES = {
     "news.publish.team", "news.publish.school", "audit.read",
     "opposition.read",
   ],
-  schooladmin: ["clearance.read", "clearance.manage",
+  schooladmin: ["recognition.manage", "clearance.read", "clearance.manage",
     "availability.read", "availability.declare",
     // school.feature.manage: hiding a module from this school or from one of
     // its people. It sits beside school.manage because it is the same job —

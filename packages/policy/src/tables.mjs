@@ -168,6 +168,27 @@ export const TABLES = {
     anchors: { school: "school_id" },
     masked: {},
   },
+  honour: {
+    // Colours, captaincy, player of the season: what a school says about a
+    // boy in public. Read by whoever reads the roster he is on — a team-mate
+    // sees the honours board, which is the point of one — and written by the
+    // people who sign it. Never edited: withdrawn with a reason, and stays.
+    read:  "player.profile.read",
+    write: "recognition.manage",
+    anchors: { school: "school_id",
+               team: "(SELECT p.team_code FROM player p WHERE p.id = honour.player_id)",
+               person: "player_id" },
+    masked: {},
+  },
+  cap_baseline: {
+    // Where a side's cap numbers start: the caps awarded before the platform
+    // was keeping the ledger. One row per side, kept by the same people who
+    // award honours, read by anyone who reads the side.
+    read:  "team.read",
+    write: "recognition.manage",
+    anchors: { school: "school_id", team: "team_code" },
+    masked: {},
+  },
   emergency_contact: {
     // Who to ring when something happens to a child. Read by the people around
     // him on the day, kept by his family and the office. Anchored through the

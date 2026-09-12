@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
 import { KZN_SCHOOLS } from "../data/institution.js";
 import { ROLES } from "../design/roles.js";
-import { D } from "../design/tokens.js";
+import { D, textOn } from "../design/tokens.js";
 import { fitnessColor } from "../lib/format.js";
 import { can, filterRecord } from "../rbac/index.js";
 import { Avatar, Badge, Card, Pill, RadarChart, SectionHeader, Select } from "../ui/primitives.jsx";
-import { usePlayersWithCareer, useRows, useSkills } from "../lib/live.js";
+import { useLive, usePlayersWithCareer, useRows, useSkills } from "../lib/live.js";
 
 // ══════════════════════════════════════════════════════
 //  SETTINGS / RBAC VIEW
@@ -119,6 +119,11 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
           </div>
         </div>
 
+        {/* What the school says about him, what he has earned, what happened.
+            Read per boy under player.profile.read; empty means nothing, or
+            nothing the reader may see, and either way no card. */}
+        <RecognitionCard playerId={p.id} role={role}/>
+
         {/* Tab nav */}
         <div style={{display:"flex",gap:"4px",padding:"10px 16px",borderBottom:`1px solid ${D.border}`,overflowX:"auto"}}>
           {tabs.map(t=>(
@@ -155,12 +160,15 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                   <Card sx={{padding:"14px"}}>
                     <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"10px"}}>SKILLS RADAR</div>
                     <div style={{display:"flex",justifyContent:"center"}}>
-                      <RadarChart data={{
-                        Batting:  Math.round(Object.values(skills.batting).reduce((a,b)=>a+b,0)/Object.values(skills.batting).length),
-                        Bowling:  Math.round(Object.values(skills.bowling).reduce((a,b)=>a+b,0)/Object.values(skills.bowling).length),
-                        Fielding: Math.round(Object.values(skills.fielding).reduce((a,b)=>a+b,0)/Object.values(skills.fielding).length),
-                        Fitness:  Math.round(Object.values(skills.fitness).reduce((a,b)=>a+b,0)/Object.values(skills.fitness).length),
-                      }} color={rCol} size={160}/>
+                      {/* One axis per category the ratings actually carry. The demo
+                          groups by batting/bowling/fielding/fitness; live ratings by
+                          technical/mental/tactical/physical. Naming four axes here
+                          crashed the profile on every live player. */}
+                      <RadarChart data={Object.fromEntries(Object.entries(skills)
+                        .filter(([,vals])=>vals&&Object.keys(vals).length)
+                        .map(([cat,vals])=>[cat.charAt(0).toUpperCase()+cat.slice(1),
+                          Math.round(Object.values(vals).reduce((a,b)=>a+b,0)/Object.values(vals).length)]))}
+                        color={rCol} size={160}/>
                     </div>
                   </Card>
                 )}
@@ -488,8 +496,15 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
     );
   };
 
-  const hiltonPlayers = PLAYERS.filter(p=>p.school==="HIL");
-  const westvillePlayers = PLAYERS.filter(p=>p.school==="WES");
+  // Grouped by each row's own school and side. This used to filter on the
+  // demo's abbreviations ("HIL", "WES") and two hard-coded team lists, which
+  // a live row — school as an id, sides the school actually fields — never
+  // matched, so the live roster listed nobody for anyone. The reader's own
+  // school is the one they see most of, so it comes first.
+  const schoolLabel = (p) => p.schoolName ?? KZN_SCHOOLS.find(s=>s.abbr===p.school)?.name ?? (p.school==="HIL"?"Hilton College":p.school);
+  const bySchool = PLAYERS.reduce((acc,p)=>{ (acc[p.school] ??= { label: schoolLabel(p), players: [] }).players.push(p); return acc; }, {});
+  const schoolGroups = Object.entries(bySchool).sort((a,b)=>b[1].players.length-a[1].players.length)
+    .map(([id,g])=>({ id, label:g.label, teams:[...new Set(g.players.map(p=>p.team).filter(Boolean))].sort(), players:g.players }));
 
   return (
     <div className="os-page">
@@ -511,48 +526,30 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
 
           {cat==="players"&&(
             <div style={{display:"flex",flexDirection:"column",gap:"4px"}}>
-              {/* Hilton */}
-              <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",padding:"4px 8px",marginTop:"4px"}}>HILTON COLLEGE</div>
-              {["1XI","U15A","U13A"].map(team=>(
-                <div key={team}>
-                  <div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted,padding:"3px 8px"}}>{team}</div>
-                  {hiltonPlayers.filter(p=>p.team===team).map(p=>(
-                    <button key={p.id} onClick={()=>handleSelect(p.id,"players")} className="pressBtn" style={{
-                      width:"100%",padding:"7px 10px",borderRadius:D.md,cursor:"pointer",textAlign:"left",marginBottom:"2px",
-                      border:`1px solid ${selId===p.id?D.violet+"55":D.border}`,background:selId===p.id?D.violet+"10":D.surf1,
-                    }}>
-                      <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
-                        <div style={{position:"relative",flexShrink:0}}>
-                          <Avatar name={p.name} size={28} color={fitnessColor(p.fitness)}/>
-                          <div style={{position:"absolute",bottom:-1,right:-1,width:"8px",height:"8px",borderRadius:"50%",background:fitnessColor(p.fitness),border:`1.5px solid ${D.surf1}`}}/>
-                        </div>
-                        <div style={{minWidth:0}}>
-                          <div style={{fontFamily:D.body,fontSize:"11px",fontWeight:selId===p.id?600:400,color:D.textPrimary,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</div>
-                          <div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>{p.role}{p.cap?` · ${p.cap.toUpperCase()}`:""}</div>
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              ))}
-              {/* Westville */}
-              <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",padding:"4px 8px",marginTop:"8px"}}>WESTVILLE BOYS' HIGH</div>
-              {["1XI","U15A"].map(team=>(
-                <div key={team}>
-                  <div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted,padding:"3px 8px"}}>{team}</div>
-                  {westvillePlayers.filter(p=>p.team===team).map(p=>(
-                    <button key={p.id} onClick={()=>handleSelect(p.id,"players")} className="pressBtn" style={{
-                      width:"100%",padding:"7px 10px",borderRadius:D.md,cursor:"pointer",textAlign:"left",marginBottom:"2px",
-                      border:`1px solid ${selId===p.id?D.amber+"55":D.border}`,background:selId===p.id?D.amber+"10":D.surf1,
-                    }}>
-                      <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
-                        <Avatar name={p.name} size={28} color={D.amber}/>
-                        <div style={{minWidth:0}}>
-                          <div style={{fontFamily:D.body,fontSize:"11px",color:D.textPrimary,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</div>
-                          <div style={{fontFamily:D.mono,fontSize:"9px",color:D.amber}}>WES · {p.role}</div>
-                        </div>
-                      </div>
-                    </button>
+              {schoolGroups.map((g,gi)=>(
+                <div key={g.id} data-testid={`roster-school-${gi}`}>
+                  <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",padding:"4px 8px",marginTop:gi?"10px":"4px",textTransform:"uppercase"}}>{g.label}</div>
+                  {g.teams.map(team=>(
+                    <div key={team}>
+                      <div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted,padding:"3px 8px"}}>{team}</div>
+                      {g.players.filter(p=>p.team===team).map(p=>(
+                        <button key={p.id} onClick={()=>handleSelect(p.id,"players")} className="pressBtn" data-testid={`roster-player-${p.id}`} style={{
+                          width:"100%",padding:"7px 10px",borderRadius:D.md,cursor:"pointer",textAlign:"left",marginBottom:"2px",
+                          border:`1px solid ${selId===p.id?D.violet+"55":D.border}`,background:selId===p.id?D.violet+"10":D.surf1,
+                        }}>
+                          <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
+                            <div style={{position:"relative",flexShrink:0}}>
+                              <Avatar name={p.name} size={28} color={fitnessColor(p.fitness)}/>
+                              <div style={{position:"absolute",bottom:-1,right:-1,width:"8px",height:"8px",borderRadius:"50%",background:fitnessColor(p.fitness),border:`1.5px solid ${D.surf1}`}}/>
+                            </div>
+                            <div style={{minWidth:0}}>
+                              <div style={{fontFamily:D.body,fontSize:"11px",fontWeight:selId===p.id?600:400,color:D.textPrimary,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</div>
+                              <div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>{p.role}{p.cap?` · ${p.cap.toUpperCase()}`:""}</div>
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
                   ))}
                 </div>
               ))}
@@ -622,6 +619,33 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// Honours, caps and milestones, in the server's order and the server's words.
+// Nothing here is a total: a cap number is a number, not a score.
+const FAMILY_TONE = { honour:D.amber, cap:D.sky, milestone:D.emerald };
+function RecognitionCard({ playerId, role }) {
+  const rows = useLive("recognition", role, 0, { playerId }).rows;
+  if (!rows.length) return null;
+  return (
+    <div style={{padding:"0 24px"}}>
+      <Card sx={{padding:"14px",marginTop:"16px"}} data-testid="recognition-card">
+        <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary,marginBottom:"8px"}}>Recognition</div>
+        <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
+          {rows.map((r,i)=>(
+            <span key={`${r.family}-${r.kind}-${r.id??i}`} data-testid={`recognition-${r.family}`}
+              title={[r.season, r.on, r.opponent&&`v ${r.opponent}`, r.citation, r.isPublic?"on the public board":null].filter(Boolean).join(" · ")}
+              style={{display:"inline-flex",alignItems:"center",gap:"6px",padding:"4px 10px",borderRadius:D.pill,fontFamily:D.body,fontSize:"11px",
+                background:FAMILY_TONE[r.family]+"14",border:`1px solid ${FAMILY_TONE[r.family]}33`,color:textOn(FAMILY_TONE[r.family])}}>
+              {r.label}
+              <span style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>{r.season??r.on}</span>
+              {r.isPublic&&<span aria-label="on the public board" style={{fontSize:"9px"}}>🏛</span>}
+            </span>
+          ))}
+        </div>
+      </Card>
     </div>
   );
 }

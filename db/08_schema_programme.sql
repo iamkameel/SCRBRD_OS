@@ -5010,3 +5010,361 @@ RETURNS TABLE (player_id uuid, full_name text, team_code text, school_id uuid,
 $$ LANGUAGE sql STABLE SECURITY DEFINER;
 REVOKE ALL ON FUNCTION workload(text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION workload(text) TO PUBLIC;
+
+-- ═══════════════════════════════════════════════════════════════════
+--  RECOGNITION — honours, caps and milestones. No points.
+-- ═══════════════════════════════════════════════════════════════════
+--
+-- Three kinds of recognition, and they are different things:
+--
+--   AN HONOUR IS AWARDED. Colours, captaincy, player of the season: a named
+--   person decided it, on a date, for a season. It is a school's statement
+--   and is never edited — withdrawn with a reason if it must be, and stays.
+--   A CAP IS EARNED. A boy who takes the field for a side has played for
+--   it, and his cap number is the order in which he first did. Derived from
+--   the team sheets and never typed in, except for the ledger's starting
+--   point: the caps a side awarded before the platform was keeping count.
+--   A MILESTONE HAPPENS. A fifty, a five-for, a hat-trick, five hundred
+--   career runs: derived from the ball log, like the score is, and noticed
+--   the moment the ball that makes it is recorded.
+--
+-- NONE OF THEM IS A CURRENCY. Nothing here is a number a boy accumulates
+-- to be ranked by, and nothing here feeds the rewards engine. A cap is
+-- 412, not 412 points.
+
+-- ── Honours ──────────────────────────────────────────────────────
+CREATE TABLE honour (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  player_id    uuid NOT NULL REFERENCES player(id) ON DELETE CASCADE,
+  school_id    uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  -- The side he was on when it was awarded, kept as it was: an honour does
+  -- not move sides when he does.
+  team_code    text,
+  kind         text NOT NULL CHECK (kind IN ('colours', 'half_colours', 'honours', 'captain', 'vice_captain',
+                                             'player_of_season', 'award')),
+  -- Required for an 'award' (which is whatever the school calls it — "Fielder
+  -- of the Year"); optional otherwise.
+  name         text CHECK (name IS NULL OR length(name) BETWEEN 3 AND 80),
+  season       text NOT NULL CHECK (season ~ '^\d{4}(/\d{2})?$'),
+  citation     text CHECK (citation IS NULL OR length(citation) <= 300),
+  awarded_on   date NOT NULL DEFAULT sa_today(),
+  awarded_by   uuid REFERENCES app_user(id),
+  awarded_at   timestamptz NOT NULL DEFAULT now(),
+  -- Whether it may go on a public board with his name. False until somebody
+  -- says otherwise; only true feeds anything outward-facing.
+  is_public    boolean NOT NULL DEFAULT false,
+  withdrawn_at timestamptz,
+  withdrawn_by uuid REFERENCES app_user(id),
+  withdrawn_reason text CHECK (withdrawn_reason IS NULL OR length(withdrawn_reason) BETWEEN 3 AND 200),
+  CONSTRAINT honour_award_is_named CHECK (kind <> 'award' OR name IS NOT NULL),
+  CONSTRAINT honour_withdrawal_has_reason CHECK ((withdrawn_at IS NULL) = (withdrawn_reason IS NULL))
+);
+-- One of each kind per boy per season, live. Awards are free-named and may
+-- be several.
+CREATE UNIQUE INDEX honour_once_a_season ON honour (player_id, kind, season)
+  WHERE withdrawn_at IS NULL AND kind <> 'award';
+CREATE INDEX ON honour (school_id, season) WHERE withdrawn_at IS NULL;
+
+CREATE OR REPLACE FUNCTION honour_stamp() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    SELECT p.school_id, p.team_code INTO NEW.school_id, NEW.team_code FROM player p WHERE p.id = NEW.player_id;
+    IF NEW.school_id IS NULL THEN
+      RAISE EXCEPTION 'no such player: %', NEW.player_id USING ERRCODE = 'foreign_key_violation';
+    END IF;
+    NEW.awarded_by := app_user_id();
+    NEW.awarded_at := now();
+    NEW.withdrawn_at := NULL; NEW.withdrawn_by := NULL; NEW.withdrawn_reason := NULL;
+    RETURN NEW;
+  END IF;
+  IF OLD.withdrawn_at IS NOT NULL THEN
+    RAISE EXCEPTION 'a withdrawn honour is not edited — award it again' USING ERRCODE = 'check_violation';
+  END IF;
+  IF NEW.player_id IS DISTINCT FROM OLD.player_id OR NEW.school_id IS DISTINCT FROM OLD.school_id
+     OR NEW.team_code IS DISTINCT FROM OLD.team_code OR NEW.kind IS DISTINCT FROM OLD.kind
+     OR NEW.name IS DISTINCT FROM OLD.name OR NEW.season IS DISTINCT FROM OLD.season
+     OR NEW.citation IS DISTINCT FROM OLD.citation OR NEW.awarded_on IS DISTINCT FROM OLD.awarded_on
+     OR NEW.awarded_by IS DISTINCT FROM OLD.awarded_by OR NEW.awarded_at IS DISTINCT FROM OLD.awarded_at THEN
+    RAISE EXCEPTION 'an honour is not edited after it is awarded — withdraw it and award it again'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  -- is_public may change: putting a name on a board, or taking it off, is a
+  -- decision about the board, not about the honour.
+  IF NEW.withdrawn_at IS NOT NULL THEN
+    NEW.withdrawn_at := now();
+    NEW.withdrawn_by := app_user_id();
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+CREATE TRIGGER honour_stamp BEFORE INSERT OR UPDATE ON honour
+  FOR EACH ROW EXECUTE FUNCTION honour_stamp();
+
+CREATE OR REPLACE FUNCTION honour_kind_label(p_kind text, p_name text) RETURNS text AS $$
+  SELECT CASE p_kind
+    WHEN 'colours'          THEN 'Full colours'
+    WHEN 'half_colours'     THEN 'Half colours'
+    WHEN 'honours'          THEN 'Honours'
+    WHEN 'captain'          THEN 'Captain'
+    WHEN 'vice_captain'     THEN 'Vice-captain'
+    WHEN 'player_of_season' THEN 'Player of the season'
+    WHEN 'award'            THEN coalesce(p_name, 'Award')
+    ELSE p_kind END || CASE WHEN p_kind <> 'award' AND p_name IS NOT NULL THEN ' — ' || p_name ELSE '' END;
+$$ LANGUAGE sql IMMUTABLE;
+
+-- ── Caps ─────────────────────────────────────────────────────────
+CREATE TABLE cap_baseline (
+  school_id   uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  team_code   text NOT NULL,
+  -- Caps the side had awarded before the first fixture the platform holds.
+  caps_before integer NOT NULL CHECK (caps_before >= 0),
+  as_of       date NOT NULL,
+  note        text CHECK (note IS NULL OR length(note) <= 200),
+  set_by      uuid REFERENCES app_user(id),
+  set_at      timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (school_id, team_code)
+);
+CREATE OR REPLACE FUNCTION cap_baseline_stamp() RETURNS trigger AS $$
+BEGIN NEW.set_by := app_user_id(); NEW.set_at := now(); RETURN NEW; END $$ LANGUAGE plpgsql;
+CREATE TRIGGER cap_baseline_stamp BEFORE INSERT OR UPDATE ON cap_baseline
+  FOR EACH ROW EXECUTE FUNCTION cap_baseline_stamp();
+
+-- An APPEARANCE is a place in the eleven for a match that was played: not
+-- the twelfth man, not a withdrawn name, not a fixture still to come. The
+-- side is the one the sheet was for — home or away — and the school is the
+-- boy's own, so a guest fixture at another school's ground is still his cap.
+CREATE OR REPLACE VIEW team_appearance WITH (security_invoker = true) AS
+SELECT p.school_id,
+       CASE s.side WHEN 'home' THEN m.team_code ELSE m.away_team_code END AS team_code,
+       s.player_id, s.match_id, s.batting_no,
+       (m.starts_at AT TIME ZONE 'Africa/Johannesburg')::date AS played_on
+  FROM match_squad s
+  JOIN match m ON m.id = s.match_id
+  JOIN player p ON p.id = s.player_id
+ WHERE NOT s.withdrawn AND NOT s.twelfth
+   AND m.status IN ('live', 'complete')
+   AND (CASE s.side WHEN 'home' THEN m.school_id ELSE m.away_school_id END) = p.school_id;
+
+-- One row per boy per side: how many times, when first, and his cap number,
+-- which is the baseline plus his place in the order of first appearances.
+-- Ties on a day — a whole new side debuting together — go by batting order
+-- on that sheet, then by name, so the numbers are stable and defensible.
+CREATE OR REPLACE VIEW team_cap WITH (security_invoker = true) AS
+WITH firsts AS (
+  SELECT DISTINCT ON (school_id, team_code, player_id)
+         school_id, team_code, player_id, played_on AS first_on, batting_no AS first_batting_no, match_id AS first_match_id
+    FROM team_appearance
+   ORDER BY school_id, team_code, player_id, played_on, match_id),
+counts AS (
+  SELECT school_id, team_code, player_id, count(*)::int AS appearances, max(played_on) AS last_on
+    FROM team_appearance GROUP BY school_id, team_code, player_id)
+SELECT f.school_id, f.team_code, f.player_id, p.full_name, c.appearances, f.first_on, c.last_on, f.first_match_id,
+       coalesce(b.caps_before, 0)
+         + rank() OVER (PARTITION BY f.school_id, f.team_code
+                        ORDER BY f.first_on, f.first_batting_no NULLS LAST, p.full_name)::int AS cap_no,
+       b.caps_before IS NOT NULL AS baseline_set
+  FROM firsts f
+  JOIN player p ON p.id = f.player_id
+  JOIN counts c ON c.school_id = f.school_id AND c.team_code = f.team_code AND c.player_id = f.player_id
+  LEFT JOIN cap_baseline b ON b.school_id = f.school_id AND b.team_code = f.team_code;
+
+-- ── Milestones ───────────────────────────────────────────────────
+-- Derived. A row here is a fold over the log and nothing else, so a voided
+-- ball takes a fifty with it, the way it takes the runs.
+CREATE OR REPLACE VIEW bowler_innings_figures WITH (security_invoker = true) AS
+SELECT b.bowler_id AS player_id, b.match_id, b.innings,
+       count(*) FILTER (WHERE b.ball_type = 'W' AND coalesce(b.dismissal,'') !~* 'run ?out')::int AS wickets,
+       coalesce(sum(CASE WHEN b.ball_type IN ('Wd','Nb') THEN 1 + coalesce(b.value,0)
+                         WHEN b.ball_type IN ('run','W')  THEN coalesce(b.value,0) ELSE 0 END), 0)::int AS runs_conceded
+  FROM ball_event_live b
+ WHERE b.kind = 'ball' AND b.bowler_id IS NOT NULL
+ GROUP BY b.bowler_id, b.match_id, b.innings;
+
+-- A hat-trick is three wickets in three consecutive LEGAL deliveries by one
+-- bowler in one innings; a wide or a no-ball in between is not a delivery
+-- and does not break it. Run-outs are not the bowler's.
+CREATE OR REPLACE VIEW bowler_hat_trick WITH (security_invoker = true) AS
+WITH legal AS (
+  SELECT b.bowler_id, b.match_id, b.innings, b.seq,
+         (b.ball_type = 'W' AND coalesce(b.dismissal,'') !~* 'run ?out') AS w
+    FROM ball_event_live b
+   WHERE b.kind = 'ball' AND b.bowler_id IS NOT NULL AND b.ball_type NOT IN ('Wd','Nb')),
+runs AS (
+  SELECT *, lag(w, 1) OVER (PARTITION BY match_id, innings, bowler_id ORDER BY seq) AS w1,
+            lag(w, 2) OVER (PARTITION BY match_id, innings, bowler_id ORDER BY seq) AS w2
+    FROM legal)
+SELECT bowler_id AS player_id, match_id, innings, min(seq)::int AS completed_at_seq
+  FROM runs WHERE w AND w1 AND w2
+ GROUP BY bowler_id, match_id, innings;
+
+CREATE OR REPLACE VIEW player_milestone WITH (security_invoker = true) AS
+WITH dated AS (
+  SELECT m.id AS match_id, m.opponent, (m.starts_at AT TIME ZONE 'Africa/Johannesburg')::date AS played_on, m.starts_at
+    FROM match m),
+innings_bat AS (
+  SELECT i.player_id, i.match_id, i.innings,
+         CASE WHEN i.runs >= 100 THEN 'hundred' ELSE 'fifty' END AS kind, i.runs::int AS value
+    FROM player_innings i WHERE i.runs >= 50),
+innings_bowl AS (
+  SELECT f.player_id, f.match_id, f.innings, 'five_for' AS kind, f.wickets AS value
+    FROM bowler_innings_figures f WHERE f.wickets >= 5),
+hat AS (
+  SELECT h.player_id, h.match_id, h.innings, 'hat_trick' AS kind, 3 AS value FROM bowler_hat_trick h),
+career_runs AS (
+  SELECT x.player_id, x.match_id, NULL::smallint AS innings, 'career_runs' AS kind, t.threshold AS value
+    FROM (SELECT i.player_id, i.match_id,
+                 sum(i.runs) OVER (PARTITION BY i.player_id ORDER BY d.starts_at, i.match_id) AS after_runs,
+                 sum(i.runs) OVER (PARTITION BY i.player_id ORDER BY d.starts_at, i.match_id
+                                   ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS before_runs
+            FROM (SELECT player_id, match_id, sum(runs) AS runs FROM player_innings GROUP BY player_id, match_id) i
+            JOIN dated d ON d.match_id = i.match_id) x
+    CROSS JOIN (VALUES (500), (1000), (2000), (5000)) t(threshold)
+   WHERE coalesce(x.before_runs, 0) < t.threshold AND x.after_runs >= t.threshold),
+career_wkts AS (
+  SELECT x.player_id, x.match_id, NULL::smallint AS innings, 'career_wickets' AS kind, t.threshold AS value
+    FROM (SELECT f.player_id, f.match_id,
+                 sum(f.wickets) OVER (PARTITION BY f.player_id ORDER BY d.starts_at, f.match_id) AS after_w,
+                 sum(f.wickets) OVER (PARTITION BY f.player_id ORDER BY d.starts_at, f.match_id
+                                      ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS before_w
+            FROM (SELECT player_id, match_id, sum(wickets) AS wickets FROM bowler_innings_figures GROUP BY player_id, match_id) f
+            JOIN dated d ON d.match_id = f.match_id) x
+    CROSS JOIN (VALUES (25), (50), (100), (250)) t(threshold)
+   WHERE coalesce(x.before_w, 0) < t.threshold AND x.after_w >= t.threshold),
+caps AS (
+  SELECT x.player_id, x.match_id, NULL::smallint AS innings, 'caps' AS kind, t.threshold AS value
+    FROM (SELECT a.player_id, a.match_id,
+                 row_number() OVER (PARTITION BY a.player_id, a.school_id, a.team_code ORDER BY a.played_on, a.match_id) AS nth
+            FROM team_appearance a) x
+    CROSS JOIN (VALUES (25), (50), (100)) t(threshold)
+   WHERE x.nth = t.threshold),
+everything AS (
+  SELECT * FROM innings_bat UNION ALL SELECT * FROM innings_bowl UNION ALL SELECT * FROM hat
+  UNION ALL SELECT * FROM career_runs UNION ALL SELECT * FROM career_wkts UNION ALL SELECT * FROM caps)
+SELECT e.player_id, e.kind, e.value, e.match_id, e.innings, d.opponent, d.played_on
+  FROM everything e JOIN dated d ON d.match_id = e.match_id;
+
+CREATE OR REPLACE FUNCTION milestone_label(p_kind text, p_value int) RETURNS text AS $$
+  SELECT CASE p_kind
+    WHEN 'fifty'          THEN 'Fifty (' || p_value || ')'
+    WHEN 'hundred'        THEN 'Hundred (' || p_value || ')'
+    WHEN 'five_for'       THEN 'Five-for (' || p_value || ' wickets)'
+    WHEN 'hat_trick'      THEN 'Hat-trick'
+    WHEN 'career_runs'    THEN p_value || ' career runs'
+    WHEN 'career_wickets' THEN p_value || ' career wickets'
+    WHEN 'caps'           THEN p_value || ' caps'
+    ELSE p_kind END;
+$$ LANGUAGE sql IMMUTABLE;
+
+-- ── The moment it happens ────────────────────────────────────────
+-- A notice the ball it lands on, once per boy per innings per kind. The
+-- table is the "once"; the milestone itself lives in the log and is never
+-- written down twice. Notices carry news.read at the boy's side and are not
+-- public: a fifty is a scorecard fact, a boy's name pushed outward is a
+-- decision the broadcast module makes.
+CREATE TABLE milestone_notice (
+  player_id uuid NOT NULL REFERENCES player(id) ON DELETE CASCADE,
+  kind      text NOT NULL,
+  match_id  uuid NOT NULL REFERENCES match(id) ON DELETE CASCADE,
+  innings   smallint NOT NULL DEFAULT 0,
+  value     int NOT NULL,
+  noticed_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (player_id, kind, match_id, innings)
+);
+ALTER TABLE milestone_notice ENABLE ROW LEVEL SECURITY;
+-- Written only by the trigger below (no insert policy). Readable by whoever
+-- may read the boy's profile, because "when was his fifty called" is part
+-- of his record, and a table nobody can read is a decision, not a default.
+CREATE POLICY milestone_notice_read ON milestone_notice
+  FOR SELECT USING (app_can('player.profile.read',
+    (SELECT p.school_id FROM player p WHERE p.id = milestone_notice.player_id),
+    (SELECT p.team_code FROM player p WHERE p.id = milestone_notice.player_id),
+    milestone_notice.player_id, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE OR REPLACE FUNCTION milestone_notify(p_player uuid, p_kind text, p_match uuid, p_innings smallint, p_value int) RETURNS void AS $$
+DECLARE p player%ROWTYPE; v_title text;
+BEGIN
+  INSERT INTO milestone_notice (player_id, kind, match_id, innings, value)
+  VALUES (p_player, p_kind, p_match, p_innings, p_value) ON CONFLICT DO NOTHING;
+  IF NOT FOUND THEN RETURN; END IF;
+  SELECT * INTO p FROM player WHERE id = p_player;
+  v_title := CASE p_kind
+    WHEN 'fifty'          THEN 'Fifty for ' || p.full_name
+    WHEN 'hundred'        THEN 'Hundred for ' || p.full_name
+    WHEN 'five_for'       THEN 'Five-for for ' || p.full_name
+    WHEN 'hat_trick'      THEN 'Hat-trick for ' || p.full_name
+    WHEN 'career_runs'    THEN p.full_name || ' passes ' || p_value || ' career runs'
+    WHEN 'career_wickets' THEN p.full_name || ' passes ' || p_value || ' career wickets'
+    ELSE milestone_label(p_kind, p_value) END;
+  INSERT INTO notification (school_id, team_code, scope_level, kind, urgency, title, body,
+                            required_capability, is_public, subject_kind, subject_id, subject_person_id)
+  VALUES (p.school_id, p.team_code, 'team', 'recognition', 'low', v_title,
+          milestone_label(p_kind, p_value) || ' against ' || coalesce((SELECT opponent FROM match WHERE id = p_match), 'the opposition') || '.',
+          'news.read', false, 'match', p_match, p_player);
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION milestone_watch() RETURNS trigger AS $$
+DECLARE v_runs int; v_before int; v_w int; v_career int; t int;
+BEGIN
+  -- The striker's innings, and his career, after this ball.
+  IF NEW.striker_id IS NOT NULL AND NEW.ball_type IN ('run', 'W', 'Nb') AND coalesce(NEW.value, 0) > 0 THEN
+    SELECT coalesce(runs, 0) INTO v_runs FROM player_innings
+     WHERE player_id = NEW.striker_id AND match_id = NEW.match_id AND innings = NEW.innings;
+    v_before := v_runs - NEW.value;
+    IF v_before < 50 AND v_runs >= 50 THEN PERFORM milestone_notify(NEW.striker_id, 'fifty', NEW.match_id, NEW.innings, v_runs); END IF;
+    IF v_before < 100 AND v_runs >= 100 THEN PERFORM milestone_notify(NEW.striker_id, 'hundred', NEW.match_id, NEW.innings, v_runs); END IF;
+    SELECT coalesce(sum(runs), 0) INTO v_career FROM player_innings WHERE player_id = NEW.striker_id;
+    FOREACH t IN ARRAY ARRAY[500, 1000, 2000, 5000] LOOP
+      IF v_career - NEW.value < t AND v_career >= t THEN PERFORM milestone_notify(NEW.striker_id, 'career_runs', NEW.match_id, 0::smallint, t); END IF;
+    END LOOP;
+  END IF;
+  -- The bowler's wicket.
+  IF NEW.bowler_id IS NOT NULL AND NEW.ball_type = 'W' AND coalesce(NEW.dismissal,'') !~* 'run ?out' THEN
+    SELECT wickets INTO v_w FROM bowler_innings_figures
+     WHERE player_id = NEW.bowler_id AND match_id = NEW.match_id AND innings = NEW.innings;
+    IF v_w = 5 THEN PERFORM milestone_notify(NEW.bowler_id, 'five_for', NEW.match_id, NEW.innings, 5); END IF;
+    IF EXISTS (SELECT 1 FROM bowler_hat_trick h WHERE h.player_id = NEW.bowler_id AND h.match_id = NEW.match_id
+                  AND h.innings = NEW.innings AND h.completed_at_seq = NEW.seq) THEN
+      PERFORM milestone_notify(NEW.bowler_id, 'hat_trick', NEW.match_id, NEW.innings, 3);
+    END IF;
+    SELECT coalesce(sum(wickets), 0) INTO v_career FROM bowler_innings_figures WHERE player_id = NEW.bowler_id;
+    FOREACH t IN ARRAY ARRAY[25, 50, 100, 250] LOOP
+      IF v_career = t THEN PERFORM milestone_notify(NEW.bowler_id, 'career_wickets', NEW.match_id, 0::smallint, t); END IF;
+    END LOOP;
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE TRIGGER ball_event_milestone AFTER INSERT ON ball_event
+  FOR EACH ROW WHEN (NEW.kind = 'ball')
+  EXECUTE FUNCTION milestone_watch();
+
+-- ── The profile's view of all three ──────────────────────────────
+-- One shape for a boy's honours, caps and milestones, per row under
+-- player.profile.read: what the roster already shows about him, said in
+-- full. Definer rights so that one check is the gate and the three sources
+-- behind it do not each subtract differently.
+CREATE OR REPLACE FUNCTION recognition(p_player uuid)
+RETURNS TABLE (family text, kind text, label text, value int, season text, on_date date,
+               match_id uuid, opponent text, is_public boolean, citation text, ref_id uuid) AS $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM player p WHERE p.id = p_player
+                    AND app_can('player.profile.read', p.school_id, p.team_code, p.id,
+                                '00000000-0000-0000-0000-000000000000'::uuid)) THEN
+    RETURN;
+  END IF;
+  RETURN QUERY
+    SELECT 'honour'::text, h.kind, honour_kind_label(h.kind, h.name), NULL::int, h.season, h.awarded_on,
+           NULL::uuid, NULL::text, h.is_public, h.citation, h.id
+      FROM honour h WHERE h.player_id = p_player AND h.withdrawn_at IS NULL
+    UNION ALL
+    SELECT 'cap', 'cap', c.team_code || ' cap ' || CASE WHEN c.baseline_set THEN '#' || c.cap_no ELSE '#' || c.cap_no || ' (no baseline set)' END
+             || ' · ' || c.appearances || ' appearance' || CASE WHEN c.appearances = 1 THEN '' ELSE 's' END,
+           c.cap_no, NULL, c.first_on, c.first_match_id, NULL, false, NULL, NULL
+      FROM team_cap c WHERE c.player_id = p_player
+    UNION ALL
+    SELECT 'milestone', ms.kind, milestone_label(ms.kind, ms.value), ms.value, NULL, ms.played_on,
+           ms.match_id, ms.opponent, false, NULL, NULL
+      FROM player_milestone ms WHERE ms.player_id = p_player
+    ORDER BY 6 DESC NULLS LAST, 1;
+END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
+REVOKE ALL ON FUNCTION recognition(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION recognition(uuid) TO PUBLIC;

@@ -2,7 +2,7 @@
 -- GENERATED from packages/policy/ by services/api/rls/generate-rls.mjs — DO NOT EDIT BY HAND.
 -- Regenerate with `pnpm rls:generate`. Applied BEFORE the scoring schema,
 -- which references app_can(). Model: docs/adr/0001-scoped-assignments.md.
--- 78 capabilities across 24 roles.
+-- 79 capabilities across 24 roles.
 
 -- Principal helpers. app_user_id() is set from the signed token on every
 -- request; everything else about a person's authority is looked up.
@@ -47,6 +47,7 @@ INSERT INTO capability (name) VALUES
   ('player.emergency.read'),
   ('player.emergency.manage'),
   ('player.workload.read'),
+  ('recognition.manage'),
   ('clearance.read'),
   ('clearance.manage'),
   ('player.performance.read'),
@@ -149,6 +150,7 @@ INSERT INTO role_capability (role, capability) VALUES
   ('platformadmin', 'audit.read'),
   ('platformadmin', 'competition.read'),
   ('platformadmin', 'news.read'),
+  ('principal', 'recognition.manage'),
   ('principal', 'clearance.read'),
   ('principal', 'clearance.manage'),
   ('principal', 'school.feature.manage'),
@@ -176,6 +178,7 @@ INSERT INTO role_capability (role, capability) VALUES
   ('principal', 'guardian.link.manage'),
   ('principal', 'player.note.read'),
   ('principal', 'scoring.amend.approve'),
+  ('directorofsport', 'recognition.manage'),
   ('directorofsport', 'player.workload.read'),
   ('directorofsport', 'clearance.read'),
   ('directorofsport', 'clearance.manage'),
@@ -224,6 +227,7 @@ INSERT INTO role_capability (role, capability) VALUES
   ('directorofsport', 'news.publish.school'),
   ('directorofsport', 'audit.read'),
   ('directorofsport', 'opposition.read'),
+  ('schooladmin', 'recognition.manage'),
   ('schooladmin', 'clearance.read'),
   ('schooladmin', 'clearance.manage'),
   ('schooladmin', 'availability.read'),

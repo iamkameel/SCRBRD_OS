@@ -104,12 +104,13 @@ export const READ_QUERIES = {
     // not an access control: it is the same for everyone and cannot tell a
     // school administrator from a coach. Asking and getting NULL is the mask
     // being tested.
-    text: `select id, school_id, full_name, team_code, playing_role,
-                  batting_style, bowling_style, fitness,
-                  born, hometown, height, weight,           -- masked per role
-                  address, guardian, id_number              -- masked per role
-             from player_masked
-            order by full_name`,
+    text: `select pm.id, pm.school_id, s.name as school_name, pm.full_name, pm.team_code, pm.playing_role,
+                  pm.batting_style, pm.bowling_style, pm.fitness,
+                  pm.born, pm.hometown, pm.height, pm.weight,           -- masked per role
+                  pm.address, pm.guardian, pm.id_number              -- masked per role
+             from player_masked pm
+             join school s on s.id = pm.school_id
+            order by pm.full_name`,
   },
   injuries: {
     masked: true,
@@ -954,6 +955,54 @@ export const READ_QUERIES = {
   bowling_directives: {
     text: `select age_band, max_overs_per_spell, max_overs_per_day from bowling_directive
             order by case age_band when 'U13' then 1 when 'U14' then 2 when 'U15' then 3 when 'U16' then 4 when 'open' then 5 else 6 end`,
+  },
+
+  /*
+   * RECOGNITION: one boy's honours, caps and milestones in one shape, through
+   * recognition() in db/08 — player.profile.read on him or nothing. Honours
+   * are awarded, caps are earned, milestones happen; none is a score.
+   */
+  recognition: {
+    text: `select family, kind, label, value, season, on_date, match_id, opponent, is_public, citation, ref_id
+             from recognition($1::uuid)`,
+    params: q => [req(q, "playerId")],
+  },
+
+  /* A side's caps ledger, in cap order. Derived from the team sheets. */
+  caps: {
+    text: `select c.school_id, c.team_code, c.player_id, c.full_name, c.cap_no, c.appearances,
+                  c.first_on, c.last_on, c.first_match_id, c.baseline_set
+             from team_cap c
+            where c.team_code = $1
+            order by c.cap_no`,
+    params: q => [req(q, "teamCode")],
+  },
+
+  /* Live honours, newest first, optionally one side's or one season's. */
+  honours: {
+    text: `select h.id, h.player_id, p.full_name, h.school_id, h.team_code, h.kind, h.name,
+                  honour_kind_label(h.kind, h.name) as label, h.season, h.citation, h.awarded_on,
+                  h.is_public, u.name as awarded_by_name
+             from honour h
+             join player p on p.id = h.player_id
+             left join app_user u on u.id = h.awarded_by
+            where h.withdrawn_at is null
+              and ($1::text is null or h.team_code = $1)
+              and ($2::text is null or h.season = $2)
+            order by h.awarded_on desc, p.full_name`,
+    params: q => [q?.teamCode || null, q?.season || null],
+  },
+
+  /* Milestones from the log, newest first. Per row, the player's own visibility. */
+  milestones: {
+    text: `select ms.player_id, p.full_name, p.team_code, ms.kind, milestone_label(ms.kind, ms.value) as label,
+                  ms.value, ms.match_id, ms.innings, ms.opponent, ms.played_on
+             from player_milestone ms
+             join player p on p.id = ms.player_id
+            where ($1::text is null or p.team_code = $1)
+              and ($2::uuid is null or ms.player_id = $2)
+            order by ms.played_on desc, p.full_name`,
+    params: q => [q?.teamCode || null, q?.playerId || null],
   },
 
   /* Which roles must hold which checks. Platform reference data. */

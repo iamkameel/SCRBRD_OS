@@ -577,6 +577,26 @@ try {
     await p.ctx.close();
   }
 
+  // ── Recognition on the profile ──────────────────────────────────
+  group("A boy's honours and caps are on his profile, for those who read him");
+  {
+    const c = await open();
+    await signIn(c.page, /Coach/);
+    await c.page.locator('[data-testid="nav-profiles"]').click({ timeout: 6000 }); await c.page.waitForTimeout(1200);
+    const row = c.page.locator('button:has-text("James Whitfield")').first();
+    ok("the coach's roster lists the boy", await row.count() === 1);
+    await row.click({ timeout: 8000 }); await c.page.waitForTimeout(2000);
+    const card = c.page.locator('[data-testid="recognition-card"]');
+    ok("the coach sees the recognition card", await card.count() === 1);
+    if (await card.count() !== 1) console.log("    errors:", c.errors.join(" | ").slice(0, 300));
+    const t = await card.innerText().catch(() => "");
+    ok("...with his colours on it", /Full colours/.test(t));
+    ok("...and his cap, numbered from the board", /1XI cap #412/.test(t));
+    ok("...and nothing that looks like points", !/points|pts|score/i.test(t));
+    ok("no console errors", c.errors.length === 0);
+    await c.ctx.close();
+  }
+
   // ── The shell, by id ────────────────────────────────────────────
   // Every walk above found its way around by button text, which is a test
   // that breaks when a label is reworded and passes when a button is drawn

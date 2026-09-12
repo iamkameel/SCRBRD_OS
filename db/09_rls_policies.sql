@@ -138,6 +138,40 @@ CREATE POLICY adult_clearance_update ON adult_clearance
   FOR UPDATE USING (app_can('clearance.manage', adult_clearance.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
            WITH CHECK (app_can('clearance.manage', adult_clearance.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
 
+-- honour — read: player.profile.read · write: recognition.manage
+ALTER TABLE honour ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS honour_read   ON honour;
+DROP POLICY IF EXISTS honour_insert ON honour;
+DROP POLICY IF EXISTS honour_update ON honour;
+DROP POLICY IF EXISTS honour_delete ON honour;
+
+CREATE POLICY honour_read ON honour
+  FOR SELECT USING (app_can('player.profile.read', honour.school_id, (SELECT p.team_code FROM player p WHERE p.id = honour.player_id), honour.player_id, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY honour_insert ON honour
+  FOR INSERT WITH CHECK (app_can('recognition.manage', honour.school_id, (SELECT p.team_code FROM player p WHERE p.id = honour.player_id), honour.player_id, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY honour_update ON honour
+  FOR UPDATE USING (app_can('recognition.manage', honour.school_id, (SELECT p.team_code FROM player p WHERE p.id = honour.player_id), honour.player_id, '00000000-0000-0000-0000-000000000000'::uuid))
+           WITH CHECK (app_can('recognition.manage', honour.school_id, (SELECT p.team_code FROM player p WHERE p.id = honour.player_id), honour.player_id, '00000000-0000-0000-0000-000000000000'::uuid));
+
+-- cap_baseline — read: team.read · write: recognition.manage
+ALTER TABLE cap_baseline ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS cap_baseline_read   ON cap_baseline;
+DROP POLICY IF EXISTS cap_baseline_insert ON cap_baseline;
+DROP POLICY IF EXISTS cap_baseline_update ON cap_baseline;
+DROP POLICY IF EXISTS cap_baseline_delete ON cap_baseline;
+
+CREATE POLICY cap_baseline_read ON cap_baseline
+  FOR SELECT USING (app_can('team.read', cap_baseline.school_id, cap_baseline.team_code, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY cap_baseline_insert ON cap_baseline
+  FOR INSERT WITH CHECK (app_can('recognition.manage', cap_baseline.school_id, cap_baseline.team_code, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY cap_baseline_update ON cap_baseline
+  FOR UPDATE USING (app_can('recognition.manage', cap_baseline.school_id, cap_baseline.team_code, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
+           WITH CHECK (app_can('recognition.manage', cap_baseline.school_id, cap_baseline.team_code, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
 -- emergency_contact — read: player.emergency.read · write: player.emergency.manage
 ALTER TABLE emergency_contact ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS emergency_contact_read   ON emergency_contact;

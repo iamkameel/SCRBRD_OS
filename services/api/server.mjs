@@ -46,6 +46,7 @@ import { fixtureRoutes } from "./write/fixture-api.mjs";
 import { rosterRoutes } from "./write/roster-api.mjs";
 import { contactRoutes } from "./write/contacts-api.mjs";
 import { clearanceRoutes } from "./write/clearance-api.mjs";
+import { recognitionRoutes } from "./write/recognition-api.mjs";
 import { MatchHub } from "./realtime/realtime.mjs";
 
 const PORT = Number(process.env.PORT || 8787);
@@ -218,6 +219,7 @@ const roster   = rosterRoutes({ pool, secret: SECRET });
 // reaches the manifest through the trip, see trip_contacts() in db/08.
 const contacts = contactRoutes({ pool, secret: SECRET });
 const clearances = clearanceRoutes({ pool, secret: SECRET });
+const recognition = recognitionRoutes({ pool, secret: SECRET });
 
 /**
  * Development sign-in.
@@ -349,6 +351,12 @@ const PLAYER_ROUTES = [
   [/^\/api\/emergency-contacts\/([^/]+)\/retire$/,   "POST", contacts.retire],
   [/^\/api\/clearances$/,                           "POST", clearances.record],
   [/^\/api\/clearances\/([^/]+)\/revoke$/,          "POST", clearances.revoke],
+  // Honours are awarded and withdrawn, never edited; a cap baseline is where
+  // a side's ledger starts. recognition.manage, through the tables' policies.
+  [/^\/api\/honours$/,                              "POST", recognition.award],
+  [/^\/api\/honours\/([^/]+)\/withdraw$/,           "POST", recognition.withdraw],
+  [/^\/api\/honours\/([^/]+)\/public$/,             "POST", recognition.setPublic],
+  [/^\/api\/cap-baselines$/,                        "POST", recognition.baseline],
   [/^\/api\/players\/([^/]+)\/assessment$/,     "POST", assess.record],
   [/^\/api\/players\/([^/]+)\/access-request$/, "POST", access.ask],
   [/^\/api\/access-requests\/([^/]+)\/decide$/, "POST", access.decide],

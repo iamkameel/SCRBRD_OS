@@ -502,3 +502,13 @@ INSERT INTO adult_clearance (person_id, school_id, kind, reference, issued_on, e
   ('88888888-0000-0000-0000-000000000017', '11111111-1111-1111-1111-111111111111', 'police_clearance', 'PCC-2026-030771', '2026-02-20', '2027-02-19', NULL),
   ('88888888-0000-0000-0000-000000000017', '11111111-1111-1111-1111-111111111111', 'child_protection', 'NRSO-11-71904',   '2025-12-01', '2027-11-30', NULL),
   ('88888888-0000-0000-0000-000000000017', '11111111-1111-1111-1111-111111111111', 'driving_permit',   'PrDP-G-4471820',  '2025-01-10', '2027-01-09', 'Goods and passengers');
+
+-- ── Recognition ────────────────────────────────────────────────────
+-- The 1XI had awarded 411 caps before the platform; James Whitfield holds
+-- full colours from last season, on the public board; S Naidoo captains
+-- this one. awarded_by NULL throughout: seeded, not signed.
+INSERT INTO cap_baseline (school_id, team_code, caps_before, as_of, note) VALUES
+  ('11111111-1111-1111-1111-111111111111', '1XI', 411, '2025-12-31', 'From the honours board in the pavilion.');
+INSERT INTO honour (player_id, kind, season, citation, awarded_on, is_public) VALUES
+  ('aaaaaaaa-0000-0000-0000-000000000001', 'colours', '2025/26', 'Led the batting all season.', '2025-11-20', true),
+  ('aaaaaaaa-0000-0000-0000-000000000003', 'captain', '2026/27', NULL, '2026-08-15', false);
