@@ -4,6 +4,8 @@ import { D, textOn } from "../design/tokens.js";
 import { dateStr, today } from "../lib/format.js";
 import { Avatar, Badge, Btn, Card, Input, Modal, Pill, SectionHeader, Select } from "../ui/primitives.jsx";
 import { useLive, useRows } from "../lib/live.js";
+import { api } from "../lib/api.js";
+import { schoolsWhere } from "../lib/session.js";
 
 // ══════════════════════════════════════════════════════
 //  TRAINING VIEW
@@ -26,7 +28,12 @@ function TrainingView({ role }) {
   // drawn; nothing here derives a state from a number.
   const LOAD = useRows("workload", role);
   // The drill library from the server; the constant below is the demo's.
-  const { rows: LIVE_DRILLS, live: drillsLive } = useLive("drills", role);
+  const [drillNonce, setDrillNonce] = useState(0);
+  const { rows: LIVE_DRILLS, live: drillsLive } = useLive("drills", role, drillNonce);
+  // Which schools this person's roles could keep a drill library for. Layout
+  // only: the insert is refused by the drill policy regardless of what is
+  // drawn here, and the form says so in the server's words when it is.
+  const drillSchools = schoolsWhere("team.manage");
   const attending = (s) => REGISTER.filter((a) => a.sessionId === s.id && a.status !== "absent").map((a) => a.playerId);
   const [view, setView] = useState("schedule");
   const [addModal, setAddModal] = useState(false);
@@ -119,6 +126,9 @@ function TrainingView({ role }) {
 
       {view==="drills"&&(
         <div>
+          {drillsLive&&drillSchools.length>0&&(
+            <AddDrill schools={drillSchools} onAdded={()=>setDrillNonce(n=>n+1)}/>
+          )}
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:"12px"}}>
             {(drillsLive ? LIVE_DRILLS : DRILLS_LIBRARY).map(d=>(
               <Card key={d.id} sx={{padding:"14px"}}>
@@ -189,6 +199,52 @@ function LoadPanel({ rows }) {
             ))}
           </tbody>
         </table>
+      </div>
+    </Card>
+  );
+}
+
+// A drill the school keeps, added by whoever manages a side there. The
+// platform's own drills (school NULL) are nobody's to write through the API,
+// which is why this always names a school and never offers "everyone's".
+function AddDrill({ schools, onAdded }) {
+  const CATEGORIES = ["batting", "bowling", "fielding", "keeping", "fitness", "tactical"];
+  const [open, setOpen] = useState(false);
+  const [schoolId, setSchoolId] = useState(schools[0]?.id ?? "");
+  const [name, setName] = useState("");
+  const [category, setCategory] = useState("batting");
+  const [minutes, setMinutes] = useState("20");
+  const [said, setSaid] = useState("");
+  const [busy, setBusy] = useState(false);
+  const add = async () => {
+    setSaid(""); setBusy(true);
+    try {
+      await api("/api/drills", { method: "POST", body: {
+        schoolId, name: name.trim(), category, durationMin: Number(minutes),
+      } });
+      setName(""); setMinutes("20"); setOpen(false); onAdded();
+    } catch (e) { setSaid(e.message || "Refused."); }
+    finally { setBusy(false); }
+  };
+  if (!open) return (
+    <div style={{marginBottom:"12px"}}>
+      <Btn size="sm" onClick={()=>setOpen(true)}>+ Drill</Btn>
+    </div>
+  );
+  return (
+    <Card sx={{padding:"14px",marginBottom:"12px"}} data-testid="add-drill">
+      <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary,marginBottom:"10px"}}>A drill for the school</div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:"10px"}}>
+        {schools.length>1&&<Select label="School" value={schoolId} onChange={setSchoolId}
+          options={schools.map(s=>({ value:s.id, label:s.name }))}/>}
+        <Input label="Name" value={name} onChange={setName} placeholder="Pavilion end yorkers"/>
+        <Select label="Category" value={category} onChange={setCategory} options={CATEGORIES}/>
+        <Input label="Minutes" value={minutes} onChange={setMinutes} type="number" placeholder="20"/>
+      </div>
+      {said&&<div role="alert" style={{fontFamily:D.body,fontSize:"11px",color:textOn(D.rose),marginBottom:"8px"}}>{said}</div>}
+      <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
+        <Btn variant="ghost" size="sm" onClick={()=>{setOpen(false);setSaid("");}}>Cancel</Btn>
+        <Btn size="sm" onClick={add} disabled={busy||name.trim().length<3||!schoolId}>Add it</Btn>
       </div>
     </Card>
   );

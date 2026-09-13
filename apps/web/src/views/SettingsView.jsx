@@ -6,6 +6,7 @@ import { D, textOn } from "../design/tokens.js";
 import { SCRBRD } from "../scorer/engine.jsx";
 import { Avatar, Badge, Btn, Card, EmptyState, Input, Modal, SectionHeader, Select } from "../ui/primitives.jsx";
 import { useLive, useRows } from "../lib/live.js";
+import { schoolsWhere } from "../lib/session.js";
 import { api } from "../lib/api.js";
 import { disablePush, enablePush, pushSupported } from "../lib/push.js";
 
@@ -192,6 +193,8 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp }) 
         </Card>
       )}
 
+      {tab==="school"&&<OpenCeiling/>}
+
       {/* ── UPGRADES ── */}
       {/* ── ALERTS: this phone, and the others I have registered ── */}
       {tab==="alerts"&&<AlertsTab role={role}/>}
@@ -359,6 +362,53 @@ function PassportTab({ role }) {
               : <Btn variant="ghost" onClick={()=>withdraw(r.id)}>Withdraw</Btn>}
           </div>
         ))}
+    </Card>
+  );
+}
+
+// THE OPEN BAND'S CEILING. The platform's directive limits a pace bowler by
+// age band and leaves Open alone: U17 and U18 play Open at school level, and
+// an Open club side may field grown men. A high school may still put its own
+// line under its schoolboys, and this is where it says so.
+//
+// Only a school may have one — the table's own trigger refuses any other kind
+// of tenant outright — so this is drawn for the schools this person's roles
+// could set it for, and the server refuses the write regardless.
+function OpenCeiling() {
+  const schools = schoolsWhere("player.workload.manage");
+  const [schoolId, setSchoolId] = useState(schools[0]?.id ?? "");
+  const [spell, setSpell] = useState("");
+  const [day, setDay] = useState("");
+  const [said, setSaid] = useState("");
+  const [done, setDone] = useState("");
+  if (schools.length === 0) return null;
+  const save = async () => {
+    setSaid(""); setDone("");
+    try {
+      const r = await api("/api/bowling-ceiling", { method: "POST", body: {
+        schoolId,
+        maxOversPerSpell: spell === "" ? null : Number(spell),
+        maxOversPerDay: day === "" ? null : Number(day),
+      } });
+      setDone(`Set: ${r.maxOversPerSpell ?? "no"} per spell, ${r.maxOversPerDay ?? "no"} per day.`);
+    } catch (e) { setSaid(e.message || "Refused."); }
+  };
+  return (
+    <Card sx={{padding:"20px",maxWidth:"520px",marginTop:"12px"}} data-testid="open-ceiling">
+      <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary,marginBottom:"4px"}}>Open-band bowling ceiling</div>
+      <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginBottom:"14px"}}>
+        The junior directives cap a pace bowler by age band. Open carries none, because U17 and U18 play Open division.
+        A school may put its own line under them anyway. Leave a field empty to set no limit of that kind.
+      </div>
+      {schools.length>1&&<Select label="School" value={schoolId} onChange={setSchoolId}
+        options={schools.map(s=>({ value:s.id, label:s.name }))}/>}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
+        <Input label="Overs per spell" value={spell} onChange={setSpell} type="number" placeholder="e.g. 7"/>
+        <Input label="Overs per day" value={day} onChange={setDay} type="number" placeholder="e.g. 18"/>
+      </div>
+      {said&&<div role="alert" style={{fontFamily:D.body,fontSize:"11px",color:textOn(D.rose),marginBottom:"8px"}}>{said}</div>}
+      {done&&<div style={{fontFamily:D.body,fontSize:"11px",color:textOn(D.emerald),marginBottom:"8px"}}>{done}</div>}
+      <Btn size="sm" onClick={save} disabled={!schoolId||(spell===""&&day==="")}>Set the ceiling</Btn>
     </Card>
   );
 }

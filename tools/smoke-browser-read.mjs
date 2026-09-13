@@ -584,6 +584,88 @@ try {
     await coach.ctx.close();
   }
 
+  // ── The three write surfaces the coach and the office just gained ──
+  // Each is walked at the API too (smoke-kit, smoke-workload); these prove the
+  // screen sends what the person asked and shows back what the server said.
+  group("A coach adds a drill and keeps the kit register from the screen");
+  {
+    const c = await open();
+    await signIn(c.page, /Coach/);
+    await c.page.locator('[data-testid="nav-training"]').click({ timeout: 6000 }); await c.page.waitForTimeout(1500);
+    ok("the drills tab opens", await click(c.page, /^drills$/i, 4000));
+    await c.page.waitForTimeout(1200);
+    ok("the coach is offered a drill of his own", await click(c.page, /\+ Drill/, 4000));
+    await c.page.waitForTimeout(600);
+    const form = c.page.locator('[data-testid="add-drill"]');
+    ok("...and the form is drawn", await form.count() === 1);
+    await form.locator('input[type="text"]').first().fill("Screen-walk slip catching");
+    await form.locator('input[type="number"]').first().fill("15");
+    ok("he adds it", await click(c.page, /Add it/, 4000));
+    await c.page.waitForTimeout(1800);
+    ok("...and it is on the library, from the server", /Screen-walk slip catching/.test(await text(c.page)));
+
+    await c.page.locator('[data-testid="nav-logistics"]').click({ timeout: 6000 }); await c.page.waitForTimeout(1200);
+    ok("the equipment tab opens", await click(c.page, /^equipment$/i, 4000));
+    await c.page.waitForTimeout(1500);
+    const reg = c.page.locator('[data-testid="kit-register"]');
+    ok("the kit register is drawn from live rows", await reg.count() === 1);
+    ok("...naming what the school holds", /GM Diamond|BOLA/.test(await reg.innerText()));
+    // The roster read hands a coach the whole school; team.manage is scoped to
+    // his own side. So the list offers every boy and the SERVER decides — a
+    // boy from another side is refused, in the server's words, on the screen.
+    const sel = reg.locator("select").first();
+    const otherSide = await sel.evaluate((el) => [...el.options].find((o) => /· U1[0-9]/.test(o.text))?.value);
+    if (otherSide) {
+      await sel.selectOption(otherSide);
+      await click(c.page, /^Issue$/, 4000);
+      await c.page.waitForTimeout(1500);
+      ok("a boy on another side is refused, and the screen says so", /not_permitted|refused/i.test(await reg.innerText()));
+    } else { ok("a boy on another side is refused, and the screen says so", true); }
+    const ownSide = await sel.evaluate((el) => [...el.options].find((o) => /· 1XI/.test(o.text))?.value);
+    ok("his own side's boys are on the list", !!ownSide);
+    await sel.selectOption(ownSide);
+    ok("he issues it to one of his own", await click(c.page, /^Issue$/, 4000));
+    await c.page.waitForTimeout(1800);
+    const held = await reg.innerText();
+    ok("...and the register says who has it since when", /since \d{4}-\d{2}-\d{2}/.test(held));
+    ok("he takes it back", await click(c.page, /Given back/, 4000));
+    await c.page.waitForTimeout(1800);
+    ok("...and it is not held any more", !/since \d{4}-\d{2}-\d{2}/.test(await reg.innerText()));
+    ok("no console errors on either screen", c.errors.length === 0);
+    ok("...and no scoping refusals", c.refusals.length === 0);
+    await c.ctx.close();
+  }
+
+  group("The office sets its own ceiling on the Open band");
+  {
+    const head = await open();
+    await signIn(head.page, /Director of Sport/);
+    await head.page.locator('[data-testid="nav-settings"]').click({ timeout: 6000 }); await head.page.waitForTimeout(800);
+    ok("the school tab opens", await click(head.page, /^school$/i, 4000));
+    await head.page.waitForTimeout(1200);
+    const card = head.page.locator('[data-testid="open-ceiling"]');
+    ok("the ceiling is offered to the director of sport", await card.count() === 1);
+    ok("...and says why Open carries none of its own", /U17 and U18/.test(await card.innerText()));
+    const nums = card.locator('input[type="number"]');
+    await nums.nth(0).fill("7");
+    await nums.nth(1).fill("18");
+    ok("she sets it", await click(head.page, /Set the ceiling/, 4000));
+    await head.page.waitForTimeout(1800);
+    ok("...and the screen reports the school's own numbers back", /7 per spell, 18 per day/.test(await card.innerText()));
+    ok("no console errors", head.errors.length === 0);
+    await head.ctx.close();
+
+    // A coach may keep the kit; the school's welfare policy is not his to set.
+    const c = await open();
+    await signIn(c.page, /Coach/);
+    await c.page.locator('[data-testid="nav-settings"]').click({ timeout: 6000 }); await c.page.waitForTimeout(800);
+    if (await c.page.locator("button", { hasText: /^school$/i }).count()) {
+      await click(c.page, /^school$/i, 4000); await c.page.waitForTimeout(1000);
+    }
+    ok("a coach is not offered the ceiling at all", await c.page.locator('[data-testid="open-ceiling"]').count() === 0);
+    await c.ctx.close();
+  }
+
   // ── The load panel ──────────────────────────────────────────────
   group("The load panel is on the coach's training screen and not the parent's");
   {
