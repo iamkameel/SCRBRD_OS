@@ -1,4 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { canonicalRole } from "../design/roles.js";
+import { api, signedIn } from "../lib/api.js";
+import { mode } from "../lib/session.js";
 import SCRBRD_LOGO from "../assets/scrbrd-logo.jpg";
 import { SCHOOLS_REGISTRY } from "../data/institution.js";
 import { ROLES } from "../design/roles.js";
@@ -15,6 +18,17 @@ function OnboardingFlow({ onComplete }) {
     team: "", playerLink: "", inviteCode: "", jersey: "",
   });
   const [schoolSearch, setSchoolSearch] = useState("");
+  // Live: the schools come from the server, by id, and the flow ends in a
+  // pending request rather than a role. Demo: the registry, and a role.
+  const [live, setLive] = useState(false);
+  const [liveSchools, setLiveSchools] = useState([]);
+  const [sent, setSent] = useState(null);   // null | "sending" | "ok" | error text
+  useEffect(() => { let off = false; (async () => {
+    if (await mode() !== "live") return;
+    const r = await api("/api/schools").catch(() => null);
+    if (off || !r?.rows) return;
+    setLive(true); setLiveSchools(r.rows.map((x) => ({ id: x.id, name: x.name, city: "", province: "" })));
+  })(); return () => { off = true; }; }, []);
   const [codeError,    setCodeError]    = useState("");
   const set = (k,v) => setData(d=>({...d,[k]:v}));
 
@@ -39,7 +53,7 @@ function OnboardingFlow({ onComplete }) {
   const needsCode = selectedRole?.requiresCode && !data.inviteCode;
   const ri = ROLES[data.role] || {};
 
-  const filteredSchools = SCHOOLS_REGISTRY.filter(s=>
+  const filteredSchools = (live ? liveSchools : SCHOOLS_REGISTRY).filter(s=>
     s.name.toLowerCase().includes(schoolSearch.toLowerCase()) ||
     s.city.toLowerCase().includes(schoolSearch.toLowerCase()) ||
     s.province.toLowerCase().includes(schoolSearch.toLowerCase())
@@ -61,7 +75,7 @@ function OnboardingFlow({ onComplete }) {
     if (stepId==="role")        return !!data.role;
     if (stepId==="invite")      return !!data.inviteCode;
     if (stepId==="school")      return !!data.schoolId;
-    if (stepId==="profile")     return data.name.length >= 2;
+    if (stepId==="profile")     return data.name.length >= 2 && (!live || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(data.email));
     return true;
   };
 
@@ -71,9 +85,29 @@ function OnboardingFlow({ onComplete }) {
       if (data.inviteCode !== expected) { setCodeError(`Invalid code. Contact your School Admin.`); return; }
       setCodeError("");
     }
-    if (step < steps.length - 1) setStep(s=>s+1);
-    else onComplete(data.role, data.name, data.schoolId||data.schoolCustom);
+    if (step < steps.length - 1) { setStep(s=>s+1); return; }
+    if (!live) { onComplete(data.role, data.name, data.schoolId||data.schoolCustom); return; }
+    // Nobody assigns themselves anything: the server records an account with
+    // nothing in it and a request for the people who may answer it.
+    setSent("sending");
+    api("/api/onboard", { method: "POST", body: { email: data.email, name: data.name, role: canonicalRole(data.role),
+                                                  schoolId: data.schoolId, teamCode: data.team || null } })
+      .then(() => setSent("ok"))
+      .catch((e) => setSent(e?.code || e?.message || "failed"));
   };
+
+  if (sent === "ok") return (
+    <div className="onboard-shell" data-testid="request-sent" style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px",background:"#05070d"}}>
+      <div style={{maxWidth:"440px",textAlign:"center"}}>
+        <div style={{fontSize:"40px",marginBottom:"12px"}}>📨</div>
+        <div style={{fontFamily:"'Syne',sans-serif",fontSize:"22px",fontWeight:800,color:"#fff",marginBottom:"8px"}}>Request sent</div>
+        <div style={{fontFamily:"'DM Sans',sans-serif",fontSize:"13px",color:"rgba(255,255,255,0.6)",lineHeight:1.6}}>
+          {data.schoolCustom} has your request to join as {ri.label||data.role}. Somebody there will answer it. Sign in once they have, with {data.email}.
+        </div>
+        <button onClick={()=>onComplete(null, data.name, null, { requested:true })} className="pressBtn" style={{marginTop:"18px",padding:"10px 18px",borderRadius:"999px",border:"none",cursor:"pointer",background:"#6366f1",color:"#fff",fontFamily:"'Syne',sans-serif",fontWeight:700}}>Back to sign in</button>
+      </div>
+    </div>
+  );
 
   const TOUR_MAP = {
     player:       [{icon:"📊",t:"Analytics",d:"Your wagon wheel, phase breakdown and shot analysis"},{icon:"💪",t:"Training",d:"Session plans and skill development goals"},{icon:"🏥",t:"Injuries",d:"Your fitness status and return-to-play timeline"}],

@@ -395,7 +395,12 @@ CREATE TABLE competition (
   format     text,                             -- T20 | 50-over | multi-day
   age_group  text,
   gender     text,
-  season     text,
+  -- WHICH CALENDAR. School cricket runs on the calendar year; everything
+  -- above it straddles the new year. The level decides which season a date
+  -- falls in, and the season row (added in db/08, once season exists) says
+  -- which one this competition belongs to.
+  level      text NOT NULL DEFAULT 'school' CHECK (level IN ('school','club','provincial','national')),
+  season_id  uuid,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX ON competition (school_id);

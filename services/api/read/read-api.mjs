@@ -45,6 +45,9 @@ export const READ_QUERIES = {
     // from a school name that might have matched neither side.
     text: `select m.id, m.school_id, m.team_code, m.opponent, m.starts_at,
                   m.format, m.overs, m.status,
+                  -- The school season the fixture falls in, by the calendar's
+                  -- rule, so a screen never derives a season from a date.
+                  (select label from season_for((m.starts_at at time zone 'Africa/Johannesburg')::date, 'school')) as season,
                   -- WHICH GAME. On the shared fixture read rather than behind a
                   -- per-sport one, because a school running cricket and hockey
                   -- needs both on one list — and a client that had to ask per
@@ -104,12 +107,13 @@ export const READ_QUERIES = {
     // not an access control: it is the same for everyone and cannot tell a
     // school administrator from a coach. Asking and getting NULL is the mask
     // being tested.
-    text: `select id, school_id, full_name, team_code, playing_role,
-                  batting_style, bowling_style, fitness,
-                  born, hometown, height, weight,           -- masked per role
-                  address, guardian, id_number              -- masked per role
-             from player_masked
-            order by full_name`,
+    text: `select pm.id, pm.school_id, s.name as school_name, pm.full_name, pm.team_code, pm.playing_role,
+                  pm.batting_style, pm.bowling_style, pm.fitness,
+                  pm.born, pm.hometown, pm.height, pm.weight,           -- masked per role
+                  pm.address, pm.guardian, pm.id_number              -- masked per role
+             from player_masked pm
+             join school s on s.id = pm.school_id
+            order by pm.full_name`,
   },
   injuries: {
     masked: true,
@@ -151,9 +155,30 @@ export const READ_QUERIES = {
   },
 
   competitions: {
-    text: `select id, name, comp_type, format, age_group, gender, school_id, season
-             from competition
-            order by name`,
+    text: `select c.id, c.name, c.comp_type, c.format, c.age_group, c.gender, c.school_id,
+                  c.level, s.label as season,
+                  (select count(*)::int from competition_division d where d.competition_id = c.id) as divisions
+             from competition c
+             left join season s on s.id = c.season_id
+            order by c.name`,
+  },
+
+  /* The calendar. Platform reference data: which seasons exist, at which level. */
+  seasons: {
+    text: `select id, level, label, starts_on, ends_on, cutoff_on,
+                  sa_today() between starts_on and ends_on as current
+             from season
+            order by level, starts_on`,
+  },
+
+  /* A competition's tiers, in rank order. Reachable by whoever can reach the competition. */
+  competition_divisions: {
+    text: `select d.id, d.competition_id, d.code, d.name, d.rank,
+                  (select count(*)::int from competition_entrant e where e.division_id = d.id) as entrants
+             from competition_division d
+            where d.competition_id = $1
+            order by d.rank`,
+    params: q => [req(q, "competitionId")],
   },
 
   // ── The programme reads ─────────────────────────────────────────
@@ -343,12 +368,16 @@ export const READ_QUERIES = {
   // through the organiser or through any entrant — a log with one row in it is
   // not a log. Writing a row stays anchored to the entrant's own school.
   league: {
-    text: `select e.competition_id, e.school_id, e.team_code, e.display_name,
+    text: `select e.id, e.competition_id, e.school_id, e.team_code, e.display_name,
                   e.played, e.won, e.lost, e.drawn, e.no_result, e.points,
-                  e.net_run_rate
+                  e.net_run_rate,
+                  -- The tier, when the competition has them. An entrant nobody
+                  -- has placed sits after every division, not in a made-up one.
+                  d.id as division_id, d.code as division_code, d.name as division_name, d.rank as division_rank
              from competition_entrant e
+             left join competition_division d on d.id = e.division_id
             where ($1::uuid is null or e.competition_id = $1)
-            order by e.points desc, e.net_run_rate desc nulls last, e.display_name`,
+            order by e.competition_id, d.rank nulls last, e.points desc, e.net_run_rate desc nulls last, e.display_name`,
     params: q => [q?.competitionId || null],
   },
 
@@ -646,7 +675,16 @@ export const READ_QUERIES = {
    */
   vehicles: {
     text: `select id, registration, description, kind, capacity, condition,
-                  next_service_on, active, notes, school_id
+                  next_service_on, active, notes, school_id,
+                  insurance_expires_on, roadworthy_expires_on,
+                  -- One word a screen can act on, derived here rather than in
+                  -- six components. 'unknown' is a gap in the records and is
+                  -- not the same as 'current'; a coordinator's list should show
+                  -- the gap, not paper over it.
+                  case when insurance_expires_on is null or roadworthy_expires_on is null then 'unknown'
+                       when least(insurance_expires_on, roadworthy_expires_on) < current_date then 'expired'
+                       when least(insurance_expires_on, roadworthy_expires_on) < current_date + 30 then 'expiring'
+                       else 'current' end as cover_state
              from vehicle
             where ($1::boolean is null or active = $1)
             order by active desc, registration`,
@@ -791,6 +829,281 @@ export const READ_QUERIES = {
    * reason — phase is masked at that tier, and a state that quietly changed
    * according to who was asking would be worse than no state at all.
    */
+  /**
+   * WHO WAS IN A SIDE ON A DATE. The question the column could not answer.
+   *
+   * A ladder for last season, a cap for a debut, an honours board, a scout
+   * asking who played in March — all of them want the side as it stood then,
+   * and until now the answer was whoever happened to be in it today. Through
+   * roster_on() in db/08 under the caller's own policies: it is the roster
+   * they already hold, asked about another day.
+   */
+  roster_on: {
+    text: `select r.player_id, p.full_name, r.team_code, r.joined_on, r.left_on
+             from roster_on($1::uuid, $2::text, $3::date, coalesce($4::text, 'cricket')) r
+             join player p on p.id = r.player_id
+            order by p.full_name`,
+    params: q => [req(q, "schoolId"), req(q, "teamCode"), req(q, "on"), q?.sport || null],
+  },
+
+  /**
+   * WHO TO RING FOR ONE CHILD, in order.
+   *
+   * Live rows only: a retired number is history, and a coach with a phone in
+   * one hand does not need it. Governed by player.emergency.read, which the
+   * people around the child on a Saturday hold and the office's file
+   * capability does not imply — see the note on the table in db/08.
+   */
+  emergency_contacts: {
+    text: `select c.id, c.player_id, p.full_name, c.school_id, c.priority,
+                  c.name, c.relationship, c.phone, c.phone_alt, c.email, c.note,
+                  c.created_at
+             from emergency_contact c
+             join player p on p.id = c.player_id
+            where c.player_id = $1 and c.active
+            order by c.priority`,
+    params: q => [req(q, "playerId")],
+  },
+
+  /**
+   * THE MANIFEST: every child on a trip and who to ring for each.
+   *
+   * Through trip_contacts() in db/08, which is where the decision lives — the
+   * driver reaches it through transport.drive on the fixture inside a window
+   * around departure, everyone else per child through player.emergency.read.
+   * Nothing here is filtered a second time; if a row comes back, the function
+   * decided this person may have it.
+   */
+  trip_contacts: {
+    text: `select player_id, full_name, priority, name, relationship,
+                  phone, phone_alt, email, note, school_id
+             from trip_contacts($1::uuid)`,
+    params: q => [req(q, "tripId")],
+  },
+
+  /*
+   * THE CLEARANCE REGISTER: every adult with a live appointment at the school
+   * whose role requires a check, against every check it requires, with one
+   * word each. Through clearance_register() in db/08, which is where the
+   * decision lives — clearance.read at the school or nothing. The gaps are
+   * the point and come first.
+   */
+  clearance_register: {
+    text: `select person_id, name, role, kind, clearance_kind_label(kind) as kind_label,
+                  status, expires_on, clearance_id, reference, school_id
+             -- No school named means the reader's own: the screen has no other
+             -- school to ask about, and the function refuses any it may not read.
+             from clearance_register(coalesce($1::uuid, (select school_id from app_user where id = app_user_id())))
+            order by case status when 'missing' then 0 when 'expired' then 1 when 'revoked' then 2
+                                 when 'expiring' then 3 else 4 end, name, kind`,
+    params: q => [q?.schoolId || null],
+  },
+
+  /*
+   * ONE ADULT'S CLEARANCES at whatever schools the reader may see them for:
+   * the office through clearance.read, the person through the identity
+   * policy. History included — a revoked row stays, with its reason — because
+   * "what did we hold on him in March" is the question an enquiry asks.
+   */
+  clearances: {
+    text: `select c.id, c.person_id, u.name, c.school_id, c.kind, clearance_kind_label(c.kind) as kind_label,
+                  c.reference, c.issued_on, c.expires_on, c.note,
+                  c.verified_by, v.name as verified_by_name, c.verified_at,
+                  c.revoked_at, c.revoked_reason,
+                  case when c.revoked_at is not null then 'revoked'
+                       when c.expires_on < current_date then 'expired'
+                       when c.expires_on <= current_date + 60 then 'expiring'
+                       else 'current' end as status
+             from adult_clearance c
+             join app_user u on u.id = c.person_id
+             left join app_user v on v.id = c.verified_by
+            where c.person_id = $1
+            order by c.kind, c.expires_on desc, c.verified_at desc`,
+    params: q => [req(q, "personId")],
+  },
+
+  /* The reader's own, for their settings screen. The policy is the identity one. */
+  my_clearances: {
+    text: `select c.id, c.school_id, s.name as school_name, c.kind, clearance_kind_label(c.kind) as kind_label,
+                  c.issued_on, c.expires_on, c.revoked_at,
+                  case when c.revoked_at is not null then 'revoked'
+                       when c.expires_on < current_date then 'expired'
+                       when c.expires_on <= current_date + 60 then 'expiring'
+                       else 'current' end as status
+             from adult_clearance c
+             join school s on s.id = c.school_id
+            where c.person_id = app_user_id()
+            order by c.school_id, c.kind, c.expires_on desc`,
+  },
+
+  /*
+   * WORKLOAD: what each boy bowled and trained, with the server's word for
+   * where his load sits. Through workload() in db/08, per row under
+   * player.development.read. An optional team narrows; nothing widens.
+   */
+  workload: {
+    text: `select * from workload($1::text)`,
+    params: q => [q?.teamCode || null],
+  },
+
+  /*
+   * ONE MATCH'S SPELLS, per bowler, from the log, with the directive that
+   * applied to each boy beside it. The scorer's screen and the coach's both
+   * read this; neither computes a spell of its own.
+   */
+  bowling_spells: {
+    text: `select s.match_id, s.innings, s.bowler_id, p.full_name, s.spell_no, s.first_over, s.last_over,
+                  s.overs, s.legal_balls, s.bowled_on,
+                  d.age_band, d.pace, d.max_overs_per_spell, d.max_overs_per_day,
+                  (d.max_overs_per_spell is not null and s.overs > d.max_overs_per_spell) as over_spell_limit,
+                  exists (select 1 from bowling_breach x
+                           where x.match_id = s.match_id and x.innings = s.innings
+                             and x.bowler_id = s.bowler_id and x.kind = 'spell' and x.key = s.first_over) as breach_recorded
+             from bowler_spell s
+             join player p on p.id = s.bowler_id
+             cross join lateral bowling_directive_for(s.bowler_id) d
+            where s.match_id = $1
+            order by s.innings, s.bowler_id, s.spell_no`,
+    params: q => [req(q, "matchId")],
+  },
+
+  /* Breaches on record, most recent first. Per row under player.development.read. */
+  bowling_breaches: {
+    text: `select x.id, x.match_id, m.opponent, x.innings, x.bowler_id, p.full_name, p.team_code,
+                  x.kind, x.overs, x.allowed, x.age_band, x.bowled_on, x.noticed_at
+             from bowling_breach x
+             join player p on p.id = x.bowler_id
+             join match m on m.id = x.match_id
+            where ($1::text is null or p.team_code = $1)
+            order by x.bowled_on desc, x.noticed_at desc`,
+    params: q => [q?.teamCode || null],
+  },
+
+  /* The directive itself. Platform reference data. */
+  bowling_directives: {
+    text: `select age_band, max_overs_per_spell, max_overs_per_day from bowling_directive
+            order by case age_band when 'U13' then 1 when 'U14' then 2 when 'U15' then 3 when 'U16' then 4 when 'open' then 5 else 6 end`,
+  },
+
+  /*
+   * RECOGNITION: one boy's honours, caps and milestones in one shape, through
+   * recognition() in db/08 — player.profile.read on him or nothing. Honours
+   * are awarded, caps are earned, milestones happen; none is a score.
+   */
+  recognition: {
+    text: `select family, kind, label, value, season, on_date, match_id, opponent, is_public, citation, ref_id
+             from recognition($1::uuid)`,
+    params: q => [req(q, "playerId")],
+  },
+
+  /* A side's caps ledger, in cap order. Derived from the team sheets. */
+  caps: {
+    text: `select c.school_id, c.team_code, c.player_id, c.full_name, c.cap_no, c.appearances,
+                  c.first_on, c.last_on, c.first_match_id, c.baseline_set
+             from team_cap c
+            where c.team_code = $1
+            order by c.cap_no`,
+    params: q => [req(q, "teamCode")],
+  },
+
+  /* Live honours, newest first, optionally one side's or one season's. */
+  honours: {
+    text: `select h.id, h.player_id, p.full_name, h.school_id, h.team_code, h.kind, h.name,
+                  honour_kind_label(h.kind, h.name) as label, s.label as season, h.citation, h.awarded_on,
+                  h.is_public, u.name as awarded_by_name
+             from honour h
+             join player p on p.id = h.player_id
+             join season s on s.id = h.season_id
+             left join app_user u on u.id = h.awarded_by
+            where h.withdrawn_at is null
+              and ($1::text is null or h.team_code = $1)
+              and ($2::text is null or s.label = $2)
+            order by h.awarded_on desc, p.full_name`,
+    params: q => [q?.teamCode || null, q?.season || null],
+  },
+
+  /* Milestones from the log, newest first. Per row, the player's own visibility. */
+  milestones: {
+    text: `select ms.player_id, p.full_name, p.team_code, ms.kind, milestone_label(ms.kind, ms.value) as label,
+                  ms.value, ms.match_id, ms.innings, ms.opponent, ms.played_on
+             from player_milestone ms
+             join player p on p.id = ms.player_id
+            where ($1::text is null or p.team_code = $1)
+              and ($2::uuid is null or ms.player_id = $2)
+            order by ms.played_on desc, p.full_name`,
+    params: q => [q?.teamCode || null, q?.playerId || null],
+  },
+
+  /*
+   * ROLE REQUESTS: mine, and the ones I could answer. `decidable` is the
+   * server's word — the same two checks decide_role_request() makes — so a
+   * screen draws a Grant button only where a grant would succeed.
+   */
+  role_requests: {
+    text: `select r.id, r.person_id, u.name, u.email, r.role, r.school_id, s.name as school_name, r.team_code,
+                  r.player_id, r.note, r.state, r.requested_at, r.decided_at, r.decided_note, d.name as decided_by_name,
+                  r.person_id = app_user_id() as mine,
+                  (r.state = 'pending'
+                   and app_can('user.role.assign', r.school_id, '*', '00000000-0000-0000-0000-000000000000'::uuid,
+                               '00000000-0000-0000-0000-000000000000'::uuid)
+                   and app_may_grant(r.role)) as decidable
+             from role_request r
+             join app_user u on u.id = r.person_id
+             -- The school's name from the public list: a stranger with no
+             -- assignments may not read the school row and must still see
+             -- which school his request is with.
+             left join lateral (select ps.name from public_schools() ps where ps.id = r.school_id) s on true
+             left join app_user d on d.id = r.decided_by
+            order by case r.state when 'pending' then 0 else 1 end, r.requested_at desc`,
+  },
+
+  /* The drill library: the platform's, and this reader's schools'. */
+  drills: {
+    text: `select d.id, d.school_id, d.name, d.category, d.duration_min, d.description, d.retired
+             from drill d where not d.retired
+            order by d.school_id nulls first, d.category, d.name`,
+  },
+
+  /* The kit, with how many are out. */
+  equipment: {
+    text: `select e.id, e.school_id, e.kind, e.label, e.quantity, e.condition, e.notes, e.updated_at,
+                  (select count(*)::int from equipment_issue i where i.equipment_id = e.id and i.returned_on is null) as out
+             from equipment e order by e.kind, e.label`,
+  },
+
+  /* Who has what. Open issues unless ?all=1. */
+  equipment_issues: {
+    text: `select i.id, i.equipment_id, e.label, e.kind, i.player_id, p.full_name, p.team_code, i.issued_on, i.returned_on
+             from equipment_issue i
+             join equipment e on e.id = i.equipment_id
+             join player p on p.id = i.player_id
+            where ($1::boolean or i.returned_on is null)
+            order by i.returned_on nulls first, i.issued_on desc`,
+    params: q => [q?.all === "1"],
+  },
+
+  /*
+   * THE PASSPORT: a boy's cricket record with provenance and confidence on
+   * every line, for his family, his own school, and a school the family has
+   * named. The gate is passport() in db/08.
+   */
+  passport: {
+    text: `select family, label, value, on_date, source_school, recorded_by, confidence from passport($1::uuid)`,
+    params: q => [req(q, "playerId")],
+  },
+  passport_consents: {
+    text: `select c.id, c.player_id, passport_name(c.player_id) as full_name, c.to_school_id, s.name as to_school, c.granted_at, c.withdrawn_at
+             from passport_consent c
+             left join lateral (select ps.name from public_schools() ps where ps.id = c.to_school_id) s on true
+            order by c.withdrawn_at nulls first, c.granted_at desc`,
+  },
+
+  /* Which roles must hold which checks. Platform reference data. */
+  clearance_requirements: {
+    text: `select role, kind, clearance_kind_label(kind) as kind_label
+             from clearance_requirement order by role, kind`,
+  },
+
   readiness: {
     text: `with clinical as (
                   -- Gated on Injuries like the availability read above and for
@@ -1595,6 +1908,12 @@ export const RESTRICTED_FIELDS = Object.freeze({
   players:  ["email", "phone", "born", "hometown", "houseatschool",
              "address", "guardian", "height", "weight", "id_number"],
   injuries: ["injury_type", "severity", "phase", "notes", "physio"],
+  emergency_contacts: ["phone", "phone_alt", "email"],
+  trip_contacts:      ["phone", "phone_alt", "email"],
+  // A certificate's own number is enough to impersonate its holder at the
+  // next school that asks for it. Logged like a phone number is.
+  clearance_register: ["reference"],
+  clearances:         ["reference"],
   career:   [],
   skills:   ["score"],
   users:    ["email"],
@@ -1620,6 +1939,8 @@ const pick = (row, path) =>
 
 /** Which id column identifies the CHILD a row is about, for the log. */
 const SUBJECT_ID = { players: "id", injuries: "player_id", skills: "player_id",
+                     emergency_contacts: "player_id", trip_contacts: "player_id",
+                     clearance_register: "person_id", clearances: "person_id",
                      users: "id", ratings: "player_id", notes: "player_id",
                      opposition_squad: "player_id" };
 

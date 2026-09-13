@@ -1,9 +1,9 @@
 
 import { useState } from "react";
-import { D } from "../design/tokens.js";
+import { D, textOn } from "../design/tokens.js";
 import { dateStr, today } from "../lib/format.js";
 import { Avatar, Badge, Btn, Card, Input, Modal, Pill, SectionHeader, Select } from "../ui/primitives.jsx";
-import { useRows } from "../lib/live.js";
+import { useLive, useRows } from "../lib/live.js";
 
 // ══════════════════════════════════════════════════════
 //  TRAINING VIEW
@@ -14,6 +14,20 @@ function TrainingView({ role }) {
   const COACHES = useRows("coaches", role);
   const PLAYERS = useRows("players", role);
   const TRAINING_SESSIONS = useRows("training", role);
+  // The register is its own read, behind player.profile.read, because it is a
+  // list of named minors and the session row is a noticeboard fact. A parent
+  // who may read "training moved to four" must not receive every child who
+  // was there. Joined here, per session, from whatever this person was sent —
+  // which for that parent is nothing, and the card says nobody is attending
+  // rather than crashing on a register it was never given.
+  const REGISTER = useRows("training_attendance", role);
+  // Each boy's load, with the server's word for it. Empty for anyone the
+  // server does not hand it to (player.workload.read), and the panel is not
+  // drawn; nothing here derives a state from a number.
+  const LOAD = useRows("workload", role);
+  // The drill library from the server; the constant below is the demo's.
+  const { rows: LIVE_DRILLS, live: drillsLive } = useLive("drills", role);
+  const attending = (s) => REGISTER.filter((a) => a.sessionId === s.id && a.status !== "absent").map((a) => a.playerId);
   const [view, setView] = useState("schedule");
   const [addModal, setAddModal] = useState(false);
   const canEdit = role==="superadmin"||role==="coach";
@@ -52,10 +66,14 @@ function TrainingView({ role }) {
           </div>
         }/>
 
+      {view==="schedule"&&LOAD.length>0&&<LoadPanel rows={LOAD}/>}
+
       {view==="schedule"&&(
         <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
           {TRAINING_SESSIONS.map(s=>{
-            const coach = COACHES.find(c=>c.id===s.coach);
+            // Live rows carry the coach's name; the demo carried an id.
+            const coach = COACHES.find(c=>c.id===s.coach) ?? (s.coach ? { name: s.coach } : null);
+            const roll = s.attendance ?? attending(s);
             const typeCol = s.type==="batting"?D.sky:s.type==="bowling"||s.type==="skills"?D.violet:s.type==="fitness"?D.amber:D.emerald;
             const isToday = s.date===dateStr(today);
             return (
@@ -77,18 +95,18 @@ function TrainingView({ role }) {
                       </div>
                     </div>
                     <div style={{textAlign:"center"}}>
-                      <div style={{fontFamily:D.mono,fontSize:"16px",fontWeight:700,color:D.amber}}>{s.attendance.length}</div>
+                      <div style={{fontFamily:D.mono,fontSize:"16px",fontWeight:700,color:D.amber}}>{roll.length}</div>
                       <div style={{fontFamily:D.body,fontSize:"9px",color:D.textMuted}}>attending</div>
                     </div>
                   </div>
                   <div style={{display:"flex",gap:"5px",flexWrap:"wrap",marginBottom:"8px"}}>
-                    {s.drills.map(d=><Pill key={d} color={typeCol}>{d}</Pill>)}
+                    {(s.drills??[]).map(d=><Pill key={d} color={typeCol}>{d}</Pill>)}
                   </div>
                   {s.notes&&<div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,fontStyle:"italic",background:D.surf2,padding:"7px 10px",borderRadius:D.sm}}>📝 {s.notes}</div>}
                   <div style={{display:"flex",gap:"4px",marginTop:"10px"}}>
-                    {s.attendance.map(pid=>{
-                      const p=PLAYERS.find(pl=>pl.id===pid);
-                      return p?<div key={pid} title={p.name}><Avatar name={p.name} size={24} color={D.emerald}/></div>:null;
+                    {roll.map(pid=>{
+                      const p=PLAYERS.find(pl=>pl.id===pid) ?? { name: REGISTER.find(a=>a.playerId===pid)?.name };
+                      return p?.name?<div key={pid} title={p.name}><Avatar name={p.name} size={24} color={D.emerald}/></div>:null;
                     })}
                     {canEdit&&<button style={{width:"24px",height:"24px",borderRadius:"50%",background:D.surf3,border:`1px dashed ${D.border}`,cursor:"pointer",color:D.textMuted,fontSize:"12px",display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>}
                   </div>
@@ -102,7 +120,7 @@ function TrainingView({ role }) {
       {view==="drills"&&(
         <div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:"12px"}}>
-            {DRILLS_LIBRARY.map(d=>(
+            {(drillsLive ? LIVE_DRILLS : DRILLS_LIBRARY).map(d=>(
               <Card key={d.id} sx={{padding:"14px"}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"8px"}}>
                   <span style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>{d.name}</span>
@@ -138,6 +156,41 @@ function TrainingView({ role }) {
         </Modal>
       )}
     </div>
+  );
+}
+
+// One row per boy, the breaches and spikes first because the server put
+// them there. The word is the server's; the colour is ours.
+const LOAD_TONE = { spike:D.rose, rising:D.amber, steady:D.emerald, light:D.sky, rested:D.textMuted, "no bowling":D.textMuted };
+function LoadPanel({ rows }) {
+  const flagged = rows.filter(r=>r.breaches28d>0||r.loadState==="spike").length;
+  return (
+    <Card sx={{padding:"16px",marginBottom:"14px"}} data-testid="load-panel">
+      <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"10px"}}>
+        <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>Bowling & training load</div>
+        <Badge color={flagged?D.rose:D.emerald}>{flagged?`${flagged} to look at`:"nothing flagged"}</Badge>
+        <span style={{marginLeft:"auto",fontFamily:D.body,fontSize:"10px",color:D.textMuted}}>overs this week · this month · longest spell · sessions</span>
+      </div>
+      <div style={{overflowX:"auto"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontFamily:D.body,fontSize:"11px"}}>
+          <tbody>
+            {rows.map(r=>(
+              <tr key={r.playerId} data-testid={`load-row-${r.playerId}`} style={{borderTop:`1px solid ${D.border}`}}>
+                <td style={{padding:"6px 8px",color:D.textPrimary,fontWeight:600,whiteSpace:"nowrap"}}>{r.name}
+                  <span style={{marginLeft:"6px",fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>{r.ageBand}{r.pace&&r.maxSpell?` · ${r.maxSpell}/${r.maxDay}`:""}</span></td>
+                <td style={{padding:"6px 8px",fontFamily:D.mono,color:D.textSecondary,whiteSpace:"nowrap"}}>{r.overs7d} · {r.overs28d} · {r.longestSpell7d}</td>
+                <td style={{padding:"6px 8px",fontFamily:D.mono,color:D.textSecondary,whiteSpace:"nowrap"}}>{r.sessions7d} ({r.minutes7d}m)</td>
+                <td style={{padding:"6px 8px"}}>
+                  <span style={{fontFamily:D.mono,fontSize:"9px",textTransform:"uppercase",padding:"2px 7px",borderRadius:D.pill,
+                    background:(LOAD_TONE[r.loadState]??D.textMuted)+"14",border:`1px solid ${(LOAD_TONE[r.loadState]??D.textMuted)}33`,color:textOn(LOAD_TONE[r.loadState]??D.textMuted)}}>{r.loadState}{r.acwr!=null?` ${r.acwr}`:""}</span>
+                  {r.breaches28d>0&&<span style={{marginLeft:"6px",fontFamily:D.mono,fontSize:"9px",color:D.roseText}}>{r.breaches28d} directive breach{r.breaches28d>1?"es":""}</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
   );
 }
 

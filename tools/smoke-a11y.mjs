@@ -17,6 +17,7 @@
  */
 import { chromium } from "playwright-core";
 import { launchOptions } from "./chromium.mjs";
+import { offline } from "./offline-browser.mjs";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
@@ -46,6 +47,7 @@ await new Promise((r) => server.listen(PORT, r));
 
 const browser = await chromium.launch({ ...launchOptions() });
 const page = await browser.newPage();
+await offline(page.context());
 
 const click = async (re, ms = 4000) => {
   const l = page.locator("button:not([disabled])", { hasText: re }).first();

@@ -1,0 +1,97 @@
+# SCRBRD — deploy
+#
+# One Firebase project, scrbrd-os, and one Google Cloud project behind it. The
+# client goes to Firebase Hosting; the API goes to Cloud Run in africa-south1
+# and Hosting rewrites /api/** to it (firebase.json), so the browser talks to
+# one origin. The database is a Cloud SQL Postgres 16 the operator provisions
+# by hand once — DEPLOYING.md — and this workflow never migrates it: a schema
+# change is applied by a person as the owner role, deliberately, before the
+# code that needs it is deployed.
+#
+# Both jobs are skipped, not failed, until the secrets exist. A red deploy on
+# every push to main for want of a credential would train everyone to ignore
+# a red deploy.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  web:
+    name: Client → Firebase Hosting
+    runs-on: ubuntu-latest
+    env:
+      FIREBASE_SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_SCRBRD_OS }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # An empty base makes every request same-origin — /api/... — which
+      # Hosting rewrites to Cloud Run. The default, localhost:8787, would
+      # ship a client that talks to the developer's own machine.
+      - name: Build the client for one origin
+        run: pnpm build
+        env:
+          VITE_API_BASE: ""
+          VITE_FCM_VAPID_KEY: ${{ secrets.VITE_FCM_VAPID_KEY }}
+
+      - name: Nothing confidential in the bundle
+        run: pnpm check:bundle
+
+      - name: Deploy to Hosting
+        if: env.FIREBASE_SA != ''
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_SCRBRD_OS }}
+          projectId: scrbrd-os
+          channelId: live
+      - name: Skipped
+        if: env.FIREBASE_SA == ''
+        run: echo "::notice::FIREBASE_SERVICE_ACCOUNT_SCRBRD_OS is not set — client built, not deployed"
+
+  api:
+    name: API → Cloud Run
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      WIF_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        if: env.WIF_PROVIDER != ''
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      # Cloud Build builds the Dockerfile at the repository root. The service's
+      # environment — DATABASE_URL, SESSION_SECRET, WEB_ORIGIN — is set on the
+      # service once, from Secret Manager, and is not repeated here: a deploy
+      # that carried them would have to carry them every time, and the first
+      # deploy that forgot one would ship an API with no session secret.
+      - name: Deploy
+        if: env.WIF_PROVIDER != ''
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: scrbrd-api
+          region: africa-south1
+          source: .
+      - name: Skipped
+        if: env.WIF_PROVIDER == ''
+        run: echo "::notice::GCP_WORKLOAD_IDENTITY_PROVIDER is not set — API not deployed"

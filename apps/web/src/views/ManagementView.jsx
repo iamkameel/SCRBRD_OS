@@ -2,7 +2,8 @@ import { useState } from "react";
 import { ROLES } from "../design/roles.js";
 import { D } from "../design/tokens.js";
 import { can } from "../rbac/index.js";
-import { useRows } from "../lib/live.js";
+import { useLive, useRows } from "../lib/live.js";
+import { api } from "../lib/api.js";
 
 // ══════════════════════════════════════════════════════
 //  MANAGEMENT VIEW
@@ -210,6 +211,7 @@ function ManagementView({ role, users, setUsers }) {
       {/* ── USER MANAGEMENT ── */}
       {activeTab==="users"&&(
         <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
+          <RequestsPanel role={role} players={PLAYERS}/>
           {/* Controls */}
           <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center"}}>
             {/* Search */}
@@ -451,6 +453,57 @@ function ManagementView({ role, users, setUsers }) {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+// The requests this person may answer, from the server's own word
+// (`decidable`). A guardian's or a pupil's needs the child named from the
+// roster before it can be granted; the select is drawn only for those.
+function RequestsPanel({ role, players }) {
+  const [nudge, setNudge] = useState(0);
+  const [pick, setPick] = useState({});
+  const [side, setSide] = useState({});
+  const rows = useLive("role_requests", role, nudge).rows.filter((r) => r.decidable);
+  // Every hook above this line, always: a hook after a conditional return
+  // changes the hook count between renders and takes the screen down.
+  if (!rows.length) return null;
+  const teams = [...new Set(players.map((p) => p.team).filter(Boolean))].sort();
+  const decide = async (r, grant) => {
+    await api(`/api/requests/${r.id}/decide`, { method: "POST", body: { grant, playerId: pick[r.id] || r.playerId || null, teamCode: side[r.id] || r.team || null } }).catch(() => {});
+    setNudge((n) => n + 1);
+  };
+  const needsChild = (r) => ["guardian", "player", "selfaccess", "enquiry"].includes(r.role);
+  // A coach is a coach of a side; a request that named none is granted by naming one here.
+  const needsSide = (r) => ["coach", "assistantcoach", "teammanager"].includes(r.role) && !r.team;
+  const ready = (r) => (!needsChild(r) || pick[r.id] || r.playerId) && (!needsSide(r) || side[r.id]);
+  return (
+    <div data-testid="requests-panel" style={{border:`1px solid ${D.border}`,borderRadius:D.lg,background:D.surf1,padding:"14px"}}>
+      <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary,marginBottom:"8px"}}>Requests to answer · {rows.length}</div>
+      {rows.map((r)=>(
+        <div key={r.id} data-testid={`request-row-${r.id}`} style={{display:"flex",alignItems:"center",gap:"10px",padding:"8px 0",borderTop:`1px solid ${D.border}`,flexWrap:"wrap"}}>
+          <div style={{flex:1,minWidth:"200px"}}>
+            <div style={{fontFamily:D.body,fontSize:"12px",color:D.textPrimary,fontWeight:600}}>{r.name} <span style={{color:D.textMuted,fontWeight:400}}>{r.email}</span></div>
+            <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>{ROLES[r.role]?.label ?? r.role}{r.team?` · ${r.team}`:""}{r.note?` — ${r.note}`:""}</div>
+          </div>
+          {needsChild(r)&&(
+            <select value={pick[r.id]||r.playerId||""} onChange={(e)=>setPick((p)=>({...p,[r.id]:e.target.value}))} aria-label="Which player"
+              style={{background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.sm,padding:"4px 6px",fontFamily:D.body,fontSize:"11px",color:D.textPrimary}}>
+              <option value="">Which player?</option>
+              {players.map((p)=><option key={p.id} value={p.id}>{p.name} · {p.team}</option>)}
+            </select>
+          )}
+          {needsSide(r)&&(
+            <select value={side[r.id]||""} onChange={(e)=>setSide((p)=>({...p,[r.id]:e.target.value}))} aria-label="Which side"
+              style={{background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.sm,padding:"4px 6px",fontFamily:D.body,fontSize:"11px",color:D.textPrimary}}>
+              <option value="">Which side?</option>
+              {teams.map((t)=><option key={t} value={t}>{t}</option>)}
+            </select>
+          )}
+          <button onClick={()=>decide(r,true)} disabled={!ready(r)} className="pressBtn" style={{padding:"5px 12px",borderRadius:D.pill,border:"none",cursor:"pointer",background:D.emerald+"22",color:D.emerald,fontFamily:D.head,fontSize:"10px",fontWeight:700}}>Grant</button>
+          <button onClick={()=>decide(r,false)} className="pressBtn" style={{padding:"5px 12px",borderRadius:D.pill,border:`1px solid ${D.border}`,cursor:"pointer",background:"transparent",color:D.textMuted,fontFamily:D.head,fontSize:"10px",fontWeight:700}}>Decline</button>
+        </div>
+      ))}
     </div>
   );
 }

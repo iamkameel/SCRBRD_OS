@@ -79,6 +79,19 @@ const WALKS = [
   // One fixture, two schools — and a route to arrange one, which the product
   // had never had.
   "fixture",
+  // Moving a boy between sides WITH A DATE, and reading a side as it stood on
+  // one. The history table itself is smoke-membership's.
+  "moves",
+  // Who to ring when something happens to a child, and whether the bus is
+  // insured to carry him.
+  "contacts",
+  "clearance",
+  "workload",
+  "recognition",
+  "season",
+  "requests",
+  "kit",
+  "passport",
   // Where a boy has played: derived from team_code writes, forgeable by
   // nobody, and the end of a promotion overwriting a season.
   "membership",

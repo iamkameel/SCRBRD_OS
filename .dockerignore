@@ -1,0 +1,13 @@
+node_modules
+**/node_modules
+apps/web/dist
+apps/web/src
+apps/web/public
+tools
+docs
+db
+.git
+.env
+.env.*
+*.log
+**/*.test.mjs

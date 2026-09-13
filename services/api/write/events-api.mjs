@@ -468,6 +468,14 @@ export function availabilityRoutes({ pool, secret }) {
  */
 export function transportRoutes({ pool, secret }) {
   const err = (code, status = 400) => Object.assign(new Error(code), { status });
+  // YYYY-MM-DD or nothing. A cover date typed as "March next year" is refused
+  // rather than stored as null, because null means "not recorded" and a
+  // coordinator who typed a date would read "unknown" as the system losing it.
+  const isoDate = (v) => {
+    if (v == null || v === "") return null;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(v))) throw err("date_must_be_yyyy_mm_dd");
+    return String(v);
+  };
   const handle = (fn) => async (req, res) => {
     try { res.json(await fn(req)); }
     catch (e) {
@@ -500,18 +508,24 @@ export function transportRoutes({ pool, secret }) {
       return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
         const r = await client.query(
           `insert into vehicle (school_id, registration, description, kind, capacity,
-                                condition, next_service_on, active, notes)
-           values ($1, btrim($2), btrim($3), $4, $5, $6, $7, $8, $9)
+                                condition, next_service_on, active, notes,
+                                insurance_expires_on, roadworthy_expires_on)
+           values ($1, btrim($2), btrim($3), $4, $5, $6, $7, $8, $9, $10, $11)
            on conflict (school_id, upper(btrim(registration))) do update
              set description = excluded.description, kind = excluded.kind,
                  capacity = excluded.capacity, condition = excluded.condition,
                  next_service_on = excluded.next_service_on,
-                 active = excluded.active, notes = excluded.notes
+                 active = excluded.active, notes = excluded.notes,
+                 insurance_expires_on = excluded.insurance_expires_on,
+                 roadworthy_expires_on = excluded.roadworthy_expires_on
            returning id, registration, description, kind, capacity, condition,
-                     next_service_on, active`,
+                     next_service_on, active, insurance_expires_on, roadworthy_expires_on`,
           [b.schoolId, String(b.registration), String(b.description), kind, cap, cond,
            b.nextServiceOn || null, b.active === false ? false : true,
-           b.notes == null ? null : String(b.notes).slice(0, 500)]);
+           b.notes == null ? null : String(b.notes).slice(0, 500),
+           // The two dates a minibus of children turns on. Optional: a school
+           // that has not recorded them is shown "unknown", not refused.
+           isoDate(b.insuranceExpiresOn), isoDate(b.roadworthyExpiresOn)]);
         if (!r.rowCount) throw err("not_permitted", 403);
         return r.rows[0];
       });

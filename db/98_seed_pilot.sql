@@ -20,6 +20,12 @@ INSERT INTO school (id, code, name, kind, province) VALUES
   ('22222222-2222-2222-2222-222222222222', 'WES', 'Westville Boys'' High',  'school', 'KwaZulu-Natal');
 
 -- ── Hilton 1st XI ─────────────────────────────────────────────────
+-- The pilot's sides were named at the start of the season, not on the day the
+-- seed happened to run. The membership history trigger reads this and dates
+-- every first membership accordingly; it is cleared again below so nothing
+-- later in the seed inherits a January effective date.
+SELECT set_config('app.effective_on', '2026-01-15', false);
+
 INSERT INTO player (id, school_id, team_code, full_name, squad_no, playing_role, born, hometown, houseAtSchool, height, weight, guardian) VALUES
   ('aaaaaaaa-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', '1XI', 'James Whitfield', 1, 'batter',     '2008-03-14', 'Howick',      'McKenzie', 181, 74, '{"name":"A Whitfield","relation":"father","phone":"+27 82 000 0001"}'),
   ('aaaaaaaa-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', '1XI', 'T Bekker',        2, 'allrounder', '2008-07-02', 'Pietermaritzburg', 'Falcon', 176, 70, '{"name":"M Bekker","relation":"mother","phone":"+27 82 000 0002"}'),
@@ -97,6 +103,11 @@ INSERT INTO player (id, school_id, team_code, full_name, squad_no, playing_role,
   ('aaaaaaaa-0000-0000-0000-000000000013', '11111111-1111-1111-1111-111111111111', 'U13A',
    'B Khumalo', 3, 'bowler', (current_date + interval '90 days' - interval '14 years')::date);
 
+-- Cleared only after the LAST player insert: three boys are seeded further
+-- down than the first two blocks, and a reset placed after the second block
+-- dated their first memberships to the day the seed ran.
+SELECT set_config('app.effective_on', '', false);
+
 INSERT INTO app_user (id, school_id, email, name, role, teams) VALUES
   ('88888888-0000-0000-0000-00000000000b', '11111111-1111-1111-1111-111111111111',
    'u14coach@example.invalid', 'T Ndlovu', 'coach', '{U14A}');
@@ -116,8 +127,14 @@ INSERT INTO ground (id, school_id, name, surface) VALUES
   ('ffffffff-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'Gordon Sherwood Oval', 'grass'),
   ('ffffffff-0000-0000-0000-000000000002', '22222222-2222-2222-2222-222222222222', 'Westville Main',       'grass');
 
-INSERT INTO competition (id, school_id, name, comp_type, format, age_group, gender, season) VALUES
-  ('99999999-0000-0000-0000-000000000001', NULL, 'KZN Schools T20 League', 'league', 'T20', '1XI', 'boys', '2026/27');
+-- A schools league: school level, so it runs on the calendar year and is
+-- named for one — "2026", not the club's "2026/27".
+INSERT INTO competition (id, school_id, name, comp_type, format, age_group, gender, level, season_id) VALUES
+  ('99999999-0000-0000-0000-000000000001', NULL, 'KZN Schools T20 League', 'league', 'T20', '1XI', 'boys', 'school', season_named('2026', 'school'));
+-- Its divisions. Both pilot sides are in the top one.
+INSERT INTO competition_division (id, competition_id, code, name, rank) VALUES
+  ('d1710000-0000-0000-0000-000000000001', '99999999-0000-0000-0000-000000000001', 'D1', 'Division 1', 1),
+  ('d1710000-0000-0000-0000-000000000002', '99999999-0000-0000-0000-000000000001', 'D2', 'Division 2', 2);
 
 -- Matches: one played, one scheduled. Neither carries a score column —
 -- the score is derived from ball_event.
@@ -245,6 +262,19 @@ INSERT INTO vehicle (id, school_id, registration, description, kind, capacity,
    current_date + 12, 'Used primarily for longer trips.')
 ON CONFLICT DO NOTHING;
 
+-- Cover recorded and current for every pilot vehicle. The walks that need a
+-- lapsed one set the date themselves; a seed that shipped an expired minibus
+-- would break every transport walk that picks the first vehicle it finds.
+UPDATE vehicle SET insurance_expires_on = '2027-03-31', roadworthy_expires_on = '2027-01-31';
+
+-- Who to ring. The trigger derives school_id from the child and stamps
+-- created_by from the session — NULL here, because a seed is nobody's act.
+INSERT INTO emergency_contact (player_id, priority, name, relationship, phone, phone_alt, email, note) VALUES
+  ('aaaaaaaa-0000-0000-0000-000000000005', 1, 'D Pillay',     'mother',      '+27 82 000 0005', NULL, 'd.pillay@example.invalid', NULL),
+  ('aaaaaaaa-0000-0000-0000-000000000005', 2, 'S Pillay',     'grandparent', '+27 31 000 0055', NULL, NULL, 'Works nights — try after seven'),
+  ('aaaaaaaa-0000-0000-0000-000000000001', 1, 'A Whitfield',  'father',      '+27 82 000 0001', '+27 33 000 0011', NULL, NULL),
+  ('bbbbbbbb-0000-0000-0000-000000000002', 1, 'M Botha',      'mother',      '+27 82 000 0202', NULL, NULL, NULL);
+
 -- The head. A school with sponsors and no principal is the same gap the
 -- bursar comment above describes, and a sharper one: sponsorship.exclusivity.waive
 -- is held by this role and by nothing else, so without an account carrying it
@@ -252,6 +282,13 @@ ON CONFLICT DO NOTHING;
 INSERT INTO app_user (id, school_id, email, name, role) VALUES
   ('88888888-0000-0000-0000-000000000016', '11111111-1111-1111-1111-111111111111',
    'principal@example.invalid', 'Dr N Mkhize', 'principal');
+
+-- Somebody who runs the shared league. competition.manage at no school at
+-- all, which is what a competition with no organising school answers to;
+-- without this account a division could only ever be observed refused.
+INSERT INTO app_user (id, school_id, email, name, role) VALUES
+  ('88888888-0000-0000-0000-000000000021', NULL,
+   'league@example.invalid', 'K Naidu', 'competitionadmin');
 
 -- The platform account. Not scoped to a school at all — this is what
 -- verifies a scout's accreditation, and accrediting an external organisation
@@ -289,6 +326,7 @@ INSERT INTO role_assignment (id, person_id, role, school_id, team_code) VALUES
   -- and these two need different scopes.
   ('a5510000-0000-0000-0000-00000000000c', '88888888-0000-0000-0000-000000000009', 'player',          '11111111-1111-1111-1111-111111111111', '1XI'),
   ('a5510000-0000-0000-0000-00000000000d', '88888888-0000-0000-0000-000000000009', 'selfaccess',      '11111111-1111-1111-1111-111111111111', NULL),
+  ('a5510000-0000-0000-0000-000000000021', '88888888-0000-0000-0000-000000000021', 'competitionadmin', NULL, NULL),
   ('a5510000-0000-0000-0000-00000000000e', '88888888-0000-0000-0000-00000000000a', 'coach',           '11111111-1111-1111-1111-111111111111', '2XI'),
   ('a5510000-0000-0000-0000-00000000000f', '88888888-0000-0000-0000-00000000000b', 'coach',           '11111111-1111-1111-1111-111111111111', 'U14A'),
   -- The four 1st XI families.
@@ -378,9 +416,9 @@ COMMIT;
 -- own team and NOT the spectator, and one U16B team notice the 1XI coach must
 -- not receive.
 
-INSERT INTO competition_entrant (competition_id, school_id, team_code, display_name, played, won, lost, drawn, no_result, points) VALUES
-  ('99999999-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', '1XI', 'Hilton 1st XI',    5, 4, 1, 0, 0, 8),
-  ('99999999-0000-0000-0000-000000000001', '22222222-2222-2222-2222-222222222222', '1XI', 'Westville 1st XI', 5, 3, 2, 0, 0, 6);
+INSERT INTO competition_entrant (competition_id, school_id, team_code, display_name, played, won, lost, drawn, no_result, points, division_id) VALUES
+  ('99999999-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', '1XI', 'Hilton 1st XI',    5, 4, 1, 0, 0, 8, 'd1710000-0000-0000-0000-000000000001'),
+  ('99999999-0000-0000-0000-000000000001', '22222222-2222-2222-2222-222222222222', '1XI', 'Westville 1st XI', 5, 3, 2, 0, 0, 6, 'd1710000-0000-0000-0000-000000000001');
 
 INSERT INTO training_session (id, school_id, team_code, title, starts_at, duration_min, venue, coach_id, session_type, drills, notes) VALUES
   ('7a717000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', '1XI',
@@ -451,3 +489,48 @@ INSERT INTO notification (id, school_id, team_code, scope_level, kind, urgency, 
 INSERT INTO match_weather (match_id, condition, temp_c, humidity_pct, wind_kph, wind_dir, uv_index, rain_chance_pct, forecast, playable) VALUES
   ('77777777-0000-0000-0000-000000000002', 'Partly cloudy', 22, 60, 16, 'SW', 7, 20,
    'Pleasant Midlands morning. Isolated cloud.', true);
+
+-- ── Adult clearances ───────────────────────────────────────────────
+-- Hilton's register as an office would actually find it: mostly kept, one
+-- first aid certificate about to lapse, one police clearance that already
+-- has, one coach with no first aid on file at all. Westville has recorded
+-- nothing on its coach — the register's loudest row. Dates that must sit a
+-- known distance from today are written relative to it. verified_by is NULL
+-- throughout: a seeded row, not a person who saw a document.
+INSERT INTO adult_clearance (person_id, school_id, kind, reference, issued_on, expires_on, note) VALUES
+  -- The 1XI coach: all three, first aid running out.
+  ('88888888-0000-0000-0000-000000000004', '11111111-1111-1111-1111-111111111111', 'police_clearance', 'PCC-2026-041177', '2026-03-01', '2027-02-28', NULL),
+  ('88888888-0000-0000-0000-000000000004', '11111111-1111-1111-1111-111111111111', 'child_protection', 'NRSO-11-88421',   '2025-11-01', '2027-10-31', NULL),
+  ('88888888-0000-0000-0000-000000000004', '11111111-1111-1111-1111-111111111111', 'first_aid',        'FA-L1-2024-3310', '2024-09-25', current_date + 20, 'Level 1'),
+  -- The 2XI coach: police clearance lapsed a month ago, no first aid on file.
+  ('88888888-0000-0000-0000-00000000000a', '11111111-1111-1111-1111-111111111111', 'police_clearance', 'PCC-2025-118902', '2025-08-01', current_date - 30, NULL),
+  ('88888888-0000-0000-0000-00000000000a', '11111111-1111-1111-1111-111111111111', 'child_protection', 'NRSO-11-90117',   '2026-01-15', '2028-01-14', NULL),
+  -- Sarah, who coaches U16B.
+  ('88888888-0000-0000-0000-000000000007', '11111111-1111-1111-1111-111111111111', 'police_clearance', 'PCC-2026-002215', '2026-01-20', '2027-01-19', NULL),
+  ('88888888-0000-0000-0000-000000000007', '11111111-1111-1111-1111-111111111111', 'child_protection', 'NRSO-11-70233',   '2025-06-01', '2027-05-31', NULL),
+  ('88888888-0000-0000-0000-000000000007', '11111111-1111-1111-1111-111111111111', 'first_aid',        'FA-L2-2025-0871', '2025-10-10', '2027-10-09', 'Level 2'),
+  -- The physio.
+  ('88888888-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 'police_clearance', 'PCC-2026-019004', '2026-02-10', '2027-02-09', NULL),
+  ('88888888-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 'child_protection', 'NRSO-11-65510',   '2025-09-01', '2027-08-31', NULL),
+  -- The driver: everything current, permit to January.
+  ('88888888-0000-0000-0000-000000000017', '11111111-1111-1111-1111-111111111111', 'police_clearance', 'PCC-2026-030771', '2026-02-20', '2027-02-19', NULL),
+  ('88888888-0000-0000-0000-000000000017', '11111111-1111-1111-1111-111111111111', 'child_protection', 'NRSO-11-71904',   '2025-12-01', '2027-11-30', NULL),
+  ('88888888-0000-0000-0000-000000000017', '11111111-1111-1111-1111-111111111111', 'driving_permit',   'PrDP-G-4471820',  '2025-01-10', '2027-01-09', 'Goods and passengers');
+
+-- ── Recognition ────────────────────────────────────────────────────
+-- The 1XI had awarded 411 caps before the platform; James Whitfield holds
+-- full colours from last season, on the public board; S Naidoo captains
+-- this one. awarded_by NULL throughout: seeded, not signed.
+INSERT INTO cap_baseline (school_id, team_code, caps_before, as_of, note) VALUES
+  ('11111111-1111-1111-1111-111111111111', '1XI', 411, '2025-12-31', 'From the honours board in the pavilion.');
+INSERT INTO honour (player_id, kind, season_id, citation, awarded_on, is_public) VALUES
+  ('aaaaaaaa-0000-0000-0000-000000000001', 'colours', season_named('2025', 'school'), 'Led the batting all season.', '2025-11-20', true),
+  ('aaaaaaaa-0000-0000-0000-000000000003', 'captain', season_named('2026', 'school'), NULL, '2026-08-15', false);
+
+-- ── Kit ────────────────────────────────────────────────────────────
+INSERT INTO equipment (id, school_id, kind, label, quantity, condition) VALUES
+  ('e0170000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'bat', 'GM Diamond, 1XI pool', 3, 'good'),
+  ('e0170000-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'helmet', 'Masuri, junior', 8, 'fair'),
+  ('e0170000-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 'bowling_machine', 'BOLA Professional', 1, 'good');
+INSERT INTO drill (school_id, name, category, duration_min, description) VALUES
+  ('11111111-1111-1111-1111-111111111111', 'Pavilion end yorkers', 'bowling', 20, 'Death bowling into the shoes with the tape line.');

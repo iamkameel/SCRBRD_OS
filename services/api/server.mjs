@@ -43,6 +43,14 @@ import { sessionRoutes } from "./realtime/session-routes.mjs";
 import { deviceRoutes, notificationRoutes, transportFor } from "./notify/push-api.mjs";
 import { rewardWeightRoutes } from "./rewards/weights-api.mjs";
 import { fixtureRoutes } from "./write/fixture-api.mjs";
+import { rosterRoutes } from "./write/roster-api.mjs";
+import { contactRoutes } from "./write/contacts-api.mjs";
+import { clearanceRoutes } from "./write/clearance-api.mjs";
+import { recognitionRoutes } from "./write/recognition-api.mjs";
+import { competitionRoutes } from "./write/competitions-api.mjs";
+import { requestRoutes } from "./write/requests-api.mjs";
+import { kitRoutes } from "./write/kit-api.mjs";
+import { workloadRoutes } from "./write/workload-api.mjs";
 import { MatchHub } from "./realtime/realtime.mjs";
 
 const PORT = Number(process.env.PORT || 8787);
@@ -209,6 +217,17 @@ const rewards  = rewardWeightRoutes({ pool, secret: SECRET });
 // Arranging a fixture, which had no route at all — fixture.update was a
 // capability in five roles with nothing it could act on.
 const fixtures = fixtureRoutes({ pool, secret: SECRET });
+// Moving a boy between sides, dated. The history row is the trigger's.
+const roster   = rosterRoutes({ pool, secret: SECRET });
+// Who to ring for a child. Kept by the family and the office; the driver
+// reaches the manifest through the trip, see trip_contacts() in db/08.
+const contacts = contactRoutes({ pool, secret: SECRET });
+const clearances = clearanceRoutes({ pool, secret: SECRET });
+const recognition = recognitionRoutes({ pool, secret: SECRET });
+const competitions = competitionRoutes({ pool, secret: SECRET });
+const requests = requestRoutes({ pool, secret: SECRET });
+const kit = kitRoutes({ pool, secret: SECRET });
+const workload = workloadRoutes({ pool, secret: SECRET });
 
 /**
  * Development sign-in.
@@ -333,6 +352,42 @@ const MATCH_ROUTES = [
 
 // Routes keyed on a player rather than a match. Same shape, same shim.
 const PLAYER_ROUTES = [
+  // Which side he is in, from a date. Writes only player.team_code; the
+  // membership history is recorded by the trigger on that column.
+  [/^\/api\/players\/([^/]+)\/team$/,           "POST", roster.move],
+  [/^\/api\/players\/([^/]+)\/emergency-contacts$/, "POST", contacts.add],
+  [/^\/api\/emergency-contacts\/([^/]+)\/retire$/,   "POST", contacts.retire],
+  [/^\/api\/clearances$/,                           "POST", clearances.record],
+  [/^\/api\/clearances\/([^/]+)\/revoke$/,          "POST", clearances.revoke],
+  // Honours are awarded and withdrawn, never edited; a cap baseline is where
+  // a side's ledger starts. recognition.manage, through the tables' policies.
+  [/^\/api\/honours$/,                              "POST", recognition.award],
+  [/^\/api\/honours\/([^/]+)\/withdraw$/,           "POST", recognition.withdraw],
+  [/^\/api\/honours\/([^/]+)\/public$/,             "POST", recognition.setPublic],
+  [/^\/api\/cap-baselines$/,                        "POST", recognition.baseline],
+  // The rewards figure. A GET on the id-bearing table, keyed on nothing: the
+  // rows are whoever the principal may read, narrowed by ?teamCode.
+  [/^\/api\/rewards$/,                              "GET",  rewards.figures],
+  // Asking for a role, and answering. /api/onboard and /api/schools carry no
+  // principal: a stranger gets an account with nothing in it and a request.
+  [/^\/api\/schools$/,                              "GET",  requests.schools],
+  [/^\/api\/onboard$/,                              "POST", requests.onboard],
+  [/^\/api\/requests$/,                             "POST", requests.request],
+  [/^\/api\/requests\/([^/]+)\/withdraw$/,           "POST", requests.withdraw],
+  [/^\/api\/requests\/([^/]+)\/decide$/,             "POST", requests.decide],
+  [/^\/api\/drills$/,                               "POST", kit.drill],
+  [/^\/api\/equipment$/,                            "POST", kit.equipment],
+  [/^\/api\/equipment\/([^/]+)\/issue$/,             "POST", kit.issue],
+  [/^\/api\/equipment-issues\/([^/]+)\/return$/,     "POST", kit.giveBack],
+  [/^\/api\/passport\/consent$/,                     "POST", kit.consent],
+  [/^\/api\/passport\/consent\/([^/]+)\/withdraw$/,   "POST", kit.withdrawConsent],
+  // A high school's own ceiling on an Open-band bowler's overs. Refused
+  // outright for anything that is not kind = 'school' — see the trigger.
+  [/^\/api\/bowling-ceiling$/,                       "POST", workload.ceiling],
+  // A competition's tiers, and who sits in which. competition.manage at the
+  // organiser, which for a shared league is a platform-wide administrator.
+  [/^\/api\/competitions\/([^/]+)\/divisions$/,      "POST", competitions.division],
+  [/^\/api\/competition-entrants\/([^/]+)\/division$/, "POST", competitions.place],
   [/^\/api\/players\/([^/]+)\/assessment$/,     "POST", assess.record],
   [/^\/api\/players\/([^/]+)\/access-request$/, "POST", access.ask],
   [/^\/api\/access-requests\/([^/]+)\/decide$/, "POST", access.decide],

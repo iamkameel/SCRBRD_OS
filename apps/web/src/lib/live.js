@@ -75,6 +75,7 @@ function asPlayer(r) {
     name: r.full_name,
     team: r.team_code,
     school: r.school_id,
+    schoolName: r.school_name ?? null,
     squadNo: r.squad_no,
     role: r.playing_role,
     batHand: r.batting_style,
@@ -160,15 +161,25 @@ function asNotification(r) {
 }
 
 function asLadderRow(r) {
-  return { id: `${r.competition_id}:${r.school_id}:${r.team_code ?? ""}`,
+  return { id: r.id ?? `${r.competition_id}:${r.school_id}:${r.team_code ?? ""}`,
+           competition: r.competition_id,
            name: r.display_name, school: r.school_id, team: r.team_code,
            played: r.played, wins: r.won, losses: r.lost, draws: r.drawn,
-           noResult: r.no_result, points: r.points, nrr: r.net_run_rate, live: true };
+           noResult: r.no_result, points: r.points, nrr: r.net_run_rate,
+           division: r.division_id ? { id: r.division_id, code: r.division_code, name: r.division_name, rank: r.division_rank } : null,
+           live: true };
+}
+function asSeason(r) {
+  return { id: r.id, level: r.level, label: r.label, startsOn: String(r.starts_on).slice(0, 10),
+           endsOn: String(r.ends_on).slice(0, 10), cutoffOn: String(r.cutoff_on).slice(0, 10), current: r.current === true, live: true };
+}
+function asDivision(r) {
+  return { id: r.id, competition: r.competition_id, code: r.code, name: r.name, rank: r.rank, entrants: r.entrants, live: true };
 }
 
 function asCompetition(r) {
   return { id: r.id, name: r.name, type: r.comp_type, format: r.format,
-           ageGroup: r.age_group, gender: r.gender, season: r.season,
+           ageGroup: r.age_group, gender: r.gender, season: r.season, level: r.level, divisions: r.divisions ?? 0,
            school: r.school_id, active: true,
            // The ladder is its own read (`league`), scoped by participation
            // rather than by who created the competition row.
@@ -287,7 +298,9 @@ function asVehicle(r) {
   return { id: r.id, reg: r.registration, description: r.description, kind: r.kind,
            capacity: r.capacity, condition: r.condition, active: r.active,
            nextService: r.next_service_on ? String(r.next_service_on).slice(0, 10) : null,
-           notes: r.notes, school: r.school_id, live: true };
+           notes: r.notes, school: r.school_id, insuranceExpiresOn: r.insurance_expires_on ? String(r.insurance_expires_on).slice(0, 10) : null,
+           roadworthyExpiresOn: r.roadworthy_expires_on ? String(r.roadworthy_expires_on).slice(0, 10) : null,
+           coverState: r.cover_state ?? "unknown", live: true };
 }
 
 /**
@@ -399,6 +412,102 @@ function asDevice(r) {
            registeredAt: r.registered_at, lastSeenAt: r.last_seen_at,
            retiredAt: r.retired_at, retiredReason: r.retired_reason,
            tokenTail: r.token_tail, active: r.retired_at == null, live: true };
+}
+
+/**
+ * Who to ring for a child, one row per contact in priority order. The same
+ * shape serves the manifest read, where rows carry the child's name too.
+ */
+function asContact(r) {
+  return { id: r.id ?? null, playerId: r.player_id, playerName: r.full_name, school: r.school_id,
+           priority: r.priority, name: r.name, relationship: r.relationship,
+           phone: r.phone, phoneAlt: r.phone_alt, email: r.email, note: r.note, live: true };
+}
+
+/** One row of the clearance register, or one adult's clearance. The word is the server's. */
+function asClearance(r) {
+  const d = (v) => (v ? String(v).slice(0, 10) : null);
+  return { id: r.id ?? r.clearance_id ?? null, personId: r.person_id ?? null, name: r.name ?? null,
+           role: r.role ?? null, school: r.school_id, schoolName: r.school_name ?? null,
+           kind: r.kind, kindLabel: r.kind_label, status: r.status, reference: r.reference ?? null,
+           issuedOn: d(r.issued_on), expiresOn: d(r.expires_on), note: r.note ?? null,
+           verifiedBy: r.verified_by_name ?? null, verifiedAt: r.verified_at ?? null,
+           revokedAt: r.revoked_at ?? null, revokedReason: r.revoked_reason ?? null, live: true };
+}
+/** One boy's workload. Every word and number is the server's. */
+function asWorkload(r) {
+  return { playerId: r.player_id, name: r.full_name, team: r.team_code, school: r.school_id,
+           ageBand: r.age_band, pace: r.pace, maxSpell: r.max_overs_per_spell, maxDay: r.max_overs_per_day,
+           overs7d: r.overs_7d, overs28d: r.overs_28d, longestSpell7d: r.longest_spell_7d,
+           breaches28d: r.breaches_28d, lastBowledOn: r.last_bowled_on ? String(r.last_bowled_on).slice(0, 10) : null,
+           sessions7d: r.sessions_7d, minutes7d: r.minutes_7d, sessions28d: r.sessions_28d, minutes28d: r.minutes_28d,
+           acwr: r.acwr == null ? null : Number(r.acwr), loadState: r.load_state, live: true };
+}
+function asSpell(r) {
+  return { matchId: r.match_id, innings: r.innings, bowlerId: r.bowler_id, name: r.full_name,
+           spellNo: r.spell_no, firstOver: r.first_over, lastOver: r.last_over, overs: r.overs,
+           legalBalls: r.legal_balls, bowledOn: r.bowled_on ? String(r.bowled_on).slice(0, 10) : null,
+           ageBand: r.age_band, pace: r.pace, maxSpell: r.max_overs_per_spell, maxDay: r.max_overs_per_day,
+           overSpellLimit: r.over_spell_limit, breachRecorded: r.breach_recorded, live: true };
+}
+function asBreach(r) {
+  return { id: r.id, matchId: r.match_id, opponent: r.opponent, innings: r.innings, bowlerId: r.bowler_id,
+           name: r.full_name, team: r.team_code, kind: r.kind, overs: r.overs, allowed: r.allowed,
+           ageBand: r.age_band, bowledOn: r.bowled_on ? String(r.bowled_on).slice(0, 10) : null,
+           noticedAt: r.noticed_at, live: true };
+}
+function asDirective(r) { return { ageBand: r.age_band, maxSpell: r.max_overs_per_spell, maxDay: r.max_overs_per_day, live: true }; }
+const d10 = (v) => (v ? String(v).slice(0, 10) : null);
+/** One line of a boy's recognition: an honour, a cap, or a milestone. The label is the server's. */
+function asRecognition(r) {
+  return { family: r.family, kind: r.kind, label: r.label, value: r.value, season: r.season, on: d10(r.on_date),
+           matchId: r.match_id, opponent: r.opponent, isPublic: r.is_public, citation: r.citation, id: r.ref_id, live: true };
+}
+function asCap(r) {
+  return { school: r.school_id, team: r.team_code, playerId: r.player_id, name: r.full_name, capNo: r.cap_no,
+           appearances: r.appearances, firstOn: d10(r.first_on), lastOn: d10(r.last_on), firstMatchId: r.first_match_id,
+           baselineSet: r.baseline_set, live: true };
+}
+function asHonour(r) {
+  return { id: r.id, playerId: r.player_id, name: r.full_name, school: r.school_id, team: r.team_code, kind: r.kind,
+           awardName: r.name, label: r.label, season: r.season, citation: r.citation, awardedOn: d10(r.awarded_on),
+           isPublic: r.is_public, awardedBy: r.awarded_by_name, live: true };
+}
+function asMilestone(r) {
+  return { playerId: r.player_id, name: r.full_name, team: r.team_code, kind: r.kind, label: r.label, value: r.value,
+           matchId: r.match_id, innings: r.innings, opponent: r.opponent, on: d10(r.played_on), live: true };
+}
+function asRoleRequest(r) {
+  return { id: r.id, personId: r.person_id, name: r.name, email: r.email, role: r.role, school: r.school_id,
+           schoolName: r.school_name, team: r.team_code, playerId: r.player_id, note: r.note, state: r.state,
+           requestedAt: r.requested_at, decidedAt: r.decided_at, decidedNote: r.decided_note, decidedBy: r.decided_by_name,
+           mine: r.mine === true, decidable: r.decidable === true, live: true };
+}
+function asDrill(r) {
+  return { id: r.id, school: r.school_id, name: r.name, category: r.category, duration: r.duration_min, desc: r.description, live: true };
+}
+function asEquipment(r) {
+  return { id: r.id, school: r.school_id, kind: r.kind, label: r.label, quantity: r.quantity, condition: r.condition, notes: r.notes, out: r.out, live: true };
+}
+function asIssue(r) {
+  return { id: r.id, equipmentId: r.equipment_id, label: r.label, kind: r.kind, playerId: r.player_id, name: r.full_name,
+           team: r.team_code, issuedOn: String(r.issued_on).slice(0, 10), returnedOn: r.returned_on ? String(r.returned_on).slice(0, 10) : null, live: true };
+}
+function asPassportLine(r) {
+  return { family: r.family, label: r.label, value: r.value, on: r.on_date ? String(r.on_date).slice(0, 10) : null,
+           source: r.source_school, recordedBy: r.recorded_by, confidence: r.confidence, live: true };
+}
+function asPassportConsent(r) {
+  return { id: r.id, playerId: r.player_id, name: r.full_name, toSchool: r.to_school_id, toSchoolName: r.to_school,
+           grantedAt: r.granted_at, withdrawnAt: r.withdrawn_at, live: true };
+}
+function asRequirement(r) { return { role: r.role, kind: r.kind, kindLabel: r.kind_label, live: true }; }
+
+/** A side as it stood on a date — nothing here is computed in the browser. */
+function asRosterOn(r) {
+  return { playerId: r.player_id, name: r.full_name, team: r.team_code,
+           joinedOn: r.joined_on ? String(r.joined_on).slice(0, 10) : null,
+           leftOn:   r.left_on   ? String(r.left_on).slice(0, 10)   : null, live: true };
 }
 
 /**
@@ -556,6 +665,8 @@ const ADAPT = {
   notifications: asNotification,
   league: asLadderRow,
   competitions: asCompetition,
+  seasons: asSeason,
+  competition_divisions: asDivision,
   weather: asWeather,
   officials: asOfficial,
   ground_conditions: asGroundCondition,
@@ -564,6 +675,27 @@ const ADAPT = {
   trips: asTrip,
   availability: asAvailability,
   readiness: asReadiness,
+  emergency_contacts: asContact,
+  trip_contacts: asContact,
+  clearance_register: asClearance,
+  clearances: asClearance,
+  my_clearances: asClearance,
+  clearance_requirements: asRequirement,
+  role_requests: asRoleRequest,
+  drills: asDrill,
+  passport: asPassportLine,
+  passport_consents: asPassportConsent,
+  equipment: asEquipment,
+  equipment_issues: asIssue,
+  recognition: asRecognition,
+  caps: asCap,
+  honours: asHonour,
+  milestones: asMilestone,
+  workload: asWorkload,
+  bowling_spells: asSpell,
+  bowling_breaches: asBreach,
+  bowling_directives: asDirective,
+  roster_on: asRosterOn,
   my_devices: asDevice,
   memberships: asMembership,
   opposition_context: asOppositionContext,
@@ -661,8 +793,14 @@ export function liveResources() { return Object.keys(ADAPT); }
  * same statement as an empty array after it, and "no fixtures today" is a
  * claim the UI should only make once the server has actually said so.
  */
-export function useLive(resource, role, nonce = 0) {
+export function useLive(resource, role, nonce = 0, params = null) {
   const demo = !signedIn();
+  // `params` narrows a read — one boy's recognition, one side's caps — and
+  // is serialised into the effect's dependencies so a new object with the
+  // same keys does not refetch, and a changed value does.
+  const query = params && Object.keys(params).length
+    ? "?" + new URLSearchParams(Object.entries(params).filter(([, v]) => v != null && v !== "")).toString()
+    : "";
   const [state, setState] = useState(() =>
     demo
       ? { rows: scoped(resource, role), live: false, loading: false, error: null }
@@ -681,7 +819,7 @@ export function useLive(resource, role, nonce = 0) {
     setState((s) => ({ ...s, loading: true }));
     (async () => {
       try {
-        const { rows } = await api(`/api/read/${resource}`);
+        const { rows } = await api(`/api/read/${resource}${query}`);
         if (!cancelled) setState({ rows: rows.map(ADAPT[resource]), live: true, loading: false, error: null });
       } catch (e) {
         // Deliberately NOT falling back to mock. See above.
@@ -705,7 +843,7 @@ export function useLive(resource, role, nonce = 0) {
       }
     })();
     return () => { cancelled = true; };
-  }, [resource, role, nonce]);
+  }, [resource, role, nonce, query]);
 
   return state;
 }

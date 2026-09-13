@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { NAV_META } from "../design/roles.js";
+import { NAV_META, groupNav } from "../design/roles.js";
 import { useNav, useSports, sportBadge } from "../lib/features.js";
 import { D } from "../design/tokens.js";
 
@@ -89,6 +89,7 @@ function MobileNav({ role, active, onNav, notifCount }) {
     const isBell = k==="notifications";
     return (
       <button onClick={()=>{ isMore ? setMoreOpen(true) : (setMoreOpen(false), onNav(k)); }} className="pressBtn"
+        data-testid={isMore?"mnav-more":`mnav-${k}`}
         aria-current={isActive&&!isMore?"page":undefined}
         aria-expanded={isMore?moreOpen:undefined}
         // The 8px uppercase label under each icon is decorative reinforcement.
@@ -108,8 +109,8 @@ function MobileNav({ role, active, onNav, notifCount }) {
     <>
       {moreOpen&&(
         <>
-          <div className="os-drawer-scrim" onClick={()=>setMoreOpen(false)}/>
-          <div className="os-drawer">
+          <div className="os-drawer-scrim" data-testid="drawer-scrim" onClick={()=>setMoreOpen(false)}/>
+          <div className="os-drawer" data-testid="drawer" role="dialog" aria-label="All modules">
             <div style={{width:"36px",height:"4px",borderRadius:D.pill,background:D.borderMed,margin:"0 auto 12px"}}/>
             <div style={{fontFamily:D.head,fontSize:"8px",fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",color:D.textMuted,margin:"2px 4px 8px"}}>ScrbrdOS · Sport</div>
             <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginBottom:"14px"}}>
@@ -124,25 +125,31 @@ function MobileNav({ role, active, onNav, notifCount }) {
                 </span>);
               })}
             </div>
-            <div style={{fontFamily:D.head,fontSize:"8px",fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",color:D.textMuted,margin:"2px 4px 8px"}}>All modules</div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(96px,1fr))",gap:"8px"}}>
-              {nav.map(k=>{
-                const m = NAV_META[k]; const isActive = active===k;
-                return (
-                  <button key={k} onClick={()=>{setMoreOpen(false);onNav(k);}} className="pressBtn" style={{
-                    display:"flex",flexDirection:"column",alignItems:"center",gap:"6px",padding:"13px 6px",
-                    background:isActive?D.indigo+"16":D.surf2,border:`1px solid ${isActive?D.indigo+"33":D.border}`,
-                    borderRadius:D.lg,cursor:"pointer"}}>
-                    <span style={{fontSize:"18px"}}>{m.icon}</span>
-                    <span style={{fontFamily:D.body,fontSize:"10px",fontWeight:isActive?600:400,color:isActive?D.textPrimary:D.textSecondary}}>{m.label}</span>
-                  </button>
-                );
-              })}
-            </div>
+            {/* The same groups the sidebar draws, from the same place. */}
+            {groupNav(nav).map(g=>(
+              <div key={g.key} role="group" aria-labelledby={`drawer-group-${g.key}`} data-testid={`drawer-group-${g.key}`} style={{marginBottom:"12px"}}>
+                <div id={`drawer-group-${g.key}`} style={{fontFamily:D.head,fontSize:"8px",fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",color:D.textMuted,margin:"2px 4px 8px"}}>{g.label}</div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(96px,1fr))",gap:"8px"}}>
+                  {g.items.map(k=>{
+                    const m = NAV_META[k]; const isActive = active===k;
+                    return (
+                      <button key={k} onClick={()=>{setMoreOpen(false);onNav(k);}} className="pressBtn"
+                        data-testid={`drawer-${k}`} aria-current={isActive?"page":undefined} style={{
+                        display:"flex",flexDirection:"column",alignItems:"center",gap:"6px",padding:"13px 6px",
+                        background:isActive?D.indigo+"16":D.surf2,border:`1px solid ${isActive?D.indigo+"33":D.border}`,
+                        borderRadius:D.lg,cursor:"pointer"}}>
+                        <span style={{fontSize:"18px"}}>{m.icon}</span>
+                        <span style={{fontFamily:D.body,fontSize:"10px",fontWeight:isActive?600:400,color:isActive?D.textPrimary:D.textSecondary}}>{m.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         </>
       )}
-      <nav aria-label="Main" className="os-bottomnav">
+      <nav aria-label="Main" className="os-bottomnav" data-testid="mnav">
         {primary.map(k=><Item key={k} k={k}/>)}
         {rest.length>0&&<Item k="__more" isMore/>}
       </nav>

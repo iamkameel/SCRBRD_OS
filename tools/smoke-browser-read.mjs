@@ -25,6 +25,7 @@
  */
 import { chromium } from "playwright-core";
 import { launchOptions } from "./chromium.mjs";
+import { offline, isFirebaseOfflineNoise } from "./offline-browser.mjs";
 import { anchorFor } from "@scrbrd/scoring";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
@@ -71,25 +72,17 @@ const browser = await chromium.launch({ ...launchOptions() });
 /** A fresh page per person: a session must not leak between them. */
 async function open() {
   const ctx = await browser.newContext();
+  await offline(ctx);
   const page = await ctx.newPage();
   const refusals = [], errors = [];
-  page.on("pageerror", (e) => errors.push(e.message));
+  page.on("pageerror", (e) => { if (!isFirebaseOfflineNoise(e.message)) errors.push(e.message); });
   page.on("console", (m) => {
     const t = m.text();
     if (/\[scrbrd\] getData\(/.test(t)) refusals.push(t);
-    // "Failed to load resource" is a network 404/CORS noise line Chrome logs
-    // itself, not our code. A bare "TypeError: Failed to fetch" is Firebase
-    // Analytics' own internal dynamic-config lookup (firebase.googleapis.com
-    // /.../webConfig, firebaseinstallations.googleapis.com) failing and
-    // logging via console.error rather than throwing — the SDK's documented
-    // behaviour offline or behind a network that blocks Google's analytics
-    // domains, which describes a school ground with no signal as much as it
-    // describes this sandbox. Nothing in THIS app's own code lets a bare
-    // fetch TypeError reach console.error: every fetch() call here is caught
-    // and reported through ApiError/useLive's own error state (see
-    // lib/api.js, lib/live.js) rather than left to surface raw, so this
-    // exact string cannot be masking one of ours.
-    if (m.type() === "error" && !/Failed to load resource/.test(t) && !/^TypeError: Failed to fetch/.test(t)) {
+    // "Failed to load resource" is Chrome's own line for a 404 or an aborted
+    // request. The Firebase SDK's offline chatter is filtered by one shared
+    // rule, with its rationale, in tools/offline-browser.mjs.
+    if (m.type() === "error" && !/Failed to load resource/.test(t) && !isFirebaseOfflineNoise(t)) {
       errors.push(t);
     }
   });
@@ -150,6 +143,15 @@ try {
   ok("no mock player appears anywhere on the screen",
      !/Luca De Villiers|Ethan Solomons|Theo Pretorius|Aiden Petersen/.test(squad));
 
+  // A boy's passport sits on his profile for his own coach: each line with
+  // where it came from and how sure the record is.
+  ok("the profiles screen opens", await nav(coach.page, /Profiles/));
+  await coach.page.locator('[data-testid="roster-player-aaaaaaaa-0000-0000-0000-000000000005"]').first().click({ timeout: 4000 }).catch(() => {});
+  await coach.page.waitForTimeout(1500);
+  const passportCard = coach.page.locator('[data-testid="passport-card"]');
+  ok("the boy's passport is on his profile", await passportCard.count() === 1);
+  ok("...every line derived, verified, asserted or seeded", await passportCard.count() === 1 && /derived|verified|asserted|seeded/i.test(await passportCard.innerText()));
+
   ok("no screen asked the browser to scope for it" +
      (coach.refusals.length ? ` — ${coach.refusals[0].slice(0, 120)}` : ""),
      coach.refusals.length === 0);
@@ -165,6 +167,25 @@ try {
   if (DEBUG) console.log("[debug] guardian squad:\n" + pSquad.slice(0, 700));
   ok("their own child is on it", /Pillay/.test(pSquad));
   ok("...and no other child is", !/Bekker|Naidoo|Cele|Whitfield/.test(pSquad));
+
+  // The passport: the family names a school from Settings, and takes it
+  // back. The gate itself is walked at the API (tools/smoke-passport.mjs);
+  // this is the screen doing exactly what the family asked, nothing more.
+  ok("the settings screen opens for them", await nav(parent.page, /Settings/));
+  ok("...with a passport tab", await click(parent.page, /Passport/));
+  await parent.page.waitForTimeout(800);
+  ok("no school is named yet", /No school has been named/.test(await text(parent.page)));
+  await parent.page.selectOption('select[aria-label="Which player"]', { index: 1 });
+  const wesOption = await parent.page.$eval('select[aria-label="Which school"]', (el) => [...el.options].find((o) => /Westville/.test(o.text))?.value);
+  ok("Westville is offered from the server's list", !!wesOption);
+  if (wesOption) await parent.page.selectOption('select[aria-label="Which school"]', wesOption);
+  ok("they name it", await click(parent.page, /Name this school/));
+  await parent.page.waitForTimeout(1500);
+  const named = await text(parent.page);
+  ok("the grant appears, naming the boy and the school", /Pillay/.test(named) && /Westville/.test(named) && !/No school has been named/.test(named));
+  ok("they take it back", await click(parent.page, /^Withdraw$/));
+  await parent.page.waitForTimeout(1500);
+  ok("...and the row says withdrawn", /withdrawn/i.test(await text(parent.page)));
   ok("the guardian's session raised no scoping refusals", parent.refusals.length === 0);
 
   // ── A notification is not permission ────────────────────────────
@@ -535,6 +556,249 @@ try {
     ok(`${who}: no uncaught error${s.errors.length ? ` — ${s.errors[0].slice(0, 140)}` : ""}`,
        s.errors.length === 0);
   }
+  // ── The clearance register ──────────────────────────────────────
+  group("The clearance register is on the office's staff screen and nobody else's");
+  {
+    const head = await open();
+    await signIn(head.page, /Director of Sport/);
+    await head.page.locator('[data-testid="nav-staff"]').click({ timeout: 6000 }); await head.page.waitForTimeout(1500);
+    const reg = head.page.locator('[data-testid="clearance-register"]');
+    ok("the director of sport sees the register on the staff screen", await reg.count() === 1);
+    const body = await text(head.page);
+    ok("...with the gaps named", /missing/i.test(body) && /expired/i.test(body));
+    ok("...and the unchecked coach on it", /P Moodley/.test(body));
+    ok("...but no reference numbers on the screen", !/PCC-2026|NRSO-11/.test(body));
+    await head.ctx.close();
+
+    const coach = await open();
+    await signIn(coach.page, /Coach/);
+    // A coach is not offered the staff screen at all (user.read); the register
+    // behind it is refused by the function regardless, which the API walk holds.
+    ok("a coach is not offered the staff screen", await coach.page.locator('[data-testid="nav-staff"]').count() === 0);
+    await coach.page.locator('[data-testid="nav-settings"]').click({ timeout: 6000 }); await coach.page.waitForTimeout(600);
+    await coach.page.locator("button", { hasText: /My clearances/ }).first().click({ timeout: 4000 }); await coach.page.waitForTimeout(1200);
+    const mine = await coach.page.locator('[data-testid="my-clearances"]').innerText().catch(() => "");
+    ok("...but he sees his own in settings", /first aid certificate/i.test(mine) && /expiring/i.test(mine));
+    ok("...and only his own", !/P Moodley|B Ngcobo/.test(mine));
+    ok("no console errors", coach.errors.length === 0 && head.errors.length === 0);
+    await coach.ctx.close();
+  }
+
+  // ── The load panel ──────────────────────────────────────────────
+  group("The load panel is on the coach's training screen and not the parent's");
+  {
+    const c = await open();
+    await signIn(c.page, /Coach/);
+    await c.page.locator('[data-testid="nav-training"]').click({ timeout: 6000 }); await c.page.waitForTimeout(1500);
+    ok("the coach sees his side's load", await c.page.locator('[data-testid="load-panel"]').count() === 1);
+    const body = await c.page.locator('[data-testid="load-panel"]').innerText();
+    ok("...one row per boy, with the server's word", /S Naidoo/.test(body) && /no bowling|rested|steady|light|rising|spike/i.test(body));
+    ok("...and the band beside each — a 1XI boy is Open", /open/.test(body) && !/U1[789]/.test(body));
+    await c.ctx.close();
+    const p = await open();
+    await signIn(p.page, /Parent/);
+    if (await p.page.locator('[data-testid="nav-training"]').count()) {
+      await p.page.locator('[data-testid="nav-training"]').click({ timeout: 6000 }); await p.page.waitForTimeout(1200);
+      ok("a parent's training screen has no load panel", await p.page.locator('[data-testid="load-panel"]').count() === 0);
+    } else ok("a parent is not offered the training screen at all", true);
+    ok("no console errors", c.errors.length === 0 && p.errors.length === 0);
+    await p.ctx.close();
+  }
+
+  // ── Recognition on the profile ──────────────────────────────────
+  group("A boy's honours and caps are on his profile, for those who read him");
+  {
+    const c = await open();
+    await signIn(c.page, /Coach/);
+    await c.page.locator('[data-testid="nav-profiles"]').click({ timeout: 6000 }); await c.page.waitForTimeout(1200);
+    const row = c.page.locator('button:has-text("James Whitfield")').first();
+    ok("the coach's roster lists the boy", await row.count() === 1);
+    await row.click({ timeout: 8000 }); await c.page.waitForTimeout(2000);
+    const card = c.page.locator('[data-testid="recognition-card"]');
+    ok("the coach sees the recognition card", await card.count() === 1);
+    if (await card.count() !== 1) console.log("    errors:", c.errors.join(" | ").slice(0, 300));
+    const t = await card.innerText().catch(() => "");
+    ok("...with his colours on it", /Full colours/.test(t));
+    ok("...and his cap, numbered from the board", /1XI cap #412/.test(t));
+    ok("...and nothing that looks like points", !/points|pts|score/i.test(t));
+    ok("no console errors", c.errors.length === 0);
+    await c.ctx.close();
+  }
+
+  // ── The ladder, per division ────────────────────────────────────
+  group("The league screen draws the live ladder, per division");
+  {
+    const c = await open();
+    await signIn(c.page, /Coach/);
+    await c.page.locator('[data-testid="nav-leagues"]').click({ timeout: 6000 }); await c.page.waitForTimeout(1800);
+    const ladder = c.page.locator('[data-testid="live-ladder"]');
+    ok("the coach sees a ladder from the server", await ladder.count() === 1);
+    const t = await ladder.innerText().catch(() => "");
+    ok("...under its division", /division 1/i.test(t));   // innerText carries the CSS upper-casing
+    ok("...with both pilot sides in it", /Hilton 1st XI/.test(t) && /Westville 1st XI/.test(t));
+    ok("...and the season the competition belongs to", /2026/.test(t) && !/2026\/27/.test(t));
+    ok("no console errors", c.errors.length === 0);
+    await c.ctx.close();
+  }
+
+  // ── Onboarding ends in a request ────────────────────────────────
+  group("A stranger onboards into a request; the office answers it; then he has a side");
+  {
+    const s = await open();
+    await click(s.page, /Get Started/, 5000); await s.page.waitForTimeout(600);
+    await click(s.page, /Continue/, 4000);                                   // welcome
+    await s.page.locator("button", { hasText: /Head Coach/ }).first().click({ timeout: 4000 });
+    await click(s.page, /Continue/, 4000);                                   // role
+    await s.page.locator("button", { hasText: /Hilton College/ }).first().click({ timeout: 6000 });
+    await click(s.page, /Continue/, 4000);                                   // school
+    await s.page.locator('input[placeholder*="Whitfield"]').fill("N Zulu");
+    await s.page.locator('input[type="email"]').first().fill("n.zulu@example.invalid");
+    await click(s.page, /Continue/, 4000);                                   // profile
+    await click(s.page, /Enter SCRBRD/, 4000);                               // tour → request
+    await s.page.waitForTimeout(1500);
+    ok("the flow ends in a request, not a role", await s.page.locator('[data-testid="request-sent"]').count() === 1);
+    ok("...and says so in words", /Hilton College has your request/.test(await text(s.page)));
+    await click(s.page, /Back to sign in/, 4000); await s.page.waitForTimeout(500);
+    await s.page.locator("#login-email").fill("n.zulu@example.invalid");
+    await click(s.page, /^Sign In$/, 5000); await s.page.waitForTimeout(2000);
+    ok("signing in shows the pending request and no shell", await s.page.locator('[data-testid="pending-requests"]').count() === 1
+       && await s.page.locator('[data-testid="request-pending"]').count() === 1 && await s.page.locator('[data-testid="os-main"]').count() === 0);
+    ok("no console errors (stranger)", s.errors.length === 0);
+    await s.ctx.close();
+
+    const o = await open();
+    await signIn(o.page, /Registrar|School Admin|registrar@example\.invalid/);
+    if (await o.page.locator('[data-testid="nav-management"]').count()) {
+      await o.page.locator('[data-testid="nav-management"]').click({ timeout: 6000 });
+      const panel = o.page.locator('[data-testid="requests-panel"]');
+      // Three reads land before the panel draws; wait for the panel, not a clock.
+      await panel.waitFor({ state: "visible", timeout: 10000 }).catch(() => {});
+      ok("the office sees the request on the management screen", await panel.count() === 1 && /N Zulu/.test(await panel.innerText()));
+      // He asked to coach and named no side; the office names one.
+      await panel.locator('select[aria-label="Which side"]').first().selectOption("1XI").catch(() => {});
+      await panel.locator("button", { hasText: /^Grant$/ }).first().click({ timeout: 4000 }); await o.page.waitForTimeout(1500);
+      // The panel, not the whole screen: once granted he is on the users list
+      // below it, which is the point.
+      ok("...grants it, and it leaves the panel", await panel.count() === 0 || !/N Zulu/.test(await panel.innerText()));
+      ok("no console errors (office)", o.errors.length === 0);
+    } else {
+      ok("the registrar is not on the pilot login; the API walk covers the grant", true);
+    }
+    await o.ctx.close();
+  }
+
+  // ── The shell, by id ────────────────────────────────────────────
+  // Every walk above found its way around by button text, which is a test
+  // that breaks when a label is reworded and passes when a button is drawn
+  // twice. The shell now carries stable ids: nav-<key> in the sidebar,
+  // mnav-<key> on the phone bar, drawer-<key> in the phone drawer, and
+  // os-main[data-page] for where the person is. This walk uses only those.
+  group("The shell is grouped, and reachable by id on a laptop and a phone");
+  {
+    const c = await open();
+    await signIn(c.page, /Coach/);
+    const tid = (id) => c.page.locator(`[data-testid="${id}"]`);
+    ok("the sidebar draws its groups", await tid("nav-group-play").count() === 1 && await tid("nav-group-people").count() === 1);
+    ok("...with a heading a screen reader can name",
+       await c.page.$eval('[data-testid="nav-group-people"]', (el) => el.getAttribute("role") === "group" && !!el.getAttribute("aria-labelledby")));
+    ok("...and no group a coach holds nothing in", await tid("nav-group-admin").count() === 0);
+    ok("the coach starts on the dashboard", await tid("os-main").getAttribute("data-page") === "dashboard");
+    await tid("nav-squad").click({ timeout: 6000 }); await c.page.waitForTimeout(800);
+    ok("clicking the squad entry lands on the squad", await tid("os-main").getAttribute("data-page") === "squad");
+    ok("...and the entry says so", await tid("nav-squad").getAttribute("aria-current") === "page");
+    ok("the phone bar is not drawn on a laptop", await tid("mnav").isVisible().catch(() => false) === false);
+    await tid("sidebar-toggle").click({ timeout: 4000 }); await c.page.waitForTimeout(400);
+    ok("the sidebar collapses", await tid("sidebar").getAttribute("data-collapsed") === "true");
+    ok("...and the entries keep their names", await tid("nav-profiles").getAttribute("aria-label") === "Profiles");
+    ok("the top bar's controls are addressable",
+       await tid("topbar-search").count() === 1 && await tid("topbar-alerts").count() === 1 && await tid("topbar-role").count() === 1);
+    ok("no console errors on the laptop", c.errors.length === 0, c.errors.join(" | "));
+    await c.ctx.close();
+
+    // Every destination a role is offered must open. Until the drawer walk
+    // below existed nothing had opened Training live, and it crashed on a
+    // register the server had deliberately not sent. So: each screen, for
+    // three very different navs, and the page must still be standing after.
+    for (const [who, label] of [[/Coach/, "coach"], [/Parent|Guardian/, "guardian"], [/Director of Sport/, "director of sport"]]) {
+      const s = await open();
+      if (!(await signIn(s.page, who))) { ok(`the ${label} signs in for the sweep`, false); await s.ctx.close(); continue; }
+      const keys = await s.page.$$eval('[data-testid^="nav-"]:not([data-testid^="nav-group-"]):not([data-testid="nav-alerts-badge"])',
+                                       (els) => els.map((e) => e.getAttribute("data-testid").slice(4)));
+      ok(`the ${label} is offered a menu`, keys.length >= 3);
+      const broken = [];
+      let pokes = 0;
+      for (const k of keys) {
+        const before = s.errors.length;
+        await s.page.locator(`[data-testid="nav-${k}"]`).click({ timeout: 6000 }).catch(() => broken.push(`${k}: no click`));
+        await s.page.waitForTimeout(700);
+        const at = await s.page.locator('[data-testid="os-main"]').getAttribute("data-page", { timeout: 3000 }).catch(() => null);
+        if (at !== k) broken.push(`${k}: landed on ${at}`);
+        if (s.errors.length > before) broken.push(`${k}: ${s.errors.slice(before).join("; ").slice(0, 120)}`);
+        // A crashed React root takes the menu down with it; every click after
+        // that waits its full timeout for a button that is not coming back.
+        if (at === null) break;
+        // ONE LEVEL DOWN. Opening a screen proves the list renders; the two
+        // profile bugs the recognition card exposed lived in the record behind
+        // the list, which nothing had opened. So poke a few buttons on each
+        // screen — a player, a fixture, a tab — and require the page to stand
+        // after each. Skipped: anything that reads like a write or a takeover.
+        const SKIP = /save|submit|delete|retire|revoke|withdraw|publish|send|sign out|log out|remove|cancel|approve|reject|start|scor|declare|record|add |new |\+/i;
+        // First, middle and last of the candidates, not the first three: a
+        // screen's first buttons are its tabs and filters, and the records
+        // are further down. The first draft poked "players / coaches / staff"
+        // on the Profiles screen and never opened a profile.
+        const buttons = s.page.locator('[data-testid="os-main"] button:not([disabled])');
+        const count = Math.min(await buttons.count().catch(() => 0), 60);
+        const candidates = [];
+        for (let i = 0; i < count; i++) {
+          const t = ((await buttons.nth(i).innerText().catch(() => "")) || "").trim().replace(/\s+/g, " ");
+          if (t.length >= 4 && !SKIP.test(t)) candidates.push([i, t]);
+        }
+        const picks = [...new Set([0, Math.floor(candidates.length / 2), candidates.length - 1])]
+          .filter((i) => i >= 0 && i < candidates.length).map((i) => candidates[i]);
+        let poked = 0;
+        for (const [i, t] of picks) {
+          const b0 = s.errors.length;
+          await buttons.nth(i).click({ timeout: 2500 }).catch(() => {});
+          await s.page.waitForTimeout(600);
+          await s.page.keyboard.press("Escape").catch(() => {});
+          poked++; pokes++;
+          if (s.errors.length > b0) broken.push(`${k} › "${t.slice(0, 32)}": ${s.errors.slice(b0).join("; ").slice(0, 120)}`);
+          if (!(await s.page.locator('[data-testid="os-main"]').count())) { broken.push(`${k} › "${t.slice(0, 32)}": page gone`); break; }
+        }
+        if (!(await s.page.locator('[data-testid="os-main"]').count())) break;
+      }
+      ok(`every screen the ${label} is offered opens, and stands when poked (${keys.length} screens, ${pokes} pokes)`, broken.length === 0);
+      ok(`...and the sweep actually reached records for the ${label}`, pokes >= keys.length);
+      if (broken.length) console.log("    " + broken.join("\n    "));
+      await s.ctx.close();
+    }
+
+    // The same person on a phone: the bar shows the first four, the drawer
+    // shows the rest in the same groups the sidebar drew.
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    await offline(ctx);
+    const page = await ctx.newPage();
+    const errors = []; page.on("pageerror", (e) => { if (!isFirebaseOfflineNoise(e.message)) errors.push(e.message); });
+    await page.addInitScript(`window.__SCRBRD_API_BASE__ = ${JSON.stringify(API)};`);
+    await page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "networkidle" });
+    await signIn(page, /Coach/);
+    const mid = (id) => page.locator(`[data-testid="${id}"]`);
+    ok("the phone bar is drawn", await mid("mnav").isVisible());
+    ok("...with the dashboard and the match centre on it", await mid("mnav-dashboard").count() === 1 && await mid("mnav-matches").count() === 1);
+    ok("...and a More button for the rest", await mid("mnav-more").count() === 1);
+    ok("the sidebar is not", await mid("sidebar").count() === 0);
+    await mid("mnav-more").click({ timeout: 4000 }); await page.waitForTimeout(500);
+    ok("More opens the drawer", await mid("drawer").isVisible());
+    ok("...grouped the same way", await mid("drawer-group-people").count() === 1 && await mid("drawer-group-develop").count() === 1);
+    await mid("drawer-training").click({ timeout: 4000 }); await page.waitForTimeout(800);
+    ok("a drawer entry navigates and closes the drawer",
+       await mid("os-main").getAttribute("data-page") === "training" && await mid("drawer").count() === 0);
+    ok("...and More now reads as the active place", await mid("mnav-more").getAttribute("aria-expanded") === "false");
+    ok("no console errors on the phone", errors.length === 0, errors.join(" | "));
+    await ctx.close();
+  }
+
 } catch (e) {
   ok(`the browser read walk threw: ${e.message?.slice(0, 160)}`, false);
 } finally {

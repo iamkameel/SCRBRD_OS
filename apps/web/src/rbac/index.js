@@ -290,6 +290,12 @@ const warned = new Set();
 /** Single-record variant. Returns null when the row may not be read at all. */
 export function filterRecord(role, resource, record) {
   if (!record) return record;
+  // A row the SERVER sent has already been authorised and masked, per column,
+  // by the policy that knows this person's real assignments. Re-deciding it
+  // here against the demo's role-to-assignment table is the browser deciding,
+  // and deciding wrongly: the demo anchors on "HIL" and the server on an id,
+  // so a live player's profile was refused for everyone and never opened.
+  if (record.live) return record;
   const def = RESOURCE[resource];
   if (!def) return null;
   const assignments = assignmentsForRole(role);

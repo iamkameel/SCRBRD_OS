@@ -245,6 +245,11 @@ try {
          && partial.missing.includes(WEIGHT_KEYS.performance));
       await c.query("ROLLBACK");
     } finally { c.release(); }
+    // Over the wire the refusal says only that it is incomplete: the list of
+    // missing terms is the list of terms.
+    const half = await api("/api/rewards?teamCode=1XI", { token: coach });
+    ok("the figure route refuses an incomplete algorithm", half.status === 409 && half.body?.error === "algorithm_incomplete");
+    ok("...without naming a term", !/reward\./.test(JSON.stringify(half.body)));
 
     for (const key of [WEIGHT_KEYS.performance, WEIGHT_KEYS.evidence,
                        WEIGHT_KEYS.windowCap, WEIGHT_KEYS.teamGate]) {
@@ -260,6 +265,49 @@ try {
          Object.keys(full.weights).length === Object.keys(WEIGHT_KEYS).length);
       await c2.query("ROLLBACK");
     } finally { c2.release(); }
+  }
+
+  group("The figure: one number per boy, to those who may read him, and nothing else");
+  {
+    const figures = async (tok, team = "1XI") => (await api(`/api/rewards?teamCode=${team}`, { token: tok })).body?.rows ?? [];
+    const one = await figures(coach);
+    ok("the coach reads his side's figures", one.length >= 3);
+    ok("...each between 0 and 100, ranked", one.every((r) => r.figure >= 0 && r.figure <= 100) && one.every((r, i) => r.rank === i + 1)
+       && one.every((r, i) => i === 0 || one[i - 1].figure >= r.figure));
+    ok("...and nothing but a figure: no term, no weight, no breakdown",
+       one.every((r) => Object.keys(r).sort().join() === "figure,name,playerId,rank,team"));
+    ok("the director reads the school", (await figures(head, "")).length > one.length);
+    ok("a spectator reads none", (await figures(await login("watcher@example.invalid"))).length === 0);
+    ok("a parent reads none", (await figures(await login("parent@example.invalid"))).length === 0);
+    const boy = await login("pillay@example.invalid");
+    ok("a boy reads his own and nobody else's", (await figures(boy)).every((r) => r.playerId === "aaaaaaaa-0000-0000-0000-000000000005"));
+    // Growth moves it. Two boys, same rating today, same evidence, no runs:
+    // one was always a 14, the other came up from an 8. Only the history
+    // separates them, so only the growth term can.
+    const X = "aaaaaaaa-0000-0000-0000-000000000005", Y = "aaaaaaaa-0000-0000-0000-000000000004";   // R Pillay, M Cele
+    const assess = (id, body) => api(`/api/players/${id}/assessment`, { method: "POST", token: coach, body });
+    await assess(X, { scores: { technical: { footwork: 14, timing: 15 } }, assessedOn: "2026-08-20" });
+    await assess(X, { scores: { technical: { footwork: 14, timing: 15 } } });
+    await assess(Y, { scores: { technical: { footwork: 8, timing: 8 } }, assessedOn: "2026-08-20" });
+    await assess(Y, { scores: { technical: { footwork: 14, timing: 15 } } });
+    const g = await figures(coach);
+    ok("a boy who came up to a 14 earns more than a boy who was always one",
+       g.find((r) => r.playerId === Y).figure > g.find((r) => r.playerId === X).figure);
+    // The cap: one monster innings does not out-earn steady runs.
+    await setWeight(WEIGHT_KEYS.windowCap, platform, { value: 2.5, effectiveFrom: "2026-09-01" });
+    // Two boys with no ratings on record, so only the runs separate them.
+    const A = "aaaaaaaa-0000-0000-0000-000000000003", B = "aaaaaaaa-0000-0000-0000-000000000002";
+    const scorer = await idOf("scorer@example.invalid");
+    let seq = 5000;
+    const feed = async (m, striker, runs) => { for (let i = 0; i < runs / 4; i++) await q(
+      `insert into ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key, client_seq, client_ts, kind, ball_type, value, striker_id)
+       values ($1, $2, $3, 0, 0, $4, 'walk', $5, $3, now(), 'ball', 'run', 4, $6)`, [m, HIL, ++seq, scorer, `rw-${seq}`, striker]); };
+    const fixture = async (d) => (await q(`insert into match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+      values ($1, '1XI', 'Kearsney', now() - ($2 || ' days')::interval, 'cricket', 'T20', 20, 'complete') returning id`, [HIL, String(d)]))[0].id;
+    await feed(await fixture(1), A, 300);
+    for (const d of [2, 3, 4]) await feed(await fixture(d), B, 40);
+    const f = await figures(coach);
+    ok("three steady forties out-earn one three hundred", f.find((r) => r.playerId === B).figure > f.find((r) => r.playerId === A).figure);
   }
 
 } catch (e) {

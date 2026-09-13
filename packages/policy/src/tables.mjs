@@ -155,6 +155,71 @@ export const TABLES = {
     masked: { "player.pii.read": ["email", "phone", "born", "hometown", "address"] },
   },
 
+  adult_clearance: {
+    // A school's record that it checked an adult: police clearance, the
+    // Children's Act register, first aid, the driving permit. Anchored on the
+    // school that did the checking, and only there — a check Hilton made is
+    // not a check WES may lean on, and whether one should travel with the
+    // person is the passport question, a consent decision for later. The
+    // person's OWN rows are readable through a hand-written identity policy
+    // in db/08; this entry is the school's side.
+    read:  "clearance.read",
+    write: "clearance.manage",
+    anchors: { school: "school_id" },
+    masked: {},
+  },
+  honour: {
+    // Colours, captaincy, player of the season: what a school says about a
+    // boy in public. Read by whoever reads the roster he is on — a team-mate
+    // sees the honours board, which is the point of one — and written by the
+    // people who sign it. Never edited: withdrawn with a reason, and stays.
+    read:  "player.profile.read",
+    write: "recognition.manage",
+    anchors: { school: "school_id",
+               team: "(SELECT p.team_code FROM player p WHERE p.id = honour.player_id)",
+               person: "player_id" },
+    masked: {},
+  },
+  cap_baseline: {
+    // Where a side's cap numbers start: the caps awarded before the platform
+    // was keeping the ledger. One row per side, kept by the same people who
+    // award honours, read by anyone who reads the side.
+    read:  "team.read",
+    write: "recognition.manage",
+    anchors: { school: "school_id", team: "team_code" },
+    masked: {},
+  },
+  bowling_ceiling_open: {
+    // The platform's own directive leaves the Open band unrestricted — see
+    // bowling_directive in db/08. A high school may put its own ceiling on
+    // it anyway; a club or academy may not (bowling_ceiling_school_only()
+    // refuses the row outright). Read by whoever reads workload; the
+    // visibleWhen widens that to whoever may SET it, since the three roles
+    // who hold player.workload.manage do not all hold player.workload.read.
+    read:  "player.workload.read",
+    write: "player.workload.manage",
+    visibleWhen: `app_can('player.workload.manage', bowling_ceiling_open.school_id, '*'::text,
+                          '00000000-0000-0000-0000-000000000000'::uuid,
+                          '00000000-0000-0000-0000-000000000000'::uuid)`,
+    anchors: { school: "school_id" },
+    masked: {},
+  },
+  emergency_contact: {
+    // Who to ring when something happens to a child. Read by the people around
+    // him on the day, kept by his family and the office. Anchored through the
+    // player's CURRENT side, as the injury row is: the coach who has him now
+    // is the coach who needs the number. The driver is deliberately absent —
+    // see trip_contacts() in db/08, which reaches him through the trip.
+    read:  "player.emergency.read",
+    write: "player.emergency.manage",
+    anchors: {
+      school: "school_id",
+      team:   "(SELECT p.team_code FROM player p WHERE p.id = emergency_contact.player_id)",
+      person: "player_id",
+    },
+    masked: {},
+  },
+
   injury: {
     // Reading an injury row is reading AVAILABILITY — that a player is out,
     // and until when. This split is the reason a coach can pick a side without
@@ -314,6 +379,39 @@ export const TABLES = {
     write: "competition.manage",
     visibleWhen: "competition_visible(competition_entrant.competition_id)",
     anchors: { school: "school_id", team: "(COALESCE(competition_entrant.team_code, '*'::text))" },
+    masked: {},
+  },
+
+  competition_division: {
+    // A tier within a competition — Division 1, Pool B. Read by whoever can
+    // reach the competition, through the organiser or through any entrant,
+    // and written by whoever administers the competition: competition.manage
+    // at the organiser's school, which for a shared league (organiser NULL)
+    // is only a platform-wide competition administrator.
+    read:  "competition.read",
+    write: "competition.manage",
+    visibleWhen: "competition_visible(competition_division.competition_id)",
+    anchors: { school: "(SELECT c.school_id FROM competition c WHERE c.id = competition_division.competition_id)" },
+    masked: {},
+  },
+
+  equipment: {
+    // The school's kit: what it has, how many, in what state. Read by
+    // whoever reads a side, kept by whoever manages one.
+    read:  "team.read",
+    write: "team.manage",
+    anchors: { school: "school_id" },
+    masked: {},
+  },
+  equipment_issue: {
+    // Who has the school's kit. A named boy holding a bat is a fact about
+    // him, so it reads under his profile — his coach, his family, the office
+    // — and is written by whoever manages the side.
+    read:  "player.profile.read",
+    write: "team.manage",
+    anchors: { school: "(SELECT e.school_id FROM equipment e WHERE e.id = equipment_issue.equipment_id)",
+               team: "(SELECT p.team_code FROM player p WHERE p.id = equipment_issue.player_id)",
+               person: "player_id" },
     masked: {},
   },
 

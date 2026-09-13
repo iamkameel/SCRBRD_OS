@@ -121,6 +121,95 @@ CREATE POLICY staff_update ON staff
   FOR UPDATE USING (app_can('user.role.assign', staff.school_id, NULL::text, staff.id, '00000000-0000-0000-0000-000000000000'::uuid))
            WITH CHECK (app_can('user.role.assign', staff.school_id, NULL::text, staff.id, '00000000-0000-0000-0000-000000000000'::uuid));
 
+-- adult_clearance — read: clearance.read · write: clearance.manage
+ALTER TABLE adult_clearance ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS adult_clearance_read   ON adult_clearance;
+DROP POLICY IF EXISTS adult_clearance_insert ON adult_clearance;
+DROP POLICY IF EXISTS adult_clearance_update ON adult_clearance;
+DROP POLICY IF EXISTS adult_clearance_delete ON adult_clearance;
+
+CREATE POLICY adult_clearance_read ON adult_clearance
+  FOR SELECT USING (app_can('clearance.read', adult_clearance.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY adult_clearance_insert ON adult_clearance
+  FOR INSERT WITH CHECK (app_can('clearance.manage', adult_clearance.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY adult_clearance_update ON adult_clearance
+  FOR UPDATE USING (app_can('clearance.manage', adult_clearance.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
+           WITH CHECK (app_can('clearance.manage', adult_clearance.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+-- honour — read: player.profile.read · write: recognition.manage
+ALTER TABLE honour ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS honour_read   ON honour;
+DROP POLICY IF EXISTS honour_insert ON honour;
+DROP POLICY IF EXISTS honour_update ON honour;
+DROP POLICY IF EXISTS honour_delete ON honour;
+
+CREATE POLICY honour_read ON honour
+  FOR SELECT USING (app_can('player.profile.read', honour.school_id, (SELECT p.team_code FROM player p WHERE p.id = honour.player_id), honour.player_id, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY honour_insert ON honour
+  FOR INSERT WITH CHECK (app_can('recognition.manage', honour.school_id, (SELECT p.team_code FROM player p WHERE p.id = honour.player_id), honour.player_id, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY honour_update ON honour
+  FOR UPDATE USING (app_can('recognition.manage', honour.school_id, (SELECT p.team_code FROM player p WHERE p.id = honour.player_id), honour.player_id, '00000000-0000-0000-0000-000000000000'::uuid))
+           WITH CHECK (app_can('recognition.manage', honour.school_id, (SELECT p.team_code FROM player p WHERE p.id = honour.player_id), honour.player_id, '00000000-0000-0000-0000-000000000000'::uuid));
+
+-- cap_baseline — read: team.read · write: recognition.manage
+ALTER TABLE cap_baseline ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS cap_baseline_read   ON cap_baseline;
+DROP POLICY IF EXISTS cap_baseline_insert ON cap_baseline;
+DROP POLICY IF EXISTS cap_baseline_update ON cap_baseline;
+DROP POLICY IF EXISTS cap_baseline_delete ON cap_baseline;
+
+CREATE POLICY cap_baseline_read ON cap_baseline
+  FOR SELECT USING (app_can('team.read', cap_baseline.school_id, cap_baseline.team_code, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY cap_baseline_insert ON cap_baseline
+  FOR INSERT WITH CHECK (app_can('recognition.manage', cap_baseline.school_id, cap_baseline.team_code, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY cap_baseline_update ON cap_baseline
+  FOR UPDATE USING (app_can('recognition.manage', cap_baseline.school_id, cap_baseline.team_code, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
+           WITH CHECK (app_can('recognition.manage', cap_baseline.school_id, cap_baseline.team_code, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+-- bowling_ceiling_open — read: player.workload.read · write: player.workload.manage
+-- plus a named exception on read — see readPredicate() in generate-rls.mjs
+ALTER TABLE bowling_ceiling_open ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS bowling_ceiling_open_read   ON bowling_ceiling_open;
+DROP POLICY IF EXISTS bowling_ceiling_open_insert ON bowling_ceiling_open;
+DROP POLICY IF EXISTS bowling_ceiling_open_update ON bowling_ceiling_open;
+DROP POLICY IF EXISTS bowling_ceiling_open_delete ON bowling_ceiling_open;
+
+CREATE POLICY bowling_ceiling_open_read ON bowling_ceiling_open
+  FOR SELECT USING ((app_can('player.workload.read', bowling_ceiling_open.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
+    OR (app_can('player.workload.manage', bowling_ceiling_open.school_id, '*'::text,
+                          '00000000-0000-0000-0000-000000000000'::uuid,
+                          '00000000-0000-0000-0000-000000000000'::uuid)));
+
+CREATE POLICY bowling_ceiling_open_insert ON bowling_ceiling_open
+  FOR INSERT WITH CHECK (app_can('player.workload.manage', bowling_ceiling_open.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY bowling_ceiling_open_update ON bowling_ceiling_open
+  FOR UPDATE USING (app_can('player.workload.manage', bowling_ceiling_open.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
+           WITH CHECK (app_can('player.workload.manage', bowling_ceiling_open.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+-- emergency_contact — read: player.emergency.read · write: player.emergency.manage
+ALTER TABLE emergency_contact ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS emergency_contact_read   ON emergency_contact;
+DROP POLICY IF EXISTS emergency_contact_insert ON emergency_contact;
+DROP POLICY IF EXISTS emergency_contact_update ON emergency_contact;
+DROP POLICY IF EXISTS emergency_contact_delete ON emergency_contact;
+
+CREATE POLICY emergency_contact_read ON emergency_contact
+  FOR SELECT USING (app_can('player.emergency.read', emergency_contact.school_id, (SELECT p.team_code FROM player p WHERE p.id = emergency_contact.player_id), emergency_contact.player_id, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY emergency_contact_insert ON emergency_contact
+  FOR INSERT WITH CHECK (app_can('player.emergency.manage', emergency_contact.school_id, (SELECT p.team_code FROM player p WHERE p.id = emergency_contact.player_id), emergency_contact.player_id, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY emergency_contact_update ON emergency_contact
+  FOR UPDATE USING (app_can('player.emergency.manage', emergency_contact.school_id, (SELECT p.team_code FROM player p WHERE p.id = emergency_contact.player_id), emergency_contact.player_id, '00000000-0000-0000-0000-000000000000'::uuid))
+           WITH CHECK (app_can('player.emergency.manage', emergency_contact.school_id, (SELECT p.team_code FROM player p WHERE p.id = emergency_contact.player_id), emergency_contact.player_id, '00000000-0000-0000-0000-000000000000'::uuid));
+
 -- injury — read: medical.status.read · write: medical.write
 ALTER TABLE injury ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS injury_read   ON injury;
@@ -227,6 +316,59 @@ CREATE POLICY competition_entrant_insert ON competition_entrant
 CREATE POLICY competition_entrant_update ON competition_entrant
   FOR UPDATE USING (app_can('competition.manage', competition_entrant.school_id, (COALESCE(competition_entrant.team_code, '*'::text)), '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
            WITH CHECK (app_can('competition.manage', competition_entrant.school_id, (COALESCE(competition_entrant.team_code, '*'::text)), '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+-- competition_division — read: competition.read · write: competition.manage
+-- plus a named exception on read — see readPredicate() in generate-rls.mjs
+ALTER TABLE competition_division ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS competition_division_read   ON competition_division;
+DROP POLICY IF EXISTS competition_division_insert ON competition_division;
+DROP POLICY IF EXISTS competition_division_update ON competition_division;
+DROP POLICY IF EXISTS competition_division_delete ON competition_division;
+
+CREATE POLICY competition_division_read ON competition_division
+  FOR SELECT USING ((app_can('competition.read', (SELECT c.school_id FROM competition c WHERE c.id = competition_division.competition_id), '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
+    OR (competition_visible(competition_division.competition_id)));
+
+CREATE POLICY competition_division_insert ON competition_division
+  FOR INSERT WITH CHECK (app_can('competition.manage', (SELECT c.school_id FROM competition c WHERE c.id = competition_division.competition_id), '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY competition_division_update ON competition_division
+  FOR UPDATE USING (app_can('competition.manage', (SELECT c.school_id FROM competition c WHERE c.id = competition_division.competition_id), '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
+           WITH CHECK (app_can('competition.manage', (SELECT c.school_id FROM competition c WHERE c.id = competition_division.competition_id), '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+-- equipment — read: team.read · write: team.manage
+ALTER TABLE equipment ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS equipment_read   ON equipment;
+DROP POLICY IF EXISTS equipment_insert ON equipment;
+DROP POLICY IF EXISTS equipment_update ON equipment;
+DROP POLICY IF EXISTS equipment_delete ON equipment;
+
+CREATE POLICY equipment_read ON equipment
+  FOR SELECT USING (app_can('team.read', equipment.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY equipment_insert ON equipment
+  FOR INSERT WITH CHECK (app_can('team.manage', equipment.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY equipment_update ON equipment
+  FOR UPDATE USING (app_can('team.manage', equipment.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
+           WITH CHECK (app_can('team.manage', equipment.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+-- equipment_issue — read: player.profile.read · write: team.manage
+ALTER TABLE equipment_issue ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS equipment_issue_read   ON equipment_issue;
+DROP POLICY IF EXISTS equipment_issue_insert ON equipment_issue;
+DROP POLICY IF EXISTS equipment_issue_update ON equipment_issue;
+DROP POLICY IF EXISTS equipment_issue_delete ON equipment_issue;
+
+CREATE POLICY equipment_issue_read ON equipment_issue
+  FOR SELECT USING (app_can('player.profile.read', (SELECT e.school_id FROM equipment e WHERE e.id = equipment_issue.equipment_id), (SELECT p.team_code FROM player p WHERE p.id = equipment_issue.player_id), equipment_issue.player_id, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY equipment_issue_insert ON equipment_issue
+  FOR INSERT WITH CHECK (app_can('team.manage', (SELECT e.school_id FROM equipment e WHERE e.id = equipment_issue.equipment_id), (SELECT p.team_code FROM player p WHERE p.id = equipment_issue.player_id), equipment_issue.player_id, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY equipment_issue_update ON equipment_issue
+  FOR UPDATE USING (app_can('team.manage', (SELECT e.school_id FROM equipment e WHERE e.id = equipment_issue.equipment_id), (SELECT p.team_code FROM player p WHERE p.id = equipment_issue.player_id), equipment_issue.player_id, '00000000-0000-0000-0000-000000000000'::uuid))
+           WITH CHECK (app_can('team.manage', (SELECT e.school_id FROM equipment e WHERE e.id = equipment_issue.equipment_id), (SELECT p.team_code FROM player p WHERE p.id = equipment_issue.player_id), equipment_issue.player_id, '00000000-0000-0000-0000-000000000000'::uuid));
 
 -- training_session — read: team.read · write: team.manage
 ALTER TABLE training_session ENABLE ROW LEVEL SECURITY;

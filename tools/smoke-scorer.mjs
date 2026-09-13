@@ -17,6 +17,7 @@
  */
 import { chromium } from "playwright-core";
 import { launchOptions } from "./chromium.mjs";
+import { offline, isFirebaseOfflineNoise } from "./offline-browser.mjs";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
@@ -43,13 +44,15 @@ await new Promise((r) => server.listen(PORT, r));
 
 const browser = await chromium.launch({ ...launchOptions() });
 const page = await browser.newPage();
+await offline(page.context());
 
 const errors = [];
-page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
+page.on("pageerror", (e) => { if (!isFirebaseOfflineNoise(e.message)) errors.push(`pageerror: ${e.message}`); });
 page.on("console", (m) => {
   if (m.type() !== "error") return;
   const t = m.text();
-  if (/Failed to load resource/.test(t)) return;
+  // "Failed to load resource" is Chrome's own line for a 404/aborted request.
+  if (/Failed to load resource/.test(t) || isFirebaseOfflineNoise(t)) return;
   errors.push(`console.error: ${t}`);
 });
 

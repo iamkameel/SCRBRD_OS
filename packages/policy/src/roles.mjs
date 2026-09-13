@@ -89,7 +89,7 @@ const BUNDLES = {
   ],
 
   // ── Institution leadership ──
-  principal: [
+  principal: ["recognition.manage", "player.workload.manage", "clearance.read", "clearance.manage",
     "school.feature.manage",
     // The waiver, and nobody else at a school holds it — see the capability's
     // own note for why it is kept away from the people who place the boards.
@@ -115,7 +115,7 @@ const BUNDLES = {
     "player.age.read", "player.roster.read", "guardian.link.manage",
     "player.note.read", "scoring.amend.approve",
   ],
-  directorofsport: [
+  directorofsport: ["recognition.manage", "player.workload.read", "player.workload.manage", "clearance.read", "clearance.manage",
     "availability.read", "availability.declare",
     // Same reasoning as the principal above: the person who runs a school's
     // sport appoints its coaching and medical staff. Bounded by
@@ -126,7 +126,7 @@ const BUNDLES = {
     "team.manage", "team.select", "fixture.create", "fixture.update", "fixture.cancel",
     "player.profile.manage", "player.performance.read", "player.development.read",
     "player.note.read", "player.note.write",
-    "medical.status.read", "medical.nature.read", "player.age.read", "player.roster.read",
+    "medical.status.read", "medical.nature.read", "player.age.read", "player.roster.read", "player.emergency.read", "player.emergency.manage",
     "discipline.read", "discipline.write",
     "analytics.read", "competition.read", "facility.read", "facility.manage",
     "transport.read", "officiating.assign", "broadcast.publish",
@@ -136,7 +136,7 @@ const BUNDLES = {
     "news.publish.team", "news.publish.school", "audit.read",
     "opposition.read",
   ],
-  schooladmin: [
+  schooladmin: ["recognition.manage", "player.workload.manage", "clearance.read", "clearance.manage",
     "availability.read", "availability.declare",
     // school.feature.manage: hiding a module from this school or from one of
     // its people. It sits beside school.manage because it is the same job —
@@ -147,13 +147,13 @@ const BUNDLES = {
     "sponsorship.read", "sponsorship.manage",
     "player.profile.manage", "player.pii.read", "player.biometric.read",
     "player.age.read", "player.identity.read", "guardian.link.manage",
-    "player.roster.read",
+    "player.roster.read", "player.emergency.read", "player.emergency.manage",
     "medical.status.read", "medical.nature.read",
     "discipline.read", "facility.read", "facility.manage",
     "transport.read", "transport.manage", "invoice.read",
     "competition.read", "news.publish.school", "audit.read",
   ],
-  sportsadmin: [
+  sportsadmin: ["clearance.read",
     "availability.read", "availability.declare",
     ...READ_TEAM, "user.read", "team.manage", "team.select",
     "fixture.create", "fixture.update", "fixture.cancel", "officiating.assign",
@@ -179,32 +179,36 @@ const BUNDLES = {
   // player's CURRENT side — so this is the notes for the children they
   // actually coach, this term, and nobody else's. It is not school-wide, and
   // it stops the moment a player changes side.
-  coach: [
+  coach: ["player.workload.read",
     "availability.read", "availability.declare",
     ...READ_TEAM, "team.select",
+    // The kit and the drill library, for his own school. Not the roster or
+    // the fixture list — those stay under the capabilities above; this is
+    // narrowly what the club calls "running the equipment room and nets".
+    "team.manage",
     "player.performance.read", "player.performance.write",
     "player.development.read", "player.development.write",
     "player.note.read", "player.note.write",
     "medical.status.read", "medical.nature.read", "medical.details.read",
-    "player.age.read", "player.roster.read",
+    "player.age.read", "player.roster.read", "player.emergency.read",
     "player.access.request", "player.access.grant",
     "analytics.read", "transport.read",
     "scoring.start", "scoring.edit", "scoring.finalise",
     "news.publish.team", "opposition.read",
   ],
-  assistantcoach: [
+  assistantcoach: ["player.workload.read",
     "availability.read", "availability.declare",
     ...READ_TEAM, "player.performance.read", "player.development.read",
     "player.note.read", "player.note.write",
     "medical.status.read", "medical.nature.read", "medical.details.read",
-    "player.age.read", "player.roster.read",
+    "player.age.read", "player.roster.read", "player.emergency.read",
     "player.access.request", "player.access.grant",
     "transport.read", "scoring.start", "scoring.edit", "opposition.read",
   ],
   teammanager: [
     "availability.read", "availability.declare",
     ...READ_TEAM, "team.select", "medical.status.read", "medical.nature.read",
-    "player.age.read", "player.roster.read",
+    "player.age.read", "player.roster.read", "player.emergency.read",
     "transport.read", "news.publish.team",
   ],
 
@@ -232,10 +236,15 @@ const BUNDLES = {
   // "myself only" — only guardian assignments carry a person list. A pupil
   // learns their diagnosis from the physio rather than from the app, which is
   // the safe side of that limitation to be on.
+  // THE THINGS ABOUT THE TEAM. Not player.development.read: this role is
+  // held across a side, and a boy does not read a team-mate's attribute
+  // scores for playing in the same XI. His own come through selfaccess,
+  // which names him and nobody else — every pupil holds both, and the
+  // client draws his menu from both.
   player: [
     "availability.declare",
     "fixture.read", "team.read", "news.read", "facility.read", "competition.read",
-    "player.profile.read", "player.performance.read", "player.development.read",
+    "player.profile.read", "player.performance.read",
     "medical.status.read", "transport.read",
   ],
   // WHAT A GRANTED REQUEST BUYS.
@@ -273,7 +282,7 @@ const BUNDLES = {
   // subject exercising a right of access, and a platform that holds a child's
   // physiotherapy notes and will not show them to the child is on the wrong
   // side of that.
-  selfaccess: [
+  selfaccess: ["player.workload.read",
     "availability.read", "availability.declare",
     "player.profile.read", "player.pii.read", "player.biometric.read",
     "player.performance.read", "player.development.read",
@@ -288,7 +297,7 @@ const BUNDLES = {
   guardian: [
     "availability.read", "availability.declare",
     "fixture.read", "team.read", "news.read", "facility.read", "competition.read",
-    "player.profile.read", "player.pii.read", "player.biometric.read",
+    "player.profile.read", "player.pii.read", "player.emergency.read", "player.emergency.manage", "player.biometric.read",
     "player.performance.read",
     // Their own children only — the assignment names them. A parent reading
     // their child's physiotherapy report is the ordinary case, not an
@@ -315,8 +324,8 @@ const BUNDLES = {
   spectator: ["fixture.read", "news.read", "competition.read"],
 
   // ── Specialists ──
-  medical: [
-    "team.read", "fixture.read", "news.read", "player.profile.read", "player.age.read",
+  medical: ["player.workload.read",
+    "team.read", "fixture.read", "news.read", "player.profile.read", "player.age.read", "player.emergency.read",
     // Height and weight are clinical inputs — a rehabilitation load is
     // calculated from them.
     "player.biometric.read",
@@ -324,7 +333,7 @@ const BUNDLES = {
   ],
   finance: ["school.read", "news.read", "invoice.read", "invoice.manage", "user.read",
             "sponsorship.read", "sponsorship.manage", "sponsorship.finance.read"],
-  transportcoordinator: ["fixture.read", "team.read", "news.read", "transport.read", "transport.manage"],
+  transportcoordinator: ["clearance.read", "fixture.read", "team.read", "news.read", "transport.read", "transport.manage", "player.emergency.read"],
   driver: ["news.read", "transport.read", "transport.drive"],
   facilities: ["fixture.read", "news.read", "facility.read", "facility.manage"],
   media: ["fixture.read", "team.read", "news.read", "player.profile.read", "player.performance.read", "news.publish.school", "news.publish.team"],

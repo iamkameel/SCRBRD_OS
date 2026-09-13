@@ -47,6 +47,56 @@ CREATE TABLE competition_entrant (
 CREATE INDEX ON competition_entrant (competition_id);
 CREATE INDEX ON competition_entrant (school_id, team_code);
 
+-- ── Divisions ──────────────────────────────────────────────────
+-- A tier within a competition: Division 1 and 2 of a league, Pool A and B
+-- of a festival. An entrant sits in at most one, and the ladder is read
+-- per division. Placing an entrant is the COMPETITION'S act, not the
+-- school's — a school does not promote itself — so it goes through
+-- place_entrant() below under competition.manage at the organiser, while a
+-- school still edits its own entrant's record (played, won, points) under
+-- its own scope as before.
+CREATE TABLE competition_division (
+  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  competition_id uuid NOT NULL REFERENCES competition(id) ON DELETE CASCADE,
+  code           text NOT NULL CHECK (code ~ '^[A-Za-z0-9 ]{1,12}$'),
+  name           text NOT NULL CHECK (length(name) BETWEEN 2 AND 60),
+  rank           smallint NOT NULL DEFAULT 1 CHECK (rank BETWEEN 1 AND 20),
+  UNIQUE (competition_id, code),
+  UNIQUE (competition_id, rank)
+);
+ALTER TABLE competition_entrant ADD COLUMN division_id uuid REFERENCES competition_division(id) ON DELETE SET NULL;
+
+-- An entrant's division belongs to the entrant's competition. The foreign
+-- key alone would let Division 1 of one league be named on an entrant in
+-- another.
+CREATE OR REPLACE FUNCTION competition_entrant_division_fits() RETURNS trigger AS $$
+BEGIN
+  IF NEW.division_id IS NOT NULL AND NOT EXISTS (
+       SELECT 1 FROM competition_division d WHERE d.id = NEW.division_id AND d.competition_id = NEW.competition_id) THEN
+    RAISE EXCEPTION 'that division belongs to another competition' USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+CREATE TRIGGER competition_entrant_division_check BEFORE INSERT OR UPDATE OF division_id ON competition_entrant
+  FOR EACH ROW EXECUTE FUNCTION competition_entrant_division_fits();
+
+CREATE OR REPLACE FUNCTION place_entrant(p_entrant uuid, p_division uuid)
+RETURNS TABLE (ok boolean, reason text) AS $$
+DECLARE e competition_entrant%ROWTYPE; v_org uuid;
+BEGIN
+  SELECT * INTO e FROM competition_entrant WHERE id = p_entrant;
+  IF NOT FOUND THEN RETURN QUERY SELECT false, 'no_such_entrant'; RETURN; END IF;
+  SELECT c.school_id INTO v_org FROM competition c WHERE c.id = e.competition_id;
+  IF NOT app_can('competition.manage', v_org, '*', '00000000-0000-0000-0000-000000000000'::uuid,
+                 '00000000-0000-0000-0000-000000000000'::uuid) THEN
+    RETURN QUERY SELECT false, 'not_permitted'; RETURN;
+  END IF;
+  UPDATE competition_entrant SET division_id = p_division WHERE id = p_entrant;
+  RETURN QUERY SELECT true, NULL::text;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+REVOKE ALL ON FUNCTION place_entrant(uuid, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION place_entrant(uuid, uuid) TO PUBLIC;
+
 -- Is this competition in reach at all?
 --
 -- A league table is a SHARED record. Anchoring an entrant row to its own
@@ -2470,6 +2520,13 @@ CREATE TABLE vehicle (
   condition    text CHECK (condition IS NULL OR condition IN
                  ('excellent','good','fair','poor','off_road')),
   next_service_on date,
+  -- The two dates a minibus of children turns on, and the transport module
+  -- could not see either. NULL means "not recorded" and is surfaced as
+  -- unknown rather than treated as fine — a school that has not typed its
+  -- insurance date in is not thereby uninsured. A KNOWN date in the past is
+  -- different: a trip on that vehicle is refused, by trip_vehicle_fits().
+  insurance_expires_on  date,
+  roadworthy_expires_on date,
   active       boolean NOT NULL DEFAULT true,
   notes        text CHECK (notes IS NULL OR length(notes) <= 500),
   created_at   timestamptz NOT NULL DEFAULT now()
@@ -2528,7 +2585,9 @@ CREATE OR REPLACE FUNCTION trip_vehicle_fits() RETURNS trigger AS $$
 DECLARE v record;
 BEGIN
   IF NEW.vehicle_id IS NULL THEN RETURN NEW; END IF;
-  SELECT school_id, capacity, active, registration INTO v FROM vehicle WHERE id = NEW.vehicle_id;
+  SELECT school_id, capacity, active, registration,
+         insurance_expires_on, roadworthy_expires_on
+    INTO v FROM vehicle WHERE id = NEW.vehicle_id;
   IF v.school_id IS DISTINCT FROM NEW.school_id THEN
     RAISE EXCEPTION 'that vehicle belongs to another school'
       USING ERRCODE = 'check_violation';
@@ -2541,6 +2600,30 @@ BEGIN
     RAISE EXCEPTION 'vehicle % seats %, and this trip names % passengers',
                     v.registration, v.capacity, NEW.seats_taken
       USING ERRCODE = 'check_violation';
+  END IF;
+
+  -- COVER. Checked when a trip is arranged or re-arranged — the vehicle or the
+  -- departure changes — and NOT when a driver marks it departed or arrived:
+  -- a refusal at "we have left" is too late to be useful and would only stop
+  -- the record of what happened. A known lapsed date refuses; an unrecorded
+  -- one does not, because the absence of a date is a gap in the office's
+  -- records, not a fact about the vehicle, and the vehicles read says
+  -- "unknown" where that is the case.
+  IF TG_OP = 'INSERT'
+     OR NEW.vehicle_id IS DISTINCT FROM OLD.vehicle_id
+     OR NEW.depart_at  IS DISTINCT FROM OLD.depart_at THEN
+    IF v.insurance_expires_on IS NOT NULL
+       AND v.insurance_expires_on < coalesce(NEW.depart_at::date, current_date) THEN
+      RAISE EXCEPTION 'vehicle %: insurance expired on %. Renew it, or record the renewal, before it carries a side',
+                      v.registration, v.insurance_expires_on
+        USING ERRCODE = 'check_violation';
+    END IF;
+    IF v.roadworthy_expires_on IS NOT NULL
+       AND v.roadworthy_expires_on < coalesce(NEW.depart_at::date, current_date) THEN
+      RAISE EXCEPTION 'vehicle %: roadworthy certificate expired on %',
+                      v.registration, v.roadworthy_expires_on
+        USING ERRCODE = 'check_violation';
+    END IF;
   END IF;
   RETURN NEW;
 END;
@@ -4000,6 +4083,9 @@ CREATE POLICY team_membership_read ON team_membership
  * record of a Tuesday that actually happened.
  */
 CREATE OR REPLACE FUNCTION player_team_membership_log() RETURNS trigger AS $$
+DECLARE
+  v_on   date;
+  v_open team_membership%ROWTYPE;
 BEGIN
   IF TG_OP = 'UPDATE'
      AND NEW.team_code IS NOT DISTINCT FROM OLD.team_code
@@ -4007,15 +4093,36 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  -- Close whatever was open. left_on, not deletion: the row that says he WAS
-  -- in the 2XI is the entire purpose of this table.
-  UPDATE team_membership
-     SET left_on = current_date
+  -- WHEN it took effect. Every move used to be dated the day it was typed,
+  -- which for a decision made on Saturday and entered on Tuesday is wrong by
+  -- three days, and for the seed meant every first membership began on the
+  -- demo's birthday. A transaction-local setting carries the real date — the
+  -- move route and the seed both use it — and absent, today. It cannot reach
+  -- before the membership it closes: that would be two sides true at once.
+  v_on := coalesce(nullif(current_setting('app.effective_on', true), '')::date, current_date);
+
+  SELECT * INTO v_open FROM team_membership
    WHERE player_id = NEW.id AND sport = 'cricket' AND left_on IS NULL;
+  IF FOUND THEN
+    -- Already recorded — a re-applied seed, or an import that changed nothing.
+    IF v_open.team_code IS NOT DISTINCT FROM NEW.team_code
+       AND v_open.school_id IS NOT DISTINCT FROM NEW.school_id THEN
+      RETURN NEW;
+    END IF;
+    IF v_on < v_open.joined_on THEN
+      RAISE EXCEPTION
+        'a move cannot take effect on %: his current side (%) only began on %',
+        v_on, v_open.team_code, v_open.joined_on
+        USING ERRCODE = 'check_violation';
+    END IF;
+    -- Close whatever was open. left_on, not deletion: the row that says he WAS
+    -- in the 2XI is the entire purpose of this table.
+    UPDATE team_membership SET left_on = v_on WHERE id = v_open.id;
+  END IF;
 
   IF NEW.team_code IS NOT NULL THEN
     INSERT INTO team_membership (player_id, school_id, sport, team_code, joined_on, reason, moved_by)
-    VALUES (NEW.id, NEW.school_id, 'cricket', NEW.team_code, current_date,
+    VALUES (NEW.id, NEW.school_id, 'cricket', NEW.team_code, v_on,
             CASE WHEN TG_OP = 'INSERT' THEN 'joined' ELSE 'moved' END,
             app_user_id());
   END IF;
@@ -4243,3 +4350,1571 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER;
 
 REVOKE ALL ON FUNCTION opposition_squad(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION opposition_squad(uuid) TO scrbrd_app;
+
+/**
+ * Who was in a side on a date. The question the column could not answer.
+ *
+ * Plain SQL over the history, under the caller's own policies — no definer
+ * rights, because nothing here is a fact the caller may not see: it is the
+ * roster read they already hold, asked about a day other than today. A read
+ * resource wraps it; a ladder, a cap or an honours board can call it directly.
+ */
+CREATE OR REPLACE FUNCTION roster_on(p_school uuid, p_team text, p_on date, p_sport text DEFAULT 'cricket')
+RETURNS TABLE (player_id uuid, team_code text, joined_on date, left_on date) AS $$
+  SELECT m.player_id, m.team_code, m.joined_on, m.left_on
+    FROM team_membership m
+   WHERE m.school_id = p_school AND m.sport = p_sport AND m.team_code = p_team
+     AND m.joined_on <= p_on AND (m.left_on IS NULL OR m.left_on > p_on)
+$$ LANGUAGE sql STABLE;
+
+-- ── Who to ring when something happens to a child ───────────────
+--
+-- A minibus leaves for an away fixture and nobody aboard can reach a parent.
+-- That was the state of this schema: the only contact a child had was a
+-- single JSON blob on the player row, behind player.pii.read — a capability
+-- the coach, the team manager, the physio and the driver do not hold, and
+-- rightly, because it is the capability for the child's FILE: address, ID
+-- number, the office's business. The people around the child on a Saturday
+-- need one thing from that file, and it is the thing that cannot wait for
+-- the office to open on Monday.
+--
+-- So it is its own table and its own capability. Up to three contacts in
+-- order, kept by the family and the office, read by the people on the day,
+-- and never deleted — a number that was replaced is retired, because "which
+-- number did we have in March" is a question a school is eventually asked.
+CREATE TABLE emergency_contact (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  player_id    uuid NOT NULL REFERENCES player(id) ON DELETE CASCADE,
+  -- Derived from the player at write time by the trigger below, never
+  -- asserted by a caller, as everywhere a row carries its child's school.
+  school_id    uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  -- Who to try first. Three is enough: past three the list is a directory,
+  -- and a coach with a phone in one hand and a boy in the other needs an
+  -- order, not options.
+  priority     smallint NOT NULL CHECK (priority BETWEEN 1 AND 3),
+  name         text NOT NULL CHECK (length(btrim(name)) BETWEEN 2 AND 80),
+  relationship text NOT NULL CHECK (relationship IN
+                 ('mother','father','guardian','grandparent','sibling','family','other')),
+  -- Digits, spaces and a leading plus. Not a full E.164 parse: a number typed
+  -- by a parent is dialled by a coach, and a check that rejects "082 000 0005"
+  -- because it lacks a country code is a check that leaves a child with no
+  -- contact at all.
+  phone        text NOT NULL CHECK (phone ~ '^\+?[0-9][0-9 ]{6,19}$'),
+  phone_alt    text CHECK (phone_alt IS NULL OR phone_alt ~ '^\+?[0-9][0-9 ]{6,19}$'),
+  email        text CHECK (email IS NULL OR email ~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$'),
+  -- "Works nights — try after seven." Short, operational, and not a place for
+  -- anything about the family's circumstances.
+  note         text CHECK (note IS NULL OR length(note) <= 200),
+  active       boolean NOT NULL DEFAULT true,
+  retired_at   timestamptz,
+  retired_by   uuid REFERENCES app_user(id),
+  created_by   uuid REFERENCES app_user(id),
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT retired_is_inactive CHECK ((retired_at IS NULL) = active)
+);
+-- One live contact per position. Partial, because the retired ones are the
+-- history and there are meant to be several.
+CREATE UNIQUE INDEX emergency_contact_priority ON emergency_contact (player_id, priority) WHERE active;
+CREATE INDEX ON emergency_contact (player_id) WHERE active;
+
+/**
+ * The school comes from the child, and the provenance from the session.
+ *
+ * SECURITY DEFINER to read the player row: the caller is somebody allowed to
+ * keep this child's contacts, which is not the same as somebody allowed to
+ * read every column of the child — a guardian holds player.emergency.manage
+ * for their own child and should not need the roster capability to save a
+ * phone number. Reading one school_id with definer rights is the whole of
+ * what this borrows.
+ */
+CREATE OR REPLACE FUNCTION emergency_contact_stamp() RETURNS trigger AS $$
+DECLARE v_school uuid;
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    SELECT p.school_id INTO v_school FROM player p WHERE p.id = NEW.player_id;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'no such player: %', NEW.player_id USING ERRCODE = 'foreign_key_violation';
+    END IF;
+    NEW.school_id  := v_school;
+    NEW.created_by := app_user_id();
+    NEW.created_at := now();
+    NEW.retired_at := NULL; NEW.retired_by := NULL; NEW.active := true;
+  ELSIF NEW.active = false AND OLD.active = true THEN
+    NEW.retired_at := now();
+    NEW.retired_by := app_user_id();
+  ELSIF NEW.active = true AND OLD.active = false THEN
+    -- A retired number is not brought back; a new row is added. Otherwise the
+    -- history would show a number retired and then never retired.
+    RAISE EXCEPTION 'a retired contact is not reactivated — add it again'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS emergency_contact_is_stamped ON emergency_contact;
+CREATE TRIGGER emergency_contact_is_stamped
+  BEFORE INSERT OR UPDATE ON emergency_contact
+  FOR EACH ROW EXECUTE FUNCTION emergency_contact_stamp();
+
+/**
+ * The manifest: every child on a trip, and who to ring for each.
+ *
+ * THE DRIVER IS REACHED THROUGH THE TRIP, NOT THROUGH A CAPABILITY ON THE
+ * CHILD. A driver's assignment is school-wide, so giving drivers
+ * player.emergency.read would hand every driver every child's numbers all
+ * year. What a driver needs is the parents of the children on his bus, on
+ * the day. So transport.drive on the fixture, inside a window around the
+ * departure — the day before to the day after — reaches the manifest, and
+ * outside that window the same driver reads nothing. A scheduled trip a
+ * fortnight away is not yet his business.
+ *
+ * Everyone else is checked PER CHILD with player.emergency.read, so a guardian
+ * reading the manifest of a bus their child is on sees their own child and
+ * nobody else's — the person anchor doing exactly what it does everywhere.
+ *
+ * SECURITY DEFINER because the driver holds no capability on emergency_contact
+ * and would otherwise read nothing through its policy. The decision is made
+ * here, in one place, with the same app_can() everything else uses.
+ */
+CREATE OR REPLACE FUNCTION trip_contacts(p_trip uuid)
+RETURNS TABLE (player_id uuid, full_name text, priority smallint, name text,
+               relationship text, phone text, phone_alt text, email text,
+               note text, school_id uuid) AS $$
+DECLARE
+  t trip%ROWTYPE;
+  m match%ROWTYPE;
+  v_driver boolean := false;
+  v_from date; v_to date;
+BEGIN
+  SELECT * INTO t FROM trip WHERE id = p_trip;
+  IF NOT FOUND THEN RETURN; END IF;
+  SELECT * INTO m FROM match WHERE id = t.match_id;
+  IF NOT FOUND THEN RETURN; END IF;
+
+  v_from := coalesce(t.depart_at::date, m.starts_at::date) - 1;
+  v_to   := coalesce(t.return_at::date, t.depart_at::date, m.starts_at::date) + 1;
+  v_driver := t.cancelled_at IS NULL
+              AND current_date BETWEEN v_from AND v_to
+              AND app_can('transport.drive', t.school_id, coalesce(m.team_code, '*'),
+                          '00000000-0000-0000-0000-000000000000'::uuid, m.id);
+
+  RETURN QUERY
+    SELECT p.id, p.full_name, c.priority, c.name, c.relationship,
+           c.phone, c.phone_alt, c.email, c.note, p.school_id
+      FROM match_squad s
+      JOIN player p ON p.id = s.player_id
+      JOIN emergency_contact c ON c.player_id = p.id AND c.active
+     WHERE s.match_id = m.id AND NOT s.withdrawn
+       AND p.school_id = t.school_id
+       AND (v_driver OR app_can('player.emergency.read', p.school_id, p.team_code, p.id,
+                                '00000000-0000-0000-0000-000000000000'::uuid))
+     ORDER BY p.full_name, c.priority;
+END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION trip_contacts(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION trip_contacts(uuid) TO PUBLIC;
+
+-- ═══════════════════════════════════════════════════════════════════
+--  ADULT CLEARANCES — has this adult been checked, and when does it lapse
+-- ═══════════════════════════════════════════════════════════════════
+--
+-- Every adult the platform puts near a child — coach, manager, physio,
+-- driver, official — is somebody a school is answerable for having checked:
+-- a police clearance certificate, the Children's Act register, a first aid
+-- certificate, a professional driving permit. The checks exist. What did not
+-- exist was anywhere to write down that they were done and when they run
+-- out, so the answer to "is the man driving the U14s on Saturday cleared?"
+-- lived in a filing cabinet, or in nobody's head.
+--
+-- WHAT IS RECORDED: that a named person at the school SAW a document, its
+-- reference, its issue date and the date the school will re-check. Not the
+-- document. A scan of a police clearance is exactly the kind of thing this
+-- codebase declines to hold: the reference number is enough to re-verify,
+-- and it is a restricted field, logged on every read.
+--
+-- A CLEARANCE BELONGS TO THE SCHOOL THAT MADE IT. Hilton's check on a coach
+-- is Hilton's; WES, where he also coaches, makes its own. Whether a check
+-- should travel with the person is the passport question, and it is a
+-- consent decision for later, not a default to slip in here.
+--
+-- A CLEARANCE WITHOUT A RE-CHECK DATE IS NOT A CLEARANCE. expires_on is
+-- required, because "checked once, years ago" is the state this table
+-- exists to make visible, and an open-ended row would hide it.
+--
+-- NEVER EDITED. A verified row is a statement by a named person on a date.
+-- If it was wrong it is revoked, with a reason, and a new one recorded; the
+-- register then shows both. Fixing it in place would show a check that was
+-- never made.
+
+CREATE TABLE clearance_requirement (
+  role text NOT NULL,
+  kind text NOT NULL,
+  PRIMARY KEY (role, kind)
+);
+ALTER TABLE clearance_requirement ENABLE ROW LEVEL SECURITY;
+-- Platform reference data, like the sports. Readable by anybody signed in —
+-- a coach is entitled to know what he is expected to hold — and written by
+-- nobody through the API.
+CREATE POLICY clearance_requirement_read ON clearance_requirement
+  FOR SELECT USING (app_user_id() IS NOT NULL);
+
+-- Which adults need which checks. The Children's Act register applies to
+-- everyone who works with children at all; the police clearance to everyone
+-- in a position of trust; first aid to whoever is alone with a side on a
+-- field; the permit to whoever drives them.
+INSERT INTO clearance_requirement (role, kind) VALUES
+  ('coach',                'police_clearance'), ('coach',                'child_protection'), ('coach', 'first_aid'),
+  ('assistantcoach',       'police_clearance'), ('assistantcoach',       'child_protection'), ('assistantcoach', 'first_aid'),
+  ('teammanager',          'police_clearance'), ('teammanager',          'child_protection'),
+  ('medical',              'police_clearance'), ('medical',              'child_protection'),
+  ('driver',               'police_clearance'), ('driver',               'child_protection'), ('driver', 'driving_permit'),
+  ('transportcoordinator', 'police_clearance'), ('transportcoordinator', 'child_protection'),
+  ('official',             'child_protection'),
+  ('scorer',               'child_protection'),
+  ('facilities',           'police_clearance');
+
+CREATE TABLE adult_clearance (
+  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  person_id      uuid NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+  school_id      uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  kind           text NOT NULL CHECK (kind IN ('police_clearance', 'child_protection', 'first_aid',
+                                               'driving_permit', 'coaching_accreditation')),
+  -- The certificate's own number, enough to re-verify it. Restricted: read
+  -- through the API it is logged like a phone number is.
+  reference      text CHECK (reference IS NULL OR length(reference) BETWEEN 3 AND 60),
+  issued_on      date NOT NULL,
+  expires_on     date NOT NULL,
+  note           text CHECK (note IS NULL OR length(note) <= 200),
+  -- Who saw the document. Stamped from the session; NULL means a seeded or
+  -- migrated row, the same sentence created_by NULL says everywhere else.
+  verified_by    uuid REFERENCES app_user(id),
+  verified_at    timestamptz NOT NULL DEFAULT now(),
+  revoked_at     timestamptz,
+  revoked_by     uuid REFERENCES app_user(id),
+  revoked_reason text CHECK (revoked_reason IS NULL OR length(revoked_reason) BETWEEN 3 AND 200),
+  CONSTRAINT clearance_expires_after_issue   CHECK (expires_on > issued_on),
+  -- Five years is the longest anything here is issued for. A longer span is a
+  -- typo in the year, and a typo in the year is a check that never lapses.
+  CONSTRAINT clearance_expiry_within_reason  CHECK (expires_on <= issued_on + 1827),
+  CONSTRAINT clearance_revocation_has_reason CHECK ((revoked_at IS NULL) = (revoked_reason IS NULL))
+);
+CREATE INDEX ON adult_clearance (person_id, kind) WHERE revoked_at IS NULL;
+CREATE INDEX ON adult_clearance (school_id) WHERE revoked_at IS NULL;
+ALTER TABLE adult_clearance ENABLE ROW LEVEL SECURITY;
+
+-- The person's own rows. The school's side — clearance.read at the school —
+-- is generated from packages/policy; this is the identity half, and the two
+-- OR together as every permissive policy does. A coach may see what Hilton
+-- holds on him and when it lapses. He may not see his colleague's, and he
+-- may not write his own: there is no identity write policy, on purpose.
+CREATE POLICY adult_clearance_own_read ON adult_clearance
+  FOR SELECT USING (person_id = app_user_id());
+
+CREATE OR REPLACE FUNCTION adult_clearance_stamp() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    NEW.verified_by := app_user_id();
+    NEW.verified_at := now();
+    NEW.revoked_at := NULL; NEW.revoked_by := NULL; NEW.revoked_reason := NULL;
+    RETURN NEW;
+  END IF;
+  IF OLD.revoked_at IS NOT NULL THEN
+    RAISE EXCEPTION 'a revoked clearance is not edited — record a new one'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  IF NEW.person_id IS DISTINCT FROM OLD.person_id OR NEW.school_id IS DISTINCT FROM OLD.school_id
+     OR NEW.kind IS DISTINCT FROM OLD.kind OR NEW.reference IS DISTINCT FROM OLD.reference
+     OR NEW.issued_on IS DISTINCT FROM OLD.issued_on OR NEW.expires_on IS DISTINCT FROM OLD.expires_on
+     OR NEW.note IS DISTINCT FROM OLD.note
+     OR NEW.verified_by IS DISTINCT FROM OLD.verified_by OR NEW.verified_at IS DISTINCT FROM OLD.verified_at THEN
+    RAISE EXCEPTION 'a clearance is not edited after verification — revoke it and record a new one'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  IF NEW.revoked_at IS NOT NULL THEN
+    NEW.revoked_at := now();
+    NEW.revoked_by := app_user_id();
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+
+CREATE TRIGGER adult_clearance_stamp BEFORE INSERT OR UPDATE ON adult_clearance
+  FOR EACH ROW EXECUTE FUNCTION adult_clearance_stamp();
+
+CREATE OR REPLACE FUNCTION clearance_kind_label(p_kind text) RETURNS text AS $$
+  SELECT CASE p_kind
+    WHEN 'police_clearance'       THEN 'police clearance'
+    WHEN 'child_protection'       THEN 'Children''s Act register clearance'
+    WHEN 'first_aid'              THEN 'first aid certificate'
+    WHEN 'driving_permit'         THEN 'professional driving permit'
+    WHEN 'coaching_accreditation' THEN 'coaching accreditation'
+    ELSE p_kind END;
+$$ LANGUAGE sql IMMUTABLE;
+
+-- ONE WORD for where a person stands on one check at one school, derived
+-- here once rather than by every screen from three dates:
+--   current   — a live clearance, more than sixty days left
+--   expiring  — a live clearance, sixty days or fewer left
+--   expired   — the latest live clearance has lapsed
+--   revoked   — nothing live, and the last one was withdrawn
+--   missing   — nothing recorded at all
+-- "unknown" does not appear: a check the school never recorded is missing,
+-- and missing is the loud state. Definer rights because the trip guard below
+-- asks it about a driver whose rows the office may not hold clearance.read
+-- on; not granted to callers, who reach it through the register.
+CREATE OR REPLACE FUNCTION clearance_status(p_person uuid, p_school uuid, p_kind text)
+RETURNS TABLE (status text, expires_on date, clearance_id uuid, reference text) AS $$
+DECLARE c record;
+BEGIN
+  SELECT ac.id, ac.expires_on, ac.reference INTO c
+    FROM adult_clearance ac
+   WHERE ac.person_id = p_person AND ac.school_id = p_school AND ac.kind = p_kind
+     AND ac.revoked_at IS NULL
+   ORDER BY ac.expires_on DESC, ac.verified_at DESC
+   LIMIT 1;
+  IF FOUND THEN
+    RETURN QUERY SELECT
+      CASE WHEN c.expires_on < current_date THEN 'expired'
+           WHEN c.expires_on <= current_date + 60 THEN 'expiring'
+           ELSE 'current' END,
+      c.expires_on, c.id, c.reference;
+    RETURN;
+  END IF;
+  IF EXISTS (SELECT 1 FROM adult_clearance ac
+              WHERE ac.person_id = p_person AND ac.school_id = p_school AND ac.kind = p_kind) THEN
+    RETURN QUERY SELECT 'revoked'::text, NULL::date, NULL::uuid, NULL::text;
+    RETURN;
+  END IF;
+  RETURN QUERY SELECT 'missing'::text, NULL::date, NULL::uuid, NULL::text;
+END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
+REVOKE ALL ON FUNCTION clearance_status(uuid, uuid, text) FROM PUBLIC;
+
+-- THE REGISTER: every adult with a live appointment at the school whose role
+-- requires a check, against every check it requires. One row per person, role
+-- and kind, with the one word above. The gaps are the point: an adult who
+-- appears with nothing recorded is the row the office needs to see first, so
+-- the order puts missing before expired before revoked before expiring.
+--
+-- Guarded whole, at the school: clearance.read there or nothing. Definer
+-- rights because the rows behind it — the appointments, the users, the
+-- clearances — are three tables with three policies, and the register is a
+-- question about the school rather than about any of them.
+CREATE OR REPLACE FUNCTION clearance_register(p_school uuid)
+RETURNS TABLE (person_id uuid, name text, role text, kind text, status text,
+               expires_on date, clearance_id uuid, reference text, school_id uuid) AS $$
+BEGIN
+  IF NOT app_can('clearance.read', p_school, '*',
+                 '00000000-0000-0000-0000-000000000000'::uuid,
+                 '00000000-0000-0000-0000-000000000000'::uuid) THEN
+    RETURN;
+  END IF;
+  RETURN QUERY
+    SELECT DISTINCT ON (u.id, ra.role, cr.kind)
+           u.id, u.name, ra.role, cr.kind, cs.status, cs.expires_on, cs.clearance_id, cs.reference, p_school
+      FROM role_assignment ra
+      JOIN app_user u ON u.id = ra.person_id
+      JOIN clearance_requirement cr ON cr.role = ra.role
+      CROSS JOIN LATERAL clearance_status(ra.person_id, p_school, cr.kind) cs
+     WHERE ra.school_id = p_school AND ra.active AND u.active
+       AND (ra.valid_from IS NULL OR ra.valid_from <= current_date)
+       AND (ra.valid_until IS NULL OR ra.valid_until > current_date)
+     ORDER BY u.id, ra.role, cr.kind;
+END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
+REVOKE ALL ON FUNCTION clearance_register(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION clearance_register(uuid) TO PUBLIC;
+
+-- A DRIVER WHOSE CHECK HAS LAPSED DOES NOT TAKE A SIDE. Checked when a driver
+-- is put on a trip, or swapped, against everything a driver must hold: a
+-- KNOWN expired or revoked check refuses, naming the person, the check and
+-- the date. A check nobody recorded does not refuse — as with the vehicle's
+-- cover, the absence of a record is a gap in the office's records, and the
+-- register makes that gap loud rather than this trigger making it silent by
+-- refusing every trip until the paperwork is typed in. Definer rights: the
+-- office arranging the trip may not hold clearance.read, and a refusal it
+-- cannot see the reason for is a refusal with a fabricated reason.
+CREATE OR REPLACE FUNCTION trip_driver_cleared() RETURNS trigger AS $$
+DECLARE req record; cs record; v_name text;
+BEGIN
+  IF NEW.driver_id IS NULL THEN RETURN NEW; END IF;
+  IF TG_OP = 'UPDATE' AND NEW.driver_id IS NOT DISTINCT FROM OLD.driver_id THEN RETURN NEW; END IF;
+  SELECT name INTO v_name FROM app_user WHERE id = NEW.driver_id;
+  FOR req IN SELECT kind FROM clearance_requirement WHERE role = 'driver' ORDER BY kind LOOP
+    SELECT * INTO cs FROM clearance_status(NEW.driver_id, NEW.school_id, req.kind);
+    IF cs.status = 'expired' THEN
+      RAISE EXCEPTION 'driver %: % expired on %. Record the renewal before he carries a side',
+                      v_name, clearance_kind_label(req.kind), cs.expires_on
+        USING ERRCODE = 'check_violation';
+    ELSIF cs.status = 'revoked' THEN
+      RAISE EXCEPTION 'driver %: % was revoked. Record a new one before he carries a side',
+                      v_name, clearance_kind_label(req.kind)
+        USING ERRCODE = 'check_violation';
+    END IF;
+  END LOOP;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE TRIGGER trip_driver_check BEFORE INSERT OR UPDATE ON trip
+  FOR EACH ROW EXECUTE FUNCTION trip_driver_cleared();
+
+-- ═══════════════════════════════════════════════════════════════════
+--  BOWLING AND TRAINING WORKLOAD — how much a boy has bowled, and whether
+--  anyone should have taken him off
+-- ═══════════════════════════════════════════════════════════════════
+--
+-- A fourteen-year-old's back does not care that the match was close. Junior
+-- cricket has had fast-bowling directives for decades — so many overs in a
+-- spell, so many in a day, by age — and they are broken most often not by
+-- coaches who disagree with them but by scorers who lost count. Nothing here
+-- refuses a ball. THE LOG RECORDS WHAT HAPPENED; a delivery that was bowled
+-- was bowled, and a scoring system that refused to write it down would only
+-- make the breach invisible. What this does instead is derive the overs and
+-- the spells from the log, compare them to the directive for the boy's age,
+-- write the breach down as a FACT the moment it happens, and tell the people
+-- responsible for him.
+--
+-- Everything is DERIVED from ball_event. No over count is stored, no spell
+-- is stored; both are folds over the log, like the score is, and a voided
+-- ball drops out of them the way it drops out of the scorecard.
+
+-- The day it is where the cricket is played. The database runs in UTC and a
+-- Saturday fixture that starts at nine in Durban is still Friday there for
+-- the first two hours of a walk run late at night; a window that ends at
+-- current_date would drop today's overs until midnight in Greenwich.
+CREATE OR REPLACE FUNCTION sa_today() RETURNS date AS $$
+  SELECT (now() AT TIME ZONE 'Africa/Johannesburg')::date $$ LANGUAGE sql STABLE;
+
+-- ── Seasons ──────────────────────────────────────────────────────
+-- A season is a fact of the calendar, not a school's setting. School
+-- cricket runs on the school year, which is the calendar year, and is
+-- named for one year: "2026". Club, provincial and national cricket run
+-- through the southern summer, July to June, and are named for two:
+-- "2025/26". Either way the age cut-off is 1 January of the year the
+-- season is named for (the second year, for a straddling one). This is the
+-- convention teams.mjs carries and the eligibility trigger enforces; the
+-- table is where fixtures, competitions and honours anchor, and the rule
+-- below is how a date finds its row.
+CREATE TABLE season (
+  id        uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  level     text NOT NULL CHECK (level IN ('school', 'club', 'provincial', 'national')),
+  label     text NOT NULL CHECK (label ~ '^\d{4}(/\d{2})?$'),
+  starts_on date NOT NULL,
+  ends_on   date NOT NULL,
+  cutoff_on date NOT NULL,
+  UNIQUE (level, label),
+  CONSTRAINT season_is_a_span CHECK (ends_on > starts_on),
+  CONSTRAINT season_cutoff_is_first_of_january CHECK (extract(month FROM cutoff_on) = 1 AND extract(day FROM cutoff_on) = 1)
+);
+ALTER TABLE season ENABLE ROW LEVEL SECURITY;
+CREATE POLICY season_read ON season FOR SELECT USING (app_user_id() IS NOT NULL);
+-- Written by the platform, like the sports: the calendar is nobody's tenant.
+CREATE POLICY season_insert ON season FOR INSERT WITH CHECK (app_holds('platform.feature.manage'));
+CREATE POLICY season_update ON season FOR UPDATE USING (app_holds('platform.feature.manage'))
+  WITH CHECK (app_holds('platform.feature.manage'));
+
+-- The seasons themselves, 2024 to 2030, so a date in any of them finds a
+-- row. A date outside them still gets a label from season_for(); it just
+-- has no row to anchor to, which is what the NULL id says.
+INSERT INTO season (level, label, starts_on, ends_on, cutoff_on)
+SELECT 'school', y::text, make_date(y, 1, 1), make_date(y, 12, 31), make_date(y, 1, 1)
+  FROM generate_series(2024, 2030) y;
+INSERT INTO season (level, label, starts_on, ends_on, cutoff_on)
+SELECT l, (y - 1)::text || '/' || lpad((y % 100)::text, 2, '0'), make_date(y - 1, 7, 1), make_date(y, 6, 30), make_date(y, 1, 1)
+  FROM generate_series(2025, 2031) y, unnest(ARRAY['club', 'provincial', 'national']) l;
+
+-- Which season a date is in, at a level: the rule, with the row when there is one.
+CREATE OR REPLACE FUNCTION season_for(p_on date DEFAULT sa_today(), p_level text DEFAULT 'school')
+RETURNS TABLE (id uuid, level text, label text, starts_on date, ends_on date, cutoff_on date) AS $$
+  WITH rule AS (
+    SELECT CASE WHEN p_level = 'school' THEN extract(year FROM p_on)::int
+                WHEN extract(month FROM p_on) >= 7 THEN extract(year FROM p_on)::int + 1
+                ELSE extract(year FROM p_on)::int END AS end_year)
+  SELECT s.id, p_level,
+         CASE WHEN p_level = 'school' THEN r.end_year::text
+              ELSE (r.end_year - 1)::text || '/' || lpad((r.end_year % 100)::text, 2, '0') END,
+         coalesce(s.starts_on, CASE WHEN p_level = 'school' THEN make_date(r.end_year, 1, 1) ELSE make_date(r.end_year - 1, 7, 1) END),
+         coalesce(s.ends_on,   CASE WHEN p_level = 'school' THEN make_date(r.end_year, 12, 31) ELSE make_date(r.end_year, 6, 30) END),
+         make_date(r.end_year, 1, 1)
+    FROM rule r
+    LEFT JOIN season s ON s.level = p_level
+     AND s.label = CASE WHEN p_level = 'school' THEN r.end_year::text
+                        ELSE (r.end_year - 1)::text || '/' || lpad((r.end_year % 100)::text, 2, '0') END;
+$$ LANGUAGE sql STABLE;
+
+-- The season named on a label, at a level, or nothing: "2026/27" is not a
+-- school season and does not become one by being typed.
+CREATE OR REPLACE FUNCTION season_named(p_label text, p_level text DEFAULT 'school') RETURNS uuid AS $$
+  SELECT id FROM season WHERE level = p_level AND label = p_label;
+$$ LANGUAGE sql STABLE;
+
+ALTER TABLE competition ADD CONSTRAINT competition_season_fk FOREIGN KEY (season_id) REFERENCES season(id);
+
+-- ── Age on the season cut-off ────────────────────────────────────
+-- Age-group cricket is played by age on a date, not age today, or a boy
+-- would change age group mid-season. The date is the season's cut-off —
+-- 1 January of the year the season is named for, at every level — which
+-- is the same rule match_squad_age_eligible() applies and teams.mjs pins.
+-- The first draft of this used 1 September, which no South African
+-- schools body uses, and disagreed with the eligibility trigger by a whole
+-- band for boys born between January and August. season_for() below is
+-- the one place the rule lives now.
+CREATE OR REPLACE FUNCTION season_cutoff(p_on date DEFAULT sa_today()) RETURNS date AS $$
+  SELECT cutoff_on FROM season_for(p_on, 'school');
+$$ LANGUAGE sql STABLE;
+
+-- "U13" is a boy who is thirteen or younger on the cut-off — the same
+-- comparison isEligible() in teams.mjs and match_squad_age_eligible()
+-- make, so the band a boy is named by and the side he may be picked for
+-- never disagree. A first draft used strict less-than, and was a year out.
+CREATE OR REPLACE FUNCTION age_band(p_born date, p_on date DEFAULT sa_today()) RETURNS text AS $$
+  SELECT CASE WHEN p_born IS NULL THEN 'unknown'
+              WHEN a <= 13 THEN 'U13' WHEN a <= 14 THEN 'U14'
+              WHEN a <= 15 THEN 'U15' WHEN a <= 16 THEN 'U16'
+              ELSE 'open' END
+    FROM (SELECT extract(year FROM age(season_cutoff(p_on), p_born))::int AS a) x;
+$$ LANGUAGE sql STABLE;
+
+-- ── The directive ────────────────────────────────────────────────
+-- Overs per spell and per day for a pace bowler, by age band. Platform
+-- reference data: a school reads it and cannot loosen it. The numbers follow
+-- the ECB fast bowling directives, mapped onto the school bands (U14 and
+-- U15 sit in the ECB's U15 band, U16 in its U17), which is what most South
+-- African schools apply in the absence of a published CSA schedule; when
+-- CSA publishes one this table is where it goes. NULL means no limit
+-- applies — an Open player, or a boy whose date of birth the school has not
+-- recorded, whom the workload read names as 'unknown' rather than quietly
+-- treating as Open.
+CREATE TABLE bowling_directive (
+  age_band            text PRIMARY KEY,
+  max_overs_per_spell smallint,
+  max_overs_per_day   smallint
+);
+ALTER TABLE bowling_directive ENABLE ROW LEVEL SECURITY;
+CREATE POLICY bowling_directive_read ON bowling_directive
+  FOR SELECT USING (app_user_id() IS NOT NULL);
+INSERT INTO bowling_directive VALUES
+  ('U13', 5, 10), ('U14', 6, 12), ('U15', 6, 12), ('U16', 7, 18),
+  ('open', NULL, NULL), ('unknown', NULL, NULL);
+
+-- Which boys the directive applies to: pace. A spinner has no over limit in
+-- any junior directive. A boy whose style nobody has recorded is treated as
+-- pace, because the cost of being wrong that way is a spinner taken off an
+-- over early, and the cost of being wrong the other way is a stress fracture.
+-- A HIGH SCHOOL'S OWN CEILING on an Open-band bowler. The platform's own
+-- directive leaves Open unrestricted (U17 and U18 play Open division at
+-- school level, per the seed's convention), and a club or a union fielding
+-- grown men in the same division is rightly under no such rule — so this is
+-- opt-in, one row per school, and refused outright for a school that is not
+-- kind = 'school'. Unset means what it always meant for Open: no ceiling.
+CREATE TABLE bowling_ceiling_open (
+  school_id            uuid PRIMARY KEY REFERENCES school(id) ON DELETE CASCADE,
+  max_overs_per_spell  smallint CHECK (max_overs_per_spell IS NULL OR max_overs_per_spell BETWEEN 1 AND 30),
+  max_overs_per_day    smallint CHECK (max_overs_per_day   IS NULL OR max_overs_per_day   BETWEEN 1 AND 60),
+  set_by               uuid REFERENCES app_user(id),
+  set_at               timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT bowling_ceiling_open_names_a_limit CHECK (max_overs_per_spell IS NOT NULL OR max_overs_per_day IS NOT NULL),
+  CONSTRAINT bowling_ceiling_open_day_not_below_spell
+    CHECK (max_overs_per_spell IS NULL OR max_overs_per_day IS NULL OR max_overs_per_day >= max_overs_per_spell)
+);
+ALTER TABLE bowling_ceiling_open ENABLE ROW LEVEL SECURITY;
+
+-- SECURITY DEFINER: the school named might not be the caller's own (it always
+-- is in practice — RLS already confines the write to that school — but the
+-- kind check has to hold regardless of what the caller's own policy would let
+-- them see), and it is the one place this refusal needs to live rather than
+-- trusted to the API layer alone. The backend is authoritative; the browser
+-- never decides whether a school is a high school.
+CREATE OR REPLACE FUNCTION bowling_ceiling_school_only() RETURNS trigger AS $$
+DECLARE v_kind text;
+BEGIN
+  SELECT kind INTO v_kind FROM school WHERE id = NEW.school_id;
+  IF v_kind IS DISTINCT FROM 'school' THEN
+    RAISE EXCEPTION 'an Open-band bowling ceiling applies to a high school, not a %', coalesce(v_kind, 'school that does not exist')
+      USING ERRCODE = 'check_violation';
+  END IF;
+  NEW.set_by := app_user_id();
+  NEW.set_at := now();
+  RETURN NEW;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+CREATE TRIGGER bowling_ceiling_open_school_only BEFORE INSERT OR UPDATE ON bowling_ceiling_open
+  FOR EACH ROW EXECUTE FUNCTION bowling_ceiling_school_only();
+
+CREATE OR REPLACE FUNCTION bowling_directive_for(p_player uuid)
+RETURNS TABLE (age_band text, pace boolean, max_overs_per_spell smallint, max_overs_per_day smallint) AS $$
+  SELECT age_band(p.born) AS age_band,
+         (p.bowling_style IS NULL OR p.bowling_style !~* 'spin|slow') AS pace,
+         CASE WHEN (p.bowling_style IS NULL OR p.bowling_style !~* 'spin|slow')
+              THEN coalesce(c.max_overs_per_spell, d.max_overs_per_spell) END,
+         CASE WHEN (p.bowling_style IS NULL OR p.bowling_style !~* 'spin|slow')
+              THEN coalesce(c.max_overs_per_day, d.max_overs_per_day) END
+    FROM player p
+    LEFT JOIN bowling_directive d ON d.age_band = age_band(p.born)
+    -- Only ever joins for the Open band, and only ever exists for a school
+    -- (the trigger above refuses any other kind), so a club's Open bowler
+    -- falls through to d's unrestricted row exactly as before.
+    LEFT JOIN bowling_ceiling_open c ON c.school_id = p.school_id AND age_band(p.born) = 'open'
+   WHERE p.id = p_player;
+$$ LANGUAGE sql STABLE;
+
+-- ── Overs, from the log ──────────────────────────────────────────
+-- An over is six LEGAL balls; a wide or a no-ball does not advance it. The
+-- over a ball belongs to is the number of legal balls before it in the
+-- innings, divided by six — counted over every ball, including the ones
+-- with no bowler attributed, or an unattributed delivery would shift every
+-- over after it. Dated by the FIXTURE, not by when the row arrived: a
+-- scorer's phone may sync the second innings on Sunday night, and a day
+-- limit is about the day the boy bowled.
+CREATE OR REPLACE VIEW bowler_over WITH (security_invoker = true) AS
+WITH balls AS (
+  SELECT b.match_id, b.innings, b.bowler_id, b.school_id, b.seq, b.ball_type,
+         coalesce(count(*) FILTER (WHERE b.ball_type NOT IN ('Wd','Nb'))
+                    OVER (PARTITION BY b.match_id, b.innings ORDER BY b.seq
+                          ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) / 6 AS over_no
+    FROM ball_event_live b
+   WHERE b.kind = 'ball')
+SELECT x.match_id, x.innings, x.bowler_id, x.school_id, x.over_no::int AS over_no,
+       (m.starts_at AT TIME ZONE 'Africa/Johannesburg')::date AS bowled_on,
+       count(*) FILTER (WHERE x.ball_type NOT IN ('Wd','Nb'))::int AS legal_balls,
+       count(*)::int AS deliveries
+  FROM balls x
+  JOIN match m ON m.id = x.match_id
+ WHERE x.bowler_id IS NOT NULL
+ GROUP BY x.match_id, x.innings, x.bowler_id, x.school_id, x.over_no, m.starts_at;
+
+-- A SPELL is unbroken bowling from one end. Ends alternate, so a bowler in a
+-- spell bowls every second over: over numbers two apart are the same spell.
+-- A gap of three or more means he missed his turn at that end — he was
+-- rested — and what he bowls next is a new spell. The directive counts
+-- spells, and counts them this way.
+CREATE OR REPLACE VIEW bowler_spell WITH (security_invoker = true) AS
+WITH o AS (
+  SELECT *, lag(over_no) OVER (PARTITION BY match_id, innings, bowler_id ORDER BY over_no) AS prev_over
+    FROM bowler_over),
+marked AS (
+  SELECT *, CASE WHEN prev_over IS NULL OR over_no - prev_over > 2 THEN 1 ELSE 0 END AS starts FROM o),
+numbered AS (
+  SELECT *, sum(starts) OVER (PARTITION BY match_id, innings, bowler_id ORDER BY over_no) AS spell_no FROM marked)
+SELECT match_id, innings, bowler_id, school_id, bowled_on, spell_no::int AS spell_no,
+       min(over_no)::int AS first_over, max(over_no)::int AS last_over,
+       count(*)::int AS overs, sum(legal_balls)::int AS legal_balls
+  FROM numbered
+ GROUP BY match_id, innings, bowler_id, school_id, bowled_on, spell_no;
+
+-- ── The breach, as a fact ────────────────────────────────────────
+-- Written the moment the log shows it and never removed: a boy who bowled a
+-- seventh over of a spell bowled it, and the row says so, with the limit he
+-- was under and the band that set it. One row per spell or per day, however
+-- many balls were bowled past the line.
+CREATE TABLE bowling_breach (
+  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  match_id   uuid NOT NULL REFERENCES match(id) ON DELETE CASCADE,
+  innings    smallint NOT NULL,
+  bowler_id  uuid NOT NULL REFERENCES player(id) ON DELETE CASCADE,
+  school_id  uuid NOT NULL REFERENCES school(id),
+  kind       text NOT NULL CHECK (kind IN ('spell', 'day')),
+  -- Which spell (its first over) or which day (0): the identity of the breach.
+  key        integer NOT NULL,
+  overs      smallint NOT NULL,
+  allowed    smallint NOT NULL,
+  age_band   text NOT NULL,
+  bowled_on  date NOT NULL,
+  noticed_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (match_id, innings, bowler_id, kind, key)
+);
+CREATE UNIQUE INDEX bowling_breach_one_per_day ON bowling_breach (bowler_id, bowled_on) WHERE kind = 'day';
+ALTER TABLE bowling_breach ENABLE ROW LEVEL SECURITY;
+-- Read under player.workload.read — coaching staff, the physio, the boy
+-- himself through self-access; written only by the trigger below, so no
+-- insert policy.
+CREATE POLICY bowling_breach_read ON bowling_breach
+  FOR SELECT USING (app_can('player.workload.read', bowling_breach.school_id,
+    (SELECT p.team_code FROM player p WHERE p.id = bowling_breach.bowler_id),
+    bowling_breach.bowler_id, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE OR REPLACE FUNCTION bowling_breach_watch() RETURNS trigger AS $$
+DECLARE
+  d record; s record; p player%ROWTYPE;
+  v_day date; v_day_overs int;
+BEGIN
+  SELECT * INTO p FROM player WHERE id = NEW.bowler_id;
+  IF NOT FOUND THEN RETURN NEW; END IF;
+  SELECT * INTO d FROM bowling_directive_for(NEW.bowler_id);
+  IF d.max_overs_per_spell IS NULL AND d.max_overs_per_day IS NULL THEN RETURN NEW; END IF;
+
+  -- The spell this ball is part of.
+  SELECT * INTO s FROM bowler_spell
+   WHERE match_id = NEW.match_id AND innings = NEW.innings AND bowler_id = NEW.bowler_id
+   ORDER BY spell_no DESC LIMIT 1;
+  IF FOUND AND d.max_overs_per_spell IS NOT NULL AND s.overs > d.max_overs_per_spell THEN
+    INSERT INTO bowling_breach (match_id, innings, bowler_id, school_id, kind, key, overs, allowed, age_band, bowled_on)
+    VALUES (NEW.match_id, NEW.innings, NEW.bowler_id, p.school_id, 'spell', s.first_over, s.overs, d.max_overs_per_spell, d.age_band, s.bowled_on)
+    ON CONFLICT DO NOTHING;
+    IF FOUND THEN
+      INSERT INTO notification (school_id, team_code, scope_level, kind, urgency, title, body,
+                                required_capability, is_public, subject_kind, subject_id, subject_person_id)
+      VALUES (p.school_id, p.team_code, 'team', 'welfare', 'high',
+              'Bowling directive exceeded',
+              p.full_name || ' (' || d.age_band || ') is ' || s.overs || ' overs into a spell; the directive allows '
+                || d.max_overs_per_spell || '. Take him off.',
+              'player.workload.read', false, 'match', NEW.match_id, NEW.bowler_id);
+    END IF;
+  END IF;
+
+  -- The day: every over he has bowled on the fixture's date, in any match.
+  SELECT o.bowled_on, count(*) INTO v_day, v_day_overs
+    FROM bowler_over o
+   WHERE o.bowler_id = NEW.bowler_id
+     AND o.bowled_on = (SELECT (m.starts_at AT TIME ZONE 'Africa/Johannesburg')::date FROM match m WHERE m.id = NEW.match_id)
+   GROUP BY o.bowled_on;
+  IF FOUND AND d.max_overs_per_day IS NOT NULL AND v_day_overs > d.max_overs_per_day THEN
+    INSERT INTO bowling_breach (match_id, innings, bowler_id, school_id, kind, key, overs, allowed, age_band, bowled_on)
+    VALUES (NEW.match_id, NEW.innings, NEW.bowler_id, p.school_id, 'day', 0, v_day_overs, d.max_overs_per_day, d.age_band, v_day)
+    ON CONFLICT DO NOTHING;
+    IF FOUND THEN
+      INSERT INTO notification (school_id, team_code, scope_level, kind, urgency, title, body,
+                                required_capability, is_public, subject_kind, subject_id, subject_person_id)
+      VALUES (p.school_id, p.team_code, 'team', 'welfare', 'high',
+              'Bowling directive exceeded',
+              p.full_name || ' (' || d.age_band || ') has bowled ' || v_day_overs || ' overs today; the directive allows '
+                || d.max_overs_per_day || ' in a day. He does not bowl again today.',
+              'player.workload.read', false, 'match', NEW.match_id, NEW.bowler_id);
+    END IF;
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- AFTER, and only for a delivery with a bowler on it. Definer rights: the
+-- scorer writing the ball holds scoring capabilities, not the boy's
+-- development record, and the breach has to be written and the coach told
+-- whoever is holding the phone.
+CREATE TRIGGER ball_event_bowling_breach AFTER INSERT ON ball_event
+  FOR EACH ROW WHEN (NEW.kind = 'ball' AND NEW.bowler_id IS NOT NULL)
+  EXECUTE FUNCTION bowling_breach_watch();
+
+-- ── Workload ─────────────────────────────────────────────────────
+-- One row per boy the reader may read the development record of: what he
+-- bowled in the last week and the last four, his longest spell, the breaches
+-- on his name, and what training he was at. The acute:chronic ratio is the
+-- standard one — this week against the average of the last four — and the
+-- word beside it is the server's, not a screen's:
+--   no bowling — nothing in four weeks
+--   rested     — bowled this month, not this week
+--   light      — under 0.8
+--   steady     — 0.8 to 1.2
+--   rising     — 1.2 to 1.5
+--   spike      — over 1.5, the range the injury literature keeps finding
+-- Under player.workload.read per row, because this is a reading of a named
+-- child's body, not a scorecard — the overs are public, the meaning is not.
+-- Not player.development.read: the pupil ROLE holds that across a side, and
+-- a boy does not get a team-mate's load for playing in the same XI. Definer rights so the per-row check is the only gate and three
+-- tables' policies do not each subtract from the answer differently.
+CREATE OR REPLACE FUNCTION workload(p_team text DEFAULT NULL)
+RETURNS TABLE (player_id uuid, full_name text, team_code text, school_id uuid,
+               age_band text, pace boolean, max_overs_per_spell smallint, max_overs_per_day smallint,
+               overs_7d int, overs_28d int, longest_spell_7d int, breaches_28d int, last_bowled_on date,
+               sessions_7d int, minutes_7d int, sessions_28d int, minutes_28d int,
+               acwr numeric, load_state text) AS $$
+  WITH boys AS (
+    SELECT p.id, p.full_name, p.team_code, p.school_id, p.born, p.bowling_style
+      FROM player p
+     WHERE (p_team IS NULL OR p.team_code = p_team)
+       AND app_can('player.workload.read', p.school_id, p.team_code, p.id,
+                   '00000000-0000-0000-0000-000000000000'::uuid)),
+  bowl AS (
+    SELECT o.bowler_id,
+           count(*) FILTER (WHERE o.bowled_on > sa_today() - 7)::int  AS overs_7d,
+           count(*) FILTER (WHERE o.bowled_on > sa_today() - 28)::int AS overs_28d,
+           max(o.bowled_on) AS last_bowled_on
+      FROM bowler_over o JOIN boys b ON b.id = o.bowler_id
+     WHERE o.bowled_on <= sa_today()
+     GROUP BY o.bowler_id),
+  spells AS (
+    SELECT s.bowler_id, max(s.overs)::int AS longest_spell_7d
+      FROM bowler_spell s JOIN boys b ON b.id = s.bowler_id
+     WHERE s.bowled_on > sa_today() - 7 AND s.bowled_on <= sa_today()
+     GROUP BY s.bowler_id),
+  breaches AS (
+    SELECT x.bowler_id, count(*)::int AS breaches_28d
+      FROM bowling_breach x JOIN boys b ON b.id = x.bowler_id
+     WHERE x.bowled_on > sa_today() - 28
+     GROUP BY x.bowler_id),
+  train AS (
+    SELECT a.player_id,
+           count(*) FILTER (WHERE t.starts_at > now() - interval '7 days')::int            AS sessions_7d,
+           coalesce(sum(t.duration_min) FILTER (WHERE t.starts_at > now() - interval '7 days'), 0)::int  AS minutes_7d,
+           count(*)::int AS sessions_28d,
+           coalesce(sum(t.duration_min), 0)::int AS minutes_28d
+      FROM training_attendance a
+      JOIN training_session t ON t.id = a.session_id
+      JOIN boys b ON b.id = a.player_id
+     WHERE a.status IN ('present', 'late') AND NOT t.cancelled
+       AND t.starts_at > now() - interval '28 days' AND t.starts_at <= now()
+     GROUP BY a.player_id)
+  SELECT b.id, b.full_name, b.team_code, b.school_id,
+         d.age_band, d.pace, d.max_overs_per_spell, d.max_overs_per_day,
+         coalesce(w.overs_7d, 0), coalesce(w.overs_28d, 0), coalesce(sp.longest_spell_7d, 0),
+         coalesce(br.breaches_28d, 0), w.last_bowled_on,
+         coalesce(tr.sessions_7d, 0), coalesce(tr.minutes_7d, 0), coalesce(tr.sessions_28d, 0), coalesce(tr.minutes_28d, 0),
+         CASE WHEN coalesce(w.overs_28d, 0) > 0
+              THEN round(coalesce(w.overs_7d, 0) / (w.overs_28d / 4.0), 2) END AS acwr,
+         CASE WHEN coalesce(w.overs_28d, 0) = 0 THEN 'no bowling'
+              WHEN coalesce(w.overs_7d, 0) = 0 THEN 'rested'
+              WHEN w.overs_7d / (w.overs_28d / 4.0) > 1.5 THEN 'spike'
+              WHEN w.overs_7d / (w.overs_28d / 4.0) >= 1.2 THEN 'rising'
+              WHEN w.overs_7d / (w.overs_28d / 4.0) < 0.8 THEN 'light'
+              ELSE 'steady' END AS load_state
+    FROM boys b
+    CROSS JOIN LATERAL bowling_directive_for(b.id) d
+    LEFT JOIN bowl w ON w.bowler_id = b.id
+    LEFT JOIN spells sp ON sp.bowler_id = b.id
+    LEFT JOIN breaches br ON br.bowler_id = b.id
+    LEFT JOIN train tr ON tr.player_id = b.id
+   ORDER BY CASE WHEN coalesce(br.breaches_28d, 0) > 0 THEN 0 ELSE 1 END,
+            CASE WHEN coalesce(w.overs_28d, 0) > 0 AND w.overs_7d / (w.overs_28d / 4.0) > 1.5 THEN 0 ELSE 1 END,
+            coalesce(w.overs_7d, 0) DESC, b.full_name;
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+REVOKE ALL ON FUNCTION workload(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION workload(text) TO PUBLIC;
+
+-- ═══════════════════════════════════════════════════════════════════
+--  RECOGNITION — honours, caps and milestones. No points.
+-- ═══════════════════════════════════════════════════════════════════
+--
+-- Three kinds of recognition, and they are different things:
+--
+--   AN HONOUR IS AWARDED. Colours, captaincy, player of the season: a named
+--   person decided it, on a date, for a season. It is a school's statement
+--   and is never edited — withdrawn with a reason if it must be, and stays.
+--   A CAP IS EARNED. A boy who takes the field for a side has played for
+--   it, and his cap number is the order in which he first did. Derived from
+--   the team sheets and never typed in, except for the ledger's starting
+--   point: the caps a side awarded before the platform was keeping count.
+--   A MILESTONE HAPPENS. A fifty, a five-for, a hat-trick, five hundred
+--   career runs: derived from the ball log, like the score is, and noticed
+--   the moment the ball that makes it is recorded.
+--
+-- NONE OF THEM IS A CURRENCY. Nothing here is a number a boy accumulates
+-- to be ranked by, and nothing here feeds the rewards engine. A cap is
+-- 412, not 412 points.
+
+-- ── Honours ──────────────────────────────────────────────────────
+CREATE TABLE honour (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  player_id    uuid NOT NULL REFERENCES player(id) ON DELETE CASCADE,
+  school_id    uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  -- The side he was on when it was awarded, kept as it was: an honour does
+  -- not move sides when he does.
+  team_code    text,
+  kind         text NOT NULL CHECK (kind IN ('colours', 'half_colours', 'honours', 'captain', 'vice_captain',
+                                             'player_of_season', 'award')),
+  -- Required for an 'award' (which is whatever the school calls it — "Fielder
+  -- of the Year"); optional otherwise.
+  name         text CHECK (name IS NULL OR length(name) BETWEEN 3 AND 80),
+  -- The school season it belongs to — a row, so "2026/27" cannot be typed
+  -- onto a school honour and two spellings of one season cannot both exist.
+  season_id    uuid NOT NULL REFERENCES season(id),
+  citation     text CHECK (citation IS NULL OR length(citation) <= 300),
+  awarded_on   date NOT NULL DEFAULT sa_today(),
+  awarded_by   uuid REFERENCES app_user(id),
+  awarded_at   timestamptz NOT NULL DEFAULT now(),
+  -- Whether it may go on a public board with his name. False until somebody
+  -- says otherwise; only true feeds anything outward-facing.
+  is_public    boolean NOT NULL DEFAULT false,
+  withdrawn_at timestamptz,
+  withdrawn_by uuid REFERENCES app_user(id),
+  withdrawn_reason text CHECK (withdrawn_reason IS NULL OR length(withdrawn_reason) BETWEEN 3 AND 200),
+  CONSTRAINT honour_award_is_named CHECK (kind <> 'award' OR name IS NOT NULL),
+  CONSTRAINT honour_withdrawal_has_reason CHECK ((withdrawn_at IS NULL) = (withdrawn_reason IS NULL))
+);
+-- One of each kind per boy per season, live. Awards are free-named and may
+-- be several.
+CREATE UNIQUE INDEX honour_once_a_season ON honour (player_id, kind, season_id)
+  WHERE withdrawn_at IS NULL AND kind <> 'award';
+CREATE INDEX ON honour (school_id, season_id) WHERE withdrawn_at IS NULL;
+
+CREATE OR REPLACE FUNCTION honour_stamp() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    SELECT p.school_id, p.team_code INTO NEW.school_id, NEW.team_code FROM player p WHERE p.id = NEW.player_id;
+    IF NEW.school_id IS NULL THEN
+      RAISE EXCEPTION 'no such player: %', NEW.player_id USING ERRCODE = 'foreign_key_violation';
+    END IF;
+    NEW.awarded_by := app_user_id();
+    NEW.awarded_at := now();
+    NEW.withdrawn_at := NULL; NEW.withdrawn_by := NULL; NEW.withdrawn_reason := NULL;
+    RETURN NEW;
+  END IF;
+  IF OLD.withdrawn_at IS NOT NULL THEN
+    RAISE EXCEPTION 'a withdrawn honour is not edited — award it again' USING ERRCODE = 'check_violation';
+  END IF;
+  IF NEW.player_id IS DISTINCT FROM OLD.player_id OR NEW.school_id IS DISTINCT FROM OLD.school_id
+     OR NEW.team_code IS DISTINCT FROM OLD.team_code OR NEW.kind IS DISTINCT FROM OLD.kind
+     OR NEW.name IS DISTINCT FROM OLD.name OR NEW.season_id IS DISTINCT FROM OLD.season_id
+     OR NEW.citation IS DISTINCT FROM OLD.citation OR NEW.awarded_on IS DISTINCT FROM OLD.awarded_on
+     OR NEW.awarded_by IS DISTINCT FROM OLD.awarded_by OR NEW.awarded_at IS DISTINCT FROM OLD.awarded_at THEN
+    RAISE EXCEPTION 'an honour is not edited after it is awarded — withdraw it and award it again'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  -- is_public may change: putting a name on a board, or taking it off, is a
+  -- decision about the board, not about the honour.
+  IF NEW.withdrawn_at IS NOT NULL THEN
+    NEW.withdrawn_at := now();
+    NEW.withdrawn_by := app_user_id();
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+CREATE TRIGGER honour_stamp BEFORE INSERT OR UPDATE ON honour
+  FOR EACH ROW EXECUTE FUNCTION honour_stamp();
+
+CREATE OR REPLACE FUNCTION honour_kind_label(p_kind text, p_name text) RETURNS text AS $$
+  SELECT CASE p_kind
+    WHEN 'colours'          THEN 'Full colours'
+    WHEN 'half_colours'     THEN 'Half colours'
+    WHEN 'honours'          THEN 'Honours'
+    WHEN 'captain'          THEN 'Captain'
+    WHEN 'vice_captain'     THEN 'Vice-captain'
+    WHEN 'player_of_season' THEN 'Player of the season'
+    WHEN 'award'            THEN coalesce(p_name, 'Award')
+    ELSE p_kind END || CASE WHEN p_kind <> 'award' AND p_name IS NOT NULL THEN ' — ' || p_name ELSE '' END;
+$$ LANGUAGE sql IMMUTABLE;
+
+-- ── Caps ─────────────────────────────────────────────────────────
+CREATE TABLE cap_baseline (
+  school_id   uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  team_code   text NOT NULL,
+  -- Caps the side had awarded before the first fixture the platform holds.
+  caps_before integer NOT NULL CHECK (caps_before >= 0),
+  as_of       date NOT NULL,
+  note        text CHECK (note IS NULL OR length(note) <= 200),
+  set_by      uuid REFERENCES app_user(id),
+  set_at      timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (school_id, team_code)
+);
+CREATE OR REPLACE FUNCTION cap_baseline_stamp() RETURNS trigger AS $$
+BEGIN NEW.set_by := app_user_id(); NEW.set_at := now(); RETURN NEW; END $$ LANGUAGE plpgsql;
+CREATE TRIGGER cap_baseline_stamp BEFORE INSERT OR UPDATE ON cap_baseline
+  FOR EACH ROW EXECUTE FUNCTION cap_baseline_stamp();
+
+-- An APPEARANCE is a place in the eleven for a match that was played: not
+-- the twelfth man, not a withdrawn name, not a fixture still to come. The
+-- side is the one the sheet was for — home or away — and the school is the
+-- boy's own, so a guest fixture at another school's ground is still his cap.
+CREATE OR REPLACE VIEW team_appearance WITH (security_invoker = true) AS
+SELECT p.school_id,
+       CASE s.side WHEN 'home' THEN m.team_code ELSE m.away_team_code END AS team_code,
+       s.player_id, s.match_id, s.batting_no,
+       (m.starts_at AT TIME ZONE 'Africa/Johannesburg')::date AS played_on
+  FROM match_squad s
+  JOIN match m ON m.id = s.match_id
+  JOIN player p ON p.id = s.player_id
+ WHERE NOT s.withdrawn AND NOT s.twelfth
+   AND m.status IN ('live', 'complete')
+   AND (CASE s.side WHEN 'home' THEN m.school_id ELSE m.away_school_id END) = p.school_id;
+
+-- One row per boy per side: how many times, when first, and his cap number,
+-- which is the baseline plus his place in the order of first appearances.
+-- Ties on a day — a whole new side debuting together — go by batting order
+-- on that sheet, then by name, so the numbers are stable and defensible.
+CREATE OR REPLACE VIEW team_cap WITH (security_invoker = true) AS
+WITH firsts AS (
+  SELECT DISTINCT ON (school_id, team_code, player_id)
+         school_id, team_code, player_id, played_on AS first_on, batting_no AS first_batting_no, match_id AS first_match_id
+    FROM team_appearance
+   ORDER BY school_id, team_code, player_id, played_on, match_id),
+counts AS (
+  SELECT school_id, team_code, player_id, count(*)::int AS appearances, max(played_on) AS last_on
+    FROM team_appearance GROUP BY school_id, team_code, player_id)
+SELECT f.school_id, f.team_code, f.player_id, p.full_name, c.appearances, f.first_on, c.last_on, f.first_match_id,
+       coalesce(b.caps_before, 0)
+         + rank() OVER (PARTITION BY f.school_id, f.team_code
+                        ORDER BY f.first_on, f.first_batting_no NULLS LAST, p.full_name)::int AS cap_no,
+       b.caps_before IS NOT NULL AS baseline_set
+  FROM firsts f
+  JOIN player p ON p.id = f.player_id
+  JOIN counts c ON c.school_id = f.school_id AND c.team_code = f.team_code AND c.player_id = f.player_id
+  LEFT JOIN cap_baseline b ON b.school_id = f.school_id AND b.team_code = f.team_code;
+
+-- ── Milestones ───────────────────────────────────────────────────
+-- Derived. A row here is a fold over the log and nothing else, so a voided
+-- ball takes a fifty with it, the way it takes the runs.
+CREATE OR REPLACE VIEW bowler_innings_figures WITH (security_invoker = true) AS
+SELECT b.bowler_id AS player_id, b.match_id, b.innings,
+       count(*) FILTER (WHERE b.ball_type = 'W' AND coalesce(b.dismissal,'') !~* 'run ?out')::int AS wickets,
+       coalesce(sum(CASE WHEN b.ball_type IN ('Wd','Nb') THEN 1 + coalesce(b.value,0)
+                         WHEN b.ball_type IN ('run','W')  THEN coalesce(b.value,0) ELSE 0 END), 0)::int AS runs_conceded
+  FROM ball_event_live b
+ WHERE b.kind = 'ball' AND b.bowler_id IS NOT NULL
+ GROUP BY b.bowler_id, b.match_id, b.innings;
+
+-- A hat-trick is three wickets in three consecutive LEGAL deliveries by one
+-- bowler in one innings; a wide or a no-ball in between is not a delivery
+-- and does not break it. Run-outs are not the bowler's.
+CREATE OR REPLACE VIEW bowler_hat_trick WITH (security_invoker = true) AS
+WITH legal AS (
+  SELECT b.bowler_id, b.match_id, b.innings, b.seq,
+         (b.ball_type = 'W' AND coalesce(b.dismissal,'') !~* 'run ?out') AS w
+    FROM ball_event_live b
+   WHERE b.kind = 'ball' AND b.bowler_id IS NOT NULL AND b.ball_type NOT IN ('Wd','Nb')),
+runs AS (
+  SELECT *, lag(w, 1) OVER (PARTITION BY match_id, innings, bowler_id ORDER BY seq) AS w1,
+            lag(w, 2) OVER (PARTITION BY match_id, innings, bowler_id ORDER BY seq) AS w2
+    FROM legal)
+SELECT bowler_id AS player_id, match_id, innings, min(seq)::int AS completed_at_seq
+  FROM runs WHERE w AND w1 AND w2
+ GROUP BY bowler_id, match_id, innings;
+
+CREATE OR REPLACE VIEW player_milestone WITH (security_invoker = true) AS
+WITH dated AS (
+  SELECT m.id AS match_id, m.opponent, (m.starts_at AT TIME ZONE 'Africa/Johannesburg')::date AS played_on, m.starts_at
+    FROM match m),
+innings_bat AS (
+  SELECT i.player_id, i.match_id, i.innings,
+         CASE WHEN i.runs >= 100 THEN 'hundred' ELSE 'fifty' END AS kind, i.runs::int AS value
+    FROM player_innings i WHERE i.runs >= 50),
+innings_bowl AS (
+  SELECT f.player_id, f.match_id, f.innings, 'five_for' AS kind, f.wickets AS value
+    FROM bowler_innings_figures f WHERE f.wickets >= 5),
+hat AS (
+  SELECT h.player_id, h.match_id, h.innings, 'hat_trick' AS kind, 3 AS value FROM bowler_hat_trick h),
+career_runs AS (
+  SELECT x.player_id, x.match_id, NULL::smallint AS innings, 'career_runs' AS kind, t.threshold AS value
+    FROM (SELECT i.player_id, i.match_id,
+                 sum(i.runs) OVER (PARTITION BY i.player_id ORDER BY d.starts_at, i.match_id) AS after_runs,
+                 sum(i.runs) OVER (PARTITION BY i.player_id ORDER BY d.starts_at, i.match_id
+                                   ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS before_runs
+            FROM (SELECT player_id, match_id, sum(runs) AS runs FROM player_innings GROUP BY player_id, match_id) i
+            JOIN dated d ON d.match_id = i.match_id) x
+    CROSS JOIN (VALUES (500), (1000), (2000), (5000)) t(threshold)
+   WHERE coalesce(x.before_runs, 0) < t.threshold AND x.after_runs >= t.threshold),
+career_wkts AS (
+  SELECT x.player_id, x.match_id, NULL::smallint AS innings, 'career_wickets' AS kind, t.threshold AS value
+    FROM (SELECT f.player_id, f.match_id,
+                 sum(f.wickets) OVER (PARTITION BY f.player_id ORDER BY d.starts_at, f.match_id) AS after_w,
+                 sum(f.wickets) OVER (PARTITION BY f.player_id ORDER BY d.starts_at, f.match_id
+                                      ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS before_w
+            FROM (SELECT player_id, match_id, sum(wickets) AS wickets FROM bowler_innings_figures GROUP BY player_id, match_id) f
+            JOIN dated d ON d.match_id = f.match_id) x
+    CROSS JOIN (VALUES (25), (50), (100), (250)) t(threshold)
+   WHERE coalesce(x.before_w, 0) < t.threshold AND x.after_w >= t.threshold),
+caps AS (
+  SELECT x.player_id, x.match_id, NULL::smallint AS innings, 'caps' AS kind, t.threshold AS value
+    FROM (SELECT a.player_id, a.match_id,
+                 row_number() OVER (PARTITION BY a.player_id, a.school_id, a.team_code ORDER BY a.played_on, a.match_id) AS nth
+            FROM team_appearance a) x
+    CROSS JOIN (VALUES (25), (50), (100)) t(threshold)
+   WHERE x.nth = t.threshold),
+everything AS (
+  SELECT * FROM innings_bat UNION ALL SELECT * FROM innings_bowl UNION ALL SELECT * FROM hat
+  UNION ALL SELECT * FROM career_runs UNION ALL SELECT * FROM career_wkts UNION ALL SELECT * FROM caps)
+SELECT e.player_id, e.kind, e.value, e.match_id, e.innings, d.opponent, d.played_on
+  FROM everything e JOIN dated d ON d.match_id = e.match_id;
+
+CREATE OR REPLACE FUNCTION milestone_label(p_kind text, p_value int) RETURNS text AS $$
+  SELECT CASE p_kind
+    WHEN 'fifty'          THEN 'Fifty (' || p_value || ')'
+    WHEN 'hundred'        THEN 'Hundred (' || p_value || ')'
+    WHEN 'five_for'       THEN 'Five-for (' || p_value || ' wickets)'
+    WHEN 'hat_trick'      THEN 'Hat-trick'
+    WHEN 'career_runs'    THEN p_value || ' career runs'
+    WHEN 'career_wickets' THEN p_value || ' career wickets'
+    WHEN 'caps'           THEN p_value || ' caps'
+    ELSE p_kind END;
+$$ LANGUAGE sql IMMUTABLE;
+
+-- ── The moment it happens ────────────────────────────────────────
+-- A notice the ball it lands on, once per boy per innings per kind. The
+-- table is the "once"; the milestone itself lives in the log and is never
+-- written down twice. Notices carry news.read at the boy's side and are not
+-- public: a fifty is a scorecard fact, a boy's name pushed outward is a
+-- decision the broadcast module makes.
+CREATE TABLE milestone_notice (
+  player_id uuid NOT NULL REFERENCES player(id) ON DELETE CASCADE,
+  kind      text NOT NULL,
+  match_id  uuid NOT NULL REFERENCES match(id) ON DELETE CASCADE,
+  innings   smallint NOT NULL DEFAULT 0,
+  value     int NOT NULL,
+  noticed_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (player_id, kind, match_id, innings)
+);
+ALTER TABLE milestone_notice ENABLE ROW LEVEL SECURITY;
+-- Written only by the trigger below (no insert policy). Readable by whoever
+-- may read the boy's profile, because "when was his fifty called" is part
+-- of his record, and a table nobody can read is a decision, not a default.
+CREATE POLICY milestone_notice_read ON milestone_notice
+  FOR SELECT USING (app_can('player.profile.read',
+    (SELECT p.school_id FROM player p WHERE p.id = milestone_notice.player_id),
+    (SELECT p.team_code FROM player p WHERE p.id = milestone_notice.player_id),
+    milestone_notice.player_id, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE OR REPLACE FUNCTION milestone_notify(p_player uuid, p_kind text, p_match uuid, p_innings smallint, p_value int) RETURNS void AS $$
+DECLARE p player%ROWTYPE; v_title text;
+BEGIN
+  INSERT INTO milestone_notice (player_id, kind, match_id, innings, value)
+  VALUES (p_player, p_kind, p_match, p_innings, p_value) ON CONFLICT DO NOTHING;
+  IF NOT FOUND THEN RETURN; END IF;
+  SELECT * INTO p FROM player WHERE id = p_player;
+  v_title := CASE p_kind
+    WHEN 'fifty'          THEN 'Fifty for ' || p.full_name
+    WHEN 'hundred'        THEN 'Hundred for ' || p.full_name
+    WHEN 'five_for'       THEN 'Five-for for ' || p.full_name
+    WHEN 'hat_trick'      THEN 'Hat-trick for ' || p.full_name
+    WHEN 'career_runs'    THEN p.full_name || ' passes ' || p_value || ' career runs'
+    WHEN 'career_wickets' THEN p.full_name || ' passes ' || p_value || ' career wickets'
+    ELSE milestone_label(p_kind, p_value) END;
+  INSERT INTO notification (school_id, team_code, scope_level, kind, urgency, title, body,
+                            required_capability, is_public, subject_kind, subject_id, subject_person_id)
+  VALUES (p.school_id, p.team_code, 'team', 'recognition', 'low', v_title,
+          milestone_label(p_kind, p_value) || ' against ' || coalesce((SELECT opponent FROM match WHERE id = p_match), 'the opposition') || '.',
+          'news.read', false, 'match', p_match, p_player);
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION milestone_watch() RETURNS trigger AS $$
+DECLARE v_runs int; v_before int; v_w int; v_career int; t int;
+BEGIN
+  -- The striker's innings, and his career, after this ball.
+  IF NEW.striker_id IS NOT NULL AND NEW.ball_type IN ('run', 'W', 'Nb') AND coalesce(NEW.value, 0) > 0 THEN
+    SELECT coalesce(runs, 0) INTO v_runs FROM player_innings
+     WHERE player_id = NEW.striker_id AND match_id = NEW.match_id AND innings = NEW.innings;
+    v_before := v_runs - NEW.value;
+    IF v_before < 50 AND v_runs >= 50 THEN PERFORM milestone_notify(NEW.striker_id, 'fifty', NEW.match_id, NEW.innings, v_runs); END IF;
+    IF v_before < 100 AND v_runs >= 100 THEN PERFORM milestone_notify(NEW.striker_id, 'hundred', NEW.match_id, NEW.innings, v_runs); END IF;
+    SELECT coalesce(sum(runs), 0) INTO v_career FROM player_innings WHERE player_id = NEW.striker_id;
+    FOREACH t IN ARRAY ARRAY[500, 1000, 2000, 5000] LOOP
+      IF v_career - NEW.value < t AND v_career >= t THEN PERFORM milestone_notify(NEW.striker_id, 'career_runs', NEW.match_id, 0::smallint, t); END IF;
+    END LOOP;
+  END IF;
+  -- The bowler's wicket.
+  IF NEW.bowler_id IS NOT NULL AND NEW.ball_type = 'W' AND coalesce(NEW.dismissal,'') !~* 'run ?out' THEN
+    SELECT wickets INTO v_w FROM bowler_innings_figures
+     WHERE player_id = NEW.bowler_id AND match_id = NEW.match_id AND innings = NEW.innings;
+    IF v_w = 5 THEN PERFORM milestone_notify(NEW.bowler_id, 'five_for', NEW.match_id, NEW.innings, 5); END IF;
+    IF EXISTS (SELECT 1 FROM bowler_hat_trick h WHERE h.player_id = NEW.bowler_id AND h.match_id = NEW.match_id
+                  AND h.innings = NEW.innings AND h.completed_at_seq = NEW.seq) THEN
+      PERFORM milestone_notify(NEW.bowler_id, 'hat_trick', NEW.match_id, NEW.innings, 3);
+    END IF;
+    SELECT coalesce(sum(wickets), 0) INTO v_career FROM bowler_innings_figures WHERE player_id = NEW.bowler_id;
+    FOREACH t IN ARRAY ARRAY[25, 50, 100, 250] LOOP
+      IF v_career = t THEN PERFORM milestone_notify(NEW.bowler_id, 'career_wickets', NEW.match_id, 0::smallint, t); END IF;
+    END LOOP;
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE TRIGGER ball_event_milestone AFTER INSERT ON ball_event
+  FOR EACH ROW WHEN (NEW.kind = 'ball')
+  EXECUTE FUNCTION milestone_watch();
+
+-- ── The profile's view of all three ──────────────────────────────
+-- One shape for a boy's honours, caps and milestones, per row under
+-- player.profile.read: what the roster already shows about him, said in
+-- full. Definer rights so that one check is the gate and the three sources
+-- behind it do not each subtract differently.
+CREATE OR REPLACE FUNCTION recognition(p_player uuid)
+RETURNS TABLE (family text, kind text, label text, value int, season text, on_date date,
+               match_id uuid, opponent text, is_public boolean, citation text, ref_id uuid) AS $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM player p WHERE p.id = p_player
+                    AND app_can('player.profile.read', p.school_id, p.team_code, p.id,
+                                '00000000-0000-0000-0000-000000000000'::uuid)) THEN
+    RETURN;
+  END IF;
+  RETURN QUERY
+    SELECT 'honour'::text, h.kind, honour_kind_label(h.kind, h.name), NULL::int, (SELECT sn.label FROM season sn WHERE sn.id = h.season_id), h.awarded_on,
+           NULL::uuid, NULL::text, h.is_public, h.citation, h.id
+      FROM honour h WHERE h.player_id = p_player AND h.withdrawn_at IS NULL
+    UNION ALL
+    SELECT 'cap', 'cap', c.team_code || ' cap ' || CASE WHEN c.baseline_set THEN '#' || c.cap_no ELSE '#' || c.cap_no || ' (no baseline set)' END
+             || ' · ' || c.appearances || ' appearance' || CASE WHEN c.appearances = 1 THEN '' ELSE 's' END,
+           c.cap_no, NULL, c.first_on, c.first_match_id, NULL, false, NULL, NULL
+      FROM team_cap c WHERE c.player_id = p_player
+    UNION ALL
+    SELECT 'milestone', ms.kind, milestone_label(ms.kind, ms.value), ms.value, NULL, ms.played_on,
+           ms.match_id, ms.opponent, false, NULL, NULL
+      FROM player_milestone ms WHERE ms.player_id = p_player
+    ORDER BY 6 DESC NULLS LAST, 1;
+END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
+REVOKE ALL ON FUNCTION recognition(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION recognition(uuid) TO PUBLIC;
+
+-- ═══════════════════════════════════════════════════════════════════
+--  ROLE REQUESTS — nobody assigns themselves anything
+-- ═══════════════════════════════════════════════════════════════════
+--
+-- The earlier build let any signed-in person make themselves System
+-- Architect, and it locked its own author out. The rule here is the
+-- opposite and has no exception: a person ASKS for a role, and somebody
+-- who may grant that role at that school ANSWERS. Onboarding ends in a
+-- pending request, not a role. Until it is answered the person has an
+-- account with nothing in it, which is exactly what a stranger should
+-- have.
+--
+-- A request carries no authority. Reading one is for the person who made
+-- it and for the people who could answer it. Granting goes through
+-- decide_role_request(), which checks the decider's authority itself and
+-- writes the assignment — and, for a pupil, the self-access pair, because
+-- a pupil holds both and the client draws his menu from both.
+
+CREATE TABLE role_request (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  person_id    uuid NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+  role         text NOT NULL,
+  school_id    uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  team_code    text,
+  -- The child, for a guardian; the boy himself, for a pupil, once the office
+  -- has matched him to a roster row (it may be left for the decider to set).
+  player_id    uuid REFERENCES player(id) ON DELETE SET NULL,
+  note         text CHECK (note IS NULL OR length(note) <= 300),
+  state        text NOT NULL DEFAULT 'pending' CHECK (state IN ('pending', 'granted', 'declined', 'withdrawn')),
+  requested_at timestamptz NOT NULL DEFAULT now(),
+  decided_by   uuid REFERENCES app_user(id),
+  decided_at   timestamptz,
+  decided_note text CHECK (decided_note IS NULL OR length(decided_note) <= 300),
+  assignment_id uuid REFERENCES role_assignment(id) ON DELETE SET NULL,
+  CONSTRAINT decided_requests_name_a_decider CHECK (state IN ('pending', 'withdrawn') OR decided_by IS NOT NULL)
+);
+-- Asking twice is nagging, not a second request.
+CREATE UNIQUE INDEX role_request_one_open ON role_request (person_id, role, school_id, coalesce(team_code, '*')) WHERE state = 'pending';
+CREATE INDEX ON role_request (school_id) WHERE state = 'pending';
+ALTER TABLE role_request ENABLE ROW LEVEL SECURITY;
+
+-- Only a role somebody could grant may be asked for. A request for a role
+-- no granter exists for would sit pending forever and tell the requester
+-- nothing.
+CREATE OR REPLACE FUNCTION role_request_is_grantable() RETURNS trigger AS $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM role_grantable g WHERE g.role = NEW.role) THEN
+    RAISE EXCEPTION 'nobody may grant the role %', NEW.role USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+CREATE TRIGGER role_request_grantable BEFORE INSERT ON role_request
+  FOR EACH ROW EXECUTE FUNCTION role_request_is_grantable();
+
+-- Mine, or one I could answer: user.role.assign at that school AND the
+-- granter table says my role may hand out that one.
+CREATE POLICY role_request_read ON role_request
+  FOR SELECT USING (
+    person_id = app_user_id()
+    OR (app_can('user.role.assign', role_request.school_id, '*', '00000000-0000-0000-0000-000000000000'::uuid,
+                '00000000-0000-0000-0000-000000000000'::uuid)
+        AND app_may_grant(role_request.role)));
+CREATE POLICY role_request_insert ON role_request
+  FOR INSERT WITH CHECK (person_id = app_user_id() AND state = 'pending');
+-- The only update the requester makes is taking it back.
+CREATE POLICY role_request_update ON role_request
+  FOR UPDATE USING (person_id = app_user_id() AND state = 'pending')
+           WITH CHECK (person_id = app_user_id() AND state = 'withdrawn');
+
+-- ONBOARDING. Unauthenticated by definition: a stranger with an email
+-- address and a name gets an account with no assignments and a pending
+-- request, and nothing else. Definer rights because app_user's insert
+-- policy needs user.role.assign, which a stranger rightly lacks. An email
+-- already on the books gets the request and no second account; a request
+-- already open is left as it is. Nothing here says whether the email was
+-- known — the answer is the same either way.
+CREATE OR REPLACE FUNCTION onboard_request(p_email text, p_name text, p_role text, p_school uuid, p_team text, p_note text)
+RETURNS uuid AS $$
+DECLARE v_user uuid; v_req uuid;
+BEGIN
+  IF p_email !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' THEN RAISE EXCEPTION 'email_invalid' USING ERRCODE = 'check_violation'; END IF;
+  IF length(btrim(p_name)) < 2 THEN RAISE EXCEPTION 'name_required' USING ERRCODE = 'check_violation'; END IF;
+  SELECT id INTO v_user FROM app_user WHERE lower(email) = lower(p_email);
+  IF v_user IS NULL THEN
+    INSERT INTO app_user (school_id, email, name, role) VALUES (p_school, lower(p_email), btrim(p_name), p_role)
+    RETURNING id INTO v_user;
+  END IF;
+  INSERT INTO role_request (person_id, role, school_id, team_code, note)
+  VALUES (v_user, p_role, p_school, nullif(btrim(coalesce(p_team, '')), ''), p_note)
+  ON CONFLICT DO NOTHING
+  RETURNING id INTO v_req;
+  RETURN coalesce(v_req, (SELECT id FROM role_request WHERE person_id = v_user AND role = p_role AND school_id = p_school AND state = 'pending' LIMIT 1));
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+REVOKE ALL ON FUNCTION onboard_request(text, text, text, uuid, text, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION onboard_request(text, text, text, uuid, text, text) TO PUBLIC;
+
+-- ANSWERING. The decider must hold user.role.assign at the request's school
+-- and be a granter of that role; the function checks both itself, because
+-- writing the assignment needs definer rights and the caller's own policy
+-- would otherwise be the only gate. A grant writes the assignment (the
+-- granter trigger stamps created_by from the session); a guardian's or a
+-- pupil's names its subject, verified by the decider, consent still the
+-- family's to give; a pupil also gets his self-access pair and his roster
+-- link. A decline records why.
+CREATE OR REPLACE FUNCTION decide_role_request(p_request uuid, p_grant boolean, p_note text, p_player uuid DEFAULT NULL, p_team text DEFAULT NULL)
+RETURNS TABLE (ok boolean, reason text, assignment_id uuid) AS $$
+DECLARE r role_request%ROWTYPE; v_asg uuid; v_self uuid; v_player uuid; v_team text;
+BEGIN
+  SELECT * INTO r FROM role_request WHERE id = p_request;
+  IF NOT FOUND THEN RETURN QUERY SELECT false, 'no_such_request', NULL::uuid; RETURN; END IF;
+  IF r.state <> 'pending' THEN RETURN QUERY SELECT false, 'already_decided', NULL::uuid; RETURN; END IF;
+  IF NOT (app_can('user.role.assign', r.school_id, '*', '00000000-0000-0000-0000-000000000000'::uuid,
+                  '00000000-0000-0000-0000-000000000000'::uuid) AND app_may_grant(r.role)) THEN
+    RETURN QUERY SELECT false, 'not_permitted', NULL::uuid; RETURN;
+  END IF;
+  IF NOT p_grant THEN
+    UPDATE role_request SET state = 'declined', decided_by = app_user_id(), decided_at = now(), decided_note = p_note WHERE id = p_request;
+    RETURN QUERY SELECT true, NULL::text, NULL::uuid; RETURN;
+  END IF;
+  v_player := coalesce(p_player, r.player_id);
+  -- A coach is a coach OF A SIDE (assignment_team_scoped): the request names
+  -- one, or the decider does, or it is not granted. Said by name rather than
+  -- left to the constraint, so the office knows what to supply.
+  v_team := coalesce(nullif(btrim(coalesce(p_team, '')), ''), r.team_code);
+  IF r.role IN ('coach', 'assistantcoach', 'teammanager') AND v_team IS NULL THEN
+    RETURN QUERY SELECT false, 'team_required', NULL::uuid; RETURN;
+  END IF;
+  IF v_player IS NOT NULL AND NOT EXISTS (SELECT 1 FROM player p WHERE p.id = v_player AND p.school_id = r.school_id) THEN
+    RETURN QUERY SELECT false, 'player_not_at_that_school', NULL::uuid; RETURN;
+  END IF;
+  IF r.role IN ('guardian', 'selfaccess', 'enquiry') AND v_player IS NULL THEN
+    RETURN QUERY SELECT false, 'player_required', NULL::uuid; RETURN;
+  END IF;
+  INSERT INTO role_assignment (person_id, role, school_id, team_code)
+  VALUES (r.person_id, r.role, r.school_id, v_team) RETURNING id INTO v_asg;
+  IF r.role IN ('guardian', 'enquiry') THEN
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at, consent_state, created_by)
+    VALUES (v_asg, v_player, CASE r.role WHEN 'guardian' THEN 'parent' ELSE 'enquiry' END, 'verified', app_user_id(), now(), 'pending', app_user_id());
+  ELSIF r.role = 'selfaccess' THEN
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at, consent_state, consent_version, consent_at, created_by)
+    VALUES (v_asg, v_player, 'self', 'verified', app_user_id(), now(), 'granted', 'popia-2026-01', now(), app_user_id());
+  ELSIF r.role = 'player' AND v_player IS NOT NULL THEN
+    -- A pupil holds both: the team role and his own record.
+    UPDATE app_user SET player_id = v_player WHERE id = r.person_id;
+    INSERT INTO role_assignment (person_id, role, school_id) VALUES (r.person_id, 'selfaccess', r.school_id) RETURNING id INTO v_self;
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at, consent_state, consent_version, consent_at, created_by)
+    VALUES (v_self, v_player, 'self', 'verified', app_user_id(), now(), 'granted', 'popia-2026-01', now(), app_user_id());
+  END IF;
+  UPDATE role_request SET state = 'granted', decided_by = app_user_id(), decided_at = now(), decided_note = p_note,
+                          assignment_id = v_asg, player_id = v_player, team_code = v_team WHERE id = p_request;
+  RETURN QUERY SELECT true, NULL::text, v_asg;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+REVOKE ALL ON FUNCTION decide_role_request(uuid, boolean, text, uuid, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION decide_role_request(uuid, boolean, text, uuid, text) TO PUBLIC;
+
+-- The schools, by name, for a stranger choosing one on the onboarding
+-- screen. A school's name is a public fact; nothing else about it is here.
+CREATE OR REPLACE FUNCTION public_schools() RETURNS TABLE (id uuid, name text) AS $$
+  SELECT s.id, s.name FROM school s ORDER BY s.name
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+REVOKE ALL ON FUNCTION public_schools() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public_schools() TO PUBLIC;
+
+-- ═══════════════════════════════════════════════════════════════════
+--  DRILLS AND KIT
+-- ═══════════════════════════════════════════════════════════════════
+
+-- The drill library. Platform drills (school NULL) are everyone's; a
+-- school's own are its own. Written under team.manage at the school; a
+-- platform drill is reference data nobody writes through the API.
+CREATE TABLE drill (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id    uuid REFERENCES school(id) ON DELETE CASCADE,
+  name         text NOT NULL CHECK (length(name) BETWEEN 3 AND 80),
+  category     text NOT NULL CHECK (category IN ('batting', 'bowling', 'fielding', 'keeping', 'fitness', 'tactical')),
+  duration_min smallint NOT NULL CHECK (duration_min BETWEEN 5 AND 180),
+  description  text CHECK (description IS NULL OR length(description) <= 500),
+  created_by   uuid REFERENCES app_user(id),
+  retired      boolean NOT NULL DEFAULT false
+);
+ALTER TABLE drill ENABLE ROW LEVEL SECURITY;
+CREATE POLICY drill_read ON drill FOR SELECT USING (
+  (school_id IS NULL AND app_user_id() IS NOT NULL)
+  OR app_can('team.read', school_id, '*', '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+CREATE POLICY drill_insert ON drill FOR INSERT WITH CHECK (
+  school_id IS NOT NULL AND app_can('team.manage', school_id, '*', '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+CREATE POLICY drill_update ON drill FOR UPDATE
+  USING (school_id IS NOT NULL AND app_can('team.manage', school_id, '*', '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
+  WITH CHECK (school_id IS NOT NULL AND app_can('team.manage', school_id, '*', '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+CREATE OR REPLACE FUNCTION drill_stamp() RETURNS trigger AS $$
+BEGIN IF TG_OP = 'INSERT' THEN NEW.created_by := app_user_id(); END IF; RETURN NEW; END $$ LANGUAGE plpgsql;
+CREATE TRIGGER drill_stamp BEFORE INSERT ON drill FOR EACH ROW EXECUTE FUNCTION drill_stamp();
+
+INSERT INTO drill (name, category, duration_min, description) VALUES
+  ('Throw-downs', 'batting', 20, 'Coach delivers throw-downs to batters; front-foot drives.'),
+  ('Short-pitch defence', 'batting', 15, 'Back-foot technique against the short ball.'),
+  ('Running between wickets', 'batting', 15, 'Calling, turning, sliding; a team drill.'),
+  ('Target bowling', 'bowling', 25, 'Cones on a good length; bowlers aim for corridors.'),
+  ('Wrist-spin variation', 'bowling', 30, 'Leg-break, googly, flipper: identification and execution.'),
+  ('Reaction catches', 'fielding', 15, 'Random feeds; fielders react.'),
+  ('Long barrier', 'fielding', 20, 'Sliding long barrier on the outfield.'),
+  ('Slips cordon', 'fielding', 20, 'Edges off the catching cradle.'),
+  ('12-3-6 sprints', 'fitness', 20, '12 sprints, 3 sets, 6 seconds each.'),
+  ('Strength and conditioning', 'fitness', 45, 'Full programme, gym or field.');
+
+-- The school's kit, and who has it.
+CREATE TABLE equipment (
+  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id  uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  kind       text NOT NULL CHECK (kind IN ('bat', 'ball', 'pads', 'gloves', 'helmet', 'kit', 'stumps', 'net', 'bowling_machine', 'other')),
+  label      text NOT NULL CHECK (length(label) BETWEEN 2 AND 80),
+  quantity   integer NOT NULL CHECK (quantity >= 0),
+  condition  text NOT NULL DEFAULT 'good' CHECK (condition IN ('good', 'fair', 'poor', 'retired')),
+  notes      text CHECK (notes IS NULL OR length(notes) <= 300),
+  updated_by uuid REFERENCES app_user(id),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE equipment ENABLE ROW LEVEL SECURITY;
+CREATE OR REPLACE FUNCTION equipment_stamp() RETURNS trigger AS $$
+BEGIN NEW.updated_by := app_user_id(); NEW.updated_at := now(); RETURN NEW; END $$ LANGUAGE plpgsql;
+CREATE TRIGGER equipment_stamp BEFORE INSERT OR UPDATE ON equipment FOR EACH ROW EXECUTE FUNCTION equipment_stamp();
+
+CREATE TABLE equipment_issue (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  equipment_id uuid NOT NULL REFERENCES equipment(id) ON DELETE CASCADE,
+  player_id    uuid NOT NULL REFERENCES player(id) ON DELETE CASCADE,
+  issued_on    date NOT NULL DEFAULT sa_today(),
+  issued_by    uuid REFERENCES app_user(id),
+  returned_on  date,
+  CONSTRAINT issue_returns_after_issue CHECK (returned_on IS NULL OR returned_on >= issued_on)
+);
+CREATE INDEX ON equipment_issue (equipment_id) WHERE returned_on IS NULL;
+ALTER TABLE equipment_issue ENABLE ROW LEVEL SECURITY;
+
+-- Kit is issued to a boy of the same school, and never more of it than the
+-- school has. Definer rights: the count needs every open issue, including
+-- ones the caller may not read.
+CREATE OR REPLACE FUNCTION equipment_issue_fits() RETURNS trigger AS $$
+DECLARE v_qty int; v_out int; v_school uuid;
+BEGIN
+  IF TG_OP = 'INSERT' THEN NEW.issued_by := app_user_id(); END IF;
+  IF TG_OP = 'UPDATE' THEN RETURN NEW; END IF;
+  SELECT quantity, school_id INTO v_qty, v_school FROM equipment WHERE id = NEW.equipment_id;
+  IF NOT EXISTS (SELECT 1 FROM player p WHERE p.id = NEW.player_id AND p.school_id = v_school) THEN
+    RAISE EXCEPTION 'kit is issued to a boy of the same school' USING ERRCODE = 'check_violation';
+  END IF;
+  SELECT count(*) INTO v_out FROM equipment_issue WHERE equipment_id = NEW.equipment_id AND returned_on IS NULL;
+  IF v_out >= v_qty THEN
+    RAISE EXCEPTION 'all % of that item are already out', v_qty USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+CREATE TRIGGER equipment_issue_check BEFORE INSERT OR UPDATE ON equipment_issue
+  FOR EACH ROW EXECUTE FUNCTION equipment_issue_fits();
+
+-- ═══════════════════════════════════════════════════════════════════
+--  THE PASSPORT — a boy's cricket record, travelling on the family's say-so
+-- ═══════════════════════════════════════════════════════════════════
+--
+-- Everything in this schema anchors on the school that recorded it, and a
+-- boy who moves schools leaves his record behind: clearances, honours and
+-- the caps ledger all said so and deferred the question. This is the
+-- answer. THE FAMILY DECIDES: a verified guardian, or the boy himself
+-- through self-access, consents to share his CRICKET record with one named
+-- school, and may withdraw it. Nothing medical, nothing from his file, no
+-- coaching note ever travels — the passport is figures, honours, caps,
+-- milestones and ratings, and each line says where it came from and how
+-- sure anyone should be of it:
+--   derived   — a fold over the ball log; nobody typed it
+--   verified  — signed by a named person on a date (an honour)
+--   asserted  — a coach's judgement (a rating), named and dated
+--   seeded    — on record with no person behind it
+
+CREATE TABLE passport_consent (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  player_id    uuid NOT NULL REFERENCES player(id) ON DELETE CASCADE,
+  to_school_id uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+  granted_by   uuid REFERENCES app_user(id),
+  granted_at   timestamptz NOT NULL DEFAULT now(),
+  withdrawn_at timestamptz,
+  withdrawn_by uuid REFERENCES app_user(id)
+);
+CREATE UNIQUE INDEX passport_consent_live ON passport_consent (player_id, to_school_id) WHERE withdrawn_at IS NULL;
+ALTER TABLE passport_consent ENABLE ROW LEVEL SECURITY;
+
+-- Is the caller this boy's family: a verified guardian, or the boy himself.
+CREATE OR REPLACE FUNCTION is_family_of(p_player uuid) RETURNS boolean AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM role_assignment a
+    JOIN assignment_subject s ON s.assignment_id = a.id
+   WHERE a.person_id = app_user_id() AND a.active
+     AND a.role IN ('guardian', 'selfaccess')
+     AND s.player_id = p_player AND s.verification_state = 'verified')
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+REVOKE ALL ON FUNCTION is_family_of(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION is_family_of(uuid) TO PUBLIC;
+
+-- Read by the family and by the school it was granted to; written by the
+-- family only. The receiving school never writes one for itself.
+CREATE POLICY passport_consent_read ON passport_consent FOR SELECT USING (
+  is_family_of(player_id)
+  OR app_can('player.profile.read', to_school_id, '*', '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+CREATE POLICY passport_consent_insert ON passport_consent FOR INSERT WITH CHECK (is_family_of(player_id) AND withdrawn_at IS NULL);
+CREATE POLICY passport_consent_update ON passport_consent FOR UPDATE USING (is_family_of(player_id) AND withdrawn_at IS NULL)
+  WITH CHECK (is_family_of(player_id) AND withdrawn_at IS NOT NULL);
+CREATE OR REPLACE FUNCTION passport_consent_stamp() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN NEW.granted_by := app_user_id(); NEW.granted_at := now(); NEW.withdrawn_at := NULL; NEW.withdrawn_by := NULL;
+  ELSIF NEW.withdrawn_at IS NOT NULL AND OLD.withdrawn_at IS NULL THEN NEW.withdrawn_at := now(); NEW.withdrawn_by := app_user_id();
+  ELSIF OLD.withdrawn_at IS NOT NULL THEN RAISE EXCEPTION 'a withdrawn consent is not revived — grant it again' USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+CREATE TRIGGER passport_consent_stamp BEFORE INSERT OR UPDATE ON passport_consent FOR EACH ROW EXECUTE FUNCTION passport_consent_stamp();
+
+-- The passport itself. Readable by the family, by the boy's own school
+-- (which holds the record anyway), and by a school the family has named.
+-- Definer rights: the receiving school holds nothing on the boy, so every
+-- policy behind these rows would refuse it; the consent row is the gate.
+CREATE OR REPLACE FUNCTION passport_open(p_player uuid) RETURNS boolean AS $$
+  SELECT is_family_of(p_player)
+      OR EXISTS (SELECT 1 FROM player p WHERE p.id = p_player
+                    AND app_can('player.profile.read', p.school_id, p.team_code, p.id, '00000000-0000-0000-0000-000000000000'::uuid))
+      OR EXISTS (SELECT 1 FROM passport_consent c
+                  WHERE c.player_id = p_player AND c.withdrawn_at IS NULL
+                    AND app_can('player.profile.read', c.to_school_id, '*', '00000000-0000-0000-0000-000000000000'::uuid,
+                                '00000000-0000-0000-0000-000000000000'::uuid))
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+REVOKE ALL ON FUNCTION passport_open(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION passport_open(uuid) TO PUBLIC;
+
+-- The boy's name, to whoever the passport is open to: the receiving school
+-- cannot read his player row, but a consent naming it is the family's word.
+CREATE OR REPLACE FUNCTION passport_name(p_player uuid) RETURNS text AS $$
+  SELECT full_name FROM player WHERE id = p_player AND passport_open(p_player)
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+REVOKE ALL ON FUNCTION passport_name(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION passport_name(uuid) TO PUBLIC;
+
+CREATE OR REPLACE FUNCTION passport(p_player uuid)
+RETURNS TABLE (family text, label text, value text, on_date date, source_school text,
+               recorded_by text, confidence text) AS $$
+DECLARE p player%ROWTYPE;
+BEGIN
+  SELECT * INTO p FROM player WHERE id = p_player;
+  IF NOT FOUND OR NOT passport_open(p_player) THEN RETURN; END IF;
+  RETURN QUERY
+    SELECT 'career', 'Batting', b.runs || ' runs in ' || b.innings || ' innings' || coalesce(', average ' || round(b.average, 1), ''),
+           NULL::date, (SELECT name FROM school WHERE id = p.school_id), 'the ball log', 'derived'
+      FROM (SELECT count(*)::int AS innings, coalesce(sum(i.runs), 0)::int AS runs,
+                   CASE WHEN count(*) FILTER (WHERE i.out) > 0 THEN sum(i.runs)::numeric / count(*) FILTER (WHERE i.out) END AS average
+              FROM player_innings i WHERE i.player_id = p_player) b WHERE b.innings > 0
+    UNION ALL
+    SELECT 'career', 'Bowling', w.wickets || ' wickets, ' || w.runs || ' runs conceded', NULL, (SELECT name FROM school WHERE id = p.school_id), 'the ball log', 'derived'
+      FROM (SELECT coalesce(sum(f.wickets), 0)::int AS wickets, coalesce(sum(f.runs_conceded), 0)::int AS runs, count(*)::int AS n
+              FROM bowler_innings_figures f WHERE f.player_id = p_player) w WHERE w.n > 0
+    UNION ALL
+    SELECT 'honour', honour_kind_label(h.kind, h.name), (SELECT sn.label FROM season sn WHERE sn.id = h.season_id), h.awarded_on,
+           (SELECT name FROM school WHERE id = h.school_id),
+           coalesce((SELECT u.name FROM app_user u WHERE u.id = h.awarded_by), 'nobody on record'),
+           CASE WHEN h.awarded_by IS NULL THEN 'seeded' ELSE 'verified' END
+      FROM honour h WHERE h.player_id = p_player AND h.withdrawn_at IS NULL
+    UNION ALL
+    SELECT 'cap', c.team_code || ' cap #' || c.cap_no, c.appearances || ' appearance' || CASE WHEN c.appearances = 1 THEN '' ELSE 's' END,
+           c.first_on, (SELECT name FROM school WHERE id = c.school_id), 'the team sheets', 'derived'
+      FROM team_cap c WHERE c.player_id = p_player
+    UNION ALL
+    SELECT 'milestone', milestone_label(m.kind, m.value), 'v ' || coalesce(m.opponent, '?'), m.played_on,
+           (SELECT name FROM school WHERE id = p.school_id), 'the ball log', 'derived'
+      FROM player_milestone m WHERE m.player_id = p_player
+    UNION ALL
+    SELECT 'rating', initcap(r.category), round(r.score, 1)::text || ' of 20', r.assessed_on,
+           (SELECT name FROM school WHERE id = p.school_id),
+           coalesce((SELECT u.name FROM app_user u WHERE u.id = r.assessed_by), 'nobody on record'),
+           CASE WHEN r.assessed_by IS NULL THEN 'seeded' ELSE 'asserted' END
+      FROM (SELECT x.category, avg(x.score) AS score, max(x.assessed_on) AS assessed_on,
+                   (array_agg(x.assessed_by ORDER BY x.assessed_on DESC))[1] AS assessed_by
+              FROM (SELECT DISTINCT ON (category, metric) category, metric, score, assessed_on, assessed_by
+                      FROM player_skill WHERE player_id = p_player ORDER BY category, metric, assessed_on DESC) x
+             GROUP BY x.category) r
+    ORDER BY 1, 4 DESC NULLS LAST, 2;
+END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
+REVOKE ALL ON FUNCTION passport(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION passport(uuid) TO PUBLIC;

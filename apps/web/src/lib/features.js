@@ -22,7 +22,8 @@
  */
 import { api, signedIn } from "./api.js";
 import { MODULE_OF_NAV } from "@scrbrd/policy/modules";
-import { ROLES } from "../design/roles.js";
+import { ROLES, navForRoles } from "../design/roles.js";
+import { profile } from "./session.js";
 import { useEffect, useState } from "react";
 
 // key → boolean, or null before the first answer. Module-level rather than
@@ -92,7 +93,14 @@ export function useFeatures() {
  */
 export function useNav(role) {
   const { features } = useFeatures();
-  const nav = ROLES[role]?.nav ?? [];
+  // A signed-in person's menu comes from the assignments they actually hold
+  // — a pupil is `player` and `selfaccess`, a coach who is also a parent is
+  // both — not from the one role the shell chose to badge them with. The
+  // demo has no assignments and falls back to the persona. Presentation
+  // either way: a destination drawn here is still refused by the API if the
+  // person may not read what is behind it.
+  const held = profile()?.assignments?.map((a) => a.role) ?? [];
+  const nav = held.length ? navForRoles([...new Set(held)]) : (ROLES[role]?.nav ?? []);
   return nav.filter((k) => {
     const module = MODULE_OF_NAV[k];
     return !module || features[module] !== false;

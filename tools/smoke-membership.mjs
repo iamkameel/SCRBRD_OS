@@ -160,9 +160,13 @@ try {
     const edit = await asPerson("sarah@example.invalid",
       `update team_membership set joined_on = '2020-01-01' where player_id = $1`, [CHILD]);
     ok("...nor edited once it exists", (!edit.ok && edit.code === "42501") || (edit.ok && edit.count === 0));
+    // Asserted as the forged VALUE not landing, not as "nothing older than
+    // today": the seed now dates first memberships to the season start, so
+    // every seeded row is older than today by design and the old comparison
+    // would have read a correct date as a forgery.
     ok("...and nothing changed",
        (await q(`select count(*)::int c from team_membership
-                  where player_id = $1 and joined_on < current_date`, [CHILD]))[0].c === 0);
+                  where player_id = $1 and joined_on = date '2020-01-01'`, [CHILD]))[0].c === 0);
   }
 
   group("Last season's side can be reconstructed");
