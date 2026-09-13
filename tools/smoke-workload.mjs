@@ -204,6 +204,30 @@ try {
        .some((b) => b.overs === 7 && b.allowed === 6));
   }
 
+  group("A high school may put its own ceiling on the Open band; a club may not");
+  {
+    const ceiling = (tok, body) => api("/api/bowling-ceiling", { method: "POST", token: tok, body: { schoolId: HIL, ...body } });
+    ok("a coach, who does not set the school's policy, cannot", [403, 401].includes((await ceiling(coach, { maxOversPerSpell: 6 })).status));
+    ok("a ceiling names at least one limit", (await ceiling(head, {})).status === 400);
+    ok("a spell limit below a day limit is refused", (await ceiling(head, { maxOversPerSpell: 12, maxOversPerDay: 6 })).status === 422);
+    // The rule itself, not the API layer: a club may not have one at all,
+    // whoever asks and however they ask — the trigger is the authority.
+    const club = (await q(`insert into school (code, name, kind) values ('CLB', 'A Cricket Club', 'club') returning id`))[0].id;
+    let clubRefused = false;
+    try { await q(`insert into bowling_ceiling_open (school_id, max_overs_per_spell) values ($1, 6)`, [club]); }
+    catch (e) { clubRefused = /high school/.test(e.message); }
+    ok("...a club is refused outright, at the table itself", clubRefused);
+    const set = await ceiling(head, { maxOversPerSpell: 6, maxOversPerDay: 12 });
+    ok("the director of sport sets Hilton's own ceiling", set.status === 200 && set.body.maxOversPerSpell === 6);
+    const m2 = await fixture("1XI", 0, "Michaelhouse");
+    await feed(m2, 0, [six(OPEN), six(OPEN), six(OPEN), six(OPEN), six(OPEN), six(OPEN), six(OPEN)]);
+    const b = await q(`select overs, allowed, age_band from bowling_breach where bowler_id = $1 and kind = 'spell'`, [OPEN]);
+    ok("a seventeen-year-old now breaches at seven, under Hilton's own line", b.some((x) => x.overs === 7 && x.allowed === 6 && x.age_band === "open"));
+    ok("...and his spell now reads the school's number, not the platform's null", (await spells(m2, coach)).find((r) => r.bowler_id === OPEN)?.max_overs_per_spell === 6);
+    ok("raising it again updates the same row, not a second one", (await ceiling(head, { maxOversPerSpell: 8, maxOversPerDay: 16 })).status === 200
+       && (await q(`select count(*)::int c from bowling_ceiling_open where school_id = $1`, [HIL]))[0].c === 1);
+  }
+
   group("The workload read says one word per boy, to those who may read him");
   {
     // Training in the window: two sessions this week, one last month, one he skipped.

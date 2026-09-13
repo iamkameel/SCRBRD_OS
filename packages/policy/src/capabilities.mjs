@@ -83,6 +83,7 @@ export const CAPABILITIES = {
   // because he plays in the same XI. The boy reaches his own through
   // self-access; the physio holds it because this is injury prevention.
   "player.workload.read":        "See a player's bowling and training load",
+  "player.workload.manage":      "Set the school's own ceiling on an Open-band bowler's overs",
   // Awarding colours and honours, and keeping the caps ledger's starting
   // point. A school decision, not a coach's: honours are read by everyone
   // who reads the roster, and written by the people who sign the board.

@@ -172,6 +172,27 @@ CREATE POLICY cap_baseline_update ON cap_baseline
   FOR UPDATE USING (app_can('recognition.manage', cap_baseline.school_id, cap_baseline.team_code, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
            WITH CHECK (app_can('recognition.manage', cap_baseline.school_id, cap_baseline.team_code, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
 
+-- bowling_ceiling_open — read: player.workload.read · write: player.workload.manage
+-- plus a named exception on read — see readPredicate() in generate-rls.mjs
+ALTER TABLE bowling_ceiling_open ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS bowling_ceiling_open_read   ON bowling_ceiling_open;
+DROP POLICY IF EXISTS bowling_ceiling_open_insert ON bowling_ceiling_open;
+DROP POLICY IF EXISTS bowling_ceiling_open_update ON bowling_ceiling_open;
+DROP POLICY IF EXISTS bowling_ceiling_open_delete ON bowling_ceiling_open;
+
+CREATE POLICY bowling_ceiling_open_read ON bowling_ceiling_open
+  FOR SELECT USING ((app_can('player.workload.read', bowling_ceiling_open.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
+    OR (app_can('player.workload.manage', bowling_ceiling_open.school_id, '*'::text,
+                          '00000000-0000-0000-0000-000000000000'::uuid,
+                          '00000000-0000-0000-0000-000000000000'::uuid)));
+
+CREATE POLICY bowling_ceiling_open_insert ON bowling_ceiling_open
+  FOR INSERT WITH CHECK (app_can('player.workload.manage', bowling_ceiling_open.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
+CREATE POLICY bowling_ceiling_open_update ON bowling_ceiling_open
+  FOR UPDATE USING (app_can('player.workload.manage', bowling_ceiling_open.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
+           WITH CHECK (app_can('player.workload.manage', bowling_ceiling_open.school_id, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid));
+
 -- emergency_contact — read: player.emergency.read · write: player.emergency.manage
 ALTER TABLE emergency_contact ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS emergency_contact_read   ON emergency_contact;

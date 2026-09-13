@@ -4898,14 +4898,59 @@ INSERT INTO bowling_directive VALUES
 -- any junior directive. A boy whose style nobody has recorded is treated as
 -- pace, because the cost of being wrong that way is a spinner taken off an
 -- over early, and the cost of being wrong the other way is a stress fracture.
+-- A HIGH SCHOOL'S OWN CEILING on an Open-band bowler. The platform's own
+-- directive leaves Open unrestricted (U17 and U18 play Open division at
+-- school level, per the seed's convention), and a club or a union fielding
+-- grown men in the same division is rightly under no such rule — so this is
+-- opt-in, one row per school, and refused outright for a school that is not
+-- kind = 'school'. Unset means what it always meant for Open: no ceiling.
+CREATE TABLE bowling_ceiling_open (
+  school_id            uuid PRIMARY KEY REFERENCES school(id) ON DELETE CASCADE,
+  max_overs_per_spell  smallint CHECK (max_overs_per_spell IS NULL OR max_overs_per_spell BETWEEN 1 AND 30),
+  max_overs_per_day    smallint CHECK (max_overs_per_day   IS NULL OR max_overs_per_day   BETWEEN 1 AND 60),
+  set_by               uuid REFERENCES app_user(id),
+  set_at               timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT bowling_ceiling_open_names_a_limit CHECK (max_overs_per_spell IS NOT NULL OR max_overs_per_day IS NOT NULL),
+  CONSTRAINT bowling_ceiling_open_day_not_below_spell
+    CHECK (max_overs_per_spell IS NULL OR max_overs_per_day IS NULL OR max_overs_per_day >= max_overs_per_spell)
+);
+ALTER TABLE bowling_ceiling_open ENABLE ROW LEVEL SECURITY;
+
+-- SECURITY DEFINER: the school named might not be the caller's own (it always
+-- is in practice — RLS already confines the write to that school — but the
+-- kind check has to hold regardless of what the caller's own policy would let
+-- them see), and it is the one place this refusal needs to live rather than
+-- trusted to the API layer alone. The backend is authoritative; the browser
+-- never decides whether a school is a high school.
+CREATE OR REPLACE FUNCTION bowling_ceiling_school_only() RETURNS trigger AS $$
+DECLARE v_kind text;
+BEGIN
+  SELECT kind INTO v_kind FROM school WHERE id = NEW.school_id;
+  IF v_kind IS DISTINCT FROM 'school' THEN
+    RAISE EXCEPTION 'an Open-band bowling ceiling applies to a high school, not a %', coalesce(v_kind, 'school that does not exist')
+      USING ERRCODE = 'check_violation';
+  END IF;
+  NEW.set_by := app_user_id();
+  NEW.set_at := now();
+  RETURN NEW;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+CREATE TRIGGER bowling_ceiling_open_school_only BEFORE INSERT OR UPDATE ON bowling_ceiling_open
+  FOR EACH ROW EXECUTE FUNCTION bowling_ceiling_school_only();
+
 CREATE OR REPLACE FUNCTION bowling_directive_for(p_player uuid)
 RETURNS TABLE (age_band text, pace boolean, max_overs_per_spell smallint, max_overs_per_day smallint) AS $$
   SELECT age_band(p.born) AS age_band,
          (p.bowling_style IS NULL OR p.bowling_style !~* 'spin|slow') AS pace,
-         CASE WHEN (p.bowling_style IS NULL OR p.bowling_style !~* 'spin|slow') THEN d.max_overs_per_spell END,
-         CASE WHEN (p.bowling_style IS NULL OR p.bowling_style !~* 'spin|slow') THEN d.max_overs_per_day END
+         CASE WHEN (p.bowling_style IS NULL OR p.bowling_style !~* 'spin|slow')
+              THEN coalesce(c.max_overs_per_spell, d.max_overs_per_spell) END,
+         CASE WHEN (p.bowling_style IS NULL OR p.bowling_style !~* 'spin|slow')
+              THEN coalesce(c.max_overs_per_day, d.max_overs_per_day) END
     FROM player p
     LEFT JOIN bowling_directive d ON d.age_band = age_band(p.born)
+    -- Only ever joins for the Open band, and only ever exists for a school
+    -- (the trigger above refuses any other kind), so a club's Open bowler
+    -- falls through to d's unrestricted row exactly as before.
+    LEFT JOIN bowling_ceiling_open c ON c.school_id = p.school_id AND age_band(p.born) = 'open'
    WHERE p.id = p_player;
 $$ LANGUAGE sql STABLE;
 

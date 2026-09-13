@@ -189,6 +189,21 @@ export const TABLES = {
     anchors: { school: "school_id", team: "team_code" },
     masked: {},
   },
+  bowling_ceiling_open: {
+    // The platform's own directive leaves the Open band unrestricted — see
+    // bowling_directive in db/08. A high school may put its own ceiling on
+    // it anyway; a club or academy may not (bowling_ceiling_school_only()
+    // refuses the row outright). Read by whoever reads workload; the
+    // visibleWhen widens that to whoever may SET it, since the three roles
+    // who hold player.workload.manage do not all hold player.workload.read.
+    read:  "player.workload.read",
+    write: "player.workload.manage",
+    visibleWhen: `app_can('player.workload.manage', bowling_ceiling_open.school_id, '*'::text,
+                          '00000000-0000-0000-0000-000000000000'::uuid,
+                          '00000000-0000-0000-0000-000000000000'::uuid)`,
+    anchors: { school: "school_id" },
+    masked: {},
+  },
   emergency_contact: {
     // Who to ring when something happens to a child. Read by the people around
     // him on the day, kept by his family and the office. Anchored through the

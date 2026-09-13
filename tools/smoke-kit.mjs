@@ -27,7 +27,9 @@ try {
   for (let i = 0; i < 60; i++) { try { const r = await api("/api/health"); if (r.body?.db === "ok") break; } catch {} await new Promise((r) => setTimeout(r, 250)); }
   const coach = await login("coach@example.invalid"), parent = await login("parent@example.invalid"), watcher = await login("watcher@example.invalid");
   const wes = await login("coach.wes@example.invalid"), registrar = await login("registrar@example.invalid");
-  const head = await login("sarah@example.invalid");   // director of sport: team.manage, which a coach does not hold
+  const head = await login("sarah@example.invalid");   // director of sport
+  // The head coach now holds team.manage too — kit and drills, not the
+  // roster or the fixture list, which stay under other capabilities.
 
   group("The drill library is the platform's and the school's");
   {
@@ -37,7 +39,9 @@ try {
     ok("a spectator reads the platform's", (await rows("/api/read/drills", watcher)).length >= 10);
     const r = await api("/api/drills", { method: "POST", token: head, body: { schoolId: HIL, name: "Two-ball catching", category: "fielding", durationMin: 10 } });
     ok("the director of sport adds one for the school", r.status === 200 && (await q(`select created_by from drill where id = $1`, [r.body.id]))[0].created_by);
-    ok("...a coach, who does not manage the side, cannot", [403, 401].includes((await api("/api/drills", { method: "POST", token: coach, body: { schoolId: HIL, name: "Coach drill", category: "fielding", durationMin: 10 } })).status));
+    const cd = await api("/api/drills", { method: "POST", token: coach, body: { schoolId: HIL, name: "Coach drill", category: "fielding", durationMin: 10 } });
+    ok("...the head coach, who now manages the side, adds one too", cd.status === 200);
+    ok("...but not for a school he does not coach at", [403, 401].includes((await api("/api/drills", { method: "POST", token: wes, body: { schoolId: HIL, name: "Nope drill", category: "fielding", durationMin: 10 } })).status));
     ok("...a spectator cannot", [403, 401].includes((await api("/api/drills", { method: "POST", token: watcher, body: { schoolId: HIL, name: "Nope drill", category: "fielding", durationMin: 10 } })).status));
     ok("...nor the director at another school", [403, 401].includes((await api("/api/drills", { method: "POST", token: head, body: { schoolId: "22222222-2222-2222-2222-222222222222", name: "Nope drill", category: "fielding", durationMin: 10 } })).status));
     ok("a category outside the vocabulary is refused", (await api("/api/drills", { method: "POST", token: head, body: { schoolId: HIL, name: "Nope", category: "yoga", durationMin: 10 } })).status === 400);
@@ -55,7 +59,10 @@ try {
     ok("a fourth is refused: all three are out", d.status === 422 && /all 3/.test(d.body?.detail ?? ""));
     ok("...and the count says so", (await rows("/api/read/equipment", coach)).find((k) => k.id === BATS)?.out === 3);
     ok("kit is not issued to another school's boy", (await issue(MACHINE, head, WESBOY)).status === 422);
-    ok("a coach, who does not manage the side, issues nothing", [403, 401].includes((await issue(MACHINE, coach, P1)).status));
+    const e = await issue(MACHINE, coach, P1);
+    ok("the head coach, who now manages the side, can issue kit", e.status === 200);
+    ok("...and gives it back, freeing it for later", (await api(`/api/equipment-issues/${e.body.id}/return`, { method: "POST", token: head })).body?.returned === 1);
+    ok("a coach at another school issues nothing here", [403, 401].includes((await issue(MACHINE, wes, P1)).status));
     ok("a spectator issues nothing", [403, 401].includes((await issue(MACHINE, watcher, P1)).status));
     ok("the boy gives it back", (await api(`/api/equipment-issues/${a.body.id}/return`, { method: "POST", token: head })).body?.returned === 1);
     ok("...and the fourth boy gets it", (await issue(BATS, head, P4)).status === 200);

@@ -2,7 +2,7 @@
 -- GENERATED from packages/policy/ by services/api/rls/generate-rls.mjs — DO NOT EDIT BY HAND.
 -- Regenerate with `pnpm rls:generate`. Applied BEFORE the scoring schema,
 -- which references app_can(). Model: docs/adr/0001-scoped-assignments.md.
--- 79 capabilities across 24 roles.
+-- 80 capabilities across 24 roles.
 
 -- Principal helpers. app_user_id() is set from the signed token on every
 -- request; everything else about a person's authority is looked up.
@@ -47,6 +47,7 @@ INSERT INTO capability (name) VALUES
   ('player.emergency.read'),
   ('player.emergency.manage'),
   ('player.workload.read'),
+  ('player.workload.manage'),
   ('recognition.manage'),
   ('clearance.read'),
   ('clearance.manage'),
@@ -151,6 +152,7 @@ INSERT INTO role_capability (role, capability) VALUES
   ('platformadmin', 'competition.read'),
   ('platformadmin', 'news.read'),
   ('principal', 'recognition.manage'),
+  ('principal', 'player.workload.manage'),
   ('principal', 'clearance.read'),
   ('principal', 'clearance.manage'),
   ('principal', 'school.feature.manage'),
@@ -180,6 +182,7 @@ INSERT INTO role_capability (role, capability) VALUES
   ('principal', 'scoring.amend.approve'),
   ('directorofsport', 'recognition.manage'),
   ('directorofsport', 'player.workload.read'),
+  ('directorofsport', 'player.workload.manage'),
   ('directorofsport', 'clearance.read'),
   ('directorofsport', 'clearance.manage'),
   ('directorofsport', 'availability.read'),
@@ -228,6 +231,7 @@ INSERT INTO role_capability (role, capability) VALUES
   ('directorofsport', 'audit.read'),
   ('directorofsport', 'opposition.read'),
   ('schooladmin', 'recognition.manage'),
+  ('schooladmin', 'player.workload.manage'),
   ('schooladmin', 'clearance.read'),
   ('schooladmin', 'clearance.manage'),
   ('schooladmin', 'availability.read'),
@@ -308,6 +312,7 @@ INSERT INTO role_capability (role, capability) VALUES
   ('coach', 'facility.read'),
   ('coach', 'competition.read'),
   ('coach', 'team.select'),
+  ('coach', 'team.manage'),
   ('coach', 'player.performance.read'),
   ('coach', 'player.performance.write'),
   ('coach', 'player.development.read'),

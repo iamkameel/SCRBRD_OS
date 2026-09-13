@@ -50,6 +50,7 @@ import { recognitionRoutes } from "./write/recognition-api.mjs";
 import { competitionRoutes } from "./write/competitions-api.mjs";
 import { requestRoutes } from "./write/requests-api.mjs";
 import { kitRoutes } from "./write/kit-api.mjs";
+import { workloadRoutes } from "./write/workload-api.mjs";
 import { MatchHub } from "./realtime/realtime.mjs";
 
 const PORT = Number(process.env.PORT || 8787);
@@ -226,6 +227,7 @@ const recognition = recognitionRoutes({ pool, secret: SECRET });
 const competitions = competitionRoutes({ pool, secret: SECRET });
 const requests = requestRoutes({ pool, secret: SECRET });
 const kit = kitRoutes({ pool, secret: SECRET });
+const workload = workloadRoutes({ pool, secret: SECRET });
 
 /**
  * Development sign-in.
@@ -379,6 +381,9 @@ const PLAYER_ROUTES = [
   [/^\/api\/equipment-issues\/([^/]+)\/return$/,     "POST", kit.giveBack],
   [/^\/api\/passport\/consent$/,                     "POST", kit.consent],
   [/^\/api\/passport\/consent\/([^/]+)\/withdraw$/,   "POST", kit.withdrawConsent],
+  // A high school's own ceiling on an Open-band bowler's overs. Refused
+  // outright for anything that is not kind = 'school' — see the trigger.
+  [/^\/api\/bowling-ceiling$/,                       "POST", workload.ceiling],
   // A competition's tiers, and who sits in which. competition.manage at the
   // organiser, which for a shared league is a platform-wide administrator.
   [/^\/api\/competitions\/([^/]+)\/divisions$/,      "POST", competitions.division],

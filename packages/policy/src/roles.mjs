@@ -89,7 +89,7 @@ const BUNDLES = {
   ],
 
   // ── Institution leadership ──
-  principal: ["recognition.manage", "clearance.read", "clearance.manage",
+  principal: ["recognition.manage", "player.workload.manage", "clearance.read", "clearance.manage",
     "school.feature.manage",
     // The waiver, and nobody else at a school holds it — see the capability's
     // own note for why it is kept away from the people who place the boards.
@@ -115,7 +115,7 @@ const BUNDLES = {
     "player.age.read", "player.roster.read", "guardian.link.manage",
     "player.note.read", "scoring.amend.approve",
   ],
-  directorofsport: ["recognition.manage", "player.workload.read", "clearance.read", "clearance.manage",
+  directorofsport: ["recognition.manage", "player.workload.read", "player.workload.manage", "clearance.read", "clearance.manage",
     "availability.read", "availability.declare",
     // Same reasoning as the principal above: the person who runs a school's
     // sport appoints its coaching and medical staff. Bounded by
@@ -136,7 +136,7 @@ const BUNDLES = {
     "news.publish.team", "news.publish.school", "audit.read",
     "opposition.read",
   ],
-  schooladmin: ["recognition.manage", "clearance.read", "clearance.manage",
+  schooladmin: ["recognition.manage", "player.workload.manage", "clearance.read", "clearance.manage",
     "availability.read", "availability.declare",
     // school.feature.manage: hiding a module from this school or from one of
     // its people. It sits beside school.manage because it is the same job —
@@ -182,6 +182,10 @@ const BUNDLES = {
   coach: ["player.workload.read",
     "availability.read", "availability.declare",
     ...READ_TEAM, "team.select",
+    // The kit and the drill library, for his own school. Not the roster or
+    // the fixture list — those stay under the capabilities above; this is
+    // narrowly what the club calls "running the equipment room and nets".
+    "team.manage",
     "player.performance.read", "player.performance.write",
     "player.development.read", "player.development.write",
     "player.note.read", "player.note.write",
