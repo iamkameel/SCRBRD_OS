@@ -110,16 +110,87 @@ curl https://<service url>/api/health          # {"ok":true,"db":"ok",...}
 curl -X POST https://<service url>/api/auth/dev-login   # refused: NODE_ENV=production
 ```
 
-### 6 · GitHub secrets
+### 6 · The two deploy identities, and the GitHub secrets that name them
 
-| Secret | For |
+Two identities, both created by you. Neither is a Google-managed service
+agent.
+
+**Which account is NOT this.** A project has service agents Google creates
+and owns, with addresses like
+`service-<project number>@gs-project-accounts.iam.gserviceaccount.com` —
+that one is the Cloud Storage agent, and it appears on its own the first time
+a `--source` deploy stages a build. No key can be downloaded for it and it is
+nobody's deploy identity. If one of these turns up in a console listing or an
+error, it is Google's plumbing working, not a credential to configure.
+
+The project NUMBER is a different thing and is genuinely needed below, for
+the workload identity principal. Confirm it rather than trusting a number
+copied from somewhere:
+
+```sh
+gcloud config set project scrbrd-os
+PROJECT_NUMBER=$(gcloud projects describe scrbrd-os --format='value(projectNumber)')
+echo "$PROJECT_NUMBER"          # expected: 705280257618
+```
+
+**Hosting.** The Firebase CLI does the whole exchange — it creates the
+account, generates the key, and writes the GitHub secret itself:
+
+```sh
+firebase login
+firebase init hosting:github        # repository: iamkameel/SCRBRD_OS
+```
+
+Decline the build script and decline overwriting the workflow: `firebase.json`
+and `.github/workflows/deploy.yml` are already here and are the ones we want.
+It leaves `FIREBASE_SERVICE_ACCOUNT_SCRBRD_OS` set.
+
+**Cloud Run.** Workload identity rather than a key file, so there is no JSON
+secret to leak or rotate:
+
+```sh
+gcloud iam service-accounts create scrbrd-deploy --display-name="SCRBRD deploy"
+
+# run.admin to deploy; cloudbuild + artifactregistry + storage because
+# `--source` builds the image in the project rather than pushing one;
+# serviceAccountUser to act as the service's own runtime identity.
+for R in roles/run.admin roles/cloudbuild.builds.editor \
+         roles/artifactregistry.writer roles/storage.admin \
+         roles/iam.serviceAccountUser; do
+  gcloud projects add-iam-policy-binding scrbrd-os \
+    --member="serviceAccount:scrbrd-deploy@scrbrd-os.iam.gserviceaccount.com" --role="$R"
+done
+
+gcloud iam workload-identity-pools create github --location=global
+
+# The attribute condition is the security boundary: a token minted for any
+# other repository cannot assume this account, however it was obtained.
+gcloud iam workload-identity-pools providers create-oidc github \
+  --location=global --workload-identity-pool=github \
+  --issuer-uri="https://token.actions.githubusercontent.com" \
+  --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository" \
+  --attribute-condition="assertion.repository=='iamkameel/SCRBRD_OS'"
+
+gcloud iam service-accounts add-iam-policy-binding \
+  scrbrd-deploy@scrbrd-os.iam.gserviceaccount.com \
+  --role=roles/iam.workloadIdentityUser \
+  --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/github/attribute.repository/iamkameel/SCRBRD_OS"
+```
+
+**The secrets**, under Settings → Secrets and variables → Actions:
+
+| Secret | Value |
 |---|---|
-| `FIREBASE_SERVICE_ACCOUNT_SCRBRD_OS` | Hosting deploy — the JSON key of a service account with Firebase Hosting Admin on scrbrd-os |
-| `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_DEPLOY_SERVICE_ACCOUNT` | Cloud Run deploy via workload identity — the account needs Cloud Run Admin, Cloud Build Editor, Service Account User |
+| `FIREBASE_SERVICE_ACCOUNT_SCRBRD_OS` | written by `firebase init hosting:github` |
+| `GCP_DEPLOY_SERVICE_ACCOUNT` | `scrbrd-deploy@scrbrd-os.iam.gserviceaccount.com` |
+| `GCP_WORKLOAD_IDENTITY_PROVIDER` | `projects/<project number>/locations/global/workloadIdentityPools/github/providers/github` |
 | `VITE_FCM_VAPID_KEY` | optional; the public half of the web-push pair |
 
 Until they exist the deploy jobs build and then say so in a notice, rather
-than fail.
+than fail. **The moment they exist, the next push to main deploys for real** —
+so add them after steps 1 to 5, never before. An API deployed ahead of its
+database is a service that refuses to start, which is the guard working and
+still a bad first impression of the platform.
 
 ## Every deploy after that
 
