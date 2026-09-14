@@ -21,6 +21,17 @@ export default defineConfig({
     // Set VITE_API_BASE= (empty) in .env to use this. An absolute base still
     // wins, so nothing here can redirect a deployed build.
     proxy: { "/api": { target: `http://localhost:${process.env.PORT || 8787}`, changeOrigin: true } },
+    // Vite 6 refuses a request whose Host header it does not recognise, which
+    // is a real protection: without it, a page on another site can point a
+    // name at 127.0.0.1 and read this dev server's responses. It also refuses
+    // every remote development environment, where the browser legitimately
+    // reaches the server through a forwarded hostname and the page arrives
+    // blank with "Blocked request" behind it.
+    //
+    // A leading dot matches the domain and its subdomains. Named suffixes
+    // rather than `true`: allowing ANY host is the version of this that keeps
+    // the convenience and throws away the protection.
+    allowedHosts: [".cloudshell.dev", ".github.dev", ".gitpod.io", ".repl.co"],
   },
   build: { outDir: "dist", sourcemap: true },
 });
