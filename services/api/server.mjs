@@ -30,6 +30,8 @@
  */
 
 import { createServer } from "node:http";
+import { readFile, stat } from "node:fs/promises";
+import { join, extname, resolve, sep } from "node:path";
 import pg from "pg";
 import { askStatGuru, describeDelivery, aiConfigured } from "./ai/ai-service.mjs";
 import { sessionProfile, runAsPrincipal, issueLoginCode, redeemMagicLink } from "./auth/auth-db.mjs";
@@ -465,6 +467,66 @@ async function moduleOn(bearer, key) {
   }
 }
 
+/*
+ * THE CLIENT, FROM THE SAME PROCESS — optional, and off unless SERVE_CLIENT
+ * names a directory.
+ *
+ * One origin is the simplest correct deployment: no CORS, no second host, no
+ * build-time API address to get wrong. Firebase Hosting achieves the same
+ * thing with a rewrite (firebase.json); this is the version for a single
+ * container, and the two are alternatives rather than layers.
+ *
+ * /api is matched BEFORE any of this, so no file can ever shadow a route.
+ */
+const CLIENT_DIR = process.env.SERVE_CLIENT
+  ? resolve(process.env.SERVE_CLIENT)
+  : null;
+const MEDIA = {
+  ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8",
+  ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+  ".ico": "image/x-icon", ".webp": "image/webp", ".woff2": "font/woff2", ".map": "application/json",
+  ".txt": "text/plain; charset=utf-8", ".webmanifest": "application/manifest+json",
+};
+
+/**
+ * Serve one file out of CLIENT_DIR, or the app's index for a route the client
+ * owns. Returns true when it answered.
+ *
+ * The traversal check is the load-bearing line. A request for
+ * `/../../etc/passwd` resolves OUTSIDE the directory, and a static server that
+ * only string-matches the prefix will happily read it — so the resolved path
+ * is compared against the directory plus a separator, which "/srv/dist-evil"
+ * cannot satisfy for "/srv/dist". Anything outside is a 404, not a 403: a
+ * different answer for a file that exists is itself a disclosure.
+ */
+async function serveClient(req, res, path) {
+  if (!CLIENT_DIR || (req.method !== "GET" && req.method !== "HEAD")) return false;
+  const wanted = resolve(join(CLIENT_DIR, decodeURIComponent(path)));
+  const inside = wanted === CLIENT_DIR || wanted.startsWith(CLIENT_DIR + sep);
+  let file = inside ? wanted : null;
+  if (file) {
+    const found = await stat(file).then((st) => (st.isDirectory() ? null : st)).catch(() => null);
+    // A path the client routes rather than a file on disk: the app's own
+    // index answers it and React reads the address. Never for /api, which
+    // returned above, so a mistyped route cannot arrive here as HTML.
+    if (!found) file = join(CLIENT_DIR, "index.html");
+  } else {
+    file = join(CLIENT_DIR, "index.html");
+  }
+  const body = await readFile(file).catch(() => null);
+  if (!body) return false;
+  const type = MEDIA[extname(file).toLowerCase()] ?? "application/octet-stream";
+  // The index must never be cached: it names the hashed asset files, and a
+  // stale one points a returning browser at bundles that no longer exist.
+  const cache = file.endsWith("index.html")
+    ? "no-cache"
+    : (path.startsWith("/assets/") ? "public, max-age=31536000, immutable" : "no-cache");
+  res.writeHead(200, { "content-type": type, "cache-control": cache });
+  res.end(req.method === "HEAD" ? undefined : body);
+  return true;
+}
+
 const server = createServer(async (req, res) => {
   if (req.method === "OPTIONS") return json(res, 204, {});
 
@@ -553,6 +615,11 @@ const server = createServer(async (req, res) => {
     // may issue a code for the address they named.
     if (exact) return json(res, 200, await exact(await readJson(req), req));
 
+    // Only now, after every route has had its turn: the client, if this
+    // process was asked to serve it. An /api path that reached here is a
+    // genuine 404 and stays one.
+    if (!path.startsWith("/api/") && await serveClient(req, res, path)) return;
+
     return json(res, 404, { error: "not_found" });
   } catch (err) {
     // A bare SQLSTATE in a response is unhelpful and a stack trace in one is
@@ -568,6 +635,7 @@ server.listen(PORT, () => {
   console.log(`SCRBRD API on http://localhost:${PORT}`);
   console.log(`  db:   ${DATABASE_URL.replace(/:[^:@]*@/, ":***@")} (row-level security applies)`);
   console.log(`  ai:   ${aiConfigured() ? "configured" : "NO CREDENTIALS — StatGuru and commentary return null"}`);
+  if (CLIENT_DIR) console.log(`  web:  serving the client from ${CLIENT_DIR}`);
   if (!process.env.SESSION_SECRET) console.log("  auth: EPHEMERAL dev secret — tokens die on restart");
   if (DEV && process.env.ALLOW_DEV_LOGIN === "1") console.log("  auth: DEV LOGIN ENABLED — /api/auth/dev-login mints tokens without a code");
 });

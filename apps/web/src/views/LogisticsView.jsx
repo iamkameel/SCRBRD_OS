@@ -2,9 +2,12 @@
 import { useState } from "react";
 import { D } from "../design/tokens.js";
 import { dateStr, today } from "../lib/format.js";
-import { Avatar, Badge, Btn, Card, KPICard, SectionHeader } from "../ui/primitives.jsx";
+import { Avatar, Badge, Btn, Card, KPICard, SectionHeader, Select } from "../ui/primitives.jsx";
 import { WeatherChip } from "./shared.jsx";
-import { useRows, useWeather } from "../lib/live.js";
+import { useLive, useRows, useWeather } from "../lib/live.js";
+import { api } from "../lib/api.js";
+import { schoolsWhere } from "../lib/session.js";
+import { textOn } from "../design/tokens.js";
 
 // A timestamp as a departure time. Absent renders as an em dash, never as a
 // time: a trip with no departure recorded has none, and "00:00" would be a
@@ -250,6 +253,7 @@ function LogisticsView({ role }) {
             <KPICard label="Match Balls"       value={EQUIPMENT_INVENTORY.find(e=>e.id==="eq1")?.qty||0} icon="🏏" color={D.indigo}/>
             <KPICard label="Safety Items"      value={EQUIPMENT_INVENTORY.filter(e=>e.category==="Safety").length} icon="🏥" color={D.rose}/>
           </div>
+          <KitRegister role={role}/>
           <Card>
             <div style={{overflowX:"auto"}}>
               <table style={{width:"100%",borderCollapse:"collapse"}}>
@@ -325,6 +329,80 @@ function LogisticsView({ role }) {
         </div>
       )}
     </div>
+  );
+}
+
+// THE KIT REGISTER, live: what the school holds, who has it, and the two acts
+// on it — a bat goes out to a named boy, and it comes back. The count of what
+// is out is the server's (`out`), never derived here: a browser that subtracts
+// its own page of issues from a quantity will disagree with the next reader.
+//
+// Both controls are drawn for anyone the register itself was handed, and both
+// are refused by the equipment_issue policy when the person may not write.
+// Offering a button the server declines is a presentation bug; deciding here
+// whether to offer it on permission grounds would be an access one.
+function KitRegister({ role }) {
+  const [nonce, setNonce] = useState(0);
+  const { rows: KIT, live } = useLive("equipment", role, nonce);
+  const ISSUES = useLive("equipment_issues", role, nonce).rows;
+  const PLAYERS = useRows("players", role);
+  const [pick, setPick] = useState({});
+  const [said, setSaid] = useState("");
+  const canKeep = schoolsWhere("team.manage").length > 0;
+  if (!live || KIT.length === 0) return null;
+  const act = async (path) => {
+    setSaid("");
+    try { await api(path, { method: "POST", body: {} }); setNonce(n=>n+1); }
+    catch (e) { setSaid(e.message || "Refused."); }
+  };
+  const give = async (eq) => {
+    const playerId = pick[eq.id];
+    if (!playerId) return;
+    setSaid("");
+    try {
+      await api(`/api/equipment/${eq.id}/issue`, { method: "POST", body: { playerId } });
+      setPick(p=>({ ...p, [eq.id]: "" })); setNonce(n=>n+1);
+    } catch (e) { setSaid(e.message || "Refused."); }
+  };
+  const openFor = (eq) => ISSUES.filter(i=>i.equipmentId===eq.id&&!i.returnedOn);
+  return (
+    <Card sx={{padding:"14px",marginBottom:"12px"}} data-testid="kit-register">
+      <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary,marginBottom:"4px"}}>The kit register</div>
+      <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginBottom:"10px"}}>
+        What the school holds, and who has it. A boy keeps it until he gives it back.
+      </div>
+      {said&&<div role="alert" style={{fontFamily:D.body,fontSize:"11px",color:textOn(D.rose),marginBottom:"8px"}}>{said}</div>}
+      {KIT.map(eq=>{
+        const out = openFor(eq);
+        const spare = eq.quantity - (eq.out ?? 0);
+        return (
+          <div key={eq.id} data-testid={`kit-${eq.id}`} style={{padding:"10px 0",borderTop:`1px solid ${D.border}`}}>
+            <div style={{display:"flex",alignItems:"center",gap:"10px",flexWrap:"wrap"}}>
+              <div style={{flex:1,minWidth:"170px"}}>
+                <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:600,color:D.textPrimary}}>{eq.label}</div>
+                <div style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>
+                  {eq.kind} · {eq.out ?? 0} of {eq.quantity} out{eq.condition?` · ${eq.condition}`:""}
+                </div>
+              </div>
+              {canKeep&&(
+                <>
+                  <Select value={pick[eq.id]??""} onChange={(v)=>setPick(p=>({ ...p, [eq.id]: v }))}
+                    options={[{ value:"", label: spare>0 ? "Issue to…" : "None spare" },
+                              ...PLAYERS.map(pl=>({ value:pl.id, label:`${pl.name}${pl.team?` · ${pl.team}`:""}` }))]}/>
+                  <Btn size="sm" onClick={()=>give(eq)} disabled={!pick[eq.id]}>Issue</Btn>
+                </>
+              )}
+            </div>
+            {out.map(i=>(
+              <div key={i.id} style={{display:"flex",alignItems:"center",gap:"8px",paddingTop:"6px"}}>
+                <span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,flex:1}}>{i.name} since {i.issuedOn}</span>
+                {canKeep&&<Btn variant="ghost" size="sm" onClick={()=>act(`/api/equipment-issues/${i.id}/return`)}>Given back</Btn>}
+              </div>
+            ))}
+          </div>
+        );
+      })}
+    </Card>
   );
 }
 

@@ -5,20 +5,117 @@ Nothing here uses any other Firebase project. Three pieces:
 
 | Piece | Where | How it gets there |
 |---|---|---|
-| Client (`apps/web`) | Firebase Hosting | `.github/workflows/deploy.yml`, on push to `main` |
-| API (`services/api`) | Cloud Run, `africa-south1`, service `scrbrd-api` | same workflow, from the root `Dockerfile` |
+| Client (`apps/web`) | Firebase Hosting | by hand (5b), or `.github/workflows/deploy.yml` on push to `main` |
+| API (`services/api`) | Cloud Run, `africa-south1`, service `scrbrd-api` | by hand (5), or the same workflow, from the root `Dockerfile` |
 | Database | Cloud SQL, Postgres 16, `africa-south1` | by hand, once, then by hand for every schema change |
 
 Hosting rewrites `/api/**` to the Cloud Run service (`firebase.json`), so the
 browser talks to one origin and the client is built with `VITE_API_BASE=""`.
 Realtime is plain HTTP, so the rewrite carries everything the client needs.
 
+## Where to run all of this
+
+**Google Cloud Shell**, at <https://shell.cloud.google.com> or the `>_` icon in
+the Cloud Console. It is a free browser terminal, already signed in as you,
+with `gcloud`, `firebase`, `node`, `git` and `psql` already installed. Nothing
+below needs anything installed on your own machine.
+
+```sh
+gcloud config set project scrbrd-os
+git clone https://github.com/iamkameel/SCRBRD_OS.git && cd SCRBRD_OS
+npm install -g pnpm && pnpm install --frozen-lockfile
+```
+
+Cloud Shell's home directory survives between sessions; the session itself
+times out when idle, and reconnecting puts you back in the same directory.
+
+## The whole thing in one service
+
+The API can serve the client from its own process: set `SERVE_CLIENT` to the
+built client directory and it answers `/` with the app and `/api/**` with the
+API, from one address. No CORS, no second host, and no build-time API address
+to get wrong — the browser calls `/api` on whatever origin served the page.
+
+`render.yaml` in the repository root is that deployment, ready to use, on a
+host with a free tier and no billing account:
+
+1. Provision the database (section 1 below) and apply the schema (section 2).
+2. On render.com: **New → Blueprint**, point it at this repository.
+3. It asks for two values, and only two:
+   - `DATABASE_URL` — the **application** role, `scrbrd_app`, never the owner.
+   - `SESSION_SECRET` — 32+ random bytes (`openssl rand -hex 32`).
+4. Deploy. The address it gives you is the whole product.
+
+A free instance sleeps when idle and takes a while to answer the first
+request after that. It is a demonstration, not a service a school depends on.
+
+### A demonstration is not a pilot
+
+The fixtures in `98_seed_pilot.sql` are invented people at invented schools,
+and one-click sign-in as any of them (`NODE_ENV=development` plus
+`ALLOW_DEV_LOGIN=1`) is a reasonable thing to put in front of someone who
+wants to see what SCRBRD does. Nothing real is exposed, because nothing there
+is real.
+
+The moment one actual child's record goes into a database, that arrangement
+is indefensible, and the rules are not negotiable: a fresh database from the
+same migrations, no seed, `NODE_ENV=production`, no dev login, and a first
+administrator from `tools/bootstrap.mjs` who invites everyone else by handing
+them a code. The two must never be the same database.
+
+## Two ways to deploy, and which to do first
+
+| | Who deploys | What it needs |
+|---|---|---|
+| **By hand** (start here) | you, signed in as yourself | nothing beyond Cloud Shell |
+| **On push to main** (later) | GitHub Actions | two service accounts and three secrets, section 6 |
+
+Do the manual deploy first. It is two commands, it proves the whole thing
+works end to end, and it needs no robot accounts or stored credentials. The
+automation in section 6 only removes the step of typing those two commands,
+and it will make much more sense once you have watched them work.
+
 ## One-time provisioning
 
 Done by an operator with owner rights on the project. None of it is in a
 workflow because none of it should happen twice.
 
-### 1 · Cloud SQL
+### 1 · A Postgres, either way
+
+Two routes. **Supabase** needs no billing account and is what the first
+deployment used; **Cloud SQL** is the one to grow into. The schema applies
+cleanly to Postgres 15, 16 and 17.
+
+#### Supabase
+
+Create a project, then, in the dashboard's **SQL Editor**:
+
+```sql
+-- The application role. db/06_app_role.sql creates it with a DEVELOPMENT
+-- password if it does not exist, and that password is published in this
+-- repository — so either create it here first, or run this immediately
+-- after migrating. Either way it must not keep the default.
+ALTER ROLE scrbrd_app WITH PASSWORD '<app secret>';
+```
+
+Connection strings come from the green **Connect** button at the top of the
+dashboard, not from the settings sidebar. Take the **session pooler** one:
+direct connections are IPv6-only and most build environments are not. The
+pooler wants the role and the project reference together as the username,
+including for the application role:
+
+```
+postgresql://scrbrd_app.<project-ref>:<app secret>@aws-1-<region>.pooler.supabase.com:5432/postgres
+```
+
+**Never run `--reset` against Supabase.** It drops the whole public schema and
+takes Supabase's own objects with it.
+
+Two things to know before choosing this for anything real: a free project
+sleeps after about a week of inactivity, and the region list has nothing in
+Africa, so every query from a South African school crosses to Europe and back.
+
+#### Cloud SQL
 
 Create a Postgres 16 instance in `africa-south1`, private IP or public with
 the Cloud SQL Auth Proxy — either way, the API reaches it over the Cloud SQL
@@ -34,10 +131,12 @@ CREATE ROLE scrbrd_app LOGIN PASSWORD '<app secret>'
   NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS NOINHERIT;
 ```
 
-Two roles, on purpose. `scrbrd` owns the schema and row-level security does
-not apply to an owner. `scrbrd_app` is what the API connects as, and
-`server.mjs` refuses to start on a connection that owns tables or can bypass
-RLS.
+Two roles, on purpose, on either host. The owner owns the schema, and
+row-level security does not apply to a table's owner. `scrbrd_app` is what
+the API connects as, and `server.mjs` asks the database what it is at boot
+and refuses to start on a connection that owns tables or can bypass RLS —
+which is how a first deployment discovered it had been handed the owner's
+connection string by an environment variable it had forgotten was exported.
 
 ### 2 · Schema
 
@@ -110,16 +209,102 @@ curl https://<service url>/api/health          # {"ok":true,"db":"ok",...}
 curl -X POST https://<service url>/api/auth/dev-login   # refused: NODE_ENV=production
 ```
 
-### 6 · GitHub secrets
+### 5b · The client, by hand
 
-| Secret | For |
+```sh
+VITE_API_BASE="" pnpm build      # empty base: same-origin, Hosting rewrites /api/**
+firebase login --no-localhost    # in Cloud Shell; a browser prompt otherwise
+firebase deploy --only hosting --project scrbrd-os
+```
+
+It prints the live URL. Open it, sign in as the platform administrator from
+step 3, and the pilot is running. **At this point you are deployed** — sections
+6 and onward are automation, not requirements.
+
+### 6 · LATER: the two deploy identities, so GitHub can deploy for you
+
+Only needed when you want a push to `main` to deploy on its own. Skip this
+entirely until the manual deploy above has worked at least once.
+
+Two identities, both created by you. Neither is a Google-managed service
+agent.
+
+**Which account is NOT this.** A project has service agents Google creates
+and owns, with addresses like
+`service-<project number>@gs-project-accounts.iam.gserviceaccount.com` —
+that one is the Cloud Storage agent, and it appears on its own the first time
+a `--source` deploy stages a build. No key can be downloaded for it and it is
+nobody's deploy identity. If one of these turns up in a console listing or an
+error, it is Google's plumbing working, not a credential to configure.
+
+The project NUMBER is a different thing and is genuinely needed below, for
+the workload identity principal. Confirm it rather than trusting a number
+copied from somewhere:
+
+```sh
+gcloud config set project scrbrd-os
+PROJECT_NUMBER=$(gcloud projects describe scrbrd-os --format='value(projectNumber)')
+echo "$PROJECT_NUMBER"          # expected: 705280257618
+```
+
+**Hosting.** The Firebase CLI does the whole exchange — it creates the
+account, generates the key, and writes the GitHub secret itself:
+
+```sh
+firebase login
+firebase init hosting:github        # repository: iamkameel/SCRBRD_OS
+```
+
+Decline the build script and decline overwriting the workflow: `firebase.json`
+and `.github/workflows/deploy.yml` are already here and are the ones we want.
+It leaves `FIREBASE_SERVICE_ACCOUNT_SCRBRD_OS` set.
+
+**Cloud Run.** Workload identity rather than a key file, so there is no JSON
+secret to leak or rotate:
+
+```sh
+gcloud iam service-accounts create scrbrd-deploy --display-name="SCRBRD deploy"
+
+# run.admin to deploy; cloudbuild + artifactregistry + storage because
+# `--source` builds the image in the project rather than pushing one;
+# serviceAccountUser to act as the service's own runtime identity.
+for R in roles/run.admin roles/cloudbuild.builds.editor \
+         roles/artifactregistry.writer roles/storage.admin \
+         roles/iam.serviceAccountUser; do
+  gcloud projects add-iam-policy-binding scrbrd-os \
+    --member="serviceAccount:scrbrd-deploy@scrbrd-os.iam.gserviceaccount.com" --role="$R"
+done
+
+gcloud iam workload-identity-pools create github --location=global
+
+# The attribute condition is the security boundary: a token minted for any
+# other repository cannot assume this account, however it was obtained.
+gcloud iam workload-identity-pools providers create-oidc github \
+  --location=global --workload-identity-pool=github \
+  --issuer-uri="https://token.actions.githubusercontent.com" \
+  --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository" \
+  --attribute-condition="assertion.repository=='iamkameel/SCRBRD_OS'"
+
+gcloud iam service-accounts add-iam-policy-binding \
+  scrbrd-deploy@scrbrd-os.iam.gserviceaccount.com \
+  --role=roles/iam.workloadIdentityUser \
+  --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/github/attribute.repository/iamkameel/SCRBRD_OS"
+```
+
+**The secrets**, under Settings → Secrets and variables → Actions:
+
+| Secret | Value |
 |---|---|
-| `FIREBASE_SERVICE_ACCOUNT_SCRBRD_OS` | Hosting deploy — the JSON key of a service account with Firebase Hosting Admin on scrbrd-os |
-| `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_DEPLOY_SERVICE_ACCOUNT` | Cloud Run deploy via workload identity — the account needs Cloud Run Admin, Cloud Build Editor, Service Account User |
+| `FIREBASE_SERVICE_ACCOUNT_SCRBRD_OS` | written by `firebase init hosting:github` |
+| `GCP_DEPLOY_SERVICE_ACCOUNT` | `scrbrd-deploy@scrbrd-os.iam.gserviceaccount.com` |
+| `GCP_WORKLOAD_IDENTITY_PROVIDER` | `projects/<project number>/locations/global/workloadIdentityPools/github/providers/github` |
 | `VITE_FCM_VAPID_KEY` | optional; the public half of the web-push pair |
 
 Until they exist the deploy jobs build and then say so in a notice, rather
-than fail.
+than fail. **The moment they exist, the next push to main deploys for real** —
+so add them after steps 1 to 5, never before. An API deployed ahead of its
+database is a service that refuses to start, which is the guard working and
+still a bad first impression of the platform.
 
 ## Every deploy after that
 
