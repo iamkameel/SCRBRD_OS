@@ -4,7 +4,8 @@ import { ROLES } from "../design/roles.js";
 import { D, textOn } from "../design/tokens.js";
 import { fitnessColor } from "../lib/format.js";
 import { can, filterRecord } from "../rbac/index.js";
-import { Avatar, Badge, Card, Pill, RadarChart, SectionHeader, Select } from "../ui/primitives.jsx";
+import { Avatar, Badge, Card, EmptyState, Pill, RadarChart, SectionHeader, Select } from "../ui/primitives.jsx";
+import { ShotWheel } from "../scorer/charts.jsx";
 import { useLive, usePlayersWithCareer, useRows, useSkills } from "../lib/live.js";
 
 // ══════════════════════════════════════════════════════
@@ -271,6 +272,12 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                   </div>
                 </Card>
               )}
+
+              {/* Where the runs actually went. The career figures above say how
+                  many; this says where, which is the question a coach asks
+                  next and the one the stored placements have been able to
+                  answer since the scorer started capturing them. */}
+              <CareerWagonWheel player={p} role={role}/>
             </div>
           )}
 
@@ -627,6 +634,45 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
 // Honours, caps and milestones, in the server's order and the server's words.
 // Nothing here is a total: a cap number is a number, not a score.
 const FAMILY_TONE = { honour:D.amber, cap:D.sky, milestone:D.emerald };
+/**
+ * Where this boy scores, across every innings rather than one.
+ *
+ * The wheel itself is the scorer's, unchanged. It wants an INNINGS — a ball log
+ * plus a squad it can read handedness off — because inside the pad that is what
+ * it always has. A career is not an innings, so this assembles the smallest
+ * object that satisfies it: the deliveries, and a one-man squad carrying the
+ * batter's own style.
+ *
+ * That is the whole reason this component exists rather than a second wheel.
+ * The mirror rule — placements stored batter-relative and flipped at render, so
+ * a left-hander's cover drive is comparable with a right-hander's — lives in
+ * screenAngle() and is covered by eighteen assertions. A career wheel that drew
+ * its own geometry would be a second implementation of that rule, and the two
+ * would drift the first time either was touched.
+ */
+function CareerWagonWheel({ player, role }) {
+  const { rows, loading, error } = useLive("player_shot_points", role, 0, { playerId: player?.id });
+  if (!player?.id) return null;
+
+  // Already in the chart's vocabulary: the column names are translated by
+  // asShotPoint() in lib/live.js, where every other read's mapping lives,
+  // rather than a second time here.
+  // batHand is what the live read already maps batting_style onto (lib/live.js),
+  // so the mirror resolves off the same field the pad uses. A boy whose style
+  // is unrecorded falls through to batHandOf's right-handed default, which is
+  // stated there as the safe-because-common choice — the fix for a left-hander
+  // is his roster entry, not a guess in a chart.
+  const inn = { ballLog: rows, squad: [{ id: player.id, batHand: player.batHand }] };
+
+  return (
+    <div data-testid="career-wagon-wheel">
+      {loading ? <EmptyState loading/>
+       : error ? <EmptyState error/>
+       : <ShotWheel inn={inn} playerId={player.id} title="Where he scores — every innings"/>}
+    </div>
+  );
+}
+
 function RecognitionCard({ playerId, role }) {
   const rows = useLive("recognition", role, 0, { playerId }).rows;
   if (!rows.length) return null;

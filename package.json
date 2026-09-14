@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "SCRBRD \u2014 South African school sports management and match-intelligence platform. First vertical: CricketOS.",
+  "description": "SCRBRD — South African school sports management and match-intelligence platform. First vertical: CricketOS.",
   "engines": {
     "node": ">=22"
   },
@@ -29,8 +29,9 @@
     "check:bundle": "node tools/check-bundle.mjs"
   },
   "devDependencies": {
-    "playwright-core": "^1.62.1",
-    "pg": "^8.23.0"
+    "esbuild": "^0.25.12",
+    "pg": "^8.23.0",
+    "playwright-core": "^1.62.1"
   },
   "dependencies": {
     "@scrbrd/policy": "workspace:*",

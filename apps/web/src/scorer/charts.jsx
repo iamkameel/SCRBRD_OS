@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { D } from "../design/tokens.js";
+import { D, textOn } from "../design/tokens.js";
 import { CX, CY, LK_COLS, R_BND, R_IN, R_MID, R_PITCH, SEGS, ballAngle, lineKey, toXY, wagEnd } from "./field.js";
 import { RR, SR } from "./format.js";
 import { IntelPanel } from "./panels.jsx";
@@ -262,7 +262,7 @@ function BowlerChart({inn}){
               border:"1px solid "+(b.id===inn.bowler?D.orange+"44":D.border)}}>
               <span style={{fontFamily:D.body,fontSize:"12px",color:b.id===inn.bowler?D.orange:D.textPrimary,fontWeight:500}}>{b.name}{b.id===inn.bowler?"*":""}</span>
               <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{Math.floor(b.balls/6)+"-"+(b.balls%6)}</span>
-              <span style={{fontFamily:D.mono,fontSize:"12px",color:b.wickets>0?D.rose:D.textSecondary,fontWeight:b.wickets?"600":"400"}}>{b.wickets+"W-"+b.runs+"R"}</span>
+              <span style={{fontFamily:D.mono,fontSize:"12px",color:b.wickets>0?textOn(D.rose):D.textSecondary,fontWeight:b.wickets?"600":"400"}}>{b.wickets+"W-"+b.runs+"R"}</span>
               <Badge color={econCol} sx={{fontSize:"9px"}}>{econ}</Badge>
             </div>
           );

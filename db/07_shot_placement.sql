@@ -86,3 +86,36 @@ COMMENT ON COLUMN ball_event.theta IS
   'Degrees from straight down the ground, leg-side positive, batter-relative. NULL for sector-era balls — never synthesised from seg.';
 COMMENT ON COLUMN ball_event.radius IS
   'Fraction of the boundary distance at this bearing; 1.00 is the rope. True metres are derived from the venue polygon, never stored here.';
+
+-- ── Rebuild ball_event_live so it can see these columns ────────────
+--
+-- The view is `SELECT b.*`, and Postgres expands that to a FIXED column list
+-- at creation time. It was created in 02, this file runs after it, so every
+-- column added above is invisible through the view — a query selecting
+-- b.theta from ball_event_live fails with 42703 "undefined column", and the
+-- one selecting b.placement_source fails the same way.
+--
+-- 02 already documents this trap: `contact` and `trajectory` were deliberately
+-- declared THERE rather than here because "a column added [in 07] never
+-- reaches it. The phases endpoint returned nothing at all until they moved
+-- here." The placement columns were left on the wrong side of that line and
+-- the note did not save them.
+--
+-- Recreating the view is the fix that holds for the next column too, wherever
+-- it is declared. It also matters for correctness rather than convenience:
+-- ball_event_live is what excludes VOIDED deliveries, so any placement query
+-- forced onto the raw table to reach these columns is a query that draws balls
+-- the scorer took back.
+--
+-- security_invoker is restated deliberately. Without it the view runs as its
+-- owner, who owns ball_event and therefore bypasses the row-level policy on
+-- it — every reader would see every school's deliveries.
+CREATE OR REPLACE VIEW ball_event_live WITH (security_invoker = true) AS
+SELECT b.*
+  FROM ball_event b
+ WHERE b.kind <> 'void'
+   AND NOT EXISTS (
+         SELECT 1 FROM ball_event v
+          WHERE v.match_id = b.match_id
+            AND v.kind = 'void'
+            AND v.payload->>'target' = b.idempotency_key);

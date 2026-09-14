@@ -144,6 +144,45 @@ export const READ_QUERIES = {
             order by b.seq`,
     params: q => [req(q, "matchId")],
   },
+  /**
+   * ONE BOY'S SHOTS, ACROSS EVERY INNINGS HE HAS PLAYED.
+   *
+   * shot_points above answers "where did this MATCH go", which is the scorer's
+   * question. This answers the coach's: where does this batter score, and where
+   * does he not. Same stored placements, different grain — and the second grain
+   * had no query at all, so the wagon wheel existed only inside the live pad and
+   * nothing on a player's own profile could draw it.
+   *
+   * Read through ball_event_live rather than ball_event: the view is
+   * security_invoker, so the deliveries returned are exactly the ones this
+   * reader may see, and it drops voided balls — a shot that was undone is not a
+   * shot this boy played. The same rule the career views already follow.
+   *
+   * Sector-era balls are included deliberately. `theta` is the measured point
+   * and `seg` the older eight-sector estimate; a wheel that silently dropped
+   * the second would show a boy's first season as empty rather than as coarse,
+   * so both come back and the drawing says which it got — capture_profile
+   * carries that, and the chart already renders the distinction.
+   */
+  player_shot_points: {
+    text: `select b.match_id, b.innings, b.seq, b.ball_type, b.value, b.shot,
+                  b.theta, b.radius, b.seg, b.close_position, b.capture_profile,
+                  -- placement_source is what tells a MEASURED point from a
+                  -- sector estimate, and the wheel's geometry branches on it:
+                  -- without it every ball falls through to the sector angle and
+                  -- a season of exact placements is drawn as eight spokes.
+                  b.placement_source,
+                  b.striker_id, b.bowler_id,
+                  m.starts_at
+             from ball_event_live b
+             join match m on m.id = b.match_id
+            where b.striker_id = $1
+              and b.kind = 'ball'
+              and (b.theta is not null or b.seg is not null)
+            order by m.starts_at, b.seq`,
+    params: q => [req(q, "playerId")],
+  },
+
   shot_point_coverage: {
     text: `select count(*) filter (where placement_source = 'point')  as points,
                   count(*) filter (where placement_source is distinct from 'point'
@@ -213,7 +252,15 @@ export const READ_QUERIES = {
   // it now also lets a person read their own row, which is why the session
   // route works for someone who holds no user.read at all.
   users: {
-    text: `select id, school_id, email, name, role, active, last_seen_at, teams
+    // player_id is the join between an ACCOUNT and a PERSON on a roster, and it
+    // was not selected — so the Users table's own "Linked To" column read an
+    // undefined field and printed an em dash for everybody, including the one
+    // account that is linked. The column was right; the query was not.
+    //
+    // It is also what aligns this screen with Squad, Profiles and the passport:
+    // a passport is keyed on the PLAYER, so without this link there is no way
+    // to get from an account to the record it belongs to.
+    text: `select id, school_id, email, name, role, active, last_seen_at, teams, player_id
              from app_user
             where active
             order by name`,

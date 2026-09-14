@@ -784,6 +784,178 @@ try {
     await c.ctx.close();
   }
 
+  // ── The dashboard assembles itself from capabilities ─────────────
+  // The KPI row used to be gated on role NAMES — "superadmin", "parent" —
+  // which exist only in the demonstration's own vocabulary. Signed in for
+  // real, twenty-one of twenty-four roles matched no branch and were shown a
+  // dashboard with nothing at the top of it.
+  //
+  // Each tile now names the capability governing the table its figure is
+  // counted over, so this walk checks BOTH directions: a role sees every
+  // figure it holds, and no role is shown one it does not. The second half is
+  // the half that matters — a count over rows you may not read comes back 0,
+  // not null, so an ungated tile does not fail visibly. It states, plainly and
+  // wrongly, that there is nothing there.
+  group("The dashboard draws the figures each role may actually read");
+  {
+    // Tiles are asserted BOTH ways per role: present, and absent. The absent
+    // half is what falsifies — remove a `holds()` gate and these go red.
+    // Matched on the ACCOUNT rather than the label. Each pilot button renders
+    // "<icon> <label>" over the address, so an anchored label regex matches
+    // nothing and a loose one risks catching a different button; the address
+    // is unique and is what the account actually is.
+    const expected = [
+      { who: /sarah@example\.invalid/, role: "directorofsport",
+        sees:   ["Active Players", "Upcoming", "Win Rate", "Alerts"],
+        cannot: [] },
+      // fixture.read, medical.status.read and team.read — but no roster and no
+      // competition, so no squad count and no win rate.
+      { who: /medical@example\.invalid/, role: "medical",
+        sees:   ["Upcoming", "Alerts"],
+        cannot: ["Active Players", "Win Rate"] },
+      // competition.read and fixture.read and nothing else that counts.
+      { who: /watcher@example\.invalid/, role: "spectator",
+        sees:   ["Upcoming", "Win Rate", "Alerts"],
+        cannot: ["Active Players", "Injuries", "Sessions This Wk"] },
+      // The bursar holds none of the six — invoices and sponsorship are not on
+      // this row. One tile, and it should be the only one.
+      { who: /bursar@example\.invalid/, role: "finance",
+        sees:   ["Alerts"],
+        cannot: ["Active Players", "Upcoming", "Win Rate", "Injuries", "Sessions This Wk"] },
+    ];
+
+    for (const e of expected) {
+      const c = await open();
+      await signIn(c.page, e.who);
+      const toDash = c.page.locator('[data-testid="nav-dashboard"]');
+      if (await toDash.count()) { await toDash.click({ timeout: 6000 }); await c.page.waitForTimeout(1200); }
+      const row = c.page.locator('[data-testid="kpi-row"]');
+      ok(`${e.role}: the dashboard has a figure row at all`, await row.count() === 1);
+      // Upper-cased, because the tile labels are CSS text-transform and
+      // innerText returns what is RENDERED. Comparing against the source
+      // spelling made every "shows" assertion fail and — far worse — made
+      // every "does NOT show" assertion pass for the wrong reason, which is an
+      // assertion that cannot fail.
+      const t = (await row.innerText().catch(() => "")).toUpperCase();
+      for (const label of e.sees) {
+        ok(`${e.role}: ...and shows ${label}, which they hold`, t.includes(label.toUpperCase()));
+      }
+      for (const label of e.cannot) {
+        ok(`${e.role}: ...and does NOT show ${label}, which they cannot read`, !t.includes(label.toUpperCase()));
+      }
+      ok(`${e.role}: no console errors`, c.errors.length === 0);
+      await c.ctx.close();
+    }
+  }
+
+  // ── The wagon wheel, off a profile rather than out of the pad ────
+  // The placements have been stored since the scorer started capturing them
+  // and were only ever drawn INSIDE the live pad, so the one screen a coach
+  // would look at — the boy's own profile — could not show where he scores.
+  //
+  // The sharpest assertion here is the mirror. Placements are stored
+  // batter-relative and flipped at render, so two batters with near-identical
+  // STORED angles must draw on OPPOSITE sides of the ground when one of them
+  // is left-handed. Geometry, read off the rendered SVG, because that rule is
+  // invisible in any amount of text.
+  group("A boy's wagon wheel is drawn on his own profile");
+  {
+    const c = await open();
+    await signIn(c.page, /coach@example\.invalid/);
+    ok("the profiles screen opens", await nav(c.page, /Profiles/));
+
+    // x2 of every drawn shot line, relative to the wheel's centre (CX = 150).
+    const sidesFor = async (playerId) => {
+      await c.page.locator(`[data-testid="roster-player-${playerId}"]`).first()
+        .click({ timeout: 4000 }).catch(() => {});
+      await c.page.waitForTimeout(800);
+      await c.page.locator("button", { hasText: /^career$/i }).first()
+        .click({ timeout: 4000 }).catch(() => {});
+      await c.page.waitForTimeout(1400);
+      const wheel = c.page.locator('[data-testid="career-wagon-wheel"]');
+      if (!(await wheel.count())) return null;
+      const xs = await wheel.locator("line").evaluateAll(
+        (els) => els.map((e) => Number(e.getAttribute("x2"))).filter(Number.isFinite));
+      return { wheel, xs, text: await wheel.innerText().catch(() => "") };
+    };
+
+    // T Bekker — right-handed, seeded through the covers (theta ~300-330).
+    const bekker = await sidesFor("aaaaaaaa-0000-0000-0000-000000000002");
+    ok("the wheel is drawn on the career tab", bekker !== null);
+    ok("...and it actually drew his shots", bekker && bekker.xs.length > 10);
+    ok("...saying how many it drew", bekker && /\d+ shown/.test(bekker.text));
+    // Off side for a right-hander is screen-left of the centre line.
+    const bekkerLeft = bekker ? bekker.xs.filter((x) => x < 150).length / bekker.xs.length : 0;
+    ok(`...predominantly to one side of the ground (${Math.round(bekkerLeft * 100)}% left)`,
+       bekkerLeft > 0.8);
+
+    // S Naidoo — LEFT-handed, seeded on the leg side at theta ~60-90.
+    //
+    // The mirror, stated as the thing that would break: unmirrored, those
+    // angles draw at x≈237-250, on the RIGHT of the centre line. Mirrored for
+    // a left-hander they become 270-300 and draw at x≈50-63, on the LEFT —
+    // the same part of the ground Bekker's off-side drives reach.
+    //
+    // That overlap is the point and was worth getting wrong once: a
+    // left-hander's leg side IS a right-hander's off side, and making the two
+    // comparable is the entire reason placements are stored batter-relative.
+    // An earlier version of this assertion expected them on opposite sides,
+    // which would have meant the mirror was NOT being applied.
+    //
+    // So the test is not "opposite Bekker" — it is "left, and left only
+    // because his handedness was read off his profile". Drop batHand from the
+    // squad the wheel is handed and every one of these flips to the right.
+    const naidoo = await sidesFor("aaaaaaaa-0000-0000-0000-000000000003");
+    ok("the left-hander's wheel draws too", naidoo && naidoo.xs.length > 5);
+    const naidooLeft = naidoo ? naidoo.xs.filter((x) => x < 150).length / naidoo.xs.length : 0;
+    ok(`...and his handedness was applied, not defaulted (${Math.round(naidooLeft * 100)}% left; unmirrored would be 0%)`,
+       naidooLeft > 0.8);
+
+    // M Cele carries the sector-era tail, so his wheel mixes measured points
+    // with eight-wedge estimates and must say so rather than imply precision.
+    const cele = await sidesFor("aaaaaaaa-0000-0000-0000-000000000004");
+    ok("a batter with sector-era balls still draws them", cele && cele.xs.length > 10);
+
+    ok("no console errors", c.errors.length === 0);
+    ok("...and no scoping refusals", c.refusals.length === 0);
+    await c.ctx.close();
+  }
+
+  // ── The role switcher, as it is actually seen ────────────────────
+  // Reported from the live deployment with a screenshot: the menu listed
+  // "Platform Admin" three times and "Principal" twice. ROLES is the LOOKUP
+  // table — real roles plus demonstration aliases resolving to them — and an
+  // alias carries its target's own label, so iterating it renders the same
+  // role repeatedly under the same name.
+  group("The role switcher lists each role once, not once per alias");
+  {
+    const c = await open();
+    await signIn(c.page, /sarah@example\.invalid/);
+    ok("the switcher opens", await click(c.page, /Director of Sport|Sarah/, 4000));
+    await c.page.waitForTimeout(400);
+    const menu = c.page.locator('[role="menu"][aria-label="Switch role"]');
+    ok("the menu is drawn", await menu.count() === 1);
+
+    const labels = await menu.locator('[role="menuitemradio"]').allInnerTexts();
+    // Each row renders "<icon> <label>", so the icon is stripped before
+    // comparing. Substring matching is not an option here: COACH is a
+    // substring of ASSISTANT COACH, and a check that counts both would call
+    // the deduplicated menu a duplicate.
+    const seen = labels.map((l) => l.trim().toUpperCase().replace(/^[^A-Z]*/, "")).filter(Boolean);
+    const dupes = seen.filter((l, i) => seen.indexOf(l) !== i);
+    ok(`no role is offered twice (${seen.length} entries)`, dupes.length === 0);
+    // Named explicitly, because these are the ones that were wrong on screen.
+    for (const label of ["PLATFORM ADMIN", "PRINCIPAL", "COACH", "PARENT / GUARDIAN"]) {
+      ok(`...${label} appears exactly once`, seen.filter((l) => l === label).length === 1);
+    }
+    // And the count is the policy's, not the lookup table's.
+    ok("the menu offers the twenty-four real roles", seen.length === 24);
+    ok("exactly one is marked as the current role",
+       (await menu.locator('[aria-checked="true"]').count()) === 1);
+    ok("no console errors", c.errors.length === 0);
+    await c.ctx.close();
+  }
+
   // ── Onboarding has a way out ─────────────────────────────────────
   // A person who clicks "Get Started" by mistake, or who already has an
   // account, used to have no way back to the login screen from the welcome
@@ -955,6 +1127,76 @@ try {
     ok("...and More now reads as the active place", await mid("mnav-more").getAttribute("aria-expanded") === "false");
     ok("no console errors on the phone", errors.length === 0, errors.join(" | "));
     await ctx.close();
+  }
+
+  // ── A dialog can be left ────────────────────────────────────────
+  //
+  // The sweep above found this the hard way: it opens a record, presses
+  // Escape, moves to the next screen — and the next nav click timed out,
+  // three assertions away from the cause. The dialog was still standing with
+  // its backdrop over the whole viewport, eating every click.
+  //
+  // The director of sport is the subject because she is the reason it
+  // surfaced: until user management was gated on the capability instead of a
+  // demo role name, no live role could reach an Edit button at all.
+  group("A dialog can be left, and the app works afterwards");
+  {
+    const c = await open();
+    ok("the director of sport signs in", await signIn(c.page, /Director of Sport/));
+    const tid = (id) => c.page.locator(`[data-testid="${id}"]`);
+    await tid("nav-settings").click({ timeout: 6000 }); await c.page.waitForTimeout(1200);
+    ok("she reaches settings", await tid("os-main").getAttribute("data-page") === "settings");
+
+    // She holds user.role.assign, so the Users tab must offer her the edit
+    // controls. If this is empty the capability gate has regressed and the
+    // rest of the group would pass vacuously.
+    const edits = c.page.locator('[data-testid="os-main"] button', { hasText: /^Edit$/ });
+    const n = await edits.count();
+    ok(`user management is offered to her (${n} rows)`, n > 0,
+       "she holds user.role.assign — gating this on a demo role name is the bug this group exists for");
+
+    if (n > 0) {
+      await edits.first().click({ timeout: 4000 }); await c.page.waitForTimeout(600);
+      ok("a dialog opens", await tid("modal-backdrop").isVisible());
+      ok("...and it is the dialog a screen reader would announce",
+         await c.page.locator('[role="dialog"][aria-modal="true"]').count() === 1);
+      ok("...named by its own heading", await c.page.evaluate(() => {
+        const d = document.querySelector('[role="dialog"]');
+        const t = document.getElementById(d?.getAttribute("aria-labelledby") || "");
+        return !!t && t.textContent.trim().length > 0;
+      }));
+      ok("...and focus has moved into it, not left at the top of the page",
+         await c.page.evaluate(() => {
+           const d = document.querySelector('[role="dialog"]');
+           return !!d && (d === document.activeElement || d.contains(document.activeElement));
+         }));
+
+      await c.page.keyboard.press("Escape"); await c.page.waitForTimeout(500);
+      ok("Escape closes it", await tid("modal-backdrop").count() === 0);
+
+      // The assertion that actually matters: the app is usable again. This is
+      // the one the sweep failed on, and a dialog that closes visually while
+      // leaving a backdrop behind would still pass the line above.
+      await tid("nav-rulebook").click({ timeout: 4000 }).catch(() => {});
+      await c.page.waitForTimeout(800);
+      ok("...and the menu works again afterwards",
+         await tid("os-main").getAttribute("data-page") === "rulebook",
+         "a nav click that lands nowhere means something invisible is still over the page");
+
+      // Clicking the backdrop is the other way out, and it must not fire when
+      // the click lands inside the card — which is the backdrop's own child.
+      await tid("nav-settings").click({ timeout: 4000 }); await c.page.waitForTimeout(1200);
+      await c.page.locator('[data-testid="os-main"] button', { hasText: /^Edit$/ }).first().click({ timeout: 4000 });
+      await c.page.waitForTimeout(600);
+      await c.page.locator('[role="dialog"] h3').click({ timeout: 4000 });
+      await c.page.waitForTimeout(400);
+      ok("a click inside the dialog does not close it", await tid("modal-backdrop").count() === 1);
+      await tid("modal-backdrop").click({ position: { x: 5, y: 5 }, timeout: 4000 });
+      await c.page.waitForTimeout(500);
+      ok("...but a click on the backdrop does", await tid("modal-backdrop").count() === 0);
+    }
+    ok("no console errors while opening and leaving a dialog", c.errors.length === 0, c.errors.join(" | "));
+    await c.ctx.close();
   }
 
 } catch (e) {

@@ -20,21 +20,95 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const SRC = join(dirname(fileURLToPath(import.meta.url)), "../src");
-const tokens = readFileSync(join(SRC, "design/tokens.js"), "utf8");
 
 let pass = 0, fail = 0;
 const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${d}` : ""); } };
 const group = (t) => console.log("\n" + t);
 
-const HEX = Object.fromEntries([...tokens.matchAll(/(\w+):"(#[0-9a-fA-F]{6})"/g)].map((m) => [m[1], m[2]]));
+// The tokens are IMPORTED, not scraped out of the source text.
+//
+// They used to be read with a regex over the file, which worked only while
+// every token was a literal hex on its own line. Design System 2.0 splits them
+// in two — `T` holds the semantic system and `D` aliases it for the four and a
+// half thousand existing call sites — so a scrape now sees `D.textMuted` as
+// the string "T.content.tertiary" and silently checks nothing.
+//
+// Importing is the stronger check anyway: it measures the colour that actually
+// reaches the screen rather than the way it happens to be spelled. An alias
+// that points at the wrong token is now a contrast failure, which is what it
+// really is.
+const { D, T } = await import(join(SRC, "design/tokens.js"));
+const HEX = Object.fromEntries(
+  Object.entries(D).filter(([, v]) => typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v)));
 const lum = (h) => {
   const c = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255)
     .map((x) => (x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4));
   return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
 };
 const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)]; return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
-const SURFACES = ["bg", "surf0", "surf1", "surf2", "surf3"].filter((k) => HEX[k]).map((k) => HEX[k]);
+const SURFACES = Object.values(T.surface);
 const worst = (c) => Math.min(...SURFACES.map((s) => ratio(c, s)));
+
+group("Design System 2.0 — the semantic system holds its own contrast");
+// Every value named for a job rather than a hue, measured against all five
+// surfaces. Two are deliberately absent: brand.blue and semantic.critical are
+// FILLS, and the assertion below is that each has a readable half instead.
+ok("there are five surfaces, darkest to lightest",
+   SURFACES.length === 5 && SURFACES.every((s, i, a) => i === 0 || lum(s) > lum(a[i - 1])));
+for (const [group_, keys] of [
+  ["content",  ["primary", "secondary", "tertiary"]],
+  ["brand",    ["lime", "green", "cyan", "blueText"]],
+  ["semantic", ["positive", "warning", "criticalText", "info"]],
+  ["sport",    ["batting", "bowling", "fielding", "intelligence"]],
+]) {
+  for (const k of keys) {
+    const v = T[group_][k];
+    ok(`${group_}.${k} reads at ${v ? worst(v).toFixed(2) : "?"}:1`, !!v && worst(v) >= 4.5);
+  }
+}
+
+group("The fill-only values are declared, and paired");
+// A colour that cannot be read is not a bug as long as it is never read. The
+// pairing is what makes that true, and textOn() is how a call site honours it
+// without knowing which value it was handed.
+const { textOn } = await import(join(SRC, "design/tokens.js"));
+for (const [fill, pair] of [[T.brand.blue, T.brand.blueText], [T.semantic.critical, T.semantic.criticalText]]) {
+  ok(`${fill} is below the text threshold, so it is a fill`, worst(fill) < 4.5);
+  ok(`...and its readable half ${pair} clears it at ${worst(pair).toFixed(2)}:1`, worst(pair) >= 4.5);
+  ok(`...and textOn() returns that half, not the fill`, textOn(fill) === pair);
+}
+ok("textOn leaves a colour that is already readable alone", textOn(T.brand.lime) === T.brand.lime);
+
+group("Text sitting ON a fill is measured against that fill");
+// The surfaces are not the only background in the app. A count badge puts type
+// directly on an accent, and the unread badge did it in white on the critical
+// red — 3.81:1, a fail, on the one element in the chrome whose whole job is to
+// be read at a glance. Near-black on the same red is 5.29:1.
+//
+// The rule generalises: whatever a badge is filled with, the text on it must
+// clear AA against THAT, not against the page.
+const BADGES = [
+  ["unread alerts", T.semantic.critical, T.surface.canvas],
+  ["live chip",     T.brand.green,       T.surface.canvas],
+  ["warning chip",  T.semantic.warning,  T.surface.canvas],
+];
+for (const [what, fill, text] of BADGES) {
+  ok(`the ${what} badge reads at ${ratio(text, fill).toFixed(2)}:1 on its own fill`, ratio(text, fill) >= 4.5);
+  // Stated as the trap it is, so the next person does not reach for white.
+  ok(`...and white would not have (${ratio("#ffffff", fill).toFixed(2)}:1)`, ratio("#ffffff", fill) < 4.5);
+}
+
+group("D is an alias table, not a second palette");
+// The one rule that keeps two token surfaces from becoming two design systems:
+// everything D exposes must be a value T already declares. A hex that appears
+// only in D is a colour nobody chose semantically.
+const tValues = new Set(Object.values(T).flatMap((v) => (typeof v === "object" ? Object.values(v) : [v])));
+const orphans = Object.entries(D)
+  .filter(([, v]) => typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v) && !tValues.has(v))
+  .map(([k, v]) => `${k} ${v}`);
+// violetText is the one sanctioned exception: it is the readable half of
+// sport.fielding, which the sport scale itself has no slot for.
+ok("every D colour is a T colour", orphans.length <= 1, orphans.join(", "));
 
 group("Every token used as text clears AA on every surface");
 // 4.5:1 is the threshold for body text. Large display type would allow 3:1,
@@ -64,7 +138,10 @@ const files = [];
 let raw = [];
 for (const f of files) {
   const src = readFileSync(f, "utf8");
-  for (const m of src.matchAll(/(?<![A-Za-z])color:D\.(indigo|violet|rose)\b(?!Text)/g)) {
+  // `color:` with optional spaces, and optionally through a ternary — the
+  // spelling `color: error ? D.rose : D.textMuted` shipped a fill-only red as
+  // an error message for as long as this pattern only matched the tight form.
+  for (const m of src.matchAll(/(?<![A-Za-z])color:\s*(?:[^,;{}\n]*\?\s*)?D\.(indigo|violet|rose)\b(?!Text)/g)) {
     // A colour that is DATA — a shot category, a role identity — is declared
     // with the fill value and passed through textOn() where it becomes text.
     // That is the pairing working, not a violation of it.
@@ -72,7 +149,24 @@ for (const f of files) {
     raw.push(`${f.replace(SRC, "src")}: ${m[0]}`);
   }
 }
-ok("no fill-only accent is set as a text colour", raw.length === 0, raw.slice(0, 3).join(" · "));
+// The tight spelling — `color:D.rose` — must be zero, and always has been.
+const tight = raw.filter((r) => /color:D\./.test(r));
+ok("no fill-only accent is set as a text colour", tight.length === 0, tight.slice(0, 3).join(" · "));
+
+// The loose spelling — `color: cond ? D.rose : …` — is the same bug wearing a
+// ternary, and widening the pattern to catch it found a tail of thirty-odd
+// pre-existing sites. They are NOT all the same fix: some are a colour being
+// READ, which textOn() resolves at the point of use, and some are a colour
+// being DECLARED as data, where wrapping it at the declaration would wrongly
+// lighten the fill as well. Telling those apart is a per-file judgement.
+//
+// So this is a ratchet rather than a threshold. The number may go DOWN and
+// must never go up: a new one is a new bug, and paying the tail down is module
+// work that belongs with the screens, not with the tokens.
+const LOOSE_TAIL = 29;
+ok(`the ternary tail is ${raw.length - tight.length} and not growing (ratchet: ${LOOSE_TAIL})`,
+   raw.length - tight.length <= LOOSE_TAIL,
+   raw.filter((r) => !/color:D\./.test(r)).slice(0, 3).join(" · "));
 
 group("The scoring pad's captions are legible");
 // §6.3 — the audit's highest-priority visual fix. These are read by an
@@ -103,7 +197,7 @@ group("Role identity");
 // model had never heard of, while fourteen roles that DO carry permissions had
 // no identity at all. Signing in as a director of sport gave ROLES[undefined]
 // and an empty shell.
-const { ROLE_IDENTITY, ROLES, NAV_CAPABILITY, NAV_GROUPS, NAV_GROUP, NAV_ORDER, groupNav, navForRoles } = await import(join(SRC, "design/roles.js"));
+const { ROLE_IDENTITY, ROLES, ROLE_FAMILIES, NAV_CAPABILITY, NAV_GROUPS, NAV_GROUP, NAV_ORDER, canonicalRole, groupNav, navForRoles } = await import(join(SRC, "design/roles.js"));
 const { ROLES: POLICY_ROLES, roleGrants } = await import("@scrbrd/policy/roles");
 
 ok("every policy role has a visual identity",
@@ -162,6 +256,71 @@ for (const r of ["directorofsport", "principal", "teammanager", "official", "med
   ok(`a ${r} can be signed in and shown something`,
      !!ROLES[r]?.label && ROLES[r].nav.length > 0);
 }
+
+group("The role switcher offers each role once");
+// Reported from the live deployment: the menu listed "Platform Admin" three
+// times and "Principal" twice, among six more duplicated pairs.
+//
+// The cause is that ROLES is a LOOKUP table — the twenty-four real roles plus
+// nine demonstration aliases (superadmin, headmaster, parent…) that resolve to
+// them. An alias carries its target's own label, so iterating ROLES to build a
+// menu renders the same role several times under the same name, and picking
+// between the copies is meaningless.
+//
+// ROLE_FAMILIES is the canonical set, grouped. It is what a chooser must use.
+const familyMembers = Object.values(ROLE_FAMILIES).flat();
+ok("the families cover every policy role", POLICY_ROLES.every((r) => familyMembers.includes(r)),
+   POLICY_ROLES.filter((r) => !familyMembers.includes(r)).join(", "));
+ok("...each exactly once",
+   familyMembers.length === POLICY_ROLES.length && new Set(familyMembers).size === familyMembers.length);
+ok("...and name no alias", familyMembers.every((r) => POLICY_ROLES.includes(r)));
+
+const familyLabels = familyMembers.map((r) => ROLES[r].label);
+const dupLabels = familyLabels.filter((l, i) => familyLabels.indexOf(l) !== i);
+ok("no two offered roles share a name", dupLabels.length === 0, [...new Set(dupLabels)].join(", "));
+
+// The aliases must STILL resolve, or an account signed in as one loses its
+// name and its navigation — which is the bug the alias table was added to fix.
+for (const legacy of ["superadmin", "headmaster", "parent", "sportsmaster"]) {
+  ok(`the ${legacy} alias still resolves to a real role`,
+     !!ROLES[legacy]?.label && POLICY_ROLES.includes(canonicalRole(legacy)));
+}
+// And iterating the lookup table is exactly what must not happen again.
+ok("the lookup table is genuinely wider than the offered set",
+   Object.keys(ROLES).length > familyMembers.length);
+
+group("The roles screen describes every role, from the policy");
+// It rendered thirty-three cards — the lookup table, aliases and all — against
+// a hand-written table of ten descriptions. Twenty-three had no detail at all,
+// the director of sport and the principal among them, and three of the ten
+// were written against demonstration aliases so the real roles behind them
+// showed nothing.
+//
+// A hand-written permission list is a second place for authority to live, on
+// the one screen whose subject IS authority. The check is therefore that the
+// description is DERIVABLE: every policy role must have capabilities to show,
+// and every capability must fall in a domain the screen can name.
+const settingsSrc = readFileSync(join(SRC, "views/SettingsView.jsx"), "utf8");
+ok("the roles screen no longer carries a hand-written permission table",
+   !/const PERMS = \{/.test(settingsSrc));
+ok("...and iterates the families rather than the lookup table",
+   /ROLE_FAMILIES\)\.map/.test(settingsSrc) && !/Object\.entries\(ROLES\)\.map/.test(settingsSrc));
+
+const { ROLE_CAPABILITIES } = await import("@scrbrd/policy/roles");
+const domainsFor = (r) => [...new Set([...(ROLE_CAPABILITIES[r] ?? [])].map((c) => c.split(".")[0]))];
+const undescribed = POLICY_ROLES.filter((r) => domainsFor(r).length === 0);
+ok("every policy role has something to describe", undescribed.length === 0, undescribed.join(", "));
+
+// The label table is presentation, so a missing entry degrades to the raw
+// prefix rather than blanking — but a gap is still worth naming here, because
+// "platform" reading as "platform" is fine and a new domain reading as a bare
+// code is how a screen starts looking unfinished.
+const labelled = new Set(Object.keys(
+  Object.fromEntries((settingsSrc.match(/(\w+):"[^"]+"/g) ?? []).map((m) => m.split(":")))));
+const allDomains = [...new Set(POLICY_ROLES.flatMap(domainsFor))];
+const unlabelled = allDomains.filter((d) => !labelled.has(d));
+ok(`every capability domain has a readable name (${allDomains.length} domains)`,
+   unlabelled.length === 0, unlabelled.join(", "));
 
 group("Navigation is derived, not hand-listed");
 // A hand-written nav per role is a second place for authority to live, and a

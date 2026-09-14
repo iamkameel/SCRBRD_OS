@@ -1,12 +1,14 @@
 
 import { useEffect, useState } from "react";
 import { SCHOOL } from "../data/institution.js";
-import { ROLES } from "../design/roles.js";
+import { ROLES, ROLE_FAMILIES, ROLE_IDENTITY, canonicalRole } from "../design/roles.js";
+import { GRANTABLE_ROLES, ROLE_CAPABILITIES, SUBJECT_SCOPED_ROLES, TEAM_SCOPED_ROLES } from "@scrbrd/policy/roles";
 import { D, textOn } from "../design/tokens.js";
 import { SCRBRD } from "../scorer/engine.jsx";
 import { Avatar, Badge, Btn, Card, EmptyState, Input, Modal, SectionHeader, Select } from "../ui/primitives.jsx";
 import { useLive, useRows } from "../lib/live.js";
 import { schoolsWhere } from "../lib/session.js";
+import { holdsCapability } from "../rbac/index.js";
 import { api } from "../lib/api.js";
 import { disablePush, enablePush, pushSupported } from "../lib/push.js";
 
@@ -33,7 +35,27 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp }) 
   const [addUser,   setAddUser]   = useState(false);
   const [delConf,   setDelConf]   = useState(null);
   const [newUser,   setNewUser]   = useState({name:"",email:"",role:"player",player:"",staffId:"",coachId:"",status:"active"});
-  const canEdit = role==="superadmin";
+  // WHO MAY MANAGE PEOPLE, by the capability rather than by a name.
+  //
+  // This read `role === "superadmin"`, which is a DEMONSTRATION ALIAS. Signed
+  // in against the server a role is its policy name — platformadmin,
+  // schooladmin, directorofsport, principal — and none of them equal
+  // "superadmin", so the Add User button and every edit, suspend and delete
+  // control was hidden from everybody on the live deployment, including the
+  // four roles that actually hold user.role.assign.
+  //
+  // The same shape of bug hid "+ Add Fixture" from the director of sport and
+  // emptied the dashboard for twenty-one roles: a hardcoded demo name standing
+  // in for a capability. holdsCapability() answers from the policy and works
+  // for both vocabularies, because the alias resolves through the same
+  // assignments the real name does.
+  const canEdit = holdsCapability(role, "user.role.assign");
+
+  // Roster people with no account, by the link the accounts read now carries.
+  // Both sides are already row-scoped in Postgres for this reader, so this
+  // reconciles two permitted lists rather than widening either.
+  const linkedPlayerIds = new Set(users.map(u=>u.player).filter(Boolean));
+  const noAccount = PLAYERS.filter(p=>!linkedPlayerIds.has(p.id));
 
   const saveUser = () => {
     if (editUser) {
@@ -50,35 +72,138 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp }) 
   const deleteUser = (id) => { setUsers(prev=>prev.filter(u=>u.id!==id)); setDelConf(null); };
   const toggleStatus = (id) => setUsers(prev=>prev.map(u=>u.id===id?{...u,status:u.status==="active"?"suspended":"active"}:u));
 
-  const PERMS = {
-    superadmin:    ["Full system access","User management","RBAC control","All 16 modules","System configuration","Audit logs"],
-    schooladmin:   ["Dashboard, Competitions, Squad, Analytics","Logistics, Fields, Staff, Calendar","Notifications, Settings (limited)","No RBAC control"],
-    coach:         ["Dashboard, Matches, Squad, Profiles","Skills, Training, Injuries, Analytics","Logistics, Fields, Calendar","No user management"],
-    player:        ["Dashboard, Own profile","Matches (view), Fixtures","Skills (own), Training (own)","Injuries (own), Notifications"],
-    parent:        ["Dashboard, Matches, Fixtures","Transport info, Notifications","Child's profile (read-only)"],
-    spectator:     ["Dashboard, Live scores","Competitions (public view)","Analytics (read-only)", "Calendar"],
-    scorer:        ["Dashboard, Match Centre","Scoring tools only","Calendar, Notifications"],
-    medical:       ["Injuries (full CRUD)","Squad health view","Training fitness data","Profiles, Notifications"],
-    driver:        ["Logistics (transport)","Matches (fixture times)","Calendar, Notifications"],
-    groundskeeper: ["Fields (full CRUD)","Matches (schedule view)","Calendar, Notifications"],
+  // WHAT A ROLE CAN DO, DERIVED FROM THE POLICY.
+  //
+  // This was a hand-written table of ten entries, and the screen rendered
+  // thirty-three cards. Twenty-three of them had no detail at all — a title, a
+  // module count, and nothing else — including the director of sport, the
+  // principal, and every operational role in the school. Three of the ten that
+  // DID have detail were written against demonstration aliases, so the real
+  // roles behind them (platformadmin, guardian, facilities) showed nothing
+  // while their aliases described them.
+  //
+  // What it said was also no longer true: "All 16 modules", "No RBAC control",
+  // "Scoring tools only". A hand-written permission list is a second place for
+  // authority to live and a second place for it to drift — the exact failure
+  // the navigation was already rebuilt to avoid, on the one screen whose
+  // subject is authority.
+  //
+  // So it is computed. Capabilities are grouped by their own domain prefix
+  // (player.*, fixture.*, medical.*), which needs no table to maintain and
+  // cannot disagree with what the database enforces.
+  const DOMAIN_LABEL = {
+    player:"Players", fixture:"Fixtures", team:"Teams", scoring:"Scoring",
+    medical:"Medical", clearance:"Clearances", transport:"Transport",
+    facility:"Grounds", competition:"Competitions", news:"News",
+    sponsorship:"Sponsorship", invoice:"Finance", user:"People",
+    school:"School", platform:"Platform", analytics:"Analytics",
+    opposition:"Opposition", scouting:"Scouting", officiating:"Officials",
+    recognition:"Recognition", discipline:"Discipline", availability:"Availability",
+    audit:"Audit", broadcast:"Broadcast", guardian:"Guardians",
   };
+  const capsOf = (r) => [...(ROLE_CAPABILITIES[r] ?? [])];
+  const domainsOf = (r) => {
+    const by = {};
+    for (const c of capsOf(r)) {
+      const d = c.split(".")[0];
+      (by[d] ??= []).push(c);
+    }
+    // Widest domain first: what a role mostly does should read first.
+    return Object.entries(by).sort((a, b) => b[1].length - a[1].length);
+  };
+  // The roles THIS person may actually grant, from the policy's own table.
+  // The picker offered Object.entries(ROLES) — the lookup table — so it listed
+  // thirty-three options with nine duplicate names, and every role in the
+  // product regardless of whether the person filling the form could confer it.
+  // Choosing one the server then refuses is a form that wastes an
+  // administrator's time to tell them something the policy already knew.
+  const grantable = GRANTABLE_ROLES[canonicalRole(role)] ?? [];
 
+  // The two shape rules the database enforces on an assignment, said plainly.
+  const scopeNote = (r) =>
+    TEAM_SCOPED_ROLES.includes(r) ? "Must name a team"
+    : SUBJECT_SCOPED_ROLES.includes(r) ? "Must name a person"
+    : ROLE_IDENTITY[r]?.family === "platform" ? "Platform-wide, no school"
+    : "Scoped to a school";
+
+  // THE ROADMAP, AGAINST WHAT IS ACTUALLY BUILT.
+  //
+  // This list described a product with no backend. Four of its items had since
+  // shipped and still read as proposals — a roadmap that cannot tell a built
+  // thing from a wished-for one is worse than no roadmap, because somebody
+  // plans around it.
+  //
+  // `status` is therefore checked against the repository, not asserted:
+  //   shipped  — built, and covered by a walk that would fail if it broke
+  //   partial  — the DATA exists and is permission-scoped; no screen draws it
+  //   planned  — not started
+  //
+  // "partial" is the honest and uncomfortable category, and it is where most of
+  // the value now sits: thirty-three of the read endpoints are computed, tested
+  // and never rendered.
   const UPGRADES = [
-    { id:"up1", category:"AI & Analysis",  priority:"high",  title:"AI Post-Match Report",      desc:"Auto-generate match reports using AI commentary, scorecard data and weather. Send to parents and coaches instantly.", effort:"Medium" },
-    { id:"up2", category:"AI & Analysis",  priority:"high",  title:"Shot Pattern Wagon Wheel",  desc:"Import wagon-wheel data from SCRBRD scorer to show each player's scoring zones and shot tendencies.", effort:"High" },
-    { id:"up3", category:"Integrations",   priority:"high",  title:"Live Score Sync (SCRBRD)",  desc:"Wire MatchCentreView to live scrbrd_v3 scorer data. Real-time wickets, overs, partnerships.", effort:"Medium" },
-    { id:"up4", category:"Comms",          priority:"high",  title:"Parent Broadcast Alerts",   desc:"Push notifications to parents when their child scores a fifty, takes a wicket, or is injured.", effort:"Medium" },
-    { id:"up5", category:"AI & Analysis",  priority:"medium",title:"Opposition Scouting Report",desc:"AI-generated scouting notes on upcoming opponents based on their H2H record and known squad.", effort:"Medium" },
-    { id:"up6", category:"Fitness",        priority:"medium",title:"Fitness Test Logging",       desc:"Record beep tests, speed gates, vertical jump, grip strength. Track trends across the season.", effort:"Low" },
-    { id:"up7", category:"Media",          priority:"medium",title:"Video Clip Tagging",         desc:"Upload short batting/bowling clips per session. Tag to player profile and link to skill gaps.", effort:"High" },
-    { id:"up8", category:"Integrations",   priority:"medium",title:"CricHQ / PlayCricket Sync", desc:"Import match scorecards automatically from CricHQ or PlayCricket via API. Reduce manual entry.", effort:"High" },
-    { id:"up9", category:"Comms",          priority:"medium",title:"In-App Parent Messaging",    desc:"Secure one-to-one messaging between coach and parent. Replaces WhatsApp groups.", effort:"High" },
-    { id:"up10",category:"Admin",          priority:"low",   title:"PDF Scorecard Export",       desc:"One-click PDF export of any match scorecard, formatted with school branding.", effort:"Low" },
-    { id:"up11",category:"Admin",          priority:"low",   title:"Season History Archive",     desc:"Year-on-year squad stats, win rates and trophies. Accessible as historical records.", effort:"Medium" },
-    { id:"up12",category:"Fitness",        priority:"low",   title:"Medical Clearance Workflow", desc:"Digital RTW forms. Physio signs off, coach notified, system auto-updates injury status.", effort:"Medium" },
-    { id:"up13",category:"Admin",          priority:"low",   title:"Payment & Subscription Mgmt",desc:"Track school subscription, per-student fees for transport/kit. Admin dashboard.", effort:"High" },
-    { id:"up14",category:"AI & Analysis",  priority:"low",   title:"Training Recommendation Engine",desc:"AI suggests next training focus per player based on recent form, skill gaps and workload.", effort:"High" },
+    // ── Shipped ──────────────────────────────────────────────────
+    { id:"up2", category:"AI & Analysis", priority:"high", status:"shipped",
+      title:"Shot Pattern Wagon Wheel",
+      desc:"A boy's scoring zones across every innings, on his own profile. Placements are stored batter-relative and mirrored at render, so a left-hander's cover drive is comparable with a right-hander's.", effort:"High" },
+    { id:"up3", category:"Integrations", priority:"high", status:"shipped",
+      title:"Live Score Sync",
+      desc:"Match Centre reads the live fold from the ball log. Offline queue, device handover and voided balls all covered.", effort:"Medium" },
+    { id:"up4", category:"Comms", priority:"high", status:"shipped",
+      title:"Parent Broadcast Alerts",
+      desc:"Push to a registered device when something happens to their child. Delivery is per-person and permission-scoped, so a notice reaches the family and nobody else.", effort:"Medium" },
+    { id:"up12", category:"Fitness", priority:"medium", status:"shipped",
+      title:"Medical Clearance Workflow",
+      desc:"Clearance requirements, adult clearances and a register a school can actually be audited against.", effort:"Medium" },
+
+    // ── Built underneath, not yet drawn ──────────────────────────
+    { id:"up5", category:"AI & Analysis", priority:"high", status:"partial",
+      title:"Opposition Dossier",
+      desc:"Batter-against-bowler match-ups, the derby record and the opponent's squad are all computed and permission-scoped. Nothing on screen reads them yet — this is the largest single gap in the product.", effort:"Medium" },
+    { id:"up15", category:"Fitness", priority:"high", status:"partial",
+      title:"Bowling Workload & Welfare",
+      desc:"Spells, breaches and directives against age-group limits are modelled and tested. A coach cannot see them. This is a duty-of-care feature, not an analytics one.", effort:"Low" },
+    { id:"up16", category:"Admin", priority:"medium", status:"partial",
+      title:"Caps, Honours & Milestones on the Passport",
+      desc:"Recorded, consented and readable; simply not shown. The cheapest item here and the one a pupil actually opens.", effort:"Low" },
+    { id:"up11", category:"Admin", priority:"low", status:"partial",
+      title:"Season History Archive",
+      desc:"Seasons and competitions are modelled; there is no year-on-year view over them.", effort:"Medium" },
+
+    // ── Planned ──────────────────────────────────────────────────
+    { id:"up17", category:"AI & Analysis", priority:"high", status:"planned",
+      title:"Match Insights & Intelligence Ribbon",
+      desc:"An insight anchored to the delivery that caused it, typed so it can be ranked rather than cycled, and carrying whether a machine derived it or a scorer confirmed it.", effort:"Medium" },
+    { id:"up18", category:"AI & Analysis", priority:"medium", status:"planned",
+      title:"Pitch Map",
+      desc:"Line and length per delivery — the bowling half of the wagon wheel. The only chart form genuinely missing.", effort:"Medium" },
+    { id:"up1", category:"AI & Analysis", priority:"medium", status:"planned",
+      title:"Post-Match Report",
+      desc:"A written report from the scorecard, the phases and the conditions. Should say which of it was derived and which asserted.", effort:"Medium" },
+    { id:"up6", category:"Fitness", priority:"medium", status:"planned",
+      title:"Fitness Test Logging",
+      desc:"Beep tests, speed gates, vertical jump, grip strength, tracked across a season.", effort:"Low" },
+    { id:"up7", category:"Media", priority:"medium", status:"planned",
+      title:"Video & Photo Clips",
+      desc:"No media is modelled at all today. For a product whose users are fifteen-year-olds, that is a real absence.", effort:"High" },
+    { id:"up9", category:"Comms", priority:"medium", status:"planned",
+      title:"In-App Parent Messaging",
+      desc:"Secure one-to-one between coach and parent, replacing the WhatsApp group. Nothing is modelled yet.", effort:"High" },
+    { id:"up13", category:"Admin", priority:"medium", status:"planned",
+      title:"Invoicing & Subscriptions",
+      desc:"Note: invoice.read and invoice.manage are already granted to the principal and the bursar, with no table behind them. The finance role currently cannot do the thing its name describes.", effort:"High" },
+    { id:"up8", category:"Integrations", priority:"low", status:"planned",
+      title:"CricHQ / PlayCricket Import",
+      desc:"CSV import exists and goes through the ordinary write policies. A direct API sync does not.", effort:"High" },
+    { id:"up10", category:"Admin", priority:"low", status:"planned",
+      title:"PDF Scorecard Export",
+      desc:"One-click export of any scorecard with the school's branding.", effort:"Low" },
+    { id:"up14", category:"AI & Analysis", priority:"low", status:"planned",
+      title:"Training Recommendation Engine",
+      desc:"Next focus per player from recent form, skill gaps and workload. Wants the workload screen above to exist first.", effort:"High" },
   ];
+  const STATUS_TONE  = { shipped:D.emerald, partial:D.amber, planned:D.textMuted };
+  const STATUS_LABEL = { shipped:"Shipped", partial:"Built, not drawn", planned:"Planned" };
 
   const priCol = p => p==="high"?D.rose:p==="medium"?D.amber:D.sky;
   const catCol  = c => c==="AI & Analysis"?D.violet:c==="Integrations"?D.teal:c==="Comms"?D.indigo:c==="Fitness"?D.emerald:D.orange;
@@ -104,6 +229,37 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp }) 
             <div style={{fontFamily:D.mono,fontSize:"11px",color:D.textMuted}}>{users.length} users · {users.filter(u=>u.status==="active").length} active</div>
             {canEdit&&<Btn size="sm" onClick={()=>{setAddUser(true);setEditUser(null);}}>+ Add User</Btn>}
           </div>
+
+          {/* THE PEOPLE WITH NO ACCOUNT.
+              This screen listed accounts, so a boy on the roster who cannot
+              sign in simply was not here — and "R Pillay has no account" is an
+              access-control fact, not an absence. It is the answer to "why
+              can't he see his own passport", and it was unobtainable from the
+              one screen whose job is access.
+              Two scoped reads, reconciled: the roster this person may read,
+              minus the accounts they may read. Neither widens the other. */}
+          {noAccount.length>0&&(
+            <Card sx={{padding:"14px",marginBottom:"14px",borderLeft:`3px solid ${D.amber}`}} data-testid="people-without-accounts">
+              <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary,marginBottom:"4px"}}>
+                On a roster, no account — {noAccount.length} of {PLAYERS.length}
+              </div>
+              <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginBottom:"10px",lineHeight:1.5}}>
+                These people appear in Squad and Profiles and hold a passport, but cannot sign in.
+                An account is what links the two: without one, nobody can read their own record.
+              </div>
+              <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
+                {noAccount.map(p=>(
+                  <span key={p.id} data-testid={`no-account-${p.id}`} style={{display:"inline-flex",alignItems:"center",gap:"6px",
+                    padding:"4px 10px",borderRadius:D.pill,background:D.amber+"14",border:`1px solid ${D.amber}33`,
+                    fontFamily:D.body,fontSize:"11px",color:D.textSecondary}}>
+                    <Avatar name={p.name} size={18} color={D.amber}/>
+                    {p.name}
+                    <span style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>{p.team}</span>
+                  </span>
+                ))}
+              </div>
+            </Card>
+          )}
           <Card>
             <div style={{overflowX:"auto"}}>
               <table style={{width:"100%",borderCollapse:"collapse"}}>
@@ -158,23 +314,59 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp }) 
 
       {/* ── ROLES ── */}
       {tab==="roles"&&(
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(270px,1fr))",gap:"12px"}}>
-          {Object.entries(ROLES).map(([r,rc2])=>(
-            <Card key={r} sx={{padding:"16px"}}>
-              <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"12px"}}>
-                <div style={{width:"38px",height:"38px",borderRadius:D.md,background:rc2.color+"18",border:`1px solid ${rc2.color}22`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"20px"}}>{rc2.icon}</div>
-                <div>
-                  <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:rc2.color}}>{rc2.label}</div>
-                  <div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>{rc2.nav.length} modules · {users.filter(u=>u.role===r).length} user{users.filter(u=>u.role===r).length!==1?"s":""}</div>
-                </div>
+        <div data-testid="roles-tab">
+          <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginBottom:"14px",lineHeight:1.5,maxWidth:"70ch"}}>
+            Every role the authorization model knows about, grouped by family.
+            What each one can do is read from the policy that generates the
+            database's row-level security — not described alongside it.
+          </div>
+          {/* ROLE_FAMILIES, not ROLES: the latter is the lookup table, and it
+              carries nine demonstration aliases that render as duplicate cards
+              under their target's own name. */}
+          {Object.entries(ROLE_FAMILIES).map(([family,members])=>(
+            <div key={family} style={{marginBottom:"18px"}}>
+              <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",color:D.textMuted,marginBottom:"8px"}}>{family}</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(270px,1fr))",gap:"12px"}}>
+                {members.map(r=>{
+                  const rc2 = ROLES[r];
+                  const doms = domainsOf(r);
+                  const n = capsOf(r).length;
+                  const held = users.filter(u=>u.role===r).length;
+                  return (
+                    <Card key={r} sx={{padding:"16px"}} data-testid={`role-card-${r}`}>
+                      <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"10px"}}>
+                        <div style={{width:"38px",height:"38px",borderRadius:D.md,background:rc2.color+"18",border:`1px solid ${rc2.color}22`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"20px"}}>{rc2.icon}</div>
+                        <div style={{minWidth:0}}>
+                          <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:rc2.color}}>{rc2.label}</div>
+                          <div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>
+                            {n} capabilit{n===1?"y":"ies"} · {rc2.nav.length} screens · {held} account{held===1?"":"s"}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted,marginBottom:"9px",letterSpacing:"0.04em"}}>
+                        {scopeNote(r)}
+                      </div>
+
+                      {doms.length===0
+                        ? <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>No capabilities.</div>
+                        : doms.map(([dom,list])=>(
+                            <div key={dom} style={{display:"flex",alignItems:"flex-start",gap:"7px",padding:"3px 0"}}>
+                              <div style={{width:"5px",height:"5px",borderRadius:"50%",background:rc2.color,flexShrink:0,marginTop:"5px"}}/>
+                              <span style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary,lineHeight:1.4}}>
+                                {DOMAIN_LABEL[dom] ?? dom}
+                                <span style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}> · {list.length}</span>
+                                {/* The capabilities themselves, for anyone who
+                                    needs the exact answer rather than the shape. */}
+                                <span title={list.join("\n")} style={{cursor:"help",color:D.textMuted}}> ⓘ</span>
+                              </span>
+                            </div>
+                          ))}
+                    </Card>
+                  );
+                })}
               </div>
-              {PERMS[r]?.map(p=>(
-                <div key={p} style={{display:"flex",alignItems:"flex-start",gap:"7px",padding:"4px 0"}}>
-                  <div style={{width:"5px",height:"5px",borderRadius:"50%",background:rc2.color,flexShrink:0,marginTop:"4px"}}/>
-                  <span style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary,lineHeight:1.4}}>{p}</span>
-                </div>
-              ))}
-            </Card>
+            </div>
           ))}
         </div>
       )}
@@ -205,25 +397,46 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp }) 
         <div>
           <div style={{padding:"14px 16px",background:`linear-gradient(135deg,${D.violet}10,${D.surf2})`,borderRadius:D.lg,border:`1px solid ${D.violet}22`,marginBottom:"18px"}}>
             <div style={{fontFamily:D.head,fontSize:"14px",fontWeight:700,color:D.violetText,marginBottom:"4px"}}>🚀 SCRBRD Platform Roadmap</div>
-            <div style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,lineHeight:1.5}}>{UPGRADES.length} suggested upgrades across {[...new Set(UPGRADES.map(u=>u.category))].length} categories. Prioritised by impact.</div>
+            <div style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,lineHeight:1.5}}>
+              {["shipped","partial","planned"].map(s=>`${UPGRADES.filter(u=>u.status===s).length} ${STATUS_LABEL[s].toLowerCase()}`).join(" · ")}.
+              Status is checked against the codebase, not declared.
+            </div>
           </div>
-          {["high","medium","low"].map(pri=>(
-            <div key={pri} style={{marginBottom:"20px"}}>
+
+          {/* Grouped by STATUS rather than priority.
+              Priority is an opinion and every item claimed one; status is a
+              fact, and it was the missing column — four of these had shipped
+              and still read as proposals. Priority survives as a tint on the
+              card, where it belongs. */}
+          {["shipped","partial","planned"].map(st=>(
+            <div key={st} style={{marginBottom:"20px"}} data-testid={`roadmap-${st}`}>
               <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"10px"}}>
-                <Badge color={priCol(pri)}>{pri==="high"?"🔴 High Priority":pri==="medium"?"🟡 Medium Priority":"🔵 Low Priority"}</Badge>
-                <span style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>{UPGRADES.filter(u=>u.priority===pri).length} items</span>
+                <Badge color={STATUS_TONE[st]}>{STATUS_LABEL[st]}</Badge>
+                <span style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>{UPGRADES.filter(u=>u.status===st).length} items</span>
+                {st==="partial"&&<span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>
+                  — the data is built and permission-scoped; no screen reads it yet
+                </span>}
               </div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:"10px"}}>
-                {UPGRADES.filter(u=>u.priority===pri).map(up=>(
-                  <Card key={up.id} sx={{padding:"14px",border:`1px solid ${priCol(pri)}18`}}>
+                {UPGRADES.filter(u=>u.status===st).map(up=>(
+                  <Card key={up.id} sx={{padding:"14px",border:`1px solid ${STATUS_TONE[st]}22`,
+                                         borderLeft:`3px solid ${priCol(up.priority)}`}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"6px"}}>
                       <div style={{fontFamily:D.body,fontSize:"13px",fontWeight:600,color:D.textPrimary,flex:1,paddingRight:"8px"}}>{up.title}</div>
                       <Badge color={catCol(up.category)}>{up.category}</Badge>
                     </div>
                     <div style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary,lineHeight:1.5,marginBottom:"10px"}}>{up.desc}</div>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                      <div style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>Effort: <span style={{color:up.effort==="Low"?D.emerald:up.effort==="Medium"?D.amber:D.rose}}>{up.effort}</span></div>
-                      <button style={{background:"none",border:`1px solid ${D.border}`,borderRadius:D.pill,padding:"3px 12px",cursor:"pointer",fontFamily:D.body,fontSize:"10px",color:D.textMuted}}>Vote ↑</button>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
+                      <div style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>
+                        {up.priority} priority · effort <span style={{color:up.effort==="Low"?D.emerald:up.effort==="Medium"?D.amber:textOn(D.rose)}}>{up.effort}</span>
+                      </div>
+                      {/* The "Vote ↑" button that stood here did nothing at all:
+                          no handler, no state, no endpoint. A control that
+                          looks live and is not teaches people the whole screen
+                          is decorative. Voting needs somewhere to record a
+                          vote; until that exists, the status is the useful
+                          thing to show. */}
+                      <span style={{fontFamily:D.mono,fontSize:"10px",color:STATUS_TONE[st]}}>{STATUS_LABEL[st]}</span>
                     </div>
                   </Card>
                 ))}
@@ -238,7 +451,7 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp }) 
         <Modal title={editUser?"Edit User":"Add New User"} onClose={()=>{setAddUser(false);setEditUser(null);}}>
           <Input label="Full Name" value={editUser?editUser.name:newUser.name} onChange={e=>editUser?setEditUser(p=>({...p,name:e.target.value})):setNewUser(p=>({...p,name:e.target.value}))} placeholder="First Last"/>
           <Input label="Email" value={editUser?editUser.email:newUser.email} onChange={e=>editUser?setEditUser(p=>({...p,email:e.target.value})):setNewUser(p=>({...p,email:e.target.value}))} type="email" placeholder="user@hilton.co.za"/>
-          <Select label="Role" value={editUser?editUser.role:newUser.role} onChange={v=>editUser?setEditUser(p=>({...p,role:v})):setNewUser(p=>({...p,role:v}))} options={Object.entries(ROLES).map(([v,r])=>({value:v,label:`${r.icon} ${r.label}`}))}/>
+          <Select label="Role" value={editUser?editUser.role:newUser.role} onChange={v=>editUser?setEditUser(p=>({...p,role:v})):setNewUser(p=>({...p,role:v}))} options={grantable.map(v=>({value:v,label:`${ROLES[v].icon} ${ROLES[v].label}`}))}/>
           <Select label="Linked Player (optional)" value={editUser?editUser.player||"":newUser.player} onChange={v=>editUser?setEditUser(p=>({...p,player:v||null})):setNewUser(p=>({...p,player:v}))} options={[{value:"",label:"None"},...PLAYERS.map(p=>({value:p.id,label:`${p.name} (${p.team} · ${p.school})`}))]}/>
           <Select label="Linked Coach (optional)" value={editUser?editUser.coachId||"":newUser.coachId} onChange={v=>editUser?setEditUser(p=>({...p,coachId:v||null})):setNewUser(p=>({...p,coachId:v}))} options={[{value:"",label:"None"},...COACHES.map(c=>({value:c.id,label:`${c.name} (${c.team})`}))]}/>
           <Select label="Linked Staff (optional)" value={editUser?editUser.staffId||"":newUser.staffId} onChange={v=>editUser?setEditUser(p=>({...p,staffId:v||null})):setNewUser(p=>({...p,staffId:v}))} options={[{value:"",label:"None"},...STAFF.map(s=>({value:s.id,label:`${s.name} (${s.role})`}))]}/>

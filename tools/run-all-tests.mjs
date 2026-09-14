@@ -17,6 +17,8 @@ const SUITES = [
   ["rubric",   "packages/scoring/test/rubric.test.mjs"],
   ["phases",   "packages/scoring/test/phases.test.mjs"],
   ["wheel",    "apps/web/test/wheel.test.mjs"],
+  // Renders components, so it needs the .jsx transform hook.
+  ["system",   "apps/web/test/system.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["client",   "apps/web/src/rbac/rbac.test.mjs"],
   ["handover", "services/api/handover/scoring-session.test.mjs"],
   ["rls",      "services/api/rls/rls.test.mjs"],
@@ -29,8 +31,8 @@ const SUITES = [
 
 let allPass = true;
 const summary = [];
-for (const [name, path] of SUITES) {
-  const r = spawnSync("node", [path], { encoding: "utf8" });
+for (const [name, path, flags = []] of SUITES) {
+  const r = spawnSync("node", [...flags, path], { encoding: "utf8" });
   const out = (r.stdout || "") + (r.stderr || "");
   const m = out.match(/(\d+) passed, (\d+) failed/);
   const passed = m ? Number(m[1]) : 0;

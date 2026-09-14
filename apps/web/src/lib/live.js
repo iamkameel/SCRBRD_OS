@@ -113,6 +113,10 @@ function asStaff(r) {
 function asUser(r) {
   return { id: r.id, name: r.name, email: r.email, role: r.role, school: r.school_id,
            status: r.active ? "active" : "inactive",
+           // The roster record this account belongs to, when it belongs to one.
+           // A coach's account links to nobody; a pupil's links to the child
+           // whose passport, squad entry and profile are all keyed on it.
+           player: r.player_id ?? null,
            lastLogin: r.last_seen_at, teams: r.teams, live: true };
 }
 
@@ -463,6 +467,27 @@ function asRecognition(r) {
   return { family: r.family, kind: r.kind, label: r.label, value: r.value, season: r.season, on: d10(r.on_date),
            matchId: r.match_id, opponent: r.opponent, isPublic: r.is_public, citation: r.citation, id: r.ref_id, live: true };
 }
+/**
+ * One placed delivery, in the shape the wagon wheel already reads.
+ *
+ * The chart is the scorer's and expects a ball off the pad's own log —
+ * `type`, `placementSource`, `strikerId`. The server speaks the column names.
+ * Translating here rather than in the view is what keeps the chart single:
+ * a second wheel that understood snake_case would be a second implementation
+ * of the mirror rule, and those two drift the first time either is touched.
+ */
+function asShotPoint(r) {
+  // radius is numeric(3,2), which node-postgres returns as a STRING rather
+  // than lose precision silently. The wheel's geometry multiplies it, so it is
+  // coerced once here instead of relying on each use site to coerce it.
+  return { type: r.ball_type, value: r.value, shot: r.shot,
+           theta: r.theta == null ? null : Number(r.theta),
+           radius: r.radius == null ? null : Number(r.radius),
+           seg: r.seg,
+           placementSource: r.placement_source, captureProfile: r.capture_profile,
+           strikerId: r.striker_id, bowlerId: r.bowler_id,
+           matchId: r.match_id, innings: r.innings, seq: r.seq, live: true };
+}
 function asCap(r) {
   return { school: r.school_id, team: r.team_code, playerId: r.player_id, name: r.full_name, capNo: r.cap_no,
            appearances: r.appearances, firstOn: d10(r.first_on), lastOn: d10(r.last_on), firstMatchId: r.first_match_id,
@@ -688,6 +713,7 @@ const ADAPT = {
   equipment: asEquipment,
   equipment_issues: asIssue,
   recognition: asRecognition,
+  player_shot_points: asShotPoint,
   caps: asCap,
   honours: asHonour,
   milestones: asMilestone,

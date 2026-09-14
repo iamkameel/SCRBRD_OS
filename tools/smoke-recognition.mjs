@@ -233,7 +233,23 @@ try {
       return !(await recog(WHITFIELD, coach)).some((x) => x.kind === "career_runs");
     })());
     // Two hundreds, a five-for, a hat-trick; the career mark went with the voided ball.
-    ok("milestones by side, newest first", (await rows("/api/read/milestones?teamCode=1XI", coach)).length === 4);
+    // The four this walk produced — two hundreds, a five-for and a hat-trick —
+    // present and in order, rather than "these are the only four in the side".
+    //
+    // It asserted a bare count, which held only while the pilot seed carried no
+    // ball log at all. The moment one was added, a seeded fifty became a fifth
+    // milestone and this went red with nothing wrong. A count over SHARED
+    // fixture data tests the fixture, not the endpoint, and the name of this
+    // assertion says ordering — so ordering is what it checks.
+    //
+    // Fifties are excluded rather than the walk's players named, because one of
+    // its four belongs to a bowler outside that list. If the seed ever gains a
+    // hundred this needs revisiting; that is a smaller trap than a bare count.
+    const ms = await rows("/api/read/milestones?teamCode=1XI", coach);
+    const mine = ms.filter((x) => x.kind !== "fifty");
+    ok(`milestones by side, newest first (${mine.length} of this walk's, ${ms.length} in the side)`,
+       mine.length === 4 &&
+       ms.every((x, i, a) => i === 0 || new Date(a[i - 1].played_on) >= new Date(x.played_on)));
     ok("the 2XI coach reads none of them", (await rows("/api/read/milestones?teamCode=1XI", coach2)).length === 0);
     ok("a parent reads their child's, if any", (await rows("/api/read/milestones", parent)).every((x) => x.player_id === PILLAY));
     ok("the notices went to the side and nobody else", (await notices(coach2)).filter((x) => x.kind === "recognition").length === 0

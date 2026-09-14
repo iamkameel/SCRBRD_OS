@@ -144,7 +144,13 @@ INSERT INTO match (id, school_id, team_code, opponent, ground_id, starts_at, for
   ('77777777-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', '1XI', 'Michaelhouse',
    'ffffffff-0000-0000-0000-000000000001', now() + interval '3 days',  'T20', 20, 'scheduled'),
   ('77777777-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 'U16B', 'Kearsney College',
-   'ffffffff-0000-0000-0000-000000000001', now() + interval '10 days', 'T20', 20, 'scheduled');
+   'ffffffff-0000-0000-0000-000000000001', now() + interval '10 days', 'T20', 20, 'scheduled'),
+  -- The match that carries the seeded ball log, below. It is deliberately NOT
+  -- ...0001: smoke-rating.mjs writes its own deliveries into that one starting
+  -- at seq 1, and ball_event is append-only, so fixture data sitting there
+  -- fails the walk rather than the walk failing honestly.
+  ('77777777-0000-0000-0000-000000000004', '11111111-1111-1111-1111-111111111111', '1XI', 'Maritzburg College',
+   'ffffffff-0000-0000-0000-000000000001', now() - interval '14 days', 'T20', 20, 'complete');
 
 -- The completed match had a toss; the two scheduled ones have not been played.
 -- 'home' rather than 'Hilton College': the winner is a side in this fixture,
@@ -534,3 +540,98 @@ INSERT INTO equipment (id, school_id, kind, label, quantity, condition) VALUES
   ('e0170000-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 'bowling_machine', 'BOLA Professional', 1, 'good');
 INSERT INTO drill (school_id, name, category, duration_min, description) VALUES
   ('11111111-1111-1111-1111-111111111111', 'Pavilion end yorkers', 'bowling', 20, 'Death bowling into the shoes with the tape line.');
+
+-- ── One innings, ball by ball ──────────────────────────────────────
+--
+-- Until this existed the pilot seed carried three matches, eleven boys and
+-- ZERO deliveries. Everything derived from the ball log was therefore empty in
+-- the demonstration — every career average, every strike rate, every phase
+-- breakdown and every wagon wheel — and each one rendered as an honest em dash
+-- that looked exactly like a broken read. The layer the handover calls the moat
+-- had no fixture data at all.
+--
+-- One completed match (7th September, 1XI) gets a full first innings. The
+-- placements are the point: each batter is given a distinct scoring zone, so a
+-- wheel drawn from this is not decorative noise but something a coach would
+-- actually read — Bekker square of the wicket on the off side, Pillay strong
+-- through mid-wicket, Cele straight.
+--
+-- S Naidoo bats LEFT, deliberately. Placements are stored batter-relative and
+-- mirrored at render (screenAngle), and with every seeded player right-handed
+-- that rule was never exercised by anything a person could look at. His arc and
+-- Bekker's are stored as near-identical theta and must draw on OPPOSITE sides
+-- of the ground. A wheel where they overlap has lost the mirror.
+--
+-- The last twelve balls are sector-era on purpose: placement_source 'sector'
+-- with a seg and no theta, which is what the archive looks like before point
+-- capture. A chart that silently dropped them would report a season as emptier
+-- than it was, so the mixed provenance is here to be drawn.
+
+UPDATE player SET batting_style = 'RHB' WHERE id IN (
+  'aaaaaaaa-0000-0000-0000-000000000001','aaaaaaaa-0000-0000-0000-000000000002',
+  'aaaaaaaa-0000-0000-0000-000000000004','aaaaaaaa-0000-0000-0000-000000000005');
+UPDATE player SET batting_style = 'LHB' WHERE id = 'aaaaaaaa-0000-0000-0000-000000000003';
+
+INSERT INTO ball_event (
+  match_id, school_id, seq, epoch, innings,
+  scorer_user_id, device_id, idempotency_key, client_seq, client_ts,
+  kind, ball_type, value, shot, seg, theta, radius,
+  placement_source, capture_profile, contact, trajectory,
+  striker_id, bowler_id)
+SELECT
+  '77777777-0000-0000-0000-000000000004',
+  '11111111-1111-1111-1111-111111111111',
+  n, 1, 0,
+  '88888888-0000-0000-0000-000000000006', 'seed-pad-01',
+  'seed-ball-' || n, n,
+  timestamptz '2026-09-07 09:30:00+02' + (n * 40 || ' seconds')::interval,
+  'ball',
+  -- Two wickets, at balls 34 and 71. Everything else is runs off the bat.
+  CASE WHEN n IN (34, 71) THEN 'W' ELSE 'run' END,
+  CASE WHEN n IN (34, 71) THEN 0
+       WHEN n % 11 = 0 THEN 6
+       WHEN n % 7  = 0 THEN 4
+       WHEN n % 3  = 0 THEN 2
+       WHEN n % 2  = 0 THEN 1
+       ELSE 0 END,
+  CASE WHEN n % 11 = 0 THEN 'lofted drive'
+       WHEN n % 7  = 0 THEN 'drive'
+       WHEN n % 3  = 0 THEN 'push'
+       ELSE 'defend' END,
+  -- Sector-era tail: seg only, no point.
+  CASE WHEN n > 84 THEN (n % 12) END,
+  -- Batter-relative degrees. 0 is straight down the ground, positive to leg.
+  CASE WHEN n > 84 THEN NULL
+       WHEN n <= 34 THEN 300 + (n % 7) * 5          -- Bekker, through the covers
+       WHEN n <= 55 THEN  60 + (n % 6) * 6          -- Naidoo, through mid-wicket
+       ELSE              175 + (n % 4) * 6 END,     -- Cele, straight
+  CASE WHEN n > 84 THEN NULL
+       WHEN n % 11 = 0 THEN 0.95                    -- six: over the rope
+       WHEN n % 7  = 0 THEN 0.88                    -- four: to the rope
+       ELSE 0.30 + ((n % 9) * 0.05) END,
+  CASE WHEN n > 84 THEN 'sector' ELSE 'point' END,
+  CASE WHEN n > 84 THEN 'quick'  ELSE 'full'  END,
+  CASE WHEN n IN (34, 71) THEN 'outside_edge'
+       WHEN n % 3 = 0 THEN 'middle' ELSE 'inside_edge' END,
+  -- A trajectory needs the bat to have been involved, so the edges that
+  -- produced the two wickets take one and nothing else here contradicts it.
+  CASE WHEN n % 11 = 0 THEN 'aerial' ELSE 'ground' END,
+  -- Three batters, and deliberately NOT R Pillay (…0005).
+  --
+  -- He is the only pupil in the seed whose ACCOUNT is linked to a player
+  -- record, which makes him the one subject available to any walk that needs
+  -- "a pupil reading his own figures". smoke-summary.mjs asserts his average is
+  -- null before it adds a delivery, and smoke-scouting.mjs counts his matches
+  -- against a three-match threshold. Giving him a seeded innings breaks both —
+  -- not because either is wrong, but because he is the fixture's clean subject
+  -- and fixture data must leave him clean.
+  CASE WHEN n <= 34 THEN 'aaaaaaaa-0000-0000-0000-000000000002'::uuid
+       WHEN n <= 55 THEN 'aaaaaaaa-0000-0000-0000-000000000003'::uuid
+       ELSE              'aaaaaaaa-0000-0000-0000-000000000004'::uuid END,
+  -- No bowler. He is a Maritzburg player and this seed carries only Hilton's
+  -- roster, so naming one of our own would put a Hilton boy's name against
+  -- every delivery bowled AT Hilton — and inflate his bowling career with an
+  -- innings he did not bowl. bowler_id is nullable for exactly this case, and
+  -- smoke-rating.mjs writes its own deliveries the same way.
+  NULL
+FROM generate_series(1, 96) AS n;

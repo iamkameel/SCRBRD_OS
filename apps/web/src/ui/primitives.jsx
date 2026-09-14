@@ -1,5 +1,5 @@
-import { useId } from "react";
-import { D, px } from "../design/tokens.js";
+import { useEffect, useId, useRef } from "react";
+import { D, px, textOn } from "../design/tokens.js";
 import { initials } from "../lib/format.js";
 
 // ══════════════════════════════════════════════════════
@@ -107,17 +107,67 @@ const Pill = ({ children, color=D.indigo, onClick }) => (
   }}>{children}</span>
 );
 
-const Modal = ({ title, children, onClose, width="520px" }) => (
-  <div className="os-modal" style={{position:"fixed",inset:0,background:"rgba(0,0,0,.75)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:"20px"}}>
-    <div className="os-modal-card" style={{background:D.surf1,borderRadius:D.xl,border:`1px solid ${D.borderMed}`,width:"100%",maxWidth:width,maxHeight:"90vh",overflow:"auto"}}>
+/**
+ * A dialog that can actually be left.
+ *
+ * This drew a full-viewport backdrop at zIndex 1000 and listened for nothing.
+ * Escape did nothing, clicking the backdrop did nothing, and the only way out
+ * was to find and hit the small ✕. While it was open the backdrop swallowed
+ * every click in the app, so a person who opened one by accident — or a
+ * keyboard user, who could not reach the ✕ at all without tabbing the whole
+ * dialog — was stuck on that screen.
+ *
+ * The browser walk found it the moment a live role could first reach one: the
+ * sweep opens a record, presses Escape, and moves on. Escape left the dialog
+ * standing, and every later click landed on the backdrop instead of the menu.
+ * A test that presses Escape is not being fussy; it is doing what a person
+ * does.
+ *
+ * So: Escape closes, the backdrop closes (but not a click inside the card,
+ * which is the same element's child), and it announces itself as a dialog
+ * named by its own heading. Focus moves in on open and returns to whatever
+ * opened it on close, because a dialog that drops focus at the top of the
+ * document leaves a screen-reader user with no idea where they are.
+ *
+ * Still missing: a tab cycle trapped inside the card. Tab can still walk out
+ * into the page behind. That is a real gap, not a solved one.
+ */
+const Modal = ({ title, children, onClose, width="520px" }) => {
+  const headingId = useId();
+  const card = useRef(null);
+  // Held in a ref, not read at close time: by then the opener may be gone
+  // (it is often a row that the dialog's own save has just re-rendered).
+  const opener = useRef(null);
+
+  useEffect(() => {
+    opener.current = document.activeElement;
+    // Focus the card, not the first field: dropping a screen reader straight
+    // into an input skips the heading that says what this dialog is.
+    card.current?.focus();
+    const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); onClose?.(); } };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      const back = opener.current;
+      if (back && typeof back.focus === "function" && document.contains(back)) back.focus();
+    };
+  }, [onClose]);
+
+  return (
+  <div className="os-modal" data-testid="modal-backdrop"
+    onMouseDown={(e)=>{ if (e.target === e.currentTarget) onClose?.(); }}
+    style={{position:"fixed",inset:0,background:"rgba(0,0,0,.75)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:"20px"}}>
+    <div className="os-modal-card" ref={card} role="dialog" aria-modal="true" aria-labelledby={headingId} tabIndex={-1}
+      style={{background:D.surf1,borderRadius:D.xl,border:`1px solid ${D.borderMed}`,width:"100%",maxWidth:width,maxHeight:"90vh",overflow:"auto",outline:"none"}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 20px",borderBottom:`1px solid ${D.border}`}}>
-        <h3 style={{fontFamily:D.head,fontSize:"15px",fontWeight:700,color:D.textPrimary}}>{title}</h3>
-        <button onClick={onClose} className="pressBtn" style={{background:"none",border:"none",cursor:"pointer",color:D.textMuted,fontSize:"18px"}}>✕</button>
+        <h3 id={headingId} style={{fontFamily:D.head,fontSize:"15px",fontWeight:700,color:D.textPrimary}}>{title}</h3>
+        <button onClick={onClose} className="pressBtn" aria-label="Close dialog" style={{background:"none",border:"none",cursor:"pointer",color:D.textMuted,fontSize:"18px"}}>✕</button>
       </div>
       <div style={{padding:"20px"}}>{children}</div>
     </div>
   </div>
-);
+  );
+};
 
 /**
  * A labelled text field.
@@ -213,7 +263,7 @@ function RadarChart({ data, color=D.indigo, size=160 }) {
 const EmptyState = ({ loading, error, message = "Nothing here yet", icon = "—" }) => (
   <div style={{ padding: "32px 16px", textAlign: "center",
                 fontFamily: D.body, fontSize: "12px",
-                color: error ? D.rose : D.textMuted }}>
+                color: error ? textOn(D.rose) : D.textMuted }}>
     <div style={{ fontSize: "20px", marginBottom: "8px", opacity: 0.6 }} aria-hidden="true">
       {loading ? "…" : error ? "!" : icon}
     </div>
