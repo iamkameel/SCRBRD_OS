@@ -1,22 +1,28 @@
 
 import { useState } from "react";
-import { D } from "../design/tokens.js";
+import { D, textOn } from "../design/tokens.js";
 import { fitnessColor, roleColor, stat } from "../lib/format.js";
 import { SR } from "../scorer/format.js";
 import { Avatar, Badge, Btn, Card, Input, Modal, RadarChart, SectionHeader, Select } from "../ui/primitives.jsx";
 import { usePlayersWithCareer, useSkills } from "../lib/live.js";
+import { api } from "../lib/api.js";
+import { schoolsWhere } from "../lib/session.js";
 
 // ══════════════════════════════════════════════════════
 //  SQUAD VIEW
 // ══════════════════════════════════════════════════════
 function SquadView({ role }) {
+  const [rosterNonce, setRosterNonce] = useState(0);
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
-  const PLAYERS = usePlayersWithCareer(role);
+  const PLAYERS = usePlayersWithCareer(role, rosterNonce);
   const SKILLS_MATRIX = useSkills(role);
   const [team, setTeam]           = useState("1XI");
   const [selected, setSelected]   = useState(null);
   const [addModal, setAddModal]   = useState(false);
+  const [np, setNp] = useState({ fullName:"", teamCode:"1XI", playingRole:"batter", battingStyle:"right-hand", born:"" });
+  const [npSaid, setNpSaid] = useState("");
+  const addSchools = schoolsWhere("player.profile.manage");
   const players = PLAYERS.filter(p=>p.team===team);
   const teams = [...new Set(PLAYERS.map(p=>p.team))];
   const canEdit = role==="superadmin"||role==="schooladmin"||role==="coach";
@@ -142,17 +148,34 @@ function SquadView({ role }) {
         )}
       </div>
       {addModal&&(
-        <Modal title="Add Player" onClose={()=>setAddModal(false)}>
-          <Input label="Full Name" value="" onChange={()=>{}} placeholder="First Last"/>
+        <Modal title="Add Player" onClose={()=>{setAddModal(false);setNpSaid("");}}>
+          {addSchools.length>1&&<Select label="School" value={np.schoolId||""} onChange={(v)=>setNp(n=>({...n,schoolId:v}))}
+            options={addSchools.map(s=>({value:s.id,label:s.name}))}/>}
+          <Input label="Full Name" value={np.fullName} onChange={(v)=>setNp(n=>({...n,fullName:v}))} placeholder="First Last"/>
           <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"12px"}}>
-            <Select label="Team" value="1XI" onChange={()=>{}} options={["1XI","U15A","U13A"]}/>
-            <Select label="Role" value="BAT" onChange={()=>{}} options={["BAT","BOWL","ALL","WK"]}/>
-            <Select label="Batting Hand" value="R" onChange={()=>{}} options={[{value:"R",label:"Right"},{value:"L",label:"Left"}]}/>
-            <Input label="Age" value="" onChange={()=>{}} type="number" placeholder="15"/>
+            <Select label="Team" value={np.teamCode} onChange={(v)=>setNp(n=>({...n,teamCode:v}))} options={["1XI","U16A","U16B","U15A","U14A","U13A"]}/>
+            <Select label="Role" value={np.playingRole} onChange={(v)=>setNp(n=>({...n,playingRole:v}))}
+              options={[{value:"batter",label:"Batter"},{value:"bowler",label:"Bowler"},{value:"allrounder",label:"Allrounder"},{value:"keeper",label:"Keeper"}]}/>
+            <Select label="Batting Hand" value={np.battingStyle} onChange={(v)=>setNp(n=>({...n,battingStyle:v}))}
+              options={[{value:"right-hand",label:"Right"},{value:"left-hand",label:"Left"}]}/>
+            <Input label="Date of birth" value={np.born} onChange={(v)=>setNp(n=>({...n,born:v}))} type="date"/>
           </div>
+          {npSaid&&<div role="alert" style={{fontFamily:D.body,fontSize:"11px",color:textOn(D.rose),marginBottom:"8px"}}>{npSaid}</div>}
           <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"8px"}}>
-            <Btn variant="ghost" onClick={()=>setAddModal(false)}>Cancel</Btn>
-            <Btn onClick={()=>setAddModal(false)}>Add Player</Btn>
+            <Btn variant="ghost" onClick={()=>{setAddModal(false);setNpSaid("");}}>Cancel</Btn>
+            <Btn onClick={async ()=>{
+              setNpSaid("");
+              try {
+                await api("/api/players", { method:"POST", body:{
+                  schoolId: np.schoolId || addSchools[0]?.id,
+                  fullName: np.fullName, teamCode: np.teamCode,
+                  playingRole: np.playingRole, battingStyle: np.battingStyle,
+                  born: np.born || null,
+                }});
+                setAddModal(false); setNp({ fullName:"", teamCode:"1XI", playingRole:"batter", battingStyle:"right-hand", born:"" });
+                setRosterNonce(x=>x+1);
+              } catch (e) { setNpSaid(e.message || "Refused."); }
+            }} disabled={np.fullName.trim().length<2}>Add Player</Btn>
           </div>
         </Modal>
       )}

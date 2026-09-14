@@ -53,6 +53,8 @@ import { competitionRoutes } from "./write/competitions-api.mjs";
 import { requestRoutes } from "./write/requests-api.mjs";
 import { kitRoutes } from "./write/kit-api.mjs";
 import { workloadRoutes } from "./write/workload-api.mjs";
+import { rosterAddRoutes } from "./write/roster-add-api.mjs";
+import { trainingRoutes } from "./write/training-api.mjs";
 import { MatchHub } from "./realtime/realtime.mjs";
 
 const PORT = Number(process.env.PORT || 8787);
@@ -230,6 +232,8 @@ const competitions = competitionRoutes({ pool, secret: SECRET });
 const requests = requestRoutes({ pool, secret: SECRET });
 const kit = kitRoutes({ pool, secret: SECRET });
 const workload = workloadRoutes({ pool, secret: SECRET });
+const rosterAdd = rosterAddRoutes({ pool, secret: SECRET });
+const training = trainingRoutes({ pool, secret: SECRET });
 
 /**
  * Development sign-in.
@@ -386,6 +390,12 @@ const PLAYER_ROUTES = [
   // A high school's own ceiling on an Open-band bowler's overs. Refused
   // outright for anything that is not kind = 'school' — see the trigger.
   [/^\/api\/bowling-ceiling$/,                       "POST", workload.ceiling],
+  // A boy joins the roster one at a time, under the same authority as the
+  // bulk CSV import (player.profile.manage).
+  [/^\/api\/players$/,                               "POST", rosterAdd.add],
+  // A session on the training calendar, under team.manage — the same
+  // capability that already keeps the drill library and the kit register.
+  [/^\/api\/training$/,                              "POST", training.schedule],
   // A competition's tiers, and who sits in which. competition.manage at the
   // organiser, which for a shared league is a platform-wide administrator.
   [/^\/api\/competitions\/([^/]+)\/divisions$/,      "POST", competitions.division],
