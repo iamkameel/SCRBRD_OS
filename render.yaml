@@ -1,0 +1,54 @@
+# SCRBRD — one service, one URL.
+#
+# The API serves the client from its own process (SERVE_CLIENT below), so a
+# deployment is a single container with a single address: no CORS, no second
+# host, and no build-time API address to get wrong. The Firebase Hosting
+# arrangement in firebase.json reaches the same place by a different road
+# (static hosting plus a rewrite to Cloud Run); the two are alternatives, and
+# this is the one that needs no billing account.
+#
+# To use it: on render.com, New → Blueprint, point it at this repository, and
+# supply the two secrets it asks for. Everything else is here.
+#
+# The database is NOT here and never will be. It is provisioned once, by a
+# person, and DEPLOYING.md says how.
+
+services:
+  - type: web
+    name: scrbrd
+    runtime: node
+    plan: free
+    region: frankfurt          # closest of Render's free regions to South Africa
+    branch: main
+    # The client is built into apps/web/dist here, and served from there at
+    # runtime. VITE_API_BASE is empty on purpose: the browser calls /api on
+    # the same origin it loaded the page from, which is this service.
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && VITE_API_BASE= pnpm build
+    startCommand: node services/api/server.mjs
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SERVE_CLIENT
+        value: apps/web/dist
+      # Render supplies PORT; server.mjs reads it.
+      #
+      # DATABASE_URL must name the APPLICATION role, never the owner. The
+      # server asks the database what it is at boot and refuses to start on a
+      # connection that row-level security cannot restrain, so a paste of the
+      # wrong string is a failed deploy rather than a silent one that answers
+      # every request in full.
+      - key: DATABASE_URL
+        sync: false
+      # 32+ random bytes. Outside development the server refuses to start
+      # without it rather than mint a well-known one.
+      - key: SESSION_SECRET
+        sync: false
+      # WEB_ORIGIN is deliberately absent: with the client on this same origin
+      # there is no cross-origin request for CORS to permit or refuse.
+      #
+      # ALLOW_DEV_LOGIN is deliberately absent too. It does nothing here —
+      # dev login is refused outright when NODE_ENV=production — and a
+      # demonstration that wants one-click sign-in as seeded people must set
+      # NODE_ENV=development knowingly, with fixture data only. See
+      # DEPLOYING.md, "A demonstration is not a pilot".

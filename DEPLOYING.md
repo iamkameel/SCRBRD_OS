@@ -29,6 +29,40 @@ npm install -g pnpm && pnpm install --frozen-lockfile
 Cloud Shell's home directory survives between sessions; the session itself
 times out when idle, and reconnecting puts you back in the same directory.
 
+## The whole thing in one service
+
+The API can serve the client from its own process: set `SERVE_CLIENT` to the
+built client directory and it answers `/` with the app and `/api/**` with the
+API, from one address. No CORS, no second host, and no build-time API address
+to get wrong — the browser calls `/api` on whatever origin served the page.
+
+`render.yaml` in the repository root is that deployment, ready to use, on a
+host with a free tier and no billing account:
+
+1. Provision the database (section 1 below) and apply the schema (section 2).
+2. On render.com: **New → Blueprint**, point it at this repository.
+3. It asks for two values, and only two:
+   - `DATABASE_URL` — the **application** role, `scrbrd_app`, never the owner.
+   - `SESSION_SECRET` — 32+ random bytes (`openssl rand -hex 32`).
+4. Deploy. The address it gives you is the whole product.
+
+A free instance sleeps when idle and takes a while to answer the first
+request after that. It is a demonstration, not a service a school depends on.
+
+### A demonstration is not a pilot
+
+The fixtures in `98_seed_pilot.sql` are invented people at invented schools,
+and one-click sign-in as any of them (`NODE_ENV=development` plus
+`ALLOW_DEV_LOGIN=1`) is a reasonable thing to put in front of someone who
+wants to see what SCRBRD does. Nothing real is exposed, because nothing there
+is real.
+
+The moment one actual child's record goes into a database, that arrangement
+is indefensible, and the rules are not negotiable: a fresh database from the
+same migrations, no seed, `NODE_ENV=production`, no dev login, and a first
+administrator from `tools/bootstrap.mjs` who invites everyone else by handing
+them a code. The two must never be the same database.
+
 ## Two ways to deploy, and which to do first
 
 | | Who deploys | What it needs |
@@ -46,7 +80,42 @@ and it will make much more sense once you have watched them work.
 Done by an operator with owner rights on the project. None of it is in a
 workflow because none of it should happen twice.
 
-### 1 · Cloud SQL
+### 1 · A Postgres, either way
+
+Two routes. **Supabase** needs no billing account and is what the first
+deployment used; **Cloud SQL** is the one to grow into. The schema applies
+cleanly to Postgres 15, 16 and 17.
+
+#### Supabase
+
+Create a project, then, in the dashboard's **SQL Editor**:
+
+```sql
+-- The application role. db/06_app_role.sql creates it with a DEVELOPMENT
+-- password if it does not exist, and that password is published in this
+-- repository — so either create it here first, or run this immediately
+-- after migrating. Either way it must not keep the default.
+ALTER ROLE scrbrd_app WITH PASSWORD '<app secret>';
+```
+
+Connection strings come from the green **Connect** button at the top of the
+dashboard, not from the settings sidebar. Take the **session pooler** one:
+direct connections are IPv6-only and most build environments are not. The
+pooler wants the role and the project reference together as the username,
+including for the application role:
+
+```
+postgresql://scrbrd_app.<project-ref>:<app secret>@aws-1-<region>.pooler.supabase.com:5432/postgres
+```
+
+**Never run `--reset` against Supabase.** It drops the whole public schema and
+takes Supabase's own objects with it.
+
+Two things to know before choosing this for anything real: a free project
+sleeps after about a week of inactivity, and the region list has nothing in
+Africa, so every query from a South African school crosses to Europe and back.
+
+#### Cloud SQL
 
 Create a Postgres 16 instance in `africa-south1`, private IP or public with
 the Cloud SQL Auth Proxy — either way, the API reaches it over the Cloud SQL
@@ -62,10 +131,12 @@ CREATE ROLE scrbrd_app LOGIN PASSWORD '<app secret>'
   NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS NOINHERIT;
 ```
 
-Two roles, on purpose. `scrbrd` owns the schema and row-level security does
-not apply to an owner. `scrbrd_app` is what the API connects as, and
-`server.mjs` refuses to start on a connection that owns tables or can bypass
-RLS.
+Two roles, on purpose, on either host. The owner owns the schema, and
+row-level security does not apply to a table's owner. `scrbrd_app` is what
+the API connects as, and `server.mjs` asks the database what it is at boot
+and refuses to start on a connection that owns tables or can bypass RLS —
+which is how a first deployment discovered it had been handed the owner's
+connection string by an environment variable it had forgotten was exported.
 
 ### 2 · Schema
 
