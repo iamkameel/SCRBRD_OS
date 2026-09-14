@@ -1,5 +1,5 @@
 import { useId } from "react";
-import { D, px } from "../design/tokens.js";
+import { D, px, textOn } from "../design/tokens.js";
 import { initials } from "../lib/format.js";
 
 // ══════════════════════════════════════════════════════
@@ -213,7 +213,7 @@ function RadarChart({ data, color=D.indigo, size=160 }) {
 const EmptyState = ({ loading, error, message = "Nothing here yet", icon = "—" }) => (
   <div style={{ padding: "32px 16px", textAlign: "center",
                 fontFamily: D.body, fontSize: "12px",
-                color: error ? D.rose : D.textMuted }}>
+                color: error ? textOn(D.rose) : D.textMuted }}>
     <div style={{ fontSize: "20px", marginBottom: "8px", opacity: 0.6 }} aria-hidden="true">
       {loading ? "…" : error ? "!" : icon}
     </div>

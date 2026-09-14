@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { ROLES } from "../design/roles.js";
-import { D } from "../design/tokens.js";
+import { ROLES, ROLE_FAMILIES, canonicalRole } from "../design/roles.js";
+import { D, T } from "../design/tokens.js";
 import { GlobalSearch } from "./GlobalSearch.jsx";
 import { useRows } from "../lib/live.js";
 
@@ -24,7 +24,7 @@ function TopBar({ role, onRoleChange, onNav, userName }) {
   return (
     <>
       {searchOpen&&<GlobalSearch role={role} onNav={onNav} onClose={()=>setSearchOpen(false)}/>}
-      <div data-testid="topbar" style={{height:"52px",background:D.surf0,borderBottom:`1px solid ${D.border}`,display:"flex",alignItems:"center",padding:"0 16px",gap:"10px",flexShrink:0,position:"sticky",top:0,zIndex:100}}>
+      <div data-testid="topbar" className="os-glass" style={{height:"52px",borderRadius:0,borderLeft:"none",borderRight:"none",borderTop:"none",display:"flex",alignItems:"center",padding:"0 16px",gap:"10px",flexShrink:0,position:"sticky",top:0,zIndex:100}}>
 
         {/* Live match chip */}
         <button onClick={()=>onNav("matches")} className="pressBtn" data-testid="topbar-live" aria-label="Live matches" style={{display:"flex",alignItems:"center",gap:"6px",padding:"4px 10px",borderRadius:D.pill,background:D.emerald+"14",border:`1px solid ${D.emerald}30`,cursor:"pointer",flexShrink:0}}>
@@ -43,7 +43,7 @@ function TopBar({ role, onRoleChange, onNav, userName }) {
         {/* Notifications */}
         <button onClick={()=>onNav("notifications")} className="pressBtn" data-testid="topbar-alerts" aria-label={unread>0?`Alerts, ${unread} unread`:"Alerts"} style={{position:"relative",background:"none",border:"none",cursor:"pointer",fontSize:"16px",flexShrink:0}}>
           🔔
-          {unread>0&&<span style={{position:"absolute",top:"-2px",right:"-2px",background:D.rose,color:"#fff",borderRadius:D.pill,padding:"0 4px",fontFamily:D.mono,fontSize:"8px",fontWeight:700,minWidth:"14px",textAlign:"center"}}>{unread}</span>}
+          {unread>0&&<span style={{position:"absolute",top:"-2px",right:"-2px",background:T.semantic.critical,color:T.surface.canvas,borderRadius:D.pill,padding:"0 4px",fontFamily:D.mono,fontSize:"8px",fontWeight:700,minWidth:"14px",textAlign:"center"}}>{unread}</span>}
         </button>
 
         {/* Role switcher */}
@@ -54,17 +54,38 @@ function TopBar({ role, onRoleChange, onNav, userName }) {
             <span style={{fontSize:"9px",color:D.textMuted}}>▼</span>
           </button>
           {roleOpen&&(
-            <div style={{position:"absolute",right:0,top:"calc(100% + 6px)",background:D.surf2,border:`1px solid ${D.borderMed}`,borderRadius:D.lg,overflow:"hidden",minWidth:"180px",zIndex:200,boxShadow:"0 8px 32px rgba(0,0,0,0.4)"}}>
-              <div style={{padding:"8px 12px 4px",fontFamily:D.head,fontSize:"8px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:D.textMuted}}>Switch Role (Demo)</div>
-              {Object.entries(ROLES).map(([r,rc])=>(
-                <button key={r} onClick={()=>{onRoleChange(r);setRoleOpen(false);}} className="pressBtn" data-testid={`role-option-${r}`} style={{
-                  width:"100%",padding:"8px 12px",display:"flex",alignItems:"center",gap:"8px",
-                  background:role===r?rc.color+"18":"transparent",border:"none",cursor:"pointer",textAlign:"left",
-                }}>
-                  <span>{rc.icon}</span>
-                  <span style={{fontFamily:D.body,fontSize:"12px",color:role===r?rc.color:D.textSecondary}}>{rc.label}</span>
-                  {role===r&&<span style={{marginLeft:"auto",width:"6px",height:"6px",borderRadius:"50%",background:rc.color}}/>}
-                </button>
+            <div role="menu" aria-label="Switch role" style={{position:"absolute",right:0,top:"calc(100% + 6px)",background:T.surface.overlay,border:`1px solid ${T.line.normal}`,borderRadius:T.radius.lg,overflowY:"auto",minWidth:"210px",maxHeight:"min(70vh,520px)",zIndex:200,boxShadow:T.elevation.lg}}>
+              <div style={{position:"sticky",top:0,background:T.surface.overlay,padding:"10px 12px 6px",borderBottom:`1px solid ${T.line.subtle}`,fontFamily:T.type.head,fontSize:"8px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.content.tertiary}}>Switch Role (Demo)</div>
+              {/* Grouped by family, and ONE ENTRY PER ROLE.
+                  This menu used to iterate ROLES, which is the LOOKUP table:
+                  twenty-four real roles plus nine demonstration aliases that
+                  resolve to them. Every alias carries its target's own label,
+                  so the list rendered "Platform Admin" three times, "Principal"
+                  twice, and six more duplicated pairs — thirty-three rows for
+                  twenty-four roles, with no way to tell the copies apart.
+                  ROLE_IDENTITY is the canonical set; the aliases stay in ROLES
+                  so an account signed in as one still resolves to a name and a
+                  navigation. */}
+              {Object.entries(ROLE_FAMILIES).map(([family,members])=>(
+                <div key={family} role="group" aria-label={family}>
+                  <div style={{padding:"9px 12px 3px",fontFamily:T.type.head,fontSize:"8px",fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",color:T.content.tertiary}}>{family}</div>
+                  {members.map(r=>{
+                    const rc = ROLES[r];
+                    const current = role===r||canonicalRole(role)===r;
+                    return (
+                      <button key={r} role="menuitemradio" aria-checked={current}
+                        onClick={()=>{onRoleChange(r);setRoleOpen(false);}}
+                        className="pressBtn os-state" data-testid={`role-option-${r}`} data-selected={current} style={{
+                        width:"100%",padding:"8px 12px",display:"flex",alignItems:"center",gap:"8px",
+                        background:current?T.surface.interactive:"transparent",border:"none",cursor:"pointer",textAlign:"left",
+                      }}>
+                        <span aria-hidden="true">{rc.icon}</span>
+                        <span style={{fontFamily:T.type.body,fontSize:"12px",color:current?rc.color:T.content.secondary}}>{rc.label}</span>
+                        {current&&<span aria-hidden="true" style={{marginLeft:"auto",width:"6px",height:"6px",borderRadius:"50%",background:rc.color}}/>}
+                      </button>
+                    );
+                  })}
+                </div>
               ))}
             </div>
           )}

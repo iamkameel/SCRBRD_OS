@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { placementFromTap, screenAngle } from "@scrbrd/scoring";
-import { D, px } from "../design/tokens.js";
+import { D, px, textOn } from "../design/tokens.js";
 import { can } from "../rbac/index.js";
 import { CX, CY, LK_COLS, R_BND, R_IN, R_MID, R_PITCH, SEGS, ballAngle, heatColor, lineKey, pieSlice, ringArc, toXY, wagEnd } from "./field.js";
 import { RR, fmtOv, SR } from "./format.js";
@@ -76,7 +76,7 @@ function DynamicBar({inn,match,target,isChase,lastOver}){
           {/* RRR if chasing */}
           {isChase&&sig.reqRr!=null&&(
             <div style={{textAlign:"center",padding:"0 10px",borderRight:`1px solid ${D.border}66`}}>
-              <div style={{fontFamily:D.mono,fontSize:"21px",fontWeight:500,color:sig.rrDelta<-1?D.rose:sig.rrDelta>0.5?D.emerald:D.amber,lineHeight:1,letterSpacing:"-0.02em"}}>{sig.reqRr}</div>
+              <div style={{fontFamily:D.mono,fontSize:"21px",fontWeight:500,color:sig.rrDelta<-1?textOn(D.rose):sig.rrDelta>0.5?D.emerald:D.amber,lineHeight:1,letterSpacing:"-0.02em"}}>{sig.reqRr}</div>
               <div style={{fontFamily:D.head,fontSize:"8px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:D.textMuted,marginTop:"2px"}}>RRR</div>
             </div>
           )}
@@ -498,7 +498,7 @@ function ScorecardPanel({innings,idx}){
             </div>
             {[b.runs,b.balls,b.fours,b.sixes,SR(b.runs,b.balls)].map((v,j)=>(
               <div key={j} style={{textAlign:"right",fontFamily:D.mono,fontSize:"12px",fontWeight:j===0?"500":"400",
-                color:j===2?D.indigo:j===3?D.amber:j===4?D.textMuted:D.textPrimary}}>{v}</div>
+                color:j===2?textOn(D.indigo):j===3?D.amber:j===4?D.textMuted:D.textPrimary}}>{v}</div>
             ))}
           </div>
         ))}

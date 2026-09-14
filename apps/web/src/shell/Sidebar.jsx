@@ -1,7 +1,7 @@
 import SCRBRD_LOGO from "../assets/scrbrd-logo.jpg";
 import { NAV_META, ROLES, groupNav } from "../design/roles.js";
 import { useNav } from "../lib/features.js";
-import { D } from "../design/tokens.js";
+import { D, T } from "../design/tokens.js";
 import { SportSwitcher } from "./MobileNav.jsx";
 
 // ══════════════════════════════════════════════════════
@@ -68,7 +68,7 @@ function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount }) {
               const isActive = active===key;
               const isBell = key==="notifications";
               return (
-                <button key={key} onClick={()=>onNav(key)} className="pressBtn"
+                <button key={key} onClick={()=>onNav(key)}
                   data-testid={`nav-${key}`}
                   // aria-current tells a screen reader which page it is ALREADY
                   // on. Without it the active state is a background tint and
@@ -76,20 +76,32 @@ function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount }) {
                   // way to find out where you are is to navigate somewhere.
                   aria-current={isActive?"page":undefined}
                   aria-label={collapsed?m.label:undefined}
+                  // os-state is the Material 3 state layer (§20): hover and
+                  // press are one mechanism defined against the CONTENT colour,
+                  // so every destination behaves identically without each one
+                  // carrying its own hover rule.
+                  className="pressBtn os-state"
+                  data-selected={isActive}
                   style={{
-                  width:"100%",padding:collapsed?"12px 0":"10px 14px",
+                  padding:collapsed?"12px 0":"10px 14px",
                   display:"flex",alignItems:"center",gap:"10px",cursor:"pointer",
-                  background:isActive?D.indigo+"18":"transparent",
-                  border:`1px solid ${isActive?D.indigo+"33":"transparent"}`,
-                  borderRadius:collapsed?"0":D.md,
+                  // The selected destination is marked by a rail against its
+                  // leading edge — the M3 navigation-rail indicator — rather
+                  // than by a tinted box. A tint has to be strong enough to see
+                  // and therefore strong enough to compete with the content;
+                  // a 2px bar is unambiguous at any strength.
+                  background:isActive?T.surface.interactive:"transparent",
+                  border:"1px solid transparent",
+                  borderLeft:`2px solid ${isActive?rc.color:"transparent"}`,
+                  borderRadius:collapsed?"0":T.radius.md,
                   margin:collapsed?"0":"1px 6px",
                   width:collapsed?"100%":"calc(100% - 12px)",
-                  transition:"all .15s",
+                  transition:`all ${T.motion.micro} ${T.motion.swift}`,
                   position:"relative",
                 }}>
-                  <span style={{fontSize:"15px",textAlign:"center",width:collapsed?"100%":"auto",color:isActive?ROLES[role].color:D.textSecondary}}>{m.icon}</span>
-                  {!collapsed&&<span style={{fontFamily:D.body,fontSize:"12px",fontWeight:isActive?600:400,color:isActive?D.textPrimary:D.textSecondary}}>{m.label}</span>}
-                  {isBell&&notifCount>0&&<span data-testid="nav-alerts-badge" style={{marginLeft:"auto",background:D.rose,color:"#fff",borderRadius:D.pill,padding:"1px 6px",fontFamily:D.mono,fontSize:"9px",fontWeight:700}}>{notifCount}</span>}
+                  <span style={{fontSize:"15px",textAlign:"center",width:collapsed?"100%":"auto",color:isActive?rc.color:T.content.secondary}}>{m.icon}</span>
+                  {!collapsed&&<span style={{fontFamily:T.type.body,fontSize:"12px",fontWeight:isActive?600:400,color:isActive?T.content.primary:T.content.secondary}}>{m.label}</span>}
+                  {isBell&&notifCount>0&&<span data-testid="nav-alerts-badge" style={{marginLeft:"auto",background:T.semantic.critical,color:T.surface.canvas,borderRadius:T.radius.pill,padding:"1px 6px",fontFamily:T.type.mono,fontSize:"9px",fontWeight:700}}>{notifCount}</span>}
                 </button>
               );
             })}

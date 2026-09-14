@@ -784,6 +784,105 @@ try {
     await c.ctx.close();
   }
 
+  // ── The dashboard assembles itself from capabilities ─────────────
+  // The KPI row used to be gated on role NAMES — "superadmin", "parent" —
+  // which exist only in the demonstration's own vocabulary. Signed in for
+  // real, twenty-one of twenty-four roles matched no branch and were shown a
+  // dashboard with nothing at the top of it.
+  //
+  // Each tile now names the capability governing the table its figure is
+  // counted over, so this walk checks BOTH directions: a role sees every
+  // figure it holds, and no role is shown one it does not. The second half is
+  // the half that matters — a count over rows you may not read comes back 0,
+  // not null, so an ungated tile does not fail visibly. It states, plainly and
+  // wrongly, that there is nothing there.
+  group("The dashboard draws the figures each role may actually read");
+  {
+    // Tiles are asserted BOTH ways per role: present, and absent. The absent
+    // half is what falsifies — remove a `holds()` gate and these go red.
+    // Matched on the ACCOUNT rather than the label. Each pilot button renders
+    // "<icon> <label>" over the address, so an anchored label regex matches
+    // nothing and a loose one risks catching a different button; the address
+    // is unique and is what the account actually is.
+    const expected = [
+      { who: /sarah@example\.invalid/, role: "directorofsport",
+        sees:   ["Active Players", "Upcoming", "Win Rate", "Alerts"],
+        cannot: [] },
+      // fixture.read, medical.status.read and team.read — but no roster and no
+      // competition, so no squad count and no win rate.
+      { who: /medical@example\.invalid/, role: "medical",
+        sees:   ["Upcoming", "Alerts"],
+        cannot: ["Active Players", "Win Rate"] },
+      // competition.read and fixture.read and nothing else that counts.
+      { who: /watcher@example\.invalid/, role: "spectator",
+        sees:   ["Upcoming", "Win Rate", "Alerts"],
+        cannot: ["Active Players", "Injuries", "Sessions This Wk"] },
+      // The bursar holds none of the six — invoices and sponsorship are not on
+      // this row. One tile, and it should be the only one.
+      { who: /bursar@example\.invalid/, role: "finance",
+        sees:   ["Alerts"],
+        cannot: ["Active Players", "Upcoming", "Win Rate", "Injuries", "Sessions This Wk"] },
+    ];
+
+    for (const e of expected) {
+      const c = await open();
+      await signIn(c.page, e.who);
+      const toDash = c.page.locator('[data-testid="nav-dashboard"]');
+      if (await toDash.count()) { await toDash.click({ timeout: 6000 }); await c.page.waitForTimeout(1200); }
+      const row = c.page.locator('[data-testid="kpi-row"]');
+      ok(`${e.role}: the dashboard has a figure row at all`, await row.count() === 1);
+      // Upper-cased, because the tile labels are CSS text-transform and
+      // innerText returns what is RENDERED. Comparing against the source
+      // spelling made every "shows" assertion fail and — far worse — made
+      // every "does NOT show" assertion pass for the wrong reason, which is an
+      // assertion that cannot fail.
+      const t = (await row.innerText().catch(() => "")).toUpperCase();
+      for (const label of e.sees) {
+        ok(`${e.role}: ...and shows ${label}, which they hold`, t.includes(label.toUpperCase()));
+      }
+      for (const label of e.cannot) {
+        ok(`${e.role}: ...and does NOT show ${label}, which they cannot read`, !t.includes(label.toUpperCase()));
+      }
+      ok(`${e.role}: no console errors`, c.errors.length === 0);
+      await c.ctx.close();
+    }
+  }
+
+  // ── The role switcher, as it is actually seen ────────────────────
+  // Reported from the live deployment with a screenshot: the menu listed
+  // "Platform Admin" three times and "Principal" twice. ROLES is the LOOKUP
+  // table — real roles plus demonstration aliases resolving to them — and an
+  // alias carries its target's own label, so iterating it renders the same
+  // role repeatedly under the same name.
+  group("The role switcher lists each role once, not once per alias");
+  {
+    const c = await open();
+    await signIn(c.page, /sarah@example\.invalid/);
+    ok("the switcher opens", await click(c.page, /Director of Sport|Sarah/, 4000));
+    await c.page.waitForTimeout(400);
+    const menu = c.page.locator('[role="menu"][aria-label="Switch role"]');
+    ok("the menu is drawn", await menu.count() === 1);
+
+    const labels = await menu.locator('[role="menuitemradio"]').allInnerTexts();
+    // Each row renders "<icon> <label>", so the icon is stripped before
+    // comparing. Substring matching is not an option here: COACH is a
+    // substring of ASSISTANT COACH, and a check that counts both would call
+    // the deduplicated menu a duplicate.
+    const seen = labels.map((l) => l.trim().toUpperCase().replace(/^[^A-Z]*/, "")).filter(Boolean);
+    const dupes = seen.filter((l, i) => seen.indexOf(l) !== i);
+    ok(`no role is offered twice (${seen.length} entries)`, dupes.length === 0);
+    // Named explicitly, because these are the ones that were wrong on screen.
+    for (const label of ["PLATFORM ADMIN", "PRINCIPAL", "COACH", "PARENT / GUARDIAN"]) {
+      ok(`...${label} appears exactly once`, seen.filter((l) => l === label).length === 1);
+    }
+    // And the count is the policy's, not the lookup table's.
+    ok("the menu offers the twenty-four real roles", seen.length === 24);
+    ok("exactly one is marked as the current role",
+       (await menu.locator('[aria-checked="true"]').count()) === 1);
+    ok("no console errors", c.errors.length === 0);
+    await c.ctx.close();
+  }
+
   // ── Onboarding has a way out ─────────────────────────────────────
   // A person who clicks "Get Started" by mistake, or who already has an
   // account, used to have no way back to the login screen from the welcome
