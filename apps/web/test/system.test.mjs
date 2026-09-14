@@ -22,6 +22,7 @@ import { T, textOn } from "../src/design/tokens.js";
 import { Bento, BentoCard, HeroSurface, TonalSurface, GlassSurface } from "../src/ui/surfaces.jsx";
 import { Metric, MetricGroup, Trend, Sparkline, StatRow, StatusPill, SegmentedControl, ContextBar, dash }
   from "../src/ui/data.jsx";
+import { Modal } from "../src/ui/primitives.jsx";
 
 let pass = 0, fail = 0;
 const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${d}` : ""); } };
@@ -194,6 +195,44 @@ ok("the drawing stays inside its own box", (() => {
   return nums.length > 0 && nums.every(([, x, y]) =>
     Number(x) >= 0 && Number(x) <= 96 && Number(y) >= 0 && Number(y) <= 28);
 })());
+
+// ══════════════════════════════════════════════════════════════════
+//
+// A dialog is a trap unless it says what it is and can be left. This drew a
+// backdrop over the whole viewport and listened for nothing: no Escape, no
+// backdrop click, no role, no name. The browser walk caught it as a nav click
+// that timed out three screens later, which is a long way from the cause.
+//
+// These are the static half — the semantics a screen reader reads. The
+// behavioural half (Escape actually closes it, and the app is usable again
+// afterwards) cannot be asserted from a static render, because the handler
+// lives in an effect that never runs here; it is asserted in
+// tools/smoke-browser-read.mjs against a real browser.
+group("A dialog says what it is, and can be left");
+
+const dlg = html(h(Modal, { title: "Edit User", onClose: () => {} }, "body"));
+
+ok("the card is a dialog", /role="dialog"/.test(dlg));
+ok("...and a modal one, so the rest of the page is out of play",
+   /aria-modal="true"/.test(dlg));
+ok("...named by its own heading, not by a guess", (() => {
+  const labelled = (dlg.match(/aria-labelledby="([^"]+)"/) ?? [])[1];
+  if (!labelled) return false;
+  // The id must actually be ON the heading that carries the title, or the
+  // name announced is empty — which is the same as having no name at all.
+  const heading = dlg.match(new RegExp(`<h3 id="${labelled.replace(/[$()*+.?[\\\]^{|}]/g, "\\$&")}"[^>]*>([^<]*)</h3>`));
+  return !!heading && heading[1] === "Edit User";
+})());
+ok("the close control has a name a voice user can say",
+   /aria-label="Close dialog"/.test(dlg));
+ok("...because its visible label is a glyph nobody can pronounce",
+   dlg.includes("\u2715"));
+ok("the card can take focus, so opening it can move focus into it",
+   /tabindex="-1"/.test(dlg));
+ok("the backdrop is addressable, so a walk can prove it dismisses",
+   /data-testid="modal-backdrop"/.test(dlg));
+ok("the body is rendered inside the dialog, not beside it",
+   dlg.indexOf("body") > dlg.indexOf('role="dialog"'));
 
 // ══════════════════════════════════════════════════════════════════
 group("The grid holds together");

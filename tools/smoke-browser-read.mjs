@@ -1129,6 +1129,76 @@ try {
     await ctx.close();
   }
 
+  // ── A dialog can be left ────────────────────────────────────────
+  //
+  // The sweep above found this the hard way: it opens a record, presses
+  // Escape, moves to the next screen — and the next nav click timed out,
+  // three assertions away from the cause. The dialog was still standing with
+  // its backdrop over the whole viewport, eating every click.
+  //
+  // The director of sport is the subject because she is the reason it
+  // surfaced: until user management was gated on the capability instead of a
+  // demo role name, no live role could reach an Edit button at all.
+  group("A dialog can be left, and the app works afterwards");
+  {
+    const c = await open();
+    ok("the director of sport signs in", await signIn(c.page, /Director of Sport/));
+    const tid = (id) => c.page.locator(`[data-testid="${id}"]`);
+    await tid("nav-settings").click({ timeout: 6000 }); await c.page.waitForTimeout(1200);
+    ok("she reaches settings", await tid("os-main").getAttribute("data-page") === "settings");
+
+    // She holds user.role.assign, so the Users tab must offer her the edit
+    // controls. If this is empty the capability gate has regressed and the
+    // rest of the group would pass vacuously.
+    const edits = c.page.locator('[data-testid="os-main"] button', { hasText: /^Edit$/ });
+    const n = await edits.count();
+    ok(`user management is offered to her (${n} rows)`, n > 0,
+       "she holds user.role.assign — gating this on a demo role name is the bug this group exists for");
+
+    if (n > 0) {
+      await edits.first().click({ timeout: 4000 }); await c.page.waitForTimeout(600);
+      ok("a dialog opens", await tid("modal-backdrop").isVisible());
+      ok("...and it is the dialog a screen reader would announce",
+         await c.page.locator('[role="dialog"][aria-modal="true"]').count() === 1);
+      ok("...named by its own heading", await c.page.evaluate(() => {
+        const d = document.querySelector('[role="dialog"]');
+        const t = document.getElementById(d?.getAttribute("aria-labelledby") || "");
+        return !!t && t.textContent.trim().length > 0;
+      }));
+      ok("...and focus has moved into it, not left at the top of the page",
+         await c.page.evaluate(() => {
+           const d = document.querySelector('[role="dialog"]');
+           return !!d && (d === document.activeElement || d.contains(document.activeElement));
+         }));
+
+      await c.page.keyboard.press("Escape"); await c.page.waitForTimeout(500);
+      ok("Escape closes it", await tid("modal-backdrop").count() === 0);
+
+      // The assertion that actually matters: the app is usable again. This is
+      // the one the sweep failed on, and a dialog that closes visually while
+      // leaving a backdrop behind would still pass the line above.
+      await tid("nav-rulebook").click({ timeout: 4000 }).catch(() => {});
+      await c.page.waitForTimeout(800);
+      ok("...and the menu works again afterwards",
+         await tid("os-main").getAttribute("data-page") === "rulebook",
+         "a nav click that lands nowhere means something invisible is still over the page");
+
+      // Clicking the backdrop is the other way out, and it must not fire when
+      // the click lands inside the card — which is the backdrop's own child.
+      await tid("nav-settings").click({ timeout: 4000 }); await c.page.waitForTimeout(1200);
+      await c.page.locator('[data-testid="os-main"] button', { hasText: /^Edit$/ }).first().click({ timeout: 4000 });
+      await c.page.waitForTimeout(600);
+      await c.page.locator('[role="dialog"] h3').click({ timeout: 4000 });
+      await c.page.waitForTimeout(400);
+      ok("a click inside the dialog does not close it", await tid("modal-backdrop").count() === 1);
+      await tid("modal-backdrop").click({ position: { x: 5, y: 5 }, timeout: 4000 });
+      await c.page.waitForTimeout(500);
+      ok("...but a click on the backdrop does", await tid("modal-backdrop").count() === 0);
+    }
+    ok("no console errors while opening and leaving a dialog", c.errors.length === 0, c.errors.join(" | "));
+    await c.ctx.close();
+  }
+
 } catch (e) {
   ok(`the browser read walk threw: ${e.message?.slice(0, 160)}`, false);
 } finally {

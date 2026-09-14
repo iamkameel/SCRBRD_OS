@@ -1,12 +1,14 @@
 
 import { useEffect, useState } from "react";
 import { SCHOOL } from "../data/institution.js";
-import { ROLES } from "../design/roles.js";
+import { ROLES, ROLE_FAMILIES, ROLE_IDENTITY, canonicalRole } from "../design/roles.js";
+import { GRANTABLE_ROLES, ROLE_CAPABILITIES, SUBJECT_SCOPED_ROLES, TEAM_SCOPED_ROLES } from "@scrbrd/policy/roles";
 import { D, textOn } from "../design/tokens.js";
 import { SCRBRD } from "../scorer/engine.jsx";
 import { Avatar, Badge, Btn, Card, EmptyState, Input, Modal, SectionHeader, Select } from "../ui/primitives.jsx";
 import { useLive, useRows } from "../lib/live.js";
 import { schoolsWhere } from "../lib/session.js";
+import { holdsCapability } from "../rbac/index.js";
 import { api } from "../lib/api.js";
 import { disablePush, enablePush, pushSupported } from "../lib/push.js";
 
@@ -33,7 +35,21 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp }) 
   const [addUser,   setAddUser]   = useState(false);
   const [delConf,   setDelConf]   = useState(null);
   const [newUser,   setNewUser]   = useState({name:"",email:"",role:"player",player:"",staffId:"",coachId:"",status:"active"});
-  const canEdit = role==="superadmin";
+  // WHO MAY MANAGE PEOPLE, by the capability rather than by a name.
+  //
+  // This read `role === "superadmin"`, which is a DEMONSTRATION ALIAS. Signed
+  // in against the server a role is its policy name — platformadmin,
+  // schooladmin, directorofsport, principal — and none of them equal
+  // "superadmin", so the Add User button and every edit, suspend and delete
+  // control was hidden from everybody on the live deployment, including the
+  // four roles that actually hold user.role.assign.
+  //
+  // The same shape of bug hid "+ Add Fixture" from the director of sport and
+  // emptied the dashboard for twenty-one roles: a hardcoded demo name standing
+  // in for a capability. holdsCapability() answers from the policy and works
+  // for both vocabularies, because the alias resolves through the same
+  // assignments the real name does.
+  const canEdit = holdsCapability(role, "user.role.assign");
 
   // Roster people with no account, by the link the accounts read now carries.
   // Both sides are already row-scoped in Postgres for this reader, so this
@@ -56,18 +72,59 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp }) 
   const deleteUser = (id) => { setUsers(prev=>prev.filter(u=>u.id!==id)); setDelConf(null); };
   const toggleStatus = (id) => setUsers(prev=>prev.map(u=>u.id===id?{...u,status:u.status==="active"?"suspended":"active"}:u));
 
-  const PERMS = {
-    superadmin:    ["Full system access","User management","RBAC control","All 16 modules","System configuration","Audit logs"],
-    schooladmin:   ["Dashboard, Competitions, Squad, Analytics","Logistics, Fields, Staff, Calendar","Notifications, Settings (limited)","No RBAC control"],
-    coach:         ["Dashboard, Matches, Squad, Profiles","Skills, Training, Injuries, Analytics","Logistics, Fields, Calendar","No user management"],
-    player:        ["Dashboard, Own profile","Matches (view), Fixtures","Skills (own), Training (own)","Injuries (own), Notifications"],
-    parent:        ["Dashboard, Matches, Fixtures","Transport info, Notifications","Child's profile (read-only)"],
-    spectator:     ["Dashboard, Live scores","Competitions (public view)","Analytics (read-only)", "Calendar"],
-    scorer:        ["Dashboard, Match Centre","Scoring tools only","Calendar, Notifications"],
-    medical:       ["Injuries (full CRUD)","Squad health view","Training fitness data","Profiles, Notifications"],
-    driver:        ["Logistics (transport)","Matches (fixture times)","Calendar, Notifications"],
-    groundskeeper: ["Fields (full CRUD)","Matches (schedule view)","Calendar, Notifications"],
+  // WHAT A ROLE CAN DO, DERIVED FROM THE POLICY.
+  //
+  // This was a hand-written table of ten entries, and the screen rendered
+  // thirty-three cards. Twenty-three of them had no detail at all — a title, a
+  // module count, and nothing else — including the director of sport, the
+  // principal, and every operational role in the school. Three of the ten that
+  // DID have detail were written against demonstration aliases, so the real
+  // roles behind them (platformadmin, guardian, facilities) showed nothing
+  // while their aliases described them.
+  //
+  // What it said was also no longer true: "All 16 modules", "No RBAC control",
+  // "Scoring tools only". A hand-written permission list is a second place for
+  // authority to live and a second place for it to drift — the exact failure
+  // the navigation was already rebuilt to avoid, on the one screen whose
+  // subject is authority.
+  //
+  // So it is computed. Capabilities are grouped by their own domain prefix
+  // (player.*, fixture.*, medical.*), which needs no table to maintain and
+  // cannot disagree with what the database enforces.
+  const DOMAIN_LABEL = {
+    player:"Players", fixture:"Fixtures", team:"Teams", scoring:"Scoring",
+    medical:"Medical", clearance:"Clearances", transport:"Transport",
+    facility:"Grounds", competition:"Competitions", news:"News",
+    sponsorship:"Sponsorship", invoice:"Finance", user:"People",
+    school:"School", platform:"Platform", analytics:"Analytics",
+    opposition:"Opposition", scouting:"Scouting", officiating:"Officials",
+    recognition:"Recognition", discipline:"Discipline", availability:"Availability",
+    audit:"Audit", broadcast:"Broadcast", guardian:"Guardians",
   };
+  const capsOf = (r) => [...(ROLE_CAPABILITIES[r] ?? [])];
+  const domainsOf = (r) => {
+    const by = {};
+    for (const c of capsOf(r)) {
+      const d = c.split(".")[0];
+      (by[d] ??= []).push(c);
+    }
+    // Widest domain first: what a role mostly does should read first.
+    return Object.entries(by).sort((a, b) => b[1].length - a[1].length);
+  };
+  // The roles THIS person may actually grant, from the policy's own table.
+  // The picker offered Object.entries(ROLES) — the lookup table — so it listed
+  // thirty-three options with nine duplicate names, and every role in the
+  // product regardless of whether the person filling the form could confer it.
+  // Choosing one the server then refuses is a form that wastes an
+  // administrator's time to tell them something the policy already knew.
+  const grantable = GRANTABLE_ROLES[canonicalRole(role)] ?? [];
+
+  // The two shape rules the database enforces on an assignment, said plainly.
+  const scopeNote = (r) =>
+    TEAM_SCOPED_ROLES.includes(r) ? "Must name a team"
+    : SUBJECT_SCOPED_ROLES.includes(r) ? "Must name a person"
+    : ROLE_IDENTITY[r]?.family === "platform" ? "Platform-wide, no school"
+    : "Scoped to a school";
 
   // THE ROADMAP, AGAINST WHAT IS ACTUALLY BUILT.
   //
@@ -257,23 +314,59 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp }) 
 
       {/* ── ROLES ── */}
       {tab==="roles"&&(
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(270px,1fr))",gap:"12px"}}>
-          {Object.entries(ROLES).map(([r,rc2])=>(
-            <Card key={r} sx={{padding:"16px"}}>
-              <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"12px"}}>
-                <div style={{width:"38px",height:"38px",borderRadius:D.md,background:rc2.color+"18",border:`1px solid ${rc2.color}22`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"20px"}}>{rc2.icon}</div>
-                <div>
-                  <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:rc2.color}}>{rc2.label}</div>
-                  <div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>{rc2.nav.length} modules · {users.filter(u=>u.role===r).length} user{users.filter(u=>u.role===r).length!==1?"s":""}</div>
-                </div>
+        <div data-testid="roles-tab">
+          <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginBottom:"14px",lineHeight:1.5,maxWidth:"70ch"}}>
+            Every role the authorization model knows about, grouped by family.
+            What each one can do is read from the policy that generates the
+            database's row-level security — not described alongside it.
+          </div>
+          {/* ROLE_FAMILIES, not ROLES: the latter is the lookup table, and it
+              carries nine demonstration aliases that render as duplicate cards
+              under their target's own name. */}
+          {Object.entries(ROLE_FAMILIES).map(([family,members])=>(
+            <div key={family} style={{marginBottom:"18px"}}>
+              <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",color:D.textMuted,marginBottom:"8px"}}>{family}</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(270px,1fr))",gap:"12px"}}>
+                {members.map(r=>{
+                  const rc2 = ROLES[r];
+                  const doms = domainsOf(r);
+                  const n = capsOf(r).length;
+                  const held = users.filter(u=>u.role===r).length;
+                  return (
+                    <Card key={r} sx={{padding:"16px"}} data-testid={`role-card-${r}`}>
+                      <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"10px"}}>
+                        <div style={{width:"38px",height:"38px",borderRadius:D.md,background:rc2.color+"18",border:`1px solid ${rc2.color}22`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"20px"}}>{rc2.icon}</div>
+                        <div style={{minWidth:0}}>
+                          <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:rc2.color}}>{rc2.label}</div>
+                          <div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>
+                            {n} capabilit{n===1?"y":"ies"} · {rc2.nav.length} screens · {held} account{held===1?"":"s"}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted,marginBottom:"9px",letterSpacing:"0.04em"}}>
+                        {scopeNote(r)}
+                      </div>
+
+                      {doms.length===0
+                        ? <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>No capabilities.</div>
+                        : doms.map(([dom,list])=>(
+                            <div key={dom} style={{display:"flex",alignItems:"flex-start",gap:"7px",padding:"3px 0"}}>
+                              <div style={{width:"5px",height:"5px",borderRadius:"50%",background:rc2.color,flexShrink:0,marginTop:"5px"}}/>
+                              <span style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary,lineHeight:1.4}}>
+                                {DOMAIN_LABEL[dom] ?? dom}
+                                <span style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}> · {list.length}</span>
+                                {/* The capabilities themselves, for anyone who
+                                    needs the exact answer rather than the shape. */}
+                                <span title={list.join("\n")} style={{cursor:"help",color:D.textMuted}}> ⓘ</span>
+                              </span>
+                            </div>
+                          ))}
+                    </Card>
+                  );
+                })}
               </div>
-              {PERMS[r]?.map(p=>(
-                <div key={p} style={{display:"flex",alignItems:"flex-start",gap:"7px",padding:"4px 0"}}>
-                  <div style={{width:"5px",height:"5px",borderRadius:"50%",background:rc2.color,flexShrink:0,marginTop:"4px"}}/>
-                  <span style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary,lineHeight:1.4}}>{p}</span>
-                </div>
-              ))}
-            </Card>
+            </div>
           ))}
         </div>
       )}
@@ -358,7 +451,7 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp }) 
         <Modal title={editUser?"Edit User":"Add New User"} onClose={()=>{setAddUser(false);setEditUser(null);}}>
           <Input label="Full Name" value={editUser?editUser.name:newUser.name} onChange={e=>editUser?setEditUser(p=>({...p,name:e.target.value})):setNewUser(p=>({...p,name:e.target.value}))} placeholder="First Last"/>
           <Input label="Email" value={editUser?editUser.email:newUser.email} onChange={e=>editUser?setEditUser(p=>({...p,email:e.target.value})):setNewUser(p=>({...p,email:e.target.value}))} type="email" placeholder="user@hilton.co.za"/>
-          <Select label="Role" value={editUser?editUser.role:newUser.role} onChange={v=>editUser?setEditUser(p=>({...p,role:v})):setNewUser(p=>({...p,role:v}))} options={Object.entries(ROLES).map(([v,r])=>({value:v,label:`${r.icon} ${r.label}`}))}/>
+          <Select label="Role" value={editUser?editUser.role:newUser.role} onChange={v=>editUser?setEditUser(p=>({...p,role:v})):setNewUser(p=>({...p,role:v}))} options={grantable.map(v=>({value:v,label:`${ROLES[v].icon} ${ROLES[v].label}`}))}/>
           <Select label="Linked Player (optional)" value={editUser?editUser.player||"":newUser.player} onChange={v=>editUser?setEditUser(p=>({...p,player:v||null})):setNewUser(p=>({...p,player:v}))} options={[{value:"",label:"None"},...PLAYERS.map(p=>({value:p.id,label:`${p.name} (${p.team} · ${p.school})`}))]}/>
           <Select label="Linked Coach (optional)" value={editUser?editUser.coachId||"":newUser.coachId} onChange={v=>editUser?setEditUser(p=>({...p,coachId:v||null})):setNewUser(p=>({...p,coachId:v}))} options={[{value:"",label:"None"},...COACHES.map(c=>({value:c.id,label:`${c.name} (${c.team})`}))]}/>
           <Select label="Linked Staff (optional)" value={editUser?editUser.staffId||"":newUser.staffId} onChange={v=>editUser?setEditUser(p=>({...p,staffId:v||null})):setNewUser(p=>({...p,staffId:v}))} options={[{value:"",label:"None"},...STAFF.map(s=>({value:s.id,label:`${s.name} (${s.role})`}))]}/>

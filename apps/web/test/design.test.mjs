@@ -289,6 +289,39 @@ for (const legacy of ["superadmin", "headmaster", "parent", "sportsmaster"]) {
 ok("the lookup table is genuinely wider than the offered set",
    Object.keys(ROLES).length > familyMembers.length);
 
+group("The roles screen describes every role, from the policy");
+// It rendered thirty-three cards — the lookup table, aliases and all — against
+// a hand-written table of ten descriptions. Twenty-three had no detail at all,
+// the director of sport and the principal among them, and three of the ten
+// were written against demonstration aliases so the real roles behind them
+// showed nothing.
+//
+// A hand-written permission list is a second place for authority to live, on
+// the one screen whose subject IS authority. The check is therefore that the
+// description is DERIVABLE: every policy role must have capabilities to show,
+// and every capability must fall in a domain the screen can name.
+const settingsSrc = readFileSync(join(SRC, "views/SettingsView.jsx"), "utf8");
+ok("the roles screen no longer carries a hand-written permission table",
+   !/const PERMS = \{/.test(settingsSrc));
+ok("...and iterates the families rather than the lookup table",
+   /ROLE_FAMILIES\)\.map/.test(settingsSrc) && !/Object\.entries\(ROLES\)\.map/.test(settingsSrc));
+
+const { ROLE_CAPABILITIES } = await import("@scrbrd/policy/roles");
+const domainsFor = (r) => [...new Set([...(ROLE_CAPABILITIES[r] ?? [])].map((c) => c.split(".")[0]))];
+const undescribed = POLICY_ROLES.filter((r) => domainsFor(r).length === 0);
+ok("every policy role has something to describe", undescribed.length === 0, undescribed.join(", "));
+
+// The label table is presentation, so a missing entry degrades to the raw
+// prefix rather than blanking — but a gap is still worth naming here, because
+// "platform" reading as "platform" is fine and a new domain reading as a bare
+// code is how a screen starts looking unfinished.
+const labelled = new Set(Object.keys(
+  Object.fromEntries((settingsSrc.match(/(\w+):"[^"]+"/g) ?? []).map((m) => m.split(":")))));
+const allDomains = [...new Set(POLICY_ROLES.flatMap(domainsFor))];
+const unlabelled = allDomains.filter((d) => !labelled.has(d));
+ok(`every capability domain has a readable name (${allDomains.length} domains)`,
+   unlabelled.length === 0, unlabelled.join(", "));
+
 group("Navigation is derived, not hand-listed");
 // A hand-written nav per role is a second place for authority to live, and a
 // second place for it to drift: a role gains a capability and never gains the
