@@ -5,13 +5,41 @@ Nothing here uses any other Firebase project. Three pieces:
 
 | Piece | Where | How it gets there |
 |---|---|---|
-| Client (`apps/web`) | Firebase Hosting | `.github/workflows/deploy.yml`, on push to `main` |
-| API (`services/api`) | Cloud Run, `africa-south1`, service `scrbrd-api` | same workflow, from the root `Dockerfile` |
+| Client (`apps/web`) | Firebase Hosting | by hand (5b), or `.github/workflows/deploy.yml` on push to `main` |
+| API (`services/api`) | Cloud Run, `africa-south1`, service `scrbrd-api` | by hand (5), or the same workflow, from the root `Dockerfile` |
 | Database | Cloud SQL, Postgres 16, `africa-south1` | by hand, once, then by hand for every schema change |
 
 Hosting rewrites `/api/**` to the Cloud Run service (`firebase.json`), so the
 browser talks to one origin and the client is built with `VITE_API_BASE=""`.
 Realtime is plain HTTP, so the rewrite carries everything the client needs.
+
+## Where to run all of this
+
+**Google Cloud Shell**, at <https://shell.cloud.google.com> or the `>_` icon in
+the Cloud Console. It is a free browser terminal, already signed in as you,
+with `gcloud`, `firebase`, `node`, `git` and `psql` already installed. Nothing
+below needs anything installed on your own machine.
+
+```sh
+gcloud config set project scrbrd-os
+git clone https://github.com/iamkameel/SCRBRD_OS.git && cd SCRBRD_OS
+npm install -g pnpm && pnpm install --frozen-lockfile
+```
+
+Cloud Shell's home directory survives between sessions; the session itself
+times out when idle, and reconnecting puts you back in the same directory.
+
+## Two ways to deploy, and which to do first
+
+| | Who deploys | What it needs |
+|---|---|---|
+| **By hand** (start here) | you, signed in as yourself | nothing beyond Cloud Shell |
+| **On push to main** (later) | GitHub Actions | two service accounts and three secrets, section 6 |
+
+Do the manual deploy first. It is two commands, it proves the whole thing
+works end to end, and it needs no robot accounts or stored credentials. The
+automation in section 6 only removes the step of typing those two commands,
+and it will make much more sense once you have watched them work.
 
 ## One-time provisioning
 
@@ -110,7 +138,22 @@ curl https://<service url>/api/health          # {"ok":true,"db":"ok",...}
 curl -X POST https://<service url>/api/auth/dev-login   # refused: NODE_ENV=production
 ```
 
-### 6 · The two deploy identities, and the GitHub secrets that name them
+### 5b · The client, by hand
+
+```sh
+VITE_API_BASE="" pnpm build      # empty base: same-origin, Hosting rewrites /api/**
+firebase login --no-localhost    # in Cloud Shell; a browser prompt otherwise
+firebase deploy --only hosting --project scrbrd-os
+```
+
+It prints the live URL. Open it, sign in as the platform administrator from
+step 3, and the pilot is running. **At this point you are deployed** — sections
+6 and onward are automation, not requirements.
+
+### 6 · LATER: the two deploy identities, so GitHub can deploy for you
+
+Only needed when you want a push to `main` to deploy on its own. Skip this
+entirely until the manual deploy above has worked at least once.
 
 Two identities, both created by you. Neither is a Google-managed service
 agent.
