@@ -35,6 +35,12 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp }) 
   const [newUser,   setNewUser]   = useState({name:"",email:"",role:"player",player:"",staffId:"",coachId:"",status:"active"});
   const canEdit = role==="superadmin";
 
+  // Roster people with no account, by the link the accounts read now carries.
+  // Both sides are already row-scoped in Postgres for this reader, so this
+  // reconciles two permitted lists rather than widening either.
+  const linkedPlayerIds = new Set(users.map(u=>u.player).filter(Boolean));
+  const noAccount = PLAYERS.filter(p=>!linkedPlayerIds.has(p.id));
+
   const saveUser = () => {
     if (editUser) {
       setUsers(prev=>prev.map(u=>u.id===editUser.id?{...u,...editUser}:u));
@@ -63,22 +69,84 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp }) 
     groundskeeper: ["Fields (full CRUD)","Matches (schedule view)","Calendar, Notifications"],
   };
 
+  // THE ROADMAP, AGAINST WHAT IS ACTUALLY BUILT.
+  //
+  // This list described a product with no backend. Four of its items had since
+  // shipped and still read as proposals — a roadmap that cannot tell a built
+  // thing from a wished-for one is worse than no roadmap, because somebody
+  // plans around it.
+  //
+  // `status` is therefore checked against the repository, not asserted:
+  //   shipped  — built, and covered by a walk that would fail if it broke
+  //   partial  — the DATA exists and is permission-scoped; no screen draws it
+  //   planned  — not started
+  //
+  // "partial" is the honest and uncomfortable category, and it is where most of
+  // the value now sits: thirty-three of the read endpoints are computed, tested
+  // and never rendered.
   const UPGRADES = [
-    { id:"up1", category:"AI & Analysis",  priority:"high",  title:"AI Post-Match Report",      desc:"Auto-generate match reports using AI commentary, scorecard data and weather. Send to parents and coaches instantly.", effort:"Medium" },
-    { id:"up2", category:"AI & Analysis",  priority:"high",  title:"Shot Pattern Wagon Wheel",  desc:"Import wagon-wheel data from SCRBRD scorer to show each player's scoring zones and shot tendencies.", effort:"High" },
-    { id:"up3", category:"Integrations",   priority:"high",  title:"Live Score Sync (SCRBRD)",  desc:"Wire MatchCentreView to live scrbrd_v3 scorer data. Real-time wickets, overs, partnerships.", effort:"Medium" },
-    { id:"up4", category:"Comms",          priority:"high",  title:"Parent Broadcast Alerts",   desc:"Push notifications to parents when their child scores a fifty, takes a wicket, or is injured.", effort:"Medium" },
-    { id:"up5", category:"AI & Analysis",  priority:"medium",title:"Opposition Scouting Report",desc:"AI-generated scouting notes on upcoming opponents based on their H2H record and known squad.", effort:"Medium" },
-    { id:"up6", category:"Fitness",        priority:"medium",title:"Fitness Test Logging",       desc:"Record beep tests, speed gates, vertical jump, grip strength. Track trends across the season.", effort:"Low" },
-    { id:"up7", category:"Media",          priority:"medium",title:"Video Clip Tagging",         desc:"Upload short batting/bowling clips per session. Tag to player profile and link to skill gaps.", effort:"High" },
-    { id:"up8", category:"Integrations",   priority:"medium",title:"CricHQ / PlayCricket Sync", desc:"Import match scorecards automatically from CricHQ or PlayCricket via API. Reduce manual entry.", effort:"High" },
-    { id:"up9", category:"Comms",          priority:"medium",title:"In-App Parent Messaging",    desc:"Secure one-to-one messaging between coach and parent. Replaces WhatsApp groups.", effort:"High" },
-    { id:"up10",category:"Admin",          priority:"low",   title:"PDF Scorecard Export",       desc:"One-click PDF export of any match scorecard, formatted with school branding.", effort:"Low" },
-    { id:"up11",category:"Admin",          priority:"low",   title:"Season History Archive",     desc:"Year-on-year squad stats, win rates and trophies. Accessible as historical records.", effort:"Medium" },
-    { id:"up12",category:"Fitness",        priority:"low",   title:"Medical Clearance Workflow", desc:"Digital RTW forms. Physio signs off, coach notified, system auto-updates injury status.", effort:"Medium" },
-    { id:"up13",category:"Admin",          priority:"low",   title:"Payment & Subscription Mgmt",desc:"Track school subscription, per-student fees for transport/kit. Admin dashboard.", effort:"High" },
-    { id:"up14",category:"AI & Analysis",  priority:"low",   title:"Training Recommendation Engine",desc:"AI suggests next training focus per player based on recent form, skill gaps and workload.", effort:"High" },
+    // ── Shipped ──────────────────────────────────────────────────
+    { id:"up2", category:"AI & Analysis", priority:"high", status:"shipped",
+      title:"Shot Pattern Wagon Wheel",
+      desc:"A boy's scoring zones across every innings, on his own profile. Placements are stored batter-relative and mirrored at render, so a left-hander's cover drive is comparable with a right-hander's.", effort:"High" },
+    { id:"up3", category:"Integrations", priority:"high", status:"shipped",
+      title:"Live Score Sync",
+      desc:"Match Centre reads the live fold from the ball log. Offline queue, device handover and voided balls all covered.", effort:"Medium" },
+    { id:"up4", category:"Comms", priority:"high", status:"shipped",
+      title:"Parent Broadcast Alerts",
+      desc:"Push to a registered device when something happens to their child. Delivery is per-person and permission-scoped, so a notice reaches the family and nobody else.", effort:"Medium" },
+    { id:"up12", category:"Fitness", priority:"medium", status:"shipped",
+      title:"Medical Clearance Workflow",
+      desc:"Clearance requirements, adult clearances and a register a school can actually be audited against.", effort:"Medium" },
+
+    // ── Built underneath, not yet drawn ──────────────────────────
+    { id:"up5", category:"AI & Analysis", priority:"high", status:"partial",
+      title:"Opposition Dossier",
+      desc:"Batter-against-bowler match-ups, the derby record and the opponent's squad are all computed and permission-scoped. Nothing on screen reads them yet — this is the largest single gap in the product.", effort:"Medium" },
+    { id:"up15", category:"Fitness", priority:"high", status:"partial",
+      title:"Bowling Workload & Welfare",
+      desc:"Spells, breaches and directives against age-group limits are modelled and tested. A coach cannot see them. This is a duty-of-care feature, not an analytics one.", effort:"Low" },
+    { id:"up16", category:"Admin", priority:"medium", status:"partial",
+      title:"Caps, Honours & Milestones on the Passport",
+      desc:"Recorded, consented and readable; simply not shown. The cheapest item here and the one a pupil actually opens.", effort:"Low" },
+    { id:"up11", category:"Admin", priority:"low", status:"partial",
+      title:"Season History Archive",
+      desc:"Seasons and competitions are modelled; there is no year-on-year view over them.", effort:"Medium" },
+
+    // ── Planned ──────────────────────────────────────────────────
+    { id:"up17", category:"AI & Analysis", priority:"high", status:"planned",
+      title:"Match Insights & Intelligence Ribbon",
+      desc:"An insight anchored to the delivery that caused it, typed so it can be ranked rather than cycled, and carrying whether a machine derived it or a scorer confirmed it.", effort:"Medium" },
+    { id:"up18", category:"AI & Analysis", priority:"medium", status:"planned",
+      title:"Pitch Map",
+      desc:"Line and length per delivery — the bowling half of the wagon wheel. The only chart form genuinely missing.", effort:"Medium" },
+    { id:"up1", category:"AI & Analysis", priority:"medium", status:"planned",
+      title:"Post-Match Report",
+      desc:"A written report from the scorecard, the phases and the conditions. Should say which of it was derived and which asserted.", effort:"Medium" },
+    { id:"up6", category:"Fitness", priority:"medium", status:"planned",
+      title:"Fitness Test Logging",
+      desc:"Beep tests, speed gates, vertical jump, grip strength, tracked across a season.", effort:"Low" },
+    { id:"up7", category:"Media", priority:"medium", status:"planned",
+      title:"Video & Photo Clips",
+      desc:"No media is modelled at all today. For a product whose users are fifteen-year-olds, that is a real absence.", effort:"High" },
+    { id:"up9", category:"Comms", priority:"medium", status:"planned",
+      title:"In-App Parent Messaging",
+      desc:"Secure one-to-one between coach and parent, replacing the WhatsApp group. Nothing is modelled yet.", effort:"High" },
+    { id:"up13", category:"Admin", priority:"medium", status:"planned",
+      title:"Invoicing & Subscriptions",
+      desc:"Note: invoice.read and invoice.manage are already granted to the principal and the bursar, with no table behind them. The finance role currently cannot do the thing its name describes.", effort:"High" },
+    { id:"up8", category:"Integrations", priority:"low", status:"planned",
+      title:"CricHQ / PlayCricket Import",
+      desc:"CSV import exists and goes through the ordinary write policies. A direct API sync does not.", effort:"High" },
+    { id:"up10", category:"Admin", priority:"low", status:"planned",
+      title:"PDF Scorecard Export",
+      desc:"One-click export of any scorecard with the school's branding.", effort:"Low" },
+    { id:"up14", category:"AI & Analysis", priority:"low", status:"planned",
+      title:"Training Recommendation Engine",
+      desc:"Next focus per player from recent form, skill gaps and workload. Wants the workload screen above to exist first.", effort:"High" },
   ];
+  const STATUS_TONE  = { shipped:D.emerald, partial:D.amber, planned:D.textMuted };
+  const STATUS_LABEL = { shipped:"Shipped", partial:"Built, not drawn", planned:"Planned" };
 
   const priCol = p => p==="high"?D.rose:p==="medium"?D.amber:D.sky;
   const catCol  = c => c==="AI & Analysis"?D.violet:c==="Integrations"?D.teal:c==="Comms"?D.indigo:c==="Fitness"?D.emerald:D.orange;
@@ -104,6 +172,37 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp }) 
             <div style={{fontFamily:D.mono,fontSize:"11px",color:D.textMuted}}>{users.length} users · {users.filter(u=>u.status==="active").length} active</div>
             {canEdit&&<Btn size="sm" onClick={()=>{setAddUser(true);setEditUser(null);}}>+ Add User</Btn>}
           </div>
+
+          {/* THE PEOPLE WITH NO ACCOUNT.
+              This screen listed accounts, so a boy on the roster who cannot
+              sign in simply was not here — and "R Pillay has no account" is an
+              access-control fact, not an absence. It is the answer to "why
+              can't he see his own passport", and it was unobtainable from the
+              one screen whose job is access.
+              Two scoped reads, reconciled: the roster this person may read,
+              minus the accounts they may read. Neither widens the other. */}
+          {noAccount.length>0&&(
+            <Card sx={{padding:"14px",marginBottom:"14px",borderLeft:`3px solid ${D.amber}`}} data-testid="people-without-accounts">
+              <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary,marginBottom:"4px"}}>
+                On a roster, no account — {noAccount.length} of {PLAYERS.length}
+              </div>
+              <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginBottom:"10px",lineHeight:1.5}}>
+                These people appear in Squad and Profiles and hold a passport, but cannot sign in.
+                An account is what links the two: without one, nobody can read their own record.
+              </div>
+              <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
+                {noAccount.map(p=>(
+                  <span key={p.id} data-testid={`no-account-${p.id}`} style={{display:"inline-flex",alignItems:"center",gap:"6px",
+                    padding:"4px 10px",borderRadius:D.pill,background:D.amber+"14",border:`1px solid ${D.amber}33`,
+                    fontFamily:D.body,fontSize:"11px",color:D.textSecondary}}>
+                    <Avatar name={p.name} size={18} color={D.amber}/>
+                    {p.name}
+                    <span style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>{p.team}</span>
+                  </span>
+                ))}
+              </div>
+            </Card>
+          )}
           <Card>
             <div style={{overflowX:"auto"}}>
               <table style={{width:"100%",borderCollapse:"collapse"}}>
@@ -205,25 +304,46 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp }) 
         <div>
           <div style={{padding:"14px 16px",background:`linear-gradient(135deg,${D.violet}10,${D.surf2})`,borderRadius:D.lg,border:`1px solid ${D.violet}22`,marginBottom:"18px"}}>
             <div style={{fontFamily:D.head,fontSize:"14px",fontWeight:700,color:D.violetText,marginBottom:"4px"}}>🚀 SCRBRD Platform Roadmap</div>
-            <div style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,lineHeight:1.5}}>{UPGRADES.length} suggested upgrades across {[...new Set(UPGRADES.map(u=>u.category))].length} categories. Prioritised by impact.</div>
+            <div style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,lineHeight:1.5}}>
+              {["shipped","partial","planned"].map(s=>`${UPGRADES.filter(u=>u.status===s).length} ${STATUS_LABEL[s].toLowerCase()}`).join(" · ")}.
+              Status is checked against the codebase, not declared.
+            </div>
           </div>
-          {["high","medium","low"].map(pri=>(
-            <div key={pri} style={{marginBottom:"20px"}}>
+
+          {/* Grouped by STATUS rather than priority.
+              Priority is an opinion and every item claimed one; status is a
+              fact, and it was the missing column — four of these had shipped
+              and still read as proposals. Priority survives as a tint on the
+              card, where it belongs. */}
+          {["shipped","partial","planned"].map(st=>(
+            <div key={st} style={{marginBottom:"20px"}} data-testid={`roadmap-${st}`}>
               <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"10px"}}>
-                <Badge color={priCol(pri)}>{pri==="high"?"🔴 High Priority":pri==="medium"?"🟡 Medium Priority":"🔵 Low Priority"}</Badge>
-                <span style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>{UPGRADES.filter(u=>u.priority===pri).length} items</span>
+                <Badge color={STATUS_TONE[st]}>{STATUS_LABEL[st]}</Badge>
+                <span style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>{UPGRADES.filter(u=>u.status===st).length} items</span>
+                {st==="partial"&&<span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>
+                  — the data is built and permission-scoped; no screen reads it yet
+                </span>}
               </div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:"10px"}}>
-                {UPGRADES.filter(u=>u.priority===pri).map(up=>(
-                  <Card key={up.id} sx={{padding:"14px",border:`1px solid ${priCol(pri)}18`}}>
+                {UPGRADES.filter(u=>u.status===st).map(up=>(
+                  <Card key={up.id} sx={{padding:"14px",border:`1px solid ${STATUS_TONE[st]}22`,
+                                         borderLeft:`3px solid ${priCol(up.priority)}`}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"6px"}}>
                       <div style={{fontFamily:D.body,fontSize:"13px",fontWeight:600,color:D.textPrimary,flex:1,paddingRight:"8px"}}>{up.title}</div>
                       <Badge color={catCol(up.category)}>{up.category}</Badge>
                     </div>
                     <div style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary,lineHeight:1.5,marginBottom:"10px"}}>{up.desc}</div>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                      <div style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>Effort: <span style={{color:up.effort==="Low"?D.emerald:up.effort==="Medium"?D.amber:D.rose}}>{up.effort}</span></div>
-                      <button style={{background:"none",border:`1px solid ${D.border}`,borderRadius:D.pill,padding:"3px 12px",cursor:"pointer",fontFamily:D.body,fontSize:"10px",color:D.textMuted}}>Vote ↑</button>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
+                      <div style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>
+                        {up.priority} priority · effort <span style={{color:up.effort==="Low"?D.emerald:up.effort==="Medium"?D.amber:textOn(D.rose)}}>{up.effort}</span>
+                      </div>
+                      {/* The "Vote ↑" button that stood here did nothing at all:
+                          no handler, no state, no endpoint. A control that
+                          looks live and is not teaches people the whole screen
+                          is decorative. Voting needs somewhere to record a
+                          vote; until that exists, the status is the useful
+                          thing to show. */}
+                      <span style={{fontFamily:D.mono,fontSize:"10px",color:STATUS_TONE[st]}}>{STATUS_LABEL[st]}</span>
                     </div>
                   </Card>
                 ))}
