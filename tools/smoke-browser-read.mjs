@@ -848,6 +848,79 @@ try {
     }
   }
 
+  // ── The wagon wheel, off a profile rather than out of the pad ────
+  // The placements have been stored since the scorer started capturing them
+  // and were only ever drawn INSIDE the live pad, so the one screen a coach
+  // would look at — the boy's own profile — could not show where he scores.
+  //
+  // The sharpest assertion here is the mirror. Placements are stored
+  // batter-relative and flipped at render, so two batters with near-identical
+  // STORED angles must draw on OPPOSITE sides of the ground when one of them
+  // is left-handed. Geometry, read off the rendered SVG, because that rule is
+  // invisible in any amount of text.
+  group("A boy's wagon wheel is drawn on his own profile");
+  {
+    const c = await open();
+    await signIn(c.page, /coach@example\.invalid/);
+    ok("the profiles screen opens", await nav(c.page, /Profiles/));
+
+    // x2 of every drawn shot line, relative to the wheel's centre (CX = 150).
+    const sidesFor = async (playerId) => {
+      await c.page.locator(`[data-testid="roster-player-${playerId}"]`).first()
+        .click({ timeout: 4000 }).catch(() => {});
+      await c.page.waitForTimeout(800);
+      await c.page.locator("button", { hasText: /^career$/i }).first()
+        .click({ timeout: 4000 }).catch(() => {});
+      await c.page.waitForTimeout(1400);
+      const wheel = c.page.locator('[data-testid="career-wagon-wheel"]');
+      if (!(await wheel.count())) return null;
+      const xs = await wheel.locator("line").evaluateAll(
+        (els) => els.map((e) => Number(e.getAttribute("x2"))).filter(Number.isFinite));
+      return { wheel, xs, text: await wheel.innerText().catch(() => "") };
+    };
+
+    // T Bekker — right-handed, seeded through the covers (theta ~300-330).
+    const bekker = await sidesFor("aaaaaaaa-0000-0000-0000-000000000002");
+    ok("the wheel is drawn on the career tab", bekker !== null);
+    ok("...and it actually drew his shots", bekker && bekker.xs.length > 10);
+    ok("...saying how many it drew", bekker && /\d+ shown/.test(bekker.text));
+    // Off side for a right-hander is screen-left of the centre line.
+    const bekkerLeft = bekker ? bekker.xs.filter((x) => x < 150).length / bekker.xs.length : 0;
+    ok(`...predominantly to one side of the ground (${Math.round(bekkerLeft * 100)}% left)`,
+       bekkerLeft > 0.8);
+
+    // S Naidoo — LEFT-handed, seeded on the leg side at theta ~60-90.
+    //
+    // The mirror, stated as the thing that would break: unmirrored, those
+    // angles draw at x≈237-250, on the RIGHT of the centre line. Mirrored for
+    // a left-hander they become 270-300 and draw at x≈50-63, on the LEFT —
+    // the same part of the ground Bekker's off-side drives reach.
+    //
+    // That overlap is the point and was worth getting wrong once: a
+    // left-hander's leg side IS a right-hander's off side, and making the two
+    // comparable is the entire reason placements are stored batter-relative.
+    // An earlier version of this assertion expected them on opposite sides,
+    // which would have meant the mirror was NOT being applied.
+    //
+    // So the test is not "opposite Bekker" — it is "left, and left only
+    // because his handedness was read off his profile". Drop batHand from the
+    // squad the wheel is handed and every one of these flips to the right.
+    const naidoo = await sidesFor("aaaaaaaa-0000-0000-0000-000000000003");
+    ok("the left-hander's wheel draws too", naidoo && naidoo.xs.length > 5);
+    const naidooLeft = naidoo ? naidoo.xs.filter((x) => x < 150).length / naidoo.xs.length : 0;
+    ok(`...and his handedness was applied, not defaulted (${Math.round(naidooLeft * 100)}% left; unmirrored would be 0%)`,
+       naidooLeft > 0.8);
+
+    // M Cele carries the sector-era tail, so his wheel mixes measured points
+    // with eight-wedge estimates and must say so rather than imply precision.
+    const cele = await sidesFor("aaaaaaaa-0000-0000-0000-000000000004");
+    ok("a batter with sector-era balls still draws them", cele && cele.xs.length > 10);
+
+    ok("no console errors", c.errors.length === 0);
+    ok("...and no scoping refusals", c.refusals.length === 0);
+    await c.ctx.close();
+  }
+
   // ── The role switcher, as it is actually seen ────────────────────
   // Reported from the live deployment with a screenshot: the menu listed
   // "Platform Admin" three times and "Principal" twice. ROLES is the LOOKUP
