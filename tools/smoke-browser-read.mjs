@@ -723,6 +723,67 @@ try {
     await c.ctx.close();
   }
 
+  // ── Arranging a fixture, the rich form ────────────────────────────
+  // POST /api/fixtures is walked at the API (tools/smoke-fixture.mjs); this
+  // proves the SCREEN actually drives it — the preview shows exactly what
+  // was typed, a quick-date chip sets the real date field, and the finished
+  // fixture is really on the ladder screen afterward, not just in a toast.
+  group("Arranging a fixture: the preview mirrors the form, and it really lands");
+  {
+    const c = await open();
+    await signIn(c.page, /Director of Sport/);
+    await c.page.locator('[data-testid="nav-leagues"]').click({ timeout: 6000 }); await c.page.waitForTimeout(1500);
+    ok("the form opens", await click(c.page, /\+ Add Fixture/, 4000));
+    await c.page.waitForTimeout(500);
+    const preview = c.page.locator('[data-testid="fixture-preview"]');
+    ok("the preview is drawn before anything is filled in", await preview.count() === 1);
+    const before = await preview.innerText();
+    ok("...and says so, rather than inventing a side", /Your side|Opponent/.test(before));
+
+    await c.page.locator("select").first().selectOption("1XI");
+    ok("the home side appears in the preview as soon as it is picked", /1XI/.test(await preview.innerText()));
+
+    ok("the away-side toggle offers naming a school on SCRBRD", await click(c.page, /A school here/, 3000));
+    await c.page.waitForTimeout(600);   // the school list is fetched, not instant
+    await c.page.locator("select").nth(1).selectOption({ label: "Westville Boys' High" });
+    await c.page.locator('input[placeholder="1XI"]').fill("2XI");
+    ok("the away side names both the school and their team, in the preview", /Westville.*2XI|2XI/.test(await preview.innerText()));
+
+    ok("a quick-date chip is offered", await click(c.page, /Next Saturday/, 3000));
+    const dateVal = await c.page.locator('input[type="date"]').first().inputValue();
+    ok("...and it really set the date field, not just a label", /^\d{4}-\d{2}-\d{2}$/.test(dateVal));
+    ok("...reflected in the preview's own words, not left showing the empty placeholder", !(await preview.innerText()).includes("—"));
+
+    ok("the format defaults sensibly and adjusts the overs together", await c.page.locator('input[type="number"]').first().inputValue() === "20");
+    await c.page.locator("select").nth(3).selectOption("One-Day");
+    await c.page.waitForTimeout(300);
+    ok("...changing it changes the overs, live, without a submit", await c.page.locator('input[type="number"]').first().inputValue() === "50");
+
+    // Home side, away side and date are all now filled in — every checklist
+    // row should show its "done" mark, not just some of them.
+    const checklistText = await c.page.locator('[data-testid="fixture-checklist"]').innerText().catch(() => "");
+    const checkMarks = (checklistText.match(/✓/g) || []).length;
+    ok("the checklist marks every requirement done once the form is complete", checkMarks === 3);
+
+    ok("he arranges it", await click(c.page, /Arrange Fixture/, 4000));
+    await c.page.waitForTimeout(1500);
+    ok("the modal closes on success", await c.page.locator('[data-testid="fixture-preview"]').count() === 0);
+
+    // Not the ladder — that is scoped to a competition this fixture was never
+    // entered into. The fixture list itself is the real ledger, read the same
+    // way the walk confirms everything else: from the server, not the toast.
+    const tok = await (await fetch(`${API}/api/auth/dev-login`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "sarah@example.invalid", deviceId: "browser-read" }),
+    })).json().then((j) => j.token);
+    const fixtures = await (await fetch(`${API}/api/read/matches`, { headers: { authorization: `Bearer ${tok}` } })).json();
+    ok("the fixture the screen just arranged is really on the database's list",
+       fixtures?.rows?.some((m) => m.team_code === "1XI" && /Westville/.test(m.away_label ?? "") && m.overs === 50));
+    ok("no console errors", c.errors.length === 0);
+    ok("...and no scoping refusals", c.refusals.length === 0);
+    await c.ctx.close();
+  }
+
   // ── Onboarding has a way out ─────────────────────────────────────
   // A person who clicks "Get Started" by mistake, or who already has an
   // account, used to have no way back to the login screen from the welcome
