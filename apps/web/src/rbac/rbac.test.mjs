@@ -6,7 +6,7 @@
  * The point of testing both is that they are generated from one policy. If
  * these two ever disagree, the policy has been forked somewhere.
  */
-import { can, canScore, getData, filterRecord, countData, grantedBy, principalForRole } from "./index.js";
+import { can, canScore, getData, filterRecord, countData, grantedBy, principalForRole, assignmentsForRole } from "./index.js";
 // This suite is the one place outside rbac/ that may read the raw constants:
 // it needs the unscoped totals to prove that scoped reads are smaller.
 import { PLAYERS, INJURIES } from "../data/mock.js";
@@ -247,6 +247,43 @@ group("H. A live session does not scope in the browser");
 
   ok("clearing the session restores the demo",
      getData("players", principalForRole("coach")).length > 0);
+}
+
+group("The demonstration obeys the policy's own assignment shapes");
+// Two rules the DATABASE enforces — a CHECK constraint for team scope, and a
+// refusal inside app_can() for subject scope — which the client's demo
+// principal built by hand and therefore skipped.
+//
+// It mattered the moment the role switcher stopped offering the legacy
+// aliases. `parent` named a child and `assistant` named a team, so the menu
+// was accidentally correct; the canonical `guardian` and `assistantcoach`
+// named neither, and the demo's guardian could see all eighteen pupils. Not a
+// live security hole — Postgres decides a real session — but the product's
+// central claim, contradicted on screen.
+{
+  const { SUBJECT_SCOPED_ROLES, TEAM_SCOPED_ROLES, ROLES: POLICY_ROLES } = await import("@scrbrd/policy/roles");
+  for (const r of POLICY_ROLES) {
+    for (const a of assignmentsForRole(r)) {
+      if (TEAM_SCOPED_ROLES.includes(a.role))
+        ok(`a demo ${r} names a team, as the database requires`, !!a.team);
+      if (SUBJECT_SCOPED_ROLES.includes(a.role))
+        ok(`a demo ${r} names a person, as app_can() requires`,
+           !!a.person || (Array.isArray(a.children) && a.children.length > 0));
+    }
+  }
+  // The consequence, measured rather than asserted in the abstract: the two
+  // roles whose whole meaning is "one child" must see one child.
+  for (const r of ["guardian", "parent", "selfaccess"]) {
+    const seen = getData("players", r);
+    ok(`a ${r} sees exactly one pupil, not the school`, seen.length === 1,
+       `${seen.length} visible`);
+  }
+  // ...and a coach sees a side, not the school.
+  for (const r of ["coach", "assistantcoach", "teammanager"]) {
+    const seen = getData("players", r);
+    ok(`a ${r} sees one side, not every pupil`, seen.length > 0 && seen.length < PLAYERS.length,
+       `${seen.length} of ${PLAYERS.length}`);
+  }
 }
 
 console.log(`\n${"─".repeat(52)}\nCLIENT RBAC SUITE: ${pass} passed, ${fail} failed`);

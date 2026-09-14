@@ -5,6 +5,7 @@ import { dateStr, fitnessColor, today } from "../lib/format.js";
 import { Avatar, Btn, Card, KPICard, Pill, StatusDot } from "../ui/primitives.jsx";
 import { useRows, useSummary } from "../lib/live.js";
 import { featureOn, useFeatures } from "../lib/features.js";
+import { holdsCapability, readsOwnRecord } from "../rbac/index.js";
 
 // ══════════════════════════════════════════════════════
 //  DASHBOARD VIEW
@@ -44,6 +45,58 @@ function DashboardView({ role, onNav }) {
   const shows = (module) => featureOn(module);
   const pct = (v) => (v == null ? "—" : `${v}%`);
 
+  // Each figure names the capability that governs the table it is counted
+  // over, so a role that cannot read that table is not shown the card at all.
+  //
+  // Absent, not an em dash, and for the same reason a switched-off module's
+  // card is absent: these are COUNTS, and a count over rows the reader may not
+  // see comes back 0, not null. "Upcoming: 0" on a platform admin's dashboard
+  // — a role holding no fixture.read whatsoever — states that no fixtures are
+  // scheduled anywhere. It is a confident, specific, wrong sentence, and it is
+  // the one the old row printed, because the row was gated on role NAMES:
+  // "superadmin" and "parent", which exist only in the demonstration. Signed
+  // in for real, twenty-one of twenty-four roles matched nothing and got no
+  // row at all.
+  const holds = (capability) => holdsCapability(role, capability);
+  const own = readsOwnRecord(role);
+  const tiles = [
+    holds("player.roster.read") && {
+      label:"Active Players", icon:"👥", color:D.sky, value:kpi(summary?.activePlayers),
+      sub: summaryLive?"In your scope":"Demo data" },
+    holds("fixture.read") && {
+      label:"Upcoming", icon:"🏆", color:D.amber, value:kpi(summary?.upcomingMatches),
+      sub:"Fixtures scheduled" },
+    // Counted over competition_entrant, which competition.read governs — so
+    // that, not analytics.read, is what decides whether the figure exists.
+    holds("competition.read") && {
+      label:"Win Rate", icon:"📈", color:D.emerald, value:pct(summary?.winRatePct),
+      sub: summary?.winRatePct==null?"No completed matches":"Across your competitions" },
+    holds("medical.status.read") && shows("injuries") && {
+      label:"Injuries", icon:"🏥", value:kpi(summary?.injuriesActive),
+      color:(summary?.injuriesActive??0)>3?D.rose:D.orange, sub:"Active restrictions" },
+    holds("team.read") && shows("training") && {
+      label:"Sessions This Wk", icon:"💪", color:D.violet, value:kpi(summary?.sessionsThisWeek),
+      sub:"Training scheduled" },
+    // The viewer's own playing record. Ungated by school scope because it is
+    // not a school figure — it resolves through app_user.player_id, which is
+    // set for a pupil account and nobody else. A guardian reaches their child's
+    // the same way; an account naming no pupil gets an em dash rather than
+    // somebody else's average.
+    own && holds("player.performance.read") && {
+      label:"Batting Avg", icon:"🏏", color:D.sky, value:kpi(summary?.myBattingAverage),
+      sub: summary?.myBattingAverage==null?"Not enough innings yet":"Career, from the ball log" },
+    own && holds("player.performance.read") && {
+      label:"Strike Rate", icon:"⚡", color:D.amber, value:kpi(summary?.myStrikeRate),
+      sub: summary?.myStrikeRate==null?"No deliveries faced yet":"Career, from the ball log" },
+    own && holds("player.performance.read") && {
+      label:"Runs", icon:"📊", color:D.teal, value:kpi(summary?.myRuns), sub:"Career total" },
+    // Notifications are addressed to a person, not read out of a scoped table,
+    // so every role that reaches a dashboard has them.
+    {
+      label:"Alerts", icon:"🔔", color:D.rose, value:kpi(summary?.unreadAlerts),
+      sub:"Unread notifications" },
+  ].filter(Boolean);
+
   return (
     <div className="os-page">
       <div style={{marginBottom:"20px"}}>
@@ -54,48 +107,11 @@ function DashboardView({ role, onNav }) {
       </div>
 
       {/* KPI row */}
-      {(role==="superadmin"||role==="schooladmin"||role==="coach")&&(
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:"12px",marginBottom:"24px"}}>
-          <KPICard label="Active Players"  value={kpi(summary?.activePlayers)} icon="👥" color={D.sky}
-                   sub={summaryLive?"In your scope":"Demo data"}/>
-          <KPICard label="Upcoming"        value={kpi(summary?.upcomingMatches)} icon="🏆" color={D.amber}
-                   sub="Fixtures scheduled"/>
-          <KPICard label="Win Rate"        value={pct(summary?.winRatePct)} icon="📈" color={D.emerald}
-                   sub={summary?.winRatePct==null?"No completed matches":"Across your competitions"}/>
-          {shows("injuries")&&(
-            <KPICard label="Injuries"        value={kpi(summary?.injuriesActive)} icon="🏥"
-                     color={(summary?.injuriesActive??0)>3?D.rose:D.orange} sub="Active restrictions"/>
-          )}
-          {shows("training")&&(
-            <KPICard label="Sessions This Wk"value={kpi(summary?.sessionsThisWeek)} icon="💪" color={D.violet}
-                     sub="Training scheduled"/>
-          )}
-          <KPICard label="Alerts"          value={kpi(summary?.unreadAlerts)} icon="🔔" color={D.rose}
-                   sub="Unread notifications"/>
-        </div>
-      )}
-      {role==="player"&&(
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:"12px",marginBottom:"24px"}}>
-          <KPICard label="Batting Avg"   value={kpi(summary?.myBattingAverage)} icon="🏏" color={D.sky}
-                   sub={summary?.myBattingAverage==null?"Not enough innings yet":"Career, from the ball log"}/>
-          <KPICard label="Strike Rate"   value={kpi(summary?.myStrikeRate)} icon="⚡" color={D.amber}
-                   sub={summary?.myStrikeRate==null?"No deliveries faced yet":"Career, from the ball log"}/>
-          <KPICard label="Runs"          value={kpi(summary?.myRuns)} icon="📈" color={D.emerald} sub="Career total"/>
-          <KPICard label="Upcoming"      value={kpi(summary?.upcomingMatches)} icon="📅" color={D.violet}
-                   sub="Fixtures scheduled"/>
-        </div>
-      )}
-      {role==="parent"&&(
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:"12px",marginBottom:"24px"}}>
-          <KPICard label="Upcoming"      value={kpi(summary?.upcomingMatches)} icon="📅" color={D.sky}
-                   sub="Fixtures scheduled"/>
-          {shows("injuries")&&(
-            <KPICard label="Injuries"      value={kpi(summary?.injuriesActive)} icon="🏥" color={D.orange}
-                     sub="Active restrictions"/>
-          )}
-          <KPICard label="Season Avg"    value={kpi(summary?.myBattingAverage)} icon="🏏" color={D.amber}
-                   sub={summary?.myBattingAverage==null?"Linked pupil accounts only":"Career, from the ball log"}/>
-          <KPICard label="Alerts"        value={kpi(summary?.unreadAlerts)} icon="🔔" color={D.rose} sub="Unread"/>
+      {tiles.length>0&&(
+        <div data-testid="kpi-row" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:"12px",marginBottom:"24px"}}>
+          {tiles.map(t=>(
+            <KPICard key={t.label} label={t.label} value={t.value} icon={t.icon} color={t.color} sub={t.sub}/>
+          ))}
         </div>
       )}
 
@@ -152,7 +168,7 @@ function DashboardView({ role, onNav }) {
           </Card>
 
           {/* Squad fitness overview */}
-          {(role==="coach"||role==="superadmin"||role==="schooladmin")&&(
+          {holds("player.roster.read")&&(
             <Card>
               <div style={{padding:"14px 16px",borderBottom:`1px solid ${D.border}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
                 <span style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>Squad Fitness — 1XI</span>

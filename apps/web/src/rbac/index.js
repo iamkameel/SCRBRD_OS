@@ -22,7 +22,7 @@
  */
 
 import { authorize, scopeFilter, ANY_SCOPE } from "@scrbrd/policy/authorize";
-import { roleGrants, ROLE_CAPABILITIES } from "@scrbrd/policy/roles";
+import { roleGrants, ROLE_CAPABILITIES, SUBJECT_SCOPED_ROLES, TEAM_SCOPED_ROLES } from "@scrbrd/policy/roles";
 import { TABLES, maskedColumns } from "@scrbrd/policy/tables";
 import { teamCodeIn } from "@scrbrd/policy/teams";
 // The demonstration vocabulary lives in its own leaf module: design/roles.js
@@ -106,12 +106,49 @@ function maskMap(resource) {
  */
 
 
-/** Assignments for a role name — legacy or current. */
+/**
+ * Assignments for a role name — legacy or current.
+ *
+ * The demonstration scope has to obey the same two shape rules the database
+ * enforces, or it demonstrates something the product does not do.
+ *
+ *   TEAM_SCOPED_ROLES must name a team. A null team_code widens to every team
+ *   in the school, and the policy is blunt about what that means for a coach:
+ *   "a coach assignment with no team is a coach who reads every child at the
+ *   school". Postgres refuses it with a CHECK constraint.
+ *
+ *   SUBJECT_SCOPED_ROLES must name a person. "A guardian row with no subject
+ *   rows is a parent who reads every child at the school." app_can() refuses
+ *   those outright, so a live session cannot produce one.
+ *
+ * This function built neither. It returned a bare { role, school }, so the
+ * demonstration's own guardian saw all eighteen pupils instead of one child —
+ * measurably, not theoretically — and its assistant coach saw the whole school
+ * rather than a side. Nothing was insecure: the client scoping is a demo
+ * fixture and a live session is decided in Postgres. But it put the exact
+ * failure the policy exists to prevent on screen, in the product whose central
+ * claim is that it does not do that.
+ *
+ * The legacy aliases had the scopes right all along — `parent` named a child,
+ * `assistant` named a team. Collapsing the role switcher onto the canonical
+ * names is what made the unscoped fallback reachable, so it is fixed here
+ * rather than by keeping duplicate rows in a menu.
+ */
 export function assignmentsForRole(role) {
   const legacy = LEGACY_ROLE[role];
   if (legacy) return [legacy];
-  if (ROLE_CAPABILITIES[role]) return [{ role, school: DEMO_SCHOOL }];
-  return []; // unknown role ⇒ no authority. Default deny.
+  if (!ROLE_CAPABILITIES[role]) return []; // unknown role ⇒ no authority. Default deny.
+
+  const a = { role, school: DEMO_SCHOOL };
+  if (TEAM_SCOPED_ROLES.includes(role)) a.team = DEMO_TEAM;
+  // A guardian is named against the children they are responsible for; a pupil
+  // reading their own file, and a front desk looking one up, are named against
+  // the person themselves.
+  if (SUBJECT_SCOPED_ROLES.includes(role)) {
+    if (role === "guardian") a.children = [DEMO_CHILD];
+    else a.person = DEMO_CHILD;
+  }
+  return [a];
 }
 
 /** A principal the views can pass around. */
@@ -162,6 +199,34 @@ export function can(role, resource, action = "r") {
 /** Live-scoring capability. Fails closed: no scoring.edit, no scoring. */
 export function canScore(role) {
   return assignmentsForRole(role).some((a) => roleGrants(a.role, "scoring.edit"));
+}
+
+/**
+ * Does this role hold a capability anywhere?
+ *
+ * The general form of canScore above, and the same courtesy: it decides what
+ * to DRAW, never what to allow. Every figure it gates is already scoped in
+ * Postgres, so a wrong answer here shows or hides a card — it cannot leak one.
+ *
+ * Takes a role name rather than a profile because the demonstration has no
+ * profile, and a dashboard that only assembled itself for signed-in people
+ * would be a dashboard nobody could be shown.
+ */
+export function holdsCapability(role, capability) {
+  return assignmentsForRole(role).some((a) => roleGrants(a.role, capability));
+}
+
+/**
+ * Are this role's figures about one person rather than a squad?
+ *
+ * A batting average on a dashboard means "yours" to a pupil and "whose?" to a
+ * director of sport. The policy already draws this line — an assignment for
+ * these roles must name a person — so the card follows it rather than keeping
+ * a second list of who counts as personal.
+ */
+const PERSONAL_ROLES = new Set([...SUBJECT_SCOPED_ROLES, "player"]);
+export function readsOwnRecord(role) {
+  return assignmentsForRole(role).some((a) => PERSONAL_ROLES.has(a.role));
 }
 
 // ── Reading data ────────────────────────────────────────
