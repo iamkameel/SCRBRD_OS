@@ -153,7 +153,16 @@ try {
   await page.waitForTimeout(1200);
   ok("the fixture list came from the server", !/Demonstration fixtures/i.test(await text()));
 
-  const before = (await dbq(`select count(*)::int n from ball_event`))[0].n;
+  // A high-water mark, not just a count. The assertions below are about the
+  // deliveries THIS BROWSER tapped, and they used to read the whole table —
+  // which held only while the seed carried no ball log. Once it did, "every
+  // row carries one device id" counted the seed's device too and failed on
+  // fixture data rather than on anything the browser did.
+  // ball_event.id is a bigserial, so "written after this point" is exactly
+  // "written by this walk", with no match id to thread through.
+  const beforeRow = (await dbq(`select count(*)::int n, coalesce(max(id), 0) as high from ball_event`))[0];
+  const before = beforeRow.n;
+  const highWater = beforeRow.high;
   // Deliberately the 1XI fixture rather than whichever card is first: it is
   // the one with a real squad in the seed, and naming it means the assertions
   // below are about a known match rather than whatever happened to be on top.
@@ -203,9 +212,9 @@ try {
   await page.waitForTimeout(4000);
   const rows = await dbq(
     `select kind, ball_type, value, device_id, epoch, bowler_id, striker_id, payload
-       from ball_event order by seq`);
+       from ball_event where id > $1 order by id`, [highWater]);
   if (DEBUG) console.log("[debug] rows:", rows.length, JSON.stringify(rows.slice(-4)));
-  ok("balls tapped in the browser are in Postgres", rows.length > before);
+  ok(`balls tapped in the browser are in Postgres (${rows.length} new, ${before} already there)`, rows.length > 0);
   ok("...as deliveries, with their runs", rows.filter((r) => r.kind === "ball").length >= 3);
   ok("...stamped with the browser's device", new Set(rows.map((r) => r.device_id)).size === 1);
   ok("...under the epoch it claimed", rows.every((r) => r.epoch === session[0].epoch));

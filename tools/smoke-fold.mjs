@@ -240,19 +240,44 @@ try {
   // So this checks the same thing the live score check does, one level down:
   // the per-batter figures the device computed, and the per-player figures the
   // database derived, are the same numbers.
+  // Scoped to THIS MATCH, not to a career.
+  //
+  // It read the career aggregates, which agreed with one innings only while
+  // every player in the seed had played exactly one match — true of a seed with
+  // no ball log at all, and false the moment one was added, which is the state
+  // of any real season. The comparison it means to make is between the device's
+  // fold of this innings and the database's fold of the same deliveries, so it
+  // now aggregates the same rows rather than everything the boy has ever done.
+  //
+  // Same source as the career views (ball_event_live, so voided balls are gone)
+  // and the same run/extra split, so the two folds stay comparable.
   const careerRows = await dbq(
-    `select player_id, runs, balls_faced, dismissals, wickets, balls_bowled, runs_conceded
-       from (select p.id as player_id,
-                    coalesce(bat.runs,0) runs, coalesce(bat.balls_faced,0) balls_faced,
-                    coalesce(d.dismissals,0) dismissals,
-                    coalesce(bowl.wickets,0) wickets,
-                    coalesce(bowl.legal_balls,0) balls_bowled,
-                    coalesce(bowl.runs_conceded,0) runs_conceded
-               from player p
-               left join player_batting_career bat on bat.player_id = p.id
-               left join player_dismissals d on d.player_id = p.id
-               left join player_bowling_career bowl on bowl.player_id = p.id) x
-      where player_id = any($1::uuid[])`, [P]);
+    `select p.id as player_id,
+            coalesce(bat.runs, 0)          as runs,
+            coalesce(bat.balls_faced, 0)   as balls_faced,
+            coalesce(bowl.balls_bowled, 0) as balls_bowled,
+            coalesce(bowl.runs_conceded, 0) as runs_conceded
+       from player p
+       left join (
+         -- Exactly the rules player_batting_career uses, so the two folds are
+         -- compared on one definition: runs off the bat only, and a no-ball IS
+         -- a ball faced while a wide is not.
+         select striker_id,
+                sum(case when ball_type in ('run','W','Nb') then coalesce(value,0) else 0 end)::int as runs,
+                sum(case when ball_type <> 'Wd' then 1 else 0 end)::int as balls_faced
+           from ball_event_live where match_id = $2 and kind = 'ball' group by striker_id
+       ) bat on bat.striker_id = p.id
+       left join (
+         -- Likewise player_bowling_career: an extra costs the bowler the run
+         -- plus the delivery, and neither counts towards his legal balls.
+         select bowler_id,
+                sum(case when ball_type not in ('Wd','Nb') then 1 else 0 end)::int as balls_bowled,
+                sum(case when ball_type in ('Wd','Nb') then 1 + coalesce(value,0)
+                         when ball_type in ('run','W')  then coalesce(value,0)
+                         else 0 end)::int as runs_conceded
+           from ball_event_live where match_id = $2 and kind = 'ball' group by bowler_id
+       ) bowl on bowl.bowler_id = p.id
+      where p.id = any($1::uuid[])`, [P, MATCH]);
   const career = Object.fromEntries(careerRows.map((r) => [r.player_id, r]));
 
   ok("the database attributes balls to a batter at all",
@@ -288,7 +313,7 @@ try {
   // The voided balls must be absent from the career figures too — the whole
   // reason the aggregates read ball_event_live rather than ball_event.
   const totalFaced = careerRows.reduce((a, r) => a + Number(r.balls_faced), 0);
-  ok(`a corrected ball is not in anyone's career record (${totalFaced} faced, ${local.balls} legal + 2 not legal)`,
+  ok(`a corrected ball is not in anyone's figures for this match (${totalFaced} faced, ${local.balls} legal + 2 not legal)`,
      totalFaced === local.batsmen.reduce((a, b) => a + b.balls, 0));
 
   group("The handover fold sees the same match");
