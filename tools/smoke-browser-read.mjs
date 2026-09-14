@@ -723,6 +723,21 @@ try {
     await c.ctx.close();
   }
 
+  // ── Onboarding has a way out ─────────────────────────────────────
+  // A person who clicks "Get Started" by mistake, or who already has an
+  // account, used to have no way back to the login screen from the welcome
+  // step — the only exit was closing the tab. Caught after a live deployment
+  // left someone stuck there.
+  group("Landing on onboarding by mistake still reaches sign-in");
+  {
+    const s = await open();
+    await click(s.page, /Get Started/, 5000); await s.page.waitForTimeout(600);
+    ok("the welcome step offers a way back", await click(s.page, /Sign in instead/, 4000));
+    await s.page.waitForTimeout(500);
+    ok("...and it is the login screen, not another dead end", await s.page.locator("#login-email").count() === 1);
+    await s.ctx.close();
+  }
+
   // ── Onboarding ends in a request ────────────────────────────────
   group("A stranger onboards into a request; the office answers it; then he has a side");
   {

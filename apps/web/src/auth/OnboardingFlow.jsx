@@ -319,7 +319,23 @@ function OnboardingFlow({ onComplete }) {
 
         {/* Navigation */}
         <div style={{display:"flex",gap:"10px",marginTop:"14px",justifyContent:"flex-end",alignItems:"center"}}>
-          {step>0&&<button onClick={()=>{setStep(s=>s-1);setCodeError("");}} className="pressBtn" style={{padding:"11px 22px",borderRadius:"14px",cursor:"pointer",background:"transparent",border:"1px solid rgba(255,255,255,0.1)",fontFamily:"'Syne',sans-serif",fontSize:"12px",fontWeight:700,color:"rgba(255,255,255,0.45)"}}>← Back</button>}
+          {/* At step 0 there is nowhere to go "back" to within this flow — the
+              only way out used to be closing the tab. A person who reached
+              onboarding by mistake, or who already has an account, needs a
+              real exit, not a dead end that only resolves by clearing their
+              browser. onComplete(..., {requested:true}) is the same signal
+              the "request sent" screen uses to return to sign-in, reused here
+              so App.jsx has one path back to the login screen, not two. */}
+          {/* At step 0 there is nowhere to go "back" to within this flow — the
+              only way out used to be closing the tab. A person who reached
+              onboarding by mistake, or who already has an account, needs a
+              real exit, not a dead end that only resolves by clearing their
+              browser. onComplete(..., {requested:true}) is the same signal
+              the "request sent" screen uses to return to sign-in, reused here
+              so App.jsx has one path back to the login screen, not two. */}
+          {step===0
+            ? <button onClick={()=>onComplete(null, "", null, { requested:true })} className="pressBtn" style={{padding:"11px 22px",borderRadius:"14px",cursor:"pointer",background:"transparent",border:"1px solid rgba(255,255,255,0.1)",fontFamily:"'Syne',sans-serif",fontSize:"12px",fontWeight:700,color:"rgba(255,255,255,0.45)"}}>← Sign in instead</button>
+            : <button onClick={()=>{setStep(s=>s-1);setCodeError("");}} className="pressBtn" style={{padding:"11px 22px",borderRadius:"14px",cursor:"pointer",background:"transparent",border:"1px solid rgba(255,255,255,0.1)",fontFamily:"'Syne',sans-serif",fontSize:"12px",fontWeight:700,color:"rgba(255,255,255,0.45)"}}>← Back</button>}
           <div style={{flex:1}}/>
           <div style={{fontFamily:"'DM Mono',monospace",fontSize:"10px",color:"rgba(255,255,255,0.25)"}}>{step+1} / {steps.length}</div>
           <button onClick={handleNext} disabled={!canAdvance()&&stepId!=="tour"} className="pressBtn" style={{
