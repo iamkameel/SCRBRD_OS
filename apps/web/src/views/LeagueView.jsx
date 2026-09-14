@@ -1,10 +1,12 @@
 
 import { useState } from "react";
-import { D } from "../design/tokens.js";
+import { D, textOn } from "../design/tokens.js";
 import { SR } from "../scorer/format.js";
 import { Avatar, Badge, Btn, Card, Input, Modal, Pill, SectionHeader, Select } from "../ui/primitives.jsx";
 import { WeatherChip } from "./shared.jsx";
 import { useLive, usePlayersWithCareer, useRows, useWeather } from "../lib/live.js";
+import { api } from "../lib/api.js";
+import { schoolsWhere } from "../lib/session.js";
 
 // ══════════════════════════════════════════════════════
 //  LEAGUE MANAGEMENT VIEW
@@ -13,13 +15,18 @@ function LeagueView({ role }) {
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
   const COMPETITIONS = useRows("competitions", role);
-  const MATCHES = useRows("matches", role);
+  const [fixtureNonce, setFixtureNonce] = useState(0);
+  const MATCHES = useLive("matches", role, fixtureNonce).rows;
+  const GROUNDS = useRows("grounds", role);
   const PLAYERS = usePlayersWithCareer(role);
   const WEATHER = useWeather(role);
   const [selComp, setSelComp] = useState("comp1");
   const [tab,     setTab]     = useState("table");
   const [editRow, setEditRow] = useState(null);  // team row being edited
   const [addFixture, setAddFixture] = useState(false);
+  const [fx, setFx] = useState({ schoolId: "", teamCode: "", opponent: "", groundId: "", startsAt: "" });
+  const [fxSaid, setFxSaid] = useState("");
+  const fixtureSchools = schoolsWhere("fixture.update");
   const comp = COMPETITIONS.find(c=>c.id===selComp) ?? COMPETITIONS[0];
   // The ladder, from the server, for the competition on screen. The demo
   // carries its table on the competition row; a live competition has none
@@ -295,14 +302,31 @@ function LeagueView({ role }) {
 
       {addFixture&&(
         <Modal title="Add Fixture" onClose={()=>setAddFixture(false)}>
-          <Input label="Home Team" value="" onChange={()=>{}} placeholder="e.g. Hilton 1st XI"/>
-          <Input label="Away Team" value="" onChange={()=>{}} placeholder="e.g. Michaelhouse 1st XI"/>
-          <Input label="Venue" value="" onChange={()=>{}} placeholder="Ground name"/>
-          <Input label="Date" value="" onChange={()=>{}} type="date"/>
-          <Select label="Competition" value={selComp} onChange={()=>{}} options={COMPETITIONS.map(c=>({value:c.id,label:c.name}))}/>
+          {fixtureSchools.length>1&&<Select label="School" value={fx.schoolId} onChange={(v)=>setFx(f=>({...f,schoolId:v}))}
+            options={fixtureSchools.map(s=>({value:s.id,label:s.name}))}/>}
+          <Select label="Home Team" value={fx.teamCode} onChange={(v)=>setFx(f=>({...f,teamCode:v}))}
+            options={[{value:"",label:"Which side?"}, ...[...new Set(PLAYERS.map(p=>p.team).filter(Boolean))].map(t=>({value:t,label:t}))]}/>
+          <Input label="Away Team" value={fx.opponent} onChange={(v)=>setFx(f=>({...f,opponent:v}))} placeholder="e.g. Michaelhouse 1st XI"/>
+          <Select label="Venue" value={fx.groundId} onChange={(v)=>setFx(f=>({...f,groundId:v}))}
+            options={[{value:"",label:"Not recorded"}, ...GROUNDS.map(g=>({value:g.id,label:g.name}))]}/>
+          <Input label="Date & time" value={fx.startsAt} onChange={(v)=>setFx(f=>({...f,startsAt:v}))} type="datetime-local"/>
+          {fxSaid&&<div role="alert" style={{fontFamily:D.body,fontSize:"11px",color:textOn(D.rose),marginBottom:"8px"}}>{fxSaid}</div>}
           <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"8px"}}>
-            <Btn variant="ghost" onClick={()=>setAddFixture(false)}>Cancel</Btn>
-            <Btn onClick={()=>setAddFixture(false)}>Create Fixture</Btn>
+            <Btn variant="ghost" onClick={()=>{setAddFixture(false);setFxSaid("");}}>Cancel</Btn>
+            <Btn onClick={async ()=>{
+              setFxSaid("");
+              try {
+                await api("/api/fixtures", { method:"POST", body:{
+                  schoolId: fx.schoolId || fixtureSchools[0]?.id,
+                  teamCode: fx.teamCode,
+                  opponent: fx.opponent,
+                  groundId: fx.groundId || null,
+                  startsAt: new Date(fx.startsAt).toISOString(),
+                }});
+                setAddFixture(false); setFx({ schoolId:"", teamCode:"", opponent:"", groundId:"", startsAt:"" });
+                setFixtureNonce(n=>n+1);
+              } catch (e) { setFxSaid(e.message || "Refused."); }
+            }} disabled={!fx.teamCode||!fx.opponent.trim()||!fx.startsAt}>Create Fixture</Btn>
           </div>
         </Modal>
       )}

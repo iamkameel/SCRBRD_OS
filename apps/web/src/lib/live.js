@@ -948,9 +948,9 @@ export function useWeather(role) {
  * A player with no career row keeps null figures rather than zeros: nobody has
  * scored 0 at an average of 0. They have not batted.
  */
-export function usePlayersWithCareer(role) {
-  const players = useRows("players", role);
-  const career = useRows("career", role);
+export function usePlayersWithCareer(role, nonce = 0) {
+  const players = useRows("players", role, nonce);
+  const career = useRows("career", role, nonce);
   if (!career.length) return players;
   const byId = new Map(career.map((c) => [c.id, c]));
   return players.map((p) => {
@@ -987,7 +987,7 @@ export function useNotes(role, playerId, nonce = 0) {
   return { notes: rows.filter((n) => !playerId || n.playerId === playerId), live, loading, error };
 }
 
-export function useRows(resource, role) { return useLive(resource, role).rows; }
+export function useRows(resource, role, nonce = 0) { return useLive(resource, role, nonce).rows; }
 
 /**
  * Live rows for a resource, falling back to what was passed in.

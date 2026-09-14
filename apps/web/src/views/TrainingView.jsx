@@ -13,9 +13,10 @@ import { schoolsWhere } from "../lib/session.js";
 function TrainingView({ role }) {
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
+  const [sessionNonce, setSessionNonce] = useState(0);
   const COACHES = useRows("coaches", role);
   const PLAYERS = useRows("players", role);
-  const TRAINING_SESSIONS = useRows("training", role);
+  const TRAINING_SESSIONS = useRows("training", role, sessionNonce);
   // The register is its own read, behind player.profile.read, because it is a
   // list of named minors and the session row is a noticeboard fact. A parent
   // who may read "training moved to four" must not receive every child who
@@ -38,6 +39,8 @@ function TrainingView({ role }) {
   const [view, setView] = useState("schedule");
   const [addModal, setAddModal] = useState(false);
   const canEdit = role==="superadmin"||role==="coach";
+  const [ns, setNs] = useState({ title:"", teamCode:"1XI", sessionType:"batting", date:"", time:"", durationMin:"90", venue:"Nets 1-3", notes:"" });
+  const [nsSaid, setNsSaid] = useState("");
 
   const DRILLS_LIBRARY = [
     { id:"d1", name:"Throw-Downs",          category:"Batting",  duration:20, desc:"Coach delivers throw-downs to batters — front foot drives focus" },
@@ -148,20 +151,36 @@ function TrainingView({ role }) {
       )}
 
       {addModal&&(
-        <Modal title="Schedule Training Session" onClose={()=>setAddModal(false)}>
-          <Input label="Session Title" value="" onChange={()=>{}} placeholder="e.g. Pre-Match Batting Practice"/>
+        <Modal title="Schedule Training Session" onClose={()=>{setAddModal(false);setNsSaid("");}}>
+          {drillSchools.length>1&&<Select label="School" value={ns.schoolId||""} onChange={(v)=>setNs(x=>({...x,schoolId:v}))}
+            options={drillSchools.map(s=>({value:s.id,label:s.name}))}/>}
+          <Input label="Session Title" value={ns.title} onChange={(v)=>setNs(x=>({...x,title:v}))} placeholder="e.g. Pre-Match Batting Practice"/>
           <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"12px"}}>
-            <Select label="Team" value="1XI" onChange={()=>{}} options={["1XI","U15A","U13A"]}/>
-            <Select label="Type" value="batting" onChange={()=>{}} options={["batting","bowling","fielding","fitness","skills","technical"]}/>
-            <Input label="Date" value="" onChange={()=>{}} type="date"/>
-            <Input label="Time" value="" onChange={()=>{}} type="time"/>
-            <Input label="Duration (min)" value="" onChange={()=>{}} type="number" placeholder="90"/>
-            <Select label="Venue" value="Nets 1-3" onChange={()=>{}} options={["Nets 1-3","Nets 4-5","Nets 6-7","Main Field","No.1 Ground"]}/>
+            <Select label="Team" value={ns.teamCode} onChange={(v)=>setNs(x=>({...x,teamCode:v}))} options={["1XI","U16A","U16B","U15A","U14A","U13A"]}/>
+            <Select label="Type" value={ns.sessionType} onChange={(v)=>setNs(x=>({...x,sessionType:v}))} options={["batting","bowling","fielding","fitness","skills","technical"]}/>
+            <Input label="Date" value={ns.date} onChange={(v)=>setNs(x=>({...x,date:v}))} type="date"/>
+            <Input label="Time" value={ns.time} onChange={(v)=>setNs(x=>({...x,time:v}))} type="time"/>
+            <Input label="Duration (min)" value={ns.durationMin} onChange={(v)=>setNs(x=>({...x,durationMin:v}))} type="number" placeholder="90"/>
+            <Select label="Venue" value={ns.venue} onChange={(v)=>setNs(x=>({...x,venue:v}))} options={["Nets 1-3","Nets 4-5","Nets 6-7","Main Field","No.1 Ground"]}/>
           </div>
-          <Input label="Notes" value="" onChange={()=>{}} placeholder="Session objectives and focus areas..."/>
+          <Input label="Notes" value={ns.notes} onChange={(v)=>setNs(x=>({...x,notes:v}))} placeholder="Session objectives and focus areas..."/>
+          {nsSaid&&<div role="alert" style={{fontFamily:D.body,fontSize:"11px",color:textOn(D.rose),marginBottom:"8px"}}>{nsSaid}</div>}
           <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"8px"}}>
-            <Btn variant="ghost" onClick={()=>setAddModal(false)}>Cancel</Btn>
-            <Btn onClick={()=>setAddModal(false)}>Create Session</Btn>
+            <Btn variant="ghost" onClick={()=>{setAddModal(false);setNsSaid("");}}>Cancel</Btn>
+            <Btn onClick={async ()=>{
+              setNsSaid("");
+              try {
+                await api("/api/training", { method:"POST", body:{
+                  schoolId: ns.schoolId || drillSchools[0]?.id,
+                  teamCode: ns.teamCode, title: ns.title, sessionType: ns.sessionType,
+                  startsAt: new Date(`${ns.date}T${ns.time || "00:00"}`).toISOString(),
+                  durationMin: Number(ns.durationMin), venue: ns.venue, notes: ns.notes,
+                }});
+                setAddModal(false);
+                setNs({ title:"", teamCode:"1XI", sessionType:"batting", date:"", time:"", durationMin:"90", venue:"Nets 1-3", notes:"" });
+                setSessionNonce(x=>x+1);
+              } catch (e) { setNsSaid(e.message || "Refused."); }
+            }} disabled={ns.title.trim().length<3||!ns.date}>Create Session</Btn>
           </div>
         </Modal>
       )}
