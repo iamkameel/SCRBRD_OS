@@ -60,11 +60,48 @@ try {
     ok("a date of birth outside a school pupil's plausible age is refused",
        (await add(head, { schoolId: HIL, fullName: "Old Boy", teamCode: "U15A", born: "1970-01-01" })).status === 400);
 
-    ok("a coach cannot — the roster is not his to write", [403, 401].includes((await add(coach, { schoolId: HIL, fullName: "Second Boy", teamCode: "U15A" })).status));
-    ok("a spectator cannot", [403, 401].includes((await add(watcher, { schoolId: HIL, fullName: "Third Boy", teamCode: "U15A" })).status));
-    ok("Westville's admin cannot add him at Hilton", [403, 401].includes((await add(wesHead, { schoolId: HIL, fullName: "Fourth Boy", teamCode: "U15A" })).status));
+    // Every fixture above carries a birthday because one is now REQUIRED — and
+    // that requirement gets its own assertions rather than being visible only
+    // as an argument everybody remembered to pass.
+    ok("a boy with neither a birthday nor an ID number is refused",
+       (await add(head, { schoolId: HIL, fullName: "No Birthday", teamCode: "U15A" })).body?.error
+         === "date_of_birth_required");
+    ok("...and nothing landed",
+       (await q(`select count(*)::int c from player where full_name = 'No Birthday'`))[0].c === 0);
+    {
+      // The ID number carries the birthday, so it is enough on its own.
+      const byId = await add(head, { schoolId: HIL, fullName: "Id Only", teamCode: "U15A",
+                                     idNumber: "1104075800085" });
+      ok("an ID number alone is enough", byId.status === 200);
+      ok("...the birthday is read out of it, and the office is told where it came from",
+         byId.body?.bornFrom === "id_number"
+         && (await q(`select to_char(born,'YYYY-MM-DD') b from player where id = $1`, [byId.body.id]))[0].b
+              === "2011-04-07");
+      ok("...and the number itself is kept",
+         (await q(`select id_number from player where id = $1`, [byId.body.id]))[0].id_number
+           === "1104075800085");
+    }
+    ok("a birthday that disagrees with the ID number beside it is refused",
+       (await add(head, { schoolId: HIL, fullName: "Clashing", teamCode: "U15A",
+                          born: "2012-01-01", idNumber: "1104075800085" })).body?.error
+         === "id_number_disagrees_with_date_of_birth");
+    ok("an unreadable ID number is refused rather than stored",
+       (await add(head, { schoolId: HIL, fullName: "Bad Id", teamCode: "U15A",
+                          idNumber: "123" })).body?.error === "id_number_unreadable");
+    {
+      // Not a refusal: older and naturalised numbers fail the checksum, and the
+      // birthday does not depend on it. Accepted, and flagged.
+      const warned = await add(head, { schoolId: HIL, fullName: "Check Digit", teamCode: "U15A",
+                                       idNumber: "1104075800089" });
+      ok("a failed check digit is a warning, not a refusal",
+         warned.status === 200 && warned.body?.warning === "id_number_check_digit_failed");
+    }
 
-    const dupe = await add(head, { schoolId: HIL, fullName: "themba nkosi", teamCode: "U16A" });
+    ok("a coach cannot — the roster is not his to write", [403, 401].includes((await add(coach, { schoolId: HIL, fullName: "Second Boy", teamCode: "U15A", born: "2011-03-14" })).status));
+    ok("a spectator cannot", [403, 401].includes((await add(watcher, { schoolId: HIL, fullName: "Third Boy", teamCode: "U15A", born: "2011-03-14" })).status));
+    ok("Westville's admin cannot add him at Hilton", [403, 401].includes((await add(wesHead, { schoolId: HIL, fullName: "Fourth Boy", teamCode: "U15A", born: "2011-03-14" })).status));
+
+    const dupe = await add(head, { schoolId: HIL, fullName: "themba nkosi", teamCode: "U16A", born: "2011-03-14" });
     ok("the same name at the same school is refused, not silently doubled", dupe.status === 422 && dupe.body?.error === "already_on_the_roster");
     ok("...and there is still only one of him", Number((await q(`select count(*)::int c from player where school_id = $1 and lower(full_name) = 'themba nkosi'`, [HIL]))[0].c) === 1);
 

@@ -77,6 +77,24 @@ CREATE OR REPLACE FUNCTION _count_subjects(p_player uuid) RETURNS integer AS $$
   SELECT count(*)::int FROM assignment_subject WHERE player_id = p_player;
 $$ LANGUAGE sql SECURITY DEFINER;
 
+-- db/11 forbids a player with no date of birth, so the state the guardian
+-- guard exists for can no longer be CREATED — only inherited. The constraint
+-- is NOT VALID, which is the whole point: rows written before it are still
+-- there, and guardian_link_establish() still has to refuse them. Lifting the
+-- constraint for one INSERT is how that legacy row is reproduced honestly,
+-- rather than deleting an assertion because the happy path got safer.
+--
+-- Safe because the whole file runs inside one transaction and ends in
+-- ROLLBACK: the constraint is restored either way, including on a failure.
+CREATE OR REPLACE FUNCTION _born_constraint(p_on boolean) RETURNS void AS $$
+BEGIN
+  IF p_on THEN
+    ALTER TABLE player ADD CONSTRAINT player_born_required CHECK (born IS NOT NULL) NOT VALID;
+  ELSE
+    ALTER TABLE player DROP CONSTRAINT IF EXISTS player_born_required;
+  END IF;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
 CREATE OR REPLACE FUNCTION _count_accounts(p_email text) RETURNS integer AS $$
   SELECT count(*)::int FROM app_user WHERE lower(email) = lower(p_email);
 $$ LANGUAGE sql SECURITY DEFINER;
@@ -877,6 +895,24 @@ BEGIN
   SELECT official_level(O_UMPIRE, current_date + 500) INTO v_level;
   PERFORM _assert(v_level IS NULL, 'a lapsed accreditation still reads as current');
 
+  -- ── A pupil without a date of birth cannot be written ─────────
+  --
+  -- The API refuses one at both doors, and this is the floor under that: a
+  -- direct INSERT, a script, a future write path nobody has thought of yet.
+  -- It matters because guardian_link_establish() refuses a link it cannot put
+  -- an end date on, so a boy with no birthday is a boy whose family can never
+  -- reach his record — and the office would not learn that until a parent
+  -- asked.
+  PERFORM _assert(EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'player_born_required' AND convalidated),
+    'the date-of-birth constraint is missing or was never validated');
+
+  BEGIN
+    INSERT INTO player (school_id, team_code, full_name) VALUES (HIL, '1XI', 'No Birthday');
+    PERFORM _assert(false, 'a player was written with no date of birth');
+  EXCEPTION WHEN check_violation OR insufficient_privilege THEN NULL;
+  END;
+
   -- ── Guardianship ends at eighteen ──────────────────────────────
   --
   -- A guardian's access is co-ownership of a CHILD's record. The model had no
@@ -940,7 +976,15 @@ BEGIN
 
   -- No date of birth, no link. Guardianship is precisely where the age has to
   -- be known, and the honest answer is to refuse rather than assume.
+  --
+  -- The constraint is lifted for the one INSERT because db/11 now forbids this
+  -- state outright. That does NOT make the guard below redundant: db/11 is
+  -- NOT VALID, so a database that held such a boy before it landed holds him
+  -- still, and he is exactly the child whose family must not be quietly given
+  -- open-ended access. Restored immediately after.
+  PERFORM _born_constraint(false);
   PERFORM _set_born(P_U13, NULL);
+  PERFORM _born_constraint(true);
   SELECT ok, reason INTO v_ok, v_reason
     FROM guardian_link_establish(U_BURSAR, P_U13, 'parent');
   PERFORM _assert(NOT v_ok AND v_reason = 'player_date_of_birth_required',

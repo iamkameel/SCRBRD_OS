@@ -14,6 +14,7 @@
  * and an empty result is the refusal.
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
+import { resolveBirthDate } from "@scrbrd/policy/date-of-birth";
 
 const err = (code, status = 400) => Object.assign(new Error(code), { status });
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -36,7 +37,13 @@ const oneOf = (v, allowed, code) => {
 export function rosterAddRoutes({ pool, secret }) {
   return {
     // POST /api/players { schoolId, fullName, teamCode?, squadNo?, playingRole?,
-    //                     battingStyle?, bowlingArm?, bowlingStyle?, born? }
+    //                     battingStyle?, bowlingArm?, bowlingStyle?, born?, idNumber? }
+    //
+    // born OR idNumber is now REQUIRED — see resolveBirthDate(). A boy entered
+    // without one is a boy whose family can never be linked, because the
+    // guardian rules refuse a link they cannot put an end date on, and the
+    // office would not find that out until a parent asked why they cannot see
+    // their son.
     add: async (req, res) => {
       try {
         const b = req.body || {};
@@ -54,18 +61,15 @@ export function rosterAddRoutes({ pool, secret }) {
           squadNo = Number(b.squadNo);
           if (!Number.isInteger(squadNo) || squadNo < 0 || squadNo > 999) throw err("squad_no_invalid");
         }
-        let born = null;
-        if (b.born != null && b.born !== "") {
-          if (!/^\d{4}-\d{2}-\d{2}$/.test(String(b.born))) throw err("born_must_be_yyyy_mm_dd");
-          born = String(b.born);
-          // A date of birth is read back at least as far as when this boy's
-          // school career began. A school cannot enrol a newborn and a school
-          // sport pupil is not fifty — this catches a fat-fingered year
-          // (2101, or 1901) rather than policing an exact age band, which is
-          // the selection trigger's job, not this form's.
-          const age = (Date.now() - new Date(born).getTime()) / (365.2425 * 86400000);
-          if (!(age >= 3 && age <= 25)) throw err("born_not_plausible_for_a_school_pupil");
-        }
+        // The plausibility window and the yyyy-mm-dd rule used to live here as
+        // eleven lines the CSV import did not have. They are shared now: one
+        // rule, three doors.
+        const dob = resolveBirthDate({ born: b.born, idNumber: b.idNumber });
+        // 400, like every other field refusal on this route — a batting hand
+        // outside R/L is a 400 here and a birthday outside the plausible window
+        // is the same kind of answer.
+        if (!dob.ok) throw err(dob.reason);
+        const { born, idNumber } = dob;
 
         await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
           // Same rule as the bulk import: nought found is an insert, one
@@ -78,14 +82,17 @@ export function rosterAddRoutes({ pool, secret }) {
 
           const { rows } = await client.query(
             `insert into player (school_id, team_code, full_name, squad_no, playing_role,
-                                  batting_style, bowling_arm, bowling_style, born)
-             values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                                  batting_style, bowling_arm, bowling_style, born, id_number)
+             values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
              returning id, school_id, team_code, full_name`,
             [b.schoolId, team, fullName, squadNo, b.playingRole || null,
-             battingStyle, bowlingArm, bowlingStyle, born]);
+             battingStyle, bowlingArm, bowlingStyle, born, idNumber]);
           if (!rows.length) throw err("not_permitted", 403);
           const p = rows[0];
-          res.json({ id: p.id, schoolId: p.school_id, teamCode: p.team_code, fullName: p.full_name });
+          res.json({ id: p.id, schoolId: p.school_id, teamCode: p.team_code, fullName: p.full_name,
+                     // Where the birthday came from, and anything worth a second
+                     // look. A warning the server keeps to itself is not a warning.
+                     bornFrom: dob.source, ...(dob.warning ? { warning: dob.warning } : {}) });
         });
       } catch (e) {
         if (e.code === "23514") return res.status(422).json({ error: "refused", detail: e.message });

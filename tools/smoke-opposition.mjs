@@ -226,8 +226,11 @@ try {
   {
     // A boy in the side nobody has logged is a fact the reader needs — "we
     // know nothing about their number seven" — not a row that quietly vanishes.
-    const newBoy = (await q(`insert into player (school_id, team_code, full_name)
-                             values ($1,'1XI','N Ntuli') returning id`, [WES]))[0].id;
+    // A birthday, because db/11 requires one of every player now — his
+    // record being empty of LOGS is the point here, not his record being
+    // incomplete.
+    const newBoy = (await q(`insert into player (school_id, team_code, full_name, born)
+                             values ($1,'1XI','N Ntuli','2009-08-19') returning id`, [WES]))[0].id;
     const s = rows(await squad(soon, coach));
     const nb = s.find((r) => r.player_id === newBoy);
     ok("he is on the list", !!nb);

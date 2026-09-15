@@ -405,7 +405,16 @@ try {
     // linked to somebody. Reusing a player an earlier group linked would make
     // the "exactly one link" assertion below count that one too.
     const NO_DOB = "aaaaaaaa-0000-0000-0000-000000000013";  // B Khumalo, U13A
+    // db/11 forbids a player with no date of birth, so this state can no longer
+    // be created — only inherited. The constraint is NOT VALID, deliberately:
+    // a database that held such a boy before it landed holds him still, and he
+    // is exactly the child whose family must not be handed open-ended access.
+    // Lifted for the one UPDATE rather than deleting the assertion because the
+    // happy path got safer. Restored on the next line.
+    await q(`alter table player drop constraint if exists player_born_required`);
     await q(`update player set born = null where id = $1`, [NO_DOB]);
+    await q(`alter table player add constraint player_born_required
+             check (born is not null) not valid`);
     const undated = await api(`/api/players/${NO_DOB}/guardians`, {
       method: "POST", token: reg, body: { guardianId: ADULT_PARENT, relationship: "parent" } });
     ok("a child with no recorded date of birth cannot be linked at all",

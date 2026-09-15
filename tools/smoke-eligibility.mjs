@@ -33,6 +33,12 @@ async function select(born, team, matchYear = 2026, matchMonth = 6) {
   const c = await pool.connect();
   try {
     await c.query("begin");
+    // A null birthday is the whole point of one case below — "an unknown age is
+    // not a pass" — and db/11 now refuses to write one. Dropped inside this
+    // transaction, which always rolls back, so the constraint is never actually
+    // gone: it models the legacy row db/11's NOT VALID deliberately leaves
+    // behind, which is the row the eligibility check has to keep refusing.
+    await c.query("alter table player drop constraint if exists player_born_required");
     const [m] = (await c.query(
       `insert into match (school_id, team_code, opponent, starts_at, format, overs, status)
        values ($1,$2,'Michaelhouse', make_date($3,$4,1), 'T20', 20, 'scheduled') returning id`,

@@ -106,16 +106,22 @@ try {
     // the table, this is the assertion that would fail — and the first person
     // to notice would be a coach holding a spreadsheet of every pupil's home
     // address.
-    await q(`update player set address = $2, id_number = $3 where id = $1`,
+    // The birthday is set alongside the number, and the pair is a real one:
+    // 110407 IS 2011-04-07, and the check digit is genuine Luhn. The number
+    // here used to be invented, which did not matter while nothing read it —
+    // and then the export/import round trip at the foot of this walk started
+    // refusing the row, because an ID number that disagrees with the birthday
+    // beside it is now a refusal rather than two unrelated columns.
+    await q(`update player set address = $2, id_number = $3, born = $4 where id = $1`,
             ["aaaaaaaa-0000-0000-0000-000000000005",
-             "14 Ridge Road, Hilton", "1104075800086"]);
+             "14 Ridge Road, Hilton", "1104075800085", "2011-04-07"]);
     const asOffice = await exportCsv("players", office);
     const asCoach  = await exportCsv("players", coach);
     ok("the office, who holds player.pii.read, gets the address",
        asOffice.includes("14 Ridge Road"));
-    ok("...and the identity number", asOffice.includes("1104075800086"));
+    ok("...and the identity number", asOffice.includes("1104075800085"));
     ok("THE COACH'S FILE HAS NO ADDRESS IN IT", !asCoach.includes("14 Ridge Road"));
-    ok("...and no identity number", !asCoach.includes("1104075800086"));
+    ok("...and no identity number", !asCoach.includes("1104075800085"));
     ok("...but does have the roster they may see", /Pillay|Botha/.test(asCoach));
     // A module switched off closes the export too, because it closes the read.
     await api("/api/admin/modules/injuries/suppress", { method: "POST", token: office,
@@ -232,7 +238,7 @@ try {
 
   group("An import is a thousand ordinary writes");
   {
-    const csv = "full_name,team_code\nSomebody Else,1XI\n";
+    const csv = "full_name,team_code,born\nSomebody Else,1XI,2011-05-04\n";
     // The same policy that refuses them on the screen.
     const cross = await importCsv("players", wesAdmin, { csv, schoolId: HIL, commit: true });
     ok("another school's office cannot import into this one",
@@ -264,7 +270,7 @@ try {
          .body?.errors?.length === 1);
     // Not an error: a school's export carries fifty columns and we want ten.
     const extra = await importCsv("players", office, {
-      csv: "full_name,house,nickname\nExtra Cols,Founders,Bots\n", schoolId: HIL });
+      csv: "full_name,house,nickname,born\nExtra Cols,Founders,Bots,2011-06-09\n", schoolId: HIL });
     ok("unused columns are reported, not rejected",
        extra.body?.clean === true && extra.body?.unknownColumns?.length === 2);
   }
@@ -275,8 +281,12 @@ try {
     // A Botha at one school is unusual and it happens, and a schema forbidding
     // it would make the second unenterable by any route. So the import says it
     // cannot tell them apart, and the person reading the file could not either.
-    await q(`insert into player (school_id, full_name, team_code, fitness)
-             values ($1,'Twin Name','U15A','fit'), ($1,'Twin Name','U15B','fit')`, [HIL]);
+    // Different birthdays, which is how a school actually tells two boys of
+    // one name apart — and which the import still cannot use, because it
+    // matches on the name and the file carries one row.
+    await q(`insert into player (school_id, full_name, team_code, fitness, born)
+             values ($1,'Twin Name','U15A','fit','2011-02-03'),
+                    ($1,'Twin Name','U15B','fit','2011-09-14')`, [HIL]);
     const r = await importCsv("players", office, {
       csv: "full_name,team_code\nTwin Name,1XI\n", schoolId: HIL, commit: true });
     ok("the row is refused", r.body?.committed === false);
@@ -285,6 +295,63 @@ try {
     ok("...and neither was changed",
        (await q(`select count(*)::int c from player
                   where full_name = 'Twin Name' and team_code = '1XI'`))[0].c === 0);
+  }
+
+  group("A boy with no date of birth does not get onto the roster");
+  {
+    // The rule the guardian work made necessary: a link cannot be given an end
+    // date without a birthday, so guardian_link_establish() refuses one — and
+    // a boy imported without a birthday is a boy whose family can never be
+    // given access. The office would find that out weeks later, from a parent.
+    //
+    // This is the path that matters most, because it is the one that creates
+    // four hundred rows at a time.
+    const bare = await importCsv("players", office, {
+      csv: "full_name,team_code\nNo Birthday,U15A\n", schoolId: HIL, commit: true });
+    ok("a new player with neither birthday nor ID number is refused",
+       bare.body?.committed === false);
+    ok("...naming the column the office has to fill",
+       bare.body?.errors?.[0]?.column === "born");
+    ok("...in words, not a reason code",
+       /date of birth is required/i.test(bare.body?.errors?.[0]?.message ?? ""));
+    ok("...and nothing landed",
+       (await q(`select count(*)::int c from player where full_name = 'No Birthday'`))[0].c === 0);
+
+    // The ID number alone is enough: its first six digits ARE the birthday, and
+    // asking a school to type both is asking for the same fact twice.
+    const byId = await importCsv("players", office, {
+      csv: "full_name,team_code,id_number\nFrom Id,U15A,1104075800085\n", schoolId: HIL, commit: true });
+    ok("an ID number alone is enough", byId.body?.committed === true);
+    ok("...and the birthday is read out of it",
+       (await q(`select to_char(born,'YYYY-MM-DD') b from player where full_name = 'From Id'`))[0].b
+         === "2011-04-07");
+
+    // Two different birthdays for one child is not a column to pick between.
+    const clash = await importCsv("players", office, {
+      csv: "full_name,team_code,born,id_number\nClashing,U15A,2012-01-01,1104075800085\n",
+      schoolId: HIL, commit: true });
+    ok("a birthday that disagrees with the ID number is refused",
+       clash.body?.committed === false && clash.body?.errors?.[0]?.column === "id_number");
+
+    // A failed check digit is a warning, not a refusal — older and naturalised
+    // numbers do fail it, and the birthday does not depend on the checksum.
+    const warned = await importCsv("players", office, {
+      csv: "full_name,team_code,id_number\nCheck Digit,U15A,1104075800089\n",
+      schoolId: HIL, commit: true });
+    ok("a number that fails its own check digit still goes in",
+       warned.body?.committed === true);
+    ok("...with the office told to read it back against the document",
+       /check digit/i.test(warned.body?.warnings?.[0]?.message ?? ""));
+    ok("...reported as a warning, never as a refused row",
+       (warned.body?.errors ?? []).length === 0);
+
+    // AND A FILE THAT CARRIES ONLY NAMES IS STILL A LEGITIMATE FILE, for boys
+    // already on the books. The update coalesces, so re-sending a team sheet
+    // must not be refused for birthdays somebody typed in last term.
+    const again = await importCsv("players", office, {
+      csv: "full_name,team_code\nFrom Id,1XI\n", schoolId: HIL, commit: true });
+    ok("an existing boy is not re-asked for a birthday he already has",
+       again.body?.committed === true && again.body?.updated === 1);
   }
 
   group("A round trip");
