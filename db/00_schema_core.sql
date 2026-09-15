@@ -72,8 +72,21 @@ CREATE TABLE player (
   -- rule with nothing behind it is the pattern this schema keeps closing.
   playing_role  text CHECK (playing_role IS NULL OR playing_role IN
                   ('batter','bowler','allrounder','keeper')),
-  batting_style text,
-  bowling_style text,
+  -- Every view that renders a hand or an arm compares this against the
+  -- single letter 'R' or 'L' — {batHand}HB, bowlArm==="L"?"LA":"RA" — across
+  -- SquadView, ProfilesView, AnalyticsView and the scorer. A seed once wrote
+  -- 'RHB'/'LHB' here instead, which passed every check that mattered to it
+  -- and silently broke every one of those comparisons: badges defaulted to
+  -- right-handed styling regardless of the boy's actual hand, and the label
+  -- rendered "LHBHB". The CHECK is the same fix playing_role already has,
+  -- closing the vocabulary before a second spelling gets in.
+  batting_style text CHECK (batting_style IS NULL OR batting_style IN ('R','L')),
+  bowling_arm   text CHECK (bowling_arm IS NULL OR bowling_arm IN ('R','L')),
+  -- Pace vs spin, not the arm — F(ast) / M(edium) / S(pin). The arm a bowler
+  -- uses and the pace he bowls at are independent facts (a left-arm seamer
+  -- and a left-arm spinner are both 'L' here and differ only in this column),
+  -- which is why they are two columns rather than one compound style string.
+  bowling_style text CHECK (bowling_style IS NULL OR bowling_style IN ('F','M','S')),
   fitness       text NOT NULL DEFAULT 'fit'
                   CHECK (fitness IN ('fit','injured','rehab','unavailable')),
   -- ── personal information (masked, in three tiers) ──

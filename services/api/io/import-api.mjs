@@ -57,11 +57,16 @@ export const IMPORTS = {
       // the one place that reads a vocabulary back in, so it is the place that
       // discovers when the vocabulary was guessed.
       playing_role:  { parse: asOneOf(["batter", "bowler", "allrounder", "keeper"]) },
-      // Free text, deliberately. Nothing in this codebase has ever written a
-      // batting_style, so there is no vocabulary to agree with — and inventing
-      // one here would repeat the mistake above with nothing to catch it.
-      batting_style: { parse: asText(20) },
-      bowling_style: { parse: asText(40) },
+      // Closed, the same way playing_role is: R/L is what every screen that
+      // renders a hand or an arm compares against, and 'RHB'/'right-handed'
+      // read plausibly here and broke every one of those comparisons
+      // silently once before. asOneOf fails loud on a spreadsheet's own
+      // spelling rather than guessing at it.
+      batting_style: { parse: asOneOf(["R", "L"]) },
+      bowling_arm:   { parse: asOneOf(["R", "L"]) },
+      // Pace or spin, not the arm — a left-arm quick and a left-arm spinner
+      // share bowling_arm and differ only here.
+      bowling_style: { parse: asOneOf(["F", "M", "S"]) },
       born:          { parse: asDate },
       email:         { parse: asEmail },
       phone:         { parse: asPhone },
@@ -70,7 +75,7 @@ export const IMPORTS = {
     // The template a school is given. Exactly the columns above, in an order
     // that reads like a team sheet rather than like a table definition.
     template: ["full_name", "team_code", "squad_no", "playing_role",
-               "batting_style", "bowling_style", "born", "email", "phone", "hometown"],
+               "batting_style", "bowling_arm", "bowling_style", "born", "email", "phone", "hometown"],
     /**
      * One row, matched on the name — and refusing to guess when it cannot.
      *
@@ -92,8 +97,8 @@ export const IMPORTS = {
     find: `select id from player
             where school_id = $1 and lower(btrim(full_name)) = lower(btrim($2))`,
     insert: `insert into player (school_id, full_name, team_code, squad_no, playing_role,
-                                 batting_style, bowling_style, born, email, phone, hometown)
-             values ($1, btrim($2), $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                                 batting_style, bowling_arm, bowling_style, born, email, phone, hometown)
+             values ($1, btrim($2), $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
              returning id`,
     // coalesce on every column, so a file that carries only names and teams
     // does not blank the birthdays somebody typed in by hand last term. A
@@ -117,14 +122,15 @@ export const IMPORTS = {
                     squad_no = coalesce($4, squad_no),
                     playing_role = coalesce($5, playing_role),
                     batting_style = coalesce($6, batting_style),
-                    bowling_style = coalesce($7, bowling_style),
-                    born = coalesce($8, born),
-                    email = coalesce($9, email),
-                    phone = coalesce($10, phone),
-                    hometown = coalesce($11, hometown)
-              where id = $12 and school_id = $1 returning id`,
+                    bowling_arm = coalesce($7, bowling_arm),
+                    bowling_style = coalesce($8, bowling_style),
+                    born = coalesce($9, born),
+                    email = coalesce($10, email),
+                    phone = coalesce($11, phone),
+                    hometown = coalesce($12, hometown)
+              where id = $13 and school_id = $1 returning id`,
     params: (school, v) => [school, v.full_name, v.team_code, v.squad_no, v.playing_role,
-                            v.batting_style, v.bowling_style, v.born, v.email, v.phone, v.hometown],
+                            v.batting_style, v.bowling_arm, v.bowling_style, v.born, v.email, v.phone, v.hometown],
   },
 };
 

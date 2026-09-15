@@ -91,10 +91,17 @@ try {
 
   // Two thirteen-year-olds and a batter, on the U14A side its coach holds.
   await q(`insert into player (id, school_id, team_code, full_name, squad_no, playing_role, born, bowling_style) values
-            ($1, $4, 'U14A', 'L Zondi', 21, 'bowler', '2014-01-15', 'right-arm fast'),
-            ($2, $4, 'U14A', 'A Govender', 22, 'bowler', '2014-03-02', 'leg spin'),
+            ($1, $4, 'U14A', 'L Zondi', 21, 'bowler', '2014-01-15', 'F'),
+            ($2, $4, 'U14A', 'A Govender', 22, 'bowler', '2014-03-02', 'S'),
             ($3, $4, 'U14A', 'N Mthembu', 23, 'batter', '2013-11-30', null),
-            ($5, $4, 'U16B', 'J Steyn', 24, 'bowler', '2010-10-01', 'right-arm fast')`, [PACE, SPIN, BAT, HIL, U15]);
+            ($5, $4, 'U16B', 'J Steyn', 24, 'bowler', '2010-10-01', 'F')`, [PACE, SPIN, BAT, HIL, U15]);
+
+  // OPEN is S Naidoo, shared with the pilot seed — which now names him a
+  // left-arm spinner for the wagon-wheel demo. This walk's own ceiling group
+  // below needs a PACE open bowler (a school's ceiling on the pace directive
+  // has no reason to touch a spinner), so it says so explicitly here rather
+  // than depending on what NULL used to default to.
+  await q(`update player set bowling_style = 'F' where id = $1`, [OPEN]);
 
   const u14   = await login("u14coach@example.invalid");   // coach, U14A
   const coach = await login("coach@example.invalid");      // coach, 1XI

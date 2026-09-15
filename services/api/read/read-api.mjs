@@ -107,8 +107,8 @@ export const READ_QUERIES = {
     // not an access control: it is the same for everyone and cannot tell a
     // school administrator from a coach. Asking and getting NULL is the mask
     // being tested.
-    text: `select pm.id, pm.school_id, s.name as school_name, pm.full_name, pm.team_code, pm.playing_role,
-                  pm.batting_style, pm.bowling_style, pm.fitness,
+    text: `select pm.id, pm.school_id, s.name as school_name, pm.full_name, pm.team_code, pm.squad_no, pm.playing_role,
+                  pm.batting_style, pm.bowling_arm, pm.bowling_style, pm.fitness,
                   pm.born, pm.hometown, pm.height, pm.weight,           -- masked per role
                   pm.address, pm.guardian, pm.id_number              -- masked per role
              from player_masked pm

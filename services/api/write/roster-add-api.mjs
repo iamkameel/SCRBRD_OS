@@ -18,12 +18,25 @@ import { runAsPrincipal } from "../auth/auth-db.mjs";
 const err = (code, status = 400) => Object.assign(new Error(code), { status });
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ROLES = ["batter", "bowler", "allrounder", "keeper"];
+// The same closed vocabularies the CHECK constraints on player enforce —
+// validated here too, so a bad value gets one clean sentence back rather than
+// a raw Postgres constraint-violation message. R/L for the hand and the arm,
+// F/M/S for pace vs spin — an arm and a pace are independent facts, which is
+// why they are two fields.
+const HAND = ["R", "L"];
+const PACE = ["F", "M", "S"];
 const clean = (v, max) => (v == null || String(v).trim() === "" ? null : String(v).trim().slice(0, max));
+const oneOf = (v, allowed, code) => {
+  if (v == null || v === "") return null;
+  const s = String(v).trim().toUpperCase();
+  if (!allowed.includes(s)) throw err(code);
+  return s;
+};
 
 export function rosterAddRoutes({ pool, secret }) {
   return {
     // POST /api/players { schoolId, fullName, teamCode?, squadNo?, playingRole?,
-    //                     battingStyle?, bowlingStyle?, born? }
+    //                     battingStyle?, bowlingArm?, bowlingStyle?, born? }
     add: async (req, res) => {
       try {
         const b = req.body || {};
@@ -33,6 +46,9 @@ export function rosterAddRoutes({ pool, secret }) {
         const team = clean(b.teamCode, 8);
         if (team && !/^[A-Z0-9]{2,8}$/.test(team)) throw err("team_code_invalid");
         if (b.playingRole != null && b.playingRole !== "" && !ROLES.includes(b.playingRole)) throw err("role_invalid");
+        const battingStyle = oneOf(b.battingStyle, HAND, "batting_style_invalid");
+        const bowlingArm = oneOf(b.bowlingArm, HAND, "bowling_arm_invalid");
+        const bowlingStyle = oneOf(b.bowlingStyle, PACE, "bowling_style_invalid");
         let squadNo = null;
         if (b.squadNo != null && b.squadNo !== "") {
           squadNo = Number(b.squadNo);
@@ -42,6 +58,13 @@ export function rosterAddRoutes({ pool, secret }) {
         if (b.born != null && b.born !== "") {
           if (!/^\d{4}-\d{2}-\d{2}$/.test(String(b.born))) throw err("born_must_be_yyyy_mm_dd");
           born = String(b.born);
+          // A date of birth is read back at least as far as when this boy's
+          // school career began. A school cannot enrol a newborn and a school
+          // sport pupil is not fifty — this catches a fat-fingered year
+          // (2101, or 1901) rather than policing an exact age band, which is
+          // the selection trigger's job, not this form's.
+          const age = (Date.now() - new Date(born).getTime()) / (365.2425 * 86400000);
+          if (!(age >= 3 && age <= 25)) throw err("born_not_plausible_for_a_school_pupil");
         }
 
         await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
@@ -55,11 +78,11 @@ export function rosterAddRoutes({ pool, secret }) {
 
           const { rows } = await client.query(
             `insert into player (school_id, team_code, full_name, squad_no, playing_role,
-                                  batting_style, bowling_style, born)
-             values ($1, $2, $3, $4, $5, $6, $7, $8)
+                                  batting_style, bowling_arm, bowling_style, born)
+             values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
              returning id, school_id, team_code, full_name`,
             [b.schoolId, team, fullName, squadNo, b.playingRole || null,
-             clean(b.battingStyle, 30), clean(b.bowlingStyle, 30), born]);
+             battingStyle, bowlingArm, bowlingStyle, born]);
           if (!rows.length) throw err("not_permitted", 403);
           const p = rows[0];
           res.json({ id: p.id, schoolId: p.school_id, teamCode: p.team_code, fullName: p.full_name });

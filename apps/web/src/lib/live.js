@@ -79,6 +79,7 @@ function asPlayer(r) {
     squadNo: r.squad_no,
     role: r.playing_role,
     batHand: r.batting_style,
+    bowlArm: r.bowling_arm,
     bowlStyle: r.bowling_style,
     fitness: r.fitness,
     born: r.born,

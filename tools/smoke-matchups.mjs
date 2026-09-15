@@ -80,7 +80,7 @@ try {
     `select id, full_name from player
       where team_code = '1XI' and school_id = $1 order by full_name limit 3`, [HIL]);
   const bowl = (await q(
-    `update player set bowling_style = 'Left-arm orthodox' where id = $1
+    `update player set bowling_style = 'S' where id = $1
       returning id, full_name, bowling_style`, [third.id]))[0];
 
   const m = (await q(
@@ -118,7 +118,7 @@ try {
   ok("the pairing appears", !!mu);
   ok("both players are named", mu?.batter_name === bat.full_name && mu?.bowler_name === bowl.full_name);
   ok("the bowler's style rides along, which is what a coach plans against",
-     mu?.bowling_style === "Left-arm orthodox");
+     mu?.bowling_style === "S");
   ok("a wide is not a ball faced", mu?.balls === 8);
   ok("runs off the bat only — the bye is not his", mu?.runs === 12);
   ok("boundaries are counted where they were hit", mu?.fours === 1 && mu?.sixes === 1);
