@@ -9,6 +9,7 @@ import { usePlayersWithCareer, useSkills } from "../lib/live.js";
 import { api } from "../lib/api.js";
 import { schoolsWhere } from "../lib/session.js";
 import { holdsCapability } from "../rbac/index.js";
+import { resolveBirthDate, BIRTH_DATE_MESSAGE } from "@scrbrd/policy/date-of-birth";
 import { ageAtCutoff, compareTeams, isEligible, parseTeam, teamLabel, teamsForLevel } from "@scrbrd/policy/teams";
 
 // U13 through U16 is an upper bound only — "a gifted twelve-year-old plays
@@ -38,7 +39,7 @@ function SquadView({ role }) {
   const [selected, setSelected]   = useState(null);
   const [addModal, setAddModal]   = useState(false);
   const [np, setNp] = useState({ fullName:"", teamCode:"1XI", playingRole:"batter",
-    battingStyle:"R", bowlingArm:"", bowlingStyle:"", squadNo:"", born:"" });
+    battingStyle:"R", bowlingArm:"", bowlingStyle:"", squadNo:"", born:"", idNumber:"" });
   const [npSaid, setNpSaid] = useState("");
   const addSchools = schoolsWhere("player.profile.manage");
   const players = PLAYERS.filter(p=>p.team===team);
@@ -63,7 +64,13 @@ function SquadView({ role }) {
   // ageAtCutoff is the SAME function a match's own eligibility check calls
   // (packages/policy/src/teams.mjs), so what this form tells a school
   // administrator can never disagree with what team selection later enforces.
-  const npAge = np.born ? ageAtCutoff(np.born, new Date(), "school") : null;
+  // Resolved as the office types, so "that ID number carries a different
+  // birthday" lands beside the field rather than as a refusal after saving.
+  const npDob = (np.born || np.idNumber) ? resolveBirthDate({ born: np.born, idNumber: np.idNumber }) : null;
+  // The band is read from whichever of the two actually supplied the date —
+  // an ID number typed with no birthday still names the age band.
+  const npBornEffective = npDob?.ok ? npDob.born : np.born;
+  const npAge = npBornEffective ? ageAtCutoff(npBornEffective, new Date(), "school") : null;
   const npBand = schoolBand(npAge);
 
   // Every team a school-level side can be, plus whatever is already on the
@@ -247,6 +254,34 @@ function SquadView({ role }) {
                   {npAge} on the season's cut-off · school band <b style={{color:D.textSecondary}}>{npBand}</b>
                 </div>
               )}
+              {/* EITHER of these two, not both. A South African ID number's
+                  first six digits ARE the date of birth, so a school working
+                  from a class list of ID numbers should not have to type the
+                  birthday again — and when both are given they must agree,
+                  because two birthdays for one child means one of them
+                  belongs to somebody else. resolveBirthDate() is the same
+                  rule the server and the CSV import apply; this runs it as
+                  the office types so the refusal arrives before the save. */}
+              <Input label="ID number (or use the date above)" value={np.idNumber}
+                     onChange={(v)=>setNp(n=>({...n,idNumber:v}))} placeholder="13 digits"/>
+              {npDob&&npDob.ok===false&&(
+                <div data-testid="add-player-dob-note" role="alert" style={{fontFamily:D.body,fontSize:"10px",
+                  color:textOn(D.rose),marginTop:"-8px",marginBottom:"12px"}}>
+                  {BIRTH_DATE_MESSAGE[npDob.reason] || npDob.reason}
+                </div>
+              )}
+              {npDob&&npDob.ok&&npDob.source==="id_number"&&(
+                <div data-testid="add-player-dob-note" style={{fontFamily:D.body,fontSize:"10px",
+                  color:D.textMuted,marginTop:"-8px",marginBottom:"12px"}}>
+                  Born <b style={{color:D.textSecondary}}>{npDob.born}</b>, read from the ID number.
+                </div>
+              )}
+              {npDob&&npDob.ok&&npDob.warning&&(
+                <div data-testid="add-player-dob-warning" style={{fontFamily:D.body,fontSize:"10px",
+                  color:D.amber,marginTop:"-8px",marginBottom:"12px"}}>
+                  {BIRTH_DATE_MESSAGE[npDob.warning]}
+                </div>
+              )}
             </div>
             <Select label="Squad No (optional)" value={np.squadNo} onChange={(v)=>setNp(n=>({...n,squadNo:v}))}
               options={[{value:"",label:"—"},...Array.from({length:99},(_,i)=>({value:String(i+1),label:String(i+1)}))]}/>
@@ -307,13 +342,14 @@ function SquadView({ role }) {
                   bowlingArm: showBowling ? (np.bowlingArm || null) : null,
                   bowlingStyle: showBowling ? (np.bowlingStyle || null) : null,
                   born: np.born || null,
+                  idNumber: np.idNumber || null,
                 }});
                 setAddModal(false);
                 setNp({ fullName:"", teamCode:"1XI", playingRole:"batter", battingStyle:"R",
-                  bowlingArm:"", bowlingStyle:"", squadNo:"", born:"" });
+                  bowlingArm:"", bowlingStyle:"", squadNo:"", born:"", idNumber:"" });
                 setRosterNonce(x=>x+1);
               } catch (e) { setNpSaid(e.message || "Refused."); }
-            }} disabled={np.fullName.trim().length<2}>Add Player</Btn>
+            }} disabled={np.fullName.trim().length<2 || !npDob?.ok}>Add Player</Btn>
           </div>
         </Modal>
       )}

@@ -85,9 +85,40 @@ UPDATE player SET fitness = 'injured' WHERE id = 'aaaaaaaa-0000-0000-0000-000000
 -- green, which is exactly the failure this line closes.
 UPDATE player SET address = '12 Example Road, Howick' WHERE school_id = '11111111-1111-1111-1111-111111111111';
 
-UPDATE player SET id_number = '0803145000081' WHERE id = 'aaaaaaaa-0000-0000-0000-000000000001';
-UPDATE player SET id_number = '0807025000082' WHERE id = 'aaaaaaaa-0000-0000-0000-000000000002';
-UPDATE player SET id_number = '0805305000085' WHERE id = 'aaaaaaaa-0000-0000-0000-000000000005';
+-- ── ID numbers, DERIVED from each boy's birthday ────────────────
+--
+-- These were three literals, and they were wrong. A South African ID number's
+-- first six digits ARE the date of birth, so a hand-typed number and a
+-- hand-typed birthday are the same fact written twice — and the moment the
+-- birthdays above became relative (so the fixture would stop ageing out of the
+-- guardian rules), the literals stopped agreeing with them. Nothing said so:
+-- the export/import round trip in tools/smoke-csv.mjs found it, which is
+-- exactly the job of a round trip.
+--
+-- Computed now, so the two can never drift apart again. The check digit is
+-- real Luhn — the same algorithm packages/policy/src/sa-id.mjs implements —
+-- because a fixture carrying numbers that fail their own checksum would make
+-- the import warn on every seeded boy and teach everyone to ignore the warning.
+CREATE OR REPLACE FUNCTION pg_temp.sa_id_for(p_born date, p_sequence text)
+RETURNS text AS $$
+DECLARE body text; total int := 0; d int; dbl boolean := true; i int;
+BEGIN
+  body := to_char(p_born, 'YYMMDD') || p_sequence || '0' || '8';
+  FOR i IN REVERSE length(body)..1 LOOP
+    d := substr(body, i, 1)::int;
+    IF dbl THEN d := d * 2; IF d > 9 THEN d := d - 9; END IF; END IF;
+    total := total + d;
+    dbl := NOT dbl;
+  END LOOP;
+  RETURN body || ((10 - (total % 10)) % 10)::text;
+END $$ LANGUAGE plpgsql;
+
+UPDATE player SET id_number = pg_temp.sa_id_for(born, '5000')
+ WHERE id = 'aaaaaaaa-0000-0000-0000-000000000001';
+UPDATE player SET id_number = pg_temp.sa_id_for(born, '5001')
+ WHERE id = 'aaaaaaaa-0000-0000-0000-000000000002';
+UPDATE player SET id_number = pg_temp.sa_id_for(born, '5002')
+ WHERE id = 'aaaaaaaa-0000-0000-0000-000000000005';
 
 INSERT INTO injury (id, school_id, player_id, injury_type, severity, date_injured, rtw_date, phase, restricted, notes, physio) VALUES
   ('cccccccc-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'aaaaaaaa-0000-0000-0000-000000000005',

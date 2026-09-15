@@ -20,6 +20,7 @@
  * did.
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
+import { resolveBirthDate, BIRTH_DATE_MESSAGE } from "@scrbrd/policy/date-of-birth";
 import { parseCsv, mapRows, asText, asDate, asInt, asOneOf, asEmail, asPhone } from "./csv.mjs";
 
 /**
@@ -67,7 +68,13 @@ export const IMPORTS = {
       // Pace or spin, not the arm — a left-arm quick and a left-arm spinner
       // share bowling_arm and differ only here.
       bowling_style: { parse: asOneOf(["F", "M", "S"]) },
+      // A date of birth is REQUIRED for a new player, and either column can
+      // supply it — an SA ID number's first six digits are the birthday, so a
+      // school working from a class list that carries ID numbers does not have
+      // to type it twice. Enforced per row below, not here, because the rule
+      // is "one of these two", which a per-column `required` cannot say.
       born:          { parse: asDate },
+      id_number:     { parse: asText(20) },
       email:         { parse: asEmail },
       phone:         { parse: asPhone },
       hometown:      { parse: asText(80) },
@@ -75,7 +82,8 @@ export const IMPORTS = {
     // The template a school is given. Exactly the columns above, in an order
     // that reads like a team sheet rather than like a table definition.
     template: ["full_name", "team_code", "squad_no", "playing_role",
-               "batting_style", "bowling_arm", "bowling_style", "born", "email", "phone", "hometown"],
+               "batting_style", "bowling_arm", "bowling_style", "born", "id_number",
+               "email", "phone", "hometown"],
     /**
      * One row, matched on the name — and refusing to guess when it cannot.
      *
@@ -94,11 +102,15 @@ export const IMPORTS = {
      * refusal naming the problem: the import cannot tell them apart and
      * neither could a person reading the file.
      */
-    find: `select id from player
+    // `born` comes back too, because the birth-date rule differs between an
+    // insert and an update: a file that carries only names and teams must not
+    // be refused for a boy whose birthday was typed in by hand last term.
+    find: `select id, born from player
             where school_id = $1 and lower(btrim(full_name)) = lower(btrim($2))`,
     insert: `insert into player (school_id, full_name, team_code, squad_no, playing_role,
-                                 batting_style, bowling_arm, bowling_style, born, email, phone, hometown)
-             values ($1, btrim($2), $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                                 batting_style, bowling_arm, bowling_style, born, id_number,
+                                 email, phone, hometown)
+             values ($1, btrim($2), $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
              returning id`,
     // coalesce on every column, so a file that carries only names and teams
     // does not blank the birthdays somebody typed in by hand last term. A
@@ -125,12 +137,39 @@ export const IMPORTS = {
                     bowling_arm = coalesce($7, bowling_arm),
                     bowling_style = coalesce($8, bowling_style),
                     born = coalesce($9, born),
-                    email = coalesce($10, email),
-                    phone = coalesce($11, phone),
-                    hometown = coalesce($12, hometown)
-              where id = $13 and school_id = $1 returning id`,
+                    id_number = coalesce($10, id_number),
+                    email = coalesce($11, email),
+                    phone = coalesce($12, phone),
+                    hometown = coalesce($13, hometown)
+              where id = $14 and school_id = $1 returning id`,
     params: (school, v) => [school, v.full_name, v.team_code, v.squad_no, v.playing_role,
-                            v.batting_style, v.bowling_arm, v.bowling_style, v.born, v.email, v.phone, v.hometown],
+                            v.batting_style, v.bowling_arm, v.bowling_style, v.born, v.id_number,
+                            v.email, v.phone, v.hometown],
+
+    /**
+     * The one rule a per-column spec cannot express: born OR id_number, and
+     * they must agree when both arrive.
+     *
+     * Per row rather than per file, so a load of four hundred children reports
+     * "line 84: a date of birth is required" for the twelve rows missing one
+     * and commits nothing — the office fixes twelve cells rather than being
+     * told the file is bad.
+     *
+     * `existing` is the row already on the books, or null. A boy who already
+     * has a birthday is not re-asked for it: the update coalesces, so a file
+     * carrying only names and teams is a legitimate thing to send.
+     */
+    resolve: (v, existing) => {
+      const dob = resolveBirthDate({ born: v.born, idNumber: v.id_number });
+      if (!dob.ok) {
+        if (dob.reason === "date_of_birth_required" && existing?.born) return { ok: true };
+        return { ok: false, column: dob.field,
+                 message: BIRTH_DATE_MESSAGE[dob.reason] ?? dob.reason };
+      }
+      v.born = dob.born;
+      v.id_number = dob.idNumber;
+      return { ok: true, warning: dob.warning };
+    },
   },
 };
 
@@ -161,6 +200,9 @@ export async function runImport(pool, secret, bearer, kind, { csv, schoolId, com
   return runAsPrincipal(pool, secret, bearer, async (client) => {
     let inserted = 0, updated = 0;
     const refused = [];
+    // Not refusals: a row that went in and is worth a second look. Kept apart
+    // from `refused` so a warning can never be mistaken for a rejected row.
+    const warnings = [];
 
     await client.query("SAVEPOINT bulk");
     for (const { line, values } of rows) {
@@ -178,9 +220,27 @@ export async function runImport(pool, secret, bearer, kind, { csv, schoolId, com
                      "the import cannot tell them apart" });
           continue;
         }
+        // The per-row rule runs HERE rather than at parse time, because it
+        // needs to know whether this boy is already on the books: an update
+        // coalesces, so a file carrying only names must not be refused for a
+        // birthday that was typed in last term.
+        //
+        // It mutates `values`, so def.params() is re-run afterwards — the
+        // copy taken above was made before the birthday was resolved from an
+        // ID number, and using it would write the row without one.
+        const checked = def.resolve ? def.resolve(values, found.rows[0] ?? null) : { ok: true };
+        if (!checked.ok) {
+          refused.push({ line, column: checked.column, message: checked.message });
+          continue;
+        }
+        if (checked.warning) {
+          warnings.push({ line, column: "id_number",
+                          message: BIRTH_DATE_MESSAGE[checked.warning] ?? checked.warning });
+        }
+        const resolved = def.params(schoolId, values);
         const r = found.rowCount === 1
-          ? await client.query(def.update, [...p, found.rows[0].id])
-          : await client.query(def.insert, p);
+          ? await client.query(def.update, [...resolved, found.rows[0].id])
+          : await client.query(def.insert, resolved);
         if (!r.rowCount) {
           // No row and no error is the policy declining silently.
           refused.push({ line, column: null, message: "not permitted at this school" });
@@ -210,12 +270,12 @@ export async function runImport(pool, secret, bearer, kind, { csv, schoolId, com
       const e = new Error("dry_run");
       e.report = { kind, committed: false, rows: rows.length, wouldInsert: inserted,
                    wouldUpdate: updated, errors: allErrors, unknownColumns: unknown,
-                   clean: allErrors.length === 0 };
+                   warnings, clean: allErrors.length === 0 };
       e.rollback = true;
       throw e;
     }
     return { kind, committed: true, rows: rows.length, inserted, updated,
-             errors: [], unknownColumns: unknown, clean: true };
+             errors: [], unknownColumns: unknown, warnings, clean: true };
   }).catch((e) => {
     if (e?.rollback && e.report) return e.report;
     throw e;

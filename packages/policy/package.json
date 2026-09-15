@@ -13,6 +13,7 @@
     "./tables": "./src/tables.mjs",
     "./teams": "./src/teams.mjs",
     "./modules": "./src/modules.mjs",
-    "./sa-id": "./src/sa-id.mjs"
+    "./sa-id": "./src/sa-id.mjs",
+    "./date-of-birth": "./src/date-of-birth.mjs"
   }
 }
