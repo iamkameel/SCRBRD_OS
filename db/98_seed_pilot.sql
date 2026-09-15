@@ -650,3 +650,45 @@ SELECT
   -- smoke-rating.mjs writes its own deliveries the same way.
   NULL
 FROM generate_series(1, 96) AS n;
+
+-- ── The officials register ───────────────────────────────────────
+-- A panel, not a school's staff list: these people stand at Hilton and at
+-- Westville and are accredited by neither. Every ID number here is a REAL,
+-- well-formed South African ID — the first six digits are the date of birth
+-- beside them and the thirteenth is a correct Luhn check digit — because the
+-- validator on the way in checks both, and a seed that could not survive its
+-- own validation would be fixture data pretending to be records.
+--
+-- V Ngcobo's accreditation is DELIBERATELY LAPSED. A register where every
+-- row is in good standing never exercises the one question it exists to
+-- answer, and the screen has to be able to draw somebody who may not stand.
+INSERT INTO official (id, full_name, born, id_number, email, phone, panel) VALUES
+  ('0a000000-0000-0000-0000-000000000001', 'E Ndlovu',  '1979-04-12', '7904125012084', 'e.ndlovu@example.invalid',  '+27 82 555 0101', 'KZN Cricket Umpires Association'),
+  ('0a000000-0000-0000-0000-000000000002', 'V Pillay',  '1982-06-03', '8206035183081', 'v.pillay@example.invalid',  '+27 82 555 0102', 'KZN Cricket Umpires Association'),
+  ('0a000000-0000-0000-0000-000000000003', 'G Marais',  '1968-11-27', '6811275244089', 'g.marais@example.invalid',  '+27 82 555 0103', 'CSA Elite Panel'),
+  ('0a000000-0000-0000-0000-000000000004', 'T Sithole', '1991-02-19', '9102195305086', 't.sithole@example.invalid', '+27 82 555 0104', 'Midlands Umpires Association'),
+  ('0a000000-0000-0000-0000-000000000005', 'V Ngcobo',  '1975-08-30', '7508305461084', 'v.ngcobo@example.invalid',  '+27 82 555 0105', 'Midlands Umpires Association');
+
+INSERT INTO official_accreditation (official_id, level, issued_by, valid_from, valid_until) VALUES
+  ('0a000000-0000-0000-0000-000000000003', 'national', 'Cricket South Africa', current_date - 1200, NULL),
+  ('0a000000-0000-0000-0000-000000000001', 'level2',   'KZNCUA',               current_date -  700, current_date + 300),
+  ('0a000000-0000-0000-0000-000000000002', 'level1',   'KZNCUA',               current_date -  400, current_date + 120),
+  ('0a000000-0000-0000-0000-000000000004', 'club',     'Midlands UA',          current_date -  200, current_date + 500),
+  -- Promoted: the club grade he came through is kept rather than overwritten,
+  -- which is the reason accreditation is a table and not a column.
+  ('0a000000-0000-0000-0000-000000000001', 'club',     'KZNCUA',               current_date - 1500, current_date - 700),
+  -- Lapsed six weeks ago, and still on the register — standing down is not
+  -- the same as never having been accredited.
+  ('0a000000-0000-0000-0000-000000000005', 'level1',   'Midlands UA',          current_date -  800, current_date -  42);
+
+-- Appointments, carrying the register id so the fixture knows WHO stood
+-- rather than only what was typed. The third is the deliberate exception:
+-- a parent stood in at short notice, is on nobody's panel, and is recorded
+-- by name alone with a null official_id — which is what that column being
+-- nullable is for.
+INSERT INTO match_official (match_id, school_id, duty, person_name, official_id, panel) VALUES
+  ('77777777-0000-0000-0000-000000000004', '11111111-1111-1111-1111-111111111111', 'umpire', 'E Ndlovu',  '0a000000-0000-0000-0000-000000000001', 'KZN Cricket Umpires Association'),
+  ('77777777-0000-0000-0000-000000000004', '11111111-1111-1111-1111-111111111111', 'scorer', 'V Pillay',  '0a000000-0000-0000-0000-000000000002', 'KZN Cricket Umpires Association'),
+  ('77777777-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'umpire', 'G Marais',  '0a000000-0000-0000-0000-000000000003', 'CSA Elite Panel'),
+  ('77777777-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'third_umpire', 'A Willing Parent', NULL, NULL),
+  ('77777777-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'umpire', 'T Sithole', '0a000000-0000-0000-0000-000000000004', 'Midlands Umpires Association');

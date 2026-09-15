@@ -132,6 +132,13 @@ export const CAPABILITIES = {
   "scoring.amend.approve":       "Approve a correction to a completed match",
   "officiating.assign":          "Assign match officials",
   "officiating.report":          "File a match official's report",
+  // The panel itself, not an appointment to a fixture. An umpire belongs to a
+  // union and stands at several schools, so the registry is NOT school data
+  // and this capability is deliberately held platform-wide: a school appoints
+  // from the panel, it does not decide who is on it or what they are
+  // accredited to stand. See TABLES has no entry for `official` — its policies
+  // are written by hand in db/08 for exactly this reason.
+  "officiating.registry.manage": "Maintain the officials register",
 
   // ── Health ──
   // THREE TIERS, not two. The split used to be availability vs the clinical

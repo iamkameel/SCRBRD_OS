@@ -78,6 +78,10 @@ DECLARE
   U_SCOUT   uuid := '88888888-0000-0000-0000-000000000002';
   U_SCORER  uuid := '88888888-0000-0000-0000-000000000006';
   U_SARAH   uuid := '88888888-0000-0000-0000-000000000007';  -- 4 assignments, 2 schools
+  U_PLAT    uuid := '88888888-0000-0000-0000-000000000014';  -- platformadmin, no school
+  O_UMPIRE  uuid;                                            -- seeded into the register below
+  v_born    date;
+  v_level   text;
   P_INJURED uuid := 'aaaaaaaa-0000-0000-0000-000000000005';  -- R Pillay, 1XI
   P_U16B    uuid := 'aaaaaaaa-0000-0000-0000-000000000006';  -- K Dlamini, U16B
   P_WES     uuid := 'bbbbbbbb-0000-0000-0000-000000000001';  -- D Mkhize, Westville
@@ -766,6 +770,62 @@ BEGIN
 
   SELECT count(*) INTO n FROM player;
   PERFORM _assert(n = 0, 'a revoked assignment still grants access');
+
+  -- ── 13. The officials register: open by name, closed by person ──
+  -- The register is the one table here that belongs to no school, so it is
+  -- the one place the tenant model cannot do the work. What replaces it: a
+  -- read anybody signed in may make, a WRITE nobody but a platform-wide
+  -- holder may make, and a masked view that keeps the person behind the name.
+  PERFORM _as(U_PLAT);
+  INSERT INTO official (full_name, born, id_number, email, phone, panel)
+  VALUES ('V Pillay', '1982-06-03', '8206035000089', 'v.pillay@example.invalid',
+          '+27 82 555 0100', 'KZN Cricket Umpires Association')
+  RETURNING id INTO O_UMPIRE;
+  INSERT INTO official_accreditation (official_id, level, issued_by, valid_from, valid_until)
+  VALUES (O_UMPIRE, 'level2', 'KZNCUA', current_date - 400, current_date + 200);
+
+  -- A school-scoped principal reads the panel. This is deliberate, not a
+  -- leak: a director of sport about to appoint somebody has to see who is on
+  -- it and at what grade, and the names are announced at the toss anyway.
+  PERFORM _as(U_SARAH);
+  SELECT count(*) INTO n FROM official WHERE id = O_UMPIRE;
+  PERFORM _assert(n = 1, 'a school cannot see the officials register at all');
+
+  -- ...and reads NOTHING that makes them a person. This is the assertion the
+  -- masked view exists for: same row, same reader, columns withheld.
+  SELECT born INTO v_born FROM official_masked WHERE id = O_UMPIRE;
+  PERFORM _assert(v_born IS NULL, 'a school reads an official''s date of birth');
+  SELECT count(*) INTO n FROM official_masked
+   WHERE id = O_UMPIRE AND (id_number IS NOT NULL OR email IS NOT NULL OR phone IS NOT NULL);
+  PERFORM _assert(n = 0, 'a school reads an official''s ID number or contact details');
+
+  -- The union does read them, or the register would hold nothing usable.
+  PERFORM _as(U_PLAT);
+  SELECT born INTO v_born FROM official_masked WHERE id = O_UMPIRE;
+  PERFORM _assert(v_born IS NOT NULL, 'the register holder cannot read a date of birth');
+
+  -- WRITING is the boundary that matters most. Sarah holds officiating.assign
+  -- — she appoints officials to fixtures all season — and that must not let
+  -- her put somebody on the panel or change what they are accredited to
+  -- stand. Appointing from a panel and deciding the panel are different jobs.
+  PERFORM _as(U_SARAH);
+  BEGIN
+    INSERT INTO official (full_name, born) VALUES ('Self Appointed', '1990-01-01');
+    PERFORM _assert(false, 'a school-scoped role can add somebody to the officials register');
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+  BEGIN
+    UPDATE official SET panel = 'Rewritten' WHERE id = O_UMPIRE;
+    PERFORM _assert(NOT FOUND, 'a school-scoped role can edit the officials register');
+  END;
+
+  -- The grade is a span, so it answers "today", and stops answering when it
+  -- lapses. A register that cannot tell those apart cannot refuse an
+  -- appointment, which is the whole reason for keeping one.
+  SELECT official_level(O_UMPIRE) INTO v_level;
+  PERFORM _assert(v_level = 'level2', 'a current accreditation does not read as current');
+  SELECT official_level(O_UMPIRE, current_date + 500) INTO v_level;
+  PERFORM _assert(v_level IS NULL, 'a lapsed accreditation still reads as current');
 
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;

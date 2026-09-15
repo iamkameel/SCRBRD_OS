@@ -85,6 +85,12 @@ const BUNDLES = {
     // is gated on the wider of the two capabilities.
     "school.feature.manage",
     "scouting.accredit",
+    // The officials register is union data, not school data, so it is held
+    // platform-wide by construction: app_can() has no wildcard for school, so
+    // a school-scoped assignment can never satisfy an untenanted row. The
+    // platform holds it for the same reason it holds user.role.assign — a
+    // recovery path when a union has nobody able to act.
+    "officiating.registry.manage",
     "school.read", "user.read", "audit.read", "competition.read", "news.read",
   ],
 
@@ -351,6 +357,9 @@ const BUNDLES = {
   competitionadmin: [
     "fixture.read", "fixture.update", "fixture.cancel", "team.read", "news.read",
     "competition.read", "competition.manage", "officiating.assign",
+    // Whoever appoints officials across a league is the one who keeps the
+    // panel: accreditation, grade and whether somebody still stands at all.
+    "officiating.registry.manage",
     "discipline.read", "scoring.correct", "scoring.amend.approve",
     "news.publish.competition",
   ],

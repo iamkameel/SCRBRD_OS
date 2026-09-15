@@ -322,11 +322,17 @@ try {
 
   // ── The officials directory ─────────────────────────────────────
   //
-  // The screen is DERIVED from appointments — there is no roster table — so
-  // the only way to know it renders real rows is to appoint somebody through
-  // the API and then look for their name in the browser. A directory built
-  // from a mock would show different names entirely, and would pass any
-  // assertion made against the API alone.
+  // Two halves, and the screen has to draw both. The REGISTER (db/08) holds
+  // who is on the panel and at what grade — facts no appointment can imply.
+  // The appearances beside them are still DERIVED from appointments, so the
+  // count cannot drift from what actually happened.
+  //
+  // Appointing through the API and then looking for the name in the browser
+  // is how we know the screen renders real rows: a directory built from a
+  // mock would show different names entirely and would pass any assertion
+  // made against the API alone. This appointment deliberately carries a NAME
+  // and no register id — the short-notice stand-in — so it also proves the
+  // unregistered fallback still reaches the screen.
   group("An appointed umpire reaches the officials screen");
   {
     const tok = await (await fetch(`${API}/api/auth/dev-login`, {
@@ -358,6 +364,15 @@ try {
       ok("the appointed umpire is on the screen", t.includes(UMPIRE));
       ok("...and the scorer beside them", t.includes("Bongani Khumalo"));
       ok("...with the panel they came off", /KZN Cricket Umpires/.test(t));
+      // The register, on the same screen: somebody who has never stood at any
+      // fixture here, and the grade beside them. Neither can come from an
+      // appointment, so neither could appear before the register existed.
+      ok("...and the register's own people, appointed or not", /G Marais|T Sithole/.test(t));
+      ok("...with the accreditation a school needs before appointing them",
+         /National Panel|Level 2|Level 1|Club Panel/i.test(t));
+      // The lapse, said in words rather than left as a blank grade. This is
+      // the one the screen exists to make unmissable.
+      ok("...and a lapsed accreditation named as lapsed", /lapsed/i.test(t));
       ok("the screen did not fall back to a mock name",
          !/D Naidoo|P van Wyk|M Cele/.test(t));
       ok("no uncaught error on the officials screen", head.errors.length === 0);

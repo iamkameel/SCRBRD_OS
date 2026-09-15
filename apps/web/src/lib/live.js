@@ -207,7 +207,39 @@ function asWeather(r) {
  */
 function asOfficial(r) {
   return { matchId: r.match_id, duty: r.duty, name: r.person_name,
-           personId: r.person_id, panel: r.panel, appointedAt: r.appointed_at, live: true };
+           personId: r.person_id, officialId: r.official_id,
+           panel: r.panel, appointedAt: r.appointed_at, live: true };
+}
+
+/**
+ * Somebody on the officials register.
+ *
+ * `level` is null in two different situations and the screen must not collapse
+ * them: an official who has never held an accreditation, and one whose
+ * accreditation has run out. `accreditations` tells them apart — none at all
+ * versus some, none current — so "not accredited" and "lapsed" can be
+ * different words on the screen, which is the difference between somebody who
+ * was never on the ladder and somebody who needs to renew.
+ *
+ * born / idNumber / email / phone arrive NULL for every reader but the union
+ * that keeps the register. That is the mask doing its job, not missing data,
+ * so they are passed through as null rather than defaulted to anything.
+ */
+function asRegisteredOfficial(r) {
+  return {
+    id: r.id,
+    name: r.full_name,
+    panel: r.panel,
+    active: r.active,
+    level: r.level ?? null,
+    accreditations: Number(r.accreditations ?? 0),
+    accreditedUntil: r.accredited_until ? String(r.accredited_until).slice(0, 10) : null,
+    born: r.born ? String(r.born).slice(0, 10) : null,
+    idNumber: r.id_number ?? null,
+    email: r.email ?? null,
+    phone: r.phone ?? null,
+    live: true,
+  };
 }
 
 /**
@@ -695,6 +727,7 @@ const ADAPT = {
   competition_divisions: asDivision,
   weather: asWeather,
   officials: asOfficial,
+  official_register: asRegisteredOfficial,
   ground_conditions: asGroundCondition,
   assignments: asAssignment,
   vehicles: asVehicle,

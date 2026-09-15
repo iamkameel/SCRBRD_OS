@@ -4,21 +4,44 @@ import { Avatar, Badge, Card, EmptyState, Pill, SectionHeader } from "../ui/prim
 import { useLive, useRows } from "../lib/live.js";
 
 // ══════════════════════════════════════════════════════
-//  OFFICIALS — who stands, and how often
+//  OFFICIALS — who is on the panel, and who actually stood
 // ══════════════════════════════════════════════════════
 //
-// THE DIRECTORY IS DERIVED, and that is a decision rather than a shortcut.
+// This screen used to be derived from appointments ALONE, and the comment here
+// argued that it should be: a second list of people maintained by hand beside
+// the appointments that really happened is a list that goes stale the first
+// time somebody is appointed without being added to it.
 //
-// There is no roster of umpires anywhere in this schema and there should not
-// be: a second list of people, maintained by hand beside the appointments that
-// actually happened, is a list that goes stale the first time somebody is
-// appointed without being added to it. Every name here has stood at a real
-// fixture, and the count beside it is the number of times.
+// That concern was right and is kept. What it got wrong was the conclusion.
+// Two facts about an official CANNOT be derived from the fact that he stood —
+// his accreditation, and whether it is still in date — and those are precisely
+// the two a school needs before appointing him. So the register (db/08) holds
+// identity and accreditation, and everything countable is still derived from
+// `match_official`: the appearance count below is the number of appointments,
+// never a stored figure.
 //
-// It also means the directory inherits its scope for free. `match_official` is
-// read under fixture.read, so this shows exactly the appointments the reader
-// may see — a coach scoped to one team sees the officials who stood at their
-// fixtures, and a director of sport sees the school's.
+// The register also fixes the limitation the old version named honestly and
+// could not solve. Keyed on a typed name, two spellings of one umpire were two
+// people. An appointment now carries `official_id`, so they are one.
+//
+// Scope is unchanged and still comes for free: appointments are read under
+// fixture.read, so a coach sees the officials who stood at their fixtures. The
+// register itself is readable by anybody signed in — a name and a grade, the
+// same disclosure the scorecard already makes — while date of birth, ID number
+// and contact are masked to everyone but the union that keeps it.
+// The accreditation ladder db/08 enforces, lowest first. `level` arrives NULL
+// in two different situations and they must not be drawn the same way: nobody
+// has ever accredited this person, or their accreditation has run out. The
+// second is a person who stood last season and needs to renew, and a screen
+// that says "unaccredited" for both tells a school to go looking for the wrong
+// thing.
+const LEVEL = {
+  club:     { label: "Club Panel",     color: D.textMuted },
+  level1:   { label: "Level 1",        color: D.sky },
+  level2:   { label: "Level 2",        color: D.emerald },
+  national: { label: "National Panel", color: D.amber },
+};
+
 const DUTY = {
   umpire:       { label: "Umpire",       icon: "🧑‍⚖️", color: D.sky },
   third_umpire: { label: "Third umpire", icon: "📺", color: D.violet },
@@ -30,6 +53,7 @@ function OfficialsView({ role }) {
   // Read through the choke point: row-scoped for this principal. Importing a
   // constant here would bypass it.
   const { rows: APPOINTMENTS, loading, error, live } = useLive("officials", role);
+  const REGISTER = useRows("official_register", role);
   const MATCHES = useRows("matches", role);
   const [duty, setDuty] = useState("all");
   const [sel, setSel]   = useState(null);
@@ -45,22 +69,47 @@ function OfficialsView({ role }) {
    */
   const people = useMemo(() => {
     const by = new Map();
+
+    // The register first, so somebody newly accredited appears BEFORE they
+    // have stood anywhere. On an appointments-only directory a new umpire was
+    // invisible until his first fixture, which is exactly backwards: the
+    // moment you most need to find him is when you are looking for somebody
+    // to appoint.
+    for (const o of REGISTER) {
+      by.set(o.id, {
+        key: o.id, name: o.name, personId: null, officialId: o.id, panel: o.panel,
+        registered: true, active: o.active, level: o.level,
+        accreditations: o.accreditations, accreditedUntil: o.accreditedUntil,
+        duties: new Set(), fixtures: 0, lastAt: null, appointments: [],
+      });
+    }
+
     for (const a of APPOINTMENTS) {
-      const key = a.personId || `name:${(a.name || "").trim().toLowerCase()}`;
+      // An appointment that names somebody on the register is THAT person,
+      // however the name was typed on the day. One that does not is keyed on
+      // the name, as before — and that is the honest answer for a parent who
+      // stood in at short notice and is on nobody's panel.
+      const key = a.officialId || a.personId || `name:${(a.name || "").trim().toLowerCase()}`;
       if (!by.has(key)) {
-        by.set(key, { key, name: a.name, personId: a.personId, panel: a.panel,
+        by.set(key, { key, name: a.name, personId: a.personId, officialId: a.officialId ?? null,
+                      panel: a.panel, registered: false, active: true, level: null,
+                      accreditations: 0, accreditedUntil: null,
                       duties: new Set(), fixtures: 0, lastAt: null, appointments: [] });
       }
       const p = by.get(key);
+      if (a.personId) p.personId = a.personId;
       p.duties.add(a.duty);
       p.fixtures += 1;
       p.appointments.push(a);
       // The panel as most recently recorded: an umpire can move associations.
-      if (a.panel) p.panel = a.panel;
+      // The register wins when it has one, because that is the maintained
+      // fact and the appointment is a copy taken on the day.
+      if (a.panel && !p.registered) p.panel = a.panel;
       if (!p.lastAt || a.appointedAt > p.lastAt) p.lastAt = a.appointedAt;
     }
+
     return [...by.values()].sort((a, b) => b.fixtures - a.fixtures || a.name.localeCompare(b.name));
-  }, [APPOINTMENTS]);
+  }, [APPOINTMENTS, REGISTER]);
 
   const shown = duty === "all" ? people : people.filter((p) => p.duties.has(duty));
   const selected = shown.find((p) => p.key === sel) ?? null;
@@ -142,8 +191,18 @@ function OfficialsView({ role }) {
                           <div style={{ fontFamily: D.body, fontSize: "11px", color: D.textMuted,
                             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {[...p.duties].map((d) => DUTY[d]?.label ?? d).join(" · ")}
+                            {p.duties.size === 0 && p.registered ? "Has not stood yet" : ""}
                             {p.panel ? ` — ${p.panel}` : ""}
                           </div>
+                          {p.registered && (
+                            <div style={{ marginTop: "3px" }} data-testid={`official-standing-${p.key}`}>
+                              {p.level
+                                ? <Badge color={LEVEL[p.level]?.color ?? D.textMuted}>{LEVEL[p.level]?.label ?? p.level}</Badge>
+                                : p.accreditations > 0
+                                  ? <Badge color={D.rose}>Accreditation lapsed</Badge>
+                                  : <Badge color={D.textMuted}>Not accredited</Badge>}
+                            </div>
+                          )}
                         </div>
                         <span style={{ fontFamily: D.mono, fontSize: "12px", color: D.textSecondary, flexShrink: 0 }}>
                           {p.fixtures}
@@ -178,6 +237,18 @@ function OfficialsView({ role }) {
                       </Pill>
                     ))}
                     {selected.panel && <Pill color={D.violet}>🎖 {selected.panel}</Pill>}
+                    {selected.registered && selected.level && (
+                      <Pill color={LEVEL[selected.level]?.color ?? D.textMuted}>
+                        {LEVEL[selected.level]?.label ?? selected.level}
+                        {selected.accreditedUntil ? ` — to ${selected.accreditedUntil}` : ""}
+                      </Pill>
+                    )}
+                    {selected.registered && !selected.level && selected.accreditations > 0 && (
+                      <Pill color={D.rose}>
+                        Lapsed{selected.accreditedUntil ? ` ${selected.accreditedUntil}` : ""}
+                      </Pill>
+                    )}
+                    {!selected.registered && <Pill color={D.textMuted}>Not on the register</Pill>}
                     <Pill color={D.textMuted}>🗓 Last {when(selected.lastAt)}</Pill>
                   </div>
 
