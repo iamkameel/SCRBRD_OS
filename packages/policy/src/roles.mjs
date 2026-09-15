@@ -65,6 +65,29 @@ const READ_TEAM = ["team.read", "fixture.read", "player.profile.read", "news.rea
 // because the alternative is a duplicate-key error at migration time — the
 // failure is loud, but it is a long way from the line that caused it.
 const BUNDLES = {
+  // ── The owner's key ──
+  //
+  // EVERY capability, platform-wide. This is the operator's own account, and
+  // it is the one role in the model that is not least-privilege: it exists so
+  // whoever runs SCRBRD can always reach in, including on the day the model
+  // itself is what is broken.
+  //
+  // Derived from ALL_CAPABILITIES rather than typed out, which is the only
+  // part of this that is not a judgement call: a hand-written list of eighty
+  // capabilities silently stops being "everything" the first time somebody
+  // adds the eighty-second, and a masterkey that quietly lost a key is worse
+  // than no masterkey, because nobody finds out until they need it.
+  //
+  // WHAT THIS COSTS, said plainly rather than left for someone to discover:
+  // this role reads every child's medical, disciplinary and PII record at
+  // every school on the platform, and nothing records that it did. That is
+  // the deliberate difference from `platformadmin` below, which stops at the
+  // schoolhouse door and reaches a school's confidential records only through
+  // platform.support.impersonate — time-boxed and audited, and as of today
+  // declared but implemented nowhere. If that path is ever built, this role is
+  // the thing it replaces.
+  superadmin: [...ALL_CAPABILITIES],
+
   // ── Platform ──
   // Operating the platform is not a licence to read a school's confidential
   // records. Support access to those goes through
@@ -466,7 +489,14 @@ export const GRANTABLE_ROLES = Object.freeze({
   // from outside a school and fix it, and that somebody is the platform
   // account, holding a tenant-less assignment nobody inside a school can
   // create.
-  platformadmin: Object.keys(ROLE_CAPABILITIES),
+  platformadmin: Object.keys(ROLE_CAPABILITIES).filter((r) => r !== "superadmin"),
+
+  // The owner's key appoints anything, including another owner's key. It is
+  // excluded from platformadmin's list above on purpose: a platform account
+  // that may grant `superadmin` IS a superadmin, one assignment away, and the
+  // distinction between the two roles would be decorative. The first one is
+  // seeded directly against the database by whoever owns the deployment.
+  superadmin: Object.keys(ROLE_CAPABILITIES),
 });
 
 /** May `granter` appoint somebody to `role`? Default deny, as everywhere. */

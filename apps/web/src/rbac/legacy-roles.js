@@ -27,7 +27,11 @@ export const DEMO_CHILD = "p5";
 
 /** Legacy role name → the policy role it means, with its demonstration scope. */
 export const LEGACY_ROLE = Object.freeze({
-  superadmin:      { role: "platformadmin",        school: null },
+  // No longer an alias — `superadmin` is a role in the policy now, holding
+  // every capability. It keeps its entry here for the SCOPE: school null is
+  // what makes it platform-wide, and app_can() has no wildcard for school, so
+  // an assignment naming one would reach that school and no other.
+  superadmin:      { role: "superadmin",           school: null },
   platformsupport: { role: "platformadmin",        school: null },
   headmaster:      { role: "principal",            school: DEMO_SCHOOL },
   sportsmaster:    { role: "directorofsport",      school: DEMO_SCHOOL },

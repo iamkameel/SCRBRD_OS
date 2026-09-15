@@ -324,6 +324,14 @@ INSERT INTO app_user (id, school_id, email, name, role) VALUES
   ('88888888-0000-0000-0000-000000000021', NULL,
    'league@example.invalid', 'K Naidu', 'competitionadmin');
 
+-- THE OWNER'S KEY. Every capability, no school, so it reaches every tenant —
+-- app_can() has no wildcard for school, so naming one would reach that school
+-- and no other. Seeded so the assertions in db/99 can exercise it: a role that
+-- nothing signs in as is a role nothing proves anything about.
+INSERT INTO app_user (id, school_id, email, name, role) VALUES
+  ('88888888-0000-0000-0000-000000000022', NULL,
+   'owner@example.invalid', 'K Ismail', 'superadmin');
+
 -- The platform account. Not scoped to a school at all — this is what
 -- verifies a scout's accreditation, and accrediting an external organisation
 -- is not a claim about any one school's roster.
@@ -379,7 +387,10 @@ INSERT INTO role_assignment (id, person_id, role, school_id, team_code) VALUES
   ('a5510000-0000-0000-0000-00000000001a', '88888888-0000-0000-0000-00000000001a', 'coach',           '22222222-2222-2222-2222-222222222222', '1XI'),
   -- school_id NULL, honestly: platform administration is not a claim about
   -- any one school, and nothing in scouting.accredit's check looks at scope.
-  ('a5510000-0000-0000-0000-000000000016', '88888888-0000-0000-0000-000000000014', 'platformadmin',   NULL, NULL);
+  ('a5510000-0000-0000-0000-000000000016', '88888888-0000-0000-0000-000000000014', 'platformadmin',   NULL, NULL),
+  -- school_id NULL is the whole point: this is the one assignment in the seed
+  -- that is about every school at once.
+  ('a5510000-0000-0000-0000-000000000022', '88888888-0000-0000-0000-000000000022', 'superadmin',      NULL, NULL);
 
 -- Who each assignment is about: the parents' children, Sarah's two children at
 -- two schools, and R Pillay's own record.

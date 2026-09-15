@@ -27,6 +27,7 @@ import { chromium } from "playwright-core";
 import { launchOptions } from "./chromium.mjs";
 import { offline, isFirebaseOfflineNoise } from "./offline-browser.mjs";
 import { anchorFor } from "@scrbrd/scoring";
+import { ROLES as POLICY_ROLES } from "@scrbrd/policy/roles";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
@@ -1016,8 +1017,12 @@ try {
     for (const label of ["PLATFORM ADMIN", "PRINCIPAL", "COACH", "PARENT / GUARDIAN"]) {
       ok(`...${label} appears exactly once`, seen.filter((l) => l === label).length === 1);
     }
-    // And the count is the policy's, not the lookup table's.
-    ok("the menu offers the twenty-four real roles", seen.length === 24);
+    // And the count is the policy's, not the lookup table's — DERIVED from it,
+    // rather than a number typed in beside a comment saying it came from the
+    // policy. It was 24 until the owner's key was added, at which point the
+    // literal was the only thing in this file that still thought so.
+    ok(`the menu offers every policy role (${POLICY_ROLES.length})`,
+       seen.length === POLICY_ROLES.length);
     ok("exactly one is marked as the current role",
        (await menu.locator('[aria-checked="true"]').count()) === 1);
     ok("no console errors", c.errors.length === 0);

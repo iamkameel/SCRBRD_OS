@@ -116,6 +116,7 @@ DECLARE
   U_SCORER  uuid := '88888888-0000-0000-0000-000000000006';
   U_SARAH   uuid := '88888888-0000-0000-0000-000000000007';  -- 4 assignments, 2 schools
   U_PLAT    uuid := '88888888-0000-0000-0000-000000000014';  -- platformadmin, no school
+  U_OWNER   uuid := '88888888-0000-0000-0000-000000000022';  -- superadmin, every capability
   O_UMPIRE  uuid;                                            -- seeded into the register below
   v_born    date;
   v_level   text;
@@ -1025,6 +1026,52 @@ BEGIN
   PERFORM _assert(v_ok, 'the office cannot enrol a coach of a named side');
   PERFORM _assert(_count_accounts('real.coach@example.invalid') = 1,
     'the enrolment did not create an account');
+
+  -- ── The owner's key reaches every tenant ──────────────────────
+  --
+  -- `superadmin` holds all 81 capabilities on an assignment naming no school.
+  -- It is the one role in the model that is not least-privilege, and these
+  -- assertions are what stop it becoming one by accident: a bundle that
+  -- quietly stopped being "everything" would leave the operator locked out of
+  -- the thing they most need to reach, and nobody would find out until the day
+  -- it mattered.
+  PERFORM _assert(
+    (SELECT count(*) FROM role_capability WHERE role = 'superadmin')
+      = (SELECT count(*) FROM capability),
+    'the owner''s key does not hold every capability');
+
+  PERFORM _as(U_OWNER);
+
+  -- Across tenants, which is the part a school-scoped role can never do:
+  -- app_can() has no wildcard for school, so this works only because the
+  -- assignment names none.
+  SELECT count(DISTINCT school_id) INTO n FROM player_masked;
+  PERFORM _assert(n >= 2, 'the owner''s key does not reach every school');
+
+  -- Through the masking, not merely around the row filter. A reader who sees
+  -- the row and a redacted column has not reached the record.
+  SELECT count(*) INTO n FROM player_masked
+   WHERE id = P_INJURED AND born IS NOT NULL AND guardian IS NOT NULL;
+  PERFORM _assert(n = 1, 'the owner''s key reads a player row but not its protected columns');
+  SELECT count(*) INTO n FROM injury;
+  PERFORM _assert(n > 0, 'the owner''s key cannot read injuries');
+
+  -- AND IT IS STILL RLS, not a bypass. The rows arrive because the policies
+  -- said yes to this principal, which is why signing out of the role takes the
+  -- access away — a superuser connection would not behave like this.
+  PERFORM set_config('app.user_id', '', true);
+  SELECT count(*) INTO n FROM player_masked;
+  PERFORM _assert(n = 0, 'the owner''s key is a connection privilege rather than an assignment');
+
+  -- Nobody mints an owner's key from inside the platform account. platformadmin
+  -- is the recovery path and may grant every OTHER role; letting it grant this
+  -- one would make the two roles the same thing, one assignment apart.
+  PERFORM _assert(NOT EXISTS (
+    SELECT 1 FROM role_grantable WHERE granter = 'platformadmin' AND role = 'superadmin'),
+    'the platform account can appoint an owner''s key');
+  PERFORM _assert(EXISTS (
+    SELECT 1 FROM role_grantable WHERE granter = 'superadmin' AND role = 'platformadmin'),
+    'the owner''s key cannot appoint a platform account');
 
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
