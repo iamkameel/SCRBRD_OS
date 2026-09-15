@@ -861,6 +861,31 @@ GRANT EXECUTE ON FUNCTION access_request_decide(uuid, boolean, text, integer) TO
  *      revocable coaching relationship into a standing personal one over that
  *      child's whole record. It is refused whoever asks, including the office.
  */
+-- ── Majority, and why a guardian link carries an end date ────────
+--
+-- A guardian's access to a child's record is co-ownership until that child
+-- turns eighteen, and then it is not. Nothing here used to say so: both
+-- places that created a guardian link inserted with valid_until NULL, so a
+-- parent linked to a thirteen-year-old kept medical status, injury nature,
+-- ratings and the full passport when that person was thirty. The `enquiry`
+-- role next door — an outside coach, carrying LESS — was time-boxed to the
+-- day. That asymmetry was the wrong way round.
+--
+-- THE DATE GOES ON THE SUBJECT, NOT THE ASSIGNMENT, and that is load-bearing.
+-- guardian_link_establish() reuses ONE guardian role_assignment per parent per
+-- school and hangs one assignment_subject off it per child. Expiring the
+-- assignment at a child's majority would cut the same parent off from a
+-- younger sibling on the elder's birthday. The relationship that ends is the
+-- one to THAT CHILD, and assignment_subject is where it lives — which app_can()
+-- already evaluates, in both its subject clauses, on every call.
+--
+-- Postgres clamps 29 February: date '2008-02-29' + 18 years is 2026-02-28, a
+-- day earlier than a naive reading and the conventional treatment. Left as it
+-- is rather than adjusted, because moving it would be inventing a rule.
+CREATE OR REPLACE FUNCTION majority_on(p_born date) RETURNS date AS $$
+  SELECT (p_born + interval '18 years')::date
+$$ LANGUAGE sql IMMUTABLE;
+
 CREATE OR REPLACE FUNCTION guardian_link_establish(
   p_guardian     uuid,
   p_player       uuid,
@@ -870,6 +895,7 @@ DECLARE
   v_school uuid;
   v_team   text;
   v_assign uuid;
+  v_born   date;
 BEGIN
   v_school := player_school(p_player);
   IF v_school IS NULL THEN RETURN QUERY SELECT false, 'no_such_player', NULL::uuid; RETURN; END IF;
@@ -894,6 +920,22 @@ BEGIN
     RETURN QUERY SELECT false, 'coaches_this_player', NULL::uuid; RETURN;
   END IF;
 
+  -- The child's date of birth decides when this ends, so it is REQUIRED here
+  -- rather than assumed. Refusing is the honest answer: a link with no end
+  -- date is the thing this is fixing, and guardianship is precisely where you
+  -- need to know how old the child is.
+  --
+  -- Asked BEFORE the assignment below is reached, because a plpgsql RETURN is
+  -- not a rollback: guarding after it would answer false and still leave a
+  -- brand-new guardian assignment standing, naming nobody.
+  SELECT p.born INTO v_born FROM player p WHERE p.id = p_player;
+  IF v_born IS NULL THEN
+    RETURN QUERY SELECT false, 'player_date_of_birth_required', NULL::uuid; RETURN;
+  END IF;
+  IF majority_on(v_born) <= current_date THEN
+    RETURN QUERY SELECT false, 'player_is_an_adult', NULL::uuid; RETURN;
+  END IF;
+
   -- One guardian assignment per person per school, reused. A second would not
   -- be wrong, but it would split one parent's children across two rows and make
   -- "end this person's guardianship" two operations instead of one.
@@ -909,16 +951,20 @@ BEGIN
     RETURNING id INTO v_assign;
   END IF;
 
+  -- Still linked means still LIVE, in the same terms app_can() uses: no end
+  -- date, or one that has not arrived. Now that every guardian link carries
+  -- its end date, `valid_until IS NULL` alone would match nothing and this
+  -- would write a second subject row for a child already named.
   IF EXISTS (SELECT 1 FROM assignment_subject g
               WHERE g.assignment_id = v_assign AND g.player_id = p_player
                 AND g.verification_state IN ('pending','verified')
-                AND g.valid_until IS NULL) THEN
+                AND (g.valid_until IS NULL OR g.valid_until > current_date)) THEN
     RETURN QUERY SELECT false, 'already_linked', v_assign; RETURN;
   END IF;
 
   INSERT INTO assignment_subject
-    (assignment_id, player_id, relationship, created_by)
-  VALUES (v_assign, p_player, p_relationship, app_user_id());
+    (assignment_id, player_id, relationship, created_by, valid_until)
+  VALUES (v_assign, p_player, p_relationship, app_user_id(), majority_on(v_born));
 
   RETURN QUERY SELECT true, NULL::text, v_assign;
 END $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -973,7 +1019,10 @@ BEGIN
          consent_at         = CASE WHEN p_consent_version IS NULL
                                    THEN g.consent_at ELSE now() END
    WHERE g.player_id = p_player
-     AND g.valid_until IS NULL
+     -- LIVE, not "open-ended". Every guardian link now ends at the child's
+     -- majority, so `valid_until IS NULL` selects nothing and this would
+     -- quietly stop finding the link it is meant to act on.
+     AND (g.valid_until IS NULL OR g.valid_until > current_date)
      AND g.verification_state = 'pending'
      AND EXISTS (SELECT 1 FROM role_assignment a
                   WHERE a.id = g.assignment_id
@@ -1030,7 +1079,10 @@ BEGIN
          valid_until        = current_date,
          verified_note      = coalesce(p_note, g.verified_note)
    WHERE g.player_id = p_player
-     AND g.valid_until IS NULL
+     -- LIVE, not "open-ended" — see guardian_link_verify above. A link that
+     -- has already run out needs no revoking, and this must still find one
+     -- that has not.
+     AND (g.valid_until IS NULL OR g.valid_until > current_date)
      AND g.verification_state IN ('pending','verified')
      AND EXISTS (SELECT 1 FROM role_assignment a
                   WHERE a.id = g.assignment_id
@@ -1096,7 +1148,8 @@ BEGIN
   UPDATE assignment_subject g
      SET consent_state = 'granted', consent_version = p_version, consent_at = now()
    WHERE g.player_id = p_player
-     AND g.valid_until IS NULL
+     -- LIVE, not "open-ended" — see guardian_link_verify above.
+     AND (g.valid_until IS NULL OR g.valid_until > current_date)
      AND g.verification_state = 'verified'
      AND EXISTS (SELECT 1 FROM role_assignment a
                   WHERE a.id = g.assignment_id
@@ -1142,7 +1195,8 @@ BEGIN
   UPDATE assignment_subject g
      SET consent_state = 'withdrawn'
    WHERE g.player_id = p_player
-     AND g.valid_until IS NULL
+     -- LIVE, not "open-ended" — see guardian_link_verify above.
+     AND (g.valid_until IS NULL OR g.valid_until > current_date)
      AND g.consent_state = 'granted'
      AND EXISTS (SELECT 1 FROM role_assignment a
                   WHERE a.id = g.assignment_id
@@ -5838,7 +5892,7 @@ GRANT EXECUTE ON FUNCTION onboard_request(text, text, text, uuid, text, text) TO
 -- link. A decline records why.
 CREATE OR REPLACE FUNCTION decide_role_request(p_request uuid, p_grant boolean, p_note text, p_player uuid DEFAULT NULL, p_team text DEFAULT NULL)
 RETURNS TABLE (ok boolean, reason text, assignment_id uuid) AS $$
-DECLARE r role_request%ROWTYPE; v_asg uuid; v_self uuid; v_player uuid; v_team text;
+DECLARE r role_request%ROWTYPE; v_asg uuid; v_self uuid; v_player uuid; v_team text; v_born date;
 BEGIN
   SELECT * INTO r FROM role_request WHERE id = p_request;
   IF NOT FOUND THEN RETURN QUERY SELECT false, 'no_such_request', NULL::uuid; RETURN; END IF;
@@ -5865,11 +5919,31 @@ BEGIN
   IF r.role IN ('guardian', 'selfaccess', 'enquiry') AND v_player IS NULL THEN
     RETURN QUERY SELECT false, 'player_required', NULL::uuid; RETURN;
   END IF;
+  -- A guardianship granted here ends at the child's majority, exactly as one
+  -- established by the office does — the same rule has to hold whichever door
+  -- the link came through, or the shorter path becomes the way round it.
+  -- `enquiry` keeps its own window, set by whoever granted it.
+  --
+  -- This sits with the other refusals, BEFORE the assignment is written, and
+  -- that placement is the point: a plpgsql RETURN is not a rollback, so a
+  -- guard downstream of the INSERT would answer false and still leave a live
+  -- guardian assignment on the record with the request still pending — and
+  -- the next attempt would write a second one.
+  IF r.role = 'guardian' THEN
+    SELECT p.born INTO v_born FROM player p WHERE p.id = v_player;
+    IF v_born IS NULL THEN
+      RETURN QUERY SELECT false, 'player_date_of_birth_required', NULL::uuid; RETURN;
+    END IF;
+    IF majority_on(v_born) <= current_date THEN
+      RETURN QUERY SELECT false, 'player_is_an_adult', NULL::uuid; RETURN;
+    END IF;
+  END IF;
   INSERT INTO role_assignment (person_id, role, school_id, team_code)
   VALUES (r.person_id, r.role, r.school_id, v_team) RETURNING id INTO v_asg;
   IF r.role IN ('guardian', 'enquiry') THEN
-    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at, consent_state, created_by)
-    VALUES (v_asg, v_player, CASE r.role WHEN 'guardian' THEN 'parent' ELSE 'enquiry' END, 'verified', app_user_id(), now(), 'pending', app_user_id());
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at, consent_state, created_by, valid_until)
+    VALUES (v_asg, v_player, CASE r.role WHEN 'guardian' THEN 'parent' ELSE 'enquiry' END, 'verified', app_user_id(), now(), 'pending', app_user_id(),
+            CASE WHEN r.role = 'guardian' THEN majority_on(v_born) END);
   ELSIF r.role = 'selfaccess' THEN
     INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at, consent_state, consent_version, consent_at, created_by)
     VALUES (v_asg, v_player, 'self', 'verified', app_user_id(), now(), 'granted', 'popia-2026-01', now(), app_user_id());

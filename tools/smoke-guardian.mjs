@@ -18,6 +18,7 @@
  *   a coach cannot become the guardian of a child in their own side
  *   the last verified link of a minor cannot be taken away
  *   withdrawing consent does not blind the parent — it unregisters the child
+ *   guardianship ENDS at eighteen, and cannot be established past it
  *
  *   node tools/migrate.mjs --reset --seed
  *   node tools/smoke-guardian.mjs
@@ -194,7 +195,8 @@ try {
      (await players(NEW_PARENT)).includes(P_U13));
   ok("...and the child is registered", (await state(P_U13)) === "active");
   const link = (await q(`select g.* from assignment_subject g join role_assignment a on a.id = g.assignment_id
-                          where a.person_id = $1 and g.player_id = $2 and g.valid_until is null`,
+                          where a.person_id = $1 and g.player_id = $2
+                            and (g.valid_until is null or g.valid_until > current_date)`,
                         [NEW_PARENT, P_U13]))[0];
   ok("...and the record names who verified it and when",
      link.verified_by === REGISTRAR && link.verified_at != null);
@@ -368,6 +370,71 @@ try {
        (await api(`/api/players/${P_SITHOLE}/guardians/consent`, { method: "POST", token: reg,
           body: { guardianId: HTTP_PARENT, consentVersion: "popia-2026-02" } })).body?.ok === true);
     ok("...registering them again", (await state(P_SITHOLE)) === "active");
+  }
+
+  group("Guardianship ends at eighteen");
+  {
+    // Its own login: `reg` above is scoped to the block that made it, and this
+    // group is a separate one.
+    const reg = await devLogin("registrar@example.invalid");
+    // S Naidoo is seeded past his eighteenth birthday on purpose, so the walk
+    // has a grown player to aim at without inventing one.
+    const P_ADULT = "aaaaaaaa-0000-0000-0000-000000000003";
+    const ADULT_PARENT = "88888888-0000-0000-0000-0000000000f5";
+    await q(`insert into app_user (id, school_id, email, name, role)
+             values ($1,$2,'late.parent@example.invalid','A Naidoo','parent')`,
+            [ADULT_PARENT, HIL]);
+
+    const late = await api(`/api/players/${P_ADULT}/guardians`, {
+      method: "POST", token: reg, body: { guardianId: ADULT_PARENT, relationship: "parent" } });
+    ok("a guardian cannot be linked to a player who has turned eighteen",
+       late.body?.error === "player_is_an_adult");
+    // 422, not 403. The office is not being told it lacks permission — it is
+    // being told the thing it asked for cannot be done, and the difference is
+    // the whole message the screen has to show.
+    ok("...and is told so as unprocessable, not as forbidden", late.status === 422);
+
+    // A refusal must leave nothing behind: the assignment is created before the
+    // subject row, so a guard on the wrong side of that INSERT would answer
+    // false and still hand this person a live guardian assignment.
+    const orphans = await q(`select count(*)::int n from role_assignment
+                              where person_id = $1 and role = 'guardian'`, [ADULT_PARENT]);
+    ok("...leaving no assignment behind", orphans[0].n === 0);
+
+    // B Khumalo, U13A: the one child in the seed this walk has not already
+    // linked to somebody. Reusing a player an earlier group linked would make
+    // the "exactly one link" assertion below count that one too.
+    const NO_DOB = "aaaaaaaa-0000-0000-0000-000000000013";  // B Khumalo, U13A
+    await q(`update player set born = null where id = $1`, [NO_DOB]);
+    const undated = await api(`/api/players/${NO_DOB}/guardians`, {
+      method: "POST", token: reg, body: { guardianId: ADULT_PARENT, relationship: "parent" } });
+    ok("a child with no recorded date of birth cannot be linked at all",
+       undated.body?.error === "player_date_of_birth_required" && undated.status === 422);
+    await q(`update player set born = (current_date - interval '13 years')::date where id = $1`, [NO_DOB]);
+
+    const dated = await api(`/api/players/${NO_DOB}/guardians`, {
+      method: "POST", token: reg, body: { guardianId: ADULT_PARENT, relationship: "parent" } });
+    ok("...and can once the date of birth is captured", dated.status === 200 && dated.body?.ok === true);
+
+    const ends = await q(`select s.valid_until, majority_on(p.born) as majority
+                            from assignment_subject s
+                            join role_assignment a on a.id = s.assignment_id and a.role = 'guardian'
+                            join player p on p.id = s.player_id
+                           where s.player_id = $1 and a.person_id = $2`, [NO_DOB, ADULT_PARENT]);
+    ok("...with the link ending on that child's eighteenth birthday",
+       ends.length === 1 && ends[0].valid_until instanceof Date
+       && ends[0].valid_until.getTime() === ends[0].majority.getTime());
+
+    // `already_linked` used to be decided by valid_until IS NULL, which no link
+    // satisfies now that every one of them carries an end date. Without this the
+    // second call would quietly write a duplicate subject row.
+    const again = await api(`/api/players/${NO_DOB}/guardians`, {
+      method: "POST", token: reg, body: { guardianId: ADULT_PARENT, relationship: "parent" } });
+    ok("asking twice is refused as a conflict, not written twice",
+       again.body?.error === "already_linked" && again.status === 409);
+    const dupes = await q(`select count(*)::int n from assignment_subject
+                            where player_id = $1`, [NO_DOB]);
+    ok("...and there is still exactly one link", dupes[0].n === 1);
   }
 
   group("Who may read a child's links");

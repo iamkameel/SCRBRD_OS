@@ -26,19 +26,47 @@ INSERT INTO school (id, code, name, kind, province) VALUES
 -- later in the seed inherits a January effective date.
 SELECT set_config('app.effective_on', '2026-01-15', false);
 
+-- Birth dates for the boys who have a guardian are RELATIVE, not literal, and
+-- that is a correction rather than a style preference. They were written as
+-- 2008 dates when the seed was new; by September 2026 four of the seven
+-- seeded guardian links were for people who had turned eighteen, so a rule
+-- that ends guardianship at majority would have quietly switched off the
+-- demonstration's own parent account. A fixture that decays with the calendar
+-- is one that passes today and fails in March for a reason nobody looking at
+-- it would guess. Relative, they stay school-age whenever the seed is run.
+--
+-- Kept around sixteen and a half, at spread-out offsets rather than one
+-- interval pasted five times: old enough to be a plausible 1st XI side, young
+-- enough that majority is a year or more away rather than next month, and not
+-- all born on the same day.
+--
+-- S NAIDOO IS THE DELIBERATE EXCEPTION, at eighteen years and four months.
+-- Two things need him there at once. smoke-workload.mjs reads him as the Open
+-- bowler with no spell limit, and the school age bands are taken at the season
+-- cutoff (1 January), so Open starts at roughly seventeen years and eight
+-- months TODAY — there is only a four-month window in which a boy is both Open
+-- and still a minor, and a fixture living in that window is one that breaks
+-- when the cutoff rolls over. Past eighteen he is Open every day of the year.
+--
+-- The second thing is the more useful one: his guardian link is therefore
+-- expired, on purpose, and the demonstration contains a parent who can no
+-- longer read a grown child's record. That is the rule this seed is here to
+-- show, and no arrangement of minors could show it. He stays selectable —
+-- player_guardian_status reads an adult as 'active' without any link at all,
+-- which is the same rule seen from the other side.
 INSERT INTO player (id, school_id, team_code, full_name, squad_no, playing_role, born, hometown, houseAtSchool, height, weight, guardian) VALUES
-  ('aaaaaaaa-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', '1XI', 'James Whitfield', 1, 'batter',     '2008-03-14', 'Howick',      'McKenzie', 181, 74, '{"name":"A Whitfield","relation":"father","phone":"+27 82 000 0001"}'),
-  ('aaaaaaaa-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', '1XI', 'T Bekker',        2, 'allrounder', '2008-07-02', 'Pietermaritzburg', 'Falcon', 176, 70, '{"name":"M Bekker","relation":"mother","phone":"+27 82 000 0002"}'),
-  ('aaaaaaaa-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', '1XI', 'S Naidoo',        3, 'bowler',     '2008-11-21', 'Durban',      'Pearce',   179, 68, '{"name":"R Naidoo","relation":"father","phone":"+27 82 000 0003"}'),
+  ('aaaaaaaa-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', '1XI', 'James Whitfield', 1, 'batter',     (current_date - interval '16 years 7 months')::date, 'Howick',      'McKenzie', 181, 74, '{"name":"A Whitfield","relation":"father","phone":"+27 82 000 0001"}'),
+  ('aaaaaaaa-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', '1XI', 'T Bekker',        2, 'allrounder', (current_date - interval '16 years 2 months')::date, 'Pietermaritzburg', 'Falcon', 176, 70, '{"name":"M Bekker","relation":"mother","phone":"+27 82 000 0002"}'),
+  ('aaaaaaaa-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', '1XI', 'S Naidoo',        3, 'bowler',     (current_date - interval '18 years 4 months')::date, 'Durban',      'Pearce',   179, 68, '{"name":"R Naidoo","relation":"father","phone":"+27 82 000 0003"}'),
   ('aaaaaaaa-0000-0000-0000-000000000004', '11111111-1111-1111-1111-111111111111', '1XI', 'M Cele',          4, 'keeper',     '2009-01-09', 'Pinetown',    'McKenzie', 172, 66, '{"name":"N Cele","relation":"mother","phone":"+27 82 000 0004"}'),
   -- p5 is the injured player 99_rls_verify.sql looks for.
-  ('aaaaaaaa-0000-0000-0000-000000000005', '11111111-1111-1111-1111-111111111111', '1XI', 'R Pillay',        5, 'allrounder', '2008-05-30', 'Umhlanga',    'Falcon',   183, 77, '{"name":"D Pillay","relation":"father","phone":"+27 82 000 0005"}'),
+  ('aaaaaaaa-0000-0000-0000-000000000005', '11111111-1111-1111-1111-111111111111', '1XI', 'R Pillay',        5, 'allrounder', (current_date - interval '16 years 10 months')::date, 'Umhlanga',    'Falcon',   183, 77, '{"name":"D Pillay","relation":"father","phone":"+27 82 000 0005"}'),
   -- A second team, so a team-scoped coach has something to be excluded from.
   ('aaaaaaaa-0000-0000-0000-000000000006', '11111111-1111-1111-1111-111111111111', 'U16B', 'K Dlamini',       7, 'batter',     '2011-02-18', 'Hilton',      'Pearce',   165, 55, '{"name":"S Dlamini","relation":"mother","phone":"+27 82 000 0006"}');
 
 -- A second school, so school scoping has something to exclude.
 INSERT INTO player (id, school_id, team_code, full_name, squad_no, playing_role, born) VALUES
-  ('bbbbbbbb-0000-0000-0000-000000000001', '22222222-2222-2222-2222-222222222222', '1XI', 'D Mkhize',  1, 'bowler', '2008-09-12'),
+  ('bbbbbbbb-0000-0000-0000-000000000001', '22222222-2222-2222-2222-222222222222', '1XI', 'D Mkhize',  1, 'bowler', (current_date - interval '16 years 5 months')::date),
   ('bbbbbbbb-0000-0000-0000-000000000002', '22222222-2222-2222-2222-222222222222', '1XI', 'K Botha',   2, 'batter', '2008-04-25');
 
 UPDATE player SET fitness = 'injured' WHERE id = 'aaaaaaaa-0000-0000-0000-000000000005';
@@ -399,6 +427,26 @@ INSERT INTO assignment_subject
   ('a5510000-0000-0000-0000-000000000013', 'aaaaaaaa-0000-0000-0000-000000000004', 'parent',
    'verified', '88888888-0000-0000-0000-00000000000c', now(), 'pending', NULL, NULL,
    '88888888-0000-0000-0000-00000000000c');  -- N Cele → M Cele
+
+-- Every guardian link ends at the child's majority, and the fixture carries
+-- the date rather than describing it. Computed from each child's own birthday
+-- instead of typed in, so the demonstration cannot drift out of step with the
+-- rule the way seven hand-written dates would. A pupil's link to their own
+-- record is untouched: that one does not end at eighteen, it is theirs.
+--
+-- greatest(…, s.valid_from) because assignment_subject requires valid_from <=
+-- valid_until and valid_from defaults to the day the row was written. S Naidoo
+-- turned eighteen four months before this seed runs, so his link ends the day
+-- it is created: expired on arrival, which is the honest record of a
+-- relationship that ended before anyone wrote it down.
+UPDATE assignment_subject s
+   SET valid_until = greatest(majority_on(p.born), s.valid_from)
+  FROM role_assignment a, player p
+ WHERE a.id = s.assignment_id
+   AND a.role = 'guardian'
+   AND p.id = s.player_id
+   AND p.born IS NOT NULL
+   AND s.valid_until IS NULL;
 
 -- The squad, LAST, because a squad row is now refused for a child with no
 -- verified, consented guardian link — so the families have to exist first.
