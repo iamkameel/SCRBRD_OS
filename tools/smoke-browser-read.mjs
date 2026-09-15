@@ -1057,10 +1057,12 @@ try {
     const s = await open();
     await click(s.page, /Get Started/, 5000); await s.page.waitForTimeout(600);
     await click(s.page, /Continue/, 4000);                                   // welcome
+    // Choosing a role or a school now advances on its own — the pick IS the
+    // intent, so there is no separate Continue press to make here anymore.
     await s.page.locator("button", { hasText: /Head Coach/ }).first().click({ timeout: 4000 });
-    await click(s.page, /Continue/, 4000);                                   // role
+    await s.page.waitForTimeout(500);                                       // role auto-advances
     await s.page.locator("button", { hasText: /Hilton College/ }).first().click({ timeout: 6000 });
-    await click(s.page, /Continue/, 4000);                                   // school
+    await s.page.waitForTimeout(500);                                       // school auto-advances
     await s.page.locator('input[placeholder*="Whitfield"]').fill("N Zulu");
     await s.page.locator('input[type="email"]').first().fill("n.zulu@example.invalid");
     await click(s.page, /Continue/, 4000);                                   // profile
@@ -1095,6 +1097,90 @@ try {
       ok("the registrar is not on the pilot login; the API walk covers the grant", true);
     }
     await o.ctx.close();
+  }
+
+  // ── A parent names his child, and it is not thrown away ──────────
+  // The parent-link step used to filter a variable named PLAYERS that this
+  // file never imported — a ReferenceError the moment a parent typed a
+  // second character into the search box, on the one path through
+  // onboarding a real parent was most likely to take. And even filled in
+  // correctly, the name went nowhere: the onboarding POST never carried it.
+  // Both are fixed the same way — the name travels as a note on the
+  // request, for whoever approves it to read — and this drives the actual
+  // browser through the step that used to crash.
+  group("A parent names his child on the way in, and the office reads it");
+  {
+    const s = await open();
+    await click(s.page, /Get Started/, 5000); await s.page.waitForTimeout(600);
+    await click(s.page, /Continue/, 4000);                                   // welcome
+    await s.page.locator("button", { hasText: /Parent \/ Guardian/ }).first().click({ timeout: 4000 });
+    await s.page.waitForTimeout(500);                                        // role auto-advances
+    await s.page.locator("button", { hasText: /Hilton College/ }).first().click({ timeout: 6000 });
+    await s.page.waitForTimeout(500);                                        // school auto-advances
+    await s.page.locator('input[placeholder*="Whitfield"]').fill("R Zulu");
+    await s.page.locator('input[type="email"]').first().fill("r.zulu@example.invalid");
+    await click(s.page, /Continue/, 4000);                                   // profile
+    ok("the parent-link step is reached, not crashed past",
+       await s.page.locator('input[placeholder*="James Whitfield"]').count() === 1);
+    // This is the exact interaction that used to throw: typing enough to
+    // have triggered a search against the undefined PLAYERS constant.
+    await s.page.locator('input[placeholder*="James Whitfield"]').fill("T Bekker");
+    ok("no console errors after typing a child's name", s.errors.length === 0, s.errors.join(" | "));
+    await click(s.page, /Continue/, 4000);                                   // parent_link
+    await click(s.page, /Enter SCRBRD/, 4000);                               // tour → request
+    await s.page.waitForTimeout(1500);
+    ok("the flow still ends in a request", await s.page.locator('[data-testid="request-sent"]').count() === 1);
+    await s.ctx.close();
+
+    const o = await open();
+    await signIn(o.page, /Registrar|School Admin|registrar@example\.invalid/);
+    if (await o.page.locator('[data-testid="nav-management"]').count()) {
+      await o.page.locator('[data-testid="nav-management"]').click({ timeout: 6000 });
+      const panel = o.page.locator('[data-testid="requests-panel"]');
+      await panel.waitFor({ state: "visible", timeout: 10000 }).catch(() => {});
+      ok("...and the child's name reached the office, not just the form",
+         /R Zulu/.test(await panel.innerText()) && /T Bekker/.test(await panel.innerText()));
+    } else {
+      ok("the registrar is not on the pilot login; the note's shape is covered at the API layer", true);
+    }
+    await o.ctx.close();
+  }
+
+  // ── A submission that fails says so, and can be tried again ──────
+  // A live onboarding POST used to have no visible "in flight" state and no
+  // rendered failure: `sent` held the error string but nothing ever read it
+  // except the one branch that checked for "ok". A person whose request
+  // failed saw a button that had stopped doing anything, with no way to
+  // tell why, and nothing stopped them submitting it again.
+  group("A failed submission is named on screen, and the form still works after");
+  {
+    const s = await open();
+    let failNext = true;
+    await s.page.route("**/api/onboard", (route) => {
+      if (failNext) { failNext = false; return route.fulfill({ status: 500, contentType: "application/json", body: '{"error":"try_again"}' }); }
+      return route.continue();
+    });
+    await click(s.page, /Get Started/, 5000); await s.page.waitForTimeout(600);
+    await click(s.page, /Continue/, 4000);
+    await s.page.locator("button", { hasText: /Head Coach/ }).first().click({ timeout: 4000 });
+    await s.page.waitForTimeout(500);
+    await s.page.locator("button", { hasText: /Hilton College/ }).first().click({ timeout: 6000 });
+    await s.page.waitForTimeout(500);
+    await s.page.locator('input[placeholder*="Whitfield"]').fill("F Ailer");
+    await s.page.locator('input[type="email"]').first().fill("f.ailer@example.invalid");
+    await click(s.page, /Continue/, 4000);
+    await click(s.page, /Enter SCRBRD/, 4000);
+    await s.page.waitForTimeout(1200);
+    ok("the refusal is named on the tour screen, not left silent",
+       await s.page.locator('[data-testid="onboard-submit-error"]').isVisible());
+    ok("...and the flow has not moved on to the request-sent screen",
+       await s.page.locator('[data-testid="request-sent"]').count() === 0);
+    ok("the button works again — this was not a dead end",
+       await click(s.page, /Enter SCRBRD/, 4000));
+    await s.page.waitForTimeout(1200);
+    ok("the retry actually reaches the server this time",
+       await s.page.locator('[data-testid="request-sent"]').count() === 1);
+    await s.ctx.close();
   }
 
   // ── The shell, by id ────────────────────────────────────────────
