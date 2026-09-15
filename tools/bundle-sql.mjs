@@ -100,7 +100,42 @@ ${readFileSync(join(DB, "98_seed_pilot.sql"), "utf8")}
 writeFileSync("/home/user/SCRBRD_OS/scrbrd-supabase-rebuild.sql", parts.join("\n"));
 
 // The verifier, with psql-only meta-commands stripped so it runs in the editor.
+//
+// AND A VISIBLE ANSWER ON THE END, which is the part that was missing. The
+// file signals success with RAISE NOTICE, and a hosted SQL editor shows result
+// ROWS and not notices — so a fully green run renders as "Success. No rows
+// returned", which is indistinguishable from a file that did nothing at all.
+// The reasoning still holds (a failed assertion raises, and an exception would
+// paint an error), but "no news is good news" is a poor thing to ask somebody
+// to trust while they are staring at an empty result pane.
+//
+// It runs AFTER the ROLLBACK on purpose: the transaction above undoes the
+// test's own mutations, and this then reads the state that actually persisted.
 const verify = readFileSync(join(DB, "99_rls_verify.sql"), "utf8")
-  .split("\n").filter(l => !/^\\/.test(l)).join("\n");
+  .split("\n").filter(l => !/^\\/.test(l)).join("\n")
+  + `
+-- ── Did it work? The answer, as rows you can see ────────────────
+-- Every column below should read OK. Anything else is a real problem:
+-- send this table back rather than trying to interpret it.
+SELECT
+  CASE WHEN (SELECT count(*) FROM role_capability WHERE role = 'superadmin')
+          = (SELECT count(*) FROM capability)
+       THEN 'OK — ' || (SELECT count(*) FROM capability) || ' capabilities'
+       ELSE 'PROBLEM' END                                       AS "Super Admin holds every key",
+  CASE WHEN to_regprocedure('enrol_person(text,text,text,uuid,text,uuid,text)') IS NOT NULL
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "Enrolment exists",
+  CASE WHEN to_regprocedure('majority_on(date)') IS NOT NULL
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "Guardianship ends at 18",
+  CASE WHEN (SELECT count(*) FROM assignment_subject s
+               JOIN role_assignment a ON a.id = s.assignment_id AND a.role = 'guardian'
+              WHERE s.valid_until IS NULL) = 0
+       THEN 'OK — none open-ended' ELSE 'PROBLEM' END            AS "Every guardian link has an end date",
+  CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
+       THEN 'OK — ${migrations.length} applied'
+       ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",
+  CASE WHEN (SELECT count(*) FROM player) > 0
+       THEN 'OK — ' || (SELECT count(*) FROM player) || ' players seeded'
+       ELSE 'PROBLEM' END                                        AS "Demo data";
+`;
 writeFileSync("/home/user/SCRBRD_OS/scrbrd-supabase-verify.sql", verify);
 console.log("wrote scrbrd-supabase-rebuild.sql and scrbrd-supabase-verify.sql");
