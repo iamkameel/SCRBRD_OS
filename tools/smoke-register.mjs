@@ -61,6 +61,11 @@ try {
     // The whole point of keeping a register rather than deriving a directory
     // from appointments: somebody accredited but not yet appointed anywhere
     // has to be findable, because that is when you are looking for them.
+    // Read BEFORE the appointment group below, which goes on to appoint the
+    // very person this looks for. Like every walk in this suite it runs on a
+    // database the harness has just reset (run-smoke-api.mjs does that per
+    // walk); run twice by hand against the same database, this one assertion
+    // is the one that will fail, and it is failing honestly.
     const stoodIds = (await q(`select distinct official_id from match_official where official_id is not null`)).map((r) => r.official_id);
     const neverStood = seen.find((o) => !stoodIds.includes(o.id));
     ok("...including somebody who has never stood at a fixture", !!neverStood);
@@ -128,6 +133,60 @@ try {
     const unlinked = await q(`select person_name from match_official where official_id is null and not withdrawn`);
     ok("...and one does not, which is allowed", unlinked.length > 0);
     ok("...and is still recorded by name", unlinked.every((r) => (r.person_name ?? "").trim().length > 0));
+  }
+
+  group("Appointing FROM the register, and being told what you just did");
+  {
+    const HIL = "11111111-1111-1111-1111-111111111111";
+    const m = (await q(
+      `insert into match (school_id, team_code, opponent, starts_at, format, overs, status)
+       values ($1,'1XI','Kearsney College', now() + interval '3 days','T20',20,'scheduled') returning id`,
+      [HIL]))[0].id;
+    const appoint = (tok, officials) =>
+      api(`/api/matches/${m}/officials`, { method: "POST", token: tok, body: { officials } });
+
+    // Naming the register rather than typing a name: the appointment now
+    // carries WHO, so it can be checked and counted.
+    const a = await appoint(head, [{ duty: "umpire", officialId: NDLOVU }]);
+    ok("an appointment can name somebody on the register", a.status === 200);
+    ok("...and the name is filled in FROM the register, not retyped",
+       (await q(`select person_name, official_id from match_official where match_id = $1 and not withdrawn`, [m]))[0]?.person_name === "E Ndlovu");
+    ok("...linked by id, which is what makes it countable", 
+       (await q(`select official_id from match_official where match_id = $1 and not withdrawn`, [m]))[0]?.official_id === NDLOVU);
+    ok("...and the panel comes with him", a.body?.standing?.[0]?.name === "E Ndlovu");
+    ok("...reported as accredited, with his grade", a.body?.standing?.[0]?.level === "level2" && a.body.standing[0].accredited === true);
+    ok("...and not flagged as lapsed", a.body?.standing?.[0]?.lapsed === false);
+
+    // The whole reason for keeping accreditation as a span. The appointment
+    // is ALLOWED — a fixture that has to be played is not blocked by
+    // paperwork — but the person appointing is told, at the one moment they
+    // can do something about it.
+    const l = await appoint(head, [{ duty: "umpire", officialId: NGCOBO }]);
+    ok("appointing somebody whose accreditation lapsed is allowed", l.status === 200);
+    ok("...and comes back named as lapsed", l.body?.standing?.[0]?.lapsed === true);
+    ok("...with no current grade to report", l.body?.standing?.[0]?.level == null);
+    ok("...and the appointment really was made", l.body?.appointed === 1);
+
+    // Standing somebody down is a decision, and appointing them anyway would
+    // make it meaningless. Unlike a lapsed grade there is no Saturday-morning
+    // argument for it, so this one refuses.
+    await q(`update official set active = false where id = $1`, [NGCOBO]);
+    const off = await appoint(head, [{ duty: "umpire", officialId: NGCOBO }]);
+    ok("somebody stood down cannot be appointed at all", off.status === 422);
+    await q(`update official set active = true where id = $1`, [NGCOBO]);
+
+    ok("an official id that is not on the register is refused",
+       (await appoint(head, [{ duty: "umpire", officialId: "0a000000-0000-0000-0000-0000000000ff" }])).status === 404);
+    ok("a malformed official id is refused before the database sees it",
+       (await appoint(head, [{ duty: "umpire", officialId: "not-a-uuid" }])).status === 400);
+
+    // The fallback is untouched: a typed name with no register id still works,
+    // because a parent standing in at short notice must not be blocked.
+    const p = await appoint(head, [{ duty: "umpire", name: "A Willing Parent" }]);
+    ok("a typed name with no register id still appoints", p.status === 200);
+    ok("...and reports no standing, because there is none to report", (p.body?.standing ?? []).length === 0);
+    ok("...and is stored with a null official_id, saying so rather than pretending",
+       (await q(`select official_id from match_official where match_id = $1 and not withdrawn`, [m]))[0]?.official_id === null);
   }
 
   group("Only the union changes the register");
