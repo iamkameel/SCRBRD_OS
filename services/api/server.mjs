@@ -381,6 +381,10 @@ const PLAYER_ROUTES = [
   [/^\/api\/requests$/,                             "POST", requests.request],
   [/^\/api\/requests\/([^/]+)\/withdraw$/,           "POST", requests.withdraw],
   [/^\/api\/requests\/([^/]+)\/decide$/,             "POST", requests.decide],
+  // The office opening an account for somebody already on the roster — the
+  // push half of onboarding. Authenticated: enrol_person() checks
+  // user.role.assign and the granter table under the caller's identity.
+  [/^\/api\/users$/,                                "POST", requests.enrol],
   [/^\/api\/drills$/,                               "POST", kit.drill],
   [/^\/api\/equipment$/,                            "POST", kit.equipment],
   [/^\/api\/equipment\/([^/]+)\/issue$/,             "POST", kit.issue],

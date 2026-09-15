@@ -15,13 +15,17 @@ import { disablePush, enablePush, pushSupported } from "../lib/push.js";
 // ══════════════════════════════════════════════════════
 //  SETTINGS VIEW — full user CRUD + RBAC + upgrades
 // ══════════════════════════════════════════════════════
-function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp }) {
+function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, onDirectoryChanged }) {
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
+  // Bumped after a write so the accounts table re-reads instead of showing the
+  // roster as it was before the enrolment. Declared ahead of the reads that
+  // take it: a const used above its own declaration is a dead-zone crash.
+  const [nonce, setNonce] = useState(0);
   const COACHES = useRows("coaches", role);
   const PLAYERS = useRows("players", role);
   const STAFF = useRows("staff", role);
-  const USERS_INITIAL = useRows("users", role);
+  const USERS_INITIAL = useRows("users", role, nonce);
   const [tab,       setTab]       = useState("users");
   // `useState(USERS_INITIAL)` captured the directory on the first render,
   // which is now the empty array before the read resolves — the same stale
@@ -31,10 +35,18 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp }) 
   // Use lifted state if provided, else the server's rows, else local edits.
   const users    = usersFromApp    || usersLocal || USERS_INITIAL;
   const setUsers = setUsersFromApp || setUsersLocal;
-  const [editUser,  setEditUser]  = useState(null);
   const [addUser,   setAddUser]   = useState(false);
-  const [delConf,   setDelConf]   = useState(null);
-  const [newUser,   setNewUser]   = useState({name:"",email:"",role:"player",player:"",staffId:"",coachId:"",status:"active"});
+  // ENROLMENT, which is what this modal does now. The fields are the ones
+  // enrol_person() actually takes: a name, an address, a role, and the person
+  // on the roster the account is FOR. `withCode` asks for the sign-in code in
+  // the same breath, because there is no email channel yet and somebody has to
+  // read it off the screen.
+  const [newUser,   setNewUser]   = useState({name:"",email:"",role:"player",player:"",withCode:true});
+  const [enrolling, setEnrolling] = useState(false);
+  const [enrolError,setEnrolError]= useState(null);
+  // The code, held until it is dismissed. It exists in readable form exactly
+  // once — this is that once.
+  const [issued,    setIssued]    = useState(null);
   // WHO MAY MANAGE PEOPLE, by the capability rather than by a name.
   //
   // This read `role === "superadmin"`, which is a DEMONSTRATION ALIAS. Signed
@@ -51,26 +63,101 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp }) 
   // assignments the real name does.
   const canEdit = holdsCapability(role, "user.role.assign");
 
+  // WHICH SCHOOL the account is opened at, taken from the signed-in person's
+  // own assignments rather than from SCHOOL.id — that constant is the
+  // demonstration institution and its id is a code ("HIL"), not a tenant uuid.
+  // Sending it would have the server refuse every enrolment, and the screen
+  // would be blaming the office for a mistake the client made.
+  const enrolSchools = schoolsWhere("user.role.assign");
+  const [enrolSchool, setEnrolSchool] = useState(null);
+  const enrolAt = enrolSchool || enrolSchools[0]?.id || null;
+
+
   // Roster people with no account, by the link the accounts read now carries.
   // Both sides are already row-scoped in Postgres for this reader, so this
   // reconciles two permitted lists rather than widening either.
   const linkedPlayerIds = new Set(users.map(u=>u.player).filter(Boolean));
   const noAccount = PLAYERS.filter(p=>!linkedPlayerIds.has(p.id));
 
-  const saveUser = () => {
-    if (editUser) {
-      setUsers(prev=>prev.map(u=>u.id===editUser.id?{...u,...editUser}:u));
-    } else {
-      const id = `u${Date.now()}`;
-      setUsers(prev=>[...prev,{...newUser,id,lastLogin:"Never"}]);
+  // WHAT THIS USED TO DO, and why it is worth saying.
+  //
+  // saveUser() pushed an object into React state. deleteUser() spliced one
+  // out. toggleStatus() flipped a string. None of them called anything, so a
+  // school could "create" sixteen accounts, watch them appear in the table,
+  // reload, and find the roster exactly as it was — and the sixteen boys still
+  // unable to sign in. That is worse than the button not being there, because
+  // the office believes the job is done.
+  //
+  // Now it enrols. The server decides everything: whether this caller may,
+  // whether the role is one they can grant, whether the boy already has an
+  // account. The client sends the form and shows the answer.
+  const enrolPerson = async () => {
+    setEnrolError(null);
+    setEnrolling(true);
+    try {
+      // The side comes from the boy's own roster row rather than from a field
+      // in this form. A pupil's team is a fact about the roster, and asking the
+      // office to retype it is asking them to contradict it.
+      const linked = PLAYERS.find(p=>p.id===newUser.player) || null;
+      const out = await api("/api/users", { method:"POST", body:{
+        email: newUser.email.trim(),
+        name: newUser.name.trim(),
+        role: newUser.role,
+        schoolId: enrolAt,
+        teamCode: linked?.team || undefined,
+        playerId: newUser.player || undefined,
+        withCode: newUser.withCode === true,
+      }});
+      setAddUser(false);
+      setNewUser({name:"",email:"",role:"player",player:"",withCode:true});
+      // Only when a code came back: an enrolment with no code is complete, and
+      // a dialog saying nothing would just be in the way.
+      if (out?.code) setIssued({ code: out.code, expiresAt: out.expiresAt, name: newUser.name.trim() });
+      else if (out?.codeError) setIssued({ code: null, error: out.codeError, name: newUser.name.trim() });
+      // Both: this screen's own read, and the lifted copy in App that the
+      // table actually renders from. Bumping only the local one left the
+      // enrolled boy still listed as having no account.
+      setNonce(n=>n+1);
+      onDirectoryChanged?.();
+    } catch (e) {
+      setEnrolError(e?.code || e?.message || "enrol_failed");
+    } finally {
+      setEnrolling(false);
     }
-    setEditUser(null);
-    setAddUser(false);
-    setNewUser({name:"",email:"",role:"player",player:"",staffId:"",coachId:"",status:"active"});
   };
 
-  const deleteUser = (id) => { setUsers(prev=>prev.filter(u=>u.id!==id)); setDelConf(null); };
-  const toggleStatus = (id) => setUsers(prev=>prev.map(u=>u.id===id?{...u,status:u.status==="active"?"suspended":"active"}:u));
+  // A fresh code for an account that already exists — the same route the
+  // enrolment uses, through login_code_issue(), which refuses anyone without
+  // user.invite at that school and refuses a code issued to yourself.
+  const [coding, setCoding] = useState(null);
+  const issueCodeFor = async (u) => {
+    setCoding(u.id);
+    try {
+      const out = await api("/api/auth/invite", { method:"POST", body:{ email: u.email } });
+      setIssued({ code: out?.code, expiresAt: out?.expiresAt, name: u.name });
+    } catch (e) {
+      setIssued({ code: null, error: ENROL_MESSAGE[e?.code] || e?.code || "code_not_issued", name: u.name });
+    } finally {
+      setCoding(null);
+    }
+  };
+
+  // Said in the office's words, not the database's. An unmapped code shows as
+  // itself rather than as a friendly guess at what it might have meant.
+  const ENROL_MESSAGE = {
+    not_permitted: "You do not hold the capability to open an account at this school.",
+    email_invalid: "That email address is not a valid one.",
+    name_required: "A full name is needed.",
+    player_required: "Choose the person on the roster this account is for.",
+    no_such_player: "That person is not on the roster.",
+    player_not_at_that_school: "That person is on another school's roster.",
+    player_already_has_an_account: "That person already has an account. Look for them in the table above.",
+    email_belongs_to_another_school: "That email address already belongs to an account at another school.",
+    player_is_an_adult: "Guardian access ends at eighteen, and this person has turned eighteen.",
+    player_date_of_birth_required: "Capture this person's date of birth first — guardian access is worked out from it.",
+    team_required: "Choose the side this person coaches.",
+    missing_token: "You are not signed in.",
+  };
 
   // WHAT A ROLE CAN DO, DERIVED FROM THE POLICY.
   //
@@ -227,7 +314,7 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp }) 
         <div>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"14px",flexWrap:"wrap",gap:"8px"}}>
             <div style={{fontFamily:D.mono,fontSize:"11px",color:D.textMuted}}>{users.length} users · {users.filter(u=>u.status==="active").length} active</div>
-            {canEdit&&<Btn size="sm" onClick={()=>{setAddUser(true);setEditUser(null);}}>+ Add User</Btn>}
+            {canEdit&&<Btn size="sm" data-testid="enrol-person" onClick={()=>{setEnrolError(null);setAddUser(true);}}>+ Enrol a person</Btn>}
           </div>
 
           {/* THE PEOPLE WITH NO ACCOUNT.
@@ -246,17 +333,31 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp }) 
               <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginBottom:"10px",lineHeight:1.5}}>
                 These people appear in Squad and Profiles and hold a passport, but cannot sign in.
                 An account is what links the two: without one, nobody can read their own record.
+                {canEdit?" Choose somebody to open an account for them.":""}
               </div>
               <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
-                {noAccount.map(p=>(
-                  <span key={p.id} data-testid={`no-account-${p.id}`} style={{display:"inline-flex",alignItems:"center",gap:"6px",
-                    padding:"4px 10px",borderRadius:D.pill,background:D.amber+"14",border:`1px solid ${D.amber}33`,
-                    fontFamily:D.body,fontSize:"11px",color:D.textSecondary}}>
-                    <Avatar name={p.name} size={18} color={D.amber}/>
-                    {p.name}
-                    <span style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>{p.team}</span>
-                  </span>
-                ))}
+                {noAccount.map(p=>{
+                  // The chip IS the way in when you may enrol. This card named
+                  // the problem for a while and offered nothing to do about it,
+                  // which is how "how do we resolve this?" gets asked.
+                  const Tag = canEdit ? "button" : "span";
+                  return (
+                    <Tag key={p.id} data-testid={`no-account-${p.id}`}
+                      {...(canEdit?{onClick:()=>{
+                        setNewUser({name:p.name,email:"",role:"player",player:p.id,withCode:true});
+                        setEnrolError(null);
+                        setAddUser(true);
+                      },title:`Enrol ${p.name}`}:{})}
+                      style={{display:"inline-flex",alignItems:"center",gap:"6px",
+                        padding:"4px 10px",borderRadius:D.pill,background:D.amber+"14",border:`1px solid ${D.amber}33`,
+                        fontFamily:D.body,fontSize:"11px",color:D.textSecondary,
+                        cursor:canEdit?"pointer":"default"}}>
+                      <Avatar name={p.name} size={18} color={D.amber}/>
+                      {p.name}
+                      <span style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>{p.team}</span>
+                    </Tag>
+                  );
+                })}
               </div>
             </Card>
           )}
@@ -293,13 +394,24 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp }) 
                         <td style={{padding:"10px 12px",textAlign:"center",fontFamily:D.body,fontSize:"11px",color:D.textSecondary}}>{linked||"—"}</td>
                         <td style={{padding:"10px 12px",textAlign:"center",fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>{u.lastLogin}</td>
                         <td style={{padding:"10px 12px",textAlign:"center"}}><Badge color={u.status==="active"?D.emerald:D.rose}>{u.status}</Badge></td>
+                        {/* EDIT, SUSPEND AND DELETE ARE GONE, and that is the
+                            change rather than an omission. All three wrote to
+                            React state and nothing else: suspending somebody
+                            greyed a row until the next reload, while they kept
+                            signing in. A control that reports success and
+                            changes nothing is worse than no control, because
+                            the office stops looking. Issuing a code is here
+                            because it is the one account action that is real
+                            end to end. */}
                         <td style={{padding:"10px 12px",textAlign:"center"}}>
                           {canEdit&&(
-                            <div style={{display:"flex",gap:"4px",justifyContent:"center"}}>
-                              <button onClick={()=>setEditUser({...u})} style={{background:"none",border:`1px solid ${D.border}`,borderRadius:D.sm,padding:"3px 9px",cursor:"pointer",fontFamily:D.body,fontSize:"10px",color:D.textSecondary}}>Edit</button>
-                              <button onClick={()=>toggleStatus(u.id)} style={{background:"none",border:`1px solid ${u.status==="active"?D.amber+"44":D.emerald+"44"}`,borderRadius:D.sm,padding:"3px 9px",cursor:"pointer",fontFamily:D.body,fontSize:"10px",color:u.status==="active"?D.amber:D.emerald}}>{u.status==="active"?"Suspend":"Restore"}</button>
-                              <button onClick={()=>setDelConf(u)} style={{background:"none",border:`1px solid ${D.rose}33`,borderRadius:D.sm,padding:"3px 9px",cursor:"pointer",fontFamily:D.body,fontSize:"10px",color:D.roseText}}>Delete</button>
-                            </div>
+                            <button onClick={()=>issueCodeFor(u)} disabled={coding===u.id}
+                              data-testid={`issue-code-${u.id}`}
+                              style={{background:"none",border:`1px solid ${D.border}`,borderRadius:D.sm,
+                                padding:"3px 9px",cursor:coding===u.id?"default":"pointer",
+                                fontFamily:D.body,fontSize:"10px",color:D.textSecondary}}>
+                              {coding===u.id?"…":"Sign-in code"}
+                            </button>
                           )}
                         </td>
                       </tr>
@@ -446,36 +558,93 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp }) 
         </div>
       )}
 
-      {/* ── ADD / EDIT MODAL ── */}
-      {(addUser||editUser)&&(
-        <Modal title={editUser?"Edit User":"Add New User"} onClose={()=>{setAddUser(false);setEditUser(null);}}>
-          <Input label="Full Name" value={editUser?editUser.name:newUser.name} onChange={e=>editUser?setEditUser(p=>({...p,name:e.target.value})):setNewUser(p=>({...p,name:e.target.value}))} placeholder="First Last"/>
-          <Input label="Email" value={editUser?editUser.email:newUser.email} onChange={e=>editUser?setEditUser(p=>({...p,email:e.target.value})):setNewUser(p=>({...p,email:e.target.value}))} type="email" placeholder="user@hilton.co.za"/>
-          <Select label="Role" value={editUser?editUser.role:newUser.role} onChange={v=>editUser?setEditUser(p=>({...p,role:v})):setNewUser(p=>({...p,role:v}))} options={grantable.map(v=>({value:v,label:`${ROLES[v].icon} ${ROLES[v].label}`}))}/>
-          <Select label="Linked Player (optional)" value={editUser?editUser.player||"":newUser.player} onChange={v=>editUser?setEditUser(p=>({...p,player:v||null})):setNewUser(p=>({...p,player:v}))} options={[{value:"",label:"None"},...PLAYERS.map(p=>({value:p.id,label:`${p.name} (${p.team} · ${p.school})`}))]}/>
-          <Select label="Linked Coach (optional)" value={editUser?editUser.coachId||"":newUser.coachId} onChange={v=>editUser?setEditUser(p=>({...p,coachId:v||null})):setNewUser(p=>({...p,coachId:v}))} options={[{value:"",label:"None"},...COACHES.map(c=>({value:c.id,label:`${c.name} (${c.team})`}))]}/>
-          <Select label="Linked Staff (optional)" value={editUser?editUser.staffId||"":newUser.staffId} onChange={v=>editUser?setEditUser(p=>({...p,staffId:v||null})):setNewUser(p=>({...p,staffId:v}))} options={[{value:"",label:"None"},...STAFF.map(s=>({value:s.id,label:`${s.name} (${s.role})`}))]}/>
-          <Select label="Status" value={editUser?editUser.status:newUser.status} onChange={v=>editUser?setEditUser(p=>({...p,status:v})):setNewUser(p=>({...p,status:v}))} options={[{value:"active",label:"Active"},{value:"suspended",label:"Suspended"}]}/>
+      {/* ── ENROL MODAL ──
+          Was "Add / Edit User", and it wrote to React state. The fields here
+          are the ones enrol_person() takes and no others: a form that collects
+          something the server has no place to put is a form that quietly
+          discards it, which is what the Linked Coach and Linked Staff selects
+          did on every save. */}
+      {addUser&&(
+        <Modal title="Enrol a person" onClose={()=>{setAddUser(false);setEnrolError(null);}}>
+          <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,lineHeight:1.5,marginBottom:"10px"}}>
+            This opens a real account and links it to their record. There is no email yet —
+            ask for a sign-in code and hand it over in person.
+          </div>
+          {enrolSchools.length>1&&(
+            <Select label="School" value={enrolAt||""} onChange={v=>setEnrolSchool(v)}
+                    options={enrolSchools.map(sc=>({value:sc.id,label:sc.name}))}/>
+          )}
+          <Select label="Role" value={newUser.role} onChange={v=>setNewUser(p=>({...p,role:v,player:v==="player"?p.player:p.player}))}
+                  options={grantable.map(v=>({value:v,label:`${ROLES[v].icon} ${ROLES[v].label}`}))}/>
+          {/* The roster, narrowed to the people who have no account — the list
+              this screen already shows as the problem. Offering somebody who
+              is already enrolled only earns a refusal from the server. */}
+          <Select label={newUser.role==="player"?"Who this account is for":"Linked person (optional)"}
+                  value={newUser.player}
+                  onChange={v=>{
+                    const pick = PLAYERS.find(x=>x.id===v);
+                    setNewUser(p=>({...p,player:v,name:p.name||pick?.name||""}));
+                  }}
+                  options={[{value:"",label:"None"},...noAccount.map(p=>({value:p.id,label:`${p.name} (${p.team})`}))]}/>
+          {/* Input hands over the VALUE, not the event — see primitives.jsx.
+              The modal this replaced read e.target.value here and took the
+              whole app down on the first keystroke; no walk ever typed into
+              it, so nothing said so. */}
+          <Input label="Full Name" value={newUser.name} onChange={v=>setNewUser(p=>({...p,name:v}))} placeholder="First Last"/>
+          <Input label="Email" value={newUser.email} onChange={v=>setNewUser(p=>({...p,email:v}))} type="email" placeholder="name@school.co.za"/>
+          <label style={{display:"flex",alignItems:"center",gap:"8px",marginTop:"10px",cursor:"pointer",
+                         fontFamily:D.body,fontSize:"12px",color:D.textSecondary}}>
+            <input type="checkbox" checked={newUser.withCode===true}
+                   onChange={e=>setNewUser(p=>({...p,withCode:e.target.checked}))}/>
+            Issue a sign-in code now
+          </label>
+          {enrolError&&(
+            <div data-testid="enrol-error" style={{marginTop:"10px",padding:"8px 10px",borderRadius:D.sm,
+              background:D.rose+"14",border:`1px solid ${D.rose}33`,fontFamily:D.body,fontSize:"11px",color:D.roseText}}>
+              {ENROL_MESSAGE[enrolError] || enrolError}
+            </div>
+          )}
           <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"10px"}}>
-            <Btn variant="ghost" onClick={()=>{setAddUser(false);setEditUser(null);}}>Cancel</Btn>
-            <Btn onClick={saveUser}>{editUser?"Save Changes":"Create User"}</Btn>
+            <Btn variant="ghost" onClick={()=>{setAddUser(false);setEnrolError(null);}}>Cancel</Btn>
+            <Btn onClick={enrolPerson} disabled={enrolling||!enrolAt}>{enrolling?"Enrolling…":"Enrol"}</Btn>
           </div>
         </Modal>
       )}
 
-      {/* ── DELETE CONFIRM ── */}
-      {delConf&&(
-        <Modal title="Delete User" onClose={()=>setDelConf(null)}>
-          <p style={{fontFamily:D.body,fontSize:"13px",color:D.textSecondary,lineHeight:1.6}}>
-            Are you sure you want to delete <strong style={{color:D.textPrimary}}>{delConf.name}</strong>?
-            This action cannot be undone.
-          </p>
-          <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"12px"}}>
-            <Btn variant="ghost" onClick={()=>setDelConf(null)}>Cancel</Btn>
-            <Btn style={{background:D.rose+"18",border:`1px solid ${D.rose}33`,color:D.roseText}} onClick={()=>deleteUser(delConf.id)}>Delete User</Btn>
+      {/* ── THE CODE, ONCE ──
+          login_code_issue() stores a hash; the readable code exists in this
+          response and nowhere else, ever again. So it is shown plainly, said to
+          be one-time, and the only way out is acknowledging it. */}
+      {issued&&(
+        <Modal title={issued.code?"Sign-in code":"Account opened"} onClose={()=>setIssued(null)}>
+          {issued.code?(
+            <>
+              <div style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,lineHeight:1.6,marginBottom:"10px"}}>
+                <strong style={{color:D.textPrimary}}>{issued.name}</strong> now has an account.
+                Write this code down and hand it over — it is shown once and cannot be read again.
+              </div>
+              <div data-testid="issued-code" style={{fontFamily:D.mono,fontSize:"22px",letterSpacing:"0.18em",
+                textAlign:"center",padding:"14px",borderRadius:D.sm,color:D.textPrimary,
+                background:D.emerald+"14",border:`1px solid ${D.emerald}44`}}>{issued.code}</div>
+              {issued.expiresAt&&(
+                <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginTop:"8px",textAlign:"center"}}>
+                  Expires {new Date(issued.expiresAt).toLocaleString()}
+                </div>
+              )}
+            </>
+          ):(
+            <div style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,lineHeight:1.6}}>
+              <strong style={{color:D.textPrimary}}>{issued.name}</strong> now has an account, but no
+              sign-in code could be issued ({issued.error}). The account is real — issue a code from
+              this screen when you are ready.
+            </div>
+          )}
+          <div style={{display:"flex",justifyContent:"flex-end",marginTop:"12px"}}>
+            <Btn onClick={()=>setIssued(null)}>Done</Btn>
           </div>
         </Modal>
       )}
+
     </div>
   );
 }

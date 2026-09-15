@@ -77,6 +77,10 @@ CREATE OR REPLACE FUNCTION _count_subjects(p_player uuid) RETURNS integer AS $$
   SELECT count(*)::int FROM assignment_subject WHERE player_id = p_player;
 $$ LANGUAGE sql SECURITY DEFINER;
 
+CREATE OR REPLACE FUNCTION _count_accounts(p_email text) RETURNS integer AS $$
+  SELECT count(*)::int FROM app_user WHERE lower(email) = lower(p_email);
+$$ LANGUAGE sql SECURITY DEFINER;
+
 -- Move a child's eighteenth birthday, or take their date of birth away. Both
 -- are owner-only edits, and both roll back with the transaction.
 CREATE OR REPLACE FUNCTION _set_born(p_player uuid, p_born date) RETURNS void AS $$
@@ -989,6 +993,38 @@ BEGIN
   PERFORM _expire_link(P_INJURED);
   SELECT count(*) INTO n FROM player_masked WHERE id = P_INJURED;
   PERFORM _assert(n = 0, 'a guardian link past its end date still reads the child');
+
+  -- ── Enrolment leaves nothing behind when it is refused ────────
+  --
+  -- enrol_person() writes the account, then answers the request through
+  -- decide_role_request(). A refusal from that second step arrives with the
+  -- account already on the table, so the writes sit in a subtransaction and
+  -- the refusal is raised rather than returned.
+  --
+  -- THIS ASSERTION HAS TO LIVE HERE, in direct SQL, and that is the whole
+  -- reason it was moved. Over HTTP withPrincipal() wraps every request in
+  -- BEGIN/COMMIT and rolls back on a thrown error, so the API path discards
+  -- the orphan whatever enrol_person() does — the walk in tools/smoke-enrol.mjs
+  -- CANNOT fail on it, and it was checked: removing the subtransaction leaves
+  -- all 31 of its assertions green. A guard nothing can falsify is a guard
+  -- nobody will keep, so the falsifying assertion belongs where a caller is
+  -- not wrapped in somebody else's transaction.
+  PERFORM _as(U_REGISTRAR);
+  -- Refused inside decide_role_request(), AFTER the account row is written:
+  -- a coach is a coach of a side, and this one names none.
+  SELECT ok, reason INTO v_ok, v_reason
+    FROM enrol_person('orphan.coach@example.invalid', 'O Coach', 'coach', HIL, NULL, NULL, NULL);
+  PERFORM _assert(NOT v_ok AND v_reason = 'team_required',
+    'a coach was enrolled with no side');
+  PERFORM _assert(_count_accounts('orphan.coach@example.invalid') = 0,
+    'a refused enrolment left a half-made account behind');
+
+  -- And the same call, given the side it was missing, does make one.
+  SELECT ok INTO v_ok
+    FROM enrol_person('real.coach@example.invalid', 'R Coach', 'coach', HIL, 'U13A', NULL, NULL);
+  PERFORM _assert(v_ok, 'the office cannot enrol a coach of a named side');
+  PERFORM _assert(_count_accounts('real.coach@example.invalid') = 1,
+    'the enrolment did not create an account');
 
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;

@@ -5961,6 +5961,142 @@ END $$ LANGUAGE plpgsql SECURITY DEFINER;
 REVOKE ALL ON FUNCTION decide_role_request(uuid, boolean, text, uuid, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION decide_role_request(uuid, boolean, text, uuid, text) TO PUBLIC;
 
+-- ── ENROLMENT: the office opening an account, rather than waiting ──
+--
+-- onboard_request() + decide_role_request() is the PULL path: a stranger asks,
+-- the school answers. It works end to end and it is not the problem. The
+-- problem is the other direction. A school arrives with a roster already in
+-- the building — sixteen boys of eighteen in the pilot — every one of them
+-- holding a passport, appearing in Squad and Profiles, and unable to sign in
+-- to read their own record, because nothing in the product creates an account
+-- for somebody who is already here. Waiting for sixteen children to discover
+-- the onboarding screen and ask is not a process, it is a hope.
+--
+-- THIS DOES NOT REIMPLEMENT THE GRANT. It raises the request on the person's
+-- behalf and answers it in the same breath, through decide_role_request() —
+-- so the authority check, the granter table, the team requirement, the
+-- guardian majority rules and the pupil's self-access pair are all the ones
+-- already written and tested, not a second copy that will drift from them.
+-- It also leaves the same audit trail a self-service request leaves: a
+-- role_request row naming who decided it and when.
+--
+-- SECURITY DEFINER for the app_user insert alone (its policy needs
+-- user.role.assign, which is checked below under the CALLER's identity —
+-- app_user_id() reads the session, and definer rights do not change it).
+CREATE OR REPLACE FUNCTION enrol_person(
+  p_email  text,
+  p_name   text,
+  p_role   text,
+  p_school uuid,
+  p_team   text DEFAULT NULL,
+  p_player uuid DEFAULT NULL,
+  p_note   text DEFAULT NULL
+) RETURNS TABLE (ok boolean, reason text, user_id uuid, assignment_id uuid) AS $$
+DECLARE
+  v_user uuid; v_req uuid; v_ok boolean; v_reason text; v_asg uuid; v_school uuid;
+BEGIN
+  -- Everything that can be refused without writing anything is refused here,
+  -- BEFORE the first INSERT. The alternative — discovering the refusal after
+  -- creating the account — is the defect this codebase already fixed once in
+  -- guardian_link_establish(): a plpgsql RETURN is not a rollback.
+  IF p_email !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' THEN
+    RETURN QUERY SELECT false, 'email_invalid', NULL::uuid, NULL::uuid; RETURN;
+  END IF;
+  IF length(btrim(coalesce(p_name, ''))) < 2 THEN
+    RETURN QUERY SELECT false, 'name_required', NULL::uuid, NULL::uuid; RETURN;
+  END IF;
+  IF p_school IS NULL THEN
+    RETURN QUERY SELECT false, 'school_required', NULL::uuid, NULL::uuid; RETURN;
+  END IF;
+
+  -- DECIDE_ROLE_REQUEST IS THE AUTHORITY OF RECORD, not this. It makes the
+  -- same two checks, and the subtransaction below discards the account when it
+  -- refuses — so removing these six lines changes no outcome, and no test goes
+  -- red. That was checked rather than assumed.
+  --
+  -- Kept as an early exit: refusing before writing anything is worth the six
+  -- lines, and a caller with no authority should not reach an INSERT at all.
+  -- Written down because a reader who deletes it will find the suite still
+  -- green and should know that is expected, not evidence the check was
+  -- pointless.
+  IF NOT (app_can('user.role.assign', p_school, '*',
+                  '00000000-0000-0000-0000-000000000000'::uuid,
+                  '00000000-0000-0000-0000-000000000000'::uuid)
+          AND app_may_grant(p_role)) THEN
+    RETURN QUERY SELECT false, 'not_permitted', NULL::uuid, NULL::uuid; RETURN;
+  END IF;
+
+  -- An account for a pupil that names no pupil is the whole point missed.
+  IF p_role = 'player' AND p_player IS NULL THEN
+    RETURN QUERY SELECT false, 'player_required', NULL::uuid, NULL::uuid; RETURN;
+  END IF;
+  IF p_player IS NOT NULL THEN
+    SELECT pl.school_id INTO v_school FROM player pl WHERE pl.id = p_player;
+    IF v_school IS NULL THEN
+      RETURN QUERY SELECT false, 'no_such_player', NULL::uuid, NULL::uuid; RETURN;
+    END IF;
+    IF v_school <> p_school THEN
+      RETURN QUERY SELECT false, 'player_not_at_that_school', NULL::uuid, NULL::uuid; RETURN;
+    END IF;
+    -- One account per pupil. Two accounts both claiming to BE the same child
+    -- is not a duplicate record, it is two people able to answer as him.
+    IF p_role = 'player' AND EXISTS (
+         SELECT 1 FROM app_user u WHERE u.player_id = p_player AND u.active) THEN
+      RETURN QUERY SELECT false, 'player_already_has_an_account', NULL::uuid, NULL::uuid; RETURN;
+    END IF;
+  END IF;
+
+  -- An email already on the books belongs to somebody. Reusing it across
+  -- schools would quietly move that person, so it is refused rather than
+  -- resolved.
+  SELECT u.id, u.school_id INTO v_user, v_school
+    FROM app_user u WHERE lower(u.email) = lower(btrim(p_email));
+  IF v_user IS NOT NULL AND v_school IS NOT NULL AND v_school <> p_school THEN
+    RETURN QUERY SELECT false, 'email_belongs_to_another_school', NULL::uuid, NULL::uuid; RETURN;
+  END IF;
+
+  -- From here on there are writes, so they go in a subtransaction. A refusal
+  -- from decide_role_request() — a missing team, a guardian link against
+  -- somebody already grown — must not leave a half-enrolled account and an
+  -- unanswered request lying about. RAISE rolls the block back; the handler
+  -- turns it back into an answer.
+  BEGIN
+    IF v_user IS NULL THEN
+      INSERT INTO app_user (school_id, email, name, role)
+      VALUES (p_school, lower(btrim(p_email)), btrim(p_name), p_role)
+      RETURNING id INTO v_user;
+    END IF;
+
+    -- An open request for the same thing is answered rather than duplicated:
+    -- a child who asked last week and is being enrolled today should end up
+    -- with one account and one decided request, not two of each.
+    SELECT r.id INTO v_req FROM role_request r
+     WHERE r.person_id = v_user AND r.role = p_role AND r.school_id = p_school
+       AND r.state = 'pending' LIMIT 1;
+    IF v_req IS NULL THEN
+      INSERT INTO role_request (person_id, role, school_id, team_code, note)
+      VALUES (v_user, p_role, p_school, nullif(btrim(coalesce(p_team, '')), ''), p_note)
+      RETURNING id INTO v_req;
+    END IF;
+
+    SELECT d.ok, d.reason, d.assignment_id INTO v_ok, v_reason, v_asg
+      FROM decide_role_request(v_req, true, p_note, p_player, p_team) d;
+    IF NOT coalesce(v_ok, false) THEN
+      RAISE EXCEPTION 'enrol_refused:%', coalesce(v_reason, 'refused')
+        USING ERRCODE = 'check_violation';
+    END IF;
+  EXCEPTION WHEN check_violation OR unique_violation OR foreign_key_violation THEN
+    RETURN QUERY SELECT false,
+      coalesce(substring(SQLERRM from 'enrol_refused:(.*)'), SQLERRM),
+      NULL::uuid, NULL::uuid;
+    RETURN;
+  END;
+
+  RETURN QUERY SELECT true, NULL::text, v_user, v_asg;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+REVOKE ALL ON FUNCTION enrol_person(text, text, text, uuid, text, uuid, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION enrol_person(text, text, text, uuid, text, uuid, text) TO PUBLIC;
+
 -- The schools, by name, for a stranger choosing one on the onboarding
 -- screen. A school's name is a public fact; nothing else about it is here.
 CREATE OR REPLACE FUNCTION public_schools() RETURNS TABLE (id uuid, name text) AS $$
