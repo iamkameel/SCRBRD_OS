@@ -2,7 +2,7 @@
 -- GENERATED from packages/policy/ by services/api/rls/generate-rls.mjs — DO NOT EDIT BY HAND.
 -- Regenerate with `pnpm rls:generate`. Applied BEFORE the scoring schema,
 -- which references app_can(). Model: docs/adr/0001-scoped-assignments.md.
--- 80 capabilities across 24 roles.
+-- 81 capabilities across 24 roles.
 
 -- Principal helpers. app_user_id() is set from the signed token on every
 -- request; everything else about a person's authority is looked up.
@@ -68,6 +68,7 @@ INSERT INTO capability (name) VALUES
   ('scoring.amend.approve'),
   ('officiating.assign'),
   ('officiating.report'),
+  ('officiating.registry.manage'),
   ('medical.status.read'),
   ('medical.nature.read'),
   ('medical.details.read'),
@@ -146,6 +147,7 @@ INSERT INTO role_capability (role, capability) VALUES
   ('platformadmin', 'user.role.assign'),
   ('platformadmin', 'school.feature.manage'),
   ('platformadmin', 'scouting.accredit'),
+  ('platformadmin', 'officiating.registry.manage'),
   ('platformadmin', 'school.read'),
   ('platformadmin', 'user.read'),
   ('platformadmin', 'audit.read'),
@@ -499,6 +501,7 @@ INSERT INTO role_capability (role, capability) VALUES
   ('competitionadmin', 'competition.read'),
   ('competitionadmin', 'competition.manage'),
   ('competitionadmin', 'officiating.assign'),
+  ('competitionadmin', 'officiating.registry.manage'),
   ('competitionadmin', 'discipline.read'),
   ('competitionadmin', 'scoring.correct'),
   ('competitionadmin', 'scoring.amend.approve'),

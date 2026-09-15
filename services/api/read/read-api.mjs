@@ -599,12 +599,40 @@ export const READ_QUERIES = {
    * a report that needs them can ask for them explicitly.
    */
   officials: {
-    text: `select match_id, duty, person_name, person_id, panel, appointed_at
+    text: `select match_id, duty, person_name, person_id, official_id, panel, appointed_at
              from match_official
             where not withdrawn
               and ($1::uuid is null or match_id = $1)
             order by duty, person_name`,
     params: q => [q?.matchId || null],
+  },
+
+  /**
+   * The officials register: who is on the panel, and at what grade.
+   *
+   * Read through official_masked, never the table, so the columns that make
+   * an official a person rather than a name — date of birth, ID number,
+   * contact — arrive as NULL for everyone but the union that keeps the
+   * register. The row itself is open to anybody signed in, which is the same
+   * disclosure the scorecard already makes.
+   *
+   * `level` and `lapsed` are DERIVED on every read rather than stored, for
+   * the reason a batting average is: an accreditation is a span, and a grade
+   * copied into a column is a grade that keeps claiming to be current after
+   * it has run out. official_level() returns NULL once every accreditation
+   * has lapsed, which reads differently from never having held one — so the
+   * two are reported separately and the screen can say which.
+   */
+  official_register: {
+    text: `select o.id, o.full_name, o.panel, o.active,
+                  o.born, o.id_number, o.email, o.phone,
+                  official_level(o.id) as level,
+                  (select max(a.valid_until) from official_accreditation a
+                    where a.official_id = o.id) as accredited_until,
+                  (select count(*)::int from official_accreditation a
+                    where a.official_id = o.id) as accreditations
+             from official_masked o
+            order by o.full_name`,
   },
 
   // The state of the square, scoped through the fixture exactly as weather is.

@@ -1518,6 +1518,187 @@ CREATE TABLE match_pitch_report (
 -- third; an U14 fixture on a wet Tuesday often has one, or a parent standing
 -- at square leg. A constraint asserting the professional shape would refuse
 -- the ordinary case, and the ordinary case is the one this product is for.
+-- ═══════════════════════════════════════════════════════════════════
+--  THE OFFICIALS REGISTER
+-- ═══════════════════════════════════════════════════════════════════
+--
+-- An umpire is not school property. He belongs to a union or an association,
+-- stands at Hilton one Saturday and Westville the next, and his accreditation
+-- is decided by neither of them. Until now this platform had no record of him
+-- at all: match_official below stores a NAME TYPED ONTO A FIXTURE, so two
+-- spellings of the same person were two people, nothing could be tracked
+-- across appointments, and there was nowhere to put an accreditation.
+--
+-- THIS TABLE IS NOT SCHOOL DATA, and that is enforced rather than stated.
+-- app_can() has no wildcard for school — "every governed row belongs to a
+-- tenant" — so an untenanted row is one a school-scoped assignment can never
+-- satisfy. Writing here therefore requires officiating.registry.manage held
+-- PLATFORM-WIDE, which is exactly the intent: a school appoints from the
+-- panel, it does not decide who is on it. That is also why `official` has no
+-- entry in packages/policy/src/tables.mjs and its policies are written by
+-- hand here, beside notification_read further down, which is the other
+-- exception and for its own reason.
+CREATE TABLE official (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  full_name    text NOT NULL CHECK (length(btrim(full_name)) > 0),
+  -- REQUIRED here, and nullable on player, and the difference is deliberate.
+  -- A school inherits a roster it did not enter and may be missing a birthday
+  -- for a boy who is already on it; an official is entered once, by the body
+  -- that accredits them, and there is no such history to inherit. Age is not
+  -- decoration on this table: minimum ages apply to standing in senior
+  -- cricket, and an adult on a field with children is somebody a school is
+  -- entitled to know the age of.
+  born         date NOT NULL,
+  -- The South African ID number carries the date of birth in its first six
+  -- digits (YYMMDD), so `born` and `id_number` are two statements of the same
+  -- fact and can be checked against each other rather than trusted
+  -- separately. The Luhn check digit is deliberately NOT enforced here, for
+  -- the same reason it is not on player: a constraint that rejects a real
+  -- person's real number because it was mistyped upstream blocks somebody's
+  -- registration at the worst moment. Both checks happen on the way in.
+  id_number    text CHECK (id_number IS NULL OR id_number ~ '^[0-9]{13}$'),
+  email        text,
+  phone        text,
+  -- The body that holds them — "KwaZulu-Natal Cricket Umpires Association",
+  -- "CSA Elite Panel". Free text on purpose: the set of associations in South
+  -- African cricket is not ours to close, and guessing at it is how a
+  -- vocabulary ends up with a fifth spelling nobody uses.
+  panel        text,
+  -- Their own account, when they have one — which is what lets them file a
+  -- report under officiating.report. Most officials never will, and the
+  -- register does not depend on it.
+  person_id    uuid REFERENCES app_user(id) ON DELETE SET NULL,
+  -- Standing somebody down is an UPDATE, never a DELETE — the same rule
+  -- match_official states below. Who stood in a disputed fixture is exactly
+  -- the sort of thing that must survive them leaving the panel.
+  active       boolean NOT NULL DEFAULT true,
+  created_by   uuid REFERENCES app_user(id),
+  created_at   timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX ON official (panel) WHERE active;
+CREATE UNIQUE INDEX ON official (id_number) WHERE id_number IS NOT NULL;
+
+-- An accreditation is a SPAN, not a label. A grade printed on the person
+-- cannot lapse, and lapsing is the whole point: standing in a fixture on an
+-- accreditation that expired in March is precisely what a register exists to
+-- catch. Kept as its own table so promotions keep their history — "Level 2
+-- since 2024" is a fact about a career, and overwriting a column would lose
+-- it every time somebody was promoted.
+CREATE TABLE official_accreditation (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  official_id  uuid NOT NULL REFERENCES official(id) ON DELETE CASCADE,
+  -- The ladder this product uses, lowest first. A closed vocabulary, checked,
+  -- because the alternative is the free-text drift this schema keeps closing:
+  -- "Level 2", "level two" and "L2" are one grade spelled three ways, and a
+  -- register that cannot compare two officials' grades is a list.
+  level        text NOT NULL CHECK (level IN ('club', 'level1', 'level2', 'national')),
+  -- Who awarded it. Free text for the same reason `panel` is.
+  issued_by    text,
+  valid_from   date NOT NULL,
+  -- NULL means it does not lapse. Not every grade carries a renewal date, and
+  -- inventing one so the column is never null would invent an expiry that
+  -- nobody set.
+  valid_until  date,
+  CONSTRAINT official_accreditation_span CHECK (valid_until IS NULL OR valid_until > valid_from),
+  recorded_by  uuid REFERENCES app_user(id),
+  recorded_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX ON official_accreditation (official_id);
+
+-- The grade somebody actually holds today, which is the highest one currently
+-- in its span — NULL when every accreditation they have has lapsed, which
+-- reads differently from never having had one and should.
+CREATE OR REPLACE FUNCTION official_level(p_official uuid, p_on date DEFAULT current_date)
+RETURNS text AS $$
+  SELECT a.level
+    FROM official_accreditation a
+   WHERE a.official_id = p_official
+     AND a.valid_from <= p_on
+     AND (a.valid_until IS NULL OR a.valid_until > p_on)
+   ORDER BY array_position(ARRAY['national','level2','level1','club']::text[], a.level)
+   LIMIT 1
+$$ LANGUAGE sql STABLE;
+
+ALTER TABLE official ENABLE ROW LEVEL SECURITY;
+ALTER TABLE official_accreditation ENABLE ROW LEVEL SECURITY;
+
+-- READ is open to anybody signed in, and that is a smaller disclosure than it
+-- first looks. match_official already argues the case below: the umpires'
+-- names are announced at the toss, printed on the scorecard and known to both
+-- sides, so treating them as confidential would be a fiction. A school about
+-- to appoint somebody has to be able to see who is on the panel and at what
+-- grade. What is NOT open is everything that makes them a person rather than
+-- a name — date of birth, ID number, contact — and that is held back by
+-- official_masked below rather than by this policy.
+CREATE POLICY official_read ON official FOR SELECT USING (app_user_id() IS NOT NULL);
+CREATE POLICY official_insert ON official FOR INSERT
+  WITH CHECK (app_can('officiating.registry.manage'));
+CREATE POLICY official_update ON official FOR UPDATE
+  USING (app_can('officiating.registry.manage'))
+  WITH CHECK (app_can('officiating.registry.manage'));
+
+CREATE POLICY official_accreditation_read ON official_accreditation
+  FOR SELECT USING (app_user_id() IS NOT NULL);
+CREATE POLICY official_accreditation_insert ON official_accreditation
+  FOR INSERT WITH CHECK (app_can('officiating.registry.manage'));
+CREATE POLICY official_accreditation_update ON official_accreditation
+  FOR UPDATE USING (app_can('officiating.registry.manage'))
+           WITH CHECK (app_can('officiating.registry.manage'));
+
+CREATE OR REPLACE FUNCTION official_stamp() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN NEW.created_by := app_user_id(); END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+CREATE TRIGGER official_stamp BEFORE INSERT ON official
+  FOR EACH ROW EXECUTE FUNCTION official_stamp();
+
+CREATE OR REPLACE FUNCTION official_accreditation_stamp() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN NEW.recorded_by := app_user_id(); END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+CREATE TRIGGER official_accreditation_stamp BEFORE INSERT ON official_accreditation
+  FOR EACH ROW EXECUTE FUNCTION official_accreditation_stamp();
+
+-- official_masked — the same column-masking shape db/09 generates for player,
+-- written by hand because `official` is deliberately not in TABLES (see the
+-- note on the table itself). Built by introspection rather than as a literal
+-- column list so that a column added to `official` later appears here
+-- automatically, masked if it is named below and open if it is not — the
+-- alternative is a view that silently stops carrying new columns, which is
+-- the trap db/02 documents about SELECT b.*.
+--
+-- The gate is officiating.registry.manage with NO scope arguments, which
+-- resolves to "holds it platform-wide": a school-scoped assignment cannot
+-- satisfy an untenanted row, so every school sees the name and the grade and
+-- only the union sees the person.
+DO $mask_official$
+DECLARE cols text;
+BEGIN
+  SELECT string_agg(
+           CASE WHEN c.column_name IN ('born', 'id_number', 'email', 'phone')
+                THEN format('CASE WHEN app_can(%L) THEN %I ELSE NULL END AS %I',
+                            'officiating.registry.manage', c.column_name, c.column_name)
+                ELSE format('%I', c.column_name)
+           END, ', ' ORDER BY c.ordinal_position)
+    INTO cols
+    FROM information_schema.columns c
+   WHERE c.table_schema = 'public' AND c.table_name = 'official';
+
+  IF cols IS NULL THEN
+    RAISE EXCEPTION 'cannot build official_masked: table official not found';
+  END IF;
+
+  -- security_invoker, for the reason spelled out at length on player_masked:
+  -- without it the view runs as its owner, who owns `official` too, and row
+  -- security is evaluated as a role that bypasses it.
+  EXECUTE format(
+    'CREATE OR REPLACE VIEW official_masked WITH (security_barrier = true, security_invoker = true) AS SELECT %s FROM official',
+    cols);
+END
+$mask_official$;
+
 CREATE TABLE match_official (
   id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   match_id     uuid NOT NULL REFERENCES match(id) ON DELETE CASCADE,
@@ -1529,6 +1710,16 @@ CREATE TABLE match_official (
   -- Set when the official holds an account here, which is what lets them file
   -- a report later under officiating.report. Null for everyone else.
   person_id    uuid REFERENCES app_user(id) ON DELETE SET NULL,
+  -- Who on the REGISTER this is, when they are on it. Nullable on purpose and
+  -- likely to stay that way for a while: a fixture that needs an umpire on
+  -- Saturday morning gets one, and a school standing a parent up at short
+  -- notice must not be blocked because that parent is not on a union panel.
+  -- So person_name above remains the fallback and this is the upgrade — an
+  -- appointment that names a registered official can be checked (accreditation
+  -- in date, no conflict of interest) and counted toward their record; one
+  -- that carries only a typed name can be neither, and says so by being null
+  -- rather than by pretending.
+  official_id  uuid REFERENCES official(id) ON DELETE SET NULL,
   panel        text,                            -- the union or association
   -- Standing an official down is an UPDATE, never a DELETE. No table in this
   -- schema has a DELETE policy for any role, and who was originally appointed

@@ -576,8 +576,16 @@ export function transportRoutes({ pool, secret }) {
 export function officialRoutes({ pool, secret }) {
   const err = (code, status = 400) => Object.assign(new Error(code), { status });
   const DUTIES = ["umpire", "third_umpire", "scorer", "referee"];
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   return {
-    // POST /matches/:id/officials { officials: [{ duty, name, personId?, panel? }] }
+    // POST /matches/:id/officials
+    //   { officials: [{ duty, name?, officialId?, personId?, panel? }] }
+    //
+    // `officialId` names somebody on the register (db/08) and is what turns an
+    // appointment from a typed name into a checkable one. It stays OPTIONAL,
+    // and that is not laziness: a fixture on Saturday morning that needs an
+    // umpire gets one, and a school standing a parent up at short notice must
+    // not be blocked because that parent is on nobody's panel.
     appoint: async (req, res) => {
       try {
         const officials = req.body?.officials;
@@ -585,17 +593,22 @@ export function officialRoutes({ pool, secret }) {
 
         for (const o of officials) {
           if (!DUTIES.includes(o?.duty)) throw err("duty_must_be_umpire_third_umpire_scorer_or_referee");
+          if (o?.officialId != null && !UUID.test(String(o.officialId))) throw err("official_id_invalid");
           // The name is required even when an account is named, because it is
           // what every reader sees: the read never joins app_user, and a blank
           // name on a scorecard is worse than a refusal here. See the table.
-          if (!o?.name || typeof o.name !== "string" || !o.name.trim()) throw err("name_required");
+          // The ONE exception is an appointment that names the register, where
+          // the name is filled in from it below rather than retyped — retyping
+          // it is how two spellings of one umpire got into the data.
+          const named = typeof o?.name === "string" && o.name.trim();
+          if (!named && o?.officialId == null) throw err("name_required");
         }
         // The same person twice on one duty is a mis-tick. The database has
         // partial unique indexes for this; catching it here names which one,
         // before anything is written.
         const seen = new Set();
         for (const o of officials) {
-          const key = `${o.duty}:${(o.personId || o.name.trim().toLowerCase())}`;
+          const key = `${o.duty}:${(o.officialId || o.personId || o.name.trim().toLowerCase())}`;
           if (seen.has(key)) throw err("duplicate_official");
           seen.add(key);
         }
@@ -607,19 +620,74 @@ export function officialRoutes({ pool, secret }) {
             [req.params.id]);
 
           let written = 0;
+          const standing = [];
           for (const o of officials) {
+            let name = typeof o.name === "string" ? o.name.trim() : "";
+            let panel = o.panel == null ? null : String(o.panel).slice(0, 200);
+
+            if (o.officialId != null) {
+              // Read the register under the caller's own identity — the read
+              // policy is "anybody signed in", so this needs no widening, and
+              // going through official_masked rather than the table means a
+              // school appointing somebody still does not learn their date of
+              // birth as a side effect of appointing them.
+              const { rows } = await client.query(
+                `select o.id, o.full_name, o.panel, o.active,
+                        official_level(o.id) as level,
+                        (select count(*)::int from official_accreditation a
+                          where a.official_id = o.id) as accreditations,
+                        o.person_id is not null as linked,
+                        (o.person_id is not null and exists (
+                           select 1 from role_assignment ra
+                            where ra.person_id = o.person_id and ra.active
+                              and ra.school_id = match_school($2)
+                              and (ra.valid_until is null or ra.valid_until > current_date)
+                         )) as conflict
+                   from official_masked o
+                  where o.id = $1`,
+                [o.officialId, req.params.id]);
+              const reg = rows[0];
+              if (!reg) throw err("no_such_official", 404);
+              // Standing DOWN is a decision somebody made about this person.
+              // Appointing them anyway would make it meaningless, and unlike a
+              // lapsed grade there is no Saturday-morning argument for it.
+              if (!reg.active) throw err("official_not_active", 422);
+
+              if (!name) name = reg.full_name;
+              if (panel == null) panel = reg.panel;
+
+              standing.push({
+                officialId: reg.id,
+                name: reg.full_name,
+                level: reg.level,
+                // Lapsed and never-accredited are both a null grade and only
+                // one of them means "go and renew it".
+                lapsed: reg.level == null && Number(reg.accreditations) > 0,
+                accredited: reg.level != null,
+                // An official with no account here cannot be checked against
+                // the school's own people at all, and `null` says so. Matching
+                // on the name instead would be the fuzzy merge this codebase
+                // refuses everywhere else.
+                conflict: reg.linked ? reg.conflict === true : null,
+              });
+            }
+
             const r = await client.query(
               `insert into match_official
-                 (match_id, school_id, duty, person_name, person_id, panel, appointed_by, appointed_at)
-               values ($1, match_school($1), $2, $3, $4, $5, app_user_id(), now())
+                 (match_id, school_id, duty, person_name, person_id, official_id, panel, appointed_by, appointed_at)
+               values ($1, match_school($1), $2, $3, $4, $5, $6, app_user_id(), now())
                returning id`,
-              [req.params.id, o.duty, o.name.trim(), o.personId ?? null,
-               o.panel == null ? null : String(o.panel).slice(0, 200)]);
+              [req.params.id, o.duty, name, o.personId ?? null, o.officialId ?? null, panel]);
             written += r.rowCount;
           }
           // Zero rows and no error means the policy refused every insert.
           if (written === 0) throw err("not_permitted", 403);
-          return { matchId: req.params.id, appointed: written };
+          // The appointment is made EITHER WAY, and what was wrong with it
+          // comes back with it. Refusing a lapsed accreditation outright would
+          // block a fixture that has to be played; saying nothing would make
+          // the register decorative. So it is recorded, and named, at the one
+          // moment somebody is in a position to do something about it.
+          return { matchId: req.params.id, appointed: written, standing };
         });
         res.json(out);
       } catch (e) {

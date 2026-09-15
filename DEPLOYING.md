@@ -111,6 +111,22 @@ postgresql://scrbrd_app.<project-ref>:<app secret>@aws-1-<region>.pooler.supabas
 **Never run `--reset` against Supabase.** It drops the whole public schema and
 takes Supabase's own objects with it.
 
+Use `--reset-objects` instead. It drops only what this project created in
+`public` — every table, view, routine and enum this repository's migrations
+made — and leaves the schema, its grants, and anything belonging to an
+extension exactly as they were. The ledger goes with it, so the next run
+applies every migration from the beginning:
+
+```sh
+DATABASE_URL='<owner connection string>' node tools/migrate.mjs --reset-objects --seed
+```
+
+That is the DEMONSTRATION path, and only the demonstration path: it destroys
+everything in the database and reseeds it with invented people. Against a
+database holding one real record it is exactly as wrong as `--reset` would be
+— there the rule above still stands, and a schema change is a new
+`db/NN_*.sql` with the `ALTER`s.
+
 Two things to know before choosing this for anything real: a free project
 sleeps after about a week of inactivity, and the region list has nothing in
 Africa, so every query from a South African school crosses to Europe and back.

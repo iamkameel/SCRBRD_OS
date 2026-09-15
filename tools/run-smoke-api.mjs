@@ -100,6 +100,9 @@ const WALKS = [
   // Reading the other side ahead of a fixture: the one deliberate crossing of
   // the tenant line, bounded by a fixture, a window and a column list.
   "opposition",
+  // The officials register: a panel that belongs to no school, read
+  // through official_masked so a name is public and a person is not.
+  "register",
 ];
 
 // Walks that drive a real browser AND need a database. They need two things
