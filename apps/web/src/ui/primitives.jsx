@@ -193,6 +193,20 @@ const Input = ({ label, value, onChange, type="text", placeholder, small }) => {
   );
 };
 
+// An option is either a bare primitive ("1XI") or {value, label}. `o.value||o`
+// looked like a reasonable fallback for the second shape but is wrong for any
+// FALSY value — an empty string standing for "none selected", or a real 0 —
+// because `"" || o` and `0 || o` both fall through to the whole object. React
+// then stringifies it onto the DOM attribute, so the option silently became
+// value="[object Object]" and choosing it committed that string rather than
+// the empty/zero value the caller asked for. Caught because a squad-number
+// clear in the Add Player modal hung a browser walk for a full 30 seconds
+// selecting an option that, from Playwright's side, did not exist — the
+// select had one whose value was NOT "", search as it might.
+//
+// The fix is a shape check, not a truthier fallback: an option is the
+// {value, label} form only when it actually is one.
+const optionOf = (o) => (o != null && typeof o === "object" ? o : { value: o, label: o });
 const Select = ({ label, value, onChange, options }) => {
   const id = useId();
   return (
@@ -201,7 +215,7 @@ const Select = ({ label, value, onChange, options }) => {
     <select id={id} value={value} onChange={e=>onChange(e.target.value)}
       style={{width:"100%",padding:"9px 12px",background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,
         color:D.textPrimary,fontFamily:D.body,fontSize:"13px"}}>
-      {options.map(o=><option key={o.value||o} value={o.value||o}>{o.label||o}</option>)}
+      {options.map(o=>{ const { value: v, label: l } = optionOf(o); return <option key={v} value={v}>{l}</option>; })}
     </select>
   </div>
   );

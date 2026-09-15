@@ -4937,13 +4937,20 @@ END $$ LANGUAGE plpgsql SECURITY DEFINER;
 CREATE TRIGGER bowling_ceiling_open_school_only BEFORE INSERT OR UPDATE ON bowling_ceiling_open
   FOR EACH ROW EXECUTE FUNCTION bowling_ceiling_school_only();
 
+-- Pace here means "not spin", which used to be read off a free-text style
+-- string by regex — a description this schema no longer stores. bowling_style
+-- is now the closed vocabulary the CHECK on player enforces: 'F', 'M' or 'S'.
+-- An unrecorded style is still treated as pace, for the reason above the
+-- directive table: the cost of wrongly limiting a spinner is an over taken
+-- off him early; the cost of wrongly NOT limiting an unrecorded quick is a
+-- stress fracture.
 CREATE OR REPLACE FUNCTION bowling_directive_for(p_player uuid)
 RETURNS TABLE (age_band text, pace boolean, max_overs_per_spell smallint, max_overs_per_day smallint) AS $$
   SELECT age_band(p.born) AS age_band,
-         (p.bowling_style IS NULL OR p.bowling_style !~* 'spin|slow') AS pace,
-         CASE WHEN (p.bowling_style IS NULL OR p.bowling_style !~* 'spin|slow')
+         (p.bowling_style IS NULL OR p.bowling_style IN ('F','M')) AS pace,
+         CASE WHEN (p.bowling_style IS NULL OR p.bowling_style IN ('F','M'))
               THEN coalesce(c.max_overs_per_spell, d.max_overs_per_spell) END,
-         CASE WHEN (p.bowling_style IS NULL OR p.bowling_style !~* 'spin|slow')
+         CASE WHEN (p.bowling_style IS NULL OR p.bowling_style IN ('F','M'))
               THEN coalesce(c.max_overs_per_day, d.max_overs_per_day) END
     FROM player p
     LEFT JOIN bowling_directive d ON d.age_band = age_band(p.born)

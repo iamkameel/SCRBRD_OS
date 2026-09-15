@@ -38,11 +38,27 @@ try {
   group("A boy joins the roster, once — the office's job, not the coach's");
   {
     const add = (tok, body) => api("/api/players", { method: "POST", token: tok, body });
-    const r = await add(head, { schoolId: HIL, fullName: "Themba Nkosi", teamCode: "U15A", playingRole: "bowler", battingStyle: "right-hand", born: "2011-03-14" });
+    const r = await add(head, { schoolId: HIL, fullName: "Themba Nkosi", teamCode: "U15A", playingRole: "bowler",
+      battingStyle: "R", bowlingArm: "L", bowlingStyle: "F", born: "2011-03-14" });
     ok("the director of sport adds him", r.status === 200 && r.body?.id);
     const boyId = r.body?.id;
     ok("...he is really in the database, at the right school", (await q(`select school_id, team_code, playing_role from player where id = $1`, [boyId]))[0]?.school_id === HIL);
     ok("...and the roster read carries him", (await rows("/api/read/players", head)).some((p) => p.id === boyId));
+    // An arm is independent of the hand he bats with — a right-hand bat can
+    // be a left-arm bowler, which is exactly what was just asked for. If the
+    // write ever collapsed the two into one field this comes back wrong.
+    ok("...and his bowling arm was NOT taken from his batting hand",
+       (await q(`select batting_style, bowling_arm, bowling_style from player where id = $1`, [boyId]))[0]?.bowling_arm === "L");
+
+    // The vocabulary the CHECK constraints enforce — validated here too, so
+    // the refusal is a clean 400 naming the field rather than a raw
+    // constraint-violation message reaching a school office.
+    ok("a batting hand outside R/L is refused",
+       (await add(head, { schoolId: HIL, fullName: "Style Boy", teamCode: "U15A", battingStyle: "RHB" })).status === 400);
+    ok("a bowling style outside F/M/S is refused",
+       (await add(head, { schoolId: HIL, fullName: "Pace Boy", teamCode: "U15A", bowlingStyle: "left-arm orthodox" })).status === 400);
+    ok("a date of birth outside a school pupil's plausible age is refused",
+       (await add(head, { schoolId: HIL, fullName: "Old Boy", teamCode: "U15A", born: "1970-01-01" })).status === 400);
 
     ok("a coach cannot — the roster is not his to write", [403, 401].includes((await add(coach, { schoolId: HIL, fullName: "Second Boy", teamCode: "U15A" })).status));
     ok("a spectator cannot", [403, 401].includes((await add(watcher, { schoolId: HIL, fullName: "Third Boy", teamCode: "U15A" })).status));

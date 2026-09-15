@@ -567,10 +567,25 @@ INSERT INTO drill (school_id, name, category, duration_min, description) VALUES
 -- capture. A chart that silently dropped them would report a season as emptier
 -- than it was, so the mixed provenance is here to be drawn.
 
-UPDATE player SET batting_style = 'RHB' WHERE id IN (
+-- Single-letter, matching every view that renders a hand or an arm
+-- ({batHand}HB, bowlArm==="L"?"LA":"RA"). This used to write 'RHB'/'LHB' —
+-- a spelling that passed placement.mjs's own defensive /^l/i regex (so the
+-- wagon wheel drew correctly) but broke every direct ==="L" comparison
+-- elsewhere: SquadView, ProfilesView and AnalyticsView all showed "LHBHB"
+-- and right-handed styling for a boy seeded as left-handed. The CHECK on
+-- player.batting_style now refuses the old spelling outright.
+UPDATE player SET batting_style = 'R' WHERE id IN (
   'aaaaaaaa-0000-0000-0000-000000000001','aaaaaaaa-0000-0000-0000-000000000002',
   'aaaaaaaa-0000-0000-0000-000000000004','aaaaaaaa-0000-0000-0000-000000000005');
-UPDATE player SET batting_style = 'LHB' WHERE id = 'aaaaaaaa-0000-0000-0000-000000000003';
+UPDATE player SET batting_style = 'L' WHERE id = 'aaaaaaaa-0000-0000-0000-000000000003';
+
+-- Bowling arm and pace/spin, for the boys named as bowlers. Naidoo bats left
+-- and bowls left-arm spin — a real, common combination, and the one that
+-- exercises bowlArm as a fact independent of batHand rather than assuming
+-- they always agree.
+UPDATE player SET bowling_arm = 'L', bowling_style = 'S' WHERE id = 'aaaaaaaa-0000-0000-0000-000000000003';
+UPDATE player SET bowling_arm = 'R', bowling_style = 'F' WHERE id = 'bbbbbbbb-0000-0000-0000-000000000001';
+UPDATE player SET bowling_arm = 'R', bowling_style = 'M' WHERE full_name = 'B Khumalo';
 
 INSERT INTO ball_event (
   match_id, school_id, seq, epoch, innings,

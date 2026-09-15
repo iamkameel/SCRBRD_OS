@@ -956,6 +956,86 @@ try {
     await c.ctx.close();
   }
 
+  // ── Add Player: age-aware, and the preview is the real card ─────
+  //
+  // Three things this form used to get wrong, each invisible from the
+  // component's own source: the button was only ever offered to a hardcoded
+  // list of demo role names, batting hand was written as "right-hand" —
+  // a spelling nothing else in the app ever reads — and a bowling arm had no
+  // field to enter at all, so every bowler in the roster rendered "RA"
+  // regardless of which arm he actually bowled with. This drives the form as
+  // a real school administrator would and checks the roster afterwards, not
+  // just the modal.
+  group("Add Player is age-aware, and its preview is the real roster card");
+  {
+    const c = await open();
+    await signIn(c.page, /Director of Sport/);
+    const tid = (id) => c.page.locator(`[data-testid="${id}"]`);
+    await tid("nav-squad").click({ timeout: 6000 }); await c.page.waitForTimeout(1000);
+    ok("she is offered the button — she holds player.profile.manage",
+       await c.page.locator("button", { hasText: "+ Add Player" }).count() === 1);
+    await c.page.locator("button", { hasText: "+ Add Player" }).click({ timeout: 4000 });
+    await c.page.waitForTimeout(400);
+    const modal = c.page.locator('[data-testid="modal-backdrop"]');
+    ok("the modal opens", await modal.isVisible());
+
+    const preview = tid("add-player-preview");
+    ok("the preview is a placeholder before he has a name", (await preview.innerText()).includes("as it will appear"));
+    await modal.locator('input[type="text"]').first().fill("Sipho Zulu");
+    await c.page.waitForTimeout(200);
+    ok("...and becomes his name the moment it is typed, in the SAME card the roster grid draws",
+       (await preview.innerText()).includes("Sipho Zulu"));
+
+    // Bowling fields are for a bowler or an allrounder — hidden for the
+    // batter this form defaults to, so a keeper is never asked for an arm he
+    // does not bowl with.
+    ok("no bowling arm is offered to a batter", await c.page.locator('[role="radiogroup"][aria-label="Bowling arm"]').count() === 0);
+    await modal.locator("select").nth(2).selectOption("bowler");   // selects, in DOM order: Squad No, Team, Role
+    await c.page.waitForTimeout(200);
+    ok("...and appears the moment the role says bowler", await c.page.locator('[role="radiogroup"][aria-label="Bowling arm"]').count() === 1);
+    await c.page.locator('[role="radiogroup"][aria-label="Bowling arm"] button', { hasText: "Left" }).click({ timeout: 4000 });
+    await c.page.locator('[role="radiogroup"][aria-label="Bowling pace or spin"] button', { hasText: "Spin" }).click({ timeout: 4000 });
+    await c.page.waitForTimeout(200);
+    ok("the preview reflects an arm independent of his batting hand",
+       (await preview.innerText()).includes("LAS"));
+
+    // U13A: an upper bound only. A date of birth well past it warns rather
+    // than blocking, because playing a gifted boy up a band is normal.
+    await modal.locator("select").nth(1).selectOption("U13A");     // Team is the second select (after Squad No)
+    const oldEnough = new Date(); oldEnough.setFullYear(oldEnough.getFullYear() - 15); oldEnough.setMonth(6, 1);
+    await modal.locator('input[type="date"]').fill(oldEnough.toISOString().slice(0, 10));
+    await c.page.waitForTimeout(300);
+    ok("too old for the selected band is named, not silently accepted",
+       await tid("age-eligibility-note").isVisible());
+    const addBtn = c.page.locator("button", { hasText: /^Add Player$/ }).last();
+    ok("...but the form is not blocked by it — the office may still enter him", await addBtn.isEnabled());
+
+    // Squad No 2 is T Bekker's, on the 1XI seed carries.
+    await modal.locator("select").nth(1).selectOption("1XI");
+    await modal.locator("select").nth(0).selectOption("2");        // Squad No is the first select
+    await c.page.waitForTimeout(300);
+    ok("a squad number already worn by someone on the team is named",
+       (await tid("squad-no-clash-note").innerText()).includes("Bekker"));
+
+    // A real save, read back from the database through the same roster read
+    // every other screen uses — not just the modal closing.
+    await modal.locator("select").nth(0).selectOption("");         // clear the clashing squad no
+    await addBtn.click({ timeout: 4000 });
+    await c.page.waitForTimeout(1200);
+    ok("saving closes the modal", await modal.count() === 0);
+    const tok = await (await fetch(`${API}/api/auth/dev-login`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "sarah@example.invalid", deviceId: "browser-read" }),
+    })).json().then((j) => j.token);
+    const p = await (await fetch(`${API}/api/read/players`, { headers: { authorization: `Bearer ${tok}` } }))
+      .json().then((j) => j.rows.find((r) => r.full_name === "Sipho Zulu"));
+    ok("he is really on the roster", !!p);
+    ok("...with the arm and pace/spin captured as independent facts, not folded into one style string",
+       p?.batting_style === "R" && p?.bowling_arm === "L" && p?.bowling_style === "S");
+    ok("no console errors", c.errors.length === 0);
+    await c.ctx.close();
+  }
+
   // ── Onboarding has a way out ─────────────────────────────────────
   // A person who clicks "Get Started" by mistake, or who already has an
   // account, used to have no way back to the login screen from the welcome

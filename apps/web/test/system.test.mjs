@@ -22,7 +22,7 @@ import { T, textOn } from "../src/design/tokens.js";
 import { Bento, BentoCard, HeroSurface, TonalSurface, GlassSurface } from "../src/ui/surfaces.jsx";
 import { Metric, MetricGroup, Trend, Sparkline, StatRow, StatusPill, SegmentedControl, ContextBar, dash }
   from "../src/ui/data.jsx";
-import { Modal } from "../src/ui/primitives.jsx";
+import { Modal, Select } from "../src/ui/primitives.jsx";
 
 let pass = 0, fail = 0;
 const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${d}` : ""); } };
@@ -233,6 +233,34 @@ ok("the backdrop is addressable, so a walk can prove it dismisses",
    /data-testid="modal-backdrop"/.test(dlg));
 ok("the body is rendered inside the dialog, not beside it",
    dlg.indexOf("body") > dlg.indexOf('role="dialog"'));
+
+// ══════════════════════════════════════════════════════════════════
+//
+// A "none selected" option is written as {value:"", label:"…"} in at least
+// eight places across the views (a linked-player picker, a squad number, a
+// ground, a spare-kit issue…), and a falsy VALUE is exactly where
+// `o.value || o` stops meaning "the option's value, or the option itself" —
+// "" and 0 are both falsy, so it silently fell through to the whole object
+// and React stringified that onto the DOM as value="[object Object]". Caught
+// because a browser walk hung for 30 real seconds selecting an option that,
+// from the outside, did not exist: the select had one, but not the one whose
+// value was "".
+group("A select option's value survives being falsy");
+
+const opt = (html, i) => (html.match(/<option[^>]*>/g) ?? [])[i] ?? "";
+const blank = html(h(Select, { value: "", onChange: () => {}, options: [{ value: "", label: "None" }, { value: "x", label: "X" }] }));
+ok('an empty-string option value is NOT stringified to "[object Object]"', !blank.includes("[object Object]"));
+ok('...it is the empty string, on the element a screen reader and Playwright alike select by',
+   /<option[^>]*value=""[^>]*>/.test(opt(blank, 0)));
+
+const zero = html(h(Select, { value: "0", onChange: () => {}, options: [{ value: 0, label: "Zero" }, { value: 1, label: "One" }] }));
+ok("a real zero survives the same way", /<option[^>]*value="0"[^>]*>/.test(opt(zero, 0)));
+
+// The other shape Select accepts — bare primitives, not {value,label} objects
+// — must still render correctly; the fix must not have narrowed Select to
+// only the object form.
+const bare = html(h(Select, { value: "1XI", onChange: () => {}, options: ["1XI", "U16A"] }));
+ok("a bare string option still renders as itself, not as an object", /<option[^>]*value="1XI"[^>]*>1XI<\/option>/.test(bare));
 
 // ══════════════════════════════════════════════════════════════════
 group("The grid holds together");
