@@ -139,4 +139,9 @@ Ball: ${eventDesc}${shot?" | Shot: "+shot.label:""}${seg?" | "+seg.label+(ball.z
   return await fetchCommentary(prompt);
 }
 
-export { ALL_SHOTS, ALL_SHOTS_FLAT, SHOT_CATEGORIES, SHOT_CATS };
+// fetchAICommentary was defined here and exported nowhere, while
+// panels.jsx called it — so opening PRO MODE threw
+// "fetchAICommentary is not defined" and took the whole scorer down with it,
+// blank screen, mid-match. The bundler cannot see this: an undefined free
+// variable is legal JavaScript right up until the line runs.
+export { ALL_SHOTS, ALL_SHOTS_FLAT, SHOT_CATEGORIES, SHOT_CATS, fetchAICommentary };

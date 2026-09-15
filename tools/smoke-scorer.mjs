@@ -177,6 +177,43 @@ try {
   ok(`undo accepted ${undone} presses (old cap was 10)`, undone >= 4);
   ok("undo rolled the derived scoreboard back", rolledBack !== null && rolledBack !== after);
   ok("no errors while undoing", errors.length === errsBeforeScoring);
+
+  // ── PRO MODE ──────────────────────────────────────────────────
+  //
+  // Reported from the live app: "in Live Scoring, the Pro Mode doesn't work."
+  // It did not. Opening it threw "fetchAICommentary is not defined" — the
+  // function lived in scorer/shots.js, was exported by nothing, and was called
+  // from scorer/panels.jsx — and the ReferenceError took the whole scorer
+  // down. Blank screen, mid-match, with a school's game in progress.
+  //
+  // NOTHING COULD HAVE SEEN IT SHORT OF OPENING THE SCREEN. The bundler does
+  // not resolve free variables, tools/check-imports.mjs only looks for names
+  // some OTHER module exports (this one was exported by nobody), and the walk
+  // stopped at the focus pad. A whole half of the scorer had no coverage at
+  // all, which is the actual defect this group closes.
+  const errsBeforePro = errors.length;
+  const proOpened = await click(/PRO MODE/i, 4000);
+  await page.waitForTimeout(1200);
+  ok("pro mode is offered on the pad", proOpened);
+  ok("...and opening it does not throw", errors.length === errsBeforePro,
+     errors.slice(errsBeforePro).join(" | "));
+  ok("...the full-capture grid is really on the page",
+     (await page.locator(".pro-score-grid").count()) === 1,
+     "a crash here renders nothing, so the grid is the difference between " +
+     "the screen switching and the screen dying");
+  ok("...with both columns drawn",
+     (await page.locator(".pro-score-grid > *").count()) >= 2);
+  ok("...and the way back is offered",
+     (await page.locator("button", { hasText: /FOCUS MODE/i }).count()) >= 1);
+
+  // Back again, because a mode you cannot leave is the dialog bug wearing a
+  // different hat — and the return trip re-renders the pad that was standing
+  // when the crash happened.
+  await click(/FOCUS MODE/i, 4000);
+  await page.waitForTimeout(900);
+  ok("...and going back to the pad works", /UNDO|QUICK MODE|DOT/i.test(await text()));
+  ok("no errors across the round trip", errors.length === errsBeforePro,
+     errors.slice(errsBeforePro).join(" | "));
 } catch (e) {
   ok(`scorer walk threw: ${e.message.slice(0, 90)}`, false);
 } finally {
