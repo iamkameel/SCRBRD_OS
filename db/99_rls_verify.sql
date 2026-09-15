@@ -59,6 +59,43 @@ CREATE OR REPLACE FUNCTION _revoke(p_person uuid) RETURNS void AS $$
   UPDATE role_assignment SET active = false WHERE person_id = p_person;
 $$ LANGUAGE sql SECURITY DEFINER;
 
+-- Reach past RLS to state a fact about the whole table. Used only where the
+-- claim IS "no such row exists anywhere" — an assertion scoped to what one
+-- reader can see could not tell an empty table from a well-hidden row.
+CREATE OR REPLACE FUNCTION _count_open_guardian_links() RETURNS integer AS $$
+  SELECT count(*)::int FROM assignment_subject s
+    JOIN role_assignment a ON a.id = s.assignment_id AND a.role = 'guardian'
+   WHERE s.valid_until IS NULL;
+$$ LANGUAGE sql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION _count_guardian_assignments(p_person uuid) RETURNS integer AS $$
+  SELECT count(*)::int FROM role_assignment
+   WHERE person_id = p_person AND role = 'guardian';
+$$ LANGUAGE sql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION _count_subjects(p_player uuid) RETURNS integer AS $$
+  SELECT count(*)::int FROM assignment_subject WHERE player_id = p_player;
+$$ LANGUAGE sql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION _count_accounts(p_email text) RETURNS integer AS $$
+  SELECT count(*)::int FROM app_user WHERE lower(email) = lower(p_email);
+$$ LANGUAGE sql SECURITY DEFINER;
+
+-- Move a child's eighteenth birthday, or take their date of birth away. Both
+-- are owner-only edits, and both roll back with the transaction.
+CREATE OR REPLACE FUNCTION _set_born(p_player uuid, p_born date) RETURNS void AS $$
+  UPDATE player SET born = p_born WHERE id = p_player;
+$$ LANGUAGE sql SECURITY DEFINER;
+
+-- Wind a live link's end date back to a date already past. This is how the
+-- "expiry is live, there is no cron" claim is made falsifiable: nothing runs
+-- between this and the read that follows it except app_can() itself.
+CREATE OR REPLACE FUNCTION _expire_link(p_player uuid) RETURNS void AS $$
+  UPDATE assignment_subject s SET valid_until = s.valid_from
+    FROM role_assignment a
+   WHERE a.id = s.assignment_id AND a.role = 'guardian' AND s.player_id = p_player;
+$$ LANGUAGE sql SECURITY DEFINER;
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -79,6 +116,7 @@ DECLARE
   U_SCORER  uuid := '88888888-0000-0000-0000-000000000006';
   U_SARAH   uuid := '88888888-0000-0000-0000-000000000007';  -- 4 assignments, 2 schools
   U_PLAT    uuid := '88888888-0000-0000-0000-000000000014';  -- platformadmin, no school
+  U_OWNER   uuid := '88888888-0000-0000-0000-000000000022';  -- superadmin, every capability
   O_UMPIRE  uuid;                                            -- seeded into the register below
   v_born    date;
   v_level   text;
@@ -101,6 +139,18 @@ DECLARE
   P_OTHER   uuid := 'aaaaaaaa-0000-0000-0000-000000000002';  -- T Bekker, also injured
   I_OWN     uuid := 'cccccccc-0000-0000-0000-000000000001';  -- R Pillay's injury, 1XI
   I_U16B    uuid := 'cccccccc-0000-0000-0000-000000000003';  -- K Dlamini's injury, U16B
+  -- The majority fixtures. S Naidoo is seeded past eighteen ON PURPOSE (see
+  -- 98_seed_pilot.sql), so his guardian link is the one that has already
+  -- ended. B Khumalo is U13A with no guardian link at all, which leaves him
+  -- free to be linked and re-linked by the assertions below without
+  -- disturbing anything else the file asserts.
+  U_REGISTRAR uuid := '88888888-0000-0000-0000-00000000000c';  -- holds guardian.link.manage
+  U_NAIDOO  uuid := '88888888-0000-0000-0000-000000000012';  -- parent of an adult
+  U_BURSAR  uuid := '88888888-0000-0000-0000-000000000015';  -- holds no guardian assignment
+  P_ADULT   uuid := 'aaaaaaaa-0000-0000-0000-000000000003';  -- S Naidoo, eighteen
+  P_U13     uuid := 'aaaaaaaa-0000-0000-0000-000000000013';  -- B Khumalo, unlinked
+  v_ok      boolean;
+  v_reason  text;
   n int;
 BEGIN
   -- ── 1. Nobody is anybody by default ────────────────────────────
@@ -826,6 +876,202 @@ BEGIN
   PERFORM _assert(v_level = 'level2', 'a current accreditation does not read as current');
   SELECT official_level(O_UMPIRE, current_date + 500) INTO v_level;
   PERFORM _assert(v_level IS NULL, 'a lapsed accreditation still reads as current');
+
+  -- ── Guardianship ends at eighteen ──────────────────────────────
+  --
+  -- A guardian's access is co-ownership of a CHILD's record. The model had no
+  -- way to say that: both creation paths wrote valid_until NULL, so a parent
+  -- linked to a thirteen-year-old still read medical status, injury nature and
+  -- the full passport when that person was thirty. These assertions are what
+  -- stop it going back.
+
+  -- Not one open-ended guardian link survives the seed. Asked of the whole
+  -- table rather than of one reader's view, because "I cannot see one" and
+  -- "there is not one" are different claims and only the second is the point.
+  PERFORM _assert(_count_open_guardian_links() = 0,
+    'a guardian link was created with no end date');
+
+  -- The date is the child's eighteenth birthday, not an approximation of it.
+  SELECT count(*) INTO n FROM assignment_subject s
+    JOIN role_assignment a ON a.id = s.assignment_id AND a.role = 'guardian'
+    JOIN player p ON p.id = s.player_id
+   WHERE s.valid_until <> greatest(majority_on(p.born), s.valid_from);
+  PERFORM _assert(n = 0, 'a guardian link ends on some date other than the child''s majority');
+
+  -- The live half: a parent of a minor still reads their child today. Asserted
+  -- alongside the expiry rather than trusting section 5, so that a change which
+  -- expired EVERY link would fail here instead of passing quietly.
+  PERFORM _as(U_PARENT);
+  SELECT count(*) INTO n FROM player_masked WHERE id = P_INJURED AND born IS NOT NULL;
+  PERFORM _assert(n = 1, 'a guardian of a minor cannot read their own child');
+
+  -- The dead half, and the reason the seed carries an adult: a parent whose
+  -- child has turned eighteen reads nothing of that child. Not a redacted row
+  -- — no row.
+  PERFORM _as(U_NAIDOO);
+  SELECT count(*) INTO n FROM player_masked WHERE id = P_ADULT;
+  PERFORM _assert(n = 0, 'a guardian still reads the record of a child who has turned eighteen');
+  SELECT count(*) INTO n FROM injury;
+  PERFORM _assert(n = 0, 'an expired guardian link still reaches injuries');
+
+  -- ── The two refusals, and what a refusal must not leave behind ──
+  PERFORM _as(U_REGISTRAR);
+
+  -- Linking a guardian to someone already grown is refused. The office cannot
+  -- re-open access to an adult's record by making a fresh link.
+  --
+  -- assignment_subject's own CHECK (valid_from <= valid_until) is a backstop
+  -- here — removing the guard below does not let the link through, it makes
+  -- the INSERT abort on a constraint violation instead. That is exactly the
+  -- difference the guard buys: a named refusal the API can turn into a 422,
+  -- rather than an exception that takes the caller's transaction with it.
+  SELECT ok, reason INTO v_ok, v_reason
+    FROM guardian_link_establish(U_BURSAR, P_ADULT, 'parent');
+  PERFORM _assert(NOT v_ok AND v_reason = 'player_is_an_adult',
+    'a guardian can be linked to a player who has turned eighteen');
+
+  -- A refusal must leave NOTHING behind. guardian_link_establish() creates the
+  -- guardian assignment before it reaches the subject row, and a plpgsql
+  -- RETURN is not a rollback — so a guard placed after that INSERT would answer
+  -- false and still leave a live guardian assignment standing, naming nobody.
+  -- This is the assertion that catches it being moved back.
+  PERFORM _assert(_count_guardian_assignments(U_BURSAR) = 0,
+    'a refused guardian link left an assignment behind');
+
+  -- No date of birth, no link. Guardianship is precisely where the age has to
+  -- be known, and the honest answer is to refuse rather than assume.
+  PERFORM _set_born(P_U13, NULL);
+  SELECT ok, reason INTO v_ok, v_reason
+    FROM guardian_link_establish(U_BURSAR, P_U13, 'parent');
+  PERFORM _assert(NOT v_ok AND v_reason = 'player_date_of_birth_required',
+    'a guardian was linked to a child with no recorded date of birth');
+  PERFORM _assert(_count_guardian_assignments(U_BURSAR) = 0,
+    'a link refused for want of a date of birth left an assignment behind');
+
+  -- Restore the date, and the same call now succeeds and ends on his birthday.
+  PERFORM _set_born(P_U13, (current_date - interval '13 years')::date);
+  SELECT ok INTO v_ok FROM guardian_link_establish(U_BURSAR, P_U13, 'parent');
+  PERFORM _assert(v_ok, 'a guardian cannot be linked to a thirteen-year-old');
+  PERFORM _assert(_count_subjects(P_U13) = 1, 'the link was not recorded');
+
+  -- And asking twice says so, rather than writing a second row. This is not
+  -- housekeeping: `already_linked` used to be decided by valid_until IS NULL,
+  -- which no link satisfies now that every one of them carries an end date,
+  -- so the duplicate would have gone in unnoticed.
+  SELECT ok, reason INTO v_ok, v_reason
+    FROM guardian_link_establish(U_BURSAR, P_U13, 'parent');
+  PERFORM _assert(NOT v_ok AND v_reason = 'already_linked',
+    'linking the same guardian to the same child twice was not refused');
+  PERFORM _assert(_count_subjects(P_U13) = 1,
+    'a duplicate guardian subject row was written for a child already linked');
+
+  -- The two structural claims again, now that a link has been made THROUGH THE
+  -- FUNCTION rather than by the seed. Asked twice on purpose: the first pair
+  -- above runs before any link is created here, so on its own it only ever
+  -- proves the seed carries end dates, and guardian_link_establish() could
+  -- quietly go back to writing NULL without a single assertion turning red.
+  PERFORM _assert(_count_open_guardian_links() = 0,
+    'guardian_link_establish created a link with no end date');
+  SELECT count(*) INTO n FROM assignment_subject s
+    JOIN role_assignment a ON a.id = s.assignment_id AND a.role = 'guardian'
+    JOIN player p ON p.id = s.player_id
+   WHERE s.valid_until <> greatest(majority_on(p.born), s.valid_from);
+  PERFORM _assert(n = 0,
+    'guardian_link_establish ended a link on some date other than the child''s majority');
+
+  -- EXPIRY IS LIVE. Nothing runs between the two reads below but app_can(),
+  -- which evaluates valid_until on every call — so there is no window in which
+  -- a link is past its date and still working, and no scheduled job whose
+  -- failure would silently hold access open.
+  --
+  -- LAST, because it deliberately winds a good link back to a date already
+  -- past. Run earlier it would leave R Pillay's row failing the whole-table
+  -- checks above, and the honest fix for that is to do it after them rather
+  -- than to teach those checks to ignore a row.
+  PERFORM _as(U_PARENT);
+  SELECT count(*) INTO n FROM player_masked WHERE id = P_INJURED;
+  PERFORM _assert(n = 1, 'the fixture for the expiry assertion is not readable to begin with');
+  PERFORM _expire_link(P_INJURED);
+  SELECT count(*) INTO n FROM player_masked WHERE id = P_INJURED;
+  PERFORM _assert(n = 0, 'a guardian link past its end date still reads the child');
+
+  -- ── Enrolment leaves nothing behind when it is refused ────────
+  --
+  -- enrol_person() writes the account, then answers the request through
+  -- decide_role_request(). A refusal from that second step arrives with the
+  -- account already on the table, so the writes sit in a subtransaction and
+  -- the refusal is raised rather than returned.
+  --
+  -- THIS ASSERTION HAS TO LIVE HERE, in direct SQL, and that is the whole
+  -- reason it was moved. Over HTTP withPrincipal() wraps every request in
+  -- BEGIN/COMMIT and rolls back on a thrown error, so the API path discards
+  -- the orphan whatever enrol_person() does — the walk in tools/smoke-enrol.mjs
+  -- CANNOT fail on it, and it was checked: removing the subtransaction leaves
+  -- all 31 of its assertions green. A guard nothing can falsify is a guard
+  -- nobody will keep, so the falsifying assertion belongs where a caller is
+  -- not wrapped in somebody else's transaction.
+  PERFORM _as(U_REGISTRAR);
+  -- Refused inside decide_role_request(), AFTER the account row is written:
+  -- a coach is a coach of a side, and this one names none.
+  SELECT ok, reason INTO v_ok, v_reason
+    FROM enrol_person('orphan.coach@example.invalid', 'O Coach', 'coach', HIL, NULL, NULL, NULL);
+  PERFORM _assert(NOT v_ok AND v_reason = 'team_required',
+    'a coach was enrolled with no side');
+  PERFORM _assert(_count_accounts('orphan.coach@example.invalid') = 0,
+    'a refused enrolment left a half-made account behind');
+
+  -- And the same call, given the side it was missing, does make one.
+  SELECT ok INTO v_ok
+    FROM enrol_person('real.coach@example.invalid', 'R Coach', 'coach', HIL, 'U13A', NULL, NULL);
+  PERFORM _assert(v_ok, 'the office cannot enrol a coach of a named side');
+  PERFORM _assert(_count_accounts('real.coach@example.invalid') = 1,
+    'the enrolment did not create an account');
+
+  -- ── The owner's key reaches every tenant ──────────────────────
+  --
+  -- `superadmin` holds all 81 capabilities on an assignment naming no school.
+  -- It is the one role in the model that is not least-privilege, and these
+  -- assertions are what stop it becoming one by accident: a bundle that
+  -- quietly stopped being "everything" would leave the operator locked out of
+  -- the thing they most need to reach, and nobody would find out until the day
+  -- it mattered.
+  PERFORM _assert(
+    (SELECT count(*) FROM role_capability WHERE role = 'superadmin')
+      = (SELECT count(*) FROM capability),
+    'the owner''s key does not hold every capability');
+
+  PERFORM _as(U_OWNER);
+
+  -- Across tenants, which is the part a school-scoped role can never do:
+  -- app_can() has no wildcard for school, so this works only because the
+  -- assignment names none.
+  SELECT count(DISTINCT school_id) INTO n FROM player_masked;
+  PERFORM _assert(n >= 2, 'the owner''s key does not reach every school');
+
+  -- Through the masking, not merely around the row filter. A reader who sees
+  -- the row and a redacted column has not reached the record.
+  SELECT count(*) INTO n FROM player_masked
+   WHERE id = P_INJURED AND born IS NOT NULL AND guardian IS NOT NULL;
+  PERFORM _assert(n = 1, 'the owner''s key reads a player row but not its protected columns');
+  SELECT count(*) INTO n FROM injury;
+  PERFORM _assert(n > 0, 'the owner''s key cannot read injuries');
+
+  -- AND IT IS STILL RLS, not a bypass. The rows arrive because the policies
+  -- said yes to this principal, which is why signing out of the role takes the
+  -- access away — a superuser connection would not behave like this.
+  PERFORM set_config('app.user_id', '', true);
+  SELECT count(*) INTO n FROM player_masked;
+  PERFORM _assert(n = 0, 'the owner''s key is a connection privilege rather than an assignment');
+
+  -- Nobody mints an owner's key from inside the platform account. platformadmin
+  -- is the recovery path and may grant every OTHER role; letting it grant this
+  -- one would make the two roles the same thing, one assignment apart.
+  PERFORM _assert(NOT EXISTS (
+    SELECT 1 FROM role_grantable WHERE granter = 'platformadmin' AND role = 'superadmin'),
+    'the platform account can appoint an owner''s key');
+  PERFORM _assert(EXISTS (
+    SELECT 1 FROM role_grantable WHERE granter = 'superadmin' AND role = 'platformadmin'),
+    'the owner''s key cannot appoint a platform account');
 
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;

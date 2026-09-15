@@ -117,11 +117,24 @@ group("C. Column masking");
 // ── D. The platform-admin change ─────────────────────────
 group("D. Operating the platform is not a licence to browse");
 {
-  // The most visible behaviour change from the migration, and it is intended:
-  // under the previous model superadmin saw everything.
-  ok("platform admin reaches no clinical records", getData("injuries", P("superadmin")).length === 0);
+  // The most visible behaviour change from the migration, and it is intended.
+  //
+  // These two named `superadmin`, which WAS an alias for platformadmin — so
+  // they read as assertions about the platform account while actually testing
+  // an alias. `superadmin` is its own role now, holding every capability, and
+  // the alias stopped meaning platformadmin the moment that landed. Pointed at
+  // the role they were always about.
+  ok("platform admin reaches no clinical records", getData("injuries", P("platformadmin")).length === 0);
   ok("platform admin reaches no player PII",
-     getData("players", P("superadmin")).every((p) => p.born === null || p.born === undefined));
+     getData("players", P("platformadmin")).every((p) => p.born === null || p.born === undefined));
+
+  // And the converse, which is the whole point of the owner's key: it is the
+  // one principal that DOES browse. Asserted here rather than left implied,
+  // because "platform admin cannot" means nothing unless something can — and
+  // if this ever goes quiet, the masterkey has stopped being one.
+  ok("the owner's key reaches clinical records", getData("injuries", P("superadmin")).length > 0);
+  ok("...and player PII",
+     getData("players", P("superadmin")).some((p) => p.born !== null && p.born !== undefined));
 }
 
 // ── E. can() / canScore() ────────────────────────────────

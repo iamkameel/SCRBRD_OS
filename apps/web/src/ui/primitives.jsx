@@ -47,13 +47,17 @@ const SectionHeader = ({ title, sub, actions, color=D.indigo }) => (
   </div>
 );
 
-const Btn = ({ children, onClick, variant="primary", size="md", disabled }) => {
+// ...rest so a caller can put a data-testid (or an aria-label, or a type) on
+// the button it is actually rendering. Without it those props were accepted
+// and silently dropped, which is how a test that targets a control by id ends
+// up asserting against a control that does not exist.
+const Btn = ({ children, onClick, variant="primary", size="md", disabled, ...rest }) => {
   const bg = variant==="primary"?D.gradMain:variant==="success"?D.gradLive:variant==="danger"?D.rose:variant==="ghost"?"transparent":D.surf3;
   const col = variant==="ghost"?D.textSecondary:"#fff";
   const pad = size==="sm"?"5px 12px":size==="lg"?"12px 24px":"8px 18px";
   const fs  = size==="sm"?"11px":size==="lg"?"14px":"12px";
   return (
-    <button onClick={onClick} disabled={disabled} className="pressBtn" style={{
+    <button onClick={onClick} disabled={disabled} className="pressBtn" {...rest} style={{
       padding:pad,borderRadius:D.pill,border:`1px solid ${variant==="ghost"?D.border:"transparent"}`,
       background:bg,color:col,cursor:disabled?"not-allowed":"pointer",fontFamily:D.head,
       fontSize:fs,fontWeight:700,letterSpacing:"0.04em",opacity:disabled?0.4:1,

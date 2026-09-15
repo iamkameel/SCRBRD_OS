@@ -2,7 +2,7 @@
 -- GENERATED from packages/policy/ by services/api/rls/generate-rls.mjs — DO NOT EDIT BY HAND.
 -- Regenerate with `pnpm rls:generate`. Companion: db/01_authz.sql.
 -- Model: capability + scoped assignment (docs/adr/0001-scoped-assignments.md).
--- Roles that may score: directorofsport, sportsadmin, coach, assistantcoach, scorer
+-- Roles that may score: superadmin, directorofsport, sportsadmin, coach, assistantcoach, scorer
 
 -- ══════════════════════════════════════════════════════════════════
 --  Team codes are a closed vocabulary

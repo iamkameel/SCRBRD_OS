@@ -27,6 +27,7 @@ import { chromium } from "playwright-core";
 import { launchOptions } from "./chromium.mjs";
 import { offline, isFirebaseOfflineNoise } from "./offline-browser.mjs";
 import { anchorFor } from "@scrbrd/scoring";
+import { ROLES as POLICY_ROLES } from "@scrbrd/policy/roles";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
@@ -651,6 +652,59 @@ try {
     await c.ctx.close();
   }
 
+  // ── Enrolment, from the screen that names the problem ───────────
+  group("A boy with no account gets one, from the card that says he has none");
+  {
+    const c = await open();
+    await signIn(c.page, /Director of Sport/);
+    const tid = (id) => c.page.locator(`[data-testid="${id}"]`);
+    await tid("nav-settings").click({ timeout: 6000 }); await c.page.waitForTimeout(1400);
+
+    const card = tid("people-without-accounts");
+    ok("the card naming the people who cannot sign in is there", await card.count() === 1);
+    const before = await card.innerText();
+    const m = before.match(/no account — (\d+) of/);
+    ok("...and it says how many", !!m && Number(m[1]) > 0);
+
+    // The chip is the way in. Before this it named the problem and offered
+    // nothing to do about it — which is how "is there a process?" gets asked.
+    const chip = card.locator('[data-testid^="no-account-"]').first();
+    const who = (await chip.innerText()).split("\n")[0].trim();
+    await chip.click({ timeout: 4000 }); await c.page.waitForTimeout(600);
+    ok("clicking one opens the enrolment dialog",
+       await c.page.locator('[role="dialog"][aria-modal="true"]').count() === 1);
+    ok("...with his name already filled in, not left to be retyped",
+       await c.page.evaluate(() => {
+         const v = [...document.querySelectorAll('[role="dialog"] input')].map((i) => i.value);
+         return v.some((x) => x && x.trim().length > 1);
+       }), who);
+
+    const email = `walk.enrol.${Date.now()}@example.invalid`;
+    await c.page.locator('[role="dialog"] input[type="email"]').fill(email);
+    ok("she enrols him", await click(c.page, /^Enrol$/, 4000));
+    await c.page.waitForTimeout(2200);
+
+    // The code is the deliverable: there is no email channel, so the office
+    // reads it off the screen and hands it over.
+    ok("a sign-in code comes back", await tid("issued-code").count() === 1);
+    const code = (await tid("issued-code").innerText()).trim();
+    ok("...and it is a real code, not an empty box", code.length >= 6);
+    await click(c.page, /^Done$/, 4000); await c.page.waitForTimeout(1600);
+
+    ok("...and one fewer person is listed as having no account",
+       Number((await card.innerText()).match(/no account — (\d+) of/)?.[1]) === Number(m[1]) - 1,
+       "the table re-reads after the write; a stale nonce would leave the old count");
+
+    // The controls that wrote nothing are gone, and this is what keeps them gone.
+    ok("no Suspend control, because suspending wrote to React state and nothing else",
+       await c.page.locator('[data-testid="os-main"] button', { hasText: /^Suspend$/ }).count() === 0);
+    ok("no Delete control either",
+       await c.page.locator('[data-testid="os-main"] button', { hasText: /^Delete$/ }).count() === 0);
+
+    ok("no console errors through the enrolment", c.errors.length === 0, c.errors.join(" | "));
+    await c.ctx.close();
+  }
+
   group("The office sets its own ceiling on the Open band");
   {
     const head = await open();
@@ -963,8 +1017,12 @@ try {
     for (const label of ["PLATFORM ADMIN", "PRINCIPAL", "COACH", "PARENT / GUARDIAN"]) {
       ok(`...${label} appears exactly once`, seen.filter((l) => l === label).length === 1);
     }
-    // And the count is the policy's, not the lookup table's.
-    ok("the menu offers the twenty-four real roles", seen.length === 24);
+    // And the count is the policy's, not the lookup table's — DERIVED from it,
+    // rather than a number typed in beside a comment saying it came from the
+    // policy. It was 24 until the owner's key was added, at which point the
+    // literal was the only thing in this file that still thought so.
+    ok(`the menu offers every policy role (${POLICY_ROLES.length})`,
+       seen.length === POLICY_ROLES.length);
     ok("exactly one is marked as the current role",
        (await menu.locator('[aria-checked="true"]').count()) === 1);
     ok("no console errors", c.errors.length === 0);
@@ -1328,12 +1386,17 @@ try {
     await tid("nav-settings").click({ timeout: 6000 }); await c.page.waitForTimeout(1200);
     ok("she reaches settings", await tid("os-main").getAttribute("data-page") === "settings");
 
-    // She holds user.role.assign, so the Users tab must offer her the edit
-    // controls. If this is empty the capability gate has regressed and the
-    // rest of the group would pass vacuously.
-    const edits = c.page.locator('[data-testid="os-main"] button', { hasText: /^Edit$/ });
+    // She holds user.role.assign, so the Users tab must offer her enrolment.
+    // If this is missing the capability gate has regressed and the rest of the
+    // group would pass vacuously.
+    //
+    // This used to open an Edit button, one per row. Those are gone: Edit,
+    // Suspend and Delete wrote to React state and nothing else, so they were
+    // removed rather than left reporting success. Enrolment is the control
+    // that is real end to end, and it is gated on the same capability.
+    const edits = c.page.locator('[data-testid="enrol-person"]');
     const n = await edits.count();
-    ok(`user management is offered to her (${n} rows)`, n > 0,
+    ok(`user management is offered to her (${n} control)`, n > 0,
        "she holds user.role.assign — gating this on a demo role name is the bug this group exists for");
 
     if (n > 0) {
@@ -1367,7 +1430,7 @@ try {
       // Clicking the backdrop is the other way out, and it must not fire when
       // the click lands inside the card — which is the backdrop's own child.
       await tid("nav-settings").click({ timeout: 4000 }); await c.page.waitForTimeout(1200);
-      await c.page.locator('[data-testid="os-main"] button', { hasText: /^Edit$/ }).first().click({ timeout: 4000 });
+      await c.page.locator('[data-testid="enrol-person"]').first().click({ timeout: 4000 });
       await c.page.waitForTimeout(600);
       await c.page.locator('[role="dialog"] h3').click({ timeout: 4000 });
       await c.page.waitForTimeout(400);

@@ -86,13 +86,22 @@ export default function SCRBRD_OS() {
   // platform directory — every name and email at every school — regardless of
   // who was signed in. The assertion that was supposed to prevent that had a
   // regex that did not match "./data/mock.js".
-  const directory = useRows("users", role);
+  // Bumped when a screen writes to the directory server-side, so the lifted
+  // copy re-reads instead of showing the roster as it was before the write.
+  const [userNonce, setUserNonce] = useState(0);
+  const directory = useRows("users", role, userNonce);
   const [users,     setUsers]     = useState([]);
   const [userEdits, setUserEdits] = useState(false);
   // Local edits win once they exist, so a re-fetch does not discard what
   // someone is in the middle of changing.
   useEffect(() => { if (!userEdits) setUsers(directory); }, [directory, userEdits]);
   const setUsersTracked = (next) => { setUserEdits(true); setUsers(next); };
+  // A SERVER WRITE BEATS A LOCAL EDIT. userEdits exists so a re-fetch does not
+  // discard what somebody is mid-way through typing, but it latches: once any
+  // screen has touched the local copy, the directory never refreshes again.
+  // An enrolment is a fact in the database, so it clears the latch and asks
+  // for the rows afresh.
+  const refreshDirectory = () => { setUserEdits(false); setUserNonce((n) => n + 1); };
   const [scorerOpen, setScorerOpen] = useState(false);
   const [profileTarget, setProfileTarget] = useState(null);
   const [scorerResume, setScorerResume] = useState(null);
@@ -294,7 +303,7 @@ export default function SCRBRD_OS() {
     sponsors:     <SponsorsView      role={role}/>,
     modules:      <ModulesView       role={role}/>,
     notifications:<NotificationsView role={role}/>,
-    settings:     <SettingsView      role={role} users={users} setUsers={setUsersTracked}/>,
+    settings:     <SettingsView      role={role} users={users} setUsers={setUsersTracked} onDirectoryChanged={refreshDirectory}/>,
     management:   <ManagementView    role={role} users={users} setUsers={setUsersTracked}/>,
     rulebook:     <RulebookView      role={role}/>,
     pitchdeck:    <PitchDeckView     role={role}/>,

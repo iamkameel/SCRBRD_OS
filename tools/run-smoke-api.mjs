@@ -90,6 +90,7 @@ const WALKS = [
   "recognition",
   "season",
   "requests",
+  "enrol",
   "kit",
   "passport",
   "web",

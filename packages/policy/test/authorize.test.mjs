@@ -11,7 +11,8 @@
 import {
   authorize, may, covers, isActive, scopeFilter, grantingAssignments, contexts,
 } from "../src/authorize.mjs";
-import { ROLES, ROLE_CAPABILITIES, roleGrants, SCORING_ROLES, unknownCapabilities, ungrantedCapabilities } from "../src/roles.mjs";
+import { ROLES, ROLE_CAPABILITIES, roleGrants, SCORING_ROLES, unknownCapabilities, ungrantedCapabilities,
+         mayGrantRole, TEAM_SCOPED_ROLES, SUBJECT_SCOPED_ROLES } from "../src/roles.mjs";
 import { ALL_CAPABILITIES, SENSITIVE, isCapability } from "../src/capabilities.mjs";
 
 let pass = 0, fail = 0;
@@ -156,6 +157,30 @@ group("D. Medical access is bounded by scope, not by tier");
   ok("platform admin does not read clinical notes", !roleGrants("platformadmin", "medical.details.read"));
   ok("platform admin does not read discipline",     !roleGrants("platformadmin", "discipline.read"));
   ok("platform support access is explicit",         roleGrants("platformadmin", "platform.support.impersonate"));
+
+  // ── The owner's key ──
+  //
+  // The one role that is deliberately not least-privilege. These assertions
+  // exist because the failure mode is silent in both directions: a bundle that
+  // stops being "everything" locks the operator out of the thing they most
+  // need, and a platform account that may appoint one makes the distinction
+  // between the two roles decorative.
+  ok("the owner's key holds every capability",
+     ALL_CAPABILITIES.every((c) => roleGrants("superadmin", c)));
+  ok("...including the ones platform admin deliberately does not",
+     roleGrants("superadmin", "medical.details.read") && roleGrants("superadmin", "discipline.read"));
+  ok("...and it is derived, not typed — count matches the catalogue",
+     ROLE_CAPABILITIES.superadmin.length === ALL_CAPABILITIES.length);
+  ok("no platform account can appoint an owner's key",
+     !mayGrantRole("platformadmin", "superadmin"));
+  ok("...and no school role can either",
+     ["schooladmin", "principal", "directorofsport"].every((r) => !mayGrantRole(r, "superadmin")));
+  ok("the owner's key can appoint anything, including another",
+     mayGrantRole("superadmin", "platformadmin") && mayGrantRole("superadmin", "superadmin"));
+  // It carries no scope of its own. Reaching every school is a property of the
+  // ASSIGNMENT naming none, not of the role — the same rule as everything else.
+  ok("it is not team-scoped and not subject-scoped",
+     !TEAM_SCOPED_ROLES.includes("superadmin") && !SUBJECT_SCOPED_ROLES.includes("superadmin"));
 
   // A scorer's assignment is normally pinned to one fixture.
   const pinned = [{ role: "scorer", school: HIL, fixture: "fix-1" }];

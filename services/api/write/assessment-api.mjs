@@ -298,12 +298,30 @@ export function accessRequestRoutes({ pool, secret }) {
  * are all checked inside the functions, under the caller's identity.
  */
 export function guardianLinkRoutes({ pool, secret }) {
+  // Not every refusal is a refusal of AUTHORITY. These functions answer with a
+  // reason, and a caller that is told 403 for all of them cannot tell "you may
+  // not do this" from "this cannot be done" — which matters most for the two
+  // age refusals, where the office needs to be told to capture a date of birth
+  // or that the person is no longer a child, not that they lack permission.
+  //
+  // Anything not listed keeps the original 403. Reasons are only moved off it
+  // here once their meaning has actually been checked, rather than by flipping
+  // the default and hoping.
+  const REFUSAL_STATUS = {
+    no_such_player: 404,
+    player_date_of_birth_required: 422,
+    player_is_an_adult: 422,
+    already_linked: 409,
+  };
   const call = (sql, params) => (req) => runAsPrincipal(
     pool, secret, req.headers?.authorization,
     async (client) => {
       const { rows } = await client.query(sql, params(req));
       const r = rows[0] ?? { ok: false, reason: "no_result" };
-      if (r.ok === false) { const e = err(r.reason || "refused", 403); throw e; }
+      if (r.ok === false) {
+        const e = err(r.reason || "refused", REFUSAL_STATUS[r.reason] ?? 403);
+        throw e;
+      }
       return r;
     });
   const handle = (fn) => async (req, res) => {

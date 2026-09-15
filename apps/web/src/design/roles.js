@@ -43,6 +43,11 @@ import { LEGACY_ROLE_NAMES } from "../rbac/legacy-roles.js";
 
 const ROLE_IDENTITY = {
   // platform — operating the platform itself
+  // The owner's key sits first and reads gold, because it is not a job at a
+  // school and should not look like one. Gold is 21.6 dE from its nearest
+  // neighbour (Match Official) and 8.83:1 on the darkest surface, so it clears
+  // both bars the suite holds with room to spare — checked, not chosen by eye.
+  superadmin:             { label:"Super Admin", icon:"🗝️", color:"#f5c518", family:"platform" },  // 8.83:1
   platformadmin:          { label:"Platform Admin", icon:"⚡", color:"#c5adfa", family:"platform" },  // 7.66:1
   // governance — running an institution
   principal:              { label:"Principal", icon:"🎓", color:"#8a8cf4", family:"governance" },  // 5.1:1
