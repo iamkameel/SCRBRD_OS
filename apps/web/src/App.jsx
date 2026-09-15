@@ -41,7 +41,7 @@ import { SquadView } from "./views/SquadView.jsx";
 import { StaffView } from "./views/StaffView.jsx";
 import { TrainingView } from "./views/TrainingView.jsx";
 import { parseBalls, parseScore, teamSquad } from "./views/shared.jsx";
-import { loadSession, saveSession } from "./lib/persist.js";
+import { clearSession, loadSession, saveSession } from "./lib/persist.js";
 import { signOut } from "./lib/session.js";
 
 // What a person with no assignments sees: their requests, each with its
@@ -135,6 +135,35 @@ export default function SCRBRD_OS() {
     const nav = ROLES[r]?.nav || [];
     setPage(nav[0] || "dashboard");
     setAppState("app");
+  };
+
+  /**
+   * Signing out, properly.
+   *
+   * There was no way out of the shell at all: signOut() existed and was wired
+   * to ONE screen — the holding page for somebody with no assignments yet — so
+   * anyone who actually got in stayed in until they cleared their browser.
+   *
+   * IT HAS TO CLEAR THREE THINGS, and clearing only the first is the trap.
+   * signOut() drops the in-memory profile, the API token and the school's
+   * module switches. That leaves the PERSISTED shell state — role, name, page —
+   * which loadSession() restores on the next boot, so the next person to pick
+   * up a school's tablet would find themselves in the last person's role on
+   * the last person's screen. clearSession() has existed since the scorer
+   * needed it and had never been called from anywhere.
+   *
+   * And the live state is reset here rather than left to the reload, because
+   * the save effect below fires on the very next render: without these, it
+   * would write the previous person's role straight back into the session that
+   * was just cleared.
+   */
+  const handleSignOut = () => {
+    signOut();
+    clearSession();
+    setScorerOpen(false); setScorerResume(null); setScorerMatchId(null);
+    setUsers([]); setUserEdits(false);
+    setRole("superadmin"); setUserName("Super Admin"); setPage("dashboard");
+    setAppState("landing");
   };
 
   const handleLoginSignUp = () => setAppState("onboarding");
@@ -252,7 +281,10 @@ export default function SCRBRD_OS() {
   );
   if (appState === "pending") return (
     <><style>{GLOBAL_CSS}</style>
-      <PendingRequests name={userName} onSignOut={()=>{ signOut(); setAppState("landing"); }}/>
+      {/* The same sign-out the shell uses. This one cleared the profile and
+          left the persisted session behind, so a reload put the next person
+          back where the last one stood. */}
+      <PendingRequests name={userName} onSignOut={handleSignOut}/>
     </>
   );
   if (appState === "onboarding") return (
@@ -318,14 +350,14 @@ export default function SCRBRD_OS() {
             navigation entry on every single page change — and the nav is up to
             nineteen entries long. Invisible until focused. */}
         <a href="#os-content" className="skip-link" data-testid="skip-link">Skip to content</a>
-        {!isMobile&&<Sidebar role={role} active={page} onNav={setPage} collapsed={collapsed} onToggle={()=>setCollapsed(!collapsed)} notifCount={unreadCount}/>}
+        {!isMobile&&<Sidebar role={role} active={page} onNav={setPage} collapsed={collapsed} onToggle={()=>setCollapsed(!collapsed)} notifCount={unreadCount} userName={userName} onSignOut={handleSignOut}/>}
         <div style={{flex:1,display:"flex",flexDirection:"column",minWidth:0,overflow:"hidden"}}>
           <TopBar role={role} onRoleChange={handleRoleChange} onNav={setPage} userName={userName}/>
           <main id="os-content" tabIndex={-1} className="os-main" data-testid="os-main" data-page={VIEW_MAP[page] ? page : "dashboard"} style={{flex:1,overflowY:"auto"}}>
             {VIEW_MAP[page] || VIEW_MAP.dashboard}
           </main>
         </div>
-        {isMobile&&<MobileNav role={role} active={page} onNav={setPage} notifCount={unreadCount}/>}
+        {isMobile&&<MobileNav role={role} active={page} onNav={setPage} notifCount={unreadCount} userName={userName} onSignOut={handleSignOut}/>}
       </div>
     </>
   );

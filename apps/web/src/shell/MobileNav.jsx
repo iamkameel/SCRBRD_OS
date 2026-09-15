@@ -73,7 +73,7 @@ function SportSwitcher() {
   );
 }
 
-function MobileNav({ role, active, onNav, notifCount }) {
+function MobileNav({ role, active, onNav, notifCount, userName, onSignOut }) {
   const [moreOpen, setMoreOpen] = useState(false);
   const { sports } = useSports();
   // Same list the sidebar draws, from the same place. Two components computing
@@ -146,6 +146,22 @@ function MobileNav({ role, active, onNav, notifCount }) {
                 </div>
               </div>
             ))}
+
+            {/* The way out lives here on a phone, for the same reason it lives
+                at the foot of the rail on a laptop: the drawer is where the
+                whole menu is, and a sign-out that exists on one of the two
+                surfaces is a sign-out half the people cannot reach. */}
+            <div style={{borderTop:`1px solid ${D.border}`,marginTop:"4px",paddingTop:"12px"}}>
+              <button onClick={()=>{setMoreOpen(false);onSignOut?.();}} className="pressBtn"
+                data-testid="drawer-signout" aria-label="Sign out"
+                style={{width:"100%",display:"flex",alignItems:"center",gap:"10px",padding:"13px 12px",
+                  background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.lg,cursor:"pointer"}}>
+                <span aria-hidden="true" style={{fontSize:"16px"}}>⏻</span>
+                <span style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary}}>Sign out</span>
+                {userName&&<span style={{marginLeft:"auto",fontFamily:D.body,fontSize:"10px",color:D.textMuted,
+                  overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"45%"}}>{userName}</span>}
+              </button>
+            </div>
           </div>
         </>
       )}
