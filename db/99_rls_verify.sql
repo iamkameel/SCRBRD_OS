@@ -135,6 +135,11 @@ DECLARE
   U_SARAH   uuid := '88888888-0000-0000-0000-000000000007';  -- 4 assignments, 2 schools
   U_PLAT    uuid := '88888888-0000-0000-0000-000000000014';  -- platformadmin, no school
   U_OWNER   uuid := '88888888-0000-0000-0000-000000000022';  -- superadmin, every capability
+  -- For the newsfeed. NOT U_COACH: section 8 revokes his assignments to prove
+  -- revocation narrows, and this file is one transaction, so he holds nothing
+  -- by the time the news block runs.
+  U_COACH2  uuid := '88888888-0000-0000-0000-00000000000a';  -- 2XI coach: team tier only
+  U_MEDIC   uuid := '88888888-0000-0000-0000-000000000003';  -- news.read, no publish tier
   O_UMPIRE  uuid;                                            -- seeded into the register below
   v_born    date;
   v_level   text;
@@ -1116,6 +1121,78 @@ BEGIN
   PERFORM _assert(EXISTS (
     SELECT 1 FROM role_grantable WHERE granter = 'superadmin' AND role = 'platformadmin'),
     'the owner''s key cannot appoint a platform account');
+
+  -- ── The newsfeed: three tiers, three audiences ────────────────
+  --
+  -- news.read and the three publish capabilities were in the model from the
+  -- first migration with nothing behind them. These assertions are what makes
+  -- the tiers mean something: each is a different AUDIENCE, derived from the
+  -- post's anchor, and a tier reaching the same people as the one above it
+  -- would not be worth having as its own capability.
+  --
+  -- NOT the 1XI coach, though he is the obvious reader for a 1XI notice:
+  -- section 8 above revokes his assignments to prove revocation narrows, and
+  -- this file is one transaction, so he holds nothing by the time it gets
+  -- here. The first draft of this block used him and reported zero rows for
+  -- every tier — which read like a broken policy and was a dead principal.
+  PERFORM _as(U_SARAH);
+  SELECT count(*) INTO n FROM news_post WHERE scope = 'team';
+  PERFORM _assert(n = 1, 'the director of sport cannot read a side''s notice');
+  SELECT count(*) INTO n FROM news_post WHERE scope = 'school';
+  PERFORM _assert(n >= 1, 'the director of sport cannot read the school''s notice');
+  -- The competition post belongs to NO school. It reaches her because her
+  -- school is entered — app_can() has no wildcard for school, so this works
+  -- only through competition_entrant.
+  SELECT count(*) INTO n FROM news_post WHERE scope = 'competition';
+  PERFORM _assert(n = 1, 'a league notice does not reach a school entered in it');
+
+  -- A DRAFT IS NOT A NOTICE. The unsent school post is Sarah''s, and she is
+  -- the only person who has it.
+  SELECT count(*) INTO n FROM news_post WHERE published_at IS NULL;
+  PERFORM _assert(n = 1, 'an author cannot see their own draft');
+  PERFORM _as(U_MEDIC);
+  SELECT count(*) INTO n FROM news_post WHERE published_at IS NULL;
+  PERFORM _assert(n = 0, 'an unsent draft is readable by somebody who did not write it');
+
+  -- A team notice reaches THAT side. Westville''s office administers another
+  -- tenant: it reads neither Hilton''s team post nor Hilton''s school post,
+  -- and does read the league notice, because Westville is entered in it.
+  PERFORM _as('88888888-0000-0000-0000-00000000000d'::uuid);
+  SELECT count(*) INTO n FROM news_post WHERE school_id = HIL;
+  PERFORM _assert(n = 0, 'another school reads this school''s notices');
+  SELECT count(*) INTO n FROM news_post WHERE scope = 'competition';
+  PERFORM _assert(n = 1, 'a league notice does not reach the other school entered in it');
+
+  -- ── The tier is the scope, and it is enforced on the write ────
+  -- The 2XI coach holds news.publish.team and not news.publish.school. He
+  -- cannot reach the whole school by naming a different anchor: the INSERT
+  -- policy reads the anchor to decide which capability to demand.
+  PERFORM _as(U_COACH2);
+  BEGIN
+    INSERT INTO news_post (scope, school_id, title, body, published_at)
+    VALUES ('school', HIL, 'A coach speaks for the school', 'Not his to send.', now());
+    PERFORM _assert(false, 'a coach posted a notice to the whole school');
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+  -- ...and can post to his own side.
+  INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+  VALUES ('team', HIL, '2XI', 'Bus leaves at seven', 'Front gate.', now());
+  SELECT count(*) INTO n FROM news_post WHERE title = 'Bus leaves at seven';
+  PERFORM _assert(n = 1, 'a coach cannot post to his own side');
+  -- The byline is the session, not the caller''s word for it.
+  SELECT count(*) INTO n FROM news_post
+   WHERE title = 'Bus leaves at seven' AND author_id = U_COACH2;
+  PERFORM _assert(n = 1, 'the author was not stamped from the session');
+
+  -- news.read WITHOUT a tier is the shape twenty-three of twenty-five roles
+  -- have: read everything meant for you, publish nothing.
+  PERFORM _as(U_MEDIC);
+  BEGIN
+    INSERT INTO news_post (scope, school_id, title, body, published_at)
+    VALUES ('school', HIL, 'The physio speaks for the school', 'No.', now());
+    PERFORM _assert(false, 'a role with no publish tier published a school notice');
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
 
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;

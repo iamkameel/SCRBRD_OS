@@ -28,6 +28,7 @@ import { LeagueView } from "./views/LeagueView.jsx";
 import { LogisticsView } from "./views/LogisticsView.jsx";
 import { ManagementView } from "./views/ManagementView.jsx";
 import { MatchCentreView } from "./views/MatchCentreView.jsx";
+import { NewsView } from "./views/NewsView.jsx";
 import { NotificationsView } from "./views/NotificationsView.jsx";
 import { OfficialsView } from "./views/OfficialsView.jsx";
 import { SponsorsView } from "./views/SponsorsView.jsx";
@@ -334,6 +335,7 @@ export default function SCRBRD_OS() {
     officials:    <OfficialsView     role={role}/>,
     sponsors:     <SponsorsView      role={role}/>,
     modules:      <ModulesView       role={role}/>,
+    news:         <NewsView          role={role}/>,
     notifications:<NotificationsView role={role}/>,
     settings:     <SettingsView      role={role} users={users} setUsers={setUsersTracked} onDirectoryChanged={refreshDirectory}/>,
     management:   <ManagementView    role={role} users={users} setUsers={setUsersTracked}/>,

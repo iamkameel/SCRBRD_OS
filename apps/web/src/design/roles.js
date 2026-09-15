@@ -114,6 +114,7 @@ const ROLE_IDENTITY = {
 */
 const NAV_CAPABILITY = {
   dashboard:     null,
+  news:          "news.read",
   matches:       "fixture.read",
   competitions:  "competition.read",
   leagues:       "competition.read",
@@ -165,7 +166,7 @@ const NAV_CAPABILITY = {
    nothing here adds a destination the capability map withheld.
 */
 const NAV_GROUPS = [
-  { key:"play",    label:"Play",       items:["dashboard","matches","calendar","competitions","leagues","officials"] },
+  { key:"play",    label:"Play",       items:["dashboard","news","matches","calendar","competitions","leagues","officials"] },
   { key:"people",  label:"People",     items:["squad","profiles","injuries","staff"] },
   { key:"develop", label:"Develop",    items:["analytics","skills","training"] },
   { key:"operate", label:"Operate",    items:["logistics","fields","sponsors"] },
@@ -250,6 +251,7 @@ const NAV_META = {
   officials:    { icon:"🧑‍⚖️", label:"Officials"    },
   staff:        { icon:"🔧",  label:"Staff"        },
   sponsors:     { icon:"🤝",  label:"Sponsors"     },
+  news:         { icon:"📰",  label:"Newsfeed"     },
   notifications:{ icon:"🔔",  label:"Alerts"       },
   settings:     { icon:"⚙️",  label:"Settings"     },
   management:   { icon:"🛠️",  label:"Management"   },
