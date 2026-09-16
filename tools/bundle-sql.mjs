@@ -174,6 +174,10 @@ SELECT
                      WHERE a.role = 'superadmin' AND a.school_id IS NULL AND a.active AND u.active
                        AND (a.valid_until IS NULL OR a.valid_until > current_date))
        THEN 'OK' ELSE 'PROBLEM — nobody holds it' END              AS "An owner's key exists",
+  CASE WHEN (SELECT count(*) FROM pg_proc p JOIN pg_namespace ns ON ns.oid = p.pronamespace
+              WHERE ns.nspname = 'public' AND p.prosecdef AND p.proname NOT LIKE '\\_%'
+                AND NOT EXISTS (SELECT 1 FROM unnest(coalesce(p.proconfig,'{}')) c WHERE c LIKE 'search_path=%')) = 0
+       THEN 'OK — all pinned' ELSE 'PROBLEM' END                  AS "Definer functions pin search_path",
   CASE WHEN to_regclass('request_replay') IS NOT NULL
        THEN 'OK' ELSE 'PROBLEM' END                             AS "Retries write once",
   CASE WHEN to_regprocedure('quarantine_resolve(bigint,boolean,jsonb,text)') IS NOT NULL

@@ -927,6 +927,18 @@ BEGIN
   PERFORM _assert(to_regprocedure('quarantine_resolve(bigint,boolean,jsonb,text)') IS NOT NULL,
     'quarantine_resolve() is missing — a quarantined ball has no way out');
 
+  -- ── Every definer function names its search path ───────────────
+  -- db/16. A SECURITY DEFINER function without a pinned search_path runs the
+  -- owner's privileges over whatever schema a caller can put first. This
+  -- verifier's own helpers (the _-prefixed ones above) are created inside this
+  -- transaction and rolled back with it, so they are left out of the count.
+  SELECT count(*) INTO n
+    FROM pg_proc p JOIN pg_namespace ns ON ns.oid = p.pronamespace
+   WHERE ns.nspname = 'public' AND p.prosecdef AND p.proname NOT LIKE '\_%'
+     AND NOT EXISTS (SELECT 1 FROM unnest(coalesce(p.proconfig, '{}')) c WHERE c LIKE 'search_path=%');
+  PERFORM _assert(n = 0,
+    n || ' SECURITY DEFINER function(s) do not pin search_path — add "SET search_path = pg_catalog, public, pg_temp" or re-run db/16');
+
   -- ── A receipt is its owner's ──────────────────────────────────
   -- db/15. The idempotency layer remembers a write's response per person;
   -- another person with the same key must see nothing, or one account's
