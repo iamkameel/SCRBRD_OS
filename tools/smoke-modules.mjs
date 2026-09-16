@@ -270,26 +270,77 @@ try {
     await q(`delete from feature_grant`);
   }
 
-  group("The write side closes too");
+  group("The write side closes too — for every module that owns a write");
   {
     // A module that refused reads while still accepting writes would be the
     // worst kind of half-working setting: the half that works is the half
     // nobody checks.
+    //
+    // This group tried ONE module, and that was the hole. A write route is
+    // gated by a tag on its row in server.mjs, and a route added later for a
+    // module whose read was already gated arrived without one — POST
+    // /api/training and POST /api/players/:id/assessment — so a school that
+    // switched Training off was refused the read of a session it could still
+    // schedule, and this walk stayed green because it never asked. So every
+    // module that owns a write is in the table below, and the table is the
+    // assertion: a module-owned write that is missing here, or here and
+    // untagged, turns this red. Each write is made three times — on, off, on
+    // again — so the refusal in the middle is the gate and not a bad payload.
     const m = (await q(
       `insert into match (school_id, team_code, opponent, starts_at, format, overs, status)
        values ($1,'1XI','Michaelhouse', now(),'T20',20,'scheduled') returning id`, [HIL]))[0].id;
-    ok("an appointment can be made while Officials is on",
-       (await api(`/api/matches/${m}/officials`, { method: "POST", token: head,
-         body: { officials: [{ duty: "umpire", name: "T Mahlangu" }] } })).status === 200);
-    await suppress("officials", registrar, { schoolId: HIL, hidden: true });
-    const blocked = await api(`/api/matches/${m}/officials`, { method: "POST", token: head,
-      body: { officials: [{ duty: "umpire", name: "S Ngcobo" }] } });
-    ok("...and refused once it is off", blocked.status === 403);
-    ok("...naming the module", blocked.body?.module === "officials");
-    ok("...with nothing written",
-       (await q(`select count(*)::int c from match_official
-                  where match_id = $1 and person_name = 'S Ngcobo'`, [m]))[0].c === 0);
-    await suppress("officials", registrar, { schoolId: HIL, hidden: false });
+    const g = (await q(`select id from ground where school_id = $1 limit 1`, [HIL]))[0].id;
+    const P = "aaaaaaaa-0000-0000-0000-000000000005";   // R Pillay, 1XI — the coach's own
+    const post = (path, token, body) => api(path, { method: "POST", token, body });
+    const count = async (sql, params) => (await q(sql, params))[0].c;
+    const day = (k) => `2025-01-${String(10 + k).padStart(2, "0")}`;
+    // write(k) sends a payload distinguishable by k; landed(k) says whether
+    // that payload is in the table. Both shapes matter: an appointment sheet
+    // replaces the panel and a ground report corrects the last one, so a
+    // row count would not tell a refused write from an upsert.
+    const WRITES = [
+      { module: "officials", token: head,
+        write: (k) => post(`/api/matches/${m}/officials`, head, { officials: [{ duty: "umpire", name: `Umpire ${k}` }] }),
+        landed: (k) => count(`select count(*)::int c from match_official where match_id = $1 and person_name = $2 and not withdrawn`, [m, `Umpire ${k}`]) },
+      { module: "training", token: coach,
+        write: (k) => post("/api/training", coach, { schoolId: HIL, teamCode: "1XI", title: `Gate probe ${k}`,
+          sessionType: "fitness", startsAt: "2026-11-02T15:30:00.000Z", durationMin: 60 }),
+        landed: (k) => count(`select count(*)::int c from training_session where title = $1`, [`Gate probe ${k}`]) },
+      { module: "skills", token: coach,
+        write: (k) => post(`/api/players/${P}/assessment`, coach, { assessedOn: day(k),
+          scores: { technical: { footwork: 10 + k, timing: 15, power: 14, catching: 15 }, mental: { concentration: 17, composure: 15 } } }),
+        landed: (k) => count(`select count(*)::int c from player_skill where player_id = $1 and metric = 'footwork' and assessed_on = $2 and score = $3`, [P, day(k), 10 + k]) },
+      { module: "sponsors", token: registrar,
+        write: (k) => post("/api/sponsors", registrar, { schoolId: HIL, name: `Gate Probe ${k}`, category: "banking" }),
+        landed: (k) => count(`select count(*)::int c from sponsor where name = $1`, [`Gate Probe ${k}`]) },
+      { module: "fields", token: head,
+        write: (k) => post(`/api/grounds/${g}/condition`, head, { drainageMin: 100 + k }),
+        landed: (k) => count(`select count(*)::int c from ground_condition where ground_id = $1 and drainage_min = $2`, [g, 100 + k]) },
+      { module: "logistics", token: registrar,
+        write: (k) => post("/api/vehicles", registrar, { schoolId: HIL, registration: `KZN 7${String(k).padStart(2, "0")} AA`, description: "probe", kind: "minibus", capacity: 8 }),
+        landed: (k) => count(`select count(*)::int c from vehicle where registration = $1`, [`KZN 7${String(k).padStart(2, "0")} AA`]) },
+    ];
+    let k = 0;
+    for (const w of WRITES) {
+      const on = await w.write(++k);
+      ok(`${w.module}: the write lands while the module is on`, on.status === 200 && (await w.landed(k)) === 1, `${on.status} ${JSON.stringify(on.body)}`);
+      await suppress(w.module, registrar, { schoolId: HIL, hidden: true });
+      const off = await w.write(++k);
+      ok(`${w.module}: ...and is refused once it is off`, off.status === 403, `${off.status} ${JSON.stringify(off.body)}`);
+      ok(`${w.module}: ...naming the module`, off.body?.module === w.module);
+      ok(`${w.module}: ...with nothing written`, (await w.landed(k)) === 0);
+      await suppress(w.module, registrar, { schoolId: HIL, hidden: false });
+      const again = await w.write(++k);
+      ok(`${w.module}: ...and lands again once it is back on`, again.status === 200 && (await w.landed(k)) === 1, `${again.status} ${JSON.stringify(again.body)}`);
+    }
+    // The table above is only complete if it names every module that owns a
+    // write route. Modules whose data is seeded or imported and never written
+    // by a route — staff, analytics, leagues, competitions — have nothing to
+    // gate on the way in, and are absent on purpose.
+    const covered = new Set(WRITES.map((w) => w.module));
+    for (const key of ["officials", "training", "skills", "sponsors", "fields", "logistics"]) {
+      ok(`the table covers ${key}`, covered.has(key));
+    }
   }
 
   group("What a family may say no to is never a module");

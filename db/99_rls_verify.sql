@@ -1325,6 +1325,74 @@ BEGIN
   EXCEPTION WHEN insufficient_privilege THEN NULL;
   END;
 
+  -- ── A module switched off is off in the database too ────────────
+  --
+  -- SCRBRD-014. The module gate is two gates reading one function: the read
+  -- API refuses a resource a module owns, the write dispatcher refuses a
+  -- route tagged with it, both through my_feature_enabled(), both over HTTP,
+  -- both walked by tools/smoke-modules.mjs. This is the half an HTTP walk
+  -- cannot reach: the resolver itself, under the policies, as the people
+  -- concerned — and the one place the database gates a write on a flag by
+  -- itself, a fixture in a sport the school has not been granted: refused,
+  -- granted, allowed, on a direct INSERT.
+  --
+  -- Said plainly, because it is the boundary: injury, training_session,
+  -- player_skill and the rest carry no trigger of their own. Their only door
+  -- is the API and the route tag is the gate. A write that reaches Postgres
+  -- some other way is carrying the schema owner's credentials, and a product
+  -- switch is not what stands between that and the data.
+  PERFORM _as(U_MEDICAL);
+  PERFORM _assert(my_feature_enabled('injuries'),
+    'Injuries reads as off for the physio before anybody switched it off');
+  PERFORM _as(U_REGISTRAR);
+  INSERT INTO feature_suppression (key, school_id, hidden_by, reason)
+  VALUES ('injuries', HIL, U_REGISTRAR, 'verify: switched off');
+  PERFORM _as(U_MEDICAL);
+  PERFORM _assert(NOT my_feature_enabled('injuries'),
+    'a school hid Injuries and the resolver still answers on for its physio');
+  -- Off at any school you belong to is off. Sarah is Hilton's head of sport
+  -- and a Westville parent; Westville did not hide anything, and she is still
+  -- refused — the safe direction, and the one the API collapses to.
+  PERFORM _as(U_SARAH);
+  PERFORM _assert(NOT my_feature_enabled('injuries'),
+    'a person assigned at two schools reads a module one of them hid');
+  PERFORM _as('88888888-0000-0000-0000-00000000000d'::uuid);   -- Westville's registrar
+  PERFORM _assert(my_feature_enabled('injuries'),
+    'hiding a module at one school hid it at the other');
+  -- A coach cannot lift it: school.feature.manage, at that school. The
+  -- UPDATE policy filters rather than raises, so the proof is that it is
+  -- still off afterwards.
+  PERFORM _as(U_COACH2);
+  UPDATE feature_suppression SET lifted_at = now(), lifted_by = U_COACH2
+   WHERE key = 'injuries' AND school_id = HIL AND lifted_at IS NULL;
+  PERFORM _as(U_MEDICAL);
+  PERFORM _assert(NOT my_feature_enabled('injuries'),
+    'a coach lifted a suppression his school administrator made');
+  PERFORM _as(U_REGISTRAR);
+  UPDATE feature_suppression SET lifted_at = now(), lifted_by = U_REGISTRAR
+   WHERE key = 'injuries' AND school_id = HIL AND lifted_at IS NULL;
+  PERFORM _as(U_MEDICAL);
+  PERFORM _assert(my_feature_enabled('injuries'),
+    'the school lifted the suppression and Injuries stayed off');
+
+  -- The write the database gates itself. Hockey ships off; the platform
+  -- grants it; the same INSERT then goes through.
+  PERFORM _as(U_REGISTRAR);
+  BEGIN
+    INSERT INTO match (school_id, team_code, opponent, starts_at, sport, status)
+    VALUES (HIL, '1XI', 'Kearsney', now() + interval '3 days', 'hockey', 'scheduled');
+    PERFORM _assert(false, 'a fixture was written in a sport the school has not been granted');
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  PERFORM _as(U_PLAT);
+  INSERT INTO feature_grant (key, school_id, granted, changed_by)
+  VALUES ('sport_hockey', HIL, true, U_PLAT);
+  PERFORM _as(U_REGISTRAR);
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, status)
+  VALUES (HIL, '1XI', 'Kearsney', now() + interval '3 days', 'hockey', 'scheduled');
+  SELECT count(*) INTO n FROM match WHERE sport = 'hockey' AND opponent = 'Kearsney';
+  PERFORM _assert(n = 1, 'the platform granted hockey and the fixture was still refused');
+
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 

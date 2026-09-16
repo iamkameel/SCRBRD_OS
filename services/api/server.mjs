@@ -438,12 +438,18 @@ const PLAYER_ROUTES = [
   [/^\/api\/players$/,                               "POST", rosterAdd.add],
   // A session on the training calendar, under team.manage — the same
   // capability that already keeps the drill library and the kit register.
-  [/^\/api\/training$/,                              "POST", training.schedule],
+  // Tagged with the module that owns training_session. It was not, so a
+  // school that switched Training off was refused the read of a session it
+  // could still schedule — the half-working setting smoke-modules.mjs
+  // describes, found by making that walk try every module's write.
+  [/^\/api\/training$/,                              "POST", training.schedule, "training"],
   // A competition's tiers, and who sits in which. competition.manage at the
   // organiser, which for a shared league is a platform-wide administrator.
   [/^\/api\/competitions\/([^/]+)\/divisions$/,      "POST", competitions.division],
   [/^\/api\/competition-entrants\/([^/]+)\/division$/, "POST", competitions.place],
-  [/^\/api\/players\/([^/]+)\/assessment$/,     "POST", assess.record],
+  // Skills owns player_skill and its read; the write was untagged. Same
+  // finding as /api/training above.
+  [/^\/api\/players\/([^/]+)\/assessment$/,     "POST", assess.record, "skills"],
   [/^\/api\/players\/([^/]+)\/access-request$/, "POST", access.ask],
   [/^\/api\/access-requests\/([^/]+)\/decide$/, "POST", access.decide],
   [/^\/api\/players\/([^/]+)\/notes$/,          "POST", notes.write],
