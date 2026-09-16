@@ -174,6 +174,8 @@ SELECT
                      WHERE a.role = 'superadmin' AND a.school_id IS NULL AND a.active AND u.active
                        AND (a.valid_until IS NULL OR a.valid_until > current_date))
        THEN 'OK' ELSE 'PROBLEM — nobody holds it' END              AS "An owner's key exists",
+  CASE WHEN to_regprocedure('owner_recovery_issue(text,text,integer)') IS NOT NULL
+       THEN 'OK' ELSE 'PROBLEM' END                              AS "Owner has a way back in",
   CASE WHEN (SELECT count(*) FROM pg_proc p JOIN pg_namespace ns ON ns.oid = p.pronamespace
               WHERE ns.nspname = 'public' AND p.prosecdef AND p.proname NOT LIKE '\\_%'
                 AND NOT EXISTS (SELECT 1 FROM unnest(coalesce(p.proconfig,'{}')) c WHERE c LIKE 'search_path=%')) = 0

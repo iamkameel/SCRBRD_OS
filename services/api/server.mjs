@@ -45,6 +45,7 @@ import { sessionRoutes } from "./realtime/session-routes.mjs";
 import { deviceRoutes, notificationRoutes, transportFor } from "./notify/push-api.mjs";
 import { rewardWeightRoutes } from "./rewards/weights-api.mjs";
 import { fixtureRoutes } from "./write/fixture-api.mjs";
+import { ownerRecoveryRoutes } from "./write/owner-recovery-api.mjs";
 import { rosterRoutes } from "./write/roster-api.mjs";
 import { contactRoutes } from "./write/contacts-api.mjs";
 import { clearanceRoutes } from "./write/clearance-api.mjs";
@@ -201,6 +202,7 @@ const guard   = guardianLinkRoutes({ pool, secret: SECRET });
 const squad   = squadRoutes({ pool, secret: SECRET });
 const toss    = tossRoutes({ pool, secret: SECRET });
 const officials = officialRoutes({ pool, secret: SECRET });
+const ownerRecovery = ownerRecoveryRoutes({ pool, secret: SECRET });
 const register  = officialRegisterRoutes({ pool, secret: SECRET });
 const avail    = availabilityRoutes({ pool, secret: SECRET });
 const trips    = transportRoutes({ pool, secret: SECRET });
@@ -266,6 +268,11 @@ async function devLogin(body) {
 // the mounted surface is readable at a glance.
 const EXACT = {
   "POST /api/auth/dev-login": async (body) => devLogin(body),
+
+  // The owner's own way back in — see owner-recovery-api.mjs. Off by
+  // default (501) until OWNER_RECOVERY_SECRET is set on this server.
+  "POST /api/auth/owner/recover": ownerRecovery.recover,
+
 
   // ── The real login, in two halves ──
   //

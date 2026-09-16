@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>SCRBRD — Owner recovery</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: #03050c; color: #fff; font-family: -apple-system, "DM Sans", sans-serif; padding: 24px;
+  }
+  .card { width: 100%; max-width: 420px; }
+  h1 { font-family: "Syne", -apple-system, sans-serif; font-size: 20px; margin: 0 0 6px; }
+  p.sub { color: rgba(255,255,255,.5); font-size: 13px; margin: 0 0 28px; line-height: 1.5; }
+  label { display: block; font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+          color: rgba(255,255,255,.4); margin-bottom: 6px; }
+  input {
+    width: 100%; box-sizing: border-box; padding: 11px 14px; border-radius: 10px; margin-bottom: 14px;
+    background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.1); color: #fff; font-size: 14px;
+  }
+  button {
+    width: 100%; padding: 12px; border-radius: 12px; border: none; cursor: pointer; font-weight: 700; font-size: 13px;
+    background: linear-gradient(135deg,#6366f1,#8b5cf6); color: #fff;
+  }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  #result { margin-top: 18px; padding: 14px; border-radius: 10px; font-size: 13px; line-height: 1.6; display: none; }
+  #result.ok { background: rgba(16,185,129,.12); border: 1px solid rgba(16,185,129,.4); }
+  #result.err { background: rgba(244,63,94,.1); border: 1px solid rgba(244,63,94,.3); color: #f87171; }
+  .code { font-family: "DM Mono", monospace; font-size: 20px; font-weight: 600; letter-spacing: .05em;
+          background: rgba(255,255,255,.06); border-radius: 8px; padding: 10px 14px; margin: 8px 0; word-break: break-all; user-select: all; }
+  a.back { display: inline-block; margin-top: 10px; color: #a5b4fc; text-decoration: none; font-size: 13px; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>Owner recovery</h1>
+    <p class="sub">
+      For when the sign-in code has expired and there is no school office to ask for a new one.
+      This mints a fresh code for an account that already holds the platform-wide owner key —
+      it cannot create that key or touch any other account. Not linked from anywhere; keep this URL to yourself.
+    </p>
+    <label for="email">Owner's email</label>
+    <input id="email" type="email" autocomplete="email" placeholder="you@example.co.za" />
+    <label for="secret">Recovery key</label>
+    <input id="secret" type="password" autocomplete="off" placeholder="the OWNER_RECOVERY_SECRET on this server" />
+    <button id="go">Get me a fresh code</button>
+    <div id="result"></div>
+  </div>
+<script>
+  const $ = (id) => document.getElementById(id);
+  $("go").addEventListener("click", async () => {
+    const email = $("email").value.trim();
+    const secret = $("secret").value;
+    const box = $("result");
+    box.className = ""; box.style.display = "none";
+    if (!email || !secret) return;
+    $("go").disabled = true; $("go").textContent = "Asking…";
+    try {
+      const res = await fetch("/api/auth/owner/recover", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-owner-recovery-secret": secret },
+        body: JSON.stringify({ email }),
+      });
+      const body = await res.json().catch(() => null);
+      box.style.display = "block";
+      if (res.ok && body?.code) {
+        const until = body.expiresAt ? new Date(body.expiresAt).toLocaleString() : "24 hours from now";
+        box.className = "ok";
+        box.innerHTML = `Sign in with this code, valid until <strong>${until}</strong>:<div class="code">${body.code}</div>` +
+          `<a class="back" href="/">Go to sign in →</a>`;
+      } else {
+        box.className = "err";
+        box.textContent = res.status === 501 ? "Recovery is not configured on this server (OWNER_RECOVERY_SECRET is unset)."
+          : res.status === 403 ? "That recovery key is not correct."
+          : res.status === 404 ? "No account at that address holds the platform-wide owner key."
+          : `Could not issue a code (${body?.error ?? res.status}).`;
+      }
+    } catch (e) {
+      box.style.display = "block"; box.className = "err"; box.textContent = "Could not reach the server.";
+    } finally {
+      $("go").disabled = false; $("go").textContent = "Get me a fresh code";
+    }
+  });
+</script>
+</body>
+</html>
