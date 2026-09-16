@@ -23,7 +23,7 @@
  */
 import { spawn } from "node:child_process";
 import pg from "pg";
-import { fanOut, buildPayload } from "../services/api/notify/push-api.mjs";
+import { fanOut, buildPayload, echoTransport } from "../services/api/notify/push-api.mjs";
 
 const PORT = 8845;
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -346,6 +346,41 @@ try {
     ok("a pointer names no subject matter", JSON.stringify(p.message).includes("injury") === false);
     ok("...and carries no body of the notice", !JSON.stringify(p.message).includes("secret"));
     ok("...only the id to fetch it with", p.message.data.notificationId === "abc");
+
+    // THE WIRE, for the notice the SYSTEM writes (SCRBRD-015).
+    //
+    // Everything above this line is a notice a person typed, and the builder
+    // asked in isolation. notify_injury() in db/08 authors one on every
+    // injury INSERT — "R Pillay has been recorded as injured: hamstring
+    // strain (moderate)" — the one notice that names a child and a diagnosis
+    // without anybody choosing the words. And payload_kind in the delivery
+    // log is fanOut()'s own word for what it sent: a fanOut() that handed the
+    // transport the notice instead of payload.message would still log
+    // "pointer" and the two assertions above would still pass. So this reads
+    // what the transport was actually given, for that notice, end to end.
+    {
+      const echo = echoTransport();
+      await q(`insert into injury (school_id, player_id, injury_type, severity, date_injured, notes)
+               values ($1, $2, 'hamstring strain', 'moderate', current_date, 'grade 2, physio Friday')`,
+              [HIL, CHILD]);
+      const authored = (await q(
+        `select id, title, body from notification
+          where kind = 'injury' and subject_person_id = $1
+          order by published_at desc limit 1`, [CHILD]))[0];
+      ok("the trigger authored a notice naming the child and the injury",
+         /Pillay/.test(authored?.body ?? "") && /hamstring/.test(authored?.body ?? ""));
+      const out = await fanOut({ pool, secret: "smoke-push-secret", bearer: `Bearer ${head}`,
+                                 notificationId: authored.id, transport: echo });
+      ok("it reached at least one phone", out.delivered > 0 && echo.sent.length > 0);
+      const wire = echo.sent.map((s) => JSON.stringify(s.payload));
+      ok("no wire payload carries the child's name", wire.every((w) => !/Pillay/.test(w)));
+      ok("...nor what is wrong with him", wire.every((w) => !/hamstring|grade 2|moderate|injur/i.test(w)));
+      ok("...nor the notice's own title", wire.every((w) => !w.includes(authored.title)));
+      ok("...only the generic line and the id",
+         echo.sent.every((s) => s.payload?.notification?.body === "You have a new notice."
+           && Object.keys(s.payload?.data ?? {}).join() === "notificationId"
+           && s.payload.data.notificationId === String(authored.id)));
+    }
   }
 
   group("Told once, and only when there is a wire");
