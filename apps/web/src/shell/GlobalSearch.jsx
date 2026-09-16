@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { askStatGuru } from "../lib/ai.js";
+import { signedIn } from "../lib/api.js";
 import { SCHOOLS_REGISTRY } from "../data/institution.js";
 import { ROLES } from "../design/roles.js";
 import { D } from "../design/tokens.js";
@@ -62,15 +63,15 @@ function GlobalSearch({ role, onNav, onClose }) {
   const askGuru = async () => {
     if (!q.trim()) return;
     setAiLoading(true); setAiMode(true); setAiAnswer("");
-    // The prompt context is built from the SCOPED list. Sending the full roster
-    // to the model would exfiltrate exactly what the search filter withholds —
-    // a leak that never renders on screen and so is easy to miss.
-    const playerContext = ALL_PLAYERS.map(p=>`${p.name} (${p.role}, ${p.team}, ${p.school})`).join(", ");
-    const matchContext = ALL_MATCHES.slice(0,5).map(m=>`${m.home} vs ${m.away} ${m.date} ${m.result||m.status}`).join("; ");
+    // Only the question goes. The data StatGuru answers from is built by the
+    // service, from the read path, under THIS session — the browser used to
+    // assemble it, which let the model be handed whatever the page held. So a
+    // demonstration, which has no session, has no StatGuru either.
+    if (!signedIn()) { setAiAnswer("StatGuru answers from your school's own data — sign in to ask."); setAiLoading(false); return; }
     try {
       // Goes to our own service, which holds the credential. The browser has
       // no API key — see apps/web/src/lib/ai.js and services/api/ai/.
-      const answer = await askStatGuru(q, `Players: ${playerContext}. Recent matches: ${matchContext}.`);
+      const answer = await askStatGuru(q);
       setAiAnswer(answer || "No answer available.");
     } catch { setAiAnswer("StatGuru offline — check your connection."); }
     setAiLoading(false);

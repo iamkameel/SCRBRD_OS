@@ -33,7 +33,7 @@ import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { join, extname, resolve, sep } from "node:path";
 import pg from "pg";
-import { askStatGuru, describeDelivery, aiConfigured } from "./ai/ai-service.mjs";
+import { askStatGuru, describeDelivery, statGuruContext, aiConfigured } from "./ai/ai-service.mjs";
 import { sessionProfile, runAsPrincipal, issueLoginCode, redeemMagicLink } from "./auth/auth-db.mjs";
 import { signToken, AuthError } from "./auth/auth.mjs";
 import { readRoute, exportRoute, liveResources } from "./read/read-api.mjs";
@@ -278,8 +278,16 @@ const EXACT = {
     (client) => issueLoginCode(client, SECRET, { email: body?.email })),
   "POST /api/auth/redeem": async (body) => redeemMagicLink(
     pool, SECRET, { email: body?.email, code: body?.code, deviceId: body?.deviceId }),
-  "POST /api/ai/statguru":   async (body) => ({ answer: await askStatGuru({ question: body.question, context: body.context }) }),
-  "POST /api/ai/commentary": async (body) => ({ line: await describeDelivery({ situation: body.situation }) }),
+  // StatGuru's data is built server-side from the read path under the
+  // caller's identity — no session, no answer — and every pupil's name is
+  // swapped for a token before the model sees it. Commentary stays open (the
+  // demo scorer has no session) but sends the names it is given the same
+  // masked way. See services/api/ai/ai-service.mjs.
+  "POST /api/ai/statguru":   async (body, req) => {
+    const ctx = await statGuruContext(pool, SECRET, req.headers?.authorization);
+    return { answer: await askStatGuru({ question: body.question, ...ctx }) };
+  },
+  "POST /api/ai/commentary": async (body) => ({ line: await describeDelivery({ situation: body.situation, names: body.names }) }),
 };
 
 const MATCH_ROUTES = [
