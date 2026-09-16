@@ -921,6 +921,12 @@ BEGIN
     SELECT 1 FROM pg_constraint WHERE conname = 'ball_event_dismissal_known' AND convalidated),
     'the dismissal vocabulary constraint is missing or was never validated');
 
+  -- ── Quarantine has a way out ──────────────────────────────────
+  -- db/14. The door is a SECURITY DEFINER function that checks its own
+  -- authority; the walk tools/smoke-quarantine.mjs exercises who may open it.
+  PERFORM _assert(to_regprocedure('quarantine_resolve(bigint,boolean,jsonb,text)') IS NOT NULL,
+    'quarantine_resolve() is missing — a quarantined ball has no way out');
+
   BEGIN
     INSERT INTO player (school_id, team_code, full_name) VALUES (HIL, '1XI', 'No Birthday');
     PERFORM _assert(false, 'a player was written with no date of birth');

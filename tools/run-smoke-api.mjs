@@ -28,6 +28,8 @@ const WALKS = [
   "rating", "notes", "amend", "login",
   // The owner's key, minted from outside the platform, and redeemed.
   "bootstrap",
+  // The way out of quarantine: who may open it, and what a released ball is.
+  "quarantine",
   // Pre-match: who can play, naming the side, calling the toss, and the
   // conditions both sides play in.
   "availability", "squad", "toss", "conditions",
