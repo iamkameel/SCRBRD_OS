@@ -1491,6 +1491,33 @@ try {
     await c.ctx.close();
   }
 
+  // ── The officials register has a door, for the body that holds it ──
+  group("The accrediting body can add to the officials register; a school cannot");
+  {
+    const d = await open();
+    await signIn(d.page, /Director of Sport/);
+    await d.page.locator('[data-testid="nav-officials"]').first().click({ timeout: 6000 }).catch(() => {});
+    await d.page.waitForTimeout(1500);
+    ok("a director of sport is not offered the register", (await d.page.locator('[data-testid="add-official"]').count()) === 0);
+    await d.ctx.close();
+
+    const l = await open();
+    await signIn(l.page, /League Admin/);
+    await l.page.locator('[data-testid="nav-officials"]').first().click({ timeout: 6000 }).catch(() => {});
+    await l.page.waitForTimeout(1500);
+    const add = l.page.locator('[data-testid="add-official"]');
+    ok("the league administrator is", (await add.count()) === 1);
+    await add.click({ timeout: 4000 }); await l.page.waitForTimeout(400);
+    const stamp = Date.now();
+    await l.page.locator('[data-testid="official-name"]').fill(`Walk Umpire ${stamp}`, { timeout: 4000 });
+    await l.page.locator('[data-testid="official-born"]').fill("1981-07-19", { timeout: 4000 });
+    await l.page.locator('[data-testid="official-save"]').click({ timeout: 4000 });
+    await l.page.waitForTimeout(2000);
+    ok("the new official appears on the register", (await text(l.page)).includes(`Walk Umpire ${stamp}`));
+    ok("no console errors (register)", l.errors.length === 0, l.errors.join(" | "));
+    await l.ctx.close();
+  }
+
   // ── The demonstration says so ─────────────────────────────────
   group("A demonstration is never mistaken for the product");
   {

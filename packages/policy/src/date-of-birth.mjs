@@ -48,7 +48,13 @@ export const PLAUSIBLE_YEARS = Object.freeze({ min: 3, max: 25 });
  * office "we took his birthday from the ID number" rather than appearing to
  * invent one.
  */
-export function resolveBirthDate({ born, idNumber } = {}, today = new Date()) {
+// Officials are adults; the same check with a different window and a
+// different reason, so the message a screen shows says "an official", not
+// "a school pupil".
+export const PLAUSIBLE_YEARS_OFFICIAL = Object.freeze({ min: 16, max: 90 });
+
+export function resolveBirthDate({ born, idNumber } = {}, today = new Date(),
+                                 { plausible = PLAUSIBLE_YEARS, notPlausible = "born_not_plausible_for_a_school_pupil" } = {}) {
   const typed = born == null || born === "" ? null : String(born).trim();
   const id = idNumber == null || idNumber === "" ? null : String(idNumber).replace(/\s/g, "");
 
@@ -94,8 +100,8 @@ export function resolveBirthDate({ born, idNumber } = {}, today = new Date()) {
     return { ok: false, reason: "born_must_be_yyyy_mm_dd", field: "born" };
   }
   const years = (today.getTime() - at) / (365.2425 * 86400000);
-  if (!(years >= PLAUSIBLE_YEARS.min && years <= PLAUSIBLE_YEARS.max)) {
-    return { ok: false, reason: "born_not_plausible_for_a_school_pupil", field: typed ? "born" : "id_number" };
+  if (!(years >= plausible.min && years <= plausible.max)) {
+    return { ok: false, reason: notPlausible, field: typed ? "born" : "id_number" };
   }
 
   return {
@@ -114,6 +120,8 @@ export const BIRTH_DATE_MESSAGE = Object.freeze({
   born_must_be_yyyy_mm_dd: "A date of birth must be written as 2011-04-07.",
   born_not_plausible_for_a_school_pupil:
     `That date makes this person under ${PLAUSIBLE_YEARS.min} or over ${PLAUSIBLE_YEARS.max}. Check the year.`,
+  born_not_plausible_for_an_official:
+    `That date makes this official under ${PLAUSIBLE_YEARS_OFFICIAL.min} or over ${PLAUSIBLE_YEARS_OFFICIAL.max}. Check the year.`,
   id_number_unreadable: "That ID number is not thirteen digits starting with a date of birth.",
   id_number_disagrees_with_date_of_birth:
     "The ID number carries a different date of birth to the one typed. One of them belongs to somebody else.",

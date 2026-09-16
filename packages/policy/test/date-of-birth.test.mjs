@@ -6,7 +6,7 @@
  * accepts anything is the state this replaces, and a rule that only ever says
  * yes is indistinguishable from no rule.
  */
-import { resolveBirthDate, BIRTH_DATE_MESSAGE, PLAUSIBLE_YEARS } from "../src/date-of-birth.mjs";
+import { resolveBirthDate, BIRTH_DATE_MESSAGE, PLAUSIBLE_YEARS, PLAUSIBLE_YEARS_OFFICIAL } from "../src/date-of-birth.mjs";
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
@@ -105,5 +105,14 @@ group("Every refusal has words the office can read");
 }
 
 console.log("\n" + "─".repeat(52));
+// An official is an adult: the same check, a wider window, its own reason.
+{
+  const adult = resolveBirthDate({ born: "1979-03-02" }, new Date("2026-09-16"), { plausible: PLAUSIBLE_YEARS_OFFICIAL, notPlausible: "born_not_plausible_for_an_official" });
+  ok("a 47-year-old is a plausible official", adult.ok === true);
+  ok("...and not a plausible pupil", resolveBirthDate({ born: "1979-03-02" }, new Date("2026-09-16")).ok === false);
+  const child = resolveBirthDate({ born: "2014-03-02" }, new Date("2026-09-16"), { plausible: PLAUSIBLE_YEARS_OFFICIAL, notPlausible: "born_not_plausible_for_an_official" });
+  ok("a twelve-year-old is refused as an official, with the official's reason", child.ok === false && child.reason === "born_not_plausible_for_an_official");
+}
+
 console.log(`DATE OF BIRTH: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

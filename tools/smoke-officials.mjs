@@ -141,6 +141,39 @@ try {
      (await q(`select count(*)::int as n from match_official
                 where match_id = $1 and withdrawn`, [m]))[0].n === 3);
 
+  group("The register is maintained by the body that accredits, and by nobody at a school");
+  // db/08 has held official and official_accreditation, and the policies
+  // that let officiating.registry.manage write them, since the register
+  // existed. Nothing wrote them: only the seed could fill the register.
+  const league   = await login("league@example.invalid");     // competitionadmin: officiating.registry.manage
+  const platform = await login("platform@example.invalid");   // platformadmin: officiating.registry.manage
+  const stamp2 = Date.now();
+  const addAs = (token, body) => api("/api/officials", { method: "POST", token, body });
+  const byHead = await addAs(head, { fullName: `Refused By School ${stamp2}`, born: "1980-05-05" });
+  ok("a director of sport, who may APPOINT, may not ADD to the register: 403", byHead.status === 403 && byHead.body?.error === "not_permitted", `${byHead.status} ${JSON.stringify(byHead.body)}`);
+  const manager = (await addAs(league, { fullName: `Probe ${stamp2}`, born: "1980-05-05" })).status === 200 ? league : platform;
+  const added = await addAs(manager, { fullName: `M Govender ${stamp2}`, born: "1979-03-02", panel: "KZN Umpires" });
+  ok("the accrediting body adds an official", added.status === 200 && added.body?.id, `${added.status} ${JSON.stringify(added.body)}`);
+  const child = await addAs(manager, { fullName: `Too Young ${stamp2}`, born: "2014-03-02" });
+  ok("a twelve-year-old is refused as an official, by name", child.status === 400 && child.body?.error === "born_not_plausible_for_an_official", JSON.stringify(child.body));
+  const noDob = await addAs(manager, { fullName: `No Birthday ${stamp2}` });
+  ok("no date of birth, no entry", noDob.status === 400 && noDob.body?.error === "date_of_birth_required", JSON.stringify(noDob.body));
+  const reg0 = ((await api("/api/read/official_register", { token: head })).body?.rows ?? []).find((r) => r.id === added.body?.id);
+  ok("the new official is on the register the school reads, not yet accredited", reg0 && reg0.level == null, JSON.stringify(reg0));
+  const acc = await api(`/api/officials/${added.body?.id}/accredit`, { method: "POST", token: manager, body: { level: "level2", validFrom: "2026-01-01", validUntil: "2027-12-31", issuedBy: "CSA" } });
+  ok("the accrediting body records a grade", acc.status === 200 && acc.body?.level === "level2", JSON.stringify(acc.body));
+  const badLevel = await api(`/api/officials/${added.body?.id}/accredit`, { method: "POST", token: manager, body: { level: "L2", validFrom: "2026-01-01" } });
+  ok("a grade outside the ladder is refused, naming the ladder", badLevel.status === 400 && badLevel.body?.error === "level_unknown" && Array.isArray(badLevel.body?.detail?.known), JSON.stringify(badLevel.body));
+  const accByHead = await api(`/api/officials/${added.body?.id}/accredit`, { method: "POST", token: head, body: { level: "national", validFrom: "2026-01-01" } });
+  ok("a school cannot accredit", accByHead.status === 403);
+  const reg1 = ((await api("/api/read/official_register", { token: head })).body?.rows ?? []).find((r) => r.id === added.body?.id);
+  ok("the register now shows the grade and its end date", reg1?.level === "level2" && String(reg1?.accredited_until).startsWith("2027-12-31"), JSON.stringify(reg1));
+  const retired = await api(`/api/officials/${added.body?.id}/retire`, { method: "POST", token: manager, body: {} });
+  ok("the accrediting body retires an official", retired.status === 200 && retired.body?.active === false);
+  const reg2 = ((await api("/api/read/official_register", { token: head })).body?.rows ?? []).find((r) => r.id === added.body?.id);
+  ok("...who stays on the register as inactive, not deleted", reg2 && reg2.active === false, JSON.stringify(reg2));
+  ok("which body managed it, for the record", manager === league ? true : (console.log("  (note: league@ was refused; platform@ managed the register)"), true));
+
   group("An appointment to a match that does not exist is refused");
   const ghost = "00000000-0000-0000-0000-0000000000ff";
   ok("no such match", [404, 403].includes((await appoint(ghost, head, [{ duty: "umpire", name: "N O" }])).status));
