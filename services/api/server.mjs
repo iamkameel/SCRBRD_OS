@@ -51,6 +51,7 @@ import { clearanceRoutes } from "./write/clearance-api.mjs";
 import { recognitionRoutes } from "./write/recognition-api.mjs";
 import { competitionRoutes } from "./write/competitions-api.mjs";
 import { requestRoutes } from "./write/requests-api.mjs";
+import { newsRoutes } from "./write/news-api.mjs";
 import { kitRoutes } from "./write/kit-api.mjs";
 import { workloadRoutes } from "./write/workload-api.mjs";
 import { rosterAddRoutes } from "./write/roster-add-api.mjs";
@@ -230,6 +231,7 @@ const clearances = clearanceRoutes({ pool, secret: SECRET });
 const recognition = recognitionRoutes({ pool, secret: SECRET });
 const competitions = competitionRoutes({ pool, secret: SECRET });
 const requests = requestRoutes({ pool, secret: SECRET });
+const news = newsRoutes({ pool, secret: SECRET });
 const kit = kitRoutes({ pool, secret: SECRET });
 const workload = workloadRoutes({ pool, secret: SECRET });
 const rosterAdd = rosterAddRoutes({ pool, secret: SECRET });
@@ -385,6 +387,11 @@ const PLAYER_ROUTES = [
   // push half of onboarding. Authenticated: enrol_person() checks
   // user.role.assign and the granter table under the caller's identity.
   [/^\/api\/users$/,                                "POST", requests.enrol],
+  // The newsfeed. Which tier a post needs is decided by its ANCHOR, inside the
+  // INSERT policy — see db/12 — so these routes carry no capability checks.
+  [/^\/api\/news$/,                                 "POST", news.publish],
+  [/^\/api\/news\/([^/]+)\/publish$/,               "POST", news.send],
+  [/^\/api\/news\/([^/]+)\/withdraw$/,              "POST", news.withdraw],
   [/^\/api\/drills$/,                               "POST", kit.drill],
   [/^\/api\/equipment$/,                            "POST", kit.equipment],
   [/^\/api\/equipment\/([^/]+)\/issue$/,             "POST", kit.issue],

@@ -1337,7 +1337,7 @@ try {
         }
         if (!(await s.page.locator('[data-testid="os-main"]').count())) break;
       }
-      ok(`every screen the ${label} is offered opens, and stands when poked (${keys.length} screens, ${pokes} pokes)`, broken.length === 0);
+      ok(`every screen the ${label} is offered opens, and stands when poked (${keys.length} screens, ${pokes} pokes)`, broken.length === 0, broken.join(" | "));
       ok(`...and the sweep actually reached records for the ${label}`, pokes >= keys.length);
       if (broken.length) console.log("    " + broken.join("\n    "));
       await s.ctx.close();
@@ -1378,6 +1378,73 @@ try {
   // The director of sport is the subject because she is the reason it
   // surfaced: until user management was gated on the capability instead of a
   // demo role name, no live role could reach an Edit button at all.
+  group("There is a way out, and it really lets go");
+  {
+    // There was no way out of the shell at all. signOut() existed and was
+    // reachable from ONE screen — the holding page for somebody with no
+    // assignments yet — so anybody who actually got in stayed in until they
+    // cleared their browser. On a school's shared tablet that is the previous
+    // person's session still standing.
+    const c = await open();
+    ok("the director of sport signs in", await signIn(c.page, /Director of Sport/));
+    const tid = (id) => c.page.locator(`[data-testid="${id}"]`);
+
+    ok("the rail offers a way out", await tid("sidebar-signout").count() === 1);
+    // Identity sits beside it, which is the other half of the change: the role
+    // badge used to occupy a bordered block at the TOP of the rail, above the
+    // first destination.
+    const foot = await tid("sidebar").innerText();
+    ok("...next to who is signed in", /Director of Sport/i.test(foot));
+
+    await tid("sidebar-signout").click({ timeout: 4000 });
+    await c.page.waitForTimeout(1200);
+
+    // The landing page, not a blank shell and not the dashboard.
+    ok("signing out lands on the landing page",
+       (await c.page.locator('[data-testid="os-main"]').count()) === 0);
+    ok("...which offers a way back in",
+       (await c.page.locator("button", { hasText: /Get Started|Log In/ }).count()) > 0);
+
+    await c.page.reload({ waitUntil: "networkidle" });
+    await c.page.waitForTimeout(1500);
+    ok("...and a reload does not put the shell back",
+       (await c.page.locator('[data-testid="os-main"]').count()) === 0);
+
+    // AND IT LET GO OF WHO THEY WERE, which is a different claim and the one
+    // that needed checking. The reload assertion above passes either way: the
+    // saved appState is "landing" whether or not anything else was cleared, so
+    // it cannot tell a real sign-out from a cosmetic one — proved by putting
+    // the bug back and watching all 286 assertions stay green.
+    //
+    // What actually persists is the ROW: saveSession() writes role, userName
+    // and page into IndexedDB, and on a school's shared tablet that row is a
+    // readable record of who used it last. Not an access-control hole — the
+    // next sign-in overwrites all three — but it is the previous person's name
+    // sitting in storage, and clearSession() has existed unused since the
+    // scorer needed it. So the assertion reads the row.
+    const left = await c.page.evaluate(() => new Promise((resolve) => {
+      const r = indexedDB.open("scrbrd");
+      r.onerror = () => resolve("unreadable");
+      r.onsuccess = () => {
+        const db = r.result;
+        if (!db.objectStoreNames.contains("kv")) return resolve(null);
+        const g = db.transaction("kv", "readonly").objectStore("kv").get("session");
+        g.onsuccess = () => resolve(g.result ?? null);
+        g.onerror = () => resolve("unreadable");
+      };
+    }));
+    //
+    // NOT "the row is empty": the save effect fires on the very next render
+    // and writes the shell's new, signed-out state straight back. What the row
+    // must not contain is the person who just left.
+    const stale = left && (left.role === "directorofsport"
+                        || /director of sport/i.test(String(left.userName ?? "")));
+    ok("...leaving no trace of who just signed out",
+       !stale, `stored session still holds ${JSON.stringify(left)}`);
+    ok("no console errors through signing out", c.errors.length === 0, c.errors.join(" | "));
+    await c.ctx.close();
+  }
+
   group("A dialog can be left, and the app works afterwards");
   {
     const c = await open();

@@ -490,6 +490,53 @@ UPDATE assignment_subject s
    AND p.born IS NOT NULL
    AND s.valid_until IS NULL;
 
+-- ── Notices, one of each tier ───────────────────────────────────
+--
+-- One per scope, because the three tiers are the whole point and a fixture
+-- with only school notices could not demonstrate that a coach's post reaches
+-- his side and not the one next door. The competition notice is the sharp one:
+-- it belongs to no school, and both entered schools read it.
+-- The byline is stamped from the session by a trigger on news_post, never
+-- taken from the row — so the seed has to BE somebody while it inserts, or
+-- every notice comes out unsigned and the draft rule (an author sees their own
+-- unsent post, nobody else does) has no author to be true about.
+-- The byline is stamped from the session by a trigger on news_post, never
+-- taken from the row — so the seed has to BE somebody while it inserts, or
+-- every notice comes out unsigned and the draft rule (an author sees their own
+-- unsent post and nobody else does) has no author to be true about.
+--
+-- One session per author, rather than one for the lot: a coach's notice signed
+-- by the director of sport is a fixture that quietly contradicts the screen it
+-- is meant to demonstrate.
+SELECT set_config('app.user_id', '88888888-0000-0000-0000-000000000004', false);  -- 1XI coach
+INSERT INTO news_post (id, scope, school_id, team_code, competition_id, title, body, published_at) VALUES
+  ('0c000000-0000-0000-0000-000000000001', 'team', '11111111-1111-1111-1111-111111111111', '1XI', NULL,
+   'Nets moved to Thursday',
+   'Wednesday''s session clashes with the Michaelhouse fixture. Nets 1-3 on Thursday at 14:30 instead. Bring whites.',
+   now() - interval '2 days');
+
+SELECT set_config('app.user_id', '88888888-0000-0000-0000-000000000007', false);  -- director of sport
+INSERT INTO news_post (id, scope, school_id, team_code, competition_id, title, body, published_at) VALUES
+  ('0c000000-0000-0000-0000-000000000002', 'school', '11111111-1111-1111-1111-111111111111', NULL, NULL,
+   'Summer tour squad announced Friday',
+   'The touring squad is named at Friday assembly. Parents of selected boys will be contacted about kit and travel over the weekend.',
+   now() - interval '1 day'),
+  -- Unsent, so the draft rule has something to be true about.
+  ('0c000000-0000-0000-0000-000000000004', 'school', '11111111-1111-1111-1111-111111111111', NULL, NULL,
+   'Draft — end of season awards',
+   'Not finished. Dates to confirm with the headmaster.',
+   NULL);
+
+SELECT set_config('app.user_id', '88888888-0000-0000-0000-000000000021', false);  -- runs the league
+INSERT INTO news_post (id, scope, school_id, team_code, competition_id, title, body, published_at) VALUES
+  ('0c000000-0000-0000-0000-000000000003', 'competition', NULL, NULL, '99999999-0000-0000-0000-000000000001',
+   'Over-rate penalties from round four',
+   'From round four, sides more than two overs short at the scheduled cut-off forfeit one league point. The playing conditions have been updated.',
+   now() - interval '6 hours');
+
+-- Cleared, so nothing later in the seed inherits a session identity.
+SELECT set_config('app.user_id', '', false);
+
 -- The squad, LAST, because a squad row is now refused for a child with no
 -- verified, consented guardian link — so the families have to exist first.
 -- M Cele is excluded by the same rule that would refuse him: his parent has not

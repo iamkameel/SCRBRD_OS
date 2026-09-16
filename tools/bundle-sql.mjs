@@ -135,7 +135,17 @@ SELECT
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",
   CASE WHEN (SELECT count(*) FROM player) > 0
        THEN 'OK — ' || (SELECT count(*) FROM player) || ' players seeded'
-       ELSE 'PROBLEM' END                                        AS "Demo data";
+       ELSE 'PROBLEM' END                                        AS "Demo data",
+  -- The two things a rebuild is FOR, once the schema is already live: the
+  -- floor under the date-of-birth rule, and the seeded ID numbers that stopped
+  -- agreeing with their birthdays when those became relative.
+  CASE WHEN EXISTS (SELECT 1 FROM pg_constraint
+                     WHERE conname = 'player_born_required' AND convalidated)
+       THEN 'OK — enforced' ELSE 'PROBLEM' END                    AS "Date of birth required",
+  CASE WHEN (SELECT count(*) FROM player
+              WHERE id_number IS NOT NULL
+                AND to_char(born, 'YYMMDD') <> substring(id_number FROM 1 FOR 6)) = 0
+       THEN 'OK — all agree' ELSE 'PROBLEM' END                   AS "ID numbers match birthdays";
 `;
 writeFileSync("/home/user/SCRBRD_OS/scrbrd-supabase-verify.sql", verify);
 console.log("wrote scrbrd-supabase-rebuild.sql and scrbrd-supabase-verify.sql");

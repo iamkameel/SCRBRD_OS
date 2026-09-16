@@ -109,7 +109,10 @@ postgresql://scrbrd_app.<project-ref>:<app secret>@aws-1-<region>.pooler.supabas
 ```
 
 **Never run `--reset` against Supabase.** It drops the whole public schema and
-takes Supabase's own objects with it.
+takes Supabase's own objects with it. The migrator now refuses `--reset` for
+any host that is not `localhost`, `127.0.0.1` or the compose service `db`
+(exit code 2); the override, `I_UNDERSTAND_THIS_DESTROYS_PRODUCTION=1`, is
+named for what it does.
 
 Use `--reset-objects` instead. It drops only what this project created in
 `public` — every table, view, routine and enum this repository's migrations

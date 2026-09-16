@@ -394,6 +394,29 @@ export const READ_QUERIES = {
             order by n.observed_on desc, n.created_at desc`,
   },
 
+  // The newsfeed. Same rule as every read here: the policy on news_post has
+  // already decided who may see each row — a team post reaches that side, a
+  // school post that school, a competition post every school entered in it —
+  // so this query orders and names, and does no filtering that looks like an
+  // authorization check.
+  //
+  // The author's own drafts come back too, by the second SELECT policy, which
+  // is why published_at is returned rather than assumed: the screen shows a
+  // draft as a draft instead of as a notice nobody else can see.
+  news: {
+    text: `select n.id, n.scope, n.school_id, n.team_code, n.competition_id,
+                  n.title, n.body, n.published_at, n.created_at,
+                  s.name as school_name, c.name as competition_name,
+                  u.name as author_name
+             from news_post n
+             left join school s      on s.id = n.school_id
+             left join competition c on c.id = n.competition_id
+             left join app_user u    on u.id = n.author_id
+            order by coalesce(n.published_at, n.created_at) desc
+            limit 100`,
+    params: () => [],
+  },
+
   // Notices. The read policy demands news.read AND the capability each row
   // declares for its own subject matter, in the same scope — so this query
   // needs no filter of its own beyond ordering, and MUST NOT grow one that

@@ -7,7 +7,7 @@ import { SportSwitcher } from "./MobileNav.jsx";
 // ══════════════════════════════════════════════════════
 //  SIDEBAR
 // ══════════════════════════════════════════════════════
-function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount }) {
+function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount, userName, onSignOut }) {
   // The role's destinations, narrowed by the modules this school has on.
   // Narrowed only — useNav() cannot add a destination the role did not hold.
   const nav = useNav(role);
@@ -35,18 +35,12 @@ function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount }) {
         </button>
       </div>
 
-      {/* Role badge */}
-      {!collapsed&&(
-        <div style={{padding:"10px 14px",borderBottom:`1px solid ${D.border}`}}>
-          <div style={{display:"flex",alignItems:"center",gap:"8px",padding:"7px 10px",borderRadius:D.md,background:rc.color+"12",border:`1px solid ${rc.color}22`}}>
-            <span style={{fontSize:"14px"}}>{rc.icon}</span>
-            <div>
-              <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:rc.color}}>{rc.label}</div>
-              <div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted}}>Active role</div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* The role badge used to sit HERE, a bordered block between the logo and
+          the sport switcher, pushing the first destination a third of the way
+          down the rail. It says who you are, which belongs with the way to
+          stop being them — so it moved to the foot, next to Sign out, where
+          every other application puts it and where it costs the navigation
+          nothing. */}
 
       {/* Sport switcher — ScrbrdOS multi-sport shell */}
       {!collapsed&&<SportSwitcher/>}
@@ -109,10 +103,53 @@ function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount }) {
         ))}
       </nav>
 
-      {/* Bottom version */}
-      {!collapsed&&<div style={{padding:"12px 14px",borderTop:`1px solid ${D.border}`}}>
-        <div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted,letterSpacing:"0.06em"}}>ScrbrdOS v3.0 · CricketOS</div>
-      </div>}
+      {/* ── Who you are, and the way out ──────────────────────────
+          There was no way out of the shell at all. signOut() existed and was
+          reachable from exactly one screen — the holding page shown to somebody
+          whose requests are still with the school — so anybody who actually got
+          in stayed in until they cleared their browser. On a school's shared
+          tablet that is not a missing convenience, it is the previous person's
+          session still standing. */}
+      <div style={{borderTop:`1px solid ${D.border}`,padding:collapsed?"8px 0":"10px 10px"}}>
+        {!collapsed&&(
+          <div style={{display:"flex",alignItems:"center",gap:"8px",padding:"6px 8px",marginBottom:"6px"}}>
+            <span aria-hidden="true" style={{fontSize:"14px",flexShrink:0}}>{rc.icon}</span>
+            <div style={{minWidth:0,flex:1}}>
+              {/* The NAME first and the role under it. The top bar carries the
+                  same pair the other way up, because there it is a control for
+                  changing role and the role is the subject; here it is a
+                  statement of who is signed in. */}
+              <div style={{fontFamily:T.type.body,fontSize:"11px",fontWeight:600,color:T.content.primary,
+                           overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{userName || rc.label}</div>
+              <div style={{fontFamily:T.type.body,fontSize:"10px",color:rc.color,
+                           overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{rc.label}</div>
+            </div>
+          </div>
+        )}
+        {/* sidebar-signout, NOT nav-signout. `nav-<key>` means a navigation
+            DESTINATION: the screen sweep in tools/smoke-browser-read.mjs
+            enumerates them by that prefix and visits each one. Named nav-*,
+            this button was swept up as a twenty-second destination, clicked,
+            and signed the sweep out mid-run — three roles reported "signout:
+            landed on null". It is a control, like sidebar-toggle beside it. */}
+        <button onClick={onSignOut} className="pressBtn os-state" data-testid="sidebar-signout"
+          aria-label="Sign out"
+          style={{
+            width:collapsed?"100%":"calc(100% - 4px)",
+            margin:collapsed?"0":"0 2px",
+            padding:collapsed?"12px 0":"8px 10px",
+            display:"flex",alignItems:"center",justifyContent:collapsed?"center":"flex-start",gap:"10px",
+            background:"transparent",border:`1px solid ${D.border}`,borderRadius:T.radius.md,
+            cursor:"pointer",transition:`all ${T.motion.micro} ${T.motion.swift}`,
+          }}>
+          <span aria-hidden="true" style={{fontSize:"14px",color:T.content.secondary}}>⏻</span>
+          {!collapsed&&<span style={{fontFamily:T.type.body,fontSize:"12px",color:T.content.secondary}}>Sign out</span>}
+        </button>
+        {/* Kept, because "what version are you on?" is the first question of
+            every support conversation — but demoted from its own bordered
+            block to one line nobody has to read. */}
+        {!collapsed&&<div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted,letterSpacing:"0.06em",padding:"8px 8px 0"}}>ScrbrdOS v3.0 · CricketOS</div>}
+      </div>
     </div>
   );
 }

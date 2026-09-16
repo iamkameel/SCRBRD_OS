@@ -205,6 +205,33 @@ function asWeather(r) {
  * joined — see match_official in db/08. So a directory built from these needs
  * no second read and cannot show a blank where an umpire should be.
  */
+/**
+ * A notice, in the product's words.
+ *
+ * `scope` is kept because it is the whole point of the row: a reader needs to
+ * know whether they are looking at something for their side, their school, or
+ * the league, and the three read very differently. `audience` renders that as
+ * the thing it actually names rather than as the word "team".
+ */
+function asNewsPost(r) {
+  const audience = r.scope === "team" ? (r.team_code || "Team")
+                 : r.scope === "school" ? (r.school_name || "School")
+                 : (r.competition_name || "Competition");
+  return {
+    id: r.id,
+    scope: r.scope,
+    audience,
+    title: r.title,
+    body: r.body,
+    author: r.author_name || "The office",
+    publishedAt: r.published_at,
+    // A post the author has not sent yet comes back to the author alone, and
+    // is labelled — an unlabelled draft looks like a notice nobody else got.
+    draft: r.published_at == null,
+    at: r.published_at || r.created_at,
+  };
+}
+
 function asOfficial(r) {
   return { matchId: r.match_id, duty: r.duty, name: r.person_name,
            personId: r.person_id, officialId: r.official_id,
@@ -726,6 +753,7 @@ const ADAPT = {
   seasons: asSeason,
   competition_divisions: asDivision,
   weather: asWeather,
+  news: asNewsPost,
   officials: asOfficial,
   official_register: asRegisteredOfficial,
   ground_conditions: asGroundCondition,
