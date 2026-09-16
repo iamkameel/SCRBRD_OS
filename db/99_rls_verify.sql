@@ -838,6 +838,21 @@ BEGIN
   PERFORM _as(U_COACH);
   SELECT count(*) INTO n FROM player;
   PERFORM _assert(n > 0, 'coach starts with no visible players');
+  -- ── A scorer sees their own quarantined balls ────────────────
+  -- db/17. Placed before the coach's assignment is revoked below. Without this, an INSERT ... ON CONFLICT into quarantine failed the
+  -- SELECT-policy check for any scorer who could not otherwise read the
+  -- table, and a coach's stale ball was lost with a 42501.
+  PERFORM _as(U_COACH);
+  PERFORM set_config('app.device_id', 'verify-device', true);
+  INSERT INTO ball_event_quarantine (match_id, school_id, submitted_epoch, current_epoch, scorer_user_id, device_id, idempotency_key, body)
+  SELECT m.id, m.school_id, 9, 1, U_COACH, 'verify-device', 'verify:quarantine:own', '{}'::jsonb
+    FROM match m WHERE m.school_id = '11111111-1111-1111-1111-111111111111' AND m.team_code = '1XI' LIMIT 1
+  ON CONFLICT (idempotency_key) DO NOTHING;
+  SELECT count(*) INTO n FROM ball_event_quarantine WHERE idempotency_key = 'verify:quarantine:own';
+  PERFORM _assert(n = 1, 'a coach cannot quarantine (and then see) their own stale ball');
+
+  PERFORM set_config('app.device_id', '', true);
+
 
   PERFORM _revoke('88888888-0000-0000-0000-000000000004');
 

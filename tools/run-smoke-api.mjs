@@ -23,7 +23,7 @@ import { readdirSync } from "node:fs";
 // Every walk here gets a reset first: they assert against seeded rows and a
 // previous walk's writes would make them pass or fail for the wrong reason.
 const WALKS = [
-  "read", "sync", "handover", "fold",
+  "read", "sync", "handover", "handover-crash", "fold",
   "assess", "access", "eligibility", "roster", "audit", "guardian",
   "rating", "notes", "amend", "login",
   // The owner's key, minted from outside the platform, and redeemed.
