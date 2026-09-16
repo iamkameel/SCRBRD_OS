@@ -179,6 +179,53 @@ function PenaltySheet({battingTeam,bowlingTeam,onConfirm,onClose}){
 }
 
 /* ═══════════════════════════════════════════════════════
+   REVISION SHEET — the umpires cut the overs / reset the target
+═══════════════════════════════════════════════════════ */
+// No DLS here. The figures are the umpires', read off their sheet and typed;
+// a wrong automatic target is worse than a typed one, and a school ground
+// has no resource tables. What this records is WHAT was set, by whom, when.
+function RevisionSheet({overs,target,isChase,onConfirm,onClose}){
+  const[newOvers,setNewOvers]=useState(String(overs??20));
+  const[newTarget,setNewTarget]=useState(target!=null?String(target):"");
+  const[reason,setReason]=useState("rain");
+  const ov=parseInt(newOvers,10), tg=newTarget===""?null:parseInt(newTarget,10);
+  const valid=Number.isInteger(ov)&&ov>=1&&ov<=(overs??20)&&(tg===null||(Number.isInteger(tg)&&tg>=1));
+  return (
+    <Sheet title="Revise the innings" accent={D.amber} onClose={onClose}>
+      <div style={{paddingTop:"14px",display:"flex",flexDirection:"column",gap:"14px"}}>
+        <div>
+          <Lbl sx={{marginBottom:"8px"}}>Overs (was {overs})</Lbl>
+          <input data-testid="revise-overs" inputMode="numeric" value={newOvers} onChange={e=>setNewOvers(e.target.value)}
+            style={{width:"100%",padding:"11px 14px",borderRadius:D.md,background:D.surf2,border:`1px solid ${D.border}`,fontFamily:D.mono,fontSize:"18px",color:D.textPrimary,boxSizing:"border-box"}}/>
+        </div>
+        {isChase&&(
+          <div>
+            <Lbl sx={{marginBottom:"8px"}}>Target (was {target})</Lbl>
+            <input data-testid="revise-target" inputMode="numeric" value={newTarget} onChange={e=>setNewTarget(e.target.value)}
+              style={{width:"100%",padding:"11px 14px",borderRadius:D.md,background:D.surf2,border:`1px solid ${D.border}`,fontFamily:D.mono,fontSize:"18px",color:D.textPrimary,boxSizing:"border-box"}}/>
+          </div>
+        )}
+        <div>
+          <Lbl sx={{marginBottom:"8px"}}>Reason</Lbl>
+          <div style={{display:"flex",flexWrap:"wrap",gap:"6px"}}>
+            {["rain","bad light","late start","ground unfit","other"].map(r=>(
+              <button key={r} onClick={()=>setReason(r)} className="pressBtn" style={{
+                padding:"5px 10px",borderRadius:D.pill,cursor:"pointer",fontFamily:D.body,fontSize:"11px",fontWeight:500,
+                border:`1px solid ${reason===r?D.amber+"55":D.border}`,background:reason===r?`${D.amber}14`:D.surf2,
+                color:reason===r?D.amber:D.textMuted,transition:"all .15s"}}>{r}</button>
+            ))}
+          </div>
+        </div>
+        <Btn variant="primary" full disabled={!valid} data-testid="revise-confirm" onClick={()=>onConfirm({overs:ov,target:tg,reason})} sx={{
+          borderRadius:D.md,background:`linear-gradient(135deg,${D.amber},${D.orange})`}}>
+          {isChase&&tg!=null?`Revise to ${ov} overs, target ${tg}`:`Revise to ${ov} overs`}
+        </Btn>
+      </div>
+    </Sheet>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
    BATTING ORDER MANAGER SHEET
 ═══════════════════════════════════════════════════════ */
 // A squad entry is {id, name}. The demonstration fixtures carry bare strings,
@@ -539,4 +586,4 @@ function Innings2Sheet({target,teamName,overs,onClose,onStart}){
   );
 }
 
-export { BattingOrderSheet, CustomBatEntry, Innings2Sheet, NewOverSheet, NoBallSheet, PenaltySheet, ShotSelectorSheet, WicketSheet };
+export { BattingOrderSheet, CustomBatEntry, Innings2Sheet, NewOverSheet, NoBallSheet, PenaltySheet, RevisionSheet, ShotSelectorSheet, WicketSheet };

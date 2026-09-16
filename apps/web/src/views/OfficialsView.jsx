@@ -1,7 +1,10 @@
 import { useMemo, useState } from "react";
 import { D } from "../design/tokens.js";
-import { Avatar, Badge, Card, EmptyState, Pill, SectionHeader } from "../ui/primitives.jsx";
+import { Avatar, Badge, Btn, Card, EmptyState, Input, Modal, Pill, SectionHeader, Select } from "../ui/primitives.jsx";
 import { useLive, useRows } from "../lib/live.js";
+import { api } from "../lib/api.js";
+import { holdsCapability } from "../rbac/index.js";
+import { resolveBirthDate, PLAUSIBLE_YEARS_OFFICIAL, BIRTH_DATE_MESSAGE } from "@scrbrd/policy/date-of-birth";
 
 // ══════════════════════════════════════════════════════
 //  OFFICIALS — who is on the panel, and who actually stood
@@ -52,8 +55,41 @@ const DUTY = {
 function OfficialsView({ role }) {
   // Read through the choke point: row-scoped for this principal. Importing a
   // constant here would bypass it.
-  const { rows: APPOINTMENTS, loading, error, live } = useLive("officials", role);
-  const REGISTER = useRows("official_register", role);
+  // The register is maintained by the body that accredits — competition and
+  // platform administration, not a school. The screen offers the controls to
+  // whoever HOLDS officiating.registry.manage; the policies on the tables
+  // decide, and a refusal comes back as a message, never as a silent nothing.
+  const canManage = holdsCapability(role, "officiating.registry.manage");
+  const [nonce, setNonce] = useState(0);
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState({ fullName: "", born: "", idNumber: "", panel: "", email: "", phone: "" });
+  const [formError, setFormError] = useState(null);
+  const [accredit, setAccredit] = useState({ level: "level1", validFrom: new Date().toISOString().slice(0, 10), validUntil: "" });
+  const [manageError, setManageError] = useState(null);
+  const dob = form.born || form.idNumber
+    ? resolveBirthDate({ born: form.born, idNumber: form.idNumber }, new Date(), { plausible: PLAUSIBLE_YEARS_OFFICIAL, notPlausible: "born_not_plausible_for_an_official" })
+    : null;
+  const submitOfficial = async () => {
+    setFormError(null);
+    try {
+      await api("/api/officials", { method: "POST", body: { ...form, born: form.born || undefined, idNumber: form.idNumber || undefined } });
+      setAdding(false); setForm({ fullName: "", born: "", idNumber: "", panel: "", email: "", phone: "" }); setNonce((n) => n + 1);
+    } catch (e) { setFormError(BIRTH_DATE_MESSAGE?.[e.code] ?? (e.code === "not_permitted" ? "You do not hold the register." : e.code === "already_registered" ? "That ID number is already on the register." : `Could not add: ${e.code ?? e.message}`)); }
+  };
+  const submitAccreditation = async (id) => {
+    setManageError(null);
+    try {
+      await api(`/api/officials/${id}/accredit`, { method: "POST", body: { level: accredit.level, validFrom: accredit.validFrom, validUntil: accredit.validUntil || undefined } });
+      setNonce((n) => n + 1);
+    } catch (e) { setManageError(e.code === "not_permitted" ? "You do not hold the register." : `Could not accredit: ${e.code ?? e.message}`); }
+  };
+  const retireOfficial = async (id) => {
+    setManageError(null);
+    try { await api(`/api/officials/${id}/retire`, { method: "POST", body: {} }); setSel(null); setNonce((n) => n + 1); }
+    catch (e) { setManageError(e.code === "not_permitted" ? "You do not hold the register." : `Could not retire: ${e.code ?? e.message}`); }
+  };
+  const { rows: APPOINTMENTS, loading, error, live } = useLive("officials", role, nonce);
+  const REGISTER = useRows("official_register", role, nonce);
   const MATCHES = useRows("matches", role);
   const [duty, setDuty] = useState("all");
   const [sel, setSel]   = useState(null);
@@ -121,7 +157,22 @@ function OfficialsView({ role }) {
       <SectionHeader
         title="Officials"
         sub="Umpires · Scorers · Referees — from the appointments that were actually made"
-        color={D.sky}/>
+        color={D.sky}
+        actions={canManage && live && <Btn size="sm" data-testid="add-official" onClick={() => { setFormError(null); setAdding(true); }}>+ Add to the register</Btn>}/>
+
+      {adding && (
+        <Modal title="Add an official to the register" onClose={() => setAdding(false)}>
+          <Input label="Full name" value={form.fullName} onChange={(v) => setForm((f) => ({ ...f, fullName: v }))} placeholder="First Last" data-testid="official-name"/>
+          <Input label="Date of birth" type="date" value={form.born} onChange={(v) => setForm((f) => ({ ...f, born: v }))} data-testid="official-born"/>
+          <Input label="SA ID number (optional — checked against the date of birth)" value={form.idNumber} onChange={(v) => setForm((f) => ({ ...f, idNumber: v }))} placeholder="13 digits"/>
+          {dob && !dob.ok && <div style={{ fontFamily: D.body, fontSize: "12px", color: D.roseText, marginBottom: "8px" }}>{BIRTH_DATE_MESSAGE?.[dob.reason] ?? dob.reason}</div>}
+          <Input label="Panel (optional)" value={form.panel} onChange={(v) => setForm((f) => ({ ...f, panel: v }))} placeholder="KZN Umpires Association"/>
+          <Input label="Email (optional)" value={form.email} onChange={(v) => setForm((f) => ({ ...f, email: v }))} type="email"/>
+          <Input label="Phone (optional)" value={form.phone} onChange={(v) => setForm((f) => ({ ...f, phone: v }))}/>
+          {formError && <div role="alert" style={{ fontFamily: D.body, fontSize: "12px", color: D.roseText, marginBottom: "8px" }}>{formError}</div>}
+          <Btn data-testid="official-save" disabled={!form.fullName.trim() || !dob?.ok} onClick={submitOfficial}>Add to the register</Btn>
+        </Modal>
+      )}
 
       {/* Loading and failure are stated, never rendered as an empty directory.
           "No officials" and "we could not ask" are different sentences and only
@@ -229,6 +280,20 @@ function OfficialsView({ role }) {
                       </div>
                     </div>
                   </div>
+                  {canManage && live && selected.registered && (
+                    <div data-testid="official-manage" style={{ marginTop: "12px", padding: "12px", borderRadius: D.md, border: `1px solid ${D.border}`, background: D.surf2 }}>
+                      <div style={{ fontFamily: D.head, fontSize: "9px", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: D.textMuted, marginBottom: "8px" }}>Accreditation</div>
+                      <Select label="Level" value={accredit.level} onChange={(v) => setAccredit((a) => ({ ...a, level: v }))}
+                              options={Object.entries(LEVEL).map(([value, l]) => ({ value, label: l.label }))}/>
+                      <Input label="Valid from" type="date" value={accredit.validFrom} onChange={(v) => setAccredit((a) => ({ ...a, validFrom: v }))}/>
+                      <Input label="Valid until (blank = does not lapse)" type="date" value={accredit.validUntil} onChange={(v) => setAccredit((a) => ({ ...a, validUntil: v }))}/>
+                      {manageError && <div role="alert" style={{ fontFamily: D.body, fontSize: "12px", color: D.roseText, marginBottom: "8px" }}>{manageError}</div>}
+                      <div style={{ display: "flex", gap: "8px" }}>
+                        <Btn size="sm" data-testid="official-accredit" onClick={() => submitAccreditation(selected.id)}>Record accreditation</Btn>
+                        <Btn size="sm" variant="ghost" data-testid="official-retire" onClick={() => retireOfficial(selected.id)}>Retire from the register</Btn>
+                      </div>
+                    </div>
+                  )}
 
                   <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "16px" }}>
                     {[...selected.duties].map((d) => (

@@ -223,6 +223,37 @@ fixture owner for the demonstration; this is the one for a real database.
 The verify bundle's "An owner's key exists" column reads OK when somebody
 holds it.
 
+### 3b · The owner's way back in
+
+Every other account's code is reissued by whoever holds `user.invite` at
+their school. The owner answers to no school, so there is no office for
+theirs — and a code is single-use and time-boxed like any other, so the day
+comes when it has expired and section 3a's SQL is the only way back in.
+
+`POST /api/auth/owner/recover` is that door, permanently open and normally
+inert: it is a 501 until `OWNER_RECOVERY_SECRET` is set as an environment
+variable on the API — a **separate** secret from `SESSION_SECRET`, generated
+once and known only to the operator:
+
+```sh
+openssl rand -base64 32
+```
+
+Set it on Render (or wherever the API runs) alongside `SESSION_SECRET`. From
+then on, `https://<your-domain>/recover.html` — not linked from the app, kept
+by the operator — takes the owner's email and that secret, and returns a
+fresh sign-in code good for 24 hours. No SQL Editor, no `DATABASE_URL`, no
+Claude session required.
+
+The function behind it, `owner_recovery_issue()` (`db/18`), has exactly one
+gate of its own: the account named must already hold a live, platform-wide
+`superadmin` assignment. It cannot create that assignment or touch any other
+account, so a leaked `OWNER_RECOVERY_SECRET` lets somebody refresh the
+owner's own code — a real risk, on the order of `SESSION_SECRET` leaking —
+never mint new privilege. Rotate it (generate a new one, update the
+environment variable) if it is ever suspected to have leaked; nothing else
+needs to change.
+
 ### 4 · Secrets
 
 In Secret Manager, on the project:
@@ -233,6 +264,7 @@ In Secret Manager, on the project:
 | `SESSION_SECRET` | 32+ random bytes; the API refuses to start without it outside development |
 | `WEB_ORIGIN` | `https://scrbrd-os.web.app` (or the custom domain) |
 | `ANTHROPIC_API_KEY` | optional; without it Stats-Magic and commentary answer null |
+| `OWNER_RECOVERY_SECRET` | optional; unset means /api/auth/owner/recover is a 501. Separate from SESSION_SECRET — see §3b |
 
 ### 5 · Cloud Run, the first time
 

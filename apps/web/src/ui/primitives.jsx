@@ -184,13 +184,19 @@ const Modal = ({ title, children, onClose, width="520px" }) => {
  *
  * A real <label htmlFor> costs nothing visually and fixes all three.
  */
-const Input = ({ label, value, onChange, type="text", placeholder, small }) => {
+// `...rest` reaches the element — a data-testid or aria-* on a form field is
+// not silently dropped. Found the way the scorer's own Btn was: a walk's
+// .fill() timed out at Playwright's default 30s because the testid never
+// reached the DOM, which looks exactly like a slow page and nothing like a
+// missing prop.
+const Input = ({ label, value, onChange, type="text", placeholder, small, ...rest }) => {
   const id = useId();
   return (
   <div style={{marginBottom:small?"0":"14px"}}>
     {label&&<label htmlFor={id} style={{display:"block",fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"5px"}}>{label}</label>}
     <input id={id} type={type} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder}
       {...(label ? {} : { "aria-label": placeholder })}
+      {...rest}
       style={{width:"100%",padding:"9px 12px",background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,
         color:D.textPrimary,fontFamily:D.body,fontSize:"13px"}}/>
   </div>
@@ -211,12 +217,12 @@ const Input = ({ label, value, onChange, type="text", placeholder, small }) => {
 // The fix is a shape check, not a truthier fallback: an option is the
 // {value, label} form only when it actually is one.
 const optionOf = (o) => (o != null && typeof o === "object" ? o : { value: o, label: o });
-const Select = ({ label, value, onChange, options }) => {
+const Select = ({ label, value, onChange, options, ...rest }) => {
   const id = useId();
   return (
   <div style={{marginBottom:"14px"}}>
     {label&&<label htmlFor={id} style={{display:"block",fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"5px"}}>{label}</label>}
-    <select id={id} value={value} onChange={e=>onChange(e.target.value)}
+    <select id={id} value={value} onChange={e=>onChange(e.target.value)} {...rest}
       style={{width:"100%",padding:"9px 12px",background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,
         color:D.textPrimary,fontFamily:D.body,fontSize:"13px"}}>
       {options.map(o=>{ const { value: v, label: l } = optionOf(o); return <option key={v} value={v}>{l}</option>; })}

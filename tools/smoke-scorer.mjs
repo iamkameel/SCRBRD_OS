@@ -178,6 +178,24 @@ try {
   ok("undo rolled the derived scoreboard back", rolledBack !== null && rolledBack !== after);
   ok("no errors while undoing", errors.length === errsBeforeScoring);
 
+  // ── The umpires cut the match ────────────────────────────────
+  // Rain: the innings is revised to fewer overs. It is an EVENT in the log,
+  // so the pad's over count follows it and the innings ends where the
+  // umpires said — from the log, not from a number stored beside it.
+  const errsBeforeRevise = errors.length;
+  const reviseBtn = page.locator('[data-testid="revise-innings"]');
+  ok("the pad offers a way to revise the innings", (await reviseBtn.count()) === 1);
+  await reviseBtn.click({ timeout: 2500 }); await page.waitForTimeout(400);
+  await dump("revise sheet");
+  const oversField = page.locator('[data-testid="revise-overs"]');
+  ok("the revise sheet opens with an overs field", (await oversField.count()) === 1);
+  await oversField.fill("1");
+  await click(/^rain$/, 1500);
+  await page.locator('[data-testid="revise-confirm"]').click({ timeout: 2500 });
+  await page.waitForTimeout(500);
+  ok("the header now reads one over, revised", /·\s*1ov\s*\(revised\)/.test(await text()), (await text()).match(/·\s*\d+ov[^\n]*/)?.[0]);
+  ok("no errors through the revision", errors.length === errsBeforeRevise);
+
   // ── PRO MODE ──────────────────────────────────────────────────
   //
   // Reported from the live app: "in Live Scoring, the Pro Mode doesn't work."

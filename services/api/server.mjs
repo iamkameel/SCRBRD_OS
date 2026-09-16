@@ -45,6 +45,7 @@ import { sessionRoutes } from "./realtime/session-routes.mjs";
 import { deviceRoutes, notificationRoutes, transportFor } from "./notify/push-api.mjs";
 import { rewardWeightRoutes } from "./rewards/weights-api.mjs";
 import { fixtureRoutes } from "./write/fixture-api.mjs";
+import { ownerRecoveryRoutes } from "./write/owner-recovery-api.mjs";
 import { rosterRoutes } from "./write/roster-api.mjs";
 import { contactRoutes } from "./write/contacts-api.mjs";
 import { clearanceRoutes } from "./write/clearance-api.mjs";
@@ -56,6 +57,7 @@ import { kitRoutes } from "./write/kit-api.mjs";
 import { workloadRoutes } from "./write/workload-api.mjs";
 import { rosterAddRoutes } from "./write/roster-add-api.mjs";
 import { trainingRoutes } from "./write/training-api.mjs";
+import { officialRegisterRoutes } from "./write/officials-register-api.mjs";
 import { MatchHub } from "./realtime/realtime.mjs";
 
 const PORT = Number(process.env.PORT || 8787);
@@ -200,6 +202,8 @@ const guard   = guardianLinkRoutes({ pool, secret: SECRET });
 const squad   = squadRoutes({ pool, secret: SECRET });
 const toss    = tossRoutes({ pool, secret: SECRET });
 const officials = officialRoutes({ pool, secret: SECRET });
+const ownerRecovery = ownerRecoveryRoutes({ pool, secret: SECRET });
+const register  = officialRegisterRoutes({ pool, secret: SECRET });
 const avail    = availabilityRoutes({ pool, secret: SECRET });
 const trips    = transportRoutes({ pool, secret: SECRET });
 const bulk     = importRoutes({ pool, secret: SECRET });
@@ -264,6 +268,11 @@ async function devLogin(body) {
 // the mounted surface is readable at a glance.
 const EXACT = {
   "POST /api/auth/dev-login": async (body) => devLogin(body),
+
+  // The owner's own way back in — see owner-recovery-api.mjs. Off by
+  // default (501) until OWNER_RECOVERY_SECRET is set on this server.
+  "POST /api/auth/owner/recover": ownerRecovery.recover,
+
 
   // ── The real login, in two halves ──
   //
@@ -363,6 +372,12 @@ const MATCH_ROUTES = [
   // Appointing the officials. officiating.assign, which until now had nothing
   // it could be exercised on.
   [/^\/api\/matches\/([^/]+)\/officials$/,         "POST", officials.appoint, "officials"],
+  // The register itself: platform- and competition-level, not a school
+  // module, so no module gate — the policies on official/official_accreditation
+  // decide (officiating.registry.manage).
+  [/^\/api\/officials$/,                             "POST", register.add],
+  [/^\/api\/officials\/([^/]+)\/accredit$/,          "POST", register.accredit],
+  [/^\/api\/officials\/([^/]+)\/retire$/,            "POST", register.retire],
   // Putting a published notice in front of people. Keyed on the notice, so it
   // rides the id-bearing table rather than SCOUT_ROUTES.
   [/^\/api\/notifications\/([^/]+)\/push$/,       "POST", notices.push],

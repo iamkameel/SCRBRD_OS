@@ -47,6 +47,10 @@ const PILOT_ACCOUNTS = [
   // every other account here sees a placement with its contract value blanked,
   // which on its own is indistinguishable from a value nobody recorded.
   { email: "bursar@example.invalid",  label: "Finance",        role: "finance" },
+  // The body that accredits officials: competition administration holds the
+  // register, and no school role does — which is the boundary the Officials
+  // screen draws.
+  { email: "league@example.invalid",  label: "League Admin",   role: "competitionadmin" },
   // The head. The only demo account holding sponsorship.exclusivity.waive —
   // the one decision the commercial roles deliberately cannot take for
   // themselves — so it is the only one that can show the waiver working.

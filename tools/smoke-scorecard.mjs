@@ -90,7 +90,11 @@ try {
   await write("innings_start", { payload: {
     battingTeam: "Hilton College", bowlingTeam: "Michaelhouse",
     teamKey: "Hilton College", bowlingTeamKey: "Michaelhouse",
-    squad: [{ id: p1.id, name: p1.full_name }, { id: p2.id, name: p2.full_name }],
+    // Eleven in the squad, so one wicket is not "all out": the innings-over
+    // rule counts squad.length - 1, and a two-man squad would end the innings
+    // on the first wicket and prove nothing about overs.
+    squad: [{ id: p1.id, name: p1.full_name }, { id: p2.id, name: p2.full_name },
+            ...Array.from({ length: 9 }, (_, i) => ({ id: `scorecard-filler-${i}`, name: `Filler ${i + 1}` }))],
     bowlingSquad: [], overs: 20,
   } });
   await write("batters", { payload: { striker: p1.id, nonStriker: p2.id } });
@@ -117,6 +121,20 @@ try {
      inn0.batsmen.find((b) => b.id === p1.id)?.fours === 1);
   ok("the dismissal mode survives the round trip — 'Bowled' renders as the scorecard's own shorthand",
      /^b\b/i.test(inn0.batsmen.find((b) => b.id === p1.id)?.dismissal ?? ""));
+  ok("four balls into a twenty-over innings, it is not over", inn0.complete === false);
+
+  group("The umpires' revision is in the log, and the replay ends the innings where they said");
+  // Rain after four balls: the innings is cut to one over. A revision is an
+  // EVENT — stored, served, replayed — not an edit to the match row, so a
+  // viewer's scorecard and the scorer's device derive the same end.
+  await write("revision", { payload: { overs: 1, reason: "rain" } });
+  await write("ball", { ballType: "run", value: 0, strikerId: p2.id });
+  await write("ball", { ballType: "run", value: 0, strikerId: p2.id });
+  const after = ((await api(`/api/matches/${m}/events`, { token: head })).body?.events ?? []).map(fromRow);
+  ok("the revision comes back off the wire with its figures", after.some((e) => e.kind === "revision" && e.overs === 1 && e.reason === "rain"));
+  const cut = deriveInnings(after.filter((e) => e.innings === 0));
+  ok("the innings is over after six legal balls, as revised", cut.complete === true && cut.balls === 6, `complete ${cut.complete}, balls ${cut.balls}`);
+  ok("...and the scorecard says it was revised, and why", cut.revised?.overs === 1 && cut.revised?.reason === "rain");
 
   group("An unplayed fixture reports nothing, never an invented one");
   const empty = (await q(

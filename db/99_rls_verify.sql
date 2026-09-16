@@ -838,6 +838,32 @@ BEGIN
   PERFORM _as(U_COACH);
   SELECT count(*) INTO n FROM player;
   PERFORM _assert(n > 0, 'coach starts with no visible players');
+  -- ── The owner's recovery function only ever refreshes the owner's key ──
+  --
+  -- db/18. Two things to prove: it exists, and its ONE gate holds — a real
+  -- account with no platform-wide superadmin assignment is refused the same
+  -- way as an address that does not exist at all, never handed a code.
+  PERFORM _assert(to_regprocedure('owner_recovery_issue(text,text,integer)') IS NOT NULL,
+    'owner_recovery_issue() is missing — the owner has no way back in but psql');
+  DECLARE
+    r_owner    record;
+    r_notowner record;
+    r_nobody   record;
+  BEGIN
+    SELECT * INTO r_owner    FROM owner_recovery_issue('owner@example.invalid', 'verify-hash-owner', 3600);
+    SELECT * INTO r_notowner FROM owner_recovery_issue('coach@example.invalid', 'verify-hash-notowner', 3600);
+    SELECT * INTO r_nobody   FROM owner_recovery_issue('nobody-at-all@example.invalid', 'verify-hash-nobody', 3600);
+    PERFORM _assert(r_owner.ok = true, 'the seeded owner cannot recover their own key');
+    PERFORM _assert(r_notowner.ok = false AND r_notowner.reason = 'not_owner',
+      'a real account with no platform-wide superadmin was handed a recovery code');
+    PERFORM _assert(r_nobody.ok = false AND r_nobody.reason = 'not_owner',
+      'an address with no account was answered differently than a real non-owner — that is enumeration');
+    -- Leaves no live code the demonstration didn't already expect: undo the
+    -- write this verification made, on the account it touched.
+    UPDATE login_code SET used_at = now()
+     WHERE code_hash IN ('verify-hash-owner') AND used_at IS NULL;
+  END;
+
   -- ── A scorer sees their own quarantined balls ────────────────
   -- db/17. Placed before the coach's assignment is revoked below. Without this, an INSERT ... ON CONFLICT into quarantine failed the
   -- SELECT-policy check for any scorer who could not otherwise read the

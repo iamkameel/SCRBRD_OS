@@ -78,6 +78,7 @@ export function deriveInnings(events = [], ctx = {}) {
 
     striker: null, nonStriker: null, bowler: null,
     complete: false, endReason: null, freeHit: false,
+    revised: null,                 // { overs, target, reason } once the umpires revised the innings
     voided: 0,   // how many earlier events this log undoes — see the fold below
   };
 
@@ -211,6 +212,16 @@ export function deriveInnings(events = [], ctx = {}) {
       case KIND.INNINGS_END:
         inn.complete = true;
         inn.endReason = ev.reason ?? null;
+        break;
+
+      // The umpires' revision. The innings-over rule and the result below read
+      // inn.overs and inn.target, so a cut to ten overs ends the innings at
+      // sixty balls and a reset target decides the match — from this event,
+      // not from anything stored beside the log.
+      case KIND.REVISION:
+        if (ev.overs != null) inn.overs = ev.overs;
+        if (ev.target != null) inn.target = ev.target;
+        inn.revised = { overs: ev.overs ?? null, target: ev.target ?? null, reason: ev.reason ?? null };
         break;
 
       case KIND.BALL: {
@@ -406,11 +417,17 @@ function describeResult(innings) {
   if (innings.length < 2) return null;
   const [a, b] = innings;
   if (!b.complete) return null;
-  if (b.runs > a.runs) {
+  // The chase is judged against the TARGET, which is one more than the first
+  // innings unless the umpires revised it. Comparing the two totals was right
+  // only while those were the same number; in a rain-cut chase of 90 to beat
+  // a 150, 100 is a win, not a loss by fifty.
+  const target = b.target ?? a.runs + 1;
+  if (b.runs >= target) {
     const wktsLeft = Math.min(10, (b.squad?.length || 11) - 1) - b.wickets;
     return { winner: b.battingTeam, margin: `${wktsLeft} wicket${wktsLeft === 1 ? "" : "s"}` };
   }
-  if (a.runs > b.runs) return { winner: a.battingTeam, margin: `${a.runs - b.runs} run${a.runs - b.runs === 1 ? "" : "s"}` };
+  const short = target - 1 - b.runs;
+  if (short > 0) return { winner: a.battingTeam, margin: `${short} run${short === 1 ? "" : "s"}` };
   return { winner: null, margin: "tie" };
 }
 

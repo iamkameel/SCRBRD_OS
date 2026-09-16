@@ -16,7 +16,7 @@ function DynamicBar({inn,match,target,isChase,lastOver}){
   const[prevCard,setPrevCard]=useState(null);
   const[animKey,setAnimKey]=useState(0);
   const timerRef=useRef(null);
-  const sig=buildSignals(inn,match?.overs||20,target,isChase);
+  const sig=buildSignals(inn,inn?.overs??match?.overs??20,target,isChase);
   const cards=buildNarratives(sig,lastOver);
 
   useEffect(()=>{
