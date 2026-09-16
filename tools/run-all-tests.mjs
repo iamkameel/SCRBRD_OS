@@ -28,6 +28,7 @@ const SUITES = [
   ["read",     "services/api/read/read.test.mjs"],
   ["csv",      "services/api/io/csv.test.mjs"],
   ["write",    "services/api/write/write.test.mjs"],
+  ["migrate",  "tools/migrate.test.mjs"],
   ["realtime", "services/api/realtime/realtime.test.mjs"],
 ];
 

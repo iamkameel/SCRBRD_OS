@@ -62,6 +62,21 @@ const psql = (sqlArgs, label) => {
 };
 const sha = (file) => createHash("sha256").update(readFileSync(file)).digest("hex");
 
+// --reset drops schema public, and on a managed host that takes the
+// platform's own objects with it. DEPLOYING.md has said "never against
+// Supabase" since the first deploy; a sentence is not a guard. The URL's host
+// decides: anything that is not this machine (or the compose service `db`)
+// is refused before psql is ever spawned. The escape hatch names what it does.
+const hostOf = (url) => { try { return new globalThis.URL(url).hostname; } catch { return ""; } };
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]", "db"]);
+if (args.has("--reset") && !LOCAL_HOSTS.has(hostOf(URL))
+    && process.env.I_UNDERSTAND_THIS_DESTROYS_PRODUCTION !== "1") {
+  console.error(`✗ refusing --reset against ${hostOf(URL) || "an unparseable DATABASE_URL"}: not a local database.\n` +
+    `  Use --reset-objects on a demonstration database (see DEPLOYING.md), or a new db/NN_*.sql on a real one.\n` +
+    `  To override on a database you are certain holds no real record: I_UNDERSTAND_THIS_DESTROYS_PRODUCTION=1`);
+  process.exit(2);
+}
+
 if (args.has("--reset")) {
   console.log(`Resetting schema on ${URL.replace(/:[^:@]*@/, ":***@")}`);
   psql(["-c", "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"], "reset schema");
