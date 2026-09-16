@@ -47,6 +47,7 @@ import { rewardWeightRoutes } from "./rewards/weights-api.mjs";
 import { fixtureRoutes } from "./write/fixture-api.mjs";
 import { ownerRecoveryRoutes } from "./write/owner-recovery-api.mjs";
 import { rosterRoutes } from "./write/roster-api.mjs";
+import { dobCaptureRoutes } from "./write/dob-capture-api.mjs";
 import { contactRoutes } from "./write/contacts-api.mjs";
 import { clearanceRoutes } from "./write/clearance-api.mjs";
 import { recognitionRoutes } from "./write/recognition-api.mjs";
@@ -229,6 +230,7 @@ const rewards  = rewardWeightRoutes({ pool, secret: SECRET });
 const fixtures = fixtureRoutes({ pool, secret: SECRET });
 // Moving a boy between sides, dated. The history row is the trigger's.
 const roster   = rosterRoutes({ pool, secret: SECRET });
+const dobCapture = dobCaptureRoutes({ pool, secret: SECRET });
 // Who to ring for a child. Kept by the family and the office; the driver
 // reaches the manifest through the trip, see trip_contacts() in db/08.
 const contacts = contactRoutes({ pool, secret: SECRET });
@@ -389,6 +391,10 @@ const PLAYER_ROUTES = [
   // Which side he is in, from a date. Writes only player.team_code; the
   // membership history is recorded by the trigger on that column.
   [/^\/api\/players\/([^/]+)\/team$/,           "POST", roster.move],
+  // The one door back from a NULL date of birth. Refuses whenever born is
+  // already set — see dob-capture-api.mjs for why that is the WHERE clause
+  // rather than a check here.
+  [/^\/api\/players\/([^/]+)\/date-of-birth$/,  "POST", dobCapture.capture],
   [/^\/api\/players\/([^/]+)\/emergency-contacts$/, "POST", contacts.add],
   [/^\/api\/emergency-contacts\/([^/]+)\/retire$/,   "POST", contacts.retire],
   [/^\/api\/clearances$/,                           "POST", clearances.record],

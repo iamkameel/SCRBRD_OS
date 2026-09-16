@@ -305,6 +305,21 @@ export const READ_QUERIES = {
     params: q => [q?.personId || null],
   },
 
+  /**
+   * THE GAPS db/10 AND db/11 COULD ONLY WARN ABOUT.
+   *
+   * A boy with no date of birth on record, and a guardian link db/10 had to
+   * end for want of one — both used to exist only as a RAISE WARNING in a
+   * migration log nobody rereads. Through dob_gaps() in db/19, gated exactly
+   * like assignment_subject_read: user.role.assign or guardian.link.manage,
+   * per row, at that boy's own school and team. Nothing here is filtered a
+   * second time; if a row comes back, the function decided this person may
+   * have it.
+   */
+  dob_gaps: {
+    text: `select * from dob_gaps()`,
+  },
+
   grounds: {
     text: `select id, school_id, name, surface
              from ground

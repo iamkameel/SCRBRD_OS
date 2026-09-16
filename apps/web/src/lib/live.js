@@ -648,6 +648,22 @@ function asInjury(r) {
 }
 
 /**
+ * A data-quality gap dob_gaps() found: a boy with no birthday, or a guardian
+ * link db/10 already had to end for lack of one. `kind` distinguishes them —
+ * see the SQL for why they are one query rather than two: the second is
+ * always a consequence of the first, and a screen answering "what is wrong
+ * with this roster" wants both under one heading.
+ */
+function asDobGap(r) {
+  return { kind: r.kind, playerId: r.player_id, name: r.full_name, team: r.team_code,
+           school: r.school_id, linkId: r.link_id,
+           guardianId: r.guardian_id, guardianName: r.guardian_name, guardianEmail: r.guardian_email,
+           relationship: r.relationship,
+           endedOn: r.ended_on ? String(r.ended_on).slice(0, 10) : null,
+           live: true };
+}
+
+/**
  * A career line, with the derived figures the squad screens draw.
  *
  * Averages and rates are computed here, from the counts the database returned,
@@ -758,6 +774,7 @@ const ADAPT = {
   official_register: asRegisteredOfficial,
   ground_conditions: asGroundCondition,
   assignments: asAssignment,
+  dob_gaps: asDobGap,
   vehicles: asVehicle,
   trips: asTrip,
   availability: asAvailability,

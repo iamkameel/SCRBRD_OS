@@ -112,6 +112,9 @@ const WALKS = [
   // The officials register: a panel that belongs to no school, read
   // through official_masked so a name is public and a person is not.
   "register",
+  // The gaps db/10 and db/11 could only warn about, and the one write route
+  // that closes the first of them.
+  "dob-gaps",
 ];
 
 // Walks that drive a real browser AND need a database. They need two things
