@@ -125,7 +125,15 @@ DATABASE_URL='<owner connection string>' node tools/migrate.mjs --reset-objects 
 ```
 
 That is the DEMONSTRATION path, and only the demonstration path: it destroys
-everything in the database and reseeds it with invented people. Against a
+everything in the database and reseeds it with invented people.
+
+For a database that already carries the ledger — the demonstration instance
+after its first rebuild included — a new migration does not need a rebuild,
+and a rebuild throws away whatever was added since (the owner's real account
+and key, for one). `node tools/bundle-sql.mjs --apply 14` writes
+`scrbrd-supabase-apply-14.sql`: the one file and its ledger row, exactly what
+`tools/migrate.mjs` would apply, guarded so it refuses to run twice or ahead of
+its predecessor. Paste that instead, then the verify bundle. Against a
 database holding one real record it is exactly as wrong as `--reset` would be
 — there the rule above still stands, and a schema change is a new
 `db/NN_*.sql` with the `ALTER`s.

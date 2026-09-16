@@ -135,7 +135,8 @@ export const EVENT_COLUMNS = `
   seq, epoch, innings, kind, ball_type, value, shot, seg, zone,
   striker_id, non_striker_id, bowler_id, dismissed_id, dismissal, idempotency_key,
   scorer_user_id, device_id, client_ts, server_ts, payload,
-  theta, radius, placement_source, placement_null, close_position, capture_profile`;
+  theta, radius, placement_source, placement_null, close_position, capture_profile,
+  recovered`;   // a ball released from quarantine says so on the way out
 
 export async function readEvents(pool, secret, bearer, matchId, sinceSeq = 0) {
   return runAsPrincipal(pool, secret, bearer, async client => {
@@ -218,6 +219,64 @@ export function amendmentRoutes({ pool, secret }) {
         const { rows } = await client.query(
           `select * from scoring_amendment_decide($1, $2, $3)`,
           [req.params.id, approve, req.body?.note ?? null]);
+        return rows[0] ?? { ok: false, reason: "no_result" };
+      });
+    }),
+  };
+}
+
+
+/**
+ * The way out of quarantine. See db/14_quarantine_release.sql.
+ *
+ * Listing is the table's own read policy (scoring.correct over the match).
+ * Resolving goes through quarantine_resolve(), which checks its own authority
+ * — scoring.amend.approve, and not the submitting scorer. The columns an
+ * accepted ball is written with are produced HERE by toRow(), the same mapper
+ * the live path uses, so a released delivery and a live one can never be two
+ * different readings of the same event.
+ */
+export function quarantineRoutes({ pool, secret }) {
+  const handle = (fn) => async (req, res) => {
+    try { res.json(await fn(req)); }
+    catch (e) {
+      const status = e.code === "42501" ? 403 : (e.status || 500);
+      res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
+    }
+  };
+  return {
+    // GET /matches/:id/quarantine  — unresolved first, oldest first
+    list: handle(async (req) => runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+      const { rows } = await client.query(
+        `select q.id, q.match_id, q.submitted_epoch, q.current_epoch, q.scorer_user_id, u.name as scorer_name,
+                q.device_id, q.idempotency_key, q.body, q.quarantined_at, q.resolved_at, q.resolution
+           from ball_event_quarantine q
+           left join app_user u on u.id = q.scorer_user_id
+          where q.match_id = $1
+          order by (q.resolved_at is not null), q.quarantined_at, q.id`, [req.params.id]);
+      return { rows };
+    })),
+    // POST /quarantine/:id/resolve { accept, note? }
+    resolve: handle(async (req) => {
+      const accept = req.body?.accept === true;
+      return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+        // The row is read under RLS first: a caller who may not see it may not
+        // resolve it, and the function then applies the stricter rule.
+        const { rows: q } = await client.query(`select body from ball_event_quarantine where id = $1`, [req.params.id]);
+        if (!q.length) { const e = new Error("no_such_quarantine"); e.status = 404; throw e; }
+        let row = null;
+        if (accept) {
+          const payload = q[0].body?.payload || {};
+          if ((payload.kind ?? "ball") === "ball" && payload.type === "W") {
+            const d = normaliseDismissal(payload.dismissal);
+            if (!d) { const e = new Error("dismissal_unknown"); e.status = 400; e.detail = { value: payload.dismissal ?? null }; throw e; }
+            payload.dismissal = d;
+          }
+          row = { ...toRow(payload), innings: q[0].body?.innings };
+        }
+        const { rows } = await client.query(
+          `select * from quarantine_resolve($1, $2, $3, $4)`,
+          [req.params.id, accept, row ? JSON.stringify(row) : null, req.body?.note ?? null]);
         return rows[0] ?? { ok: false, reason: "no_result" };
       });
     }),

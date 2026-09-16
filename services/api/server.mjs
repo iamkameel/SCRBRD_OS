@@ -38,7 +38,7 @@ import { sessionProfile, runAsPrincipal, issueLoginCode, redeemMagicLink } from 
 import { signToken, AuthError } from "./auth/auth.mjs";
 import { readRoute, exportRoute, liveResources } from "./read/read-api.mjs";
 import { importRoutes, IMPORTS } from "./io/import-api.mjs";
-import { eventRoutes, amendmentRoutes, squadRoutes, tossRoutes, conditionsRoutes, officialRoutes, availabilityRoutes, transportRoutes } from "./write/events-api.mjs";
+import { eventRoutes, amendmentRoutes, quarantineRoutes, squadRoutes, tossRoutes, conditionsRoutes, officialRoutes, availabilityRoutes, transportRoutes } from "./write/events-api.mjs";
 import { scoutingRoutes, featureRoutes, drsRoutes, broadcastRoutes, sponsorRoutes, moduleAdminRoutes } from "./write/scouting-api.mjs";
 import { assessmentRoutes, accessRequestRoutes, developmentNoteRoutes, guardianLinkRoutes } from "./write/assessment-api.mjs";
 import { sessionRoutes } from "./realtime/session-routes.mjs";
@@ -195,6 +195,7 @@ const assess  = assessmentRoutes({ pool, secret: SECRET });
 const access  = accessRequestRoutes({ pool, secret: SECRET });
 const notes   = developmentNoteRoutes({ pool, secret: SECRET });
 const amend   = amendmentRoutes({ pool, secret: SECRET });
+const quarantine = quarantineRoutes({ pool, secret: SECRET });
 const guard   = guardianLinkRoutes({ pool, secret: SECRET });
 const squad   = squadRoutes({ pool, secret: SECRET });
 const toss    = tossRoutes({ pool, secret: SECRET });
@@ -303,6 +304,8 @@ const MATCH_ROUTES = [
   [/^\/api\/matches\/([^/]+)\/events$/,             "POST", events.append],
   [/^\/api\/matches\/([^/]+)\/events$/,             "GET",  events.list],
   [/^\/api\/matches\/([^/]+)\/amendments$/,        "POST", amend.request],
+  // The way out of quarantine: list what is waiting, then accept or reject.
+  [/^\/api\/matches\/([^/]+)\/quarantine$/,         "GET",  quarantine.list],
   // Naming the side. The two safeguarding triggers on match_squad fire here,
   // and had no way to fire at all before this route existed.
   [/^\/api\/matches\/([^/]+)\/squad$/,             "POST", squad.select],
@@ -440,6 +443,7 @@ const PLAYER_ROUTES = [
   [/^\/api\/players\/([^/]+)\/guardians\/withdraw$/,   "POST", guard.withdraw],
   [/^\/api\/notes\/([^/]+)$/,                    "PATCH", notes.revise],
   [/^\/api\/amendments\/([^/]+)\/decide$/,       "POST", amend.decide],
+  [/^\/api\/quarantine\/([^/]+)\/resolve$/,       "POST", quarantine.resolve],
 ];
 
 // Scouting: keyed on the scout, not on a match or a child. Registration takes
