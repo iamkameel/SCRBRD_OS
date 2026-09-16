@@ -192,6 +192,8 @@ SELECT
                JOIN role_assignment a ON a.id = s.assignment_id AND a.role = 'guardian'
               WHERE s.valid_until IS NULL) = 0
        THEN 'OK — none open-ended' ELSE 'PROBLEM' END            AS "Every guardian link has an end date",
+  CASE WHEN to_regprocedure('dob_gaps()') IS NOT NULL
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "Data-quality gaps are visible",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",

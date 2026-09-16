@@ -1115,6 +1115,50 @@ BEGIN
   PERFORM _assert(n = 0,
     'guardian_link_establish ended a link on some date other than the child''s majority');
 
+  -- ── dob_gaps(): the two facts db/10 and db/11 could only log ────
+  --
+  -- Reuses P_U13 (B Khumalo) exactly as he stands after the block above: born
+  -- restored, one live guardian link to U_BURSAR. Nothing below him is read
+  -- again in this file, so nothing here needs to leave him as it found him.
+  PERFORM _assert(to_regprocedure('dob_gaps()') IS NOT NULL,
+    'dob_gaps() is missing — a NULL date of birth is invisible outside a migration log');
+
+  -- A plain gap, with his guardian link left standing and still years from
+  -- its own majority date. This is the case dob_gaps() must NOT confuse with
+  -- an ended link: every link carries a future end date now, and a query that
+  -- tested valid_until IS NOT NULL alone would call this one ended too.
+  PERFORM _born_constraint(false);
+  PERFORM _set_born(P_U13, NULL);
+  PERFORM _born_constraint(true);
+  PERFORM _as(U_REGISTRAR);
+  SELECT count(*) INTO n FROM dob_gaps() WHERE kind = 'no_dob' AND player_id = P_U13;
+  PERFORM _assert(n = 1, 'dob_gaps() did not surface a player with no date of birth');
+  SELECT count(*) INTO n FROM dob_gaps() WHERE kind = 'guardian_link_ended' AND player_id = P_U13;
+  PERFORM _assert(n = 0, 'dob_gaps() called a link years from its own end date "ended"');
+  PERFORM _as(U_BURSAR);
+  SELECT count(*) INTO n FROM dob_gaps() WHERE player_id = P_U13;
+  PERFORM _assert(n = 0,
+    'dob_gaps() showed a data-quality gap to somebody holding neither user.role.assign nor guardian.link.manage');
+
+  -- The other half: the link wound back to its own start date — db/10's own
+  -- effect, produced the same way _expire_link() proves expiry live above —
+  -- with the birthday still missing. p.born IS NULL and s.valid_until in the
+  -- past is the exact signature dob_gaps() reads, not a state asserted for
+  -- the test's sake.
+  PERFORM _expire_link(P_U13);
+  PERFORM _as(U_REGISTRAR);
+  SELECT count(*) INTO n FROM dob_gaps()
+   WHERE kind = 'guardian_link_ended' AND player_id = P_U13
+     AND guardian_id = U_BURSAR AND relationship = 'parent';
+  PERFORM _assert(n = 1, 'dob_gaps() did not surface a guardian link ended for want of a date of birth');
+  PERFORM _as(U_BURSAR);
+  SELECT count(*) INTO n FROM dob_gaps() WHERE player_id = P_U13;
+  PERFORM _assert(n = 0, 'dob_gaps() showed an ended guardian link to somebody holding neither capability');
+
+  -- Restored. Nothing later reads P_U13 again, but leaving a child's own
+  -- birthday nulled for the rest of the run is not a state worth risking.
+  PERFORM _set_born(P_U13, (current_date - interval '13 years')::date);
+
   -- EXPIRY IS LIVE. Nothing runs between the two reads below but app_can(),
   -- which evaluates valid_until on every call — so there is no window in which
   -- a link is past its date and still working, and no scheduled job whose

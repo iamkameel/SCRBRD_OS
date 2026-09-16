@@ -11,6 +11,7 @@ import { schoolsWhere } from "../lib/session.js";
 import { holdsCapability } from "../rbac/index.js";
 import { api } from "../lib/api.js";
 import { disablePush, enablePush, pushSupported } from "../lib/push.js";
+import { resolveBirthDate, BIRTH_DATE_MESSAGE } from "@scrbrd/policy/date-of-birth";
 
 // ══════════════════════════════════════════════════════
 //  SETTINGS VIEW — full user CRUD + RBAC + upgrades
@@ -78,6 +79,55 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, on
   // reconciles two permitted lists rather than widening either.
   const linkedPlayerIds = new Set(users.map(u=>u.player).filter(Boolean));
   const noAccount = PLAYERS.filter(p=>!linkedPlayerIds.has(p.id));
+
+  // THE GAPS db/10 AND db/11 COULD ONLY WARN ABOUT.
+  //
+  // Both migrations named the boy and told an operator to fix it in a
+  // Postgres log nobody rereads. dob_gaps() reads the same two facts back —
+  // no birthday, and a guardian link db/10 had to end for want of one — so
+  // this screen can name them where the office actually looks.
+  const dobGaps = useRows("dob_gaps", role, nonce);
+  const noDob = dobGaps.filter(g=>g.kind==="no_dob");
+  const linkEnded = dobGaps.filter(g=>g.kind==="guardian_link_ended");
+
+  // ONE MODAL DOES BOTH STEPS. A guardian link that ended for want of a
+  // birthday needs the birthday captured AND the link re-established — two
+  // API calls, guardian_link_establish() refusing the second until the first
+  // has landed. Asking the office to reopen this card and find the same boy
+  // a second time is asking them to do the database's bookkeeping; the
+  // guardianId and relationship travel with the row precisely so this can be
+  // one click instead of two.
+  const [captureFor,   setCaptureFor]   = useState(null); // {playerId, name, guardianId?, guardianName?, relationship?}
+  const [captureValue, setCaptureValue] = useState({born:"",idNumber:""});
+  const [capturing,    setCapturing]    = useState(false);
+  const [captureError, setCaptureError] = useState(null);
+  const captureCheck = (captureValue.born || captureValue.idNumber)
+    ? resolveBirthDate({ born: captureValue.born, idNumber: captureValue.idNumber })
+    : null;
+  const saveDob = async () => {
+    if (!captureFor) return;
+    setCaptureError(null);
+    setCapturing(true);
+    try {
+      await api(`/api/players/${captureFor.playerId}/date-of-birth`, { method:"POST", body:{
+        born: captureValue.born || undefined,
+        idNumber: captureValue.idNumber || undefined,
+      }});
+      if (captureFor.guardianId) {
+        await api(`/api/players/${captureFor.playerId}/guardians`, { method:"POST", body:{
+          guardianId: captureFor.guardianId,
+          relationship: captureFor.relationship || "parent",
+        }});
+      }
+      setCaptureFor(null);
+      setCaptureValue({born:"",idNumber:""});
+      setNonce(n=>n+1);
+    } catch (e) {
+      setCaptureError(e?.code || e?.message || "capture_failed");
+    } finally {
+      setCapturing(false);
+    }
+  };
 
   // WHAT THIS USED TO DO, and why it is worth saying.
   //
@@ -361,6 +411,86 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, on
               </div>
             </Card>
           )}
+
+          {/* THE GAPS db/10 AND db/11 COULD ONLY WARN ABOUT.
+              Same reasoning as the card above: naming a problem and offering
+              nothing to do about it is how "how do we fix this?" gets asked.
+              Two rows from one read — see dob_gaps() in db/19 — under one
+              heading, because the second is always a consequence of the
+              first: a guardian link cannot be re-established until the
+              birthday above it is captured. */}
+          {(noDob.length>0||linkEnded.length>0)&&(
+            <Card sx={{padding:"14px",marginBottom:"14px",borderLeft:`3px solid ${D.rose}`}} data-testid="dob-gaps">
+              <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary,marginBottom:"4px"}}>
+                No date of birth on record — {noDob.length} of {PLAYERS.length}
+              </div>
+              <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginBottom:"10px",lineHeight:1.5}}>
+                Nobody's family can be linked to them and no guardian link can be given an end date until this is captured.
+                {canEdit?" Choose somebody to capture it.":""}
+              </div>
+              {noDob.length>0&&(
+                <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginBottom:linkEnded.length>0?"14px":0}}>
+                  {noDob.map(p=>{
+                    const Tag = canEdit ? "button" : "span";
+                    return (
+                      <Tag key={p.playerId} data-testid={`dob-gap-${p.playerId}`}
+                        {...(canEdit?{onClick:()=>{
+                          setCaptureFor({playerId:p.playerId,name:p.name});
+                          setCaptureValue({born:"",idNumber:""});
+                          setCaptureError(null);
+                        },title:`Capture ${p.name}'s date of birth`}:{})}
+                        style={{display:"inline-flex",alignItems:"center",gap:"6px",
+                          padding:"4px 10px",borderRadius:D.pill,background:D.rose+"14",border:`1px solid ${D.rose}33`,
+                          fontFamily:D.body,fontSize:"11px",color:D.textSecondary,
+                          cursor:canEdit?"pointer":"default"}}>
+                        <Avatar name={p.name} size={18} color={D.rose}/>
+                        {p.name}
+                        <span style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>{p.team}</span>
+                      </Tag>
+                    );
+                  })}
+                </div>
+              )}
+
+              {linkEnded.length>0&&(
+                <>
+                  <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textPrimary,marginBottom:"4px"}}>
+                    Guardian access ended for want of it — {linkEnded.length}
+                  </div>
+                  <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginBottom:"10px",lineHeight:1.5}}>
+                    These links were live once. Capturing the birthday and re-establishing the link is one step below.
+                  </div>
+                  <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
+                    {linkEnded.map(g=>(
+                      <div key={g.linkId} data-testid={`guardian-link-ended-${g.linkId}`}
+                        style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap",
+                          padding:"6px 10px",borderRadius:D.sm,background:D.amber+"0c",border:`1px solid ${D.amber}22`}}>
+                        <Avatar name={g.name} size={18} color={D.amber}/>
+                        <span style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary}}>{g.name}</span>
+                        <span style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>
+                          {g.relationship} · {g.guardianName||g.guardianEmail||"unknown guardian"} · ended {g.endedOn}
+                        </span>
+                        {canEdit&&(
+                          <button data-testid={`relink-${g.linkId}`}
+                            onClick={()=>{
+                              setCaptureFor({playerId:g.playerId,name:g.name,
+                                guardianId:g.guardianId,guardianName:g.guardianName,relationship:g.relationship});
+                              setCaptureValue({born:"",idNumber:""});
+                              setCaptureError(null);
+                            }}
+                            style={{marginLeft:"auto",background:"none",border:`1px solid ${D.border}`,borderRadius:D.sm,
+                              padding:"3px 9px",cursor:"pointer",fontFamily:D.body,fontSize:"10px",color:D.textSecondary}}>
+                            Capture &amp; re-establish
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </Card>
+          )}
+
           <Card>
             <div style={{overflowX:"auto"}}>
               <table style={{width:"100%",borderCollapse:"collapse"}}>
@@ -607,6 +737,50 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, on
           <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"10px"}}>
             <Btn variant="ghost" onClick={()=>{setAddUser(false);setEnrolError(null);}}>Cancel</Btn>
             <Btn onClick={enrolPerson} disabled={enrolling||!enrolAt}>{enrolling?"Enrolling…":"Enrol"}</Btn>
+          </div>
+        </Modal>
+      )}
+
+      {/* ── CAPTURE A DATE OF BIRTH ──
+          The same form for both rows of the card above: a plain gap asks for
+          one write, a guardian-link-ended row asks for two — this one and
+          then guardian_link_establish() with the guardianId and relationship
+          the read carried along, so the office does it once rather than
+          finding the same boy twice. */}
+      {captureFor&&(
+        <Modal title={captureFor.guardianId?"Capture & re-establish":"Capture date of birth"}
+               onClose={()=>{setCaptureFor(null);setCaptureError(null);}}>
+          <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,lineHeight:1.5,marginBottom:"10px"}}>
+            <strong style={{color:D.textPrimary}}>{captureFor.name}</strong> has no date of birth on record.
+            {captureFor.guardianId
+              ? ` Once it is captured, ${captureFor.guardianName||"the guardian"}'s link (${captureFor.relationship||"parent"}) is re-established in the same step.`
+              : " Type it, or give an ID number and it will be read from that."}
+          </div>
+          <Input label="Date of birth" value={captureValue.born}
+                 onChange={v=>setCaptureValue(p=>({...p,born:v}))} type="date"/>
+          <Input label="ID number (optional)" value={captureValue.idNumber}
+                 onChange={v=>setCaptureValue(p=>({...p,idNumber:v}))} placeholder="13 digits"/>
+          {captureCheck&&captureCheck.ok===false&&(
+            <div data-testid="capture-dob-note" role="alert" style={{marginTop:"8px",fontFamily:D.body,fontSize:"10px",color:D.roseText}}>
+              {BIRTH_DATE_MESSAGE[captureCheck.reason] || captureCheck.reason}
+            </div>
+          )}
+          {captureCheck&&captureCheck.ok&&captureCheck.source==="id_number"&&(
+            <div style={{marginTop:"8px",fontFamily:D.body,fontSize:"10px",color:D.textMuted}}>
+              Born <b style={{color:D.textSecondary}}>{captureCheck.born}</b>, read from the ID number.
+            </div>
+          )}
+          {captureError&&(
+            <div data-testid="capture-dob-error" style={{marginTop:"10px",padding:"8px 10px",borderRadius:D.sm,
+              background:D.rose+"14",border:`1px solid ${D.rose}33`,fontFamily:D.body,fontSize:"11px",color:D.roseText}}>
+              {BIRTH_DATE_MESSAGE[captureError] || ENROL_MESSAGE[captureError] || captureError}
+            </div>
+          )}
+          <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"10px"}}>
+            <Btn variant="ghost" onClick={()=>{setCaptureFor(null);setCaptureError(null);}}>Cancel</Btn>
+            <Btn data-testid="save-dob" onClick={saveDob} disabled={capturing||!captureCheck?.ok}>
+              {capturing?"Saving…":captureFor.guardianId?"Capture & re-establish":"Capture"}
+            </Btn>
           </div>
         </Modal>
       )}
