@@ -205,6 +205,39 @@ group("B. Ordered flush, retry, and partial acks");
   ok("backoff resets after success", e.backoffMs === 0);
 }
 
+group("B. Lost response — the server took the balls, the device never heard");
+{
+  // The worst network on a school ground is not "down"; it is "the request
+  // got through and the answer did not". The server has the over; the device
+  // still thinks it does not. What must not happen next is the over twice.
+  const storage = memoryStorage();
+  const serverHas = new Map();                    // idempotencyKey → seq, what Postgres would hold
+  let calls = 0, acceptedTotal = 0;
+  const transport = async (mid, batch) => {
+    calls++;
+    const accepted = [], duplicates = [];
+    for (const e of batch) {
+      if (serverHas.has(e.idempotencyKey)) duplicates.push({ idempotencyKey: e.idempotencyKey, seq: serverHas.get(e.idempotencyKey) });
+      else { serverHas.set(e.idempotencyKey, serverHas.size + 1); accepted.push({ idempotencyKey: e.idempotencyKey, seq: serverHas.size }); }
+    }
+    acceptedTotal += accepted.length;
+    if (calls === 1) throw new Error("socket hang up");     // processed, then the response is lost
+    return { accepted, duplicates };
+  };
+  const e = new SyncEngine({ matchId: "m3", deviceId: "devA", scorerId: "uS", epoch: 3, storage, transport, isOnline: () => false });
+  await e.init();
+  for (let i = 0; i < 3; i++) await e.record({ kind: "ball", type: "run", value: 1 });
+  e.isOnline = () => true;
+  await e.sync();                                                 // the server stored 3; the device heard nothing
+  ok("the server holds the balls", serverHas.size === 3);
+  ok("the device still holds them as pending", e.pendingCount === 3);
+  const r = await e.sync();                                       // the retry
+  ok("the retry is answered as duplicates and settles", r.remaining === 0 && e.pendingCount === 0);
+  ok("the server holds each ball ONCE", serverHas.size === 3 && acceptedTotal === 3);
+  ok("storage cleared after the duplicate acks", (await storage.list("evt:")).length === 0);
+  ok("the optimistic score counts each ball once", e.score().runs === 3);
+}
+
 group("B. Stale-epoch server response → moved to rejected, not lost silently");
 {
   const storage = memoryStorage();

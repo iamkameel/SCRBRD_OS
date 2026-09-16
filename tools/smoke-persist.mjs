@@ -15,6 +15,8 @@
  *   PERSIST_DEBUG=1 node tools/smoke-persist.mjs
  */
 import { chromium } from "playwright-core";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { launchOptions } from "./chromium.mjs";
 import { offline } from "./offline-browser.mjs";
 import { createServer } from "node:http";
@@ -41,22 +43,32 @@ const server = createServer(async (req, res) => {
 });
 await new Promise((r) => server.listen(PORT, r));
 
-const browser = await chromium.launch({ ...launchOptions() });
-// One persistent context: IndexedDB must survive the reload, which means the
-// same origin and the same profile. A fresh page in the same context is exactly
-// what a scorer's browser does when it reloads the tab.
-const page = await browser.newPage();
-await offline(page.context());
-
+// A PERSISTENT PROFILE on disk, not an in-memory context. A reload keeps
+// IndexedDB either way; what an in-memory context cannot survive is the
+// browser being CLOSED — the tab swiped away, the phone restarted — which
+// is the case a scorer at a ground actually hits. The profile is what a
+// real browser keeps between launches, so the walk closes it and relaunches
+// on the same directory.
+const profile = mkdtempSync(join(tmpdir(), "scrbrd-persist-"));
 const errors = [];
-page.on("pageerror", (e) => { errors.push(`pageerror: ${e.message}`); });
-page.on("console", (m) => {
-  if (m.type() !== "error") return;
-  const t = m.text();
-  // "Failed to load resource" is Chrome's own line for a 404/aborted request.
-  if (/Failed to load resource/.test(t)) return;
-  errors.push(`console.error: ${t}`);
-});
+const wire = (pg) => {
+  pg.on("pageerror", (e) => { errors.push(`pageerror: ${e.message}`); });
+  pg.on("console", (m) => {
+    if (m.type() !== "error") return;
+    const t = m.text();
+    // "Failed to load resource" is Chrome's own line for a 404/aborted request.
+    if (/Failed to load resource/.test(t)) return;
+    errors.push(`console.error: ${t}`);
+  });
+};
+const launch = async () => {
+  const ctx = await chromium.launchPersistentContext(profile, { ...launchOptions() });
+  await offline(ctx);
+  const pg = ctx.pages()[0] ?? await ctx.newPage();
+  wire(pg);
+  return { ctx, pg };
+};
+let { ctx: context, pg: page } = await launch();
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
@@ -172,11 +184,35 @@ try {
   // The whole point: the deliveries scored offline survived.
   ok(`score survived the reload (${beforeReload} → ${afterReload})`, afterReload === beforeReload);
   ok("no errors after the reload", errors.length === errsBefore);
+
+  // ── The browser is CLOSED, not reloaded ──────────────────────
+  // Everything above survives a reload because the context lives on. This
+  // is the case the audit found untested: the browser process ends — the
+  // tab is swiped away, the phone restarts — and the match must still be on
+  // the device when it is opened again.
+  await context.close();
+  ({ ctx: context, pg: page } = await launch());
+  await page.goto(`http://localhost:${PORT}/`, { waitUntil: "networkidle" });
+  await page.waitForTimeout(1500);
+  ok("the app comes back after the browser was closed", (await page.$eval("#root", (el) => el.innerHTML.length)) > 500);
+  if (!/UNDO|OUTCOME|Phase|\bDOT\b/i.test(await text())) {
+    if (!/Match Centre/i.test(await text())) await click(/Get Started|Log In/, 3000);
+    if (/Head Coach/i.test(await text())) { await click("Head Coach", 3000); await click(/^Sign In$/, 3000); await page.waitForTimeout(1200); }
+    await intoScorer();
+  }
+  await clearBlockers();
+  if (!/\bDOT\b/i.test(await text())) await click(/QUICK MODE/i, 2500);
+  const afterReopen = await scoreOf();
+  if (DEBUG) console.log(`[debug] ${afterReopen} after close and reopen`);
+  ok("the match is still on the device after the browser was closed", afterReopen !== null);
+  ok(`the offline score survived the browser closing (${beforeReload} → ${afterReopen})`, afterReopen === beforeReload);
+  ok("no errors after the reopen", errors.length === errsBefore);
 } catch (e) {
   ok(`persistence walk threw: ${e.message.slice(0, 90)}`, false);
 } finally {
-  await browser.close();
+  await context.close().catch(() => {});
   server.close();
+  rmSync(profile, { recursive: true, force: true });
 }
 
 if (errors.length) {
