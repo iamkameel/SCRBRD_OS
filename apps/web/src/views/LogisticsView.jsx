@@ -1,5 +1,6 @@
 
 import { useState } from "react";
+import { holdsCapability } from "../rbac/index.js";
 import { D } from "../design/tokens.js";
 import { dateStr, today } from "../lib/format.js";
 import { Avatar, Badge, Btn, Card, KPICard, SectionHeader, Select } from "../ui/primitives.jsx";
@@ -46,7 +47,7 @@ function LogisticsView({ role }) {
   const VEHICLES = useRows("vehicles", role);
   const TRIPS    = useRows("trips", role);
   const [manifest,  setManifest]  = useState(null);
-  const canEdit = role==="superadmin"||role==="schooladmin"||role==="driver";
+  const canEdit = holdsCapability(role,"transport.manage")||holdsCapability(role,"transport.drive");
 
   const EQUIPMENT_INVENTORY = [
     { id:"eq1",  name:"Match Balls (Dukes)",      category:"Cricket",   qty:24, condition:"Good",      location:"Equipment Room A", lastAudit:"2025-02-01" },

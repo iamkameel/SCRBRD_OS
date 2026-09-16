@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ROLES } from "../design/roles.js";
 import { D } from "../design/tokens.js";
-import { can } from "../rbac/index.js";
+import { can, holdsCapability } from "../rbac/index.js";
 import { useLive, useRows } from "../lib/live.js";
 import { api } from "../lib/api.js";
 
@@ -23,10 +23,13 @@ function ManagementView({ role, users, setUsers }) {
   const [searchQ,   setSearchQ]   = useState("");
   const [newUser,   setNewUser]   = useState({name:"",email:"",role:"player",status:"active"});
 
+  // The one gate that stays on the role name: only the owner's key may
+  // appoint another, which is the policy's own rule (db/99: platformadmin
+  // cannot grant superadmin). Everything else asks what the role HOLDS.
   const isSuperAdmin  = role==="superadmin";
   const isAdmin       = ["superadmin","schooladmin","sportsmaster"].includes(role);
   const isGroundskeeper = role==="groundskeeper";
-  const canManageUsers= isSuperAdmin;
+  const canManageUsers= holdsCapability(role,"user.role.assign");
 
   // Filtered users
   const filteredUsers = (users||USERS_INITIAL).filter(u=>{
@@ -411,7 +414,7 @@ function ManagementView({ role, users, setUsers }) {
       )}
 
       {/* ── AUDIT LOG ── */}
-      {activeTab==="audit"&&isSuperAdmin&&(
+      {activeTab==="audit"&&holdsCapability(role,"audit.read")&&(
         <div style={{borderRadius:D.lg,border:`1px solid ${D.border}`,background:D.surf1,overflow:"hidden"}}>
           <div style={{padding:"12px 18px",borderBottom:`1px solid ${D.border}`}}><div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary}}>🔍 Audit Log</div></div>
           {AUDIT_LOG.map((a,i)=>{
