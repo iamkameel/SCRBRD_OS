@@ -76,6 +76,68 @@ export const OFF_THE_BAT = new Set([BALL_TYPE.RUN, BALL_TYPE.WICKET, BALL_TYPE.N
 
 export const RETIRE_REASON = { HURT: "hurt", OUT: "out" }; // retired hurt may resume
 
+/*
+ * HOW A BATTER IS OUT — a closed vocabulary.
+ *
+ * The law used to be a regular expression over free text: replay.mjs asked
+ * /run ?out|retired|obstruct|handled|timed ?out/i whether the bowler was
+ * credited, and a second, narrower regex whether a wicket stood on a free
+ * hit. The scorer's own sheet happened to spell every mode so the regex
+ * caught it; anything else — a CSV, a second client, "r/o", "run-out",
+ * "timed-out" — credited the bowler with a wicket that was never his, and the
+ * two regexes disagreed about handled ball on a free hit. A law encoded where
+ * the display string lived is not a law.
+ *
+ * The eleven in the Laws. `normaliseDismissal` is the ONLY way in: it takes
+ * whatever a producer wrote and returns one of these or null, and the API
+ * refuses a wicket it returns null for. Everything downstream — the reducer,
+ * SQL, the sheet, a scorecard line — reads the canonical value.
+ */
+export const DISMISSAL = Object.freeze({
+  BOWLED: "bowled", CAUGHT: "caught", LBW: "lbw", RUN_OUT: "run_out", STUMPED: "stumped",
+  HIT_WICKET: "hit_wicket", HANDLED_BALL: "handled_ball", OBSTRUCTING_FIELD: "obstructing_field",
+  TIMED_OUT: "timed_out", RETIRED_OUT: "retired_out", HIT_TWICE: "hit_twice",
+});
+export const DISMISSALS = new Set(Object.values(DISMISSAL));
+export const DISMISSAL_LABEL = Object.freeze({
+  bowled: "Bowled", caught: "Caught", lbw: "LBW", run_out: "Run Out", stumped: "Stumped",
+  hit_wicket: "Hit Wicket", handled_ball: "Handled Ball", obstructing_field: "Obstructing the Field",
+  timed_out: "Timed Out", retired_out: "Retired Out", hit_twice: "Hit the Ball Twice",
+});
+/**
+ * Not the bowler's, and not saved by a free hit: the six the bowler did not
+ * take (Law 21.19 lists the ways out off a free hit — run out, handled,
+ * obstructing, hit twice; timed out and retired out need no delivery at all).
+ * One set, both questions, so the two can never disagree again.
+ */
+export const NON_DELIVERY = new Set([
+  DISMISSAL.RUN_OUT, DISMISSAL.HANDLED_BALL, DISMISSAL.OBSTRUCTING_FIELD,
+  DISMISSAL.TIMED_OUT, DISMISSAL.RETIRED_OUT, DISMISSAL.HIT_TWICE,
+]);
+export const chargedToBowler = (d) => DISMISSALS.has(d) && !NON_DELIVERY.has(d);
+export const standsOnFreeHit = (d) => NON_DELIVERY.has(d);
+
+const DISMISSAL_SPELLINGS = [
+  [DISMISSAL.RUN_OUT,           /^(run[ _-]?out|r\/?o)$/],
+  [DISMISSAL.STUMPED,           /^(stumped|st)$/],
+  [DISMISSAL.CAUGHT,            /^(caught|c|ct|caught (and|&) bowled|c&b)$/],
+  [DISMISSAL.BOWLED,            /^(bowled|b)$/],
+  [DISMISSAL.LBW,               /^(lbw|leg before( wicket)?)$/],
+  [DISMISSAL.HIT_WICKET,        /^(hit[ _-]?wicket|hw)$/],
+  [DISMISSAL.HANDLED_BALL,      /^(handled([ _-]the)?[ _-]?ball|handled)$/],
+  [DISMISSAL.OBSTRUCTING_FIELD, /^(obstruct(ing|ed)?([ _-]the)?[ _-]?field|obstruction)$/],
+  [DISMISSAL.TIMED_OUT,         /^timed[ _-]?out$/],
+  [DISMISSAL.RETIRED_OUT,       /^retired([ _-]?out)?$/],
+  [DISMISSAL.HIT_TWICE,         /^(hit([ _-]the)?([ _-]ball)?[ _-]?twice|double[ _-]?hit)$/],
+];
+/** Whatever a producer wrote → one of DISMISSAL, or null for "not a dismissal we know". */
+export function normaliseDismissal(text) {
+  if (typeof text !== "string") return null;
+  const t = text.trim().toLowerCase().replace(/\s+/g, " ");
+  if (DISMISSALS.has(t)) return t;
+  return DISMISSAL_SPELLINGS.find(([, re]) => re.test(t))?.[0] ?? null;
+}
+
 export const INNINGS_END_REASON = {
   ALL_OUT:   "all_out",
   OVERS:     "overs_complete",
@@ -235,7 +297,9 @@ export const ball = (o) => ({
   bowlerApproach: o.bowlerApproach ?? null,
   // Dismissal detail. `fielder` was dropped by the artifact's log and is
   // carried here so a scorecard line reads "c Naidoo b Mkhize" after replay.
-  dismissal: o.dismissal ?? null,
+  // Canonical where it can be. An unknown spelling is kept as written so the
+  // API can refuse it by name rather than quietly recording a null wicket.
+  dismissal: normaliseDismissal(o.dismissal) ?? o.dismissal ?? null,
   fielder: o.fielder ?? null,
   dismissed: o.dismissed ?? null, // player id; defaults to the striker at replay
   freeHit: o.freeHit ?? false,

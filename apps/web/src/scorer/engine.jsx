@@ -4,6 +4,7 @@ import {
   ball as ballEvent, penalty as penaltyEvent, inningsEnd,
   newEventId, undoLast,
   noPlacement, NO_CONTACT_SHOTS, PLACEMENT_NULL, PLACEMENT_SOURCE, CAPTURE_PROFILE,
+  DISMISSAL_LABEL,
 } from "@scrbrd/scoring";
 import { D } from "../design/tokens.js";
 import { deviceId } from "../lib/device.js";
@@ -995,7 +996,7 @@ function SCRBRD({resume}={}){
                         <BallDot ball={b} size={24}/>
                         <div style={{flex:1}}>
                           <div style={{fontFamily:D.body,fontSize:"12px",color:D.textPrimary,fontWeight:500}}>
-                            {b.type==="W"?"WICKET — "+b.dismissal:
+                            {b.type==="W"?"WICKET — "+(DISMISSAL_LABEL[b.dismissal]??b.dismissal):
                              b.type==="Wd"?"Wide ball":
                              b.type==="Nb"?`No Ball (${b.nbType?.replace("_"," ")||""}), ${b.value||0}+1 runs`:
                              b.type==="Pen"?`Penalty ${b.value} runs to ${b.to} team — ${b.reason}`:

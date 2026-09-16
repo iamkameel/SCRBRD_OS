@@ -15,8 +15,12 @@ import { toCsv } from "../io/csv.mjs";
 import {
   DISCIPLINES, battingIndex, bowlingIndex, coachIndex, adjustedRating,
   SCALE_MIN, SCALE_MAX,
-  fromRow, deriveInnings, deriveMatchPhases,
+  fromRow, deriveInnings, deriveMatchPhases, NON_DELIVERY,
 } from "@scrbrd/scoring";
+
+// The dismissals that are not the bowler's, as a SQL list, from the one set
+// the reducer reads — so a query cannot restate the law differently.
+const NOT_THE_BOWLERS = [...NON_DELIVERY].map((d) => `'${d}'`).join(", ");
 
 // resource → query. `masked: true` documents (and lets tests assert) that the
 // query reads a masking view. `params` maps request query → SQL params.
@@ -1549,7 +1553,7 @@ export const READ_QUERIES = {
                   count(*) filter (where b.value = 6)::int                     as sixes,
                   count(*) filter (
                     where b.ball_type = 'W'
-                      and coalesce(b.dismissal,'') !~* 'run ?out'
+                      and coalesce(b.dismissal,'') not in (${NOT_THE_BOWLERS})
                       and coalesce(b.dismissed_id, b.striker_id) = b.striker_id
                   )::int                                                       as dismissals
              from ball_event_live b

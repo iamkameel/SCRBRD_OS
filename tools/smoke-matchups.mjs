@@ -110,7 +110,7 @@ try {
   await ball({ value: 6 });
   await ball({ type: "B", value: 2 });            // a bye: faced, but not his runs
   await ball({ value: 1 });
-  await ball({ type: "W", value: 0, dismissal: "Bowled" });
+  await ball({ type: "W", value: 0, dismissal: "bowled" });
 
   group("The matchup is counted off the log");
   const rows = await matchups(head, bat.id);
@@ -135,8 +135,8 @@ try {
   // The same rule player_bowling_career applies. Two failures are possible and
   // both are silent: crediting the bowler with a run out, and filing a far-end
   // run out against whoever happened to be on strike.
-  await ball({ type: "W", value: 0, dismissal: "Run out", dismissed: bat.id });
-  await ball({ type: "W", value: 0, dismissal: "Bowled", dismissed: other.id });
+  await ball({ type: "W", value: 0, dismissal: "run_out", dismissed: bat.id });
+  await ball({ type: "W", value: 0, dismissal: "bowled", dismissed: other.id });
   const after = (await matchups(head, bat.id)).find((r) => r.bowler_id === bowl.id);
   ok("a run out is not credited to the bowler", after?.dismissals === 1);
   ok("...nor is a dismissal of the batter at the other end",
