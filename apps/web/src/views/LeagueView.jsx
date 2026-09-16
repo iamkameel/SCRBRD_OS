@@ -1,5 +1,6 @@
 
 import { useEffect, useState } from "react";
+import { holdsCapability } from "../rbac/index.js";
 import { D, textOn } from "../design/tokens.js";
 import { SR } from "../scorer/format.js";
 import { addDays, dateStr, today } from "../lib/format.js";
@@ -31,7 +32,7 @@ function LeagueView({ role }) {
   // carries its table on the competition row; a live competition has none
   // there and this read is where it comes from — with its divisions.
   const LADDER = useLive("league", role, 0, comp?.live ? { competitionId: comp.id } : null).rows;
-  const canEdit = role==="superadmin"||role==="schooladmin";
+  const canEdit = holdsCapability(role,"competition.manage");
 
   // Editable table row state
   const [tableEdit, setTableEdit] = useState({}); // { teamName: {W,L,NR} }

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { D } from "../design/tokens.js";
 import { useLive } from "../lib/live.js";
-import { canScore } from "../rbac/index.js";
+import { canScore, holdsCapability } from "../rbac/index.js";
 import { SCRBRD } from "../scorer/engine.jsx";
 import { Badge, Btn, Card, Pill, SectionHeader, StatusDot } from "../ui/primitives.jsx";
 import { ScorecardModal, WeatherChip } from "./shared.jsx";
@@ -29,7 +29,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
         color={D.emerald}
         actions={
           <>
-            {(role==="superadmin"||role==="schooladmin"||role==="coach")&&<Btn size="sm" onClick={()=>{}}>+ Schedule Match</Btn>}
+            {holdsCapability(role,"fixture.create")&&<Btn size="sm" onClick={()=>{}}>+ Schedule Match</Btn>}
             {canScore(role)&&<button onClick={()=>onOpenScorer(null)} className="pressBtn" style={{padding:"5px 12px",borderRadius:D.pill,background:D.emerald+"18",border:`1px solid ${D.emerald}30`,color:D.emerald,fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:"0.05em",cursor:"pointer",display:"flex",alignItems:"center",gap:"5px"}}>
               <div className="live-dot"/>Open SCRBRD Scorer ↗
             </button>}

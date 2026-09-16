@@ -1,5 +1,6 @@
 
 import { useState } from "react";
+import { holdsCapability } from "../rbac/index.js";
 import { ROLES } from "../design/roles.js";
 import { D, textOn } from "../design/tokens.js";
 import { roleColor } from "../lib/format.js";
@@ -21,7 +22,7 @@ function StaffView({ role }) {
   const REGISTER = useRows("clearance_register", role);
   const [filter, setFilter] = useState("all");
   const [sel, setSel]       = useState(null);
-  const canEdit = role==="superadmin"||role==="schooladmin";
+  const canEdit = holdsCapability(role,"user.role.assign");
 
   const roleIcon  = r => r==="scorer"?"📋":r==="medical"?"⚕️":r==="driver"?"🚌":r==="groundskeeper"?"🌿":"👤";
   const roleColor = r => ROLES[r]?.color || D.textMuted;

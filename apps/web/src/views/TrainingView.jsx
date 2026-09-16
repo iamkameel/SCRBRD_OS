@@ -1,5 +1,6 @@
 
 import { useState } from "react";
+import { holdsCapability } from "../rbac/index.js";
 import { D, textOn } from "../design/tokens.js";
 import { dateStr, today } from "../lib/format.js";
 import { Avatar, Badge, Btn, Card, Input, Modal, Pill, SectionHeader, Select } from "../ui/primitives.jsx";
@@ -38,7 +39,7 @@ function TrainingView({ role }) {
   const attending = (s) => REGISTER.filter((a) => a.sessionId === s.id && a.status !== "absent").map((a) => a.playerId);
   const [view, setView] = useState("schedule");
   const [addModal, setAddModal] = useState(false);
-  const canEdit = role==="superadmin"||role==="coach";
+  const canEdit = holdsCapability(role,"team.manage");   // the training API writes under team.manage
   const [ns, setNs] = useState({ title:"", teamCode:"1XI", sessionType:"batting", date:"", time:"", durationMin:"90", venue:"Nets 1-3", notes:"" });
   const [nsSaid, setNsSaid] = useState("");
 

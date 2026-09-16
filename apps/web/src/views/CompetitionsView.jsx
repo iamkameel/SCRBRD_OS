@@ -1,5 +1,6 @@
 
 import { useState } from "react";
+import { holdsCapability } from "../rbac/index.js";
 import { D } from "../design/tokens.js";
 import { Avatar, Badge, Btn, Card, SectionHeader, StatusDot } from "../ui/primitives.jsx";
 import { usePlayersWithCareer, useRows } from "../lib/live.js";
@@ -15,7 +16,7 @@ function CompetitionsView({ role }) {
   return (
     <div className="os-page">
       <SectionHeader title="Competitions" sub="Leagues, cups and tournaments" color={D.amber}
-        actions={(role==="superadmin"||role==="schooladmin")&&<Btn size="sm">+ New Competition</Btn>}/>
+        actions={holdsCapability(role,"competition.manage")&&<Btn size="sm">+ New Competition</Btn>}/>
       <div style={{display:"flex",gap:"8px",marginBottom:"20px",flexWrap:"wrap"}}>
         {COMPETITIONS.map(c=>(
           <button key={c.id} onClick={()=>setActive(c.id)} className="pressBtn" style={{

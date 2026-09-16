@@ -634,12 +634,43 @@ const server = createServer(async (req, res) => {
         return json(res, 403, { error: "module_disabled", module });
       }
       const body = (req.method === "POST" || req.method === "PATCH") ? await readJson(req) : {};
-      return handler({
-        params: { id: m[1] },
-        query: Object.fromEntries(url.searchParams),
-        body,
-        headers: req.headers,
-      }, shim(res));
+      const request = { params: { id: m[1] }, query: Object.fromEntries(url.searchParams), body, headers: req.headers };
+
+      // A RETRY WRITES ONCE. A write that carries an Idempotency-Key header
+      // is answered from its receipt (db/15_request_replay.sql) when the same
+      // person sends the same key again, and the handler does not run. Done
+      // here, in the one place every write is dispatched, rather than in
+      // fourteen handlers: ball events keep their own key inside the batch,
+      // and everything else gets this for free. The receipt is written after
+      // the handler answers, only for an answer the handler stood behind (not
+      // a 5xx), and only under the person's own session — the table's policy
+      // lets nobody read or write another's receipts.
+      const idem = (req.method === "POST" || req.method === "PATCH") ? String(req.headers["idempotency-key"] ?? "").trim() : "";
+      if (idem && req.headers.authorization) {
+        const route = `${req.method} ${pattern.source.replace(/\\\//g, "/").replace(/\(\[\^\/\]\+\)/g, ":id").replace(/[\^$]/g, "")}${m[1] ? ` ${m[1]}` : ""}`;
+        const seen = await runAsPrincipal(pool, SECRET, req.headers.authorization, async (client) =>
+          (await client.query(`select route, status, body from request_replay where key = $1`, [idem])).rows[0] ?? null);
+        if (seen) {
+          if (seen.route !== route) return json(res, 422, { error: "idempotency_key_reused", route: seen.route });
+          res.setHeader("idempotent-replayed", "true");
+          return json(res, seen.status, seen.body);
+        }
+        const captured = shim(res);
+        const send = captured.json.bind(captured);
+        captured.json = (payload) => {
+          const status = captured._status;
+          send(payload);
+          if (status < 500) {
+            runAsPrincipal(pool, SECRET, req.headers.authorization, (client) =>
+              client.query(`insert into request_replay (person_id, key, route, status, body)
+                            values (app_user_id(), $1, $2, $3, $4) on conflict do nothing`,
+                           [idem, route, status, JSON.stringify(payload ?? null)])).catch(() => {});
+          }
+          return captured;
+        };
+        return handler(request, captured);
+      }
+      return handler(request, shim(res));
     }
 
     const exact = EXACT[`${req.method} ${path}`];

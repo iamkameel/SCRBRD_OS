@@ -927,6 +927,37 @@ BEGIN
   PERFORM _assert(to_regprocedure('quarantine_resolve(bigint,boolean,jsonb,text)') IS NOT NULL,
     'quarantine_resolve() is missing — a quarantined ball has no way out');
 
+  -- ── Every definer function names its search path ───────────────
+  -- db/16. A SECURITY DEFINER function without a pinned search_path runs the
+  -- owner's privileges over whatever schema a caller can put first. This
+  -- verifier's own helpers (the _-prefixed ones above) are created inside this
+  -- transaction and rolled back with it, so they are left out of the count.
+  SELECT count(*) INTO n
+    FROM pg_proc p JOIN pg_namespace ns ON ns.oid = p.pronamespace
+   WHERE ns.nspname = 'public' AND p.prosecdef AND p.proname NOT LIKE '\_%'
+     AND NOT EXISTS (SELECT 1 FROM unnest(coalesce(p.proconfig, '{}')) c WHERE c LIKE 'search_path=%');
+  PERFORM _assert(n = 0,
+    n || ' SECURITY DEFINER function(s) do not pin search_path — add "SET search_path = pg_catalog, public, pg_temp" or re-run db/16');
+
+  -- ── A receipt is its owner's ──────────────────────────────────
+  -- db/15. The idempotency layer remembers a write's response per person;
+  -- another person with the same key must see nothing, or one account's
+  -- receipt would answer another's request.
+  PERFORM _as(U_COACH2);
+  INSERT INTO request_replay (person_id, key, route, status, body)
+  VALUES (U_COACH2, 'verify-key', 'POST /api/verify', 200, '{"ok":true}'::jsonb);
+  PERFORM _as(U_MEDIC);
+  SELECT count(*) INTO n FROM request_replay WHERE key = 'verify-key';
+  PERFORM _assert(n = 0, 'a receipt is readable by somebody who is not its owner');
+  BEGIN
+    INSERT INTO request_replay (person_id, key, route, status, body)
+    VALUES (U_COACH2, 'verify-key-2', 'POST /api/verify', 200, '{}'::jsonb);
+    PERFORM _assert(false, 'a receipt can be written under another person''s name');
+  EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+  PERFORM _as(U_COACH2);
+  SELECT count(*) INTO n FROM request_replay WHERE key = 'verify-key';
+  PERFORM _assert(n = 1, 'the owner cannot read back their own receipt');
+
   BEGIN
     INSERT INTO player (school_id, team_code, full_name) VALUES (HIL, '1XI', 'No Birthday');
     PERFORM _assert(false, 'a player was written with no date of birth');

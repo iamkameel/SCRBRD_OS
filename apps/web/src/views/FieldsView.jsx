@@ -1,5 +1,6 @@
 
 import { useState } from "react";
+import { holdsCapability } from "../rbac/index.js";
 import { D } from "../design/tokens.js";
 import { Avatar, Badge, Btn, Card, EmptyState, SectionHeader } from "../ui/primitives.jsx";
 import { useLive, useRows } from "../lib/live.js";
@@ -25,7 +26,7 @@ function FieldsView({ role }) {
   const [selId, setSelId]         = useState(null);
   const [selPitch,  setSelPitch]  = useState(0);
   const [tab, setTab]             = useState("overview");
-  const canEdit = role==="superadmin"||role==="schooladmin"||role==="groundskeeper";
+  const canEdit = holdsCapability(role,"facility.manage");
   const selGround = GROUNDS.find(g => g.id === selId) ?? GROUNDS[0];
   const gk = selGround?.groundskeeper ? STAFF.find(s=>s.id===selGround.groundskeeper) : null;
 

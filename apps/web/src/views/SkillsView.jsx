@@ -1,5 +1,6 @@
 
 import { useState } from "react";
+import { holdsCapability } from "../rbac/index.js";
 import { D } from "../design/tokens.js";
 import { fitnessColor } from "../lib/format.js";
 import { Avatar, Badge, Btn, Card, EmptyState, Modal, RadarChart, SectionHeader } from "../ui/primitives.jsx";
@@ -97,7 +98,7 @@ function SkillsView({ role }) {
   const assessed = PLAYERS.filter(p => SKILLS_MATRIX[p.id]);
   const selPlayer = PLAYERS.find(p => p.id === selId) ?? assessed[0] ?? PLAYERS[0];
   const skills = selPlayer ? SKILLS_MATRIX[selPlayer.id] : null;
-  const canEdit = role==="superadmin"||role==="coach";
+  const canEdit = holdsCapability(role,"player.development.write");
   const cats = skills ? Object.keys(skills) : [];
   // Technical / mental / physical — the craft, the head, the body.
   const SKILL_COLORS = { technical:D.sky, mental:D.violet, tactical:D.amber, physical:D.emerald };

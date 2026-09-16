@@ -1469,6 +1469,28 @@ try {
     await c.ctx.close();
   }
 
+  // ── A control is drawn for whoever HOLDS the capability ───────
+  group("A director of sport can schedule a match, and a coach cannot");
+  {
+    // Nine views gated their controls on role NAMES — role === "superadmin"
+    // || role === "schooladmin" — so a director of sport, who holds
+    // fixture.create in the policy and could create a fixture through the
+    // API, never saw the button. The gate now asks what the role holds.
+    const d = await open();
+    await signIn(d.page, /Director of Sport/);
+    await d.page.locator('[data-testid="nav-matches"]').first().click({ timeout: 6000 }).catch(() => {});
+    await d.page.waitForTimeout(1200);
+    ok("the director of sport is offered Schedule Match", (await d.page.locator("button", { hasText: /Schedule Match/ }).count()) === 1);
+    ok("no console errors (director)", d.errors.length === 0, d.errors.join(" | "));
+    await d.ctx.close();
+    const c = await open();
+    await signIn(c.page, /Head Coach/);
+    await c.page.locator('[data-testid="nav-matches"]').first().click({ timeout: 6000 }).catch(() => {});
+    await c.page.waitForTimeout(1200);
+    ok("a coach, who holds no fixture.create, is not", (await c.page.locator("button", { hasText: /Schedule Match/ }).count()) === 0);
+    await c.ctx.close();
+  }
+
   // ── The demonstration says so ─────────────────────────────────
   group("A demonstration is never mistaken for the product");
   {

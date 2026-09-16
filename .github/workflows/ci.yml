@@ -57,11 +57,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # No version here on purpose: package.json's packageManager field names
+      # the exact pnpm, and action-setup@v4 REFUSES to run when both are set —
+      # "Multiple versions of pnpm specified". That refusal was every CI job
+      # on main dying at step 3, in twenty seconds, since packageManager was
+      # added. Green was a statement about nothing for six merges.
       - uses: pnpm/action-setup@v4
-        # 10 to match the pnpm that maintains pnpm-lock.yaml. The lockfile is
-        # format 9.0, which both majors read, but --frozen-lockfile fails on any
-        # rewrite a different major would want to make.
-        with: { version: 10 }
       - uses: actions/setup-node@v4
         with:
           node-version: 22          # package.json engines says >=22
@@ -107,11 +108,12 @@ jobs:
           --health-interval 2s --health-timeout 3s --health-retries 30
     steps:
       - uses: actions/checkout@v4
+      # No version here on purpose: package.json's packageManager field names
+      # the exact pnpm, and action-setup@v4 REFUSES to run when both are set —
+      # "Multiple versions of pnpm specified". That refusal was every CI job
+      # on main dying at step 3, in twenty seconds, since packageManager was
+      # added. Green was a statement about nothing for six merges.
       - uses: pnpm/action-setup@v4
-        # 10 to match the pnpm that maintains pnpm-lock.yaml. The lockfile is
-        # format 9.0, which both majors read, but --frozen-lockfile fails on any
-        # rewrite a different major would want to make.
-        with: { version: 10 }
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -131,6 +133,13 @@ jobs:
       # and a Chromium, and this job has neither.
       - name: Walks
         run: pnpm smoke:api
+
+      # The live policy assertions, db/99, against a database built by the
+      # migrator from nothing — the same file the Supabase verify bundle is
+      # cut from. The walks reset the database between themselves but never
+      # run this; it only ever ran on a laptop.
+      - name: Verifier
+        run: node tools/migrate.mjs --reset --seed && node tools/migrate.mjs --verify
 
       # Policy is generated from packages/policy/. A hand-edit to the generated
       # file survives until someone regenerates and then silently disappears,
@@ -158,11 +167,12 @@ jobs:
           --health-interval 2s --health-timeout 3s --health-retries 30
     steps:
       - uses: actions/checkout@v4
+      # No version here on purpose: package.json's packageManager field names
+      # the exact pnpm, and action-setup@v4 REFUSES to run when both are set —
+      # "Multiple versions of pnpm specified". That refusal was every CI job
+      # on main dying at step 3, in twenty seconds, since packageManager was
+      # added. Green was a statement about nothing for six merges.
       - uses: pnpm/action-setup@v4
-        # 10 to match the pnpm that maintains pnpm-lock.yaml. The lockfile is
-        # format 9.0, which both majors read, but --frozen-lockfile fails on any
-        # rewrite a different major would want to make.
-        with: { version: 10 }
       - uses: actions/setup-node@v4
         with:
           node-version: 22
