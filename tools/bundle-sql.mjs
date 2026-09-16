@@ -54,6 +54,51 @@ if (/\$\{/.test(teardown)) throw new Error("unresolved interpolation left in the
 
 const migrations = readdirSync(DB).filter(f => /^\d\d_.*\.sql$/.test(f) && !/^9[89]_/.test(f)).sort();
 
+// ── --apply NN: one migration, for a database that already has the rest ──
+//
+// The rebuild bundle tears the demonstration database down and reseeds it,
+// which also throws away anything a person added since — the owner's real
+// account and key, minted after the last rebuild. A ledgered database wants
+// what tools/migrate.mjs would do: apply the one file it does not have and
+// record it. This is that, as a paste: refuses if the file is already in the
+// ledger or its predecessor is not, then the file verbatim, then the ledger
+// row with the same hash the migrator would write.
+const applyAt = process.argv.indexOf("--apply");
+if (applyAt >= 0) {
+  const nn = String(process.argv[applyAt + 1] ?? "").padStart(2, "0");
+  const file = migrations.find((f) => f.startsWith(nn + "_"));
+  if (!file) { console.error(`no migration ${nn}_*.sql in db/`); process.exit(2); }
+  const prev = migrations[migrations.indexOf(file) - 1] ?? null;
+  const out = `-- ══════════════════════════════════════════════════════════════════
+--  SCRBRD — apply ${file} to a database that already has the rest
+-- ══════════════════════════════════════════════════════════════════
+--
+--  For the Supabase SQL Editor. Nothing here tears anything down: it is the
+--  one migration and its ledger row, exactly what \`node tools/migrate.mjs\`
+--  would apply to this database. Refuses to run twice, and refuses to run
+--  ahead of its predecessor.
+DO $apply$
+BEGIN
+  IF EXISTS (SELECT 1 FROM schema_migration WHERE name = '${file}') THEN
+    RAISE EXCEPTION '${file} is already in this database''s ledger — nothing to do';
+  END IF;${prev ? `
+  IF NOT EXISTS (SELECT 1 FROM schema_migration WHERE name = '${prev}') THEN
+    RAISE EXCEPTION '${prev} has not been applied here — apply it first, or use the rebuild bundle';
+  END IF;` : ""}
+END $apply$;
+
+-- ── ${file} ──
+${readFileSync(join(DB, file), "utf8")}
+
+-- ── the ledger row, with the hash the migrator would record ──
+INSERT INTO schema_migration (name, sha256) VALUES ('${file}', '${sha(join(DB, file))}');
+`;
+  const target = `/home/user/SCRBRD_OS/scrbrd-supabase-apply-${nn}.sql`;
+  writeFileSync(target, out);
+  console.log(`wrote scrbrd-supabase-apply-${nn}.sql (${file}, after ${prev ?? "nothing"})`);
+  process.exit(0);
+}
+
 const parts = [`-- ═══════════════════════════════════════════════════════════════
 --  SCRBRD — full schema rebuild for Supabase's SQL Editor
 --
