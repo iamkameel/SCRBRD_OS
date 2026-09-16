@@ -26,6 +26,8 @@ const WALKS = [
   "read", "sync", "handover", "fold",
   "assess", "access", "eligibility", "roster", "audit", "guardian",
   "rating", "notes", "amend", "login",
+  // The owner's key, minted from outside the platform, and redeemed.
+  "bootstrap",
   // Pre-match: who can play, naming the side, calling the toss, and the
   // conditions both sides play in.
   "availability", "squad", "toss", "conditions",
