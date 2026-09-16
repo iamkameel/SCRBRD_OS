@@ -11,6 +11,7 @@ const SUITES = [
   ["authorize","packages/policy/test/authorize.test.mjs"],
   ["scoring",  "packages/scoring/test/replay.test.mjs"],
   ["design",   "apps/web/test/design.test.mjs"],
+  ["analytics","apps/web/test/analytics.test.mjs"],
   ["teams",    "packages/policy/test/teams.test.mjs"],
   ["sa-id",    "packages/policy/test/sa-id.test.mjs"],
   ["dob",      "packages/policy/test/date-of-birth.test.mjs"],

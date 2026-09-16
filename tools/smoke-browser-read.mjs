@@ -25,7 +25,7 @@
  */
 import { chromium } from "playwright-core";
 import { launchOptions } from "./chromium.mjs";
-import { offline, isFirebaseOfflineNoise } from "./offline-browser.mjs";
+import { offline } from "./offline-browser.mjs";
 import { anchorFor } from "@scrbrd/scoring";
 import { ROLES as POLICY_ROLES } from "@scrbrd/policy/roles";
 import { spawn } from "node:child_process";
@@ -76,14 +76,14 @@ async function open() {
   await offline(ctx);
   const page = await ctx.newPage();
   const refusals = [], errors = [];
-  page.on("pageerror", (e) => { if (!isFirebaseOfflineNoise(e.message)) errors.push(e.message); });
+  page.on("pageerror", (e) => { errors.push(e.message); });
   page.on("console", (m) => {
     const t = m.text();
     if (/\[scrbrd\] getData\(/.test(t)) refusals.push(t);
     // "Failed to load resource" is Chrome's own line for a 404 or an aborted
     // request. The Firebase SDK's offline chatter is filtered by one shared
     // rule, with its rationale, in tools/offline-browser.mjs.
-    if (m.type() === "error" && !/Failed to load resource/.test(t) && !isFirebaseOfflineNoise(t)) {
+    if (m.type() === "error" && !/Failed to load resource/.test(t)) {
       errors.push(t);
     }
   });
@@ -1348,7 +1348,7 @@ try {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
     await offline(ctx);
     const page = await ctx.newPage();
-    const errors = []; page.on("pageerror", (e) => { if (!isFirebaseOfflineNoise(e.message)) errors.push(e.message); });
+    const errors = []; page.on("pageerror", (e) => { errors.push(e.message); });
     await page.addInitScript(`window.__SCRBRD_API_BASE__ = ${JSON.stringify(API)};`);
     await page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "networkidle" });
     await signIn(page, /Coach/);
@@ -1442,6 +1442,30 @@ try {
     ok("...leaving no trace of who just signed out",
        !stale, `stored session still holds ${JSON.stringify(left)}`);
     ok("no console errors through signing out", c.errors.length === 0, c.errors.join(" | "));
+    await c.ctx.close();
+  }
+
+  // ── Nothing phones home until asked ───────────────────────────
+  group("Analytics waits for consent");
+  {
+    const c = await open();
+    const google = [];
+    c.page.on("request", (r) => { // Firebase's own hosts, not Google's: the page fetches its typefaces from
+    // fonts.googleapis.com on every visit, and that is a font, not analytics.
+    if (/firebase[a-z]*\.googleapis\.com|firebaseapp\.com|google-analytics\.com|googletagmanager\.com/.test(r.url())) google.push(r.url()); });
+    await c.page.reload({ waitUntil: "networkidle" }); await c.page.waitForTimeout(1500);
+    ok("the landing page makes no Firebase or Google request", google.length === 0, google.slice(0, 3).join(" | "));
+    const sw = c.page.locator('[data-testid="analytics-consent"]');
+    ok("the switch is on the landing page, and off", (await sw.count()) === 1 && (await sw.getAttribute("aria-checked")) === "false");
+    await sw.click({ timeout: 4000 }); await c.page.waitForTimeout(2500);
+    ok("turning it on is what starts the SDK", google.length > 0, "no Firebase request after consent");
+    ok("...and the switch says on", (await sw.getAttribute("aria-checked")) === "true");
+    await sw.click({ timeout: 4000 }); await c.page.waitForTimeout(500);
+    const before = google.length;
+    await c.page.reload({ waitUntil: "networkidle" }); await c.page.waitForTimeout(1500);
+    ok("off again, the next visit makes none", google.length === before, google.slice(before, before + 3).join(" | "));
+    // No console-error assertion here: with third parties aborted, the SDK
+    // that consent started reports being offline, which is its business.
     await c.ctx.close();
   }
 

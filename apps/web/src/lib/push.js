@@ -67,7 +67,7 @@ export async function enablePush({ label } = {}) {
     // offline shell, and letting Firebase quietly install a second worker at
     // its default path is how two workers end up fighting over one scope.
     const registration = await navigator.serviceWorker.register("/firebase-messaging-sw.js");
-    const token = await getToken(getMessaging(firebaseApp), {
+    const token = await getToken(getMessaging(await firebaseApp()), {
       vapidKey: VAPID, serviceWorkerRegistration: registration });
     if (!token) return { ok: false, reason: "no_token" };
 
@@ -95,7 +95,7 @@ export async function disablePush() {
   let retired = 0;
   try {
     const { getMessaging, getToken, deleteToken } = await import("firebase/messaging");
-    const messaging = getMessaging(firebaseApp);
+    const messaging = getMessaging(await firebaseApp());
     const token = VAPID ? await getToken(messaging, { vapidKey: VAPID }).catch(() => null) : null;
     if (token) {
       const res = await api("/api/devices/retire", { method: "POST", body: { token } });
@@ -118,7 +118,7 @@ export async function disablePush() {
 export async function onPushWhileOpen(handler) {
   if (!(await pushSupported())) return () => {};
   const { getMessaging, onMessage } = await import("firebase/messaging");
-  return onMessage(getMessaging(firebaseApp), (payload) => {
+  return onMessage(getMessaging(await firebaseApp()), (payload) => {
     handler({ notificationId: payload?.data?.notificationId ?? null });
   });
 }

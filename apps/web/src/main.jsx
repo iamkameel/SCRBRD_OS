@@ -1,9 +1,10 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import SCRBRD_OS from "./App.jsx";
-// Side-effect import: initialises the Firebase app and, where supported,
-// Analytics. See lib/firebase.js for what this does and does not collect.
-import "./lib/firebase.js";
+// Analytics starts only on a device that said yes — see lib/firebase.js for
+// what it does and does not collect, and the landing page for the switch.
+import { startAnalyticsIfConsented } from "./lib/firebase.js";
+startAnalyticsIfConsented();
 
 // Register the offline shell. Without it a reload with no signal cannot even
 // fetch the page, so a scorer who reloads mid-over loses access to a match

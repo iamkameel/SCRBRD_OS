@@ -20,10 +20,16 @@
  * guardian, or school identifier — that would hand Google a copy of exactly
  * the scoped data the RLS model exists to contain. Anything added later that
  * logs an app-specific event has to keep to that rule.
+ *
+ * NOTHING RUNS UNTIL SOMEONE SAYS SO. Analytics used to initialise at boot,
+ * for every visitor — a parent, a pupil, a school evaluating the product —
+ * before any of them had been asked. Its identifiers are personal
+ * information under POPIA, and a child's doubly so. So the SDK is not even
+ * imported until a per-device preference says yes (lib/persist.js, key
+ * "analytics"; the switch is on the landing page), which also keeps ~200 KB
+ * of SDK out of the chunk every visitor downloads to reach the login screen.
+ * Push messaging still needs the Firebase app object and asks for it lazily.
  */
-import { initializeApp } from "firebase/app";
-import { getAnalytics, isSupported } from "firebase/analytics";
-
 const firebaseConfig = {
   apiKey: "AIzaSyAagOmj51ns5R64-IQRI92o4Sa5iagFRPA",
   authDomain: "scrbrd-os.firebaseapp.com",
@@ -34,13 +40,53 @@ const firebaseConfig = {
   measurementId: "G-978R0NW98E",
 };
 
-export const firebaseApp = initializeApp(firebaseConfig);
+import { getPref, setPref } from "./persist.js";
+
+const CONSENT_KEY = "analytics";
+
+// The app object, made once, on first need — a dynamic import so firebase/app
+// is a chunk that only a consenting visitor or a push subscriber fetches.
+let _app = null;
+export async function firebaseApp() {
+  if (!_app) {
+    const { initializeApp, getApps } = await import("firebase/app");
+    _app = getApps()[0] ?? initializeApp(firebaseConfig);
+  }
+  return _app;
+}
+
+/** Has this device said yes to anonymous usage analytics? Default: no. */
+export async function analyticsConsented() { return (await getPref(CONSENT_KEY)) === true; }
 
 // Analytics needs a real browser (IndexedDB, cookies) and Firebase's own
 // isSupported() is how it says so — a private tab with storage blocked stays
-// silent rather than throwing. Exported as a promise rather than a value: any
-// call site that wants the instance awaits it instead of racing a variable
-// that starts null and is filled in later.
-export const analyticsReady = isSupported()
-  .then((ok) => (ok ? getAnalytics(firebaseApp) : null))
-  .catch(() => null);
+// silent rather than throwing.
+let _analytics = null;
+async function enableAnalytics(load) {
+  if (_analytics) return _analytics;
+  try {
+    const { getAnalytics, isSupported } = await load();
+    if (!(await isSupported())) return null;
+    _analytics = getAnalytics(await firebaseApp());
+  } catch { _analytics = null; }
+  return _analytics;
+}
+
+/**
+ * Called once at boot. Resolves to the Analytics instance only when this device
+ * consented earlier; otherwise resolves null WITHOUT loading the SDK. `load` is
+ * injectable so a test can prove the SDK is not fetched without consent.
+ */
+export async function startAnalyticsIfConsented({ load = () => import("firebase/analytics") } = {}) {
+  if (!(await analyticsConsented())) return null;
+  return enableAnalytics(load);
+}
+
+/** The switch. Turning it on starts Analytics now; turning it off stops future boots from starting it. */
+export async function setAnalyticsConsent(on, { load = () => import("firebase/analytics") } = {}) {
+  await setPref(CONSENT_KEY, on === true);
+  if (on) return enableAnalytics(load);
+  // The SDK has no "unload"; the honest promise is "not on the next visit",
+  // and the switch says so.
+  return null;
+}

@@ -142,5 +142,26 @@ if (findings.length) {
   console.error("  have the API return the FIGURE and its bands, never the weights.");
   process.exit(1);
 }
-console.log(`BUNDLE CHECK: ${files.length} assets, ${FORBIDDEN.length} markers, 0 leaks · no client source reaches the rewards module`);
+// ── The Firebase SDK is not in the chunk every visitor downloads ──
+//
+// Analytics runs only on a device that consented (lib/firebase.js), and the
+// point of a dynamic import is that the SDK is not fetched before then. The
+// bundler could undo that silently — a static import added anywhere in the
+// entry graph folds firebase/app back into the main chunk and nothing would
+// look different. So: the largest index-*.js must not carry the SDK's own
+// package names, and some other asset must, or the SDK went missing entirely.
+const js = files.filter((f) => /\.js$/.test(f) && !/\.map$/.test(f));
+const entry = js.filter((f) => /[\\/]index-[^\\/]+\.js$/.test(f)).sort((a, b) => statSync(b).size - statSync(a).size)[0];
+const SDK = ["@firebase/app", "@firebase/analytics"];
+const entryText = entry ? readFileSync(entry, "utf8") : "";
+const inEntry = SDK.filter((m) => entryText.includes(m));
+const elsewhere = SDK.filter((m) => js.some((f) => f !== entry && readFileSync(f, "utf8").includes(m)));
+if (!entry || inEntry.length || elsewhere.length !== SDK.length) {
+  console.error(`✗ FIREBASE SDK PLACEMENT — entry chunk ${entry ? relative(".", entry) : "(none)"}`);
+  if (inEntry.length) console.error(`  in the entry chunk: ${inEntry.join(", ")} — a static import of firebase/* reached the entry graph`);
+  if (elsewhere.length !== SDK.length) console.error(`  not found in any other chunk: ${SDK.filter((m) => !elsewhere.includes(m)).join(", ")}`);
+  process.exit(1);
+}
+const entryKB = Math.round(statSync(entry).size / 1024);
+console.log(`BUNDLE CHECK: ${files.length} assets, ${FORBIDDEN.length} markers, 0 leaks · no client source reaches the rewards module · Firebase SDK outside the ${entryKB} KB entry chunk`);
 process.exit(0);
