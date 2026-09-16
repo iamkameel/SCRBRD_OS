@@ -134,6 +134,26 @@ included extras.
 
 ---
 
+## Reduced overs — the umpires' revision
+
+Rain, bad light, a late start: the umpires cut the innings to fewer overs
+and, for a chase, set a new target. SCRBRD records that as an event in the
+log — `revision({ overs, target, reason })` — never as an edit to the match
+row. Everything that reads the innings derives from it: the pad's over
+count, the innings-over rule (`inn.overs`), the result (`inn.target`), the
+second device after a handover, and the server's own replay. The revision
+itself is on the record with who made it and when.
+
+The result of a chase is judged against the **target**, which is one more
+than the first innings unless revised. In a rain-cut chase of 90 to beat a
+150, 100 is a win by wickets; 88 is a loss by one run; 89 is a tie. The
+engine used to compare the two totals, which was right only while those
+were the same number.
+
+There is no DLS or VJD calculation. The figures are the umpires', typed. A
+school ground has no resource tables, and a wrong automatic target is worse
+than a typed one.
+
 ## Adding a new scoring situation
 
 Do not add a counter. Add an event kind in `events.mjs`, fold it in

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import {
   deriveInnings, inningsStart, batters as battersEvent, bowler as bowlerEvent,
-  ball as ballEvent, penalty as penaltyEvent, inningsEnd,
+  ball as ballEvent, penalty as penaltyEvent, revision as revisionEvent, inningsEnd,
   newEventId, undoLast,
   noPlacement, NO_CONTACT_SHOTS, PLACEMENT_NULL, PLACEMENT_SOURCE, CAPTURE_PROFILE,
   DISMISSAL_LABEL,
@@ -19,7 +19,7 @@ import { AnalysisDashboard, ManhattanChart } from "./charts.jsx";
 import { DynamicBar, EventOverlay, FreeHitBanner, PartnershipCard, ScorecardPanel, buildEventCfg, detectMilestone } from "./panels.jsx";
 import { FocusPad, ScoringPanel } from "./scoring.jsx";
 import { SetupScreen } from "./setup.jsx";
-import { BattingOrderSheet, Innings2Sheet, NewOverSheet, NoBallSheet, PenaltySheet, ShotSelectorSheet, WicketSheet } from "./sheets.jsx";
+import { BattingOrderSheet, Innings2Sheet, NewOverSheet, NoBallSheet, PenaltySheet, RevisionSheet, ShotSelectorSheet, WicketSheet } from "./sheets.jsx";
 import { INT_TEAMS } from "./teams.js";
 import { BallDot, Btn, Card, GS, Glass, Lbl } from "./ui.jsx";
 
@@ -664,6 +664,13 @@ function SCRBRD({resume}={}){
     emit(penaltyEvent({runs,toBattingTeam:to==="batting",reason}));
     setModal(null);
   };
+  // The umpires' revision goes into the log like a ball. Everything that
+  // reads the innings — the over count on the pad, the innings-over rule, the
+  // result, the other device, the server — derives it from there.
+  const reviseInnings=({overs,target,reason})=>{
+    emit(revisionEvent({overs,target,reason}));
+    setModal(null);
+  };
 
   const getSquad=()=>{
     if(!inn)return[];
@@ -692,6 +699,15 @@ function SCRBRD({resume}={}){
           if(nbType==="height"||nbType==="beamer")setFreeHit(true);
         }}
         onClose={()=>setModal(null)}/>
+    );
+
+    if(modal==="revise")return (
+      <RevisionSheet
+        overs={inn?.overs??match?.overs??20}
+        target={curIn===1?(inn?.target??((innings[0]?.runs||0)+1)):null}
+        isChase={curIn===1}
+        onClose={()=>setModal(null)}
+        onConfirm={reviseInnings}/>
     );
 
     if(modal==="penalty")return (
@@ -832,7 +848,7 @@ function SCRBRD({resume}={}){
 
   /* ── MATCH SCREEN ── */
   const NAV=[{id:"score",icon:"🏏",label:"Score"},{id:"cards",icon:"📋",label:"Cards"},{id:"analysis",icon:"📊",label:"Analysis"},{id:"history",icon:"📜",label:"History"}];
-  const target2=curIn===1?(innings[0]?.runs||0)+1:null;
+  const target2=curIn===1?(inn?.target??((innings[0]?.runs||0)+1)):null;
   // Determine if shot selection is in progress (show field in "confirm shot" mode)
   const awaitingField=scoringCtx&&scoringCtx.type!=="W"&&scoringCtx.type!=="Wd"&&scoringCtx.type!=="Nb"&&modal===null;
 
@@ -871,8 +887,12 @@ function SCRBRD({resume}={}){
             <span style={{color:D.textMuted,fontSize:"11px"}}> vs </span>
             <span style={{marginRight:"3px"}}>{innings[1]?.teamFlag||""}</span>
             <span style={{color:D.emerald}}>{match?.team2}</span>
-            <span style={{color:D.textMuted,fontSize:"11px"}}> · {match?.overs}ov</span>
+            <span style={{color:D.textMuted,fontSize:"11px"}}> · {inn?.overs??match?.overs}ov{inn?.revised&&<span style={{color:D.amber}} title={`revised: ${inn.revised.reason}`}> (revised)</span>}</span>
           </div>
+          <button onClick={()=>setModal("revise")} className="pressBtn" data-testid="revise-innings" title="Revise overs / target (rain)"
+            style={{flexShrink:0,padding:"4px 10px",borderRadius:D.pill,cursor:"pointer",background:"transparent",border:`1px solid ${D.border}`,fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted}}>
+            ☔ Revise
+          </button>
           {/* Awaiting field prompt */}
           {awaitingField&&(
             <div style={{background:`${D.amber}14`,border:`1px solid ${D.amber}44`,borderRadius:D.pill,padding:"4px 12px",

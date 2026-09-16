@@ -14,7 +14,7 @@ import {
   placementFromTap, noPlacement, screenAngle, thetaFromScreen,
   zoneFromRadius, closePositionFor, hasPoint, heatMapEligible, batHandOf,
   thetaFromClock, clockFromTheta, fieldingCircle, depthBand, positionName,
-  PLACEMENT_SOURCE, PLACEMENT_NULL, CLOSE_RADIUS, DISMISSAL, chargedToBowler, normaliseDismissal,
+  PLACEMENT_SOURCE, PLACEMENT_NULL, CLOSE_RADIUS, DISMISSAL, chargedToBowler, normaliseDismissal, revision,
 } from "../src/index.mjs";
 
 let pass = 0, fail = 0;
@@ -124,6 +124,34 @@ group("A. Derived aggregates");
   const hw = deriveInnings([...open(), ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: "Hit Wicket" })]);
   ok("hit wicket reads with the bowler", /^hit wicket b /.test(hw.batsmen.find(b => b.status === "out")?.dismissal ?? ""));
 }
+{
+  // THE UMPIRES CUT THE MATCH. Rain: an innings of 20 becomes 10, and a chase
+  // of 151 becomes 90. Both are events in the log, not edits beside it.
+  const cut = deriveInnings([...open(), revision({ overs: 1, reason: "rain" }),
+    ...Array.from({ length: 6 }, () => ball({ type: BALL_TYPE.RUN, value: 1 }))]);
+  ok("a revision to one over ends the innings after six legal balls", cut.complete === true && cut.balls === 6);
+  ok("...and the innings says it was revised", cut.revised?.overs === 1 && cut.revised?.reason === "rain");
+  const notCut = deriveInnings([...open(), ...Array.from({ length: 6 }, () => ball({ type: BALL_TYPE.RUN, value: 1 }))]);
+  ok("without the revision, six balls is not an innings", notCut.complete === false);
+
+  const first = [...open(), ball({ type: BALL_TYPE.RUN, value: 6 }), inningsEnd({ reason: "declared" })].map((e) => ({ ...e, innings: 0 }));
+  const chase = (target, runs, done = true) => [
+    ...open().map((e) => ({ ...e, innings: 1 })),
+    { ...revision({ target }), innings: 1 },
+    ...Array.from({ length: runs }, () => ({ ...ball({ type: BALL_TYPE.RUN, value: 1 }), innings: 1 })),
+    ...(done ? [{ ...inningsEnd({ reason: "overs_complete" }), innings: 1 }] : []),
+  ];
+  ok("a chase that reaches the REVISED target wins, though it scored fewer than the first innings",
+     deriveMatch([...first, ...chase(4, 4)]).result?.winner === "HIL" || deriveMatch([...first, ...chase(4, 4)]).result?.winner != null);
+  const r4 = deriveMatch([...first, ...chase(4, 4)]).result;
+  const r2 = deriveMatch([...first, ...chase(4, 2)]).result;
+  const r3 = deriveMatch([...first, ...chase(4, 3)]).result;
+  ok("...by wickets", /wickets?$/.test(r4?.margin ?? ""), JSON.stringify(r4));
+  ok("a chase short of the revised target loses by the shortfall, not by the first-innings total", r2?.winner === innings0Team(first) && r2?.margin === "1 run", JSON.stringify(r2));
+  ok("one short of the revised target is a tie", r3?.winner === null && r3?.margin === "tie", JSON.stringify(r3));
+  ok("an unfinished chase has no result yet", deriveMatch([...first, ...chase(4, 2, false)]).result === null);
+}
+function innings0Team(evs) { return evs.find((e) => e.kind === "innings_start")?.battingTeam; }
 {
   // Run out is not the bowler's wicket.
   const inn = deriveInnings([...open(), ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: "run out", fielder: "L Govender" })]);

@@ -52,6 +52,7 @@ export const KIND = {
   PENALTY:       "penalty",       // penalty runs, no delivery bowled
   RETIRE:        "retire",        // batter leaves the crease without being dismissed
   INNINGS_END:   "innings_end",   // declaration, all out, overs complete, rain
+  REVISION:      "revision",      // the umpires cut the overs and/or reset the target (rain)
   VOID:          "void",          // undoes an earlier event that has already synced
 };
 
@@ -342,6 +343,21 @@ export const voidEvent = (o) => ({
   ...base(KIND.VOID, o),
   target: o.target,
   reason: o.reason ?? "scorer_undo",
+});
+
+/**
+ * A reduced-overs revision: the umpires cut the innings to `overs`, and for
+ * a chase set a new `target`. Either alone is fine. It is an EVENT in the log
+ * like everything else — rather than an edit to the match row — so the
+ * scorecard, the second device and the server all derive the same innings
+ * end and the same result, and the revision itself is on the record with
+ * who made it and when. No DLS/VJD here: the figures are the umpires', typed.
+ */
+export const revision = (o) => ({
+  ...base(KIND.REVISION, o),
+  overs: o.overs ?? null,
+  target: o.target ?? null,
+  reason: o.reason ?? "rain",
 });
 
 export const inningsEnd = (o) => ({

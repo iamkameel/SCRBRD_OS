@@ -116,7 +116,10 @@ const BallDot = ({ ball, size=28 }) => {
   );
 };
 
-const Btn = ({ children, onClick, disabled, variant="primary", size="md", full, sx }) => {
+// `...rest` reaches the element, so a data-testid or an aria attribute on a
+// scorer button is not silently dropped — a walk that clicks a testid that
+// never rendered fails on a timeout, which says nothing about why.
+const Btn = ({ children, onClick, disabled, variant="primary", size="md", full, sx, ...rest }) => {
   const pad = size==="xs"?"5px 10px":size==="sm"?"8px 14px":size==="lg"?"15px 28px":"11px 20px";
   const fs  = size==="xs"?"10px":size==="sm"?"12px":size==="lg"?"15px":"13px";
   const V = {
@@ -132,7 +135,7 @@ const Btn = ({ children, onClick, disabled, variant="primary", size="md", full, 
   };
   const v=V[variant]||V.primary;
   return (
-    <button className="pressBtn" disabled={!!disabled} onClick={!disabled?onClick:undefined} style={{
+    <button className="pressBtn" disabled={!!disabled} onClick={!disabled?onClick:undefined} {...rest} style={{
       ...v, padding:pad, borderRadius:D.pill, cursor:disabled?"not-allowed":"pointer",
       fontFamily:D.body, fontSize:fs, fontWeight:600, letterSpacing:"0.01em",
       width:full?"100%":undefined, whiteSpace:"nowrap",
