@@ -149,6 +149,9 @@ SELECT
   CASE WHEN EXISTS (SELECT 1 FROM pg_constraint
                      WHERE conname = 'player_born_required' AND convalidated)
        THEN 'OK — enforced' ELSE 'PROBLEM' END                    AS "Date of birth required",
+  CASE WHEN EXISTS (SELECT 1 FROM pg_constraint
+                     WHERE conname = 'ball_event_dismissal_known' AND convalidated)
+       THEN 'OK — eleven ways out' ELSE 'PROBLEM' END              AS "Dismissals are a closed list",
   CASE WHEN (SELECT count(*) FROM player
               WHERE id_number IS NOT NULL
                 AND to_char(born, 'YYMMDD') <> substring(id_number FROM 1 FOR 6)) = 0

@@ -77,7 +77,7 @@ function RulebookView({ role }) {
         { rule:"Wicket recording: Dismissal type must be selected from the approved list. 'Caught' requires naming the fielder. 'Run Out' requires end (striker/non-striker)." },
         { rule:"Over completion: After 6 legal deliveries, the over is complete. No-balls and wides are additional deliveries and extend the over." },
         { rule:"Innings completion: Innings ends when 10 wickets have fallen, the over limit is reached, or the captain declares (in non-limited formats)." },
-        { rule:"Free Hit: After a Front-Foot No-Ball, the next delivery is a Free Hit. Only run-out, handled ball, hit wicket, obstruction, or stumped dismissals apply." },
+        { rule:"Free Hit: After a Front-Foot No-Ball, the next delivery is a Free Hit. The batter can be out only run out, handling the ball, obstructing the field, or hitting the ball twice — never bowled, caught, LBW, stumped or hit wicket." },
       ]
     },
   ];

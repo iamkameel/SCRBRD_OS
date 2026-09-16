@@ -57,6 +57,21 @@ const ev = (n, extra = {}) => ({ epoch: 3, deviceId: "devA", scorerId: "uScorer"
   idempotencyKey: `devA:3:${n}`, innings: 0, payload: { kind: "ball", type: "run", value: n % 7 }, ...extra });
 
 // ── A. Server ──
+group("A0. A wicket names how the batter was out, from the closed list, or is refused");
+{
+  const db = fakeDb({ session: liveSession });
+  const bad = ev(1, { payload: { kind: "ball", type: "W", value: 0, dismissal: "run away" } });
+  let err = null;
+  try { await appendEvents(db.pool, SECRET, bearer(), "m1", [ev(0), bad]); } catch (e) { err = e; }
+  ok("an unknown dismissal is a 400", err?.status === 400 && err?.message === "dismissal_unknown", String(err?.message));
+  ok("...naming the field and the value", err?.detail?.field === "dismissal" && err?.detail?.value === "run away");
+  ok("...and nothing in the batch was written", db.ballEvents.length === 0);
+  const db2 = fakeDb({ session: liveSession });
+  const r = await appendEvents(db2.pool, SECRET, bearer(), "m1", [ev(1, { payload: { kind: "ball", type: "W", value: 0, dismissal: "Run Out" } })]);
+  ok("a known spelling is accepted", r.accepted.length === 1);
+  ok("...and stored canonical", db2.ballEvents[0]?.includes("run_out") && !db2.ballEvents[0]?.includes("Run Out"));
+}
+
 group("A. appendEvents runs under a principal transaction");
 {
   const db = fakeDb({ session: liveSession });

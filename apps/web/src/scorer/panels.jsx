@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { placementFromTap, screenAngle } from "@scrbrd/scoring";
+import { placementFromTap, screenAngle, DISMISSAL_LABEL } from "@scrbrd/scoring";
 import { D, px, textOn } from "../design/tokens.js";
 import { can } from "../rbac/index.js";
 import { CX, CY, LK_COLS, R_BND, R_IN, R_MID, R_PITCH, SEGS, ballAngle, heatColor, lineKey, pieSlice, ringArc, toXY, wagEnd } from "./field.js";
@@ -599,7 +599,7 @@ function CommentaryCard({inn}){
   },[lastBallKey]);
   const getBallKey=(b)=>b.over+"_"+b.ballInOver;
   const descBall=(b)=>{
-    if(b.type==="W")return "WICKET — "+b.dismissal;
+    if(b.type==="W")return "WICKET — "+(DISMISSAL_LABEL[b.dismissal]??b.dismissal);
     if(b.type==="Wd")return "Wide ball";
     if(b.type==="Nb")return "No Ball ("+(b.nbType||"front foot").replace("_"," ")+"), "+(b.value||0)+"+1 runs";
     if(b.type==="Pen")return "Penalty "+b.value+" runs — "+(b.reason||"");

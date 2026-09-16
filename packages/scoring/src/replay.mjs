@@ -33,7 +33,7 @@
  * Cricket; deriving made them visible.
  */
 
-import { KIND, BALL_TYPE, isLegal } from "./events.mjs";
+import { KIND, BALL_TYPE, isLegal, normaliseDismissal, chargedToBowler, standsOnFreeHit, DISMISSAL, DISMISSAL_LABEL } from "./events.mjs";
 
 // The scoring UI renders on these values: a batter at the crease is "batting",
 // and a squad member who never came in is "dnb" (never produced here — a batter
@@ -285,10 +285,13 @@ export function deriveInnings(events = [], ctx = {}) {
         const entry = logBall(ev, at);
 
         if (type === BALL_TYPE.WICKET) {
-          // A free hit cannot be lost to a bowled/caught dismissal; run outs
-          // still stand. Guarding here keeps the rule in one place.
-          const runOut = /run ?out/i.test(ev.dismissal ?? "");
-          if (!wasFreeHit || runOut) {
+          // A free hit cannot be lost to the bowler's dismissals; the
+          // non-delivery ones stand. One set decides that AND the bowler's
+          // credit below (events.mjs NON_DELIVERY), so they cannot disagree.
+          // Normalised here too, so a log written before the vocabulary was
+          // closed still replays under the law.
+          const mode = normaliseDismissal(ev.dismissal);
+          if (!wasFreeHit || standsOnFreeHit(mode)) {
             const outId = ev.dismissed ?? inn.striker;
             const outBat = batterFor(outId);
             inn.wickets += 1;
@@ -296,7 +299,7 @@ export function deriveInnings(events = [], ctx = {}) {
               outBat.status = BAT_STATUS.OUT;
               outBat.dismissal = describeDismissal(ev, nameOf(inn.bowler));
             }
-            if (bow && chargedToBowler(ev.dismissal)) bow.wickets += 1;
+            if (bow && chargedToBowler(mode)) bow.wickets += 1;
             inn.fow.push({
               runs: inn.runs, wickets: inn.wickets,
               batsman: outBat?.name ?? "?", overs: fmtOvers(inn.balls),
@@ -332,19 +335,21 @@ export function deriveInnings(events = [], ctx = {}) {
   return inn;
 }
 
-/** Dismissals not credited to the bowler. */
-const UNCREDITED = /run ?out|retired|obstruct|handled|timed ?out/i;
-const chargedToBowler = (mode) => !UNCREDITED.test(mode ?? "");
-
+/** The scorecard line, from the canonical dismissal. */
 function describeDismissal(ev, bowlerName) {
-  const mode = ev.dismissal ?? "out";
+  const mode = normaliseDismissal(ev.dismissal);
   const f = ev.fielder ? ` ${ev.fielder}` : "";
-  if (/run ?out/i.test(mode)) return `run out${f ? ` (${ev.fielder})` : ""}`;
-  if (/stumped|^st\b/i.test(mode)) return `st${f} b ${bowlerName ?? "?"}`;
-  if (/caught|^c\b/i.test(mode)) return `c${f || " ?"} b ${bowlerName ?? "?"}`;
-  if (/bowled|^b\b/i.test(mode)) return `b ${bowlerName ?? "?"}`;
-  if (/lbw/i.test(mode)) return `lbw b ${bowlerName ?? "?"}`;
-  return bowlerName ? `${mode} b ${bowlerName}` : mode;
+  const b = bowlerName ?? "?";
+  switch (mode) {
+    case DISMISSAL.RUN_OUT:    return `run out${ev.fielder ? ` (${ev.fielder})` : ""}`;
+    case DISMISSAL.STUMPED:    return `st${f} b ${b}`;
+    case DISMISSAL.CAUGHT:     return `c${f || " ?"} b ${b}`;
+    case DISMISSAL.BOWLED:     return `b ${b}`;
+    case DISMISSAL.LBW:        return `lbw b ${b}`;
+    case DISMISSAL.HIT_WICKET: return `hit wicket b ${b}`;
+    case null:                 return ev.dismissal ?? "out";   // a log from before the vocabulary closed
+    default:                   return DISMISSAL_LABEL[mode].toLowerCase(); // not the bowler's: no "b"
+  }
 }
 
 /**

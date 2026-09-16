@@ -14,7 +14,7 @@ import {
   placementFromTap, noPlacement, screenAngle, thetaFromScreen,
   zoneFromRadius, closePositionFor, hasPoint, heatMapEligible, batHandOf,
   thetaFromClock, clockFromTheta, fieldingCircle, depthBand, positionName,
-  PLACEMENT_SOURCE, PLACEMENT_NULL, CLOSE_RADIUS,
+  PLACEMENT_SOURCE, PLACEMENT_NULL, CLOSE_RADIUS, DISMISSAL, chargedToBowler, normaliseDismissal,
 } from "../src/index.mjs";
 
 let pass = 0, fail = 0;
@@ -90,6 +90,39 @@ group("A. Derived aggregates");
   ok("out batter marked",     inn.batsmen.find(b => b.id === "p2").status === "out");
   ok("new batter at crease",  inn.striker === "p3");
   ok("partnership closed",    inn.partnerships.length === 1);
+}
+{
+  // THE WICKET MATRIX. Every way out in the Laws, and the two questions the
+  // reducer asks of it — credited to the bowler? stands on a free hit? — from
+  // one set, so the answers cannot disagree. The law used to be two regexes
+  // over free text; "r/o" credited the bowler and handled ball on a free hit
+  // was thrown out.
+  const CREDITED = new Set(["bowled", "caught", "lbw", "stumped", "hit_wicket"]);
+  for (const d of Object.values(DISMISSAL)) {
+    const inn = deriveInnings([...open(), ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: d, fielder: "F" })]);
+    ok(`${d}: is a wicket`, inn.wickets === 1);
+    ok(`${d}: bowler ${CREDITED.has(d) ? "credited" : "NOT credited"}`,
+       inn.bowlers.find(b => b.id === "w1").wickets === (CREDITED.has(d) ? 1 : 0));
+    ok(`${d}: chargedToBowler agrees`, chargedToBowler(d) === CREDITED.has(d));
+    const fh = deriveInnings([...open(), ball({ type: BALL_TYPE.NO_BALL, value: 0 }),
+                                        ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: d })]);
+    ok(`${d}: on a free hit ${CREDITED.has(d) ? "does not stand" : "stands"}`, fh.wickets === (CREDITED.has(d) ? 0 : 1));
+  }
+  // Spellings a producer might use, all one law.
+  for (const [text, want] of [["Run Out", "run_out"], ["run-out", "run_out"], ["r/o", "run_out"], ["RO", "run_out"],
+                              ["timed-out", "timed_out"], ["Caught", "caught"], ["c", "caught"], ["st", "stumped"],
+                              ["Handled Ball", "handled_ball"], ["Obstructed Field", "obstructing_field"],
+                              ["hit the ball twice", "hit_twice"], ["retired", "retired_out"], ["LBW", "lbw"]]) {
+    ok(`"${text}" is ${want}`, normaliseDismissal(text) === want);
+  }
+  ok("an unknown spelling is not a dismissal", normaliseDismissal("run away") === null && normaliseDismissal(null) === null);
+  ok("the builder writes the canonical value", ball({ type: BALL_TYPE.WICKET, dismissal: "r/o" }).dismissal === "run_out");
+  ok("...and keeps an unknown one for the API to refuse by name", ball({ type: BALL_TYPE.WICKET, dismissal: "run away" }).dismissal === "run away");
+  const ro = deriveInnings([...open(), ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: "r/o", fielder: "L Govender" })]);
+  ok("\"r/o\" is NOT the bowler's wicket", ro.bowlers.find(b => b.id === "w1").wickets === 0);
+  ok("...and reads on the card as a run out", ro.batsmen.find(b => b.status === "out")?.dismissal === "run out (L Govender)");
+  const hw = deriveInnings([...open(), ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: "Hit Wicket" })]);
+  ok("hit wicket reads with the bowler", /^hit wicket b /.test(hw.batsmen.find(b => b.status === "out")?.dismissal ?? ""));
 }
 {
   // Run out is not the bowler's wicket.

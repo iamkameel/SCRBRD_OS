@@ -207,7 +207,7 @@ try {
     ok("...and is its own notice", (await notices(coach)).some((x) => /Hundred for James Whitfield/.test(x.title)));
     // Naidoo: four wickets, then a run out that is not his, then a fifth.
     await feed(m, 1, [wicket(CELE, NAIDOO), dot(CELE, NAIDOO), wicket(CELE, NAIDOO), wicket(CELE, NAIDOO), dot(CELE, NAIDOO), wicket(CELE, NAIDOO, "caught")]);
-    await feed(m, 1, [wicket(CELE, NAIDOO, "run out")]);
+    await feed(m, 1, [wicket(CELE, NAIDOO, "run_out")]);
     ok("a run out is not the bowler's", !(await recog(NAIDOO, coach)).some((x) => x.kind === "five_for"));
     await feed(m, 1, [wicket(CELE, NAIDOO, "lbw")]);
     ok("the fifth is a five-for", (await recog(NAIDOO, coach)).some((x) => x.kind === "five_for" && x.value === 5));

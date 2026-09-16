@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { DISMISSAL, DISMISSAL_LABEL } from "@scrbrd/scoring";
 import { D } from "../design/tokens.js";
 import { fmtOv } from "./format.js";
 import { SHOT_CATEGORIES } from "./shots.js";
@@ -310,12 +311,14 @@ function CustomBatEntry({onSend}){
    WICKET SHEET
 ═══════════════════════════════════════════════════════ */
 function WicketSheet({batName,fieldingSquad,onClose,onConfirm}){
-  const[mode,setMode]=useState("Bowled");
+  const[mode,setMode]=useState(DISMISSAL.BOWLED);
   const[fielder,setFielder]=useState("");
   const[fielterFilter,setFielderFilter]=useState("");
-  const modes=["Bowled","Caught","LBW","Run Out","Stumped","Hit Wicket","Handled Ball","Obstructed Field"];
-  const needsFielder=mode==="Caught"||mode==="Run Out";
-  const isStumped=mode==="Stumped";
+  // The eleven in the Laws, from the one list the reducer and the API read.
+  // The button shows the label; the event carries the canonical value.
+  const modes=Object.keys(DISMISSAL_LABEL);
+  const needsFielder=mode===DISMISSAL.CAUGHT||mode===DISMISSAL.RUN_OUT;
+  const isStumped=mode===DISMISSAL.STUMPED;
   // Find WK from fielding squad
   const wkName=(fieldingSquad||[]).find(p=>p.role==="WK")?.name||null;
   // Auto-assign WK for stumped
@@ -326,7 +329,7 @@ function WicketSheet({batName,fieldingSquad,onClose,onConfirm}){
     setMode(m);
     setFielder("");
     setFielderFilter("");
-    if(m==="Stumped"&&wkName)setFielder(wkName);
+    if(m===DISMISSAL.STUMPED&&wkName)setFielder(wkName);
   };
   return (
     <Sheet title="WICKET!" accent={D.rose} onClose={onClose}>
@@ -340,7 +343,7 @@ function WicketSheet({batName,fieldingSquad,onClose,onConfirm}){
             border:"1px solid "+(mode===m?D.rose+"55":D.border),
             background:mode===m?D.rose+"1a":D.surf2,
             color:mode===m?"#fca5a5":D.textSecondary,transition:"all .15s"}}>
-            {m}
+            {DISMISSAL_LABEL[m]}
           </button>
         ))}
       </div>

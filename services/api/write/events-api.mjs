@@ -21,7 +21,7 @@
  * Mirrors MatchSession.append() from scoring-session.mjs, against SQL.
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
-import { toRow } from "@scrbrd/scoring";
+import { toRow, normaliseDismissal } from "@scrbrd/scoring";
 
 /**
  * @param events array of {epoch, deviceId, scorerId, idempotencyKey, clientSeq, clientTs, innings, payload}
@@ -29,6 +29,24 @@ import { toRow } from "@scrbrd/scoring";
  */
 export async function appendEvents(pool, secret, bearer, matchId, events) {
   if (!Array.isArray(events) || events.length === 0) { const e = new Error("no_events"); e.status = 400; throw e; }
+
+  // THE VOCABULARY IS CLOSED AT THIS DOOR. A wicket names how the batter was
+  // out from packages/scoring's DISMISSAL, or it is not recorded: the bowler's
+  // figures and the free-hit rule both read that value, and a spelling
+  // nothing recognises used to credit the bowler with a wicket that was
+  // never his. Checked over the whole batch before the transaction opens, so
+  // a refusal is a 400 naming the value and nothing was written.
+  for (const ev of events) {
+    const p = ev.payload || {};
+    if ((p.kind ?? "ball") !== "ball" || p.type !== "W") continue;
+    const d = normaliseDismissal(p.dismissal);
+    if (!d) {
+      const e = new Error("dismissal_unknown"); e.status = 400;
+      e.detail = { field: "dismissal", value: p.dismissal ?? null, idempotencyKey: ev.idempotencyKey };
+      throw e;
+    }
+    p.dismissal = d;
+  }
 
   return runAsPrincipal(pool, secret, bearer, async client => {
     // Serialise all writes for this match, and refresh the lease if this

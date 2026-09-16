@@ -912,6 +912,15 @@ BEGIN
     SELECT 1 FROM pg_constraint WHERE conname = 'player_born_required' AND convalidated),
     'the date-of-birth constraint is missing or was never validated');
 
+  -- ── How a batter is out is a closed list ──────────────────────
+  --
+  -- db/13: the dismissal column admits the eleven in the Laws and nothing
+  -- else, validated over every row already here. A stray spelling used to
+  -- credit the bowler with a wicket that was never his.
+  PERFORM _assert(EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'ball_event_dismissal_known' AND convalidated),
+    'the dismissal vocabulary constraint is missing or was never validated');
+
   BEGIN
     INSERT INTO player (school_id, team_code, full_name) VALUES (HIL, '1XI', 'No Birthday');
     PERFORM _assert(false, 'a player was written with no date of birth');

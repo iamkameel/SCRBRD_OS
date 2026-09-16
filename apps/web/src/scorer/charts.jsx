@@ -5,7 +5,7 @@ import { RR, SR } from "./format.js";
 import { IntelPanel } from "./panels.jsx";
 import { buildSignals } from "./signals.js";
 import { Badge, Card, Lbl, SignalBar } from "./ui.jsx";
-import { batHandOf, hasPoint, positionName } from "@scrbrd/scoring";
+import { batHandOf, hasPoint, positionName, DISMISSAL_LABEL } from "@scrbrd/scoring";
 
 /* ═══════════════════════════════════════════════════════
    INTEL DASHBOARD TAB
@@ -28,7 +28,7 @@ function WormChart({innings,curIn,match}){
       pts.push({ball,runs});
       if(b.type==="W"){
         const bat=inn.batsmen.find(x=>x.id===b.striker);
-        wkts.push({ball,runs,n:wkts.length+1,name:bat?bat.name:(b.dismissal||"Wicket"),mode:b.dismissal||""});
+        wkts.push({ball,runs,n:wkts.length+1,name:bat?bat.name:(DISMISSAL_LABEL[b.dismissal]||b.dismissal||"Wicket"),mode:DISMISSAL_LABEL[b.dismissal]||b.dismissal||""});
       }
     });
     return{pts,wkts};
