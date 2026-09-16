@@ -136,7 +136,9 @@ async function fetchAICommentary(ball,inn,milestone){
 Ball: ${eventDesc}${shot?" | Shot: "+shot.label:""}${seg?" | "+seg.label+(ball.zone==="boundary"?" (boundary)":ball.zone==="outer"?" (outfield)":""):""}${ball.bowlerApproach?" | Bowling "+ball.bowlerApproach:""}${batContext}${bowlContext}${partnerInfo}${milestoneCtx}`;
   // Enhancement layer only: returns null on any failure, and no scoring path
   // awaits it. A ball must be recordable with the network entirely absent.
-  return await fetchCommentary(prompt);
+  // The names the situation mentions, so the service can token them out
+  // before the model sees the line and put them back after.
+  return await fetchCommentary(prompt, [batsman?.name, bowler?.name].filter(Boolean));
 }
 
 // fetchAICommentary was defined here and exported nowhere, while

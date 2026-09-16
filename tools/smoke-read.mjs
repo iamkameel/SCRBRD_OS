@@ -332,6 +332,28 @@ try {
   ok("an unauthenticated read is refused", anon.status === 401);
   const nonsense = await api("/api/read/nonsense", coach);
   ok("an unknown resource is a 404, not an empty list", nonsense.status === 404);
+  // ── Stats-Magic answers from the read path, under a session ──
+  //
+  // The endpoint used to take a context string from anybody. Now it builds
+  // its own from readResource under the caller's identity, so a caller with
+  // no session is refused by the read path before any model is involved.
+  // With no credentials configured the answer is null, which is the honest
+  // no-model result and not a server error.
+  {
+    const post = async (token, body) => {
+      const res = await fetch(`${BASE}/api/ai/stats-magic`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify(body),
+      });
+      return { status: res.status, body: await res.json().catch(() => null) };
+    };
+    const anon = await post(null, { question: "who is the top scorer?", context: "Players: A Real Child" });
+    ok("Stats-Magic with no session is refused", anon.status === 401, `status ${anon.status} ${JSON.stringify(anon.body)}`);
+    const tok = await login("coach@example.invalid");
+    const signed = await post(tok, { question: "who is the top scorer?" });
+    ok("Stats-Magic with a session is answered by the service, not refused", signed.status === 200 && "answer" in (signed.body ?? {}), `status ${signed.status} ${JSON.stringify(signed.body)}`);
+  }
 } catch (e) {
   ok(`the read walk threw: ${e.message?.slice(0, 120)}`, false);
 } finally {

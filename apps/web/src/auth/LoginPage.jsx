@@ -153,11 +153,18 @@ function LoginPage({ onLogin, onSignUp }) {
     return RANK.find(r => held.includes(r)) ?? held[0] ?? "spectator";
   };
 
-  const handleGoogleOAuth = async () => {
+  // The demonstration's front door. There is no OAuth behind it and there
+  // never was: it hands the shell a role and a name, and the shell runs on
+  // mock data. That is fine on a laptop with no server — it is what the demo
+  // is for — and it is a lie on the live site, where it used to sit above the
+  // real sign-in labelled "Continue with Google". A school evaluating the
+  // product clicked it, saw a working roster, and had no way to know that
+  // nothing on screen was theirs or would be kept. So it renders only when
+  // there is no server, and says what it does.
+  const handleDemoEntry = async () => {
     setOauthLoading(true);
-    await new Promise(r=>setTimeout(r,1200));
-    // Simulate Google OAuth — returns schooladmin for demo
-    onLogin("schooladmin","Demo User (Google)");
+    await new Promise(r=>setTimeout(r,600));
+    onLogin("schooladmin","Demo School Admin");
     setOauthLoading(false);
   };
 
@@ -178,10 +185,11 @@ function LoginPage({ onLogin, onSignUp }) {
         </div>
 
         <div style={{borderRadius:"20px",border:"1px solid rgba(255,255,255,0.08)",background:"rgba(255,255,255,0.02)",padding:"28px",backdropFilter:"blur(20px)"}}>
-          {/* Google OAuth button */}
-          <button onClick={handleGoogleOAuth} disabled={oauthLoading} className="pressBtn" style={{width:"100%",padding:"12px",borderRadius:"12px",cursor:"pointer",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",display:"flex",alignItems:"center",justifyContent:"center",gap:"10px",marginBottom:"20px",transition:"all .2s"}}>
-            <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z"/><path fill="#FBBC05" d="M3.964 10.71c-.18-.54-.282-1.117-.282-1.71s.102-1.17.282-1.71V4.958H.957C.347 6.173 0 7.548 0 9s.348 2.827.957 4.042l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/></svg>
-            <span style={{fontFamily:"'Syne',sans-serif",fontSize:"13px",fontWeight:700,color:"rgba(255,255,255,0.85)"}}>{oauthLoading?"Connecting…":"Continue with Google"}</span>
+          {/* Demo entry — only where there is no server. See handleDemoEntry. */}
+          {live === false && <>
+          <button onClick={handleDemoEntry} disabled={oauthLoading} data-testid="login-demo" className="pressBtn" style={{width:"100%",padding:"12px",borderRadius:"12px",cursor:"pointer",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",display:"flex",alignItems:"center",justifyContent:"center",gap:"10px",marginBottom:"20px",transition:"all .2s"}}>
+            <span aria-hidden="true">🎬</span>
+            <span style={{fontFamily:"'Syne',sans-serif",fontSize:"13px",fontWeight:700,color:"rgba(255,255,255,0.85)"}}>{oauthLoading?"Opening the demo…":"Explore the demo — nothing is saved"}</span>
           </button>
 
           <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"20px"}}>
@@ -189,6 +197,7 @@ function LoginPage({ onLogin, onSignUp }) {
             <span style={{fontFamily:"'DM Mono',monospace",fontSize:"10px",color:"rgba(255,255,255,0.3)"}}>or email</span>
             <div style={{flex:1,height:"1px",background:"rgba(255,255,255,0.08)"}}/>
           </div>
+          </>}
 
           {/* Email + password */}
           {[

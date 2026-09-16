@@ -25,7 +25,7 @@
  */
 import { chromium } from "playwright-core";
 import { launchOptions } from "./chromium.mjs";
-import { offline, isFirebaseOfflineNoise } from "./offline-browser.mjs";
+import { offline } from "./offline-browser.mjs";
 import { anchorFor } from "@scrbrd/scoring";
 import { ROLES as POLICY_ROLES } from "@scrbrd/policy/roles";
 import { spawn } from "node:child_process";
@@ -76,14 +76,14 @@ async function open() {
   await offline(ctx);
   const page = await ctx.newPage();
   const refusals = [], errors = [];
-  page.on("pageerror", (e) => { if (!isFirebaseOfflineNoise(e.message)) errors.push(e.message); });
+  page.on("pageerror", (e) => { errors.push(e.message); });
   page.on("console", (m) => {
     const t = m.text();
     if (/\[scrbrd\] getData\(/.test(t)) refusals.push(t);
     // "Failed to load resource" is Chrome's own line for a 404 or an aborted
     // request. The Firebase SDK's offline chatter is filtered by one shared
     // rule, with its rationale, in tools/offline-browser.mjs.
-    if (m.type() === "error" && !/Failed to load resource/.test(t) && !isFirebaseOfflineNoise(t)) {
+    if (m.type() === "error" && !/Failed to load resource/.test(t)) {
       errors.push(t);
     }
   });
@@ -1348,7 +1348,7 @@ try {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
     await offline(ctx);
     const page = await ctx.newPage();
-    const errors = []; page.on("pageerror", (e) => { if (!isFirebaseOfflineNoise(e.message)) errors.push(e.message); });
+    const errors = []; page.on("pageerror", (e) => { errors.push(e.message); });
     await page.addInitScript(`window.__SCRBRD_API_BASE__ = ${JSON.stringify(API)};`);
     await page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "networkidle" });
     await signIn(page, /Coach/);
@@ -1442,6 +1442,74 @@ try {
     ok("...leaving no trace of who just signed out",
        !stale, `stored session still holds ${JSON.stringify(left)}`);
     ok("no console errors through signing out", c.errors.length === 0, c.errors.join(" | "));
+    await c.ctx.close();
+  }
+
+  // ── Nothing phones home until asked ───────────────────────────
+  group("Analytics waits for consent");
+  {
+    const c = await open();
+    const google = [];
+    c.page.on("request", (r) => { // Firebase's own hosts, not Google's: the page fetches its typefaces from
+    // fonts.googleapis.com on every visit, and that is a font, not analytics.
+    if (/firebase[a-z]*\.googleapis\.com|firebaseapp\.com|google-analytics\.com|googletagmanager\.com/.test(r.url())) google.push(r.url()); });
+    await c.page.reload({ waitUntil: "networkidle" }); await c.page.waitForTimeout(1500);
+    ok("the landing page makes no Firebase or Google request", google.length === 0, google.slice(0, 3).join(" | "));
+    const sw = c.page.locator('[data-testid="analytics-consent"]');
+    ok("the switch is on the landing page, and off", (await sw.count()) === 1 && (await sw.getAttribute("aria-checked")) === "false");
+    await sw.click({ timeout: 4000 }); await c.page.waitForTimeout(2500);
+    ok("turning it on is what starts the SDK", google.length > 0, "no Firebase request after consent");
+    ok("...and the switch says on", (await sw.getAttribute("aria-checked")) === "true");
+    await sw.click({ timeout: 4000 }); await c.page.waitForTimeout(500);
+    const before = google.length;
+    await c.page.reload({ waitUntil: "networkidle" }); await c.page.waitForTimeout(1500);
+    ok("off again, the next visit makes none", google.length === before, google.slice(before, before + 3).join(" | "));
+    // No console-error assertion here: with third parties aborted, the SDK
+    // that consent started reports being offline, which is its business.
+    await c.ctx.close();
+  }
+
+  // ── The demonstration says so ─────────────────────────────────
+  group("A demonstration is never mistaken for the product");
+  {
+    const c = await open();
+    await click(c.page, /Get Started|Log In/, 5000); await c.page.waitForTimeout(800);
+    ok("the login screen is up", (await c.page.locator("#login-email").count()) === 1);
+    // There IS a server, so the demo's front door is not offered. It used to
+    // be, labelled "Continue with Google", and it set a role with no token.
+    ok("with a server reachable, no demo entry is offered",
+       (await c.page.locator('[data-testid="login-demo"]').count()) === 0
+       && !/Continue with Google/.test(await text(c.page)));
+
+    // The other way into the shell without a token: a saved appState from a
+    // previous visit. The token is module-scope and does not survive a reload,
+    // so this is what a reload of a signed-in tab looks like too.
+    await c.page.evaluate(() => new Promise((resolve, reject) => {
+      const r = indexedDB.open("scrbrd");
+      r.onerror = () => reject(r.error);
+      r.onsuccess = () => {
+        const db = r.result;
+        if (!db.objectStoreNames.contains("kv")) return resolve("no-kv");
+        const put = db.transaction("kv", "readwrite").objectStore("kv")
+          .put({ appState: "app", role: "schooladmin", userName: "Nobody In Particular", page: "dashboard" }, "session");
+        put.onsuccess = () => resolve("ok"); put.onerror = () => reject(put.error);
+      };
+    }));
+    await c.page.reload({ waitUntil: "networkidle" }); await c.page.waitForTimeout(1500);
+    ok("a restored session with no token opens the shell", (await c.page.locator('[data-testid="os-main"]').count()) === 1);
+    ok("...and the shell says it is a demonstration", (await c.page.locator('[data-testid="demo-banner"]').count()) === 1
+       && /nothing is saved/i.test(await text(c.page)));
+    await c.page.locator('[data-testid="nav-squad"]').first().click({ timeout: 6000 }).catch(() => {});
+    await c.page.waitForTimeout(800);
+    ok("...on the next screen too", (await c.page.locator('[data-testid="demo-banner"]').count()) === 1);
+    await c.page.locator('[data-testid="demo-banner-signin"]').click({ timeout: 4000 });
+    await c.page.waitForTimeout(600);
+    ok("the banner's Sign in reaches the login screen", (await c.page.locator("#login-email").count()) === 1);
+    await click(c.page, /Registrar|School Admin|registrar@example\.invalid/, 4000);
+    await click(c.page, /^Sign In$/, 5000); await c.page.waitForTimeout(2000);
+    ok("a real session has no banner", (await c.page.locator('[data-testid="os-main"]').count()) === 1
+       && (await c.page.locator('[data-testid="demo-banner"]').count()) === 0);
+    ok("no console errors (demonstration)", c.errors.length === 0, c.errors.join(" | "));
     await c.ctx.close();
   }
 

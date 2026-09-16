@@ -11,6 +11,7 @@ const SUITES = [
   ["authorize","packages/policy/test/authorize.test.mjs"],
   ["scoring",  "packages/scoring/test/replay.test.mjs"],
   ["design",   "apps/web/test/design.test.mjs"],
+  ["analytics","apps/web/test/analytics.test.mjs"],
   ["teams",    "packages/policy/test/teams.test.mjs"],
   ["sa-id",    "packages/policy/test/sa-id.test.mjs"],
   ["dob",      "packages/policy/test/date-of-birth.test.mjs"],
@@ -29,6 +30,7 @@ const SUITES = [
   ["csv",      "services/api/io/csv.test.mjs"],
   ["write",    "services/api/write/write.test.mjs"],
   ["migrate",  "tools/migrate.test.mjs"],
+  ["ai",       "services/api/ai/ai.test.mjs"],
   ["realtime", "services/api/realtime/realtime.test.mjs"],
 ];
 

@@ -34,7 +34,7 @@ function TopBar({ role, onRoleChange, onNav, userName }) {
         {/* Search bar */}
         <button onClick={()=>setSearchOpen(true)} className="pressBtn" data-testid="topbar-search" style={{flex:1,maxWidth:"420px",display:"flex",alignItems:"center",gap:"8px",padding:"7px 12px",borderRadius:D.pill,background:D.surf2,border:`1px solid ${D.border}`,cursor:"pointer",textAlign:"left"}}>
           <span style={{fontSize:"13px",color:D.textMuted}}>🔍</span>
-          <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,flex:1}}>Search or ask StatGuru…</span>
+          <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,flex:1}}>Search or ask Stats-Magic…</span>
           <span className="os-kbd" style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted,background:D.surf3,padding:"2px 6px",borderRadius:"4px",flexShrink:0}}>⌘K</span>
         </button>
 

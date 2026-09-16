@@ -354,6 +354,17 @@ export default function SCRBRD_OS() {
         <a href="#os-content" className="skip-link" data-testid="skip-link">Skip to content</a>
         {!isMobile&&<Sidebar role={role} active={page} onNav={setPage} collapsed={collapsed} onToggle={()=>setCollapsed(!collapsed)} notifCount={unreadCount} userName={userName} onSignOut={handleSignOut}/>}
         <div style={{flex:1,display:"flex",flexDirection:"column",minWidth:0,overflow:"hidden"}}>
+          {/* Said on every screen, not once on the login page. The shell can
+              be reached without a session — the demo entry, a restored
+              appState after a reload that dropped the token — and from inside
+              it a mock roster and a real one look the same. One line, above
+              everything, for as long as there is no token. */}
+          {!signedIn() && (
+            <div role="status" data-testid="demo-banner" style={{display:"flex",alignItems:"center",justifyContent:"center",gap:"12px",padding:"6px 16px",background:"rgba(245,158,11,0.14)",borderBottom:`1px solid ${D.amber}`,fontFamily:D.body,fontSize:"12px",color:D.textPrimary}}>
+              <span><strong>Demonstration.</strong> Nothing on these screens is a school's, and nothing is saved.</span>
+              <button onClick={()=>setAppState("login")} className="pressBtn" data-testid="demo-banner-signin" style={{padding:"3px 10px",borderRadius:D.pill,border:`1px solid ${D.amber}`,background:"transparent",color:D.textPrimary,fontFamily:D.head,fontSize:"11px",fontWeight:700,cursor:"pointer"}}>Sign in</button>
+            </div>
+          )}
           <TopBar role={role} onRoleChange={handleRoleChange} onNav={setPage} userName={userName}/>
           <main id="os-content" tabIndex={-1} className="os-main" data-testid="os-main" data-page={VIEW_MAP[page] ? page : "dashboard"} style={{flex:1,overflowY:"auto"}}>
             {VIEW_MAP[page] || VIEW_MAP.dashboard}

@@ -205,7 +205,7 @@ In Secret Manager, on the project:
 | `DATABASE_URL` | `postgres://scrbrd_app:<app secret>@/scrbrd?host=/cloudsql/scrbrd-os:africa-south1:<instance>` |
 | `SESSION_SECRET` | 32+ random bytes; the API refuses to start without it outside development |
 | `WEB_ORIGIN` | `https://scrbrd-os.web.app` (or the custom domain) |
-| `ANTHROPIC_API_KEY` | optional; without it StatGuru and commentary answer null |
+| `ANTHROPIC_API_KEY` | optional; without it Stats-Magic and commentary answer null |
 
 ### 5 · Cloud Run, the first time
 

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import { askStatGuru } from "../lib/ai.js";
+import { askStatsMagic } from "../lib/ai.js";
+import { signedIn } from "../lib/api.js";
 import { SCHOOLS_REGISTRY } from "../data/institution.js";
 import { ROLES } from "../design/roles.js";
 import { D } from "../design/tokens.js";
@@ -62,17 +63,17 @@ function GlobalSearch({ role, onNav, onClose }) {
   const askGuru = async () => {
     if (!q.trim()) return;
     setAiLoading(true); setAiMode(true); setAiAnswer("");
-    // The prompt context is built from the SCOPED list. Sending the full roster
-    // to the model would exfiltrate exactly what the search filter withholds —
-    // a leak that never renders on screen and so is easy to miss.
-    const playerContext = ALL_PLAYERS.map(p=>`${p.name} (${p.role}, ${p.team}, ${p.school})`).join(", ");
-    const matchContext = ALL_MATCHES.slice(0,5).map(m=>`${m.home} vs ${m.away} ${m.date} ${m.result||m.status}`).join("; ");
+    // Only the question goes. The data Stats-Magic answers from is built by the
+    // service, from the read path, under THIS session — the browser used to
+    // assemble it, which let the model be handed whatever the page held. So a
+    // demonstration, which has no session, has no Stats-Magic either.
+    if (!signedIn()) { setAiAnswer("Stats-Magic answers from your school's own data — sign in to ask."); setAiLoading(false); return; }
     try {
       // Goes to our own service, which holds the credential. The browser has
       // no API key — see apps/web/src/lib/ai.js and services/api/ai/.
-      const answer = await askStatGuru(q, `Players: ${playerContext}. Recent matches: ${matchContext}.`);
+      const answer = await askStatsMagic(q);
       setAiAnswer(answer || "No answer available.");
-    } catch { setAiAnswer("StatGuru offline — check your connection."); }
+    } catch { setAiAnswer("Stats-Magic offline — check your connection."); }
     setAiLoading(false);
   };
 
@@ -84,13 +85,13 @@ function GlobalSearch({ role, onNav, onClose }) {
         {/* Input row */}
         <div style={{display:"flex",alignItems:"center",gap:"10px",padding:"14px 16px",borderBottom:`1px solid ${D.border}`}}>
           <span style={{fontSize:"16px",color:D.textMuted}}>🔍</span>
-          <input ref={inputRef} value={q} onChange={e=>{setQ(e.target.value);setAiMode(false);setAiAnswer("");}} aria-label="Search, or ask StatGuru"
+          <input ref={inputRef} value={q} onChange={e=>{setQ(e.target.value);setAiMode(false);setAiAnswer("");}} aria-label="Search, or ask Stats-Magic"
             onKeyDown={e=>{if(e.key==="Escape")onClose();if(e.key==="Enter")askGuru();}}
-            placeholder="Search players, matches, staff… or ask StatGuru anything"
+            placeholder="Search players, matches, staff… or ask Stats-Magic anything"
             style={{flex:1,background:"transparent",border:"none",fontFamily:D.body,fontSize:"14px",color:D.textPrimary,}}/>
           {looksLikeStat&&!aiMode&&(
             <button onClick={askGuru} className="pressBtn" style={{display:"flex",alignItems:"center",gap:"5px",padding:"5px 12px",borderRadius:D.pill,cursor:"pointer",background:`${D.violet}18`,border:`1px solid ${D.violet}44`,fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.violetText,whiteSpace:"nowrap"}}>
-              ✦ Ask StatGuru
+              ✦ Ask Stats-Magic
             </button>
           )}
           <button onClick={onClose} className="pressBtn" style={{background:"none",border:"none",cursor:"pointer",color:D.textMuted,fontSize:"18px",lineHeight:1}}>×</button>
@@ -100,7 +101,7 @@ function GlobalSearch({ role, onNav, onClose }) {
         {aiMode&&(
           <div style={{padding:"14px 16px",borderBottom:`1px solid ${D.border}`,background:`${D.violet}0a`}}>
             <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"8px"}}>
-              <span style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.violetText,letterSpacing:"0.06em"}}>✦ STATGURU</span>
+              <span style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.violetText,letterSpacing:"0.06em"}}>✦ STATS-MAGIC</span>
               {aiLoading&&<span style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>thinking…</span>}
             </div>
             {aiLoading
@@ -136,7 +137,7 @@ function GlobalSearch({ role, onNav, onClose }) {
               ))}
             </div>
             <div style={{marginTop:"14px",padding:"10px 14px",borderRadius:D.md,background:`${D.violet}08`,border:`1px solid ${D.violet}22`}}>
-              <span style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.violetText}}>✦ StatGuru tip: </span>
+              <span style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.violetText}}>✦ Stats-Magic tip: </span>
               <span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>Try "What is James Whitfield's strike rate?" or "Who are the top bowlers this season?"</span>
             </div>
           </div>
@@ -146,15 +147,15 @@ function GlobalSearch({ role, onNav, onClose }) {
         {!aiMode&&q.length>=2&&results.length===0&&(
           <div style={{padding:"24px 16px",textAlign:"center"}}>
             <div style={{fontFamily:D.body,fontSize:"13px",color:D.textMuted,marginBottom:"10px"}}>No results for "{q}"</div>
-            <button onClick={askGuru} className="pressBtn" style={{padding:"8px 18px",borderRadius:D.pill,cursor:"pointer",background:`${D.violet}18`,border:`1px solid ${D.violet}44`,fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.violetText}}>✦ Ask StatGuru instead</button>
+            <button onClick={askGuru} className="pressBtn" style={{padding:"8px 18px",borderRadius:D.pill,cursor:"pointer",background:`${D.violet}18`,border:`1px solid ${D.violet}44`,fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.violetText}}>✦ Ask Stats-Magic instead</button>
           </div>
         )}
 
         {/* Footer */}
         <div style={{padding:"8px 16px",borderTop:`1px solid ${D.border}`,display:"flex",alignItems:"center",gap:"12px"}}>
-          <span style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>↵ Enter to ask StatGuru</span>
+          <span style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>↵ Enter to ask Stats-Magic</span>
           <span style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>Esc to close</span>
-          <span style={{marginLeft:"auto",fontFamily:D.head,fontSize:"8px",fontWeight:700,color:D.violetText}}>✦ StatGuru powered by Claude</span>
+          <span style={{marginLeft:"auto",fontFamily:D.head,fontSize:"8px",fontWeight:700,color:D.violetText}}>✦ Stats-Magic powered by Claude</span>
         </div>
       </div>
     </div>

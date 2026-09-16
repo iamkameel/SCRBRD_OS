@@ -1,11 +1,20 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import SCRBRD_LOGO from "../assets/scrbrd-logo.jpg";
 import { SCRBRD } from "../scorer/engine.jsx";
 
 // ══════════════════════════════════════════════════════
 //  LANDING PAGE
 // ══════════════════════════════════════════════════════
+import { analyticsConsented, setAnalyticsConsent } from "../lib/firebase.js";
+
 function LandingPage({ onEnter, onLogin }) {
+  // Anonymous usage analytics: off until this device says otherwise. Asked
+  // here, at the front door, because a pupil or a parent should never have to
+  // find a settings page to learn that nothing was collected.
+  const [analytics, setAnalytics] = useState(false);
+  useEffect(() => { analyticsConsented().then(setAnalytics).catch(() => {}); }, []);
+  const toggleAnalytics = async () => { const on = !analytics; setAnalytics(on); await setAnalyticsConsent(on); };
+
   const [hov, setHov] = useState(null);
   const FEATURES = [
     { icon:"🏏", title:"Live Scoring",     desc:"Ball-by-ball broadcast scoring with AI commentary" },
@@ -59,6 +68,14 @@ function LandingPage({ onEnter, onLogin }) {
       <div style={{borderTop:"1px solid rgba(255,255,255,0.06)",padding:"24px",textAlign:"center"}}>
         <img src={SCRBRD_LOGO} alt="SCRBRD" style={{height:"18px",objectFit:"contain",opacity:0.35,filter:"grayscale(1) brightness(2)",display:"block",margin:"0 auto 10px"}}/>
         <div style={{fontFamily:"'DM Mono',monospace",fontSize:"10px",color:"rgba(255,255,255,0.2)",letterSpacing:"0.08em"}}>© 2026 SCRBRD · School Cricket Intelligence Platform</div>
+        <div style={{marginTop:"10px",fontFamily:"'DM Mono',monospace",fontSize:"10px",color:"rgba(255,255,255,0.35)",letterSpacing:"0.04em"}}>
+          Anonymous usage analytics: <strong>{analytics ? "on" : "off"}</strong>{" "}
+          <button onClick={toggleAnalytics} role="switch" aria-checked={analytics} data-testid="analytics-consent" className="pressBtn"
+            style={{marginLeft:"6px",padding:"2px 10px",borderRadius:"10px",cursor:"pointer",background:"transparent",border:"1px solid rgba(255,255,255,0.18)",fontFamily:"'DM Mono',monospace",fontSize:"10px",color:"rgba(255,255,255,0.6)"}}>
+            {analytics ? "Turn off" : "Turn on"}
+          </button>
+          {analytics && <span style={{marginLeft:"8px"}}>— stops on your next visit if turned off</span>}
+        </div>
       </div>
     </div>
   );

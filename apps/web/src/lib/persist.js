@@ -115,7 +115,11 @@ async function backend() {
   }
   try {
     const b = localBackend();
-    b.put("__probe", 1); b.del("__probe");
+    // Awaited, or the probe cannot fail: put() is async, so a thrown
+    // ReferenceError (no localStorage at all) or a quota error became a
+    // rejected promise nobody looked at, and a backend that cannot write was
+    // chosen over the one that can.
+    await b.put("__probe", 1); await b.del("__probe");
     _backend = b;
   } catch {
     _backend = memoryBackend();
@@ -188,4 +192,16 @@ export async function loadSession() {
 
 export async function clearSession() {
   try { await (await backend()).del("session"); return true; } catch { return false; }
+}
+
+// ── Preferences ──────────────────────────────────────────
+//
+// Small, per-device choices the person made on purpose — today, whether
+// anonymous usage analytics may run. Namespaced so a preference can never
+// collide with a match log or the session row.
+export async function getPref(key) {
+  try { return await (await backend()).get(`pref:${key}`); } catch { return null; }
+}
+export async function setPref(key, value) {
+  try { await (await backend()).put(`pref:${key}`, value); return true; } catch { return false; }
 }
