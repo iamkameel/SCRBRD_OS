@@ -41,8 +41,8 @@ async function post(path, body, { timeoutMs = 8000, headers = {} } = {}) {
  * path under this session, so the browser cannot hand the model anything
  * the read path would not. Needs a session; the caller checks signedIn().
  */
-export async function askStatGuru(question) {
-  const d = await post("/api/ai/statguru", { question }, { headers: authHeaders() });
+export async function askStatsMagic(question) {
+  const d = await post("/api/ai/stats-magic", { question }, { headers: authHeaders() });
   return d?.answer ?? null;
 }
 

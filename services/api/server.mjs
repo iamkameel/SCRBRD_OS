@@ -24,7 +24,7 @@
  *   POST /api/players/:id/access-request          ask that player's coach for access
  *   POST /api/access-requests/:id/decide          answer such a request
  *   GET  /api/matches/:id/events?since=           incremental sync
- *   POST /api/ai/statguru, /api/ai/commentary
+ *   POST /api/ai/stats-magic, /api/ai/commentary
  *
  *   node services/api/server.mjs        # PORT=8787 by default
  */
@@ -33,7 +33,7 @@ import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { join, extname, resolve, sep } from "node:path";
 import pg from "pg";
-import { askStatGuru, describeDelivery, statGuruContext, aiConfigured } from "./ai/ai-service.mjs";
+import { askStatsMagic, describeDelivery, statsMagicContext, aiConfigured } from "./ai/ai-service.mjs";
 import { sessionProfile, runAsPrincipal, issueLoginCode, redeemMagicLink } from "./auth/auth-db.mjs";
 import { signToken, AuthError } from "./auth/auth.mjs";
 import { readRoute, exportRoute, liveResources } from "./read/read-api.mjs";
@@ -278,14 +278,14 @@ const EXACT = {
     (client) => issueLoginCode(client, SECRET, { email: body?.email })),
   "POST /api/auth/redeem": async (body) => redeemMagicLink(
     pool, SECRET, { email: body?.email, code: body?.code, deviceId: body?.deviceId }),
-  // StatGuru's data is built server-side from the read path under the
+  // Stats-Magic's data is built server-side from the read path under the
   // caller's identity — no session, no answer — and every pupil's name is
   // swapped for a token before the model sees it. Commentary stays open (the
   // demo scorer has no session) but sends the names it is given the same
   // masked way. See services/api/ai/ai-service.mjs.
-  "POST /api/ai/statguru":   async (body, req) => {
-    const ctx = await statGuruContext(pool, SECRET, req.headers?.authorization);
-    return { answer: await askStatGuru({ question: body.question, ...ctx }) };
+  "POST /api/ai/stats-magic":   async (body, req) => {
+    const ctx = await statsMagicContext(pool, SECRET, req.headers?.authorization);
+    return { answer: await askStatsMagic({ question: body.question, ...ctx }) };
   },
   "POST /api/ai/commentary": async (body) => ({ line: await describeDelivery({ situation: body.situation, names: body.names }) }),
 };
@@ -663,7 +663,7 @@ await assertRlsApplies();
 server.listen(PORT, () => {
   console.log(`SCRBRD API on http://localhost:${PORT}`);
   console.log(`  db:   ${DATABASE_URL.replace(/:[^:@]*@/, ":***@")} (row-level security applies)`);
-  console.log(`  ai:   ${aiConfigured() ? "configured" : "NO CREDENTIALS — StatGuru and commentary return null"}`);
+  console.log(`  ai:   ${aiConfigured() ? "configured" : "NO CREDENTIALS — Stats-Magic and commentary return null"}`);
   if (CLIENT_DIR) console.log(`  web:  serving the client from ${CLIENT_DIR}`);
   if (!process.env.SESSION_SECRET) console.log("  auth: EPHEMERAL dev secret — tokens die on restart");
   if (DEV && process.env.ALLOW_DEV_LOGIN === "1") console.log("  auth: DEV LOGIN ENABLED — /api/auth/dev-login mints tokens without a code");

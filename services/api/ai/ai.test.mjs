@@ -7,7 +7,7 @@
  * provider being reachable. A fake provider answers using the tokens, as the
  * real one is told to, so the way back is tested too.
  */
-import { maskNames, describeDelivery, askStatGuru, contextFrom, statGuruContext } from "./ai-service.mjs";
+import { maskNames, describeDelivery, askStatsMagic, contextFrom, statsMagicContext } from "./ai-service.mjs";
 
 let pass = 0, fail = 0;
 const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${d}` : ""); } };
@@ -40,7 +40,7 @@ const flat = (params) => JSON.stringify(params);
   ok("a provider failure is a null line, never a throw", (await describeDelivery({ situation: "dot", names: [], send: async () => { throw new Error("boom"); } })) === null);
 }
 
-// ── StatGuru ──
+// ── Stats-Magic ──
 {
   const ctx = contextFrom({
     players: [{ full_name: "James Whitfield", playing_role: "Batter", team_code: "1XI", school_name: "Hilton College" },
@@ -52,16 +52,16 @@ const flat = (params) => JSON.stringify(params);
 
   let sent = null;
   const send = async (params) => { sent = params; return { content: [{ type: "text", text: "PLAYER_1 is the top scorer; PLAYER_2 the leading wicket-taker." }] }; };
-  const answer = await askStatGuru({ question: "Who is better, James Whitfield or Kieran Naidoo?", ...ctx, send });
-  ok("StatGuru request carries no name — not in the data", !/Whitfield|Naidoo/i.test(sent?.system ?? "x"), sent?.system?.slice(-200));
+  const answer = await askStatsMagic({ question: "Who is better, James Whitfield or Kieran Naidoo?", ...ctx, send });
+  ok("Stats-Magic request carries no name — not in the data", !/Whitfield|Naidoo/i.test(sent?.system ?? "x"), sent?.system?.slice(-200));
   ok("...and not in the question", !/Whitfield|Naidoo/i.test(flat(sent?.messages)), flat(sent?.messages));
   ok("the answer comes back named", answer === "James Whitfield is the top scorer; Kieran Naidoo the leading wicket-taker.", answer);
 
   // The context is built under the caller's session. A read that refuses
   // (no token → 401 from runAsPrincipal) refuses the whole thing.
-  const refused = await statGuruContext(null, "s", undefined, async () => { const e = new Error("no_principal"); e.status = 401; throw e; }).catch((e) => e);
+  const refused = await statsMagicContext(null, "s", undefined, async () => { const e = new Error("no_principal"); e.status = 401; throw e; }).catch((e) => e);
   ok("no session, no context — the read path's refusal is the answer", refused?.status === 401);
-  const built = await statGuruContext(null, "s", "Bearer t", async (_p, _s, _b, r) => ({ rows: r === "players" ? [{ full_name: "A Pupil" }] : [] }));
+  const built = await statsMagicContext(null, "s", "Bearer t", async (_p, _s, _b, r) => ({ rows: r === "players" ? [{ full_name: "A Pupil" }] : [] }));
   ok("with a session, the rows come from readResource", built.names[0] === "A Pupil" && /A Pupil/.test(built.context));
 }
 
