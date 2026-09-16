@@ -30,6 +30,8 @@ const WALKS = [
   "bootstrap",
   // The way out of quarantine: who may open it, and what a released ball is.
   "quarantine",
+  // A retry writes once: the Idempotency-Key layer over every write route.
+  "idempotency",
   // Pre-match: who can play, naming the side, calling the toss, and the
   // conditions both sides play in.
   "availability", "squad", "toss", "conditions",
