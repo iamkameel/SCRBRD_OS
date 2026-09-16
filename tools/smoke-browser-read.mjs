@@ -1445,6 +1445,50 @@ try {
     await c.ctx.close();
   }
 
+  // ── The demonstration says so ─────────────────────────────────
+  group("A demonstration is never mistaken for the product");
+  {
+    const c = await open();
+    await click(c.page, /Get Started|Log In/, 5000); await c.page.waitForTimeout(800);
+    ok("the login screen is up", (await c.page.locator("#login-email").count()) === 1);
+    // There IS a server, so the demo's front door is not offered. It used to
+    // be, labelled "Continue with Google", and it set a role with no token.
+    ok("with a server reachable, no demo entry is offered",
+       (await c.page.locator('[data-testid="login-demo"]').count()) === 0
+       && !/Continue with Google/.test(await text(c.page)));
+
+    // The other way into the shell without a token: a saved appState from a
+    // previous visit. The token is module-scope and does not survive a reload,
+    // so this is what a reload of a signed-in tab looks like too.
+    await c.page.evaluate(() => new Promise((resolve, reject) => {
+      const r = indexedDB.open("scrbrd");
+      r.onerror = () => reject(r.error);
+      r.onsuccess = () => {
+        const db = r.result;
+        if (!db.objectStoreNames.contains("kv")) return resolve("no-kv");
+        const put = db.transaction("kv", "readwrite").objectStore("kv")
+          .put({ appState: "app", role: "schooladmin", userName: "Nobody In Particular", page: "dashboard" }, "session");
+        put.onsuccess = () => resolve("ok"); put.onerror = () => reject(put.error);
+      };
+    }));
+    await c.page.reload({ waitUntil: "networkidle" }); await c.page.waitForTimeout(1500);
+    ok("a restored session with no token opens the shell", (await c.page.locator('[data-testid="os-main"]').count()) === 1);
+    ok("...and the shell says it is a demonstration", (await c.page.locator('[data-testid="demo-banner"]').count()) === 1
+       && /nothing is saved/i.test(await text(c.page)));
+    await c.page.locator('[data-testid="nav-squad"]').first().click({ timeout: 6000 }).catch(() => {});
+    await c.page.waitForTimeout(800);
+    ok("...on the next screen too", (await c.page.locator('[data-testid="demo-banner"]').count()) === 1);
+    await c.page.locator('[data-testid="demo-banner-signin"]').click({ timeout: 4000 });
+    await c.page.waitForTimeout(600);
+    ok("the banner's Sign in reaches the login screen", (await c.page.locator("#login-email").count()) === 1);
+    await click(c.page, /Registrar|School Admin|registrar@example\.invalid/, 4000);
+    await click(c.page, /^Sign In$/, 5000); await c.page.waitForTimeout(2000);
+    ok("a real session has no banner", (await c.page.locator('[data-testid="os-main"]').count()) === 1
+       && (await c.page.locator('[data-testid="demo-banner"]').count()) === 0);
+    ok("no console errors (demonstration)", c.errors.length === 0, c.errors.join(" | "));
+    await c.ctx.close();
+  }
+
   group("A dialog can be left, and the app works afterwards");
   {
     const c = await open();
