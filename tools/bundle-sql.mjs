@@ -122,6 +122,13 @@ SELECT
           = (SELECT count(*) FROM capability)
        THEN 'OK — ' || (SELECT count(*) FROM capability) || ' capabilities'
        ELSE 'PROBLEM' END                                       AS "Super Admin holds every key",
+  -- A LIVE owner's key: a platform-wide superadmin assignment on an active
+  -- account. On the demonstration database that is the seeded fixture owner;
+  -- on a real one it is whoever ran tools/bootstrap.mjs --owner.
+  CASE WHEN EXISTS (SELECT 1 FROM role_assignment a JOIN app_user u ON u.id = a.person_id
+                     WHERE a.role = 'superadmin' AND a.school_id IS NULL AND a.active AND u.active
+                       AND (a.valid_until IS NULL OR a.valid_until > current_date))
+       THEN 'OK' ELSE 'PROBLEM — nobody holds it' END              AS "An owner's key exists",
   CASE WHEN to_regprocedure('enrol_person(text,text,text,uuid,text,uuid,text)') IS NOT NULL
        THEN 'OK' ELSE 'PROBLEM' END                             AS "Enrolment exists",
   CASE WHEN to_regprocedure('majority_on(date)') IS NOT NULL

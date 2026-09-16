@@ -196,6 +196,25 @@ same. That person signs in with the code, and invites the school's first
 administrator from the app. Running it again for the same email mints a new
 code and changes nothing else — the recovery path for a locked-out operator.
 
+### 3a · The owner's key
+
+The platform administrator above can grant every role but one. The owner's
+key — `superadmin`, every capability, no school — is deliberately not
+grantable from inside the platform (`db/99` asserts it), so it is written the
+same way, once, with `--owner`:
+
+```sh
+read -rs SESSION_SECRET && export SESSION_SECRET
+DATABASE_URL=postgres://scrbrd:<owner secret>@127.0.0.1:5432/scrbrd \
+  node tools/bootstrap.mjs --owner --email you@example.co.za --name "Your Name"
+```
+
+Until this existed the only thing that ever created that assignment was
+`98_seed_pilot.sql`, which must never run here. The seed still carries a
+fixture owner for the demonstration; this is the one for a real database.
+The verify bundle's "An owner's key exists" column reads OK when somebody
+holds it.
+
 ### 4 · Secrets
 
 In Secret Manager, on the project:
