@@ -1393,6 +1393,35 @@ BEGIN
   SELECT count(*) INTO n FROM match WHERE sport = 'hockey' AND opponent = 'Kearsney';
   PERFORM _assert(n = 1, 'the platform granted hockey and the fixture was still refused');
 
+  -- ── A read across every tenant is on the record ────────────────
+  -- SCRBRD-026. The owner's key and a platform administrator's reach every
+  -- school; db/20 makes the log say so, decided at write time by the same
+  -- liveness rule as everything else about the reader.
+  PERFORM _as(U_OWNER);
+  PERFORM _assert(app_is_platform_wide(), 'the owner does not read as platform-wide');
+  PERFORM _as(U_PLAT);
+  PERFORM _assert(app_is_platform_wide(), 'a platform administrator does not read as platform-wide');
+  PERFORM _as(U_REGISTRAR);
+  PERFORM _assert(NOT app_is_platform_wide(), 'a school administrator reads as platform-wide');
+  PERFORM _as(U_SARAH);
+  PERFORM _assert(NOT app_is_platform_wide(), 'two school assignments add up to the platform');
+  -- The row carries the answer, stamped by the function and not by the
+  -- caller: the same call, from the owner and from the school's own office.
+  PERFORM _as(U_OWNER);
+  PERFORM log_restricted_read('players', ARRAY[P_INJURED], ARRAY['born'], HIL);
+  PERFORM _as(U_REGISTRAR);
+  PERFORM log_restricted_read('players', ARRAY[P_INJURED], ARRAY['born'], HIL);
+  -- Read back as the school's own auditor: both rows are theirs to see, and
+  -- exactly one of them is a read from outside the school.
+  PERFORM _as(U_SARAH);   -- director of sport at Hilton: audit.read
+  SELECT count(*) INTO n FROM access_log
+   WHERE school_id = HIL AND resource = 'players' AND person_id = U_OWNER AND platform_wide;
+  PERFORM _assert(n = 1,
+    'the owner''s read of a school''s roster is not marked platform-wide in that school''s log');
+  SELECT count(*) INTO n FROM access_log
+   WHERE school_id = HIL AND resource = 'players' AND person_id = U_REGISTRAR AND NOT platform_wide;
+  PERFORM _assert(n = 1, 'a school''s own read of its own roster was marked platform-wide');
+
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 

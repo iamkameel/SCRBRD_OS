@@ -1802,7 +1802,9 @@ export const READ_QUERIES = {
   access_log: {
     text: `select l.id, l.school_id, l.person_id, u.name as person_name,
                   l.resource, l.record_ids, l.record_count, l.fields,
-                  l.device_id, l.occurred_at
+                  l.device_id, l.occurred_at,
+                  -- Whether the reader reached this school from outside it.
+                  l.platform_wide
              from access_log l
              left join app_user u on u.id = l.person_id
             where ($1::uuid is null or l.record_ids @> array[$1::uuid])
@@ -2109,17 +2111,33 @@ export async function readResource(pool, secret, bearer, resource, query = {}) {
     // different columns back — logging the query would record a disclosure
     // that never happened for one of them.
     const watched = RESTRICTED_FIELDS[resource];
-    if (watched?.length && rows.length) {
+    const idCol = SUBJECT_ID[resource];
+    const idsIn = (some) => idCol
+      ? [...new Set(some.map((r) => r[idCol]).filter(Boolean))].slice(0, MAX_LOGGED_IDS)
+      : [];
+    // A PLATFORM-WIDE READER'S EVERY READ IS ON THE RECORD (db/20). For the
+    // owner's key or a platform administrator, a roster is not their
+    // school's roster, it is every school's, and the read crosses a tenant
+    // boundary whether or not a restricted column came back. One row per
+    // school the rows came from, so each school's own auditor sees the
+    // owner's read of THEIR children in THEIR log, rather than one row filed
+    // under whichever school happened to sort first.
+    const { rows: [who] } = await client.query(`select app_is_platform_wide() as platform`);
+    if (who?.platform && rows.length) {
+      const disclosed = (watched ?? []).filter((f) => rows.some((r) => pick(r, f) != null));
+      for (const school of new Set(rows.map((r) => r.school_id ?? null))) {
+        const mine = rows.filter((r) => (r.school_id ?? null) === school);
+        await client.query(
+          `select log_restricted_read($1, $2::uuid[], $3::text[], $4::uuid)`,
+          [resource, idsIn(mine), disclosed, school]);
+      }
+    } else if (watched?.length && rows.length) {
       const disclosed = watched.filter((f) => rows.some((r) => pick(r, f) != null));
       if (disclosed.length) {
-        const idCol = SUBJECT_ID[resource];
-        const ids = idCol
-          ? [...new Set(rows.map((r) => r[idCol]).filter(Boolean))].slice(0, MAX_LOGGED_IDS)
-          : [];
         const school = rows.find((r) => r.school_id)?.school_id ?? null;
         await client.query(
           `select log_restricted_read($1, $2::uuid[], $3::text[], $4::uuid)`,
-          [resource, ids, disclosed, school]);
+          [resource, idsIn(rows), disclosed, school]);
       }
     }
     return rows;

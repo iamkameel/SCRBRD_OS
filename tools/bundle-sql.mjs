@@ -194,6 +194,10 @@ SELECT
        THEN 'OK — none open-ended' ELSE 'PROBLEM' END            AS "Every guardian link has an end date",
   CASE WHEN to_regprocedure('dob_gaps()') IS NOT NULL
        THEN 'OK' ELSE 'PROBLEM' END                             AS "Data-quality gaps are visible",
+  CASE WHEN to_regprocedure('app_is_platform_wide()') IS NOT NULL
+        AND EXISTS (SELECT 1 FROM information_schema.columns
+                     WHERE table_name = 'access_log' AND column_name = 'platform_wide')
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "Platform-wide reads are on the record",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",
