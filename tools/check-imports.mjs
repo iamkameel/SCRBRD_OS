@@ -42,15 +42,37 @@ const files = [];
  * a spread exists to use: `<Btn {...textOn} />` silently checked nothing.
  * Turning `...` into blanks before that regex runs leaves the name behind it
  * exactly as bare as `...textOn` actually leaves it at runtime.
+ *
+ * ALL THREE KINDS OF STRING GO IN ONE PASS, in source order. They used to be
+ * three passes — backticks, then single quotes, then double — and the single
+ * quote pass ran over text the double-quote pass had not yet removed. An
+ * apostrophe inside a double-quoted string ("a school's roster") opened a
+ * phantom '…' that ran to the next apostrophe in the file, swallowing one `"`
+ * on the way, and from there every double-quoted string was paired with the
+ * wrong partner: their CONTENTS became code, and a word inside one of them —
+ * "add SCRBRD to your home screen" — was reported as a missing import. One
+ * alternation, scanned left to right, means whichever quote opens first is
+ * the one that closes, which is what the language does. Single- and
+ * double-quoted strings cannot span a line, so a stray apostrophe in JSX
+ * text can mislead the scanner only to the end of that line.
  */
+const STRING = /`(?:\\.|[^`\\])*`|'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"/g;
 const codeOf = (src) =>
   src
     .replace(/\/\*[\s\S]*?\*\//g, " ")
     .replace(/(^|[^:\\])\/\/[^\n]*/g, "$1 ")
-    .replace(/`(?:\\.|[^`\\])*`/g, (t) => (t.match(/\$\{[^}]*\}/g) || []).join(" "))
-    .replace(/'(?:\\.|[^'\\])*'/g, " ")
-    .replace(/"(?:\\.|[^"\\])*"/g, " ")
+    .replace(STRING, (t) => (t[0] === "`" ? (t.match(/\$\{[^}]*\}/g) || []).join(" ") : " "))
     .replace(/>[^<>{}]*</g, "><")                      // JSX text nodes
+    // JSX text that touches an {expression} — `>nobody can read it {x}<` —
+    // which the line above cannot cross. Kept narrow on purpose: no ( ) ; =
+    // inside, so an arrow body such as `if (xs.some(x => fmt(x))) {` is never
+    // read as prose and its references never swallowed. The `}` form also
+    // refuses a comma: `[{ default: S }, { parseBalls }]` is a destructuring
+    // list, and eating its `, ` glued two parameter names into one that
+    // nothing declared. Prose with brackets next to an expression is the one
+    // shape left to a false positive.
+    .replace(/>[^<>{}();=]*(?=[<{])/g, ">")
+    .replace(/}[^<>{}();=,]*(?=[<{])/g, "}")
     .replace(/\.\.\./g, "   ")                          // spread/rest — see above
     .replace(/(\?\.|\.)\s*([A-Za-z_$][\w$]*)/g, "$1_");  // property accesses
 
