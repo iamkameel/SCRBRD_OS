@@ -35,6 +35,13 @@ const files = [];
  * comments, string bodies (keeping `${...}` interpolations), JSX text nodes,
  * and property accesses. Without the last two, `>SCRBRD<` rendered as text and
  * `ScorerApp.seedLiveResume(...)` both read as free variables.
+ *
+ * SPREAD/REST MUST GO FIRST. `...textOn` is three dots then a real reference
+ * — the property-access strip below sees only its own single `.` alternative
+ * and reads the last of the three as `.textOn`, stripping the very identifier
+ * a spread exists to use: `<Btn {...textOn} />` silently checked nothing.
+ * Turning `...` into blanks before that regex runs leaves the name behind it
+ * exactly as bare as `...textOn` actually leaves it at runtime.
  */
 const codeOf = (src) =>
   src
@@ -44,6 +51,7 @@ const codeOf = (src) =>
     .replace(/'(?:\\.|[^'\\])*'/g, " ")
     .replace(/"(?:\\.|[^"\\])*"/g, " ")
     .replace(/>[^<>{}]*</g, "><")                      // JSX text nodes
+    .replace(/\.\.\./g, "   ")                          // spread/rest — see above
     .replace(/(\?\.|\.)\s*([A-Za-z_$][\w$]*)/g, "$1_");  // property accesses
 
 const exportsOf = (src) => {
