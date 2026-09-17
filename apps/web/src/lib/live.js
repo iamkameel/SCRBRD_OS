@@ -448,6 +448,31 @@ function asOppositionPlayer(r) {
 }
 
 /**
+ * An innings in three parts, already in the product's vocabulary.
+ *
+ * Unlike every other adapter in this file this one is nearly an identity, and
+ * that is deliberate rather than lazy: the phases read is COMPOSED on the
+ * server by the same derivePhases() the scorer's device runs, so what arrives
+ * is already the scoring package's names — runRate, dotPct, controlPct — and
+ * not the database's columns. Renaming any of it here would put a second
+ * vocabulary between the fold and the screen, which is exactly the drift the
+ * shared package exists to prevent: a phase breakdown that disagreed with the
+ * scorecard beside it would be worse than none, because both look
+ * authoritative and nothing could say which was right.
+ *
+ * THE NULLS ARE THE LOAD-BEARING PART and are passed through untouched:
+ * `runRate` null when no balls were bowled in the phase, `controlPct` and
+ * `beatenPct` null when no contact was recorded at all, `par` and `vsPar`
+ * null in a first innings because there is nothing yet to be level with. A
+ * zero in any of their places is a fabrication, and a screen that cannot tell
+ * "nobody was watching that closely" from "he middled nothing" has invented a
+ * batter who is out of touch.
+ */
+function asPhases(r) {
+  return { innings: r.innings, phases: r.phases, live: true };
+}
+
+/**
  * The head-to-head against one rival, DERIVED — never a stored tally.
  *
  * `undecided` is the honest column and must be drawn, not dropped: a fixture
@@ -890,6 +915,7 @@ const ADAPT = {
   memberships: asMembership,
   opposition_context: asOppositionContext,
   opposition_squad: asOppositionPlayer,
+  phases: asPhases,
   derby_record: asDerby,
   matchups: asMatchup,
   matchup_coverage: asMatchupCoverage,

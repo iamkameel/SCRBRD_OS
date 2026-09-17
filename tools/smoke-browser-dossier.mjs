@@ -25,9 +25,12 @@
  * disclosure rather than a bug.
  *
  * It also covers Analytics, whose Head-to-Head tab showed a hand-written table
- * of invented results against six named KZN schools until this change. That is
- * worse than an empty screen, and the assertion is that the fabricated rows
- * are gone and the derived ones are there.
+ * of invented results against six named KZN schools, and whose Phases tab
+ * showed three hard-coded rows with a runsFor/runsAgainst pair invented across
+ * a whole season. That is worse than an empty screen, and the assertions are
+ * that the fabricated rows are gone, the derived ones are there, and — the
+ * part a phase breakdown gets wrong — that a withheld percentage reads as
+ * "none recorded" rather than 0%.
  *
  *   node tools/migrate.mjs --reset --seed
  *   pnpm build && node tools/smoke-browser-dossier.mjs
@@ -179,7 +182,7 @@ const closeDossier = async (page) => {
   await page.waitForTimeout(400);
 };
 
-let soon, later, solo, wrongSide;
+let soon, later, solo, wrongSide, nets;
 
 try {
   for (let i = 0; i < 60; i++) {
@@ -220,7 +223,7 @@ try {
                             order by full_name limit 2`, [HIL]);
   const hilBowler = (await q(`update player set bowling_style = 'S' where id = $1 returning id`,
                              [hilPair[1].id]))[0].id;
-  const nets = await fixture(HIL, "1XI", { opponent: "Michaelhouse 2nd XI", days: -4, status: "complete" });
+  nets = await fixture(HIL, "1XI", { opponent: "Michaelhouse 2nd XI", days: -4, status: "complete" });
   await balls(nets, HIL, 24, { striker: hilPair[0].id, bowler: hilBowler, wicketsAt: [20] });
 
   soon      = await fixture(HIL, "1XI", { awaySchool: WES, awayTeam: "1XI", days: 7 });
@@ -476,6 +479,77 @@ try {
     ok("the unattributable deliveries are explained, not hidden",
        !/Not attributable/.test(mu) || /nobody named|not on SCRBRD|does not keep its roster/i.test(mu),
        mu.replace(/\s+/g, " ").slice(0, 240));
+  }
+
+  group("Phases are folded from the log, not typed in");
+  {
+    ok("the Phases tab opens", await click(coach.page, /^Phases$/, 4000));
+    await coach.page.waitForTimeout(1800);
+    const ph = await text(coach.page);
+    if (DEBUG) console.log("[debug] phases:\n" + ph.slice(0, 1200));
+
+    // The fabricated block this replaced, by its own strings: it labelled the
+    // spans "Powerplay (1–6)" and showed a "Net RPO" the real fold does not
+    // produce. The derived cards say "overs 1-6" instead.
+    ok("the invented phase rows are gone",
+       !/Powerplay \(1–6\)/.test(ph) && !/Net RPO/.test(ph) && !/Wkts Batting/.test(ph),
+       ph.replace(/\s+/g, " ").slice(0, 220));
+    ok("...and it says the fold is the scorer's own reducer", /same reducer/i.test(ph));
+    ok("a fixture is offered to fold", (await coach.page.locator('[data-testid^="phases-match-"]').count()) > 0);
+    ok("an innings is drawn", (await coach.page.locator('[data-testid^="phases-innings-"]').count()) > 0);
+    ok("...with the three phases named", /Powerplay/.test(ph) && /Middle overs/.test(ph) && /Death overs/.test(ph));
+
+    // THE ASSERTION THIS TAB EXISTS TO GET RIGHT. The seeded log records no
+    // contact on any delivery, so every control figure is null. A phase card
+    // that rendered 0% would report a batter who middled nothing, when the
+    // truth is that nobody was watching that closely.
+    const cards = coach.page.locator('[data-testid^="phase-1-"]');
+    const n = await cards.count();
+    ok("the first innings drew its phase cards", n > 0, String(n));
+    let zeroed = [], objects = [];
+    for (let i = 0; i < n; i++) {
+      const t = (await cards.nth(i).innerText()).replace(/\s+/g, " ");
+      if (/too short/.test(t)) continue;
+      // Scoped to the two CONTROL tiles, not the whole card: a phase card
+      // legitimately carries other percentages (a dot rate, a strike rotation)
+      // while control is withheld, and a card-wide regex would fail on those.
+      // The bug this walk's own falsification turned up: Metric renders its
+      // `value` through dash(), which stringifies, so a node handed to it
+      // reaches the screen as "[object Object]". Three figures did.
+      if (/\[object Object\]/.test(t)) objects.push(t);
+    }
+    for (const which of ["control", "beaten"]) {
+      const tiles = coach.page.locator(`[data-testid^="${which}-1-"]`);
+      for (let i = 0; i < (await tiles.count()); i++) {
+        const t = (await tiles.nth(i).innerText()).replace(/\s+/g, " ");
+        // Nobody recorded contact, so the figure must be an em dash. A
+        // percentage here is the specific lie: a batter who middled nothing,
+        // when the truth is nobody was watching that closely.
+        if (/no contact recorded/i.test(t) && /\d+%/.test(t)) zeroed.push(`${which}: ${t}`);
+        if (/\[object Object\]/.test(t)) objects.push(`${which}: ${t}`);
+      }
+    }
+    ok("a control figure nobody recorded carries no percentage at all", zeroed.length === 0, zeroed[0]);
+    ok("...and no figure rendered as a stringified object", objects.length === 0, objects[0]);
+    ok("...with the reason said in words", /no contact recorded/i.test(ph));
+    // The same class of fault, across the whole screen rather than one card.
+    ok("nothing anywhere on Analytics is a stringified object", !/\[object Object\]/.test(ph),
+       ph.replace(/\s+/g, " ").slice(0, 200));
+
+    // Compare against what the server actually sent, the same way the dossier
+    // floor is checked: the screen may not state a figure the fold withheld.
+    const served = (await call(`/api/read/phases?matchId=${nets}`, { token: coachToken })).body?.rows ?? [];
+    ok("the server serves innings to compare against", served.length > 0, `${served.length}`);
+    const first = served[0]?.phases ?? {};
+    const withheldControl = Object.values(first).filter((x) => x && x.played && x.controlPct == null);
+    ok("...and at least one phase genuinely has no control figure", withheldControl.length > 0,
+       `${withheldControl.length} of ${Object.keys(first).length}`);
+    // A first innings has no par by definition — the chase is measured against
+    // the total, never the other way round.
+    const parred = Object.values(first).filter((x) => x && x.par != null);
+    ok("a first innings is measured against nothing", parred.length === 0, `${parred.length} carried par`);
+    ok("...so the screen shows no comparison for it", !/They made \d+ in this phase/.test(
+       await coach.page.locator('[data-testid="phases-innings-1"]').innerText()));
   }
 
   ok("the whole session raised no scoping refusals", coach.refusals.length === 0, coach.refusals[0]);

@@ -1,6 +1,6 @@
 
 import { useState } from "react";
-import { D, px } from "../design/tokens.js";
+import { D, px, textOn } from "../design/tokens.js";
 import { fitnessColor } from "../lib/format.js";
 import { Avatar, Badge, Card, EmptyState, ProgressBar, SectionHeader } from "../ui/primitives.jsx";
 import { usePlayersWithCareer, useLive } from "../lib/live.js";
@@ -36,12 +36,6 @@ function AnalyticsView({ role }) {
   };
 
 
-  // Phase analysis
-  const PHASES = [
-    { phase:"Powerplay (1–6)",    runsFor:52, runsAgainst:48, wktsFor:2,  wktsAgainst:3  },
-    { phase:"Middle (7–14)",      runsFor:78, runsAgainst:62, wktsFor:3,  wktsAgainst:4  },
-    { phase:"Death (15–20)",      runsFor:56, runsAgainst:44, wktsFor:5,  wktsAgainst:3  },
-  ];
 
   // Season trend data (last 8 matches)
   const SEASON_TREND = [142,186,134,168,194,152,177,142];
@@ -73,19 +67,19 @@ function AnalyticsView({ role }) {
         </div>
       </div>
 
-      {(subView==="performance"||subView==="phases")&&(
+      {subView==="performance"&&(
         /* SAID OUT LOUD, because the tab beside these two is now derived.
-           Head-to-Head and Match-ups read the database; the season worm, the
-           per-player bars and the phase split are still hard-coded arrays in
-           this file. A screen that mixes measured and invented figures without
+           Phases, Head-to-Head and Match-ups read the database; the season
+           worm and the per-player bars are still hard-coded arrays in this
+           file. A screen that mixes measured and invented figures without
            marking which is which is worse than one that is honestly empty —
            and the invented head-to-head table this replaced is exactly how
-           that goes wrong. Converting these is the next piece of work:
-           `phases` is already a permission-scoped read this module claims. */
+           that goes wrong. These two need a career read per player over a
+           season, which is not one of this module's reads yet. */
         <Card sx={{padding:"10px 14px",marginBottom:"12px",border:`1px solid ${D.amber}33`,background:`${D.amber}0c`}}>
           <div style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary,lineHeight:1.5}}>
             <Badge color={D.amber}>demonstration</Badge>{" "}
-            {"These figures are illustrative, not your school's. Head-to-Head and Match-ups are derived from the database; this tab is not yet."}
+            {"These figures are illustrative, not your school's. Phases, Head-to-Head and Match-ups are derived from the database; this tab is not yet."}
           </div>
         </Card>
       )}
@@ -147,44 +141,7 @@ function AnalyticsView({ role }) {
         </>
       )}
 
-      {subView==="phases"&&(
-        <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
-          {PHASES.map(ph=>{
-            const netRPO = ((ph.runsFor - ph.runsAgainst)/8).toFixed(1);
-            return (
-              <Card key={ph.phase} sx={{padding:"16px"}}>
-                <div style={{fontFamily:D.head,fontSize:"14px",fontWeight:700,color:D.textPrimary,marginBottom:"12px"}}>{ph.phase}</div>
-                <div style={{display:"grid",gridTemplateColumns:"var(--g-5,1fr 1fr 1fr 1fr 1fr)",gap:"10px"}}>
-                  {[
-                    ["Runs Scored",    ph.runsFor,          D.emerald],
-                    ["Runs Conceded",  ph.runsAgainst,      D.rose],
-                    ["Wkts Batting",   `${ph.wktsFor} lost`,D.amber],
-                    ["Wkts Bowling",   `${ph.wktsAgainst} taken`,D.violet],
-                    ["Net RPO",        netRPO>=0?`+${netRPO}`:netRPO, Number(netRPO)>=0?D.emerald:D.rose],
-                  ].map(([l,v,c])=>(
-                    <div key={l} style={{textAlign:"center",padding:"10px 6px",background:D.surf2,borderRadius:D.md}}>
-                      <div style={{fontFamily:D.mono,fontSize:"18px",fontWeight:700,color:c}}>{v}</div>
-                      <div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,marginTop:"4px"}}>{l}</div>
-                    </div>
-                  ))}
-                </div>
-                <div style={{marginTop:"12px",display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"8px"}}>
-                  <div>
-                    <div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,marginBottom:"4px"}}>Batting run rate</div>
-                    <ProgressBar pct={Math.min(100,(ph.runsFor/8/12)*100)} color={D.emerald}/>
-                    <div style={{fontFamily:D.mono,fontSize:"10px",color:D.emerald,marginTop:"2px"}}>{(ph.runsFor/8).toFixed(1)} RPO</div>
-                  </div>
-                  <div>
-                    <div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,marginBottom:"4px"}}>Conceded run rate</div>
-                    <ProgressBar pct={Math.min(100,(ph.runsAgainst/8/12)*100)} color={D.rose}/>
-                    <div style={{fontFamily:D.mono,fontSize:"10px",color:D.roseText,marginTop:"2px"}}>{(ph.runsAgainst/8).toFixed(1)} RPO</div>
-                  </div>
-                </div>
-              </Card>
-            );
-          })}
-        </div>
-      )}
+      {subView==="phases"&&<Phases role={role}/>}
 
       {subView==="h2h"&&<HeadToHead role={role} teamFilter={teamFilter}/>}
 
@@ -462,6 +419,178 @@ function Matchups({ role }) {
           </div>
         </Card>
       )}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════
+//  PHASES — an innings in three parts, folded not stored
+//
+//  A coach who only sees "142 for 6" cannot tell whether the side lost the
+//  powerplay or threw away the death, and those are different problems with
+//  different answers in the nets.
+//
+//  This tab used to be three hard-coded rows with a runsFor/runsAgainst pair
+//  invented across a whole season. The real read is PER FIXTURE, and the
+//  comparison it offers is better than the one that was invented: a second
+//  innings carries `par` — what the other side made in the same phase — and
+//  `vsPar`, the gap. That is the "for and against" the fabricated table was
+//  reaching for, derived per match from the actual log rather than asserted
+//  over a season nobody counted.
+//
+//  FOUR NULLS THIS MUST DRAW RATHER THAN ZERO:
+//
+//    runRate null      no balls bowled in the phase. Not a run rate of zero.
+//    controlPct null   no contact was recorded on any delivery. A QUICK
+//                      capture profile records none, and a control figure over
+//                      every ball would report a batter as out of touch when
+//                      nobody was watching that closely.
+//    par / vsPar null  a FIRST innings, which by definition has nothing yet to
+//                      be level with. The order is not symmetric: the chase is
+//                      measured against the total, never the other way round.
+//    played false      the innings was too short for the phase to exist. A
+//                      twelve-over innings has no death overs, and drawing an
+//                      empty card labelled "0 runs" would invent one.
+//
+//  And a match with no deliveries comes back with NO innings rather than an
+//  innings of zeros, which is the difference between "not scored yet" and
+//  "nobody scored".
+// ══════════════════════════════════════════════════════
+const PHASE_TONE = { powerplay: D.sky, middle: D.violet, death: D.orange };
+
+/**
+ * A percentage, or an em dash where the fold withheld one.
+ *
+ * A STRING, not a component, and that is not a style preference: Metric
+ * renders its `value` through dash(), which stringifies — so a node handed to
+ * it arrives on screen as "[object Object]". It was, until the walk's own
+ * falsification exposed it. The reason a figure is missing belongs in the
+ * metric's `sub`, which does take a node, and never in a zero.
+ */
+const pctText = (v) => (v == null ? "—" : `${v}%`);
+
+function Phases({ role }) {
+  const { rows: MATCHES } = useLive("matches", role);
+  // Only a fixture that has been played has a log to fold. A scheduled one
+  // would come back with no innings, which is honest but is not a useful
+  // default to land on.
+  const played = MATCHES.filter((m) => m.status === "complete" || m.status === "live");
+  const [matchId, setMatchId] = useState("");
+  const chosen = matchId || played[0]?.id || "";
+  const { rows, loading, error, disabled } = useLive("phases", role, 0, chosen ? { matchId: chosen } : null);
+  const match = played.find((m) => m.id === chosen);
+
+  if (!played.length) {
+    return <EmptyState icon="🏏" message="No played fixture you may see — a phase breakdown is folded from a ball log, so there is nothing to fold yet."/>;
+  }
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:"12px"}} data-testid="phases">
+      <div style={{display:"flex",gap:"5px",flexWrap:"wrap",alignItems:"center"}}>
+        <span style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:".08em",
+                      textTransform:"uppercase",color:D.textMuted,marginRight:"4px"}}>Fixture</span>
+        {played.slice(0, 8).map((m) => (
+          <button key={m.id} type="button" onClick={()=>setMatchId(m.id)} aria-pressed={chosen===m.id}
+            className="pressBtn" data-testid={`phases-match-${m.id}`}
+            style={{padding:"4px 12px",borderRadius:D.pill,cursor:"pointer",
+                    border:`1px solid ${chosen===m.id?D.sky:D.border}`,background:"transparent",
+                    fontFamily:D.mono,fontSize:"10px",color:chosen===m.id?D.textPrimary:D.textMuted}}>
+            {m.awayTeam} · {m.date}
+          </button>
+        ))}
+      </div>
+
+      {loading&&<EmptyState loading/>}
+      {disabled&&<EmptyState icon="⊘" message="Analytics is switched off for this school."/>}
+      {error&&<EmptyState error/>}
+
+      {!loading&&!error&&!disabled&&rows.length===0&&(
+        <EmptyState icon="📋" message={`${match?.awayTeam ?? "This fixture"} has no deliveries on record — it has not been scored, which is not the same as nobody scoring.`}/>
+      )}
+
+      {rows.map((inn) => (
+        <div key={inn.innings} data-testid={`phases-innings-${inn.innings}`}>
+          <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary,margin:"4px 0 8px"}}>
+            {inn.innings===1?"First innings":"Second innings"}
+            {inn.innings===2&&<span style={{fontFamily:D.body,fontSize:"11px",fontWeight:400,color:D.textMuted}}>
+              {" "}· measured against the first
+            </span>}
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
+            {["powerplay","middle","death"].map((k) => {
+              const ph = inn.phases?.[k];
+              if (!ph) return null;
+              const tone = PHASE_TONE[k];
+              // A phase the innings was too short to contain. Named, not drawn
+              // as an empty card of zeros.
+              if (!ph.played) {
+                return (
+                  <Card key={k} sx={{padding:"10px 16px"}} data-testid={`phase-${inn.innings}-${k}`}>
+                    <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>
+                      {`${ph.label} — this innings was too short to have one.`}
+                    </div>
+                  </Card>
+                );
+              }
+              return (
+                <Card key={k} sx={{padding:"14px 16px"}} data-testid={`phase-${inn.innings}-${k}`}>
+                  <div style={{display:"flex",alignItems:"baseline",gap:"10px",marginBottom:"12px",flexWrap:"wrap"}}>
+                    <span style={{fontFamily:D.head,fontSize:"14px",fontWeight:700,color:textOn(tone)}}>{ph.label}</span>
+                    <span style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>overs {ph.overs}</span>
+                    <span style={{flex:1}}/>
+                    <span style={{fontFamily:D.mono,fontSize:"18px",fontWeight:700,color:D.textPrimary}}>
+                      {ph.runs}<span style={{fontSize:"12px",color:D.textMuted}}>/{ph.wickets}</span>
+                    </span>
+                    <span style={{fontFamily:D.mono,fontSize:"11px",color:D.textMuted}}>
+                      {ph.runRate==null?"— no balls":`${ph.runRate} RPO`}
+                    </span>
+                  </div>
+                  <MetricGroup min={104}>
+                    <Metric size="sm" label="Balls" value={ph.balls}/>
+                    <Metric size="sm" label="Dots" value={ph.dots}
+                            sub={ph.dotPct==null?"no balls bowled":`${ph.dotPct}% of the phase`}/>
+                    <Metric size="sm" label="Boundaries" value={ph.fours+ph.sixes}
+                            sub={`${ph.fours} four${ph.fours===1?"":"s"}, ${ph.sixes} six${ph.sixes===1?"":"es"}`}/>
+                    <Metric size="sm" label="Strike turned" value={pctText(ph.strikeRotationPct)}
+                            sub={ph.strikeRotationPct==null?"no balls bowled":"singles and threes"}/>
+                    {/* Control, over the deliveries where contact was actually
+                        recorded — never over every ball. A null is an em dash
+                        and the sub says nobody was watching that closely,
+                        which is a different claim from "he middled nothing". */}
+                    <Metric size="sm" label="Middled" value={pctText(ph.controlPct)}
+                            data-testid={`control-${inn.innings}-${k}`}
+                            sub={ph.assessed?`${ph.middled} of ${ph.assessed} assessed`:"no contact recorded"}/>
+                    <Metric size="sm" label="Beaten" value={pctText(ph.beatenPct)}
+                            data-testid={`beaten-${inn.innings}-${k}`}
+                            sub={ph.assessed?`${ph.beaten} of ${ph.assessed} assessed`:"no contact recorded"}
+                            tone={ph.beatenPct!=null&&ph.beatenPct>=30?D.amber:undefined}/>
+                  </MetricGroup>
+                  {/* The comparison the fabricated table was reaching for,
+                      done per fixture. Absent in a first innings by design. */}
+                  {ph.par!=null&&(
+                    <div style={{marginTop:"10px",paddingTop:"10px",borderTop:`1px solid ${D.border}`,
+                                 display:"flex",alignItems:"center",gap:"10px",flexWrap:"wrap"}}>
+                      <span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>
+                        {`They made ${ph.par} in this phase.`}
+                      </span>
+                      <span style={{fontFamily:D.mono,fontSize:"12px",fontWeight:700,
+                                    color:ph.vsPar>0?D.emerald:ph.vsPar<0?D.roseText:D.textMuted}}>
+                        {ph.vsPar>0?`+${ph.vsPar}`:String(ph.vsPar)}
+                      </span>
+                    </div>
+                  )}
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+
+      <div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,lineHeight:1.6,maxWidth:"680px"}}>
+        Folded from the ball log through the same reducer the scorer&rsquo;s device runs, over the deliveries you may
+        see — so two people can legitimately get different figures for the same match, and that is the model working
+        rather than a fault. Nothing here is stored.
+      </div>
     </div>
   );
 }
