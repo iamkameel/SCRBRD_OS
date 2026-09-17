@@ -18,6 +18,9 @@
  *   2. app_can(...)                    — THE authorization decision, in SQL
  *   3. per-table RLS policies          — read/write, built on app_can
  *   4. *_masked views                  — per-row column masking, on app_can
+ *   5. db/23_authz_time_box.sql        — the decision functions as they run
+ *                                        today: db/01's, plus the hour hand
+ *                                        a support assignment needs (SCRBRD-012)
  *
  * The decision is a SECURITY DEFINER lookup over role_assignment rather than
  * anything carried in the session. That is a deliberate choice (ADR 0001):
@@ -95,7 +98,36 @@ const callCan = (table, def, capability, anchors = def.anchors) => {
   return `app_can(${args.join(", ")})`;
 };
 
-function decisionFunction() {
+/**
+ * The hour hand on an assignment.
+ *
+ * valid_from/valid_until are DATES — an appointment runs for a season, and a
+ * guardian's link ends on a birthday. SCRBRD-012's support access runs for an
+ * hour, and a date cannot say so. db/22 adds role_assignment.expires_at
+ * (timestamptz, NULL for every ordinary appointment), and the liveness rule
+ * in every decision function gains one line.
+ *
+ * WHY A FLAG AND NOT AN EDIT. db/01_authz.sql has run on a database that must
+ * never be reset, and the ledger refuses a file whose hash changed — so the
+ * three functions cannot be changed where they were born. They are emitted
+ * again, with the line, into a second generated file (db/23_authz_time_box.sql,
+ * timeBox() below), and this generator keeps emitting db/01 exactly as it
+ * shipped. A fresh install replays both and ends where production is. The
+ * template stays the single source of the decision; the flag is the only
+ * difference between what shipped and what runs.
+ */
+const liveness = (timeBoxed) => timeBoxed
+  ? "\n       AND (a.expires_at IS NULL OR a.expires_at > now())"
+  : "";
+// db/16 pinned every SECURITY DEFINER function's search_path with ALTER
+// FUNCTION — and CREATE OR REPLACE discards that, so a re-emitted function
+// has to carry the pin in its own definition or it comes back unpinned. The
+// verifier caught exactly that on the first run of db/23.
+const definerTail = (timeBoxed) => timeBoxed
+  ? "$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;"
+  : "$$ LANGUAGE sql STABLE SECURITY DEFINER;";
+
+function decisionFunction({ timeBoxed = false } = {}) {
   return `${banner("The authorization decision")}
 -- app_can(capability, school, team, person, fixture)
 --
@@ -139,7 +171,7 @@ CREATE OR REPLACE FUNCTION app_can(
      WHERE a.person_id = app_user_id()
        AND a.active
        AND (a.valid_from  IS NULL OR a.valid_from  <= current_date)
-       AND (a.valid_until IS NULL OR a.valid_until >  current_date)
+       AND (a.valid_until IS NULL OR a.valid_until >  current_date)${liveness(timeBoxed)}
        -- institution. There is no ANY_SCOPE for school: every governed row
        -- belongs to a tenant, and one that does not state its tenant is one
        -- nobody should reach.
@@ -196,7 +228,7 @@ CREATE OR REPLACE FUNCTION app_can(
                       AND (g.valid_until IS NULL OR g.valid_until > current_date)))
            END
   )
-$$ LANGUAGE sql STABLE SECURITY DEFINER;
+${definerTail(timeBoxed)}
 
 REVOKE ALL ON FUNCTION app_can(text, uuid, text, uuid, uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION app_can(text, uuid, text, uuid, uuid) TO PUBLIC;
@@ -233,9 +265,9 @@ CREATE OR REPLACE FUNCTION app_holds(p_capability text) RETURNS boolean AS $$
        AND a.active
        AND (NOT c.platform_only OR a.school_id IS NULL)
        AND (a.valid_from  IS NULL OR a.valid_from  <= current_date)
-       AND (a.valid_until IS NULL OR a.valid_until >  current_date)
+       AND (a.valid_until IS NULL OR a.valid_until >  current_date)${liveness(timeBoxed)}
   )
-$$ LANGUAGE sql STABLE SECURITY DEFINER;
+${definerTail(timeBoxed)}
 
 REVOKE ALL ON FUNCTION app_holds(text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION app_holds(text) TO PUBLIC;
@@ -421,7 +453,11 @@ DELETE FROM role_grantable;
 INSERT INTO role_grantable (granter, role) VALUES
 ${grantRows.join(",\n")};
 
--- app_may_grant(role) — may the caller appoint somebody to this role?
+${mayGrantFunction()}`;
+}
+
+function mayGrantFunction({ timeBoxed = false } = {}) {
+  return `-- app_may_grant(role) — may the caller appoint somebody to this role?
 --
 -- Two questions, both of which have to answer yes. Whether the caller's own
 -- roles list this one as grantable, and — for a role carrying a tenant-less
@@ -435,7 +471,7 @@ CREATE OR REPLACE FUNCTION app_may_grant(p_role text) RETURNS boolean AS $$
      WHERE a.person_id = app_user_id()
        AND a.active
        AND (a.valid_from  IS NULL OR a.valid_from  <= current_date)
-       AND (a.valid_until IS NULL OR a.valid_until >  current_date)
+       AND (a.valid_until IS NULL OR a.valid_until >  current_date)${liveness(timeBoxed)}
        -- A role carrying a platform capability may only be handed out by
        -- somebody whose own assignment belongs to no school.
        AND (a.school_id IS NULL OR NOT EXISTS (
@@ -443,7 +479,7 @@ CREATE OR REPLACE FUNCTION app_may_grant(p_role text) RETURNS boolean AS $$
                 JOIN capability c ON c.name = rc.capability AND c.platform_only
                WHERE rc.role = p_role))
   )
-$$ LANGUAGE sql STABLE SECURITY DEFINER;
+${definerTail(timeBoxed)}
 
 REVOKE ALL ON FUNCTION app_may_grant(text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION app_may_grant(text) TO PUBLIC;`;
@@ -811,6 +847,35 @@ export function policies() {
   ].join("\n");
 }
 
+/**
+ * The decision functions as they RUN: db/01's three, re-emitted with the hour
+ * hand (see `liveness` above). Applied after db/22, which adds the column
+ * they read — Postgres validates a SQL function's body against the tables it
+ * names at creation time, so the order is not optional.
+ */
+export function timeBox() {
+  return [
+    `-- ══════════════════════════════════════════════════════════════════`,
+    `--  23 · The hour hand on an assignment (SCRBRD-012)`,
+    `-- ══════════════════════════════════════════════════════════════════`,
+    `-- GENERATED from packages/policy/ by services/api/rls/generate-rls.mjs — DO NOT EDIT BY HAND.`,
+    `-- Regenerate with \`pnpm rls:generate\`. Companion: db/01_authz.sql, which`,
+    `-- stays exactly as it shipped; this file is the same three functions with`,
+    `-- one more line in their liveness rule:`,
+    `--`,
+    `--     AND (a.expires_at IS NULL OR a.expires_at > now())`,
+    `--`,
+    `-- role_assignment.expires_at (db/22) is NULL for every ordinary appointment,`,
+    `-- so nothing here changes for anyone but a support assignment — which is`,
+    `-- live for the minutes it was issued for and not one second longer, decided`,
+    `-- by the same functions on every statement, with no job to run and fail.`,
+    ``,
+    decisionFunction({ timeBoxed: true }),
+    mayGrantFunction({ timeBoxed: true }),
+    ``,
+  ].join("\n");
+}
+
 /** Backwards-compatible single string, for the drift tests. */
 export function main() { return authz() + "\n" + policies(); }
 
@@ -818,5 +883,6 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const { writeFileSync } = await import("node:fs");
   writeFileSync("db/01_authz.sql", authz());
   writeFileSync("db/09_rls_policies.sql", policies());
-  console.log("wrote db/01_authz.sql and db/09_rls_policies.sql");
+  writeFileSync("db/23_authz_time_box.sql", timeBox());
+  console.log("wrote db/01_authz.sql, db/09_rls_policies.sql and db/23_authz_time_box.sql");
 }

@@ -79,7 +79,8 @@ after reconciling against the paper book.
               ▼
  Postgres
  ├─ app_can(cap, school, team, person, fixture) — THE decision; STABLE, SECURITY DEFINER,
- │    search_path pinned (db/16); liveness of role_assignment + assignment_subject per call
+ │    search_path pinned (db/16); liveness of role_assignment + assignment_subject per call,
+ │    including the hour hand on a support assignment (expires_at, db/22; functions re-emitted in db/23)
  ├─ RLS on every table (generated); login_code and schema_migration have no policy = deny
  ├─ *_masked views, security_invoker — per-row column masking (RLS cannot do columns)
  ├─ module gates (school_module → feature_enabled()) — can only NARROW access
@@ -98,7 +99,8 @@ after reconciling against the paper book.
 | **Column** | *which fields* — PII, the three medical tiers | generated `*_masked` views; a coach gets nature + status, not the physio's notes (ADR 0002) |
 | **Module** | has the *school* switched this on | `feature_enabled()`; write routes tagged in `server.mjs`; `drs_review` and the sport grant are gated in SQL too |
 | **Token / lease** | is this *device* scoring *this match* now | the scoring-session state machine (`docs/SCORING_HANDOVER_SPEC.md`) |
-| **Record** | who *actually received* a restricted field, and any read made platform-wide | `access_log`, per school, written by the database |
+| **Record** | who *actually received* a restricted field, and any read made platform-wide or under support | `access_log`, per school, written by the database |
+| **Support** | a platform person reaching *one* school as *one* of its roles, for an hour | `support_access_begin()` (`db/22`): a real assignment with an hour hand (`expires_at`) the decision functions read (`db/23`); the school can end it; every read under it is stamped |
 
 The client's `can()` and the database's policies come from the **same** policy
 package, so they cannot drift — CI regenerates the SQL and fails on any
@@ -175,7 +177,7 @@ handover: explicit, gated on a drained outbox, verified against a replay; the ep
 | Medical | `db/08`, generated `injury_masked`, `db/21` | `read-api`, `InjuryView`, `clearance-api` | Three tiers: status, nature, details. |
 | Programme | `db/08` | training, skills, workload, logistics, fields, sponsors, officials, kit | Each behind its module switch. |
 | News & notices | `db/12`, `notify/` | `news-api`, `NewsView`, `NotificationsView` | Public notices are general; the specific line waits for a signed-in reader. |
-| Audit | `db/08`, `db/20` | `read-api` | `access_log`; readable under `audit.read` at the school. |
+| Audit | `db/08`, `db/20`, `db/22` | `read-api` | `access_log`; readable under `audit.read` at the school. `support_access`: who had support access, why, for how long, who ended it. |
 | AI | `ai/` | `lib/ai.js`, `TopBar` | Stateless; what the client sends is the client's choice. |
 
 ## 8 · Dependency graph
@@ -212,6 +214,9 @@ db/NN_*.sql (new) ──▶ migrate.mjs --reset --seed --verify (local, with the
 - `db/01` and `db/09` are generated and, once applied, as frozen as the rest.
   A capability change after go-live is `roles.mjs` + a new `db/NN` + an
   entry in `WITHDRAWN_SINCE_01` in the generator (`db/21` is the example).
+  A change to a *decision function* is the generator emitting it again into
+  a new numbered file with the change flagged (`db/23` is the example: the
+  same three functions, one more liveness line), while `db/01` stays as shipped.
 - `SELECT name FROM schema_migration ORDER BY name;` says where a database
   is when it has fallen behind; apply each missing number in order.
 - `--reset` / `--reset-objects` are the demonstration path only.
@@ -230,6 +235,7 @@ go-live".
 | A coach sees an injury's nature and return date, never the clinical notes | `db/99` §3, `rbac.test`, `smoke-read`, `smoke-audit` (ADR 0002) |
 | Every disclosure of a restricted field, and every platform-wide read, is on the record and cannot be forged or read by its subject | `smoke-audit` as the real `scrbrd_app` connection |
 | A retry never writes twice | `smoke-idempotency`, `db/15` |
+| Support access is one role at one school, stops by itself within its minutes, can be ended by the school, and leaves every read on the school's record | `db/99` (the hour hand wound back, then read again — no job between), `smoke-support` |
 | Offline scoring survives a reload; handover cannot fork the log | `smoke-browser-sync`, `smoke-sync`, `smoke-handover` |
 | Guardianship ends at majority; a refused enrolment leaves nothing behind | `db/99`, `smoke-guardian` |
 | Nothing confidential, and no Firebase, in the chunk every visitor downloads | `check-bundle` |
