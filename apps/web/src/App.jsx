@@ -5,8 +5,7 @@
  * destinations to their view components. Views read data through getData() in
  * rbac/, never from the mock constants directly.
  */
-import { useState, useEffect, useRef } from "react";
-import ScorerApp from "./scorer/index.jsx";
+import { Suspense, lazy, useState, useEffect, useRef } from "react";
 import { LandingPage } from "./auth/LandingPage.jsx";
 import { LoginPage } from "./auth/LoginPage.jsx";
 import { OnboardingFlow } from "./auth/OnboardingFlow.jsx";
@@ -18,32 +17,72 @@ import { useLive, useRows } from "./lib/live.js";
 import { MobileNav, useIsMobile } from "./shell/MobileNav.jsx";
 import { Sidebar } from "./shell/Sidebar.jsx";
 import { TopBar } from "./shell/TopBar.jsx";
-import { AnalyticsView } from "./views/AnalyticsView.jsx";
-import { CalendarView } from "./views/CalendarView.jsx";
-import { CompetitionsView } from "./views/CompetitionsView.jsx";
-import { DashboardView } from "./views/DashboardView.jsx";
-import { FieldsView } from "./views/FieldsView.jsx";
-import { InjuryView } from "./views/InjuryView.jsx";
-import { LeagueView } from "./views/LeagueView.jsx";
-import { LogisticsView } from "./views/LogisticsView.jsx";
-import { ManagementView } from "./views/ManagementView.jsx";
-import { MatchCentreView } from "./views/MatchCentreView.jsx";
-import { NewsView } from "./views/NewsView.jsx";
-import { NotificationsView } from "./views/NotificationsView.jsx";
-import { OfficialsView } from "./views/OfficialsView.jsx";
-import { SponsorsView } from "./views/SponsorsView.jsx";
-import { ModulesView } from "./views/ModulesView.jsx";
-import { PitchDeckView } from "./views/PitchDeckView.jsx";
-import { ProfilesView } from "./views/ProfilesView.jsx";
-import { RulebookView } from "./views/RulebookView.jsx";
-import { SettingsView } from "./views/SettingsView.jsx";
-import { SkillsView } from "./views/SkillsView.jsx";
-import { SquadView } from "./views/SquadView.jsx";
-import { StaffView } from "./views/StaffView.jsx";
-import { TrainingView } from "./views/TrainingView.jsx";
-import { parseBalls, parseScore, teamSquad } from "./views/shared.jsx";
 import { clearSession, loadSession, saveSession } from "./lib/persist.js";
 import { signOut } from "./lib/session.js";
+
+// ── Route-level code splitting (SCRBRD-020) ─────────────────────────────
+//
+// Every visitor used to download one 936 KB chunk before the landing page
+// drew, most of it screens they would never open: a parent on mobile data
+// looks at the match centre and the newsfeed, not the sponsor register or
+// the pitch deck. The views and the scorer are now fetched on first use, and
+// tools/check-bundle.mjs holds the entry chunk under its ceiling and asserts
+// that a view and the scorer are in some OTHER chunk — because a single
+// static import of any of them, anywhere in the entry graph, folds it back
+// into the first download and the build stays green. Not hypothetical: two
+// `import { SCRBRD }` lines nothing used, left in the auth pages by the split
+// from the single-file artifact, were still carrying 31 KB of the scorer's
+// engine into every visitor's download — its module-level code, which Rollup
+// cannot drop for an import it cannot prove pure — and would have kept doing
+// so after this split. (The whole scorer was there too, but through this
+// file's own static import of it.)
+//
+// THE SCORER IS PREFETCHED, NOT JUST LAZY. It is the one thing that has to
+// work with no signal — a scorer who loaded the app at the gate, lost the
+// network at the far field and then opened the pad must not be met by a
+// failed chunk fetch. So the moment the shell mounts for a role that can
+// score, the chunk is requested; the service worker (cache-first for hashed
+// assets) keeps it for the reload mid-over. A view that has never been
+// opened is unavailable offline, and that is fine: nothing on those screens
+// is scored.
+//
+// The views are named exports and lazy() wants a default, hence the adapter.
+const view = (load, name) => lazy(() => load().then((m) => ({ default: m[name] })));
+const AnalyticsView     = view(() => import("./views/AnalyticsView.jsx"),     "AnalyticsView");
+const CalendarView      = view(() => import("./views/CalendarView.jsx"),      "CalendarView");
+const CompetitionsView  = view(() => import("./views/CompetitionsView.jsx"),  "CompetitionsView");
+const DashboardView     = view(() => import("./views/DashboardView.jsx"),     "DashboardView");
+const FieldsView        = view(() => import("./views/FieldsView.jsx"),        "FieldsView");
+const InjuryView        = view(() => import("./views/InjuryView.jsx"),        "InjuryView");
+const LeagueView        = view(() => import("./views/LeagueView.jsx"),        "LeagueView");
+const LogisticsView     = view(() => import("./views/LogisticsView.jsx"),     "LogisticsView");
+const ManagementView    = view(() => import("./views/ManagementView.jsx"),    "ManagementView");
+const MatchCentreView   = view(() => import("./views/MatchCentreView.jsx"),   "MatchCentreView");
+const NewsView          = view(() => import("./views/NewsView.jsx"),          "NewsView");
+const NotificationsView = view(() => import("./views/NotificationsView.jsx"), "NotificationsView");
+const OfficialsView     = view(() => import("./views/OfficialsView.jsx"),     "OfficialsView");
+const SponsorsView      = view(() => import("./views/SponsorsView.jsx"),      "SponsorsView");
+const ModulesView       = view(() => import("./views/ModulesView.jsx"),       "ModulesView");
+const PitchDeckView     = view(() => import("./views/PitchDeckView.jsx"),     "PitchDeckView");
+const ProfilesView      = view(() => import("./views/ProfilesView.jsx"),      "ProfilesView");
+const RulebookView      = view(() => import("./views/RulebookView.jsx"),      "RulebookView");
+const SettingsView      = view(() => import("./views/SettingsView.jsx"),      "SettingsView");
+const SkillsView        = view(() => import("./views/SkillsView.jsx"),        "SkillsView");
+const SquadView         = view(() => import("./views/SquadView.jsx"),         "SquadView");
+const StaffView         = view(() => import("./views/StaffView.jsx"),         "StaffView");
+const TrainingView      = view(() => import("./views/TrainingView.jsx"),      "TrainingView");
+const loadScorer = () => import("./scorer/index.jsx");
+const ScorerApp  = lazy(loadScorer);
+
+// What the main area shows for the moment between choosing a screen and its
+// chunk arriving. Kept inside <main> so the shell around it does not move.
+function Loading({ what }) {
+  return (
+    <div role="status" data-testid="view-loading" style={{padding:"24px",fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>
+      Loading {what}…
+    </div>
+  );
+}
 
 // What a person with no assignments sees: their requests, each with its
 // state, and nothing of the school's. Rows come from the server under the
@@ -200,18 +239,29 @@ export default function SCRBRD_OS() {
       return;
     }
     if (m && m.status === "live" && m.scorecard?.home) {
-      const { runs, wkts } = parseScore(m.scorecard.home.score);
-      setScorerResume(ScorerApp.seedLiveResume({
-        matchId: m.id, team1: m.homeTeam, team2: m.awayTeam, overs: 20,
-        runs, wickets: wkts, balls: parseBalls(m.scorecard.home.overs),
-        // This branch seeds a scorer from a STORED scorecard, which only mock
-        // fixtures carry — a live match has no score column by design, because
-        // the score is derived from ball_event. So there is no roster to pass
-        // and the synthetic fallback is the correct answer here rather than a
-        // degradation.
-        squad1: teamSquad(m.homeTeam), squad2: teamSquad(m.awayTeam),
-      }));
-    } else setScorerResume(null);
+      // This branch seeds a scorer from a STORED scorecard, which only mock
+      // fixtures carry — a live match has no score column by design, because
+      // the score is derived from ball_event. So there is no roster to pass
+      // and the synthetic fallback is the correct answer here rather than a
+      // degradation.
+      //
+      // Both modules arrive on demand: the seed helper hangs off the scorer,
+      // and the three parsers live in views/shared.jsx, which brings the
+      // charts and the seed with it. A static import of either here would put
+      // them in every visitor's first download for the sake of the demo.
+      Promise.all([loadScorer(), import("./views/shared.jsx")]).then(([{ default: Scorer }, { parseBalls, parseScore, teamSquad }]) => {
+        const { runs, wkts } = parseScore(m.scorecard.home.score);
+        setScorerResume(Scorer.seedLiveResume({
+          matchId: m.id, team1: m.homeTeam, team2: m.awayTeam, overs: 20,
+          runs, wickets: wkts, balls: parseBalls(m.scorecard.home.overs),
+          squad1: teamSquad(m.homeTeam), squad2: teamSquad(m.awayTeam),
+        }));
+        setScorerMatchId(m.id ?? null);
+        setScorerOpen(true);
+      });
+      return;
+    }
+    setScorerResume(null);
     setScorerMatchId(m?.id ?? null);
     setScorerOpen(true);
   };
@@ -269,6 +319,13 @@ export default function SCRBRD_OS() {
   const notifications = useRows("notifications", role);
   const unreadCount = notifications.filter(n=>!n.read).length;
 
+  // The scorer's chunk, requested before anyone asks for it — see the note
+  // at the top of this file. Fire-and-forget: a failure here is a slow
+  // network, and the fetch on opening the pad will try again.
+  useEffect(() => {
+    if (appState === "app" && canScore(role)) loadScorer().catch(() => {});
+  }, [appState, role]);
+
   // ── Auth screens ──
   if (appState === "landing") return (
     <><style>{GLOBAL_CSS}</style>
@@ -306,9 +363,11 @@ export default function SCRBRD_OS() {
           starts empty. Keying on the match id says what it means and works for
           both. */}
       <div className="scorer-shell">
-        <ScorerApp
-          key={scorerResume ? (scorerResume.cfg?.matchId ?? scorerResume.cfg?.team1 ?? "resume") : "new"}
-          resume={scorerResume}/>
+        <Suspense fallback={<Loading what="the scorer"/>}>
+          <ScorerApp
+            key={scorerResume ? (scorerResume.cfg?.matchId ?? scorerResume.cfg?.team1 ?? "resume") : "new"}
+            resume={scorerResume}/>
+        </Suspense>
       </div>
       <button className="os-exit-scorer pressBtn" onClick={()=>{setScorerOpen(false);setScorerResume(null);}}>
         ‹ SCRBRD OS
@@ -367,7 +426,9 @@ export default function SCRBRD_OS() {
           )}
           <TopBar role={role} onRoleChange={handleRoleChange} onNav={setPage} userName={userName}/>
           <main id="os-content" tabIndex={-1} className="os-main" data-testid="os-main" data-page={VIEW_MAP[page] ? page : "dashboard"} style={{flex:1,overflowY:"auto"}}>
-            {VIEW_MAP[page] || VIEW_MAP.dashboard}
+            <Suspense fallback={<Loading what={VIEW_MAP[page] ? page : "dashboard"}/>}>
+              {VIEW_MAP[page] || VIEW_MAP.dashboard}
+            </Suspense>
           </main>
         </div>
         {isMobile&&<MobileNav role={role} active={page} onNav={setPage} notifCount={unreadCount} userName={userName} onSignOut={handleSignOut}/>}

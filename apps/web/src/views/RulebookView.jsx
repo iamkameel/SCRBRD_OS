@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { D } from "../design/tokens.js";
-import { SCRBRD } from "../scorer/engine.jsx";
 
 // ══════════════════════════════════════════════════════
 //  RULEBOOK VIEW

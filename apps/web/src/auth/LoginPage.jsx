@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import SCRBRD_LOGO from "../assets/scrbrd-logo.jpg";
 import { ROLES } from "../design/roles.js";
-import { SCRBRD } from "../scorer/engine.jsx";
 import { mode as apiMode, signIn, signInWithCode, devLoginAvailable } from "../lib/session.js";
 
 // ══════════════════════════════════════════════════════

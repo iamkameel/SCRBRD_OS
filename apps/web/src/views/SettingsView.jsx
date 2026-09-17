@@ -4,7 +4,6 @@ import { SCHOOL } from "../data/institution.js";
 import { ROLES, ROLE_FAMILIES, ROLE_IDENTITY, canonicalRole } from "../design/roles.js";
 import { GRANTABLE_ROLES, ROLE_CAPABILITIES, SUBJECT_SCOPED_ROLES, TEAM_SCOPED_ROLES } from "@scrbrd/policy/roles";
 import { D, textOn } from "../design/tokens.js";
-import { SCRBRD } from "../scorer/engine.jsx";
 import { Avatar, Badge, Btn, Card, EmptyState, Input, Modal, SectionHeader, Select } from "../ui/primitives.jsx";
 import { useLive, useRows } from "../lib/live.js";
 import { schoolsWhere } from "../lib/session.js";

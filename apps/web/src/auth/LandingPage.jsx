@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import SCRBRD_LOGO from "../assets/scrbrd-logo.jpg";
-import { SCRBRD } from "../scorer/engine.jsx";
 
 // ══════════════════════════════════════════════════════
 //  LANDING PAGE
