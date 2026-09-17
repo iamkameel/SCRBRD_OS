@@ -399,7 +399,7 @@ export default function SCRBRD_OS() {
     settings:     <SettingsView      role={role} users={users} setUsers={setUsersTracked} onDirectoryChanged={refreshDirectory}/>,
     management:   <ManagementView    role={role} users={users} setUsers={setUsersTracked}/>,
     rulebook:     <RulebookView      role={role}/>,
-    pitchdeck:    <PitchDeckView     role={role}/>,
+    pitchdeck:    <PitchDeckView     role={role} onNav={setPage}/>,
   };
 
   return (
