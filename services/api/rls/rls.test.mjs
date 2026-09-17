@@ -10,7 +10,7 @@
 import { ROLES, ROLE_CAPABILITIES, roleGrants, SCORING_ROLES, SUBJECT_SCOPED_ROLES } from "@scrbrd/policy/roles";
 import { TABLES, referencedCapabilities, isCapabilityExpression, maskedColumns } from "@scrbrd/policy/tables";
 import { ALL_CAPABILITIES, SENSITIVE, isCapability } from "@scrbrd/policy/capabilities";
-import { main, WITHDRAWN_SINCE_01 } from "./generate-rls.mjs";
+import { main, authz, timeBox, WITHDRAWN_SINCE_01 } from "./generate-rls.mjs";
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
@@ -214,6 +214,24 @@ ok("it names the ADR", /docs\/adr\/0001/.test(SQL));
 ok("no rbac_scope remains",        !/rbac_scope/.test(SQL));
 ok("no rbac_field_denied remains", !/rbac_field_denied/.test(SQL));
 ok("no app_role\\(\\) remains",    !/app_role\(\)/.test(SQL));
+
+// ── SCRBRD-012: the hour hand is emitted where it runs, not where it shipped ──
+// db/01 is frozen once applied, so the decision functions are re-emitted into
+// db/23 with the one extra liveness line. The flag must reach all three, and
+// must not touch db/01's output — that is the whole point of the flag.
+{
+  const shipped = authz(), running = timeBox();
+  // Anchored to a body line: the file's header quotes the same line in a comment.
+  const inBodies = (sql) => (sql.match(/^ {7}AND \(a\.expires_at IS NULL OR a\.expires_at > now\(\)\)$/gm) || []).length;
+  ok("db/01 is emitted without the hour hand", inBodies(shipped) === 0);
+  ok("db/23 carries it in app_can, app_holds and app_may_grant", inBodies(running) === 3);
+  // db/16 pinned search_path with ALTER FUNCTION, which CREATE OR REPLACE
+  // discards — so the re-emitted functions must carry the pin themselves.
+  ok("...each pinned to a search_path in its own definition",
+     (running.match(/SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;/g) || []).length === 3);
+  ok("...and db/01's tails are exactly as shipped",
+     !/SECURITY DEFINER SET search_path/.test(shipped));
+}
 
 console.log(`\n${"─".repeat(52)}\nRLS SUITE: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

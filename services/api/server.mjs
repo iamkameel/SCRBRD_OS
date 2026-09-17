@@ -48,6 +48,7 @@ import { fixtureRoutes } from "./write/fixture-api.mjs";
 import { ownerRecoveryRoutes } from "./write/owner-recovery-api.mjs";
 import { rosterRoutes } from "./write/roster-api.mjs";
 import { dobCaptureRoutes } from "./write/dob-capture-api.mjs";
+import { supportAccessRoutes } from "./write/support-access-api.mjs";
 import { contactRoutes } from "./write/contacts-api.mjs";
 import { clearanceRoutes } from "./write/clearance-api.mjs";
 import { recognitionRoutes } from "./write/recognition-api.mjs";
@@ -231,6 +232,7 @@ const fixtures = fixtureRoutes({ pool, secret: SECRET });
 // Moving a boy between sides, dated. The history row is the trigger's.
 const roster   = rosterRoutes({ pool, secret: SECRET });
 const dobCapture = dobCaptureRoutes({ pool, secret: SECRET });
+const support = supportAccessRoutes({ pool, secret: SECRET });
 // Who to ring for a child. Kept by the family and the office; the driver
 // reaches the manifest through the trip, see trip_contacts() in db/08.
 const contacts = contactRoutes({ pool, secret: SECRET });
@@ -395,6 +397,11 @@ const PLAYER_ROUTES = [
   // already set — see dob-capture-api.mjs for why that is the WHERE clause
   // rather than a check here.
   [/^\/api\/players\/([^/]+)\/date-of-birth$/,  "POST", dobCapture.capture],
+  // SCRBRD-012. One role at one school for an hour, on the record — see
+  // support-access-api.mjs. In this table rather than the fixed one so a
+  // retried "begin" with an Idempotency-Key answers from its receipt.
+  [/^\/api\/support\/access$/,                    "POST", support.begin],
+  [/^\/api\/support\/access\/([^/]+)\/end$/,       "POST", support.end],
   [/^\/api\/players\/([^/]+)\/emergency-contacts$/, "POST", contacts.add],
   [/^\/api\/emergency-contacts\/([^/]+)\/retire$/,   "POST", contacts.retire],
   [/^\/api\/clearances$/,                           "POST", clearances.record],

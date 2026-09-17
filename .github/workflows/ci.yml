@@ -148,8 +148,8 @@ jobs:
       - name: RLS output is current
         run: |
           pnpm rls:generate
-          git diff --exit-code db/01_authz.sql db/09_rls_policies.sql \
-            || { echo "::error::db/01_authz.sql or db/09_rls_policies.sql is stale — run 'pnpm rls:generate' and commit the result"; exit 1; }
+          git diff --exit-code db/01_authz.sql db/09_rls_policies.sql db/23_authz_time_box.sql \
+            || { echo "::error::db/01_authz.sql, db/09_rls_policies.sql or db/23_authz_time_box.sql is stale — run 'pnpm rls:generate' and commit the result"; exit 1; }
 
   browser:
     name: Browser walks

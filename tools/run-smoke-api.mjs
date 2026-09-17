@@ -115,6 +115,7 @@ const WALKS = [
   // The gaps db/10 and db/11 could only warn about, and the one write route
   // that closes the first of them.
   "dob-gaps",
+  "support",
 ];
 
 // Walks that drive a real browser AND need a database. They need two things

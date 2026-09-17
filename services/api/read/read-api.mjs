@@ -1799,12 +1799,35 @@ export const READ_QUERIES = {
    * who generated the entries — a log the reader can read tells them exactly
    * what to avoid next time.
    */
+  // SCRBRD-012. The sessions themselves. RLS: the person who began one, the
+  // school it reached (audit.read), and the platform's support holders.
+  // Liveness comes from support_access_live() — the ASSIGNMENT's hour hand,
+  // the thing the decision functions read — rather than from a join: the
+  // auditor at a school may not read the support person's assignment row,
+  // and a join would silently drop the session they are entitled to see.
+  support_access: {
+    text: `select s.id, s.actor_id, u.name as actor_name,
+                  s.school_id, sc.name as school_name,
+                  s.role, s.team_code, s.reason,
+                  s.started_at, s.expires_at, s.ended_at, e.name as ended_by_name,
+                  support_access_live(s.id) as live,
+                  s.actor_id = app_user_id() as mine
+             from support_access s
+             left join app_user u  on u.id = s.actor_id
+             left join school   sc on sc.id = s.school_id
+             left join app_user e  on e.id = s.ended_by
+            order by s.started_at desc`,
+  },
   access_log: {
     text: `select l.id, l.school_id, l.person_id, u.name as person_name,
                   l.resource, l.record_ids, l.record_count, l.fields,
                   l.device_id, l.occurred_at,
                   -- Whether the reader reached this school from outside it.
-                  l.platform_wide
+                  l.platform_wide,
+                  -- And whether they reached it through a support session
+                  -- (db/22): the row in support_access says who, why and
+                  -- for how long.
+                  l.support_access_id
              from access_log l
              left join app_user u on u.id = l.person_id
             where ($1::uuid is null or l.record_ids @> array[$1::uuid])
@@ -2122,8 +2145,14 @@ export async function readResource(pool, secret, bearer, resource, query = {}) {
     // school the rows came from, so each school's own auditor sees the
     // owner's read of THEIR children in THEIR log, rather than one row filed
     // under whichever school happened to sort first.
-    const { rows: [who] } = await client.query(`select app_is_platform_wide() as platform`);
-    if (who?.platform && rows.length) {
+    //
+    // A SUPPORT SESSION'S EVERY READ IS ON THE RECORD THE SAME WAY (db/22).
+    // The session reaches one school as one of its roles, so the rows come
+    // from that school and the stamp — support_access_id — is decided inside
+    // log_restricted_read(), never sent from here.
+    const { rows: [who] } = await client.query(
+      `select app_is_platform_wide() as platform, app_support_access_id() is not null as support`);
+    if ((who?.platform || who?.support) && rows.length) {
       const disclosed = (watched ?? []).filter((f) => rows.some((r) => pick(r, f) != null));
       for (const school of new Set(rows.map((r) => r.school_id ?? null))) {
         const mine = rows.filter((r) => (r.school_id ?? null) === school);

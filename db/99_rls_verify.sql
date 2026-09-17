@@ -114,6 +114,15 @@ CREATE OR REPLACE FUNCTION _expire_link(p_player uuid) RETURNS void AS $$
    WHERE a.id = s.assignment_id AND a.role = 'guardian' AND s.player_id = p_player;
 $$ LANGUAGE sql SECURITY DEFINER;
 
+-- Wind a support session's hour hand back to a second ago (SCRBRD-012). The
+-- same claim as _expire_link, about the same rule: the decision functions
+-- read expires_at on every statement, and nothing else has to run.
+CREATE OR REPLACE FUNCTION _expire_support(p_id uuid) RETURNS void AS $$
+  UPDATE role_assignment a SET expires_at = now() - interval '1 second'
+    FROM support_access s
+   WHERE s.id = p_id AND a.id = s.assignment_id;
+$$ LANGUAGE sql SECURITY DEFINER;
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -174,6 +183,8 @@ DECLARE
   P_U13     uuid := 'aaaaaaaa-0000-0000-0000-000000000013';  -- B Khumalo, unlinked
   v_ok      boolean;
   v_reason  text;
+  S_ID      uuid;         -- a support session (SCRBRD-012)
+  S_EXP     timestamptz;
   n int;
 BEGIN
   -- ── 1. Nobody is anybody by default ────────────────────────────
@@ -1429,6 +1440,101 @@ BEGIN
   SELECT count(*) INTO n FROM access_log
    WHERE school_id = HIL AND resource = 'players' AND person_id = U_REGISTRAR AND NOT platform_wide;
   PERFORM _assert(n = 1, 'a school''s own read of its own roster was marked platform-wide');
+
+
+  -- ── SCRBRD-012: support access is an hour, at one school, on the record ──
+  --
+  -- platformadmin holds no school's roles, so a platform administrator reads
+  -- nothing of a school. support_access_begin() hands them ONE role at ONE
+  -- school for the minutes asked, as a real assignment with an hour hand —
+  -- role_assignment.expires_at (db/22) — that app_can() reads on every
+  -- statement (db/23). Every read under it is stamped in the school's log,
+  -- and the school's own office can end it.
+  PERFORM _as(U_PLAT);
+  SELECT count(*) INTO n FROM player_masked WHERE school_id = HIL;
+  PERFORM _assert(n = 0, 'a platform administrator reads a school''s roster without support access');
+
+  -- Refusals first, each for its own reason.
+  PERFORM _as(U_SARAH);
+  SELECT ok, reason INTO v_ok, v_reason FROM support_access_begin(HIL, 'schooladmin', 'ticket 4411: roster import failing');
+  PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted', 'somebody without platform.support.impersonate began a support session');
+  PERFORM _as(U_PLAT);
+  SELECT ok, reason INTO v_ok, v_reason FROM support_access_begin(HIL, 'platformadmin', 'ticket 4411: roster import failing');
+  PERFORM _assert(NOT v_ok AND v_reason = 'role_not_supportable', 'a platform role was issued at a school');
+  SELECT ok, reason INTO v_ok, v_reason FROM support_access_begin(HIL, 'superadmin', 'ticket 4411: roster import failing');
+  PERFORM _assert(NOT v_ok AND v_reason = 'role_not_supportable', 'the owner''s key was issued as support');
+  SELECT ok, reason INTO v_ok, v_reason FROM support_access_begin(HIL, 'guardian', 'ticket 4411: roster import failing');
+  PERFORM _assert(NOT v_ok AND v_reason = 'role_needs_subject', 'support was issued as somebody''s parent');
+  SELECT ok, reason INTO v_ok, v_reason FROM support_access_begin(HIL, 'nosuchrole', 'ticket 4411: roster import failing');
+  PERFORM _assert(NOT v_ok AND v_reason = 'role_unknown', 'a role that does not exist was issued');
+  SELECT ok, reason INTO v_ok, v_reason FROM support_access_begin(HIL, 'schooladmin', 'fix');
+  PERFORM _assert(NOT v_ok AND v_reason = 'reason_required', 'a support session began with no reason worth reading');
+  SELECT ok, reason INTO v_ok, v_reason FROM support_access_begin(HIL, 'schooladmin', 'ticket 4411: roster import failing', NULL, 0);
+  PERFORM _assert(NOT v_ok AND v_reason = 'minutes_out_of_range', 'a support session of no minutes began');
+  SELECT ok, reason INTO v_ok, v_reason FROM support_access_begin(HIL, 'schooladmin', 'ticket 4411: roster import failing', NULL, 241);
+  PERFORM _assert(NOT v_ok AND v_reason = 'minutes_out_of_range', 'a support session longer than four hours began');
+  SELECT ok, reason INTO v_ok, v_reason FROM support_access_begin('00000000-0000-0000-0000-000000000000', 'schooladmin', 'ticket 4411: roster import failing');
+  PERFORM _assert(NOT v_ok AND v_reason = 'school_unknown', 'support was issued at a school that does not exist');
+
+  -- The door opens: one role, one school, sixty minutes.
+  SELECT ok, reason, id, expires_at INTO v_ok, v_reason, S_ID, S_EXP
+    FROM support_access_begin(HIL, 'schooladmin', 'ticket 4411: roster import failing');
+  PERFORM _assert(v_ok, 'a platform administrator could not begin support access: ' || coalesce(v_reason, '?'));
+  PERFORM _assert(S_EXP > now() + interval '59 minutes' AND S_EXP <= now() + interval '60 minutes',
+    'the default support session is not an hour');
+  SELECT count(*) INTO n FROM player_masked WHERE school_id = HIL;
+  PERFORM _assert(n > 0, 'support access at Hilton reads nothing of Hilton');
+  SELECT count(*) INTO n FROM player_masked WHERE school_id = WES;
+  PERFORM _assert(n = 0, 'support access at Hilton reads Westville');
+  PERFORM _assert(app_support_access_id(HIL) = S_ID, 'the live session is not the one reported for Hilton');
+  SELECT ok, reason INTO v_ok, v_reason FROM support_access_begin(HIL, 'schooladmin', 'ticket 4411: roster import failing');
+  PERFORM _assert(NOT v_ok AND v_reason = 'already_live', 'the same support session was issued twice');
+
+  -- Every read under it is on the record, stamped with the session, in the
+  -- school's own log — and the session record is theirs to read.
+  PERFORM log_restricted_read('players', ARRAY[P_INJURED], ARRAY['born'], HIL);
+  PERFORM _as(U_SARAH);   -- audit.read at Hilton
+  -- Both stamps at once: platform_wide says WHO read (a key that answers to
+  -- no school, db/20), support_access_id says THROUGH WHICH DOOR.
+  SELECT count(*) INTO n FROM access_log
+   WHERE school_id = HIL AND person_id = U_PLAT AND support_access_id = S_ID AND platform_wide;
+  PERFORM _assert(n = 1, 'a read under support access is not stamped with the session in the school''s log');
+  SELECT count(*) INTO n FROM support_access WHERE id = S_ID;
+  PERFORM _assert(n = 1, 'the school''s auditor cannot see the support session at their school');
+  PERFORM _as(U_COACH);
+  SELECT count(*) INTO n FROM support_access WHERE id = S_ID;
+  PERFORM _assert(n = 0, 'a coach can read the support session record');
+
+  -- The school ends it. Not the platform: the school.
+  SELECT ok, reason INTO v_ok, v_reason FROM support_access_end(S_ID);
+  PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted', 'a coach ended a support session');
+  PERFORM _as(U_SARAH);   -- user.role.assign at Hilton
+  SELECT ok, reason INTO v_ok, v_reason FROM support_access_end(S_ID);
+  PERFORM _assert(v_ok, 'the school''s office could not end a support session at their school');
+  PERFORM _as(U_PLAT);
+  SELECT count(*) INTO n FROM player_masked WHERE school_id = HIL;
+  PERFORM _assert(n = 0, 'an ended support session still reads the school');
+  SELECT ok, reason INTO v_ok, v_reason FROM support_access_end(S_ID);
+  PERFORM _assert(v_ok AND v_reason = 'already_ended', 'ending a session twice is not safe');
+  PERFORM _as(U_SARAH);
+  SELECT count(*) INTO n FROM support_access WHERE id = S_ID AND ended_by = U_SARAH AND ended_at IS NOT NULL;
+  PERFORM _assert(n = 1, 'the record does not say who ended the session');
+
+  -- EXPIRY IS LIVE. Wind the hour hand back and read again: no job, no window.
+  PERFORM _as(U_PLAT);
+  SELECT ok, reason, id INTO v_ok, v_reason, S_ID
+    FROM support_access_begin(HIL, 'schooladmin', 'ticket 4412: the second look');
+  PERFORM _assert(v_ok, 'a second support session could not begin after the first ended');
+  SELECT count(*) INTO n FROM player_masked WHERE school_id = HIL;
+  PERFORM _assert(n > 0, 'the second support session reads nothing');
+  PERFORM _expire_support(S_ID);
+  SELECT count(*) INTO n FROM player_masked WHERE school_id = HIL;
+  PERFORM _assert(n = 0, 'a support session past its hour still reads the school');
+  PERFORM _assert(app_support_access_id(HIL) IS NULL, 'an expired session is still reported as live');
+  -- ...and an ordinary appointment, with no hour hand, is untouched by any of it.
+  PERFORM _as(U_SARAH);
+  SELECT count(*) INTO n FROM player_masked WHERE school_id = HIL;
+  PERFORM _assert(n > 0, 'the hour hand stopped an ordinary appointment');
 
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;

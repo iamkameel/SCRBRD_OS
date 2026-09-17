@@ -198,6 +198,9 @@ SELECT
         AND EXISTS (SELECT 1 FROM information_schema.columns
                      WHERE table_name = 'access_log' AND column_name = 'platform_wide')
        THEN 'OK' ELSE 'PROBLEM' END                             AS "Platform-wide reads are on the record",
+  CASE WHEN to_regprocedure('support_access_begin(uuid,text,text,text,integer)') IS NOT NULL
+        AND pg_get_functiondef('app_can(text,uuid,text,uuid,uuid)'::regprocedure) LIKE '%expires_at%'
+       THEN 'OK — an hour, on the record' ELSE 'PROBLEM' END     AS "Support access is time-boxed",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",

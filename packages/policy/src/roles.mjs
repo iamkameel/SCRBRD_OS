@@ -83,15 +83,18 @@ const BUNDLES = {
   // every school on the platform, and nothing records that it did. That is
   // the deliberate difference from `platformadmin` below, which stops at the
   // schoolhouse door and reaches a school's confidential records only through
-  // platform.support.impersonate — time-boxed and audited, and as of today
-  // declared but implemented nowhere. If that path is ever built, this role is
-  // the thing it replaces.
+  // platform.support.impersonate — time-boxed and audited, and since db/22
+  // real: support_access_begin() issues one role at one school for an hour,
+  // and every read under it is stamped in that school's log. That path is
+  // built; this key is what it replaces, and the reason to stop using it.
   superadmin: [...ALL_CAPABILITIES],
 
   // ── Platform ──
   // Operating the platform is not a licence to read a school's confidential
   // records. Support access to those goes through
-  // platform.support.impersonate, which is time-boxed and audited.
+  // platform.support.impersonate: support_access_begin() (db/22), one role
+  // at one school, sixty minutes by default, four hours at most, ended by
+  // the school if it wants, every read under it on the school's record.
   platformadmin: [
     "platform.health.read", "platform.tenant.manage", "platform.support.impersonate",
     "platform.feature.manage",
