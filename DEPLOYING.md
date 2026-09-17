@@ -185,6 +185,8 @@ if it changed after it ran. So a schema change after go-live is a new file
 with a higher number — `db/10_….sql` with the `ALTER`s — applied by the same
 command, by the owner role, before the code that needs it is deployed. Editing
 a file that has already run is not a migration path; the migrator says so.
+The full rule, the generated-file case and the paste procedure are under
+"Changing the schema after go-live" below.
 
 ### 3 · The first person
 
@@ -397,6 +399,92 @@ docker build -t scrbrd-api .
 docker run --rm --network host -e NODE_ENV=production \
   -e SESSION_SECRET=try -e DATABASE_URL=postgres://scrbrd_app:scrbrd_app@127.0.0.1:5432/scrbrd scrbrd-api
 ```
+
+## Changing the schema after go-live
+
+**A production change is a new `db/NN_*.sql` file. Nothing else.** Not an
+edit to a file that has already run, not a regenerated `db/01`, not a rebuild.
+This is the rule the ledger enforces, and it is worth knowing why before the
+migrator refuses something.
+
+### Three guards, and what each one means for a change
+
+1. **The ledger.** `schema_migration` records every file applied with its
+   hash. `tools/migrate.mjs` skips a file whose hash is unchanged and
+   **refuses** one whose hash changed — the file is what production ran, and
+   a different file with the same name is not a migration, it is a story
+   about one. `bundle-sql.mjs --apply NN` refuses to run twice and refuses to
+   run ahead of its predecessor, for the same reason.
+
+2. **The generator.** `db/01_authz.sql` and `db/09_rls_policies.sql` are
+   written by `pnpm rls:generate` from `packages/policy`, and CI fails if
+   regenerating changes either byte. Once they have run on production they
+   are frozen like everything else — so a change to a role's capability
+   bundle is **not** "edit `roles.mjs` and regenerate". That rewrites `db/01`,
+   which production has already applied, and the ledger refuses it. The
+   change is three things: `roles.mjs` (the truth for a fresh install and for
+   the client), a `db/NN` with the `DELETE`/`INSERT` on `role_capability` for
+   a database that already has `db/01`, and an entry in `WITHDRAWN_SINCE_01`
+   in `services/api/rls/generate-rls.mjs` so the generator keeps emitting the
+   frozen file exactly as shipped. `db/21_coach_medical_overview.sql` is the
+   worked example. The same shape corrects anything else a generated file got
+   wrong: `db/10` corrects `db/08` without touching it.
+
+3. **The verifier.** `db/99_rls_verify.sql` is not schema and is never
+   ledgered, so it changes freely — every guarantee a new file adds gets a
+   section there, and the verify bundle runs the whole file against
+   production after each paste.
+
+### The procedure
+
+1. Write `db/NN_*.sql`, the next number after the highest in `db/`. Forward
+   only. `IF NOT EXISTS` and `CREATE OR REPLACE` where they are honest;
+   `SET search_path = pg_catalog, public, pg_temp` on every `SECURITY DEFINER`
+   function (`db/16` is why). Explain the change in the file's header — that
+   comment is what the next person reads in the SQL Editor.
+2. Prove it locally against a rebuilt database, with its assertion in place:
+   ```sh
+   node tools/migrate.mjs --reset --seed && node tools/migrate.mjs --verify
+   ```
+   Then break the guard and watch the assertion go red for the right reason
+   before trusting it.
+3. Generate the paste and apply it to production, in the SQL Editor:
+   ```sh
+   node tools/bundle-sql.mjs --apply NN     # → scrbrd-supabase-apply-NN.sql
+   node tools/bundle-sql.mjs                # → scrbrd-supabase-verify.sql (and the rebuild bundle, which you do not paste)
+   ```
+   Paste `apply-NN`, then `verify`. Expect `ALL RLS LIVE ASSERTIONS PASSED`.
+4. **Only then** deploy or merge the code that needs it. Schema first, always.
+   An API that calls a function the database does not have yet is a `42883`
+   on every screen that touches it — a read path that started calling
+   `app_is_platform_wide()` before `db/20` had been pasted did exactly that.
+
+### When production is behind by more than one file
+
+The apply bundles are one file each, and each refuses to run ahead of its
+predecessor, so the wrong order fails loudly instead of leaving a gap. Find
+out where production is:
+
+```sql
+SELECT name FROM schema_migration ORDER BY name;
+```
+
+then paste `apply-NN` for each missing number, in order, and `verify` once at
+the end. Production was once found frozen at `db/14` while the branch had
+reached `db/19` — five pastes, one verify, and the recovery page that had
+been failing with `42883` worked.
+
+### What never happens to a database holding a real record
+
+- Editing any `db/NN` file already in its ledger. Hand-editing `db/01` or
+  `db/09` counts: the generator overwrites them and CI diffs them.
+- `--reset` or `--reset-objects`. Both are the demonstration path and both
+  destroy everything. The demonstration instance stops being exempt the day
+  it carries the ledger and the owner's real key — from then on it, too,
+  takes `apply-NN`.
+- Pasting a migration by hand without its ledger row. The next `apply` sees
+  the predecessor missing and refuses; the next `migrate.mjs` tries to apply
+  it again and fails on the first `CREATE`.
 
 ## What is not here
 

@@ -1,5 +1,7 @@
 # SCRBRD OS — System Map
 
+> A dated snapshot from the Pass 1 audit, kept as the record of what was found. The maintained map is `docs/ARCHITECTURE.md`; several rows below (eager Firebase, no quarantine release, no idempotency outside events) were true on `0783ed5` and are not true now.
+
 **Pass:** Focused Pass 1 · **Branch audited:** `claude/ui-refactor-ds2` at `0783ed5` · **Date:** 2026-09-16
 **Method:** every row below was read from the file named, or observed at runtime against a freshly rebuilt local database (`db/00`–`db/12` + `db/98_seed_pilot.sql`). Anything not checked is marked `NOT VERIFIED`.
 

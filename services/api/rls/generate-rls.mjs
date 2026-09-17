@@ -1,7 +1,16 @@
 #!/usr/bin/env node
 /**
- * Emits db/02_rls_policies.sql from the policy model. Never hand-edit the SQL;
- * change packages/policy/ and run `pnpm rls:generate`.
+ * Emits db/01_authz.sql and db/09_rls_policies.sql from the policy model.
+ * Never hand-edit the SQL; change packages/policy/ and run `pnpm rls:generate`.
+ *
+ * BOTH FILES ARE FROZEN ONCE PRODUCTION HAS RUN THEM. The migration ledger
+ * refuses an applied file whose hash changed, and CI refuses a tree where
+ * regenerating would change either file — so after go-live this generator
+ * must keep reproducing the shipped bytes. A capability change is therefore
+ * three edits, not one: roles.mjs (the truth for a fresh install and the
+ * client), a new db/NN with the DELETE/INSERT for a database that already
+ * has db/01, and WITHDRAWN_SINCE_01 below so the emitted db/01 does not move.
+ * DEPLOYING.md, "Changing the schema after go-live", has the procedure.
  *
  * What this emits
  * ───────────────
