@@ -195,19 +195,22 @@ const BUNDLES = {
 
   // ── Coaching ──
   //
-  // A coach holds the FULL medical record for the side they coach, clinical
-  // notes included, at your instruction. The model can express a narrower line
-  // — for a long time it drew one, on the reasoning that picking a team needs
-  // availability and not a physiotherapist's write-up — and the argument for
-  // the wider one is that a school coach IS the person managing a child's load
-  // week to week, and making them phone the physio to find out whether a
-  // shoulder may bowl is a worse outcome than them reading it.
+  // ADR 0002 (decided): a coach gets an OVERVIEW, not the full record. He
+  // needs to know what the injury is and when the boy is expected back — the
+  // nature tier, `injury_type` / `severity` / `phase`, plus `rtw_date` and
+  // `restricted` which sit under the status tier below it — because that is
+  // what picking a side week to week actually requires. The physio's clinical
+  // notes and who is treating the boy (`notes`, `physio` — medical.details.read)
+  // do not travel to the touchline; a coach without them still phones the
+  // physio for the write-up, which is the safe side to be on. This replaces
+  // an earlier, wider grant that held medical.details.read too — see ADR 0002
+  // for why it was narrowed and what a coach lost.
   //
-  // What keeps this safe is scope, not tier. A coach assignment must name a
-  // team (assignment_team_scoped), and the injury policy anchors on the
-  // player's CURRENT side — so this is the notes for the children they
-  // actually coach, this term, and nobody else's. It is not school-wide, and
-  // it stops the moment a player changes side.
+  // What keeps the nature tier itself safe is scope, not tier on its own. A
+  // coach assignment must name a team (assignment_team_scoped), and the
+  // injury policy anchors on the player's CURRENT side — so this is the
+  // children they actually coach, this term, and nobody else's. It is not
+  // school-wide, and it stops the moment a player changes side.
   coach: ["player.workload.read",
     "availability.read", "availability.declare",
     ...READ_TEAM, "team.select",
@@ -218,7 +221,7 @@ const BUNDLES = {
     "player.performance.read", "player.performance.write",
     "player.development.read", "player.development.write",
     "player.note.read", "player.note.write",
-    "medical.status.read", "medical.nature.read", "medical.details.read",
+    "medical.status.read", "medical.nature.read",
     "player.age.read", "player.roster.read", "player.emergency.read",
     "player.access.request", "player.access.grant",
     "analytics.read", "transport.read",
@@ -229,7 +232,7 @@ const BUNDLES = {
     "availability.read", "availability.declare",
     ...READ_TEAM, "player.performance.read", "player.development.read",
     "player.note.read", "player.note.write",
-    "medical.status.read", "medical.nature.read", "medical.details.read",
+    "medical.status.read", "medical.nature.read",
     "player.age.read", "player.roster.read", "player.emergency.read",
     "player.access.request", "player.access.grant",
     "transport.read", "scoring.start", "scoring.edit", "opposition.read",

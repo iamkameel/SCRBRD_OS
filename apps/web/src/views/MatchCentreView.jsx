@@ -2,7 +2,6 @@ import { useState } from "react";
 import { D } from "../design/tokens.js";
 import { useLive } from "../lib/live.js";
 import { canScore, holdsCapability } from "../rbac/index.js";
-import { SCRBRD } from "../scorer/engine.jsx";
 import { Badge, Btn, Card, Pill, SectionHeader, StatusDot } from "../ui/primitives.jsx";
 import { ScorecardModal, WeatherChip } from "./shared.jsx";
 import { useRows, useWeather } from "../lib/live.js";

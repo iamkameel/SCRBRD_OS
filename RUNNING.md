@@ -65,9 +65,13 @@ pnpm db:reset       # DROP SCHEMA public CASCADE, apply db/0*.sql, load the pilo
 pnpm db:verify      # the same, then run db/99_rls_verify.sql — the live RLS assertions
 ```
 
-**`db:reset` destroys everything in the database.** It is the only honest way
-to re-apply, because there is no migration ledger: every `db/0*.sql` file is
-applied in order from nothing. Never point it at a database you care about.
+**`db:reset` destroys everything in the database** and applies every
+`db/NN_*.sql` again from nothing, writing a fresh ledger (`schema_migration`)
+as it goes. That is the right thing for the throwaway database on your
+machine and the wrong thing for any database you keep: there the ledger is
+what makes a change a new file rather than a rebuild, and the migrator refuses
+`--reset` off localhost for exactly this reason. `DEPLOYING.md`, "Changing the
+schema after go-live", is the rule for those.
 
 `98_seed_pilot.sql` is fixture data — two schools, Hilton College (`HIL`) and
 Westville Boys' High (`WES`), their people, players, fixtures, a scored innings,

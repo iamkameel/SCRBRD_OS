@@ -151,7 +151,13 @@ if (findings.length) {
 // look different. So: the largest index-*.js must not carry the SDK's own
 // package names, and some other asset must, or the SDK went missing entirely.
 const js = files.filter((f) => /\.js$/.test(f) && !/\.map$/.test(f));
-const entry = js.filter((f) => /[\\/]index-[^\\/]+\.js$/.test(f)).sort((a, b) => statSync(b).size - statSync(a).size)[0];
+// The entry chunk is the one index.html loads — not "the largest index-*.js",
+// which it used to be: the scorer's chunk is ALSO named index-* (it comes from
+// scorer/index.jsx), and the day it outgrew the entry this check would have
+// measured the wrong file and passed.
+const html = readFileSync(join(DIST, "index.html"), "utf8");
+const entryName = html.match(/<script[^>]+type="module"[^>]+src="\/?assets\/(index-[^"]+\.js)"/)?.[1];
+const entry = entryName ? js.find((f) => f.endsWith(entryName)) : undefined;
 const SDK = ["@firebase/app", "@firebase/analytics"];
 const entryText = entry ? readFileSync(entry, "utf8") : "";
 const inEntry = SDK.filter((m) => entryText.includes(m));
@@ -162,6 +168,46 @@ if (!entry || inEntry.length || elsewhere.length !== SDK.length) {
   if (elsewhere.length !== SDK.length) console.error(`  not found in any other chunk: ${SDK.filter((m) => !elsewhere.includes(m)).join(", ")}`);
   process.exit(1);
 }
+// ── The screens are not in the chunk every visitor downloads either ──
+//
+// SCRBRD-020. The views and the scorer are fetched on first use (App.jsx);
+// before that, one 936 KB chunk carried every screen to every visitor. The
+// same thing that could undo the Firebase split undoes this one: a static
+// import of a view, or of any scorer module from something in the entry
+// graph, folds it straight back into the entry chunk and the build still
+// succeeds. So the entry chunk has a ceiling, and one string from a view and
+// one from the scorer must be absent from it and present in some other chunk
+// — the second half so that the check cannot pass because a screen went
+// missing altogether.
+//
+// Falsified three ways when written. A real static use of the scorer from the
+// landing page: red on both the ceiling (559 KB) and the scorer marker. A
+// static view in App.jsx: red on the view marker. And an UNUSED import of the
+// scorer's engine — two of which the auth pages had carried since the split —
+// grew the entry by 31 KB and tripped nothing: Rollup keeps a module's
+// side-effecting top level for an import it cannot prove pure, but drops the
+// rest, so the marker is not reached. The ceiling is what bounds that kind of
+// creep; the markers are for the whole-screen kind.
+const ENTRY_LIMIT_KB = 500;
+const OUTSIDE_ENTRY = [
+  ["a view (SettingsView)",  "dob-gaps"],
+  ["the scorer (sheets.jsx)", "revise-target"],
+];
+const others = js.filter((f) => f !== entry).map((f) => readFileSync(f, "utf8"));
 const entryKB = Math.round(statSync(entry).size / 1024);
-console.log(`BUNDLE CHECK: ${files.length} assets, ${FORBIDDEN.length} markers, 0 leaks · no client source reaches the rewards module · Firebase SDK outside the ${entryKB} KB entry chunk`);
+const splitProblems = [];
+if (entryKB > ENTRY_LIMIT_KB) splitProblems.push(`the entry chunk is ${entryKB} KB; the ceiling is ${ENTRY_LIMIT_KB} KB`);
+for (const [what, marker] of OUTSIDE_ENTRY) {
+  if (entryText.includes(marker)) splitProblems.push(`${what} is in the entry chunk ("${marker}" found there) — something in the entry graph imports it statically`);
+  else if (!others.some((t) => t.includes(marker))) splitProblems.push(`${what} is in no chunk at all ("${marker}" not found) — the marker or the screen went missing`);
+}
+if (splitProblems.length) {
+  console.error(`✗ CODE SPLITTING UNDONE — entry chunk ${relative(".", entry)}`);
+  for (const p of splitProblems) console.error(`  ${p}`);
+  console.error("\n  Views and the scorer are lazy in apps/web/src/App.jsx. Find the static import");
+  console.error("  that reaches them from the entry graph (grep for scorer/ and views/ outside");
+  console.error("  those directories) and make it dynamic or delete it.");
+  process.exit(1);
+}
+console.log(`BUNDLE CHECK: ${files.length} assets, ${FORBIDDEN.length} markers, 0 leaks · no client source reaches the rewards module · Firebase SDK, the views and the scorer outside the ${entryKB} KB entry chunk (ceiling ${ENTRY_LIMIT_KB} KB)`);
 process.exit(0);

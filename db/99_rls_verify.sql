@@ -243,22 +243,25 @@ BEGIN
   PERFORM _assert(n > (SELECT count(*) FROM player WHERE school_id = HIL AND team_code = '1XI'),
                   'the roster is no wider than the coach''s own side');
 
-  -- ── 3. The coach of the side holds the whole record ────────────
-  -- A coach reads the full medical record — clinical notes included — for the
-  -- children they coach. What keeps that safe is SCOPE, not tier: a coach
-  -- assignment must name a team, and the injury policy anchors through
-  -- player.team_code, so the reach is their own current squad and stops there.
-  -- Every assertion in this block is about that boundary.
+  -- ── 3. The coach of the side holds an OVERVIEW, not the full record ──
+  -- ADR 0002 (decided): a coach reads the nature tier — what the injury is,
+  -- how severe, when he is expected back — for the children they coach, and
+  -- not the physio's clinical write-up. What keeps the nature tier itself
+  -- safe is SCOPE, not tier: a coach assignment must name a team, and the
+  -- injury policy anchors through player.team_code, so the reach is their
+  -- own current squad and stops there. Every assertion in this block is
+  -- about that boundary, plus the one tier that stays shut regardless of it.
   SELECT count(*) INTO n FROM injury;
   PERFORM _assert(n > 0, 'coach cannot see that a player is unavailable');
   SELECT count(*) INTO n FROM injury_masked WHERE notes IS NOT NULL;
-  PERFORM _assert(n > 0, 'coach cannot read the clinical notes for their own squad');
+  PERFORM _assert(n = 0, 'coach reads the clinical notes — ADR 0002 keeps those with the physio');
   SELECT count(*) INTO n FROM injury_masked WHERE physio IS NOT NULL;
-  PERFORM _assert(n > 0, 'coach cannot see who is treating their own player');
+  PERFORM _assert(n = 0, 'coach sees who is treating their own player — not part of the overview');
   SELECT count(*) INTO n FROM injury_masked WHERE rtw_date IS NOT NULL;
   PERFORM _assert(n > 0, 'return-to-play date wrongly masked from the coach');
 
-  -- The line that matters now that the tier is open to them: their OWN side.
+  -- The line that matters now that the nature tier is open to them: their
+  -- OWN side.
   --
   -- Addressed by injury id, NOT by joining to player and filtering on
   -- team_code. That join was the first version of this assertion and it could
@@ -268,12 +271,17 @@ BEGIN
   -- really does hand the coach all three injuries — left it green.
   SELECT count(*) INTO n FROM injury_masked WHERE id = I_U16B;
   PERFORM _assert(n = 0, 'a coach reads an injury outside the side they coach');
-  SELECT count(*) INTO n FROM injury_masked WHERE id = I_U16B AND notes IS NOT NULL;
-  PERFORM _assert(n = 0, 'a coach reads clinical notes outside the side they coach');
-  -- …while their own side's notes are there, so this is a boundary and not a
+  SELECT count(*) INTO n FROM injury_masked WHERE id = I_U16B AND injury_type IS NOT NULL;
+  PERFORM _assert(n = 0, 'a coach reads the nature of an injury outside the side they coach');
+  -- …while their own side's nature is there, so this is a boundary and not a
   -- blanket refusal.
+  SELECT count(*) INTO n FROM injury_masked WHERE id = I_OWN AND injury_type IS NOT NULL;
+  PERFORM _assert(n = 1, 'a coach cannot read the nature of an injury for a player they coach');
+  -- And the clinical notes are shut on their OWN side too — not merely at
+  -- the team boundary above, which a details-tier grant could satisfy on its
+  -- own and leave this hole open.
   SELECT count(*) INTO n FROM injury_masked WHERE id = I_OWN AND notes IS NOT NULL;
-  PERFORM _assert(n = 1, 'a coach cannot read the notes for a player they coach');
+  PERFORM _assert(n = 0, 'a coach reads the clinical notes for a player they coach');
 
   -- The coach picks a side, so they need to know it is a hamstring and how bad.
   SELECT count(*) INTO n FROM injury_masked WHERE injury_type IS NOT NULL;
@@ -1324,6 +1332,103 @@ BEGIN
     PERFORM _assert(false, 'a role with no publish tier published a school notice');
   EXCEPTION WHEN insufficient_privilege THEN NULL;
   END;
+
+  -- ── A module switched off is off in the database too ────────────
+  --
+  -- SCRBRD-014. The module gate is two gates reading one function: the read
+  -- API refuses a resource a module owns, the write dispatcher refuses a
+  -- route tagged with it, both through my_feature_enabled(), both over HTTP,
+  -- both walked by tools/smoke-modules.mjs. This is the half an HTTP walk
+  -- cannot reach: the resolver itself, under the policies, as the people
+  -- concerned — and the one place the database gates a write on a flag by
+  -- itself, a fixture in a sport the school has not been granted: refused,
+  -- granted, allowed, on a direct INSERT.
+  --
+  -- Said plainly, because it is the boundary: injury, training_session,
+  -- player_skill and the rest carry no trigger of their own. Their only door
+  -- is the API and the route tag is the gate. A write that reaches Postgres
+  -- some other way is carrying the schema owner's credentials, and a product
+  -- switch is not what stands between that and the data.
+  PERFORM _as(U_MEDICAL);
+  PERFORM _assert(my_feature_enabled('injuries'),
+    'Injuries reads as off for the physio before anybody switched it off');
+  PERFORM _as(U_REGISTRAR);
+  INSERT INTO feature_suppression (key, school_id, hidden_by, reason)
+  VALUES ('injuries', HIL, U_REGISTRAR, 'verify: switched off');
+  PERFORM _as(U_MEDICAL);
+  PERFORM _assert(NOT my_feature_enabled('injuries'),
+    'a school hid Injuries and the resolver still answers on for its physio');
+  -- Off at any school you belong to is off. Sarah is Hilton's head of sport
+  -- and a Westville parent; Westville did not hide anything, and she is still
+  -- refused — the safe direction, and the one the API collapses to.
+  PERFORM _as(U_SARAH);
+  PERFORM _assert(NOT my_feature_enabled('injuries'),
+    'a person assigned at two schools reads a module one of them hid');
+  PERFORM _as('88888888-0000-0000-0000-00000000000d'::uuid);   -- Westville's registrar
+  PERFORM _assert(my_feature_enabled('injuries'),
+    'hiding a module at one school hid it at the other');
+  -- A coach cannot lift it: school.feature.manage, at that school. The
+  -- UPDATE policy filters rather than raises, so the proof is that it is
+  -- still off afterwards.
+  PERFORM _as(U_COACH2);
+  UPDATE feature_suppression SET lifted_at = now(), lifted_by = U_COACH2
+   WHERE key = 'injuries' AND school_id = HIL AND lifted_at IS NULL;
+  PERFORM _as(U_MEDICAL);
+  PERFORM _assert(NOT my_feature_enabled('injuries'),
+    'a coach lifted a suppression his school administrator made');
+  PERFORM _as(U_REGISTRAR);
+  UPDATE feature_suppression SET lifted_at = now(), lifted_by = U_REGISTRAR
+   WHERE key = 'injuries' AND school_id = HIL AND lifted_at IS NULL;
+  PERFORM _as(U_MEDICAL);
+  PERFORM _assert(my_feature_enabled('injuries'),
+    'the school lifted the suppression and Injuries stayed off');
+
+  -- The write the database gates itself. Hockey ships off; the platform
+  -- grants it; the same INSERT then goes through.
+  PERFORM _as(U_REGISTRAR);
+  BEGIN
+    INSERT INTO match (school_id, team_code, opponent, starts_at, sport, status)
+    VALUES (HIL, '1XI', 'Kearsney', now() + interval '3 days', 'hockey', 'scheduled');
+    PERFORM _assert(false, 'a fixture was written in a sport the school has not been granted');
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  PERFORM _as(U_PLAT);
+  INSERT INTO feature_grant (key, school_id, granted, changed_by)
+  VALUES ('sport_hockey', HIL, true, U_PLAT);
+  PERFORM _as(U_REGISTRAR);
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, status)
+  VALUES (HIL, '1XI', 'Kearsney', now() + interval '3 days', 'hockey', 'scheduled');
+  SELECT count(*) INTO n FROM match WHERE sport = 'hockey' AND opponent = 'Kearsney';
+  PERFORM _assert(n = 1, 'the platform granted hockey and the fixture was still refused');
+
+  -- ── A read across every tenant is on the record ────────────────
+  -- SCRBRD-026. The owner's key and a platform administrator's reach every
+  -- school; db/20 makes the log say so, decided at write time by the same
+  -- liveness rule as everything else about the reader.
+  PERFORM _as(U_OWNER);
+  PERFORM _assert(app_is_platform_wide(), 'the owner does not read as platform-wide');
+  PERFORM _as(U_PLAT);
+  PERFORM _assert(app_is_platform_wide(), 'a platform administrator does not read as platform-wide');
+  PERFORM _as(U_REGISTRAR);
+  PERFORM _assert(NOT app_is_platform_wide(), 'a school administrator reads as platform-wide');
+  PERFORM _as(U_SARAH);
+  PERFORM _assert(NOT app_is_platform_wide(), 'two school assignments add up to the platform');
+  -- The row carries the answer, stamped by the function and not by the
+  -- caller: the same call, from the owner and from the school's own office.
+  PERFORM _as(U_OWNER);
+  PERFORM log_restricted_read('players', ARRAY[P_INJURED], ARRAY['born'], HIL);
+  PERFORM _as(U_REGISTRAR);
+  PERFORM log_restricted_read('players', ARRAY[P_INJURED], ARRAY['born'], HIL);
+  -- Read back as the school's own auditor: both rows are theirs to see, and
+  -- exactly one of them is a read from outside the school.
+  PERFORM _as(U_SARAH);   -- director of sport at Hilton: audit.read
+  SELECT count(*) INTO n FROM access_log
+   WHERE school_id = HIL AND resource = 'players' AND person_id = U_OWNER AND platform_wide;
+  PERFORM _assert(n = 1,
+    'the owner''s read of a school''s roster is not marked platform-wide in that school''s log');
+  SELECT count(*) INTO n FROM access_log
+   WHERE school_id = HIL AND resource = 'players' AND person_id = U_REGISTRAR AND NOT platform_wide;
+  PERFORM _assert(n = 1, 'a school''s own read of its own roster was marked platform-wide');
 
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;

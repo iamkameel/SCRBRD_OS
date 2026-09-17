@@ -142,11 +142,12 @@ try {
   const coachInjuries = await read("injuries", coach);
   ok("the physio reads clinical notes", medicInjuries.some((i) => i.notes));
   ok("the coach reads that a player is unavailable", coachInjuries.length > 0);
-  // The coach of the side holds the full record, clinical notes included.
-  // What keeps that safe is scope: a coach assignment must name a team, and
-  // the injury policy anchors through the player's current side.
-  ok("...and the clinical notes for the squad they coach",
-     coachInjuries.some((i) => i.notes != null));
+  // ADR 0002: a coach holds an OVERVIEW for the squad they coach — the
+  // nature tier, not the physio's clinical write-up. What keeps the nature
+  // tier itself safe is scope: a coach assignment must name a team, and the
+  // injury policy anchors through the player's current side.
+  ok("...but NOT the clinical notes — those stay with the physio",
+     coachInjuries.every((i) => i.notes == null));
   ok("...for their own side only — the U16B injury is not among them",
      coachInjuries.every((i) => i.id !== "cccccccc-0000-0000-0000-000000000003"));
   ok("the scorer reads no injuries at all", (await read("injuries", scorer)).length === 0);

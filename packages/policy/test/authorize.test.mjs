@@ -138,13 +138,19 @@ group("D. Medical access is bounded by scope, not by tier");
   const res = { school: HIL, team: "U16A", person: "p5" };
   const otherSide = { school: HIL, team: "1XI", person: "p9" };
   ok("coach sees availability",        may({ assignments: coach, capability: "medical.status.read", resource: res }));
-  // The coach of a side holds the whole record for that side. The boundary is
-  // the TEAM, not the tier: the same capability against another side's player
-  // is refused, which is the assertion that has to hold for this to be safe.
-  ok("coach sees the diagnosis for their own side",
-     may({ assignments: coach, capability: "medical.details.read", resource: res }));
+  // ADR 0002: a coach holds the nature tier for the side they coach — what
+  // the injury is, not the physio's write-up — and the boundary on THAT is
+  // the TEAM, not a further tier: the same capability against another side's
+  // player is refused, which is the assertion that has to hold for this to
+  // be safe.
+  ok("coach sees the injury's nature for their own side",
+     may({ assignments: coach, capability: "medical.nature.read", resource: res }));
   ok("coach does NOT see it for another side",
-     !may({ assignments: coach, capability: "medical.details.read", resource: otherSide }));
+     !may({ assignments: coach, capability: "medical.nature.read", resource: otherSide }));
+  // The clinical write-up itself never travels to the touchline — that is
+  // the "overview, not the full record" line ADR 0002 drew.
+  ok("coach does NOT hold the clinical-details capability at all",
+     !may({ assignments: coach, capability: "medical.details.read", resource: res }));
   ok("a pupil never reaches the diagnosis of a team mate",
      !may({ assignments: [{ role: "player", school: HIL, team: "U16A" }],
             capability: "medical.nature.read", resource: res }));

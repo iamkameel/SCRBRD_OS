@@ -83,8 +83,12 @@ try {
   await read("injuries", coach);
   const coachEntry = (await q(`select * from access_log where resource='injuries'`))[0];
   ok("the coach's read is logged too", !!coachEntry);
-  ok("...and names the notes they DID receive",
-     (coachEntry?.fields ?? []).includes("notes"));
+  // ADR 0002: a coach receives the nature tier (injury_type/severity/phase),
+  // not the physio's clinical notes — the log names what he actually got.
+  ok("...and names the nature columns they DID receive",
+     (coachEntry?.fields ?? []).includes("injury_type"));
+  ok("...and NOT the clinical notes — those never reached him",
+     !(coachEntry?.fields ?? []).includes("notes"));
 
   // A spectator receives no injury rows at all, so nothing was disclosed and
   // nothing should be written. A log that records attempts rather than
@@ -150,6 +154,52 @@ try {
   ok("everything read about one child can be answered",
      aboutChild.length > 0 && aboutChild.every((r) => (r.record_ids ?? []).includes(P_INJURED)));
   ok("...naming the reader", aboutChild.every((r) => r.person_name));
+
+  group("A read across every tenant is on the record");
+  {
+    // SCRBRD-026. A school's own office reading its own roster writes a row
+    // only when a restricted column came back. The owner's key reaches every
+    // school, so the same read is a read across a tenant boundary — written
+    // whether or not a restricted column came back, marked so, once per
+    // school it touched, so each school's auditor finds it in THEIR log.
+    const HIL = "11111111-1111-1111-1111-111111111111";
+    const owner = await login("owner@example.invalid");
+    await q(`delete from access_log`);
+    const everyone = await read("players", owner);
+    const schools = new Set(everyone.map((p) => p.school_id));
+    ok("the owner reads more than one school's roster", schools.size > 1);
+    const logged = await q(`select school_id, platform_wide, record_count from access_log where resource = 'players'`);
+    ok("...and it is logged once per school",
+       logged.length === schools.size && [...schools].every((s) => logged.some((l) => l.school_id === s)));
+    ok("...marked as a read from outside the school", logged.every((l) => l.platform_wide === true));
+    ok("...naming the children it returned", logged.every((l) => l.record_count > 0));
+
+    // An unrestricted read — a fixture list — is nobody's disclosure when a
+    // coach reads their own, and the whole platform's when the owner does.
+    await q(`delete from access_log`);
+    await read("matches", coach);
+    ok("a coach's fixture list writes nothing, as before",
+       (await q(`select count(*)::int n from access_log`))[0].n === 0);
+    await read("matches", owner);
+    ok("the owner's fixture list is on the record",
+       (await q(`select count(*)::int n from access_log where resource = 'matches' and platform_wide`))[0].n > 0);
+
+    // The flag is about the reader's reach, decided by the database at write
+    // time — not about the resource, and not the caller's word.
+    await q(`delete from access_log`);
+    await read("injuries", medic);
+    ok("a school's own restricted read is not marked platform-wide",
+       (await q(`select bool_or(platform_wide) w from access_log`))[0].w === false);
+
+    // The school's auditor sees the owner's read of their children in their
+    // own log, says it came from outside, and does not see the other school's.
+    await q(`delete from access_log`);
+    await read("players", owner);
+    const seen = await read("access_log", head);
+    ok("the school's auditor sees the owner's read in their own log",
+       seen.some((r) => r.resource === "players" && r.platform_wide === true));
+    ok("...and not the other school's row", seen.every((r) => r.school_id === HIL));
+  }
 } catch (e) {
   ok(`the audit walk threw: ${e.message?.slice(0, 160)}`, false);
 } finally {
