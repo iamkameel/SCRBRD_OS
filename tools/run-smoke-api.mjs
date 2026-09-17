@@ -116,6 +116,7 @@ const WALKS = [
   // that closes the first of them.
   "dob-gaps",
   "support",
+  "commit",
 ];
 
 // Walks that drive a real browser AND need a database. They need two things
