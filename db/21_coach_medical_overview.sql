@@ -1,0 +1,28 @@
+-- ══════════════════════════════════════════════════════════════════
+--  21 · A coach's overview, not the physio's file (ADR 0002)
+-- ══════════════════════════════════════════════════════════════════
+--
+-- db/01_authz.sql granted coach and assistantcoach medical.details.read
+-- alongside medical.status.read and medical.nature.read — the physio's
+-- clinical notes and who is treating a boy, not just what is wrong with him
+-- and roughly how long he is out. ADR 0002 narrows that: a coach keeps the
+-- nature tier (what the injury is, how severe — he still needs that to
+-- manage a bowling load) and loses the details tier. Everyone else who held
+-- it — medical, guardian, selfaccess, superadmin — is untouched.
+--
+-- This is NOT done by editing db/01_authz.sql and regenerating. That file
+-- already ran on a database that must not be reset (tools/migrate.mjs's
+-- ledger refuses a file whose hash has changed since it was applied — the
+-- same rule that has kept db/00-14 frozen since go-live), so the correction
+-- goes in its own file, exactly as db/10 corrects data db/08 got wrong
+-- without rewriting db/08. generate-rls.mjs's WITHDRAWN_SINCE_01 keeps
+-- db/01_authz.sql reproducing its own original, already-shipped grant on
+-- every regeneration — a fresh install still receives it there and loses it
+-- here, replaying exactly what a database that was already live went
+-- through, rather than two histories that disagree.
+--
+-- Safe to run twice: it removes rows if they are there and does nothing if
+-- they already are not, which is also what makes it a no-op on a database
+-- that somehow never carried the old grant.
+DELETE FROM role_capability
+ WHERE role IN ('coach', 'assistantcoach') AND capability = 'medical.details.read';

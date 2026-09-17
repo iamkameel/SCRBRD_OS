@@ -10,7 +10,7 @@
 import { ROLES, ROLE_CAPABILITIES, roleGrants, SCORING_ROLES, SUBJECT_SCOPED_ROLES } from "@scrbrd/policy/roles";
 import { TABLES, referencedCapabilities, isCapabilityExpression, maskedColumns } from "@scrbrd/policy/tables";
 import { ALL_CAPABILITIES, SENSITIVE, isCapability } from "@scrbrd/policy/capabilities";
-import { main } from "./generate-rls.mjs";
+import { main, WITHDRAWN_SINCE_01 } from "./generate-rls.mjs";
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
@@ -80,9 +80,15 @@ ok("rows are replaced wholesale", /DELETE FROM role_capability;/.test(SQL));
     for (const cap of ROLE_CAPABILITIES[role]) {
       if (!SQL.includes(`('${role}', '${cap}')`)) missing++;
     }
-    // A capability the role does NOT hold must not appear for it.
+    // A capability the role does NOT hold must not appear for it — except a
+    // row db/01_authz.sql already shipped and a later db/NN withdraws
+    // (ADR 0002): that one row is meant to keep reproducing exactly what
+    // was already applied, not the current live model. See
+    // WITHDRAWN_SINCE_01 in generate-rls.mjs for why db/01 cannot simply be
+    // regenerated to match ROLE_CAPABILITIES directly.
+    const withdrawn = new Set((WITHDRAWN_SINCE_01[role] ?? []).map((w) => w.capability));
     for (const cap of ALL_CAPABILITIES) {
-      if (!roleGrants(role, cap) && SQL.includes(`('${role}', '${cap}')`)) wrong++;
+      if (!roleGrants(role, cap) && !withdrawn.has(cap) && SQL.includes(`('${role}', '${cap}')`)) wrong++;
     }
   }
   ok("every granted capability is emitted", missing === 0);

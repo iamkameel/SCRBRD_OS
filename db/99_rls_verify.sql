@@ -243,22 +243,25 @@ BEGIN
   PERFORM _assert(n > (SELECT count(*) FROM player WHERE school_id = HIL AND team_code = '1XI'),
                   'the roster is no wider than the coach''s own side');
 
-  -- ── 3. The coach of the side holds the whole record ────────────
-  -- A coach reads the full medical record — clinical notes included — for the
-  -- children they coach. What keeps that safe is SCOPE, not tier: a coach
-  -- assignment must name a team, and the injury policy anchors through
-  -- player.team_code, so the reach is their own current squad and stops there.
-  -- Every assertion in this block is about that boundary.
+  -- ── 3. The coach of the side holds an OVERVIEW, not the full record ──
+  -- ADR 0002 (decided): a coach reads the nature tier — what the injury is,
+  -- how severe, when he is expected back — for the children they coach, and
+  -- not the physio's clinical write-up. What keeps the nature tier itself
+  -- safe is SCOPE, not tier: a coach assignment must name a team, and the
+  -- injury policy anchors through player.team_code, so the reach is their
+  -- own current squad and stops there. Every assertion in this block is
+  -- about that boundary, plus the one tier that stays shut regardless of it.
   SELECT count(*) INTO n FROM injury;
   PERFORM _assert(n > 0, 'coach cannot see that a player is unavailable');
   SELECT count(*) INTO n FROM injury_masked WHERE notes IS NOT NULL;
-  PERFORM _assert(n > 0, 'coach cannot read the clinical notes for their own squad');
+  PERFORM _assert(n = 0, 'coach reads the clinical notes — ADR 0002 keeps those with the physio');
   SELECT count(*) INTO n FROM injury_masked WHERE physio IS NOT NULL;
-  PERFORM _assert(n > 0, 'coach cannot see who is treating their own player');
+  PERFORM _assert(n = 0, 'coach sees who is treating their own player — not part of the overview');
   SELECT count(*) INTO n FROM injury_masked WHERE rtw_date IS NOT NULL;
   PERFORM _assert(n > 0, 'return-to-play date wrongly masked from the coach');
 
-  -- The line that matters now that the tier is open to them: their OWN side.
+  -- The line that matters now that the nature tier is open to them: their
+  -- OWN side.
   --
   -- Addressed by injury id, NOT by joining to player and filtering on
   -- team_code. That join was the first version of this assertion and it could
@@ -268,12 +271,17 @@ BEGIN
   -- really does hand the coach all three injuries — left it green.
   SELECT count(*) INTO n FROM injury_masked WHERE id = I_U16B;
   PERFORM _assert(n = 0, 'a coach reads an injury outside the side they coach');
-  SELECT count(*) INTO n FROM injury_masked WHERE id = I_U16B AND notes IS NOT NULL;
-  PERFORM _assert(n = 0, 'a coach reads clinical notes outside the side they coach');
-  -- …while their own side's notes are there, so this is a boundary and not a
+  SELECT count(*) INTO n FROM injury_masked WHERE id = I_U16B AND injury_type IS NOT NULL;
+  PERFORM _assert(n = 0, 'a coach reads the nature of an injury outside the side they coach');
+  -- …while their own side's nature is there, so this is a boundary and not a
   -- blanket refusal.
+  SELECT count(*) INTO n FROM injury_masked WHERE id = I_OWN AND injury_type IS NOT NULL;
+  PERFORM _assert(n = 1, 'a coach cannot read the nature of an injury for a player they coach');
+  -- And the clinical notes are shut on their OWN side too — not merely at
+  -- the team boundary above, which a details-tier grant could satisfy on its
+  -- own and leave this hole open.
   SELECT count(*) INTO n FROM injury_masked WHERE id = I_OWN AND notes IS NOT NULL;
-  PERFORM _assert(n = 1, 'a coach cannot read the notes for a player they coach');
+  PERFORM _assert(n = 0, 'a coach reads the clinical notes for a player they coach');
 
   -- The coach picks a side, so they need to know it is a hamstring and how bad.
   SELECT count(*) INTO n FROM injury_masked WHERE injury_type IS NOT NULL;

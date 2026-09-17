@@ -83,8 +83,12 @@ try {
   await read("injuries", coach);
   const coachEntry = (await q(`select * from access_log where resource='injuries'`))[0];
   ok("the coach's read is logged too", !!coachEntry);
-  ok("...and names the notes they DID receive",
-     (coachEntry?.fields ?? []).includes("notes"));
+  // ADR 0002: a coach receives the nature tier (injury_type/severity/phase),
+  // not the physio's clinical notes — the log names what he actually got.
+  ok("...and names the nature columns they DID receive",
+     (coachEntry?.fields ?? []).includes("injury_type"));
+  ok("...and NOT the clinical notes — those never reached him",
+     !(coachEntry?.fields ?? []).includes("notes"));
 
   // A spectator receives no injury rows at all, so nothing was disclosed and
   // nothing should be written. A log that records attempts rather than

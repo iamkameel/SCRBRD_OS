@@ -288,10 +288,45 @@ ALTER TABLE ${t} ADD CONSTRAINT ${t}_team_code_known CHECK (${teamCodeCheck("tea
   return out.join("\n");
 }
 
+/**
+ * A grant db/01_authz.sql already shipped, withdrawn since by its own
+ * db/NN file rather than by rewriting db/01.
+ *
+ * db/01_authz.sql runs once per database and is then history: the ledger in
+ * tools/migrate.mjs refuses a file whose hash no longer matches what it
+ * recorded, on a production database that must not be reset — the same rule
+ * that keeps db/00-14 frozen after go-live. ROLE_CAPABILITIES is nonetheless
+ * the single live model, read by authorize()/scopeFilter(), the client's
+ * rbac choke point, and every test — narrowing it there is correct and
+ * immediate. Reproducing db/01's ORIGINAL bootstrap grants is what stops
+ * that correct edit from silently rewriting an already-shipped file the
+ * moment somebody runs `pnpm rls:generate` again.
+ *
+ * Each entry is retired here once its own db/NN file exists and has landed:
+ * a fresh install then grants it here and withdraws it there, exactly
+ * replaying what happened to a database that was already live when the
+ * decision changed. See db/21_coach_medical_overview.sql and ADR 0002.
+ *
+ * `after` reproduces db/01's ORIGINAL position for the row, not just its
+ * presence — the two sit byte-for-byte where they always did, immediately
+ * after `medical.nature.read`, so this stays a true reproduction of the
+ * shipped file rather than the same rows in a new order.
+ */
+export const WITHDRAWN_SINCE_01 = {
+  coach:           [{ after: "medical.nature.read", capability: "medical.details.read" }],
+  assistantcoach:  [{ after: "medical.nature.read", capability: "medical.details.read" }],
+};
+
 function capabilityRows() {
   const rows = [];
-  for (const role of ROLES)
-    for (const cap of ROLE_CAPABILITIES[role]) rows.push(`  (${q(role)}, ${q(cap)})`);
+  for (const role of ROLES) {
+    const bundle = [...ROLE_CAPABILITIES[role]];
+    for (const { after, capability } of WITHDRAWN_SINCE_01[role] ?? []) {
+      const at = bundle.indexOf(after);
+      bundle.splice(at === -1 ? bundle.length : at + 1, 0, capability);
+    }
+    for (const cap of bundle) rows.push(`  (${q(role)}, ${q(cap)})`);
+  }
   const catalogue = ALL_CAPABILITIES.map((c) => `  (${q(c)})`).join(",\n");
   const grantRows = [];
   for (const [granter, granted] of Object.entries(GRANTABLE_ROLES))
