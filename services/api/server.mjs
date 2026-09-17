@@ -155,10 +155,37 @@ const json = (res, status, body) => {
   res.end(JSON.stringify(body));
 };
 
+/**
+ * The response shim: Express-shaped status()/json() over a bare ServerResponse.
+ *
+ * IT RECORDS; THE DISPATCHER SENDS. Every write handler answers from inside
+ * its transaction — res.json() is called in the runAsPrincipal callback, and
+ * withPrincipal() only issues COMMIT once that callback returns. When json()
+ * wrote to the socket directly, the 200 could reach the client a few
+ * milliseconds before the row was committed: a walk that read the database
+ * on the very next line missed it now and then (roster-add, intermittently,
+ * on CI), and — the part that matters — a client could be told "saved" for
+ * a write whose COMMIT then refused. So json() stores the answer, and the
+ * dispatcher flushes it after the handler's promise has resolved, which for
+ * a write is after COMMIT. No handler changed; the meaning of their 200 did.
+ *
+ * THE LAST WORD WINS. A handler that recorded 200 and then, when COMMIT
+ * threw, recorded 500 in its catch has answered 500 — the first answer was
+ * never sent. rawRes() below overrides json() to write immediately, for the
+ * two file responses that end with bytes of their own; both are reads.
+ */
 const shim = (res) => ({
   _status: 200,
+  _pending: null,
   status(code) { this._status = code; return this; },
-  json(body) { json(res, this._status, body); return this; },
+  json(body) { this._pending = { status: this._status, body }; return this; },
+  /** Send what was recorded, if anything. Returns it, so a caller can act on the status. */
+  flush() {
+    const sent = this._pending;
+    this._pending = null;
+    if (sent) json(res, sent.status, sent.body);
+    return sent;
+  },
 });
 
 /**
@@ -641,11 +668,13 @@ const server = createServer(async (req, res) => {
 
     if (req.method === "GET" && path.startsWith("/api/read/")) {
       const shimmed = shim(res);
-      return read({
+      await read({
         params: { resource: decodeURIComponent(path.slice("/api/read/".length)) },
         query: Object.fromEntries(url.searchParams),
         headers: req.headers,
       }, shimmed);
+      shimmed.flush();
+      return;
     }
 
     for (const [pattern, method, handler, module] of [...MATCH_ROUTES, ...PLAYER_ROUTES, ...SCOUT_ROUTES]) {
@@ -680,8 +709,11 @@ const server = createServer(async (req, res) => {
       // a 5xx), and only under the person's own session — the table's policy
       // lets nobody read or write another's receipts.
       const idem = (req.method === "POST" || req.method === "PATCH") ? String(req.headers["idempotency-key"] ?? "").trim() : "";
-      if (idem && req.headers.authorization) {
-        const route = `${req.method} ${pattern.source.replace(/\\\//g, "/").replace(/\(\[\^\/\]\+\)/g, ":id").replace(/[\^$]/g, "")}${m[1] ? ` ${m[1]}` : ""}`;
+      const keyed = Boolean(idem && req.headers.authorization);
+      const route = keyed
+        ? `${req.method} ${pattern.source.replace(/\\\//g, "/").replace(/\(\[\^\/\]\+\)/g, ":id").replace(/[\^$]/g, "")}${m[1] ? ` ${m[1]}` : ""}`
+        : null;
+      if (keyed) {
         const seen = await runAsPrincipal(pool, SECRET, req.headers.authorization, async (client) =>
           (await client.query(`select route, status, body from request_replay where key = $1`, [idem])).rows[0] ?? null);
         if (seen) {
@@ -689,22 +721,30 @@ const server = createServer(async (req, res) => {
           res.setHeader("idempotent-replayed", "true");
           return json(res, seen.status, seen.body);
         }
-        const captured = shim(res);
-        const send = captured.json.bind(captured);
-        captured.json = (payload) => {
-          const status = captured._status;
-          send(payload);
-          if (status < 500) {
-            runAsPrincipal(pool, SECRET, req.headers.authorization, (client) =>
-              client.query(`insert into request_replay (person_id, key, route, status, body)
-                            values (app_user_id(), $1, $2, $3, $4) on conflict do nothing`,
-                           [idem, route, status, JSON.stringify(payload ?? null)])).catch(() => {});
-          }
-          return captured;
-        };
-        return handler(request, captured);
       }
-      return handler(request, shim(res));
+
+      // THE ANSWER LEAVES AFTER THE HANDLER RESOLVES — see shim(). For a
+      // write, that is after withPrincipal() has committed, so a 200 on the
+      // wire means a row in the database, and a client that reads the moment
+      // it hears back finds what it was told about.
+      const out = shim(res);
+      await handler(request, out);
+      const sent = out.flush();
+
+      // The receipt, written from the answer that was actually SENT — after
+      // COMMIT, never before it. It used to be written the moment the handler
+      // called json(), inside the transaction: a write whose COMMIT then
+      // refused had already left a 200 receipt behind, and the client's
+      // retry with the same key would have been answered from it, "saved",
+      // with nothing saved. Only an answer the handler stood behind (not a
+      // 5xx), only under the person's own session.
+      if (keyed && sent && sent.status < 500) {
+        runAsPrincipal(pool, SECRET, req.headers.authorization, (client) =>
+          client.query(`insert into request_replay (person_id, key, route, status, body)
+                        values (app_user_id(), $1, $2, $3, $4) on conflict do nothing`,
+                       [idem, route, sent.status, JSON.stringify(sent.body ?? null)])).catch(() => {});
+      }
+      return;
     }
 
     const exact = EXACT[`${req.method} ${path}`];

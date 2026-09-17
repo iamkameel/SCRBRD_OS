@@ -65,6 +65,8 @@ after reconciling against the paper book.
               ▼
  API (services/api/server.mjs)
  ├─ withPrincipal()   BEGIN; set_config('app.user_id', …, LOCAL); route; COMMIT | ROLLBACK
+ │                    the answer leaves AFTER COMMIT: the response shim records what a
+ │                    handler says and the dispatcher flushes it once the handler resolves
  ├─ read/             GET /api/read/:resource — SELECTs over *_masked views under RLS;
  │                    restricted columns that came back are logged (access_log)
  ├─ write/            POST … — one handler per domain; a retry replays the stored
@@ -235,6 +237,7 @@ go-live".
 | A coach sees an injury's nature and return date, never the clinical notes | `db/99` §3, `rbac.test`, `smoke-read`, `smoke-audit` (ADR 0002) |
 | Every disclosure of a restricted field, and every platform-wide read, is on the record and cannot be forged or read by its subject | `smoke-audit` as the real `scrbrd_app` connection |
 | A retry never writes twice | `smoke-idempotency`, `db/15` |
+| A 200 means a committed row; a COMMIT that refuses is answered 5xx, and leaves no idempotency receipt | `smoke-commit` (COMMIT slowed, then made to refuse, by deferred constraint triggers) |
 | Support access is one role at one school, stops by itself within its minutes, can be ended by the school, and leaves every read on the school's record | `db/99` (the hour hand wound back, then read again — no job between), `smoke-support` |
 | Offline scoring survives a reload; handover cannot fork the log | `smoke-browser-sync`, `smoke-sync`, `smoke-handover` |
 | Guardianship ends at majority; a refused enrolment leaves nothing behind | `db/99`, `smoke-guardian` |
