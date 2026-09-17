@@ -448,6 +448,73 @@ function asOppositionPlayer(r) {
 }
 
 /**
+ * The head-to-head against one rival, DERIVED — never a stored tally.
+ *
+ * `undecided` is the honest column and must be drawn, not dropped: a fixture
+ * whose toss was never recorded has known scores and no attributable winner,
+ * and a record reading "won 6" when two more were played that nobody can
+ * judge is a lie of omission. A win rate computed over `played` would repeat
+ * it, so the percentage belongs over the decided games only.
+ *
+ * Two people will legitimately get different totals for the same rivalry:
+ * this is counted over the fixtures each of them may see.
+ */
+function asDerby(r) {
+  const decided = (r.won ?? 0) + (r.lost ?? 0) + (r.tied ?? 0);
+  return {
+    school: r.school_id, opponent: r.opponent, rivalKey: r.rival_key,
+    awaySchool: r.away_school_id, title: r.title, sinceYear: r.since_year,
+    played: r.played, won: r.won, lost: r.lost, tied: r.tied, undecided: r.undecided,
+    decided,
+    // Null rather than zero when nothing is decided: 0% would read as "we
+    // always lose" for a rivalry whose results are simply unattributable.
+    winPct: decided ? Math.round((r.won / decided) * 100) : null,
+    lastPlayed: r.last_played,
+    recent: (r.recent ?? []).map((x) => ({
+      startsAt: x.starts_at, team: x.team_code, result: x.result,
+      firstRuns: x.first_runs, secondRuns: x.second_runs,
+    })),
+    live: true,
+  };
+}
+
+/**
+ * One batter against one bowler, from the ball log.
+ *
+ * `bowlingStyle` rides along so a screen can aggregate the pairs into what a
+ * coach actually plans against — left-arm orthodox, right-arm quick — rather
+ * than only naming individuals.
+ */
+function asMatchup(r) {
+  return {
+    batterId: r.batter_id, batterName: r.batter_name,
+    bowlerId: r.bowler_id, bowlerName: r.bowler_name, bowlingStyle: r.bowling_style,
+    balls: r.balls, runs: r.runs, dots: r.dots, fours: r.fours, sixes: r.sixes,
+    dismissals: r.dismissals,
+    strikeRate: r.balls ? Math.round((r.runs / r.balls) * 1000) / 10 : null,
+    live: true,
+  };
+}
+
+/**
+ * How much of the log the match-ups can speak for.
+ *
+ * Most bowlers a school's batter faces are not SCRBRD players, so those
+ * deliveries carry no bowler_id and are invisible to the match-up query. A
+ * screen that showed "12 balls faced" without saying it had ignored 300
+ * others would be stating something false with a number on it — so this is
+ * read beside them and drawn beside them.
+ */
+function asMatchupCoverage(r) {
+  const total = r.deliveries ?? 0;
+  return {
+    attributable: r.attributable, unattributable: r.unattributable, deliveries: total,
+    pct: total ? Math.round((r.attributable / total) * 100) : null,
+    live: true,
+  };
+}
+
+/**
  * One chapter of where a boy has played. `current` marks the side he is in
  * now; everything else is history, closed by the move that ended it and
  * editable by nobody.
@@ -823,6 +890,9 @@ const ADAPT = {
   memberships: asMembership,
   opposition_context: asOppositionContext,
   opposition_squad: asOppositionPlayer,
+  derby_record: asDerby,
+  matchups: asMatchup,
+  matchup_coverage: asMatchupCoverage,
   sports: asSport,
   module_settings: asModuleSetting,
   module_suppressions: asModuleSuppression,

@@ -27,12 +27,12 @@ export const UPGRADES = [
     desc: "A school turns a module off for itself or for one person; off at any school you belong to is off, and a write is refused as surely as a read.", effort: "Low" },
   { id: "up21", category: "Admin",         priority: "high",   status: "shipped", title: "Who Read What",
     desc: "Every restricted read, every read from outside the school and every support session, on the school's own record under Settings › School.", effort: "Low" },
+  { id: "up5",  category: "AI & Analysis", priority: "high",   status: "shipped", title: "Opposition Dossier",
+    desc: "The other side's squad and what the ball log says about each of them, on the fixture in Match Centre, inside the fourteen-day window before it. Cricket columns only, figures withheld below a thirty-ball floor with the evidence named, and every read written to the other school's access log. Head-to-Head is now derived from the fixtures rather than the hand-written table it replaced, and the match-ups say how much of the log they can speak for.", effort: "Medium" },
   { id: "up22", category: "Integrations",  priority: "medium", status: "shipped", title: "Reduced-Overs Matches",
     desc: "A revised limit and target mid-innings, entered by the umpire, replayed by the same reducer.", effort: "Medium" },
 
   // ── Built underneath, not yet drawn ──────────────────────────
-  { id: "up5",  category: "AI & Analysis", priority: "high",   status: "partial", title: "Opposition Dossier",
-    desc: "Batter-against-bowler match-ups, the derby record and the opponent's squad are all computed and permission-scoped. Nothing on screen reads them yet — this is the largest single gap in the product.", effort: "Medium" },
   { id: "up16", category: "Admin",         priority: "medium", status: "partial", title: "Caps, Honours & Milestones on the Passport",
     desc: "Recorded, consented and readable; simply not shown. The cheapest item here and the one a pupil actually opens.", effort: "Low" },
   { id: "up11", category: "Admin",         priority: "low",    status: "partial", title: "Season History Archive",
