@@ -592,7 +592,8 @@ try {
     // behind it is refused by the function regardless, which the API walk holds.
     ok("a coach is not offered the staff screen", await coach.page.locator('[data-testid="nav-staff"]').count() === 0);
     await coach.page.locator('[data-testid="nav-settings"]').click({ timeout: 6000 }); await coach.page.waitForTimeout(600);
-    await coach.page.locator("button", { hasText: /My clearances/ }).first().click({ timeout: 4000 }); await coach.page.waitForTimeout(1200);
+    // "My clearances" lives on the Me tab now, beside my access and this device.
+    await coach.page.locator('[role="tab"]', { hasText: /^Me$/ }).first().click({ timeout: 4000 }); await coach.page.waitForTimeout(1200);
     const mine = await coach.page.locator('[data-testid="my-clearances"]').innerText().catch(() => "");
     ok("...but he sees his own in settings", /first aid certificate/i.test(mine) && /expiring/i.test(mine));
     ok("...and only his own", !/P Moodley|B Ngcobo/.test(mine));

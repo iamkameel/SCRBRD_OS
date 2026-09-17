@@ -316,7 +316,8 @@ ok("every policy role has something to describe", undescribed.length === 0, unde
 // "platform" reading as "platform" is fine and a new domain reading as a bare
 // code is how a screen starts looking unfinished.
 const labelled = new Set(Object.keys(
-  Object.fromEntries((settingsSrc.match(/(\w+):"[^"]+"/g) ?? []).map((m) => m.split(":")))));
+  // Whitespace after the colon is a formatting choice, not a missing label.
+  Object.fromEntries((settingsSrc.match(/(\w+):\s*"[^"]+"/g) ?? []).map((m) => m.split(/:\s*/)))));
 const allDomains = [...new Set(POLICY_ROLES.flatMap(domainsFor))];
 const unlabelled = allDomains.filter((d) => !labelled.has(d));
 ok(`every capability domain has a readable name (${allDomains.length} domains)`,

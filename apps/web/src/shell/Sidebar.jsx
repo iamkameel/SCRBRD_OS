@@ -1,3 +1,4 @@
+import pkg from "../../package.json";
 import SCRBRD_LOGO from "../assets/scrbrd-logo.jpg";
 import { NAV_META, ROLES, groupNav } from "../design/roles.js";
 import { useNav } from "../lib/features.js";
@@ -148,7 +149,7 @@ function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount, userNam
         {/* Kept, because "what version are you on?" is the first question of
             every support conversation — but demoted from its own bordered
             block to one line nobody has to read. */}
-        {!collapsed&&<div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted,letterSpacing:"0.06em",padding:"8px 8px 0"}}>ScrbrdOS v3.0 · CricketOS</div>}
+        {!collapsed&&<div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted,letterSpacing:"0.06em",padding:"8px 8px 0"}}>SCRBRD v{pkg.version} · CricketOS</div>}
       </div>
     </div>
   );

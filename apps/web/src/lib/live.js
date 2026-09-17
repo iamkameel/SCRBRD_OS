@@ -630,6 +630,22 @@ function asReadiness(r) {
  * a grantedBy, and the import checker catches the collision — the same trap a
  * local named signedIn walked into earlier.
  */
+/** One line of a school's record of who read what (db/08, db/20, db/22). */
+function asAccessLog(r) {
+  return { id: r.id, school: r.school_id, personId: r.person_id, personName: r.person_name ?? null,
+           resource: r.resource, recordIds: r.record_ids ?? [], recordCount: r.record_count ?? 0,
+           fields: r.fields ?? [], device: r.device_id ?? null, occurredAt: r.occurred_at,
+           platformWide: r.platform_wide === true, supportAccessId: r.support_access_id ?? null, live: true };
+}
+
+/** A support session that reached a school: who, as what, why, for how long. */
+function asSupportAccess(r) {
+  return { id: r.id, actorId: r.actor_id, actorName: r.actor_name ?? null,
+           school: r.school_id, schoolName: r.school_name ?? null, role: r.role, team: r.team_code ?? null,
+           reason: r.reason, startedAt: r.started_at, expiresAt: r.expires_at, endedAt: r.ended_at ?? null,
+           endedByName: r.ended_by_name ?? null, live: r.live === true, mine: r.mine === true };
+}
+
 function asAssignment(r) {
   return { id: r.id, personId: r.person_id, personName: r.person_name,
            role: r.role, school: r.school_id, team: r.team_code, fixture: r.fixture_id,
@@ -774,6 +790,8 @@ const ADAPT = {
   official_register: asRegisteredOfficial,
   ground_conditions: asGroundCondition,
   assignments: asAssignment,
+  access_log: asAccessLog,
+  support_access: asSupportAccess,
   dob_gaps: asDobGap,
   vehicles: asVehicle,
   trips: asTrip,
