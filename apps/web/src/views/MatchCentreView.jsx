@@ -4,6 +4,7 @@ import { useLive } from "../lib/live.js";
 import { canScore, holdsCapability } from "../rbac/index.js";
 import { Badge, Btn, Card, Pill, SectionHeader, StatusDot } from "../ui/primitives.jsx";
 import { ScorecardModal, WeatherChip } from "./shared.jsx";
+import { OppositionDossier } from "./dossier.jsx";
 import { useRows, useWeather } from "../lib/live.js";
 
 function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
@@ -20,6 +21,13 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
   const [filter, setFilter] = useState("all");
   const [selMatch, setSelMatch] = useState(null);
   const [cardM,    setCardM]    = useState(null);
+  // Which fixture's dossier is open. Offered on a fixture that has not been
+  // played, to a person whose role holds opposition.read — and that is ALL
+  // the client decides. Whether there is anything to read is answered by two
+  // SECURITY DEFINER functions against this exact fixture, so the button can
+  // open a panel that says "not you", "not yet" or "not this opponent", the
+  // same way canScore() offers a scorer button the database may still refuse.
+  const [dossierM, setDossierM] = useState(null);
   const filtered = MATCHES.filter(m=>filter==="all"||m.status===filter);
   return (
     <div className="os-page">
@@ -45,6 +53,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
         ))}
       </div>
       {cardM&&<ScorecardModal match={cardM} role={role} onClose={()=>setCardM(null)} onNavProfile={(id)=>{setCardM(null);onNavProfile&&onNavProfile(id);}}/>}
+      {dossierM&&<OppositionDossier match={dossierM} role={role} onClose={()=>setDossierM(null)}/>}
       <div style={{display:"grid",gridTemplateColumns:selMatch?"var(--g-side-r,1fr 340px)":"1fr",gap:"16px",alignItems:"start"}}>
         <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
           {filtered.map(m=>{
@@ -102,6 +111,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
                           log itself and says so honestly when a match has not been
                           scored yet, which is the right answer to give here. */}
                       {(isLive||m.status==="complete")&&<Btn size="sm" variant="ghost" onClick={e=>{e.stopPropagation();setCardM(m);}}>{m.status==="complete"?"Scorecard":"Live Scorecard"}</Btn>}
+                      {m.status==="upcoming"&&holdsCapability(role,"opposition.read")&&<Btn size="sm" variant="ghost" onClick={e=>{e.stopPropagation();setDossierM(m);}} data-testid={`dossier-open-${m.id}`}>Dossier</Btn>}
                     </div>
                   </div>
                 </div>
