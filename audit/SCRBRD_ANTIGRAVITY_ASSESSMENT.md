@@ -1,7 +1,8 @@
 # What `iamkameel/SCRBRD_AntiGravity` has that this tree does not — and what it has that this tree should never build
 
 Requested: an audit of `iamkameel/SCRBRD_AntiGravity` against SCRBRD OS, focused on UI/UX, modals, and
-the depth of its data model. Read at `acfb10e` (2026-09-16), read-only clone, no code merged.
+the depth of its data model. Read at `acfb10e` (2026-09-16), read-only clone, no code merged. Part 4 is a
+later, separate request — a focused look at player passports and profiles specifically.
 
 ## What this repository is
 
@@ -261,6 +262,86 @@ adopted ideas (recognition, the workflow-state inventory, duty rosters; here, th
 NRR simulator). It is a reason to keep checking every borrowed idea the same way this document did: against
 the actual wired code, not the README — and, as SCRBRD-058 shows, against this tree's own schema before
 assuming a gap is really empty.
+
+---
+
+## Part 4 — Player passports and profiles, investigated on request (2026-09-18)
+
+Requested separately: a focused look at how `SCRBRD_AntiGravity` builds a player's own passport/profile
+page. Checked against the tree the same way as everything above. The finding here is sharper than
+anything in Part 1: not an absent algorithm, but **hardcoded fabricated content, live, on a real child's
+own dashboard.**
+
+### 4.1 `PlayerPassportView.tsx` — the one that ships, and what it actually shows
+
+`PlayerDetailClient.tsx` (`/players/[id]`) and `player-dashboard.tsx` — the latter fed by
+`fetchPersonByEmail`, i.e. **the signed-in player's own real identity** — both render
+`PlayerPassportView`. Of everything on that page, `player?.dateOfBirth`, `battingHand`/`bowlingHand`, and
+`schoolName` are the only fields read from the real player passed in. Every other figure is a literal in
+the component:
+
+- **Batting Core / Bowling Core stat blocks** — `value={42}` matches, `{1248}` runs, `{48.0}` average,
+  `{136.5}` strike rate, `{96.2}` overs, `{41}` wickets, `{3.1}` economy, `{22.1}` bowling average.
+  Identical for every player who opens the page, real or not.
+- **"Professional Trajectory" timeline** — five hardcoded steps (`U11 2020-21 Greenfields Primary A` …
+  `OPEN 2025-26 Riverside First XI High`), naming schools that have nothing to do with whoever is
+  actually being viewed.
+- **`DOB: {player?.dateOfBirth || '14 MAY 2008'}`** — a specific, plausible fallback birthdate for a
+  minor, shown with the same styling as a real one, the moment the real field is empty.
+- **"Biometric Status: Secured & Verified"**, a fingerprint icon, and **"Eligibility Verified — Cleared
+  for Regional Representation"**, a shield-check icon — both permanently on, gating nothing, backed by no
+  biometric or eligibility system anywhere else in the codebase. Presented as compliance/security facts
+  about a specific child.
+- **`ScoutingIntel`**, called with **zero props**, so its defaults are the only values ever shown: rating
+  `A+`, potential ceiling `Professional / Elite` at `85%`, growth `+12%`, risk `Low`, and the canned
+  sentence *"Exceptional talent with a strong work ethic. Shows great promise for future development and
+  impact."* — for every player, unconditionally. This is `SCRBRD_ANTIGRAVITY_ASSESSMENT.md` §1.2's
+  `PotentialProjection` finding again, in a worse form: not merely undercomputed, but hardcoded as the
+  only behaviour that exists.
+- **`PassportRadarChart`** and **`FormTrendTracker`**, also called with zero props: a fixed six-axis skill
+  radar (120/98/86/99/85/65 of 150) and a fixed six-month form line (4.2→8.4), for every player alike.
+- **`TacticalComparison`** — a fixed strike-rate/average/boundary-%/dot-ball-% comparison against a "League
+  Avg," for every player alike.
+- **Avatar fallback** — `https://ui-avatars.com/api/?name=${firstName}+${lastName}…`: when no photo
+  exists, the child's actual name is sent to a third-party public API to generate one. A minor's name
+  leaving the system boundary to an uncontrolled external service, on a page styled "Personnel Data Sheet
+  v4.2 · Official Record · Powered by SCRBRD OS Intel Core."
+
+Every one of these renders with full visual authority — badges, checkmarks, "verified," a signature line —
+on a real child's own screen, logged in as themselves.
+
+### 4.2 The honest version exists, and was never wired up
+
+`PlayerProfileHeader.tsx` is a different, better-behaved header for the same concept: every field reads
+from the real `player` prop, conditionally (`player.battingStyle && <Badge>…`), with an honest fallback
+("Team not assigned") rather than an invented one, and DOB rendered only `{player.dateOfBirth && …}`. A
+search of the whole tree finds no import of it anywhere — it is dead code, superseded in practice by the
+component that fabricates. The codebase contains its own refutation of `PlayerPassportView` and shipped
+the other one.
+
+### 4.3 One real, honest exception, on fake inputs only
+
+`src/lib/intelligence/athletePassportEngine.ts` is a different thing entirely and is **not** part of this
+finding: a pure, transparent cross-sport training-load calculator (session-RPE style — duration × intensity
+per appearance, rolled into a 0–100 load score with alerts for back-to-back competition days, too many
+disciplines in a week, no rest day). Every number traces to a real session, and nothing about the
+computation itself is fabricated. Its one honest caveat: `intensity` is a fixed formula per event type
+(cricket: a function of overs bowled; swimming/athletics: a constant per category), not a real per-athlete
+perceived-exertion rating, so the score's precision is better than its inputs deserve — worth knowing, not
+worth refusing. Wired into `MultiSportPlatform` (`/sports/multi-sport`), which per that repo's own gap
+analysis (Part 1 of this document, §self-audit) only ever receives `MOCK_SWIMMING_GALA` /
+`MOCK_ATHLETICS_MEET` data — real logic, currently exercised only on fake inputs, in contrast to §4.1's
+fake logic on real inputs.
+
+**Verdict: do not adopt anything from `PlayerPassportView.tsx`, `PassportWidgets.tsx`,
+`PassportRadarChart.tsx`, or `FormTrendTracker.tsx`.** SCRBRD OS's own passport (confidence-tiered —
+`derived`/`verified`/`asserted`/`seeded`, each row naming its source and recorder) is already the correct
+answer to "how sure are we of this fact about this child," which is the exact question this file gets
+backwards by never asking it. The workload-engine's shape (§4.3) is worth a look purely as a load-scoring
+method, separately from anything in this section, if SCRBRD OS ever extends `player.workload` beyond
+bowling-overs ceilings to a cross-discipline picture — not filed as a numbered entry, since SCRBRD OS's own
+workload model already serves a narrower, real purpose (a school-enforced overs ceiling, not a monitoring
+score) and widening it is a product decision, not a bug fix.
 
 ---
 
