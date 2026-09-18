@@ -174,6 +174,47 @@ try {
   ok("...who stays on the register as inactive, not deleted", reg2 && reg2.active === false, JSON.stringify(reg2));
   ok("which body managed it, for the record", manager === league ? true : (console.log("  (note: league@ was refused; platform@ managed the register)"), true));
 
+  // ── SCRBRD-037. The duty roster over the same fixture ──
+  //
+  // match_duties is a UNION across match_official, scoring_session, trip,
+  // match_pitch_report and match_squad, each read under its own policy. What
+  // is asserted here is the half a screen cannot fake: it returns what is on
+  // record and NOTHING for what is not, so the panel's "nothing on record" is
+  // a true statement rather than a placeholder.
+  group("The duty roster says what is on record, and nothing for what is not");
+  {
+    const duties = async (token, matchId) =>
+      (await api(`/api/read/match_duties?matchId=${matchId}`, { token })).body?.rows ?? [];
+    const rows = await duties(head, m);
+    const kinds = new Set(rows.map((r) => r.duty));
+    ok("the officials just appointed are in the roster", kinds.has("umpire"), [...kinds].join(" "));
+    ok("...with the name the appointment carries, not a blank",
+       rows.filter((r) => r.duty === "umpire").every((r) => (r.who ?? "").length > 1),
+       JSON.stringify(rows.filter((r) => r.duty === "umpire")));
+    ok("...and the state is the word the table uses",
+       rows.filter((r) => r.duty === "umpire").every((r) => r.state === "named"));
+    // Nothing has been arranged for transport or the pitch on this fixture, so
+    // those arms must return NO ROW. A row claiming "pending" would be the
+    // roster inventing an obligation nobody recorded.
+    ok("a duty nobody recorded produces no row at all, not a pending one",
+       !kinds.has("transport") && !kinds.has("ground"), [...kinds].join(" "));
+    ok("no row carries a state the client cannot name",
+       rows.every((r) => ["named", "recorded", "idle", "active", "handover_pending",
+                          "verifying", "arranged", "departed", "arrived", "cancelled"].includes(r.state)),
+       rows.map((r) => `${r.duty}:${r.state}`).join(" "));
+    // A withdrawn appointment is excluded, the same rule the officials read
+    // follows — otherwise replacing a panel doubles it.
+    const before = (await duties(head, m)).filter((r) => r.duty === "umpire").length;
+    await appoint(m, head, [{ duty: "umpire", name: "R Eplacement" }]);
+    const after = (await duties(head, m)).filter((r) => r.duty === "umpire");
+    ok("replacing the panel does not leave the withdrawn appointment behind",
+       after.length <= before && after.some((r) => r.who === "R Eplacement"),
+       `${before} → ${after.length}: ${after.map((r) => r.who).join(",")}`);
+    ok("the roster refuses an unauthenticated read",
+       [401, 403].includes((await api(`/api/read/match_duties?matchId=${m}`)).status));
+    ok("...and needs a fixture named", [400, 404, 500].includes((await api("/api/read/match_duties", { token: head })).status));
+  }
+
   group("An appointment to a match that does not exist is refused");
   const ghost = "00000000-0000-0000-0000-0000000000ff";
   ok("no such match", [404, 403].includes((await appoint(ghost, head, [{ duty: "umpire", name: "N O" }])).status));

@@ -680,6 +680,68 @@ export const READ_QUERIES = {
   // The state of the square, scoped through the fixture exactly as weather is.
   // Nothing personal here, but a pitch-report table readable by anyone would
   // answer "does this school have a fixture on Saturday?" to whoever asked.
+  /**
+   * The match-day duty roster. SCRBRD-037.
+   *
+   * Officials, transport, the ground report, the team sheet and the scoring
+   * session all exist and each is read on its own screen. Nobody has ever been
+   * able to stand at a fixture and ask the one question that matters an hour
+   * before the toss: IS EVERYTHING COVERED.
+   *
+   * READINESS, NOT NAMES. That is the whole point and it is the part that is
+   * easy to get wrong. A duty with nothing recorded is `none` — it is NOT
+   * "pending", because pending means somebody is expected and this schema does
+   * not know that. No fixture declares how many umpires it ought to have, so a
+   * roster that printed "Umpire 2 — pending" would be inventing an obligation
+   * to fill it. `none` says what is true: nothing is on record.
+   *
+   * A UNION RATHER THAN A JOIN, deliberately. Each arm reads its own table
+   * under that table's own row-level security, so the roster degrades per
+   * reader without a line of code here: a coach who cannot see the transport
+   * plan gets no transport row rather than an error or, worse, a row that
+   * quietly claims nothing is arranged. What is missing from a reader's
+   * roster is what is missing from that reader's authority, and the two should
+   * be the same thing.
+   */
+  match_duties: {
+    text: `select o.duty                              as duty,
+                  o.person_name                        as who,
+                  'named'                              as state,
+                  coalesce(o.panel, '')                as detail,
+                  o.appointed_at                       as at
+             from match_official o
+            where o.match_id = $1 and not o.withdrawn
+            union all
+           select 'scoring', coalesce(u.name, ''),
+                  s.state::text,
+                  case when s.lease_until is not null then 'lease held' else '' end,
+                  s.updated_at
+             from scoring_session s
+             left join app_user u on u.id = s.holder_user_id
+            where s.match_id = $1
+            union all
+           select 'transport', coalesce(t.driver_name, ''), t.state, coalesce(t.registration, ''), t.arranged_at
+             from (select tr.match_id, tr.arranged_at, v.registration, du.name as driver_name,
+                          case when tr.cancelled_at is not null then 'cancelled'
+                               when tr.arrived_at   is not null then 'arrived'
+                               when tr.departed_at  is not null then 'departed'
+                               else 'arranged' end as state
+                     from trip tr
+                     left join vehicle v  on v.id  = tr.vehicle_id
+                     left join app_user du on du.id = tr.driver_id) t
+            where t.match_id = $1
+            union all
+           select 'ground', '', 'recorded', coalesce(r.surface, ''), r.reported_at
+             from match_pitch_report r
+            where r.match_id = $1
+            union all
+           select 'squad', '', 'named', count(*)::text || ' selected', max(q.selected_at)
+             from match_squad q
+            where q.match_id = $1 and not q.withdrawn
+            having count(*) > 0`,
+    params: q => [req(q, "matchId")],
+  },
+
   pitch_report: {
     text: `select match_id, surface, grass, bounce, pace, favours,
                   covers_on, notes, bounce_rating, pace_rating, outfield, reported_at

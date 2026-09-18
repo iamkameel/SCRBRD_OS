@@ -691,6 +691,17 @@ function asScoutingConsent(r) {
            decidedAt: r.decided_at ? String(r.decided_at).slice(0, 10) : null,
            decidedBy: r.decided_by_name ?? null, live: true };
 }
+/**
+ * SCRBRD-037. One recorded duty. The read returns ONLY what is on record, so
+ * every row here is something somebody actually did — which is what lets the
+ * panel say "nothing on record" for the rest without guessing whether it
+ * should have been.
+ */
+function asDuty(r) {
+  return { duty: r.duty, who: r.who || null, state: r.state,
+           detail: r.detail || null,
+           at: r.at ? String(r.at).slice(0, 10) : null, live: true };
+}
 function asRequirement(r) { return { role: r.role, kind: r.kind, kindLabel: r.kind_label, live: true }; }
 
 /** A side as it stood on a date — nothing here is computed in the browser. */
@@ -913,6 +924,7 @@ const ADAPT = {
   passport: asPassportLine,
   passport_consents: asPassportConsent,
   scouting_consent: asScoutingConsent,
+  match_duties: asDuty,
   equipment: asEquipment,
   equipment_issues: asIssue,
   recognition: asRecognition,

@@ -1509,6 +1509,33 @@ try {
     await c.page.locator('[data-testid="nav-matches"]').first().click({ timeout: 6000 }).catch(() => {});
     await c.page.waitForTimeout(1200);
     ok("a coach, who holds no fixture.create, is not", (await c.page.locator("button", { hasText: /Schedule Match/ }).count()) === 0);
+
+    // ── SCRBRD-037. The duty roster, and the empty case especially ──
+    //
+    // The read returns only what is on record, so the panel has to SAY
+    // something for the rest. A blank row would be the screen falling silent
+    // on the question it exists to answer, and a "pending" would be inventing
+    // an obligation nobody recorded.
+    await c.page.locator('[data-testid^="match-card-"]').first().click({ timeout: 5000 }).catch(() => {});
+    await c.page.waitForTimeout(1400);
+    const roster = c.page.locator('[data-testid="duty-roster"]');
+    if (await roster.count() === 0) {
+      // The panel only exists once a fixture is selected. If the click did not
+      // open one, say so rather than passing on an absent element.
+      ok("a fixture opens its detail panel with the duty roster", false, "no duty-roster after selecting a fixture");
+    } else {
+      const rt = await roster.innerText();
+      ok("the fixture's duty roster is drawn", true);
+      ok("...and counts what is on record out of what a fixture can have",
+         /\d+ of \d+ on record/.test(rt), rt.slice(0, 80));
+      ok("...naming a duty nobody recorded as such, not as pending",
+         /nothing on record/.test(rt) && !/pending/i.test(rt), rt.slice(0, 200));
+      ok("...and every slot the client knows about has a line",
+         (await c.page.locator('[data-testid^="duty-"]').count()) >= 8);
+      ok("nothing on the roster is a stringified object",
+         !/\[object |undefined|NaN/.test(rt), rt.slice(0, 160));
+    }
+    ok("no console errors (coach, match centre)", c.errors.length === 0, c.errors.join(" | "));
     await c.ctx.close();
   }
 
