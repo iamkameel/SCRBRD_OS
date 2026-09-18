@@ -11,7 +11,7 @@ import { deviceId } from "../lib/device.js";
 import { loadMatch, saveMatch, storageKind } from "../lib/persist.js";
 import { api, signedIn } from "../lib/api.js";
 import { profile } from "../lib/session.js";
-import { startSync } from "../lib/sync.js";
+import { resumeSync, startSync } from "../lib/sync.js";
 import { SEGS } from "./field.js";
 import { fmtOv } from "./format.js";
 import { ALL_SHOTS } from "./shots.js";
@@ -19,7 +19,7 @@ import { AnalysisDashboard, ManhattanChart } from "./charts.jsx";
 import { DynamicBar, EventOverlay, FreeHitBanner, InningsOverBanner, PartnershipCard, ScorecardPanel, buildEventCfg, detectMilestone } from "./panels.jsx";
 import { FocusPad, ScoringPanel } from "./scoring.jsx";
 import { SetupScreen } from "./setup.jsx";
-import { BattingOrderSheet, Innings2Sheet, InningsReviewSheet, NewOverSheet, NoBallSheet, PenaltySheet, RevisionSheet, ShotSelectorSheet, WicketSheet } from "./sheets.jsx";
+import { BattingOrderSheet, HandoverSheet, Innings2Sheet, InningsReviewSheet, NewOverSheet, NoBallSheet, PenaltySheet, RevisionSheet, ShotSelectorSheet, WicketSheet } from "./sheets.jsx";
 import { INT_TEAMS } from "./teams.js";
 import { BallDot, Btn, Card, GS, Glass, Lbl } from "./ui.jsx";
 
@@ -106,7 +106,11 @@ function SyncPill({ sync, storage }) {
     synced:  { dot: D.emerald, label: "Sent",   title: "Every ball is on the server" },
     syncing: { dot: D.amber, label: `Sending ${sync.pending}`, title: "Balls still on their way" },
     waiting: { dot: D.amber, label: `Held ${sync.pending}`, title: "No connection — balls are saved and will send when there is one" },
-    local:   { dot: D.textMuted, label: "On device", title: `Saved here only (${sync.reason ?? "no server"})` },
+    local:   sync.reason === "handed_over"
+      ? { dot: D.sky, label: "Handed over", title: "You gave the scoring token to someone else" }
+      : sync.reason === "handover_pending" || sync.reason === "verifying"
+      ? { dot: D.amber, label: "Handover pending", title: "Someone has armed a handover — use ⇄ Take over to claim it" }
+      : { dot: D.textMuted, label: "On device", title: `Saved here only (${sync.reason ?? "no server"})` },
     offline: { dot: D.textMuted, label: "On device", title: "Saved here only" },
   }[sync.state] ?? { dot: D.textMuted, label: "On device", title: "Saved here only" };
 
@@ -172,6 +176,19 @@ function SCRBRD({resume}={}){
   // scoring never depends on it existing.
   const syncRef = useRef(null);
   const [sync, setSync] = useState({ state: "offline", pending: 0, reason: null });
+  // Bumped after a handover completes on THIS device (as the incoming
+  // scorer, once verifyTakeover succeeds) to re-run the sync effect below —
+  // the device now legitimately holds the token, and the plain claim it
+  // opened with only failed because a handover was pending at the time.
+  const [syncNonce, setSyncNonce] = useState(0);
+  // Set just before that bump, to the epoch verifyTakeover just returned.
+  // The effect below reads and clears it: present means "attach with THIS
+  // epoch, no reclaim" (resumeSync); absent means the ordinary mount path
+  // (startSync, which claims). Skipping the reclaim matters — the device
+  // calling it is already the holder, and scoring_claim()'s guard only
+  // refuses someone else, so a redundant claim here would still succeed and
+  // burn an epoch for nothing.
+  const resumeEpochRef = useRef(null);
 
 
   // ── Derivation ──────────────────────────────────────────
@@ -298,10 +315,9 @@ function SCRBRD({resume}={}){
     let stopped = false;
     let handle = null;
     (async () => {
-      const started = await startSync({
-        matchId,
-        userId: profile()?.user?.id,
-        onChange: (st) => {
+      const resumeEpoch = resumeEpochRef.current;
+      resumeEpochRef.current = null;
+      const onChange = (st) => {
           if (stopped) return;
           setSync({
             state: st.pendingCount === 0 ? "synced" : (st.online ? "syncing" : "waiting"),
@@ -311,10 +327,18 @@ function SCRBRD({resume}={}){
           // The undo boundary reads this: an acknowledged ball can only be
           // taken back with a compensating event.
           syncedRef.current = handle ? handle.syncedIds() : syncedRef.current;
-        },
-      });
+      };
+      const started = resumeEpoch != null
+        ? await resumeSync({ matchId, userId: profile()?.user?.id, epoch: resumeEpoch, onChange })
+        : await startSync({ matchId, userId: profile()?.user?.id, onChange });
       if (stopped) { started.ok && started.stop(); return; }
-      if (!started.ok) { setSync({ state: "local", pending: 0, reason: started.reason }); return; }
+      if (!started.ok) {
+        // handover_pending / verifying: NOT an error, this device simply
+        // isn't the holder yet — the top bar's Handover button reads
+        // sync.reason and opens straight on "take over" rather than the
+        // ordinary "sync unavailable" story.
+        setSync({ state: "local", pending: 0, reason: started.reason }); return;
+      }
       handle = started;
       syncRef.current = started;
       syncedRef.current = started.syncedIds();
@@ -326,7 +350,7 @@ function SCRBRD({resume}={}){
       syncRef.current?.stop();
       syncRef.current = null;
     };
-  }, [matchId]);
+  }, [matchId, syncNonce]);
 
   // Persist on every change to the log. Skipped until hydration has finished,
   // or the empty initial state would overwrite the very log being restored.
@@ -734,6 +758,28 @@ function SCRBRD({resume}={}){
         onConfirm={reviseInnings}/>
     );
 
+    if(modal==="handover")return (
+      <HandoverSheet
+        matchId={matchId} device={deviceIdRef.current}
+        epoch={syncRef.current?.epoch}
+        pending={sync.pending}
+        ballInFlight={scoringCtx!=null}
+        startTab={sync.reason==="handover_pending"||sync.reason==="verifying"?"take":"hand"}
+        onHandedOver={()=>{
+          // This device armed it and someone else has now claimed and
+          // verified it — its own token is gone. Stop trying to sync as a
+          // holder it no longer is; a stale lease heartbeat would only earn
+          // a confusing not_token_holder error for a device that already
+          // knows it handed over.
+          syncRef.current?.stop();
+          syncRef.current=null;
+          setSync({state:"local",pending:0,reason:"handed_over"});
+          setModal(null);
+        }}
+        onTakenOver={(newEpoch)=>{resumeEpochRef.current=newEpoch;setSyncNonce(n=>n+1);}}
+        onClose={()=>setModal(null)}/>
+    );
+
     if(modal==="penalty")return (
       <PenaltySheet
         battingTeam={inn?.battingTeam||"Batting"}
@@ -926,6 +972,19 @@ function SCRBRD({resume}={}){
             style={{flexShrink:0,padding:"4px 10px",borderRadius:D.pill,cursor:"pointer",background:"transparent",border:`1px solid ${D.border}`,fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted}}>
             ☔ Revise
           </button>
+          {/* Visible to whoever currently holds the token (to offer it) and
+              to whoever's own claim was refused because one is already
+              pending (to take it) — anyone else has nothing to do here. */}
+          {(syncRef.current||sync.reason==="handover_pending"||sync.reason==="verifying")&&(
+            <button onClick={()=>setModal("handover")} className="pressBtn" data-testid="open-handover"
+              title={sync.reason==="handover_pending"||sync.reason==="verifying"?"A handover is pending — enter the code":"Hand scoring to someone else"}
+              style={{flexShrink:0,padding:"4px 10px",borderRadius:D.pill,cursor:"pointer",
+                background:sync.reason==="handover_pending"?`${D.amber}14`:"transparent",
+                border:`1px solid ${sync.reason==="handover_pending"?D.amber+"55":D.border}`,
+                fontFamily:D.head,fontSize:"10px",fontWeight:700,color:sync.reason==="handover_pending"?D.amber:D.textMuted}}>
+              ⇄ {sync.reason==="handover_pending"||sync.reason==="verifying"?"Take over":"Handover"}
+            </button>
+          )}
           {/* Awaiting field prompt */}
           {awaitingField&&(
             <div style={{background:`${D.amber}14`,border:`1px solid ${D.amber}44`,borderRadius:D.pill,padding:"4px 12px",

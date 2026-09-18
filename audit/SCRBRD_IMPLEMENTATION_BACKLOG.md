@@ -868,7 +868,17 @@ screen against the wired code before borrowing it, which is what the assessment 
 
 Three concrete gaps this tree does not yet cover, checked against the tree before being written here:
 
-### SCRBRD-056
+### ~~SCRBRD-056~~ — CLOSED
+**Closed 2026-09-18.** `HandoverSheet` (arm/claim/verify tabs), `apps/web/src/lib/handover.js`, a
+client-side pre-check in `sync.js` that declines to auto-claim into a pending handover, and
+`tools/smoke-browser-handover.mjs` (two real browser contexts, two real logins, a wrong confirmation
+refused with a field-level diff before a correct one transfers the token). Found and fixed along the way:
+the reference `.mjs`'s `diffConfirmation` shape does not match what `scoring_verify_takeover` actually
+returns (flat `exp_runs`/`exp_wkts`/`exp_balls`, not a `diff` array) — built the diff client-side from
+what the function really answers with; and a naive "re-run startSync after a takeover" cost the new holder
+a spurious second epoch, fixed with `resumeSync()`. `SCRBRD-059` records a gap this surfaced but does not
+fix: `scoring_claim()` itself does not check for a pending handover, only this screen's own client-side
+courtesy check does.
 **Title:** The scoring-session handover has a full backend and no screen
 **Priority:** P1 · **Domain:** Scoring / Sync · **Type:** product gap
 **Affected files:** new scorer-facing modal, `apps/web/src/scorer/`; no server changes
@@ -971,3 +981,45 @@ result back.
 - [ ] The "+ Pitch Report" button opens a working form and the report round-trips through the real route
 - [ ] The duty roster's `ground` slot reflects a submitted report, not only "recorded"
 **Regression risk:** LOW — additive UI over an already-shipped schema and routes.
+
+### SCRBRD-059
+**Title:** `scoring_claim()` does not check for a pending or in-progress handover
+**Priority:** P2 · **Domain:** Scoring / Sync · **Type:** correctness
+**Affected files:** `db/02_schema_scoring.sql` (`scoring_claim`), a new `db/NN`
+**Affected users:** every match where a handover is armed while a second device is also open
+
+**Current behaviour, found while building SCRBRD-056:** `scoring_claim(p_match, p_device)` refuses only
+when `state = 'active' AND lease_until > now() AND holder_device IS DISTINCT FROM p_device` — a
+colleague's live lease. It does **not** check for `handover_pending` or `verifying`. So while a handover
+is armed, any device with `scoring.start` that calls the plain `/session/claim` route — which is exactly
+what the scoring screen does on ordinary mount — takes the token outright, skipping the code and the
+verification handshake entirely. The reference implementation (`scoring-session.mjs`'s in-memory
+`claim()`) has the identical shape, so this is a property of the design, not a divergence between the two.
+**Expected behaviour:** a plain claim while `handover_pending` or `verifying` is refused with a reason
+naming the state, the same way a live lease is refused today — steering the caller toward the code/verify
+path rather than silently completing it for them.
+**Root cause:** the guard was written for the one case it was asked to prevent (two devices scoring at
+once) and never extended to the handover states, which did not exist yet when it was first written.
+**Recommended change:** add `OR s.state IN ('handover_pending', 'verifying')` to the refusal condition,
+with its own reason (`handover_pending` / `verifying`) rather than folding it into `lease_active`, since
+the remedy is different — enter the code, not wait out a lease.
+**Interim mitigation, already shipped in SCRBRD-056:** `apps/web/src/lib/handover.js`'s `sessionState()`
+and `sync.js`'s `startSync()` read the session state client-side before calling `/session/claim` and
+decline to auto-claim into a pending or verifying handover. This narrows the window for anyone going
+through the app in the ordinary way; it does not close it — a direct API call, or a race between the read
+and the claim, still bypasses it. Recorded rather than left silent, per this file's own convention.
+**Why it matters:** the handover UI SCRBRD-056 just built is only as trustworthy as the state machine
+underneath it; a client-side courtesy check is not the same guarantee as a database-enforced one.
+**Dependencies:** none. **Security / privacy impact:** none — everyone who could exploit this already
+holds `scoring.start` on this match; it is a workflow-integrity gap, not an authorisation one.
+**Data migration required:** **YES** — a decision-function change after go-live needs its own `db/NN`
+(no capability or bundle changes, so no `WITHDRAWN_SINCE_01`/`ADDED_SINCE_01` entry is needed).
+**Tests required:** a unit assertion in `scoring-session.test.mjs` (or its DB-level equivalent) that a
+plain claim during `handover_pending`/`verifying` is refused; the client-side pre-check already has
+coverage via the browser handover walk (SCRBRD-056).
+**Acceptance criteria:**
+- [ ] A plain claim while a handover is pending or verifying is refused, at the database function, not
+  only in the client
+- [ ] The refusal names which state blocked it
+**Regression risk:** LOW — narrows an existing function's success cases; every currently-passing walk
+claims into `idle` or a genuinely dead `active` lease, neither of which this touches.
