@@ -17,6 +17,7 @@ const SUITES = [
   ["dob",      "packages/policy/test/date-of-birth.test.mjs"],
   ["modules",  "packages/policy/test/modules.test.mjs"],
   ["separation","packages/policy/test/separation.test.mjs"],
+  ["sensitivity","packages/policy/test/sensitivity.test.mjs"],
   ["rating",   "packages/scoring/test/rating.test.mjs"],
   ["rubric",   "packages/scoring/test/rubric.test.mjs"],
   ["phases",   "packages/scoring/test/phases.test.mjs"],

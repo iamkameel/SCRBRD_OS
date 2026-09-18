@@ -205,7 +205,13 @@ group("F. Model integrity");
 ok("every capability the tables reference exists", referencedCapabilities().every(isCapability));
 ok("every capability the tables reference is granted to some role",
    referencedCapabilities().every((c) => ROLES.some((r) => roleGrants(r, c))));
-ok("SENSITIVE capabilities are all used as mask gates or read gates", SENSITIVE.every(isCapability));
+// This line used to claim SENSITIVE capabilities "are all used as mask gates
+// or read gates" while asserting only that the names were spelled correctly —
+// true of every string in this file, and so a label rather than a test. The
+// claim it was making is now made properly, against the mask map and the
+// logger's watched columns, in packages/policy/test/sensitivity.test.mjs.
+// What is left here is the narrow thing this file is the right place for.
+ok("SENSITIVE names only real capabilities", SENSITIVE.every(isCapability));
 ok("no role bundles a capability that does not exist",
    ROLES.every((r) => ROLE_CAPABILITIES[r].every(isCapability)));
 ok("the generated file warns against hand-editing", /DO NOT EDIT BY HAND/.test(SQL));

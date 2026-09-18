@@ -367,7 +367,20 @@ the next ledger file rather than alone.
 **Regression risk:** MEDIUM — a DoS who currently corrects a match by themselves will need a scorer to
 request it. That is the point, and it needs saying to the pilot schools before it ships.
 
-### SCRBRD-030
+### SCRBRD-030 — PART ONE DONE
+
+> **Coherence landed; the ordered scale does not.** `packages/policy/test/sensitivity.test.mjs`
+> now joins `SENSITIVE` (capabilities) to `RESTRICTED_FIELDS` (the logger's watched columns)
+> through the mask map, so the two lists cannot drift apart in silence. 16 assertions.
+> It found `discipline.read` and `discipline.write` gating nothing at all — see SCRBRD-053 —
+> and replaced a vacuous line in `rls.test.mjs` that claimed the join while checking spelling.
+>
+> The five-level scale is still open and is the rest of this entry. It needs a judgement call
+> per capability across all 81, and the decision that matters is whether `SENSITIVE` becomes
+> `level >= 2` — which would WIDEN its membership (adding `player.age.read`,
+> `guardian.link.manage`, `medical.status.read`, the invoice reads and more) and therefore
+> widen what the deck claims is logged. That is a behaviour change, not a classification, and
+> it wants deciding rather than assuming.
 
 **Title:** Sensitivity tiers 0–4, refining the binary `SENSITIVE` set into an ordered scale
 **Priority:** P1 · **Domain:** RBAC / Privacy · **Type:** architecture
@@ -577,6 +590,17 @@ already-correct. Risk LOW. Migration UNKNOWN until the audit.
   selection exist. **Caveat that belongs in the entry:** an auto-selection must show its rationale or it is
   a black box a coach cannot defend to a parent — the same standard applied to a selection decision
   instead of a statistic. Risk MEDIUM, and mostly on the explanation rather than the arithmetic.
+- **SCRBRD-053** — `discipline.read` and `discipline.write` gate nothing. Six roles hold one or
+  both (`superadmin`, `principal`, `directorofsport`, `schooladmin`, `selfaccess`,
+  `competitionadmin` read; `superadmin`, `directorofsport`, `official` write) and there is no disciplinary
+  record in the schema: no table, no policy, no masked column, no read resource. So the
+  capability grants nothing today, and on the day a record arrives the reader of one would not
+  be logged, because the logger watches columns and there are none to watch. Found by
+  `sensitivity.test.mjs`, recorded there in `NOT_YET_IMPLEMENTED` with the reason, and the
+  suite fails if either starts being referenced without the entry being removed. Either build
+  the record or drop the capabilities — what should not persist is a role bundle that promises
+  something the schema cannot deliver. Files: a new `db/NN`, `tables.mjs`, `read-api.mjs`.
+  Risk LOW. **Migration YES** if built.
 - **SCRBRD-052** — A browser walk that scores an innings to its end. `smoke-browser-sync` opens the real
   scorer on a real match and taps four deliveries of twenty overs, so nothing exercises what happens when an
   innings completes: not the review gate (SCRBRD-038), not the innings break, not the result screen, not the
