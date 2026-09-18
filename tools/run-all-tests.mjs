@@ -16,6 +16,7 @@ const SUITES = [
   ["sa-id",    "packages/policy/test/sa-id.test.mjs"],
   ["dob",      "packages/policy/test/date-of-birth.test.mjs"],
   ["modules",  "packages/policy/test/modules.test.mjs"],
+  ["separation","packages/policy/test/separation.test.mjs"],
   ["rating",   "packages/scoring/test/rating.test.mjs"],
   ["rubric",   "packages/scoring/test/rubric.test.mjs"],
   ["phases",   "packages/scoring/test/phases.test.mjs"],
