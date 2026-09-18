@@ -5,7 +5,7 @@ import { RR, SR } from "./format.js";
 import { IntelPanel } from "./panels.jsx";
 import { buildSignals } from "./signals.js";
 import { Badge, Card, Lbl, SignalBar } from "./ui.jsx";
-import { batHandOf, hasPoint, positionName, DISMISSAL_LABEL } from "@scrbrd/scoring";
+import { batHandOf, hasPoint, positionName, screenAngle, shotDensity, directionalProfile, DISMISSAL_LABEL } from "@scrbrd/scoring";
 
 /* ═══════════════════════════════════════════════════════
    INTEL DASHBOARD TAB
@@ -381,6 +381,129 @@ function ShotWheel({inn,playerId=null,title="Wagon wheel"}){
   );
 }
 
+/* ──────────────────────────────
+   WHERE HE MAKES CONTACT — the surface (SCRBRD-046)
+   and the shape (SCRBRD-045). Both derive from the same captured points the
+   wheel draws, in the same frame, with the same mirror; see
+   packages/scoring/src/spatial.mjs for what each figure is and is not.
+────────────────────────────── */
+/** The balls a chart is about, and the hand each was played with. */
+const shotsOf=(inn,playerId)=>{
+  const log=inn?.ballLog||[];
+  return playerId?log.filter(b=>b.strikerId===playerId):log;
+};
+const handFor=(inn)=>(b)=>batHandOf(inn,b.strikerId);
+/** One line under a chart saying what it drew and what it left out. */
+const Provenance=({n,excluded,children})=>(
+  <div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,marginTop:"8px",textAlign:"center",lineHeight:1.5}}>
+    {children??`${n} shot${n===1?"":"s"} placed exactly.`}
+    {excluded>0&&` ${excluded} ball${excluded===1?"":"s"} carried no exact point and ${excluded===1?"is":"are"} not drawn.`}
+  </div>
+);
+const NothingHere=({mine})=>(
+  <div style={{color:D.textMuted,fontFamily:D.body,fontSize:"13px",padding:"18px 0",textAlign:"center"}}>
+    {mine.length?"No exact placements on record.":"No balls faced."}
+  </div>
+);
+
+function ShotHeatMap({inn,playerId=null,title="Where he makes contact"}){
+  if(!inn)return null;
+  const mine=shotsOf(inn,playerId);
+  const d=shotDensity(mine,{batHandFor:handFor(inn)});
+  // One hue, light to dark: a sequential surface is magnitude, and magnitude
+  // is a single ramp. The amber is the ground's own colour on the wheel.
+  const cells=d.cells.filter(c=>c.density>=0.04);
+  return (
+    <div data-testid="shot-heat-map">
+    <Card style={{padding:"14px 16px"}}>
+      <div style={{display:"flex",alignItems:"baseline",gap:"8px",marginBottom:"10px"}}>
+        <Lbl>{title}</Lbl>
+        <span style={{marginLeft:"auto",fontFamily:D.mono,fontSize:"11px",color:D.textSecondary}}>{d.n} placed</span>
+      </div>
+      {d.n===0?<NothingHere mine={mine}/>:(
+        <div style={{width:"100%",maxWidth:"260px",margin:"0 auto",aspectRatio:"1"}}>
+          <svg viewBox="0 0 300 300" style={{width:"100%",height:"100%",display:"block"}} role="img"
+            aria-label={`Contact density: ${d.n} placed shots, bandwidth ${d.bandwidth}`}>
+            <defs><clipPath id={`heat-clip-${playerId??"all"}`}><circle cx={CX} cy={CY} r={R_BND}/></clipPath></defs>
+            <circle cx={CX} cy={CY} r={R_BND+3} fill="#070d09" stroke={`${D.amber}30`} strokeWidth="1"/>
+            <g clipPath={`url(#heat-clip-${playerId??"all"})`}>
+              {cells.map((c,i)=>{
+                const px=CX+(c.x-c.size/2)*R_BND, py=CY+(c.y-c.size/2)*R_BND, w=c.size*R_BND;
+                return(<rect key={i} className="heat-cell" x={px} y={py} width={w+0.4} height={w+0.4}
+                  fill={D.amber} opacity={Math.min(1,c.density).toFixed(3)} data-density={c.density.toFixed(3)}>
+                  <title>{`${Math.round(c.density*100)}% of the peak`}</title>
+                </rect>);
+              })}
+            </g>
+            <circle cx={CX} cy={CY} r={R_MID} fill="none" stroke="rgba(255,255,255,.12)" strokeWidth="1" strokeDasharray="4 3"/>
+            <circle cx={CX} cy={CY} r={R_IN} fill="none" stroke="rgba(255,255,255,.10)" strokeWidth="1" strokeDasharray="3 4"/>
+            <rect x={CX-4.5} y={CY-R_PITCH} width={9} height={R_PITCH*2} rx="2.5" fill="#7c6e45" stroke={`${D.amber}60`} strokeWidth="0.7"/>
+          </svg>
+        </div>
+      )}
+      {d.n>0&&<Provenance n={d.n} excluded={d.excludedCount}/>}
+    </Card>
+    </div>
+  );
+}
+
+function ShotSpider({inn,playerId=null,title="Reach by direction"}){
+  if(!inn)return null;
+  const mine=shotsOf(inn,playerId);
+  const p=directionalProfile(mine);
+  // The axes are mirrored for a left-hander, the bins are not: his cover is
+  // still his cover, it is just on the other side of the ground. A whole
+  // innings of mixed hands is drawn in the right-hander's frame and says so.
+  const hands=new Set(mine.filter(hasPoint).map(b=>batHandOf(inn,b.strikerId)));
+  const hand=playerId?batHandOf(inn,playerId):(hands.size===1?[...hands][0]:"R");
+  const at=(mid,r)=>toXY(screenAngle(mid,hand),r);
+  const pts=p.directions.map(d=>at(d.mid,(d.reach??0)*R_BND));
+  return (
+    <div data-testid="shot-spider">
+    <Card style={{padding:"14px 16px"}}>
+      <div style={{display:"flex",alignItems:"baseline",gap:"8px",marginBottom:"10px"}}>
+        <Lbl>{title}</Lbl>
+        <span style={{marginLeft:"auto",fontFamily:D.mono,fontSize:"11px",color:D.textSecondary}}>{p.n} placed</span>
+      </div>
+      {p.n===0?<NothingHere mine={mine}/>:(
+        <div style={{width:"100%",maxWidth:"280px",margin:"0 auto",aspectRatio:"1"}}>
+          <svg viewBox="0 0 300 300" style={{width:"100%",height:"100%",display:"block"}} role="img"
+            aria-label={`Reach by direction: ${p.n} placed shots, strongest ${p.strongest?.replace(/_/g," ")}`}>
+            <circle cx={CX} cy={CY} r={R_BND} fill="#070d09" stroke={`${D.amber}30`} strokeWidth="1"/>
+            <circle cx={CX} cy={CY} r={R_MID} fill="none" stroke="rgba(255,255,255,.08)" strokeWidth="1" strokeDasharray="4 3"/>
+            <circle cx={CX} cy={CY} r={R_IN} fill="none" stroke="rgba(255,255,255,.08)" strokeWidth="1" strokeDasharray="3 4"/>
+            {p.directions.map(d=>{const[x,y]=at(d.mid,R_BND);return(
+              <line key={`a${d.key}`} x1={CX} y1={CY} x2={x} y2={y} stroke="rgba(255,255,255,.07)" strokeWidth="0.6"/>);})}
+            <polygon className="spider-shape" points={pts.map(q=>q.join(",")).join(" ")}
+              fill={`${D.indigo}30`} stroke={D.indigo} strokeWidth="1.5" strokeLinejoin="round"/>
+            {p.directions.map((d,i)=>{
+              const[x,y]=pts[i];const[lx,ly]=at(d.mid,R_BND+15);
+              return(<g key={d.key} data-testid={`spider-axis-${d.key}`} data-shots={d.shots} data-reach={d.reach==null?"":d.reach.toFixed(2)} data-x={lx.toFixed(1)}>
+                {d.shots>0&&<circle cx={x} cy={y} r="3.5" fill={D.indigo} stroke="#070d09" strokeWidth="1.5">
+                  <title>{`${d.label}: ${d.shots} shot${d.shots===1?"":"s"}, reach ${Math.round(d.reach*100)}% of the rope, ${d.runs} run${d.runs===1?"":"s"}`}</title>
+                </circle>}
+                <text x={lx} y={ly} textAnchor="middle" dominantBaseline="middle" fontSize="7" fontFamily={D.body}
+                  fill={d.shots?D.textSecondary:D.textMuted} fontWeight={d.key===p.strongest?700:400}>
+                  {d.label}{d.shots?` ${d.shots}`:""}
+                </text>
+              </g>);
+            })}
+            <rect x={CX-4.5} y={CY-R_PITCH} width={9} height={R_PITCH*2} rx="2.5" fill="#7c6e45" stroke={`${D.amber}60`} strokeWidth="0.7"/>
+          </svg>
+        </div>
+      )}
+      {p.n>0&&(
+        <Provenance n={p.n} excluded={p.excludedCount}>
+          {`Reach is the mean distance in each direction, 100% at the rope; the number is shots that way. `}
+          {!playerId&&hands.size>1?"Mixed hands, drawn as a right-hander's ground. ":""}
+          {`${p.n} shot${p.n===1?"":"s"} placed exactly.`}
+        </Provenance>
+      )}
+    </Card>
+    </div>
+  );
+}
+
 function AnalysisDashboard({inn,match,curIn,innings}){
   const overs=match?.overs||20;
   const target=curIn===1?(innings[0]?.runs||0)+1:null;
@@ -413,6 +536,8 @@ function AnalysisDashboard({inn,match,curIn,innings}){
             <ManhattanChart inn={inn} match={match}/>
             <BatsmanChart inn={inn}/>
             <BowlerChart inn={inn}/>
+            <ShotHeatMap inn={inn}/>
+            <ShotSpider inn={inn}/>
           </div>
         </div>
       )}
@@ -464,4 +589,4 @@ function AnalysisDashboard({inn,match,curIn,innings}){
   );
 }
 
-export { AnalysisDashboard, BatsmanChart, BowlerChart, ManhattanChart, RunRateChart, ShotWheel, WormChart };
+export { AnalysisDashboard, BatsmanChart, BowlerChart, ManhattanChart, RunRateChart, ShotHeatMap, ShotSpider, ShotWheel, WormChart };

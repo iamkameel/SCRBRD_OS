@@ -1011,6 +1011,71 @@ try {
     await c.ctx.close();
   }
 
+  // ── The same placements, as a surface and as a shape (SCRBRD-045, -046) ──
+  // CareerShotShape sits beside the wagon wheel on the same tab, reading the
+  // same rows. The sharpest thing to prove here is the axis mirror: the
+  // spider's directions are batter-relative (a left-hander's cover is still
+  // labelled "cover") but the ANGLE it is drawn at flips, so Bekker's
+  // strongest direction and Naidoo's sit on opposite sides of the SVG.
+  group("The same placements draw as a density surface and a directional shape");
+  {
+    const c = await open();
+    await signIn(c.page, /coach@example\.invalid/);
+    ok("the profiles screen opens", await nav(c.page, /Profiles/));
+
+    const shapeFor = async (playerId) => {
+      await c.page.locator(`[data-testid="roster-player-${playerId}"]`).first()
+        .click({ timeout: 4000 }).catch(() => {});
+      await c.page.waitForTimeout(800);
+      await c.page.locator("button", { hasText: /^career$/i }).first()
+        .click({ timeout: 4000 }).catch(() => {});
+      await c.page.waitForTimeout(1400);
+      const shape = c.page.locator('[data-testid="career-shot-shape"]');
+      if (!(await shape.count())) return null;
+      const heat = shape.locator('[data-testid="shot-heat-map"]');
+      const spider = shape.locator('[data-testid="shot-spider"]');
+      const cells = await heat.locator(".heat-cell").evaluateAll(
+        (els) => els.map((e) => Number(e.getAttribute("data-density"))));
+      const axes = await spider.locator("[data-testid^='spider-axis-']").evaluateAll(
+        (els) => els.map((e) => ({
+          key: e.getAttribute("data-testid").replace("spider-axis-", ""),
+          shots: Number(e.getAttribute("data-shots")),
+          x: Number(e.getAttribute("data-x")),
+        })));
+      return { heat, spider, cells, axes, heatText: await heat.innerText().catch(() => ""),
+               spiderText: await spider.innerText().catch(() => "") };
+    };
+
+    const bekker = await shapeFor("aaaaaaaa-0000-0000-0000-000000000002");
+    ok("the density surface is drawn on the career tab", bekker !== null && (await bekker.heat.count()) === 1);
+    ok("...with cells over the peak", bekker && bekker.cells.some((d) => d > 0.9), bekker && Math.max(...bekker.cells));
+    ok("...saying how many it placed", bekker && /\d+ placed/.test(bekker.heatText));
+    ok("the spider is drawn beside it", bekker && (await bekker.spider.count()) === 1);
+    ok("...with an axis for every angular family", bekker && bekker.axes.length === 12, bekker?.axes.length);
+    ok("...saying reach is a distance and not an aim", bekker && /mean distance/.test(bekker.spiderText));
+    ok("...and never claiming precision", bekker && !/precision/i.test(bekker.spiderText));
+    // Bekker was seeded through the covers (theta ~300-330): the axis with
+    // shots should be an off-side family, left of the wheel's centre (x<150).
+    const bekkerHit = bekker?.axes.filter((a) => a.shots > 0) ?? [];
+    ok("Bekker's contact lands in an off-side family", bekkerHit.length > 0 && bekkerHit.every((a) => a.x < 150),
+       bekkerHit.map((a) => `${a.key}@${a.x}`).join(" "));
+
+    // Naidoo — left-handed, seeded on the leg side at theta ~60-90, which the
+    // wheel test already proves draws mirrored to x<150. The spider's own
+    // axes must show the same mirror: his hit families sit on the SAME side
+    // of the SVG as Bekker's, both left, for the reason wheel.test.mjs
+    // states — a left-hander's leg side is a right-hander's off side.
+    const naidoo = await shapeFor("aaaaaaaa-0000-0000-0000-000000000003");
+    ok("the left-hander's surface is drawn too", naidoo && naidoo.cells.some((d) => d > 0.5));
+    const naidooHit = naidoo?.axes.filter((a) => a.shots > 0) ?? [];
+    ok("...and his spider mirrors the same way the wheel does", naidooHit.length > 0 && naidooHit.every((a) => a.x < 150),
+       naidooHit.map((a) => `${a.key}@${a.x}`).join(" "));
+
+    ok("no console errors", c.errors.length === 0);
+    ok("...and no scoping refusals", c.refusals.length === 0);
+    await c.ctx.close();
+  }
+
   // ── The role switcher, as it is actually seen ────────────────────
   // Reported from the live deployment with a screenshot: the menu listed
   // "Platform Admin" three times and "Principal" twice. ROLES is the LOOKUP

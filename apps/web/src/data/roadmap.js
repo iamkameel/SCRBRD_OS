@@ -56,6 +56,10 @@ export const UPGRADES = [
   // this file against the code: this is what it costs when nobody does.
   { id: "up16", category: "Admin",         priority: "medium", status: "shipped", title: "Caps, Honours & Milestones on the Passport",
     desc: "Colours, half-colours, honours, captaincy, a side's cap ledger and the milestones the ball log threw up \u2014 on the boy's own profile, in the server's words, each carrying the season it belongs to and whether it may go on a public board.", effort: "Low", walk: ["recognition", "browser-read"] },
+  { id: "up45", category: "AI & Analysis", priority: "medium", status: "shipped", title: "Contact Density Map",
+    desc: "A continuous heat map over the ground from a batter's captured placements, smoothed by a 2D Gaussian kernel rather than drawn as forty overlapping spokes. Sector-era balls carry no distance and are excluded, with the count said aloud rather than dropped silently.", effort: "Medium", walk: ["read", "browser-read"] },
+  { id: "up46", category: "AI & Analysis", priority: "medium", status: "shipped", title: "Directional Reach Chart",
+    desc: "Batting power and directionality by the ground's own angular families \u2014 fine leg through third man \u2014 as a spider chart of mean reach per direction. \u201cPrecision\u201d is deliberately not drawn: the log records where a ball landed, never where a batter meant it to go, so no axis claims to measure intent.", effort: "Medium", walk: ["read", "browser-read"] },
 
   // ── Built underneath, not yet drawn ──────────────────────────
   { id: "up11", category: "Admin",         priority: "low",    status: "partial", title: "Season History Archive",

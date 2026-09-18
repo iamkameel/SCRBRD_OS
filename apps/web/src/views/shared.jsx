@@ -4,7 +4,7 @@ import { ROLES } from "../design/roles.js";
 import { D } from "../design/tokens.js";
 import { mulberry32, strSeed } from "../lib/rng.js";
 import { can, filterRecord } from "../rbac/index.js";
-import { BatsmanChart, BowlerChart, ManhattanChart, ShotWheel, WormChart } from "../scorer/charts.jsx";
+import { BatsmanChart, BowlerChart, ManhattanChart, ShotHeatMap, ShotSpider, ShotWheel, WormChart } from "../scorer/charts.jsx";
 import { seedCompletedMatch } from "../scorer/seed.js";
 import { Badge, Modal, Pill, SkillBar } from "../ui/primitives.jsx";
 import { useRows } from "../lib/live.js";
@@ -449,6 +449,10 @@ function ScorecardModal({ match, onClose, role, onNavProfile }){
       </div>
       <ShotWheel inn={inn} playerId={wheelOf}
         title={wheelOf?(inn.batsmen.find(b=>b.id===wheelOf)?.name??"Wagon wheel"):"Wagon wheel"}/>
+      <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"10px",marginTop:"10px"}}>
+        <ShotHeatMap inn={inn} playerId={wheelOf}/>
+        <ShotSpider inn={inn} playerId={wheelOf}/>
+      </div>
       {/* Batting card */}
       <SecLbl>Batting</SecLbl>
       <div style={{border:`1px solid ${D.border}`,borderRadius:D.lg,overflow:"hidden",marginBottom:"12px"}}>
