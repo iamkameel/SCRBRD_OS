@@ -842,6 +842,9 @@ Pass 3:
 18. ~~**SCRBRD-057** NRR simulator~~ — blocked; checking the schema before writing the code found there
     is no aggregate data to simulate from. Re-scoped to a prerequisite entry once "derived or typed" is
     answered. **SCRBRD-058** pitch report screen — independent, low priority, not blocked.
+19. **SCRBRD-060** knockout bracket — independent, clean UI-only gap over an existing `comp_type`, once
+    the round/seed derivation question is answered. **SCRBRD-061** bowling pitch map — blocked on its own
+    capture step (new `ball_event` columns); do not build the chart before the capture exists.
 
 # Blocked Work
 
@@ -858,6 +861,7 @@ Pass 3:
 | SCRBRD-037 duty roster | SCRBRD-034 | readiness is duty status; without the lifecycle the roster can only show names, which is the thing §17.3 says not to do |
 | SCRBRD-042 consent register | an audit of the existing consent reads | the entry may be already-satisfied; writing the change before the audit would be inventing work |
 | SCRBRD-057 NRR simulator | a decision on how `competition_entrant`'s aggregates are derived | no runs/overs-for-and-against exist to simulate from, only a stored final `net_run_rate` — computing a projection from that alone would be a fabricated number |
+| SCRBRD-061 bowling pitch map | its own capture step | no delivery has ever had a real line or length recorded; a chart today would heat-map every innings to one identical cell |
 
 # Pass 3 — Harvested from the `scrbrd_antigravity` prototype
 
@@ -868,7 +872,9 @@ Its own self-audit (`Audit Pack/audit/*.md`, dated two days before this read) ra
 on real data, 43 partially mocked or randomised, 13 fully mocked — read as a warning to verify every
 screen against the wired code before borrowing it, which is what the assessment file does file by file.
 
-Three concrete gaps this tree does not yet cover, checked against the tree before being written here:
+Five concrete gaps this tree does not yet cover, checked against the tree before being written here —
+the first three from the initial pass, the last two from a later follow-up request for "rich data,
+dynamic UI/UX" specifically (`audit/SCRBRD_ANTIGRAVITY_ASSESSMENT.md` Part 5):
 
 ### ~~SCRBRD-056~~ — CLOSED
 **Closed 2026-09-18.** `HandoverSheet` (arm/claim/verify tabs), `apps/web/src/lib/handover.js`, a
@@ -1049,3 +1055,78 @@ coverage via the browser handover walk (SCRBRD-056).
 - [ ] The refusal names which state blocked it
 **Regression risk:** LOW — narrows an existing function's success cases; every currently-passing walk
 claims into `idle` or a genuinely dead `active` lease, neither of which this touches.
+
+### SCRBRD-060
+**Title:** No bracket view for a knockout competition, though the schema already names one
+**Priority:** P3 · **Domain:** Competitions · **Type:** product gap
+**Affected files:** `apps/web/src/views/CompetitionsView.jsx`, `apps/web/src/views/LeagueView.jsx` (or a
+new `BracketView.jsx`); no server or schema changes
+**Affected users:** anyone following a knockout or festival competition
+
+**Current behaviour, checked against `scrbrd_antigravity`:** `competition.comp_type` (`db/00_schema_core.sql`)
+is already `league | knockout | festival`, but every competition screen in this codebase only ever renders
+a league table — there is no bracket UI anywhere, for any `comp_type`. `KnockoutBracket.tsx` in the
+AntiGravity tree is honestly built: every value on a match card (team names, scores, date, winner
+highlighting, a live pulse, a trophy on the final) comes from a typed `BracketRound[]` prop, with an honest
+`"TBD"` fallback for a team or date genuinely not yet known rather than an invented one; the connectors
+between rounds are layout math, not data. `CompetitionViewClient.tsx` passes `bracketRounds` straight
+through with no fabrication at the call site either. Zero fabrication found in this feature, unlike the
+player-passport and pitch-map findings in the same review pass.
+**Expected behaviour:** a competition with `comp_type = 'knockout'` (or `'festival'`) renders a bracket —
+rounds and matches derived from real `fixture`/`match` rows for that competition, not a league table.
+**Root cause:** the data model was built wide enough to name a knockout competition; the view layer was
+only ever built for the league case.
+**Recommended change:** a `BracketView` component modelled on `KnockoutBracket.tsx`'s shape (round columns,
+match cards, "TBD" for not-yet-known teams/dates, connector lines as pure layout), fed by real fixtures for
+the competition rather than a new prop shape invented for the port — the round/seeding structure needs its
+own derivation from `fixture` (e.g. round number, bracket position) since nothing in `db/00`/`db/08`
+currently records bracket position explicitly; that derivation is this entry's real scope, not the card UI.
+**Why it matters:** a real, currently-invisible product gap — a knockout competition is a named, supported
+`comp_type` with no way to see its bracket.
+**Dependencies:** a decision on how bracket position/round is derived or stored for a `fixture` in a
+knockout competition (may need a `db/NN` if round/seed is not already inferable from existing columns).
+**Security / privacy impact:** none — same read data as any other fixture view (`fixture.read`).
+**Data migration required:** possibly, depending on the dependency above.
+**Tests required:** a browser walk against a seeded knockout competition, once the derivation is decided.
+**Acceptance criteria:**
+- [ ] A `comp_type = 'knockout'` competition renders a real bracket, not a league table
+- [ ] Not-yet-known teams or dates show an honest placeholder, never an invented one
+**Regression risk:** LOW — additive view over existing fixture data; does not touch the league path.
+
+### SCRBRD-061
+**Title:** No bowling line/length capture, so a pitch map can only ever show one identical cell
+**Priority:** P3 · **Domain:** Scoring / Analytics · **Type:** capture gap, blocked-then-product
+**Affected files:** `packages/scoring/src/placement.mjs` and the ball-entry UI (capture), a new `db/NN`
+adding line/length columns to `ball_event`, then a new pitch-map chart component (display)
+**Affected users:** coaches and analysts reviewing a bowler's or an innings' line and length
+
+**Current behaviour, checked against `scrbrd_antigravity`:** `PitchMap.tsx` (a line/length heat grid, 4
+lengths × 5 lines) is itself honestly built — a real prop-driven density grid, no fabrication in the
+component. But its one call site, `TabsAnalysis.tsx:92`, feeds it `b?.length || 'Good'` and
+`b?.line || 'Off Stump'` — and nothing anywhere in that codebase's scoring path ever captures a real line
+or length on a delivery, so those are not a fallback for the rare missing case, they are the only value any
+delivery has. Every innings would heat-map to one identical cell. SCRBRD OS is in the same position,
+honestly: `packages/scoring/src/placement.mjs` captures where the ball went AFTER contact (batting
+placement — theta/radius, already powering the wheel, heat map and spider chart from SCRBRD-045/046). It
+captures nothing about where the ball was BOWLED.
+**Expected behaviour:** a scorer can optionally record a delivery's line and length at the point of
+scoring; a pitch-map chart renders real density from those recorded values, with no delivery defaulted into
+a cell it wasn't actually bowled to.
+**Root cause:** the scoring UI and `ball_event` schema were built for outcome and batting-placement capture;
+bowling line/length was never part of that capture step.
+**Recommended change:** **do not build the chart first.** This is capture-plus-chart, not chart alone: (1)
+a line/length selector in the scoring UI, optional like placement capture; (2) new columns on `ball_event`
+for line and length; (3) only then a pitch-map chart reading real values, following the same
+honest-placeholder discipline as SCRBRD-060 (an unrecorded delivery is omitted, never defaulted into a
+cell).
+**Why it matters:** the source's own component is clean, but adopting it as-is would silently import the
+one-cell fabrication its caller has, and SCRBRD OS has no capture to feed an honest version yet either —
+flagged now rather than after a small "just add the chart" misestimate.
+**Dependencies:** SCRBRD-039 (capture profiles) precedent — same shape of problem, optional in-scoring
+capture feeding a chart — worth building alongside or after it rather than as a one-off.
+**Security / privacy impact:** none. **Data migration required:** **YES** — new `ball_event` columns.
+**Tests required:** unit coverage for the new capture path once built; a browser walk once the chart exists.
+**Acceptance criteria:**
+- [ ] Not attempted as chart-only; capture ships first
+- [ ] An innings with no recorded line/length data shows an honestly empty map, never a fabricated one
+**Regression risk:** N/A — nothing built yet.

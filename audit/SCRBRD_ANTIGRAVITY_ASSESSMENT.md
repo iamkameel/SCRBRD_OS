@@ -351,3 +351,35 @@ See `audit/SCRBRD_IMPLEMENTATION_BACKLOG.md`, "Pass 3 — Harvested from the `sc
 prototype," for SCRBRD-056 (handover UI, closed), SCRBRD-057 (NRR simulator, blocked on missing aggregate
 data — see §2.2's correction) and SCRBRD-058 (the pitch-report screen — schema and routes already shipped;
 only the form was missing). Nothing in Part 1 is filed — it is recorded here as a decision, not a task.
+
+---
+
+## Part 5 — Two more, checked on request for "rich data, dynamic UI/UX"
+
+### 5.1 `KnockoutBracket.tsx` — clean, worth building fresh, filed
+
+Zero fabrication in the component itself: every value on the card — team names, scores, date, winner
+highlighting, a live pulse, a trophy on the final — comes from a typed `BracketRound[]` prop, with honest
+`"TBD"` fallbacks for a team or date genuinely not yet known, never an invented one. The bracket-line
+connectors between rounds are pure layout math, not data.
+
+SCRBRD OS already has the anchor for this and draws nothing from it: `competition.comp_type` (`db/00`)
+is `league | knockout | festival`, but every competition screen (`LeagueView.jsx`, `CompetitionsView.jsx`)
+only ever renders a league table. A knockout competition has no bracket anywhere. Filed as **SCRBRD-060**.
+
+### 5.2 A bowling pitch map — the idea is real, the source's data is not, and neither is SCRBRD OS's yet
+
+`PitchMap.tsx` (line/length heat grid, 4 lengths × 5 lines) is, like the bracket, honestly built — a real
+prop-driven density grid, no fabrication in the component. But its one call site
+(`TabsAnalysis.tsx:92`) feeds it `b?.length || 'Good'` and `b?.line || 'Off Stump'` — and nothing anywhere
+in that codebase's scoring path ever captures a real line or length on a delivery, so those defaults are
+not a fallback for the rare missing case, they are the only value any delivery ever has. Every innings
+would heat-map to one identical cell.
+
+SCRBRD OS is in the same position, honestly: `packages/scoring/src/placement.mjs` captures where the BALL
+WENT after contact (batting placement — theta/radius, the wheel, the new heat map and spider chart). It
+captures nothing about where the ball was BOWLED. Building this well is not "add a chart" the way
+SCRBRD-045/046 was — those worked because the placements were already captured. A bowling pitch map needs
+the capture step first: a line/length selector at the point of scoring, a new pair of columns on
+`ball_event`, and only then a chart worth trusting. Filed as **SCRBRD-061**, scoped as capture-plus-chart,
+not chart alone, so it is not mistaken for a small addition.
