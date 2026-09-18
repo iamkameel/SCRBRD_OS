@@ -835,6 +835,13 @@ Pass 2:
 15. **SCRBRD-033** role-entry briefing — the best product item, and derivable rather than written.
 16. Remaining Pass 2 P2/P3 in ID order.
 
+Pass 3:
+
+17. **SCRBRD-056** handover UI — the backend and its tests already exist; this is the highest-value item
+    in Pass 3 because it closes a real product gap rather than adding a new one.
+18. **SCRBRD-057** NRR simulator, **SCRBRD-058** pitch report screen — both independent, low priority,
+    P3 in ID order; neither is blocked.
+
 # Blocked Work
 
 | Task | Blocked by | Reason |
@@ -849,3 +856,118 @@ Pass 2:
 | SCRBRD-036 sponsor viewer | SCRBRD-032 | the ADR is the test a new role has to pass, and this is the first role request it would govern |
 | SCRBRD-037 duty roster | SCRBRD-034 | readiness is duty status; without the lifecycle the roster can only show names, which is the thing §17.3 says not to do |
 | SCRBRD-042 consent register | an audit of the existing consent reads | the entry may be already-satisfied; writing the change before the audit would be inventing work |
+
+# Pass 3 — Harvested from the `scrbrd_antigravity` prototype
+
+`iamkameel/SCRBRD_AntiGravity` is the same Next.js/Firebase lineage as `scrbrd-beta-2` (Pass 2 above),
+diverged much further — 454 component files against beta-2's 121. Full assessment, including the parts
+deliberately **not** adopted and the reasoning for each, is `audit/SCRBRD_ANTIGRAVITY_ASSESSMENT.md`.
+Its own self-audit (`Audit Pack/audit/*.md`, dated two days before this read) rates 65 of its 142 routes
+on real data, 43 partially mocked or randomised, 13 fully mocked — read as a warning to verify every
+screen against the wired code before borrowing it, which is what the assessment file does file by file.
+
+Three concrete gaps this tree does not yet cover, checked against the tree before being written here:
+
+### SCRBRD-056
+**Title:** The scoring-session handover has a full backend and no screen
+**Priority:** P1 · **Domain:** Scoring / Sync · **Type:** product gap
+**Affected files:** new scorer-facing modal, `apps/web/src/scorer/`; no server changes
+**Affected users:** every match with a scorer change mid-innings — the common case is a phone handed to
+whoever is free, not the same person for the whole match
+
+**Current behaviour:** `services/api/handover/scoring-session.mjs` implements the complete protocol —
+`armHandover` issues a code, `claimHandover` takes it, a cross-device diff confirmation compares both
+sides' derived state before the token actually transfers, the epoch increments to invalidate the old
+device. Routes are wired (`server.mjs:340-341`) and a full API walk exists (`WALKS` in
+`tools/run-smoke-api.mjs`). Nothing in `apps/web/src` calls either route — a scorer at the ground has no
+way to trigger a handover through the app today.
+**Expected behaviour:** a modal reachable from the scoring screen: outgoing scorer arms it and sees a
+code with a countdown; incoming scorer enters it and claims it; if the derived states disagree, both are
+shown before anything transfers, per the backend's own diff-confirmation step.
+**Root cause:** the protocol was built and proven (`scoring-session.test.mjs`) before the screen was, and
+nothing has asked for the screen since.
+**Recommended change:** a two-step dialog (generate / claim), modelled on the shape in
+`SCRBRD_ANTIGRAVITY_ASSESSMENT.md` §2.1 — four-box PIN entry, live countdown — with the diff-confirmation
+step that source lacks (its own audit calls its version of this feature "PIN issued, never enforced").
+No PIN embedded in a URL. A browser walk to go with it, since none exists.
+**Why it matters:** the offline/handover story is the one this product's own roadmap already claims
+(`up3`, shipped) — the API-level walk it names is real, but "shipped" reads differently once it is clear
+a human cannot do this from the app itself.
+**Dependencies:** none — the routes and protocol already exist. **Security / privacy impact:** none new;
+same auth as every other scorer action. **Data migration required:** NO.
+**Tests required:** a browser walk exercising arm → claim → diff-confirm → epoch increment through the UI.
+**Acceptance criteria:**
+- [ ] A scorer can arm and claim a handover from the app, with no direct API call
+- [ ] A disagreement between the two devices' derived state is shown before the token transfers
+- [ ] The code is never carried in a URL
+**Regression risk:** LOW — additive UI over an already-tested backend.
+
+### SCRBRD-057
+**Title:** No what-if tool over the standings SCRBRD OS already computes
+**Priority:** P3 · **Domain:** Competitions / Analytics · **Type:** enhancement
+**Affected files:** `apps/web/src/views/LeagueView.jsx` or a new component beside it
+**Affected users:** competition admins and coaches following a run-in
+
+**Current behaviour:** `LeagueView.jsx` renders real, derived net run rate per team. There is no tool for
+"what happens to our NRR and rank if we make 240 off 45 overs against a team bowled out for 180."
+**Expected behaviour:** pick a team, enter a hypothetical result for both sides, see the projected NRR and
+table position — computed on the spot from the real standings already read, never stored, and labelled as
+a hypothetical everywhere it is shown.
+**Root cause:** not built; a genuine gap rather than a corrected mistake.
+**Recommended change:** a client-side simulation, on top of the standings resource already read, modelled
+on `NRRScenarioCalculator.tsx`'s inputs (runs, overs, all-out flag, per side) but with SCRBRD OS's own
+"(hypothetical)" labelling discipline rather than that source's plain "Projected NRR."
+**Why it matters:** small, low-risk, and asked for by exactly the audience (competition admins) already
+served by the screen it sits beside.
+**Dependencies:** none. **Security / privacy impact:** none — no new read, no write.
+**Data migration required:** NO.
+**Tests required:** a unit suite for the NRR-and-rank math against a few hand-checked scenarios.
+**Acceptance criteria:**
+- [ ] The projected figure is visibly and permanently labelled hypothetical
+- [ ] Nothing computed here is written anywhere
+**Regression risk:** LOW.
+
+### SCRBRD-058
+**Title:** The pitch report has a schema, a write route and a read resource, and no screen reaches any of them
+**Priority:** P3 · **Domain:** Facilities / Duty roster · **Type:** product gap
+**Affected files:** `apps/web/src/views/FieldsView.jsx` (the button already there), or the duty roster's
+`ground` slot; no server or schema changes
+**Affected users:** groundskeepers and whoever checks a ground is fit to play on
+
+**Current behaviour, corrected from the first draft of this entry:** this was originally filed as a
+missing table, on the assumption AntiGravity's `LogGroundStatusDialog.tsx` covered ground reporting that
+SCRBRD OS lacked entirely. It does not lack it. `db/08_schema_programme.sql` already has
+`match_pitch_report` (surface, grass, bounce, pace as words; `bounce_rating`/`pace_rating` as OPTIONAL 1–10
+numbers, with its own comment on exactly why a word and a number are not the same fact: *"a groundsman
+says 'two-paced' out loud; a director of sport asking which of five squares has got slower since September
+needs the number"*) and a separate `ground_condition` for the ground itself, deliberately kept apart from
+the per-fixture report so a drainage figure is not copied across every match at that venue and left to
+drift. `events-api.mjs:896` already writes it; `read-api.mjs`'s `pitch_report` resource already reads it
+back; the duty roster's `match_duties` read already unions it in as the `ground` arm's state. **This
+schema is already a stronger worked example of "a word plus an optional number where the number means
+something" than anything in `SCRBRD_ANTIGRAVITY_ASSESSMENT.md` §2.3 proposed inventing** — see Part 3 of
+that document, corrected alongside this entry.
+
+What is actually missing is narrower: `FieldsView.jsx:112` has a "+ Pitch Report" button with no
+`onClick` at all, and nothing in `apps/web/src` calls `useLive("pitch_report", ...)`. The schema, the
+write route and the read resource all exist and reach nothing.
+**Expected behaviour:** the button opens a form over the real columns (surface, grass, bounce, pace,
+the two optional ratings, outfield, favours, covers_on, notes) and posts to the existing route; the
+report reads back through the existing resource, on `FieldsView` and/or the duty roster's `ground` slot.
+**Root cause:** the write and read paths were built for the schema and the duty-roster summary; nobody
+has yet built the form.
+**Recommended change:** wire the existing button to a sheet/modal using the columns as they already are —
+no new enum, no new table, no flattening a word-plus-optional-number field into a single score.
+**Why it matters:** closes a real, narrow gap without repeating the false-precision mistake the source
+material would have imported were the schema not already there to check against.
+**Dependencies:** none for the form itself; SCRBRD-034 (duty lifecycle) for the roster slot to mean more
+than "recorded" once it reads the fuller record.
+**Security / privacy impact:** none — no sensitive data, and the RLS policies (`facility.manage` to write,
+`fixture.read` to read) already exist. **Data migration required:** NO — schema, write route and read
+resource are all already shipped.
+**Tests required:** a browser walk exercising the form against the existing write route and reading the
+result back.
+**Acceptance criteria:**
+- [ ] The "+ Pitch Report" button opens a working form and the report round-trips through the real route
+- [ ] The duty roster's `ground` slot reflects a submitted report, not only "recorded"
+**Regression risk:** LOW — additive UI over an already-shipped schema and routes.
