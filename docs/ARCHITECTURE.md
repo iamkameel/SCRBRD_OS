@@ -20,7 +20,7 @@ the second, `ls db/` is the third.
 | Sync | `packages/sync` | The offline outbox and idempotent replay of ball events to `/api/events`. |
 | Database | `db` | Numbered, forward-only SQL. `00`–`23` are the schema and its corrections; `98` is the pilot seed (invented people, never production); `99` is the live verifier and is not schema. |
 | Tooling | `tools` | `migrate.mjs` (the ledger), `bundle-sql.mjs` (Supabase pastes), `run-all-tests.mjs`, `check-imports.mjs`, `check-bundle.mjs`, `run-smoke-api.mjs` and the `smoke-*.mjs` walks it refuses to leave unlisted. `hooks/guard.mjs` is the PreToolUse guard wired up in `.claude/settings.json`: it closes the applied end of the ledger (§9) to editors and to the shell alike, and refuses the deletes and pushes that cannot be undone. |
-| Docs | `docs` | This file, `AUTH_SPEC.md`, `SCORING_RULES.md`, `SCORING_HANDOVER_SPEC.md`, the reconciliation specs, and `adr/` (0001 scoped assignments, 0002 the coach's medical overview). |
+| Docs | `docs` | This file, `AUTH_SPEC.md`, `SCORING_RULES.md`, `SCORING_HANDOVER_SPEC.md`, the reconciliation specs, and `adr/` (0001 scoped assignments, 0002 the coach's medical overview, 0003 job titles are not roles). |
 | Deploy | `DEPLOYING.md`, `render.yaml`, `Dockerfile`, `.github/workflows` | Render (or Cloud Run) for the API serving the built client from one origin; Supabase (or Cloud SQL) for Postgres; CI on every PR. |
 
 ## 2 · The spine: one log, everything derived
@@ -108,6 +108,15 @@ The client's `can()` and the database's policies come from the **same** policy
 package, so they cannot drift — CI regenerates the SQL and fails on any
 difference. The API handlers contain no authorization of their own: they run
 under the principal and let the database decide.
+
+**What does not get a layer.** A job title is not a role unless it needs
+different data access or different approval authority — ADR 0003, which also
+says where the others go instead (a scope, a record of its own like `honour`,
+or a specialism). Every role is priced in `roles.mjs`, the RLS matrix, `db/99`
+and a production paste, so the question is worth asking before the line is
+written rather than after. `packages/policy/test/separation.test.mjs` asserts
+the boundaries the roster is supposed to keep, including the ones nobody has
+written down anywhere else.
 
 ## 5 · Trust boundaries
 

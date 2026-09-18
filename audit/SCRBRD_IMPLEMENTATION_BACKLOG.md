@@ -425,9 +425,15 @@ SCRBRD-034's duty lifecycle needs in order to expire a fixture-scoped role.
 - [ ] A test asserts at least one write refused purely on state, with role and scope both valid
 **Regression risk:** LOW as an inventory; MEDIUM if it becomes a signature change.
 
-### SCRBRD-032
+### ~~SCRBRD-032~~ — CLOSED
 
-**Title:** ADR — job titles that must not become RBAC roles
+> Closed. `docs/adr/0003-job-titles-are-not-roles.md`, cross-referenced from
+> `ARCHITECTURE.md` §1 and §4. The two tests are different data access or different
+> approval authority; the three alternatives are a scope, a record of its own, or a
+> specialism. Captaincy already followed the second — `honour.kind` in `db/08` — which
+> is the worked example the ADR points at rather than a pattern it invents.
+
+**Title:** ~~ADR — job titles that must not become RBAC roles~~
 **Priority:** P1 · **Domain:** RBAC · **Type:** documentation
 **Affected files:** `docs/adr/0003-job-titles-are-not-roles.md` (new)
 **Affected users:** none directly; governs every future role request
