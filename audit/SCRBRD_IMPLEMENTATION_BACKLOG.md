@@ -334,7 +334,18 @@ and §21.5 both go red) and by emptying the recorded-exception list (§11.2 repo
 - [x] The four prose-only rules are printed with the reason each resists assertion
 **Regression risk:** NONE — no production code path is touched.
 
-### SCRBRD-029
+### ~~SCRBRD-029~~ — CLOSED, by SCRBRD-054 rather than as written
+
+**Closed 2026-09-18.** `db/24_amend_request.sql` gives the request its own capability,
+`scoring.amend.request`, held by the scorer and superadmin and nobody else. `directorofsport` and
+`competitionadmin` keep `scoring.correct` — session recovery, the quarantine queue, DRS entry — and
+never receive the request, so the requester and approver sets are disjoint without a withdrawal.
+`KNOWN` in `separation.test.mjs` is empty; the verifier proves Sarah cannot file and the scorer can;
+`smoke-amend` proves the same through the API and that the function's own guard still holds when a
+request is planted in her name past the policy. **Nothing changes on production until `db/24` is
+pasted**, and `FROZEN_THROUGH` goes to 24 when it has been. The entry below is left as it was written,
+because the reverted attempt is the record of why the obvious fix was wrong.
+
 
 **Title:** One pair of hands can request and approve a correction to a locked match
 **Priority:** P1 · **Domain:** RBAC / Scoring · **Type:** security
@@ -388,9 +399,9 @@ a `WITHDRAWN_SINCE_01` entry in the generator + a production paste (ARCHITECTURE
 the next ledger file rather than alone.
 **Tests required:** `separation.test.mjs` with `KNOWN` emptied; `authorize.test.mjs`; the RLS-output diff.
 **Acceptance criteria:**
-- [ ] Neither role holds both halves
-- [ ] `KNOWN` is empty and the suite is green
-- [ ] Production verify bundle returns OK in every column
+- [x] Neither role holds both halves
+- [x] `KNOWN` is empty and the suite is green
+- [ ] Production verify bundle returns OK in every column — after `db/24` is pasted
 **Regression risk:** MEDIUM — a DoS who currently corrects a match by themselves will need a scorer to
 request it. That is the point, and it needs saying to the pilot schools before it ships.
 
@@ -688,14 +699,23 @@ already-correct. Risk LOW. Migration UNKNOWN until the audit.
   selection exist. **Caveat that belongs in the entry:** an auto-selection must show its rationale or it is
   a black box a coach cannot defend to a parent — the same standard applied to a selection decision
   instead of a statistic. Risk MEDIUM, and mostly on the explanation rather than the arithmetic.
-- **SCRBRD-055** — Scouting consent is enforced and invisible. `player_scouting_consent` gates
+- ~~**SCRBRD-055**~~ — **CLOSED** in #29: `ScoutingConsentSection` on Settings › Passport over a
+  `scouting_consent` read, with the toggle writing through the existing route. As filed:
+  Scouting consent is enforced and invisible. `player_scouting_consent` gates
   `scouting_candidates()` correctly and is written through `/api/players/:id/scouting-consent`, but
   no screen draws it: a parent cannot see whether their son is visible to accredited scouts, nor
   change their mind, without someone making an API call for them. Consent that cannot be inspected
   by the person who gave it is consent in name. The passport equivalent is drawn in Settings and is
   the shape to copy. Files: a section on Settings › Passport or the player's own profile, reading a
   new `scouting_consent` resource. Risk LOW. Migration NO — the table and the write route exist.
-- **SCRBRD-054** — `scoring.correct` is four capabilities wearing one name: force-release a stuck
+- ~~**SCRBRD-054**~~ — **CLOSED.** `scoring.amend.request` in `capabilities.mjs`, on the scorer in
+  `roles.mjs`; `ADDED_SINCE_01` in the generator is the mirror of `WITHDRAWN_SINCE_01` and keeps
+  `db/01` byte-identical (hash checked before and after); `db/24_amend_request.sql` inserts the
+  catalogue row, the two grants and recreates `scoring_amendment_insert` on the new name, with its
+  own assertion block; `rls.test.mjs` B2 holds the mirror honest (falsified by swapping a holder in
+  db/24); `db/99` and `smoke-amend` prove it live (both falsified against the pre-db/24 policy).
+  `scoring.correct` stays with the three roles that recover a session. Awaiting paste.
+  As filed: `scoring.correct` is four capabilities wearing one name: force-release a stuck
   lease, read the quarantine queue, write a DRS review, and request an amendment. The first three
   are operational recovery and belong with whoever is senior at the ground; the fourth is half of a
   separation-of-duties pair and belongs with the person who noticed the mistake. Because they share
@@ -780,7 +800,7 @@ SCRBRD-005 (AI pseudonyms) — independent
 SCRBRD-024 (CI) — independent, protects everything after it
 
 Pass 2:
-SCRBRD-028 (invariants) ──▶ SCRBRD-029 (split request/approve) ──┐
+SCRBRD-028 (invariants) ──▶ SCRBRD-029 ✓ via SCRBRD-054 ✓ (db/24) ──┐
 SCRBRD-030 (sensitivity tiers) ───────────────────────────────────┴▶ ride together on one db/NN
 SCRBRD-031 (workflow-state) ──▶ SCRBRD-034 (duty lifecycle) ──▶ SCRBRD-037 (duty roster)
 SCRBRD-032 (ADR) ──▶ SCRBRD-036 (sponsor viewer)   [the ADR is the test the new role must pass]
@@ -808,8 +828,8 @@ Pass 2:
 11. **SCRBRD-032** the ADR, before the next role request rather than after it.
 12. **SCRBRD-030** sensitivity tiers; **SCRBRD-031** workflow-state inventory — both policy-side, both
     unblock the entries behind them.
-13. **SCRBRD-029** split request/approve — **rides with the next `db/NN`**, never alone, and the pilot
-    schools are told before it ships.
+13. ~~**SCRBRD-029** split request/approve~~ — done as `db/24` via SCRBRD-054; the pilot schools are
+    told before it is pasted, because a head of sport who filed corrections herself will now need a scorer to.
 14. **SCRBRD-035** escalation roster; **SCRBRD-042** consent audit — independent, cheap, and -042 may
     close itself.
 15. **SCRBRD-033** role-entry briefing — the best product item, and derivable rather than written.
@@ -824,7 +844,7 @@ Pass 2:
 | SCRBRD-020 code splitting | SCRBRD-006 | Firebase is the largest single removable chunk; split after it is lazy |
 | SCRBRD-027 delete legacy-roles | SCRBRD-001, -011 | login page and view gates still read it |
 | SCRBRD-007 search_path | SCRBRD-004 | both add ledger files; sequence them to avoid a ledger conflict on production |
-| SCRBRD-029 split request/approve | a `db/NN` slot | a capability change after go-live needs `roles.mjs` + a ledger file + a `WITHDRAWN_SINCE_01` entry + a production paste; not worth a file of its own |
+| ~~SCRBRD-029 split request/approve~~ | `db/24` | done — it took a new capability, so it got its own file after all, and `ADDED_SINCE_01` in the generator for it |
 | SCRBRD-034 duty lifecycle | SCRBRD-031 | `delegated` and an expiring fixture role are workflow states; naming the layer comes first |
 | SCRBRD-036 sponsor viewer | SCRBRD-032 | the ADR is the test a new role has to pass, and this is the first role request it would govern |
 | SCRBRD-037 duty roster | SCRBRD-034 | readiness is duty status; without the lifecycle the roster can only show names, which is the thing §17.3 says not to do |

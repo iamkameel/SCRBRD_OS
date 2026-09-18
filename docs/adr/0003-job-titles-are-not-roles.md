@@ -34,8 +34,8 @@ and no other operational role does or should (ADR 0002). That is a role.
 
 **Different approval authority.** Does this title decide something, or approve
 something another role requested? `scoring.amend.approve` exists separately
-from `scoring.correct` because an approval one person can give themselves is
-not an approval. A title that is the second signature on something is a role.
+from `scoring.amend.request` because an approval one person can give themselves
+is not an approval. A title that is the second signature on something is a role.
 
 If neither is true, the title is a label, and labels do not need a row in the
 permission matrix.
@@ -48,8 +48,8 @@ Every role is priced in four places, and only the first is cheap:
 - the RLS matrix, because every policy that names roles now has one more case;
 - `db/99_rls_verify.sql`, which asserts the live behaviour of that matrix;
 - **and a production paste.** A capability change after go-live is `roles.mjs`
-  plus a new `db/NN` plus a `WITHDRAWN_SINCE_01` entry in the generator plus a
-  paste into Supabase (`docs/ARCHITECTURE.md` §9). There is no version of
+  plus a new `db/NN` plus a `WITHDRAWN_SINCE_01` or `ADDED_SINCE_01` entry in
+  the generator plus a paste into Supabase (`docs/ARCHITECTURE.md` §9). There is no version of
   adding a role that is a code change only.
 
 There are 25 roles, and taking something back costs more than granting it.

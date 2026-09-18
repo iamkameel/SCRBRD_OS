@@ -138,9 +138,11 @@ Thinner:
   `archived` do not exist.
 - ~~There is no `amendments` table.~~ **Built.** `scoring_amendment` +
   `scoring_amendment_decide()`. §7.3 and §7.4 hold: a correction to a completed
-  match is requested by somebody holding `scoring.correct` and applied only when
-  somebody holding `scoring.amend.approve` — a separate capability, deliberately
-  **not** held by the scorer — approves it.
+  match is requested by somebody holding `scoring.amend.request` (`db/24`; it
+  rode on `scoring.correct` before that, which also gave the two roles that
+  approve the power to request) and applied only when somebody holding
+  `scoring.amend.approve` — a separate capability, deliberately **not** held by
+  the scorer — approves it.
 
   Two findings from building it. First, an amendment after lock was not merely
   unapproved, it was **impossible**: `ball_event_insert` demands an active

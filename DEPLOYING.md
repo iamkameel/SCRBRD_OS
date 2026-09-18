@@ -427,7 +427,12 @@ migrator refuses something.
    a database that already has `db/01`, and an entry in `WITHDRAWN_SINCE_01`
    in `services/api/rls/generate-rls.mjs` so the generator keeps emitting the
    frozen file exactly as shipped. `db/21_coach_medical_overview.sql` is the
-   worked example. The same shape corrects anything else a generated file got
+   worked example. A **new** capability is the mirror image: an entry in
+   `ADDED_SINCE_01` keeps it out of the emitted `db/01` altogether, and the
+   `db/NN` it names inserts the catalogue row, the grants and whatever policy
+   it was introduced for — `db/24_amend_request.sql` is that example, and
+   `rls.test.mjs` checks the file carries a row for every holder in
+   `roles.mjs`. The same shape corrects anything else a generated file got
    wrong: `db/10` corrects `db/08` without touching it.
 
 3. **The verifier.** `db/99_rls_verify.sql` is not schema and is never

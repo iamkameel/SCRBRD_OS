@@ -255,8 +255,11 @@ const BUNDLES = {
   // still holds none of the sensitive splits — no PII, no medical, no
   // discipline — so they see the team sheet and the sporting profile behind it
   // and nothing else about the child.
+  // scoring.amend.request and not scoring.amend.approve: the scorer files the
+  // correction to a locked match and somebody else signs it (db/24).
   scorer: ["fixture.read", "team.read", "news.read", "player.profile.read",
-           "scoring.start", "scoring.edit", "scoring.finalise", "scoring.correct"],
+           "scoring.start", "scoring.edit", "scoring.finalise", "scoring.correct",
+           "scoring.amend.request"],
   official: ["fixture.read", "team.read", "news.read", "officiating.report", "discipline.write"],
 
   // ── The people the data is about ──

@@ -1228,7 +1228,7 @@ BEGIN
 
   -- ── The owner's key reaches every tenant ──────────────────────
   --
-  -- `superadmin` holds all 81 capabilities on an assignment naming no school.
+  -- `superadmin` holds all 82 capabilities on an assignment naming no school.
   -- It is the one role in the model that is not least-privilege, and these
   -- assertions are what stop it becoming one by accident: a bundle that
   -- quietly stopped being "everything" would leave the operator locked out of
@@ -1535,6 +1535,37 @@ BEGIN
   PERFORM _as(U_SARAH);
   SELECT count(*) INTO n FROM player_masked WHERE school_id = HIL;
   PERFORM _assert(n > 0, 'the hour hand stopped an ordinary appointment');
+
+  -- ── SCRBRD-054: a correction takes two people, in the database ──
+  --
+  -- db/02's INSERT policy on scoring_amendment asked for `scoring.correct`,
+  -- which the director of sport holds for session recovery and which also
+  -- made her the requester of the corrections she approves. db/24 moved the
+  -- request onto `scoring.amend.request`, held by the scorer. Proven here as
+  -- Postgres enforces it, not as roles.mjs describes it: Sarah, who approves,
+  -- cannot file; the scorer, who files, can — and Sarah still holds what
+  -- `scoring.correct` recovers, because taking that away was the wrong fix.
+  PERFORM _assert(
+    NOT EXISTS (SELECT 1 FROM role_capability
+                 WHERE role IN ('directorofsport', 'competitionadmin')
+                   AND capability = 'scoring.amend.request'),
+    'an approver holds the request as well');
+  PERFORM _assert(
+    (SELECT count(*) FROM role_capability
+      WHERE role IN ('directorofsport', 'competitionadmin') AND capability = 'scoring.correct') = 2,
+    'session recovery was withdrawn from the roles that need it at the ground');
+  PERFORM _as(U_SARAH);
+  BEGIN
+    INSERT INTO scoring_amendment (match_id, school_id, target_key, reason, requested_by)
+    VALUES ('77777777-0000-0000-0000-000000000001', HIL, 'verify-key', 'Filed by an approver.', U_SARAH);
+    PERFORM _assert(false, 'a director of sport filed an amendment request');
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+  PERFORM _as(U_SCORER);
+  INSERT INTO scoring_amendment (match_id, school_id, target_key, reason, requested_by)
+  VALUES ('77777777-0000-0000-0000-000000000001', HIL, 'verify-key', 'Filed by the scorer.', U_SCORER);
+  SELECT count(*) INTO n FROM scoring_amendment WHERE target_key = 'verify-key' AND requested_by = U_SCORER;
+  PERFORM _assert(n = 1, 'the scorer could not file an amendment request');
 
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
