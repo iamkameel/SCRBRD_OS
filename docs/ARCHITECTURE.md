@@ -109,6 +109,22 @@ package, so they cannot drift — CI regenerates the SQL and fails on any
 difference. The API handlers contain no authorization of their own: they run
 under the principal and let the database decide.
 
+**When, and why it is not a fifth row.** `Roles&Duty.md` §2.1 asks for a fourth
+authorisation control beside role, scope and relationship: *when* — the workflow
+state the record is in. SCRBRD OS enforces it, and deliberately not here.
+Thirty trigger functions in `db/` refuse something; twenty-nine of them consult
+no capability at all. A withdrawn honour is not edited, a fixture's sport is
+frozen once it has a ball log, `ball_event` is append-only — and the rule is the
+same for a scorer and for `superadmin`, because it is about the record and not
+about the reader. That is stronger than making it a control alongside the
+others, where a sufficiently privileged role could be granted past it: a rule
+any capability can bypass is a privilege, not an invariant. The one refusing
+trigger that does gate on a capability is `sponsorship_exclusivity_gate`, which
+is an approval by design — `sponsorship.exclusivity.waive` exists so a
+governance role can take that decision and be named taking it.
+`packages/policy/test/invariants.test.mjs` keeps the split honest: an invariant
+that acquires a capability check has become a privilege, and goes red there.
+
 **What does not get a layer.** A job title is not a role unless it needs
 different data access or different approval authority — ADR 0003, which also
 says where the others go instead (a scope, a record of its own like `honour`,

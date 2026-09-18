@@ -5,6 +5,7 @@ import { canScore, holdsCapability } from "../rbac/index.js";
 import { Badge, Btn, Card, Pill, SectionHeader, StatusDot } from "../ui/primitives.jsx";
 import { ScorecardModal, WeatherChip } from "./shared.jsx";
 import { OppositionDossier } from "./dossier.jsx";
+import { DutyRoster } from "./duties.jsx";
 import { useRows, useWeather } from "../lib/live.js";
 
 function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
@@ -62,7 +63,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
             const isLive = m.status==="live";
             const isSel = selMatch?.id===m.id;
             return (
-              <Card key={m.id} onClick={()=>setSelMatch(isSel?null:m)} sx={{
+              <Card key={m.id} data-testid={`match-card-${m.id}`} onClick={()=>setSelMatch(isSel?null:m)} sx={{
                 background:isLive?`linear-gradient(135deg,${D.emerald}08,${D.surf1})`:D.surf1,
                 border:`1px solid ${isSel?D.sky+"55":isLive?D.emerald+"22":D.border}`,cursor:"pointer",
               }}>
@@ -134,6 +135,13 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
                 <button onClick={()=>setSelMatch(null)} style={{background:"none",border:"none",cursor:"pointer",color:D.textMuted,fontSize:"16px"}}>✕</button>
               </div>
               {w&&<div style={{marginBottom:"12px"}}><WeatherChip w={w}/></div>}
+              {/* SCRBRD-037. The live answer to the question the blocks below
+                  gesture at. Those read demo constants — STAFF, GROUNDS,
+                  selMatch.transport — which are null for every real fixture,
+                  the same shape of problem the scorecard button had. This
+                  reads match_duties through the choke point and says "nothing
+                  on record" where nothing is, rather than falling silent. */}
+              <DutyRoster matchId={selMatch.id} role={role}/>
               {ground&&pitch&&(
                 <div style={{marginBottom:"12px",background:D.surf2,borderRadius:D.md,padding:"10px 12px",border:`1px solid ${D.teal}22`}}>
                   <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.teal,letterSpacing:"0.08em",marginBottom:"7px"}}>PITCH REPORT</div>

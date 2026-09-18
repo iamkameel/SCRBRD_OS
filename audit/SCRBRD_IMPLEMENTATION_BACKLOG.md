@@ -351,9 +351,36 @@ the escalation target for a scoring dispute, so the approval is the capability t
 `scoring.correct` is the redundant one in that pair of hands.
 **Root cause:** both roles were given the scoring block wholesale; the two-capability split was applied to
 the scorer and not re-applied upward.
-**Recommended change:** drop `scoring.correct` from `directorofsport` and `competitionadmin`, keeping
-`scoring.amend.approve`. Then delete the entry from `KNOWN` in `separation.test.mjs` — the suite fails
-until it is removed, which is the intended sequence.
+**Recommended change:** ~~drop `scoring.correct` from `directorofsport` and `competitionadmin`~~ —
+**tried, and wrong. Reverted 2026-09-18.** `db/24_scoring_approval_split.sql` was written, the
+withdrawal went through `WITHDRAWN_SINCE_01` correctly (db/01's hash did not move, which is the
+check that the mechanism worked), the migration applied cleanly and the live rows were right. Then
+the walks ran and three went red: `handover-crash` (5), `amend` (2), `drs` (13).
+
+`scoring.correct` gates **four unrelated things**, and only the last is what its name says:
+
+| | |
+|---|---|
+| `db/02:453` | force-releasing a stuck scoring lease |
+| `db/02:252` | reading the quarantine queue |
+| `db/09:504` | writing a DRS review |
+| `db/02:790` | the amendment request itself |
+
+So withdrawing it does not narrow self-approval. It strips a Director of Sport of session
+recovery, quarantine visibility and DRS entry — on a Saturday morning, when the match is stuck and
+he is the only person at the ground with the authority to fix it. That is a worse outcome than the
+crossing it was meant to close.
+
+The real defect is the overloading (SCRBRD-054). **The fix is to split the request onto its own
+capability** — `scoring.amend.request`, held by the scorer — leaving `scoring.correct` for the
+three operational acts. That is a new capability, three policy changes, a `db/NN` and a paste,
+which is a larger piece of work than this entry assumed and is why it is being re-scoped rather
+than retried.
+
+Worth keeping from the attempt: the withdrawal machinery is proven end to end, and the assertion
+that caught it was not the one I expected. An earlier draft asserted that nobody who can append
+balls may also approve an amendment; that is larger than §11.2 requires and was narrowed to the
+real invariant — the requester and approver sets must be disjoint.
 **Why it matters:** the guard the codebase says it has, in the file that says it, is not the guard it has.
 **Dependencies:** SCRBRD-028 (records it). **Security / privacy impact:** closes a self-approval path.
 **Data migration required:** **YES** — a capability change after go-live is `roles.mjs` + a new `db/NN` +
@@ -367,7 +394,20 @@ the next ledger file rather than alone.
 **Regression risk:** MEDIUM — a DoS who currently corrects a match by themselves will need a scorer to
 request it. That is the point, and it needs saying to the pilot schools before it ships.
 
-### SCRBRD-030
+### SCRBRD-030 — PART ONE DONE
+
+> **Coherence landed; the ordered scale does not.** `packages/policy/test/sensitivity.test.mjs`
+> now joins `SENSITIVE` (capabilities) to `RESTRICTED_FIELDS` (the logger's watched columns)
+> through the mask map, so the two lists cannot drift apart in silence. 16 assertions.
+> It found `discipline.read` and `discipline.write` gating nothing at all — see SCRBRD-053 —
+> and replaced a vacuous line in `rls.test.mjs` that claimed the join while checking spelling.
+>
+> The five-level scale is still open and is the rest of this entry. It needs a judgement call
+> per capability across all 81, and the decision that matters is whether `SENSITIVE` becomes
+> `level >= 2` — which would WIDEN its membership (adding `player.age.read`,
+> `guardian.link.manage`, `medical.status.read`, the invoice reads and more) and therefore
+> widen what the deck claims is logged. That is a behaviour change, not a classification, and
+> it wants deciding rather than assuming.
 
 **Title:** Sensitivity tiers 0–4, refining the binary `SENSITIVE` set into an ordered scale
 **Priority:** P1 · **Domain:** RBAC / Privacy · **Type:** architecture
@@ -398,9 +438,22 @@ empty if no expression changed.
 **Regression risk:** LOW if the RLS output diff stays empty; MEDIUM if it does not, which would mean the
 classification disagrees with a shipped policy and is itself the finding.
 
-### SCRBRD-031
+### ~~SCRBRD-031~~ — CLOSED, with the premise corrected
 
-**Title:** Name workflow-state as the fourth authorisation layer
+> **The inventory said the entry was wrong, which is what an inventory is for.**
+> Workflow state is not a missing authorisation layer here. It is enforced BELOW
+> authorisation, as a record invariant in the database: of the thirty refusing trigger
+> functions in `db/`, twenty-nine consult no capability at all, so the rule is the same
+> for a scorer and for `superadmin`. That is stronger than beta-2's model, where "when"
+> sits beside role and scope and is therefore something a privileged role could be
+> granted past. The single capability gate, `sponsorship_exclusivity_gate`, is an
+> approval by design and is recorded as one.
+>
+> No signature change to `authorize()`, which is what this entry existed to decide.
+> `packages/policy/test/invariants.test.mjs` (15 assertions) holds the split, and
+> `ARCHITECTURE.md` §4 states it. SCRBRD-034's duty lifecycle no longer depends on this.
+
+**Title:** ~~Name workflow-state as the fourth authorisation layer~~
 **Priority:** P1 · **Domain:** RBAC · **Type:** architecture / documentation
 **Affected files:** `packages/policy/src/authorize.mjs`, `docs/ARCHITECTURE.md`, write handlers
 **Affected users:** none directly
@@ -461,7 +514,31 @@ cost of getting one wrong.
 
 ## P2 — Concepts the tree does not have
 
-### SCRBRD-033 — Role-entry briefing: what this role may not do, and who it hands off to
+### ~~SCRBRD-033~~ — CLOSED, at a third of the size, and with my own claim corrected
+
+> **`ungrantedCapabilities()` does not do what this entry said it did.** It returns
+> capabilities NO role grants — dead weight across the roster — not the complement for one
+> role. The entry claimed the "must not" list was derivable from it. Misread; recorded rather
+> than quietly rewritten, because the same misreading produced the harvest write-up's claim too.
+>
+> The idea survived the correction, the shape did not. A role's complement IS trivially
+> computable, and it is **useless**: a scorer lacks seventy-three capabilities. Two narrowings
+> were measured against the real roster before anything was built —
+> sensitive-not-held gives 3–9 lines per role, held-by-few-roles gives 11–13 and mostly
+> irrelevant ones. The first is the boundary that matters and the second was dropped.
+>
+> `boundaries(role)` in `roles.mjs` returns the sensitive capabilities a role does not hold,
+> each naming who does; break-glass accounts are excluded from the hand-off with the reason.
+> `BoundariesSection` draws it on Settings › Me. Nothing is written per role: move a capability
+> and the text moves with it. 8 assertions in `separation.test.mjs`, 6 in `smoke-browser-read`,
+> and the browser ones were falsified by granting `coach` `medical.details.read` and rebuilding
+> — the walk went red, which is the proof they track the policy rather than a string.
+>
+> Not built, and not needed: the executive summary and recommended display mode from beta-2's
+> version. Settings › Roles already lists what every role may do, thoroughly. What was missing
+> was only the second person — what **you** may not do, and who decides instead.
+
+**Title:** ~~Role-entry briefing: what this role may not do, and who it hands off to~~
 `roles.mjs` encodes what a role *may* do. Nothing tells a person what they may **not** do or who receives
 the next decision. `Roles&Duty.md` §4–§9 gives every role a *Must not* and a *Hand-offs* section, and
 beta-2 renders it at sign-in (`src/ai/flows/onboarding-briefing.ts`) as summary, responsibilities,
@@ -480,7 +557,21 @@ longer retaining active scoring permission."* `role_assignment` already carries 
 currently takes on trust. `delegated` is the state handover has no name for. Files: new `db/NN`,
 `packages/policy/src/authorize.mjs`. Depends on SCRBRD-031. Risk MEDIUM. **Migration YES.**
 
-### SCRBRD-035 — Operational escalation roster
+### SCRBRD-035 — Operational escalation roster — **RE-SCOPED, do not import as written**
+
+> Checked the 18 rows against the real roster before building. **Four of the roles they escalate
+> TO do not exist here** — Support Admin, Compliance/Safeguarding Officer, Audit Reviewer, Match
+> Referee/Commissioner — and they are the terminal target in most rows. Importing the table
+> wholesale produces a screen telling a school administrator to escalate to nobody, which is worse
+> than no screen.
+>
+> Adding those four roles is not a shortcut either: each has to pass ADR 0003's two tests first,
+> and at least Compliance/Safeguarding plausibly would.
+>
+> What is buildable now is narrower and mostly already built: `boundaries(role)` answers "I cannot
+> do this, who can" by derivation, for every sensitive capability. The rows this roster adds beyond
+> that are the ones routing to the four missing roles. So the useful order is ADR 0003 tests →
+> whichever of those roles passes → then this. Left open and depending on that rather than closed.
 §12: 18 rows of issue → primary owner → escalates to (guardian-link dispute → School Admin →
 Safeguarding; locked-score dispute → Match Commissioner → league governance; suspected unauthorised access
 → Compliance → Super Admin **and** Audit Reviewer). `tools/smoke-escalation.mjs` is about *privilege*
@@ -540,7 +631,27 @@ limits themselves are already here (`bowling_directive` with age bands in `db/08
 presentation over existing data plus a clause store. Files: `RulebookView.jsx`, new `db/NN` for clauses.
 Risk LOW. **Migration YES** if clauses are stored rather than shipped in code.
 
-### SCRBRD-042 — Consent register: `redacted` as a terminal state
+### ~~SCRBRD-042~~ — CLOSED as already-correct, which is what the entry said might happen
+
+> Audited both consent surfaces. Neither lets absence and refusal read the same, and the
+> enforcement is stronger than this entry assumed.
+>
+> **`passport_consent`** keeps withdrawn rows — `withdrawn_at` and `withdrawn_by`, never a delete —
+> and `SettingsView` draws them dimmed, labelled `withdrawn`, carrying both dates ("named 3 Mar ·
+> withdrawn 14 Jun"), with live grants sorted first. A partial unique index keeps one live grant per
+> player per school while leaving the history intact.
+>
+> **`player_scouting_consent`** uses an explicit `consent_state IN ('granted','withdrawn')` with
+> one row per player, so a withdrawal is an UPDATE and not a disappearance. And it is **enforced**:
+> `scouting_candidates()` inner-joins on `consent_state = 'granted'`, so a withdrawn consent and a
+> consent never given both fall out — the same inner-join shape that keeps cross-school pairings out
+> of match-ups. `smoke-scouting` covers the primitive including that a school cannot consent on a
+> family's behalf; `smoke-passport` covers the authorisation side.
+>
+> **One real gap, and it is not this one:** `player_scouting_consent` is drawn on no screen, so a
+> family cannot see or change whether their son may be scouted. Filed as SCRBRD-055.
+
+**Title:** ~~Consent register: `redacted` as a terminal state~~
 `GovernanceView.tsx` models consent as `GRANTED | PENDING | REDACTED`. Consent appears in 240 places here;
 what needs checking is whether **withdrawn** consent is visibly withdrawn rather than simply absent.
 Absence and refusal reading the same is the failure mode — the same distinction the dossier makes between
@@ -577,6 +688,32 @@ already-correct. Risk LOW. Migration UNKNOWN until the audit.
   selection exist. **Caveat that belongs in the entry:** an auto-selection must show its rationale or it is
   a black box a coach cannot defend to a parent — the same standard applied to a selection decision
   instead of a statistic. Risk MEDIUM, and mostly on the explanation rather than the arithmetic.
+- **SCRBRD-055** — Scouting consent is enforced and invisible. `player_scouting_consent` gates
+  `scouting_candidates()` correctly and is written through `/api/players/:id/scouting-consent`, but
+  no screen draws it: a parent cannot see whether their son is visible to accredited scouts, nor
+  change their mind, without someone making an API call for them. Consent that cannot be inspected
+  by the person who gave it is consent in name. The passport equivalent is drawn in Settings and is
+  the shape to copy. Files: a section on Settings › Passport or the player's own profile, reading a
+  new `scouting_consent` resource. Risk LOW. Migration NO — the table and the write route exist.
+- **SCRBRD-054** — `scoring.correct` is four capabilities wearing one name: force-release a stuck
+  lease, read the quarantine queue, write a DRS review, and request an amendment. The first three
+  are operational recovery and belong with whoever is senior at the ground; the fourth is half of a
+  separation-of-duties pair and belongs with the person who noticed the mistake. Because they share
+  a name they cannot be held separately, which is what makes SCRBRD-029 unfixable as written.
+  Splitting the request out (`scoring.amend.request`) is the prerequisite for that entry. Files:
+  `capabilities.mjs`, `roles.mjs`, `db/02`'s three policies via a new `db/NN`, `db/09` regenerated.
+  Risk MEDIUM. **Migration YES.** Discovered by writing db/24 and running the walks.
+- **SCRBRD-053** — `discipline.read` and `discipline.write` gate nothing. Six roles hold one or
+  both (`superadmin`, `principal`, `directorofsport`, `schooladmin`, `selfaccess`,
+  `competitionadmin` read; `superadmin`, `directorofsport`, `official` write) and there is no disciplinary
+  record in the schema: no table, no policy, no masked column, no read resource. So the
+  capability grants nothing today, and on the day a record arrives the reader of one would not
+  be logged, because the logger watches columns and there are none to watch. Found by
+  `sensitivity.test.mjs`, recorded there in `NOT_YET_IMPLEMENTED` with the reason, and the
+  suite fails if either starts being referenced without the entry being removed. Either build
+  the record or drop the capabilities — what should not persist is a role bundle that promises
+  something the schema cannot deliver. Files: a new `db/NN`, `tables.mjs`, `read-api.mjs`.
+  Risk LOW. **Migration YES** if built.
 - **SCRBRD-052** — A browser walk that scores an innings to its end. `smoke-browser-sync` opens the real
   scorer on a real match and taps four deliveries of twenty overs, so nothing exercises what happens when an
   innings completes: not the review gate (SCRBRD-038), not the innings break, not the result screen, not the
@@ -589,6 +726,25 @@ already-correct. Risk LOW. Migration UNKNOWN until the audit.
   exposing the file** — §11.3 rendered as a feature, and `TrainingView`'s drill library is where it goes),
   and `confidence: HIGH | MODERATE | LOW` per recommendation, which is `evidence_label()` under another
   name. Risk LOW.
+
+## Roadmap corrections, 2026-09-18
+
+`up16` (Caps, Honours & Milestones on the Passport) was listed **partial — "simply not shown"**.
+It has been shown since it was built: `recognition()` in `db/08` returns all three families,
+`RecognitionCard` renders on the player profile (`ProfilesView.jsx:126`), `smoke-recognition`
+carries 73 assertions and `smoke-browser-read.mjs:769` asserts the card in a real browser.
+Moved to **shipped**, which takes the public count from 10 to 11.
+
+The other three partials were checked and are accurate: `up11` has no year-on-year view over
+seasons, `up23`'s platform side is an API route with no screen (the school side in Settings is
+the half that exists), and `up24`'s DRS panel is drawn nowhere. `up6` and `up10` are labelled
+*effort Low* and are not — the first needs a new table and therefore a production paste, the
+second a PDF library against 161 KB of entry-chunk headroom.
+
+Both directions are now checked. `apps/web/test/roadmap.test.mjs` holds shipped items to naming
+a walk that exists and is registered, and partials to naming a real identifier from
+`services/api` that no view references. The second half is what up16 needed and the first
+version did not have.
 
 ## Not harvested, and why
 

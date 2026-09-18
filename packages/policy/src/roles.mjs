@@ -20,7 +20,7 @@
  * (visible immediately, reported at once) rather than one that silently can.
  */
 
-import { ALL_CAPABILITIES, isCapability } from "./capabilities.mjs";
+import { ALL_CAPABILITIES, isCapability, CAPABILITIES, SENSITIVE } from "./capabilities.mjs";
 
 /**
  * Roles whose assignment MUST name a team.
@@ -514,4 +514,54 @@ export function mayGrantRole(granter, role) {
 export function ungrantableRoles() {
   const grantable = new Set(Object.values(GRANTABLE_ROLES).flat());
   return ROLES.filter((r) => !grantable.has(r));
+}
+
+// ── What a role may NOT do, and who decides instead ──────────────
+//
+// SCRBRD-033. Every screen in this product tells a person what they can do.
+// Nothing told them where their authority stops, or who to go to when it does,
+// and both of those are answerable from the policy without anybody writing
+// prose per role.
+//
+// THE LIST IS DELIBERATELY NOT THE COMPLEMENT. A role holds between two and
+// eighty-one capabilities, so "everything you cannot do" runs to seventy-odd
+// lines for a scorer and tells them nothing. Two candidate narrowings were
+// measured against the real roster before this was written:
+//
+//   sensitive-not-held      3 to 9 items per role   ← this one
+//   held-by-few-roles      11 to 13 items per role, mostly irrelevant
+//                          (a coach does not need telling he cannot drive a
+//                          minibus or manage an invoice)
+//
+// The first is small, and it is the boundary that actually matters: the
+// capabilities that reach a child's contact details, identity, body, notes or
+// clinical record. A coach learning from this screen that the clinical record
+// is the medical officer's, the boy's parent's and the boy's own is ADR 0002
+// rendered as help rather than as a refusal at the moment he needed it.
+//
+// The hand-off is derived the same way. Whoever holds the capability IS the
+// answer to "then who", so there is no protocol to maintain: change the
+// policy and this changes with it.
+const HANDOFF_EXCLUDED = new Set(["superadmin", "platformadmin"]);
+
+/**
+ * The sensitive capabilities `role` does not hold, each naming who does.
+ *
+ * @param {string} role
+ * @returns {{capability: string, what: string, askInstead: string[]}[]}
+ */
+export function boundaries(role) {
+  const held = new Set(ROLE_CAPABILITIES[role] ?? []);
+  return SENSITIVE
+    .filter((c) => !held.has(c))
+    .map((capability) => ({
+      capability,
+      what: CAPABILITIES[capability],
+      // The break-glass accounts are left out on purpose. "Ask the platform
+      // owner" is not advice a coach can act on, and naming them here would
+      // make an escalation path out of an account that exists so that nothing
+      // is ever truly locked out.
+      askInstead: ROLES.filter((r) => !HANDOFF_EXCLUDED.has(r) && r !== role
+                                   && ROLE_CAPABILITIES[r].includes(capability)),
+    }));
 }

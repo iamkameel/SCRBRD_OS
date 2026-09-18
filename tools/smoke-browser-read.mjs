@@ -597,6 +597,26 @@ try {
     const mine = await coach.page.locator('[data-testid="my-clearances"]').innerText().catch(() => "");
     ok("...but he sees his own in settings", /first aid certificate/i.test(mine) && /expiring/i.test(mine));
     ok("...and only his own", !/P Moodley|B Ngcobo/.test(mine));
+
+    // SCRBRD-033. Where his access stops, derived from the policy rather than
+    // written per role — so the assertions are about a coach's REAL boundary
+    // and would go red if the capability moved.
+    const bounds = coach.page.locator('[data-testid="boundaries-section"]');
+    ok("the coach is told where his access stops", await bounds.count() === 1);
+    const bt = await bounds.innerText().catch(() => "");
+    ok("...including the clinical record, which is ADR 0002's whole point",
+       await coach.page.locator('[data-testid="boundary-medical.details.read"]').count() === 1, bt.slice(0, 120));
+    ok("...and the boy's identity document",
+       await coach.page.locator('[data-testid="boundary-player.identity.read"]').count() === 1);
+    // He DOES hold the availability tier, so it must not appear as a boundary.
+    ok("...and not the medical status he reads every week",
+       await coach.page.locator('[data-testid="boundary-medical.status.read"]').count() === 0);
+    ok("each line says who to ask instead", /\bAsk\b/.test(bt) && /Medical|Parent|Guardian|Director/i.test(bt), bt.slice(0, 200));
+    // The lesson from the dossier's [object Object]: a derived section renders
+    // whatever it was handed, and a unit test that never rendered it cannot see
+    // a stringified object.
+    ok("nothing on the panel is a stringified object", !/\[object |undefined|NaN/.test(bt), bt.slice(0, 160));
+
     ok("no console errors", coach.errors.length === 0 && head.errors.length === 0);
     await coach.ctx.close();
   }
@@ -1489,6 +1509,33 @@ try {
     await c.page.locator('[data-testid="nav-matches"]').first().click({ timeout: 6000 }).catch(() => {});
     await c.page.waitForTimeout(1200);
     ok("a coach, who holds no fixture.create, is not", (await c.page.locator("button", { hasText: /Schedule Match/ }).count()) === 0);
+
+    // ── SCRBRD-037. The duty roster, and the empty case especially ──
+    //
+    // The read returns only what is on record, so the panel has to SAY
+    // something for the rest. A blank row would be the screen falling silent
+    // on the question it exists to answer, and a "pending" would be inventing
+    // an obligation nobody recorded.
+    await c.page.locator('[data-testid^="match-card-"]').first().click({ timeout: 5000 }).catch(() => {});
+    await c.page.waitForTimeout(1400);
+    const roster = c.page.locator('[data-testid="duty-roster"]');
+    if (await roster.count() === 0) {
+      // The panel only exists once a fixture is selected. If the click did not
+      // open one, say so rather than passing on an absent element.
+      ok("a fixture opens its detail panel with the duty roster", false, "no duty-roster after selecting a fixture");
+    } else {
+      const rt = await roster.innerText();
+      ok("the fixture's duty roster is drawn", true);
+      ok("...and counts what is on record out of what a fixture can have",
+         /\d+ of \d+ on record/.test(rt), rt.slice(0, 80));
+      ok("...naming a duty nobody recorded as such, not as pending",
+         /nothing on record/.test(rt) && !/pending/i.test(rt), rt.slice(0, 200));
+      ok("...and every slot the client knows about has a line",
+         (await c.page.locator('[data-testid^="duty-"]').count()) >= 8);
+      ok("nothing on the roster is a stringified object",
+         !/\[object |undefined|NaN/.test(rt), rt.slice(0, 160));
+    }
+    ok("no console errors (coach, match centre)", c.errors.length === 0, c.errors.join(" | "));
     await c.ctx.close();
   }
 

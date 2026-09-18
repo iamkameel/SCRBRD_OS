@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import pkg from "../../package.json";
 import { ROLES, ROLE_FAMILIES, ROLE_IDENTITY, canonicalRole } from "../design/roles.js";
-import { GRANTABLE_ROLES, ROLE_CAPABILITIES, SUBJECT_SCOPED_ROLES, TEAM_SCOPED_ROLES } from "@scrbrd/policy/roles";
+import { boundaries, GRANTABLE_ROLES, ROLE_CAPABILITIES, SUBJECT_SCOPED_ROLES, TEAM_SCOPED_ROLES } from "@scrbrd/policy/roles";
 import { D, textOn } from "../design/tokens.js";
 import { Avatar, Badge, Btn, Card, EmptyState, Input, Modal, SectionHeader, Select } from "../ui/primitives.jsx";
 import { Metric, MetricGroup } from "../ui/data.jsx";
@@ -722,6 +722,53 @@ function RolesTab({ users, grantable }) {
 // ══════════════════════════════════════════════════════
 //  ME — my own access, this device, my clearances
 // ══════════════════════════════════════════════════════
+/**
+ * Where your authority stops, and who decides instead. SCRBRD-033.
+ *
+ * Every other screen in the product tells a person what they can do. This one
+ * tells them what they cannot, which is the half that matters at the moment
+ * somebody asks them for something they should not hand over.
+ *
+ * Nothing here is written per role. boundaries() derives it from the same
+ * policy that generates the database's row-level security, so it cannot drift
+ * from what would actually happen — and a capability moved between roles moves
+ * this text with it. It is the sensitive set the role does not hold, which is
+ * three to nine lines rather than the seventy-odd of a full complement.
+ *
+ * The hand-off is derived too: whoever holds the capability IS the answer to
+ * "then who". Break-glass accounts are left out of that list on purpose, in
+ * boundaries() itself, with the reason.
+ */
+const ASK_SHOWN = 4;
+function BoundariesSection({ role }) {
+  const bounds = boundaries(role);
+  if (bounds.length === 0) return null;     // the owner's key holds everything
+  return (
+    <Panel data-testid="boundaries-section">
+      <CardHead title="Where your access stops"
+        sub="What this role deliberately cannot reach, and who to ask instead. Read from the same policy the database enforces, so it is what would actually happen rather than a description of it."/>
+      <div style={{ display: "grid", gap: "8px" }}>
+        {bounds.map((b) => {
+          const shown = b.askInstead.slice(0, ASK_SHOWN).map((r) => ROLES[r]?.label ?? r);
+          const rest = b.askInstead.length - shown.length;
+          return (
+            <div key={b.capability} data-testid={`boundary-${b.capability}`}
+                 style={{ padding: "10px 12px", borderRadius: D.md, background: D.surf2 + "66",
+                          border: `1px solid ${D.border}` }}>
+              <div style={{ fontFamily: D.body, fontSize: "12px", fontWeight: 600, color: D.textPrimary }}>{b.what}</div>
+              <div style={{ ...SUB, marginTop: "3px" }}>
+                Ask <span style={{ color: D.textSecondary }}>{shown.join(", ")}</span>
+                {rest > 0 ? ` or ${rest} other${rest === 1 ? "" : "s"}` : ""}.
+              </div>
+              <div style={{ ...MONO, marginTop: "3px" }}>{b.capability}</div>
+            </div>
+          );
+        })}
+      </div>
+    </Panel>
+  );
+}
+
 function MeTab({ role }) {
   const me = profile();
   const live = signedIn();
@@ -764,6 +811,7 @@ function MeTab({ role }) {
           )}
       </Panel>
 
+      <BoundariesSection role={role}/>
       <AlertsSection role={role}/>
       <MyClearancesSection role={role}/>
     </div>
@@ -907,6 +955,66 @@ function AlertsSection({ role }) {
 // list is what the server lets this person see — their own grants, or the
 // ones naming their school — and the form is refused by the API for anyone
 // who is not his family; the message below says so in its words.
+/**
+ * Whether a boy may be seen by accredited scouts. SCRBRD-055.
+ *
+ * The gate has always worked: scouting_candidates() inner-joins on
+ * consent_state = 'granted', so a withdrawal and a decision never made both
+ * fall out, and only a guardian can set it — scouting_consent_set() takes no
+ * administrative override. What did not exist was anywhere to LOOK at it. A
+ * consent the family who gave it cannot inspect, or change their mind about
+ * without asking somebody to make an API call, is a consent in name.
+ *
+ * Drawn beside the passport consent because they are the same act on the same
+ * child: naming who may see him. A boy with no row has made no decision, and
+ * that reads as "not shown to scouts" rather than as a blank, because the two
+ * are the same thing here — the join excludes both — and saying so is the
+ * honest version.
+ */
+function ScoutingConsentSection({ role, players }) {
+  const [nudge, setNudge] = useState(0);
+  const [said, setSaid] = useState("");
+  const rows = useLive("scouting_consent", role, nudge).rows;
+  const decided = new Map(rows.map((r) => [r.playerId, r]));
+  const set = async (playerId, granted) => {
+    setSaid("");
+    try { await api(`/api/players/${playerId}/scouting-consent`, { method: "POST", body: { granted } }); setNudge((n) => n + 1); }
+    catch (e) { setSaid(e.message || "Refused."); }
+  };
+  return (
+    <Panel sx={{ marginTop: "16px" }} data-testid="scouting-consent-section">
+      <CardHead title="Seen by scouts"
+        sub="Only an accredited scout, only with a family's yes, and only ever the cricket record. A boy nobody has decided for is not shown — there is no default yes here."/>
+      {said && <div role="alert" style={{ fontFamily: D.body, fontSize: "11px", color: textOn(D.rose), marginBottom: "8px" }}>{said}</div>}
+      {players.length === 0
+        ? <EmptyState icon="🔭" message="No player to decide for."/>
+        : players.map((p) => {
+            const c = decided.get(p.id);
+            const on = c?.granted === true;
+            return (
+              <div key={p.id} data-testid={`scouting-consent-${p.id}`}
+                   style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 0", borderTop: `1px solid ${D.border}` }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textPrimary, fontWeight: 600 }}>{p.name}</div>
+                  <div style={{ fontFamily: D.body, fontSize: "10px", color: D.textMuted }}>
+                    {c ? `${c.state} ${c.decidedAt ?? ""}${c.decidedBy ? ` · ${c.decidedBy}` : ""}`.trim() : "no decision recorded"}
+                  </div>
+                </div>
+                <span data-testid={`scouting-state-${p.id}`}
+                      style={{ fontFamily: D.mono, fontSize: "9px", textTransform: "uppercase",
+                               color: on ? textOn(D.emerald) : D.textMuted }}>
+                  {on ? "shown to scouts" : "not shown"}
+                </span>
+                <Btn variant="ghost" onClick={() => set(p.id, !on)} data-testid={`scouting-toggle-${p.id}`}>
+                  {on ? "Withdraw" : "Allow"}
+                </Btn>
+              </div>
+            );
+          })}
+    </Panel>
+  );
+}
+
 function PassportTab({ role }) {
   const [nudge, setNudge] = useState(0);
   const [schools, setSchools] = useState([]);
@@ -929,7 +1037,8 @@ function PassportTab({ role }) {
   const sel = { background: D.surf2, border: `1px solid ${D.border}`, borderRadius: D.sm, padding: "7px 10px", fontFamily: D.body, fontSize: "12px", color: D.textPrimary };
   const open = rows.filter((r) => !r.withdrawnAt), closed = rows.filter((r) => r.withdrawnAt);
   return (
-    <Panel data-testid="passport-tab">
+    <>
+      <Panel data-testid="passport-tab">
       <CardHead title="Passport"
         sub="A boy's cricket record stays with his school until his family names another. Only his cricket record travels: nothing medical, no files, no notes. A family can take a name back at any time."/>
       <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center", marginBottom: "12px" }}>
@@ -957,7 +1066,9 @@ function PassportTab({ role }) {
               : <Btn variant="ghost" onClick={() => withdraw(r.id)}>Withdraw</Btn>}
           </div>
         ))}
-    </Panel>
+      </Panel>
+      <ScoutingConsentSection role={role} players={players}/>
+    </>
   );
 }
 
@@ -1192,7 +1303,7 @@ function RoadmapTab() {
   return (
     <div>
       <Panel sx={{ marginBottom: "16px" }}>
-        <CardHead title="Platform roadmap" sub="Status is checked against the codebase, not declared: a thing is shipped when a walk would fail if it broke. Priority is an opinion and survives as a tint."/>
+        <CardHead title="Platform roadmap" sub="Every shipped item names the walk that covers it, and a test checks that walk exists and is registered to run — so the claim falls over in the suite rather than quietly on this page. Priority is an opinion and survives as a tint."/>
         <MetricGroup min={130}>
           {["shipped", "partial", "planned"].map((s) => (
             <button key={s} onClick={() => setOnly(only === s ? "" : s)} aria-pressed={only === s}

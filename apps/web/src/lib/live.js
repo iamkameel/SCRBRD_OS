@@ -678,6 +678,30 @@ function asPassportConsent(r) {
   return { id: r.id, playerId: r.player_id, name: r.full_name, toSchool: r.to_school_id, toSchoolName: r.to_school,
            grantedAt: r.granted_at, withdrawnAt: r.withdrawn_at, live: true };
 }
+/**
+ * SCRBRD-055. `granted` is derived from the state rather than sent as a
+ * boolean on purpose: the table's vocabulary is 'granted' | 'withdrawn', and a
+ * row that is neither — an unknown state from a later migration — must not
+ * read as granted because a boolean coerced it.
+ */
+function asScoutingConsent(r) {
+  return { playerId: r.player_id, name: r.full_name, team: r.team_code,
+           state: r.consent_state,
+           granted: r.consent_state === "granted",
+           decidedAt: r.decided_at ? String(r.decided_at).slice(0, 10) : null,
+           decidedBy: r.decided_by_name ?? null, live: true };
+}
+/**
+ * SCRBRD-037. One recorded duty. The read returns ONLY what is on record, so
+ * every row here is something somebody actually did — which is what lets the
+ * panel say "nothing on record" for the rest without guessing whether it
+ * should have been.
+ */
+function asDuty(r) {
+  return { duty: r.duty, who: r.who || null, state: r.state,
+           detail: r.detail || null,
+           at: r.at ? String(r.at).slice(0, 10) : null, live: true };
+}
 function asRequirement(r) { return { role: r.role, kind: r.kind, kindLabel: r.kind_label, live: true }; }
 
 /** A side as it stood on a date — nothing here is computed in the browser. */
@@ -899,6 +923,8 @@ const ADAPT = {
   drills: asDrill,
   passport: asPassportLine,
   passport_consents: asPassportConsent,
+  scouting_consent: asScoutingConsent,
+  match_duties: asDuty,
   equipment: asEquipment,
   equipment_issues: asIssue,
   recognition: asRecognition,
