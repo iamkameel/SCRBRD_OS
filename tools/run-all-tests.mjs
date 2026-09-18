@@ -23,6 +23,8 @@ const SUITES = [
   ["wheel",    "apps/web/test/wheel.test.mjs"],
   // Renders components, so it needs the .jsx transform hook.
   ["system",   "apps/web/test/system.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // Renders the scorer's review sheet, so it needs the same transform.
+  ["review",   "apps/web/test/innings-review.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["client",   "apps/web/src/rbac/rbac.test.mjs"],
   ["handover", "services/api/handover/scoring-session.test.mjs"],
   ["rls",      "services/api/rls/rls.test.mjs"],

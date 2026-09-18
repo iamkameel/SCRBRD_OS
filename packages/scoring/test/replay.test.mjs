@@ -269,6 +269,52 @@ group("D. Strike rotation and innings end");
   ok("innings ends when overs are done", short.complete === true);
   ok("explicit end reason recorded",
      deriveInnings([...open(), inningsEnd({ reason: "declared" })]).endReason === "declared");
+
+  // SCRBRD-038. An innings that ends by itself now says WHY, so the review the
+  // scorer confirms can name the reason and the innings_end written on that
+  // confirmation carries the same word the laws did. Before this, `complete`
+  // was a boolean and `endReason` stayed null unless somebody typed one.
+  ok("...and a derived end reports overs_complete", short.endReason === "overs_complete");
+  ok("...all out reports all_out",
+     deriveInnings([...open(), ...Array.from({ length: 4 }, () => ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" }))])
+       .endReason === "all_out");
+
+  // The order between the three matters on the ball that satisfies two at once.
+  // A chase won off the last legal ball of the last over is won, not timed out;
+  // a last-wicket single that levels nothing is all out. Testing them
+  // separately would pass on any order, so both are tested on the SAME ball.
+  const chaseOnLastBall = deriveInnings([
+    inningsStart({ battingTeam: "A", bowlingTeam: "B", squad: SQ_A, bowlingSquad: SQ_B, overs: 1, target: 6 }),
+    batters({ striker: "p1", nonStriker: "p2" }), bowler({ bowler: "w1" }),
+    ...Array.from({ length: 6 }, () => runs(1)),
+  ]);
+  ok("a chase completed on the last legal ball reads as the chase, not the overs",
+     chaseOnLastBall.complete === true && chaseOnLastBall.endReason === "target_reached",
+     chaseOnLastBall.endReason);
+  const allOutOnLastBall = deriveInnings([
+    inningsStart({ battingTeam: "A", bowlingTeam: "B", squad: SQ_A, bowlingSquad: SQ_B, overs: 1 }),
+    batters({ striker: "p1", nonStriker: "p2" }), bowler({ bowler: "w1" }),
+    ...Array.from({ length: 2 }, () => runs(1)),
+    ...Array.from({ length: 4 }, () => ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" })),
+  ]);
+  ok("the last wicket on the last legal ball reads as all out, not the overs",
+     allOutOnLastBall.endReason === "all_out", allOutOnLastBall.endReason);
+
+  // An explicit event wins over the derivation, which is what makes a
+  // declaration expressible at all: the same log, nine down inside the overs,
+  // is "declared" only because somebody said so.
+  const declaredEarly = deriveInnings([
+    ...open(),
+    ...Array.from({ length: 4 }, () => ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" })),
+    inningsEnd({ reason: "declared" }),
+  ]);
+  ok("an explicit reason is not overwritten by the derivation",
+     declaredEarly.endReason === "declared", declaredEarly.endReason);
+
+  // And an innings still in progress claims neither.
+  const open1 = deriveInnings([...open(), runs(1)]);
+  ok("an innings in progress has no reason and is not complete",
+     open1.complete === false && open1.endReason === null, open1.endReason);
 }
 {
   const r = deriveInnings([...open(), runs(1), retire({ batter: "p1", reason: "hurt" })]);

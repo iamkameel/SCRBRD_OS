@@ -503,13 +503,21 @@ Files: new view, reads over existing resources. Risk LOW. Migration NO.
 closed innings. Cheapest available reduction in the error class that is most expensive afterwards.
 Files: `apps/web/src/views/` scoring surface, `services/api/write/`. Risk LOW. Migration NO.
 
-### SCRBRD-039 — Capture profiles: full / standard / quick
-`placementEngine.ts` declares `CAPTURE_PROFILE`. This tree has the null-reason vocabulary already
-(`placement.mjs`: `no_contact`, `not_applicable`, `not_required`, `skipped`, plus `padded`, `beaten`,
-`leave`) but no declared profile — so a null says "not captured" without saying **whether it was ever
-asked for**. A profile separates those two, and that changes what an evidence label may honestly claim
-about a thin field. Directly additive to `evidence_label()`. Files: `packages/scoring/src/placement.mjs`,
-scoring capture UI, new `db/NN` for the per-innings profile. Risk LOW. **Migration YES** (one column).
+### SCRBRD-039 — Capture profiles: declare the intent, not just record the code path
+**Corrected 2026-09-18.** The first version of this entry claimed SCRBRD OS had no capture profile. It has
+one: `CAPTURE_PROFILE` in `packages/scoring/src/placement.mjs`, a `capture_profile` column on `ball_event`
+with a `CHECK` in `db/07`, carried through quarantine release in `db/14`, and set by the engine per ball.
+The original claim came from a grep with a broken alternation, which is exactly the failure the Pass 2 rule
+above exists to prevent — recorded rather than silently edited.
+
+The real gap is narrower and still worth having. The profile is currently a **consequence of the code path**
+— a sector tap yields `standard`, a ball with no placement yields `quick` — not a **declared intent** the
+scorer or the fixture chose. Nothing surfaces it, nothing aggregates it, and `evidence_label()` cannot ask
+"how much was this innings ever going to capture?" So a thin figure reads as thin capture when it may be a
+faithful record at a profile that never collected the field. Files: `placement.mjs`, the scoring capture UI,
+`evidence_label()`, and an innings-level declared profile (a new `db/NN`, one column on the innings or
+carried on `innings_start`). Risk LOW. **Migration YES** if declared per innings rather than derived from
+the balls already logged.
 
 ### SCRBRD-040 — Scoring hub FSM with a named blocked state
 `blockedMissingSetup` — "cannot score because toss, openers or bowler are not set" as a state that
@@ -563,6 +571,13 @@ already-correct. Risk LOW. Migration UNKNOWN until the audit.
   selection exist. **Caveat that belongs in the entry:** an auto-selection must show its rationale or it is
   a black box a coach cannot defend to a parent — the same standard applied to a selection decision
   instead of a statistic. Risk MEDIUM, and mostly on the explanation rather than the arithmetic.
+- **SCRBRD-052** — A browser walk that scores an innings to its end. `smoke-browser-sync` opens the real
+  scorer on a real match and taps four deliveries of twenty overs, so nothing exercises what happens when an
+  innings completes: not the review gate (SCRBRD-038), not the innings break, not the result screen, not the
+  second innings' target. Completing an innings by wickets rather than overs is the cheap route — ten
+  dismissals through the wicket sheet instead of a hundred and twenty taps — and it would also be the first
+  coverage of the handover and quarantine paths under a closed innings. Files: `tools/smoke-browser-sync.mjs`
+  or a walk of its own. Risk LOW. Migration NO.
 - **SCRBRD-051** — Two shapes worth keeping from `aiCoachAssistant.ts`, without its fabrication:
   per-drill `safetyCleared` driven by `medicalRestrictions` (a drill blocked by a restriction **without
   exposing the file** — §11.3 rendered as a feature, and `TrainingView`'s drill library is where it goes),
