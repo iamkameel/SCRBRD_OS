@@ -68,13 +68,21 @@ const KNOWN = {
     roles: ["directorofsport", "competitionadmin"],
     reason:
       "capabilities.mjs says the approval is 'deliberately not' held by whoever " +
-      "requests the correction, but both of these hold the request AND the " +
-      "approval, so either can amend a locked match unilaterally. The Director " +
-      "of Sport is also the escalation target for a scoring dispute, so one of " +
-      "the two capabilities is redundant in that pair of hands rather than " +
-      "load-bearing. Tracked as SCRBRD-029.",
+      "requests the correction, and these two hold both halves, so either can " +
+      "amend a locked match unilaterally. THE OBVIOUS FIX IS WRONG, which is " +
+      "why this is still here: db/24 was written to withdraw scoring.correct " +
+      "from both, the full chain was run, and three walks went red. That " +
+      "capability gates four unrelated things — force-releasing a stuck " +
+      "scoring lease (db/02:453), reading the quarantine queue (db/02:252), " +
+      "writing a DRS review (db/09:504) and the amendment request itself " +
+      "(db/02:790). Withdrawing it does not narrow self-approval; it strips a " +
+      "director of sport of session recovery, quarantine visibility and DRS " +
+      "entry on a Saturday morning. The real defect is the overloading, and " +
+      "the fix is to split the request out onto its own capability. Tracked " +
+      "as SCRBRD-029, re-scoped, and SCRBRD-054 for the overloading.",
   },
 };
+
 
 /** Every role any recorded exception covers. */
 const EXEMPT = Object.values(KNOWN).flatMap((k) => k.roles);
@@ -106,14 +114,19 @@ group("§11.1  Viewing a match does not grant scoring rights");
   const leaked = ROLES.filter((r) => !SCORING_ROLES.includes(r) && reach(r, SESSION).length);
   ok("no role outside SCORING_ROLES reaches the live scoring session", leaked.length === 0,
      leaked.map((r) => `${r}: ${reach(r, SESSION).join(",")}`).join(" · "));
-  // Approving an amendment to a locked match, while also being able to append
-  // balls to a live one, is the same crossing §11.2 is about, seen from the
-  // other side — so it is held to the same recorded exceptions rather than a
-  // second list.
-  const onTablet = others("scoring.amend.approve")
-    .filter((r) => caps(r).includes("scoring.edit") && !EXEMPT.includes(r));
-  ok("...and the governance capabilities are otherwise held away from the tablet",
-     onTablet.length === 0, onTablet.join(" "));
+  // The invariant §11.2 is actually reaching for, stated as the two sets
+  // rather than as a list of roles: a correction has to take two people. An
+  // earlier version of this line asserted something larger — that nobody who
+  // can append balls may also approve an amendment — which is not required.
+  // A director of sport who scored the match himself is fine as an approver
+  // PROVIDED he cannot also be the one requesting, and that is exactly the
+  // overlap the exception above records and SCRBRD-029 exists to remove.
+  const requesters = new Set(others("scoring.correct"));
+  const approvers = new Set(others("scoring.amend.approve"));
+  const overlap = [...requesters].filter((r) => approvers.has(r) && !EXEMPT.includes(r));
+  ok("a correction takes two people, beyond the recorded exception",
+     overlap.length === 0 && requesters.size > 0 && approvers.size > 0,
+     `requesters ${[...requesters].join(",")} · approvers ${[...approvers].join(",")}`);
   // The public end of it: the roles that exist only to watch.
   const scoring = [...SESSION, ...GOVERNANCE];
   for (const r of ["spectator", "media", "scout"])
@@ -129,13 +142,18 @@ group("§11.2  The scorer records, the umpire officiates, a third party approves
 {
   const pair = ["scoring.correct", "scoring.amend.approve"];
   const both = others(pair[0]).filter((r) => caps(r).includes(pair[1]));
-  const allowed = KNOWN["scoring: requesting and approving in one pair of hands"].roles;
-  const unrecorded = both.filter((r) => !allowed.includes(r));
+  // Reads the exception list generically rather than by key, because the key
+  // it used to name is gone: db/24 withdrew scoring.correct from the two roles
+  // that held both halves, so the entry was deleted and this assertion now
+  // stands on an empty list — which is the state it always wanted.
+  const unrecorded = both.filter((r) => !EXEMPT.includes(r));
   ok("nobody may both request and approve a correction, beyond the recorded exceptions",
      unrecorded.length === 0, `unrecorded: ${unrecorded.join(", ")}`);
   // The exception list must stay real, or it silently licenses a role that no
-  // longer needs licensing.
-  const stale = allowed.filter((r) => !both.includes(r));
+  // longer needs licensing. This is what would have forced the entry to be
+  // deleted had db/24 landed — and what will force it when SCRBRD-029 lands
+  // for real, by splitting the capability rather than withdrawing it.
+  const stale = EXEMPT.filter((r) => !both.includes(r));
   ok("...and every recorded exception is still a real crossing", stale.length === 0,
      `fixed — delete from KNOWN: ${stale.join(", ")}`);
   ok("the scorer requests corrections and cannot approve them",

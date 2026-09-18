@@ -351,9 +351,36 @@ the escalation target for a scoring dispute, so the approval is the capability t
 `scoring.correct` is the redundant one in that pair of hands.
 **Root cause:** both roles were given the scoring block wholesale; the two-capability split was applied to
 the scorer and not re-applied upward.
-**Recommended change:** drop `scoring.correct` from `directorofsport` and `competitionadmin`, keeping
-`scoring.amend.approve`. Then delete the entry from `KNOWN` in `separation.test.mjs` — the suite fails
-until it is removed, which is the intended sequence.
+**Recommended change:** ~~drop `scoring.correct` from `directorofsport` and `competitionadmin`~~ —
+**tried, and wrong. Reverted 2026-09-18.** `db/24_scoring_approval_split.sql` was written, the
+withdrawal went through `WITHDRAWN_SINCE_01` correctly (db/01's hash did not move, which is the
+check that the mechanism worked), the migration applied cleanly and the live rows were right. Then
+the walks ran and three went red: `handover-crash` (5), `amend` (2), `drs` (13).
+
+`scoring.correct` gates **four unrelated things**, and only the last is what its name says:
+
+| | |
+|---|---|
+| `db/02:453` | force-releasing a stuck scoring lease |
+| `db/02:252` | reading the quarantine queue |
+| `db/09:504` | writing a DRS review |
+| `db/02:790` | the amendment request itself |
+
+So withdrawing it does not narrow self-approval. It strips a Director of Sport of session
+recovery, quarantine visibility and DRS entry — on a Saturday morning, when the match is stuck and
+he is the only person at the ground with the authority to fix it. That is a worse outcome than the
+crossing it was meant to close.
+
+The real defect is the overloading (SCRBRD-054). **The fix is to split the request onto its own
+capability** — `scoring.amend.request`, held by the scorer — leaving `scoring.correct` for the
+three operational acts. That is a new capability, three policy changes, a `db/NN` and a paste,
+which is a larger piece of work than this entry assumed and is why it is being re-scoped rather
+than retried.
+
+Worth keeping from the attempt: the withdrawal machinery is proven end to end, and the assertion
+that caught it was not the one I expected. An earlier draft asserted that nobody who can append
+balls may also approve an amendment; that is larger than §11.2 requires and was narrowed to the
+real invariant — the requester and approver sets must be disjoint.
 **Why it matters:** the guard the codebase says it has, in the file that says it, is not the guard it has.
 **Dependencies:** SCRBRD-028 (records it). **Security / privacy impact:** closes a self-approval path.
 **Data migration required:** **YES** — a capability change after go-live is `roles.mjs` + a new `db/NN` +
@@ -627,6 +654,14 @@ already-correct. Risk LOW. Migration UNKNOWN until the audit.
   selection exist. **Caveat that belongs in the entry:** an auto-selection must show its rationale or it is
   a black box a coach cannot defend to a parent — the same standard applied to a selection decision
   instead of a statistic. Risk MEDIUM, and mostly on the explanation rather than the arithmetic.
+- **SCRBRD-054** — `scoring.correct` is four capabilities wearing one name: force-release a stuck
+  lease, read the quarantine queue, write a DRS review, and request an amendment. The first three
+  are operational recovery and belong with whoever is senior at the ground; the fourth is half of a
+  separation-of-duties pair and belongs with the person who noticed the mistake. Because they share
+  a name they cannot be held separately, which is what makes SCRBRD-029 unfixable as written.
+  Splitting the request out (`scoring.amend.request`) is the prerequisite for that entry. Files:
+  `capabilities.mjs`, `roles.mjs`, `db/02`'s three policies via a new `db/NN`, `db/09` regenerated.
+  Risk MEDIUM. **Migration YES.** Discovered by writing db/24 and running the walks.
 - **SCRBRD-053** — `discipline.read` and `discipline.write` gate nothing. Six roles hold one or
   both (`superadmin`, `principal`, `directorofsport`, `schooladmin`, `selfaccess`,
   `competitionadmin` read; `superadmin`, `directorofsport`, `official` write) and there is no disciplinary
