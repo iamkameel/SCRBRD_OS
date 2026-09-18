@@ -9,7 +9,13 @@
  * connection: nothing on the scoring path may await one of these.
  */
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8787";
+// Optional chaining for the same reason lib/api.js gives at length: this is
+// Vite's object and it is UNDEFINED under plain node, which the scorer's shot
+// vocabulary now reaches — shots.js imports fetchCommentary from here, and the
+// innings-review suite renders a sheet that imports shots.js. Without the `?.`
+// the whole module graph throws on load and the failure names this line rather
+// than the test.
+const API_BASE = import.meta.env?.VITE_API_BASE ?? "http://localhost:8787";
 
 import { getToken } from "./api.js";
 const authHeaders = () => (getToken() ? { authorization: `Bearer ${getToken()}` } : {});

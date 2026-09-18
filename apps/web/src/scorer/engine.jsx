@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import {
   deriveInnings, inningsStart, batters as battersEvent, bowler as bowlerEvent,
-  ball as ballEvent, penalty as penaltyEvent, revision as revisionEvent, inningsEnd,
+  ball as ballEvent, penalty as penaltyEvent, revision as revisionEvent, inningsEnd, INNINGS_END_REASON, KIND,
   newEventId, undoLast,
   noPlacement, NO_CONTACT_SHOTS, PLACEMENT_NULL, PLACEMENT_SOURCE, CAPTURE_PROFILE,
   DISMISSAL_LABEL,
@@ -16,10 +16,10 @@ import { SEGS } from "./field.js";
 import { fmtOv } from "./format.js";
 import { ALL_SHOTS } from "./shots.js";
 import { AnalysisDashboard, ManhattanChart } from "./charts.jsx";
-import { DynamicBar, EventOverlay, FreeHitBanner, PartnershipCard, ScorecardPanel, buildEventCfg, detectMilestone } from "./panels.jsx";
+import { DynamicBar, EventOverlay, FreeHitBanner, InningsOverBanner, PartnershipCard, ScorecardPanel, buildEventCfg, detectMilestone } from "./panels.jsx";
 import { FocusPad, ScoringPanel } from "./scoring.jsx";
 import { SetupScreen } from "./setup.jsx";
-import { BattingOrderSheet, Innings2Sheet, NewOverSheet, NoBallSheet, PenaltySheet, RevisionSheet, ShotSelectorSheet, WicketSheet } from "./sheets.jsx";
+import { BattingOrderSheet, Innings2Sheet, InningsReviewSheet, NewOverSheet, NoBallSheet, PenaltySheet, RevisionSheet, ShotSelectorSheet, WicketSheet } from "./sheets.jsx";
 import { INT_TEAMS } from "./teams.js";
 import { BallDot, Btn, Card, GS, Glass, Lbl } from "./ui.jsx";
 
@@ -492,6 +492,30 @@ function SCRBRD({resume}={}){
   //  EventOverlay's `suppressBlur` prop — mutating the event object here
   //  used to re-arm its dismiss timers and strand queued overlays.)
 
+  // Whether THIS innings has been closed in the log, as opposed to merely
+  // being over. The two come apart for as long as the scorer has not confirmed
+  // the review, which is exactly the window the banner exists to cover.
+  const inningsClosed=(events[curIn]??[]).some(e=>e.kind===KIND.INNINGS_END);
+
+  // ── Closing an innings ──────────────────────────────────
+  // SCRBRD-038. Until now the ball that completed an innings also closed it,
+  // and the close existed only as an inference: `innings_end` was defined in
+  // the event model, honoured by the replay, imported by this file — and never
+  // emitted by anything. So every replay re-derived the ending, and the reason
+  // for it was nowhere in the log.
+  //
+  // Confirming the review writes it. The reason comes from the replay rather
+  // than from a control, because the laws decide it and the scorer is being
+  // asked to check the figures, not to classify them. A declaration is the one
+  // ending a scorer declares, and it arrives through the revision/declare path
+  // rather than here.
+  const closeInnings=()=>{
+    emit(inningsEnd({reason:inn?.endReason??INNINGS_END_REASON.OVERS}));
+    setModal(null);
+    if(curIn===0){setCurIn(1);setModal("innings2");}
+    else setScreen("result");
+  };
+
   // ── Undo ────────────────────────────────────────────────
   // The artifact kept a deep-copy snapshot stack capped at ten entries,
   // because aggregates could not be recomputed — a scorer who spotted at ball
@@ -600,7 +624,7 @@ function SCRBRD({resume}={}){
       setEventOverlay(q[0]);
     }
     setFreeHit(after.freeHit);
-    if(endedInnings){if(curIn===0){setCurIn(1);setModal("innings2");}else setScreen("result");}
+    if(endedInnings)setModal("inningsReview");
     else if(endedOver){setModalCtx({lastBowlerId});setModal("newOver");}
   };
 
@@ -644,7 +668,7 @@ function SCRBRD({resume}={}){
       setEventOverlay(wicketCfg);
     }
     setFreeHit(after.freeHit);
-    if(endedInnings){if(curIn===0){setCurIn(1);setModal("innings2");}else setScreen("result");}
+    if(endedInnings)setModal("inningsReview");
     else if(!stood){if(endedOver){setModalCtx({lastBowlerId:before?.bowler||null});setModal("newOver");}}
     else if(endedOver)setModal("newBatsmanThenOver");
     else setModal("newBatsman");
@@ -794,6 +818,14 @@ function SCRBRD({resume}={}){
       );
     }
 
+    if(modal==="inningsReview")return (
+      <InningsReviewSheet
+        inn={inn} inningsNo={curIn+1}
+        onConfirm={closeInnings}
+        onFixLastBall={()=>{undoLastBall();setModal(null);}}
+        onClose={()=>setModal(null)}/>
+    );
+
     if(modal==="innings2")return (
       <Innings2Sheet
         target={(innings[0]?.runs||0)+1}
@@ -870,6 +902,7 @@ function SCRBRD({resume}={}){
       <GS/>
       {eventOverlay&&<EventOverlay event={eventOverlay} onDone={onOverlayDone} suppressBlur={!!modal}/>}
       {freeHit&&<FreeHitBanner onDismiss={()=>setFreeHit(false)}/>}
+      {inn?.complete&&!inningsClosed&&!modal&&<InningsOverBanner onReview={()=>setModal("inningsReview")}/>}
       {renderModal()}
       <div style={{minHeight:"100vh",background:D.base,paddingBottom:"88px"}}>
         {/* Top bar */}

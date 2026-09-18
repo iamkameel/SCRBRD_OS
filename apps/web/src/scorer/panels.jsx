@@ -796,6 +796,47 @@ function buildEventCfg(ballValue,milestone){
 }
 
 /* ═══════════════════════════════════════════════════════
+   INNINGS OVER BANNER — SCRBRD-038
+
+   The review sheet is a checkpoint, not a trap: Escape closes it, and it has
+   to, because a modal a scorer cannot dismiss is a modal a scorer learns to
+   dread. This is what makes that safe — the innings is over whether or not
+   anyone has confirmed it, so the state says so persistently and offers the
+   way forward.
+
+   It is derived from `complete` rather than raised by the transition, which
+   also closes a hole that predates the review. A delivery is not the only
+   thing that can end an innings: penalty runs can complete a chase, and an
+   umpires' revision that cuts the overs below the balls already bowled ends it
+   with no ball bowled at all. Neither of those paths ever transitioned, so an
+   innings ended that way simply sat there. Reading the state catches all three
+   without the engine having to remember which acts can finish a match.
+═══════════════════════════════════════════════════════ */
+function InningsOverBanner({onReview}){
+  return (
+    <div style={{
+      position:"fixed",top:"72px",left:"50%",transform:"translateX(-50%)",
+      zIndex:1000,padding:"10px 20px",borderRadius:D.pill,
+      background:D.surf3,border:`1px solid ${D.amber}66`,
+      boxShadow:"0 8px 28px rgba(0,0,0,.45)",
+      display:"flex",alignItems:"center",gap:"14px",
+      animation:"bounceIn .4s cubic-bezier(.22,1,.36,1)",
+    }} data-testid="innings-over-banner">
+      <div>
+        <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:800,color:D.textPrimary,letterSpacing:"0.04em"}}>INNINGS OVER</div>
+        <div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted}}>Not closed yet — check the figures first</div>
+      </div>
+      <button onClick={onReview} className="pressBtn" data-testid="banner-review"
+        style={{padding:"7px 16px",borderRadius:D.pill,cursor:"pointer",border:"none",
+          background:D.amber,color:textOn(D.amber),
+          fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.04em"}}>
+        Review
+      </button>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
    FREE HIT BANNER — shown when next ball is a free hit
 ═══════════════════════════════════════════════════════ */
 function FreeHitBanner({onDismiss}){
@@ -900,4 +941,4 @@ function PartnershipCard({inn}){
   );
 }
 
-export { CommentaryCard, DynamicBar, EventOverlay, FreeHitBanner, IntelPanel, PartnershipCard, ScorecardPanel, WagonWheel, buildEventCfg, detectMilestone };
+export { CommentaryCard, DynamicBar, EventOverlay, FreeHitBanner, InningsOverBanner, IntelPanel, PartnershipCard, ScorecardPanel, WagonWheel, buildEventCfg, detectMilestone };

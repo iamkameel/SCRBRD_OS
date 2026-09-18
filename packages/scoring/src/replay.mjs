@@ -33,7 +33,7 @@
  * Cricket; deriving made them visible.
  */
 
-import { KIND, BALL_TYPE, isLegal, normaliseDismissal, chargedToBowler, standsOnFreeHit, DISMISSAL, DISMISSAL_LABEL } from "./events.mjs";
+import { KIND, BALL_TYPE, isLegal, normaliseDismissal, chargedToBowler, standsOnFreeHit, DISMISSAL, DISMISSAL_LABEL, INNINGS_END_REASON } from "./events.mjs";
 
 // The scoring UI renders on these values: a batter at the crease is "batting",
 // and a squad member who never came in is "dnb" (never produced here — a batter
@@ -342,7 +342,15 @@ export function deriveInnings(events = [], ctx = {}) {
   }
 
   computeMaidens(inn);
-  if (!inn.complete) inn.complete = isInningsOver(inn);
+  // An explicit innings_end event has already set both fields and wins: it is
+  // what the scorer recorded. Without one the innings is still over when the
+  // laws say it is, and the reason is derivable from the same three facts that
+  // decide it — so an innings that ended before anyone pressed anything can
+  // still say why.
+  if (!inn.complete) {
+    const why = inningsOverReason(inn);
+    if (why) { inn.complete = true; inn.endReason = why; }
+  }
   return inn;
 }
 
@@ -387,11 +395,27 @@ function computeMaidens(inn) {
   }
 }
 
-function isInningsOver(inn) {
-  const allOut = inn.wickets >= Math.min(10, Math.max(1, (inn.squad?.length || 11) - 1));
-  const oversDone = inn.balls >= (inn.overs ?? 20) * 6;
-  const chased = inn.target != null && inn.runs >= inn.target;
-  return allOut || oversDone || chased;
+/**
+ * Why this innings is over, or null while it is not.
+ *
+ * The three conditions are ordered the way the laws settle a tie between them.
+ * A chase that is completed by the winning run ends there whatever the over
+ * count would have said a ball later, and a side that is all out is all out
+ * even on the last ball of the last over — so the reason a scorer is shown,
+ * and the reason written into the log when they confirm it, is the one that
+ * actually closed the innings rather than whichever test happened to run
+ * first.
+ *
+ * Returning the reason rather than a boolean is what lets the review sheet
+ * name it. `declared` and `abandoned` are not derivable — nothing in a ball log
+ * implies a captain's decision or an umpire's — so those two only ever arrive
+ * as an explicit innings_end event.
+ */
+function inningsOverReason(inn) {
+  if (inn.target != null && inn.runs >= inn.target) return INNINGS_END_REASON.TARGET;
+  if (inn.wickets >= Math.min(10, Math.max(1, (inn.squad?.length || 11) - 1))) return INNINGS_END_REASON.ALL_OUT;
+  if (inn.balls >= (inn.overs ?? 20) * 6) return INNINGS_END_REASON.OVERS;
+  return null;
 }
 
 // ── Match-level derivation ───────────────────────────────

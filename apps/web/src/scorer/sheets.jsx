@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { DISMISSAL, DISMISSAL_LABEL } from "@scrbrd/scoring";
+import { DISMISSAL, DISMISSAL_LABEL, INNINGS_END_REASON } from "@scrbrd/scoring";
 import { D } from "../design/tokens.js";
 import { fmtOv } from "./format.js";
 import { SHOT_CATEGORIES } from "./shots.js";
@@ -586,4 +586,113 @@ function Innings2Sheet({target,teamName,overs,onClose,onStart}){
   );
 }
 
-export { BattingOrderSheet, CustomBatEntry, Innings2Sheet, NewOverSheet, NoBallSheet, PenaltySheet, RevisionSheet, ShotSelectorSheet, WicketSheet };
+
+/* ═══════════════════════════════════════════════════════
+   INNINGS REVIEW SHEET — SCRBRD-038
+
+   The checkpoint between the last ball and a closed innings.
+
+   Before this, the ball that completed an innings also closed it: the engine
+   read `complete` off the projection and went straight to the innings break or
+   the result screen. Nothing was wrong with the arithmetic — the fold is the
+   same fold — but the scorer never saw the total they were committing to, and
+   an innings sealed on a mis-tapped six is the most expensive error in the
+   app to unpick afterwards. It needs the correction workflow, which needs an
+   approval from somebody who is not the scorer.
+
+   So: read it back first. The figures here are all derived, never entered —
+   this sheet cannot change the innings, only show it and ask.
+
+   Three ways out, and all three are honest:
+     - Confirm       → an innings_end event carrying the derived reason, and
+                       the innings is closed in the log rather than inferred
+                       from it on every replay.
+     - Fix last ball → undo, which un-completes the innings and returns to
+                       scoring. The scorer said the figures are wrong; the
+                       last ball is the one that can still be taken back.
+     - Close (Esc)   → neither. The innings stays over and unconfirmed, and
+                       the banner on the scoring screen brings this back. A
+                       checkpoint that traps the scorer would be worked around
+                       within a week.
+═══════════════════════════════════════════════════════ */
+const END_REASON_TEXT = Object.freeze({
+  [INNINGS_END_REASON.ALL_OUT]:   "All out",
+  [INNINGS_END_REASON.OVERS]:     "Overs complete",
+  [INNINGS_END_REASON.TARGET]:    "Target reached",
+  [INNINGS_END_REASON.DECLARED]:  "Declared",
+  [INNINGS_END_REASON.ABANDONED]: "Abandoned",
+});
+
+function InningsReviewSheet({inn,inningsNo,onConfirm,onFixLastBall,onClose}){
+  const notOut=(inn?.batsmen||[]).filter(b=>b.status==="batting");
+  // Only bowlers who actually bowled. A name with no balls against it is a
+  // squad entry, not a spell, and reading one back as "0-0 off 0" invites the
+  // scorer to wonder what they got wrong.
+  const spells=(inn?.bowlers||[]).filter(b=>b.balls>0).sort((a,b)=>b.wickets-a.wickets||a.runs-b.runs).slice(0,3);
+  const ex=inn?.extras||{};
+  const extrasTotal=(ex.wide||0)+(ex.noBall||0)+(ex.bye||0)+(ex.legBye||0)+(ex.penalty||0);
+  const reason=END_REASON_TEXT[inn?.endReason]??"Innings over";
+  const row={display:"flex",justifyContent:"space-between",alignItems:"baseline",
+    padding:"7px 0",borderBottom:`1px solid ${D.border}`,fontFamily:D.body,fontSize:"13px"};
+
+  return (
+    <Sheet title={`Innings ${inningsNo} — check before closing`} accent={D.amber} onClose={onClose}>
+      <div style={{paddingTop:"10px"}} data-testid="innings-review">
+        <div style={{textAlign:"center",marginBottom:"18px"}}>
+          <div style={{fontFamily:D.mono,fontSize:"clamp(44px,10vw,64px)",fontWeight:500,
+            color:D.textPrimary,lineHeight:1,letterSpacing:"-0.02em"}} data-testid="review-score">
+            {inn?.runs??0}/{inn?.wickets??0}
+          </div>
+          <div style={{fontFamily:D.body,fontSize:"14px",color:D.textMuted,marginTop:"6px"}} data-testid="review-overs">
+            {fmtOv(inn?.balls??0)} overs
+          </div>
+          <div style={{marginTop:"10px"}}>
+            <Badge color={D.amber} data-testid="review-reason">{reason}</Badge>
+          </div>
+        </div>
+
+        <Lbl sx={{marginBottom:"4px"}}>At the crease</Lbl>
+        {notOut.length===0
+          ? <div style={{...row,color:D.textMuted}} data-testid="review-nobody-in">Nobody not out</div>
+          : notOut.map(b=>(
+              <div key={b.id} style={row} data-testid={`review-batter-${b.id}`}>
+                <span style={{color:D.textPrimary}}>{b.name}</span>
+                <span style={{fontFamily:D.mono,color:D.textSecondary}}>{b.runs}* ({b.balls})</span>
+              </div>))}
+
+        <Lbl sx={{marginTop:"14px",marginBottom:"4px"}}>Extras</Lbl>
+        <div style={row} data-testid="review-extras">
+          <span style={{color:D.textPrimary}}>{extrasTotal}</span>
+          <span style={{fontFamily:D.mono,color:D.textSecondary,fontSize:"12px"}}>
+            {`${ex.wide||0}w ${ex.noBall||0}nb ${ex.bye||0}b ${ex.legBye||0}lb${ex.penalty?` ${ex.penalty}p`:""}`}
+          </span>
+        </div>
+
+        {spells.length>0&&<>
+          <Lbl sx={{marginTop:"14px",marginBottom:"4px"}}>Leading figures</Lbl>
+          {spells.map(b=>(
+            <div key={b.id} style={row} data-testid={`review-bowler-${b.id}`}>
+              <span style={{color:D.textPrimary}}>{b.name}</span>
+              <span style={{fontFamily:D.mono,color:D.textSecondary}}>{b.wickets}-{b.runs} ({fmtOv(b.balls)})</span>
+            </div>))}
+        </>}
+
+        <div style={{display:"flex",flexDirection:"column",gap:"8px",marginTop:"20px"}}>
+          <Btn variant="primary" size="lg" sx={{borderRadius:D.md}}
+            onClick={onConfirm} data-testid="review-confirm">
+            That is right — close the innings
+          </Btn>
+          <Btn variant="ghost" size="md" sx={{borderRadius:D.md}}
+            onClick={onFixLastBall} data-testid="review-fix">
+            Take back the last ball
+          </Btn>
+        </div>
+        <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,textAlign:"center",marginTop:"10px"}}>
+          Once closed, changing this innings needs a correction the scorer cannot approve alone.
+        </div>
+      </div>
+    </Sheet>
+  );
+}
+
+export { BattingOrderSheet, CustomBatEntry, Innings2Sheet, InningsReviewSheet, NewOverSheet, NoBallSheet, PenaltySheet, RevisionSheet, ShotSelectorSheet, WicketSheet };

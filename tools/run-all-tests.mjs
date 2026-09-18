@@ -16,12 +16,15 @@ const SUITES = [
   ["sa-id",    "packages/policy/test/sa-id.test.mjs"],
   ["dob",      "packages/policy/test/date-of-birth.test.mjs"],
   ["modules",  "packages/policy/test/modules.test.mjs"],
+  ["separation","packages/policy/test/separation.test.mjs"],
   ["rating",   "packages/scoring/test/rating.test.mjs"],
   ["rubric",   "packages/scoring/test/rubric.test.mjs"],
   ["phases",   "packages/scoring/test/phases.test.mjs"],
   ["wheel",    "apps/web/test/wheel.test.mjs"],
   // Renders components, so it needs the .jsx transform hook.
   ["system",   "apps/web/test/system.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // Renders the scorer's review sheet, so it needs the same transform.
+  ["review",   "apps/web/test/innings-review.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["client",   "apps/web/src/rbac/rbac.test.mjs"],
   ["handover", "services/api/handover/scoring-session.test.mjs"],
   ["rls",      "services/api/rls/rls.test.mjs"],
@@ -31,6 +34,7 @@ const SUITES = [
   ["write",    "services/api/write/write.test.mjs"],
   ["migrate",  "tools/migrate.test.mjs"],
   ["imports",  "tools/check-imports.test.mjs"],
+  ["guard",    "tools/hooks/guard.test.mjs"],
   ["ai",       "services/api/ai/ai.test.mjs"],
   ["realtime", "services/api/realtime/realtime.test.mjs"],
 ];
