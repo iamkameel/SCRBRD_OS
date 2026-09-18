@@ -13,3 +13,7 @@ apps/web/public/assets/generated/
 scrbrd-supabase-rebuild.sql
 scrbrd-supabase-verify.sql
 scrbrd-supabase-apply-*.sql
+
+# Personal Claude Code overrides. The project hooks in .claude/settings.json
+# are committed; anything you set for yourself alone is not.
+.claude/settings.local.json

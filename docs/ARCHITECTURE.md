@@ -18,8 +18,8 @@ the second, `ls db/` is the third.
 | Policy | `packages/policy` | The canonical RBAC model: capabilities, roles and their bundles, the grantable-role matrix, team-code and subject scoping, `date-of-birth.mjs` (SA ID ↔ DOB). **Generates** `db/01_authz.sql` and `db/09_rls_policies.sql` (`pnpm rls:generate`). |
 | Scoring | `packages/scoring` | Event-sourced cricket law. `replay.mjs` is the deterministic reducer from `ball_event` to a scorecard; the dismissal vocabulary is closed (`db/13`). |
 | Sync | `packages/sync` | The offline outbox and idempotent replay of ball events to `/api/events`. |
-| Database | `db` | Numbered, forward-only SQL. `00`–`21` are the schema and its corrections; `98` is the pilot seed (invented people, never production); `99` is the live verifier and is not schema. |
-| Tooling | `tools` | `migrate.mjs` (the ledger), `bundle-sql.mjs` (Supabase pastes), `run-all-tests.mjs`, `check-imports.mjs`, `check-bundle.mjs`, `run-smoke-api.mjs` and the `smoke-*.mjs` walks it refuses to leave unlisted. |
+| Database | `db` | Numbered, forward-only SQL. `00`–`23` are the schema and its corrections; `98` is the pilot seed (invented people, never production); `99` is the live verifier and is not schema. |
+| Tooling | `tools` | `migrate.mjs` (the ledger), `bundle-sql.mjs` (Supabase pastes), `run-all-tests.mjs`, `check-imports.mjs`, `check-bundle.mjs`, `run-smoke-api.mjs` and the `smoke-*.mjs` walks it refuses to leave unlisted. `hooks/guard.mjs` is the PreToolUse guard wired up in `.claude/settings.json`: it closes the applied end of the ledger (§9) to editors and to the shell alike, and refuses the deletes and pushes that cannot be undone. |
 | Docs | `docs` | This file, `AUTH_SPEC.md`, `SCORING_RULES.md`, `SCORING_HANDOVER_SPEC.md`, the reconciliation specs, and `adr/` (0001 scoped assignments, 0002 the coach's medical overview). |
 | Deploy | `DEPLOYING.md`, `render.yaml`, `Dockerfile`, `.github/workflows` | Render (or Cloud Run) for the API serving the built client from one origin; Supabase (or Cloud SQL) for Postgres; CI on every PR. |
 
@@ -213,6 +213,13 @@ db/NN_*.sql (new) ──▶ migrate.mjs --reset --seed --verify (local, with the
 
 - `schema_migration` records each file with its hash. A changed applied
   file is **refused**; so is an apply paste out of order or run twice.
+- `tools/hooks/guard.mjs` refuses the edit *before* it is made, so the
+  refusal lands while the change is still cheap to redirect into a new file
+  rather than at the deploy. It knows how far the ledger reaches from one
+  constant, `FROZEN_THROUGH` — **bump it when a new `db/NN` has been pasted
+  into production**, or the guard leaves that file open. `tools/hooks/guard.test.mjs`
+  asserts the constant still names a file that exists, which catches it
+  pointing past the end but not a number left behind.
 - `db/01` and `db/09` are generated and, once applied, as frozen as the rest.
   A capability change after go-live is `roles.mjs` + a new `db/NN` + an
   entry in `WITHDRAWN_SINCE_01` in the generator (`db/21` is the example).
