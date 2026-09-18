@@ -1,9 +1,10 @@
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { holdsCapability } from "../rbac/index.js";
 import { D } from "../design/tokens.js";
-import { Avatar, Badge, Btn, Card, EmptyState, SectionHeader } from "../ui/primitives.jsx";
+import { Avatar, Badge, Btn, Card, EmptyState, Modal, Select, SectionHeader } from "../ui/primitives.jsx";
 import { useLive, useRows } from "../lib/live.js";
+import { api } from "../lib/api.js";
 
 // ══════════════════════════════════════════════════════
 //  FIELDS VIEW — rich ground & pitch profiles
@@ -13,6 +14,12 @@ function FieldsView({ role }) {
   // principal. Importing the raw constant here would bypass both.
   const { rows: GROUNDS, loading, error } = useLive("grounds", role);
   const STAFF = useRows("staff", role);
+  // Fixtures at this ground, for the pitch-report picker below. `venue` is
+  // the ground's NAME (the matches read joins it in; there is no ground_id
+  // on the client's match shape yet), which is what a fixture list actually
+  // carries and is enough to tell two grounds apart.
+  const MATCHES = useRows("matches", role);
+  const [reportOpen, setReportOpen] = useState(false);
   // The groundsman's own record, per ground. Everything below this line that
   // is NOT drawn from it — orientation, dimensions, lights, the pitch strips —
   // exists only in the demo's mock: no table carries them, so in a live
@@ -109,7 +116,12 @@ function FieldsView({ role }) {
   return (
     <div className="os-page">
       <SectionHeader title="Fields & Pitch Profiles" sub="Ground management, pitch preparation and surface data" color={D.teal}
-        actions={canEdit&&<Btn size="sm">+ Pitch Report</Btn>}/>
+        actions={canEdit&&<Btn size="sm" data-testid="open-pitch-report" onClick={()=>setReportOpen(true)}>+ Pitch Report</Btn>}/>
+      {reportOpen&&(
+        <PitchReportModal ground={selGround} role={role}
+          fixtures={MATCHES.filter(m=>m.venue===selGround.name)}
+          onClose={()=>setReportOpen(false)}/>
+      )}
 
       <div style={{display:"grid",gridTemplateColumns:"var(--g-side-l,200px 1fr)",gap:"16px",alignItems:"start"}}>
         {/* Ground list */}
@@ -335,6 +347,115 @@ function FieldsView({ role }) {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * The pitch report — logged against a FIXTURE, not the ground (that is
+ * `ground_condition`, above). Every field is optional; `services/api`'s
+ * write route refuses only a report that says nothing at all
+ * ("empty_report"). Ratings are a number BESIDE the word, never instead of
+ * it: `bounce` and `bounceRating` are different facts, and this form asks
+ * for both without requiring either (SCRBRD_ANTIGRAVITY_ASSESSMENT.md §2.3
+ * is the write-up of why a slider standing in for a feeling was refused
+ * here).
+ */
+const PITCH_FIELDS = {
+  surface:  { label: "Surface",  values: ["hard", "firm", "soft", "damp"] },
+  grass:    { label: "Grass",    values: ["bare", "light", "covered", "green"] },
+  bounce:   { label: "Bounce",   values: ["low", "even", "variable", "steep"] },
+  pace:     { label: "Pace",     values: ["slow", "medium", "quick"] },
+  favours:  { label: "Favours",  values: ["seam", "spin", "batting", "even"] },
+  outfield: { label: "Outfield", values: ["fast", "medium", "slow"] },
+};
+function PitchReportModal({ ground, fixtures, role, onClose }) {
+  const [matchId, setMatchId] = useState(fixtures[0]?.id ?? "");
+  const [form, setForm] = useState({});
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null); // null | "ok" | error string
+  const set = (k) => (v) => setForm((f) => ({ ...f, [k]: v || undefined }));
+
+  // `on conflict (match_id) do update` on the server OVERWRITES every column
+  // with whatever this form sends, INCLUDING a blank re-entered as null — so
+  // a second report that only updates one field would otherwise wipe every
+  // other one already on file. Pre-filling from the fixture's existing
+  // report, before anything is typed, is what keeps an update an update.
+  const { rows: existing } = useLive("pitch_report", role, 0, { matchId });
+  useEffect(() => {
+    const r = existing[0];
+    setForm(r ? {
+      surface: r.surface ?? undefined, grass: r.grass ?? undefined,
+      bounce: r.bounce ?? undefined, pace: r.pace ?? undefined,
+      favours: r.favours ?? undefined, outfield: r.outfield ?? undefined,
+      coversOn: r.coversOn == null ? undefined : String(r.coversOn),
+      bounceRating: r.bounceRating == null ? undefined : String(r.bounceRating),
+      paceRating: r.paceRating == null ? undefined : String(r.paceRating),
+      notes: r.notes ?? undefined,
+    } : {});
+  }, [matchId, existing[0]?.reportedAt]);
+
+  const submit = async () => {
+    setBusy(true); setResult(null);
+    try {
+      await api(`/api/matches/${matchId}/pitch`, {
+        method: "POST",
+        body: {
+          ...form,
+          coversOn: form.coversOn === "true" ? true : form.coversOn === "false" ? false : undefined,
+          bounceRating: form.bounceRating ? Number(form.bounceRating) : undefined,
+          paceRating: form.paceRating ? Number(form.paceRating) : undefined,
+        },
+      });
+      setResult("ok");
+    } catch (e) {
+      setResult(e.code || e.message || "error");
+    }
+    setBusy(false);
+  };
+
+  return (
+    <Modal title={`Pitch report — ${ground.name}`} onClose={onClose} width="560px">
+      {!fixtures.length ? (
+        <div style={{color:D.textMuted,fontFamily:D.body,fontSize:"13px"}}>
+          No fixtures are recorded at this ground yet — there is nothing to file a report against.
+        </div>
+      ) : result === "ok" ? (
+        <div data-testid="pitch-report-saved" style={{color:D.emerald,fontFamily:D.body,fontSize:"13px",lineHeight:1.6}}>
+          Saved. The duty roster and this match's fixture screen will show it.
+          <div style={{marginTop:"14px"}}><Btn variant="tonal" onClick={onClose}>Close</Btn></div>
+        </div>
+      ) : (
+        <div style={{display:"flex",flexDirection:"column",gap:"2px"}}>
+          <Select label="Fixture" value={matchId} onChange={setMatchId} data-testid="pitch-report-fixture"
+            options={fixtures.map((m) => ({ value: m.id, label: `${m.awayTeam ?? "TBC"} — ${m.date ?? "no date"}` }))}/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}>
+            {Object.entries(PITCH_FIELDS).map(([k, { label, values }]) => (
+              <Select key={k} label={label} value={form[k] ?? ""} onChange={set(k)} data-testid={`pitch-report-${k}`}
+                options={[{ value: "", label: "— not recorded" }, ...values]}/>
+            ))}
+            <Select label="Covers on" value={form.coversOn ?? ""} onChange={set("coversOn")} data-testid="pitch-report-coversOn"
+              options={[{ value: "", label: "— not recorded" }, { value: "true", label: "On" }, { value: "false", label: "Off" }]}/>
+            <div/>
+            <Select label="Bounce rating (1–10)" value={form.bounceRating ?? ""} onChange={set("bounceRating")} data-testid="pitch-report-bounceRating"
+              options={[{ value: "", label: "— not recorded" }, ...Array.from({ length: 10 }, (_, i) => String(i + 1))]}/>
+            <Select label="Pace rating (1–10)" value={form.paceRating ?? ""} onChange={set("paceRating")} data-testid="pitch-report-paceRating"
+              options={[{ value: "", label: "— not recorded" }, ...Array.from({ length: 10 }, (_, i) => String(i + 1))]}/>
+          </div>
+          <label style={{display:"block",fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"5px"}}>Notes</label>
+          <textarea data-testid="pitch-report-notes" value={form.notes ?? ""} onChange={(e)=>set("notes")(e.target.value)} rows={3}
+            style={{width:"100%",padding:"9px 12px",background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,
+              color:D.textPrimary,fontFamily:D.body,fontSize:"13px",boxSizing:"border-box",resize:"vertical",marginBottom:"14px"}}/>
+          {result && result !== "ok" && (
+            <div data-testid="pitch-report-error" style={{color:D.roseText,fontFamily:D.body,fontSize:"12px",marginBottom:"10px"}}>
+              {result === "empty_report" ? "Record at least one thing before saving." : `Could not save (${result}).`}
+            </div>
+          )}
+          <Btn variant="primary" full disabled={busy||!matchId} data-testid="pitch-report-submit" onClick={submit}>
+            {busy ? "Saving…" : "Save pitch report"}
+          </Btn>
+        </div>
+      )}
+    </Modal>
   );
 }
 

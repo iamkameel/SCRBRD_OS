@@ -645,6 +645,19 @@ function asCap(r) {
            appearances: r.appearances, firstOn: d10(r.first_on), lastOn: d10(r.last_on), firstMatchId: r.first_match_id,
            baselineSet: r.baseline_set, live: true };
 }
+/**
+ * A fixture's pitch report, in the client's vocabulary. Read by
+ * SCRBRD-058's FieldsView form to pre-fill an existing report before it is
+ * edited — `on conflict (match_id) do update` overwrites every column, so a
+ * form that started blank would silently null out whatever was not
+ * re-entered.
+ */
+function asPitchReport(r) {
+  return { matchId: r.match_id, surface: r.surface, grass: r.grass, bounce: r.bounce,
+           pace: r.pace, favours: r.favours, coversOn: r.covers_on, notes: r.notes,
+           bounceRating: r.bounce_rating, paceRating: r.pace_rating, outfield: r.outfield,
+           reportedAt: r.reported_at, live: true };
+}
 function asHonour(r) {
   return { id: r.id, playerId: r.player_id, name: r.full_name, school: r.school_id, team: r.team_code, kind: r.kind,
            awardName: r.name, label: r.label, season: r.season, citation: r.citation, awardedOn: d10(r.awarded_on),
@@ -929,6 +942,7 @@ const ADAPT = {
   equipment_issues: asIssue,
   recognition: asRecognition,
   player_shot_points: asShotPoint,
+  pitch_report: asPitchReport,
   caps: asCap,
   honours: asHonour,
   milestones: asMilestone,

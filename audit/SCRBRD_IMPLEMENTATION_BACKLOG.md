@@ -839,8 +839,9 @@ Pass 3:
 
 17. **SCRBRD-056** handover UI — the backend and its tests already exist; this is the highest-value item
     in Pass 3 because it closes a real product gap rather than adding a new one.
-18. **SCRBRD-057** NRR simulator, **SCRBRD-058** pitch report screen — both independent, low priority,
-    P3 in ID order; neither is blocked.
+18. ~~**SCRBRD-057** NRR simulator~~ — blocked; checking the schema before writing the code found there
+    is no aggregate data to simulate from. Re-scoped to a prerequisite entry once "derived or typed" is
+    answered. **SCRBRD-058** pitch report screen — independent, low priority, not blocked.
 
 # Blocked Work
 
@@ -856,6 +857,7 @@ Pass 3:
 | SCRBRD-036 sponsor viewer | SCRBRD-032 | the ADR is the test a new role has to pass, and this is the first role request it would govern |
 | SCRBRD-037 duty roster | SCRBRD-034 | readiness is duty status; without the lifecycle the roster can only show names, which is the thing §17.3 says not to do |
 | SCRBRD-042 consent register | an audit of the existing consent reads | the entry may be already-satisfied; writing the change before the audit would be inventing work |
+| SCRBRD-057 NRR simulator | a decision on how `competition_entrant`'s aggregates are derived | no runs/overs-for-and-against exist to simulate from, only a stored final `net_run_rate` — computing a projection from that alone would be a fabricated number |
 
 # Pass 3 — Harvested from the `scrbrd_antigravity` prototype
 
@@ -913,31 +915,55 @@ same auth as every other scorer action. **Data migration required:** NO.
 **Regression risk:** LOW — additive UI over an already-tested backend.
 
 ### SCRBRD-057
-**Title:** No what-if tool over the standings SCRBRD OS already computes
-**Priority:** P3 · **Domain:** Competitions / Analytics · **Type:** enhancement
-**Affected files:** `apps/web/src/views/LeagueView.jsx` or a new component beside it
+**Title:** No what-if tool over the standings — and it cannot be built honestly yet
+**Priority:** P3 · **Domain:** Competitions / Analytics · **Type:** blocked, re-scoped
+**Affected files:** `db/08_schema_programme.sql` (`competition_entrant`), a new `db/NN`, then
+`apps/web/src/views/LeagueView.jsx`
 **Affected users:** competition admins and coaches following a run-in
 
-**Current behaviour:** `LeagueView.jsx` renders real, derived net run rate per team. There is no tool for
-"what happens to our NRR and rank if we make 240 off 45 overs against a team bowled out for 180."
-**Expected behaviour:** pick a team, enter a hypothetical result for both sides, see the projected NRR and
-table position — computed on the spot from the real standings already read, never stored, and labelled as
-a hypothetical everywhere it is shown.
-**Root cause:** not built; a genuine gap rather than a corrected mistake.
-**Recommended change:** a client-side simulation, on top of the standings resource already read, modelled
-on `NRRScenarioCalculator.tsx`'s inputs (runs, overs, all-out flag, per side) but with SCRBRD OS's own
-"(hypothetical)" labelling discipline rather than that source's plain "Projected NRR."
-**Why it matters:** small, low-risk, and asked for by exactly the audience (competition admins) already
-served by the screen it sits beside.
-**Dependencies:** none. **Security / privacy impact:** none — no new read, no write.
-**Data migration required:** NO.
-**Tests required:** a unit suite for the NRR-and-rank math against a few hand-checked scenarios.
-**Acceptance criteria:**
-- [ ] The projected figure is visibly and permanently labelled hypothetical
-- [ ] Nothing computed here is written anywhere
-**Regression risk:** LOW.
+**Current behaviour, corrected from the first draft of this entry:** the first draft assumed a "what-if"
+simulator was a small client-side addition over data already read. Checking `competition_entrant`
+(`db/08`) before writing the code found the opposite: the table stores `played`, `won`, `lost`, `drawn`,
+`no_result`, `points` and a single stored **`net_run_rate` number** — no runs-for, overs-for, runs-against
+or overs-against. NRR is `(runs for ÷ overs for) − (runs against ÷ overs against)`; without the four raw
+aggregates a "projected NRR" cannot be computed, only guessed at by treating the stored rate as if it
+composed linearly with a new match's rate, which it does not — a rate is not an average of rates unless
+weighted by the overs each one covers. Doing that would be exactly the fabrication this codebase's culture
+exists to refuse: a confident-looking number computed from data that is not there.
 
-### SCRBRD-058
+Worse, `LADDER`/`LiveLadder` (the real, `useLive("league", ...)` path, `comp.live === true`) is the only
+honest half of `LeagueView.jsx`. The DEMO half — `comp.table`, rendered when `comp.live` is falsy, with an
+"Edit Standings" / "✓ Save Changes" flow — writes only to local React state (`tableEdit`); no route exists
+under `services/api/write` for `competition_entrant` at all. A competition admin's "Save" on that screen
+persists nothing.
+**Expected behaviour:** either the simulator is dropped until the prerequisite exists, or the prerequisite
+is built first: `competition_entrant` gains real per-side aggregate columns (runs/legal-balls for and
+against), maintained from actual results — which itself needs an answer to a question this entry cannot
+answer alone: are those aggregates derived from `ball_event`/`match` results automatically, or typed by a
+competition admin as the authoritative record (the same "a human said so" standing a typed DLS revision
+target has)? That choice decides whether this is a read-side feature or a write-pipeline one.
+**Root cause:** the standings model was built far enough to show a ladder, not far enough to recompute one.
+**Recommended change:** **do not build the simulator on top of the stored `net_run_rate` alone.** File the
+real prerequisite — the aggregate columns and their maintenance story — as its own entry once the
+derivation question above is answered; this entry stays blocked until then.
+**Why it matters:** almost shipped a plausible-looking number with no real arithmetic behind it, on a
+screen a competition admin would act on.
+**Dependencies:** an answer to "derived or typed" for the standings aggregates, then a `db/NN`.
+**Security / privacy impact:** none. **Data migration required:** **YES**, once unblocked.
+**Tests required:** N/A until re-scoped.
+**Acceptance criteria:**
+- [ ] Not attempted before the aggregate data exists
+**Regression risk:** N/A — nothing was built.
+
+### ~~SCRBRD-058~~ — CLOSED
+**Closed 2026-09-18.** `PitchReportModal` in `FieldsView.jsx`, wired to the existing write route and the
+`pitch_report` read resource (new `asPitchReport` adapter in `lib/live.js` — no resource previously had
+one). Every field optional, matching the server's own "empty report" refusal. Pre-fills from any existing
+report before rendering the form: `on conflict (match_id) do update` overwrites every column with whatever
+is submitted, so a blank form re-opened on an already-reported fixture would have silently wiped it —
+found and fixed while writing the browser walk, which proves the fix by reopening the same fixture and
+checking the form shows what was actually saved, not a blank one. 10 new assertions in
+`smoke-browser-read.mjs`.
 **Title:** The pitch report has a schema, a write route and a read resource, and no screen reaches any of them
 **Priority:** P3 · **Domain:** Facilities / Duty roster · **Type:** product gap
 **Affected files:** `apps/web/src/views/FieldsView.jsx` (the button already there), or the duty roster's

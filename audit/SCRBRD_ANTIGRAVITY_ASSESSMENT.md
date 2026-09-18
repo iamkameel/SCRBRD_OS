@@ -153,15 +153,25 @@ property `scoring-session.mjs`'s own comment says the handshake exists to provid
 is exactly what the handover handshake exists to detect."* No PIN in a URL. No new capability required —
 the routes exist. Filed as **SCRBRD-056**.
 
-### 2.2 An NRR "what-if" simulator
+### 2.2 An NRR "what-if" simulator — blocked, and worth stating why
 
-SCRBRD OS already reads and renders real net run rate (`LeagueView.jsx`, `net_run_rate` from
-`services/api`). What it does not have is `NRRScenarioCalculator.tsx`'s idea: pick a team, propose a
-hypothetical result (runs, overs, all-out or not, for both sides), and show the projected NRR and table
-movement — clearly a simulation over already-derived standings, never stored, never asserted as a
-prediction. That framing keeps it inside this codebase's own honesty rule as long as it is built the same
-way: a `(hypothetical)` label that never leaves the screen it was computed on, no new capability, no write.
-Filed as **SCRBRD-057**.
+`NRRScenarioCalculator.tsx`'s idea — pick a team, propose a hypothetical result, see the projected NRR and
+table movement — looked like a small addition over the real net run rate SCRBRD OS already renders
+(`LeagueView.jsx`, `LiveLadder`). Checking `competition_entrant` (`db/08_schema_programme.sql`) before
+writing any code found it stores only a single final `net_run_rate` number — no runs-for, overs-for,
+runs-against or overs-against. NRR is a rate over cumulative totals; a "projection" built from the stored
+rate alone, without those totals, would be exactly the fabricated-number pattern this document spends
+Part 1 refusing, just aimed at a competition table instead of a player. It is not filed as buildable work —
+see `SCRBRD-057`, re-scoped to the real prerequisite (the aggregate columns, and a decision on whether they
+are derived from match results or typed by a competition admin, before anything simulates from them). The
+closest parallel already in this tree: a typed DLS revision target is honest because a person stated it; a
+computed one is not, for the same reason a computed NRR projection over data that is not there would not be.
+
+While checking this, `LeagueView.jsx`'s OTHER standings path — `comp.table`, the "Edit Standings" / "✓ Save
+Changes" flow shown for a demo competition — turned out to write only to local React state. No route
+exists to persist a competition_entrant row at all. That is a separate, pre-existing gap, recorded in
+`SCRBRD-057` rather than filed fresh here, since fixing it is the same prerequisite this section already
+needed.
 
 ### 2.3 A pre-match ground/pitch status check — checked against the tree, and mostly already there
 
@@ -257,6 +267,6 @@ assuming a gap is really empty.
 ## Backlog entries filed
 
 See `audit/SCRBRD_IMPLEMENTATION_BACKLOG.md`, "Pass 3 — Harvested from the `scrbrd_antigravity`
-prototype," for SCRBRD-056 (handover UI), SCRBRD-057 (NRR simulator) and SCRBRD-058 (the pitch-report
-screen — schema and routes already shipped; only the form is missing). Nothing in Part 1 is filed — it is
-recorded here as a decision, not a task.
+prototype," for SCRBRD-056 (handover UI, closed), SCRBRD-057 (NRR simulator, blocked on missing aggregate
+data — see §2.2's correction) and SCRBRD-058 (the pitch-report screen — schema and routes already shipped;
+only the form was missing). Nothing in Part 1 is filed — it is recorded here as a decision, not a task.

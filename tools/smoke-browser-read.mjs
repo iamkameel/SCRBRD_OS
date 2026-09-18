@@ -1740,6 +1740,62 @@ try {
     await c.ctx.close();
   }
 
+  // ── The pitch report: a real schema and route, no screen (SCRBRD-058) ──
+  // db/08 already has match_pitch_report and ground_condition, events-api.mjs
+  // already writes the former, read-api.mjs already reads it back, and the
+  // duty roster already unions its state in — the button that reaches any of
+  // it was the only piece missing, and it is the only piece this proves.
+  group("The groundsman's report reaches the fixture it is filed against");
+  {
+    const c = await open();
+    ok("the director of sport signs in", await signIn(c.page, /Director of Sport/));
+    const tid = (id) => c.page.locator(`[data-testid="${id}"]`);
+    await tid("nav-fields").click({ timeout: 6000 }); await c.page.waitForTimeout(1200);
+    ok("she reaches Fields", await tid("os-main").getAttribute("data-page") === "fields");
+
+    ok("the report button is offered — she holds facility.manage",
+       await tid("open-pitch-report").count() === 1);
+    await tid("open-pitch-report").click({ timeout: 4000 });
+    await c.page.waitForTimeout(500);
+    ok("a dialog opens", await c.page.locator('[role="dialog"][aria-modal="true"]').count() === 1);
+
+    const fixtureSelect = tid("pitch-report-fixture");
+    ok("it offers real fixtures at this ground, not a placeholder",
+       await fixtureSelect.locator("option").count() > 1, // "— not recorded" style placeholders don't apply here; first option is a real fixture
+       `${await fixtureSelect.locator("option").count()} options`);
+
+    // Every field is optional; filing one alone is still a real report.
+    await fixtureSelect.selectOption({ index: 0 });
+    const chosenFixture = await fixtureSelect.inputValue();
+    await tid("pitch-report-bounce").selectOption("variable");
+    await tid("pitch-report-bounceRating").selectOption("7");
+    await tid("pitch-report-notes").fill("Two-paced early on, truer after lunch.");
+    await tid("pitch-report-submit").click({ timeout: 4000 });
+    await c.page.waitForTimeout(700);
+    ok("saving it closes the form with a confirmation", await tid("pitch-report-saved").count() === 1);
+    await c.page.locator('button', { hasText: /^Close$/ }).first().click({ timeout: 3000 });
+    await c.page.waitForTimeout(400);
+    ok("...and the dialog is gone", await tid("modal-backdrop").count() === 0);
+
+    // Read it back through the real route, entirely through the app: reopen
+    // the same fixture and check the form pre-fills what was just saved. This
+    // is also the assertion for the fix that made this safe to reopen at
+    // all — `on conflict do update` overwrites every column with whatever a
+    // blank form sends, so a form that did not pre-fill would silently wipe
+    // this report the next time anyone touched it.
+    await tid("open-pitch-report").click({ timeout: 4000 });
+    await c.page.waitForTimeout(400);
+    await fixtureSelect.selectOption(chosenFixture);
+    await c.page.waitForTimeout(600);
+    ok("re-opening the same fixture shows what was actually saved, not a blank form",
+       await tid("pitch-report-bounce").inputValue() === "variable" &&
+       await tid("pitch-report-bounceRating").inputValue() === "7");
+    ok("...including the note", (await tid("pitch-report-notes").inputValue()).includes("Two-paced"));
+
+    ok("no console errors filing a pitch report", c.errors.length === 0, c.errors.join(" | "));
+    await c.ctx.close();
+  }
+
 } catch (e) {
   ok(`the browser read walk threw: ${e.message?.slice(0, 160)}`, false);
 } finally {
