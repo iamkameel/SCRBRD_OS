@@ -383,3 +383,103 @@ SCRBRD-045/046 was — those worked because the placements were already captured
 the capture step first: a line/length selector at the point of scoring, a new pair of columns on
 `ball_event`, and only then a chart worth trusting. Filed as **SCRBRD-061**, scoped as capture-plus-chart,
 not chart alone, so it is not mistaken for a small addition.
+
+---
+
+## Part 6 — A wider sweep, on request to keep mining the tree (2026-09-18)
+
+Parts 1–5 had only touched 5 of the tree's 63 `src/components/` directories (scoring, competitions,
+fields, players/profiles, scouting). Requested: keep looking, broader, for more of what Part 5 found.
+Surveyed the remaining directories by name/size triage first, then read in full and traced to their real
+call site whichever ones looked like genuine data visualization or dynamic UX rather than a static card —
+the same standard as every part above. Every finding below was independently re-verified against the
+source (grep for the exact line, confirm the call site) before being written here, not taken on the
+strength of the pass that found it.
+
+### 6.1 `MatchMomentumChart.tsx` — real event data, a coin flip for direction. Refuse; already have better.
+
+A cumulative home-vs-away momentum area chart, fed by `matchImpactEvents` — a real Firestore read of real
+per-ball impact values (`src/app/matches/[id]/page.tsx:24`, `fetchMatchImpactEvents`). But inside the
+component, the entire shape of the line comes from:
+
+```ts
+// and add a random walk to simulate momentum shifts.
+currentMomentum += (event.totalImpactValue || 0) * (Math.random() > 0.5 ? 1 : -1);
+```
+
+The magnitude of each swing is real; which team it swings toward is `Math.random() > 0.5`. The comment
+admits it rather than hiding it, which does not change what renders: a confident, definitive-looking swing
+chart, half coin-flip. SCRBRD OS already has the honest version of this exact idea — `apps/web/src/scorer/
+charts.jsx`'s `WormChart` (real cumulative runs/wickets, per ball) and `signals.js`'s `sig.mom` momentum
+signal, both derived straight from the real ball log, no randomness anywhere in the attribution.
+**Verdict: refuse. Adopting this would be a regression relative to what already exists.**
+
+### 6.2 `PlayerImpactCard.tsx` / `rankingsService.calculatePPR()` — good abstinence pattern, one bad default
+
+The card itself (`src/components/rankings/PlayerImpactCard.tsx`, called from `PlayerDetailClient.tsx:541`)
+is well-behaved in a way worth noting on its own: untracked dimensions (fielding, momentum) render
+**"Not tracked"** rather than a plausible invented number, and its radar chart only plots the dimensions
+the engine actually produced — the opposite pattern from the passport radar chart refused in Part 4. But
+the service behind it has: `if (impacts.length === 0) return { score: 40.0, components: [] };` — a
+specific, confident "40.0 — Developing" Impact Profile score shown for a player with zero recorded impact
+events, at the same visual weight as a real one.
+**Verdict: refuse the single-number score/badge itself; keep the per-dimension "Not tracked" honesty
+pattern in mind as a good template if SCRBRD OS ever needs a partial-data radar elsewhere — it is the
+right way to show a chart that doesn't have every value yet.**
+
+### 6.3 A derive-at-read-time NRR — directly informs SCRBRD-057's open question
+
+`src/app/actions/pointsTableActions.ts` computes a real points table, including NRR, by querying
+`status == 'completed'` Firestore matches and building each team's `runsFor`/`ballsFor`/`runsAgainst`/
+`ballsAgainst` **from the completed match records themselves**, then running the real NRR formula
+(`pointsTableUtils.ts`) — confirmed by reading both files directly. This is architecturally the exact
+prerequisite SCRBRD-057 was blocked on: SCRBRD OS's `competition_entrant` stores only a final
+`net_run_rate`, no raw aggregate columns, and SCRBRD-057's own entry left open whether those aggregates
+should be *derived* from results or *typed* by an admin.
+
+This sweep answers that question in SCRBRD OS's favour, not by copying this code but by what it proves is
+possible: AntiGravity has to reconstruct runs/overs by parsing a `"245/8"` score string and assuming
+`balls = overs * 6` (`extractMatchScores()` — wrong whenever an innings ends early or overs differ, since
+it never touches the real deliveries). SCRBRD OS does not need to guess at this at all — `ball_event` is
+the authoritative, per-delivery log (`innings`, `ball_type`, `value`, real legal-ball tracking already used
+by `packages/scoring/src/replay.mjs`), so the same runs-for/legal-balls-for/against aggregates AntiGravity
+derives from a parsed string, SCRBRD OS can derive exactly and honestly from the real ball log it already
+has. **This does not close SCRBRD-057** — deriving per-team aggregates from `ball_event` across a
+competition and wiring a what-if UI on top is still real, unbuilt work — but it answers "derived or typed"
+with "derived, from `ball_event`, the way everything else in this schema already is," which is the missing
+half of that entry. SCRBRD-057 updated accordingly rather than left as a dead end.
+
+### 6.4 Three confirmations that SCRBRD OS's existing answer is already the better one
+
+- **Head-to-head.** `teamComparisonActions.ts` is genuinely real (real Firestore queries, its own test
+  asserts "returns missing values for teams without recorded statistics") — and SCRBRD OS already has the
+  same feature with the same stated principle: `apps/web/src/lib/live.js:476`, *"The head-to-head against
+  one rival, DERIVED — never a stored tally,"* rendered by `AnalyticsView.jsx`'s `HeadToHead`, which
+  documents replacing an earlier invented table. Nothing to adopt; a useful second data point that the
+  "derive, never store a tally" rule is the right one.
+- **Fixture calendar.** `FixtureCalendar.tsx` is clean and prop-driven, no fabrication — but SCRBRD OS's
+  own `apps/web/src/views/CalendarView.jsx` already reads real matches and training sessions plus real
+  weather, which this component's source tree has no equivalent of at all. SCRBRD OS's version is already
+  the stronger implementation.
+- **Notification centre.** `GlobalNotificationCenter.tsx` (`Sidebar.tsx:219`) is a hardcoded
+  `MOCK_NOTIFICATIONS` array with no real data path anywhere in that tree. SCRBRD OS's `NotificationsView.jsx`
+  and `DashboardView.jsx` already read real rows via `useRows("notifications", role)`. Nothing to adopt here
+  either.
+
+### 6.5 Minor flag, not a filed item
+
+`stats/PerformanceRing.tsx` itself is a clean, generic, pure `value: number` progress-ring — fine as a
+shape. Its one caller (`src/app/people/[id]/page.tsx`) computes that value with its own admitted
+`// mock for now` comment: `Math.round(((totalRuns + wickets*20) / matchesPlayed) * 2)`, an invented,
+undisclosed weighting rendered as a definitive "Performance Score." The ring component is reusable if
+SCRBRD OS ever has a real, disclosed 0–100 metric to put in it; this particular formula should not be.
+
+### Not pursued
+
+`LiveTelemetryTicker.tsx` and `SchoolReadinessGauge.tsx` (`dashboard/`) are fully mocked **and** grep to
+zero call sites anywhere in the source tree — dead code even in their own repository, lowest priority of
+anything found. `ai/AiMatchIntelligencePanel.tsx` and the larger role dashboards
+(`coach-dashboard.tsx`, `sportsmaster-dashboard.tsx`, `medical-dashboard.tsx`) were not read in full this
+pass — worth a dedicated look if a future request specifically wants an AI-panel or role-dashboard audit,
+but nothing here should be assumed either way without doing that reading first, per this document's own
+rule.

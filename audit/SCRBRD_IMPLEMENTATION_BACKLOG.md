@@ -860,7 +860,7 @@ Pass 3:
 | SCRBRD-036 sponsor viewer | SCRBRD-032 | the ADR is the test a new role has to pass, and this is the first role request it would govern |
 | SCRBRD-037 duty roster | SCRBRD-034 | readiness is duty status; without the lifecycle the roster can only show names, which is the thing §17.3 says not to do |
 | SCRBRD-042 consent register | an audit of the existing consent reads | the entry may be already-satisfied; writing the change before the audit would be inventing work |
-| SCRBRD-057 NRR simulator | a decision on how `competition_entrant`'s aggregates are derived | no runs/overs-for-and-against exist to simulate from, only a stored final `net_run_rate` — computing a projection from that alone would be a fabricated number |
+| SCRBRD-057 NRR simulator | the runs/legal-balls-for-and-against derivation from `ball_event` (not yet built) | no runs/overs-for-and-against exist to simulate from today, only a stored final `net_run_rate` — computing a projection from that alone would be a fabricated number; "derived, not typed" is now the answer, but the derivation itself is unbuilt |
 | SCRBRD-061 bowling pitch map | its own capture step | no delivery has ever had a real line or length recorded; a chart today would heat-map every innings to one identical cell |
 
 # Pass 3 — Harvested from the `scrbrd_antigravity` prototype
@@ -948,14 +948,30 @@ against), maintained from actual results — which itself needs an answer to a q
 answer alone: are those aggregates derived from `ball_event`/`match` results automatically, or typed by a
 competition admin as the authoritative record (the same "a human said so" standing a typed DLS revision
 target has)? That choice decides whether this is a read-side feature or a write-pipeline one.
+
+**Update 2026-09-18, "derived or typed" now answered:** a wider AntiGravity sweep (assessment file §6.3)
+found `pointsTableActions.ts` there deriving the same four aggregates at read time from completed matches,
+rather than storing them — but doing it by parsing a `"245/8"` score string and assuming
+`balls = overs × 6`, which is wrong whenever an innings ends early. SCRBRD OS does not need that guesswork:
+`ball_event` is already the authoritative per-delivery log (`innings`, `ball_type`, `value`, legal-ball
+tracking `packages/scoring/src/replay.mjs` already relies on), so the same aggregates AntiGravity
+reconstructs approximately from a parsed string, SCRBRD OS can derive exactly from the real ball log —
+**derived, not typed**, consistent with every other number this schema already computes rather than stores
+(replay, `HeadToHead` in `live.js`). This answers the open question; it does not build the prerequisite —
+a derivation (materialized view or read-time aggregation over `ball_event`, per competition) is still
+unbuilt, real work.
 **Root cause:** the standings model was built far enough to show a ladder, not far enough to recompute one.
 **Recommended change:** **do not build the simulator on top of the stored `net_run_rate` alone.** File the
-real prerequisite — the aggregate columns and their maintenance story — as its own entry once the
-derivation question above is answered; this entry stays blocked until then.
+real prerequisite — a derivation of runs-for/legal-balls-for/against per team from `ball_event`, exposed
+either as a read resource or a materialized view — as its own entry now that "derived, from the ball log"
+answers the design question; this entry stays blocked until that prerequisite ships.
 **Why it matters:** almost shipped a plausible-looking number with no real arithmetic behind it, on a
 screen a competition admin would act on.
-**Dependencies:** an answer to "derived or typed" for the standings aggregates, then a `db/NN`.
-**Security / privacy impact:** none. **Data migration required:** **YES**, once unblocked.
+**Dependencies:** the runs-for/legal-balls-for/against derivation from `ball_event`, filed as its own
+prerequisite entry — no schema-design decision left outstanding.
+**Security / privacy impact:** none. **Data migration required:** possibly NO for the derivation itself
+(a read-time aggregation needs no new columns; a materialized view would), **YES** if the simulator later
+needs its own storage.
 **Tests required:** N/A until re-scoped.
 **Acceptance criteria:**
 - [ ] Not attempted before the aggregate data exists
