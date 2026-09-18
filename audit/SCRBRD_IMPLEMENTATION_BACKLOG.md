@@ -845,6 +845,9 @@ Pass 3:
 19. **SCRBRD-060** knockout bracket — independent, clean UI-only gap over an existing `comp_type`, once
     the round/seed derivation question is answered. **SCRBRD-061** bowling pitch map — blocked on its own
     capture step (new `ball_event` columns); do not build the chart before the capture exists.
+20. **SCRBRD-062** multi-fixture duty-coverage overview — smallest of the Pass 3 items: reuses an
+    already-correct, already-shipped read (`match_duties`, `SCRBRD-037`'s `DutyRoster`) across several
+    fixtures instead of one; no schema or server change.
 
 # Blocked Work
 
@@ -872,9 +875,10 @@ Its own self-audit (`Audit Pack/audit/*.md`, dated two days before this read) ra
 on real data, 43 partially mocked or randomised, 13 fully mocked — read as a warning to verify every
 screen against the wired code before borrowing it, which is what the assessment file does file by file.
 
-Five concrete gaps this tree does not yet cover, checked against the tree before being written here —
-the first three from the initial pass, the last two from a later follow-up request for "rich data,
-dynamic UI/UX" specifically (`audit/SCRBRD_ANTIGRAVITY_ASSESSMENT.md` Part 5):
+Six concrete gaps this tree does not yet cover, checked against the tree before being written here — the
+first three from the initial pass, the next two from a follow-up request for "rich data, dynamic UI/UX"
+(`audit/SCRBRD_ANTIGRAVITY_ASSESSMENT.md` Part 5), and the last from a wider sweep of the directories that
+pass had not yet reached (Parts 6–7):
 
 ### ~~SCRBRD-056~~ — CLOSED
 **Closed 2026-09-18.** `HandoverSheet` (arm/claim/verify tabs), `apps/web/src/lib/handover.js`, a
@@ -1146,3 +1150,51 @@ capture feeding a chart — worth building alongside or after it rather than as 
 - [ ] Not attempted as chart-only; capture ships first
 - [ ] An innings with no recorded line/length data shows an honestly empty map, never a fabricated one
 **Regression risk:** N/A — nothing built yet.
+
+### SCRBRD-062
+**Title:** No way to see duty-roster coverage across several fixtures at once
+**Priority:** P3 · **Domain:** Facilities / Duty roster · **Type:** product gap
+**Affected files:** a new view (e.g. `apps/web/src/views/ReadinessOverview.jsx`), reusing the existing
+`match_duties` read resource across multiple `matchId`s; no server, schema, or RLS changes
+**Affected users:** a sportsmaster / director of sport with several fixtures on a given weekend
+
+**Current behaviour, checked against `scrbrd_antigravity`:** its `SportsmasterDashboard` shows a
+"Readiness Status Board" — the next 5 fixtures, each with squad/venue/transport/officials status pills —
+traced to `getFixtureReadinessAction`. Venue and transport are real (a real field record, a real transport
+trip); squad and officials are both the identical `f.status === 'scheduled' ? 'ready' : 'pending'` test,
+one of them commented `// Static for now` — every scheduled fixture reads "ready" on both regardless of
+whether a lineup was picked or an umpire appointed.
+
+SCRBRD OS does not have this fabrication, because it does not have this screen at all — and the real
+building block for it already exists and is already correct: `apps/web/src/views/duties.jsx`'s
+`DutyRoster` computes genuine per-fixture coverage (umpires, third umpire, referee, scorer, scoring
+session, team sheet, pitch report, transport) from the `match_duties` union, under the same "READINESS,
+NOT NAMES" discipline documented in `services/api/read/read-api.mjs` — "nothing on record" rather than
+"pending" wherever nothing has actually happened. It is rendered only inside `MatchCentreView.jsx`, for
+one selected match at a time. There is no screen that lists several upcoming fixtures side by side with
+their coverage counts, the way a sportsmaster would actually want to scan a coming weekend.
+**Expected behaviour:** a compact table or card list — the school's next N fixtures, each showing a
+coverage count (e.g. "6/8 duties on record") and which slots are covered — built by running the existing
+`match_duties` read across those fixtures, not a new per-fixture formula.
+**Root cause:** `DutyRoster` was built and proven for the single-match detail screen (`SCRBRD-037`); nobody
+has yet needed the same real data summarised across fixtures.
+**Recommended change:** a new view that queries `match_duties` for each of the next N upcoming fixtures for
+a school (or reuses a batched version of the same query) and renders the same `SLOTS`/coverage logic
+`duties.jsx` already has, once per fixture, in a scannable list — explicitly not the AntiGravity formula of
+inferring squad/officials readiness from the fixture's own `scheduled` status, which restates the same fact
+twice under two labels instead of checking anything.
+**Why it matters:** the one piece of this idea genuinely missing from SCRBRD OS is UI, not data or
+discipline — the existing `match_duties` read already refuses exactly the fabrication the source commits,
+so this is close to the smallest kind of gap this backlog files.
+**Dependencies:** none for a first version reading `match_duties` as it is today; SCRBRD-034 (duty
+lifecycle) would let a covered slot mean more than "recorded" once it lands, the same as SCRBRD-037's own
+dependency.
+**Security / privacy impact:** none — same `match_duties` read, same per-table RLS, as the existing
+single-match roster. **Data migration required:** NO.
+**Tests required:** a browser walk confirming coverage counts for a small set of seeded fixtures with
+different duty states match what `MatchCentreView`'s own `DutyRoster` shows for the same fixtures.
+**Acceptance criteria:**
+- [ ] A sportsmaster can see coverage across several upcoming fixtures without opening each one
+- [ ] A slot with nothing on record reads as absent, never as "pending" or "ready"
+- [ ] The coverage count for a fixture matches what that fixture's own `DutyRoster` shows
+**Regression risk:** LOW — additive read-only view over an already-correct, already-tested resource.

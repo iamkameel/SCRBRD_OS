@@ -478,8 +478,110 @@ SCRBRD OS ever has a real, disclosed 0–100 metric to put in it; this particula
 
 `LiveTelemetryTicker.tsx` and `SchoolReadinessGauge.tsx` (`dashboard/`) are fully mocked **and** grep to
 zero call sites anywhere in the source tree — dead code even in their own repository, lowest priority of
-anything found. `ai/AiMatchIntelligencePanel.tsx` and the larger role dashboards
-(`coach-dashboard.tsx`, `sportsmaster-dashboard.tsx`, `medical-dashboard.tsx`) were not read in full this
-pass — worth a dedicated look if a future request specifically wants an AI-panel or role-dashboard audit,
-but nothing here should be assumed either way without doing that reading first, per this document's own
-rule.
+anything found.
+
+---
+
+## Part 7 — The `ai/` and `dashboards/` layers, read in full (2026-09-18)
+
+Part 6 flagged these as unread. Read in full this pass: `AiMatchIntelligencePanel.tsx` (604 lines) and all
+12 files in `dashboards/` (3,373 lines), plus the server actions behind the promising ones, each traced to
+its real call site the same way as every part above.
+
+### 7.0 A general observation before the specifics
+
+Every dashboard here reads meaningfully more disciplined than the `players/`/`scouting/` layers Part 4 and
+1.2 found rotten — including comments that self-report a fix for exactly the fabrication pattern this
+document keeps finding elsewhere. `medicalActions.ts`'s `logMedicalIncidentAction`:
+
+```ts
+// Deliberately unguarded: a failed write must abort before the audit entry
+// is written. Wrapping this in a try/catch would let the log attest to an
+// incident that was never filed — which is what the old swallowed error
+// plus its fabricated `local-inc-…` id did.
+```
+
+and `getCoachIntelligenceAction`'s readiness query: *"We intentionally do not assign a synthetic baseline
+where a player has never checked in."* This looks like a later, more mature refactor pass over the same
+codebase, not a uniformly-quality tree — worth remembering if this repo is mined further: the `dashboards/`
+and newer `actions/` files are a better place to look than `players/`/`scouting/` were.
+
+### 7.1 `CoachDashboard` + `SquadReadinessSummaryCard` — clean, real, a layout pattern worth reusing
+
+`coach-dashboard.tsx`'s own header comment states its own discipline before this audit had to find it:
+*"What is deliberately NOT here: [...] Likely XI, Field Plan, Match Plan and Captain Channel panels have no
+backing data in this codebase [...] Rather than ship placeholder cards for them [...] this view is built
+only from data that is genuinely live."* Verified true: `getCoachIntelligenceAction` queries a real
+`readiness_scores` Firestore collection per assigned player, chunked for Firestore's 30-item `in` limit,
+with the no-synthetic-baseline comment quoted above. The form sparkline is captioned *"a direct reading of
+real outcomes, not a fabricated series"* and is exactly that — `W`/`T`/`L` mapped to `1`/`0.5`/`0` from
+real confirmed match results, nothing invented for the missing ones. `SquadReadinessSummaryCard` (a
+separate, clean, prop-driven component) renders a four-band distribution — optimal / monitor / attention /
+**"no check-in"** — with the missing-data band always visible rather than folded into "optimal" by
+omission, then a filterable per-player list.
+
+Two ideas worth reusing, not the code: (1) a rank-ordered "bento" layout — hero / primary / intelligence /
+utility — that answers "what needs attention, what's now, what's next, who's ready" without a single tab
+click, instead of hiding two-thirds of the picture behind tabs by default (the file's own words for the
+anti-pattern it replaced); (2) a readiness distribution chart with an explicit, equally-weighted band for
+"no data yet," rather than treating missing as zero or omitting it.
+
+SCRBRD OS's own `readiness`/`availability` resources (`apps/web/src/lib/live.js`) are already richer than
+this Firestore collection — tri-state throughout (*"true restricted, false cleared, null not asked"*),
+self-declared vs. staff-declared distinguished, a return-to-play date — but nothing composes them into a
+single coach-facing view with this pattern; today's `DashboardView.jsx` is one shared, capability-gated KPI
+feed for every role, not a per-role prioritized board. Not filed as its own numbered entry — a per-role
+dashboard split is a bigger product decision than this audit should presume — but recorded as a concrete,
+verified-good pattern for whoever next touches the coach-facing screens.
+
+### 7.2 `SportsmasterDashboard`'s "Readiness Status Board" — half real, half fabricated; the real half is a genuine, narrow, already-buildable gap
+
+The board shows the next 5 fixtures with four status pills each: squad, venue, transport, officials.
+Traced to `getFixtureReadinessAction`:
+
+```ts
+readiness: {
+    squad: f.status === 'scheduled' ? 'ready' : 'pending',
+    venue: field?.status === 'Excellent' || field?.status === 'Good' ? 'ready' : 'pending',
+    transport: trip?.status === 'Ready' || trip?.status === 'Scheduled' ? 'ready' : 'pending',
+    officials: f.status === 'scheduled' ? 'ready' : 'pending' // Static for now
+}
+```
+
+`venue` and `transport` are real (a real field record, a real transport trip). `squad` and `officials` are
+not readiness checks at all — both are the same `f.status === 'scheduled'` test as each other and as the
+row's own existence, restated twice under different labels, one of them admitted in-line as *"static for
+now."* Every scheduled fixture shows "squad ready" and "officials ready" whether or not a lineup was ever
+selected or an umpire ever appointed.
+
+The *concept* — one compact table, across several fixtures, showing coverage at a glance — is exactly the
+piece missing from SCRBRD OS, and SCRBRD OS is positioned to build it honestly where this source could
+not: `apps/web/src/views/duties.jsx`'s `DutyRoster` already computes real per-fixture coverage across
+umpires, third umpire, referee, scorer, scoring session, team sheet, pitch report and transport — via the
+`match_duties` union, under the same "READINESS, NOT NAMES" discipline quoted in Part 6 — but only for
+**one match at a time**, rendered inside `MatchCentreView.jsx`'s single-fixture detail screen. There is no
+screen anywhere in SCRBRD OS that lists the coming week's fixtures with their coverage counts side by side,
+the way a sportsmaster would actually want to scan them before a Saturday.
+
+Filed as **SCRBRD-062**: a multi-fixture duty-coverage overview, built by running the *existing*
+`match_duties` read across the next N fixtures for a school rather than one match at a time — explicitly
+not by copying this source's squad/officials formula, which is the "don't do this" example for exactly why
+`duties.jsx`'s own header insists on "nothing on record," not "pending."
+
+### 7.3 `AiMatchIntelligencePanel.tsx` — dead code, and its defaults are fabricated even if it were wired up
+
+Zero call sites anywhere in `src/` — this 604-line component is never imported or rendered by anything in
+the app, the same as `LiveTelemetryTicker`/`SchoolReadinessGauge` in Part 6. If it ever were wired up, its
+props default to a fabricated demo match (`homeTeamName = 'Westville Boys'`, fictional player names and
+stats baked into the payload builders) rather than requiring real data to be passed in — the same
+bad-default pattern already refused in `PitchMap.tsx` (Part 5) and `MatchMomentumChart.tsx` (Part 6), here
+compounded by the component having no real caller at all to catch it.
+
+The AI flows behind it (`generateMatchSummary` and three siblings) are real Genkit/Gemini calls with real
+structured prompts — not the numeric-fabrication pattern this document mostly hunts, but a different
+question SCRBRD OS's culture has not needed to answer yet: whether an AI-generated match report or
+player-of-the-match narrative belongs on this product at all, and if so, only ever over real, complete
+match data, never a demo default standing in for it. **Not recommended to adopt as-is** — dead code with
+fabricated defaults is not a foundation to build on — but noted rather than silently skipped, since an LLM
+match-report feature is a plausible future ask and this is evidence of exactly the trap to avoid if it
+comes up: build it against real `ball_event`/scorecard data with no bundled demo fallback, or not at all.
