@@ -955,6 +955,66 @@ function AlertsSection({ role }) {
 // list is what the server lets this person see — their own grants, or the
 // ones naming their school — and the form is refused by the API for anyone
 // who is not his family; the message below says so in its words.
+/**
+ * Whether a boy may be seen by accredited scouts. SCRBRD-055.
+ *
+ * The gate has always worked: scouting_candidates() inner-joins on
+ * consent_state = 'granted', so a withdrawal and a decision never made both
+ * fall out, and only a guardian can set it — scouting_consent_set() takes no
+ * administrative override. What did not exist was anywhere to LOOK at it. A
+ * consent the family who gave it cannot inspect, or change their mind about
+ * without asking somebody to make an API call, is a consent in name.
+ *
+ * Drawn beside the passport consent because they are the same act on the same
+ * child: naming who may see him. A boy with no row has made no decision, and
+ * that reads as "not shown to scouts" rather than as a blank, because the two
+ * are the same thing here — the join excludes both — and saying so is the
+ * honest version.
+ */
+function ScoutingConsentSection({ role, players }) {
+  const [nudge, setNudge] = useState(0);
+  const [said, setSaid] = useState("");
+  const rows = useLive("scouting_consent", role, nudge).rows;
+  const decided = new Map(rows.map((r) => [r.playerId, r]));
+  const set = async (playerId, granted) => {
+    setSaid("");
+    try { await api(`/api/players/${playerId}/scouting-consent`, { method: "POST", body: { granted } }); setNudge((n) => n + 1); }
+    catch (e) { setSaid(e.message || "Refused."); }
+  };
+  return (
+    <Panel sx={{ marginTop: "16px" }} data-testid="scouting-consent-section">
+      <CardHead title="Seen by scouts"
+        sub="Only an accredited scout, only with a family's yes, and only ever the cricket record. A boy nobody has decided for is not shown — there is no default yes here."/>
+      {said && <div role="alert" style={{ fontFamily: D.body, fontSize: "11px", color: textOn(D.rose), marginBottom: "8px" }}>{said}</div>}
+      {players.length === 0
+        ? <EmptyState icon="🔭" message="No player to decide for."/>
+        : players.map((p) => {
+            const c = decided.get(p.id);
+            const on = c?.granted === true;
+            return (
+              <div key={p.id} data-testid={`scouting-consent-${p.id}`}
+                   style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 0", borderTop: `1px solid ${D.border}` }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textPrimary, fontWeight: 600 }}>{p.name}</div>
+                  <div style={{ fontFamily: D.body, fontSize: "10px", color: D.textMuted }}>
+                    {c ? `${c.state} ${c.decidedAt ?? ""}${c.decidedBy ? ` · ${c.decidedBy}` : ""}`.trim() : "no decision recorded"}
+                  </div>
+                </div>
+                <span data-testid={`scouting-state-${p.id}`}
+                      style={{ fontFamily: D.mono, fontSize: "9px", textTransform: "uppercase",
+                               color: on ? textOn(D.emerald) : D.textMuted }}>
+                  {on ? "shown to scouts" : "not shown"}
+                </span>
+                <Btn variant="ghost" onClick={() => set(p.id, !on)} data-testid={`scouting-toggle-${p.id}`}>
+                  {on ? "Withdraw" : "Allow"}
+                </Btn>
+              </div>
+            );
+          })}
+    </Panel>
+  );
+}
+
 function PassportTab({ role }) {
   const [nudge, setNudge] = useState(0);
   const [schools, setSchools] = useState([]);
@@ -977,7 +1037,8 @@ function PassportTab({ role }) {
   const sel = { background: D.surf2, border: `1px solid ${D.border}`, borderRadius: D.sm, padding: "7px 10px", fontFamily: D.body, fontSize: "12px", color: D.textPrimary };
   const open = rows.filter((r) => !r.withdrawnAt), closed = rows.filter((r) => r.withdrawnAt);
   return (
-    <Panel data-testid="passport-tab">
+    <>
+      <Panel data-testid="passport-tab">
       <CardHead title="Passport"
         sub="A boy's cricket record stays with his school until his family names another. Only his cricket record travels: nothing medical, no files, no notes. A family can take a name back at any time."/>
       <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center", marginBottom: "12px" }}>
@@ -1005,7 +1066,9 @@ function PassportTab({ role }) {
               : <Btn variant="ghost" onClick={() => withdraw(r.id)}>Withdraw</Btn>}
           </div>
         ))}
-    </Panel>
+      </Panel>
+      <ScoutingConsentSection role={role} players={players}/>
+    </>
   );
 }
 

@@ -167,6 +167,54 @@ try {
   group("An unauthenticated request is refused, not answered with an empty truth");
   ok("no token, no read", [401, 403].includes((await api("/api/read/scouting_candidates")).status));
 
+  // ── SCRBRD-055. The family can now SEE the decision they made ──
+  //
+  // The gate has always worked. What did not exist was a way to look at it:
+  // a consent whose giver cannot inspect it, or change their mind without
+  // asking somebody to make an API call, is a consent in name.
+  group("A family can read back the consent they gave");
+  const consentOf = async (token) => (await api("/api/read/scouting_consent", { token })).body?.rows || [];
+  {
+    await setConsent(R_PILLAY, parent, true);
+    const mine = await consentOf(parent);
+    const row = mine.find((r) => r.player_id === R_PILLAY);
+    ok("the guardian reads their own child's decision back", !!row, `${mine.length} rows`);
+    ok("...with the state in the table's own words, not a boolean",
+       row?.consent_state === "granted", row?.consent_state);
+    ok("...and when it was decided", !!row?.decided_at);
+
+    await setConsent(R_PILLAY, parent, false);
+    const after = (await consentOf(parent)).find((r) => r.player_id === R_PILLAY);
+    ok("a withdrawal is visible as a withdrawal, not as a missing row",
+       after?.consent_state === "withdrawn", after?.consent_state ?? "(row gone)");
+
+    // The read carries no filtering of its own — the table's policy does it —
+    // so this is where that claim is held to account.
+    ok("a boy with no decision has no row to read rather than a default yes",
+       !(await consentOf(parent)).some((r) => r.player_id === OTHER));
+    // Stronger than "not this boy", because "not this boy" would also pass on a
+    // read that was broken. A scout sees NOTHING here: the table's policy asks
+    // player.profile.read against the child, and a scout's accreditation does
+    // not reach one. That matters beyond tidiness — a scout who could read
+    // these rows would learn which families had said no, which is the one
+    // thing a family declining should never reveal to the person declined.
+    ok("a scout reads no consent rows at all, not merely none for this boy",
+       (await consentOf(scoutTok)).length === 0, `${(await consentOf(scoutTok)).length} rows`);
+    // A coach DOES see his own side's decisions, which is the policy working as
+    // written rather than an oversight: he holds player.profile.read for those
+    // boys, and a coach about to recommend one to a scout is better off knowing
+    // the family already said no.
+    const coachSees = await consentOf(coach);
+    ok("a coach sees the decision for a boy in his own side",
+       coachSees.some((r) => r.player_id === R_PILLAY), `${coachSees.length} rows`);
+    ok("no token, no consent read", [401, 403].includes((await api("/api/read/scouting_consent")).status));
+
+    // No restore here, deliberately. This walk is not idempotent and never was
+    // — run it twice without a reset and its opening assertions fail on the
+    // state the first run left, with or without this block. The runner resets
+    // between walks, which is the mechanism that makes that fine.
+  }
+
 } catch (e) {
   fail++; console.log("\n  ✗ threw:", e.message);
   if (serverErr.length) console.log(serverErr.join("").slice(-1500));

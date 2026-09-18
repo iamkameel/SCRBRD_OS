@@ -557,7 +557,21 @@ longer retaining active scoring permission."* `role_assignment` already carries 
 currently takes on trust. `delegated` is the state handover has no name for. Files: new `db/NN`,
 `packages/policy/src/authorize.mjs`. Depends on SCRBRD-031. Risk MEDIUM. **Migration YES.**
 
-### SCRBRD-035 — Operational escalation roster
+### SCRBRD-035 — Operational escalation roster — **RE-SCOPED, do not import as written**
+
+> Checked the 18 rows against the real roster before building. **Four of the roles they escalate
+> TO do not exist here** — Support Admin, Compliance/Safeguarding Officer, Audit Reviewer, Match
+> Referee/Commissioner — and they are the terminal target in most rows. Importing the table
+> wholesale produces a screen telling a school administrator to escalate to nobody, which is worse
+> than no screen.
+>
+> Adding those four roles is not a shortcut either: each has to pass ADR 0003's two tests first,
+> and at least Compliance/Safeguarding plausibly would.
+>
+> What is buildable now is narrower and mostly already built: `boundaries(role)` answers "I cannot
+> do this, who can" by derivation, for every sensitive capability. The rows this roster adds beyond
+> that are the ones routing to the four missing roles. So the useful order is ADR 0003 tests →
+> whichever of those roles passes → then this. Left open and depending on that rather than closed.
 §12: 18 rows of issue → primary owner → escalates to (guardian-link dispute → School Admin →
 Safeguarding; locked-score dispute → Match Commissioner → league governance; suspected unauthorised access
 → Compliance → Super Admin **and** Audit Reviewer). `tools/smoke-escalation.mjs` is about *privilege*
@@ -617,7 +631,27 @@ limits themselves are already here (`bowling_directive` with age bands in `db/08
 presentation over existing data plus a clause store. Files: `RulebookView.jsx`, new `db/NN` for clauses.
 Risk LOW. **Migration YES** if clauses are stored rather than shipped in code.
 
-### SCRBRD-042 — Consent register: `redacted` as a terminal state
+### ~~SCRBRD-042~~ — CLOSED as already-correct, which is what the entry said might happen
+
+> Audited both consent surfaces. Neither lets absence and refusal read the same, and the
+> enforcement is stronger than this entry assumed.
+>
+> **`passport_consent`** keeps withdrawn rows — `withdrawn_at` and `withdrawn_by`, never a delete —
+> and `SettingsView` draws them dimmed, labelled `withdrawn`, carrying both dates ("named 3 Mar ·
+> withdrawn 14 Jun"), with live grants sorted first. A partial unique index keeps one live grant per
+> player per school while leaving the history intact.
+>
+> **`player_scouting_consent`** uses an explicit `consent_state IN ('granted','withdrawn')` with
+> one row per player, so a withdrawal is an UPDATE and not a disappearance. And it is **enforced**:
+> `scouting_candidates()` inner-joins on `consent_state = 'granted'`, so a withdrawn consent and a
+> consent never given both fall out — the same inner-join shape that keeps cross-school pairings out
+> of match-ups. `smoke-scouting` covers the primitive including that a school cannot consent on a
+> family's behalf; `smoke-passport` covers the authorisation side.
+>
+> **One real gap, and it is not this one:** `player_scouting_consent` is drawn on no screen, so a
+> family cannot see or change whether their son may be scouted. Filed as SCRBRD-055.
+
+**Title:** ~~Consent register: `redacted` as a terminal state~~
 `GovernanceView.tsx` models consent as `GRANTED | PENDING | REDACTED`. Consent appears in 240 places here;
 what needs checking is whether **withdrawn** consent is visibly withdrawn rather than simply absent.
 Absence and refusal reading the same is the failure mode — the same distinction the dossier makes between
@@ -654,6 +688,13 @@ already-correct. Risk LOW. Migration UNKNOWN until the audit.
   selection exist. **Caveat that belongs in the entry:** an auto-selection must show its rationale or it is
   a black box a coach cannot defend to a parent — the same standard applied to a selection decision
   instead of a statistic. Risk MEDIUM, and mostly on the explanation rather than the arithmetic.
+- **SCRBRD-055** — Scouting consent is enforced and invisible. `player_scouting_consent` gates
+  `scouting_candidates()` correctly and is written through `/api/players/:id/scouting-consent`, but
+  no screen draws it: a parent cannot see whether their son is visible to accredited scouts, nor
+  change their mind, without someone making an API call for them. Consent that cannot be inspected
+  by the person who gave it is consent in name. The passport equivalent is drawn in Settings and is
+  the shape to copy. Files: a section on Settings › Passport or the player's own profile, reading a
+  new `scouting_consent` resource. Risk LOW. Migration NO — the table and the write route exist.
 - **SCRBRD-054** — `scoring.correct` is four capabilities wearing one name: force-release a stuck
   lease, read the quarantine queue, write a DRS review, and request an amendment. The first three
   are operational recovery and belong with whoever is senior at the ground; the fourth is half of a

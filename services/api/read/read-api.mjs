@@ -1208,6 +1208,29 @@ export const READ_QUERIES = {
     text: `select family, label, value, on_date, source_school, recorded_by, confidence from passport($1::uuid)`,
     params: q => [req(q, "playerId")],
   },
+  /**
+   * Whether a boy may be seen by accredited scouts, and who decided.
+   *
+   * SCRBRD-055. The table has gated scouting_candidates() since it was
+   * written — an inner join on consent_state = 'granted', so a withdrawal and
+   * a decision never made both fall out — and the family could set it through
+   * /api/players/:id/scouting-consent. What was missing was any way to LOOK at
+   * it. A consent the person who gave it cannot inspect is a consent in name,
+   * which is the whole reason this read exists.
+   *
+   * No filtering here. The table's own policy asks player.profile.read against
+   * the boy, so a guardian sees their own children, a coach sees his side, and
+   * a scout sees nothing he was not already going to see.
+   */
+  scouting_consent: {
+    text: `select c.player_id, p.full_name, p.team_code, c.consent_state, c.decided_at,
+                  u.name as decided_by_name
+             from player_scouting_consent c
+             join player p on p.id = c.player_id
+             left join app_user u on u.id = c.decided_by
+            order by p.full_name`,
+  },
+
   passport_consents: {
     text: `select c.id, c.player_id, passport_name(c.player_id) as full_name, c.to_school_id, s.name as to_school, c.granted_at, c.withdrawn_at
              from passport_consent c
