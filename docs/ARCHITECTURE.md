@@ -247,7 +247,10 @@ db/NN_*.sql (new) ──▶ migrate.mjs --reset --seed --verify (local, with the
   pointing past the end but not a number left behind.
 - `db/01` and `db/09` are generated and, once applied, as frozen as the rest.
   A capability change after go-live is `roles.mjs` + a new `db/NN` + an
-  entry in `WITHDRAWN_SINCE_01` in the generator (`db/21` is the example).
+  entry in `WITHDRAWN_SINCE_01` in the generator (`db/21` is the example) —
+  or, for a capability that did not exist when `db/01` shipped, an entry in
+  `ADDED_SINCE_01`, which keeps the name out of `db/01` and points at the
+  `db/NN` that inserts it (`db/24` is the example).
   A change to a *decision function* is the generator emitting it again into
   a new numbered file with the change flagged (`db/23` is the example: the
   same three functions, one more liveness line), while `db/01` stays as shipped.

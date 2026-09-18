@@ -12,7 +12,7 @@
  * approval one person can give themselves is a formality with a column:
  *
  *   the scorer may request and may not approve
- *   nobody approves their own, whatever they hold
+ *   the approver may not request (db/24), and could not approve her own even if she had
  *   the void is authored by the requester and approved by somebody else,
  *     and both names survive in the record
  *   the ordinary scoring path still cannot touch a finished match
@@ -116,27 +116,39 @@ try {
   ok("the six is still there", (await runs()) === before);
 
   group("Nobody approves their own, whatever they hold");
+  // Until db/24 the head of sport could file a request, because the request
+  // rode on scoring.correct and she holds that for session recovery. Now the
+  // request is its own capability and she does not hold it: the door is shut
+  // at the request, before the function's own guard is ever reached.
   const ownReq = await ask(MATCH, head, {
-    targetKey: "wrong-six", reason: "Head of sport files one themselves." });
-  // The scorer's request is still open on this delivery, so this one is
-  // refused by the one-open-request rule — file it against nothing instead.
-  if (ownReq.status === 200) {
-    const own = await decide(ownReq.body.id, head, { approve: true });
-    ok("the head of sport cannot approve their own", own.body?.ok === false);
-    ok("...and is told exactly why", own.body?.reason === "cannot_approve_your_own");
-  } else {
-    ok("a second open request against the same delivery is refused", ownReq.status >= 400);
-    // Prove the self-approval guard on a different delivery.
-    await q(`insert into ball_event
-               (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
-                idempotency_key, client_seq, client_ts, kind, ball_type, value, striker_id)
-             values ($1,$2, 9003, 1, 0, $3, 'device-amend', 'other-ball', 9003, now(),
-                     'ball', 'run', 2, $4)`, [MATCH, HIL, U_SCORER, P_BAT]);
-    const own = await ask(MATCH, head, { targetKey: "other-ball", reason: "Own request." });
-    const decided = await decide(own.body.id, head, { approve: true });
-    ok("the head of sport cannot approve their own", decided.body?.ok === false);
-    ok("...and is told exactly why", decided.body?.reason === "cannot_approve_your_own");
-  }
+    targetKey: "other-ball", reason: "Head of sport files one themselves." });
+  ok("the head of sport cannot file a request at all", ownReq.status === 403);
+  ok("...and is told it is not permitted", ownReq.body?.error === "not_permitted");
+  ok("...and no row was written", (await q(
+    `select count(*)::int n from scoring_amendment where requested_by = $1`, [U_HEAD]))[0].n === 0);
+  // The function's guard is the second lock on the same door, and it has to
+  // hold even for the one account that does hold both halves. Put a request
+  // in her name past the policy — as the superuser, which is the only way
+  // in — and have her decide it.
+  await q(`insert into ball_event
+             (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+              idempotency_key, client_seq, client_ts, kind, ball_type, value, striker_id)
+           values ($1,$2, 9003, 1, 0, $3, 'device-amend', 'other-ball', 9003, now(),
+                   'ball', 'run', 2, $4)`, [MATCH, HIL, U_SCORER, P_BAT]);
+  const planted = (await q(
+    `insert into scoring_amendment (match_id, school_id, target_key, reason, requested_by)
+     values ($1, $2, 'other-ball', 'Planted past the policy.', $3) returning id`, [MATCH, HIL, U_HEAD]))[0];
+  const decided = await decide(planted.id, head, { approve: true });
+  ok("even then, the head of sport cannot approve their own", decided.body?.ok === false);
+  ok("...and is told exactly why", decided.body?.reason === "cannot_approve_your_own");
+  ok("...and the delivery is still in the log", (await q(
+    `select count(*)::int n from ball_event_live where match_id = $1 and idempotency_key = 'other-ball'`,
+    [MATCH]))[0].n === 1);
+  // The head of sport still has what scoring.correct is for. Withdrawing it
+  // was the fix that broke three walks; this is the line that says it stayed.
+  ok("...while still holding session recovery", (await q(
+    `select count(*)::int n from role_capability
+      where role = 'directorofsport' and capability = 'scoring.correct'`))[0].n === 1);
 
   group("Somebody else approves, and the log changes");
   // Measured immediately before, not at the top: the self-approval group above

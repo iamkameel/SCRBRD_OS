@@ -9,8 +9,9 @@
  * must keep reproducing the shipped bytes. A capability change is therefore
  * three edits, not one: roles.mjs (the truth for a fresh install and the
  * client), a new db/NN with the DELETE/INSERT for a database that already
- * has db/01, and WITHDRAWN_SINCE_01 below so the emitted db/01 does not move.
- * DEPLOYING.md, "Changing the schema after go-live", has the procedure.
+ * has db/01, and WITHDRAWN_SINCE_01 or ADDED_SINCE_01 below so the emitted
+ * db/01 does not move. DEPLOYING.md, "Changing the schema after go-live",
+ * has the procedure.
  *
  * What this emits
  * ───────────────
@@ -358,17 +359,41 @@ export const WITHDRAWN_SINCE_01 = {
   assistantcoach:  [{ after: "medical.nature.read", capability: "medical.details.read" }],
 };
 
+/**
+ * The mirror: capabilities that did not exist when db/01 shipped.
+ *
+ * db/01 inserts the whole catalogue and every bundle, so a new name in
+ * capabilities.mjs would otherwise land in the frozen file twice — once as a
+ * catalogue row and once per role that holds it. Each name here is LEFT OUT
+ * of db/01's emission entirely, and the db/NN it maps to is where a database
+ * — fresh or live — actually receives it: the catalogue row first, then the
+ * role_capability rows for every role the model grants it to, then whatever
+ * policy the capability was introduced to gate. A fresh install therefore
+ * reaches the same state as production by the same path, which is the
+ * property WITHDRAWN_SINCE_01 exists to keep.
+ *
+ * rls.test.mjs holds each entry to that: the name appears nowhere in db/01,
+ * and the file it names carries a catalogue row and a role row for every
+ * holder in roles.mjs. An entry never retires — the day db/01 is regenerated
+ * onto a fresh cluster it must still omit the name, or the ledger sees a
+ * changed file.
+ */
+export const ADDED_SINCE_01 = {
+  "scoring.amend.request": "24_amend_request.sql",
+};
+const shippedIn01 = (cap) => !(cap in ADDED_SINCE_01);
+
 function capabilityRows() {
   const rows = [];
   for (const role of ROLES) {
-    const bundle = [...ROLE_CAPABILITIES[role]];
+    const bundle = [...ROLE_CAPABILITIES[role]].filter(shippedIn01);
     for (const { after, capability } of WITHDRAWN_SINCE_01[role] ?? []) {
       const at = bundle.indexOf(after);
       bundle.splice(at === -1 ? bundle.length : at + 1, 0, capability);
     }
     for (const cap of bundle) rows.push(`  (${q(role)}, ${q(cap)})`);
   }
-  const catalogue = ALL_CAPABILITIES.map((c) => `  (${q(c)})`).join(",\n");
+  const catalogue = ALL_CAPABILITIES.filter(shippedIn01).map((c) => `  (${q(c)})`).join(",\n");
   const grantRows = [];
   for (const [granter, granted] of Object.entries(GRANTABLE_ROLES))
     for (const r of granted) grantRows.push(`  (${q(granter)}, ${q(r)})`);
@@ -391,7 +416,7 @@ ${catalogue}
 ON CONFLICT (name) DO NOTHING;
 -- Set every regeneration, in both directions, so removing a name from
 -- PLATFORM_ONLY actually relaxes the rule rather than leaving a stale true.
-UPDATE capability SET platform_only = (name IN (${PLATFORM_ONLY.map(q).join(", ")}));
+UPDATE capability SET platform_only = (name IN (${PLATFORM_ONLY.filter(shippedIn01).map(q).join(", ")}));
 
 -- Readable by everyone, writable by nobody but a migration. The names are
 -- already in the client bundle, so there is nothing to protect by hiding them
@@ -806,7 +831,7 @@ export function authz() {
     `-- GENERATED from packages/policy/ by services/api/rls/generate-rls.mjs — DO NOT EDIT BY HAND.`,
     `-- Regenerate with \`pnpm rls:generate\`. Applied BEFORE the scoring schema,`,
     `-- which references app_can(). Model: docs/adr/0001-scoped-assignments.md.`,
-    `-- ${ALL_CAPABILITIES.length} capabilities across ${ROLES.length} roles.`,
+    `-- ${ALL_CAPABILITIES.filter(shippedIn01).length} capabilities across ${ROLES.length} roles.`,
     ``,
     `-- Principal helpers. app_user_id() is set from the signed token on every`,
     `-- request; everything else about a person's authority is looked up.`,

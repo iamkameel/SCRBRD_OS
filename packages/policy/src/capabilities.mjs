@@ -124,11 +124,25 @@ export const CAPABILITIES = {
   "scoring.start":               "Claim the scoring token for a match",
   "scoring.edit":                "Append ball events",
   "scoring.finalise":            "Close an innings or lock a match",
-  // TWO CAPABILITIES, because the spec asks for an approval and an approval one
-  // person can give themselves is a formality. `scoring.correct` is held by the
-  // scorer — they are the person who noticed the mistake — and the approval is
-  // deliberately not.
-  "scoring.correct":             "Request a correction to a completed match",
+  // THREE CAPABILITIES where there used to be two, because the spec asks for
+  // an approval and an approval one person can give themselves is a formality.
+  //
+  // `scoring.correct` is OPERATIONAL RECOVERY at the ground: force-releasing
+  // a scoring lease whose holder has gone (db/02 scoring_session_release),
+  // reading the quarantine queue (db/02, db/14) and entering a DRS review
+  // (db/09). Whoever is senior on a Saturday morning holds it, and that
+  // includes the director of sport and the competition admin.
+  //
+  // `scoring.amend.request` is the FIRST SIGNATURE on a correction to a
+  // locked match, held by the scorer — the person who noticed the mistake —
+  // and `scoring.amend.approve` is the second, deliberately held by nobody who
+  // holds the first. Until db/24 the request rode on `scoring.correct`, which
+  // meant the two roles above held both halves and could amend a published
+  // result unilaterally; withdrawing `scoring.correct` from them to close that
+  // stripped session recovery instead (SCRBRD-029, SCRBRD-054). The request
+  // had to be its own name before the two hands could be kept apart.
+  "scoring.correct":             "Recover a scoring session: release a stuck lease, read the quarantine, enter a DRS review",
+  "scoring.amend.request":       "Request a correction to a completed match",
   "scoring.amend.approve":       "Approve a correction to a completed match",
   "officiating.assign":          "Assign match officials",
   "officiating.report":          "File a match official's report",

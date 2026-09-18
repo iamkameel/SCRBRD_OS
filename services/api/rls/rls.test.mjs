@@ -10,7 +10,10 @@
 import { ROLES, ROLE_CAPABILITIES, roleGrants, SCORING_ROLES, SUBJECT_SCOPED_ROLES } from "@scrbrd/policy/roles";
 import { TABLES, referencedCapabilities, isCapabilityExpression, maskedColumns } from "@scrbrd/policy/tables";
 import { ALL_CAPABILITIES, SENSITIVE, isCapability } from "@scrbrd/policy/capabilities";
-import { main, authz, timeBox, WITHDRAWN_SINCE_01 } from "./generate-rls.mjs";
+import { main, authz, timeBox, WITHDRAWN_SINCE_01, ADDED_SINCE_01 } from "./generate-rls.mjs";
+import { existsSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
@@ -78,6 +81,9 @@ ok("rows are replaced wholesale", /DELETE FROM role_capability;/.test(SQL));
   let missing = 0, wrong = 0;
   for (const role of ROLES) {
     for (const cap of ROLE_CAPABILITIES[role]) {
+      // ...except a capability the model gained after db/01 shipped, which the
+      // db/NN in ADDED_SINCE_01 grants instead. Held to that in group B2.
+      if (cap in ADDED_SINCE_01) continue;
       if (!SQL.includes(`('${role}', '${cap}')`)) missing++;
     }
     // A capability the role does NOT hold must not appear for it — except a
@@ -95,6 +101,41 @@ ok("rows are replaced wholesale", /DELETE FROM role_capability;/.test(SQL));
   ok("no ungranted capability is emitted", wrong === 0);
 }
 ok("all roles appear", ROLES.every((r) => SQL.includes(`('${r}', `)));
+
+// ── B2. Capabilities added after db/01 shipped ───────────
+// The mirror of WITHDRAWN_SINCE_01. A name here must be absent from db/01
+// altogether — not in the catalogue, not in any bundle, not in the
+// platform_only list — and present in the db/NN it names, as a catalogue row
+// plus one role_capability row per holder in roles.mjs. Both halves matter:
+// leaving it out of db/01 keeps the frozen file frozen, and putting it into
+// the ledger file is what makes a fresh install and production agree.
+group("B2. Capabilities added after db/01 shipped");
+{
+  const DB = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "db");
+  const shipped = authz();
+  const added = Object.entries(ADDED_SINCE_01);
+  ok("the mirror is in use, so this group is testing something", added.length > 0);
+  for (const [cap, file] of added) {
+    ok(`${cap} is a real capability`, isCapability(cap));
+    ok(`${cap} is granted to somebody in the model`, ROLES.some((r) => roleGrants(r, cap)));
+    ok(`${cap} appears nowhere in the emitted db/01`, !shipped.includes(cap));
+    const path = join(DB, file);
+    ok(`${file} exists`, existsSync(path));
+    const ledger = existsSync(path) ? readFileSync(path, "utf8") : "";
+    ok(`${file} inserts the catalogue row`,
+       new RegExp(`INSERT INTO capability \\(name\\) VALUES \\('${cap.replaceAll(".", "\\.")}'\\)`).test(ledger));
+    const holders = ROLES.filter((r) => roleGrants(r, cap));
+    // A ledger file may align its rows; the emitted db/01 never does.
+    const grants = (r) => new RegExp(`\\('${r}',\\s+'${cap.replaceAll(".", "\\.")}'\\)`).test(ledger);
+    const unlisted = holders.filter((r) => !grants(r));
+    ok(`${file} grants it to every holder in roles.mjs (${holders.join(", ")}) — missing: ${unlisted.join(", ") || "none"}`,
+       unlisted.length === 0);
+    const extra = ROLES.filter((r) => !roleGrants(r, cap) && grants(r));
+    ok(`...and to nobody else — extra: ${extra.join(", ") || "none"}`, extra.length === 0);
+  }
+  ok("db/01's capability count in its header is the shipped count, not the model's",
+     shipped.includes(`-- ${ALL_CAPABILITIES.length - added.length} capabilities across`));
+}
 // No role-shaped decision function survives in the SQL. Scoring authority is
 // app_can('scoring.edit', ...) over assignments; a can_score(role) helper would
 // answer the question without a scope, which is how the old model leaked.

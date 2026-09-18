@@ -31,8 +31,12 @@
  *
  * Falsified by granting `scout` the capability `player.pii.read` in a local
  * copy of roles.mjs and confirming §11.7 and §21.5 both go red; and by
- * emptying KNOWN and confirming §11.2 reports the two roles it covers rather
- * than passing on a shorter list.
+ * granting `directorofsport` the capability `scoring.amend.request` in the
+ * same way and confirming §11.2 names it as an unrecorded crossing. KNOWN
+ * held one entry — the two roles that could request and approve a
+ * correction in one pair of hands — until db/24 split the request onto its
+ * own capability; the entry went with it, and the anti-rot assertion below
+ * is what would have said so had it been left behind.
  *
  *   node packages/policy/test/separation.test.mjs
  */
@@ -61,26 +65,18 @@ const reach = (role, forbidden) => forbidden.filter((c) => caps(role).includes(c
 // Recorded exceptions. Each needs a reason, and each is checked below to still
 // be a real crossing: when the policy is corrected the entry has to go, or the
 // suite says so. Correcting one of these is not a code change — it is
-// roles.mjs + a new db/NN + a WITHDRAWN_SINCE_01 entry + a production paste
-// (ARCHITECTURE.md §9), which is why they are recorded rather than fixed here.
+// roles.mjs + a new db/NN + a WITHDRAWN_SINCE_01 or ADDED_SINCE_01 entry + a
+// production paste (ARCHITECTURE.md §9), which is why they are recorded
+// rather than fixed here.
 const KNOWN = {
-  "scoring: requesting and approving in one pair of hands": {
-    roles: ["directorofsport", "competitionadmin"],
-    reason:
-      "capabilities.mjs says the approval is 'deliberately not' held by whoever " +
-      "requests the correction, and these two hold both halves, so either can " +
-      "amend a locked match unilaterally. THE OBVIOUS FIX IS WRONG, which is " +
-      "why this is still here: db/24 was written to withdraw scoring.correct " +
-      "from both, the full chain was run, and three walks went red. That " +
-      "capability gates four unrelated things — force-releasing a stuck " +
-      "scoring lease (db/02:453), reading the quarantine queue (db/02:252), " +
-      "writing a DRS review (db/09:504) and the amendment request itself " +
-      "(db/02:790). Withdrawing it does not narrow self-approval; it strips a " +
-      "director of sport of session recovery, quarantine visibility and DRS " +
-      "entry on a Saturday morning. The real defect is the overloading, and " +
-      "the fix is to split the request out onto its own capability. Tracked " +
-      "as SCRBRD-029, re-scoped, and SCRBRD-054 for the overloading.",
-  },
+  // Empty since db/24. The entry that lived here — directorofsport and
+  // competitionadmin holding both halves of a correction — is the worked
+  // example of why this list exists: the obvious fix (withdraw
+  // `scoring.correct` from both) was written, run, and reverted because that
+  // capability also gates session recovery, the quarantine queue and DRS
+  // entry. The real fix was a fourth name, `scoring.amend.request`, which
+  // took a capability, a ledger file and a paste — and only then could the
+  // entry be deleted. See db/24_amend_request.sql and SCRBRD-054.
 };
 
 
@@ -106,10 +102,16 @@ group("§11.1  Viewing a match does not grant scoring rights");
   // from exactly that (roles.mjs: holders of `scoring.edit`). GOVERNANCE is what
   // happens to a locked match afterwards, and it belongs to people who will
   // never touch a tablet: a principal approving an amendment is not a scorer.
+  // RECOVERY is the third thing: what somebody senior does at the ground when
+  // a session is stuck — release the lease, read the quarantine, enter a DRS
+  // review. It is neither the live act nor governance of a locked match, and
+  // until db/24 it shared a name with the amendment request, which is what
+  // made §11.2 unfixable without breaking a Saturday morning (SCRBRD-054).
   const SESSION = ["scoring.start", "scoring.edit", "scoring.finalise"];
-  const GOVERNANCE = ["scoring.correct", "scoring.amend.approve"];
-  ok("every scoring capability is either a session act or a governance one",
-     ALL_CAPABILITIES.filter((c) => c.startsWith("scoring.")).length === SESSION.length + GOVERNANCE.length,
+  const RECOVERY = ["scoring.correct"];
+  const GOVERNANCE = ["scoring.amend.request", "scoring.amend.approve"];
+  ok("every scoring capability is a session act, a recovery act or a governance one",
+     ALL_CAPABILITIES.filter((c) => c.startsWith("scoring.")).length === SESSION.length + RECOVERY.length + GOVERNANCE.length,
      ALL_CAPABILITIES.filter((c) => c.startsWith("scoring.")).join(" "));
   const leaked = ROLES.filter((r) => !SCORING_ROLES.includes(r) && reach(r, SESSION).length);
   ok("no role outside SCORING_ROLES reaches the live scoring session", leaked.length === 0,
@@ -119,9 +121,9 @@ group("§11.1  Viewing a match does not grant scoring rights");
   // earlier version of this line asserted something larger — that nobody who
   // can append balls may also approve an amendment — which is not required.
   // A director of sport who scored the match himself is fine as an approver
-  // PROVIDED he cannot also be the one requesting, and that is exactly the
-  // overlap the exception above records and SCRBRD-029 exists to remove.
-  const requesters = new Set(others("scoring.correct"));
+  // PROVIDED he cannot also be the one requesting — which held only on paper
+  // until db/24 gave the request its own name (SCRBRD-029, SCRBRD-054).
+  const requesters = new Set(others("scoring.amend.request"));
   const approvers = new Set(others("scoring.amend.approve"));
   const overlap = [...requesters].filter((r) => approvers.has(r) && !EXEMPT.includes(r));
   ok("a correction takes two people, beyond the recorded exception",
@@ -140,24 +142,31 @@ group("§11.1  Viewing a match does not grant scoring rights");
 // ── §11.2 Scorer vs match authority ──────────────────────
 group("§11.2  The scorer records, the umpire officiates, a third party approves");
 {
-  const pair = ["scoring.correct", "scoring.amend.approve"];
+  const pair = ["scoring.amend.request", "scoring.amend.approve"];
   const both = others(pair[0]).filter((r) => caps(r).includes(pair[1]));
-  // Reads the exception list generically rather than by key, because the key
-  // it used to name is gone: db/24 withdrew scoring.correct from the two roles
-  // that held both halves, so the entry was deleted and this assertion now
-  // stands on an empty list — which is the state it always wanted.
+  // Reads the exception list generically rather than by key: since db/24 the
+  // list is empty, so this stands on nothing but the two capability sets —
+  // which is the state it always wanted.
   const unrecorded = both.filter((r) => !EXEMPT.includes(r));
   ok("nobody may both request and approve a correction, beyond the recorded exceptions",
      unrecorded.length === 0, `unrecorded: ${unrecorded.join(", ")}`);
   // The exception list must stay real, or it silently licenses a role that no
-  // longer needs licensing. This is what would have forced the entry to be
-  // deleted had db/24 landed — and what will force it when SCRBRD-029 lands
-  // for real, by splitting the capability rather than withdrawing it.
+  // longer needs licensing. This is what forced the directorofsport /
+  // competitionadmin entry out when db/24 landed.
   const stale = EXEMPT.filter((r) => !both.includes(r));
   ok("...and every recorded exception is still a real crossing", stale.length === 0,
      `fixed — delete from KNOWN: ${stale.join(", ")}`);
   ok("the scorer requests corrections and cannot approve them",
-     caps("scorer").includes("scoring.correct") && !caps("scorer").includes("scoring.amend.approve"));
+     caps("scorer").includes("scoring.amend.request") && !caps("scorer").includes("scoring.amend.approve"));
+  // The split has to leave recovery where it was, or it is db/24's reverted
+  // predecessor under another name: the two roles that lost the request
+  // still release a lease, still read the quarantine, still enter a review.
+  for (const r of ["directorofsport", "competitionadmin"])
+    ok(`${r} approves, recovers a session, and does not request`,
+       caps(r).includes("scoring.amend.approve") && caps(r).includes("scoring.correct")
+         && !caps(r).includes("scoring.amend.request"));
+  ok("the request is held by the scorer and nobody else who is not the owner",
+     others("scoring.amend.request").join() === "scorer");
   ok("the scorer holds no officiating or disciplinary authority",
      reach("scorer", ["officiating.assign", "officiating.report", "officiating.registry.manage",
                       "discipline.read", "discipline.write"]).length === 0,
