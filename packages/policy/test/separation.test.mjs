@@ -36,7 +36,7 @@
  *
  *   node packages/policy/test/separation.test.mjs
  */
-import { ROLES, ROLE_CAPABILITIES, SCORING_ROLES } from "../src/roles.mjs";
+import { ROLES, ROLE_CAPABILITIES, SCORING_ROLES, boundaries } from "../src/roles.mjs";
 import { ALL_CAPABILITIES, SENSITIVE, PLATFORM_ONLY } from "../src/capabilities.mjs";
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -241,6 +241,49 @@ ok("§21.10  holding a commercial capability never carries a sensitive one with 
      gates.length <= GATE_CEILING, gates.slice(0, 4).join(" · "));
   ok("...and the ceiling is not slack — lower it when SCRBRD-011 removes one",
      gates.length === GATE_CEILING, `${gates.length} found; set GATE_CEILING to that`);
+}
+
+// ── The boundary, told to the person standing at it ──────
+//
+// SCRBRD-033. boundaries(role) is the same separation these rules assert,
+// turned around and addressed to whoever holds the role: the sensitive things
+// you do not hold, and who holds them instead. It is derived, so it cannot
+// drift from the policy above — which is the whole reason it is not prose.
+group("§11, said to the person rather than about them");
+{
+  ok("the owner's key has no boundary, because it holds everything",
+     boundaries("superadmin").length === 0);
+  ok("an operational role does have one", boundaries("coach").length >= 4,
+     `coach: ${boundaries("coach").length}`);
+
+  const wrong = [], undescribed = [], liars = [], selfish = [], nobody = [];
+  for (const role of ROLES)
+    for (const b of boundaries(role)) {
+      // It may only name what the role does NOT hold, or the screen tells a
+      // coach he cannot do something he does every day.
+      if (caps(role).includes(b.capability)) wrong.push(`${role}:${b.capability}`);
+      if (!b.what) undescribed.push(b.capability);
+      // Every name offered has to actually hold it: a hand-off to somebody who
+      // would also be refused sends a person round a loop.
+      const bad = b.askInstead.filter((r) => !caps(r).includes(b.capability));
+      if (bad.length) liars.push(`${b.capability}→${bad.join(",")}`);
+      if (b.askInstead.includes(role)) selfish.push(`${role}:${b.capability}`);
+      if (b.askInstead.includes("superadmin") || b.askInstead.includes("platformadmin"))
+        nobody.push(`${role}:${b.capability}`);
+      if (b.askInstead.length === 0) nobody.push(`${role}:${b.capability} has nobody to ask`);
+    }
+  ok("a boundary never names something the role already holds", wrong.length === 0, wrong.slice(0, 3).join(" "));
+  ok("every boundary says what the capability is, in the words the policy uses",
+     undescribed.length === 0, undescribed.slice(0, 3).join(" "));
+  ok("every name offered as a hand-off genuinely holds it", liars.length === 0, liars.slice(0, 3).join(" "));
+  ok("...and is never the role itself", selfish.length === 0, selfish.slice(0, 3).join(" "));
+  ok("...and is never a break-glass account, nor an empty list",
+     nobody.length === 0, nobody.slice(0, 3).join(" "));
+
+  // The floor. An empty SENSITIVE, or a boundaries() that returned nothing,
+  // would make all five of those true about no data at all.
+  const total = ROLES.reduce((n, r) => n + boundaries(r).length, 0);
+  ok(`${total} boundaries were checked across ${ROLES.length} roles`, total >= 100, `${total}`);
 }
 
 // ── What this file does not check ────────────────────────

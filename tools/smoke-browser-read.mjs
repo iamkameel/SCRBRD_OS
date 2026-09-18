@@ -597,6 +597,26 @@ try {
     const mine = await coach.page.locator('[data-testid="my-clearances"]').innerText().catch(() => "");
     ok("...but he sees his own in settings", /first aid certificate/i.test(mine) && /expiring/i.test(mine));
     ok("...and only his own", !/P Moodley|B Ngcobo/.test(mine));
+
+    // SCRBRD-033. Where his access stops, derived from the policy rather than
+    // written per role — so the assertions are about a coach's REAL boundary
+    // and would go red if the capability moved.
+    const bounds = coach.page.locator('[data-testid="boundaries-section"]');
+    ok("the coach is told where his access stops", await bounds.count() === 1);
+    const bt = await bounds.innerText().catch(() => "");
+    ok("...including the clinical record, which is ADR 0002's whole point",
+       await coach.page.locator('[data-testid="boundary-medical.details.read"]').count() === 1, bt.slice(0, 120));
+    ok("...and the boy's identity document",
+       await coach.page.locator('[data-testid="boundary-player.identity.read"]').count() === 1);
+    // He DOES hold the availability tier, so it must not appear as a boundary.
+    ok("...and not the medical status he reads every week",
+       await coach.page.locator('[data-testid="boundary-medical.status.read"]').count() === 0);
+    ok("each line says who to ask instead", /\bAsk\b/.test(bt) && /Medical|Parent|Guardian|Director/i.test(bt), bt.slice(0, 200));
+    // The lesson from the dossier's [object Object]: a derived section renders
+    // whatever it was handed, and a unit test that never rendered it cannot see
+    // a stringified object.
+    ok("nothing on the panel is a stringified object", !/\[object |undefined|NaN/.test(bt), bt.slice(0, 160));
+
     ok("no console errors", coach.errors.length === 0 && head.errors.length === 0);
     await coach.ctx.close();
   }

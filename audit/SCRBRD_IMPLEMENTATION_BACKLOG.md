@@ -487,7 +487,31 @@ cost of getting one wrong.
 
 ## P2 — Concepts the tree does not have
 
-### SCRBRD-033 — Role-entry briefing: what this role may not do, and who it hands off to
+### ~~SCRBRD-033~~ — CLOSED, at a third of the size, and with my own claim corrected
+
+> **`ungrantedCapabilities()` does not do what this entry said it did.** It returns
+> capabilities NO role grants — dead weight across the roster — not the complement for one
+> role. The entry claimed the "must not" list was derivable from it. Misread; recorded rather
+> than quietly rewritten, because the same misreading produced the harvest write-up's claim too.
+>
+> The idea survived the correction, the shape did not. A role's complement IS trivially
+> computable, and it is **useless**: a scorer lacks seventy-three capabilities. Two narrowings
+> were measured against the real roster before anything was built —
+> sensitive-not-held gives 3–9 lines per role, held-by-few-roles gives 11–13 and mostly
+> irrelevant ones. The first is the boundary that matters and the second was dropped.
+>
+> `boundaries(role)` in `roles.mjs` returns the sensitive capabilities a role does not hold,
+> each naming who does; break-glass accounts are excluded from the hand-off with the reason.
+> `BoundariesSection` draws it on Settings › Me. Nothing is written per role: move a capability
+> and the text moves with it. 8 assertions in `separation.test.mjs`, 6 in `smoke-browser-read`,
+> and the browser ones were falsified by granting `coach` `medical.details.read` and rebuilding
+> — the walk went red, which is the proof they track the policy rather than a string.
+>
+> Not built, and not needed: the executive summary and recommended display mode from beta-2's
+> version. Settings › Roles already lists what every role may do, thoroughly. What was missing
+> was only the second person — what **you** may not do, and who decides instead.
+
+**Title:** ~~Role-entry briefing: what this role may not do, and who it hands off to~~
 `roles.mjs` encodes what a role *may* do. Nothing tells a person what they may **not** do or who receives
 the next decision. `Roles&Duty.md` §4–§9 gives every role a *Must not* and a *Hand-offs* section, and
 beta-2 renders it at sign-in (`src/ai/flows/onboarding-briefing.ts`) as summary, responsibilities,

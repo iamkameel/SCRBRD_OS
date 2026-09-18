@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import pkg from "../../package.json";
 import { ROLES, ROLE_FAMILIES, ROLE_IDENTITY, canonicalRole } from "../design/roles.js";
-import { GRANTABLE_ROLES, ROLE_CAPABILITIES, SUBJECT_SCOPED_ROLES, TEAM_SCOPED_ROLES } from "@scrbrd/policy/roles";
+import { boundaries, GRANTABLE_ROLES, ROLE_CAPABILITIES, SUBJECT_SCOPED_ROLES, TEAM_SCOPED_ROLES } from "@scrbrd/policy/roles";
 import { D, textOn } from "../design/tokens.js";
 import { Avatar, Badge, Btn, Card, EmptyState, Input, Modal, SectionHeader, Select } from "../ui/primitives.jsx";
 import { Metric, MetricGroup } from "../ui/data.jsx";
@@ -722,6 +722,53 @@ function RolesTab({ users, grantable }) {
 // ══════════════════════════════════════════════════════
 //  ME — my own access, this device, my clearances
 // ══════════════════════════════════════════════════════
+/**
+ * Where your authority stops, and who decides instead. SCRBRD-033.
+ *
+ * Every other screen in the product tells a person what they can do. This one
+ * tells them what they cannot, which is the half that matters at the moment
+ * somebody asks them for something they should not hand over.
+ *
+ * Nothing here is written per role. boundaries() derives it from the same
+ * policy that generates the database's row-level security, so it cannot drift
+ * from what would actually happen — and a capability moved between roles moves
+ * this text with it. It is the sensitive set the role does not hold, which is
+ * three to nine lines rather than the seventy-odd of a full complement.
+ *
+ * The hand-off is derived too: whoever holds the capability IS the answer to
+ * "then who". Break-glass accounts are left out of that list on purpose, in
+ * boundaries() itself, with the reason.
+ */
+const ASK_SHOWN = 4;
+function BoundariesSection({ role }) {
+  const bounds = boundaries(role);
+  if (bounds.length === 0) return null;     // the owner's key holds everything
+  return (
+    <Panel data-testid="boundaries-section">
+      <CardHead title="Where your access stops"
+        sub="What this role deliberately cannot reach, and who to ask instead. Read from the same policy the database enforces, so it is what would actually happen rather than a description of it."/>
+      <div style={{ display: "grid", gap: "8px" }}>
+        {bounds.map((b) => {
+          const shown = b.askInstead.slice(0, ASK_SHOWN).map((r) => ROLES[r]?.label ?? r);
+          const rest = b.askInstead.length - shown.length;
+          return (
+            <div key={b.capability} data-testid={`boundary-${b.capability}`}
+                 style={{ padding: "10px 12px", borderRadius: D.md, background: D.surf2 + "66",
+                          border: `1px solid ${D.border}` }}>
+              <div style={{ fontFamily: D.body, fontSize: "12px", fontWeight: 600, color: D.textPrimary }}>{b.what}</div>
+              <div style={{ ...SUB, marginTop: "3px" }}>
+                Ask <span style={{ color: D.textSecondary }}>{shown.join(", ")}</span>
+                {rest > 0 ? ` or ${rest} other${rest === 1 ? "" : "s"}` : ""}.
+              </div>
+              <div style={{ ...MONO, marginTop: "3px" }}>{b.capability}</div>
+            </div>
+          );
+        })}
+      </div>
+    </Panel>
+  );
+}
+
 function MeTab({ role }) {
   const me = profile();
   const live = signedIn();
@@ -764,6 +811,7 @@ function MeTab({ role }) {
           )}
       </Panel>
 
+      <BoundariesSection role={role}/>
       <AlertsSection role={role}/>
       <MyClearancesSection role={role}/>
     </div>
