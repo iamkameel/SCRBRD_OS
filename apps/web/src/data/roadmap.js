@@ -12,6 +12,14 @@ import { D } from "../design/tokens.js";
 // checks each one exists on disk and is registered in tools/run-smoke-api.mjs,
 // so a walk that is deleted or renamed takes the claim down with it.
 //
+// `undrawn` is the same idea pointing the other way. A "partial" claims the
+// data exists and no screen draws it, and that claim goes stale just as easily
+// — up16 sat here saying "simply not shown" while RecognitionCard had been on
+// the player profile all along. So each partial names a real identifier from
+// services/api, and the test checks it is real AND that no view references it.
+// Naming something real is the floor: an invented testid nobody would ever use
+// would pass forever.
+//
 // BE PRECISE ABOUT WHAT THAT PROVES. It proves the named walk exists and runs.
 // It does not prove the walk would fail if the feature broke — no test can
 // prove that about another test — so the screens say "names the walk that
@@ -42,16 +50,20 @@ export const UPGRADES = [
     desc: "The other side's squad and what the ball log says about each of them, on the fixture in Match Centre, inside the fourteen-day window before it. Cricket columns only, figures withheld below a thirty-ball floor with the evidence named, and every read written to the other school's access log. Head-to-Head is now derived from the fixtures rather than the hand-written table it replaced, and the match-ups say how much of the log they can speak for.", effort: "Medium", walk: ["opposition", "browser-dossier"] },
   { id: "up22", category: "Integrations",  priority: "medium", status: "shipped", title: "Reduced-Overs Matches",
     desc: "A revised limit and target mid-innings, entered by the umpire, replayed by the same reducer.", effort: "Medium", walk: ["scorecard"] },
+  // Was listed "partial — simply not shown" until the walk field went in and
+  // somebody looked. RecognitionCard has been on the player profile since it
+  // was built, and two walks assert it. See the note above about re-reading
+  // this file against the code: this is what it costs when nobody does.
+  { id: "up16", category: "Admin",         priority: "medium", status: "shipped", title: "Caps, Honours & Milestones on the Passport",
+    desc: "Colours, half-colours, honours, captaincy, a side's cap ledger and the milestones the ball log threw up \u2014 on the boy's own profile, in the server's words, each carrying the season it belongs to and whether it may go on a public board.", effort: "Low", walk: ["recognition", "browser-read"] },
 
   // ── Built underneath, not yet drawn ──────────────────────────
-  { id: "up16", category: "Admin",         priority: "medium", status: "partial", title: "Caps, Honours & Milestones on the Passport",
-    desc: "Recorded, consented and readable; simply not shown. The cheapest item here and the one a pupil actually opens.", effort: "Low" },
   { id: "up11", category: "Admin",         priority: "low",    status: "partial", title: "Season History Archive",
-    desc: "Seasons and competitions are modelled; there is no year-on-year view over them.", effort: "Medium" },
+    desc: "Seasons and competitions are modelled; there is no year-on-year view over them.", effort: "Medium", undrawn: ["seasons"] /* the read exists; no view calls it */ },
   { id: "up23", category: "Admin",         priority: "low",    status: "partial", title: "Support Access Screen",
-    desc: "A platform administrator can begin a one-hour, one-school session through the API and the school sees it here. Nothing draws the platform side yet.", effort: "Low" },
+    desc: "A platform administrator can begin a one-hour, one-school session through the API and the school sees it here. Nothing draws the platform side yet.", effort: "Low", undrawn: ["support_access_begin"] /* the school side is drawn in Settings; this is the platform side, which is an API route and no screen */ },
   { id: "up24", category: "AI & Analysis", priority: "low",    status: "partial", title: "DRS Review Panel",
-    desc: "Built and switched off platform-wide until there is ball-tracking to feed it.", effort: "High" },
+    desc: "Built and switched off platform-wide until there is ball-tracking to feed it.", effort: "High", undrawn: ["drs_reviews"] /* the read exists and the module is off platform-wide */ },
 
   // ── Planned ──────────────────────────────────────────────────
   { id: "up17", category: "AI & Analysis", priority: "high",   status: "planned", title: "Match Insights & Intelligence Ribbon",

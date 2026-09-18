@@ -627,6 +627,25 @@ already-correct. Risk LOW. Migration UNKNOWN until the audit.
   and `confidence: HIGH | MODERATE | LOW` per recommendation, which is `evidence_label()` under another
   name. Risk LOW.
 
+## Roadmap corrections, 2026-09-18
+
+`up16` (Caps, Honours & Milestones on the Passport) was listed **partial — "simply not shown"**.
+It has been shown since it was built: `recognition()` in `db/08` returns all three families,
+`RecognitionCard` renders on the player profile (`ProfilesView.jsx:126`), `smoke-recognition`
+carries 73 assertions and `smoke-browser-read.mjs:769` asserts the card in a real browser.
+Moved to **shipped**, which takes the public count from 10 to 11.
+
+The other three partials were checked and are accurate: `up11` has no year-on-year view over
+seasons, `up23`'s platform side is an API route with no screen (the school side in Settings is
+the half that exists), and `up24`'s DRS panel is drawn nowhere. `up6` and `up10` are labelled
+*effort Low* and are not — the first needs a new table and therefore a production paste, the
+second a PDF library against 161 KB of entry-chunk headroom.
+
+Both directions are now checked. `apps/web/test/roadmap.test.mjs` holds shipped items to naming
+a walk that exists and is registered, and partials to naming a real identifier from
+`services/api` that no view references. The second half is what up16 needed and the first
+version did not have.
+
 ## Not harvested, and why
 
 | Prototype asset | Decision |

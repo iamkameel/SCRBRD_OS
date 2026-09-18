@@ -28,7 +28,7 @@
  *
  *   node apps/web/test/roadmap.test.mjs
  */
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { UPGRADES, STATUS_LABEL } from "../src/data/roadmap.js";
@@ -87,6 +87,48 @@ ok("nothing that is not shipped claims a walk",
    UPGRADES.filter((u) => u.status !== "shipped" && u.walk).map((u) => u.id).join(" "));
 ok("every partial says what exists and what does not",
    UPGRADES.filter((u) => u.status === "partial").every((u) => (u.desc ?? "").length > 40));
+
+// ── Understatement, which is the half the first version missed ──
+//
+// The checks above police a shipped item that claims too much. They are blind
+// to a partial that claims too little, and that is the one that was actually
+// wrong: up16 said "simply not shown" while RecognitionCard had been on the
+// player profile since it was built, asserted by two walks. A roadmap that
+// under-reports is a smaller problem than one that over-reports, and it is
+// still a page telling a headmaster something untrue.
+group("Nothing claims to be undrawn while a screen draws it");
+{
+  const walk = (dir) => readdirSync(dir, { withFileTypes: true })
+    .flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]));
+  const views = walk(join(ROOT, "apps/web/src/views"))
+    .filter((f) => f.endsWith(".jsx") || f.endsWith(".js"))
+    .map((f) => ({ f: f.slice(ROOT.length + 1), text: readFileSync(f, "utf8") }));
+  const api = walk(join(ROOT, "services/api"))
+    .filter((f) => f.endsWith(".mjs") && !f.includes(".test."))
+    .map((f) => readFileSync(f, "utf8")).join("\n");
+
+  const partials = UPGRADES.filter((u) => u.status === "partial");
+  ok(`there are ${partials.length} partials, each naming what is not drawn`,
+     partials.length > 0 && partials.every((u) => Array.isArray(u.undrawn) && u.undrawn.length),
+     partials.filter((u) => !u.undrawn?.length).map((u) => u.id).join(" "));
+
+  // Naming something REAL is the floor. An invented identifier nobody would
+  // ever write would satisfy the check below forever.
+  const unreal = partials.flatMap((u) => (u.undrawn ?? []).filter((n) => !api.includes(n)).map((n) => `${u.id}→${n}`));
+  ok("every named identifier is real — it exists in services/api", unreal.length === 0, unreal.join(" "));
+
+  const drawn = [];
+  for (const u of partials)
+    for (const n of u.undrawn ?? []) {
+      const hit = views.find((v) => v.text.includes(n));
+      if (hit) drawn.push(`${u.id} says "${n}" is undrawn, but ${hit.f} references it`);
+    }
+  ok("...and no view references one of them", drawn.length === 0, drawn.join(" · "));
+
+  const checked = partials.flatMap((u) => u.undrawn ?? []).length;
+  ok(`${checked} undrawn identifiers were actually checked against ${views.length} view files`,
+     checked >= partials.length && views.length >= 10);
+}
 
 console.log("\n" + "─".repeat(52));
 console.log(`ROADMAP: ${pass} passed, ${fail} failed`);
