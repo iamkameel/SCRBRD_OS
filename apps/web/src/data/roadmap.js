@@ -3,34 +3,45 @@ import { D } from "../design/tokens.js";
 // ══════════════════════════════════════════════════════
 //  THE ROADMAP — one list, read by Settings › Roadmap and by the pitch deck
 //
-// `status` is checked against the repository, not asserted:
-//   shipped  — built, drawn, and covered by a walk that would fail if it broke
+//   shipped  — built, drawn, and covered by the walk(s) named in `walk`
 //   partial  — the DATA exists and is permission-scoped; no screen draws it
 //   planned  — not started
+//
+// `walk` is what makes "shipped" answerable instead of asserted. Every shipped
+// entry names the walks that cover it, and apps/web/test/roadmap.test.mjs
+// checks each one exists on disk and is registered in tools/run-smoke-api.mjs,
+// so a walk that is deleted or renamed takes the claim down with it.
+//
+// BE PRECISE ABOUT WHAT THAT PROVES. It proves the named walk exists and runs.
+// It does not prove the walk would fail if the feature broke — no test can
+// prove that about another test — so the screens say "names the walk that
+// covers it" rather than "a walk would fail if it broke", which was the older
+// and larger claim nothing was keeping.
+//
 // "partial" is the honest and uncomfortable category. Re-read against the
 // code each time this file is touched; the grep is the source, not memory.
 export const UPGRADES = [
   // ── Shipped ──────────────────────────────────────────────────
   { id: "up2",  category: "AI & Analysis", priority: "high",   status: "shipped", title: "Shot Pattern Wagon Wheel",
-    desc: "A boy's scoring zones across every innings, on his own profile. Placements are stored batter-relative and mirrored at render, so a left-hander's cover drive is comparable with a right-hander's.", effort: "High" },
+    desc: "A boy's scoring zones across every innings, on his own profile. Placements are stored batter-relative and mirrored at render, so a left-hander's cover drive is comparable with a right-hander's.", effort: "High", walk: ["read", "browser-read"] },
   { id: "up3",  category: "Integrations",  priority: "high",   status: "shipped", title: "Live Score Sync",
-    desc: "Match Centre reads the live fold from the ball log. Offline queue, device handover, voided balls and a way out of quarantine all covered.", effort: "Medium" },
+    desc: "Match Centre reads the live fold from the ball log. Offline queue, device handover, voided balls and a way out of quarantine all covered. A delivery that completes an innings opens a review of the derived figures rather than sealing it, and confirming writes the innings_end event that records why it ended.", effort: "Medium", walk: ["sync", "browser-sync", "handover", "quarantine"] },
   { id: "up4",  category: "Comms",         priority: "high",   status: "shipped", title: "Parent Broadcast Alerts",
-    desc: "Push to a registered device when something happens to their child. Delivery is per-person and permission-scoped; the prompt itself names nobody.", effort: "Medium" },
+    desc: "Push to a registered device when something happens to their child. Delivery is per-person and permission-scoped; the prompt itself names nobody.", effort: "Medium", walk: ["push", "broadcast"] },
   { id: "up12", category: "Fitness",       priority: "medium", status: "shipped", title: "Medical Clearance Workflow",
-    desc: "Clearance requirements, adult clearances and a register a school can actually be audited against.", effort: "Medium" },
+    desc: "Clearance requirements, adult clearances and a register a school can actually be audited against.", effort: "Medium", walk: ["clearance"] },
   { id: "up15", category: "Fitness",       priority: "high",   status: "shipped", title: "Bowling Workload & Welfare",
-    desc: "Spells, breaches and directives against age-group limits, on the Training screen, with a school's own Open-band ceiling set from Settings.", effort: "Low" },
+    desc: "Spells, breaches and directives against age-group limits, on the Training screen, with a school's own Open-band ceiling set from Settings.", effort: "Low", walk: ["workload"] },
   { id: "up19", category: "Admin",         priority: "medium", status: "shipped", title: "Officials & Kit Registers",
-    desc: "The panel of umpires and scorers, with accreditation; the kit the school holds and who has it out.", effort: "Medium" },
+    desc: "The panel of umpires and scorers, with accreditation; the kit the school holds and who has it out.", effort: "Medium", walk: ["officials", "kit"] },
   { id: "up20", category: "Admin",         priority: "medium", status: "shipped", title: "Module Switches",
-    desc: "A school turns a module off for itself or for one person; off at any school you belong to is off, and a write is refused as surely as a read.", effort: "Low" },
+    desc: "A school turns a module off for itself or for one person; off at any school you belong to is off, and a write is refused as surely as a read.", effort: "Low", walk: ["modules"] },
   { id: "up21", category: "Admin",         priority: "high",   status: "shipped", title: "Who Read What",
-    desc: "Every restricted read, every read from outside the school and every support session, on the school's own record under Settings › School.", effort: "Low" },
+    desc: "Every restricted read, every read from outside the school and every support session, on the school's own record under Settings › School.", effort: "Low", walk: ["audit", "access"] },
   { id: "up5",  category: "AI & Analysis", priority: "high",   status: "shipped", title: "Opposition Dossier",
-    desc: "The other side's squad and what the ball log says about each of them, on the fixture in Match Centre, inside the fourteen-day window before it. Cricket columns only, figures withheld below a thirty-ball floor with the evidence named, and every read written to the other school's access log. Head-to-Head is now derived from the fixtures rather than the hand-written table it replaced, and the match-ups say how much of the log they can speak for.", effort: "Medium" },
+    desc: "The other side's squad and what the ball log says about each of them, on the fixture in Match Centre, inside the fourteen-day window before it. Cricket columns only, figures withheld below a thirty-ball floor with the evidence named, and every read written to the other school's access log. Head-to-Head is now derived from the fixtures rather than the hand-written table it replaced, and the match-ups say how much of the log they can speak for.", effort: "Medium", walk: ["opposition", "browser-dossier"] },
   { id: "up22", category: "Integrations",  priority: "medium", status: "shipped", title: "Reduced-Overs Matches",
-    desc: "A revised limit and target mid-innings, entered by the umpire, replayed by the same reducer.", effort: "Medium" },
+    desc: "A revised limit and target mid-innings, entered by the umpire, replayed by the same reducer.", effort: "Medium", walk: ["scorecard"] },
 
   // ── Built underneath, not yet drawn ──────────────────────────
   { id: "up16", category: "Admin",         priority: "medium", status: "partial", title: "Caps, Honours & Milestones on the Passport",

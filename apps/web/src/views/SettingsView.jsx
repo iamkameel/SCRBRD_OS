@@ -1192,7 +1192,7 @@ function RoadmapTab() {
   return (
     <div>
       <Panel sx={{ marginBottom: "16px" }}>
-        <CardHead title="Platform roadmap" sub="Status is checked against the codebase, not declared: a thing is shipped when a walk would fail if it broke. Priority is an opinion and survives as a tint."/>
+        <CardHead title="Platform roadmap" sub="Every shipped item names the walk that covers it, and a test checks that walk exists and is registered to run — so the claim falls over in the suite rather than quietly on this page. Priority is an opinion and survives as a tint."/>
         <MetricGroup min={130}>
           {["shipped", "partial", "planned"].map((s) => (
             <button key={s} onClick={() => setOnly(only === s ? "" : s)} aria-pressed={only === s}

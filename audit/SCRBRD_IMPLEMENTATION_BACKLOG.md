@@ -411,9 +411,22 @@ empty if no expression changed.
 **Regression risk:** LOW if the RLS output diff stays empty; MEDIUM if it does not, which would mean the
 classification disagrees with a shipped policy and is itself the finding.
 
-### SCRBRD-031
+### ~~SCRBRD-031~~ — CLOSED, with the premise corrected
 
-**Title:** Name workflow-state as the fourth authorisation layer
+> **The inventory said the entry was wrong, which is what an inventory is for.**
+> Workflow state is not a missing authorisation layer here. It is enforced BELOW
+> authorisation, as a record invariant in the database: of the thirty refusing trigger
+> functions in `db/`, twenty-nine consult no capability at all, so the rule is the same
+> for a scorer and for `superadmin`. That is stronger than beta-2's model, where "when"
+> sits beside role and scope and is therefore something a privileged role could be
+> granted past. The single capability gate, `sponsorship_exclusivity_gate`, is an
+> approval by design and is recorded as one.
+>
+> No signature change to `authorize()`, which is what this entry existed to decide.
+> `packages/policy/test/invariants.test.mjs` (15 assertions) holds the split, and
+> `ARCHITECTURE.md` §4 states it. SCRBRD-034's duty lifecycle no longer depends on this.
+
+**Title:** ~~Name workflow-state as the fourth authorisation layer~~
 **Priority:** P1 · **Domain:** RBAC · **Type:** architecture / documentation
 **Affected files:** `packages/policy/src/authorize.mjs`, `docs/ARCHITECTURE.md`, write handlers
 **Affected users:** none directly

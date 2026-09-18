@@ -18,10 +18,12 @@ const SUITES = [
   ["modules",  "packages/policy/test/modules.test.mjs"],
   ["separation","packages/policy/test/separation.test.mjs"],
   ["sensitivity","packages/policy/test/sensitivity.test.mjs"],
+  ["invariants","packages/policy/test/invariants.test.mjs"],
   ["rating",   "packages/scoring/test/rating.test.mjs"],
   ["rubric",   "packages/scoring/test/rubric.test.mjs"],
   ["phases",   "packages/scoring/test/phases.test.mjs"],
   ["wheel",    "apps/web/test/wheel.test.mjs"],
+  ["roadmap",  "apps/web/test/roadmap.test.mjs"],
   // Renders components, so it needs the .jsx transform hook.
   ["system",   "apps/web/test/system.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Renders the scorer's review sheet, so it needs the same transform.
