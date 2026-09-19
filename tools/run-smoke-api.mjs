@@ -60,6 +60,9 @@ const WALKS = [
   "drs",
   // The public overlay, and the names that do not go on it.
   "broadcast",
+  // Stats-Magic's own context: real career figures from /read/career, and no
+  // child's name in the request that would have gone to the model provider.
+  "statsmagic",
   // Sponsorship: which brands may be on a child's scoreboard, and what stays
   // between the school and the sponsor.
   "commercial",

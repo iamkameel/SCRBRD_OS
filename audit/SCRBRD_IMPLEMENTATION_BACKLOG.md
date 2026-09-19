@@ -1612,3 +1612,98 @@ shared code are the read resource map (additive; `disciplinary_records` is claim
 deliberately — a school cannot switch off a safeguarding record the way it switches off
 Analytics) and the seed, which gains one account and one fixture-scoped assignment. The whole
 suite, the live verifier and the new walk are green against a freshly reset database.
+
+### ~~SCRBRD-064~~ — CLOSED
+
+**Closed 2026-09-19.** `contextFrom()` in `services/api/ai/ai-service.mjs` now folds a third
+resource, `career`, into Stats-Magic's context — read through the same `readResource` call, under
+the same principal, as `players` and `matches` already are. Before this, the model saw a roster and
+eight fixtures and nothing else: "what's his strike rate this term?" was unanswerable, and the
+system prompt's own instruction ("answer only from the supplied data; say so if it doesn't contain
+the answer") meant the honest reply to every stats question was a refusal. The platform's headline
+natural-language feature could not read the platform's numbers.
+
+**The masking guarantee is the design, not an afterthought.** `career` rows are keyed onto the
+roster **by `player_id`**, and every stats line is written with the roster's own `full_name` —
+never the career row's — because `names` (the list `askStatsMagic()` masks the whole context
+with) is collected from the roster. Keying the join the other way, or building the stats string
+beside the roster instead of through it, would be one careless line away from a child's real name
+reaching a third-party model provider in clear. Falsified directly: dropping the career players'
+names from the `names` list turned the new "no name reaches the provider in a stats line either"
+assertion red, printing three real names in the outbound request; restored, and green again.
+
+**Ratios are computed in JS, never stored or computed in SQL**, for the same reason `/read/career`
+itself gives: the division-by-zero cases are the interesting ones, and each is written as a phrase
+saying why rather than as a fabricated number — a batter never dismissed has "no average (never
+dismissed)," not an average of zero; a bowler with no wicket has "no average (no wicket)," not a
+sentinel. A player with nothing in the ball log at all (no career row, or a row of coalesced zeros
+— `/read/career` left-joins and coalesces, so the two look the same and are treated the same) is
+named under "Nothing recorded yet in the ball log for: …" rather than given a line of zeros
+alongside players who do have one.
+
+Two assumptions this entry's own first draft got wrong, caught rather than shipped: the seeded ball
+log carries no `bowler_id` at all (96 deliveries, 96 strikers, zero bowlers), so
+`player_bowling_career` is empty on a fresh reset — a live check that only read the seed would have
+called the bowling half covered while it was untested; `tools/smoke-statsmagic.mjs` writes its own
+charged deliveries, the way `smoke-phases` shapes the innings it needs, rather than trusting the
+seed to exercise it. And a `/read/career` row of coalesced zeros looked, to an early version of the
+code, like the same shape as no row at all, and printed "batting: no record; bowling: no record"
+for a boy who had genuinely never played, under a heading that read as claiming figures — caught by
+the assertion that a boy with nothing recorded is never given a figures line at all, not named
+twice under two different headings.
+
+Verified against a freshly reset and reseeded database, read as the director of sport: M Cele — 1
+match, 71 runs off 41 balls, SR 173.2, average 71.00, 5x4 3x6; S Naidoo — 1 match, 41 runs off 21
+balls, SR 195.2, no average (never dismissed — he has not been out, which the line does not
+confuse with an average of zero); D Mkhize — 0 wickets, 44 runs off 24 legal balls, economy 11.00,
+no average (no wicket). Every figure checked against `player_batting_career`/`player_bowling_career`
+read directly for the same player. `ai.test.mjs` grew from 20 to 31 assertions (real figures
+present; no fabricated zeros; the stats line's masked token is the roster line's own token, checked
+on the raw `system` string before unmasking); `tools/smoke-statsmagic.mjs` is new, 17 assertions
+against real Postgres, registered in `tools/run-smoke-api.mjs`'s `WALKS`. Full suite: 1938
+assertions across 31 suites. `apps/web/src/data/roadmap.js`'s `up47` moves from `planned` to
+`shipped`, naming the new walk.
+
+**Title:** Stats-Magic answers from real figures: fold `/read/career` into the model's context
+**Priority:** P2 · **Domain:** AI / Analysis · **Type:** product completeness
+**Affected files:** `services/api/ai/ai-service.mjs` (`contextFrom`, `statsMagicContext`, new
+`careerLine`), `services/api/ai/ai.test.mjs`, `tools/smoke-statsmagic.mjs` (new),
+`tools/run-smoke-api.mjs`, `apps/web/src/data/roadmap.js`
+**Affected users:** every coach, parent and pupil who asks Stats-Magic anything numeric
+
+**Current behaviour:** `contextFrom({ players, matches })` built the entire context from a roster
+string and up to eight fixtures. No runs, no wickets, no average, no strike rate, no economy —
+nothing derived from the ball log reached the prompt.
+**Expected behaviour:** the context also carries each roster player's batting and bowling figures,
+read from `/read/career` under the same principal as `players`/`matches`, with the ratios a cricket
+question actually asks for, computed from the raw counts.
+**Root cause:** Stats-Magic's context was built when the career views were the player profile's own
+business. Neither half was wrong; they were never joined.
+**Recommended change (as built):** described above.
+**Why it matters:** a stats assistant that cannot read the platform's stats fails silently — the
+model says "the data does not contain that" and sounds correct rather than incomplete. The masking
+half matters more: a line describing a child's performance is the first string in this codebase
+built specifically to describe a named child's play to a third-party model provider, and it is
+exactly the string that leaks if built beside the roster rather than through it.
+**Dependencies:** none — `player_batting_career`, `player_bowling_career`, `player_dismissals` and
+`/read/career` all pre-date this; nothing in SQL changed.
+**Security / privacy impact:** neutral-to-positive, asserted rather than assumed. Figures come from
+`security_invoker` views under the caller's own principal, scoped exactly as every screen already
+is; every name still goes through `maskNames()`, checked against every `full_name` in the database
+in the live walk, not just the names one fixture happens to use.
+**Data migration required:** NO — derived, never stored.
+**Tests required:** `ai.test.mjs` for the masking/zero-fabrication guarantees; `smoke-statsmagic`
+for the live seam against real Postgres.
+**Acceptance criteria:**
+- [x] `statsMagicContext()` reads `career` through `readResource`, not a bespoke query
+- [x] Strike rate, batting average, economy and bowling average appear in the built context
+- [x] A player with no record is named as having none and is never given a figure
+- [x] A batter never dismissed has no average; a bowler with no wicket has none
+- [x] No `full_name` in the database appears in the request that would go to the provider
+- [x] `ai` suite green at 31 assertions; `smoke-statsmagic` green at 17; full suite green
+**Regression risk:** LOW for scoring and the read path, neither of which changed. The real risk is
+prompt size — the context now carries a line per roster player with a record, which grows with a
+full season's data and is worth measuring before the pilot, the same way the commentary cost note
+elsewhere in `ai-service.mjs` already flags for that feature. Capping or ranking which players'
+figures are included, if it becomes necessary, is a product decision and was deliberately left
+alone here.
