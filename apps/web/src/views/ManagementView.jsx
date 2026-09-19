@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { mayGrantRole } from "@scrbrd/policy/roles";
 import { ROLES } from "../design/roles.js";
 import { D } from "../design/tokens.js";
 import { can, holdsCapability } from "../rbac/index.js";
@@ -23,10 +24,13 @@ function ManagementView({ role, users, setUsers }) {
   const [searchQ,   setSearchQ]   = useState("");
   const [newUser,   setNewUser]   = useState({name:"",email:"",role:"player",status:"active"});
 
-  // The one gate that stays on the role name: only the owner's key may
-  // appoint another, which is the policy's own rule (db/99: platformadmin
-  // cannot grant superadmin). Everything else asks what the role HOLDS.
-  const isSuperAdmin  = role==="superadmin";
+  // Derived from the policy's own grant list rather than the role name:
+  // GRANTABLE_ROLES says only the owner's key may appoint another owner's key
+  // (db/99: platformadmin cannot grant superadmin). This is presentation-only
+  // filtering for the role picker below — the server enforces the same rule
+  // via mayGrantRole() regardless of what this screen shows. Everything else
+  // in this view asks what the role HOLDS.
+  const isSuperAdmin  = mayGrantRole(role, "superadmin");
   const isAdmin       = ["superadmin","schooladmin","sportsmaster"].includes(role);
   const isGroundskeeper = role==="groundskeeper";
   const canManageUsers= holdsCapability(role,"user.role.assign");
@@ -107,7 +111,9 @@ function ManagementView({ role, users, setUsers }) {
             {u.role&&<div style={{display:"flex",alignItems:"center",gap:"8px",padding:"8px 14px",borderRadius:D.md,background:`${ROLES[u.role]?.color||D.indigo}12`,border:`1px solid ${ROLES[u.role]?.color||D.indigo}33`}}>
               <span style={{fontSize:"16px"}}>{ROLES[u.role]?.icon}</span>
               <span style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:ROLES[u.role]?.color||D.indigo}}>{ROLES[u.role]?.label}</span>
-              {u.role==="superadmin"&&<span style={{marginLeft:"auto",fontFamily:D.head,fontSize:"8px",color:D.roseText}}>⚠ Highest privilege</span>}
+              {/* "Highest privilege" means exactly the role that can appoint another
+                  of itself — nobody else's grant list includes it (GRANTABLE_ROLES). */}
+              {mayGrantRole(u.role,"superadmin")&&<span style={{marginLeft:"auto",fontFamily:D.head,fontSize:"8px",color:D.roseText}}>⚠ Highest privilege</span>}
             </div>}
 
             {[

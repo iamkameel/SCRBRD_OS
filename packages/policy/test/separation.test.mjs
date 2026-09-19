@@ -294,10 +294,13 @@ ok("§21.10  holding a commercial capability never carries a sensitive one with 
    !ROLES.some((r) => r !== "superadmin" &&
      caps(r).includes("sponsorship.finance.read") && reach(r, [...SENSITIVE]).length));
 {
-  // §21.1 — a role name is not an access check. Fourteen view gates still read
-  // the role string directly (SCRBRD-011). This is a ratchet, not a pass: it
-  // may fall, never rise, so a new one fails here rather than in review.
-  const GATE_CEILING = 14;
+  // §21.1 — a role name is not an access check. Twelve view gates still read
+  // the role string directly. SCRBRD-011 closed the `superadmin` pair in
+  // ManagementView.jsx (isSuperAdmin and the "Highest privilege" badge), both
+  // now derived from mayGrantRole() instead of a hand-written role literal.
+  // This is a ratchet, not a pass: it may fall, never rise, so a new one
+  // fails here rather than in review.
+  const GATE_CEILING = 12;
   const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
     e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]);
   const gates = walk(join(ROOT, "apps/web/src"))

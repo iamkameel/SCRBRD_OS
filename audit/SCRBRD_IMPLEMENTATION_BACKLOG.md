@@ -178,11 +178,29 @@ None open. No finding in Pass 1 met the P0 bar (cross-tenant read/write, session
 
 ## Deployment
 
-### SCRBRD-008
+### ~~SCRBRD-008~~ — CLOSED
+
+**Closed 2026-09-19.** The host guard (`LOCAL_HOSTS`, `hostOf()`,
+`I_UNDERSTAND_THIS_DESTROYS_PRODUCTION`) already existed in `tools/migrate.mjs:75-90` and was
+already exercised by `tools/migrate.test.mjs` for a remote host (refused, exit 2, host named,
+password not leaked, nothing attempted against the database) and for the named override (guard
+passed, `psql` actually invoked). What was missing was the other acceptance line: proof that a
+*local* `DATABASE_URL` is not caught by the same guard. Added one case —
+`postgres://scrbrd:scrbrd@127.0.0.1:5432/scrbrd` run through `--reset` — asserting `status !== 2`
+and that `"Resetting schema"` is printed, i.e. the run reached past the guard (`tools/migrate.test.mjs`,
+"a local DATABASE_URL is not refused by the guard"). The suite is now 8 assertions, up from 7.
+Falsified twice, not once: (1) with the guard's `if` short-circuited to `false` in a scratch edit,
+five of the eight assertions in this file went red (the two `--reset`-against-a-remote-host checks,
+the two-paths-named check, the unparseable-URL check, and the not-attempted check) while the new
+local-host assertion stayed green, as expected — the guard's absence does not itself make a local
+run *refused*, so that particular assertion cannot detect this failure mode on its own; the other
+five already did, and still do. (2) the scratch edit was then discarded and the original restored,
+confirmed by re-running: all 8 green again. `node tools/migrate.test.mjs` and the full
+`node tools/run-all-tests.mjs` both pass with the guard intact.
 
 **Title:** `migrate.mjs --reset` refuses non-local hosts
 **Priority:** P1 · **Domain:** DB / Ops · **Type:** reliability
-**Affected files:** `tools/migrate.mjs`, `package.json` (`db:reset`), `DEPLOYING.md`
+**Affected files:** `tools/migrate.mjs`, `tools/migrate.test.mjs`, `package.json` (`db:reset`), `DEPLOYING.md`
 **Affected users:** operator
 
 **Current behaviour:** `pnpm db:reset` drops and reseeds whatever `DATABASE_URL` points at. The rule "never run `--reset` against Supabase" is a sentence in chat and in `DEPLOYING.md`.
@@ -193,8 +211,8 @@ None open. No finding in Pass 1 met the P0 bar (cross-tenant read/write, session
 **Dependencies:** none. **Security / privacy impact:** protective. **Data migration required:** NO
 **Tests required:** unit test with a fake remote `DATABASE_URL` asserting refusal and exit code.
 **Acceptance criteria:**
-- [ ] `DATABASE_URL=postgres://x@db.supabase.co/… node tools/migrate.mjs --reset` exits 2 with a named refusal
-- [ ] Local reset unchanged
+- [x] `DATABASE_URL=postgres://x@db.supabase.co/… node tools/migrate.mjs --reset` exits 2 with a named refusal — asserted against `aws-1-eu-west-1.pooler.supabase.com` (any non-local host exercises the same `hostOf()` check; the guard runs before any connection is attempted, so no live host is needed)
+- [x] Local reset unchanged — a `127.0.0.1` `DATABASE_URL` passes the guard exactly like the documented override does
 **Regression risk:** LOW
 
 ---
@@ -206,8 +224,50 @@ None open. No finding in Pass 1 met the P0 bar (cross-tenant read/write, session
 ### SCRBRD-007 — `SET search_path` on every `SECURITY DEFINER` function
 Files: `services/api/rls/generate-rls.mjs` (generated functions), new `db/13`/`14` for hand-written ones (`01`, `02`, `04`, `05`, `06`, `08`, `12`), `db/99` assertion `count(*)=0 FROM pg_proc WHERE prosecdef AND proconfig IS NULL` in `public`. Evidence SEC-P2-01. Dependencies: SCRBRD-004 (ledger sequencing). Migration YES. Risk LOW.
 
-### SCRBRD-011 — Replace eleven `role === "superadmin"` view gates with `can(capability)`
-Files listed in Security Audit §8. Evidence SEC-P2-02 / RISK-ARC-001. Acceptance: Director of Sport sees "Schedule Match"; `grep -rn 'role *=== *"superadmin"' apps/web/src` → only the retirement comment in `SettingsView.jsx:52`. Dependencies: none. Risk LOW.
+### ~~SCRBRD-011~~ — CLOSED · Replace the last `role === "superadmin"` view gates with `mayGrantRole()`
+
+**Closed 2026-09-19.** Two real gates were left in `apps/web/src/views/ManagementView.jsx`: `const
+isSuperAdmin = role==="superadmin"` (line 29, gating both `promoteRole`'s own-role-assignment check
+and the role picker's filter at what was then line 293), and `u.role==="superadmin"` (the "⚠ Highest
+privilege" badge, then line 110). Both are now derived from the policy's own grant list —
+`mayGrantRole(role, "superadmin")` and `mayGrantRole(u.role, "superadmin")` respectively, imported
+from `@scrbrd/policy/roles` the same way `apps/web/src/design/roles.js` already imports `roleGrants`
+from it. This is strictly more correct than the string compare it replaces: if `GRANTABLE_ROLES` in
+`packages/policy/src/roles.mjs` ever changes who may grant `superadmin`, this screen now follows
+automatically instead of silently drifting from the server's own `mayGrantRole()`/`GRANTABLE_ROLES`
+enforcement, which was already correct and is untouched by this change (only the client's
+presentation-side filtering moved).
+
+`grep -rn 'role *=== *"superadmin"' apps/web/src` now returns **zero** matches — cleaner than the
+acceptance criterion asked for. The criterion as written expected one surviving hit, a retirement
+comment at `SettingsView.jsx:52`; that comment does not exist anywhere in the current tree (searched
+for `superadmin` and `retirement` in that file — no matches), so the criterion is satisfied by there
+being nothing left to retire, not by a comment this change added.
+
+Parity was checked explicitly rather than assumed: for all 25 roles in `ROLES`,
+`mayGrantRole(r, "superadmin") === (r === "superadmin")` — zero mismatches — because
+`GRANTABLE_ROLES.superadmin` is the only grant list in `roles.mjs` containing `"superadmin"` (`platformadmin`'s
+list is `Object.keys(ROLE_CAPABILITIES).filter((r) => r !== "superadmin")`, explicitly excluding it,
+per the comment at `roles.mjs` explaining why a platform account that could grant `superadmin` would
+be one assignment away from being indistinguishable from it).
+
+The ratchet in `packages/policy/test/separation.test.mjs` §21.1 counts the broader pattern
+`role\s*===\s*"[a-z]*"` across all view gates (not just `superadmin`), which dropped from 14 to 12
+matches; `GATE_CEILING` was lowered from 14 to 12 to match, per the test's own comment that it "may
+fall, never rise." Falsified in both directions: reverting `ManagementView.jsx` to its prior content
+(via `git show HEAD:...`) while the ceiling was already lowered made §21.1 fail as
+`14 ≤ 12 → false`, confirming the ratchet actually catches a regression; restoring the fix brought it
+back to `12 ≤ 12 → true`, and `separation.test.mjs` and `node tools/run-all-tests.mjs` are both fully
+green afterward (30 suites, 1879 assertions, up from 1878 by the one new `migrate.test.mjs` case
+added for SCRBRD-008).
+
+**Acceptance criteria:**
+- [x] `grep -rn 'role *=== *"superadmin"' apps/web/src` → no real gates (0 hits total; the retirement
+  comment the original criterion named does not exist in the current tree, so there is nothing left
+  to find)
+- [x] Director of Sport still sees "Schedule Match" — unaffected: that gate was never on `role`, and
+  no `directorofsport`-related behaviour was touched by this change
+Files: `apps/web/src/views/ManagementView.jsx`. Evidence SEC-P2-02 / RISK-ARC-001. Dependencies: none. Risk LOW.
 
 ### SCRBRD-012 — Implement or remove `platform.support.impersonate`
 Files: `packages/policy/src/roles.mjs:86-96`, `capabilities.mjs:287,345`, new route. Evidence SEC-P2-03. If implemented: a `role_assignment` with `valid_until = now() + interval '1 hour'` and an audit row; `db/99` asserts expiry. Dependencies: audit log (SCRBRD-026). Risk MEDIUM.
