@@ -235,60 +235,75 @@ None open. No finding in Pass 1 met the P0 bar (cross-tenant read/write, session
 
 ## Reliability
 
-### SCRBRD-003 — PARTIALLY DONE, backend only
+### ~~SCRBRD-003~~ — CLOSED
 
-> **Checked 2026-09-19, left open.** The backend is real and matches the entry closely:
-> `GET /api/matches/:id/quarantine` (`services/api/write/events-api.mjs:248-257`, wired at
-> `services/api/server.mjs:348`) lists unresolved rows first, oldest first, and
-> `POST /api/quarantine/:id/resolve` (`events-api.mjs:259-281`, wired at `server.mjs:507`) is the
-> release/discard route — named `resolve({accept})` rather than two routes, but the same operation:
-> `accept: true` re-normalises the dismissal through the same `normaliseDismissal()` the live path
-> uses (`events-api.mjs:271-274`, satisfying this entry's dependency on SCRBRD-002) and calls
-> `quarantine_resolve()` in `db/14_quarantine_release.sql`, which requires
-> `scoring.amend.approve` over the match (`db/14:33,53`) — not `scoring.write` — and sets
-> `resolved_at`/`resolved_by`/`resolution` (`db/14:63,71,103`), gating the acceptance criterion
-> that a scorer without approval gets refused on release.
->
-> **What is missing:** no UI. `grep -rn quarantine apps/web/src` finds only a roadmap description
-> string (`apps/web/src/data/roadmap.js:36`, which lists a `"quarantine"` walk under "shipped") —
-> there is no panel in Match Centre or anywhere else that lets a Director of Sport actually see or
-> act on a quarantined ball; the feature is reachable only by calling the API directly. That is the
-> gap the entry's "panel in Match Centre" line was about, and it is not closed by the backend alone.
->
-> **Acceptance criteria, checked live** — `node tools/smoke-quarantine.mjs` against this
-> environment's database returned **25 passed, 0 failed** on one run. Caveat worth recording: this
-> environment's local Postgres is not isolated to this worktree (no Docker daemon here; the walk
-> connected to a Postgres already listening on `127.0.0.1:5432` shared with other concurrent
-> sessions), and a later re-run in the same session found the seeded dev-login accounts gone
-> (`no_such_user`) — almost certainly another session reseeding the same database in between. The
-> 25/0 result is pasted verbatim from when it ran; it is not reproducible on demand in this shared
-> environment, so treat it as one real, positive data point rather than a stable regression gate.
-> - [x] Released ball appears in the scorecard at its `seq` —
->       `smoke-quarantine.mjs:105-108`: `"the ball is in the log at the next seq"`
-> - [x] Scorer without approval capability gets 403 on release — `smoke-quarantine.mjs`'s
->       `PLAIN`/`COACH` accounts (`scoring.edit` only, or no correction capability) are refused the
->       decision; `db/14:53`'s `app_can('scoring.amend.approve', ...)` check surfaces as
->       `e.code === "42501"` → `403` at `events-api.mjs:242-244`
-> - [x] Discarded ball never re-appears — `smoke-quarantine.mjs:118-123`: `"Rejecting closes the
->       row and writes nothing"`, both rows end resolved with distinct resolutions
-**Regression risk:** MEDIUM — the backend is proven; the missing UI is the reason this stays open
+**Closed 2026-09-19.** The route, the function and their 25-assertion API walk (`tools/smoke-quarantine.mjs`)
+were already built and green before this pass — `db/14_quarantine_release.sql`'s `quarantine_resolve()`,
+`GET /api/matches/:id/quarantine` and `POST /api/quarantine/:id/resolve` in `services/api/write/events-api.mjs`.
+What did not exist was any way for a person to reach either route except by calling the API directly:
+`grep -rn quarantine apps/web/src` found one string, in `apps/web/src/data/roadmap.js`, describing a walk
+rather than drawing a screen. This pass closes exactly that gap and touches no route, no function and no
+migration.
 
-**Title:** Quarantine review and release route
+`apps/web/src/views/quarantine.jsx` (new) is the panel, wired into `MatchCentreView.jsx` beside the
+existing `DutyRoster` on a selected match's detail card — Match Centre, not `scorer/panels.jsx` (the
+backlog's own guess): that file is the live pad's in-over display components, imported only by the scoring
+engine while an over is being scored, and a stale-epoch ball is reviewed **after** the fact, by the person
+who approves corrections, not by the scorer mid-innings. `holdsCapability(role, "scoring.amend.approve")`
+gates whether the panel draws at all — the same courtesy every other screen in this file already extends
+(`OfficialsView`'s `canManage`, `MatchCentreView`'s `canScore`) — and decides nothing else: the list's own
+RLS policy and `quarantine_resolve()`'s own four-point authority check are what actually allow or refuse.
+
+**The one thing worth writing down for whoever reads this next:** `quarantine_resolve()` answers a refusal
+with HTTP 200 and `{ ok: false, reason }`, not a 4xx — it is a SQL function returning a row, not a raised
+exception. The acceptance criterion below asked for "403 on release", which is not what the server does
+and was never going to be fixed by the UI. What the panel actually had to get right, and the browser walk
+falsifies, is that it reads `res.ok` rather than trusting the HTTP status — a resolve() that only checked
+the promise resolving would have shown a released ball that was never released. Caught by directing
+`sarah@example.invalid` (who submitted the quarantined balls as scorer) to release her own submission: the
+server refuses with `cannot_release_your_own` on a 200, and the panel shows it, in words, next to the row —
+not a silent no-op that looks identical to success.
+
+Verified end to end in a real browser against a freshly reset and reseeded database
+(`node tools/migrate.mjs --reset --seed`), with a quarantined wicket and a quarantined run seeded through a
+stale-epoch send exactly as `tools/smoke-quarantine.mjs` does it (no static seed carries one):
+new `tools/smoke-browser-quarantine.mjs`, 32 assertions, registered in `BROWSER_WALKS` in
+`tools/run-smoke-api.mjs`. It proves, against the running app: the panel appears for the director of sport and for the principal (both
+hold `scoring.amend.approve`) with the ball's own context on screen — what it was ("Wicket — Run Out
+(L Govender)", "1 run"), who sent it ("Sarah Mokoena"), and the epoch that sent it there against the one
+now current ("epoch 6 (now 1)"); the submitting scorer's own release attempt is refused, in the panel, and
+nothing moves; a different approver's release removes it from the panel and the ball is back in
+`/api/matches/:id/events` — the same read `ScorecardModal` uses — at the next `seq`, under the current
+epoch, marked `recovered`, dismissal intact; a discard removes the other from the panel, writes nothing to
+the log, and a fresh re-fetch of the panel (not just the same page state) still shows nothing waiting; and
+`ball_event_quarantine` itself ends with one `accepted` row and one `rejected` row.
+
+`apps/web/src/data/roadmap.js`'s `up3` ("Live Score Sync") already named the `quarantine` API walk as
+covering "a way out of quarantine" — true before this pass, since the door was real even with no handle on
+it, but read by a headmaster it invited the assumption that the handle existed too. `up3` now also names
+`browser-quarantine`, and its description says plainly that the panel is what closes it.
+`node tools/run-all-tests.mjs`: 1939 assertions across 31 suites, 0 failed; `node tools/migrate.mjs
+--reset --seed --verify`: ALL RLS LIVE ASSERTIONS PASSED.
+
+**Title:** ~~Quarantine review and release route~~
 **Priority:** P1 · **Domain:** Scoring · **Type:** reliability / correctness
-**Affected files:** `services/api/write/events-api.mjs`, `services/api/handover/scoring-session.mjs`, `db/02_schema_scoring.sql:145,164-182`, `apps/web/src/scorer/panels.jsx`, `packages/policy` (new capability or reuse `scoring.amend.approve`)
+**Affected files:** `apps/web/src/views/quarantine.jsx` (new), `apps/web/src/views/MatchCentreView.jsx`,
+`tools/smoke-browser-quarantine.mjs` (new), `tools/run-smoke-api.mjs`, `apps/web/src/data/roadmap.js`.
+`services/api/write/events-api.mjs`, `db/14_quarantine_release.sql` and `tools/smoke-quarantine.mjs` were
+already built and are unchanged by this pass.
 **Affected users:** scorers, anyone reading a scorecard with a quarantined ball
 
 **Current behaviour:** stale-epoch events land in `ball_event_quarantine`; `recovered`/`resolved_at` are never set by any code path; no UI lists them.
 **Expected behaviour:** a person with `scoring.amend.approve` sees the match's quarantined events, and can release (re-apply under the current epoch, `recovered = true, resolved_at = now()`) or discard (`resolved_at` only).
 **Root cause:** quarantine was built as a safety valve; the exit was deferred.
-**Recommended change:** `GET /api/read/quarantine?match=…`, `POST /api/quarantine/:id/release`, `POST /api/quarantine/:id/discard`; panel in Match Centre.
+**Recommended change:** ~~`GET /api/read/quarantine?match=…`, `POST /api/quarantine/:id/release`, `POST /api/quarantine/:id/discard`; panel in Match Centre.~~ Built instead, before this pass, as `GET /api/matches/:id/quarantine` and one `POST /api/quarantine/:id/resolve { accept }` — a single decision route rather than two, which is what `quarantine_resolve()` already was. The panel in Match Centre is this pass.
 **Why it matters:** RISK-REL-001 / SCO-P1-02 — a lost ball is a wrong match record for ever.
 **Dependencies:** SCRBRD-002 (released events must pass the same vocabulary check). **Security / privacy impact:** release is a write to canonical truth; gate on the approval capability, not on `scoring.write`. **Data migration required:** NO
 **Tests required:** new `tools/smoke-quarantine.mjs`: quarantine a ball via stale epoch → list → release → replay shows it → `db/99` asserts `recovered` set.
 **Acceptance criteria:**
-- [ ] Released ball appears in the scorecard at its `seq`
-- [ ] Scorer without approval capability gets 403 on release
-- [ ] Discarded ball never re-appears
+- [x] Released ball appears in the scorecard at its `seq` — `tools/smoke-browser-quarantine.mjs`, both through the browser panel and against `/api/matches/:id/events` and Postgres directly
+- [x] Scorer without approval capability is refused — corrected from "403": the server answers 200 with `ok:false` and a named reason (`smoke-quarantine.mjs`'s `not_permitted` case; the browser walk's `cannot_release_your_own` case), and the panel shows the refusal rather than hiding it
+- [x] Discarded ball never re-appears — asserted after a remount-and-refetch of the panel, not just immediately after the click
 **Regression risk:** MEDIUM
 
 ## Scoring

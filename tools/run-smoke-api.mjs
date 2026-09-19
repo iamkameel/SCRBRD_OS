@@ -131,7 +131,7 @@ const WALKS = [
 // they run under `--browser` rather than in the default set. Splitting them
 // out is not tidiness: CI's first run put them in the API job, which had
 // neither, and both jobs failed on a missing dist/index.html.
-const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-dossier", "browser-handover", "browser-innings-end"];
+const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-dossier", "browser-handover", "browser-innings-end", "browser-quarantine"];
 
 // Walks that need no database, run by `pnpm smoke` instead. Named here only so
 // the completeness check below knows they are accounted for.

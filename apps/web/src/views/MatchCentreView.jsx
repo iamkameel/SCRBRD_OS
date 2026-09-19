@@ -6,6 +6,7 @@ import { Badge, Btn, Card, Pill, SectionHeader, StatusDot } from "../ui/primitiv
 import { ScorecardModal, WeatherChip } from "./shared.jsx";
 import { OppositionDossier } from "./dossier.jsx";
 import { DutyRoster } from "./duties.jsx";
+import { QuarantinePanel } from "./quarantine.jsx";
 import { useRows, useWeather } from "../lib/live.js";
 
 function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
@@ -142,6 +143,12 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
                   reads match_duties through the choke point and says "nothing
                   on record" where nothing is, rather than falling silent. */}
               <DutyRoster matchId={selMatch.id} role={role}/>
+              {/* SCRBRD-003. Offered only to whoever holds scoring.amend.approve
+                  — see quarantine.jsx for why that check is a courtesy and not
+                  the gate. Placed in Match Centre rather than the live pad: a
+                  stale-epoch ball is reviewed after the fact, by the person who
+                  approves corrections, not by the scorer mid-over. */}
+              <QuarantinePanel matchId={selMatch.id} role={role}/>
               {ground&&pitch&&(
                 <div style={{marginBottom:"12px",background:D.surf2,borderRadius:D.md,padding:"10px 12px",border:`1px solid ${D.teal}22`}}>
                   <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.teal,letterSpacing:"0.08em",marginBottom:"7px"}}>PITCH REPORT</div>
