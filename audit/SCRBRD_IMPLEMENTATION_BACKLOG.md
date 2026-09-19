@@ -1325,7 +1325,7 @@ SCRBRD-009 ✓ (idempotency) — independent
 SCRBRD-010 ✓ (offline walks) — independent, should land BEFORE SCRBRD-003 (regression net)
 SCRBRD-008 ✓ (reset guard) — independent, do first: five lines, Critical impact
 SCRBRD-005 ✓ (AI pseudonyms) — independent
-SCRBRD-024 (CI) — independent, protects everything after it
+SCRBRD-024 ✓ (CI) — independent, protects everything after it
 
 Pass 2:
 SCRBRD-028 (invariants) ──▶ SCRBRD-029 ✓ via SCRBRD-054 ✓ (db/24)
@@ -1342,14 +1342,14 @@ SCRBRD-042 (consent audit) — independent, may close as already-correct
 
 1. ~~**SCRBRD-008** reset guard~~ — done.
 2. ~~**SCRBRD-000** ship the branch~~ — done.
-3. **SCRBRD-024** CI on every PR — still open; every later item would then have a net.
+3. ~~**SCRBRD-024** CI on every PR~~ — done; every later item has a net.
 4. ~~**SCRBRD-001** production login page; **SCRBRD-006** analytics consent; **SCRBRD-005** AI pseudonyms~~ — all three done.
 5. ~~**SCRBRD-004** owner key migration~~ — done.
 6. ~~**SCRBRD-010** offline/handover walks~~, ~~**SCRBRD-002** dismissal enum~~ — both done; **SCRBRD-003**
    quarantine release is backend-only — real, tested, and still open for lack of a UI panel.
 7. ~~**SCRBRD-009** idempotency; **SCRBRD-011** capability gates; **SCRBRD-007** search_path~~ — all three done.
-8. Remaining Pass 1 P2/P3 in ID order — of the ones checked in this pass, only **SCRBRD-003** (UI),
-   **SCRBRD-026** (audit log) and **SCRBRD-024** (CI) are still genuinely open; see each entry above.
+8. Remaining Pass 1 P2/P3 in ID order — of the ones checked in this pass, only **SCRBRD-003** (UI)
+   and **SCRBRD-026** (audit log) are still genuinely open; see each entry above.
 
 Pass 2:
 
