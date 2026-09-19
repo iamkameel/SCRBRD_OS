@@ -1161,12 +1161,16 @@ confirms the overview's coverage count matches it, then cross-checks the same fi
 `MatchCentreView` shows the identical count — proving the two screens cannot drift from each other by
 construction, not just by inspection.
 
-Found along the way, unrelated to this change and left unfixed because they are out of this entry's scope:
-running the full `smoke-browser-read.mjs` top to bottom hit four pre-existing failures in screens this
-entry never touched (a guardian's school name, a Logistics trip arranged through the API, the Add Player
-modal closing on save, and the pending-request view after onboarding) — reproduced identically against the
-unmodified file with this change entirely stashed out, so they predate this entry. Recorded rather than
-left silent; not filed as their own numbered entries yet because their root cause was not investigated.
+**Correction on the same day:** the closing note above first reported four failures in unrelated screens
+(a guardian's school name, a Logistics trip, Add Player, onboarding) as pre-existing bugs, on the strength
+of them reproducing with this change stashed out. That stash test controlled for the wrong variable —
+it ruled out this change, but not the fact that the same un-reset database had already been driven through
+five consecutive walk runs, each one writing state (a withdrawn passport grant, an extra trip, an extra
+onboarded account) the next run's assertions did not expect. A `tools/migrate.mjs --reset --seed` followed
+by exactly one run of `smoke-browser-read.mjs` came back **350 passed, 0 failed** — all four "failures"
+were this session's own repeated-run contamination, not product bugs, and are retracted. A second such
+clean run caught one further one-off timing flake in the ratings screen that did not reproduce on a third;
+also not filed. Left here so the wrong conclusion doesn't get re-derived the same way twice.
 **Title:** No way to see duty-roster coverage across several fixtures at once
 **Priority:** P3 · **Domain:** Facilities / Duty roster · **Type:** product gap
 **Affected files:** a new view (e.g. `apps/web/src/views/ReadinessOverview.jsx`), reusing the existing
