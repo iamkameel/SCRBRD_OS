@@ -83,13 +83,28 @@ export const UPGRADES = [
   { id: "up9",  category: "Comms",         priority: "medium", status: "planned", title: "In-App Parent Messaging",
     desc: "Secure one-to-one between coach and parent, replacing the WhatsApp group. Nothing is modelled yet.", effort: "High" },
   { id: "up13", category: "Admin",         priority: "medium", status: "planned", title: "Invoicing & Subscriptions",
-    desc: "invoice.read and invoice.manage are already granted to the principal and the bursar, with no table behind them. The finance role currently cannot do the thing its name describes.", effort: "High" },
+    desc: "invoice.read and invoice.manage are granted to schooladmin, principal and the finance role, with no table behind either. SCRBRD-030 split the old commercial `finance` bundle in two — this pair is now the entire reason the role exists — and a bursar holding it still cannot invoice anyone.", effort: "High" },
+  { id: "up51", category: "Admin",         priority: "high",   status: "planned", title: "Disciplinary Record",
+    desc: "discipline.read and discipline.write are held by six roles and gate nothing: no table, no policy, no read resource (packages/policy/test/sensitivity.test.mjs). A school administrator who “can read discipline” can read nothing today, and nobody who could read one would be logged doing it.", effort: "Medium" },
   { id: "up8",  category: "Integrations",  priority: "low",    status: "planned", title: "CricHQ / PlayCricket Import",
     desc: "CSV import exists and goes through the ordinary write policies. A direct API sync does not.", effort: "High" },
   { id: "up10", category: "Admin",         priority: "low",    status: "planned", title: "PDF Scorecard Export",
     desc: "One-click export of any scorecard with the school's branding.", effort: "Low" },
   { id: "up14", category: "AI & Analysis", priority: "low",    status: "planned", title: "Training Recommendation Engine",
     desc: "Next focus per player from recent form, skill gaps and workload.", effort: "High" },
+  // Inspired by a deep dive into howstat.com, the long-running cricket
+  // statisticians' site — checked against this codebase's own schema and
+  // read path before being written down, not carried over as marketing copy.
+  // up47 is the one that matters most: it is a real, present gap in a
+  // shipped feature, found by reading contextFrom() itself, not a new idea.
+  { id: "up47", category: "AI & Analysis", priority: "high",   status: "planned", title: "Stats-Magic Answers From Real Figures",
+    desc: "contextFrom() in services/api/ai/ai-service.mjs hands the model a roster and eight recent fixtures — no runs, no wickets, no averages. “What's his strike rate this term?” cannot be answered today, because nothing in the prompt says. player_batting_career and player_bowling_career already compute the raw figures for /read/career; wiring them into Stats-Magic's context, masked the same way names already are, is what separates a fixture-list chatbot from a stats one.", effort: "Medium" },
+  { id: "up48", category: "AI & Analysis", priority: "medium", status: "planned", title: "Dismissal Analysis",
+    desc: "How a boy gets out, and how a bowler takes his wickets, broken down by method — bowled, caught, lbw, run out, stumped and the rest. ball_event.dismissal already carries a closed, validated vocabulary (db/13_dismissal_vocabulary.sql) and dismissal_is_bowlers() already separates a bowler's dismissals from the ones that are not his; nothing aggregates either side by type today, only a flat count (player_dismissals). howstat.com runs a page in exactly this shape, for both ends of the dismissal.", effort: "Medium" },
+  { id: "up49", category: "AI & Analysis", priority: "low",    status: "planned", title: "Ground Records",
+    desc: "Team and player figures per venue — average first-innings score at this ground, who has scored most runs here, home advantage by result. match.ground_id already links every fixture to a ground; nothing aggregates across it. howstat.com's Ground Records menu is the model to build against.", effort: "Medium" },
+  { id: "up50", category: "AI & Analysis", priority: "low",    status: "planned", title: "Bowling Analysis by Batting Order",
+    desc: "A bowler's wickets split by where the batter they dismissed sat in the order — top, middle or tail — instead of one blended average, so a coach can tell a new-ball wicket-taker from a tail-ender. Derivable from the event log's own batting sequence; no position is stored anywhere today. howstat.com runs this as a standing page for Test, ODI and T20 bowling.", effort: "High" },
 ];
 export const STATUS_TONE  = { shipped: D.emerald, partial: D.amber, planned: D.textMuted };
 export const STATUS_LABEL = { shipped: "Shipped", partial: "Built, not drawn", planned: "Planned" };
