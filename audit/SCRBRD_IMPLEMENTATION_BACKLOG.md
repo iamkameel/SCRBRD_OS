@@ -634,8 +634,21 @@ Files: `apps/web/src/App.jsx` VIEW_MAP → `React.lazy`. Evidence RISK-ARC-002. 
 > `message` field does not even contain the literal word `"injury"`.
 **Regression risk:** LOW
 
-### SCRBRD-026 — Audit log for platform-wide reads
-New table + trigger or API-level log for any read performed under a `school_id NULL` assignment. Prerequisite for SCRBRD-012. Evidence Security Audit §8. Migration YES. Risk MEDIUM.
+### ~~SCRBRD-026~~ — CLOSED — Audit log for platform-wide reads
+
+**Closed 2026-09-19.** `db/20_platform_reads.sql` is exactly this, already built: `access_log`
+gains a `platform_wide` column, `app_is_platform_wide()` decides it at read time from the caller's
+own live assignments (a `school_id IS NULL` assignment, not a claim the caller makes), and
+`log_restricted_read()` stamps every row with it. `db/99_rls_verify.sql` (lines 1425-1440+) already
+names this entry directly in its own comment ("SCRBRD-026. The owner's key and a platform
+administrator's reach every school; db/20 makes the log say so") and asserts all four directions
+live: the owner and a platform administrator read as platform-wide, a school administrator does
+not, and two ordinary school assignments never add up to one. SCRBRD-012 and SCRBRD-053 both
+already depend on this mechanism working, which it does — SCRBRD-053's own closure verified a
+`competitionadmin` cross-school read stamped `platform_wide` with zero extra wiring, precisely
+because this was already in place. No new code needed; only this entry was stale.
+**Acceptance:** `db/99_rls_verify.sql` asserts the reader distinction live, in both directions,
+for the owner's key, a platform administrator, a school administrator and a two-school assignment.
 
 ## Product completeness
 
@@ -1313,7 +1326,7 @@ version did not have.
 
 ```text
 SCRBRD-000 ✓ (ship) ──▶ SCRBRD-004 ✓ (owner key) ──▶ SCRBRD-007 ✓ (search_path)
-                                              └▶ SCRBRD-026 (audit log) ──▶ SCRBRD-012 ✓ (impersonate)
+                                              └▶ SCRBRD-026 ✓ (audit log) ──▶ SCRBRD-012 ✓ (impersonate)
 SCRBRD-002 ✓ (dismissal enum) ──▶ SCRBRD-003 (quarantine release — backend done, no UI, still open)
                              └▶ SCRBRD-016 ✓ (reduced overs)
                              └▶ SCRBRD-017 ✓ (determinism test)
@@ -1349,7 +1362,7 @@ SCRBRD-042 (consent audit) — independent, may close as already-correct
    quarantine release is backend-only — real, tested, and still open for lack of a UI panel.
 7. ~~**SCRBRD-009** idempotency; **SCRBRD-011** capability gates; **SCRBRD-007** search_path~~ — all three done.
 8. Remaining Pass 1 P2/P3 in ID order — of the ones checked in this pass, only **SCRBRD-003** (UI)
-   and **SCRBRD-026** (audit log) are still genuinely open; see each entry above.
+   is still genuinely open; see its entry above.
 
 Pass 2:
 
@@ -1384,16 +1397,16 @@ Pass 3:
 
 | Task | Blocked by | Reason |
 |---|---|---|
-| SCRBRD-012 impersonate | SCRBRD-026 | "audited" is in the capability's own description; cannot be implemented without a log to write to |
-| SCRBRD-003 quarantine release | SCRBRD-002 | a released event must pass the same vocabulary check as a fresh one |
-| SCRBRD-020 code splitting | SCRBRD-006 | Firebase is the largest single removable chunk; split after it is lazy |
-| SCRBRD-027 delete legacy-roles | SCRBRD-001, -011 | login page and view gates still read it |
-| SCRBRD-007 search_path | SCRBRD-004 | both add ledger files; sequence them to avoid a ledger conflict on production |
+| ~~SCRBRD-012 impersonate~~ | ~~SCRBRD-026~~ | done — both closed; `db/22`'s own audit table plus `db/20`'s platform-wide log |
+| SCRBRD-003 quarantine release | ~~SCRBRD-002~~ | blocker closed; SCRBRD-003 itself stays open for lack of a UI panel, not for this |
+| ~~SCRBRD-020 code splitting~~ | ~~SCRBRD-006~~ | done — both closed |
+| SCRBRD-027 delete legacy-roles | ~~SCRBRD-001~~, ~~-011~~ | both closed — unblocked; ready to pick up |
+| ~~SCRBRD-007 search_path~~ | ~~SCRBRD-004~~ | done — both closed |
 | ~~SCRBRD-029 split request/approve~~ | `db/24` | done — it took a new capability, so it got its own file after all, and `ADDED_SINCE_01` in the generator for it |
-| SCRBRD-034 duty lifecycle | SCRBRD-031 | `delegated` and an expiring fixture role are workflow states; naming the layer comes first |
-| SCRBRD-036 sponsor viewer | SCRBRD-032 | the ADR is the test a new role has to pass, and this is the first role request it would govern |
+| SCRBRD-034 duty lifecycle | SCRBRD-031 | `~~SCRBRD-031~~`'s own closure says SCRBRD-034 no longer depends on it (premise corrected) — re-check SCRBRD-034 on its own merits before assuming it is still blocked |
+| SCRBRD-036 sponsor viewer | ~~SCRBRD-032~~ | ADR closed; a role request still has to be raised and pass it before this is buildable |
 | SCRBRD-037 duty roster | SCRBRD-034 | readiness is duty status; without the lifecycle the roster can only show names, which is the thing §17.3 says not to do |
-| SCRBRD-042 consent register | an audit of the existing consent reads | the entry may be already-satisfied; writing the change before the audit would be inventing work |
+| ~~SCRBRD-042 consent register~~ | — | done — closed as already-correct |
 | SCRBRD-057 NRR simulator | the runs/legal-balls-for-and-against derivation from `ball_event` (not yet built) | no runs/overs-for-and-against exist to simulate from today, only a stored final `net_run_rate` — computing a projection from that alone would be a fabricated number; "derived, not typed" is now the answer, but the derivation itself is unbuilt |
 | SCRBRD-061 bowling pitch map | its own capture step | no delivery has ever had a real line or length recorded; a chart today would heat-map every innings to one identical cell |
 
