@@ -273,11 +273,30 @@ Evidence RISK-ARC-004. Risk LOW.
 - **SCRBRD-020** (also P2 dependency chain) — see above.
 
 ## Polish
-- **SCRBRD-017** — Replay determinism test: shuffle `ball_event` input, assert identical scorecard; assert server sorts by `(epoch, seq)` before replay. Evidence RISK-SCO-004. Risk LOW.
+- ~~**SCRBRD-017**~~ — **CLOSED.** `packages/scoring/test/replay.test.mjs`, new group D: a canonical
+  event log with real `seq` values, reversed then re-derived (a genuinely different, wrong answer,
+  proving order matters), then sorted back by `seq` alone and re-derived again (identical to the
+  canonical result) — twice, once on a short log and once on an eighteen-event log with a strike
+  rotation, a bowler change and a wicket, shuffled by a fixed permutation rather than `Math.random()` so
+  a failure is reproducible. Corrected while writing it: the original wording asked for sorting by
+  `(epoch, seq)`, but `seq` is allocated as `max(seq)+1` per match (`services/api/write/events-api.mjs`),
+  already a single global order across every device and epoch — every real read path that feeds a replay
+  (`session-routes.mjs`'s catch-up query, `read-api.mjs`'s `phases`/`shot_points`) already sorts by plain
+  `seq`, and there is no second column left to break a tie on. Evidence RISK-SCO-004. Risk LOW.
 
 ## Cleanup
 - ~~**SCRBRD-024**~~ — **CLOSED.** `.github/workflows/ci.yml` runs the suites, `migrate --reset --seed && migrate --verify`, and the RLS-output diff on every PR. Evidence RISK-OPS-002.
-- **SCRBRD-025** — `bundle-sql.mjs` writes the git SHA into a `schema_migration.note` column so Supabase records which bundle it received. Evidence RISK-OPS-003. Migration YES (one nullable column).
+- ~~**SCRBRD-025**~~ — **CLOSED.** `schema_migration` gains a nullable `note` column — via
+  `CREATE TABLE ... (..., note text)` for a fresh database, `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`
+  for one this project already provisioned, in both `tools/migrate.mjs` and `tools/bundle-sql.mjs`, so
+  neither ledger-writer can find the column missing under the other. Every ledger row `bundle-sql.mjs`
+  writes — the full rebuild, and the single-migration `--apply NN` paste — now carries the git commit SHA
+  the bundle was generated from in `note`; `migrate.mjs` does the same for a local/CI apply, so the two
+  ledgers read the same way rather than one populated and one always null. Best-effort: a shallow clone or
+  a working copy with no git history at all still migrates, with `note` left `NULL` rather than the run
+  refusing. Evidence RISK-OPS-003. Migration YES (one nullable column, applied by the tooling itself, not
+  a `db/NN` file — `schema_migration` is bootstrap infrastructure the numbered migrations describe, not
+  one of them).
 - **SCRBRD-027** — Delete `apps/web/src/rbac/legacy-roles.js` once SCRBRD-001 and -011 land. Evidence SEC-P3-01.
 
 ---

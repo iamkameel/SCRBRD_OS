@@ -322,6 +322,66 @@ group("D. Strike rotation and innings end");
   ok("retirement is not a wicket", r.wickets === 0);
 }
 
+// ── D. Order-independence, given seq ─────────────────────
+//
+// SCRBRD-017. The header above has claimed this since before there was a
+// test for it. `seq` is the one thing every read path that feeds a replay
+// actually sorts by (services/api/realtime/session-routes.mjs's catch-up
+// query, read-api.mjs's `phases`/`shot_points`, all `order by ... seq`) —
+// deliberately just `seq`, not `(epoch, seq)`: it is allocated as
+// `max(seq)+1` per match at insert time (services/api/write/events-api.mjs),
+// so it is already a single global order across every device and epoch that
+// ever wrote to this match, and there is no second column left for a tie to
+// need breaking on.
+//
+// This does not prove the read paths sort correctly — that is what their own
+// suites are for (realtime.test.mjs's reconnect-from-lastSeq coverage is the
+// transport half of this same property). It proves the fold itself: handed
+// events in the wrong order, deriveInnings() gives a different, wrong
+// answer, and handed the same events sorted by seq — however they arrived —
+// it gives the one true answer back every time.
+group("D. Replay is deterministic and order-independent, given seq");
+{
+  // A wicket for the striker AFTER the run that puts him on 4 — reordering
+  // these two must change the result (he cannot be out for 4 before he has
+  // scored it), which is what makes the "unsorted differs" assertion below
+  // a real check rather than one that would pass on a log shuffling cannot
+  // actually disturb.
+  const canonical = [...open(), runs(4), ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" })]
+    .map((e, i) => ({ ...e, seq: i + 1 }));
+  const correct = deriveInnings(canonical);
+  ok("sanity: the striker is out for 4, not 0", correct.wickets === 1 &&
+     correct.batsmen.find(b => b.id === "p1").runs === 4);
+
+  const shuffled = [...canonical].reverse(); // deterministic "wrong order", not flaky randomness
+  const wrong = deriveInnings(shuffled);
+  ok("out of seq order, the fold gives a different, wrong answer — proving order really matters",
+     JSON.stringify(wrong) !== JSON.stringify(correct));
+
+  const resorted = [...shuffled].sort((a, b) => a.seq - b.seq);
+  ok("sorted back by seq alone, the shuffled log derives the identical result",
+     JSON.stringify(deriveInnings(resorted)) === JSON.stringify(correct));
+
+  // A second, larger shuffle — not reversed this time — for the same
+  // property on a log with more to get wrong: two overs, a strike rotation,
+  // a bowler change, and a wicket partway through.
+  const longCanonical = [
+    ...open(), runs(1), runs(4), runs(0), runs(2), runs(6),
+    ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" }),
+    batters({ striker: "p3" }), runs(1), runs(1), runs(0), runs(2), runs(0),
+    bowler({ bowler: "w2" }), runs(1), runs(4), runs(1), runs(0), runs(1), runs(1),
+  ].map((e, i) => ({ ...e, seq: i + 1 }));
+  const longCorrect = deriveInnings(longCanonical);
+  // A fixed permutation (not Math.random()) so a failure is reproducible
+  // rather than a coin flip that only sometimes catches a regression.
+  const longShuffled = longCanonical.slice().sort((a, b) => ((a.seq * 7) % 19) - ((b.seq * 7) % 19));
+  ok("the eighteen-event log is genuinely out of order before sorting",
+     longShuffled.map(e => e.seq).join(",") !== longCanonical.map(e => e.seq).join(","));
+  ok("...and still derives identically once sorted back by seq",
+     JSON.stringify(deriveInnings(longShuffled.slice().sort((a, b) => a.seq - b.seq))) ===
+     JSON.stringify(longCorrect));
+}
+
 // ── E. Determinism, match level, and the wire ────────────
 group("E. Determinism, match derivation, wire round-trip");
 {

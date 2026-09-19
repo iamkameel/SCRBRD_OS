@@ -33,11 +33,19 @@
  */
 import { readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 
 const DB = "/home/user/SCRBRD_OS/db";
 const sha = (f) => createHash("sha256").update(readFileSync(f)).digest("hex");
 const src = readFileSync("/home/user/SCRBRD_OS/tools/migrate.mjs", "utf8");
+// SCRBRD-025. A bundle pasted into Supabase's SQL Editor otherwise leaves no
+// record of which commit produced it — the ledger says WHEN and WHAT
+// (sha256 per file), never which git state chose that file set. Best-effort:
+// a shallow clone with no git history still has to be able to write a bundle.
+const gitShaResult = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" });
+const COMMIT = gitShaResult.status === 0 ? gitShaResult.stdout.trim() : null;
+const noteSql = COMMIT ? `'${COMMIT}'` : "NULL";
 
 // Lift the teardown verbatim from the migrator rather than retyping it: a
 // second copy of a destructive statement is a second thing to get wrong.
@@ -87,11 +95,16 @@ BEGIN
   END IF;` : ""}
 END $apply$;
 
+-- A database ledgered by a bundle from before SCRBRD-025 has no note column
+-- yet; this reaches it either way.
+ALTER TABLE schema_migration ADD COLUMN IF NOT EXISTS note text;
+
 -- ── ${file} ──
 ${readFileSync(join(DB, file), "utf8")}
 
--- ── the ledger row, with the hash the migrator would record ──
-INSERT INTO schema_migration (name, sha256) VALUES ('${file}', '${sha(join(DB, file))}');
+-- ── the ledger row, with the hash the migrator would record and the commit
+--    this bundle was generated from ──
+INSERT INTO schema_migration (name, sha256, note) VALUES ('${file}', '${sha(join(DB, file))}', ${noteSql});
 `;
   const target = `/home/user/SCRBRD_OS/scrbrd-supabase-apply-${nn}.sql`;
   writeFileSync(target, out);
@@ -119,7 +132,8 @@ ${teardown}
 -- ── 2. The ledger, so the command-line migrator still works later ──
 DROP TABLE IF EXISTS schema_migration;
 CREATE TABLE schema_migration (
-  name text PRIMARY KEY, sha256 text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now());
+  name text PRIMARY KEY, sha256 text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now(),
+  note text);
 ALTER TABLE schema_migration ENABLE ROW LEVEL SECURITY;
 `];
 
@@ -130,7 +144,7 @@ for (const f of migrations) {
 -- ── ${step}. ${f} ──
 -- ══════════════════════════════════════════════════════════════════
 ${readFileSync(join(DB, f), "utf8")}
-INSERT INTO schema_migration (name, sha256) VALUES ('${f}', '${sha(join(DB, f))}');
+INSERT INTO schema_migration (name, sha256, note) VALUES ('${f}', '${sha(join(DB, f))}', ${noteSql});
 `);
   step++;
 }
