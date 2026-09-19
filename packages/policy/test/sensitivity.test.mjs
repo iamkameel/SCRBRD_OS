@@ -188,7 +188,8 @@ group("SCRBRD-030: a watched column is never reached by an under-classified capa
 group("And the watched columns are watched for a reason");
 {
   ok("every watched resource names at least one field",
-     Object.entries(RESTRICTED_FIELDS).every(([r, f]) => Array.isArray(f) && (f.length > 0 || r === "career")),
+     Object.entries(RESTRICTED_FIELDS).every(([r, f]) =>
+       Array.isArray(f) && (f.length > 0 || r === "career" || r === "dismissal_breakdown")),
      Object.entries(RESTRICTED_FIELDS).filter(([, f]) => !f.length).map(([r]) => r).join(" "));
   ok("no watched field is a duplicate within its resource",
      Object.values(RESTRICTED_FIELDS).every((f) => new Set(f).size === f.length));

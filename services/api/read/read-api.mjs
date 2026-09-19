@@ -1881,6 +1881,51 @@ export const READ_QUERIES = {
   },
 
   /**
+   * How a boy is out, and how a bowler takes wickets — by method.
+   *
+   * `career` above has `dismissals` and `wickets` as single counts.
+   * player_dismissal_breakdown / player_wicket_breakdown (db/26) are the same
+   * scope, GROUPed one dimension further. Same tenant-scoping discipline as
+   * `career`: no module owns this (see OWNER_OF_READ — `career` has none
+   * either), because the actual gate is not a switch, it is the RLS this
+   * already inherits from ball_event_live (security_invoker, fixture.read)
+   * and from `player` (player.profile.read for the row that names them).
+   * `player.performance.read` is a real capability — every scoring role holds
+   * it — but nothing in this file or in db/09's policies asks app_can() about
+   * it; it currently governs a client-side `holds()` check in
+   * DashboardView.jsx and nothing on the read path. Inventing a second gate
+   * here that the sibling resource does not have would make two people with
+   * identical assignments see different things from `career` and from this,
+   * for no reason either could discover. So this reuses exactly what `career`
+   * already relies on rather than adding one.
+   *
+   * LONG-FORM: one row per player per dismissal type per side, `side` being
+   * 'batting' or 'bowling' — the shape `skills` already uses for a small
+   * fixed vocabulary. `dismissal` is NULL for a wicket whose method was never
+   * recorded (see db/26); the client renders that as "method not recorded"
+   * rather than dropping the row, so a sum over this resource never disagrees
+   * with the flat total `career.dismissals` / `career.wickets` gives.
+   *
+   * CAUGHT AND BOWLED is not its own line — see db/26's comment. ball_event
+   * has no fielder/catcher column, so there is nothing here to distinguish
+   * the bowler catching his own wicket from any other fielder catching it off
+   * him; both are 'caught'. Faking the split from bowler_id alone would be
+   * wrong for nearly every 'caught' row.
+   */
+  dismissal_breakdown: {
+    text: `select p.id as player_id, p.full_name, p.team_code, p.school_id,
+                  'batting'::text as side, d.dismissal, d.dismissals as count
+             from player p
+             join player_dismissal_breakdown d on d.player_id = p.id
+           union all
+           select p.id as player_id, p.full_name, p.team_code, p.school_id,
+                  'bowling'::text as side, w.dismissal, w.wickets as count
+             from player p
+             join player_wicket_breakdown w on w.player_id = p.id
+            order by full_name, side, dismissal nulls last`,
+  },
+
+  /**
    * Who is about to age out of their side, and which side to trial them for.
    *
    * DERIVED, not delivered. There is no job publishing these and no row
@@ -2173,6 +2218,7 @@ export const RESTRICTED_FIELDS = Object.freeze({
   clearance_register: ["reference"],
   clearances:         ["reference"],
   career:   [],
+  dismissal_breakdown: [],
   skills:   ["score"],
   users:    ["email"],
   // Dotted, because a rating is nested. What is disclosed here is a named

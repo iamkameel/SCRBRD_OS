@@ -2264,3 +2264,87 @@ full season's data and is worth measuring before the pilot, the same way the com
 elsewhere in `ai-service.mjs` already flags for that feature. Capping or ranking which players'
 figures are included, if it becomes necessary, is a product decision and was deliberately left
 alone here.
+
+### ~~SCRBRD-065~~ — CLOSED
+
+**Closed 2026-09-19.** `player_dismissal_breakdown`/`player_wicket_breakdown` (`db/26_dismissal_breakdown.sql`)
+group the exact same rows `player_dismissals` and `player_bowling_career` already fold into a single
+count each — the arithmetic is a GROUP BY away, now that `db/13` closed `ball_event.dismissal` to the
+eleven values the Laws recognise. Exposed as a new read resource, `dismissal_breakdown`, in
+`read-api.mjs`, inheriting the same RLS boundary `career` already relies on (`security_invoker` over
+`ball_event_live`, `fixture.read`) — no new capability, no new gate, the same tenant-scoping
+discipline as its sibling.
+
+**The one law this exists to keep, and the one place it could have been gotten wrong:** a run out is
+not the bowler's wicket. `player_wicket_breakdown` filters through `dismissal_is_bowlers()` — the
+same predicate `player_bowling_career.wickets` already uses — so the two can never disagree about
+whose figure a dismissal counts against. `tools/smoke-dismissals.mjs` proves this against real
+Postgres by writing a synthetic over (the static seed's only two wickets both have `bowler_id NULL`,
+for a real, pre-existing reason — the bowler in that innings is an opposing player with no row in
+a Hilton-only roster — so nothing in the seed alone exercises the predicate) crediting one bowler
+with five methods including a run out, and asserting the run out is the one that does not show up
+in his four wicket-type rows.
+
+**A real bug this closure caught before it shipped, not after:** the smoke test's first draft used
+`T Bekker` as its synthetic striker — the same player the seed's own 96-ball over separately credits
+with a real `bowled` dismissal at ball 34 — so the "five, exactly" assertion was fighting a sixth,
+real dismissal already on his record and failed. Fixed by moving the synthetic striker to `S Naidoo`,
+whose range in that same over (balls 35-55) carries neither of the seed's two wickets, confirmed by
+re-reading the seed's own ball-assignment logic rather than guessing. `node tools/run-all-tests.mjs`
+also needed `sensitivity.test.mjs`'s "every watched resource names at least one field" widened to
+accept `dismissal_breakdown` as row-gated the same way it already accepts `career` — a resource with
+nothing masked because the whole row is the gate, not an oversight.
+
+**Caught and bowled is deliberately not its own line.** HowStat and most scorecards give it one
+because it says the bowler took the catch himself — a fact about WHO FIELDED it, which `ball_event`
+does not record. Every caught dismissal off a bowler's own bowling looks identical in the log to a
+catch taken by any of the other ten fielders; inferring the split from `bowler_id` alone would be
+wrong for nearly every `caught` row in the game, which is worse than not drawing the line at all. If
+a fielder/catcher column is ever added, the split falls out of the same `GROUP BY` for free.
+
+Falsified live: the real view swapped for a broken one crediting every method to the bowler
+(run out included), confirmed the defect reappears and the assertion built to catch it goes red,
+then restored from the file that ships (read back into the test rather than retyped, so "restore"
+cannot itself drift from what `db/26` says) and reconfirmed green.
+
+Verified against a freshly reset and reseeded database: `node tools/migrate.mjs --reset --seed
+--verify` (ALL RLS LIVE ASSERTIONS PASSED, no capability or policy changed — `pnpm rls:generate`
+leaves `db/01`/`db/09`/`db/23` byte-identical); `tools/smoke-dismissals.mjs`, 13 assertions,
+registered as `"dismissals"` in `tools/run-smoke-api.mjs`; full suite 2008 assertions across 31
+suites.
+
+**No screen this pass.** `up48` on the roadmap moves from `planned` to `partial`, naming
+`dismissal_breakdown` as undrawn — the same honest pattern `up51`/`up23`/`up24` already use for a
+real, read-gated resource with no view yet built against it.
+
+**Title:** ~~Dismissal Analysis — how a boy gets out, and how a bowler takes wickets, by method~~
+**Priority:** P2 · **Domain:** AI / Analysis · **Type:** product completeness
+**Affected files:** `db/26_dismissal_breakdown.sql` (new), `services/api/read/read-api.mjs`,
+`db/98_seed_pilot.sql`, `tools/smoke-dismissals.mjs` (new), `tools/run-smoke-api.mjs`,
+`packages/policy/test/sensitivity.test.mjs`, `apps/web/src/data/roadmap.js`
+**Affected users:** every coach or analyst asking how a boy gets out, or how a bowler's wickets break down
+
+**Current behaviour:** `player_dismissals` and `player_bowling_career.wickets` each give one number;
+neither can say bowled-how-many, caught-how-many, lbw-how-many.
+**Expected behaviour:** the same figures, grouped one dimension further, read from the same RLS
+boundary every sibling career resource already relies on.
+**Root cause:** the flat counts were built first, and nobody had asked the question a breakdown
+answers until the HowStat review named it.
+**Recommended change (as built):** described above.
+**Why it matters:** a coach who can see a bowler took five wickets but not how — five yorkers or
+five lucky nicks — is reading a number, not a bowling spell.
+**Dependencies:** `db/13`'s closed dismissal vocabulary and `dismissal_is_bowlers()`, both pre-existing.
+**Security / privacy impact:** none — no new capability, same read boundary as `career`.
+**Data migration required:** NO — two views over existing rows; no schema change, no backfill.
+**Tests required:** `tools/smoke-dismissals.mjs`'s live, self-falsifying proof that a run out is
+never credited to the bowler.
+**Acceptance criteria:**
+- [x] A bowler's wickets are readable broken down by method, excluding run outs and the other
+      non-bowler dismissals
+- [x] A batter's dismissals are readable broken down by method, run outs included
+- [x] The breakdown sums to the same totals `player_dismissals`/`player_bowling_career` already give
+- [x] Falsified live: crediting a run out to the bowler is caught, not silently accepted
+- [x] No capability or RLS policy changed
+**Regression risk:** LOW — two new views and one new read resource, additive; no existing resource,
+policy or capability touched.
+alone here.

@@ -734,7 +734,7 @@ INSERT INTO ball_event (
   scorer_user_id, device_id, idempotency_key, client_seq, client_ts,
   kind, ball_type, value, shot, seg, theta, radius,
   placement_source, capture_profile, contact, trajectory,
-  striker_id, bowler_id)
+  striker_id, bowler_id, dismissal)
 SELECT
   '77777777-0000-0000-0000-000000000004',
   '11111111-1111-1111-1111-111111111111',
@@ -790,7 +790,16 @@ SELECT
   -- every delivery bowled AT Hilton — and inflate his bowling career with an
   -- innings he did not bowl. bowler_id is nullable for exactly this case, and
   -- smoke-rating.mjs writes its own deliveries the same way.
-  NULL
+  NULL,
+  -- Bekker is bowled at 34, Cele is caught at 71 — real methods, from the
+  -- eleven db/13 knows, so player_dismissal_breakdown has something other
+  -- than an "unknown" bucket to show for the one seeded innings the pilot
+  -- carries. Nobody is credited with either wicket: the bowler above is
+  -- NULL for exactly the reason the comment beside it gives, so
+  -- player_wicket_breakdown is legitimately empty from this seed alone —
+  -- tools/smoke-dismissals.mjs supplies a bowler synthetically, the way
+  -- smoke-rating.mjs already supplies deliveries the seed itself cannot.
+  CASE WHEN n = 34 THEN 'bowled' WHEN n = 71 THEN 'caught' END
 FROM generate_series(1, 96) AS n;
 
 -- ── The officials register ───────────────────────────────────────

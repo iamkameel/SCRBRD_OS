@@ -123,6 +123,9 @@ const WALKS = [
   // and gated nothing, and the only policy in the schema whose fixture anchor
   // is allowed to be NULL.
   "discipline",
+  // How a boy is out, and how a bowler takes wickets, by method rather than
+  // as a single count.
+  "dismissals",
   "commit",
 ];
 
