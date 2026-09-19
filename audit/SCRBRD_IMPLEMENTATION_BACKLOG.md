@@ -781,7 +781,26 @@ for the owner's key, a platform administrator, a school administrator and a two-
   refusing. Evidence RISK-OPS-003. Migration YES (one nullable column, applied by the tooling itself, not
   a `db/NN` file — `schema_migration` is bootstrap infrastructure the numbered migrations describe, not
   one of them).
-- **SCRBRD-027** — Delete `apps/web/src/rbac/legacy-roles.js` once SCRBRD-001 and -011 land. Evidence SEC-P3-01.
+- **SCRBRD-027** — Delete `apps/web/src/rbac/legacy-roles.js` once SCRBRD-001 and -011 land.
+  **Checked 2026-09-19, still blocked, but not on -001/-011 any more.** Both of those closed
+  without touching this: SCRBRD-001 was about the fake "Continue with Google" button, SCRBRD-011
+  about the last `role === "superadmin"` view gates — neither is about legacy role NAMES. What
+  this file is actually still holding up: `LoginPage.jsx`'s `MOCK_USERS` (`gsutherland@hilton.co.za`
+  → `role:"sportsmaster"`, `emzimba@hilton.co.za` → `role:"groundskeeper"`) and its `DEMO_ACCOUNTS`
+  (`helen.w@gmail.com` → `role:"parent"`) still sign people in with old-vocabulary names, not the
+  real policy roles (`directorofsport`, `facilities`, `guardian`); `OnboardingFlow.jsx`'s persona
+  picker and `ManagementView.jsx`'s tab/role branches use `sportsmaster`/`groundskeeper` directly
+  too. Both `design/roles.js`'s `canonicalRole()`/`ROLES` and `rbac/index.js`'s
+  `assignmentsForRole()` resolve those names ONLY through `LEGACY_ROLE`/`LEGACY_ROLE_ALIAS`, which
+  come from this file — remove it today and those logins render `ROLES[undefined]` (blank shell)
+  and get `assignmentsForRole() → []` (default-deny). `apps/web/test/design.test.mjs:284-286`
+  already asserts, by name, that `headmaster`/`sportsmaster`/`parent` resolve through
+  `canonicalRole()` — the suite itself currently requires this file to exist. Falsified directly:
+  deleting the file and running `design.test.mjs` fails immediately with `ERR_MODULE_NOT_FOUND`
+  before a single assertion runs, confirming a test would catch removal; restored, green again.
+  The real prerequisite is retiring the old-vocabulary names from the demo/onboarding files
+  themselves (a proper subset of SCRBRD-001's original spirit, never actually done), not -001/-011
+  as filed. Evidence SEC-P3-01.
 
 ---
 
@@ -1332,8 +1351,9 @@ SCRBRD-002 ✓ (dismissal enum) ──▶ SCRBRD-003 (quarantine release — bac
                              └▶ SCRBRD-017 ✓ (determinism test)
 SCRBRD-006 ✓ (analytics consent) ──▶ SCRBRD-020 ✓ (code splitting)
 SCRBRD-001 ✓ (login page) ──┐
-SCRBRD-011 ✓ (capability gates) ──┴▶ SCRBRD-027 (delete legacy-roles — still blocked on nothing now
-                                       that -001/-011 are closed; ready to pick up)
+SCRBRD-011 ✓ (capability gates) ──┴  (neither actually gated SCRBRD-027 — checked 2026-09-19)
+SCRBRD-027 (delete legacy-roles — still blocked, on retiring old-vocabulary names from
+             LoginPage/OnboardingFlow/ManagementView, not on -001/-011)
 SCRBRD-009 ✓ (idempotency) — independent
 SCRBRD-010 ✓ (offline walks) — independent, should land BEFORE SCRBRD-003 (regression net)
 SCRBRD-008 ✓ (reset guard) — independent, do first: five lines, Critical impact
@@ -1400,7 +1420,7 @@ Pass 3:
 | ~~SCRBRD-012 impersonate~~ | ~~SCRBRD-026~~ | done — both closed; `db/22`'s own audit table plus `db/20`'s platform-wide log |
 | SCRBRD-003 quarantine release | ~~SCRBRD-002~~ | blocker closed; SCRBRD-003 itself stays open for lack of a UI panel, not for this |
 | ~~SCRBRD-020 code splitting~~ | ~~SCRBRD-006~~ | done — both closed |
-| SCRBRD-027 delete legacy-roles | ~~SCRBRD-001~~, ~~-011~~ | both closed — unblocked; ready to pick up |
+| SCRBRD-027 delete legacy-roles | old-vocabulary role names in `LoginPage`/`OnboardingFlow`/`ManagementView` | -001/-011 are closed but never actually gated this — checked 2026-09-19, see the entry above |
 | ~~SCRBRD-007 search_path~~ | ~~SCRBRD-004~~ | done — both closed |
 | ~~SCRBRD-029 split request/approve~~ | `db/24` | done — it took a new capability, so it got its own file after all, and `ADDED_SINCE_01` in the generator for it |
 | SCRBRD-034 duty lifecycle | SCRBRD-031 | `~~SCRBRD-031~~`'s own closure says SCRBRD-034 no longer depends on it (premise corrected) — re-check SCRBRD-034 on its own merits before assuming it is still blocked |
