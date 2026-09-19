@@ -413,6 +413,37 @@ export const READ_QUERIES = {
             order by n.observed_on desc, n.created_at desc`,
   },
 
+  /**
+   * A disciplinary matter about a named child (SCRBRD-053).
+   *
+   * No masking view, because there is nothing to mask: discipline.read gates
+   * the whole ROW, and a reader without it sees no record at all rather than a
+   * record with its prose blanked. Masking is the wrong instrument here: a
+   * matter with its account removed still says a named boy is in trouble and
+   * no longer says what for, which discloses the fact and withholds the only
+   * part that would let a reader weigh it.
+   *
+   * LEFT JOIN on player, not JOIN, and the difference is load-bearing.
+   * `competitionadmin` holds discipline.read and no player capability at all,
+   * so the join's own row-level security yields nothing for them — an INNER
+   * join would silently return an empty list to the one reader the
+   * platform-wide arm of this policy exists for, and it would look like a
+   * school with a clean record rather than a refusal. What comes back instead
+   * is the record without the child's name, which is exactly the line
+   * player.profile.read draws: the matter is the league's business and the
+   * roster is the school's.
+   */
+  disciplinary_records: {
+    text: `select d.id, d.player_id, d.school_id, d.match_id, d.body,
+                  d.state, d.outcome, d.occurred_on, d.created_at, d.updated_at,
+                  d.recorded_by, u.name as recorded_by_name,
+                  p.full_name, p.team_code
+             from disciplinary_record d
+             left join player p   on p.id = d.player_id
+             left join app_user u on u.id = d.recorded_by
+            order by d.occurred_on desc, d.created_at desc`,
+  },
+
   // The newsfeed. Same rule as every read here: the policy on news_post has
   // already decided who may see each row — a team post reaches that side, a
   // school post that school, a competition post every school entered in it —
@@ -2154,6 +2185,15 @@ export const RESTRICTED_FIELDS = Object.freeze({
   // group that may read it is deliberately narrow. Every read is logged, which
   // is what makes the narrowness answerable rather than merely convenient.
   notes:    ["body"],
+  // A disciplinary matter about a named child, and what the school decided to
+  // do about it. Nothing here is masked — discipline.read gates the row — so
+  // this entry is the ONLY reason an ordinary school-side read of one is
+  // logged at all: the platform-wide branch below stamps a cross-school
+  // reader whatever the resource says, and the branch after it stamps
+  // everybody else only when a watched column comes back. Without these two
+  // names a principal could read a child's record and leave no trace, which
+  // is the half of SCRBRD-053 that was not about the policy.
+  disciplinary_records: ["body", "outcome"],
   // Another school's children, by name, read for a fixture. Logged against
   // the school that was read — school_id on every row is theirs, not the
   // reader's — so the disclosure lands in the right school's log.
@@ -2169,6 +2209,7 @@ const SUBJECT_ID = { players: "id", injuries: "player_id", skills: "player_id",
                      emergency_contacts: "player_id", trip_contacts: "player_id",
                      clearance_register: "person_id", clearances: "person_id",
                      users: "id", ratings: "player_id", notes: "player_id",
+                     disciplinary_records: "player_id",
                      opposition_squad: "player_id" };
 
 /** At most this many ids per entry. A log row is evidence, not a data export. */

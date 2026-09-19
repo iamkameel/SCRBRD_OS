@@ -197,6 +197,25 @@ ok("...and cannot read a coach's private player notes",
    !caps("schooladmin").includes("player.note.read"));
 ok("...nor a medical file",
    !caps("schooladmin").includes("medical.details.read"));
+// THE MIRROR, and since SCRBRD-053 it is load-bearing rather than tidy.
+// `official` writes a disciplinary record and cannot read one, which is why
+// neither write path in services/api/write/discipline-api.mjs uses RETURNING:
+// Postgres applies the SELECT policy to a row an INSERT returns, so the day
+// this asymmetry stops being true is the day that design decision stops being
+// necessary — and the day it is reversed in the other direction, by somebody
+// taking the write away, an umpire silently cannot file an incident at all.
+ok("the official files a disciplinary record and cannot read one",
+   caps("official").includes("discipline.write") && !caps("official").includes("discipline.read"));
+ok("...and the two ends of it are held by different sets of roles",
+   others("discipline.read").join() !== others("discipline.write").join(),
+   `read: ${others("discipline.read").join(" ")} · write: ${others("discipline.write").join(" ")}`);
+// Filing is one job and running the school's sport is another. The overlap is
+// exactly one role — the director of sport, who is the only person who can
+// both file an off-field matter and conclude one an umpire filed — and that is
+// a decision rather than an accident, so it is written down.
+ok("filing is held by the umpire and the director of sport, and by nobody else",
+   others("discipline.write").join() === "directorofsport,official",
+   others("discipline.write").join(" "));
 
 // ── §11.5 Finance vs sporting performance ────────────────
 group("§11.5  Finance sees payers and invoices, not performance or health");

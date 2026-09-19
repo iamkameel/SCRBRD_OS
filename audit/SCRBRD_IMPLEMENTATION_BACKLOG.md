@@ -785,17 +785,15 @@ already-correct. Risk LOW. Migration UNKNOWN until the audit.
   Splitting the request out (`scoring.amend.request`) is the prerequisite for that entry. Files:
   `capabilities.mjs`, `roles.mjs`, `db/02`'s three policies via a new `db/NN`, `db/09` regenerated.
   Risk MEDIUM. **Migration YES.** Discovered by writing db/24 and running the walks.
-- **SCRBRD-053** — `discipline.read` and `discipline.write` gate nothing. Six roles hold one or
-  both (`superadmin`, `principal`, `directorofsport`, `schooladmin`, `selfaccess`,
-  `competitionadmin` read; `superadmin`, `directorofsport`, `official` write) and there is no disciplinary
-  record in the schema: no table, no policy, no masked column, no read resource. So the
-  capability grants nothing today, and on the day a record arrives the reader of one would not
-  be logged, because the logger watches columns and there are none to watch. Found by
-  `sensitivity.test.mjs`, recorded there in `NOT_YET_IMPLEMENTED` with the reason, and the
-  suite fails if either starts being referenced without the entry being removed. Either build
-  the record or drop the capabilities — what should not persist is a role bundle that promises
-  something the schema cannot deliver. Files: a new `db/NN`, `tables.mjs`, `read-api.mjs`.
-  Risk LOW. **Migration YES** if built.
+- ~~**SCRBRD-053**~~ — **CLOSED.** `db/25_disciplinary_record.sql`, the read resource
+  `disciplinary_records`, `services/api/write/discipline-api.mjs` and
+  `tools/smoke-discipline.mjs`; full entry below. The record was built rather than the
+  capabilities dropped. Found two things worth knowing beyond the feature: Postgres applies a
+  table's SELECT policy to any row an `INSERT`/`UPDATE` **returns**, so an `official` — who
+  holds `discipline.write` and not `discipline.read` — could never have filed through a handler
+  using `RETURNING`; and the same rule makes a targeted `UPDATE ... WHERE id = …` invisible to
+  that writer while a blind `UPDATE` with no `WHERE` is not, which is why every statement here
+  names an id. Awaiting paste (`scrbrd-supabase-apply-25.sql`).
 - ~~**SCRBRD-052**~~ — **CLOSED.** `tools/smoke-browser-innings-end.mjs`, full entry below. Found and
   fixed two `Badge` components that silently dropped `data-testid`; found and filed **SCRBRD-063** (a
   second innings can never close on reaching its target — nothing wires the two together).
@@ -1404,3 +1402,153 @@ target down with real deliveries instead of a second round of wickets, once this
 **Regression risk:** LOW-MEDIUM — adds an event, and an event shape change on a heavily-replayed path
 deserves the full scoring suite run (`packages/scoring/test/*`, `apps/web/test/system.test.mjs`) before
 shipping, not just the new browser walk.
+
+### ~~SCRBRD-053~~ — CLOSED
+
+**Closed 2026-09-19.** The record exists. `db/25_disciplinary_record.sql` creates
+`disciplinary_record`, its three indexes, an authorship trigger and its own row-level policies;
+`disciplinary_records` is a read resource in `read-api.mjs` with an entry in `RESTRICTED_FIELDS`
+so every read of one is logged; `services/api/write/discipline-api.mjs` carries the two routes
+(`POST /api/players/:id/discipline`, `PATCH /api/discipline/:id`); and
+`tools/smoke-discipline.mjs` — 47 assertions, registered in `tools/run-smoke-api.mjs` — walks all
+of it over HTTP against real Postgres. **No capability grant changed.** The six bundles were
+already correct about who should be able to do this; it was the schema that had nothing to offer
+them, which is why `pnpm rls:generate` leaves `db/01_authz.sql`, `db/09_rls_policies.sql` and
+`db/23_authz_time_box.sql` byte-identical (checked with `git diff` after regenerating).
+
+**The shape was derived from the grants rather than chosen, and that is most of the design.**
+Read is held by `principal`/`directorofsport`/`schooladmin` (school-scoped), by `selfaccess` (a
+pupil reading his own, which needs a **person** anchor on the row), and by `competitionadmin`,
+whose assignment names no school and therefore reaches every school — automatically, because a
+NULL school on the ASSIGNMENT widens, with no platform-wide clause written anywhere. Write is
+held by `directorofsport` and by `official`, and an official is appointed **per match**, so the
+row needs a **fixture** anchor or the umpire's grant is unusable. `school_id` is denormalised for
+`development_note`'s reason plus one more: `competitionadmin` holds no player capability at all,
+so a derived school anchor would have resolved to NULL for them and been right only by accident.
+It is the only table in the schema whose RLS **fixture anchor can be NULL** — every other
+policy-anchored `match_id` is NOT NULL — so the same column carries the on-field/off-field
+distinction that a category enum would otherwise have restated. Falsified by swapping the anchor
+for `ANY_SCOPE` and watching the umpire successfully file about a match he never stood at.
+
+**Two Postgres behaviours found by building it, both of which changed the code.** First,
+`INSERT ... RETURNING` evaluates the SELECT policy on the returned row — so `returning id`, the
+shape every other write handler in this repo uses, would have refused the one writer this
+capability exists for, and refused it with "new row violates row-level security policy", which
+names the wrong policy. Verified with a two-policy probe table before the handler was written,
+then falsified by adding `returning id` back and watching the umpire's filing fail. Second, the
+same rule applies to the rows an `UPDATE`'s `WHERE` clause reads: a writer without the read
+cannot name a row, while a blind `UPDATE` with no `WHERE` touches every row the UPDATE policy
+allows (probed: `rowCount 0` against `rowCount 2`). Every statement here names an id, and the
+consequence — an umpire cannot revise his own report — is the right answer for a document that is
+evidence, with the school progressing it.
+
+**The trigger divides the row rather than locking it.** `development_note`'s trigger refuses any
+non-author UPDATE; that is correct for a coach's private note and wrong here, because the umpire
+who filed the incident was appointed for one afternoon and the matter outlives the appointment.
+So: the **account** is the author's (`45001` on a non-author changing `body`), the **outcome** is
+the school's (`state`/`outcome` for anyone holding `discipline.write` in scope), and the
+**subject** is nobody's to move (`45002`, new — a record re-filed against another child is a new
+record). Both are deliberately distinct from `42501`; all three are mapped in the handler, and a
+fourth, `23514`, is the constraint refusing a matter concluded without saying what happened.
+
+**Judgement calls, flagged because they were calls and not deductions.** No severity scale and no
+category enum: grading an offence against a written rule belongs with SCRBRD-041, which is the
+entry for rulebook clauses and their severities, and the on-field/off-field distinction a category would carry is already stated by whether
+`match_id` is present. `state` IS there, with three values, because `capabilities.mjs` describes
+the write as "Record **and progress** disciplinary matters" and a record that can only be appended
+to cannot be progressed. The read query `LEFT JOIN`s `player`: `competitionadmin` cannot read a
+roster, so an inner join would have returned an empty list to the platform-wide reader and looked
+like a school with a clean record. **The policies are hand-written and the table is deliberately
+NOT in `tables.mjs`** — `db/09` is generated, runs before `db/25`, and has already run on
+production, so a generated policy for a table born here would fail on a fresh install and break
+the ledger on a live one. `news_post` (db/12) and db/24's re-gated INSERT went the same way. What
+keeps the hand-written predicates honest instead is db/25's own `DO` assertion block, db/99's
+live assertions, and `sensitivity.test.mjs`, which greps the SQL for the capability inside an
+`app_can()` call — falsified by renaming the capability in the policy and watching
+`sensitivity.test.mjs` name `discipline.read` as gating nothing.
+
+**Verified against a freshly reset and reseeded database, in that order, with a second reset
+before the suites** (this file's own lesson about test-run contamination):
+`node tools/migrate.mjs --reset --seed --verify` prints ALL RLS LIVE ASSERTIONS PASSED over **254
+live assertions, up from 235** — the 19 new ones cover the six grants, the fixture anchor from
+both sides, the tenant line, the platform-wide stamp and all three trigger refusals;
+`node tools/smoke-discipline.mjs` 47 passed, 0 failed; `node tools/run-all-tests.mjs`
+**ALL SUITES PASSED · 1926 assertions across 31 suites**, up from 1923.
+`sensitivity.test.mjs` now reports 23 of 25 sensitive capabilities implemented (was 21) and 17
+row-gated rather than column-masked (was 15). Six separate falsifications were run and reverted:
+granting `medical` the read, granting `medical` both, replacing the fixture anchor with
+`ANY_SCOPE`, removing the non-author check, removing the subject pin, and removing the outcome
+constraint — each turned the intended assertion red and nothing else.
+
+**NO UI SCREEN IN THIS PASS, and that is a decision rather than an omission.** `up51` on the
+roadmap moves from `planned` to **`partial`**, naming `disciplinary_records` as undrawn, which
+`roadmap.test.mjs` checks is a real identifier in `services/api` that no view references. The
+reasoning: the gap SCRBRD-053 recorded was a capability gating nothing, and that is now closed at
+the layer where it existed. What a screen would have to settle first is a product question the
+schema does not get to answer — how a fifteen-year-old is shown a live disciplinary matter about
+himself, since `selfaccess` holds the read — and there is no design input on a case workflow to
+build against. `up23` (support access) and `up24` (DRS) are the precedent in the same file for
+shipping the API and the policy and saying so.
+
+**Title:** ~~`discipline.read` and `discipline.write` gate nothing~~
+**Priority:** P3 as filed, P1 as it turned out · **Domain:** RBAC / Privacy · **Type:** missing feature
+**Affected files:** `db/25_disciplinary_record.sql` (new), `db/98_seed_pilot.sql`,
+`db/99_rls_verify.sql`, `services/api/read/read-api.mjs`,
+`services/api/write/discipline-api.mjs` (new), `services/api/server.mjs`,
+`packages/policy/test/sensitivity.test.mjs`, `packages/policy/test/separation.test.mjs`,
+`tools/smoke-discipline.mjs` (new), `tools/run-smoke-api.mjs`, `apps/web/src/data/roadmap.js`
+**Affected users:** every holder of either capability — six roles, none of whose grants changed,
+all of which now reach something. And the seed gains its first `official` account: `official` was
+the one role in the bundle list that nothing ever signed in as, so `officiating.report` and
+`discipline.write` could previously only be observed failing.
+
+**Current behaviour:** `discipline.read` is held by `superadmin`, `principal`, `directorofsport`,
+`schooladmin`, `selfaccess` and `competitionadmin`; `discipline.write` by `superadmin`,
+`directorofsport` and `official`. Neither gates anything: no table, no policy, no masked column,
+no read resource. A school administrator who "can read discipline" can read nothing at all, and
+on the day a record arrives nobody's read of it would be logged, because the logger watches
+columns and there are none to watch.
+**Expected behaviour:** a disciplinary matter about a named child exists, is filed by the umpire
+who stood at the match or by the school, is progressed and concluded by the school, is readable
+by the head, the office, the boy himself and the league that runs the fixture — and by nobody
+else — and every read of one is on the school's own record.
+**Root cause:** the capability catalogue and the role bundles were written from
+`Roles&Duty.md` in one pass, ahead of the schema. Six bundles were correct about who should be
+able to do this; nothing had been built for them to do it to, and nothing in the suite could tell
+a capability with no gate from one with a gate elsewhere until `sensitivity.test.mjs` joined the
+two lists (SCRBRD-030).
+**Recommended change:** build the record — a new `db/NN`, an entry in `tables.mjs`, a read
+resource — or drop the pair. What should not persist is a role bundle promising something the
+schema cannot deliver.
+**Why it matters:** a capability that grants nothing is worse than an absent one. It reads as a
+control on a page a headmaster is shown, it is in the bundle a school is handed at onboarding,
+and the first person to find out it was decoration is whoever needed it.
+**Dependencies:** SCRBRD-030, which is how it was found. **Security / privacy impact:** real and
+in the intended direction — a level-3 record, row-gated rather than column-masked, with the
+platform-wide reader's every read stamped by the existing `app_is_platform_wide()` mechanism at
+no cost, and the school-side reader's logged because of the `RESTRICTED_FIELDS` entry.
+**Data migration required:** **YES** — `db/25_disciplinary_record.sql`, forward only, with its own
+assertion block; `scrbrd-supabase-apply-25.sql` generated and awaiting paste. No backfill: there
+is no prior disciplinary data anywhere to migrate, and none is seeded.
+**Tests required:** the `NOT_YET_IMPLEMENTED` entries removed from `sensitivity.test.mjs` (the
+suite's own anti-rot assertion fails if a listed capability starts being referenced, so this was
+forced rather than remembered); §11.4 of `separation.test.mjs` extended with the mirror of the
+`schooladmin` rule — the official writes and cannot read, which is the assumption the
+no-`RETURNING` design rests on; 19 live assertions in `db/99_rls_verify.sql`; and
+`tools/smoke-discipline.mjs` end to end over the routes.
+**Acceptance criteria:**
+- [x] Something real is gated by both capabilities, checked by grepping the SQL rather than by assertion
+- [x] Every one of the six grants reaches the record, each for its own scope reason
+- [x] A role without the capability is refused the read and the write, against real Postgres
+- [x] The refusal is attributable to the capability alone — the falsifying principal is medical
+      staff, whose assignment passes every other dimension of `app_can()`
+- [x] An official can file only about the fixture he was appointed to
+- [x] Authorship is fixed at INSERT and the account cannot be rewritten by anybody else
+- [x] Every read of a record is logged, school-side and cross-school
+- [x] No capability grant changed, and the three generated SQL files are byte-identical
+**Regression risk:** LOW. A new table with no reader anywhere in the client, no change to any
+role's grants and no edit to a generated or already-applied file. The two places it does touch
+shared code are the read resource map (additive; `disciplinary_records` is claimed by no module,
+deliberately — a school cannot switch off a safeguarding record the way it switches off
+Analytics) and the seed, which gains one account and one fixture-scoped assignment. The whole
+suite, the live verifier and the new walk are green against a freshly reset database.

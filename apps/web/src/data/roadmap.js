@@ -68,6 +68,8 @@ export const UPGRADES = [
     desc: "A platform administrator can begin a one-hour, one-school session through the API and the school sees it here. Nothing draws the platform side yet.", effort: "Low", undrawn: ["support_access_begin"] /* the school side is drawn in Settings; this is the platform side, which is an API route and no screen */ },
   { id: "up24", category: "AI & Analysis", priority: "low",    status: "partial", title: "DRS Review Panel",
     desc: "Built and switched off platform-wide until there is ball-tracking to feed it.", effort: "High", undrawn: ["drs_reviews"] /* the read exists and the module is off platform-wide */ },
+  { id: "up51", category: "Admin",         priority: "high",   status: "partial", title: "Disciplinary Record",
+    desc: "The record the two disciplinary capabilities had been promising since db/01 and never gated: a matter about a named child, filed by the umpire who stood at the match or by the school, concluded by the school, readable by the head, the office, the boy himself and the league that runs the fixture — and by nobody else. Every read of one is on the school's own record. No screen draws it yet: who is shown a live matter about themselves, and how, is a product decision the schema does not get to make.", effort: "Medium", undrawn: ["disciplinary_records"] /* the read and both write routes exist; no view calls them */ },
 
   // ── Planned ──────────────────────────────────────────────────
   { id: "up17", category: "AI & Analysis", priority: "high",   status: "planned", title: "Match Insights & Intelligence Ribbon",
@@ -84,8 +86,6 @@ export const UPGRADES = [
     desc: "Secure one-to-one between coach and parent, replacing the WhatsApp group. Nothing is modelled yet.", effort: "High" },
   { id: "up13", category: "Admin",         priority: "medium", status: "planned", title: "Invoicing & Subscriptions",
     desc: "invoice.read and invoice.manage are granted to schooladmin, principal and the finance role, with no table behind either. SCRBRD-030 split the old commercial `finance` bundle in two — this pair is now the entire reason the role exists — and a bursar holding it still cannot invoice anyone.", effort: "High" },
-  { id: "up51", category: "Admin",         priority: "high",   status: "planned", title: "Disciplinary Record",
-    desc: "discipline.read and discipline.write are held by six roles and gate nothing: no table, no policy, no read resource (packages/policy/test/sensitivity.test.mjs). A school administrator who “can read discipline” can read nothing today, and nobody who could read one would be logged doing it.", effort: "Medium" },
   { id: "up8",  category: "Integrations",  priority: "low",    status: "planned", title: "CricHQ / PlayCricket Import",
     desc: "CSV import exists and goes through the ordinary write policies. A direct API sync does not.", effort: "High" },
   { id: "up10", category: "Admin",         priority: "low",    status: "planned", title: "PDF Scorecard Export",

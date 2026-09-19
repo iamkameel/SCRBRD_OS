@@ -185,6 +185,17 @@ DECLARE
   v_reason  text;
   S_ID      uuid;         -- a support session (SCRBRD-012)
   S_EXP     timestamptz;
+  -- The disciplinary record (SCRBRD-053) — the accounts this file did not
+  -- already name. The six grants on discipline.read/write are four distinct
+  -- scope shapes: school-scoped, subject-scoped (a pupil's own), one-fixture
+  -- (an umpire's appointment) and no-school-at-all (platform-wide).
+  U_HEAD_M  uuid := '88888888-0000-0000-0000-000000000016';  -- principal, Hilton
+  U_LEAGUE  uuid := '88888888-0000-0000-0000-000000000021';  -- competitionadmin, NO school
+  U_UMPIRE  uuid := '88888888-0000-0000-0000-000000000023';  -- official, ONE fixture
+  U_WES_ADM uuid := '88888888-0000-0000-0000-00000000000d';  -- schooladmin, Westville
+  M_STOOD   uuid := '77777777-0000-0000-0000-000000000004';  -- the match he umpired
+  M_OTHER   uuid := '77777777-0000-0000-0000-000000000002';  -- one he did not
+  D_ID      uuid;
   n int;
 BEGIN
   -- ── 1. Nobody is anybody by default ────────────────────────────
@@ -1566,6 +1577,141 @@ BEGIN
   VALUES ('77777777-0000-0000-0000-000000000001', HIL, 'verify-key', 'Filed by the scorer.', U_SCORER);
   SELECT count(*) INTO n FROM scoring_amendment WHERE target_key = 'verify-key' AND requested_by = U_SCORER;
   PERFORM _assert(n = 1, 'the scorer could not file an amendment request');
+
+  -- ── SCRBRD-053: the disciplinary record, and the six grants on it ──
+  --
+  -- `discipline.read` and `discipline.write` sat in the catalogue and in six
+  -- role bundles gating nothing at all. db/25 is the record they now gate,
+  -- and the point of asserting it here rather than in the model suites is
+  -- that the policy is HAND-WRITTEN: the table is born after db/09, so
+  -- generate-rls.mjs never sees it, and nothing but these assertions and the
+  -- ones inside db/25 would notice if a predicate were wrong.
+  --
+  -- Nobody without the capability, first — AND THE PRINCIPAL MATTERS HERE.
+  -- Medical staff are the one seeded account at Hilton whose refusal is
+  -- attributable to the capability and to nothing else: the assignment is
+  -- school-scoped with a NULL team, names no subject and names no fixture, so
+  -- every other dimension of app_can() passes and only `discipline.write`
+  -- is missing. A coach would be refused twice over — no capability AND a
+  -- team anchor that is not his side — which tables.mjs's own note on derived
+  -- anchors warns about: the falsification that does not fail because
+  -- something else was already refusing. Granting `medical` the read and
+  -- watching this block go red is how that was checked rather than assumed.
+  PERFORM _as(U_MEDICAL);
+  BEGIN
+    INSERT INTO disciplinary_record (player_id, school_id, recorded_by, body)
+    VALUES (P_INJURED, HIL, U_MEDICAL, 'Filed by somebody with no disciplinary authority.');
+    PERFORM _assert(false, 'medical staff filed a disciplinary record');
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+
+  -- THE UMPIRE'S APPOINTMENT IS ONE FIXTURE, and that is the whole of his
+  -- authority here. app_can() refuses a fixture-scoped assignment on a row
+  -- that does not state the same fixture, so the match he stood at is the
+  -- only match he can file about — and a row naming no fixture at all is
+  -- refused too, because NULL on the resource narrows.
+  PERFORM _as(U_UMPIRE);
+  BEGIN
+    INSERT INTO disciplinary_record (player_id, school_id, match_id, recorded_by, body)
+    VALUES (P_INJURED, HIL, M_OTHER, U_UMPIRE, 'Filed about a fixture he did not stand at.');
+    PERFORM _assert(false, 'an official filed an incident at a fixture he was not appointed to');
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+  BEGIN
+    INSERT INTO disciplinary_record (player_id, school_id, recorded_by, body)
+    VALUES (P_INJURED, HIL, U_UMPIRE, 'Filed against the school at large.');
+    PERFORM _assert(false, 'an official filed a matter with no fixture behind it');
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+  INSERT INTO disciplinary_record (player_id, school_id, match_id, recorded_by, body)
+  VALUES (P_INJURED, HIL, M_STOOD, U_UMPIRE, 'Dissent at the umpire''s decision; sent from the field.');
+
+  -- ...AND HE CANNOT READ IT BACK. `official` holds discipline.write and not
+  -- discipline.read — the mirror of schooladmin, who reads and cannot write.
+  -- This is also why neither write path uses RETURNING: Postgres applies the
+  -- SELECT policy to a row an INSERT returns, so `returning id` would have
+  -- refused the writer this capability exists for.
+  SELECT count(*) INTO n FROM disciplinary_record;
+  PERFORM _assert(n = 0, 'an official can read the disciplinary record he filed');
+
+  -- Authorship is the session's, never the payload's.
+  PERFORM _as(U_SARAH);
+  SELECT id INTO D_ID FROM disciplinary_record WHERE match_id = M_STOOD;
+  PERFORM _assert(
+    (SELECT recorded_by FROM disciplinary_record WHERE id = D_ID) = U_UMPIRE,
+    'the record does not name the person who actually filed it');
+
+  -- The school-side readers, each for its own scope reason.
+  SELECT count(*) INTO n FROM disciplinary_record WHERE id = D_ID;
+  PERFORM _assert(n = 1, 'the director of sport cannot read a record at her own school');
+  PERFORM _as(U_HEAD_M);
+  SELECT count(*) INTO n FROM disciplinary_record WHERE id = D_ID;
+  PERFORM _assert(n = 1, 'the principal cannot read a record at his own school');
+  -- A pupil reads HIS OWN and nobody else's: `selfaccess` is subject-scoped,
+  -- so the person anchor on the row has to be the child his assignment names.
+  PERFORM _as(U_SELF);
+  SELECT count(*) INTO n FROM disciplinary_record WHERE id = D_ID;
+  PERFORM _assert(n = 1, 'a pupil cannot read his own disciplinary record');
+  -- Another pupil, and medical staff: both school-scoped with a NULL team and
+  -- no subject, so the capability is the only thing refusing either of them.
+  PERFORM _as(U_PUPIL);
+  SELECT count(*) INTO n FROM disciplinary_record;
+  PERFORM _assert(n = 0, 'another pupil at the school reads it');
+  PERFORM _as(U_MEDICAL);
+  SELECT count(*) INTO n FROM disciplinary_record;
+  PERFORM _assert(n = 0, 'medical staff read a disciplinary record');
+  -- A coach is refused twice — no capability, and a team anchor that is not
+  -- his side. Worth asserting because it is the case a school would actually
+  -- worry about, and worth labelling because it would keep passing if the
+  -- capability check were removed.
+  PERFORM _as(U_COACH2);
+  SELECT count(*) INTO n FROM disciplinary_record;
+  PERFORM _assert(n = 0, 'a coach reads another side''s disciplinary record');
+  -- The tenant line holds: Westville's office reads Westville's.
+  PERFORM _as(U_WES_ADM);
+  SELECT count(*) INTO n FROM disciplinary_record;
+  PERFORM _assert(n = 0, 'another school''s administrator reads Hilton''s disciplinary record');
+
+  -- PLATFORM-WIDE BY CONSTRUCTION, NOT BY EXCEPTION. A competition
+  -- administrator's assignment names no school, and a NULL school on the
+  -- ASSIGNMENT widens to every school — so the league reads this without a
+  -- line anywhere saying so, and every read of it is stamped platform_wide by
+  -- log_restricted_read() (db/20) for the same reason.
+  PERFORM _as(U_LEAGUE);
+  SELECT count(*) INTO n FROM disciplinary_record WHERE id = D_ID;
+  PERFORM _assert(n = 1, 'the competition administrator cannot read a record across schools');
+  PERFORM _assert(app_is_platform_wide(), 'a competition administrator is not treated as a platform-wide reader');
+
+  -- THE ACCOUNT IS THE AUTHOR'S; THE OUTCOME IS THE SCHOOL'S. The director of
+  -- sport did not write this and may not rewrite it, and she is exactly the
+  -- person who has to be able to conclude it.
+  PERFORM _as(U_SARAH);
+  BEGIN
+    UPDATE disciplinary_record SET body = 'Rewritten by somebody else.' WHERE id = D_ID;
+    PERFORM _assert(false, 'a non-author rewrote the account of a disciplinary matter');
+  EXCEPTION WHEN sqlstate '45001' THEN NULL;
+  END;
+  BEGIN
+    UPDATE disciplinary_record SET player_id = P_U16B WHERE id = D_ID;
+    PERFORM _assert(false, 'a disciplinary record was re-filed against another child');
+  EXCEPTION WHEN sqlstate '45002' THEN NULL;
+  END;
+  BEGIN
+    UPDATE disciplinary_record SET state = 'concluded' WHERE id = D_ID;
+    PERFORM _assert(false, 'a matter was concluded without saying what happened');
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  UPDATE disciplinary_record SET state = 'concluded',
+         outcome = 'Two matches missed; apology delivered to the umpire.' WHERE id = D_ID;
+  SELECT count(*) INTO n FROM disciplinary_record
+   WHERE id = D_ID AND state = 'concluded' AND recorded_by = U_UMPIRE AND updated_at IS NOT NULL;
+  PERFORM _assert(n = 1, 'the school could not conclude a matter an official filed');
+
+  -- Nothing here can be erased, at either layer.
+  PERFORM _assert(
+    NOT EXISTS (SELECT 1 FROM pg_policy
+                 WHERE polrelid = 'disciplinary_record'::regclass AND polcmd = 'd'),
+    'disciplinary_record has a delete policy');
 
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;

@@ -116,6 +116,10 @@ const WALKS = [
   // that closes the first of them.
   "dob-gaps",
   "support",
+  // The disciplinary record: two capabilities that were in six role bundles
+  // and gated nothing, and the only policy in the schema whose fixture anchor
+  // is allowed to be NULL.
+  "discipline",
   "commit",
 ];
 

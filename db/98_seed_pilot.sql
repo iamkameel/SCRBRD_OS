@@ -834,3 +834,27 @@ INSERT INTO match_official (match_id, school_id, duty, person_name, official_id,
   ('77777777-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'umpire', 'G Marais',  '0a000000-0000-0000-0000-000000000003', 'CSA Elite Panel'),
   ('77777777-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'third_umpire', 'A Willing Parent', NULL, NULL),
   ('77777777-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'umpire', 'T Sithole', '0a000000-0000-0000-0000-000000000004', 'Midlands Umpires Association');
+
+-- AN UMPIRE WHO CAN SIGN IN (SCRBRD-053). Every row above is a person on a
+-- panel; this is the same person holding an account and an appointment the
+-- authorization model can read. Without it `official` was the one role in the
+-- bundle list that nothing ever signed in as, so `officiating.report` and
+-- `discipline.write` could only be observed failing.
+--
+-- THE ASSIGNMENT NAMES ONE FIXTURE, which is the point of it. An official is
+-- appointed per match, not per team, and app_can() refuses a fixture-scoped
+-- assignment on any row that does not state that same fixture — so E Ndlovu
+-- can file an incident from the match he stood at and from no other. team_code
+-- is NULL because an umpire stands over both sides, not one of them.
+INSERT INTO app_user (id, school_id, email, name, role) VALUES
+  ('88888888-0000-0000-0000-000000000023', '11111111-1111-1111-1111-111111111111',
+   'e.ndlovu@example.invalid', 'E Ndlovu', 'official');
+
+INSERT INTO role_assignment (id, person_id, role, school_id, team_code, fixture_id) VALUES
+  ('a5510000-0000-0000-0000-000000000023', '88888888-0000-0000-0000-000000000023', 'official',
+   '11111111-1111-1111-1111-111111111111', NULL, '77777777-0000-0000-0000-000000000004');
+
+-- No disciplinary record is seeded. Nothing draws one yet (SCRBRD-053 shipped
+-- the API and the policy, not a screen), and the walk that exercises it
+-- asserts on counts — so it owns its own fixture rather than working around
+-- rows that arrived here.

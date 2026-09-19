@@ -22,11 +22,16 @@
  * the file, and so a label rather than a test.
  *
  * What it found on the first run, which is why it exists: `discipline.read`
- * and `discipline.write` are held by six roles and gate NOTHING. No table
- * policy references them, no masked column, no read resource. They are
- * declarations of intent, and the intent is a good one, but until something
- * implements them a school administrator who "can read discipline" can read
- * nothing and a reader who could is not logged.
+ * and `discipline.write` were held by six roles and gated NOTHING. No table
+ * policy referenced them, no masked column, no read resource. They were
+ * declarations of intent, and the intent was a good one, but until something
+ * implemented them a school administrator who "can read discipline" could
+ * read nothing and a reader who could was not logged. SCRBRD-053 built the
+ * record (db/25_disciplinary_record.sql), and the pair came off
+ * NOT_YET_IMPLEMENTED below because the `handGated` grep started finding them
+ * — the "every recorded exception is still unimplemented" assertion goes red
+ * otherwise, which is the list retiring itself rather than somebody
+ * remembering to. `invoice.read`/`invoice.manage` are still there.
  *
  * Falsified by removing the `injuries` entry from RESTRICTED_FIELDS, which
  * leaves medical.nature.read and medical.details.read masking columns nobody
@@ -82,14 +87,6 @@ const referenced = new Set([...referencedCapabilities(), ...handGated]);
  * being referenced, because then the entry is the stale thing.
  */
 const NOT_YET_IMPLEMENTED = {
-  "discipline.read": "No disciplinary record exists in the schema. Six roles hold " +
-    "this and it gates nothing: no table policy, no masked column, no read " +
-    "resource. Until a record exists, holding it grants nothing and the reader " +
-    "of one would not be logged.",
-  "discipline.write": "The same from the writing end, and the one held by an " +
-    "official rather than an administrator — so when the record does arrive, " +
-    "filing an incident and reading the file are already two capabilities and " +
-    "should stay that way.",
   // SCRBRD-030 widened SENSITIVE to level >= 2 and found this pair the same
   // way it found discipline.read/write the first time: a capability in the
   // catalogue and the role bundles, with no invoice table, policy, function
