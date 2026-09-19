@@ -1275,7 +1275,27 @@ result screen in a real browser, and it found two real bugs in its first hour of
 - [x] The result screen is reached and Postgres agrees with what both screens showed
 **Regression risk:** LOW — a new test file plus a two-line prop-spreading fix matching an existing pattern.
 
-### SCRBRD-063
+### ~~SCRBRD-063~~ — CLOSED
+**Closed 2026-09-19.** `Innings2Sheet`'s `onStart` in `apps/web/src/scorer/engine.jsx` now emits an
+`INNINGS_START` event for the second innings before opening the "opener" sheet, carrying `target:
+innings[0].runs + 1` — the fix the recommended change below described, built the way it described. One
+change from the original recommendation, made after tracing the actual risk rather than assuming the
+first idea was safe: **not** a `REVISION` event. `RevisionSheet`'s own reducer marks an innings
+`revised`, and `engine.jsx` renders a visible "(revised)" badge next to the overs whenever that flag is
+set — a plain `revision()` call to seed the target would have shown every ordinary, un-rained-off second
+innings as revised, trading the bug just fixed for a new, user-facing one. The `INNINGS_START` this emits
+is also non-destructive by construction: it reads `battingTeam`/`bowlingTeam`/`squad`/`bowlingSquad`/
+`overs`/`twelfthMan` from `innings[1]` itself first, falling back to `match` state only where nothing is
+there yet — so a match started from scratch, whose second innings already has real squad data from
+`startMatch`'s `open2`, gets that data re-declared unchanged rather than overwritten with an empty squad,
+and only a real fixture resumed from the server (which never got an `INNINGS_START` for its second innings
+at all) falls through to the `match`-derived values. Fixes the byproduct too: the result screen's second
+scorecard panel now shows the real batting team's name instead of a blank heading.
+
+Verified against the real app, not a unit mock: `tools/smoke-browser-innings-end.mjs` (SCRBRD-052) now
+chases the target down with real sixes instead of a second round of wickets, and the review sheet opens on
+its own with `target_reached` — checked on screen and independently against the two `innings_end` events
+Postgres actually received. Full scoring and system suites green throughout (1915 assertions, 31 suites).
 **Title:** A second innings never gets a real target, so it can never end on reaching one
 **Priority:** P1 · **Domain:** Scoring · **Type:** correctness
 **Affected files:** `apps/web/src/scorer/engine.jsx` (wherever the second innings' event log is opened —
@@ -1331,11 +1351,11 @@ the existing "chase completed on the last legal ball" style) asserting `engine.j
 event construction includes `target`; then `tools/smoke-browser-innings-end.mjs` rescoped to chase a
 target down with real deliveries instead of a second round of wickets, once this lands.
 **Acceptance criteria:**
-- [ ] A second innings that reaches its target closes on `target_reached`, without needing all out or
+- [x] A second innings that reaches its target closes on `target_reached`, without needing all out or
   overs complete
-- [ ] The second innings' `INNINGS_START` event carries `battingTeam`/`bowlingTeam` correctly, so the
+- [x] The second innings' `INNINGS_START` event carries `battingTeam`/`bowlingTeam` correctly, so the
   result screen's scorecard panel names the real team
-- [ ] `smoke-browser-innings-end.mjs` is updated to chase a target rather than take a second round of
+- [x] `smoke-browser-innings-end.mjs` is updated to chase a target rather than take a second round of
   wickets, and still passes
 **Regression risk:** LOW-MEDIUM — adds an event, and an event shape change on a heavily-replayed path
 deserves the full scoring suite run (`packages/scoring/test/*`, `apps/web/test/system.test.mjs`) before

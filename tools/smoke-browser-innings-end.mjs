@@ -4,35 +4,32 @@
  *
  * `smoke-browser-sync.mjs` opens the real scorer on a real match and taps
  * four deliveries of twenty overs — enough to prove the pad reaches Postgres,
- * nothing more. Nothing in this codebase's browser suite had ever exercised
- * what happens when an innings actually finishes: the review gate
- * (SCRBRD-038, `InningsReviewSheet`), the innings break (`Innings2Sheet`),
- * the second innings' target reaching the pad, or the result screen.
+ * nothing more. This is the one that closes a first innings by wickets, then
+ * chases the real target down in the second, so it is the first walk to ever
+ * exercise the review gate (SCRBRD-038, `InningsReviewSheet`), the innings
+ * break (`Innings2Sheet`), the second innings' target actually ending the
+ * match, and the result screen.
  *
- * Dismissals through the wicket sheet are the cheap route to a closed
+ * Dismissals through the wicket sheet are the cheap route to a closed first
  * innings — a handful of taps against a hundred and twenty for a full set of
- * overs — so that is how BOTH innings are finished, however many the
- * batting side's real seeded squad actually takes to go all out (asserted as
- * "at least one, and the review sheet genuinely opened," not a hardcoded
- * count — see the groups below).
+ * overs — however many the batting side's real seeded squad actually takes
+ * to go all out (asserted as "at least one, and the review sheet genuinely
+ * opened," not a hardcoded count — see the group below).
  *
- * The second innings is not scored to its target reaching it, on purpose:
- * that was the original design here, and running it against the real app
- * found that the path does not exist yet. `deriveInnings()`'s own tests
- * require the caller to pass `target` on the second innings' own
- * INNINGS_START event for the target branch of `inningsOverReason()` to ever
- * fire, and `engine.jsx` never does — not resuming a real fixture, not
- * starting a match from scratch. The pad shows a real, correctly-computed
- * target (asserted below); nothing wires it to closing the innings when it
- * is reached. Filed as SCRBRD-063 rather than fixed inline here, since it is
- * a scoring-engine correctness change, not a browser-walk concern. Both
- * innings going all out with no runs scored also means the match ties —
- * the one result this walk can prove honestly without that fix.
+ * The second innings genuinely chases its target down with real deliveries.
+ * The first version of this walk could not do that: running it against the
+ * real app found that a second innings never got its own INNINGS_START, so
+ * nothing ever set its `target`, and `inningsOverReason()`'s target branch
+ * could never fire — a chase that reached its target just kept being scored.
+ * Filed and fixed as SCRBRD-063 (`engine.jsx`'s `Innings2Sheet.onStart`), and
+ * this walk is the proof it stayed fixed, not a unit case against the
+ * package alone: it is the actual button a scorer clicks.
  *
  * Checked against Postgres, not just the page: the two `innings_end` events
- * this walk should have produced, both `all_out` — because a review-confirm
- * click that drew the right screen but wrote the wrong reason is a bug this
- * suite exists to catch, and the DOM alone cannot see it.
+ * this walk should have produced, with the real reasons the laws give —
+ * `all_out` then `target_reached` — because a review-confirm click that drew
+ * the right screen but wrote the wrong reason is a bug this suite exists to
+ * catch, and the DOM alone cannot see it.
  *
  *   node tools/migrate.mjs --reset --seed
  *   pnpm build && node tools/smoke-browser-innings-end.mjs
@@ -280,46 +277,35 @@ try {
   ok("the pad reopens for the second innings", /\bDOT\b/i.test(await text()));
   ok("...with the real target on screen", /Need \d+ off/i.test(await text()));
 
-  // NOT scored to the target reaching it, on purpose. Chasing it down with
-  // real deliveries was the original design here, and it surfaced a real gap
-  // rather than proving the target path: `deriveInnings()`'s own test suite
-  // requires the caller to pass `target` on the innings' own INNINGS_START
-  // event for the target branch of inningsOverReason() to ever fire
-  // (packages/scoring/test/replay.test.mjs, "a chase completed on the last
-  // legal ball"), and engine.jsx never does this for a second innings —
-  // not on a resumed real fixture, not on a match started from scratch.
-  // The pad computes and shows a target for the scorer's own benefit
-  // (asserted above), entirely client-side and independent of the replay
-  // model; nothing ever tells the replay to close the innings when that
-  // target is actually reached. Filed as SCRBRD-063 rather than patched
-  // here — it is a scoring-engine correctness fix, not a browser-walk
-  // concern, and deserves its own review. This walk instead closes the
-  // second innings the same honest way as the first: all out.
-  group("Wickets, again, close the second innings — the target path is a separate, filed bug");
-  let secondTaken = 0, secondReviewOpen = false;
-  for (let i = 0; i < 11 && !secondReviewOpen; i++) {
-    if (await takeWicket(i + 1)) secondTaken++;
-    secondReviewOpen = (await page.locator('[data-testid="innings-review"]').count()) > 0;
+  group("The chase reaches its target with real deliveries, and the innings closes on its own");
+  let sixesHit = 0, chaseReviewOpen = false;
+  for (let i = 0; i < 40 && !chaseReviewOpen; i++) {
+    await clearBlockers();
+    chaseReviewOpen = (await tid("innings-review").count()) > 0;
+    if (chaseReviewOpen) break;
+    if (await click(/^6$/, 2000)) sixesHit++;
+    await page.waitForTimeout(350);
   }
-  if (DEBUG) console.log(`[debug] second-innings wickets taken: ${secondTaken}`);
-  ok(`dismissals through the sheet closed the second innings too (${secondTaken} confirmed, review sheet open: ${secondReviewOpen})`,
-     secondTaken >= 1 && secondReviewOpen);
-  const secondReason = (await tid("review-reason").innerText()).trim();
-  ok(`...for the real reason the laws give ("${secondReason}")`, /all\s*out/i.test(secondReason));
+  await clearBlockers();
+  if (DEBUG) console.log(`[debug] sixes hit chasing the target: ${sixesHit}`);
+  ok("the chase reached the target through real scoring, not a shortcut", sixesHit > 0);
+  ok("the review sheet opened on its own — SCRBRD-063's fix: reaching the target ends the innings",
+     await tid("innings-review").count() === 1);
+  const secondReason = (await tid("review-reason").innerText({ timeout: 3000 }).catch(() => "<not found>")).trim();
+  ok(`...for the real reason the laws give ("${secondReason}")`, /target/i.test(secondReason));
 
   await tid("review-confirm").click({ timeout: 4000 });
   await page.waitForTimeout(1000);
 
-  group("The result screen is reached from two real, closed innings");
+  group("The result screen names the winner from a real chase");
   const resultText = await text();
   ok("the result screen is reached, not left on the pad", /Match Complete/i.test(resultText));
-  // Both sides went all out with no runs scored — the wicket-only technique's
-  // honest consequence, and a tie is the one result this technique can prove
-  // without depending on the same SCRBRD-063 target-completion path. A real
-  // margin (by runs / by wickets) is exercised once SCRBRD-063 lands and a
-  // walk can chase a target down properly.
-  ok("...naming a tied match, the real consequence of two scoreless innings",
-     /Match Tied/i.test(resultText));
+  // The side that batted second (Michaelhouse here) won the chase — SCRBRD-063
+  // also fixed the second innings' battingTeam never being set, which is what
+  // let the result screen name the real team rather than leaving this blank.
+  ok("...naming the chasing side as the winner, not a blank team",
+     /Michaelhouse/i.test(resultText));
+  ok("...with a margin in wickets, since the chase succeeded", /wicket/i.test(resultText));
 
   group("Postgres agrees with both screens");
   const endEvents = await dbq(
@@ -327,8 +313,8 @@ try {
   ok(`two innings_end events were written (${endEvents.length} found)`, endEvents.length === 2);
   ok("...the first for the real reason the laws give (all out)",
      endEvents[0]?.payload?.reason === "all_out");
-  ok("...the second too — SCRBRD-063 is why this isn't target_reached yet",
-     endEvents[1]?.payload?.reason === "all_out");
+  ok("...the second for the real reason the laws give (target reached)",
+     endEvents[1]?.payload?.reason === "target_reached");
 
   ok("no console errors across the whole innings", errors.length === 0, errors.slice(0, 3).join(" | "));
 } catch (e) {

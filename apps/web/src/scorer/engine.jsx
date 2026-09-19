@@ -875,10 +875,41 @@ function SCRBRD({resume}={}){
     if(modal==="innings2")return (
       <Innings2Sheet
         target={(innings[0]?.runs||0)+1}
-        teamName={innings[1]?.battingTeam||""}
+        teamName={match?.team2||innings[1]?.battingTeam||""}
         overs={match?.overs||20}
         onClose={()=>setModal(null)}
-        onStart={()=>setModal("opener")}/>
+        onStart={()=>{
+          // SCRBRD-063. The second innings never got its own INNINGS_START —
+          // nothing set inn.target, so inningsOverReason() could never return
+          // target_reached, and a chase that reached its target just kept
+          // being scored. A plain REVISION event would set the target without
+          // that risk, but it also flags the innings `revised` — the pad
+          // would show a "(revised)" badge on a normal chase that was never
+          // touched by rain or an umpire, which is worse than the bug it
+          // would fix. So this re-declares INNINGS_START, sourcing every
+          // field from `innings[1]` first: the from-scratch match setup
+          // already gave this innings its real team/squad data up front
+          // (`startMatch`'s `open2`), so re-declaring it here from itself is
+          // a no-op except for adding the one field that was always missing.
+          // Only the real-fixture resume path — which never emits an
+          // INNINGS_START for innings 1 at all — falls through to `match`:
+          // team1 bats first by construction on both paths into a match, so
+          // team2 is the second innings' batting side, with no seeded roster
+          // of its own (the same reason its opening bowler is already typed,
+          // not picked) and the real eleven from innings 1 still bowling.
+          emit(inningsStart({
+            battingTeam: innings[1]?.battingTeam || match?.team2,
+            bowlingTeam: innings[1]?.bowlingTeam || match?.team1,
+            teamKey: innings[1]?.teamKey || match?.teamKey2 || match?.team2,
+            bowlingTeamKey: innings[1]?.bowlingTeamKey || match?.teamKey1 || match?.team1,
+            squad: innings[1]?.squad?.length ? innings[1].squad : [],
+            bowlingSquad: innings[1]?.bowlingSquad?.length ? innings[1].bowlingSquad : (innings[0]?.squad ?? []),
+            twelfthMan: innings[1]?.twelfthMan ?? null,
+            overs: innings[1]?.overs || match?.overs || 20,
+            target: (innings[0]?.runs || 0) + 1,
+          }));
+          setModal("opener");
+        }}/>
     );
 
     if(modal==="editOrder")return (
