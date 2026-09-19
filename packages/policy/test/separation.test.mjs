@@ -201,25 +201,46 @@ ok("...nor a medical file",
 // ── §11.5 Finance vs sporting performance ────────────────
 group("§11.5  Finance sees payers and invoices, not performance or health");
 {
-  const forbidden = [...SENSITIVE, "analytics.read", "opposition.read", "player.performance.read",
-                     "player.development.read", "scouting.read", "medical.status.read"];
+  // SCRBRD-030 put invoice.read/invoice.manage on SENSITIVE (level 2) — the
+  // same widening that split this role in two. Spreading the whole of
+  // SENSITIVE into "forbidden" would now forbid finance the one thing it
+  // holds, so the billing pair is named out rather than swept in with it.
+  const forbidden = SENSITIVE.filter((c) => !c.startsWith("invoice."))
+    .concat(["analytics.read", "opposition.read", "player.performance.read",
+             "player.development.read", "scouting.read", "medical.status.read"]);
   ok("finance reaches nothing sporting, personal or clinical",
      reach("finance", forbidden).length === 0, reach("finance", forbidden).join(","));
+  ok("...and does hold the billing reads it exists for",
+     ["invoice.read", "invoice.manage"].every((c) => caps("finance").includes(c)));
+  // The half that used to be true by construction, when one bundle held both:
+  // now that `sponsorship` exists, finance holding a scrap of it back would be
+  // the split failing to actually separate anything.
+  ok("...and none of the commercial capabilities that moved to `sponsorship`",
+     ["sponsorship.read", "sponsorship.manage", "sponsorship.finance.read"]
+       .every((c) => !caps("finance").includes(c)));
+
+  ok("sponsorship reaches nothing sporting, personal, clinical or billing",
+     reach("sponsorship", [...forbidden, "invoice.read", "invoice.manage"]).length === 0,
+     reach("sponsorship", [...forbidden, "invoice.read", "invoice.manage"]).join(","));
   ok("...and does hold the commercial reads it exists for",
-     ["invoice.read", "sponsorship.read", "sponsorship.finance.read"].every((c) => caps("finance").includes(c)));
+     ["sponsorship.read", "sponsorship.manage", "sponsorship.finance.read"]
+       .every((c) => caps("sponsorship").includes(c)));
 }
 
 // ── §11.6 Sponsor vs participant data ────────────────────
 group("§11.6  Commercial access is aggregate and never a back door");
 {
   // The external sponsor viewer is a role SCRBRD OS has not built (SCRBRD-036).
-  // This is where it gets held to aggregate-only on the day it is added, so the
-  // assertion states both halves rather than passing on an empty set.
-  const sponsorish = ROLES.filter((r) => /sponsor|partner/.test(r));
+  // `sponsorship` is not that role — it is the internal commercial role
+  // SCRBRD-030 split out of the old `finance` bundle, held by somebody at the
+  // school — but it is exactly the shape §11.6 exists to hold to
+  // aggregate-only, so it is checked the same way rather than carved out.
+  const sponsorish = ROLES.filter((r) => /sponsor|partner/.test(r) && r !== "sponsorship");
   ok("no external sponsor-viewer role exists yet (SCRBRD-036 would add one)",
      sponsorish.length === 0, sponsorish.join(" "));
-  const bad = sponsorish.filter((r) => reach(r, [...SENSITIVE]).length);
-  ok("...and if one is added it may hold nothing sensitive", bad.length === 0, bad.join(" "));
+  const bad = [...sponsorish, "sponsorship"].filter((r) => reach(r, [...SENSITIVE]).length);
+  ok("...and neither the internal commercial role nor a future external one holds anything sensitive",
+     bad.length === 0, bad.join(" "));
   ok("sponsorship.exclusivity.waive is not reachable from outside governance",
      others("sponsorship.exclusivity.waive").every((r) => ["principal", "directorofsport"].includes(r)),
      others("sponsorship.exclusivity.waive").join(" "));

@@ -424,26 +424,63 @@ the next ledger file rather than alone.
 **Regression risk:** MEDIUM — a DoS who currently corrects a match by themselves will need a scorer to
 request it. That is the point, and it needs saying to the pilot schools before it ships.
 
-### SCRBRD-030 — PART ONE DONE
+### ~~SCRBRD-030~~ — CLOSED
 
-> **Coherence landed; the ordered scale does not.** `packages/policy/test/sensitivity.test.mjs`
-> now joins `SENSITIVE` (capabilities) to `RESTRICTED_FIELDS` (the logger's watched columns)
-> through the mask map, so the two lists cannot drift apart in silence. 16 assertions.
-> It found `discipline.read` and `discipline.write` gating nothing at all — see SCRBRD-053 —
-> and replaced a vacuous line in `rls.test.mjs` that claimed the join while checking spelling.
->
-> The five-level scale is still open and is the rest of this entry. It needs a judgement call
-> per capability across all 81, and the decision that matters is whether `SENSITIVE` becomes
-> `level >= 2` — which would WIDEN its membership (adding `player.age.read`,
-> `guardian.link.manage`, `medical.status.read`, the invoice reads and more) and therefore
-> widen what the deck claims is logged. That is a behaviour change, not a classification, and
-> it wants deciding rather than assuming.
+**Closed 2026-09-19.** Every one of the 82 capabilities now carries a `LEVEL` (0-4, `Roles&Duty.md`
+§2.3), `SENSITIVE` is derived (`LEVEL[c] >= 2`) rather than a hand-picked array, and
+`sensitivity.test.mjs` gained the class-level assertion Part One's plan called for: no capability
+masking a logged column is classified below level 2 — falsified by temporarily lowering
+`player.pii.read` to level 1 and confirming the exact failure, then restoring it. `SENSITIVE` widened
+from 9 members to 25.
 
-**Title:** Sensitivity tiers 0–4, refining the binary `SENSITIVE` set into an ordered scale
+**The widening surfaced a real conflict, not a false one.** `invoice.read`/`invoice.manage` crossed
+into `SENSITIVE` at level 2, and the `finance` role held both of those and `sponsorship.finance.read`
+together — exactly the crossing `separation.test.mjs` §21.10 exists to catch ("holding a commercial
+capability never carries a sensitive one with it"). This was not a bug in the test or the scale; it
+was a bundle that had never been examined against that rule on its own terms, inherited whole from
+the prototype's one "money" role. Three fixes were possible — narrow §21.10's scope, drop the invoice
+reads back to level 1, or split the role — and the choice was put to the person running the project
+rather than picked unilaterally, given it touches a deliberate separation-of-duties guarantee. **The
+role was split**: `finance` now holds exactly `invoice.read`/`invoice.manage` plus the institutional
+floor, and a new role, `sponsorship`, holds `sponsorship.read`/`sponsorship.manage`/
+`sponsorship.finance.read`. A school that wants one bursar doing both still can — nothing stops the
+same person holding both `role_assignment` rows — but a school that wants them separated now can
+express that, which the old bundle could not.
+
+The split touched further than `roles.mjs`: `db/01_authz.sql` and `db/09_rls_policies.sql` regenerated
+(`pnpm rls:generate`, no hand edits — both are generated output); a new `ROLE_IDENTITY` entry in
+`apps/web/src/design/roles.js` (`sponsorship`, family `commercial`, 11.55 dE from its nearest neighbour,
+6.69:1 contrast, both checked by `design.test.mjs`, not chosen by eye); the seeded bursar
+(`db/98_seed_pilot.sql`) given a second `role_assignment` row so the existing browser walk proving the
+commercial mask (`tools/smoke-browser-read.mjs`) keeps demonstrating it; `tools/smoke-escalation.mjs`'s
+self-appointment check split into two rows (billing records / contract values) matching the two roles;
+and `separation.test.mjs` itself re-worked at §11.5 and §11.6, since spreading the widened `SENSITIVE`
+into a "forbidden" list now swept in the very capability `finance` exists to hold.
+
+**A second, independent gap surfaced by the same widening, unrelated to the role split:**
+`platform.support.impersonate` (level 3, `PLATFORM_ONLY`) joined `SENSITIVE` too, and
+`boundaries()` — the function behind the Settings screen's "what you cannot do, and who to ask"
+panel — had no honest answer for it: no school-scoped role holds a platform-only capability, ever,
+by construction, so "who else at your school can do this" was a question with no school-side answer,
+and the boundary rendered naming nobody. Fixed by excluding `PLATFORM_ONLY` capabilities from
+`boundaries()` entirely, with the reasoning kept in the function's own comment. Falsified by
+reverting the filter and confirming `separation.test.mjs`'s "never a break-glass account, nor an
+empty list" assertion goes red for `principal`, `directorofsport` and `schooladmin`.
+
+Verified against a freshly reset and reseeded database, not left to the unit suites alone:
+`tools/migrate.mjs --reset --seed --verify` (171 live RLS assertions), `tools/smoke-escalation.mjs`
+(51 assertions) and `tools/smoke-browser-read.mjs` (350 assertions, including the role switcher now
+offering all 26 roles and the bursar still the only account that sees a sponsorship contract's real
+value) all green. Full suite: 1923 assertions across 31 suites.
+
+**Title:** ~~Sensitivity tiers 0–4, refining the binary `SENSITIVE` set into an ordered scale~~
 **Priority:** P1 · **Domain:** RBAC / Privacy · **Type:** architecture
-**Affected files:** `packages/policy/src/capabilities.mjs`, `packages/policy/src/tables.mjs`,
-`services/api/rls/rls.test.mjs`, `db/99_rls_verify.sql`
-**Affected users:** none directly; changes what the RLS suite is able to assert
+**Affected files:** `packages/policy/src/capabilities.mjs`, `packages/policy/src/roles.mjs`,
+`packages/policy/test/sensitivity.test.mjs`, `packages/policy/test/separation.test.mjs`,
+`db/01_authz.sql`, `db/09_rls_policies.sql` (regenerated), `db/98_seed_pilot.sql`,
+`apps/web/src/design/roles.js`, `tools/smoke-escalation.mjs`
+**Affected users:** every finance-role holder — a bursar's single role becomes two, assignable
+separately; no other role's grants changed
 
 **Current behaviour:** `capabilities.mjs` exports `SENSITIVE` — 9 capabilities, a flag. The distinction
 between public and internal-operational data is not represented at all, and the 243 RLS assertions are
@@ -457,16 +494,22 @@ by a capability cleared to level 2.
 (level ≥ 2) so there is one source; assert monotonicity in `rls.test.mjs`.
 **Why it matters:** the single highest-leverage change available to the RLS suite — it turns per-policy
 assertions into a per-class one, so a new table is covered by default instead of by diligence.
-**Dependencies:** none. **Security / privacy impact:** assurance only. **Data migration required:** NO —
-classification is policy-side; `db/09` is regenerated from it only if a policy expression changes.
-**Tests required:** `rls.test.mjs` class assertion; `modules.test.mjs` unchanged; RLS-output diff must be
-empty if no expression changed.
+**Dependencies:** none. **Security / privacy impact:** real — widening `SENSITIVE` found a genuine
+separation-of-duties crossing (`finance` holding both a commercial and, after this, a sensitive
+capability) that a hand-picked list had been letting stand. **Data migration required:** NO —
+`db/01`/`db/09` are generated output, regenerated by `pnpm rls:generate`, not a new `db/NN`.
+**Tests required:** the class assertion landed in `sensitivity.test.mjs`, not `rls.test.mjs` (the file
+that already owned the SENSITIVE/RESTRICTED_FIELDS join); `separation.test.mjs` for the role split;
+`design.test.mjs` for the new role's colour; live RLS verify and the escalation/browser-read smokes
+for the seeded consequence.
 **Acceptance criteria:**
-- [ ] Every one of the 81 capabilities carries a level
-- [ ] `SENSITIVE` is derived, not listed
-- [ ] An assertion fails when a capability's level is lowered below the field it reaches
-**Regression risk:** LOW if the RLS output diff stays empty; MEDIUM if it does not, which would mean the
-classification disagrees with a shipped policy and is itself the finding.
+- [x] Every one of the 82 capabilities carries a level
+- [x] `SENSITIVE` is derived, not listed
+- [x] An assertion fails when a capability's level is lowered below the field it reaches
+- [x] The separation-of-duties crossing the widening exposed is resolved, not suppressed
+**Regression risk:** LOW — the RLS output diff is the two roles' policies changing shape, which is the
+intended effect, not drift; every suite that could show a wrong grant (separation, sensitivity, RLS
+live verify, escalation, browser-read) is green against a freshly reset database.
 
 ### ~~SCRBRD-031~~ — CLOSED, with the premise corrected
 
@@ -815,8 +858,8 @@ SCRBRD-005 (AI pseudonyms) — independent
 SCRBRD-024 (CI) — independent, protects everything after it
 
 Pass 2:
-SCRBRD-028 (invariants) ──▶ SCRBRD-029 ✓ via SCRBRD-054 ✓ (db/24) ──┐
-SCRBRD-030 (sensitivity tiers) ───────────────────────────────────┴▶ ride together on one db/NN
+SCRBRD-028 (invariants) ──▶ SCRBRD-029 ✓ via SCRBRD-054 ✓ (db/24)
+SCRBRD-030 (sensitivity tiers) ✓ — closed with no db/NN; `db/01`/`db/09` regenerated in place
 SCRBRD-031 (workflow-state) ──▶ SCRBRD-034 (duty lifecycle) ──▶ SCRBRD-037 (duty roster)
 SCRBRD-032 (ADR) ──▶ SCRBRD-036 (sponsor viewer)   [the ADR is the test the new role must pass]
 SCRBRD-039 (capture profiles) ──▶ SCRBRD-045, -046 (spider, heatmap)
@@ -841,8 +884,9 @@ Pass 2:
 9. **SCRBRD-028** invariants — landed in `bdf837e`'s successor; every later RBAC change then has a net.
 10. **SCRBRD-038** review-confirm gate — smallest change, largest error class, no migration.
 11. **SCRBRD-032** the ADR, before the next role request rather than after it.
-12. **SCRBRD-030** sensitivity tiers; **SCRBRD-031** workflow-state inventory — both policy-side, both
-    unblock the entries behind them.
+12. ~~**SCRBRD-030** sensitivity tiers~~ — done, `LEVEL` on all 82 capabilities, `SENSITIVE` derived,
+    the `finance`/`sponsorship` role split it forced also done; **SCRBRD-031** workflow-state
+    inventory — closed separately, see above — unblocks the entries behind it.
 13. ~~**SCRBRD-029** split request/approve~~ — done as `db/24` via SCRBRD-054; the pilot schools are
     told before it is pasted, because a head of sport who filed corrections herself will now need a scorer to.
 14. **SCRBRD-035** escalation roster; **SCRBRD-042** consent audit — independent, cheap, and -042 may

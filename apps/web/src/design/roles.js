@@ -92,6 +92,13 @@ const ROLE_IDENTITY = {
   facilities:             { label:"Groundskeeper", icon:"🌿", color:"#22e7d1", family:"operations" },  // 9.58:1
   // commercial — money
   finance:                { label:"Finance Admin", icon:"💰", color:"#83cb16", family:"commercial" },  // 7.51:1
+  // SCRBRD-030 split the old `finance` bundle: this is the commercial half,
+  // sponsorship.finance.read included, kept out of the school office's own
+  // grantable list the same way finance itself is. Same family as finance —
+  // both are "money" — a different hue so the two are never mistaken for one
+  // another: 11.55 dE from its nearest neighbour (Super Admin's gold) and
+  // 6.69:1 on the darkest surface, checked, not chosen by eye.
+  sponsorship:            { label:"Sponsorship", icon:"🤝", color:"#d1ae00", family:"commercial" },  // 6.69:1
   // media — telling people about it
   media:                  { label:"Media", icon:"📰", color:"#f59ec9", family:"media" },  // 7.58:1
   // competition — running a competition

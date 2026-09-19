@@ -109,7 +109,11 @@ try {
     for (const [role, what] of [
       ["platformadmin", "the platform itself"],
       ["medical",       "children's clinical notes"],
-      ["finance",       "sponsorship contract values"],
+      // SCRBRD-030 split the old commercial `finance` bundle in two —
+      // `sponsorship` kept the contract values, `finance` kept the invoices —
+      // and the school office was already, deliberately, kept from both.
+      ["finance",       "billing and invoice records"],
+      ["sponsorship",   "sponsorship contract values"],
       ["principal",     "the school's own leadership"],
     ]) {
       ok(`a school administrator cannot appoint themselves ${role} — ${what}`,

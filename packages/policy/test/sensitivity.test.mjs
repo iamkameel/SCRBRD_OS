@@ -37,9 +37,11 @@
  *
  *   node packages/policy/test/sensitivity.test.mjs
  */
-import { SENSITIVE, ALL_CAPABILITIES, isCapability } from "../src/capabilities.mjs";
+import { SENSITIVE, ALL_CAPABILITIES, isCapability, LEVEL } from "../src/capabilities.mjs";
 import { referencedCapabilities, maskedColumns, MASKED_TABLES, TABLES } from "../src/tables.mjs";
 import { RESTRICTED_FIELDS } from "../../../services/api/read/read-api.mjs";
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 
 let passes = 0, fails = 0;
 const ok = (label, cond, detail = "") => {
@@ -48,7 +50,29 @@ const ok = (label, cond, detail = "") => {
 };
 const group = (t) => console.log("\n" + t);
 
-const referenced = new Set(referencedCapabilities());
+/**
+ * SCRBRD-030. `referencedCapabilities()` sees only what `tables.mjs` models —
+ * a table's own `read`/`write`/masked columns, generated into RLS policies.
+ * Some capabilities are deliberately NOT modelled there and are instead
+ * checked by hand inside a SECURITY DEFINER function — `officiating.
+ * registry.manage`'s own comment names the pattern ("See TABLES has no entry
+ * for `official`... written by hand in db/08 for exactly this reason"), and
+ * `guardian.link.manage`, `scouting.read/write` and `platform.support.
+ * impersonate` all turned out to be the same case: real `app_can()`/
+ * `app_holds()` guards in db/08, db/19 and db/22, invisible to the
+ * table-generation model because they were never meant to be generated from
+ * it. Treating "not in tables.mjs" as "not implemented" would have filed four
+ * real gates as promises nobody kept. This greps the actual SQL for the
+ * capability inside one of those two calls — a real, checkable signal, not a
+ * rubber stamp — and folds it into the same `referenced` set.
+ */
+const DB_DIR = join(import.meta.dirname, "../../../db");
+const dbSource = readdirSync(DB_DIR).filter((f) => f.endsWith(".sql"))
+  .map((f) => readFileSync(join(DB_DIR, f), "utf8")).join("\n");
+const handGated = new Set(
+  ALL_CAPABILITIES.filter((c) => new RegExp(`app_(can|holds)\\(\\s*'${c.replace(/\./g, "\\.")}'`).test(dbSource)));
+
+const referenced = new Set([...referencedCapabilities(), ...handGated]);
 
 /**
  * Sensitive capabilities that knowingly gate nothing yet.
@@ -66,6 +90,16 @@ const NOT_YET_IMPLEMENTED = {
     "official rather than an administrator — so when the record does arrive, " +
     "filing an incident and reading the file are already two capabilities and " +
     "should stay that way.",
+  // SCRBRD-030 widened SENSITIVE to level >= 2 and found this pair the same
+  // way it found discipline.read/write the first time: a capability in the
+  // catalogue and the role bundles, with no invoice table, policy, function
+  // or read resource anywhere in the schema to be a real gate for.
+  "invoice.read": "No invoice table exists in the schema. Four roles hold this " +
+    "(schooladmin, directorofsport, sportsadmin, finance) and it gates " +
+    "nothing: no table, no policy, no function, no read resource.",
+  "invoice.manage": "The same from the writing end, held by finance alone — no " +
+    "table for it to raise or reconcile a row in, so the write side is " +
+    "exactly as unimplemented as the read side.",
 };
 
 // ── The two lists agree ──────────────────────────────────
@@ -127,6 +161,31 @@ group("Every sensitive capability that IS implemented is watched on the way out"
   const rowGated = live.filter((c) => !gated[c]?.length);
   ok(`${rowGated.length} gate rows rather than columns, which is a policy's job`,
      rowGated.every((c) => referenced.has(c)), rowGated.join(" "));
+}
+
+group("SCRBRD-030: a watched column is never reached by an under-classified capability");
+{
+  // Recomputed rather than hoisted out of the group above — every group in
+  // this file is self-contained, and the cost of rebuilding a 7-entry map is
+  // nothing next to a second copy of it silently drifting from the first.
+  const gated = {};
+  for (const t of MASKED_TABLES)
+    for (const [cap, cols] of Object.entries(maskedColumns(TABLES[t]) ?? {}))
+      for (const col of cols) (gated[cap] ??= []).push(`${t}.${col}`);
+  const watched = new Set(Object.values(RESTRICTED_FIELDS).flat().map((f) => f.split(".")[0]));
+
+  ok("every capability carries a level", ALL_CAPABILITIES.every((c) => c in LEVEL));
+  ok("...on the real 0–4 scale", Object.values(LEVEL).every((n) => Number.isInteger(n) && n >= 0 && n <= 4));
+  // The class-level assertion the ordered scale exists for: a capability that
+  // masks a column the logger already treats as sensitive cannot itself be
+  // classified below Restricted Personal — that would be a capability
+  // guarding real personal data while the scale calls it merely operational,
+  // which is exactly the drift SENSITIVE being hand-listed used to allow.
+  const underClassified = Object.entries(gated)
+    .filter(([cap, cols]) => cols.some((tc) => watched.has(tc.split(".")[1])) && LEVEL[cap] < 2)
+    .map(([cap]) => `${cap} (level ${LEVEL[cap]})`);
+  ok("no capability masking a logged column is classified below level 2",
+     underClassified.length === 0, underClassified.join(", "));
 }
 
 group("And the watched columns are watched for a reason");

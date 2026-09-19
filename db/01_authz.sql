@@ -2,7 +2,7 @@
 -- GENERATED from packages/policy/ by services/api/rls/generate-rls.mjs — DO NOT EDIT BY HAND.
 -- Regenerate with `pnpm rls:generate`. Applied BEFORE the scoring schema,
 -- which references app_can(). Model: docs/adr/0001-scoped-assignments.md.
--- 81 capabilities across 25 roles.
+-- 81 capabilities across 26 roles.
 
 -- Principal helpers. app_user_id() is set from the signed token on every
 -- request; everything else about a person's authority is looked up.
@@ -545,9 +545,12 @@ INSERT INTO role_capability (role, capability) VALUES
   ('finance', 'invoice.read'),
   ('finance', 'invoice.manage'),
   ('finance', 'user.read'),
-  ('finance', 'sponsorship.read'),
-  ('finance', 'sponsorship.manage'),
-  ('finance', 'sponsorship.finance.read'),
+  ('sponsorship', 'school.read'),
+  ('sponsorship', 'news.read'),
+  ('sponsorship', 'user.read'),
+  ('sponsorship', 'sponsorship.read'),
+  ('sponsorship', 'sponsorship.manage'),
+  ('sponsorship', 'sponsorship.finance.read'),
   ('transportcoordinator', 'clearance.read'),
   ('transportcoordinator', 'fixture.read'),
   ('transportcoordinator', 'team.read'),
@@ -647,6 +650,7 @@ INSERT INTO role_grantable (granter, role) VALUES
   ('principal', 'schooladmin'),
   ('principal', 'medical'),
   ('principal', 'finance'),
+  ('principal', 'sponsorship'),
   ('principal', 'coach'),
   ('principal', 'assistantcoach'),
   ('principal', 'teammanager'),
@@ -679,6 +683,7 @@ INSERT INTO role_grantable (granter, role) VALUES
   ('platformadmin', 'spectator'),
   ('platformadmin', 'medical'),
   ('platformadmin', 'finance'),
+  ('platformadmin', 'sponsorship'),
   ('platformadmin', 'transportcoordinator'),
   ('platformadmin', 'driver'),
   ('platformadmin', 'facilities'),
@@ -704,6 +709,7 @@ INSERT INTO role_grantable (granter, role) VALUES
   ('superadmin', 'spectator'),
   ('superadmin', 'medical'),
   ('superadmin', 'finance'),
+  ('superadmin', 'sponsorship'),
   ('superadmin', 'transportcoordinator'),
   ('superadmin', 'driver'),
   ('superadmin', 'facilities'),

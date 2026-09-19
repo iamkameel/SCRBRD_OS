@@ -293,10 +293,14 @@ INSERT INTO app_user (id, school_id, email, name, role, player_id, teams) VALUES
 
 -- The bursar. A school with sponsors and no finance account is the same gap
 -- the registrar comment above describes: sponsorship.finance.read is held by
--- this role and by nothing else in the floor bundle, so without an account
--- carrying it, the masking on a contract's value could only ever be observed
--- from the outside — every reader masked, none unmasked, which proves the
--- column is absent rather than that it is guarded.
+-- the `sponsorship` role (SCRBRD-030 split it out of `finance`) and by
+-- nothing else in the floor bundle, so without an account carrying it, the
+-- masking on a contract's value could only ever be observed from the
+-- outside — every reader masked, none unmasked, which proves the column is
+-- absent rather than that it is guarded. Given both role_assignment rows
+-- below: one small-school bursar doing both jobs, which the split leaves a
+-- school free to choose or not choose — see the role's own comment in
+-- roles.mjs for why that choice, and not this account, is the point of it.
 INSERT INTO app_user (id, school_id, email, name, role) VALUES
   ('88888888-0000-0000-0000-000000000015', '11111111-1111-1111-1111-111111111111',
    'bursar@example.invalid', 'M du Toit', 'finance');
@@ -410,6 +414,7 @@ INSERT INTO role_assignment (id, person_id, role, school_id, team_code) VALUES
   ('a5510000-0000-0000-0000-000000000012', '88888888-0000-0000-0000-000000000012', 'guardian',        '11111111-1111-1111-1111-111111111111', NULL),
   ('a5510000-0000-0000-0000-000000000013', '88888888-0000-0000-0000-000000000013', 'guardian',        '11111111-1111-1111-1111-111111111111', NULL),
   ('a5510000-0000-0000-0000-000000000017', '88888888-0000-0000-0000-000000000015', 'finance',         '11111111-1111-1111-1111-111111111111', NULL),
+  ('a5510000-0000-0000-0000-00000000001b', '88888888-0000-0000-0000-000000000015', 'sponsorship',     '11111111-1111-1111-1111-111111111111', NULL),
   ('a5510000-0000-0000-0000-000000000018', '88888888-0000-0000-0000-000000000016', 'principal',       '11111111-1111-1111-1111-111111111111', NULL),
   ('a5510000-0000-0000-0000-000000000019', '88888888-0000-0000-0000-000000000017', 'driver',          '11111111-1111-1111-1111-111111111111', NULL),
   -- The Westville 1XI coach. Scoped to Westville and to 1XI exactly as the
