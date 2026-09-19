@@ -734,13 +734,9 @@ already-correct. Risk LOW. Migration UNKNOWN until the audit.
   the record or drop the capabilities — what should not persist is a role bundle that promises
   something the schema cannot deliver. Files: a new `db/NN`, `tables.mjs`, `read-api.mjs`.
   Risk LOW. **Migration YES** if built.
-- **SCRBRD-052** — A browser walk that scores an innings to its end. `smoke-browser-sync` opens the real
-  scorer on a real match and taps four deliveries of twenty overs, so nothing exercises what happens when an
-  innings completes: not the review gate (SCRBRD-038), not the innings break, not the result screen, not the
-  second innings' target. Completing an innings by wickets rather than overs is the cheap route — ten
-  dismissals through the wicket sheet instead of a hundred and twenty taps — and it would also be the first
-  coverage of the handover and quarantine paths under a closed innings. Files: `tools/smoke-browser-sync.mjs`
-  or a walk of its own. Risk LOW. Migration NO.
+- ~~**SCRBRD-052**~~ — **CLOSED.** `tools/smoke-browser-innings-end.mjs`, full entry below. Found and
+  fixed two `Badge` components that silently dropped `data-testid`; found and filed **SCRBRD-063** (a
+  second innings can never close on reaching its target — nothing wires the two together).
 - **SCRBRD-051** — Two shapes worth keeping from `aiCoachAssistant.ts`, without its fabrication:
   per-drill `safetyCleared` driven by `medicalRestrictions` (a drill blocked by a restriction **without
   exposing the file** — §11.3 rendered as a feature, and `TrainingView`'s drill library is where it goes),
@@ -1217,3 +1213,111 @@ different duty states match what `MatchCentreView`'s own `DutyRoster` shows for 
 - [ ] A slot with nothing on record reads as absent, never as "pending" or "ready"
 - [ ] The coverage count for a fixture matches what that fixture's own `DutyRoster` shows
 **Regression risk:** LOW — additive read-only view over an already-correct, already-tested resource.
+
+### ~~SCRBRD-052~~ — CLOSED
+**Closed 2026-09-19.** `tools/smoke-browser-innings-end.mjs`: a real browser scores a real fixture to a
+closed first innings (wickets through `WicketSheet`, however many the seeded squad actually takes — not a
+hardcoded ten), confirms `InningsReviewSheet`'s review gate, starts the second innings from
+`Innings2Sheet`, confirms the real target reaches the pad, closes the second innings the same way, and
+lands on the result screen — with the two `innings_end` events cross-checked directly against Postgres.
+
+Two real bugs found and fixed while building it, both in components no browser walk had exercised before
+because nothing had ever driven an innings to completion:
+- **`Badge` silently dropped `data-testid`, in two places.** `apps/web/src/scorer/ui.jsx`'s `Badge` (used
+  by `InningsReviewSheet`'s `review-reason`) and `apps/web/src/ui/primitives.jsx`'s separate `Badge` did
+  not spread extra props onto the underlying `<span>`, unlike `Card`'s already-established pattern in the
+  same file. `review-reason`'s own `data-testid` was accepted by JSX and thrown away — a real defect
+  waiting for the first thing to actually look for it, which this walk was. Fixed both to spread `...rest`,
+  matching `Card`.
+- **A second innings never gets a real target for the replay to close on** — filed separately as
+  **SCRBRD-063** below rather than fixed inline, since it is a scoring-engine correctness change, not
+  something a test file should carry.
+**Title:** A browser walk that scores an innings to its end
+**Priority:** P3 · **Domain:** Scoring · **Type:** test coverage
+**Affected files:** `tools/smoke-browser-innings-end.mjs` (new); `apps/web/src/scorer/ui.jsx`,
+`apps/web/src/ui/primitives.jsx` (the `Badge` fix)
+**Affected users:** none directly — coverage for a path every real match eventually takes
+
+**Current behaviour, before this:** `smoke-browser-sync.mjs` opens the real scorer and taps four
+deliveries of twenty overs — enough to prove the pad reaches Postgres, nothing more. Nothing exercised the
+review gate (SCRBRD-038), the innings break, the second innings' target, or the result screen.
+**Expected behaviour:** an innings closed by wickets rather than overs — the cheap route, ten dismissals
+through the wicket sheet against a hundred and twenty taps — covering the handover and quarantine paths
+under a closed innings as a side effect of existing.
+**Root cause:** nobody had needed a browser walk to run this long before.
+**Recommended change:** done, as described above.
+**Why it matters:** this is the first walk to ever reach `InningsReviewSheet`, `Innings2Sheet`, or the
+result screen in a real browser, and it found two real bugs in its first hour of existing.
+**Dependencies:** none. **Security / privacy impact:** none. **Data migration required:** NO.
+**Tests required:** itself.
+**Acceptance criteria:**
+- [x] A real browser closes a first innings by wickets and confirms the review gate
+- [x] The second innings' real target reaches the pad
+- [x] The result screen is reached and Postgres agrees with what both screens showed
+**Regression risk:** LOW — a new test file plus a two-line prop-spreading fix matching an existing pattern.
+
+### SCRBRD-063
+**Title:** A second innings never gets a real target, so it can never end on reaching one
+**Priority:** P1 · **Domain:** Scoring · **Type:** correctness
+**Affected files:** `apps/web/src/scorer/engine.jsx` (wherever the second innings' event log is opened —
+today, nowhere), `packages/scoring/src/replay.mjs` (`inningsOverReason`, unchanged but worth re-reading
+alongside the fix)
+**Affected users:** every match that goes to a second innings and is won by reaching the target rather
+than by the chasing side being bowled out or running out of overs — which, for a run-chase that succeeds,
+is the common case, not the rare one
+
+**Current behaviour, found building SCRBRD-052's browser walk:** `packages/scoring/src/replay.mjs`'s
+`inningsOverReason()` only returns `target_reached` when `inn.target != null && inn.runs >= inn.target` —
+and `inn.target` is set **only** by an explicit `target` field on that innings' own `INNINGS_START` event
+(or a `REVISION` event). `packages/scoring/test/replay.test.mjs` already asserts this directly: its "chase
+completed on the last legal ball" case passes `target: 6` on `inningsStart()` by hand. Checking
+`apps/web/src/scorer/engine.jsx` for where the second innings gets its own `INNINGS_START` event with a
+computed target found nothing, on either of this codebase's two paths into a second innings: the
+from-scratch match setup (`open2` at engine.jsx, no `target` field) and the far more common path, resuming
+a real fixture through `closeInnings()`'s `curIn===0` branch, which sets `modal:"innings2"` and never
+emits an `INNINGS_START` for innings 1 at all — `addBatsman`/`addBowler` just emit `battersEvent`/
+`bowlerEvent` straight into an innings whose derived object has never been told what it needs to win.
+
+The pad itself is unaffected and already correct — `scoring.jsx`'s `target=curIn===1?(innings[0]?.runs||0)+1:null` computes and shows a real, correct target entirely client-side, independent of the replay
+model. What is missing is the wiring from that number to the thing that is actually supposed to check it:
+today, a real run-chase that reaches its target does not close the innings. It keeps going — by all out, or
+by running out overs — however many further deliveries get bowled after the match was already effectively
+over. A byproduct spotted along the way, from the same root cause: the result screen's `ScorecardPanel` for
+the second innings shows a blank team-name heading (`{i.battingTeam} · Innings 2`) whenever `i.battingTeam`
+was never set, because nothing set it.
+**Expected behaviour:** the moment a second innings' runs reach its target, `inningsOverReason()` returns
+`target_reached`, `InningsReviewSheet` opens on its own exactly as it does for all-out or overs-complete,
+and the second innings' scorecard panel shows the real batting team's name.
+**Root cause:** the review-gate refactor (SCRBRD-038) correctly wired `all_out` and `overs_complete`
+through `after.complete`/`inningsOverReason`, both derivable from the innings' own ball log alone. `target`
+is the one completion reason that is NOT derivable from one innings' own log — it needs the other innings'
+result — and nothing was added at the point the second innings actually begins to carry that fact forward
+into an event the replay can see.
+**Recommended change:** when the second innings genuinely begins (the natural point is `Innings2Sheet`'s
+`onStart`, before `setModal("opener")`, or the first `addBatsman`/`addBowler` call for that innings if
+lazier initialisation is preferred), emit an `INNINGS_START` event for innings 1 carrying `target:
+innings[0].runs + 1` alongside the same `battingTeam`/`bowlingTeam`/`teamKey`/`bowlingTeamKey`/`squad`/
+`bowlingSquad`/`overs` fields the first innings' own `INNINGS_START` already carries, sourced from the
+same `resume.cfg`/`match` state already available at that point (a home team confirmed by `resume.cfg`, an
+away team's squad handled the same honest way an away bowler already is — typed, not invented, when there
+is no roster to offer). A revised target (`RevisionSheet`) already overwrites `inn.target` via its own
+`REVISION` event and needs no change.
+**Why it matters:** this is a correctness gap in when a match is allowed to be over, not a display
+polish item — a scorer has no signal that the chase is done, and would keep recording deliveries that,
+under the Laws, should never have been bowled.
+**Dependencies:** none. **Security / privacy impact:** none. **Data migration required:** NO — an event
+shape change, not a schema one.
+**Tests required:** a unit case in `packages/scoring/test/replay.test.mjs`-adjacent coverage (or extending
+the existing "chase completed on the last legal ball" style) asserting `engine.jsx`'s own second-innings
+event construction includes `target`; then `tools/smoke-browser-innings-end.mjs` rescoped to chase a
+target down with real deliveries instead of a second round of wickets, once this lands.
+**Acceptance criteria:**
+- [ ] A second innings that reaches its target closes on `target_reached`, without needing all out or
+  overs complete
+- [ ] The second innings' `INNINGS_START` event carries `battingTeam`/`bowlingTeam` correctly, so the
+  result screen's scorecard panel names the real team
+- [ ] `smoke-browser-innings-end.mjs` is updated to chase a target rather than take a second round of
+  wickets, and still passes
+**Regression risk:** LOW-MEDIUM — adds an event, and an event shape change on a heavily-replayed path
+deserves the full scoring suite run (`packages/scoring/test/*`, `apps/web/test/system.test.mjs`) before
+shipping, not just the new browser walk.
