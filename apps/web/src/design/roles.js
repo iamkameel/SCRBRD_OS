@@ -127,6 +127,10 @@ const NAV_CAPABILITY = {
   logistics:     "transport.read",
   calendar:      "fixture.read",
   fields:        "facility.read",
+  // The read side of match_duties' own union — each sub-select carries its
+  // own capability regardless of this entry, so a role sees no more here
+  // than it would opening one fixture's duty roster at a time.
+  readiness:     "fixture.read",
   // The same capability the appointments themselves are read under. Nav mirrors
   // the API; the API is the security — a destination that appears for somebody
   // who may not read a fixture would show them an empty screen, not a leak,
@@ -169,7 +173,7 @@ const NAV_GROUPS = [
   { key:"play",    label:"Play",       items:["dashboard","news","matches","calendar","competitions","leagues","officials"] },
   { key:"people",  label:"People",     items:["squad","profiles","injuries","staff"] },
   { key:"develop", label:"Develop",    items:["analytics","skills","training"] },
-  { key:"operate", label:"Operate",    items:["logistics","fields","sponsors"] },
+  { key:"operate", label:"Operate",    items:["logistics","fields","sponsors","readiness"] },
   { key:"admin",   label:"Administer", items:["management","modules","pitchdeck"] },
   { key:"you",     label:"You",        items:["notifications","settings","rulebook"] },
 ];
@@ -248,6 +252,7 @@ const NAV_META = {
   logistics:    { icon:"🚌",  label:"Logistics"    },
   calendar:     { icon:"📅",  label:"Calendar"     },
   fields:       { icon:"🌿",  label:"Fields"       },
+  readiness:    { icon:"🛡️",  label:"Readiness"    },
   officials:    { icon:"🧑‍⚖️", label:"Officials"    },
   staff:        { icon:"🔧",  label:"Staff"        },
   sponsors:     { icon:"🤝",  label:"Sponsors"     },

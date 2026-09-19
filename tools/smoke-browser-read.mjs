@@ -1796,6 +1796,53 @@ try {
     await c.ctx.close();
   }
 
+  // ── SCRBRD-062: several fixtures' duty coverage, at a glance ────────
+  //
+  // The overview is the SAME match_duties read the single-fixture DutyRoster
+  // already uses, fanned out across fixtures — so the one thing worth proving
+  // in a browser is that it cannot drift from what that fixture's own screen
+  // shows. Ground truth is read directly from the API first, then checked
+  // against both screens, rather than assumed from seed data or from what an
+  // earlier group in this file happened to write.
+  group("A sportsmaster sees duty coverage across several fixtures, and it matches each fixture's own roster");
+  {
+    const tok = await (await fetch(`${API}/api/auth/dev-login`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "sarah@example.invalid", deviceId: "browser-read" }),
+    })).json().then((j) => j.token);
+    const MATCH = "77777777-0000-0000-0000-000000000002"; // Michaelhouse, seeded scheduled
+
+    const truth = await (await fetch(`${API}/api/read/match_duties?matchId=${MATCH}`, {
+      headers: { authorization: `Bearer ${tok}` },
+    })).json();
+    const trueCovered = new Set((truth?.rows ?? []).map((r) => r.duty)).size;
+    ok("the fixture has at least the seeded umpire on record", trueCovered >= 1, `${trueCovered} covered`);
+
+    const c = await open();
+    ok("the director of sport signs in", await signIn(c.page, /sarah@example\.invalid|Director/));
+    const tid = (id) => c.page.locator(`[data-testid="${id}"]`);
+    await tid("nav-readiness").click({ timeout: 6000 }); await c.page.waitForTimeout(1200);
+    ok("she reaches Readiness", await tid("os-main").getAttribute("data-page") === "readiness");
+
+    const card = tid(`readiness-fixture-${MATCH}`);
+    ok("the fixture is on the overview", await card.count() === 1);
+    const overviewText = await tid(`readiness-covered-${MATCH}`).innerText();
+    ok(`the overview reads "${trueCovered} of 8 on record"`, overviewText.trim() === `${trueCovered} of 8 on record`);
+    ok("the covered slot itself is shown as on record, not merely counted",
+       await tid(`readiness-slot-${MATCH}-umpire`).count() === 1);
+
+    // Cross-check against the fixture's own screen — not a second opinion,
+    // the same claim asked twice.
+    await tid("nav-matches").click({ timeout: 6000 }); await c.page.waitForTimeout(1200);
+    await c.page.locator(`[data-testid="match-card-${MATCH}"]`).click({ timeout: 4000 });
+    await c.page.waitForTimeout(600);
+    const rosterText = await tid("duty-covered").innerText();
+    ok(`the fixture's own duty roster agrees: "${rosterText.trim()}"`, rosterText.trim() === overviewText.trim());
+
+    ok("no console errors on either screen", c.errors.length === 0, c.errors.join(" | "));
+    await c.ctx.close();
+  }
+
 } catch (e) {
   ok(`the browser read walk threw: ${e.message?.slice(0, 160)}`, false);
 } finally {

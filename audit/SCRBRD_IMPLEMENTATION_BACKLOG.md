@@ -845,9 +845,9 @@ Pass 3:
 19. **SCRBRD-060** knockout bracket — independent, clean UI-only gap over an existing `comp_type`, once
     the round/seed derivation question is answered. **SCRBRD-061** bowling pitch map — blocked on its own
     capture step (new `ball_event` columns); do not build the chart before the capture exists.
-20. **SCRBRD-062** multi-fixture duty-coverage overview — smallest of the Pass 3 items: reuses an
-    already-correct, already-shipped read (`match_duties`, `SCRBRD-037`'s `DutyRoster`) across several
-    fixtures instead of one; no schema or server change.
+20. ~~**SCRBRD-062** multi-fixture duty-coverage overview~~ — CLOSED; reused the already-correct,
+    already-shipped `match_duties` read (`SCRBRD-037`'s `DutyRoster`) across several fixtures instead of
+    one, no schema or server change.
 
 # Blocked Work
 
@@ -1151,7 +1151,22 @@ capture feeding a chart — worth building alongside or after it rather than as 
 - [ ] An innings with no recorded line/length data shows an honestly empty map, never a fabricated one
 **Regression risk:** N/A — nothing built yet.
 
-### SCRBRD-062
+### ~~SCRBRD-062~~ — CLOSED
+**Closed 2026-09-19.** `apps/web/src/views/ReadinessOverview.jsx`, a new `readiness` nav destination
+(`fixture.read`, "Operate" group), and `useDutyCoverage()` in `lib/live.js` — the same `match_duties` read
+and `asDuty` adapter `DutyRoster` already uses, fanned out with `Promise.all` across a school's next 8
+upcoming fixtures rather than one at a time. No new schema, server route, or RLS. A new browser-walk group
+in `smoke-browser-read.mjs` reads ground truth for a seeded fixture directly from `/api/read/match_duties`,
+confirms the overview's coverage count matches it, then cross-checks the same fixture's own `DutyRoster` on
+`MatchCentreView` shows the identical count — proving the two screens cannot drift from each other by
+construction, not just by inspection.
+
+Found along the way, unrelated to this change and left unfixed because they are out of this entry's scope:
+running the full `smoke-browser-read.mjs` top to bottom hit four pre-existing failures in screens this
+entry never touched (a guardian's school name, a Logistics trip arranged through the API, the Add Player
+modal closing on save, and the pending-request view after onboarding) — reproduced identically against the
+unmodified file with this change entirely stashed out, so they predate this entry. Recorded rather than
+left silent; not filed as their own numbered entries yet because their root cause was not investigated.
 **Title:** No way to see duty-roster coverage across several fixtures at once
 **Priority:** P3 · **Domain:** Facilities / Duty roster · **Type:** product gap
 **Affected files:** a new view (e.g. `apps/web/src/views/ReadinessOverview.jsx`), reusing the existing
