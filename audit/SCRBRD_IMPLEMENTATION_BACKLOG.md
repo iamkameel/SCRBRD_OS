@@ -1184,12 +1184,107 @@ Officials, transport, facilities, medical and scorer are five separate surfaces 
 screen that joins them, and "pending ≠ filled" is the same honesty as the null discipline in Analytics.
 Files: new view, reads over existing resources. Risk LOW. Migration NO.
 
-### SCRBRD-038 — Review-confirm gate before an innings closes
-`scoringHubMachine.ts` has a `reviewConfirm` state and `CONFIRM_INNINGS_END { verified: boolean }`;
-`ReviewConfirmModal.tsx` reads the totals back before the innings is sealed. `review_confirm` returns
-**zero hits** here — there is commit, amend and handover, but no checkpoint between the last ball and a
-closed innings. Cheapest available reduction in the error class that is most expensive afterwards.
-Files: `apps/web/src/views/` scoring surface, `services/api/write/`. Risk LOW. Migration NO.
+### ~~SCRBRD-038~~ — CLOSED
+
+**Closed 2026-09-19.** `scoringHubMachine.ts`/`ReviewConfirmModal.tsx`/`review_confirm` (this entry's
+own citations) do not exist in this codebase — they are the other prototype's names for the same
+idea, harvested without checking against the tree. What genuinely had zero hits here was the thing
+those names point at: a checkpoint between the last ball and a closed innings that the MODEL, not
+just one screen, actually enforces.
+
+**What was already built, and what it was missing.** `InningsReviewSheet` already existed and
+already showed the scorer the derived totals before confirming — the review DIALOG was real. What
+was not real was the gate: confirming called `emit(inningsEnd({reason: inn?.endReason ??
+INNINGS_END_REASON.OVERS}))`, and the reducer honoured whatever an `innings_end` event claimed,
+unconditionally, setting `inn.complete`/`inn.endReason` from the event's say-so. `inningsClosed`
+was computed as "does an `INNINGS_END` event exist in this innings' log" — true the instant one
+appeared, whatever it claimed. A seal naming an ending the log did not support (all out at twelve
+for none), a seal naming nothing (silently defaulted to "the overs ran out"), or a stale seal
+replayed from an offline queue after the figures it was minted against had moved — an undo, a
+released quarantine ball — would all have closed the innings exactly as readily as a genuine
+confirm. The checkpoint existed in one React component tree and nowhere the model could see it.
+
+**The fix moves the check into the fold.** `inningsEnd()` (`packages/scoring/src/events.mjs`) gains
+a `confirmed: {runs, wickets, balls}` field and drops its `OVERS` default (`reason` is now `null`
+unless given — the default was quietly asserting a real match's ending on a missing argument; the
+one production call site, `sealInnings()`, always supplies one). `sealInnings(inn, reason)`
+(`packages/scoring/src/replay.mjs`) builds the event by reading the figures straight off the
+derived innings, so an event minted through it can never claim figures the log didn't just produce.
+`sealRefusal(ev, inn, why)`, run inside `deriveInnings()`'s own fold at the `INNINGS_END` case,
+checks every seal against the log it is folding over: the confirmed figures must equal what the log
+derives at that exact point (pinning the seal to THIS occurrence of the ending, not some earlier
+or later one); the reason must be present; and if the reason is one of the three the laws derive
+(`all_out`/`overs`/`target`), it must be the one they actually derive here — `declared`/`abandoned`
+are taken on the scorer's word, since nothing in a ball log implies a captain's or umpire's
+decision, but still only with figures attached. A refused seal sets `inn.sealRefused` and leaves
+`inn.complete`/`inn.sealed` to fall through to the laws' own derivation — it cannot wrongly force an
+innings closed, and cannot wrongly keep genuinely-finished scoring blocked either, since the
+post-loop fallback (`if (!inn.complete) { ... }`) still applies exactly as it always did.
+
+`apps/web/src/scorer/engine.jsx`'s `inningsClosed` now reads `inn?.sealed === true` — the model's
+verified answer — instead of scanning the log for the event's mere existence, and `closeInnings()`
+calls `sealInnings(inn)` instead of hand-building the event, so the UI has no path left that can
+close an innings by asserting that it is closed. A refused seal is not a dead end: the banner stays
+up, and confirming again builds a fresh seal off the (now current) derived figures, which succeeds
+— the design is self-healing rather than requiring an error dialog for a case that resolves itself
+on retry.
+
+**Tests.** `packages/scoring/test/replay.test.mjs` gained a new group ("H. The seal — over is not
+closed") covering: a seal with no `confirmed` figures refused (`UNCONFIRMED`); a seal whose figures
+don't match the log refused (`FIGURES_MOVED`) — the offline-queue/quarantine-race case, reproduced
+by minting a seal, then replaying one more legitimate ball before it, and confirming the stale seal
+is rejected rather than closing the innings on stale figures; a seal with no reason refused
+(`NO_REASON` — the exact failure the old `OVERS` default used to paper over); a seal claiming a
+law-derived reason the log doesn't support refused (`NOT_THE_LAWS_REASON`); and a genuine
+`sealInnings()`-built seal accepted, setting `sealed`/`complete`/`endReason` correctly for all three
+law-derived endings plus `declared`/`abandoned`. `apps/web/test/innings-review.test.mjs` gained
+"A delivery cannot reach a closed innings without the review" and "The reducer refuses a seal the
+review did not produce," rendering the actual sheet component and asserting against the derived
+model, not a mock.
+
+Verified against a freshly reset and reseeded database and a real browser, not left to the unit
+suites: `node tools/smoke-browser-innings-end.mjs` (SCRBRD-052/-063's own walk, which chases a real
+target down to a genuine `target_reached` close) still passes at 23/23 with the new gate in place —
+proof the legitimate confirm path is unaffected — and the full suite is green: 2008 assertions
+across 31 suites (`scoring` 296, `review` 38), up from the pre-existing 1939.
+
+**Title:** ~~Review-confirm gate before an innings closes~~
+**Priority:** P1 · **Domain:** Scoring · **Type:** correctness
+**Affected files:** `packages/scoring/src/events.mjs`, `packages/scoring/src/replay.mjs`,
+`apps/web/src/scorer/engine.jsx`, `packages/scoring/test/replay.test.mjs`,
+`apps/web/test/innings-review.test.mjs`
+**Affected users:** every match — the gate now sits between every last ball and every closed innings,
+not only the ones this entry originally imagined going wrong
+
+**Current behaviour, before this:** an `innings_end` event was honoured by the reducer
+unconditionally — a scorer's genuine confirm and a malformed, stale or offline-replayed event were
+indistinguishable to the model, which read only "does one exist," not "does its claim match the log."
+**Expected behaviour:** an innings is `sealed` only when a seal's confirmed figures match what the
+log independently derives at that point, and its reason is either genuinely law-derived or one of
+the two endings the laws cannot derive at all.
+**Root cause:** the review dialog was built as a UI courtesy (SCRBRD-016/prior scoring work); nobody
+had asked the model itself to check the courtesy was honoured.
+**Recommended change:** as built — `sealInnings()`/`sealRefusal()` in the reducer, `inningsClosed`
+reading `inn.sealed`.
+**Why it matters:** the scoring engine is this platform's most consequential surface; a gate that
+exists in one screen and not in the model it feeds is not a gate, it is a suggestion.
+**Dependencies:** none. **Security / privacy impact:** none — a correctness guarantee over the
+scoring log, not an access boundary. **Data migration required:** NO — an event-shape addition
+(`confirmed`), not a schema change; no existing stored event carries the field, and none needs to
+for old matches, since `sealRefusal()` only runs on events replayed after this change.
+**Tests required:** the "H. The seal" group in `replay.test.mjs`; the two new cases in
+`innings-review.test.mjs`; the existing `smoke-browser-innings-end.mjs` re-run as a regression
+check on the legitimate path.
+**Acceptance criteria:**
+- [x] A seal with no confirmed figures does not close the innings
+- [x] A seal whose figures don't match the log (stale/replayed-out-of-order) is refused, not honoured
+- [x] A seal naming no reason is refused, rather than defaulting to "overs"
+- [x] A seal claiming a law-derived ending the log does not support is refused
+- [x] `declared`/`abandoned` are still accepted on the scorer's word, since the laws cannot derive them
+- [x] The legitimate confirm path (`smoke-browser-innings-end.mjs`) is unaffected
+**Regression risk:** LOW — the one production call site of `inningsEnd()` already supplied an
+explicit reason before this change, so the dropped default affects nothing live; the fallback
+derivation for an innings with no accepted seal is unchanged from before this entry.
 
 ### SCRBRD-039 — Capture profiles: declare the intent, not just record the code path
 **Corrected 2026-09-18.** The first version of this entry claimed SCRBRD OS had no capture profile. It has

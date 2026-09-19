@@ -360,10 +360,34 @@ export const revision = (o) => ({
   reason: o.reason ?? "rain",
 });
 
+/**
+ * The seal on an innings. SCRBRD-038.
+ *
+ * `confirmed` is the figures the scorer read back on the review sheet, carried
+ * on the event so the reducer can check the seal against the log instead of
+ * taking its word for it: see sealRefusal() in replay.mjs, which is what makes
+ * the review a gate rather than a dialog. Build it with sealInnings() — the
+ * figures come off the derived innings there, so an event cannot claim figures
+ * the sheet never showed.
+ *
+ * `reason` has no default on purpose. It used to default to OVERS, so
+ * `inningsEnd({})` — a seal that does not say why — asserted that the overs ran
+ * out. That is a sentence about a real match invented by a missing argument.
+ */
 export const inningsEnd = (o) => ({
   ...base(KIND.INNINGS_END, o),
-  reason: o.reason ?? INNINGS_END_REASON.OVERS,
+  reason: o.reason ?? null,
+  confirmed: o.confirmed
+    ? { runs: o.confirmed.runs ?? null, wickets: o.confirmed.wickets ?? null, balls: o.confirmed.balls ?? null }
+    : null,
 });
+
+/** The three endings the laws derive from a ball log, and so the three a seal
+ *  may not simply assert. `declared` and `abandoned` are not in here: nothing in
+ *  a ball log implies a captain's decision or an umpire's. */
+export const DERIVED_END_REASONS = new Set([
+  INNINGS_END_REASON.ALL_OUT, INNINGS_END_REASON.OVERS, INNINGS_END_REASON.TARGET,
+]);
 
 // ── Wire translation (client camelCase ↔ ball_event snake_case) ──
 // Fields that have a column of their own on ball_event. Placement joins them

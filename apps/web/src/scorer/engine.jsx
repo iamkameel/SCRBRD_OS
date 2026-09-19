@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import {
   deriveInnings, inningsStart, batters as battersEvent, bowler as bowlerEvent,
-  ball as ballEvent, penalty as penaltyEvent, revision as revisionEvent, inningsEnd, INNINGS_END_REASON, KIND,
+  ball as ballEvent, penalty as penaltyEvent, revision as revisionEvent, sealInnings,
   newEventId, undoLast,
   noPlacement, NO_CONTACT_SHOTS, PLACEMENT_NULL, PLACEMENT_SOURCE, CAPTURE_PROFILE,
   DISMISSAL_LABEL,
@@ -516,10 +516,16 @@ function SCRBRD({resume}={}){
   //  EventOverlay's `suppressBlur` prop — mutating the event object here
   //  used to re-arm its dismiss timers and strand queued overlays.)
 
-  // Whether THIS innings has been closed in the log, as opposed to merely
-  // being over. The two come apart for as long as the scorer has not confirmed
-  // the review, which is exactly the window the banner exists to cover.
-  const inningsClosed=(events[curIn]??[]).some(e=>e.kind===KIND.INNINGS_END);
+  // Whether THIS innings has been closed, as opposed to merely being over. The
+  // two come apart for as long as the scorer has not confirmed the review,
+  // which is exactly the window the banner exists to cover.
+  //
+  // Asked of the replay rather than by scanning the log for the event kind: a
+  // seal whose figures the log does not produce is refused there (see
+  // sealRefusal), and a screen that counted the event would call such an
+  // innings closed while the model called it open — a disagreement with nothing
+  // to reconcile it.
+  const inningsClosed=inn?.sealed===true;
 
   // ── Closing an innings ──────────────────────────────────
   // SCRBRD-038. Until now the ball that completed an innings also closed it,
@@ -528,13 +534,20 @@ function SCRBRD({resume}={}){
   // emitted by anything. So every replay re-derived the ending, and the reason
   // for it was nowhere in the log.
   //
-  // Confirming the review writes it. The reason comes from the replay rather
-  // than from a control, because the laws decide it and the scorer is being
-  // asked to check the figures, not to classify them. A declaration is the one
-  // ending a scorer declares, and it arrives through the revision/declare path
-  // rather than here.
+  // Confirming the review writes it, and writes it through sealInnings(), which
+  // stamps the figures this sheet just showed onto the event. That is what the
+  // reducer checks the seal against, so the gate is a property of the model and
+  // not of this file: nothing can close an innings by asserting that it is
+  // closed. The reason comes from the replay rather than from a control, because
+  // the laws decide it and the scorer is being asked to check the figures, not
+  // to classify them. A declaration is the one ending a scorer declares, and it
+  // arrives through the revision/declare path rather than here.
   const closeInnings=()=>{
-    emit(inningsEnd({reason:inn?.endReason??INNINGS_END_REASON.OVERS}));
+    // An innings that is not over has nothing to seal, and a seal built from it
+    // would carry no reason and be refused. Nothing in the UI can reach this —
+    // the sheet only opens on a complete innings — which is why it is cheap.
+    if(!inn?.complete)return;
+    emit(sealInnings(inn));
     setModal(null);
     if(curIn===0){setCurIn(1);setModal("innings2");}
     else setScreen("result");
