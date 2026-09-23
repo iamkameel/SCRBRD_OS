@@ -18,23 +18,19 @@
  * replay. A UI that suggested the expected numbers would turn the one check
  * that catches a real divergence into a confirm-the-computer's-guess button.
  *
- * A KNOWN GAP, LEFT OPEN AND RECORDED RATHER THAN PAPERED OVER
+ * A GAP THAT WAS OPEN, AND WHY THE PRE-CHECK STAYS (SCRBRD-059)
  * ──────────────────────────────────────────────────────────────
- * scoring_claim() (the plain, non-handover claim db/02 uses when the pad
- * first opens) only refuses when the session is ACTIVE with someone else's
- * live lease — it does not check for HANDOVER_PENDING or VERIFYING. So a
- * second device that simply opens the scoring screen while a handover is
- * armed can claim the token outright, bypassing the code and the
- * verification handshake entirely; the reference implementation
- * (scoring-session.mjs) has the identical shape. That is a property of the
- * session state machine itself, not of this screen, and fixing it is a
- * database-function change with its own db/NN — filed as SCRBRD-059 rather
- * than folded in here. What THIS file does about it: `precheck()` below,
- * called before sync.js's initial claim, reads the session's current state
- * first and — client-side only — declines to auto-claim into a pending or
- * verifying handover, so a scorer who opens the app in the ordinary way is
- * steered to the code/verify screen instead of silently taking the token.
- * It narrows the window; it does not close it, and says so here.
+ * scoring_claim() (the plain, non-handover claim the pad makes when it first
+ * opens) used to refuse only an ACTIVE session with someone else's live
+ * lease, so a second device that simply opened the scoring screen while a
+ * handover was armed took the token outright, bypassing the code and the
+ * verification handshake. db/28 closed that in the database: a plain claim
+ * is now refused as `handover_pending` (from anyone but the device and user
+ * that armed it — see cancelHandover below) or `verifying` (from anyone),
+ * the same reasons sync.js's pre-check returns, so the scorer lands on the
+ * same "take over" screen whichever of the two answers first.
+ * `sessionState()` below is still called before sync.js's initial claim: it
+ * no longer carries the guarantee, it just saves a refused round trip.
  */
 import { api } from "./api.js";
 
@@ -68,7 +64,9 @@ export const armHandover = (matchId, { device, pending = 0, ballInFlight = false
  * device it was armed from bumps the epoch, clears the pending handover
  * fields, and hands the (fresh) token straight back to the caller, which is
  * exactly a cancel. Named for what it does, not for the route it happens to
- * share.
+ * share. db/28 keeps this one plain claim open while a handover is armed —
+ * only for the arming device AND user — and refuses it once the incoming
+ * scorer has entered the code (`verifying`).
  */
 export const cancelHandover = (matchId, { device }) =>
   api(`/api/matches/${matchId}/session/claim`, { method: "POST", body: { device } });

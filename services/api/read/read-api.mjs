@@ -432,6 +432,13 @@ export const READ_QUERIES = {
    * is the record without the child's name, which is exactly the line
    * player.profile.read draws: the matter is the league's business and the
    * roster is the school's.
+   *
+   * `playerId`, optional, narrows to one child — which is how the Conduct tab
+   * on a boy's profile asks. It is a narrowing, never a widening (RLS has
+   * already decided the set), and it matters for the LOG as much as for the
+   * wire: every row returned is logged below as a read of that child's
+   * record, so a profile that fetched the whole school's matters to show one
+   * boy's would put every other child's name in the access log as read.
    */
   disciplinary_records: {
     text: `select d.id, d.player_id, d.school_id, d.match_id, d.body,
@@ -441,7 +448,15 @@ export const READ_QUERIES = {
              from disciplinary_record d
              left join player p   on p.id = d.player_id
              left join app_user u on u.id = d.recorded_by
+            where ($1::uuid is null or d.player_id = $1::uuid)
             order by d.occurred_on desc, d.created_at desc`,
+    params: (q) => {
+      const id = q?.playerId || null;
+      if (id && !/^[0-9a-f-]{36}$/i.test(id)) {
+        const e = new Error("bad_param:playerId"); e.status = 400; throw e;
+      }
+      return [id];
+    },
   },
 
   // The newsfeed. Same rule as every read here: the policy on news_post has

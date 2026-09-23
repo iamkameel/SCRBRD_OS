@@ -297,5 +297,40 @@ group("The demonstration obeys the policy's own assignment shapes");
   }
 }
 
+// ── The disciplinary record: staff only, by product decision ──
+//
+// The database lets a pupil read his own record (selfaccess holds
+// discipline.read). The product owner decided the app does not draw it for
+// him yet, so the Conduct tab is gated on the PERSONA — the role the shell was
+// laid out for plus the roles it always comes with (ROLE_IDENTITY.also) — and
+// the pupil clause is what keeps him out. Asserted over every role the shell
+// can be laid out for, so a new role cannot slip past by not being listed.
+group("The Conduct tab is drawn for staff readers only");
+{
+  const { readsConduct, filesConduct } = await import("./conduct.js");
+  const { ROLES: SHELL } = await import("../design/roles.js");
+  const { roleGrants } = await import("@scrbrd/policy/roles");
+  const readers = Object.keys(SHELL).filter(readsConduct).map((r) => SHELL[r].aliasOf ?? r);
+  const writers = Object.keys(SHELL).filter(filesConduct).map((r) => SHELL[r].aliasOf ?? r);
+  const STAFF_READERS = ["superadmin", "principal", "directorofsport", "schooladmin", "competitionadmin"];
+  const WRITERS = ["superadmin", "directorofsport", "official"];
+  ok(`exactly the staff readers are drawn it (${[...new Set(readers)].sort().join(",")})`,
+     [...new Set(readers)].sort().join() === [...STAFF_READERS].sort().join());
+  ok(`exactly the writers are offered the form (${[...new Set(writers)].sort().join(",")})`,
+     [...new Set(writers)].sort().join() === [...WRITERS].sort().join());
+  // Not vacuous: the pupil persona DOES hold the read, through selfaccess, so
+  // it is the own-record clause and nothing else that hides the tab from him.
+  ok("the pupil persona holds discipline.read through selfaccess",
+     (SHELL.player.also ?? []).some((r) => roleGrants(r, "discipline.read")));
+  for (const r of ["player", "selfaccess", "guardian", "parent"])
+    ok(`a ${r} is not drawn the Conduct tab`, !readsConduct(r));
+  for (const r of ["coach", "assistantcoach", "scorer", "medical", "official", "spectator"])
+    ok(`a ${r} is not drawn the Conduct tab`, !readsConduct(r));
+  // The umpire files and cannot read back — the asymmetry db/25 is built on.
+  ok("an official may file but is not drawn the record", filesConduct("official") && !readsConduct("official"));
+  ok("a school administrator reads it but is not offered the form",
+     readsConduct("schooladmin") && !filesConduct("schooladmin"));
+}
+
 console.log(`\n${"─".repeat(52)}\nCLIENT RBAC SUITE: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

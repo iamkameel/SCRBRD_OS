@@ -45,13 +45,12 @@ export async function startSync({ matchId, userId, onChange }) {
   if (!matchId) return { ok: false, reason: "no_match" };
   if (!signedIn()) return { ok: false, reason: "not_signed_in" };
 
-  // scoring_claim() only refuses when the session is ACTIVE with someone
-  // else's live lease — it does not know about a handover in progress, so a
-  // plain claim while one is armed would take the token outright, skipping
-  // the code and the verification handshake (see handover.js's header for
-  // why this check lives here rather than in the database function). Best
-  // effort: a read that fails leaves this exactly as safe, or unsafe, as it
-  // was before the check existed.
+  // A handover in progress: this device is not the holder, and the way in is
+  // the code. The database refuses the plain claim below in both states and
+  // names them (db/28, SCRBRD-059) — this read only saves the refused round
+  // trip, and returns the same reasons, so either answer lands the scorer on
+  // the same "take over" screen. Best effort: a read that fails falls through
+  // to the claim, which is now what enforces it.
   const priorState = await sessionState(matchId);
   if (priorState === "handover_pending" || priorState === "verifying") {
     return { ok: false, reason: priorState };
@@ -67,7 +66,8 @@ export async function startSync({ matchId, userId, onChange }) {
   }
   // A refusal here is an authorization answer from the database, not advice.
   // `lease_active` means a colleague is scoring on another device right now —
-  // taking the token from them is a handover, not a claim.
+  // taking the token from them is a handover, not a claim. `handover_pending`
+  // and `verifying` (db/28) mean one is already under way: enter the code.
   if (!claim?.ok) return { ok: false, reason: claim?.reason || "claim_refused" };
 
   return attachEngine({ matchId, userId, epoch: claim.epoch, onChange });

@@ -201,6 +201,71 @@ group("Dead device — lease expiry and force-release");
 }
 
 // ─────────────────────────────────────────────
+group("A plain claim cannot jump a handover (SCRBRD-059)");
+{
+  // Pending: a second device opening the scorer is refused, by name.
+  const s = mk();
+  s.claim({ scorerId:"uA", deviceId:"dA", role:"scorer" });
+  const armed = s.armHandover({ deviceId:"dA", epoch:1, pendingCount:0 });
+  const jump = s.claim({ scorerId:"uB", deviceId:"dB", role:"coach" });
+  ok("plain claim while HANDOVER_PENDING refused", jump.ok === false);
+  ok("...and the refusal names the state, not the lease", jump.reason === REJECT.HANDOVER_PENDING && jump.reason === "handover_pending");
+  ok("...leaving the handover armed, code intact, epoch unmoved",
+     s.state === SESSION.HANDOVER_PENDING && s.pendingHandover?.code === armed.code && s.epoch === 1);
+  // The same device string under a different scorer is not the arming holder.
+  ok("the arming DEVICE under another scorer is refused too",
+     s.claim({ scorerId:"uB", deviceId:"dA", role:"coach" }).reason === REJECT.HANDOVER_PENDING);
+  // Not lease-gated: the outgoing lease is not refreshed while pending.
+  advance(LEASE_MS + GRACE_MS + 1);
+  ok("still refused once the outgoing lease has lapsed",
+     s.claim({ scorerId:"uB", deviceId:"dB", role:"coach" }).reason === REJECT.HANDOVER_PENDING);
+  // The arming device + scorer taking it back is the client's cancel.
+  const back = s.claim({ scorerId:"uA", deviceId:"dA", role:"scorer" });
+  ok("the arming device may take it back (the client's cancel)", back.ok === true && back.epoch === 2);
+  ok("...which clears the handover", s.state === SESSION.ACTIVE && s.pendingHandover === null);
+  ok("...and the old code no longer works",
+     s.claimHandover({ scorerId:"uB", deviceId:"dB", role:"coach", code: armed.code }).reason === REJECT.NOT_PENDING);
+}
+{
+  // Verifying: nobody claims past it — not a bystander, not the claimant,
+  // not the outgoing device — lease or no lease.
+  const s = mk();
+  s.claim({ scorerId:"uA", deviceId:"dA", role:"scorer" });
+  const armed = s.armHandover({ deviceId:"dA", epoch:1, pendingCount:0 });
+  s.claimHandover({ scorerId:"uB", deviceId:"dB", role:"coach", code: armed.code });
+  ok("session is VERIFYING", s.state === SESSION.VERIFYING);
+  const bystander = s.claim({ scorerId:"uC", deviceId:"dC", role:"coach" });
+  ok("plain claim while VERIFYING refused, by name",
+     bystander.ok === false && bystander.reason === REJECT.VERIFYING && bystander.reason === "verifying");
+  ok("the outgoing device is refused too", s.claim({ scorerId:"uA", deviceId:"dA", role:"scorer" }).reason === REJECT.VERIFYING);
+  ok("the claimant cannot skip its own verification", s.claim({ scorerId:"uB", deviceId:"dB", role:"coach" }).reason === REJECT.VERIFYING);
+  advance(LEASE_MS + GRACE_MS + 1);
+  ok("still refused once the lease has lapsed", s.claim({ scorerId:"uC", deviceId:"dC", role:"coach" }).reason === REJECT.VERIFYING);
+  ok("...with the handover and epoch untouched", s.state === SESSION.VERIFYING && s.epoch === 1 && s.pendingHandover?.claimant?.deviceId === "dB");
+  // The way back from a stalled verification is unchanged: force-release, then claim.
+  ok("a stalled verification is force-released", s.forceRelease({ byRole:"sportsmaster", byScorerId:"uS" }).ok === true);
+  const fresh = s.claim({ scorerId:"uC", deviceId:"dC", role:"coach" });
+  ok("...and the idle match is claimed fresh", fresh.ok === true && fresh.epoch === 3);
+}
+{
+  // Unchanged: the live-lease refusal, and every claim that used to succeed.
+  const s = mk();
+  ok("idle claim still succeeds", s.claim({ scorerId:"uA", deviceId:"dA", role:"scorer" }).ok === true);
+  const steal = s.claim({ scorerId:"uB", deviceId:"dB", role:"coach" });
+  ok("live lease still refused as lease_active", steal.ok === false && steal.reason === REJECT.LEASE_ACTIVE && steal.holder?.deviceId === "dA");
+  ok("the holder re-claiming its own live token still succeeds", s.claim({ scorerId:"uA", deviceId:"dA", role:"scorer" }).ok === true);
+  advance(LEASE_MS + 1);
+  const lapsed = s.claim({ scorerId:"uB", deviceId:"dB", role:"coach" });
+  ok("a lapsed ACTIVE lease is still claimable", lapsed.ok === true && s.holder.deviceId === "dB");
+  // And the handover itself still completes after all that.
+  const armed = s.armHandover({ deviceId:"dB", epoch:s.epoch, pendingCount:0 });
+  ok("the full handover path still works", armed.ok === true &&
+     s.claimHandover({ scorerId:"uA", deviceId:"dA", role:"scorer", code: armed.code }).ok === true &&
+     s.verifyAndTakeOver({ deviceId:"dA", confirm:{ runs:0, wickets:0, balls:0 } }).ok === true &&
+     s.state === SESSION.ACTIVE && s.holder.deviceId === "dA");
+}
+
+// ─────────────────────────────────────────────
 group("Lease expiry blocks writes (no silent zombie scoring)");
 {
   const s = mk();

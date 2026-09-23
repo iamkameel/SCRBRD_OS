@@ -717,6 +717,26 @@ function asDuty(r) {
 }
 function asRequirement(r) { return { role: r.role, kind: r.kind, kindLabel: r.kind_label, live: true }; }
 
+/**
+ * A DRS review of one delivery — see `drs_reviews` in read-api.mjs.
+ *
+ * `pitching`, `impact` and `wickets` are the ball-tracking components and
+ * arrive NULL until there is ball-tracking to measure them; nothing here
+ * invents a value in their place. This resource is reachable only while the
+ * `drs_review` feature is on for the school — off, the read itself is
+ * refused before any row reaches this adapter (see apps/web/src/views/drs.jsx).
+ */
+function asDrsReview(r) {
+  return {
+    matchId: r.match_id, ballSeq: r.ball_seq,
+    evidenceSource: r.evidence_source, calledBy: r.called_by,
+    onField: r.on_field, outcome: r.outcome,
+    pitching: r.pitching, impact: r.impact, wickets: r.wickets,
+    shotOffered: r.shot_offered, notes: r.notes || null,
+    reviewedAt: r.reviewed_at, live: true,
+  };
+}
+
 /** A side as it stood on a date — nothing here is computed in the browser. */
 function asRosterOn(r) {
   return { playerId: r.player_id, name: r.full_name, team: r.team_code,
@@ -938,6 +958,7 @@ const ADAPT = {
   passport_consents: asPassportConsent,
   scouting_consent: asScoutingConsent,
   match_duties: asDuty,
+  drs_reviews: asDrsReview,
   equipment: asEquipment,
   equipment_issues: asIssue,
   recognition: asRecognition,
@@ -971,6 +992,8 @@ const ADAPT = {
   career: asCareer,
   ratings: asRating,
   notes: asNote,
+  dismissal_breakdown: asDismissalBreakdown,
+  disciplinary_records: asMatter,
   // The dashboard's figures. One row, already scoped in Postgres — see the
   // `summary` query in read-api.mjs for why the counting happens there and not
   // here. The adapter only renames; it must never compute a figure the server
@@ -1020,6 +1043,45 @@ function asNote(r) {
     observedOn: r.observed_on ? String(r.observed_on).slice(0, 10) : null,
     author: r.author_name || null, authorId: r.author_id,
     revised: !!r.updated_at,
+  };
+}
+
+/**
+ * One row of "how he's out" or "how he takes wickets", by method.
+ *
+ * `method` stays NULL rather than being coerced to a string here — db/26's
+ * comment and the read API's are both explicit that a NULL dismissal is a
+ * real wicket whose method was never recorded, not a row to drop, and the
+ * view renders it as "Method not recorded" so a sum over this resource never
+ * disagrees with the flat `career.dismissals` / `career.wickets` count.
+ * `count` is coerced to a number because the column arrives as text over
+ * JSON the way every other aggregate count in this file does.
+ */
+function asDismissalBreakdown(r) {
+  return {
+    playerId: r.player_id, name: r.full_name, team: r.team_code, school: r.school_id,
+    side: r.side, method: r.dismissal, count: Number(r.count),
+    live: true,
+  };
+}
+
+/**
+ * A disciplinary matter (SCRBRD-053). No mock twin, and there never should be:
+ * an invented matter about a named child on a demo screen reads exactly like a
+ * real one. Signed out, useLive() returns nothing for this resource because
+ * rbac/ has no demo source for it.
+ *
+ * The recorder's NAME may arrive null — the reader can see the matter and not
+ * the account of whoever filed it — and it is left null rather than defaulted,
+ * so the screen says so instead of inventing somebody.
+ */
+function asMatter(r) {
+  return {
+    id: r.id, playerId: r.player_id, schoolId: r.school_id, matchId: r.match_id ?? null,
+    body: r.body, state: r.state, outcome: r.outcome ?? null,
+    occurredOn: r.occurred_on ? String(r.occurred_on).slice(0, 10) : null,
+    recordedBy: r.recorded_by_name ?? null, recordedById: r.recorded_by,
+    playerName: r.full_name ?? null, updatedAt: r.updated_at ?? null,
   };
 }
 

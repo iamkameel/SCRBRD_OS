@@ -123,6 +123,19 @@ CREATE OR REPLACE FUNCTION _expire_support(p_id uuid) RETURNS void AS $$
    WHERE s.id = p_id AND a.id = s.assignment_id;
 $$ LANGUAGE sql SECURITY DEFINER;
 
+-- SCRBRD-059. The handover section starts from no session at all, whatever a
+-- demonstration left on that match, and lets a lease lapse the way ninety
+-- seconds of silence would. scoring_session has no UPDATE or DELETE policy by
+-- design — transitions go through the definer functions — so both are owner
+-- edits, and both roll back with the transaction.
+CREATE OR REPLACE FUNCTION _scoring_session_reset(p_match uuid) RETURNS void AS $$
+  DELETE FROM scoring_session WHERE match_id = p_match;
+$$ LANGUAGE sql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION _lapse_scoring_lease(p_match uuid) RETURNS void AS $$
+  UPDATE scoring_session SET lease_until = now() - interval '1 minute' WHERE match_id = p_match;
+$$ LANGUAGE sql SECURITY DEFINER;
+
 -- Fixtures this file needs that a database seeded before them never received.
 -- Production was seeded once and has taken apply-NN bundles since, so the
 -- verify bundle cannot assume the current db/98. Written as the owner, before
@@ -210,6 +223,11 @@ DECLARE
   M_STOOD   uuid := '77777777-0000-0000-0000-000000000004';  -- the match he umpired
   M_OTHER   uuid := '77777777-0000-0000-0000-000000000002';  -- one he did not
   D_ID      uuid;
+  -- SCRBRD-059: a match nothing else here scores, so the section owns its session.
+  M_HANDOVER uuid := '77777777-0000-0000-0000-000000000003';
+  v_epoch   integer;
+  v_code    text;
+  v_state   text;
   n int;
 BEGIN
   -- ── 1. Nobody is anybody by default ────────────────────────────
@@ -1726,6 +1744,78 @@ BEGIN
     NOT EXISTS (SELECT 1 FROM pg_policy
                  WHERE polrelid = 'disciplinary_record'::regclass AND polcmd = 'd'),
     'disciplinary_record has a delete policy');
+
+  -- ── 14. A plain claim cannot jump a handover (SCRBRD-059, db/28) ─
+  -- The scoring screen makes a plain scoring_claim() on ordinary mount. While
+  -- a handover is armed or being verified that claim must be refused by the
+  -- DATABASE, naming the state — the client's own pre-check is a courtesy a
+  -- direct API call never meets. Driven through the real functions, as the
+  -- scorer (outgoing, device a) and Sarah (incoming, device b; she also holds
+  -- scoring.correct, which the recovery at the end needs).
+  PERFORM _scoring_session_reset(M_HANDOVER);
+  PERFORM _as(U_SCORER);
+  SELECT c.ok, c.epoch INTO v_ok, v_epoch FROM scoring_claim(M_HANDOVER, 'verify-059-a') c;
+  PERFORM _assert(v_ok AND v_epoch = 1, 'the scorer could not claim an idle match');
+  SELECT a.ok, a.code INTO v_ok, v_code FROM scoring_arm_handover(M_HANDOVER, 'verify-059-a', 0, false) a;
+  PERFORM _assert(v_ok AND v_code ~ '^\d{6}$', 'the scorer could not arm a handover');
+
+  -- Armed: another device's plain claim is refused as handover_pending.
+  PERFORM _as(U_SARAH);
+  SELECT c.ok, c.reason, c.epoch INTO v_ok, v_reason, v_epoch FROM scoring_claim(M_HANDOVER, 'verify-059-b') c;
+  PERFORM _assert(NOT v_ok AND v_reason = 'handover_pending' AND v_epoch = 1,
+    format('a plain claim jumped an armed handover (ok=%s reason=%s)', v_ok, v_reason));
+  SELECT count(*) INTO n FROM scoring_session
+   WHERE match_id = M_HANDOVER AND state = 'handover_pending' AND handover_code = v_code AND epoch = 1;
+  PERFORM _assert(n = 1, 'a refused claim still disturbed the armed handover');
+  -- The arming device's string, sent by somebody else, is not the arming holder.
+  SELECT c.reason INTO v_reason FROM scoring_claim(M_HANDOVER, 'verify-059-a') c;
+  PERFORM _assert(v_reason IS NOT DISTINCT FROM 'handover_pending',
+    'another user claimed an armed handover by naming the arming device');
+  -- Not lease-gated: nothing refreshes the outgoing lease once it is armed.
+  PERFORM _lapse_scoring_lease(M_HANDOVER);
+  SELECT c.reason INTO v_reason FROM scoring_claim(M_HANDOVER, 'verify-059-b') c;
+  PERFORM _assert(v_reason IS NOT DISTINCT FROM 'handover_pending',
+    'an armed handover was claimable once the outgoing lease lapsed');
+
+  -- The arming device and user taking it back is the client's cancel
+  -- (apps/web/src/lib/handover.js) and must keep working.
+  PERFORM _as(U_SCORER);
+  SELECT c.ok, c.epoch INTO v_ok, v_epoch FROM scoring_claim(M_HANDOVER, 'verify-059-a') c;
+  PERFORM _assert(v_ok AND v_epoch = 2, 'the arming device could not take its own handover back');
+  SELECT state::text INTO v_state FROM scoring_session WHERE match_id = M_HANDOVER;
+  PERFORM _assert(v_state = 'active', 'cancelling a handover left the session ' || coalesce(v_state, 'unreadable'));
+
+  -- Verifying: refused as verifying — the claimant, the outgoing device, lease or no lease.
+  SELECT a.code INTO v_code FROM scoring_arm_handover(M_HANDOVER, 'verify-059-a', 0, false) a;
+  PERFORM _as(U_SARAH);
+  SELECT h.ok INTO v_ok FROM scoring_claim_handover(M_HANDOVER, 'verify-059-b', v_code) h;
+  PERFORM _assert(v_ok, 'Sarah could not claim the handover with its code');
+  SELECT c.ok, c.reason, c.epoch INTO v_ok, v_reason, v_epoch FROM scoring_claim(M_HANDOVER, 'verify-059-b') c;
+  PERFORM _assert(NOT v_ok AND v_reason = 'verifying' AND v_epoch = 2,
+    format('the claimant skipped its own verification with a plain claim (ok=%s reason=%s)', v_ok, v_reason));
+  PERFORM _as(U_SCORER);
+  SELECT c.reason INTO v_reason FROM scoring_claim(M_HANDOVER, 'verify-059-a') c;
+  PERFORM _assert(v_reason IS NOT DISTINCT FROM 'verifying',
+    'the outgoing device claimed back past a verification in progress');
+  PERFORM _lapse_scoring_lease(M_HANDOVER);
+  SELECT c.reason INTO v_reason FROM scoring_claim(M_HANDOVER, 'verify-059-a') c;
+  PERFORM _assert(v_reason IS NOT DISTINCT FROM 'verifying',
+    'a verification in progress was claimable once the lease lapsed');
+  SELECT count(*) INTO n FROM scoring_session
+   WHERE match_id = M_HANDOVER AND state = 'verifying' AND epoch = 2 AND claimant_device = 'verify-059-b';
+  PERFORM _assert(n = 1, 'a refused claim still disturbed the verification');
+
+  -- Recovery is unchanged: force-release once the lease has lapsed, then claim.
+  PERFORM _as(U_SARAH);
+  SELECT f.ok INTO v_ok FROM scoring_force_release(M_HANDOVER) f;
+  PERFORM _assert(v_ok, 'a stalled verification could not be force-released');
+  PERFORM _as(U_SCORER);
+  SELECT c.ok, c.epoch INTO v_ok, v_epoch FROM scoring_claim(M_HANDOVER, 'verify-059-a') c;
+  PERFORM _assert(v_ok AND v_epoch = 4, 'the released match could not be claimed fresh');
+  -- And the live-lease refusal is exactly what it was.
+  PERFORM _as(U_SARAH);
+  SELECT c.ok, c.reason INTO v_ok, v_reason FROM scoring_claim(M_HANDOVER, 'verify-059-b') c;
+  PERFORM _assert(NOT v_ok AND v_reason = 'lease_active', 'a live lease is no longer refused as lease_active');
 
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
