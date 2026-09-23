@@ -61,13 +61,14 @@ export const UPGRADES = [
   { id: "up46", category: "AI & Analysis", priority: "medium", status: "shipped", title: "Directional Reach Chart",
     desc: "Batting power and directionality by the ground's own angular families \u2014 fine leg through third man \u2014 as a spider chart of mean reach per direction. \u201cPrecision\u201d is deliberately not drawn: the log records where a ball landed, never where a batter meant it to go, so no axis claims to measure intent.", effort: "Medium", walk: ["read", "browser-read"] },
 
+  { id: "up24", category: "AI & Analysis", priority: "low",    status: "shipped", title: "DRS Review Panel",
+    desc: "The screen is built and proven end to end — a match's reviews listed with the Law 36 components and always how the decision was known, and a form to record one for whoever holds scoring.correct — and it stays switched off for every school on the platform, on purpose, until there is ball-tracking to feed it. “Pitching in line” entered by a person today is a judgement wearing the visual language of a measurement, which is exactly what the platform switch (drs_review in packages/policy/src/modules.mjs, enforced again by a trigger in Postgres) exists to prevent. Nobody sees this panel by default; a platform administrator throwing that one switch is the only way it becomes visible anywhere, and switching it back off makes it disappear again without touching a row on record.", effort: "High", walk: ["drs", "browser-drs"] },
+
   // ── Built underneath, not yet drawn ──────────────────────────
   { id: "up11", category: "Admin",         priority: "low",    status: "partial", title: "Season History Archive",
     desc: "Seasons and competitions are modelled; there is no year-on-year view over them.", effort: "Medium", undrawn: ["seasons"] /* the read exists; no view calls it */ },
   { id: "up23", category: "Admin",         priority: "low",    status: "partial", title: "Support Access Screen",
     desc: "A platform administrator can begin a one-hour, one-school session through the API and the school sees it here. Nothing draws the platform side yet.", effort: "Low", undrawn: ["support_access_begin"] /* the school side is drawn in Settings; this is the platform side, which is an API route and no screen */ },
-  { id: "up24", category: "AI & Analysis", priority: "low",    status: "partial", title: "DRS Review Panel",
-    desc: "Built and switched off platform-wide until there is ball-tracking to feed it.", effort: "High", undrawn: ["drs_reviews"] /* the read exists and the module is off platform-wide */ },
   { id: "up51", category: "Admin",         priority: "high",   status: "partial", title: "Disciplinary Record",
     desc: "The record the two disciplinary capabilities had been promising since db/01 and never gated: a matter about a named child, filed by the umpire who stood at the match or by the school, concluded by the school, readable by the head, the office, the boy himself and the league that runs the fixture — and by nobody else. Every read of one is on the school's own record. No screen draws it yet: who is shown a live matter about themselves, and how, is a product decision the schema does not get to make.", effort: "Medium", undrawn: ["disciplinary_records"] /* the read and both write routes exist; no view calls them */ },
 

@@ -717,6 +717,26 @@ function asDuty(r) {
 }
 function asRequirement(r) { return { role: r.role, kind: r.kind, kindLabel: r.kind_label, live: true }; }
 
+/**
+ * A DRS review of one delivery — see `drs_reviews` in read-api.mjs.
+ *
+ * `pitching`, `impact` and `wickets` are the ball-tracking components and
+ * arrive NULL until there is ball-tracking to measure them; nothing here
+ * invents a value in their place. This resource is reachable only while the
+ * `drs_review` feature is on for the school — off, the read itself is
+ * refused before any row reaches this adapter (see apps/web/src/views/drs.jsx).
+ */
+function asDrsReview(r) {
+  return {
+    matchId: r.match_id, ballSeq: r.ball_seq,
+    evidenceSource: r.evidence_source, calledBy: r.called_by,
+    onField: r.on_field, outcome: r.outcome,
+    pitching: r.pitching, impact: r.impact, wickets: r.wickets,
+    shotOffered: r.shot_offered, notes: r.notes || null,
+    reviewedAt: r.reviewed_at, live: true,
+  };
+}
+
 /** A side as it stood on a date — nothing here is computed in the browser. */
 function asRosterOn(r) {
   return { playerId: r.player_id, name: r.full_name, team: r.team_code,
@@ -938,6 +958,7 @@ const ADAPT = {
   passport_consents: asPassportConsent,
   scouting_consent: asScoutingConsent,
   match_duties: asDuty,
+  drs_reviews: asDrsReview,
   equipment: asEquipment,
   equipment_issues: asIssue,
   recognition: asRecognition,
