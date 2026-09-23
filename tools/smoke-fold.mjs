@@ -31,6 +31,7 @@ import pg from "pg";
 import { SyncEngine, memoryStorage } from "@scrbrd/sync";
 import {
   deriveInnings, inningsStart, batters, bowler, ball, BALL_TYPE, undoLast, newEventId,
+  noPlacement, placementEvidence, evidenceLabel, PLACEMENT_FIELD, PLACEMENT_NULL, CAPTURE_PROFILE,
 } from "@scrbrd/scoring";
 
 const PORT = 8796;
@@ -106,13 +107,16 @@ try {
   ok("a refused claim leaves the real holder's session untouched",
      stillHeld[0]?.holder_device === DEVICE && stillHeld[0]?.epoch === epoch);
 
+  let online = true;
   // Everything is sent as it happens, so every undo lands on a SYNCED event
   // and therefore appends a void rather than truncating. That is the case the
   // two folds disagreed about, so it is the case worth driving.
   const engine = new SyncEngine({
     matchId: MATCH, deviceId: DEVICE, scorerId: profile.body.user.id, epoch, innings: 0,
     storage: memoryStorage(),
-    isOnline: () => true,
+    // Switchable, so the declared-profile innings below can be recorded with
+    // no signal and sent afterwards — the offline queue, not a live post.
+    isOnline: () => online,
     transport: async (matchId, batch) => {
       const r = await api(`/api/matches/${matchId}/events`, {
         method: "POST", token, body: { events: batch } });
@@ -315,6 +319,74 @@ try {
   const totalFaced = careerRows.reduce((a, r) => a + Number(r.balls_faced), 0);
   ok(`a corrected ball is not in anyone's figures for this match (${totalFaced} faced, ${local.balls} legal + 2 not legal)`,
      totalFaced === local.batsmen.reduce((a, b) => a + b.balls, 0));
+
+  group("What an innings declared it would capture — both folds (SCRBRD-039)");
+  // Innings 0 above declared nothing, like every innings scored before a
+  // profile could be declared. It must read exactly as it always did.
+  const [undeclared] = await dbq(
+    `select declared_profile, points, placed, point_evidence, placement_evidence
+       from innings_placement_evidence where match_id = $1 and innings = 0`, [MATCH]);
+  const localEv0 = placementEvidence(local.ballLog, { declared: local.declaredProfile });
+  ok("the undeclared innings is undeclared in both folds",
+     local.declaredProfile === null && undeclared?.declared_profile === null);
+  ok(`...and grades as it always did — device ${localEv0.label}, database ${undeclared?.point_evidence}, count-only ${evidenceLabel(localEv0.n)}`,
+     localEv0.label === evidenceLabel(localEv0.n) && undeclared?.point_evidence === localEv0.label
+     && undeclared?.placement_evidence === evidenceLabel(Number(undeclared?.placed)));
+
+  // Innings 1, recorded with NO SIGNAL: declared standard, then a sector and a
+  // quick single, then a second declaration — quick — arriving after the
+  // balls. Everything sits in the outbox until the signal comes back, then
+  // goes to the server in one flush, in order.
+  online = false;
+  const log1 = [];
+  const rec1 = async (raw) => {
+    const ev = stamp({ ...raw, innings: 1 });
+    log1.push(ev);
+    await engine.record(ev);
+    return ev;
+  };
+  const open1 = { innings: 1, battingTeam: "Michaelhouse", bowlingTeam: "Hilton 1st XI", squad, overs: 20 };
+  const crease = { striker: P[0], nonStriker: P[1], bowler: P[2] };
+  await rec1(inningsStart({ ...open1, captureProfile: CAPTURE_PROFILE.STANDARD }));
+  await rec1(batters({ innings: 1, striker: P[0], nonStriker: P[1] }));
+  await rec1(bowler({ innings: 1, bowler: P[2] }));
+  await rec1(ball({ innings: 1, type: BALL_TYPE.RUN, value: 2, ...crease, seg: 3, zone: "outer",
+                    placementSource: "sector", captureProfile: CAPTURE_PROFILE.STANDARD }));
+  await rec1(ball({ innings: 1, type: BALL_TYPE.RUN, value: 0, ...crease,
+                    ...noPlacement(PLACEMENT_NULL.NOT_REQUIRED, CAPTURE_PROFILE.QUICK) }));
+  await rec1(inningsStart({ ...open1, captureProfile: CAPTURE_PROFILE.QUICK }));   // too late
+  ok(`offline: the declared innings is queued, not sent (${engine.pendingCount} pending)`,
+     engine.pendingCount === log1.length);
+
+  online = true;
+  for (let i = 0; i < 40 && engine.pendingCount > 0; i++) {
+    await engine.sync();
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  ok("the offline-queued innings reached the server when the signal came back", engine.pendingCount === 0);
+
+  const local1 = deriveInnings(log1);
+  const [remote1] = await dbq(
+    `select declared_profile, deliveries, points, placed, point_evidence, placement_evidence
+       from innings_placement_evidence where match_id = $1 and innings = 1`, [MATCH]);
+  const pt1 = placementEvidence(local1.ballLog, { need: PLACEMENT_FIELD.POINT, declared: local1.declaredProfile });
+  const pl1 = placementEvidence(local1.ballLog, { need: PLACEMENT_FIELD.SECTOR, declared: local1.declaredProfile });
+  const stored = await dbq(
+    `select capture_profile from ball_event
+      where match_id = $1 and innings = 1 and kind = 'innings_start' order by seq`, [MATCH]);
+  ok("the log keeps BOTH declarations, in the capture_profile column — deriving decides, nothing is dropped",
+     stored.map((r) => r.capture_profile).join() === "standard,quick");
+  ok(`declared agree — device ${local1.declaredProfile}, database ${remote1?.declared_profile}`,
+     local1.declaredProfile === remote1?.declared_profile);
+  // Independently of both: the promise was made before the balls, the second
+  // one after them, so the first stands.
+  ok("...and it is standard: the declaration after the balls is refused by both", remote1?.declared_profile === "standard");
+  ok(`no exact point in a standard innings is not captured, by design — device ${pt1.label}, database ${remote1?.point_evidence}`,
+     pt1.label === "not_captured" && remote1?.point_evidence === pt1.label);
+  ok(`one sector of two deliveries is graded, not excused — device ${pl1.label}, database ${remote1?.placement_evidence}`,
+     pl1.label === "insufficient" && remote1?.placement_evidence === pl1.label && Number(remote1?.placed) === 1);
+  ok("the declaration moved no cricket: the second innings' score is its balls",
+     local1.runs === 2 && local1.balls === 2 && Number(remote1?.deliveries) === 2);
 
   group("The handover fold sees the same match");
   // scoring_verify_takeover reads ball_event_live too now. Asking it with the

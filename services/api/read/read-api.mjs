@@ -177,9 +177,19 @@ export const READ_QUERIES = {
                   -- a season of exact placements is drawn as eight spokes.
                   b.placement_source,
                   b.striker_id, b.bowler_id,
-                  m.starts_at
+                  m.starts_at,
+                  -- What this ball's innings DECLARED it would capture
+                  -- (SCRBRD-039, db/31). A career mixes innings, so the
+                  -- heat map reads each ball against its own innings: a
+                  -- sector from an innings declared 'standard' was never
+                  -- asked for a point, and says so, rather than being counted
+                  -- with the balls that should have had one and do not.
+                  -- NULL is undeclared, which reads exactly as before.
+                  d.declared_profile
              from ball_event_live b
              join match m on m.id = b.match_id
+             left join innings_declared_profile d
+                    on d.match_id = b.match_id and d.innings = b.innings
             where b.striker_id = $1
               and b.kind = 'ball'
               and (b.theta is not null or b.seg is not null)

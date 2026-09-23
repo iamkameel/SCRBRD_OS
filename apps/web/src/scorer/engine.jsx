@@ -21,7 +21,7 @@ import { FocusPad, ScoringPanel } from "./scoring.jsx";
 import { SetupScreen } from "./setup.jsx";
 import { BattingOrderSheet, HandoverSheet, Innings2Sheet, InningsReviewSheet, NewOverSheet, NoBallSheet, PenaltySheet, RevisionSheet, ShotSelectorSheet, WicketSheet } from "./sheets.jsx";
 import { INT_TEAMS } from "./teams.js";
-import { BallDot, Btn, Card, GS, Glass, Lbl } from "./ui.jsx";
+import { BallDot, Btn, CaptureProfilePicker, Card, GS, Glass, Lbl } from "./ui.jsx";
 
 // Reconstruct an event log from a seeded innings object.
 //
@@ -293,6 +293,10 @@ function SCRBRD({resume}={}){
           battingTeam: resume.cfg.team1, bowlingTeam: resume.cfg.team2,
           teamKey: resume.cfg.teamKey1, bowlingTeamKey: resume.cfg.teamKey2,
           squad, bowlingSquad: [], overs: resume.cfg.overs ?? 20,
+          // A fixture that carries a declaration passes it on; none does yet,
+          // so this innings opens undeclared — exactly as before — and the
+          // scorer declares it on the opener sheet before the first ball.
+          captureProfile: resume.cfg.captureProfile ?? undefined,
           id: newEventId(deviceIdRef.current, id ?? "local"),
         })] : [], []]);
         setCurIn(0);
@@ -374,10 +378,13 @@ function SCRBRD({resume}={}){
 
     // Opening an innings is an event, not an object. Both innings are opened
     // up front so the second already knows its squads when the chase begins.
+    // The capture profile chosen at setup is declared on BOTH, for the same
+    // reason (SCRBRD-039); the innings break may change the second's.
+    const captureProfile=cfg.captureProfile??undefined;
     const open1=[inningsStart({innings:0,battingTeam:cfg.team1,bowlingTeam:cfg.team2,
-      squad:sq1,bowlingSquad:bsq1,twelfthMan:cfg.twelfth1||null,teamKey:tk1,bowlingTeamKey:tk2,overs:cfg.overs||20})];
+      squad:sq1,bowlingSquad:bsq1,twelfthMan:cfg.twelfth1||null,teamKey:tk1,bowlingTeamKey:tk2,overs:cfg.overs||20,captureProfile})];
     const open2=[inningsStart({innings:1,battingTeam:cfg.team2,bowlingTeam:cfg.team1,
-      squad:sq2,bowlingSquad:bsq2,twelfthMan:cfg.twelfth2||null,teamKey:tk2,bowlingTeamKey:tk1,overs:cfg.overs||20})];
+      squad:sq2,bowlingSquad:bsq2,twelfthMan:cfg.twelfth2||null,teamKey:tk2,bowlingTeamKey:tk1,overs:cfg.overs||20,captureProfile})];
 
     // Openers and opening bowler chosen in setup step 4.
     if(cfg.opener1&&cfg.opener2&&cfg.openBowler){
@@ -393,6 +400,28 @@ function SCRBRD({resume}={}){
   };
 
   const toggleLine=k=>setHidden(prev=>{const n=new Set(prev);n.has(k)?n.delete(k):n.add(k);return n;});
+
+  // ── Declaring what this innings will capture (SCRBRD-039) ──
+  // Open until the first ball, and not after: the declaration is a promise
+  // about the balls to come, and the fold ignores one that arrives behind
+  // them. A real fixture opens its innings during hydration, before anyone
+  // has been asked, so the opener sheet offers it here. Choosing re-declares
+  // the innings from itself — every field as it stands, plus the profile —
+  // the same move the innings break already makes (SCRBRD-063).
+  //
+  // Only before the openers are named, too. innings_start is the one event
+  // undo will not walk past (undo.mjs FOUNDATION), so a declaration made
+  // between the striker and the non-striker would pin the striker in place.
+  const canDeclare=!!inn?.battingTeam&&(inn?.ballLog?.length??0)===0&&(inn?.batsmen?.length??0)===0;
+  const declareCapture=(captureProfile)=>{
+    if(!canDeclare||captureProfile===inn.declaredProfile)return;
+    emit(inningsStart({
+      battingTeam:inn.battingTeam, bowlingTeam:inn.bowlingTeam,
+      teamKey:inn.teamKey, bowlingTeamKey:inn.bowlingTeamKey,
+      squad:inn.squad, bowlingSquad:inn.bowlingSquad, twelfthMan:inn.twelfthMan,
+      overs:inn.overs, target:inn.target, captureProfile,
+    }));
+  };
 
   // Guard: ensure players are set before scoring
   const guardReady=()=>{
@@ -807,6 +836,7 @@ function SCRBRD({resume}={}){
         batsmen={inn?.batsmen||[]}
         teamKey={inn?.teamKey}
         twelfthMan={inn?.twelfthMan}
+        header={canDeclare?<CaptureProfilePicker value={inn.declaredProfile} onChange={declareCapture}/>:null}
         onSend={name=>{
           const hasStriker=!!(inn?.striker);
           const hasNonStriker=!!(inn?.nonStriker);
@@ -890,8 +920,9 @@ function SCRBRD({resume}={}){
         target={(innings[0]?.runs||0)+1}
         teamName={match?.team2||innings[1]?.battingTeam||""}
         overs={match?.overs||20}
+        declared={innings[1]?.declaredProfile??innings[0]?.declaredProfile??null}
         onClose={()=>setModal(null)}
-        onStart={()=>{
+        onStart={(captureProfile)=>{
           // SCRBRD-063. The second innings never got its own INNINGS_START —
           // nothing set inn.target, so inningsOverReason() could never return
           // target_reached, and a chase that reached its target just kept
@@ -920,6 +951,9 @@ function SCRBRD({resume}={}){
             twelfthMan: innings[1]?.twelfthMan ?? null,
             overs: innings[1]?.overs || match?.overs || 20,
             target: (innings[0]?.runs || 0) + 1,
+            // What the break chose (SCRBRD-039). Left off when nothing was
+            // chosen: absence keeps whatever innings[1] already declared.
+            captureProfile: captureProfile ?? undefined,
           }));
           setModal("opener");
         }}/>

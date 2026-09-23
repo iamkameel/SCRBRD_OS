@@ -893,6 +893,58 @@ BEGIN
   SELECT count(*) INTO n FROM notification_read;
   PERFORM _assert(n = 0, 'one person can see which notices another person has opened');
 
+  -- ── SCRBRD-039. What an innings declared it would capture ─────
+  -- db/31's two views derive the declaration from innings_start rows and grade
+  -- placement against it. Two things to prove against the real policies:
+  --
+  --   - The seed's one scored innings (Maritzburg, …0004) declared nothing,
+  --     like every innings before SCRBRD-039, and must read EXACTLY as db/08's
+  --     count-only label always graded it — the backward-compatibility claim,
+  --     live, on sector-era and point-era balls together.
+  --   - The views are the caller's view of the log and nothing more: every
+  --     innings they name is one whose rows the reader can see, and a
+  --     principal with no assignment sees none.
+  --
+  -- What a DECLARED innings reads is driven through the real API, lease and
+  -- epoch in tools/smoke-fold.mjs; it cannot be written from here without
+  -- holding a scoring session.
+  PERFORM _as(U_COACH);
+  DECLARE
+    m_seed uuid := '77777777-0000-0000-0000-000000000004';
+    r      record;
+    v_pts  bigint;
+    v_plc  bigint;
+  BEGIN
+    SELECT count(*) FILTER (WHERE placement_source = 'point'),
+           count(*) FILTER (WHERE theta IS NOT NULL OR seg IS NOT NULL)
+      INTO v_pts, v_plc
+      FROM ball_event_live WHERE match_id = m_seed AND innings = 0 AND kind = 'ball';
+    PERFORM _assert(v_pts > 0 AND v_plc > v_pts,
+      'the coach cannot see the seeded innings (points and sector-era balls) the declared-profile checks read');
+    SELECT * INTO r FROM innings_placement_evidence WHERE match_id = m_seed AND innings = 0;
+    PERFORM _assert(r.match_id IS NOT NULL, 'innings_placement_evidence does not show the coach his own side''s innings');
+    PERFORM _assert(r.declared_profile IS NULL,
+      format('an innings with no declaration reads as declared %s', r.declared_profile));
+    PERFORM _assert(r.points = v_pts AND r.placed = v_plc,
+      format('innings_placement_evidence counts %s points / %s placed; the log holds %s / %s', r.points, r.placed, v_pts, v_plc));
+    PERFORM _assert(r.point_evidence = evidence_label(v_pts) AND r.placement_evidence = evidence_label(v_plc),
+      format('an undeclared innings no longer reads as before: %s / %s, db/08 says %s / %s',
+             r.point_evidence, r.placement_evidence, evidence_label(v_pts), evidence_label(v_plc)));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM innings_placement_evidence WHERE point_evidence = 'not_captured'
+                                                                         OR placement_evidence = 'not_captured')
+                    AND NOT EXISTS (SELECT 1 FROM innings_declared_profile),
+      'the seed declared nothing, yet something in it is excused as not captured');
+    PERFORM _assert(NOT EXISTS (
+        SELECT 1 FROM innings_placement_evidence e
+         WHERE NOT EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = e.match_id AND b.innings = e.innings)),
+      'innings_placement_evidence names an innings whose log the reader cannot see');
+  END;
+  PERFORM _as('00000000-0000-0000-0000-0000000000de');
+  SELECT count(*) INTO n FROM innings_placement_evidence;
+  PERFORM _assert(n = 0, format('a principal with no assignment sees %s innings of placement evidence', n));
+  SELECT count(*) INTO n FROM innings_declared_profile;
+  PERFORM _assert(n = 0, format('a principal with no assignment sees %s capture declarations', n));
+
   -- ── 12. Revocation takes effect immediately ────────────────────
   -- This is the property the SECURITY DEFINER lookup was chosen for. Nothing
   -- about authority is carried in the session, so deactivating an assignment

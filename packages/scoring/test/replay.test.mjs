@@ -7,6 +7,9 @@
  *   E. the wire round-trip (client event ↔ ball_event row) is lossless
  *   H. an innings is over when the laws say so, and closed only when a scorer
  *      has confirmed the figures the log actually holds (SCRBRD-038)
+ *   I. a declared capture profile is read against the log and never rewrites
+ *      it — and an innings that declared nothing replays as it always did
+ *      (SCRBRD-039)
  */
 import {
   deriveInnings, deriveMatch, fmtOvers, confirmationState, sealInnings, SEAL_REFUSAL,
@@ -17,6 +20,7 @@ import {
   zoneFromRadius, closePositionFor, hasPoint, heatMapEligible, batHandOf,
   thetaFromClock, clockFromTheta, fieldingCircle, depthBand, positionName,
   PLACEMENT_SOURCE, PLACEMENT_NULL, CLOSE_RADIUS, DISMISSAL, chargedToBowler, normaliseDismissal, revision,
+  CAPTURE_PROFILE, PLACEMENT_FIELD, NOT_CAPTURED, evidenceLabel, placementEvidence, profileCollects,
 } from "../src/index.mjs";
 
 let pass = 0, fail = 0;
@@ -845,6 +849,161 @@ group("H. The seal — over is not closed (SCRBRD-038)");
      JSON.stringify(deriveInnings(refusedLog)) === JSON.stringify(deriveInnings(refusedLog)));
   ok("...and a later good seal clears the refusal",
      deriveInnings([...refusedLog, goodSeal]).sealRefused === null);
+}
+
+// ── I. The declared capture profile ──────────────────────
+group("I. What the innings declared it would capture (SCRBRD-039)");
+{
+  // A mixed innings, the way the pad actually writes one: a tapped point, a
+  // sector, a quick run with nothing placed, and a leave with no contact.
+  const point = ball({ type: BALL_TYPE.RUN, value: 4, ...placementFromTap({ angle: 300, radius: 0.9 }) });
+  const sector = ball({ type: BALL_TYPE.RUN, value: 1, seg: 3, zone: "outer",
+                        placementSource: PLACEMENT_SOURCE.SECTOR, captureProfile: CAPTURE_PROFILE.STANDARD });
+  const quick = ball({ type: BALL_TYPE.RUN, value: 2, ...noPlacement(PLACEMENT_NULL.NOT_REQUIRED, CAPTURE_PROFILE.QUICK) });
+  const leave = ball({ type: BALL_TYPE.RUN, value: 0, shot: "leave", ...noPlacement(PLACEMENT_NULL.NO_CONTACT, CAPTURE_PROFILE.QUICK) });
+  const deliveries = [point, sector, quick, leave];
+  const startWith = (captureProfile) => [
+    inningsStart({ battingTeam: "Hilton College", bowlingTeam: "Westville Boys'", squad: SQ_A,
+                   bowlingSquad: SQ_B, overs: 20, captureProfile, clientTs: 1 }),
+    batters({ striker: "p1", nonStriker: "p2", clientTs: 2 }), bowler({ bowler: "w1", clientTs: 3 }),
+  ];
+  const strip = (inn) => { const { declaredProfile, ...rest } = inn; return JSON.stringify(rest); };
+
+  // ── The event ──
+  ok("an undeclared innings_start carries no captureProfile key at all",
+     !("captureProfile" in inningsStart({ battingTeam: "A", bowlingTeam: "B" })));
+  ok("a declared one carries it", inningsStart({ battingTeam: "A", captureProfile: "standard" }).captureProfile === "standard");
+  let threw = null;
+  try { inningsStart({ battingTeam: "A", captureProfile: "Full" }); } catch (e) { threw = e; }
+  ok("a profile the model does not define is refused at the constructor, by name",
+     threw instanceof TypeError && /unknown capture profile "Full"/.test(threw.message));
+
+  // ── Backward compatibility: a log from before this existed ──
+  // Written as a raw object, the shape every innings_start already on a phone
+  // or in the server's log has. It must replay to the same innings, and every
+  // label on it must be the count-only label it always was.
+  const legacyStart = { kind: KIND.INNINGS_START, innings: 0, clientTs: 1, battingTeam: "Hilton College",
+    bowlingTeam: "Westville Boys'", teamKey: "Hilton College", bowlingTeamKey: "Westville Boys'",
+    squad: SQ_A, bowlingSquad: SQ_B, twelfthMan: null, overs: 20, target: null };
+  const legacyLog = [legacyStart, ...startWith(undefined).slice(1), ...deliveries];
+  const legacy = deriveInnings(legacyLog);
+  ok("an innings that declared nothing folds to declaredProfile null", legacy.declaredProfile === null);
+  ok("...and to exactly the innings a freshly built undeclared start gives",
+     JSON.stringify(legacy) === JSON.stringify(deriveInnings([...startWith(undefined), ...deliveries])));
+  ok("the legacy score is untouched", legacy.runs === 7 && legacy.balls === 4);
+  const lp = placementEvidence(legacy.ballLog, { need: PLACEMENT_FIELD.POINT, declared: legacy.declaredProfile });
+  const ls = placementEvidence(legacy.ballLog, { need: PLACEMENT_FIELD.SECTOR, declared: legacy.declaredProfile });
+  ok("an undeclared innings grades points by count alone, as before", lp.label === evidenceLabel(lp.n) && lp.n === 1);
+  ok("...and sectors", ls.label === evidenceLabel(ls.n) && ls.n === 2);
+  ok("...and nothing in it is excused as not captured", lp.notCaptured === 0 && ls.notCaptured === 0);
+  const empty = deriveInnings([legacyStart, ...deliveries.slice(2)]);
+  ok("an undeclared innings with no placement at all is 'none', never 'not_captured'",
+     placementEvidence(empty.ballLog, { declared: empty.declaredProfile }).label === "none");
+
+  // ── The declaration never moves the cricket ──
+  for (const p of Object.values(CAPTURE_PROFILE)) {
+    const inn = deriveInnings([...startWith(p), ...deliveries]);
+    ok(`declared ${p}: folds to ${p}`, inn.declaredProfile === p);
+    ok(`declared ${p}: every other field is the undeclared innings, exactly`,
+       strip(inn) === strip(deriveInnings([...startWith(undefined), ...deliveries])));
+  }
+
+  // ── Reading the evidence against it ──
+  const std = deriveInnings([...startWith("standard"), quick, leave]);
+  ok("a standard innings with no points: the heat map is not captured, by design",
+     placementEvidence(std.ballLog, { declared: std.declaredProfile }).label === NOT_CAPTURED);
+  ok("...but its missing sectors are a real 'none' — standard asked for them",
+     placementEvidence(std.ballLog, { need: PLACEMENT_FIELD.SECTOR, declared: std.declaredProfile }).label === "none");
+  const full = deriveInnings([...startWith("full"), quick, leave]);
+  ok("the same balls under a full declaration are missing, not excused",
+     placementEvidence(full.ballLog, { declared: full.declaredProfile }).label === "none");
+  const qk = deriveInnings([...startWith("quick"), quick, leave]);
+  const qe = placementEvidence(qk.ballLog, { need: PLACEMENT_FIELD.SECTOR, declared: qk.declaredProfile });
+  ok("a quick innings never asked for a sector", qe.label === NOT_CAPTURED && qe.notCaptured === 2 && qe.missing === 0);
+  const stray = deriveInnings([...startWith("standard"), point, quick]);
+  ok("a point tapped in a standard innings is real data and graded as such",
+     placementEvidence(stray.ballLog, { declared: stray.declaredProfile }).label === "insufficient");
+  ok("an empty quick innings grades as db/31 does: not captured",
+     placementEvidence([], { declared: "quick" }).label === NOT_CAPTURED && evidenceLabel(0, "quick", "point") === NOT_CAPTURED);
+  ok("thresholds are db/08's evidence_label",
+     [0, 29, 30, 99, 100, 249, 250].map((n) => evidenceLabel(n)).join() === "none,insufficient,low,low,moderate,moderate,high");
+  ok("profiles collect what they say", profileCollects("full", "point") && profileCollects("standard", "sector")
+     && !profileCollects("standard", "point") && !profileCollects("quick", "sector") && profileCollects(null, "point"));
+
+  // Across innings — a career — each ball is read against its own innings.
+  const career = [
+    ...[quick, leave].map((b) => ({ ...b, declaredProfile: "standard" })),
+    ...[quick].map((b) => ({ ...b, declaredProfile: null })),
+  ];
+  const ce = placementEvidence(career, { declaredFor: (b) => b.declaredProfile });
+  ok("a career splits never-asked from missing", ce.notCaptured === 2 && ce.missing === 1 && ce.label === "none");
+  ok("...and is 'not captured' only when every gap was by design",
+     placementEvidence(career.slice(0, 2), { declaredFor: (b) => b.declaredProfile }).label === NOT_CAPTURED);
+
+  // ── The three rules of the fold ──
+  const redeclare = (o) => inningsStart({ battingTeam: "Hilton College", bowlingTeam: "Westville Boys'",
+                                          squad: SQ_A, bowlingSquad: SQ_B, ...o });
+  const late = deriveInnings([...startWith(undefined), point, redeclare({ captureProfile: "quick" })]);
+  ok("a declaration after the first delivery is not honoured", late.declaredProfile === null);
+  const lateOver = deriveInnings([...startWith("full"), point, redeclare({ captureProfile: "quick" })]);
+  ok("...nor may it overwrite one made in time", lateOver.declaredProfile === "full");
+  const keep = deriveInnings([...startWith("standard"), redeclare({ target: 50 }), quick]);
+  ok("a re-declared innings_start without the field keeps the declaration (SCRBRD-063's break)",
+     keep.declaredProfile === "standard" && keep.target === 50);
+  const changed = deriveInnings([...startWith("standard"), redeclare({ captureProfile: "quick" }), quick]);
+  ok("the latest declaration before the first ball wins", changed.declaredProfile === "quick");
+  const bogus = deriveInnings([{ ...legacyStart, captureProfile: "everything" }, ...deliveries]);
+  ok("an unknown value in a log is not a declaration, and does not throw", bogus.declaredProfile === null && bogus.runs === 7);
+  const undone = { ...point, id: "b-undone" };
+  const afterVoid = deriveInnings([...startWith(undefined), undone, voidEvent({ target: "b-undone" }),
+    redeclare({ captureProfile: "standard" })]);
+  ok("a ball that was voided never happened, so a declaration after it is still in time",
+     afterVoid.declaredProfile === "standard" && afterVoid.balls === 0);
+
+  // ── The wire, and the offline queue ──
+  const declaredStart = { ...redeclare({ captureProfile: "standard" }), id: "d:1" };
+  const row = toRow(declaredStart);
+  ok("the declaration travels in the capture_profile column, which db/07's CHECK guards",
+     row.capture_profile === "standard" && !("captureProfile" in row.payload));
+  ok("...and comes back off it", fromRow({ ...row, seq: 1, idempotency_key: "d:1" }).captureProfile === "standard");
+  const oldRow = toRow(legacyStart);
+  ok("an undeclared start sends no capture_profile at all", !("capture_profile" in oldRow));
+  ok("...and an old row with a NULL column reads back undeclared",
+     !("captureProfile" in fromRow({ ...oldRow, capture_profile: null, seq: 1 })));
+
+  // An innings recorded with no signal: every event goes to disk as JSON
+  // inside a queue entry (packages/sync, record()), is replayed locally from
+  // there ({...payload, id, seq}), then crosses the wire and comes back as a
+  // row. All three views of the one log must fold to the same innings.
+  const device = [...startWith("standard"), ...deliveries].map((e, i) => ({ ...e, id: `dev:${i}` }));
+  const disk = device.map((e, i) => JSON.stringify({ idempotencyKey: e.id, clientSeq: i + 1, payload: e }));
+  const fromQueue = disk.map((j) => JSON.parse(j)).map((q, i) => ({ ...q.payload, id: q.idempotencyKey, seq: 1e9 + i }));
+  const fromServer = device.map((e, i) => fromRow({ ...toRow(e), seq: i + 1, idempotency_key: e.id }));
+  const here = deriveInnings(device), queued = deriveInnings(fromQueue), synced = deriveInnings(fromServer);
+  ok("an offline-queued declared innings replays from the queue as recorded",
+     queued.declaredProfile === "standard" && strip(queued).replace(/"seq":\d+(\.\d+)?(e\+\d+)?,?/g, "")
+       === strip(here).replace(/"seq":\d+(\.\d+)?(e\+\d+)?,?/g, ""));
+  ok("...and from the server's rows once it syncs",
+     synced.declaredProfile === "standard" && synced.runs === here.runs && synced.balls === here.balls
+     && placementEvidence(synced.ballLog, { declared: synced.declaredProfile }).label
+        === placementEvidence(here.ballLog, { declared: here.declaredProfile }).label);
+  // A queue written by a build that predates this — no key on anything — still
+  // applies, and to an undeclared innings, not to an error.
+  const oldQueue = legacyLog
+    .map((e, i) => JSON.parse(JSON.stringify({ idempotencyKey: `old:${i}`, payload: e })))
+    .map((q, i) => ({ ...q.payload, id: q.idempotencyKey, seq: 1e9 + i }));
+  const oldInn = deriveInnings(oldQueue);
+  ok("a queue from an older build applies, undeclared, with its score intact",
+     oldInn.declaredProfile === null && oldInn.runs === legacy.runs && oldInn.balls === legacy.balls);
+  // And a match that mixes them: declared on the new device, the second
+  // innings re-opened by an older device at the break.
+  const m = deriveMatch([
+    ...[...startWith("quick"), quick].map((e) => ({ ...e, innings: 0 })),
+    { ...legacyStart, innings: 1, target: 3 },
+    { ...quick, innings: 1 },
+  ]);
+  ok("each innings keeps its own declaration across a mixed-build match",
+     m.innings[0].declaredProfile === "quick" && m.innings[1].declaredProfile === null);
 }
 
 console.log(`\n${"─".repeat(52)}\nSCORING SUITE: ${pass} passed, ${fail} failed`);

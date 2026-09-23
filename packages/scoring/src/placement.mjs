@@ -319,6 +319,100 @@ export function heatMapEligible(balls = []) {
   return { eligible, excluded, excludedCount: excluded.length };
 }
 
+// ── How much a placement figure rests on, and why it is thin ─────
+/**
+ * What each DECLARED capture profile asks the scorer for. SCRBRD-039.
+ *
+ * `point` is an exact tap (theta and radius); `sector` is any placement at all
+ * — a point reduces to its sector, so a full innings collects both. A quick
+ * innings collects neither: it is runs, extras and wickets, which every
+ * profile collects and which is why the opposition dossier's figures (runs
+ * and balls) keep the one-argument evidence_label untouched.
+ *
+ * Mirrors capture_profile_collects() in db/31. Change one, change both.
+ */
+export const PLACEMENT_FIELD = Object.freeze({ POINT: "point", SECTOR: "sector" });
+export const PROFILE_COLLECTS = Object.freeze({
+  [CAPTURE_PROFILE.FULL]:     Object.freeze([PLACEMENT_FIELD.POINT, PLACEMENT_FIELD.SECTOR]),
+  [CAPTURE_PROFILE.STANDARD]: Object.freeze([PLACEMENT_FIELD.SECTOR]),
+  [CAPTURE_PROFILE.QUICK]:    Object.freeze([]),
+});
+
+/**
+ * Did this declared profile ask for this field?
+ *
+ * An UNDECLARED innings (null) is taken to have asked for everything. That is
+ * not optimism, it is backward compatibility: it is how every innings was
+ * read before a profile could be declared, so an old match's thin heat map
+ * still reads as thin rather than being quietly excused.
+ */
+export function profileCollects(profile, field) {
+  if (!Object.values(PLACEMENT_FIELD).includes(field)) {
+    throw new TypeError(`unknown placement field ${JSON.stringify(field)}`);
+  }
+  if (profile == null) return true;
+  return PROFILE_COLLECTS[profile]?.includes(field) ?? true;
+}
+
+/** The label a figure carries when the declared profile never collected it. */
+export const NOT_CAPTURED = "not_captured";
+
+/**
+ * How much evidence is behind a figure — db/08's evidence_label(), in words
+ * the reader will act on, with the same thresholds so a chart and the
+ * dossier grade alike.
+ *
+ * With a declared profile and a field, db/31's three-argument overload: a
+ * figure with NOTHING behind it, from an innings whose declared profile never
+ * asked for that field, is `not_captured` — "not collected, by design" — and
+ * not `none`, which says the record is missing something it should have. Only
+ * at zero: a stray point tapped in a standard innings is real data and is
+ * graded like any other.
+ */
+export function evidenceLabel(n, declared = undefined, need = undefined) {
+  if (need !== undefined && !(n > 0) && !profileCollects(declared, need)) return NOT_CAPTURED;
+  if (n == null || n === 0) return "none";
+  if (n < 30) return "insufficient";
+  if (n < 100) return "low";
+  if (n < 250) return "moderate";
+  return "high";
+}
+
+/** Does this ball carry any placement at all — a point, or a sector-era seg? */
+export const hasPlacement = (b) => b?.theta != null || b?.seg != null;
+
+/**
+ * A set of balls read against what was declared for them.
+ *
+ * Splits the balls a chart could NOT use into the two facts they are:
+ * `notCaptured` — the ball's innings declared a profile that never asked for
+ * this field — and `missing` — it was asked for (or nothing was declared) and
+ * is not there, which includes a leave or a wide with nothing to place. A
+ * chart states both, separately, rather than one "excluded" count that makes
+ * a faithful quick innings look like a careless full one.
+ *
+ * `declared` is the one profile for a single innings; `declaredFor(ball)`
+ * resolves it per ball, for a set drawn from many innings (a career). With
+ * neither, every ball is undeclared and the label is exactly evidenceLabel(n).
+ */
+export function placementEvidence(balls = [], { need = PLACEMENT_FIELD.POINT, declared = null, declaredFor } = {}) {
+  const has = need === PLACEMENT_FIELD.POINT ? hasPoint : hasPlacement;
+  const profileOf = declaredFor ?? (() => declared);
+  let n = 0, notCaptured = 0, missing = 0;
+  for (const b of balls) {
+    if (has(b)) n += 1;
+    else if (profileCollects(profileOf(b), need)) missing += 1;
+    else notCaptured += 1;
+  }
+  // A single declared profile grades exactly as db/31's overload does, empty
+  // innings included. Per ball, "not captured" needs every gap to be by design:
+  // one ball that was asked for and is absent makes the zero a real zero.
+  const label = declaredFor
+    ? (n === 0 && notCaptured > 0 && missing === 0 ? NOT_CAPTURED : evidenceLabel(n))
+    : evidenceLabel(n, declared, need);
+  return { label, n, notCaptured, missing, excludedCount: notCaptured + missing };
+}
+
 /**
  * Which way the striker bats, from the squad carried on innings_start.
  *

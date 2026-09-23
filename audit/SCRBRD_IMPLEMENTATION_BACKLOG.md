@@ -1357,21 +1357,109 @@ check on the legitimate path.
 explicit reason before this change, so the dropped default affects nothing live; the fallback
 derivation for an innings with no accepted seal is unchanged from before this entry.
 
-### SCRBRD-039 — Capture profiles: declare the intent, not just record the code path
-**Corrected 2026-09-18.** The first version of this entry claimed SCRBRD OS had no capture profile. It has
-one: `CAPTURE_PROFILE` in `packages/scoring/src/placement.mjs`, a `capture_profile` column on `ball_event`
-with a `CHECK` in `db/07`, carried through quarantine release in `db/14`, and set by the engine per ball.
-The original claim came from a grep with a broken alternation, which is exactly the failure the Pass 2 rule
-above exists to prevent — recorded rather than silently edited.
+### ~~SCRBRD-039~~ — CLOSED
 
-The real gap is narrower and still worth having. The profile is currently a **consequence of the code path**
-— a sector tap yields `standard`, a ball with no placement yields `quick` — not a **declared intent** the
-scorer or the fixture chose. Nothing surfaces it, nothing aggregates it, and `evidence_label()` cannot ask
-"how much was this innings ever going to capture?" So a thin figure reads as thin capture when it may be a
-faithful record at a profile that never collected the field. Files: `placement.mjs`, the scoring capture UI,
-`evidence_label()`, and an innings-level declared profile (a new `db/NN`, one column on the innings or
-carried on `innings_start`). Risk LOW. **Migration YES** if declared per innings rather than derived from
-the balls already logged.
+**Closed 2026-09-23.** An innings now carries a **declared** capture profile — what the scorer chose,
+at setup, to collect on every ball — and the placement evidence is read against it, so "never asked
+for" and "missing" are two different answers.
+
+**Where it lives, and why.** On the `innings_start` event (`inningsStart({captureProfile})` in
+`packages/scoring/src/events.mjs`), not in a column set beside the log. The ball log is the only source
+of truth; a declaration held anywhere else is a second record of the same fact with its own write path
+through the lease, epoch and quarantine. `innings_start` already travels all of those, and `toRow()`
+already maps `captureProfile` into `ball_event.capture_profile`, whose db/07 `CHECK` already refuses
+anything but `full`/`standard`/`quick` — so the storage is **zero new columns**: an `innings_start` row
+with a non-NULL `capture_profile` IS the declaration. The key is **omitted, not null**, when undeclared,
+so an undeclared innings built today is byte-identical to every `innings_start` already on a phone, in
+an outbox or in the server's log. The per-ball `captureProfile` is untouched.
+
+**The fold** (`deriveInnings`, `replay.mjs`) derives `inn.declaredProfile` under three rules, and db/31's
+`innings_declared_profile` view applies the same three to the rows: (1) honoured only **before the first
+non-voided delivery** — a declaration that lands behind the balls (typed late, or released from
+quarantine to a later seq) would excuse a thin record retrospectively; (2) **absence is not a
+retraction** — SCRBRD-063's re-declaration at the break, or an older build, keeps what was declared;
+(3) the latest honoured declaration wins. An unknown value in a log is ignored, never thrown; the
+constructor is where one is refused.
+
+**The labels.** `db/31_declared_capture_profile.sql` adds `evidence_label(bigint, text, text)` — a new
+arity; db/08's `evidence_label(bigint)` and every caller of it are untouched — which returns
+`'not_captured'` for a figure with nothing behind it from an innings whose declared profile never asked
+for the field, and db/08's thresholds otherwise. `capture_profile_collects()` says what each profile
+asks for (`point`: full; `sector`: full, standard). **Undeclared is taken to have asked for
+everything**, which is exactly how every innings read before: the DO `$check$` asserts the overload
+equals the one-argument label at every threshold edge for NULL. `innings_placement_evidence`
+(security_invoker) grades each innings' points and placements. JS mirrors in `placement.mjs`:
+`evidenceLabel()`, `profileCollects()`, `placementEvidence()` (which splits the undrawable balls into
+`notCaptured` and `missing`, per innings or per ball for a career).
+
+**Surfaced** where placement evidence is shown: the heat map and spider (`charts.jsx`) say "Not
+captured, by design: this innings was declared standard (sector only)…" instead of "No exact placements
+on record", and their provenance line counts never-asked separately from missing — in the pad, the
+scorecard modal (`views/shared.jsx`) and the profile's career charts, whose `player_shot_points` read
+now carries each ball's innings declaration. **The dossier is deliberately unchanged**:
+`opposition_squad`'s figures are runs and balls, which every profile collects, so there is nothing a
+declaration could excuse there.
+
+**Chosen at innings setup.** `CaptureProfilePicker` (`scorer/ui.jsx`) on the match step of
+`SetupScreen` (declares both innings; default **Full**, which is what the pad already does — it asks
+where every ball went), on the innings break (`Innings2Sheet`, carrying the first innings' declaration
+forward, or nothing), and on the opener sheet for a real fixture, whose innings opens during hydration
+before anyone is asked — open only until the openers are named, because `innings_start` is the one
+event undo will not walk past. A fixture that declares nothing opens undeclared, as before.
+
+**Tests.** `replay.test.mjs` group I (+40, 296 → 336; the base file's 296 assertions pass unchanged
+against the new source): legacy logs fold to `declaredProfile: null` and to the identical innings;
+declaring never moves any other field; every rule of the fold; the wire round trip through the column;
+an offline-queued declared innings replayed from its JSON queue entries and from server rows; a queue
+from an older build; a mixed-build match. New suite `apps/web/test/capture-profile.test.mjs` (18) renders
+the charts and pickers. `tools/smoke-fold.mjs` records a declared innings **offline**, flushes it, and
+compares the device fold with db/31's views (declared profile, the late declaration refused by both,
+`not_captured` / `insufficient` from both). `db/99` asserts live that the seed's undeclared innings grades
+exactly as db/08 always did and that the views show nothing to a principal with no assignment.
+
+**Falsified.** Dropping the before-the-first-ball test from the fold → 2 red; letting absence retract →
+2 red; `captureProfile: o.captureProfile ?? null` in the constructor → 2 red; charts ignoring the
+declaration → 9 red; SetupScreen defaulting to null → 1 red; db/31 with undeclared treated as not
+collecting a point → the migration's own `$check$` raised "an undeclared innings grades 0 point as
+not_captured, not none"; `innings_declared_profile` without the before-the-first-ball test → `smoke-fold` 2 red ("device standard, database quick"); the view reading undeclared as `quick` → db/99 "an innings with no declaration reads as declared quick"; `innings_placement_evidence` without `security_invoker` → db/31's `$check$` raised.
+
+**Verified** against a freshly reset and reseeded database: `migrate --verify` ALL RLS LIVE ASSERTIONS PASSED; `run-smoke-api scorecard fold quarantine sync schema-guard` 144 assertions across 5 walks (fold 35); `--browser browser-sync browser-innings-end` 18 + 23; `pnpm smoke` 8 + 21 + 16 + 24; `run-all-tests` ALL SUITES PASSED, 2200 assertions across 35 suites (from 2141 across 34).
+
+**Acceptance criteria:**
+- [x] An innings-level declared profile, carried on `innings_start`, with the log as source of truth
+- [x] The scorer chooses it at innings setup; the default declares today's behaviour, and a fixture
+  that declares nothing opens undeclared
+- [x] `evidence_label()` distinguishes "not captured by design" from "missing" (db/31 overload + JS mirror)
+- [x] Surfaced where placement evidence is shown (heat map, spider; pad, scorecard, career)
+- [x] Existing matches with no declared profile replay and read exactly as before — replay group I,
+  db/31 `$check$`, db/99 live
+- [x] Offline-queued events still apply — replay group I, and `smoke-fold` through the real outbox
+- [x] Migration is `db/31` only, not in `db/SHIPPED.sha256`, listed in `expected-migrations.json`
+
+**Affected files:** `packages/scoring/src/{events,replay,placement}.mjs`,
+`packages/scoring/test/replay.test.mjs`, `db/31_declared_capture_profile.sql`, `db/99_rls_verify.sql`,
+`services/api/expected-migrations.json`, `services/api/read/read-api.mjs`, `apps/web/src/lib/live.js`,
+`apps/web/src/scorer/{ui,setup,sheets,engine,charts}.jsx`, `apps/web/test/capture-profile.test.mjs`,
+`tools/smoke-fold.mjs`, `tools/run-all-tests.mjs`
+**Regression risk:** LOW — no score, scorecard or per-ball field reads the declaration; an undeclared
+innings is byte-identical on the wire and grades identically in both folds.
+
+**Title:** ~~Capture profiles: declare the intent, not just record the code path~~
+**Original entry, as filed:**
+> **Corrected 2026-09-18.** The first version of this entry claimed SCRBRD OS had no capture profile. It has
+> one: `CAPTURE_PROFILE` in `packages/scoring/src/placement.mjs`, a `capture_profile` column on `ball_event`
+> with a `CHECK` in `db/07`, carried through quarantine release in `db/14`, and set by the engine per ball.
+> The original claim came from a grep with a broken alternation, which is exactly the failure the Pass 2 rule
+> above exists to prevent — recorded rather than silently edited.
+>
+> The real gap is narrower and still worth having. The profile is currently a **consequence of the code path**
+> — a sector tap yields `standard`, a ball with no placement yields `quick` — not a **declared intent** the
+> scorer or the fixture chose. Nothing surfaces it, nothing aggregates it, and `evidence_label()` cannot ask
+> "how much was this innings ever going to capture?" So a thin figure reads as thin capture when it may be a
+> faithful record at a profile that never collected the field. Files: `placement.mjs`, the scoring capture UI,
+> `evidence_label()`, and an innings-level declared profile (a new `db/NN`, one column on the innings or
+> carried on `innings_start`). Risk LOW. **Migration YES** if declared per innings rather than derived from
+> the balls already logged.
 
 ### SCRBRD-040 — Scoring hub FSM with a named blocked state
 `blockedMissingSetup` — "cannot score because toss, openers or bowler are not set" as a state that

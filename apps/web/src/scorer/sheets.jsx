@@ -5,7 +5,7 @@ import { armHandover, cancelHandover, claimHandover, sessionState, verifyTakeove
 import { fmtOv } from "./format.js";
 import { SHOT_CATEGORIES } from "./shots.js";
 import { INT_TEAMS, ROLE_COLORS } from "./teams.js";
-import { Badge, Btn, Lbl, Sep, Sheet } from "./ui.jsx";
+import { Badge, Btn, CaptureProfilePicker, Lbl, Sep, Sheet } from "./ui.jsx";
 import { Select } from "../ui/primitives.jsx";
 
 /* ═══════════════════════════════════════════════════════
@@ -473,7 +473,7 @@ function TakeOverTab({ matchId, device, onTakenOver, onClose }) {
 // normalised at the door rather than being tested for at every use.
 const entry = (p) => (typeof p === "string" ? { id: p, name: p } : { id: p?.id ?? p?.name, name: p?.name ?? p?.id });
 
-function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose}){
+function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,header=null}){
   const teamInfo=INT_TEAMS[teamKey]||null;
   const roster=(squad||[]).map(entry);
   const available=roster.filter(p=>{
@@ -489,6 +489,7 @@ function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose}){
   return (
     <Sheet title="Batting Order" accent={D.emerald} onClose={onClose}>
       <div style={{paddingTop:"12px"}}>
+        {header&&<div style={{marginBottom:"14px"}}>{header}</div>}
         {/* At crease */}
         {atCrease.length>0&&(
           <div style={{marginBottom:"12px"}}>
@@ -809,7 +810,15 @@ function NewOverSheet({ovNum,prevBowlers,bowlingSquad,bowlingTeamKey,lastBowlerN
 /* ═══════════════════════════════════════════════════════
    INNINGS BREAK SHEET
 ═══════════════════════════════════════════════════════ */
-function Innings2Sheet({target,teamName,overs,onClose,onStart}){
+/**
+ * The innings break is the second innings' setup, so it is where that innings
+ * declares what it will capture (SCRBRD-039). It starts from whatever was
+ * declared already — the from-scratch setup declares both innings up front —
+ * and from nothing when nothing was, so a scorer who presses Start without
+ * touching it changes nothing about how the match reads.
+ */
+function Innings2Sheet({target,teamName,overs,declared=null,onClose,onStart}){
+  const[profile,setProfile]=useState(declared);
   return (
     <Sheet title="Innings Break" accent={D.indigo} onClose={onClose}>
       <div style={{textAlign:"center",padding:"20px 0 24px"}}>
@@ -818,7 +827,10 @@ function Innings2Sheet({target,teamName,overs,onClose,onStart}){
           background:D.grad,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text",
           lineHeight:1,letterSpacing:"-0.02em",marginBottom:"6px"}}>{target}</div>
         <div style={{fontFamily:D.body,fontSize:"14px",color:D.textMuted,marginBottom:"24px"}}>runs to win in {overs} overs</div>
-        <Btn variant="primary" size="lg" sx={{borderRadius:D.md,minWidth:"220px"}} onClick={onStart}>Start 2nd Innings →</Btn>
+        <div style={{textAlign:"left",maxWidth:"360px",margin:"0 auto 20px"}}>
+          <CaptureProfilePicker value={profile} onChange={setProfile}/>
+        </div>
+        <Btn variant="primary" size="lg" sx={{borderRadius:D.md,minWidth:"220px"}} onClick={()=>onStart(profile)}>Start 2nd Innings →</Btn>
       </div>
     </Sheet>
   );

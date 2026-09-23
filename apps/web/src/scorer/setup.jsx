@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import { D } from "../design/tokens.js";
 import { INT_TEAMS, ROLE_COLORS } from "./teams.js";
-import { Badge, Btn, GS, Glass, Lbl } from "./ui.jsx";
+import { Badge, Btn, CaptureProfilePicker, GS, Glass, Lbl } from "./ui.jsx";
 import { Select } from "../ui/primitives.jsx";
 
 /* ═══════════════════════════════════════════════════════
@@ -440,6 +440,10 @@ function SetupScreen({onStart}){
   const[team1Key,setTeam1Key]=useState("");
   const[team2Key,setTeam2Key]=useState("");
   const[overs,setOvers]=useState(20);
+  // Declared for both innings (SCRBRD-039). Full is what the pad already
+  // does on every ball — it asks where the ball went — so the default declares
+  // today's behaviour rather than changing it.
+  const[captureProfile,setCaptureProfile]=useState("full");
   const[xi1,setXi1]=useState([]);const[order1,setOrder1]=useState([]);const[twelfth1,setTwelfth1]=useState(null);
   const[xi2,setXi2]=useState([]);const[order2,setOrder2]=useState([]);const[twelfth2,setTwelfth2]=useState(null);
   const[toss,setToss]=useState(0);const[bat,setBat]=useState(0);
@@ -502,6 +506,7 @@ function SetupScreen({onStart}){
                   ))}
                 </div>
               </div>
+              <CaptureProfilePicker value={captureProfile} onChange={setCaptureProfile}/>
               <Btn variant="primary" size="lg" full disabled={!canContinue0}
                 onClick={()=>canContinue0&&setStep(1)} sx={{borderRadius:D.md}}>
                 Select {INT_TEAMS[team1Key]?.flag} {team1Key||"Team 1"} XI →
@@ -614,7 +619,7 @@ function SetupScreen({onStart}){
                   const sq1=first===0?order1:order2;
                   const sq2=first===0?order2:order1;
                   onStart({
-                    team1:team1Key, team2:team2Key, overs, toss, bat,
+                    team1:team1Key, team2:team2Key, overs, toss, bat, captureProfile,
                     squad1:sq1, squad2:sq2,
                     twelfth1:first===0?twelfth1:twelfth2,
                     twelfth2:first===0?twelfth2:twelfth1,

@@ -642,6 +642,9 @@ function asShotPoint(r) {
            radius: r.radius == null ? null : Number(r.radius),
            seg: r.seg,
            placementSource: r.placement_source, captureProfile: r.capture_profile,
+           // The innings' declared profile (SCRBRD-039), not the ball's own:
+           // the charts read each ball against what its innings asked for.
+           declaredProfile: r.declared_profile ?? null,
            strikerId: r.striker_id, bowlerId: r.bowler_id,
            matchId: r.match_id, innings: r.innings, seq: r.seq, live: true };
 }

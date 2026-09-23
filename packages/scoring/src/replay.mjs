@@ -34,6 +34,9 @@
  */
 
 import { KIND, BALL_TYPE, isLegal, normaliseDismissal, chargedToBowler, standsOnFreeHit, DISMISSAL, DISMISSAL_LABEL, INNINGS_END_REASON, DERIVED_END_REASONS, inningsEnd } from "./events.mjs";
+import { CAPTURE_PROFILE } from "./placement.mjs";
+
+const DECLARABLE = new Set(Object.values(CAPTURE_PROFILE));
 
 // The scoring UI renders on these values: a batter at the crease is "batting",
 // and a squad member who never came in is "dnb" (never produced here — a batter
@@ -83,6 +86,11 @@ export function deriveInnings(events = [], ctx = {}) {
     // and confirmed them, and `sealRefused` says why a seal did not count.
     sealed: false, sealRefused: null,
     revised: null,                 // { overs, target, reason } once the umpires revised the innings
+    // What the scorer declared this innings would capture — see inningsStart()
+    // in events.mjs and the INNINGS_START case below. null is "never
+    // declared", which is every innings scored before SCRBRD-039 and reads
+    // exactly as they always did: nothing is excused as "not captured".
+    declaredProfile: null,
     voided: 0,   // how many earlier events this log undoes — see the fold below
   };
 
@@ -179,6 +187,29 @@ export function deriveInnings(events = [], ctx = {}) {
           overs: ev.overs ?? 20, target: ev.target ?? null,
         });
         if (ctx.flagFor) inn.teamFlag = ctx.flagFor(inn.teamKey) ?? "🏏";
+        // THE DECLARED CAPTURE PROFILE. SCRBRD-039. Three rules, each one a
+        // way a declaration could otherwise rewrite what the evidence means:
+        //
+        //   - It is a promise about the balls to come, so it is honoured only
+        //     BEFORE the first delivery. A declaration that arrives after balls
+        //     have been folded — typed in late, or released from quarantine to
+        //     a seq behind them — would excuse a thin record retrospectively
+        //     ("that innings was only ever quick"), which is exactly the
+        //     misreading this exists to prevent in the other direction. It is
+        //     ignored, and the innings reads as it did before it arrived.
+        //   - Absence is not a retraction. The second innings is re-declared
+        //     at the break (SCRBRD-063) by code that may not carry the field,
+        //     and a device on an older build re-opens innings without it; a
+        //     missing key keeps what was declared rather than erasing it.
+        //   - A value the model does not know is not a declaration. Replay is
+        //     a fold over a log that may have come from anywhere and does not
+        //     throw; the constructor is where a bad value is refused.
+        //
+        // db/31's innings_declared_profile applies the same three rules to
+        // the innings_start rows, so the device and the database agree.
+        if (DECLARABLE.has(ev.captureProfile) && inn.ballLog.length === 0) {
+          inn.declaredProfile = ev.captureProfile;
+        }
         break;
       }
 

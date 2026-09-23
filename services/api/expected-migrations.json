@@ -27,5 +27,6 @@
   "26_dismissal_breakdown.sql",
   "27_sponsorship_role.sql",
   "28_scoring_claim_handover.sql",
-  "29_migration_ledger_read.sql"
+  "29_migration_ledger_read.sql",
+  "31_declared_capture_profile.sql"
 ]
