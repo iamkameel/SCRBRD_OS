@@ -89,14 +89,14 @@ function OnboardingFlow({ onComplete }) {
   // an extra step in front of nothing.
   const PUBLIC_ROLES = [
     { id:"schooladmin",  icon:"🏫", label:"School Admin",       desc:"Manage your school’s cricket programme" },
-    { id:"sportsmaster", icon:"🏅", label:"Sportsmaster",       desc:"Oversee teams, fixtures & competitions" },
+    { id:"directorofsport", icon:"🏅", label:"Director of Sport", desc:"Oversee teams, fixtures & competitions" },
     { id:"coach",        icon:"🎯", label:"Head Coach",         desc:"Player development, analytics & tactics" },
     { id:"assistant",    icon:"🤝", label:"Coaching Assistant", desc:"Training support & squad management" },
     { id:"player",       icon:"🏏", label:"Player",             desc:"Track your own stats, form & development" },
-    { id:"parent",       icon:"👪", label:"Parent / Guardian",  desc:"Follow your child’s matches & logistics" },
+    { id:"guardian",     icon:"👪", label:"Parent / Guardian",  desc:"Follow your child’s matches & logistics" },
     { id:"scorer",       icon:"📋", label:"Official Scorer",    desc:"Score matches, submit scorecards" },
     { id:"medical",      icon:"⚕️", label:"Medical Staff",      desc:"Manage injuries and player fitness" },
-    { id:"groundskeeper",icon:"🌿", label:"Groundskeeper",      desc:"Pitch prep, field management & tasks" },
+    { id:"facilities",   icon:"🌿", label:"Groundskeeper",      desc:"Pitch prep, field management & tasks" },
     { id:"spectator",    icon:"👁", label:"Spectator / Fan",    desc:"View scores, stats and fixtures" },
   ];
 
@@ -114,7 +114,7 @@ function OnboardingFlow({ onComplete }) {
   const getSteps = () => {
     const base = ["welcome","role", ...(onlySchool ? [] : ["school"]), "profile"];
     if (data.role==="player") return [...base,"player_detail","tour"];
-    if (data.role==="parent") return [...base,"parent_link","tour"];
+    if (data.role==="guardian") return [...base,"parent_link","tour"];
     return [...base,"tour"];
   };
   const steps = getSteps();
@@ -142,7 +142,7 @@ function OnboardingFlow({ onComplete }) {
   // rather than being asked for and then quietly dropped on submission.
   const buildNote = () => {
     const parts = [];
-    if (data.role === "parent" && data.playerLink.trim()) parts.push(`Child: ${data.playerLink.trim()}`);
+    if (data.role === "guardian" && data.playerLink.trim()) parts.push(`Child: ${data.playerLink.trim()}`);
     if (data.role === "player") {
       if (data.jersey.trim())     parts.push(`Jersey: ${data.jersey.trim()}`);
       if (data.playerRole)        parts.push(`Plays as: ${data.playerRole}`);
@@ -178,10 +178,10 @@ function OnboardingFlow({ onComplete }) {
 
   const TOUR_MAP = {
     player:       [{icon:"📊",t:"Analytics",d:"Your wagon wheel, phase breakdown and shot analysis"},{icon:"💪",t:"Training",d:"Session plans and skill development goals"},{icon:"🏥",t:"Injuries",d:"Your fitness status and return-to-play timeline"}],
-    parent:       [{icon:"🏏",t:"Match Centre",d:"Live scores and full scorecards"},{icon:"🚌",t:"Logistics",d:"Transport times and venues"},{icon:"🔔",t:"Notifications",d:"Real-time alerts for your child"}],
+    guardian:     [{icon:"🏏",t:"Match Centre",d:"Live scores and full scorecards"},{icon:"🚌",t:"Logistics",d:"Transport times and venues"},{icon:"🔔",t:"Notifications",d:"Real-time alerts for your child"}],
     coach:        [{icon:"👥",t:"Squad View",d:"Full team with skills, form and availability"},{icon:"📊",t:"Analytics",d:"Team and player performance breakdowns"},{icon:"💪",t:"Training",d:"Session planner and attendance tracker"}],
     scorer:       [{icon:"🏏",t:"Match Centre",d:"Open the live scoring interface"},{icon:"📅",t:"Calendar",d:"Your assigned match schedule"}],
-    groundskeeper:[{icon:"🌿",t:"Fields",d:"Pitch profiles and preparation status"},{icon:"🛠️",t:"Management",d:"Ground task assignments and scheduling"}],
+    facilities:   [{icon:"🌿",t:"Fields",d:"Pitch profiles and preparation status"},{icon:"🛠️",t:"Management",d:"Ground task assignments and scheduling"}],
     default:      [{icon:"⬡",t:"Dashboard",d:"Live scores and team news at a glance"},{icon:"📅",t:"Calendar",d:"All fixtures, training and events"},{icon:"🔔",t:"Notifications",d:"Match alerts and announcements"}],
   };
   const tourItems = TOUR_MAP[data.role] || TOUR_MAP.default;

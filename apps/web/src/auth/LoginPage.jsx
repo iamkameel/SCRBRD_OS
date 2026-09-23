@@ -28,7 +28,7 @@ const PILOT_ACCOUNTS = [
   { email: "scorer@example.invalid",  label: "Scorer",         role: "scorer" },
   { email: "coach@example.invalid",   label: "Head Coach",     role: "coach" },
   { email: "sarah@example.invalid",   label: "Director of Sport", role: "directorofsport" },
-  { email: "parent@example.invalid",  label: "Parent",         role: "parent" },
+  { email: "parent@example.invalid",  label: "Parent",         role: "guardian" },
   // A pupil reading their OWN file. Self-access is a built, policy-enforced
   // role — a boy may read his own medical record and his own attribute scores —
   // and until now there was no way into the demo as one, so the boundary it
@@ -76,12 +76,12 @@ function LoginPage({ onLogin, onSignUp }) {
   // Mock credentials map: email → {role, name}
   const MOCK_USERS = {
     "admin@hilton.co.za":       { role:"superadmin",    name:"Admin User",            pw:"admin123" },
-    "gsutherland@hilton.co.za": { role:"sportsmaster",  name:"Graham Sutherland",     pw:"sports123" },
+    "gsutherland@hilton.co.za": { role:"directorofsport", name:"Graham Sutherland",   pw:"sports123" },
     "c.hendricks@hilton.co.za": { role:"coach",         name:"Craig Hendricks",       pw:"coach123" },
     "james@hilton.co.za":       { role:"player",        name:"James Whitfield",       pw:"player123" },
-    "helen.w@gmail.com":        { role:"parent",        name:"Helen Whitfield",       pw:"parent123" },
+    "helen.w@gmail.com":        { role:"guardian",      name:"Helen Whitfield",       pw:"parent123" },
     "bwessels@hilton.co.za":    { role:"scorer",        name:"Brian Wessels",         pw:"scorer123" },
-    "emzimba@hilton.co.za":     { role:"groundskeeper", name:"Ernest Mzimba",         pw:"ground123" },
+    "emzimba@hilton.co.za":     { role:"facilities",    name:"Ernest Mzimba",         pw:"ground123" },
     "skhumalo@hilton.co.za":    { role:"medical",       name:"Dr Khumalo",            pw:"medic123" },
   };
 
@@ -175,7 +175,7 @@ function LoginPage({ onLogin, onSignUp }) {
     { role:"superadmin",   email:"admin@hilton.co.za",       pw:"admin123",   label:"Super Admin" },
     { role:"coach",        email:"c.hendricks@hilton.co.za", pw:"coach123",   label:"Head Coach" },
     { role:"player",       email:"james@hilton.co.za",       pw:"player123",  label:"Player" },
-    { role:"parent",       email:"helen.w@gmail.com",        pw:"parent123",  label:"Parent" },
+    { role:"guardian",     email:"helen.w@gmail.com",        pw:"parent123",  label:"Parent" },
   ];
 
   return (

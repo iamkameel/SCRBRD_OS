@@ -31,8 +31,8 @@ function ManagementView({ role, users, setUsers }) {
   // via mayGrantRole() regardless of what this screen shows. Everything else
   // in this view asks what the role HOLDS.
   const isSuperAdmin  = mayGrantRole(role, "superadmin");
-  const isAdmin       = ["superadmin","schooladmin","sportsmaster"].includes(role);
-  const isGroundskeeper = role==="groundskeeper";
+  const isAdmin       = ["superadmin","schooladmin","directorofsport"].includes(role);
+  const isGroundskeeper = role==="facilities";
   const canManageUsers= holdsCapability(role,"user.role.assign");
 
   // Filtered users
@@ -64,9 +64,9 @@ function ManagementView({ role, users, setUsers }) {
   const TABS_MAP = {
     superadmin:    [{id:"users",icon:"👥",label:"User Management",color:D.violetText},{id:"squad",icon:"🏏",label:"Squad Admin",color:D.sky},{id:"fixtures",icon:"📅",label:"Fixtures",color:D.amber},{id:"broadcast",icon:"📡",label:"Broadcast",color:D.roseText},{id:"audit",icon:"🔍",label:"Audit Log",color:D.textMuted}],
     schooladmin:   [{id:"users",icon:"👥",label:"Users",color:D.indigoText},{id:"squad",icon:"🏏",label:"Squad Admin",color:D.sky},{id:"fixtures",icon:"📅",label:"Fixtures",color:D.amber},{id:"broadcast",icon:"📡",label:"Broadcast",color:D.roseText}],
-    sportsmaster:  [{id:"squad",icon:"🏏",label:"Team Management",color:D.sky},{id:"fixtures",icon:"📅",label:"Fixture Admin",color:D.amber},{id:"broadcast",icon:"📡",label:"Announcements",color:D.roseText}],
+    directorofsport: [{id:"squad",icon:"🏏",label:"Team Management",color:D.sky},{id:"fixtures",icon:"📅",label:"Fixture Admin",color:D.amber},{id:"broadcast",icon:"📡",label:"Announcements",color:D.roseText}],
     coach:         [{id:"squad",icon:"🏏",label:"Squad Tools",color:D.emerald}],
-    groundskeeper: [{id:"grounds",icon:"🌿",label:"Ground Tasks",color:D.teal}],
+    facilities:    [{id:"grounds",icon:"🌿",label:"Ground Tasks",color:D.teal}],
   };
   const tabs = TABS_MAP[role]||TABS_MAP.coach;
 
