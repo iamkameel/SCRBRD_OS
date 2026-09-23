@@ -261,11 +261,16 @@ group("The role switcher offers each role once");
 // Reported from the live deployment: the menu listed "Platform Admin" three
 // times and "Principal" twice, among six more duplicated pairs.
 //
-// The cause is that ROLES is a LOOKUP table — the twenty-four real roles plus
-// nine demonstration aliases (superadmin, headmaster, parent…) that resolve to
-// them. An alias carries its target's own label, so iterating ROLES to build a
-// menu renders the same role several times under the same name, and picking
-// between the copies is meaningless.
+// The cause was that ROLES used to be a LOOKUP table — the twenty-four real
+// roles plus nine demonstration aliases (superadmin, headmaster, parent…)
+// that resolved to them. An alias carried its target's own label, so
+// iterating ROLES to build a menu rendered the same role several times under
+// the same name, and picking between the copies was meaningless.
+//
+// SCRBRD-027 retired the alias table (rbac/legacy-roles.js) once nothing in
+// the client — login, onboarding, or the switcher — still spoke the old
+// vocabulary. ROLES is now exactly ROLE_IDENTITY: one entry per policy role,
+// nothing to alias.
 //
 // ROLE_FAMILIES is the canonical set, grouped. It is what a chooser must use.
 const familyMembers = Object.values(ROLE_FAMILIES).flat();
@@ -279,15 +284,38 @@ const familyLabels = familyMembers.map((r) => ROLES[r].label);
 const dupLabels = familyLabels.filter((l, i) => familyLabels.indexOf(l) !== i);
 ok("no two offered roles share a name", dupLabels.length === 0, [...new Set(dupLabels)].join(", "));
 
-// The aliases must STILL resolve, or an account signed in as one loses its
-// name and its navigation — which is the bug the alias table was added to fix.
-for (const legacy of ["superadmin", "headmaster", "parent", "sportsmaster"]) {
-  ok(`the ${legacy} alias still resolves to a real role`,
-     !!ROLES[legacy]?.label && POLICY_ROLES.includes(canonicalRole(legacy)));
-}
-// And iterating the lookup table is exactly what must not happen again.
-ok("the lookup table is genuinely wider than the offered set",
-   Object.keys(ROLES).length > familyMembers.length);
+// The alias table is gone (SCRBRD-027): ROLES is no longer a lookup table
+// wider than the offered set, it IS the offered set. Iterating it can never
+// render a duplicate again, because there is nothing left to duplicate.
+ok("the lookup table carries no alias — it is exactly the offered set",
+   Object.keys(ROLES).length === familyMembers.length);
+
+group("Every sign-in and onboarding entry point speaks only policy roles");
+// The client used to carry a second vocabulary — superadmin, headmaster,
+// sportsmaster, parent, assistant… — mapped onto these through
+// rbac/legacy-roles.js. That file is gone, so a role name reaching
+// principalForRole()/canonicalRole()/ROLES[] from a login screen, a demo
+// account or the onboarding persona picker is no longer translated. It must
+// already be one of ROLE_IDENTITY's own keys, or the account signs in to a
+// blank shell (ROLES[undefined]) and default-deny.
+//
+// Scraped from source rather than imported, because these are literal
+// object keys inside component functions, not exported constants — the same
+// technique the roles-screen check below uses for SettingsView.
+const loginSrc = readFileSync(join(SRC, "auth/LoginPage.jsx"), "utf8");
+const onboardingSrc = readFileSync(join(SRC, "auth/OnboardingFlow.jsx"), "utf8");
+const entryPointRoles = new Set([
+  ...[...loginSrc.matchAll(/\brole:\s*"([a-z]+)"/g)].map((m) => m[1]),
+  ...[...onboardingSrc.matchAll(/\{\s*id:"([a-z]+)",\s*icon:/g)].map((m) => m[1]),
+]);
+ok(`found sign-in/onboarding roles to check (${entryPointRoles.size})`, entryPointRoles.size > 0);
+for (const r of entryPointRoles)
+  ok(`"${r}" (login or onboarding) is a real policy role, not a legacy name`,
+     POLICY_ROLES.includes(r));
+// The function that used to translate a legacy name now has nothing to
+// translate: every policy role must resolve to itself.
+ok("canonicalRole is the identity function on every policy role",
+   POLICY_ROLES.every((r) => canonicalRole(r) === r));
 
 group("The roles screen describes every role, from the policy");
 // It rendered thirty-three cards — the lookup table, aliases and all — against

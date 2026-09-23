@@ -24,7 +24,7 @@ const P = (role) => principalForRole(role);
 group("A. Row scoping");
 {
   const coachRows = getData("players", P("coach"));
-  const dosRows = getData("players", P("sportsmaster"));
+  const dosRows = getData("players", P("directorofsport"));
   ok("coach sees only their own team",
      coachRows.length > 0 && coachRows.every((p) => p.team === "1XI"));
   ok("director of sport sees the whole school",
@@ -34,11 +34,31 @@ group("A. Row scoping");
   ok("a player sees only themselves",
      getData("players", P("player")).every((p) => p.id === "p1"));
   ok("a guardian sees only their child",
-     getData("players", P("parent")).every((p) => p.id === "p5"));
+     getData("players", P("guardian")).every((p) => p.id === "p5"));
   ok("a spectator reaches no player records at all",
      getData("players", P("spectator")).length === 0);
   ok("an unknown role gets nothing (default deny)",
      getData("players", P("nonsense-role")).length === 0);
+}
+
+// ── A1. Demo scopes SCRBRD-027 had to carry over by hand ──
+// rbac/legacy-roles.js used to give these four roles a scope the generic
+// branch of assignmentsForRole() would not compute on its own — retiring
+// that file (SCRBRD-027) moved each override into assignmentsForRole()
+// itself. Pinned directly, not just through the row counts elsewhere in this
+// suite, because a wrong scope here is a wrong scope for every demo screen at
+// once: the owner's key losing its platform-wide reach, or a pupil suddenly
+// able to browse the whole school.
+group("A1. The demo scopes the alias table used to carry");
+{
+  ok("the owner's key is platform-wide, not scoped to the demo school",
+     assignmentsForRole("superadmin")[0].school === null);
+  ok("the platform account is platform-wide too — it operates every tenant",
+     assignmentsForRole("platformadmin")[0].school === null);
+  ok("the demo's own pupil is scoped to himself, not left unscoped",
+     assignmentsForRole("player")[0].person === "p1");
+  ok("a scorer is scoped to the team they are assigned to score",
+     assignmentsForRole("scorer")[0].team === "1XI");
 }
 
 // ── A2. Everyone who needs a fixture can see one ─────────
@@ -51,9 +71,9 @@ group("A2. Fixtures reach the people who need them");
   ok("coach sees their team's fixtures",   getData("matches", P("coach")).length > 0);
   ok("scorer sees fixtures to score",      getData("matches", P("scorer")).length > 0);
   ok("coach sees a live fixture",          getData("matches", P("coach")).some((m) => m.status === "live"));
-  ok("guardian sees their child's school fixtures", getData("matches", P("parent")).length > 0);
+  ok("guardian sees their child's school fixtures", getData("matches", P("guardian")).length > 0);
   ok("director sees more than a team coach",
-     getData("matches", P("sportsmaster")).length > getData("matches", P("coach")).length);
+     getData("matches", P("directorofsport")).length > getData("matches", P("coach")).length);
   // Asserted on the PARSED code, not on the display string. A fixture names
   // its side in prose — "Hilton 1st XI" — and the anchor is the code inside
   // it, so a regex over the raw name tests the wrong thing and breaks the
@@ -79,7 +99,7 @@ group("C. Column masking");
 {
   const asCoach = getData("players", P("coach"));
   const asAdmin = getData("players", P("schooladmin"));
-  const asGuardian = getData("players", P("parent"));
+  const asGuardian = getData("players", P("guardian"));
 
   // A coach picking a U13 side who cannot see an age cannot avoid putting a
   // fifteen-year-old in it, so date of birth has its own capability and they
@@ -107,7 +127,7 @@ group("C. Column masking");
   ok("coach CAN read return-to-play",           coachInj.every((i) => i.rtw));
   ok("medical staff read clinical notes",       medInj.some((i) => i.notes !== null));
   ok("guardian reads their own child's clinical notes",
-     getData("injuries", P("parent")).every((i) => i.notes !== null));
+     getData("injuries", P("guardian")).every((i) => i.notes !== null));
   ok("driver reaches no injuries at all",       getData("injuries", P("driver")).length === 0);
   ok("scorer reaches no injuries at all",       getData("injuries", P("scorer")).length === 0);
 }
@@ -141,7 +161,7 @@ group("E. Legacy surface still answers correctly");
   ok("coach may update injuries? no",     can("coach", "injuries", "update").allowed === false);
   ok("medical may update injuries",       can("medical", "injuries", "update").allowed === true);
   ok("coach reads players at team scope", can("coach", "players", "r").scope === "team");
-  ok("director reads at school scope",    can("sportsmaster", "players", "r").scope === "school");
+  ok("director reads at school scope",    can("directorofsport", "players", "r").scope === "school");
   ok("player reads at own scope",         can("player", "players", "r").scope === "own");
   // `born` moved out of the coach's deny list when it moved tiers; height is
   // still behind player.pii.read, which they do not hold.
@@ -153,7 +173,7 @@ group("E. Legacy surface still answers correctly");
 
   ok("coach may score",       canScore("coach") === true);
   ok("scorer may score",      canScore("scorer") === true);
-  ok("parent may NOT score",  canScore("parent") === false);
+  ok("guardian may NOT score", canScore("guardian") === false);
   ok("driver may NOT score",  canScore("driver") === false);
   ok("spectator may NOT score", canScore("spectator") === false);
   ok("unknown role may NOT score", canScore("nonsense-role") === false);
@@ -270,7 +290,10 @@ group("The demonstration obeys the policy's own assignment shapes");
 // was accidentally correct; the canonical `guardian` and `assistantcoach`
 // named neither, and the demo's guardian could see all eighteen pupils. Not a
 // live security hole — Postgres decides a real session — but the product's
-// central claim, contradicted on screen.
+// central claim, contradicted on screen. (SCRBRD-027 retired those aliases
+// entirely — `parent` is no longer a name assignmentsForRole() answers for at
+// all — so this is now history rather than a live risk, and the roles below
+// are asserted under their own canonical names.)
 {
   const { SUBJECT_SCOPED_ROLES, TEAM_SCOPED_ROLES, ROLES: POLICY_ROLES } = await import("@scrbrd/policy/roles");
   for (const r of POLICY_ROLES) {
@@ -284,7 +307,7 @@ group("The demonstration obeys the policy's own assignment shapes");
   }
   // The consequence, measured rather than asserted in the abstract: the two
   // roles whose whole meaning is "one child" must see one child.
-  for (const r of ["guardian", "parent", "selfaccess"]) {
+  for (const r of ["guardian", "selfaccess"]) {
     const seen = getData("players", r);
     ok(`a ${r} sees exactly one pupil, not the school`, seen.length === 1,
        `${seen.length} visible`);
@@ -322,7 +345,7 @@ group("The Conduct tab is drawn for staff readers only");
   // it is the own-record clause and nothing else that hides the tab from him.
   ok("the pupil persona holds discipline.read through selfaccess",
      (SHELL.player.also ?? []).some((r) => roleGrants(r, "discipline.read")));
-  for (const r of ["player", "selfaccess", "guardian", "parent"])
+  for (const r of ["player", "selfaccess", "guardian"])
     ok(`a ${r} is not drawn the Conduct tab`, !readsConduct(r));
   for (const r of ["coach", "assistantcoach", "scorer", "medical", "official", "spectator"])
     ok(`a ${r} is not drawn the Conduct tab`, !readsConduct(r));

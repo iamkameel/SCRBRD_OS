@@ -796,26 +796,72 @@ for the owner's key, a platform administrator, a school administrator and a two-
   refusing. Evidence RISK-OPS-003. Migration YES (one nullable column, applied by the tooling itself, not
   a `db/NN` file — `schema_migration` is bootstrap infrastructure the numbered migrations describe, not
   one of them).
-- **SCRBRD-027** — Delete `apps/web/src/rbac/legacy-roles.js` once SCRBRD-001 and -011 land.
-  **Checked 2026-09-19, still blocked, but not on -001/-011 any more.** Both of those closed
-  without touching this: SCRBRD-001 was about the fake "Continue with Google" button, SCRBRD-011
-  about the last `role === "superadmin"` view gates — neither is about legacy role NAMES. What
-  this file is actually still holding up: `LoginPage.jsx`'s `MOCK_USERS` (`gsutherland@hilton.co.za`
-  → `role:"sportsmaster"`, `emzimba@hilton.co.za` → `role:"groundskeeper"`) and its `DEMO_ACCOUNTS`
-  (`helen.w@gmail.com` → `role:"parent"`) still sign people in with old-vocabulary names, not the
-  real policy roles (`directorofsport`, `facilities`, `guardian`); `OnboardingFlow.jsx`'s persona
-  picker and `ManagementView.jsx`'s tab/role branches use `sportsmaster`/`groundskeeper` directly
-  too. Both `design/roles.js`'s `canonicalRole()`/`ROLES` and `rbac/index.js`'s
-  `assignmentsForRole()` resolve those names ONLY through `LEGACY_ROLE`/`LEGACY_ROLE_ALIAS`, which
-  come from this file — remove it today and those logins render `ROLES[undefined]` (blank shell)
-  and get `assignmentsForRole() → []` (default-deny). `apps/web/test/design.test.mjs:284-286`
-  already asserts, by name, that `headmaster`/`sportsmaster`/`parent` resolve through
-  `canonicalRole()` — the suite itself currently requires this file to exist. Falsified directly:
-  deleting the file and running `design.test.mjs` fails immediately with `ERR_MODULE_NOT_FOUND`
-  before a single assertion runs, confirming a test would catch removal; restored, green again.
-  The real prerequisite is retiring the old-vocabulary names from the demo/onboarding files
-  themselves (a proper subset of SCRBRD-001's original spirit, never actually done), not -001/-011
-  as filed. Evidence SEC-P3-01.
+- ~~**SCRBRD-027**~~ — CLOSED.
+  **Closed 2026-09-23.** The real prerequisite this item was actually waiting on — retiring the
+  old-vocabulary names from every place that can set the SIGNED-IN role, not -001/-011 as
+  originally filed — is done, and `rbac/legacy-roles.js` is deleted.
+
+  What changed, entry point by entry point: `OnboardingFlow.jsx`'s `PUBLIC_ROLES` picker had one
+  survivor, `id:"assistant"` (the only entry point still naming a legacy value — everything in
+  `LoginPage.jsx`'s `MOCK_USERS`/`DEMO_ACCOUNTS`/`PILOT_ACCOUNTS` was already real by the time this
+  was checked, from the prior pass), now `id:"assistantcoach"`. `data/mock.js`'s `STAFF` and
+  `USERS_INITIAL` records fed `ROLES[s.role]`/`ROLES[u.role]` lookups directly in `StaffView.jsx`,
+  `ProfilesView.jsx` and `ManagementView.jsx` (avatar colour, filter chips, the role picker and the
+  promote-role `<select>`) — `groundskeeper`→`facilities`, `sportsmaster`→`directorofsport`,
+  `assistant`→`assistantcoach` (×2 staff rows, ×2 user rows), `parent`→`guardian`; the display-only
+  filter/section labels in `StaffView.jsx` and `ProfilesView.jsx` were updated alongside so
+  "Groundskeepers" still reads correctly rather than becoming "Facilitys". Checked and left alone as
+  genuinely inert: `COACHES[].role` career-history strings ("Head Coach", "Assistant Coach" — title
+  case, never looked up in `ROLES[]`), the `groundskeeper:"st7"` foreign-key field on `GROUNDS` rows
+  (a staff id, not a role), `relationship:"parent"` in `SettingsView.jsx` (a family-relationship
+  label posted to `/api/players/:id/guardians`, not an RBAC role), and the `roles:[...]` arrays on
+  `NOTIFICATIONS` mock rows (dead data — `lib/live.js`'s `asNotification()` drops the field entirely
+  for exactly this reason, and no view ever reads it).
+
+  `rbac/index.js`'s `assignmentsForRole()` no longer has a `LEGACY_ROLE` table to fall back on; four
+  policy roles needed a demo scope narrower or wider than its generic branch would compute on its
+  own, and each is now an explicit, tested override rather than an accident of the alias table:
+  `superadmin` and `platformadmin` are platform-wide (`school: null` — the generic branch would
+  otherwise scope even the owner's key to the demo school), `player` is scoped to person `"p1"`
+  (the generic branch has no `person` at all for a role outside `SUBJECT_SCOPED_ROLES`, and
+  `covers()` treats an absent `person` as no restriction — the demo's own pupil would otherwise read
+  every player at the school), and `scorer` keeps its team scope (`team: "1XI"`, also outside
+  `TEAM_SCOPED_ROLES`). `DEMO_SCHOOL`/`DEMO_TEAM`/`DEMO_CHILD` moved to a new leaf module,
+  `rbac/demo-scope.js`, rather than back into `rbac/index.js` or `design/roles.js` — `design/roles.js`
+  no longer needs them at all, now that it has no alias table to build.
+
+  `design/roles.js`'s `LEGACY_ROLE_ALIAS`/`ROLES`-with-aliases mechanism is gone; `ROLES` is now
+  exactly `ROLE_IDENTITY` (24 entries, one per policy role) and `canonicalRole()` is the identity
+  function. `apps/web/test/design.test.mjs` no longer asserts that
+  `["superadmin","headmaster","parent","sportsmaster"]` resolve through an alias table that no
+  longer exists; it instead scrapes every `role:"…"` and onboarding `id:"…"` literal out of
+  `LoginPage.jsx`/`OnboardingFlow.jsx` and asserts each one is a `ROLE_IDENTITY` key, plus that
+  `canonicalRole()` is identity on every policy role — falsified directly, the same way the original
+  entry falsified `design.test.mjs`'s need for this file: reintroducing `id:"assistant"` in
+  `OnboardingFlow.jsx` fails the new check immediately, restored, green again.
+  `apps/web/src/rbac/rbac.test.mjs` had the same legacy names baked into its own assertions
+  (`P("sportsmaster")`, `P("parent")`) — repointed at `directorofsport`/`guardian`, and a new group
+  (A1) pins the four demo-scope overrides above directly rather than only through the row counts
+  elsewhere in the suite.
+
+  Acceptance, checked in order:
+  - [x] no legacy name can reach `assignmentsForRole()`/`principalForRole()`/`canonicalRole()`/
+        `ROLES[…]` as a SIGNED-IN role from any entry point (login, demo accounts, pilot accounts,
+        onboarding persona picker, the role switcher)
+  - [x] mock STAFF/USER records that feed a `ROLES[]` lookup use policy role names; genuinely inert
+        job-title/foreign-key/relationship strings were identified and left alone, not blindly renamed
+  - [x] `superadmin`'s (and `platformadmin`'s) platform-wide demo scope survives the alias table's
+        removal — `assignmentsForRole("superadmin")[0].school === null`, pinned in `rbac.test.mjs`
+  - [x] `apps/web/src/rbac/legacy-roles.js` deleted; `node tools/check-imports.mjs` clean (79
+        modules, 0 missing imports)
+  - [x] `packages/policy/test/separation.test.mjs` §21.1 role-string ratchet unchanged — no new
+        role-string view gate was added anywhere in this change
+  - [x] `pnpm build` clean; `node tools/migrate.mjs --reset --seed && node tools/run-smoke-api.mjs
+        --browser browser-read` passes (exercises the role switcher across every role); `node
+        tools/migrate.mjs --reset --seed && node tools/run-all-tests.mjs` → ALL SUITES PASSED; `pnpm
+        smoke` passes
+
+  Evidence SEC-P3-01.
 
 ---
 
@@ -1475,8 +1521,8 @@ SCRBRD-002 ✓ (dismissal enum) ──▶ SCRBRD-003 (quarantine release — bac
 SCRBRD-006 ✓ (analytics consent) ──▶ SCRBRD-020 ✓ (code splitting)
 SCRBRD-001 ✓ (login page) ──┐
 SCRBRD-011 ✓ (capability gates) ──┴  (neither actually gated SCRBRD-027 — checked 2026-09-19)
-SCRBRD-027 (delete legacy-roles — still blocked, on retiring old-vocabulary names from
-             LoginPage/OnboardingFlow/ManagementView, not on -001/-011)
+SCRBRD-027 ✓ (delete legacy-roles — closed 2026-09-23, on retiring old-vocabulary names from
+             LoginPage/OnboardingFlow/ManagementView/mock.js, not on -001/-011)
 SCRBRD-009 ✓ (idempotency) — independent
 SCRBRD-010 ✓ (offline walks) — independent, should land BEFORE SCRBRD-003 (regression net)
 SCRBRD-008 ✓ (reset guard) — independent, do first: five lines, Critical impact
@@ -1543,7 +1589,7 @@ Pass 3:
 | ~~SCRBRD-012 impersonate~~ | ~~SCRBRD-026~~ | done — both closed; `db/22`'s own audit table plus `db/20`'s platform-wide log |
 | SCRBRD-003 quarantine release | ~~SCRBRD-002~~ | blocker closed; SCRBRD-003 itself stays open for lack of a UI panel, not for this |
 | ~~SCRBRD-020 code splitting~~ | ~~SCRBRD-006~~ | done — both closed |
-| SCRBRD-027 delete legacy-roles | old-vocabulary role names in `LoginPage`/`OnboardingFlow`/`ManagementView` | -001/-011 are closed but never actually gated this — checked 2026-09-19, see the entry above |
+| ~~SCRBRD-027 delete legacy-roles~~ | old-vocabulary role names in `LoginPage`/`OnboardingFlow`/`ManagementView`/`mock.js` | done — closed 2026-09-23, see the entry above |
 | ~~SCRBRD-007 search_path~~ | ~~SCRBRD-004~~ | done — both closed |
 | ~~SCRBRD-029 split request/approve~~ | `db/24` | done — it took a new capability, so it got its own file after all, and `ADDED_SINCE_01` in the generator for it |
 | SCRBRD-034 duty lifecycle | SCRBRD-031 | `~~SCRBRD-031~~`'s own closure says SCRBRD-034 no longer depends on it (premise corrected) — re-check SCRBRD-034 on its own merits before assuming it is still blocked |

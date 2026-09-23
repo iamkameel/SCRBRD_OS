@@ -613,9 +613,9 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
 
           {cat==="staff"&&(
             <div style={{display:"flex",flexDirection:"column",gap:"4px"}}>
-              {["scorer","medical","driver","groundskeeper"].map(sRole=>(
+              {["scorer","medical","driver","facilities"].map(sRole=>(
                 <div key={sRole}>
-                  <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,color:ROLES[sRole]?.color||D.textMuted,letterSpacing:"0.08em",padding:"4px 8px",marginTop:"4px",textTransform:"uppercase"}}>{sRole}s</div>
+                  <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,color:ROLES[sRole]?.color||D.textMuted,letterSpacing:"0.08em",padding:"4px 8px",marginTop:"4px",textTransform:"uppercase"}}>{sRole==="facilities"?"Groundskeepers":`${sRole}s`}</div>
                   {STAFF.filter(s=>s.role===sRole).map(s=>(
                     <button key={s.id} onClick={()=>handleSelect(s.id,"staff")} className="pressBtn" style={{
                       width:"100%",padding:"7px 10px",borderRadius:D.md,cursor:"pointer",textAlign:"left",marginBottom:"2px",

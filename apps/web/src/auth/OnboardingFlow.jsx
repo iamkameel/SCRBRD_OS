@@ -91,7 +91,7 @@ function OnboardingFlow({ onComplete }) {
     { id:"schooladmin",  icon:"🏫", label:"School Admin",       desc:"Manage your school’s cricket programme" },
     { id:"directorofsport", icon:"🏅", label:"Director of Sport", desc:"Oversee teams, fixtures & competitions" },
     { id:"coach",        icon:"🎯", label:"Head Coach",         desc:"Player development, analytics & tactics" },
-    { id:"assistant",    icon:"🤝", label:"Coaching Assistant", desc:"Training support & squad management" },
+    { id:"assistantcoach", icon:"🤝", label:"Coaching Assistant", desc:"Training support & squad management" },
     { id:"player",       icon:"🏏", label:"Player",             desc:"Track your own stats, form & development" },
     { id:"guardian",     icon:"👪", label:"Parent / Guardian",  desc:"Follow your child’s matches & logistics" },
     { id:"scorer",       icon:"📋", label:"Official Scorer",    desc:"Score matches, submit scorecards" },
