@@ -30,7 +30,7 @@ import { spawn } from "node:child_process";
 import pg from "pg";
 import { SyncEngine, memoryStorage } from "@scrbrd/sync";
 import {
-  deriveInnings, inningsStart, batters, bowler, ball, BALL_TYPE, undoLast, newEventId,
+  deriveInnings, inningsStart, batters, bowler, ball, BALL_TYPE, undoLast, newEventId, sealInnings, INNINGS_END_REASON,
   noPlacement, placementEvidence, evidenceLabel, PLACEMENT_FIELD, PLACEMENT_NULL, CAPTURE_PROFILE,
 } from "@scrbrd/scoring";
 
@@ -46,7 +46,7 @@ const P = [
 ];
 
 let pass = 0, fail = 0;
-const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
+const ok = (n, c, d = "") => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${d}` : ""); } };
 const group = (t) => console.log("\n" + t);
 
 const server = spawn(process.execPath, ["services/api/server.mjs"], {
@@ -337,6 +337,19 @@ try {
   // quick single, then a second declaration — quick — arriving after the
   // balls. Everything sits in the outbox until the signal comes back, then
   // goes to the server in one flush, in order.
+  // The first innings ends before the second begins. The server refuses a
+  // delivery in innings 1 while innings 0 is still open (lawsRefusal:
+  // previous_innings_open), so it is declared here, with the figures read
+  // back — the one ending a scorer declares rather than the laws deriving.
+  await record(sealInnings(deriveInnings(log, {}), INNINGS_END_REASON.DECLARED));
+  for (let i = 0; i < 40 && engine.pendingCount > 0; i++) {
+    await engine.sync();
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  ok("the first innings is closed before the second is scored",
+     deriveInnings(log, {}).sealed === true && engine.pendingCount === 0 && engine.held.length === 0,
+     JSON.stringify({ sealRefused: deriveInnings(log, {}).sealRefused, pending: engine.pendingCount, held: engine.held.map((h) => h.reason) }));
+
   online = false;
   const log1 = [];
   const rec1 = async (raw) => {

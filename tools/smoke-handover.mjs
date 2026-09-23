@@ -54,7 +54,7 @@ const P = [
 ];
 
 let pass = 0, fail = 0;
-const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
+const ok = (n, c, d = "") => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${d}` : ""); } };
 const group = (t) => console.log("\n" + t);
 
 const server = spawn(process.execPath, ["services/api/server.mjs"], {
@@ -121,9 +121,13 @@ try {
     batters({ striker: P[0], nonStriker: P[1] }),
     bowler({ bowler: P[2] }),
     ...[1, 4, 0, 2, 0, 6].map((v) => ball({ type: BALL_TYPE.RUN, value: v })),
+    // The over is done and the fold has cleared the bowler, so the next ball
+    // needs a new one: the server refuses a delivery nobody is bowling (db/36
+    // and lawsRefusal). The pad would have asked for him here too.
+    bowler({ bowler: "T Mokoena" }),   // a Michaelhouse bowler: a typed name, as the pad records one
   ];
   const wrote = await post(tokenA, DEV_A, epochA, opening);
-  ok("device A's over reaches the server", wrote.body?.accepted?.length === 9);
+  ok("device A's over reaches the server", wrote.body?.accepted?.length === 10);
 
   const logA = await readLog(tokenA);
   const scoreA = deriveInnings(logA.map(fromRow), {});
@@ -139,18 +143,18 @@ try {
   // the SQL that checks the confirmation. Miss it in one place and a corrected
   // over can never be handed over, with both sides certain they are right.
   const mistake = ball({ type: BALL_TYPE.RUN, value: 4 });
-  await post(tokenA, DEV_A, epochA, [mistake], 10);
+  const sentMistake = await post(tokenA, DEV_A, epochA, [mistake], 11);
   const withMistake = deriveInnings((await readLog(tokenA)).map(fromRow), {});
-  ok("a wrong ball goes in like any other", withMistake.runs === 17);
+  ok("a wrong ball goes in like any other", withMistake.runs === 17, JSON.stringify(sentMistake.body));
 
   const corrected = undoLast(
     (await readLog(tokenA)).map(fromRow), { isSynced: () => true });
   ok("undoing it produces a void, not a deletion", corrected.action === "void");
-  await post(tokenA, DEV_A, epochA, [corrected.events.at(-1)], 11);
+  await post(tokenA, DEV_A, epochA, [corrected.events.at(-1)], 12);
 
   const afterVoid = deriveInnings((await readLog(tokenA)).map(fromRow), {});
   ok("the correction takes the runs back off", afterVoid.runs === 13);
-  ok("...without removing anything from the log", (await readLog(tokenA)).length === 11);
+  ok("...without removing anything from the log", (await readLog(tokenA)).length === 12);
 
   // ── Arming: the unsynced gate ──────────────────────────────────
   group("Arming the handover");
@@ -213,7 +217,7 @@ try {
     method: "POST", token: tokenB, body: { device: DEV_B, code: arm.body.code },
   });
   ok("device B claims with the code", claimB.body?.ok === true);
-  ok("...and is handed the whole log to rebuild from", (claimB.body?.events || []).length === 11);
+  ok("...and is handed the whole log to rebuild from", (claimB.body?.events || []).length === 12);
   ok("...including the correction, so it derives the same score",
      deriveInnings((claimB.body.events || []).map(fromRow), {}).runs === 13);
   const plainVerifying = await api(`/api/matches/${MATCH}/session/claim`, {
@@ -267,13 +271,13 @@ try {
   ok("device B scores on", contB.body?.accepted?.length === 2);
 
   const finalLog = await readLog(tokenB);
-  ok("one continuous log, not two", finalLog.length === 13);
+  ok("one continuous log, not two", finalLog.length === 14);
   ok("seq stayed contiguous across the handover", finalLog.every((r, i) => r.seq === i + 1));
   ok("the log records which device entered each ball",
-     finalLog.filter((r) => r.device_id === DEV_A).length === 11 &&
+     finalLog.filter((r) => r.device_id === DEV_A).length === 12 &&
      finalLog.filter((r) => r.device_id === DEV_B).length === 2);
   ok("...and which epoch it was entered under",
-     finalLog.filter((r) => r.epoch === epochA).length === 11 &&
+     finalLog.filter((r) => r.epoch === epochA).length === 12 &&
      finalLog.filter((r) => r.epoch === epochB).length === 2);
 
   const final = deriveInnings(finalLog.map(fromRow), {});
@@ -290,7 +294,7 @@ try {
   // Device A reading the match still sees everything — losing the token is
   // not losing access to the fixture.
   const aStillReads = await readLog(tokenA);
-  ok("the outgoing scorer can still follow the match", aStillReads.length === 13);
+  ok("the outgoing scorer can still follow the match", aStillReads.length === 14);
 } catch (e) {
   ok(`the handover threw: ${e.message?.slice(0, 100)}`, false);
   console.log(e.stack?.split("\n").slice(0, 4).join("\n"));

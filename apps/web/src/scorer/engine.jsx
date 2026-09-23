@@ -4,7 +4,7 @@ import {
   ball as ballEvent, penalty as penaltyEvent, revision as revisionEvent, sealInnings,
   newEventId, undoLast,
   noPlacement, NO_CONTACT_SHOTS, PLACEMENT_NULL, PLACEMENT_SOURCE, CAPTURE_PROFILE,
-  DISMISSAL_LABEL, scoringReadiness, SCORING_BLOCK,
+  DISMISSAL_LABEL, scoringReadiness, SCORING_BLOCK, lawsRefusal, REFUSAL_TEXT,
 } from "@scrbrd/scoring";
 import { D } from "../design/tokens.js";
 import { deviceId } from "../lib/device.js";
@@ -105,6 +105,13 @@ async function liveSquad(cfg) {
 function SyncPill({ sync, storage }) {
   const S = {
     synced:  { dot: D.emerald, label: "Sent",   title: "Every ball is on the server" },
+    // The server refused these, or already holds a different event under the
+    // same id (db/36). It wrote nothing, so they are on this device only and
+    // will not be resent; a person has to look. Named, not folded into
+    // "Sent": a refused ball the board still shows is exactly the
+    // disagreement a scorer must be told about.
+    held:    { dot: D.rose, label: `Refused ${sync.held}`,
+               title: `The server did not accept ${sync.held === 1 ? "one event" : `${sync.held} events`}${sync.heldReason ? ` — ${REFUSAL_TEXT[sync.heldReason] ?? sync.heldReason}` : ""}. They are kept on this device.` },
     syncing: { dot: D.amber, label: `Sending ${sync.pending}`, title: "Balls still on their way" },
     waiting: { dot: D.amber, label: `Held ${sync.pending}`, title: "No connection — balls are saved and will send when there is one" },
     local:   sync.reason === "handed_over"
@@ -329,9 +336,12 @@ function SCRBRD({resume}={}){
       resumeEpochRef.current = null;
       const onChange = (st) => {
           if (stopped) return;
+          const heldEvs = handle?.engine?.held ?? [];
           setSync({
-            state: st.pendingCount === 0 ? "synced" : (st.online ? "syncing" : "waiting"),
+            state: st.heldCount ? "held" : st.pendingCount === 0 ? "synced" : (st.online ? "syncing" : "waiting"),
             pending: st.pendingCount,
+            held: st.heldCount || 0,
+            heldReason: heldEvs.length ? heldEvs[heldEvs.length - 1].reason : null,
             reason: st.lastError,
           });
           // The undo boundary reads this: an acknowledged ball can only be
@@ -353,7 +363,12 @@ function SCRBRD({resume}={}){
       syncRef.current = started;
       syncedRef.current = started.syncedIds();
 
-      setSync({ state: started.pending() ? "syncing" : "synced", pending: started.pending(), reason: null });
+      // Held events survive a reload (packages/sync keeps them on disk), so a
+      // scorer who reopens the pad is told about them again, not shown "Sent".
+      const heldAtStart = started.engine?.held ?? [];
+      setSync({ state: heldAtStart.length ? "held" : started.pending() ? "syncing" : "synced",
+                pending: started.pending(), held: heldAtStart.length,
+                heldReason: heldAtStart.at(-1)?.reason ?? null, reason: null });
     })();
     return () => {
       stopped = true;
@@ -792,6 +807,12 @@ function SCRBRD({resume}={}){
   };
 
   const addBowler=name=>emit(bowlerEvent({bowler:name}));
+  // The bowler sheet asks the question the server asks when the event
+  // arrives — lawsRefusal() over the same two arrays this screen already
+  // folds — so a bowler it offers is one the server will take. It used to
+  // compare names against the last bowler, a rule of its own that knew
+  // nothing of a mid-over change (Law 17.8: "or parts thereof").
+  const bowlerRefusal=id=>lawsRefusal({innings,events},bowlerEvent({innings:curIn,bowler:id}));
 
   const awardPenalty=(runs,to,reason)=>{
     emit(penaltyEvent({runs,toBattingTeam:to==="batting",reason}));
@@ -899,6 +920,7 @@ function SCRBRD({resume}={}){
           bowlingSquad={inn?.bowlingSquad||[]}
           bowlingTeamKey={inn?.bowlingTeamKey}
           lastBowlerName={lastBowler?.name||null}
+          refuses={bowlerRefusal}
           onClose={()=>setModal(null)}
           onConfirm={name=>{addBowler(name);setModal(null);}}/>
       );
@@ -945,6 +967,7 @@ function SCRBRD({resume}={}){
           bowlingSquad={inn?.bowlingSquad||[]}
           bowlingTeamKey={inn?.bowlingTeamKey}
           lastBowlerName={lastBowler?.name||null}
+          refuses={bowlerRefusal}
           onClose={()=>setModal(null)}
           onConfirm={name=>{addBowler(name);setModal(null);}}/>
       );

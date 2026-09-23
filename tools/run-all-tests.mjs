@@ -23,6 +23,8 @@ const SUITES = [
   ["rating",   "packages/scoring/test/rating.test.mjs"],
   ["rubric",   "packages/scoring/test/rubric.test.mjs"],
   ["readiness","packages/scoring/test/readiness.test.mjs"],
+  // What a scoring command may be: the Laws the server enforces at commit.
+  ["laws",     "packages/scoring/test/laws.test.mjs"],
   ["phases",   "packages/scoring/test/phases.test.mjs"],
   ["spatial",  "packages/scoring/test/spatial.test.mjs"],
   ["wheel",    "apps/web/test/wheel.test.mjs"],

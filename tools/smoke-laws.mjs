@@ -1,0 +1,243 @@
+#!/usr/bin/env node
+/**
+ * The server decides what a scoring command may be, at commit.
+ *
+ * Three things the write path used to take on the client's word, each proved
+ * here against a real Postgres and a real HTTP server:
+ *
+ *   ONE KEY, ONE EVENT (db/36). The same key with the same body is a retry:
+ *   a duplicate, as it always was. The same key with a DIFFERENT body used to
+ *   be answered "duplicate" too, and the new body dropped — the device told
+ *   its ball was safe while the server kept another. It is now a conflict,
+ *   reported by name, and nothing is written.
+ *
+ *   UNDO IS LAST-IN, FIRST-OUT. The pad only ever voids the latest event that
+ *   still counts. The server accepted a void naming ANY event, which is an
+ *   amendment with no second person. It now refuses anything but the latest.
+ *
+ *   THE LAWS (lawsRefusal, packages/scoring). A ball with nobody bowling, the
+ *   same bowler twice running, a wicket for a boy who is not batting, a ball
+ *   after the match is decided — refused per event, with the reason, and the
+ *   rest of the batch still judged, so one illegal ball cannot wedge an
+ *   offline queue. The sync engine holds a refused event for a person.
+ *
+ * And a legal match still scores end to end, through both innings, to a
+ * result the server's own fold and the device's agree on.
+ *
+ *   node tools/migrate.mjs --reset --seed
+ *   node tools/smoke-laws.mjs
+ */
+import { spawn } from "node:child_process";
+import pg from "pg";
+import { SyncEngine, memoryStorage } from "@scrbrd/sync";
+import {
+  deriveInnings, deriveMatch, fromRow, inningsStart, batters, bowler, ball, voidEvent, sealInnings,
+  BALL_TYPE, newEventId, REFUSAL,
+} from "@scrbrd/scoring";
+
+const PORT = 8891;
+const BASE = `http://127.0.0.1:${PORT}`;
+const DB = process.env.DATABASE_URL || "postgres://scrbrd:scrbrd@127.0.0.1:5432/scrbrd";
+const MATCH = "77777777-0000-0000-0000-000000000002";
+const SCORER = "scorer@example.invalid";
+const DEVICE = "device-laws-01";
+const P = ["aaaaaaaa-0000-0000-0000-000000000001", "aaaaaaaa-0000-0000-0000-000000000002",
+           "aaaaaaaa-0000-0000-0000-000000000004"];
+// The opposition bowls in the first innings and bats in the second. SCRBRD
+// holds no rows for them, so they are typed names, as the pad records them.
+const DLAMINI = "S Dlamini", MOKOENA = "T Mokoena";
+
+let pass = 0, fail = 0;
+const ok = (n, c, d = "") => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${String(d).slice(0, 300)}` : ""); } };
+const group = (t) => console.log("\n" + t);
+
+const server = spawn(process.execPath, ["services/api/server.mjs"], {
+  env: { ...process.env, PORT: String(PORT), NODE_ENV: "development", ALLOW_DEV_LOGIN: "1",
+         SESSION_SECRET: "smoke-laws-secret" },
+  stdio: ["ignore", "pipe", "pipe"],
+});
+const serverErr = [];
+server.stderr.on("data", (d) => serverErr.push(d.toString()));
+
+const api = async (path, { method = "GET", token, body } = {}) => {
+  const res = await fetch(BASE + path, {
+    method,
+    headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  return { status: res.status, body: await res.json().catch(() => null) };
+};
+const waitForHealth = async () => {
+  for (let i = 0; i < 60; i++) {
+    try { const r = await api("/api/health"); if (r.body?.db === "ok") return r.body; } catch { /* not up yet */ }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  return null;
+};
+const pool = new pg.Pool({ connectionString: DB });
+const q = async (t, p) => (await pool.query(t, p)).rows;
+
+let token, epoch, clientSeq = 0;
+/** Every event gets its identity first, exactly as the scorer's emit() does: the id IS the key. */
+const stamp = (innings, ev) => ({ ...ev, innings, id: ev.id ?? newEventId(DEVICE, MATCH) });
+const envelope = (ev) => ({ epoch, deviceId: DEVICE, idempotencyKey: ev.id, clientSeq: ++clientSeq,
+                            clientTs: Date.now(), innings: ev.innings, payload: ev });
+const post = async (...evs) => (await api(`/api/matches/${MATCH}/events`, {
+  method: "POST", token, body: { events: evs.map(envelope) } })).body;
+const serverLog = async () => ((await api(`/api/matches/${MATCH}/events?since=0`, { token })).body?.events || []).map(fromRow);
+const innings = async (i) => deriveInnings((await serverLog()).filter((e) => (e.innings ?? 0) === i));
+const rowCount = async () => (await q(`select count(*)::int n from ball_event where match_id = $1`, [MATCH]))[0].n;
+const refusedAs = (res, reason) => res?.refused?.length === 1 && res.refused[0].reason === reason && !res.accepted?.length;
+
+try {
+  ok("server comes up", !!(await waitForHealth()));
+  token = (await api("/api/auth/dev-login", { method: "POST", body: { email: SCORER, deviceId: DEVICE } })).body?.token;
+  const claim = await api(`/api/matches/${MATCH}/session/claim`, { method: "POST", token, body: { device: DEVICE } });
+  ok("the scorer claims the match", claim.body?.ok === true, JSON.stringify(claim.body));
+  epoch = claim.body?.epoch;
+
+  const squad = P.map((id, i) => ({ id, name: `Player ${i + 1}` }));
+  // Both innings opened up front, the way the scorer's setup does it.
+  const open0 = [stamp(0, inningsStart({ battingTeam: "Hilton 1st XI", bowlingTeam: "Michaelhouse", squad, overs: 2 })),
+                 stamp(1, inningsStart({ battingTeam: "Michaelhouse", bowlingTeam: "Hilton 1st XI", squad: [], bowlingSquad: squad, overs: 2 })),
+                 stamp(0, batters({ striker: P[0], nonStriker: P[1] })),
+                 stamp(0, bowler({ bowler: DLAMINI }))];
+  const opened = await post(...open0);
+  ok("the innings is opened", opened?.accepted?.length === 4, JSON.stringify(opened));
+
+  group("One key names one event");
+  const first = stamp(0, ball({ type: BALL_TYPE.RUN, value: 1 }));
+  const a1 = await post(first);
+  ok("a ball is accepted", a1?.accepted?.length === 1);
+  const seq1 = a1?.accepted?.[0]?.seq;
+  const before = await rowCount();
+  const retry = await post(first);
+  ok("the same key with the same body is a duplicate, at the same seq",
+     retry?.duplicates?.length === 1 && retry.duplicates[0].seq === seq1 && !retry.conflicts?.length, JSON.stringify(retry));
+  const changed = await post({ ...first, value: 4 });
+  ok("the same key with a DIFFERENT body is a conflict, naming the stored seq",
+     changed?.conflicts?.length === 1 && changed.conflicts[0].seq === seq1
+     && changed.conflicts[0].reason === "idempotency_conflict" && !changed.duplicates?.length, JSON.stringify(changed));
+  ok("...and nothing was written for either", (await rowCount()) === before);
+  const stored = await q(`select value from ball_event where idempotency_key = $1`, [first.id]);
+  ok("...the stored ball is still the one first sent", stored[0]?.value === 1);
+
+  group("Innings are played in order");
+  const early = await post(stamp(1, ball({ type: BALL_TYPE.RUN, value: 4 })));
+  ok("a ball in the second innings while the first is open is refused",
+     refusedAs(early, REFUSAL.PREVIOUS_INNINGS_OPEN), JSON.stringify(early));
+
+  group("At the crease");
+  // After the single, P[1] is on strike and P[0] at the other end.
+  const stranger = await post(stamp(0, ball({ type: BALL_TYPE.WICKET, dismissal: "run_out", dismissed: P[2] })));
+  ok("a wicket for a batter who is not at the crease is refused", refusedAs(stranger, REFUSAL.NOT_AT_CREASE), JSON.stringify(stranger));
+  const twice = await post(stamp(0, batters({ nonStriker: P[1] })));
+  ok("the same batter at both ends is refused", refusedAs(twice, REFUSAL.SAME_BATTER_BOTH_ENDS), JSON.stringify(twice));
+  const swap = await post(stamp(0, batters({ striker: P[2] })));
+  ok("a not-out batter cannot be replaced without leaving", refusedAs(swap, REFUSAL.CREASE_OCCUPIED), JSON.stringify(swap));
+
+  group("Undo is last-in, first-out");
+  const second = stamp(0, ball({ type: BALL_TYPE.RUN, value: 6 }));
+  await post(second);
+  const old = await post(stamp(0, voidEvent({ target: first.id })));
+  ok("a void of an older ball is refused — that is an amendment", refusedAs(old, REFUSAL.VOID_NOT_LATEST), JSON.stringify(old));
+  const unknown = await post(stamp(0, voidEvent({ target: "no-such-ball" })));
+  ok("a void of nothing in this match is refused", refusedAs(unknown, REFUSAL.VOID_UNKNOWN_TARGET), JSON.stringify(unknown));
+  const latest = await post(stamp(0, voidEvent({ target: second.id })));
+  ok("a void of the latest ball is accepted", latest?.accepted?.length === 1, JSON.stringify(latest));
+  ok("...and the six is off the board", (await innings(0)).runs === 1);
+  const again = await post(stamp(0, voidEvent({ target: second.id })));
+  ok("it cannot be undone twice", refusedAs(again, REFUSAL.VOID_ALREADY_VOIDED), JSON.stringify(again));
+
+  group("One illegal event does not wedge the queue");
+  // Five legal balls finish the over. The middle event is illegal; the rest
+  // of the batch is still judged, against the log without it.
+  const batch = await post(stamp(0, ball({ value: 0 })), stamp(0, ball({ value: 2 })),
+                           stamp(0, ball({ type: BALL_TYPE.WICKET, dismissal: "caught", dismissed: "Nobody" })),
+                           stamp(0, ball({ value: 0 })), stamp(0, ball({ value: 1 })), stamp(0, ball({ value: 0 })));
+  ok("the illegal one is refused by name, the five legal ones are written",
+     batch?.refused?.length === 1 && batch.refused[0].reason === REFUSAL.NOT_AT_CREASE && batch?.accepted?.length === 5,
+     JSON.stringify(batch));
+  ok("the over is complete", (await innings(0)).balls === 6);
+
+  group("The over, and the bowler");
+  const noBowler = await post(stamp(0, ball({ value: 1 })));
+  ok("a ball with nobody named to bowl the new over is refused", refusedAs(noBowler, REFUSAL.NEXT_BOWLER), JSON.stringify(noBowler));
+  const same = await post(stamp(0, bowler({ bowler: DLAMINI })));
+  ok("the same bowler for a second over running is refused (Law 17.8)", refusedAs(same, REFUSAL.CONSECUTIVE_OVERS), JSON.stringify(same));
+  const change = await post(stamp(0, bowler({ bowler: MOKOENA })));
+  ok("a different bowler is accepted", change?.accepted?.length === 1);
+  const over2 = await post(...[1, 0, 4, 0, 0, 1].map((v) => stamp(0, ball({ value: v }))));
+  ok("the second over is scored", over2?.accepted?.length === 6, JSON.stringify(over2));
+  const inn0 = await innings(0);
+  ok(`the first innings is over by the laws — ${inn0.runs}/${inn0.wickets} off ${inn0.balls}`,
+     inn0.complete === true && inn0.balls === 12 && inn0.runs === 10);
+  const late = await post(stamp(0, ball({ value: 1 })));
+  ok("a ball after the overs are done is refused", refusedAs(late, REFUSAL.INNINGS_OVER), JSON.stringify(late));
+  const seal = await post(stamp(0, sealInnings(inn0)));
+  ok("the scorer seals it", seal?.accepted?.length === 1 && (await innings(0)).sealed === true);
+
+  group("The chase, through the sync engine, to a result");
+  // The break re-declares the chase with its target (engine.jsx, SCRBRD-063).
+  const target = inn0.runs + 1;
+  const engine = new SyncEngine({
+    matchId: MATCH, deviceId: DEVICE, scorerId: claim.body?.user_id ?? null, epoch, innings: 1,
+    storage: memoryStorage(),
+    transport: async (id, evs) => {
+      const r = await api(`/api/matches/${id}/events`, { method: "POST", token, body: { events: evs } });
+      if (r.status !== 200) throw new Error(`${r.status}: ${JSON.stringify(r.body)}`);
+      return r.body;
+    },
+  });
+  await engine.init();
+  const rec = async (ev) => { await engine.record(stamp(1, ev)); await engine.sync(); };
+  const drain = async () => {
+    for (let i = 0; i < 40 && engine.pendingCount > 0; i++) { await engine.sync(); await new Promise((r) => setTimeout(r, 50)); }
+  };
+  await rec(inningsStart({ battingTeam: "Michaelhouse", bowlingTeam: "Hilton 1st XI", squad: [], bowlingSquad: squad, overs: 2, target }));
+  await rec(batters({ striker: DLAMINI, nonStriker: MOKOENA }));
+  await rec(bowler({ bowler: P[2] }));
+  await rec(ball({ value: 4 }));
+  await rec(ball({ type: BALL_TYPE.WICKET, dismissal: "stumped", dismissed: "Twelfth Man" }));   // illegal
+  await rec(ball({ value: 2 }));
+  await drain();
+  ok("the engine holds the refused ball for a person, with its reason",
+     engine.held.length === 1 && engine.held[0].state === "refused" && engine.held[0].reason === REFUSAL.NOT_AT_CREASE,
+     JSON.stringify(engine.held.map((h) => [h.state, h.reason])));
+  ok("...it is neither acked nor left pending, so the outbox drains", engine.pendingCount === 0
+     && !engine.acked.some((a) => a.idempotencyKey === engine.held[0]?.idempotencyKey));
+  ok("...and the balls either side of it reached the server", (await innings(1)).runs === 6);
+  await rec(ball({ value: 4 }));   // 10 — one short of 11
+  await rec(ball({ value: 1 }));   // 11: the chase is won
+  await drain();
+
+  const log = await serverLog();
+  const match = deriveMatch(log);
+  ok(`the match is decided — ${match.result?.winner} by ${match.result?.margin}`,
+     match.result?.winner === "Michaelhouse" && match.innings[1].runs === target, JSON.stringify(match.result));
+  const after = await post(stamp(1, ball({ value: 6 })));
+  ok("no ball is accepted after the match is decided", refusedAs(after, REFUSAL.MATCH_DECIDED), JSON.stringify(after));
+
+  group("The server's fold and the device's agree");
+  const [live0] = await q(`select runs::int, wickets::int, legal_balls::int from match_live_score where match_id = $1 and innings = 0`, [MATCH]);
+  const [live1] = await q(`select runs::int, wickets::int, legal_balls::int from match_live_score where match_id = $1 and innings = 1`, [MATCH]);
+  ok("first innings: SQL and replay agree", live0?.runs === match.innings[0].runs && live0?.legal_balls === match.innings[0].balls,
+     JSON.stringify([live0, match.innings[0].runs]));
+  ok("second innings: SQL and replay agree", live1?.runs === match.innings[1].runs && live1?.legal_balls === match.innings[1].balls,
+     JSON.stringify([live1, match.innings[1].runs]));
+  const [unstamped] = await q(`select count(*)::int n from ball_event where match_id = $1 and fingerprint is null`, [MATCH]);
+  ok("every event written carries its fingerprint", unstamped.n === 0);
+} catch (e) {
+  ok(`the walk threw: ${e.message?.slice(0, 200)}`, false);
+  console.log(e.stack?.split("\n").slice(0, 4).join("\n"));
+} finally {
+  server.kill("SIGTERM");
+  await pool.end();
+}
+
+if (fail && serverErr.length) {
+  console.log("\nServer stderr:");
+  console.log(serverErr.join("").split("\n").slice(0, 12).join("\n"));
+}
+console.log(`\n${"─".repeat(52)}\nLAWS SMOKE: ${pass} passed, ${fail} failed`);
+process.exit(fail ? 1 : 0);

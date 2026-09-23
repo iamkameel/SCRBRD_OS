@@ -124,10 +124,21 @@ try {
 
   group("A ball that arrived by another road is not written twice");
   // The same key, quarantined again by a stale send after it was released.
+  // The SAME ball — fielder and all. db/36: a key names one event, so a
+  // resend is a duplicate only when it says what the stored one says.
   const dupe = await post(scorer, DEV_A, epoch + 7, [   // the SAME key as before: epoch + 7, client seq 10
-    ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: "run_out", striker: P[0], nonStriker: P[1], bowler: P[2] }),
+    ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: "Run Out", fielder: "L Govender", striker: P[0], nonStriker: P[1], bowler: P[2] }),
   ], 10);
   ok("a resend of the released key is reported as a duplicate, not quarantined", dupe.body?.duplicates?.length === 1, JSON.stringify(dupe.body));
+  // ...and a DIFFERENT ball under that key is not a duplicate. This used to be
+  // answered "duplicate" and dropped: the device told its wicket was safe, the
+  // server holding another.
+  const other = await post(scorer, DEV_A, epoch + 7, [
+    ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: "run_out", striker: P[0], nonStriker: P[1], bowler: P[2] }),
+  ], 10);
+  ok("the same key with a different body is a conflict, naming the stored seq",
+     other.body?.conflicts?.length === 1 && other.body.conflicts[0].seq === released?.seq
+     && other.body?.duplicates?.length === 0, JSON.stringify(other.body));
   const unknown = await resolve(999999, dos, { accept: true });
   ok("an id that does not exist is a 404", unknown.status === 404);
 } catch (e) {
