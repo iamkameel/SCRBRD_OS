@@ -758,25 +758,34 @@ export const READ_QUERIES = {
    * quietly claims nothing is arranged. What is missing from a reader's
    * roster is what is missing from that reader's authority, and the two should
    * be the same thing.
+   *
+   * `status` is an appointment's LIFECYCLE (SCRBRD-034): pending, active,
+   * delegated, completed, expired — derived by duty_status() (db/30) from
+   * the fixture's status, the appointment, and the scoring audit, never
+   * stored. It is NULL on every other arm: a bus or a pitch report is not a
+   * duty somebody holds. It grants nothing and is read here only so the
+   * roster can say it; a withdrawn appointment ('revoked') is not on this
+   * roster at all, for the reason above.
    */
   match_duties: {
     text: `select o.duty                              as duty,
                   o.person_name                        as who,
                   'named'                              as state,
                   coalesce(o.panel, '')                as detail,
-                  o.appointed_at                       as at
+                  o.appointed_at                       as at,
+                  duty_status(o.id)                    as status
              from match_official o
             where o.match_id = $1 and not o.withdrawn
             union all
            select 'scoring', coalesce(u.name, ''),
                   s.state::text,
                   case when s.lease_until is not null then 'lease held' else '' end,
-                  s.updated_at
+                  s.updated_at, null::text
              from scoring_session s
              left join app_user u on u.id = s.holder_user_id
             where s.match_id = $1
             union all
-           select 'transport', coalesce(t.driver_name, ''), t.state, coalesce(t.registration, ''), t.arranged_at
+           select 'transport', coalesce(t.driver_name, ''), t.state, coalesce(t.registration, ''), t.arranged_at, null::text
              from (select tr.match_id, tr.arranged_at, v.registration, du.name as driver_name,
                           case when tr.cancelled_at is not null then 'cancelled'
                                when tr.arrived_at   is not null then 'arrived'
@@ -787,11 +796,11 @@ export const READ_QUERIES = {
                      left join app_user du on du.id = tr.driver_id) t
             where t.match_id = $1
             union all
-           select 'ground', '', 'recorded', coalesce(r.surface, ''), r.reported_at
+           select 'ground', '', 'recorded', coalesce(r.surface, ''), r.reported_at, null::text
              from match_pitch_report r
             where r.match_id = $1
             union all
-           select 'squad', '', 'named', count(*)::text || ' selected', max(q.selected_at)
+           select 'squad', '', 'named', count(*)::text || ' selected', max(q.selected_at), null::text
              from match_squad q
             where q.match_id = $1 and not q.withdrawn
             having count(*) > 0`,

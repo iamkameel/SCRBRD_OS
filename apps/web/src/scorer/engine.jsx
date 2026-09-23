@@ -12,6 +12,7 @@ import { loadMatch, saveMatch, storageKind } from "../lib/persist.js";
 import { api, signedIn } from "../lib/api.js";
 import { profile } from "../lib/session.js";
 import { resumeSync, startSync } from "../lib/sync.js";
+import { refusalWords } from "../lib/handover.js";
 import { SEGS } from "./field.js";
 import { fmtOv } from "./format.js";
 import { ALL_SHOTS } from "./shots.js";
@@ -110,6 +111,11 @@ function SyncPill({ sync, storage }) {
       ? { dot: D.sky, label: "Handed over", title: "You gave the scoring token to someone else" }
       : sync.reason === "handover_pending" || sync.reason === "verifying"
       ? { dot: D.amber, label: "Handover pending", title: "Someone has armed a handover — use ⇄ Take over to claim it" }
+      // db/33 (SCRBRD-034): the result is declared and the database refuses
+      // every claim. Not "On device (match_complete)": the scorer should
+      // know retrying will not help and where a correction goes instead.
+      : sync.reason === "match_complete"
+      ? { dot: D.sky, label: "Match complete", title: refusalWords("match_complete") }
       : { dot: D.textMuted, label: "On device", title: `Saved here only (${sync.reason ?? "no server"})` },
     offline: { dot: D.textMuted, label: "On device", title: "Saved here only" },
   }[sync.state] ?? { dot: D.textMuted, label: "On device", title: "Saved here only" };

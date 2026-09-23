@@ -1207,6 +1207,38 @@ longer retaining active scoring permission."* `role_assignment` already carries 
 currently takes on trust. `delegated` is the state handover has no name for. Files: new `db/NN`,
 `packages/policy/src/authorize.mjs`. Depends on SCRBRD-031. Risk MEDIUM. **Migration YES.**
 
+**Part delivered 2026-09-23 — step 1 (derived status, the hour hand's reason) and D3 (completion ends
+scoring). NOT closed:** linking `match_official` to `role_assignment` and `suspended` are the other half,
+built separately (`db/31`, `db/32`, `db/34`).
+- `db/30_duty_status.sql` — `duty_status(match_official.id)`, read-only, STABLE, grants nothing. Derived,
+  in precedence order: `revoked` (withdrawn) → `completed` (match `complete`) → `expired` (`abandoned`) →
+  `delegated` (a scorer duty naming an account that is `from_user` on a `handover_complete` in
+  `scoring_audit` and is not the session holder now; checked on `scheduled` as well as `live`, because
+  scoring does not wait for the status to move) → `active` (`live`) → `pending` (`scheduled`). Never
+  `suspended`. SECURITY DEFINER so a reader without `audit.read` gets the same answer; answers only a caller
+  with `fixture.read` over the match (`match_official_read`'s predicate), NULL otherwise. Exposed as
+  `status` on `match_duties` and shown on the duty roster (`views/duties.jsx`); no policy-package mirror —
+  the client shows the server's answer.
+- Also `db/30`: a DEFERRED constraint trigger `role_assignment_expiry_has_reason` (on `role_assignment`
+  INSERT / UPDATE OF `expires_at`, and on `support_access` DELETE / re-point) — a non-null `expires_at` must be
+  named by a `support_access` row (reason required) that issued at least that hour. Closes the direct INSERT
+  under `role_assignment_write`, and the office UPDATE that extended a live session's hour. Deferred because
+  `support_access_begin()` writes the assignment before the record.
+- `sessionProfile` (`services/api/auth/auth-db.mjs`) now drops an assignment past `expires_at` and returns
+  `expiresAt` — a lapsed support session no longer shows as live (display only; reads were already refused).
+- `db/33_completion_ends_scoring.sql` — `scoring_claim` (from db/28), `scoring_claim_handover` (db/04),
+  `scoring_verify_takeover` and `scoring_lease_check` (db/02) refuse a `complete` match for everyone as
+  `match_complete`, after the capability check; signatures and shapes unchanged. `scoring_lease_check` cannot
+  grow a reason column, so it answers `holds=false, state='match_complete'`; the write path quarantines the
+  ball with reason `match_complete` and the heartbeat reports it. The amendment request (db/24) is untouched
+  and asserted still open. Force-release and arm are unchanged. The client says it in words
+  (`REFUSAL_WORDS` in `lib/handover.js`, the scorer's sync pill and handover sheet).
+- Live assertions in `db/99` (the expiry block after SCRBRD-012; section 15), a walk addition in
+  `tools/smoke-support.mjs`. Not yet in `db/SHIPPED.sha256`. `db/01`/`db/09`/`db/23` unchanged.
+- **Found, not fixed:** the office may still UPDATE a support assignment's `expires_at` to NULL — turning an
+  hour into a standing appointment. The rule here covers only a non-null hour hand; it belongs with the
+  suspension/link work, which already has to decide what may move on a live assignment.
+
 ### SCRBRD-035 — Operational escalation roster — **RE-SCOPED, do not import as written**
 
 > Checked the 18 rows against the real roster before building. **Four of the roles they escalate

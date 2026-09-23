@@ -71,6 +71,29 @@ export const armHandover = (matchId, { device, pending = 0, ballInFlight = false
 export const cancelHandover = (matchId, { device }) =>
   api(`/api/matches/${matchId}/session/claim`, { method: "POST", body: { device } });
 
+/**
+ * The words for a refusal the token functions name. The database decides;
+ * this only says it in a sentence a scorer at the boundary can act on. A
+ * reason not listed is shown as itself rather than swallowed.
+ *
+ * `match_complete` (db/33, SCRBRD-034): the fixture's result is declared and
+ * scoring has closed — for everyone, whatever they hold. The claim, both
+ * handover steps and the lease all refuse it; a ball sent after it goes to
+ * quarantine. The remedy is not to retry: a correction to a finished match
+ * is an amendment request, which stays open.
+ */
+export const REFUSAL_WORDS = {
+  match_complete: "This match is complete — scoring has closed. A correction now goes through an amendment request.",
+  lease_active: "Someone else is scoring this match on another device right now.",
+  handover_pending: "A handover is waiting — enter the code from the outgoing scorer.",
+  verifying: "A handover is being confirmed on another device.",
+  no_capability: "You are not appointed to score this match.",
+  not_pending: "There is no handover waiting on this match.",
+  not_token_holder: "This device does not hold the scoring token.",
+  unreachable: "Could not reach the server.",
+};
+export const refusalWords = (reason) => REFUSAL_WORDS[reason] ?? `Could not complete this (${reason}).`;
+
 /** Step 2 — incoming device claims the pending handover with its code. */
 export const claimHandover = (matchId, { device, code }) =>
   api(`/api/matches/${matchId}/session/handover/claim`, {

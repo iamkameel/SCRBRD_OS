@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { DISMISSAL, DISMISSAL_LABEL, INNINGS_END_REASON } from "@scrbrd/scoring";
 import { D } from "../design/tokens.js";
-import { armHandover, cancelHandover, claimHandover, sessionState, verifyTakeover } from "../lib/handover.js";
+import { armHandover, cancelHandover, claimHandover, refusalWords, sessionState, verifyTakeover } from "../lib/handover.js";
 import { fmtOv } from "./format.js";
 import { SHOT_CATEGORIES } from "./shots.js";
 import { INT_TEAMS, ROLE_COLORS } from "./teams.js";
@@ -329,7 +329,9 @@ function HandOverTab({ matchId, device, epoch, pending, ballInFlight, onHandedOv
         Issues a six-digit code for the person taking over. Read it to them, or send it — it is not a
         password, only a claim ticket, and it expires the moment someone else claims this match's token.
       </div>
-      {error&&<div style={{color:D.roseText,fontFamily:D.body,fontSize:"12px"}}>Could not arm a handover ({error}).</div>}
+      {error&&<div data-testid="handover-arm-error" style={{color:D.roseText,fontFamily:D.body,fontSize:"12px"}}>
+        {error==="match_complete"?refusalWords(error):`Could not arm a handover (${error}).`}
+      </div>}
       <Btn variant="primary" full disabled={busy} data-testid="handover-arm" onClick={arm}>
         {busy?"Arming…":"Hand over scoring"}
       </Btn>
@@ -356,6 +358,9 @@ function HandOverTab({ matchId, device, epoch, pending, ballInFlight, onHandedOv
     </div>
   );
 }
+
+// Refusals the takeover can meet that are not a figure mismatch, said in words.
+const REASON_FIELDS = { match_complete: 1, not_pending: 1, no_capability: 1, unreachable: 1 };
 
 /** The incoming scorer: the code, then an INDEPENDENT read of the physical scoreboard. */
 function TakeOverTab({ matchId, device, onTakenOver, onClose }) {
@@ -416,8 +421,8 @@ function TakeOverTab({ matchId, device, onTakenOver, onClose }) {
           style={{width:"100%",padding:"14px",borderRadius:D.md,background:D.surf2,border:`1px solid ${D.border}`,
             fontFamily:D.mono,fontSize:"26px",letterSpacing:"0.2em",textAlign:"center",color:D.textPrimary,boxSizing:"border-box"}}/>
       </div>
-      {claimError&&<div style={{color:D.roseText,fontFamily:D.body,fontSize:"12px"}}>
-        {claimError==="verify_mismatch"?"That code doesn't match — check it and try again.":`Could not claim (${claimError}).`}
+      {claimError&&<div data-testid="handover-claim-error" style={{color:D.roseText,fontFamily:D.body,fontSize:"12px"}}>
+        {claimError==="verify_mismatch"?"That code doesn't match — check it and try again.":refusalWords(claimError)}
       </div>}
       <Btn variant="primary" full disabled={busy||code.length!==6} data-testid="handover-claim" onClick={claim}>
         {busy?"Claiming…":"Claim this match"}
@@ -452,7 +457,7 @@ function TakeOverTab({ matchId, device, onTakenOver, onClose }) {
           {diff.map((d,i)=>(
             <div key={i}>{d.expected!==undefined
               ? `${d.field}: expected ${d.expected}, entered ${d.got}`
-              : `Reason: ${d.field}`}</div>
+              : d.field in REASON_FIELDS ? refusalWords(d.field) : `Reason: ${d.field}`}</div>
           ))}
         </div>
       )}

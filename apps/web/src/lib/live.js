@@ -719,7 +719,11 @@ function asScoutingConsent(r) {
  * should have been.
  */
 function asDuty(r) {
+  // `status` is the server's duty_status() (db/30), null on every row that is
+  // not an appointment. Carried as the server answered it — the client never
+  // derives a lifecycle of its own.
   return { duty: r.duty, who: r.who || null, state: r.state,
+           status: r.status ?? null,
            detail: r.detail || null,
            at: r.at ? String(r.at).slice(0, 10) : null, live: true };
 }

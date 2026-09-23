@@ -136,6 +136,27 @@ CREATE OR REPLACE FUNCTION _lapse_scoring_lease(p_match uuid) RETURNS void AS $$
   UPDATE scoring_session SET lease_until = now() - interval '1 minute' WHERE match_id = p_match;
 $$ LANGUAGE sql SECURITY DEFINER;
 
+-- SCRBRD-034. A fixture's status is what duty_status() (db/30) and the
+-- completion gate (db/33) read, and moving it is an owner edit here — the
+-- section needs one match walked scheduled → live → complete → abandoned.
+CREATE OR REPLACE FUNCTION _set_match_status(p_match uuid, p_status text) RETURNS void AS $$
+  UPDATE match SET status = p_status WHERE id = p_match;
+$$ LANGUAGE sql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION _lease_until(p_match uuid) RETURNS timestamptz AS $$
+  SELECT lease_until FROM scoring_session WHERE match_id = p_match;
+$$ LANGUAGE sql SECURITY DEFINER;
+
+-- Two appointments on the handover section's match (U16B v Kearsney): the
+-- seeded scorer, holding an account, so a handover can name him as the one
+-- who passed the pen on — and an umpire already stood down.
+INSERT INTO match_official (id, match_id, school_id, duty, person_name, person_id, withdrawn) VALUES
+  ('d0730000-0000-0000-0000-000000000001', '77777777-0000-0000-0000-000000000003',
+   '11111111-1111-1111-1111-111111111111', 'scorer', 'A Wessels', '88888888-0000-0000-0000-000000000006', false),
+  ('d0730000-0000-0000-0000-000000000002', '77777777-0000-0000-0000-000000000003',
+   '11111111-1111-1111-1111-111111111111', 'umpire', 'A Stood-Down Umpire', NULL, true)
+ON CONFLICT DO NOTHING;
+
 -- Fixtures this file needs that a database seeded before them never received.
 -- Production was seeded once and has taken apply-NN bundles since, so the
 -- verify bundle cannot assume the current db/98. Written as the owner, before
@@ -228,6 +249,14 @@ DECLARE
   v_epoch   integer;
   v_code    text;
   v_state   text;
+  -- SCRBRD-034: the two appointments seeded above, and what a handover needs.
+  O_SCORER  uuid := 'd0730000-0000-0000-0000-000000000001';
+  O_STOOD   uuid := 'd0730000-0000-0000-0000-000000000002';
+  v_until   timestamptz;
+  v_runs    int;
+  v_wkts    int;
+  v_balls   int;
+  A_ID      uuid;
   n int;
 BEGIN
   -- ── 1. Nobody is anybody by default ────────────────────────────
@@ -1631,6 +1660,81 @@ BEGIN
   SELECT count(*) INTO n FROM player_masked WHERE school_id = HIL;
   PERFORM _assert(n > 0, 'the hour hand stopped an ordinary appointment');
 
+  -- ── SCRBRD-034 (db/30): an hour hand always carries a reason ──
+  --
+  -- expires_at is the support session's hour hand, and support_access_begin()
+  -- will not issue one without a reason. role_assignment_write let the
+  -- school's office write one directly — an INSERT naming expires_at, or an
+  -- UPDATE moving a live session's hour forward — with no reason and no
+  -- record. db/30's check is DEFERRED to commit, because the support path
+  -- writes the assignment before the record; this file ends in ROLLBACK and
+  -- never commits, so each assertion fires the pending check on the spot
+  -- with SET CONSTRAINTS ... IMMEDIATE.
+  --
+  -- The support path itself passes: a session issued, checked at once. The
+  -- same statement also fires the checks queued by every begin and every
+  -- _expire_support() above — winding an hour hand BACK stays within what
+  -- was issued.
+  PERFORM _as(U_PLAT);
+  SELECT ok, reason, id INTO v_ok, v_reason, S_ID
+    FROM support_access_begin(HIL, 'schooladmin', 'ticket 4413: the third look, checked at once');
+  PERFORM _assert(v_ok, 'a support session could not begin under the expiry check: ' || coalesce(v_reason, '?'));
+  SET CONSTRAINTS role_assignment_expiry_has_reason IMMEDIATE;
+  SET CONSTRAINTS role_assignment_expiry_has_reason DEFERRED;
+
+  -- A direct time-boxed grant: the office may appoint an analyst, and may
+  -- not give the appointment an hour hand with nothing saying why.
+  PERFORM _as(U_SARAH);   -- user.role.assign at Hilton; directorofsport may grant analyst
+  BEGIN
+    INSERT INTO role_assignment (person_id, role, school_id, expires_at)
+    VALUES (U_WATCHER, 'analyst', HIL, now() + interval '1 hour');
+    SET CONSTRAINTS role_assignment_expiry_has_reason IMMEDIATE;
+    PERFORM _assert(false, 'a time-boxed assignment was written with no support session behind it');
+  EXCEPTION WHEN check_violation THEN
+    PERFORM _assert(SQLERRM LIKE '%no support session%', 'the direct grant was refused for another reason: ' || SQLERRM);
+  END;
+  SET CONSTRAINTS role_assignment_expiry_has_reason DEFERRED;
+  -- The same appointment with no hour hand is an ordinary one, and is not
+  -- this check's business. Undone by raising past it, so U_WATCHER keeps
+  -- holding nothing for the assertions that rely on that.
+  BEGIN
+    INSERT INTO role_assignment (person_id, role, school_id)
+    VALUES (U_WATCHER, 'analyst', HIL);
+    SET CONSTRAINTS role_assignment_expiry_has_reason IMMEDIATE;
+    RAISE EXCEPTION USING ERRCODE = 'ZZ034', MESSAGE = 'undo';
+  EXCEPTION WHEN sqlstate 'ZZ034' THEN NULL;
+  END;
+  SET CONSTRAINTS role_assignment_expiry_has_reason DEFERRED;
+
+  -- Moving a live session's hour FORWARD is a longer session than the reason
+  -- was given for. The school's office holds the UPDATE policy over it.
+  SELECT s.assignment_id, s.expires_at INTO A_ID, v_until FROM support_access s WHERE s.id = S_ID;
+  PERFORM _assert(A_ID IS NOT NULL, 'the school''s auditor cannot see the live support session');
+  BEGIN
+    UPDATE role_assignment SET expires_at = v_until + interval '1 day' WHERE id = A_ID;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    PERFORM _assert(n = 1, 'the office could not reach the support assignment at all — the next assertion would prove nothing');
+    SET CONSTRAINTS role_assignment_expiry_has_reason IMMEDIATE;
+    PERFORM _assert(false, 'a support session''s hour was extended past what its reason was given for');
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  SET CONSTRAINTS role_assignment_expiry_has_reason DEFERRED;
+  -- ...an ordinary appointment cannot be given one after the fact either.
+  SELECT a.id INTO A_ID FROM role_assignment a
+   WHERE a.person_id = U_COACH2 AND a.active AND a.expires_at IS NULL LIMIT 1;
+  BEGIN
+    UPDATE role_assignment SET expires_at = now() + interval '1 hour' WHERE id = A_ID;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    PERFORM _assert(n = 1, 'the office could not reach the 2XI coach''s appointment — the next assertion would prove nothing');
+    SET CONSTRAINTS role_assignment_expiry_has_reason IMMEDIATE;
+    PERFORM _assert(false, 'an ordinary appointment was given an hour hand with no reason');
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  SET CONSTRAINTS role_assignment_expiry_has_reason DEFERRED;
+  -- The session this block opened is ended, so nothing below inherits it.
+  SELECT ok INTO v_ok FROM support_access_end(S_ID);
+  PERFORM _assert(v_ok, 'the school could not end the third support session');
+
   -- ── SCRBRD-054: a correction takes two people, in the database ──
   --
   -- db/02's INSERT policy on scoring_amendment asked for `scoring.correct`,
@@ -1868,6 +1972,118 @@ BEGIN
   PERFORM _as(U_SARAH);
   SELECT c.ok, c.reason INTO v_ok, v_reason FROM scoring_claim(M_HANDOVER, 'verify-059-b') c;
   PERFORM _assert(NOT v_ok AND v_reason = 'lease_active', 'a live lease is no longer refused as lease_active');
+
+  -- ── 15. A duty's lifecycle, and completion ends scoring (SCRBRD-034) ─
+  -- db/30's duty_status() derives each state from a fact already on record;
+  -- db/33 makes a complete match unscorable for everyone. One fixture walked
+  -- through its life: the scorer appointment seeded above (A Wessels, who
+  -- holds an account) and an umpire already stood down. Sarah reads.
+  PERFORM _scoring_session_reset(M_HANDOVER);
+  PERFORM _as(U_SARAH);
+  PERFORM _assert(duty_status(O_SCORER) = 'pending',
+    'a scheduled fixture''s scorer is not pending: ' || coalesce(duty_status(O_SCORER), 'NULL'));
+  PERFORM _assert(duty_status(O_STOOD) = 'revoked', 'a withdrawn appointment is not revoked');
+  -- Only to a reader who may see the appointment: Westville's office may not.
+  PERFORM _as(U_WES_ADM);
+  PERFORM _assert(duty_status(O_SCORER) IS NULL, 'duty_status answered a reader who cannot see the fixture');
+  PERFORM _as(U_SARAH);
+
+  PERFORM _set_match_status(M_HANDOVER, 'live');
+  PERFORM _assert(duty_status(O_SCORER) = 'active', 'a live fixture''s scorer is not active');
+  PERFORM _assert(duty_status(O_STOOD) = 'revoked', 'a stood-down umpire came back to life when play began');
+
+  -- The scorer hands the pen to Sarah: delegated, while she holds it.
+  PERFORM _as(U_SCORER);
+  SELECT c.ok INTO v_ok FROM scoring_claim(M_HANDOVER, 'verify-034-a') c;
+  PERFORM _assert(v_ok, 'the scorer could not claim a live fixture');
+  PERFORM _assert(duty_status(O_SCORER) = 'active', 'the scorer holding the pen is not active');
+  SELECT a.code INTO v_code FROM scoring_arm_handover(M_HANDOVER, 'verify-034-a', 0, false) a;
+  PERFORM _as(U_SARAH);
+  SELECT h.ok INTO v_ok FROM scoring_claim_handover(M_HANDOVER, 'verify-034-b', v_code) h;
+  PERFORM _assert(v_ok, 'Sarah could not claim the scorer''s handover');
+  -- A wrong reading answers with the server's own count; the right one follows.
+  SELECT v.exp_runs, v.exp_wkts, v.exp_balls INTO v_runs, v_wkts, v_balls
+    FROM scoring_verify_takeover(M_HANDOVER, 'verify-034-b', -1, -1, -1) v;
+  SELECT v.ok INTO v_ok FROM scoring_verify_takeover(M_HANDOVER, 'verify-034-b', v_runs, v_wkts, v_balls) v;
+  PERFORM _assert(v_ok, 'Sarah could not complete the takeover');
+  PERFORM _assert(duty_status(O_SCORER) = 'delegated',
+    'the scorer who handed the pen over is not delegated: ' || coalesce(duty_status(O_SCORER), 'NULL'));
+  -- The scorer reads the fixture and not scoring_audit (audit.read is the
+  -- office's) — and is told the same thing about his own duty.
+  PERFORM _as(U_SCORER);
+  SELECT count(*) INTO n FROM scoring_audit WHERE match_id = M_HANDOVER;
+  PERFORM _assert(n = 0, 'the scorer reads scoring_audit — the next assertion would prove nothing');
+  PERFORM _assert(duty_status(O_SCORER) IS NOT DISTINCT FROM 'delegated',
+    'a reader without audit.read is told something different about the same duty: ' || coalesce(duty_status(O_SCORER), 'NULL'));
+  -- He takes it back once her lease lapses: holding it again is active.
+  PERFORM _lapse_scoring_lease(M_HANDOVER);
+  PERFORM _as(U_SCORER);
+  SELECT c.ok INTO v_ok FROM scoring_claim(M_HANDOVER, 'verify-034-a') c;
+  PERFORM _assert(v_ok, 'the scorer could not take a lapsed token back');
+  PERFORM _assert(duty_status(O_SCORER) = 'active', 'a scorer holding the pen again is still delegated');
+
+  -- ── Completion ends scoring (db/33) ──
+  -- Arm a handover and put another one mid-verification first, so both of
+  -- the handover functions meet a complete match with work in flight.
+  SELECT a.code INTO v_code FROM scoring_arm_handover(M_HANDOVER, 'verify-034-a', 0, false) a;
+  PERFORM _assert(v_code IS NOT NULL, 'the scorer could not arm a handover on a live fixture');
+  PERFORM _set_match_status(M_HANDOVER, 'complete');
+  PERFORM _as(U_SARAH);
+  SELECT h.ok, h.reason INTO v_ok, v_reason FROM scoring_claim_handover(M_HANDOVER, 'verify-034-b', v_code) h;
+  PERFORM _assert(NOT v_ok AND v_reason = 'match_complete',
+    format('a handover was claimed on a complete match (ok=%s reason=%s)', v_ok, v_reason));
+  PERFORM _set_match_status(M_HANDOVER, 'live');
+  SELECT h.ok INTO v_ok FROM scoring_claim_handover(M_HANDOVER, 'verify-034-b', v_code) h;
+  PERFORM _assert(v_ok, 'the handover could not be claimed once the fixture was live again');
+  PERFORM _set_match_status(M_HANDOVER, 'complete');
+  SELECT v.ok, v.reason INTO v_ok, v_reason
+    FROM scoring_verify_takeover(M_HANDOVER, 'verify-034-b', v_runs, v_wkts, v_balls) v;
+  PERFORM _assert(NOT v_ok AND v_reason = 'match_complete',
+    format('a takeover was verified on a complete match (ok=%s reason=%s)', v_ok, v_reason));
+  SELECT count(*) INTO n FROM scoring_session
+   WHERE match_id = M_HANDOVER AND state = 'verifying' AND claimant_device = 'verify-034-b';
+  PERFORM _assert(n = 1, 'a refused takeover still moved the session');
+
+  -- The plain claim: refused for everyone, the supervisor included, once
+  -- the session is idle and nothing else would stand in the way.
+  PERFORM _lapse_scoring_lease(M_HANDOVER);
+  SELECT f.ok INTO v_ok FROM scoring_force_release(M_HANDOVER) f;
+  PERFORM _assert(v_ok, 'a session on a complete match could not be force-released — that is how one is tidied');
+  SELECT c.ok, c.reason INTO v_ok, v_reason FROM scoring_claim(M_HANDOVER, 'verify-034-b') c;
+  PERFORM _assert(NOT v_ok AND v_reason = 'match_complete',
+    format('the director of sport claimed a complete match (ok=%s reason=%s)', v_ok, v_reason));
+  PERFORM _as(U_SCORER);
+  SELECT c.ok, c.reason INTO v_ok, v_reason FROM scoring_claim(M_HANDOVER, 'verify-034-a') c;
+  PERFORM _assert(NOT v_ok AND v_reason = 'match_complete',
+    format('the appointed scorer claimed a complete match (ok=%s reason=%s)', v_ok, v_reason));
+  SELECT count(*) INTO n FROM scoring_session WHERE match_id = M_HANDOVER AND state = 'idle';
+  PERFORM _assert(n = 1, 'a refused claim on a complete match still took the token');
+
+  -- The lease: a token held when the result is declared is not extended.
+  -- Live again, the scorer claims; complete, the very next check refuses —
+  -- while the lease is still running, which is the case that matters.
+  PERFORM _set_match_status(M_HANDOVER, 'live');
+  SELECT c.ok, c.epoch INTO v_ok, v_epoch FROM scoring_claim(M_HANDOVER, 'verify-034-a') c;
+  PERFORM _assert(v_ok, 'the scorer could not claim the fixture back while live');
+  SELECT l.holds INTO v_ok FROM scoring_lease_check(M_HANDOVER, 'verify-034-a', v_epoch) l;
+  PERFORM _assert(v_ok, 'the token holder''s lease check fails on a live fixture');
+  PERFORM _set_match_status(M_HANDOVER, 'complete');
+  v_until := _lease_until(M_HANDOVER);
+  SELECT l.holds, l.state INTO v_ok, v_state FROM scoring_lease_check(M_HANDOVER, 'verify-034-a', v_epoch) l;
+  PERFORM _assert(NOT v_ok AND v_state = 'match_complete',
+    format('a lease was honoured on a complete match (holds=%s state=%s)', v_ok, v_state));
+  PERFORM _assert(_lease_until(M_HANDOVER) = v_until, 'a lease was extended on a complete match');
+  PERFORM _assert(duty_status(O_SCORER) = 'completed', 'a finished fixture''s scorer is not completed');
+
+  -- Corrections are the amendment path, and completion leaves it open.
+  INSERT INTO scoring_amendment (match_id, school_id, target_key, reason, requested_by)
+  VALUES (M_HANDOVER, HIL, 'verify-034-key', 'Filed after the result was declared.', U_SCORER);
+  SELECT count(*) INTO n FROM scoring_amendment WHERE target_key = 'verify-034-key' AND match_id = M_HANDOVER;
+  PERFORM _assert(n = 1, 'completion shut the amendment request as well');
+
+  PERFORM _set_match_status(M_HANDOVER, 'abandoned');
+  PERFORM _assert(duty_status(O_SCORER) = 'expired', 'an abandoned fixture''s scorer is not expired');
+  PERFORM _assert(duty_status(O_STOOD) = 'revoked', 'withdrawn does not outrank the fixture''s end');
 
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;

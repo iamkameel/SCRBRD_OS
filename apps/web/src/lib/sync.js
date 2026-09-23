@@ -68,6 +68,9 @@ export async function startSync({ matchId, userId, onChange }) {
   // `lease_active` means a colleague is scoring on another device right now —
   // taking the token from them is a handover, not a claim. `handover_pending`
   // and `verifying` (db/28) mean one is already under way: enter the code.
+  // `match_complete` (db/33) means the result is declared and scoring has
+  // closed for everyone — the pad stays usable, nothing is sent, and the
+  // scorer is told a correction is an amendment request (engine.jsx).
   if (!claim?.ok) return { ok: false, reason: claim?.reason || "claim_refused" };
 
   return attachEngine({ matchId, userId, epoch: claim.epoch, onChange });

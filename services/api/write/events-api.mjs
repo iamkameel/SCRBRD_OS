@@ -83,7 +83,10 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
           [matchId, ev.epoch, lease.epoch, ev.deviceId, ev.idempotencyKey, JSON.stringify(ev)]);
         result.quarantined.push({
           idempotencyKey: ev.idempotencyKey,
-          reason: lease.found ? "stale_epoch_or_lease" : "no_session",
+          // db/33: a ball sent at a complete match is held for a person to
+          // decide, and says why — not mistaken for a stale token.
+          reason: lease.state === "match_complete" ? "match_complete"
+                : lease.found ? "stale_epoch_or_lease" : "no_session",
         });
         continue;
       }
