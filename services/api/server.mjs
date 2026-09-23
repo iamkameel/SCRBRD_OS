@@ -62,6 +62,7 @@ import { rosterAddRoutes } from "./write/roster-add-api.mjs";
 import { trainingRoutes } from "./write/training-api.mjs";
 import { officialRegisterRoutes } from "./write/officials-register-api.mjs";
 import { MatchHub } from "./realtime/realtime.mjs";
+import { schemaRefusal } from "./schema-guard.mjs";
 
 const PORT = Number(process.env.PORT || 8787);
 const ORIGIN = process.env.WEB_ORIGIN || "http://localhost:5173";
@@ -115,6 +116,24 @@ async function assertRlsApplies() {
       `\n\nEvery policy in db/ would be inert and every request would be answered in\n` +
       `full, with nothing reporting a fault. Point DATABASE_URL at scrbrd_app\n` +
       `(see db/05_app_role.sql) rather than at the schema owner.\n`);
+    process.exit(1);
+  }
+}
+
+/**
+ * Refuse to serve code the database has not caught up with (SCRBRD-066).
+ *
+ * The same shape as assertRlsApplies(), for the other way a deploy fails
+ * silently: this code expects a migration the database does not have, and
+ * every screen that needs it answers 42P01/42883. A revision that does not
+ * start never takes traffic on Cloud Run or Render, so the previous one keeps
+ * serving until the schema is applied. The list and the reasoning are in
+ * schema-guard.mjs; a database AHEAD of the code (schema first) starts fine.
+ */
+async function assertSchemaCurrent() {
+  const refusal = await schemaRefusal(pool);
+  if (refusal) {
+    console.error(refusal);
     process.exit(1);
   }
 }
@@ -776,6 +795,7 @@ const server = createServer(async (req, res) => {
 });
 
 await assertRlsApplies();
+await assertSchemaCurrent();
 
 server.listen(PORT, () => {
   console.log(`SCRBRD API on http://localhost:${PORT}`);

@@ -127,6 +127,9 @@ const WALKS = [
   // as a single count.
   "dismissals",
   "commit",
+  // The API refuses to start on a database missing a migration it was built
+  // against, and starts on one that is ahead of it (SCRBRD-066).
+  "schema-guard",
 ];
 
 // Walks that drive a real browser AND need a database. They need two things

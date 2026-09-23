@@ -40,6 +40,7 @@ const SUITES = [
   ["write",    "services/api/write/write.test.mjs"],
   ["migrate",  "tools/migrate.test.mjs"],
   ["shipped",  "tools/shipped.test.mjs"],
+  ["schema-guard", "services/api/schema-guard.test.mjs"],
   ["imports",  "tools/check-imports.test.mjs"],
   ["guard",    "tools/hooks/guard.test.mjs"],
   ["ai",       "services/api/ai/ai.test.mjs"],

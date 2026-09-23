@@ -2427,3 +2427,76 @@ never credited to the bowler.
 **Regression risk:** LOW — two new views and one new read resource, additive; no existing resource,
 policy or capability touched.
 alone here.
+
+### ~~SCRBRD-066~~ — CLOSED
+
+**Closed 2026-09-23.** The API now refuses to start when the database is missing a migration the
+code was built against — the same way `server.mjs` already refuses a superuser connection.
+
+**The evidence.** On 2026-09-23 production's API and client were found running the code from merged
+PRs #30 and #31 against a database still at `db/23`: `db/24`–`db/27` had never been pasted. Every
+screen reaching for what those files create would have answered `42P01`/`42883` for as long as nobody
+looked. DEPLOYING.md's rule was "schema first, always"; `.github/workflows/deploy.yml` deploys the API
+and the client on every push to `main` whatever state the database is in, and `render.yaml` does the
+same. The rule was a sentence.
+
+**As built.** `services/api/expected-migrations.json` lists every `db/NN_*.sql` name the code was built
+against (the image carries no `db/`, so the server needs its own record; names only —
+`db/SHIPPED.sha256` pins bytes). At boot, after `assertRlsApplies()` and before `listen`,
+`assertSchemaCurrent()` (`services/api/schema-guard.mjs`) reads the ledger through a new
+`SECURITY DEFINER` function, `schema_migrations_applied()` (`db/29_migration_ledger_read.sql`) —
+`schema_migration` has RLS on and no policy, so `scrbrd_app` reads none of it directly — and exits 1
+naming every missing file and the `scrbrd-supabase-apply-NN.sql` paste for each, in order. A database
+AHEAD of the code (the normal state during a schema-first rollout) starts. A database without `db/29`
+cannot report what it has and is refused with the query to find out. No escape hatch: a database
+behind the code is fixed by applying the migration, locally `node tools/migrate.mjs`. On Cloud Run
+and Render a revision that fails to start never takes traffic, so the previous revision keeps
+serving; `deploy.yml`'s client job now `needs: api`, so the client does not go out ahead of an API
+that was refused.
+
+`db/29` returns names only (no hash, note or timestamp), is revoked from `PUBLIC` (and from Supabase's
+`anon`/`authenticated` where they exist), granted to `scrbrd_app` alone, pins `search_path`, and
+asserts all of that in its own `DO $check$`. **`db/29` is itself in the expected list**, so production
+must take `apply-29` before the first deploy of this guard — the rule applied to the file that
+enforces it.
+
+**Tests.** `services/api/schema-guard.test.mjs` (registered as `schema-guard`, 22 assertions) holds the
+list to `db/` exactly — adding a migration without listing it fails the suite — and proves the
+comparison over a fake pool. `tools/smoke-schema-guard.mjs` (WALKS entry `schema-guard`, port 8846,
+19 assertions) boots the real server as `scrbrd_app` against a freshly migrated database: complete →
+starts; one extra ledger row → starts; `26_*` removed → exit 1 naming it and `apply-26`; `24`–`27`
+removed (the incident) → all four, in order; `db/29`'s function renamed away → refused with the
+lookup query; restored → starts.
+
+**Falsified.** Guard call commented out of `server.mjs`: 11 of the walk's 19 assertions went red.
+Guard changed to refuse extras too: the "ahead" assertion went red in both the walk and the unit
+suite. A stray `db/30_falsify.sql`: the list assertion went red naming it. `db/29`'s check re-run
+after each of GRANT to PUBLIC, SECURITY INVOKER, RESET search_path, REVOKE from `scrbrd_app`, and a
+body returning hashes: each raised its own message.
+
+**Verified.** `migrate --reset --seed && --verify`: ALL RLS LIVE ASSERTIONS PASSED; walks `read`,
+`handover`, `handover-crash`, `schema-guard` pass, and `smoke-scorer` 21/21; full suite 2125
+assertions across 34 suites; `rls:generate` leaves `db/01`/`db/09`/`db/23` byte-identical.
+
+**Title:** ~~The API serves code the database has not caught up with~~
+**Priority:** P1 · **Domain:** Deploy / Platform · **Type:** deploy safety
+**Affected files:** `db/29_migration_ledger_read.sql` (new), `services/api/schema-guard.mjs` (new),
+`services/api/expected-migrations.json` (new), `services/api/schema-guard.test.mjs` (new),
+`tools/smoke-schema-guard.mjs` (new), `services/api/server.mjs`, `tools/run-all-tests.mjs`,
+`tools/run-smoke-api.mjs`, `.github/workflows/deploy.yml`, `DEPLOYING.md`
+**Affected users:** everyone using a screen whose schema had not been applied
+**Current behaviour:** a deploy ahead of its schema serves `42P01`/`42883` until somebody notices.
+**Expected behaviour:** it fails to start; the previous revision keeps serving; the log says which
+paste to apply.
+**Root cause:** "schema first" was enforced by nothing — the deploy never looks at the database.
+**Dependencies:** the ledger (`tools/migrate.mjs`, `tools/bundle-sql.mjs`).
+**Security / privacy impact:** one new definer function exposing migration file names to the
+application role only; no capability, policy or table changed.
+**Data migration required:** YES — `db/29`, before this API deploys. No backfill.
+**Acceptance criteria:**
+- [x] The server refuses to start on a database missing an expected migration, naming it and the fix
+- [x] A database ahead of the code starts
+- [x] Adding a `db/NN` without listing it fails the suite
+- [x] Falsified: with the guard removed, the refusal assertions go red
+**Regression risk:** LOW for behaviour; the operational risk is the one intended — the first deploy
+after this merges will not start until `apply-29` has been pasted.
