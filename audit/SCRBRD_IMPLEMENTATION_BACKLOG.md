@@ -2231,6 +2231,24 @@ deliberately — a school cannot switch off a safeguarding record the way it swi
 Analytics) and the seed, which gains one account and one fixture-scoped assignment. The whole
 suite, the live verifier and the new walk are green against a freshly reset database.
 
+**Drawn, 2026-09-23 — staff only, by product decision.** `apps/web/src/views/discipline.jsx` is the
+first screen over the record. A **Conduct** tab on the player profile lists a boy's matters (date,
+fixture, state, who recorded it, the account, the outcome) and, for a `discipline.write` holder,
+carries the school-side "Record a matter" form and Conclude/Withdraw with a required outcome. In
+Match Centre, "Report an incident" lets the appointed umpire file against his fixture and tells
+him *"Recorded — the school has it"* without reading anything back. Every refusal the routes map
+(42501 → `not_permitted`, 45001, 45002, the CHECK) is said in words beside the form.
+**The product owner decided pupils see nothing of the record in the app yet**, although
+`selfaccess` may read his own in the database; neither the database nor the policy changed. The
+gate is `rbac/conduct.js` — `discipline.read` over the whole *persona* (the shell's role plus
+`ROLE_IDENTITY.also`, because a pupil is laid out as `player` and holds the read through
+`selfaccess`) and not `readsOwnRecord` — pinned for every shell role in `rbac.test.mjs`; courtesy
+only, RLS is the guard. `disciplinary_records` gained an optional `playerId` narrowing so a
+profile's read — and the access-log entry it writes — names one child, not every child with a
+matter. The umpire cannot read the team sheet (no `player.profile.read`), so he names a player by
+his part in the ball log he stood over; anyone not in it he has to report to the school directly.
+Walk: `tools/smoke-browser-discipline.mjs`; `up51` is shipped.
+
 ### ~~SCRBRD-064~~ — CLOSED
 
 **Closed 2026-09-19.** `contextFrom()` in `services/api/ai/ai-service.mjs` now folds a third

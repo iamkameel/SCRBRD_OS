@@ -8,6 +8,8 @@ import { can, filterRecord } from "../rbac/index.js";
 import { Avatar, Badge, Card, EmptyState, Pill, RadarChart, SectionHeader, Select } from "../ui/primitives.jsx";
 import { ShotHeatMap, ShotSpider, ShotWheel } from "../scorer/charts.jsx";
 import { useLive, usePlayersWithCareer, useRows, useSkills } from "../lib/live.js";
+import { ConductTab } from "./discipline.jsx";
+import { readsConduct } from "../rbac/conduct.js";
 
 // ══════════════════════════════════════════════════════
 //  SETTINGS / RBAC VIEW
@@ -82,7 +84,8 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
     const skills = SKILLS_MATRIX[p.id];
     const inj = INJURIES.find(i=>i.player===p.id);
     const rCol = p.role==="BAT"?D.sky:p.role==="BOWL"?D.violet:p.role==="ALL"?D.emerald:D.amber;
-    const tabs = ["overview","career","form","vs opponents","development"];
+    // "conduct" is staff-only by product decision; see rbac/conduct.js.
+    const tabs = ["overview","career","form","vs opponents","development",...(readsConduct(role)?["conduct"]:[])];
     const schoolInfo = p.school==="HIL"?"Hilton College":KZN_SCHOOLS.find(s=>s.abbr===p.school)?.name||p.school;
 
     return (
@@ -135,7 +138,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
         {/* Tab nav */}
         <div style={{display:"flex",gap:"4px",padding:"10px 16px",borderBottom:`1px solid ${D.border}`,overflowX:"auto"}}>
           {tabs.map(t=>(
-            <button key={t} onClick={()=>setTab(t)} className="pressBtn" style={{
+            <button key={t} onClick={()=>setTab(t)} className="pressBtn" data-testid={`profile-tab-${t.replace(/ /g,"-")}`} style={{
               padding:"5px 14px",borderRadius:D.pill,cursor:"pointer",textTransform:"capitalize",flexShrink:0,
               border:`1px solid ${tab===t?rCol+"55":D.border}`,background:tab===t?rCol+"12":"transparent",
               fontFamily:D.body,fontSize:"11px",fontWeight:tab===t?600:400,color:tab===t?rCol:D.textMuted,
@@ -367,6 +370,9 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
               )}
             </div>
           )}
+
+          {/* CONDUCT TAB — staff only; RLS is the real guard */}
+          {tab==="conduct"&&readsConduct(role)&&<ConductTab player={p} role={role}/>}
 
           {/* DEVELOPMENT TAB */}
           {tab==="development"&&(

@@ -8,6 +8,7 @@ import { OppositionDossier } from "./dossier.jsx";
 import { DutyRoster } from "./duties.jsx";
 import { QuarantinePanel } from "./quarantine.jsx";
 import { DrsPanel } from "./drs.jsx";
+import { ReportIncident } from "./discipline.jsx";
 import { useRows, useWeather } from "../lib/live.js";
 
 function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
@@ -151,6 +152,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
                   approves corrections, not by the scorer mid-over. */}
               <QuarantinePanel matchId={selMatch.id} role={role}/>
               <DrsPanel matchId={selMatch.id} role={role}/>
+              <ReportIncident match={selMatch} role={role}/>
               {ground&&pitch&&(
                 <div style={{marginBottom:"12px",background:D.surf2,borderRadius:D.md,padding:"10px 12px",border:`1px solid ${D.teal}22`}}>
                   <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.teal,letterSpacing:"0.08em",marginBottom:"7px"}}>PITCH REPORT</div>

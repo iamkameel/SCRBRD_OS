@@ -993,6 +993,7 @@ const ADAPT = {
   ratings: asRating,
   notes: asNote,
   dismissal_breakdown: asDismissalBreakdown,
+  disciplinary_records: asMatter,
   // The dashboard's figures. One row, already scoped in Postgres — see the
   // `summary` query in read-api.mjs for why the counting happens there and not
   // here. The adapter only renames; it must never compute a figure the server
@@ -1061,6 +1062,26 @@ function asDismissalBreakdown(r) {
     playerId: r.player_id, name: r.full_name, team: r.team_code, school: r.school_id,
     side: r.side, method: r.dismissal, count: Number(r.count),
     live: true,
+  };
+}
+
+/**
+ * A disciplinary matter (SCRBRD-053). No mock twin, and there never should be:
+ * an invented matter about a named child on a demo screen reads exactly like a
+ * real one. Signed out, useLive() returns nothing for this resource because
+ * rbac/ has no demo source for it.
+ *
+ * The recorder's NAME may arrive null — the reader can see the matter and not
+ * the account of whoever filed it — and it is left null rather than defaulted,
+ * so the screen says so instead of inventing somebody.
+ */
+function asMatter(r) {
+  return {
+    id: r.id, playerId: r.player_id, schoolId: r.school_id, matchId: r.match_id ?? null,
+    body: r.body, state: r.state, outcome: r.outcome ?? null,
+    occurredOn: r.occurred_on ? String(r.occurred_on).slice(0, 10) : null,
+    recordedBy: r.recorded_by_name ?? null, recordedById: r.recorded_by,
+    playerName: r.full_name ?? null, updatedAt: r.updated_at ?? null,
   };
 }
 
