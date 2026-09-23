@@ -890,7 +890,7 @@ Two things were deliberately **not** harvested, and are recorded here so the dec
 
 ## P1 — Governance boundaries that exist but are not asserted
 
-### SCRBRD-028
+### ~~SCRBRD-028~~ — CLOSED
 
 **Title:** Separation-of-duties and production-rule invariants as named tests
 **Priority:** P1 · **Domain:** RBAC · **Type:** test
@@ -1235,7 +1235,19 @@ policy-side table, `SupportView`, `AuditView`. Risk LOW. Migration NO.
 is added. Note the trap the rule names: *"sponsor entitlement must never become a back door into protected
 participant data."* Files: `roles.mjs`, new `db/NN`. Risk MEDIUM. **Migration YES.**
 
-### SCRBRD-037 — Match-day duty roster that shows readiness, not names
+### ~~SCRBRD-037~~ — CLOSED — Match-day duty roster that shows readiness, not names
+
+**Closed 2026-09-23 — found already built.** `apps/web/src/views/duties.jsx` (`DutyRoster`, mounted in
+`MatchCentreView.jsx`) shipped in #29 (`952f68c`) under this number and was never marked closed here. It
+shows each slot — umpires, third umpire, referee, scorer appointed, scoring session, team sheet, pitch
+report, transport — as what is ON RECORD in `match_duties`, and an empty slot reads "nothing on record",
+never "pending": nothing in the schema says a fixture owes a second umpire, and inventing the obligation
+would report a school as failing it. Each row sits under its own table's RLS, so a reader sees only what
+they may. Covered by `tools/smoke-browser-read.mjs` and `tools/smoke-officials.mjs`;
+`ReadinessOverview.jsx` (SCRBRD-062) runs the same read across several fixtures. What it cannot show yet is
+a duty's lifecycle status (delegated, suspended…) — that is SCRBRD-034, in progress, and lands on this
+roster when it does.
+
 §17.3: twelve duties (both head coaches, both managers, scorer, two umpires, commissioner, grounds,
 medical, transport, media) each with a status — confirmed / pending / live / handed over / ready / issue.
 The document's own line is the requirement: *"the roster should expose duty readiness, not merely names."*
