@@ -992,6 +992,7 @@ const ADAPT = {
   career: asCareer,
   ratings: asRating,
   notes: asNote,
+  dismissal_breakdown: asDismissalBreakdown,
   // The dashboard's figures. One row, already scoped in Postgres — see the
   // `summary` query in read-api.mjs for why the counting happens there and not
   // here. The adapter only renames; it must never compute a figure the server
@@ -1041,6 +1042,25 @@ function asNote(r) {
     observedOn: r.observed_on ? String(r.observed_on).slice(0, 10) : null,
     author: r.author_name || null, authorId: r.author_id,
     revised: !!r.updated_at,
+  };
+}
+
+/**
+ * One row of "how he's out" or "how he takes wickets", by method.
+ *
+ * `method` stays NULL rather than being coerced to a string here — db/26's
+ * comment and the read API's are both explicit that a NULL dismissal is a
+ * real wicket whose method was never recorded, not a row to drop, and the
+ * view renders it as "Method not recorded" so a sum over this resource never
+ * disagrees with the flat `career.dismissals` / `career.wickets` count.
+ * `count` is coerced to a number because the column arrives as text over
+ * JSON the way every other aggregate count in this file does.
+ */
+function asDismissalBreakdown(r) {
+  return {
+    playerId: r.player_id, name: r.full_name, team: r.team_code, school: r.school_id,
+    side: r.side, method: r.dismissal, count: Number(r.count),
+    live: true,
   };
 }
 

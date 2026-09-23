@@ -3,6 +3,7 @@ import { KZN_SCHOOLS } from "../data/institution.js";
 import { ROLES } from "../design/roles.js";
 import { D, textOn } from "../design/tokens.js";
 import { fitnessColor } from "../lib/format.js";
+import { signedIn } from "../lib/api.js";
 import { can, filterRecord } from "../rbac/index.js";
 import { Avatar, Badge, Card, EmptyState, Pill, RadarChart, SectionHeader, Select } from "../ui/primitives.jsx";
 import { ShotHeatMap, ShotSpider, ShotWheel } from "../scorer/charts.jsx";
@@ -28,6 +29,11 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
   const SKILLS_MATRIX = useSkills(role);
   const STAFF = useRows("staff", role);
   const TRAINING_SESSIONS = useRows("training", role);
+  // How a boy is out, and how a bowler takes his wickets — one fetch, long
+  // form, filtered per player where the career tab draws it. No mock
+  // fallback exists for this resource (see up48): a signed-out session gets
+  // an honest "sign in" line rather than an invented figure.
+  const DISMISSAL_BREAKDOWN = useLive("dismissal_breakdown", role);
   const [cat,     setCat]     = useState("players");   // players | coaches | staff
   const [selId,   setSelId]   = useState(profileTarget || null);
   const [tab,     setTab]     = useState("overview");
@@ -237,6 +243,14 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                     </div>
                   ))}
                 </Card>
+                {/* How he's out, by method (up48). Long-form rows filtered to
+                    this player, client-side — the read is the same one shot
+                    Postgres already scoped by RLS for `career` above, not a
+                    second gate drawn here. */}
+                <DismissalMethodCard
+                  title="DISMISSALS BY METHOD" testId="dismissal-breakdown-batting" color={D.rose}
+                  live={DISMISSAL_BREAKDOWN} playerId={p.id} side="batting"
+                  emptyMessage="No dismissals yet."/>
                 {p.wkts>0&&(
                   <Card sx={{padding:"14px"}}>
                     <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"12px"}}>BOWLING CAREER</div>
@@ -255,6 +269,14 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                       </div>
                     ))}
                   </Card>
+                )}
+                {/* How he takes wickets, by method (up48). Same guard as the
+                    card beside it: no season wickets, nothing to break down. */}
+                {p.wkts>0&&(
+                  <DismissalMethodCard
+                    title="WICKETS BY METHOD" testId="dismissal-breakdown-bowling" color={D.violet}
+                    live={DISMISSAL_BREAKDOWN} playerId={p.id} side="bowling"
+                    emptyMessage="No wickets yet."/>
                 )}
               </div>
               {/* Batting position visual */}
@@ -739,4 +761,71 @@ function PassportCard({ playerId, role }) {
   );
 }
 
-export { ProfilesView };
+// The eleven methods the Laws recognise (db/13), in the words a coach reads
+// rather than the column's snake_case. "Caught and bowled" is deliberately
+// absent — see db/26's own comment: ball_event has no fielder/catcher
+// column, so there is nothing here to distinguish the bowler taking his own
+// catch from any other fielder taking it off him. Both are just `caught`.
+const DISMISSAL_METHOD_LABEL = {
+  bowled: "Bowled", caught: "Caught", lbw: "LBW", run_out: "Run out",
+  stumped: "Stumped", hit_wicket: "Hit wicket", handled_ball: "Handled the ball",
+  obstructing_field: "Obstructing the field", timed_out: "Timed out",
+  retired_out: "Retired out", hit_twice: "Hit the ball twice",
+};
+// NULL is a real wicket whose method the log never carried — not one to drop
+// (db/26, and the read API's comment beside `dismissal_breakdown`). Naming it
+// plainly here is what keeps a sum over this card equal to the flat
+// career.dismissals / career.wickets count it refines.
+const dismissalMethodLabel = (m) => m == null ? "Method not recorded" : (DISMISSAL_METHOD_LABEL[m] ?? m);
+
+/**
+ * "How he's out" (batting) or "how he takes wickets" (bowling), by method.
+ *
+ * `live` is the shared useLive("dismissal_breakdown", role) result — one
+ * fetch for the whole profile, filtered here to this player and this side,
+ * because the resource is long-form across every player and both sides (see
+ * lib/live.js). CONVENTION: no mock fallback for a derived match statistic —
+ * signed out, this says so rather than drawing an invented bar.
+ */
+function DismissalMethodCard({ title, testId, color, live, playerId, side, emptyMessage }) {
+  if (!signedIn()) {
+    return (
+      <Card sx={{padding:"14px"}} data-testid={testId}>
+        <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"12px"}}>{title}</div>
+        <EmptyState message="Sign in to see dismissal analysis — it is derived from live match data."/>
+      </Card>
+    );
+  }
+  const { rows, loading, error } = live;
+  const mine = rows.filter((r)=>r.playerId===playerId && r.side===side);
+  const total = mine.reduce((s,r)=>s+r.count,0);
+  // Every real method first, largest first; an unrecorded method last,
+  // regardless of its count, so the card reads "here's how" before "and here's
+  // what we don't know".
+  const sorted = [...mine].sort((a,b)=>
+    (a.method===null)-(b.method===null) || b.count-a.count);
+  return (
+    <Card sx={{padding:"14px"}} data-testid={testId}>
+      <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"12px"}}>{title}</div>
+      {loading ? <EmptyState loading/>
+       : error ? <EmptyState error/>
+       : !sorted.length ? <EmptyState message={emptyMessage}/>
+       : sorted.map((r)=>{
+          const pct = total>0 ? Math.round((r.count/total)*100) : 0;
+          return (
+            <div key={r.method ?? "unrecorded"} style={{marginBottom:"9px"}}>
+              <div style={{display:"flex",justifyContent:"space-between",fontFamily:D.body,fontSize:"11px",color:D.textPrimary,marginBottom:"3px"}}>
+                <span>{dismissalMethodLabel(r.method)}</span>
+                <span style={{fontFamily:D.mono,fontSize:"11px",color:D.textMuted}}>{r.count} · {pct}%</span>
+              </div>
+              <div style={{height:"6px",borderRadius:D.pill,background:D.surf2,overflow:"hidden"}}>
+                <div style={{height:"100%",width:`${pct}%`,borderRadius:D.pill,background:color}}/>
+              </div>
+            </div>
+          );
+        })}
+    </Card>
+  );
+}
+
+export { ProfilesView, DismissalMethodCard, dismissalMethodLabel };
