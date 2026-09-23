@@ -25,6 +25,11 @@ concurrency:
 jobs:
   web:
     name: Client → Firebase Hosting
+    # After the API, and only if it deployed. The API refuses to start on a
+    # database missing a migration it was built against (SCRBRD-066), so a
+    # deploy ahead of its schema fails there — and a client shipped anyway
+    # would be new screens calling routes the still-serving old API lacks.
+    needs: api
     runs-on: ubuntu-latest
     env:
       FIREBASE_SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_SCRBRD_OS }}

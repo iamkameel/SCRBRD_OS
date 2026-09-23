@@ -427,7 +427,7 @@ const STAFF = [
     notes:"Used primarily for longer trips. Excellent with the boys.",
   },
   {
-    id:"st7", role:"groundskeeper", name:"Mr Ernest Mzimba",
+    id:"st7", role:"facilities", name:"Mr Ernest Mzimba",
     age:58, phone:"+27 72 445 0087", email:"emzimba@hilton.co.za",
     photo:"EM", active:true,
     qualifications:["Turfgrass Management Certificate (UKZN)","Groundsmanship Level 2 (CSA)","Irrigation Systems Certificate"],
@@ -439,7 +439,7 @@ const STAFF = [
     notes:"Consults weather forecast daily. Covers pitches when thunderstorm risk >40%.",
   },
   {
-    id:"st8", role:"groundskeeper", name:"Mr Sipho Hadebe",
+    id:"st8", role:"facilities", name:"Mr Sipho Hadebe",
     age:34, phone:"+27 81 990 3345", email:"shadebe@hilton.co.za",
     photo:"SH", active:true,
     qualifications:["Horticulture Certificate (Cedara)","Groundsmanship Level 1 (CSA)"],
@@ -451,7 +451,7 @@ const STAFF = [
   },
   // Sportsmaster
   {
-    id:"st9", role:"sportsmaster", name:"Mr Graham Sutherland",
+    id:"st9", role:"directorofsport", name:"Mr Graham Sutherland",
     age:48, phone:"+27 82 441 7721", email:"gsutherland@hilton.co.za",
     photo:"GS", active:true,
     qualifications:["BSc Sports Science (UKZN)","Level 3 CSA Coach","Athletics SA Officials Badge"],
@@ -461,7 +461,7 @@ const STAFF = [
   },
   // Coaching Assistants
   {
-    id:"st10", role:"assistant", name:"Mr Siyanda Maphumulo",
+    id:"st10", role:"assistantcoach", name:"Mr Siyanda Maphumulo",
     age:26, phone:"+27 73 882 0014", email:"smaphumulo@hilton.co.za",
     photo:"SM", active:true,
     qualifications:["Level 1 CSA Coach","BA Sports Management (DUT)"],
@@ -471,7 +471,7 @@ const STAFF = [
     notes:"Manages the squad WhatsApp and training attendance records.",
   },
   {
-    id:"st11", role:"assistant", name:"Mr Luyanda Dube",
+    id:"st11", role:"assistantcoach", name:"Mr Luyanda Dube",
     age:23, phone:"+27 71 334 5512", email:"ldube@hilton.co.za",
     photo:"LD", active:true,
     qualifications:["Level 1 CSA Coach","BSc Sport Science (UKZN, in progress)"],
@@ -486,17 +486,17 @@ const USERS_INITIAL = [
   { id:"u1",  name:"Admin User",              role:"superadmin",    email:"admin@hilton.co.za",          player:null,  staffId:null,  coachId:null,  lastLogin:"Today 08:14",  status:"active"   },
   { id:"u2",  name:"Craig Hendricks",         role:"coach",         email:"c.hendricks@hilton.co.za",    player:null,  staffId:null,  coachId:"c1",  lastLogin:"Today 07:55",  status:"active"   },
   { id:"u3",  name:"James Whitfield",         role:"player",        email:"james@hilton.co.za",          player:"p1",  staffId:null,  coachId:null,  lastLogin:"Yesterday",    status:"active"   },
-  { id:"u4",  name:"Helen Whitfield",         role:"parent",        email:"helen.w@gmail.com",           player:"p1",  staffId:null,  coachId:null,  lastLogin:"3 days ago",   status:"active"   },
+  { id:"u4",  name:"Helen Whitfield",         role:"guardian",        email:"helen.w@gmail.com",           player:"p1",  staffId:null,  coachId:null,  lastLogin:"3 days ago",   status:"active"   },
   { id:"u5",  name:"Spectator View",          role:"spectator",     email:"fan@example.com",             player:null,  staffId:null,  coachId:null,  lastLogin:"1 week ago",   status:"active"   },
   { id:"u6",  name:"Brian Wessels",           role:"scorer",        email:"bwessels@hilton.co.za",       player:null,  staffId:"st1", coachId:null,  lastLogin:"Today 09:00",  status:"active"   },
   { id:"u7",  name:"Dr Siphamandla Khumalo",  role:"medical",       email:"skhumalo@hilton.co.za",       player:null,  staffId:"st3", coachId:null,  lastLogin:"Yesterday",    status:"active"   },
   { id:"u8",  name:"Themba Nxumalo",          role:"driver",        email:"tnxumalo@hilton.co.za",       player:null,  staffId:"st5", coachId:null,  lastLogin:"2 days ago",   status:"active"   },
-  { id:"u9",  name:"Ernest Mzimba",           role:"groundskeeper", email:"emzimba@hilton.co.za",        player:null,  staffId:"st7", coachId:null,  lastLogin:"Today 06:30",  status:"active"   },
+  { id:"u9",  name:"Ernest Mzimba",           role:"facilities", email:"emzimba@hilton.co.za",        player:null,  staffId:"st7", coachId:null,  lastLogin:"Today 06:30",  status:"active"   },
   { id:"u10", name:"Luca De Villiers",        role:"player",        email:"luca@hilton.co.za",           player:"p2",  staffId:null,  coachId:null,  lastLogin:"Yesterday",    status:"active"   },
   { id:"u11", name:"Dean Abrahams",           role:"coach",         email:"d.abrahams@hilton.co.za",     player:null,  staffId:null,  coachId:"c2",  lastLogin:"Today 08:00",  status:"active"   },
-  { id:"u13", name:"Graham Sutherland",        role:"sportsmaster",  email:"gsutherland@hilton.co.za",    player:null,  staffId:"st9", coachId:null,  lastLogin:"Today 07:30",  status:"active"   },
-  { id:"u14", name:"Siyanda Maphumulo",         role:"assistant",     email:"smaphumulo@hilton.co.za",     player:null,  staffId:"st10",coachId:null,  lastLogin:"Today 08:45",  status:"active"   },
-  { id:"u15", name:"Luyanda Dube",              role:"assistant",     email:"ldube@hilton.co.za",          player:null,  staffId:"st11",coachId:null,  lastLogin:"Yesterday",    status:"active"   },
+  { id:"u13", name:"Graham Sutherland",        role:"directorofsport",  email:"gsutherland@hilton.co.za",    player:null,  staffId:"st9", coachId:null,  lastLogin:"Today 07:30",  status:"active"   },
+  { id:"u14", name:"Siyanda Maphumulo",         role:"assistantcoach",     email:"smaphumulo@hilton.co.za",     player:null,  staffId:"st10",coachId:null,  lastLogin:"Today 08:45",  status:"active"   },
+  { id:"u15", name:"Luyanda Dube",              role:"assistantcoach",     email:"ldube@hilton.co.za",          player:null,  staffId:"st11",coachId:null,  lastLogin:"Yesterday",    status:"active"   },
   { id:"u12", name:"Priya Naidoo",            role:"coach",         email:"p.naidoo@hilton.co.za",       player:null,  staffId:null,  coachId:"c4",  lastLogin:"Yesterday",    status:"active"   },
 ];
 

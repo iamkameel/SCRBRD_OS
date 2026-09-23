@@ -127,6 +127,9 @@ const WALKS = [
   // as a single count.
   "dismissals",
   "commit",
+  // The API refuses to start on a database missing a migration it was built
+  // against, and starts on one that is ahead of it (SCRBRD-066).
+  "schema-guard",
 ];
 
 // Walks that drive a real browser AND need a database. They need two things
@@ -137,7 +140,7 @@ const WALKS = [
 // browser-innings-end scores an innings to its end, which nothing else does:
 // browser-sync taps four deliveries of twenty overs, so the review gate between
 // the last ball and a closed innings was never exercised end to end.
-const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-dossier", "browser-handover", "browser-innings-end", "browser-quarantine", "browser-drs", "browser-dismissals", "browser-discipline"];
+const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-dossier", "browser-handover", "browser-innings-end", "browser-quarantine", "browser-drs", "browser-dismissals", "browser-discipline", "browser-support", "browser-seasons"];
 
 // Walks that need no database, run by `pnpm smoke` instead. Named here only so
 // the completeness check below knows they are accounted for.

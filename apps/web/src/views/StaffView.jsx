@@ -24,7 +24,7 @@ function StaffView({ role }) {
   const [sel, setSel]       = useState(null);
   const canEdit = holdsCapability(role,"user.role.assign");
 
-  const roleIcon  = r => r==="scorer"?"📋":r==="medical"?"⚕️":r==="driver"?"🚌":r==="groundskeeper"?"🌿":"👤";
+  const roleIcon  = r => r==="scorer"?"📋":r==="medical"?"⚕️":r==="driver"?"🚌":r==="facilities"?"🌿":"👤";
   const roleColor = r => ROLES[r]?.color || D.textMuted;
   const filtered  = filter==="all" ? STAFF : STAFF.filter(s=>s.role===filter);
 
@@ -34,14 +34,14 @@ function StaffView({ role }) {
         actions={canEdit&&<Btn size="sm">+ Add Staff</Btn>}/>
 
       <div style={{display:"flex",gap:"6px",marginBottom:"20px",flexWrap:"wrap"}}>
-        {["all","scorer","medical","driver","groundskeeper"].map(f=>(
+        {["all","scorer","medical","driver","facilities"].map(f=>(
           <button key={f} onClick={()=>{setFilter(f);setSel(null);}} className="pressBtn" style={{
             padding:"6px 16px",borderRadius:D.pill,cursor:"pointer",textTransform:"capitalize",
             border:`1px solid ${filter===f?(ROLES[f]?.color||D.cyan)+"55":D.border}`,
             background:filter===f?(ROLES[f]?.color||D.cyan)+"14":"transparent",
             fontFamily:D.body,fontSize:"11px",fontWeight:filter===f?600:400,
             color:filter===f?D.textPrimary:D.textMuted,
-          }}>{f==="all"?"All Staff":`${roleIcon(f)} ${f.charAt(0).toUpperCase()+f.slice(1)}s`}</button>
+          }}>{f==="all"?"All Staff":f==="facilities"?`${roleIcon(f)} Groundskeepers`:`${roleIcon(f)} ${f.charAt(0).toUpperCase()+f.slice(1)}s`}</button>
         ))}
       </div>
 
@@ -194,7 +194,7 @@ function StaffView({ role }) {
                 </div>
               )}
 
-              {sel.role==="groundskeeper"&&(
+              {sel.role==="facilities"&&(
                 <div style={{marginBottom:"12px"}}>
                   <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"7px"}}>GROUNDS PROFILE</div>
                   {[["Assigned Grounds",sel.groundsAssigned?.map(id=>GROUNDS.find(g=>g.id===id)?.shortName).join(", ")],["Speciality",sel.speciality],["Pitch Prep",sel.pitchPreparation]].filter(([,v])=>v).map(([l,v])=>(

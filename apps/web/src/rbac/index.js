@@ -25,11 +25,8 @@ import { authorize, scopeFilter, ANY_SCOPE } from "@scrbrd/policy/authorize";
 import { roleGrants, ROLE_CAPABILITIES, SUBJECT_SCOPED_ROLES, TEAM_SCOPED_ROLES } from "@scrbrd/policy/roles";
 import { TABLES, maskedColumns } from "@scrbrd/policy/tables";
 import { teamCodeIn } from "@scrbrd/policy/teams";
-// The demonstration vocabulary lives in its own leaf module: design/roles.js
-// needs the same mapping, and declaring it in either of us makes the other
-// import it — a cycle that shows up as a TDZ error rather than anything
-// legible. See rbac/legacy-roles.js.
-import { LEGACY_ROLE, DEMO_SCHOOL, DEMO_TEAM, DEMO_CHILD } from "./legacy-roles.js";
+// The demonstration's own anchors — not database ids, see demo-scope.js.
+import { DEMO_SCHOOL, DEMO_TEAM, DEMO_CHILD } from "./demo-scope.js";
 // Whether a session exists. NOT an authorization answer — it is the switch
 // between "this is a demo on mock data" and "a server is deciding".
 import { signedIn } from "../lib/api.js";
@@ -86,28 +83,34 @@ function maskMap(resource) {
 }
 
 // ── The demo principal ──────────────────────────────────
+// The role switcher, LoginPage's accounts and OnboardingFlow's persona
+// picker all speak the policy's own role names now (SCRBRD-027 retired the
+// pre-migration vocabulary — superadmin-as-alias, headmaster, sportsmaster,
+// parent, assistant… — that rbac/legacy-roles.js used to translate). This
+// function no longer translates a legacy name; it builds a demo ASSIGNMENT
+// for a real one, which is a different job: even a canonical role name needs
+// a school (and sometimes a team, or a person) before authorize() can decide
+// anything with it.
+
 /**
- * The role switcher still speaks the pre-migration role names. This maps each
- * to a role in the current model plus a scope, so the demo keeps working while
- * authorization runs on assignments.
+ * Two roles are platform-wide by construction, not school-scoped: operating
+ * the platform is not being at a school. `school: null` is what makes an
+ * assignment reach across every tenant (see authorize()'s own comment on
+ * `covers()`) — the one thing the generic branch below cannot produce, since
+ * it exists to scope INTO the demo school, not out of it.
  *
- * Three of these are judgement calls rather than renames, and are flagged in
- * docs/adr/0001:
- *
- *   superadmin      → platformadmin. Under the new model NOBODY sees
- *                     everything: operating the platform does not grant
- *                     access to a school's medical or disciplinary records.
- *                     The demo's default role therefore shows LESS than it
- *                     used to. That is the intended behaviour, not a
- *                     regression — but it is the most visible change here.
- *   headcoach       → coach with the team widened to the whole school.
- *   platformsupport → platformadmin; the distinction now lives in whether
- *                     platform.support.impersonate has been exercised.
+ * superadmin is the owner's key and holds every capability; without this it
+ * would still be scoped to HIL and never demonstrate what "platform-wide"
+ * means. platformadmin holds no medical or PII-reading capability at all —
+ * "operating the platform is not a licence to browse" — so this changes
+ * nothing about what it can see, only where: school.read, user.read and
+ * audit.read reach every institution, as they do for a real platform
+ * account, rather than only the demo's own school.
  */
-
+const PLATFORM_WIDE_ROLES = new Set(["superadmin", "platformadmin"]);
 
 /**
- * Assignments for a role name — legacy or current.
+ * Assignments for a policy role name.
  *
  * The demonstration scope has to obey the same two shape rules the database
  * enforces, or it demonstrates something the product does not do.
@@ -121,25 +124,41 @@ function maskMap(resource) {
  *   rows is a parent who reads every child at the school." app_can() refuses
  *   those outright, so a live session cannot produce one.
  *
- * This function built neither. It returned a bare { role, school }, so the
- * demonstration's own guardian saw all eighteen pupils instead of one child —
- * measurably, not theoretically — and its assistant coach saw the whole school
- * rather than a side. Nothing was insecure: the client scoping is a demo
- * fixture and a live session is decided in Postgres. But it put the exact
- * failure the policy exists to prevent on screen, in the product whose central
- * claim is that it does not do that.
+ * A bare `{ role, school }` skips both, so the demonstration's own guardian
+ * saw all eighteen pupils instead of one child — measurably, not
+ * theoretically — and its assistant coach saw the whole school rather than a
+ * side. Nothing was insecure: the client scoping is a demo fixture and a
+ * live session is decided in Postgres. But it put the exact failure the
+ * policy exists to prevent on screen, in the product whose central claim is
+ * that it does not do that.
  *
- * The legacy aliases had the scopes right all along — `parent` named a child,
- * `assistant` named a team. Collapsing the role switcher onto the canonical
- * names is what made the unscoped fallback reachable, so it is fixed here
- * rather than by keeping duplicate rows in a menu.
+ * Two roles need a narrower anchor than TEAM_SCOPED_ROLES/SUBJECT_SCOPED_ROLES
+ * give them, because the database's own shape rules do not happen to cover
+ * them:
+ *
+ *   `player` is not in SUBJECT_SCOPED_ROLES (that list is what app_can()
+ *   itself refuses an unscoped row for; a player's own visibility is scoped
+ *   by a different mechanism in Postgres). Left to the generic branch it
+ *   gets no `person` at all — and covers() treats an absent `person` as no
+ *   restriction, so the demo's own pupil would read every player at the
+ *   school. Named to "p1" (James Whitfield, the demo's own signed-in pupil),
+ *   not DEMO_CHILD ("p5"), because the two personas are different people —
+ *   the smoke walk signs in as James and asserts on his row specifically.
+ *
+ *   `scorer` is not in TEAM_SCOPED_ROLES either, so left to the generic
+ *   branch it would read fixtures for every team in the school rather than
+ *   the one side a scorer is actually assigned to. Narrowed to DEMO_TEAM for
+ *   the same reason a coach is: it is what the role is FOR.
  */
+const DEMO_SCOPE_OVERRIDE = {
+  player: { person: "p1" },
+  scorer: { team: DEMO_TEAM },
+};
+
 export function assignmentsForRole(role) {
-  const legacy = LEGACY_ROLE[role];
-  if (legacy) return [legacy];
   if (!ROLE_CAPABILITIES[role]) return []; // unknown role ⇒ no authority. Default deny.
 
-  const a = { role, school: DEMO_SCHOOL };
+  const a = { role, school: PLATFORM_WIDE_ROLES.has(role) ? null : DEMO_SCHOOL };
   if (TEAM_SCOPED_ROLES.includes(role)) a.team = DEMO_TEAM;
   // A guardian is named against the children they are responsible for; a pupil
   // reading their own file, and a front desk looking one up, are named against
@@ -148,6 +167,7 @@ export function assignmentsForRole(role) {
     if (role === "guardian") a.children = [DEMO_CHILD];
     else a.person = DEMO_CHILD;
   }
+  Object.assign(a, DEMO_SCOPE_OVERRIDE[role]);
   return [a];
 }
 

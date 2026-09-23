@@ -1,5 +1,4 @@
 import { roleGrants } from "@scrbrd/policy/roles";
-import { LEGACY_ROLE_NAMES } from "../rbac/legacy-roles.js";
 
 /* ═══════════════════════════════════════════════════════
    ROLE IDENTITY
@@ -11,9 +10,10 @@ import { LEGACY_ROLE_NAMES } from "../rbac/legacy-roles.js";
    all. Signing in as a director of sport produced ROLES[undefined] and an
    empty shell: no navigation, no colour, no name.
 
-   The policy's twenty-two roles are the vocabulary now, because they are the
-   ones that decide anything. The old names live on as aliases below so the
-   demonstration accounts keep working.
+   The policy's roles are the vocabulary now, because they are the ones that
+   decide anything. The old names do not live on even as aliases (SCRBRD-027):
+   every sign-in and onboarding entry point speaks a real policy role name
+   directly, so there is nothing left to translate.
 
    COLOUR CARRIES MEANING, IN TWO DIMENSIONS.
    Family says which domain of access a role sits in; position within the
@@ -211,33 +211,30 @@ const navForRoles = (roles) =>
 /** A persona's destinations: its role, plus the roles it always comes with. */
 const navFor = (role) => navForRoles([role, ...(ROLE_IDENTITY[role]?.also ?? [])]);
 
-/* ── Legacy names ───────────────────────────────────────────────────
-   The demonstration accounts and the seeded fixtures still speak the old
-   vocabulary. Mapping rather than renaming keeps them working.
+/* ── Legacy names — retired (SCRBRD-027) ─────────────────────────────
+   The demonstration accounts, the seeded fixtures and the onboarding persona
+   picker used to speak an old vocabulary (superadmin-as-alias, headmaster,
+   sportsmaster, parent, assistant…) that this file mapped onto the policy's
+   own role names via rbac/legacy-roles.js's LEGACY_ROLE_NAMES.
 
-   The mapping is DERIVED from rbac/index.js, which already had to declare it
-   in order to hand a legacy name its assignments. Two copies would drift, and
-   the symptom would be a login that works with no navigation — which is the
-   bug this whole file is fixing. Names that are already policy roles are
-   filtered out: `coach` is not an alias for anything.
+   That vocabulary is gone from every entry point that can set the SIGNED-IN
+   role — LoginPage's accounts, OnboardingFlow's persona picker and
+   ManagementView's role picker all speak policy role names directly now
+   (apps/web/test/design.test.mjs asserts this for the first two). With
+   nothing left to translate, `canonicalRole` is identity on every policy
+   role and ROLES carries exactly ROLE_IDENTITY's keys — no wider lookup
+   table for a menu to accidentally iterate and duplicate.
 */
-const LEGACY_ROLE_ALIAS = Object.fromEntries(
-  Object.entries(LEGACY_ROLE_NAMES).filter(([legacy]) => !ROLE_IDENTITY[legacy]),
+
+/** Identity on the policy vocabulary — kept as a function because every call
+ *  site names it, not what it does; TopBar and SettingsView both compare a
+ *  role against `canonicalRole(other)` rather than the role itself. */
+const canonicalRole = (r) => r;
+
+/** The shape the shell reads: label, icon, colour and nav, per policy role. */
+const ROLES = Object.fromEntries(
+  Object.entries(ROLE_IDENTITY).map(([r, id]) => [r, { ...id, nav: navFor(r) }]),
 );
-
-/** Resolve any role name — current or legacy — to the policy vocabulary. */
-const canonicalRole = (r) => (ROLE_IDENTITY[r] ? r : LEGACY_ROLE_ALIAS[r] ?? r);
-
-/**
- * The shape the shell reads: label, icon, colour and nav, for every role in
- * the policy AND every legacy name that maps onto one. Built once.
- */
-const ROLES = Object.fromEntries([
-  ...Object.entries(ROLE_IDENTITY).map(([r, id]) => [r, { ...id, nav: navFor(r) }]),
-  ...Object.entries(LEGACY_ROLE_ALIAS).map(([legacy, real]) => [
-    legacy, { ...ROLE_IDENTITY[real], nav: navFor(real), aliasOf: real },
-  ]),
-]);
 
 /** Roles grouped by access domain — for a legend, or a role picker. */
 const ROLE_FAMILIES = Object.entries(ROLE_IDENTITY).reduce((acc, [r, id]) => {

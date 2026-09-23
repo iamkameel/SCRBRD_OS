@@ -46,12 +46,13 @@ import { dirname, resolve, relative } from "node:path";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-// Bump this when a new db/NN has been applied to production — see DEPLOYING.md.
-// At or below it, a file is history; above it, it has not run yet and is still
-// editable. db/98 and db/99 are the seed and the RLS verifier, which
-// tools/migrate.mjs excludes from the ledger and which are regenerated rather
-// than frozen, so they are excluded here too however high this number goes.
-export const FROZEN_THROUGH = 23;
+// The highest db/NN in db/SHIPPED.sha256 — the record of what production has
+// applied. A hand-bumped constant sat at 23 while 24–28 shipped. At or below
+// it a file is history; above it, it has not run yet and is still editable.
+// db/98 and db/99 are the seed and the RLS verifier, which tools/migrate.mjs
+// excludes from the ledger, so they are excluded here too.
+export const FROZEN_THROUGH = Math.max(-1, ...readFileSync(resolve(ROOT, "db", "SHIPPED.sha256"), "utf8")
+  .split("\n").map((l) => /\sdb\/(\d\d)_\S+\.sql\s*$/.exec(l)?.[1]).filter(Boolean).map(Number));
 
 const isFrozen = (nn) => Number(nn) <= FROZEN_THROUGH && !/^9[89]$/.test(nn);
 

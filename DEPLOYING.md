@@ -388,9 +388,12 @@ still a bad first impression of the platform.
 
 ## Every deploy after that
 
-Push to `main`. The workflow builds the client with an empty API base, checks
-that nothing confidential reaches the bundle, deploys it to Hosting, and
-deploys the API from the Dockerfile. It never touches the database.
+Push to `main`. The workflow deploys the API from the Dockerfile, then builds
+the client with an empty API base, checks that nothing confidential reaches
+the bundle, and deploys it to Hosting. It never touches the database — and an
+API whose migrations the database does not have yet refuses to start, so that
+deploy fails and the client waits with it ("The API refuses to run ahead of
+its schema", below).
 
 To try the image locally, against the development database:
 
@@ -444,8 +447,9 @@ migrator refuses something.
 
 ### The procedure
 
-1. Write `db/NN_*.sql`, the next number after the highest in `db/`. Forward
-   only. `IF NOT EXISTS` and `CREATE OR REPLACE` where they are honest;
+1. Write `db/NN_*.sql`, the next number after the highest in `db/`, and add
+   its name to `services/api/expected-migrations.json` (the suite fails
+   until you do). Forward only. `IF NOT EXISTS` and `CREATE OR REPLACE` where they are honest;
    `SET search_path = pg_catalog, public, pg_temp` on every `SECURITY DEFINER`
    function (`db/16` is why). Explain the change in the file's header — that
    comment is what the next person reads in the SQL Editor.
@@ -469,6 +473,41 @@ migrator refuses something.
    An API that calls a function the database does not have yet is a `42883`
    on every screen that touches it — a read path that started calling
    `app_is_platform_wide()` before `db/20` had been pasted did exactly that.
+
+### The API refuses to run ahead of its schema
+
+Step 4 used to be a sentence. On 2026-09-23 production was found serving the
+code from PRs #30 and #31 against a database still at `db/23` — `db/24` to
+`db/27` had never been pasted, and nothing said so. Now, at boot and before it
+listens, `services/api/server.mjs` compares the migrations it was built
+against (`services/api/expected-migrations.json` — the image carries no `db/`)
+with the database's ledger, read through `schema_migrations_applied()`
+(`db/29`), and exits if any is missing:
+
+```
+Refusing to start: the database is missing 4 migration(s) this code was built against.
+  missing:  24_amend_request.sql
+  ...
+Fix: apply scrbrd-supabase-apply-NN.sql for each, in this order (DEPLOYING.md,
+"The procedure"):
+    node tools/bundle-sql.mjs --apply 24   → scrbrd-supabase-apply-24.sql  (24_amend_request.sql)
+  ...
+```
+
+A revision that does not start never takes traffic on Cloud Run or Render, so
+the previous one keeps serving; the deploy workflow runs the client only after
+the API succeeds, so the client does not go out ahead either. **The fix is
+always the schema**: paste each named `apply-NN` in order, `verify`, then
+redeploy (re-run the workflow, or push again). A database that is *ahead* of
+the code — a file pasted before the code that needs it merged — is the normal
+order and starts fine. A database with no `db/29` cannot report what it has, so
+the server refuses and says to look (`SELECT name FROM schema_migration`).
+
+There is no switch to skip this. A development database that is behind takes
+`node tools/migrate.mjs`, the same as any other.
+
+**`db/29` itself is in the list.** The first deploy of this guard needs
+`apply-29` pasted first — which is the rule, applied to the file that enforces it.
 
 ### When production is behind by more than one file
 

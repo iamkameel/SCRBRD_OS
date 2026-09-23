@@ -13,17 +13,19 @@ import { api, signedIn } from "../lib/api.js";
 import { disablePush, enablePush, pushSupported } from "../lib/push.js";
 import { resolveBirthDate, BIRTH_DATE_MESSAGE } from "@scrbrd/policy/date-of-birth";
 import { STATUS_LABEL, STATUS_TONE, UPGRADES } from "../data/roadmap.js";
+import { SupportAccessPanel } from "./support.jsx";
 
 // ══════════════════════════════════════════════════════
 //  SETTINGS & ACCESS CONTROL
 //
-//  Six tabs, each answering one question the office actually asks:
+//  Six tabs (seven for platform support), each answering one question the office actually asks:
 //    People    — who can sign in, and who on the roster cannot yet
 //    Roles     — what each role may do, read from the policy
 //    Me        — my own access, this device, my clearances
 //    Passport  — where a boy's record may travel
 //    School    — what is on record for each school I belong to
 //    Roadmap   — what is built, what is built underneath, what is planned
+//    Support   — platform support holders only: an hour at one school
 //
 //  Everything drawn here is live and row-scoped: the reads go through the
 //  same choke point as every other screen, and the client decides nothing
@@ -38,6 +40,8 @@ const TABS = [
   { id: "passport", label: "Passport", hint: "Where a record may travel" },
   { id: "school",   label: "School",   hint: "What is on record for each school" },
   { id: "upgrades", label: "Roadmap",  hint: "Built, built underneath, planned" },
+  // The platform side of support access (support.jsx); drawn only for a holder.
+  { id: "support",  label: "Support",  hint: "Reach one school, for an hour, on the record", cap: "platform.support.impersonate" },
 ];
 
 // ── Small shared pieces ────────────────────────────────
@@ -267,7 +271,7 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, on
           text had to know the icon. */}
       <div role="tablist" aria-label="Settings sections"
            style={{ display: "flex", gap: "6px", marginBottom: "18px", flexWrap: "wrap" }}>
-        {TABS.map((t) => {
+        {TABS.filter((t) => !t.cap || holdsCapability(role, t.cap)).map((t) => {
           const on = tab === t.id;
           const n = t.id === "users" ? attention : 0;
           return (
@@ -301,6 +305,7 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, on
         {tab === "passport" && <PassportTab role={role}/>}
         {tab === "school"   && <SchoolTab role={role} users={users} players={PLAYERS} staff={STAFF} coaches={COACHES} canAudit={canAudit}/>}
         {tab === "upgrades" && <RoadmapTab/>}
+        {tab === "support"  && <SupportAccessPanel role={role}/>}
       </div>
 
       {/* ── ENROL MODAL ──
@@ -1197,7 +1202,25 @@ function SchoolTab({ role, users, players, staff, coaches, canAudit }) {
 // database. The API filters every row to the reader's school.
 function AuditSection({ role }) {
   const reads = useRows("access_log", role);
-  const sessions = useRows("support_access", role);
+  const [nonce, setNonce] = useState(0);
+  const sessions = useRows("support_access", role, nonce);
+  // The office may end a session early — the school does not have to trust the
+  // platform to leave. Same capability support_access_end() checks; courtesy only.
+  const canEnd = holdsCapability(role, "user.role.assign");
+  const [endSaid, setEndSaid] = useState({});
+  const endSession = async (s) => {
+    setEndSaid((m) => ({ ...m, [s.id]: "" }));
+    try {
+      const r = await api(`/api/support/access/${s.id}/end`, { method: "POST" });
+      if (r?.note === "already_ended") setEndSaid((m) => ({ ...m, [s.id]: "It had already been ended." }));
+    } catch (e) {
+      const code = e?.code || e?.message;
+      setEndSaid((m) => ({ ...m, [s.id]: code === "not_permitted"
+        ? "Only someone who makes appointments at this school can end a session."
+        : `The server refused: ${code ?? "unreachable"}.` }));
+    }
+    setNonce((n) => n + 1);
+  };
   const recent = reads.slice(0, 40);
   return (
     <div style={{ display: "grid", gap: "16px" }}>
@@ -1230,7 +1253,7 @@ function AuditSection({ role }) {
             </div>
           )}
       </Panel>
-      <Panel>
+      <Panel data-testid="school-support-access">
         <CardHead title="Support access"
           sub="When the platform reached this school as one of its own roles: who, why, for how long, and who ended it. A session stops by itself within its minutes; the office can end one sooner."/>
         {sessions.length === 0
@@ -1243,6 +1266,8 @@ function AuditSection({ role }) {
                 <div style={MONO}>began {ago(s.startedAt)} · {s.endedAt ? `ended ${ago(s.endedAt)}${s.endedByName ? ` by ${s.endedByName}` : ""}` : s.live ? `until ${new Date(s.expiresAt).toLocaleTimeString()}` : "expired"}</div>
               </div>
               <Badge color={s.live ? D.amber : D.textMuted}>{s.live ? "Live now" : "Over"}</Badge>
+              {s.live && canEnd && <Btn size="sm" variant="danger" onClick={() => endSession(s)} data-testid="school-support-end">End now</Btn>}
+              {endSaid[s.id] && <div role="alert" style={{ flexBasis: "100%", fontFamily: D.body, fontSize: "11px", color: D.roseText }}>{endSaid[s.id]}</div>}
             </div>
           ))}
       </Panel>
