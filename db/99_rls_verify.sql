@@ -2280,6 +2280,7 @@ BEGIN
   END;
   SELECT s.ok INTO v_ok FROM duty_suspend(D_DUTY, 'Complaint about the scorebook under review') s;
   PERFORM _assert(v_ok, 'the school office could not suspend a linked duty');
+  PERFORM _assert(duty_status(D_DUTY) = 'suspended', 'a suspended duty does not read as suspended: ' || coalesce(duty_status(D_DUTY), 'NULL'));
   SELECT count(*) INTO n FROM duty_suspension
    WHERE duty_id = D_DUTY AND assignment_id = A_DUTY AND suspended_by = U_REGISTRAR
      AND reason = 'Complaint about the scorebook under review' AND lifted_at IS NULL;
@@ -2323,6 +2324,7 @@ BEGIN
   -- touching the assignment: same row, never deactivated, nothing reactivated.
   SELECT l.ok INTO v_ok FROM duty_lift(D_DUTY, 'Scorebook checked; no fault found') l;
   PERFORM _assert(v_ok, 'the school office could not lift a suspension');
+  PERFORM _assert(duty_status(D_DUTY) <> 'suspended', 'a lifted duty still reads as suspended');
   SELECT count(*) INTO n FROM duty_suspension
    WHERE duty_id = D_DUTY AND lifted_by = U_REGISTRAR AND lifted_at IS NOT NULL
      AND lift_reason = 'Scorebook checked; no fault found'

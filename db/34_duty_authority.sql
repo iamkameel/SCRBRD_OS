@@ -408,6 +408,50 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 REVOKE ALL ON FUNCTION assignment_suspended(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION assignment_suspended(uuid) TO PUBLIC;
 
+-- ── duty_status() learns "suspended" ─────────────────────────────
+-- db/30 derived every state but this one, because until this file there was
+-- no fact behind it. db/30's body, with one line: a suspension reads after
+-- revoked, completed and expired — a withdrawn duty or a finished match is
+-- the more final answer — and before delegated, active and pending.
+CREATE OR REPLACE FUNCTION duty_status(p_official uuid) RETURNS text AS $$
+DECLARE
+  o  match_official%ROWTYPE;
+  m  match%ROWTYPE;
+BEGIN
+  SELECT * INTO o FROM match_official WHERE id = p_official;
+  IF NOT FOUND THEN RETURN NULL; END IF;
+  SELECT * INTO m FROM match WHERE id = o.match_id;
+  IF NOT FOUND THEN RETURN NULL; END IF;
+  -- The same question match_official_read asks, so this answers exactly the
+  -- readers who can already see the appointment.
+  IF NOT app_can('fixture.read', m.school_id, m.team_code,
+                 '00000000-0000-0000-0000-000000000000'::uuid, m.id) THEN
+    RETURN NULL;
+  END IF;
+
+  IF o.withdrawn                 THEN RETURN 'revoked';   END IF;
+  IF m.status = 'complete'       THEN RETURN 'completed'; END IF;
+  IF m.status = 'abandoned'      THEN RETURN 'expired';   END IF;
+  IF duty_suspended(o.id)        THEN RETURN 'suspended'; END IF;
+
+  IF o.duty = 'scorer' AND o.person_id IS NOT NULL
+     AND EXISTS (SELECT 1 FROM scoring_audit a
+                  WHERE a.match_id = o.match_id
+                    AND a.event = 'handover_complete'
+                    AND a.from_user = o.person_id)
+     AND NOT EXISTS (SELECT 1 FROM scoring_session s
+                      WHERE s.match_id = o.match_id
+                        AND s.state <> 'idle'
+                        AND s.holder_user_id = o.person_id) THEN
+    RETURN 'delegated';
+  END IF;
+
+  IF m.status = 'live'           THEN RETURN 'active';    END IF;
+  RETURN 'pending';              -- 'scheduled', the only value left (db/00's CHECK)
+END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION duty_status(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION duty_status(uuid) TO scrbrd_app;
+
 -- ── Assertion ──────────────────────────────────────────────────────
 -- The shape of what this file promised. The behaviour — a suspended duty
 -- granting nothing, lifting restoring it, only the office acting, reasons
@@ -463,5 +507,8 @@ BEGIN
   OR NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'role_assignment_linked_guard' AND NOT tgisinternal)
   OR NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'duty_suspension_append_only' AND NOT tgisinternal) THEN
     RAISE EXCEPTION 'db/34: a guard trigger is missing';
+  END IF;
+  IF (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('duty_status(uuid)')) NOT LIKE '%duty_suspended(o.id)%' THEN
+    RAISE EXCEPTION 'db/34: duty_status does not answer suspended';
   END IF;
 END $check$;

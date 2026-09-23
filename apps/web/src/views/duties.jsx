@@ -58,11 +58,11 @@ const TONE = {
 // and is mapped anyway, so a change to the read cannot print a raw code.
 const STATUS_WORD = {
   pending: "to come", active: "on duty", delegated: "handed over",
-  completed: "completed", expired: "fixture abandoned", revoked: "stood down",
+  completed: "completed", expired: "fixture abandoned", revoked: "stood down", suspended: "suspended",
 };
 const STATUS_TONE = {
   pending: D.textMuted, active: D.emerald, delegated: D.amber,
-  completed: D.sky, expired: D.textMuted, revoked: D.rose,
+  completed: D.sky, expired: D.textMuted, revoked: D.rose, suspended: D.rose,
 };
 
 function DutyRoster({ matchId, role }) {
