@@ -13,17 +13,19 @@ import { api, signedIn } from "../lib/api.js";
 import { disablePush, enablePush, pushSupported } from "../lib/push.js";
 import { resolveBirthDate, BIRTH_DATE_MESSAGE } from "@scrbrd/policy/date-of-birth";
 import { STATUS_LABEL, STATUS_TONE, UPGRADES } from "../data/roadmap.js";
+import { SupportAccessPanel } from "./support.jsx";
 
 // ══════════════════════════════════════════════════════
 //  SETTINGS & ACCESS CONTROL
 //
-//  Six tabs, each answering one question the office actually asks:
+//  Six tabs (seven for platform support), each answering one question the office actually asks:
 //    People    — who can sign in, and who on the roster cannot yet
 //    Roles     — what each role may do, read from the policy
 //    Me        — my own access, this device, my clearances
 //    Passport  — where a boy's record may travel
 //    School    — what is on record for each school I belong to
 //    Roadmap   — what is built, what is built underneath, what is planned
+//    Support   — platform support holders only: an hour at one school
 //
 //  Everything drawn here is live and row-scoped: the reads go through the
 //  same choke point as every other screen, and the client decides nothing
@@ -38,6 +40,8 @@ const TABS = [
   { id: "passport", label: "Passport", hint: "Where a record may travel" },
   { id: "school",   label: "School",   hint: "What is on record for each school" },
   { id: "upgrades", label: "Roadmap",  hint: "Built, built underneath, planned" },
+  // The platform side of support access (support.jsx); drawn only for a holder.
+  { id: "support",  label: "Support",  hint: "Reach one school, for an hour, on the record", cap: "platform.support.impersonate" },
 ];
 
 // ── Small shared pieces ────────────────────────────────
@@ -267,7 +271,7 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, on
           text had to know the icon. */}
       <div role="tablist" aria-label="Settings sections"
            style={{ display: "flex", gap: "6px", marginBottom: "18px", flexWrap: "wrap" }}>
-        {TABS.map((t) => {
+        {TABS.filter((t) => !t.cap || holdsCapability(role, t.cap)).map((t) => {
           const on = tab === t.id;
           const n = t.id === "users" ? attention : 0;
           return (
@@ -301,6 +305,7 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, on
         {tab === "passport" && <PassportTab role={role}/>}
         {tab === "school"   && <SchoolTab role={role} users={users} players={PLAYERS} staff={STAFF} coaches={COACHES} canAudit={canAudit}/>}
         {tab === "upgrades" && <RoadmapTab/>}
+        {tab === "support"  && <SupportAccessPanel role={role}/>}
       </div>
 
       {/* ── ENROL MODAL ──
@@ -1230,7 +1235,7 @@ function AuditSection({ role }) {
             </div>
           )}
       </Panel>
-      <Panel>
+      <Panel data-testid="school-support-access">
         <CardHead title="Support access"
           sub="When the platform reached this school as one of its own roles: who, why, for how long, and who ended it. A session stops by itself within its minutes; the office can end one sooner."/>
         {sessions.length === 0
