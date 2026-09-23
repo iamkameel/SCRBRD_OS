@@ -309,7 +309,8 @@ export const READ_QUERIES = {
                   a.role, a.school_id, a.team_code, a.fixture_id,
                   a.active, a.valid_from, a.valid_until,
                   a.created_at, a.created_by, g.name as granted_by_name,
-                  a.revoked_at, a.revoked_by, r.name as revoked_by_name
+                  a.revoked_at, a.revoked_by, r.name as revoked_by_name,
+                  assignment_suspended(a.id) as suspended
              from role_assignment a
              left join app_user p on p.id = a.person_id
              left join app_user g on g.id = a.created_by
@@ -700,13 +701,42 @@ export const READ_QUERIES = {
    * "who was ever named". The rows are kept for the disputed-fixture case and
    * a report that needs them can ask for them explicitly.
    */
+  //
+  // SCRBRD-034 adds three columns and no reach. `id` is what the office's
+  // link/suspend/lift controls name. `linked` says the duty rests on an
+  // assignment (db/34) — a fact, not the assignment itself, which stays
+  // behind role_assignment's own policy. `suspended` is duty_suspended(),
+  // which answers only for a duty the reader could see anyway; WHY is the
+  // office's record and is read from duty_suspensions below, not here.
   officials: {
-    text: `select match_id, duty, person_name, person_id, official_id, panel, appointed_at
+    text: `select id, match_id, duty, person_name, person_id, official_id, panel, appointed_at,
+                  assignment_id is not null as linked,
+                  duty_suspended(id)          as suspended
              from match_official
             where not withdrawn
               and ($1::uuid is null or match_id = $1)
             order by duty, person_name`,
     params: q => [q?.matchId || null],
+  },
+
+  /**
+   * The office's record of suspended duties (SCRBRD-034, db/34): who paused
+   * a duty, when and why, and who lifted it, when and why. duty_suspension is
+   * readable under user.role.assign at the school and by nobody else — not
+   * the scorer it is about, who learns THAT they are suspended (the officials
+   * read above, assignment_suspended()) and not the reason.
+   */
+  duty_suspensions: {
+    text: `select s.id, s.duty_id, o.match_id, o.duty, o.person_name,
+                  s.suspended_at, s.reason, sb.name as suspended_by_name,
+                  s.lifted_at, s.lift_reason, lb.name as lifted_by_name
+             from duty_suspension s
+             left join match_official o on o.id = s.duty_id
+             left join app_user sb on sb.id = s.suspended_by
+             left join app_user lb on lb.id = s.lifted_by
+            where ($1::uuid is null or s.duty_id = $1)
+            order by s.suspended_at desc`,
+    params: q => [q?.dutyId || null],
   },
 
   /**

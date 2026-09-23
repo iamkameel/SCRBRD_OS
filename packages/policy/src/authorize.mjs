@@ -33,6 +33,10 @@ import { ROLE_CAPABILITIES, roleGrants } from "./roles.mjs";
  * @property {boolean?} active
  * @property {string?} from        ISO date, inclusive
  * @property {string?} until       ISO date, exclusive
+ * @property {string?} expiresAt   ISO instant, exclusive — the hour hand on a
+ *                                 support assignment (db/22, db/23)
+ * @property {boolean?} suspended  the duty this assignment rests on is
+ *                                 suspended by the school office (db/34, db/35)
  *
  * @typedef {object} Resource
  * @property {string?} school
@@ -68,12 +72,22 @@ const DENY = Object.freeze({ allowed: false, via: null, reason: "no_matching_ass
  */
 export const ANY_SCOPE = "*";
 
-/** Is the assignment in force at `at`? */
+/**
+ * Is the assignment in force at `at`?
+ *
+ * The same liveness rule the SQL decision functions apply (db/35): active,
+ * started, not ended by date, not past its hour hand, and not suspended. A
+ * suspension is not `active: false` — db/01 never lets a revoked assignment
+ * come back, and a suspension is lifted — so it is its own field, and either
+ * one alone takes the assignment out of every decision.
+ */
 export function isActive(a, at = new Date()) {
   if (a.active === false) return false;
+  if (a.suspended === true) return false;
   const t = at instanceof Date ? at : new Date(at);
   if (a.from && t < new Date(a.from)) return false;
   if (a.until && t >= new Date(a.until)) return false;
+  if (a.expiresAt && t >= new Date(a.expiresAt)) return false;
   return true;
 }
 

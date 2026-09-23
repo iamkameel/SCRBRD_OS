@@ -229,5 +229,44 @@ group("E. Expiry, integrity, contexts");
      contexts({ assignments: [past] }).length === 0);
 }
 
+group("F. A suspended duty, and the hour hand — the SQL liveness rule, mirrored");
+{
+  // SCRBRD-034 (db/34, db/35). A scorer's assignment is narrowed to one
+  // fixture and linked to the duty. The office suspends the duty: the SQL
+  // decision functions stop counting the assignment while `active` stays
+  // true, because a revoked assignment is never reactivated and a suspension
+  // is lifted. The mirror must say the same thing or the client offers a
+  // scoring screen the database will refuse.
+  const FX = "77777777-0000-0000-0000-000000000004";
+  const scorer = { role: "scorer", school: HIL, fixture: FX, active: true };
+  const resource = { school: HIL, team: "1XI", fixture: FX };
+  ok("a linked scorer's assignment scores its fixture",
+     may({ assignments: [scorer], capability: "scoring.edit", resource }));
+  ok("suspended, the same assignment scores nothing",
+     !may({ assignments: [{ ...scorer, suspended: true }], capability: "scoring.edit", resource }));
+  ok("...and reads nothing",
+     !may({ assignments: [{ ...scorer, suspended: true }], capability: "fixture.read", resource }));
+  ok("...while active is still true — suspension is not revocation",
+     !isActive({ ...scorer, suspended: true }) && scorer.active === true);
+  ok("lifted (suspended:false) it is live again",
+     isActive({ ...scorer, suspended: false }));
+  ok("a suspended assignment is not offered as a context",
+     contexts({ assignments: [{ ...scorer, suspended: true }] }).length === 0);
+  ok("a suspended assignment is not a scope to count over",
+     grantingAssignments({ assignments: [{ ...scorer, suspended: true }], capability: "scoring.edit" }).length === 0);
+  // Suspension pauses THAT assignment and no other the person holds.
+  const schoolWide = { role: "scorer", school: HIL };
+  ok("another assignment of the same person still decides for itself",
+     may({ assignments: [{ ...scorer, suspended: true }, schoolWide], capability: "scoring.edit", resource }));
+
+  // db/23's hour hand, which the mirror did not read until now.
+  const now = new Date("2026-09-23T10:00:00Z");
+  const support = { role: "schooladmin", school: HIL, expiresAt: "2026-09-23T10:30:00Z" };
+  ok("a support assignment is live before its hour hand", isActive(support, now));
+  ok("...and not at it", !isActive(support, new Date("2026-09-23T10:30:00Z")));
+  ok("...nor after it", !may({ assignments: [support], capability: "user.role.assign",
+     resource: { school: HIL }, at: new Date("2026-09-23T11:00:00Z") }));
+}
+
 console.log(`\n${"─".repeat(52)}\nAUTHORIZE SUITE: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -50,6 +50,9 @@ const WALKS = [
   "scorecard",
   // Appointing the officials: officiating.assign, which had nothing to act on.
   "officials",
+  // A duty and the authority it rests on: the office links, suspends and
+  // lifts, each with a reason; withdrawing the duty revokes it (SCRBRD-034).
+  "duties",
   // The head-to-head against a rival, derived from the fixtures rather than
   // stored beside them.
   "derby",
@@ -140,7 +143,7 @@ const WALKS = [
 // browser-innings-end scores an innings to its end, which nothing else does:
 // browser-sync taps four deliveries of twenty overs, so the review gate between
 // the last ball and a closed innings was never exercised end to end.
-const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-dossier", "browser-handover", "browser-innings-end", "browser-quarantine", "browser-drs", "browser-dismissals", "browser-discipline", "browser-support", "browser-seasons", "browser-rulebook"];
+const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-dossier", "browser-handover", "browser-innings-end", "browser-quarantine", "browser-drs", "browser-dismissals", "browser-discipline", "browser-support", "browser-seasons", "browser-rulebook", "browser-duties"];
 
 // Walks that need no database, run by `pnpm smoke` instead. Named here only so
 // the completeness check below knows they are accounted for.

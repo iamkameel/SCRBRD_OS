@@ -31,5 +31,7 @@
   "30_duty_status.sql",
   "31_declared_capture_profile.sql",
   "32_rulebook_clause.sql",
-  "33_completion_ends_scoring.sql"
+  "33_completion_ends_scoring.sql",
+  "34_duty_authority.sql",
+  "35_authz_suspension.sql"
 ]

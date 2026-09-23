@@ -50,6 +50,7 @@ import { ownerRecoveryRoutes } from "./write/owner-recovery-api.mjs";
 import { rosterRoutes } from "./write/roster-api.mjs";
 import { dobCaptureRoutes } from "./write/dob-capture-api.mjs";
 import { supportAccessRoutes } from "./write/support-access-api.mjs";
+import { dutyAuthorityRoutes } from "./write/duty-authority-api.mjs";
 import { contactRoutes } from "./write/contacts-api.mjs";
 import { clearanceRoutes } from "./write/clearance-api.mjs";
 import { recognitionRoutes } from "./write/recognition-api.mjs";
@@ -281,6 +282,8 @@ const fixtures = fixtureRoutes({ pool, secret: SECRET });
 const roster   = rosterRoutes({ pool, secret: SECRET });
 const dobCapture = dobCaptureRoutes({ pool, secret: SECRET });
 const support = supportAccessRoutes({ pool, secret: SECRET });
+// SCRBRD-034: a duty linked to the assignment it rests on, and the pause.
+const duties = dutyAuthorityRoutes({ pool, secret: SECRET });
 // Who to ring for a child. Kept by the family and the office; the driver
 // reaches the manifest through the trip, see trip_contacts() in db/08.
 const contacts = contactRoutes({ pool, secret: SECRET });
@@ -450,6 +453,13 @@ const PLAYER_ROUTES = [
   // retried "begin" with an Idempotency-Key answers from its receipt.
   [/^\/api\/support\/access$/,                    "POST", support.begin],
   [/^\/api\/support\/access\/([^/]+)\/end$/,       "POST", support.end],
+  // SCRBRD-034. The school office links a match duty to the fixture-scoped
+  // assignment it rests on, and suspends or lifts it with a reason — see
+  // duty-authority-api.mjs. NOT module-gated: taking authority away must not
+  // depend on a menu setting.
+  [/^\/api\/duties\/([^/]+)\/link$/,              "POST", duties.link],
+  [/^\/api\/duties\/([^/]+)\/suspend$/,           "POST", duties.suspend],
+  [/^\/api\/duties\/([^/]+)\/lift$/,              "POST", duties.lift],
   [/^\/api\/players\/([^/]+)\/emergency-contacts$/, "POST", contacts.add],
   [/^\/api\/emergency-contacts\/([^/]+)\/retire$/,   "POST", contacts.retire],
   [/^\/api\/clearances$/,                           "POST", clearances.record],

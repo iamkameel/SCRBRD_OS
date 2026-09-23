@@ -10,7 +10,7 @@
 import { ROLES, ROLE_CAPABILITIES, roleGrants, SCORING_ROLES, SUBJECT_SCOPED_ROLES } from "@scrbrd/policy/roles";
 import { TABLES, referencedCapabilities, isCapabilityExpression, maskedColumns } from "@scrbrd/policy/tables";
 import { ALL_CAPABILITIES, SENSITIVE, isCapability } from "@scrbrd/policy/capabilities";
-import { main, authz, timeBox, WITHDRAWN_SINCE_01, ADDED_SINCE_01, ROLES_ADDED_SINCE_01 } from "./generate-rls.mjs";
+import { main, authz, timeBox, suspension, WITHDRAWN_SINCE_01, ADDED_SINCE_01, ROLES_ADDED_SINCE_01 } from "./generate-rls.mjs";
 import { GRANTABLE_ROLES } from "@scrbrd/policy/roles";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -308,6 +308,32 @@ ok("no app_role\\(\\) remains",    !/app_role\(\)/.test(SQL));
      (running.match(/SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;/g) || []).length === 3);
   ok("...and db/01's tails are exactly as shipped",
      !/SECURITY DEFINER SET search_path/.test(shipped));
+}
+
+// ── SCRBRD-034: the pause is emitted where it runs, beside the hour hand ──
+// db/35 re-emits db/23's three functions with one more liveness condition,
+// reading duty_suspension (db/34). db/01 and db/23 must not carry it — both
+// are shipped — and db/35 must not lose db/23's line on the way.
+{
+  const shipped = authz(), hour = timeBox(), running = suspension();
+  const pause = (sql) => (sql.match(/^ {7}AND NOT EXISTS \(SELECT 1 FROM duty_suspension s\n {24}WHERE s\.assignment_id = a\.id AND s\.lifted_at IS NULL\)$/gm) || []).length;
+  const hand = (sql) => (sql.match(/^ {7}AND \(a\.expires_at IS NULL OR a\.expires_at > now\(\)\)$/gm) || []).length;
+  ok("db/01 is emitted without the pause", pause(shipped) === 0);
+  ok("db/23 is emitted without the pause", pause(hour) === 0);
+  ok("db/35 carries it in app_can, app_holds and app_may_grant", pause(running) === 3);
+  ok("...and keeps db/23's hour hand in all three", hand(running) === 3);
+  ok("...each pinned to a search_path in its own definition",
+     (running.match(/SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;/g) || []).length === 3);
+  ok("...and ends in a DO $check$ that asks the catalogue for the line",
+     /DO \$check\$[\s\S]*duty_suspension s[\s\S]*END \$check\$;\n$/.test(running));
+  // What CI diffs. A generated file missing from that list is one nobody
+  // notices going stale — exactly what the list exists to stop.
+  const here = dirname(fileURLToPath(import.meta.url));
+  const ci = readFileSync(join(here, "../../../.github/workflows/ci.yml"), "utf8");
+  ok("CI regenerates and diffs db/35 with the other generated files",
+     /git diff --exit-code db\/01_authz\.sql db\/09_rls_policies\.sql db\/23_authz_time_box\.sql db\/35_authz_suspension\.sql/.test(ci));
+  const onDisk = join(here, "../../../db/35_authz_suspension.sql");
+  ok("db/35 on disk is what the generator emits", existsSync(onDisk) && readFileSync(onDisk, "utf8") === running);
 }
 
 console.log(`\n${"─".repeat(52)}\nRLS SUITE: ${pass} passed, ${fail} failed`);

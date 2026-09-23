@@ -238,9 +238,20 @@ function asNewsPost(r) {
 }
 
 function asOfficial(r) {
-  return { matchId: r.match_id, duty: r.duty, name: r.person_name,
+  return { id: r.id ?? null, matchId: r.match_id, duty: r.duty, name: r.person_name,
            personId: r.person_id, officialId: r.official_id,
-           panel: r.panel, appointedAt: r.appointed_at, live: true };
+           panel: r.panel, appointedAt: r.appointed_at,
+           // SCRBRD-034: the duty rests on an assignment, and whether the
+           // office has paused it. Why is the office's (duty_suspensions).
+           linked: r.linked === true, suspended: r.suspended === true, live: true };
+}
+
+/** The office's record of a suspended duty: who, when and why, both ways. */
+function asDutySuspension(r) {
+  return { id: r.id, dutyId: r.duty_id, matchId: r.match_id, duty: r.duty, name: r.person_name,
+           suspendedAt: r.suspended_at, reason: r.reason, suspendedBy: r.suspended_by_name,
+           liftedAt: r.lifted_at ?? null, liftReason: r.lift_reason ?? null, liftedBy: r.lifted_by_name ?? null,
+           live: true };
 }
 
 /**
@@ -827,6 +838,9 @@ function asAssignment(r) {
            validUntil: r.valid_until ? String(r.valid_until).slice(0, 10) : null,
            grantedAt: r.created_at, granterId: r.created_by, granterName: r.granted_by_name,
            revokedAt: r.revoked_at, revokerId: r.revoked_by, revokerName: r.revoked_by_name,
+           // Paused by the office (db/34): not live, but not revoked either.
+           // authorize.mjs isActive() reads this beside `active`.
+           suspended: r.suspended === true,
            live: true };
 }
 
@@ -960,6 +974,7 @@ const ADAPT = {
   weather: asWeather,
   news: asNewsPost,
   officials: asOfficial,
+  duty_suspensions: asDutySuspension,
   official_register: asRegisteredOfficial,
   ground_conditions: asGroundCondition,
   assignments: asAssignment,

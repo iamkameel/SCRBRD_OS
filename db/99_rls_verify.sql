@@ -171,6 +171,37 @@ INSERT INTO role_assignment (id, person_id, role, school_id, team_code, fixture_
    '11111111-1111-1111-1111-111111111111', NULL, '77777777-0000-0000-0000-000000000004')
 ON CONFLICT DO NOTHING;
 
+-- SCRBRD-034 (section 15). A scorer with an account and NO assignment at all,
+-- appointed to a fixture nothing else here touches — so every read that
+-- passes or fails for them passes or fails because of the one assignment the
+-- office links, and for no other reason. The appointment is written as the
+-- owner, the way the seed writes appointments; the link, the suspension and
+-- the lift are made below as the application role, through the functions.
+INSERT INTO app_user (id, school_id, email, name, role) VALUES
+  ('88888888-0000-0000-0000-00000000034a', '11111111-1111-1111-1111-111111111111',
+   'duty34@example.invalid', 'D Duty', 'scorer')
+ON CONFLICT DO NOTHING;
+INSERT INTO match (id, school_id, team_code, opponent, starts_at, format, overs, status) VALUES
+  ('77777777-0000-0000-0000-00000000034a', '11111111-1111-1111-1111-111111111111', '1XI',
+   'Verify 034 XI', now() + interval '3 days', 'T20', 20, 'scheduled')
+ON CONFLICT DO NOTHING;
+INSERT INTO match_official (id, match_id, school_id, duty, person_name, person_id) VALUES
+  ('0d000000-0000-0000-0000-00000000034a', '77777777-0000-0000-0000-00000000034a',
+   '11111111-1111-1111-1111-111111111111', 'scorer', 'D Duty', '88888888-0000-0000-0000-00000000034a'),
+  -- A second, never linked: the link guard is asserted on a duty with no live
+  -- link to protect, so it cannot pass for that reason instead.
+  ('0d000000-0000-0000-0000-00000000034b', '77777777-0000-0000-0000-00000000034a',
+   '11111111-1111-1111-1111-111111111111', 'umpire', 'D Duty', '88888888-0000-0000-0000-00000000034a')
+ON CONFLICT DO NOTHING;
+
+-- The application role holds no privilege on match_official.assignment_id,
+-- so the link's SHAPE guard can only be reached as the owner. This is that
+-- reach, for the assertions that the guard refuses a wrong link however it is
+-- written.
+CREATE OR REPLACE FUNCTION _link_raw(p_duty uuid, p_assignment uuid) RETURNS void AS $$
+  UPDATE match_official SET assignment_id = p_assignment WHERE id = p_duty;
+$$ LANGUAGE sql SECURITY DEFINER;
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -257,6 +288,13 @@ DECLARE
   v_wkts    int;
   v_balls   int;
   A_ID      uuid;
+
+  -- SCRBRD-034: the duty, its fixture, its scorer, and the assignment linked.
+  U_DUTY    uuid := '88888888-0000-0000-0000-00000000034a';
+  M_DUTY    uuid := '77777777-0000-0000-0000-00000000034a';
+  D_DUTY    uuid := '0d000000-0000-0000-0000-00000000034a';
+  D_DUTY2   uuid := '0d000000-0000-0000-0000-00000000034b';  -- same fixture, never linked
+  A_DUTY    uuid;
   n int;
 BEGIN
   -- ── 1. Nobody is anybody by default ────────────────────────────
@@ -2143,6 +2181,182 @@ BEGIN
                  WHERE polrelid IN ('rulebook_clause'::regclass, 'rulebook_clause_age'::regclass)
                    AND polcmd <> 'r'),
     'a rulebook table has a write policy');
+
+  -- ── 16. A duty, the authority it rests on, and the pause (SCRBRD-034) ─
+  -- db/34 links a match duty to a fixture-scoped assignment the office makes;
+  -- db/35 teaches the decision functions to read a suspension. The claims:
+  -- only the office links, suspends and lifts; a reason is required each way;
+  -- a suspended assignment grants NOTHING, read or write, through every
+  -- decision function; lifting restores it without reactivating anything;
+  -- withdrawing the duty revokes it.
+  --
+  -- The appointment alone grants nothing — that was the gap.
+  PERFORM _as(U_DUTY);
+  SELECT count(*) INTO n FROM match WHERE id = M_DUTY;
+  PERFORM _assert(n = 0, 'an appointment with no linked assignment let its scorer read the fixture');
+
+  -- Only the school office links. A coach, another school's office, the duty's
+  -- own scorer, and a principal — who holds user.role.assign but may not
+  -- appoint a scorer (GRANTABLE_ROLES) — are all refused.
+  FOREACH v_code IN ARRAY ARRAY[U_COACH2::text, U_WES_ADM::text, U_DUTY::text, U_HEAD_M::text] LOOP
+    PERFORM _as(v_code::uuid);
+    SELECT l.ok, l.reason INTO v_ok, v_reason FROM duty_link(D_DUTY) l;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted',
+      format('%s linked a duty to an assignment (ok=%s reason=%s)', v_code, v_ok, v_reason));
+  END LOOP;
+  PERFORM _as(U_REGISTRAR);
+  SELECT l.ok, l.assignment_id INTO v_ok, A_DUTY FROM duty_link(D_DUTY) l;
+  PERFORM _assert(v_ok AND A_DUTY IS NOT NULL, 'the school office could not link a duty');
+  SELECT count(*) INTO n FROM role_assignment
+   WHERE id = A_DUTY AND person_id = U_DUTY AND role = 'scorer' AND school_id = HIL
+     AND fixture_id = M_DUTY AND team_code IS NULL AND active AND created_by = U_REGISTRAR;
+  PERFORM _assert(n = 1, 'the linked assignment is not exactly the duty''s shape, granted by the office');
+  SELECT l.reason INTO v_reason FROM duty_link(D_DUTY) l;
+  PERFORM _assert(v_reason = 'already_linked', 'a live link was replaced by a second one');
+
+  -- The link now grants the duty's authority, at that fixture and no other.
+  PERFORM _as(U_DUTY);
+  SELECT count(*) INTO n FROM match WHERE id = M_DUTY;
+  PERFORM _assert(n = 1, 'a linked scorer cannot read their own fixture');
+  PERFORM _assert(app_can('scoring.edit', HIL, '1XI', NULL, M_DUTY), 'a linked scorer cannot score their fixture');
+  PERFORM _assert(NOT app_can('scoring.edit', HIL, '1XI', NULL, M_OTHER), 'a linked scorer can score a fixture they were not appointed to');
+
+  -- Nobody writes the link around duty_link(). The director of sport holds
+  -- officiating.assign AND user.role.assign and may update the appointment;
+  -- the league holds officiating.assign everywhere. Neither can touch the
+  -- column: the application role has no privilege on it.
+  FOREACH v_code IN ARRAY ARRAY[U_SARAH::text, U_LEAGUE::text] LOOP
+    PERFORM _as(v_code::uuid);
+    BEGIN
+      UPDATE match_official SET assignment_id = NULL WHERE id = D_DUTY;
+      PERFORM _assert(false, format('%s unlinked a duty directly', v_code));
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    BEGIN
+      UPDATE match_official SET assignment_id = 'a5510000-0000-0000-0000-000000000023' WHERE id = D_DUTY2;
+      PERFORM _assert(false, format('%s linked a duty directly, around duty_link()', v_code));
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+  END LOOP;
+  -- A linked appointment keeps what it is about, for anyone who may edit it.
+  PERFORM _as(U_SARAH);
+  BEGIN
+    UPDATE match_official SET person_id = U_SCORER WHERE id = D_DUTY;
+    PERFORM _assert(false, 'a linked appointment was re-pointed at somebody else');
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  -- And the SHAPE holds however the column is written — even as the owner.
+  -- E Ndlovu's official assignment is the right role for an umpire and the
+  -- wrong person at the wrong fixture; a live link is not dropped.
+  BEGIN
+    PERFORM _link_raw(D_DUTY2, 'a5510000-0000-0000-0000-000000000023');
+    PERFORM _assert(false, 'a duty was linked to another person''s assignment at another fixture');
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  BEGIN
+    PERFORM _link_raw(D_DUTY, NULL);
+    PERFORM _assert(false, 'a duty was unlinked from a live assignment');
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+
+  -- Suspending: the office only, and never without a reason.
+  PERFORM _as(U_COACH2);
+  SELECT s.ok, s.reason INTO v_ok, v_reason FROM duty_suspend(D_DUTY, 'Not the coach''s call') s;
+  PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted', 'a coach suspended a duty');
+  PERFORM _as(U_DUTY);
+  SELECT s.ok, s.reason INTO v_ok, v_reason FROM duty_suspend(D_DUTY, 'Standing myself down') s;
+  PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted', 'a scorer suspended their own duty');
+  PERFORM _as(U_REGISTRAR);
+  SELECT s.ok, s.reason INTO v_ok, v_reason FROM duty_suspend(D_DUTY, '   ') s;
+  PERFORM _assert(NOT v_ok AND v_reason = 'reason_required', 'a duty was suspended with a blank reason');
+  SELECT s.ok, s.reason INTO v_ok, v_reason FROM duty_suspend(D_DUTY, NULL) s;
+  PERFORM _assert(NOT v_ok AND v_reason = 'reason_required', 'a duty was suspended with no reason');
+  -- Nobody writes the record around the function.
+  BEGIN
+    INSERT INTO duty_suspension (duty_id, assignment_id, school_id, suspended_by, reason)
+    VALUES (D_DUTY, A_DUTY, HIL, U_REGISTRAR, 'Written round the function');
+    PERFORM _assert(false, 'the application role wrote a suspension directly');
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+  SELECT s.ok INTO v_ok FROM duty_suspend(D_DUTY, 'Complaint about the scorebook under review') s;
+  PERFORM _assert(v_ok, 'the school office could not suspend a linked duty');
+  SELECT count(*) INTO n FROM duty_suspension
+   WHERE duty_id = D_DUTY AND assignment_id = A_DUTY AND suspended_by = U_REGISTRAR
+     AND reason = 'Complaint about the scorebook under review' AND lifted_at IS NULL;
+  PERFORM _assert(n = 1, 'the suspension did not record who, when and why');
+  -- A principal holds user.role.assign, so may pause a duty (answered as
+  -- already suspended, not as not permitted)…
+  PERFORM _as(U_HEAD_M);
+  SELECT s.reason INTO v_reason FROM duty_suspend(D_DUTY, 'Also pausing it') s;
+  PERFORM _assert(v_reason = 'already_suspended',
+    format('a principal was refused a suspension for the wrong reason (%s)', v_reason));
+
+  -- WHILE SUSPENDED, THE ASSIGNMENT GRANTS NOTHING. A real read under
+  -- fixture.read, a real write decision, and all three decision functions.
+  PERFORM _as(U_DUTY);
+  SELECT count(*) INTO n FROM match WHERE id = M_DUTY;
+  PERFORM _assert(n = 0, 'a suspended scorer still reads the fixture');
+  SELECT count(*) INTO n FROM match_official WHERE match_id = M_DUTY;
+  PERFORM _assert(n = 0, 'a suspended scorer still reads the fixture''s appointments');
+  PERFORM _assert(NOT app_can('scoring.edit', HIL, '1XI', NULL, M_DUTY), 'a suspended scorer may still score');
+  PERFORM _assert(NOT app_holds('scoring.edit'), 'app_holds() still counts a suspended assignment');
+  -- app_may_grant() carries the same line (db/35's own check asserts it), but
+  -- no role a duty can rest on grants anything, so there is no live claim to
+  -- make about it here that would not pass for the wrong reason.
+  -- The scorer is told they are suspended, and not why.
+  PERFORM _assert(assignment_suspended(A_DUTY), 'a suspended scorer cannot see that they are suspended');
+  SELECT count(*) INTO n FROM duty_suspension;
+  PERFORM _assert(n = 0, 'a suspended scorer reads the office''s reason');
+  -- …and nobody but the office can lift it.
+  SELECT l.ok, l.reason INTO v_ok, v_reason FROM duty_lift(D_DUTY, 'I am fine now') l;
+  PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted', 'a scorer lifted their own suspension');
+  -- …and a principal, who could pause it, cannot restore a role they may not appoint.
+  PERFORM _as(U_HEAD_M);
+  SELECT l.ok, l.reason INTO v_ok, v_reason FROM duty_lift(D_DUTY, 'Restoring') l;
+  PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted', 'a principal lifted a scorer''s suspension');
+  PERFORM _as(U_REGISTRAR);
+  PERFORM _assert(duty_suspended(D_DUTY), 'duty_suspended() does not report the open suspension');
+  SELECT l.ok, l.reason INTO v_ok, v_reason FROM duty_lift(D_DUTY, '') l;
+  PERFORM _assert(NOT v_ok AND v_reason = 'reason_required', 'a suspension was lifted without a reason');
+
+  -- LIFTING RESTORES IT, and restores it by closing the record, not by
+  -- touching the assignment: same row, never deactivated, nothing reactivated.
+  SELECT l.ok INTO v_ok FROM duty_lift(D_DUTY, 'Scorebook checked; no fault found') l;
+  PERFORM _assert(v_ok, 'the school office could not lift a suspension');
+  SELECT count(*) INTO n FROM duty_suspension
+   WHERE duty_id = D_DUTY AND lifted_by = U_REGISTRAR AND lifted_at IS NOT NULL
+     AND lift_reason = 'Scorebook checked; no fault found'
+     AND reason = 'Complaint about the scorebook under review';
+  PERFORM _assert(n = 1, 'the lift did not record who, when and why beside the suspension');
+  SELECT count(*) INTO n FROM role_assignment WHERE id = A_DUTY AND active AND revoked_at IS NULL;
+  PERFORM _assert(n = 1, 'suspending or lifting touched the assignment''s active flag');
+  PERFORM _as(U_DUTY);
+  SELECT count(*) INTO n FROM match WHERE id = M_DUTY;
+  PERFORM _assert(n = 1, 'lifting a suspension did not restore the scorer''s read');
+  PERFORM _assert(app_can('scoring.edit', HIL, '1XI', NULL, M_DUTY), 'lifting a suspension did not restore scoring');
+  PERFORM _assert(NOT assignment_suspended(A_DUTY), 'a lifted suspension still reads as suspended');
+
+  -- WITHDRAWING THE DUTY REVOKES THE AUTHORITY, in the same statement, by
+  -- whoever withdraws it — the director of sport through officiating.assign.
+  PERFORM _as(U_SARAH);
+  UPDATE match_official SET withdrawn = true WHERE id = D_DUTY;
+  SELECT count(*) INTO n FROM role_assignment
+   WHERE id = A_DUTY AND NOT active AND revoked_by = U_SARAH AND revoked_at IS NOT NULL;
+  PERFORM _assert(n = 1, 'withdrawing a linked duty did not revoke its assignment');
+  PERFORM _as(U_DUTY);
+  SELECT count(*) INTO n FROM match WHERE id = M_DUTY;
+  PERFORM _assert(n = 0, 'a withdrawn scorer still reads the fixture');
+  PERFORM _as(U_SARAH);
+  BEGIN
+    UPDATE match_official SET withdrawn = false WHERE id = D_DUTY;
+    PERFORM _assert(false, 'a withdrawn linked appointment was reinstated over a revoked assignment');
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  PERFORM _as(U_REGISTRAR);
+  SELECT s.reason INTO v_reason FROM duty_suspend(D_DUTY, 'Too late') s;
+  PERFORM _assert(v_reason = 'duty_withdrawn', 'a withdrawn duty could be suspended');
+  SELECT l.reason INTO v_reason FROM duty_link(D_DUTY) l;
+  PERFORM _assert(v_reason = 'duty_withdrawn', 'a withdrawn duty could be linked again');
 
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;

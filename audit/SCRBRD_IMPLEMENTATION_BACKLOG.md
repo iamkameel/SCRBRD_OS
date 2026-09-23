@@ -1239,6 +1239,41 @@ built separately (`db/31`, `db/32`, `db/34`).
   hour into a standing appointment. The rule here covers only a non-null hour hand; it belongs with the
   suspension/link work, which already has to decide what may move on a live assignment.
 
+> **2026-09-23 — the authority half (D1 + D2) is built; the lifecycle half (`duty_status()`, db/30) is
+> separate. Not closed until both land.**
+> - **D1, the link.** `match_official.assignment_id` (db/34). `duty_link(duty)` — the school office
+>   (`user.role.assign` at the school **and** `app_may_grant(role)`, i.e. exactly what
+>   `role_assignment_write` asks) **creates** a fresh assignment of the duty's exact shape (this person;
+>   `scorer`, or `official` for umpire/third umpire/referee; this school; this fixture; no team) and links
+>   it. It does not adopt an existing one: withdrawal revokes and suspension silences what a duty is linked
+>   to, so adopting A Wessels's school-wide scorer assignment would let one fixture end or pause her
+>   authority everywhere. One duty per assignment (unique index). The application role has no column
+>   privilege on `assignment_id` (only `duty_link()` writes it — a trigger asking `app_can()` would have
+>   been a privilege, not an invariant, per `invariants.test.mjs`); a capability-free guard trigger holds
+>   the shape however it is written (a linked row is not re-pointed or un-withdrawn), and a second freezes
+>   a linked assignment's fixture/dates. **Withdrawing a linked duty revokes the assignment
+>   in the same statement** (definer trigger; `revoked_by` is the person who withdrew). The appoint route
+>   now keeps a linked duty re-submitted on the new sheet (same duty, same account) instead of withdrawing
+>   and re-making it — otherwise adding a second umpire would have silently ended the scorer's authority.
+> - **D2, the pause.** `duty_suspension` (db/34): who/when/why to suspend, who/when/why to lift, append
+>   then close, writable only through `duty_suspend()` / `duty_lift()`; reason required by function and
+>   table. Suspend asks `user.role.assign` (what revoking asks); lift also asks `app_may_grant` (what
+>   appointing asks) — a principal may pause a scorer and not restore one — and nobody lifts their own.
+>   `active` is never touched. **db/35 is generated**: `generate-rls.mjs` gains a `suspendable` flag beside
+>   `timeBoxed`, and `suspension()` re-emits db/23's three decision functions with
+>   `AND NOT EXISTS (… duty_suspension s WHERE s.assignment_id = a.id AND s.lifted_at IS NULL)`; db/01,
+>   db/09 and db/23 regenerate byte-identical and CI diffs db/35 with them. The client mirror
+>   (`isActive`) reads `suspended` — and `expiresAt`, which it had never read.
+> - **Reads.** `officials` carries `id`, `linked`, `suspended`; `duty_suspensions` is the office's record
+>   (RLS: `user.role.assign`); `assignments` carries `suspended`. The scorer learns *that* they are
+>   suspended, never *why* (a scorer may be a pupil; the reason may be a safeguarding sentence).
+>   **For the merge with `duty_status()`:** `duty_suspended(match_official.id)` is the fold point —
+>   `WHEN duty_suspended(mo.id) THEN 'suspended'`, after `revoked` (withdrawn duty / revoked
+>   assignment) and before `active`/`delegated`.
+> - **Screen.** Officials → an official → each appointment: *Link authority*, *Suspend* / *Lift* with a
+>   reason, gated on `holdsCapability(role, "user.role.assign")`. Assertions: db/99 §15;
+>   `tools/smoke-duties.mjs`.
+
 ### SCRBRD-035 — Operational escalation roster — **RE-SCOPED, do not import as written**
 
 > Checked the 18 rows against the real roster before building. **Four of the roles they escalate
