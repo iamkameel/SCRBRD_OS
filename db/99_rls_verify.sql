@@ -1719,6 +1719,16 @@ BEGIN
   EXCEPTION WHEN check_violation THEN NULL;
   END;
   SET CONSTRAINTS role_assignment_expiry_has_reason DEFERRED;
+  -- ...nor taken OFF, which would make the hour's support permanent while the
+  -- support record still reads as over.
+  SELECT s.assignment_id INTO A_ID FROM support_access s WHERE s.id = S_ID;
+  BEGIN
+    UPDATE role_assignment SET expires_at = NULL WHERE id = A_ID;
+    PERFORM _assert(false, 'a support session''s hour was removed, making it permanent');
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  PERFORM _assert((SELECT expires_at FROM role_assignment WHERE id = A_ID) IS NOT NULL,
+    'the support assignment lost its hour');
   -- ...an ordinary appointment cannot be given one after the fact either.
   SELECT a.id INTO A_ID FROM role_assignment a
    WHERE a.person_id = U_COACH2 AND a.active AND a.expires_at IS NULL LIMIT 1;

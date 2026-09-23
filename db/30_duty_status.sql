@@ -163,6 +163,27 @@ CREATE CONSTRAINT TRIGGER role_assignment_expiry_has_reason
   FOR EACH ROW
   EXECUTE FUNCTION role_assignment_expiry_check();
 
+-- 3. AN HOUR HAND CANNOT BE TAKEN OFF. The check above runs only when an
+--    expiry is SET, so clearing one slipped past it: the school's office, which
+--    holds the UPDATE policy over a support assignment, could blank expires_at
+--    and turn an hour's support into a permanent appointment while the support
+--    record still read "ended at the hour". Nothing legitimate clears one —
+--    support_access_end() revokes the assignment and leaves its hour alone — so
+--    this refuses the change outright rather than asking why.
+CREATE OR REPLACE FUNCTION role_assignment_expiry_kept() RETURNS trigger AS $$
+BEGIN
+  RAISE EXCEPTION 'role_assignment %: an expiry cannot be removed', OLD.id
+    USING ERRCODE = 'check_violation',
+          HINT = 'A time-boxed assignment ends at its hour, or earlier by support_access_end(). It never becomes permanent.';
+END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION role_assignment_expiry_kept() FROM PUBLIC;
+
+DROP TRIGGER IF EXISTS role_assignment_expiry_kept ON role_assignment;
+CREATE TRIGGER role_assignment_expiry_kept
+  BEFORE UPDATE OF expires_at ON role_assignment
+  FOR EACH ROW WHEN (OLD.expires_at IS NOT NULL AND NEW.expires_at IS NULL)
+  EXECUTE FUNCTION role_assignment_expiry_kept();
+
 -- ── Assertion ──────────────────────────────────────────────────────
 -- What this file promised, checked in the same paste. The behaviour — each
 -- status from its fact, a direct time-boxed grant refused at commit, the
@@ -203,6 +224,11 @@ BEGIN
          AND t.tgrelid IN ('role_assignment'::regclass, 'support_access'::regclass)
          AND t.tgconstraint <> 0 AND t.tgdeferrable AND t.tginitdeferred) <> 2 THEN
     RAISE EXCEPTION 'db/30: the expiry-needs-a-reason check is not a deferred constraint trigger on both tables';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger t
+                  WHERE t.tgname = 'role_assignment_expiry_kept'
+                    AND t.tgrelid = 'role_assignment'::regclass AND NOT t.tgisinternal) THEN
+    RAISE EXCEPTION 'db/30: nothing stops an expiry being cleared';
   END IF;
   -- No DEFINER here without its pin (db/16's rule, which db/99 also counts).
   IF EXISTS (SELECT 1 FROM pg_proc p
