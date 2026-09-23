@@ -10,6 +10,7 @@ import { spawnSync } from "node:child_process";
 const SUITES = [
   ["authorize","packages/policy/test/authorize.test.mjs"],
   ["scoring",  "packages/scoring/test/replay.test.mjs"],
+  ["laws-spec","packages/scoring/test/laws-spec.test.mjs"],
   ["design",   "apps/web/test/design.test.mjs"],
   ["analytics","apps/web/test/analytics.test.mjs"],
   ["teams",    "packages/policy/test/teams.test.mjs"],
