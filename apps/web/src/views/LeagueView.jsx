@@ -6,6 +6,7 @@ import { SR } from "../scorer/format.js";
 import { addDays, dateStr, today } from "../lib/format.js";
 import { Avatar, Badge, Btn, Card, Input, Modal, Pill, SectionHeader, Select } from "../ui/primitives.jsx";
 import { WeatherChip } from "./shared.jsx";
+import { SeasonHistory } from "./SeasonHistoryView.jsx";
 import { useLive, usePlayersWithCareer, useRows, useWeather } from "../lib/live.js";
 import { api } from "../lib/api.js";
 import { mode, schoolsWhere } from "../lib/session.js";
@@ -76,7 +77,7 @@ function LeagueView({ role }) {
         <>
           {/* Tab bar */}
           <div style={{display:"flex",gap:"6px",marginBottom:"16px"}}>
-            {["table","fixtures","results","performers"].filter(t=>{
+            {["table","fixtures","results","performers","history"].filter(t=>{
               if(t==="table") return comp.table||comp.type==="league"||comp.type==="tournament";
               if(t==="performers") return true;
               return true;
@@ -297,6 +298,9 @@ function LeagueView({ role }) {
               </Card>
             </div>
           )}
+
+          {/* ── SEASON HISTORY ── */}
+          {tab==="history"&&<SeasonHistory role={role}/>}
         </>
       )}
 

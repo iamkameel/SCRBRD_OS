@@ -72,10 +72,8 @@ export const UPGRADES = [
   // apps/web/src/views/support.jsx, under Settings › Support.
   { id: "up23", category: "Admin",         priority: "low",    status: "shipped", title: "Support Access Screen",
     desc: "A platform administrator chooses a school, a role and a reason, and begins a session from Settings › Support: one school, an hour unless they say otherwise, four at most. The countdown is the server's expiry and whether it is live is the server's answer, so it stops by itself with nobody watching. The school sees who, as what and why under Settings › School, and either side can end it early: the platform from Settings › Support, or the school office from its own card — the school does not have to trust the platform to leave. Either way it reads as ended, and by whom, on both sides. Every refusal — no reason worth reading, a session already open, a role a school cannot hold — is said in words. Only a support holder is offered the tab; the database refuses anyone else regardless.", effort: "Low", walk: ["support", "browser-support"] },
-
-  // ── Built underneath, not yet drawn ──────────────────────────
-  { id: "up11", category: "Admin",         priority: "low",    status: "partial", title: "Season History Archive",
-    desc: "Seasons and competitions are modelled; there is no year-on-year view over them.", effort: "Medium", undrawn: ["seasons"] /* the read exists; no view calls it */ },
+  { id: "up11", category: "Admin",         priority: "low",    status: "shipped", title: "Season History Archive",
+    desc: "A year-on-year view over the seasons and competitions already modelled, as a tab on Leagues: every school season on record, the current one marked, and — for whichever is chosen — its competitions (with final standings, from the same read the current one uses) and its fixtures, matched to it the same way the calendar does everywhere else, through season_for() and the season a competition points at, never re-derived from a date range in the browser.", effort: "Medium", walk: ["season", "browser-seasons"] },
 
   // ── Planned ──────────────────────────────────────────────────
   { id: "up17", category: "AI & Analysis", priority: "high",   status: "planned", title: "Match Insights & Intelligence Ribbon",

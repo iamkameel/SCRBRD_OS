@@ -49,6 +49,11 @@ function asMatch(r) {
     status: MATCH_STATUS[r.status] ?? "upcoming",
     result: null,
     competition: null,
+    // The school season this fixture falls in, from the same season_for()
+    // rule the calendar uses — never derived again here from the date, so a
+    // season history view and the database can never name a fixture into two
+    // different years.
+    season: r.season ?? null,
     overs: r.overs,
     format: r.format,
     schoolId: r.school_id,

@@ -108,8 +108,9 @@ group("Nothing claims to be undrawn while a screen draws it");
     .map((f) => readFileSync(f, "utf8")).join("\n");
 
   const partials = UPGRADES.filter((u) => u.status === "partial");
-  ok(`there are ${partials.length} partials, each naming what is not drawn`,
-     partials.length > 0 && partials.every((u) => Array.isArray(u.undrawn) && u.undrawn.length),
+  // Zero is a real state — every built-underneath item drawn — not a vacuous pass.
+  ok(`every partial names what is not drawn (${partials.length} today)`,
+     partials.every((u) => Array.isArray(u.undrawn) && u.undrawn.length),
      partials.filter((u) => !u.undrawn?.length).map((u) => u.id).join(" "));
 
   // Naming something REAL is the floor. An invented identifier nobody would
