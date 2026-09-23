@@ -2864,3 +2864,25 @@ the wicket and the new batter can be wrong.
 survivor from that and the runs completed. Needs a product decision on the pad question before building.
 **Tests required:** turn the `KNOWN_GAP` into passing cases for both ends.
 **Data migration required:** NO.
+
+### SCRBRD-070 — A scorer cannot see or clear an event the server refused
+**Title:** Held (refused / conflicting) events are kept on the device and counted, but no screen lists or resolves them
+**Priority:** P1 · **Domain:** Scoring · **Type:** workflow gap (follows db/36)
+**Affected files:** `packages/sync/src/sync-engine.mjs` (`held`, `discardHeld`), `apps/web/src/scorer/engine.jsx` (the "Refused N" pill)
+**Found 2026-09-23** reviewing the commit-time Laws work. Since db/36 the server refuses an illegal event or a reused
+key with a different body and writes nothing; the device holds it apart from the outbox. The pad says "Refused N" with
+the latest reason, but nothing calls `discardHeld`, and the pad's own board still counts the refused event, so the
+device and the server disagree until a person acts — and a refused lifecycle event (e.g. a bowler) makes the balls
+after it refused too.
+**Expected behaviour:** a sheet on the pad listing each held event with its reason in words, and for each: discard
+(the board re-derives without it) or correct and re-send as a new event. Handover warns while events are held.
+**Tests required:** browser walk — provoke a refusal, see it listed, discard it, board and server agree.
+
+### SCRBRD-071 — Loose ends found building the commit-time Laws check
+**Priority:** P3 · **Domain:** Scoring · **Type:** correctness (each small)
+- `contact` and `trajectory` are mapped by `toRow` but not listed in the live INSERT or in `quarantine_resolve`, so they are dropped. The pad does not emit them today.
+- A ball released from quarantine (`quarantine_resolve`) is inserted without the Laws check.
+- A key already held in quarantine and re-sent while the device holds the token is written live; a later release of the held copy then hits the unique key.
+- A batter returning after retiring hurt keeps "retired" on his record in the fold.
+- Timed out and retired out are recorded as `W` balls, which count as a legal delivery of the over.
+**Tests required:** one case per item when it is taken up.
