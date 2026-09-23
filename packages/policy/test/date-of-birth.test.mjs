@@ -9,13 +9,16 @@
 import { resolveBirthDate, BIRTH_DATE_MESSAGE, PLAUSIBLE_YEARS, PLAUSIBLE_YEARS_OFFICIAL } from "../src/date-of-birth.mjs";
 
 let pass = 0, fail = 0;
-const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
-const group = (t) => console.log("\n" + t);
+// The third argument is accepted and NOT printed — one call below passes a
+// detail this helper has always dropped. Left as found; see the typecheck notes.
+/** @param {string} n @param {unknown} c @param {string} [_detail] */
+const ok = (n, c, _detail) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
+const group = (/** @type {string} */ t) => console.log("\n" + t);
 
 // Fixed, so the plausibility window does not drift the suite with the calendar
 // the way the seed's birthdates once did.
 const TODAY = new Date("2026-09-15T00:00:00Z");
-const r = (i) => resolveBirthDate(i, TODAY);
+const r = (/** @type {Parameters<typeof resolveBirthDate>[0]} */ i) => resolveBirthDate(i, TODAY);
 
 // Checksum-valid, generated rather than invented: 2011-04-07.
 const VALID_ID = "1104075800085";
@@ -93,6 +96,7 @@ group("The date must be written the one way the database reads");
 
 group("Every refusal has words the office can read");
 {
+  /** @type {Set<string>} */
   const reasons = new Set();
   for (const input of [{}, { born: "07/04/2011" }, { born: "1901-01-01" },
                        { idNumber: "123" }, { born: "2012-01-01", idNumber: VALID_ID }]) {

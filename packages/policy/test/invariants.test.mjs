@@ -54,8 +54,8 @@ const DB = process.env.SCRBRD_DB_DIR
   ?? join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "db");
 
 let pass = 0, fail = 0;
-const ok = (n, c, d = "") => { console.log(`${c ? "✓" : "✗"} ${n}${c || !d ? "" : `\n    ${d}`}`); c ? pass++ : fail++; };
-const group = (t) => console.log("\n" + t);
+const ok = (/** @type {string} */ n, /** @type {unknown} */ c, d = "") => { console.log(`${c ? "✓" : "✗"} ${n}${c || !d ? "" : `\n    ${d}`}`); c ? pass++ : fail++; };
+const group = (/** @type {string} */ t) => console.log("\n" + t);
 
 const sql = readdirSync(DB).filter((f) => f.endsWith(".sql")).sort()
   .map((f) => readFileSync(join(DB, f), "utf8")).join("\n");

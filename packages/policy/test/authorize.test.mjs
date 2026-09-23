@@ -16,10 +16,10 @@ import { ROLES, ROLE_CAPABILITIES, roleGrants, SCORING_ROLES, unknownCapabilitie
 import { ALL_CAPABILITIES, SENSITIVE, isCapability } from "../src/capabilities.mjs";
 
 let pass = 0, fail = 0;
-const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
-const group = (t) => console.log("\n" + t);
+const ok = (/** @type {string} */ n, /** @type {unknown} */ c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
+const group = (/** @type {string} */ t) => console.log("\n" + t);
 
-const HIL = "school-hilton", WES = "school-westville", KEA = "school-kearsney";
+const HIL = "school-hilton", KEA = "school-kearsney";
 
 // Sarah: Director of Sport at Hilton, coach of one Hilton team, guardian of a
 // child in a different Hilton team, and guardian of a child at another school.
@@ -51,7 +51,7 @@ group("A. Capability and scope are one decision");
 
   ok("the decision names the granting assignment",
      authorize({ assignments: SARAH, capability: "player.performance.write",
-                 resource: { school: HIL, team: "U16A", person: "p1" } }).via.team === "U16A");
+                 resource: { school: HIL, team: "U16A", person: "p1" } }).via?.team === "U16A");
 
   ok("default deny with no assignments",
      !may({ assignments: [], capability: "fixture.read", resource: { school: HIL } }));
@@ -76,7 +76,7 @@ group("B. A guardian with children at two schools");
   // "why am I seeing this?" affordance reports.
   const other = { school: HIL, team: "U14B", person: "other-child" };
   ok("sees another Hilton player via Director of Sport",
-     authorize({ assignments: SARAH, capability: "player.profile.read", resource: other }).via.role === "directorofsport");
+     authorize({ assignments: SARAH, capability: "player.profile.read", resource: other }).via?.role === "directorofsport");
   ok("guardianship alone does NOT reach another child",
      !may({ assignments: SARAH.filter((a) => a.role === "guardian"),
             capability: "player.profile.read", resource: other }));

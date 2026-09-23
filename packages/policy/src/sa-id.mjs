@@ -46,6 +46,9 @@ const WELL_FORMED = /^[0-9]{13}$/;
  * casting out nines. Kept as its own function so the tests can check the
  * algorithm against known-good numbers rather than only through a validator
  * that might be wrong in the same direction twice.
+ *
+ * @param {string} body  the digits to sum
+ * @returns {number|null}  null when `body` holds a non-digit
  */
 export function luhnCheckDigit(body) {
   let sum = 0;
@@ -69,6 +72,12 @@ export function luhnCheckDigit(body) {
  *
  * Deliberately takes `today` rather than reading the clock, so the boundary
  * cases are testable rather than only reachable on the right calendar day.
+ *
+ * @param {number} yy
+ * @param {number} mm  1-12
+ * @param {number} dd
+ * @param {Date} [today]
+ * @returns {Date|null}
  */
 export function resolveCentury(yy, mm, dd, today = new Date()) {
   const thisYear = today.getUTCFullYear();
@@ -87,8 +96,12 @@ export function resolveCentury(yy, mm, dd, today = new Date()) {
 /**
  * Read an ID number.
  *
- * @returns {{ok: boolean, reason?: string, born?: Date, sex?: "male"|"female",
- *             citizen?: boolean, checkDigitValid?: boolean}}
+ * @param {unknown} value
+ * @param {Date} [today]
+ * @returns {{ok: true, born: Date, sex: "male"|"female", citizen: boolean, checkDigitValid: boolean, reason?: undefined}
+ *         | {ok: false, reason: string, born?: undefined, sex?: undefined, citizen?: undefined, checkDigitValid?: undefined}}
+ *   Each side names the other's fields as absent, so `r.born` reads as
+ *   `Date|undefined` without narrowing on `ok` first.
  *
  * `ok` false means the number could not be read at all — the wrong length, a
  * non-digit, or six leading digits that are not a date anybody could have been
@@ -115,7 +128,12 @@ export function readSaId(value, today = new Date()) {
   };
 }
 
-/** The date of birth an ID number carries, as YYYY-MM-DD, or null. */
+/**
+ * The date of birth an ID number carries, as YYYY-MM-DD, or null.
+ * @param {unknown} value
+ * @param {Date} [today]
+ * @returns {string|null}
+ */
 export function bornFromSaId(value, today = new Date()) {
   const r = readSaId(value, today);
   return r.ok ? r.born.toISOString().slice(0, 10) : null;
@@ -128,6 +146,10 @@ export function bornFromSaId(value, today = new Date()) {
  * disagreement — it is simply nothing to check — so this reports `agree: true`
  * with `checked: false`, and requiring the fields at all is a separate
  * decision the caller makes.
+ *
+ * @param {string|null|undefined} born
+ * @param {string|null|undefined} idNumber
+ * @param {Date} [today]
  */
 export function bornAgreesWithSaId(born, idNumber, today = new Date()) {
   if (born == null || born === "" || idNumber == null || idNumber === "") {

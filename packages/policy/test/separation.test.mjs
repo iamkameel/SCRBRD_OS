@@ -49,18 +49,18 @@ import { dirname, join } from "node:path";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
 let passes = 0, fails = 0;
-const ok = (label, cond, detail = "") => {
+const ok = (/** @type {string} */ label, /** @type {unknown} */ cond, detail = "") => {
   console.log(`${cond ? "✓" : "✗"} ${label}${cond || !detail ? "" : `\n    ${detail}`}`);
   if (cond) passes++; else fails++;
 };
-const group = (t) => console.log("\n" + t);
+const group = (/** @type {string} */ t) => console.log("\n" + t);
 
-const caps = (role) => ROLE_CAPABILITIES[role] ?? [];
-const holders = (cap) => ROLES.filter((r) => caps(r).includes(cap));
+const caps = (/** @type {string} */ role) => ROLE_CAPABILITIES[role] ?? [];
+const holders = (/** @type {string} */ cap) => ROLES.filter((r) => caps(r).includes(cap));
 /** Roles holding `cap`, minus the break-glass account. */
-const others = (cap) => holders(cap).filter((r) => r !== "superadmin");
+const others = (/** @type {string} */ cap) => holders(cap).filter((r) => r !== "superadmin");
 /** Which of `forbidden` this role holds — the empty array is the pass. */
-const reach = (role, forbidden) => forbidden.filter((c) => caps(role).includes(c));
+const reach = (/** @type {string} */ role, /** @type {readonly string[]} */ forbidden) => forbidden.filter((c) => caps(role).includes(c));
 
 // Recorded exceptions. Each needs a reason, and each is checked below to still
 // be a real crossing: when the policy is corrected the entry has to go, or the
@@ -68,6 +68,7 @@ const reach = (role, forbidden) => forbidden.filter((c) => caps(role).includes(c
 // roles.mjs + a new db/NN + a WITHDRAWN_SINCE_01 or ADDED_SINCE_01 entry + a
 // production paste (ARCHITECTURE.md §9), which is why they are recorded
 // rather than fixed here.
+/** @type {Record<string, {roles: string[], reason: string}>} */
 const KNOWN = {
   // Empty since db/24. The entry that lived here — directorofsport and
   // competitionadmin holding both halves of a correction — is the worked
@@ -301,6 +302,7 @@ ok("§21.10  holding a commercial capability never carries a sensitive one with 
   // This is a ratchet, not a pass: it may fall, never rise, so a new one
   // fails here rather than in review.
   const GATE_CEILING = 12;
+  /** @type {(dir: string) => string[]} */
   const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
     e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]);
   const gates = walk(join(ROOT, "apps/web/src"))

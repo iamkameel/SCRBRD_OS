@@ -17,10 +17,62 @@ import { deriveInnings } from "@scrbrd/scoring";
 
 const CHECKPOINT_EVERY = 6;               // sync at each over boundary
 const BACKOFF = [0, 1000, 2000, 5000, 15000, 30000]; // ms, capped
-const kEvt  = n => `evt:${String(n).padStart(9, "0")}`;
+const kEvt  = (/** @type {number} */ n) => `evt:${String(n).padStart(9, "0")}`;
 const kMeta = "meta:clientSeq";
 
+/**
+ * Where the queue is made durable. Values are whatever the adapter stores —
+ * the engine writes JSON strings, and reads back strings or structured
+ * clones — so they are `any` at this boundary on purpose.
+ * @typedef {object} OutboxStorage
+ * @property {(key: string, value: any) => Promise<unknown>} put
+ * @property {(key: string) => Promise<any>} get
+ * @property {(key: string) => Promise<unknown>} delete
+ * @property {(prefix: string) => Promise<{key: string, value: any}[]>} list
+ *
+ * One queued ball, as persisted and as sent.
+ * @typedef {object} OutboxEvent
+ * @property {string} matchId
+ * @property {string} deviceId
+ * @property {string} scorerId
+ * @property {number} epoch
+ * @property {number} innings
+ * @property {number} clientSeq
+ * @property {number} clientTs
+ * @property {string} idempotencyKey
+ * @property {any} payload            a scoring event, whose shape the scoring package owns
+ * @property {number} [seq]           server sequence, once acked
+ * @property {string} [reason]        why the server quarantined it
+ *
+ * What the server says about a batch.
+ * @typedef {object} TransportResult
+ * @property {{idempotencyKey: string, seq: number}[]} [accepted]
+ * @property {{idempotencyKey: string, seq: number}[]} [duplicates]
+ * @property {{idempotencyKey: string, reason: string}[]} [quarantined]
+ *
+ * @typedef {(matchId: string, batch: OutboxEvent[]) => Promise<TransportResult>} Transport
+ *
+ * @typedef {object} OutboxStatus
+ * @property {number} pendingCount
+ * @property {boolean} syncing
+ * @property {string|null} lastError
+ * @property {boolean} online
+ */
+
 export class SyncEngine {
+  /**
+   * @param {object} options
+   * @param {string} options.matchId
+   * @param {string} options.deviceId
+   * @param {string} options.scorerId
+   * @param {number} options.epoch
+   * @param {number} [options.innings]
+   * @param {OutboxStorage} options.storage
+   * @param {Transport} options.transport
+   * @param {() => boolean} [options.isOnline]
+   * @param {() => number} [options.now]
+   * @param {(status: OutboxStatus) => void} [options.onChange]
+   */
   constructor({ matchId, deviceId, scorerId, epoch, innings = 0,
                 storage, transport, isOnline = () => true, now = () => Date.now(), onChange }) {
     this.matchId = matchId; this.deviceId = deviceId; this.scorerId = scorerId;
@@ -29,10 +81,14 @@ export class SyncEngine {
     this.isOnline = isOnline; this.now = now; this.onChange = onChange;
 
     this.clientSeq = 0;
+    /** @type {OutboxEvent[]} */
     this.pending = [];        // persisted, awaiting server ack
+    /** @type {OutboxEvent[]} */
     this.acked = [];          // confirmed by server (kept for optimistic replay)
+    /** @type {OutboxEvent[]} */
     this.rejected = [];       // stale-epoch / quarantined server-side
     this.syncing = false;
+    /** @type {string|null} */
     this.lastError = null;
     this.attempt = 0;
   }
@@ -41,7 +97,7 @@ export class SyncEngine {
   async init() {
     const items = await this.storage.list("evt:");
     this.pending = items
-      .map(i => (typeof i.value === "string" ? JSON.parse(i.value) : i.value))
+      .map(i => /** @type {OutboxEvent} */ (typeof i.value === "string" ? JSON.parse(i.value) : i.value))
       .sort((a, b) => a.clientSeq - b.clientSeq);
     const meta = await this.storage.get(kMeta);
     const persistedSeq = meta ? Number(typeof meta === "string" ? meta : meta.value ?? meta) : 0;
@@ -59,9 +115,13 @@ export class SyncEngine {
   /**
    * Record a ball. Persists FIRST, then queues. Always succeeds locally — this
    * is what keeps play going with no signal. Returns the event.
+   *
+   * @param {any} payload  the scoring event
+   * @returns {Promise<OutboxEvent>}
    */
   async record(payload) {
     this.clientSeq += 1;
+    /** @type {OutboxEvent} */
     const ev = {
       matchId: this.matchId, deviceId: this.deviceId, scorerId: this.scorerId,
       epoch: this.epoch, innings: this.innings, clientSeq: this.clientSeq,
@@ -88,7 +148,10 @@ export class SyncEngine {
     return ev;
   }
 
-  /** True at an over boundary — caller may force a checkpoint sync. */
+  /**
+   * True at an over boundary — caller may force a checkpoint sync.
+   * @param {number} legalBallsThisInnings
+   */
   shouldCheckpoint(legalBallsThisInnings) { return legalBallsThisInnings > 0 && legalBallsThisInnings % CHECKPOINT_EVERY === 0; }
 
   /**
@@ -105,6 +168,7 @@ export class SyncEngine {
       const batch = this.pending.slice();          // ordered
       const res = await this.transport(this.matchId, batch);
       // res: { accepted:[{idempotencyKey,seq}], duplicates:[...], quarantined:[...] }
+      /** @type {Map<string, {state: "acked", seq: number} | {state: "rejected", reason: string}>} */
       const settled = new Map();
       for (const a of res.accepted || [])   settled.set(a.idempotencyKey, { state: "acked", seq: a.seq });
       for (const d of res.duplicates || []) settled.set(d.idempotencyKey, { state: "acked", seq: d.seq });
@@ -121,7 +185,10 @@ export class SyncEngine {
       this.pending = stillPending;
       this.lastError = null; this.attempt = 0;
     } catch (e) {
-      this.lastError = e.message || String(e);
+      // `any`, not narrowed: a non-Error with a .message is reported by that
+      // message, as it always has been. (A thrown null or undefined would
+      // throw again here — noted in the typecheck notes, left as found.)
+      this.lastError = /** @type {any} */ (e).message || String(e);
       this.attempt = Math.min(this.attempt + 1, BACKOFF.length - 1);
     } finally {
       this.syncing = false; this._emit();
@@ -130,6 +197,7 @@ export class SyncEngine {
   }
 
   /** Delay before the next retry after a failure (exponential, capped). */
+  /** @returns {number} */
   get backoffMs() { return BACKOFF[this.attempt]; }
 
   /**
@@ -153,7 +221,9 @@ export class SyncEngine {
 }
 
 // ── In-memory storage (tests) ──
+/** @returns {OutboxStorage & {_dump: () => Map<string, any>}} */
 export function memoryStorage() {
+  /** @type {Map<string, any>} */
   const m = new Map();
   return {
     async put(k, v) { m.set(k, v); },

@@ -69,6 +69,17 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
 
+      # TypeScript as a checker over the JavaScript — nothing is compiled.
+      # Zero errors across tsconfig.json's `include`, the strict list, which
+      # tools/typecheck-scope.test.mjs lets grow and never shrink.
+      - name: Typecheck
+        run: pnpm typecheck
+
+      # Bug-shaped rules only: undefined names, duplicate keys, loose equality,
+      # the rules of hooks. Errors fail; warnings are the cleanup queue.
+      - name: Lint
+        run: pnpm lint
+
       # Authorisation, scoring, the design system, the rubric, the client's
       # RBAC copy. No services, so this is the signal that arrives first.
       - name: Tests

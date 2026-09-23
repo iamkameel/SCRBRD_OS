@@ -49,6 +49,8 @@ const SUITES = [
   ["schema-guard", "services/api/schema-guard.test.mjs"],
   ["imports",  "tools/check-imports.test.mjs"],
   ["guard",    "tools/hooks/guard.test.mjs"],
+  // The typecheck strict list only grows, and names nothing that is not there.
+  ["ts-scope", "tools/typecheck-scope.test.mjs"],
   ["ai",       "services/api/ai/ai.test.mjs"],
   ["realtime", "services/api/realtime/realtime.test.mjs"],
 ];

@@ -18,8 +18,8 @@ import {
 } from "../src/teams.mjs";
 
 let pass = 0, fail = 0;
-const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
-const group = (t) => console.log("\n" + t);
+const ok = (/** @type {string} */ n, /** @type {unknown} */ c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
+const group = (/** @type {string} */ t) => console.log("\n" + t);
 
 // ── A. Schools stop at U16 ───────────────────────────────
 group("A. A school has no U17, U18 or U19");
@@ -39,10 +39,10 @@ ok("2XI reads as 2nd XI", teamLabel("2XI") === "2nd XI");
 ok("3XI reads as 3rd XI", teamLabel("3XI") === "3rd XI");
 ok("4XI reads as 4th XI", teamLabel("4XI") === "4th XI");
 ok("11XI reads as 11th XI, not 11st", teamLabel("11XI") === "11th XI");
-ok("an open team has a rank and no age", parseTeam("2XI").rank === 2 && parseTeam("2XI").age === null);
-ok("an age team has an age and no rank", parseTeam("U14B").age === 14 && parseTeam("U14B").rank === null);
-ok("...and carries its division", parseTeam("U14B").division === "B");
-ok("a division is optional", parseTeam("U14").division === null);
+ok("an open team has a rank and no age", parseTeam("2XI")?.rank === 2 && parseTeam("2XI")?.age === null);
+ok("an age team has an age and no rank", parseTeam("U14B")?.age === 14 && parseTeam("U14B")?.rank === null);
+ok("...and carries its division", parseTeam("U14B")?.division === "B");
+ok("a division is optional", parseTeam("U14")?.division === null);
 
 // ── C. Representative cricket DOES have U19 ──────────────
 group("C. Provincial and national select on age");
@@ -61,7 +61,7 @@ group("D. The vocabulary is closed");
 for (const junk of ["", "  ", "First XI", "1st XI", "U16Z", "0XI", "21XI", "XI", "U", null, 42, {}])
   ok(`${JSON.stringify(junk)} does not parse`, parseTeam(junk) === null);
 ok("the SQL check accepts a real code",
-   new RegExp(teamCodeCheck("t").match(/'\^(.*)\$'/)[0].slice(1, -1)).test("U14A"));
+   new RegExp(/** @type {RegExpMatchArray} */ (teamCodeCheck("t").match(/'\^(.*)\$'/))[0].slice(1, -1)).test("U14A"));
 ok("...and rejects U19 shaped like a school team is not its job",
    /U\(9\|10\|11\|12\|13\|14\|15\|16\|17\|18\|19\)/.test(teamCodeCheck("t")));
 
@@ -109,8 +109,8 @@ ok("an unparseable team answers null", isEligible(14, "rubbish") === null);
 // while both were wrong.
 group("F2. Age is measured at 1 January of the school year");
 {
-  const born = (s) => new Date(s + "T00:00:00Z");
-  const on   = (s) => new Date(s + "T00:00:00Z");
+  const born = (/** @type {string} */ s) => new Date(s + "T00:00:00Z");
+  const on   = (/** @type {string} */ s) => new Date(s + "T00:00:00Z");
 
   ok("the cut-off is the first of January",
      CUTOFF_MONTH === 1 && CUTOFF_DAY === 1);
@@ -168,8 +168,8 @@ group("F2. Age is measured at 1 January of the school year");
 // applied at another is the failure this whole block exists to catch.
 group("F3. Above school, the season straddles the new year");
 {
-  const born = (s) => new Date(s + "T00:00:00Z");
-  const on   = (s) => new Date(s + "T00:00:00Z");
+  const born = (/** @type {string} */ s) => new Date(s + "T00:00:00Z");
+  const on   = (/** @type {string} */ s) => new Date(s + "T00:00:00Z");
   const B = born("2011-03-15");             // turns 15 in March 2026
 
   ok("school seasons do not straddle", SEASON_SPANS_NEW_YEAR.school === false);

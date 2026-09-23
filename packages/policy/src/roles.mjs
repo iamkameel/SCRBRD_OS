@@ -426,7 +426,12 @@ const INDEX = Object.freeze(
   Object.fromEntries(Object.entries(ROLE_CAPABILITIES).map(([r, caps]) => [r, new Set(caps)])),
 );
 
-/** Does this role name include this capability? Scope is NOT considered here. */
+/**
+ * Does this role name include this capability? Scope is NOT considered here.
+ * @param {string} role
+ * @param {string} capability
+ * @returns {boolean}
+ */
 export function roleGrants(role, capability) {
   return INDEX[role]?.has(capability) ?? false;
 }
@@ -476,6 +481,7 @@ export function ungrantedCapabilities() {
  * enforced separately, by PLATFORM_ONLY in capabilities.mjs. This list is the
  * tenant-level question sitting on top of it.
  */
+/** @type {Readonly<Record<string, string[]>>} */
 export const GRANTABLE_ROLES = Object.freeze({
   // The school office. Appointments that run a school's cricket: coaching
   // staff, team management, the people who score and officiate, pupils and
@@ -528,7 +534,12 @@ export const GRANTABLE_ROLES = Object.freeze({
   superadmin: Object.keys(ROLE_CAPABILITIES),
 });
 
-/** May `granter` appoint somebody to `role`? Default deny, as everywhere. */
+/**
+ * May `granter` appoint somebody to `role`? Default deny, as everywhere.
+ * @param {string} granter
+ * @param {string} role
+ * @returns {boolean}
+ */
 export function mayGrantRole(granter, role) {
   return (GRANTABLE_ROLES[granter] ?? []).includes(role);
 }

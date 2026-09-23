@@ -17,8 +17,8 @@ import { MODULES, FEATURES, SPORTS, SWITCHABLE, OWNER_OF_READ, MODULE_OF_NAV, sp
 import { ALL_CAPABILITIES } from "../src/capabilities.mjs";
 
 let pass = 0, fail = 0;
-const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
-const group = (t) => console.log("\n" + t);
+const ok = (/** @type {string} */ n, /** @type {unknown} */ c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
+const group = (/** @type {string} */ t) => console.log("\n" + t);
 
 const SCHEMA = readFileSync(new URL("../../../db/08_schema_programme.sql", import.meta.url), "utf8");
 // The sport catalogue lives in db/00, because `match` references it and that
@@ -91,6 +91,7 @@ group("C. A module's kind and its table agree");
 
 group("D. Modules name capabilities that exist");
 {
+  /** @type {Set<string|undefined>} */
   const caps = new Set(ALL_CAPABILITIES);
   for (const [key, def] of Object.entries(MODULES)) {
     // The module gate is an AND on top of the capability, so a module naming a

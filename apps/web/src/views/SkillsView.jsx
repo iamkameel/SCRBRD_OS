@@ -147,7 +147,7 @@ function SkillsView({ role }) {
               const overall=Math.round(Object.values(s).flatMap(c=>Object.values(c)).reduce((a,b)=>a+b,0)/Object.values(s).flatMap(c=>Object.values(c)).length);
               return (
                 <button key={p.id} onClick={()=>setSelId(p.id)} className="pressBtn" style={{
-                  width:"100%",padding:"10px 14px",display:"flex",alignItems:"center",gap:"9px",
+                  padding:"10px 14px",display:"flex",alignItems:"center",gap:"9px",
                   background:selPlayer.id===p.id?D.violet+"12":"transparent",
                   border:`1px solid ${selPlayer.id===p.id?D.violet+"33":"transparent"}`,
                   borderRadius:D.md,margin:"1px 5px",width:"calc(100% - 10px)",cursor:"pointer",

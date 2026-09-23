@@ -1,0 +1,31 @@
+{
+  // TypeScript as a CHECKER over the JavaScript. Nothing is compiled, nothing
+  // is renamed: the server stays no-build and the files db/SHIPPED.sha256 and
+  // tools/hooks/guard.mjs protect stay where they are. Types come from JSDoc.
+  //
+  // `include` IS THE STRICT LIST. Every file under these paths must check with
+  // zero errors. Files outside it still get loaded when something inside
+  // imports them (so their inferred types flow in), but their own errors are
+  // not reported — tools/typecheck.mjs filters them out. To bring the next
+  // package in, add its line here and fix what `pnpm typecheck` reports.
+  // tools/typecheck-scope.test.mjs refuses a list that shrinks.
+  "include": [
+    "packages/policy/src/**/*.mjs",
+    "packages/policy/test/**/*.mjs",
+    "packages/sync/src/**/*.mjs"
+  ],
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "jsx": "react-jsx",
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": true,
+    "noFallthroughCasesInSwitch": true,
+    "skipLibCheck": true,
+    "types": ["node"]
+  }
+}
