@@ -2095,6 +2095,55 @@ BEGIN
   PERFORM _assert(duty_status(O_SCORER) = 'expired', 'an abandoned fixture''s scorer is not expired');
   PERFORM _assert(duty_status(O_STOOD) = 'revoked', 'withdrawn does not outrank the fixture''s end');
 
+  -- ── Rulebook clauses: anyone signed in reads, nobody writes (SCRBRD-041, db/32)
+  -- Reference material under the directive's own predicate. The spectator is
+  -- the narrowest signed-in principal there is; if he reads the clause, so
+  -- does everyone who can read the limit it explains.
+  PERFORM set_config('app.user_id', '', true);
+  SELECT count(*) INTO n FROM rulebook_clause;
+  PERFORM _assert(n = 0, 'an unidentified session can read rulebook clauses');
+  SELECT count(*) INTO n FROM rulebook_clause_age;
+  PERFORM _assert(n = 0, 'an unidentified session can read the ages a clause applies to');
+
+  PERFORM _as(U_WATCHER);
+  SELECT count(*) INTO n FROM rulebook_clause;
+  PERFORM _assert(n >= 7, format('a spectator reads %s rulebook clauses, not the seven db/32 seeds', n));
+  -- Every limit he can read cites a clause he can read, for its own band.
+  SELECT count(*) INTO n FROM bowling_directive d
+    JOIN rulebook_clause_age a ON a.clause_code = d.clause_code AND a.age_band = d.age_band
+    JOIN rulebook_clause c ON c.code = d.clause_code;
+  PERFORM _assert(n = (SELECT count(*) FROM bowling_directive) AND n = 6,
+    format('only %s of the directive''s limits cite a readable clause for their band', n));
+  SELECT count(*) INTO n FROM bowling_directive WHERE age_band = 'U13' AND clause_code = 'PACE-U13';
+  PERFORM _assert(n = 1, 'the U13 limit does not cite PACE-U13');
+
+  -- Not even the owner's key writes the rulebook through the application: the
+  -- privilege is revoked AND there is no write policy, so the refusal is the
+  -- same whichever layer a later file loosens first.
+  PERFORM _as(U_OWNER);
+  BEGIN
+    INSERT INTO rulebook_clause (code, title, category, severity, source, body)
+    VALUES ('VERIFY-X', 'Written through the application', 'Conduct', 'Guideline', 'db/99 assertion',
+            'A clause the application role must never be able to write, whoever it is acting for.');
+    PERFORM _assert(false, 'the application role inserted a rulebook clause');
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+  BEGIN
+    UPDATE rulebook_clause SET severity = 'Guideline' WHERE code = 'PACE-U13';
+    PERFORM _assert(false, 'the application role downgraded a mandatory clause');
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+  BEGIN
+    INSERT INTO rulebook_clause_age (clause_code, age_band) VALUES ('PACE-OPEN', 'U13');
+    PERFORM _assert(false, 'the application role widened a clause to another age band');
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+  PERFORM _assert(
+    NOT EXISTS (SELECT 1 FROM pg_policy
+                 WHERE polrelid IN ('rulebook_clause'::regclass, 'rulebook_clause_age'::regclass)
+                   AND polcmd <> 'r'),
+    'a rulebook table has a write policy');
+
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 

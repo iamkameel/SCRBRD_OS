@@ -30,6 +30,10 @@ const NOT_THE_BOWLERS = [...NON_DELIVERY].map((d) => `'${d}'`).join(", ");
  */
 const DISCIPLINE_NAMES = Object.freeze(Object.keys(DISCIPLINES));
 
+/** The directive's bands youngest first, then Open, then a boy with no date of birth. */
+const BAND_ORDER = (col) =>
+  `case ${col} when 'U13' then 1 when 'U14' then 2 when 'U15' then 3 when 'U16' then 4 when 'open' then 5 else 6 end`;
+
 export const READ_QUERIES = {
   matches: {
     // These column names are the real ones. The query named home_team,
@@ -1186,7 +1190,26 @@ export const READ_QUERIES = {
    * player.development.read. An optional team narrows; nothing widens.
    */
   workload: {
-    text: `select * from workload($1::text)`,
+    // THE CLAUSE BESIDE THE LIMIT (SCRBRD-041). The limit a boy is under is
+    // bowling_directive's for his band, and that row names the rulebook
+    // clause it enforces (db/32) — so the monitor can cite the rule instead
+    // of asserting a bare number. Only for a pace bowler: a spinner is under
+    // no limit, and the U13 clause beside a leg-spinner's name would be the
+    // screen claiming a rule applies that does not. For an Open bowler whose
+    // school has set its own ceiling the clause is PACE-OPEN, which is the
+    // one that says the school's ceiling is the limit.
+    //
+    // LATERAL, so the function scan stays the outer side of a nested loop
+    // and workload()'s own order (breaches first, then spikes) survives the
+    // join, as it did when this read was `select * from workload()`.
+    text: `select w.*, c.code as clause_code, c.title as clause_title,
+                  c.severity as clause_severity, c.body as clause_body
+             from workload($1::text) w
+             left join lateral (
+               select rc.code, rc.title, rc.severity, rc.body
+                 from bowling_directive d
+                 join rulebook_clause rc on rc.code = d.clause_code
+                where d.age_band = w.age_band and w.pace) c on true`,
     params: q => [q?.teamCode || null],
   },
 
@@ -1223,10 +1246,31 @@ export const READ_QUERIES = {
     params: q => [q?.teamCode || null],
   },
 
-  /* The directive itself. Platform reference data. */
+  /* The directive itself, with the clause each band's limit enforces. Platform reference data. */
   bowling_directives: {
-    text: `select age_band, max_overs_per_spell, max_overs_per_day from bowling_directive
-            order by case age_band when 'U13' then 1 when 'U14' then 2 when 'U15' then 3 when 'U16' then 4 when 'open' then 5 else 6 end`,
+    text: `select age_band, max_overs_per_spell, max_overs_per_day, clause_code from bowling_directive
+            order by ${BAND_ORDER("age_band")}`,
+  },
+
+  /*
+   * THE RULEBOOK (SCRBRD-041): the platform's clauses, from db/32, each with
+   * the age bands it applies to and — where a directive row cites it — the
+   * figures it enforces, joined from bowling_directive rather than written
+   * into the clause text, so the rule a person reads and the number the
+   * breach trigger applies cannot disagree. Reference material: the policy
+   * is "signed in", the same as the directive's.
+   */
+  rulebook_clauses: {
+    text: `select c.code, c.title, c.body, c.category, c.severity, c.source,
+                  coalesce((select array_agg(a.age_band order by ${BAND_ORDER("a.age_band")})
+                              from rulebook_clause_age a where a.clause_code = c.code), '{}') as applicable_ages,
+                  coalesce((select json_agg(json_build_object('age_band', d.age_band,
+                                                              'max_overs_per_spell', d.max_overs_per_spell,
+                                                              'max_overs_per_day', d.max_overs_per_day)
+                                            order by ${BAND_ORDER("d.age_band")})
+                              from bowling_directive d where d.clause_code = c.code), '[]') as limits
+             from rulebook_clause c
+            order by c.category, c.sort_order, c.code`,
   },
 
   /*

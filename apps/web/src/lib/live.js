@@ -602,7 +602,12 @@ function asWorkload(r) {
            overs7d: r.overs_7d, overs28d: r.overs_28d, longestSpell7d: r.longest_spell_7d,
            breaches28d: r.breaches_28d, lastBowledOn: r.last_bowled_on ? String(r.last_bowled_on).slice(0, 10) : null,
            sessions7d: r.sessions_7d, minutes7d: r.minutes_7d, sessions28d: r.sessions_28d, minutes28d: r.minutes_28d,
-           acwr: r.acwr == null ? null : Number(r.acwr), loadState: r.load_state, live: true };
+           acwr: r.acwr == null ? null : Number(r.acwr), loadState: r.load_state,
+           // The rulebook clause his limit enforces (SCRBRD-041), or null for a
+           // boy under no limit — the server decides which, not this screen.
+           clause: r.clause_code ? { code: r.clause_code, title: r.clause_title,
+                                     severity: r.clause_severity, body: r.clause_body } : null,
+           live: true };
 }
 function asSpell(r) {
   return { matchId: r.match_id, innings: r.innings, bowlerId: r.bowler_id, name: r.full_name,
@@ -617,7 +622,14 @@ function asBreach(r) {
            ageBand: r.age_band, bowledOn: r.bowled_on ? String(r.bowled_on).slice(0, 10) : null,
            noticedAt: r.noticed_at, live: true };
 }
-function asDirective(r) { return { ageBand: r.age_band, maxSpell: r.max_overs_per_spell, maxDay: r.max_overs_per_day, live: true }; }
+function asDirective(r) { return { ageBand: r.age_band, maxSpell: r.max_overs_per_spell, maxDay: r.max_overs_per_day, clauseCode: r.clause_code ?? null, live: true }; }
+/** A rulebook clause (db/32). The limits are bowling_directive's, joined by the server. */
+function asClause(r) {
+  return { code: r.code, title: r.title, body: r.body, category: r.category, severity: r.severity,
+           source: r.source, ages: r.applicable_ages ?? [],
+           limits: (r.limits ?? []).map((l) => ({ ageBand: l.age_band, maxSpell: l.max_overs_per_spell, maxDay: l.max_overs_per_day })),
+           live: true };
+}
 const d10 = (v) => (v ? String(v).slice(0, 10) : null);
 /** One line of a boy's recognition: an honour, a cap, or a milestone. The label is the server's. */
 function asRecognition(r) {
@@ -983,6 +995,7 @@ const ADAPT = {
   bowling_spells: asSpell,
   bowling_breaches: asBreach,
   bowling_directives: asDirective,
+  rulebook_clauses: asClause,
   roster_on: asRosterOn,
   my_devices: asDevice,
   memberships: asMembership,

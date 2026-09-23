@@ -1558,13 +1558,63 @@ a11y 24); `migrate --reset --seed` then walks `browser-sync` 21, `browser-inning
 `apps/web/src/scorer/scoring.jsx`, `apps/web/test/scoring-blocked.test.mjs` (new),
 `tools/run-all-tests.mjs`, `tools/smoke-browser-sync.mjs`. Risk LOW. Migration NO.
 
-### SCRBRD-041 — Rulebook clauses with severity and applicable ages, cited by the workload monitor
-`RulebookView.jsx` exists; beta-2's *clause shape* is better — `severity: Mandatory | Guideline | Penalty
-Enforced`, `applicableAges`, and categories including Curator & Turf and Medical & Safety. Making a clause
-queryable lets the workload surface **cite the clause it is enforcing** instead of asserting a number. The
-limits themselves are already here (`bowling_directive` with age bands in `db/08`), so this is
-presentation over existing data plus a clause store. Files: `RulebookView.jsx`, new `db/NN` for clauses.
-Risk LOW. **Migration YES** if clauses are stored rather than shipped in code.
+### ~~SCRBRD-041~~ — CLOSED
+
+> Original entry: `RulebookView.jsx` exists; beta-2's *clause shape* is better — `severity: Mandatory |
+> Guideline | Penalty Enforced`, `applicableAges`, and categories including Curator & Turf and Medical &
+> Safety. Making a clause queryable lets the workload surface **cite the clause it is enforcing** instead
+> of asserting a number. Risk LOW. **Migration YES** if clauses are stored rather than shipped in code.
+
+**Closed 2026-09-23.** Clauses are stored, every directive limit names the one it enforces, and the
+Training screen's load panel cites it beside the number.
+
+**The evidence.** Before this the load panel printed `U13 · 5/10` and nothing said where 5 and 10 came
+from; the only statement of the rule was a comment above `bowling_directive` in `db/08`.
+`RulebookView.jsx` was six hard-coded sections of general Laws text (subtitled with one real school's
+name), none of it about the limits the platform enforces.
+
+**As built.** `db/32_rulebook_clause.sql`: `rulebook_clause` (`code` is the key: the thing a directive,
+a screen and a person cite; `title`, `body`, `category` CHECKed to Medical & Safety / Curator & Turf /
+Playing Conditions / Conduct, `severity` CHECKed to the three values, `source`), and
+`rulebook_clause_age` (clause × band, the band a **foreign key into `bowling_directive.age_band`**, so
+the vocabulary is `age_band()`'s own and nothing restates it). `bowling_directive.clause_code` is new
+and NOT NULL, with a **composite FK `(clause_code, age_band)` onto the clause's ages**: the U13 limit
+cannot cite a clause that does not apply to U13. Seven clauses: `PACE-SCOPE`, `PACE-COUNT`, `PACE-U13`,
+`PACE-U14-U15`, `PACE-U16`, `PACE-OPEN` (Guideline — no platform limit; a school's ceiling), `PACE-DOB`.
+**No clause text states a number**; the figures are joined from `bowling_directive` by the read, so the
+rule a person reads and the limit the breach trigger applies cannot drift. Text source: the repo holds no
+official directive text, only `db/08`'s note that the figures follow the ECB fast bowling directives
+mapped onto school bands in the absence of a CSA schedule — so each clause is written as the platform's
+summary, says so in `source` ("Not official wording"), and carries a SCRBRD code, not an official number.
+
+RLS: one SELECT policy per table, `app_user_id() IS NOT NULL` — the predicate `bowling_directive_read`
+already uses, so a clause is exactly as visible as the limit it explains; no write policy, and
+INSERT/UPDATE/DELETE revoked from `scrbrd_app` (db/06's two-layer treatment of `capability`). No write
+route: nothing found needs one, and a school wanting a stricter Open line has `bowling_ceiling_open`.
+Reads: `rulebook_clauses` (new), `bowling_directives` (+`clause_code`), `workload` (+`clause_code/title/
+severity/body`, pace bowlers only — a spinner is under no limit and gets no citation).
+`RulebookView` draws the clauses by category with severity, ages and figures, keeping the Laws crib
+below, labelled reference-only.
+
+**Tests.** `db/99`: signed-out reads 0; a spectator reads all 7 and every directive row's clause for its
+band; even the owner's key cannot insert, update or widen a clause; no non-SELECT policy.
+`tools/smoke-workload.mjs` 68 → 81: the directive→clause map, the clause read, and every workload row
+against a written-out band→clause map, incl. seeded B Khumalo (U13, `PACE-U13`, 5/10), M Cele (U16), an
+Open bowler under Hilton's ceiling (`PACE-OPEN`). `tools/smoke-browser-rulebook.mjs` (BROWSER_WALKS, 25):
+rulebook renders the seven clauses in order with severity, ages and joined figures; Khumalo's row cites
+`PACE-U13 · Pace bowling limits: U13` and expands to the text; the spinner's row cites nothing.
+
+**Falsified.** Policy `USING (true)` → db/99 "an unidentified session can read rulebook clauses";
+`USING (false)` → "a spectator reads 0"; grant + insert policy → "inserted a rulebook clause". Composite FK
+removed → db/32's `$check$` "U13 limit was allowed to cite the U16 clause"; severity CHECK dropped →
+"severity Advisory was accepted"; REVOKE removed → "the application role can write rulebook_clause".
+`and w.pace` removed from the workload read → 2 workload assertions red; band join pinned to U13 → 3 red.
+
+- [x] Clauses stored with severity, applicable ages and category
+- [x] Every directive limit references its clause (FK, band-checked)
+- [x] Workload monitor cites the clause (code + title, expands to text)
+- [x] Rulebook renders clauses grouped by category
+- [x] Live RLS assertions and walks, each guard falsified
 
 ### ~~SCRBRD-042~~ — CLOSED as already-correct, which is what the entry said might happen
 
