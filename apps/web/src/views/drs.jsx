@@ -2,7 +2,7 @@ import { useState } from "react";
 import { D, textOn } from "../design/tokens.js";
 import { api } from "../lib/api.js";
 import { useLive } from "../lib/live.js";
-import { featureOn, useFeatures } from "../lib/features.js";
+import { useFeatures } from "../lib/features.js";
 import { holdsCapability } from "../rbac/index.js";
 import { Btn, Card } from "../ui/primitives.jsx";
 
@@ -96,22 +96,23 @@ function Field({ text, children }) {
   );
 }
 
-function DrsPanel({ matchId, role }) {
-  // Fills the module-level feature map this session reads — see
-  // DashboardView for the same call for the same reason: without something
-  // mounting the hook, featureOn() answers "on" for everything forever.
-  useFeatures();
+// COURTESY ONLY — see the file comment. featureOn()'s "unknown is on" suits a
+// menu; for a feature off by default it would flash this panel before the map
+// arrives and draw it when the read fails, so this waits for an explicit true.
+// Mounting the body only then also keeps a doomed read off every Match Centre.
+function DrsPanel(props) {
+  const { features, ready } = useFeatures();
+  if (!ready || features.drs_review !== true) return null;
+  return <DrsPanelBody {...props}/>;
+}
+
+function DrsPanelBody({ matchId, role }) {
   const [nonce, setNonce] = useState(0);
   const { rows, loading, error } = useLive("drs_reviews", role, nonce, matchId ? { matchId } : null);
   const canRecord = holdsCapability(role, "scoring.correct");
   const [form, setForm] = useState(EMPTY_FORM);
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState(null);
-
-  // COURTESY ONLY — see the file comment. Rendering nothing here decides
-  // what to DRAW; drs_review_gate and the read's own module check decide
-  // what to allow, independently of this component ever existing.
-  if (!featureOn("drs_review")) return null;
 
   const setField = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
