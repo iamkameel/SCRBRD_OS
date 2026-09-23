@@ -114,7 +114,7 @@ Never auto-merge two divergent ball logs. A wrong scorecard that looks authorita
 
 | Endpoint | Purpose | Key failure modes |
 |---|---|---|
-| `POST /matches/:id/session/claim` | Take an idle match | `no_capability`, `lease_active` |
+| `POST /matches/:id/session/claim` | Take an idle match | `no_capability`, `lease_active`, `handover_pending` (only the arming device may claim back — a cancel), `verifying` |
 | `POST /matches/:id/session/heartbeat` | Refresh lease (~20s) | `not_token_holder`, `stale_epoch` |
 | `POST /matches/:id/events` | Append ball(s), idempotent | `stale_epoch` (→quarantine), `lease_expired`, `not_token_holder` |
 | `POST /matches/:id/session/handover/arm` | Arm, returns code | `unsynced_work` (+count), `ball_in_flight` |

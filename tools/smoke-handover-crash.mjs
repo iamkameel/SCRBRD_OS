@@ -79,7 +79,7 @@ try {
   const lockedA = await post(tokenA, DEV_A, epochA, [ball({ type: BALL_TYPE.RUN, value: 2, striker: P[0], nonStriker: P[1], bowler: P[2] })], 10);
   ok("A cannot score while verification is pending", (lockedA.body?.accepted?.length ?? 0) === 0 && lockedA.body?.quarantined?.length === 1, JSON.stringify(lockedA.body));
   const claimAgain = await session("claim", tokenA, { device: DEV_A });
-  ok("...nor simply claim it back: verification_pending", claimAgain.body?.ok === false && claimAgain.body?.reason === "verification_pending", JSON.stringify(claimAgain.body));
+  ok("...nor simply claim it back: verifying", claimAgain.body?.ok === false && claimAgain.body?.reason === "verifying", JSON.stringify(claimAgain.body));
 
   group("Recovery waits for the lease");
   const early = await session("force-release", tokenD, {});
@@ -88,6 +88,12 @@ try {
   // walk does not wait ninety seconds; it moves the clock the way ninety
   // seconds would have.
   await q(`update scoring_session set lease_until = now() - interval '1 minute' where match_id = $1`, [MATCH]);
+  // SCRBRD-059 / db/28: the lapse opens force-release, not a plain claim.
+  // db/17 let a claim through here; with no heartbeat outside ACTIVE, that
+  // was ninety seconds after the last ball whether B was dead or still
+  // reading the scoreboard.
+  const claimLapsed = await session("claim", tokenA, { device: DEV_A });
+  ok("a lapsed lease does not reopen a plain claim past verification", claimLapsed.body?.ok === false && claimLapsed.body?.reason === "verifying", JSON.stringify(claimLapsed.body));
   const noCap = await post(tokenB, DEV_B, epochA + 1, [ball({ type: BALL_TYPE.RUN, value: 1 })], 50);
   ok("a ball from the dead device after its lease lapsed is quarantined, not merged", noCap.body?.quarantined?.length === 1, JSON.stringify(noCap.body));
   const release = await session("force-release", tokenD, {});

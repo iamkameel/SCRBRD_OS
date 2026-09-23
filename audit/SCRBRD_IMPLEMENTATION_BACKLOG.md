@@ -1721,7 +1721,54 @@ result back.
 - [ ] The duty roster's `ground` slot reflects a submitted report, not only "recorded"
 **Regression risk:** LOW — additive UI over an already-shipped schema and routes.
 
-### SCRBRD-059
+### ~~SCRBRD-059~~ — CLOSED
+
+**Closed 2026-09-23.** `db/28_scoring_claim_handover.sql` re-creates `scoring_claim()` from its latest
+definition (`db/17`, not `db/02`) with the same signature and return shape: a plain claim while
+`handover_pending` is refused as `handover_pending`, and while `verifying` as `verifying` — each its own
+reason, neither folded into `lease_active`. The reference `claim()` in `scoring-session.mjs` has the same two
+refusals and the same strings. The file ends in a `DO $check$` asserting the return shape, `SECURITY DEFINER`,
+the pinned search path, `scrbrd_app`'s EXECUTE, both reasons and the surviving `lease_active` refusal; it is
+**not** yet in `db/SHIPPED.sha256`. No capability or bundle moved: regenerating leaves `db/01`, `db/09` and
+`db/23` byte-identical.
+
+**Two things the recommended one-line change would have got wrong, found by reading the callers first.**
+First, `db/17` had already added a `verifying` refusal — but only while the lease was live, as
+`verification_pending`. Leases are refreshed only while ACTIVE (`scoring_lease_check`), so once a handover
+is armed the outgoing lease runs down from the last ball, and ninety seconds later that guard opened
+whether the incoming scorer was dead or still reading the scoreboard. `db/28` refuses `verifying`
+unconditionally; the stalled-verification recovery is unchanged — force-release by `scoring.correct` once the
+lease lapses, then a fresh claim — which is what `smoke-handover-crash.mjs` already walked. Its
+`verification_pending` expectation became `verifying`, the reason the client already uses (`engine.jsx`),
+and it gained an assertion that a lapsed lease no longer reopens the claim. Second, **the client's
+`cancelHandover()` IS a plain claim** from the arming device (`handover.js`: there is no cancel route), so a
+blanket `OR s.state IN (...)` would have broken cancel. A `handover_pending` claim is therefore still allowed
+from the arming device **and** user — the same pair `scoring_arm_handover()` checks — and from nobody else.
+
+**Evidence.** `db/99` section 14 drives the real functions as `scrbrd_app` (scorer on device a, Sarah on
+device b, match 0003): armed → Sarah refused `handover_pending`, session and code untouched; the arming
+device string under Sarah's account refused; still refused after the lease lapses; the arming
+device+user takes it back (epoch 2, `active`); re-armed and code-claimed → Sarah and the scorer both refused
+`verifying`, still after a lapse, verification untouched; force-release then claim (epoch 4); a live lease
+still `lease_active`. `migrate --reset --seed && --verify` → ALL RLS LIVE ASSERTIONS PASSED.
+`scoring-session.test.mjs` 77 → 98 assertions. `smoke-handover.mjs` asserts B's plain claim is refused as
+`handover_pending` once armed and as `verifying` after the code (36 passed); `run-smoke-api.mjs handover
+handover-crash sync fold quarantine` → 36/18/51/25/25, 0 failed. `run-all-tests.mjs` after a reset →
+ALL SUITES PASSED · 2065 assertions across 32 suites (was 2041).
+
+**Falsified, each then restored:** removing the `handover_pending` clause → db/99 "a plain claim jumped an
+armed handover (ok=t)", the reference suite 6 red, and the handover walk's plain claim taking the token
+(the code claim, verify and every later step failing behind it — the original bug, reproduced); putting
+back `db/17`'s lease gate on `verifying` → db/99 "claimable once the lease lapsed", the crash walk
+`{"ok":true,"epoch":2}`; dropping the cancel exemption → db/99 "the arming device could not take its own
+handover back"; matching on device alone → db/99 "another user claimed an armed handover by naming the
+arming device"; restoring the old reason string → `db/28`'s own `$check$` refused to apply.
+
+**Kept deliberately:** the SCRBRD-056 client pre-check (`sessionState()` before `startSync()`'s claim). It
+no longer carries the guarantee; it returns the same two reasons, so the scorer lands on the same "take
+over" screen whichever answers first, and saves a refused round trip. Comments in `handover.js`/`sync.js`
+and the spec's API table (`docs/SCORING_HANDOVER_SPEC.md` §6) now say so.
+
 **Title:** `scoring_claim()` does not check for a pending or in-progress handover
 **Priority:** P2 · **Domain:** Scoring / Sync · **Type:** correctness
 **Affected files:** `db/02_schema_scoring.sql` (`scoring_claim`), a new `db/NN`
@@ -1757,9 +1804,10 @@ holds `scoring.start` on this match; it is a workflow-integrity gap, not an auth
 plain claim during `handover_pending`/`verifying` is refused; the client-side pre-check already has
 coverage via the browser handover walk (SCRBRD-056).
 **Acceptance criteria:**
-- [ ] A plain claim while a handover is pending or verifying is refused, at the database function, not
-  only in the client
-- [ ] The refusal names which state blocked it
+- [x] A plain claim while a handover is pending or verifying is refused, at the database function, not
+  only in the client — `db/28`; `db/99` section 14 and `smoke-handover.mjs` prove it against live Postgres
+  (the arming device+user's own claim during `handover_pending` stays open: it is the client's cancel)
+- [x] The refusal names which state blocked it — `handover_pending` / `verifying`, distinct from `lease_active`
 **Regression risk:** LOW — narrows an existing function's success cases; every currently-passing walk
 claims into `idle` or a genuinely dead `active` lease, neither of which this touches.
 

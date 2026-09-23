@@ -42,6 +42,11 @@ export const REJECT = {
   VERIFY_MISMATCH: "verify_mismatch",
   NOT_PENDING:     "not_pending",
   LEASE_ACTIVE:    "lease_active",
+  // A plain claim refused because a handover is under way. Named for the
+  // state, not folded into LEASE_ACTIVE: the remedy is the code (or waiting
+  // for the incoming scorer to verify), not waiting out a lease.
+  HANDOVER_PENDING:"handover_pending",
+  VERIFYING:       "verifying",
 };
 
 // ─────────────────────────────────────────────────────────
@@ -80,12 +85,27 @@ export class MatchSession {
   replay() { return replayEvents(this.events); }
 
   // ── token lifecycle ──
-  /** Claim an idle match (or take over an expired lease). */
+  /**
+   * Claim an idle match (or take over an expired lease).
+   *
+   * Never past a handover (SCRBRD-059, db/28): while one is armed only the
+   * device and scorer that armed it may claim — which takes the token back,
+   * the client's cancel — and while the incoming scorer is verifying nobody
+   * may, lease or no lease. A stalled verification is recovered by
+   * forceRelease(), then a claim of the idle match.
+   */
   claim({ scorerId, deviceId, role, name }) {
     if (!this.canScore(role)) return { ok: false, reason: REJECT.NO_CAPABILITY };
     if (this.state === SESSION.ACTIVE && this._leaseLive() &&
         this.holder?.deviceId !== deviceId) {
       return { ok: false, reason: REJECT.LEASE_ACTIVE, holder: this.holder };
+    }
+    if (this.state === SESSION.HANDOVER_PENDING &&
+        (this.holder?.deviceId !== deviceId || this.holder?.scorerId !== scorerId)) {
+      return { ok: false, reason: REJECT.HANDOVER_PENDING };
+    }
+    if (this.state === SESSION.VERIFYING) {
+      return { ok: false, reason: REJECT.VERIFYING };
     }
     this.epoch += 1;
     this.holder = { scorerId, deviceId, name };

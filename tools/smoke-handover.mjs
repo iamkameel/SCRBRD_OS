@@ -182,6 +182,15 @@ try {
   ok("a synced device arms the handover", arm.body?.ok === true);
   ok("...and gets a code to read out", /^\d{6}$/.test(arm.body?.code || ""));
 
+  // SCRBRD-059. Device B opening the scorer the ordinary way makes a PLAIN
+  // claim. The database refuses it and names the state, so the client steers
+  // B to the code instead of handing it the token with no handshake at all.
+  const plainB = await api(`/api/matches/${MATCH}/session/claim`, {
+    method: "POST", token: tokenB, body: { device: DEV_B },
+  });
+  ok("a plain claim while the handover is armed is refused as handover_pending",
+     plainB.body?.ok === false && plainB.body?.reason === "handover_pending");
+
   // ── Claiming ───────────────────────────────────────────────────
   group("Device B claims it");
   const wrongCode = await api(`/api/matches/${MATCH}/session/handover/claim`, {
@@ -207,6 +216,11 @@ try {
   ok("...and is handed the whole log to rebuild from", (claimB.body?.events || []).length === 11);
   ok("...including the correction, so it derives the same score",
      deriveInnings((claimB.body.events || []).map(fromRow), {}).runs === 13);
+  const plainVerifying = await api(`/api/matches/${MATCH}/session/claim`, {
+    method: "POST", token: tokenB, body: { device: DEV_B },
+  });
+  ok("...nor can it skip verifying with a plain claim: verifying",
+     plainVerifying.body?.ok === false && plainVerifying.body?.reason === "verifying");
 
   // Scoring is LOCKED between claim and verify: neither device may write.
   const lockedA = await post(tokenA, DEV_A, epochA, [ball({ type: BALL_TYPE.RUN, value: 4 })], 20);
