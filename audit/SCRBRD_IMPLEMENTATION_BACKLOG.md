@@ -944,6 +944,19 @@ request it. That is the point, and it needs saying to the pilot schools before i
 
 ### ~~SCRBRD-030~~ — CLOSED
 
+**Corrected 2026-09-23.** As first closed, the `finance`/`sponsorship` split was shipped by regenerating
+`db/01_authz.sql` in place. Production has run `db/01`, so `tools/migrate.mjs` refuses that file on a
+live database — the branch could not deploy. `db/01` is now byte-identical to `main` again:
+`generate-rls.mjs` re-emits finance's three commercial rows through `WITHDRAWN_SINCE_01` and leaves the
+role out through a new `ROLES_ADDED_SINCE_01`. `db/27_sponsorship_role.sql` carries the split for fresh
+and live databases alike, and matches every live `finance` appointment with a `sponsorship` one, so no
+bursar loses access. Checked on a database built exactly as `main` (24 files) with the branch applied on
+top: 3 applied, 24 skipped, the bursar's commercial access kept, `db/99` green. `rls.test.mjs` group B3
+holds any added role to its db/NN (falsified by dropping a bundle row and an appointer row). The gap that
+let this through is closed by `tools/shipped.test.mjs`, which pins every migration merged to `main` to
+its shipped hash via `db/SHIPPED.sha256` — the SCRBRD-030 `db/01` hashes `39d31949…`, the shipped one
+`40298933…`, so it would have gone red.
+
 **Closed 2026-09-19.** Every one of the 82 capabilities now carries a `LEVEL` (0-4, `Roles&Duty.md`
 §2.3), `SENSITIVE` is derived (`LEVEL[c] >= 2`) rather than a hand-picked array, and
 `sensitivity.test.mjs` gained the class-level assertion Part One's plan called for: no capability
@@ -1472,7 +1485,7 @@ SCRBRD-024 ✓ (CI) — independent, protects everything after it
 
 Pass 2:
 SCRBRD-028 (invariants) ──▶ SCRBRD-029 ✓ via SCRBRD-054 ✓ (db/24)
-SCRBRD-030 (sensitivity tiers) ✓ — closed with no db/NN; `db/01`/`db/09` regenerated in place
+SCRBRD-030 (sensitivity tiers) ✓ — role split corrected 2026-09-23 to ship as `db/27`; `db/01` restored
 SCRBRD-031 (workflow-state) ──▶ SCRBRD-034 (duty lifecycle) ──▶ SCRBRD-037 (duty roster)
 SCRBRD-032 (ADR) ──▶ SCRBRD-036 (sponsor viewer)   [the ADR is the test the new role must pass]
 SCRBRD-039 (capture profiles) ──▶ SCRBRD-045, -046 (spider, heatmap)

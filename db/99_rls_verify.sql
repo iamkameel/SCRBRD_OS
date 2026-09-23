@@ -123,6 +123,20 @@ CREATE OR REPLACE FUNCTION _expire_support(p_id uuid) RETURNS void AS $$
    WHERE s.id = p_id AND a.id = s.assignment_id;
 $$ LANGUAGE sql SECURITY DEFINER;
 
+-- Fixtures this file needs that a database seeded before them never received.
+-- Production was seeded once and has taken apply-NN bundles since, so the
+-- verify bundle cannot assume the current db/98. Written as the owner, before
+-- privilege drops, and rolled back with everything else; a no-op where the
+-- seed already has them. The umpire: SCRBRD-053's one-fixture official.
+INSERT INTO app_user (id, school_id, email, name, role) VALUES
+  ('88888888-0000-0000-0000-000000000023', '11111111-1111-1111-1111-111111111111',
+   'e.ndlovu@example.invalid', 'E Ndlovu', 'official')
+ON CONFLICT DO NOTHING;
+INSERT INTO role_assignment (id, person_id, role, school_id, team_code, fixture_id) VALUES
+  ('a5510000-0000-0000-0000-000000000023', '88888888-0000-0000-0000-000000000023', 'official',
+   '11111111-1111-1111-1111-111111111111', NULL, '77777777-0000-0000-0000-000000000004')
+ON CONFLICT DO NOTHING;
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;

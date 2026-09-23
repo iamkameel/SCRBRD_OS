@@ -37,6 +37,7 @@ const SUITES = [
   ["csv",      "services/api/io/csv.test.mjs"],
   ["write",    "services/api/write/write.test.mjs"],
   ["migrate",  "tools/migrate.test.mjs"],
+  ["shipped",  "tools/shipped.test.mjs"],
   ["imports",  "tools/check-imports.test.mjs"],
   ["guard",    "tools/hooks/guard.test.mjs"],
   ["ai",       "services/api/ai/ai.test.mjs"],
