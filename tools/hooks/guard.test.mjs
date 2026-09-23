@@ -80,7 +80,7 @@ const frozen = readdirSync(DB)
 // last file it closes nothing, and the block below would still pass green on
 // the files it does cover. So the top of the range has to be a real file.
 // (The count is not asserted — the numbering has a gap at db/03, which was
-// never written, so 23 files reach db/23.)
+// never written, so N-1 files reach db/N.)
 ok(`db/${FROZEN_THROUGH} exists, so the frozen range ends on a real file`,
    frozen.some((f) => Number(f.slice(0, 2)) === FROZEN_THROUGH),
    `top of db/ is ${frozen.at(-1)}`);
