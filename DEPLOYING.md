@@ -427,7 +427,9 @@ migrator refuses something.
    a database that already has `db/01`, and an entry in `WITHDRAWN_SINCE_01`
    in `services/api/rls/generate-rls.mjs` so the generator keeps emitting the
    frozen file exactly as shipped. `db/21_coach_medical_overview.sql` is the
-   worked example. A **new** capability is the mirror image: an entry in
+   worked example. A **new role** goes in `ROLES_ADDED_SINCE_01`, which
+   keeps it out of `db/01` altogether; `db/27_sponsorship_role.sql` is that
+   example. A **new** capability is the mirror image: an entry in
    `ADDED_SINCE_01` keeps it out of the emitted `db/01` altogether, and the
    `db/NN` it names inserts the catalogue row, the grants and whatever policy
    it was introduced for — `db/24_amend_request.sql` is that example, and
@@ -459,6 +461,10 @@ migrator refuses something.
    node tools/bundle-sql.mjs                # → scrbrd-supabase-verify.sql (and the rebuild bundle, which you do not paste)
    ```
    Paste `apply-NN`, then `verify`. Expect `ALL RLS LIVE ASSERTIONS PASSED`.
+   Then record it as shipped, so the suite refuses any later edit to it:
+   ```sh
+   sha256sum db/NN_*.sql >> db/SHIPPED.sha256
+   ```
 4. **Only then** deploy or merge the code that needs it. Schema first, always.
    An API that calls a function the database does not have yet is a `42883`
    on every screen that touches it — a read path that started calling

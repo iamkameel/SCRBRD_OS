@@ -33,7 +33,7 @@
  * Cricket; deriving made them visible.
  */
 
-import { KIND, BALL_TYPE, isLegal, normaliseDismissal, chargedToBowler, standsOnFreeHit, DISMISSAL, DISMISSAL_LABEL, INNINGS_END_REASON } from "./events.mjs";
+import { KIND, BALL_TYPE, isLegal, normaliseDismissal, chargedToBowler, standsOnFreeHit, DISMISSAL, DISMISSAL_LABEL, INNINGS_END_REASON, DERIVED_END_REASONS, inningsEnd } from "./events.mjs";
 
 // The scoring UI renders on these values: a batter at the crease is "batting",
 // and a squad member who never came in is "dnb" (never produced here — a batter
@@ -78,6 +78,10 @@ export function deriveInnings(events = [], ctx = {}) {
 
     striker: null, nonStriker: null, bowler: null,
     complete: false, endReason: null, freeHit: false,
+    // Over and closed are different facts. `complete` is the laws' answer and
+    // needs nobody's permission; `sealed` means a scorer read the figures back
+    // and confirmed them, and `sealRefused` says why a seal did not count.
+    sealed: false, sealRefused: null,
     revised: null,                 // { overs, target, reason } once the umpires revised the innings
     voided: 0,   // how many earlier events this log undoes — see the fold below
   };
@@ -209,10 +213,19 @@ export function deriveInnings(events = [], ctx = {}) {
         break;
       }
 
-      case KIND.INNINGS_END:
+      // The seal, and the only thing in this fold that may be refused. Checked
+      // HERE rather than after the loop because the figures have to be the ones
+      // the log produces at THIS point in it — which is what ties a seal to the
+      // occurrence of the innings ending that the scorer actually reviewed.
+      case KIND.INNINGS_END: {
+        const refusal = sealRefusal(ev, inn, inningsOverReason(inn));
+        if (refusal) { inn.sealRefused = refusal; break; }
+        inn.sealed = true;
+        inn.sealRefused = null;
         inn.complete = true;
-        inn.endReason = ev.reason ?? null;
+        inn.endReason = ev.reason;
         break;
+      }
 
       // The umpires' revision. The innings-over rule and the result below read
       // inn.overs and inn.target, so a cut to ten overs ends the innings at
@@ -342,11 +355,12 @@ export function deriveInnings(events = [], ctx = {}) {
   }
 
   computeMaidens(inn);
-  // An explicit innings_end event has already set both fields and wins: it is
-  // what the scorer recorded. Without one the innings is still over when the
-  // laws say it is, and the reason is derivable from the same three facts that
-  // decide it — so an innings that ended before anyone pressed anything can
-  // still say why.
+  // A seal that stood has already set both fields and wins: it is what the
+  // scorer recorded. Without one — none written yet, or one refused — the
+  // innings is still over when the laws say it is, and the reason is derivable
+  // from the same three facts that decide it, so an innings that ended before
+  // anyone pressed anything can still say why. What it cannot say is that it
+  // was closed, which is the whole distinction SCRBRD-038 needed.
   if (!inn.complete) {
     const why = inningsOverReason(inn);
     if (why) { inn.complete = true; inn.endReason = why; }
@@ -416,6 +430,69 @@ function inningsOverReason(inn) {
   if (inn.wickets >= Math.min(10, Math.max(1, (inn.squad?.length || 11) - 1))) return INNINGS_END_REASON.ALL_OUT;
   if (inn.balls >= (inn.overs ?? 20) * 6) return INNINGS_END_REASON.OVERS;
   return null;
+}
+
+/** Why this seal does not close the innings, or null when it does. */
+export const SEAL_REFUSAL = Object.freeze({
+  UNCONFIRMED: "unconfirmed",       // no figures on the event: nobody read anything back
+  NO_REASON:   "no_reason",         // closed, unsaid — the fault the OVERS default used to hide
+  FIGURES_MOVED: "figures_moved",   // the log no longer produces what was confirmed
+  NOT_THE_LAWS_REASON: "not_the_laws_reason", // claims an ending the laws do not derive here
+});
+
+/**
+ * Does this seal stand? SCRBRD-038.
+ *
+ * An innings_end event is the scorer saying "I have read these figures back and
+ * they are right". The reducer used to take the saying without the reading: it
+ * set `complete` and `endReason` from whatever the event claimed, unconditionally.
+ * So the checkpoint between the last ball and a closed innings existed once, in
+ * one React component tree, and the model underneath it would have honoured
+ *
+ *   - a seal naming an ending the log does not support — all out at twelve for
+ *     none, a target reached in an innings that has no target;
+ *   - a seal naming none at all, which the constructor turned into "the overs
+ *     ran out";
+ *   - a stale seal: one minted before an undo, replayed out of an offline queue,
+ *     or overtaken by a delivery released from quarantine, closing an innings
+ *     whose figures had moved since the review it claims to record.
+ *
+ * None of those needs bad faith to happen; the last one needs only a queue and
+ * a bad afternoon of signal. So the review's evidence travels on the event and
+ * is checked against the fold:
+ *
+ *   - the figures must be the figures the log produces at this point, which is
+ *     what pins the seal to THIS occurrence of the innings ending;
+ *   - a seal naming one of the three endings the laws derive must name the one
+ *     they actually derive here. `declared` and `abandoned` are nobody's
+ *     arithmetic — a captain's decision and an umpire's — so they are taken on
+ *     the scorer's word, but still only with the figures attached.
+ *
+ * A refusal is recorded rather than thrown. Replay is a fold over a log that
+ * may have come from anywhere, and a scoring surface that stops working because
+ * one event was malformed is worse than one that says which event it will not
+ * honour.
+ */
+function sealRefusal(ev, inn, why) {
+  const c = ev.confirmed;
+  if (!c || c.runs == null || c.wickets == null || c.balls == null) return SEAL_REFUSAL.UNCONFIRMED;
+  if (c.runs !== inn.runs || c.wickets !== inn.wickets || c.balls !== inn.balls) return SEAL_REFUSAL.FIGURES_MOVED;
+  if (ev.reason == null) return SEAL_REFUSAL.NO_REASON;
+  if (DERIVED_END_REASONS.has(ev.reason) && ev.reason !== why) return SEAL_REFUSAL.NOT_THE_LAWS_REASON;
+  return null;
+}
+
+/**
+ * The event that closes an innings the scorer has just reviewed.
+ *
+ * The figures are read off the innings rather than passed in, which is the
+ * point: the seal carries what the review sheet showed, because the sheet was
+ * drawn from this same object. `reason` defaults to the one the laws derived —
+ * the scorer is being asked to check the figures, not to classify the ending —
+ * and is overridable only for the two endings nothing in a ball log implies.
+ */
+export function sealInnings(inn, reason = inn?.endReason ?? null) {
+  return inningsEnd({ reason, confirmed: { runs: inn?.runs, wickets: inn?.wickets, balls: inn?.balls } });
 }
 
 // ── Match-level derivation ───────────────────────────────

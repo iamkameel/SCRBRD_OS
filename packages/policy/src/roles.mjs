@@ -20,7 +20,7 @@
  * (visible immediately, reported at once) rather than one that silently can.
  */
 
-import { ALL_CAPABILITIES, isCapability, CAPABILITIES, SENSITIVE } from "./capabilities.mjs";
+import { ALL_CAPABILITIES, isCapability, CAPABILITIES, SENSITIVE, PLATFORM_ONLY } from "./capabilities.mjs";
 
 /**
  * Roles whose assignment MUST name a team.
@@ -369,8 +369,26 @@ const BUNDLES = {
     "player.biometric.read",
     "medical.status.read", "medical.nature.read", "medical.details.read", "medical.write",
   ],
-  finance: ["school.read", "news.read", "invoice.read", "invoice.manage", "user.read",
-            "sponsorship.read", "sponsorship.manage", "sponsorship.finance.read"],
+  // SCRBRD-030 split this in two. Widening SENSITIVE to level >= 2 pulled
+  // invoice.read/invoice.manage into it, and this role held both those and
+  // sponsorship.finance.read — exactly the crossing §21.10 exists to catch:
+  // a commercial capability carrying a sensitive one in the same pair of
+  // hands. The bundle was never examined for that on its own terms, only
+  // inherited whole from the prototype's one "money" role.
+  //
+  // A school that wants one bursar doing both jobs still can — nothing stops
+  // the same person holding both role_assignment rows. What the split adds is
+  // the choice: a school that wants its billing clerk kept away from
+  // commercial contract terms, or its sponsorship lead kept away from a
+  // family's account balance, can now assign one without the other. The old
+  // bundle could not express that at all.
+  finance: ["school.read", "news.read", "invoice.read", "invoice.manage", "user.read"],
+  // The commercial half of the old `finance` bundle. Not sponsorship.
+  // exclusivity.waive — that stays with the principal alone, for the reason
+  // given on `principal` above — but the read/manage pair and the one figure
+  // that pair's own sale is measured in.
+  sponsorship: ["school.read", "news.read", "user.read",
+                "sponsorship.read", "sponsorship.manage", "sponsorship.finance.read"],
   transportcoordinator: ["clearance.read", "fixture.read", "team.read", "news.read", "transport.read", "transport.manage", "player.emergency.read"],
   driver: ["news.read", "transport.read", "transport.drive"],
   facilities: ["fixture.read", "news.read", "facility.read", "facility.manage"],
@@ -466,9 +484,11 @@ export const GRANTABLE_ROLES = Object.freeze({
   // NOT `medical` — a physiotherapist's appointment reaches a child's clinical
   // notes, and the person who signs that off should be the one accountable for
   // clinical access, not the office that manages logins. NOT `finance`, which
-  // reaches contract values. NOT `principal` or `directorofsport`, which are
-  // appointments a school makes rather than a system administrator. And never
-  // `platformadmin`.
+  // reaches billing and invoice records, and NOT `sponsorship`, which reaches
+  // contract values — SCRBRD-030 split the old commercial `finance` bundle in
+  // two, and the office was kept from both halves, not just the one that kept
+  // the name. NOT `principal` or `directorofsport`, which are appointments a
+  // school makes rather than a system administrator. And never `platformadmin`.
   schooladmin: [
     "coach", "assistantcoach", "teammanager", "scorer", "official",
     "player", "guardian", "selfaccess", "spectator", "enquiry",
@@ -480,7 +500,7 @@ export const GRANTABLE_ROLES = Object.freeze({
   // physiotherapist is a real appointment made by a real person; a school
   // administrator quietly adding it to their own account is not.
   principal: [
-    "directorofsport", "sportsadmin", "schooladmin", "medical", "finance",
+    "directorofsport", "sportsadmin", "schooladmin", "medical", "finance", "sponsorship",
     "coach", "assistantcoach", "teammanager", "facilities",
   ],
   directorofsport: [
@@ -556,7 +576,17 @@ const HANDOFF_EXCLUDED = new Set(["superadmin", "platformadmin"]);
 export function boundaries(role) {
   const held = new Set(ROLE_CAPABILITIES[role] ?? []);
   return SENSITIVE
-    .filter((c) => !held.has(c))
+    // SCRBRD-030 widened SENSITIVE onto the same 0-4 scale as PLATFORM_ONLY
+    // capabilities like platform.support.impersonate, and that combination
+    // has no honest answer here: no school-scoped role holds a platform-only
+    // capability, ever, by construction — so "who else at your school can do
+    // this" is not a boundary a school person has, it is a question with no
+    // school-side answer at all. Telling a coach he cannot impersonate other
+    // users platform-wide, then naming nobody to ask, is not a boundary — it
+    // is a capability that was never his school's to reach in the first
+    // place. PLATFORM_ONLY capabilities are excluded here for that reason,
+    // not carried as a boundary with an empty hand-off.
+    .filter((c) => !held.has(c) && !PLATFORM_ONLY.includes(c))
     .map((capability) => ({
       capability,
       what: CAPABILITIES[capability],

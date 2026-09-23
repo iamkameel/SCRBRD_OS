@@ -197,29 +197,69 @@ ok("...and cannot read a coach's private player notes",
    !caps("schooladmin").includes("player.note.read"));
 ok("...nor a medical file",
    !caps("schooladmin").includes("medical.details.read"));
+// THE MIRROR, and since SCRBRD-053 it is load-bearing rather than tidy.
+// `official` writes a disciplinary record and cannot read one, which is why
+// neither write path in services/api/write/discipline-api.mjs uses RETURNING:
+// Postgres applies the SELECT policy to a row an INSERT returns, so the day
+// this asymmetry stops being true is the day that design decision stops being
+// necessary — and the day it is reversed in the other direction, by somebody
+// taking the write away, an umpire silently cannot file an incident at all.
+ok("the official files a disciplinary record and cannot read one",
+   caps("official").includes("discipline.write") && !caps("official").includes("discipline.read"));
+ok("...and the two ends of it are held by different sets of roles",
+   others("discipline.read").join() !== others("discipline.write").join(),
+   `read: ${others("discipline.read").join(" ")} · write: ${others("discipline.write").join(" ")}`);
+// Filing is one job and running the school's sport is another. The overlap is
+// exactly one role — the director of sport, who is the only person who can
+// both file an off-field matter and conclude one an umpire filed — and that is
+// a decision rather than an accident, so it is written down.
+ok("filing is held by the umpire and the director of sport, and by nobody else",
+   others("discipline.write").join() === "directorofsport,official",
+   others("discipline.write").join(" "));
 
 // ── §11.5 Finance vs sporting performance ────────────────
 group("§11.5  Finance sees payers and invoices, not performance or health");
 {
-  const forbidden = [...SENSITIVE, "analytics.read", "opposition.read", "player.performance.read",
-                     "player.development.read", "scouting.read", "medical.status.read"];
+  // SCRBRD-030 put invoice.read/invoice.manage on SENSITIVE (level 2) — the
+  // same widening that split this role in two. Spreading the whole of
+  // SENSITIVE into "forbidden" would now forbid finance the one thing it
+  // holds, so the billing pair is named out rather than swept in with it.
+  const forbidden = SENSITIVE.filter((c) => !c.startsWith("invoice."))
+    .concat(["analytics.read", "opposition.read", "player.performance.read",
+             "player.development.read", "scouting.read", "medical.status.read"]);
   ok("finance reaches nothing sporting, personal or clinical",
      reach("finance", forbidden).length === 0, reach("finance", forbidden).join(","));
+  ok("...and does hold the billing reads it exists for",
+     ["invoice.read", "invoice.manage"].every((c) => caps("finance").includes(c)));
+  // The half that used to be true by construction, when one bundle held both:
+  // now that `sponsorship` exists, finance holding a scrap of it back would be
+  // the split failing to actually separate anything.
+  ok("...and none of the commercial capabilities that moved to `sponsorship`",
+     ["sponsorship.read", "sponsorship.manage", "sponsorship.finance.read"]
+       .every((c) => !caps("finance").includes(c)));
+
+  ok("sponsorship reaches nothing sporting, personal, clinical or billing",
+     reach("sponsorship", [...forbidden, "invoice.read", "invoice.manage"]).length === 0,
+     reach("sponsorship", [...forbidden, "invoice.read", "invoice.manage"]).join(","));
   ok("...and does hold the commercial reads it exists for",
-     ["invoice.read", "sponsorship.read", "sponsorship.finance.read"].every((c) => caps("finance").includes(c)));
+     ["sponsorship.read", "sponsorship.manage", "sponsorship.finance.read"]
+       .every((c) => caps("sponsorship").includes(c)));
 }
 
 // ── §11.6 Sponsor vs participant data ────────────────────
 group("§11.6  Commercial access is aggregate and never a back door");
 {
   // The external sponsor viewer is a role SCRBRD OS has not built (SCRBRD-036).
-  // This is where it gets held to aggregate-only on the day it is added, so the
-  // assertion states both halves rather than passing on an empty set.
-  const sponsorish = ROLES.filter((r) => /sponsor|partner/.test(r));
+  // `sponsorship` is not that role — it is the internal commercial role
+  // SCRBRD-030 split out of the old `finance` bundle, held by somebody at the
+  // school — but it is exactly the shape §11.6 exists to hold to
+  // aggregate-only, so it is checked the same way rather than carved out.
+  const sponsorish = ROLES.filter((r) => /sponsor|partner/.test(r) && r !== "sponsorship");
   ok("no external sponsor-viewer role exists yet (SCRBRD-036 would add one)",
      sponsorish.length === 0, sponsorish.join(" "));
-  const bad = sponsorish.filter((r) => reach(r, [...SENSITIVE]).length);
-  ok("...and if one is added it may hold nothing sensitive", bad.length === 0, bad.join(" "));
+  const bad = [...sponsorish, "sponsorship"].filter((r) => reach(r, [...SENSITIVE]).length);
+  ok("...and neither the internal commercial role nor a future external one holds anything sensitive",
+     bad.length === 0, bad.join(" "));
   ok("sponsorship.exclusivity.waive is not reachable from outside governance",
      others("sponsorship.exclusivity.waive").every((r) => ["principal", "directorofsport"].includes(r)),
      others("sponsorship.exclusivity.waive").join(" "));
@@ -254,10 +294,13 @@ ok("§21.10  holding a commercial capability never carries a sensitive one with 
    !ROLES.some((r) => r !== "superadmin" &&
      caps(r).includes("sponsorship.finance.read") && reach(r, [...SENSITIVE]).length));
 {
-  // §21.1 — a role name is not an access check. Fourteen view gates still read
-  // the role string directly (SCRBRD-011). This is a ratchet, not a pass: it
-  // may fall, never rise, so a new one fails here rather than in review.
-  const GATE_CEILING = 14;
+  // §21.1 — a role name is not an access check. Twelve view gates still read
+  // the role string directly. SCRBRD-011 closed the `superadmin` pair in
+  // ManagementView.jsx (isSuperAdmin and the "Highest privilege" badge), both
+  // now derived from mayGrantRole() instead of a hand-written role literal.
+  // This is a ratchet, not a pass: it may fall, never rise, so a new one
+  // fails here rather than in review.
+  const GATE_CEILING = 12;
   const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
     e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]);
   const gates = walk(join(ROOT, "apps/web/src"))

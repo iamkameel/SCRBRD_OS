@@ -1011,6 +1011,71 @@ try {
     await c.ctx.close();
   }
 
+  // ── The same placements, as a surface and as a shape (SCRBRD-045, -046) ──
+  // CareerShotShape sits beside the wagon wheel on the same tab, reading the
+  // same rows. The sharpest thing to prove here is the axis mirror: the
+  // spider's directions are batter-relative (a left-hander's cover is still
+  // labelled "cover") but the ANGLE it is drawn at flips, so Bekker's
+  // strongest direction and Naidoo's sit on opposite sides of the SVG.
+  group("The same placements draw as a density surface and a directional shape");
+  {
+    const c = await open();
+    await signIn(c.page, /coach@example\.invalid/);
+    ok("the profiles screen opens", await nav(c.page, /Profiles/));
+
+    const shapeFor = async (playerId) => {
+      await c.page.locator(`[data-testid="roster-player-${playerId}"]`).first()
+        .click({ timeout: 4000 }).catch(() => {});
+      await c.page.waitForTimeout(800);
+      await c.page.locator("button", { hasText: /^career$/i }).first()
+        .click({ timeout: 4000 }).catch(() => {});
+      await c.page.waitForTimeout(1400);
+      const shape = c.page.locator('[data-testid="career-shot-shape"]');
+      if (!(await shape.count())) return null;
+      const heat = shape.locator('[data-testid="shot-heat-map"]');
+      const spider = shape.locator('[data-testid="shot-spider"]');
+      const cells = await heat.locator(".heat-cell").evaluateAll(
+        (els) => els.map((e) => Number(e.getAttribute("data-density"))));
+      const axes = await spider.locator("[data-testid^='spider-axis-']").evaluateAll(
+        (els) => els.map((e) => ({
+          key: e.getAttribute("data-testid").replace("spider-axis-", ""),
+          shots: Number(e.getAttribute("data-shots")),
+          x: Number(e.getAttribute("data-x")),
+        })));
+      return { heat, spider, cells, axes, heatText: await heat.innerText().catch(() => ""),
+               spiderText: await spider.innerText().catch(() => "") };
+    };
+
+    const bekker = await shapeFor("aaaaaaaa-0000-0000-0000-000000000002");
+    ok("the density surface is drawn on the career tab", bekker !== null && (await bekker.heat.count()) === 1);
+    ok("...with cells over the peak", bekker && bekker.cells.some((d) => d > 0.9), bekker && Math.max(...bekker.cells));
+    ok("...saying how many it placed", bekker && /\d+ placed/.test(bekker.heatText));
+    ok("the spider is drawn beside it", bekker && (await bekker.spider.count()) === 1);
+    ok("...with an axis for every angular family", bekker && bekker.axes.length === 12, bekker?.axes.length);
+    ok("...saying reach is a distance and not an aim", bekker && /mean distance/.test(bekker.spiderText));
+    ok("...and never claiming precision", bekker && !/precision/i.test(bekker.spiderText));
+    // Bekker was seeded through the covers (theta ~300-330): the axis with
+    // shots should be an off-side family, left of the wheel's centre (x<150).
+    const bekkerHit = bekker?.axes.filter((a) => a.shots > 0) ?? [];
+    ok("Bekker's contact lands in an off-side family", bekkerHit.length > 0 && bekkerHit.every((a) => a.x < 150),
+       bekkerHit.map((a) => `${a.key}@${a.x}`).join(" "));
+
+    // Naidoo — left-handed, seeded on the leg side at theta ~60-90, which the
+    // wheel test already proves draws mirrored to x<150. The spider's own
+    // axes must show the same mirror: his hit families sit on the SAME side
+    // of the SVG as Bekker's, both left, for the reason wheel.test.mjs
+    // states — a left-hander's leg side is a right-hander's off side.
+    const naidoo = await shapeFor("aaaaaaaa-0000-0000-0000-000000000003");
+    ok("the left-hander's surface is drawn too", naidoo && naidoo.cells.some((d) => d > 0.5));
+    const naidooHit = naidoo?.axes.filter((a) => a.shots > 0) ?? [];
+    ok("...and his spider mirrors the same way the wheel does", naidooHit.length > 0 && naidooHit.every((a) => a.x < 150),
+       naidooHit.map((a) => `${a.key}@${a.x}`).join(" "));
+
+    ok("no console errors", c.errors.length === 0);
+    ok("...and no scoping refusals", c.refusals.length === 0);
+    await c.ctx.close();
+  }
+
   // ── The role switcher, as it is actually seen ────────────────────
   // Reported from the live deployment with a screenshot: the menu listed
   // "Platform Admin" three times and "Principal" twice. ROLES is the LOOKUP
@@ -1672,6 +1737,109 @@ try {
       ok("...but a click on the backdrop does", await tid("modal-backdrop").count() === 0);
     }
     ok("no console errors while opening and leaving a dialog", c.errors.length === 0, c.errors.join(" | "));
+    await c.ctx.close();
+  }
+
+  // ── The pitch report: a real schema and route, no screen (SCRBRD-058) ──
+  // db/08 already has match_pitch_report and ground_condition, events-api.mjs
+  // already writes the former, read-api.mjs already reads it back, and the
+  // duty roster already unions its state in — the button that reaches any of
+  // it was the only piece missing, and it is the only piece this proves.
+  group("The groundsman's report reaches the fixture it is filed against");
+  {
+    const c = await open();
+    ok("the director of sport signs in", await signIn(c.page, /Director of Sport/));
+    const tid = (id) => c.page.locator(`[data-testid="${id}"]`);
+    await tid("nav-fields").click({ timeout: 6000 }); await c.page.waitForTimeout(1200);
+    ok("she reaches Fields", await tid("os-main").getAttribute("data-page") === "fields");
+
+    ok("the report button is offered — she holds facility.manage",
+       await tid("open-pitch-report").count() === 1);
+    await tid("open-pitch-report").click({ timeout: 4000 });
+    await c.page.waitForTimeout(500);
+    ok("a dialog opens", await c.page.locator('[role="dialog"][aria-modal="true"]').count() === 1);
+
+    const fixtureSelect = tid("pitch-report-fixture");
+    ok("it offers real fixtures at this ground, not a placeholder",
+       await fixtureSelect.locator("option").count() > 1, // "— not recorded" style placeholders don't apply here; first option is a real fixture
+       `${await fixtureSelect.locator("option").count()} options`);
+
+    // Every field is optional; filing one alone is still a real report.
+    await fixtureSelect.selectOption({ index: 0 });
+    const chosenFixture = await fixtureSelect.inputValue();
+    await tid("pitch-report-bounce").selectOption("variable");
+    await tid("pitch-report-bounceRating").selectOption("7");
+    await tid("pitch-report-notes").fill("Two-paced early on, truer after lunch.");
+    await tid("pitch-report-submit").click({ timeout: 4000 });
+    await c.page.waitForTimeout(700);
+    ok("saving it closes the form with a confirmation", await tid("pitch-report-saved").count() === 1);
+    await c.page.locator('button', { hasText: /^Close$/ }).first().click({ timeout: 3000 });
+    await c.page.waitForTimeout(400);
+    ok("...and the dialog is gone", await tid("modal-backdrop").count() === 0);
+
+    // Read it back through the real route, entirely through the app: reopen
+    // the same fixture and check the form pre-fills what was just saved. This
+    // is also the assertion for the fix that made this safe to reopen at
+    // all — `on conflict do update` overwrites every column with whatever a
+    // blank form sends, so a form that did not pre-fill would silently wipe
+    // this report the next time anyone touched it.
+    await tid("open-pitch-report").click({ timeout: 4000 });
+    await c.page.waitForTimeout(400);
+    await fixtureSelect.selectOption(chosenFixture);
+    await c.page.waitForTimeout(600);
+    ok("re-opening the same fixture shows what was actually saved, not a blank form",
+       await tid("pitch-report-bounce").inputValue() === "variable" &&
+       await tid("pitch-report-bounceRating").inputValue() === "7");
+    ok("...including the note", (await tid("pitch-report-notes").inputValue()).includes("Two-paced"));
+
+    ok("no console errors filing a pitch report", c.errors.length === 0, c.errors.join(" | "));
+    await c.ctx.close();
+  }
+
+  // ── SCRBRD-062: several fixtures' duty coverage, at a glance ────────
+  //
+  // The overview is the SAME match_duties read the single-fixture DutyRoster
+  // already uses, fanned out across fixtures — so the one thing worth proving
+  // in a browser is that it cannot drift from what that fixture's own screen
+  // shows. Ground truth is read directly from the API first, then checked
+  // against both screens, rather than assumed from seed data or from what an
+  // earlier group in this file happened to write.
+  group("A sportsmaster sees duty coverage across several fixtures, and it matches each fixture's own roster");
+  {
+    const tok = await (await fetch(`${API}/api/auth/dev-login`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "sarah@example.invalid", deviceId: "browser-read" }),
+    })).json().then((j) => j.token);
+    const MATCH = "77777777-0000-0000-0000-000000000002"; // Michaelhouse, seeded scheduled
+
+    const truth = await (await fetch(`${API}/api/read/match_duties?matchId=${MATCH}`, {
+      headers: { authorization: `Bearer ${tok}` },
+    })).json();
+    const trueCovered = new Set((truth?.rows ?? []).map((r) => r.duty)).size;
+    ok("the fixture has at least the seeded umpire on record", trueCovered >= 1, `${trueCovered} covered`);
+
+    const c = await open();
+    ok("the director of sport signs in", await signIn(c.page, /sarah@example\.invalid|Director/));
+    const tid = (id) => c.page.locator(`[data-testid="${id}"]`);
+    await tid("nav-readiness").click({ timeout: 6000 }); await c.page.waitForTimeout(1200);
+    ok("she reaches Readiness", await tid("os-main").getAttribute("data-page") === "readiness");
+
+    const card = tid(`readiness-fixture-${MATCH}`);
+    ok("the fixture is on the overview", await card.count() === 1);
+    const overviewText = await tid(`readiness-covered-${MATCH}`).innerText();
+    ok(`the overview reads "${trueCovered} of 8 on record"`, overviewText.trim() === `${trueCovered} of 8 on record`);
+    ok("the covered slot itself is shown as on record, not merely counted",
+       await tid(`readiness-slot-${MATCH}-umpire`).count() === 1);
+
+    // Cross-check against the fixture's own screen — not a second opinion,
+    // the same claim asked twice.
+    await tid("nav-matches").click({ timeout: 6000 }); await c.page.waitForTimeout(1200);
+    await c.page.locator(`[data-testid="match-card-${MATCH}"]`).click({ timeout: 4000 });
+    await c.page.waitForTimeout(600);
+    const rosterText = await tid("duty-covered").innerText();
+    ok(`the fixture's own duty roster agrees: "${rosterText.trim()}"`, rosterText.trim() === overviewText.trim());
+
+    ok("no console errors on either screen", c.errors.length === 0, c.errors.join(" | "));
     await c.ctx.close();
   }
 

@@ -60,6 +60,9 @@ const WALKS = [
   "drs",
   // The public overlay, and the names that do not go on it.
   "broadcast",
+  // Stats-Magic's own context: real career figures from /read/career, and no
+  // child's name in the request that would have gone to the model provider.
+  "statsmagic",
   // Sponsorship: which brands may be on a child's scoreboard, and what stays
   // between the school and the sponsor.
   "commercial",
@@ -116,6 +119,13 @@ const WALKS = [
   // that closes the first of them.
   "dob-gaps",
   "support",
+  // The disciplinary record: two capabilities that were in six role bundles
+  // and gated nothing, and the only policy in the schema whose fixture anchor
+  // is allowed to be NULL.
+  "discipline",
+  // How a boy is out, and how a bowler takes wickets, by method rather than
+  // as a single count.
+  "dismissals",
   "commit",
 ];
 
@@ -124,7 +134,10 @@ const WALKS = [
 // they run under `--browser` rather than in the default set. Splitting them
 // out is not tidiness: CI's first run put them in the API job, which had
 // neither, and both jobs failed on a missing dist/index.html.
-const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-dossier"];
+// browser-innings-end scores an innings to its end, which nothing else does:
+// browser-sync taps four deliveries of twenty overs, so the review gate between
+// the last ball and a closed innings was never exercised end to end.
+const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-dossier", "browser-handover", "browser-innings-end", "browser-quarantine"];
 
 // Walks that need no database, run by `pnpm smoke` instead. Named here only so
 // the completeness check below knows they are accounted for.

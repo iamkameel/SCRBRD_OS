@@ -413,6 +413,37 @@ export const READ_QUERIES = {
             order by n.observed_on desc, n.created_at desc`,
   },
 
+  /**
+   * A disciplinary matter about a named child (SCRBRD-053).
+   *
+   * No masking view, because there is nothing to mask: discipline.read gates
+   * the whole ROW, and a reader without it sees no record at all rather than a
+   * record with its prose blanked. Masking is the wrong instrument here: a
+   * matter with its account removed still says a named boy is in trouble and
+   * no longer says what for, which discloses the fact and withholds the only
+   * part that would let a reader weigh it.
+   *
+   * LEFT JOIN on player, not JOIN, and the difference is load-bearing.
+   * `competitionadmin` holds discipline.read and no player capability at all,
+   * so the join's own row-level security yields nothing for them — an INNER
+   * join would silently return an empty list to the one reader the
+   * platform-wide arm of this policy exists for, and it would look like a
+   * school with a clean record rather than a refusal. What comes back instead
+   * is the record without the child's name, which is exactly the line
+   * player.profile.read draws: the matter is the league's business and the
+   * roster is the school's.
+   */
+  disciplinary_records: {
+    text: `select d.id, d.player_id, d.school_id, d.match_id, d.body,
+                  d.state, d.outcome, d.occurred_on, d.created_at, d.updated_at,
+                  d.recorded_by, u.name as recorded_by_name,
+                  p.full_name, p.team_code
+             from disciplinary_record d
+             left join player p   on p.id = d.player_id
+             left join app_user u on u.id = d.recorded_by
+            order by d.occurred_on desc, d.created_at desc`,
+  },
+
   // The newsfeed. Same rule as every read here: the policy on news_post has
   // already decided who may see each row — a team post reaches that side, a
   // school post that school, a competition post every school entered in it —
@@ -1850,6 +1881,51 @@ export const READ_QUERIES = {
   },
 
   /**
+   * How a boy is out, and how a bowler takes wickets — by method.
+   *
+   * `career` above has `dismissals` and `wickets` as single counts.
+   * player_dismissal_breakdown / player_wicket_breakdown (db/26) are the same
+   * scope, GROUPed one dimension further. Same tenant-scoping discipline as
+   * `career`: no module owns this (see OWNER_OF_READ — `career` has none
+   * either), because the actual gate is not a switch, it is the RLS this
+   * already inherits from ball_event_live (security_invoker, fixture.read)
+   * and from `player` (player.profile.read for the row that names them).
+   * `player.performance.read` is a real capability — every scoring role holds
+   * it — but nothing in this file or in db/09's policies asks app_can() about
+   * it; it currently governs a client-side `holds()` check in
+   * DashboardView.jsx and nothing on the read path. Inventing a second gate
+   * here that the sibling resource does not have would make two people with
+   * identical assignments see different things from `career` and from this,
+   * for no reason either could discover. So this reuses exactly what `career`
+   * already relies on rather than adding one.
+   *
+   * LONG-FORM: one row per player per dismissal type per side, `side` being
+   * 'batting' or 'bowling' — the shape `skills` already uses for a small
+   * fixed vocabulary. `dismissal` is NULL for a wicket whose method was never
+   * recorded (see db/26); the client renders that as "method not recorded"
+   * rather than dropping the row, so a sum over this resource never disagrees
+   * with the flat total `career.dismissals` / `career.wickets` gives.
+   *
+   * CAUGHT AND BOWLED is not its own line — see db/26's comment. ball_event
+   * has no fielder/catcher column, so there is nothing here to distinguish
+   * the bowler catching his own wicket from any other fielder catching it off
+   * him; both are 'caught'. Faking the split from bowler_id alone would be
+   * wrong for nearly every 'caught' row.
+   */
+  dismissal_breakdown: {
+    text: `select p.id as player_id, p.full_name, p.team_code, p.school_id,
+                  'batting'::text as side, d.dismissal, d.dismissals as count
+             from player p
+             join player_dismissal_breakdown d on d.player_id = p.id
+           union all
+           select p.id as player_id, p.full_name, p.team_code, p.school_id,
+                  'bowling'::text as side, w.dismissal, w.wickets as count
+             from player p
+             join player_wicket_breakdown w on w.player_id = p.id
+            order by full_name, side, dismissal nulls last`,
+  },
+
+  /**
    * Who is about to age out of their side, and which side to trial them for.
    *
    * DERIVED, not delivered. There is no job publishing these and no row
@@ -2142,6 +2218,7 @@ export const RESTRICTED_FIELDS = Object.freeze({
   clearance_register: ["reference"],
   clearances:         ["reference"],
   career:   [],
+  dismissal_breakdown: [],
   skills:   ["score"],
   users:    ["email"],
   // Dotted, because a rating is nested. What is disclosed here is a named
@@ -2154,6 +2231,15 @@ export const RESTRICTED_FIELDS = Object.freeze({
   // group that may read it is deliberately narrow. Every read is logged, which
   // is what makes the narrowness answerable rather than merely convenient.
   notes:    ["body"],
+  // A disciplinary matter about a named child, and what the school decided to
+  // do about it. Nothing here is masked — discipline.read gates the row — so
+  // this entry is the ONLY reason an ordinary school-side read of one is
+  // logged at all: the platform-wide branch below stamps a cross-school
+  // reader whatever the resource says, and the branch after it stamps
+  // everybody else only when a watched column comes back. Without these two
+  // names a principal could read a child's record and leave no trace, which
+  // is the half of SCRBRD-053 that was not about the policy.
+  disciplinary_records: ["body", "outcome"],
   // Another school's children, by name, read for a fixture. Logged against
   // the school that was read — school_id on every row is theirs, not the
   // reader's — so the disclosure lands in the right school's log.
@@ -2169,6 +2255,7 @@ const SUBJECT_ID = { players: "id", injuries: "player_id", skills: "player_id",
                      emergency_contacts: "player_id", trip_contacts: "player_id",
                      clearance_register: "person_id", clearances: "person_id",
                      users: "id", ratings: "player_id", notes: "player_id",
+                     disciplinary_records: "player_id",
                      opposition_squad: "player_id" };
 
 /** At most this many ids per entry. A log row is evidence, not a data export. */

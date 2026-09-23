@@ -9,7 +9,7 @@
  * must keep reproducing the shipped bytes. A capability change is therefore
  * three edits, not one: roles.mjs (the truth for a fresh install and the
  * client), a new db/NN with the DELETE/INSERT for a database that already
- * has db/01, and WITHDRAWN_SINCE_01 or ADDED_SINCE_01 below so the emitted
+ * has db/01, and WITHDRAWN_SINCE_01, ADDED_SINCE_01 or ROLES_ADDED_SINCE_01 below so the emitted
  * db/01 does not move. DEPLOYING.md, "Changing the schema after go-live",
  * has the procedure.
  *
@@ -357,7 +357,23 @@ ALTER TABLE ${t} ADD CONSTRAINT ${t}_team_code_known CHECK (${teamCodeCheck("tea
 export const WITHDRAWN_SINCE_01 = {
   coach:           [{ after: "medical.nature.read", capability: "medical.details.read" }],
   assistantcoach:  [{ after: "medical.nature.read", capability: "medical.details.read" }],
+  // SCRBRD-030 moved the commercial reads to the `sponsorship` role; db/27 withdraws them.
+  finance: [
+    { after: "user.read",          capability: "sponsorship.read" },
+    { after: "sponsorship.read",   capability: "sponsorship.manage" },
+    { after: "sponsorship.manage", capability: "sponsorship.finance.read" },
+  ],
 };
+
+/**
+ * Roles that did not exist when db/01 shipped. Left out of db/01's bundles,
+ * its role_grantable rows and its header count; the db/NN named here creates
+ * them, on a fresh install and on production alike. Never retires.
+ */
+export const ROLES_ADDED_SINCE_01 = {
+  sponsorship: "27_sponsorship_role.sql",
+};
+const roleIn01 = (role) => !(role in ROLES_ADDED_SINCE_01);
 
 /**
  * The mirror: capabilities that did not exist when db/01 shipped.
@@ -385,7 +401,7 @@ const shippedIn01 = (cap) => !(cap in ADDED_SINCE_01);
 
 function capabilityRows() {
   const rows = [];
-  for (const role of ROLES) {
+  for (const role of ROLES.filter(roleIn01)) {
     const bundle = [...ROLE_CAPABILITIES[role]].filter(shippedIn01);
     for (const { after, capability } of WITHDRAWN_SINCE_01[role] ?? []) {
       const at = bundle.indexOf(after);
@@ -396,7 +412,7 @@ function capabilityRows() {
   const catalogue = ALL_CAPABILITIES.filter(shippedIn01).map((c) => `  (${q(c)})`).join(",\n");
   const grantRows = [];
   for (const [granter, granted] of Object.entries(GRANTABLE_ROLES))
-    for (const r of granted) grantRows.push(`  (${q(granter)}, ${q(r)})`);
+    for (const r of granted) if (roleIn01(granter) && roleIn01(r)) grantRows.push(`  (${q(granter)}, ${q(r)})`);
   return `${banner("The capability catalogue")}
 -- Every capability the model defines, as rows, so a column that stores a
 -- capability NAME can have a foreign key onto it — notification.required_capability
@@ -831,7 +847,7 @@ export function authz() {
     `-- GENERATED from packages/policy/ by services/api/rls/generate-rls.mjs — DO NOT EDIT BY HAND.`,
     `-- Regenerate with \`pnpm rls:generate\`. Applied BEFORE the scoring schema,`,
     `-- which references app_can(). Model: docs/adr/0001-scoped-assignments.md.`,
-    `-- ${ALL_CAPABILITIES.filter(shippedIn01).length} capabilities across ${ROLES.length} roles.`,
+    `-- ${ALL_CAPABILITIES.filter(shippedIn01).length} capabilities across ${ROLES.filter(roleIn01).length} roles.`,
     ``,
     `-- Principal helpers. app_user_id() is set from the signed token on every`,
     `-- request; everything else about a person's authority is looked up.`,

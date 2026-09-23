@@ -66,8 +66,12 @@ const Btn = ({ children, onClick, variant="primary", size="md", disabled, ...res
   );
 };
 
-const Badge = ({ children, color=D.indigo }) => (
-  <span style={{
+// `rest` carries data-* and aria-* attributes through, the same as Card
+// above — without it, a data-testid passed to a Badge is silently dropped,
+// which is what let review-reason (InningsReviewSheet) go unfindable until
+// SCRBRD-052's browser walk was the first thing to actually look for it.
+const Badge = ({ children, color=D.indigo, ...rest }) => (
+  <span {...rest} style={{
     padding:"2px 8px",borderRadius:D.pill,fontFamily:D.mono,fontSize:"9px",fontWeight:500,
     background:color+"18",border:`1px solid ${color}30`,color,letterSpacing:"0.05em",textTransform:"uppercase",
   }}>{children}</span>

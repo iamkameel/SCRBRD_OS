@@ -42,7 +42,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import {
-  deriveInnings, inningsStart, batters, bowler, ball, penalty,
+  deriveInnings, inningsStart, batters, bowler, ball, penalty, inningsEnd, sealInnings,
   BALL_TYPE, INNINGS_END_REASON,
 } from "@scrbrd/scoring";
 import { InningsReviewSheet } from "../src/scorer/sheets.jsx";
@@ -158,12 +158,18 @@ group("A delivery cannot reach a closed innings without the review");
                           && !l.includes("setScreen") && !l.includes('setModal("innings2")')),
      endedPaths.join(" | "));
   // The close is written to the log exactly once, from the confirmation.
-  const emits = (engine.match(/emit\(inningsEnd\(/g) ?? []).length;
+  const emits = (engine.match(/emit\(sealInnings\(/g) ?? []).length;
   ok("the innings_end event is emitted from one place", emits === 1, `${emits} call sites`);
   ok("...and that place is the review's confirm handler",
-     /const closeInnings=\(\)=>\{\s*emit\(inningsEnd\(/.test(engine));
-  ok("the confirm handler carries the reason the replay derived",
-     /emit\(inningsEnd\(\{reason:inn\?\.endReason/.test(engine));
+     /const closeInnings=\(\)=>\{[\s\S]{0,400}?emit\(sealInnings\(inn\)\)/.test(engine));
+  // sealInnings() is what puts the figures the sheet just showed onto the event,
+  // and the reducer refuses a seal without them — so the reason and the evidence
+  // both come off the innings rather than being assembled here. An engine that
+  // hand-rolled an inningsEnd() would be writing a seal the model will not honour.
+  ok("the seal is built from the innings, not assembled by hand",
+     !/inningsEnd\(/.test(engine), "engine.jsx still constructs innings_end itself");
+  ok("...and the confirm refuses to seal an innings that is not over",
+     /const closeInnings=\(\)=>\{[\s\S]{0,300}?if\(!inn\?\.complete\)return;/.test(engine));
 
   // The sheet is dismissible, so something has to hold the way back — and it
   // has to be derived from state rather than raised by the transition, because
@@ -172,9 +178,45 @@ group("A delivery cannot reach a closed innings without the review");
   // the transition at all.
   ok("a banner stands while the innings is over and not yet closed",
      /\{inn\?\.complete&&!inningsClosed&&!modal&&<InningsOverBanner/.test(engine));
-  ok("...and 'closed' means the log carries the event, not that a screen moved",
-     /const inningsClosed=\(events\[curIn\]\?\?\[\]\)\.some\(e=>e\.kind===KIND\.INNINGS_END\)/.test(engine));
+  // "Closed" is the replay's answer, not a scan of the log for the event kind.
+  // The two are not the same: a seal whose figures the log does not produce is
+  // refused by the reducer, and a screen that counted the event would draw such
+  // an innings as closed while the model called it open.
+  ok("...and 'closed' is what the replay says, not that the event is present",
+     /const inningsClosed=inn\?\.sealed===true/.test(engine));
   ok("...and it opens the same review", /onReview=\{\(\)=>setModal\("inningsReview"\)\}/.test(engine));
+}
+
+// ── The gate is in the model, not only in the path ───────
+group("The reducer refuses a seal the review did not produce");
+{
+  // This is the half the group above cannot reach, and the reason it no longer
+  // has to: engine.jsx is one producer of innings_end, and the guarantee has to
+  // hold for every other — an offline queue replaying, a second device at a
+  // handover, a delivery released from quarantine, the server folding the log.
+  // Read as source text, the gate was a regex over one React file. Here it is a
+  // property of the fold. The exhaustive version lives in group H of
+  // packages/scoring/test/replay.test.mjs; these three are the sheet's own
+  // contract with it.
+  const played = [
+    inningsStart({ battingTeam: "A", bowlingTeam: "B", squad: SQ_A, bowlingSquad: SQ_B, overs: 1 }),
+    batters({ striker: "p1", nonStriker: "p2" }), bowler({ bowler: "w1" }),
+    ...Array.from({ length: 6 }, () => runs(1)),
+  ];
+  const inn = deriveInnings(played);
+  ok("the innings is over and NOT closed before the confirm",
+     inn.complete === true && inn.sealed === false);
+  ok("...and an innings_end that carries no confirmed figures does not close it",
+     deriveInnings([...played, inningsEnd({ reason: inn.endReason })]).sealed === false);
+  // The figures on the seal are the figures this sheet renders, because both
+  // come off the same derived innings — which is what makes the sheet the
+  // evidence rather than the decoration.
+  const seal = sealInnings(inn);
+  const shown = sheet(inn);
+  ok("the seal carries exactly the figures the sheet showed",
+     shown.includes(`${seal.confirmed.runs}/${seal.confirmed.wickets}`)
+     && new RegExp(`>${Math.floor(seal.confirmed.balls / 6)}\\.${seal.confirmed.balls % 6} overs<`).test(shown));
+  ok("...and that seal closes the innings", deriveInnings([...played, seal]).sealed === true);
 }
 
 console.log("\n" + "─".repeat(52));

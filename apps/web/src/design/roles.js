@@ -92,6 +92,13 @@ const ROLE_IDENTITY = {
   facilities:             { label:"Groundskeeper", icon:"🌿", color:"#22e7d1", family:"operations" },  // 9.58:1
   // commercial — money
   finance:                { label:"Finance Admin", icon:"💰", color:"#83cb16", family:"commercial" },  // 7.51:1
+  // SCRBRD-030 split the old `finance` bundle: this is the commercial half,
+  // sponsorship.finance.read included, kept out of the school office's own
+  // grantable list the same way finance itself is. Same family as finance —
+  // both are "money" — a different hue so the two are never mistaken for one
+  // another: 11.55 dE from its nearest neighbour (Super Admin's gold) and
+  // 6.69:1 on the darkest surface, checked, not chosen by eye.
+  sponsorship:            { label:"Sponsorship", icon:"🤝", color:"#d1ae00", family:"commercial" },  // 6.69:1
   // media — telling people about it
   media:                  { label:"Media", icon:"📰", color:"#f59ec9", family:"media" },  // 7.58:1
   // competition — running a competition
@@ -127,6 +134,10 @@ const NAV_CAPABILITY = {
   logistics:     "transport.read",
   calendar:      "fixture.read",
   fields:        "facility.read",
+  // The read side of match_duties' own union — each sub-select carries its
+  // own capability regardless of this entry, so a role sees no more here
+  // than it would opening one fixture's duty roster at a time.
+  readiness:     "fixture.read",
   // The same capability the appointments themselves are read under. Nav mirrors
   // the API; the API is the security — a destination that appears for somebody
   // who may not read a fixture would show them an empty screen, not a leak,
@@ -169,7 +180,7 @@ const NAV_GROUPS = [
   { key:"play",    label:"Play",       items:["dashboard","news","matches","calendar","competitions","leagues","officials"] },
   { key:"people",  label:"People",     items:["squad","profiles","injuries","staff"] },
   { key:"develop", label:"Develop",    items:["analytics","skills","training"] },
-  { key:"operate", label:"Operate",    items:["logistics","fields","sponsors"] },
+  { key:"operate", label:"Operate",    items:["logistics","fields","sponsors","readiness"] },
   { key:"admin",   label:"Administer", items:["management","modules","pitchdeck"] },
   { key:"you",     label:"You",        items:["notifications","settings","rulebook"] },
 ];
@@ -248,6 +259,7 @@ const NAV_META = {
   logistics:    { icon:"🚌",  label:"Logistics"    },
   calendar:     { icon:"📅",  label:"Calendar"     },
   fields:       { icon:"🌿",  label:"Fields"       },
+  readiness:    { icon:"🛡️",  label:"Readiness"    },
   officials:    { icon:"🧑‍⚖️", label:"Officials"    },
   staff:        { icon:"🔧",  label:"Staff"        },
   sponsors:     { icon:"🤝",  label:"Sponsors"     },

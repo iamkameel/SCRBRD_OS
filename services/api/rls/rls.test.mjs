@@ -10,7 +10,8 @@
 import { ROLES, ROLE_CAPABILITIES, roleGrants, SCORING_ROLES, SUBJECT_SCOPED_ROLES } from "@scrbrd/policy/roles";
 import { TABLES, referencedCapabilities, isCapabilityExpression, maskedColumns } from "@scrbrd/policy/tables";
 import { ALL_CAPABILITIES, SENSITIVE, isCapability } from "@scrbrd/policy/capabilities";
-import { main, authz, timeBox, WITHDRAWN_SINCE_01, ADDED_SINCE_01 } from "./generate-rls.mjs";
+import { main, authz, timeBox, WITHDRAWN_SINCE_01, ADDED_SINCE_01, ROLES_ADDED_SINCE_01 } from "./generate-rls.mjs";
+import { GRANTABLE_ROLES } from "@scrbrd/policy/roles";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -79,7 +80,8 @@ group("B. Role → capability rows");
 ok("rows are replaced wholesale", /DELETE FROM role_capability;/.test(SQL));
 {
   let missing = 0, wrong = 0;
-  for (const role of ROLES) {
+  // A role added after db/01 shipped is granted by its own db/NN; group B3.
+  for (const role of ROLES.filter((r) => !(r in ROLES_ADDED_SINCE_01))) {
     for (const cap of ROLE_CAPABILITIES[role]) {
       // ...except a capability the model gained after db/01 shipped, which the
       // db/NN in ADDED_SINCE_01 grants instead. Held to that in group B2.
@@ -100,7 +102,8 @@ ok("rows are replaced wholesale", /DELETE FROM role_capability;/.test(SQL));
   ok("every granted capability is emitted", missing === 0);
   ok("no ungranted capability is emitted", wrong === 0);
 }
-ok("all roles appear", ROLES.every((r) => SQL.includes(`('${r}', `)));
+ok("all roles shipped in db/01 appear",
+   ROLES.filter((r) => !(r in ROLES_ADDED_SINCE_01)).every((r) => SQL.includes(`('${r}', `)));
 
 // ── B2. Capabilities added after db/01 shipped ───────────
 // The mirror of WITHDRAWN_SINCE_01. A name here must be absent from db/01
@@ -136,6 +139,33 @@ group("B2. Capabilities added after db/01 shipped");
   ok("db/01's capability count in its header is the shipped count, not the model's",
      shipped.includes(`-- ${ALL_CAPABILITIES.length - added.length} capabilities across`));
 }
+// ── B3. Roles added after db/01 shipped ──────────────────
+// The same property for a whole role: absent from the frozen file, present —
+// bundle, appointers and all — in the db/NN it names.
+group("B3. Roles added after db/01 shipped");
+{
+  const DB = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "db");
+  const shipped = authz();
+  for (const [role, file] of Object.entries(ROLES_ADDED_SINCE_01)) {
+    ok(`${role} is a role in the model`, ROLES.includes(role));
+    ok(`${role} appears nowhere in the emitted db/01`, !shipped.includes(`'${role}'`));
+    const path = join(DB, file);
+    ok(`${file} exists`, existsSync(path));
+    const ledger = existsSync(path) ? readFileSync(path, "utf8") : "";
+    const row = (a, b) => new RegExp(`\\('${a}',\\s+'${b.replaceAll(".", "\\.")}'\\)`).test(ledger);
+    const unlisted = ROLE_CAPABILITIES[role].filter((c) => !row(role, c));
+    ok(`${file} grants ${role} its whole bundle — missing: ${unlisted.join(", ") || "none"}`, unlisted.length === 0);
+    const extra = ALL_CAPABILITIES.filter((c) => !roleGrants(role, c) && row(role, c));
+    ok(`...and nothing else — extra: ${extra.join(", ") || "none"}`, extra.length === 0);
+    const granters = Object.entries(GRANTABLE_ROLES).filter(([, g]) => g.includes(role)).map(([k]) => k);
+    const ungranted = granters.filter((g) => !row(g, role));
+    ok(`${file} lets every appointer in roles.mjs appoint it — missing: ${ungranted.join(", ") || "none"}`,
+       granters.length > 0 && ungranted.length === 0);
+  }
+  ok("db/01's role count in its header is the shipped count, not the model's",
+     shipped.includes(`capabilities across ${ROLES.length - Object.keys(ROLES_ADDED_SINCE_01).length} roles.`));
+}
+
 // No role-shaped decision function survives in the SQL. Scoring authority is
 // app_can('scoring.edit', ...) over assignments; a can_score(role) helper would
 // answer the question without a scope, which is how the old model leaked.

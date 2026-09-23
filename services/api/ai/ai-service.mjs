@@ -88,6 +88,48 @@ export function maskNames(text, names = []) {
 
 const TOKEN_RULE = "People are referred to by tokens like PLAYER_1 and PLAYER_2. Those are names: use them verbatim, exactly as written, wherever you would use the person's name, and never invent a name for them.";
 
+/*
+ * Figures, not stored anywhere, computed HERE.
+ *
+ * /read/career returns the raw counts the two career views aggregate and no
+ * ratios, for the reason its own comment gives: the division-by-zero cases are
+ * the interesting ones and SQL would have to pick a lie for each. A batter who
+ * has never been out has NO average, which is not an average of zero; a bowler
+ * who has taken no wicket has no bowling average and no strike rate. So each
+ * ratio is null when its denominator is, and a null is written as a phrase
+ * saying why rather than as a number.
+ */
+const rate = (num, den, dp) => (den > 0 ? (num / den).toFixed(dp) : null);
+const matchesWord = (n) => `${n} ${n === 1 ? "match" : "matches"}`;
+
+/**
+ * One player's figures as a line the model can quote from.
+ *
+ * `matches` is the "is there a record at all" test, not `runs`: the career
+ * views carry `WHERE matches > 0`, and /read/career left-joins them and
+ * coalesces the misses to 0. So 0 balls off 0 matches is a player who has
+ * never faced one, and 0 runs off 12 balls in 1 match is a real duck. Printing
+ * both as "0" would hand the model a fabricated figure and no way to tell.
+ */
+function careerLine(name, c) {
+  const n = (k) => Number(c?.[k] ?? 0);
+  const bat = n("bat_matches") === 0 ? "no record" : [
+    matchesWord(n("bat_matches")),
+    `${n("runs")} runs off ${n("balls_faced")} balls`,
+    rate(100 * n("runs"), n("balls_faced"), 1) ? `SR ${rate(100 * n("runs"), n("balls_faced"), 1)}` : "no strike rate (no ball faced)",
+    rate(n("runs"), n("dismissals"), 2) ? `average ${rate(n("runs"), n("dismissals"), 2)}` : "no average (never dismissed)",
+    `${n("fours")}x4 ${n("sixes")}x6`,
+  ].join(", ");
+  const bowl = n("bowl_matches") === 0 ? "no record" : [
+    matchesWord(n("bowl_matches")),
+    `${n("wickets")} wickets`,
+    `${n("runs_conceded")} runs off ${n("balls_bowled")} legal balls`,
+    rate(6 * n("runs_conceded"), n("balls_bowled"), 2) ? `economy ${rate(6 * n("runs_conceded"), n("balls_bowled"), 2)}` : "no economy (no legal ball bowled)",
+    rate(n("runs_conceded"), n("wickets"), 2) ? `average ${rate(n("runs_conceded"), n("wickets"), 2)}` : "no average (no wicket)",
+  ].join(", ");
+  return `${name} — batting: ${bat}; bowling: ${bowl}`;
+}
+
 /**
  * The data Stats-Magic may see: built HERE, from the read path, under the
  * caller's own identity.
@@ -99,21 +141,51 @@ const TOKEN_RULE = "People are referred to by tokens like PLAYER_1 and PLAYER_2.
  * under RLS and the masking views, the same door every screen uses, and the
  * client sends a question and nothing else. No session, no context: the read
  * path refuses before any of this runs.
+ *
+ * `career` is keyed on the ROSTER, by player_id, and every stats line is
+ * written with the roster's own `full_name` — never the career row's. That is
+ * deliberate and it is the masking guarantee: `names` is collected from the
+ * roster, askStatsMagic masks the whole context string with exactly that list,
+ * and a stats line that introduced a name the roster did not carry would go to
+ * the provider in clear. Keying the other way round would be one join away
+ * from doing precisely that.
  */
-export function contextFrom({ players = [], matches = [] }) {
+export function contextFrom({ players = [], matches = [], career = [] }) {
   const names = players.map((p) => p.full_name).filter(Boolean);
   const roster = players.map((p) => [p.full_name, p.playing_role, p.team_code, p.school_name].filter(Boolean).join(", ")).join("; ");
   const fixtures = matches.slice(0, 8).map((m) =>
     `${m.team_code ?? "?"} v ${m.opponent ?? m.away_team_code ?? "?"} ${m.starts_at ? String(m.starts_at).slice(0, 10) : ""} ${m.status ?? ""}`.trim()).join("; ");
-  return { names, context: `Players: ${roster || "(none)"}. Recent fixtures: ${fixtures || "(none)"}.` };
+  const byId = new Map(career.filter((c) => c?.player_id).map((c) => [String(c.player_id), c]));
+  const played = [], unplayed = [];
+  for (const p of players) {
+    if (!p.full_name) continue;
+    const c = byId.get(String(p.id));
+    // A career row of coalesced zeros and no career row at all say the same
+    // thing — nothing has been recorded — and are named together.
+    if (Number(c?.bat_matches ?? 0) || Number(c?.bowl_matches ?? 0)) played.push(careerLine(p.full_name, c));
+    else unplayed.push(p.full_name);
+  }
+  // Named rather than silently absent. A roster of thirty and figures for six
+  // invites the model to read the other twenty-four as unknown when what is
+  // known about them is that nothing has been recorded.
+  const none = unplayed.length ? ` Nothing recorded yet in the ball log for: ${unplayed.join("; ")}.` : "";
+  const figures = played.length
+    ? ` Career figures, from the deliveries this user may read: ${played.join(". ")}.${none}`
+    : (unplayed.length ? ` No career figures: nothing recorded yet in the ball log for any of them.` : "");
+  return { names, context: `Players: ${roster || "(none)"}. Recent fixtures: ${fixtures || "(none)"}.${figures}` };
 }
 
 export async function statsMagicContext(pool, secret, bearer, read = readResource) {
-  const [players, matches] = await Promise.all([
+  const [players, matches, career] = await Promise.all([
     read(pool, secret, bearer, "players"),
     read(pool, secret, bearer, "matches"),
+    read(pool, secret, bearer, "career"),
   ]);
-  return contextFrom({ players: players?.rows ?? players ?? [], matches: matches?.rows ?? matches ?? [] });
+  return contextFrom({
+    players: players?.rows ?? players ?? [],
+    matches: matches?.rows ?? matches ?? [],
+    career: career?.rows ?? career ?? [],
+  });
 }
 
 /**

@@ -86,8 +86,12 @@ const Lbl = ({ children, sx }) => (
 
 const Sep = ({ sx }) => <div style={{height:"1px",background:D.border,...sx}} />;
 
-const Badge = ({ children, color, sx }) => (
-  <span style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.12em",
+// `rest` carries data-* and aria-* attributes through, the way Card and
+// Sheet already do — without it, a data-testid passed to a Badge is
+// silently dropped, which is what left review-reason (InningsReviewSheet)
+// unfindable until SCRBRD-052's browser walk was the first thing to look.
+const Badge = ({ children, color, sx, ...rest }) => (
+  <span {...rest} style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.12em",
     textTransform:"uppercase",padding:"3px 8px",borderRadius:D.pill,
     background:`${color||D.indigo}1e`,color:color||D.indigo,
     border:`1px solid ${color||D.indigo}30`,flexShrink:0,...sx}}>{children}</span>

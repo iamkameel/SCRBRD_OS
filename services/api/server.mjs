@@ -41,6 +41,7 @@ import { importRoutes, IMPORTS } from "./io/import-api.mjs";
 import { eventRoutes, amendmentRoutes, quarantineRoutes, squadRoutes, tossRoutes, conditionsRoutes, officialRoutes, availabilityRoutes, transportRoutes } from "./write/events-api.mjs";
 import { scoutingRoutes, featureRoutes, drsRoutes, broadcastRoutes, sponsorRoutes, moduleAdminRoutes } from "./write/scouting-api.mjs";
 import { assessmentRoutes, accessRequestRoutes, developmentNoteRoutes, guardianLinkRoutes } from "./write/assessment-api.mjs";
+import { disciplineRoutes } from "./write/discipline-api.mjs";
 import { sessionRoutes } from "./realtime/session-routes.mjs";
 import { deviceRoutes, notificationRoutes, transportFor } from "./notify/push-api.mjs";
 import { rewardWeightRoutes } from "./rewards/weights-api.mjs";
@@ -225,6 +226,7 @@ const read    = readRoute({ pool, secret: SECRET });
 const assess  = assessmentRoutes({ pool, secret: SECRET });
 const access  = accessRequestRoutes({ pool, secret: SECRET });
 const notes   = developmentNoteRoutes({ pool, secret: SECRET });
+const conduct = disciplineRoutes({ pool, secret: SECRET });
 const amend   = amendmentRoutes({ pool, secret: SECRET });
 const quarantine = quarantineRoutes({ pool, secret: SECRET });
 const guard   = guardianLinkRoutes({ pool, secret: SECRET });
@@ -487,6 +489,11 @@ const PLAYER_ROUTES = [
   [/^\/api\/players\/([^/]+)\/access-request$/, "POST", access.ask],
   [/^\/api\/access-requests\/([^/]+)\/decide$/, "POST", access.decide],
   [/^\/api\/players\/([^/]+)\/notes$/,          "POST", notes.write],
+  // A disciplinary matter (SCRBRD-053). No module tag: a school cannot switch
+  // off a safeguarding record the way it switches off Analytics, and the
+  // module gate can only ever refuse — so tagging this would be a setting
+  // that makes an umpire unable to file an incident.
+  [/^\/api\/players\/([^/]+)\/discipline$/,     "POST", conduct.file],
   // Scouting: a guardian's own decision about their own child, and nobody
   // else's — no administrative override exists in scouting_consent_set().
   // NOT gated by the scouting module, deliberately, though everything else
@@ -503,6 +510,7 @@ const PLAYER_ROUTES = [
   [/^\/api\/players\/([^/]+)\/guardians\/consent$/,    "POST", guard.consent],
   [/^\/api\/players\/([^/]+)\/guardians\/withdraw$/,   "POST", guard.withdraw],
   [/^\/api\/notes\/([^/]+)$/,                    "PATCH", notes.revise],
+  [/^\/api\/discipline\/([^/]+)$/,               "PATCH", conduct.progress],
   [/^\/api\/amendments\/([^/]+)\/decide$/,       "POST", amend.decide],
   [/^\/api\/quarantine\/([^/]+)\/resolve$/,       "POST", quarantine.resolve],
 ];

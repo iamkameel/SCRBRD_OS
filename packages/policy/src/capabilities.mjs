@@ -367,23 +367,134 @@ export const PLATFORM_ONLY = Object.freeze([
 
 export const ALL_CAPABILITIES = Object.freeze(Object.keys(CAPABILITIES));
 
-/** Capabilities that expose a minor's sensitive information. */
-export const SENSITIVE = Object.freeze([
-  "player.note.read",
-  "player.pii.read",
-  // An adult's name and number, tied to a named minor. Logged like the rest.
-  "player.emergency.read",
-  "player.biometric.read",
-  // The ID number of a minor. More sensitive than anything else here: a
-  // diagnosis heals, an address changes, a South African ID number is issued
-  // once and is useful to a fraudster for the rest of that child's life.
-  "player.identity.read",
-  // The nature of a minor's injury is health information about a child, so it
-  // belongs here even though it is a tier below the clinical notes.
-  "medical.nature.read",
-  "medical.details.read",
-  "discipline.read",
-  "discipline.write",
-]);
+/**
+ * SCRBRD-030. `Roles&Duty.md` §2.3's five levels, on every capability:
+ *
+ *   0  Public                — anyone with a login, or the terrace, could see it
+ *   1  Internal Operational  — the school's own running of itself; nobody's
+ *                              personal life
+ *   2  Restricted Personal   — a named person's own information, or an
+ *                              adult's vetting status; not clinical, not candid
+ *   3  Highly Sensitive      — candid, clinical, or disciplinary; the record
+ *                              a subject-access request has to be able to find
+ *   4  Ultra-Restricted      — durable, fraud-usable, or a full diagnosis;
+ *                              the two fields with no safe fallback tier below them
+ *
+ * Two decisions worth stating rather than leaving implicit in a number:
+ *
+ * `platform.support.impersonate` carries no personal field of its own — it is
+ * the capability to become anyone else's session, already time-boxed and
+ * audited by its own mechanism (SCRBRD-012). Levelled here at 3 anyway: a
+ * scale meant to bound risk that stopped at "does this literally read a
+ * column" would call the master key less sensitive than a coach's note, which
+ * is backwards. It masks no column, so it will not appear in the join below —
+ * its protection is the audit trail, not this scale.
+ *
+ * `sponsorship.finance.read` is commercially confidential ("a coach who can
+ * see a boundary board has no business seeing the contract behind it") but is
+ * not personal information about anyone, minor or adult. Left at 1 rather
+ * than folded into a scale whose top three levels are all named for a
+ * PERSON'S data — the separation from `sponsorship.read` is already that
+ * capability's own protection, and this scale should not blur what it means
+ * by reaching for it to cover an unrelated kind of confidentiality.
+ */
+export const LEVEL = Object.freeze({
+  // ── Institution & identity ──
+  "school.read": 0, "school.manage": 1,
+  "user.read": 1, "user.invite": 1, "user.role.assign": 1, "audit.read": 1,
+
+  // ── Squad & people ──
+  "team.read": 0, "team.manage": 1, "team.select": 1,
+  // A small window into a child's home life — the file's own words.
+  "availability.read": 2, "availability.declare": 2,
+  "player.profile.read": 1, "player.profile.manage": 1,
+  "player.pii.read": 2,
+  "player.emergency.read": 2, "player.emergency.manage": 2,
+  // Bowling/training load and the breaches on a named child's record —
+  // narrower than development.read on purpose (see the capability's own
+  // comment), and bodily rather than merely sporting.
+  "player.workload.read": 2,
+  // A school-wide ceiling, not a child's own data — the policy knob, not the load.
+  "player.workload.manage": 1,
+  "recognition.manage": 0,
+  "clearance.read": 2, "clearance.manage": 2,
+  // Match figures: a scorecard, meant to be public.
+  "player.performance.read": 0, "player.performance.write": 1,
+  "player.development.read": 1, "player.development.write": 1,
+  // Candid prose about a child, not a number — see the capability's own comment.
+  "player.note.read": 3, "player.note.write": 3,
+
+  // ── Fixtures & scoring ──
+  "fixture.read": 0, "fixture.create": 1, "fixture.update": 1, "fixture.cancel": 1,
+  "scoring.start": 1, "scoring.edit": 1, "scoring.finalise": 1,
+  "scoring.correct": 1, "scoring.amend.request": 1, "scoring.amend.approve": 1,
+  "officiating.assign": 1, "officiating.report": 1, "officiating.registry.manage": 1,
+
+  // ── Health — the three tiers named in the capabilities' own comment ──
+  "medical.status.read": 2, "medical.nature.read": 3,
+  // The clinical record: diagnosis and who is treating them. POPIA-sensitive
+  // health information with no safe fallback tier below it.
+  "medical.details.read": 4,
+  "medical.write": 3,
+
+  // ── A minor's identity, split three ways ──
+  "player.roster.read": 0,
+  "player.age.read": 2,
+  "player.biometric.read": 3,
+  // "The single most dangerous field about a child in the schema" — the
+  // capability's own words. Durable, unique, fraud-usable for life.
+  "player.identity.read": 4,
+
+  "guardian.link.manage": 2,
+
+  "player.access.request": 1, "player.access.grant": 1,
+
+  // ── Conduct ──
+  "discipline.read": 3, "discipline.write": 3,
+
+  // ── Operations ──
+  "transport.read": 1, "transport.manage": 1, "transport.drive": 1,
+  "facility.read": 0, "facility.manage": 1,
+
+  // ── Money ──
+  "invoice.read": 2, "invoice.manage": 2,
+  // A sponsor's name and logo are meant to be seen — the capability's own comment.
+  "sponsorship.read": 0, "sponsorship.manage": 1, "sponsorship.exclusivity.waive": 1,
+  "sponsorship.finance.read": 1,
+
+  // ── Competition ──
+  "competition.read": 0, "competition.manage": 1,
+
+  // ── Publishing ──
+  "news.read": 0, "news.publish.team": 1, "news.publish.school": 1,
+  "news.publish.competition": 1, "broadcast.publish": 1,
+
+  // ── Analysis ──
+  "analytics.read": 1,
+  // Bounded to cricket columns and aggregates, never a person — the
+  // capability's own comment.
+  "opposition.read": 1,
+  // A specific child's talent evaluation, watched externally.
+  "scouting.read": 2, "scouting.write": 2,
+
+  // ── Platform ──
+  "platform.health.read": 1, "platform.tenant.manage": 1,
+  "scouting.accredit": 1,
+  "platform.support.impersonate": 3,
+  "platform.feature.manage": 1, "platform.reward.manage": 1,
+  "school.feature.manage": 1,
+});
+
+/**
+ * Capabilities classified level 2 (Restricted Personal) or higher — derived,
+ * not hand-listed, so a capability cannot be sensitive in one file and not
+ * the other. Widened by SCRBRD-030 from a hand-picked nine to everything the
+ * ordered scale actually places there: `player.age.read`,
+ * `medical.status.read`, `guardian.link.manage`, `clearance.read/manage`,
+ * `invoice.read/manage`, `scouting.read/write` and `availability.*` are new
+ * members, not omissions corrected — the scale is wider than the set it
+ * replaces on purpose.
+ */
+export const SENSITIVE = Object.freeze(ALL_CAPABILITIES.filter((c) => LEVEL[c] >= 2));
 
 export const isCapability = (c) => Object.hasOwn(CAPABILITIES, c);

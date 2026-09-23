@@ -65,6 +65,7 @@ const SponsorsView      = view(() => import("./views/SponsorsView.jsx"),      "S
 const ModulesView       = view(() => import("./views/ModulesView.jsx"),       "ModulesView");
 const PitchDeckView     = view(() => import("./views/PitchDeckView.jsx"),     "PitchDeckView");
 const ProfilesView      = view(() => import("./views/ProfilesView.jsx"),      "ProfilesView");
+const ReadinessOverview = view(() => import("./views/ReadinessOverview.jsx"), "ReadinessOverview");
 const RulebookView      = view(() => import("./views/RulebookView.jsx"),      "RulebookView");
 const SettingsView      = view(() => import("./views/SettingsView.jsx"),      "SettingsView");
 const SkillsView        = view(() => import("./views/SkillsView.jsx"),        "SkillsView");
@@ -390,6 +391,7 @@ export default function SCRBRD_OS() {
     logistics:    <LogisticsView     role={role}/>,
     calendar:     <CalendarView      role={role} onNav={setPage}/>,
     fields:       <FieldsView        role={role}/>,
+    readiness:    <ReadinessOverview role={role}/>,
     staff:        <StaffView         role={role}/>,
     officials:    <OfficialsView     role={role}/>,
     sponsors:     <SponsorsView      role={role}/>,

@@ -5,9 +5,11 @@
  *   C. the Laws-of-Cricket cases the artifact's counters got wrong
  *   D. replay is deterministic and order-independent given seq
  *   E. the wire round-trip (client event ↔ ball_event row) is lossless
+ *   H. an innings is over when the laws say so, and closed only when a scorer
+ *      has confirmed the figures the log actually holds (SCRBRD-038)
  */
 import {
-  deriveInnings, deriveMatch, fmtOvers, confirmationState,
+  deriveInnings, deriveMatch, fmtOvers, confirmationState, sealInnings, SEAL_REFUSAL,
   inningsStart, batters, bowler, ball, penalty, retire, inningsEnd,
   BALL_TYPE, KIND, toRow, fromRow, isLegal,
   voidEvent, undoLast, lastUndoableIndex, newEventId,
@@ -134,13 +136,26 @@ group("A. Derived aggregates");
   const notCut = deriveInnings([...open(), ...Array.from({ length: 6 }, () => ball({ type: BALL_TYPE.RUN, value: 1 }))]);
   ok("without the revision, six balls is not an innings", notCut.complete === false);
 
-  const first = [...open(), ball({ type: BALL_TYPE.RUN, value: 6 }), inningsEnd({ reason: "declared" })].map((e) => ({ ...e, innings: 0 }));
-  const chase = (target, runs, done = true) => [
-    ...open().map((e) => ({ ...e, innings: 1 })),
-    { ...revision({ target }), innings: 1 },
-    ...Array.from({ length: runs }, () => ({ ...ball({ type: BALL_TYPE.RUN, value: 1 }), innings: 1 })),
-    ...(done ? [{ ...inningsEnd({ reason: "overs_complete" }), innings: 1 }] : []),
-  ];
+  // Both innings are closed with sealInnings(), not with a hand-rolled
+  // innings_end. A seal carries the figures the scorer read back and is refused
+  // if the log does not produce them — see group F — so a fixture that asserts
+  // "this innings is over" without them is asserting nothing the reducer honours.
+  const firstPlayed = [...open(), ball({ type: BALL_TYPE.RUN, value: 6 })];
+  const first = [...firstPlayed, sealInnings(deriveInnings(firstPlayed), "declared")]
+    .map((e) => ({ ...e, innings: 0 }));
+  const chase = (target, runs, done = true) => {
+    const played = [
+      ...open().map((e) => ({ ...e, innings: 1 })),
+      { ...revision({ target }), innings: 1 },
+      ...Array.from({ length: runs }, () => ({ ...ball({ type: BALL_TYPE.RUN, value: 1 }), innings: 1 })),
+    ];
+    if (!done) return played;
+    // A chase that reached the revised target ended on its own and says so. One
+    // that did not was called by the umpires, which is `abandoned` — and the
+    // result still stands on the revised target, which is what is being tested.
+    const inn = deriveInnings(played);
+    return [...played, { ...sealInnings(inn, inn.endReason ?? "abandoned"), innings: 1 }];
+  };
   ok("a chase that reaches the REVISED target wins, though it scored fewer than the first innings",
      deriveMatch([...first, ...chase(4, 4)]).result?.winner === "HIL" || deriveMatch([...first, ...chase(4, 4)]).result?.winner != null);
   const r4 = deriveMatch([...first, ...chase(4, 4)]).result;
@@ -268,7 +283,7 @@ group("D. Strike rotation and innings end");
   ]);
   ok("innings ends when overs are done", short.complete === true);
   ok("explicit end reason recorded",
-     deriveInnings([...open(), inningsEnd({ reason: "declared" })]).endReason === "declared");
+     deriveInnings([...open(), sealInnings(deriveInnings(open()), "declared")]).endReason === "declared");
 
   // SCRBRD-038. An innings that ends by itself now says WHY, so the review the
   // scorer confirms can name the reason and the innings_end written on that
@@ -303,10 +318,13 @@ group("D. Strike rotation and innings end");
   // An explicit event wins over the derivation, which is what makes a
   // declaration expressible at all: the same log, nine down inside the overs,
   // is "declared" only because somebody said so.
-  const declaredEarly = deriveInnings([
+  const declaredPlayed = [
     ...open(),
     ...Array.from({ length: 4 }, () => ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" })),
-    inningsEnd({ reason: "declared" }),
+  ];
+  const declaredEarly = deriveInnings([
+    ...declaredPlayed,
+    sealInnings(deriveInnings(declaredPlayed), "declared"),
   ]);
   ok("an explicit reason is not overwritten by the derivation",
      declaredEarly.endReason === "declared", declaredEarly.endReason);
@@ -322,6 +340,66 @@ group("D. Strike rotation and innings end");
   ok("retirement is not a wicket", r.wickets === 0);
 }
 
+// ── D. Order-independence, given seq ─────────────────────
+//
+// SCRBRD-017. The header above has claimed this since before there was a
+// test for it. `seq` is the one thing every read path that feeds a replay
+// actually sorts by (services/api/realtime/session-routes.mjs's catch-up
+// query, read-api.mjs's `phases`/`shot_points`, all `order by ... seq`) —
+// deliberately just `seq`, not `(epoch, seq)`: it is allocated as
+// `max(seq)+1` per match at insert time (services/api/write/events-api.mjs),
+// so it is already a single global order across every device and epoch that
+// ever wrote to this match, and there is no second column left for a tie to
+// need breaking on.
+//
+// This does not prove the read paths sort correctly — that is what their own
+// suites are for (realtime.test.mjs's reconnect-from-lastSeq coverage is the
+// transport half of this same property). It proves the fold itself: handed
+// events in the wrong order, deriveInnings() gives a different, wrong
+// answer, and handed the same events sorted by seq — however they arrived —
+// it gives the one true answer back every time.
+group("D. Replay is deterministic and order-independent, given seq");
+{
+  // A wicket for the striker AFTER the run that puts him on 4 — reordering
+  // these two must change the result (he cannot be out for 4 before he has
+  // scored it), which is what makes the "unsorted differs" assertion below
+  // a real check rather than one that would pass on a log shuffling cannot
+  // actually disturb.
+  const canonical = [...open(), runs(4), ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" })]
+    .map((e, i) => ({ ...e, seq: i + 1 }));
+  const correct = deriveInnings(canonical);
+  ok("sanity: the striker is out for 4, not 0", correct.wickets === 1 &&
+     correct.batsmen.find(b => b.id === "p1").runs === 4);
+
+  const shuffled = [...canonical].reverse(); // deterministic "wrong order", not flaky randomness
+  const wrong = deriveInnings(shuffled);
+  ok("out of seq order, the fold gives a different, wrong answer — proving order really matters",
+     JSON.stringify(wrong) !== JSON.stringify(correct));
+
+  const resorted = [...shuffled].sort((a, b) => a.seq - b.seq);
+  ok("sorted back by seq alone, the shuffled log derives the identical result",
+     JSON.stringify(deriveInnings(resorted)) === JSON.stringify(correct));
+
+  // A second, larger shuffle — not reversed this time — for the same
+  // property on a log with more to get wrong: two overs, a strike rotation,
+  // a bowler change, and a wicket partway through.
+  const longCanonical = [
+    ...open(), runs(1), runs(4), runs(0), runs(2), runs(6),
+    ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" }),
+    batters({ striker: "p3" }), runs(1), runs(1), runs(0), runs(2), runs(0),
+    bowler({ bowler: "w2" }), runs(1), runs(4), runs(1), runs(0), runs(1), runs(1),
+  ].map((e, i) => ({ ...e, seq: i + 1 }));
+  const longCorrect = deriveInnings(longCanonical);
+  // A fixed permutation (not Math.random()) so a failure is reproducible
+  // rather than a coin flip that only sometimes catches a regression.
+  const longShuffled = longCanonical.slice().sort((a, b) => ((a.seq * 7) % 19) - ((b.seq * 7) % 19));
+  ok("the eighteen-event log is genuinely out of order before sorting",
+     longShuffled.map(e => e.seq).join(",") !== longCanonical.map(e => e.seq).join(","));
+  ok("...and still derives identically once sorted back by seq",
+     JSON.stringify(deriveInnings(longShuffled.slice().sort((a, b) => a.seq - b.seq))) ===
+     JSON.stringify(longCorrect));
+}
+
 // ── E. Determinism, match level, and the wire ────────────
 group("E. Determinism, match derivation, wire round-trip");
 {
@@ -330,10 +408,12 @@ group("E. Determinism, match derivation, wire round-trip");
   ok("replay does not mutate the log", log.length === 6 && log[3].value === 4);
 }
 {
+  const firstInnings = [...open(), runs(10)];
   const m = deriveMatch([
-    ...open().map(e => ({ ...e, innings: 0 })),
-    ...[runs(10)].map(e => ({ ...e, innings: 0 })),
-    inningsEnd({ innings: 0, reason: "overs_complete" }),
+    ...firstInnings.map(e => ({ ...e, innings: 0 })),
+    // Declared: ten off one ball is not an innings the laws have ended, and a
+    // seal may only name an ending the laws derive when they derive it.
+    { ...sealInnings(deriveInnings(firstInnings), "declared"), innings: 0 },
     { ...inningsStart({ battingTeam: "Westville Boys'", bowlingTeam: "Hilton College", squad: SQ_B, bowlingSquad: SQ_A, overs: 20, target: 11 }), innings: 1 },
     { ...batters({ striker: "w1", nonStriker: "w2" }), innings: 1 },
     { ...bowler({ bowler: "p1" }), innings: 1 },
@@ -589,6 +669,182 @@ group("G. Where the ball went");
   const inn = { striker: "p1", squad: [{ id: "p1", name: "A", batHand: "L" }, { id: "p2", name: "B" }] };
   ok("a left-hander is read from the squad", batHandOf(inn) === "L");
   ok("...and an unmarked player defaults to right", batHandOf(inn, "p2") === "R");
+}
+
+/* ── H. The seal, and what it takes to close an innings ───
+ *
+ * SCRBRD-038 asked for a checkpoint between the last ball and a closed innings.
+ * The review sheet was that checkpoint, and it was the ONLY one: the reducer
+ * honoured any innings_end unconditionally, so the gate lived in one React
+ * component tree and the model beneath it would have closed an innings on the
+ * strength of an event that said so. It did not need bad faith — a stale seal
+ * out of an offline queue, or a delivery released from quarantine landing before
+ * one, is a bad afternoon of signal.
+ *
+ * What is asserted below is the reducer's half, for each of the three endings
+ * the laws derive, and it is the half that holds on the server, on a second
+ * device at a handover, and in any replay of the log:
+ *
+ *   an innings is not closed until a scorer has confirmed THESE figures,
+ *   and a seal may not name an ending the log does not produce.
+ *
+ * `complete` is deliberately left alone by all of this. An innings is over when
+ * the laws say so whether or not anybody has pressed anything — that is what the
+ * banner on the scoring screen is for — and confusing "over" with "closed" is
+ * the distinction this group exists to keep.
+ *
+ * Falsified by returning null from sealRefusal() (everything here but the
+ * derivation assertions goes red), and by dropping the FIGURES_MOVED clause
+ * alone (the stale-seal assertions go red and nothing else does).
+ */
+group("H. The seal — over is not closed (SCRBRD-038)");
+{
+  const sq = (n) => Array.from({ length: n }, (_, i) => ({ id: `p${i + 1}`, name: `P${i + 1}` }));
+  const start = (o) => [
+    inningsStart({ battingTeam: "A", bowlingTeam: "B", squad: sq(5), bowlingSquad: SQ_B, overs: 20, ...o }),
+    batters({ striker: "p1", nonStriker: "p2" }), bowler({ bowler: "w1" }),
+  ];
+  const wkt = () => ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" });
+
+  // One log per ending, each ended by the laws and nothing else.
+  const ENDINGS = [
+    ["all_out",        [...start({}), ...Array.from({ length: 4 }, wkt)]],
+    ["overs_complete", [...start({ overs: 1 }), ...Array.from({ length: 6 }, () => runs(1))]],
+    ["target_reached", [...start({ target: 6 }), runs(6)]],
+  ];
+  const OTHER = (r) => ["all_out", "overs_complete", "target_reached"].filter((x) => x !== r);
+
+  for (const [reason, played] of ENDINGS) {
+    const over = deriveInnings(played);
+    ok(`${reason}: the laws end the innings and name it`,
+       over.complete === true && over.endReason === reason);
+    ok(`${reason}: ...and it is NOT closed on the strength of that`, over.sealed === false);
+
+    // The bare assertion the reducer used to accept.
+    const bare = deriveInnings([...played, inningsEnd({ reason })]);
+    ok(`${reason}: an innings_end with no figures does not close it`,
+       bare.sealed === false && bare.sealRefused === SEAL_REFUSAL.UNCONFIRMED);
+    ok(`${reason}: ...and the innings still reads as over, not as closed`,
+       bare.complete === true && bare.endReason === reason);
+
+    // The seal the review writes.
+    const sealed = deriveInnings([...played, sealInnings(over)]);
+    ok(`${reason}: a confirmed seal closes it`,
+       sealed.sealed === true && sealed.sealRefused === null);
+    ok(`${reason}: ...carrying the reason the laws derived`, sealed.endReason === reason);
+
+    // A seal that names one of the other two derivable endings, with figures
+    // that are otherwise perfectly correct.
+    for (const wrong of OTHER(reason)) {
+      const mislabelled = deriveInnings([...played,
+        inningsEnd({ reason: wrong, confirmed: { runs: over.runs, wickets: over.wickets, balls: over.balls } })]);
+      ok(`${reason}: a seal claiming ${wrong} is refused`,
+         mislabelled.sealed === false && mislabelled.sealRefused === SEAL_REFUSAL.NOT_THE_LAWS_REASON);
+      ok(`${reason}: ...and the log still says ${reason}`, mislabelled.endReason === reason);
+    }
+
+    // Each figure on its own, because a check on the total alone would pass a
+    // seal that had the runs right and the wickets wrong.
+    for (const [field, value] of [["runs", over.runs + 1], ["wickets", over.wickets + 1], ["balls", over.balls + 1]]) {
+      const moved = deriveInnings([...played, inningsEnd({ reason,
+        confirmed: { runs: over.runs, wickets: over.wickets, balls: over.balls, [field]: value } })]);
+      ok(`${reason}: a seal whose ${field} the log does not produce is refused`,
+         moved.sealed === false && moved.sealRefused === SEAL_REFUSAL.FIGURES_MOVED);
+    }
+
+    // An innings that has not ended cannot be closed as though it had — the
+    // other half of the gate, and the one that says a seal is about THIS
+    // occurrence of the innings ending rather than about the innings.
+    const early = [...start({}), runs(1)];
+    const inProgress = deriveInnings(early);
+    const forced = deriveInnings([...early,
+      inningsEnd({ reason, confirmed: { runs: inProgress.runs, wickets: inProgress.wickets, balls: inProgress.balls } })]);
+    ok(`${reason}: cannot be claimed by an innings still in progress`,
+       forced.sealed === false && forced.sealRefused === SEAL_REFUSAL.NOT_THE_LAWS_REASON);
+    ok(`${reason}: ...which leaves the innings open`,
+       forced.complete === false && forced.endReason === null);
+  }
+
+  // A seal that does not say why. This used to be the most dangerous shape in
+  // the model, because the constructor filled it in: inningsEnd({}) asserted
+  // that the overs had run out, in any innings, at any score.
+  const oneOver = [...start({ overs: 1 }), ...Array.from({ length: 6 }, () => runs(1))];
+  const figs = deriveInnings(oneOver);
+  ok("a seal with no reason no longer claims that the overs ran out",
+     inningsEnd({}).reason === null);
+  const unsaid = deriveInnings([...oneOver,
+    inningsEnd({ confirmed: { runs: figs.runs, wickets: figs.wickets, balls: figs.balls } })]);
+  ok("...and a reasonless seal is refused even with the right figures",
+     unsaid.sealed === false && unsaid.sealRefused === SEAL_REFUSAL.NO_REASON);
+
+  // THE STALE SEAL. A delivery arriving before the seal in the log is exactly
+  // what quarantine release produces (db/14 appends at max(seq)+1, so a ball
+  // held back by a stale epoch lands after everything already stored) and what
+  // a second device's queue produces at a handover. The figures the scorer
+  // confirmed are then not the figures of the innings, and the innings needs
+  // confirming again rather than closing on a review of a different score.
+  const allOutPlayed = [...start({}), ...Array.from({ length: 4 }, wkt)];
+  const goodSeal = sealInnings(deriveInnings(allOutPlayed));
+  const overtaken = deriveInnings([...allOutPlayed, runs(6), goodSeal]);
+  ok("a seal overtaken by a delivery is refused", overtaken.sealed === false);
+  ok("...naming the figures as the reason", overtaken.sealRefused === SEAL_REFUSAL.FIGURES_MOVED);
+  ok("...and the innings is over, unclosed, at the figures the log actually holds",
+     overtaken.complete === true && overtaken.runs === 6 && overtaken.endReason === "all_out");
+  // And the same seal, in the log it was written for, stands.
+  ok("the same seal stands where it belongs",
+     deriveInnings([...allOutPlayed, goodSeal]).sealed === true);
+
+  // A re-confirmation after the figures moved. This is what the banner sends
+  // the scorer back to do, and it has to work or the innings can never close.
+  const reconfirmed = [...allOutPlayed, runs(6)];
+  ok("re-confirming the moved figures closes it",
+     deriveInnings([...reconfirmed, sealInnings(deriveInnings(reconfirmed))]).sealed === true);
+
+  // The two endings no ball log implies. A captain's declaration and an
+  // umpire's abandonment are taken on the scorer's word — but only with the
+  // figures, because the point of the checkpoint is that somebody read them.
+  for (const spoken of ["declared", "abandoned"]) {
+    const played = [...start({}), runs(4)];
+    const inn = deriveInnings(played);
+    ok(`${spoken} is accepted with the figures, though the laws derive nothing`,
+       deriveInnings([...played, sealInnings(inn, spoken)]).endReason === spoken);
+    ok(`...and ${spoken} without them is not`,
+       deriveInnings([...played, inningsEnd({ reason: spoken })]).sealed === false);
+  }
+
+  // The seal has to survive the wire, or one that stood on the phone would be
+  // refused by the server folding the same log back.
+  const wire = fromRow({ ...toRow(goodSeal), seq: 9 });
+  ok("the confirmed figures ride the wire in the payload",
+     toRow(goodSeal).payload.confirmed?.wickets === 4);
+  ok("...and a seal that made the round trip still closes the innings",
+     deriveInnings([...allOutPlayed, wire]).sealed === true);
+
+  // And through the match-level fold, which is the server's path.
+  const m = deriveMatch([
+    ...allOutPlayed.map((e) => ({ ...e, innings: 0 })),
+    { ...goodSeal, innings: 0 },
+    ...allOutPlayed.map((e) => ({ ...e, innings: 1 })),
+    { ...inningsEnd({ reason: "all_out" }), innings: 1 },
+  ]);
+  ok("deriveMatch closes the sealed innings and not the asserted one",
+     m.innings[0].sealed === true && m.innings[1].sealed === false);
+
+  // sealInnings() cannot be talked into an event the reducer would refuse,
+  // which is why the scoring surface builds seals with it and not by hand.
+  const notOver = deriveInnings([...start({}), runs(1)]);
+  ok("sealInnings on an unfinished innings carries no reason", sealInnings(notOver).reason === null);
+  ok("...so it is refused rather than closing an innings in progress",
+     deriveInnings([...start({}), runs(1), sealInnings(notOver)]).sealed === false);
+  ok("sealInnings takes its figures from the innings, never from a caller",
+     JSON.stringify(sealInnings(figs).confirmed) === JSON.stringify({ runs: 6, wickets: 0, balls: 6 }));
+
+  // Replay stays pure over a log that contains a refusal.
+  const refusedLog = [...allOutPlayed, inningsEnd({ reason: "all_out" })];
+  ok("a log carrying a refused seal still derives deterministically",
+     JSON.stringify(deriveInnings(refusedLog)) === JSON.stringify(deriveInnings(refusedLog)));
+  ok("...and a later good seal clears the refusal",
+     deriveInnings([...refusedLog, goodSeal]).sealRefused === null);
 }
 
 console.log(`\n${"─".repeat(52)}\nSCORING SUITE: ${pass} passed, ${fail} failed`);

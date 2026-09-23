@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { DISMISSAL, DISMISSAL_LABEL, INNINGS_END_REASON } from "@scrbrd/scoring";
 import { D } from "../design/tokens.js";
+import { armHandover, cancelHandover, claimHandover, sessionState, verifyTakeover } from "../lib/handover.js";
 import { fmtOv } from "./format.js";
 import { SHOT_CATEGORIES } from "./shots.js";
 import { INT_TEAMS, ROLE_COLORS } from "./teams.js";
@@ -222,6 +223,243 @@ function RevisionSheet({overs,target,isChase,onConfirm,onClose}){
         </Btn>
       </div>
     </Sheet>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
+   HANDOVER SHEET — the scoring-session token, changing hands (SCRBRD-056)
+═══════════════════════════════════════════════════════ */
+// Two tabs because two different devices use this screen: the outgoing
+// scorer's phone arms a handover and reads the code aloud; the incoming
+// scorer's phone — a different login, usually a different device — enters
+// it. `startTab` opens straight on "take" when this device's own claim was
+// refused because a handover is already pending (engine.jsx's sync effect
+// sets that), so the person who needs to act next is not left on the wrong
+// tab of their own screen.
+const HANDOVER_POLL_MS = 2500;
+
+function HandoverSheet({ matchId, device, epoch, pending, ballInFlight, startTab = "hand", onHandedOver, onTakenOver, onClose }) {
+  const [tab, setTab] = useState(startTab);
+  return (
+    <Sheet title="Handover" accent={D.sky} onClose={onClose}>
+      <div style={{paddingTop:"14px",display:"flex",flexDirection:"column",gap:"14px"}}>
+        <div style={{display:"flex",gap:"6px"}}>
+          {[["hand","Hand over"],["take","Take over"]].map(([id,label])=>(
+            <button key={id} data-testid={`handover-tab-${id}`} onClick={()=>setTab(id)} className="pressBtn" style={{
+              flex:1,padding:"9px",borderRadius:D.pill,cursor:"pointer",border:"none",
+              fontFamily:D.head,fontSize:"11px",fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",
+              background:tab===id?D.grad:D.surf2,color:tab===id?"#fff":D.textMuted}}>
+              {label}
+            </button>
+          ))}
+        </div>
+        {tab==="hand"
+          ? <HandOverTab matchId={matchId} device={device} epoch={epoch} pending={pending} ballInFlight={ballInFlight}
+              onHandedOver={onHandedOver} onClose={onClose}/>
+          : <TakeOverTab matchId={matchId} device={device} onTakenOver={onTakenOver} onClose={onClose}/>}
+      </div>
+    </Sheet>
+  );
+}
+
+/** The outgoing scorer: arm, read the code aloud, wait, or change their mind. */
+function HandOverTab({ matchId, device, epoch, pending, ballInFlight, onHandedOver, onClose }) {
+  const [code, setCode] = useState(null);
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [waitingFor, setWaitingFor] = useState(null); // name of whoever claimed it, once known
+  const pollRef = useRef(null);
+
+  // Once armed, poll the session state a scorer may already read
+  // (match_duties, fixture.read) for the handover completing — the same
+  // field the pre-check in sync.js reads, so this needs no route of its own.
+  useEffect(() => {
+    if (!code) return;
+    let cancelled = false;
+    pollRef.current = setInterval(async () => {
+      const state = await sessionState(matchId);
+      if (cancelled) return;
+      if (state === "verifying") setWaitingFor("verifying");
+      else if (state === "active" || state === null) {
+        // Either genuinely handed over, or this device's own reclaim already
+        // fired and cleared the local code — either way there is nothing left
+        // to wait for on this screen.
+        clearInterval(pollRef.current);
+        onHandedOver?.();
+      }
+    }, HANDOVER_POLL_MS);
+    return () => { cancelled = true; clearInterval(pollRef.current); };
+  }, [code, matchId, onHandedOver]);
+
+  const arm = async () => {
+    setBusy(true); setError(null);
+    try {
+      const r = await armHandover(matchId, { device, pending: 0, ballInFlight: false });
+      if (r.ok) setCode(r.code);
+      else setError(r.reason);
+    } catch { setError("unreachable"); }
+    setBusy(false);
+  };
+
+  const cancel = async () => {
+    setBusy(true);
+    try { await cancelHandover(matchId, { device }); } catch { /* the poll above will settle it either way */ }
+    clearInterval(pollRef.current);
+    setCode(null); setBusy(false);
+    onClose?.();
+  };
+
+  if (pending > 0) return (
+    <div data-testid="handover-blocked-pending" style={{textAlign:"center",padding:"18px 8px",color:D.textSecondary,fontFamily:D.body,fontSize:"13px",lineHeight:1.6}}>
+      <div style={{fontSize:"28px",marginBottom:"8px"}}>📡</div>
+      <strong style={{color:D.amber}}>{pending} ball{pending===1?"":"s"} not yet uploaded.</strong><br/>
+      Move to better signal before handing over — a handover with unsynced balls would leave them on this
+      device only.
+    </div>
+  );
+  if (ballInFlight) return (
+    <div data-testid="handover-blocked-in-flight" style={{textAlign:"center",padding:"18px 8px",color:D.textSecondary,fontFamily:D.body,fontSize:"13px",lineHeight:1.6}}>
+      Finish recording this ball first — a delivery started mid-entry cannot be handed over part-way through.
+    </div>
+  );
+
+  if (!code) return (
+    <>
+      <div style={{color:D.textSecondary,fontFamily:D.body,fontSize:"13px",lineHeight:1.6,padding:"4px 2px"}}>
+        Issues a six-digit code for the person taking over. Read it to them, or send it — it is not a
+        password, only a claim ticket, and it expires the moment someone else claims this match's token.
+      </div>
+      {error&&<div style={{color:D.roseText,fontFamily:D.body,fontSize:"12px"}}>Could not arm a handover ({error}).</div>}
+      <Btn variant="primary" full disabled={busy} data-testid="handover-arm" onClick={arm}>
+        {busy?"Arming…":"Hand over scoring"}
+      </Btn>
+    </>
+  );
+
+  return (
+    <div style={{textAlign:"center",display:"flex",flexDirection:"column",gap:"14px"}}>
+      <div>
+        <Lbl sx={{marginBottom:"8px"}}>Give this code to the incoming scorer</Lbl>
+        <div data-testid="handover-code" style={{fontFamily:D.mono,fontSize:"36px",fontWeight:700,letterSpacing:"0.15em",
+          color:D.textPrimary,background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,padding:"16px"}}>
+          {code}
+        </div>
+      </div>
+      <div style={{color:D.textMuted,fontFamily:D.body,fontSize:"12px"}}>
+        {waitingFor==="verifying"
+          ? "They have the code — confirming the score now."
+          : "Waiting for them to enter it…"}
+      </div>
+      <Btn variant="ghost" full disabled={busy} data-testid="handover-cancel" onClick={cancel}>
+        {busy?"Cancelling…":"Cancel — keep scoring myself"}
+      </Btn>
+    </div>
+  );
+}
+
+/** The incoming scorer: the code, then an INDEPENDENT read of the physical scoreboard. */
+function TakeOverTab({ matchId, device, onTakenOver, onClose }) {
+  const [code, setCode] = useState("");
+  const [claimed, setClaimed] = useState(false);
+  const [claimError, setClaimError] = useState(null);
+  const [runs, setRuns] = useState(""); const [wickets, setWickets] = useState("");
+  const [overs, setOvers] = useState(""); const [ballsInOver, setBallsInOver] = useState("");
+  const [diff, setDiff] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const claim = async () => {
+    setBusy(true); setClaimError(null);
+    try {
+      const r = await claimHandover(matchId, { device, code: code.trim() });
+      if (r.ok) setClaimed(true);
+      else setClaimError(r.reason);
+    } catch { setClaimError("unreachable"); }
+    setBusy(false);
+  };
+
+  const ov = parseInt(overs, 10), bo = parseInt(ballsInOver, 10);
+  const ballsTotal = Number.isInteger(ov) && Number.isInteger(bo) ? ov * 6 + bo : NaN;
+  const valid = /^\d{1,3}$/.test(runs) && /^\d{1,2}$/.test(wickets) && Number.isInteger(ballsTotal) && bo >= 0 && bo <= 5;
+
+  const verify = async () => {
+    setBusy(true); setDiff(null);
+    const entered = { runs: parseInt(runs, 10), wickets: parseInt(wickets, 10), balls: ballsTotal };
+    try {
+      const r = await verifyTakeover(matchId, { device, ...entered });
+      if (r.ok) { onTakenOver?.(r.epoch); onClose?.(); }
+      else if (r.reason === "verify_mismatch" && r.exp_runs != null) {
+        // scoring_verify_takeover returns exp_runs/exp_wkts/exp_balls flat,
+        // not a diff array — the reference implementation's shape
+        // (scoring-session.mjs's diffConfirmation) is a design double, not
+        // what the live database function actually answers with. Built here
+        // rather than asked of the server, which already told us everything
+        // it has in those three fields.
+        const FIELD = { runs: "Runs", wickets: "Wickets", balls: "Balls (total, this innings)" };
+        const exp = { runs: r.exp_runs, wickets: r.exp_wkts, balls: r.exp_balls };
+        setDiff(Object.keys(FIELD)
+          .filter((f) => exp[f] !== entered[f])
+          .map((f) => ({ field: FIELD[f], expected: exp[f], got: entered[f] })));
+      } else setDiff([{ field: r.reason || "mismatch" }]);
+    } catch { setDiff([{ field: "unreachable" }]); }
+    setBusy(false);
+  };
+
+  if (!claimed) return (
+    <>
+      <div style={{color:D.textSecondary,fontFamily:D.body,fontSize:"13px",lineHeight:1.6,padding:"4px 2px"}}>
+        Ask the outgoing scorer for the six-digit code shown on their screen.
+      </div>
+      <div>
+        <Lbl sx={{marginBottom:"8px"}}>Code</Lbl>
+        <input data-testid="handover-code-entry" inputMode="numeric" maxLength={6} value={code}
+          onChange={e=>setCode(e.target.value.replace(/\D/g,"").slice(0,6))}
+          style={{width:"100%",padding:"14px",borderRadius:D.md,background:D.surf2,border:`1px solid ${D.border}`,
+            fontFamily:D.mono,fontSize:"26px",letterSpacing:"0.2em",textAlign:"center",color:D.textPrimary,boxSizing:"border-box"}}/>
+      </div>
+      {claimError&&<div style={{color:D.roseText,fontFamily:D.body,fontSize:"12px"}}>
+        {claimError==="verify_mismatch"?"That code doesn't match — check it and try again.":`Could not claim (${claimError}).`}
+      </div>}
+      <Btn variant="primary" full disabled={busy||code.length!==6} data-testid="handover-claim" onClick={claim}>
+        {busy?"Claiming…":"Claim this match"}
+      </Btn>
+    </>
+  );
+
+  return (
+    <>
+      <div style={{color:D.textSecondary,fontFamily:D.body,fontSize:"13px",lineHeight:1.6,padding:"4px 2px"}}>
+        Read the <strong>physical scoreboard</strong> — not this app — and type what it says. This is the
+        check that catches a gap before it becomes a disputed scorecard, so it does not fill itself in.
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px"}}>
+        <div><Lbl sx={{marginBottom:"6px"}}>Runs</Lbl>
+          <input data-testid="handover-verify-runs" inputMode="numeric" value={runs} onChange={e=>setRuns(e.target.value.replace(/\D/g,""))}
+            style={{width:"100%",padding:"11px",borderRadius:D.md,background:D.surf2,border:`1px solid ${D.border}`,fontFamily:D.mono,fontSize:"18px",color:D.textPrimary,boxSizing:"border-box"}}/></div>
+        <div><Lbl sx={{marginBottom:"6px"}}>Wickets</Lbl>
+          <input data-testid="handover-verify-wickets" inputMode="numeric" value={wickets} onChange={e=>setWickets(e.target.value.replace(/\D/g,""))}
+            style={{width:"100%",padding:"11px",borderRadius:D.md,background:D.surf2,border:`1px solid ${D.border}`,fontFamily:D.mono,fontSize:"18px",color:D.textPrimary,boxSizing:"border-box"}}/></div>
+        <div><Lbl sx={{marginBottom:"6px"}}>Overs</Lbl>
+          <input data-testid="handover-verify-overs" inputMode="numeric" value={overs} onChange={e=>setOvers(e.target.value.replace(/\D/g,""))}
+            style={{width:"100%",padding:"11px",borderRadius:D.md,background:D.surf2,border:`1px solid ${D.border}`,fontFamily:D.mono,fontSize:"18px",color:D.textPrimary,boxSizing:"border-box"}}/></div>
+        <div><Lbl sx={{marginBottom:"6px"}}>Balls (0–5)</Lbl>
+          <input data-testid="handover-verify-balls" inputMode="numeric" value={ballsInOver} onChange={e=>setBallsInOver(e.target.value.replace(/\D/g,""))}
+            style={{width:"100%",padding:"11px",borderRadius:D.md,background:D.surf2,border:`1px solid ${D.border}`,fontFamily:D.mono,fontSize:"18px",color:D.textPrimary,boxSizing:"border-box"}}/></div>
+      </div>
+      {diff&&(
+        <div data-testid="handover-verify-mismatch" style={{color:D.roseText,fontFamily:D.body,fontSize:"12px",lineHeight:1.6,
+          background:`${D.rose}0e`,border:`1px solid ${D.rose}33`,borderRadius:D.md,padding:"10px 12px"}}>
+          <strong>That doesn't match the server's log.</strong>
+          {diff.map((d,i)=>(
+            <div key={i}>{d.expected!==undefined
+              ? `${d.field}: expected ${d.expected}, entered ${d.got}`
+              : `Reason: ${d.field}`}</div>
+          ))}
+        </div>
+      )}
+      <Btn variant="primary" full disabled={busy||!valid} data-testid="handover-verify-confirm" onClick={verify}>
+        {busy?"Checking…":"Confirm and take over"}
+      </Btn>
+    </>
   );
 }
 
@@ -695,4 +933,4 @@ function InningsReviewSheet({inn,inningsNo,onConfirm,onFixLastBall,onClose}){
   );
 }
 
-export { BattingOrderSheet, CustomBatEntry, Innings2Sheet, InningsReviewSheet, NewOverSheet, NoBallSheet, PenaltySheet, RevisionSheet, ShotSelectorSheet, WicketSheet };
+export { BattingOrderSheet, CustomBatEntry, HandoverSheet, Innings2Sheet, InningsReviewSheet, NewOverSheet, NoBallSheet, PenaltySheet, RevisionSheet, ShotSelectorSheet, WicketSheet };

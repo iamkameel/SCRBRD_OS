@@ -139,6 +139,18 @@ const FAMILIES = [
   [310, 345, "third",           "third",       "deep third",      "short third", null],
 ];
 
+/**
+ * The same table, as axes: one per family, at the middle of its arc. The
+ * spider chart (spatial.mjs) draws its spokes at these angles rather than
+ * evenly around a circle, so the shape it makes is the shape of the ground.
+ * `label` is the ring name — "cover", not "deep cover" — because a direction
+ * is not a depth.
+ */
+export const ANGULAR_FAMILIES = Object.freeze(FAMILIES.map(([from, to, key, label]) => {
+  const span = ((to - from) % 360 + 360) % 360;
+  return Object.freeze({ key, label, from, to, mid: norm(from + span / 2) });
+}));
+
 export function angularFamily(theta) {
   if (theta == null) return null;
   const t = norm(theta);

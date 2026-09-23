@@ -293,10 +293,14 @@ INSERT INTO app_user (id, school_id, email, name, role, player_id, teams) VALUES
 
 -- The bursar. A school with sponsors and no finance account is the same gap
 -- the registrar comment above describes: sponsorship.finance.read is held by
--- this role and by nothing else in the floor bundle, so without an account
--- carrying it, the masking on a contract's value could only ever be observed
--- from the outside — every reader masked, none unmasked, which proves the
--- column is absent rather than that it is guarded.
+-- the `sponsorship` role (SCRBRD-030 split it out of `finance`) and by
+-- nothing else in the floor bundle, so without an account carrying it, the
+-- masking on a contract's value could only ever be observed from the
+-- outside — every reader masked, none unmasked, which proves the column is
+-- absent rather than that it is guarded. Given both role_assignment rows
+-- below: one small-school bursar doing both jobs, which the split leaves a
+-- school free to choose or not choose — see the role's own comment in
+-- roles.mjs for why that choice, and not this account, is the point of it.
 INSERT INTO app_user (id, school_id, email, name, role) VALUES
   ('88888888-0000-0000-0000-000000000015', '11111111-1111-1111-1111-111111111111',
    'bursar@example.invalid', 'M du Toit', 'finance');
@@ -410,6 +414,7 @@ INSERT INTO role_assignment (id, person_id, role, school_id, team_code) VALUES
   ('a5510000-0000-0000-0000-000000000012', '88888888-0000-0000-0000-000000000012', 'guardian',        '11111111-1111-1111-1111-111111111111', NULL),
   ('a5510000-0000-0000-0000-000000000013', '88888888-0000-0000-0000-000000000013', 'guardian',        '11111111-1111-1111-1111-111111111111', NULL),
   ('a5510000-0000-0000-0000-000000000017', '88888888-0000-0000-0000-000000000015', 'finance',         '11111111-1111-1111-1111-111111111111', NULL),
+  ('a5510000-0000-0000-0000-00000000001b', '88888888-0000-0000-0000-000000000015', 'sponsorship',     '11111111-1111-1111-1111-111111111111', NULL),
   ('a5510000-0000-0000-0000-000000000018', '88888888-0000-0000-0000-000000000016', 'principal',       '11111111-1111-1111-1111-111111111111', NULL),
   ('a5510000-0000-0000-0000-000000000019', '88888888-0000-0000-0000-000000000017', 'driver',          '11111111-1111-1111-1111-111111111111', NULL),
   -- The Westville 1XI coach. Scoped to Westville and to 1XI exactly as the
@@ -729,7 +734,7 @@ INSERT INTO ball_event (
   scorer_user_id, device_id, idempotency_key, client_seq, client_ts,
   kind, ball_type, value, shot, seg, theta, radius,
   placement_source, capture_profile, contact, trajectory,
-  striker_id, bowler_id)
+  striker_id, bowler_id, dismissal)
 SELECT
   '77777777-0000-0000-0000-000000000004',
   '11111111-1111-1111-1111-111111111111',
@@ -785,7 +790,16 @@ SELECT
   -- every delivery bowled AT Hilton — and inflate his bowling career with an
   -- innings he did not bowl. bowler_id is nullable for exactly this case, and
   -- smoke-rating.mjs writes its own deliveries the same way.
-  NULL
+  NULL,
+  -- Bekker is bowled at 34, Cele is caught at 71 — real methods, from the
+  -- eleven db/13 knows, so player_dismissal_breakdown has something other
+  -- than an "unknown" bucket to show for the one seeded innings the pilot
+  -- carries. Nobody is credited with either wicket: the bowler above is
+  -- NULL for exactly the reason the comment beside it gives, so
+  -- player_wicket_breakdown is legitimately empty from this seed alone —
+  -- tools/smoke-dismissals.mjs supplies a bowler synthetically, the way
+  -- smoke-rating.mjs already supplies deliveries the seed itself cannot.
+  CASE WHEN n = 34 THEN 'bowled' WHEN n = 71 THEN 'caught' END
 FROM generate_series(1, 96) AS n;
 
 -- ── The officials register ───────────────────────────────────────
@@ -829,3 +843,27 @@ INSERT INTO match_official (match_id, school_id, duty, person_name, official_id,
   ('77777777-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'umpire', 'G Marais',  '0a000000-0000-0000-0000-000000000003', 'CSA Elite Panel'),
   ('77777777-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'third_umpire', 'A Willing Parent', NULL, NULL),
   ('77777777-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'umpire', 'T Sithole', '0a000000-0000-0000-0000-000000000004', 'Midlands Umpires Association');
+
+-- AN UMPIRE WHO CAN SIGN IN (SCRBRD-053). Every row above is a person on a
+-- panel; this is the same person holding an account and an appointment the
+-- authorization model can read. Without it `official` was the one role in the
+-- bundle list that nothing ever signed in as, so `officiating.report` and
+-- `discipline.write` could only be observed failing.
+--
+-- THE ASSIGNMENT NAMES ONE FIXTURE, which is the point of it. An official is
+-- appointed per match, not per team, and app_can() refuses a fixture-scoped
+-- assignment on any row that does not state that same fixture — so E Ndlovu
+-- can file an incident from the match he stood at and from no other. team_code
+-- is NULL because an umpire stands over both sides, not one of them.
+INSERT INTO app_user (id, school_id, email, name, role) VALUES
+  ('88888888-0000-0000-0000-000000000023', '11111111-1111-1111-1111-111111111111',
+   'e.ndlovu@example.invalid', 'E Ndlovu', 'official');
+
+INSERT INTO role_assignment (id, person_id, role, school_id, team_code, fixture_id) VALUES
+  ('a5510000-0000-0000-0000-000000000023', '88888888-0000-0000-0000-000000000023', 'official',
+   '11111111-1111-1111-1111-111111111111', NULL, '77777777-0000-0000-0000-000000000004');
+
+-- No disciplinary record is seeded. Nothing draws one yet (SCRBRD-053 shipped
+-- the API and the policy, not a screen), and the walk that exercises it
+-- asserts on counts — so it owns its own fixture rather than working around
+-- rows that arrived here.

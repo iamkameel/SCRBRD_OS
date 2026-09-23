@@ -645,6 +645,19 @@ function asCap(r) {
            appearances: r.appearances, firstOn: d10(r.first_on), lastOn: d10(r.last_on), firstMatchId: r.first_match_id,
            baselineSet: r.baseline_set, live: true };
 }
+/**
+ * A fixture's pitch report, in the client's vocabulary. Read by
+ * SCRBRD-058's FieldsView form to pre-fill an existing report before it is
+ * edited — `on conflict (match_id) do update` overwrites every column, so a
+ * form that started blank would silently null out whatever was not
+ * re-entered.
+ */
+function asPitchReport(r) {
+  return { matchId: r.match_id, surface: r.surface, grass: r.grass, bounce: r.bounce,
+           pace: r.pace, favours: r.favours, coversOn: r.covers_on, notes: r.notes,
+           bounceRating: r.bounce_rating, paceRating: r.pace_rating, outfield: r.outfield,
+           reportedAt: r.reported_at, live: true };
+}
 function asHonour(r) {
   return { id: r.id, playerId: r.player_id, name: r.full_name, school: r.school_id, team: r.team_code, kind: r.kind,
            awardName: r.name, label: r.label, season: r.season, citation: r.citation, awardedOn: d10(r.awarded_on),
@@ -929,6 +942,7 @@ const ADAPT = {
   equipment_issues: asIssue,
   recognition: asRecognition,
   player_shot_points: asShotPoint,
+  pitch_report: asPitchReport,
   caps: asCap,
   honours: asHonour,
   milestones: asMilestone,
@@ -1233,6 +1247,57 @@ export function useNotes(role, playerId, nonce = 0) {
 }
 
 export function useRows(resource, role, nonce = 0) { return useLive(resource, role, nonce).rows; }
+
+/**
+ * Duty-roster coverage for several fixtures at once. SCRBRD-062.
+ *
+ * `useLive("match_duties", role, 0, { matchId })` already reads this
+ * correctly for one fixture — the SLOTS union, "nothing on record" rather
+ * than "pending" — from `duties.jsx`'s `DutyRoster`. This is the same read,
+ * fanned out across the matches a sportsmaster actually wants to scan
+ * together, not a new formula: each fixture's count comes from the identical
+ * query and adapter, so it cannot read differently from what that fixture's
+ * own DutyRoster shows.
+ *
+ * Returns `{ coverage, loading }`, where `coverage` is a
+ * `Map<matchId, { rows, error }>` — `rows` in `asDuty` shape, ready for the
+ * same `SLOTS`/`byDuty` grouping `DutyRoster` already does. A fixture whose
+ * fetch failed gets its own `error` rather than being silently dropped from
+ * the map, so a screen reading it can say which fixture would not load
+ * rather than under-counting the whole board.
+ */
+export function useDutyCoverage(matchIds, role, nonce = 0) {
+  const ids = matchIds.filter(Boolean);
+  const key = ids.join(",");
+  const [state, setState] = useState({ coverage: new Map(), loading: ids.length > 0 });
+
+  useEffect(() => {
+    if (!ids.length) { setState({ coverage: new Map(), loading: false }); return; }
+    if (!signedIn()) {
+      // No demo fixture is registered for match_duties (see getData()), so
+      // every fixture reads as fully unrecorded — the same as DutyRoster
+      // shows for any single match in a demo session.
+      setState({ coverage: new Map(ids.map((id) => [id, { rows: [], error: null }])), loading: false });
+      return;
+    }
+    let cancelled = false;
+    setState((s) => ({ ...s, loading: true }));
+    (async () => {
+      const entries = await Promise.all(ids.map(async (id) => {
+        try {
+          const { rows } = await api(`/api/read/match_duties?matchId=${encodeURIComponent(id)}`);
+          return [id, { rows: rows.map(ADAPT.match_duties), error: null }];
+        } catch (e) {
+          return [id, { rows: [], error: e.code || "unreachable" }];
+        }
+      }));
+      if (!cancelled) setState({ coverage: new Map(entries), loading: false });
+    })();
+    return () => { cancelled = true; };
+  }, [key, role, nonce]);
+
+  return state;
+}
 
 /**
  * Live rows for a resource, falling back to what was passed in.

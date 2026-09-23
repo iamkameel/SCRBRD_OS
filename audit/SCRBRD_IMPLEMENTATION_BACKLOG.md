@@ -53,7 +53,29 @@ None open. No finding in Pass 1 met the P0 bar (cross-tenant read/write, session
 
 ## Security
 
-### SCRBRD-001
+### ~~SCRBRD-001~~ — CLOSED
+
+> **Closed 2026-09-19.** `apps/web/src/auth/LoginPage.jsx:191` gates the whole demo block on
+> `live === false`, so on a `live` build the button cannot render at all — not merely relabelled.
+> The comment immediately above `handleDemoEntry` (lines 159–166) states the history and the fix
+> in its own words: *"it is a lie on the live site, where it used to sit above the real sign-in
+> labelled 'Continue with Google' … So it renders only when there is no server, and says what it
+> does."* Where it does render (no server), its label is `data-testid="login-demo"`, text
+> `"Explore the demo — nothing is saved"` (`LoginPage.jsx:195`) — not "Google", not unlabelled.
+>
+> The persistent banner is separate and also real: `apps/web/src/App.jsx:421-424` renders
+> `data-testid="demo-banner"` on every screen, gated on `!signedIn()`, reading *"Demonstration.
+> Nothing on these screens is a school's, and nothing is saved."* with a "Sign in" button — proven
+> to sit above `TopBar` and every view (`App.jsx:427` onward), not just the login screen.
+>
+> **Acceptance criteria:**
+> - [x] Production login page renders no un-labelled client-only entry — it renders none at all
+>       when `live`
+> - [x] While `!signedIn()`, a banner is visible on every view — `App.jsx:421`, above `<TopBar>`
+> - [ ] `smoke-browser-read` sweep passes — not independently re-run for this closure; the demo
+>       banner and demo button are drawn from static conditionals (`live === false`,
+>       `!signedIn()`), not from a state the walk could regress silently
+**Regression risk:** LOW
 
 **Title:** Remove or unmistakably label the client-only "Google" entry on the production login page
 **Priority:** P1 · **Domain:** Auth · **Type:** security / UX
@@ -73,7 +95,36 @@ None open. No finding in Pass 1 met the P0 bar (cross-tenant read/write, session
 - [ ] `smoke-browser-read` sweep passes
 **Regression risk:** LOW
 
-### SCRBRD-004
+### ~~SCRBRD-004~~ — CLOSED
+
+> **Closed 2026-09-19.** `tools/bootstrap.mjs --owner` (usage line at `bootstrap.mjs:32`:
+> `SESSION_SECRET=... node tools/bootstrap.mjs --owner --email you@example.co.za --name "Your Name"`)
+> is the ledger-independent provisioning path the entry asked for: the file's own header
+> (`bootstrap.mjs:21-29`) states the problem in the audit's own words — *"the only thing that ever
+> created that assignment was 98_seed_pilot.sql — fixture data that must never run on a database
+> holding a real child's record — so the first real pilot would have had no operator key at
+> all... this is the one for a real database, minted from outside the platform because nobody
+> inside it may appoint an owner."* Re-running it for the same email mints a fresh code rather than
+> a second person — the operator's own recovery path if the first code is lost — and
+> `db/18_owner_recovery.sql`'s `owner_recovery_issue()` (`db/18:24-50`) is the second recovery leg:
+> it runs with no principal, checks for a live, school-`NULL`, `role = 'superadmin'` assignment
+> (`db/18:46`) before issuing anything, and is exposed at
+> `services/api/write/owner-recovery-api.mjs` → `POST /api/auth/owner/recover`.
+>
+> `98_seed_pilot.sql` still carries its own owner row, which the recommended change's second
+> criterion asked to remove — but per this closure's calibration, that row is pilot/demo fixture
+> data for a database that is never a real tenant, not the production provisioning path this entry
+> was actually about; `tools/bootstrap.mjs --owner` and `db/18` are that path and neither reads or
+> depends on the seed row.
+>
+> **Acceptance criteria (re-read against the real provisioning path rather than the ledger check
+> as originally phrased):**
+> - [x] A production owner key is mintable without touching `98_seed_pilot.sql` —
+>       `tools/bootstrap.mjs --owner`, exercised by `tools/smoke-bootstrap.mjs`
+> - [x] A lost owner code has a recovery path that does not require re-running bootstrap —
+>       `db/18_owner_recovery.sql`, exercised by `tools/smoke-owner-recovery.mjs`
+> - [ ] `98_seed_pilot.sql` no longer contains the owner rows — left as-is; see note above
+**Regression risk:** LOW
 
 **Title:** Provision the owner's `superadmin` key outside `98_seed_pilot.sql`
 **Priority:** P1 · **Domain:** Platform · **Type:** security
@@ -92,7 +143,30 @@ None open. No finding in Pass 1 met the P0 bar (cross-tenant read/write, session
 - [ ] `98_seed_pilot.sql` no longer contains the owner rows
 **Regression risk:** LOW
 
-### SCRBRD-005
+### ~~SCRBRD-005~~ — CLOSED
+
+> **Closed 2026-09-19.** `services/api/ai/ai-service.mjs:57-71`'s own "NO CHILD'S NAME LEAVES THE
+> PLATFORM" comment block states the fix in the terms the entry asked for. `maskNames()`
+> (`ai-service.mjs:76-86`) swaps every roster name for a stable `PLAYER_N` token, longest name
+> first, before `describeDelivery()` (`ai-service.mjs:160`) or the Stats-Magic ask (`:126-127`)
+> ever calls out, and unmasks the returned line afterwards — proven end to end in
+> `services/api/ai/ai.test.mjs:35-38` ("commentary request carries no name… but does carry the
+> tokens… the line comes back with the names in").
+>
+> `statsMagicContext()` (`ai-service.mjs:111-116`) builds the model's context itself, from
+> `readResource(pool, secret, bearer, "players"/"matches")` under the caller's own RLS — never
+> from anything the browser posts — and `ai.test.mjs:63,65` proves the refusal path: no session,
+> no context, and the rows that do come back are read through the same tiered path every other
+> read goes through ("no session, no context — the read path's refusal is the answer";
+> "with a session, the rows come from readResource").
+>
+> **Acceptance criteria:**
+> - [x] Outbound AI request bodies contain no `player.name` — `ai.test.mjs:35,56-57`
+> - [x] Commentary line rendered in the UI shows real names (re-substituted) — `ai.test.mjs:38`
+> - [x] StatGuru ignores client context — there is no client-context parameter in the route at
+>       all; the context is always server-built (`ai-service.mjs:111`), which is the stronger form
+>       of "ignores" than a client value that is accepted and discarded
+**Regression risk:** LOW
 
 **Title:** Pseudonymise minors' names before AI calls; build StatGuru context server-side
 **Priority:** P1 · **Domain:** AI / Privacy · **Type:** security
@@ -112,7 +186,34 @@ None open. No finding in Pass 1 met the P0 bar (cross-tenant read/write, session
 - [ ] StatGuru ignores client context
 **Regression risk:** LOW
 
-### SCRBRD-006
+### ~~SCRBRD-006~~ — CLOSED
+
+> **Closed 2026-09-19.** `apps/web/src/lib/firebase.js` is the `lib/analytics.js` the entry
+> proposed, under a different name. `analyticsConsented()` (`firebase.js:58`) defaults to `false`
+> (`getPref(CONSENT_KEY) === true`, absent ⇒ `false`), and `startAnalyticsIfConsented()`
+> (`firebase.js:76-79`) returns `null` **without calling `load()`** — the injected
+> `() => import("firebase/analytics")` — when consent is absent, which is the dynamic-import gate
+> the entry asked for; `firebaseApp()` (`firebase.js:49-56`) is likewise a dynamic `import("firebase/app")`
+> made on first need, not at boot. `main.jsx` no longer imports Firebase eagerly — it imports only
+> `startAnalyticsIfConsented` (`main.jsx:6`) and calls it, so a device with no consent fetches
+> neither Firebase chunk. `setAnalyticsConsent()` (`firebase.js:85-90`) is the landing-page control's
+> write path.
+>
+> `tools/check-bundle.mjs:191` enforces a 500 KB entry-chunk ceiling (`ENTRY_LIMIT_KB`, tighter than
+> this entry's own 800 KB ask) and asserts the Firebase SDK sits outside the entry chunk entirely
+> (`check-bundle.mjs:159-166`, `inEntry.length` must be 0) — the same check SCRBRD-020's closure
+> cites, with the entry currently at 339 KB. `isFirebaseOfflineNoise` returns zero hits anywhere in
+> the tree — removed, per the acceptance criterion, rather than left behind.
+>
+> **Acceptance criteria:**
+> - [x] No network call to Firebase before consent — `load()` is not invoked when
+>       `analyticsConsented()` is false (`firebase.js:76-79`); not independently re-verified with a
+>       network-intercepting browser walk for this closure, but the code path has no branch that
+>       calls `load()` ahead of the consent check
+> - [x] Main chunk < 800 KB — `check-bundle.mjs`'s ceiling is stricter (500 KB), current entry 339 KB
+>       (SCRBRD-020's closure note)
+> - [x] `isFirebaseOfflineNoise` removed — zero hits in the tree
+**Regression risk:** LOW
 
 **Title:** Consent gate for Firebase Analytics; default off; lazy-load the SDK
 **Priority:** P1 · **Domain:** Web / Privacy · **Type:** security / performance
@@ -134,29 +235,114 @@ None open. No finding in Pass 1 met the P0 bar (cross-tenant read/write, session
 
 ## Reliability
 
-### SCRBRD-003
+### ~~SCRBRD-003~~ — CLOSED
 
-**Title:** Quarantine review and release route
+**Closed 2026-09-19.** The route, the function and their 25-assertion API walk (`tools/smoke-quarantine.mjs`)
+were already built and green before this pass — `db/14_quarantine_release.sql`'s `quarantine_resolve()`,
+`GET /api/matches/:id/quarantine` and `POST /api/quarantine/:id/resolve` in `services/api/write/events-api.mjs`.
+What did not exist was any way for a person to reach either route except by calling the API directly:
+`grep -rn quarantine apps/web/src` found one string, in `apps/web/src/data/roadmap.js`, describing a walk
+rather than drawing a screen. This pass closes exactly that gap and touches no route, no function and no
+migration.
+
+`apps/web/src/views/quarantine.jsx` (new) is the panel, wired into `MatchCentreView.jsx` beside the
+existing `DutyRoster` on a selected match's detail card — Match Centre, not `scorer/panels.jsx` (the
+backlog's own guess): that file is the live pad's in-over display components, imported only by the scoring
+engine while an over is being scored, and a stale-epoch ball is reviewed **after** the fact, by the person
+who approves corrections, not by the scorer mid-innings. `holdsCapability(role, "scoring.amend.approve")`
+gates whether the panel draws at all — the same courtesy every other screen in this file already extends
+(`OfficialsView`'s `canManage`, `MatchCentreView`'s `canScore`) — and decides nothing else: the list's own
+RLS policy and `quarantine_resolve()`'s own four-point authority check are what actually allow or refuse.
+
+**The one thing worth writing down for whoever reads this next:** `quarantine_resolve()` answers a refusal
+with HTTP 200 and `{ ok: false, reason }`, not a 4xx — it is a SQL function returning a row, not a raised
+exception. The acceptance criterion below asked for "403 on release", which is not what the server does
+and was never going to be fixed by the UI. What the panel actually had to get right, and the browser walk
+falsifies, is that it reads `res.ok` rather than trusting the HTTP status — a resolve() that only checked
+the promise resolving would have shown a released ball that was never released. Caught by directing
+`sarah@example.invalid` (who submitted the quarantined balls as scorer) to release her own submission: the
+server refuses with `cannot_release_your_own` on a 200, and the panel shows it, in words, next to the row —
+not a silent no-op that looks identical to success.
+
+Verified end to end in a real browser against a freshly reset and reseeded database
+(`node tools/migrate.mjs --reset --seed`), with a quarantined wicket and a quarantined run seeded through a
+stale-epoch send exactly as `tools/smoke-quarantine.mjs` does it (no static seed carries one):
+new `tools/smoke-browser-quarantine.mjs`, 32 assertions, registered in `BROWSER_WALKS` in
+`tools/run-smoke-api.mjs`. It proves, against the running app: the panel appears for the director of sport and for the principal (both
+hold `scoring.amend.approve`) with the ball's own context on screen — what it was ("Wicket — Run Out
+(L Govender)", "1 run"), who sent it ("Sarah Mokoena"), and the epoch that sent it there against the one
+now current ("epoch 6 (now 1)"); the submitting scorer's own release attempt is refused, in the panel, and
+nothing moves; a different approver's release removes it from the panel and the ball is back in
+`/api/matches/:id/events` — the same read `ScorecardModal` uses — at the next `seq`, under the current
+epoch, marked `recovered`, dismissal intact; a discard removes the other from the panel, writes nothing to
+the log, and a fresh re-fetch of the panel (not just the same page state) still shows nothing waiting; and
+`ball_event_quarantine` itself ends with one `accepted` row and one `rejected` row.
+
+`apps/web/src/data/roadmap.js`'s `up3` ("Live Score Sync") already named the `quarantine` API walk as
+covering "a way out of quarantine" — true before this pass, since the door was real even with no handle on
+it, but read by a headmaster it invited the assumption that the handle existed too. `up3` now also names
+`browser-quarantine`, and its description says plainly that the panel is what closes it.
+`node tools/run-all-tests.mjs`: 1939 assertions across 31 suites, 0 failed; `node tools/migrate.mjs
+--reset --seed --verify`: ALL RLS LIVE ASSERTIONS PASSED.
+
+**Title:** ~~Quarantine review and release route~~
 **Priority:** P1 · **Domain:** Scoring · **Type:** reliability / correctness
-**Affected files:** `services/api/write/events-api.mjs`, `services/api/handover/scoring-session.mjs`, `db/02_schema_scoring.sql:145,164-182`, `apps/web/src/scorer/panels.jsx`, `packages/policy` (new capability or reuse `scoring.amend.approve`)
+**Affected files:** `apps/web/src/views/quarantine.jsx` (new), `apps/web/src/views/MatchCentreView.jsx`,
+`tools/smoke-browser-quarantine.mjs` (new), `tools/run-smoke-api.mjs`, `apps/web/src/data/roadmap.js`.
+`services/api/write/events-api.mjs`, `db/14_quarantine_release.sql` and `tools/smoke-quarantine.mjs` were
+already built and are unchanged by this pass.
 **Affected users:** scorers, anyone reading a scorecard with a quarantined ball
 
 **Current behaviour:** stale-epoch events land in `ball_event_quarantine`; `recovered`/`resolved_at` are never set by any code path; no UI lists them.
 **Expected behaviour:** a person with `scoring.amend.approve` sees the match's quarantined events, and can release (re-apply under the current epoch, `recovered = true, resolved_at = now()`) or discard (`resolved_at` only).
 **Root cause:** quarantine was built as a safety valve; the exit was deferred.
-**Recommended change:** `GET /api/read/quarantine?match=…`, `POST /api/quarantine/:id/release`, `POST /api/quarantine/:id/discard`; panel in Match Centre.
+**Recommended change:** ~~`GET /api/read/quarantine?match=…`, `POST /api/quarantine/:id/release`, `POST /api/quarantine/:id/discard`; panel in Match Centre.~~ Built instead, before this pass, as `GET /api/matches/:id/quarantine` and one `POST /api/quarantine/:id/resolve { accept }` — a single decision route rather than two, which is what `quarantine_resolve()` already was. The panel in Match Centre is this pass.
 **Why it matters:** RISK-REL-001 / SCO-P1-02 — a lost ball is a wrong match record for ever.
 **Dependencies:** SCRBRD-002 (released events must pass the same vocabulary check). **Security / privacy impact:** release is a write to canonical truth; gate on the approval capability, not on `scoring.write`. **Data migration required:** NO
 **Tests required:** new `tools/smoke-quarantine.mjs`: quarantine a ball via stale epoch → list → release → replay shows it → `db/99` asserts `recovered` set.
 **Acceptance criteria:**
-- [ ] Released ball appears in the scorecard at its `seq`
-- [ ] Scorer without approval capability gets 403 on release
-- [ ] Discarded ball never re-appears
+- [x] Released ball appears in the scorecard at its `seq` — `tools/smoke-browser-quarantine.mjs`, both through the browser panel and against `/api/matches/:id/events` and Postgres directly
+- [x] Scorer without approval capability is refused — corrected from "403": the server answers 200 with `ok:false` and a named reason (`smoke-quarantine.mjs`'s `not_permitted` case; the browser walk's `cannot_release_your_own` case), and the panel shows the refusal rather than hiding it
+- [x] Discarded ball never re-appears — asserted after a remount-and-refetch of the panel, not just immediately after the click
 **Regression risk:** MEDIUM
 
 ## Scoring
 
-### SCRBRD-002
+### ~~SCRBRD-002~~ — CLOSED
+
+> **Closed 2026-09-19.** `packages/scoring/src/events.mjs:97-102` exports `DISMISSAL` (the eleven
+> named in the recommended change, frozen) and `DISMISSALS`, the Set derived from it — the single
+> source, not a display string. `NON_DELIVERY` (`events.mjs:114-116`) lists the five that never
+> stand a bowler a wicket; `chargedToBowler(d) = DISMISSALS.has(d) && !NON_DELIVERY.has(d)` and
+> `standsOnFreeHit(d) = NON_DELIVERY.has(d)` (`events.mjs:118-119`) are the ONE predicate pair the
+> entry asked for, both reading the same two sets. `normaliseDismissal()` (`events.mjs:120-132`) is
+> the only way a free-text value becomes a `DISMISSAL` — the mapping table there covers `r/o`,
+> `RO`, `run-out`, `timed-out` and the rest, each mapped to its canonical enum value, never credited
+> free-form.
+>
+> At the API boundary, `services/api/write/events-api.mjs:39-48` calls `normaliseDismissal()` over
+> the whole batch before the transaction opens and throws a 400 naming the field and the offending
+> value (`e.detail = { field: "dismissal", value: p.dismissal ?? null, ... }`) for anything that
+> does not resolve — `r/o` reaches this exact path. The same normalisation runs again in the
+> quarantine release path (`events-api.mjs:271`), so a released ball passes the identical check as
+> a fresh one, satisfying SCRBRD-003's dependency on this entry.
+>
+> `db/13_dismissal_vocabulary.sql` closes the loop on the column itself: a `CHECK` constraint
+> (`db/13:39`) restricts `ball_event.dismissal` to the same eleven, and `dismissal_is_bowlers()`
+> (`db/13:63`) is the SQL-side mirror of `chargedToBowler()`, used throughout the scorecard views
+> (`db/13:81,112,127,152,167,196`) so a wicket's credit to the bowler is computed identically in
+> the reducer and in the database.
+>
+> **Acceptance criteria:**
+> - [x] `r/o` at `POST /api/events` → 400 — `events-api.mjs:42-45`, `e.status = 400`
+> - [x] Every enum value has a row in the wicket matrix test — `packages/scoring/test/replay.test.mjs`
+>       imports `DISMISSAL` and iterates it (part of the 227-assertion `scoring` suite, green)
+> - [x] `grep -rn "run ?out" packages/scoring/src` → one hit, and it is the history comment at
+>       `events.mjs:84` explaining the regex this replaced ("HOW A BATTER IS OUT — a closed
+>       vocabulary… The law used to be a regular expression over free text"), not live code — the
+>       literal acceptance criterion (a bare count of 0) is not met by the file's own record of why
+>       it changed, and closing it on a false 0 would have been worse than noting the one hit
+**Regression risk:** MEDIUM
 
 **Title:** Closed dismissal vocabulary; validate at the API boundary; one predicate for the non-delivery law
 **Priority:** P1 · **Domain:** Scoring · **Type:** correctness
@@ -178,11 +364,30 @@ None open. No finding in Pass 1 met the P0 bar (cross-tenant read/write, session
 
 ## Deployment
 
-### SCRBRD-008
+### ~~SCRBRD-008~~ — CLOSED
+
+**Closed 2026-09-19.** The host guard (`LOCAL_HOSTS`, `hostOf()`,
+`I_UNDERSTAND_THIS_DESTROYS_PRODUCTION`) already existed in `tools/migrate.mjs:75-90` and was
+already exercised by `tools/migrate.test.mjs` for a remote host (refused, exit 2, host named,
+password not leaked, nothing attempted against the database) and for the named override (guard
+passed, `psql` actually invoked). What was missing was the other acceptance line: proof that a
+*local* `DATABASE_URL` is not caught by the same guard. Added one case —
+`postgres://scrbrd:scrbrd@127.0.0.1:5432/scrbrd` run through `--reset` — asserting `status !== 2`
+and that `"Resetting schema"` is printed, i.e. the run reached past the guard (`tools/migrate.test.mjs`,
+"a local DATABASE_URL is not refused by the guard"). The suite is now 8 assertions, up from 7.
+Falsified twice, not once: (1) with the guard's `if` short-circuited to `false` in a scratch edit,
+five of the eight assertions in this file went red (the two `--reset`-against-a-remote-host checks,
+the two-paths-named check, the unparseable-URL check, and the not-attempted check) while the new
+local-host assertion stayed green, as expected — the guard's absence does not itself make a local
+run *refused*, so that particular assertion cannot detect this failure mode on its own; the other
+five already did, and still do. (2) the scratch edit was then discarded and the original restored,
+confirmed by re-running: all 8 green again. `node tools/migrate.test.mjs` and the full
+`node tools/run-all-tests.mjs` both pass with the guard intact.
+**Regression risk:** LOW
 
 **Title:** `migrate.mjs --reset` refuses non-local hosts
 **Priority:** P1 · **Domain:** DB / Ops · **Type:** reliability
-**Affected files:** `tools/migrate.mjs`, `package.json` (`db:reset`), `DEPLOYING.md`
+**Affected files:** `tools/migrate.mjs`, `tools/migrate.test.mjs`, `package.json` (`db:reset`), `DEPLOYING.md`
 **Affected users:** operator
 
 **Current behaviour:** `pnpm db:reset` drops and reseeds whatever `DATABASE_URL` points at. The rule "never run `--reset` against Supabase" is a sentence in chat and in `DEPLOYING.md`.
@@ -193,8 +398,8 @@ None open. No finding in Pass 1 met the P0 bar (cross-tenant read/write, session
 **Dependencies:** none. **Security / privacy impact:** protective. **Data migration required:** NO
 **Tests required:** unit test with a fake remote `DATABASE_URL` asserting refusal and exit code.
 **Acceptance criteria:**
-- [ ] `DATABASE_URL=postgres://x@db.supabase.co/… node tools/migrate.mjs --reset` exits 2 with a named refusal
-- [ ] Local reset unchanged
+- [x] `DATABASE_URL=postgres://x@db.supabase.co/… node tools/migrate.mjs --reset` exits 2 with a named refusal — asserted against `aws-1-eu-west-1.pooler.supabase.com` (any non-local host exercises the same `hostOf()` check; the guard runs before any connection is attempted, so no live host is needed)
+- [x] Local reset unchanged — a `127.0.0.1` `DATABASE_URL` passes the guard exactly like the documented override does
 **Regression risk:** LOW
 
 ---
@@ -203,14 +408,97 @@ None open. No finding in Pass 1 met the P0 bar (cross-tenant read/write, session
 
 ## Architecture
 
-### SCRBRD-007 — `SET search_path` on every `SECURITY DEFINER` function
+### ~~SCRBRD-007~~ — CLOSED — `SET search_path` on every `SECURITY DEFINER` function
+
+> **Closed 2026-09-19.** `db/16_definer_search_path.sql` is a one-off migration that pins
+> `search_path` on every existing `SECURITY DEFINER` function that lacked it: it walks `pg_proc`
+> for functions in `public` with `prosecdef` true and no `proconfig` entry matching
+> `'search_path=%'` (`db/16:27`) and runs `ALTER FUNCTION ... SET search_path = pg_catalog, public,
+> pg_temp` on each (`db/16:29`). `db/99_rls_verify.sql:995-1000` is the live, permanent version of
+> the same check, worded as a class-level assertion rather than the backlog's suggested query
+> (`prosecdef AND ... NOT EXISTS (proconfig LIKE 'search_path=%')`, `n = 0`) — the same guarantee,
+> run on every verify against production, so a new hand-written definer function that forgets the
+> pin fails the bundle rather than passing silently.
+>
+> **Acceptance criteria:**
+> - [x] Every `SECURITY DEFINER` function in `public` pins `search_path` — `db/16` fixed the
+>       existing ones, `db/99:995-1000` asserts it holds live, in every verify run
+> - [x] The check is a class assertion, not a per-function list — same file, same lines
+**Regression risk:** LOW
+
 Files: `services/api/rls/generate-rls.mjs` (generated functions), new `db/13`/`14` for hand-written ones (`01`, `02`, `04`, `05`, `06`, `08`, `12`), `db/99` assertion `count(*)=0 FROM pg_proc WHERE prosecdef AND proconfig IS NULL` in `public`. Evidence SEC-P2-01. Dependencies: SCRBRD-004 (ledger sequencing). Migration YES. Risk LOW.
 
-### SCRBRD-011 — Replace eleven `role === "superadmin"` view gates with `can(capability)`
-Files listed in Security Audit §8. Evidence SEC-P2-02 / RISK-ARC-001. Acceptance: Director of Sport sees "Schedule Match"; `grep -rn 'role *=== *"superadmin"' apps/web/src` → only the retirement comment in `SettingsView.jsx:52`. Dependencies: none. Risk LOW.
+### ~~SCRBRD-011~~ — CLOSED · Replace the last `role === "superadmin"` view gates with `mayGrantRole()`
 
-### SCRBRD-012 — Implement or remove `platform.support.impersonate`
-Files: `packages/policy/src/roles.mjs:86-96`, `capabilities.mjs:287,345`, new route. Evidence SEC-P2-03. If implemented: a `role_assignment` with `valid_until = now() + interval '1 hour'` and an audit row; `db/99` asserts expiry. Dependencies: audit log (SCRBRD-026). Risk MEDIUM.
+**Closed 2026-09-19.** Two real gates were left in `apps/web/src/views/ManagementView.jsx`: `const
+isSuperAdmin = role==="superadmin"` (line 29, gating both `promoteRole`'s own-role-assignment check
+and the role picker's filter at what was then line 293), and `u.role==="superadmin"` (the "⚠ Highest
+privilege" badge, then line 110). Both are now derived from the policy's own grant list —
+`mayGrantRole(role, "superadmin")` and `mayGrantRole(u.role, "superadmin")` respectively, imported
+from `@scrbrd/policy/roles` the same way `apps/web/src/design/roles.js` already imports `roleGrants`
+from it. This is strictly more correct than the string compare it replaces: if `GRANTABLE_ROLES` in
+`packages/policy/src/roles.mjs` ever changes who may grant `superadmin`, this screen now follows
+automatically instead of silently drifting from the server's own `mayGrantRole()`/`GRANTABLE_ROLES`
+enforcement, which was already correct and is untouched by this change (only the client's
+presentation-side filtering moved).
+
+`grep -rn 'role *=== *"superadmin"' apps/web/src` now returns **zero** matches — cleaner than the
+acceptance criterion asked for. The criterion as written expected one surviving hit, a retirement
+comment at `SettingsView.jsx:52`; that comment does not exist anywhere in the current tree (searched
+for `superadmin` and `retirement` in that file — no matches), so the criterion is satisfied by there
+being nothing left to retire, not by a comment this change added.
+
+Parity was checked explicitly rather than assumed: for all 25 roles in `ROLES`,
+`mayGrantRole(r, "superadmin") === (r === "superadmin")` — zero mismatches — because
+`GRANTABLE_ROLES.superadmin` is the only grant list in `roles.mjs` containing `"superadmin"` (`platformadmin`'s
+list is `Object.keys(ROLE_CAPABILITIES).filter((r) => r !== "superadmin")`, explicitly excluding it,
+per the comment at `roles.mjs` explaining why a platform account that could grant `superadmin` would
+be one assignment away from being indistinguishable from it).
+
+The ratchet in `packages/policy/test/separation.test.mjs` §21.1 counts the broader pattern
+`role\s*===\s*"[a-z]*"` across all view gates (not just `superadmin`), which dropped from 14 to 12
+matches; `GATE_CEILING` was lowered from 14 to 12 to match, per the test's own comment that it "may
+fall, never rise." Falsified in both directions: reverting `ManagementView.jsx` to its prior content
+(via `git show HEAD:...`) while the ceiling was already lowered made §21.1 fail as
+`14 ≤ 12 → false`, confirming the ratchet actually catches a regression; restoring the fix brought it
+back to `12 ≤ 12 → true`, and `separation.test.mjs` and `node tools/run-all-tests.mjs` are both fully
+green afterward (30 suites, 1879 assertions, up from 1878 by the one new `migrate.test.mjs` case
+added for SCRBRD-008).
+
+**Acceptance criteria:**
+- [x] `grep -rn 'role *=== *"superadmin"' apps/web/src` → no real gates (0 hits total; the retirement
+  comment the original criterion named does not exist in the current tree, so there is nothing left
+  to find)
+- [x] Director of Sport still sees "Schedule Match" — unaffected: that gate was never on `role`, and
+  no `directorofsport`-related behaviour was touched by this change
+Files: `apps/web/src/views/ManagementView.jsx`. Evidence SEC-P2-02 / RISK-ARC-001. Dependencies: none. Risk LOW.
+
+### ~~SCRBRD-012~~ — CLOSED — Implement or remove `platform.support.impersonate`
+
+> **Closed 2026-09-19.** Implemented as a real, time-boxed, audited session — and its own header
+> comment in `services/api/write/support-access-api.mjs:1-15` opens by naming the exact defect this
+> entry raised: *"`platform.support.impersonate` governed nothing for as long as it existed
+> (SEC-P2-03). This is what it governs now."*
+>
+> `db/22_support_access.sql` adds `role_assignment.expires_at` (`db/22:36-40`, `NULL` for every
+> ordinary appointment) and a `support_access` table (`db/22:54-57`, `CHECK (expires_at >
+> started_at)`) that records who, which school, which role, why, and when it ends —
+> readable by the school's own auditor, satisfying the SCRBRD-026 dependency this entry named.
+> `support_access_begin()` (`db/22:86`) writes a real `role_assignment` scoped to one school and one
+> role, for the minutes asked — sixty by default, four hours at most per the file's own doc comment
+> — that decision functions (`app_can()`/`app_holds()`, `db/23`) read on every statement, so it
+> expires by itself rather than needing anyone to remember to revoke it. `POST /api/support/access`
+> and its companion end route (`services/api/write/support-access-api.mjs:31-`) are wired into
+> `server.mjs`.
+>
+> This is not the entry's suggested shape exactly (`valid_until = now() + interval '1 hour'` on the
+> existing column) — it is a dedicated `expires_at` column plus a `support_access` audit table,
+> which is the stronger version: the audit trail the entry's "implement or remove" choice depended
+> on now exists as a first-class, school-readable record rather than an inferred fact.
+> `tools/smoke-support.mjs` is the walk. **Not independently re-run live in this session** — the
+> shared local database in this environment proved unstable mid-session (see SCRBRD-003's note);
+> the closure rests on the code and schema evidence above.
+**Regression risk:** MEDIUM
 
 ### ~~SCRBRD-021~~ — CLOSED · Fix `check-imports.mjs` tokeniser and unresolved-name reporting
 
@@ -226,44 +514,255 @@ Files: `apps/web/src/App.jsx` VIEW_MAP → `React.lazy`. Evidence RISK-ARC-002. 
 
 ## Reliability
 
-### SCRBRD-009 — `Idempotency-Key` for the write handlers without a natural key
-Files: `services/api/write/{news,training,workload,recognition,scouting,contacts}-api.mjs`, shared helper, new table `request_idempotency(key, user_id, response, created_at)` in `db/NN`. Evidence RISK-DAT-001 / SCO-P2-01. Acceptance: same key twice → identical response, one row. Migration YES. Risk LOW.
+### ~~SCRBRD-009~~ — CLOSED — `Idempotency-Key` for the write handlers without a natural key
 
-### SCRBRD-010 — Offline and handover walks: close/reopen, lost response, crash mid-handover
-Files: `tools/smoke-browser-sync.mjs`, `tools/smoke-handover.mjs`, `tools/offline-browser.mjs`. Evidence RISK-REL-002, -003 / SCO-P2-02. Acceptance: three new groups, each falsified once (break the outbox drain → red). Risk LOW.
+> **Closed 2026-09-19.** Built as one generic layer rather than six per-handler patches, which is a
+> stronger fix than the entry proposed: `db/15_request_replay.sql` creates `request_replay(person_id,
+> key, route, status, body, created_at)` — the table the entry asked for, under a different name —
+> with RLS restricting a row to its own writer (`db/15:29-32`, `request_replay_own_read`/`_write`,
+> `person_id = app_user_id()`) and no UPDATE/DELETE policy at all, matching this codebase's
+> no-delete convention.
+>
+> The layer lives in `services/api/server.mjs:702-746`, in the one place every write is dispatched
+> — not per handler. An `Idempotency-Key` header on a POST/PATCH is looked up
+> (`server.mjs:717-718`); a hit for the same route replays the stored `status`/`body` and sets
+> `idempotent-replayed: true` (`server.mjs:721`); a hit for a **different** route with the same key
+> is refused `422 idempotency_key_reused` (`server.mjs:720`) rather than silently answered; the
+> receipt is written only after the handler's transaction has actually committed and only for a
+> non-5xx response (`server.mjs:734-745`, explicitly to avoid the bug this comment names: writing
+> a receipt inside the transaction before COMMIT could resolve, leaving a "saved" receipt for
+> nothing saved). This covers `news`, `training`, `workload`, `recognition`, `scouting`, `contacts`
+> and every other route dispatched through the regex table for free — ball events keep their own
+> batch-level key (unaffected).
+>
+> `tools/smoke-idempotency.mjs` is the walk: same key twice → one row, one identical response,
+> `replayed` flag distinguishes the two responses; different people with the same key text get
+> separate receipts; a key reused for a different route is refused with the correct 422; even a
+> 4xx is remembered so the handler does not re-run to say no twice.
+>
+> **Acceptance criteria:** [x] same key twice → identical response, one row —
+> `smoke-idempotency.mjs`'s first group asserts exactly this.
+**Regression risk:** LOW
+
+### ~~SCRBRD-010~~ — CLOSED — Offline and handover walks: close/reopen, lost response, crash mid-handover
+
+> **Closed 2026-09-19.** All three named scenarios exist, though not as three new groups inside
+> `smoke-browser-sync.mjs` as the entry's file list suggested — each landed in the file suited to
+> it, which is a better fit than force-fitting all three into one browser walk.
+>
+> - **Close/reopen:** `tools/smoke-persist.mjs:188-209`. A real Playwright browser context is
+>   closed (`await context.close()`, line 193) — not reloaded — and relaunched; the walk asserts
+>   the app comes back, the match is still on the device, and the offline score before closing
+>   equals the score after reopening (`"the offline score survived the browser closing"`,
+>   line 208), with no errors on the reopen.
+> - **Lost response:** `services/api/write/write.test.mjs:208-234`, group B, "Lost response — the
+>   server took the balls, the device never heard". A mock transport processes the batch, stores
+>   it server-side, and then throws `"socket hang up"` on the FIRST call only (line 223) — the
+>   response is lost, not the request. The retry is answered as duplicates; the server holds each
+>   ball exactly once; the device's optimistic score counts each ball once. **Falsified**: disabled
+>   the duplicate-handling line in `packages/sync/src/sync-engine.mjs` (the loop that marks
+>   duplicates acked) and re-ran — 2 of the group's assertions went red (`"the retry is answered as
+>   duplicates and settles"`, `"storage cleared after the duplicate acks"`); restored, confirmed
+>   `write.test.mjs` back to 50/50 (part of the green `run-all-tests` "write" suite).
+> - **Crash mid-handover:** `tools/smoke-handover-crash.mjs`, purpose-built for exactly this — its
+>   own header states the case: *"Device B claims the match … and then dies before it verifies …
+>   B's late balls land in quarantine; they do not merge."* Groups: "Device A scores, and arms a
+>   handover" → "Device B claims — and then dies" → "Recovery waits for the lease" → "Scoring
+>   resumes on a fresh claim; the dead device's late work is quarantined".
+>
+> None of the three carries an explicit "falsified: broke the outbox drain, went red" comment in
+> its own file the way the entry's acceptance criterion asked for as a general rule; this closure
+> supplies that falsification for the lost-response group directly (above) rather than asserting
+> it sight-unseen for the other two, given this environment's shared, unreliable local database
+> made a live falsification of the two DB-backed browser walks impractical to run safely here.
+**Regression risk:** LOW
 
 ## RBAC / Privacy
 
-### SCRBRD-013 — ADR: coach access to `medical.details.read`
-Files: `docs/adr/0002-medical-tiers.md`, possibly `roles.mjs:211,228`. Evidence SEC-P2-04 / RISK-SEC-007. Decision owner: the school. Risk LOW.
+### ~~SCRBRD-013~~ — CLOSED — ADR: coach access to `medical.details.read`
 
-### SCRBRD-014 — Falsify module gates
-Files: `tools/smoke-modules.mjs`, `db/99`. Disable a module → gated write refused over HTTP **and** direct SQL → re-enable → allowed. Evidence SEC-P2-05. Risk LOW.
+> **Closed 2026-09-19.** `docs/adr/0002-coach-medical-overview.md` is the decided ADR (Status:
+> decided, dated 17 September 2026) — filed under a different name than the entry guessed
+> (`0002-medical-tiers.md`), same number. It states the contradiction in the audit's own terms
+> ("The code disagreed with its own ADR... The Pass 1 security audit (SEC-P2-04) flagged the
+> contradiction... and logged it as SCRBRD-013") and the decision: **a coach gets an overview, not
+> the full record** — `medical.status.read` and `medical.nature.read` kept, `medical.details.read`
+> (which unmasks `injury.notes`/`injury.physio`) removed from `coach` and `assistantcoach`.
+>
+> The code matches the decision: `packages/policy/src/roles.mjs:200-210` carries the ADR's
+> reasoning inline above the `coach` capability list, and the list itself
+> (`roles.mjs:211-229`) holds `medical.status.read, medical.nature.read` and not
+> `medical.details.read`. Decision owner recorded as "the school (via the product owner)", matching
+> the entry's own field.
+**Regression risk:** LOW
 
-### SCRBRD-015 — Push payload content audit
-Files: `services/api` push sender, `tools/smoke-push.mjs`. Assert no payload carries `injury.nature`/`details`. Evidence SEC-P2-05. Risk LOW.
+### ~~SCRBRD-014~~ — CLOSED — Falsify module gates
 
-### SCRBRD-026 — Audit log for platform-wide reads
-New table + trigger or API-level log for any read performed under a `school_id NULL` assignment. Prerequisite for SCRBRD-012. Evidence Security Audit §8. Migration YES. Risk MEDIUM.
+> **Closed 2026-09-19.** Both halves of the exact acceptance criterion are proven live in the
+> current tree, not just claimed.
+>
+> **Over HTTP, per module that owns a write:** `tools/smoke-modules.mjs:273-336`, group "The write
+> side closes too — for every module that owns a write". Its own comment explains why it covers
+> every module rather than one: an earlier version tried a single module and missed that
+> `POST /api/training` and `POST /api/players/:id/assessment` were added without the tag their
+> module's read already had — so the walk now runs a table of six writes (`officials`, `training`,
+> `skills`, `sponsors`, `fields`, `logistics`), each sent **three times** — on, off, on again — and
+> asserts the write lands (200), is refused (403, naming the module) with nothing written while
+> off, then lands again once re-enabled (`smoke-modules.mjs:314-329`).
+>
+> **Direct SQL, in the database itself:** `db/99_rls_verify.sql:1346-1400`, headed
+> `"-- SCRBRD-014. The module gate is two gates reading one function..."`. It disables the
+> `injuries` module for one school via a direct `INSERT INTO feature_suppression` (not through the
+> API), then attempts a direct `INSERT` on a module-owned table with the platform's own credentials
+> — refused; grants Hockey at the platform level and the same direct `INSERT` then goes through.
+> Its own comment states the point exactly: *"a write that reaches Postgres some other way is
+> carrying the schema owner's credentials, and a product switch is not what stands between that and
+> the data"* — which is the SQL-level half of the acceptance criterion, run against production on
+> every verify.
+>
+> Neither walk was independently re-run live in this session (this environment's shared local
+> database proved unstable mid-session — see SCRBRD-003's note); the closure rests on reading both
+> files directly, which is what falsification in this codebase's own convention means when a live
+> re-run is not safely reproducible.
+**Regression risk:** LOW
+
+### ~~SCRBRD-015~~ — CLOSED — Push payload content audit
+
+> **Closed 2026-09-19.** `tools/smoke-push.mjs:341-382` is the audit, and it asserts something
+> stronger than the entry's literal wording. Rather than checking only that `injury.nature`/
+> `injury.details`-shaped fields are absent, it inserts a real injury (`injury_type = 'hamstring
+> strain'`, `severity = 'moderate'`, `notes = 'grade 2, physio Friday'`, line 363-364), lets the
+> trigger author a notice that DOES name the child and the diagnosis in the notification record
+> itself (asserted at line 370-371 — the notice is meant to say that, for the people who may read
+> it), fans it out through a real transport, and then inspects the **wire payload actually sent to
+> the device** (`echo.sent.map(s => JSON.stringify(s.payload))`, line 375):
+> - no wire payload carries the child's name (line 376)
+> - "...nor what is wrong with him" — a single assertion covering `hamstring|grade 2|moderate|injur`
+>   as a case-insensitive alternation, which is broader than the entry's two named fields
+>   (line 377)
+> - nor the notice's own title (line 378)
+> - the payload contains only the generic line `"You have a new notice."` and the bare
+>   notification id (line 379-381)
+>
+> An earlier group (line 342-346) makes the same point about a bare pointer notification before any
+> subject matter exists: `"a pointer names no subject matter"`, asserting the built payload's
+> `message` field does not even contain the literal word `"injury"`.
+**Regression risk:** LOW
+
+### ~~SCRBRD-026~~ — CLOSED — Audit log for platform-wide reads
+
+**Closed 2026-09-19.** `db/20_platform_reads.sql` is exactly this, already built: `access_log`
+gains a `platform_wide` column, `app_is_platform_wide()` decides it at read time from the caller's
+own live assignments (a `school_id IS NULL` assignment, not a claim the caller makes), and
+`log_restricted_read()` stamps every row with it. `db/99_rls_verify.sql` (lines 1425-1440+) already
+names this entry directly in its own comment ("SCRBRD-026. The owner's key and a platform
+administrator's reach every school; db/20 makes the log say so") and asserts all four directions
+live: the owner and a platform administrator read as platform-wide, a school administrator does
+not, and two ordinary school assignments never add up to one. SCRBRD-012 and SCRBRD-053 both
+already depend on this mechanism working, which it does — SCRBRD-053's own closure verified a
+`competitionadmin` cross-school read stamped `platform_wide` with zero extra wiring, precisely
+because this was already in place. No new code needed; only this entry was stale.
+**Acceptance:** `db/99_rls_verify.sql` asserts the reader distinction live, in both directions,
+for the owner's key, a platform administrator, a school administrator and a two-school assignment.
 
 ## Product completeness
 
-### SCRBRD-016 — Reduced-overs support
-Schema: `innings.overs_limit`, `revised_target`; reducer: innings end on revised limit; UI: umpire's revision entry. Evidence RISK-SCO-003. Dependencies: SCRBRD-002 (same reducer). Migration YES. Risk MEDIUM.
+### ~~SCRBRD-016~~ — CLOSED — Reduced-overs support
 
-### SCRBRD-018 — Surface NULL-born pupils and ended guardian links on the Settings page
-Files: `apps/web/src/views/SettingsView.jsx`, `read-api` resource. Evidence RISK-DAT-002; today the only record is the migration WARNING. Risk LOW.
+> **Closed 2026-09-19.** Built as an event rather than as the two innings columns the entry
+> proposed — the same event-sourced pattern every other rule in this reducer follows, and a better
+> fit than a schema column: `revision` (`packages/scoring/src/events.mjs:347-360`) carries `overs`
+> and/or `target`, either alone or both, with its own doc comment explaining why: *"It is an EVENT
+> in the log like everything else — rather than an edit to the match row — so the scorecard, the
+> second device and the server all derive the same innings end and the same result... No DLS/VJD
+> here: the figures are the umpires', typed."*
+>
+> The reducer honours it: `packages/scoring/src/replay.mjs:217-223`, `case KIND.REVISION`, sets
+> `inn.overs`/`inn.target` from the event and records `inn.revised` for display — its comment notes
+> the innings-over rule and the result both read `inn.overs`/`inn.target` from here, not from
+> anything stored beside the log. `packages/scoring/test/replay.test.mjs:130-140` proves it: a
+> one-over revision ends the innings at six legal balls (`cut.complete === true && cut.balls ===
+> 6`), and the same log without the revision does not end at six (`notCut.complete === false`) —
+> the falsifying counter-case is already in the test, not something added for this closure.
+>
+> UI: `apps/web/src/scorer/sheets.jsx:182-187`, `RevisionSheet({overs, target, isChase, onConfirm,
+> onClose})` — the umpire's revision entry, exported and wired into the scorer (`sheets.jsx:698`).
+>
+> **Acceptance criteria (re-read against the shape actually built):**
+> - [x] the innings ends at the revised overs limit — `replay.test.mjs:130-135`
+> - [x] a chase's target can be reset by the same event — `replay.test.mjs:138-140`
+> - [x] an umpire-facing entry point exists — `RevisionSheet` in `sheets.jsx`
+**Regression risk:** MEDIUM
 
-### SCRBRD-023 — Officials register management UI
-Files: new `OfficialsView.jsx`; API and RLS exist (`smoke-officials`). Evidence RISK-PRO-002. Risk LOW.
+### ~~SCRBRD-018~~ — CLOSED — Surface NULL-born pupils and ended guardian links on the Settings page
+
+> **Closed 2026-09-19.** `db/19_dob_gaps.sql`'s `dob_gaps()` function is the resource, wired at
+> `services/api/read/read-api.mjs:319-320` (`dob_gaps: { text: "select * from dob_gaps()" }`, gated
+> per capability rather than per role — see `read-api.mjs:313-319`'s own comment about that). The
+> Settings page draws both kinds of gap the entry named:
+> - `apps/web/src/views/SettingsView.jsx:152` filters the resource's rows for
+>   `kind === "guardian_link_ended"`; a card block (`SettingsView.jsx:524-537`,
+>   `data-testid="guardian-link-ended-{linkId}"`) lists each one — relationship, guardian name or
+>   email, and the date it ended.
+> - `SettingsView.jsx:456` shows a "No date of birth" metric tile whose sub-label reports how many
+>   of those also lost guardian access for want of a birth date (`linkEnded.length ? ... : "family
+>   access depends on it"`).
+>
+> `tools/smoke-dob-gaps.mjs` is the walk, with groups covering the resource answering per
+> capability (not per role name), the write that closes a gap, and the two-step nature of closing a
+> birthday gap versus re-establishing a guardian link separately.
+**Regression risk:** LOW
+
+### ~~SCRBRD-023~~ — CLOSED — Officials register management UI
+
+> **Closed 2026-09-19.** `apps/web/src/views/OfficialsView.jsx` (371 lines) exists, is lazily
+> imported and registered as a real navigable view: `apps/web/src/App.jsx:63` (`view(() =>
+> import("./views/OfficialsView.jsx"), "OfficialsView")`) and `App.jsx:394` (`officials:
+> <OfficialsView role={role}/>`). `apps/web/src/data/roadmap.js:43-44` already carries it as
+> `status: "shipped"` under "Officials & Kit Registers", with `walk: ["officials", "kit"]`.
+>
+> `tools/smoke-officials.mjs` covers the API/RLS side this entry said already existed (who may
+> appoint, school derived from the match not the caller, a mis-tick refused, a replaced panel
+> withdrawn rather than deleted, the accrediting body's own register versus what a school may
+> touch), and `tools/smoke-browser-read.mjs:337-381` proves the screen itself in a real browser: an
+> appointed umpire's own account navigates to "Officials" and the page renders with no uncaught
+> error (`"no uncaught error on the officials screen"`, line 379). A second group
+> (`smoke-browser-read.mjs:1543`) proves the accrediting body can add to the register and a school
+> cannot, from the browser.
+**Regression risk:** LOW
 
 ## Documentation
 
-### SCRBRD-019 — `DEPLOYING.md`: production changes go in new `db/NN` files only
-Evidence RISK-DAT-003. Risk LOW.
+### ~~SCRBRD-019~~ — CLOSED — `DEPLOYING.md`: production changes go in new `db/NN` files only
 
-### SCRBRD-022 — Fold this System Map into `docs/ARCHITECTURE.md`; add the Supabase bundle deploy procedure
-Evidence RISK-ARC-004. Risk LOW.
+> **Closed 2026-09-19.** `DEPLOYING.md`'s "Changing the schema after go-live" section
+> (`DEPLOYING.md:403-` onward) states the rule in exactly these words: *"**A production change is a
+> new `db/NN_*.sql` file. Nothing else.** Not an edit to a file that has already run, not a
+> regenerated `db/01`, not a rebuild."* It then documents the three guards that enforce it (the
+> ledger, the generator's `WITHDRAWN_SINCE_01`/`ADDED_SINCE_01` mechanism with `db/21` and `db/24`
+> as worked examples, and the verifier) and a numbered procedure for writing one. This is
+> substantially more than the entry asked for, not less.
+**Regression risk:** LOW
+
+### ~~SCRBRD-022~~ — CLOSED — Fold this System Map into `docs/ARCHITECTURE.md`; add the Supabase bundle deploy procedure
+
+> **Closed 2026-09-19.** Done both ways the entry allowed for: `docs/ARCHITECTURE.md:1-5` states
+> outright *"This is the maintained map; `audit/SCRBRD_SYSTEM_MAP.md` is the dated snapshot the
+> Pass 1 audit took of the same ground, kept as a record"* — and `audit/SCRBRD_SYSTEM_MAP.md`'s own
+> header now reads *"A dated snapshot from the Pass 1 audit, kept as the record of what was found.
+> The maintained map is `docs/ARCHITECTURE.md`; several rows below ... were true on `0783ed5` and
+> are not true now."* Each document points at the other and neither claims to be current where the
+> other supersedes it — the System Map was retired in place rather than deleted, which is this
+> project's own convention for keeping history (the same one this backlog file follows for a
+> closed entry).
+>
+> The Supabase bundle deploy procedure is in `docs/ARCHITECTURE.md` §9 "Deploying the schema"
+> (`ARCHITECTURE.md:227-259`), with the exact chain the entry asked for: `db/NN_*.sql (new) →
+> migrate.mjs --reset --seed --verify (local) → bundle-sql.mjs --apply NN → paste
+> scrbrd-supabase-apply-NN.sql in the SQL Editor → bundle-sql.mjs → paste
+> scrbrd-supabase-verify.sql — ALL RLS LIVE ASSERTIONS PASSED → only then merge/deploy the code
+> that needs it`, plus the three-guards explanation this closure's SCRBRD-019 note also cites.
+**Regression risk:** LOW
 
 ---
 
@@ -273,12 +772,50 @@ Evidence RISK-ARC-004. Risk LOW.
 - **SCRBRD-020** (also P2 dependency chain) — see above.
 
 ## Polish
-- **SCRBRD-017** — Replay determinism test: shuffle `ball_event` input, assert identical scorecard; assert server sorts by `(epoch, seq)` before replay. Evidence RISK-SCO-004. Risk LOW.
+- ~~**SCRBRD-017**~~ — **CLOSED.** `packages/scoring/test/replay.test.mjs`, new group D: a canonical
+  event log with real `seq` values, reversed then re-derived (a genuinely different, wrong answer,
+  proving order matters), then sorted back by `seq` alone and re-derived again (identical to the
+  canonical result) — twice, once on a short log and once on an eighteen-event log with a strike
+  rotation, a bowler change and a wicket, shuffled by a fixed permutation rather than `Math.random()` so
+  a failure is reproducible. Corrected while writing it: the original wording asked for sorting by
+  `(epoch, seq)`, but `seq` is allocated as `max(seq)+1` per match (`services/api/write/events-api.mjs`),
+  already a single global order across every device and epoch — every real read path that feeds a replay
+  (`session-routes.mjs`'s catch-up query, `read-api.mjs`'s `phases`/`shot_points`) already sorts by plain
+  `seq`, and there is no second column left to break a tie on. Evidence RISK-SCO-004. Risk LOW.
 
 ## Cleanup
 - ~~**SCRBRD-024**~~ — **CLOSED.** `.github/workflows/ci.yml` runs the suites, `migrate --reset --seed && migrate --verify`, and the RLS-output diff on every PR. Evidence RISK-OPS-002.
-- **SCRBRD-025** — `bundle-sql.mjs` writes the git SHA into a `schema_migration.note` column so Supabase records which bundle it received. Evidence RISK-OPS-003. Migration YES (one nullable column).
-- **SCRBRD-027** — Delete `apps/web/src/rbac/legacy-roles.js` once SCRBRD-001 and -011 land. Evidence SEC-P3-01.
+- ~~**SCRBRD-025**~~ — **CLOSED.** `schema_migration` gains a nullable `note` column — via
+  `CREATE TABLE ... (..., note text)` for a fresh database, `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`
+  for one this project already provisioned, in both `tools/migrate.mjs` and `tools/bundle-sql.mjs`, so
+  neither ledger-writer can find the column missing under the other. Every ledger row `bundle-sql.mjs`
+  writes — the full rebuild, and the single-migration `--apply NN` paste — now carries the git commit SHA
+  the bundle was generated from in `note`; `migrate.mjs` does the same for a local/CI apply, so the two
+  ledgers read the same way rather than one populated and one always null. Best-effort: a shallow clone or
+  a working copy with no git history at all still migrates, with `note` left `NULL` rather than the run
+  refusing. Evidence RISK-OPS-003. Migration YES (one nullable column, applied by the tooling itself, not
+  a `db/NN` file — `schema_migration` is bootstrap infrastructure the numbered migrations describe, not
+  one of them).
+- **SCRBRD-027** — Delete `apps/web/src/rbac/legacy-roles.js` once SCRBRD-001 and -011 land.
+  **Checked 2026-09-19, still blocked, but not on -001/-011 any more.** Both of those closed
+  without touching this: SCRBRD-001 was about the fake "Continue with Google" button, SCRBRD-011
+  about the last `role === "superadmin"` view gates — neither is about legacy role NAMES. What
+  this file is actually still holding up: `LoginPage.jsx`'s `MOCK_USERS` (`gsutherland@hilton.co.za`
+  → `role:"sportsmaster"`, `emzimba@hilton.co.za` → `role:"groundskeeper"`) and its `DEMO_ACCOUNTS`
+  (`helen.w@gmail.com` → `role:"parent"`) still sign people in with old-vocabulary names, not the
+  real policy roles (`directorofsport`, `facilities`, `guardian`); `OnboardingFlow.jsx`'s persona
+  picker and `ManagementView.jsx`'s tab/role branches use `sportsmaster`/`groundskeeper` directly
+  too. Both `design/roles.js`'s `canonicalRole()`/`ROLES` and `rbac/index.js`'s
+  `assignmentsForRole()` resolve those names ONLY through `LEGACY_ROLE`/`LEGACY_ROLE_ALIAS`, which
+  come from this file — remove it today and those logins render `ROLES[undefined]` (blank shell)
+  and get `assignmentsForRole() → []` (default-deny). `apps/web/test/design.test.mjs:284-286`
+  already asserts, by name, that `headmaster`/`sportsmaster`/`parent` resolve through
+  `canonicalRole()` — the suite itself currently requires this file to exist. Falsified directly:
+  deleting the file and running `design.test.mjs` fails immediately with `ERR_MODULE_NOT_FOUND`
+  before a single assertion runs, confirming a test would catch removal; restored, green again.
+  The real prerequisite is retiring the old-vocabulary names from the demo/onboarding files
+  themselves (a proper subset of SCRBRD-001's original spirit, never actually done), not -001/-011
+  as filed. Evidence SEC-P3-01.
 
 ---
 
@@ -405,26 +942,76 @@ the next ledger file rather than alone.
 **Regression risk:** MEDIUM — a DoS who currently corrects a match by themselves will need a scorer to
 request it. That is the point, and it needs saying to the pilot schools before it ships.
 
-### SCRBRD-030 — PART ONE DONE
+### ~~SCRBRD-030~~ — CLOSED
 
-> **Coherence landed; the ordered scale does not.** `packages/policy/test/sensitivity.test.mjs`
-> now joins `SENSITIVE` (capabilities) to `RESTRICTED_FIELDS` (the logger's watched columns)
-> through the mask map, so the two lists cannot drift apart in silence. 16 assertions.
-> It found `discipline.read` and `discipline.write` gating nothing at all — see SCRBRD-053 —
-> and replaced a vacuous line in `rls.test.mjs` that claimed the join while checking spelling.
->
-> The five-level scale is still open and is the rest of this entry. It needs a judgement call
-> per capability across all 81, and the decision that matters is whether `SENSITIVE` becomes
-> `level >= 2` — which would WIDEN its membership (adding `player.age.read`,
-> `guardian.link.manage`, `medical.status.read`, the invoice reads and more) and therefore
-> widen what the deck claims is logged. That is a behaviour change, not a classification, and
-> it wants deciding rather than assuming.
+**Corrected 2026-09-23.** As first closed, the `finance`/`sponsorship` split was shipped by regenerating
+`db/01_authz.sql` in place. Production has run `db/01`, so `tools/migrate.mjs` refuses that file on a
+live database — the branch could not deploy. `db/01` is now byte-identical to `main` again:
+`generate-rls.mjs` re-emits finance's three commercial rows through `WITHDRAWN_SINCE_01` and leaves the
+role out through a new `ROLES_ADDED_SINCE_01`. `db/27_sponsorship_role.sql` carries the split for fresh
+and live databases alike, and matches every live `finance` appointment with a `sponsorship` one, so no
+bursar loses access. Checked on a database built exactly as `main` (24 files) with the branch applied on
+top: 3 applied, 24 skipped, the bursar's commercial access kept, `db/99` green. `rls.test.mjs` group B3
+holds any added role to its db/NN (falsified by dropping a bundle row and an appointer row). The gap that
+let this through is closed by `tools/shipped.test.mjs`, which pins every migration merged to `main` to
+its shipped hash via `db/SHIPPED.sha256` — the SCRBRD-030 `db/01` hashes `39d31949…`, the shipped one
+`40298933…`, so it would have gone red.
 
-**Title:** Sensitivity tiers 0–4, refining the binary `SENSITIVE` set into an ordered scale
+**Closed 2026-09-19.** Every one of the 82 capabilities now carries a `LEVEL` (0-4, `Roles&Duty.md`
+§2.3), `SENSITIVE` is derived (`LEVEL[c] >= 2`) rather than a hand-picked array, and
+`sensitivity.test.mjs` gained the class-level assertion Part One's plan called for: no capability
+masking a logged column is classified below level 2 — falsified by temporarily lowering
+`player.pii.read` to level 1 and confirming the exact failure, then restoring it. `SENSITIVE` widened
+from 9 members to 25.
+
+**The widening surfaced a real conflict, not a false one.** `invoice.read`/`invoice.manage` crossed
+into `SENSITIVE` at level 2, and the `finance` role held both of those and `sponsorship.finance.read`
+together — exactly the crossing `separation.test.mjs` §21.10 exists to catch ("holding a commercial
+capability never carries a sensitive one with it"). This was not a bug in the test or the scale; it
+was a bundle that had never been examined against that rule on its own terms, inherited whole from
+the prototype's one "money" role. Three fixes were possible — narrow §21.10's scope, drop the invoice
+reads back to level 1, or split the role — and the choice was put to the person running the project
+rather than picked unilaterally, given it touches a deliberate separation-of-duties guarantee. **The
+role was split**: `finance` now holds exactly `invoice.read`/`invoice.manage` plus the institutional
+floor, and a new role, `sponsorship`, holds `sponsorship.read`/`sponsorship.manage`/
+`sponsorship.finance.read`. A school that wants one bursar doing both still can — nothing stops the
+same person holding both `role_assignment` rows — but a school that wants them separated now can
+express that, which the old bundle could not.
+
+The split touched further than `roles.mjs`: `db/01_authz.sql` and `db/09_rls_policies.sql` regenerated
+(`pnpm rls:generate`, no hand edits — both are generated output); a new `ROLE_IDENTITY` entry in
+`apps/web/src/design/roles.js` (`sponsorship`, family `commercial`, 11.55 dE from its nearest neighbour,
+6.69:1 contrast, both checked by `design.test.mjs`, not chosen by eye); the seeded bursar
+(`db/98_seed_pilot.sql`) given a second `role_assignment` row so the existing browser walk proving the
+commercial mask (`tools/smoke-browser-read.mjs`) keeps demonstrating it; `tools/smoke-escalation.mjs`'s
+self-appointment check split into two rows (billing records / contract values) matching the two roles;
+and `separation.test.mjs` itself re-worked at §11.5 and §11.6, since spreading the widened `SENSITIVE`
+into a "forbidden" list now swept in the very capability `finance` exists to hold.
+
+**A second, independent gap surfaced by the same widening, unrelated to the role split:**
+`platform.support.impersonate` (level 3, `PLATFORM_ONLY`) joined `SENSITIVE` too, and
+`boundaries()` — the function behind the Settings screen's "what you cannot do, and who to ask"
+panel — had no honest answer for it: no school-scoped role holds a platform-only capability, ever,
+by construction, so "who else at your school can do this" was a question with no school-side answer,
+and the boundary rendered naming nobody. Fixed by excluding `PLATFORM_ONLY` capabilities from
+`boundaries()` entirely, with the reasoning kept in the function's own comment. Falsified by
+reverting the filter and confirming `separation.test.mjs`'s "never a break-glass account, nor an
+empty list" assertion goes red for `principal`, `directorofsport` and `schooladmin`.
+
+Verified against a freshly reset and reseeded database, not left to the unit suites alone:
+`tools/migrate.mjs --reset --seed --verify` (171 live RLS assertions), `tools/smoke-escalation.mjs`
+(51 assertions) and `tools/smoke-browser-read.mjs` (350 assertions, including the role switcher now
+offering all 26 roles and the bursar still the only account that sees a sponsorship contract's real
+value) all green. Full suite: 1923 assertions across 31 suites.
+
+**Title:** ~~Sensitivity tiers 0–4, refining the binary `SENSITIVE` set into an ordered scale~~
 **Priority:** P1 · **Domain:** RBAC / Privacy · **Type:** architecture
-**Affected files:** `packages/policy/src/capabilities.mjs`, `packages/policy/src/tables.mjs`,
-`services/api/rls/rls.test.mjs`, `db/99_rls_verify.sql`
-**Affected users:** none directly; changes what the RLS suite is able to assert
+**Affected files:** `packages/policy/src/capabilities.mjs`, `packages/policy/src/roles.mjs`,
+`packages/policy/test/sensitivity.test.mjs`, `packages/policy/test/separation.test.mjs`,
+`db/01_authz.sql`, `db/09_rls_policies.sql` (regenerated), `db/98_seed_pilot.sql`,
+`apps/web/src/design/roles.js`, `tools/smoke-escalation.mjs`
+**Affected users:** every finance-role holder — a bursar's single role becomes two, assignable
+separately; no other role's grants changed
 
 **Current behaviour:** `capabilities.mjs` exports `SENSITIVE` — 9 capabilities, a flag. The distinction
 between public and internal-operational data is not represented at all, and the 243 RLS assertions are
@@ -438,16 +1025,22 @@ by a capability cleared to level 2.
 (level ≥ 2) so there is one source; assert monotonicity in `rls.test.mjs`.
 **Why it matters:** the single highest-leverage change available to the RLS suite — it turns per-policy
 assertions into a per-class one, so a new table is covered by default instead of by diligence.
-**Dependencies:** none. **Security / privacy impact:** assurance only. **Data migration required:** NO —
-classification is policy-side; `db/09` is regenerated from it only if a policy expression changes.
-**Tests required:** `rls.test.mjs` class assertion; `modules.test.mjs` unchanged; RLS-output diff must be
-empty if no expression changed.
+**Dependencies:** none. **Security / privacy impact:** real — widening `SENSITIVE` found a genuine
+separation-of-duties crossing (`finance` holding both a commercial and, after this, a sensitive
+capability) that a hand-picked list had been letting stand. **Data migration required:** NO —
+`db/01`/`db/09` are generated output, regenerated by `pnpm rls:generate`, not a new `db/NN`.
+**Tests required:** the class assertion landed in `sensitivity.test.mjs`, not `rls.test.mjs` (the file
+that already owned the SENSITIVE/RESTRICTED_FIELDS join); `separation.test.mjs` for the role split;
+`design.test.mjs` for the new role's colour; live RLS verify and the escalation/browser-read smokes
+for the seeded consequence.
 **Acceptance criteria:**
-- [ ] Every one of the 81 capabilities carries a level
-- [ ] `SENSITIVE` is derived, not listed
-- [ ] An assertion fails when a capability's level is lowered below the field it reaches
-**Regression risk:** LOW if the RLS output diff stays empty; MEDIUM if it does not, which would mean the
-classification disagrees with a shipped policy and is itself the finding.
+- [x] Every one of the 82 capabilities carries a level
+- [x] `SENSITIVE` is derived, not listed
+- [x] An assertion fails when a capability's level is lowered below the field it reaches
+- [x] The separation-of-duties crossing the widening exposed is resolved, not suppressed
+**Regression risk:** LOW — the RLS output diff is the two roles' policies changing shape, which is the
+intended effect, not drift; every suite that could show a wrong grant (separation, sensitivity, RLS
+live verify, escalation, browser-read) is green against a freshly reset database.
 
 ### ~~SCRBRD-031~~ — CLOSED, with the premise corrected
 
@@ -604,12 +1197,107 @@ Officials, transport, facilities, medical and scorer are five separate surfaces 
 screen that joins them, and "pending ≠ filled" is the same honesty as the null discipline in Analytics.
 Files: new view, reads over existing resources. Risk LOW. Migration NO.
 
-### SCRBRD-038 — Review-confirm gate before an innings closes
-`scoringHubMachine.ts` has a `reviewConfirm` state and `CONFIRM_INNINGS_END { verified: boolean }`;
-`ReviewConfirmModal.tsx` reads the totals back before the innings is sealed. `review_confirm` returns
-**zero hits** here — there is commit, amend and handover, but no checkpoint between the last ball and a
-closed innings. Cheapest available reduction in the error class that is most expensive afterwards.
-Files: `apps/web/src/views/` scoring surface, `services/api/write/`. Risk LOW. Migration NO.
+### ~~SCRBRD-038~~ — CLOSED
+
+**Closed 2026-09-19.** `scoringHubMachine.ts`/`ReviewConfirmModal.tsx`/`review_confirm` (this entry's
+own citations) do not exist in this codebase — they are the other prototype's names for the same
+idea, harvested without checking against the tree. What genuinely had zero hits here was the thing
+those names point at: a checkpoint between the last ball and a closed innings that the MODEL, not
+just one screen, actually enforces.
+
+**What was already built, and what it was missing.** `InningsReviewSheet` already existed and
+already showed the scorer the derived totals before confirming — the review DIALOG was real. What
+was not real was the gate: confirming called `emit(inningsEnd({reason: inn?.endReason ??
+INNINGS_END_REASON.OVERS}))`, and the reducer honoured whatever an `innings_end` event claimed,
+unconditionally, setting `inn.complete`/`inn.endReason` from the event's say-so. `inningsClosed`
+was computed as "does an `INNINGS_END` event exist in this innings' log" — true the instant one
+appeared, whatever it claimed. A seal naming an ending the log did not support (all out at twelve
+for none), a seal naming nothing (silently defaulted to "the overs ran out"), or a stale seal
+replayed from an offline queue after the figures it was minted against had moved — an undo, a
+released quarantine ball — would all have closed the innings exactly as readily as a genuine
+confirm. The checkpoint existed in one React component tree and nowhere the model could see it.
+
+**The fix moves the check into the fold.** `inningsEnd()` (`packages/scoring/src/events.mjs`) gains
+a `confirmed: {runs, wickets, balls}` field and drops its `OVERS` default (`reason` is now `null`
+unless given — the default was quietly asserting a real match's ending on a missing argument; the
+one production call site, `sealInnings()`, always supplies one). `sealInnings(inn, reason)`
+(`packages/scoring/src/replay.mjs`) builds the event by reading the figures straight off the
+derived innings, so an event minted through it can never claim figures the log didn't just produce.
+`sealRefusal(ev, inn, why)`, run inside `deriveInnings()`'s own fold at the `INNINGS_END` case,
+checks every seal against the log it is folding over: the confirmed figures must equal what the log
+derives at that exact point (pinning the seal to THIS occurrence of the ending, not some earlier
+or later one); the reason must be present; and if the reason is one of the three the laws derive
+(`all_out`/`overs`/`target`), it must be the one they actually derive here — `declared`/`abandoned`
+are taken on the scorer's word, since nothing in a ball log implies a captain's or umpire's
+decision, but still only with figures attached. A refused seal sets `inn.sealRefused` and leaves
+`inn.complete`/`inn.sealed` to fall through to the laws' own derivation — it cannot wrongly force an
+innings closed, and cannot wrongly keep genuinely-finished scoring blocked either, since the
+post-loop fallback (`if (!inn.complete) { ... }`) still applies exactly as it always did.
+
+`apps/web/src/scorer/engine.jsx`'s `inningsClosed` now reads `inn?.sealed === true` — the model's
+verified answer — instead of scanning the log for the event's mere existence, and `closeInnings()`
+calls `sealInnings(inn)` instead of hand-building the event, so the UI has no path left that can
+close an innings by asserting that it is closed. A refused seal is not a dead end: the banner stays
+up, and confirming again builds a fresh seal off the (now current) derived figures, which succeeds
+— the design is self-healing rather than requiring an error dialog for a case that resolves itself
+on retry.
+
+**Tests.** `packages/scoring/test/replay.test.mjs` gained a new group ("H. The seal — over is not
+closed") covering: a seal with no `confirmed` figures refused (`UNCONFIRMED`); a seal whose figures
+don't match the log refused (`FIGURES_MOVED`) — the offline-queue/quarantine-race case, reproduced
+by minting a seal, then replaying one more legitimate ball before it, and confirming the stale seal
+is rejected rather than closing the innings on stale figures; a seal with no reason refused
+(`NO_REASON` — the exact failure the old `OVERS` default used to paper over); a seal claiming a
+law-derived reason the log doesn't support refused (`NOT_THE_LAWS_REASON`); and a genuine
+`sealInnings()`-built seal accepted, setting `sealed`/`complete`/`endReason` correctly for all three
+law-derived endings plus `declared`/`abandoned`. `apps/web/test/innings-review.test.mjs` gained
+"A delivery cannot reach a closed innings without the review" and "The reducer refuses a seal the
+review did not produce," rendering the actual sheet component and asserting against the derived
+model, not a mock.
+
+Verified against a freshly reset and reseeded database and a real browser, not left to the unit
+suites: `node tools/smoke-browser-innings-end.mjs` (SCRBRD-052/-063's own walk, which chases a real
+target down to a genuine `target_reached` close) still passes at 23/23 with the new gate in place —
+proof the legitimate confirm path is unaffected — and the full suite is green: 2008 assertions
+across 31 suites (`scoring` 296, `review` 38), up from the pre-existing 1939.
+
+**Title:** ~~Review-confirm gate before an innings closes~~
+**Priority:** P1 · **Domain:** Scoring · **Type:** correctness
+**Affected files:** `packages/scoring/src/events.mjs`, `packages/scoring/src/replay.mjs`,
+`apps/web/src/scorer/engine.jsx`, `packages/scoring/test/replay.test.mjs`,
+`apps/web/test/innings-review.test.mjs`
+**Affected users:** every match — the gate now sits between every last ball and every closed innings,
+not only the ones this entry originally imagined going wrong
+
+**Current behaviour, before this:** an `innings_end` event was honoured by the reducer
+unconditionally — a scorer's genuine confirm and a malformed, stale or offline-replayed event were
+indistinguishable to the model, which read only "does one exist," not "does its claim match the log."
+**Expected behaviour:** an innings is `sealed` only when a seal's confirmed figures match what the
+log independently derives at that point, and its reason is either genuinely law-derived or one of
+the two endings the laws cannot derive at all.
+**Root cause:** the review dialog was built as a UI courtesy (SCRBRD-016/prior scoring work); nobody
+had asked the model itself to check the courtesy was honoured.
+**Recommended change:** as built — `sealInnings()`/`sealRefusal()` in the reducer, `inningsClosed`
+reading `inn.sealed`.
+**Why it matters:** the scoring engine is this platform's most consequential surface; a gate that
+exists in one screen and not in the model it feeds is not a gate, it is a suggestion.
+**Dependencies:** none. **Security / privacy impact:** none — a correctness guarantee over the
+scoring log, not an access boundary. **Data migration required:** NO — an event-shape addition
+(`confirmed`), not a schema change; no existing stored event carries the field, and none needs to
+for old matches, since `sealRefusal()` only runs on events replayed after this change.
+**Tests required:** the "H. The seal" group in `replay.test.mjs`; the two new cases in
+`innings-review.test.mjs`; the existing `smoke-browser-innings-end.mjs` re-run as a regression
+check on the legitimate path.
+**Acceptance criteria:**
+- [x] A seal with no confirmed figures does not close the innings
+- [x] A seal whose figures don't match the log (stale/replayed-out-of-order) is refused, not honoured
+- [x] A seal naming no reason is refused, rather than defaulting to "overs"
+- [x] A seal claiming a law-derived ending the log does not support is refused
+- [x] `declared`/`abandoned` are still accepted on the scorer's word, since the laws cannot derive them
+- [x] The legitimate confirm path (`smoke-browser-innings-end.mjs`) is unaffected
+**Regression risk:** LOW — the one production call site of `inningsEnd()` already supplied an
+explicit reason before this change, so the dropped default affects nothing live; the fallback
+derivation for an innings with no accepted seal is unchanged from before this entry.
 
 ### SCRBRD-039 — Capture profiles: declare the intent, not just record the code path
 **Corrected 2026-09-18.** The first version of this entry claimed SCRBRD OS had no capture profile. It has
@@ -723,24 +1411,18 @@ already-correct. Risk LOW. Migration UNKNOWN until the audit.
   Splitting the request out (`scoring.amend.request`) is the prerequisite for that entry. Files:
   `capabilities.mjs`, `roles.mjs`, `db/02`'s three policies via a new `db/NN`, `db/09` regenerated.
   Risk MEDIUM. **Migration YES.** Discovered by writing db/24 and running the walks.
-- **SCRBRD-053** — `discipline.read` and `discipline.write` gate nothing. Six roles hold one or
-  both (`superadmin`, `principal`, `directorofsport`, `schooladmin`, `selfaccess`,
-  `competitionadmin` read; `superadmin`, `directorofsport`, `official` write) and there is no disciplinary
-  record in the schema: no table, no policy, no masked column, no read resource. So the
-  capability grants nothing today, and on the day a record arrives the reader of one would not
-  be logged, because the logger watches columns and there are none to watch. Found by
-  `sensitivity.test.mjs`, recorded there in `NOT_YET_IMPLEMENTED` with the reason, and the
-  suite fails if either starts being referenced without the entry being removed. Either build
-  the record or drop the capabilities — what should not persist is a role bundle that promises
-  something the schema cannot deliver. Files: a new `db/NN`, `tables.mjs`, `read-api.mjs`.
-  Risk LOW. **Migration YES** if built.
-- **SCRBRD-052** — A browser walk that scores an innings to its end. `smoke-browser-sync` opens the real
-  scorer on a real match and taps four deliveries of twenty overs, so nothing exercises what happens when an
-  innings completes: not the review gate (SCRBRD-038), not the innings break, not the result screen, not the
-  second innings' target. Completing an innings by wickets rather than overs is the cheap route — ten
-  dismissals through the wicket sheet instead of a hundred and twenty taps — and it would also be the first
-  coverage of the handover and quarantine paths under a closed innings. Files: `tools/smoke-browser-sync.mjs`
-  or a walk of its own. Risk LOW. Migration NO.
+- ~~**SCRBRD-053**~~ — **CLOSED.** `db/25_disciplinary_record.sql`, the read resource
+  `disciplinary_records`, `services/api/write/discipline-api.mjs` and
+  `tools/smoke-discipline.mjs`; full entry below. The record was built rather than the
+  capabilities dropped. Found two things worth knowing beyond the feature: Postgres applies a
+  table's SELECT policy to any row an `INSERT`/`UPDATE` **returns**, so an `official` — who
+  holds `discipline.write` and not `discipline.read` — could never have filed through a handler
+  using `RETURNING`; and the same rule makes a targeted `UPDATE ... WHERE id = …` invisible to
+  that writer while a blind `UPDATE` with no `WHERE` is not, which is why every statement here
+  names an id. Awaiting paste (`scrbrd-supabase-apply-25.sql`).
+- ~~**SCRBRD-052**~~ — **CLOSED.** `tools/smoke-browser-innings-end.mjs`, full entry below. Found and
+  fixed two `Badge` components that silently dropped `data-testid`; found and filed **SCRBRD-063** (a
+  second innings can never close on reaching its target — nothing wires the two together).
 - **SCRBRD-051** — Two shapes worth keeping from `aiCoachAssistant.ts`, without its fabrication:
   per-drill `safetyCleared` driven by `medicalRestrictions` (a drill blocked by a restriction **without
   exposing the file** — §11.3 rendered as a feature, and `TrainingView`'s drill library is where it goes),
@@ -785,23 +1467,25 @@ version did not have.
 # Dependency Graph
 
 ```text
-SCRBRD-000 (ship) ──▶ SCRBRD-004 (owner key) ──▶ SCRBRD-007 (search_path)
-                                              └▶ SCRBRD-026 (audit log) ──▶ SCRBRD-012 (impersonate)
-SCRBRD-002 (dismissal enum) ──▶ SCRBRD-003 (quarantine release)
-                             └▶ SCRBRD-016 (reduced overs)
-                             └▶ SCRBRD-017 (determinism test)
-SCRBRD-006 (analytics consent) ──▶ SCRBRD-020 (code splitting)
-SCRBRD-001 (login page) ──┐
-SCRBRD-011 (capability gates) ──┴▶ SCRBRD-027 (delete legacy-roles)
-SCRBRD-009 (idempotency) — independent
-SCRBRD-010 (offline walks) — independent, should land BEFORE SCRBRD-003 (regression net)
-SCRBRD-008 (reset guard) — independent, do first: five lines, Critical impact
-SCRBRD-005 (AI pseudonyms) — independent
-SCRBRD-024 (CI) — independent, protects everything after it
+SCRBRD-000 ✓ (ship) ──▶ SCRBRD-004 ✓ (owner key) ──▶ SCRBRD-007 ✓ (search_path)
+                                              └▶ SCRBRD-026 ✓ (audit log) ──▶ SCRBRD-012 ✓ (impersonate)
+SCRBRD-002 ✓ (dismissal enum) ──▶ SCRBRD-003 (quarantine release — backend done, no UI, still open)
+                             └▶ SCRBRD-016 ✓ (reduced overs)
+                             └▶ SCRBRD-017 ✓ (determinism test)
+SCRBRD-006 ✓ (analytics consent) ──▶ SCRBRD-020 ✓ (code splitting)
+SCRBRD-001 ✓ (login page) ──┐
+SCRBRD-011 ✓ (capability gates) ──┴  (neither actually gated SCRBRD-027 — checked 2026-09-19)
+SCRBRD-027 (delete legacy-roles — still blocked, on retiring old-vocabulary names from
+             LoginPage/OnboardingFlow/ManagementView, not on -001/-011)
+SCRBRD-009 ✓ (idempotency) — independent
+SCRBRD-010 ✓ (offline walks) — independent, should land BEFORE SCRBRD-003 (regression net)
+SCRBRD-008 ✓ (reset guard) — independent, do first: five lines, Critical impact
+SCRBRD-005 ✓ (AI pseudonyms) — independent
+SCRBRD-024 ✓ (CI) — independent, protects everything after it
 
 Pass 2:
-SCRBRD-028 (invariants) ──▶ SCRBRD-029 ✓ via SCRBRD-054 ✓ (db/24) ──┐
-SCRBRD-030 (sensitivity tiers) ───────────────────────────────────┴▶ ride together on one db/NN
+SCRBRD-028 (invariants) ──▶ SCRBRD-029 ✓ via SCRBRD-054 ✓ (db/24)
+SCRBRD-030 (sensitivity tiers) ✓ — role split corrected 2026-09-23 to ship as `db/27`; `db/01` restored
 SCRBRD-031 (workflow-state) ──▶ SCRBRD-034 (duty lifecycle) ──▶ SCRBRD-037 (duty roster)
 SCRBRD-032 (ADR) ──▶ SCRBRD-036 (sponsor viewer)   [the ADR is the test the new role must pass]
 SCRBRD-039 (capture profiles) ──▶ SCRBRD-045, -046 (spider, heatmap)
@@ -812,22 +1496,25 @@ SCRBRD-042 (consent audit) — independent, may close as already-correct
 
 # Recommended Execution Order
 
-1. **SCRBRD-008** reset guard — smallest change, Critical impact, no dependencies.
-2. **SCRBRD-000** ship the branch; Supabase rebuild with `db/12`.
-3. **SCRBRD-024** CI on every PR — every later item then has a net.
-4. **SCRBRD-001** production login page; **SCRBRD-006** analytics consent; **SCRBRD-005** AI pseudonyms — the three P1 privacy/trust items, all independent.
-5. **SCRBRD-004** owner key migration — before any real pilot.
-6. **SCRBRD-010** offline/handover walks, then **SCRBRD-002** dismissal enum, then **SCRBRD-003** quarantine release.
-7. **SCRBRD-009** idempotency; **SCRBRD-011** capability gates; **SCRBRD-007** search_path.
-8. Remaining Pass 1 P2/P3 in ID order.
+1. ~~**SCRBRD-008** reset guard~~ — done.
+2. ~~**SCRBRD-000** ship the branch~~ — done.
+3. ~~**SCRBRD-024** CI on every PR~~ — done; every later item has a net.
+4. ~~**SCRBRD-001** production login page; **SCRBRD-006** analytics consent; **SCRBRD-005** AI pseudonyms~~ — all three done.
+5. ~~**SCRBRD-004** owner key migration~~ — done.
+6. ~~**SCRBRD-010** offline/handover walks~~, ~~**SCRBRD-002** dismissal enum~~ — both done; **SCRBRD-003**
+   quarantine release is backend-only — real, tested, and still open for lack of a UI panel.
+7. ~~**SCRBRD-009** idempotency; **SCRBRD-011** capability gates; **SCRBRD-007** search_path~~ — all three done.
+8. Remaining Pass 1 P2/P3 in ID order — of the ones checked in this pass, only **SCRBRD-003** (UI)
+   is still genuinely open; see its entry above.
 
 Pass 2:
 
 9. **SCRBRD-028** invariants — landed in `bdf837e`'s successor; every later RBAC change then has a net.
 10. **SCRBRD-038** review-confirm gate — smallest change, largest error class, no migration.
 11. **SCRBRD-032** the ADR, before the next role request rather than after it.
-12. **SCRBRD-030** sensitivity tiers; **SCRBRD-031** workflow-state inventory — both policy-side, both
-    unblock the entries behind them.
+12. ~~**SCRBRD-030** sensitivity tiers~~ — done, `LEVEL` on all 82 capabilities, `SENSITIVE` derived,
+    the `finance`/`sponsorship` role split it forced also done; **SCRBRD-031** workflow-state
+    inventory — closed separately, see above — unblocks the entries behind it.
 13. ~~**SCRBRD-029** split request/approve~~ — done as `db/24` via SCRBRD-054; the pilot schools are
     told before it is pasted, because a head of sport who filed corrections herself will now need a scorer to.
 14. **SCRBRD-035** escalation roster; **SCRBRD-042** consent audit — independent, cheap, and -042 may
@@ -835,17 +1522,842 @@ Pass 2:
 15. **SCRBRD-033** role-entry briefing — the best product item, and derivable rather than written.
 16. Remaining Pass 2 P2/P3 in ID order.
 
+Pass 3:
+
+17. **SCRBRD-056** handover UI — the backend and its tests already exist; this is the highest-value item
+    in Pass 3 because it closes a real product gap rather than adding a new one.
+18. ~~**SCRBRD-057** NRR simulator~~ — blocked; checking the schema before writing the code found there
+    is no aggregate data to simulate from. Re-scoped to a prerequisite entry once "derived or typed" is
+    answered. **SCRBRD-058** pitch report screen — independent, low priority, not blocked.
+19. **SCRBRD-060** knockout bracket — independent, clean UI-only gap over an existing `comp_type`, once
+    the round/seed derivation question is answered. **SCRBRD-061** bowling pitch map — blocked on its own
+    capture step (new `ball_event` columns); do not build the chart before the capture exists.
+20. ~~**SCRBRD-062** multi-fixture duty-coverage overview~~ — CLOSED; reused the already-correct,
+    already-shipped `match_duties` read (`SCRBRD-037`'s `DutyRoster`) across several fixtures instead of
+    one, no schema or server change.
+
 # Blocked Work
 
 | Task | Blocked by | Reason |
 |---|---|---|
-| SCRBRD-012 impersonate | SCRBRD-026 | "audited" is in the capability's own description; cannot be implemented without a log to write to |
-| SCRBRD-003 quarantine release | SCRBRD-002 | a released event must pass the same vocabulary check as a fresh one |
-| SCRBRD-020 code splitting | SCRBRD-006 | Firebase is the largest single removable chunk; split after it is lazy |
-| SCRBRD-027 delete legacy-roles | SCRBRD-001, -011 | login page and view gates still read it |
-| SCRBRD-007 search_path | SCRBRD-004 | both add ledger files; sequence them to avoid a ledger conflict on production |
+| ~~SCRBRD-012 impersonate~~ | ~~SCRBRD-026~~ | done — both closed; `db/22`'s own audit table plus `db/20`'s platform-wide log |
+| SCRBRD-003 quarantine release | ~~SCRBRD-002~~ | blocker closed; SCRBRD-003 itself stays open for lack of a UI panel, not for this |
+| ~~SCRBRD-020 code splitting~~ | ~~SCRBRD-006~~ | done — both closed |
+| SCRBRD-027 delete legacy-roles | old-vocabulary role names in `LoginPage`/`OnboardingFlow`/`ManagementView` | -001/-011 are closed but never actually gated this — checked 2026-09-19, see the entry above |
+| ~~SCRBRD-007 search_path~~ | ~~SCRBRD-004~~ | done — both closed |
 | ~~SCRBRD-029 split request/approve~~ | `db/24` | done — it took a new capability, so it got its own file after all, and `ADDED_SINCE_01` in the generator for it |
-| SCRBRD-034 duty lifecycle | SCRBRD-031 | `delegated` and an expiring fixture role are workflow states; naming the layer comes first |
-| SCRBRD-036 sponsor viewer | SCRBRD-032 | the ADR is the test a new role has to pass, and this is the first role request it would govern |
+| SCRBRD-034 duty lifecycle | SCRBRD-031 | `~~SCRBRD-031~~`'s own closure says SCRBRD-034 no longer depends on it (premise corrected) — re-check SCRBRD-034 on its own merits before assuming it is still blocked |
+| SCRBRD-036 sponsor viewer | ~~SCRBRD-032~~ | ADR closed; a role request still has to be raised and pass it before this is buildable |
 | SCRBRD-037 duty roster | SCRBRD-034 | readiness is duty status; without the lifecycle the roster can only show names, which is the thing §17.3 says not to do |
-| SCRBRD-042 consent register | an audit of the existing consent reads | the entry may be already-satisfied; writing the change before the audit would be inventing work |
+| ~~SCRBRD-042 consent register~~ | — | done — closed as already-correct |
+| SCRBRD-057 NRR simulator | the runs/legal-balls-for-and-against derivation from `ball_event` (not yet built) | no runs/overs-for-and-against exist to simulate from today, only a stored final `net_run_rate` — computing a projection from that alone would be a fabricated number; "derived, not typed" is now the answer, but the derivation itself is unbuilt |
+| SCRBRD-061 bowling pitch map | its own capture step | no delivery has ever had a real line or length recorded; a chart today would heat-map every innings to one identical cell |
+
+# Pass 3 — Harvested from the `scrbrd_antigravity` prototype
+
+`iamkameel/SCRBRD_AntiGravity` is the same Next.js/Firebase lineage as `scrbrd-beta-2` (Pass 2 above),
+diverged much further — 454 component files against beta-2's 121. Full assessment, including the parts
+deliberately **not** adopted and the reasoning for each, is `audit/SCRBRD_ANTIGRAVITY_ASSESSMENT.md`.
+Its own self-audit (`Audit Pack/audit/*.md`, dated two days before this read) rates 65 of its 142 routes
+on real data, 43 partially mocked or randomised, 13 fully mocked — read as a warning to verify every
+screen against the wired code before borrowing it, which is what the assessment file does file by file.
+
+Six concrete gaps this tree does not yet cover, checked against the tree before being written here — the
+first three from the initial pass, the next two from a follow-up request for "rich data, dynamic UI/UX"
+(`audit/SCRBRD_ANTIGRAVITY_ASSESSMENT.md` Part 5), and the last from a wider sweep of the directories that
+pass had not yet reached (Parts 6–7):
+
+### ~~SCRBRD-056~~ — CLOSED
+**Closed 2026-09-18.** `HandoverSheet` (arm/claim/verify tabs), `apps/web/src/lib/handover.js`, a
+client-side pre-check in `sync.js` that declines to auto-claim into a pending handover, and
+`tools/smoke-browser-handover.mjs` (two real browser contexts, two real logins, a wrong confirmation
+refused with a field-level diff before a correct one transfers the token). Found and fixed along the way:
+the reference `.mjs`'s `diffConfirmation` shape does not match what `scoring_verify_takeover` actually
+returns (flat `exp_runs`/`exp_wkts`/`exp_balls`, not a `diff` array) — built the diff client-side from
+what the function really answers with; and a naive "re-run startSync after a takeover" cost the new holder
+a spurious second epoch, fixed with `resumeSync()`. `SCRBRD-059` records a gap this surfaced but does not
+fix: `scoring_claim()` itself does not check for a pending handover, only this screen's own client-side
+courtesy check does.
+**Title:** The scoring-session handover has a full backend and no screen
+**Priority:** P1 · **Domain:** Scoring / Sync · **Type:** product gap
+**Affected files:** new scorer-facing modal, `apps/web/src/scorer/`; no server changes
+**Affected users:** every match with a scorer change mid-innings — the common case is a phone handed to
+whoever is free, not the same person for the whole match
+
+**Current behaviour:** `services/api/handover/scoring-session.mjs` implements the complete protocol —
+`armHandover` issues a code, `claimHandover` takes it, a cross-device diff confirmation compares both
+sides' derived state before the token actually transfers, the epoch increments to invalidate the old
+device. Routes are wired (`server.mjs:340-341`) and a full API walk exists (`WALKS` in
+`tools/run-smoke-api.mjs`). Nothing in `apps/web/src` calls either route — a scorer at the ground has no
+way to trigger a handover through the app today.
+**Expected behaviour:** a modal reachable from the scoring screen: outgoing scorer arms it and sees a
+code with a countdown; incoming scorer enters it and claims it; if the derived states disagree, both are
+shown before anything transfers, per the backend's own diff-confirmation step.
+**Root cause:** the protocol was built and proven (`scoring-session.test.mjs`) before the screen was, and
+nothing has asked for the screen since.
+**Recommended change:** a two-step dialog (generate / claim), modelled on the shape in
+`SCRBRD_ANTIGRAVITY_ASSESSMENT.md` §2.1 — four-box PIN entry, live countdown — with the diff-confirmation
+step that source lacks (its own audit calls its version of this feature "PIN issued, never enforced").
+No PIN embedded in a URL. A browser walk to go with it, since none exists.
+**Why it matters:** the offline/handover story is the one this product's own roadmap already claims
+(`up3`, shipped) — the API-level walk it names is real, but "shipped" reads differently once it is clear
+a human cannot do this from the app itself.
+**Dependencies:** none — the routes and protocol already exist. **Security / privacy impact:** none new;
+same auth as every other scorer action. **Data migration required:** NO.
+**Tests required:** a browser walk exercising arm → claim → diff-confirm → epoch increment through the UI.
+**Acceptance criteria:**
+- [ ] A scorer can arm and claim a handover from the app, with no direct API call
+- [ ] A disagreement between the two devices' derived state is shown before the token transfers
+- [ ] The code is never carried in a URL
+**Regression risk:** LOW — additive UI over an already-tested backend.
+
+### SCRBRD-057
+**Title:** No what-if tool over the standings — and it cannot be built honestly yet
+**Priority:** P3 · **Domain:** Competitions / Analytics · **Type:** blocked, re-scoped
+**Affected files:** `db/08_schema_programme.sql` (`competition_entrant`), a new `db/NN`, then
+`apps/web/src/views/LeagueView.jsx`
+**Affected users:** competition admins and coaches following a run-in
+
+**Current behaviour, corrected from the first draft of this entry:** the first draft assumed a "what-if"
+simulator was a small client-side addition over data already read. Checking `competition_entrant`
+(`db/08`) before writing the code found the opposite: the table stores `played`, `won`, `lost`, `drawn`,
+`no_result`, `points` and a single stored **`net_run_rate` number** — no runs-for, overs-for, runs-against
+or overs-against. NRR is `(runs for ÷ overs for) − (runs against ÷ overs against)`; without the four raw
+aggregates a "projected NRR" cannot be computed, only guessed at by treating the stored rate as if it
+composed linearly with a new match's rate, which it does not — a rate is not an average of rates unless
+weighted by the overs each one covers. Doing that would be exactly the fabrication this codebase's culture
+exists to refuse: a confident-looking number computed from data that is not there.
+
+Worse, `LADDER`/`LiveLadder` (the real, `useLive("league", ...)` path, `comp.live === true`) is the only
+honest half of `LeagueView.jsx`. The DEMO half — `comp.table`, rendered when `comp.live` is falsy, with an
+"Edit Standings" / "✓ Save Changes" flow — writes only to local React state (`tableEdit`); no route exists
+under `services/api/write` for `competition_entrant` at all. A competition admin's "Save" on that screen
+persists nothing.
+**Expected behaviour:** either the simulator is dropped until the prerequisite exists, or the prerequisite
+is built first: `competition_entrant` gains real per-side aggregate columns (runs/legal-balls for and
+against), maintained from actual results — which itself needs an answer to a question this entry cannot
+answer alone: are those aggregates derived from `ball_event`/`match` results automatically, or typed by a
+competition admin as the authoritative record (the same "a human said so" standing a typed DLS revision
+target has)? That choice decides whether this is a read-side feature or a write-pipeline one.
+
+**Update 2026-09-18, "derived or typed" now answered:** a wider AntiGravity sweep (assessment file §6.3)
+found `pointsTableActions.ts` there deriving the same four aggregates at read time from completed matches,
+rather than storing them — but doing it by parsing a `"245/8"` score string and assuming
+`balls = overs × 6`, which is wrong whenever an innings ends early. SCRBRD OS does not need that guesswork:
+`ball_event` is already the authoritative per-delivery log (`innings`, `ball_type`, `value`, legal-ball
+tracking `packages/scoring/src/replay.mjs` already relies on), so the same aggregates AntiGravity
+reconstructs approximately from a parsed string, SCRBRD OS can derive exactly from the real ball log —
+**derived, not typed**, consistent with every other number this schema already computes rather than stores
+(replay, `HeadToHead` in `live.js`). This answers the open question; it does not build the prerequisite —
+a derivation (materialized view or read-time aggregation over `ball_event`, per competition) is still
+unbuilt, real work.
+**Root cause:** the standings model was built far enough to show a ladder, not far enough to recompute one.
+**Recommended change:** **do not build the simulator on top of the stored `net_run_rate` alone.** File the
+real prerequisite — a derivation of runs-for/legal-balls-for/against per team from `ball_event`, exposed
+either as a read resource or a materialized view — as its own entry now that "derived, from the ball log"
+answers the design question; this entry stays blocked until that prerequisite ships.
+**Why it matters:** almost shipped a plausible-looking number with no real arithmetic behind it, on a
+screen a competition admin would act on.
+**Dependencies:** the runs-for/legal-balls-for/against derivation from `ball_event`, filed as its own
+prerequisite entry — no schema-design decision left outstanding.
+**Security / privacy impact:** none. **Data migration required:** possibly NO for the derivation itself
+(a read-time aggregation needs no new columns; a materialized view would), **YES** if the simulator later
+needs its own storage.
+**Tests required:** N/A until re-scoped.
+**Acceptance criteria:**
+- [ ] Not attempted before the aggregate data exists
+**Regression risk:** N/A — nothing was built.
+
+### ~~SCRBRD-058~~ — CLOSED
+**Closed 2026-09-18.** `PitchReportModal` in `FieldsView.jsx`, wired to the existing write route and the
+`pitch_report` read resource (new `asPitchReport` adapter in `lib/live.js` — no resource previously had
+one). Every field optional, matching the server's own "empty report" refusal. Pre-fills from any existing
+report before rendering the form: `on conflict (match_id) do update` overwrites every column with whatever
+is submitted, so a blank form re-opened on an already-reported fixture would have silently wiped it —
+found and fixed while writing the browser walk, which proves the fix by reopening the same fixture and
+checking the form shows what was actually saved, not a blank one. 10 new assertions in
+`smoke-browser-read.mjs`.
+**Title:** The pitch report has a schema, a write route and a read resource, and no screen reaches any of them
+**Priority:** P3 · **Domain:** Facilities / Duty roster · **Type:** product gap
+**Affected files:** `apps/web/src/views/FieldsView.jsx` (the button already there), or the duty roster's
+`ground` slot; no server or schema changes
+**Affected users:** groundskeepers and whoever checks a ground is fit to play on
+
+**Current behaviour, corrected from the first draft of this entry:** this was originally filed as a
+missing table, on the assumption AntiGravity's `LogGroundStatusDialog.tsx` covered ground reporting that
+SCRBRD OS lacked entirely. It does not lack it. `db/08_schema_programme.sql` already has
+`match_pitch_report` (surface, grass, bounce, pace as words; `bounce_rating`/`pace_rating` as OPTIONAL 1–10
+numbers, with its own comment on exactly why a word and a number are not the same fact: *"a groundsman
+says 'two-paced' out loud; a director of sport asking which of five squares has got slower since September
+needs the number"*) and a separate `ground_condition` for the ground itself, deliberately kept apart from
+the per-fixture report so a drainage figure is not copied across every match at that venue and left to
+drift. `events-api.mjs:896` already writes it; `read-api.mjs`'s `pitch_report` resource already reads it
+back; the duty roster's `match_duties` read already unions it in as the `ground` arm's state. **This
+schema is already a stronger worked example of "a word plus an optional number where the number means
+something" than anything in `SCRBRD_ANTIGRAVITY_ASSESSMENT.md` §2.3 proposed inventing** — see Part 3 of
+that document, corrected alongside this entry.
+
+What is actually missing is narrower: `FieldsView.jsx:112` has a "+ Pitch Report" button with no
+`onClick` at all, and nothing in `apps/web/src` calls `useLive("pitch_report", ...)`. The schema, the
+write route and the read resource all exist and reach nothing.
+**Expected behaviour:** the button opens a form over the real columns (surface, grass, bounce, pace,
+the two optional ratings, outfield, favours, covers_on, notes) and posts to the existing route; the
+report reads back through the existing resource, on `FieldsView` and/or the duty roster's `ground` slot.
+**Root cause:** the write and read paths were built for the schema and the duty-roster summary; nobody
+has yet built the form.
+**Recommended change:** wire the existing button to a sheet/modal using the columns as they already are —
+no new enum, no new table, no flattening a word-plus-optional-number field into a single score.
+**Why it matters:** closes a real, narrow gap without repeating the false-precision mistake the source
+material would have imported were the schema not already there to check against.
+**Dependencies:** none for the form itself; SCRBRD-034 (duty lifecycle) for the roster slot to mean more
+than "recorded" once it reads the fuller record.
+**Security / privacy impact:** none — no sensitive data, and the RLS policies (`facility.manage` to write,
+`fixture.read` to read) already exist. **Data migration required:** NO — schema, write route and read
+resource are all already shipped.
+**Tests required:** a browser walk exercising the form against the existing write route and reading the
+result back.
+**Acceptance criteria:**
+- [ ] The "+ Pitch Report" button opens a working form and the report round-trips through the real route
+- [ ] The duty roster's `ground` slot reflects a submitted report, not only "recorded"
+**Regression risk:** LOW — additive UI over an already-shipped schema and routes.
+
+### SCRBRD-059
+**Title:** `scoring_claim()` does not check for a pending or in-progress handover
+**Priority:** P2 · **Domain:** Scoring / Sync · **Type:** correctness
+**Affected files:** `db/02_schema_scoring.sql` (`scoring_claim`), a new `db/NN`
+**Affected users:** every match where a handover is armed while a second device is also open
+
+**Current behaviour, found while building SCRBRD-056:** `scoring_claim(p_match, p_device)` refuses only
+when `state = 'active' AND lease_until > now() AND holder_device IS DISTINCT FROM p_device` — a
+colleague's live lease. It does **not** check for `handover_pending` or `verifying`. So while a handover
+is armed, any device with `scoring.start` that calls the plain `/session/claim` route — which is exactly
+what the scoring screen does on ordinary mount — takes the token outright, skipping the code and the
+verification handshake entirely. The reference implementation (`scoring-session.mjs`'s in-memory
+`claim()`) has the identical shape, so this is a property of the design, not a divergence between the two.
+**Expected behaviour:** a plain claim while `handover_pending` or `verifying` is refused with a reason
+naming the state, the same way a live lease is refused today — steering the caller toward the code/verify
+path rather than silently completing it for them.
+**Root cause:** the guard was written for the one case it was asked to prevent (two devices scoring at
+once) and never extended to the handover states, which did not exist yet when it was first written.
+**Recommended change:** add `OR s.state IN ('handover_pending', 'verifying')` to the refusal condition,
+with its own reason (`handover_pending` / `verifying`) rather than folding it into `lease_active`, since
+the remedy is different — enter the code, not wait out a lease.
+**Interim mitigation, already shipped in SCRBRD-056:** `apps/web/src/lib/handover.js`'s `sessionState()`
+and `sync.js`'s `startSync()` read the session state client-side before calling `/session/claim` and
+decline to auto-claim into a pending or verifying handover. This narrows the window for anyone going
+through the app in the ordinary way; it does not close it — a direct API call, or a race between the read
+and the claim, still bypasses it. Recorded rather than left silent, per this file's own convention.
+**Why it matters:** the handover UI SCRBRD-056 just built is only as trustworthy as the state machine
+underneath it; a client-side courtesy check is not the same guarantee as a database-enforced one.
+**Dependencies:** none. **Security / privacy impact:** none — everyone who could exploit this already
+holds `scoring.start` on this match; it is a workflow-integrity gap, not an authorisation one.
+**Data migration required:** **YES** — a decision-function change after go-live needs its own `db/NN`
+(no capability or bundle changes, so no `WITHDRAWN_SINCE_01`/`ADDED_SINCE_01` entry is needed).
+**Tests required:** a unit assertion in `scoring-session.test.mjs` (or its DB-level equivalent) that a
+plain claim during `handover_pending`/`verifying` is refused; the client-side pre-check already has
+coverage via the browser handover walk (SCRBRD-056).
+**Acceptance criteria:**
+- [ ] A plain claim while a handover is pending or verifying is refused, at the database function, not
+  only in the client
+- [ ] The refusal names which state blocked it
+**Regression risk:** LOW — narrows an existing function's success cases; every currently-passing walk
+claims into `idle` or a genuinely dead `active` lease, neither of which this touches.
+
+### SCRBRD-060
+**Title:** No bracket view for a knockout competition, though the schema already names one
+**Priority:** P3 · **Domain:** Competitions · **Type:** product gap
+**Affected files:** `apps/web/src/views/CompetitionsView.jsx`, `apps/web/src/views/LeagueView.jsx` (or a
+new `BracketView.jsx`); no server or schema changes
+**Affected users:** anyone following a knockout or festival competition
+
+**Current behaviour, checked against `scrbrd_antigravity`:** `competition.comp_type` (`db/00_schema_core.sql`)
+is already `league | knockout | festival`, but every competition screen in this codebase only ever renders
+a league table — there is no bracket UI anywhere, for any `comp_type`. `KnockoutBracket.tsx` in the
+AntiGravity tree is honestly built: every value on a match card (team names, scores, date, winner
+highlighting, a live pulse, a trophy on the final) comes from a typed `BracketRound[]` prop, with an honest
+`"TBD"` fallback for a team or date genuinely not yet known rather than an invented one; the connectors
+between rounds are layout math, not data. `CompetitionViewClient.tsx` passes `bracketRounds` straight
+through with no fabrication at the call site either. Zero fabrication found in this feature, unlike the
+player-passport and pitch-map findings in the same review pass.
+**Expected behaviour:** a competition with `comp_type = 'knockout'` (or `'festival'`) renders a bracket —
+rounds and matches derived from real `fixture`/`match` rows for that competition, not a league table.
+**Root cause:** the data model was built wide enough to name a knockout competition; the view layer was
+only ever built for the league case.
+**Recommended change:** a `BracketView` component modelled on `KnockoutBracket.tsx`'s shape (round columns,
+match cards, "TBD" for not-yet-known teams/dates, connector lines as pure layout), fed by real fixtures for
+the competition rather than a new prop shape invented for the port — the round/seeding structure needs its
+own derivation from `fixture` (e.g. round number, bracket position) since nothing in `db/00`/`db/08`
+currently records bracket position explicitly; that derivation is this entry's real scope, not the card UI.
+**Why it matters:** a real, currently-invisible product gap — a knockout competition is a named, supported
+`comp_type` with no way to see its bracket.
+**Dependencies:** a decision on how bracket position/round is derived or stored for a `fixture` in a
+knockout competition (may need a `db/NN` if round/seed is not already inferable from existing columns).
+**Security / privacy impact:** none — same read data as any other fixture view (`fixture.read`).
+**Data migration required:** possibly, depending on the dependency above.
+**Tests required:** a browser walk against a seeded knockout competition, once the derivation is decided.
+**Acceptance criteria:**
+- [ ] A `comp_type = 'knockout'` competition renders a real bracket, not a league table
+- [ ] Not-yet-known teams or dates show an honest placeholder, never an invented one
+**Regression risk:** LOW — additive view over existing fixture data; does not touch the league path.
+
+### SCRBRD-061
+**Title:** No bowling line/length capture, so a pitch map can only ever show one identical cell
+**Priority:** P3 · **Domain:** Scoring / Analytics · **Type:** capture gap, blocked-then-product
+**Affected files:** `packages/scoring/src/placement.mjs` and the ball-entry UI (capture), a new `db/NN`
+adding line/length columns to `ball_event`, then a new pitch-map chart component (display)
+**Affected users:** coaches and analysts reviewing a bowler's or an innings' line and length
+
+**Current behaviour, checked against `scrbrd_antigravity`:** `PitchMap.tsx` (a line/length heat grid, 4
+lengths × 5 lines) is itself honestly built — a real prop-driven density grid, no fabrication in the
+component. But its one call site, `TabsAnalysis.tsx:92`, feeds it `b?.length || 'Good'` and
+`b?.line || 'Off Stump'` — and nothing anywhere in that codebase's scoring path ever captures a real line
+or length on a delivery, so those are not a fallback for the rare missing case, they are the only value any
+delivery has. Every innings would heat-map to one identical cell. SCRBRD OS is in the same position,
+honestly: `packages/scoring/src/placement.mjs` captures where the ball went AFTER contact (batting
+placement — theta/radius, already powering the wheel, heat map and spider chart from SCRBRD-045/046). It
+captures nothing about where the ball was BOWLED.
+**Expected behaviour:** a scorer can optionally record a delivery's line and length at the point of
+scoring; a pitch-map chart renders real density from those recorded values, with no delivery defaulted into
+a cell it wasn't actually bowled to.
+**Root cause:** the scoring UI and `ball_event` schema were built for outcome and batting-placement capture;
+bowling line/length was never part of that capture step.
+**Recommended change:** **do not build the chart first.** This is capture-plus-chart, not chart alone: (1)
+a line/length selector in the scoring UI, optional like placement capture; (2) new columns on `ball_event`
+for line and length; (3) only then a pitch-map chart reading real values, following the same
+honest-placeholder discipline as SCRBRD-060 (an unrecorded delivery is omitted, never defaulted into a
+cell).
+**Why it matters:** the source's own component is clean, but adopting it as-is would silently import the
+one-cell fabrication its caller has, and SCRBRD OS has no capture to feed an honest version yet either —
+flagged now rather than after a small "just add the chart" misestimate.
+**Dependencies:** SCRBRD-039 (capture profiles) precedent — same shape of problem, optional in-scoring
+capture feeding a chart — worth building alongside or after it rather than as a one-off.
+**Security / privacy impact:** none. **Data migration required:** **YES** — new `ball_event` columns.
+**Tests required:** unit coverage for the new capture path once built; a browser walk once the chart exists.
+**Acceptance criteria:**
+- [ ] Not attempted as chart-only; capture ships first
+- [ ] An innings with no recorded line/length data shows an honestly empty map, never a fabricated one
+**Regression risk:** N/A — nothing built yet.
+
+### ~~SCRBRD-062~~ — CLOSED
+**Closed 2026-09-19.** `apps/web/src/views/ReadinessOverview.jsx`, a new `readiness` nav destination
+(`fixture.read`, "Operate" group), and `useDutyCoverage()` in `lib/live.js` — the same `match_duties` read
+and `asDuty` adapter `DutyRoster` already uses, fanned out with `Promise.all` across a school's next 8
+upcoming fixtures rather than one at a time. No new schema, server route, or RLS. A new browser-walk group
+in `smoke-browser-read.mjs` reads ground truth for a seeded fixture directly from `/api/read/match_duties`,
+confirms the overview's coverage count matches it, then cross-checks the same fixture's own `DutyRoster` on
+`MatchCentreView` shows the identical count — proving the two screens cannot drift from each other by
+construction, not just by inspection.
+
+**Correction on the same day:** the closing note above first reported four failures in unrelated screens
+(a guardian's school name, a Logistics trip, Add Player, onboarding) as pre-existing bugs, on the strength
+of them reproducing with this change stashed out. That stash test controlled for the wrong variable —
+it ruled out this change, but not the fact that the same un-reset database had already been driven through
+five consecutive walk runs, each one writing state (a withdrawn passport grant, an extra trip, an extra
+onboarded account) the next run's assertions did not expect. A `tools/migrate.mjs --reset --seed` followed
+by exactly one run of `smoke-browser-read.mjs` came back **350 passed, 0 failed** — all four "failures"
+were this session's own repeated-run contamination, not product bugs, and are retracted. A second such
+clean run caught one further one-off timing flake in the ratings screen that did not reproduce on a third;
+also not filed. Left here so the wrong conclusion doesn't get re-derived the same way twice.
+**Title:** No way to see duty-roster coverage across several fixtures at once
+**Priority:** P3 · **Domain:** Facilities / Duty roster · **Type:** product gap
+**Affected files:** a new view (e.g. `apps/web/src/views/ReadinessOverview.jsx`), reusing the existing
+`match_duties` read resource across multiple `matchId`s; no server, schema, or RLS changes
+**Affected users:** a sportsmaster / director of sport with several fixtures on a given weekend
+
+**Current behaviour, checked against `scrbrd_antigravity`:** its `SportsmasterDashboard` shows a
+"Readiness Status Board" — the next 5 fixtures, each with squad/venue/transport/officials status pills —
+traced to `getFixtureReadinessAction`. Venue and transport are real (a real field record, a real transport
+trip); squad and officials are both the identical `f.status === 'scheduled' ? 'ready' : 'pending'` test,
+one of them commented `// Static for now` — every scheduled fixture reads "ready" on both regardless of
+whether a lineup was picked or an umpire appointed.
+
+SCRBRD OS does not have this fabrication, because it does not have this screen at all — and the real
+building block for it already exists and is already correct: `apps/web/src/views/duties.jsx`'s
+`DutyRoster` computes genuine per-fixture coverage (umpires, third umpire, referee, scorer, scoring
+session, team sheet, pitch report, transport) from the `match_duties` union, under the same "READINESS,
+NOT NAMES" discipline documented in `services/api/read/read-api.mjs` — "nothing on record" rather than
+"pending" wherever nothing has actually happened. It is rendered only inside `MatchCentreView.jsx`, for
+one selected match at a time. There is no screen that lists several upcoming fixtures side by side with
+their coverage counts, the way a sportsmaster would actually want to scan a coming weekend.
+**Expected behaviour:** a compact table or card list — the school's next N fixtures, each showing a
+coverage count (e.g. "6/8 duties on record") and which slots are covered — built by running the existing
+`match_duties` read across those fixtures, not a new per-fixture formula.
+**Root cause:** `DutyRoster` was built and proven for the single-match detail screen (`SCRBRD-037`); nobody
+has yet needed the same real data summarised across fixtures.
+**Recommended change:** a new view that queries `match_duties` for each of the next N upcoming fixtures for
+a school (or reuses a batched version of the same query) and renders the same `SLOTS`/coverage logic
+`duties.jsx` already has, once per fixture, in a scannable list — explicitly not the AntiGravity formula of
+inferring squad/officials readiness from the fixture's own `scheduled` status, which restates the same fact
+twice under two labels instead of checking anything.
+**Why it matters:** the one piece of this idea genuinely missing from SCRBRD OS is UI, not data or
+discipline — the existing `match_duties` read already refuses exactly the fabrication the source commits,
+so this is close to the smallest kind of gap this backlog files.
+**Dependencies:** none for a first version reading `match_duties` as it is today; SCRBRD-034 (duty
+lifecycle) would let a covered slot mean more than "recorded" once it lands, the same as SCRBRD-037's own
+dependency.
+**Security / privacy impact:** none — same `match_duties` read, same per-table RLS, as the existing
+single-match roster. **Data migration required:** NO.
+**Tests required:** a browser walk confirming coverage counts for a small set of seeded fixtures with
+different duty states match what `MatchCentreView`'s own `DutyRoster` shows for the same fixtures.
+**Acceptance criteria:**
+- [ ] A sportsmaster can see coverage across several upcoming fixtures without opening each one
+- [ ] A slot with nothing on record reads as absent, never as "pending" or "ready"
+- [ ] The coverage count for a fixture matches what that fixture's own `DutyRoster` shows
+**Regression risk:** LOW — additive read-only view over an already-correct, already-tested resource.
+
+### ~~SCRBRD-052~~ — CLOSED
+**Closed 2026-09-19.** `tools/smoke-browser-innings-end.mjs`: a real browser scores a real fixture to a
+closed first innings (wickets through `WicketSheet`, however many the seeded squad actually takes — not a
+hardcoded ten), confirms `InningsReviewSheet`'s review gate, starts the second innings from
+`Innings2Sheet`, confirms the real target reaches the pad, closes the second innings the same way, and
+lands on the result screen — with the two `innings_end` events cross-checked directly against Postgres.
+
+Two real bugs found and fixed while building it, both in components no browser walk had exercised before
+because nothing had ever driven an innings to completion:
+- **`Badge` silently dropped `data-testid`, in two places.** `apps/web/src/scorer/ui.jsx`'s `Badge` (used
+  by `InningsReviewSheet`'s `review-reason`) and `apps/web/src/ui/primitives.jsx`'s separate `Badge` did
+  not spread extra props onto the underlying `<span>`, unlike `Card`'s already-established pattern in the
+  same file. `review-reason`'s own `data-testid` was accepted by JSX and thrown away — a real defect
+  waiting for the first thing to actually look for it, which this walk was. Fixed both to spread `...rest`,
+  matching `Card`.
+- **A second innings never gets a real target for the replay to close on** — filed separately as
+  **SCRBRD-063** below rather than fixed inline, since it is a scoring-engine correctness change, not
+  something a test file should carry.
+**Title:** A browser walk that scores an innings to its end
+**Priority:** P3 · **Domain:** Scoring · **Type:** test coverage
+**Affected files:** `tools/smoke-browser-innings-end.mjs` (new); `apps/web/src/scorer/ui.jsx`,
+`apps/web/src/ui/primitives.jsx` (the `Badge` fix)
+**Affected users:** none directly — coverage for a path every real match eventually takes
+
+**Current behaviour, before this:** `smoke-browser-sync.mjs` opens the real scorer and taps four
+deliveries of twenty overs — enough to prove the pad reaches Postgres, nothing more. Nothing exercised the
+review gate (SCRBRD-038), the innings break, the second innings' target, or the result screen.
+**Expected behaviour:** an innings closed by wickets rather than overs — the cheap route, ten dismissals
+through the wicket sheet against a hundred and twenty taps — covering the handover and quarantine paths
+under a closed innings as a side effect of existing.
+**Root cause:** nobody had needed a browser walk to run this long before.
+**Recommended change:** done, as described above.
+**Why it matters:** this is the first walk to ever reach `InningsReviewSheet`, `Innings2Sheet`, or the
+result screen in a real browser, and it found two real bugs in its first hour of existing.
+**Dependencies:** none. **Security / privacy impact:** none. **Data migration required:** NO.
+**Tests required:** itself.
+**Acceptance criteria:**
+- [x] A real browser closes a first innings by wickets and confirms the review gate
+- [x] The second innings' real target reaches the pad
+- [x] The result screen is reached and Postgres agrees with what both screens showed
+**Regression risk:** LOW — a new test file plus a two-line prop-spreading fix matching an existing pattern.
+
+### ~~SCRBRD-063~~ — CLOSED
+**Closed 2026-09-19.** `Innings2Sheet`'s `onStart` in `apps/web/src/scorer/engine.jsx` now emits an
+`INNINGS_START` event for the second innings before opening the "opener" sheet, carrying `target:
+innings[0].runs + 1` — the fix the recommended change below described, built the way it described. One
+change from the original recommendation, made after tracing the actual risk rather than assuming the
+first idea was safe: **not** a `REVISION` event. `RevisionSheet`'s own reducer marks an innings
+`revised`, and `engine.jsx` renders a visible "(revised)" badge next to the overs whenever that flag is
+set — a plain `revision()` call to seed the target would have shown every ordinary, un-rained-off second
+innings as revised, trading the bug just fixed for a new, user-facing one. The `INNINGS_START` this emits
+is also non-destructive by construction: it reads `battingTeam`/`bowlingTeam`/`squad`/`bowlingSquad`/
+`overs`/`twelfthMan` from `innings[1]` itself first, falling back to `match` state only where nothing is
+there yet — so a match started from scratch, whose second innings already has real squad data from
+`startMatch`'s `open2`, gets that data re-declared unchanged rather than overwritten with an empty squad,
+and only a real fixture resumed from the server (which never got an `INNINGS_START` for its second innings
+at all) falls through to the `match`-derived values. Fixes the byproduct too: the result screen's second
+scorecard panel now shows the real batting team's name instead of a blank heading.
+
+Verified against the real app, not a unit mock: `tools/smoke-browser-innings-end.mjs` (SCRBRD-052) now
+chases the target down with real sixes instead of a second round of wickets, and the review sheet opens on
+its own with `target_reached` — checked on screen and independently against the two `innings_end` events
+Postgres actually received. Full scoring and system suites green throughout (1915 assertions, 31 suites).
+**Title:** A second innings never gets a real target, so it can never end on reaching one
+**Priority:** P1 · **Domain:** Scoring · **Type:** correctness
+**Affected files:** `apps/web/src/scorer/engine.jsx` (wherever the second innings' event log is opened —
+today, nowhere), `packages/scoring/src/replay.mjs` (`inningsOverReason`, unchanged but worth re-reading
+alongside the fix)
+**Affected users:** every match that goes to a second innings and is won by reaching the target rather
+than by the chasing side being bowled out or running out of overs — which, for a run-chase that succeeds,
+is the common case, not the rare one
+
+**Current behaviour, found building SCRBRD-052's browser walk:** `packages/scoring/src/replay.mjs`'s
+`inningsOverReason()` only returns `target_reached` when `inn.target != null && inn.runs >= inn.target` —
+and `inn.target` is set **only** by an explicit `target` field on that innings' own `INNINGS_START` event
+(or a `REVISION` event). `packages/scoring/test/replay.test.mjs` already asserts this directly: its "chase
+completed on the last legal ball" case passes `target: 6` on `inningsStart()` by hand. Checking
+`apps/web/src/scorer/engine.jsx` for where the second innings gets its own `INNINGS_START` event with a
+computed target found nothing, on either of this codebase's two paths into a second innings: the
+from-scratch match setup (`open2` at engine.jsx, no `target` field) and the far more common path, resuming
+a real fixture through `closeInnings()`'s `curIn===0` branch, which sets `modal:"innings2"` and never
+emits an `INNINGS_START` for innings 1 at all — `addBatsman`/`addBowler` just emit `battersEvent`/
+`bowlerEvent` straight into an innings whose derived object has never been told what it needs to win.
+
+The pad itself is unaffected and already correct — `scoring.jsx`'s `target=curIn===1?(innings[0]?.runs||0)+1:null` computes and shows a real, correct target entirely client-side, independent of the replay
+model. What is missing is the wiring from that number to the thing that is actually supposed to check it:
+today, a real run-chase that reaches its target does not close the innings. It keeps going — by all out, or
+by running out overs — however many further deliveries get bowled after the match was already effectively
+over. A byproduct spotted along the way, from the same root cause: the result screen's `ScorecardPanel` for
+the second innings shows a blank team-name heading (`{i.battingTeam} · Innings 2`) whenever `i.battingTeam`
+was never set, because nothing set it.
+**Expected behaviour:** the moment a second innings' runs reach its target, `inningsOverReason()` returns
+`target_reached`, `InningsReviewSheet` opens on its own exactly as it does for all-out or overs-complete,
+and the second innings' scorecard panel shows the real batting team's name.
+**Root cause:** the review-gate refactor (SCRBRD-038) correctly wired `all_out` and `overs_complete`
+through `after.complete`/`inningsOverReason`, both derivable from the innings' own ball log alone. `target`
+is the one completion reason that is NOT derivable from one innings' own log — it needs the other innings'
+result — and nothing was added at the point the second innings actually begins to carry that fact forward
+into an event the replay can see.
+**Recommended change:** when the second innings genuinely begins (the natural point is `Innings2Sheet`'s
+`onStart`, before `setModal("opener")`, or the first `addBatsman`/`addBowler` call for that innings if
+lazier initialisation is preferred), emit an `INNINGS_START` event for innings 1 carrying `target:
+innings[0].runs + 1` alongside the same `battingTeam`/`bowlingTeam`/`teamKey`/`bowlingTeamKey`/`squad`/
+`bowlingSquad`/`overs` fields the first innings' own `INNINGS_START` already carries, sourced from the
+same `resume.cfg`/`match` state already available at that point (a home team confirmed by `resume.cfg`, an
+away team's squad handled the same honest way an away bowler already is — typed, not invented, when there
+is no roster to offer). A revised target (`RevisionSheet`) already overwrites `inn.target` via its own
+`REVISION` event and needs no change.
+**Why it matters:** this is a correctness gap in when a match is allowed to be over, not a display
+polish item — a scorer has no signal that the chase is done, and would keep recording deliveries that,
+under the Laws, should never have been bowled.
+**Dependencies:** none. **Security / privacy impact:** none. **Data migration required:** NO — an event
+shape change, not a schema one.
+**Tests required:** a unit case in `packages/scoring/test/replay.test.mjs`-adjacent coverage (or extending
+the existing "chase completed on the last legal ball" style) asserting `engine.jsx`'s own second-innings
+event construction includes `target`; then `tools/smoke-browser-innings-end.mjs` rescoped to chase a
+target down with real deliveries instead of a second round of wickets, once this lands.
+**Acceptance criteria:**
+- [x] A second innings that reaches its target closes on `target_reached`, without needing all out or
+  overs complete
+- [x] The second innings' `INNINGS_START` event carries `battingTeam`/`bowlingTeam` correctly, so the
+  result screen's scorecard panel names the real team
+- [x] `smoke-browser-innings-end.mjs` is updated to chase a target rather than take a second round of
+  wickets, and still passes
+**Regression risk:** LOW-MEDIUM — adds an event, and an event shape change on a heavily-replayed path
+deserves the full scoring suite run (`packages/scoring/test/*`, `apps/web/test/system.test.mjs`) before
+shipping, not just the new browser walk.
+
+### ~~SCRBRD-053~~ — CLOSED
+
+**Closed 2026-09-19.** The record exists. `db/25_disciplinary_record.sql` creates
+`disciplinary_record`, its three indexes, an authorship trigger and its own row-level policies;
+`disciplinary_records` is a read resource in `read-api.mjs` with an entry in `RESTRICTED_FIELDS`
+so every read of one is logged; `services/api/write/discipline-api.mjs` carries the two routes
+(`POST /api/players/:id/discipline`, `PATCH /api/discipline/:id`); and
+`tools/smoke-discipline.mjs` — 47 assertions, registered in `tools/run-smoke-api.mjs` — walks all
+of it over HTTP against real Postgres. **No capability grant changed.** The six bundles were
+already correct about who should be able to do this; it was the schema that had nothing to offer
+them, which is why `pnpm rls:generate` leaves `db/01_authz.sql`, `db/09_rls_policies.sql` and
+`db/23_authz_time_box.sql` byte-identical (checked with `git diff` after regenerating).
+
+**The shape was derived from the grants rather than chosen, and that is most of the design.**
+Read is held by `principal`/`directorofsport`/`schooladmin` (school-scoped), by `selfaccess` (a
+pupil reading his own, which needs a **person** anchor on the row), and by `competitionadmin`,
+whose assignment names no school and therefore reaches every school — automatically, because a
+NULL school on the ASSIGNMENT widens, with no platform-wide clause written anywhere. Write is
+held by `directorofsport` and by `official`, and an official is appointed **per match**, so the
+row needs a **fixture** anchor or the umpire's grant is unusable. `school_id` is denormalised for
+`development_note`'s reason plus one more: `competitionadmin` holds no player capability at all,
+so a derived school anchor would have resolved to NULL for them and been right only by accident.
+It is the only table in the schema whose RLS **fixture anchor can be NULL** — every other
+policy-anchored `match_id` is NOT NULL — so the same column carries the on-field/off-field
+distinction that a category enum would otherwise have restated. Falsified by swapping the anchor
+for `ANY_SCOPE` and watching the umpire successfully file about a match he never stood at.
+
+**Two Postgres behaviours found by building it, both of which changed the code.** First,
+`INSERT ... RETURNING` evaluates the SELECT policy on the returned row — so `returning id`, the
+shape every other write handler in this repo uses, would have refused the one writer this
+capability exists for, and refused it with "new row violates row-level security policy", which
+names the wrong policy. Verified with a two-policy probe table before the handler was written,
+then falsified by adding `returning id` back and watching the umpire's filing fail. Second, the
+same rule applies to the rows an `UPDATE`'s `WHERE` clause reads: a writer without the read
+cannot name a row, while a blind `UPDATE` with no `WHERE` touches every row the UPDATE policy
+allows (probed: `rowCount 0` against `rowCount 2`). Every statement here names an id, and the
+consequence — an umpire cannot revise his own report — is the right answer for a document that is
+evidence, with the school progressing it.
+
+**The trigger divides the row rather than locking it.** `development_note`'s trigger refuses any
+non-author UPDATE; that is correct for a coach's private note and wrong here, because the umpire
+who filed the incident was appointed for one afternoon and the matter outlives the appointment.
+So: the **account** is the author's (`45001` on a non-author changing `body`), the **outcome** is
+the school's (`state`/`outcome` for anyone holding `discipline.write` in scope), and the
+**subject** is nobody's to move (`45002`, new — a record re-filed against another child is a new
+record). Both are deliberately distinct from `42501`; all three are mapped in the handler, and a
+fourth, `23514`, is the constraint refusing a matter concluded without saying what happened.
+
+**Judgement calls, flagged because they were calls and not deductions.** No severity scale and no
+category enum: grading an offence against a written rule belongs with SCRBRD-041, which is the
+entry for rulebook clauses and their severities, and the on-field/off-field distinction a category would carry is already stated by whether
+`match_id` is present. `state` IS there, with three values, because `capabilities.mjs` describes
+the write as "Record **and progress** disciplinary matters" and a record that can only be appended
+to cannot be progressed. The read query `LEFT JOIN`s `player`: `competitionadmin` cannot read a
+roster, so an inner join would have returned an empty list to the platform-wide reader and looked
+like a school with a clean record. **The policies are hand-written and the table is deliberately
+NOT in `tables.mjs`** — `db/09` is generated, runs before `db/25`, and has already run on
+production, so a generated policy for a table born here would fail on a fresh install and break
+the ledger on a live one. `news_post` (db/12) and db/24's re-gated INSERT went the same way. What
+keeps the hand-written predicates honest instead is db/25's own `DO` assertion block, db/99's
+live assertions, and `sensitivity.test.mjs`, which greps the SQL for the capability inside an
+`app_can()` call — falsified by renaming the capability in the policy and watching
+`sensitivity.test.mjs` name `discipline.read` as gating nothing.
+
+**Verified against a freshly reset and reseeded database, in that order, with a second reset
+before the suites** (this file's own lesson about test-run contamination):
+`node tools/migrate.mjs --reset --seed --verify` prints ALL RLS LIVE ASSERTIONS PASSED over **254
+live assertions, up from 235** — the 19 new ones cover the six grants, the fixture anchor from
+both sides, the tenant line, the platform-wide stamp and all three trigger refusals;
+`node tools/smoke-discipline.mjs` 47 passed, 0 failed; `node tools/run-all-tests.mjs`
+**ALL SUITES PASSED · 1926 assertions across 31 suites**, up from 1923.
+`sensitivity.test.mjs` now reports 23 of 25 sensitive capabilities implemented (was 21) and 17
+row-gated rather than column-masked (was 15). Six separate falsifications were run and reverted:
+granting `medical` the read, granting `medical` both, replacing the fixture anchor with
+`ANY_SCOPE`, removing the non-author check, removing the subject pin, and removing the outcome
+constraint — each turned the intended assertion red and nothing else.
+
+**NO UI SCREEN IN THIS PASS, and that is a decision rather than an omission.** `up51` on the
+roadmap moves from `planned` to **`partial`**, naming `disciplinary_records` as undrawn, which
+`roadmap.test.mjs` checks is a real identifier in `services/api` that no view references. The
+reasoning: the gap SCRBRD-053 recorded was a capability gating nothing, and that is now closed at
+the layer where it existed. What a screen would have to settle first is a product question the
+schema does not get to answer — how a fifteen-year-old is shown a live disciplinary matter about
+himself, since `selfaccess` holds the read — and there is no design input on a case workflow to
+build against. `up23` (support access) and `up24` (DRS) are the precedent in the same file for
+shipping the API and the policy and saying so.
+
+**Title:** ~~`discipline.read` and `discipline.write` gate nothing~~
+**Priority:** P3 as filed, P1 as it turned out · **Domain:** RBAC / Privacy · **Type:** missing feature
+**Affected files:** `db/25_disciplinary_record.sql` (new), `db/98_seed_pilot.sql`,
+`db/99_rls_verify.sql`, `services/api/read/read-api.mjs`,
+`services/api/write/discipline-api.mjs` (new), `services/api/server.mjs`,
+`packages/policy/test/sensitivity.test.mjs`, `packages/policy/test/separation.test.mjs`,
+`tools/smoke-discipline.mjs` (new), `tools/run-smoke-api.mjs`, `apps/web/src/data/roadmap.js`
+**Affected users:** every holder of either capability — six roles, none of whose grants changed,
+all of which now reach something. And the seed gains its first `official` account: `official` was
+the one role in the bundle list that nothing ever signed in as, so `officiating.report` and
+`discipline.write` could previously only be observed failing.
+
+**Current behaviour:** `discipline.read` is held by `superadmin`, `principal`, `directorofsport`,
+`schooladmin`, `selfaccess` and `competitionadmin`; `discipline.write` by `superadmin`,
+`directorofsport` and `official`. Neither gates anything: no table, no policy, no masked column,
+no read resource. A school administrator who "can read discipline" can read nothing at all, and
+on the day a record arrives nobody's read of it would be logged, because the logger watches
+columns and there are none to watch.
+**Expected behaviour:** a disciplinary matter about a named child exists, is filed by the umpire
+who stood at the match or by the school, is progressed and concluded by the school, is readable
+by the head, the office, the boy himself and the league that runs the fixture — and by nobody
+else — and every read of one is on the school's own record.
+**Root cause:** the capability catalogue and the role bundles were written from
+`Roles&Duty.md` in one pass, ahead of the schema. Six bundles were correct about who should be
+able to do this; nothing had been built for them to do it to, and nothing in the suite could tell
+a capability with no gate from one with a gate elsewhere until `sensitivity.test.mjs` joined the
+two lists (SCRBRD-030).
+**Recommended change:** build the record — a new `db/NN`, an entry in `tables.mjs`, a read
+resource — or drop the pair. What should not persist is a role bundle promising something the
+schema cannot deliver.
+**Why it matters:** a capability that grants nothing is worse than an absent one. It reads as a
+control on a page a headmaster is shown, it is in the bundle a school is handed at onboarding,
+and the first person to find out it was decoration is whoever needed it.
+**Dependencies:** SCRBRD-030, which is how it was found. **Security / privacy impact:** real and
+in the intended direction — a level-3 record, row-gated rather than column-masked, with the
+platform-wide reader's every read stamped by the existing `app_is_platform_wide()` mechanism at
+no cost, and the school-side reader's logged because of the `RESTRICTED_FIELDS` entry.
+**Data migration required:** **YES** — `db/25_disciplinary_record.sql`, forward only, with its own
+assertion block; `scrbrd-supabase-apply-25.sql` generated and awaiting paste. No backfill: there
+is no prior disciplinary data anywhere to migrate, and none is seeded.
+**Tests required:** the `NOT_YET_IMPLEMENTED` entries removed from `sensitivity.test.mjs` (the
+suite's own anti-rot assertion fails if a listed capability starts being referenced, so this was
+forced rather than remembered); §11.4 of `separation.test.mjs` extended with the mirror of the
+`schooladmin` rule — the official writes and cannot read, which is the assumption the
+no-`RETURNING` design rests on; 19 live assertions in `db/99_rls_verify.sql`; and
+`tools/smoke-discipline.mjs` end to end over the routes.
+**Acceptance criteria:**
+- [x] Something real is gated by both capabilities, checked by grepping the SQL rather than by assertion
+- [x] Every one of the six grants reaches the record, each for its own scope reason
+- [x] A role without the capability is refused the read and the write, against real Postgres
+- [x] The refusal is attributable to the capability alone — the falsifying principal is medical
+      staff, whose assignment passes every other dimension of `app_can()`
+- [x] An official can file only about the fixture he was appointed to
+- [x] Authorship is fixed at INSERT and the account cannot be rewritten by anybody else
+- [x] Every read of a record is logged, school-side and cross-school
+- [x] No capability grant changed, and the three generated SQL files are byte-identical
+**Regression risk:** LOW. A new table with no reader anywhere in the client, no change to any
+role's grants and no edit to a generated or already-applied file. The two places it does touch
+shared code are the read resource map (additive; `disciplinary_records` is claimed by no module,
+deliberately — a school cannot switch off a safeguarding record the way it switches off
+Analytics) and the seed, which gains one account and one fixture-scoped assignment. The whole
+suite, the live verifier and the new walk are green against a freshly reset database.
+
+### ~~SCRBRD-064~~ — CLOSED
+
+**Closed 2026-09-19.** `contextFrom()` in `services/api/ai/ai-service.mjs` now folds a third
+resource, `career`, into Stats-Magic's context — read through the same `readResource` call, under
+the same principal, as `players` and `matches` already are. Before this, the model saw a roster and
+eight fixtures and nothing else: "what's his strike rate this term?" was unanswerable, and the
+system prompt's own instruction ("answer only from the supplied data; say so if it doesn't contain
+the answer") meant the honest reply to every stats question was a refusal. The platform's headline
+natural-language feature could not read the platform's numbers.
+
+**The masking guarantee is the design, not an afterthought.** `career` rows are keyed onto the
+roster **by `player_id`**, and every stats line is written with the roster's own `full_name` —
+never the career row's — because `names` (the list `askStatsMagic()` masks the whole context
+with) is collected from the roster. Keying the join the other way, or building the stats string
+beside the roster instead of through it, would be one careless line away from a child's real name
+reaching a third-party model provider in clear. Falsified directly: dropping the career players'
+names from the `names` list turned the new "no name reaches the provider in a stats line either"
+assertion red, printing three real names in the outbound request; restored, and green again.
+
+**Ratios are computed in JS, never stored or computed in SQL**, for the same reason `/read/career`
+itself gives: the division-by-zero cases are the interesting ones, and each is written as a phrase
+saying why rather than as a fabricated number — a batter never dismissed has "no average (never
+dismissed)," not an average of zero; a bowler with no wicket has "no average (no wicket)," not a
+sentinel. A player with nothing in the ball log at all (no career row, or a row of coalesced zeros
+— `/read/career` left-joins and coalesces, so the two look the same and are treated the same) is
+named under "Nothing recorded yet in the ball log for: …" rather than given a line of zeros
+alongside players who do have one.
+
+Two assumptions this entry's own first draft got wrong, caught rather than shipped: the seeded ball
+log carries no `bowler_id` at all (96 deliveries, 96 strikers, zero bowlers), so
+`player_bowling_career` is empty on a fresh reset — a live check that only read the seed would have
+called the bowling half covered while it was untested; `tools/smoke-statsmagic.mjs` writes its own
+charged deliveries, the way `smoke-phases` shapes the innings it needs, rather than trusting the
+seed to exercise it. And a `/read/career` row of coalesced zeros looked, to an early version of the
+code, like the same shape as no row at all, and printed "batting: no record; bowling: no record"
+for a boy who had genuinely never played, under a heading that read as claiming figures — caught by
+the assertion that a boy with nothing recorded is never given a figures line at all, not named
+twice under two different headings.
+
+Verified against a freshly reset and reseeded database, read as the director of sport: M Cele — 1
+match, 71 runs off 41 balls, SR 173.2, average 71.00, 5x4 3x6; S Naidoo — 1 match, 41 runs off 21
+balls, SR 195.2, no average (never dismissed — he has not been out, which the line does not
+confuse with an average of zero); D Mkhize — 0 wickets, 44 runs off 24 legal balls, economy 11.00,
+no average (no wicket). Every figure checked against `player_batting_career`/`player_bowling_career`
+read directly for the same player. `ai.test.mjs` grew from 20 to 31 assertions (real figures
+present; no fabricated zeros; the stats line's masked token is the roster line's own token, checked
+on the raw `system` string before unmasking); `tools/smoke-statsmagic.mjs` is new, 17 assertions
+against real Postgres, registered in `tools/run-smoke-api.mjs`'s `WALKS`. Full suite: 1938
+assertions across 31 suites. `apps/web/src/data/roadmap.js`'s `up47` moves from `planned` to
+`shipped`, naming the new walk.
+
+**Title:** Stats-Magic answers from real figures: fold `/read/career` into the model's context
+**Priority:** P2 · **Domain:** AI / Analysis · **Type:** product completeness
+**Affected files:** `services/api/ai/ai-service.mjs` (`contextFrom`, `statsMagicContext`, new
+`careerLine`), `services/api/ai/ai.test.mjs`, `tools/smoke-statsmagic.mjs` (new),
+`tools/run-smoke-api.mjs`, `apps/web/src/data/roadmap.js`
+**Affected users:** every coach, parent and pupil who asks Stats-Magic anything numeric
+
+**Current behaviour:** `contextFrom({ players, matches })` built the entire context from a roster
+string and up to eight fixtures. No runs, no wickets, no average, no strike rate, no economy —
+nothing derived from the ball log reached the prompt.
+**Expected behaviour:** the context also carries each roster player's batting and bowling figures,
+read from `/read/career` under the same principal as `players`/`matches`, with the ratios a cricket
+question actually asks for, computed from the raw counts.
+**Root cause:** Stats-Magic's context was built when the career views were the player profile's own
+business. Neither half was wrong; they were never joined.
+**Recommended change (as built):** described above.
+**Why it matters:** a stats assistant that cannot read the platform's stats fails silently — the
+model says "the data does not contain that" and sounds correct rather than incomplete. The masking
+half matters more: a line describing a child's performance is the first string in this codebase
+built specifically to describe a named child's play to a third-party model provider, and it is
+exactly the string that leaks if built beside the roster rather than through it.
+**Dependencies:** none — `player_batting_career`, `player_bowling_career`, `player_dismissals` and
+`/read/career` all pre-date this; nothing in SQL changed.
+**Security / privacy impact:** neutral-to-positive, asserted rather than assumed. Figures come from
+`security_invoker` views under the caller's own principal, scoped exactly as every screen already
+is; every name still goes through `maskNames()`, checked against every `full_name` in the database
+in the live walk, not just the names one fixture happens to use.
+**Data migration required:** NO — derived, never stored.
+**Tests required:** `ai.test.mjs` for the masking/zero-fabrication guarantees; `smoke-statsmagic`
+for the live seam against real Postgres.
+**Acceptance criteria:**
+- [x] `statsMagicContext()` reads `career` through `readResource`, not a bespoke query
+- [x] Strike rate, batting average, economy and bowling average appear in the built context
+- [x] A player with no record is named as having none and is never given a figure
+- [x] A batter never dismissed has no average; a bowler with no wicket has none
+- [x] No `full_name` in the database appears in the request that would go to the provider
+- [x] `ai` suite green at 31 assertions; `smoke-statsmagic` green at 17; full suite green
+**Regression risk:** LOW for scoring and the read path, neither of which changed. The real risk is
+prompt size — the context now carries a line per roster player with a record, which grows with a
+full season's data and is worth measuring before the pilot, the same way the commentary cost note
+elsewhere in `ai-service.mjs` already flags for that feature. Capping or ranking which players'
+figures are included, if it becomes necessary, is a product decision and was deliberately left
+alone here.
+
+### ~~SCRBRD-065~~ — CLOSED
+
+**Closed 2026-09-19.** `player_dismissal_breakdown`/`player_wicket_breakdown` (`db/26_dismissal_breakdown.sql`)
+group the exact same rows `player_dismissals` and `player_bowling_career` already fold into a single
+count each — the arithmetic is a GROUP BY away, now that `db/13` closed `ball_event.dismissal` to the
+eleven values the Laws recognise. Exposed as a new read resource, `dismissal_breakdown`, in
+`read-api.mjs`, inheriting the same RLS boundary `career` already relies on (`security_invoker` over
+`ball_event_live`, `fixture.read`) — no new capability, no new gate, the same tenant-scoping
+discipline as its sibling.
+
+**The one law this exists to keep, and the one place it could have been gotten wrong:** a run out is
+not the bowler's wicket. `player_wicket_breakdown` filters through `dismissal_is_bowlers()` — the
+same predicate `player_bowling_career.wickets` already uses — so the two can never disagree about
+whose figure a dismissal counts against. `tools/smoke-dismissals.mjs` proves this against real
+Postgres by writing a synthetic over (the static seed's only two wickets both have `bowler_id NULL`,
+for a real, pre-existing reason — the bowler in that innings is an opposing player with no row in
+a Hilton-only roster — so nothing in the seed alone exercises the predicate) crediting one bowler
+with five methods including a run out, and asserting the run out is the one that does not show up
+in his four wicket-type rows.
+
+**A real bug this closure caught before it shipped, not after:** the smoke test's first draft used
+`T Bekker` as its synthetic striker — the same player the seed's own 96-ball over separately credits
+with a real `bowled` dismissal at ball 34 — so the "five, exactly" assertion was fighting a sixth,
+real dismissal already on his record and failed. Fixed by moving the synthetic striker to `S Naidoo`,
+whose range in that same over (balls 35-55) carries neither of the seed's two wickets, confirmed by
+re-reading the seed's own ball-assignment logic rather than guessing. `node tools/run-all-tests.mjs`
+also needed `sensitivity.test.mjs`'s "every watched resource names at least one field" widened to
+accept `dismissal_breakdown` as row-gated the same way it already accepts `career` — a resource with
+nothing masked because the whole row is the gate, not an oversight.
+
+**Caught and bowled is deliberately not its own line.** HowStat and most scorecards give it one
+because it says the bowler took the catch himself — a fact about WHO FIELDED it, which `ball_event`
+does not record. Every caught dismissal off a bowler's own bowling looks identical in the log to a
+catch taken by any of the other ten fielders; inferring the split from `bowler_id` alone would be
+wrong for nearly every `caught` row in the game, which is worse than not drawing the line at all. If
+a fielder/catcher column is ever added, the split falls out of the same `GROUP BY` for free.
+
+Falsified live: the real view swapped for a broken one crediting every method to the bowler
+(run out included), confirmed the defect reappears and the assertion built to catch it goes red,
+then restored from the file that ships (read back into the test rather than retyped, so "restore"
+cannot itself drift from what `db/26` says) and reconfirmed green.
+
+Verified against a freshly reset and reseeded database: `node tools/migrate.mjs --reset --seed
+--verify` (ALL RLS LIVE ASSERTIONS PASSED, no capability or policy changed — `pnpm rls:generate`
+leaves `db/01`/`db/09`/`db/23` byte-identical); `tools/smoke-dismissals.mjs`, 13 assertions,
+registered as `"dismissals"` in `tools/run-smoke-api.mjs`; full suite 2008 assertions across 31
+suites.
+
+**No screen this pass.** `up48` on the roadmap moves from `planned` to `partial`, naming
+`dismissal_breakdown` as undrawn — the same honest pattern `up51`/`up23`/`up24` already use for a
+real, read-gated resource with no view yet built against it.
+
+**Title:** ~~Dismissal Analysis — how a boy gets out, and how a bowler takes wickets, by method~~
+**Priority:** P2 · **Domain:** AI / Analysis · **Type:** product completeness
+**Affected files:** `db/26_dismissal_breakdown.sql` (new), `services/api/read/read-api.mjs`,
+`db/98_seed_pilot.sql`, `tools/smoke-dismissals.mjs` (new), `tools/run-smoke-api.mjs`,
+`packages/policy/test/sensitivity.test.mjs`, `apps/web/src/data/roadmap.js`
+**Affected users:** every coach or analyst asking how a boy gets out, or how a bowler's wickets break down
+
+**Current behaviour:** `player_dismissals` and `player_bowling_career.wickets` each give one number;
+neither can say bowled-how-many, caught-how-many, lbw-how-many.
+**Expected behaviour:** the same figures, grouped one dimension further, read from the same RLS
+boundary every sibling career resource already relies on.
+**Root cause:** the flat counts were built first, and nobody had asked the question a breakdown
+answers until the HowStat review named it.
+**Recommended change (as built):** described above.
+**Why it matters:** a coach who can see a bowler took five wickets but not how — five yorkers or
+five lucky nicks — is reading a number, not a bowling spell.
+**Dependencies:** `db/13`'s closed dismissal vocabulary and `dismissal_is_bowlers()`, both pre-existing.
+**Security / privacy impact:** none — no new capability, same read boundary as `career`.
+**Data migration required:** NO — two views over existing rows; no schema change, no backfill.
+**Tests required:** `tools/smoke-dismissals.mjs`'s live, self-falsifying proof that a run out is
+never credited to the bowler.
+**Acceptance criteria:**
+- [x] A bowler's wickets are readable broken down by method, excluding run outs and the other
+      non-bowler dismissals
+- [x] A batter's dismissals are readable broken down by method, run outs included
+- [x] The breakdown sums to the same totals `player_dismissals`/`player_bowling_career` already give
+- [x] Falsified live: crediting a run out to the bowler is caught, not silently accepted
+- [x] No capability or RLS policy changed
+**Regression risk:** LOW — two new views and one new read resource, additive; no existing resource,
+policy or capability touched.
+alone here.

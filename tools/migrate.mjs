@@ -61,6 +61,13 @@ const psql = (sqlArgs, label) => {
   console.log(`✓ ${label}`);
 };
 const sha = (file) => createHash("sha256").update(readFileSync(file)).digest("hex");
+// SCRBRD-025. Best-effort: a shallow clone or a stray working copy with no
+// git at all still has to be able to migrate, so a failure here is a null
+// note, never a reason to stop.
+const gitSha = () => {
+  const r = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" });
+  return r.status === 0 ? r.stdout.trim() : null;
+};
 
 // --reset drops schema public, and on a managed host that takes the
 // platform's own objects with it. DEPLOYING.md has said "never against
@@ -169,8 +176,13 @@ $reset_objects$;`;
 }
 
 // The ledger lives with the schema it describes, so a reset takes it too.
+// `note` is added separately with IF NOT EXISTS: CREATE TABLE IF NOT EXISTS
+// is a no-op against a ledger this project already provisioned, and that
+// database still needs the column to record which commit applied a migration
+// from here on.
 psql(["-c", `CREATE TABLE IF NOT EXISTS schema_migration (
   name text PRIMARY KEY, sha256 text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now());
+ALTER TABLE schema_migration ADD COLUMN IF NOT EXISTS note text;
 ALTER TABLE schema_migration ENABLE ROW LEVEL SECURITY`], "ledger");
 // RLS on, no policies: the application role reads nothing of it, which the
 // live verifier insists on for every table; the owner, who runs this, reads it regardless.
@@ -187,6 +199,7 @@ const ledger = new Map();
 const migrations = readdirSync(DB_DIR).filter(f => /^\d\d_.*\.sql$/.test(f) && !/^9[89]_/.test(f)).sort();
 if (!migrations.length) { console.error("no migrations found in db/"); process.exit(1); }
 
+const commitSha = gitSha();
 let applied = 0, skipped = 0;
 for (const f of migrations) {
   const file = join(DB_DIR, f), hash = sha(file), had = ledger.get(f);
@@ -199,7 +212,8 @@ for (const f of migrations) {
   }
   // One transaction per file: a failure half-way leaves nothing behind, and
   // the ledger row is written by the same transaction as the schema it records.
-  const r = run(["-1", "-f", file, "-c", `INSERT INTO schema_migration (name, sha256) VALUES ('${f}', '${hash}')`]);
+  const note = commitSha ? `'${commitSha}'` : "NULL";
+  const r = run(["-1", "-f", file, "-c", `INSERT INTO schema_migration (name, sha256, note) VALUES ('${f}', '${hash}', ${note})`]);
   if (!r.ok) { console.error(`✗ ${f}\n${r.out}`); process.exit(1); }
   if (r.out) console.log(r.out);
   console.log(`✓ ${f}`);

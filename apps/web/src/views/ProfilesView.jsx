@@ -5,7 +5,7 @@ import { D, textOn } from "../design/tokens.js";
 import { fitnessColor } from "../lib/format.js";
 import { can, filterRecord } from "../rbac/index.js";
 import { Avatar, Badge, Card, EmptyState, Pill, RadarChart, SectionHeader, Select } from "../ui/primitives.jsx";
-import { ShotWheel } from "../scorer/charts.jsx";
+import { ShotHeatMap, ShotSpider, ShotWheel } from "../scorer/charts.jsx";
 import { useLive, usePlayersWithCareer, useRows, useSkills } from "../lib/live.js";
 
 // ══════════════════════════════════════════════════════
@@ -665,11 +665,24 @@ function CareerWagonWheel({ player, role }) {
   const inn = { ballLog: rows, squad: [{ id: player.id, batHand: player.batHand }] };
 
   return (
-    <div data-testid="career-wagon-wheel">
-      {loading ? <EmptyState loading/>
-       : error ? <EmptyState error/>
-       : <ShotWheel inn={inn} playerId={player.id} title="Where he scores — every innings"/>}
-    </div>
+    <>
+      <div data-testid="career-wagon-wheel">
+        {loading ? <EmptyState loading/>
+         : error ? <EmptyState error/>
+         : <ShotWheel inn={inn} playerId={player.id} title="Where he scores — every innings"/>}
+      </div>
+      {/* The same fetch, drawn twice more: as a surface, so forty spokes read
+          as regions, and as a shape, so "he scores square" is a figure per
+          direction and not an impression. One useLive call above serves all
+          three — a second identical request for the same rows would be the
+          network paying for a chart choice. */}
+      {!loading&&!error&&(
+        <div data-testid="career-shot-shape" style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"10px"}}>
+          <ShotHeatMap inn={inn} playerId={player.id}/>
+          <ShotSpider inn={inn} playerId={player.id}/>
+        </div>
+      )}
+    </>
   );
 }
 
