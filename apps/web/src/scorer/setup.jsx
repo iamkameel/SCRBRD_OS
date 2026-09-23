@@ -283,20 +283,16 @@ function TeamSelector({value, onChange, accent, label}){
    SQUAD BUILDER — 15 players, select 11 + 12th man
 ═══════════════════════════════════════════════════════ */
 function SquadBuilder({teamKey, selected11, setSelected11, twelfthMan, setTwelfthMan, battingOrder, setBattingOrder}){
-  const team=INT_TEAMS[teamKey];
-  if(!team)return null;
-  const accent=team.accent||D.sky;
-  // KNOWN DEFECT, left as found: these hooks run after the early return above,
-  // so a SquadBuilder whose teamKey goes from unknown to known (or back) calls
-  // a different number of hooks between renders and React throws. The fix is
-  // to hoist them above the return; that changes behaviour, so it is its own
-  // change. Suppressed here only so `pnpm lint` can gate everything else.
-  /* eslint-disable react-hooks/rules-of-hooks -- known defect, see above */
+  // Hooks first, before the early return: a SquadBuilder whose teamKey went
+  // from unknown to known called a different number of hooks between renders,
+  // and React throws on that.
   const dragIdx=useRef(null);
   const dragOverIdx=useRef(null);
   const[dragging,setDragging]=useState(null);
   const[dragOver,setDragOver]=useState(null);
-  /* eslint-enable react-hooks/rules-of-hooks */
+  const team=INT_TEAMS[teamKey];
+  if(!team)return null;
+  const accent=team.accent||D.sky;
 
   const toggle=(playerName)=>{
     const inXI=selected11.includes(playerName);

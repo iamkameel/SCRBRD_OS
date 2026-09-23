@@ -19,7 +19,7 @@
  * citations.
  */
 import {
-  deriveInnings, fmtOvers,
+  deriveInnings,
   inningsStart, batters, bowler, ball,
   BALL_TYPE,
 } from "../src/index.mjs";
