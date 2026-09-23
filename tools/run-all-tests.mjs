@@ -21,6 +21,7 @@ const SUITES = [
   ["invariants","packages/policy/test/invariants.test.mjs"],
   ["rating",   "packages/scoring/test/rating.test.mjs"],
   ["rubric",   "packages/scoring/test/rubric.test.mjs"],
+  ["readiness","packages/scoring/test/readiness.test.mjs"],
   ["phases",   "packages/scoring/test/phases.test.mjs"],
   ["spatial",  "packages/scoring/test/spatial.test.mjs"],
   ["wheel",    "apps/web/test/wheel.test.mjs"],
@@ -29,6 +30,8 @@ const SUITES = [
   ["system",   "apps/web/test/system.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Renders the scorer's review sheet, so it needs the same transform.
   ["review",   "apps/web/test/innings-review.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // Renders the pad's "can't score yet" panel from a folded innings, same transform.
+  ["blocked",  "apps/web/test/scoring-blocked.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Renders the profile's dismissal-by-method card, same transform.
   ["dismissal-card", "apps/web/test/dismissal-breakdown.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Renders the placement charts and the capture-profile picker (SCRBRD-039).

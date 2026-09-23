@@ -1461,12 +1461,70 @@ innings is byte-identical on the wire and grades identically in both folds.
 > carried on `innings_start`). Risk LOW. **Migration YES** if declared per innings rather than derived from
 > the balls already logged.
 
-### SCRBRD-040 — Scoring hub FSM with a named blocked state
-`blockedMissingSetup` — "cannot score because toss, openers or bowler are not set" as a state that
-explains itself, rather than a disabled button. The pattern already exists here
-(`rubric.test.mjs`: *"the gate is legible — the rubric reports its own readiness"*); this extends it to the
-scoring hub, where the gate is currently implicit. Files: scoring surface, `packages/scoring`.
-Risk LOW. Migration NO.
+### ~~SCRBRD-040~~ — CLOSED
+
+**Closed 2026-09-23.** The scorer's gate is a function of the folded innings that names what is
+missing, the pad says it in words, and the engine enforces the same answer it shows.
+
+**The evidence.** The gate was three inline lines in `engine.jsx`'s `guardReady`: no striker or
+non-striker → `setModal("opener")`, no bowler → `setModal("bowler")`, no innings → `return false`. A
+fourth copy sat in `onScore`. None of it said why. Worse, the last branch was a silent dead pad: a
+real fixture resumed with no roster on the device (`liveSquad()` returns null when not signed in or
+the team sheet fails) writes no `innings_start`, so every tap returned false and nothing appeared.
+The hub's stage-2 commits (`onRun`, `onBye`, `onLegBye`) never checked at all; they relied on stage 0.
+
+**As built.** `packages/scoring/src/readiness.mjs` — `scoringReadiness(inn)` returns
+`{ ready, blocked: [{ code, says, fix }] }`, `blocked` in the order to fix, `blocked[0]` the one to
+fix now. Codes (`SCORING_BLOCK`), each derived from the fold and nothing else:
+`no_innings` (`!inn` or `battingTeam == null` — no `innings_start`), `innings_closed` (`sealed`),
+`innings_over` (`complete` and not sealed, carrying `endReason`) — both terminal, given alone —
+then `openers` (an end empty, fewer than two batters ever named), `next_batter` (an end empty after
+that), `opening_bowler` (no bowler, no delivery yet), `next_bowler` (no bowler after deliveries,
+carrying the over number). Words live beside the codes (`SCORING_BLOCK_TEXT`).
+**The toss is deliberately not a gate**: it is not in the ball log (it is `match_toss`, server-side,
+and a resumed fixture never brings it to the device), so a check would be a guess. What the toss
+decides — who bats — is on `innings_start`, and `no_innings` checks that.
+In `engine.jsx`, `const readiness=scoringReadiness(inn)` feeds `guardReady`, `onScore`, a new check at
+the top of `commitBall` (the funnel for every delivery) and `confirmWicket`, and `<ScoringBlocked>`
+(`scoring.jsx`) above both pads: `role="status"`, `aria-live="polite"`, "Can't score yet: the
+opening batters have not been chosen." with a "Choose the opening batters" button and a "Then: …"
+line for what follows; it wraps at phone width and hides while a sheet is open. `fixBlock` maps each
+code to the sheet that already existed (opener, newBatsman, bowler, newOver, inningsReview,
+innings2); the one reason with no sheet, `no_innings` on the first innings, writes the same
+`innings_start` the roster path writes, with an empty squad, then opens the batting sheet. A tap on
+a blocked pad still opens the fix.
+
+**Tests.** `packages/scoring/test/readiness.test.mjs` (suite `readiness`, 39): every code from a
+folded log, both orderings (batters before bowler), the terminal cases not also asking for a batter,
+a refused seal still `innings_over`, a voided bowler event, every prefix of a played log agreeing
+with the raw facts, and words for every code. `apps/web/test/scoring-blocked.test.mjs` (suite
+`blocked`, 24) renders the panel from folded innings and asserts the sentence, the fix button,
+`role="status"`, nothing when ready, and reads `engine.jsx` for the one gate. `smoke-browser-sync`
+gained 3: the real pad on a real fixture says the openers sentence, its button opens the batting
+sheet, and the panel is gone once openers and bowler are named.
+
+**Falsified.** Openers check restricted to `batsmen.length >= 2` (reports ready on `[innings_start,
+bowler]`): readiness 4 red, render test 4 red. Early `return { ready: true }` while fewer than two
+batters are named: readiness 4 red plus the prefix sweep, render 6 red. Restored; both green. The
+first build showed the panel behind open sheets and `browser-innings-end` went red (its `NEXT`
+matcher clicked the panel's "Send in the next batter" behind the sheet) — hence hidden while a
+sheet is open.
+
+**Verified.** `replay.test` 296/296; `pnpm build`; `pnpm smoke` (smoke 8, scorer 21, persistence 16,
+a11y 24); `migrate --reset --seed` then walks `browser-sync` 21, `browser-innings-end` 23,
+`browser-handover` 26 — all pass; full suite ALL SUITES PASSED, 2205 assertions across 36 suites
+(was 34; +39 `readiness`, +24 `blocked`).
+
+- [x] a named blocked state per missing thing, derived from the fold
+- [x] the pad explains it in words, with the fix as the action
+- [x] the engine's gate and the words are one function
+- [x] unit + render tests, falsified
+
+**Title:** ~~Scoring hub FSM with a named blocked state~~
+**Affected files:** `packages/scoring/src/readiness.mjs` (new), `packages/scoring/src/index.mjs`,
+`packages/scoring/test/readiness.test.mjs` (new), `apps/web/src/scorer/engine.jsx`,
+`apps/web/src/scorer/scoring.jsx`, `apps/web/test/scoring-blocked.test.mjs` (new),
+`tools/run-all-tests.mjs`, `tools/smoke-browser-sync.mjs`. Risk LOW. Migration NO.
 
 ### SCRBRD-041 — Rulebook clauses with severity and applicable ages, cited by the workload monitor
 `RulebookView.jsx` exists; beta-2's *clause shape* is better — `severity: Mandatory | Guideline | Penalty
@@ -2646,3 +2704,18 @@ application role only; no capability, policy or table changed.
 - [x] Falsified: with the guard removed, the refusal assertions go red
 **Regression risk:** LOW for behaviour; the operational risk is the one intended — the first deploy
 after this merges will not start until `apply-29` has been pasted.
+
+### SCRBRD-067 — A real fixture opens its first innings without asking who won the toss
+**Title:** The scorer assumes the home side (`team1`) bats first on a live fixture, although the toss is recorded
+**Priority:** P2 · **Domain:** Scoring · **Type:** correctness
+**Affected files:** `apps/web/src/scorer/engine.jsx` (the "real fixture nobody has scored yet" hydration path,
+and SCRBRD-040's `NO_INNINGS` fix, which deliberately copies it), the toss read (`match_toss`, `tools/smoke-toss.mjs`)
+**Found 2026-09-23** while reviewing SCRBRD-040. The demo setup flow derives the batting side from the toss and the
+bat/bowl election (`setup.jsx`, `first = bat===0 ? toss : 1-toss`). The live-fixture path does not: it writes
+`innings_start` with `battingTeam: cfg.team1`, and SCRBRD-040's fix for a fixture with no roster on the device
+writes the same. When the side that won the toss chose to field, the first innings is recorded against the wrong
+team, and `innings_start` is the one event undo will not walk past.
+**Expected behaviour:** the first `innings_start` on a live fixture names the side the recorded toss put in to bat;
+with no toss recorded, the scorer is asked (toss winner and election) before the innings opens, never defaulted.
+**Tests required:** a walk that records a toss where the away side bats first and asserts the opened innings.
+**Data migration required:** NO (reads the existing toss).

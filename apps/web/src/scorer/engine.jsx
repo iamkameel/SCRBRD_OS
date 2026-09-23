@@ -4,7 +4,7 @@ import {
   ball as ballEvent, penalty as penaltyEvent, revision as revisionEvent, sealInnings,
   newEventId, undoLast,
   noPlacement, NO_CONTACT_SHOTS, PLACEMENT_NULL, PLACEMENT_SOURCE, CAPTURE_PROFILE,
-  DISMISSAL_LABEL,
+  DISMISSAL_LABEL, scoringReadiness, SCORING_BLOCK,
 } from "@scrbrd/scoring";
 import { D } from "../design/tokens.js";
 import { deviceId } from "../lib/device.js";
@@ -17,7 +17,7 @@ import { fmtOv } from "./format.js";
 import { ALL_SHOTS } from "./shots.js";
 import { AnalysisDashboard, ManhattanChart } from "./charts.jsx";
 import { DynamicBar, EventOverlay, FreeHitBanner, InningsOverBanner, PartnershipCard, ScorecardPanel, buildEventCfg, detectMilestone } from "./panels.jsx";
-import { FocusPad, ScoringPanel } from "./scoring.jsx";
+import { FocusPad, ScoringBlocked, ScoringPanel } from "./scoring.jsx";
 import { SetupScreen } from "./setup.jsx";
 import { BattingOrderSheet, HandoverSheet, Innings2Sheet, InningsReviewSheet, NewOverSheet, NoBallSheet, PenaltySheet, RevisionSheet, ShotSelectorSheet, WicketSheet } from "./sheets.jsx";
 import { INT_TEAMS } from "./teams.js";
@@ -423,14 +423,48 @@ function SCRBRD({resume}={}){
     }));
   };
 
-  // Guard: ensure players are set before scoring
+  // ── The gate ────────────────────────────────────────────
+  // SCRBRD-040. Whether a delivery may be recorded is asked of the scoring
+  // package, not of this file, and the answer names what is missing. The pad
+  // shows that answer in words (ScoringBlocked) and every path that records a
+  // ball checks the same answer, so the screen cannot say "ready" while the
+  // engine refuses, or the reverse. It used to be three inline checks here:
+  // a missing batter or bowler popped a sheet with no reason given, and no
+  // innings at all returned false and did nothing.
+  const readiness=scoringReadiness(inn);
+
+  // The fix for each reason is the sheet that already existed for it. Only an
+  // innings with nobody batting had none: a fixture resumed with no roster on
+  // the device (not signed in, or no team sheet) opened on a pad that refused
+  // every tap in silence. Opening it here writes the same innings_start the
+  // roster path writes — team1 bats first on every path into a match — with
+  // an empty squad, so the scorer names players as they come in.
+  const fixBlock=(b)=>{
+    switch(b?.code){
+      case SCORING_BLOCK.NO_INNINGS:
+        if(curIn===1){setModal("innings2");return;}
+        if(!match?.team1)return;
+        emit(inningsStart({battingTeam:match.team1,bowlingTeam:match.team2,
+          teamKey:match.teamKey1||match.team1,bowlingTeamKey:match.teamKey2||match.team2,
+          squad:[],bowlingSquad:[],overs:match.overs??20}));
+        setModal("opener");return;
+      case SCORING_BLOCK.INNINGS_OVER: setModal("inningsReview");return;
+      case SCORING_BLOCK.OPENERS: setModal("opener");return;
+      case SCORING_BLOCK.NEXT_BATTER: setModal(inn?.striker?"opener":"newBatsman");return;
+      case SCORING_BLOCK.OPENING_BOWLER: setModal("bowler");return;
+      case SCORING_BLOCK.NEXT_BOWLER:
+        setModalCtx({lastBowlerId:inn?.ballLog?.[inn.ballLog.length-1]?.bowlerId??null});
+        setModal("newOver");return;
+      default: return; // innings closed: nothing to fix, only to say
+    }
+  };
+
+  // A tap on the pad while blocked still opens the fix — it is what the
+  // scorer's hand is asking for — but the pad now says why, above it.
   const guardReady=()=>{
-    if(!inn)return false;
-    // Only open the opener modal mid-match (e.g. after a wicket where batsman wasn't set)
-    // Never re-open at match start — opener + bowler are set during setup
-    if(!inn.striker||!inn.nonStriker){setModal("opener");return false;}
-    if(!inn.bowler){setModal("bowler");return false;}
-    return true;
+    if(readiness.ready)return true;
+    fixBlock(readiness.blocked[0]);
+    return false;
   };
 
   // Hub stage 0: approach toggle
@@ -605,8 +639,7 @@ function SCRBRD({resume}={}){
 
   // Legacy onScore kept for any remaining modal references
   const onScore=(type,value)=>{
-    if(!inn)return;
-    if(!inn.striker||!inn.nonStriker||!inn.bowler){setModal("opener");return;}
+    if(!guardReady())return;
     if(type==="Wd"){commitBall("Wd",value,null,null,null,hubApproach);return;}
     if(type==="Nb"){setModal("noBall");return;}
     setScoringCtx({type,value});
@@ -633,6 +666,9 @@ function SCRBRD({resume}={}){
    * "not required" rather than a silent blank.
    */
   const commitBall=(type,value,shot,seg,zone,approach,placement)=>{
+    // Every delivery comes through here, including the hub's stage-2 paths
+    // that were only checked at stage 0. The same answer the pad shows.
+    if(!readiness.ready)return;
     const place=placement??(seg!=null
       ? {seg,zone,placementSource:PLACEMENT_SOURCE.SECTOR,captureProfile:CAPTURE_PROFILE.STANDARD}
       : noPlacement(
@@ -708,6 +744,7 @@ function SCRBRD({resume}={}){
   };
 
   const confirmWicket=(mode,fielder)=>{
+    if(!readiness.ready){setModal(null);return;}
     // The dismissal, the fielder, whose wicket it is and whether the bowler is
     // credited are all decided by the replay. The fielder in particular used to
     // be dropped from the log entirely, so a replayed scorecard could never
@@ -1100,6 +1137,9 @@ function SCRBRD({resume}={}){
 
         {/* Content */}
         <div style={{maxWidth:"1320px",margin:"0 auto",padding:"16px"}}>
+          {/* Not while a sheet is open: the sheet IS the fix in progress, and
+              a second button offering the same fix behind it only competes. */}
+          {activeTab==="score"&&!modal&&<ScoringBlocked readiness={readiness} onFix={fixBlock}/>}
           {activeTab==="score"&&uiMode==="focus"&&(
             <FocusPad inn={inn} match={match} curIn={curIn} target={target2}
               onCommitDetailed={onCommitDetailed} onWicketCtx={onWicketCtx}

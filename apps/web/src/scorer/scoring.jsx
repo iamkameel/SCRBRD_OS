@@ -634,4 +634,45 @@ function FocusPad({inn,match,curIn,target,onCommitDetailed,onWicketCtx,onWide,on
 }
 
 
-export { FocusPad, ScoringHub, ScoringPanel };
+/* ═══════════════════════════════════════════════════════
+   SCORING BLOCKED — SCRBRD-040
+   The gate, said out loud. `readiness` is scoringReadiness(inn) from
+   @scrbrd/scoring — the same value the engine checks before it records a
+   delivery — so what this says and what the engine enforces are one answer
+   read twice. It used to be a sheet that popped open on a tap with no reason
+   given, or, with no innings open, nothing at all.
+═══════════════════════════════════════════════════════ */
+const OVER_CODES=new Set(["innings_over","innings_closed"]);
+function ScoringBlocked({readiness,onFix}){
+  if(!readiness||readiness.ready||!readiness.blocked?.length)return null;
+  const [first,...rest]=readiness.blocked;
+  // An innings that is over is not waiting on setup, so it does not get "yet".
+  const lead=OVER_CODES.has(first.code)?"Can't score":"Can't score yet";
+  return (
+    <div role="status" aria-live="polite" data-testid="scoring-blocked" data-block={first.code}
+      style={{display:"flex",flexWrap:"wrap",alignItems:"center",gap:"10px 14px",
+        marginBottom:"12px",padding:"12px 14px",borderRadius:"12px",
+        background:`${D.amber}12`,border:`1px solid ${D.amber}55`}}>
+      <div style={{flex:"1 1 220px",minWidth:0}}>
+        <div style={{fontFamily:D.body,fontSize:"14px",fontWeight:600,color:D.textPrimary,lineHeight:1.35}}>
+          {lead}: {first.says}.
+        </div>
+        {rest.length>0&&(
+          <div style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,marginTop:"3px",lineHeight:1.35}}>
+            Then: {rest.map(r=>r.says).join("; ")}.
+          </div>
+        )}
+      </div>
+      {first.fix&&onFix&&(
+        <button onClick={()=>onFix(first)} className="pressBtn" data-testid="scoring-blocked-fix"
+          style={{flexShrink:0,minHeight:"40px",padding:"8px 16px",borderRadius:D.pill,cursor:"pointer",
+            border:"none",background:D.amber,color:textOn(D.amber),
+            fontFamily:D.head,fontSize:"13px",fontWeight:700,letterSpacing:"0.02em"}}>
+          {first.fix}
+        </button>
+      )}
+    </div>
+  );
+}
+
+export { FocusPad, ScoringBlocked, ScoringHub, ScoringPanel };
