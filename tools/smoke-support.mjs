@@ -136,12 +136,44 @@ try {
   const second = await begin(plat, { schoolId: HIL, role: "directorofsport", reason: "ticket 4412: the second look at Hilton" });
   ok("a second session begins once the first has ended", second.status === 200);
   ok("...and reads", (await read("players", plat)).length > 0);
+  const liveAt = async () => ((await api("/api/session", { token: plat })).body?.assignments ?? [])
+    .filter((a) => a.school === HIL && a.role === "directorofsport");
+  const shown = await liveAt();
+  ok("the workspace shows the session, with when it stops (SCRBRD-034)",
+     shown.length === 1 && Math.abs(new Date(shown[0].expiresAt) - new Date(second.body.expiresAt)) < 1000);
   await q(`update role_assignment a set expires_at = now() - interval '1 second'
              from support_access s where s.id = $1 and a.id = s.assignment_id`, [second.body.id]);
   ok("past its hour it reads nothing — app_can() evaluated the clock on this very statement",
      (await read("players", plat)).length === 0);
   ok("...and reports itself as no longer live",
      (await read("support_access", plat)).find((s) => s.id === second.body.id)?.live === false);
+  ok("...and the workspace stops showing it — sessionProfile reads the hour hand too (SCRBRD-034)",
+     (await liveAt()).length === 0);
+
+  group("An hour hand carries a reason, however it is written (SCRBRD-034, db/30)");
+  // role_assignment_write lets the school's office INSERT an assignment, and
+  // used to let it set expires_at with no reason and no support record. The
+  // deferred check refuses it at COMMIT — so the whole statement fails.
+  const [{ id: WATCHER }] = await q(`select id from app_user where email = 'watcher@example.invalid'`);
+  const [{ id: SARAH_ID }] = await q(`select id from app_user where email = 'sarah@example.invalid'`);
+  const asSarahDirect = async (sql, params) => {
+    const c = await pool.connect();
+    try {
+      await c.query("begin");
+      await c.query("set local role scrbrd_app");
+      await c.query("select set_config('app.user_id', $1, true)", [SARAH_ID]);
+      await c.query(sql, params);
+      await c.query("commit");
+      return null;
+    } catch (e) { await c.query("rollback").catch(() => {}); return e; } finally { c.release(); }
+  };
+  const direct = await asSarahDirect(
+    `insert into role_assignment (person_id, role, school_id, expires_at) values ($1, 'analyst', $2, now() + interval '1 hour')`,
+    [WATCHER, HIL]);
+  ok("a time-boxed grant with no support session is refused at commit",
+     direct?.code === "23514" && /no support session/.test(direct?.message ?? ""));
+  ok("...and left nothing behind",
+     (await q(`select count(*)::int n from role_assignment where person_id = $1 and expires_at is not null`, [WATCHER]))[0].n === 0);
 
   group("Nothing else moved");
   ok("an ordinary appointment, with no hour hand, is untouched", (await read("players", sarah)).length > 0);

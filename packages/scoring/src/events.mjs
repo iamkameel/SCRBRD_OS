@@ -43,6 +43,11 @@
  * consistent, and there is no evidence left to reconcile them with.
  */
 
+import { CAPTURE_PROFILE } from "./placement.mjs";
+
+/** The three declarable profiles. Mirrors the CHECK on ball_event.capture_profile. */
+const CAPTURE_PROFILES = new Set(Object.values(CAPTURE_PROFILE));
+
 // ── Event kinds ──────────────────────────────────────────
 export const KIND = {
   INNINGS_START: "innings_start", // opens an innings, carries squads + format
@@ -182,6 +187,48 @@ const base = (kind, o = {}) => ({
   ...(o.seq !== undefined ? { seq: o.seq } : {}),
 });
 
+/**
+ * Reject a capture profile the model does not define. SCRBRD-039.
+ *
+ * Same reasoning as checkedType below: a misspelt declaration ("Full",
+ * "standrad") is not a harmless null. It would be refused by the CHECK on
+ * ball_event.capture_profile when it synced — rejecting the innings_start and
+ * with it the squads — so it is refused here, on the device, where the scorer
+ * who chose it is still looking at the screen.
+ */
+const checkedProfile = (p) => {
+  if (!CAPTURE_PROFILES.has(p)) {
+    throw new TypeError(
+      `unknown capture profile ${JSON.stringify(p)} — expected one of ${[...CAPTURE_PROFILES].join(", ")}`);
+  }
+  return p;
+};
+
+/**
+ * Open an innings.
+ *
+ * `captureProfile` is the DECLARED capture intent for the whole innings
+ * (SCRBRD-039): what the scorer chose, at setup, to collect on every ball —
+ * `full` (an exact point), `standard` (a sector) or `quick` (runs only). It is
+ * not the per-ball `captureProfile` on a delivery, which still records the code
+ * path each ball actually took (placement.mjs); this is the promise those balls
+ * are read against, so that a heat map with nothing on it can say "never asked
+ * for" rather than "missing".
+ *
+ * Carried here, on the event, rather than in a column set beside the log: the
+ * log is the only source of truth (see the top of this file), and a
+ * declaration that lived anywhere else could disagree with the innings it
+ * describes. It travels through toRow() into ball_event.capture_profile on the
+ * innings_start row — the column and its CHECK already exist (db/07) — and
+ * db/31 derives the per-innings declaration from that row, the same way the
+ * fold below derives it from this event.
+ *
+ * OMITTED, not null, when undeclared. Every innings_start already on a phone,
+ * in an outbox or in the server's log has no such key, and an undeclared
+ * innings built today must be the same object those are — byte for byte
+ * through the wire round trip — so that nothing about an old match reads
+ * differently for this having shipped.
+ */
 export const inningsStart = (o) => ({
   ...base(KIND.INNINGS_START, o),
   battingTeam: o.battingTeam,
@@ -193,6 +240,7 @@ export const inningsStart = (o) => ({
   twelfthMan: o.twelfthMan ?? null,
   overs: o.overs ?? 20,
   target: o.target ?? null,
+  ...(o.captureProfile != null ? { captureProfile: checkedProfile(o.captureProfile) } : {}),
 });
 
 export const batters = (o) => ({

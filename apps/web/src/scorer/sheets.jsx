@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { DISMISSAL, DISMISSAL_LABEL, INNINGS_END_REASON } from "@scrbrd/scoring";
 import { D } from "../design/tokens.js";
-import { armHandover, cancelHandover, claimHandover, sessionState, verifyTakeover } from "../lib/handover.js";
+import { armHandover, cancelHandover, claimHandover, refusalWords, sessionState, verifyTakeover } from "../lib/handover.js";
 import { fmtOv } from "./format.js";
 import { SHOT_CATEGORIES } from "./shots.js";
 import { INT_TEAMS, ROLE_COLORS } from "./teams.js";
-import { Badge, Btn, Lbl, Sep, Sheet } from "./ui.jsx";
+import { Badge, Btn, CaptureProfilePicker, Lbl, Sep, Sheet } from "./ui.jsx";
 import { Select } from "../ui/primitives.jsx";
 
 /* ═══════════════════════════════════════════════════════
@@ -329,7 +329,9 @@ function HandOverTab({ matchId, device, epoch, pending, ballInFlight, onHandedOv
         Issues a six-digit code for the person taking over. Read it to them, or send it — it is not a
         password, only a claim ticket, and it expires the moment someone else claims this match's token.
       </div>
-      {error&&<div style={{color:D.roseText,fontFamily:D.body,fontSize:"12px"}}>Could not arm a handover ({error}).</div>}
+      {error&&<div data-testid="handover-arm-error" style={{color:D.roseText,fontFamily:D.body,fontSize:"12px"}}>
+        {error==="match_complete"?refusalWords(error):`Could not arm a handover (${error}).`}
+      </div>}
       <Btn variant="primary" full disabled={busy} data-testid="handover-arm" onClick={arm}>
         {busy?"Arming…":"Hand over scoring"}
       </Btn>
@@ -356,6 +358,9 @@ function HandOverTab({ matchId, device, epoch, pending, ballInFlight, onHandedOv
     </div>
   );
 }
+
+// Refusals the takeover can meet that are not a figure mismatch, said in words.
+const REASON_FIELDS = { match_complete: 1, not_pending: 1, no_capability: 1, unreachable: 1 };
 
 /** The incoming scorer: the code, then an INDEPENDENT read of the physical scoreboard. */
 function TakeOverTab({ matchId, device, onTakenOver, onClose }) {
@@ -416,8 +421,8 @@ function TakeOverTab({ matchId, device, onTakenOver, onClose }) {
           style={{width:"100%",padding:"14px",borderRadius:D.md,background:D.surf2,border:`1px solid ${D.border}`,
             fontFamily:D.mono,fontSize:"26px",letterSpacing:"0.2em",textAlign:"center",color:D.textPrimary,boxSizing:"border-box"}}/>
       </div>
-      {claimError&&<div style={{color:D.roseText,fontFamily:D.body,fontSize:"12px"}}>
-        {claimError==="verify_mismatch"?"That code doesn't match — check it and try again.":`Could not claim (${claimError}).`}
+      {claimError&&<div data-testid="handover-claim-error" style={{color:D.roseText,fontFamily:D.body,fontSize:"12px"}}>
+        {claimError==="verify_mismatch"?"That code doesn't match — check it and try again.":refusalWords(claimError)}
       </div>}
       <Btn variant="primary" full disabled={busy||code.length!==6} data-testid="handover-claim" onClick={claim}>
         {busy?"Claiming…":"Claim this match"}
@@ -452,7 +457,7 @@ function TakeOverTab({ matchId, device, onTakenOver, onClose }) {
           {diff.map((d,i)=>(
             <div key={i}>{d.expected!==undefined
               ? `${d.field}: expected ${d.expected}, entered ${d.got}`
-              : `Reason: ${d.field}`}</div>
+              : d.field in REASON_FIELDS ? refusalWords(d.field) : `Reason: ${d.field}`}</div>
           ))}
         </div>
       )}
@@ -473,7 +478,7 @@ function TakeOverTab({ matchId, device, onTakenOver, onClose }) {
 // normalised at the door rather than being tested for at every use.
 const entry = (p) => (typeof p === "string" ? { id: p, name: p } : { id: p?.id ?? p?.name, name: p?.name ?? p?.id });
 
-function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose}){
+function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,header=null}){
   const teamInfo=INT_TEAMS[teamKey]||null;
   const roster=(squad||[]).map(entry);
   const available=roster.filter(p=>{
@@ -489,6 +494,7 @@ function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose}){
   return (
     <Sheet title="Batting Order" accent={D.emerald} onClose={onClose}>
       <div style={{paddingTop:"12px"}}>
+        {header&&<div style={{marginBottom:"14px"}}>{header}</div>}
         {/* At crease */}
         {atCrease.length>0&&(
           <div style={{marginBottom:"12px"}}>
@@ -809,7 +815,15 @@ function NewOverSheet({ovNum,prevBowlers,bowlingSquad,bowlingTeamKey,lastBowlerN
 /* ═══════════════════════════════════════════════════════
    INNINGS BREAK SHEET
 ═══════════════════════════════════════════════════════ */
-function Innings2Sheet({target,teamName,overs,onClose,onStart}){
+/**
+ * The innings break is the second innings' setup, so it is where that innings
+ * declares what it will capture (SCRBRD-039). It starts from whatever was
+ * declared already — the from-scratch setup declares both innings up front —
+ * and from nothing when nothing was, so a scorer who presses Start without
+ * touching it changes nothing about how the match reads.
+ */
+function Innings2Sheet({target,teamName,overs,declared=null,onClose,onStart}){
+  const[profile,setProfile]=useState(declared);
   return (
     <Sheet title="Innings Break" accent={D.indigo} onClose={onClose}>
       <div style={{textAlign:"center",padding:"20px 0 24px"}}>
@@ -818,7 +832,10 @@ function Innings2Sheet({target,teamName,overs,onClose,onStart}){
           background:D.grad,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text",
           lineHeight:1,letterSpacing:"-0.02em",marginBottom:"6px"}}>{target}</div>
         <div style={{fontFamily:D.body,fontSize:"14px",color:D.textMuted,marginBottom:"24px"}}>runs to win in {overs} overs</div>
-        <Btn variant="primary" size="lg" sx={{borderRadius:D.md,minWidth:"220px"}} onClick={onStart}>Start 2nd Innings →</Btn>
+        <div style={{textAlign:"left",maxWidth:"360px",margin:"0 auto 20px"}}>
+          <CaptureProfilePicker value={profile} onChange={setProfile}/>
+        </div>
+        <Btn variant="primary" size="lg" sx={{borderRadius:D.md,minWidth:"220px"}} onClick={()=>onStart(profile)}>Start 2nd Innings →</Btn>
       </div>
     </Sheet>
   );

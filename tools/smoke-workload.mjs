@@ -129,6 +129,24 @@ try {
     const dir = await rows("/api/read/bowling_directives", watcher);
     ok("anyone signed in reads the directive", dir.find((d) => d.age_band === "U13")?.max_overs_per_spell === 5
        && dir.find((d) => d.age_band === "open")?.max_overs_per_spell === null);
+    ok("...and each band names the clause it enforces",
+       dir.map((d) => `${d.age_band}:${d.clause_code}`).join() ===
+       "U13:PACE-U13,U14:PACE-U14-U15,U15:PACE-U14-U15,U16:PACE-U16,open:PACE-OPEN,unknown:PACE-DOB");
+
+    // SCRBRD-041: the rulebook's clauses, readable by the narrowest signed-in
+    // principal, with the directive's figures joined in rather than restated.
+    const clauses = await rows("/api/read/rulebook_clauses", watcher);
+    const c13 = clauses.find((c) => c.code === "PACE-U13");
+    ok("a spectator reads the rulebook's clauses", clauses.length === 7);
+    ok("...each Medical & Safety, with a severity from the three",
+       clauses.every((c) => c.category === "Medical & Safety" && ["Mandatory", "Guideline", "Penalty Enforced"].includes(c.severity)));
+    ok("...the U13 clause applies to U13 and carries the directive's 5 and 10",
+       JSON.stringify(c13?.applicable_ages) === '["U13"]'
+       && JSON.stringify(c13?.limits) === '[{"age_band":"U13","max_overs_per_spell":5,"max_overs_per_day":10}]');
+    ok("...one clause covers U14 and U15 together",
+       JSON.stringify(clauses.find((c) => c.code === "PACE-U14-U15")?.applicable_ages) === '["U14","U15"]');
+    ok("...and no clause restates a limit in its own text", clauses.every((c) => !/\b(5|6|7|10|12|18)\s+overs\b/.test(c.body)));
+    ok("the rulebook is not read signed out", (await api("/api/read/rulebook_clauses")).status === 401);
 
     // Forty days back: out of every window the workload read counts, so the
     // shape of these spells is all this match contributes.
@@ -258,9 +276,38 @@ try {
     ok("...the ratio", Number(z.acwr) === Number((10 / (22 / 4)).toFixed(2)));
     ok("...and the word", z.load_state === "spike");
     ok("the spinner is steady work with no directive", w.find((r) => r.player_id === SPIN)?.max_overs_per_spell === null && w.find((r) => r.player_id === SPIN)?.breaches_28d === 0);
+    // SCRBRD-041: the limit cites the clause it enforces.
+    ok("...his limit cites the U13 clause", z.clause_code === "PACE-U13" && z.clause_title === "Pace bowling limits: U13"
+       && z.clause_severity === "Mandatory" && /U13 band/.test(z.clause_body));
+    ok("...and the spinner's row cites none, because no limit applies to him",
+       w.find((r) => r.player_id === SPIN)?.clause_code === null);
     ok("a boy who has not bowled says so", w.find((r) => r.player_id === BAT)?.load_state === "no bowling");
     ok("the breaches come first", w[0].player_id === PACE);
     ok("the director of sport reads the whole school", (await workload(head)).length >= 9);
+    {
+      // Every pace row cites the clause for its own band, and every other row
+      // none. The map is written out here, not read back from the database —
+      // a read that joined on the wrong column would agree with itself.
+      const CLAUSE = { U13: "PACE-U13", U14: "PACE-U14-U15", U15: "PACE-U14-U15", U16: "PACE-U16", open: "PACE-OPEN", unknown: "PACE-DOB" };
+      const all = await workload(head);
+      const wrong = all.filter((r) => r.clause_code !== (r.pace ? CLAUSE[r.age_band] : null));
+      ok("every boy's limit cites his own band's clause, and a spinner's none", wrong.length === 0,
+         wrong.map((r) => `${r.full_name} ${r.age_band} ${r.pace} → ${r.clause_code}`).join("; "));
+      // The seeded boys, not this walk's: B Khumalo is a U13A medium-pacer in
+      // db/98, M Cele a 1XI keeper born 2009 with no style recorded (so pace).
+      const khumalo = all.find((r) => r.full_name === "B Khumalo");
+      ok("the seeded U13 medium-pacer cites PACE-U13 beside 5/10",
+         khumalo?.age_band === "U13" && khumalo?.pace === true && khumalo?.clause_code === "PACE-U13"
+         && khumalo?.max_overs_per_spell === 5 && khumalo?.max_overs_per_day === 10);
+      const cele = all.find((r) => r.full_name === "M Cele");
+      ok("the seeded U16 boy with no style recorded cites PACE-U16", cele?.age_band === "U16" && cele?.clause_code === "PACE-U16");
+      // The Open bowler under Hilton's own ceiling: the clause that says a
+      // school's ceiling is the limit, not a band clause claiming 6/12 as the
+      // platform's.
+      const naidoo = all.find((r) => r.player_id === OPEN);
+      ok("an Open bowler under the school's own ceiling cites PACE-OPEN",
+         naidoo?.max_overs_per_spell === 8 && naidoo?.clause_code === "PACE-OPEN" && naidoo?.clause_severity === "Guideline");
+    }
     ok("the 1XI coach reads his own side and not the U14s", (await workload(coach)).every((r) => r.team_code === "1XI") && (await workload(coach, "U14A")).length === 0);
     ok("a spectator reads nothing", (await workload(watcher)).length === 0);
     ok("a parent reads nothing", (await workload(parent)).length === 0);

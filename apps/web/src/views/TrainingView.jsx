@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { holdsCapability } from "../rbac/index.js";
 import { D, textOn } from "../design/tokens.js";
 import { dateStr, today } from "../lib/format.js";
@@ -194,6 +194,9 @@ function TrainingView({ role }) {
 const LOAD_TONE = { spike:D.rose, rising:D.amber, steady:D.emerald, light:D.sky, rested:D.textMuted, "no bowling":D.textMuted };
 function LoadPanel({ rows }) {
   const flagged = rows.filter(r=>r.breaches28d>0||r.loadState==="spike").length;
+  // Whose clause is open. The citation is the server's (workload → db/32);
+  // the screen only decides whether its text is showing.
+  const [openClause, setOpenClause] = useState(null);
   return (
     <Card sx={{padding:"16px",marginBottom:"14px"}} data-testid="load-panel">
       <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"10px"}}>
@@ -205,9 +208,17 @@ function LoadPanel({ rows }) {
         <table style={{width:"100%",borderCollapse:"collapse",fontFamily:D.body,fontSize:"11px"}}>
           <tbody>
             {rows.map(r=>(
-              <tr key={r.playerId} data-testid={`load-row-${r.playerId}`} style={{borderTop:`1px solid ${D.border}`}}>
+              <Fragment key={r.playerId}>
+              <tr data-testid={`load-row-${r.playerId}`} style={{borderTop:`1px solid ${D.border}`}}>
                 <td style={{padding:"6px 8px",color:D.textPrimary,fontWeight:600,whiteSpace:"nowrap"}}>{r.name}
-                  <span style={{marginLeft:"6px",fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>{r.ageBand}{r.pace&&r.maxSpell?` · ${r.maxSpell}/${r.maxDay}`:""}</span></td>
+                  <span style={{marginLeft:"6px",fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>{r.ageBand}{r.pace&&r.maxSpell?` · ${r.maxSpell}/${r.maxDay}`:""}</span>
+                  {r.clause&&<button type="button" data-testid={`load-clause-${r.playerId}`}
+                    aria-expanded={openClause===r.playerId}
+                    onClick={()=>setOpenClause(openClause===r.playerId?null:r.playerId)}
+                    title={`${r.clause.code} — ${r.clause.title}`}
+                    style={{marginLeft:"6px",padding:"1px 6px",borderRadius:D.pill,cursor:"pointer",
+                      border:`1px solid ${D.border}`,background:"transparent",fontFamily:D.mono,fontSize:"9px",color:D.textSecondary}}>
+                    {r.clause.code} · {r.clause.title}</button>}</td>
                 <td style={{padding:"6px 8px",fontFamily:D.mono,color:D.textSecondary,whiteSpace:"nowrap"}}>{r.overs7d} · {r.overs28d} · {r.longestSpell7d}</td>
                 <td style={{padding:"6px 8px",fontFamily:D.mono,color:D.textSecondary,whiteSpace:"nowrap"}}>{r.sessions7d} ({r.minutes7d}m)</td>
                 <td style={{padding:"6px 8px"}}>
@@ -216,6 +227,16 @@ function LoadPanel({ rows }) {
                   {r.breaches28d>0&&<span style={{marginLeft:"6px",fontFamily:D.mono,fontSize:"9px",color:D.roseText}}>{r.breaches28d} directive breach{r.breaches28d>1?"es":""}</span>}
                 </td>
               </tr>
+              {r.clause&&openClause===r.playerId&&(
+                <tr data-testid={`load-clause-text-${r.playerId}`}>
+                  <td colSpan={4} style={{padding:"4px 8px 10px",color:D.textSecondary,lineHeight:1.5,whiteSpace:"normal"}}>
+                    <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textPrimary}}>
+                      {r.clause.code} · {r.clause.title} <span style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted,fontWeight:400}}>{r.clause.severity}</span></div>
+                    <div style={{marginTop:"2px"}}>{r.clause.body}</div>
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             ))}
           </tbody>
         </table>

@@ -30,6 +30,10 @@ const NOT_THE_BOWLERS = [...NON_DELIVERY].map((d) => `'${d}'`).join(", ");
  */
 const DISCIPLINE_NAMES = Object.freeze(Object.keys(DISCIPLINES));
 
+/** The directive's bands youngest first, then Open, then a boy with no date of birth. */
+const BAND_ORDER = (col) =>
+  `case ${col} when 'U13' then 1 when 'U14' then 2 when 'U15' then 3 when 'U16' then 4 when 'open' then 5 else 6 end`;
+
 export const READ_QUERIES = {
   matches: {
     // These column names are the real ones. The query named home_team,
@@ -177,9 +181,19 @@ export const READ_QUERIES = {
                   -- a season of exact placements is drawn as eight spokes.
                   b.placement_source,
                   b.striker_id, b.bowler_id,
-                  m.starts_at
+                  m.starts_at,
+                  -- What this ball's innings DECLARED it would capture
+                  -- (SCRBRD-039, db/31). A career mixes innings, so the
+                  -- heat map reads each ball against its own innings: a
+                  -- sector from an innings declared 'standard' was never
+                  -- asked for a point, and says so, rather than being counted
+                  -- with the balls that should have had one and do not.
+                  -- NULL is undeclared, which reads exactly as before.
+                  d.declared_profile
              from ball_event_live b
              join match m on m.id = b.match_id
+             left join innings_declared_profile d
+                    on d.match_id = b.match_id and d.innings = b.innings
             where b.striker_id = $1
               and b.kind = 'ball'
               and (b.theta is not null or b.seg is not null)
@@ -295,7 +309,8 @@ export const READ_QUERIES = {
                   a.role, a.school_id, a.team_code, a.fixture_id,
                   a.active, a.valid_from, a.valid_until,
                   a.created_at, a.created_by, g.name as granted_by_name,
-                  a.revoked_at, a.revoked_by, r.name as revoked_by_name
+                  a.revoked_at, a.revoked_by, r.name as revoked_by_name,
+                  assignment_suspended(a.id) as suspended
              from role_assignment a
              left join app_user p on p.id = a.person_id
              left join app_user g on g.id = a.created_by
@@ -686,13 +701,42 @@ export const READ_QUERIES = {
    * "who was ever named". The rows are kept for the disputed-fixture case and
    * a report that needs them can ask for them explicitly.
    */
+  //
+  // SCRBRD-034 adds three columns and no reach. `id` is what the office's
+  // link/suspend/lift controls name. `linked` says the duty rests on an
+  // assignment (db/34) — a fact, not the assignment itself, which stays
+  // behind role_assignment's own policy. `suspended` is duty_suspended(),
+  // which answers only for a duty the reader could see anyway; WHY is the
+  // office's record and is read from duty_suspensions below, not here.
   officials: {
-    text: `select match_id, duty, person_name, person_id, official_id, panel, appointed_at
+    text: `select id, match_id, duty, person_name, person_id, official_id, panel, appointed_at,
+                  assignment_id is not null as linked,
+                  duty_suspended(id)          as suspended
              from match_official
             where not withdrawn
               and ($1::uuid is null or match_id = $1)
             order by duty, person_name`,
     params: q => [q?.matchId || null],
+  },
+
+  /**
+   * The office's record of suspended duties (SCRBRD-034, db/34): who paused
+   * a duty, when and why, and who lifted it, when and why. duty_suspension is
+   * readable under user.role.assign at the school and by nobody else — not
+   * the scorer it is about, who learns THAT they are suspended (the officials
+   * read above, assignment_suspended()) and not the reason.
+   */
+  duty_suspensions: {
+    text: `select s.id, s.duty_id, o.match_id, o.duty, o.person_name,
+                  s.suspended_at, s.reason, sb.name as suspended_by_name,
+                  s.lifted_at, s.lift_reason, lb.name as lifted_by_name
+             from duty_suspension s
+             left join match_official o on o.id = s.duty_id
+             left join app_user sb on sb.id = s.suspended_by
+             left join app_user lb on lb.id = s.lifted_by
+            where ($1::uuid is null or s.duty_id = $1)
+            order by s.suspended_at desc`,
+    params: q => [q?.dutyId || null],
   },
 
   /**
@@ -748,25 +792,34 @@ export const READ_QUERIES = {
    * quietly claims nothing is arranged. What is missing from a reader's
    * roster is what is missing from that reader's authority, and the two should
    * be the same thing.
+   *
+   * `status` is an appointment's LIFECYCLE (SCRBRD-034): pending, active,
+   * delegated, completed, expired — derived by duty_status() (db/30) from
+   * the fixture's status, the appointment, and the scoring audit, never
+   * stored. It is NULL on every other arm: a bus or a pitch report is not a
+   * duty somebody holds. It grants nothing and is read here only so the
+   * roster can say it; a withdrawn appointment ('revoked') is not on this
+   * roster at all, for the reason above.
    */
   match_duties: {
     text: `select o.duty                              as duty,
                   o.person_name                        as who,
                   'named'                              as state,
                   coalesce(o.panel, '')                as detail,
-                  o.appointed_at                       as at
+                  o.appointed_at                       as at,
+                  duty_status(o.id)                    as status
              from match_official o
             where o.match_id = $1 and not o.withdrawn
             union all
            select 'scoring', coalesce(u.name, ''),
                   s.state::text,
                   case when s.lease_until is not null then 'lease held' else '' end,
-                  s.updated_at
+                  s.updated_at, null::text
              from scoring_session s
              left join app_user u on u.id = s.holder_user_id
             where s.match_id = $1
             union all
-           select 'transport', coalesce(t.driver_name, ''), t.state, coalesce(t.registration, ''), t.arranged_at
+           select 'transport', coalesce(t.driver_name, ''), t.state, coalesce(t.registration, ''), t.arranged_at, null::text
              from (select tr.match_id, tr.arranged_at, v.registration, du.name as driver_name,
                           case when tr.cancelled_at is not null then 'cancelled'
                                when tr.arrived_at   is not null then 'arrived'
@@ -777,11 +830,11 @@ export const READ_QUERIES = {
                      left join app_user du on du.id = tr.driver_id) t
             where t.match_id = $1
             union all
-           select 'ground', '', 'recorded', coalesce(r.surface, ''), r.reported_at
+           select 'ground', '', 'recorded', coalesce(r.surface, ''), r.reported_at, null::text
              from match_pitch_report r
             where r.match_id = $1
             union all
-           select 'squad', '', 'named', count(*)::text || ' selected', max(q.selected_at)
+           select 'squad', '', 'named', count(*)::text || ' selected', max(q.selected_at), null::text
              from match_squad q
             where q.match_id = $1 and not q.withdrawn
             having count(*) > 0`,
@@ -1167,7 +1220,26 @@ export const READ_QUERIES = {
    * player.development.read. An optional team narrows; nothing widens.
    */
   workload: {
-    text: `select * from workload($1::text)`,
+    // THE CLAUSE BESIDE THE LIMIT (SCRBRD-041). The limit a boy is under is
+    // bowling_directive's for his band, and that row names the rulebook
+    // clause it enforces (db/32) — so the monitor can cite the rule instead
+    // of asserting a bare number. Only for a pace bowler: a spinner is under
+    // no limit, and the U13 clause beside a leg-spinner's name would be the
+    // screen claiming a rule applies that does not. For an Open bowler whose
+    // school has set its own ceiling the clause is PACE-OPEN, which is the
+    // one that says the school's ceiling is the limit.
+    //
+    // LATERAL, so the function scan stays the outer side of a nested loop
+    // and workload()'s own order (breaches first, then spikes) survives the
+    // join, as it did when this read was `select * from workload()`.
+    text: `select w.*, c.code as clause_code, c.title as clause_title,
+                  c.severity as clause_severity, c.body as clause_body
+             from workload($1::text) w
+             left join lateral (
+               select rc.code, rc.title, rc.severity, rc.body
+                 from bowling_directive d
+                 join rulebook_clause rc on rc.code = d.clause_code
+                where d.age_band = w.age_band and w.pace) c on true`,
     params: q => [q?.teamCode || null],
   },
 
@@ -1204,10 +1276,31 @@ export const READ_QUERIES = {
     params: q => [q?.teamCode || null],
   },
 
-  /* The directive itself. Platform reference data. */
+  /* The directive itself, with the clause each band's limit enforces. Platform reference data. */
   bowling_directives: {
-    text: `select age_band, max_overs_per_spell, max_overs_per_day from bowling_directive
-            order by case age_band when 'U13' then 1 when 'U14' then 2 when 'U15' then 3 when 'U16' then 4 when 'open' then 5 else 6 end`,
+    text: `select age_band, max_overs_per_spell, max_overs_per_day, clause_code from bowling_directive
+            order by ${BAND_ORDER("age_band")}`,
+  },
+
+  /*
+   * THE RULEBOOK (SCRBRD-041): the platform's clauses, from db/32, each with
+   * the age bands it applies to and — where a directive row cites it — the
+   * figures it enforces, joined from bowling_directive rather than written
+   * into the clause text, so the rule a person reads and the number the
+   * breach trigger applies cannot disagree. Reference material: the policy
+   * is "signed in", the same as the directive's.
+   */
+  rulebook_clauses: {
+    text: `select c.code, c.title, c.body, c.category, c.severity, c.source,
+                  coalesce((select array_agg(a.age_band order by ${BAND_ORDER("a.age_band")})
+                              from rulebook_clause_age a where a.clause_code = c.code), '{}') as applicable_ages,
+                  coalesce((select json_agg(json_build_object('age_band', d.age_band,
+                                                              'max_overs_per_spell', d.max_overs_per_spell,
+                                                              'max_overs_per_day', d.max_overs_per_day)
+                                            order by ${BAND_ORDER("d.age_band")})
+                              from bowling_directive d where d.clause_code = c.code), '[]') as limits
+             from rulebook_clause c
+            order by c.category, c.sort_order, c.code`,
   },
 
   /*

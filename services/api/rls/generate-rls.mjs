@@ -19,9 +19,12 @@
  *   2. app_can(...)                    — THE authorization decision, in SQL
  *   3. per-table RLS policies          — read/write, built on app_can
  *   4. *_masked views                  — per-row column masking, on app_can
- *   5. db/23_authz_time_box.sql        — the decision functions as they run
- *                                        today: db/01's, plus the hour hand
+ *   5. db/23_authz_time_box.sql        — the decision functions as they ran
+ *                                        from db/23: db/01's, plus the hour hand
  *                                        a support assignment needs (SCRBRD-012)
+ *   6. db/35_authz_suspension.sql      — the decision functions as they run
+ *                                        today: db/23's, plus the pause on a
+ *                                        suspended duty (SCRBRD-034)
  *
  * The decision is a SECURITY DEFINER lookup over role_assignment rather than
  * anything carried in the session. That is a deliberate choice (ADR 0001):
@@ -117,9 +120,29 @@ const callCan = (table, def, capability, anchors = def.anchors) => {
  * template stays the single source of the decision; the flag is the only
  * difference between what shipped and what runs.
  */
-const liveness = (timeBoxed) => timeBoxed
+const liveness = (timeBoxed, suspendable = false) => (timeBoxed
   ? "\n       AND (a.expires_at IS NULL OR a.expires_at > now())"
-  : "";
+  : "") + (suspendable ? SUSPENSION : "");
+
+/**
+ * The pause on a duty (SCRBRD-034, db/34 and db/35).
+ *
+ * A duty the school office has suspended rests on an assignment that must
+ * grant nothing until the suspension is lifted — and lifting must bring it
+ * back. `active` cannot carry that: db/01's role_assignment_revoke_only()
+ * refuses to reactivate a withdrawn row, and rightly, so false is forever.
+ * The suspension is therefore its own row (duty_suspension, db/34), open
+ * until somebody lifts it with a reason, and the liveness rule gains a
+ * second line reading it.
+ *
+ * The same flag discipline as the hour hand: db/01 and db/23 keep emitting
+ * exactly what shipped, and the functions are emitted once more, with both
+ * lines, into db/35_authz_suspension.sql (suspension() below). db/34 must
+ * run first because a SQL function's body is checked against the tables it
+ * names when it is created.
+ */
+const SUSPENSION = "\n       AND NOT EXISTS (SELECT 1 FROM duty_suspension s"
+  + "\n                        WHERE s.assignment_id = a.id AND s.lifted_at IS NULL)";
 // db/16 pinned every SECURITY DEFINER function's search_path with ALTER
 // FUNCTION — and CREATE OR REPLACE discards that, so a re-emitted function
 // has to carry the pin in its own definition or it comes back unpinned. The
@@ -128,7 +151,7 @@ const definerTail = (timeBoxed) => timeBoxed
   ? "$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;"
   : "$$ LANGUAGE sql STABLE SECURITY DEFINER;";
 
-function decisionFunction({ timeBoxed = false } = {}) {
+function decisionFunction({ timeBoxed = false, suspendable = false } = {}) {
   return `${banner("The authorization decision")}
 -- app_can(capability, school, team, person, fixture)
 --
@@ -172,7 +195,7 @@ CREATE OR REPLACE FUNCTION app_can(
      WHERE a.person_id = app_user_id()
        AND a.active
        AND (a.valid_from  IS NULL OR a.valid_from  <= current_date)
-       AND (a.valid_until IS NULL OR a.valid_until >  current_date)${liveness(timeBoxed)}
+       AND (a.valid_until IS NULL OR a.valid_until >  current_date)${liveness(timeBoxed, suspendable)}
        -- institution. There is no ANY_SCOPE for school: every governed row
        -- belongs to a tenant, and one that does not state its tenant is one
        -- nobody should reach.
@@ -266,7 +289,7 @@ CREATE OR REPLACE FUNCTION app_holds(p_capability text) RETURNS boolean AS $$
        AND a.active
        AND (NOT c.platform_only OR a.school_id IS NULL)
        AND (a.valid_from  IS NULL OR a.valid_from  <= current_date)
-       AND (a.valid_until IS NULL OR a.valid_until >  current_date)${liveness(timeBoxed)}
+       AND (a.valid_until IS NULL OR a.valid_until >  current_date)${liveness(timeBoxed, suspendable)}
   )
 ${definerTail(timeBoxed)}
 
@@ -497,7 +520,7 @@ ${grantRows.join(",\n")};
 ${mayGrantFunction()}`;
 }
 
-function mayGrantFunction({ timeBoxed = false } = {}) {
+function mayGrantFunction({ timeBoxed = false, suspendable = false } = {}) {
   return `-- app_may_grant(role) — may the caller appoint somebody to this role?
 --
 -- Two questions, both of which have to answer yes. Whether the caller's own
@@ -512,7 +535,7 @@ CREATE OR REPLACE FUNCTION app_may_grant(p_role text) RETURNS boolean AS $$
      WHERE a.person_id = app_user_id()
        AND a.active
        AND (a.valid_from  IS NULL OR a.valid_from  <= current_date)
-       AND (a.valid_until IS NULL OR a.valid_until >  current_date)${liveness(timeBoxed)}
+       AND (a.valid_until IS NULL OR a.valid_until >  current_date)${liveness(timeBoxed, suspendable)}
        -- A role carrying a platform capability may only be handed out by
        -- somebody whose own assignment belongs to no school.
        AND (a.school_id IS NULL OR NOT EXISTS (
@@ -917,6 +940,72 @@ export function timeBox() {
   ].join("\n");
 }
 
+/**
+ * The decision functions as they run from db/35 on: db/23's, plus the pause on
+ * a suspended duty (see SUSPENSION above). Applied after db/34, which creates
+ * the duty_suspension table these bodies read.
+ *
+ * Ends in its own DO $check$ like every hand-written migration, and the check
+ * is generated too: it asks the catalogue whether the functions that were just
+ * created really read the suspension, really run as definer, and really carry
+ * the pinned search_path — so a paste that half-applied, or a later file that
+ * re-emitted them without the line, cannot pass for this one.
+ */
+export function suspension() {
+  const fns = ["app_can(text,uuid,text,uuid,uuid)", "app_holds(text)", "app_may_grant(text)"];
+  return [
+    `-- ══════════════════════════════════════════════════════════════════`,
+    `--  35 · A suspended duty grants nothing (SCRBRD-034)`,
+    `-- ══════════════════════════════════════════════════════════════════`,
+    `-- GENERATED from packages/policy/ by services/api/rls/generate-rls.mjs — DO NOT EDIT BY HAND.`,
+    `-- Regenerate with \`pnpm rls:generate\`. Companions: db/01_authz.sql and`,
+    `-- db/23_authz_time_box.sql, which stay exactly as they shipped; this file is`,
+    `-- db/23's three functions with one more condition in their liveness rule:`,
+    `--`,
+    `--     AND NOT EXISTS (SELECT 1 FROM duty_suspension s`,
+    `--                      WHERE s.assignment_id = a.id AND s.lifted_at IS NULL)`,
+    `--`,
+    `-- duty_suspension (db/34) holds a row only for an assignment the school`,
+    `-- office linked to a match duty and then suspended, with a reason. While`,
+    `-- that row is open the assignment is not live — to app_can(), app_holds()`,
+    `-- and app_may_grant() alike — and lifting it (another reason, another name)`,
+    `-- makes it live again without touching role_assignment.active, which db/01`,
+    `-- never lets go from false back to true. Every other assignment has no row`,
+    `-- there, so nothing changes for anybody else.`,
+    ``,
+    decisionFunction({ timeBoxed: true, suspendable: true }),
+    mayGrantFunction({ timeBoxed: true, suspendable: true }),
+    ``,
+    `-- ── Assertion ──────────────────────────────────────────────────────`,
+    `DO $check$`,
+    `DECLARE`,
+    `  f   text;`,
+    `  o   oid;`,
+    `BEGIN`,
+    `  FOREACH f IN ARRAY ARRAY[${fns.map(q).join(", ")}] LOOP`,
+    `    o := to_regprocedure(f);`,
+    `    IF o IS NULL THEN`,
+    `      RAISE EXCEPTION 'db/35: % is missing', f;`,
+    `    END IF;`,
+    `    IF NOT (SELECT prosecdef FROM pg_proc WHERE oid = o) THEN`,
+    `      RAISE EXCEPTION 'db/35: % is no longer SECURITY DEFINER', f;`,
+    `    END IF;`,
+    `    IF NOT EXISTS (SELECT 1 FROM pg_proc p, unnest(coalesce(p.proconfig, '{}')) c`,
+    `                    WHERE p.oid = o AND c = 'search_path=pg_catalog, public, pg_temp') THEN`,
+    `      RAISE EXCEPTION 'db/35: % does not pin its search_path', f;`,
+    `    END IF;`,
+    `    IF (SELECT prosrc FROM pg_proc WHERE oid = o) NOT LIKE '%duty_suspension s%s.lifted_at IS NULL%' THEN`,
+    `      RAISE EXCEPTION 'db/35: % does not read the suspension', f;`,
+    `    END IF;`,
+    `    IF (SELECT prosrc FROM pg_proc WHERE oid = o) NOT LIKE '%a.expires_at IS NULL OR a.expires_at > now()%' THEN`,
+    `      RAISE EXCEPTION 'db/35: % lost db/23''s hour hand', f;`,
+    `    END IF;`,
+    `  END LOOP;`,
+    `END $check$;`,
+    ``,
+  ].join("\n");
+}
+
 /** Backwards-compatible single string, for the drift tests. */
 export function main() { return authz() + "\n" + policies(); }
 
@@ -925,5 +1014,6 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   writeFileSync("db/01_authz.sql", authz());
   writeFileSync("db/09_rls_policies.sql", policies());
   writeFileSync("db/23_authz_time_box.sql", timeBox());
-  console.log("wrote db/01_authz.sql, db/09_rls_policies.sql and db/23_authz_time_box.sql");
+  writeFileSync("db/35_authz_suspension.sql", suspension());
+  console.log("wrote db/01_authz.sql, db/09_rls_policies.sql, db/23_authz_time_box.sql and db/35_authz_suspension.sql");
 }

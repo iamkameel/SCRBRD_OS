@@ -50,6 +50,21 @@ const TONE = {
   idle: D.textMuted, cancelled: D.rose,
 };
 
+// An appointment's lifecycle (SCRBRD-034), as the server derived it
+// (duty_status, db/30) — never worked out here. It says where the DUTY
+// stands, which is not the same as what the person may do: a scorer whose
+// fixture is complete is still the scorer on record, and holds no pen.
+// 'revoked' never reaches this roster (withdrawn appointments are not on it)
+// and is mapped anyway, so a change to the read cannot print a raw code.
+const STATUS_WORD = {
+  pending: "to come", active: "on duty", delegated: "handed over",
+  completed: "completed", expired: "fixture abandoned", revoked: "stood down", suspended: "suspended",
+};
+const STATUS_TONE = {
+  pending: D.textMuted, active: D.emerald, delegated: D.amber,
+  completed: D.sky, expired: D.textMuted, revoked: D.rose, suspended: D.rose,
+};
+
 function DutyRoster({ matchId, role }) {
   const { rows, loading, error } = useLive("match_duties", role, 0, { matchId });
   if (loading || error) return <EmptyState loading={loading} error={error}/>;
@@ -84,6 +99,12 @@ function DutyRoster({ matchId, role }) {
                                      color: TONE[r.state] ?? D.textMuted }}>
                         {STATE_WORD[r.state] ?? r.state}
                       </span>
+                      {r.status && <span data-testid={`duty-${slot.key}-status`} data-status={r.status}
+                            title="Where this appointment stands — not what it permits"
+                            style={{ fontFamily: D.mono, fontSize: "9px", textTransform: "uppercase",
+                                     color: STATUS_TONE[r.status] ?? D.textMuted }}>
+                        · {STATUS_WORD[r.status] ?? r.status}
+                      </span>}
                       {r.who && r.detail && <span style={{ fontFamily: D.mono, fontSize: "9px", color: D.textMuted }}>{r.detail}</span>}
                     </div>
                   ))}
@@ -95,4 +116,4 @@ function DutyRoster({ matchId, role }) {
   );
 }
 
-export { DutyRoster, SLOTS };
+export { DutyRoster, SLOTS, STATUS_WORD };

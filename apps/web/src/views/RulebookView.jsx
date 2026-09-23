@@ -1,15 +1,61 @@
 import { useState } from "react";
 import { D } from "../design/tokens.js";
+import { Badge } from "../ui/primitives.jsx";
+import { useLive } from "../lib/live.js";
 
 // ══════════════════════════════════════════════════════
 //  RULEBOOK VIEW
+//
+//  Two kinds of content, and the screen says which is which.
+//
+//  THE PLATFORM'S CLAUSES come from the server (rulebook_clause, db/32):
+//  code, title, text, severity and the age bands each applies to, with the
+//  figures a clause enforces joined from bowling_directive rather than typed
+//  into its text. These are the rules SCRBRD applies, and the workload monitor
+//  on the Training screen cites them by code beside each boy's limit.
+//
+//  THE LAWS SUMMARY below them is a reference crib kept in this file, as it
+//  always was. Nothing stores it and nothing cites it.
 // ══════════════════════════════════════════════════════
 
-// ══════════════════════════════════════════════════════
-//  RULEBOOK VIEW
-// ══════════════════════════════════════════════════════
+const SEVERITY_TONE = { "Mandatory": D.amber, "Penalty Enforced": D.rose, "Guideline": D.sky };
+const CATEGORY_ICON = { "Medical & Safety": "⛑️", "Curator & Turf": "🌱", "Playing Conditions": "📏", "Conduct": "🤝" };
+const bandLabel = (b) => b === "open" ? "Open" : b === "unknown" ? "No date of birth" : b;
+const limitText = (l) => l.maxSpell == null && l.maxDay == null
+  ? `${bandLabel(l.ageBand)}: no platform limit`
+  : `${bandLabel(l.ageBand)}: ${l.maxSpell ?? "—"} overs a spell, ${l.maxDay ?? "—"} a day`;
+
+function Clause({ c }) {
+  const tone = SEVERITY_TONE[c.severity] ?? D.textMuted;
+  return (
+    <div id={`clause-${c.code}`} data-testid={`clause-${c.code}`}
+      style={{borderRadius:D.md,border:`1px solid ${D.border}`,background:D.surf1,padding:"14px 18px",display:"flex",flexDirection:"column",gap:"8px"}}>
+      <div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
+        <span style={{fontFamily:D.mono,fontSize:"10px",fontWeight:700,color:D.textMuted}}>{c.code}</span>
+        <span style={{fontFamily:D.head,fontSize:"14px",fontWeight:700,color:D.textPrimary}}>{c.title}</span>
+        <Badge color={tone} data-testid={`clause-severity-${c.code}`}>{c.severity}</Badge>
+      </div>
+      <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}} data-testid={`clause-ages-${c.code}`}>
+        {c.ages.length
+          ? c.ages.map(a=><span key={a} style={{fontFamily:D.mono,fontSize:"10px",padding:"1px 7px",borderRadius:D.pill,border:`1px solid ${D.border}`,color:D.textSecondary}}>{bandLabel(a)}</span>)
+          : <span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>Not tied to an age band</span>}
+      </div>
+      <div style={{fontFamily:D.body,fontSize:"13px",color:D.textSecondary,lineHeight:1.6}}>{c.body}</div>
+      {c.limits.length>0&&(
+        <div data-testid={`clause-limits-${c.code}`} style={{fontFamily:D.mono,fontSize:"11px",color:D.textPrimary}}>
+          {c.limits.map(limitText).join(" · ")}
+        </div>
+      )}
+      <div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted}}>{c.source}</div>
+    </div>
+  );
+}
+
 function RulebookView({ role }) {
-  const [openSection, setOpenSection] = useState("scoring");
+  const clauses = useLive("rulebook_clauses", role);
+  // Categories in the server's order, each only if it has a clause.
+  const categories = [...new Set(clauses.rows.map(c=>c.category))];
+  const [chosen, setChosen] = useState(null);
 
   const RULES = [
     {
@@ -81,36 +127,66 @@ function RulebookView({ role }) {
     },
   ];
 
+  // The first clause category opens by default once the clauses arrive; the
+  // Laws crib when there are none (signed out, or nothing on the server).
+  const open = chosen ?? (categories.length ? `cat:${categories[0]}` : "scoring");
+  const tab = (id, label) => (
+    <button key={id} onClick={()=>setChosen(id)} className="pressBtn" data-testid={`rulebook-tab-${id}`} style={{
+      display:"flex",alignItems:"center",gap:"6px",padding:"7px 14px",borderRadius:D.pill,
+      cursor:"pointer",border:`1px solid ${open===id?D.amber+"66":D.border}`,
+      background:open===id?`${D.amber}18`:"transparent",
+      fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:"0.05em",
+      color:open===id?D.amber:D.textMuted,transition:"all .18s",
+    }}>{label}</button>
+  );
+  const groupLabel = (t) => <div style={{fontFamily:D.mono,fontSize:"9px",letterSpacing:"0.08em",textTransform:"uppercase",color:D.textMuted,marginTop:"14px"}}>{t}</div>;
+
   return (
-    <div style={{display:"flex",flexDirection:"column",gap:"20px"}}>
+    <div style={{display:"flex",flexDirection:"column",gap:"20px"}} data-testid="rulebook">
       {/* Header */}
       <div style={{borderRadius:D.lg,border:`1px solid ${D.amber}33`,background:`linear-gradient(135deg,${D.amber}0a,${D.surf1})`,padding:"24px"}}>
         <div style={{display:"flex",alignItems:"center",gap:"16px",flexWrap:"wrap"}}>
           <div style={{fontSize:"40px"}}>📖</div>
           <div>
             <div style={{fontFamily:D.head,fontSize:"24px",fontWeight:800,color:D.textPrimary,lineHeight:1.1}}>SCRBRD Rulebook</div>
-            <div style={{fontFamily:D.body,fontSize:"13px",color:D.textMuted,marginTop:"4px"}}>Official cricket rules and platform guidelines for Hilton College CC</div>
+            <div style={{fontFamily:D.body,fontSize:"13px",color:D.textMuted,marginTop:"4px"}}>The clauses the platform applies, and a summary of the Laws for reference</div>
           </div>
         </div>
-        <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginTop:"16px"}}>
-          {RULES.map(s=>(
-            <button key={s.id} onClick={()=>setOpenSection(s.id)} className="pressBtn" style={{
-              display:"flex",alignItems:"center",gap:"6px",padding:"7px 14px",borderRadius:D.pill,
-              cursor:"pointer",border:`1px solid ${openSection===s.id?D.amber+"66":D.border}`,
-              background:openSection===s.id?`${D.amber}18`:"transparent",
-              fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:"0.05em",
-              color:openSection===s.id?D.amber:D.textMuted,transition:"all .18s",
-            }}>{s.icon} {s.title}</button>
-          ))}
+        {groupLabel("Platform clauses")}
+        <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginTop:"6px"}}>
+          {categories.map(c=>tab(`cat:${c}`, `${CATEGORY_ICON[c] ?? "📌"} ${c}`))}
+          {!categories.length&&(
+            <span data-testid="rulebook-clauses-empty" style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>
+              {clauses.loading ? "Loading…"
+                : clauses.error ? "The platform's clauses could not be loaded."
+                : !clauses.live ? "Sign in to read the platform's clauses."
+                : "No clauses on record."}
+            </span>
+          )}
+        </div>
+        {groupLabel("Laws summary — reference only")}
+        <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginTop:"6px"}}>
+          {RULES.map(s=>tab(s.id, `${s.icon} ${s.title}`))}
         </div>
       </div>
 
-      {/* Rules content */}
-      {RULES.filter(s=>s.id===openSection).map(section=>(
+      {/* The platform's clauses, one category at a time */}
+      {categories.filter(c=>open===`cat:${c}`).map(c=>(
+        <div key={c} data-testid="rulebook-category" data-category={c} style={{display:"flex",flexDirection:"column",gap:"10px"}}>
+          <div style={{fontFamily:D.head,fontSize:"16px",fontWeight:800,color:D.textPrimary}}>
+            {CATEGORY_ICON[c] ?? "📌"} {c}
+          </div>
+          {clauses.rows.filter(x=>x.category===c).map(x=><Clause key={x.code} c={x}/>)}
+        </div>
+      ))}
+
+      {/* The Laws crib */}
+      {RULES.filter(s=>s.id===open).map(section=>(
         <div key={section.id} style={{display:"flex",flexDirection:"column",gap:"10px"}}>
           <div style={{fontFamily:D.head,fontSize:"16px",fontWeight:800,color:D.textPrimary}}>
             {section.icon} {section.title}
           </div>
+          <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>A general summary kept in the app for reference. Unlike the platform's clauses, these are not stored or cited anywhere.</div>
           {section.rules.map((r,i)=>(
             <div key={i} style={{borderRadius:D.md,border:`1px solid ${D.border}`,background:D.surf1,padding:"14px 18px",display:"flex",alignItems:"flex-start",gap:"12px"}}>
               <div style={{width:"22px",height:"22px",borderRadius:"50%",background:`${D.amber}18`,border:`1px solid ${D.amber}33`,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:D.mono,fontSize:"10px",fontWeight:700,color:D.amber,flexShrink:0,marginTop:"1px"}}>{i+1}</div>

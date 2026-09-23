@@ -55,7 +55,12 @@ export function sessionRoutes({ pool, secret, hub }) {
         // holding the token perfectly well.
         const r = await callFn(pool, secret, b,
           `select * from scoring_lease_check($1,$2,$3)`, [id, req.body.device, req.body.epoch]);
-        res.json({ ok: !!r.holds, reason: r.holds ? null : (r.found ? "not_token_holder" : "no_session"), epoch: r.epoch });
+        // db/33: on a complete match the lease is never extended and the
+        // function says so in `state` (its shape cannot grow a reason).
+        res.json({ ok: !!r.holds, epoch: r.epoch,
+                   reason: r.holds ? null
+                         : r.state === "match_complete" ? "match_complete"
+                         : (r.found ? "not_token_holder" : "no_session") });
       } catch (e) { res.status(e.status || 500).json({ error: e.code || e.message }); }
     },
 

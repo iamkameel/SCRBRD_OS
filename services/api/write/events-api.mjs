@@ -83,7 +83,10 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
           [matchId, ev.epoch, lease.epoch, ev.deviceId, ev.idempotencyKey, JSON.stringify(ev)]);
         result.quarantined.push({
           idempotencyKey: ev.idempotencyKey,
-          reason: lease.found ? "stale_epoch_or_lease" : "no_session",
+          // db/33: a ball sent at a complete match is held for a person to
+          // decide, and says why — not mistaken for a stale token.
+          reason: lease.state === "match_complete" ? "match_complete"
+                : lease.found ? "stale_epoch_or_lease" : "no_session",
         });
         continue;
       }
@@ -691,14 +694,32 @@ export function officialRoutes({ pool, secret }) {
         }
 
         const out = await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+          // A LINKED DUTY RE-SUBMITTED IS KEPT, NOT RE-MADE (SCRBRD-034).
+          // A sheet replaces the panel by withdrawing it and writing the new
+          // one, and withdrawing a duty the office has linked to an assignment
+          // revokes that assignment (db/34). So re-saving the sheet to add a
+          // second umpire would silently end the scorer's authority — and the
+          // re-made row would be unlinked. A linked appointment whose duty and
+          // account are on the new sheet is therefore left standing as it
+          // was, link and all; everything else is replaced exactly as before.
+          const { rows: linked } = await client.query(
+            `select id, duty, person_id from match_official
+              where match_id = $1 and not withdrawn and assignment_id is not null`,
+            [req.params.id]);
+          const keep = new Map();
+          for (const o of officials) {
+            const hit = o.personId && linked.find((l) => l.duty === o.duty && l.person_id === o.personId && ![...keep.values()].includes(l.id));
+            if (hit) keep.set(o, hit.id);
+          }
           await client.query(
             `update match_official set withdrawn = true
-              where match_id = $1 and not withdrawn`,
-            [req.params.id]);
+              where match_id = $1 and not withdrawn and not (id = any($2::uuid[]))`,
+            [req.params.id, [...keep.values()]]);
 
           let written = 0;
           const standing = [];
           for (const o of officials) {
+            if (keep.has(o)) continue;
             let name = typeof o.name === "string" ? o.name.trim() : "";
             let panel = o.panel == null ? null : String(o.panel).slice(0, 200);
 
@@ -757,14 +778,23 @@ export function officialRoutes({ pool, secret }) {
               [req.params.id, o.duty, name, o.personId ?? null, o.officialId ?? null, panel]);
             written += r.rowCount;
           }
-          // Zero rows and no error means the policy refused every insert.
-          if (written === 0) throw err("not_permitted", 403);
+          // Zero rows and no error means the policy refused every insert. A
+          // sheet that only re-submitted linked duties wrote nothing either,
+          // so it is asked the same question the policy would have asked.
+          if (written === 0 && keep.size === 0) throw err("not_permitted", 403);
+          if (written === 0) {
+            const { rows: [can] } = await client.query(
+              `select app_can('officiating.assign', match_school($1), match_team($1),
+                              '00000000-0000-0000-0000-000000000000'::uuid, $1) as ok`,
+              [req.params.id]);
+            if (!can?.ok) throw err("not_permitted", 403);
+          }
           // The appointment is made EITHER WAY, and what was wrong with it
           // comes back with it. Refusing a lapsed accreditation outright would
           // block a fixture that has to be played; saying nothing would make
           // the register decorative. So it is recorded, and named, at the one
           // moment somebody is in a position to do something about it.
-          return { matchId: req.params.id, appointed: written, standing };
+          return { matchId: req.params.id, appointed: written, kept: keep.size, standing };
         });
         res.json(out);
       } catch (e) {

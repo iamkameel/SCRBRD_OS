@@ -890,7 +890,7 @@ Two things were deliberately **not** harvested, and are recorded here so the dec
 
 ## P1 — Governance boundaries that exist but are not asserted
 
-### SCRBRD-028
+### ~~SCRBRD-028~~ — CLOSED
 
 **Title:** Separation-of-duties and production-rule invariants as named tests
 **Priority:** P1 · **Domain:** RBAC · **Type:** test
@@ -1207,6 +1207,73 @@ longer retaining active scoring permission."* `role_assignment` already carries 
 currently takes on trust. `delegated` is the state handover has no name for. Files: new `db/NN`,
 `packages/policy/src/authorize.mjs`. Depends on SCRBRD-031. Risk MEDIUM. **Migration YES.**
 
+**Part delivered 2026-09-23 — step 1 (derived status, the hour hand's reason) and D3 (completion ends
+scoring). NOT closed:** linking `match_official` to `role_assignment` and `suspended` are the other half,
+built separately (`db/31`, `db/32`, `db/34`).
+- `db/30_duty_status.sql` — `duty_status(match_official.id)`, read-only, STABLE, grants nothing. Derived,
+  in precedence order: `revoked` (withdrawn) → `completed` (match `complete`) → `expired` (`abandoned`) →
+  `delegated` (a scorer duty naming an account that is `from_user` on a `handover_complete` in
+  `scoring_audit` and is not the session holder now; checked on `scheduled` as well as `live`, because
+  scoring does not wait for the status to move) → `active` (`live`) → `pending` (`scheduled`). Never
+  `suspended`. SECURITY DEFINER so a reader without `audit.read` gets the same answer; answers only a caller
+  with `fixture.read` over the match (`match_official_read`'s predicate), NULL otherwise. Exposed as
+  `status` on `match_duties` and shown on the duty roster (`views/duties.jsx`); no policy-package mirror —
+  the client shows the server's answer.
+- Also `db/30`: a DEFERRED constraint trigger `role_assignment_expiry_has_reason` (on `role_assignment`
+  INSERT / UPDATE OF `expires_at`, and on `support_access` DELETE / re-point) — a non-null `expires_at` must be
+  named by a `support_access` row (reason required) that issued at least that hour. Closes the direct INSERT
+  under `role_assignment_write`, and the office UPDATE that extended a live session's hour. Deferred because
+  `support_access_begin()` writes the assignment before the record.
+- `sessionProfile` (`services/api/auth/auth-db.mjs`) now drops an assignment past `expires_at` and returns
+  `expiresAt` — a lapsed support session no longer shows as live (display only; reads were already refused).
+- `db/33_completion_ends_scoring.sql` — `scoring_claim` (from db/28), `scoring_claim_handover` (db/04),
+  `scoring_verify_takeover` and `scoring_lease_check` (db/02) refuse a `complete` match for everyone as
+  `match_complete`, after the capability check; signatures and shapes unchanged. `scoring_lease_check` cannot
+  grow a reason column, so it answers `holds=false, state='match_complete'`; the write path quarantines the
+  ball with reason `match_complete` and the heartbeat reports it. The amendment request (db/24) is untouched
+  and asserted still open. Force-release and arm are unchanged. The client says it in words
+  (`REFUSAL_WORDS` in `lib/handover.js`, the scorer's sync pill and handover sheet).
+- Live assertions in `db/99` (the expiry block after SCRBRD-012; section 15), a walk addition in
+  `tools/smoke-support.mjs`. Not yet in `db/SHIPPED.sha256`. `db/01`/`db/09`/`db/23` unchanged.
+- **Found, not fixed:** the office may still UPDATE a support assignment's `expires_at` to NULL — turning an
+  hour into a standing appointment. The rule here covers only a non-null hour hand; it belongs with the
+  suspension/link work, which already has to decide what may move on a live assignment.
+
+> **2026-09-23 — the authority half (D1 + D2) is built; the lifecycle half (`duty_status()`, db/30) is
+> separate. Not closed until both land.**
+> - **D1, the link.** `match_official.assignment_id` (db/34). `duty_link(duty)` — the school office
+>   (`user.role.assign` at the school **and** `app_may_grant(role)`, i.e. exactly what
+>   `role_assignment_write` asks) **creates** a fresh assignment of the duty's exact shape (this person;
+>   `scorer`, or `official` for umpire/third umpire/referee; this school; this fixture; no team) and links
+>   it. It does not adopt an existing one: withdrawal revokes and suspension silences what a duty is linked
+>   to, so adopting A Wessels's school-wide scorer assignment would let one fixture end or pause her
+>   authority everywhere. One duty per assignment (unique index). The application role has no column
+>   privilege on `assignment_id` (only `duty_link()` writes it — a trigger asking `app_can()` would have
+>   been a privilege, not an invariant, per `invariants.test.mjs`); a capability-free guard trigger holds
+>   the shape however it is written (a linked row is not re-pointed or un-withdrawn), and a second freezes
+>   a linked assignment's fixture/dates. **Withdrawing a linked duty revokes the assignment
+>   in the same statement** (definer trigger; `revoked_by` is the person who withdrew). The appoint route
+>   now keeps a linked duty re-submitted on the new sheet (same duty, same account) instead of withdrawing
+>   and re-making it — otherwise adding a second umpire would have silently ended the scorer's authority.
+> - **D2, the pause.** `duty_suspension` (db/34): who/when/why to suspend, who/when/why to lift, append
+>   then close, writable only through `duty_suspend()` / `duty_lift()`; reason required by function and
+>   table. Suspend asks `user.role.assign` (what revoking asks); lift also asks `app_may_grant` (what
+>   appointing asks) — a principal may pause a scorer and not restore one — and nobody lifts their own.
+>   `active` is never touched. **db/35 is generated**: `generate-rls.mjs` gains a `suspendable` flag beside
+>   `timeBoxed`, and `suspension()` re-emits db/23's three decision functions with
+>   `AND NOT EXISTS (… duty_suspension s WHERE s.assignment_id = a.id AND s.lifted_at IS NULL)`; db/01,
+>   db/09 and db/23 regenerate byte-identical and CI diffs db/35 with them. The client mirror
+>   (`isActive`) reads `suspended` — and `expiresAt`, which it had never read.
+> - **Reads.** `officials` carries `id`, `linked`, `suspended`; `duty_suspensions` is the office's record
+>   (RLS: `user.role.assign`); `assignments` carries `suspended`. The scorer learns *that* they are
+>   suspended, never *why* (a scorer may be a pupil; the reason may be a safeguarding sentence).
+>   **For the merge with `duty_status()`:** `duty_suspended(match_official.id)` is the fold point —
+>   `WHEN duty_suspended(mo.id) THEN 'suspended'`, after `revoked` (withdrawn duty / revoked
+>   assignment) and before `active`/`delegated`.
+> - **Screen.** Officials → an official → each appointment: *Link authority*, *Suspend* / *Lift* with a
+>   reason, gated on `holdsCapability(role, "user.role.assign")`. Assertions: db/99 §15;
+>   `tools/smoke-duties.mjs`.
+
 ### SCRBRD-035 — Operational escalation roster — **RE-SCOPED, do not import as written**
 
 > Checked the 18 rows against the real roster before building. **Four of the roles they escalate
@@ -1235,7 +1302,19 @@ policy-side table, `SupportView`, `AuditView`. Risk LOW. Migration NO.
 is added. Note the trap the rule names: *"sponsor entitlement must never become a back door into protected
 participant data."* Files: `roles.mjs`, new `db/NN`. Risk MEDIUM. **Migration YES.**
 
-### SCRBRD-037 — Match-day duty roster that shows readiness, not names
+### ~~SCRBRD-037~~ — CLOSED — Match-day duty roster that shows readiness, not names
+
+**Closed 2026-09-23 — found already built.** `apps/web/src/views/duties.jsx` (`DutyRoster`, mounted in
+`MatchCentreView.jsx`) shipped in #29 (`952f68c`) under this number and was never marked closed here. It
+shows each slot — umpires, third umpire, referee, scorer appointed, scoring session, team sheet, pitch
+report, transport — as what is ON RECORD in `match_duties`, and an empty slot reads "nothing on record",
+never "pending": nothing in the schema says a fixture owes a second umpire, and inventing the obligation
+would report a school as failing it. Each row sits under its own table's RLS, so a reader sees only what
+they may. Covered by `tools/smoke-browser-read.mjs` and `tools/smoke-officials.mjs`;
+`ReadinessOverview.jsx` (SCRBRD-062) runs the same read across several fixtures. What it cannot show yet is
+a duty's lifecycle status (delegated, suspended…) — that is SCRBRD-034, in progress, and lands on this
+roster when it does.
+
 §17.3: twelve duties (both head coaches, both managers, scorer, two umpires, commissioner, grounds,
 medical, transport, media) each with a status — confirmed / pending / live / handed over / ready / issue.
 The document's own line is the requirement: *"the roster should expose duty readiness, not merely names."*
@@ -1345,36 +1424,232 @@ check on the legitimate path.
 explicit reason before this change, so the dropped default affects nothing live; the fallback
 derivation for an innings with no accepted seal is unchanged from before this entry.
 
-### SCRBRD-039 — Capture profiles: declare the intent, not just record the code path
-**Corrected 2026-09-18.** The first version of this entry claimed SCRBRD OS had no capture profile. It has
-one: `CAPTURE_PROFILE` in `packages/scoring/src/placement.mjs`, a `capture_profile` column on `ball_event`
-with a `CHECK` in `db/07`, carried through quarantine release in `db/14`, and set by the engine per ball.
-The original claim came from a grep with a broken alternation, which is exactly the failure the Pass 2 rule
-above exists to prevent — recorded rather than silently edited.
+### ~~SCRBRD-039~~ — CLOSED
 
-The real gap is narrower and still worth having. The profile is currently a **consequence of the code path**
-— a sector tap yields `standard`, a ball with no placement yields `quick` — not a **declared intent** the
-scorer or the fixture chose. Nothing surfaces it, nothing aggregates it, and `evidence_label()` cannot ask
-"how much was this innings ever going to capture?" So a thin figure reads as thin capture when it may be a
-faithful record at a profile that never collected the field. Files: `placement.mjs`, the scoring capture UI,
-`evidence_label()`, and an innings-level declared profile (a new `db/NN`, one column on the innings or
-carried on `innings_start`). Risk LOW. **Migration YES** if declared per innings rather than derived from
-the balls already logged.
+**Closed 2026-09-23.** An innings now carries a **declared** capture profile — what the scorer chose,
+at setup, to collect on every ball — and the placement evidence is read against it, so "never asked
+for" and "missing" are two different answers.
 
-### SCRBRD-040 — Scoring hub FSM with a named blocked state
-`blockedMissingSetup` — "cannot score because toss, openers or bowler are not set" as a state that
-explains itself, rather than a disabled button. The pattern already exists here
-(`rubric.test.mjs`: *"the gate is legible — the rubric reports its own readiness"*); this extends it to the
-scoring hub, where the gate is currently implicit. Files: scoring surface, `packages/scoring`.
-Risk LOW. Migration NO.
+**Where it lives, and why.** On the `innings_start` event (`inningsStart({captureProfile})` in
+`packages/scoring/src/events.mjs`), not in a column set beside the log. The ball log is the only source
+of truth; a declaration held anywhere else is a second record of the same fact with its own write path
+through the lease, epoch and quarantine. `innings_start` already travels all of those, and `toRow()`
+already maps `captureProfile` into `ball_event.capture_profile`, whose db/07 `CHECK` already refuses
+anything but `full`/`standard`/`quick` — so the storage is **zero new columns**: an `innings_start` row
+with a non-NULL `capture_profile` IS the declaration. The key is **omitted, not null**, when undeclared,
+so an undeclared innings built today is byte-identical to every `innings_start` already on a phone, in
+an outbox or in the server's log. The per-ball `captureProfile` is untouched.
 
-### SCRBRD-041 — Rulebook clauses with severity and applicable ages, cited by the workload monitor
-`RulebookView.jsx` exists; beta-2's *clause shape* is better — `severity: Mandatory | Guideline | Penalty
-Enforced`, `applicableAges`, and categories including Curator & Turf and Medical & Safety. Making a clause
-queryable lets the workload surface **cite the clause it is enforcing** instead of asserting a number. The
-limits themselves are already here (`bowling_directive` with age bands in `db/08`), so this is
-presentation over existing data plus a clause store. Files: `RulebookView.jsx`, new `db/NN` for clauses.
-Risk LOW. **Migration YES** if clauses are stored rather than shipped in code.
+**The fold** (`deriveInnings`, `replay.mjs`) derives `inn.declaredProfile` under three rules, and db/31's
+`innings_declared_profile` view applies the same three to the rows: (1) honoured only **before the first
+non-voided delivery** — a declaration that lands behind the balls (typed late, or released from
+quarantine to a later seq) would excuse a thin record retrospectively; (2) **absence is not a
+retraction** — SCRBRD-063's re-declaration at the break, or an older build, keeps what was declared;
+(3) the latest honoured declaration wins. An unknown value in a log is ignored, never thrown; the
+constructor is where one is refused.
+
+**The labels.** `db/31_declared_capture_profile.sql` adds `evidence_label(bigint, text, text)` — a new
+arity; db/08's `evidence_label(bigint)` and every caller of it are untouched — which returns
+`'not_captured'` for a figure with nothing behind it from an innings whose declared profile never asked
+for the field, and db/08's thresholds otherwise. `capture_profile_collects()` says what each profile
+asks for (`point`: full; `sector`: full, standard). **Undeclared is taken to have asked for
+everything**, which is exactly how every innings read before: the DO `$check$` asserts the overload
+equals the one-argument label at every threshold edge for NULL. `innings_placement_evidence`
+(security_invoker) grades each innings' points and placements. JS mirrors in `placement.mjs`:
+`evidenceLabel()`, `profileCollects()`, `placementEvidence()` (which splits the undrawable balls into
+`notCaptured` and `missing`, per innings or per ball for a career).
+
+**Surfaced** where placement evidence is shown: the heat map and spider (`charts.jsx`) say "Not
+captured, by design: this innings was declared standard (sector only)…" instead of "No exact placements
+on record", and their provenance line counts never-asked separately from missing — in the pad, the
+scorecard modal (`views/shared.jsx`) and the profile's career charts, whose `player_shot_points` read
+now carries each ball's innings declaration. **The dossier is deliberately unchanged**:
+`opposition_squad`'s figures are runs and balls, which every profile collects, so there is nothing a
+declaration could excuse there.
+
+**Chosen at innings setup.** `CaptureProfilePicker` (`scorer/ui.jsx`) on the match step of
+`SetupScreen` (declares both innings; default **Full**, which is what the pad already does — it asks
+where every ball went), on the innings break (`Innings2Sheet`, carrying the first innings' declaration
+forward, or nothing), and on the opener sheet for a real fixture, whose innings opens during hydration
+before anyone is asked — open only until the openers are named, because `innings_start` is the one
+event undo will not walk past. A fixture that declares nothing opens undeclared, as before.
+
+**Tests.** `replay.test.mjs` group I (+40, 296 → 336; the base file's 296 assertions pass unchanged
+against the new source): legacy logs fold to `declaredProfile: null` and to the identical innings;
+declaring never moves any other field; every rule of the fold; the wire round trip through the column;
+an offline-queued declared innings replayed from its JSON queue entries and from server rows; a queue
+from an older build; a mixed-build match. New suite `apps/web/test/capture-profile.test.mjs` (18) renders
+the charts and pickers. `tools/smoke-fold.mjs` records a declared innings **offline**, flushes it, and
+compares the device fold with db/31's views (declared profile, the late declaration refused by both,
+`not_captured` / `insufficient` from both). `db/99` asserts live that the seed's undeclared innings grades
+exactly as db/08 always did and that the views show nothing to a principal with no assignment.
+
+**Falsified.** Dropping the before-the-first-ball test from the fold → 2 red; letting absence retract →
+2 red; `captureProfile: o.captureProfile ?? null` in the constructor → 2 red; charts ignoring the
+declaration → 9 red; SetupScreen defaulting to null → 1 red; db/31 with undeclared treated as not
+collecting a point → the migration's own `$check$` raised "an undeclared innings grades 0 point as
+not_captured, not none"; `innings_declared_profile` without the before-the-first-ball test → `smoke-fold` 2 red ("device standard, database quick"); the view reading undeclared as `quick` → db/99 "an innings with no declaration reads as declared quick"; `innings_placement_evidence` without `security_invoker` → db/31's `$check$` raised.
+
+**Verified** against a freshly reset and reseeded database: `migrate --verify` ALL RLS LIVE ASSERTIONS PASSED; `run-smoke-api scorecard fold quarantine sync schema-guard` 144 assertions across 5 walks (fold 35); `--browser browser-sync browser-innings-end` 18 + 23; `pnpm smoke` 8 + 21 + 16 + 24; `run-all-tests` ALL SUITES PASSED, 2200 assertions across 35 suites (from 2141 across 34).
+
+**Acceptance criteria:**
+- [x] An innings-level declared profile, carried on `innings_start`, with the log as source of truth
+- [x] The scorer chooses it at innings setup; the default declares today's behaviour, and a fixture
+  that declares nothing opens undeclared
+- [x] `evidence_label()` distinguishes "not captured by design" from "missing" (db/31 overload + JS mirror)
+- [x] Surfaced where placement evidence is shown (heat map, spider; pad, scorecard, career)
+- [x] Existing matches with no declared profile replay and read exactly as before — replay group I,
+  db/31 `$check$`, db/99 live
+- [x] Offline-queued events still apply — replay group I, and `smoke-fold` through the real outbox
+- [x] Migration is `db/31` only, not in `db/SHIPPED.sha256`, listed in `expected-migrations.json`
+
+**Affected files:** `packages/scoring/src/{events,replay,placement}.mjs`,
+`packages/scoring/test/replay.test.mjs`, `db/31_declared_capture_profile.sql`, `db/99_rls_verify.sql`,
+`services/api/expected-migrations.json`, `services/api/read/read-api.mjs`, `apps/web/src/lib/live.js`,
+`apps/web/src/scorer/{ui,setup,sheets,engine,charts}.jsx`, `apps/web/test/capture-profile.test.mjs`,
+`tools/smoke-fold.mjs`, `tools/run-all-tests.mjs`
+**Regression risk:** LOW — no score, scorecard or per-ball field reads the declaration; an undeclared
+innings is byte-identical on the wire and grades identically in both folds.
+
+**Title:** ~~Capture profiles: declare the intent, not just record the code path~~
+**Original entry, as filed:**
+> **Corrected 2026-09-18.** The first version of this entry claimed SCRBRD OS had no capture profile. It has
+> one: `CAPTURE_PROFILE` in `packages/scoring/src/placement.mjs`, a `capture_profile` column on `ball_event`
+> with a `CHECK` in `db/07`, carried through quarantine release in `db/14`, and set by the engine per ball.
+> The original claim came from a grep with a broken alternation, which is exactly the failure the Pass 2 rule
+> above exists to prevent — recorded rather than silently edited.
+>
+> The real gap is narrower and still worth having. The profile is currently a **consequence of the code path**
+> — a sector tap yields `standard`, a ball with no placement yields `quick` — not a **declared intent** the
+> scorer or the fixture chose. Nothing surfaces it, nothing aggregates it, and `evidence_label()` cannot ask
+> "how much was this innings ever going to capture?" So a thin figure reads as thin capture when it may be a
+> faithful record at a profile that never collected the field. Files: `placement.mjs`, the scoring capture UI,
+> `evidence_label()`, and an innings-level declared profile (a new `db/NN`, one column on the innings or
+> carried on `innings_start`). Risk LOW. **Migration YES** if declared per innings rather than derived from
+> the balls already logged.
+
+### ~~SCRBRD-040~~ — CLOSED
+
+**Closed 2026-09-23.** The scorer's gate is a function of the folded innings that names what is
+missing, the pad says it in words, and the engine enforces the same answer it shows.
+
+**The evidence.** The gate was three inline lines in `engine.jsx`'s `guardReady`: no striker or
+non-striker → `setModal("opener")`, no bowler → `setModal("bowler")`, no innings → `return false`. A
+fourth copy sat in `onScore`. None of it said why. Worse, the last branch was a silent dead pad: a
+real fixture resumed with no roster on the device (`liveSquad()` returns null when not signed in or
+the team sheet fails) writes no `innings_start`, so every tap returned false and nothing appeared.
+The hub's stage-2 commits (`onRun`, `onBye`, `onLegBye`) never checked at all; they relied on stage 0.
+
+**As built.** `packages/scoring/src/readiness.mjs` — `scoringReadiness(inn)` returns
+`{ ready, blocked: [{ code, says, fix }] }`, `blocked` in the order to fix, `blocked[0]` the one to
+fix now. Codes (`SCORING_BLOCK`), each derived from the fold and nothing else:
+`no_innings` (`!inn` or `battingTeam == null` — no `innings_start`), `innings_closed` (`sealed`),
+`innings_over` (`complete` and not sealed, carrying `endReason`) — both terminal, given alone —
+then `openers` (an end empty, fewer than two batters ever named), `next_batter` (an end empty after
+that), `opening_bowler` (no bowler, no delivery yet), `next_bowler` (no bowler after deliveries,
+carrying the over number). Words live beside the codes (`SCORING_BLOCK_TEXT`).
+**The toss is deliberately not a gate**: it is not in the ball log (it is `match_toss`, server-side,
+and a resumed fixture never brings it to the device), so a check would be a guess. What the toss
+decides — who bats — is on `innings_start`, and `no_innings` checks that.
+In `engine.jsx`, `const readiness=scoringReadiness(inn)` feeds `guardReady`, `onScore`, a new check at
+the top of `commitBall` (the funnel for every delivery) and `confirmWicket`, and `<ScoringBlocked>`
+(`scoring.jsx`) above both pads: `role="status"`, `aria-live="polite"`, "Can't score yet: the
+opening batters have not been chosen." with a "Choose the opening batters" button and a "Then: …"
+line for what follows; it wraps at phone width and hides while a sheet is open. `fixBlock` maps each
+code to the sheet that already existed (opener, newBatsman, bowler, newOver, inningsReview,
+innings2); the one reason with no sheet, `no_innings` on the first innings, writes the same
+`innings_start` the roster path writes, with an empty squad, then opens the batting sheet. A tap on
+a blocked pad still opens the fix.
+
+**Tests.** `packages/scoring/test/readiness.test.mjs` (suite `readiness`, 39): every code from a
+folded log, both orderings (batters before bowler), the terminal cases not also asking for a batter,
+a refused seal still `innings_over`, a voided bowler event, every prefix of a played log agreeing
+with the raw facts, and words for every code. `apps/web/test/scoring-blocked.test.mjs` (suite
+`blocked`, 24) renders the panel from folded innings and asserts the sentence, the fix button,
+`role="status"`, nothing when ready, and reads `engine.jsx` for the one gate. `smoke-browser-sync`
+gained 3: the real pad on a real fixture says the openers sentence, its button opens the batting
+sheet, and the panel is gone once openers and bowler are named.
+
+**Falsified.** Openers check restricted to `batsmen.length >= 2` (reports ready on `[innings_start,
+bowler]`): readiness 4 red, render test 4 red. Early `return { ready: true }` while fewer than two
+batters are named: readiness 4 red plus the prefix sweep, render 6 red. Restored; both green. The
+first build showed the panel behind open sheets and `browser-innings-end` went red (its `NEXT`
+matcher clicked the panel's "Send in the next batter" behind the sheet) — hence hidden while a
+sheet is open.
+
+**Verified.** `replay.test` 296/296; `pnpm build`; `pnpm smoke` (smoke 8, scorer 21, persistence 16,
+a11y 24); `migrate --reset --seed` then walks `browser-sync` 21, `browser-innings-end` 23,
+`browser-handover` 26 — all pass; full suite ALL SUITES PASSED, 2205 assertions across 36 suites
+(was 34; +39 `readiness`, +24 `blocked`).
+
+- [x] a named blocked state per missing thing, derived from the fold
+- [x] the pad explains it in words, with the fix as the action
+- [x] the engine's gate and the words are one function
+- [x] unit + render tests, falsified
+
+**Title:** ~~Scoring hub FSM with a named blocked state~~
+**Affected files:** `packages/scoring/src/readiness.mjs` (new), `packages/scoring/src/index.mjs`,
+`packages/scoring/test/readiness.test.mjs` (new), `apps/web/src/scorer/engine.jsx`,
+`apps/web/src/scorer/scoring.jsx`, `apps/web/test/scoring-blocked.test.mjs` (new),
+`tools/run-all-tests.mjs`, `tools/smoke-browser-sync.mjs`. Risk LOW. Migration NO.
+
+### ~~SCRBRD-041~~ — CLOSED
+
+> Original entry: `RulebookView.jsx` exists; beta-2's *clause shape* is better — `severity: Mandatory |
+> Guideline | Penalty Enforced`, `applicableAges`, and categories including Curator & Turf and Medical &
+> Safety. Making a clause queryable lets the workload surface **cite the clause it is enforcing** instead
+> of asserting a number. Risk LOW. **Migration YES** if clauses are stored rather than shipped in code.
+
+**Closed 2026-09-23.** Clauses are stored, every directive limit names the one it enforces, and the
+Training screen's load panel cites it beside the number.
+
+**The evidence.** Before this the load panel printed `U13 · 5/10` and nothing said where 5 and 10 came
+from; the only statement of the rule was a comment above `bowling_directive` in `db/08`.
+`RulebookView.jsx` was six hard-coded sections of general Laws text (subtitled with one real school's
+name), none of it about the limits the platform enforces.
+
+**As built.** `db/32_rulebook_clause.sql`: `rulebook_clause` (`code` is the key: the thing a directive,
+a screen and a person cite; `title`, `body`, `category` CHECKed to Medical & Safety / Curator & Turf /
+Playing Conditions / Conduct, `severity` CHECKed to the three values, `source`), and
+`rulebook_clause_age` (clause × band, the band a **foreign key into `bowling_directive.age_band`**, so
+the vocabulary is `age_band()`'s own and nothing restates it). `bowling_directive.clause_code` is new
+and NOT NULL, with a **composite FK `(clause_code, age_band)` onto the clause's ages**: the U13 limit
+cannot cite a clause that does not apply to U13. Seven clauses: `PACE-SCOPE`, `PACE-COUNT`, `PACE-U13`,
+`PACE-U14-U15`, `PACE-U16`, `PACE-OPEN` (Guideline — no platform limit; a school's ceiling), `PACE-DOB`.
+**No clause text states a number**; the figures are joined from `bowling_directive` by the read, so the
+rule a person reads and the limit the breach trigger applies cannot drift. Text source: the repo holds no
+official directive text, only `db/08`'s note that the figures follow the ECB fast bowling directives
+mapped onto school bands in the absence of a CSA schedule — so each clause is written as the platform's
+summary, says so in `source` ("Not official wording"), and carries a SCRBRD code, not an official number.
+
+RLS: one SELECT policy per table, `app_user_id() IS NOT NULL` — the predicate `bowling_directive_read`
+already uses, so a clause is exactly as visible as the limit it explains; no write policy, and
+INSERT/UPDATE/DELETE revoked from `scrbrd_app` (db/06's two-layer treatment of `capability`). No write
+route: nothing found needs one, and a school wanting a stricter Open line has `bowling_ceiling_open`.
+Reads: `rulebook_clauses` (new), `bowling_directives` (+`clause_code`), `workload` (+`clause_code/title/
+severity/body`, pace bowlers only — a spinner is under no limit and gets no citation).
+`RulebookView` draws the clauses by category with severity, ages and figures, keeping the Laws crib
+below, labelled reference-only.
+
+**Tests.** `db/99`: signed-out reads 0; a spectator reads all 7 and every directive row's clause for its
+band; even the owner's key cannot insert, update or widen a clause; no non-SELECT policy.
+`tools/smoke-workload.mjs` 68 → 81: the directive→clause map, the clause read, and every workload row
+against a written-out band→clause map, incl. seeded B Khumalo (U13, `PACE-U13`, 5/10), M Cele (U16), an
+Open bowler under Hilton's ceiling (`PACE-OPEN`). `tools/smoke-browser-rulebook.mjs` (BROWSER_WALKS, 25):
+rulebook renders the seven clauses in order with severity, ages and joined figures; Khumalo's row cites
+`PACE-U13 · Pace bowling limits: U13` and expands to the text; the spinner's row cites nothing.
+
+**Falsified.** Policy `USING (true)` → db/99 "an unidentified session can read rulebook clauses";
+`USING (false)` → "a spectator reads 0"; grant + insert policy → "inserted a rulebook clause". Composite FK
+removed → db/32's `$check$` "U13 limit was allowed to cite the U16 clause"; severity CHECK dropped →
+"severity Advisory was accepted"; REVOKE removed → "the application role can write rulebook_clause".
+`and w.pace` removed from the workload read → 2 workload assertions red; band join pinned to U13 → 3 red.
+
+- [x] Clauses stored with severity, applicable ages and category
+- [x] Every directive limit references its clause (FK, band-checked)
+- [x] Workload monitor cites the clause (code + title, expands to text)
+- [x] Rulebook renders clauses grouped by category
+- [x] Live RLS assertions and walks, each guard falsified
 
 ### ~~SCRBRD-042~~ — CLOSED as already-correct, which is what the entry said might happen
 
@@ -2546,3 +2821,18 @@ application role only; no capability, policy or table changed.
 - [x] Falsified: with the guard removed, the refusal assertions go red
 **Regression risk:** LOW for behaviour; the operational risk is the one intended — the first deploy
 after this merges will not start until `apply-29` has been pasted.
+
+### SCRBRD-067 — A real fixture opens its first innings without asking who won the toss
+**Title:** The scorer assumes the home side (`team1`) bats first on a live fixture, although the toss is recorded
+**Priority:** P2 · **Domain:** Scoring · **Type:** correctness
+**Affected files:** `apps/web/src/scorer/engine.jsx` (the "real fixture nobody has scored yet" hydration path,
+and SCRBRD-040's `NO_INNINGS` fix, which deliberately copies it), the toss read (`match_toss`, `tools/smoke-toss.mjs`)
+**Found 2026-09-23** while reviewing SCRBRD-040. The demo setup flow derives the batting side from the toss and the
+bat/bowl election (`setup.jsx`, `first = bat===0 ? toss : 1-toss`). The live-fixture path does not: it writes
+`innings_start` with `battingTeam: cfg.team1`, and SCRBRD-040's fix for a fixture with no roster on the device
+writes the same. When the side that won the toss chose to field, the first innings is recorded against the wrong
+team, and `innings_start` is the one event undo will not walk past.
+**Expected behaviour:** the first `innings_start` on a live fixture names the side the recorded toss put in to bat;
+with no toss recorded, the scorer is asked (toss winner and election) before the innings opens, never defaulted.
+**Tests required:** a walk that records a toss where the away side bats first and asserts the opened innings.
+**Data migration required:** NO (reads the existing toss).

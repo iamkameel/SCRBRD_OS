@@ -185,7 +185,18 @@ try {
   });
   ok("the 1XI fixture offers the scorer", opened);
   await page.waitForTimeout(2500);
+  // SCRBRD-040. A fixture nobody has scored has no openers, and the pad says
+  // so in words rather than waiting for a tap to pop a sheet with no reason.
+  const blocked = page.locator('[data-testid="scoring-blocked"]');
+  ok("the pad says why it cannot score yet — the openers are not chosen",
+     /Can.t score yet: the opening batters have not been chosen/.test(
+       await blocked.first().innerText({ timeout: 3000 }).catch(() => "")));
+  // Its own fix button opens the batting sheet that clearBlockers answers.
+  await page.locator('[data-testid="scoring-blocked-fix"]').first().click({ timeout: 3000 }).catch(() => {});
+  await page.waitForTimeout(500);
+  ok("...and its fix opens the batting sheet", /Available to Bat|Batting Order/i.test(await text()));
   await clearBlockers();
+  ok("...and once openers and bowler are named, it is gone", (await blocked.count()) === 0);
   if (!/\bDOT\b/i.test(await text())) await click(/QUICK MODE/i, 2500);
   await page.waitForTimeout(400);
   ok("the scorer opens on the pad", /\bDOT\b/i.test(await text()));

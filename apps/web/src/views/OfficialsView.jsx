@@ -52,6 +52,84 @@ const DUTY = {
   referee:      { label: "Referee",      icon: "⚖️", color: D.amber },
 };
 
+// ── A duty's authority: link, suspend, lift (SCRBRD-034) ─────────────
+//
+// An appointment on this screen is a DUTY; the permission to act on it is a
+// role_assignment. The school office links the two (db/34), and may pause a
+// linked duty — the assignment grants nothing until the pause is lifted — or
+// lift it. Each pause and each lift carries a reason, and the database
+// refuses both without one. Offered to whoever HOLDS user.role.assign; the
+// definer functions decide, including the finer rule the button cannot see
+// (restoring authority also asks whether you may appoint that role), and a
+// refusal comes back here as a sentence.
+const DUTY_REFUSAL = {
+  not_permitted:       "Only the school office can do that for this duty.",
+  reason_required:     "Say why — the reason is kept with the record.",
+  reason_too_long:     "Keep the reason under 2,000 characters.",
+  no_account:          "This official has no account here, so there is no authority to link.",
+  already_linked:      "This duty is already linked.",
+  already_suspended:   "This duty is already suspended.",
+  not_suspended:       "This duty is not suspended.",
+  duty_withdrawn:      "This appointment has been withdrawn.",
+  not_linked:          "Link the duty before suspending it.",
+  assignment_not_live: "The authority behind this duty has already been revoked.",
+  duty_suspended:      "Lift the suspension before linking again.",
+  own_duty:            "Somebody else has to lift your own suspension.",
+};
+
+function DutyAuthority({ appointment: a, canAssign, live, suspension, onDone }) {
+  const [reason, setReason] = useState("");
+  const [asking, setAsking] = useState(null);           // "suspend" | "lift" | null
+  const [error, setError] = useState(null);
+  if (!live || !a.id) return null;
+  const act = async (verb) => {
+    setError(null);
+    try {
+      await api(`/api/duties/${a.id}/${verb}`, { method: "POST", body: verb === "link" ? {} : { reason } });
+      setAsking(null); setReason(""); onDone();
+    } catch (e) { setError(DUTY_REFUSAL[e.code] ?? `Could not ${verb}: ${e.code ?? e.message}`); }
+  };
+  const state = a.suspended ? "suspended" : a.linked ? "linked" : "unlinked";
+  if (!canAssign && !a.suspended) return null;
+  return (
+    <div data-testid="duty-authority" data-duty={a.id} data-state={state}
+         style={{ padding: "0 13px 10px", display: "flex", flexDirection: "column", gap: "6px" }}>
+      {a.suspended && (
+        <div style={{ fontFamily: D.body, fontSize: "11px", color: D.roseText }}>
+          Suspended — this duty's authority grants nothing until it is lifted.
+          {suspension && ` ${suspension.suspendedBy ?? "The office"}: “${suspension.reason}”`}
+        </div>
+      )}
+      {canAssign && (
+        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+          {!a.linked && a.personId && (
+            <Btn size="sm" variant="ghost" data-testid="duty-link" onClick={() => act("link")}>Link authority</Btn>
+          )}
+          {a.linked && !a.suspended && asking !== "suspend" && (
+            <Btn size="sm" variant="ghost" data-testid="duty-suspend" onClick={() => setAsking("suspend")}>Suspend</Btn>
+          )}
+          {a.suspended && asking !== "lift" && (
+            <Btn size="sm" variant="ghost" data-testid="duty-lift" onClick={() => setAsking("lift")}>Lift suspension</Btn>
+          )}
+        </div>
+      )}
+      {canAssign && asking && (
+        <div style={{ display: "flex", gap: "6px", alignItems: "flex-end" }}>
+          <div style={{ flex: 1 }}>
+            <Input small label={asking === "suspend" ? "Why suspend?" : "Why lift?"} value={reason}
+                   onChange={setReason} data-testid="duty-reason"/>
+          </div>
+          <Btn size="sm" data-testid="duty-confirm" disabled={!reason.trim()} onClick={() => act(asking)}>
+            {asking === "suspend" ? "Suspend" : "Lift"}
+          </Btn>
+          <Btn size="sm" variant="ghost" onClick={() => { setAsking(null); setReason(""); setError(null); }}>Cancel</Btn>
+        </div>
+      )}
+      {error && <div role="alert" style={{ fontFamily: D.body, fontSize: "12px", color: D.roseText }}>{error}</div>}
+    </div>
+  );
+}
+
 function OfficialsView({ role }) {
   // Read through the choke point: row-scoped for this principal. Importing a
   // constant here would bypass it.
@@ -89,6 +167,12 @@ function OfficialsView({ role }) {
     catch (e) { setManageError(e.code === "not_permitted" ? "You do not hold the register." : `Could not retire: ${e.code ?? e.message}`); }
   };
   const { rows: APPOINTMENTS, loading, error, live } = useLive("officials", role, nonce);
+  // The office's side of a duty's authority (SCRBRD-034). The capability, not
+  // the role name; the rows are RLS-scoped to the office, so anybody else
+  // gets none and sees only THAT a duty is suspended, never why.
+  const canAssign = holdsCapability(role, "user.role.assign");
+  const SUSPENSIONS = useRows("duty_suspensions", role, nonce);
+  const openSuspension = (dutyId) => SUSPENSIONS.find((x) => x.dutyId === dutyId && !x.liftedAt) ?? null;
   const REGISTER = useRows("official_register", role, nonce);
   const MATCHES = useRows("matches", role);
   const [duty, setDuty] = useState("all");
@@ -328,10 +412,11 @@ function OfficialsView({ role }) {
                       .map((a, i) => {
                         const fx = fixtureOf(a.matchId);
                         return (
-                          <div key={a.matchId + a.duty + i}
+                          <div key={a.id ?? a.matchId + a.duty + i}
+                            style={{ borderTop: i === 0 ? "none" : `1px solid ${D.border}` }}>
+                          <div
                             style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
-                              gap: "10px", padding: "10px 13px",
-                              borderTop: i === 0 ? "none" : `1px solid ${D.border}` }}>
+                              gap: "10px", padding: "10px 13px" }}>
                             <div style={{ minWidth: 0 }}>
                               <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textPrimary,
                                 overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -345,9 +430,15 @@ function OfficialsView({ role }) {
                                 {fx?.date ?? when(a.appointedAt)}{fx?.venue ? ` · ${fx.venue}` : ""}
                               </div>
                             </div>
-                            <Badge color={DUTY[a.duty]?.color ?? D.textMuted}>
-                              {DUTY[a.duty]?.label ?? a.duty}
-                            </Badge>
+                            <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                              {a.suspended && <Badge color={D.rose}>Suspended</Badge>}
+                              <Badge color={DUTY[a.duty]?.color ?? D.textMuted}>
+                                {DUTY[a.duty]?.label ?? a.duty}
+                              </Badge>
+                            </div>
+                          </div>
+                          <DutyAuthority appointment={a} canAssign={canAssign} live={live}
+                                         suspension={openSuspension(a.id)} onDone={() => setNonce((n) => n + 1)}/>
                           </div>
                         );
                       })}

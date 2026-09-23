@@ -99,7 +99,7 @@ export async function sessionProfile(pool, secret, bearer) {
       `select id, name, email from app_user where id = $1`, [principal.userId]);
     const { rows: assignments } = await client.query(
       `select a.id, a.role, a.school_id, s.name as school_name, a.team_code,
-              a.season, a.fixture_id, a.valid_from, a.valid_until,
+              a.season, a.fixture_id, a.valid_from, a.valid_until, a.expires_at,
               -- WHO this assignment is about: a guardian's children, or, for a
               -- self-access assignment, the holder's own player row. It was
               -- called children, back when the table was named for guardians,
@@ -111,6 +111,12 @@ export async function sessionProfile(pool, secret, bearer) {
         where a.person_id = $1 and a.active
           and (a.valid_from  is null or a.valid_from  <= current_date)
           and (a.valid_until is null or a.valid_until >  current_date)
+          -- The support session's hour hand (db/22), the third clause of the
+          -- liveness rule app_can() applies (db/23). Without it a session
+          -- past its hour stayed on the workspace as if it were live —
+          -- display only, since every read is refused regardless, but a
+          -- screen that says "you are at Hilton" when you are not is wrong.
+          and (a.expires_at  is null or a.expires_at  >  now())
         group by a.id, s.name
         order by a.role`, [principal.userId]);
     return {
@@ -121,6 +127,8 @@ export async function sessionProfile(pool, secret, bearer) {
         school: a.school_id, schoolName: a.school_name,
         team: a.team_code, season: a.season, fixture: a.fixture_id,
         from: a.valid_from, until: a.valid_until,
+        // Non-null only for a support session: when it stops by itself.
+        expiresAt: a.expires_at ?? null,
         subjects: a.subjects,
         // Kept while the demo vocabulary still says children. Both name the
         // same rows; subjects is the one to read.

@@ -246,4 +246,46 @@ const Sheet = ({ children, title, accent, onClose }) => {
   );
 };
 
-export { Badge, BallDot, Btn, Card, GS, Glass, Lbl, Sep, Sheet, SignalBar };
+/**
+ * What this innings will capture on every ball — DECLARED, at setup, rather
+ * than inferred afterwards from whichever path each ball took. SCRBRD-039.
+ *
+ * The choice travels on the innings_start event (packages/scoring events.mjs)
+ * and is what a thin heat map is read against: a standard innings with no
+ * exact points says "never asked for", not "missing". It does not change the
+ * pad — every ball still records its own profile as before.
+ *
+ * `value` may be null: an innings nobody declared, which reads exactly as
+ * every innings did before this existed. Nothing is chosen for the scorer.
+ */
+const CAPTURE_CHOICES = [
+  { id: "full",     label: "Full",     hint: "exact point" },
+  { id: "standard", label: "Standard", hint: "sector only" },
+  { id: "quick",    label: "Quick",    hint: "runs only" },
+];
+const CaptureProfilePicker = ({ value, onChange, label = "What will you capture?" }) => (
+  <div data-testid="capture-profile-picker">
+    <Lbl sx={{ marginBottom: "8px" }}>{label}</Lbl>
+    <div role="radiogroup" aria-label={label} style={{ display: "flex", gap: "6px" }}>
+      {CAPTURE_CHOICES.map(c => (
+        <button key={c.id} type="button" role="radio" aria-checked={value === c.id}
+          data-testid={`capture-profile-${c.id}`} onClick={() => onChange(c.id)} className="pressBtn" style={{
+            flex: 1, padding: "9px 0", borderRadius: D.md, cursor: "pointer",
+            border: `1px solid ${value === c.id ? D.indigo + "77" : D.border}`,
+            background: value === c.id ? `${D.indigo}1a` : D.surf2,
+            color: value === c.id ? D.sky : D.textMuted, transition: "all .2s",
+          }}>
+          <div style={{ fontFamily: D.body, fontSize: "13px", fontWeight: 600 }}>{c.label}</div>
+          <div style={{ fontFamily: D.body, fontSize: "10px", marginTop: "2px" }}>{c.hint}</div>
+        </button>
+      ))}
+    </div>
+    {value == null && (
+      <div style={{ fontFamily: D.body, fontSize: "10px", color: D.textMuted, marginTop: "6px" }}>
+        Not declared — read as it always has been.
+      </div>
+    )}
+  </div>
+);
+
+export { Badge, BallDot, Btn, Card, CaptureProfilePicker, GS, Glass, Lbl, Sep, Sheet, SignalBar };

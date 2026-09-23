@@ -5,7 +5,7 @@ import { RR, SR } from "./format.js";
 import { IntelPanel } from "./panels.jsx";
 import { buildSignals } from "./signals.js";
 import { Badge, Card, Lbl, SignalBar } from "./ui.jsx";
-import { batHandOf, hasPoint, positionName, screenAngle, shotDensity, directionalProfile, DISMISSAL_LABEL } from "@scrbrd/scoring";
+import { batHandOf, hasPoint, positionName, screenAngle, shotDensity, directionalProfile, DISMISSAL_LABEL, placementEvidence, NOT_CAPTURED, PLACEMENT_FIELD } from "@scrbrd/scoring";
 
 /* ═══════════════════════════════════════════════════════
    INTEL DASHBOARD TAB
@@ -393,16 +393,37 @@ const shotsOf=(inn,playerId)=>{
   return playerId?log.filter(b=>b.strikerId===playerId):log;
 };
 const handFor=(inn)=>(b)=>batHandOf(inn,b.strikerId);
-/** One line under a chart saying what it drew and what it left out. */
-const Provenance=({n,excluded,children})=>(
+/**
+ * The balls a chart could not draw, read against what their innings DECLARED
+ * it would capture (SCRBRD-039). A ball carries its own innings' declaration
+ * when it came from a career read (lib/live.js asShotPoint); inside one
+ * innings it is the innings' own. Undeclared reads exactly as it always did.
+ */
+const pointEvidence=(inn,balls)=>placementEvidence(balls,{
+  need:PLACEMENT_FIELD.POINT,
+  declaredFor:b=>b.declaredProfile!==undefined?b.declaredProfile:(inn?.declaredProfile??null),
+});
+const PROFILE_WORD={full:"full",standard:"standard (sector only)",quick:"quick (runs only)"};
+const declaredOf=(inn,balls)=>{
+  const ps=new Set(balls.map(b=>b.declaredProfile!==undefined?b.declaredProfile:(inn?.declaredProfile??null)).filter(Boolean));
+  return ps.size===1?[...ps][0]:null;
+};
+/** One line under a chart saying what it drew and what it left out — and
+ *  which of the gaps are gaps, and which were never asked for. */
+const Provenance=({n,missing,notCaptured=0,children})=>(
   <div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,marginTop:"8px",textAlign:"center",lineHeight:1.5}}>
     {children??`${n} shot${n===1?"":"s"} placed exactly.`}
-    {excluded>0&&` ${excluded} ball${excluded===1?"":"s"} carried no exact point and ${excluded===1?"is":"are"} not drawn.`}
+    {missing>0&&` ${missing} ball${missing===1?"":"s"} carried no exact point and ${missing===1?"is":"are"} not drawn.`}
+    {notCaptured>0&&<span data-testid="placement-not-captured-count">{` ${notCaptured} came from an innings that never asked for an exact point.`}</span>}
   </div>
 );
-const NothingHere=({mine})=>(
-  <div style={{color:D.textMuted,fontFamily:D.body,fontSize:"13px",padding:"18px 0",textAlign:"center"}}>
-    {mine.length?"No exact placements on record.":"No balls faced."}
+const NothingHere=({mine,ev,declared})=>(
+  <div style={{color:D.textMuted,fontFamily:D.body,fontSize:"13px",padding:"18px 0",textAlign:"center"}}
+    data-testid={ev?.label===NOT_CAPTURED?"placement-not-captured":undefined}>
+    {!mine.length?"No balls faced."
+      :ev?.label===NOT_CAPTURED
+        ?`Not captured, by design: ${declared?`this innings was declared ${PROFILE_WORD[declared]??declared}`:"these innings were declared"} and never asked for an exact point.`
+        :"No exact placements on record."}
   </div>
 );
 
@@ -410,6 +431,7 @@ function ShotHeatMap({inn,playerId=null,title="Where he makes contact"}){
   if(!inn)return null;
   const mine=shotsOf(inn,playerId);
   const d=shotDensity(mine,{batHandFor:handFor(inn)});
+  const ev=pointEvidence(inn,mine);
   // One hue, light to dark: a sequential surface is magnitude, and magnitude
   // is a single ramp. The amber is the ground's own colour on the wheel.
   const cells=d.cells.filter(c=>c.density>=0.04);
@@ -420,7 +442,7 @@ function ShotHeatMap({inn,playerId=null,title="Where he makes contact"}){
         <Lbl>{title}</Lbl>
         <span style={{marginLeft:"auto",fontFamily:D.mono,fontSize:"11px",color:D.textSecondary}}>{d.n} placed</span>
       </div>
-      {d.n===0?<NothingHere mine={mine}/>:(
+      {d.n===0?<NothingHere mine={mine} ev={ev} declared={declaredOf(inn,mine)}/>:(
         <div style={{width:"100%",maxWidth:"260px",margin:"0 auto",aspectRatio:"1"}}>
           <svg viewBox="0 0 300 300" style={{width:"100%",height:"100%",display:"block"}} role="img"
             aria-label={`Contact density: ${d.n} placed shots, bandwidth ${d.bandwidth}`}>
@@ -441,7 +463,7 @@ function ShotHeatMap({inn,playerId=null,title="Where he makes contact"}){
           </svg>
         </div>
       )}
-      {d.n>0&&<Provenance n={d.n} excluded={d.excludedCount}/>}
+      {d.n>0&&<Provenance n={d.n} missing={ev.missing} notCaptured={ev.notCaptured}/>}
     </Card>
     </div>
   );
@@ -451,6 +473,7 @@ function ShotSpider({inn,playerId=null,title="Reach by direction"}){
   if(!inn)return null;
   const mine=shotsOf(inn,playerId);
   const p=directionalProfile(mine);
+  const ev=pointEvidence(inn,mine);
   // The axes are mirrored for a left-hander, the bins are not: his cover is
   // still his cover, it is just on the other side of the ground. A whole
   // innings of mixed hands is drawn in the right-hander's frame and says so.
@@ -465,7 +488,7 @@ function ShotSpider({inn,playerId=null,title="Reach by direction"}){
         <Lbl>{title}</Lbl>
         <span style={{marginLeft:"auto",fontFamily:D.mono,fontSize:"11px",color:D.textSecondary}}>{p.n} placed</span>
       </div>
-      {p.n===0?<NothingHere mine={mine}/>:(
+      {p.n===0?<NothingHere mine={mine} ev={ev} declared={declaredOf(inn,mine)}/>:(
         <div style={{width:"100%",maxWidth:"280px",margin:"0 auto",aspectRatio:"1"}}>
           <svg viewBox="0 0 300 300" style={{width:"100%",height:"100%",display:"block"}} role="img"
             aria-label={`Reach by direction: ${p.n} placed shots, strongest ${p.strongest?.replace(/_/g," ")}`}>
@@ -493,7 +516,7 @@ function ShotSpider({inn,playerId=null,title="Reach by direction"}){
         </div>
       )}
       {p.n>0&&(
-        <Provenance n={p.n} excluded={p.excludedCount}>
+        <Provenance n={p.n} missing={ev.missing} notCaptured={ev.notCaptured}>
           {`Reach is the mean distance in each direction, 100% at the rope; the number is shots that way. `}
           {!playerId&&hands.size>1?"Mixed hands, drawn as a right-hander's ground. ":""}
           {`${p.n} shot${p.n===1?"":"s"} placed exactly.`}

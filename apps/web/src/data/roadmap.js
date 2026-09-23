@@ -39,7 +39,7 @@ export const UPGRADES = [
   { id: "up12", category: "Fitness",       priority: "medium", status: "shipped", title: "Medical Clearance Workflow",
     desc: "Clearance requirements, adult clearances and a register a school can actually be audited against.", effort: "Medium", walk: ["clearance"] },
   { id: "up15", category: "Fitness",       priority: "high",   status: "shipped", title: "Bowling Workload & Welfare",
-    desc: "Spells, breaches and directives against age-group limits, on the Training screen, with a school's own Open-band ceiling set from Settings.", effort: "Low", walk: ["workload"] },
+    desc: "Spells, breaches and directives against age-group limits, on the Training screen, with a school's own Open-band ceiling set from Settings. Each limit cites the rulebook clause it enforces, by code and title, and opens its text; the Rulebook draws the platform's clauses by category with severity, ages and the directive's figures.", effort: "Low", walk: ["workload", "browser-rulebook"] },
   { id: "up19", category: "Admin",         priority: "medium", status: "shipped", title: "Officials & Kit Registers",
     desc: "The panel of umpires and scorers, with accreditation; the kit the school holds and who has it out.", effort: "Medium", walk: ["officials", "kit"] },
   { id: "up20", category: "Admin",         priority: "medium", status: "shipped", title: "Module Switches",
