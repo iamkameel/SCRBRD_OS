@@ -275,6 +275,29 @@ try {
   ok("the school's card now says over", /Over/i.test(schoolOver) && !/Live now/i.test(schoolOver), schoolOver.slice(0, 300));
   ok("...and who ended it", /by Platform Ops/.test(schoolOver));
 
+  // ── Ended by the school ──────────────────────────────────────────
+  group("The school office ends a session itself — it does not have to trust the platform to leave");
+  await tid(plat.page, "support-school").selectOption(HIL);
+  await tid(plat.page, "support-role").selectOption("directorofsport");
+  await tid(plat.page, "support-reason").fill(REASON);
+  await tid(plat.page, "support-begin").click({ timeout: 6000 });
+  await plat.page.waitForTimeout(1800);
+  const second = (await sessionsInDb()).find((s) => !s.ended_at);
+  ok("the operator begins a second session", !!second, JSON.stringify(await sessionsInDb()));
+  await openTab(dos.page, "me");
+  await openTab(dos.page, "school");
+  const endBtn = schoolCard(dos.page).locator('[data-testid="school-support-end"]');
+  ok("the school's card offers the director of sport an End button on the live session", await endBtn.count() === 1);
+  await endBtn.first().click({ timeout: 6000 }).catch(() => {});
+  await dos.page.waitForTimeout(1800);
+  const bySchool = (await sessionsInDb()).find((s) => s.id === second?.id);
+  ok("Postgres agrees: ended by the school's director of sport, and the assignment is off",
+     bySchool?.ended_at && bySchool.ended_by === "sarah@example.invalid" && bySchool.assignment_active === false,
+     JSON.stringify(bySchool));
+  const schoolAfter = await schoolCard(dos.page).innerText().catch(() => "");
+  ok("...and the school's card no longer shows anything live", !/Live now/i.test(schoolAfter), schoolAfter.slice(0, 300));
+  ok("...nor an End button", await endBtn.count() === 0);
+
   ok("no console errors on the operator's session", plat.errors.length === 0, plat.errors.join(" | "));
   ok("no console errors on the school's session", dos.errors.length === 0, dos.errors.join(" | "));
   await plat.ctx.close().catch(() => {});

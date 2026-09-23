@@ -1202,7 +1202,25 @@ function SchoolTab({ role, users, players, staff, coaches, canAudit }) {
 // database. The API filters every row to the reader's school.
 function AuditSection({ role }) {
   const reads = useRows("access_log", role);
-  const sessions = useRows("support_access", role);
+  const [nonce, setNonce] = useState(0);
+  const sessions = useRows("support_access", role, nonce);
+  // The office may end a session early — the school does not have to trust the
+  // platform to leave. Same capability support_access_end() checks; courtesy only.
+  const canEnd = holdsCapability(role, "user.role.assign");
+  const [endSaid, setEndSaid] = useState({});
+  const endSession = async (s) => {
+    setEndSaid((m) => ({ ...m, [s.id]: "" }));
+    try {
+      const r = await api(`/api/support/access/${s.id}/end`, { method: "POST" });
+      if (r?.note === "already_ended") setEndSaid((m) => ({ ...m, [s.id]: "It had already been ended." }));
+    } catch (e) {
+      const code = e?.code || e?.message;
+      setEndSaid((m) => ({ ...m, [s.id]: code === "not_permitted"
+        ? "Only someone who makes appointments at this school can end a session."
+        : `The server refused: ${code ?? "unreachable"}.` }));
+    }
+    setNonce((n) => n + 1);
+  };
   const recent = reads.slice(0, 40);
   return (
     <div style={{ display: "grid", gap: "16px" }}>
@@ -1248,6 +1266,8 @@ function AuditSection({ role }) {
                 <div style={MONO}>began {ago(s.startedAt)} · {s.endedAt ? `ended ${ago(s.endedAt)}${s.endedByName ? ` by ${s.endedByName}` : ""}` : s.live ? `until ${new Date(s.expiresAt).toLocaleTimeString()}` : "expired"}</div>
               </div>
               <Badge color={s.live ? D.amber : D.textMuted}>{s.live ? "Live now" : "Over"}</Badge>
+              {s.live && canEnd && <Btn size="sm" variant="danger" onClick={() => endSession(s)} data-testid="school-support-end">End now</Btn>}
+              {endSaid[s.id] && <div role="alert" style={{ flexBasis: "100%", fontFamily: D.body, fontSize: "11px", color: D.roseText }}>{endSaid[s.id]}</div>}
             </div>
           ))}
       </Panel>
