@@ -2401,7 +2401,10 @@ const MAX_LOGGED_IDS = 500;
  * @param {Record<string, string>} [query]
  */
 export async function readResource(pool, secret, bearer, resource, query = {}) {
-  const def = READ_QUERIES[resource];
+  // Object.hasOwn, not a bare index: READ_QUERIES is a plain object, so a URL
+  // naming "constructor" or "__proto__" found Object.prototype's member, passed
+  // the 404 and opened a transaction as the caller before failing elsewhere.
+  const def = Object.hasOwn(READ_QUERIES, resource) ? READ_QUERIES[resource] : undefined;
   if (!def) { const e = /** @type {DressedError} */ (new Error("unknown_resource")); e.status = 404; throw e; }
   const params = def.params ? def.params(query) : [];
   const module = OWNER_OF_READ[resource];
@@ -2526,7 +2529,7 @@ export async function exportResource(pool, secret, bearer, resource, query = {})
  */
 /** @param {string} resource */
 function columnsOf(resource) {
-  const text = READ_QUERIES[resource]?.text ?? "";
+  const text = (Object.hasOwn(READ_QUERIES, resource) ? READ_QUERIES[resource]?.text : undefined) ?? "";
   const select = text.match(/select\s+([\s\S]*?)\s+from\s/i)?.[1];
   if (!select) return [];
   // Split on commas that are not inside brackets: the SELECT lists contain

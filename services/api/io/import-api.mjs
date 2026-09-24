@@ -206,7 +206,7 @@ export const IMPORTS = {
  * @param {{ csv?: unknown, schoolId?: string, commit?: unknown }} body  the request body as sent
  */
 export async function runImport(pool, secret, bearer, kind, { csv, schoolId, commit }) {
-  const def = IMPORTS[/** @type {string} */ (kind)];   // an absent kind finds nothing, as "undefined"
+  const def = Object.hasOwn(IMPORTS, /** @type {string} */ (kind)) ? IMPORTS[/** @type {string} */ (kind)] : undefined;   // an absent kind finds nothing, as "undefined"
   if (!def) { const e = /** @type {DressedError} */ (new Error("unknown_import")); e.status = 404; throw e; }
   if (def.needsSchool && !schoolId) {
     const e = /** @type {DressedError} */ (new Error("school_required")); e.status = 400; throw e;
@@ -336,7 +336,8 @@ export function importRoutes({ pool, secret }) {
     // "full_name, team_code, born" will send "Name, Team, DOB", and the
     // support conversation that follows costs more than this route.
     template: async (req, res) => {
-      const def = IMPORTS[/** @type {string} */ (req.params.id)];   // an absent id finds nothing, as "undefined"
+      const id = String(req.params.id);
+      const def = Object.hasOwn(IMPORTS, id) ? IMPORTS[id] : undefined;   // an absent id finds nothing, as "undefined"
       if (!def) return res.status(404).json({ error: "unknown_import" });
       const name = `scrbrd-${req.params.id}-template.csv`;
       res.writeHead(200, {

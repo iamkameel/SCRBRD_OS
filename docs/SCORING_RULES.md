@@ -297,3 +297,20 @@ Do not add a counter. Add an event kind in `events.mjs`, fold it in
 column the `ball_event` table does not have, put it in `payload` — `toRow()`
 carries unknown fields there untouched, so capturing a new dimension never
 requires a migration.
+
+## Product decisions, 2026-09-24
+
+Taken by the product owner on the rules the commit-time Laws check left open.
+
+1. **Dismissal on a free hit — record it, batter not out.** Unchanged from §6. The pad records the ball and the
+   appeal as they happened; the fold saves the batter (`standsOnFreeHit`). The server does not refuse it.
+2. **Mid-over bowler change — allowed, with a reason.** Law 17.8.1: a bowler incapacitated or suspended may be
+   replaced mid-over. The pad asks *Injury or suspended?* and records it on the `bowler` event; the one who finishes
+   the over may not bowl the next (already enforced as "or parts thereof"). Built as SCRBRD-080.
+3. **Run out with runs completed — ask which end.** One extra question on a run out that completed runs: out at the
+   striker's end or the bowler's end (Law 38.2). The fold places the survivor from that. Built as SCRBRD-069.
+4. **No-ball byes — fix the model.** A no-ball records runs off the bat and runs not off the bat separately; only
+   the first is the batter's (Law 21.6, Law 23). Old events replay unchanged. Built as SCRBRD-068.
+5. **Timed out and retired out are not deliveries.** Recorded as a dismissal event that is not a ball: the over's
+   count and the bowler's figures are unaffected and the bowler gets no credit. Old matches replay unchanged.
+   Built as SCRBRD-081.

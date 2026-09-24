@@ -3052,3 +3052,15 @@ SCRBRD-074 writes one `sent:<key>` entry per event per match+device to `scrbrd-o
 `indexedDbStorage.clearMatch()` would remove them but nothing calls it. Clear a match's outbox once the match is
 complete and the queue is empty. Devices that queued events before the markers existed have none for those
 keys: after the upgrade a re-offered, already-acknowledged ball reads as unsent until its first flush.
+
+### Decided 2026-09-24 — scoring rules (see docs/SCORING_RULES.md "Product decisions, 2026-09-24")
+- **SCRBRD-068** (no-ball byes): approved — build.
+- **SCRBRD-069** (run-out end): decided — ask the scorer which end on a run out that completed runs — build.
+- **SCRBRD-080 — Mid-over bowler change records its reason.** Allowed (Law 17.8.1); the pad asks *Injury or suspended?* and records it on the `bowler` event. P2.
+- **SCRBRD-081 — Timed out and retired out are not deliveries.** A non-ball dismissal event; over count and bowler figures unaffected; old logs replay unchanged. P2.
+
+### Decided 2026-09-24 — screens to build next (from docs/redesign/SCREEN_MAP.md)
+- **SCRBRD-082 — Post-match report.** Scorecard, key moments, figures, generated from the log after a match.
+- **SCRBRD-083 — Public live match and league pages.** Signed-out. Needs a written rule first on what data about minors is ever public (names? photos? none?) — design with the policy package, not in the view.
+- **SCRBRD-084 — Season awards and MVP.** Season roll-up of figures and ratings already computed.
+- **SCRBRD-085 — Phone day-of views for drivers and groundskeepers.**
