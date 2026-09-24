@@ -33,7 +33,7 @@
  * Cricket; deriving made them visible.
  */
 
-import { KIND, BALL_TYPE, isLegal, normaliseDismissal, chargedToBowler, standsOnFreeHit, DISMISSAL, DISMISSAL_LABEL, INNINGS_END_REASON, DERIVED_END_REASONS, RETIREMENT_DISMISSAL, inningsEnd } from "./events.mjs";
+import { KIND, BALL_TYPE, isLegal, normaliseDismissal, chargedToBowler, standsOnFreeHit, DISMISSAL, DISMISSAL_LABEL, INNINGS_END_REASON, DERIVED_END_REASONS, RETIREMENT_DISMISSAL, runsOffBat, inningsEnd } from "./events.mjs";
 import { CAPTURE_PROFILE } from "./placement.mjs";
 
 /** @import { LogEvent, SquadMember } from "./events.mjs" */
@@ -459,18 +459,24 @@ function inningsFolder(ctx = {}) {
             if (bow) bow.wides += 1;
             break;
 
-          case BALL_TYPE.NO_BALL:
+          case BALL_TYPE.NO_BALL: {
+            // `v` is the runs completed; they are the striker's only when they
+            // came off the bat (SCRBRD-068, NB_RUNS in events.mjs). Byes or
+            // leg byes off a no-ball are No-ball extras, and — like every run
+            // resulting from a no-ball — debited to the bowler (Law 21).
+            const offBat = runsOffBat(ev);
             inn.runs += penaltyRun + v;
-            inn.extras.noBall += penaltyRun;
+            inn.extras.noBall += penaltyRun + (v - offBat);
             bowlerCharged = penaltyRun + v;
             if (bow) bow.noBalls += 1;
             // A no-ball is a ball faced even when no run is scored off it.
             if (bat) {
-              bat.balls += 1; bat.runs += v;
-              if (v === 4) bat.fours += 1;
-              if (v === 6) bat.sixes += 1;
+              bat.balls += 1; bat.runs += offBat;
+              if (offBat === 4) bat.fours += 1;
+              if (offBat === 6) bat.sixes += 1;
             }
             break;
+          }
 
           case BALL_TYPE.BYE:
             inn.runs += v; inn.extras.bye += v;

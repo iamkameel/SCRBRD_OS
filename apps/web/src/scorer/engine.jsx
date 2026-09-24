@@ -1065,9 +1065,11 @@ function SCRBRD({resume}={}){
 
     if(modal==="noBall")return (
       <NoBallSheet
-        onConfirm={(nbType,runs)=>{
+        onConfirm={(nbType,runs,nbRuns)=>{
+          // `nbRuns` only when the scorer said byes or leg byes (SCRBRD-068);
+          // off the bat is the event's default and is left off it.
           emit(ballEvent({type:"Nb",value:runs,shot:selShot,
-            seg:selSeg?.seg??null,zone:selSeg?.zone??null,nbType}));
+            seg:selSeg?.seg??null,zone:selSeg?.zone??null,nbType,...(nbRuns?{nbRuns}:{})}));
           setSelSeg(null);setModal(null);scoreKeyRef.current++;
           // A height no-ball or a beamer earns a free hit. The replay also
           // tracks this; setting it here keeps the banner immediate.
@@ -1513,7 +1515,7 @@ function SCRBRD({resume}={}){
                           <div style={{fontFamily:D.body,fontSize:"12px",color:D.textPrimary,fontWeight:500}}>
                             {b.type==="W"?"WICKET — "+(DISMISSAL_LABEL[b.dismissal]??b.dismissal):
                              b.type==="Wd"?"Wide ball":
-                             b.type==="Nb"?`No Ball (${b.nbType?.replace("_"," ")||""}), ${b.value||0}+1 runs`:
+                             b.type==="Nb"?`No Ball (${b.nbType?.replace("_"," ")||""}), ${b.value||0}+1 runs${b.nbRuns?` (${b.nbRuns==="leg_byes"?"leg byes":"byes"})`:""}`:
                              b.type==="Pen"?`Penalty ${b.value} runs to ${b.to} team — ${b.reason}`:
                              b.type==="B"?`Bye, ${b.value} run${b.value!==1?"s":""}`:
                              b.type==="LB"?`Leg Bye, ${b.value} run${b.value!==1?"s":""}`:

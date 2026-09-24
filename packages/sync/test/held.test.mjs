@@ -183,6 +183,9 @@ group("G. In words");
   // SCRBRD-080: a bowler taking over mid-over says why.
   ok("a mid-over change names its reason", describeEvent(bowler({ bowler: "Z Unknown", reason: "injury" }), innings[0])
      === "Bowler — Z Unknown to bowl (takes over mid-over: injury)");
+  // SCRBRD-068: byes off a no-ball are named as byes, runs off the bat as runs.
+  ok("leg byes off a no-ball", describeEvent(ball({ type: "Nb", value: 2, nbRuns: "leg_byes" }), innings[0]) === "No ball + 2 leg byes");
+  ok("a no-ball hit for one", describeEvent(ball({ type: "Nb", value: 1 }), innings[0]) === "No ball + 1 run");
   ok("retired hurt, a retirement", describeEvent(retire({ batter: "p1", reason: "hurt" }), innings[0]) === "Retirement — S Dlamini (retired hurt)");
 }
 

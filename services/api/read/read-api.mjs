@@ -15,7 +15,7 @@ import { toCsv } from "../io/csv.mjs";
 import {
   DISCIPLINES, battingIndex, bowlingIndex, coachIndex, adjustedRating,
   SCALE_MIN, SCALE_MAX,
-  fromRow, deriveInnings, deriveMatchPhases, NON_DELIVERY,
+  fromRow, deriveInnings, deriveMatchPhases, NON_DELIVERY, NB_RUNS_VALUES,
 } from "@scrbrd/scoring";
 /** @import { Pool, Handler, ApiRequest, RawResponse, DressedError } from "../api-types.mjs" */
 // A caught error is `any` to the checker (CaughtError in api-types.mjs).
@@ -23,6 +23,11 @@ import {
 // The dismissals that are not the bowler's, as a SQL list, from the one set
 // the reducer reads — so a query cannot restate the law differently.
 const NOT_THE_BOWLERS = [...NON_DELIVERY].map((d) => `'${d}'`).join(", ");
+// Runs that are the striker's, as SQL over ball_event `b`: runsOffBat() in
+// packages/scoring. A no-ball's are, unless payload.nbRuns says byes or leg
+// byes (SCRBRD-068); a no-ball recorded before that has no nbRuns and was hit.
+const OFF_THE_BAT_SQL = `(b.ball_type in ('run','W') or (b.ball_type = 'Nb'
+  and coalesce(b.payload->>'nbRuns', '') not in (${[...NB_RUNS_VALUES].map((v) => `'${v}'`).join(", ")})))`;
 
 // resource → query. `masked: true` documents (and lets tests assert) that the
 // query reads a masking view. `params` maps request query → SQL params.
@@ -1789,8 +1794,10 @@ export const READ_QUERIES = {
                   count(*) filter (where b.ball_type not in ('Wd','Nb'))::int  as balls,
                   -- Runs off the bat. Byes and leg byes are not the batter's,
                   -- which is the same split runs_conceded makes on the bowling
-                  -- side of the same delivery.
-                  coalesce(sum(case when b.ball_type in ('run','W','Nb')
+                  -- side of the same delivery — nor are byes or leg byes off a
+                  -- no-ball, which it records in payload.nbRuns (SCRBRD-068;
+                  -- runsOffBat() in packages/scoring is the same rule).
+                  coalesce(sum(case when ${OFF_THE_BAT_SQL}
                                     then coalesce(b.value,0) else 0 end), 0)::int as runs,
                   -- A dot is a legal delivery worth nothing, which is the rule
                   -- derivePhases already applies (packages/scoring/src/phases.mjs).
@@ -1801,8 +1808,11 @@ export const READ_QUERIES = {
                   -- anything.
                   count(*) filter (where b.ball_type not in ('Wd','Nb')
                                      and coalesce(b.value,0) = 0)::int          as dots,
-                  count(*) filter (where b.value = 4)::int                     as fours,
-                  count(*) filter (where b.value = 6)::int                     as sixes,
+                  -- The batter's fours and sixes, as the fold and the phases
+                  -- count them: off the bat. Counting every ball worth four
+                  -- called four byes, and five wides, a boundary.
+                  count(*) filter (where b.value = 4 and b.ball_type <> 'W' and ${OFF_THE_BAT_SQL})::int as fours,
+                  count(*) filter (where b.value = 6 and b.ball_type <> 'W' and ${OFF_THE_BAT_SQL})::int as sixes,
                   count(*) filter (
                     where b.ball_type = 'W'
                       and coalesce(b.dismissal,'') not in (${NOT_THE_BOWLERS})

@@ -385,7 +385,9 @@ group("L. The invariant, over many innings");
     while (legal < toPlay * 6 && out < 10) {
       if (legal % 6 === 0) ev.push({ kind: "bowler", bowler: `b${(legal / 6) % 2}` });
       const r = rnd();
-      if (r < 0.06) ev.push({ kind: "ball", type: "Nb", value: pick([0, 0, 1, 4, 6]) });
+      if (r < 0.05) ev.push({ kind: "ball", type: "Nb", value: pick([0, 0, 1, 4, 6]) });
+      // Byes or leg byes off a no-ball (SCRBRD-068): the side's, not a four.
+      else if (r < 0.06) ev.push({ kind: "ball", type: "Nb", value: pick([1, 2, 4]), nbRuns: pick(["byes", "leg_byes"]) });
       else if (r < 0.10) ev.push({ kind: "ball", type: "Wd", value: pick([0, 0, 1, 4]) });
       else if (r < 0.14) { ev.push({ kind: "ball", type: pick(["B", "LB"]), value: pick([1, 2, 4]) }); legal++; }
       else if (r < 0.22) {
@@ -421,7 +423,7 @@ group("L. The invariant, over many innings");
     return ev;
   };
 
-  let logs = 0, bad = 0, savedSeen = 0, standingSeen = 0, penaltiesSeen = 0, nbBoundaries = 0, byeFours = 0, revised = 0, offBallSeen = 0;
+  let logs = 0, bad = 0, savedSeen = 0, standingSeen = 0, penaltiesSeen = 0, nbBoundaries = 0, byeFours = 0, revised = 0, offBallSeen = 0, nbByes = 0;
   /** @type {string[]} */
   const why = [];
   for (const overs of [20, 50, 15, 8, 1, 20, 12, 30, 20, 6, 25, 20]) {
@@ -449,8 +451,9 @@ group("L. The invariant, over many innings");
       savedSeen += inn.ballLog.filter((b) => b.freeHitSaved).length;
       standingSeen += inn.wickets;
       penaltiesSeen += inn.extras.penalty;
-      nbBoundaries += inn.ballLog.filter((b) => b.type === "Nb" && (b.value === 4 || b.value === 6)).length;
-      byeFours += inn.ballLog.filter((b) => (b.type === "B" || b.type === "LB") && b.value === 4).length;
+      nbBoundaries += inn.ballLog.filter((b) => b.type === "Nb" && !b.nbRuns && (b.value === 4 || b.value === 6)).length;
+      byeFours += inn.ballLog.filter((b) => (b.type === "B" || b.type === "LB" || (b.type === "Nb" && b.nbRuns)) && b.value === 4).length;
+      nbByes += inn.ballLog.filter((b) => b.type === "Nb" && b.nbRuns && b.value === 4).length;
       offBallSeen += inn.nonBallWickets.length;
       if (inn.revised) revised++;
     }
@@ -463,6 +466,7 @@ group("L. The invariant, over many innings");
   ok("...and no-ball boundaries, four byes, penalty runs and a revision",
      nbBoundaries > 0 && byeFours > 0 && penaltiesSeen > 0 && revised > 0);
   ok("...and wickets that fell with no ball (retired out, timed out)", offBallSeen > 0);
+  ok("...and four byes off a no-ball, which are nobody's four", nbByes > 0);
 }
 
 console.log(`\n${"─".repeat(52)}\nPHASES SUITE: ${pass} passed, ${fail} failed`);

@@ -12,8 +12,8 @@
  *   - AG models a wicket ON a no-ball or a wide (extraType + isWicket). Here a
  *     wicket is its own delivery type, W, which is legal; "caught off a
  *     no-ball" and "stumped off a wide" cannot be written, so there is nothing
- *     to refuse. Nor can "a single bye off a no-ball" (Nb's value is runs off
- *     the bat).
+ *     to refuse. "A single bye off a no-ball" can be written since SCRBRD-068
+ *     (`nbRuns: "byes"`) — group M.
  *
  * Groups E onwards are the lifecycle and undo rules this repository adds.
  *
@@ -383,6 +383,27 @@ group("L. A bowler replaced during an over: injury or suspended");
      old.bowler === "w3" && old.bowlerChanges.length === 1 && old.bowlerChanges[0].reason === null && old.balls === 5);
   ok("a bowler for a new over is not a change", deriveInnings(done).bowlerChanges.length === 0
      && deriveInnings([...done, ...at(0, bowler({ bowler: "w2" }))]).bowlerChanges.length === 0);
+}
+
+// ── M. Whose the runs off a no-ball are (SCRBRD-068) ────────────
+group("M. No-ball byes and leg byes at commit");
+{
+  const L = [...open(0), ...runs(0, 1)];
+  ok("byes off a no-ball are accepted", judge(L, at(0, ball({ type: BALL_TYPE.NO_BALL, value: 2, nbRuns: "byes" }))[0]) === null);
+  ok("leg byes off one too", judge(L, at(0, ball({ type: BALL_TYPE.NO_BALL, value: 1, nbRuns: "leg_byes" }))[0]) === null);
+  ok("a no-ball hit for runs, as always", judge(L, at(0, ball({ type: BALL_TYPE.NO_BALL, value: 4 }))[0]) === null);
+  const odd = /** @type {LogEvent} */ (/** @type {unknown} */ ({ kind: "ball", type: "Nb", value: 2, nbRuns: "overthrows" }));
+  ok("anything else is refused: the fold would read it as off the bat", judge(L, at(0, odd)[0]) === REFUSAL.NB_RUNS_UNKNOWN);
+  const onBye = /** @type {LogEvent} */ (/** @type {unknown} */ ({ kind: "ball", type: "B", value: 2, nbRuns: "byes" }));
+  ok("...and so is the field on a delivery that is not a no-ball", judge(L, at(0, onBye)[0]) === REFUSAL.NB_RUNS_UNKNOWN);
+  // Both folds agree on what it scored.
+  const log = [...L, ...at(0, ball({ type: BALL_TYPE.NO_BALL, value: 3, nbRuns: "leg_byes" }))];
+  const server = new MatchFold(log).view().innings[0];
+  const client = deriveInnings(log);
+  ok("the server's fold and the pad's agree on it",
+     server.runs === client.runs && server.extras.noBall === client.extras.noBall && server.striker === client.striker
+     && server.batsmen.find((b) => b.id === "p2")?.runs === client.batsmen.find((b) => b.id === "p2")?.runs
+     && client.batsmen.find((b) => b.id === "p2")?.runs === 0);
 }
 
 group("J. Every reason has words for the person who has to clear it");

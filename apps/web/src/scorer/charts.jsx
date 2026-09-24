@@ -5,7 +5,7 @@ import { RR, SR } from "./format.js";
 import { IntelPanel } from "./panels.jsx";
 import { buildSignals } from "./signals.js";
 import { Badge, Card, Lbl, SignalBar } from "./ui.jsx";
-import { batHandOf, hasPoint, positionName, screenAngle, shotDensity, directionalProfile, DISMISSAL_LABEL, placementEvidence, NOT_CAPTURED, PLACEMENT_FIELD } from "@scrbrd/scoring";
+import { batHandOf, hasPoint, positionName, screenAngle, shotDensity, directionalProfile, DISMISSAL_LABEL, placementEvidence, NOT_CAPTURED, PLACEMENT_FIELD, runsOffBat } from "@scrbrd/scoring";
 
 /* ═══════════════════════════════════════════════════════
    INTEL DASHBOARD TAB
@@ -306,7 +306,9 @@ function ShotWheel({inn,playerId=null,title="Wagon wheel"}){
   const drawn=mine.filter(b=>b.theta!=null||b.seg!=null);
   const exact=drawn.filter(hasPoint).length;
   const missing=mine.length-drawn.length;
-  const runs=mine.reduce((s,b)=>s+(b.value||0),0);
+  // One batter's wheel counts his runs — not byes, even off a no-ball
+  // (runsOffBat, SCRBRD-068); the side's counts everything run.
+  const runs=mine.reduce((s,b)=>s+(playerId?runsOffBat(b):(b.value||0)),0);
   return (
     <Card style={{padding:"14px 16px"}}>
       <div style={{display:"flex",alignItems:"baseline",gap:"8px",marginBottom:"10px"}}>

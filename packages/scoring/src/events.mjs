@@ -84,9 +84,54 @@ export const ILLEGAL = new Set([BALL_TYPE.WIDE, BALL_TYPE.NO_BALL]);
  *  @param {string} type */
 export const isLegal = (type) => !ILLEGAL.has(type);
 
-/** Runs credited to the batter (as opposed to the extras column).
+/** Runs credited to the batter (as opposed to the extras column) — on a
+ *  no-ball only when they came off the bat: see NB_RUNS and runsOffBat().
  *  @type {ReadonlySet<string>} */
 export const OFF_THE_BAT = new Set([BALL_TYPE.RUN, BALL_TYPE.WICKET, BALL_TYPE.NO_BALL]);
+
+/**
+ * Whose the runs off a no-ball are (SCRBRD-068). A no-ball's `value` is the
+ * runs the batters completed, or the boundary allowance — as for a wide, a
+ * bye or a leg bye. `nbRuns` says where they came from:
+ *
+ *   absent     off the bat — the striker's (Law 21.6). Every no-ball recorded
+ *              before this has no `nbRuns`, and that is what they were: the
+ *              pad's sheet asked for "runs scored off this ball", so an old
+ *              no-ball replays exactly as it always did.
+ *   "byes"     the ball did not touch the bat or the batter;
+ *   "leg_byes" it came off the batter's person, not the bat.
+ *
+ * Runs not off the bat are not the striker's (Law 23). By the Laws they are
+ * scored as No-ball extras, and every run resulting from a no-ball — the
+ * penalty, runs off the bat, byes, leg byes — is debited to the bowler; only a
+ * five-run penalty award is not (MCC Laws 2017, Law 21: "Runs resulting from
+ * a No ball – how scored"). So the team's total and the bowler's figures are
+ * the same whichever it is; the batter's runs, fours and sixes are not. The
+ * pad still records which of the two it was, because it is what the scorer saw
+ * and a competition playing other conditions can read it.
+ *
+ * Carried as a new field rather than by reading `value` differently, so the
+ * runs completed stay in one place — which is what strike is rotated by, and
+ * what every SQL fold already adds to the total and the bowler (`1 + value`).
+ */
+export const NB_RUNS = Object.freeze({ BYES: "byes", LEG_BYES: "leg_byes" });
+/** @typedef {typeof NB_RUNS[keyof typeof NB_RUNS]} NbRuns */
+/** @type {ReadonlySet<unknown>}  asked of whatever a producer wrote */
+export const NB_RUNS_VALUES = new Set(Object.values(NB_RUNS));
+
+/**
+ * The runs off a delivery that are the striker's. A no-ball's are unless the
+ * event says they were byes or leg byes; a bye or leg bye's never are; a wide
+ * scores nothing to the batter.
+ * @param {{type?: string | null, value?: number | null, nbRuns?: unknown}} ev
+ * @returns {number}
+ */
+export function runsOffBat(ev) {
+  const t = ev.type ?? BALL_TYPE.RUN;
+  if (!OFF_THE_BAT.has(t)) return 0;
+  if (t === BALL_TYPE.NO_BALL && NB_RUNS_VALUES.has(ev.nbRuns)) return 0;
+  return ev.value ?? 0;
+}
 
 /**
  * Why a batter's innings ended, or paused, with no delivery. Retired hurt is
@@ -267,6 +312,7 @@ export const INNINGS_END_REASON = {
  *   theta: number | null, radius: number | null,
  *   placementSource: string | null, placementNull: string | null,
  *   closePosition: string | null, captureProfile: string | null,
+ *   nbRuns?: NbRuns,
  * }} BallEvent
  */
 /**
@@ -282,6 +328,7 @@ export const INNINGS_END_REASON = {
  *   theta?: number | null, radius?: number | null,
  *   placementSource?: string | null, placementNull?: string | null,
  *   closePosition?: string | null, captureProfile?: string | null,
+ *   nbRuns?: string | null,
  * }} BallInput
  */
 
@@ -493,8 +540,9 @@ export const bowler = (o) => {
 /**
  * A delivery.
  *
- * `value` means runs off the bat for `run`/`W`/`Nb`, and the number of extras
- * run for `B`/`LB`/`Wd`. The one-run penalty for a wide or no-ball is implicit
+ * `value` means runs off the bat for `run`/`W`, the number of extras run for
+ * `B`/`LB`/`Wd`, and for `Nb` the runs completed — off the bat unless
+ * `nbRuns` says byes or leg byes (NB_RUNS, SCRBRD-068). The one-run penalty for a wide or no-ball is implicit
  * and added during replay — never baked into `value`, so that the penalty can
  * never be double-counted by a caller that already added it.
  */
@@ -549,14 +597,34 @@ const checkedType = (t) => {
   return /** @type {BallType} */ (t);
 };
 
+/**
+ * Reject an `nbRuns` the model does not define, or one on a delivery that is
+ * not a no-ball: refused where the scorer who chose it can still see it.
+ * @param {string | null | undefined} n  @param {BallType} type
+ * @returns {NbRuns | null}
+ */
+const checkedNbRuns = (n, type) => {
+  if (n == null) return null;
+  if (!NB_RUNS_VALUES.has(n) || type !== BALL_TYPE.NO_BALL) {
+    throw new TypeError(`nbRuns ${JSON.stringify(n)} is for a no-ball, one of ${[...NB_RUNS_VALUES].join(", ")}`);
+  }
+  return /** @type {NbRuns} */ (n);
+};
+
 /** @param {BallInput} o  @returns {BallEvent} */
-export const ball = (o) => ({
+export const ball = (o) => {
+  const type = checkedType(o.type);
+  const nbRuns = checkedNbRuns(o.nbRuns, type);
+  return {
   ...base(KIND.BALL, o),
   // `type` is the delivery kind (run | W | Wd | Nb | B | LB). It is named to
   // match both the ball_event.ball_type column and the log entries the scoring
   // UI already reads, so a log entry needs no translation on either side.
-  type: checkedType(o.type),
+  type,
   value: o.value ?? 0,
+  // Runs off a no-ball that were not off the bat (SCRBRD-068). Omitted when
+  // they were, so a no-ball hit for runs is the same event it always was.
+  ...(nbRuns ? { nbRuns } : {}),
 
   // WHO WAS INVOLVED
   // ────────────────
@@ -606,7 +674,8 @@ export const ball = (o) => ({
   placementNull: o.placementNull ?? null,     // why there is no placement
   closePosition: o.closePosition ?? null,     // set only inside the catching ring
   captureProfile: o.captureProfile ?? null,   // "full" | "standard" | "quick"
-});
+  };
+};
 
 /** @param {PenaltyInput} o  @returns {PenaltyEvent} */
 export const penalty = (o) => ({

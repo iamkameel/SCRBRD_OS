@@ -169,6 +169,38 @@ group("C. Crease occupancy after a wicket");
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// D. Byes and leg byes off a no-ball are not the striker's (SCRBRD-068)
+//    (AG: liveProjectionRules.test.ts; Law 21, Law 23)
+//
+// A no-ball records the runs completed in `value` and, when they did not
+// come off the bat, `nbRuns: "byes" | "leg_byes"`. By the Laws they are
+// No-ball extras, and every run of a no-ball is debited to the bowler; the
+// striker gets the ball faced and none of the runs.
+// ═══════════════════════════════════════════════════════════════════════
+group("D. No-ball byes and leg byes (SCRBRD-068)");
+{
+  for (const nbRuns of /** @type {const} */ (["byes", "leg_byes"])) {
+    const inn = deriveInnings([...open(), ball({ type: BALL_TYPE.NO_BALL, value: 3, nbRuns })]);
+    const p1 = inn.batsmen.find((b) => b.id === "p1");
+    const w1 = inn.bowlers.find((b) => b.id === "w1");
+    ok(`${nbRuns}: the side has the penalty and the three`, inn.runs === 4);
+    ok(`${nbRuns}: all four are no-ball extras, none are byes`, inn.extras.noBall === 4 && inn.extras.bye === 0 && inn.extras.legBye === 0);
+    ok(`${nbRuns}: the striker faced it and scored none of it`, p1?.balls === 1 && p1?.runs === 0);
+    ok(`${nbRuns}: the bowler is charged all four, and no legal ball`, w1?.runs === 4 && w1?.balls === 0 && w1?.noBalls === 1);
+    ok(`${nbRuns}: three run is an odd number — they crossed`, inn.striker === "p2" && inn.nonStriker === "p1");
+    ok(`${nbRuns}: and it is still a free hit`, inn.freeHit === true);
+  }
+  const four = deriveInnings([...open(), ball({ type: BALL_TYPE.NO_BALL, value: 4, nbRuns: "byes" })]);
+  const p1 = four.batsmen.find((b) => b.id === "p1");
+  ok("four byes off a no-ball are not the striker's four", p1?.fours === 0 && p1?.runs === 0);
+  const hit = deriveInnings([...open(), ball({ type: BALL_TYPE.NO_BALL, value: 4 })]);
+  const h1 = hit.batsmen.find((b) => b.id === "p1");
+  ok("...a no-ball hit for four is, as it always was", h1?.fours === 1 && h1?.runs === 4 && hit.extras.noBall === 1);
+  ok("...and the side's total and the bowler's figures are the same either way",
+     four.runs === hit.runs && four.bowlers[0].runs === hit.bowlers[0].runs);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // KNOWN_GAP
 //    (AG: src/lib/scoring/__tests__/liveProjectionRules.test.ts,
 //     "non-striker run out after a completed single: the striker has

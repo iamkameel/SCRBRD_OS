@@ -116,7 +116,8 @@ Kept deliberately, listed so a future reader does not "fix" them back:
 
 - **Wides and no-balls do not consume a ball of the over.** `isLegal()`.
 - **Byes and leg byes are not charged to the bowler** but do count as balls
-  bowled, and are balls faced by the batter.
+  bowled, and are balls faced by the batter. Off a no-ball they are No-ball
+  extras and are charged to him, like every run of a no-ball (SCRBRD-068).
 - **Run outs and the other non-delivery dismissals are not credited to the
   bowler** — see `UNCREDITED` in `replay.mjs`.
 - **The bowler is cleared at the end of each over**, so the next `bowler` event
@@ -181,6 +182,7 @@ Refused, with the reason named:
 | Once play starts, a not-out batter leaves only by dismissal or retirement — no replacing him; swapping ends is allowed | new |
 | Only a batter at the crease can retire; nothing is recorded for an innings nobody opened | new |
 | A wicket with no ball is retired out (a batter who is in) or timed out (the batter due in, Law 40) — nothing else | SCRBRD-081 |
+| Runs off a no-ball are off the bat, byes or leg byes — nothing else | SCRBRD-068 |
 | A live `void` names the latest event that still counts in the innings in play — last in, first out, as the pad's undo. Anything older is an amendment (a second person, `scoring_amendment`) | new, `undo.mjs` |
 
 Not refused, deliberately — each would need a product decision: a dismissal on
@@ -314,6 +316,44 @@ Taken by the product owner on the rules the commit-time Laws check left open.
 5. **Timed out and retired out are not deliveries.** Recorded as a dismissal event that is not a ball: the over's
    count and the bowler's figures are unaffected and the bowler gets no credit. Old matches replay unchanged.
    Built as SCRBRD-081 — see below.
+
+### Byes and leg byes off a no-ball (SCRBRD-068)
+
+**The shape.** A no-ball's `value` is the runs the batters completed (or the boundary allowance), as it is for a wide,
+a bye or a leg bye. A new, optional field says whose they were: `nbRuns: "byes" | "leg_byes"` (`NB_RUNS`). Absent means
+off the bat. The constructor refuses any other value, and the field on anything but a no-ball.
+
+**Why not a second number beside `value`.** Every shipped SQL fold already reads a no-ball as `1 + value` — the live
+score, the handover check (`scoring_verify_takeover`), the bowler's career runs conceded. Splitting the runs into two
+numbers would have left all of them short by the byes, and a handover after a no-ball bye would have failed
+verification. With `value` still the runs completed, they stay right with no migration; the new field only decides the
+batter's share. And it is what old events already are: the pad asked for "runs scored off this ball", so a no-ball with
+no `nbRuns` is off the bat and replays exactly as before.
+
+**How it is scored (MCC Laws, Law 21 — "Runs resulting from a No ball – how scored").** The one-run penalty is a
+No-ball extra. Runs completed off the bat are the striker's; otherwise they too are No-ball extras — not byes or leg
+byes. Apart from a five-run penalty award, every run resulting from a no-ball is debited to the bowler. So:
+
+| No-ball, 2 run | Side | Extras | Striker | Bowler | Strike |
+|---|---|---|---|---|---|
+| off the bat | +3 | nb +1 | +2 runs, +1 ball | +3 | kept (2 is even) |
+| byes / leg byes | +3 | nb +3 | +0 runs, +1 ball | +3 | kept |
+
+The team total and the bowler's figures do not depend on the answer; the batter's runs, fours and sixes do. A no-ball is
+a ball faced either way. Strike is rotated by the runs completed. The pad records which of byes or leg byes it was
+because that is what the scorer saw; the fold scores both as no-ball extras. (A competition playing conditions that
+score them as byes and leg byes, not debited to the bowler, would read `nbRuns` differently — not modelled.)
+
+**Consumers.** The fold (`runsOffBat()` in `events.mjs` is the one rule), the phases (fours and sixes, and their
+invariant), the scorecard and ball-by-ball text, the one-batter wagon wheel's run count, the held sheet, the Laws
+(an unknown `nbRuns`, or one on anything but a no-ball: `nb_runs_unknown`), and the matchups read in
+`services/api/read/read-api.mjs` — which now counts only runs off the bat, and only fours and sixes off the bat: it
+used to count every ball worth four, four byes and five wides included.
+
+**Not moved.** The SQL career views (`player_batting_since`, `player_innings` in `db/02`, and their `db/08`/`db/13`
+siblings) credit a no-ball's `value` to the striker. A no-ball bye recorded with a `striker_id` would be over-credited
+there; the pad's no-ball does not carry a `striker_id` today (it never has), so none is yet. Reading `payload.nbRuns`
+there needs those views redefined — a migration.
 
 ### A bowler replaced during an over (SCRBRD-080)
 

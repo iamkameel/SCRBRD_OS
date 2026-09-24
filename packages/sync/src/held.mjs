@@ -318,7 +318,7 @@ export function describeEvent(ev, inn, find) {
           return `Wicket — ${who != null ? `${n(who)} ` : ""}${how}${v ? `, ${plural(v, "run")}` : ""}${ev.bowler != null ? ` (bowling: ${n(ev.bowler)})` : ""}`;
         }
         case "Wd": return `Wide${v ? ` + ${plural(v, "run")}` : ""}${face}`;
-        case "Nb": return `No ball${v ? ` + ${plural(v, "run")}` : ""}${face}`;
+        case "Nb": return `No ball${v ? ` + ${ev.nbRuns === "byes" ? plural(v, "bye") : ev.nbRuns === "leg_byes" ? plural(v, "leg bye") : plural(v, "run")}` : ""}${face}`;
         case "B":  return `${plural(v, "bye")}${face}`;
         case "LB": return `${plural(v, "leg bye")}${face}`;
         default:   return `Ball — ${v ? plural(v, "run") : "dot ball"}${face}`;

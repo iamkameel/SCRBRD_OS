@@ -615,7 +615,7 @@ function CommentaryCard({inn}){
   const descBall=(b)=>{
     if(b.type==="W")return "WICKET — "+(DISMISSAL_LABEL[b.dismissal]??b.dismissal);
     if(b.type==="Wd")return "Wide ball";
-    if(b.type==="Nb")return "No Ball ("+(b.nbType||"front foot").replace("_"," ")+"), "+(b.value||0)+"+1 runs";
+    if(b.type==="Nb")return "No Ball ("+(b.nbType||"front foot").replace("_"," ")+"), "+(b.value||0)+"+1 runs"+(b.nbRuns?(b.nbRuns==="leg_byes"?" (leg byes)":" (byes)"):"");
     if(b.type==="Pen")return "Penalty "+b.value+" runs — "+(b.reason||"");
     if(b.type==="B")return "Bye — "+b.value+" run"+(b.value!==1?"s":"");
     if(b.type==="LB")return "Leg Bye — "+b.value+" run"+(b.value!==1?"s":"");

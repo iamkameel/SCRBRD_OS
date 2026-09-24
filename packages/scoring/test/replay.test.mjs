@@ -1142,5 +1142,43 @@ group("J. Timed out and retired out are not deliveries (SCRBRD-081)");
   ok("...and back, the same wicket", deriveInnings([...out, fromRow({ ...row, seq: 99, client_ts: new Date().toISOString() })]).wickets === 2);
 }
 
+// ── K. No-ball byes (SCRBRD-068) ─────────────────────────
+group("K. Whose the runs off a no-ball are (SCRBRD-068)");
+{
+  const hit = ball({ type: BALL_TYPE.NO_BALL, value: 2 });
+  ok("a no-ball hit for runs is built as it always was: no nbRuns key", !("nbRuns" in hit));
+  const lb = ball({ type: BALL_TYPE.NO_BALL, value: 2, nbRuns: "leg_byes" });
+  ok("leg byes off one carry it", lb.nbRuns === "leg_byes" && lb.value === 2);
+  let threw = 0;
+  try { ball({ type: BALL_TYPE.NO_BALL, value: 1, nbRuns: "overthrows" }); } catch { threw++; }
+  try { ball({ type: BALL_TYPE.BYE, value: 1, nbRuns: "byes" }); } catch { threw++; }
+  ok("an unknown one, or one on a delivery that is not a no-ball, is refused at construction", threw === 2);
+
+  // OLD LOGS: a no-ball as the pad wrote it until now (value, no nbRuns) is
+  // the striker's — the figures below are the fold's before SCRBRD-068.
+  /** @type {LogEvent} */
+  const oldNb = { kind: "ball", type: "Nb", value: 4 };
+  const old = deriveInnings([...open(), oldNb]);
+  const p1 = must(old.batsmen.find((b) => b.id === "p1"));
+  ok("an old no-ball for four replays as it did: his four, one no-ball extra, five to the side",
+     p1.runs === 4 && p1.fours === 1 && p1.balls === 1 && old.extras.noBall === 1 && old.runs === 5 && old.bowlers[0].runs === 5);
+
+  const withLb = deriveInnings([...open(), runs(1), lb]);
+  const p2 = must(withLb.batsmen.find((b) => b.id === "p2"));
+  ok("leg byes off a no-ball: the striker faced it and has none of them", p2.balls === 1 && p2.runs === 0);
+  ok("...the side has 1 + 1 + 2, three of them no-ball extras", withLb.runs === 4 && withLb.extras.noBall === 3);
+  ok("...the bowler is charged every run of the no-ball", withLb.bowlers[0].runs === 4);
+  ok("...two run is even: the ends are as they were", withLb.striker === "p2");
+  const partnership = withLb.curPartner.runs;
+  ok("...and the partnership has them, as it has every extra", partnership === 4);
+
+  // Through the wire, and a retry of an old no-ball still says the same thing.
+  const row = toRow({ ...lb, innings: 0 });
+  ok("stored with value in its column and nbRuns in payload", row.value === 2 && row.ball_type === "Nb" && row.payload.nbRuns === "leg_byes");
+  const back = fromRow({ ...row, seq: 5, client_ts: new Date().toISOString() });
+  ok("...and back", back.kind === "ball" && "nbRuns" in back && back.nbRuns === "leg_byes");
+  ok("an old no-ball's row gains no payload key", !("nbRuns" in toRow({ ...oldNb, innings: 0 }).payload));
+}
+
 console.log(`\n${"─".repeat(52)}\nSCORING SUITE: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

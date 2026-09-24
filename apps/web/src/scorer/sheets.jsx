@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { DISMISSAL, DISMISSAL_LABEL, INNINGS_END_REASON } from "@scrbrd/scoring";
+import { DISMISSAL, DISMISSAL_LABEL, INNINGS_END_REASON, NB_RUNS } from "@scrbrd/scoring";
 import { D } from "../design/tokens.js";
 import { armHandover, cancelHandover, claimHandover, refusalWords, sessionState, verifyTakeover } from "../lib/handover.js";
 import { fmtOv } from "./format.js";
@@ -54,6 +54,12 @@ function ShotSelectorSheet({onSelect,onSkip,onClose}){
 function NoBallSheet({onConfirm,onClose}){
   const[nbType,setNbType]=useState("front_foot");
   const[runs,setRuns]=useState(0);
+  // Whose the runs are (SCRBRD-068): off the bat they are the striker's; byes
+  // or leg byes off a no-ball are not (Law 23) — they are no-ball extras, and
+  // the bowler is charged every run of a no-ball either way (Law 21).
+  // null is off the bat, the event's default, so it is not written.
+  const[from,setFrom]=useState(null);
+  const FROM=[{id:null,label:"Off the bat"},{id:NB_RUNS.BYES,label:"Byes"},{id:NB_RUNS.LEG_BYES,label:"Leg byes"}];
   // Front foot NB: batter CAN be caught (only bowled/LBW/hit wicket protected)
   // Height NB (above shoulder): same + extra restrictions
   // Both: 1 penalty run + any runs scored, bat gets credit, doesn't count as legal delivery
@@ -91,10 +97,10 @@ function NoBallSheet({onConfirm,onClose}){
         </div>
         {/* Runs off the no ball */}
         <div>
-          <Lbl sx={{marginBottom:"8px"}}>Runs Scored Off This Ball</Lbl>
+          <Lbl sx={{marginBottom:"8px"}}>Runs Completed Off This Ball</Lbl>
           <div style={{display:"flex",gap:"6px"}}>
             {[0,1,2,3,4,5,6].map(r=>(
-              <button key={r} onClick={()=>setRuns(r)} className="pressBtn" style={{
+              <button key={r} data-testid={`nb-run-${r}`} onClick={()=>setRuns(r)} className="pressBtn" style={{
                 flex:1,padding:"11px 0",borderRadius:D.md,cursor:"pointer",
                 fontFamily:D.mono,fontSize:"15px",fontWeight:500,
                 border:`1px solid ${runs===r?D.amber+"77":D.border}`,
@@ -107,7 +113,23 @@ function NoBallSheet({onConfirm,onClose}){
             +1 penalty run added automatically. Total: <span style={{color:D.amber,fontFamily:D.mono,fontWeight:500}}>{runs+1}</span> runs to batting team.
           </div>
         </div>
-        <Btn variant="amber" size="lg" full onClick={()=>onConfirm(nbType,runs)} sx={{borderRadius:D.md}}>
+        {runs>0&&(
+          <div data-testid="nb-runs-from">
+            <Lbl sx={{marginBottom:"8px"}}>Off the bat, or byes / leg byes?</Lbl>
+            <div style={{display:"flex",gap:"6px"}}>
+              {FROM.map(f=>(
+                <button key={f.label} type="button" data-testid={`nb-runs-${f.id??"bat"}`} onClick={()=>setFrom(f.id)} className="pressBtn" style={{
+                  flex:1,padding:"10px 0",borderRadius:D.md,cursor:"pointer",fontFamily:D.body,fontSize:"12px",fontWeight:600,
+                  border:`1px solid ${from===f.id?D.amber+"77":D.border}`,background:from===f.id?`${D.amber}1a`:D.surf2,
+                  color:from===f.id?D.amber:D.textMuted}}>{f.label}</button>
+              ))}
+            </div>
+            <div style={{marginTop:"6px",color:D.textMuted,fontSize:"11px",fontFamily:D.body}}>
+              {from?"Not the batter's: no-ball extras, charged to the bowler.":"Credited to the batter."}
+            </div>
+          </div>
+        )}
+        <Btn variant="amber" size="lg" full data-testid="nb-confirm" onClick={()=>onConfirm(nbType,runs,runs>0?from:null)} sx={{borderRadius:D.md}}>
           Confirm No Ball ({runs+1} runs)
         </Btn>
       </div>

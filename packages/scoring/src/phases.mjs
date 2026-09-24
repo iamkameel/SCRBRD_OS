@@ -30,7 +30,8 @@
  *             and timed out fall with no ball (SCRBRD-081); the fold files
  *             them in inn.nonBallWickets with their over, and so do these.
  *   fours, sixes  the batters' fours and sixes: off the bat, so a no-ball
- *             hit for four is one and four byes are not.
+ *             hit for four is one, and four byes — off a no-ball or not —
+ *             are not (runsOffBat, SCRBRD-068).
  *
  * Every delivery lands in a phase. If more overs were bowled than the innings
  * now has — the umpires cut it below where it stood — the phases are drawn
@@ -59,7 +60,7 @@
  * nothing to be level with. A card that says "14 behind where they were" is
  * worth more than one that says "par: 48" and cannot say why.
  */
-import { isLegal, BALL_TYPE } from "./events.mjs";
+import { isLegal, BALL_TYPE, runsOffBat } from "./events.mjs";
 
 /** @import { Innings } from "./replay.mjs" */
 
@@ -239,9 +240,12 @@ export function derivePhases(inn, { opposing = null } = {}) {
     // Counting any legal ball worth four called four byes a boundary and
     // missed a no-ball struck for four, so the phases and the scorecard's
     // 4s and 6s columns disagreed.
+    // Byes or leg byes off a no-ball are not (SCRBRD-068): runsOffBat() is
+    // the fold's own answer to "whose were they".
     if (type === BALL_TYPE.RUN || type === BALL_TYPE.NO_BALL) {
-      if (value === 4) acc.fours += 1;
-      if (value === 6) acc.sixes += 1;
+      const offBat = runsOffBat(b);
+      if (offBat === 4) acc.fours += 1;
+      if (offBat === 6) acc.sixes += 1;
     }
     // A wicket is a W ball the fold let stand. Not "a ball with a dismissal
     // on it": a free hit saves the batter from the bowler's dismissals, the

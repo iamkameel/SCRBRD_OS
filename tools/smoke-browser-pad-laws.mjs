@@ -293,6 +293,42 @@ try {
   await page.locator("button", { hasText: /^🏏\s*Score$/ }).first().click({ timeout: 3000 }).catch(() => {});
   await page.waitForTimeout(400);
 
+  // ── SCRBRD-068 ───────────────────────────────────────────────
+  group("SCRBRD-068: a no-ball — off the bat, or byes / leg byes?");
+  await makeReady();
+  const nbStriker = over2.inn.striker;
+  const runsBefore = over2.inn.batsmen.find((b) => b.id === nbStriker)?.runs ?? 0;
+  const ballsBefore = over2.inn.batsmen.find((b) => b.id === nbStriker)?.balls ?? 0;
+  await click(/^NB/, 3000);
+  await page.waitForTimeout(400);
+  ok("the no-ball sheet opens", await tid("nb-confirm").count() === 1);
+  ok("...and asks nothing about runs nobody ran", await tid("nb-runs-from").count() === 0);
+  await tap("nb-run-2");
+  ok("with runs taken, it asks: off the bat, or byes / leg byes?", await tid("nb-runs-from").count() === 1
+     && /Off the bat, or byes \/ leg byes/i.test(await text()));
+  await tap("nb-runs-leg_byes");
+  await tap("nb-confirm");
+  const lb = await agree("after a no-ball and two leg byes");
+  const nbRow = lb.rows.filter((r) => r.kind === "ball" && r.ball_type === "Nb").at(-1);
+  ok("the server stored the runs completed and whose they were",
+     nbRow?.value === 2 && nbRow?.payload?.nbRuns === "leg_byes", JSON.stringify(nbRow && { value: nbRow.value, payload: nbRow.payload }));
+  const faced = lb.inn.batsmen.find((b) => b.id === nbStriker);
+  ok("...the striker faced it and has none of the two", faced?.runs === runsBefore && faced?.balls === ballsBefore + 1);
+  ok("...the side has three, all no-ball extras", lb.inn.runs === over2.inn.runs + 3 && lb.inn.extras.noBall === over2.inn.extras.noBall + 3);
+  ok("...the bowler is charged all three", lb.inn.bowlers.find((b) => b.id === "C Mthembu")?.runs === 3);
+  ok("...two run, so the striker kept strike", lb.inn.striker === nbStriker);
+
+  await click(/^NB/, 3000);
+  await page.waitForTimeout(400);
+  await tap("nb-run-1");
+  await tap("nb-runs-bat");
+  await tap("nb-confirm");
+  const hitNb = await agree("after a no-ball hit for one");
+  const hitRow = hitNb.rows.filter((r) => r.kind === "ball" && r.ball_type === "Nb").at(-1);
+  ok("off the bat is the default, and is not written", hitRow?.value === 1 && !("nbRuns" in (hitRow?.payload ?? {})));
+  ok("...the run is the striker's", hitNb.inn.batsmen.find((b) => b.id === nbStriker)?.runs === runsBefore + 1);
+  ok("...and one run, so they crossed", hitNb.inn.striker !== nbStriker && hitNb.inn.nonStriker === nbStriker);
+
   ok("no console errors on the pad", errors.length === 0, errors.slice(0, 3).join(" | "));
 } catch (e) {
   ok(`the walk threw: ${e.message?.slice(0, 200)}`, false);
