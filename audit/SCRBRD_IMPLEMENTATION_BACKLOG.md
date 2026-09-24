@@ -3064,3 +3064,8 @@ keys: after the upgrade a re-offered, already-acknowledged ball reads as unsent 
 - **SCRBRD-083 — Public live match and league pages.** Signed-out. Needs a written rule first on what data about minors is ever public (names? photos? none?) — design with the policy package, not in the view.
 - **SCRBRD-084 — Season awards and MVP.** Season roll-up of figures and ratings already computed.
 - **SCRBRD-085 — Phone day-of views for drivers and groundskeepers.**
+
+### SCRBRD-086 — Season awards need a season-scoped career read
+**Priority:** P2 · **Domain:** Analytics · **Type:** gap (follows SCRBRD-084)
+The `career` read aggregates every match the reader can see, with no season parameter, so the Awards tab is correct
+only while a school has one season of history. Add a season-scoped read (RLS-reviewed, Opus) and a season selector.
