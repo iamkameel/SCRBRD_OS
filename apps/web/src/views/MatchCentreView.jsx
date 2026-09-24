@@ -5,6 +5,7 @@ import { canScore, holdsCapability } from "../rbac/index.js";
 import { schoolsWhere } from "../lib/session.js";
 import { Badge, Btn, Card, Pill, SectionHeader, StatusDot } from "../ui/primitives.jsx";
 import { ScorecardModal, WeatherChip } from "./shared.jsx";
+import { PostMatchReport } from "./postmatch.jsx";
 import { OppositionDossier } from "./dossier.jsx";
 import { DutyRoster } from "./duties.jsx";
 import { QuarantinePanel } from "./quarantine.jsx";
@@ -31,6 +32,11 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
   const [filter, setFilter] = useState("all");
   const [selMatch, setSelMatch] = useState(null);
   const [cardM,    setCardM]    = useState(null);
+  // The Post-Match Report (SCRBRD-082) — a fixture's own screen, opened from
+  // its card the same way the Scorecard is. Offered only once a match is
+  // complete: a live fixture's report would be reporting on a game still
+  // being played, which is what the Live Scorecard is already for.
+  const [reportM,  setReportM]  = useState(null);
   // Which schools this person could arrange a fixture FOR — layout only, the
   // same courtesy schoolsWhere() is everywhere else: match_insert() in db/09
   // decides for real. The button itself stays gated on holdsCapability(), so
@@ -77,6 +83,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
         ))}
       </div>
       {cardM&&<ScorecardModal match={cardM} role={role} onClose={()=>setCardM(null)} onNavProfile={(id)=>{setCardM(null);onNavProfile&&onNavProfile(id);}}/>}
+      {reportM&&<PostMatchReport match={reportM} role={role} onClose={()=>setReportM(null)} onNavProfile={(id)=>{setReportM(null);onNavProfile&&onNavProfile(id);}}/>}
       {dossierM&&<OppositionDossier match={dossierM} role={role} onClose={()=>setDossierM(null)}/>}
       {scheduleOpen&&(
         <AddFixtureModal fixtureSchools={fixtureSchools} teamOptions={SCHOOL_TEAMS} grounds={GROUNDS} matches={MATCHES}
@@ -140,6 +147,12 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
                           log itself and says so honestly when a match has not been
                           scored yet, which is the right answer to give here. */}
                       {(isLive||m.status==="complete")&&<Btn size="sm" variant="ghost" onClick={e=>{e.stopPropagation();setCardM(m);}}>{m.status==="complete"?"Scorecard":"Live Scorecard"}</Btn>}
+                      {/* SCRBRD-082. Only once the match is complete — the
+                          same reasoning canScore()'s own comment gives for
+                          every other offered-but-checked-server-side button:
+                          a report on a match still being played would be
+                          reporting on the wrong thing, not merely early. */}
+                      {m.status==="complete"&&<Btn size="sm" variant="ghost" onClick={e=>{e.stopPropagation();setReportM(m);}} data-testid={`report-open-${m.id}`}>Post-match report</Btn>}
                       {m.status==="upcoming"&&holdsCapability(role,"opposition.read")&&<Btn size="sm" variant="ghost" onClick={e=>{e.stopPropagation();setDossierM(m);}} data-testid={`dossier-open-${m.id}`}>Dossier</Btn>}
                     </div>
                   </div>
