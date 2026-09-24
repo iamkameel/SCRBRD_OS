@@ -26,11 +26,19 @@
 import { KIND } from "./events.mjs";
 import { voidEvent } from "./events.mjs";
 
-/** Events that must never be undone away — the innings would lose its squads. */
+/** @import { LogEvent } from "./events.mjs" */
+
+/** Events that must never be undone away — the innings would lose its squads.
+ *  @type {ReadonlySet<string>} */
 const FOUNDATION = new Set([KIND.INNINGS_START]);
 
-/** Ids this log has already undone. */
+/**
+ * Ids this log has already undone.
+ * @param {LogEvent[]} [events]
+ * @returns {Set<string>}
+ */
 export function voidedIds(events = []) {
+  /** @type {Set<string>} */
   const out = new Set();
   for (const ev of events) if (ev.kind === KIND.VOID && ev.target != null) out.add(ev.target);
   return out;
@@ -42,6 +50,9 @@ export function voidedIds(events = []) {
  * Skips voids and anything they have already undone, so pressing undo three
  * times walks back three balls rather than undoing its own corrections.
  * Returns -1 when there is nothing left that may be undone.
+ *
+ * @param {LogEvent[]} [events]
+ * @returns {number}
  */
 export function lastUndoableIndex(events = []) {
   const voided = voidedIds(events);
@@ -58,13 +69,15 @@ export function lastUndoableIndex(events = []) {
 /**
  * Undo one event.
  *
- * @param events  the innings log
- * @param isSynced (event) => boolean — has the server accepted this event?
- *   Defaults to treating everything as synced, which is the SAFE default: it
- *   produces a void, and a void is always correct. Truncation is the
- *   optimisation, and an optimisation applied by mistake is what corrupts a
- *   match.
- * @returns { events, action, target } — action is "truncate" | "void" | "none"
+ * @param {LogEvent[]} [events]  the innings log
+ * @param {object} [opts]
+ * @param {(ev: LogEvent) => boolean} [opts.isSynced]  has the server accepted
+ *   this event? Defaults to treating everything as synced, which is the SAFE
+ *   default: it produces a void, and a void is always correct. Truncation is
+ *   the optimisation, and an optimisation applied by mistake is what corrupts
+ *   a match.
+ * @param {string} [opts.reason]  carried on the void
+ * @returns {{events: LogEvent[], action: "truncate" | "void" | "none", target: LogEvent | null}}
  */
 export function undoLast(events = [], { isSynced = () => true, reason = "scorer_undo" } = {}) {
   const i = lastUndoableIndex(events);

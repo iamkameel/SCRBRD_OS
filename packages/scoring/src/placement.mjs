@@ -46,15 +46,32 @@ export const PLACEMENT_NULL = {
 /** How much this scorer is capturing. Spatial aggregates require full/standard. */
 export const CAPTURE_PROFILE = { FULL: "full", STANDARD: "standard", QUICK: "quick" };
 
+/**
+ * The placement fields a ball carries, as the readers here consume them: any
+ * delivery (a BallEvent, a fold's ballLog entry, a read-path row) will do.
+ * @typedef {object} PlacedBall
+ * @property {number | null} [theta]
+ * @property {number | null} [radius]
+ * @property {string | null} [placementSource]
+ * @property {number | null} [seg]
+ * @property {number | null} [value]
+ */
+
+/** @param {number} deg */
 const norm = (deg) => ((Math.round(deg) % 360) + 360) % 360;
+/** @param {number} t @param {number} a @param {number} b */
 const between = (t, a, b) => (a <= b ? t >= a && t < b : t >= a || t < b);
 
-/** Quantise on write. Float noise implies precision nobody has and bloats the row. */
+/** Quantise on write. Float noise implies precision nobody has and bloats the row.
+ *  @param {number} deg */
 export const quantiseTheta = (deg) => norm(deg);
+/** @param {number} r */
 export const quantiseRadius = (r) => Math.round(Math.min(Math.max(r, 0), 1) * 100) / 100;
 
-/** Coaches speak in clock positions; the frame is built so this is trivial. */
+/** Coaches speak in clock positions; the frame is built so this is trivial.
+ *  @param {number} hour */
 export const thetaFromClock = (hour) => norm(hour * 30);
+/** @param {number} theta */
 export const clockFromTheta = (theta) => (Math.round(norm(theta) / 30) % 12) || 12;
 
 /**
@@ -64,13 +81,21 @@ export const clockFromTheta = (theta) => (Math.round(norm(theta) / 30) % 12) || 
  * the wheel. A left-hander is mirrored, which is the defect this replaces —
  * their placement used to be stored against fixed segment angles and was
  * silently wrong for every ball they faced.
+ *
+ * @param {number | null | undefined} theta
+ * @param {string} [batHand]  "R" | "L"
+ * @returns {number | null}   null exactly when theta is
  */
 export function screenAngle(theta, batHand = "R") {
   if (theta == null) return null;
   return batHand === "L" ? norm(360 - theta) : norm(theta);
 }
 
-/** The inverse: a tap on the field graphic → batter-relative theta. */
+/**
+ * The inverse: a tap on the field graphic → batter-relative theta.
+ * @param {number} angle
+ * @param {string} [batHand]
+ */
 export function thetaFromScreen(angle, batHand = "R") {
   return batHand === "L" ? norm(360 - angle) : norm(angle);
 }
@@ -90,6 +115,7 @@ export function thetaFromScreen(angle, batHand = "R") {
  */
 export const CIRCLE_RADIUS_M = 27.43;          // 30 yards
 export const DEFAULT_BOUNDARY_M = 62;          // a mid-sized school ground
+/** @param {number} [boundaryM] */
 export const fieldingCircle = (boundaryM = DEFAULT_BOUNDARY_M) =>
   Math.min(CIRCLE_RADIUS_M / boundaryM, 0.95);
 
@@ -103,6 +129,10 @@ export const DEPTH = { SILLY: "silly", SHORT: "short", RING: "ring", DEEP: "deep
 export const SILLY_MAX = 0.11;
 export const SHORT_MAX = 0.26;
 
+/**
+ * @param {number | null | undefined} radius
+ * @param {{boundaryM?: number}} [opts]
+ */
 export function depthBand(radius, { boundaryM } = {}) {
   if (radius == null) return null;
   if (radius < SILLY_MAX) return DEPTH.SILLY;
@@ -122,6 +152,8 @@ export function depthBand(radius, { boundaryM } = {}) {
  *   - `backward` denotes behind square and applies only to some families
  *   - behind square on the leg side is crowded: four positions in ~60°
  *   - off side behind square is `third` in modern usage, not third man
+ *
+ * @type {[from: number, to: number, key: string, ring: string, deep: string, short: string, silly: string | null][]}
  */
 const FAMILIES = [
   // from, to, key, ring name, deep name, short name, silly name
@@ -151,6 +183,7 @@ export const ANGULAR_FAMILIES = Object.freeze(FAMILIES.map(([from, to, key, labe
   return Object.freeze({ key, label, from, to, mid: norm(from + span / 2) });
 }));
 
+/** @param {number | null | undefined} theta  @returns {string | null} */
 export function angularFamily(theta) {
   if (theta == null) return null;
   const t = norm(theta);
@@ -186,6 +219,10 @@ const SLIP_FIRST = 352;   // first slip sits just off the keeper's shoulder
  * whether first and second slip should be distinguished by hand is still open
  * (spec §11.3); deriving it means a later change to the arc re-labels the
  * archive rather than stranding it.
+ *
+ * @param {number | null | undefined} theta
+ * @param {number | null | undefined} radius
+ * @returns {string | null}
  */
 export function closePositionFor(theta, radius) {
   if (theta == null || radius == null || radius >= CLOSE_RADIUS) return null;
@@ -213,6 +250,11 @@ export function closePositionFor(theta, radius) {
  * Deriving means the naming table can be corrected, re-banded or localised
  * later without touching a single ball. The alternative — writing "deep cover"
  * onto the delivery — freezes today's taxonomy into the archive.
+ *
+ * @param {number | null | undefined} theta
+ * @param {number | null | undefined} radius
+ * @param {{boundaryM?: number}} [opts]
+ * @returns {string | null}
  */
 export function positionName(theta, radius, { boundaryM } = {}) {
   if (theta == null || radius == null) return null;
@@ -245,6 +287,7 @@ const R_ROPE = 124, R_INNER = 56, R_MIDDLE = 104;
 export const ZONE_INNER = R_INNER / R_ROPE;    // 0.45
 export const ZONE_OUTER = R_MIDDLE / R_ROPE;   // 0.84
 
+/** @param {number | null | undefined} radius */
 export function zoneFromRadius(radius) {
   if (radius == null) return null;
   if (radius >= ZONE_OUTER) return "boundary";
@@ -255,6 +298,8 @@ export function zoneFromRadius(radius) {
 /**
  * Which of the twelve sectors a point falls in. Sectors are 30° wide and
  * CENTRED on their nominal angle, so segment 0 spans 345°–15°.
+ *
+ * @param {number} angle
  */
 export function segFromScreenAngle(angle) {
   return Math.round(norm(angle) / 30) % 12;
@@ -271,6 +316,8 @@ export function segFromScreenAngle(angle) {
  * A tap outside the rope is a six that cleared it: radius clamps to 1.00.
  * Whether to allow radius above 1.00 — the only way to tell a six that just
  * cleared from one that landed in the car park — is still open (spec §11.1).
+ *
+ * @param {{angle: number, radius: number, batHand?: string, profile?: string}} tap
  */
 export function placementFromTap({ angle, radius, batHand = "R", profile = CAPTURE_PROFILE.FULL }) {
   const theta = quantiseTheta(thetaFromScreen(angle, batHand));
@@ -283,12 +330,17 @@ export function placementFromTap({ angle, radius, batHand = "R", profile = CAPTU
     closePosition: closePositionFor(theta, r),
     captureProfile: profile,
     // Derived, not captured. Kept so the sector-era read path is untouched.
-    seg: segFromScreenAngle(screenAngle(theta, batHand)),
+    // screenAngle is null only for a null theta, and theta is a number here.
+    seg: segFromScreenAngle(/** @type {number} */ (screenAngle(theta, batHand))),
     zone: zoneFromRadius(r),
   };
 }
 
-/** A ball with no placement, and the reason why. */
+/**
+ * A ball with no placement, and the reason why.
+ * @param {string} reason  one of PLACEMENT_NULL
+ * @param {string} [profile]
+ */
 export function noPlacement(reason, profile = CAPTURE_PROFILE.FULL) {
   return {
     theta: null, radius: null,
@@ -303,7 +355,10 @@ export function noPlacement(reason, profile = CAPTURE_PROFILE.FULL) {
 /** Shots where the bat never touched the ball, so placement is meaningless. */
 export const NO_CONTACT_SHOTS = new Set(["missed", "padded", "hit_body", "leave", "beaten"]);
 
-/** Does this ball carry a real captured point? The heat map's admission test. */
+/**
+ * Does this ball carry a real captured point? The heat map's admission test.
+ * @param {PlacedBall | null | undefined} b
+ */
 export const hasPoint = (b) =>
   b?.placementSource === PLACEMENT_SOURCE.POINT && b.theta != null && b.radius != null;
 
@@ -312,9 +367,12 @@ export const hasPoint = (b) =>
  * may not, so a view can state the excluded count rather than quietly dropping
  * them. Both halves are honest; neither asks the reader to understand the
  * distinction unless they want to.
+ *
+ * @template {PlacedBall} B
+ * @param {B[]} [balls]
  */
 export function heatMapEligible(balls = []) {
-  const eligible = [], excluded = [];
+  const eligible = /** @type {B[]} */ ([]), excluded = /** @type {B[]} */ ([]);
   for (const b of balls) (hasPoint(b) ? eligible : excluded).push(b);
   return { eligible, excluded, excludedCount: excluded.length };
 }
@@ -332,6 +390,7 @@ export function heatMapEligible(balls = []) {
  * Mirrors capture_profile_collects() in db/31. Change one, change both.
  */
 export const PLACEMENT_FIELD = Object.freeze({ POINT: "point", SECTOR: "sector" });
+/** @type {Readonly<Record<string, readonly string[]>>}  declared profile → the fields it asks for */
 export const PROFILE_COLLECTS = Object.freeze({
   [CAPTURE_PROFILE.FULL]:     Object.freeze([PLACEMENT_FIELD.POINT, PLACEMENT_FIELD.SECTOR]),
   [CAPTURE_PROFILE.STANDARD]: Object.freeze([PLACEMENT_FIELD.SECTOR]),
@@ -345,9 +404,14 @@ export const PROFILE_COLLECTS = Object.freeze({
  * not optimism, it is backward compatibility: it is how every innings was
  * read before a profile could be declared, so an old match's thin heat map
  * still reads as thin rather than being quietly excused.
+ *
+ * @param {string | null | undefined} profile  the declared capture profile
+ * @param {string} field  one of PLACEMENT_FIELD; anything else throws
+ * @returns {boolean}
  */
 export function profileCollects(profile, field) {
-  if (!Object.values(PLACEMENT_FIELD).includes(field)) {
+  // Widened to string[] to ask about any string; the throw is the narrowing.
+  if (!/** @type {readonly string[]} */ (Object.values(PLACEMENT_FIELD)).includes(field)) {
     throw new TypeError(`unknown placement field ${JSON.stringify(field)}`);
   }
   if (profile == null) return true;
@@ -368,9 +432,16 @@ export const NOT_CAPTURED = "not_captured";
  * not `none`, which says the record is missing something it should have. Only
  * at zero: a stray point tapped in a standard innings is real data and is
  * graded like any other.
+ *
+ * @param {number | null | undefined} n  how many balls the figure rests on
+ * @param {string | null} [declared]    the innings' declared capture profile
+ * @param {string} [need]               the PLACEMENT_FIELD the figure needs
+ * @returns {string}
  */
 export function evidenceLabel(n, declared = undefined, need = undefined) {
-  if (need !== undefined && !(n > 0) && !profileCollects(declared, need)) return NOT_CAPTURED;
+  // `!(n > 0)` is deliberately true for a null or undefined n (the comparison
+  // is false), which the checker will not compare; the cast only admits that.
+  if (need !== undefined && !(/** @type {number} */ (n) > 0) && !profileCollects(declared, need)) return NOT_CAPTURED;
   if (n == null || n === 0) return "none";
   if (n < 30) return "insufficient";
   if (n < 100) return "low";
@@ -378,7 +449,10 @@ export function evidenceLabel(n, declared = undefined, need = undefined) {
   return "high";
 }
 
-/** Does this ball carry any placement at all — a point, or a sector-era seg? */
+/**
+ * Does this ball carry any placement at all — a point, or a sector-era seg?
+ * @param {PlacedBall | null | undefined} b
+ */
 export const hasPlacement = (b) => b?.theta != null || b?.seg != null;
 
 /**
@@ -394,6 +468,13 @@ export const hasPlacement = (b) => b?.theta != null || b?.seg != null;
  * `declared` is the one profile for a single innings; `declaredFor(ball)`
  * resolves it per ball, for a set drawn from many innings (a career). With
  * neither, every ball is undeclared and the label is exactly evidenceLabel(n).
+ *
+ * @template {PlacedBall} B
+ * @param {B[]} [balls]
+ * @param {object} [opts]
+ * @param {string} [opts.need]  a PLACEMENT_FIELD
+ * @param {string | null} [opts.declared]
+ * @param {(b: B) => string | null | undefined} [opts.declaredFor]
  */
 export function placementEvidence(balls = [], { need = PLACEMENT_FIELD.POINT, declared = null, declaredFor } = {}) {
   const has = need === PLACEMENT_FIELD.POINT ? hasPoint : hasPlacement;
@@ -420,6 +501,12 @@ export function placementEvidence(balls = [], { need = PLACEMENT_FIELD.POINT, de
  * the common one — a wrong answer mirrors that batter's whole innings. A
  * left-hander whose profile is incomplete is stored wrong, and the fix is the
  * roster rather than a guess here.
+ *
+ * @param {{striker?: string | null, squad?: import("./events.mjs").SquadMember[],
+ *          bowlingSquad?: import("./events.mjs").SquadMember[]} | null | undefined} inn
+ *   a derived innings, or any object carrying its squads
+ * @param {string | null} [playerId]
+ * @returns {"R" | "L"}
  */
 export function batHandOf(inn, playerId = inn?.striker) {
   if (!inn || playerId == null) return "R";

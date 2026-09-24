@@ -45,6 +45,9 @@ import { KIND, BALL_TYPE } from "./events.mjs";
 import { scoringReadiness } from "./readiness.mjs";
 import { voidedIds, lastUndoableIndex } from "./undo.mjs";
 
+/** @import { LogEvent, Loose, BallEvent, BattersEvent, VoidEvent } from "./events.mjs" */
+/** @import { Innings } from "./replay.mjs" */
+
 /** Every reason an event can be refused. The readiness codes are reused as-is. */
 export const REFUSAL = Object.freeze({
   // A ball the pad itself would not have recorded (readiness.mjs, SCRBRD-040).
@@ -74,6 +77,7 @@ export const REFUSAL = Object.freeze({
   VOID_FOUNDATION:        "void_foundation",        // innings_start is never undone
   VOID_NOT_LATEST:        "void_not_latest",        // undo is last-in, first-out
 });
+/** @typedef {typeof REFUSAL[keyof typeof REFUSAL]} Refusal */
 
 /** Words for a person reading a held event. Finishes "The server refused this: …". */
 export const REFUSAL_TEXT = Object.freeze({
@@ -105,11 +109,12 @@ export const REFUSAL_TEXT = Object.freeze({
 
 /**
  * @typedef {object} MatchView
- * @property {any[]}      innings  deriveInnings() state per innings number (sparse)
- * @property {object[][]} [events] each innings' own log, in order, voids included
+ * @property {(Innings | null | undefined)[]} innings  deriveInnings() state per innings number (sparse)
+ * @property {LogEvent[][]} [events] each innings' own log, in order, voids included
  */
 
-/** Events that happen at the crease and so need the innings to be in play. */
+/** Events that happen at the crease and so need the innings to be in play.
+ *  @type {ReadonlySet<unknown>}  asked of any event's kind, or of none */
 const PLAY = new Set([KIND.BALL, KIND.BATTERS, KIND.BOWLER, KIND.RETIRE, KIND.INNINGS_END]);
 
 /**
@@ -119,9 +124,10 @@ const PLAY = new Set([KIND.BALL, KIND.BATTERS, KIND.BOWLER, KIND.RETIRE, KIND.IN
  * is not refused — the fold ignores unknown kinds, and a newer client's event
  * is not illegal for being newer.
  *
- * @param {MatchView} match
- * @param {any} ev   the pending event, in the client's shape (events.mjs)
- * @returns {string|null}  one of REFUSAL, or null
+ * @param {MatchView | null | undefined} match
+ * @param {LogEvent | null | undefined} ev   the pending event, in the client's
+ *   shape (events.mjs). One of a kind this build does not know is not refused.
+ * @returns {Refusal | null}
  */
 export function lawsRefusal(match, ev) {
   const innings = match?.innings ?? [];
@@ -164,7 +170,14 @@ export function lawsRefusal(match, ev) {
   }
 }
 
-/** A delivery. */
+/**
+ * A delivery.
+ * @param {(Innings | null | undefined)[]} innings
+ * @param {Innings | null} inn  innings[i]
+ * @param {number} i
+ * @param {Loose<BallEvent>} ev
+ * @returns {Refusal | null}
+ */
 function ballRefusal(innings, inn, i, ev) {
   // The chase is over: the result is decided. The AntiGravity rule
   // (recordBallAction: "the match is complete"), and the reason a phone that
@@ -178,21 +191,28 @@ function ballRefusal(innings, inn, i, ev) {
   // empty end, nobody bowling. One answer, three readers now.
   const ready = scoringReadiness(inn);
   if (!ready.ready) return ready.blocked[0].code;
+  // Ready means an innings: scoringReadiness blocks NO_INNINGS on a null one.
+  const inPlay = /** @type {Innings} */ (inn);
 
-  if (inn.striker === inn.nonStriker) return REFUSAL.SAME_BATTER_BOTH_ENDS;
-  if (bowledLastOver(inn, inn.bowler)) return REFUSAL.CONSECUTIVE_OVERS;
+  if (inPlay.striker === inPlay.nonStriker) return REFUSAL.SAME_BATTER_BOTH_ENDS;
+  if (bowledLastOver(inPlay, inPlay.bowler)) return REFUSAL.CONSECUTIVE_OVERS;
 
   // Whoever is out must be one of the two batting. `dismissed` defaults to
   // the striker at replay; one that names anyone else would record a wicket
   // for a boy who was not at the crease and leave the real pair untouched.
   if ((ev.type ?? BALL_TYPE.RUN) === BALL_TYPE.WICKET && ev.dismissed != null
-      && ev.dismissed !== inn.striker && ev.dismissed !== inn.nonStriker) {
+      && ev.dismissed !== inPlay.striker && ev.dismissed !== inPlay.nonStriker) {
     return REFUSAL.NOT_AT_CREASE;
   }
   return null;
 }
 
-/** A new batter, the openers, or a change of ends. */
+/**
+ * A new batter, the openers, or a change of ends.
+ * @param {Innings} inn
+ * @param {Loose<BattersEvent>} ev
+ * @returns {Refusal | null}
+ */
 function battersRefusal(inn, ev) {
   const striker = ev.striker ?? inn.striker;
   const nonStriker = ev.nonStriker ?? inn.nonStriker;
@@ -229,6 +249,9 @@ function battersRefusal(inn, ev) {
  * from the fold's own ball log, where every delivery carries the over it was
  * in and the bowler the fold had at the time — so a mid-over change is
  * covered: both men who shared the last over are barred from the next one.
+ *
+ * @param {Innings} inn
+ * @param {string | null | undefined} bowlerId
  */
 function bowledLastOver(inn, bowlerId) {
   if (bowlerId == null) return false;
@@ -244,7 +267,11 @@ function bowledLastOver(inn, bowlerId) {
   return false;
 }
 
-/** Is there play — a delivery — in any innings after this one? */
+/**
+ * Is there play — a delivery — in any innings after this one?
+ * @param {(Innings | null | undefined)[]} innings
+ * @param {number} i
+ */
 function laterPlay(innings, i) {
   for (let j = i + 1; j < innings.length; j++) if ((innings[j]?.ballLog?.length ?? 0) > 0) return true;
   return false;
@@ -261,6 +288,10 @@ function laterPlay(innings, i) {
  * (scoring_amendment: a second person, a reason, an approval). Amendments
  * write their void through scoring_amendment_decide(), not through this door,
  * and are not judged here.
+ *
+ * @param {MatchView | null | undefined} match
+ * @param {Loose<VoidEvent>} ev
+ * @returns {Refusal | null}
  */
 function voidRefusal(match, ev) {
   if (ev.target == null) return REFUSAL.VOID_NO_TARGET;
@@ -279,7 +310,8 @@ function voidRefusal(match, ev) {
   if (home !== i) return REFUSAL.VOID_WRONG_INNINGS;
 
   const log = all[i];
-  const target = log.find((e) => e.id === ev.target);
+  // Found: `home` is the innings whose log has an event with this id.
+  const target = /** @type {LogEvent} */ (log.find((e) => e.id === ev.target));
   if (target.kind === KIND.VOID) return REFUSAL.VOID_OF_VOID;
   if (voidedIds(log).has(ev.target)) return REFUSAL.VOID_ALREADY_VOIDED;
   if (target.kind === KIND.INNINGS_START) return REFUSAL.VOID_FOUNDATION;

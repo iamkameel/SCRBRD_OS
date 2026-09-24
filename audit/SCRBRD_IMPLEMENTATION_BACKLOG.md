@@ -2865,7 +2865,25 @@ survivor from that and the runs completed. Needs a product decision on the pad q
 **Tests required:** turn the `KNOWN_GAP` into passing cases for both ends.
 **Data migration required:** NO.
 
-### SCRBRD-070 — A scorer cannot see or clear an event the server refused
+### ~~SCRBRD-070~~ — CLOSED
+
+> **Closed 2026-09-24.** Tapping the pad's "Refused N" pill opens a sheet (`apps/web/src/scorer/held.jsx`)
+> listing each held event in words — what it was, with the players' names, the reason (`REFUSAL_TEXT`; a
+> conflict gets its own sentence: the server keeps its copy, discard is the fix) and when. The rules are
+> pure and tested in `packages/sync/src/held.mjs` (`packages/sync/test/held.test.mjs`, suite `held`):
+> **Discard** takes the event out of the pad's log through the same `setEvents` → `saveMatch` path undo
+> uses, then lets the held copy go; **Record again** (refusals only, never conflicts) moves it to the end as
+> a new event with a new id and `resentFrom`, offered only when `lawsRefusal` against the server's view
+> says it would be accepted, and credited to the crease as it stands then. Each is offered for one event or
+> for it and every event held after it (the cascade). Nothing is resent on its own: discarding the refused
+> cause does not change what the server knows, so the balls after it only become legal once the scorer puts
+> the cause right and records them again. `SyncEngine.record()` no longer re-queues a key it holds, so a
+> reopened pad no longer doubled the held list. Undo of a refused last ball lets its held copy go. The
+> handover sheet warns while anything is held and does not block. Walk: `tools/smoke-browser-held.mjs`
+> (browser set) — provoke, list, discard, reopen, repair the cascade, discard a cascade; the pad's saved log
+> and the server's `ball_event` agree id for id and figure for figure. No migration.
+
+#### (original entry) SCRBRD-070 — A scorer cannot see or clear an event the server refused
 **Title:** Held (refused / conflicting) events are kept on the device and counted, but no screen lists or resolves them
 **Priority:** P1 · **Domain:** Scoring · **Type:** workflow gap (follows db/36)
 **Affected files:** `packages/sync/src/sync-engine.mjs` (`held`, `discardHeld`), `apps/web/src/scorer/engine.jsx` (the "Refused N" pill)
@@ -2885,4 +2903,27 @@ after it refused too.
 - A key already held in quarantine and re-sent while the device holds the token is written live; a later release of the held copy then hits the unique key.
 - A batter returning after retiring hurt keeps "retired" on his record in the fold.
 - Timed out and retired out are recorded as `W` balls, which count as a legal delivery of the over.
+- Undoing a refused event that is not the last one still appends a `void`, which the server refuses and holds too (both can be discarded from the held sheet; undo could drop it locally instead).
+- `tools/smoke-a11y.mjs` and `tools/smoke-browser-read.mjs` both use port 4326, so they collide when run at the same time.
+- `tools/check-imports` reads the word "can" in JSX text as a call to the `can()` helper (false positive).
 **Tests required:** one case per item when it is taken up.
+
+### SCRBRD-072 — Phase wickets count a dismissal the free hit saved
+**Title:** `phases.mjs` counts every ball with a dismissal as a wicket, including one the fold saved on a free hit
+**Priority:** P2 · **Domain:** Scoring / analytics · **Type:** correctness
+**Affected files:** `packages/scoring/src/phases.mjs` (~line 193, `if (b.dismissal) acc.wickets += 1`)
+**Found 2026-09-24** adding `packages/scoring` to strict type checking; confirmed by running: a no-ball followed by a
+bowled "wicket" gives the fold 0 wickets and the phase breakdown 1. The file promises phases always add up to the
+innings; they do not. Phases should ask the same question the fold does (`standsOnFreeHit`, the ball's free-hit flag).
+**Tests required:** a phases case with a free hit, asserting phase wickets sum to the innings' wickets.
+**Data migration required:** NO.
+
+### SCRBRD-073 — Rating indices turn a non-numeric count into a number
+**Title:** `battingIndex` / `bowlingIndex` accept `NaN` counts past the sample floor and score them as 0
+**Priority:** P3 · **Domain:** Analytics · **Type:** input validation
+**Affected files:** `packages/scoring/src/rating.mjs` (~190, ~238)
+**Found 2026-09-24** in the same work. `NaN < 30` is false, so a malformed count passes the sample floor; `scoreFrom`
+then returns null, which the arithmetic reads as 0 (`battingIndex({runs:100, ballsFaced:"x", dismissals:2})` →
+10.8, "good"). Today's callers pass numbers from the fold, so this bites only a bad caller.
+**Expected behaviour:** a non-finite count yields no index (null / "insufficient"), never a number.
+**Data migration required:** NO.

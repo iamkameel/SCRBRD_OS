@@ -2,6 +2,7 @@ import { useState } from "react";
 import { D } from "../design/tokens.js";
 import { useLive } from "../lib/live.js";
 import { canScore, holdsCapability } from "../rbac/index.js";
+import { schoolsWhere } from "../lib/session.js";
 import { Badge, Btn, Card, Pill, SectionHeader, StatusDot } from "../ui/primitives.jsx";
 import { ScorecardModal, WeatherChip } from "./shared.jsx";
 import { OppositionDossier } from "./dossier.jsx";
@@ -9,6 +10,7 @@ import { DutyRoster } from "./duties.jsx";
 import { QuarantinePanel } from "./quarantine.jsx";
 import { DrsPanel } from "./drs.jsx";
 import { ReportIncident } from "./discipline.jsx";
+import { AddFixtureModal, RescheduleFixture, SCHOOL_TEAMS } from "./fixtures.jsx";
 import { useRows, useWeather } from "../lib/live.js";
 
 function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
@@ -16,15 +18,33 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
   // principal. Importing the raw constant here would bypass both.
   const COMPETITIONS = useRows("competitions", role);
   const GROUNDS = useRows("grounds", role);
+  // Bumped after a fixture is arranged or amended, so the list re-reads from
+  // the server instead of sitting on whatever it showed before the write —
+  // the same nonce pattern TrainingView and LeagueView already use.
+  const [matchesNonce, setMatchesNonce] = useState(0);
   // Fixtures come from the server when there is one — the same call site,
   // scoped in Postgres rather than in the browser. Falls back to the demo
   // fixtures otherwise, and says which it is showing.
-  const { rows: MATCHES, live: matchesAreLive } = useLive("matches", role);
+  const { rows: MATCHES, live: matchesAreLive } = useLive("matches", role, matchesNonce);
   const STAFF = useRows("staff", role);
   const WEATHER = useWeather(role);
   const [filter, setFilter] = useState("all");
   const [selMatch, setSelMatch] = useState(null);
   const [cardM,    setCardM]    = useState(null);
+  // Which schools this person could arrange a fixture FOR — layout only, the
+  // same courtesy schoolsWhere() is everywhere else: match_insert() in db/09
+  // decides for real. The button itself stays gated on holdsCapability(), so
+  // this is read even when it will not be used, for the reason canScore()'s
+  // own comment gives: getting it wrong shows a button that then says no.
+  const fixtureSchools = schoolsWhere("fixture.create");
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  // Same courtesy, for the amend side: which schools this person could move a
+  // fixture for at all. The host/away distinction inside that is not visible
+  // to the client (match.school_id means "the host", never "us" — see the
+  // matches read) so this only narrows to "a school you hold fixture.update
+  // at"; an away school's own attempt is still refused by match_update() in
+  // db/09, same as it always was.
+  const amendSchools = schoolsWhere("fixture.update");
   // Which fixture's dossier is open. Offered on a fixture that has not been
   // played, to a person whose role holds opposition.read — and that is ALL
   // the client decides. Whether there is anything to read is answered by two
@@ -40,7 +60,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
         color={D.emerald}
         actions={
           <>
-            {holdsCapability(role,"fixture.create")&&<Btn size="sm" onClick={()=>{}}>+ Schedule Match</Btn>}
+            {holdsCapability(role,"fixture.create")&&<Btn size="sm" onClick={()=>setScheduleOpen(true)}>+ Schedule Match</Btn>}
             {canScore(role)&&<button onClick={()=>onOpenScorer(null)} className="pressBtn" style={{padding:"5px 12px",borderRadius:D.pill,background:D.emerald+"18",border:`1px solid ${D.emerald}30`,color:D.emerald,fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:"0.05em",cursor:"pointer",display:"flex",alignItems:"center",gap:"5px"}}>
               <div className="live-dot"/>Open SCRBRD Scorer ↗
             </button>}
@@ -58,6 +78,11 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
       </div>
       {cardM&&<ScorecardModal match={cardM} role={role} onClose={()=>setCardM(null)} onNavProfile={(id)=>{setCardM(null);onNavProfile&&onNavProfile(id);}}/>}
       {dossierM&&<OppositionDossier match={dossierM} role={role} onClose={()=>setDossierM(null)}/>}
+      {scheduleOpen&&(
+        <AddFixtureModal fixtureSchools={fixtureSchools} teamOptions={SCHOOL_TEAMS} grounds={GROUNDS} matches={MATCHES}
+          onClose={()=>setScheduleOpen(false)}
+          onCreated={()=>{setScheduleOpen(false);setMatchesNonce(n=>n+1);}}/>
+      )}
       <div style={{display:"grid",gridTemplateColumns:selMatch?"var(--g-side-r,1fr 340px)":"1fr",gap:"16px",alignItems:"start"}}>
         <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
           {filtered.map(m=>{
@@ -138,6 +163,14 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
                 <button onClick={()=>setSelMatch(null)} style={{background:"none",border:"none",cursor:"pointer",color:D.textMuted,fontSize:"16px"}}>✕</button>
               </div>
               {w&&<div style={{marginBottom:"12px"}}><WeatherChip w={w}/></div>}
+              {/* Rescheduling and calling off — fixture.update, at the HOST's
+                  own school. amendSchools is a courtesy filter, not the gate:
+                  match_update() in db/09 refuses an away school's attempt
+                  regardless, and would refuse this one too if the courtesy
+                  check above were ever wrong. */}
+              {holdsCapability(role,"fixture.update")&&amendSchools.some(s=>s.id===selMatch.schoolId)&&(
+                <RescheduleFixture match={selMatch} grounds={GROUNDS} onChanged={()=>setMatchesNonce(n=>n+1)}/>
+              )}
               {/* SCRBRD-037. The live answer to the question the blocks below
                   gesture at. Those read demo constants — STAFF, GROUNDS,
                   selMatch.transport — which are null for every real fixture,

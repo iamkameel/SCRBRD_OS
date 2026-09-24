@@ -143,10 +143,12 @@ const WALKS = [
 // they run under `--browser` rather than in the default set. Splitting them
 // out is not tidiness: CI's first run put them in the API job, which had
 // neither, and both jobs failed on a missing dist/index.html.
+// browser-held provokes a refusal on the pad and resolves it (SCRBRD-070):
+// discard, the cascade, record again, and the handover warning.
 // browser-innings-end scores an innings to its end, which nothing else does:
 // browser-sync taps four deliveries of twenty overs, so the review gate between
 // the last ball and a closed innings was never exercised end to end.
-const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-dossier", "browser-handover", "browser-innings-end", "browser-quarantine", "browser-drs", "browser-dismissals", "browser-discipline", "browser-support", "browser-seasons", "browser-rulebook", "browser-duties"];
+const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-dossier", "browser-handover", "browser-innings-end", "browser-quarantine", "browser-drs", "browser-dismissals", "browser-discipline", "browser-support", "browser-seasons", "browser-rulebook", "browser-duties", "browser-fixture-create", "browser-held"];
 
 // Walks that need no database, run by `pnpm smoke` instead. Named here only so
 // the completeness check below knows they are accounted for.

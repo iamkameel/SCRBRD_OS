@@ -12,7 +12,9 @@
   "include": [
     "packages/policy/src/**/*.mjs",
     "packages/policy/test/**/*.mjs",
-    "packages/sync/src/**/*.mjs"
+    "packages/sync/src/**/*.mjs",
+    "packages/scoring/src/**/*.mjs",
+    "packages/scoring/test/**/*.mjs"
   ],
   "compilerOptions": {
     "target": "es2023",

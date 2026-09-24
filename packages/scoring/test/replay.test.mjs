@@ -23,9 +23,19 @@ import {
   CAPTURE_PROFILE, PLACEMENT_FIELD, NOT_CAPTURED, evidenceLabel, placementEvidence, profileCollects,
 } from "../src/index.mjs";
 
+/** @import { LogEvent, Loose, BallEvent, BallInput, BattersEvent, BowlerEvent, InningsStartEvent, InningsStartInput } from "../src/events.mjs" */
+
 let pass = 0, fail = 0;
+// A third argument (a detail to print) is passed in places and ignored here.
+/** @type {(n: string, c: unknown, detail?: unknown) => void} */
 const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
-const group = (t) => console.log("\n" + t);
+const group = (/** @type {string} */ t) => console.log("\n" + t);
+/**
+ * The value an assertion reads, which the setup guarantees is there: a
+ * missing one fails the suite loudly instead of being read as a property.
+ * @template T  @param {T} x  @returns {NonNullable<T>}
+ */
+const must = (x) => { if (x == null) throw new Error("replay.test: expected a value"); return x; };
 
 // ── Fixtures ─────────────────────────────────────────────
 const SQ_A = [
@@ -43,6 +53,7 @@ const open = () => [
   batters({ striker: "p1", nonStriker: "p2" }),
   bowler({ bowler: "w1" }),
 ];
+/** @param {number} v  @param {BallInput} [o] */
 const runs = (v, o = {}) => ball({ type: BALL_TYPE.RUN, value: v, ...o });
 
 // ── A. Aggregates the artifact maintained by hand ────────
@@ -53,12 +64,12 @@ group("A. Derived aggregates");
   ok("legal balls counted",   inn.balls === 6);
   ok("overs formatted",       fmtOvers(inn.balls) === "1.0");
   // p1 faces balls 1-2 (4, then 1 which rotates); p2 faces 3-6 (0, 6, 2, 1).
-  ok("striker figures",       inn.batsmen.find(b => b.id === "p1").runs === 5);
-  ok("non-striker figures",   inn.batsmen.find(b => b.id === "p2").runs === 9);
-  ok("balls faced split",     inn.batsmen.find(b => b.id === "p1").balls === 2 && inn.batsmen.find(b => b.id === "p2").balls === 4);
-  ok("boundaries counted",    inn.batsmen.find(b => b.id === "p1").fours === 1 && inn.batsmen.find(b => b.id === "p2").sixes === 1);
-  ok("bowler conceded",       inn.bowlers.find(b => b.id === "w1").runs === 14);
-  ok("bowler balls",          inn.bowlers.find(b => b.id === "w1").balls === 6);
+  ok("striker figures",       inn.batsmen.find(b => b.id === "p1")?.runs === 5);
+  ok("non-striker figures",   inn.batsmen.find(b => b.id === "p2")?.runs === 9);
+  ok("balls faced split",     inn.batsmen.find(b => b.id === "p1")?.balls === 2 && inn.batsmen.find(b => b.id === "p2")?.balls === 4);
+  ok("boundaries counted",    inn.batsmen.find(b => b.id === "p1")?.fours === 1 && inn.batsmen.find(b => b.id === "p2")?.sixes === 1);
+  ok("bowler conceded",       inn.bowlers.find(b => b.id === "w1")?.runs === 14);
+  ok("bowler balls",          inn.bowlers.find(b => b.id === "w1")?.balls === 6);
   ok("ballLog length",        inn.ballLog.length === 6);
   ok("overLog grouped",       inn.overLog.length === 1 && inn.overLog[0].balls.length === 6);
   ok("bowler cleared at over end", inn.bowler === null);
@@ -78,9 +89,9 @@ group("A. Derived aggregates");
   ok("leg byes recorded",       inn.extras.legBye === 1);
   ok("total runs 1+3+3+1",      inn.runs === 8);
   ok("only legal balls count",  inn.balls === 2);
-  ok("no-ball runs to batter",  inn.batsmen.find(b => b.id === "p1").runs === 2);
-  ok("byes NOT to batter",      inn.batsmen.find(b => b.id === "p1").runs === 2);
-  ok("byes NOT charged to bowler", inn.bowlers.find(b => b.id === "w1").runs === 4);
+  ok("no-ball runs to batter",  inn.batsmen.find(b => b.id === "p1")?.runs === 2);
+  ok("byes NOT to batter",      inn.batsmen.find(b => b.id === "p1")?.runs === 2);
+  ok("byes NOT charged to bowler", inn.bowlers.find(b => b.id === "w1")?.runs === 4);
 }
 {
   const inn = deriveInnings([
@@ -90,10 +101,10 @@ group("A. Derived aggregates");
     runs(2),
   ]);
   ok("wicket counted",        inn.wickets === 1);
-  ok("bowler credited",       inn.bowlers.find(b => b.id === "w1").wickets === 1);
+  ok("bowler credited",       inn.bowlers.find(b => b.id === "w1")?.wickets === 1);
   ok("fall of wicket logged", inn.fow.length === 1 && inn.fow[0].runs === 1);
-  ok("dismissal reads as a scorecard line", inn.batsmen.find(b => b.id === "p2").dismissal === "c K Botha b D Mkhize");
-  ok("out batter marked",     inn.batsmen.find(b => b.id === "p2").status === "out");
+  ok("dismissal reads as a scorecard line", inn.batsmen.find(b => b.id === "p2")?.dismissal === "c K Botha b D Mkhize");
+  ok("out batter marked",     inn.batsmen.find(b => b.id === "p2")?.status === "out");
   ok("new batter at crease",  inn.striker === "p3");
   ok("partnership closed",    inn.partnerships.length === 1);
 }
@@ -108,7 +119,7 @@ group("A. Derived aggregates");
     const inn = deriveInnings([...open(), ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: d, fielder: "F" })]);
     ok(`${d}: is a wicket`, inn.wickets === 1);
     ok(`${d}: bowler ${CREDITED.has(d) ? "credited" : "NOT credited"}`,
-       inn.bowlers.find(b => b.id === "w1").wickets === (CREDITED.has(d) ? 1 : 0));
+       inn.bowlers.find(b => b.id === "w1")?.wickets === (CREDITED.has(d) ? 1 : 0));
     ok(`${d}: chargedToBowler agrees`, chargedToBowler(d) === CREDITED.has(d));
     const fh = deriveInnings([...open(), ball({ type: BALL_TYPE.NO_BALL, value: 0 }),
                                         ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: d })]);
@@ -125,7 +136,7 @@ group("A. Derived aggregates");
   ok("the builder writes the canonical value", ball({ type: BALL_TYPE.WICKET, dismissal: "r/o" }).dismissal === "run_out");
   ok("...and keeps an unknown one for the API to refuse by name", ball({ type: BALL_TYPE.WICKET, dismissal: "run away" }).dismissal === "run away");
   const ro = deriveInnings([...open(), ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: "r/o", fielder: "L Govender" })]);
-  ok("\"r/o\" is NOT the bowler's wicket", ro.bowlers.find(b => b.id === "w1").wickets === 0);
+  ok("\"r/o\" is NOT the bowler's wicket", ro.bowlers.find(b => b.id === "w1")?.wickets === 0);
   ok("...and reads on the card as a run out", ro.batsmen.find(b => b.status === "out")?.dismissal === "run out (L Govender)");
   const hw = deriveInnings([...open(), ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: "Hit Wicket" })]);
   ok("hit wicket reads with the bowler", /^hit wicket b /.test(hw.batsmen.find(b => b.status === "out")?.dismissal ?? ""));
@@ -147,6 +158,7 @@ group("A. Derived aggregates");
   const firstPlayed = [...open(), ball({ type: BALL_TYPE.RUN, value: 6 })];
   const first = [...firstPlayed, sealInnings(deriveInnings(firstPlayed), "declared")]
     .map((e) => ({ ...e, innings: 0 }));
+  /** @param {number} target  @param {number} runs  @param {boolean} [done] */
   const chase = (target, runs, done = true) => {
     const played = [
       ...open().map((e) => ({ ...e, innings: 1 })),
@@ -170,12 +182,13 @@ group("A. Derived aggregates");
   ok("one short of the revised target is a tie", r3?.winner === null && r3?.margin === "tie", JSON.stringify(r3));
   ok("an unfinished chase has no result yet", deriveMatch([...first, ...chase(4, 2, false)]).result === null);
 }
+/** @param {LogEvent[]} evs */
 function innings0Team(evs) { return evs.find((e) => e.kind === "innings_start")?.battingTeam; }
 {
   // Run out is not the bowler's wicket.
   const inn = deriveInnings([...open(), ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: "run out", fielder: "L Govender" })]);
   ok("run out counts as a wicket",     inn.wickets === 1);
-  ok("run out NOT credited to bowler", inn.bowlers.find(b => b.id === "w1").wickets === 0);
+  ok("run out NOT credited to bowler", inn.bowlers.find(b => b.id === "w1")?.wickets === 0);
 }
 {
   // Maidens: an over of dots, then an over with a leg bye (still a maiden).
@@ -185,15 +198,15 @@ function innings0Team(evs) { return evs.find((e) => e.kind === "innings_start")?
     bowler({ bowler: "w2" }),
     ...Array.from({ length: 5 }, () => runs(0)), ball({ type: BALL_TYPE.LEG_BYE, value: 1 }),
   ]);
-  ok("maiden over detected",        inn.bowlers.find(b => b.id === "w1").maidens === 1);
-  ok("leg bye does not spoil maiden", inn.bowlers.find(b => b.id === "w2").maidens === 1);
+  ok("maiden over detected",        inn.bowlers.find(b => b.id === "w1")?.maidens === 1);
+  ok("leg bye does not spoil maiden", inn.bowlers.find(b => b.id === "w2")?.maidens === 1);
 }
 {
   // A wide IS charged to the bowler, so an over containing one is never a maiden
   // even though the six legal balls were all dots.
   const withWide = deriveInnings([...open(), ball({ type: BALL_TYPE.WIDE, value: 0 }), ...Array.from({ length: 6 }, () => runs(0))]);
   ok("over has 6 legal balls plus the wide", withWide.overLog[0].balls.length === 7 && withWide.balls === 6);
-  ok("wide spoils the maiden",               withWide.bowlers.find(b => b.id === "w1").maidens === 0);
+  ok("wide spoils the maiden",               withWide.bowlers.find(b => b.id === "w1")?.maidens === 0);
 }
 {
   const inn = deriveInnings([...open(), penalty({ runs: 5 })]);
@@ -216,7 +229,7 @@ group("B. Undo by truncation");
   // free: correcting ball 2 after ball 14 is just a shorter log.
   const long = [...open(), ...Array.from({ length: 14 }, (_, i) => runs(i % 3))];
   const corrected = [...long.slice(0, 4), runs(6), ...long.slice(5)];
-  ok("correct ball 2 after ball 14", deriveInnings(corrected).runs === deriveInnings(long).runs - long[4].value + 6);
+  ok("correct ball 2 after ball 14", deriveInnings(corrected).runs === deriveInnings(long).runs - /** @type {BallEvent} */ (long[4]).value + 6);   // [4]: open() is three events
   ok("undo depth is unbounded",      deriveInnings(long.slice(0, 4)).balls === 1);
 }
 
@@ -237,18 +250,18 @@ group("C. Divergences from the artifact (documented in docs/SCORING_RULES.md)");
   // 3. A no-ball with no run off the bat is still a ball faced. The artifact
   //    guarded the increment behind `value > 0`.
   const inn = deriveInnings([...open(), ball({ type: BALL_TYPE.NO_BALL, value: 0 })]);
-  ok("no-ball with 0 runs is a ball faced", inn.batsmen.find(b => b.id === "p1").balls === 1);
+  ok("no-ball with 0 runs is a ball faced", inn.batsmen.find(b => b.id === "p1")?.balls === 1);
 }
 {
   // 4. Maidens were never tracked at all — the field existed and stayed 0.
   const inn = deriveInnings([...open(), ...Array.from({ length: 6 }, () => runs(0))]);
-  ok("maidens are tracked", inn.bowlers.find(b => b.id === "w1").maidens === 1);
+  ok("maidens are tracked", inn.bowlers.find(b => b.id === "w1")?.maidens === 1);
 }
 {
   // 5. The fielder was dropped from the log entirely, so a caught dismissal
   //    could not name who took it after replay.
   const inn = deriveInnings([...open(), ball({ type: BALL_TYPE.WICKET, dismissal: "caught", fielder: "K Botha" })]);
-  ok("fielder survives replay", /K Botha/.test(inn.batsmen.find(b => b.id === "p1").dismissal));
+  ok("fielder survives replay", /K Botha/.test(must(must(inn.batsmen.find(b => b.id === "p1")).dismissal)));
 }
 {
   // 6. Free hit: a bowled dismissal off a free hit does not stand; a run out does.
@@ -340,7 +353,7 @@ group("D. Strike rotation and innings end");
 }
 {
   const r = deriveInnings([...open(), runs(1), retire({ batter: "p1", reason: "hurt" })]);
-  ok("retired batter marked",   r.batsmen.find(b => b.id === "p1").status === "retired");
+  ok("retired batter marked",   r.batsmen.find(b => b.id === "p1")?.status === "retired");
   ok("retirement is not a wicket", r.wickets === 0);
 }
 
@@ -373,7 +386,7 @@ group("D. Replay is deterministic and order-independent, given seq");
     .map((e, i) => ({ ...e, seq: i + 1 }));
   const correct = deriveInnings(canonical);
   ok("sanity: the striker is out for 4, not 0", correct.wickets === 1 &&
-     correct.batsmen.find(b => b.id === "p1").runs === 4);
+     correct.batsmen.find(b => b.id === "p1")?.runs === 4);
 
   const shuffled = [...canonical].reverse(); // deterministic "wrong order", not flaky randomness
   const wrong = deriveInnings(shuffled);
@@ -409,7 +422,7 @@ group("E. Determinism, match derivation, wire round-trip");
 {
   const log = [...open(), runs(4), runs(1), runs(2)];
   ok("replay is pure",  JSON.stringify(deriveInnings(log)) === JSON.stringify(deriveInnings(log)));
-  ok("replay does not mutate the log", log.length === 6 && log[3].value === 4);
+  ok("replay does not mutate the log", log.length === 6 && /** @type {BallEvent} */ (log[3]).value === 4);   // [3]: the first delivery
 }
 {
   const firstInnings = [...open(), runs(10)];
@@ -428,8 +441,10 @@ group("E. Determinism, match derivation, wire round-trip");
   ok("result names a winner", m.result?.winner === "Westville Boys'");
 }
 {
+  // @ts-expect-error `zone` is text ('inner' | 'outer' | 'boundary'); this number only rides through the round trip
   const ev = ball({ type: BALL_TYPE.WICKET, value: 0, shot: "drive", seg: 4, zone: 2, dismissal: "caught", fielder: "K Botha", bowlerApproach: "over" });
-  const back = fromRow({ ...toRow(ev), seq: 12 });
+  // A ball went in, so a ball comes back.
+  const back = /** @type {Loose<BallEvent>} */ (fromRow({ ...toRow(ev), seq: 12 }));
   ok("wire round-trip keeps shot",     back.shot === "drive");
   ok("wire round-trip keeps segment",  back.seg === 4);
   ok("wire round-trip keeps fielder",  back.fielder === "K Botha");
@@ -459,14 +474,14 @@ group("E. A bowler with no player row");
   const typed = toRow(bowler({ bowler: "A Nel" }));
   ok("a typed name does not go in the uuid column", typed.bowler_id === null);
   ok("...it rides in the payload instead", typed.payload.bowler === "A Nel");
-  ok("...and comes back intact", fromRow({ ...typed, seq: 1 }).bowler === "A Nel");
+  ok("...and comes back intact", /** @type {Loose<BowlerEvent>} */ (fromRow({ ...typed, seq: 1 })).bowler === "A Nel");
 
   // A real player still joins, so a scorecard can be attributed.
   const mixed = toRow(batters({ striker: UUID, nonStriker: "Unlisted Kid" }));
   ok("a real player id goes in the column", mixed.striker_id === UUID);
   ok("...and is not duplicated into the payload", !("striker" in mixed.payload));
   ok("an unlisted batter still rides in the payload", mixed.payload.nonStriker === "Unlisted Kid");
-  const back = fromRow({ ...mixed, seq: 2 });
+  const back = /** @type {Loose<BattersEvent>} */ (fromRow({ ...mixed, seq: 2 }));   // batters in, batters out
   ok("both come back the way they went in",
      back.striker === UUID && back.nonStriker === "Unlisted Kid");
 
@@ -488,7 +503,8 @@ group("E. A bowler with no player row");
 // scorecard ends up quietly wrong with no evidence of why. See src/undo.mjs.
 group("F. Undo before and after the server has it");
 {
-  const id = (n) => `dev:m1:${n}`;
+  const id = (/** @type {number} */ n) => `dev:m1:${n}`;
+  /** @param {LogEvent[]} evs  @returns {LogEvent[]} */
   const withIds = (evs) => evs.map((e, i) => ({ ...e, id: id(i) }));
   const log = withIds([...open(), runs(4), runs(1), runs(6)]);
   const before = deriveInnings(log);
@@ -506,7 +522,8 @@ group("F. Undo before and after the server has it");
   ok("a synced ball is voided, not dropped", remote.action === "void");
   ok("...the log grows rather than shrinks", remote.events.length === log.length + 1);
   ok("...the void names the ball it undoes",
-     remote.events.at(-1).kind === KIND.VOID && remote.events.at(-1).target === log.at(-1).id);
+     remote.events.at(-1)?.kind === KIND.VOID
+     && /** @type {Loose<import("../src/events.mjs").VoidEvent>} */ (remote.events.at(-1)).target === must(log.at(-1)).id);
   ok("...and replay agrees with the truncated version",
      deriveInnings(remote.events).runs === deriveInnings(local.events).runs);
   ok("...down to the ball count and the striker",
@@ -558,7 +575,8 @@ group("F. Undo before and after the server has it");
   // device is the problem it was invented to solve.
   // id(3) is the first delivery, worth four.
   const v = voidEvent({ target: id(3) });
-  ok("a void round-trips through the wire", fromRow(toRow(v)).target === id(3));
+  ok("a void round-trips through the wire",
+     /** @type {Loose<import("../src/events.mjs").VoidEvent>} */ (fromRow(toRow(v))).target === id(3));
   ok("...and still voids the right ball after the round trip",
      deriveInnings([...log, fromRow(toRow(v))]).runs === 7);
 
@@ -664,7 +682,7 @@ group("G. Where the ball went");
      row.placement_source === PLACEMENT_SOURCE.POINT);
   ok("none of it is duplicated into the payload",
      !("theta" in row.payload) && !("placementSource" in row.payload));
-  const back = fromRow({ ...row, seq: 3 });
+  const back = /** @type {Loose<BallEvent>} */ (fromRow({ ...row, seq: 3 }));   // a ball in, a ball out
   ok("the point survives the round trip",
      back.theta === p.theta && back.radius === p.radius && hasPoint(back));
 
@@ -703,20 +721,21 @@ group("G. Where the ball went");
  */
 group("H. The seal — over is not closed (SCRBRD-038)");
 {
-  const sq = (n) => Array.from({ length: n }, (_, i) => ({ id: `p${i + 1}`, name: `P${i + 1}` }));
-  const start = (o) => [
+  const sq = (/** @type {number} */ n) => Array.from({ length: n }, (_, i) => ({ id: `p${i + 1}`, name: `P${i + 1}` }));
+  const start = (/** @type {InningsStartInput} */ o) => [
     inningsStart({ battingTeam: "A", bowlingTeam: "B", squad: sq(5), bowlingSquad: SQ_B, overs: 20, ...o }),
     batters({ striker: "p1", nonStriker: "p2" }), bowler({ bowler: "w1" }),
   ];
   const wkt = () => ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" });
 
   // One log per ending, each ended by the laws and nothing else.
+  /** @type {[string, (InningsStartEvent | BattersEvent | BowlerEvent | BallEvent)[]][]} */
   const ENDINGS = [
     ["all_out",        [...start({}), ...Array.from({ length: 4 }, wkt)]],
     ["overs_complete", [...start({ overs: 1 }), ...Array.from({ length: 6 }, () => runs(1))]],
     ["target_reached", [...start({ target: 6 }), runs(6)]],
   ];
-  const OTHER = (r) => ["all_out", "overs_complete", "target_reached"].filter((x) => x !== r);
+  const OTHER = (/** @type {string} */ r) => ["all_out", "overs_complete", "target_reached"].filter((x) => x !== r);
 
   for (const [reason, played] of ENDINGS) {
     const over = deriveInnings(played);
@@ -862,12 +881,12 @@ group("I. What the innings declared it would capture (SCRBRD-039)");
   const quick = ball({ type: BALL_TYPE.RUN, value: 2, ...noPlacement(PLACEMENT_NULL.NOT_REQUIRED, CAPTURE_PROFILE.QUICK) });
   const leave = ball({ type: BALL_TYPE.RUN, value: 0, shot: "leave", ...noPlacement(PLACEMENT_NULL.NO_CONTACT, CAPTURE_PROFILE.QUICK) });
   const deliveries = [point, sector, quick, leave];
-  const startWith = (captureProfile) => [
+  const startWith = (/** @type {string | undefined} */ captureProfile) => [
     inningsStart({ battingTeam: "Hilton College", bowlingTeam: "Westville Boys'", squad: SQ_A,
                    bowlingSquad: SQ_B, overs: 20, captureProfile, clientTs: 1 }),
     batters({ striker: "p1", nonStriker: "p2", clientTs: 2 }), bowler({ bowler: "w1", clientTs: 3 }),
   ];
-  const strip = (inn) => { const { declaredProfile, ...rest } = inn; return JSON.stringify(rest); };
+  const strip = (/** @type {import("../src/replay.mjs").Innings} */ inn) => { const { declaredProfile, ...rest } = inn; return JSON.stringify(rest); };
 
   // ── The event ──
   ok("an undeclared innings_start carries no captureProfile key at all",
@@ -941,7 +960,7 @@ group("I. What the innings declared it would capture (SCRBRD-039)");
      placementEvidence(career.slice(0, 2), { declaredFor: (b) => b.declaredProfile }).label === NOT_CAPTURED);
 
   // ── The three rules of the fold ──
-  const redeclare = (o) => inningsStart({ battingTeam: "Hilton College", bowlingTeam: "Westville Boys'",
+  const redeclare = (/** @type {InningsStartInput} */ o) => inningsStart({ battingTeam: "Hilton College", bowlingTeam: "Westville Boys'",
                                           squad: SQ_A, bowlingSquad: SQ_B, ...o });
   const late = deriveInnings([...startWith(undefined), point, redeclare({ captureProfile: "quick" })]);
   ok("a declaration after the first delivery is not honoured", late.declaredProfile === null);
@@ -965,7 +984,7 @@ group("I. What the innings declared it would capture (SCRBRD-039)");
   const row = toRow(declaredStart);
   ok("the declaration travels in the capture_profile column, which db/07's CHECK guards",
      row.capture_profile === "standard" && !("captureProfile" in row.payload));
-  ok("...and comes back off it", fromRow({ ...row, seq: 1, idempotency_key: "d:1" }).captureProfile === "standard");
+  ok("...and comes back off it", /** @type {Loose<InningsStartEvent>} */ (fromRow({ ...row, seq: 1, idempotency_key: "d:1" })).captureProfile === "standard");
   const oldRow = toRow(legacyStart);
   ok("an undeclared start sends no capture_profile at all", !("capture_profile" in oldRow));
   ok("...and an old row with a NULL column reads back undeclared",

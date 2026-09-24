@@ -14,8 +14,15 @@ import {
 } from "../src/rubric.mjs";
 
 let pass = 0, fail = 0;
+/** @param {string} n  @param {unknown} c */
 const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
-const group = (t) => console.log("\n" + t);
+const group = (/** @type {string} */ t) => console.log("\n" + t);
+/**
+ * The value an assertion reads, which the setup guarantees is there: a
+ * missing one fails the suite loudly instead of being compared as null.
+ * @template T  @param {T} x  @returns {NonNullable<T>}
+ */
+const must = (x) => { if (x == null) throw new Error("expected a value"); return x; };
 
 // ── A. Interpolation ─────────────────────────────────────
 group("A0. Every calibration point is on the 1-20 scale");
@@ -30,14 +37,14 @@ ok("the index tops out where the coach's scale does",
 group("A. Anchors interpolate, in both directions");
 ok("an anchor point returns its own score", scoreFrom(STAT_ANCHORS.battingAverage, 30) === 13);
 ok("between anchors it interpolates",
-   scoreFrom(STAT_ANCHORS.battingAverage, 40) > 13 && scoreFrom(STAT_ANCHORS.battingAverage, 40) < 18);
+   must(scoreFrom(STAT_ANCHORS.battingAverage, 40)) > 13 && must(scoreFrom(STAT_ANCHORS.battingAverage, 40)) < 18);
 ok("below the bottom anchor it clamps", scoreFrom(STAT_ANCHORS.battingAverage, -5) === 1);
 ok("above the top anchor it clamps", scoreFrom(STAT_ANCHORS.battingAverage, 200) === 20);
 // Economy descends: LOWER is better, and the same function has to cope.
 ok("a descending table scores low values high", scoreFrom(STAT_ANCHORS.bowlingEconomy, 4.5) === 20);
 ok("...and high values low", scoreFrom(STAT_ANCHORS.bowlingEconomy, 12) === 1);
 ok("...monotonically in between",
-   scoreFrom(STAT_ANCHORS.bowlingEconomy, 5) > scoreFrom(STAT_ANCHORS.bowlingEconomy, 8));
+   must(scoreFrom(STAT_ANCHORS.bowlingEconomy, 5)) > must(scoreFrom(STAT_ANCHORS.bowlingEconomy, 8)));
 ok("a missing statistic scores nothing, not zero", scoreFrom(STAT_ANCHORS.battingAverage, null) === null);
 
 // ── B. The sample floor ──────────────────────────────────
@@ -45,7 +52,7 @@ group("B. A number nobody has earned is not produced");
 {
   const oneBallSix = battingIndex({ runs: 6, ballsFaced: 1, dismissals: 0 });
   ok("one ball for six is refused, not rated 100", oneBallSix.value === null);
-  ok("...and says why", /1 balls faced/.test(oneBallSix.reason));
+  ok("...and says why", /1 balls faced/.test(must(oneBallSix.reason)));
   ok("just below the floor is still refused",
      battingIndex({ runs: 40, ballsFaced: MIN_BALLS_FACED - 1, dismissals: 1 }).value === null);
   ok("at the floor a number appears",
@@ -63,22 +70,22 @@ group("C. Undefined statistics stay undefined");
   const neverOut = battingIndex({ runs: 120, ballsFaced: 90, dismissals: 0 });
   ok("a batter never dismissed still gets an index", neverOut.value !== null);
   ok("...with no average, rather than runs divided by zero", neverOut.parts.average === null);
-  ok("...leaning on strike rate, and saying so", /strike rate only/.test(neverOut.reason));
+  ok("...leaning on strike rate, and saying so", /strike rate only/.test(must(neverOut.reason)));
   ok("...at reduced confidence", neverOut.confidence === "low");
 
   const noWickets = bowlingIndex({ runsConceded: 30, ballsBowled: 60, wickets: 0 });
   // Three an over and no wickets. On the 1-20 scale that is not "average with
   // nothing to show for it" — it is excellent bowling that happened not to
   // take a wicket, and the index must say so.
-  ok("a tight wicketless spell is not a failure", noWickets.value > 10);
-  ok("...it is excellent bowling", noWickets.value >= 16);
+  ok("a tight wicketless spell is not a failure", must(noWickets.value) > 10);
+  ok("...it is excellent bowling", must(noWickets.value) >= 16);
   ok("...with no bowling strike rate", noWickets.parts.strikeRate === null);
 
   // Economy is the one where getting the direction wrong is invisible: both
   // produce a number, and only one of them is right.
   const tight = bowlingIndex({ runsConceded: 30, ballsBowled: 60, wickets: 2 });
   const loose = bowlingIndex({ runsConceded: 90, ballsBowled: 60, wickets: 2 });
-  ok("conceding fewer runs scores higher", tight.value > loose.value);
+  ok("conceding fewer runs scores higher", must(tight.value) > must(loose.value));
 }
 
 // ── D. Confidence rises with the sample ──────────────────
@@ -100,8 +107,8 @@ group("E. Every score can show where it came from");
      Number.isFinite(b.parts.averageScore) && Number.isFinite(b.parts.strikeRateScore));
   ok("the weighting is reported, not hidden", b.parts.averageWeight === 0.6);
   ok("the index sits between its two components",
-     b.value >= Math.min(b.parts.averageScore, b.parts.strikeRateScore) &&
-     b.value <= Math.max(b.parts.averageScore, b.parts.strikeRateScore));
+     must(b.value) >= Math.min(must(b.parts.averageScore), must(b.parts.strikeRateScore)) &&
+     must(b.value) <= Math.max(must(b.parts.averageScore), must(b.parts.strikeRateScore)));
 }
 
 // ── F. A missing half is never a zero ────────────────────
@@ -142,14 +149,14 @@ group("F. A missing half is never a zero");
 // of evidence from ever fully answering back.
 group("F2. The coach anchors it; the ball log moves it");
 {
-  const anchored = (sample) => adjustedRating({ coach: 16, performance: 11, sample });
+  const anchored = (/** @type {number} */ sample) => adjustedRating({ coach: 16, performance: 11, sample });
 
   ok("with no match data the rating IS the coach's number", anchored(0).value === 16);
   ok("...and nothing has moved", anchored(0).drift === 0);
 
   // Monotonic: every additional delivery moves it further, and always towards
   // the evidence rather than past it.
-  const curve = [0, 30, 80, 120, 240, 500].map((n) => anchored(n).value);
+  const curve = [0, 30, 80, 120, 240, 500].map((n) => must(anchored(n).value));
   ok("more evidence moves it further",
      curve.every((v, i) => i === 0 || v < curve[i - 1]));
   ok("...always towards the index, never past it",
@@ -163,7 +170,7 @@ group("F2. The coach anchors it; the ball log moves it");
 
   // The direction follows the evidence, not the coach.
   const up = adjustedRating({ coach: 8, performance: 17, sample: 240 });
-  ok("a player who outperforms the eye test is moved UP", up.drift > 0 && up.value > 8);
+  ok("a player who outperforms the eye test is moved UP", must(up.drift) > 0 && must(up.value) > 8);
   ok("...and the coach's original number is still there to compare against",
      up.coach === 8);
   ok("...and the explanation says which way and by how much",
@@ -176,9 +183,9 @@ group("F2. The coach anchors it; the ball log moves it");
   ok("at 80 deliveries it matches the fixed 60/40 blend it replaced",
      anchored(80).value === Math.round((16 * 0.6 + 11 * 0.4) * 10) / 10);
   ok("...but a bigger sample goes further than 60/40 ever could",
-     anchored(500).value < 16 * 0.6 + 11 * 0.4);
+     must(anchored(500).value) < 16 * 0.6 + 11 * 0.4);
   ok("...and a smaller one does not go nearly as far",
-     anchored(30).value > 16 * 0.6 + 11 * 0.4);
+     must(anchored(30).value) > 16 * 0.6 + 11 * 0.4);
 
   ok("the two are level at the prior", anchored(COACH_PRIOR_BALLS).performanceWeight === 0.5);
   // The knob, at both extremes.
@@ -214,7 +221,8 @@ ok("only batting and bowling are derivable",
 ok("fielding and keeping are coach-only",
    COACH_ONLY_DISCIPLINES.includes("fielding") && COACH_ONLY_DISCIPLINES.includes("keeping"));
 ok("...and no index function pretends otherwise",
-   typeof globalThis.fieldingIndex === "undefined");
+   // Widened to ask for a name the global object is not declared to have.
+   typeof /** @type {Record<string, unknown>} */ (globalThis).fieldingIndex === "undefined");
 // Every discipline is defined over attributes that actually exist. A typo here
 // produces a coach index quietly averaging fewer attributes than it claims.
 {

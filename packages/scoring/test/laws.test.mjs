@@ -30,31 +30,56 @@ import {
   BALL_TYPE, INNINGS_END_REASON, standsOnFreeHit, DISMISSAL,
 } from "../src/index.mjs";
 
+/** @import { LogEvent, InningsStartInput } from "../src/events.mjs" */
+/** @import { Innings } from "../src/replay.mjs" */
+/** @import { MatchView } from "../src/laws.mjs" */
+
 let pass = 0, fail = 0;
+/** @param {string} n  @param {unknown} c  @param {unknown} [d] */
 const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d !== undefined ? `— ${JSON.stringify(d).slice(0, 200)}` : ""); } };
-const group = (t) => console.log("\n" + t);
+const group = (/** @type {string} */ t) => console.log("\n" + t);
+/**
+ * The value an assertion reads, which the setup guarantees is there: a
+ * missing one fails the suite loudly instead of being read as a property.
+ * @template T  @param {T} x  @returns {NonNullable<T>}
+ */
+const must = (x) => { if (x == null) throw new Error("laws.test: expected a value"); return x; };
 
 const SQ_A = ["p1", "p2", "p3", "p4", "p5"].map((id) => ({ id, name: id.toUpperCase() }));
 const SQ_B = ["w1", "w2", "w3", "w4", "w5"].map((id) => ({ id, name: id.toUpperCase() }));
 
 let n = 0;
-/** Give every event an id and an innings, the way the scorer's emit() does. */
+/**
+ * Give every event an id and an innings, the way the scorer's emit() does.
+ * @param {number} innings
+ * @param {...LogEvent} evs
+ * @returns {(LogEvent & {innings: number, id: string})[]}
+ */
 const at = (innings, ...evs) => evs.map((e) => ({ ...e, innings, id: e.id ?? `e${++n}` }));
-const open = (innings = 0, o = {}) => at(innings,
+const open = (innings = 0, /** @type {InningsStartInput} */ o = {}) => at(innings,
   inningsStart({ battingTeam: innings ? "B" : "A", bowlingTeam: innings ? "A" : "B",
                  squad: innings ? SQ_B : SQ_A, bowlingSquad: innings ? SQ_A : SQ_B, overs: 2, ...o }),
   batters(innings ? { striker: "w1", nonStriker: "w2" } : { striker: "p1", nonStriker: "p2" }),
   bowler({ bowler: innings ? "p5" : "w1" }));
+/** @param {number} innings  @param {...number} vs */
 const runs = (innings, ...vs) => at(innings, ...vs.map((v) => ball({ type: BALL_TYPE.RUN, value: v })));
 
-/** The scorer's view: per-innings logs, each folded by deriveInnings(). */
+/**
+ * The scorer's view: per-innings logs, each folded by deriveInnings().
+ * @param {LogEvent[]} log
+ * @returns {MatchView}
+ */
 function clientView(log) {
+  /** @type {LogEvent[][]} */
   const events = [];
   for (const e of log) (events[e.innings ?? 0] ??= []).push(e);
   return { events, innings: [...events].map((l) => (l ? deriveInnings(l) : null)) };
 }
 
-/** Ask both sides; report a disagreement as a failure of its own. */
+/**
+ * Ask both sides; report a disagreement as a failure of its own.
+ * @param {LogEvent[]} log  @param {LogEvent} ev  @param {string} [label]
+ */
 function judge(log, ev, label = "") {
   const server = lawsRefusal(new MatchFold(log).view(), ev);
   const client = lawsRefusal(clientView(log), ev);
@@ -87,12 +112,12 @@ group("A. validateDelivery, translated");
   const bowledOnFreeHit = at(0, ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" }))[0];
   ok("a bowled on a free hit is recorded (AG refuses it; the fold saves the batter)", judge(nb, bowledOnFreeHit) === null);
   const saved = deriveInnings([...nb, bowledOnFreeHit]);
-  ok("...and the batter is not out", saved.wickets === 0 && saved.ballLog.at(-1).freeHitSaved === true);
+  ok("...and the batter is not out", saved.wickets === 0 && saved.ballLog.at(-1)?.freeHitSaved === true);
 
   const runOutNS = at(0, ball({ type: BALL_TYPE.WICKET, dismissal: "run_out", dismissed: "p2" }))[0];
   ok("accepts a run out of the non-striker on a free hit", judge(nb, runOutNS) === null);
   const ro = deriveInnings([...nb, runOutNS]);
-  ok("...and it stands, against the non-striker", ro.wickets === 1 && ro.batsmen.find((b) => b.id === "p2").status === "out");
+  ok("...and it stands, against the non-striker", ro.wickets === 1 && ro.batsmen.find((b) => b.id === "p2")?.status === "out");
 
   // Five legal, a no-ball, the legal sixth: the over ends on a legal ball, so
   // the first ball of the next over is not a free hit.
@@ -108,7 +133,7 @@ group("A. validateDelivery, translated");
 
 group("B. isFreeHitPending, as the fold's own free-hit state");
 {
-  const fh = (...kinds) => deriveInnings([...open(0), ...at(0, ...kinds.map((t) => ball({ type: t })))]).freeHit;
+  const fh = (/** @type {string[]} */ ...kinds) => deriveInnings([...open(0), ...at(0, ...kinds.map((t) => ball({ type: t })))]).freeHit;
   ok("is false at the start of an over", fh() === false);
   ok("follows a no-ball", fh(BALL_TYPE.NO_BALL) === true);
   ok("carries over a wide bowled on the free hit", fh(BALL_TYPE.NO_BALL, BALL_TYPE.WIDE) === true);
@@ -129,6 +154,7 @@ group("C. isDismissalAllowed on a free hit — one set, NON_DELIVERY");
 
 group("D. runsCompleted — the runs that decide strike, as the fold rotates it");
 {
+  /** @param {string} type  @param {number} value */
   const strikerAfter = (type, value) => deriveInnings([...open(0), ...at(0, ball({ type, value }))]).striker;
   ok("a plain wide is not a run", strikerAfter(BALL_TYPE.WIDE, 0) === "p1");
   ok("a wide the batters ran one on is one run", strikerAfter(BALL_TYPE.WIDE, 1) === "p2");
@@ -161,7 +187,7 @@ group("E. Innings in order; no ball once the match is decided");
   // Target is 2 (first innings made 1). One more run wins it.
   const won = [...chase, ...runs(1, 1)];
   ok("the chase is won", deriveMatch(won).result?.winner === "B");
-  const winningBall = won.at(-1);
+  const winningBall = must(won.at(-1));
   ok("no ball after the match is decided (AG recordBallAction)", judge(won, at(1, ball({}))[0]) === REFUSAL.MATCH_DECIDED);
   ok("...but the winning ball can still be undone", judge(won, at(1, voidEvent({ target: winningBall.id }))[0]) === null);
   const undone = [...won, ...at(1, voidEvent({ target: winningBall.id }))];
@@ -203,12 +229,14 @@ group("F. At the crease");
 
 group("G. Nothing belongs to an innings nobody opened");
 {
-  for (const [label, ev] of [["batters", batters({ striker: "p1", nonStriker: "p2" })], ["bowler", bowler({ bowler: "w1" })],
-                             ["ball", ball({})], ["penalty", penalty({ runs: 5 })], ["revision", revision({ overs: 10 })],
-                             ["retire", retire({ batter: "p1" })], ["innings_end", inningsEnd({ reason: "abandoned" })]]) {
+  for (const [label, ev] of /** @type {[string, LogEvent][]} */ ([
+         ["batters", batters({ striker: "p1", nonStriker: "p2" })], ["bowler", bowler({ bowler: "w1" })],
+         ["ball", ball({})], ["penalty", penalty({ runs: 5 })], ["revision", revision({ overs: 10 })],
+         ["retire", retire({ batter: "p1" })], ["innings_end", inningsEnd({ reason: "abandoned" })]])) {
     ok(`${label} before innings_start is refused`, judge([], at(0, ev)[0], label) === REFUSAL.NO_INNINGS);
   }
   ok("an event kind this build does not know is not refused for being new",
+     // @ts-expect-error a kind outside LogEvent is the case under test
      judge(open(0), at(0, { kind: "drinks_break" })[0]) === null);
 }
 
@@ -222,7 +250,8 @@ group("H. A live void names the latest event that still counts");
   const once = [...L, ...at(0, voidEvent({ target: b6.id }))];
   ok("after one undo, the next latest is the one before it", judge(once, at(0, voidEvent({ target: b4.id }))[0]) === null);
   ok("the undone one cannot be undone twice", judge(once, at(0, voidEvent({ target: b6.id }))[0]) === REFUSAL.VOID_ALREADY_VOIDED);
-  ok("an undo cannot be undone", judge(once, at(0, voidEvent({ target: once.at(-1).id }))[0]) === REFUSAL.VOID_OF_VOID);
+  ok("an undo cannot be undone", judge(once, at(0, voidEvent({ target: must(once.at(-1)).id }))[0]) === REFUSAL.VOID_OF_VOID);
+  // @ts-expect-error a void with no target is the case under test
   ok("a void must name something", judge(L, at(0, voidEvent({}))[0]) === REFUSAL.VOID_NO_TARGET);
   ok("...that this match has", judge(L, at(0, voidEvent({ target: "nope" }))[0]) === REFUSAL.VOID_UNKNOWN_TARGET);
   ok("...in the innings the void is filed under", judge(L, at(1, voidEvent({ target: b6.id }))[0]) === REFUSAL.VOID_WRONG_INNINGS);
@@ -231,13 +260,13 @@ group("H. A live void names the latest event that still counts");
 
   const second = [...L, ...at(0, inningsEnd({ reason: "declared", confirmed: { runs: 11, wickets: 0, balls: 3 } })), ...open(1), ...runs(1, 2)];
   ok("the last event of the first innings cannot be undone once the second has play",
-     judge(second, at(0, voidEvent({ target: second.find((e) => e.kind === "innings_end").id }))[0]) === REFUSAL.VOID_NOT_LATEST);
+     judge(second, at(0, voidEvent({ target: must(second.find((e) => e.kind === "innings_end")).id }))[0]) === REFUSAL.VOID_NOT_LATEST);
   // The scorer opens BOTH innings at setup (engine.jsx startMatch), so an
   // innings_start for innings 1 sits in the log from the first ball. It is not
   // play, and must not freeze undo in innings 0.
   const upfront = [...open(0).slice(0, 1), ...open(1).slice(0, 1), ...open(0).slice(1), ...runs(0, 1)];
   ok("the second innings opened up front does not block undo in the first",
-     judge(upfront, at(0, voidEvent({ target: upfront.at(-1).id }))[0]) === null);
+     judge(upfront, at(0, voidEvent({ target: must(upfront.at(-1)).id }))[0]) === null);
 }
 
 // ── I. MatchFold is deriveInnings, extended ──────────────────────
@@ -245,7 +274,7 @@ group("I. The incremental fold agrees with the full one");
 {
   const log = [...open(0), ...runs(0, 1, 4), ...at(0, ball({ type: BALL_TYPE.WIDE, value: 1 }), ball({ type: BALL_TYPE.NO_BALL, value: 2 })),
                ...runs(0, 6)];
-  const six = log.at(-1);
+  const six = must(log.at(-1));
   const rest = [...at(0, voidEvent({ target: six.id })), ...runs(0, 0, 0, 0), ...at(0, bowler({ bowler: "w2" })),
                 ...runs(0, 1, 1), ...at(0, revision({ overs: 1 }))];
   const f = new MatchFold(log);
@@ -253,7 +282,7 @@ group("I. The incremental fold agrees with the full one");
   const all = [...log, ...rest];
   const inc = f.view().innings[0];
   const full = deriveInnings(all);
-  const same = ["runs", "wickets", "balls", "striker", "nonStriker", "bowler", "freeHit", "complete", "endReason", "voided", "overs"]
+  const same = /** @type {(keyof Innings)[]} */ (["runs", "wickets", "balls", "striker", "nonStriker", "bowler", "freeHit", "complete", "endReason", "voided", "overs"])
     .every((k) => inc[k] === full[k]);
   ok("same figures, crease and state after pushes, a void and a revision", same,
      { inc: [inc.runs, inc.balls, inc.complete, inc.endReason], full: [full.runs, full.balls, full.complete, full.endReason] });
@@ -262,7 +291,7 @@ group("I. The incremental fold agrees with the full one");
   reopened.push(at(0, revision({ overs: 5 }))[0]);
   ok("a revision can reopen an innings the view had settled as over",
      new MatchFold(all).view().innings[0].complete === true && reopened.view().innings[0].complete === false);
-  ok("view() settles on a copy: the live fold is not marked complete", f.byInnings.get(0).inn.complete === false);
+  ok("view() settles on a copy: the live fold is not marked complete", f.byInnings.get(0)?.inn.complete === false);
 }
 
 group("J. Every reason has words for the person who has to clear it");

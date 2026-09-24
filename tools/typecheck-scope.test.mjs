@@ -23,6 +23,8 @@ const FLOOR = [
   "packages/policy/src/**/*.mjs",
   "packages/policy/test/**/*.mjs",
   "packages/sync/src/**/*.mjs",
+  "packages/scoring/src/**/*.mjs",
+  "packages/scoring/test/**/*.mjs",
 ];
 
 let pass = 0, fail = 0;
