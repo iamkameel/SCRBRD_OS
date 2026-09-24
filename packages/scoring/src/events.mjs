@@ -57,7 +57,8 @@ export const KIND = /** @type {const} */ ({
   BOWLER:        "bowler",        // bowler set for the coming over
   BALL:          "ball",          // a delivery
   PENALTY:       "penalty",       // penalty runs, no delivery bowled
-  RETIRE:        "retire",        // batter leaves the crease without being dismissed
+  RETIRE:        "retire",        // an innings ends or pauses with no delivery: retired hurt, or —
+                                  // marked `type: "W"` — retired out / timed out (SCRBRD-081)
   INNINGS_END:   "innings_end",   // declaration, all out, overs complete, rain
   REVISION:      "revision",      // the umpires cut the overs and/or reset the target (rain)
   VOID:          "void",          // undoes an earlier event that has already synced
@@ -87,7 +88,13 @@ export const isLegal = (type) => !ILLEGAL.has(type);
  *  @type {ReadonlySet<string>} */
 export const OFF_THE_BAT = new Set([BALL_TYPE.RUN, BALL_TYPE.WICKET, BALL_TYPE.NO_BALL]);
 
-export const RETIRE_REASON = { HURT: "hurt", OUT: "out" }; // retired hurt may resume
+/**
+ * Why a batter's innings ended, or paused, with no delivery. Retired hurt is
+ * not out and may resume (Law 25.4.2). Retired out (Law 25.4.3) and timed out
+ * (Law 40) are dismissals: a wicket falls, the over does not move and the
+ * bowler takes nothing. retire() says how the event marks the difference.
+ */
+export const RETIRE_REASON = Object.freeze({ HURT: "hurt", OUT: "out", TIMED_OUT: "timed_out" });
 
 /*
  * HOW A BATTER IS OUT — a closed vocabulary.
@@ -278,7 +285,12 @@ export const INNINGS_END_REASON = {
 /** @typedef {EventBase & {kind: "penalty", runs: number, toBattingTeam: boolean, reason: string | null}} PenaltyEvent */
 /** @typedef {BaseInput & {runs?: number, toBattingTeam?: boolean, reason?: string | null}} PenaltyInput */
 
-/** @typedef {EventBase & {kind: "retire", batter: string, reason: string}} RetireEvent */
+/**
+ * A retirement. `type` and `dismissal` are present exactly when it is a
+ * dismissal (retired out, timed out): see retire().
+ * @typedef {EventBase & {kind: "retire", batter: string, reason: string,
+ *   type?: "W", dismissal?: Dismissal}} RetireEvent
+ */
 /** @typedef {BaseInput & {batter: string, reason?: string}} RetireInput */
 
 /**
@@ -575,12 +587,63 @@ export const penalty = (o) => ({
   reason: o.reason ?? null,
 });
 
-/** @param {RetireInput} o  @returns {RetireEvent} */
-export const retire = (o) => ({
-  ...base(KIND.RETIRE, o),
-  batter: o.batter,
-  reason: o.reason ?? RETIRE_REASON.HURT,
+/**
+ * The dismissal each retirement reason is, when it is one.
+ * @type {Readonly<Record<string, Dismissal>>}
+ */
+export const RETIREMENT_DISMISSAL = Object.freeze({
+  [RETIRE_REASON.OUT]: DISMISSAL.RETIRED_OUT,
+  [RETIRE_REASON.TIMED_OUT]: DISMISSAL.TIMED_OUT,
 });
+
+/**
+ * A batter's innings ends, or pauses, without a delivery. SCRBRD-081.
+ *
+ * Retired hurt is the event as it always was: `{batter, reason: "hurt"}`, no
+ * wicket, and he may come back.
+ *
+ * Retired out (Law 25.4.3) and timed out (Law 40) are DISMISSALS WITHOUT A
+ * BALL. They used to be recorded as W deliveries — the pad's wicket sheet
+ * offered them beside bowled and caught — which counted a legal ball of the
+ * over and put the ball in the bowler's figures. Neither involves the bowler
+ * or a delivery: a boy who does not walk out within three minutes is out, and
+ * so is one who walks off without the umpire's leave to do so.
+ *
+ * So they are this event, marked with `type: "W"` and the canonical
+ * `dismissal`. Why a retirement and not a new kind:
+ *
+ *   - `retire` already IS "a batter's innings ends with no delivery". Retired
+ *     out was already one of its reasons; the server already judges it (the
+ *     batter must be in, and a batter retired out may not return), the sync
+ *     sheet already names it, and an older build that folds one still empties
+ *     the end instead of ignoring an unknown kind and leaving him at the crease.
+ *   - `type: "W"` is how every shipped SQL fold over ball_event says "a
+ *     wicket" (match_live_score, scoring_verify_takeover: ball_type = 'W'),
+ *     and `kind = 'ball'` is how each says "a delivery". A retire row with
+ *     ball_type 'W' is therefore, to every one of them, a wicket that is not a
+ *     ball — the public score and the handover check agree with the device
+ *     with no migration. A new kind would need the same marker to be counted,
+ *     and would be one more kind for every reader to learn.
+ *
+ * The marker is also what keeps old logs as they were: a `retire` with
+ * reason "out" written before this (none was ever emitted by the pad, but the
+ * model allowed it) has no `type`, and replays exactly as it always did — no
+ * wicket. Only a retirement built here, or by anything that says `type: "W"`,
+ * is a dismissal.
+ *
+ * @param {RetireInput} o
+ * @returns {RetireEvent}
+ */
+export const retire = (o) => {
+  const reason = o.reason ?? RETIRE_REASON.HURT;
+  const dismissal = Object.hasOwn(RETIREMENT_DISMISSAL, reason) ? RETIREMENT_DISMISSAL[reason] : null;
+  return {
+    ...base(KIND.RETIRE, o),
+    batter: o.batter,
+    reason,
+    ...(dismissal ? { type: /** @type {"W"} */ (BALL_TYPE.WICKET), dismissal } : {}),
+  };
+};
 
 /**
  * Undo an event the server already has.

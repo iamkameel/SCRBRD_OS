@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import {
   deriveInnings, inningsStart, batters as battersEvent, bowler as bowlerEvent,
-  ball as ballEvent, penalty as penaltyEvent, revision as revisionEvent, sealInnings,
+  ball as ballEvent, penalty as penaltyEvent, revision as revisionEvent, retire as retireEvent, sealInnings,
   newEventId, KIND, battingFirst, tossFromRow, firstInningsSides,
   noPlacement, NO_CONTACT_SHOTS, PLACEMENT_NULL, PLACEMENT_SOURCE, CAPTURE_PROFILE,
-  DISMISSAL_LABEL, scoringReadiness, SCORING_BLOCK, lawsRefusal, REFUSAL_TEXT, LOCAL_ONLY,
+  DISMISSAL, DISMISSAL_LABEL, RETIRE_REASON, scoringReadiness, SCORING_BLOCK, lawsRefusal, REFUSAL_TEXT, LOCAL_ONLY,
 } from "@scrbrd/scoring";
 import { D } from "../design/tokens.js";
 import { deviceId } from "../lib/device.js";
@@ -953,8 +953,35 @@ function SCRBRD({resume}={}){
     }
   };
 
-  const confirmWicket=(mode,fielder)=>{
+  // A wicket with no delivery: retired out, timed out (SCRBRD-081). A retire
+  // event marked W (events.mjs retire()), never a ball — the over does not
+  // move and the bowler takes nothing. What follows is read from the
+  // projection, as after a ball: the innings may be over, or an end empty.
+  // `keepModal` leaves the sheet it came from open (timed out, from the
+  // batting-order sheet, still has an end to fill).
+  const recordNonBallWicket=(ev,{keepModal=false}={})=>{
+    const after=project(ev);
+    emit(ev);
+    setSelSeg(null);setSelShot(null);setScoringCtx(null);setModalCtx({});
+    scoreKeyRef.current++;setHubStage(0);setHubShot(null);
+    milestoneQRef.current=[];
+    setEventOverlay({...buildEventCfg("W",null),noBlur:true});
+    if(after.complete)setModal("inningsReview");
+    else if(keepModal)return;
+    else if(after.striker==null||after.nonStriker==null)setModal("newBatsman");
+    else setModal(null);
+  };
+  // Offered on the batting-order sheet only when the Laws would take it:
+  // the same question the server asks, of a batter nobody has named yet.
+  const canTimeOut=!!inn&&lawsRefusal({innings,events},retireEvent({innings:curIn,batter:"\u0000",reason:RETIRE_REASON.TIMED_OUT}))===null;
+  const recordTimedOut=id=>recordNonBallWicket(retireEvent({batter:id,reason:RETIRE_REASON.TIMED_OUT}),{keepModal:true});
+
+  const confirmWicket=(mode,fielder,extra={})=>{
     if(!readiness.ready){setModal(null);return;}
+    if(mode===DISMISSAL.RETIRED_OUT){
+      recordNonBallWicket(retireEvent({batter:extra.dismissed??inn.striker,reason:RETIRE_REASON.OUT}));
+      return;
+    }
     // The dismissal, the fielder, whose wicket it is and whether the bowler is
     // credited are all decided by the replay. The fielder in particular used to
     // be dropped from the log entirely, so a replayed scorecard could never
@@ -1110,6 +1137,7 @@ function SCRBRD({resume}={}){
         teamKey={inn?.teamKey}
         twelfthMan={inn?.twelfthMan}
         header={canDeclare?<CaptureProfilePicker value={inn.declaredProfile} onChange={declareCapture}/>:null}
+        onTimedOut={canTimeOut?recordTimedOut:null}
         onSend={name=>{
           const hasStriker=!!(inn?.striker);
           const hasNonStriker=!!(inn?.nonStriker);
@@ -1145,9 +1173,11 @@ function SCRBRD({resume}={}){
       return (
         <WicketSheet
           batName={inn?.batsmen.find(b=>b.id===inn.striker)?.name||"Batsman"}
+          striker={inn?.striker!=null?{id:inn.striker,name:inn.batsmen.find(b=>b.id===inn.striker)?.name??String(inn.striker)}:null}
+          nonStriker={inn?.nonStriker!=null?{id:inn.nonStriker,name:inn.batsmen.find(b=>b.id===inn.nonStriker)?.name??String(inn.nonStriker)}:null}
           fieldingSquad={fieldingSquad}
           onClose={()=>{setModal(null);setScoringCtx(null);setSelShot(null);resetHub();}}
-          onConfirm={(mode,fielder)=>{confirmWicket(mode,fielder);}}/>
+          onConfirm={(mode,fielder,extra)=>{confirmWicket(mode,fielder,extra);}}/>
       );
     }
 
@@ -1159,8 +1189,17 @@ function SCRBRD({resume}={}){
           batsmen={inn?.batsmen||[]}
           teamKey={inn?.teamKey}
           twelfthMan={inn?.twelfthMan}
+          onTimedOut={canTimeOut?recordTimedOut:null}
           onSend={name=>{
-            addBatsman(name,true);
+            // To the END THAT IS EMPTY. This sent every new batter to the
+            // striker's end, which is right only when the striker was out
+            // mid-over: after a wicket on the last ball the survivor has
+            // already changed ends, and after the non-striker is out the
+            // striker is still in — naming the new man as striker dropped a
+            // not-out batter from the crease, and the server refused it
+            // (crease_occupied). Retired out and a run out's end make an
+            // empty non-striker's end ordinary (SCRBRD-081, SCRBRD-069).
+            addBatsman(name,inn?.striker==null);
             if(isThenOver)setModal("newOver");else setModal(null);
           }}
           onClose={()=>setModal(null)}/>

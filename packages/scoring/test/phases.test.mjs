@@ -352,6 +352,19 @@ group("K. Penalty runs are the one figure no phase carries");
   ok("...the phases have everything but", phaseSum(ev, "runs") === inn.runs - inn.extras.penalty);
 }
 
+group("K2. A wicket with no ball is filed by the over it fell in (SCRBRD-081)");
+{
+  /** @type {LogEvent[]} */
+  const ev = [START, PAIR, BOWLER, ...Array.from({ length: 36 }, () => /** @type {LogEvent} */ ({ kind: "ball", type: "run", value: 0 })),
+              { kind: "bowler", bowler: "y" }, { kind: "ball", type: "run", value: 1 },
+              { kind: "retire", batter: "a", reason: "out", type: "W", dismissal: "retired_out" }];
+  const inn = deriveInnings(ev);
+  const ph = must(derivePhases(inn));
+  ok("the innings has the wicket, and no extra ball", inn.wickets === 1 && inn.balls === 37);
+  ok("...and so do the phases: in the seventh over, the middle", ph.middle.wickets === 1 && ph.powerplay.wickets === 0);
+  ok("...which sum to the innings", phaseSum(ev, "wickets") === 1 && phaseSum(ev, "balls") === 37);
+}
+
 group("L. The invariant, over many innings");
 {
   // Deterministic, so a failure reproduces: a small LCG, not Math.random.
@@ -384,9 +397,23 @@ group("L. The invariant, over many innings");
         const now = deriveInnings(ev);
         if (now.wickets > out) {
           out++;
+          // Now and then the batter due in is timed out (SCRBRD-081): a
+          // wicket with no ball, and the one after him comes in.
+          if (out < 10 && rnd() < 0.15) {
+            ev.push({ kind: "retire", batter: `p${next++}`, reason: "timed_out", type: "W", dismissal: "timed_out" });
+            out++;
+          }
+          if (out >= 10) break;
           ev.push(now.striker == null ? { kind: "batters", striker: `p${next++}` }
                                       : { kind: "batters", nonStriker: `p${next++}` });
         }
+      } else if (r < 0.225 && out < 9) {
+        // Retired out, between two balls (SCRBRD-081).
+        const now = deriveInnings(ev);
+        const who = /** @type {string} */ (pick([now.striker, now.nonStriker]));
+        ev.push({ kind: "retire", batter: who, reason: "out", type: "W", dismissal: "retired_out" });
+        out++;
+        ev.push(who === now.striker ? { kind: "batters", striker: `p${next++}` } : { kind: "batters", nonStriker: `p${next++}` });
       } else { ev.push({ kind: "ball", type: "run", value: pick([0, 0, 0, 1, 1, 1, 2, 3, 4, 6]) }); legal++; }
       if (rnd() < 0.01) ev.push({ kind: "penalty", runs: 5 });
     }
@@ -394,7 +421,7 @@ group("L. The invariant, over many innings");
     return ev;
   };
 
-  let logs = 0, bad = 0, savedSeen = 0, standingSeen = 0, penaltiesSeen = 0, nbBoundaries = 0, byeFours = 0, revised = 0;
+  let logs = 0, bad = 0, savedSeen = 0, standingSeen = 0, penaltiesSeen = 0, nbBoundaries = 0, byeFours = 0, revised = 0, offBallSeen = 0;
   /** @type {string[]} */
   const why = [];
   for (const overs of [20, 50, 15, 8, 1, 20, 12, 30, 20, 6, 25, 20]) {
@@ -424,6 +451,7 @@ group("L. The invariant, over many innings");
       penaltiesSeen += inn.extras.penalty;
       nbBoundaries += inn.ballLog.filter((b) => b.type === "Nb" && (b.value === 4 || b.value === 6)).length;
       byeFours += inn.ballLog.filter((b) => (b.type === "B" || b.type === "LB") && b.value === 4).length;
+      offBallSeen += inn.nonBallWickets.length;
       if (inn.revised) revised++;
     }
   }
@@ -434,6 +462,7 @@ group("L. The invariant, over many innings");
   ok("...and wickets that stood", standingSeen > 0);
   ok("...and no-ball boundaries, four byes, penalty runs and a revision",
      nbBoundaries > 0 && byeFours > 0 && penaltiesSeen > 0 && revised > 0);
+  ok("...and wickets that fell with no ball (retired out, timed out)", offBallSeen > 0);
 }
 
 console.log(`\n${"─".repeat(52)}\nPHASES SUITE: ${pass} passed, ${fail} failed`);

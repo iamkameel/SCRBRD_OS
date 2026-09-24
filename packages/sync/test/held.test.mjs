@@ -10,7 +10,7 @@
  *   node packages/sync/test/held.test.mjs
  */
 import {
-  inningsStart, batters, bowler, ball, voidEvent, BALL_TYPE, deriveInnings, MatchFold,
+  inningsStart, batters, bowler, ball, retire, voidEvent, BALL_TYPE, deriveInnings, MatchFold,
   lawsRefusal, REFUSAL, REFUSAL_TEXT, undoLast,
 } from "@scrbrd/scoring";
 import {
@@ -176,6 +176,11 @@ group("G. In words");
   ok("an undo names what it undid", describeEvent(voidEvent({ target: B1.id }), innings[0], (k) => LOG[0].find((e) => e.id === k))
      === "Undo — of \"Ball — 4 runs, K Naidoo facing A Nel\"");
   ok("an unknown player id is shown as itself", describeEvent(bowler({ bowler: "Z Unknown" }), innings[0]) === "Bowler — Z Unknown to bowl");
+  // SCRBRD-081: a dismissal with no ball says so; a retirement stays one.
+  ok("timed out, a wicket with no ball", describeEvent(retire({ batter: "p3", reason: "timed_out" }), innings[0])
+     === "Wicket, no ball — T Mokoena timed out");
+  ok("retired out, the same", describeEvent(retire({ batter: "p1", reason: "out" }), innings[0]) === "Wicket, no ball — S Dlamini retired out");
+  ok("retired hurt, a retirement", describeEvent(retire({ batter: "p1", reason: "hurt" }), innings[0]) === "Retirement — S Dlamini (retired hurt)");
 }
 
 group("H. The engine: a held event is not queued again when the pad re-offers its log");

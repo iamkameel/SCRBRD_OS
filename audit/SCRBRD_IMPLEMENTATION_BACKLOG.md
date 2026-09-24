@@ -3058,6 +3058,9 @@ keys: after the upgrade a re-offered, already-acknowledged ball reads as unsent 
 - **SCRBRD-069** (run-out end): decided — ask the scorer which end on a run out that completed runs — build.
 - **SCRBRD-080 — Mid-over bowler change records its reason.** Allowed (Law 17.8.1); the pad asks *Injury or suspended?* and records it on the `bowler` event. P2.
 - **SCRBRD-081 — Timed out and retired out are not deliveries.** A non-ball dismissal event; over count and bowler figures unaffected; old logs replay unchanged. P2.
+  **Built 2026-09-24:** a `retire` marked `type: "W"` (docs/SCORING_RULES.md, "Timed out and retired out"). Left
+  open: the career views (db/02, db/13) and the dismissal breakdown (db/26) read `kind = 'ball'`, so these
+  dismissals are not in a player's SQL career dismissals — counting them needs those views redefined (a migration).
 
 ### Decided 2026-09-24 — screens to build next (from docs/redesign/SCREEN_MAP.md)
 - **SCRBRD-082 — Post-match report.** Scorecard, key moments, figures, generated from the log after a match.

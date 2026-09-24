@@ -330,7 +330,14 @@ export function describeEvent(ev, inn, find) {
                    ev.nonStriker != null ? n(ev.nonStriker) : null].filter(Boolean);
       return `Batters — ${who.length ? who.join(" and ") : "nobody named"}`;
     }
-    case "retire":  return `Retirement — ${n(ev.batter)} (${ev.reason === "out" ? "retired out" : "retired hurt"})`;
+    case "retire": {
+      // SCRBRD-081: marked W, it is a dismissal with no ball.
+      if (ev.type === "W") {
+        const how = ev.dismissal === "timed_out" || ev.reason === "timed_out" ? "timed out" : "retired out";
+        return `Wicket, no ball — ${n(ev.batter)} ${how}`;
+      }
+      return `Retirement — ${n(ev.batter)} (${ev.reason === "out" ? "retired out" : "retired hurt"})`;
+    }
     case "penalty": return `Penalty — ${plural(Number(ev.runs ?? 5), "run")} to the ${ev.toBattingTeam === false ? "fielding" : "batting"} side`;
     case "revision": {
       const parts = [ev.overs != null ? `${ev.overs} overs` : null, ev.target != null ? `target ${ev.target}` : null].filter(Boolean);

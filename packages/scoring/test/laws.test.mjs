@@ -294,6 +294,56 @@ group("I. The incremental fold agrees with the full one");
   ok("view() settles on a copy: the live fold is not marked complete", f.byInnings.get(0)?.inn.complete === false);
 }
 
+// ── K. Dismissals with no delivery (SCRBRD-081) ─────────────────
+group("K. Timed out and retired out: a retire marked W");
+{
+  const L = [...open(0), ...runs(0, 1, 0)];   // p2 on strike, p1 at the other end
+  ok("retired out of a batter who is in is accepted",
+     judge(L, at(0, retire({ batter: "p1", reason: "out" }))[0]) === null);
+  ok("...of one who is not, refused", judge(L, at(0, retire({ batter: "p4", reason: "out" }))[0]) === REFUSAL.NOT_AT_CREASE);
+
+  const out = [...L, ...at(0, ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" }))];
+  ok("timed out of the batter due in, after a wicket, is accepted",
+     judge(out, at(0, retire({ batter: "p3", reason: "timed_out" }))[0]) === null);
+  ok("...of a batter at the crease, refused: he got there", judge(out, at(0, retire({ batter: "p1", reason: "timed_out" }))[0]) === REFUSAL.NOT_NEXT_IN);
+  ok("...while both ends are filled, refused: nobody is due",
+     judge(L, at(0, retire({ batter: "p3", reason: "timed_out" }))[0]) === REFUSAL.NOT_NEXT_IN);
+  ok("...of an opener, refused: Law 40 is the incoming batter's",
+     judge(at(0, inningsStart({ battingTeam: "A", squad: SQ_A }), batters({ striker: "p1" }), bowler({ bowler: "w1" })),
+           at(0, retire({ batter: "p2", reason: "timed_out" }))[0]) === REFUSAL.NOT_NEXT_IN);
+  ok("...of a batter already out, refused", judge(out, at(0, retire({ batter: "p2", reason: "timed_out" }))[0]) === REFUSAL.BATTER_ALREADY_OUT);
+  const timed = [...out, ...at(0, retire({ batter: "p3", reason: "timed_out" }))];
+  ok("a batter timed out does not come in afterwards", judge(timed, at(0, batters({ striker: "p3" }))[0]) === REFUSAL.BATTER_ALREADY_OUT);
+  ok("...the next one does", judge(timed, at(0, batters({ striker: "p4" }))[0]) === null);
+  const retOut = [...L, ...at(0, retire({ batter: "p1", reason: "out" }))];
+  ok("a batter retired out does not come back", judge(retOut, at(0, batters({ nonStriker: "p1" }))[0]) === REFUSAL.BATTER_ALREADY_OUT);
+
+  /** @type {LogEvent} */
+  const bowledNoBall = { kind: "retire", batter: "p1", reason: "out", type: "W", dismissal: "bowled" };
+  ok("no other way out is recorded without a ball", judge(L, at(0, bowledNoBall)[0]) === REFUSAL.NEEDS_A_DELIVERY);
+
+  // The over does not move, so Law 17.8 reads the same after one.
+  const overDone = [...open(0), ...runs(0, 0, 0, 0, 0, 0, 0), ...at(0, retire({ batter: "p1", reason: "out" }), batters({ striker: "p3" }))];
+  ok("the over is still over: the same bowler may not start the next",
+     judge(overDone, at(0, bowler({ bowler: "w1" }))[0]) === REFUSAL.CONSECUTIVE_OVERS);
+  const midOver = [...open(0), ...runs(0, 0, 0), ...at(0, retire({ batter: "p1", reason: "out" }), batters({ striker: "p3" }))];
+  ok("...and mid-over the same bowler carries on", judge(midOver, at(0, ball({}))[0]) === null
+     && deriveInnings([...midOver, ...at(0, ball({}))]).bowler === "w1");
+
+  // The last man out on no ball ends the innings; nothing more is recorded.
+  const small = at(0, inningsStart({ battingTeam: "A", bowlingTeam: "B", squad: SQ_A.slice(0, 2), bowlingSquad: SQ_B, overs: 2 }),
+                   batters({ striker: "p1", nonStriker: "p2" }), bowler({ bowler: "w1" }), ball({}));
+  const allOut = [...small, ...at(0, retire({ batter: "p2", reason: "out" }))];
+  ok("retired out can end an innings", deriveInnings(allOut).complete === true);
+  ok("...after which a ball is refused", judge(allOut, at(0, ball({}))[0]) === REFUSAL.INNINGS_OVER);
+  ok("...and so is another dismissal without one", judge(allOut, at(0, retire({ batter: "p1", reason: "out" }))[0]) === REFUSAL.INNINGS_OVER);
+
+  // The shape before SCRBRD-081 is still taken: an older build's queue syncs.
+  ok("a W delivery naming timed out (the old shape) is still accepted",
+     judge(L, at(0, ball({ type: BALL_TYPE.WICKET, dismissal: "timed_out" }))[0]) === null);
+  ok("retired hurt is judged as it always was", judge(L, at(0, retire({ batter: "p1", reason: "hurt" }))[0]) === null);
+}
+
 group("J. Every reason has words for the person who has to clear it");
 {
   const missing = Object.values(REFUSAL).filter((r) => typeof REFUSAL_TEXT[r] !== "string");

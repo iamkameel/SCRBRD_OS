@@ -33,7 +33,7 @@
  * Cricket; deriving made them visible.
  */
 
-import { KIND, BALL_TYPE, isLegal, normaliseDismissal, chargedToBowler, standsOnFreeHit, DISMISSAL, DISMISSAL_LABEL, INNINGS_END_REASON, DERIVED_END_REASONS, inningsEnd } from "./events.mjs";
+import { KIND, BALL_TYPE, isLegal, normaliseDismissal, chargedToBowler, standsOnFreeHit, DISMISSAL, DISMISSAL_LABEL, INNINGS_END_REASON, DERIVED_END_REASONS, RETIREMENT_DISMISSAL, inningsEnd } from "./events.mjs";
 import { CAPTURE_PROFILE } from "./placement.mjs";
 
 /** @import { LogEvent, SquadMember } from "./events.mjs" */
@@ -112,6 +112,10 @@ const BAT_STATUS = { NOT_OUT: "batting", OUT: "out", RETIRED: "retired" };
  * @property {Batter[]} batsmen
  * @property {Bowler[]} bowlers
  * @property {{runs: number, wickets: number, batsman: string, overs: string}[]} fow
+ * @property {{over: number, batter: string | null, dismissal: string}[]} nonBallWickets
+ *   the wickets that fell with no delivery (retired out, timed out: SCRBRD-081),
+ *   each with the 0-based over the next delivery is in. They are in `wickets`
+ *   and `fow`, and in no ballLog entry.
  * @property {{bat1: string, bat2: string, runs: number, balls: number, wicket: number}[]} partnerships
  * @property {{runs: number, balls: number, bat1: string | null, bat2: string | null}} curPartner
  * @property {BallLogEntry[]} ballLog
@@ -139,6 +143,23 @@ const BAT_STATUS = { NOT_OUT: "batting", OUT: "out", RETIRED: "retired" };
 /** Overs in cricket's odd base: 17 legal balls is 2.5 overs.
  *  @param {number} balls */
 export const fmtOvers = (balls) => `${Math.floor(balls / 6)}.${balls % 6}`;
+
+/**
+ * The dismissal a retire event records, or null when it records none.
+ * SCRBRD-081: a retirement is a dismissal exactly when it is marked
+ * `type: "W"` — see retire() in events.mjs — and then it is retired out or
+ * timed out, nothing else: every other way out needs a delivery. The reason
+ * stands in for a dismissal a W-marked event does not spell out.
+ *
+ * @param {LogEvent} ev  a retire event
+ * @returns {"retired_out" | "timed_out" | null}
+ */
+export function retirementDismissal(ev) {
+  if (ev.kind !== KIND.RETIRE || ev.type !== BALL_TYPE.WICKET) return null;
+  const how = normaliseDismissal(ev.dismissal)
+    ?? (Object.hasOwn(RETIREMENT_DISMISSAL, ev.reason ?? "") ? RETIREMENT_DISMISSAL[/** @type {string} */ (ev.reason)] : null);
+  return how === DISMISSAL.RETIRED_OUT || how === DISMISSAL.TIMED_OUT ? how : null;
+}
 
 /** @param {string} id  @param {string} name  @returns {Batter} */
 const newBatter = (id, name) => ({
@@ -180,7 +201,7 @@ function inningsFolder(ctx = {}) {
     runs: 0, wickets: 0, balls: 0,
     extras: { wide: 0, noBall: 0, bye: 0, legBye: 0, penalty: 0 },
 
-    batsmen: [], bowlers: [], fow: [],
+    batsmen: [], bowlers: [], fow: [], nonBallWickets: [],
     partnerships: [], curPartner: { runs: 0, balls: 0, bat1: null, bat2: null },
     ballLog: [], overLog: [],
 
@@ -330,6 +351,29 @@ function inningsFolder(ctx = {}) {
         break;
 
       case KIND.RETIRE: {
+        // A dismissal with no delivery (SCRBRD-081): retired out, timed out.
+        // A wicket falls; the over, the free hit and the bowler's figures do
+        // not move, because nothing was bowled. See retire() in events.mjs for
+        // why the `type: "W"` marker, and not the reason, decides it.
+        const how = retirementDismissal(ev);
+        if (how) {
+          const outBat = batterFor(ev.batter);
+          inn.wickets += 1;
+          if (outBat) { outBat.status = BAT_STATUS.OUT; outBat.dismissal = DISMISSAL_LABEL[how].toLowerCase(); }
+          inn.fow.push({ runs: inn.runs, wickets: inn.wickets, batsman: outBat?.name ?? "?", overs: fmtOvers(inn.balls) });
+          // The over the next delivery is in — where a phase breakdown files it.
+          inn.nonBallWickets.push({ over: Math.floor(inn.balls / 6), batter: ev.batter ?? null, dismissal: how });
+          // Retired out is a batter at the crease: his partnership ends and
+          // his end empties, as on a wicket ball. Timed out is the batter due
+          // in, who never reached it: nothing at the crease changes.
+          if (ev.batter != null && (inn.striker === ev.batter || inn.nonStriker === ev.batter)) {
+            closePartnership();
+            if (inn.striker === ev.batter) inn.striker = null; else inn.nonStriker = null;
+            inn.curPartner = { runs: 0, balls: 0, bat1: inn.striker, bat2: inn.nonStriker };
+            partnerStartRuns = inn.runs;
+          }
+          break;
+        }
         const b = batterFor(ev.batter);
         if (b) { b.status = BAT_STATUS.RETIRED; b.dismissal = `retired ${ev.reason ?? "hurt"}`; }
         closePartnership();

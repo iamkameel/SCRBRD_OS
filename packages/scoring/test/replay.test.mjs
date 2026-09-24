@@ -1052,5 +1052,95 @@ group("I. What the innings declared it would capture (SCRBRD-039)");
      m.innings[0].declaredProfile === "quick" && m.innings[1].declaredProfile === null);
 }
 
+// ── J. Dismissals with no delivery (SCRBRD-081) ──────────
+group("J. Timed out and retired out are not deliveries (SCRBRD-081)");
+{
+  const five = [...open(), runs(1), runs(0), runs(4)];
+  const before = deriveInnings(five);
+
+  // Retired out: the non-striker (p1, after the single) walks off.
+  const ro = retire({ batter: "p1", reason: "out" });
+  ok("retired out is built as a retire marked W, with the canonical dismissal",
+     ro.kind === KIND.RETIRE && ro.type === BALL_TYPE.WICKET && ro.dismissal === DISMISSAL.RETIRED_OUT);
+  const rOut = deriveInnings([...five, ro]);
+  ok("retired out is a wicket", rOut.wickets === before.wickets + 1);
+  ok("...that bowls no ball: the over's count and the innings' balls do not move",
+     rOut.balls === before.balls && rOut.ballLog.length === before.ballLog.length);
+  const w1 = must(rOut.bowlers.find((b) => b.id === "w1"));
+  const w1Before = must(before.bowlers.find((b) => b.id === "w1"));
+  ok("...and the bowler's figures do not move: no ball, no run, no wicket",
+     w1.balls === w1Before.balls && w1.runs === w1Before.runs && w1.wickets === 0);
+  const p1 = must(rOut.batsmen.find((b) => b.id === "p1"));
+  ok("the batter is out, retired out, his runs and balls kept",
+     p1.status === "out" && p1.dismissal === "retired out" && p1.runs === 1 && p1.balls === 1);
+  ok("his end is empty and the other batter stays where he was",
+     rOut.nonStriker === null && rOut.striker === before.striker);
+  ok("the fall of wickets has him, at the score and overs when he left",
+     rOut.fow.length === 1 && rOut.fow[0].batsman === "James Whitfield" && rOut.fow[0].runs === 5 && rOut.fow[0].overs === "0.3");
+  ok("...and the fold says the wicket fell with no ball, in the first over",
+     rOut.nonBallWickets.length === 1 && rOut.nonBallWickets[0].over === 0 && rOut.nonBallWickets[0].dismissal === "retired_out");
+  ok("the partnership closes on it", rOut.partnerships.length === 1 && rOut.partnerships[0].runs === 5);
+
+  // Timed out: the batter due in after a wicket never gets there.
+  const out = [...five, ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" })];
+  const afterWkt = deriveInnings(out);
+  const to = retire({ batter: "p3", reason: "timed_out" });
+  ok("timed out is built the same way", to.type === BALL_TYPE.WICKET && to.dismissal === DISMISSAL.TIMED_OUT);
+  const tOut = deriveInnings([...out, to]);
+  ok("timed out is a wicket", tOut.wickets === 2);
+  ok("...on no ball, credited to nobody",
+     tOut.balls === afterWkt.balls && must(tOut.bowlers.find((b) => b.id === "w1")).wickets === 1);
+  ok("...of a batter who never reached the crease: both ends as they were",
+     tOut.striker === afterWkt.striker && tOut.nonStriker === afterWkt.nonStriker);
+  const p3 = must(tOut.batsmen.find((b) => b.id === "p3"));
+  ok("he is on the card: timed out, 0 off 0", p3.status === "out" && p3.dismissal === "timed out" && p3.balls === 0);
+  const next = deriveInnings([...out, to, batters({ striker: "p4" })]);
+  ok("the next batter fills the end", next.striker === "p4" && next.nonStriker === afterWkt.nonStriker);
+
+  // A free hit is not spent by something that is not a ball.
+  const fh = deriveInnings([...open(), ball({ type: BALL_TYPE.NO_BALL }), retire({ batter: "p1", reason: "out" })]);
+  ok("a free hit survives a retirement between the balls", fh.freeHit === true);
+
+  // The last wicket ends the innings, on no ball.
+  const three = [inningsStart({ battingTeam: "A", bowlingTeam: "B", squad: SQ_A.slice(0, 3), bowlingSquad: SQ_B }),
+    batters({ striker: "p1", nonStriker: "p2" }), bowler({ bowler: "w1" }), runs(0),
+    ball({ type: BALL_TYPE.WICKET, dismissal: "caught" }), retire({ batter: "p2", reason: "out" })];
+  const allOut = deriveInnings(three);
+  ok("a side can be all out on a retirement", allOut.complete && allOut.endReason === "all_out" && allOut.balls === 2);
+
+  // Retired hurt is untouched: no marker, no wicket.
+  const hurt = retire({ batter: "p1", reason: "hurt" });
+  ok("retired hurt carries no marker and is no wicket",
+     !("type" in hurt) && !("dismissal" in hurt) && deriveInnings([...five, hurt]).wickets === 0);
+
+  // OLD LOGS REPLAY EXACTLY AS BEFORE. Two shapes an older log can hold:
+  //   - the pad's own, until now: a W delivery naming timed out / retired out;
+  //   - the model's: a retire with reason "out" and no marker.
+  // The figures below are what the fold derived from these before SCRBRD-081,
+  // written out rather than recomputed, so a change to either is a failure.
+  const oldTimed = deriveInnings([...five, ball({ type: BALL_TYPE.WICKET, dismissal: "timed_out" })]);
+  ok("an old W ball 'timed out' still counts a legal ball", oldTimed.balls === 4 && oldTimed.wickets === 1);
+  ok("...in the bowler's overs, with no wicket to him",
+     must(oldTimed.bowlers.find((b) => b.id === "w1")).balls === 4 && must(oldTimed.bowlers.find((b) => b.id === "w1")).wickets === 0);
+  ok("...against the striker, as it always did", oldTimed.striker === null && oldTimed.nonStriker === "p1"
+     && must(oldTimed.batsmen.find((b) => b.id === "p2")).dismissal === "timed out"
+     && oldTimed.fow[0].overs === "0.4" && oldTimed.nonBallWickets.length === 0);
+  const oldRetired = deriveInnings([...five, ball({ type: BALL_TYPE.WICKET, dismissal: "retired_out" })]);
+  ok("an old W ball 'retired out' replays the same way",
+     oldRetired.balls === 4 && oldRetired.wickets === 1 && must(oldRetired.batsmen.find((b) => b.id === "p2")).balls === 3);
+  /** @type {LogEvent} */
+  const legacyRetireOut = { kind: "retire", batter: "p1", reason: "out" };
+  const oldRet = deriveInnings([...five, legacyRetireOut]);
+  ok("an unmarked retire 'out' is still no wicket, status retired",
+     oldRet.wickets === 0 && must(oldRet.batsmen.find((b) => b.id === "p1")).status === "retired"
+     && must(oldRet.batsmen.find((b) => b.id === "p1")).dismissal === "retired out" && oldRet.nonBallWickets.length === 0);
+
+  // Through the wire: the row a retirement is stored as.
+  const row = toRow({ ...to, innings: 0 });
+  ok("stored: kind retire, ball_type W, the dismissal in its column, the batter in payload",
+     row.kind === "retire" && row.ball_type === "W" && row.dismissal === "timed_out" && row.payload.batter === "p3");
+  ok("...and back, the same wicket", deriveInnings([...out, fromRow({ ...row, seq: 99, client_ts: new Date().toISOString() })]).wickets === 2);
+}
+
 console.log(`\n${"─".repeat(52)}\nSCORING SUITE: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

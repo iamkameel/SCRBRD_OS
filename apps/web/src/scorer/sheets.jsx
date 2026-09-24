@@ -498,7 +498,15 @@ function TakeOverTab({ matchId, device, onTakenOver, onClose }) {
 // normalised at the door rather than being tested for at every use.
 const entry = (p) => (typeof p === "string" ? { id: p, name: p } : { id: p?.id ?? p?.name, name: p?.name ?? p?.id });
 
-function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,header=null}){
+/**
+ * `onTimedOut` is given only while an end is empty after a wicket or a
+ * retirement — when Law 40 can apply (SCRBRD-081; the pad asks lawsRefusal).
+ * It turns the sheet's pick into "this batter was timed out": a wicket with no
+ * ball, recorded, and the sheet stays open for the batter who comes in.
+ */
+function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,header=null,onTimedOut=null}){
+  const[timedOut,setTimedOut]=useState(false);
+  const send=timedOut&&onTimedOut?(id)=>{setTimedOut(false);onTimedOut(id);}:onSend;
   const teamInfo=INT_TEAMS[teamKey]||null;
   const roster=(squad||[]).map(entry);
   const available=roster.filter(p=>{
@@ -533,14 +541,22 @@ function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,head
             })}
           </div>
         )}
+        {onTimedOut&&(
+          <button type="button" data-testid="timed-out-toggle" onClick={()=>setTimedOut(v=>!v)} className="pressBtn" style={{
+            width:"100%",marginBottom:"12px",padding:"9px 12px",borderRadius:D.md,cursor:"pointer",textAlign:"left",
+            border:`1px solid ${timedOut?D.rose+"55":D.border}`,background:timedOut?`${D.rose}12`:"transparent",
+            fontFamily:D.body,fontSize:"12px",fontWeight:500,color:timedOut?D.roseText:D.textSecondary}}>
+            {timedOut?"Timed out — tap the batter who did not arrive in time (Law 40)":"Incoming batter timed out?"}
+          </button>
+        )}
         {/* Available */}
-        <Lbl sx={{marginBottom:"7px"}}>Available to Bat</Lbl>
+        <Lbl sx={{marginBottom:"7px"}}>{timedOut?"Who was timed out?":"Available to Bat"}</Lbl>
         <div style={{display:"flex",flexDirection:"column",gap:"4px",marginBottom:"12px"}}>
           {available.map((p,i)=>{
             const ri=getRoleInfo(p.name);
             const pos=roster.findIndex(r=>r.id===p.id)+1;
             return (
-              <button key={p.id} onClick={()=>onSend(p.id)} className="pressBtn" style={{
+              <button key={p.id} onClick={()=>send(p.id)} className="pressBtn" style={{
                 display:"flex",alignItems:"center",gap:"10px",
                 padding:"9px 12px",borderRadius:D.md,cursor:"pointer",textAlign:"left",width:"100%",
                 border:`1px solid ${i===0?D.emerald+"44":D.border}`,
@@ -596,7 +612,7 @@ function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,head
           </details>
         )}
         <Sep sx={{marginBottom:"12px"}}/>
-        <CustomBatEntry onSend={onSend}/>
+        <CustomBatEntry onSend={send}/>
       </div>
     </Sheet>
   );
@@ -621,13 +637,21 @@ function CustomBatEntry({onSend}){
 /* ═══════════════════════════════════════════════════════
    WICKET SHEET
 ═══════════════════════════════════════════════════════ */
-function WicketSheet({batName,fieldingSquad,onClose,onConfirm}){
+function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,onClose,onConfirm}){
   const[mode,setMode]=useState(DISMISSAL.BOWLED);
   const[fielder,setFielder]=useState("");
   const[fielterFilter,setFielderFilter]=useState("");
-  // The eleven in the Laws, from the one list the reducer and the API read.
-  // The button shows the label; the event carries the canonical value.
-  const modes=Object.keys(DISMISSAL_LABEL);
+  // Whose wicket, where the mode leaves it open. Retired out is either
+  // batter's; the rest default to the striker, as the event does.
+  const[who,setWho]=useState(striker?.id??null);
+  // The Laws' ways out, from the one list the reducer and the API read. The
+  // button shows the label; the event carries the canonical value. Timed out
+  // is not here: it is the INCOMING batter's (Law 40), who is never at the
+  // crease while this sheet is open — the batting-order sheet offers it while
+  // an end is empty (SCRBRD-081). Retired out is here, and is recorded as the
+  // dismissal with no ball it is, not as a delivery.
+  const modes=Object.keys(DISMISSAL_LABEL).filter(m=>m!==DISMISSAL.TIMED_OUT);
+  const asksWho=mode===DISMISSAL.RETIRED_OUT&&striker&&nonStriker;
   const needsFielder=mode===DISMISSAL.CAUGHT||mode===DISMISSAL.RUN_OUT;
   const isStumped=mode===DISMISSAL.STUMPED;
   // Find WK from fielding squad
@@ -640,16 +664,20 @@ function WicketSheet({batName,fieldingSquad,onClose,onConfirm}){
     setMode(m);
     setFielder("");
     setFielderFilter("");
+    setWho(striker?.id??null);
     if(m===DISMISSAL.STUMPED&&wkName)setFielder(wkName);
   };
+  const whoName=who===nonStriker?.id?nonStriker?.name:(striker?.name??batName);
+  const pill=(on)=>({flex:1,padding:"10px",borderRadius:D.md,cursor:"pointer",fontFamily:D.body,fontSize:"13px",fontWeight:500,
+    border:"1px solid "+(on?D.rose+"55":D.border),background:on?D.rose+"1a":D.surf2,color:on?"#fca5a5":D.textSecondary});
   return (
     <Sheet title="WICKET!" accent={D.rose} onClose={onClose}>
       <div style={{color:D.textSecondary,fontSize:"13px",fontFamily:D.body,marginBottom:"14px",paddingTop:"4px"}}>
-        {batName} is dismissed
+        {asksWho?whoName:batName} is dismissed
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"7px",marginBottom:"14px"}}>
         {modes.map(m=>(
-          <button key={m} onClick={()=>handleMode(m)} className="pressBtn" style={{
+          <button key={m} data-testid={`wicket-mode-${m}`} onClick={()=>handleMode(m)} className="pressBtn" style={{
             padding:"11px",borderRadius:D.md,cursor:"pointer",fontFamily:D.body,fontSize:"13px",fontWeight:500,
             border:"1px solid "+(mode===m?D.rose+"55":D.border),
             background:mode===m?D.rose+"1a":D.surf2,
@@ -658,6 +686,20 @@ function WicketSheet({batName,fieldingSquad,onClose,onConfirm}){
           </button>
         ))}
       </div>
+      {asksWho&&(
+        <div style={{marginBottom:"12px"}}>
+          <Lbl sx={{marginBottom:"7px"}}>Who is out?</Lbl>
+          <div style={{display:"flex",gap:"7px"}}>
+            <button data-testid="wicket-who-striker" onClick={()=>setWho(striker.id)} className="pressBtn" style={pill(who===striker.id)}>{striker.name}</button>
+            <button data-testid="wicket-who-nonstriker" onClick={()=>setWho(nonStriker.id)} className="pressBtn" style={pill(who===nonStriker.id)}>{nonStriker.name}</button>
+          </div>
+          {mode===DISMISSAL.RETIRED_OUT&&(
+            <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginTop:"6px"}}>
+              Recorded between deliveries: no ball of the over, nothing to the bowler.
+            </div>
+          )}
+        </div>
+      )}
       {isStumped&&(
         <div style={{marginBottom:"12px",padding:"10px 13px",borderRadius:D.md,
           background:D.violet+"0e",border:"1px solid "+D.violet+"33"}}>
@@ -704,7 +746,8 @@ function WicketSheet({batName,fieldingSquad,onClose,onConfirm}){
       )}
       <div style={{display:"flex",gap:"10px",marginTop:"4px"}}>
         <Btn variant="ghost" sx={{flex:1,borderRadius:D.md}} onClick={onClose}>Cancel</Btn>
-        <Btn variant="danger" sx={{flex:2,borderRadius:D.md}} onClick={()=>onConfirm(mode,displayFielder)}>Confirm Out</Btn>
+        <Btn variant="danger" sx={{flex:2,borderRadius:D.md}} data-testid="wicket-confirm"
+          onClick={()=>onConfirm(mode,displayFielder,{dismissed:asksWho&&who!==striker?.id?who:null})}>Confirm Out</Btn>
       </div>
     </Sheet>
   );

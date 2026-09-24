@@ -26,7 +26,9 @@
  *             not one: the fold decides that once, with standsOnFreeHit(),
  *             and writes the answer on the log entry as `freeHitSaved`, so
  *             reading that flag IS asking the fold. A second copy of the
- *             rule here is how the two came apart (SCRBRD-072).
+ *             rule here is how the two came apart (SCRBRD-072). Retired out
+ *             and timed out fall with no ball (SCRBRD-081); the fold files
+ *             them in inn.nonBallWickets with their over, and so do these.
  *   fours, sixes  the batters' fours and sixes: off the bat, so a no-ball
  *             hit for four is one and four byes are not.
  *
@@ -198,10 +200,14 @@ export function derivePhases(inn, { opposing = null } = {}) {
   // Number.isFinite proves inn is there and its overs a number; it is no guard to the checker.
   const overs = Number.isFinite(inn?.overs) ? /** @type {{overs: number}} */ (inn).overs : 20;
   const log = inn?.ballLog ?? [];
+  // Wickets that fell with no delivery — retired out, timed out (SCRBRD-081).
+  // They are in the fold's wickets and in no ball, so they are filed by the
+  // over they fell in, which the fold records beside them.
+  const offBall = inn?.nonBallWickets ?? [];
   // The overs actually reached. A revision below where the innings stood
   // would otherwise leave its last overs outside every span, and those balls
   // in no phase; the fold counts every ball it folds, so must this.
-  const reached = log.reduce((n, b) => Math.max(n, (b.over ?? 0) + 1), 0);
+  const reached = [...log, ...offBall].reduce((n, b) => Math.max(n, (b.over ?? 0) + 1), 0);
   const spans = phasesFor(Math.max(overs, reached));
   if (!spans) return null;
 
@@ -253,6 +259,12 @@ export function derivePhases(inn, { opposing = null } = {}) {
       // different things to work on.
       if (b.contact === "beat") acc.beaten += 1;
     }
+  }
+
+  for (const w of offBall) {
+    const overNo = (w.over ?? 0) + 1;
+    const name = PHASE_NAMES.find((p) => spans[p] && overNo >= spans[p].from && overNo <= spans[p].to);
+    if (name) buckets[name].wickets += 1;
   }
 
   /** @param {number} n  @param {number} d */

@@ -179,6 +179,7 @@ Refused, with the reason named:
 | A dismissed batter, or one retired out, does not come back; retired hurt may (Law 25.4) | new |
 | Once play starts, a not-out batter leaves only by dismissal or retirement — no replacing him; swapping ends is allowed | new |
 | Only a batter at the crease can retire; nothing is recorded for an innings nobody opened | new |
+| A wicket with no ball is retired out (a batter who is in) or timed out (the batter due in, Law 40) — nothing else | SCRBRD-081 |
 | A live `void` names the latest event that still counts in the innings in play — last in, first out, as the pad's undo. Anything older is an amendment (a second person, `scoring_amendment`) | new, `undo.mjs` |
 
 Not refused, deliberately — each would need a product decision: a dismissal on
@@ -313,4 +314,43 @@ Taken by the product owner on the rules the commit-time Laws check left open.
    the first is the batter's (Law 21.6, Law 23). Old events replay unchanged. Built as SCRBRD-068.
 5. **Timed out and retired out are not deliveries.** Recorded as a dismissal event that is not a ball: the over's
    count and the bowler's figures are unaffected and the bowler gets no credit. Old matches replay unchanged.
-   Built as SCRBRD-081.
+   Built as SCRBRD-081 — see below.
+
+### Timed out and retired out (SCRBRD-081)
+
+**The shape.** A `retire` event marked `type: "W"`, with the canonical `dismissal` (`retired_out` or `timed_out`):
+`retire({ batter, reason: "out" })` or `retire({ batter, reason: "timed_out" })`. Retired hurt is unchanged —
+`retire({ batter, reason: "hurt" })`, no marker, no wicket, may resume.
+
+**Why a flag on `retire` and not a new kind.** `retire` already is "a batter's innings ends with no delivery": retired
+out was already one of its reasons, the server already judges it (the batter must be in; a batter retired out does not
+return), the held sheet already names it, and an older build folding one still empties the end instead of ignoring an
+unknown kind. And the marker is the one every shipped SQL fold already reads: `match_live_score` and
+`scoring_verify_takeover` count a wicket as `ball_type = 'W'` and a ball as `kind = 'ball'`, so a retire row with
+`ball_type = 'W'` is — to the public score and to the handover check — a wicket that is not a ball, with no migration.
+A new kind would have needed the same marker to be counted.
+
+**The fold.** A wicket, a fall-of-wicket entry at the score and overs when it fell, the batter out ("retired out",
+"timed out"); `balls`, the over, the free hit and every bowler's figures unchanged. Retired out empties the batter's
+end and closes the partnership; timed out is the incoming batter, so nothing at the crease changes. Each is also in
+`inn.nonBallWickets` with the over it fell in, which is how phases file it (their wickets still sum to the innings').
+
+**The Laws at commit.** Retired out: the batter is at the crease. Timed out (Law 40): an end is empty after a wicket or a
+retirement (not the openers), and the batter is neither at the crease nor already out (`not_next_in`,
+`batter_already_out`). Either is refused once the innings is over or closed. A `retire` marked W naming any other way
+out is refused (`needs_a_delivery`).
+
+**Old logs.** A W *delivery* naming timed out or retired out — the pad's shape until now — replays exactly as before (a
+legal ball, in the bowler's overs, against the striker unless `dismissed` says otherwise) and is still accepted at
+commit, so an older build's queue syncs. A `retire` with reason `out` and no marker (the model allowed it; nothing
+emitted it) is still no wicket. Neither is rewritten.
+
+**The pad.** Retired out is on the wicket sheet, which now asks which batter; it records the retire event, not a ball.
+Timed out is not on the wicket sheet — both batters are in while it is open — but on the batting-order sheet while an
+end is empty after a wicket or a retirement ("Incoming batter timed out?"), offered only when `lawsRefusal` would take
+it. The new batter is sent to the end that is empty (it used to be the striker's, always — which after a wicket on the
+last ball of an over dropped the not-out survivor from the crease, and the server refused it as `crease_occupied`).
+
+**Not moved.** The career views in `db/02`/`db/13` and the dismissal breakdown (`db/26`) read `kind = 'ball'`, so a
+retired out or timed out recorded this way is not in a player's career dismissals there. Counting it needs those views
+redefined (a migration); the live score, the handover check and every device fold already count it.
