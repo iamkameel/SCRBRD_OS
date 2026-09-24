@@ -381,8 +381,10 @@ there needs those views redefined — a migration.
 (`BOWLER_CHANGE_REASON`). It is present only on a change during an over and omitted otherwise, so a bowler for a new
 over is the same event it always was. The constructor refuses any other value.
 
-**Mid-over** means a delivery of the over the next ball is in has been bowled (`isMidOver`, in `replay.mjs`) — a wide
-or no-ball that opened the over counts. Correcting the opening bowler before the first ball is not a change.
+**Mid-over** means a delivery of the over the next ball is in has been bowled, and a bowler is on (`isMidOver`, in
+`replay.mjs`) — a wide or no-ball that opened the over counts. Correcting the opening bowler before the first ball is
+not a change, and nor is naming a bowler when nobody is on (a pad holding balls the server refused for want of one,
+SCRBRD-070's cascade): there is nobody to replace.
 
 **No reason: refused.** Law 17.8.1 lets a bowler be replaced during an over only when he is incapacitated or
 suspended, so the reason is what makes the change lawful, and the pad always asks. A new mid-over `bowler` event with no

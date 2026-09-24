@@ -149,19 +149,25 @@ const BAT_STATUS = { NOT_OUT: "batting", OUT: "out", RETIRED: "retired" };
 export const fmtOvers = (balls) => `${Math.floor(balls / 6)}.${balls % 6}`;
 
 /**
- * Is an over under way — has a delivery of the over the next ball is in been
- * bowled? A bowler named now takes over from one who has started it
- * (SCRBRD-080, Law 17.8.1); at an over's start there is nobody to take over
- * from. A wide or no-ball counts: it is part of the over though not one of
- * its six. The log is in order, so the last entry answers.
+ * Is an over under way, with a bowler on — has a delivery of the over the
+ * next ball is in been bowled, by the bowler the fold has? A bowler named now
+ * takes over from one who has started it (SCRBRD-080, Law 17.8.1); at an
+ * over's start there is nobody to take over from. A wide or no-ball counts: it
+ * is part of the over though not one of its six. The log is in order, so the
+ * last entry answers.
  *
- * @param {Pick<Innings, "balls" | "ballLog"> | Partial<Innings> | null | undefined} inn
+ * With nobody on there is nobody to replace: a pad whose log holds balls the
+ * server refused for want of a bowler (SCRBRD-070's cascade) names one then,
+ * and that is naming the bowler, not changing him.
+ *
+ * @param {Pick<Innings, "balls" | "ballLog" | "bowler"> | Partial<Innings> | null | undefined} inn
  * @returns {boolean}
  */
 export function isMidOver(inn) {
-  const log = inn?.ballLog ?? [];
+  if (inn?.bowler == null) return false;
+  const log = inn.ballLog ?? [];
   const last = log[log.length - 1];
-  return last != null && last.over === Math.floor((inn?.balls ?? 0) / 6);
+  return last != null && last.over === Math.floor((inn.balls ?? 0) / 6);
 }
 
 /**

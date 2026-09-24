@@ -366,6 +366,13 @@ group("L. A bowler replaced during an over: injury or suspended");
   const done = [...open(0), ...runs(0, 0, 0, 0, 0, 0, 0)];
   ok("a new over needs no reason", judge(done, at(0, bowler({ bowler: "w2" }))[0]) === null);
   ok("nor does correcting the opening bowler before a ball", judge(open(0), at(0, bowler({ bowler: "w2" }))[0]) === null);
+  // A pad holding balls the server refused for want of a bowler (the held
+  // cascade, SCRBRD-070) has balls in an over and nobody on: naming one then
+  // replaces nobody.
+  const nobodyOn = [...open(0), ...runs(0, 0, 0, 0, 0, 0, 0), ...runs(0, 4)];
+  ok("with balls in the over and nobody on, naming a bowler needs no reason",
+     deriveInnings(nobodyOn).bowler === null && judge(nobodyOn, at(0, bowler({ bowler: "w2" }))[0]) === null
+     && deriveInnings([...nobodyOn, ...at(0, bowler({ bowler: "w2" }))]).bowlerChanges.length === 0);
   // Law 17.8, "or parts thereof", still binds the man who finished the over.
   const finished = [...two, ...at(0, bowler({ bowler: "w3", reason: "injury" })), ...runs(0, 0, 0, 0)];
   ok("the replacement may not bowl the next over", judge(finished, at(0, bowler({ bowler: "w3" }))[0]) === REFUSAL.CONSECUTIVE_OVERS);
