@@ -64,6 +64,40 @@ group("B. A number nobody has earned is not produced");
      bowlingIndex({ runsConceded: 40, ballsBowled: MIN_BALLS_BOWLED, wickets: 2 }).value !== null);
 }
 
+// ── B2. A non-finite count is never scored ────────────────
+//
+// SCRBRD-073: `NaN < 30` and `Infinity < 30` are both false, so a malformed
+// count used to slip straight past the sample floor, and the arithmetic
+// downstream read the resulting null score as zero — a confidently wrong
+// number ("good" confidence) rather than no number at all.
+group("B2. A non-finite count is never scored");
+{
+  // The exact case from the backlog entry: a bad ballsFaced string.
+  const badBallsString = battingIndex({ runs: 100, ballsFaced: "x", dismissals: 2 });
+  ok("a non-numeric ballsFaced string is refused, not scored 10.8", badBallsString.value === null);
+  ok("...at no confidence, not 'good'", badBallsString.confidence === "none");
+
+  ok("a literal NaN ballsFaced is refused",
+     battingIndex({ runs: 40, ballsFaced: NaN, dismissals: 1 }).value === null);
+  ok("an infinite ballsFaced is refused, not treated as an enormous sample",
+     battingIndex({ runs: 40, ballsFaced: Infinity, dismissals: 1 }).value === null);
+  ok("a non-finite dismissals count is refused even with valid balls",
+     battingIndex({ runs: 400, ballsFaced: 360, dismissals: "x" }).value === null);
+  ok("a non-finite runs count is refused even with valid balls and dismissals",
+     battingIndex({ runs: "x", ballsFaced: 360, dismissals: 12 }).value === null);
+
+  ok("a non-numeric ballsBowled string is refused",
+     bowlingIndex({ runsConceded: 40, ballsBowled: "x", wickets: 2 }).value === null);
+  ok("a literal NaN ballsBowled is refused",
+     bowlingIndex({ runsConceded: 40, ballsBowled: NaN, wickets: 2 }).value === null);
+  ok("an infinite ballsBowled is refused",
+     bowlingIndex({ runsConceded: 40, ballsBowled: Infinity, wickets: 2 }).value === null);
+  ok("a non-finite wickets count is refused even with valid balls",
+     bowlingIndex({ runsConceded: 200, ballsBowled: 120, wickets: "x" }).value === null);
+  ok("a non-finite runsConceded count is refused even with valid balls and wickets",
+     bowlingIndex({ runsConceded: "x", ballsBowled: 120, wickets: 5 }).value === null);
+}
+
 // ── C. Undefined is not zero ─────────────────────────────
 group("C. Undefined statistics stay undefined");
 {
