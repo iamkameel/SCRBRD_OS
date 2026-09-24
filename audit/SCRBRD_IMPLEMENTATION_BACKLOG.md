@@ -2955,3 +2955,25 @@ then returns null, which the arithmetic reads as 0 (`battingIndex({runs:100, bal
 10.8, "good"). Today's callers pass numbers from the fold, so this bites only a bad caller.
 **Expected behaviour:** a non-finite count yields no index (null / "insufficient"), never a number.
 **Data migration required:** NO.
+
+### SCRBRD-074 — An undone ball that has not been sent yet is still sent
+**Title:** Undo drops an unsynced event from the pad's log but not from the outbox, so the server records a ball the pad does not show
+**Priority:** P1 · **Domain:** Scoring / sync · **Type:** correctness (silent divergence)
+**Affected files:** `packages/sync/src/sync-engine.mjs` (no way to withdraw a pending event), `packages/scoring/src/undo.mjs`
+("not synced → drop" rule), `apps/web/src/scorer/engine.jsx` (`undoLastBall`)
+**Found 2026-09-24** building SCRBRD-067 and confirmed by reading: `SyncEngine` has no method that removes an event
+from `pending`, and the pad's undo only cuts its own log. A mis-tap undone while offline (or before the next flush) is
+sent when signal returns; the server then holds a delivery the scorer undid, with nothing on the pad to show it.
+**Expected behaviour:** undoing an event still in the outbox withdraws it from the outbox (persisted storage too) in the
+same step, atomically with the log change; one implementation of the "never reached the server" rule covering both
+held and pending events. An event already in flight is the hard case: if a flush is in progress, undo must either wait
+for its answer or fall back to a `void`.
+**Tests required:** unit (sync-engine withdraw, including mid-flush); browser walk — go offline, score, undo, go online,
+server and pad agree.
+**Data migration required:** NO.
+
+### SCRBRD-075 — Loose ends found building the toss fix
+**Priority:** P2/P3 · **Domain:** Scoring / sync
+- **Acked ids are memory-only.** After a reload, `syncedIds()` is empty, so offline, undo treats a ball the server already has as unsynced and cuts it locally instead of voiding it (heals online when duplicates come back acked). Persist acked ids, or ask the server before cutting. (P2)
+- **A toss answered offline is never sent.** If the pad cannot read the toss, asks the scorer, and the POST also fails, the answer is not retried; the server may also have held a different toss the pad could not read. The innings still follows the scorer's answer. Queue the toss like an event, or re-check on reconnect. (P3)
+- **Incoming handover device mints its own `innings_start`** when it opens a fixture with no saved log, with a new id. Check against docs/SCORING_HANDOVER_SPEC.md: the incoming device should replay the server's log, not start one. (P2 — needs a look)
