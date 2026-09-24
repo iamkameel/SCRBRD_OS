@@ -258,6 +258,38 @@ statement (a trigger, so every writer reaches it). Nobody is asked to release a
 ball already in the log. The same key with other content is still a conflict,
 and its held copy stays for a person.
 
+### An approved amendment meets the Laws, less last-in-first-out
+
+An amendment (`scoring_amendment`: filed with `scoring.amend.request`, approved
+by somebody else with `scoring.amend.approve`) appends a `void` of an OLDER
+delivery — that is what it is for. Since SCRBRD-076 (db/38)
+`scoring_amendment_decide()` takes the same per-match lock as the live path
+and a release, so a live batch can no longer append after the void without
+judging against it; the route then judges the void with `lawsRefusal()` in a
+savepoint, as for a release. Every void rule applies **except** "only the
+latest event" — that is the pad's undo, and applied here it would refuse
+every amendment. In practice the one the Laws add is that the start of an
+innings is never voided (`void_foundation`): the SQL function already answers
+a missing, voided or void target as `no_such_live_delivery`. A refusal writes
+nothing, leaves the request pending, and answers
+`{ ok: false, reason: "laws_refused", law, text }`. The balls bowled after an
+amended delivery are not re-judged; whether a correction should re-judge them
+is a product decision.
+
+### A value the record cannot hold is refused per event
+
+A contact, trajectory, placement or capture profile outside `ball_event`'s
+column CHECKs (db/07), or a value that is not the column's type, is refused
+per event in `refused` — `contact_unknown`, `trajectory_unknown`,
+`trajectory_without_contact`, `placement_invalid`, `capture_profile_unknown`,
+`value_refused`, each with words in `REFUSAL_TEXT` — and the rest of the batch
+is written (SCRBRD-077). It used to fail the whole batch with a 500 that the
+device resent forever. The placement vocabularies `placement.mjs` owns are
+checked at the door, before anything is held; everything else is judged by the
+CHECKs themselves, the write of each event running in its own savepoint. A
+held ball that carries one is refused, in words, when somebody tries to
+release it.
+
 ## Adding a new scoring situation
 
 Do not add a counter. Add an event kind in `events.mjs`, fold it in

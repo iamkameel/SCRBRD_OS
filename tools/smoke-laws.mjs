@@ -32,7 +32,7 @@ import pg from "pg";
 import { SyncEngine, memoryStorage } from "@scrbrd/sync";
 import {
   deriveInnings, deriveMatch, fromRow, inningsStart, batters, bowler, ball, voidEvent, sealInnings,
-  BALL_TYPE, newEventId, REFUSAL, toRow,
+  BALL_TYPE, newEventId, REFUSAL, REFUSAL_TEXT, toRow, PLACEMENT_SOURCE, PLACEMENT_NULL, CAPTURE_PROFILE,
 } from "@scrbrd/scoring";
 
 const PORT = 8891;
@@ -290,6 +290,79 @@ try {
   await oldWriter(lost, top + 2);
   const r2 = await shotsPost(lost);
   ok("(an old row that had lost a contact would read as a conflict, not a duplicate)", r2?.conflicts?.length === 1, JSON.stringify(r2));
+
+  group("A value the record cannot hold refuses one event, not the batch (SCRBRD-077)");
+  // A value outside a column CHECK used to throw inside appendEvents: the
+  // whole batch a 500, and the device resending it forever. Now each is
+  // refused on its own, named, and the legal balls either side are written.
+  const bad = (name, fields) => ({ name, ev: stamp(0, ball({ type: BALL_TYPE.RUN, value: 0, ...fields })) });
+  const good1 = stamp(0, ball({ type: BALL_TYPE.RUN, value: 1 }));
+  const good2 = stamp(0, ball({ type: BALL_TYPE.RUN, value: 2 }));
+  const cases = [
+    [bad("contact", { contact: "thick_edge" }), "contact_unknown"],
+    [bad("trajectory", { contact: "middle", trajectory: "skied" }), "trajectory_unknown"],
+    [bad("a path off a bat that missed", { contact: "beat", trajectory: "aerial" }), "trajectory_without_contact"],
+    [bad("placement source", { placementSource: "guess" }), "placement_invalid"],
+    [bad("why there is no placement", { placementNull: "forgot" }), "placement_invalid"],
+    [bad("capture profile", { captureProfile: "extreme" }), "capture_profile_unknown"],
+    [bad("a bearing past 359", { placementSource: "point", theta: 400, radius: 0.5 }), "placement_invalid"],
+    [bad("a zone", { zone: "deep" }), "placement_invalid"],
+    [bad("a segment that is not a number", { seg: "abc" }), "value_refused"],
+  ];
+  const valueBatch = [good1, ...cases.map(([c]) => c.ev), good2];
+  const vr = await api(`/api/matches/${SHOTS}/events`, {
+    method: "POST", token, body: { events: valueBatch.map((ev) => ({ ...envelope(ev), epoch: sc.body?.epoch })) } });
+  ok("the batch is answered, not a 500", vr.status === 200, JSON.stringify(vr.body));
+  ok("the legal balls either side are written", vr.body?.accepted?.length === 2
+     && vr.body.accepted.every((a) => [good1.id, good2.id].includes(a.idempotencyKey)), JSON.stringify(vr.body?.accepted));
+  for (const [c, reason] of cases) {
+    const r = vr.body?.refused?.find((x) => x.idempotencyKey === c.ev.id);
+    ok(`${c.name}: refused as ${reason}`, r?.reason === reason, JSON.stringify(r));
+  }
+  ok("every refused reason has words for the person reading it",
+     (vr.body?.refused ?? []).every((r) => typeof REFUSAL_TEXT[r.reason] === "string"), JSON.stringify(vr.body?.refused));
+  const [{ n: wrote }] = await q(`select count(*)::int n from ball_event where idempotency_key = any($1)`,
+                                 [cases.map(([c]) => c.ev.id)]);
+  ok("...and none of the refused events was written", wrote === 0);
+  const resent = await api(`/api/matches/${SHOTS}/events`, {
+    method: "POST", token, body: { events: valueBatch.map((ev) => ({ ...envelope(ev), epoch: sc.body?.epoch })) } });
+  ok("resent, the batch settles the same way: two duplicates, the rest refused — nothing wedges",
+     resent.status === 200 && resent.body?.duplicates?.length === 2 && resent.body?.refused?.length === cases.length,
+     JSON.stringify(resent.body));
+
+  // A vocabulary packages/scoring owns is refused at the door, whatever the
+  // token: holding it would only move the failure to the day it is released.
+  const staleBad = stamp(0, ball({ type: BALL_TYPE.RUN, value: 0, captureProfile: "extreme" }));
+  const sb = await api(`/api/matches/${SHOTS}/events`, {
+    method: "POST", token, body: { events: [{ ...envelope(staleBad), epoch: (sc.body?.epoch ?? 0) + 99 }] } });
+  ok("a stale-token event with a value the record cannot hold is refused, not held",
+     sb.body?.refused?.[0]?.reason === "capture_profile_unknown" && !sb.body?.quarantined?.length, JSON.stringify(sb.body));
+  // One whose only vocabulary is the database's CHECK is held — the CHECK runs
+  // at the INSERT — and refused, in words, when somebody tries to release it.
+  const staleContact = stamp(0, ball({ type: BALL_TYPE.RUN, value: 0, contact: "thick_edge" }));
+  const sh = await api(`/api/matches/${SHOTS}/events`, {
+    method: "POST", token, body: { events: [{ ...envelope(staleContact), epoch: (sc.body?.epoch ?? 0) + 99 }] } });
+  ok("a stale-token event whose contact only the CHECK knows is held", sh.body?.quarantined?.length === 1, JSON.stringify(sh.body));
+  const [heldRow] = await q(`select id from ball_event_quarantine where idempotency_key = $1`, [staleContact.id]);
+  const approver = (await api("/api/auth/dev-login", { method: "POST", body: { email: "sarah@example.invalid", deviceId: "device-laws-approver" } })).body?.token;
+  const rel = await api(`/api/quarantine/${heldRow?.id}/resolve`, { method: "POST", token: approver, body: { accept: true } });
+  ok("...and releasing it is refused with the reason, not a 500", rel.status === 200 && rel.body?.ok === false
+     && rel.body?.reason === "value_refused" && rel.body?.value === "contact_unknown" && !!rel.body?.text, JSON.stringify(rel));
+  const [{ n: stillHeld }] = await q(`select count(*)::int n from ball_event_quarantine
+                                       where idempotency_key = $1 and resolved_at is null`, [staleContact.id]);
+  ok("...and it is still held, for a person to discard", stillHeld === 1);
+
+  // The door reads placement.mjs; the table's CHECKs say the same. If one
+  // moves without the other, this is where it shows.
+  for (const [constraint, vocab] of [["ball_event_placement_source", PLACEMENT_SOURCE],
+                                     ["ball_event_placement_null", PLACEMENT_NULL],
+                                     ["ball_event_capture_profile", CAPTURE_PROFILE]]) {
+    const [{ def }] = await q(`select pg_get_constraintdef(oid) def from pg_constraint
+                                where conrelid = 'ball_event'::regclass and conname = $1`, [constraint]);
+    const inCheck = [...def.matchAll(/'([^']+)'::text/g)].map((m) => m[1]).sort();
+    ok(`${constraint} and placement.mjs list the same values`,
+       JSON.stringify(inCheck) === JSON.stringify(Object.values(vocab).sort()), `${def} vs ${Object.values(vocab)}`);
+  }
 } catch (e) {
   ok(`the walk threw: ${e.message?.slice(0, 200)}`, false);
   console.log(e.stack?.split("\n").slice(0, 4).join("\n"));

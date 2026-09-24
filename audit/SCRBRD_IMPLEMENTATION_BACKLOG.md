@@ -2999,14 +2999,32 @@ server and pad agree.
 - **A toss answered offline is never sent.** If the pad cannot read the toss, asks the scorer, and the POST also fails, the answer is not retried; the server may also have held a different toss the pad could not read. The innings still follows the scorer's answer. Queue the toss like an event, or re-check on reconnect. (P3)
 - **Incoming handover device mints its own `innings_start`** when it opens a fixture with no saved log, with a new id. Check against docs/SCORING_HANDOVER_SPEC.md: the incoming device should replay the server's log, not start one. (P2 — needs a look)
 
-### SCRBRD-076 — An approved amendment appends to the log without the per-match lock
+### ~~SCRBRD-076~~ — CLOSED
+**Closed 2026-09-24.** `db/38_amendment_lock.sql` replaces `scoring_amendment_decide()` with db/02's body plus the
+`scoring_session` row lock (after the authority checks, before max(seq); session row first, then the amendment row,
+re-checking its state), and pins `search_path`. The decide route judges the void with `lawsRefusal()` in a savepoint
+and rolls back with `laws_refused` in words — every void rule except `void_not_latest`, which is the pad's undo and
+would refuse every amendment (`amendmentRefusal()` in events-api.mjs says why). db/99 section 18; `smoke-amend.mjs`
+holds the session row and shows the approval waits for it, and refuses a void of an `innings_start`.
+Open, not decided here: the balls bowled after an amended delivery are not re-judged against the corrected log.
+
+Original entry — An approved amendment appends to the log without the per-match lock
 **Priority:** P2 · **Domain:** Scoring · **Type:** concurrency
 **Affected files:** `scoring_amendment_decide()` (db/02, frozen — would need a CREATE OR REPLACE in a new migration, as db/37 did for `quarantine_resolve`)
 **Found 2026-09-24** building db/37. A live batch that has already folded the log can append after an approved
 amendment's `void` without judging against it — the race db/37 closed for quarantine releases. Take the same
 `scoring_session` row lock first, and judge the amendment with `lawsRefusal` in its route the same way the release route does.
 
-### SCRBRD-077 — A placement value the database rejects fails the whole batch with a 500
+### ~~SCRBRD-077~~ — CLOSED
+**Closed 2026-09-24.** `appendEvents` refuses such an event in `refused` and writes the rest: placement.mjs's
+vocabularies (placement source, placement null, capture profile) at the door, and every other column CHECK or
+malformed value (SQLSTATE 23514 / class 22) by running each event's write in a savepoint. Reasons
+`contact_unknown`, `trajectory_unknown`, `trajectory_without_contact`, `placement_invalid`,
+`capture_profile_unknown`, `value_refused`, with words in `REFUSAL_TEXT`. The release route answers `value_refused`
+instead of a 500 for a held ball carrying one. `smoke-laws.mjs` also fails if placement.mjs and db/07's CHECKs
+disagree. `close_position` has no CHECK and is not validated.
+
+Original entry — A placement value the database rejects fails the whole batch with a 500
 **Priority:** P3 · **Domain:** Scoring / sync
 A contact, trajectory or placement value that violates a column CHECK makes `appendEvents` throw, the batch returns
 500, and the device resends it forever. The pad sends none of these today. Validate the vocabulary at the door (as

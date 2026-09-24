@@ -9,6 +9,7 @@
  *     event under a key already used (db/36, the commit fingerprint),
  *   - judges every live event against the Laws before it is written
  *     (lawsRefusal() in packages/scoring, over the fold of the log so far),
+ *   - refuses, per event, a value the table cannot hold (SCRBRD-077),
  *   - allocates the authoritative per-match seq,
  *   - routes stale-epoch events to QUARANTINE instead of merging them,
  *   - refreshes the lease on activity (once per request, not once per ball).
@@ -24,7 +25,8 @@
  * Mirrors MatchSession.append() from scoring-session.mjs, against SQL.
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
-import { toRow, fromRow, normaliseDismissal, MatchFold, lawsRefusal, REFUSAL_TEXT } from "@scrbrd/scoring";
+import { toRow, fromRow, normaliseDismissal, MatchFold, lawsRefusal, REFUSAL, REFUSAL_TEXT,
+         PLACEMENT_SOURCE, PLACEMENT_NULL, CAPTURE_PROFILE } from "@scrbrd/scoring";
 
 /**
  * The columns an event is stored with, as ONE object, keyed by column name.
@@ -73,6 +75,68 @@ function columnsFor(matchId, ev) {
   };
 }
 
+/**
+ * The placement vocabularies packages/scoring owns, checked at the door
+ * (SCRBRD-077). Read from placement.mjs, never listed here: db/07's CHECKs
+ * say the same, and the walk (tools/smoke-laws.mjs) fails if the two differ.
+ * @type {[column: string, allowed: string[], reason: string][]}
+ */
+const PLACEMENT_VOCABULARY = [
+  ["placement_source", Object.values(PLACEMENT_SOURCE), "placement_invalid"],
+  ["placement_null", Object.values(PLACEMENT_NULL), "placement_invalid"],
+  ["capture_profile", Object.values(CAPTURE_PROFILE), "capture_profile_unknown"],
+];
+
+/**
+ * Why this event's columns cannot be stored, by packages/scoring's own
+ * vocabularies, or null.
+ * @param {Record<string, any>} cols  columnsFor()
+ * @returns {{reason: string, field: string, value: any} | null}
+ */
+function vocabularyRefusal(cols) {
+  for (const [field, allowed, reason] of PLACEMENT_VOCABULARY) {
+    const value = cols[field];
+    if (value != null && !allowed.includes(value)) return { reason, field, value };
+  }
+  return null;
+}
+
+/**
+ * The database's own answer, as a reason a person can read: the CHECK a row
+ * broke is named by its constraint, and the refusal by what the scorer
+ * recorded. Each reason has its words in REFUSAL_TEXT (packages/scoring/src/laws.mjs).
+ * @type {Record<string, string>}
+ */
+const CHECK_REASON = {
+  ball_event_contact: "contact_unknown",
+  ball_event_trajectory: "trajectory_unknown",
+  ball_event_trajectory_needs_contact: "trajectory_without_contact",
+  ball_event_placement_source: "placement_invalid",
+  ball_event_placement_null: "placement_invalid",
+  ball_event_theta_range: "placement_invalid",
+  ball_event_radius_range: "placement_invalid",
+  ball_event_point_is_complete: "placement_invalid",
+  ball_event_zone_check: "placement_invalid",
+  ball_event_capture_profile: "capture_profile_unknown",
+};
+
+/**
+ * A write the database refused because of a VALUE in the event — a column
+ * CHECK on ball_event (23514), or a value that is not the column's type or
+ * does not fit it (SQLSTATE class 22) — as a per-event refusal. Anything else
+ * (a policy, a missing function, a lost connection) is not the event's fault
+ * and returns null, so the caller rethrows it.
+ * @param {any} e  a pg error
+ * @returns {{reason: string, constraint?: string} | null}
+ */
+function valueRefusal(e) {
+  if (e?.code === "23514" && e.table === "ball_event") {
+    return { reason: CHECK_REASON[e.constraint] ?? "value_refused", constraint: e.constraint };
+  }
+  if (typeof e?.code === "string" && e.code.startsWith("22")) return { reason: "value_refused" };
+  return null;
+}
+
 /** The fingerprint of an event that has not been stored: db/36's function over the row it would be. */
 const FINGERPRINT_OF = `ball_event_fingerprint(jsonb_populate_record(null::ball_event, $2::jsonb))`;
 
@@ -83,7 +147,7 @@ const FINGERPRINT_OF = `ball_event_fingerprint(jsonb_populate_record(null::ball_
  *   duplicates:  {idempotencyKey: string, seq: number}[],
  *   quarantined: {idempotencyKey: string, reason: string}[],
  *   conflicts:   {idempotencyKey: string, seq: number|null, reason: "idempotency_conflict"}[],
- *   refused:     {idempotencyKey: string, reason: string}[],
+ *   refused:     {idempotencyKey: string, reason: string, field?: string, value?: any, constraint?: string}[],
  * }>}
  *
  * Every event in the batch lands in exactly one bucket. `conflicts` and
@@ -142,8 +206,13 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
       return new MatchFold(rows.map(fromRow));
     };
 
-    for (const ev of events) {
-      const cols = columnsFor(matchId, ev);
+    /**
+     * Steps 1–4 for one event: everything that touches the database. Run by the
+     * loop below inside a savepoint, so a value the table refuses refuses this
+     * event and not the batch.
+     * @param {any} ev  @param {Record<string, any>} cols
+     */
+    const writeOne = async (ev, cols) => {
       const colsJson = JSON.stringify(cols);
 
       // 1. idempotency — is this key already stored, and is it THIS event?
@@ -158,7 +227,7 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
       if (dup[0]) {
         if (dup[0].same) result.duplicates.push({ idempotencyKey: ev.idempotencyKey, seq: dup[0].seq });
         else result.conflicts.push({ idempotencyKey: ev.idempotencyKey, seq: dup[0].seq, reason: "idempotency_conflict" });
-        continue;
+        return;
       }
       // ...and the same question of a key already HELD. A NULL fingerprint
       // is a row quarantined before db/36, which cannot be fingerprinted in
@@ -169,7 +238,7 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
         [ev.idempotencyKey, colsJson]);
       if (held[0] && !held[0].same) {
         result.conflicts.push({ idempotencyKey: ev.idempotencyKey, seq: null, reason: "idempotency_conflict" });
-        continue;
+        return;
       }
       // The SAME event, held under a stale token and re-sent now, goes on
       // like any other: if this device holds the token it is judged and
@@ -198,7 +267,7 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
           reason: lease.state === "match_complete" ? "match_complete"
                 : lease.found ? "stale_epoch_or_lease" : "no_session",
         });
-        continue;
+        return;
       }
 
       // 3. The Laws. Judged on the event exactly as it will be stored and read
@@ -219,7 +288,7 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
       if (!fold) fold = await loadFold();
       const candidate = fromRow({ ...cols, idempotency_key: ev.idempotencyKey });
       const why = lawsRefusal(fold.view(), candidate);
-      if (why) { result.refused.push({ idempotencyKey: ev.idempotencyKey, reason: why }); continue; }
+      if (why) { result.refused.push({ idempotencyKey: ev.idempotencyKey, reason: why }); return; }
 
       // 4. allocate the authoritative seq and insert (RLS WITH CHECK is the final guard)
       const { rows: mx } = await client.query(
@@ -241,6 +310,43 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
 
       fold.push({ ...candidate, seq });
       result.accepted.push({ idempotencyKey: ev.idempotencyKey, seq });
+    };
+
+    for (const ev of events) {
+      const cols = columnsFor(matchId, ev);
+
+      // 0. A VALUE THE RECORD CANNOT HOLD REFUSES THIS EVENT, NOT THE BATCH
+      //    (SCRBRD-077). A contact, trajectory or placement outside a column
+      //    CHECK used to make the INSERT throw: the whole batch was a 500, and
+      //    the device resent it forever — the wedge step 3 exists to prevent.
+      //    Two checks, neither holding a copy of a vocabulary:
+      //
+      //    - At the door, before the database is touched, the placement
+      //      vocabularies packages/scoring owns (placement.mjs:
+      //      PLACEMENT_SOURCE, PLACEMENT_NULL, CAPTURE_PROFILE), read from
+      //      there. A refused value is refused whether or not the device
+      //      holds the token: holding it would only move the failure to the
+      //      day somebody tried to release it.
+      //    - Everything else the table constrains — contact and trajectory,
+      //      whose only vocabulary is db/07's CHECK, theta and radius ranges,
+      //      a zone, a malformed number — is judged by those CHECKs
+      //      themselves: steps 1-4 run in a savepoint, and a CHECK violation
+      //      or malformed value (SQLSTATE 23514, class 22) rolls back that
+      //      one event and names it. Anything else still fails the request.
+      //      An event routed to quarantine meets them only when released
+      //      (quarantineRoutes answers value_refused then, not a 500).
+      const bad = vocabularyRefusal(cols);
+      if (bad) { result.refused.push({ idempotencyKey: ev.idempotencyKey, ...bad }); continue; }
+      await client.query("savepoint event_write");
+      try {
+        await writeOne(ev, cols);
+        await client.query("release savepoint event_write");
+      } catch (e) {
+        const why = valueRefusal(e);
+        if (!why) throw e;
+        await client.query("rollback to savepoint event_write");
+        result.refused.push({ idempotencyKey: ev.idempotencyKey, ...why });
+      }
     }
     return result;
   });
@@ -303,7 +409,57 @@ export function eventRoutes({ pool, secret }) {
  * scoring_amendment_decide() checks the approver's authority — and that they
  * are not the requester — before it appends anything. A check in JavaScript
  * would be a second opinion that can drift from the one that runs.
+ *
+ * AN APPROVED AMENDMENT MEETS THE LAWS (SCRBRD-076), in the release route's
+ * order: scoring_amendment_decide() inside a SAVEPOINT decides WHO, and takes
+ * the live path's per-match lock before it appends (db/38); the log up to the
+ * void is folded and the void judged as it was stored; a refusal rolls the
+ * savepoint back — no void, the request still pending — and says why in
+ * words. See amendmentRefusal() for which Laws those are.
  */
+
+/**
+ * The Laws an amendment's void is judged by: lawsRefusal(), less the one rule
+ * that is about live undo and not about the log.
+ *
+ * An amendment is a correction to a match — usually a COMPLETED one — filed by
+ * one person and approved by another (scoring.amend.request, then
+ * scoring.amend.approve, never the same person: db/02, db/24). Its void names
+ * an OLDER delivery; that is the whole point of it. lawsRefusal() refuses any
+ * void but the latest event that still counts (`void_not_latest`), because on
+ * the pad an undo is last-in, first-out and anything older "needs an
+ * amendment" — its own words. Applied here that rule would refuse every
+ * amendment there is. So it is the one refusal an amendment is exempt from;
+ * lawsRefusal() itself is not bent, and the live path still enforces it.
+ *
+ * Every other void rule stands: the target must be an event of this match, in
+ * the innings the void is filed under, not a void, not already undone, and not
+ * an `innings_start` — voiding the start of an innings leaves its balls with no
+ * batting side, squad or overs, and an amendment can only void, never write the
+ * replacement, so that is never a correction. In practice the SQL function
+ * answers all but the last first, with its own reason (no_such_live_delivery);
+ * `void_foundation` is the one the Laws add.
+ *
+ * This leans on voidRefusal() (packages/scoring/src/laws.mjs) asking the LIFO
+ * question LAST — every other void rule is checked before `void_not_latest` is
+ * returned, so an exemption from it cannot excuse anything else. The walk
+ * (tools/smoke-amend.mjs) approves a non-latest void and refuses an
+ * innings_start one, and fails if that order ever changes.
+ *
+ * What an amendment does to the events AFTER its target — a wicket voided under
+ * the batter who came in for it — is not re-judged: the fold replays them as it
+ * always has. Deciding that a correction must also re-judge the balls bowled
+ * since would be a product decision, not a Law.
+ *
+ * @param {import("@scrbrd/scoring").MatchView} match  the fold of the log before the void
+ * @param {import("@scrbrd/scoring").LogEvent} voidEv  the void, as stored
+ * @returns {string | null}
+ */
+function amendmentRefusal(match, voidEv) {
+  const why = lawsRefusal(match, voidEv);
+  return why === REFUSAL.VOID_NOT_LATEST ? null : why;
+}
+
 export function amendmentRoutes({ pool, secret }) {
   const err = (code, status = 400) => Object.assign(new Error(code), { status });
   const handle = (fn) => async (req, res) => {
@@ -335,13 +491,39 @@ export function amendmentRoutes({ pool, secret }) {
       });
     }),
     // POST /amendments/:id/decide { approve, note? }
+    //   → { ok: true, void_key } | { ok: false, reason }
+    //   | { ok: false, reason: "laws_refused", law, text }   (nothing written; still pending)
     decide: handle(async (req) => {
       const approve = req.body?.approve === true;
       return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+        await client.query("savepoint amendment_decide");
         const { rows } = await client.query(
           `select * from scoring_amendment_decide($1, $2, $3)`,
           [req.params.id, approve, req.body?.note ?? null]);
-        return rows[0] ?? { ok: false, reason: "no_result" };
+        const out = rows[0] ?? { ok: false, reason: "no_result" };
+        if (!approve || !out.ok) { await client.query("release savepoint amendment_decide"); return out; }
+
+        // Written, under the per-match lock (db/38). Now the Laws, over the
+        // log the void landed on.
+        const { rows: log } = await client.query(
+          `select ${EVENT_COLUMNS} from ball_event
+            where match_id = (select match_id from ball_event where idempotency_key = $1)
+              and seq <= (select seq from ball_event where idempotency_key = $1)
+            order by seq`, [out.void_key]);
+        const written = log.find((r) => r.idempotency_key === out.void_key);
+        const why = written
+          ? amendmentRefusal(new MatchFold(log.filter((r) => r.seq < written.seq).map(fromRow)).view(), fromRow(written))
+          // The approver cannot read the log they would be amending. Nothing
+          // can be judged, so nothing is written.
+          : "log_unreadable";
+        if (why) {
+          await client.query("rollback to savepoint amendment_decide");
+          return why === "log_unreadable"
+            ? { ok: false, reason: "not_permitted" }
+            : { ok: false, reason: "laws_refused", law: why, text: REFUSAL_TEXT[why] ?? why };
+        }
+        await client.query("release savepoint amendment_decide");
+        return out;
       });
     }),
   };
@@ -419,9 +601,22 @@ export function quarantineRoutes({ pool, secret }) {
           row = { ...toRow(payload), innings: q[0].body?.innings };
         }
         await client.query("savepoint quarantine_release");
-        const { rows } = await client.query(
-          `select * from quarantine_resolve($1, $2, $3, $4)`,
-          [req.params.id, accept, row ? JSON.stringify(row) : null, req.body?.note ?? null]);
+        let rows;
+        try {
+          ({ rows } = await client.query(
+            `select * from quarantine_resolve($1, $2, $3, $4)`,
+            [req.params.id, accept, row ? JSON.stringify(row) : null, req.body?.note ?? null]));
+        } catch (e) {
+          // A held ball carrying a value the table cannot hold (SCRBRD-077).
+          // The live path refuses one when it writes it; a ball held under a
+          // stale token is held before any column CHECK runs, so the first
+          // CHECK it meets is this INSERT. Nothing written, still held, and
+          // the reason in words — not a 500.
+          const bad = valueRefusal(e);
+          if (!bad) throw e;
+          await client.query("rollback to savepoint quarantine_release");
+          return { ok: false, reason: "value_refused", value: bad.reason, text: REFUSAL_TEXT[bad.reason] ?? bad.reason };
+        }
         const out = rows[0] ?? { ok: false, reason: "no_result" };
         if (!accept || !out.ok) { await client.query("release savepoint quarantine_release"); return out; }
 

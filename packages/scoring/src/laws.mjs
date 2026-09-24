@@ -105,6 +105,14 @@ export const REFUSAL_TEXT = Object.freeze({
   void_not_latest: "only the latest event can be undone; older ones need an amendment",
   // The idempotency conflict is not a Law, but it is held the same way.
   idempotency_conflict: "a different event was already recorded under this event's id",
+  // Nor are these: a value the record has no place for (SCRBRD-077,
+  // services/api/write/events-api.mjs), refused per event like a Law.
+  contact_unknown: "how the bat met the ball was not one the scorebook knows",
+  trajectory_unknown: "the path of the ball off the bat was not one the scorebook knows",
+  trajectory_without_contact: "a path off the bat was recorded for a ball the bat did not touch",
+  placement_invalid: "where the ball went was not recorded in a form the scorebook can hold",
+  capture_profile_unknown: "the capture profile was not one the scorebook knows",
+  value_refused: "a value in it is not one the scorebook can hold",
 });
 
 /**
@@ -287,7 +295,9 @@ function laterPlay(innings, i) {
  * still at the crease — and that is what an amendment is for
  * (scoring_amendment: a second person, a reason, an approval). Amendments
  * write their void through scoring_amendment_decide(), not through this door,
- * and are not judged here.
+ * and their route judges it by this function less VOID_NOT_LATEST
+ * (amendmentRefusal() in services/api/write/events-api.mjs, SCRBRD-076) —
+ * which relies on the last-in-first-out question being asked LAST, below.
  *
  * @param {MatchView | null | undefined} match
  * @param {Loose<VoidEvent>} ev

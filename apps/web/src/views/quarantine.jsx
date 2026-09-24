@@ -115,7 +115,10 @@ function QuarantinePanel({ matchId, role }) {
       if (res?.reason === "laws_refused") {
         setSaid((s) => ({ ...s, [row.id]: { text: lawsSaid(res), laws: true } }));
       } else if (!res?.ok) {
-        setSaid((s) => ({ ...s, [row.id]: REFUSAL[res?.reason] ?? res?.reason ?? "Refused." }));
+        // value_refused carries the server's own words (SCRBRD-077).
+        setSaid((s) => ({ ...s, [row.id]: REFUSAL[res?.reason]
+          ?? (res?.text ? `The record cannot hold this ball: ${res.text}. Nothing was written — discard it.` : null)
+          ?? res?.reason ?? "Refused." }));
       } else {
         setNonce((n) => n + 1);
       }

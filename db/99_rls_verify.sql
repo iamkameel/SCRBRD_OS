@@ -215,6 +215,14 @@ CREATE OR REPLACE FUNCTION _count_open_held_copies() RETURNS integer AS $$
      AND (q.fingerprint IS NULL OR q.fingerprint = b.fingerprint);
 $$ LANGUAGE sql SECURITY DEFINER;
 
+-- db/38. Whether a transaction holds a row lock on a match's scoring_session
+-- row: SELECT ... FOR UPDATE stamps the row's xmax with the locker, so a row
+-- this transaction has just created (xmax 0) reads non-zero once something has
+-- locked it. Read past RLS: the claim is about the row, not about who may see it.
+CREATE OR REPLACE FUNCTION _session_xmax(p_match uuid) RETURNS text AS $$
+  SELECT xmax::text FROM scoring_session WHERE match_id = p_match;
+$$ LANGUAGE sql SECURITY DEFINER;
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -2489,6 +2497,95 @@ BEGIN
     SELECT count(*) INTO n FROM ball_event_quarantine
      WHERE idempotency_key = 'verify:037:other' AND resolved_at IS NULL AND resolution IS NULL;
     PERFORM _assert(n = 1, 'a held event was closed by a DIFFERENT event written under its key');
+  END;
+  PERFORM set_config('app.device_id', '', true);
+
+  -- ── 18. An approved amendment takes the per-match lock (SCRBRD-076, db/38) ──
+  -- scoring_amendment_decide() appended its void without the lock the live
+  -- path and a release take, so a live batch that had folded the log could
+  -- append after the void unjudged. That the void meets the Laws is the API's
+  -- (lawsRefusal() cannot run in SQL); tools/smoke-amend.mjs walks it. Here:
+  -- the function in the database is db/38's, it locks, and it still answers
+  -- every reason db/02 gave, in db/02's order.
+  PERFORM _assert(pg_get_functiondef('scoring_amendment_decide(uuid,boolean,text)'::regprocedure)
+                    ~ 'FROM scoring_session s WHERE s.match_id = a.match_id FOR UPDATE.*INSERT INTO ball_event',
+    'scoring_amendment_decide() does not take the per-match lock before it appends its void');
+  PERFORM _assert(EXISTS (SELECT 1 FROM pg_proc
+                           WHERE oid = 'scoring_amendment_decide(uuid,boolean,text)'::regprocedure
+                             AND prosecdef
+                             AND 'search_path=pg_catalog, public, pg_temp' = ANY (proconfig)),
+    'scoring_amendment_decide() lost its pinned search_path (db/16) when db/38 replaced it');
+  PERFORM _scoring_session_reset(M_HANDOVER);
+  PERFORM _as(U_SCORER);
+  SELECT c.ok INTO v_ok FROM scoring_claim(M_HANDOVER, 'verify-038') c;
+  PERFORM _assert(v_ok, 'the scorer could not claim the match the db/38 section amends');
+  PERFORM _assert(_session_xmax(M_HANDOVER) = '0',
+    format('the db/38 section''s session row is locked before anything amends it (xmax %s)', _session_xmax(M_HANDOVER)));
+  DECLARE
+    A_LIVE  uuid;   -- the scorer's request, approved by somebody else
+    A_OWN   uuid;   -- the owner's, decided by the owner
+    A_GONE  uuid;   -- a second request on a delivery already voided
+    v_void  text;
+  BEGIN
+    -- The ball section 17 wrote live, and one after it: the amendment voids
+    -- the OLDER one, which is what an amendment is for.
+    INSERT INTO scoring_amendment (match_id, school_id, target_key, reason, requested_by)
+    VALUES (M_HANDOVER, match_school(M_HANDOVER), 'verify:037:same', 'db/38: the lock', U_SCORER)
+    RETURNING id INTO A_LIVE;
+
+    -- (1) before (2): the scorer holds no approval at all, so deciding his
+    --     own request is not_permitted — not the self-approval guard.
+    SELECT d.reason INTO v_reason FROM scoring_amendment_decide(A_LIVE, true) d;
+    PERFORM _assert(v_reason IS NOT DISTINCT FROM 'not_permitted',
+      format('the scorer deciding his own request was answered %s, not not_permitted', coalesce(v_reason, 'NULL')));
+    PERFORM _assert(_session_xmax(M_HANDOVER) = '0',
+      'a caller with no standing over the match took its per-match lock');
+
+    PERFORM _as(U_SARAH);
+    SELECT d.reason INTO v_reason FROM scoring_amendment_decide(gen_random_uuid(), true) d;
+    PERFORM _assert(v_reason IS NOT DISTINCT FROM 'no_such_amendment',
+      format('an amendment that does not exist was answered %s', coalesce(v_reason, 'NULL')));
+
+    SELECT d.ok, d.reason, d.void_key INTO v_ok, v_reason, v_void
+      FROM scoring_amendment_decide(A_LIVE, true, 'db/38') d;
+    PERFORM _assert(v_ok AND v_void IS NOT DISTINCT FROM 'amendment:' || A_LIVE::text,
+      format('the director of sport could not approve the scorer''s amendment (%s)', coalesce(v_reason, 'NULL')));
+    -- THE LOCK. Taken by the approval, held to this transaction's end.
+    PERFORM _assert(_session_xmax(M_HANDOVER) <> '0',
+      'approving an amendment appended to the log without the per-match lock the live path takes');
+    SELECT count(*) INTO n FROM ball_event
+     WHERE idempotency_key = v_void AND kind = 'void' AND device_id = 'amendment'
+       AND scorer_user_id = U_SCORER AND payload->>'approved_by' = U_SARAH::text
+       AND payload->>'target' = 'verify:037:same'
+       AND seq = (SELECT max(seq) FROM ball_event WHERE match_id = M_HANDOVER);
+    PERFORM _assert(n = 1, 'the void is not the requester''s, approved by the approver, at the end of the log');
+
+    SELECT d.reason INTO v_reason FROM scoring_amendment_decide(A_LIVE, true) d;
+    PERFORM _assert(v_reason IS NOT DISTINCT FROM 'already_approved',
+      format('an approved amendment decided again was answered %s', coalesce(v_reason, 'NULL')));
+
+    -- (3) a delivery already voided is not live.
+    PERFORM _as(U_SCORER);
+    INSERT INTO scoring_amendment (match_id, school_id, target_key, reason, requested_by)
+    VALUES (M_HANDOVER, match_school(M_HANDOVER), 'verify:037:same', 'db/38: again', U_SCORER)
+    RETURNING id INTO A_GONE;
+    PERFORM _as(U_SARAH);
+    SELECT d.reason INTO v_reason FROM scoring_amendment_decide(A_GONE, true) d;
+    PERFORM _assert(v_reason IS NOT DISTINCT FROM 'no_such_live_delivery',
+      format('voiding a delivery already voided was answered %s', coalesce(v_reason, 'NULL')));
+    SELECT d.ok INTO v_ok FROM scoring_amendment_decide(A_GONE, false, 'db/38: nothing to void') d;
+    SELECT count(*) INTO n FROM scoring_amendment WHERE id = A_GONE AND state = 'declined' AND decided_by = U_SARAH;
+    PERFORM _assert(v_ok AND n = 1, 'the director of sport could not decline an amendment');
+
+    -- (2) nobody approves their own, whatever they hold: the owner holds
+    --     both halves.
+    PERFORM _as(U_OWNER);
+    INSERT INTO scoring_amendment (match_id, school_id, target_key, reason, requested_by)
+    VALUES (M_HANDOVER, match_school(M_HANDOVER), 'verify:037:other', 'db/38: my own', U_OWNER)
+    RETURNING id INTO A_OWN;
+    SELECT d.reason INTO v_reason FROM scoring_amendment_decide(A_OWN, true) d;
+    PERFORM _assert(v_reason IS NOT DISTINCT FROM 'cannot_approve_your_own',
+      format('the owner deciding their own amendment was answered %s', coalesce(v_reason, 'NULL')));
   END;
   PERFORM set_config('app.device_id', '', true);
 
