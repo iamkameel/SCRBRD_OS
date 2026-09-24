@@ -46,6 +46,11 @@ function asMatch(r) {
     venue: r.ground ?? null,
     groundId: null,
     date: r.starts_at ? String(r.starts_at).slice(0, 10) : null,
+    // HH:MM, sliced the same way `date` is rather than through a Date object
+    // and a timezone conversion — a day-of screen naming a kickoff time is the
+    // one thing worse than naming none: this is the raw instant the fixture
+    // was scheduled at, exactly as written.
+    time: r.starts_at ? String(r.starts_at).slice(11, 16) : null,
     status: MATCH_STATUS[r.status] ?? "upcoming",
     result: null,
     competition: null,

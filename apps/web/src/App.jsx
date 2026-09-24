@@ -11,7 +11,7 @@ import { LoginPage } from "./auth/LoginPage.jsx";
 import { OnboardingFlow } from "./auth/OnboardingFlow.jsx";
 import { ROLES } from "./design/roles.js";
 import { D, GLOBAL_CSS } from "./design/tokens.js";
-import { canScore, scoped } from "./rbac/index.js";
+import { canScore, holdsCapability, scoped } from "./rbac/index.js";
 import { api, signedIn } from "./lib/api.js";
 import { useLive, useRows } from "./lib/live.js";
 import { MobileNav, useIsMobile } from "./shell/MobileNav.jsx";
@@ -52,6 +52,10 @@ const AnalyticsView     = view(() => import("./views/AnalyticsView.jsx"),     "A
 const CalendarView      = view(() => import("./views/CalendarView.jsx"),      "CalendarView");
 const CompetitionsView  = view(() => import("./views/CompetitionsView.jsx"),  "CompetitionsView");
 const DashboardView     = view(() => import("./views/DashboardView.jsx"),     "DashboardView");
+// The driver and groundskeeper's landing screen (SCRBRD-085) — one module,
+// two named exports, chosen below by capability rather than by role name.
+const DriverDayView         = view(() => import("./views/DayOfView.jsx"), "DriverDayView");
+const GroundskeeperDayView  = view(() => import("./views/DayOfView.jsx"), "GroundskeeperDayView");
 const FieldsView        = view(() => import("./views/FieldsView.jsx"),        "FieldsView");
 const InjuryView        = view(() => import("./views/InjuryView.jsx"),        "InjuryView");
 const LeagueView        = view(() => import("./views/LeagueView.jsx"),        "LeagueView");
@@ -377,8 +381,24 @@ export default function SCRBRD_OS() {
   );
 
   // ── Main app ──
+  //
+  // The day-of landing screen (SCRBRD-085). A driver holds transport.drive,
+  // which no other role grants, so that capability alone identifies the
+  // account. A groundskeeper is `facility.manage` WITHOUT `team.manage` — the
+  // thing that separates the "facilities" role's narrow capability set from
+  // schooladmin, sportsadmin and directorofsport, who also hold
+  // facility.manage but run the ordinary desktop and must keep it. Neither
+  // check names a role: a school that granted a groundskeeper transport.drive
+  // as well, say, would land them on the driver screen, which is a person's
+  // actual capability describing them more truly than a role label would.
+  const isDriverLanding = holdsCapability(role, "transport.drive");
+  const isGroundskeeperLanding = !isDriverLanding
+    && holdsCapability(role, "facility.manage") && !holdsCapability(role, "team.manage");
+  const dashboardView = isDriverLanding ? <DriverDayView role={role}/>
+    : isGroundskeeperLanding ? <GroundskeeperDayView role={role}/>
+    : <DashboardView role={role} onNav={setPage}/>;
   const VIEW_MAP = {
-    dashboard:    <DashboardView     role={role} onNav={setPage}/>,
+    dashboard:    dashboardView,
     matches:      <MatchCentreView   role={role} onOpenScorer={openScorer} onNavProfile={(id)=>{setProfileTarget(id);setPage("profiles");}}/>,
     competitions: <CompetitionsView  role={role}/>,
     leagues:      <LeagueView        role={role}/>,
