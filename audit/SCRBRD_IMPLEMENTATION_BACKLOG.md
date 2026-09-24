@@ -2886,3 +2886,23 @@ after it refused too.
 - A batter returning after retiring hurt keeps "retired" on his record in the fold.
 - Timed out and retired out are recorded as `W` balls, which count as a legal delivery of the over.
 **Tests required:** one case per item when it is taken up.
+
+### SCRBRD-072 — Phase wickets count a dismissal the free hit saved
+**Title:** `phases.mjs` counts every ball with a dismissal as a wicket, including one the fold saved on a free hit
+**Priority:** P2 · **Domain:** Scoring / analytics · **Type:** correctness
+**Affected files:** `packages/scoring/src/phases.mjs` (~line 193, `if (b.dismissal) acc.wickets += 1`)
+**Found 2026-09-24** adding `packages/scoring` to strict type checking; confirmed by running: a no-ball followed by a
+bowled "wicket" gives the fold 0 wickets and the phase breakdown 1. The file promises phases always add up to the
+innings; they do not. Phases should ask the same question the fold does (`standsOnFreeHit`, the ball's free-hit flag).
+**Tests required:** a phases case with a free hit, asserting phase wickets sum to the innings' wickets.
+**Data migration required:** NO.
+
+### SCRBRD-073 — Rating indices turn a non-numeric count into a number
+**Title:** `battingIndex` / `bowlingIndex` accept `NaN` counts past the sample floor and score them as 0
+**Priority:** P3 · **Domain:** Analytics · **Type:** input validation
+**Affected files:** `packages/scoring/src/rating.mjs` (~190, ~238)
+**Found 2026-09-24** in the same work. `NaN < 30` is false, so a malformed count passes the sample floor; `scoreFrom`
+then returns null, which the arithmetic reads as 0 (`battingIndex({runs:100, ballsFaced:"x", dismissals:2})` →
+10.8, "good"). Today's callers pass numbers from the fold, so this bites only a bad caller.
+**Expected behaviour:** a non-finite count yields no index (null / "insufficient"), never a number.
+**Data migration required:** NO.
