@@ -2977,3 +2977,16 @@ server and pad agree.
 - **Acked ids are memory-only.** After a reload, `syncedIds()` is empty, so offline, undo treats a ball the server already has as unsynced and cuts it locally instead of voiding it (heals online when duplicates come back acked). Persist acked ids, or ask the server before cutting. (P2)
 - **A toss answered offline is never sent.** If the pad cannot read the toss, asks the scorer, and the POST also fails, the answer is not retried; the server may also have held a different toss the pad could not read. The innings still follows the scorer's answer. Queue the toss like an event, or re-check on reconnect. (P3)
 - **Incoming handover device mints its own `innings_start`** when it opens a fixture with no saved log, with a new id. Check against docs/SCORING_HANDOVER_SPEC.md: the incoming device should replay the server's log, not start one. (P2 — needs a look)
+
+### SCRBRD-076 — An approved amendment appends to the log without the per-match lock
+**Priority:** P2 · **Domain:** Scoring · **Type:** concurrency
+**Affected files:** `scoring_amendment_decide()` (db/02, frozen — would need a CREATE OR REPLACE in a new migration, as db/37 did for `quarantine_resolve`)
+**Found 2026-09-24** building db/37. A live batch that has already folded the log can append after an approved
+amendment's `void` without judging against it — the race db/37 closed for quarantine releases. Take the same
+`scoring_session` row lock first, and judge the amendment with `lawsRefusal` in its route the same way the release route does.
+
+### SCRBRD-077 — A placement value the database rejects fails the whole batch with a 500
+**Priority:** P3 · **Domain:** Scoring / sync
+A contact, trajectory or placement value that violates a column CHECK makes `appendEvents` throw, the batch returns
+500, and the device resends it forever. The pad sends none of these today. Validate the vocabulary at the door (as
+the dismissal vocabulary already is) and refuse per event.

@@ -50,7 +50,10 @@ BEGIN
 END $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION _assert(cond boolean, msg text) RETURNS void AS $$
-BEGIN IF NOT cond THEN RAISE EXCEPTION 'RLS ASSERT FAILED: %', msg; END IF; END $$ LANGUAGE plpgsql;
+-- IS NOT TRUE, not NOT: a condition that comes out NULL — a comparison against
+-- a value SELECT ... INTO found no row for — is a check that never ran, and
+-- `IF NOT NULL` does not raise. That let an assertion pass vacuously.
+BEGIN IF cond IS NOT TRUE THEN RAISE EXCEPTION 'RLS ASSERT FAILED: % (condition was %)', msg, coalesce(cond::text, 'NULL'); END IF; END $$ LANGUAGE plpgsql;
 
 -- Revoke an assignment as the table owner. Created here, before privilege is
 -- dropped, because the unprivileged role cannot SET ROLE back up — which is
