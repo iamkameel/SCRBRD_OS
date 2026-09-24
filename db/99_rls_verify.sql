@@ -841,9 +841,15 @@ BEGIN
   -- The sharpest case: a guardian's assignment lists their children, so the
   -- person anchor narrows a whole team sheet down to the one row that is
   -- theirs. Same table, same query, one row.
+  --
+  -- Asked as "no row but their own child's", not "exactly one row": the child
+  -- may be on more than one team sheet (a database that has run the contacts
+  -- walk has him on several), and every one of those is rightly the
+  -- guardian's to see. Counting rows made the check depend on how many
+  -- fixtures the boy was picked for; counting OTHER boys' rows is the leak.
   PERFORM _as(U_PARENT);
-  SELECT count(*) INTO n FROM match_squad;
-  PERFORM _assert(n = 1, 'guardian sees more of the team sheet than their own child');
+  SELECT count(*) INTO n FROM match_squad WHERE player_id <> P_INJURED;
+  PERFORM _assert(n = 0, 'guardian sees another child on the team sheet');
   SELECT count(*) INTO n FROM match_squad WHERE player_id = P_INJURED;
   PERFORM _assert(n = 1, 'guardian cannot see their own child on the team sheet');
 
