@@ -1771,8 +1771,9 @@ export const READ_QUERIES = {
    * bowler, and against bowling like his.
    *
    * The wicket rule is NOT restated here. `ball_type = 'W'` with a dismissal
-   * that is not a run out is exactly the predicate player_bowling_career uses
-   * (db/02_schema_scoring.sql), and two definitions of "wicket" that can drift
+   * that is the bowler's, and that the free hit did not save
+   * (ball_wicket_stands(), db/42), is exactly the predicate
+   * player_bowling_career uses, and two definitions of "wicket" that can drift
    * apart is precisely what this schema keeps removing. The dismissed player is
    * checked against the striker as well, because a run out at the far end
    * dismisses the other batter and would otherwise be filed against the wrong
@@ -1813,10 +1814,14 @@ export const READ_QUERIES = {
                   -- called four byes, and five wides, a boundary.
                   count(*) filter (where b.value = 4 and b.ball_type <> 'W' and ${OFF_THE_BAT_SQL})::int as fours,
                   count(*) filter (where b.value = 6 and b.ball_type <> 'W' and ${OFF_THE_BAT_SQL})::int as sixes,
+                  -- A dismissal the free hit saved is not one: the fold's
+                  -- rule, ball_wicket_stands() in db/42, which is what every
+                  -- SQL wicket count asks.
                   count(*) filter (
                     where b.ball_type = 'W'
                       and coalesce(b.dismissal,'') not in (${NOT_THE_BOWLERS})
                       and coalesce(b.dismissed_id, b.striker_id) = b.striker_id
+                      and ball_wicket_stands(b.match_id, b.innings, b.seq, b.kind, b.ball_type, b.dismissal)
                   )::int                                                       as dismissals
              from ball_event_live b
              join player bat  on bat.id  = b.striker_id

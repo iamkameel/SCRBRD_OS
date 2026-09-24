@@ -150,6 +150,12 @@ CREATE OR REPLACE FUNCTION _lease_until(p_match uuid) RETURNS timestamptz AS $$
   SELECT lease_until FROM scoring_session WHERE match_id = p_match;
 $$ LANGUAGE sql SECURITY DEFINER;
 
+-- db/42: what the milestone trigger wrote. The claim is "the trigger wrote no
+-- such row", which a reader's policy could not tell from a hidden one.
+CREATE OR REPLACE FUNCTION _count_milestones(p_player uuid, p_kind text, p_match uuid) RETURNS integer AS $$
+  SELECT count(*)::int FROM milestone_notice WHERE player_id = p_player AND kind = p_kind AND match_id = p_match;
+$$ LANGUAGE sql SECURITY DEFINER;
+
 -- Two appointments on the handover section's match (U16B v Kearsney): the
 -- seeded scorer, holding an account, so a handover can name him as the one
 -- who passed the pen on — and an umpire already stood down.
@@ -3096,6 +3102,187 @@ BEGIN
     PERFORM _assert(k_ro1 - k_ro0 = 1 AND k_to1 - k_to0 = 1 AND k_out1 - k_out0 = 1,
       format('the dismissal breakdown moved retired_out %s / timed_out %s / timed_out (never faced) %s, expected 1 / 1 / 1',
              k_ro1 - k_ro0, k_to1 - k_to0, k_out1 - k_out0));
+  END;
+  PERFORM set_config('app.device_id', '', true);
+
+  -- ── 20. A wicket the free hit saved is no wicket in SQL (db/42) ─────
+  -- The fold saves a batter dismissed off a free hit by a bowler's method
+  -- (standsOnFreeHit); every SQL reader now asks ball_wicket_stands() the
+  -- same question. One over, on the match §19 scores and with the pen §19
+  -- claimed, then a handover. Deltas, read before and after, coalesced to a
+  -- number: _assert() refuses a NULL. Each assertion's label names what it
+  -- guards; each was run once, alone, against the pre-db/42 definition of
+  -- what it names (or the rule broken the way it says) and failed.
+  --
+  --    k  delivery                      striker  the fold
+  --    1  a dot                          BAT     (whatever came before, no free hit now)
+  --    2  W bowled                       BAT     stands, the bowler's
+  --    3  W caught                       BAT     stands, the bowler's
+  --    4  no-ball                        BAT     free hit
+  --    5  W lbw                          SAVE    SAVED — and it breaks the hat-trick
+  --    6  no-ball                        SAVE    free hit
+  --    7  wide                           SAVE    carries the free hit
+  --    8  W stumped                      SAVE    SAVED
+  --    9  no-ball                        BAT     free hit
+  --   10  W run out                      BAT     stands on a free hit, not the bowler's
+  --   11  no-ball                        BAT     ...taken back by
+  --   12  void of 11                             so no free hit
+  --   13  W bowled                       BAT     stands, the bowler's
+  --   14  no-ball                        SAVE    free hit
+  --   15  W hit wicket                   SAVE    SAVED (and consumes the free hit)
+  --   16  W caught                       BAT     stands, the bowler's
+  --
+  -- Five wickets stand (2, 3, 10, 13, 16); four are the bowler's, so no
+  -- five-for; three are saved, all SAVE's, who is not out. Before db/42 the
+  -- SQL counted eight, seven of them the bowler's, a five-for, a hat-trick
+  -- completed at k = 5, and SAVE out three times.
+  PERFORM set_config('app.device_id', 'verify-040', true);
+  DECLARE
+    P_BAT  uuid := 'aaaaaaaa-0000-0000-0000-000000000006';  -- K Dlamini
+    P_SAVE uuid := 'aaaaaaaa-0000-0000-0000-000000000012';  -- J Sithole: on strike for every saved ball
+    P_BOWL uuid := 'bbbbbbbb-0000-0000-0000-000000000002';  -- K Botha
+    live0 bigint; live1 bigint; all0 bigint; fig0 bigint; fig1 bigint; bow0 bigint; bow1 bigint;
+    wb0 record; wb1 record; sv0 bigint; sv1 bigint; bt0 bigint; bt1 bigint; sk0 bigint; sk1 bigint;
+    hat0 bigint; hat1 bigint; five0 int; five1 int; hn0 int; hn1 int; save_out boolean; save_faced bigint;
+    x record;
+  BEGIN
+    PERFORM _as(U_OWNER);
+    live0 := coalesce((SELECT wickets FROM match_live_score WHERE match_id = M_HANDOVER AND innings = 0), 0);
+    all0  := coalesce((SELECT sum(wickets) FROM match_live_score WHERE match_id = M_HANDOVER), 0);
+    fig0  := coalesce((SELECT wickets FROM bowler_innings_figures
+                        WHERE player_id = P_BOWL AND match_id = M_HANDOVER AND innings = 0), 0);
+    bow0  := coalesce((SELECT wickets FROM player_bowling_since(P_BOWL, NULL)), 0);
+    SELECT coalesce(sum(wickets) FILTER (WHERE dismissal IN ('bowled', 'caught')), 0) AS mine,
+           coalesce(sum(wickets) FILTER (WHERE dismissal IN ('lbw', 'stumped', 'hit_wicket')), 0) AS saved
+      INTO wb0 FROM player_wicket_breakdown WHERE player_id = P_BOWL;
+    sv0 := coalesce(player_dismissals_since(P_SAVE, NULL), 0);
+    bt0 := coalesce(player_dismissals_since(P_BAT, NULL), 0);
+    sk0 := coalesce((SELECT sum(dismissals) FROM player_dismissal_breakdown WHERE player_id = P_SAVE), 0);
+    hat0 := (SELECT count(*) FROM bowler_hat_trick WHERE player_id = P_BOWL AND match_id = M_HANDOVER AND innings = 0);
+    five0 := _count_milestones(P_BOWL, 'five_for', M_HANDOVER);
+    hn0   := _count_milestones(P_BOWL, 'hat_trick', M_HANDOVER);
+
+    -- One statement per delivery, as they arrive: the milestone trigger is
+    -- AFTER ROW, and in one multi-row INSERT every row's trigger would see
+    -- the whole over — the five-for below could never be reached at five.
+    PERFORM _as(U_SCORER);
+    FOR x IN SELECT * FROM (VALUES
+        ( 1, 'ball', 'run', NULL,         'bat',  '{}'::jsonb),
+        ( 2, 'ball', 'W',   'bowled',     'bat',  '{}'::jsonb),
+        ( 3, 'ball', 'W',   'caught',     'bat',  '{}'::jsonb),
+        ( 4, 'ball', 'Nb',  NULL,         'bat',  '{}'::jsonb),
+        ( 5, 'ball', 'W',   'lbw',        'save', '{}'::jsonb),
+        ( 6, 'ball', 'Nb',  NULL,         'save', '{}'::jsonb),
+        ( 7, 'ball', 'Wd',  NULL,         'save', '{}'::jsonb),
+        ( 8, 'ball', 'W',   'stumped',    'save', '{}'::jsonb),
+        ( 9, 'ball', 'Nb',  NULL,         'bat',  '{}'::jsonb),
+        (10, 'ball', 'W',   'run_out',    'bat',  '{}'::jsonb),
+        (11, 'ball', 'Nb',  NULL,         'bat',  '{}'::jsonb),
+        (12, 'void', NULL,  NULL,         NULL,   '{"target":"verify:042:11"}'::jsonb),
+        (13, 'ball', 'W',   'bowled',     'bat',  '{}'::jsonb),
+        (14, 'ball', 'Nb',  NULL,         'save', '{}'::jsonb),
+        (15, 'ball', 'W',   'hit_wicket', 'save', '{}'::jsonb),
+        (16, 'ball', 'W',   'caught',     'bat',  '{}'::jsonb)
+      ) AS v(k, kind, bt, dis, who, pl) ORDER BY k
+    LOOP
+      INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                              idempotency_key, client_seq, client_ts, kind, ball_type, value,
+                              striker_id, bowler_id, dismissal, payload)
+      VALUES (M_HANDOVER, match_school(M_HANDOVER), 9500 + x.k, v_epoch, 0, U_SCORER, 'verify-040',
+              'verify:042:' || x.k, 9500 + x.k, now(), x.kind, x.bt, CASE WHEN x.kind = 'ball' THEN 0 END,
+              CASE x.who WHEN 'bat' THEN P_BAT WHEN 'save' THEN P_SAVE END,
+              CASE WHEN x.kind = 'ball' THEN P_BOWL END, x.dis, x.pl);
+    END LOOP;
+
+    PERFORM _as(U_OWNER);
+    live1 := coalesce((SELECT wickets FROM match_live_score WHERE match_id = M_HANDOVER AND innings = 0), 0);
+    fig1  := coalesce((SELECT wickets FROM bowler_innings_figures
+                        WHERE player_id = P_BOWL AND match_id = M_HANDOVER AND innings = 0), 0);
+    bow1  := coalesce((SELECT wickets FROM player_bowling_since(P_BOWL, NULL)), 0);
+    SELECT coalesce(sum(wickets) FILTER (WHERE dismissal IN ('bowled', 'caught')), 0) AS mine,
+           coalesce(sum(wickets) FILTER (WHERE dismissal IN ('lbw', 'stumped', 'hit_wicket')), 0) AS saved
+      INTO wb1 FROM player_wicket_breakdown WHERE player_id = P_BOWL;
+    sv1 := coalesce(player_dismissals_since(P_SAVE, NULL), 0);
+    bt1 := coalesce(player_dismissals_since(P_BAT, NULL), 0);
+    sk1 := coalesce((SELECT sum(dismissals) FROM player_dismissal_breakdown WHERE player_id = P_SAVE), 0);
+    hat1 := (SELECT count(*) FROM bowler_hat_trick WHERE player_id = P_BOWL AND match_id = M_HANDOVER AND innings = 0);
+    five1 := _count_milestones(P_BOWL, 'five_for', M_HANDOVER);
+    hn1   := _count_milestones(P_BOWL, 'hat_trick', M_HANDOVER);
+    SELECT coalesce(i.out, true), coalesce(i.balls_faced, 0) INTO save_out, save_faced
+      FROM player_innings i WHERE i.player_id = P_SAVE AND i.match_id = M_HANDOVER AND i.innings = 0;
+
+    -- (rule) The fold's flag, ball by ball: wides carry it, a void takes its
+    -- no-ball away, a legal ball consumes it, a no-ball earns it.
+    PERFORM _assert(ball_on_free_hit(M_HANDOVER, 0::smallint, 9505) AND ball_on_free_hit(M_HANDOVER, 0::smallint, 9510)
+                    AND ball_on_free_hit(M_HANDOVER, 0::smallint, 9515),
+      'db/42 (rule): a ball straight after a no-ball is not on a free hit');
+    -- (rule-wide)
+    PERFORM _assert(coalesce(ball_on_free_hit(M_HANDOVER, 0::smallint, 9508), false),
+      'db/42 (rule-wide): a wide did not carry the free hit to the next ball');
+    -- (rule-void)
+    PERFORM _assert(NOT coalesce(ball_on_free_hit(M_HANDOVER, 0::smallint, 9513), true),
+      'db/42 (rule-void): a no-ball that was taken back still earned a free hit');
+    -- (rule-consumed)
+    PERFORM _assert(NOT coalesce(ball_on_free_hit(M_HANDOVER, 0::smallint, 9516), true)
+                    AND NOT coalesce(ball_on_free_hit(M_HANDOVER, 0::smallint, 9502), true),
+      'db/42 (rule-consumed): a legal ball did not consume the free hit');
+    -- (rule-methods) Only the six non-delivery methods stand; a NULL method does not.
+    PERFORM _assert((SELECT bool_and(dismissal_stands_on_free_hit(d) = (d IN ('run_out', 'handled_ball', 'obstructing_field',
+                                                                                'timed_out', 'retired_out', 'hit_twice')))
+                       FROM unnest(ARRAY['bowled', 'caught', 'lbw', 'run_out', 'stumped', 'hit_wicket', 'handled_ball',
+                                         'obstructing_field', 'timed_out', 'retired_out', 'hit_twice']) d)
+                    AND dismissal_stands_on_free_hit(NULL) IS NOT DISTINCT FROM false,
+      'db/42 (rule-methods): the methods that stand on a free hit are not events.mjs NON_DELIVERY');
+    -- (a) match_live_score
+    PERFORM _assert(live1 - live0 = 5,
+      format('db/42 (a) match_live_score: wickets moved by %s, expected 5 (three were saved by the free hit)', live1 - live0));
+    -- (c) bowler_innings_figures
+    PERFORM _assert(fig1 - fig0 = 4,
+      format('db/42 (c) bowler_innings_figures: the bowler''s wickets moved by %s, expected 4', fig1 - fig0));
+    -- (d) player_bowling_since
+    PERFORM _assert(bow1 - bow0 = 4,
+      format('db/42 (d) player_bowling_since: the bowler''s career wickets moved by %s, expected 4', bow1 - bow0));
+    -- (e) player_wicket_breakdown
+    PERFORM _assert(wb1.mine - wb0.mine = 4 AND wb1.saved - wb0.saved = 0,
+      format('db/42 (e) player_wicket_breakdown: bowled/caught moved by %s, lbw/stumped/hit wicket by %s, expected 4 and 0',
+             wb1.mine - wb0.mine, wb1.saved - wb0.saved));
+    -- (f) player_dismissals_since
+    PERFORM _assert(sv1 - sv0 = 0 AND bt1 - bt0 = 5,
+      format('db/42 (f) player_dismissals_since: the saved batter''s dismissals moved by %s (expected 0), the other''s by %s (expected 5)',
+             sv1 - sv0, bt1 - bt0));
+    -- (g) player_dismissal_breakdown
+    PERFORM _assert(sk1 - sk0 = 0,
+      format('db/42 (g) player_dismissal_breakdown: the saved batter has %s more lines of how he got out, expected 0', sk1 - sk0));
+    -- (h) player_innings
+    PERFORM _assert(save_faced >= 5 AND NOT save_out,
+      format('db/42 (h) player_innings: the batter every free hit saved reads out=%s after %s balls faced', save_out, save_faced));
+    -- (i) bowler_hat_trick
+    PERFORM _assert(hat1 - hat0 = 0,
+      format('db/42 (i) bowler_hat_trick: a hat-trick completed by a saved ball (%s new)', hat1 - hat0));
+    -- (j) the five-for notice (milestone_watch over bowler_innings_figures)
+    PERFORM _assert(five1 - five0 = 0,
+      format('db/42 (j) milestone five_for: announced for four wickets and three saved balls (%s)', five1 - five0));
+    -- (k) the hat-trick notice (milestone_watch and bowler_hat_trick)
+    PERFORM _assert(hn1 - hn0 = 0,
+      format('db/42 (k) milestone hat_trick: announced for a saved ball (%s)', hn1 - hn0));
+
+    -- (b) scoring_verify_takeover: the pen goes to Sarah, who states the
+    -- fold's count — five more wickets — and the server expects the same.
+    PERFORM _as(U_SCORER);
+    SELECT a.code INTO v_code FROM scoring_arm_handover(M_HANDOVER, 'verify-040', 0, false) a;
+    PERFORM _assert(v_code IS NOT NULL, 'db/42: the scorer could not arm a handover after the free-hit over');
+    PERFORM _as(U_SARAH);
+    SELECT h.ok INTO v_ok FROM scoring_claim_handover(M_HANDOVER, 'verify-042-b', v_code) h;
+    PERFORM _assert(v_ok, 'db/42: Sarah could not claim the handover after the free-hit over');
+    SELECT v.exp_runs, v.exp_wkts, v.exp_balls INTO v_runs, v_wkts, v_balls
+      FROM scoring_verify_takeover(M_HANDOVER, 'verify-042-b', -1, -1, -1) v;
+    -- (b) scoring_verify_takeover
+    PERFORM _assert(v_wkts - all0 = 5,
+      format('db/42 (b) scoring_verify_takeover: expects %s more wickets than before the over, the fold says 5 — the handover could never verify',
+             v_wkts - all0));
+    SELECT v.ok INTO v_ok FROM scoring_verify_takeover(M_HANDOVER, 'verify-042-b', v_runs, all0::int + 5, v_balls) v;
+    -- (b) scoring_verify_takeover
+    PERFORM _assert(v_ok, 'db/42 (b) scoring_verify_takeover: the fold''s count did not verify after a saved wicket');
   END;
   PERFORM set_config('app.device_id', '', true);
 

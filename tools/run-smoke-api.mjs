@@ -132,6 +132,9 @@ const WALKS = [
   // How a boy is out, and how a bowler takes wickets, by method rather than
   // as a single count.
   "dismissals",
+  // A wicket the free hit saved: the fold and every SQL reader agree, over
+  // generated logs (db/42).
+  "free-hit",
   "commit",
   // The API refuses to start on a database missing a migration it was built
   // against, and starts on one that is ahead of it (SCRBRD-066).

@@ -108,6 +108,14 @@ dismissals. A free hit now saves the batter from every mode of dismissal except
 those that stand on a free hit — run out, and the other non-delivery
 dismissals — and is consumed by the next legal delivery.
 
+**In SQL (db/42).** Every SQL reader of `ball_event` that counts a wicket asks `ball_wicket_stands()`, the fold's
+rule in SQL: a W ball on a free hit stands only when its method is one of `NON_DELIVERY` (run out, handled the ball,
+obstructing the field, hit the ball twice, timed out, retired out). Whether a ball is on a free hit is
+`ball_on_free_hit()`: the last earlier delivery of the innings that was not a wide, voids excluded, was a no-ball.
+The live score, the handover check (`scoring_verify_takeover`), a batter's dismissals, innings and breakdown, a
+bowler's figures, hat-trick, breakdown and milestones, the opposition's figures and the matchups read all agree with
+the fold; `tools/smoke-free-hit.mjs` holds them to it over generated logs.
+
 ---
 
 ## Rules the engine implements that were already correct

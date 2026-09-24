@@ -3084,6 +3084,14 @@ keys: after the upgrade a re-offered, already-acknowledged ball reads as unsent 
   (3) `opposition_squad()`'s `balls` excludes no-balls, its fours/sixes count byes and wides worth four or six, and
   its `runs_conceded` leaves out the wide/no-ball penalty run; (4) a NULL `ball_type` on a `ball` row is a run to the
   fold and nothing to SQL (nothing writes one).
+  **(1) Closed 2026-09-24:** `db/42_free_hit_wickets.sql` — `ball_wicket_stands()` / `ball_on_free_hit()` carry the
+  fold's rule, and `match_live_score`, `scoring_verify_takeover`, `player_dismissals_since`, `player_innings`,
+  `player_dismissal_breakdown`, `player_bowling_since`, `bowler_innings_figures`, `bowler_hat_trick`,
+  `player_wicket_breakdown`, `opposition_squad`, `milestone_watch` and the read API's `matchups` ask it. Proved by
+  `tools/smoke-free-hit.mjs` (fold = SQL over 64 generated/hand-written innings), `smoke-handover` (a handover after
+  a saved wicket verifies) and `db/99` §20. Still open, found alongside: a W ball with no method (NULL `dismissal`)
+  is the bowler's wicket to `dismissal_is_bowlers()` and not to the fold's `chargedToBowler()` — the API refuses one,
+  so only a row written before db/13 or by hand can carry it.
 
 ### Decided 2026-09-24 — screens to build next (from docs/redesign/SCREEN_MAP.md)
 - **SCRBRD-082 — Post-match report.** Scorecard, key moments, figures, generated from the log after a match.
