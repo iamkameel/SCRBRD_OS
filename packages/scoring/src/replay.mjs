@@ -116,6 +116,10 @@ const BAT_STATUS = { NOT_OUT: "batting", OUT: "out", RETIRED: "retired" };
  *   the wickets that fell with no delivery (retired out, timed out: SCRBRD-081),
  *   each with the 0-based over the next delivery is in. They are in `wickets`
  *   and `fow`, and in no ballLog entry.
+ * @property {{over: number, ballInOver: number, from: string | null, to: string, reason: string | null}[]} bowlerChanges
+ *   bowlers replaced during an over (SCRBRD-080): 0-based over, the legal balls
+ *   of it already bowled, who left, who took over, and why (null in a log from
+ *   before the pad asked)
  * @property {{bat1: string, bat2: string, runs: number, balls: number, wicket: number}[]} partnerships
  * @property {{runs: number, balls: number, bat1: string | null, bat2: string | null}} curPartner
  * @property {BallLogEntry[]} ballLog
@@ -143,6 +147,22 @@ const BAT_STATUS = { NOT_OUT: "batting", OUT: "out", RETIRED: "retired" };
 /** Overs in cricket's odd base: 17 legal balls is 2.5 overs.
  *  @param {number} balls */
 export const fmtOvers = (balls) => `${Math.floor(balls / 6)}.${balls % 6}`;
+
+/**
+ * Is an over under way — has a delivery of the over the next ball is in been
+ * bowled? A bowler named now takes over from one who has started it
+ * (SCRBRD-080, Law 17.8.1); at an over's start there is nobody to take over
+ * from. A wide or no-ball counts: it is part of the over though not one of
+ * its six. The log is in order, so the last entry answers.
+ *
+ * @param {Pick<Innings, "balls" | "ballLog"> | Partial<Innings> | null | undefined} inn
+ * @returns {boolean}
+ */
+export function isMidOver(inn) {
+  const log = inn?.ballLog ?? [];
+  const last = log[log.length - 1];
+  return last != null && last.over === Math.floor((inn?.balls ?? 0) / 6);
+}
 
 /**
  * The dismissal a retire event records, or null when it records none.
@@ -201,7 +221,7 @@ function inningsFolder(ctx = {}) {
     runs: 0, wickets: 0, balls: 0,
     extras: { wide: 0, noBall: 0, bye: 0, legBye: 0, penalty: 0 },
 
-    batsmen: [], bowlers: [], fow: [], nonBallWickets: [],
+    batsmen: [], bowlers: [], fow: [], nonBallWickets: [], bowlerChanges: [],
     partnerships: [], curPartner: { runs: 0, balls: 0, bat1: null, bat2: null },
     ballLog: [], overLog: [],
 
@@ -339,6 +359,16 @@ function inningsFolder(ctx = {}) {
       }
 
       case KIND.BOWLER:
+        // A change during an over (SCRBRD-080): recorded with the reason the
+        // event gives — none, in a log from before the pad asked — so a card
+        // can say who finished whose over, and why.
+        if (isMidOver(inn) && ev.bowler != null && ev.bowler !== inn.bowler) {
+          const last = inn.ballLog[inn.ballLog.length - 1];
+          inn.bowlerChanges.push({
+            over: Math.floor(inn.balls / 6), ballInOver: inn.balls % 6,
+            from: inn.bowler ?? last?.bowlerId ?? null, to: ev.bowler, reason: ev.reason ?? null,
+          });
+        }
         bowlerFor(ev.bowler);
         inn.bowler = ev.bowler;
         break;

@@ -756,9 +756,19 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,onClose
 /* ═══════════════════════════════════════════════════════
    NEW OVER / BOWLER SHEET
 ═══════════════════════════════════════════════════════ */
-function NewOverSheet({ovNum,prevBowlers,bowlingSquad,bowlingTeamKey,lastBowlerName,refuses,onClose,onConfirm}){
+/**
+ * `midOver` (SCRBRD-080): the over is under way, so this is a bowler taking
+ * over from one who cannot finish it. Law 17.8.1 allows that only for an
+ * injured or suspended bowler, so the sheet asks which before it offers
+ * anyone, and passes it on: onConfirm(id, reason).
+ */
+function NewOverSheet({ovNum,prevBowlers,bowlingSquad,bowlingTeamKey,lastBowlerName,refuses,onClose,onConfirm:confirm,midOver=false}){
   const[name,setName]=useState("");
   const[filter,setFilter]=useState("");
+  const[reason,setReason]=useState(null);
+  const onConfirm=(id)=>{if(midOver&&!reason)return;confirm(id,midOver?reason:undefined);};
+  const reasonPill=(on)=>({flex:1,padding:"10px",borderRadius:D.md,cursor:"pointer",fontFamily:D.body,fontSize:"13px",fontWeight:600,
+    border:`1px solid ${on?D.amber+"77":D.border}`,background:on?`${D.amber}1a`:D.surf2,color:on?D.amber:D.textSecondary});
   const teamInfo=INT_TEAMS[bowlingTeamKey]||null;
   // Build full list: team bowlers first, then all-rounders, then others
   // Same normalisation as the batting sheet: a demonstration squad is bare
@@ -775,16 +785,31 @@ function NewOverSheet({ovNum,prevBowlers,bowlingSquad,bowlingTeamKey,lastBowlerN
   // the rule the server applies when the bowler event arrives — asked by the
   // id that will be emitted. The name comparison is kept only for a caller
   // that does not pass it.
-  const canBowl=(p)=>refuses?!refuses(p.id??p.name):p.name!==lastBowlerName;
+  // Mid-over, nobody is offered until the reason is chosen.
+  const canBowl=(p)=>(!midOver||!!reason)&&(refuses?!refuses(p.id??p.name):p.name!==lastBowlerName);
   const prevBowlerMap={};
   prevBowlers.forEach(b=>{prevBowlerMap[b.name]=b;});
   return (
-    <Sheet title={ovNum===0?"Opening Bowler":`Over ${ovNum} Complete`} accent={D.amber} onClose={onClose}>
+    <Sheet title={midOver?"Change of Bowler":ovNum===0?"Opening Bowler":`Over ${ovNum} Complete`} accent={D.amber} onClose={onClose}>
       <div style={{paddingTop:"8px"}}>
+        {midOver&&(
+          <div data-testid="bowler-change-reason" style={{marginBottom:"14px"}}>
+            <Lbl sx={{marginBottom:"7px",color:D.amber}}>Injury or suspended?</Lbl>
+            <div style={{display:"flex",gap:"7px"}}>
+              <button type="button" data-testid="bowler-change-injury" onClick={()=>setReason("injury")} className="pressBtn" style={reasonPill(reason==="injury")}>Injury</button>
+              <button type="button" data-testid="bowler-change-suspended" onClick={()=>setReason("suspended")} className="pressBtn" style={reasonPill(reason==="suspended")}>Suspended</button>
+            </div>
+            <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginTop:"6px"}}>
+              Law 17.8.1: a bowler may be replaced during an over only when injured or suspended. Whoever finishes the over may not bowl the next.
+            </div>
+          </div>
+        )}
+        {!midOver&&(
         <div style={{color:D.textSecondary,fontSize:"12px",fontFamily:D.body,marginBottom:"14px"}}>
           {ovNum===0?"Select the opening bowler.":`Select bowler for over ${ovNum+1}.`}
           {lastBowlerName&&<span style={{color:D.textMuted}}> ({lastBowlerName} cannot bowl consecutive overs)</span>}
         </div>
+        )}
         {/* Search filter */}
         <div style={{marginBottom:"12px"}}>
           <input value={filter} onChange={e=>setFilter(e.target.value)} aria-label="Search bowlers"
@@ -812,7 +837,7 @@ function NewOverSheet({ovNum,prevBowlers,bowlingSquad,bowlingTeamKey,lastBowlerN
                     <div style={{flex:1}}>
                       <div style={{fontFamily:D.body,fontSize:"13px",fontWeight:500,
                         color:dis?D.textMuted:D.textPrimary}}>{b.name}</div>
-                      {dis&&<div style={{fontFamily:D.body,fontSize:"10px",color:D.roseText,marginTop:"1px"}}>Cannot bowl consecutive overs</div>}
+                      {dis&&(!midOver||reason)&&<div style={{fontFamily:D.body,fontSize:"10px",color:D.roseText,marginTop:"1px"}}>Cannot bowl consecutive overs</div>}
                     </div>
                     {ri&&<Badge color={ROLE_COLORS[ri.role]} sx={{fontSize:"8px"}}>{ri.role}</Badge>}
                     <div style={{display:"flex",gap:"12px",alignItems:"center"}}>

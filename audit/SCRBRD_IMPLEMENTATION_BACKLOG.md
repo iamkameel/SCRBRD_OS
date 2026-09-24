@@ -3057,6 +3057,9 @@ keys: after the upgrade a re-offered, already-acknowledged ball reads as unsent 
 - **SCRBRD-068** (no-ball byes): approved — build.
 - **SCRBRD-069** (run-out end): decided — ask the scorer which end on a run out that completed runs — build.
 - **SCRBRD-080 — Mid-over bowler change records its reason.** Allowed (Law 17.8.1); the pad asks *Injury or suspended?* and records it on the `bowler` event. P2.
+  **Built 2026-09-24:** `bowler({ bowler, reason: "injury" | "suspended" })`; a mid-over change with no reason is
+  refused at commit (`mid_over_no_reason`); old logs replay. Not built: Law 41 says a suspended bowler does not bowl
+  again in the innings — nothing refuses him yet (a further product decision).
 - **SCRBRD-081 — Timed out and retired out are not deliveries.** A non-ball dismissal event; over count and bowler figures unaffected; old logs replay unchanged. P2.
   **Built 2026-09-24:** a `retire` marked `type: "W"` (docs/SCORING_RULES.md, "Timed out and retired out"). Left
   open: the career views (db/02, db/13) and the dismissal breakdown (db/26) read `kind = 'ball'`, so these

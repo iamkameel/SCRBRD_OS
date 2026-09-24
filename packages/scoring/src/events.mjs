@@ -245,8 +245,11 @@ export const INNINGS_END_REASON = {
 /** @typedef {EventBase & {kind: "batters", striker: string | null, nonStriker: string | null}} BattersEvent */
 /** @typedef {BaseInput & {striker?: string | null, nonStriker?: string | null}} BattersInput */
 
-/** @typedef {EventBase & {kind: "bowler", bowler: string | null}} BowlerEvent */
-/** @typedef {BaseInput & {bowler?: string | null}} BowlerInput */
+/**
+ * `reason` is present only on a change of bowler during an over (SCRBRD-080).
+ * @typedef {EventBase & {kind: "bowler", bowler: string | null, reason?: BowlerChangeReason}} BowlerEvent
+ */
+/** @typedef {BaseInput & {bowler?: string | null, reason?: string | null}} BowlerInput */
 
 /**
  * A delivery. Player references are ids where SCRBRD holds a row, typed names
@@ -455,11 +458,37 @@ export const batters = (o) => ({
   nonStriker: o.nonStriker ?? null,
 });
 
-/** @param {BowlerInput} o  @returns {BowlerEvent} */
-export const bowler = (o) => ({
-  ...base(KIND.BOWLER, o),
-  bowler: o.bowler ?? null,
-});
+/**
+ * Why a bowler was replaced during an over. Law 17.8.1: only a bowler who is
+ * incapacitated (injured, taken ill) or suspended (Law 41) may be; the
+ * over is finished by another, who may not have bowled the previous over and
+ * may not bowl the next (17.8, "or parts thereof").
+ */
+export const BOWLER_CHANGE_REASON = Object.freeze({ INJURY: "injury", SUSPENDED: "suspended" });
+/** @typedef {typeof BOWLER_CHANGE_REASON[keyof typeof BOWLER_CHANGE_REASON]} BowlerChangeReason */
+/** @type {ReadonlySet<unknown>}  asked of whatever a producer wrote */
+export const BOWLER_CHANGE_REASONS = new Set(Object.values(BOWLER_CHANGE_REASON));
+
+/**
+ * The bowler for the coming over — or, with `reason`, the one who takes over
+ * DURING an over from a bowler injured or suspended (SCRBRD-080). The reason
+ * is omitted when not given, so a bowler event for a new over is the same
+ * object it always was; an unknown one is refused here, where the scorer who
+ * chose it is still looking at the screen (the server refuses one too).
+ *
+ * @param {BowlerInput} o
+ * @returns {BowlerEvent}
+ */
+export const bowler = (o) => {
+  if (o.reason != null && !BOWLER_CHANGE_REASONS.has(o.reason)) {
+    throw new TypeError(`unknown bowler change reason ${JSON.stringify(o.reason)} — expected one of ${[...BOWLER_CHANGE_REASONS].join(", ")}`);
+  }
+  return {
+    ...base(KIND.BOWLER, o),
+    bowler: o.bowler ?? null,
+    ...(o.reason != null ? { reason: /** @type {BowlerChangeReason} */ (o.reason) } : {}),
+  };
+};
 
 /**
  * A delivery.

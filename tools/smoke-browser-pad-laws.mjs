@@ -247,6 +247,52 @@ try {
      to.inn.batsmen.some((b) => b.dismissal === "timed out" && b.balls === 0));
   ok("...and only the bowled one is the bowler's", to.inn.bowlers.reduce((a, b) => a + b.wickets, 0) === 1);
 
+  // ── SCRBRD-080 ───────────────────────────────────────────────
+  group("SCRBRD-080: a bowler replaced mid-over — the pad asks why");
+  await makeReady();
+  await click(/PRO MODE/, 3000);
+  await page.waitForTimeout(500);
+  ok("the over is under way", to.inn.balls % 6 !== 0);
+  ok("the pro pad offers a change of bowler", await click(/Chg Bowler/, 3000));
+  await page.waitForTimeout(400);
+  ok("the sheet asks: injury or suspended?", await tid("bowler-change-reason").count() === 1 && /Injury or suspended/i.test(await text()));
+  const goBtn = page.locator("button", { hasText: /^Go$/ }).first();
+  const bowlerField = page.locator("input[aria-label='Bowler name']").first();
+  await bowlerField.fill("B Zulu");
+  ok("...and offers nobody until it is answered", await goBtn.isDisabled());
+  await tap("bowler-change-injury");
+  ok("...then the replacement may be named", !(await goBtn.isDisabled()));
+  await goBtn.click({ timeout: 3000 });
+  await page.waitForTimeout(500);
+  await click(/FOCUS MODE/, 3000);
+  const ch = await agree("after the change");
+  const bowlerRow = ch.rows.filter((r) => r.kind === "bowler").at(-1);
+  ok("the server stored the change with its reason",
+     bowlerRow?.payload?.bowler === "B Zulu" && bowlerRow?.payload?.reason === "injury", JSON.stringify(bowlerRow?.payload));
+  ok("...and its fold says who took over, when, and why",
+     ch.inn.bowlerChanges.length === 1 && ch.inn.bowlerChanges[0].to === "B Zulu" && ch.inn.bowlerChanges[0].from === "A Nel"
+     && ch.inn.bowlerChanges[0].reason === "injury" && ch.inn.bowler === "B Zulu");
+  // B Zulu finishes the over.
+  for (let b = ch.inn.balls % 6; b < 6; b++) await click(/^·/, 2000);
+  await page.waitForTimeout(600);
+  ok("the over ends and the pad asks for the next bowler", /Over \d+ Complete/i.test(await text()));
+  const nextField = page.locator("input[aria-label='Bowler name']").first();
+  await nextField.fill("B Zulu");
+  ok("...not the man who finished the last one (Law 17.8, or parts thereof)", await page.locator("button", { hasText: /^Go$/ }).first().isDisabled());
+  await nextField.fill("A Nel");
+  ok("...nor the man he replaced", await page.locator("button", { hasText: /^Go$/ }).first().isDisabled());
+  await nextField.fill("C Mthembu");
+  await page.locator("button:not([disabled])", { hasText: /^Go$/ }).first().click({ timeout: 3000 });
+  await page.waitForTimeout(500);
+  const over2 = await agree("over two begins");
+  ok("the server took the third bowler", over2.inn.bowler === "C Mthembu" && over2.inn.balls === 6);
+  await page.locator("button", { hasText: /^📋\s*Cards$/ }).first().click({ timeout: 3000 }).catch(() => {});
+  await page.waitForTimeout(500);
+  const cards = await tid("bowler-changes").first().innerText().catch(() => "");
+  ok(`the scorecard says it (${cards.trim()})`, /B Zulu took over from A Nel \(injured\)/.test(cards));
+  await page.locator("button", { hasText: /^🏏\s*Score$/ }).first().click({ timeout: 3000 }).catch(() => {});
+  await page.waitForTimeout(400);
+
   ok("no console errors on the pad", errors.length === 0, errors.slice(0, 3).join(" | "));
 } catch (e) {
   ok(`the walk threw: ${e.message?.slice(0, 200)}`, false);

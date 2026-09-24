@@ -172,6 +172,7 @@ Refused, with the reason named:
 | A ball needs an innings, batters at both ends and a bowler; not in a closed or finished innings | `scoringReadiness()` (the pad's own gate) |
 | Striker and non-striker are different players | AntiGravity `validateDelivery` |
 | No bowler bowls two overs, or parts of two, running (Law 17.8) | AntiGravity; "parts thereof" added |
+| A bowler replaced during an over says why: injury or suspension (Law 17.8.1) | SCRBRD-080 |
 | Whoever is out on a wicket must be one of the two batting | AntiGravity |
 | No ball once the second innings is complete — the match is decided | AntiGravity `recordBallAction` |
 | An innings starts only when the one before it has ended (by the laws or a seal) | new, from the model |
@@ -183,9 +184,7 @@ Refused, with the reason named:
 | A live `void` names the latest event that still counts in the innings in play — last in, first out, as the pad's undo. Anything older is an amendment (a second person, `scoring_amendment`) | new, `undo.mjs` |
 
 Not refused, deliberately — each would need a product decision: a dismissal on
-a free hit (§6 above records it and saves the batter), a mid-over change of
-bowler (Law 17.8.1 allows it for injury; the model does not say why a change
-happened), a stale or wrong seal (`sealRefusal` records and ignores it), a late
+a free hit (§6 above records it and saves the batter), a stale or wrong seal (`sealRefusal` records and ignores it), a late
 capture-profile declaration, the number of innings a format has, and whether a
 typed player is in the squad.
 
@@ -315,6 +314,30 @@ Taken by the product owner on the rules the commit-time Laws check left open.
 5. **Timed out and retired out are not deliveries.** Recorded as a dismissal event that is not a ball: the over's
    count and the bowler's figures are unaffected and the bowler gets no credit. Old matches replay unchanged.
    Built as SCRBRD-081 — see below.
+
+### A bowler replaced during an over (SCRBRD-080)
+
+**The shape.** The `bowler` event gains an optional `reason`: `"injury"` or `"suspended"`
+(`BOWLER_CHANGE_REASON`). It is present only on a change during an over and omitted otherwise, so a bowler for a new
+over is the same event it always was. The constructor refuses any other value.
+
+**Mid-over** means a delivery of the over the next ball is in has been bowled (`isMidOver`, in `replay.mjs`) — a wide
+or no-ball that opened the over counts. Correcting the opening bowler before the first ball is not a change.
+
+**No reason: refused.** Law 17.8.1 lets a bowler be replaced during an over only when he is incapacitated or
+suspended, so the reason is what makes the change lawful, and the pad always asks. A new mid-over `bowler` event with no
+reason, or one the model does not know, is refused at commit (`mid_over_no_reason`). Naming the bowler already on is
+no change and needs none. Only new events are judged: a log from before the pad asked replays unchanged, its change
+recorded with the reason unknown. An older build's change arrives without one and is held for a person, like any
+refusal; its balls are still judged, against the bowler the server has.
+
+**The fold.** Unchanged figures — each man is credited with the balls he bowled — plus `inn.bowlerChanges`: the over,
+the legal balls of it already bowled, who left, who took over and why. "Or parts thereof" (Law 17.8) was already
+enforced and still is: neither the man who left nor the one who finished the over may bowl the next.
+
+**The pad.** "Chg Bowler" during an over opens the bowler sheet as *Change of Bowler*, which asks *Injury or
+suspended?* and offers nobody until it is answered. The scorecard's bowling card lists each change ("Over 2.3: B Zulu
+took over from A Nel (injured)"; "reason not recorded" for an old log).
 
 ### Timed out and retired out (SCRBRD-081)
 

@@ -4,7 +4,7 @@ import {
   ball as ballEvent, penalty as penaltyEvent, revision as revisionEvent, retire as retireEvent, sealInnings,
   newEventId, KIND, battingFirst, tossFromRow, firstInningsSides,
   noPlacement, NO_CONTACT_SHOTS, PLACEMENT_NULL, PLACEMENT_SOURCE, CAPTURE_PROFILE,
-  DISMISSAL, DISMISSAL_LABEL, RETIRE_REASON, scoringReadiness, SCORING_BLOCK, lawsRefusal, REFUSAL_TEXT, LOCAL_ONLY,
+  DISMISSAL, DISMISSAL_LABEL, RETIRE_REASON, BOWLER_CHANGE_REASON, isMidOver, scoringReadiness, SCORING_BLOCK, lawsRefusal, REFUSAL_TEXT, LOCAL_ONLY,
 } from "@scrbrd/scoring";
 import { D } from "../design/tokens.js";
 import { deviceId } from "../lib/device.js";
@@ -1022,13 +1022,18 @@ function SCRBRD({resume}={}){
     emit(battersEvent(asStriker?{striker:name}:{nonStriker:name}));
   };
 
-  const addBowler=name=>emit(bowlerEvent({bowler:name}));
+  // `reason` only for a change during an over (SCRBRD-080): the sheet asks
+  // "Injury or suspended?" then, and the server refuses a change without one.
+  const addBowler=(name,reason)=>emit(bowlerEvent({bowler:name,...(reason?{reason}:{})}));
+  const midOver=isMidOver(inn);
   // The bowler sheet asks the question the server asks when the event
   // arrives — lawsRefusal() over the same two arrays this screen already
   // folds — so a bowler it offers is one the server will take. It used to
   // compare names against the last bowler, a rule of its own that knew
   // nothing of a mid-over change (Law 17.8: "or parts thereof").
-  const bowlerRefusal=id=>lawsRefusal({innings,events},bowlerEvent({innings:curIn,bowler:id}));
+  // Mid-over the sheet itself insists on the reason; what it asks the Laws
+  // here is the rest (Law 17.8), so it offers a reason the server will take.
+  const bowlerRefusal=id=>lawsRefusal({innings,events},bowlerEvent({innings:curIn,bowler:id,...(midOver?{reason:BOWLER_CHANGE_REASON.INJURY}:{})}));
 
   const awardPenalty=(runs,to,reason)=>{
     emit(penaltyEvent({runs,toBattingTeam:to==="batting",reason}));
@@ -1216,8 +1221,9 @@ function SCRBRD({resume}={}){
           bowlingTeamKey={inn?.bowlingTeamKey}
           lastBowlerName={lastBowler?.name||null}
           refuses={bowlerRefusal}
+          midOver={midOver}
           onClose={()=>setModal(null)}
-          onConfirm={name=>{addBowler(name);setModal(null);}}/>
+          onConfirm={(name,reason)=>{addBowler(name,reason);setModal(null);}}/>
       );
     }
 

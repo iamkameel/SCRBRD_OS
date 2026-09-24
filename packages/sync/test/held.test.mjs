@@ -180,6 +180,9 @@ group("G. In words");
   ok("timed out, a wicket with no ball", describeEvent(retire({ batter: "p3", reason: "timed_out" }), innings[0])
      === "Wicket, no ball — T Mokoena timed out");
   ok("retired out, the same", describeEvent(retire({ batter: "p1", reason: "out" }), innings[0]) === "Wicket, no ball — S Dlamini retired out");
+  // SCRBRD-080: a bowler taking over mid-over says why.
+  ok("a mid-over change names its reason", describeEvent(bowler({ bowler: "Z Unknown", reason: "injury" }), innings[0])
+     === "Bowler — Z Unknown to bowl (takes over mid-over: injury)");
   ok("retired hurt, a retirement", describeEvent(retire({ batter: "p1", reason: "hurt" }), innings[0]) === "Retirement — S Dlamini (retired hurt)");
 }
 

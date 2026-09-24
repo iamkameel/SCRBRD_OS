@@ -219,8 +219,9 @@ group("F. At the crease");
 
   // Law 17.8, "or parts thereof": a mid-over change bars BOTH bowlers from the next over.
   const shared = [...open(0), ...runs(0, 0, 0, 0), ...at(0, bowler({ bowler: "w3" })), ...runs(0, 0, 0, 0)];
-  ok("a mid-over change of bowler is accepted (Law 17.8.1 — not refused here)",
-     judge([...open(0), ...runs(0, 0)], at(0, bowler({ bowler: "w3" }))[0]) === null);
+  // SCRBRD-080: accepted with the reason Law 17.8.1 gives; refused without.
+  ok("a mid-over change of bowler is accepted with its reason (Law 17.8.1)",
+     judge([...open(0), ...runs(0, 0)], at(0, bowler({ bowler: "w3", reason: "injury" }))[0]) === null);
   ok("...and neither man who shared the over may bowl the next",
      judge(shared, at(0, bowler({ bowler: "w1" }))[0]) === REFUSAL.CONSECUTIVE_OVERS
      && judge(shared, at(0, bowler({ bowler: "w3" }))[0]) === REFUSAL.CONSECUTIVE_OVERS
@@ -342,6 +343,46 @@ group("K. Timed out and retired out: a retire marked W");
   ok("a W delivery naming timed out (the old shape) is still accepted",
      judge(L, at(0, ball({ type: BALL_TYPE.WICKET, dismissal: "timed_out" }))[0]) === null);
   ok("retired hurt is judged as it always was", judge(L, at(0, retire({ batter: "p1", reason: "hurt" }))[0]) === null);
+}
+
+// ── L. A mid-over change of bowler says why (SCRBRD-080) ────────
+group("L. A bowler replaced during an over: injury or suspended");
+{
+  const two = [...open(0), ...runs(0, 0, 0, 1)];   // three balls of the first over
+  ok("with no reason, refused", judge(two, at(0, bowler({ bowler: "w3" }))[0]) === REFUSAL.MID_OVER_NO_REASON);
+  ok("injured, accepted", judge(two, at(0, bowler({ bowler: "w3", reason: "injury" }))[0]) === null);
+  ok("suspended, accepted", judge(two, at(0, bowler({ bowler: "w3", reason: "suspended" }))[0]) === null);
+  /** @type {LogEvent} */
+  const odd = /** @type {LogEvent} */ (/** @type {unknown} */ ({ kind: "bowler", bowler: "w3", reason: "tired" }));
+  ok("a reason the model does not know, refused", judge(two, at(0, odd)[0]) === REFUSAL.MID_OVER_NO_REASON);
+  let threw = false;
+  try { bowler({ bowler: "w3", reason: "tired" }); } catch { threw = true; }
+  ok("...and the constructor will not build one", threw);
+  ok("naming the bowler already on is no change, and needs none", judge(two, at(0, bowler({ bowler: "w1" }))[0]) === null);
+  // A wide is part of the over: a change after it is mid-over too.
+  const wide = [...open(0), ...runs(0, 0, 0, 0, 0, 0), ...at(0, bowler({ bowler: "w2" }), ball({ type: BALL_TYPE.WIDE }))];
+  ok("after a wide that opened an over, a change is mid-over", judge(wide, at(0, bowler({ bowler: "w3" }))[0]) === REFUSAL.MID_OVER_NO_REASON);
+  // Not mid-over: the start of an over, or before the first ball.
+  const done = [...open(0), ...runs(0, 0, 0, 0, 0, 0, 0)];
+  ok("a new over needs no reason", judge(done, at(0, bowler({ bowler: "w2" }))[0]) === null);
+  ok("nor does correcting the opening bowler before a ball", judge(open(0), at(0, bowler({ bowler: "w2" }))[0]) === null);
+  // Law 17.8, "or parts thereof", still binds the man who finished the over.
+  const finished = [...two, ...at(0, bowler({ bowler: "w3", reason: "injury" })), ...runs(0, 0, 0, 0)];
+  ok("the replacement may not bowl the next over", judge(finished, at(0, bowler({ bowler: "w3" }))[0]) === REFUSAL.CONSECUTIVE_OVERS);
+  ok("...nor the injured man", judge(finished, at(0, bowler({ bowler: "w1" }))[0]) === REFUSAL.CONSECUTIVE_OVERS);
+  // The fold records who took over, when, and why; the balls are his.
+  const inn = deriveInnings(finished);
+  ok("the fold records the change: over 1, after 3 balls, w1 to w3, injury",
+     inn.bowlerChanges.length === 1 && inn.bowlerChanges[0].over === 0 && inn.bowlerChanges[0].ballInOver === 3
+     && inn.bowlerChanges[0].from === "w1" && inn.bowlerChanges[0].to === "w3" && inn.bowlerChanges[0].reason === "injury");
+  ok("...and splits the over's balls between them",
+     inn.bowlers.find((b) => b.id === "w1")?.balls === 3 && inn.bowlers.find((b) => b.id === "w3")?.balls === 3);
+  // A log from before the pad asked still replays, and says it did not say.
+  const old = deriveInnings([...two, { kind: "bowler", bowler: "w3", innings: 0 }, ...runs(0, 0, 0)]);
+  ok("an old mid-over change with no reason replays, its reason unknown",
+     old.bowler === "w3" && old.bowlerChanges.length === 1 && old.bowlerChanges[0].reason === null && old.balls === 5);
+  ok("a bowler for a new over is not a change", deriveInnings(done).bowlerChanges.length === 0
+     && deriveInnings([...done, ...at(0, bowler({ bowler: "w2" }))]).bowlerChanges.length === 0);
 }
 
 group("J. Every reason has words for the person who has to clear it");

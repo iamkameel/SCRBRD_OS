@@ -33,16 +33,14 @@
  * a refusal the Laws do not require would strand a real scorer mid-match:
  *   - a dismissal the fold saves on a free hit (SCORING_RULES.md §6 records it
  *     and marks the batter saved; it is not refused);
- *   - a mid-over change of bowler (Law 17.8.1 allows it for an incapacitated or
- *     suspended bowler, and the event model does not say which a change is);
  *   - a stale or wrong seal (sealRefusal() in replay.mjs records and ignores
  *     it, by design, because an offline queue can replay one);
  *   - a late capture-profile declaration (the fold ignores it; SCRBRD-039);
  *   - how many innings a format has, and whether a player is in the squad
  *     (opposition players are typed names SCRBRD holds no row for).
  */
-import { KIND, BALL_TYPE, DISMISSAL } from "./events.mjs";
-import { retirementDismissal } from "./replay.mjs";
+import { KIND, BALL_TYPE, DISMISSAL, BOWLER_CHANGE_REASONS } from "./events.mjs";
+import { retirementDismissal, isMidOver } from "./replay.mjs";
 import { scoringReadiness } from "./readiness.mjs";
 import { voidedIds, lastUndoableIndex } from "./undo.mjs";
 
@@ -69,6 +67,7 @@ export const REFUSAL = Object.freeze({
   CREASE_OCCUPIED:        "crease_occupied",        // a not-out batter replaced without leaving
   NOT_AT_CREASE:          "not_at_crease",          // dismissed / retiring batter is not batting
   CONSECUTIVE_OVERS:      "consecutive_overs",      // Law 17.8: not two overs, or parts, running
+  MID_OVER_NO_REASON:     "mid_over_no_reason",     // Law 17.8.1: a change during an over says why (SCRBRD-080)
   // A dismissal with no delivery (SCRBRD-081).
   NEEDS_A_DELIVERY:       "needs_a_delivery",       // only retired out and timed out happen without a ball
   NOT_NEXT_IN:            "not_next_in",            // timed out: the batter was not the one due in
@@ -100,6 +99,7 @@ export const REFUSAL_TEXT = Object.freeze({
   crease_occupied: "a batter who is not out was replaced",
   not_at_crease: "that batter is not at the crease",
   consecutive_overs: "a bowler may not bowl two overs in a row",
+  mid_over_no_reason: "the bowler was changed during an over without saying why — injury or suspension (Law 17.8.1)",
   needs_a_delivery: "only retired out and timed out are recorded without a ball — every other way out needs a delivery",
   not_next_in: "a batter can be timed out only while an end is empty and he is the one due in",
   void_no_target: "the undo named no event",
@@ -163,7 +163,16 @@ export function lawsRefusal(match, ev) {
     case KIND.BATTERS: return inn?.battingTeam == null ? REFUSAL.NO_INNINGS : battersRefusal(inn, ev);
     case KIND.BOWLER: {
       if (inn?.battingTeam == null) return REFUSAL.NO_INNINGS;
-      return bowledLastOver(inn, ev.bowler) ? REFUSAL.CONSECUTIVE_OVERS : null;
+      if (bowledLastOver(inn, ev.bowler)) return REFUSAL.CONSECUTIVE_OVERS;
+      // Law 17.8.1: an over is finished by another bowler only when the one
+      // bowling it is incapacitated or suspended, and the event says which
+      // (SCRBRD-080). One with no reason, or one the model does not know, is
+      // refused: the reason is what makes the change lawful. A log from
+      // before the pad asked still replays; only a new event is judged.
+      if (isMidOver(inn) && ev.bowler != null && ev.bowler !== inn.bowler && !BOWLER_CHANGE_REASONS.has(ev.reason)) {
+        return REFUSAL.MID_OVER_NO_REASON;
+      }
+      return null;
     }
     case KIND.RETIRE: {
       if (inn?.battingTeam == null) return REFUSAL.NO_INNINGS;
