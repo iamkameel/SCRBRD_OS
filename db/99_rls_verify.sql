@@ -246,6 +246,100 @@ INSERT INTO match_pitch_report (match_id, school_id, surface, favours) VALUES
   ('77777777-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 'firm', 'seam')
 ON CONFLICT DO NOTHING;
 
+-- db/41. A second driver at the same school (a test-only account, like the
+-- umpire above), and three fixtures: A's today (with a second bus on it, which
+-- B drives), B's today (with a bus nobody is named on), and A's in ten days.
+-- The squads (named in the section itself, by _pick_41, so no earlier count
+-- of a team sheet moves) are J Whitfield, whom the seed gives an emergency
+-- contact and whose registration nothing earlier in this file touches, so
+-- each manifest has something in it to leak. Owner-written, rolled back.
+INSERT INTO app_user (id, school_id, email, name, role) VALUES
+  ('88888888-0000-0000-0000-00000000041b', '11111111-1111-1111-1111-111111111111',
+   'driver41b@example.invalid', 'B Second-Driver', 'driver')
+ON CONFLICT DO NOTHING;
+INSERT INTO role_assignment (id, person_id, role, school_id, team_code) VALUES
+  ('a5510000-0000-0000-0000-00000000041b', '88888888-0000-0000-0000-00000000041b', 'driver',
+   '11111111-1111-1111-1111-111111111111', NULL)
+ON CONFLICT DO NOTHING;
+INSERT INTO match (id, school_id, team_code, opponent, starts_at, format, overs, status) VALUES
+  ('77777777-0000-0000-0000-0000000041a0', '11111111-1111-1111-1111-111111111111', '1XI',
+   'Verify 041 A XI', now() + interval '3 hours', 'T20', 20, 'scheduled'),
+  ('77777777-0000-0000-0000-0000000041b0', '11111111-1111-1111-1111-111111111111', '2XI',
+   'Verify 041 B XI', now() + interval '3 hours', 'T20', 20, 'scheduled'),
+  ('77777777-0000-0000-0000-0000000041f0', '11111111-1111-1111-1111-111111111111', '1XI',
+   'Verify 041 F XI', now() + interval '10 days', 'T20', 20, 'scheduled')
+ON CONFLICT DO NOTHING;
+INSERT INTO trip (id, match_id, school_id, driver_id, depart_at, pickup) VALUES
+  ('41410000-0000-0000-0000-00000000000a', '77777777-0000-0000-0000-0000000041a0',
+   '11111111-1111-1111-1111-111111111111', '88888888-0000-0000-0000-000000000017',
+   now() + interval '2 hours', 'db/99: A''s bus'),
+  ('41410000-0000-0000-0000-0000000000a2', '77777777-0000-0000-0000-0000000041a0',
+   '11111111-1111-1111-1111-111111111111', '88888888-0000-0000-0000-00000000041b',
+   now() + interval '2 hours', 'db/99: B''s bus to A''s fixture'),
+  -- The office's own schooladmin at the wheel of a third bus to A's fixture:
+  -- somebody who reads the fixture in his own right and also drives, whom
+  -- db/41's restrictive policy must leave exactly as he was.
+  ('41410000-0000-0000-0000-0000000000a3', '77777777-0000-0000-0000-0000000041a0',
+   '11111111-1111-1111-1111-111111111111', '88888888-0000-0000-0000-00000000000c',
+   now() + interval '2 hours', 'db/99: the office drives too'),
+  ('41410000-0000-0000-0000-00000000000b', '77777777-0000-0000-0000-0000000041b0',
+   '11111111-1111-1111-1111-111111111111', '88888888-0000-0000-0000-00000000041b',
+   now() + interval '2 hours', 'db/99: B''s bus'),
+  ('41410000-0000-0000-0000-00000000000c', '77777777-0000-0000-0000-0000000041b0',
+   '11111111-1111-1111-1111-111111111111', NULL,
+   now() + interval '2 hours', 'db/99: nobody named'),
+  ('41410000-0000-0000-0000-00000000000f', '77777777-0000-0000-0000-0000000041f0',
+   '11111111-1111-1111-1111-111111111111', '88888888-0000-0000-0000-000000000017',
+   now() + interval '10 days', 'db/99: A''s bus, a fortnight off')
+ON CONFLICT DO NOTHING;
+
+-- Past RLS: the trips a person is named on; the fixtures of his live ones;
+-- what a manifest holds; whether a mark landed.
+CREATE OR REPLACE FUNCTION _count_trips_driven_by(p_user uuid) RETURNS integer AS $$
+  SELECT count(*)::int FROM trip WHERE driver_id = p_user;
+$$ LANGUAGE sql SECURITY DEFINER;
+CREATE OR REPLACE FUNCTION _count_matches_driven_by(p_user uuid) RETURNS integer AS $$
+  SELECT count(DISTINCT match_id)::int FROM trip WHERE driver_id = p_user AND cancelled_at IS NULL;
+$$ LANGUAGE sql SECURITY DEFINER;
+CREATE OR REPLACE FUNCTION _manifest_size(p_trip uuid) RETURNS integer AS $$
+  SELECT count(*)::int
+    FROM trip t JOIN match_squad s ON s.match_id = t.match_id AND NOT s.withdrawn
+    JOIN player p ON p.id = s.player_id AND p.school_id = t.school_id
+    JOIN emergency_contact c ON c.player_id = p.id AND c.active
+   WHERE t.id = p_trip;
+$$ LANGUAGE sql SECURITY DEFINER;
+CREATE OR REPLACE FUNCTION _pick_41() RETURNS void AS $$
+  INSERT INTO match_squad (match_id, player_id, side) VALUES
+    ('77777777-0000-0000-0000-0000000041a0', 'aaaaaaaa-0000-0000-0000-000000000001', 'home'),
+    ('77777777-0000-0000-0000-0000000041b0', 'aaaaaaaa-0000-0000-0000-000000000001', 'home'),
+    ('77777777-0000-0000-0000-0000000041f0', 'aaaaaaaa-0000-0000-0000-000000000001', 'home')
+  ON CONFLICT DO NOTHING;
+$$ LANGUAGE sql SECURITY DEFINER;
+CREATE OR REPLACE FUNCTION _trip_departed(p_trip uuid) RETURNS boolean AS $$
+  SELECT departed_at IS NOT NULL FROM trip WHERE id = p_trip;
+$$ LANGUAGE sql SECURITY DEFINER;
+CREATE OR REPLACE FUNCTION _cancel_trip(p_trip uuid) RETURNS void AS $$
+  UPDATE trip SET cancelled_at = now() WHERE id = p_trip;
+$$ LANGUAGE sql SECURITY DEFINER;
+-- What the CURRENT person could read of match and trip before db/41, computed
+-- from the policies db/09 shipped: match_read's two arms, and trip_read with
+-- its anchor subquery — which resolves exactly when match_read passes, and
+-- otherwise hands app_can() a NULL school and team.
+CREATE OR REPLACE FUNCTION _match_read_09(m match) RETURNS boolean AS $$
+  SELECT app_can('fixture.read', m.school_id, m.team_code, '00000000-0000-0000-0000-000000000000'::uuid, m.id)
+      OR app_can('fixture.read', m.away_school_id, m.away_team_code, '00000000-0000-0000-0000-000000000000'::uuid, m.id);
+$$ LANGUAGE sql SECURITY DEFINER;
+CREATE OR REPLACE FUNCTION _count_match_before_41() RETURNS integer AS $$
+  SELECT count(*)::int FROM match m WHERE _match_read_09(m);
+$$ LANGUAGE sql SECURITY DEFINER;
+CREATE OR REPLACE FUNCTION _count_trip_before_41() RETURNS integer AS $$
+  SELECT count(*)::int FROM trip t JOIN match m ON m.id = t.match_id
+   WHERE app_can('transport.read',
+                 CASE WHEN _match_read_09(m) THEN m.school_id END,
+                 CASE WHEN _match_read_09(m) THEN m.team_code END,
+                 '00000000-0000-0000-0000-000000000000'::uuid, t.match_id);
+$$ LANGUAGE sql SECURITY DEFINER;
+
 -- Past RLS, because each claim below is "exactly these rows and no others",
 -- and an RLS-scoped count cannot tell the rows that exist from the rows shown.
 CREATE OR REPLACE FUNCTION _count_availability_of(p_player uuid) RETURNS integer AS $$
@@ -2719,11 +2813,159 @@ BEGIN
 
     -- (6) WITHHELD, ON PURPOSE. trip keeps its subquery: resolving it would
     --     show a school-wide driver every trip at the school, not his own
-    --     (docs/rls-anchor-audit.md, "trip"). Until the narrower rule is
-    --     decided he reads none — including the one arranged for him. When
-    --     that changes, this is the line to change with it.
+    --     (docs/rls-anchor-audit.md, "trip"). db/41 gave the named driver his
+    --     own trips instead (its section below); the tripwire that stays here
+    --     is that he reads none he is not driving.
+    SELECT count(*) INTO n FROM trip WHERE driver_id IS DISTINCT FROM U_DRIVE;
+    PERFORM _assert(n = 0, format('the driver reads %s trip(s) he is not driving: trip was withheld from db/39 — see docs/rls-anchor-audit.md', n));
+  END;
+
+  -- ── db/41. A driver reaches his own trips, and no other ──
+  --
+  -- trip_contacts() used to hand the manifest — every travelling child's
+  -- parents' numbers — to anybody holding transport.drive at the school, for
+  -- any trip there within a day; trip_mark() let them mark any trip there, and
+  -- anybody at all mark a trip with no driver named. The read went the other
+  -- way: a driver saw no trip, not even his own. Each claim is one half of
+  -- that, and the last is that nobody else's view of trip or match moved.
+  DECLARE
+    U_DRIVE  uuid := '88888888-0000-0000-0000-000000000017';  -- driver A (the seed's)
+    U_DRIVE2 uuid := '88888888-0000-0000-0000-00000000041b';  -- driver B, same school
+    T_A      uuid := '41410000-0000-0000-0000-00000000000a';  -- A's bus, today
+    T_A2     uuid := '41410000-0000-0000-0000-0000000000a2';  -- B's bus to A's fixture
+    T_A3     uuid := '41410000-0000-0000-0000-0000000000a3';  -- the office's bus to A's fixture
+    T_B      uuid := '41410000-0000-0000-0000-00000000000b';  -- B's bus, today
+    T_N      uuid := '41410000-0000-0000-0000-00000000000c';  -- nobody named
+    T_F      uuid := '41410000-0000-0000-0000-00000000000f';  -- A's bus, ten days off
+    M_A      uuid := '77777777-0000-0000-0000-0000000041a0';
+    M_B      uuid := '77777777-0000-0000-0000-0000000041b0';
+    M_F      uuid := '77777777-0000-0000-0000-0000000041f0';
+    who      uuid;
+  BEGIN
+    PERFORM _pick_41();
+    PERFORM _assert(_manifest_size(T_A) > 0 AND _manifest_size(T_B) > 0 AND _manifest_size(T_F) > 0,
+      'db/41''s manifests have nobody on them — the contact assertions below would pass vacuously');
+
+    -- (1) THE READ. A reads his trips — all of them, and nobody else's: not
+    --     B's bus at the same school, and not B's second bus to A's own
+    --     fixture, which trip_read's anchor would resolve once A can read
+    --     that fixture (trip_driver_own_only is what stops it).
+    PERFORM _as(U_DRIVE);
+    SELECT count(*) INTO n FROM trip WHERE id = T_A;
+    PERFORM _assert(n = 1, 'the driver cannot read the trip he is driving');
+    SELECT count(*) INTO n FROM trip WHERE id = T_B;
+    PERFORM _assert(n = 0, 'the driver reads another driver''s trip at his school');
+    SELECT count(*) INTO n FROM trip WHERE id IN (T_A2, T_A3);
+    PERFORM _assert(n = 0, format('the driver reads %s other bus(es) to his own fixture', n));
     SELECT count(*) INTO n FROM trip;
-    PERFORM _assert(n = 0, format('the driver reads %s trip(s): trip was withheld from db/39 — see docs/rls-anchor-audit.md', n));
+    PERFORM _assert(n = _count_trips_driven_by(U_DRIVE),
+      format('the driver reads %s trip(s); he is named on %s', n, _count_trips_driven_by(U_DRIVE)));
+
+    -- (2) THE FIXTURE, for the day-of screen: his live trips' fixtures and no
+    --     other — and the fixture only, not what hangs off it.
+    SELECT count(*) INTO n FROM match WHERE id = M_A;
+    PERFORM _assert(n = 1, 'the driver cannot read the fixture of the trip he is driving');
+    SELECT count(*) INTO n FROM match WHERE id = M_B;
+    PERFORM _assert(n = 0, 'the driver reads the fixture of another driver''s trip');
+    SELECT count(*) INTO n FROM match;
+    PERFORM _assert(n = _count_matches_driven_by(U_DRIVE),
+      format('the driver reads %s fixture(s); he drives to %s', n, _count_matches_driven_by(U_DRIVE)));
+    SELECT (SELECT count(*) FROM match_squad) + (SELECT count(*) FROM match_toss)
+         + (SELECT count(*) FROM match_availability) + (SELECT count(*) FROM emergency_contact)
+      INTO n;
+    PERFORM _assert(n = 0, format('the driver reads %s squad/toss/availability/contact row(s) through a fixture he can now see', n));
+
+    -- (3) THE MANIFEST. His own bus, inside the window; nothing for B's bus,
+    --     nothing for the other bus to his own fixture, nothing ten days out.
+    SELECT count(*) INTO n FROM trip_contacts(T_A);
+    PERFORM _assert(n = _manifest_size(T_A),
+      format('the driver reads %s of the %s contact rows on his own bus today', n, _manifest_size(T_A)));
+    SELECT count(*) INTO n FROM trip_contacts(T_B);
+    PERFORM _assert(n = 0, format('the driver reads %s emergency contact(s) off another driver''s bus', n));
+    SELECT count(*) INTO n FROM trip_contacts(T_A2);
+    PERFORM _assert(n = 0, format('the driver reads %s emergency contact(s) off the other bus to his fixture', n));
+    SELECT count(*) INTO n FROM trip_contacts(T_N);
+    PERFORM _assert(n = 0, format('the driver reads %s emergency contact(s) off a bus nobody is named on', n));
+    SELECT count(*) INTO n FROM trip_contacts(T_F);
+    PERFORM _assert(n = 0, format('the driver reads %s emergency contact(s) ten days before his trip', n));
+
+    -- (4) THE MARKS. Not B's bus, not the other bus to his fixture, not a bus
+    --     nobody is named on; his own, yes.
+    SELECT m.reason INTO v_reason FROM trip_mark(T_B, 'departed') m;
+    PERFORM _assert(v_reason IS NOT DISTINCT FROM 'not_this_driver',
+      format('the driver marking another driver''s trip was answered %s', coalesce(v_reason, 'ok')));
+    SELECT m.reason INTO v_reason FROM trip_mark(T_A2, 'departed') m;
+    PERFORM _assert(v_reason IS NOT DISTINCT FROM 'not_this_driver',
+      format('the driver marking the other bus to his fixture was answered %s', coalesce(v_reason, 'ok')));
+    SELECT m.reason INTO v_reason FROM trip_mark(T_N, 'departed') m;
+    PERFORM _assert(v_reason IS NOT DISTINCT FROM 'not_this_driver',
+      format('the driver marking a trip nobody is named on was answered %s', coalesce(v_reason, 'ok')));
+    SELECT m.ok INTO v_ok FROM trip_mark(T_A, 'departed') m;
+    PERFORM _assert(v_ok AND _trip_departed(T_A), 'the driver could not mark his own trip departed');
+    -- A trip with no driver named was open to ANYBODY: db/08's gate came out
+    -- NULL, and IF NOT NULL does not refuse.
+    FOREACH who IN ARRAY ARRAY[U_PARENT, U_WATCHER, U_COACH2]::uuid[] LOOP
+      PERFORM _as(who);
+      SELECT m.reason INTO v_reason FROM trip_mark(T_N, 'departed') m;
+      PERFORM _assert(v_reason IS NOT DISTINCT FROM 'not_this_driver',
+        format('%s marking a trip nobody is named on was answered %s', who, coalesce(v_reason, 'ok')));
+    END LOOP;
+    PERFORM _assert(NOT _trip_departed(T_N), 'a trip nobody is named on was marked departed');
+    -- The office stands in for a driver who did not mark.
+    PERFORM _as(U_REGISTRAR);
+    SELECT m.ok INTO v_ok FROM trip_mark(T_B, 'departed') m;
+    PERFORM _assert(v_ok AND _trip_departed(T_B), 'a transport.manage holder could not mark a trip departed');
+
+    -- (5) B, the mirror: his two buses, his manifest, not A's.
+    PERFORM _as(U_DRIVE2);
+    SELECT count(*) INTO n FROM trip;
+    PERFORM _assert(n = 2 AND n = _count_trips_driven_by(U_DRIVE2),
+      format('driver B reads %s trip(s); he is named on %s', n, _count_trips_driven_by(U_DRIVE2)));
+    SELECT count(*) INTO n FROM trip_contacts(T_B);
+    PERFORM _assert(n = _manifest_size(T_B), format('driver B reads %s contact rows on his own bus', n));
+    SELECT count(*) INTO n FROM trip_contacts(T_A);
+    PERFORM _assert(n = 0, format('driver B reads %s emergency contact(s) off A''s bus', n));
+    -- ...and once his driver assignment is revoked, the trips still naming
+    -- him give him nothing: no read, no fixture, no manifest, no mark.
+    PERFORM _revoke(U_DRIVE2);
+    SELECT (SELECT count(*) FROM trip) + (SELECT count(*) FROM match) INTO n;
+    PERFORM _assert(n = 0, format('a revoked driver still reads %s trip/fixture row(s)', n));
+    SELECT count(*) INTO n FROM trip_contacts(T_A2);
+    PERFORM _assert(n = 0, format('a revoked driver reads %s emergency contact(s) off his own bus', n));
+    SELECT m.reason INTO v_reason FROM trip_mark(T_A2, 'departed') m;
+    PERFORM _assert(v_reason IS NOT DISTINCT FROM 'not_this_driver',
+      format('a revoked driver marking the trip that names him was answered %s', coalesce(v_reason, 'ok')));
+
+    -- (6) A cancelled trip no longer shows him its fixture — but he still
+    --     reads the trip itself, so the screen can say it is off. That row
+    --     is trip_driver_own_read's alone: with the fixture hidden, trip_read's
+    --     anchor comes back NULL (for a live trip it resolves through the
+    --     fixture he can now read, so the two policies overlap there).
+    PERFORM _cancel_trip(T_F);
+    PERFORM _as(U_DRIVE);
+    SELECT count(*) INTO n FROM match WHERE id = M_F;
+    PERFORM _assert(n = 0, 'the driver reads the fixture of a cancelled trip');
+    SELECT count(*) INTO n FROM trip WHERE id = T_F;
+    PERFORM _assert(n = 1, 'the driver cannot read his own cancelled trip');
+
+    -- (7) NOBODY ELSE MOVED. For every other principal here, what they read
+    --     of match and trip is exactly what db/09's policies gave them.
+    FOREACH who IN ARRAY ARRAY[U_PARENT, U_SARAH, U_REGISTRAR, U_WATCHER, U_SELF, U_PUPIL,
+                               U_COACH2, U_SCORER, U_MEDIC, U_BURSAR, U_WES_ADM, U_HEAD_M,
+                               U_UMPIRE, U_LEAGUE, U_PLAT, U_OWNER]::uuid[] LOOP
+      PERFORM _as(who);
+      SELECT count(*) INTO n FROM match;
+      PERFORM _assert(n = _count_match_before_41(),
+        format('%s reads %s fixture(s); db/09 gave %s', who, n, _count_match_before_41()));
+      SELECT count(*) INTO n FROM trip;
+      PERFORM _assert(n = _count_trip_before_41(),
+        format('%s reads %s trip(s); db/09 gave %s', who, n, _count_trip_before_41()));
+    END LOOP;
+    -- ...and the transport office still sees every bus — including the ones
+    -- on a fixture its schooladmin is himself driving to.
+    PERFORM _as(U_REGISTRAR);
+    SELECT count(*) INTO n FROM trip WHERE id IN (T_A, T_A2, T_A3, T_B, T_N, T_F);
+    PERFORM _assert(n = 6, format('the transport office, driving one of them, reads %s of db/41''s 6 trips', n));
   END;
 
   -- ── 19. A player's SQL figures follow the fold (SCRBRD-068/081, db/40) ──

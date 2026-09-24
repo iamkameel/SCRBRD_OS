@@ -179,8 +179,23 @@ try {
        (await q(`select arrived_at from trip where id=$1`, [t2.body.id]))[0].arrived_at === null);
 
     // Somebody else's trip, at the same school. Being a driver is not being
-    // THIS trip's driver — though a school-wide transport.drive assignment
-    // legitimately reaches it, which is why the fixture anchor matters.
+    // THIS trip's driver: a school-wide transport.drive assignment used to
+    // reach every trip at the school through trip_mark(), and since db/41 it
+    // reaches only the trips that name him.
+    const t3 = await arrange(other, office, { seatsTaken: 5 });
+    ok("a second bus to that fixture, nobody named, is arranged", t3.status === 200);
+    const driverOnT3 = await mark(t3.body.id, driver, "departed");
+    ok("the driver cannot mark a bus he is not named on", driverOnT3.status === 403,
+       `${driverOnT3.status} ${JSON.stringify(driverOnT3.body)}`);
+    ok("...refused as not this driver", JSON.stringify(driverOnT3.body ?? {}).includes("not_this_driver"));
+    // db/08 let ANYBODY mark a trip with no driver named: its gate compared
+    // NULL, and IF NOT (NULL) did not refuse.
+    ok("nor can a parent, though no driver is named on it",
+       [403, 401].includes((await mark(t3.body.id, parent, "departed")).status));
+    ok("...and nothing was stamped",
+       (await q(`select departed_at from trip where id=$1`, [t3.body.id]))[0].departed_at === null);
+    ok("the driver reads the trip that names him and not the one that does not",
+       (await trips(other, driver)).map((r) => r.id).join() === t2.body.id);
     const parentMark = await mark(t2.body.id, parent, "departed");
     ok("a parent cannot mark a bus departed", [403, 401].includes(parentMark.status));
     ok("the office can, standing in for a driver who did not",

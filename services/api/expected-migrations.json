@@ -38,5 +38,6 @@
   "37_quarantine_loose_ends.sql",
   "38_amendment_lock.sql",
   "39_match_anchor_helpers.sql",
-  "40_career_follows_the_fold.sql"
+  "40_career_follows_the_fold.sql",
+  "41_trip_driver_own.sql"
 ]

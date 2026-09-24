@@ -1,6 +1,6 @@
 # RLS anchor audit — policies that resolve their scope through a subquery
 
-**Date:** 2026-09-24 · **Branch:** `claude/scrbrd-os-03vb2m` · **Fix:** `db/39_match_anchor_helpers.sql`
+**Date:** 2026-09-24 · **Branch:** `claude/scrbrd-os-03vb2m` · **Fix:** `db/39_match_anchor_helpers.sql`; `trip` and the manifest leak: `db/41_trip_driver_own.sql` (§7)
 
 Found by the driver day-of screen (SCRBRD-085): a driver-only account reads
 zero rows from `/api/read/trips`. The cause is not specific to transport.
@@ -30,10 +30,10 @@ lands, then what `db/39` does and what it deliberately does not.
 | | Table | Whose data | What happens |
 |---|---|---|---|
 | ⚠ **Fixed** | `match_availability` | availability of **named pupils** ("unavailable, family") | A pupil's `selfaccess` now reads and declares **his own** row for any fixture at his school. Nobody reads anybody else's row who could not before. db/99 asserts both halves. |
-| ⚠ **Withheld** | `trip` | pickup, driver; the key to `trip_contacts()` — **children's emergency contacts** | Resolving the anchor would show a school-wide driver **every** trip at the school, and with every trip id he can pull every travelling child's parents' phone numbers through `trip_contacts()` (§5.1). Not fixed. Narrower rule proposed. |
+| ✅ **Fixed in db/41** (anchor still withheld) | `trip` | pickup, driver; the key to `trip_contacts()` — **children's emergency contacts** | Resolving the anchor would show a school-wide driver **every** trip at the school, and with every trip id he can pull every travelling child's parents' phone numbers through `trip_contacts()` (§5.1). The anchor is still the subquery. db/41 adds the narrower rule instead: the **named** driver reads his own trips and their fixtures, and nobody else's (§7). |
 | ⚠ **Withheld** | `match_squad` | which **named minors** are selected | A coach holding a granted `enquiry` about one boy would read which of **another side's** fixtures that boy is named for. Not fixed; decision needed. |
 | ⚠ **Withheld** | `training_attendance` | which **named minors** attended | Same `enquiry` widening, to another side's training register. Not fixed. |
-| ⚠ **Live today, not caused by the anchor** | `trip_contacts()` | **children's emergency contacts** | A school-wide driver **already** receives the manifest — every travelling child's parents' names and numbers — for **any** trip at his school within ±1 day of departure, not just his own, given its id (probe P1: 3 contact rows for a trip he is not driving). The only thing in the way today is that the empty trip read hides the ids. And a driver who also holds `fixture.read` at the school (a parent there) already reads every trip id (probe P2). Needs the fix in §5.1 (2) regardless of anything else here. |
+| ✅ **Fixed in db/41** — was live, not caused by the anchor | `trip_contacts()` | **children's emergency contacts** | A school-wide driver **already** receives the manifest — every travelling child's parents' names and numbers — for **any** trip at his school within ±1 day of departure, not just his own, given its id (probe P1: 3 contact rows for a trip he is not driving). The only thing in the way today is that the empty trip read hides the ids. And a driver who also holds `fixture.read` at the school (a parent there) already reads every trip id (probe P2). Needs the fix in §5.1 (2) regardless of anything else here. **db/41 is that fix** (§7): the driver path now requires `t.driver_id = app_user_id()`, so P1 returns 0 rows and P2's trip ids open no manifest but his own bus's. |
 | Unchanged | `injury`, `emergency_contact`, `development_note`, `player_skill`, `honour`, `disciplinary_record`, `bowling_breach`, `team_membership`, `milestone_notice`, `injury_masked` | medical, family PII, coaching notes, discipline | Anchored through `player`. **No role is blind through them** in any assignment shape the product creates, so nothing to fix — and the `player` subquery is the defence in depth `tables.mjs` documents. Left as they are. |
 
 ---
@@ -177,7 +177,8 @@ reads his own U16B declaration and not the U16B boy's beside it, and in total
 exactly his own rows; he can declare his own and cannot declare or change
 another boy's; he still cannot read the U16B fixture itself; for eleven
 principals no row of the six tables is visible without its fixture; and the
-driver still reads no trips (the withheld case, as a tripwire).
+driver still reads no trips (the withheld case, as a tripwire — since db/41,
+"no trip he is not driving").
 
 ---
 
@@ -203,7 +204,7 @@ driver still reads no trips (the withheld case, as a tripwire).
   a parent there, a spectator account — reads every trip already (probe P2),
   and so reaches every manifest.
 
-**Proposed narrower rule (not implemented — product decision):**
+**Proposed narrower rule — (1) and (2) implemented in db/41 (§7); (3) still open:**
 
 1. `trip` read gains a named exception: `trip.driver_id = app_user_id()` —
    the named driver reads his own trip. Nothing else about the anchor changes.
@@ -217,6 +218,9 @@ driver still reads no trips (the withheld case, as a tripwire).
 (1) alone fixes the day-of screen without widening anything; (2) closes the
 manifest leak whether or not (1) lands. After (1), the dayof walk and the
 db/99 tripwire flip to "sees his own trip, and not the other one".
+(As built, (1) was not quite enough: the day-of card also needs the trip's
+fixture, and giving him that re-opened the second bus to the same fixture
+through `trip_read`'s own subquery. §7 has both.)
 
 ### 5.2 · Other things hidden that arguably should not be
 
@@ -249,6 +253,83 @@ row's anchor resolves depends on unrelated appointments — the property
 `app_can()` was written never to have ("never a union across assignments").
 That is why converting even the no-change tables is worth doing, and why the
 withheld tables need a rule that does not ride on it.
+
+---
+
+## 7 · What `db/41` did about `trip` (2026-09-24)
+
+`db/41_trip_driver_own.sql`, hand-written, is §5.1 (1) and (2), plus two
+things the first draft of this audit did not foresee.
+
+| Object | Before | After |
+|---|---|---|
+| `trip_contacts(p_trip)` | driver path: `transport.drive` at the school, ±1 day | **and** `t.driver_id = app_user_id()` (NULL-safe). Window, the per-child `player.emergency.read` path, signature, return shape and grants unchanged. `search_path` pinned. |
+| `trip_mark(p_trip, p_event)` | named driver **or** any `transport.drive` holder at the school **or** `transport.manage` — and on a trip with no driver named the gate came out NULL, which `IF NOT` does not refuse: **anybody** could mark a driverless trip | (named driver **and** still holds `transport.drive` there) **or** `transport.manage`, NULL-safe. Reasons, signature and grants unchanged. `search_path` pinned. |
+| `trip_driver_own_read` (new, permissive, on `trip`) | — | `driver_id = app_user_id() AND app_can('transport.read', trip.school_id, match_team(trip.match_id), ANY, trip.match_id)`. No subquery on `match`. |
+| `match_trip_driver_read` (new, permissive, on `match`) | — | the named driver of a **live** trip reads its fixture, through `trip_driven_matches()` (SECURITY DEFINER). A policy on `match` reading `trip` under the caller's RLS fails with *infinite recursion detected in policy for relation "match"* (tried: `trip_read` reads `match`). |
+| `trip_driver_own_only` (new, **restrictive**, on `trip`) | — | where a caller reaches a fixture **only** as its driver (drives a live trip on it, no `fixture.read` home or away), he sees his own trips on it and not the others. |
+
+**Why the restrictive policy.** Once the driver can read his fixture,
+`trip_read`'s anchor subquery resolves for *every* trip on that fixture —
+the second bus, driven by somebody else (sabotage: dropping it, the seeded
+driver reads `["Top gate", "Chapel steps"]`). That is §5.4 in miniature: the
+union of what else he can read decides what the subquery grants. The
+restrictive policy is `true` for everybody who can read the fixture by
+`fixture.read` — the transport office, coaches, parents — so their view does
+not move; db/99 checks that for sixteen principals against the db/09
+predicates.
+
+**Match columns** the driver now reads for his own fixture: `id`,
+`school_id`, `team_code`, `away_school_id`, `away_team_code`, `opponent`,
+`ground_id`, `starts_at`, `sport`, `format`, `overs`, `status`,
+`created_at` — fixture metadata, no pupil, contact, medical or disciplinary
+field. Everything hanging off the fixture stays behind its own policy: with
+the fixture visible he still reads no `match_squad`, `match_toss`,
+`match_availability`, `emergency_contact` row (db/99, falsified by granting
+`driver` `player.profile.read`: 2 squad rows). Measured over all 105 public
+relations as the seeded driver, with and without db/41's three policies:
+only `match` (+1) and `trip` (+1) change.
+
+**Still open:** (3) above — whether a driver should hold school-wide
+`transport.read` at all. A driver who is also a parent at the school still
+reads every trip there through the parent's `fixture.read` (P2), though no
+manifest now but his own bus's. And the **venue**: the ground's name is
+behind `facility.read`, which a driver does not hold; the day-of card says
+"check with your coordinator" rather than widening `ground`.
+
+**Evidence.** `db/99` section "db/41" asserts each half; every assertion was
+falsified once, in the never-committed transaction ahead of the whole file:
+
+| Sabotage | Assertion that failed |
+|---|---|
+| `trip_contacts()` without the named-driver check | the driver reads 1 emergency contact(s) off another driver's bus |
+| `trip_contacts()` without the window | the driver reads 1 emergency contact(s) ten days before his trip |
+| `trip_contacts()` driver path off | the driver reads 0 of the 1 contact rows on his own bus today |
+| `trip_mark()` as db/08 shipped it | the driver marking another driver's trip was answered ok |
+| `trip_mark()` without the NULL-safe compare | the driver marking a trip nobody is named on was answered ok |
+| `trip_mark()` named driver without `transport.drive` | a revoked driver marking the trip that names him was answered ok |
+| `trip_mark()` without the `transport.manage` arm | a transport.manage holder could not mark a trip departed |
+| `trip_mark()` named-driver arm off | the driver could not mark his own trip departed |
+| `trip_driver_own_read` dropped | the driver cannot read his own cancelled trip |
+| `trip_driver_own_read` without `app_can` | a revoked driver still reads 2 trip/fixture row(s) |
+| `trip_driver_own_read` for any named driver | the driver reads 1 trip(s) he is not driving (db/39's tripwire) |
+| `trip_driver_own_read` and `match_trip_driver_read` dropped | the driver cannot read the trip he is driving |
+| `trip_driver_own_only` dropped | the driver reads 2 trip(s) he is not driving |
+| `trip_fixture_driver_only()` ignoring `fixture.read` | the schooladmin (driving one bus) reads 5 trip(s); db/09 gave 7 |
+| `match_trip_driver_read` dropped | the driver cannot read the fixture of the trip he is driving |
+| `match_trip_driver_read` `USING (true)` | an unidentified session can read matches |
+| `trip_driven_matches()` for any driver | the driver reads the fixture of another driver's trip |
+| `trip_driven_matches()` including cancelled trips | the driver reads the fixture of a cancelled trip |
+| `trip_driven_matches()` without `app_can` | a revoked driver still reads 2 trip/fixture row(s) |
+| `driver` granted `player.profile.read` | the driver reads 2 squad/toss/availability/contact row(s) through a fixture he can now see |
+
+The day-of browser walk (`tools/smoke-browser-dayof.mjs`) flipped from "the
+driver sees nothing" to "exactly his trip and its fixture, not the other
+driver's bus at the school nor the second bus to his fixture, and he cannot
+mark the other driver's". Against the same sabotages it fails at: the API
+trip read (restrictive dropped), the trip card and both reads (driver
+policies dropped), and both manifests and the other driver's mark
+(`trip_contacts`/`trip_mark` as db/08 shipped them).
 
 ---
 

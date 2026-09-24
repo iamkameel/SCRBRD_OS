@@ -15,51 +15,26 @@
  * anything: every read here is the same row-scoped, column-masked query the
  * desktop screens use, and every write is the same policy-governed route.
  *
- * THE DRIVER GAP, LEFT OPEN RATHER THAN WIDENED — AND BIGGER THAN IT LOOKS.
- * A driver's role holds transport.read and transport.drive but NOT
- * fixture.read (packages/policy/src/roles.mjs). The obvious consequence is
- * that `match` rows — opponent, venue, format — are invisible to this
- * account, exactly as on the desktop Logistics screen today. The
- * non-obvious one, found by this ticket's own browser walk rather than
- * guessed at: `trip`'s own read policy (packages/policy/src/tables.mjs,
- * generated into db/09_rls_policies.sql) anchors its school/team on a plain
- * subquery against `match` —
+ * WHAT A DRIVER READS, and why it is exactly this (db/41). A driver's role
+ * holds transport.read and transport.drive but NOT fixture.read
+ * (packages/policy/src/roles.mjs), and his assignment is school-wide. Until
+ * db/41 that meant `/api/read/trips` came back empty for him — trip's read
+ * policy resolves its school/team through a subquery on `match`, which he
+ * could not read — while trip_contacts() and trip_mark() went the other way
+ * and let any transport.drive holder reach every trip at the school.
+ * docs/rls-anchor-audit.md §5.1 has the whole story. db/41 made both follow
+ * the trip's named driver: he reads the trips that name him, the fixture of
+ * each live one (opponent, start, format — `match` rows, nothing that hangs
+ * off them), the manifest of his own bus on the day, and he marks his own
+ * trips. Not another driver's bus at the school, and not the second bus to
+ * his own fixture.
  *
- *     school: "(SELECT m.school_id FROM match m WHERE m.id = trip.match_id)"
- *
- * — run under the CALLER's own row-level security, not through the
- * SECURITY DEFINER match_school()/match_team() helpers db/02 built for
- * exactly this. Every other table anchored on a fixture (weather, the pitch
- * report, match_official, match_availability…) is generated the same way,
- * and it has never mattered before, because every OTHER role that holds
- * transport.read (transportcoordinator, schooladmin, sportsadmin,
- * directorofsport) also independently holds fixture.read, so the subquery
- * always resolved for them. `driver` is the first role ever granted a
- * capability on a fixture-anchored table without also holding fixture.read,
- * and the subquery comes back NULL — which the resource side of app_can()
- * treats as "does not state its school", failing closed. The result: a
- * driver's account reads ZERO rows from `/api/read/trips`, always,
- * regardless of whether a trip is arranged for them. Confirmed against a
- * live database, not inferred from the policy text (tools/smoke-browser-
- * dayof.mjs, group 1).
- *
- * This view does not work around either half of that by reading a wider
- * resource, joining around the policy, or fabricating a destination from the
- * pickup text. It reads exactly what `/api/read/trips` returns under the
- * driver's own RLS — which is nothing yet — and says so, plainly, rather
- * than a bare "no trips" that would read as a fact about the school's
- * schedule instead of a fact about this account's access. The write side
- * still works: trip_mark() is its own SECURITY DEFINER function keyed on the
- * trip id and the caller's driver_id, so a driver who is handed a trip id
- * some other way (or once the read is fixed) can still mark it departed and
- * arrived — the buttons below are wired and were proven against the API
- * directly (same smoke walk), only the list above them is empty for now.
- *
- * SCRBRD-085's write-up asks Opus to decide the fix: give `trip`'s anchor
- * (and its fixture-anchored siblings) the SECURITY DEFINER helper instead of
- * a raw subquery — the schema-wide fix, since nothing about this is specific
- * to transport — or give driver a narrow, trip-scoped fixture.read. Either
- * is an RLS/capability change and neither belongs in this commit.
+ * So this view does no filtering that matters for access: the reads are
+ * already his. It still keeps to trips naming him (a person who is also,
+ * say, the transport coordinator reads every trip, and this screen is about
+ * the ones he is driving). The venue is the one gap left, and it is said
+ * rather than guessed: the ground's name is behind facility.read, which a
+ * driver does not hold, so the card says "check with your coordinator".
  */
 import { useState } from "react";
 import { D, textOn } from "../design/tokens.js";
@@ -80,7 +55,7 @@ const dayOf = (ts) => (ts ? String(ts).slice(0, 10) : null);
  * A trip card: what the driver's own account can read about it, and the one
  * or two buttons trip_mark() actually accepts from this driver.
  */
-function TripCard({ trip, onMarked }) {
+function TripCard({ trip, fixture, onMarked }) {
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState("");
   const mark = async (event) => {
@@ -106,6 +81,15 @@ function TripCard({ trip, onMarked }) {
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "14px" }}>
+        {fixture && (
+          <div data-testid="driver-trip-fixture" style={{ fontFamily: D.body, fontSize: "14px", color: D.textPrimary }}>
+            🏏 <strong>{fixture.homeTeam} vs {fixture.awayTeam}</strong>
+            {fixture.time ? ` · starts ${fixture.time}` : ""}{fixture.format ? ` · ${fixture.format}` : ""}
+            <div style={{ fontFamily: D.body, fontSize: "13px", color: D.textMuted }}>
+              {fixture.venue || "Venue: check with your coordinator"}
+            </div>
+          </div>
+        )}
         <div style={{ fontFamily: D.body, fontSize: "14px", color: D.textPrimary }}>
           📍 <strong>Pickup:</strong> {trip.pickup || "Not recorded — check with your coordinator"}
         </div>
@@ -147,6 +131,9 @@ function TripCard({ trip, onMarked }) {
 function DriverDayView({ role }) {
   const [nonce, setNonce] = useState(0);
   const { rows: rawTrips, live, loading, error } = useLive("trips", role, nonce);
+  // The fixtures of his live trips — the only `match` rows a driver reads.
+  const { rows: fixtures } = useLive("matches", role);
+  const fixtureOf = (t) => fixtures.find((m) => m.id === t.matchId) ?? null;
   const myId = profile()?.user?.id;
   const mine = rawTrips.filter((t) => t.driverId === myId && t.state !== "cancelled" && t.departAt);
   const todayStr = dateStr(today);
@@ -166,24 +153,10 @@ function DriverDayView({ role }) {
         </p>
       </div>
 
-      {/* What this account cannot show yet, said once and plainly rather than
-          left as a silent empty list. See the file comment: this is not one
-          missing field but the whole trip read, and it is not worked around
-          here by reading a wider resource or guessing at what is missing. */}
-      <Card sx={{ padding: "12px 14px", marginBottom: "16px", background: D.amber + "0e", border: `1px solid ${D.amber}33` }}>
-        <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textSecondary, lineHeight: 1.5 }}>
-          This account can't yet confirm whether a trip has been arranged for you, or show
-          its fixture, opponent or venue. Ask your transport coordinator for today's
-          departure time, pickup point and vehicle directly, and check in with them once
-          you're on the road — once this is fixed, marking a trip departed and arrived from
-          here will still work exactly as below.
-        </div>
-      </Card>
-
       {loading && <EmptyState loading/>}
       {!loading && error && <EmptyState error/>}
       {!loading && !error && live && mine.length === 0 && (
-        <EmptyState icon="🚌" message="No trips are visible here yet."/>
+        <EmptyState icon="🚌" message="No trips are arranged for you."/>
       )}
 
       {todays.length > 0 && (
@@ -191,7 +164,7 @@ function DriverDayView({ role }) {
           <div style={{ fontFamily: D.head, fontSize: "11px", fontWeight: 700, color: D.textMuted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "8px" }}>
             Today
           </div>
-          {todays.map((t) => <TripCard key={t.id} trip={t} onMarked={() => setNonce((n) => n + 1)}/>)}
+          {todays.map((t) => <TripCard key={t.id} trip={t} fixture={fixtureOf(t)} onMarked={() => setNonce((n) => n + 1)}/>)}
         </>
       )}
 
@@ -207,7 +180,9 @@ function DriverDayView({ role }) {
                   <div style={{ fontFamily: D.body, fontSize: "13px", fontWeight: 600, color: D.textPrimary }}>
                     {new Date(t.departAt).toLocaleDateString("en-ZA", { weekday: "short", day: "numeric", month: "short" })} · {hm(t.departAt)}
                   </div>
-                  <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>{t.pickup || "Pickup not recorded"}</div>
+                  <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>
+                    {fixtureOf(t) ? `${fixtureOf(t).homeTeam} vs ${fixtureOf(t).awayTeam} · ` : ""}{t.pickup || "Pickup not recorded"}
+                  </div>
                 </div>
                 {t.reg && <Badge color={D.teal}>{t.reg}</Badge>}
               </div>

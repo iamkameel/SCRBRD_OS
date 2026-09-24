@@ -55,7 +55,8 @@
  * `trip` and `match_squad` are NOT converted, deliberately: resolving their
  * anchor would widen what a driver and a granted enquiry can read beyond what
  * either role was meant to reach. docs/rls-anchor-audit.md has the whole
- * table-by-table reasoning and the narrower rules proposed instead. The
+ * table-by-table reasoning and the narrower rules proposed instead; for
+ * `trip`, db/41 is the narrower rule (see the trip entry below). The
  * player-anchored tables keep their subqueries too — no role is blind through
  * them, and the defence in depth above is real there.
  */
@@ -767,12 +768,29 @@ export const TABLES = {
     // could re-time it, swap the vehicle, or cancel it.
     //
     // STILL A PLAIN SUBQUERY, and that is a held decision, not an oversight.
-    // It is why a driver-only account reads no trips at all (the driver holds
-    // transport.read but not fixture.read, so the anchor comes back NULL).
     // Resolving it through match_school() would not give the driver HIS trip —
-    // his assignment is school-wide, so he would read EVERY trip at the school.
-    // docs/rls-anchor-audit.md proposes the narrower rule (the named driver
-    // reads his own trip) for the product owner to decide.
+    // his assignment is school-wide, so he would read EVERY trip at the school
+    // (docs/rls-anchor-audit.md). What gives him his own is hand-written in
+    // db/41_trip_driver_own.sql, next to this generated policy and not in it:
+    //
+    //   trip_driver_own_read  (permissive)  the NAMED driver (driver_id)
+    //       reads his own trip, under transport.read, anchored on the trip's
+    //       own school_id and match_team() — never a subquery on match.
+    //   match_trip_driver_read  (on match)  ...and the fixture of a live trip
+    //       he drives, for the day-of screen, via the SECURITY DEFINER
+    //       trip_driven_matches() (a policy on match reading trip under the
+    //       caller's RLS would recurse through this one).
+    //   trip_driver_own_only  (RESTRICTIVE)  where he reaches a fixture only
+    //       as its driver, he sees his own trips on it and not the second bus
+    //       — which this subquery would otherwise resolve for, now that he
+    //       can read the fixture.
+    //
+    // And the two definer functions that took transport.drive school-wide are
+    // narrowed there too: trip_contacts() gives the manifest to the named
+    // driver only, and trip_mark() accepts the named driver (still holding
+    // transport.drive) or transport.manage. So a driver assigned to
+    // Saturday's match reaches Saturday's trip and no other — by the trip
+    // naming him, which is what this entry always meant.
     read:  "transport.read",
     write: "transport.manage",
     anchors: {

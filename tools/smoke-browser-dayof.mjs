@@ -5,9 +5,12 @@
  * Both roles used to land on the coordinator's desktop dashboard. This walk
  * signs in as each, at a 360px phone viewport, and proves:
  *
- *   1. A driver sees today's trip — departure, pickup, vehicle — and can mark
- *      it departed and arrived, each mark landing in the database through
- *      trip_mark() (services/api/write/events-api.mjs transportRoutes()).
+ *   1. A driver sees today's trip — departure, pickup, vehicle, and its
+ *      fixture — and EXACTLY that: not another driver's bus at the same
+ *      school, nor the second bus to his own fixture (db/41). He marks it
+ *      departed and arrived from the phone, each mark landing in the database
+ *      through trip_mark() (services/api/write/events-api.mjs
+ *      transportRoutes()), and cannot mark the other driver's.
  *   2. A groundskeeper sees today's fixture — time, ground, format — and can
  *      file a pitch report from the phone (conditionsRoutes().pitch), which a
  *      second read confirms actually reached match_pitch_report.
@@ -18,7 +21,9 @@
  * only groundskeeper is a STAFF row with no login (S Zondi, like the bursar
  * and the driver before SCRBRD carried their own accounts) — so this walk
  * mints one itself, the way smoke-browser-duties.mjs mints a scorer: a
- * test-only app_user and role_assignment, never written to the seed.
+ * test-only app_user and role_assignment, never written to the seed. The
+ * second driver, whose buses the seeded driver must not see, is minted the
+ * same way.
  *
  *   node tools/migrate.mjs --reset --seed
  *   pnpm build && node tools/smoke-browser-dayof.mjs
@@ -40,6 +45,7 @@ const HIL = "11111111-1111-1111-1111-111111111111";
 // The seed's own driver (RUNNING.md's `driver@example.invalid` / B Ngcobo).
 const DRIVER_ID = "88888888-0000-0000-0000-000000000017";
 const VEHICLE_ID = "4e111111-0000-0000-0000-000000000001"; // KZN 482 GP, 22 seats
+const OTHER_VEHICLE_ID = "4e111111-0000-0000-0000-000000000002"; // KZN 119 KP, 14 seats
 const GROUND_ID = "ffffffff-0000-0000-0000-000000000001";  // Gordon Sherwood Oval
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".jpg": "image/jpeg", ".map": "application/json" };
 
@@ -144,9 +150,37 @@ try {
     [matchId, HIL, VEHICLE_ID, DRIVER_ID, TRIP_DEPART]))[0].id;
   ok("a trip for the seeded driver is arranged against it", !!tripId);
 
+  // A second driver at the same school, minted like the groundskeeper below:
+  // his own bus to another fixture today, and a second bus to the seeded
+  // driver's fixture. Neither is the seeded driver's business (db/41).
+  const stamp = Date.now();
+  const otherDriverId = (await dbq(
+    `insert into app_user (school_id, email, name, role) values ($1, $2, 'Z Other Driver', 'driver') returning id`,
+    [HIL, `dayof-driver-b-${stamp}@example.invalid`]))[0].id;
+  await dbq(
+    `insert into role_assignment (person_id, role, school_id, team_code) values ($1, 'driver', $2, null)`,
+    [otherDriverId, HIL]);
+  const otherMatchId = (await dbq(
+    `insert into match (school_id, team_code, opponent, ground_id, starts_at, format, overs, status)
+     values ($1, '2XI', 'Other Driver XI', $2, $3, 'T20', 20, 'scheduled') returning id`,
+    [HIL, GROUND_ID, todayAt(10, 0)]))[0].id;
+  const otherTripId = (await dbq(
+    `insert into trip (match_id, school_id, vehicle_id, driver_id, depart_at, pickup)
+     values ($1, $2, $3, $4, $5, 'Bottom gate') returning id`,
+    [otherMatchId, HIL, OTHER_VEHICLE_ID, otherDriverId, todayAt(9, 30)]))[0].id;
+  const secondBusId = (await dbq(
+    `insert into trip (match_id, school_id, driver_id, depart_at, pickup)
+     values ($1, $2, $3, $4, 'Chapel steps') returning id`,
+    [matchId, HIL, otherDriverId, TRIP_DEPART]))[0].id;
+  ok("another driver's two buses are arranged beside it", !!otherTripId && !!secondBusId);
+  // A boy the seed gives an emergency contact, named for both fixtures, so
+  // every manifest below has a parent's number on it to leak.
+  await dbq(
+    `insert into match_squad (match_id, player_id, side) values ($1, $3, 'home'), ($2, $3, 'home')`,
+    [matchId, otherMatchId, "aaaaaaaa-0000-0000-0000-000000000001"]);
+
   // The groundskeeper: no seeded account holds `facilities`, so one is minted
   // here — a test-only fixture, not a seed addition. See the file header.
-  const stamp = Date.now();
   const gkEmail = `dayof-groundskeeper-${stamp}@example.invalid`;
   const gkId = (await dbq(
     `insert into app_user (school_id, email, name, role) values ($1, $2, 'W Browser Groundskeeper', 'facilities') returning id`,
@@ -156,65 +190,57 @@ try {
     [gkId, HIL]);
   ok("a test-only groundskeeper account is minted", !!gkId);
 
-  // ── 1. The driver lands on their own screen, not the desktop dashboard ──
+  // ── 1. The driver sees his own trip and its fixture — and nobody else's ──
   //
-  // A trip is genuinely arranged for this driver in the database (above).
-  // What this section proves is not "the driver sees it" — see the file
-  // header and DayOfView.jsx's own comment for why they currently cannot —
-  // but that the account lands on the right screen, is told the truth about
-  // what it cannot yet show, and is never shown the ordinary desktop
-  // dashboard instead.
-  group("1. A driver signs in and lands on their own screen, not the desktop dashboard");
+  // Before db/41 this group proved the opposite: a driver-only account read
+  // zero trips, even with one arranged for him, because trip's read policy
+  // resolved its anchor through `match`, which a driver cannot read. db/41
+  // gave the NAMED driver his own trips and their fixtures, and nothing
+  // wider — which is what the "not" lines below are for.
+  group("1. A driver signs in and sees his own trip and its fixture — and no other driver's");
   const driver = await open();
   ok("the seeded driver signs in", await signIn(driver.page, "driver@example.invalid"));
+  await driver.page.waitForTimeout(1000);
   const landing = await text(driver.page);
   ok("the day-of driver screen is drawn", await tid(driver.page, "dayof-driver").count() === 1);
   ok("...not the ordinary dashboard", !/Upcoming Fixtures/.test(landing) && await tid(driver.page, "kpi-row").count() === 0);
-  // THE GAP, PROVEN RATHER THAN ASSUMED. A trip really is arranged for this
-  // driver (tripId, above) — pickup "Top gate", vehicle KZN 482 GP — and
-  // NONE of it reaches this screen, because /api/read/trips returns zero
-  // rows for a driver-only account regardless of what is arranged. See
-  // DayOfView.jsx's file comment for the RLS chain this traces to
-  // (trip's read policy resolving its school/team through a plain subquery
-  // against `match`, which is itself gated on fixture.read). db/39 moved seven
-  // fixture-anchored tables to match_school()/match_team() and deliberately
-  // NOT trip: with this driver's school-wide assignment the helpers would
-  // show him every trip at the school, not his. docs/rls-anchor-audit.md
-  // proposes the narrower rule; these assertions flip when it lands.
-  ok("...not the pickup that really is arranged for them", !/Top gate/.test(landing));
-  ok("...nor the vehicle", !/KZN\s?482\s?GP/.test(landing));
-  ok("...no trip card at all — the read is empty, not the trip", await tid(driver.page, "driver-trip").count() === 0);
-  ok("...and the screen says so honestly, rather than a bare empty list",
-     /can't yet confirm whether a trip has been arranged/i.test(landing)
-     && /No trips are visible here yet/.test(landing));
+  ok("...with exactly one trip card for today", await tid(driver.page, "driver-trip").count() === 1,
+     `${await tid(driver.page, "driver-trip").count()} cards`);
+  ok("...and it is his", await tid(driver.page, "driver-trip").first().getAttribute("data-trip-id").catch(() => null) === tripId);
+  ok("...naming the departure", /08:30/.test(landing));
+  ok("...the pickup", /Top gate/.test(landing));
+  ok("...the vehicle", /KZN\s?482\s?GP/.test(landing));
+  ok("...and the fixture it goes to: the opposition", /Browser Day-of XI/.test(landing));
+  ok("...and when it starts", /starts 09:00/.test(landing));
+  ok("not the other driver's bus at the same school",
+     !/Bottom gate/.test(landing) && !/KZN\s?119\s?KP/.test(landing) && !/Other Driver XI/.test(landing));
+  ok("...nor the other driver's second bus to his own fixture", !/Chapel steps/.test(landing));
+  ok("no console errors for the driver", driver.errors.length === 0, driver.errors.join(" | "));
   await driver.ctx.close();
 
-  // The gap the file header documents, confirmed twice more at the API
-  // rather than guessed from the DOM.
+  // The same, at the API rather than from the DOM — which is where the
+  // policy answers.
   const driverTok = await (await fetch(`${API}/api/auth/dev-login`, {
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ email: "driver@example.invalid", deviceId: "browser-dayof" }),
   })).json().then((j) => j.token);
   const driverH = { "content-type": "application/json", authorization: `Bearer ${driverTok}` };
-  const driverMatches = await (await fetch(`${API}/api/read/matches`, { headers: driverH })).json();
-  ok("...confirmed at the API: the driver's account reads zero fixtures, including this one",
-     Array.isArray(driverMatches?.rows) && driverMatches.rows.length === 0);
   const driverTrips = await (await fetch(`${API}/api/read/trips`, { headers: driverH })).json();
-  ok("...and zero trips too, though one really is theirs",
-     Array.isArray(driverTrips?.rows) && driverTrips.rows.length === 0);
+  ok("at the API: the driver reads exactly his own trip",
+     Array.isArray(driverTrips?.rows) && driverTrips.rows.length === 1 && driverTrips.rows[0].id === tripId,
+     JSON.stringify(driverTrips?.rows?.map((r) => r.pickup)));
+  const driverMatches = await (await fetch(`${API}/api/read/matches`, { headers: driverH })).json();
+  ok("...and exactly his trip's fixture",
+     Array.isArray(driverMatches?.rows) && driverMatches.rows.length === 1 && driverMatches.rows[0].id === matchId,
+     JSON.stringify(driverMatches?.rows?.map((r) => r.opponent)));
+  const manifestOf = async (id) =>
+    (await (await fetch(`${API}/api/read/trip_contacts?tripId=${id}`, { headers: driverH })).json())?.rows ?? null;
+  ok("...the manifest of his own bus, on the day", (await manifestOf(tripId))?.length > 0);
+  ok("...and no manifest off the other driver's bus", (await manifestOf(otherTripId))?.length === 0);
+  ok("...nor off the second bus to his own fixture", (await manifestOf(secondBusId))?.length === 0);
 
-  // ── 2. The write side still works, reached directly by id ───────────────
-  //
-  // trip_mark() is its own SECURITY DEFINER function, keyed on the trip id
-  // and the caller's own driver_id — it does not depend on the broken read
-  // above, and neither does the button that calls it in TripCard (DayOfView.
-  // jsx): given a trip to render, marking it departed and arrived is already
-  // wired to the same route this proves works. This is "the API lets a
-  // driver mark departed/arrived already" from the ticket, confirmed end to
-  // end at the API; the browser cannot exercise the button today only
-  // because nothing renders it to click, which is the gap above and not a
-  // second one.
-  group("2. The write side already works for the driver, reached directly by id");
+  // ── 2. The marks: his own trip, from the phone; not the other driver's ──
+  group("2. The driver marks his own trip, and not another driver's");
   // Tried BEFORE the real driver marks anything, so a refusal here means
   // "not this driver" and not merely "already departed" — the same trip, in
   // the same state, refused for the reason that matters.
@@ -228,21 +254,35 @@ try {
     body: JSON.stringify({ event: "departed" }),
   });
   ok("somebody who is not this driver cannot mark the trip at all", !wrongDriverRes.ok);
-
-  const departRes = await fetch(`${API}/api/trips/${tripId}/mark`, {
+  // Holding transport.drive at the school is not being this bus's driver.
+  const otherMarkRes = await fetch(`${API}/api/trips/${otherTripId}/mark`, {
     method: "POST", headers: driverH, body: JSON.stringify({ event: "departed" }),
   });
-  ok("the driver marks the trip departed", departRes.ok);
+  const otherMarkBody = await otherMarkRes.json().catch(() => ({}));
+  ok("the driver cannot mark the other driver's bus", otherMarkRes.status === 403,
+     `${otherMarkRes.status} ${JSON.stringify(otherMarkBody)}`);
+  ok("...refused as not this driver", JSON.stringify(otherMarkBody).includes("not_this_driver"), JSON.stringify(otherMarkBody));
+  ok("...and nothing was stamped on it",
+     (await dbq(`select departed_at from trip where id = $1`, [otherTripId]))[0]?.departed_at === null);
+
+  // From the phone, with the buttons on his card.
+  const driver2 = await open();
+  ok("the driver signs in again", await signIn(driver2.page, "driver@example.invalid"));
+  await driver2.page.waitForTimeout(1000);
+  ok("he taps \"We've left\"", await click(driver2.page, /We've left/, 4000));
+  await driver2.page.waitForTimeout(1500);
   const [afterDepart] = await dbq(`select departed_at, arrived_at from trip where id = $1`, [tripId]);
   ok("...and the database holds a departure time", !!afterDepart?.departed_at && !afterDepart?.arrived_at);
+  ok("...and the card says he is on the road", /On the road/i.test(await text(driver2.page)));
 
-  const arriveRes = await fetch(`${API}/api/trips/${tripId}/mark`, {
-    method: "POST", headers: driverH, body: JSON.stringify({ event: "arrived" }),
-  });
-  ok("...then arrived", arriveRes.ok);
+  ok("he taps \"We've arrived\"", await click(driver2.page, /We've arrived/, 4000));
+  await driver2.page.waitForTimeout(1500);
   const [afterArrive] = await dbq(`select departed_at, arrived_at from trip where id = $1`, [tripId]);
   ok("...and the database holds an arrival time, after the departure",
      !!afterArrive?.arrived_at && afterArrive.arrived_at >= afterArrive.departed_at);
+  ok("...and the card says so", /Arrived/i.test(await text(driver2.page)));
+  ok("no console errors for the driver's marks", driver2.errors.length === 0, driver2.errors.join(" | "));
+  await driver2.ctx.close();
 
   // ── 3. The groundskeeper lands on today's fixtures ───────────────────
   group("3. A groundskeeper signs in and sees today's fixture, not the desktop dashboard");
@@ -254,7 +294,11 @@ try {
   ok("...naming the fixture's time", /09:00/.test(gkLanding));
   ok("...the ground it is at", /Gordon Sherwood Oval/.test(gkLanding));
   ok("...and the format", /T20/.test(gkLanding));
-  ok("...with exactly one fixture card", await tid(gk.page, "gk-fixture").count() === 1);
+  // Two fixtures today: this one and the second driver's (group 1's fixture
+  // at the same ground). One card each, never a duplicate.
+  ok("...with exactly one fixture card for it",
+     await gk.page.locator(`[data-testid="gk-fixture"][data-match-id="${matchId}"]`).count() === 1);
+  ok("...and one per fixture today", await tid(gk.page, "gk-fixture").count() === 2);
 
   group("4. The groundskeeper files a pitch report from the phone");
   ok("the quick form opens", await click(gk.page, /File pitch report/, 4000));

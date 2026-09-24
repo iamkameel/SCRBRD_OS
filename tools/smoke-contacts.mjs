@@ -13,8 +13,9 @@
  *      player.emergency.read is not player.pii.read.
  *   2. THE FAMILY KEEPS ITS OWN NUMBERS, and only its own.
  *   3. A REPLACED NUMBER IS RETIRED, NEVER DELETED.
- *   4. THE DRIVER IS REACHED THROUGH THE TRIP, on the day, and reads nothing
- *      otherwise — a school-wide driver must not hold every child's numbers.
+ *   4. THE DRIVER IS REACHED THROUGH THE TRIP HE IS DRIVING, on the day, and
+ *      reads nothing otherwise — a school-wide driver must not hold every
+ *      child's numbers, nor those on another bus at his school (db/41).
  *   5. A GUARDIAN READING THE MANIFEST SEES THEIR OWN CHILD AND NOBODY ELSE'S.
  *   6. A KNOWN-LAPSED VEHICLE DOES NOT CARRY A SIDE; an unrecorded date is
  *      "unknown", not "fine" and not "refused".
@@ -83,6 +84,7 @@ try {
   const registrar = await login("registrar@example.invalid");
   const head      = await login("sarah@example.invalid");
   const driver    = await login("driver@example.invalid");     // school-wide transport.drive
+  const driverId  = (await q(`select id from app_user where email = 'driver@example.invalid'`))[0].id;
   const idOf = async (email) => (await q(`select id from app_user where email = $1`, [email]))[0].id;
 
   group("The adult on the bus can reach a parent, and the file stays closed");
@@ -154,7 +156,7 @@ try {
        !(await q(`update emergency_contact set active = true where id = $1`, [hist[0].id ?? r.body.id]).then(() => true).catch(() => false)));
   }
 
-  group("The driver is reached through the trip, on the day, and not otherwise");
+  group("The driver is reached through the trip he is driving, on the day, and not otherwise");
   {
     ok("a driver holds no capability on a child's contacts", (await contacts(CHILD, driver)).length === 0);
     const veh = (await q(`select id from vehicle where school_id = $1 limit 1`, [HIL]))[0];
@@ -166,16 +168,22 @@ try {
 
     const today = await fixture(0);
     await pick(today, CHILD);
-    const t1 = await trip(today, registrar, { vehicleId: veh.id, departAt: new Date(Date.now() + 36e5).toISOString(), seatsTaken: 12 });
-    ok("a trip leaving today is arranged", t1.status === 200);
+    const t1 = await trip(today, registrar, { vehicleId: veh.id, driverId, departAt: new Date(Date.now() + 36e5).toISOString(), seatsTaken: 12 });
+    ok("a trip leaving today is arranged, naming the driver", t1.status === 200);
     const m1 = await manifest(t1.body.id, driver);
     ok("...and the driver reads its manifest", m1.length > 0 && m1.every((r) => r.player_id === CHILD));
     ok("...with a parent's number on it", /^\+27/.test(m1[0]?.phone ?? ""));
+    // A second bus to the same fixture, the same boys, nobody named — the
+    // shape db/08 leaked: any transport.drive holder at the school, any trip.
+    const t1b = await trip(today, registrar, { departAt: new Date(Date.now() + 36e5).toISOString(), seatsTaken: 4 });
+    ok("a second bus today, with no driver named, is arranged", t1b.status === 200);
+    ok("...and the driver reads NOT ONE contact off it", (await manifest(t1b.body.id, driver)).length === 0);
+    ok("...though the coach reads its manifest", (await manifest(t1b.body.id, coach)).length > 0);
 
     const later = await fixture(12);
     await pick(later, CHILD);
-    const t2 = await trip(later, registrar, { vehicleId: veh.id, departAt: daysFromNow(12).toISOString(), seatsTaken: 12 });
-    ok("a trip a fortnight away is arranged", t2.status === 200);
+    const t2 = await trip(later, registrar, { vehicleId: veh.id, driverId, departAt: daysFromNow(12).toISOString(), seatsTaken: 12 });
+    ok("a trip a fortnight away is arranged, naming the same driver", t2.status === 200);
     ok("...and is not yet the driver's business", (await manifest(t2.body.id, driver)).length === 0);
     ok("the coach reads either manifest", (await manifest(t2.body.id, coach)).length > 0);
     // Per child, not per bus: a guardian on the manifest sees their own.
