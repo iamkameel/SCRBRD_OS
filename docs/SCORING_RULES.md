@@ -183,6 +183,7 @@ Refused, with the reason named:
 | Only a batter at the crease can retire; nothing is recorded for an innings nobody opened | new |
 | A wicket with no ball is retired out (a batter who is in) or timed out (the batter due in, Law 40) — nothing else | SCRBRD-081 |
 | Runs off a no-ball are off the bat, byes or leg byes — nothing else | SCRBRD-068 |
+| The end a batter was out at is the striker's or the bowler's, and only on a wicket | SCRBRD-069 |
 | A live `void` names the latest event that still counts in the innings in play — last in, first out, as the pad's undo. Anything older is an amendment (a second person, `scoring_amendment`) | new, `undo.mjs` |
 
 Not refused, deliberately — each would need a product decision: a dismissal on
@@ -316,6 +317,25 @@ Taken by the product owner on the rules the commit-time Laws check left open.
 5. **Timed out and retired out are not deliveries.** Recorded as a dismissal event that is not a ball: the over's
    count and the bowler's figures are unaffected and the bowler gets no credit. Old matches replay unchanged.
    Built as SCRBRD-081 — see below.
+
+### Which end after a run out that completed runs (SCRBRD-069)
+
+**The shape.** A wicket may carry `outAt: "striker_end" | "bowler_end"` (`RUN_OUT_END`): the end the wicket was put down
+at (Law 38.2). Omitted otherwise. The constructor refuses any other value, or the field on anything but a wicket; so
+does the server (`out_at_unknown`).
+
+**The fold.** When the wicket stands and the end is recorded, that end is empty and the survivor is at the other one —
+whoever `dismissed` names (the striker by default). With runs completed the batters have crossed (Law 18), so the
+pre-ball crease no longer says which end is which; the end does. The end-of-over change of ends applies after, as for
+any wicket. With no end recorded — every log before this, and a run out with no run completed, which the pad does not
+ask about — the dismissed batter's end before the ball empties, exactly as before. The runs completed are credited as
+they always were (the striker's, charged to the bowler).
+
+**The pad.** On a run out the wicket sheet asks who is out, how many runs were completed first (0–3), and — when any
+were — *Out at the striker's end or the bowler's end?*; it will not confirm until that is answered. The new batter is
+sent to the end that is empty.
+
+This was `laws-spec.test.mjs`'s last KNOWN_GAP; it is now group E there, both ends.
 
 ### Byes and leg byes off a no-ball (SCRBRD-068)
 

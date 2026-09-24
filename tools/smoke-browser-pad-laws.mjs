@@ -15,6 +15,17 @@
  *               batting-order sheet: wickets with no ball. The server's rows
  *               are retire events marked W, the ball count does not move and
  *               the bowler takes nothing.
+ *   SCRBRD-080  "Chg Bowler" mid-over asks Injury or suspended?, the row
+ *               carries it, Law 17.8 bars both men from the next over, and
+ *               the scorecard says who took over and why.
+ *   SCRBRD-068  The no-ball sheet asks off the bat, or byes / leg byes?; leg
+ *               byes are the side's and not the striker's, a run off the bat
+ *               is his.
+ *   SCRBRD-069  A run out after a completed run asks which end; the survivor
+ *               is placed from it and the new batter takes the empty end.
+ *
+ * At every step the board, the server's fold and match_live_score (the SQL
+ * fold the public score and the handover check read) must say the same.
  *
  *   node tools/migrate.mjs --reset --seed
  *   pnpm build && node tools/smoke-browser-pad-laws.mjs
@@ -216,21 +227,18 @@ try {
   await tap("wicket-confirm");
   await page.waitForTimeout(600);
   ok("...and the batting-order sheet asks for the next man", /Available to Bat/i.test(await text()));
-  await clearBlockers();
   const ro = await agree("after retired out");
   const roRow = ro.rows.find((r) => r.kind === "retire");
   ok("the server stored a retire marked W, not a ball",
      roRow?.ball_type === "W" && roRow?.dismissal === "retired_out" && roRow?.payload?.batter === nonStriker, JSON.stringify(roRow));
   ok("...a wicket, with the ball count and the bowler's figures where they were",
-     ro.inn.wickets === 1 && ro.inn.balls === 2 && ro.inn.bowlers.every((b) => b.wickets === 0 && b.balls <= 2));
-  ok("...and the new batter took the empty end, the striker still in",
-     ro.inn.striker === start.inn.striker && ro.inn.nonStriker != null && ro.inn.nonStriker !== nonStriker);
+     ro.inn.wickets === 1 && ro.inn.balls === 2 && ro.inn.bowlers.every((b) => b.wickets === 0 && b.balls === 2));
+  ok("...his end empty, the striker still in", ro.inn.striker === start.inn.striker && ro.inn.nonStriker === null);
 
+  // Timed out is the batter due in at that empty end (Law 40). The squad
+  // has five, so four wickets end the innings: this walk spends two here.
   group("SCRBRD-081: timed out, from the batting-order sheet");
-  await click(/Wicket/, 2500);
-  await tap("wicket-confirm");        // bowled, the sheet's default
-  await page.waitForTimeout(600);
-  ok("after a wicket the sheet offers timed out", await tid("timed-out-toggle").count() === 1);
+  ok("with an end empty, the sheet offers timed out", await tid("timed-out-toggle").count() === 1);
   await tap("timed-out-toggle");
   ok("...and asks who", /Who was timed out/i.test(await text()));
   const due = await page.locator("button:not([disabled])", { hasText: /Next\s*$/i }).first().innerText().catch(() => "");
@@ -241,11 +249,13 @@ try {
   const to = await agree("after timed out");
   const toRow = to.rows.filter((r) => r.kind === "retire").at(-1);
   ok("the server stored timed out the same way", toRow?.ball_type === "W" && toRow?.dismissal === "timed_out", JSON.stringify(toRow));
-  ok("...three wickets on three balls: the bowled ball, and two with none",
-     to.inn.wickets === 3 && to.inn.balls === 3 && to.inn.nonBallWickets.length === 2);
+  ok("...two wickets on two balls, neither of them a ball",
+     to.inn.wickets === 2 && to.inn.balls === 2 && to.inn.nonBallWickets.length === 2);
   ok(`...the man timed out is on the card (${due.split("\n")[1] ?? due})`,
      to.inn.batsmen.some((b) => b.dismissal === "timed out" && b.balls === 0));
-  ok("...and only the bowled one is the bowler's", to.inn.bowlers.reduce((a, b) => a + b.wickets, 0) === 1);
+  ok("...and neither is the bowler's", to.inn.bowlers.reduce((a, b) => a + b.wickets, 0) === 0);
+  ok("the next batter took the empty end, the striker still in",
+     to.inn.striker === start.inn.striker && to.inn.nonStriker != null && to.inn.nonStriker !== nonStriker);
 
   // ── SCRBRD-080 ───────────────────────────────────────────────
   group("SCRBRD-080: a bowler replaced mid-over — the pad asks why");
@@ -328,6 +338,33 @@ try {
   ok("off the bat is the default, and is not written", hitRow?.value === 1 && !("nbRuns" in (hitRow?.payload ?? {})));
   ok("...the run is the striker's", hitNb.inn.batsmen.find((b) => b.id === nbStriker)?.runs === runsBefore + 1);
   ok("...and one run, so they crossed", hitNb.inn.striker !== nbStriker && hitNb.inn.nonStriker === nbStriker);
+
+  // ── SCRBRD-069 ───────────────────────────────────────────────
+  group("SCRBRD-069: a run out after a completed run — which end?");
+  await makeReady();
+  const S = hitNb.inn.striker, N = hitNb.inn.nonStriker;
+  await click(/Wicket/, 2500);
+  await tap("wicket-mode-run_out");
+  await tap("wicket-who-nonstriker");
+  ok("with no run completed, it does not ask the end", await tid("wicket-end").count() === 0);
+  await tap("wicket-runs-1");
+  ok("with one completed, it asks: out at the striker's end or the bowler's end?",
+     await tid("wicket-end").count() === 1 && /Out at the striker's end or the bowler's end/i.test(await text()));
+  ok("...and will not confirm until answered", await tid("wicket-confirm").first().isDisabled());
+  await tap("wicket-end-striker");
+  await tap("wicket-confirm");
+  await page.waitForTimeout(600);
+  ok("the batting-order sheet asks for the next man", /Available to Bat/i.test(await text()));
+  await clearBlockers();
+  const ro2 = await agree("after the run out");
+  const roBall = ro2.rows.filter((r) => r.kind === "ball" && r.ball_type === "W").at(-1);
+  ok("the server stored the run, who was out and the end",
+     roBall?.value === 1 && roBall?.dismissal === "run_out" && roBall?.payload?.outAt === "striker_end"
+     && (roBall?.dismissed_id ?? roBall?.payload?.dismissed) === N, JSON.stringify(roBall && { value: roBall.value, payload: roBall.payload, dismissed: roBall.dismissed_id }));
+  ok("...the survivor crossed: he is at the non-striker's end", ro2.inn.nonStriker === S);
+  ok("...and the new batter came in at the striker's end, the one left empty",
+     ro2.inn.striker != null && ro2.inn.striker !== S && ro2.inn.striker !== N);
+  ok("...with the run the striker's", ro2.inn.batsmen.find((b) => b.id === S)?.runs === (hitNb.inn.batsmen.find((b) => b.id === S)?.runs ?? 0) + 1);
 
   ok("no console errors on the pad", errors.length === 0, errors.slice(0, 3).join(" | "));
 } catch (e) {

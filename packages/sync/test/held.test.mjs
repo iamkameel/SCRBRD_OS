@@ -186,6 +186,10 @@ group("G. In words");
   // SCRBRD-068: byes off a no-ball are named as byes, runs off the bat as runs.
   ok("leg byes off a no-ball", describeEvent(ball({ type: "Nb", value: 2, nbRuns: "leg_byes" }), innings[0]) === "No ball + 2 leg byes");
   ok("a no-ball hit for one", describeEvent(ball({ type: "Nb", value: 1 }), innings[0]) === "No ball + 1 run");
+  // SCRBRD-069: a run out that says where it happened.
+  ok("a run out at the striker's end, after a run",
+     describeEvent(ball({ type: "W", value: 1, dismissal: "run_out", dismissed: "p2", outAt: "striker_end" }), innings[0])
+     === "Wicket — K Naidoo Run Out at the striker's end, 1 run");
   ok("retired hurt, a retirement", describeEvent(retire({ batter: "p1", reason: "hurt" }), innings[0]) === "Retirement — S Dlamini (retired hurt)");
 }
 

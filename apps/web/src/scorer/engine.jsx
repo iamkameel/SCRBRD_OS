@@ -986,9 +986,14 @@ function SCRBRD({resume}={}){
     // credited are all decided by the replay. The fielder in particular used to
     // be dropped from the log entirely, so a replayed scorecard could never
     // render "c Botha b Mkhize".
-    const ev=ballEvent({type:"W",value:0,shot:modalCtx?.shot||null,
+    // A run out carries the runs completed before it, who was out when it
+    // was not the striker, and — when runs were completed — the end the
+    // wicket was put down at (SCRBRD-069), which the fold empties.
+    const ev=ballEvent({type:"W",value:extra.runs??0,shot:modalCtx?.shot||null,
       seg:modalCtx?.seg??null,zone:modalCtx?.zone??null,
-      dismissal:mode,fielder:fielder||null,freeHit});
+      dismissal:mode,fielder:fielder||null,freeHit,
+      ...(extra.dismissed?{dismissed:extra.dismissed}:{}),
+      ...(extra.outAt?{outAt:extra.outAt}:{})});
     const before=inn;
     const after=project(ev);
     const endedOver=after.balls>before.balls&&after.balls%6===0;
@@ -1513,7 +1518,7 @@ function SCRBRD({resume}={}){
                         <BallDot ball={b} size={24}/>
                         <div style={{flex:1}}>
                           <div style={{fontFamily:D.body,fontSize:"12px",color:D.textPrimary,fontWeight:500}}>
-                            {b.type==="W"?"WICKET — "+(DISMISSAL_LABEL[b.dismissal]??b.dismissal):
+                            {b.type==="W"?"WICKET — "+(DISMISSAL_LABEL[b.dismissal]??b.dismissal)+(b.outAt?` at the ${b.outAt==="bowler_end"?"bowler's":"striker's"} end`:"")+(b.value?`, ${b.value} run${b.value!==1?"s":""}`:""):
                              b.type==="Wd"?"Wide ball":
                              b.type==="Nb"?`No Ball (${b.nbType?.replace("_"," ")||""}), ${b.value||0}+1 runs${b.nbRuns?` (${b.nbRuns==="leg_byes"?"leg byes":"byes"})`:""}`:
                              b.type==="Pen"?`Penalty ${b.value} runs to ${b.to} team — ${b.reason}`:

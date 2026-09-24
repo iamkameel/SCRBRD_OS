@@ -673,7 +673,14 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,onClose
   // an end is empty (SCRBRD-081). Retired out is here, and is recorded as the
   // dismissal with no ball it is, not as a delivery.
   const modes=Object.keys(DISMISSAL_LABEL).filter(m=>m!==DISMISSAL.TIMED_OUT);
-  const asksWho=mode===DISMISSAL.RETIRED_OUT&&striker&&nonStriker;
+  // A run out: who, how many runs were completed first, and — when some
+  // were, so the batters have crossed (Law 18) — at which end the wicket was
+  // put down (Law 38.2). That end is the one left empty (SCRBRD-069).
+  const[runs,setRuns]=useState(0);
+  const[end,setEnd]=useState(null);
+  const isRunOut=mode===DISMISSAL.RUN_OUT;
+  const asksWho=(mode===DISMISSAL.RETIRED_OUT||isRunOut)&&striker&&nonStriker;
+  const asksEnd=isRunOut&&runs>0;
   const needsFielder=mode===DISMISSAL.CAUGHT||mode===DISMISSAL.RUN_OUT;
   const isStumped=mode===DISMISSAL.STUMPED;
   // Find WK from fielding squad
@@ -687,6 +694,7 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,onClose
     setFielder("");
     setFielderFilter("");
     setWho(striker?.id??null);
+    setRuns(0);setEnd(null);
     if(m===DISMISSAL.STUMPED&&wkName)setFielder(wkName);
   };
   const whoName=who===nonStriker?.id?nonStriker?.name:(striker?.name??batName);
@@ -720,6 +728,28 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,onClose
               Recorded between deliveries: no ball of the over, nothing to the bowler.
             </div>
           )}
+        </div>
+      )}
+      {isRunOut&&(
+        <div style={{marginBottom:"12px"}}>
+          <Lbl sx={{marginBottom:"7px"}}>Runs completed before the run out</Lbl>
+          <div style={{display:"flex",gap:"7px"}}>
+            {[0,1,2,3].map(r=>(
+              <button key={r} data-testid={`wicket-runs-${r}`} onClick={()=>{setRuns(r);if(r===0)setEnd(null);}} className="pressBtn" style={pill(runs===r)}>{r}</button>
+            ))}
+          </div>
+        </div>
+      )}
+      {asksEnd&&(
+        <div data-testid="wicket-end" style={{marginBottom:"12px"}}>
+          <Lbl sx={{marginBottom:"7px"}}>Out at the striker's end or the bowler's end?</Lbl>
+          <div style={{display:"flex",gap:"7px"}}>
+            <button data-testid="wicket-end-striker" onClick={()=>setEnd("striker_end")} className="pressBtn" style={pill(end==="striker_end")}>Striker's end</button>
+            <button data-testid="wicket-end-bowler" onClick={()=>setEnd("bowler_end")} className="pressBtn" style={pill(end==="bowler_end")}>Bowler's end</button>
+          </div>
+          <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginTop:"6px"}}>
+            The batters crossed for the runs; the end where the wicket was broken is the one left empty.
+          </div>
         </div>
       )}
       {isStumped&&(
@@ -768,8 +798,9 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,onClose
       )}
       <div style={{display:"flex",gap:"10px",marginTop:"4px"}}>
         <Btn variant="ghost" sx={{flex:1,borderRadius:D.md}} onClick={onClose}>Cancel</Btn>
-        <Btn variant="danger" sx={{flex:2,borderRadius:D.md}} data-testid="wicket-confirm"
-          onClick={()=>onConfirm(mode,displayFielder,{dismissed:asksWho&&who!==striker?.id?who:null})}>Confirm Out</Btn>
+        <Btn variant="danger" sx={{flex:2,borderRadius:D.md}} data-testid="wicket-confirm" disabled={asksEnd&&!end}
+          onClick={()=>{if(asksEnd&&!end)return;onConfirm(mode,displayFielder,{dismissed:asksWho&&who!==striker?.id?who:null,
+            runs:isRunOut?runs:0,outAt:asksEnd?end:null});}}>Confirm Out</Btn>
       </div>
     </Sheet>
   );

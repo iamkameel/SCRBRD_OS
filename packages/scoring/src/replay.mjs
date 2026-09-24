@@ -33,7 +33,7 @@
  * Cricket; deriving made them visible.
  */
 
-import { KIND, BALL_TYPE, isLegal, normaliseDismissal, chargedToBowler, standsOnFreeHit, DISMISSAL, DISMISSAL_LABEL, INNINGS_END_REASON, DERIVED_END_REASONS, RETIREMENT_DISMISSAL, runsOffBat, inningsEnd } from "./events.mjs";
+import { KIND, BALL_TYPE, isLegal, normaliseDismissal, chargedToBowler, standsOnFreeHit, DISMISSAL, DISMISSAL_LABEL, INNINGS_END_REASON, DERIVED_END_REASONS, RETIREMENT_DISMISSAL, RUN_OUT_END, runsOffBat, inningsEnd } from "./events.mjs";
 import { CAPTURE_PROFILE } from "./placement.mjs";
 
 /** @import { LogEvent, SquadMember } from "./events.mjs" */
@@ -535,7 +535,15 @@ function inningsFolder(ctx = {}) {
               batsman: outBat?.name ?? "?", overs: fmtOvers(inn.balls),
             });
             closePartnership();
-            if (inn.striker === outId) inn.striker = null; else inn.nonStriker = null;
+            // Which end is now empty. With the end recorded (SCRBRD-069, a
+            // run out that completed runs: the batters have crossed, Law 18),
+            // it is that end, and the survivor is at the other (Law 38.2).
+            // Without it — every log before the pad asked — the dismissed
+            // batter's end before the ball, as it always was.
+            const survivor = outId === inn.striker ? inn.nonStriker : outId === inn.nonStriker ? inn.striker : undefined;
+            if (survivor !== undefined && ev.outAt === RUN_OUT_END.STRIKER) { inn.striker = null; inn.nonStriker = survivor; }
+            else if (survivor !== undefined && ev.outAt === RUN_OUT_END.BOWLER) { inn.striker = survivor; inn.nonStriker = null; }
+            else if (inn.striker === outId) inn.striker = null; else inn.nonStriker = null;
             inn.curPartner = { runs: 0, balls: 0, bat1: inn.striker, bat2: inn.nonStriker };
             partnerStartRuns = inn.runs;
           } else {
@@ -546,8 +554,9 @@ function inningsFolder(ctx = {}) {
         // Strike rotation — odd runs actually run, then the change of ends at
         // the close of an over. Runs off a no-ball and byes run off a wide both
         // rotate: they were run between the wickets like any other. A wicket
-        // does not rotate; the incoming batter's end is set by the next
-        // `batters` event.
+        // does not rotate: the survivor's end is set above (from the end the
+        // batter was out at, when the event says), and the incoming batter's
+        // by the next `batters` event.
         if (type !== BALL_TYPE.WICKET && v % 2 === 1) rotate();
         if (legal && inn.balls % 6 === 0) { rotate(); inn.bowler = null; }
 

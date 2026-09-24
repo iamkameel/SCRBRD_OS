@@ -3060,6 +3060,8 @@ keys: after the upgrade a re-offered, already-acknowledged ball reads as unsent 
   them needs a migration. Also found: the pad's no-ball carries no striker, non-striker or bowler at all, so no-balls
   are missing from every SQL career figure (batting balls faced, bowling runs conceded and no-balls).
 - **SCRBRD-069** (run-out end): decided — ask the scorer which end on a run out that completed runs — build.
+  **Built 2026-09-24:** `outAt: "striker_end" | "bowler_end"` on the wicket; the laws-spec KNOWN_GAP is now passing
+  cases for both ends (docs/SCORING_RULES.md, "Which end after a run out that completed runs").
 - **SCRBRD-080 — Mid-over bowler change records its reason.** Allowed (Law 17.8.1); the pad asks *Injury or suspended?* and records it on the `bowler` event. P2.
   **Built 2026-09-24:** `bowler({ bowler, reason: "injury" | "suspended" })`; a mid-over change with no reason is
   refused at commit (`mid_over_no_reason`); old logs replay. Not built: Law 41 says a suspended bowler does not bowl

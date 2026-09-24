@@ -406,6 +406,30 @@ group("M. No-ball byes and leg byes at commit");
      && client.batsmen.find((b) => b.id === "p2")?.runs === 0);
 }
 
+// ── N. The end a run out happened at (SCRBRD-069) ─────────────
+group("N. A run out that completed runs, and the end it was at");
+{
+  const L = [...open(0), ...runs(0, 0)];
+  const ro = at(0, ball({ type: BALL_TYPE.WICKET, value: 1, dismissal: "run_out", dismissed: "p2", outAt: "striker_end" }))[0];
+  ok("a run out with its end is accepted", judge(L, ro) === null);
+  const bad = /** @type {LogEvent} */ (/** @type {unknown} */ ({ kind: "ball", type: "W", value: 1, dismissal: "run_out", outAt: "long_leg" }));
+  ok("an end that is neither is refused", judge(L, at(0, bad)[0]) === REFUSAL.OUT_AT_UNKNOWN);
+  const onRun = /** @type {LogEvent} */ (/** @type {unknown} */ ({ kind: "ball", type: "run", value: 1, outAt: "bowler_end" }));
+  ok("...and so is an end on a delivery that is not a wicket", judge(L, at(0, onRun)[0]) === REFUSAL.OUT_AT_UNKNOWN);
+  let threw = false;
+  try { ball({ type: BALL_TYPE.RUN, value: 1, outAt: "bowler_end" }); } catch { threw = true; }
+  ok("...which the constructor will not build", threw);
+  // Both folds put the survivor at the same end, and the next batter the
+  // server takes is the one sent to the empty end.
+  const log = [...L, ro];
+  const server = new MatchFold(log).view().innings[0];
+  const client = deriveInnings(log);
+  ok("server and pad agree: the striker's end is empty, p1 at the other",
+     server.striker === null && client.striker === null && server.nonStriker === "p1" && client.nonStriker === "p1");
+  ok("the new batter goes to the striker's end", judge(log, at(0, batters({ striker: "p3" }))[0]) === null);
+  ok("...not over the survivor", judge(log, at(0, batters({ nonStriker: "p3" }))[0]) === REFUSAL.CREASE_OCCUPIED);
+}
+
 group("J. Every reason has words for the person who has to clear it");
 {
   const missing = Object.values(REFUSAL).filter((r) => typeof REFUSAL_TEXT[r] !== "string");

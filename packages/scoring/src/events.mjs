@@ -115,6 +115,21 @@ export const OFF_THE_BAT = new Set([BALL_TYPE.RUN, BALL_TYPE.WICKET, BALL_TYPE.N
  * what every SQL fold already adds to the total and the bowler (`1 + value`).
  */
 export const NB_RUNS = Object.freeze({ BYES: "byes", LEG_BYES: "leg_byes" });
+
+/**
+ * Where a batter was out, on a wicket that says (SCRBRD-069): the end the
+ * wicket was put down at (Law 38.2). With runs completed before a run out the
+ * batters have changed ends (Law 18), and the pre-ball crease no longer says
+ * which end is empty; this does. The survivor is at the other end.
+ *
+ * Asked by the pad on a run out that completed runs, and absent otherwise —
+ * then, as in every log before this, the dismissed batter's end before the
+ * ball is the one that empties.
+ */
+export const RUN_OUT_END = Object.freeze({ STRIKER: "striker_end", BOWLER: "bowler_end" });
+/** @typedef {typeof RUN_OUT_END[keyof typeof RUN_OUT_END]} RunOutEnd */
+/** @type {ReadonlySet<unknown>}  asked of whatever a producer wrote */
+export const RUN_OUT_ENDS = new Set(Object.values(RUN_OUT_END));
 /** @typedef {typeof NB_RUNS[keyof typeof NB_RUNS]} NbRuns */
 /** @type {ReadonlySet<unknown>}  asked of whatever a producer wrote */
 export const NB_RUNS_VALUES = new Set(Object.values(NB_RUNS));
@@ -312,7 +327,7 @@ export const INNINGS_END_REASON = {
  *   theta: number | null, radius: number | null,
  *   placementSource: string | null, placementNull: string | null,
  *   closePosition: string | null, captureProfile: string | null,
- *   nbRuns?: NbRuns,
+ *   nbRuns?: NbRuns, outAt?: RunOutEnd,
  * }} BallEvent
  */
 /**
@@ -328,7 +343,7 @@ export const INNINGS_END_REASON = {
  *   theta?: number | null, radius?: number | null,
  *   placementSource?: string | null, placementNull?: string | null,
  *   closePosition?: string | null, captureProfile?: string | null,
- *   nbRuns?: string | null,
+ *   nbRuns?: string | null, outAt?: string | null,
  * }} BallInput
  */
 
@@ -611,10 +626,25 @@ const checkedNbRuns = (n, type) => {
   return /** @type {NbRuns} */ (n);
 };
 
+/**
+ * Reject an `outAt` the model does not define, or one on a delivery that is
+ * not a wicket.
+ * @param {string | null | undefined} e  @param {BallType} type
+ * @returns {RunOutEnd | null}
+ */
+const checkedOutAt = (e, type) => {
+  if (e == null) return null;
+  if (!RUN_OUT_ENDS.has(e) || type !== BALL_TYPE.WICKET) {
+    throw new TypeError(`outAt ${JSON.stringify(e)} is for a wicket, one of ${[...RUN_OUT_ENDS].join(", ")}`);
+  }
+  return /** @type {RunOutEnd} */ (e);
+};
+
 /** @param {BallInput} o  @returns {BallEvent} */
 export const ball = (o) => {
   const type = checkedType(o.type);
   const nbRuns = checkedNbRuns(o.nbRuns, type);
+  const outAt = checkedOutAt(o.outAt, type);
   return {
   ...base(KIND.BALL, o),
   // `type` is the delivery kind (run | W | Wd | Nb | B | LB). It is named to
@@ -663,6 +693,9 @@ export const ball = (o) => {
   dismissal: normaliseDismissal(o.dismissal) ?? o.dismissal ?? null,
   fielder: o.fielder ?? null,
   dismissed: o.dismissed ?? null, // player id; defaults to the striker at replay
+  // The end the batter was out at (SCRBRD-069), when the scorer was asked.
+  // Omitted otherwise, so every other wicket is the event it always was.
+  ...(outAt ? { outAt } : {}),
   freeHit: o.freeHit ?? false,
 
   // ── Shot placement ──

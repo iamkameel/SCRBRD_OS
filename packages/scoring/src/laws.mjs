@@ -39,7 +39,7 @@
  *   - how many innings a format has, and whether a player is in the squad
  *     (opposition players are typed names SCRBRD holds no row for).
  */
-import { KIND, BALL_TYPE, DISMISSAL, BOWLER_CHANGE_REASONS, NB_RUNS_VALUES } from "./events.mjs";
+import { KIND, BALL_TYPE, DISMISSAL, BOWLER_CHANGE_REASONS, NB_RUNS_VALUES, RUN_OUT_ENDS } from "./events.mjs";
 import { retirementDismissal, isMidOver } from "./replay.mjs";
 import { scoringReadiness } from "./readiness.mjs";
 import { voidedIds, lastUndoableIndex } from "./undo.mjs";
@@ -73,6 +73,8 @@ export const REFUSAL = Object.freeze({
   NOT_NEXT_IN:            "not_next_in",            // timed out: the batter was not the one due in
   // Whose the runs off a no-ball were (SCRBRD-068).
   NB_RUNS_UNKNOWN:        "nb_runs_unknown",        // not off the bat, byes or leg byes, or not on a no-ball
+  // Where a batter was out (SCRBRD-069).
+  OUT_AT_UNKNOWN:         "out_at_unknown",         // not the striker's or the bowler's end, or not on a wicket
   // Undo.
   VOID_NO_TARGET:         "void_no_target",
   VOID_UNKNOWN_TARGET:    "void_unknown_target",    // names nothing in this innings of this match
@@ -105,6 +107,7 @@ export const REFUSAL_TEXT = Object.freeze({
   needs_a_delivery: "only retired out and timed out are recorded without a ball — every other way out needs a delivery",
   not_next_in: "a batter can be timed out only while an end is empty and he is the one due in",
   nb_runs_unknown: "runs off a no-ball were said to be something other than off the bat, byes or leg byes",
+  out_at_unknown: "the end the batter was out at was not the striker's or the bowler's",
   void_no_target: "the undo named no event",
   void_unknown_target: "the undo named an event this innings does not have",
   void_wrong_innings: "the undo named an event in a different innings",
@@ -230,6 +233,13 @@ function ballRefusal(innings, inn, i, ev) {
   // runs the scorer said were not his.
   if (ev.nbRuns != null && ((ev.type ?? BALL_TYPE.RUN) !== BALL_TYPE.NO_BALL || !NB_RUNS_VALUES.has(ev.nbRuns))) {
     return REFUSAL.NB_RUNS_UNKNOWN;
+  }
+
+  // The end a batter was out at is the striker's or the bowler's, and only
+  // a wicket has one (SCRBRD-069). The fold ignores anything else — and would
+  // leave the survivor where the scorer said he was not.
+  if (ev.outAt != null && ((ev.type ?? BALL_TYPE.RUN) !== BALL_TYPE.WICKET || !RUN_OUT_ENDS.has(ev.outAt))) {
+    return REFUSAL.OUT_AT_UNKNOWN;
   }
 
   // Whoever is out must be one of the two batting. `dismissed` defaults to

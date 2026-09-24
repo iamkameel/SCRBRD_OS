@@ -315,7 +315,8 @@ export function describeEvent(ev, inn, find) {
         case "W": {
           const how = /** @type {Record<string, string>} */ (DISMISSAL_LABEL)[ev.dismissal] ?? ev.dismissal ?? "out";
           const who = ev.dismissed ?? ev.striker;
-          return `Wicket — ${who != null ? `${n(who)} ` : ""}${how}${v ? `, ${plural(v, "run")}` : ""}${ev.bowler != null ? ` (bowling: ${n(ev.bowler)})` : ""}`;
+          const end = ev.outAt === "striker_end" ? " at the striker's end" : ev.outAt === "bowler_end" ? " at the bowler's end" : "";
+          return `Wicket — ${who != null ? `${n(who)} ` : ""}${how}${end}${v ? `, ${plural(v, "run")}` : ""}${ev.bowler != null ? ` (bowling: ${n(ev.bowler)})` : ""}`;
         }
         case "Wd": return `Wide${v ? ` + ${plural(v, "run")}` : ""}${face}`;
         case "Nb": return `No ball${v ? ` + ${ev.nbRuns === "byes" ? plural(v, "bye") : ev.nbRuns === "leg_byes" ? plural(v, "leg bye") : plural(v, "run")}` : ""}${face}`;
