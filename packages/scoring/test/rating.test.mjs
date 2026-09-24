@@ -76,6 +76,11 @@ group("B2. A non-finite count is never scored");
   const badBallsString = battingIndex({ runs: 100, ballsFaced: "x", dismissals: 2 });
   ok("a non-numeric ballsFaced string is refused, not scored 10.8", badBallsString.value === null);
   ok("...at no confidence, not 'good'", badBallsString.confidence === "none");
+  ok("...and says the count is not a number, not that the sample is short",
+     /balls faced is not a number/.test(must(badBallsString.reason)));
+  const badRuns = battingIndex({ runs: NaN, ballsFaced: 120, dismissals: 2 });
+  ok("a bad run count with a full sample names the bad count, not the sample",
+     badRuns.value === null && /not a number/.test(must(badRuns.reason)) && !/needed/.test(must(badRuns.reason)));
 
   ok("a literal NaN ballsFaced is refused",
      battingIndex({ runs: 40, ballsFaced: NaN, dismissals: 1 }).value === null);

@@ -2904,8 +2904,8 @@ after it refused too.
 - A batter returning after retiring hurt keeps "retired" on his record in the fold.
 - Timed out and retired out are recorded as `W` balls, which count as a legal delivery of the over.
 - Undoing a refused event that is not the last one still appends a `void`, which the server refuses and holds too (both can be discarded from the held sheet; undo could drop it locally instead).
-- `tools/smoke-a11y.mjs` and `tools/smoke-browser-read.mjs` both use port 4326, so they collide when run at the same time.
-- `tools/check-imports` reads the word "can" in JSX text as a call to the `can()` helper (false positive).
+- ~~`tools/smoke-a11y.mjs` and `tools/smoke-browser-read.mjs` both use port 4326~~ — fixed 2026-09-24 (smoke-a11y → 4331).
+- ~~`tools/check-imports` reads the word "can" in JSX text as a call to the `can()` helper~~ — fixed 2026-09-24.
 **Tests required:** one case per item when it is taken up.
 
 ### ~~SCRBRD-072~~ — CLOSED
@@ -2926,7 +2926,11 @@ innings; they do not. Phases should ask the same question the fold does (`stands
 **Tests required:** a phases case with a free hit, asserting phase wickets sum to the innings' wickets.
 **Data migration required:** NO.
 
-### SCRBRD-073 — Rating indices turn a non-numeric count into a number
+### ~~SCRBRD-073~~ — CLOSED
+**Closed 2026-09-24.** A non-finite balls count fails the sample floor, and a non-finite runs / dismissals /
+wickets / runs-conceded count yields no index, each with a reason naming the bad count. Tests in rating.test.mjs (B2).
+
+Original entry — Rating indices turn a non-numeric count into a number
 **Title:** `battingIndex` / `bowlingIndex` accept `NaN` counts past the sample floor and score them as 0
 **Priority:** P3 · **Domain:** Analytics · **Type:** input validation
 **Affected files:** `packages/scoring/src/rating.mjs` (~190, ~238)

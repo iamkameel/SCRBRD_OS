@@ -169,7 +169,8 @@ export function battingIndex(c = {}) {
   // the bare comparison alone would let a malformed count through.
   if (!Number.isFinite(balls) || balls < MIN_BALLS_FACED) {
     return { value: null, confidence: "none",
-             reason: `only ${balls} balls faced; ${MIN_BALLS_FACED} needed`,
+             reason: Number.isFinite(balls) ? `only ${balls} balls faced; ${MIN_BALLS_FACED} needed`
+                                            : "balls faced is not a number",
              parts: { ballsFaced: balls } };
   }
 
@@ -193,7 +194,7 @@ export function battingIndex(c = {}) {
   // index rather than let the arithmetic below read that null as zero.
   if (avgScore == null || srScore == null) {
     return { value: null, confidence: "none",
-             reason: `only ${balls} balls faced; ${MIN_BALLS_FACED} needed`,
+             reason: "a batting count (runs or dismissals) is not a number",
              parts: { ballsFaced: balls } };
   }
   const value = round1(avgScore * BATTING_AVERAGE_WEIGHT + srScore * (1 - BATTING_AVERAGE_WEIGHT));
@@ -221,7 +222,8 @@ export function bowlingIndex(c = {}) {
   // floor, since `NaN < 36` and `Infinity < 36` are both false.
   if (!Number.isFinite(balls) || balls < MIN_BALLS_BOWLED) {
     return { value: null, confidence: "none",
-             reason: `only ${balls} balls bowled; ${MIN_BALLS_BOWLED} needed`,
+             reason: Number.isFinite(balls) ? `only ${balls} balls bowled; ${MIN_BALLS_BOWLED} needed`
+                                            : "balls bowled is not a number",
              parts: { ballsBowled: balls } };
   }
 
@@ -244,7 +246,7 @@ export function bowlingIndex(c = {}) {
   // zero.
   if (ecoScore == null || srScore == null) {
     return { value: null, confidence: "none",
-             reason: `only ${balls} balls bowled; ${MIN_BALLS_BOWLED} needed`,
+             reason: "a bowling count (runs conceded or wickets) is not a number",
              parts: { ballsBowled: balls } };
   }
   const value = round1((ecoScore + srScore) / 2);
