@@ -812,21 +812,30 @@ const server = createServer(async (req, res) => {
       // it hears back finds what it was told about.
       const out = shim(res);
       await handler(request, out);
-      const sent = out.flush();
 
-      // The receipt, written from the answer that was actually SENT — after
-      // COMMIT, never before it. It used to be written the moment the handler
-      // called json(), inside the transaction: a write whose COMMIT then
-      // refused had already left a 200 receipt behind, and the client's
-      // retry with the same key would have been answered from it, "saved",
-      // with nothing saved. Only an answer the handler stood behind (not a
-      // 5xx), only under the person's own session.
-      if (keyed && sent && sent.status < 500) {
-        runAsPrincipal(pool, SECRET, req.headers.authorization, (client) =>
+      // The receipt, written from the answer about to be SENT — after COMMIT
+      // (the handler has resolved, so withPrincipal() has committed), never
+      // before it. It used to be written the moment the handler called
+      // json(), inside the transaction: a write whose COMMIT then refused had
+      // already left a 200 receipt behind, and the client's retry with the
+      // same key would have been answered from it, "saved", with nothing
+      // saved. Only an answer the handler stood behind (not a 5xx), only
+      // under the person's own session.
+      //
+      // AWAITED, and before the answer leaves. It used to be fired after the
+      // reply and not waited for, so a client that retried the moment it
+      // heard back could arrive before the receipt existed and run the
+      // handler a second time — the idempotency walk caught it as a 400 that
+      // did not replay. A receipt that fails to write costs only the replay,
+      // never the answer: the error is swallowed and the answer still goes.
+      const pending = out._pending;
+      if (keyed && pending && pending.status < 500) {
+        await runAsPrincipal(pool, SECRET, req.headers.authorization, (client) =>
           client.query(`insert into request_replay (person_id, key, route, status, body)
                         values (app_user_id(), $1, $2, $3, $4) on conflict do nothing`,
-                       [idem, route, sent.status, JSON.stringify(sent.body ?? null)])).catch(() => {});
+                       [idem, route, pending.status, JSON.stringify(pending.body ?? null)])).catch(() => {});
       }
+      out.flush();
       return;
     }
 
