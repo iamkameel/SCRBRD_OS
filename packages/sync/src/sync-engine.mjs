@@ -23,6 +23,13 @@ const kEvt  = (/** @type {number} */ n) => `evt:${String(n).padStart(9, "0")}`;
 // them again would be refused again — and so a restart does not lose them:
 // the server wrote NOTHING for these, so this is the only copy there is.
 const kHeld = (/** @type {number} */ n) => `held:${String(n).padStart(9, "0")}`;
+// Offered to the server: written for each event, by key, BEFORE the request
+// that carries it goes out, and never removed. The one fact undo needs that
+// the queue alone cannot give — an event still pending may already be in the
+// server's log (its request timed out after the server wrote it), and after a
+// reload the pad re-offers its whole log, so "pending" also names events the
+// server acknowledged in an earlier session (SCRBRD-074, SCRBRD-075).
+const kSent = (/** @type {string} */ key) => `sent:${key}`;
 const kMeta = "meta:clientSeq";
 
 /**
@@ -102,7 +109,14 @@ export class SyncEngine {
     // decision on THIS device. Persisted, and never resent on their own.
     /** @type {Array<any>} each is the queued event plus {state: "refused"|"conflict", reason} */
     this.held = [];
+    // Every key this device has ever put in a request for this match
+    // (persisted under `sent:`). Membership is decided before the request
+    // leaves, synchronously, so an undo in the same tick already sees it.
+    /** @type {Set<string>} */
+    this.sent = new Set();
     this.syncing = false;
+    /** @type {Promise<any>|null} the flush in progress, which a second sync() call waits on */
+    this._inflight = null;
     /** @type {string|null} */
     this.lastError = null;
     this.attempt = 0;
@@ -117,9 +131,28 @@ export class SyncEngine {
     this.held = (await this.storage.list("held:"))
       .map(i => (typeof i.value === "string" ? JSON.parse(i.value) : i.value))
       .sort((a, b) => a.clientSeq - b.clientSeq);
+    for (const i of await this.storage.list("sent:")) this.sent.add(i.key.slice("sent:".length));
     const meta = await this.storage.get(kMeta);
     const persistedSeq = meta ? Number(typeof meta === "string" ? meta : meta.value ?? meta) : 0;
     this.clientSeq = Math.max(persistedSeq, this.pending.length ? this.pending[this.pending.length - 1].clientSeq : 0);
+    // Events queued under the token generation just before this one are this
+    // device's own, carried across its own reclaim: every claim, transfer and
+    // force-release bumps the epoch by exactly one, so `epoch - 1` means
+    // nobody else held the token in between and the server's log has not
+    // moved except by this device. They go out under the token it holds now.
+    // Left stale, the first of them decides the lease check for the whole
+    // batch (events-api reads events[0].epoch), so every ball the scorer
+    // queued offline — and every one re-offered behind them — went to
+    // quarantine on the first reload with signal. Anything older is left as
+    // it is: another device held the token since, and quarantine is what
+    // those are for (SCORING_HANDOVER_SPEC §4). The epoch is not part of an
+    // event's fingerprint, so a restamped resend of an event the server
+    // already has is still a duplicate, not a conflict.
+    for (const ev of this.pending) {
+      if (ev.epoch !== this.epoch - 1) continue;
+      ev.epoch = this.epoch;
+      await this.storage.put(kEvt(ev.clientSeq), JSON.stringify(ev));
+    }
     this._emit();
     return { recovered: this.pending.length };
   }
@@ -129,6 +162,76 @@ export class SyncEngine {
   get safeToHandOver() { return this.pending.length === 0; }
 
   get heldCount() { return this.held.length; }
+
+  /**
+   * Did the server answer for this event and write nothing? (Refused, or a
+   * conflicting id — see `held`.)
+   * @param {string} key
+   * @returns {boolean}
+   */
+  isHeld(key) { return this.held.some(h => h.idempotencyKey === key); }
+
+  /**
+   * Has this event never left the device? True only for an event in the
+   * queue that has never been put in a request, by this session or any
+   * earlier one on this device. Everything else may be on the server: an
+   * event in flight, one whose request failed without an answer (the server
+   * may have written it before the connection dropped), one acknowledged in
+   * an earlier session and re-offered since, and one the queue has not been
+   * handed yet.
+   *
+   * This is the fact undo's NOT SYNCED rule rests on (undo.mjs), and
+   * `withdraw` asks it again, in the same tick, before it acts.
+   *
+   * It relies on what the pad guarantees today: every event it offers the
+   * queue was minted on this device. A log replayed FROM the server (the
+   * incoming device at a handover, SCRBRD-075) must mark those keys sent
+   * before offering them, or they would read as never sent.
+   * @param {string} key
+   * @returns {boolean}
+   */
+  isUnsent(key) { return !this.sent.has(key) && this.pending.some(e => e.idempotencyKey === key); }
+
+  /**
+   * Take back an event that has never left this device: the undo of a ball
+   * nobody else has seen (undo.mjs, NOT SYNCED). It leaves the queue in
+   * memory at once — before the first await, so no flush that starts after
+   * this call can carry it — and then leaves storage.
+   *
+   * Refused (false) when the event is not unsent: in flight, in a request
+   * that never answered, acknowledged, held, or not queued at all. The
+   * caller undoes it with a `void` instead, which is right whatever the
+   * server holds. That is the whole of the mid-flush rule: an event the
+   * server may have accepted is never withdrawn, and nothing waits on the
+   * network to decide.
+   *
+   * ORDER. The caller saves its log only once this has resolved. A crash
+   * between the two leaves the event in the pad's saved log and out of the
+   * queue; the next start re-offers the log, so it is queued and sent again
+   * — the pad shows it and the server has it, and only the undo is lost.
+   * The other order could leave it out of the log and still in the queue:
+   * sent, and not shown. That is the divergence this exists to prevent.
+   *
+   * If storage refuses the delete, the event goes back in the queue and the
+   * promise rejects: the copy on disk will be sent, so the caller must put
+   * the event back in its log.
+   * @param {string} key
+   * @returns {Promise<boolean>}
+   */
+  async withdraw(key) {
+    if (!this.isUnsent(key)) return false;
+    const gone = this.pending.filter(e => e.idempotencyKey === key);
+    this.pending = this.pending.filter(e => e.idempotencyKey !== key);
+    this._emit();
+    try {
+      for (const ev of gone) await this.storage.delete(kEvt(ev.clientSeq));
+    } catch (e) {
+      this.pending = [...this.pending, ...gone].sort((a, b) => a.clientSeq - b.clientSeq);
+      this._emit();
+      throw e;
+    }
+    return true;
+  }
 
   _emit() {
     this.onChange?.({ pendingCount: this.pending.length, heldCount: this.held.length,
@@ -165,7 +268,14 @@ export class SyncEngine {
     // person asked to resolve the same event twice (SCRBRD-070). A held
     // event leaves only by a person's hand (discardHeld); recording it again
     // is a NEW event with a new id (held.mjs recordAgain), which passes.
-    const known = payload?.id != null ? this.held.find(h => h.idempotencyKey === payload.id) : null;
+    //
+    // The same for an event already waiting in the queue: after a reload the
+    // queue rehydrates from disk AND the pad re-offers its log, and a second
+    // copy under one key doubled the pending count and would outlive a
+    // withdrawal of the first.
+    const known = payload?.id != null
+      ? this.held.find(h => h.idempotencyKey === payload.id) ?? this.pending.find(e => e.idempotencyKey === payload.id)
+      : null;
     if (known) return known;
     this.clientSeq += 1;
     /** @type {OutboxEvent} */
@@ -205,14 +315,38 @@ export class SyncEngine {
    * Flush pending to the server IN ORDER. Batches all pending in one request.
    * Acked/duplicate → cleared from storage. Quarantined → moved to rejected.
    * Any transient/offline failure stops the flush and preserves order.
+   *
+   * A call while a flush is out waits for THAT flush and answers with its
+   * result, rather than returning at once as if there were nothing to do:
+   * `await engine.sync()` then always means a flush has settled. (It used to
+   * be true only by luck of timing — the flush started by record() usually
+   * finished within the microtasks a caller's await took, and the sent
+   * markers written before each request make that no longer so.)
+   * @returns {Promise<{flushed: number, remaining: number, offline?: boolean, rejected?: number, held?: number}>}
    */
-  async sync() {
-    if (this.syncing || this.pending.length === 0) return { flushed: 0, remaining: this.pending.length };
-    if (!this.isOnline()) return { flushed: 0, remaining: this.pending.length, offline: true };
+  sync() {
+    if (this._inflight) return this._inflight;
+    if (this.pending.length === 0) return Promise.resolve({ flushed: 0, remaining: 0 });
+    if (!this.isOnline()) return Promise.resolve({ flushed: 0, remaining: this.pending.length, offline: true });
+    const p = this._flush().finally(() => { if (this._inflight === p) this._inflight = null; });
+    this._inflight = p;
+    return p;
+  }
+
+  /** One flush; only sync() starts it. */
+  async _flush() {
     this.syncing = true; this._emit();
     let flushed = 0;
     try {
       const batch = this.pending.slice();          // ordered
+      // Sent is decided here, before the first await: from this line on an
+      // undo of any of these is a void (isUnsent, withdraw). Then it is made
+      // durable, and only then does the request go out — a crash after the
+      // request left and before its marker was written would leave an event
+      // the server may hold looking as if it had never left.
+      const fresh = batch.filter(ev => !this.sent.has(ev.idempotencyKey));
+      for (const ev of fresh) this.sent.add(ev.idempotencyKey);
+      for (const ev of fresh) await this.storage.put(kSent(ev.idempotencyKey), "1");
       const res = await this.transport(this.matchId, batch);
       // res: { accepted:[{idempotencyKey,seq}], duplicates:[...], quarantined:[...],
       //        conflicts:[{idempotencyKey,seq,reason}], refused:[{idempotencyKey,reason}] }

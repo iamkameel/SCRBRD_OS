@@ -15,7 +15,7 @@ import {
   deriveInnings, deriveMatch, fmtOvers, confirmationState, sealInnings, SEAL_REFUSAL,
   inningsStart, batters, bowler, ball, penalty, retire, inningsEnd,
   BALL_TYPE, KIND, toRow, fromRow, isLegal,
-  voidEvent, undoLast, lastUndoableIndex, newEventId,
+  voidEvent, undoLast, lastUndoableIndex, newEventId, boundaryOf, LOCAL_ONLY,
   placementFromTap, noPlacement, screenAngle, thetaFromScreen,
   zoneFromRadius, closePositionFor, hasPoint, heatMapEligible, batHandOf,
   thetaFromClock, clockFromTheta, fieldingCircle, depthBand, positionName,
@@ -581,6 +581,33 @@ group("F. Undo before and after the server has it");
      deriveInnings([...log, fromRow(toRow(v))]).runs === 7);
 
   ok("event ids are unique per device", newEventId("dev", "m1") !== newEventId("dev", "m1"));
+
+  // SCRBRD-074/075. The boundary read off the device's outbox: one rule for
+  // held, never-sent and everything else, and the safe answer when the
+  // outbox cannot be seen.
+  const last = must(log.at(-1)).id ?? "";
+  /** @param {{held?: string[], unsent?: string[]}} o  @returns {import("../src/undo.mjs").OutboxView} */
+  const box = ({ held = [], unsent = [] }) => ({ isHeld: (k) => held.includes(k), isUnsent: (k) => unsent.includes(k) });
+  const cut = undoLast(log, { outbox: box({ unsent: [last] }) });
+  ok("never sent, and last: cut, for the caller to withdraw", cut.action === "truncate" && cut.target?.id === last);
+  ok("...exactly as isSynced false cuts it", JSON.stringify(cut.events) === JSON.stringify(local.events));
+  ok("pending but already offered to the server: a void (it may be in the server's log)",
+     undoLast(log, { outbox: box({}) }).action === "void");
+  ok("held: dropped, even when also unsent — held is asked first",
+     undoLast(log, { outbox: box({ held: [last], unsent: [last] }) }).action === "drop");
+  ok("an outbox that cannot be seen (null): every undo is a void",
+     undoLast(log, { outbox: null }).action === "void");
+  ok("...and outbox wins over isSynced when both are given",
+     undoLast(log, { outbox: null, isSynced: () => false }).action === "void");
+  ok("a device with nowhere to send (LOCAL_ONLY): cut", undoLast(log, { outbox: LOCAL_ONLY }).action === "truncate");
+  const b = boundaryOf(box({ unsent: [last] }));
+  ok("boundaryOf: never sent is not synced", !b.isSynced(must(log.at(-1))));
+  ok("...anything else is", b.isSynced(must(log.at(-2))));
+  ok("...and an event with no id is synced — the outbox cannot answer for it", b.isSynced(runs(1)));
+  // A void goes to the outbox by its id; the caller mints it.
+  const minted = undoLast(log, { isSynced: () => true, voidId: "dev:m1:void" });
+  ok("a void carries the id it is given", minted.events.at(-1)?.id === "dev:m1:void");
+  ok("...and none when none is given (tests, and callers that stamp it themselves)", remote.events.at(-1)?.id === undefined);
 }
 
 // ── G. Shot placement ────────────────────────────────────

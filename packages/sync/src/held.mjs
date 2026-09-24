@@ -54,7 +54,7 @@
  * it is in no log to be re-queued from. A copy the server refuses in turn is
  * held under its new key — the count stays, nothing doubles.
  */
-import { deriveInnings, lawsRefusal, undoLast, REFUSAL_TEXT, DISMISSAL_LABEL } from "@scrbrd/scoring";
+import { deriveInnings, lawsRefusal, undoLast, LOCAL_ONLY, REFUSAL_TEXT, DISMISSAL_LABEL } from "@scrbrd/scoring";
 
 /**
  * An event the server refused or conflicted on, as the engine holds it.
@@ -115,29 +115,44 @@ export function withoutEvents(log, ids) {
 }
 
 /**
- * The pad's undo, for the innings in play, knowing what the server refused.
+ * The pad's undo, for the innings in play, asked of the device's outbox.
  *
- * Which undo applies is undo.mjs's rule (undoLast), asked here with the
- * device's held list: a held event is DROPPED from wherever it sits — the
- * server never had it, so there is nothing to void, and a void would be
- * refused and held in its turn (SCRBRD-071). `discard` names the held copy
- * the caller lets go (SyncEngine.discardHeld) once the log is saved: the
- * scorer has taken the event off the board with their own hand, so it does
- * not linger in the Refused list as something the board no longer shows.
+ * Which undo applies is undo.mjs's rule (undoLast), asked with the outbox's
+ * two answers (`boundaryOf`): a held event is DROPPED from wherever it sits —
+ * the server never had it, so there is nothing to void, and a void would be
+ * refused and held in its turn (SCRBRD-071); an event that has never left the
+ * device is TRUNCATED when it is last; anything else is voided.
+ *
+ * What the caller does with the outbox afterwards is named, not implied:
+ *   `withdraw` — the key to take back out of the queue (SyncEngine.withdraw)
+ *     BEFORE the shorter log is saved, or the event is sent anyway and the
+ *     server records a ball the pad no longer shows (SCRBRD-074). Null when
+ *     there is no queue to take it from (LOCAL_ONLY).
+ *   `discard` — the held copy to let go (SyncEngine.discardHeld) once the log
+ *     is saved: the scorer has taken the event off the board with their own
+ *     hand, so it does not linger in the Refused list.
  *
  * @param {PadLog} log
- * @param {number} innings                  the innings in play
- * @param {HeldEvent[]} held                everything this device holds
- * @param {(ev: any) => boolean} isSynced   has the server accepted it?
- * @returns {{log: PadLog, action: "truncate"|"drop"|"void"|"none", target: any, discard: string|null}}
+ * @param {number} innings        the innings in play
+ * @param {import("@scrbrd/scoring").OutboxView | null} outbox
+ *   the device's SyncEngine; LOCAL_ONLY for a match with no server behind
+ *   it; null for a live match whose outbox is not attached (every undo a void)
+ * @param {() => string} [mint]  the id for a void (the pad's newEventId). The
+ *   pad offers its outbox only events with ids, so a void without one is
+ *   never sent and the server keeps the ball the pad took back.
+ * @returns {{log: PadLog, action: "truncate"|"drop"|"void"|"none", target: any, discard: string|null, withdraw: string|null}}
  */
-export function undoOnPad(log, innings, held, isSynced) {
-  const keys = new Set(held.map((h) => h.idempotencyKey));
-  const r = undoLast(log[innings] ?? [], { isSynced, isHeld: (ev) => ev?.id != null && keys.has(ev.id) });
-  if (r.action === "none") return { log, action: r.action, target: r.target, discard: null };
+export function undoOnPad(log, innings, outbox, mint) {
+  const r = undoLast(log[innings] ?? [], { outbox, voidId: mint?.() });
+  if (r.action === "none") return { log, action: r.action, target: r.target, discard: null, withdraw: null };
   const next = [...log];
   next[innings] = r.events;
-  return { log: next, action: r.action, target: r.target, discard: r.action === "drop" ? r.target?.id ?? null : null };
+  const id = r.target?.id ?? null;
+  return {
+    log: next, action: r.action, target: r.target,
+    discard: r.action === "drop" ? id : null,
+    withdraw: r.action === "truncate" && outbox !== LOCAL_ONLY ? id : null,
+  };
 }
 
 /**

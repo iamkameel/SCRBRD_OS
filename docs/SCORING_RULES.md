@@ -222,6 +222,18 @@ its turn — and lets its held copy go (SCRBRD-071; the rule is `undoLast`'s
 sheet warns while anything is held and does not block: held events are not in
 the outbox.
 
+Undo of an event that has **never left the device** — still in the outbox and
+never put in a request (`SyncEngine.isUnsent`; every key is marked sent on disk
+before its request goes out) — cuts it from the pad's log **and** withdraws it
+from the outbox (`SyncEngine.withdraw`), or it would be sent anyway and the
+server would hold a ball the pad no longer shows (SCRBRD-074). The withdrawal
+is on disk before the shorter log is saved, so a crash between the two leaves
+the ball in the log and out of the outbox, and the next start re-offers it:
+never sent-and-not-shown. An event in flight, in a request that never answered,
+or acknowledged in any session is undone with a `void`: the server may have it.
+So is every event on a live pad whose outbox is not attached (no claim yet this
+session). One rule, `undoLast` reading the outbox through `boundaryOf`.
+
 The same key sent with a different body is a **conflict**, not a duplicate: each
 row carries a fingerprint of what it says (db/36), and a key names one event.
 

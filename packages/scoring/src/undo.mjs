@@ -7,7 +7,14 @@
  *   NOT SYNCED — the event has only ever existed on this device. Drop it and
  *     re-derive. Exact, unlimited in depth, and leaves no trace, which is
  *     right: a mis-tap corrected two seconds later is not part of the match's
- *     history.
+ *     history. "Only ever existed on this device" is narrower than "not yet
+ *     acknowledged": it is an event still in the device's outbox that has
+ *     never been put in a request (packages/sync SyncEngine.isUnsent). One in
+ *     flight, or in a request that never answered, may already be in the
+ *     server's log, and is SYNCED for this purpose. And the outbox copy has
+ *     to go too, or it is sent anyway and the server records a ball the pad
+ *     no longer shows (SCRBRD-074): a `truncate` is the caller's cue to
+ *     withdraw it (SyncEngine.withdraw) BEFORE it saves the shorter log.
  *
  *   SYNCED — the server has it, its log is append-only (no UPDATE, no DELETE,
  *     enforced by trigger and by the absence of a policy), and a second device
@@ -27,7 +34,10 @@
  *
  * This is the one place that rule is written. The held sheet's discard
  * (packages/sync held.mjs) is the same move made by hand, and the pad's undo
- * asks this function with the device's held list (held.mjs `undoOnPad`).
+ * asks this function with the device's outbox (held.mjs `undoOnPad`), whose
+ * two answers — held, and never sent — are read here and nowhere else
+ * (`boundaryOf`). A device that cannot see its outbox gets the safe answer:
+ * everything may be on the server, so every undo is a void.
  *
  * Getting this wrong is not a subtle bug. It is the failure mode where a
  * scorecard is quietly wrong at the end of a match and nobody can say why.
@@ -44,6 +54,43 @@ import { voidEvent } from "./events.mjs";
 /** Events that must never be undone away — the innings would lose its squads.
  *  @type {ReadonlySet<string>} */
 const FOUNDATION = new Set([KIND.INNINGS_START]);
+
+/**
+ * What a device's outbox knows about an event, by id: the two facts undo
+ * needs. packages/sync's SyncEngine is one.
+ * @typedef {object} OutboxView
+ * @property {(id: string) => boolean} isHeld    the server answered for it and wrote nothing
+ * @property {(id: string) => boolean} isUnsent  queued here and never put in a request
+ */
+
+/**
+ * The outbox of a device with nowhere to send: a match with no server
+ * behind it. Nothing it records ever leaves, so every undo may truncate.
+ * @type {OutboxView}
+ */
+export const LOCAL_ONLY = Object.freeze({ isHeld: () => false, isUnsent: () => true });
+
+/**
+ * The undo boundary, read off an outbox — the one place its two answers
+ * become undoLast's two questions.
+ *
+ * `null` is a device that cannot see its outbox (a live match whose claim
+ * has not succeeded this session): an earlier session may have queued,
+ * sent or had refused any event in its log, so everything is SYNCED and
+ * every undo is a void. A void is always correct; it only leaves a trace.
+ *
+ * @param {OutboxView | null} outbox
+ * @returns {{isSynced: (ev: LogEvent) => boolean, isHeld: (ev: LogEvent) => boolean}}
+ */
+export function boundaryOf(outbox) {
+  if (!outbox) return { isSynced: () => true, isHeld: () => false };
+  return {
+    isHeld: (ev) => ev.id != null && outbox.isHeld(ev.id),
+    // No id: nothing the outbox could answer for. SYNCED, the safe side
+    // (and undoLast cannot void it either, so it reports "none").
+    isSynced: (ev) => ev.id == null || !outbox.isUnsent(ev.id),
+  };
+}
 
 /**
  * Ids this log has already undone.
@@ -84,21 +131,33 @@ export function lastUndoableIndex(events = []) {
  *
  * @param {LogEvent[]} [events]  the innings log
  * @param {object} [opts]
- * @param {(ev: LogEvent) => boolean} [opts.isSynced]  has the server accepted
- *   this event? Defaults to treating everything as synced, which is the SAFE
- *   default: it produces a void, and a void is always correct. Truncation is
- *   the optimisation, and an optimisation applied by mistake is what corrupts
- *   a match.
+ * @param {OutboxView | null} [opts.outbox]  the device's outbox; when given
+ *   (null included), isSynced and isHeld are read from it (`boundaryOf`) and
+ *   the two below are ignored. The pad asks this way.
+ * @param {(ev: LogEvent) => boolean} [opts.isSynced]  may the server have
+ *   this event? False only for one that has never left the device (NOT
+ *   SYNCED above). Defaults to treating everything as synced, which is the
+ *   SAFE default: it produces a void, and a void is always correct.
+ *   Truncation is the optimisation, and an optimisation applied by mistake is
+ *   what corrupts a match.
  * @param {(ev: LogEvent) => boolean} [opts.isHeld]  did the server answer
  *   for this event and write nothing? Defaults to no, which leaves every
  *   event to the two rules above. Yes is only for an event the server has
  *   already refused or conflicted on — not one still waiting to be sent, which
  *   the outbox will still deliver.
  * @param {string} [opts.reason]  carried on the void
+ * @param {string} [opts.voidId]  the id the void is recorded under, minted by
+ *   the caller (newEventId). A void with no id cannot be sent: the outbox
+ *   takes events by id, and the pad offers it only what has one.
  * @returns {{events: LogEvent[], action: "truncate" | "drop" | "void" | "none", target: LogEvent | null}}
- *   `drop`: a held event taken out of the log; the caller lets its held copy go.
+ *   `truncate`: an event that never left the device; the caller withdraws
+ *   its outbox copy before saving the log. `drop`: a held event taken out of
+ *   the log; the caller lets its held copy go.
  */
-export function undoLast(events = [], { isSynced = () => true, isHeld = () => false, reason = "scorer_undo" } = {}) {
+export function undoLast(events = [], opts = {}) {
+  const { reason = "scorer_undo", voidId } = opts;
+  const { isSynced = () => true, isHeld = () => false } =
+    opts.outbox !== undefined ? boundaryOf(opts.outbox) : opts;
   const i = lastUndoableIndex(events);
   if (i < 0) return { events, action: "none", target: null };
   const target = events[i];
@@ -122,7 +181,7 @@ export function undoLast(events = [], { isSynced = () => true, isHeld = () => fa
   if (target.id == null) return { events, action: "none", target };
 
   return {
-    events: [...events, voidEvent({ target: target.id, innings: target.innings ?? 0, reason })],
+    events: [...events, voidEvent({ target: target.id, innings: target.innings ?? 0, reason, ...(voidId != null ? { id: voidId } : {}) })],
     action: "void",
     target,
   };

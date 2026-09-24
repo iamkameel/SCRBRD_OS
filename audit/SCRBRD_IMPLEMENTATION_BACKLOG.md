@@ -2956,7 +2956,26 @@ then returns null, which the arithmetic reads as 0 (`battingIndex({runs:100, bal
 **Expected behaviour:** a non-finite count yields no index (null / "insufficient"), never a number.
 **Data migration required:** NO.
 
-### SCRBRD-074 — An undone ball that has not been sent yet is still sent
+### ~~SCRBRD-074~~ — CLOSED
+
+> **Closed 2026-09-24.** `SyncEngine.withdraw(key)` takes an event that has never left the device out of the
+> outbox, memory and storage. "Never left" is `SyncEngine.isUnsent`: queued AND never put in a request — every
+> key is marked `sent:` on disk before the request that carries it goes out, so an event in flight, or in a
+> request that never answered (the server may have written it), is not unsent. Undo's rule stays in one place:
+> `undoLast` reads the outbox through `boundaryOf` (held → drop, never sent and last → truncate, anything else →
+> void; no outbox visible on a live match → void), and `undoOnPad` names the key to `withdraw`. **Order:** the
+> withdrawal is durable before the shorter log is saved (the pad's persist effect waits on it); a crash between
+> leaves the ball in the saved log and out of the outbox, which the next start heals by re-offering the log —
+> never a ball sent that the pad does not show. A failed withdrawal puts the ball back in the log. **Mid-flush:**
+> never waits and never withdraws what is in flight — withdraw refuses it synchronously and the undo is a void.
+> Also fixed on the way: the pad's void had no id, so the log-watching effect never offered it to the outbox
+> and the server kept every ball undone by a void; and events queued offline and rehydrated after a reload
+> carried the previous epoch, so the first of them failed the batch's lease check and every ball queued
+> offline went to quarantine — events queued under `epoch - 1` (the device's own reclaim; nobody else held the
+> token) are restamped at `init`. Tests: `packages/sync/test/sync-engine.test.mjs` (suite `outbox`, incl.
+> mid-flush with a held-open transport), `replay.test.mjs` F, `held.test.mjs` I; browser walk
+> `tools/smoke-browser-offline-undo.mjs` (`browser-offline-undo`).
+
 **Title:** Undo drops an unsynced event from the pad's log but not from the outbox, so the server records a ball the pad does not show
 **Priority:** P1 · **Domain:** Scoring / sync · **Type:** correctness (silent divergence)
 **Affected files:** `packages/sync/src/sync-engine.mjs` (no way to withdraw a pending event), `packages/scoring/src/undo.mjs`
@@ -2974,7 +2993,9 @@ server and pad agree.
 
 ### SCRBRD-075 — Loose ends found building the toss fix
 **Priority:** P2/P3 · **Domain:** Scoring / sync
-- **Acked ids are memory-only.** After a reload, `syncedIds()` is empty, so offline, undo treats a ball the server already has as unsynced and cuts it locally instead of voiding it (heals online when duplicates come back acked). Persist acked ids, or ask the server before cutting. (P2)
+- ~~**Acked ids are memory-only.**~~ **Closed 2026-09-24 with SCRBRD-074:** the outbox persists a `sent:` marker
+  per key before each request, and undo asks `isUnsent`, so a reload (which re-offers the whole log) no longer
+  makes an acknowledged ball look unsent; a live pad with no outbox attached voids. Was: After a reload, `syncedIds()` is empty, so offline, undo treats a ball the server already has as unsynced and cuts it locally instead of voiding it (heals online when duplicates come back acked). Persist acked ids, or ask the server before cutting. (P2)
 - **A toss answered offline is never sent.** If the pad cannot read the toss, asks the scorer, and the POST also fails, the answer is not retried; the server may also have held a different toss the pad could not read. The innings still follows the scorer's answer. Queue the toss like an event, or re-check on reconnect. (P3)
 - **Incoming handover device mints its own `innings_start`** when it opens a fixture with no saved log, with a new id. Check against docs/SCORING_HANDOVER_SPEC.md: the incoming device should replay the server's log, not start one. (P2 — needs a look)
 
@@ -2990,3 +3011,26 @@ amendment's `void` without judging against it — the race db/37 closed for quar
 A contact, trajectory or placement value that violates a column CHECK makes `appendEvents` throw, the batch returns
 500, and the device resends it forever. The pad sends none of these today. Validate the vocabulary at the door (as
 the dismissal vocabulary already is) and refuse per event.
+
+### SCRBRD-078 — A live pad that loads without signal never syncs until it is reloaded with signal
+**Priority:** P2 · **Domain:** Scoring / sync · **Type:** offline resilience
+**Found 2026-09-24** building the SCRBRD-074 walk. Three linked gaps, each by design or by omission:
+- The API token lives in memory only (`lib/api.js`), so every reload signs the scorer out of the server; the
+  pad reopens in demo mode and must be signed into again before anything is sent.
+- The session restore looks a live fixture up on the server (`App.jsx`), so after a reload with no signal the
+  pad for a live fixture does not reopen at all — the log is safe on disk, but the scorer lands on the shell.
+- The sync effect (`engine.jsx`) claims once, on mount; a claim that failed for want of signal is never retried
+  when signal returns (the outbox's own `online` listener only exists once a claim has succeeded).
+While unattached, undo on a live match voids every ball (SCRBRD-074: the outbox cannot be seen, so nothing is
+known never to have been sent) — correct, but it leaves a trace for each mis-tap.
+**Expected:** retry the claim on `online` / on a timer while the pad is `local` for want of signal; reopen a
+live fixture's pad from its saved log offline; decide whether a reload may keep the session (the handover
+spec's "a scorer should not have to log in again mid-over").
+
+### SCRBRD-079 — Outbox `sent:` markers are never cleared
+**Priority:** P3 · **Domain:** Scoring / sync
+SCRBRD-074 writes one `sent:<key>` entry per event per match+device to `scrbrd-outbox`, and keeps it for good
+(it is what tells undo, after a reload, that a ball has left the device). A few hundred small keys per match;
+`indexedDbStorage.clearMatch()` would remove them but nothing calls it. Clear a match's outbox once the match is
+complete and the queue is empty. Devices that queued events before the markers existed have none for those
+keys: after the upgrade a re-offered, already-acknowledged ball reads as unsent until its first flush.

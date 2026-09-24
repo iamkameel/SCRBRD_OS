@@ -52,6 +52,11 @@ const asHeld = (log, refused, state = "refused") => {
 };
 const fig = (inn) => inn && { runs: inn.runs, wickets: inn.wickets, balls: inn.balls, bowler: inn.bowler, striker: inn.striker };
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+/** An outbox as undo reads it (undo.mjs OutboxView): this held list, and "never sent" as !isSynced. */
+const outboxOf = (held, isSynced) => ({
+  isHeld: (/** @type {string} */ k) => held.some((h) => h.idempotencyKey === k),
+  isUnsent: (/** @type {string} */ k) => !isSynced({ id: k }),
+});
 
 // One over by A Nel, then A Nel again — Law 17.8 — and two balls after it.
 const OPEN = withId(inningsStart({ battingTeam: "HIL", bowlingTeam: "MHS", squad: SQUAD, bowlingSquad: [], overs: 20 }));
@@ -237,7 +242,7 @@ group("I. Undo of a held event drops it, wherever it sits — never a void (SCRB
   ok("...which the server refuses in its turn: it has no such event", lawsRefusal(answered.fold.view(), voidOfHeld) === REFUSAL.VOID_UNKNOWN_TARGET,
      lawsRefusal(answered.fold.view(), voidOfHeld));
 
-  const r = undoOnPad(log, 0, held, isSynced);
+  const r = undoOnPad(log, 0, outboxOf(held, isSynced));
   ok("with it, the held event is dropped", r.action === "drop" && r.target?.id === nelAgain.id, r.action);
   ok("...and no void is written", !r.log[0].some((e) => e.kind === "void" && e.target === nelAgain.id) && r.log[0].length === log[0].length - 1);
   ok("...its held copy is named for the caller to let go", r.discard === nelAgain.id);
@@ -248,21 +253,23 @@ group("I. Undo of a held event drops it, wherever it sits — never a void (SCRB
   ok("the input log is not changed", log[0].length === 12 && log[0].includes(nelAgain));
 
   // One rule for every position: last or not, held means dropped.
-  const cascade = undoOnPad(LOG, 0, HELD, () => false);
+  const cascade = undoOnPad(LOG, 0, outboxOf(HELD, () => false));
   ok("a held event that IS last is dropped the same way, and let go", cascade.action === "drop" && cascade.discard === B2.id
      && cascade.log[0].length === LOG[0].length - 1);
 
   // Nothing else moves: the two rules undo.mjs already had.
   const clean = [[OPEN, PAIR, NEL, ...OVER1], []];
-  const allSynced = undoOnPad(clean, 0, [], () => true);
+  const allSynced = undoOnPad(clean, 0, outboxOf([], () => true));
   ok("an event the server accepted is still undone by a void", allSynced.action === "void" && allSynced.discard === null
      && allSynced.log[0].at(-1).kind === "void");
-  const pending = undoOnPad(clean, 0, [], () => false);
+  const pending = undoOnPad(clean, 0, outboxOf([], () => false));
   ok("an unsent last event is still truncated, and nothing is discarded", pending.action === "truncate" && pending.discard === null
      && pending.log[0].length === clean[0].length - 1);
+  ok("...and its outbox copy is named to withdraw (SCRBRD-074)", pending.withdraw === clean[0].at(-1).id);
+  ok("a void or a drop withdraws nothing", allSynced.withdraw === null && cascade.withdraw === null);
   ok("a held innings_start is not undone — undo never walks past one",
-     undoOnPad([[OPEN], []], 0, asHeld([[OPEN], []], [{ idempotencyKey: OPEN.id, reason: "x" }]), () => false).action === "none");
-  ok("no held list at all: undo as before", undoOnPad(log, 0, [], isSynced).action === "void");
+     undoOnPad([[OPEN], []], 0, outboxOf(asHeld([[OPEN], []], [{ idempotencyKey: OPEN.id, reason: "x" }]), () => false)).action === "none");
+  ok("no held list at all: undo as before", undoOnPad(log, 0, outboxOf([], isSynced)).action === "void");
 }
 
 console.log(`\n${"─".repeat(52)}\nHELD: ${pass} passed, ${fail} failed`);

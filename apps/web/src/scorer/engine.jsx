@@ -4,7 +4,7 @@ import {
   ball as ballEvent, penalty as penaltyEvent, revision as revisionEvent, sealInnings,
   newEventId, KIND, battingFirst, tossFromRow, firstInningsSides,
   noPlacement, NO_CONTACT_SHOTS, PLACEMENT_NULL, PLACEMENT_SOURCE, CAPTURE_PROFILE,
-  DISMISSAL_LABEL, scoringReadiness, SCORING_BLOCK, lawsRefusal, REFUSAL_TEXT,
+  DISMISSAL_LABEL, scoringReadiness, SCORING_BLOCK, lawsRefusal, REFUSAL_TEXT, LOCAL_ONLY,
 } from "@scrbrd/scoring";
 import { D } from "../design/tokens.js";
 import { deviceId } from "../lib/device.js";
@@ -254,13 +254,15 @@ function SCRBRD({resume}={}){
   // and must never trigger a re-render of the scoring pad mid-tap.
   const deviceIdRef = useRef(deviceId());
   const matchIdRef = useRef(null);
-  // Ids the server has acknowledged. Empty means nothing has left the device,
-  // which is both the truth and the safe answer: undo then truncates, and no
-  // correction is written for a ball nobody else has seen.
-  const syncedRef = useRef(new Set());
   // The outbox, once the match has been claimed. Null while offline-only —
-  // scoring never depends on it existing.
+  // scoring never depends on it existing. Undo asks it what has left the
+  // device (undoOnPad); there is no second copy of that answer here.
   const syncRef = useRef(null);
+  // Undo withdrawals not yet on disk (SCRBRD-074), each resolving true once
+  // its event is out of the stored outbox, or false when it could not be
+  // taken out and is being put back in the log. A save of the log waits for
+  // every one of them (the persist effect below).
+  const withdrawalsRef = useRef(new Set());
   const [sync, setSync] = useState({ state: "offline", pending: 0, reason: null });
   // Bumped after a handover completes on THIS device (as the incoming
   // scorer, once verifyTakeover succeeds) to re-run the sync effect below —
@@ -431,9 +433,6 @@ function SCRBRD({resume}={}){
             heldList: heldEvs.slice(),
             reason: st.lastError,
           });
-          // The undo boundary reads this: an acknowledged ball can only be
-          // taken back with a compensating event.
-          syncedRef.current = handle ? handle.syncedIds() : syncedRef.current;
       };
       const started = resumeEpoch != null
         ? await resumeSync({ matchId, userId: profile()?.user?.id, epoch: resumeEpoch, onChange })
@@ -448,7 +447,6 @@ function SCRBRD({resume}={}){
       }
       handle = started;
       syncRef.current = started;
-      syncedRef.current = started.syncedIds();
 
       // Held events survive a reload (packages/sync keeps them on disk), so a
       // scorer who reopens the pad is told about them again, not shown "Sent".
@@ -470,7 +468,15 @@ function SCRBRD({resume}={}){
     if (!hydratedRef.current || !matchId) return;
     if (!events.some(e => e.length)) return;
     let cancelled = false;
+    // An undo that withdrew an unsent ball from the outbox is saved only once
+    // the withdrawal is on disk (SCRBRD-074): a crash in between then leaves
+    // the ball in the saved log and out of the outbox, which the next start
+    // heals by re-offering the log — never the reverse, a ball sent that the
+    // pad no longer shows. A log that depends on a failed withdrawal is not
+    // saved at all: the ball is being put back, and that version saves.
+    const gate = Promise.all([...withdrawalsRef.current]);
     (async () => {
+      if (!(await gate).every(Boolean)) return;
       const ok = await saveMatch(matchId, { events, curIn, cfg: match });
       if (!cancelled && ok) setSaveState(s => ({ ...s, savedAt: Date.now() }));
     })();
@@ -767,10 +773,44 @@ function SCRBRD({resume}={}){
   // drops it from the log wherever it sits — never a void, which the server
   // would refuse and hold in its turn (SCRBRD-071) — and lets its held copy
   // go: the scorer has just taken it off the board with their own hand.
-  // undoOnPad asks undo.mjs with the device's held list; the rule is there.
+  // undoOnPad asks undo.mjs with the device's outbox; the rule is there.
+  //
+  // An event that never left the device (SCRBRD-074) is cut from the log AND
+  // withdrawn from the outbox, or it is sent anyway and the server records a
+  // ball the pad no longer shows. The decision and the withdrawal happen in
+  // this one tick — withdraw takes it out of the queue before its first
+  // await — so a flush cannot pick it up in between, and one already in
+  // flight has marked it sent, which makes it a void instead. The shorter log
+  // is saved only once the withdrawal is on disk (withdrawalsRef, the
+  // persist effect below). Which outbox: the attached one; none at all for a
+  // match with no server behind it (LOCAL_ONLY, every event may be cut); and
+  // for a live match whose claim has not succeeded this session, null — an
+  // earlier session may have sent anything here, so every undo is a void.
   const undoLastBall=()=>{
-    const outbox=syncRef.current?.engine;
-    const undone=undoOnPad(events,curIn,outbox?.held??[],e=>syncedRef.current.has(e.id));
+    const outbox=syncRef.current?.engine??null;
+    // A void is appended here, not through emit(), so it is stamped here: the
+    // log-watching effect offers the outbox only events with ids, and a void
+    // without one was never sent — the server kept every ball undone by one.
+    const undone=undoOnPad(events,curIn,outbox??(matchIdRef.current?null:LOCAL_ONLY),
+      ()=>newEventId(deviceIdRef.current,matchIdRef.current??"local"));
+    if(undone.withdraw&&outbox){
+      const target=undone.target, inn=curIn, at=events[curIn].length-1;
+      // The withdrawal failed or was refused: the outbox still has the
+      // event and will send it, so the log gets it back where it was.
+      const putBack=()=>setEvents(prev=>{
+        if(prev.some(evs=>evs.some(e=>e.id===target.id)))return prev;
+        const cp=[...prev], evs=[...(cp[inn]??[])];
+        evs.splice(Math.min(at,evs.length),0,target);
+        cp[inn]=evs;
+        return cp;
+      });
+      const w=outbox.withdraw(undone.withdraw).then(ok=>ok,()=>false).then(ok=>{
+        withdrawalsRef.current.delete(w);
+        if(!ok)putBack();
+        return ok;
+      });
+      withdrawalsRef.current.add(w);
+    }
     if(undone.action!=="none")setEvents(undone.log);
     if(undone.discard)outbox?.discardHeld(undone.discard).catch(()=>{});
     resetHub();

@@ -121,8 +121,6 @@ function attachEngine({ matchId, userId, epoch, onChange }) {
       engine,
       /** Queue one scoring event. Resolves as soon as it is DURABLE, not sent. */
       record: (event) => engine.record(event),
-      /** Which event ids the server has confirmed — the undo boundary reads this. */
-      syncedIds: () => new Set(engine.acked.map((e) => e.idempotencyKey)),
       pending: () => engine.pendingCount,
       /** Handover is only safe with an empty outbox (§ the handover spec). */
       safeToHandOver: () => engine.safeToHandOver,

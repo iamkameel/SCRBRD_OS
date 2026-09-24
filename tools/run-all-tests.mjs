@@ -27,6 +27,8 @@ const SUITES = [
   ["laws",     "packages/scoring/test/laws.test.mjs"],
   // What a person does about an event the server refused (SCRBRD-070).
   ["held",     "packages/sync/test/held.test.mjs"],
+  // Undo and the outbox: withdraw what never left, void what may have (SCRBRD-074/075).
+  ["outbox",   "packages/sync/test/sync-engine.test.mjs"],
   // Who bats first on a live fixture: the recorded toss, never a default (SCRBRD-067).
   ["toss",     "packages/scoring/test/toss.test.mjs"],
   ["phases",   "packages/scoring/test/phases.test.mjs"],
