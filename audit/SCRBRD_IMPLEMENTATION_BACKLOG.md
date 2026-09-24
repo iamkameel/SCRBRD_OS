@@ -2903,6 +2903,9 @@ after it refused too.
 - A key already held in quarantine and re-sent while the device holds the token is written live; a later release of the held copy then hits the unique key.
 - A batter returning after retiring hurt keeps "retired" on his record in the fold.
 - Timed out and retired out are recorded as `W` balls, which count as a legal delivery of the over.
+- Undoing a refused event that is not the last one still appends a `void`, which the server refuses and holds too (both can be discarded from the held sheet; undo could drop it locally instead).
+- `tools/smoke-a11y.mjs` and `tools/smoke-browser-read.mjs` both use port 4326, so they collide when run at the same time.
+- `tools/check-imports` reads the word "can" in JSX text as a call to the `can()` helper (false positive).
 **Tests required:** one case per item when it is taken up.
 
 ### SCRBRD-072 — Phase wickets count a dismissal the free hit saved
