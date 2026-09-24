@@ -283,13 +283,16 @@ function TeamSelector({value, onChange, accent, label}){
    SQUAD BUILDER — 15 players, select 11 + 12th man
 ═══════════════════════════════════════════════════════ */
 function SquadBuilder({teamKey, selected11, setSelected11, twelfthMan, setTwelfthMan, battingOrder, setBattingOrder}){
-  const team=INT_TEAMS[teamKey];
-  if(!team)return null;
-  const accent=team.accent||D.sky;
+  // Hooks first, before the early return: a SquadBuilder whose teamKey went
+  // from unknown to known called a different number of hooks between renders,
+  // and React throws on that.
   const dragIdx=useRef(null);
   const dragOverIdx=useRef(null);
   const[dragging,setDragging]=useState(null);
   const[dragOver,setDragOver]=useState(null);
+  const team=INT_TEAMS[teamKey];
+  if(!team)return null;
+  const accent=team.accent||D.sky;
 
   const toggle=(playerName)=>{
     const inXI=selected11.includes(playerName);

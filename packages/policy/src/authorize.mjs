@@ -22,30 +22,46 @@ import { ROLE_CAPABILITIES, roleGrants } from "./roles.mjs";
 
 /**
  * @typedef {object} Assignment
- * @property {string}  role        one of ROLE_CAPABILITIES
- * @property {string?} school      institution id; null = platform-wide
- * @property {string?} team        team code; null = every team in `school`
- * @property {string?} season      season id; null = every season
- * @property {string[]?} children  guardian relationships (player ids)
- * @property {string?} person      the person this assignment is *about* (a
- *                                 player's own assignment over themselves)
- * @property {string?} fixture     narrows to a single fixture (scorers, officials)
- * @property {boolean?} active
- * @property {string?} from        ISO date, inclusive
- * @property {string?} until       ISO date, exclusive
- * @property {string?} expiresAt   ISO instant, exclusive — the hour hand on a
- *                                 support assignment (db/22, db/23)
- * @property {boolean?} suspended  the duty this assignment rests on is
- *                                 suspended by the school office (db/34, db/35)
+ * @property {string}  role               one of ROLE_CAPABILITIES
+ * @property {string|null} [school]       institution id; null = platform-wide
+ * @property {string|null} [team]         team code; null = every team in `school`
+ * @property {string|null} [season]       season id; null = every season
+ * @property {string[]|null} [children]   guardian relationships (player ids)
+ * @property {string|null} [person]       the person this assignment is *about* (a
+ *                                        player's own assignment over themselves)
+ * @property {string|null} [fixture]      narrows to a single fixture (scorers, officials)
+ * @property {boolean|null} [active]
+ * @property {string|null} [from]         ISO date, inclusive
+ * @property {string|null} [until]        ISO date, exclusive
+ * @property {string|null} [expiresAt]    ISO instant, exclusive — the hour hand on a
+ *                                        support assignment (db/22, db/23)
+ * @property {boolean|null} [suspended]   the duty this assignment rests on is
+ *                                        suspended by the school office (db/34, db/35)
  *
  * @typedef {object} Resource
- * @property {string?} school
- * @property {string?} team
- * @property {string?} season
- * @property {string?} person      the player/person the row is about
- * @property {string?} fixture
+ * @property {string|null} [school]
+ * @property {string|null} [team]
+ * @property {string|null} [season]
+ * @property {string|null} [person]       the player/person the row is about
+ * @property {string|null} [fixture]
+ *
+ * A point in time: a Date, or anything `new Date()` accepts.
+ * @typedef {Date|string|number} Instant
+ *
+ * @typedef {object} Decision
+ * @property {boolean} allowed
+ * @property {Assignment|null} via
+ * @property {string|null} reason
+ *
+ * @typedef {object} Scope
+ * @property {string|null|undefined} school
+ * @property {string|null} team
+ * @property {string|null} season
+ * @property {string|null} fixture
+ * @property {string[]|null} persons
  */
 
+/** @type {Readonly<Decision>} */
 const DENY = Object.freeze({ allowed: false, via: null, reason: "no_matching_assignment" });
 
 /**
@@ -80,6 +96,10 @@ export const ANY_SCOPE = "*";
  * suspension is not `active: false` — db/01 never lets a revoked assignment
  * come back, and a suspension is lifted — so it is its own field, and either
  * one alone takes the assignment out of every decision.
+ *
+ * @param {Assignment} a
+ * @param {Instant} [at]
+ * @returns {boolean}
  */
 export function isActive(a, at = new Date()) {
   if (a.active === false) return false;
@@ -99,6 +119,10 @@ export function isActive(a, at = new Date()) {
  * on the RESOURCE is not a wildcard — a resource that does not say which
  * school it belongs to cannot be covered by a school-scoped assignment, which
  * is what keeps an unscoped query from quietly matching everything.
+ *
+ * @param {Assignment} a
+ * @param {Resource} [resource]
+ * @returns {boolean}
  */
 export function covers(a, resource = {}) {
   // Platform assignments (school: null) reach across tenants by design.
@@ -128,7 +152,12 @@ export function covers(a, resource = {}) {
 /**
  * The decision.
  *
- * @returns {{allowed: boolean, via: Assignment|null, reason: string|null}}
+ * @param {object} args
+ * @param {Assignment[]} [args.assignments]
+ * @param {string} [args.capability]
+ * @param {Resource} [args.resource]
+ * @param {Instant} [args.at]
+ * @returns {Decision}
  * `via` names the assignment that granted it — needed so the UI can say
  * "you see this because you coach U16A", and so an aggregate can be scoped by
  * the same assignment that authorised it.
@@ -144,7 +173,11 @@ export function authorize({ assignments = [], capability, resource = {}, at = ne
   return DENY;
 }
 
-/** Convenience: the boolean, when the granting assignment does not matter. */
+/**
+ * Convenience: the boolean, when the granting assignment does not matter.
+ * @param {Parameters<typeof authorize>[0]} args
+ * @returns {boolean}
+ */
 export const may = (args) => authorize(args).allowed;
 
 /**
@@ -157,6 +190,12 @@ export const may = (args) => authorize(args).allowed;
  * already leaked, even though no row was ever rendered.
  *
  * Use `scopeFilter()` below to turn the result into a query predicate.
+ *
+ * @param {object} args
+ * @param {Assignment[]} [args.assignments]
+ * @param {string} args.capability
+ * @param {Instant} [args.at]
+ * @returns {Assignment[]}
  */
 export function grantingAssignments({ assignments = [], capability, at = new Date() }) {
   return assignments.filter((a) => isActive(a, at) && roleGrants(a.role, capability));
@@ -173,6 +212,12 @@ export function grantingAssignments({ assignments = [], capability, at = new Dat
  * exports and activity feeds — not only to row reads. Anything that reaches
  * the database without one of these has bypassed authorization regardless of
  * whether a row was displayed.
+ *
+ * @param {object} args
+ * @param {Assignment[]} [args.assignments]
+ * @param {string} args.capability
+ * @param {Instant} [args.at]
+ * @returns {{unrestricted: boolean, scopes: Scope[]}}
  */
 export function scopeFilter({ assignments = [], capability, at = new Date() }) {
   const granting = grantingAssignments({ assignments, capability, at });
@@ -188,6 +233,11 @@ export function scopeFilter({ assignments = [], capability, at = new Date() }) {
   return { unrestricted: false, scopes: dedupe(scopes) };
 }
 
+/**
+ * @template T
+ * @param {T[]} rows
+ * @returns {T[]}
+ */
 const dedupe = (rows) => {
   const seen = new Set();
   return rows.filter((r) => {
@@ -205,6 +255,10 @@ const dedupe = (rows) => {
  * the person already holds through that assignment. The server must re-derive
  * the decision from the assignment on every request; a selected context
  * arriving from the client is a hint about intent, never an authority.
+ *
+ * @param {object} args
+ * @param {Assignment[]} [args.assignments]
+ * @param {Instant} [args.at]
  */
 export function contexts({ assignments = [], at = new Date() }) {
   return assignments.filter((a) => isActive(a, at)).map((a) => ({

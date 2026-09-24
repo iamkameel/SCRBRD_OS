@@ -32,6 +32,9 @@ const WALKS = [
   "quarantine",
   // A retry writes once: the Idempotency-Key layer over every write route.
   "idempotency",
+  // What a scoring command may be, decided by the server at commit: one key
+  // one event (db/36), last-in-first-out undo, and the Laws.
+  "laws",
   // The owner's own way back in, off by default, gated on its own secret.
   "owner-recovery",
   // Pre-match: who can play, naming the side, calling the toss, and the

@@ -42,6 +42,7 @@ export const LEVELS = Object.freeze(["school", "club", "provincial", "national"]
  * which is exactly the band schools do NOT have — selected on age, not on
  * which XI a boy happens to be in.
  */
+/** @type {Readonly<Record<string, readonly number[]>>} */
 export const AGE_GROUPS = Object.freeze({
   school:     Object.freeze([9, 10, 11, 12, 13, 14, 15, 16]),
   club:       Object.freeze([9, 10, 11, 12, 13, 14, 15, 16]),
@@ -65,7 +66,7 @@ const DIVISION = /^[A-F]$/;
 const OPEN_CODE = /^(\d{1,2})XI$/;
 const AGE_CODE = /^U(\d{1,2})([A-F]?)$/;
 
-const ORDINAL = (n) => {
+const ORDINAL = (/** @type {number} */ n) => {
   const s = ["th", "st", "nd", "rd"], v = n % 100;
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 };
@@ -73,8 +74,11 @@ const ORDINAL = (n) => {
 /**
  * Parse a team code into what it means.
  *
- * @returns {{kind:"age"|"open", age:number|null, division:string|null,
- *            rank:number|null, code:string}} or null when the code is not one.
+ * @param {unknown} code
+ * @returns {ParsedTeam|null} null when the code is not one.
+ *
+ * @typedef {{kind:"open", age:null, division:null, rank:number, code:string}
+ *         | {kind:"age", age:number, division:string|null, rank:null, code:string}} ParsedTeam
  */
 export function parseTeam(code) {
   if (typeof code !== "string") return null;
@@ -98,7 +102,12 @@ export function parseTeam(code) {
   return null;
 }
 
-/** Is this a team code a given level may field? */
+/**
+ * Is this a team code a given level may field?
+ * @param {unknown} code
+ * @param {string} [level]
+ * @returns {boolean}
+ */
 export function isValidTeam(code, level = "school") {
   const t = parseTeam(code);
   if (!t) return false;
@@ -107,7 +116,11 @@ export function isValidTeam(code, level = "school") {
   return Array.isArray(bands) && bands.includes(t.age);
 }
 
-/** "U14B" → "U14B";  "1XI" → "1st XI". */
+/**
+ * "U14B" → "U14B";  "1XI" → "1st XI".
+ * @param {string|null|undefined} code
+ * @returns {string}
+ */
 export function teamLabel(code) {
   const t = parseTeam(code);
   if (!t) return code ?? "";
@@ -120,6 +133,10 @@ export function teamLabel(code) {
  * Open teams are the senior end, so they sort ahead of every age group, with
  * the 1st XI first. Age groups descend — U16 before U9 — because that is the
  * order a team sheet, a fixture list and a squad picker are read in.
+ *
+ * @param {unknown} a
+ * @param {unknown} b
+ * @returns {number}
  */
 export function compareTeams(a, b) {
   const A = parseTeam(a), B = parseTeam(b);
@@ -127,8 +144,9 @@ export function compareTeams(a, b) {
   if (!A) return 1;
   if (!B) return -1;
   if (A.kind !== B.kind) return A.kind === "open" ? -1 : 1;
-  if (A.kind === "open") return A.rank - B.rank;
-  if (A.age !== B.age) return B.age - A.age;
+  // Kinds are equal from here; both halves of each test say so to the checker.
+  if (A.kind === "open" && B.kind === "open") return A.rank - B.rank;
+  if (A.kind === "age" && B.kind === "age" && A.age !== B.age) return B.age - A.age;
   return String(A.division ?? "").localeCompare(String(B.division ?? ""));
 }
 
@@ -188,6 +206,7 @@ export const CUTOFF_DAY = 1;
  * year. Everything above it does: the season is the southern summer, spring to
  * autumn, and is spoken as "2025/26".
  */
+/** @type {Readonly<Record<string, boolean>>} */
 export const SEASON_SPANS_NEW_YEAR = Object.freeze({
   school: false, club: true, provincial: true, national: true,
 });
@@ -212,6 +231,10 @@ const SEASON_END_OFFSET = 1;
  * For every other level, the year the SEASON ENDS — so a fixture in October
  * 2025 and one in February 2026 are the same 2025/26 season and answer to the
  * same 1 January 2026.
+ *
+ * @param {Date|string|number} onDate
+ * @param {string} [level]
+ * @returns {number|null}  null for an unreadable date
  */
 export function seasonYearFor(onDate, level = "school") {
   const ref = onDate instanceof Date ? onDate : new Date(onDate);
@@ -227,6 +250,10 @@ export function seasonYearFor(onDate, level = "school") {
  * `season` is a scope anchor on role_assignment, compared for equality, so the
  * two vocabularies must not be invented twice — "2026" for a school and
  * "2025/26" for a club are both correct and are not interchangeable.
+ *
+ * @param {Date|string|number} onDate
+ * @param {string} [level]
+ * @returns {string|null}
  */
 export function seasonLabel(onDate, level = "school") {
   const end = seasonYearFor(onDate, level);
@@ -235,7 +262,11 @@ export function seasonLabel(onDate, level = "school") {
   return `${end - SEASON_END_OFFSET}/${String(end % 100).padStart(2, "0")}`;
 }
 
-/** The cut-off date for a season, as a Date. Takes the year, not a level. */
+/**
+ * The cut-off date for a season, as a Date. Takes the year, not a level.
+ * @param {number} seasonYear
+ * @returns {Date}
+ */
 export function cutoffFor(seasonYear) {
   return new Date(Date.UTC(seasonYear, CUTOFF_MONTH - 1, CUTOFF_DAY));
 }
@@ -248,6 +279,11 @@ export function cutoffFor(seasonYear) {
  * an edge case: `born` is masked behind player.age.read, so a caller without
  * it receives NULL and must not be handed an eligibility answer computed from
  * nothing.
+ *
+ * @param {Date|string|number|null|undefined} born
+ * @param {Date|string|number} [onDate]
+ * @param {string} [level]
+ * @returns {number|null}
  */
 export function ageAtCutoff(born, onDate = new Date(), level = "school") {
   if (!born) return null;
@@ -276,6 +312,10 @@ export function ageAtCutoff(born, onDate = new Date(), level = "school") {
  * Returns null when the age is unknown rather than guessing, because
  * `player.born` is masked behind player.pii.read and a caller who may not read
  * a date of birth must not be handed an eligibility answer derived from it.
+ *
+ * @param {number|null|undefined} age
+ * @param {unknown} code
+ * @returns {boolean|null}
  */
 export function isEligible(age, code) {
   const t = parseTeam(code);
@@ -300,6 +340,8 @@ export function isEligible(age, code) {
  * mapping, so this returns EVERY open side and lets the coaches sort it out,
  * which is what actually happens in a school.
  *
+ * @param {unknown} code
+ * @param {{openSides?: number}} [options]
  * @returns {string[]} candidate team codes, or [] when there is no step up.
  */
 export function nextBandUp(code, { openSides = 3 } = {}) {
@@ -323,6 +365,9 @@ export function nextBandUp(code, { openSides = 3 } = {}) {
  * out ahead of the birthday rather than when he becomes ineligible. By the time
  * he is ineligible, the trials have happened.
  *
+ * @param {Date|string|number|null|undefined} born
+ * @param {unknown} team
+ * @param {Date|string|number} [from]
  * @returns {{birthday:Date, currentBand:number, nextBand:number}|null}
  */
 export function bandChangeAhead(born, team, from = new Date()) {
@@ -332,9 +377,9 @@ export function bandChangeAhead(born, team, from = new Date()) {
   if (Number.isNaN(b.getTime())) return null;
   const ref = from instanceof Date ? from : new Date(from);
 
-  let year = ref.getUTCFullYear();
+  const year = ref.getUTCFullYear();
   let birthday = new Date(Date.UTC(year, b.getUTCMonth(), b.getUTCDate()));
-  if (birthday < ref) birthday = new Date(Date.UTC(++year, b.getUTCMonth(), b.getUTCDate()));
+  if (birthday < ref) birthday = new Date(Date.UTC(year + 1, b.getUTCMonth(), b.getUTCDate()));
 
   // Their band at the cut-off AFTER that birthday. If it exceeds the side they
   // are in, they age out of it for the coming season.
@@ -349,8 +394,14 @@ export function bandChangeAhead(born, team, from = new Date()) {
 /** How far ahead a coach is told. Thirty days, per the product rule. */
 export const BAND_CHANGE_NOTICE_DAYS = 30;
 
-/** Every code a level may legitimately field, in reading order. */
+/**
+ * Every code a level may legitimately field, in reading order.
+ * @param {string} [level]
+ * @param {{divisions?: string[], openSides?: number}} [options]
+ * @returns {string[]}
+ */
 export function teamsForLevel(level = "school", { divisions = ["A", "B", "C"], openSides = 3 } = {}) {
+  /** @type {string[]} */
   const out = [];
   if (level === "school" || level === "club")
     for (let r = 1; r <= openSides; r++) out.push(`${r}XI`);
@@ -369,6 +420,9 @@ export function teamsForLevel(level = "school", { divisions = ["A", "B", "C"], o
  * anchor NARROWS, which is how a coach ends up seeing no fixtures at all.
  *
  * One function, and it understands both halves of the vocabulary.
+ *
+ * @param {unknown} name
+ * @returns {string|null}
  */
 export function teamCodeIn(name) {
   if (typeof name !== "string") return null;
@@ -393,6 +447,9 @@ export function teamCodeIn(name) {
  * permissive about LEVEL — a single CHECK cannot know whether a row belongs to
  * a school or a province — so it admits any age band any level uses, and the
  * level-specific rule is isValidTeam() above.
+ *
+ * @param {string} column
+ * @returns {string}
  */
 export function teamCodeCheck(column) {
   const allAges = [...new Set(Object.values(AGE_GROUPS).flat())].sort((a, b) => a - b);

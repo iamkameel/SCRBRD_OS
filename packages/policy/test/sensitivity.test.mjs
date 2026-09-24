@@ -49,11 +49,11 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 let passes = 0, fails = 0;
-const ok = (label, cond, detail = "") => {
+const ok = (/** @type {string} */ label, /** @type {unknown} */ cond, detail = "") => {
   console.log(`${cond ? "✓" : "✗"} ${label}${cond || !detail ? "" : `\n    ${detail}`}`);
   if (cond) passes++; else fails++;
 };
-const group = (t) => console.log("\n" + t);
+const group = (/** @type {string} */ t) => console.log("\n" + t);
 
 /**
  * SCRBRD-030. `referencedCapabilities()` sees only what `tables.mjs` models —
@@ -125,6 +125,7 @@ group("Every sensitive capability that IS implemented is watched on the way out"
   // empty object every time, so removing a whole resource from the logger left
   // it green — an assertion structurally incapable of failing, found by
   // falsifying it rather than by reading it.
+  /** @type {Record<string, string[]>} */
   const gated = {};                       // capability → [table.column]
   for (const t of MASKED_TABLES)
     for (const [cap, cols] of Object.entries(maskedColumns(TABLES[t]) ?? {}))
@@ -165,6 +166,7 @@ group("SCRBRD-030: a watched column is never reached by an under-classified capa
   // Recomputed rather than hoisted out of the group above — every group in
   // this file is self-contained, and the cost of rebuilding a 7-entry map is
   // nothing next to a second copy of it silently drifting from the first.
+  /** @type {Record<string, string[]>} */
   const gated = {};
   for (const t of MASKED_TABLES)
     for (const [cap, cols] of Object.entries(maskedColumns(TABLES[t]) ?? {}))

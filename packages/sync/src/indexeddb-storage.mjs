@@ -15,10 +15,15 @@
 // database already at that version with its store missing — "One of the
 // specified object stores was not found", thrown from inside the scorer the
 // moment it starts syncing. Separate names cost nothing and cannot collide.
+/**
+ * @param {{dbName?: string, matchId: string, deviceId: string}} options
+ * @returns {import("./sync-engine.mjs").OutboxStorage & {clearMatch: () => Promise<unknown>}}
+ */
 export function indexedDbStorage({ dbName = "scrbrd-outbox", matchId, deviceId }) {
   const store = "queue";
   const ns = `${matchId}:${deviceId}:`;                 // namespace keys per match+device
 
+  /** @type {() => Promise<IDBDatabase>} */
   const open = () => new Promise((resolve, reject) => {
     const req = indexedDB.open(dbName, 1);
     req.onupgradeneeded = () => { if (!req.result.objectStoreNames.contains(store)) req.result.createObjectStore(store); };
@@ -26,19 +31,27 @@ export function indexedDbStorage({ dbName = "scrbrd-outbox", matchId, deviceId }
     req.onerror = () => reject(req.error);
   });
 
+  /**
+   * @template T
+   * @param {IDBTransactionMode} mode
+   * @param {(os: IDBObjectStore) => T | Promise<T>} fn
+   * @returns {Promise<T>}
+   */
   const tx = async (mode, fn) => {
     const db = await open();
     return new Promise((resolve, reject) => {
       const t = db.transaction(store, mode);
       const os = t.objectStore(store);
+      /** @type {T} */
       let out;
       Promise.resolve(fn(os)).then(v => { out = v; });
-      t.oncomplete = () => { db.close(); resolve(out); };
+      t.oncomplete = () => { db.close(); resolve(/** @type {T} */ (out)); };
       t.onerror = () => { db.close(); reject(t.error); };
       t.onabort = () => { db.close(); reject(t.error); };
     });
   };
 
+  /** @type {<R>(r: IDBRequest<R>) => Promise<R>} */
   const reqP = r => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
 
   return {
@@ -48,7 +61,8 @@ export function indexedDbStorage({ dbName = "scrbrd-outbox", matchId, deviceId }
     async list(prefix) {
       return tx("readonly", async os => {
         const keys = await reqP(os.getAllKeys());
-        const wanted = keys.filter(k => typeof k === "string" && k.startsWith(ns + prefix));
+        const wanted = /** @type {string[]} */ (keys.filter(k => typeof k === "string" && k.startsWith(ns + prefix)));
+        /** @type {{key: string, value: any}[]} */
         const out = [];
         for (const k of wanted) out.push({ key: k.slice(ns.length), value: await reqP(os.get(k)) });
         return out;

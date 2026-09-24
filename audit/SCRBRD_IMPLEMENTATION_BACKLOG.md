@@ -2836,3 +2836,53 @@ team, and `innings_start` is the one event undo will not walk past.
 with no toss recorded, the scorer is asked (toss winner and election) before the innings opens, never defaulted.
 **Tests required:** a walk that records a toss where the away side bats first and asserts the opened innings.
 **Data migration required:** NO (reads the existing toss).
+
+### SCRBRD-068 — Byes or leg byes run off a no-ball are credited to the batter
+**Title:** A no-ball's `value` is always runs off the bat, so the event model cannot record no-ball byes
+**Priority:** P2 · **Domain:** Scoring · **Type:** correctness (event model)
+**Affected files:** `packages/scoring/src/events.mjs` (`BALL_TYPE.NO_BALL`), `packages/scoring/src/replay.mjs`
+(`bat.runs += v` on a no-ball), the scorer pad's extras sheet
+**Found 2026-09-23** translating AntiGravity's `liveProjectionRules.test.ts` into `packages/scoring/test/laws-spec.test.mjs`.
+By the Laws, byes or leg byes taken off a no-ball are scored as no-ball extras and are not the striker's
+(Law 21.6, Law 23). OS's no-ball carries one number, defined as runs off the bat, so four byes off a no-ball either
+go into the batter's score or cannot be entered at all.
+**Expected behaviour:** a no-ball records runs off the bat and runs not off the bat separately; the batter is
+credited only with the first, the bowler charged per the Laws, and old logs replay unchanged.
+**Tests required:** laws-spec cases for no-ball + byes and no-ball + leg byes (batter, bowler, extras, strike).
+**Data migration required:** NO if the new field rides in the payload; the fold must default it for old events.
+
+### SCRBRD-069 — Which end is empty after a run out that completed runs
+**Title:** The fold never changes ends on a wicket ball, so a run out after a completed run leaves the survivor at the wrong end
+**Priority:** P3 · **Domain:** Scoring · **Type:** correctness (display between events)
+**Affected files:** `packages/scoring/src/replay.mjs` (`deriveInnings`, the wicket case)
+**Found 2026-09-23** in the same translation (kept as a named `KNOWN_GAP` in `laws-spec.test.mjs`). With runs
+completed before the run out, the batters have changed ends (Law 18), and which end the dismissed batter was out at
+decides which end is empty (Law 38.2). The fold cannot know the second from the event today; it assumes neither
+changed. The next `batters` event names ends explicitly, so the scorecard is right; the live "who is facing" between
+the wicket and the new batter can be wrong.
+**Expected behaviour:** a run out records the end it happened at (or the scorer is asked), and the fold places the
+survivor from that and the runs completed. Needs a product decision on the pad question before building.
+**Tests required:** turn the `KNOWN_GAP` into passing cases for both ends.
+**Data migration required:** NO.
+
+### SCRBRD-070 — A scorer cannot see or clear an event the server refused
+**Title:** Held (refused / conflicting) events are kept on the device and counted, but no screen lists or resolves them
+**Priority:** P1 · **Domain:** Scoring · **Type:** workflow gap (follows db/36)
+**Affected files:** `packages/sync/src/sync-engine.mjs` (`held`, `discardHeld`), `apps/web/src/scorer/engine.jsx` (the "Refused N" pill)
+**Found 2026-09-23** reviewing the commit-time Laws work. Since db/36 the server refuses an illegal event or a reused
+key with a different body and writes nothing; the device holds it apart from the outbox. The pad says "Refused N" with
+the latest reason, but nothing calls `discardHeld`, and the pad's own board still counts the refused event, so the
+device and the server disagree until a person acts — and a refused lifecycle event (e.g. a bowler) makes the balls
+after it refused too.
+**Expected behaviour:** a sheet on the pad listing each held event with its reason in words, and for each: discard
+(the board re-derives without it) or correct and re-send as a new event. Handover warns while events are held.
+**Tests required:** browser walk — provoke a refusal, see it listed, discard it, board and server agree.
+
+### SCRBRD-071 — Loose ends found building the commit-time Laws check
+**Priority:** P3 · **Domain:** Scoring · **Type:** correctness (each small)
+- `contact` and `trajectory` are mapped by `toRow` but not listed in the live INSERT or in `quarantine_resolve`, so they are dropped. The pad does not emit them today.
+- A ball released from quarantine (`quarantine_resolve`) is inserted without the Laws check.
+- A key already held in quarantine and re-sent while the device holds the token is written live; a later release of the held copy then hits the unique key.
+- A batter returning after retiring hurt keeps "retired" on his record in the fold.
+- Timed out and retired out are recorded as `W` balls, which count as a legal delivery of the over.
+**Tests required:** one case per item when it is taken up.

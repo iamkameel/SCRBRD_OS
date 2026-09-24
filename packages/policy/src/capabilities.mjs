@@ -33,6 +33,7 @@
  * moving a column is what the split buys.
  */
 
+/** @type {Record<string, string>} capability → what it lets a person do */
 export const CAPABILITIES = {
   // ── Institution & identity ──
   "school.read":                 "See the institution's profile and settings",
@@ -398,6 +399,7 @@ export const ALL_CAPABILITIES = Object.freeze(Object.keys(CAPABILITIES));
  * capability's own protection, and this scale should not blur what it means
  * by reaching for it to cover an unrelated kind of confidentiality.
  */
+/** @type {Readonly<Record<string, number>>} */
 export const LEVEL = Object.freeze({
   // ── Institution & identity ──
   "school.read": 0, "school.manage": 1,
@@ -497,4 +499,4 @@ export const LEVEL = Object.freeze({
  */
 export const SENSITIVE = Object.freeze(ALL_CAPABILITIES.filter((c) => LEVEL[c] >= 2));
 
-export const isCapability = (c) => Object.hasOwn(CAPABILITIES, c);
+export const isCapability = (/** @type {string} */ c) => Object.hasOwn(CAPABILITIES, c);

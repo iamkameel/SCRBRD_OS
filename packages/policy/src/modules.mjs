@@ -53,7 +53,21 @@
  * list rather than claiming a read it would break other screens by refusing.
  */
 
-/** A destination in the shell, and the data behind it. */
+/**
+ * One switchable thing: a module, a feature or a sport.
+ * @typedef {object} SwitchDef
+ * @property {"module"|"feature"|"sport"} kind
+ * @property {string}   label
+ * @property {string}   [nav]         the shell destination it gates (modules)
+ * @property {string}   [capability]  the capability its destination needs
+ * @property {string}   [engine]      how a sport is scored (sports)
+ * @property {string[]} reads         read resources it OWNS — refused when off
+ */
+
+/**
+ * A destination in the shell, and the data behind it.
+ * @type {Record<string, SwitchDef>}
+ */
 export const MODULES = {
   // Destinations that are somebody's own — their dashboard, their alerts,
   // their settings — are deliberately ABSENT from this file. A switch that
@@ -133,6 +147,7 @@ export const MODULES = {
  * administrator's screen can group them, and so that "turn off Analytics" and
  * "turn off DRS" are visibly the same kind of act.
  */
+/** @type {Record<string, SwitchDef>} */
 export const FEATURES = {
   drs_review: {
     kind: "feature", label: "DRS / LBW review",
@@ -186,6 +201,7 @@ export const FEATURES = {
  * survives a sport being switched off, deliberately: a school that stops
  * running hockey keeps last season's hockey fixtures.
  */
+/** @type {Record<string, SwitchDef>} */
 export const SPORTS = {
   sport_cricket:   { kind: "sport", label: "Cricket",   engine: "scoring",  reads: [] },
   sport_rugby:     { kind: "sport", label: "Rugby",     engine: "fixtures", reads: [] },
@@ -197,7 +213,7 @@ export const SPORTS = {
 };
 
 /** A sport's flag key, from its code. Mirrors the generated column in db/00. */
-export const sportFlagKey = (code) => `sport_${code}`;
+export const sportFlagKey = (/** @type {string} */ code) => `sport_${code}`;
 
 /** Everything switchable — module, feature and sport — keyed the way the flag table is. */
 export const SWITCHABLE = { ...MODULES, ...FEATURES, ...SPORTS };
@@ -210,6 +226,7 @@ export const SWITCHABLE = { ...MODULES, ...FEATURES, ...SPORTS };
  * switch — a thing that is off for a reason nobody can find.
  */
 export const OWNER_OF_READ = (() => {
+  /** @type {Record<string, string>} */
   const out = {};
   for (const [key, def] of Object.entries(SWITCHABLE)) {
     for (const r of def.reads ?? []) {

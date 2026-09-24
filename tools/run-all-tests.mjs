@@ -10,6 +10,7 @@ import { spawnSync } from "node:child_process";
 const SUITES = [
   ["authorize","packages/policy/test/authorize.test.mjs"],
   ["scoring",  "packages/scoring/test/replay.test.mjs"],
+  ["laws-spec","packages/scoring/test/laws-spec.test.mjs"],
   ["design",   "apps/web/test/design.test.mjs"],
   ["analytics","apps/web/test/analytics.test.mjs"],
   ["teams",    "packages/policy/test/teams.test.mjs"],
@@ -22,6 +23,8 @@ const SUITES = [
   ["rating",   "packages/scoring/test/rating.test.mjs"],
   ["rubric",   "packages/scoring/test/rubric.test.mjs"],
   ["readiness","packages/scoring/test/readiness.test.mjs"],
+  // What a scoring command may be: the Laws the server enforces at commit.
+  ["laws",     "packages/scoring/test/laws.test.mjs"],
   ["phases",   "packages/scoring/test/phases.test.mjs"],
   ["spatial",  "packages/scoring/test/spatial.test.mjs"],
   ["wheel",    "apps/web/test/wheel.test.mjs"],
@@ -48,6 +51,8 @@ const SUITES = [
   ["schema-guard", "services/api/schema-guard.test.mjs"],
   ["imports",  "tools/check-imports.test.mjs"],
   ["guard",    "tools/hooks/guard.test.mjs"],
+  // The typecheck strict list only grows, and names nothing that is not there.
+  ["ts-scope", "tools/typecheck-scope.test.mjs"],
   ["ai",       "services/api/ai/ai.test.mjs"],
   ["realtime", "services/api/realtime/realtime.test.mjs"],
 ];

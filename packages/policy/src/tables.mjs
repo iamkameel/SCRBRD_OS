@@ -42,6 +42,23 @@
  * before the write goes through. That is the correct behaviour and a confusing
  * afternoon if you do not expect it.
  */
+/**
+ * A scope-anchor map: resource dimension → SQL column or expression. A null
+ * value declares the dimension absent on purpose.
+ * @typedef {{school?: string|null, team?: string|null, person?: string|null, fixture?: string|null, season?: string|null}} Anchors
+ *
+ * @typedef {object} TableDef
+ * @property {string}  read                 capability name, or a parenthesised SQL expression
+ * @property {string}  [readAlso]           a second read capability, same convention
+ * @property {string}  write                capability name, or a parenthesised SQL expression
+ * @property {Anchors} anchors
+ * @property {Anchors[]} [readAnchors]      further scopes a row may be READ through
+ * @property {string}  [visibleWhen]        SQL: rows visible regardless of capability
+ * @property {Record<string, string[]>} [masked]         capability → columns, team-anchored
+ * @property {Record<string, string[]>} [maskedAnyTeam]  capability → columns, school-anchored
+ */
+
+/** @type {Record<string, TableDef>} */
 export const TABLES = {
   // ── Tenancy and directory ────────────────────────────────────────────
   school: {
@@ -842,8 +859,12 @@ export const TABLES = {
  * everybody else, "which columns are masked and behind what" is one question
  * with one answer, and asking it in two places is how the client and the
  * database came to disagree about `born` the moment the second group appeared.
+ *
+ * @param {TableDef|null|undefined} def
+ * @returns {Record<string, string[]>}
  */
 export function maskedColumns(def) {
+  /** @type {Record<string, string[]>} */
   const out = {};
   for (const src of [def?.masked ?? {}, def?.maskedAnyTeam ?? {}])
     for (const [cap, cols] of Object.entries(src)) out[cap] = [...(out[cap] ?? []), ...cols];
@@ -863,12 +884,13 @@ export const MASKED_TABLES = Object.entries(TABLES)
  * Only literals can be cross-checked against roles.mjs — an expression names
  * whatever the row says, which is the point of it.
  */
-export const isCapabilityExpression = (c) => typeof c === "string" && c.startsWith("(");
+export const isCapabilityExpression = (/** @type {unknown} */ c) => typeof c === "string" && c.startsWith("(");
 
 /** Every capability NAMED here, for cross-checking against roles.mjs. */
 export function referencedCapabilities() {
+  /** @type {Set<string>} */
   const out = new Set();
-  const add = (c) => { if (c && !isCapabilityExpression(c)) out.add(c); };
+  const add = (/** @type {string|undefined} */ c) => { if (c && !isCapabilityExpression(c)) out.add(c); };
   for (const def of Object.values(TABLES)) {
     add(def.read);
     add(def.readAlso);

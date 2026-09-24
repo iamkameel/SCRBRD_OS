@@ -16,8 +16,9 @@ import { luhnCheckDigit, resolveCentury, readSaId, bornFromSaId, bornAgreesWithS
   from "@scrbrd/policy/sa-id";
 
 let pass = 0, fail = 0;
+/** @param {string} n @param {unknown} c @param {string} [d] */
 const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${d}` : ""); } };
-const group = (t) => console.log("\n" + t);
+const group = (/** @type {string} */ t) => console.log("\n" + t);
 
 // A fixed "today", so every boundary below is reachable on any day of the
 // year rather than only when the calendar happens to cooperate.
@@ -31,7 +32,7 @@ group("The check digit is Luhn, and it is computed not guessed");
 // direction this still passes — which is why the known-good cases follow.
 const body = "790412501208";
 const d = luhnCheckDigit(body);
-ok("a check digit is a single digit", Number.isInteger(d) && d >= 0 && d <= 9);
+ok("a check digit is a single digit", d !== null && Number.isInteger(d) && d >= 0 && d <= 9);
 ok("...and the number it completes verifies", readSaId(body + d, TODAY).checkDigitValid === true);
 
 // Known-good: these are the seeded officials' numbers, whose digits were

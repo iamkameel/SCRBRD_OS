@@ -5,7 +5,10 @@
  * job: the ball_event INSERT policy (schema_scoring.sql) already requires
  * capability + token + matching epoch + a live lease. This layer:
  *   - serialises writes per match (locks the session row),
- *   - dedupes on idempotency_key (retries are free),
+ *   - dedupes on idempotency_key (retries are free) — and refuses a DIFFERENT
+ *     event under a key already used (db/36, the commit fingerprint),
+ *   - judges every live event against the Laws before it is written
+ *     (lawsRefusal() in packages/scoring, over the fold of the log so far),
  *   - allocates the authoritative per-match seq,
  *   - routes stale-epoch events to QUARANTINE instead of merging them,
  *   - refreshes the lease on activity (once per request, not once per ball).
@@ -21,11 +24,63 @@
  * Mirrors MatchSession.append() from scoring-session.mjs, against SQL.
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
-import { toRow, normaliseDismissal } from "@scrbrd/scoring";
+import { toRow, fromRow, normaliseDismissal, MatchFold, lawsRefusal } from "@scrbrd/scoring";
+
+/**
+ * The columns an event is stored with, as ONE object, keyed by column name.
+ *
+ * The insert reads its values out of this object (through
+ * jsonb_populate_record, so Postgres coerces them exactly once, one way) and
+ * the idempotency check fingerprints this same object. If the two were built
+ * separately, a retry of an honest ball could fingerprint differently from the
+ * row it matches — a numeric rounded on one side and not the other — and be
+ * refused as a conflict. One object, so it cannot.
+ *
+ * toRow() from @scrbrd/scoring is the ONLY place the camelCase event shape
+ * becomes snake_case columns. This used to be a second mapping written out by
+ * hand here, and the two had already drifted — it read p.strikerId where the
+ * event says striker, so every dismissal arrived with a null batter. Anything
+ * the table has no column for rides in payload, so capturing a new dimension
+ * needs no migration.
+ *
+ * @param {string} matchId
+ * @param {any} ev  the envelope {innings, payload, ...}
+ * @returns {Record<string, any>}
+ */
+function columnsFor(matchId, ev) {
+  const row = toRow(ev.payload || {});
+  return {
+    match_id: matchId,
+    innings: row.innings ?? ev.innings ?? 0,
+    kind: row.kind || "ball",
+    ball_type: row.ball_type ?? null, value: row.value ?? null,
+    shot: row.shot ?? null, seg: row.seg ?? null, zone: row.zone ?? null,
+    striker_id: row.striker_id ?? null, non_striker_id: row.non_striker_id ?? null,
+    bowler_id: row.bowler_id ?? null, dismissed_id: row.dismissed_id ?? null,
+    dismissal: row.dismissal ?? null, payload: row.payload ?? {},
+    theta: row.theta ?? null, radius: row.radius ?? null,
+    placement_source: row.placement_source ?? null, placement_null: row.placement_null ?? null,
+    close_position: row.close_position ?? null, capture_profile: row.capture_profile ?? null,
+  };
+}
+
+/** The fingerprint of an event that has not been stored: db/36's function over the row it would be. */
+const FINGERPRINT_OF = `ball_event_fingerprint(jsonb_populate_record(null::ball_event, $2::jsonb))`;
 
 /**
  * @param events array of {epoch, deviceId, scorerId, idempotencyKey, clientSeq, clientTs, innings, payload}
- * @returns { accepted:[{idempotencyKey,seq}], duplicates:[...], quarantined:[...] }
+ * @returns {Promise<{
+ *   accepted:    {idempotencyKey: string, seq: number}[],
+ *   duplicates:  {idempotencyKey: string, seq: number}[],
+ *   quarantined: {idempotencyKey: string, reason: string}[],
+ *   conflicts:   {idempotencyKey: string, seq: number|null, reason: "idempotency_conflict"}[],
+ *   refused:     {idempotencyKey: string, reason: string}[],
+ * }>}
+ *
+ * Every event in the batch lands in exactly one bucket. `conflicts` and
+ * `refused` are the two where NOTHING was written: the server has no copy,
+ * so the device must keep its own and show it to a person (packages/sync
+ * holds them durably, apart from the outbox, for exactly that).
  */
 export async function appendEvents(pool, secret, bearer, matchId, events) {
   if (!Array.isArray(events) || events.length === 0) { const e = new Error("no_events"); e.status = 400; throw e; }
@@ -63,13 +118,50 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
       `select * from scoring_lease_check($1, $2, $3)`,
       [matchId, events[0].deviceId, events[0].epoch]);
     const lease = lrows[0] || { found: false, holds: false, epoch: null };
-    const result = { accepted: [], duplicates: [], quarantined: [] };
+    const result = { accepted: [], duplicates: [], quarantined: [], conflicts: [], refused: [] };
+
+    // The match as the Laws read it, folded ONCE, on the first event that
+    // needs judging, and extended as each event is accepted — so the fifth
+    // ball of a batch is judged against the four before it, not against the
+    // log as it stood when the request arrived. Safe to hold across the
+    // batch because scoring_lease_check above holds the per-match lock.
+    /** @type {MatchFold|null} */
+    let fold = null;
+    const loadFold = async () => {
+      const { rows } = await client.query(
+        `select ${EVENT_COLUMNS} from ball_event where match_id = $1 order by seq`, [matchId]);
+      return new MatchFold(rows.map(fromRow));
+    };
 
     for (const ev of events) {
-      // 1. idempotency — already stored?
+      const cols = columnsFor(matchId, ev);
+      const colsJson = JSON.stringify(cols);
+
+      // 1. idempotency — is this key already stored, and is it THIS event?
+      //    A key is one event's identity (newEventId). The same key with the
+      //    same content is a retry and costs nothing. The same key with other
+      //    content is two events claiming one identity: it is refused and
+      //    reported, because answering "duplicate" would tell the device its
+      //    ball was recorded when the server kept a different one.
       const { rows: dup } = await client.query(
-        `select seq from ball_event where idempotency_key = $1`, [ev.idempotencyKey]);
-      if (dup[0]) { result.duplicates.push({ idempotencyKey: ev.idempotencyKey, seq: dup[0].seq }); continue; }
+        `select seq, fingerprint = ${FINGERPRINT_OF} as same from ball_event where idempotency_key = $1`,
+        [ev.idempotencyKey, colsJson]);
+      if (dup[0]) {
+        if (dup[0].same) result.duplicates.push({ idempotencyKey: ev.idempotencyKey, seq: dup[0].seq });
+        else result.conflicts.push({ idempotencyKey: ev.idempotencyKey, seq: dup[0].seq, reason: "idempotency_conflict" });
+        continue;
+      }
+      // ...and the same question of a key already HELD. A NULL fingerprint
+      // is a row quarantined before db/36, which cannot be fingerprinted in
+      // SQL (see there): it is answered as the write path always answered it.
+      const { rows: held } = await client.query(
+        `select fingerprint is null or fingerprint = ${FINGERPRINT_OF} as same
+           from ball_event_quarantine where idempotency_key = $1`,
+        [ev.idempotencyKey, colsJson]);
+      if (held[0] && !held[0].same) {
+        result.conflicts.push({ idempotencyKey: ev.idempotencyKey, seq: null, reason: "idempotency_conflict" });
+        continue;
+      }
 
       // 2. token/epoch/lease gate (the DB RLS enforces this too; we check here to
       //    ROUTE mismatches to quarantine rather than get an opaque RLS failure).
@@ -77,10 +169,11 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
       if (!authed) {
         await client.query(
           `insert into ball_event_quarantine
-             (match_id, school_id, submitted_epoch, current_epoch, scorer_user_id, device_id, idempotency_key, body)
-           values ($1, match_school($1), $2, $3, app_user_id(), $4, $5, $6)
+             (match_id, school_id, submitted_epoch, current_epoch, scorer_user_id, device_id, idempotency_key, body, fingerprint)
+           values ($1, match_school($1), $2, $3, app_user_id(), $4, $5, $6,
+                   ball_event_fingerprint(jsonb_populate_record(null::ball_event, $7::jsonb)))
            on conflict (idempotency_key) do nothing`,
-          [matchId, ev.epoch, lease.epoch, ev.deviceId, ev.idempotencyKey, JSON.stringify(ev)]);
+          [matchId, ev.epoch, lease.epoch, ev.deviceId, ev.idempotencyKey, JSON.stringify(ev), colsJson]);
         result.quarantined.push({
           idempotencyKey: ev.idempotencyKey,
           // db/33: a ball sent at a complete match is held for a person to
@@ -91,36 +184,45 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
         continue;
       }
 
-      // 3. allocate the authoritative seq and insert (RLS WITH CHECK is the final guard)
+      // 3. The Laws. Judged on the event exactly as it will be stored and read
+      //    back (fromRow of these columns), so the fold that judges it and the
+      //    fold that later replays it see the same thing.
+      //
+      //    A refusal is PER EVENT, in `refused`, and the rest of the batch is
+      //    still judged — not a 4xx for the whole request. A batch is one
+      //    phone's offline queue, sent in order and resent until it settles.
+      //    A 4xx would leave every event pending, so the phone would send the
+      //    same batch, be refused the same way, and never sync again: one
+      //    illegal ball at 11:05 would wedge the whole afternoon behind it,
+      //    and a handover (which needs an empty outbox) would become
+      //    impossible. Per event, the illegal one is named and handed back —
+      //    the device holds it for a person (packages/sync) — and the legal
+      //    ones after it are judged on their own against the log without it.
+      //    Nothing is dropped: every event lands in exactly one bucket.
+      if (!fold) fold = await loadFold();
+      const candidate = fromRow({ ...cols, idempotency_key: ev.idempotencyKey });
+      const why = lawsRefusal(fold.view(), candidate);
+      if (why) { result.refused.push({ idempotencyKey: ev.idempotencyKey, reason: why }); continue; }
+
+      // 4. allocate the authoritative seq and insert (RLS WITH CHECK is the final guard)
       const { rows: mx } = await client.query(
         `select coalesce(max(seq), 0) + 1 as next from ball_event where match_id = $1`, [matchId]);
       const seq = mx[0].next;
-      // toRow() from @scrbrd/scoring is the ONLY place the camelCase event
-      // shape becomes snake_case columns. This used to be a second mapping
-      // written out by hand here, and the two had already drifted — it read
-      // p.strikerId where the event says striker, so every dismissal arrived
-      // with a null batter. Anything the table has no column for rides in
-      // payload, so capturing a new dimension needs no migration.
-      const row = toRow(ev.payload || {});
       await client.query(
         `insert into ball_event
            (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
             idempotency_key, client_seq, client_ts, kind, ball_type, value, shot, seg, zone,
             striker_id, non_striker_id, bowler_id, dismissed_id, dismissal, payload,
             theta, radius, placement_source, placement_null, close_position, capture_profile)
-         values ($1, match_school($1), $2, $3, $4, app_user_id(), $5,
-                 $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19,
-                 $20, $21, $22, $23, $24, $25, $26)`,
-        [matchId, seq, ev.epoch, row.innings ?? ev.innings ?? 0, ev.deviceId,
-         ev.idempotencyKey, ev.clientSeq, new Date(ev.clientTs ?? Date.now()),
-         row.kind || "ball", row.ball_type ?? null, row.value ?? null,
-         row.shot ?? null, row.seg ?? null, row.zone ?? null,
-         row.striker_id ?? null, row.non_striker_id ?? null, row.bowler_id ?? null,
-         row.dismissed_id ?? null, row.dismissal ?? null, JSON.stringify(row.payload ?? {}),
-         row.theta ?? null, row.radius ?? null, row.placement_source ?? null,
-         row.placement_null ?? null, row.close_position ?? null, row.capture_profile ?? null]);
+         select $1, match_school($1), $2, $3, r.innings, app_user_id(), $4,
+                $5, $6, $7, r.kind, r.ball_type, r.value, r.shot, r.seg, r.zone,
+                r.striker_id, r.non_striker_id, r.bowler_id, r.dismissed_id, r.dismissal, r.payload,
+                r.theta, r.radius, r.placement_source, r.placement_null, r.close_position, r.capture_profile
+           from jsonb_populate_record(null::ball_event, $8::jsonb) r`,
+        [matchId, seq, ev.epoch, ev.deviceId,
+         ev.idempotencyKey, ev.clientSeq, new Date(ev.clientTs ?? Date.now()), colsJson]);
 
-
+      fold.push({ ...candidate, seq });
       result.accepted.push({ idempotencyKey: ev.idempotencyKey, seq });
     }
     return result;

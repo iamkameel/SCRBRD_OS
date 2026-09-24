@@ -10,6 +10,8 @@
   },
   "scripts": {
     "test": "node tools/run-all-tests.mjs",
+    "typecheck": "node tools/typecheck.mjs",
+    "lint": "eslint .",
     "dev": "node tools/dev.mjs",
     "build": "pnpm --filter @scrbrd/web build",
     "db:up": "docker compose up -d db && node tools/wait-for-db.mjs",
@@ -23,15 +25,21 @@
     "dev:api": "node services/api/server.mjs",
     "check:imports": "node tools/check-imports.mjs",
     "smoke": "node tools/smoke.mjs && node tools/smoke-scorer.mjs && node tools/smoke-persist.mjs && node tools/smoke-a11y.mjs",
-    "verify": "pnpm test && pnpm check:imports && pnpm build && pnpm check:bundle && pnpm smoke && pnpm smoke:api",
+    "verify": "pnpm typecheck && pnpm lint && pnpm test && pnpm check:imports && pnpm build && pnpm check:bundle && pnpm smoke && pnpm smoke:api",
     "smoke:api": "node tools/run-smoke-api.mjs",
     "smoke:browser": "node tools/run-smoke-api.mjs --browser",
     "check:bundle": "node tools/check-bundle.mjs"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.20.2",
     "esbuild": "^0.25.12",
+    "eslint": "^10.11.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.12.0",
     "pg": "^8.23.0",
-    "playwright-core": "^1.62.1"
+    "playwright-core": "^1.62.1",
+    "typescript": "^7.0.2"
   },
   "dependencies": {
     "@scrbrd/policy": "workspace:*",

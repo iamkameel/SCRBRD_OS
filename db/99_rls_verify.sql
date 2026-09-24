@@ -1051,12 +1051,61 @@ BEGIN
   -- table, and a coach's stale ball was lost with a 42501.
   PERFORM _as(U_COACH);
   PERFORM set_config('app.device_id', 'verify-device', true);
-  INSERT INTO ball_event_quarantine (match_id, school_id, submitted_epoch, current_epoch, scorer_user_id, device_id, idempotency_key, body)
-  SELECT m.id, m.school_id, 9, 1, U_COACH, 'verify-device', 'verify:quarantine:own', '{}'::jsonb
+  -- A held event carries its fingerprint (db/36); the write path computes it.
+  INSERT INTO ball_event_quarantine (match_id, school_id, submitted_epoch, current_epoch, scorer_user_id, device_id, idempotency_key, body, fingerprint)
+  SELECT m.id, m.school_id, 9, 1, U_COACH, 'verify-device', 'verify:quarantine:own', '{}'::jsonb, 'verify-fingerprint'
     FROM match m WHERE m.school_id = '11111111-1111-1111-1111-111111111111' AND m.team_code = '1XI' LIMIT 1
   ON CONFLICT (idempotency_key) DO NOTHING;
   SELECT count(*) INTO n FROM ball_event_quarantine WHERE idempotency_key = 'verify:quarantine:own';
   PERFORM _assert(n = 1, 'a coach cannot quarantine (and then see) their own stale ball');
+
+  -- ── db/36: an idempotency key names ONE event ──────────────────
+  -- The write path answers "duplicate" only when the stored event's
+  -- fingerprint matches the one it is holding, and "conflict" otherwise. That
+  -- is only as good as the fingerprint: present on every row, stamped by the
+  -- database for EVERY writer (the seed below wrote its balls with plain SQL,
+  -- as scoring_amendment_decide and quarantine_resolve do), and blind to how
+  -- an event arrived but not to what it says.
+  SELECT count(*) INTO n FROM pg_attribute
+   WHERE attrelid = 'ball_event'::regclass AND attname = 'fingerprint' AND attnotnull;
+  PERFORM _assert(n = 1, 'ball_event.fingerprint is nullable: an event can be stored that no retry can be compared with');
+  SELECT count(*) INTO n FROM pg_trigger
+   WHERE tgrelid = 'ball_event'::regclass AND tgname = 'zz_ball_event_fingerprint' AND tgenabled = 'O';
+  PERFORM _assert(n = 1, 'the trigger that stamps ball_event.fingerprint is missing or disabled');
+  -- BEFORE triggers fire in name order; one after it could change the row
+  -- the fingerprint was taken of. (tgtype: 2 = BEFORE, 4 = INSERT.)
+  SELECT count(*) INTO n FROM pg_trigger
+   WHERE tgrelid = 'ball_event'::regclass AND NOT tgisinternal
+     AND (tgtype & 2) = 2 AND (tgtype & 4) = 4 AND tgname > 'zz_ball_event_fingerprint';
+  PERFORM _assert(n = 0, 'a BEFORE INSERT trigger on ball_event runs after the fingerprint is taken');
+  SELECT count(*) INTO n FROM ball_event;
+  PERFORM _assert(n > 0, 'no ball_event rows are visible here to check fingerprints against');
+  SELECT count(*) INTO n FROM ball_event b WHERE b.fingerprint IS DISTINCT FROM ball_event_fingerprint(b);
+  PERFORM _assert(n = 0, 'a stored event carries a fingerprint that is not the canonical one');
+  -- Blind to provenance: a retry under a new epoch, device, seq or clock is
+  -- the same event, or every honest retry after a claim is a conflict.
+  SELECT count(*) INTO n FROM ball_event b
+   WHERE ball_event_fingerprint(b) <> ball_event_fingerprint(jsonb_populate_record(b, jsonb_build_object(
+           'seq', b.seq + 1000, 'epoch', b.epoch + 1, 'device_id', 'another-device', 'client_seq', 0,
+           'client_ts', now(), 'server_ts', now(), 'recovered', NOT b.recovered, 'id', b.id + 100000)));
+  PERFORM _assert(n = 0, 'the fingerprint changes with how an event arrived — an honest retry would be refused');
+  -- ...and not blind to content: one more run is a different event.
+  SELECT count(*) INTO n FROM ball_event b
+   WHERE ball_event_fingerprint(b) = ball_event_fingerprint(jsonb_populate_record(b, jsonb_build_object(
+           'value', coalesce(b.value, 0) + 1)));
+  PERFORM _assert(n = 0, 'two events that differ by a run share a fingerprint — a changed ball would pass as a retry');
+  -- A NEW held event must carry one; only rows held before db/36 may not.
+  SELECT count(*) INTO n FROM pg_trigger
+   WHERE tgrelid = 'ball_event_quarantine'::regclass
+     AND tgname = 'ball_event_quarantine_fingerprint_required' AND tgenabled = 'O';
+  PERFORM _assert(n = 1, 'the trigger requiring a held event''s fingerprint is missing or disabled');
+  BEGIN
+    INSERT INTO ball_event_quarantine (match_id, school_id, submitted_epoch, current_epoch, scorer_user_id, device_id, idempotency_key, body)
+    SELECT m.id, m.school_id, 9, 1, U_COACH, 'verify-device', 'verify:quarantine:nofp', '{}'::jsonb
+      FROM match m WHERE m.school_id = '11111111-1111-1111-1111-111111111111' AND m.team_code = '1XI' LIMIT 1;
+    PERFORM _assert(false, 'a new held event was stored with no fingerprint');
+  EXCEPTION WHEN not_null_violation THEN NULL;
+  END;
 
   PERFORM set_config('app.device_id', '', true);
 

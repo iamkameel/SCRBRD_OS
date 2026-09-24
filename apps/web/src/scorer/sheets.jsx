@@ -693,7 +693,7 @@ function WicketSheet({batName,fieldingSquad,onClose,onConfirm}){
 /* ═══════════════════════════════════════════════════════
    NEW OVER / BOWLER SHEET
 ═══════════════════════════════════════════════════════ */
-function NewOverSheet({ovNum,prevBowlers,bowlingSquad,bowlingTeamKey,lastBowlerName,onClose,onConfirm}){
+function NewOverSheet({ovNum,prevBowlers,bowlingSquad,bowlingTeamKey,lastBowlerName,refuses,onClose,onConfirm}){
   const[name,setName]=useState("");
   const[filter,setFilter]=useState("");
   const teamInfo=INT_TEAMS[bowlingTeamKey]||null;
@@ -708,9 +708,11 @@ function NewOverSheet({ovNum,prevBowlers,bowlingSquad,bowlingTeamKey,lastBowlerN
     ? allBowlers.filter(p=>p.name.toLowerCase().includes(filter.toLowerCase()))
     : allBowlers;
   const prevNames=new Set(prevBowlers.map(b=>b.name));
-  // Can't bowl consecutive overs. Compared by NAME because that is what the
-  // caller has to hand for the previous bowler; ids are what get emitted.
-  const canBowl=(pname)=>pname!==lastBowlerName;
+  // Can't bowl consecutive overs (Law 17.8). `refuses` is lawsRefusal() —
+  // the rule the server applies when the bowler event arrives — asked by the
+  // id that will be emitted. The name comparison is kept only for a caller
+  // that does not pass it.
+  const canBowl=(p)=>refuses?!refuses(p.id??p.name):p.name!==lastBowlerName;
   const prevBowlerMap={};
   prevBowlers.forEach(b=>{prevBowlerMap[b.name]=b;});
   return (
@@ -735,7 +737,7 @@ function NewOverSheet({ovNum,prevBowlers,bowlingSquad,bowlingTeamKey,lastBowlerN
             <Lbl sx={{marginBottom:"7px",color:D.amber}}>Already Bowled This Innings</Lbl>
             <div style={{display:"flex",flexDirection:"column",gap:"4px"}}>
               {prevBowlers.map(b=>{
-                const dis=!canBowl(b.name);
+                const dis=!canBowl(b);
                 const ri=teamInfo?.players.find(p=>p.name===b.name);
                 return (
                   <button key={b.id} onClick={()=>!dis&&onConfirm(b.id)} disabled={dis} className="pressBtn" style={{
@@ -769,7 +771,7 @@ function NewOverSheet({ovNum,prevBowlers,bowlingSquad,bowlingTeamKey,lastBowlerN
         <div style={{display:"flex",flexDirection:"column",gap:"4px",marginBottom:"14px",maxHeight:"280px",overflowY:"auto"}}>
           {filtered.map(player=>{
             const alreadyBowled=prevBowlerMap[player.name];
-            const dis=!canBowl(player.name);
+            const dis=!canBowl(player);
             const rc=ROLE_COLORS[player.role]||D.orange;
             return (
               <button key={player.id??player.name} onClick={()=>!dis&&onConfirm(player.id??player.name)} disabled={dis} className="pressBtn" style={{
@@ -804,8 +806,8 @@ function NewOverSheet({ovNum,prevBowlers,bowlingSquad,bowlingTeamKey,lastBowlerN
             style={{flex:1,background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,
               color:D.textPrimary,fontSize:"14px",fontFamily:D.body,fontWeight:500,padding:"10px 14px"}}
             onFocus={e=>e.target.style.borderColor=D.amber+"66"} onBlur={e=>e.target.style.borderColor=D.border}
-            onKeyDown={e=>{if(e.key==="Enter"&&name.trim())onConfirm(name.trim());}}/>
-          <Btn variant="amber" disabled={!name.trim()} onClick={()=>name.trim()&&onConfirm(name.trim())} sx={{borderRadius:D.md,padding:"10px 18px"}}>Go</Btn>
+            onKeyDown={e=>{if(e.key==="Enter"&&name.trim()&&canBowl({name:name.trim()}))onConfirm(name.trim());}}/>
+          <Btn variant="amber" disabled={!name.trim()||!canBowl({name:name.trim()})} onClick={()=>name.trim()&&canBowl({name:name.trim()})&&onConfirm(name.trim())} sx={{borderRadius:D.md,padding:"10px 18px"}}>Go</Btn>
         </div>
       </div>
     </Sheet>

@@ -36,23 +36,27 @@ const YYYY_MM_DD = /^\d{4}-\d{2}-\d{2}$/;
  */
 export const PLAUSIBLE_YEARS = Object.freeze({ min: 3, max: 25 });
 
-/**
- * Establish a date of birth from what the office actually typed.
- *
- * @param {{born?: string|null, idNumber?: string|null}} input
- * @param {Date} [today]
- * @returns {{ok: true, born: string, idNumber: string|null, source: "typed"|"id_number",
- *            warning?: string} | {ok: false, reason: string, field: "born"|"id_number"}}
- *
- * `source` says which of the two the date came from, so a caller can tell the
- * office "we took his birthday from the ID number" rather than appearing to
- * invent one.
- */
 // Officials are adults; the same check with a different window and a
 // different reason, so the message a screen shows says "an official", not
 // "a school pupil".
 export const PLAUSIBLE_YEARS_OFFICIAL = Object.freeze({ min: 16, max: 90 });
 
+/**
+ * Establish a date of birth from what the office actually typed.
+ *
+ * @param {{born?: string|null, idNumber?: string|null}} input
+ * @param {Date} [today]
+ * @param {{plausible?: {min: number, max: number}, notPlausible?: string}} [window]
+ *   the age band and refusal reason; defaults to a school pupil's
+ * @returns {{ok: true, born: string, idNumber: string|null, source: "typed"|"id_number",
+ *            warning?: string, reason?: undefined, field?: undefined}
+ *         | {ok: false, reason: string, field: "born"|"id_number",
+ *            born?: undefined, idNumber?: undefined, source?: undefined, warning?: undefined}}
+ *
+ * `source` says which of the two the date came from, so a caller can tell the
+ * office "we took his birthday from the ID number" rather than appearing to
+ * invent one.
+ */
 export function resolveBirthDate({ born, idNumber } = {}, today = new Date(),
                                  { plausible = PLAUSIBLE_YEARS, notPlausible = "born_not_plausible_for_a_school_pupil" } = {}) {
   const typed = born == null || born === "" ? null : String(born).trim();
@@ -106,7 +110,9 @@ export function resolveBirthDate({ born, idNumber } = {}, today = new Date(),
 
   return {
     ok: true,
-    born: resolved,
+    // Not null: both-absent returned above, and a null here would have parsed
+    // to NaN and been refused as not YYYY-MM-DD.
+    born: /** @type {string} */ (resolved),
     idNumber: id,
     source: typed !== null ? "typed" : "id_number",
     ...(warning ? { warning } : {}),
@@ -114,6 +120,7 @@ export function resolveBirthDate({ born, idNumber } = {}, today = new Date(),
 }
 
 /** The office's words for each refusal, so three screens do not invent three. */
+/** @type {Readonly<Record<string, string>>} */
 export const BIRTH_DATE_MESSAGE = Object.freeze({
   date_of_birth_required:
     "A date of birth is required — type one, or give the ID number and we will read it from that.",

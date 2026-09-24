@@ -143,6 +143,8 @@ presentation.
 ## 6 · Check your setup
 
 ```sh
+pnpm typecheck         # TypeScript over the JavaScript, on the strict list (below)
+pnpm lint              # ESLint across apps, packages, services and tools
 pnpm test              # every unit suite, no database needed
 pnpm check:imports     # every import resolves
 pnpm build && pnpm check:bundle   # the client builds, and nothing confidential is in it
@@ -155,6 +157,54 @@ pnpm verify            # all of the above, in order
 `smoke:api` refuses to start if a `tools/smoke-*.mjs` exists that nothing runs,
 and runs the live RLS verifier before the first walk. Both are there because a
 test nobody runs is a document.
+
+### Types and lint
+
+The code stays JavaScript. Nothing is renamed to `.ts` and nothing is compiled:
+the server runs straight from source, and the paths `db/SHIPPED.sha256` and
+`tools/hooks/guard.mjs` know about stay where they are. TypeScript runs as a
+**checker** (`allowJs` + `checkJs`, `strict`, `noEmit`) and the types come from
+JSDoc.
+
+**What is checked.** `tsconfig.json`'s `include` is the strict list — today
+`packages/policy` (source and tests) and `packages/sync`. Every file on it must
+have zero errors. A file on the list that imports one off it (sync imports
+`@scrbrd/scoring`) pulls it into the program so its inferred types flow in, but
+`tools/typecheck.mjs` does not count the outside file's own errors;
+`node tools/typecheck.mjs --all` shows them.
+
+**Adding a package.** Add its glob to `include` in `tsconfig.json` *and* to
+`FLOOR` in `tools/typecheck-scope.test.mjs`, run `pnpm typecheck`, and fix what
+it reports. The test refuses a list that shrinks, and an entry that matches no
+directory (tsc treats a typo'd glob as "zero files, zero errors"). The same
+list is where ESLint's `no-unused-vars` and `no-useless-assignment` are errors
+rather than warnings. A type fix must not change behaviour; where the honest
+fix would, leave the code as found and write it up instead.
+
+**JSDoc conventions.**
+
+- Exported functions carry `@param` / `@returns`. Destructured options are
+  `@param {object} args` then `@param {T} [args.name]` per field.
+- Shapes that recur get a `@typedef` next to the code that owns them
+  (`Assignment` in `authorize.mjs`, `TableDef` in `tables.mjs`, `OutboxEvent`
+  in `sync-engine.mjs`) and are imported elsewhere with
+  `@type {import("./file.mjs").Name}`.
+- Lookup tables indexed by a runtime string are `Record<string, T>` — a frozen
+  literal's exact keys cannot be indexed by `string` under `strict`.
+- Result unions name the other side's fields as absent
+  (`{ok: true, born: string, reason?: undefined} | {ok: false, reason: string, born?: undefined}`),
+  so `r.born` reads without narrowing on `ok` first.
+- A cast is `/** @type {T} */ (expr)` — parentheses required — and gets a
+  comment saying why the checker cannot see what the code knows.
+- `any` is for real boundaries (storage values, a scoring event owned by a
+  package not yet on the list), never to silence an error.
+
+**Lint.** `eslint.config.mjs` is `@eslint/js` recommended plus bug-shaped
+rules (`eqeqeq` with the `== null` idiom allowed, `no-throw-literal`,
+`array-callback-return`, …) and, for `apps/web`, the React hooks rules.
+Nothing stylistic. Errors fail `pnpm lint`; warnings (unused variables outside
+the strict list, `exhaustive-deps`) are the cleanup queue. A deliberately
+unused binding starts with `_`.
 
 ## Ports and variables
 

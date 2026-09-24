@@ -58,14 +58,22 @@ const newBowler = (id, name) => ({
 });
 
 /**
- * Fold the event log into a complete innings.
+ * The fold itself, one event at a time.
  *
- * @param {object[]} events  ordered event log (see events.mjs)
- * @param {object}  [ctx]
- * @param {(key:string)=>string} [ctx.flagFor]  team key → flag emoji, for the UI
- * @returns {object} innings state, shaped as the views already expect
+ * deriveInnings() below is this, applied to a whole log. It is split out so
+ * the server can extend a fold it has already built rather than start again
+ * for every event it is asked to judge (see MatchFold) — WITHOUT a second
+ * implementation of any rule: there is one switch over the event kinds, and
+ * both callers go through it. A second fold is how the handover replay fell
+ * behind this one (scoring-session.mjs), and it must not happen again here.
+ *
+ * `apply` never sees a void or a voided event; the caller filters them, because
+ * which events are voided is a property of the whole log, not of one event.
+ *
+ * @param {object} [ctx]
+ * @returns {{ inn: any, apply: (ev: any) => void }}
  */
-export function deriveInnings(events = [], ctx = {}) {
+function inningsFolder(ctx = {}) {
   const inn = {
     battingTeam: null, bowlingTeam: null,
     teamKey: null, bowlingTeamKey: null, teamFlag: "🏏",
@@ -156,26 +164,7 @@ export function deriveInnings(events = [], ctx = {}) {
     return entry;
   };
 
-  // A `void` event undoes an earlier one. Collect the targets in one pass
-  // first, because a void necessarily appears AFTER the event it undoes and
-  // the fold below is single-pass and order-dependent — a ball that has been
-  // voided must never be counted, not counted and then subtracted. Subtracting
-  // is where the artifact's aggregates went wrong: a wicket cannot be
-  // un-taken by decrementing, because the batter who came in afterwards is
-  // already at the crease.
-  //
-  // Voiding a void does nothing on purpose. Undoing an undo means appending
-  // the original event again; the log records what the scorer did, in order,
-  // and is not a stack.
-  const voided = new Set();
-  for (const ev of events) {
-    if (ev.kind === KIND.VOID && ev.target != null) voided.add(ev.target);
-  }
-  inn.voided = voided.size;
-
-  for (const ev of events) {
-    if (ev.kind === KIND.VOID) continue;
-    if (ev.id != null && voided.has(ev.id)) continue;
+  const apply = (ev) => {
     switch (ev.kind) {
       case KIND.INNINGS_START: {
         Object.assign(inn, {
@@ -383,8 +372,52 @@ export function deriveInnings(events = [], ctx = {}) {
 
       default: break; // unknown kinds are ignored, never fatal
     }
-  }
+  };
 
+  return { inn, apply };
+}
+
+/**
+ * Fold the event log into a complete innings.
+ *
+ * @param {object[]} events  ordered event log (see events.mjs)
+ * @param {object}  [ctx]
+ * @param {(key:string)=>string} [ctx.flagFor]  team key → flag emoji, for the UI
+ * @returns {any} innings state, shaped as the views already expect
+ */
+export function deriveInnings(events = [], ctx = {}) {
+  const { inn, apply } = inningsFolder(ctx);
+  // A `void` event undoes an earlier one. Collect the targets in one pass
+  // first, because a void necessarily appears AFTER the event it undoes and
+  // the fold below is single-pass and order-dependent — a ball that has been
+  // voided must never be counted, not counted and then subtracted. Subtracting
+  // is where the artifact's aggregates went wrong: a wicket cannot be
+  // un-taken by decrementing, because the batter who came in afterwards is
+  // already at the crease.
+  //
+  // Voiding a void does nothing on purpose. Undoing an undo means appending
+  // the original event again; the log records what the scorer did, in order,
+  // and is not a stack.
+  const voided = voidedTargets(events);
+  inn.voided = voided.size;
+  for (const ev of events) {
+    if (ev.kind === KIND.VOID) continue;
+    if (ev.id != null && voided.has(ev.id)) continue;
+    apply(ev);
+  }
+  settleInnings(inn);
+  return inn;
+}
+
+/** The targets of every void in this log. */
+function voidedTargets(events) {
+  const voided = new Set();
+  for (const ev of events) if (ev.kind === KIND.VOID && ev.target != null) voided.add(ev.target);
+  return voided;
+}
+
+/** What the fold settles once the events are in. Idempotent. */
+function settleInnings(inn) {
   computeMaidens(inn);
   // A seal that stood has already set both fields and wins: it is what the
   // scorer recorded. Without one — none written yet, or one refused — the
@@ -396,7 +429,6 @@ export function deriveInnings(events = [], ctx = {}) {
     const why = inningsOverReason(inn);
     if (why) { inn.complete = true; inn.endReason = why; }
   }
-  return inn;
 }
 
 /** The scorecard line, from the canonical dismissal. */
@@ -543,6 +575,92 @@ export function deriveMatch(events = [], ctx = {}) {
   const indices = [...byInnings.keys()].sort((a, b) => a - b);
   const innings = indices.map((i) => deriveInnings(byInnings.get(i), ctx));
   return { innings, current: innings.length ? innings.length - 1 : 0, result: describeResult(innings) };
+}
+
+/**
+ * A match's fold that can be extended one event at a time. For the server's
+ * commit path: appendEvents() judges each event in a batch against the log as
+ * it stands INCLUDING the events of the same batch it has just accepted, and
+ * re-deriving the whole match for every one of them is a fold per event where
+ * one per request will do.
+ *
+ * It is the same fold. Each innings is an inningsFolder() — the one switch
+ * deriveInnings() runs — fed the same events, filtered the same way. Two
+ * differences, both about WHEN, not what:
+ *
+ *   - A void cannot be applied incrementally: it removes an event already
+ *     folded, and the fold does not subtract (see deriveInnings). So pushing a
+ *     void re-folds that one innings from its own log. The server only accepts
+ *     a void of the latest event that still counts, and undo is rare, so this
+ *     is the exception and not the rule.
+ *   - view() does not settle maidens: nothing that judges the next event
+ *     reads them, and recounting every over for every event is the cost this
+ *     exists to avoid. `complete` and `endReason` ARE settled, on a copy, so a
+ *     later revision can still reopen an innings the way it does in a full
+ *     replay.
+ */
+export class MatchFold {
+  /** @param {object[]} [events] the match's log in seq order  @param {object} [ctx] */
+  constructor(events = [], ctx = {}) {
+    this.ctx = ctx;
+    /** @type {Map<number, {events: object[], voided: Set<string>, inn: any, apply: (ev: any) => void}>} */
+    this.byInnings = new Map();
+    for (const ev of events) this._bucket(ev.innings ?? 0).events.push(ev);
+    for (const b of this.byInnings.values()) this._refold(b);
+  }
+
+  /** @param {number} i */
+  _bucket(i) {
+    let b = this.byInnings.get(i);
+    if (!b) {
+      const { inn, apply } = inningsFolder(this.ctx);
+      b = { events: [], voided: new Set(), inn, apply };
+      this.byInnings.set(i, b);
+    }
+    return b;
+  }
+
+  /** Fold one innings again from its own log — exactly deriveInnings' loop. */
+  _refold(b) {
+    const { inn, apply } = inningsFolder(this.ctx);
+    b.inn = inn; b.apply = apply;
+    b.voided = voidedTargets(b.events);
+    inn.voided = b.voided.size;
+    for (const ev of b.events) {
+      if (ev.kind === KIND.VOID) continue;
+      if (ev.id != null && b.voided.has(ev.id)) continue;
+      apply(ev);
+    }
+  }
+
+  /** Extend the fold with an event the log has just accepted. */
+  push(ev) {
+    const b = this._bucket(ev.innings ?? 0);
+    b.events.push(ev);
+    if (ev.kind === KIND.VOID) { this._refold(b); return; }
+    if (ev.id != null && b.voided.has(ev.id)) return;
+    b.apply(ev);
+  }
+
+  /**
+   * The match as the laws read it: each innings' state and its own log, both
+   * indexed by innings number. The same shape the scorer already holds
+   * (engine.jsx keeps `innings` and `events` as arrays by innings), so the
+   * laws take one argument from either side.
+   *
+   * @returns {{ innings: any[], events: object[][] }}
+   */
+  view() {
+    /** @type {any[]} */ const innings = [];
+    /** @type {object[][]} */ const events = [];
+    for (const [i, b] of this.byInnings) {
+      const inn = b.inn;
+      const why = inn.complete ? null : inningsOverReason(inn);
+      innings[i] = why ? { ...inn, complete: true, endReason: why } : { ...inn };
+      events[i] = b.events;
+    }
+    return { innings, events };
+  }
 }
 
 function describeResult(innings) {

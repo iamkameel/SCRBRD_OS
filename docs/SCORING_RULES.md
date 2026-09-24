@@ -154,6 +154,48 @@ There is no DLS or VJD calculation. The figures are the umpires', typed. A
 school ground has no resource tables, and a wrong automatic target is worse
 than a typed one.
 
+## What the server refuses at commit
+
+The pad's rules bind only the pad. A second client, an older build or a queue
+replayed after a handover could append anything, and the log is append-only,
+so the server now judges every live event before it is written
+(`services/api/write/events-api.mjs`, inside the per-match lock) with ONE
+function, `lawsRefusal(match, ev)` in `packages/scoring/src/laws.mjs`, over
+the fold of the log so far (`MatchFold` — the same `deriveInnings` switch,
+extended one event at a time, never a second fold). The pad asks the same
+function (the new-over sheet does today).
+
+Refused, with the reason named:
+
+| Rule | Source |
+|---|---|
+| A ball needs an innings, batters at both ends and a bowler; not in a closed or finished innings | `scoringReadiness()` (the pad's own gate) |
+| Striker and non-striker are different players | AntiGravity `validateDelivery` |
+| No bowler bowls two overs, or parts of two, running (Law 17.8) | AntiGravity; "parts thereof" added |
+| Whoever is out on a wicket must be one of the two batting | AntiGravity |
+| No ball once the second innings is complete — the match is decided | AntiGravity `recordBallAction` |
+| An innings starts only when the one before it has ended (by the laws or a seal) | new, from the model |
+| No play in an innings once a later one has a delivery | new |
+| A dismissed batter, or one retired out, does not come back; retired hurt may (Law 25.4) | new |
+| Once play starts, a not-out batter leaves only by dismissal or retirement — no replacing him; swapping ends is allowed | new |
+| Only a batter at the crease can retire; nothing is recorded for an innings nobody opened | new |
+| A live `void` names the latest event that still counts in the innings in play — last in, first out, as the pad's undo. Anything older is an amendment (a second person, `scoring_amendment`) | new, `undo.mjs` |
+
+Not refused, deliberately — each would need a product decision: a dismissal on
+a free hit (§6 above records it and saves the batter), a mid-over change of
+bowler (Law 17.8.1 allows it for injury; the model does not say why a change
+happened), a stale or wrong seal (`sealRefusal` records and ignores it), a late
+capture-profile declaration, the number of innings a format has, and whether a
+typed player is in the squad.
+
+A refusal is **per event**, in the response's `refused` bucket, and the rest of
+the batch is still judged: a 4xx would leave an offline queue resending the same
+illegal ball forever. The sync engine holds refused events on the device for a
+person (`packages/sync`, `held`) — the server wrote nothing.
+
+The same key sent with a different body is a **conflict**, not a duplicate: each
+row carries a fingerprint of what it says (db/36), and a key names one event.
+
 ## Adding a new scoring situation
 
 Do not add a counter. Add an event kind in `events.mjs`, fold it in
