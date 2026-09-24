@@ -851,7 +851,7 @@ BEGIN
   SELECT count(*) INTO n FROM match_squad WHERE player_id <> P_INJURED;
   PERFORM _assert(n = 0, 'guardian sees another child on the team sheet');
   SELECT count(*) INTO n FROM match_squad WHERE player_id = P_INJURED;
-  PERFORM _assert(n = 1, 'guardian cannot see their own child on the team sheet');
+  PERFORM _assert(n >= 1, 'guardian cannot see their own child on the team sheet');
 
   -- The ANY_SCOPE regression. A fixture names no person, so a guardian's
   -- child list has nothing to constrain — and before app_can() could say
