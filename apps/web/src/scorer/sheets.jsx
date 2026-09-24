@@ -238,7 +238,7 @@ function RevisionSheet({overs,target,isChase,onConfirm,onClose}){
 // tab of their own screen.
 const HANDOVER_POLL_MS = 2500;
 
-function HandoverSheet({ matchId, device, epoch, pending, ballInFlight, startTab = "hand", onHandedOver, onTakenOver, onClose }) {
+function HandoverSheet({ matchId, device, epoch, pending, held = 0, onShowHeld, ballInFlight, startTab = "hand", onHandedOver, onTakenOver, onClose }) {
   const [tab, setTab] = useState(startTab);
   return (
     <Sheet title="Handover" accent={D.sky} onClose={onClose}>
@@ -254,7 +254,7 @@ function HandoverSheet({ matchId, device, epoch, pending, ballInFlight, startTab
           ))}
         </div>
         {tab==="hand"
-          ? <HandOverTab matchId={matchId} device={device} epoch={epoch} pending={pending} ballInFlight={ballInFlight}
+          ? <HandOverTab matchId={matchId} device={device} epoch={epoch} pending={pending} held={held} onShowHeld={onShowHeld} ballInFlight={ballInFlight}
               onHandedOver={onHandedOver} onClose={onClose}/>
           : <TakeOverTab matchId={matchId} device={device} onTakenOver={onTakenOver} onClose={onClose}/>}
       </div>
@@ -263,7 +263,7 @@ function HandoverSheet({ matchId, device, epoch, pending, ballInFlight, startTab
 }
 
 /** The outgoing scorer: arm, read the code aloud, wait, or change their mind. */
-function HandOverTab({ matchId, device, epoch, pending, ballInFlight, onHandedOver, onClose }) {
+function HandOverTab({ matchId, device, epoch, pending, held = 0, onShowHeld, ballInFlight, onHandedOver, onClose }) {
   const [code, setCode] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -329,6 +329,26 @@ function HandOverTab({ matchId, device, epoch, pending, ballInFlight, onHandedOv
         Issues a six-digit code for the person taking over. Read it to them, or send it — it is not a
         password, only a claim ticket, and it expires the moment someone else claims this match's token.
       </div>
+      {/* Held events (SCRBRD-070) are NOT in the outbox - the server
+          refused them and wrote nothing - so they do not block a handover
+          the way unsent balls do: there is nothing to wait for. But they
+          are on this board and on no other, and the incoming scorer's
+          check is against the server's replay, which leaves them out. Said
+          here, with the way to them; the choice stays the scorer's. */}
+      {held>0&&(
+        <div data-testid="handover-held-warning" style={{background:`${D.rose}12`,border:`1px solid ${D.rose}44`,borderRadius:D.md,
+          padding:"10px 12px",color:D.textSecondary,fontFamily:D.body,fontSize:"12.5px",lineHeight:1.55}}>
+          <strong style={{color:D.roseText}}>{held} event{held===1?"":"s"} the server refused {held===1?"is":"are"} still on this device.</strong>{" "}
+          The server does not have {held===1?"it":"them"}, so the scorer taking over will not see {held===1?"it":"them"}, and
+          the score they confirm is the server's, without {held===1?"it":"them"}. Resolve {held===1?"it":"them"} first where possible,
+          or hand over anyway: {held===1?"it stays":"they stay"} here on this device.
+          {onShowHeld&&(
+            <div style={{marginTop:"8px"}}>
+              <Btn variant="ghost" size="sm" data-testid="handover-held-review" onClick={onShowHeld}>Review refused events</Btn>
+            </div>
+          )}
+        </div>
+      )}
       {error&&<div data-testid="handover-arm-error" style={{color:D.roseText,fontFamily:D.body,fontSize:"12px"}}>
         {error==="match_complete"?refusalWords(error):`Could not arm a handover (${error}).`}
       </div>}

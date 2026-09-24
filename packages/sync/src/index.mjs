@@ -12,3 +12,4 @@
  */
 export * from "./sync-engine.mjs";
 export * from "./indexeddb-storage.mjs";
+export * from "./held.mjs";

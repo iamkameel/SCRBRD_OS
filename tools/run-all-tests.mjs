@@ -25,6 +25,8 @@ const SUITES = [
   ["readiness","packages/scoring/test/readiness.test.mjs"],
   // What a scoring command may be: the Laws the server enforces at commit.
   ["laws",     "packages/scoring/test/laws.test.mjs"],
+  // What a person does about an event the server refused (SCRBRD-070).
+  ["held",     "packages/sync/test/held.test.mjs"],
   ["phases",   "packages/scoring/test/phases.test.mjs"],
   ["spatial",  "packages/scoring/test/spatial.test.mjs"],
   ["wheel",    "apps/web/test/wheel.test.mjs"],

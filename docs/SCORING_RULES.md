@@ -193,6 +193,31 @@ the batch is still judged: a 4xx would leave an offline queue resending the same
 illegal ball forever. The sync engine holds refused events on the device for a
 person (`packages/sync`, `held`) — the server wrote nothing.
 
+What that person does (SCRBRD-070, `packages/sync/src/held.mjs`, the sheet
+behind the pad's "Refused N" pill): every event the server accepted after a
+refused one was judged against a log WITHOUT it, so the server's log is the
+pad's log with the held events taken out. Two resolutions, each for one event
+or for it and every event held after it:
+
+- **Discard** — the event leaves the pad's log (the same path undo takes for an
+  event that never left the device) and the held copy goes. The only
+  resolution for a conflict: the server keeps the event it already has under
+  that id.
+- **Record again** — the same delivery (or bowler, or batters) taken out of its
+  place and appended as a new event with a new id, where the server judges it
+  afresh; the row's payload names the key it replaces (`resentFrom`). Offered
+  only for a refusal, and only when `lawsRefusal` against the server's log says
+  it would be accepted. A ball recorded again is credited to the batters and
+  bowler at the crease when it is recorded, as a fresh tap would be.
+
+Nothing is resent on its own. Discarding the cause of a cascade (a bowler
+refused under Law 17.8, and the balls after him refused for want of a bowler)
+does not make the rest legal — the server never had the bowler, so letting him
+go changes nothing it knows; the balls become legal only once the scorer names
+the right bowler, and then only by being recorded again. Undo of a refused last
+ball truncates it and lets its held copy go. The handover sheet warns while
+anything is held and does not block: held events are not in the outbox.
+
 The same key sent with a different body is a **conflict**, not a duplicate: each
 row carries a fingerprint of what it says (db/36), and a key names one event.
 

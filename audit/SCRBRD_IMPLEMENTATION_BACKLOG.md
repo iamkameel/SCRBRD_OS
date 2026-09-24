@@ -2865,7 +2865,25 @@ survivor from that and the runs completed. Needs a product decision on the pad q
 **Tests required:** turn the `KNOWN_GAP` into passing cases for both ends.
 **Data migration required:** NO.
 
-### SCRBRD-070 — A scorer cannot see or clear an event the server refused
+### ~~SCRBRD-070~~ — CLOSED
+
+> **Closed 2026-09-24.** Tapping the pad's "Refused N" pill opens a sheet (`apps/web/src/scorer/held.jsx`)
+> listing each held event in words — what it was, with the players' names, the reason (`REFUSAL_TEXT`; a
+> conflict gets its own sentence: the server keeps its copy, discard is the fix) and when. The rules are
+> pure and tested in `packages/sync/src/held.mjs` (`packages/sync/test/held.test.mjs`, suite `held`):
+> **Discard** takes the event out of the pad's log through the same `setEvents` → `saveMatch` path undo
+> uses, then lets the held copy go; **Record again** (refusals only, never conflicts) moves it to the end as
+> a new event with a new id and `resentFrom`, offered only when `lawsRefusal` against the server's view
+> says it would be accepted, and credited to the crease as it stands then. Each is offered for one event or
+> for it and every event held after it (the cascade). Nothing is resent on its own: discarding the refused
+> cause does not change what the server knows, so the balls after it only become legal once the scorer puts
+> the cause right and records them again. `SyncEngine.record()` no longer re-queues a key it holds, so a
+> reopened pad no longer doubled the held list. Undo of a refused last ball lets its held copy go. The
+> handover sheet warns while anything is held and does not block. Walk: `tools/smoke-browser-held.mjs`
+> (browser set) — provoke, list, discard, reopen, repair the cascade, discard a cascade; the pad's saved log
+> and the server's `ball_event` agree id for id and figure for figure. No migration.
+
+#### (original entry) SCRBRD-070 — A scorer cannot see or clear an event the server refused
 **Title:** Held (refused / conflicting) events are kept on the device and counted, but no screen lists or resolves them
 **Priority:** P1 · **Domain:** Scoring · **Type:** workflow gap (follows db/36)
 **Affected files:** `packages/sync/src/sync-engine.mjs` (`held`, `discardHeld`), `apps/web/src/scorer/engine.jsx` (the "Refused N" pill)

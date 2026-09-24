@@ -13,6 +13,8 @@ import { api, signedIn } from "../lib/api.js";
 import { profile } from "../lib/session.js";
 import { resumeSync, startSync } from "../lib/sync.js";
 import { refusalWords } from "../lib/handover.js";
+import { withoutEvents, recordAgain, recordAgainRefusal, heldInOrder } from "@scrbrd/sync";
+import { HeldSheet } from "./held.jsx";
 import { SEGS } from "./field.js";
 import { fmtOv } from "./format.js";
 import { ALL_SHOTS } from "./shots.js";
@@ -102,7 +104,7 @@ async function liveSquad(cfg) {
  * school can see it. A scorer offline all afternoon is fully saved and not at
  * all sent, and telling them "saved" alone would be true and misleading.
  */
-function SyncPill({ sync, storage }) {
+function SyncPill({ sync, storage, onOpenHeld }) {
   const S = {
     synced:  { dot: D.emerald, label: "Sent",   title: "Every ball is on the server" },
     // The server refused these, or already holds a different event under the
@@ -127,13 +129,29 @@ function SyncPill({ sync, storage }) {
     offline: { dot: D.textMuted, label: "On device", title: "Saved here only" },
   }[sync.state] ?? { dot: D.textMuted, label: "On device", title: "Saved here only" };
 
+  const pillStyle = {display:"flex",alignItems:"center",gap:"6px",background:D.surf1,
+    border:`1px solid ${D.border}`,borderRadius:D.pill,padding:"4px 11px",flexShrink:0};
+  const inner = (
+    <>
+      <div style={{width:"6px",height:"6px",borderRadius:"50%",background:S.dot}}/>
+      <span style={{fontFamily:D.mono,fontSize:"11px",color:D.textSecondary}}>{S.label}</span>
+    </>
+  );
+  // Held events wait on a person, so the pill that names them is also the
+  // way to them (SCRBRD-070): a count with nothing behind it was the gap.
+  if (sync.state === "held" && onOpenHeld) return (
+    <button type="button" onClick={onOpenHeld} className="pressBtn" data-testid="held-open"
+      title={`${S.title} Tap to see them.`}
+      aria-label={`Sync status: ${S.label}. ${S.title} Open the list.`}
+      style={{...pillStyle,cursor:"pointer",border:`1px solid ${D.rose}55`}}>
+      {inner}
+    </button>
+  );
   return (
     <div title={`${S.title}${storage ? ` · ${storage}` : ""}`}
       aria-label={`Sync status: ${S.label}. ${S.title}`}
-      style={{display:"flex",alignItems:"center",gap:"6px",background:D.surf1,
-        border:`1px solid ${D.border}`,borderRadius:D.pill,padding:"4px 11px",flexShrink:0}}>
-      <div style={{width:"6px",height:"6px",borderRadius:"50%",background:S.dot}}/>
-      <span style={{fontFamily:D.mono,fontSize:"11px",color:D.textSecondary}}>{S.label}</span>
+      style={pillStyle}>
+      {inner}
     </div>
   );
 }
@@ -342,6 +360,8 @@ function SCRBRD({resume}={}){
             pending: st.pendingCount,
             held: st.heldCount || 0,
             heldReason: heldEvs.length ? heldEvs[heldEvs.length - 1].reason : null,
+            // The list itself, for the sheet that resolves them (SCRBRD-070).
+            heldList: heldEvs.slice(),
             reason: st.lastError,
           });
           // The undo boundary reads this: an acknowledged ball can only be
@@ -368,7 +388,7 @@ function SCRBRD({resume}={}){
       const heldAtStart = started.engine?.held ?? [];
       setSync({ state: heldAtStart.length ? "held" : started.pending() ? "syncing" : "synced",
                 pending: started.pending(), held: heldAtStart.length,
-                heldReason: heldAtStart.at(-1)?.reason ?? null, reason: null });
+                heldReason: heldAtStart.at(-1)?.reason ?? null, heldList: heldAtStart.slice(), reason: null });
     })();
     return () => {
       stopped = true;
@@ -653,9 +673,49 @@ function SCRBRD({resume}={}){
       cp[curIn]=undoLast(prev[curIn],{isSynced:e=>syncedRef.current.has(e.id)}).events;
       return cp;
     });
+    // Undoing a ball the server REFUSED truncates it (it was never synced),
+    // and the scorer has just taken it off the board with their own hand —
+    // so the held copy goes too, rather than lingering in the Refused list
+    // as an event the board no longer shows (SCRBRD-070). Asked of the same
+    // log the updater above reads; a held event that is not last gets a void
+    // like any other, and stays held.
+    const undone=undoLast(events[curIn],{isSynced:e=>syncedRef.current.has(e.id)});
+    const outbox=syncRef.current?.engine;
+    if(undone.action==="truncate"&&outbox?.held.some(h=>h.idempotencyKey===undone.target?.id)){
+      outbox.discardHeld(undone.target.id).catch(()=>{});
+    }
     resetHub();
     setModal(null);
     scoreKeyRef.current++;
+  };
+
+  // ── Held events (SCRBRD-070) ────────────────────────────
+  // An event the server refused, or that conflicts with one it already has,
+  // is on this device only. Resolving one changes THE LOG — the same
+  // setEvents → saveMatch path undo takes, so the board re-derives and a
+  // reload restores what the scorer chose — and only then lets the held copy
+  // go. Crash between the two and either the log still has it (it is sent,
+  // refused and held again on the next start) or the held list still names
+  // an event the log no longer has (shown as off the board, discarded with a
+  // tap). Neither loses it, neither doubles it. The rules are in
+  // packages/sync/src/held.mjs.
+  const discardHeldEvents=async(keys)=>{
+    const outbox=syncRef.current?.engine;
+    if(!outbox)return;
+    setEvents(prev=>withoutEvents(prev,keys));
+    for(const k of keys)await outbox.discardHeld(k);
+  };
+  const recordHeldAgain=async(keys)=>{
+    const outbox=syncRef.current?.engine;
+    if(!outbox)return;
+    const scope=heldInOrder(outbox.held).filter(h=>keys.includes(h.idempotencyKey));
+    // Judged again at the moment of the tap, not when the sheet drew: the
+    // log may have moved since.
+    if(!scope.length||recordAgainRefusal(events,outbox.held,scope))return;
+    const {log}=recordAgain(events,outbox.held,scope,
+      ()=>newEventId(deviceIdRef.current,matchIdRef.current??"local"));
+    setEvents(log);
+    for(const h of scope)await outbox.discardHeld(h.idempotencyKey);
   };
 
   // Legacy onScore kept for any remaining modal references
@@ -864,11 +924,24 @@ function SCRBRD({resume}={}){
         onConfirm={reviseInnings}/>
     );
 
+    if(modal==="held")return (
+      <HeldSheet
+        held={sync.heldList??[]}
+        events={events}
+        innings={innings}
+        live={!!syncRef.current}
+        onDiscard={discardHeldEvents}
+        onRecordAgain={recordHeldAgain}
+        onClose={()=>setModal(null)}/>
+    );
+
     if(modal==="handover")return (
       <HandoverSheet
         matchId={matchId} device={deviceIdRef.current}
         epoch={syncRef.current?.epoch}
         pending={sync.pending}
+        held={sync.held??0}
+        onShowHeld={()=>setModal("held")}
         ballInFlight={scoringCtx!=null}
         startTab={sync.reason==="handover_pending"||sync.reason==="verifying"?"take":"hand"}
         onHandedOver={()=>{
@@ -1144,7 +1217,7 @@ function SCRBRD({resume}={}){
               <span style={{color:D.textMuted,fontSize:"11px",fontFamily:D.mono}}>{fmtOv(inn.balls)}</span>
             </div>
           )}
-          <SyncPill sync={sync} storage={saveState.kind}/>
+          <SyncPill sync={sync} storage={saveState.kind} onOpenHeld={()=>setModal("held")}/>
           {/* The score, announced.
               Tapping a key on the pad changes numbers in three places and
               says nothing. For a screen-reader user that is the entire

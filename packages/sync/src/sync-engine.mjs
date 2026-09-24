@@ -157,6 +157,16 @@ export class SyncEngine {
    * @returns {Promise<OutboxEvent>}
    */
   async record(payload) {
+    // An event this device already holds is not recorded twice. The pad
+    // offers its whole log to the queue whenever it (re)attaches — it cannot
+    // know what an earlier session sent — so without this a reload would
+    // send every held event again, be refused again, and hold a second copy
+    // under the same key: the Refused count doubling on every reload, and a
+    // person asked to resolve the same event twice (SCRBRD-070). A held
+    // event leaves only by a person's hand (discardHeld); recording it again
+    // is a NEW event with a new id (held.mjs recordAgain), which passes.
+    const known = payload?.id != null ? this.held.find(h => h.idempotencyKey === payload.id) : null;
+    if (known) return known;
     this.clientSeq += 1;
     /** @type {OutboxEvent} */
     const ev = {
