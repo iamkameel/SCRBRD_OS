@@ -17,8 +17,9 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 let pass = 0, fail = 0;
+/** @param {string} n @param {unknown} c */
 const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
-const group = (t) => console.log("\n" + t);
+const group = (/** @type {string} */ t) => console.log("\n" + t);
 
 const SQL = main();
 
@@ -129,7 +130,7 @@ group("B2. Capabilities added after db/01 shipped");
        new RegExp(`INSERT INTO capability \\(name\\) VALUES \\('${cap.replaceAll(".", "\\.")}'\\)`).test(ledger));
     const holders = ROLES.filter((r) => roleGrants(r, cap));
     // A ledger file may align its rows; the emitted db/01 never does.
-    const grants = (r) => new RegExp(`\\('${r}',\\s+'${cap.replaceAll(".", "\\.")}'\\)`).test(ledger);
+    const grants = (/** @type {string} */ r) => new RegExp(`\\('${r}',\\s+'${cap.replaceAll(".", "\\.")}'\\)`).test(ledger);
     const unlisted = holders.filter((r) => !grants(r));
     ok(`${file} grants it to every holder in roles.mjs (${holders.join(", ")}) — missing: ${unlisted.join(", ") || "none"}`,
        unlisted.length === 0);
@@ -152,7 +153,7 @@ group("B3. Roles added after db/01 shipped");
     const path = join(DB, file);
     ok(`${file} exists`, existsSync(path));
     const ledger = existsSync(path) ? readFileSync(path, "utf8") : "";
-    const row = (a, b) => new RegExp(`\\('${a}',\\s+'${b.replaceAll(".", "\\.")}'\\)`).test(ledger);
+    const row = (/** @type {string} */ a, /** @type {string} */ b) => new RegExp(`\\('${a}',\\s+'${b.replaceAll(".", "\\.")}'\\)`).test(ledger);
     const unlisted = ROLE_CAPABILITIES[role].filter((c) => !row(role, c));
     ok(`${file} grants ${role} its whole bundle — missing: ${unlisted.join(", ") || "none"}`, unlisted.length === 0);
     const extra = ALL_CAPABILITIES.filter((c) => !roleGrants(role, c) && row(role, c));
@@ -178,11 +179,11 @@ ok("every scoring role reaches scoring.edit through its bundle",
 
 // ── C. Per-table policies ────────────────────────────────
 group("C. Table policies");
-const rx = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const rx = (/** @type {string} */ s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 // A capability slot is a literal name, or a parenthesised SQL expression that
 // computes one from the row (notification declares its own). Both end up as
 // the first argument to app_can(); only the quoting differs.
-const capArg = (c) => (isCapabilityExpression(c) ? rx(c) : `'${rx(c)}'`);
+const capArg = (/** @type {string} */ c) => (isCapabilityExpression(c) ? rx(c) : `'${rx(c)}'`);
 
 for (const [table, def] of Object.entries(TABLES)) {
   ok(`${table}: RLS enabled`,      new RegExp(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY`).test(SQL));
@@ -299,7 +300,7 @@ ok("no app_role\\(\\) remains",    !/app_role\(\)/.test(SQL));
 {
   const shipped = authz(), running = timeBox();
   // Anchored to a body line: the file's header quotes the same line in a comment.
-  const inBodies = (sql) => (sql.match(/^ {7}AND \(a\.expires_at IS NULL OR a\.expires_at > now\(\)\)$/gm) || []).length;
+  const inBodies = (/** @type {string} */ sql) => (sql.match(/^ {7}AND \(a\.expires_at IS NULL OR a\.expires_at > now\(\)\)$/gm) || []).length;
   ok("db/01 is emitted without the hour hand", inBodies(shipped) === 0);
   ok("db/23 carries it in app_can, app_holds and app_may_grant", inBodies(running) === 3);
   // db/16 pinned search_path with ALTER FUNCTION, which CREATE OR REPLACE
@@ -316,8 +317,8 @@ ok("no app_role\\(\\) remains",    !/app_role\(\)/.test(SQL));
 // are shipped — and db/35 must not lose db/23's line on the way.
 {
   const shipped = authz(), hour = timeBox(), running = suspension();
-  const pause = (sql) => (sql.match(/^ {7}AND NOT EXISTS \(SELECT 1 FROM duty_suspension s\n {24}WHERE s\.assignment_id = a\.id AND s\.lifted_at IS NULL\)$/gm) || []).length;
-  const hand = (sql) => (sql.match(/^ {7}AND \(a\.expires_at IS NULL OR a\.expires_at > now\(\)\)$/gm) || []).length;
+  const pause = (/** @type {string} */ sql) => (sql.match(/^ {7}AND NOT EXISTS \(SELECT 1 FROM duty_suspension s\n {24}WHERE s\.assignment_id = a\.id AND s\.lifted_at IS NULL\)$/gm) || []).length;
+  const hand = (/** @type {string} */ sql) => (sql.match(/^ {7}AND \(a\.expires_at IS NULL OR a\.expires_at > now\(\)\)$/gm) || []).length;
   ok("db/01 is emitted without the pause", pause(shipped) === 0);
   ok("db/23 is emitted without the pause", pause(hour) === 0);
   ok("db/35 carries it in app_can, app_holds and app_may_grant", pause(running) === 3);

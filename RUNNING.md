@@ -167,8 +167,12 @@ the server runs straight from source, and the paths `db/SHIPPED.sha256` and
 JSDoc.
 
 **What is checked.** `tsconfig.json`'s `include` is the strict list — today
-`packages/policy` (source and tests) and `packages/sync`. Every file on it must
-have zero errors. A file on the list that imports one off it (sync imports
+`packages/policy` (source and tests), `packages/sync`, `packages/scoring`
+(source and tests) and `services/api`. Every file on it must have zero errors.
+Its `exclude` holds the holes: `services/api/write/events-api.mjs`, which is the
+next file to bring in. An excluded file is loaded when a listed one imports it,
+but its own errors are not counted and lint treats it as off the list;
+`tools/typecheck-scope.test.mjs` refuses an exclusion it does not name. A file on the list that imports one off it (sync imports
 `@scrbrd/scoring`) pulls it into the program so its inferred types flow in, but
 `tools/typecheck.mjs` does not count the outside file's own errors;
 `node tools/typecheck.mjs --all` shows them.
@@ -188,7 +192,10 @@ fix would, leave the code as found and write it up instead.
 - Shapes that recur get a `@typedef` next to the code that owns them
   (`Assignment` in `authorize.mjs`, `TableDef` in `tables.mjs`, `OutboxEvent`
   in `sync-engine.mjs`) and are imported elsewhere with
-  `@type {import("./file.mjs").Name}`.
+  `@type {import("./file.mjs").Name}` or a `/** @import { Name } from "./file.mjs" */`
+  line. The server's shared shapes — the request and response a route handler
+  sees, the pool, a caught error — are in `services/api/api-types.mjs`, a
+  types-only module nothing imports at runtime.
 - Lookup tables indexed by a runtime string are `Record<string, T>` — a frozen
   literal's exact keys cannot be indexed by `string` under `strict`.
 - Result unions name the other side's fields as absent
@@ -197,7 +204,10 @@ fix would, leave the code as found and write it up instead.
 - A cast is `/** @type {T} */ (expr)` — parentheses required — and gets a
   comment saying why the checker cannot see what the code knows.
 - `any` is for real boundaries (storage values, a scoring event owned by a
-  package not yet on the list), never to silence an error.
+  package not yet on the list, a database row, a request body before it is
+  validated), never to silence an error. A `catch` binding can only be `any`
+  or `unknown` to the checker, so the server writes `catch (/** @type {any} */ e)`
+  — `CaughtError` in `api-types.mjs` says what that `any` holds.
 
 **Lint.** `eslint.config.mjs` is `@eslint/js` recommended plus bug-shaped
 rules (`eqeqeq` with the `== null` idiom allowed, `no-throw-literal`,

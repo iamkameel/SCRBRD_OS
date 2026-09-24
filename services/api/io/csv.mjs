@@ -43,13 +43,17 @@
  * silently tidied its input would be making decisions the caller cannot see;
  * the field mappers below trim, because trimming a name is a decision about
  * names.
+ * @param {unknown} text
+ * @returns {{ header: string[], rows: string[][] }}
  */
 export function parseCsv(text) {
   if (typeof text !== "string") return { header: [], rows: [] };
   // The BOM, removed once, at the front, before anything looks at a header.
   const s = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
 
+  /** @type {string[][]} */
   const rows = [];
+  /** @type {string[]} */
   let row = [];
   let field = "";
   let quoted = false;
@@ -100,6 +104,7 @@ export function parseCsv(text) {
  * A number is left alone — it is serialised from a real number, not from user
  * input, so it cannot carry a formula, and prefixing it would make every
  * exported figure a string that no spreadsheet will sum.
+ * @param {unknown} value
  */
 export function neutralise(value) {
   if (value === null || value === undefined) return "";
@@ -108,7 +113,7 @@ export function neutralise(value) {
   return /^[=+\-@\t\r]/.test(str) ? "'" + str : str;
 }
 
-/** One field, quoted only where it has to be. */
+/** One field, quoted only where it has to be. @param {unknown} cell */
 function quote(cell) {
   const s = neutralise(cell);
   return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
@@ -125,6 +130,8 @@ function quote(cell) {
  * UTF-8 as the local code page, and every South African name with a diacritic
  * — Böhmer, Ngcobo's apostrophes, Zoë — arrives mangled in a document a school
  * then prints.
+ * @param {(Record<string, unknown> | null | undefined)[]} rows
+ * @param {string[] | null} [columns]
  */
 export function toCsv(rows, columns) {
   const cols = columns ?? [...new Set(rows.flatMap((r) => Object.keys(r ?? {})))];
@@ -142,6 +149,8 @@ export function toCsv(rows, columns) {
  * birthday is a day, and 2011-04-07T22:00:00.000Z is that day in one timezone
  * and the day before in another. Objects become JSON rather than
  * "[object Object]", which is the shape of a column somebody deletes.
+ * @param {Record<string, unknown> | null | undefined} row
+ * @param {string} col
  */
 function pick(row, col) {
   const v = row?.[col];
@@ -167,9 +176,22 @@ function pick(row, col) {
  * an error — a school's export carries fifty columns and we want six — but
  * worth returning, because a header typo looks exactly like a column we chose
  * not to read, and only the person who wrote it can tell which.
+ *
+ * @typedef {object} ColumnSpec
+ * @property {boolean} [required]
+ * @property {string} [as]                     the key the value lands under, when not the column's name
+ * @property {(v: string) => unknown} [parse]  throws a sentence the school can act on
+ *
+ * @typedef {{ line: number, column: string | null, message: string, value?: string }} RowError
+ *
+ * @param {{ header: string[], rows: string[][] }} parsed
+ * @param {Record<string, ColumnSpec>} spec
+ * @returns {{ rows: { line: number, values: Record<string, unknown> }[], errors: RowError[], unknown: string[] }}
  */
 export function mapRows({ header, rows }, spec) {
+  /** @type {RowError[]} */
   const errors = [];
+  /** @type {{ line: number, values: Record<string, unknown> }[]} */
   const out = [];
   const index = new Map(header.map((h, i) => [h, i]));
   const known = new Set(Object.keys(spec));
@@ -185,10 +207,12 @@ export function mapRows({ header, rows }, spec) {
 
   rows.forEach((cells, n) => {
     const line = n + 2;              // +1 for zero-based, +1 for the header
+    /** @type {Record<string, unknown>} */
     const obj = {};
     let bad = false;
     for (const [col, def] of Object.entries(spec)) {
-      const raw = index.has(col) ? (cells[index.get(col)] ?? "") : "";
+      // has() was checked, so get() finds it.
+      const raw = index.has(col) ? (cells[/** @type {number} */ (index.get(col))] ?? "") : "";
       const value = raw.trim();
       if (!value) {
         if (def.required) {
@@ -201,7 +225,7 @@ export function mapRows({ header, rows }, spec) {
       }
       try {
         obj[def.as ?? col] = def.parse ? def.parse(value) : value;
-      } catch (e) {
+      } catch (/** @type {any} */ e) {   // a parser's Error, carrying its sentence
         errors.push({ line, column: col, message: e.message, value });
         bad = true;
       }
@@ -218,7 +242,7 @@ export function mapRows({ header, rows }, spec) {
 // 84: born must be a date like 2011-04-07, not 07/04/2011" tells them what to
 // change; "invalid input syntax for type date" does not.
 
-export const asText = (max) => (v) => {
+export const asText = (/** @type {number | undefined} */ max) => (/** @type {string} */ v) => {
   if (max && v.length > max) throw new Error(`must be ${max} characters or fewer`);
   return v;
 };
@@ -232,7 +256,7 @@ export const asText = (max) => (v) => {
  * group — which is the exact failure the squad-eligibility trigger exists to
  * prevent, arriving through a side door.
  */
-export const asDate = (v) => {
+export const asDate = (/** @type {string} */ v) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) {
     throw new Error("must be a date like 2011-04-07 (day/month order is ambiguous and is not guessed)");
   }
@@ -243,7 +267,8 @@ export const asDate = (v) => {
   return v;
 };
 
-export const asInt = ({ min, max } = {}) => (v) => {
+/** @param {{ min?: number, max?: number }} [range] */
+export const asInt = ({ min, max } = {}) => (/** @type {string} */ v) => {
   if (!/^-?\d+$/.test(v)) throw new Error("must be a whole number");
   const n = Number(v);
   if (min != null && n < min) throw new Error(`must be at least ${min}`);
@@ -251,7 +276,7 @@ export const asInt = ({ min, max } = {}) => (v) => {
   return n;
 };
 
-export const asOneOf = (allowed) => (v) => {
+export const asOneOf = (/** @type {readonly string[]} */ allowed) => (/** @type {string} */ v) => {
   const hit = allowed.find((a) => a.toLowerCase() === v.toLowerCase());
   if (!hit) throw new Error(`must be one of ${allowed.join(", ")}`);
   return hit;                        // the canonical spelling, not theirs
@@ -265,12 +290,12 @@ export const asOneOf = (allowed) => (v) => {
  * catches is the actual mistake in a school's spreadsheet: a phone number in
  * the email column, or a name.
  */
-export const asEmail = (v) => {
+export const asEmail = (/** @type {string} */ v) => {
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) throw new Error("does not look like an email address");
   return v.toLowerCase();
 };
 
-export const asPhone = (v) => {
+export const asPhone = (/** @type {string} */ v) => {
   const cleaned = v.replace(/[^\d+]/g, "");
   if (cleaned.replace(/\D/g, "").length < 9) throw new Error("is too short to be a phone number");
   return v;

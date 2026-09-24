@@ -16,12 +16,29 @@
  */
 import { replayEvents } from "../handover/scoring-session.mjs";
 
+/**
+ * A committed ball as the stream and the since-cursor deliver it.
+ * @typedef {import("../handover/scoring-session.mjs").Logged & { seq: number }} StreamEvent
+ *
+ * The socket adapter's side of the contract.
+ * @typedef {object} ConnectHandlers
+ * @property {() => void} onOpen
+ * @property {(msg: any) => void} onMessage   a message off the wire, as parsed
+ * @property {() => void} onClose
+ */
+
 const BACKOFF = [500, 1000, 2000, 5000, 15000];
 
 export class MatchStream {
   /**
-   * @param connect    ({onOpen,onMessage,onClose}) => disconnectFn  (WS/SSE adapter)
-   * @param fetchSince (matchId, sinceSeq) => events[]               (GET /events?since=)
+   * @param {object} opts
+   * @param {string} opts.matchId
+   * @param {(handlers: ConnectHandlers) => () => void} opts.connect
+   *   ({onOpen,onMessage,onClose}) => disconnectFn  (WS/SSE adapter)
+   * @param {(matchId: string, sinceSeq: number) => Promise<StreamEvent[]> | StreamEvent[]} opts.fetchSince
+   *   (matchId, sinceSeq) => events[]               (GET /events?since=)
+   * @param {(state: { score: ReturnType<typeof replayEvents>, session: unknown, lastSeq: number }) => void} [opts.onUpdate]
+   * @param {() => number} [opts.now]
    */
   constructor({ matchId, connect, fetchSince, onUpdate, now = () => Date.now() }) {
     this.matchId = matchId;
@@ -30,13 +47,17 @@ export class MatchStream {
     this.onUpdate = onUpdate;
     this.now = now;
 
+    /** @type {Map<number, StreamEvent>} */
     this.applied = new Map();   // seq -> event  (dedupe + replay source)
     this.lastSeq = 0;
+    /** @type {unknown} */
     this.session = null;        // latest session/handover state
+    /** @type {StreamEvent[]} */
     this.buffer = [];           // stream events held during catch-up
     this.buffering = false;
     this.connected = false;
     this.attempt = 0;
+    /** @type {(() => void) | null} */
     this._disconnect = null;
     this._stopped = false;
   }
@@ -59,6 +80,7 @@ export class MatchStream {
     });
   }
 
+  /** @param {any} msg  a message off the wire, as parsed */
   _onMessage(msg) {
     if (!msg) return;
     if (msg.type === "session") { this.session = msg; this._emit(); return; }
@@ -66,7 +88,7 @@ export class MatchStream {
       const evs = msg.events || [];
       if (this.buffering) { this.buffer.push(...evs); return; }     // hold during catch-up
       // gap? (we're missing something before these) → re-catch-up
-      const minSeq = Math.min(...evs.map(e => e.seq));
+      const minSeq = Math.min(...evs.map((/** @type {StreamEvent} */ e) => e.seq));
       if (minSeq > this.lastSeq + 1) { this._catchUp(); return; }
       this._apply(evs);
     }
@@ -86,7 +108,11 @@ export class MatchStream {
     this._apply(held);
   }
 
-  /** Idempotent on seq — the guarantee that makes joins/reconnects safe. */
+  /**
+   * Idempotent on seq — the guarantee that makes joins/reconnects safe.
+   * @param {StreamEvent[] | null | undefined} events
+   * @param {boolean} [silent]
+   */
   _apply(events, silent = false) {
     let changed = false;
     for (const e of events || []) {

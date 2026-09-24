@@ -10,8 +10,9 @@
 import { maskNames, describeDelivery, askStatsMagic, contextFrom, statsMagicContext } from "./ai-service.mjs";
 
 let pass = 0, fail = 0;
+/** @param {string} n @param {unknown} c @param {unknown} [d] */
 const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${d}` : ""); } };
-const flat = (params) => JSON.stringify(params);
+const flat = (/** @type {unknown} */ params) => JSON.stringify(params);
 
 // ── the helper ──
 {
@@ -27,7 +28,9 @@ const flat = (params) => JSON.stringify(params);
 
 // ── commentary ──
 {
+  /** @type {any} */            // the request the service built
   let sent = null;
+  /** @type {import("./ai-service.mjs").Send} */
   const send = async (params) => { sent = params; return { content: [{ type: "text", text: "PLAYER_1 leans into that one off PLAYER_2, four more." }] }; };
   const line = await describeDelivery({
     situation: "Ball: FOUR | James Whitfield: 42* (30b) | Kieran Naidoo: 3-0 18r 1w",
@@ -50,7 +53,9 @@ const flat = (params) => JSON.stringify(params);
   ok("the context is built from the read path's rows", /Players: James Whitfield, Batter, 1XI, Hilton College; Kieran Naidoo/.test(ctx.context), ctx.context);
   ok("...and the names come with it", ctx.names.length === 2);
 
+  /** @type {any} */            // the request the service built
   let sent = null;
+  /** @type {import("./ai-service.mjs").Send} */
   const send = async (params) => { sent = params; return { content: [{ type: "text", text: "PLAYER_1 is the top scorer; PLAYER_2 the leading wicket-taker." }] }; };
   const answer = await askStatsMagic({ question: "Who is better, James Whitfield or Kieran Naidoo?", ...ctx, send });
   ok("Stats-Magic request carries no name — not in the data", !/Whitfield|Naidoo/i.test(sent?.system ?? "x"), sent?.system?.slice(-200));
@@ -59,9 +64,10 @@ const flat = (params) => JSON.stringify(params);
 
   // The context is built under the caller's session. A read that refuses
   // (no token → 401 from runAsPrincipal) refuses the whole thing.
-  const refused = await statsMagicContext(null, "s", undefined, async () => { const e = new Error("no_principal"); e.status = 401; throw e; }).catch((e) => e);
+  // No pool: the injected read never touches one.
+  const refused = await statsMagicContext(/** @type {any} */ (null), "s", undefined, async () => { const e = /** @type {Error & { status?: number }} */ (new Error("no_principal")); e.status = 401; throw e; }).catch((e) => e);
   ok("no session, no context — the read path's refusal is the answer", refused?.status === 401);
-  const built = await statsMagicContext(null, "s", "Bearer t", async (_p, _s, _b, r) => ({ rows: r === "players" ? [{ full_name: "A Pupil" }] : [] }));
+  const built = await statsMagicContext(/** @type {any} */ (null), "s", "Bearer t", async (_p, _s, _b, r) => ({ rows: r === "players" ? [{ full_name: "A Pupil" }] : [] }));
   ok("with a session, the rows come from readResource", built.names[0] === "A Pupil" && /A Pupil/.test(built.context));
 }
 
@@ -110,7 +116,9 @@ const flat = (params) => JSON.stringify(params);
   // THE MASKING. A stats line naming a child is exactly the string that could
   // reach the provider in clear if it were built beside the roster instead of
   // inside it, so this asserts on what WOULD have been sent.
+  /** @type {any} */            // the request the service built
   let sent = null;
+  /** @type {import("./ai-service.mjs").Send} */
   const send = async (params) => { sent = params; return { content: [{ type: "text", text: "PLAYER_1, SR 126.8." }] }; };
   const answer = await askStatsMagic({ question: "What is James Whitfield's strike rate this term?", ...ctx, send });
   ok("no name reaches the provider in a stats line either",
@@ -123,7 +131,7 @@ const flat = (params) => JSON.stringify(params);
      /Nothing recorded yet in the ball log for: PLAYER_\d\./.test(sent.system), sent?.system?.slice(-200));
   ok("the answer comes back with the name restored", answer === "James Whitfield, SR 126.8.", answer);
 
-  const built = await statsMagicContext(null, "s", "Bearer t", async (_p, _s, _b, r) =>
+  const built = await statsMagicContext(/** @type {any} */ (null), "s", "Bearer t", async (_p, _s, _b, r) =>
     ({ rows: r === "players" ? [players[0]] : r === "career" ? [career[0]] : [] }));
   ok("statsMagicContext reads career through the same read path as players and matches",
      /James Whitfield — batting: 4 matches, 213 runs/.test(built.context), built.context);

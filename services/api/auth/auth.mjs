@@ -38,11 +38,28 @@
  *      request on that pooled connection. This is the classic RLS footgun.
  */
 import { createHmac, timingSafeEqual, randomBytes } from "node:crypto";
+/** @import { Db, ApiResponse } from "../api-types.mjs" */
 
 // ── base64url ──
-const b64url = buf => Buffer.from(buf).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-const b64urlJson = obj => b64url(JSON.stringify(obj));
-const fromB64url = s => Buffer.from(s.replace(/-/g, "+").replace(/_/g, "/"), "base64");
+const b64url = (/** @type {string | Uint8Array} */ buf) => Buffer.from(buf).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const b64urlJson = (/** @type {unknown} */ obj) => b64url(JSON.stringify(obj));
+const fromB64url = (/** @type {string} */ s) => Buffer.from(s.replace(/-/g, "+").replace(/_/g, "/"), "base64");
+
+/**
+ * A verified token's claims. `sub` is the person, `did` the device.
+ * @typedef {object} Claims
+ * @property {string} iss
+ * @property {string} aud
+ * @property {string} sub
+ * @property {string} did
+ * @property {number} iat
+ * @property {number} exp
+ */
+
+/**
+ * Who a request runs as: a person on a device, or nobody (ANON).
+ * @typedef {{ userId: string | null, deviceId: string | null }} Principal
+ */
 
 // ── Token claims contract ──
 // Identity only: who (sub) and on what device (did). Authority is not in here
@@ -56,6 +73,10 @@ export const TOKEN = { iss: "scrbrd", aud: "scrbrd-api", ttlSec: 30 * 60 };
  * deviceId is required, not optional: an unbound token is one that any device
  * can score with. Callers that genuinely have no device (a server-side job)
  * should say so explicitly by passing one.
+ * @param {{ userId: string, deviceId: string }} who
+ * @param {string} secret
+ * @param {() => number} [now]
+ * @returns {string}
  */
 export function signToken({ userId, deviceId }, secret, now = Date.now) {
   if (!userId || !deviceId) throw new Error("signToken: userId and deviceId required");
@@ -67,7 +88,13 @@ export function signToken({ userId, deviceId }, secret, now = Date.now) {
   return `${signingInput}.${sig}`;
 }
 
-/** Verify signature, issuer, audience and expiry. Throws on any failure. */
+/**
+ * Verify signature, issuer, audience and expiry. Throws on any failure.
+ * @param {unknown} token
+ * @param {string} secret
+ * @param {() => number} [now]
+ * @returns {Claims}
+ */
 export function verifyToken(token, secret, now = Date.now) {
   if (typeof token !== "string" || token.split(".").length !== 3) throw new AuthError("malformed_token");
   const [h, p, sig] = token.split(".");
@@ -85,6 +112,7 @@ export function verifyToken(token, secret, now = Date.now) {
 }
 
 export class AuthError extends Error {
+  /** @param {string} code */
   constructor(code) { super(code); this.name = "AuthError"; this.code = code; this.status = 401; }
 }
 
@@ -99,6 +127,8 @@ export class AuthError extends Error {
  *
  * Kept as a function rather than inlined because it is the one place that
  * decides what a principal IS, and callers should not be reaching into claims.
+ * @param {{ sub?: string, did?: string } | null | undefined} claims
+ * @returns {Principal}
  */
 export function principalFromClaims(claims) {
   if (!claims?.sub) return ANON;
@@ -106,7 +136,7 @@ export function principalFromClaims(claims) {
 }
 
 /** The anonymous principal — app_can() finds no assignments, so RLS denies everything. */
-export const ANON = Object.freeze({ userId: null, deviceId: null });
+export const ANON = Object.freeze(/** @type {Principal} */ ({ userId: null, deviceId: null }));
 
 // ── Session config (what RLS reads) ──
 /**
@@ -116,6 +146,7 @@ export const ANON = Object.freeze({ userId: null, deviceId: null });
  * An anonymous principal sets both to the empty string, which app_user_id()
  * turns into NULL, which matches no role_assignment row. Default deny falls
  * out of the data model rather than out of a branch someone has to remember.
+ * @param {Principal | null | undefined} principal
  */
 export function sessionConfigStatements(principal) {
   const p = principal || ANON;
@@ -130,6 +161,11 @@ export function sessionConfigStatements(principal) {
  * Opens a transaction, sets LOCAL config, runs the callback, commits — or
  * rolls back on error. `client` must be a single dedicated connection
  * (checked out of the pool), not the pool itself.
+ * @template T
+ * @param {Db} client
+ * @param {Principal | null | undefined} principal
+ * @param {(client: Db) => T | Promise<T>} fn
+ * @returns {Promise<T>}
  */
 export async function withPrincipal(client, principal, fn) {
   await client.query("BEGIN");
@@ -150,8 +186,14 @@ export async function withPrincipal(client, principal, fn) {
  * request. Does NOT set DB context here — that happens per-query inside
  * withPrincipal, so it is always txn-local. Missing/invalid token → ANON
  * (RLS decides what anon may do, which is nothing).
+ * @param {{ secret: string, now?: () => number, requireAuth?: boolean }} opts
  */
 export function authMiddleware({ secret, now = Date.now, requireAuth = true }) {
+  /**
+   * @param {{ headers?: { authorization?: string }, principal?: Principal }} req
+   * @param {ApiResponse} res
+   * @param {() => unknown} next
+   */
   return (req, res, next) => {
     const h = req.headers?.authorization || "";
     const token = h.startsWith("Bearer ") ? h.slice(7) : null;
@@ -163,7 +205,7 @@ export function authMiddleware({ secret, now = Date.now, requireAuth = true }) {
     try {
       req.principal = principalFromClaims(verifyToken(token, secret, now));
       return next();
-    } catch (e) {
+    } catch (/** @type {any} */ e) {   // an AuthError: code and status
       if (requireAuth) return res.status(e.status || 401).json({ error: e.code || "unauthorized" });
       req.principal = ANON;
       return next();
@@ -188,6 +230,7 @@ export function authMiddleware({ secret, now = Date.now, requireAuth = true }) {
  */
 export const CODE_TTL_SEC = 3 * 24 * 60 * 60;
 
+/** @param {string} secret @param {number} [ttlSec] */
 export function newMagicCode(secret, ttlSec = CODE_TTL_SEC) {
   const raw = randomBytes(24).toString("base64url");
   return { raw, hash: magicHash(raw, secret), expiresInSec: ttlSec };
@@ -202,6 +245,8 @@ export function newMagicCode(secret, ttlSec = CODE_TTL_SEC) {
  * exploitable, and it was still the wrong shape: a stolen copy of login_code
  * plus this file is enough to check a guess, and there is no reason to allow
  * that when the secret is already in hand at every call site.
+ * @param {unknown} raw
+ * @param {string} secret
  */
 export function magicHash(raw, secret) {
   if (!secret) throw new AuthError("missing_secret");

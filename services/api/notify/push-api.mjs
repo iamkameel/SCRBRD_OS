@@ -25,8 +25,12 @@
 import { runAsPrincipal } from "../auth/auth-db.mjs";
 import { withPrincipal } from "../auth/auth.mjs";
 import { transportFromEnv } from "./fcm.mjs";
+/** @import { RouteDeps, ApiRequest, ApiResponse, Handler, Pool } from "../api-types.mjs" */
+/** @import { PushTransport } from "./fcm.mjs" */
+// A caught error is `any` to the checker (CaughtError in api-types.mjs):
+// pg's carry a SQLSTATE `code`, this module's own carry an HTTP `status`.
 
-const err = (code, status = 400) => Object.assign(new Error(code), { status });
+const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
 
 const PLATFORMS = ["web", "android", "ios"];
 const SCOPES = ["school", "team", "competition"];
@@ -54,6 +58,7 @@ const SUBJECT_KINDS = ["match", "injury", "training", "transport", "facility",
  * "You have a notice" is safe; "you have an INJURY notice" names the subject
  * matter, and a lock screen reading `injury` about a school a bystander can
  * see is most of the disclosure with none of the words.
+ * @param {any} notice  a notification row
  */
 export function buildPayload(notice) {
   const id = String(notice.id);
@@ -87,7 +92,9 @@ export function buildPayload(notice) {
  * It records what it was handed so a walk can assert that a restricted notice
  * travelled as a pointer — in memory, on the server, never in the database.
  */
+/** @returns {PushTransport & { sent: unknown[] }} */
 export function echoTransport() {
+  /** @type {unknown[]} */
   const sent = [];
   return {
     name: "echo",
@@ -96,12 +103,19 @@ export function echoTransport() {
   };
 }
 
-/** The transport this process will use, or null when push is not configured. */
+/**
+ * The transport this process will use, or null when push is not configured.
+ * @param {NodeJS.ProcessEnv} [env]
+ * @returns {PushTransport | null}
+ */
 export function transportFor(env = process.env) {
   if (env.NODE_ENV !== "production" && env.PUSH_TRANSPORT === "echo") {
-    // One instance per process, so a walk can read back what was sent.
-    if (!transportFor._echo) transportFor._echo = echoTransport();
-    return transportFor._echo;
+    // One instance per process, so a walk can read back what was sent. It
+    // hangs off the function itself, which the checker cannot see from inside
+    // the function it is assigned on — hence the alias.
+    const self = /** @type {typeof transportFor & { _echo?: PushTransport }} */ (transportFor);
+    if (!self._echo) self._echo = echoTransport();
+    return self._echo;
   }
   return transportFromEnv(env);
 }
@@ -113,6 +127,12 @@ export function transportFor(env = process.env) {
  * question with an unreasonable answer attached — which families have the app,
  * on how many devices — and a publisher does not get that list back from here
  * any more than they can read it from the table.
+ * @param {object} args
+ * @param {Pool} args.pool
+ * @param {string} args.secret
+ * @param {string | undefined} args.bearer  the Authorization header, as sent
+ * @param {string | undefined} args.notificationId
+ * @param {PushTransport | null | undefined} args.transport
  */
 export async function fanOut({ pool, secret, bearer, notificationId, transport }) {
   if (!transport) throw err("push_not_configured", 503);
@@ -143,6 +163,7 @@ export async function fanOut({ pool, secret, bearer, notificationId, transport }
 
   // ── 2. The address book. An enumeration, not a decision. ──
   const client = await pool.connect();
+  /** @type {any[]} */
   let candidates;
   try {
     const { rows } = await client.query(
@@ -153,10 +174,11 @@ export async function fanOut({ pool, secret, bearer, notificationId, transport }
 
   // Grouped per person, because the authorization question is asked once per
   // person and not once per phone.
+  /** @type {Map<string, any[]>} */
   const byPerson = new Map();
   for (const c of candidates) {
     if (!byPerson.has(c.person_id)) byPerson.set(c.person_id, []);
-    byPerson.get(c.person_id).push(c);
+    /** @type {any[]} */ (byPerson.get(c.person_id)).push(c);   // set just above when absent
   }
 
   let delivered = 0, refused = 0, failed = 0, retired = 0;
@@ -166,7 +188,8 @@ export async function fanOut({ pool, secret, bearer, notificationId, transport }
 
     // ── 3. THE QUESTION, asked as them, through the notice's own policy. ──
     const conn = await pool.connect();
-    let visible = false;
+    // No initial value: the try either assigns it or throws past the check.
+    let visible;
     try {
       visible = await withPrincipal(conn, principal, async (c) => {
         const { rows } = await c.query(
@@ -236,10 +259,12 @@ export async function fanOut({ pool, secret, bearer, notificationId, transport }
  * may know — so there is nothing here for a role to govern, and no
  * administrative path to enrol somebody else's phone.
  */
+/** @param {RouteDeps} deps @returns {Record<string, Handler>} */
 export function deviceRoutes({ pool, secret }) {
+  /** @param {(req: ApiRequest) => Promise<unknown>} fn @returns {Handler} */
   const handle = (fn) => async (req, res) => {
     try { res.json(await fn(req)); }
-    catch (e) {
+    catch (/** @type {any} */ e) {
       if (e.code === "23514") return res.status(422).json({ error: "invalid_device", detail: e.message });
       const status = e.code === "42501" ? 403 : (e.status || 500);
       res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
@@ -328,10 +353,15 @@ export function deviceRoutes({ pool, secret }) {
  * publisher, and a caller without news.publish for the scope gets 403 from the
  * database rather than from a branch in this file.
  */
+/**
+ * @param {{ pool: Pool, secret: string, transport?: PushTransport | null }} deps
+ * @returns {Record<string, Handler>}
+ */
 export function notificationRoutes({ pool, secret, transport = transportFor() }) {
+  /** @param {(req: ApiRequest) => Promise<unknown>} fn @returns {Handler} */
   const handle = (fn) => async (req, res) => {
     try { res.json(await fn(req)); }
-    catch (e) {
+    catch (/** @type {any} */ e) {
       if (e.code === "23514") return res.status(422).json({ error: "invalid_notice", detail: e.message });
       if (e.code === "23503") return res.status(404).json({ error: "no_such_school_or_subject" });
       const status = e.code === "42501" ? 403 : (e.status || 500);

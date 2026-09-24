@@ -31,15 +31,20 @@
  * the ability to READ it, which is the point.
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
+/** @import { RouteDeps, ApiRequest, ApiResponse, Handler } from "../api-types.mjs" */
+// A caught error is `any` to the checker (CaughtError in api-types.mjs):
+// pg's carry a SQLSTATE `code`, this module's own carry an HTTP `status`.
 
-const err = (code, status = 400) => Object.assign(new Error(code), { status });
+const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
 
 const STATUS = ["scheduled", "live", "complete", "abandoned"];
 
+/** @param {RouteDeps} deps @returns {Record<string, Handler>} */
 export function fixtureRoutes({ pool, secret }) {
+  /** @param {(req: ApiRequest) => Promise<unknown>} fn @returns {Handler} */
   const handle = (fn) => async (req, res) => {
     try { res.json(await fn(req)); }
-    catch (e) {
+    catch (/** @type {any} */ e) {
       // 23514 is one of the fixture's own rules — a sport the school has not
       // been granted, an over count on a hockey match, a side playing itself,
       // a played fixture whose opponent somebody tried to change. Every one of
@@ -53,7 +58,7 @@ export function fixtureRoutes({ pool, secret }) {
   };
 
   /** The away side, validated into the one shape the database takes. */
-  const awaySide = (b) => {
+  const awaySide = (/** @type {any} */ b) => {   // the request body, unvalidated
     const named = b.awaySchoolId != null && String(b.awaySchoolId) !== "";
     const typed = b.opponent != null && String(b.opponent).trim() !== "";
     if (named && typed) throw err("name_the_away_side_once");

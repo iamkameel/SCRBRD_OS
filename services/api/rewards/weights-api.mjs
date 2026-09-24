@@ -15,9 +15,13 @@
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
 import { rewardFigures } from "./score.mjs";
+/** @import { RouteDeps, ApiRequest, ApiResponse, Handler } from "../api-types.mjs" */
+// A caught error is `any` to the checker (CaughtError in api-types.mjs):
+// pg's carry a SQLSTATE `code`, this module's own carry an HTTP `status`.
 
-const err = (code, status = 400) => Object.assign(new Error(code), { status });
+const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
 
+/** @param {RouteDeps} deps @returns {Record<string, Handler>} */
 export function rewardWeightRoutes({ pool, secret }) {
   return {
     // GET /api/rewards?teamCode=   the figures, for the boys this person may read.
@@ -29,7 +33,7 @@ export function rewardWeightRoutes({ pool, secret }) {
           rewardFigures(client, { teamCode: req.query?.teamCode || null }));
         if (!out.ok) return res.status(409).json({ error: "algorithm_incomplete" });
         res.json({ rows: out.rows });
-      } catch (e) {
+      } catch (/** @type {any} */ e) {
         const status = e.code === "42501" ? 403 : (e.status || 500);
         res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
       }
@@ -60,7 +64,7 @@ export function rewardWeightRoutes({ pool, secret }) {
           return { key: rows[0].key, effectiveFrom: rows[0].effective_from };
         });
         res.json(out);
-      } catch (e) {
+      } catch (/** @type {any} */ e) {
         // 23505 is the same key on the same day. Reported as a conflict rather
         // than swallowed: an operator who meant to correct today's value needs
         // to know the first one is already standing, because the correction is

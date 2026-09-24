@@ -13,20 +13,25 @@
  * into a boy's effective limit, and its trigger for who may write it.
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
+/** @import { RouteDeps, ApiRequest, ApiResponse, Handler } from "../api-types.mjs" */
+// A caught error is `any` to the checker (CaughtError in api-types.mjs):
+// pg's carry a SQLSTATE `code`, this module's own carry an HTTP `status`.
 
-const err = (code, status = 400) => Object.assign(new Error(code), { status });
+const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const overs = (v, max, code) => {
+const overs = (/** @type {unknown} */ v, /** @type {number} */ max, /** @type {string} */ code) => {
   if (v == null || v === "") return null;
   const n = Number(v);
   if (!Number.isInteger(n) || n < 1 || n > max) throw err(code);
   return n;
 };
 
+/** @param {RouteDeps} deps @returns {Record<string, Handler>} */
 export function workloadRoutes({ pool, secret }) {
+  /** @param {(req: ApiRequest) => Promise<unknown>} fn @returns {Handler} */
   const handle = (fn) => async (req, res) => {
     try { res.json(await fn(req)); }
-    catch (e) {
+    catch (/** @type {any} */ e) {
       if (e.code === "23514") return res.status(422).json({ error: "refused", detail: e.message });
       if (e.code === "23503") return res.status(404).json({ error: "no_such_school" });
       const status = e.code === "42501" ? 403 : (e.status || 500);

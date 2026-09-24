@@ -17,6 +17,31 @@
 
 import { deriveInnings } from "@scrbrd/scoring";
 
+/**
+ * Who holds the token.
+ * @typedef {{ scorerId: string, deviceId: string, name?: string }} Holder
+ *
+ * An armed handover, and — once the incoming scorer has the code — who
+ * claimed it.
+ * @typedef {object} PendingHandover
+ * @property {string | null} toScorerId
+ * @property {string} code
+ * @property {number} armedAt
+ * @property {number} fromEpoch
+ * @property {Holder} [claimant]
+ *
+ * One ball as the log holds it: the device's envelope around a scoring event
+ * (whose shape @scrbrd/scoring owns), plus the server's seq once stored.
+ * @typedef {{ idempotencyKey: string, deviceId: string, epoch: number, seq?: number, payload?: any, [k: string]: any }} Envelope
+ *
+ * Anything replayEvents() can fold: an envelope, a stored row, a broadcast
+ * ball — it reads seq, idempotencyKey and payload (or the row itself).
+ * @typedef {{ seq?: number, idempotencyKey?: string, payload?: any, [k: string]: any }} Logged
+ *
+ * What the incoming scorer reads off the physical scoreboard.
+ * @typedef {Partial<Record<typeof CONFIRM_FIELDS[number], unknown>>} Confirmation
+ */
+
 // ─────────────────────────────────────────────────────────
 //  Constants
 // ─────────────────────────────────────────────────────────
@@ -66,18 +91,25 @@ export class MatchSession {
 
     this.state   = SESSION.IDLE;
     this.epoch   = 0;        // increments on every token transfer/claim
+    /** @type {Holder | null} */
     this.holder  = null;     // { scorerId, deviceId, name }
     this.leaseUntil = 0;
+    /** @type {PendingHandover | null} */
     this.pendingHandover = null; // { toScorerId?, code, armedAt, fromEpoch }
 
+    /** @type {Envelope[]} */
     this.events      = [];   // authoritative append-only log
     this.seq         = 0;    // authoritative sequence
+    /** @type {Set<string>} */
     this.seenKeys    = new Set();  // idempotency
+    /** @type {Envelope[]} */
     this.quarantine  = [];   // events rejected for stale epoch — human review
+    /** @type {Record<string, unknown>[]} */
     this.audit       = [];   // handover / token history
   }
 
   // ── internal helpers ──
+  /** @param {string} type @param {Record<string, unknown>} data */
   _log(type, data) { this.audit.push({ type, at: this.now(), ...data }); }
   _leaseLive() { return this.now() < this.leaseUntil; }
 
@@ -93,6 +125,7 @@ export class MatchSession {
    * the client's cancel — and while the incoming scorer is verifying nobody
    * may, lease or no lease. A stalled verification is recovered by
    * forceRelease(), then a claim of the idle match.
+   * @param {{ scorerId: string, deviceId: string, role: string, name?: string }} who
    */
   claim({ scorerId, deviceId, role, name }) {
     if (!this.canScore(role)) return { ok: false, reason: REJECT.NO_CAPABILITY };
@@ -116,7 +149,10 @@ export class MatchSession {
     return { ok: true, epoch: this.epoch, state: this.replay() };
   }
 
-  /** Keep the lease alive. Called every ~20s while scoring. */
+  /**
+   * Keep the lease alive. Called every ~20s while scoring.
+   * @param {{ deviceId: string, epoch: number }} args
+   */
   heartbeat({ deviceId, epoch }) {
     if (this.holder?.deviceId !== deviceId) return { ok: false, reason: REJECT.NOT_TOKEN_HOLDER };
     if (epoch !== this.epoch) return { ok: false, reason: REJECT.STALE_EPOCH };
@@ -128,6 +164,7 @@ export class MatchSession {
    * Append a ball event.
    * Rejects: wrong device, stale epoch, expired lease, duplicate key.
    * Stale-epoch events are quarantined rather than dropped or merged.
+   * @param {Envelope} event
    */
   append(event) {
     const { deviceId, epoch, idempotencyKey } = event;
@@ -155,6 +192,7 @@ export class MatchSession {
   /**
    * Step 1 — outgoing scorer arms handover.
    * Blocked while the device still holds unsynced balls or a part-entered ball.
+   * @param {{ deviceId: string, epoch: number, pendingCount?: number, ballInFlight?: boolean, toScorerId?: string | null }} args
    */
   armHandover({ deviceId, epoch, pendingCount = 0, ballInFlight = false, toScorerId = null }) {
     if (this.holder?.deviceId !== deviceId) return { ok: false, reason: REJECT.NOT_TOKEN_HOLDER };
@@ -165,11 +203,15 @@ export class MatchSession {
     const code = handoverCode(this.matchId, this.epoch);
     this.state = SESSION.HANDOVER_PENDING;
     this.pendingHandover = { toScorerId, code, armedAt: this.now(), fromEpoch: this.epoch };
-    this._log("handover_armed", { from: this.holder.scorerId, toScorerId, code });
+    // The device check above passed against a string deviceId, so a holder is set.
+    this._log("handover_armed", { from: /** @type {Holder} */ (this.holder).scorerId, toScorerId, code });
     return { ok: true, code, state: this.replay() };
   }
 
-  /** Outgoing scorer changes their mind. */
+  /**
+   * Outgoing scorer changes their mind.
+   * @param {{ deviceId: string }} args
+   */
   cancelHandover({ deviceId }) {
     if (this.holder?.deviceId !== deviceId) return { ok: false, reason: REJECT.NOT_TOKEN_HOLDER };
     if (this.state !== SESSION.HANDOVER_PENDING) return { ok: false, reason: REJECT.NOT_PENDING };
@@ -182,11 +224,13 @@ export class MatchSession {
   /**
    * Step 2 — incoming scorer claims the pending handover and receives the
    * full log to rebuild from. Scoring stays LOCKED until verify() passes.
+   * @param {{ scorerId: string, deviceId: string, role: string, name?: string, code: string | undefined }} args  a missing code is a mismatch
    */
   claimHandover({ scorerId, deviceId, role, name, code }) {
     if (!this.canScore(role)) return { ok: false, reason: REJECT.NO_CAPABILITY };
     if (this.state !== SESSION.HANDOVER_PENDING) return { ok: false, reason: REJECT.NOT_PENDING };
-    const ph = this.pendingHandover;
+    // HANDOVER_PENDING is only ever entered by armHandover(), which sets it.
+    const ph = /** @type {PendingHandover} */ (this.pendingHandover);
     if (ph.code !== code) return { ok: false, reason: REJECT.VERIFY_MISMATCH };
     if (ph.toScorerId && ph.toScorerId !== scorerId) return { ok: false, reason: REJECT.NO_CAPABILITY };
 
@@ -199,6 +243,7 @@ export class MatchSession {
   /**
    * Step 3 — incoming scorer confirms the on-field state against the
    * physical scoreboard. Only on a match does the token transfer.
+   * @param {{ deviceId: string, confirm: Confirmation }} args
    */
   verifyAndTakeOver({ deviceId, confirm }) {
     if (this.state !== SESSION.VERIFYING) return { ok: false, reason: REJECT.NOT_PENDING };
@@ -224,6 +269,7 @@ export class MatchSession {
   /**
    * Recovery path — a dead/lost device holding the token. An authorised
    * admin may force-release only after the lease has expired plus grace.
+   * @param {{ byRole: string, byScorerId?: string, override?: boolean }} args
    */
   forceRelease({ byRole, byScorerId, override = false }) {
     if (!this.canScore(byRole)) return { ok: false, reason: REJECT.NO_CAPABILITY };
@@ -240,7 +286,11 @@ export class MatchSession {
     return { ok: true, epoch: this.epoch };
   }
 
-  /** Operator review of quarantined events (e.g. offline device that died). */
+  /**
+   * Operator review of quarantined events (e.g. offline device that died).
+   * @param {string} idempotencyKey
+   * @param {"accept" | "reject" | string} decision
+   */
   reviewQuarantine(idempotencyKey, decision) {
     const idx = this.quarantine.findIndex(e => e.idempotencyKey === idempotencyKey);
     if (idx < 0) return { ok: false };
@@ -261,14 +311,18 @@ export class MatchSession {
 //  Client-side offline queue
 // ─────────────────────────────────────────────────────────
 export class ScoringQueue {
+  /** @param {{ deviceId: string, scorerId: string, epoch: number, now?: () => number }} args */
   constructor({ deviceId, scorerId, epoch, now = () => Date.now() }) {
     this.deviceId = deviceId;
     this.scorerId = scorerId;
     this.epoch = epoch;
     this.now = now;
     this.clientSeq = 0;
+    /** @type {Envelope[]} */
     this.pending = [];    // not yet acknowledged by the server
+    /** @type {Envelope[]} */
     this.acked = [];      // confirmed
+    /** @type {Record<string, unknown>[]} */
     this.rejected = [];
   }
 
@@ -276,7 +330,10 @@ export class ScoringQueue {
   /** Handover is only safe when nothing is left unsynced. */
   get safeToHandOver() { return this.pending.length === 0; }
 
-  /** Record a ball locally. Always succeeds — this is what keeps play going. */
+  /**
+   * Record a ball locally. Always succeeds — this is what keeps play going.
+   * @param {any} payload  a scoring event, whose shape @scrbrd/scoring owns
+   */
   enqueue(payload) {
     this.clientSeq += 1;
     const ev = {
@@ -293,7 +350,10 @@ export class ScoringQueue {
     return ev;
   }
 
-  /** Attempt to flush. `transport` returns the server's append() result. */
+  /**
+   * Attempt to flush. `transport` returns the server's append() result.
+   * @param {(ev: Envelope) => Promise<{ ok: boolean, reason?: string, [k: string]: unknown }>} transport
+   */
   async flush(transport) {
     const results = [];
     while (this.pending.length) {
@@ -312,7 +372,7 @@ export class ScoringQueue {
   }
 
   /** Over-boundary checkpoint: a natural, frequent sync point. */
-  shouldCheckpoint(ballsThisOver) { return ballsThisOver % CHECKPOINT_EVERY === 0; }
+  shouldCheckpoint(/** @type {number} */ ballsThisOver) { return ballsThisOver % CHECKPOINT_EVERY === 0; }
 }
 
 // ─────────────────────────────────────────────────────────
@@ -331,6 +391,7 @@ export class ScoringQueue {
  * handover impossible, with both sides certain they were right.
  *
  * There is one fold now. This is a projection of it.
+ * @param {Logged[]} events
  */
 export function replayEvents(events) {
   const ordered = [...events].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));
@@ -354,7 +415,7 @@ export function replayEvents(events) {
 //  Helpers
 // ─────────────────────────────────────────────────────────
 /** Short human-readable code the outgoing scorer reads aloud. */
-export function handoverCode(matchId, epoch) {
+export function handoverCode(/** @type {string} */ matchId, /** @type {number} */ epoch) {
   let h = 2166136261;
   const s = `${matchId}:${epoch}`;
   for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
@@ -362,14 +423,18 @@ export function handoverCode(matchId, epoch) {
 }
 
 /** Fields the incoming scorer must confirm against the physical scoreboard. */
-export const CONFIRM_FIELDS = ["runs", "wickets", "balls", "striker", "nonStriker", "bowler"];
+export const CONFIRM_FIELDS = /** @type {const} */ (["runs", "wickets", "balls", "striker", "nonStriker", "bowler"]);
 
+/**
+ * @param {Record<typeof CONFIRM_FIELDS[number], unknown>} truth
+ * @param {Confirmation} confirm
+ */
 export function diffConfirmation(truth, confirm) {
   return CONFIRM_FIELDS
     .filter(f => confirm[f] !== undefined && confirm[f] !== truth[f])
     .map(f => ({ field: f, expected: truth[f], got: confirm[f] }));
 }
 
-export function fmtOvers(balls) {
+export function fmtOvers(/** @type {number} */ balls) {
   return `${Math.floor(balls / 6)}${balls % 6 ? "." + (balls % 6) : ""}`;
 }

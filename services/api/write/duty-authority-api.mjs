@@ -19,8 +19,12 @@
  * depend on whether somebody switched the officials module off.
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
+/** @import { RouteDeps, ApiRequest, ApiResponse, Handler, CaughtError } from "../api-types.mjs" */
+// A caught error is `any` to the checker (CaughtError in api-types.mjs):
+// pg's carry a SQLSTATE `code`, this module's own carry an HTTP `status`.
 
-const err = (code, status = 400) => Object.assign(new Error(code), { status });
+const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
+/** @type {Record<string, number>} */
 const STATUS = {
   not_permitted: 403, no_such_duty: 404,
   reason_required: 400, reason_too_long: 400,
@@ -29,6 +33,7 @@ const STATUS = {
   no_account: 422,
 };
 
+/** @param {ApiResponse} res @param {CaughtError} e */
 const fail = (res, e) => {
   // Not a uuid where one was expected.
   if (e.code === "22P02") return res.status(400).json({ error: "bad_request" });
@@ -38,14 +43,20 @@ const fail = (res, e) => {
   res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
 };
 
-const reasonOf = (body) => {
+const reasonOf = (/** @type {any} */ body) => {   // the request body, unvalidated
   const r = typeof body?.reason === "string" ? body.reason.trim() : "";
   if (!r) throw err("reason_required");
   if (r.length > 2000) throw err("reason_too_long");
   return r;
 };
 
+/** @param {RouteDeps} deps @returns {Record<string, Handler>} */
 export function dutyAuthorityRoutes({ pool, secret }) {
+  /**
+   * @param {ApiRequest} req @param {ApiResponse} res
+   * @param {string} sql @param {unknown[]} params
+   * @param {(row: any) => unknown} shape  the function's result row → the answer
+   */
   const verdict = async (req, res, sql, params, shape) => {
     await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
       const { rows } = await client.query(sql, params);
@@ -59,21 +70,21 @@ export function dutyAuthorityRoutes({ pool, secret }) {
       try {
         await verdict(req, res, `select * from duty_link($1)`, [req.params.id],
           (r) => ({ dutyId: req.params.id, assignmentId: r.assignment_id }));
-      } catch (e) { fail(res, e); }
+      } catch (/** @type {any} */ e) { fail(res, e); }
     },
     suspend: async (req, res) => {
       try {
         const reason = reasonOf(req.body);
         await verdict(req, res, `select * from duty_suspend($1, $2)`, [req.params.id, reason],
           () => ({ dutyId: req.params.id, suspended: true }));
-      } catch (e) { fail(res, e); }
+      } catch (/** @type {any} */ e) { fail(res, e); }
     },
     lift: async (req, res) => {
       try {
         const reason = reasonOf(req.body);
         await verdict(req, res, `select * from duty_lift($1, $2)`, [req.params.id, reason],
           () => ({ dutyId: req.params.id, suspended: false }));
-      } catch (e) { fail(res, e); }
+      } catch (/** @type {any} */ e) { fail(res, e); }
     },
   };
 }

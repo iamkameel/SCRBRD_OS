@@ -12,7 +12,15 @@
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
 import { EVENT_COLUMNS } from "../write/events-api.mjs";
+/** @import { Pool, IdHandler } from "../api-types.mjs" */
+/** @import { MatchHub } from "./realtime.mjs" */
+// A caught error is `any` to the checker (CaughtError in api-types.mjs).
 
+/**
+ * @param {Pool} pool @param {string} secret @param {string | undefined} bearer
+ * @param {string} sql @param {unknown[]} params
+ * @returns {Promise<any>}  the function's result row, or {}
+ */
 async function callFn(pool, secret, bearer, sql, params) {
   return runAsPrincipal(pool, secret, bearer, async client => {
     const { rows } = await client.query(sql, params);
@@ -20,7 +28,11 @@ async function callFn(pool, secret, bearer, sql, params) {
   });
 }
 
-/** After any successful transition, read the fresh session row and broadcast it. */
+/**
+ * After any successful transition, read the fresh session row and broadcast it.
+ * @param {Pool} pool @param {string} secret @param {string | undefined} bearer
+ * @param {MatchHub} hub @param {string} matchId
+ */
 async function broadcastState(pool, secret, bearer, hub, matchId) {
   const { rows } = await runAsPrincipal(pool, secret, bearer, async client =>
     client.query(`select state, epoch, holder_user_id, holder_device from scoring_session where match_id = $1`, [matchId]));
@@ -28,7 +40,12 @@ async function broadcastState(pool, secret, bearer, hub, matchId) {
   if (s) hub.broadcastSession(matchId, { state: s.state, epoch: s.epoch, holder: s.holder_user_id });
 }
 
+/**
+ * @param {{ pool: Pool, secret: string, hub: MatchHub }} deps
+ * @returns {Record<string, IdHandler>}  every route here is /matches/:id/session/…
+ */
 export function sessionRoutes({ pool, secret, hub }) {
+  /** @param {string} matchId @param {string | undefined} bearer @param {any} result */
   const withBroadcast = async (matchId, bearer, result) => {
     if (result.ok) await broadcastState(pool, secret, bearer, hub, matchId);
     return result;
@@ -41,7 +58,7 @@ export function sessionRoutes({ pool, secret, hub }) {
       try {
         const r = await callFn(pool, secret, b, `select * from scoring_claim($1,$2)`, [id, req.body.device]);
         res.json(await withBroadcast(id, b, r));
-      } catch (e) { res.status(e.status || 500).json({ error: e.code || e.message }); }
+      } catch (/** @type {any} */ e) { res.status(e.status || 500).json({ error: e.code || e.message }); }
     },
 
     // POST /matches/:id/session/heartbeat { device, epoch }
@@ -61,7 +78,7 @@ export function sessionRoutes({ pool, secret, hub }) {
                    reason: r.holds ? null
                          : r.state === "match_complete" ? "match_complete"
                          : (r.found ? "not_token_holder" : "no_session") });
-      } catch (e) { res.status(e.status || 500).json({ error: e.code || e.message }); }
+      } catch (/** @type {any} */ e) { res.status(e.status || 500).json({ error: e.code || e.message }); }
     },
 
     // POST /matches/:id/session/handover/arm { device, pending, ballInFlight, to? }
@@ -72,7 +89,7 @@ export function sessionRoutes({ pool, secret, hub }) {
           `select * from scoring_arm_handover($1,$2,$3,$4,$5)`,
           [id, req.body.device, req.body.pending ?? 0, !!req.body.ballInFlight, req.body.to || null]);
         res.json(await withBroadcast(id, b, r));
-      } catch (e) { res.status(e.status || 500).json({ error: e.code || e.message }); }
+      } catch (/** @type {any} */ e) { res.status(e.status || 500).json({ error: e.code || e.message }); }
     },
 
     // POST /matches/:id/session/handover/claim { device, code }  → VERIFYING
@@ -94,7 +111,7 @@ export function sessionRoutes({ pool, secret, hub }) {
           await broadcastState(pool, secret, b, hub, id);
         }
         res.json(r);
-      } catch (e) { res.status(e.status || 500).json({ error: e.code || e.message }); }
+      } catch (/** @type {any} */ e) { res.status(e.status || 500).json({ error: e.code || e.message }); }
     },
 
     // POST /matches/:id/session/handover/verify { device, runs, wickets, balls }
@@ -105,7 +122,7 @@ export function sessionRoutes({ pool, secret, hub }) {
           `select * from scoring_verify_takeover($1,$2,$3,$4,$5)`,
           [id, req.body.device, req.body.runs, req.body.wickets, req.body.balls]);
         res.json(await withBroadcast(id, b, r));
-      } catch (e) { res.status(e.status || 500).json({ error: e.code || e.message }); }
+      } catch (/** @type {any} */ e) { res.status(e.status || 500).json({ error: e.code || e.message }); }
     },
 
     // POST /matches/:id/session/force-release
@@ -114,7 +131,7 @@ export function sessionRoutes({ pool, secret, hub }) {
       try {
         const r = await callFn(pool, secret, b, `select * from scoring_force_release($1)`, [id]);
         res.json(await withBroadcast(id, b, r));
-      } catch (e) { res.status(e.status || 500).json({ error: e.code || e.message }); }
+      } catch (/** @type {any} */ e) { res.status(e.status || 500).json({ error: e.code || e.message }); }
     },
   };
 }

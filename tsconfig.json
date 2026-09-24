@@ -14,7 +14,18 @@
     "packages/policy/test/**/*.mjs",
     "packages/sync/src/**/*.mjs",
     "packages/scoring/src/**/*.mjs",
-    "packages/scoring/test/**/*.mjs"
+    "packages/scoring/test/**/*.mjs",
+    "services/api/**/*.mjs"
+  ],
+  // Holes in the list, each one waiting to be closed. A file here is loaded
+  // when something on the list imports it, but its own errors are not
+  // counted (tools/typecheck.mjs) and lint treats it as off the list.
+  // tools/typecheck-scope.test.mjs refuses an exclusion it does not know.
+  //   events-api.mjs — was being rewritten when services/api joined; it is
+  //   the next file onto the list.
+  "exclude": [
+    "**/node_modules",
+    "services/api/write/events-api.mjs"
   ],
   "compilerOptions": {
     "target": "es2023",

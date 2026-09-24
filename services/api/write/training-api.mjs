@@ -9,16 +9,21 @@
  * kit forms closed earlier in this branch.
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
+/** @import { RouteDeps, ApiRequest, ApiResponse, Handler } from "../api-types.mjs" */
+// A caught error is `any` to the checker (CaughtError in api-types.mjs):
+// pg's carry a SQLSTATE `code`, this module's own carry an HTTP `status`.
 
-const err = (code, status = 400) => Object.assign(new Error(code), { status });
+const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TYPES = ["technical", "skills", "batting", "bowling", "fielding", "fitness", "match-prep"];
-const clean = (v, max) => (v == null || String(v).trim() === "" ? null : String(v).trim().slice(0, max));
+const clean = (/** @type {unknown} */ v, /** @type {number} */ max) => (v == null || String(v).trim() === "" ? null : String(v).trim().slice(0, max));
 
+/** @param {RouteDeps} deps @returns {Record<string, Handler>} */
 export function trainingRoutes({ pool, secret }) {
+  /** @param {(req: ApiRequest) => Promise<unknown>} fn @returns {Handler} */
   const handle = (fn) => async (req, res) => {
     try { res.json(await fn(req)); }
-    catch (e) {
+    catch (/** @type {any} */ e) {
       if (e.code === "23514") return res.status(422).json({ error: "refused", detail: e.message });
       if (e.code === "23503") return res.status(404).json({ error: "no_such_school_or_ground" });
       const status = e.code === "42501" ? 403 : (e.status || 500);

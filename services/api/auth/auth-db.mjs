@@ -15,6 +15,8 @@ import {
   signToken, verifyToken, principalFromClaims, withPrincipal,
   newMagicCode, magicHash, AuthError, CODE_TTL_SEC,
 } from "./auth.mjs";
+/** @import { Db, Pool } from "../api-types.mjs" */
+/** @import { Principal } from "./auth.mjs" */
 
 // ── Login: issue a code, at the office ──
 //
@@ -29,6 +31,12 @@ import {
 // moment it exists in readable form anywhere.
 //
 // POST /api/auth/invite { email }   (authenticated)
+/**
+ * @param {Db} db  the issuer's own transaction, identity already set
+ * @param {string} secret
+ * @param {{ email?: string }} args
+ * @param {number} [ttlSec]
+ */
 export async function issueLoginCode(db, secret, { email }, ttlSec = CODE_TTL_SEC) {
   if (!email) throw new AuthError("missing_email");
   const { raw, hash, expiresInSec } = newMagicCode(secret, ttlSec);
@@ -49,6 +57,12 @@ export async function issueLoginCode(db, secret, { email }, ttlSec = CODE_TTL_SE
 // later under time pressure.
 //
 // POST /api/auth/request-link { email }
+/**
+ * @param {Db} db
+ * @param {string} secret
+ * @param {(email: string, raw: string) => unknown} sendEmail
+ * @param {{ email: string }} args
+ */
 export async function requestMagicLink(db, secret, sendEmail, { email }) {
   const { rows } = await db.query(`select auth_account_for_email($1) as id`, [email]);
   const userId = rows[0]?.id || null;
@@ -70,6 +84,11 @@ export async function requestMagicLink(db, secret, sendEmail, { email }) {
 // code cannot both be given a session — the second UPDATE matches nothing.
 //
 // POST /api/auth/redeem { email, code, deviceId }
+/**
+ * @param {Db} db
+ * @param {string} secret
+ * @param {{ email?: string, code?: string, deviceId?: string }} args
+ */
 export async function redeemMagicLink(db, secret, { email, code, deviceId }) {
   if (!deviceId) throw new AuthError("missing_device");
   if (!email || !code) throw new AuthError("invalid_or_expired_code");
@@ -92,6 +111,9 @@ export async function redeemMagicLink(db, secret, { email, code, deviceId }) {
  * Read under the person's own RLS context, so it can only ever return their
  * own rows: role_assignment's policy scopes SELECT to person_id = app_user_id()
  * plus whoever holds user.role.assign over the same school.
+ * @param {Pool} pool
+ * @param {string} secret
+ * @param {string | undefined} bearer  the Authorization header, as sent
  */
 export async function sessionProfile(pool, secret, bearer) {
   return runAsPrincipal(pool, secret, bearer, async (client, principal) => {
@@ -145,9 +167,16 @@ export async function sessionProfile(pool, secret, bearer) {
  * `fn` receives (client, principal). The connection is dedicated for the
  * duration and returned to the pool with no lingering context, because
  * withPrincipal sets everything transaction-locally and commits.
+ * @template T
+ * @param {Pool} pool
+ * @param {string} secret
+ * @param {string | undefined} bearer  the Authorization header, as sent
+ * @param {(client: Db, principal: Principal) => T | Promise<T>} fn
+ * @returns {Promise<T>}
  */
 export async function runAsPrincipal(pool, secret, bearer, fn) {
-  const token = (bearer || "").startsWith("Bearer ") ? bearer.slice(7) : null;
+  // startsWith() on (bearer || "") was true, so bearer is a string here.
+  const token = (bearer || "").startsWith("Bearer ") ? /** @type {string} */ (bearer).slice(7) : null;
   if (!token) throw new AuthError("missing_token");
   const principal = principalFromClaims(verifyToken(token, secret));
   const client = await pool.connect();          // one dedicated connection

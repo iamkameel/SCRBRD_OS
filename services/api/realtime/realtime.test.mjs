@@ -10,10 +10,13 @@ import { MatchHub, makeCommitAndBroadcast } from "./realtime.mjs";
 import { sessionRoutes } from "./session-routes.mjs";
 import { MatchStream } from "./live-client.mjs";
 import { signToken } from "../auth/auth.mjs";
+/** @import { ConnectHandlers, StreamEvent } from "./live-client.mjs" */
+/** @import { Pool } from "../api-types.mjs" */
 
 let pass = 0, fail = 0;
+/** @param {string} n @param {unknown} c */
 const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
-const group = t => console.log("\n" + t);
+const group = (/** @type {string} */ t) => console.log("\n" + t);
 const SECRET = "step5-secret";
 const bearer = (userId = "uS", deviceId = "devA") => `Bearer ${signToken({ userId, deviceId }, SECRET)}`;
 const nextTick = () => new Promise(r => setTimeout(r, 0));
@@ -22,7 +25,8 @@ const nextTick = () => new Promise(r => setTimeout(r, 0));
 group("A. Hub fanout + unsubscribe + resilience");
 {
   const hub = new MatchHub();
-  const a = [], b = [];
+  /** @type {any[]} */
+  const a = [], b = /** @type {any[]} */ ([]);
   const offA = hub.subscribe("m3", m => a.push(m));
   const offB = hub.subscribe("m3", m => b.push(m));
   hub.subscribe("m9", () => { throw new Error("other match"); }); // must not receive m3
@@ -44,6 +48,7 @@ group("A. Hub fanout + unsubscribe + resilience");
 
   // a throwing subscriber must not break the others
   const hub2 = new MatchHub();
+  /** @type {unknown[]} */
   const got = [];
   hub2.subscribe("m", () => { throw new Error("bad socket"); });
   hub2.subscribe("m", m => got.push(m));
@@ -54,10 +59,12 @@ group("A. Hub fanout + unsubscribe + resilience");
 group("A. commit-and-broadcast wiring");
 {
   const hub = new MatchHub();
+  /** @type {any[]} */
   const seen = [];
   hub.subscribe("m3", m => seen.push(m));
   // fake appendEvents: accept everything, assign seq = clientSeq
-  const fakeAppend = async (pool, sec, br, mid, events) => ({
+  const fakeAppend = async (/** @type {any} */ pool, /** @type {string} */ sec, /** @type {string | undefined} */ br,
+                            /** @type {string} */ mid, /** @type {any[]} */ events) => ({
     accepted: events.map(e => ({ idempotencyKey: e.idempotencyKey, seq: e.clientSeq })),
     duplicates: [], quarantined: [],
   });
@@ -66,7 +73,8 @@ group("A. commit-and-broadcast wiring");
     { idempotencyKey: "d:1:1", clientSeq: 1, epoch: 1, innings: 0, payload: { kind: "ball", value: 4 } },
     { idempotencyKey: "d:1:2", clientSeq: 2, epoch: 1, innings: 0, payload: { kind: "ball", value: 6 } },
   ];
-  await commit(null, null, bearer(), "m3", events);
+  // The fake append never reads the pool or the secret.
+  await commit(null, /** @type {any} */ (null), bearer(), "m3", events);
   ok("committed balls broadcast with full payload", seen.length === 1 && seen[0].events.length === 2 && seen[0].events[0].payload.value === 4);
   ok("broadcast carries assigned seq", seen[0].events[1].seq === 2);
 }
@@ -75,13 +83,15 @@ group("A. commit-and-broadcast wiring");
 group("B. Session routes run under principal and broadcast state");
 {
   const hub = new MatchHub();
+  /** @type {any[]} */
   const seen = [];
   hub.subscribe("m3", m => seen.push(m));
 
   // fake pool: scoring_claim returns ok, then the follow-up session read returns active
+  /** @type {string[]} */
   const log = [];
   const client = {
-    query: async (text, params) => {
+    query: async (/** @type {string} */ text, /** @type {any[] | undefined} */ _params) => {
       log.push(text.replace(/\s+/g, " ").trim());
       if (/scoring_claim\(/.test(text)) return { rows: [{ ok: true, reason: null, epoch: 1 }] };
       if (/from scoring_session where match_id/.test(text)) return { rows: [{ state: "active", epoch: 1, holder_user_id: "uS", holder_device: "devA" }] };
@@ -89,11 +99,14 @@ group("B. Session routes run under principal and broadcast state");
     },
     release() {},
   };
-  const pool = { connect: async () => client };
+  // A fake pool: connect() is all runAsPrincipal() asks of one.
+  const pool = /** @type {Pool} */ (/** @type {unknown} */ ({ connect: async () => client }));
   const routes = sessionRoutes({ pool, secret: SECRET, hub });
 
+  /** @type {any} */            // what the route answered
   let sent = null;
-  const res = { json: b => (sent = b), status: () => res };
+  /** @type {any} */            // a fake response: json() records, status() chains
+  const res = { json: (/** @type {unknown} */ b) => (sent = b), status: () => res };
   await routes.claim({ params: { id: "m3" }, headers: { authorization: bearer() }, body: { device: "devA" } }, res);
   ok("claim returns ok", sent.ok === true && sent.epoch === 1);
   ok("claim ran under a principal txn", log.includes("BEGIN") && log.includes("COMMIT"));
@@ -101,12 +114,14 @@ group("B. Session routes run under principal and broadcast state");
 
   // heartbeat does NOT broadcast (no state change)
   const before = seen.length;
-  const client2 = { query: async (t) => (/scoring_lease_check/.test(t)
+  const client2 = { query: async (/** @type {string} */ t) => (/scoring_lease_check/.test(t)
     ? { rows: [{ found: true, holds: true, epoch: 1, state: "active" }] }
     : { rows: [] }), release() {} };
-  const routes2 = sessionRoutes({ pool: { connect: async () => client2 }, secret: SECRET, hub });
+  const routes2 = sessionRoutes({ pool: /** @type {Pool} */ (/** @type {unknown} */ ({ connect: async () => client2 })), secret: SECRET, hub });
+  /** @type {any} */            // what the route answered
   let hb = null;
-  await routes2.heartbeat({ params: { id: "m3" }, headers: { authorization: bearer() }, body: { device: "devA", epoch: 1 } }, { json: b => (hb = b), status: () => ({ json: () => {} }) });
+  await routes2.heartbeat({ params: { id: "m3" }, headers: { authorization: bearer() }, body: { device: "devA", epoch: 1 } },
+    /** @type {any} */ ({ json: (/** @type {unknown} */ b) => (hb = b), status: () => ({ json: () => {} }) }));   // a fake response
   ok("heartbeat ok", hb.ok === true);
   // The old handler ran a direct UPDATE on scoring_session, which has no UPDATE
   // policy — so it matched nothing and reported not_token_holder to a scorer
@@ -120,12 +135,15 @@ group("B. Session routes run under principal and broadcast state");
 group("C. Joining mid-match: no missed, no duplicated events");
 {
   // Controllable fake transport
+  /** @type {any} */            // the stream's handlers, once it connects
   let handlers = null;
-  const connect = h => { handlers = h; return () => { handlers = null; }; };
+  const connect = (/** @type {ConnectHandlers} */ h) => { handlers = h; return () => { handlers = null; }; };
   // History source: everything up to seq 5 already happened
+  /** @type {StreamEvent[]} */
   const HISTORY = [1, 2, 3, 4, 5].map(seq => ({ seq, payload: { kind: "ball", type: "run", value: 1 } }));
-  const fetchSince = async (mid, since) => HISTORY.filter(e => e.seq > since);
+  const fetchSince = async (/** @type {string} */ mid, /** @type {number} */ since) => HISTORY.filter(e => e.seq > since);
 
+  /** @type {unknown[]} */
   const updates = [];
   const stream = new MatchStream({ matchId: "m3", connect, fetchSince, onUpdate: u => updates.push(u) });
   stream.start();
@@ -153,10 +171,11 @@ group("C. Joining mid-match: no missed, no duplicated events");
 
 group("C. Reconnect resumes from lastSeq (no re-fetch of the whole match)");
 {
-  let handlers = null, sinceCalls = [];
-  const connect = h => { handlers = h; return () => {}; };
+  /** @type {any} */            // the stream's handlers, once it connects
+  let handlers = null, sinceCalls = /** @type {number[]} */ ([]);
+  const connect = (/** @type {ConnectHandlers} */ h) => { handlers = h; return () => {}; };
   const HISTORY = Array.from({ length: 12 }, (_, i) => ({ seq: i + 1, payload: { kind: "ball", value: 1 } }));
-  const fetchSince = async (mid, since) => { sinceCalls.push(since); return HISTORY.filter(e => e.seq > since); };
+  const fetchSince = async (/** @type {string} */ mid, /** @type {number} */ since) => { sinceCalls.push(since); return HISTORY.filter(e => e.seq > since); };
 
   const stream = new MatchStream({ matchId: "m3", connect, fetchSince });
   stream.start();

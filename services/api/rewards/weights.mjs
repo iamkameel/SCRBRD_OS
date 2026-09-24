@@ -34,6 +34,8 @@
  * existence of the terms — but the names travel with the weights here because
  * the two together are the algorithm, and a client has no use for either.
  */
+/** One number per coefficient, by name. @typedef {Record<keyof typeof WEIGHT_KEYS, number>} Weights */
+
 export const WEIGHT_KEYS = Object.freeze({
   // Impact-adjusted performance, not runs. The ImpactEngine reading — pressure
   // and opposition already normalise for context — folded out of the ball log
@@ -71,6 +73,10 @@ export const WEIGHT_KEYS = Object.freeze({
  * caller must treat that as "cannot compute", never as zero: a missing growth
  * weight silently turning the growth term off would produce a plausible figure
  * built on three terms instead of four, and nothing on screen would say so.
+ * @param {import("../api-types.mjs").Db} client
+ * @param {string} key
+ * @param {string | null} [onDate]  an ISO day; today when absent
+ * @returns {Promise<number | null>}
  */
 export async function weightAt(client, key, onDate = null) {
   const { rows } = await client.query(
@@ -89,13 +95,19 @@ export async function weightAt(client, key, onDate = null) {
  *
  * A partial answer is refused rather than filled in. An award computed with a
  * term missing is not a smaller award, it is a different algorithm.
+ * @param {import("../api-types.mjs").Db} client
+ * @param {string | null} [onDate]
+ * @returns {Promise<{ ok: true, weights: Weights, missing?: undefined } | { ok: false, missing: string[], weights?: undefined }>}
  */
 export async function weightsFor(client, onDate = null) {
+  /** @type {Partial<Weights>} */
   const out = {};
+  /** @type {string[]} */
   const missing = [];
   for (const [name, key] of Object.entries(WEIGHT_KEYS)) {
     const v = await weightAt(client, key, onDate);
-    if (v == null) missing.push(key); else out[name] = v;
+    if (v == null) missing.push(key); else out[/** @type {keyof Weights} */ (name)] = v;   // name is a WEIGHT_KEYS key
   }
-  return missing.length ? { ok: false, missing } : { ok: true, weights: out };
+  // Nothing missing means every WEIGHT_KEYS name was filled above.
+  return missing.length ? { ok: false, missing } : { ok: true, weights: /** @type {Weights} */ (out) };
 }

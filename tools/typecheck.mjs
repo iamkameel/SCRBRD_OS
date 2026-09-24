@@ -7,7 +7,8 @@
  * ignores errors in files outside it (a package in the list that imports
  * @scrbrd/scoring pulls scoring's source into the program, and scoring is not
  * on the list yet). Those out-of-scope errors are counted, never printed —
- * they are the next package's work, not this one's.
+ * they are the next package's work, not this one's. A file under tsconfig's
+ * `exclude` is out of scope the same way, though its directory is on the list.
  *
  * An error with no file (a broken tsconfig, a missing @types package) always
  * fails.
@@ -25,7 +26,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 /**
  * tsconfig.json, parsed. It is JSON plus full-line // comments, and nothing
  * else — keep it that way, or teach this function more.
- * @returns {{include: string[], compilerOptions: Record<string, unknown>}}
+ * @returns {{include: string[], exclude?: string[], compilerOptions: Record<string, unknown>}}
  */
 export function tsconfig() {
   return JSON.parse(readFileSync(join(ROOT, "tsconfig.json"), "utf8")
@@ -38,8 +39,24 @@ export const strictList = () => tsconfig().include;
 /** "packages/policy/src/**\/*.mjs" → "packages/policy/src/" */
 export const prefixOf = (/** @type {string} */ glob) => glob.slice(0, glob.search(/[*?[{]|$/));
 
+/** The `exclude` globs: holes in the strict list, each one a file still to bring in. */
+export const excludedList = () => /** @type {string[]} */ (tsconfig().exclude ?? []);
+
+/**
+ * Does a path fall under an `exclude` glob? Only the two shapes the list uses:
+ * a literal path (a file, or a directory and everything in it) and a leading
+ * `**\/` meaning "at any depth".
+ * @param {string} file @param {string} glob
+ */
+export function excludes(file, glob) {
+  const lit = (/** @type {string} */ s) => s.replace(/[.+^${}()|[\]\\?*]/g, "\\$&");
+  const body = glob.startsWith("**/") ? `(?:^|.*/)${lit(glob.slice(3))}` : `^${lit(glob)}`;
+  return new RegExp(`${body}(?:/|$)`).test(file);
+}
+
 function main() {
   const prefixes = strictList().map(prefixOf);
+  const holes = excludedList();
   const tsc = join(ROOT, "node_modules", "typescript", "bin", "tsc");
   const r = spawnSync(process.execPath, [tsc, "-p", join(ROOT, "tsconfig.json"), "--pretty", "false"],
     { cwd: ROOT, encoding: "utf8" });
@@ -55,7 +72,8 @@ function main() {
     diags.push({ file: m ? m[1].replaceAll("\\", "/") : null, text: line });
   }
 
-  const inScope = diags.filter((d) => d.file == null || prefixes.some((p) => d.file?.startsWith(p)));
+  const inScope = diags.filter(({ file }) => file == null
+    || (prefixes.some((p) => file.startsWith(p)) && !holes.some((g) => excludes(file, g))));
   const outside = diags.length - inScope.length;
   const all = process.argv.includes("--all");
 

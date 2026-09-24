@@ -16,14 +16,20 @@
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
 import { resolveBirthDate, PLAUSIBLE_YEARS_OFFICIAL } from "@scrbrd/policy/date-of-birth";
+/** @import { RouteDeps, ApiRequest, ApiResponse, Handler } from "../api-types.mjs" */
+// A caught error is `any` to the checker (CaughtError in api-types.mjs):
+// pg's carry a SQLSTATE `code`, this module's own carry an HTTP `status`.
 
 const LEVELS = new Set(["club", "level1", "level2", "national"]);
 
+/** @param {RouteDeps} deps @returns {Record<string, Handler>} */
 export function officialRegisterRoutes({ pool, secret }) {
+  /** @param {string} code @param {number} [status] @param {unknown} [detail] */
   const err = (code, status = 400, detail) => Object.assign(new Error(code), { status, detail });
+  /** @param {(req: ApiRequest) => Promise<unknown>} fn @returns {Handler} */
   const handle = (fn) => async (req, res) => {
     try { res.json(await fn(req)); }
-    catch (e) {
+    catch (/** @type {any} */ e) {
       const status = e.code === "42501" ? 403 : e.code === "23505" ? 409 : (e.status || 500);
       res.status(status).json({ error: e.code === "42501" ? "not_permitted" : e.code === "23505" ? "already_registered" : (e.message || "error"), ...(e.detail ? { detail: e.detail } : {}) });
     }

@@ -17,6 +17,8 @@ import {
   SCALE_MIN, SCALE_MAX,
   fromRow, deriveInnings, deriveMatchPhases, NON_DELIVERY,
 } from "@scrbrd/scoring";
+/** @import { Pool, Handler, ApiRequest, RawResponse, DressedError } from "../api-types.mjs" */
+// A caught error is `any` to the checker (CaughtError in api-types.mjs).
 
 // The dismissals that are not the bowler's, as a SQL list, from the one set
 // the reducer reads — so a query cannot restate the law differently.
@@ -28,12 +30,23 @@ const NOT_THE_BOWLERS = [...NON_DELIVERY].map((d) => `'${d}'`).join(", ");
  * The four disciplines, in a fixed order, so the query's parameter positions
  * and the composer's reading of them cannot drift apart.
  */
-const DISCIPLINE_NAMES = Object.freeze(Object.keys(DISCIPLINES));
+// Object.keys() of a frozen literal is exactly its keys.
+const DISCIPLINE_NAMES = Object.freeze(/** @type {(keyof typeof DISCIPLINES)[]} */ (Object.keys(DISCIPLINES)));
 
 /** The directive's bands youngest first, then Open, then a boy with no date of birth. */
-const BAND_ORDER = (col) =>
+const BAND_ORDER = (/** @type {string} */ col) =>
   `case ${col} when 'U13' then 1 when 'U14' then 2 when 'U15' then 3 when 'U16' then 4 when 'open' then 5 else 6 end`;
 
+/**
+ * One governed read.
+ * @typedef {object} ReadQuery
+ * @property {string} text                                   the SQL
+ * @property {boolean} [masked]                              reads a *_masked view
+ * @property {(q: Record<string, string>) => unknown[]} [params]  request query → SQL params
+ * @property {(rows: any[]) => any[]} [compose]              rows → the answer, when judgement is applied in JS
+ */
+
+/** @type {Record<string, ReadQuery>} */
 export const READ_QUERIES = {
   matches: {
     // These column names are the real ones. The query named home_team,
@@ -468,7 +481,7 @@ export const READ_QUERIES = {
     params: (q) => {
       const id = q?.playerId || null;
       if (id && !/^[0-9a-f-]{36}$/i.test(id)) {
-        const e = new Error("bad_param:playerId"); e.status = 400; throw e;
+        const e = /** @type {DressedError} */ (new Error("bad_param:playerId")); e.status = 400; throw e;
       }
       return [id];
     },
@@ -2147,7 +2160,8 @@ export const READ_QUERIES = {
  * says correctly rather than inventing a half.
  */
 function ratingsQuery() {
-  const cols = [], joins = [];
+  /** @type {string[]} */
+  const cols = [], joins = /** @type {string[]} */ ([]);
   DISCIPLINE_NAMES.forEach((d, i) => {
     const n = i + 1;
     cols.push(`${d}_a.anchor as ${d}_anchor`, `${d}_a.scores as ${d}_scores`,
@@ -2224,19 +2238,22 @@ function ratingsQuery() {
  * twelve-over match, and a caller who could name the figure could move the
  * death overs and change what every number on the card means.
  */
+/** @param {any[]} rows  ball_event rows, with the match's over count joined in */
 function composePhases(rows) {
   // Every row carries the match's over count, joined in SQL. Twenty is the
   // fallback for a match with none recorded, not a default anyone can send.
   const overs = Number.isFinite(rows[0]?.overs) ? rows[0].overs : 20;
+  /** @type {Map<number, any[]>} */
   const byInnings = new Map();
   for (const r of rows) {
     const n = r.innings ?? 1;
     if (!byInnings.has(n)) byInnings.set(n, []);
-    byInnings.get(n).push(fromRow(r));
+    /** @type {any[]} */ (byInnings.get(n)).push(fromRow(r));   // set just above when absent
   }
   const innings = [...byInnings.keys()].sort((a, b) => a - b)
     .map((n) => deriveInnings(
-      [{ kind: "innings_start", overs, squad: [], bowlingSquad: [] }, ...byInnings.get(n)]));
+      // n came from byInnings.keys(), so get() finds it.
+      [{ kind: "innings_start", overs, squad: [], bowlingSquad: [] }, .../** @type {any[]} */ (byInnings.get(n))]));
   const { first, second } = deriveMatchPhases(innings);
   // One row per innings, so the shape matches every other read: a list.
   return [first, second]
@@ -2244,10 +2261,12 @@ function composePhases(rows) {
     .filter(Boolean);
 }
 
+/** @param {any[]} rows  ratingsQuery() rows */
 function composeRatings(rows) {
   return rows.map((r) => {
     // The two disciplines the ball log can speak to. The others have no index
     // and adjustedRating() reports "coach" rather than inventing a half.
+    /** @type {Partial<Record<string, { value: number | null }>>} */
     const index = {
       batting: battingIndex({
         runs: Number(r.runs), ballsFaced: Number(r.balls_faced), dismissals: Number(r.dismissals),
@@ -2257,8 +2276,10 @@ function composeRatings(rows) {
         wickets: Number(r.wickets),
       }),
     };
+    /** @type {Partial<Record<string, number>>} */
     const sample = { batting: Number(r.balls_faced), bowling: Number(r.balls_bowled) };
 
+    /** @type {Record<string, unknown>} */
     const out = {
       player_id: r.player_id, full_name: r.full_name,
       team_code: r.team_code, school_id: r.school_id,
@@ -2291,9 +2312,10 @@ function composeRatings(rows) {
   });
 }
 
+/** @param {Record<string, string> | undefined} q @param {string} key */
 function req(q, key) {
   const v = q?.[key];
-  if (v === undefined || v === null || v === "") { const e = new Error(`missing_param:${key}`); e.status = 400; throw e; }
+  if (v === undefined || v === null || v === "") { const e = /** @type {DressedError} */ (new Error(`missing_param:${key}`)); e.status = 400; throw e; }
   return v;
 }
 
@@ -2315,7 +2337,7 @@ function req(q, key) {
  * question — a column can be masked for tidiness and a column can be sensitive
  * without being masked from anyone who can already reach the row.
  */
-export const RESTRICTED_FIELDS = Object.freeze({
+export const RESTRICTED_FIELDS = Object.freeze(/** @type {Record<string, string[]>} */ ({
   players:  ["email", "phone", "born", "hometown", "houseatschool",
              "address", "guardian", "height", "weight", "id_number"],
   injuries: ["injury_type", "severity", "phase", "notes", "physio"],
@@ -2352,13 +2374,14 @@ export const RESTRICTED_FIELDS = Object.freeze({
   // the school that was read — school_id on every row is theirs, not the
   // reader's — so the disclosure lands in the right school's log.
   opposition_squad: ["full_name"],
-});
+}));
 
 /** Read a possibly-dotted path off a row. Flat names behave exactly as before. */
-const pick = (row, path) =>
+const pick = (/** @type {any} */ row, /** @type {string} */ path) =>
   path.split(".").reduce((v, k) => (v == null ? v : v[k]), row);
 
 /** Which id column identifies the CHILD a row is about, for the log. */
+/** @type {Record<string, string>} */
 const SUBJECT_ID = { players: "id", injuries: "player_id", skills: "player_id",
                      emergency_contacts: "player_id", trip_contacts: "player_id",
                      clearance_register: "person_id", clearances: "person_id",
@@ -2371,11 +2394,15 @@ const MAX_LOGGED_IDS = 500;
 
 /**
  * Read a resource under the caller's principal.
- * @returns rows already row-filtered (RLS) and column-masked (views).
+ * @returns {Promise<any[]>} rows already row-filtered (RLS) and column-masked (views).
+ * @param {Pool} pool @param {string} secret
+ * @param {string | undefined} bearer  the Authorization header, as sent
+ * @param {string} resource
+ * @param {Record<string, string>} [query]
  */
 export async function readResource(pool, secret, bearer, resource, query = {}) {
   const def = READ_QUERIES[resource];
-  if (!def) { const e = new Error("unknown_resource"); e.status = 404; throw e; }
+  if (!def) { const e = /** @type {DressedError} */ (new Error("unknown_resource")); e.status = 404; throw e; }
   const params = def.params ? def.params(query) : [];
   const module = OWNER_OF_READ[resource];
   return runAsPrincipal(pool, secret, bearer, async client => {
@@ -2401,7 +2428,7 @@ export async function readResource(pool, secret, bearer, resource, query = {}) {
       const { rows: [gate] } = await client.query(
         `select my_feature_enabled($1) as on`, [module]);
       if (!gate?.on) {
-        const e = new Error("module_disabled");
+        const e = /** @type {DressedError} */ (new Error("module_disabled"));
         e.status = 403; e.code = "module_disabled"; e.module = module;
         throw e;
       }
@@ -2415,7 +2442,7 @@ export async function readResource(pool, secret, bearer, resource, query = {}) {
     // that never happened for one of them.
     const watched = RESTRICTED_FIELDS[resource];
     const idCol = SUBJECT_ID[resource];
-    const idsIn = (some) => idCol
+    const idsIn = (/** @type {any[]} */ some) => idCol
       ? [...new Set(some.map((r) => r[idCol]).filter(Boolean))].slice(0, MAX_LOGGED_IDS)
       : [];
     // A PLATFORM-WIDE READER'S EVERY READ IS ON THE RECORD (db/20). For the
@@ -2473,6 +2500,10 @@ export function liveResources() { return Object.keys(READ_QUERIES); }
  *
  * The column order is the FIRST ROW's key order, which is the query's own
  * SELECT order, so a term's exports diff against each other.
+ * @param {Pool} pool @param {string} secret
+ * @param {string | undefined} bearer  the Authorization header, as sent
+ * @param {string} resource
+ * @param {Record<string, string>} [query]
  */
 export async function exportResource(pool, secret, bearer, resource, query = {}) {
   const rows = await readResource(pool, secret, bearer, resource, query);
@@ -2493,6 +2524,7 @@ export async function exportResource(pool, secret, bearer, resource, query = {})
  * cannot work them out it returns nothing rather than guessing, which produces
  * a headerless empty file instead of a file with invented columns.
  */
+/** @param {string} resource */
 function columnsOf(resource) {
   const text = READ_QUERIES[resource]?.text ?? "";
   const select = text.match(/select\s+([\s\S]*?)\s+from\s/i)?.[1];
@@ -2520,10 +2552,15 @@ function columnsOf(resource) {
 // A separate route rather than a query parameter on the read, because the two
 // have different response shapes and different headers, and a client that
 // forgot the parameter should get JSON rather than a download.
+/**
+ * @param {{ pool: Pool, secret: string }} deps
+ * @returns {(req: ApiRequest, res: RawResponse) => Promise<unknown>}
+ */
 export function exportRoute({ pool, secret }) {
   return async (req, res) => {
     try {
-      const resource = req.params.resource;
+      // The dispatcher always sets it, from the path.
+      const resource = /** @type {string} */ (req.params.resource);
       const { csv, rows } = await exportResource(
         pool, secret, req.headers?.authorization, resource, req.query || {});
       // A filename with the day in it, because a school will download the same
@@ -2538,7 +2575,7 @@ export function exportRoute({ pool, secret }) {
         "x-scrbrd-rows": String(rows),
       });
       res.end(csv);
-    } catch (e) {
+    } catch (/** @type {any} */ e) {
       res.status(e.status || 500).json({
         error: e.code || e.message, ...(e.module ? { module: e.module } : {}) });
     }
@@ -2546,12 +2583,13 @@ export function exportRoute({ pool, secret }) {
 }
 
 // ── Express/Fastify route: GET /read/:resource ──
+/** @param {{ pool: Pool, secret: string }} deps @returns {Handler} */
 export function readRoute({ pool, secret }) {
   return async (req, res) => {
     try {
-      const rows = await readResource(pool, secret, req.headers?.authorization, req.params.resource, req.query || {});
+      const rows = await readResource(pool, secret, req.headers?.authorization, /** @type {string} */ (req.params.resource), req.query || {});   // set by the dispatcher, from the path
       res.json({ resource: req.params.resource, rows });
-    } catch (e) {
+    } catch (/** @type {any} */ e) {
       // `module` rides along on a module refusal so a client can say WHICH
       // one is off instead of rendering "could not load" — a screen that
       // reports a switched-off module as a failure sends somebody looking for

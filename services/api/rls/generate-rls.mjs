@@ -37,13 +37,14 @@
  * given argument set rather than once per row.
  */
 
-import { GRANTABLE_ROLES, ROLE_CAPABILITIES, ROLES, roleGrants, SCORING_ROLES, SUBJECT_SCOPED_ROLES, TEAM_SCOPED_ROLES, ungrantableRoles, unknownCapabilities } from "@scrbrd/policy/roles";
+import { GRANTABLE_ROLES, ROLE_CAPABILITIES, ROLES, SCORING_ROLES, SUBJECT_SCOPED_ROLES, TEAM_SCOPED_ROLES, unknownCapabilities } from "@scrbrd/policy/roles";
 import { TABLES, isCapabilityExpression } from "@scrbrd/policy/tables";
 import { teamCodeCheck } from "@scrbrd/policy/teams";
 import { ALL_CAPABILITIES, PLATFORM_ONLY } from "@scrbrd/policy/capabilities";
+/** @import { TableDef, Anchors } from "@scrbrd/policy/tables" */
 
-const q = (s) => `'${String(s).replaceAll("'", "''")}'`;
-const banner = (t) => `\n-- ══════════════════════════════════════════════════════════════════\n--  ${t}\n-- ══════════════════════════════════════════════════════════════════`;
+const q = (/** @type {unknown} */ s) => `'${String(s).replaceAll("'", "''")}'`;
+const banner = (/** @type {string} */ t) => `\n-- ══════════════════════════════════════════════════════════════════\n--  ${t}\n-- ══════════════════════════════════════════════════════════════════`;
 
 /** Scope anchor expression for a table column, or NULL when the table has none. */
 /**
@@ -70,6 +71,12 @@ const banner = (t) => `\n-- ═════════════════�
  * legal id anywhere in the schema, so it cannot collide with a real row.
  */
 const ANY = { uuid: "'00000000-0000-0000-0000-000000000000'::uuid", text: "'*'::text" };
+/**
+ * @param {string} table
+ * @param {TableDef} def
+ * @param {keyof Anchors} key
+ * @param {keyof typeof ANY} cast
+ */
 const anchor = (table, def, key, cast) => {
   if (!(key in (def.anchors ?? {}))) return ANY[cast];   // dimension does not apply
   const col = def.anchors[key];
@@ -88,8 +95,14 @@ const anchor = (table, def, key, cast) => {
  * inventing a second decision function keeps every authorization answer coming
  * out of app_can().
  */
-const capExpr = (c) => (isCapabilityExpression(c) ? c : q(c));
+const capExpr = (/** @type {string} */ c) => (isCapabilityExpression(c) ? c : q(c));
 
+/**
+ * @param {string} table
+ * @param {TableDef} def
+ * @param {string} capability
+ * @param {Anchors} [anchors]
+ */
 const callCan = (table, def, capability, anchors = def.anchors) => {
   const at = { ...def, anchors };
   const args = [
@@ -120,7 +133,7 @@ const callCan = (table, def, capability, anchors = def.anchors) => {
  * template stays the single source of the decision; the flag is the only
  * difference between what shipped and what runs.
  */
-const liveness = (timeBoxed, suspendable = false) => (timeBoxed
+const liveness = (/** @type {boolean} */ timeBoxed, suspendable = false) => (timeBoxed
   ? "\n       AND (a.expires_at IS NULL OR a.expires_at > now())"
   : "") + (suspendable ? SUSPENSION : "");
 
@@ -147,7 +160,7 @@ const SUSPENSION = "\n       AND NOT EXISTS (SELECT 1 FROM duty_suspension s"
 // FUNCTION — and CREATE OR REPLACE discards that, so a re-emitted function
 // has to carry the pin in its own definition or it comes back unpinned. The
 // verifier caught exactly that on the first run of db/23.
-const definerTail = (timeBoxed) => timeBoxed
+const definerTail = (/** @type {boolean} */ timeBoxed) => timeBoxed
   ? "$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;"
   : "$$ LANGUAGE sql STABLE SECURITY DEFINER;";
 
@@ -377,6 +390,7 @@ ALTER TABLE ${t} ADD CONSTRAINT ${t}_team_code_known CHECK (${teamCodeCheck("tea
  * after `medical.nature.read`, so this stays a true reproduction of the
  * shipped file rather than the same rows in a new order.
  */
+/** @type {Record<string, { after: string, capability: string }[]>} */
 export const WITHDRAWN_SINCE_01 = {
   coach:           [{ after: "medical.nature.read", capability: "medical.details.read" }],
   assistantcoach:  [{ after: "medical.nature.read", capability: "medical.details.read" }],
@@ -396,7 +410,7 @@ export const WITHDRAWN_SINCE_01 = {
 export const ROLES_ADDED_SINCE_01 = {
   sponsorship: "27_sponsorship_role.sql",
 };
-const roleIn01 = (role) => !(role in ROLES_ADDED_SINCE_01);
+const roleIn01 = (/** @type {string} */ role) => !(role in ROLES_ADDED_SINCE_01);
 
 /**
  * The mirror: capabilities that did not exist when db/01 shipped.
@@ -420,7 +434,7 @@ const roleIn01 = (role) => !(role in ROLES_ADDED_SINCE_01);
 export const ADDED_SINCE_01 = {
   "scoring.amend.request": "24_amend_request.sql",
 };
-const shippedIn01 = (cap) => !(cap in ADDED_SINCE_01);
+const shippedIn01 = (/** @type {string} */ cap) => !(cap in ADDED_SINCE_01);
 
 function capabilityRows() {
   const rows = [];
@@ -560,6 +574,7 @@ GRANT EXECUTE ON FUNCTION app_may_grant(text) TO PUBLIC;`;
  * generated SQL with its reason attached, so a reviewer reads the exception
  * rather than discovering the absence.
  */
+/** @param {string} table @param {TableDef} def */
 const readPredicate = (table, def) => {
   // `readAlso` is AND-ed, and it is the opposite kind of thing from
   // `visibleWhen`: an exception widens, a second requirement narrows. A
@@ -641,6 +656,7 @@ function maskViews() {
     //                   how old a boy is, and only his own coach can see his
     //                   home address.
     const teamAnchored = anchor(table, def, "team", "text");
+    /** @type {Record<string, { cap: string, team: string }>} */
     const guard = {};
     for (const [cap, cols] of Object.entries(masked))
       for (const c of cols) guard[c.toLowerCase()] = { cap, team: teamAnchored };
