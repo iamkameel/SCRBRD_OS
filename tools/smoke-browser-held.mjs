@@ -24,6 +24,9 @@
  *      to the right bowler, and nothing is written twice.
  *   E. The cascade, let go: "discard this and the N after it" — and the
  *      handover sheet warns (and does not block) while any are held.
+ *   F. Undo reaches a refused event that is NOT the last one (SCRBRD-071):
+ *      it leaves the pad's log like an unsent event and its held copy goes —
+ *      no void is sent, which the server would only refuse and hold too.
  * After B-less-held, D and E, the board and the server's log agree event for
  * event and figure for figure — checked against Postgres, not the page.
  *
@@ -34,7 +37,7 @@
 import { chromium } from "playwright-core";
 import { launchOptions } from "./chromium.mjs";
 import { offline } from "./offline-browser.mjs";
-import { inningsStart, batters, bowler, ball, BALL_TYPE, deriveInnings, fromRow } from "@scrbrd/scoring";
+import { inningsStart, batters, bowler, ball, voidEvent, BALL_TYPE, deriveInnings, fromRow } from "@scrbrd/scoring";
 import { EVENT_COLUMNS } from "../services/api/write/events-api.mjs";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
@@ -362,6 +365,40 @@ try {
   ok("...10 runs in 12 balls, none of the three it refused", figures(s3.inn) === "10/0 in 12 balls"
      && ![BOTHA_AGAIN.id, C1.id, C2.id].some((k) => s3.ids.includes(k)), figures(s3.inn));
   ok("no held copies left on disk", (await heldOnDisk()) === 0);
+
+  group("F. Undo of a refused event that is not the last one: it leaves the log, and nothing is sent");
+  await exitScorer();
+  const saved3 = await readSaved();
+  const log3 = saved3.events[0];
+  // Botha a third over running (refused, Law 17.8); then C Cele, whom the
+  // server takes — it had nobody bowling — and the scorer's undo of Cele,
+  // which it also takes (Cele was the latest). The next undo reaches Botha:
+  // held, with two events the server accepted sitting after him.
+  const BOTHA_THIRD = w(bowler({ innings: 0, bowler: "B Botha" }));
+  const CELE = w(bowler({ innings: 0, bowler: "C Cele" }));
+  const UNDO_CELE = w(voidEvent({ innings: 0, target: CELE.id }));
+  await writeSaved({ ...saved3, events: [[...log3, BOTHA_THIRD, CELE, UNDO_CELE], []], savedAt: Date.now() });
+  ok("the fixture reopens", await openFixture());
+  const s4 = await serverLog();
+  ok("the server refused Botha and took Cele and the undo of him",
+     !s4.ids.includes(BOTHA_THIRD.id) && s4.ids.includes(CELE.id) && s4.ids.includes(UNDO_CELE.id), s4.ids.slice(-3).join(" "));
+  ok("the pill says Refused 1", /Refused 1/.test(await pill()), await pill());
+  ok("...and the refused bowler is not the last event on the pad", (await padIds()).at(-1) === UNDO_CELE.id);
+
+  await page.getByRole("button", { name: "Undo the last ball" }).first().click({ timeout: 4000 });
+  await page.waitForTimeout(3000);
+  const afterUndo = (await readSaved())?.events?.[0] ?? [];
+  ok("undo takes the refused bowler out of the pad's log", !afterUndo.some((e) => e.id === BOTHA_THIRD.id));
+  ok("...without a void of him — on the pad", !afterUndo.some((e) => e.kind === "void" && e.target === BOTHA_THIRD.id));
+  const s5 = await serverLog();
+  ok("...or on the server: nothing new was sent", s5.rows.length === s4.rows.length, `${s5.rows.length} v ${s4.rows.length}`);
+  ok("...Cele and the undo of him stay where they were", JSON.stringify(afterUndo.slice(-2).map((e) => e.id)) === JSON.stringify([CELE.id, UNDO_CELE.id]));
+  ok("its held copy is gone, and nothing new is held: the pill says Sent",
+     await tid("held-open").count() === 0 && /\bSent\b/.test(await text()), await pill());
+  ok("...no held copies on disk", (await heldOnDisk()) === 0, await heldOnDisk());
+  ok("the pad's log and the server's log hold the same events, in the same order",
+     JSON.stringify(afterUndo.map((e) => e.id)) === JSON.stringify(s5.ids), `${afterUndo.length} v ${s5.ids.length}`);
+  ok("...and the board shows the server's figures", (await board()) === boardOf(s5.inn), `${await board()} v ${boardOf(s5.inn)}`);
 
   ok("no console errors", errors.length === 0, errors.slice(0, 3).join(" | "));
 } catch (e) {

@@ -214,9 +214,13 @@ Nothing is resent on its own. Discarding the cause of a cascade (a bowler
 refused under Law 17.8, and the balls after him refused for want of a bowler)
 does not make the rest legal — the server never had the bowler, so letting him
 go changes nothing it knows; the balls become legal only once the scorer names
-the right bowler, and then only by being recorded again. Undo of a refused last
-ball truncates it and lets its held copy go. The handover sheet warns while
-anything is held and does not block: held events are not in the outbox.
+the right bowler, and then only by being recorded again. Undo that reaches a
+held event drops it from the pad's log — last or not, never with a `void`,
+which would name an event the server does not have and be refused and held in
+its turn — and lets its held copy go (SCRBRD-071; the rule is `undoLast`'s
+`isHeld` in `undo.mjs`, asked by `undoOnPad` in `held.mjs`). The handover
+sheet warns while anything is held and does not block: held events are not in
+the outbox.
 
 The same key sent with a different body is a **conflict**, not a duplicate: each
 row carries a fingerprint of what it says (db/36), and a key names one event.

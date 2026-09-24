@@ -11,11 +11,11 @@
  */
 import {
   inningsStart, batters, bowler, ball, voidEvent, BALL_TYPE, deriveInnings, MatchFold,
-  lawsRefusal, REFUSAL, REFUSAL_TEXT,
+  lawsRefusal, REFUSAL, REFUSAL_TEXT, undoLast,
 } from "@scrbrd/scoring";
 import {
   SyncEngine, memoryStorage, heldFrom, heldInOrder, withoutEvents, serverView, inLog,
-  recordAgainRefusal, recordAgain, describeHeld, describeEvent, reasonWords, CONFLICT_TEXT,
+  recordAgainRefusal, recordAgain, describeHeld, describeEvent, reasonWords, CONFLICT_TEXT, undoOnPad,
 } from "../src/index.mjs";
 
 let pass = 0, fail = 0;
@@ -210,6 +210,59 @@ group("H. The engine: a held event is not queued again when the pad re-offers it
   ok("discarding the original lets exactly that one go", await again.discardHeld(B1.id) === true
      && again.held.length === 1 && again.held[0].idempotencyKey === copy.id);
   ok("...and a second discard of it finds nothing", await again.discardHeld(B1.id) === false);
+}
+
+group("I. Undo of a held event drops it, wherever it sits — never a void (SCRBRD-071)");
+{
+  // Nel again (refused, Law 17.8); the scorer names Botha (accepted — the
+  // server had nobody bowling), thinks better of it and undoes him (a void,
+  // accepted: Botha was synced and last). The next undo reaches Nel: held,
+  // and NOT the last event in the log.
+  const nelAgain = withId(bowler({ bowler: "A Nel" }));
+  const botha = withId(bowler({ bowler: "B Botha" }));
+  const undoBotha = withId(voidEvent({ target: botha.id }));
+  const log = [[OPEN, PAIR, NEL, ...OVER1, nelAgain, botha, undoBotha], []];
+  const answered = serve(log[0]);
+  const held = asHeld(log, answered.refused);
+  const synced = new Set(answered.accepted.map((e) => e.id));
+  const isSynced = (/** @type {any} */ e) => synced.has(e.id);
+  ok("the server refused Nel and took Botha and the undo of him",
+     held.length === 1 && held[0].idempotencyKey === nelAgain.id && synced.has(botha.id) && synced.has(undoBotha.id), answered.refused);
+
+  // The bug: undo asked without the held list voids an event the server
+  // never had, and the server refuses the void too — a second held event.
+  const before = undoLast(log[0], { isSynced });
+  ok("without the held list, undo appends a void (the old behaviour)", before.action === "void" && before.target?.id === nelAgain.id);
+  const voidOfHeld = before.events.at(-1);
+  ok("...which the server refuses in its turn: it has no such event", lawsRefusal(answered.fold.view(), voidOfHeld) === REFUSAL.VOID_UNKNOWN_TARGET,
+     lawsRefusal(answered.fold.view(), voidOfHeld));
+
+  const r = undoOnPad(log, 0, held, isSynced);
+  ok("with it, the held event is dropped", r.action === "drop" && r.target?.id === nelAgain.id, r.action);
+  ok("...and no void is written", !r.log[0].some((e) => e.kind === "void" && e.target === nelAgain.id) && r.log[0].length === log[0].length - 1);
+  ok("...its held copy is named for the caller to let go", r.discard === nelAgain.id);
+  ok("...Botha and the undo of him stay where they were", same(r.log[0].slice(-2).map((e) => e.id), [botha.id, undoBotha.id]));
+  ok("...the other innings is untouched", r.log[1] === log[1]);
+  ok("the pad's log is now the server's log, event for event", same(r.log[0].map((e) => e.id), answered.accepted.map((e) => e.id)));
+  ok("...and figure for figure", same(fig(deriveInnings(r.log[0])), fig(answered.fold.view().innings[0])));
+  ok("the input log is not changed", log[0].length === 12 && log[0].includes(nelAgain));
+
+  // One rule for every position: last or not, held means dropped.
+  const cascade = undoOnPad(LOG, 0, HELD, () => false);
+  ok("a held event that IS last is dropped the same way, and let go", cascade.action === "drop" && cascade.discard === B2.id
+     && cascade.log[0].length === LOG[0].length - 1);
+
+  // Nothing else moves: the two rules undo.mjs already had.
+  const clean = [[OPEN, PAIR, NEL, ...OVER1], []];
+  const allSynced = undoOnPad(clean, 0, [], () => true);
+  ok("an event the server accepted is still undone by a void", allSynced.action === "void" && allSynced.discard === null
+     && allSynced.log[0].at(-1).kind === "void");
+  const pending = undoOnPad(clean, 0, [], () => false);
+  ok("an unsent last event is still truncated, and nothing is discarded", pending.action === "truncate" && pending.discard === null
+     && pending.log[0].length === clean[0].length - 1);
+  ok("a held innings_start is not undone — undo never walks past one",
+     undoOnPad([[OPEN], []], 0, asHeld([[OPEN], []], [{ idempotencyKey: OPEN.id, reason: "x" }]), () => false).action === "none");
+  ok("no held list at all: undo as before", undoOnPad(log, 0, [], isSynced).action === "void");
 }
 
 console.log(`\n${"─".repeat(52)}\nHELD: ${pass} passed, ${fail} failed`);

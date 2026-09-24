@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import {
   deriveInnings, inningsStart, batters as battersEvent, bowler as bowlerEvent,
   ball as ballEvent, penalty as penaltyEvent, revision as revisionEvent, sealInnings,
-  newEventId, undoLast,
+  newEventId, KIND, battingFirst, tossFromRow, firstInningsSides,
   noPlacement, NO_CONTACT_SHOTS, PLACEMENT_NULL, PLACEMENT_SOURCE, CAPTURE_PROFILE,
   DISMISSAL_LABEL, scoringReadiness, SCORING_BLOCK, lawsRefusal, REFUSAL_TEXT,
 } from "@scrbrd/scoring";
@@ -13,8 +13,9 @@ import { api, signedIn } from "../lib/api.js";
 import { profile } from "../lib/session.js";
 import { resumeSync, startSync } from "../lib/sync.js";
 import { refusalWords } from "../lib/handover.js";
-import { withoutEvents, recordAgain, recordAgainRefusal, heldInOrder } from "@scrbrd/sync";
+import { withoutEvents, recordAgain, recordAgainRefusal, heldInOrder, undoOnPad } from "@scrbrd/sync";
 import { HeldSheet } from "./held.jsx";
+import { TossSheet } from "./toss.jsx";
 import { SEGS } from "./field.js";
 import { fmtOv } from "./format.js";
 import { ALL_SHOTS } from "./shots.js";
@@ -85,6 +86,60 @@ async function liveSquad(cfg) {
       id: p.id, name: p.full_name,
       batHand: /^l/i.test(p.batting_style || "") ? "L" : "R",
     }));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The toss for a fixture, as the server recorded it. SCRBRD-067.
+ *
+ * Read through the fixture list the Match Centre already reads —
+ * GET /api/read/matches, under fixture.read, whose rows carry toss_won_by,
+ * toss_decision and the server's own bats_first (read-api.mjs) — rather than
+ * a new endpoint: the scorer holds fixture.read over any match it may score,
+ * and a second read of the same row would be a second policy to keep in step.
+ *
+ * Null when there is no toss, no server, or the read failed. Null is not
+ * "the home side": the pad then asks (TossSheet), because the innings it
+ * opens cannot be undone.
+ */
+async function liveToss(cfg) {
+  if (!cfg?.matchId || !signedIn()) return null;
+  try {
+    const { rows } = await api("/api/read/matches");
+    return tossFromRow(rows.find((r) => r.id === cfg.matchId));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Tell the server the toss the scorer just answered on the pad. SCRBRD-067.
+ *
+ * Recorded, not only used, because the toss is a fact about the match that
+ * others read: the server derives the innings order and the result from it
+ * (bats_first() in the result read), and a second device opening this
+ * fixture reads it instead of asking again — and perhaps being answered
+ * differently. The pad's user may write it: match_toss is written under
+ * scoring.start (packages/policy tables.mjs), the capability the pad was
+ * opened with and claims the token with, so there is no second gate here;
+ * the server's policy decides and a refusal changes nothing on the pad.
+ *
+ * It cannot be locked at this point in the ordinary case: the trigger
+ * (match_toss_before_first_ball, 23514 → 409 toss_locked) freezes the toss
+ * once the server has a delivery, and the pad asks before its first innings
+ * is open, so it has sent none. If the server has deliveries anyway (another
+ * device scored this fixture without a toss) the write is refused and the
+ * innings still opens from the answer — the scorer is standing at the ground
+ * and the pad scores offline by design; the server's toss, if it ever gets
+ * one, goes through a scoring amendment like any correction after play has
+ * started. With no signal the write simply fails: best effort, like the read.
+ */
+async function recordToss(matchId, { wonBy, decision }) {
+  if (!matchId || !signedIn()) return null;
+  try {
+    return await api(`/api/matches/${matchId}/toss`, { method: "POST", body: { wonBy, decision } });
   } catch {
     return null;
   }
@@ -220,6 +275,11 @@ function SCRBRD({resume}={}){
   // refuses someone else, so a redundant claim here would still succeed and
   // burn an epoch for nothing.
   const resumeEpochRef = useRef(null);
+  // A live fixture's first innings (SCRBRD-067): the home side's roster as
+  // the server gave it, and the toss — read at hydration, or answered on the
+  // pad. Refs, like the two above: read when the innings opens, never drawn.
+  const homeSquadRef = useRef(null);
+  const tossRef = useRef(null);
 
 
   // ── Derivation ──────────────────────────────────────────
@@ -318,12 +378,18 @@ function SCRBRD({resume}={}){
         // carries the players, so the scorecard replays correctly later on a
         // device that never loaded a roster — including the one taking over at
         // a handover.
-        const squad = await liveSquad(resume.cfg);
+        //
+        // Which side bats is the recorded toss's answer (SCRBRD-067), never
+        // the order the fixture lists its sides in: innings_start is the one
+        // event undo will not walk past. No toss — none recorded, or no way
+        // to ask — and nothing opens: the scorer is asked first (TossSheet).
+        const [squad, toss] = await Promise.all([liveSquad(resume.cfg), liveToss(resume.cfg)]);
         if (cancelled) return;
-        setEvents([squad ? [inningsStart({
-          battingTeam: resume.cfg.team1, bowlingTeam: resume.cfg.team2,
-          teamKey: resume.cfg.teamKey1, bowlingTeamKey: resume.cfg.teamKey2,
-          squad, bowlingSquad: [], overs: resume.cfg.overs ?? 20,
+        homeSquadRef.current = squad;
+        tossRef.current = toss;
+        setEvents([toss ? [inningsStart({
+          ...firstInningsSides({ batsFirst: toss.batsFirst, fixture: resume.cfg, homeSquad: squad }),
+          overs: resume.cfg.overs ?? 20,
           // A fixture that carries a declaration passes it on; none does yet,
           // so this innings opens undeclared — exactly as before — and the
           // scorer declares it on the opener sheet before the first ball.
@@ -331,6 +397,7 @@ function SCRBRD({resume}={}){
           id: newEventId(deviceIdRef.current, id ?? "local"),
         })] : [], []]);
         setCurIn(0);
+        if (!toss) setModal("toss");
         setSaveState({ kind: await storageKind(), restored: false, savedAt: null });
       }
       setScreen("match");
@@ -422,9 +489,14 @@ function SCRBRD({resume}={}){
     // The capture profile chosen at setup is declared on BOTH, for the same
     // reason (SCRBRD-039); the innings break may change the second's.
     const captureProfile=cfg.captureProfile??undefined;
-    const open1=[inningsStart({innings:0,battingTeam:cfg.team1,bowlingTeam:cfg.team2,
+    // The side names follow the keys, which setup already ordered by the toss
+    // (setup.jsx: teamKey1 is whoever bats first). team1/team2 stay in the
+    // order they were picked, so naming the batting side from team1 put the
+    // first-picked side's name on the other side's innings whenever it
+    // fielded first (SCRBRD-067). In setup a side's name IS its key.
+    const open1=[inningsStart({innings:0,battingTeam:tk1,bowlingTeam:tk2,
       squad:sq1,bowlingSquad:bsq1,twelfthMan:cfg.twelfth1||null,teamKey:tk1,bowlingTeamKey:tk2,overs:cfg.overs||20,captureProfile})];
-    const open2=[inningsStart({innings:1,battingTeam:cfg.team2,bowlingTeam:cfg.team1,
+    const open2=[inningsStart({innings:1,battingTeam:tk2,bowlingTeam:tk1,
       squad:sq2,bowlingSquad:bsq2,twelfthMan:cfg.twelfth2||null,teamKey:tk2,bowlingTeamKey:tk1,overs:cfg.overs||20,captureProfile})];
 
     // Openers and opening bowler chosen in setup step 4.
@@ -464,6 +536,30 @@ function SCRBRD({resume}={}){
     }));
   };
 
+  // ── The first innings of a live fixture (SCRBRD-067) ─────
+  // The side the toss put in bats; the home roster (the one the pad reads)
+  // goes with the home side, batting or bowling. firstInningsSides says which.
+  const openFirstInnings=(batsFirst)=>{
+    if(!match||curIn!==0||events[0].some(e=>e.kind===KIND.INNINGS_START))return;
+    emit(inningsStart({
+      ...firstInningsSides({batsFirst,fixture:match,homeSquad:homeSquadRef.current}),
+      overs:match.overs??20,
+      captureProfile:match.captureProfile??undefined,
+    }));
+  };
+  // The scorer's answer to the toss sheet. It opens the innings from the
+  // answer at once — the same rule the server applies, so no round trip
+  // stands between the coin and the first ball — and is recorded as the
+  // toss (recordToss says why, and why it is allowed and not yet locked).
+  const answerToss=(toss)=>{
+    const batsFirst=battingFirst(toss);
+    if(!batsFirst)return;
+    tossRef.current={wonBy:toss.wonBy,decision:toss.decision,batsFirst};
+    recordToss(match?.matchId,toss);
+    openFirstInnings(batsFirst);
+    setModal("opener");
+  };
+
   // ── The gate ────────────────────────────────────────────
   // SCRBRD-040. Whether a delivery may be recorded is asked of the scoring
   // package, not of this file, and the answer names what is missing. The pad
@@ -475,19 +571,18 @@ function SCRBRD({resume}={}){
   const readiness=scoringReadiness(inn);
 
   // The fix for each reason is the sheet that already existed for it. Only an
-  // innings with nobody batting had none: a fixture resumed with no roster on
-  // the device (not signed in, or no team sheet) opened on a pad that refused
-  // every tap in silence. Opening it here writes the same innings_start the
-  // roster path writes — team1 bats first on every path into a match — with
-  // an empty squad, so the scorer names players as they come in.
+  // innings with nobody batting had none: a fixture resumed with no toss or
+  // no roster on the device opened on a pad that refused every tap in
+  // silence. Opening it here writes the same innings_start hydration writes —
+  // the side the toss put in, with whatever roster there is — and with no
+  // toss to go on it asks for one first (SCRBRD-067): never team1 by default.
   const fixBlock=(b)=>{
     switch(b?.code){
       case SCORING_BLOCK.NO_INNINGS:
         if(curIn===1){setModal("innings2");return;}
         if(!match?.team1)return;
-        emit(inningsStart({battingTeam:match.team1,bowlingTeam:match.team2,
-          teamKey:match.teamKey1||match.team1,bowlingTeamKey:match.teamKey2||match.team2,
-          squad:[],bowlingSquad:[],overs:match.overs??20}));
+        if(!tossRef.current){setModal("toss");return;}
+        openFirstInnings(tossRef.current.batsFirst);
         setModal("opener");return;
       case SCORING_BLOCK.INNINGS_OVER: setModal("inningsReview");return;
       case SCORING_BLOCK.OPENERS: setModal("opener");return;
@@ -667,23 +762,17 @@ function SCRBRD({resume}={}){
   // and the rule lives in @scrbrd/scoring rather than here: it will apply
   // identically on a second device during a handover, and two implementations
   // of it would be one too many. See packages/scoring/src/undo.mjs.
+  //
+  // An event the server REFUSED (held, SCRBRD-070) never reached it, so undo
+  // drops it from the log wherever it sits — never a void, which the server
+  // would refuse and hold in its turn (SCRBRD-071) — and lets its held copy
+  // go: the scorer has just taken it off the board with their own hand.
+  // undoOnPad asks undo.mjs with the device's held list; the rule is there.
   const undoLastBall=()=>{
-    setEvents(prev=>{
-      const cp=[...prev];
-      cp[curIn]=undoLast(prev[curIn],{isSynced:e=>syncedRef.current.has(e.id)}).events;
-      return cp;
-    });
-    // Undoing a ball the server REFUSED truncates it (it was never synced),
-    // and the scorer has just taken it off the board with their own hand —
-    // so the held copy goes too, rather than lingering in the Refused list
-    // as an event the board no longer shows (SCRBRD-070). Asked of the same
-    // log the updater above reads; a held event that is not last gets a void
-    // like any other, and stays held.
-    const undone=undoLast(events[curIn],{isSynced:e=>syncedRef.current.has(e.id)});
     const outbox=syncRef.current?.engine;
-    if(undone.action==="truncate"&&outbox?.held.some(h=>h.idempotencyKey===undone.target?.id)){
-      outbox.discardHeld(undone.target.id).catch(()=>{});
-    }
+    const undone=undoOnPad(events,curIn,outbox?.held??[],e=>syncedRef.current.has(e.id));
+    if(undone.action!=="none")setEvents(undone.log);
+    if(undone.discard)outbox?.discardHeld(undone.discard).catch(()=>{});
     resetHub();
     setModal(null);
     scoreKeyRef.current++;
@@ -924,6 +1013,13 @@ function SCRBRD({resume}={}){
         onConfirm={reviseInnings}/>
     );
 
+    if(modal==="toss")return (
+      <TossSheet
+        home={match?.team1} away={match?.team2}
+        onConfirm={answerToss}
+        onClose={()=>setModal(null)}/>
+    );
+
     if(modal==="held")return (
       <HeldSheet
         held={sync.heldList??[]}
@@ -1057,7 +1153,7 @@ function SCRBRD({resume}={}){
     if(modal==="innings2")return (
       <Innings2Sheet
         target={(innings[0]?.runs||0)+1}
-        teamName={match?.team2||innings[1]?.battingTeam||""}
+        teamName={innings[1]?.battingTeam||innings[0]?.bowlingTeam||match?.team2||""}
         overs={match?.overs||20}
         declared={innings[1]?.declaredProfile??innings[0]?.declaredProfile??null}
         onClose={()=>setModal(null)}
@@ -1075,17 +1171,19 @@ function SCRBRD({resume}={}){
           // (`startMatch`'s `open2`), so re-declaring it here from itself is
           // a no-op except for adding the one field that was always missing.
           // Only the real-fixture resume path — which never emits an
-          // INNINGS_START for innings 1 at all — falls through to `match`:
-          // team1 bats first by construction on both paths into a match, so
-          // team2 is the second innings' batting side, with no seeded roster
-          // of its own (the same reason its opening bowler is already typed,
-          // not picked) and the real eleven from innings 1 still bowling.
+          // INNINGS_START for innings 1 at all — falls through, and it falls
+          // through to the FIRST innings with its sides swapped, not to
+          // `match`: on a live fixture the toss decides who batted first
+          // (SCRBRD-067), so team2 is not necessarily batting now. Whoever
+          // bowled then bats now, with the squad they bowled with — the home
+          // roster when the away side batted first, none (typed names) when
+          // it did not — and the side that batted first bowls with its own.
           emit(inningsStart({
-            battingTeam: innings[1]?.battingTeam || match?.team2,
-            bowlingTeam: innings[1]?.bowlingTeam || match?.team1,
-            teamKey: innings[1]?.teamKey || match?.teamKey2 || match?.team2,
-            bowlingTeamKey: innings[1]?.bowlingTeamKey || match?.teamKey1 || match?.team1,
-            squad: innings[1]?.squad?.length ? innings[1].squad : [],
+            battingTeam: innings[1]?.battingTeam || innings[0]?.bowlingTeam || match?.team2,
+            bowlingTeam: innings[1]?.bowlingTeam || innings[0]?.battingTeam || match?.team1,
+            teamKey: innings[1]?.teamKey || innings[0]?.bowlingTeamKey || match?.teamKey2 || match?.team2,
+            bowlingTeamKey: innings[1]?.bowlingTeamKey || innings[0]?.teamKey || match?.teamKey1 || match?.team1,
+            squad: innings[1]?.squad?.length ? innings[1].squad : (innings[0]?.bowlingSquad ?? []),
             bowlingSquad: innings[1]?.bowlingSquad?.length ? innings[1].bowlingSquad : (innings[0]?.squad ?? []),
             twelfthMan: innings[1]?.twelfthMan ?? null,
             overs: innings[1]?.overs || match?.overs || 20,

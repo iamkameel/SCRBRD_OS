@@ -16,6 +16,19 @@
  *     no evidence left to reconcile them. So the correction is itself an event:
  *     a `void` naming the ball it undoes, appended like any other.
  *
+ *   HELD — the server answered for the event and wrote nothing: it refused it
+ *     under the Laws, or already holds a different event under its id (db/36;
+ *     packages/sync keeps these apart as `held`). It never reached the
+ *     server's log and is never sent again, so it is dropped, from wherever it
+ *     sits — a void would name an event the server does not have, and be
+ *     refused and held in its turn (SCRBRD-071). Dropping it out of the middle
+ *     renumbers nothing: every event after it that the server accepted was
+ *     judged against a log without it.
+ *
+ * This is the one place that rule is written. The held sheet's discard
+ * (packages/sync held.mjs) is the same move made by hand, and the pad's undo
+ * asks this function with the device's held list (held.mjs `undoOnPad`).
+ *
  * Getting this wrong is not a subtle bug. It is the failure mode where a
  * scorecard is quietly wrong at the end of a match and nobody can say why.
  *
@@ -76,13 +89,23 @@ export function lastUndoableIndex(events = []) {
  *   default: it produces a void, and a void is always correct. Truncation is
  *   the optimisation, and an optimisation applied by mistake is what corrupts
  *   a match.
+ * @param {(ev: LogEvent) => boolean} [opts.isHeld]  did the server answer
+ *   for this event and write nothing? Defaults to no, which leaves every
+ *   event to the two rules above. Yes is only for an event the server has
+ *   already refused or conflicted on — not one still waiting to be sent, which
+ *   the outbox will still deliver.
  * @param {string} [opts.reason]  carried on the void
- * @returns {{events: LogEvent[], action: "truncate" | "void" | "none", target: LogEvent | null}}
+ * @returns {{events: LogEvent[], action: "truncate" | "drop" | "void" | "none", target: LogEvent | null}}
+ *   `drop`: a held event taken out of the log; the caller lets its held copy go.
  */
-export function undoLast(events = [], { isSynced = () => true, reason = "scorer_undo" } = {}) {
+export function undoLast(events = [], { isSynced = () => true, isHeld = () => false, reason = "scorer_undo" } = {}) {
   const i = lastUndoableIndex(events);
   if (i < 0) return { events, action: "none", target: null };
   const target = events[i];
+
+  // Held: never on the server, never to be. Out of the log wherever it is,
+  // last or not, and no void — see HELD above.
+  if (isHeld(target)) return { events: events.filter((_, k) => k !== i), action: "drop", target };
 
   // Truncation is only available when the event is both unsynced AND the last
   // thing in the log. An unsynced event with voids sitting after it cannot be

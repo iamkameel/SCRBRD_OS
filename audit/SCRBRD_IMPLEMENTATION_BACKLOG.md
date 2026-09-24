@@ -2822,7 +2822,23 @@ application role only; no capability, policy or table changed.
 **Regression risk:** LOW for behaviour; the operational risk is the one intended — the first deploy
 after this merges will not start until `apply-29` has been pasted.
 
-### SCRBRD-067 — A real fixture opens its first innings without asking who won the toss
+### ~~SCRBRD-067~~ — CLOSED
+
+> **Closed 2026-09-24.** On a live fixture the pad reads the toss the server recorded — through the fixture
+> list it already reads (`GET /api/read/matches`, fixture.read, whose rows carry `toss_won_by`,
+> `toss_decision`, `bats_first`), no new endpoint — and opens the first `innings_start` with the side it put
+> in, the home roster going with the home side whether batting or bowling (`firstInningsSides`,
+> `packages/scoring/src/toss.mjs`). With no toss (none recorded, or no way to ask) nothing opens: the pad asks
+> for the winner and the election (`apps/web/src/scorer/toss.jsx`, nothing preselected), and the "can't score
+> yet" fix asks again rather than defaulting. The answer opens the innings at once by the server's rule
+> (`battingFirst` = `bats_first()`) and is recorded as the toss (`POST /matches/:id/toss`, written under
+> scoring.start — the pad's own capability; not locked, since the pad has sent no delivery; refused or
+> offline changes nothing on the pad). The second innings swaps sides and squads from the first rather than
+> assuming team2. The demo setup's innings now carry the batting side's name, not the first-picked side's.
+> Tests: `packages/scoring/test/toss.test.mjs` (suite `toss`), `tools/smoke-browser-toss.mjs` (browser set).
+> The walks that open the seeded Michaelhouse fixture record a home-bats toss first. No migration.
+
+#### (original entry) SCRBRD-067 — A real fixture opens its first innings without asking who won the toss
 **Title:** The scorer assumes the home side (`team1`) bats first on a live fixture, although the toss is recorded
 **Priority:** P2 · **Domain:** Scoring · **Type:** correctness
 **Affected files:** `apps/web/src/scorer/engine.jsx` (the "real fixture nobody has scored yet" hydration path,
@@ -2903,7 +2919,7 @@ after it refused too.
 - A key already held in quarantine and re-sent while the device holds the token is written live; a later release of the held copy then hits the unique key.
 - A batter returning after retiring hurt keeps "retired" on his record in the fold.
 - Timed out and retired out are recorded as `W` balls, which count as a legal delivery of the over.
-- Undoing a refused event that is not the last one still appends a `void`, which the server refuses and holds too (both can be discarded from the held sheet; undo could drop it locally instead).
+- ~~Undoing a refused event that is not the last one still appends a `void`, which the server refuses and holds too.~~ Done 2026-09-24: undo drops a held event wherever it sits and lets its held copy go (`undoLast` `isHeld`, `undoOnPad`; `held.test.mjs` group I, `smoke-browser-held.mjs` group F).
 - ~~`tools/smoke-a11y.mjs` and `tools/smoke-browser-read.mjs` both use port 4326~~ — fixed 2026-09-24 (smoke-a11y → 4331).
 - ~~`tools/check-imports` reads the word "can" in JSX text as a call to the `can()` helper~~ — fixed 2026-09-24.
 **Tests required:** one case per item when it is taken up.

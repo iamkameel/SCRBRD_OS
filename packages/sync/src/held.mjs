@@ -19,7 +19,7 @@
  * THE TWO RESOLUTIONS, AND WHY THERE IS NO THIRD
  * ──────────────────────────────────────────────
  * Discard. The event leaves the pad's log — the same move undo makes for an
- * event that never left the device (undo.mjs: truncation), through the same
+ * event the server never accepted (undo.mjs: HELD), through the same
  * setEvents → saveMatch path — and then the held copy is let go
  * (SyncEngine.discardHeld). Always available, for a refusal and a conflict.
  *
@@ -54,7 +54,7 @@
  * it is in no log to be re-queued from. A copy the server refuses in turn is
  * held under its new key — the count stays, nothing doubles.
  */
-import { deriveInnings, lawsRefusal, REFUSAL_TEXT, DISMISSAL_LABEL } from "@scrbrd/scoring";
+import { deriveInnings, lawsRefusal, undoLast, REFUSAL_TEXT, DISMISSAL_LABEL } from "@scrbrd/scoring";
 
 /**
  * An event the server refused or conflicted on, as the engine holds it.
@@ -90,17 +90,18 @@ export function heldFrom(held, key) {
 
 /**
  * Is this event still in the pad's log? A held ball the scorer has since
- * undone (undo truncates an unsynced last event) is not.
+ * undone (undo drops a held event, undo.mjs HELD) is not.
  * @param {PadLog} log
  * @param {string} id
  */
 export const inLog = (log, id) => log.some((evs) => (evs ?? []).some((e) => e?.id === id));
 
 /**
- * The pad's log without these events. A held event never reached the server,
- * so like an unsynced event under undo it simply leaves — no void, which the
- * server would refuse anyway (it has nothing to void). Innings arrays that
- * lose nothing are returned as they were.
+ * The pad's log without these events: the held sheet's discard. A held event
+ * never reached the server, so it simply leaves — no void, which the server
+ * would refuse anyway (it has nothing to void). The same rule undo follows
+ * for one (undo.mjs, HELD; `undoOnPad` below). Innings arrays that lose
+ * nothing are returned as they were.
  * @param {PadLog} log
  * @param {Iterable<string>} ids
  * @returns {PadLog}
@@ -111,6 +112,32 @@ export function withoutEvents(log, ids) {
     if (!(evs ?? []).some((e) => drop.has(e?.id))) return evs;
     return evs.filter((e) => !drop.has(e?.id));
   });
+}
+
+/**
+ * The pad's undo, for the innings in play, knowing what the server refused.
+ *
+ * Which undo applies is undo.mjs's rule (undoLast), asked here with the
+ * device's held list: a held event is DROPPED from wherever it sits — the
+ * server never had it, so there is nothing to void, and a void would be
+ * refused and held in its turn (SCRBRD-071). `discard` names the held copy
+ * the caller lets go (SyncEngine.discardHeld) once the log is saved: the
+ * scorer has taken the event off the board with their own hand, so it does
+ * not linger in the Refused list as something the board no longer shows.
+ *
+ * @param {PadLog} log
+ * @param {number} innings                  the innings in play
+ * @param {HeldEvent[]} held                everything this device holds
+ * @param {(ev: any) => boolean} isSynced   has the server accepted it?
+ * @returns {{log: PadLog, action: "truncate"|"drop"|"void"|"none", target: any, discard: string|null}}
+ */
+export function undoOnPad(log, innings, held, isSynced) {
+  const keys = new Set(held.map((h) => h.idempotencyKey));
+  const r = undoLast(log[innings] ?? [], { isSynced, isHeld: (ev) => ev?.id != null && keys.has(ev.id) });
+  if (r.action === "none") return { log, action: r.action, target: r.target, discard: null };
+  const next = [...log];
+  next[innings] = r.events;
+  return { log: next, action: r.action, target: r.target, discard: r.action === "drop" ? r.target?.id ?? null : null };
 }
 
 /**

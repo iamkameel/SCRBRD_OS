@@ -152,6 +152,13 @@ try {
     await new Promise((r) => setTimeout(r, 250));
   }
 
+  // SCRBRD-067: the pad opens a live fixture's first innings from the toss
+  // the server has, and asks for one when there is none. This walk has always
+  // had the home side batting first, so that is the toss it records.
+  await dbq(`insert into match_toss (match_id, school_id, won_by, decision)
+             select id, school_id, 'home', 'bat' from match where id = '77777777-0000-0000-0000-000000000002'
+             on conflict (match_id) do nothing`);
+
   group("Outgoing device: the scorer opens and plays a few balls");
   outgoing = await openAs(/Scorer/);
   ok("the scorer signs in", /Match Centre|Dashboard/i.test(await outgoing.text()));
