@@ -202,6 +202,16 @@ CREATE OR REPLACE FUNCTION _link_raw(p_duty uuid, p_assignment uuid) RETURNS voi
   UPDATE match_official SET assignment_id = p_assignment WHERE id = p_duty;
 $$ LANGUAGE sql SECURITY DEFINER;
 
+-- db/37. "No held ball is still waiting for a person although the same event
+-- is already in the log" is a claim about the whole table, so it is counted
+-- past RLS, like the guardian-link count above.
+CREATE OR REPLACE FUNCTION _count_open_held_copies() RETURNS integer AS $$
+  SELECT count(*)::int FROM ball_event_quarantine q
+    JOIN ball_event b ON b.idempotency_key = q.idempotency_key AND b.match_id = q.match_id
+   WHERE q.resolved_at IS NULL
+     AND (q.fingerprint IS NULL OR q.fingerprint = b.fingerprint);
+$$ LANGUAGE sql SECURITY DEFINER;
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -2408,6 +2418,76 @@ BEGIN
   PERFORM _assert(v_reason = 'duty_withdrawn', 'a withdrawn duty could be suspended');
   SELECT l.reason INTO v_reason FROM duty_link(D_DUTY) l;
   PERFORM _assert(v_reason = 'duty_withdrawn', 'a withdrawn duty could be linked again');
+
+  -- ── 17. Quarantine's loose ends (SCRBRD-071, db/37) ────────────
+  -- Three guarantees the database holds; the fourth — that a released ball
+  -- meets the Laws — is the API's (lawsRefusal() cannot run in SQL), and
+  -- tools/smoke-quarantine.mjs drives it end to end.
+  --
+  -- (a) A released ball keeps contact and trajectory, and (b) takes the live
+  --     path's per-match lock before it reads max(seq), so a live batch can
+  --     neither race it for a seq nor append after it unjudged. Behaviour is
+  --     proved in the walk; here, that the function in the database is the
+  --     one db/37 wrote.
+  PERFORM _assert(pg_get_functiondef('quarantine_resolve(bigint,boolean,jsonb,text)'::regprocedure)
+                    ~ 'p_row->>''contact''.*p_row->>''trajectory''',
+    'quarantine_resolve() drops contact and trajectory from a released ball');
+  PERFORM _assert(pg_get_functiondef('quarantine_resolve(bigint,boolean,jsonb,text)'::regprocedure)
+                    ~ 'FROM scoring_session s WHERE s.match_id = q.match_id FOR UPDATE',
+    'quarantine_resolve() no longer takes the per-match lock the live write path takes');
+  PERFORM _assert(EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ball_event_quarantine_resolution_check'
+                            AND pg_get_constraintdef(oid) LIKE '%superseded%'),
+    'a held row cannot be closed as superseded');
+
+  -- (c) A key written live closes its held copy, in the same statement, for
+  --     every writer: a ball held under a stale token and re-sent by the
+  --     device that now holds the token is not left for a person to
+  --     "release" into a log that already has it.
+  PERFORM _assert(EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'ball_event'::regclass
+                            AND tgname = 'ball_event_supersedes_held' AND tgenabled = 'O'),
+    'the trigger that closes a held copy of a key written live is missing or disabled');
+  PERFORM _assert(_count_open_held_copies() = 0,
+    'a held ball is still waiting for a person although the same event is already in the log');
+  PERFORM _scoring_session_reset(M_HANDOVER);
+  PERFORM _as(U_SCORER);
+  PERFORM set_config('app.device_id', 'verify-037', true);
+  SELECT c.ok, c.epoch INTO v_ok, v_epoch FROM scoring_claim(M_HANDOVER, 'verify-037') c;
+  PERFORM _assert(v_ok, 'the scorer could not claim the match the db/37 section scores');
+  DECLARE
+    v_ball jsonb := jsonb_build_object('match_id', M_HANDOVER, 'innings', 0, 'kind', 'ball',
+                                       'ball_type', 'run', 'value', 2, 'payload', '{}'::jsonb);
+    v_res  text;
+    v_by   uuid;
+  BEGIN
+    -- Held under a stale epoch with the fingerprint the write path computes;
+    -- a second key held saying something else.
+    INSERT INTO ball_event_quarantine (match_id, school_id, submitted_epoch, current_epoch, scorer_user_id,
+                                       device_id, idempotency_key, body, fingerprint)
+    VALUES (M_HANDOVER, match_school(M_HANDOVER), v_epoch + 5, v_epoch, U_SCORER, 'verify-037',
+            'verify:037:same', '{}'::jsonb,
+            ball_event_fingerprint(jsonb_populate_record(null::ball_event, v_ball))),
+           (M_HANDOVER, match_school(M_HANDOVER), v_epoch + 5, v_epoch, U_SCORER, 'verify-037',
+            'verify:037:other', '{}'::jsonb, 'verify-037-a-different-event');
+    -- ...then both keys written live, the way appendEvents writes a row.
+    INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                            idempotency_key, client_seq, client_ts, kind, ball_type, value, payload)
+    SELECT M_HANDOVER, match_school(M_HANDOVER), 9000 + k, v_epoch, r.innings, U_SCORER, 'verify-037',
+           key, k, now(), r.kind, r.ball_type, r.value, r.payload
+      FROM jsonb_populate_record(null::ball_event, v_ball) r,
+           (VALUES (1, 'verify:037:same'), (2, 'verify:037:other')) AS x(k, key);
+    -- IS NOT DISTINCT FROM, and counts: _assert() passes a NULL condition,
+    -- so a comparison with a row that is not there would pass vacuously.
+    SELECT resolution, resolved_by INTO v_res, v_by FROM ball_event_quarantine WHERE idempotency_key = 'verify:037:same';
+    PERFORM _assert(v_res IS NOT DISTINCT FROM 'superseded' AND v_by IS NOT DISTINCT FROM U_SCORER,
+      format('writing a held key live left its held copy %s (by %s), not superseded', coalesce(v_res, 'open'), v_by));
+    -- A different event under the key is a conflict — the write path refuses
+    -- it before it gets here — and if one is ever written, it stays held for a
+    -- person rather than being closed as if it were the same ball.
+    SELECT count(*) INTO n FROM ball_event_quarantine
+     WHERE idempotency_key = 'verify:037:other' AND resolved_at IS NULL AND resolution IS NULL;
+    PERFORM _assert(n = 1, 'a held event was closed by a DIFFERENT event written under its key');
+  END;
+  PERFORM set_config('app.device_id', '', true);
 
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;

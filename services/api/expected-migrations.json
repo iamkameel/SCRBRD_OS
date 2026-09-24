@@ -34,5 +34,6 @@
   "33_completion_ends_scoring.sql",
   "34_duty_authority.sql",
   "35_authz_suspension.sql",
-  "36_commit_fingerprint.sql"
+  "36_commit_fingerprint.sql",
+  "37_quarantine_loose_ends.sql"
 ]

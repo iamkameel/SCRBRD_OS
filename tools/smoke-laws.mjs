@@ -32,13 +32,16 @@ import pg from "pg";
 import { SyncEngine, memoryStorage } from "@scrbrd/sync";
 import {
   deriveInnings, deriveMatch, fromRow, inningsStart, batters, bowler, ball, voidEvent, sealInnings,
-  BALL_TYPE, newEventId, REFUSAL,
+  BALL_TYPE, newEventId, REFUSAL, toRow,
 } from "@scrbrd/scoring";
 
 const PORT = 8891;
 const BASE = `http://127.0.0.1:${PORT}`;
 const DB = process.env.DATABASE_URL || "postgres://scrbrd:scrbrd@127.0.0.1:5432/scrbrd";
 const MATCH = "77777777-0000-0000-0000-000000000002";
+// A second fixture for the contact/trajectory walk, so its deliveries do not
+// change the over and innings counts the walk above asserts.
+const SHOTS = "77777777-0000-0000-0000-000000000003";
 const SCORER = "scorer@example.invalid";
 const DEVICE = "device-laws-01";
 const P = ["aaaaaaaa-0000-0000-0000-000000000001", "aaaaaaaa-0000-0000-0000-000000000002",
@@ -227,6 +230,66 @@ try {
      JSON.stringify([live1, match.innings[1].runs]));
   const [unstamped] = await q(`select count(*)::int n from ball_event where match_id = $1 and fingerprint is null`, [MATCH]);
   ok("every event written carries its fingerprint", unstamped.n === 0);
+
+  group("How the bat met it: contact and trajectory reach the log (SCRBRD-071)");
+  // toRow() maps both to columns; the live INSERT used to list neither, so a
+  // captured edge arrived as nothing at all.
+  const sc = await api(`/api/matches/${SHOTS}/session/claim`, { method: "POST", token, body: { device: DEVICE } });
+  ok("the scorer claims a second fixture", sc.body?.ok === true, JSON.stringify(sc.body));
+  const shotsPost = async (...evs) => (await api(`/api/matches/${SHOTS}/events`, {
+    method: "POST", token, body: { events: evs.map((ev) => ({ ...envelope(ev), epoch: sc.body?.epoch })) } })).body;
+  const shotsLog = async () => ((await api(`/api/matches/${SHOTS}/events?since=0`, { token })).body?.events || []);
+  const setUp = await shotsPost(stamp(0, inningsStart({ battingTeam: "Hilton U16B", bowlingTeam: "Kearsney", squad, overs: 2 })),
+                                stamp(0, batters({ striker: P[0], nonStriker: P[1] })), stamp(0, bowler({ bowler: DLAMINI })));
+  ok("the innings is opened", setUp?.accepted?.length === 3, JSON.stringify(setUp));
+  const edged = stamp(0, ball({ type: BALL_TYPE.RUN, value: 4, contact: "outside_edge", trajectory: "aerial" }));
+  const e1 = await shotsPost(edged);
+  ok("an edge in the air is accepted", e1?.accepted?.length === 1, JSON.stringify(e1));
+  const [stored2] = await q(`select contact, trajectory from ball_event where idempotency_key = $1`, [edged.id]);
+  ok("...stored in its columns", stored2?.contact === "outside_edge" && stored2?.trajectory === "aerial", JSON.stringify(stored2));
+  const back = (await shotsLog()).map(fromRow).find((e) => e.id === edged.id);
+  ok("...and read back through the API as the scorer sent it",
+     back?.contact === "outside_edge" && back?.trajectory === "aerial", JSON.stringify(back));
+  const e2 = await shotsPost(edged);
+  ok("a retry of it is a duplicate", e2?.duplicates?.length === 1 && !e2?.conflicts?.length, JSON.stringify(e2));
+  const e3 = await shotsPost({ ...edged, contact: "middle" });
+  ok("the same key claiming the ball was middled is a conflict: contact is content", e3?.conflicts?.length === 1, JSON.stringify(e3));
+
+  // A ROW STORED BEFORE THIS FIX, retried now. The old write path listed
+  // neither column, so the row holds NULL for both whatever the event said.
+  // Written here exactly as that path wrote it — its column list, the same
+  // toRow() — and then retried through today's path.
+  const oldWriter = async (ev, seq) => {
+    const r = toRow(ev);
+    await q(`insert into ball_event
+               (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                idempotency_key, client_seq, client_ts, kind, ball_type, value, shot, seg, zone,
+                striker_id, non_striker_id, bowler_id, dismissed_id, dismissal, payload,
+                theta, radius, placement_source, placement_null, close_position, capture_profile)
+             select $1, match_school($1), $2, $3, r.innings, (select id from app_user where email = $4), $5,
+                    $6, $2, now(), r.kind, r.ball_type, r.value, r.shot, r.seg, r.zone,
+                    r.striker_id, r.non_striker_id, r.bowler_id, r.dismissed_id, r.dismissal, r.payload,
+                    r.theta, r.radius, r.placement_source, r.placement_null, r.close_position, r.capture_profile
+               from jsonb_populate_record(null::ball_event, $7::jsonb) r`,
+            [SHOTS, seq, sc.body?.epoch, SCORER, DEVICE, ev.id, JSON.stringify({ ...r, match_id: SHOTS })]);
+  };
+  const [{ n: top }] = await q(`select max(seq)::int n from ball_event where match_id = $1`, [SHOTS]);
+  // What the pad sends, and always has: ball() fills both with null.
+  const padBall = stamp(0, ball({ type: BALL_TYPE.RUN, value: 1 }));
+  ok("the pad's ball() carries contact and trajectory as null", padBall.contact === null && padBall.trajectory === null);
+  await oldWriter(padBall, top + 1);
+  const r1 = await shotsPost(padBall);
+  ok("a retry of a ball the OLD path stored is still a duplicate — its fingerprint did not move",
+     r1?.duplicates?.length === 1 && r1.duplicates[0].seq === top + 1 && !r1?.conflicts?.length, JSON.stringify(r1));
+  // The one case that would move: an event that DID carry a contact, stored
+  // by the old path without it. No client has ever sent one (the pad does
+  // not offer the capture), so no stored row is in this state — this shows
+  // what the risk would have looked like: loud, a conflict held for a
+  // person, never a silent drop.
+  const lost = stamp(0, ball({ type: BALL_TYPE.RUN, value: 0, contact: "beat" }));
+  await oldWriter(lost, top + 2);
+  const r2 = await shotsPost(lost);
+  ok("(an old row that had lost a contact would read as a conflict, not a duplicate)", r2?.conflicts?.length === 1, JSON.stringify(r2));
 } catch (e) {
   ok(`the walk threw: ${e.message?.slice(0, 200)}`, false);
   console.log(e.stack?.split("\n").slice(0, 4).join("\n"));

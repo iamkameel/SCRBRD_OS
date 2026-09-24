@@ -24,7 +24,7 @@
  * Mirrors MatchSession.append() from scoring-session.mjs, against SQL.
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
-import { toRow, fromRow, normaliseDismissal, MatchFold, lawsRefusal } from "@scrbrd/scoring";
+import { toRow, fromRow, normaliseDismissal, MatchFold, lawsRefusal, REFUSAL_TEXT } from "@scrbrd/scoring";
 
 /**
  * The columns an event is stored with, as ONE object, keyed by column name.
@@ -43,6 +43,14 @@ import { toRow, fromRow, normaliseDismissal, MatchFold, lawsRefusal } from "@scr
  * the table has no column for rides in payload, so capturing a new dimension
  * needs no migration.
  *
+ * Every column toRow() maps is listed here AND in the insert below. `contact`
+ * and `trajectory` were not (SCRBRD-071): toRow() took them out of the payload
+ * and nothing put them in a column, so they were dropped. Listing them does not
+ * move the fingerprint (db/36) of any row stored before: those were stored with
+ * both NULL, the pad's ball() sends both as null unless a scorer captured them
+ * (it has never offered to), and NULLs are stripped before hashing — so a retry
+ * of an old ball still reads as a duplicate.
+ *
  * @param {string} matchId
  * @param {any} ev  the envelope {innings, payload, ...}
  * @returns {Record<string, any>}
@@ -54,7 +62,8 @@ function columnsFor(matchId, ev) {
     innings: row.innings ?? ev.innings ?? 0,
     kind: row.kind || "ball",
     ball_type: row.ball_type ?? null, value: row.value ?? null,
-    shot: row.shot ?? null, seg: row.seg ?? null, zone: row.zone ?? null,
+    shot: row.shot ?? null, contact: row.contact ?? null, trajectory: row.trajectory ?? null,
+    seg: row.seg ?? null, zone: row.zone ?? null,
     striker_id: row.striker_id ?? null, non_striker_id: row.non_striker_id ?? null,
     bowler_id: row.bowler_id ?? null, dismissed_id: row.dismissed_id ?? null,
     dismissal: row.dismissal ?? null, payload: row.payload ?? {},
@@ -162,6 +171,14 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
         result.conflicts.push({ idempotencyKey: ev.idempotencyKey, seq: null, reason: "idempotency_conflict" });
         continue;
       }
+      // The SAME event, held under a stale token and re-sent now, goes on
+      // like any other: if this device holds the token it is judged and
+      // written live below, exactly as a new ball would be, and writing it
+      // closes the held copy as 'superseded' in the same statement (db/37's
+      // trigger) — so nobody is later asked to release a ball already in the
+      // log. Answering "duplicate" instead would tell the device its ball was
+      // recorded while the log still lacked it, and every ball after it would
+      // be judged against a log one short.
 
       // 2. token/epoch/lease gate (the DB RLS enforces this too; we check here to
       //    ROUTE mismatches to quarantine rather than get an opaque RLS failure).
@@ -211,11 +228,11 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
       await client.query(
         `insert into ball_event
            (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
-            idempotency_key, client_seq, client_ts, kind, ball_type, value, shot, seg, zone,
-            striker_id, non_striker_id, bowler_id, dismissed_id, dismissal, payload,
+            idempotency_key, client_seq, client_ts, kind, ball_type, value, shot, contact, trajectory,
+            seg, zone, striker_id, non_striker_id, bowler_id, dismissed_id, dismissal, payload,
             theta, radius, placement_source, placement_null, close_position, capture_profile)
          select $1, match_school($1), $2, $3, r.innings, app_user_id(), $4,
-                $5, $6, $7, r.kind, r.ball_type, r.value, r.shot, r.seg, r.zone,
+                $5, $6, $7, r.kind, r.ball_type, r.value, r.shot, r.contact, r.trajectory, r.seg, r.zone,
                 r.striker_id, r.non_striker_id, r.bowler_id, r.dismissed_id, r.dismissal, r.payload,
                 r.theta, r.radius, r.placement_source, r.placement_null, r.close_position, r.capture_profile
            from jsonb_populate_record(null::ball_event, $8::jsonb) r`,
@@ -237,7 +254,7 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
  * reason a log that made the round trip replays to the same scorecard.
  */
 export const EVENT_COLUMNS = `
-  seq, epoch, innings, kind, ball_type, value, shot, seg, zone,
+  seq, epoch, innings, kind, ball_type, value, shot, contact, trajectory, seg, zone,
   striker_id, non_striker_id, bowler_id, dismissed_id, dismissal, idempotency_key,
   scorer_user_id, device_id, client_ts, server_ts, payload,
   theta, radius, placement_source, placement_null, close_position, capture_profile,
@@ -332,7 +349,8 @@ export function amendmentRoutes({ pool, secret }) {
 
 
 /**
- * The way out of quarantine. See db/14_quarantine_release.sql.
+ * The way out of quarantine. See db/14_quarantine_release.sql and
+ * db/37_quarantine_loose_ends.sql.
  *
  * Listing is the table's own read policy (scoring.correct over the match).
  * Resolving goes through quarantine_resolve(), which checks its own authority
@@ -340,6 +358,24 @@ export function amendmentRoutes({ pool, secret }) {
  * accepted ball is written with are produced HERE by toRow(), the same mapper
  * the live path uses, so a released delivery and a live one can never be two
  * different readings of the same event.
+ *
+ * A RELEASED BALL MEETS THE LAWS, the same function as a live one
+ * (SCRBRD-071). It used to be written with no judgement at all: a held ball
+ * from a bowler bowling his second over running, or one delivered after the
+ * match was decided, went straight into the log on an approver's click. SQL
+ * cannot run lawsRefusal(), so the order is:
+ *
+ *   1. quarantine_resolve() inside a SAVEPOINT. It decides WHO may release —
+ *      a caller it refuses learns nothing about the match from a Laws verdict
+ *      — and takes the live path's per-match lock, held to our commit, before
+ *      it writes the ball at the next seq.
+ *   2. The log up to that seq is folded (MatchFold, the live path's fold) and
+ *      lawsRefusal() is asked about the row exactly as it was stored.
+ *   3. Refused: ROLLBACK TO the savepoint. Nothing was written, the held row
+ *      is still open, and the answer says why in words. The person deciding
+ *      then has two honest choices, both theirs to make: discard it, or leave
+ *      it held until the log changes (a bowler named, a batter in) and try
+ *      again. Neither is taken for them.
  */
 export function quarantineRoutes({ pool, secret }) {
   const handle = (fn) => async (req, res) => {
@@ -362,12 +398,15 @@ export function quarantineRoutes({ pool, secret }) {
       return { rows };
     })),
     // POST /quarantine/:id/resolve { accept, note? }
+    //   → { ok: true, seq } | { ok: false, reason }
+    //   | { ok: false, reason: "laws_refused", law, text }   (nothing written; still held)
     resolve: handle(async (req) => {
       const accept = req.body?.accept === true;
       return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
         // The row is read under RLS first: a caller who may not see it may not
         // resolve it, and the function then applies the stricter rule.
-        const { rows: q } = await client.query(`select body from ball_event_quarantine where id = $1`, [req.params.id]);
+        const { rows: q } = await client.query(
+          `select match_id, body from ball_event_quarantine where id = $1`, [req.params.id]);
         if (!q.length) { const e = new Error("no_such_quarantine"); e.status = 404; throw e; }
         let row = null;
         if (accept) {
@@ -379,10 +418,31 @@ export function quarantineRoutes({ pool, secret }) {
           }
           row = { ...toRow(payload), innings: q[0].body?.innings };
         }
+        await client.query("savepoint quarantine_release");
         const { rows } = await client.query(
           `select * from quarantine_resolve($1, $2, $3, $4)`,
           [req.params.id, accept, row ? JSON.stringify(row) : null, req.body?.note ?? null]);
-        return rows[0] ?? { ok: false, reason: "no_result" };
+        const out = rows[0] ?? { ok: false, reason: "no_result" };
+        if (!accept || !out.ok) { await client.query("release savepoint quarantine_release"); return out; }
+
+        // Written, under the lock. Now the Laws, over the log it landed on.
+        const { rows: log } = await client.query(
+          `select ${EVENT_COLUMNS} from ball_event where match_id = $1 and seq <= $2 order by seq`,
+          [q[0].match_id, out.seq]);
+        const released = log.find((r) => r.seq === out.seq);
+        const why = released
+          ? lawsRefusal(new MatchFold(log.filter((r) => r.seq < out.seq).map(fromRow)).view(), fromRow(released))
+          // The approver cannot read the log they would be adding to. Nothing
+          // can be judged, so nothing is written.
+          : "log_unreadable";
+        if (why) {
+          await client.query("rollback to savepoint quarantine_release");
+          return why === "log_unreadable"
+            ? { ok: false, reason: "not_permitted" }
+            : { ok: false, reason: "laws_refused", law: why, text: REFUSAL_TEXT[why] ?? why };
+        }
+        await client.query("release savepoint quarantine_release");
+        return out;
       });
     }),
   };

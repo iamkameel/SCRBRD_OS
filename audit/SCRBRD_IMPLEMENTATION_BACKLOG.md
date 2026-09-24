@@ -2914,9 +2914,9 @@ after it refused too.
 
 ### SCRBRD-071 — Loose ends found building the commit-time Laws check
 **Priority:** P3 · **Domain:** Scoring · **Type:** correctness (each small)
-- `contact` and `trajectory` are mapped by `toRow` but not listed in the live INSERT or in `quarantine_resolve`, so they are dropped. The pad does not emit them today.
-- A ball released from quarantine (`quarantine_resolve`) is inserted without the Laws check.
-- A key already held in quarantine and re-sent while the device holds the token is written live; a later release of the held copy then hits the unique key.
+- ~~`contact` and `trajectory` are mapped by `toRow` but not listed in the live INSERT or in `quarantine_resolve`, so they are dropped.~~ **Done** (db/37, `events-api.mjs`): both are written on the live path and on release, and read back. Old rows' fingerprints do not move (stored NULL, pad sends null, NULLs stripped); `tools/smoke-laws.mjs` retries a row written by the old insert.
+- ~~A ball released from quarantine (`quarantine_resolve`) is inserted without the Laws check.~~ **Done**: the release route calls `quarantine_resolve()` in a savepoint (it keeps the authority check and now takes the per-match lock), folds the log and asks `lawsRefusal()`; a refusal rolls back, keeps the ball held and returns `laws_refused` with the reason in words. The panel offers Discard or Leave it held.
+- ~~A key already held in quarantine and re-sent while the device holds the token is written live; a later release of the held copy then hits the unique key.~~ **Done**: writing it live is right (lease, epoch and Laws all pass), and db/37's trigger closes the held copy as `superseded` in the same statement; rows already left open are closed by the migration. (The old release did not actually hit the unique key — db/14's own check answered `already_recorded` and closed the row as `rejected` — but until then the row sat open in the approver's queue.)
 - A batter returning after retiring hurt keeps "retired" on his record in the fold.
 - Timed out and retired out are recorded as `W` balls, which count as a legal delivery of the over.
 - ~~Undoing a refused event that is not the last one still appends a `void`, which the server refuses and holds too.~~ Done 2026-09-24: undo drops a held event wherever it sits and lets its held copy go (`undoLast` `isHeld`, `undoOnPad`; `held.test.mjs` group I, `smoke-browser-held.mjs` group F).

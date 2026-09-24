@@ -225,6 +225,27 @@ the outbox.
 The same key sent with a different body is a **conflict**, not a duplicate: each
 row carries a fingerprint of what it says (db/36), and a key names one event.
 
+### A ball released from quarantine meets the same Laws
+
+A ball sent under a stale token is held (`ball_event_quarantine`) for somebody
+holding `scoring.amend.approve` — not the scorer who sent it — to release or
+discard. Releasing it used to write it with no judgement at all. Now
+(SCRBRD-071, db/37) `quarantine_resolve()` decides who may release and takes
+the live path's per-match lock; the API route then folds the log it landed on
+and asks `lawsRefusal()` about it, exactly as for a live event. A refusal
+writes nothing, leaves the ball held, and answers
+`{ ok: false, reason: "laws_refused", law, text }`, `text` being the same words
+as the pad's held sheet. The approver's two choices are theirs: **discard** it,
+or **leave it held** until the log changes (a batter walks in, a bowler is
+named) and release it then.
+
+A ball held under a stale token and then re-sent, same key and same content, by
+a device that now holds the token is written live like any other ball — judged,
+at the next seq — and its held copy is closed as **superseded** in the same
+statement (a trigger, so every writer reaches it). Nobody is asked to release a
+ball already in the log. The same key with other content is still a conflict,
+and its held copy stays for a person.
+
 ## Adding a new scoring situation
 
 Do not add a counter. Add an event kind in `events.mjs`, fold it in
