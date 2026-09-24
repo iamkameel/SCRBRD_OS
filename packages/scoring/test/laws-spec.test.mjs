@@ -25,9 +25,10 @@ import {
 } from "../src/index.mjs";
 
 let pass = 0, fail = 0, skip = 0;
+/** @param {string} n  @param {unknown} c */
 const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
-const known = (n) => { skip++; console.log("  ⚠ KNOWN_GAP (skipped):", n); };
-const group = (t) => console.log("\n" + t);
+const known = (/** @type {string} */ n) => { skip++; console.log("  ⚠ KNOWN_GAP (skipped):", n); };
+const group = (/** @type {string} */ t) => console.log("\n" + t);
 
 // ── Fixtures ─────────────────────────────────────────────
 const SQ_A = [
@@ -42,7 +43,7 @@ const open = (overs = 20) => [
   bowler({ bowler: "w1" }),
 ];
 const dot = () => ball({ type: BALL_TYPE.RUN, value: 0 });
-const runs = (v) => ball({ type: BALL_TYPE.RUN, value: v });
+const runs = (/** @type {number} */ v) => ball({ type: BALL_TYPE.RUN, value: v });
 
 // ═══════════════════════════════════════════════════════════════════════
 // A. Innings length is a property of the format, not a constant

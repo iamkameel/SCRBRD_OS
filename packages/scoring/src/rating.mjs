@@ -108,7 +108,7 @@ export const MIN_BALLS_BOWLED = 36;  // six overs
 /** Sample sizes at which an index stops being provisional. */
 const CONFIDENCE_STEPS = { batting: [30, 90, 240], bowling: [36, 120, 300] };
 
-const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+/** @param {number} v */
 const round1 = (v) => Math.round(v * 10) / 10;
 
 /**
@@ -117,6 +117,10 @@ const round1 = (v) => Math.round(v * 10) / 10;
  * Handles both directions: a descending table (economy, where lower is better)
  * works without a separate code path, because the interpolation only cares
  * that the statistic axis is monotonic.
+ *
+ * @param {readonly (readonly number[])[]} anchors  [statistic, score] points, monotonic in the statistic
+ * @param {number | null | undefined} value
+ * @returns {number | null}  null for a missing or non-finite value
  */
 export function scoreFrom(anchors, value) {
   if (value == null || !Number.isFinite(value)) return null;
@@ -136,6 +140,7 @@ export function scoreFrom(anchors, value) {
   return null;
 }
 
+/** @param {"batting" | "bowling"} kind  @param {number} sample */
 const confidence = (kind, sample) => {
   const [min, fair, good] = CONFIDENCE_STEPS[kind];
   if (sample < min) return "none";
@@ -147,8 +152,9 @@ const confidence = (kind, sample) => {
 /**
  * Batting, from the career counts the read path returns.
  *
- * @param {{runs:number, ballsFaced:number, dismissals:number}} c
- * @returns {{value:number|null, confidence:string, reason:string|null, parts:object}}
+ * @param {{runs?: number | string | null, ballsFaced?: number | string | null,
+ *          dismissals?: number | string | null}} [c]  numbers, or the strings pg returns for them
+ * @returns {{value:number|null, confidence:string, reason:string|null, parts:Record<string, number|null>}}
  *   `value` is null whenever the sample cannot support a number. `parts`
  *   carries the working, so a screen can show why the score is what it is
  *   rather than asserting it.
@@ -179,7 +185,11 @@ export function battingIndex(c = {}) {
 
   const average = runs / outs;
   const avgScore = scoreFrom(STAT_ANCHORS.battingAverage, average);
-  const value = round1(avgScore * BATTING_AVERAGE_WEIGHT + srScore * (1 - BATTING_AVERAGE_WEIGHT));
+  // Numbers for any finite statistic. NOT proven for a non-numeric count: a
+  // NaN passes the sample floor (NaN < 30 is false), scoreFrom returns null,
+  // and null reads as 0 here. Cast rather than changed; see the type report.
+  const value = round1(/** @type {number} */ (avgScore) * BATTING_AVERAGE_WEIGHT
+    + /** @type {number} */ (srScore) * (1 - BATTING_AVERAGE_WEIGHT));
   return {
     value, confidence: confidence("batting", balls), reason: null,
     parts: { runs, ballsFaced: balls, dismissals: outs,
@@ -192,7 +202,8 @@ export function battingIndex(c = {}) {
 /**
  * Bowling, from the career counts.
  *
- * @param {{runsConceded:number, ballsBowled:number, wickets:number}} c
+ * @param {{runsConceded?: number | string | null, ballsBowled?: number | string | null,
+ *          wickets?: number | string | null}} [c]  numbers, or the strings pg returns for them
  */
 export function bowlingIndex(c = {}) {
   const conceded = Number(c.runsConceded ?? 0);
@@ -219,7 +230,8 @@ export function bowlingIndex(c = {}) {
 
   const strikeRate = balls / wkts;
   const srScore = scoreFrom(STAT_ANCHORS.bowlingStrikeRate, strikeRate);
-  const value = round1((ecoScore + srScore) / 2);
+  // As in battingIndex: numbers for finite counts, null (read as 0) for NaN ones.
+  const value = round1((/** @type {number} */ (ecoScore) + /** @type {number} */ (srScore)) / 2);
   return {
     value, confidence: confidence("bowling", balls), reason: null,
     parts: { runsConceded: conceded, ballsBowled: balls, wickets: wkts,
@@ -235,9 +247,12 @@ export function bowlingIndex(c = {}) {
  * Returns null rather than 0 for a discipline nobody has assessed, because an
  * unassessed player and a player rated zero are different claims and only one
  * of them has ever been made about anybody.
+ *
+ * @param {Record<string, unknown>} [categoryScores]  attribute → score
  */
 export function coachIndex(categoryScores = {}) {
-  const vals = Object.values(categoryScores).filter((v) => Number.isFinite(v));
+  // The filter keeps finite numbers only.
+  const vals = /** @type {number[]} */ (Object.values(categoryScores).filter((v) => Number.isFinite(v)));
   if (!vals.length) return { value: null, metrics: 0 };
   return { value: round1(vals.reduce((a, b) => a + b, 0) / vals.length), metrics: vals.length };
 }
@@ -282,11 +297,18 @@ export const COACH_PRIOR_BALLS = 120;
  * When one side is missing the rating IS the other side, and `basis` says so —
  * never a blend with a zero standing in for the absent input, which would halve
  * the rating of every player nobody has assessed yet.
+ *
+ * @param {object} [args]
+ * @param {number | null} [args.coach]        the coach's index for the discipline
+ * @param {number | null} [args.performance]  the performance index
+ * @param {number} [args.sample]              deliveries behind `performance`
+ * @param {number} [args.priorBalls]          COACH_PRIOR_BALLS unless argued with
  */
 export function adjustedRating({ coach = null, performance = null, sample = 0,
                                  priorBalls = COACH_PRIOR_BALLS } = {}) {
-  const c = Number.isFinite(coach) ? coach : null;
-  const p = Number.isFinite(performance) ? performance : null;
+  // Number.isFinite proves each a number.
+  const c = Number.isFinite(coach) ? /** @type {number} */ (coach) : null;
+  const p = Number.isFinite(performance) ? /** @type {number} */ (performance) : null;
   const n = Number.isFinite(sample) && sample > 0 ? sample : 0;
 
   if (c == null && p == null) {

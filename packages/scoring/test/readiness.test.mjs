@@ -21,9 +21,13 @@ import {
   scoringReadiness, SCORING_BLOCK, SCORING_BLOCK_TEXT,
 } from "../src/index.mjs";
 
+/** @import { LogEvent } from "../src/events.mjs" */
+/** @import { Innings } from "../src/replay.mjs" */
+
 let pass = 0, fail = 0;
+/** @param {string} n  @param {unknown} c  @param {unknown} [d] */
 const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d !== undefined ? `— ${JSON.stringify(d).slice(0, 200)}` : ""); } };
-const group = (t) => console.log("\n" + t);
+const group = (/** @type {string} */ t) => console.log("\n" + t);
 
 const SQ_A = ["p1", "p2", "p3", "p4"].map((id) => ({ id, name: id.toUpperCase() }));
 const SQ_B = [{ id: "w1", name: "W1" }, { id: "w2", name: "W2" }];
@@ -33,8 +37,9 @@ const BOWL = bowler({ bowler: "w1" });
 const run = (v = 0) => ball({ type: BALL_TYPE.RUN, value: v });
 const out = () => ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: "bowled" });
 
-const codes = (inn) => scoringReadiness(inn).blocked.map((b) => b.code);
-const readyOf = (evs) => scoringReadiness(deriveInnings(evs));
+const codes = (/** @type {Partial<Innings> | null} */ inn) => scoringReadiness(inn).blocked.map((b) => b.code);
+const readyOf = (/** @type {LogEvent[]} */ evs) => scoringReadiness(deriveInnings(evs));
+/** @param {unknown} a  @param {unknown} b */
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 // ── A. Before there is an innings ────────────────────────

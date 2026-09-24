@@ -15,15 +15,20 @@ import { join } from "node:path";
 import {
   TREE, ANCHORS, ANCHOR_POINTS, BANDS, BENCHMARKS, BENCHMARKS_ARE_PROVISIONAL,
   CEILING, RUBRIC_VERSION, allSkills, unanchoredSkills, rubricIsReady, ageRelative, rubric,
-  SCALE_MIN, SCALE_MAX, BANDS_OF_SCALE, scaleBand, DISCIPLINES,
-  DERIVABLE_DISCIPLINES, COACH_ONLY_DISCIPLINES,
   DRAFT_ANCHORS, anchorFor, draftedSkills, unwrittenSkills,
 } from "../src/rubric.mjs";
 import { ASSESSMENT_SHAPE, validateAssessment } from "../../../services/api/write/assessment-api.mjs";
 
 let pass = 0, fail = 0;
+/** @param {string} n  @param {unknown} c */
 const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
-const group = (t) => console.log("\n" + t);
+const group = (/** @type {string} */ t) => console.log("\n" + t);
+/**
+ * The value an assertion reads, which the setup guarantees is there: a
+ * missing one fails the suite loudly instead of being read as a property.
+ * @template T  @param {T} x  @returns {NonNullable<T>}
+ */
+const must = (x) => { if (x == null) throw new Error("expected a value"); return x; };
 
 // ── A. The gate ──────────────────────────────────────────
 group("A. The schema does not ship before the anchors do");
@@ -72,7 +77,7 @@ ok("the rubric is versioned", RUBRIC_VERSION === "cricket-v1");
 // The failure this prevents: a player who genuinely improves between U14 and
 // U15 scoring lower at U15, because the bar rose faster than they did.
 ok("a fixed score is comparable across bands — the same number means the same thing",
-   ageRelative(60, "U14") > ageRelative(60, "U16"));
+   must(ageRelative(60, "U14")) > must(ageRelative(60, "U16")));
 // The worked example from the spec: a player moving U15 → U16 whose stored
 // score rises 61 → 66. The absolute number rises, which is the truth. The
 // age-relative one BARELY moves, because the bar rose too — and that is the
@@ -82,9 +87,9 @@ ok("a fixed score is comparable across bands — the same number means the same 
 // true for every input. Vacuous, and it passed.
 ok("the absolute score records improvement plainly", 66 > 61);
 ok("...while the age-relative view can stay almost flat across a promotion",
-   Math.abs(ageRelative(66, "U16") - ageRelative(61, "U15")) < 0.05);
+   Math.abs(must(ageRelative(66, "U16")) - must(ageRelative(61, "U15"))) < 0.05);
 ok("...and can even FALL while the player improves, which is why it is not stored",
-   ageRelative(62, "U16") < ageRelative(61, "U15"));
+   must(ageRelative(62, "U16")) < must(ageRelative(61, "U15")));
 
 // ── D. Bands, including the one schools actually have ────
 group("D. Above U16 there is no age group, so OPEN is a band");
@@ -102,9 +107,9 @@ ok("an unknown band answers null", ageRelative(60, "U19") === null);
 ok("a missing score answers null", ageRelative(null, "U15") === null);
 ok("a band with no benchmark answers null", ageRelative(60, "NOPE") === null);
 // On the 1-20 scale: the U16 benchmark is 14, so 13 is just short of par.
-ok("a real pairing answers a ratio", ageRelative(13, "U16") > 0.9 && ageRelative(13, "U16") < 1.0);
+ok("a real pairing answers a ratio", must(ageRelative(13, "U16")) > 0.9 && must(ageRelative(13, "U16")) < 1.0);
 ok("...and a player at the benchmark is exactly par", ageRelative(BENCHMARKS.U16, "U16") === 1);
-ok("...and one above it is above par", ageRelative(BENCHMARKS.U16 + 3, "U16") > 1);
+ok("...and one above it is above par", must(ageRelative(BENCHMARKS.U16 + 3, "U16")) > 1);
 
 // ── F. The write path has no attribute list of its own ───
 //
@@ -120,7 +125,7 @@ group("F. One attribute set, not two");
 
   // ...and behaviourally, which is what actually protects a coach: a made-up
   // attribute is refused, and a real one on the old scale is too.
-  const rejects = (scores) => {
+  const rejects = (/** @type {Record<string, Record<string, unknown>>} */ scores) => {
     try { validateAssessment({ scores }); return false; } catch { return true; }
   };
   ok("a real attribute at a real score is accepted",
@@ -174,9 +179,9 @@ group("H. A draft is not an anchor");
 
   // Anything showing an anchor is obliged to say which kind it got.
   ok("an approved anchor reports itself as authored",
-     anchorFor("technical.footwork").status === "authored");
+     anchorFor("technical.footwork")?.status === "authored");
   ok("a draft reports itself as a draft",
-     anchorFor("mental.bravery").status === "draft");
+     anchorFor("mental.bravery")?.status === "draft");
   ok("an attribute that does not exist has no anchor at all",
      anchorFor("technical.swagger") === null);
 

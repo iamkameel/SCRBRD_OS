@@ -38,6 +38,10 @@
  * coaches can agree they did or did not see.
  */
 
+/** An attribute's anchors: scale point (4, 8, 12, 16, 20) → the behaviour seen there.
+ *  @typedef {Readonly<Record<number, string>>} AnchorPoints */
+
+/** @type {Readonly<Record<string, AnchorPoints>>}  "group.attribute" → its draft anchors */
 export const DRAFT_ANCHORS = Object.freeze({
   // ── TECHNICAL: with the bat ──
   "technical.timing": Object.freeze({

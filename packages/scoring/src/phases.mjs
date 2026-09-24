@@ -27,6 +27,43 @@
  */
 import { isLegal, BALL_TYPE } from "./events.mjs";
 
+/** @import { Innings } from "./replay.mjs" */
+
+/** @typedef {"powerplay" | "middle" | "death"} PhaseName */
+/** An inclusive range of 1-indexed over numbers.
+ *  @typedef {{from: number, to: number}} Span */
+/** @typedef {{powerplay: Readonly<Span>, middle: Readonly<Span> | null, death: Readonly<Span> | null}} PhaseSpans */
+
+/**
+ * One phase of one innings, as derivePhases() reports it. Rates and
+ * percentages are null where there is nothing to divide by; `par` and `vsPar`
+ * are null in a first innings.
+ * @typedef {object} Phase
+ * @property {PhaseName} name
+ * @property {string} label
+ * @property {string} overs          "1-6", or "—" when the innings has no such phase
+ * @property {boolean} played
+ * @property {number} runs
+ * @property {number} wickets
+ * @property {number} balls
+ * @property {number | null} runRate
+ * @property {number} dots
+ * @property {number} fours
+ * @property {number} sixes
+ * @property {number | null} dotPct
+ * @property {number | null} boundaryPct
+ * @property {number | null} strikeRotationPct
+ * @property {number} assessed
+ * @property {number} middled
+ * @property {number} beaten
+ * @property {number | null} controlPct
+ * @property {number | null} beatenPct
+ * @property {number | null} par
+ * @property {number | null} vsPar
+ */
+/** @typedef {Readonly<Record<PhaseName, Readonly<Phase>>>} InningsPhases */
+
+/** @type {readonly PhaseName[]} */
 export const PHASE_NAMES = Object.freeze(["powerplay", "middle", "death"]);
 
 export const PHASE_LABELS = Object.freeze({
@@ -51,6 +88,9 @@ export const PHASE_LABELS = Object.freeze({
  * A very short innings degrades sensibly rather than producing overlapping or
  * negative ranges: at six overs or fewer there is no middle, and `middle` comes
  * back null rather than an empty range pretending to be one.
+ *
+ * @param {number} overs  the innings' overs; anything not a positive number is none
+ * @returns {Readonly<PhaseSpans> | null}
  */
 export function phasesFor(overs) {
   const n = Number.isFinite(overs) && overs > 0 ? Math.floor(overs) : 0;
@@ -93,7 +133,8 @@ export function phasesFor(overs) {
   });
 }
 
-/** "1-6", or "—" for a phase this innings is too short to have. */
+/** "1-6", or "—" for a phase this innings is too short to have.
+ *  @param {Span | null | undefined} span */
 export function phaseRange(span) {
   return span ? `${span.from}-${span.to}` : "—";
 }
@@ -116,9 +157,14 @@ const EMPTY = () => ({
  * Rates come back null rather than zero when there are no balls in a phase:
  * a run rate of 0.00 over an unbowled powerplay is a claim about how a side
  * batted, and the side has not batted yet.
+ *
+ * @param {Partial<Innings> | null | undefined} inn
+ * @param {{opposing?: InningsPhases | null}} [opts]
+ * @returns {InningsPhases | null}
  */
 export function derivePhases(inn, { opposing = null } = {}) {
-  const overs = Number.isFinite(inn?.overs) ? inn.overs : 20;
+  // Number.isFinite proves inn is there and its overs a number; it is no guard to the checker.
+  const overs = Number.isFinite(inn?.overs) ? /** @type {{overs: number}} */ (inn).overs : 20;
   const spans = phasesFor(overs);
   if (!spans) return null;
 
@@ -135,7 +181,7 @@ export function derivePhases(inn, { opposing = null } = {}) {
 
     const type = b.type ?? BALL_TYPE.RUN;
     const legal = isLegal(type);
-    const value = Number.isFinite(b.value) ? b.value : 0;
+    const value = Number.isFinite(b.value) ? /** @type {number} */ (b.value) : 0;   // isFinite proves it
     // Team runs, not the batter's: an illegal delivery costs one before
     // anything run off it. Same arithmetic as the fold in replay.mjs, so the
     // phases always add up to the innings total.
@@ -161,8 +207,10 @@ export function derivePhases(inn, { opposing = null } = {}) {
     }
   }
 
+  /** @param {number} n  @param {number} d */
   const pct = (n, d) => (d > 0 ? Math.round((n / d) * 100) : null);
-  const out = {};
+  // Filled below for every name in PHASE_NAMES before it is returned.
+  const out = /** @type {Record<PhaseName, Readonly<Phase>>} */ ({});
   for (const name of PHASE_NAMES) {
     const a = buckets[name];
     const span = spans[name];
@@ -198,8 +246,9 @@ export function derivePhases(inn, { opposing = null } = {}) {
       beatenPct: pct(a.beaten, a.assessed),
       // What the other side made in the same phase, and the gap. Both null in
       // a first innings, because there is nothing yet to be level with.
-      par: Number.isFinite(parRuns) ? parRuns : null,
-      vsPar: Number.isFinite(parRuns) ? a.runs - parRuns : null,
+      // Number.isFinite(parRuns) proves it a number.
+      par: Number.isFinite(parRuns) ? /** @type {number} */ (parRuns) : null,
+      vsPar: Number.isFinite(parRuns) ? a.runs - /** @type {number} */ (parRuns) : null,
     });
   }
   return Object.freeze(out);
@@ -210,6 +259,9 @@ export function derivePhases(inn, { opposing = null } = {}) {
  *
  * The order matters and is not symmetric: the chase is compared to the total,
  * never the other way round. A first innings has no par by definition.
+ *
+ * @param {(Partial<Innings> | null | undefined)[]} [innings]
+ * @returns {Readonly<{first: InningsPhases | null, second: InningsPhases | null}>}
  */
 export function deriveMatchPhases(innings = []) {
   const first = innings[0] ? derivePhases(innings[0]) : null;

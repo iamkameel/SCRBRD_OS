@@ -36,6 +36,11 @@
 import { KIND, BALL_TYPE, isLegal, normaliseDismissal, chargedToBowler, standsOnFreeHit, DISMISSAL, DISMISSAL_LABEL, INNINGS_END_REASON, DERIVED_END_REASONS, inningsEnd } from "./events.mjs";
 import { CAPTURE_PROFILE } from "./placement.mjs";
 
+/** @import { LogEvent, SquadMember } from "./events.mjs" */
+/** @typedef {import("./events.mjs").Loose<import("./events.mjs").BallEvent>} LoggedBall */
+/** @typedef {import("./events.mjs").Loose<import("./events.mjs").InningsEndEvent>} LoggedSeal */
+
+/** @type {ReadonlySet<unknown>}  asked of whatever an innings_start carried */
 const DECLARABLE = new Set(Object.values(CAPTURE_PROFILE));
 
 // The scoring UI renders on these values: a batter at the crease is "batting",
@@ -43,15 +48,106 @@ const DECLARABLE = new Set(Object.values(CAPTURE_PROFILE));
 // only exists once they appear in the log).
 const BAT_STATUS = { NOT_OUT: "batting", OUT: "out", RETIRED: "retired" };
 
-/** Overs in cricket's odd base: 17 legal balls is 2.5 overs. */
+/**
+ * A batter's line on the card.
+ * @typedef {object} Batter
+ * @property {string} id
+ * @property {string} name
+ * @property {number} runs
+ * @property {number} balls
+ * @property {number} fours
+ * @property {number} sixes
+ * @property {string} status          one of BAT_STATUS: "batting" | "out" | "retired"
+ * @property {string | null} dismissal the scorecard line, e.g. "c Naidoo b Mkhize"
+ */
+
+/**
+ * A bowler's figures.
+ * @typedef {object} Bowler
+ * @property {string} id
+ * @property {string} name
+ * @property {number} runs      charged to him: not byes or leg byes
+ * @property {number} balls     legal deliveries
+ * @property {number} wickets
+ * @property {number} wides
+ * @property {number} noBalls
+ * @property {number} maidens   settled after the fold (computeMaidens)
+ */
+
+/**
+ * A delivery as the fold logged it: the event, stamped with who was on strike
+ * and bowling at the time and where in the innings it fell.
+ * @typedef {LoggedBall & {
+ *   strikerId: string | null,
+ *   bowlerId: string | null | undefined,
+ *   over: number,
+ *   ballInOver: number,
+ *   freeHitSaved?: boolean,
+ * }} BallLogEntry
+ */
+
+/**
+ * The innings state deriveInnings() returns — the shape the views read.
+ *
+ * The four team fields are null until an innings_start, and undefined if one
+ * arrived without them: the fold copies them as found. `bowler` likewise takes
+ * whatever a bowler event carried, and is cleared to null at the end of each
+ * over.
+ *
+ * @typedef {object} Innings
+ * @property {string | null | undefined} battingTeam
+ * @property {string | null | undefined} bowlingTeam
+ * @property {string | null | undefined} teamKey
+ * @property {string | null | undefined} bowlingTeamKey
+ * @property {string} teamFlag
+ * @property {SquadMember[]} squad
+ * @property {SquadMember[]} bowlingSquad
+ * @property {string | null} twelfthMan
+ * @property {number} overs
+ * @property {number | null} target
+ * @property {number} runs
+ * @property {number} wickets
+ * @property {number} balls          legal deliveries
+ * @property {{wide: number, noBall: number, bye: number, legBye: number, penalty: number}} extras
+ * @property {Batter[]} batsmen
+ * @property {Bowler[]} bowlers
+ * @property {{runs: number, wickets: number, batsman: string, overs: string}[]} fow
+ * @property {{bat1: string, bat2: string, runs: number, balls: number, wicket: number}[]} partnerships
+ * @property {{runs: number, balls: number, bat1: string | null, bat2: string | null}} curPartner
+ * @property {BallLogEntry[]} ballLog
+ * @property {{over: number, balls: BallLogEntry[]}[]} overLog
+ * @property {string | null} striker
+ * @property {string | null} nonStriker
+ * @property {string | null | undefined} bowler
+ * @property {boolean} complete      the laws' answer, or a seal's
+ * @property {string | null} endReason one of INNINGS_END_REASON
+ * @property {boolean} freeHit
+ * @property {boolean} sealed        a scorer confirmed the figures
+ * @property {string | null} sealRefused one of SEAL_REFUSAL
+ * @property {{overs: number | null, target: number | null, reason: string | null} | null} revised
+ * @property {string | null} declaredProfile  one of CAPTURE_PROFILE, or null: never declared
+ * @property {number} voided         how many earlier events this log undoes
+ */
+
+/**
+ * What the fold may be told from outside the log.
+ * @typedef {object} FoldContext
+ * @property {(teamKey: string | null | undefined) => string | null | undefined} [flagFor]
+ *   team key → flag emoji, for the UI
+ */
+
+/** Overs in cricket's odd base: 17 legal balls is 2.5 overs.
+ *  @param {number} balls */
 export const fmtOvers = (balls) => `${Math.floor(balls / 6)}.${balls % 6}`;
 
+/** @param {string} id  @param {string} name  @returns {Batter} */
 const newBatter = (id, name) => ({
   id, name,
   runs: 0, balls: 0, fours: 0, sixes: 0,
   status: BAT_STATUS.NOT_OUT, dismissal: null,
 });
 
+/** @param {string} id  @param {string} name  @returns {Bowler} */
 const newBowler = (id, name) => ({
   id, name,
   runs: 0, balls: 0, wickets: 0, wides: 0, noBalls: 0, maidens: 0,
@@ -70,10 +166,11 @@ const newBowler = (id, name) => ({
  * `apply` never sees a void or a voided event; the caller filters them, because
  * which events are voided is a property of the whole log, not of one event.
  *
- * @param {object} [ctx]
- * @returns {{ inn: any, apply: (ev: any) => void }}
+ * @param {FoldContext} [ctx]
+ * @returns {{ inn: Innings, apply: (ev: LogEvent) => void }}
  */
 function inningsFolder(ctx = {}) {
+  /** @type {Innings} */
   const inn = {
     battingTeam: null, bowlingTeam: null,
     teamKey: null, bowlingTeamKey: null, teamFlag: "🏏",
@@ -104,6 +201,7 @@ function inningsFolder(ctx = {}) {
 
   // Name resolution comes from the squads carried on innings_start, so a
   // scorecard replays correctly even on a device that never loaded the roster.
+  /** @param {string | null | undefined} id  @returns {string | null}  null exactly when id is */
   const nameOf = (id) => {
     if (id == null) return null;
     const all = [...(inn.squad || []), ...(inn.bowlingSquad || [])];
@@ -111,16 +209,19 @@ function inningsFolder(ctx = {}) {
     return hit?.name ?? String(id);
   };
 
+  // nameOf() is null only for a null id, and both of these return first on one.
+  /** @param {string | null | undefined} id */
   const batterFor = (id) => {
     if (id == null) return null;
     let b = inn.batsmen.find((x) => x.id === id);
-    if (!b) { b = newBatter(id, nameOf(id)); inn.batsmen.push(b); }
+    if (!b) { b = newBatter(id, /** @type {string} */ (nameOf(id))); inn.batsmen.push(b); }
     return b;
   };
+  /** @param {string | null | undefined} id */
   const bowlerFor = (id) => {
     if (id == null) return null;
     let b = inn.bowlers.find((x) => x.id === id);
-    if (!b) { b = newBowler(id, nameOf(id)); inn.bowlers.push(b); }
+    if (!b) { b = newBowler(id, /** @type {string} */ (nameOf(id))); inn.bowlers.push(b); }
     return b;
   };
 
@@ -151,7 +252,9 @@ function inningsFolder(ctx = {}) {
   // the caller rather than read from `inn.balls` here: by the time a ball is
   // logged the count is already incremented, which would push the sixth ball of
   // every over into the next over and silently break maiden detection.
+  /** @param {LoggedBall} ev  @param {number} at */
   const logBall = (ev, at) => {
+    /** @type {BallLogEntry} */
     const entry = {
       ...ev,
       strikerId: inn.striker, bowlerId: inn.bowler,
@@ -164,6 +267,7 @@ function inningsFolder(ctx = {}) {
     return entry;
   };
 
+  /** @param {LogEvent} ev */
   const apply = (ev) => {
     switch (ev.kind) {
       case KIND.INNINGS_START: {
@@ -197,7 +301,8 @@ function inningsFolder(ctx = {}) {
         // db/31's innings_declared_profile applies the same three rules to
         // the innings_start rows, so the device and the database agree.
         if (DECLARABLE.has(ev.captureProfile) && inn.ballLog.length === 0) {
-          inn.declaredProfile = ev.captureProfile;
+          // DECLARABLE holds only the profile strings, so has() proves one.
+          inn.declaredProfile = /** @type {string} */ (ev.captureProfile);
         }
         break;
       }
@@ -243,7 +348,8 @@ function inningsFolder(ctx = {}) {
         inn.sealed = true;
         inn.sealRefused = null;
         inn.complete = true;
-        inn.endReason = ev.reason;
+        // sealRefusal() refuses NO_REASON for a null reason, so it is set here.
+        inn.endReason = /** @type {string} */ (ev.reason);
         break;
       }
 
@@ -380,10 +486,9 @@ function inningsFolder(ctx = {}) {
 /**
  * Fold the event log into a complete innings.
  *
- * @param {object[]} events  ordered event log (see events.mjs)
- * @param {object}  [ctx]
- * @param {(key:string)=>string} [ctx.flagFor]  team key → flag emoji, for the UI
- * @returns {any} innings state, shaped as the views already expect
+ * @param {LogEvent[]} [events]  ordered event log (see events.mjs)
+ * @param {FoldContext} [ctx]
+ * @returns {Innings} innings state, shaped as the views already expect
  */
 export function deriveInnings(events = [], ctx = {}) {
   const { inn, apply } = inningsFolder(ctx);
@@ -409,14 +514,19 @@ export function deriveInnings(events = [], ctx = {}) {
   return inn;
 }
 
-/** The targets of every void in this log. */
+/**
+ * The targets of every void in this log.
+ * @param {LogEvent[]} events
+ */
 function voidedTargets(events) {
+  /** @type {Set<string>} */
   const voided = new Set();
   for (const ev of events) if (ev.kind === KIND.VOID && ev.target != null) voided.add(ev.target);
   return voided;
 }
 
-/** What the fold settles once the events are in. Idempotent. */
+/** What the fold settles once the events are in. Idempotent.
+ *  @param {Innings} inn */
 function settleInnings(inn) {
   computeMaidens(inn);
   // A seal that stood has already set both fields and wins: it is what the
@@ -431,7 +541,12 @@ function settleInnings(inn) {
   }
 }
 
-/** The scorecard line, from the canonical dismissal. */
+/**
+ * The scorecard line, from the canonical dismissal.
+ * @param {LoggedBall} ev
+ * @param {string | null} bowlerName
+ * @returns {string}
+ */
 function describeDismissal(ev, bowlerName) {
   const mode = normaliseDismissal(ev.dismissal);
   const f = ev.fielder ? ` ${ev.fielder}` : "";
@@ -452,6 +567,8 @@ function describeDismissal(ev, bowlerName) {
  * A maiden is a completed over off which the bowler conceded nothing. Byes and
  * leg byes are not the bowler's, so they do not spoil it; wides and no-balls
  * are, so they do.
+ *
+ * @param {Innings} inn
  */
 function computeMaidens(inn) {
   for (const b of inn.bowlers) b.maidens = 0;
@@ -487,6 +604,9 @@ function computeMaidens(inn) {
  * name it. `declared` and `abandoned` are not derivable — nothing in a ball log
  * implies a captain's decision or an umpire's — so those two only ever arrive
  * as an explicit innings_end event.
+ *
+ * @param {Innings} inn
+ * @returns {string | null}  one of INNINGS_END_REASON
  */
 function inningsOverReason(inn) {
   if (inn.target != null && inn.runs >= inn.target) return INNINGS_END_REASON.TARGET;
@@ -535,6 +655,11 @@ export const SEAL_REFUSAL = Object.freeze({
  * may have come from anywhere, and a scoring surface that stops working because
  * one event was malformed is worse than one that says which event it will not
  * honour.
+ *
+ * @param {LoggedSeal} ev
+ * @param {Innings} inn  the fold at the seal
+ * @param {string | null} why  inningsOverReason(inn)
+ * @returns {string | null}  one of SEAL_REFUSAL
  */
 function sealRefusal(ev, inn, why) {
   const c = ev.confirmed;
@@ -553,6 +678,10 @@ function sealRefusal(ev, inn, why) {
  * drawn from this same object. `reason` defaults to the one the laws derived —
  * the scorer is being asked to check the figures, not to classify the ending —
  * and is overridable only for the two endings nothing in a ball log implies.
+ *
+ * @param {Pick<Partial<Innings>, "runs" | "wickets" | "balls" | "endReason"> | null} [inn]
+ * @param {string | null} [reason]
+ * @returns {import("./events.mjs").InningsEndEvent}
  */
 export function sealInnings(inn, reason = inn?.endReason ?? null) {
   return inningsEnd({ reason, confirmed: { runs: inn?.runs, wickets: inn?.wickets, balls: inn?.balls } });
@@ -564,16 +693,23 @@ export function sealInnings(inn, reason = inn?.endReason ?? null) {
  * Split a flat event log by innings index and derive each.
  * The log is one stream per match — `innings` on each event is the selector —
  * which is what lets a single `since` cursor drive realtime catch-up.
+ *
+ * @param {LogEvent[]} [events]
+ * @param {FoldContext} [ctx]
+ * @returns {{innings: Innings[], current: number, result: MatchResult | null}}
  */
 export function deriveMatch(events = [], ctx = {}) {
+  /** @type {Map<number, LogEvent[]>} */
   const byInnings = new Map();
   for (const ev of events) {
     const i = ev.innings ?? 0;
     if (!byInnings.has(i)) byInnings.set(i, []);
-    byInnings.get(i).push(ev);
+    // Set on the line above when it was missing.
+    /** @type {LogEvent[]} */ (byInnings.get(i)).push(ev);
   }
   const indices = [...byInnings.keys()].sort((a, b) => a - b);
-  const innings = indices.map((i) => deriveInnings(byInnings.get(i), ctx));
+  // `indices` are byInnings' own keys.
+  const innings = indices.map((i) => deriveInnings(/** @type {LogEvent[]} */ (byInnings.get(i)), ctx));
   return { innings, current: innings.length ? innings.length - 1 : 0, result: describeResult(innings) };
 }
 
@@ -599,11 +735,16 @@ export function deriveMatch(events = [], ctx = {}) {
  *     later revision can still reopen an innings the way it does in a full
  *     replay.
  */
+/**
+ * One innings of a MatchFold: its own log, the voids in it, and its fold.
+ * @typedef {{events: LogEvent[], voided: Set<string>, inn: Innings, apply: (ev: LogEvent) => void}} FoldBucket
+ */
+
 export class MatchFold {
-  /** @param {object[]} [events] the match's log in seq order  @param {object} [ctx] */
+  /** @param {LogEvent[]} [events] the match's log in seq order  @param {FoldContext} [ctx] */
   constructor(events = [], ctx = {}) {
     this.ctx = ctx;
-    /** @type {Map<number, {events: object[], voided: Set<string>, inn: any, apply: (ev: any) => void}>} */
+    /** @type {Map<number, FoldBucket>} */
     this.byInnings = new Map();
     for (const ev of events) this._bucket(ev.innings ?? 0).events.push(ev);
     for (const b of this.byInnings.values()) this._refold(b);
@@ -620,7 +761,8 @@ export class MatchFold {
     return b;
   }
 
-  /** Fold one innings again from its own log — exactly deriveInnings' loop. */
+  /** Fold one innings again from its own log — exactly deriveInnings' loop.
+   *  @param {FoldBucket} b */
   _refold(b) {
     const { inn, apply } = inningsFolder(this.ctx);
     b.inn = inn; b.apply = apply;
@@ -633,7 +775,8 @@ export class MatchFold {
     }
   }
 
-  /** Extend the fold with an event the log has just accepted. */
+  /** Extend the fold with an event the log has just accepted.
+   *  @param {LogEvent} ev */
   push(ev) {
     const b = this._bucket(ev.innings ?? 0);
     b.events.push(ev);
@@ -648,11 +791,11 @@ export class MatchFold {
    * (engine.jsx keeps `innings` and `events` as arrays by innings), so the
    * laws take one argument from either side.
    *
-   * @returns {{ innings: any[], events: object[][] }}
+   * @returns {{ innings: Innings[], events: LogEvent[][] }}
    */
   view() {
-    /** @type {any[]} */ const innings = [];
-    /** @type {object[][]} */ const events = [];
+    /** @type {Innings[]} */ const innings = [];
+    /** @type {LogEvent[][]} */ const events = [];
     for (const [i, b] of this.byInnings) {
       const inn = b.inn;
       const why = inn.complete ? null : inningsOverReason(inn);
@@ -663,6 +806,12 @@ export class MatchFold {
   }
 }
 
+/**
+ * @typedef {{winner: string | null | undefined, margin: string}} MatchResult
+ *   `winner` is a battingTeam (null on a tie); `margin` reads "3 wickets", "12 runs" or "tie"
+ */
+
+/** @param {Innings[]} innings  @returns {MatchResult | null} */
 function describeResult(innings) {
   if (innings.length < 2) return null;
   const [a, b] = innings;
@@ -686,6 +835,8 @@ function describeResult(innings) {
 /**
  * The shape `MatchSession.replay()` returns, used by the handover verification
  * handshake. Derived from the same fold so the two can never disagree.
+ *
+ * @param {Innings} inn
  */
 export function confirmationState(inn) {
   return {

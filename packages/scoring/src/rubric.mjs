@@ -42,6 +42,8 @@
 
 import { DRAFT_ANCHORS, DRAFTED } from "./rubric-drafts.mjs";
 
+/** @import { AnchorPoints } from "./rubric-drafts.mjs" */
+
 export const RUBRIC_VERSION = "cricket-v1";
 
 /**
@@ -65,10 +67,15 @@ export const BANDS_OF_SCALE = Object.freeze([
   Object.freeze({ from: 16, to: 20, label: "Excellent" }),
 ]);
 
-/** Where on the scale a score sits, in words. */
+/**
+ * Where on the scale a score sits, in words.
+ * @param {number | null | undefined} score
+ * @returns {string | null}
+ */
 export function scaleBand(score) {
   if (!Number.isFinite(score)) return null;
-  return BANDS_OF_SCALE.find((b) => score >= b.from && score <= b.to)?.label ?? null;
+  const s = /** @type {number} */ (score);   // Number.isFinite, above, proves it
+  return BANDS_OF_SCALE.find((b) => s >= b.from && s <= b.to)?.label ?? null;
 }
 
 /**
@@ -99,6 +106,7 @@ export const BANDS = Object.freeze(["U9", "U10", "U11", "U12", "U13", "U14", "U1
  */
 export const BENCHMARKS_ARE_PROVISIONAL = true;
 
+/** @param {number} from  @param {number} to  @returns {Record<string, number>} */
 const provisional = (from, to) =>
   Object.fromEntries(BANDS.map((b, i) => [b, Math.round(from + ((to - from) * i) / (BANDS.length - 1))]));
 
@@ -239,6 +247,8 @@ export const COACH_ONLY_DISCIPLINES = Object.freeze(["fielding", "keeping"]);
  * rest must look like. Every other attribute is deliberately absent rather than
  * filled with something plausible: a placeholder anchor is worse than none,
  * because a coach reads it and calibrates against it.
+ *
+ * @type {Readonly<Record<string, AnchorPoints>>}  "group.attribute" → its anchors
  */
 export const ANCHORS = Object.freeze({
   "technical.footwork": Object.freeze({
@@ -270,6 +280,9 @@ export { DRAFT_ANCHORS, DRAFTED };
  * that shows a draft is obliged to say so, because a coach who calibrates
  * against an unapproved sentence produces drift, and drift is
  * indistinguishable from a player changing.
+ *
+ * @param {string} skill  "group.attribute"
+ * @returns {{points: AnchorPoints, status: "authored" | "draft"} | null}
  */
 export function anchorFor(skill) {
   if (ANCHORS[skill]) return { points: ANCHORS[skill], status: "authored" };
@@ -316,12 +329,18 @@ export function rubricIsReady() { return unanchoredSkills().length === 0; }
  * the note on BANDS. Returns null rather than a number when the band is unknown
  * or has no benchmark, because "we do not know" and "exactly average" are
  * different answers and one of them is a lie.
+ *
+ * @param {number | null | undefined} score
+ * @param {string} band  one of BANDS, as recorded on the assessment
+ * @param {Readonly<Record<string, number>> | null} [benchmarks]
+ * @returns {number | null}
  */
 export function ageRelative(score, band, benchmarks = BENCHMARKS) {
   if (!Number.isFinite(score)) return null;
   const expected = benchmarks?.[band];
-  if (!Number.isFinite(expected) || expected <= 0) return null;
-  return Math.round((score / expected) * 100) / 100;
+  // Number.isFinite proves both numbers; the checker does not narrow on it.
+  if (!Number.isFinite(expected) || /** @type {number} */ (expected) <= 0) return null;
+  return Math.round((/** @type {number} */ (score) / /** @type {number} */ (expected)) * 100) / 100;
 }
 
 export const BENCHMARKS = Object.freeze(provisional(8, 15));

@@ -13,14 +13,26 @@
 import { shotDensity, directionalProfile, ANGULAR_FAMILIES, angularFamily } from "../src/index.mjs";
 
 let pass = 0, fail = 0;
+/** @param {string} n  @param {unknown} c  @param {string} [d] */
 const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${d}` : ""); } };
-const group = (t) => console.log("\n" + t);
+const group = (/** @type {string} */ t) => console.log("\n" + t);
+/**
+ * The value an assertion reads, which the setup guarantees is there: a
+ * missing one fails the suite loudly instead of being read as a property.
+ * @template T  @param {T} x  @returns {NonNullable<T>}
+ */
+const must = (x) => { if (x == null) throw new Error("spatial.test: expected a value"); return x; };
 
+/** @param {number} theta  @param {number} radius  @param {number} [value]  @param {{strikerId?: string}} [extra] */
 const point = (theta, radius, value = 1, extra = {}) =>
   ({ placementSource: "point", theta, radius, value, type: "run", ...extra });
+/** @param {number} seg  @param {number} [value] */
 const sector = (seg, value = 1) => ({ placementSource: "sector", seg, value, type: "run" });
-const near = (a, b, eps = 1e-9) => Math.abs(a - b) < eps;
+/** @param {number | null} a  a figure that may be null (null subtracts as 0)  @param {number} b  @param {number} [eps] */
+const near = (a, b, eps = 1e-9) => Math.abs(/** @type {number} */ (a) - b) < eps;
+/** @param {number} theta  @param {number} r */
 const unit = (theta, r) => ({ x: r * Math.sin(theta * Math.PI / 180), y: -r * Math.cos(theta * Math.PI / 180) });
+/** @param {{cells: {x: number, y: number, density: number}[]}} res  @param {number} theta  @param {number} r */
 const cellAt = (res, theta, r) => {
   const u = unit(theta, r);
   return res.cells.reduce((best, c) =>
@@ -38,7 +50,7 @@ group("The density surface");
   ok("...and no cell outside it", one.cells.every((c) => c.x * c.x + c.y * c.y <= 1));
   ok("the peak is exactly 1", Math.max(...one.cells.map((c) => c.density)) === 1);
   ok("...and sits where the ball landed",
-     near(one.peak.x, unit(300, 0.8).x, one.cells[0].size) && near(one.peak.y, unit(300, 0.8).y, one.cells[0].size),
+     near(must(one.peak).x, unit(300, 0.8).x, one.cells[0].size) && near(must(one.peak).y, unit(300, 0.8).y, one.cells[0].size),
      JSON.stringify(one.peak));
   ok("the far side of the ground is empty", cellAt(one, 120, 0.8).density < 0.001);
 
@@ -53,7 +65,7 @@ group("The density surface");
   // Bandwidth: wider is flatter. The ratio of the trough between two
   // clusters to the peak rises as the kernels overlap.
   const two = [point(60, 0.7), point(300, 0.7)];
-  const troughOver = (bw) => cellAt(shotDensity(two, { bandwidth: bw }), 0, 0.7).density;
+  const troughOver = (/** @type {number} */ bw) => cellAt(shotDensity(two, { bandwidth: bw }), 0, 0.7).density;
   ok("a wider bandwidth fills the gap between two shots", troughOver(0.5) > troughOver(0.1));
 
   const sectors = shotDensity([point(300, 0.8), sector(9), sector(10), { placementSource: "point", theta: 300, radius: null }]);
@@ -63,9 +75,10 @@ group("The density surface");
 
   // The mirror. The same stored angle, one right-hander and one left-hander:
   // opposite sides of the ground, resolved per ball from who played it.
+  /** @type {Record<string, string>} */
   const hands = { r: "R", l: "L" };
   const byHand = shotDensity([point(300, 0.8, 4, { strikerId: "r" }), point(300, 0.8, 4, { strikerId: "l" })],
-                             { batHandFor: (b) => hands[b.strikerId] });
+                             { batHandFor: (b) => hands[must(b.strikerId)] });
   const rh = cellAt(byHand, 300, 0.8).density, lh = cellAt(byHand, 60, 0.8).density;
   ok("a left-hander's shot is mirrored across the ground", rh > 0.9 && lh > 0.9, `RH side ${rh}, LH side ${lh}`);
   const unmirrored = shotDensity([point(300, 0.8), point(300, 0.8)]);
@@ -87,8 +100,8 @@ group("The directional profile");
     sector(3, 4), { placementSource: "point", theta: null, radius: null, value: 0 },
   ];
   const prof = directionalProfile(balls);
-  const cover = prof.directions.find((d) => d.key === "cover");
-  const sq = prof.directions.find((d) => d.key === "square_leg");
+  const cover = must(prof.directions.find((d) => d.key === "cover"));
+  const sq = must(prof.directions.find((d) => d.key === "square_leg"));
   ok("shots per direction are counted", cover.shots === 3 && sq.shots === 1);
   ok("the counts add up to the placed balls", prof.directions.reduce((s, d) => s + d.shots, 0) === prof.n && prof.n === 4);
   ok("reach is the mean radius", near(cover.reach, 0.7) && near(sq.reach, 1.0));
@@ -104,11 +117,11 @@ group("The directional profile");
   // The families are batter-relative, so a left-hander's cover drive is still
   // a cover drive. Mirroring is for the axes, not the bins.
   const lh = directionalProfile([point(245, 0.8, 4, { strikerId: "l" })], { batHandFor: () => "L" });
-  ok("a left-hander's cover drive is binned as cover", lh.directions.find((d) => d.key === "cover").shots === 1);
+  ok("a left-hander's cover drive is binned as cover", lh.directions.find((d) => d.key === "cover")?.shots === 1);
 
   ok("the axis table agrees with angularFamily at every midpoint",
      ANGULAR_FAMILIES.every((f) => angularFamily(f.mid) === f.key));
-  ok("the wrap-around family sits at zero", ANGULAR_FAMILIES.find((f) => f.key === "straight_behind").mid === 0);
+  ok("the wrap-around family sits at zero", ANGULAR_FAMILIES.find((f) => f.key === "straight_behind")?.mid === 0);
 }
 
 console.log(`\n${"─".repeat(52)}\nSPATIAL: ${pass} passed, ${fail} failed`);

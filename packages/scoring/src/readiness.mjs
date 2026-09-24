@@ -31,6 +31,13 @@ export const SCORING_BLOCK = Object.freeze({
   OPENING_BOWLER: "opening_bowler",  // nobody has bowled yet and nobody is named to
   NEXT_BOWLER:    "next_bowler",     // the over ended and replay cleared the bowler
 });
+/** @typedef {typeof SCORING_BLOCK[keyof typeof SCORING_BLOCK]} ScoringBlock */
+
+/**
+ * One reason a delivery cannot be recorded. `endReason` rides on
+ * INNINGS_OVER, `over` (1-based) on NEXT_BOWLER.
+ * @typedef {{code: ScoringBlock, says: string, fix: string | null, endReason?: string | null, over?: number}} Blocked
+ */
 
 /**
  * The words for each reason. `says` finishes the sentence "Can't score yet: …";
@@ -47,14 +54,20 @@ export const SCORING_BLOCK_TEXT = Object.freeze({
   [SCORING_BLOCK.NEXT_BOWLER]:    { says: "nobody is bowling the next over", fix: "Choose the bowler" },
 });
 
+/**
+ * @param {ScoringBlock} code
+ * @param {{endReason?: string | null, over?: number}} [extra]
+ * @returns {Blocked}
+ */
 const reason = (code, extra = {}) => ({ code, ...SCORING_BLOCK_TEXT[code], ...extra });
 
 /**
  * Can the next delivery be recorded against this innings?
  *
- * @param {object|null} inn  a derived innings (deriveInnings), or null when the
- *                           log for this innings is empty
- * @returns {{ ready: boolean, blocked: {code:string, says:string, fix:string|null}[] }}
+ * @param {Partial<import("./replay.mjs").Innings> | null | undefined} inn
+ *   a derived innings (deriveInnings), or null when the log for this innings
+ *   is empty
+ * @returns {{ ready: boolean, blocked: Blocked[] }}
  *   `blocked` is empty exactly when `ready`, and otherwise lists every missing
  *   thing in the order the scorer has to supply them — `blocked[0]` is the one
  *   to fix now.
@@ -70,6 +83,7 @@ export function scoringReadiness(inn) {
   if (inn.sealed) return { ready: false, blocked: [reason(SCORING_BLOCK.INNINGS_CLOSED)] };
   if (inn.complete) return { ready: false, blocked: [reason(SCORING_BLOCK.INNINGS_OVER, { endReason: inn.endReason ?? null })] };
 
+  /** @type {Blocked[]} */
   const blocked = [];
   // Batters before the bowler: it is the order the sheets ask in, and the
   // order a scorer at the crease thinks in.

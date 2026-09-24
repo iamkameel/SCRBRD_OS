@@ -48,14 +48,25 @@
  */
 import { ANGULAR_FAMILIES, angularFamily, hasPoint, screenAngle } from "./placement.mjs";
 
-/** A point on the unit disc: theta clockwise from behind the batter, r ≤ 1. */
+/** @import { PlacedBall } from "./placement.mjs" */
+
+/** A point on the unit disc: theta clockwise from behind the batter, r ≤ 1.
+ *  @param {number} theta  @param {number} radius */
 const toUnit = (theta, radius) => {
   const t = (theta * Math.PI) / 180;
   return { x: radius * Math.sin(t), y: -radius * Math.cos(t) };
 };
 
-/** The angle to work in, given who played the ball. */
-const frameAngle = (b, batHandFor) => screenAngle(b.theta, batHandFor?.(b) ?? "R");
+/**
+ * The angle to work in, given who played the ball.
+ * @template {PlacedBall} B
+ * @param {B} b  a ball with a point (hasPoint), so its theta is a number
+ * @param {((b: B) => string | null | undefined) | undefined} batHandFor
+ * @returns {number}
+ */
+const frameAngle = (b, batHandFor) =>
+  // screenAngle is null only for a null theta, and callers pass hasPoint balls.
+  /** @type {number} */ (screenAngle(b.theta, batHandFor?.(b) ?? "R"));
 
 /**
  * Gaussian kernel density over a regular grid covering the unit disc.
@@ -72,11 +83,20 @@ const frameAngle = (b, batHandFor) => screenAngle(b.theta, batHandFor?.(b) ?? "R
  * Density is normalised so the peak cell is 1.0, which means the surface says
  * WHERE, not HOW MUCH — the count is returned beside it for that. Cells whose
  * centre lies outside the disc are not evaluated.
+ *
+ * @template {PlacedBall} B
+ * @param {B[]} [balls]
+ * @param {object} [opts]
+ * @param {number} [opts.bandwidth]  in disc units
+ * @param {number} [opts.grid]       cells per side
+ * @param {(b: B) => string | null | undefined} [opts.batHandFor]  "L" mirrors that ball
  */
 export function shotDensity(balls = [], { bandwidth = 0.15, grid = 24, batHandFor } = {}) {
-  const eligible = [], excluded = [];
+  const eligible = /** @type {B[]} */ ([]), excluded = /** @type {B[]} */ ([]);
   for (const b of balls) (hasPoint(b) ? eligible : excluded).push(b);
   const n = eligible.length;
+  /** @type {{cells: {x: number, y: number, size: number, density: number}[], n: number, excludedCount: number,
+   *          bandwidth: number, grid: number, peak: {x: number, y: number} | null}} */
   const result = { cells: [], n, excludedCount: excluded.length, bandwidth, grid, peak: null };
   if (n === 0) return result;
 
@@ -120,31 +140,42 @@ export function shotDensity(balls = [], { bandwidth = 0.15, grid = 24, batHandFo
  * right-hander; for a left-hander the caller mirrors the AXES, not the balls,
  * because the families are defined batter-relative and the boy's cover is
  * still his cover.
+ *
+ * `batHandFor` is accepted and not read (hence `_batHandFor`): the families
+ * are batter-relative, so nothing here depends on the hand (see the loop below).
+ *
+ * @template {PlacedBall} B
+ * @param {B[]} [balls]
+ * @param {{batHandFor?: (b: B) => string | null | undefined}} [opts]
  */
-export function directionalProfile(balls = [], { batHandFor } = {}) {
-  const eligible = [], excluded = [];
+export function directionalProfile(balls = [], { batHandFor: _batHandFor } = {}) {
+  const eligible = /** @type {B[]} */ ([]), excluded = /** @type {B[]} */ ([]);
   for (const b of balls) (hasPoint(b) ? eligible : excluded).push(b);
   const n = eligible.length;
+  /** @type {Map<string, B[]>} */
   const bins = new Map(ANGULAR_FAMILIES.map((f) => [f.key, []]));
   for (const b of eligible) {
     // The family is a property of the BATTER-RELATIVE angle, so a
     // left-hander's cover drive lands in `cover` — mirroring happens when the
     // axes are drawn, never here.
     const key = angularFamily(b.theta);
-    if (key) bins.get(key).push(b);
+    // angularFamily returns a key of ANGULAR_FAMILIES, and bins has every one.
+    if (key) /** @type {B[]} */ (bins.get(key)).push(b);
   }
   const directions = ANGULAR_FAMILIES.map((f) => {
-    const bs = bins.get(f.key);
+    const bs = /** @type {B[]} */ (bins.get(f.key));   // every family was binned above
     const radii = bs.map((b) => Math.min(Number(b.radius), 1));
     const shots = bs.length;
     const runs = bs.reduce((s, b) => s + (Number(b.value) || 0), 0);
     const reach = shots ? radii.reduce((a, r) => a + r, 0) / shots : null;
     const spread = shots > 1
-      ? Math.sqrt(radii.reduce((a, r) => a + (r - reach) ** 2, 0) / (shots - 1))
+      // reach is a number whenever there are shots.
+      ? Math.sqrt(radii.reduce((a, r) => a + (r - /** @type {number} */ (reach)) ** 2, 0) / (shots - 1))
       : null;
     return { key: f.key, label: f.label, mid: f.mid, shots, runs, reach, spread,
              share: n ? shots / n : 0, yield: shots ? runs / shots : null };
   });
-  const strongest = directions.reduce((best, d) => (d.shots > (best?.shots ?? 0) ? d : best), null);
+  const strongest = directions.reduce((best, d) => (d.shots > (best?.shots ?? 0) ? d : best),
+    /** @type {typeof directions[number] | null} */ (null));
   return { directions, n, excludedCount: excluded.length, strongest: strongest?.key ?? null };
 }

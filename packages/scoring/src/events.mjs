@@ -49,7 +49,9 @@ import { CAPTURE_PROFILE } from "./placement.mjs";
 const CAPTURE_PROFILES = new Set(Object.values(CAPTURE_PROFILE));
 
 // ── Event kinds ──────────────────────────────────────────
-export const KIND = {
+// `@type {const}` is for the checker only: it makes each value its own literal
+// type, so a `switch (ev.kind)` over these narrows the event to its kind.
+export const KIND = /** @type {const} */ ({
   INNINGS_START: "innings_start", // opens an innings, carries squads + format
   BATTERS:       "batters",       // striker / non-striker set (openers or new arrival)
   BOWLER:        "bowler",        // bowler set for the coming over
@@ -59,25 +61,30 @@ export const KIND = {
   INNINGS_END:   "innings_end",   // declaration, all out, overs complete, rain
   REVISION:      "revision",      // the umpires cut the overs and/or reset the target (rain)
   VOID:          "void",          // undoes an earlier event that has already synced
-};
+});
+/** @typedef {typeof KIND[keyof typeof KIND]} Kind */
 
 /** Delivery types. Mirrors ball_event.ball_type. */
-export const BALL_TYPE = {
+export const BALL_TYPE = /** @type {const} */ ({
   RUN:     "run", // runs off the bat (including 0)
   WICKET:  "W",
   WIDE:    "Wd",
   NO_BALL: "Nb",
   BYE:     "B",
   LEG_BYE: "LB",
-};
+});
+/** @typedef {typeof BALL_TYPE[keyof typeof BALL_TYPE]} BallType */
 
-/** A delivery that does not count towards the over. */
+/** A delivery that does not count towards the over.
+ *  @type {ReadonlySet<string>} */
 export const ILLEGAL = new Set([BALL_TYPE.WIDE, BALL_TYPE.NO_BALL]);
 
-/** Does this delivery consume a ball of the over? */
+/** Does this delivery consume a ball of the over?
+ *  @param {string} type */
 export const isLegal = (type) => !ILLEGAL.has(type);
 
-/** Runs credited to the batter (as opposed to the extras column). */
+/** Runs credited to the batter (as opposed to the extras column).
+ *  @type {ReadonlySet<string>} */
 export const OFF_THE_BAT = new Set([BALL_TYPE.RUN, BALL_TYPE.WICKET, BALL_TYPE.NO_BALL]);
 
 export const RETIRE_REASON = { HURT: "hurt", OUT: "out" }; // retired hurt may resume
@@ -104,6 +111,13 @@ export const DISMISSAL = Object.freeze({
   HIT_WICKET: "hit_wicket", HANDLED_BALL: "handled_ball", OBSTRUCTING_FIELD: "obstructing_field",
   TIMED_OUT: "timed_out", RETIRED_OUT: "retired_out", HIT_TWICE: "hit_twice",
 });
+/** @typedef {typeof DISMISSAL[keyof typeof DISMISSAL]} Dismissal */
+/**
+ * Every canonical dismissal. Typed for the question it answers — "is this
+ * one?" is asked of whatever a producer wrote, null included — rather than
+ * for its contents, which are the Dismissal values.
+ * @type {ReadonlySet<unknown>}
+ */
 export const DISMISSALS = new Set(Object.values(DISMISSAL));
 export const DISMISSAL_LABEL = Object.freeze({
   bowled: "Bowled", caught: "Caught", lbw: "LBW", run_out: "Run Out", stumped: "Stumped",
@@ -115,14 +129,18 @@ export const DISMISSAL_LABEL = Object.freeze({
  * take (Law 21.19 lists the ways out off a free hit — run out, handled,
  * obstructing, hit twice; timed out and retired out need no delivery at all).
  * One set, both questions, so the two can never disagree again.
+ * @type {ReadonlySet<unknown>}  asked of anything, like DISMISSALS
  */
 export const NON_DELIVERY = new Set([
   DISMISSAL.RUN_OUT, DISMISSAL.HANDLED_BALL, DISMISSAL.OBSTRUCTING_FIELD,
   DISMISSAL.TIMED_OUT, DISMISSAL.RETIRED_OUT, DISMISSAL.HIT_TWICE,
 ]);
+/** @param {unknown} d  a dismissal, canonical (normaliseDismissal) or not */
 export const chargedToBowler = (d) => DISMISSALS.has(d) && !NON_DELIVERY.has(d);
+/** @param {unknown} d  a dismissal, canonical (normaliseDismissal) or not */
 export const standsOnFreeHit = (d) => NON_DELIVERY.has(d);
 
+/** @type {[Dismissal, RegExp][]} */
 const DISMISSAL_SPELLINGS = [
   [DISMISSAL.RUN_OUT,           /^(run[ _-]?out|r\/?o)$/],
   [DISMISSAL.STUMPED,           /^(stumped|st)$/],
@@ -136,11 +154,16 @@ const DISMISSAL_SPELLINGS = [
   [DISMISSAL.RETIRED_OUT,       /^retired([ _-]?out)?$/],
   [DISMISSAL.HIT_TWICE,         /^(hit([ _-]the)?([ _-]ball)?[ _-]?twice|double[ _-]?hit)$/],
 ];
-/** Whatever a producer wrote → one of DISMISSAL, or null for "not a dismissal we know". */
+/**
+ * Whatever a producer wrote → one of DISMISSAL, or null for "not a dismissal we know".
+ * @param {unknown} text
+ * @returns {Dismissal | null}
+ */
 export function normaliseDismissal(text) {
   if (typeof text !== "string") return null;
   const t = text.trim().toLowerCase().replace(/\s+/g, " ");
-  if (DISMISSALS.has(t)) return t;
+  // DISMISSALS holds exactly the Dismissal values, so has(t) proves t is one.
+  if (DISMISSALS.has(t)) return /** @type {Dismissal} */ (t);
   return DISMISSAL_SPELLINGS.find(([, re]) => re.test(t))?.[0] ?? null;
 }
 
@@ -151,6 +174,162 @@ export const INNINGS_END_REASON = {
   DECLARED:  "declared",
   ABANDONED: "abandoned",
 };
+
+// ── Event shapes ─────────────────────────────────────────
+// The constructors below are the source of truth for these: each typedef is
+// exactly what its constructor returns. What the FOLD accepts is looser — see
+// LogEvent at the end of this block.
+
+/**
+ * A player as the squads on innings_start carry him. The fold and batHandOf()
+ * also tolerate a bare id in place of the object (`p?.id ?? p`); that legacy
+ * form is not part of the type.
+ * @typedef {object} SquadMember
+ * @property {string} id
+ * @property {string} [name]
+ * @property {string} [batHand]         "R" | "L"
+ * @property {string} [batting_style]   the roster's spelling, read by batHandOf()
+ * @property {string} [battingStyle]
+ */
+
+/**
+ * The fields every event carries.
+ * @typedef {object} EventBase
+ * @property {number} innings    0-based innings index
+ * @property {number} clientTs   ms since the epoch, on the recording device
+ * @property {string} [id]       the event's identity — see newEventId()
+ * @property {number} [seq]      assigned by the queue or the database, never here
+ */
+
+/**
+ * What every constructor takes besides its own fields.
+ * @typedef {object} BaseInput
+ * @property {number} [innings]
+ * @property {number} [clientTs]
+ * @property {string} [id]
+ * @property {number} [seq]
+ */
+
+/**
+ * The teams are copied as given, so an innings_start built without them
+ * carries them as undefined — which readiness reads as "nobody has said who is
+ * batting" (NO_INNINGS), exactly like no innings_start at all.
+ * @typedef {EventBase & {
+ *   kind: "innings_start",
+ *   battingTeam: string | undefined, bowlingTeam: string | undefined,
+ *   teamKey: string | undefined, bowlingTeamKey: string | undefined,
+ *   squad: SquadMember[], bowlingSquad: SquadMember[],
+ *   twelfthMan: string | null,
+ *   overs: number, target: number | null,
+ *   captureProfile?: string,
+ * }} InningsStartEvent
+ */
+/**
+ * @typedef {BaseInput & {
+ *   battingTeam?: string, bowlingTeam?: string,
+ *   teamKey?: string, bowlingTeamKey?: string,
+ *   squad?: SquadMember[], bowlingSquad?: SquadMember[],
+ *   twelfthMan?: string | null,
+ *   overs?: number, target?: number | null,
+ *   captureProfile?: string | null,
+ * }} InningsStartInput
+ */
+
+/** @typedef {EventBase & {kind: "batters", striker: string | null, nonStriker: string | null}} BattersEvent */
+/** @typedef {BaseInput & {striker?: string | null, nonStriker?: string | null}} BattersInput */
+
+/** @typedef {EventBase & {kind: "bowler", bowler: string | null}} BowlerEvent */
+/** @typedef {BaseInput & {bowler?: string | null}} BowlerInput */
+
+/**
+ * A delivery. Player references are ids where SCRBRD holds a row, typed names
+ * where it does not (see asPlayerId). `dismissal` is canonical where it can
+ * be, and otherwise the producer's own spelling, kept so the API can refuse it
+ * by name.
+ * @typedef {EventBase & {
+ *   kind: "ball",
+ *   type: BallType, value: number,
+ *   striker: string | null, nonStriker: string | null, bowler: string | null,
+ *   shot: string | null, contact: string | null, trajectory: string | null,
+ *   seg: number | null, zone: string | null, bowlerApproach: string | null,
+ *   dismissal: string | null, fielder: string | null, dismissed: string | null,
+ *   freeHit: boolean,
+ *   theta: number | null, radius: number | null,
+ *   placementSource: string | null, placementNull: string | null,
+ *   closePosition: string | null, captureProfile: string | null,
+ * }} BallEvent
+ */
+/**
+ * `type` is a string rather than a BallType because checkedType() is the guard
+ * that refuses a misspelt one; `dismissal` is whatever the producer wrote.
+ * @typedef {BaseInput & {
+ *   type?: string | null, value?: number,
+ *   striker?: string | null, nonStriker?: string | null, bowler?: string | null,
+ *   shot?: string | null, contact?: string | null, trajectory?: string | null,
+ *   seg?: number | null, zone?: string | null, bowlerApproach?: string | null,
+ *   dismissal?: string | null, fielder?: string | null, dismissed?: string | null,
+ *   freeHit?: boolean,
+ *   theta?: number | null, radius?: number | null,
+ *   placementSource?: string | null, placementNull?: string | null,
+ *   closePosition?: string | null, captureProfile?: string | null,
+ * }} BallInput
+ */
+
+/** @typedef {EventBase & {kind: "penalty", runs: number, toBattingTeam: boolean, reason: string | null}} PenaltyEvent */
+/** @typedef {BaseInput & {runs?: number, toBattingTeam?: boolean, reason?: string | null}} PenaltyInput */
+
+/** @typedef {EventBase & {kind: "retire", batter: string, reason: string}} RetireEvent */
+/** @typedef {BaseInput & {batter: string, reason?: string}} RetireInput */
+
+/**
+ * `target` is the id of the event undone.
+ * @typedef {EventBase & {kind: "void", target: string, reason: string}} VoidEvent
+ */
+/** @typedef {BaseInput & {target: string, reason?: string}} VoidInput */
+
+/** @typedef {EventBase & {kind: "revision", overs: number | null, target: number | null, reason: string}} RevisionEvent */
+/** @typedef {BaseInput & {overs?: number | null, target?: number | null, reason?: string}} RevisionInput */
+
+/**
+ * The figures a seal was confirmed against. See sealRefusal() in replay.mjs.
+ * @typedef {{runs: number | null, wickets: number | null, balls: number | null}} Confirmed
+ */
+/** @typedef {EventBase & {kind: "innings_end", reason: string | null, confirmed: Confirmed | null}} InningsEndEvent */
+/**
+ * @typedef {BaseInput & {
+ *   reason?: string | null,
+ *   confirmed?: {runs?: number | null, wickets?: number | null, balls?: number | null} | null,
+ * }} InningsEndInput
+ */
+
+/**
+ * Any event a constructor here can build.
+ * @typedef {InningsStartEvent | BattersEvent | BowlerEvent | BallEvent | PenaltyEvent
+ *   | RetireEvent | VoidEvent | RevisionEvent | InningsEndEvent} ScoringEvent
+ */
+
+/**
+ * An event with its kind and any subset of its other fields.
+ * @template {{kind: string}} T
+ * @typedef {Pick<T, "kind"> & Partial<Omit<T, "kind">>} Loose
+ */
+
+/**
+ * An event as the FOLD receives it: its kind, and any of that kind's fields.
+ *
+ * Looser than ScoringEvent on purpose. A log may come from anywhere — the
+ * wire (fromRow omits every NULL column), an older build, a test — and replay
+ * reads every field through a default (`ev.type ?? BALL_TYPE.RUN`) rather
+ * than trusting it to be present. A constructed event is always one of these.
+ *
+ * Only the kinds this build knows are in the union. The fold ignores any
+ * other kind (a newer client's event is not an error); a caller holding one
+ * says so with a cast.
+ *
+ * @typedef {Loose<InningsStartEvent> | Loose<BattersEvent> | Loose<BowlerEvent>
+ *   | Loose<BallEvent> | Loose<PenaltyEvent> | Loose<RetireEvent> | Loose<VoidEvent>
+ *   | Loose<RevisionEvent> | Loose<InningsEndEvent>} LogEvent
+ */
 
 // ── Constructors ─────────────────────────────────────────
 // Each returns a plain, serialisable object. `seq` is assigned by the caller
@@ -167,6 +346,10 @@ let _monotonic = 0;
  *
  * Stable per (device, match, counter) and never reused, so two devices scoring
  * the same match cannot collide.
+ *
+ * @param {string} deviceId
+ * @param {string} matchId
+ * @returns {string}
  */
 export function newEventId(deviceId, matchId) {
   _monotonic += 1;
@@ -176,6 +359,11 @@ export function newEventId(deviceId, matchId) {
 /** Former name. The value was always the event's identity, not just a dedupe token. */
 export const newIdempotencyKey = newEventId;
 
+/**
+ * @template {Kind} K
+ * @param {K} kind
+ * @param {BaseInput} [o]
+ */
 const base = (kind, o = {}) => ({
   kind,
   innings: o.innings ?? 0,
@@ -195,6 +383,8 @@ const base = (kind, o = {}) => ({
  * ball_event.capture_profile when it synced — rejecting the innings_start and
  * with it the squads — so it is refused here, on the device, where the scorer
  * who chose it is still looking at the screen.
+ *
+ * @param {string} p
  */
 const checkedProfile = (p) => {
   if (!CAPTURE_PROFILES.has(p)) {
@@ -228,6 +418,9 @@ const checkedProfile = (p) => {
  * innings built today must be the same object those are — byte for byte
  * through the wire round trip — so that nothing about an old match reads
  * differently for this having shipped.
+ *
+ * @param {InningsStartInput} o
+ * @returns {InningsStartEvent}
  */
 export const inningsStart = (o) => ({
   ...base(KIND.INNINGS_START, o),
@@ -243,12 +436,14 @@ export const inningsStart = (o) => ({
   ...(o.captureProfile != null ? { captureProfile: checkedProfile(o.captureProfile) } : {}),
 });
 
+/** @param {BattersInput} o  @returns {BattersEvent} */
 export const batters = (o) => ({
   ...base(KIND.BATTERS, o),
   striker: o.striker ?? null,
   nonStriker: o.nonStriker ?? null,
 });
 
+/** @param {BowlerInput} o  @returns {BowlerEvent} */
 export const bowler = (o) => ({
   ...base(KIND.BOWLER, o),
   bowler: o.bowler ?? null,
@@ -275,7 +470,10 @@ export const bowler = (o) => ({
  * anything needing a position. It is NEVER upgraded by synthesising a point
  * from its sector.
  */
-/** The delivery kinds a ball may be, for the guard below. */
+/**
+ * The delivery kinds a ball may be, for the guard below.
+ * @type {ReadonlySet<unknown>}  asked of whatever the caller passed
+ */
 const BALL_TYPES = new Set(Object.values(BALL_TYPE));
 
 /**
@@ -296,6 +494,9 @@ const BALL_TYPES = new Set(Object.values(BALL_TYPE));
  * That one is only ever caught by asserting the score independently, which is
  * how it was found: tools/smoke-fold.mjs made exactly that mistake and the
  * "both folds agree" assertion passed while the arithmetic one did not.
+ *
+ * @param {string | null | undefined} t
+ * @returns {BallType}
  */
 const checkedType = (t) => {
   if (t == null) return BALL_TYPE.RUN;
@@ -303,9 +504,11 @@ const checkedType = (t) => {
     throw new TypeError(
       `unknown ball type ${JSON.stringify(t)} — expected one of ${[...BALL_TYPES].join(", ")}`);
   }
-  return t;
+  // BALL_TYPES holds exactly the BallType values, so has(t) proves t is one.
+  return /** @type {BallType} */ (t);
 };
 
+/** @param {BallInput} o  @returns {BallEvent} */
 export const ball = (o) => ({
   ...base(KIND.BALL, o),
   // `type` is the delivery kind (run | W | Wd | Nb | B | LB). It is named to
@@ -364,6 +567,7 @@ export const ball = (o) => ({
   captureProfile: o.captureProfile ?? null,   // "full" | "standard" | "quick"
 });
 
+/** @param {PenaltyInput} o  @returns {PenaltyEvent} */
 export const penalty = (o) => ({
   ...base(KIND.PENALTY, o),
   runs: o.runs ?? 5,
@@ -371,6 +575,7 @@ export const penalty = (o) => ({
   reason: o.reason ?? null,
 });
 
+/** @param {RetireInput} o  @returns {RetireEvent} */
 export const retire = (o) => ({
   ...base(KIND.RETIRE, o),
   batter: o.batter,
@@ -386,6 +591,9 @@ export const retire = (o) => ({
  *
  * A void is never itself voided. Undoing an undo means appending the original
  * again, because the log is a record of what the scorer did, not a stack.
+ *
+ * @param {VoidInput} o
+ * @returns {VoidEvent}
  */
 export const voidEvent = (o) => ({
   ...base(KIND.VOID, o),
@@ -400,6 +608,9 @@ export const voidEvent = (o) => ({
  * scorecard, the second device and the server all derive the same innings
  * end and the same result, and the revision itself is on the record with
  * who made it and when. No DLS/VJD here: the figures are the umpires', typed.
+ *
+ * @param {RevisionInput} o
+ * @returns {RevisionEvent}
  */
 export const revision = (o) => ({
   ...base(KIND.REVISION, o),
@@ -421,6 +632,9 @@ export const revision = (o) => ({
  * `reason` has no default on purpose. It used to default to OVERS, so
  * `inningsEnd({})` — a seal that does not say why — asserted that the overs ran
  * out. That is a sentence about a real match invented by a missing argument.
+ *
+ * @param {InningsEndInput} o
+ * @returns {InningsEndEvent}
  */
 export const inningsEnd = (o) => ({
   ...base(KIND.INNINGS_END, o),
@@ -472,10 +686,18 @@ const ROW_SNAKE = {
  * identically, because it only ever compares ids for equality.
  */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** @param {unknown} v  @returns {string | null} */
 const asPlayerId = (v) => (typeof v === "string" && UUID.test(v) ? v : null);
 
-/** Client event → a `ball_event` row body for POST /matches/:id/events. */
+/**
+ * Client event → a `ball_event` row body for POST /matches/:id/events.
+ *
+ * @param {Readonly<Record<string, any>>} ev  any event (a LogEvent), read
+ *   field by field: whatever has no column rides in `payload`
+ * @returns {Record<string, any>}  column → value, with `payload` the jsonb rest
+ */
 export function toRow(ev) {
+  /** @type {Record<string, any>} */
   const row = {
     kind: ev.kind,
     innings: ev.innings ?? 0,
@@ -507,7 +729,12 @@ export function toRow(ev) {
   return row;
 }
 
-/** `ball_event` row → client event. Inverse of toRow(). */
+/**
+ * `ball_event` row → client event. Inverse of toRow().
+ *
+ * @param {Record<string, any>} row  as the database returned it
+ * @returns {LogEvent}  `kind` is the column's, which its CHECK confines to KIND
+ */
 export function fromRow(row) {
   return {
     kind: row.kind,
