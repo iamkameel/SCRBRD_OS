@@ -50,11 +50,16 @@ export function getToken() { return _token; }
 export function signedIn() { return _token != null; }
 
 export class ApiError extends Error {
-  constructor(status, code, path) {
+  // `detail` carries a route's own words for a refusal it already named —
+  // fixture-api.mjs, for one, passes a Postgres CHECK violation's message
+  // through rather than flattening it to a bare code. Optional and additive:
+  // no existing caller reads it, so nothing that only used status/code changes.
+  constructor(status, code, path, detail) {
     super(`${code || "http_" + status} (${path})`);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
+    this.detail = detail ?? null;
   }
 }
 
@@ -78,7 +83,7 @@ export async function api(path, { method = "GET", body, timeoutMs = 10000 } = {}
       signal: ctl.signal,
     });
     const data = await res.json().catch(() => null);
-    if (!res.ok) throw new ApiError(res.status, data?.error, path);
+    if (!res.ok) throw new ApiError(res.status, data?.error, path, data?.detail);
     return data;
   } finally {
     clearTimeout(timer);

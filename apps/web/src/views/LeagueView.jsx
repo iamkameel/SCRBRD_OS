@@ -1,15 +1,13 @@
-
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { holdsCapability } from "../rbac/index.js";
-import { D, textOn } from "../design/tokens.js";
+import { D } from "../design/tokens.js";
 import { SR } from "../scorer/format.js";
-import { addDays, dateStr, today } from "../lib/format.js";
-import { Avatar, Badge, Btn, Card, Input, Modal, Pill, SectionHeader, Select } from "../ui/primitives.jsx";
+import { Avatar, Badge, Btn, Card, Pill, SectionHeader } from "../ui/primitives.jsx";
 import { WeatherChip } from "./shared.jsx";
 import { SeasonHistory } from "./SeasonHistoryView.jsx";
+import { AddFixtureModal } from "./fixtures.jsx";
 import { useLive, usePlayersWithCareer, useRows, useWeather } from "../lib/live.js";
-import { api } from "../lib/api.js";
-import { mode, schoolsWhere } from "../lib/session.js";
+import { schoolsWhere } from "../lib/session.js";
 
 // ══════════════════════════════════════════════════════
 //  LEAGUE MANAGEMENT VIEW
@@ -27,7 +25,12 @@ function LeagueView({ role }) {
   const [tab,     setTab]     = useState("table");
   const [editRow, setEditRow] = useState(null);  // team row being edited
   const [addFixture, setAddFixture] = useState(false);
-  const fixtureSchools = schoolsWhere("fixture.update");
+  // fixture.create, not fixture.update: this offers the ARRANGE form, and a
+  // role holding only fixture.update (competitionadmin, rescheduling across a
+  // league) would see the button and then be refused by match_insert() in
+  // db/09 — the exact "a button that then says no" bug canScore()'s own
+  // comment warns against.
+  const fixtureSchools = schoolsWhere("fixture.create");
   const comp = COMPETITIONS.find(c=>c.id===selComp) ?? COMPETITIONS[0];
   // The ladder, from the server, for the competition on screen. The demo
   // carries its table on the competition row; a live competition has none
@@ -362,188 +365,6 @@ function LiveLadder({ rows, comp }) {
         </div>
       ))}
     </Card>
-  );
-}
-
-// A boy's game arranged for real: two sides, a place, a time. The right
-// column is a live preview of exactly the fixture the left column is
-// building — nothing in it is invented, only assembled from what has
-// already been typed, so it can never say more than the form actually knows.
-function AddFixtureModal({ fixtureSchools, teamOptions, grounds, matches, onClose, onCreated }) {
-  const [schoolId, setSchoolId] = useState(fixtureSchools[0]?.id ?? "");
-  const [teamCode, setTeamCode] = useState("");
-  // The API's own two answers to "who is the away side" (see
-  // services/api/write/fixture-api.mjs): a tenant school, named and read by
-  // both sides, or free text for a visitor SCRBRD does not host. The toggle
-  // makes that choice visible instead of leaving one text box to mean both.
-  const [awayMode, setAwayMode] = useState("free");   // "free" | "school"
-  const [opponent, setOpponent] = useState("");
-  const [awaySchoolId, setAwaySchoolId] = useState("");
-  const [awayTeamCode, setAwayTeamCode] = useState("");
-  const [liveSchools, setLiveSchools] = useState([]);
-  const [groundId, setGroundId] = useState("");
-  const [date, setDate] = useState("");
-  const [time, setTime] = useState("14:00");
-  const [format, setFormat] = useState("T20");
-  const [overs, setOvers] = useState("20");
-  const [said, setSaid] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  // The away-school list is the same one onboarding offers a stranger — a
-  // public fact, nothing more — fetched once, only if this mode is ever used.
-  useEffect(() => { let off = false; (async () => {
-    if (await mode() !== "live") return;
-    const r = await api("/api/schools").catch(() => null);
-    if (!off && r?.rows) setLiveSchools(r.rows);
-  })(); return () => { off = true; }; }, []);
-
-  const FORMATS = { T20: 20, "One-Day": 50, "Two-Day": 80 };
-  const setFmt = (f) => { setFormat(f); setOvers(String(FORMATS[f] ?? 20)); };
-
-  const ground = grounds.find(g=>g.id===groundId);
-  const awaySchool = liveSchools.find(s=>s.id===awaySchoolId);
-  const awayLabel = awayMode==="school"
-    ? (awaySchool ? `${awaySchool.name}${awayTeamCode?` ${awayTeamCode}`:""}` : "")
-    : opponent;
-  const ready = teamCode && (awayMode==="school" ? (awaySchoolId && awayTeamCode.trim()) : opponent.trim()) && date;
-
-  // Nothing here blocks a double-booking — the ground and the hour are a
-  // fact worth knowing, not a rule worth enforcing, and only the office
-  // arranging the trip could say whether it is really a clash. Computed
-  // from the same fixture list already on screen: no fabricated lookup.
-  const clash = date && ground && matches.some(m => m.venue===ground.name && m.date===date);
-
-  const submit = async () => {
-    setSaid(""); setBusy(true);
-    try {
-      await api("/api/fixtures", { method: "POST", body: {
-        schoolId, teamCode,
-        ...(awayMode==="school" ? { awaySchoolId, awayTeamCode: awayTeamCode.trim() } : { opponent: opponent.trim() }),
-        groundId: groundId || null,
-        startsAt: new Date(`${date}T${time}`).toISOString(),
-        format, overs: Number(overs),
-      }});
-      onCreated();
-    } catch (e) { setSaid(e.message || "Refused."); }
-    finally { setBusy(false); }
-  };
-
-  // Three taps to a real Saturday, since almost every school fixture is one.
-  const nextSaturday = (from) => { const d = new Date(from); const add = (6 - d.getDay() + 7) % 7 || 7; d.setDate(d.getDate() + add); return d; };
-  const quickDates = [
-    { label: "This Saturday", d: nextSaturday(addDays(today, -1)) },
-    { label: "Next Saturday", d: nextSaturday(today) },
-    { label: "In two weeks", d: addDays(today, 14) },
-  ];
-
-  const checklist = [
-    { label: "Home side", done: !!teamCode },
-    { label: "Away side", done: awayMode==="school" ? !!(awaySchoolId && awayTeamCode.trim()) : !!opponent.trim() },
-    { label: "Date", done: !!date },
-  ];
-
-  const lbl = { display:"block",fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"5px"};
-
-  return (
-    <Modal title="Arrange a Fixture" onClose={onClose} width="800px">
-      <div style={{display:"flex",gap:"20px",flexWrap:"wrap"}}>
-        {/* ── The form ── */}
-        <div style={{flex:"1 1 380px",minWidth:"320px"}}>
-          {fixtureSchools.length>1&&<Select label="School" value={schoolId} onChange={setSchoolId}
-            options={fixtureSchools.map(s=>({value:s.id,label:s.name}))}/>}
-
-          <Select label="Home side" value={teamCode} onChange={setTeamCode}
-            options={[{value:"",label:"Which of your teams?"}, ...teamOptions.map(t=>({value:t,label:t}))]}/>
-
-          <div style={{marginBottom:"5px"}}>
-            <label style={lbl}>Away side</label>
-            <div style={{display:"flex",background:D.surf2,borderRadius:D.pill,padding:"3px",border:`1px solid ${D.border}`,marginBottom:"8px"}}>
-              {[["free","Not on SCRBRD"],["school","A school here"]].map(([m,l])=>(
-                <button key={m} onClick={()=>setAwayMode(m)} className="pressBtn" style={{
-                  flex:1,padding:"6px 10px",borderRadius:D.pill,border:"none",cursor:"pointer",
-                  background:awayMode===m?D.gradLive:"transparent",color:awayMode===m?"#fff":D.textMuted,
-                  fontFamily:D.head,fontSize:"10px",fontWeight:700,
-                }}>{l}</button>
-              ))}
-            </div>
-          </div>
-          {awayMode==="free"
-            ? <Input label="Opponent" value={opponent} onChange={setOpponent} placeholder="e.g. Michaelhouse 1st XI"/>
-            : (
-              <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:"10px"}}>
-                <Select label="School" value={awaySchoolId} onChange={setAwaySchoolId}
-                  options={[{value:"",label:liveSchools.length?"Which school?":"Loading…"}, ...liveSchools.map(s=>({value:s.id,label:s.name}))]}/>
-                <Input label="Their team" value={awayTeamCode} onChange={(v)=>setAwayTeamCode(v.toUpperCase())} placeholder="1XI"/>
-              </div>
-            )}
-
-          <label style={lbl}>Quick dates</label>
-          <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginBottom:"12px"}}>
-            {quickDates.map(q=>(
-              <button key={q.label} onClick={()=>setDate(dateStr(q.d))} className="pressBtn" style={{
-                padding:"5px 12px",borderRadius:D.pill,cursor:"pointer",
-                border:`1px solid ${date===dateStr(q.d)?D.violet+"55":D.border}`,
-                background:date===dateStr(q.d)?D.violet+"14":"transparent",
-                fontFamily:D.body,fontSize:"11px",color:date===dateStr(q.d)?D.violet:D.textMuted,
-              }}>{q.label}</button>
-            ))}
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px"}}>
-            <Input label="Date" value={date} onChange={setDate} type="date"/>
-            <Input label="Time" value={time} onChange={setTime} type="time"/>
-          </div>
-
-          <Select label="Venue" value={groundId} onChange={setGroundId}
-            options={[{value:"",label:"Not recorded"}, ...grounds.map(g=>({value:g.id,label:g.name}))]}/>
-          {clash&&<div style={{fontFamily:D.body,fontSize:"11px",color:D.amber,marginTop:"-8px",marginBottom:"12px"}}>
-            ⚠ Another fixture is already down for {ground.name} that day.</div>}
-
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px"}}>
-            <Select label="Format" value={format} onChange={setFmt} options={Object.keys(FORMATS)}/>
-            <Input label="Overs" value={overs} onChange={setOvers} type="number"/>
-          </div>
-        </div>
-
-        {/* ── The live preview: exactly what the left column has assembled ── */}
-        <div style={{flex:"1 1 300px",minWidth:"280px"}}>
-          <div style={{position:"sticky",top:0}}>
-            <Card sx={{padding:"18px",background:`linear-gradient(160deg,${D.violet}0d,${D.surf1})`}} data-testid="fixture-preview">
-              <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:"14px",textAlign:"center"}}>Matchday</div>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:"14px",marginBottom:"16px"}}>
-                <div style={{textAlign:"center"}}>
-                  <Avatar name={teamCode||"?"} size={44} color={D.emerald}/>
-                  <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textPrimary,marginTop:"6px"}}>{teamCode||"Your side"}</div>
-                </div>
-                <div style={{fontFamily:D.mono,fontSize:"11px",color:D.textMuted,fontWeight:700}}>VS</div>
-                <div style={{textAlign:"center"}}>
-                  <Avatar name={awayLabel||"?"} size={44} color={D.rose}/>
-                  <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textPrimary,marginTop:"6px",maxWidth:"110px"}}>{awayLabel||"Opponent"}</div>
-                </div>
-              </div>
-              <div style={{display:"flex",flexDirection:"column",gap:"8px",fontFamily:D.body,fontSize:"12px",color:D.textSecondary,borderTop:`1px solid ${D.border}`,paddingTop:"12px"}}>
-                <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:D.textMuted}}>When</span>
-                  <span>{date ? new Date(`${date}T${time}`).toLocaleString(undefined,{weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}) : "—"}</span></div>
-                <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:D.textMuted}}>Venue</span><span>{ground?.name ?? "Not recorded"}</span></div>
-                <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:D.textMuted}}>Format</span><span>{format} · {overs} overs</span></div>
-              </div>
-            </Card>
-            <div data-testid="fixture-checklist" style={{marginTop:"14px",display:"flex",flexDirection:"column",gap:"6px"}}>
-              {checklist.map(c=>(
-                <div key={c.label} style={{display:"flex",alignItems:"center",gap:"8px",fontFamily:D.body,fontSize:"11px",color:c.done?D.emerald:D.textMuted}}>
-                  <span>{c.done?"✓":"○"}</span>{c.label}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {said&&<div role="alert" style={{fontFamily:D.body,fontSize:"11px",color:textOn(D.rose),marginTop:"14px"}}>{said}</div>}
-      <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"16px"}}>
-        <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
-        <Btn onClick={submit} disabled={!ready||busy}>{busy?"Arranging…":"Arrange Fixture"}</Btn>
-      </div>
-    </Modal>
   );
 }
 
