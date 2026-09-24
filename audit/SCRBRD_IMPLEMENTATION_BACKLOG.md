@@ -2908,7 +2908,15 @@ after it refused too.
 - `tools/check-imports` reads the word "can" in JSX text as a call to the `can()` helper (false positive).
 **Tests required:** one case per item when it is taken up.
 
-### SCRBRD-072 — Phase wickets count a dismissal the free hit saved
+### ~~SCRBRD-072~~ — CLOSED
+**Closed 2026-09-24.** Phases now read the fold's own `freeHitSaved` flag instead of re-deciding, and three more
+divergences were fixed with it: fours and sixes count only runs off the bat (not four byes; a no-ball hit for four
+counts), a W ball with no mode written counts as the fold does, and a revision below the overs already bowled no
+longer drops the later balls. An invariant test over 60 generated innings holds runs, balls, wickets, dots, fours and
+sixes summed over phases equal to the innings. Penalty runs stay outside every phase (the fold keeps only their total);
+phase runs sum to `runs − extras.penalty`, documented in phases.mjs.
+
+Original entry — Phase wickets count a dismissal the free hit saved
 **Title:** `phases.mjs` counts every ball with a dismissal as a wicket, including one the fold saved on a free hit
 **Priority:** P2 · **Domain:** Scoring / analytics · **Type:** correctness
 **Affected files:** `packages/scoring/src/phases.mjs` (~line 193, `if (b.dismissal) acc.wickets += 1`)
