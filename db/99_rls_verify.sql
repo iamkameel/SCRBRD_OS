@@ -2726,6 +2726,131 @@ BEGIN
     PERFORM _assert(n = 0, format('the driver reads %s trip(s): trip was withheld from db/39 — see docs/rls-anchor-audit.md', n));
   END;
 
+  -- ── 19. A player's SQL figures follow the fold (SCRBRD-068/081, db/40) ──
+  -- Balls written live, old shapes beside new, and every career reader asked
+  -- what moved. Deltas, read before and after, so whatever an earlier section
+  -- left in the log cannot pass or fail this one. Every figure is coalesced
+  -- to a number before it is compared: _assert() refuses a NULL, and a
+  -- missing row is a figure of 0 here, not a check that never ran.
+  --
+  --   old  a no-ball for 4 with no nbRuns          off the bat: 4 runs, a four
+  --   new  a no-ball, 4 byes     (nbRuns byes)     not his: 0 runs, no four
+  --   new  a no-ball, 6 leg byes (nbRuns leg_byes) not his: 0 runs, no six
+  --   old  a W ball naming timed_out               a ball, his dismissal, not the bowler's
+  --   new  retire marked W, retired_out, P_BAT     his dismissal, no ball, no bowler
+  --   new  retire marked W, timed_out,   P_OUT     his dismissal, an innings of 0 (0)
+  --   new  retire marked W, a typed name           nobody's (not a player id)
+  --   old  retire, reason out, NO W marker, P_OUT  not a wicket (as in the fold)
+  PERFORM _scoring_session_reset(M_HANDOVER);
+  PERFORM _as(U_SCORER);
+  PERFORM set_config('app.device_id', 'verify-040', true);
+  SELECT c.ok, c.epoch INTO v_ok, v_epoch FROM scoring_claim(M_HANDOVER, 'verify-040') c;
+  PERFORM _assert(v_ok, 'the scorer could not claim the match the db/40 section scores');
+  DECLARE
+    P_BAT  uuid := 'aaaaaaaa-0000-0000-0000-000000000006';  -- K Dlamini
+    P_OUT  uuid := 'aaaaaaaa-0000-0000-0000-000000000011';  -- L Mahlangu, never faced a ball
+    P_BOWL uuid := 'bbbbbbbb-0000-0000-0000-000000000002';  -- K Botha
+    bat0 record; bat1 record; bow0 record; bow1 record;
+    d_bat0 bigint; d_bat1 bigint; d_out0 bigint; d_out1 bigint; d_all0 bigint; d_all1 bigint;
+    m_out0 bigint; m_out1 bigint; bw0 bigint; bw1 bigint;
+    k_ro0 bigint; k_ro1 bigint; k_to0 bigint; k_to1 bigint; k_out0 bigint; k_out1 bigint;
+    inn_out record;
+  BEGIN
+    PERFORM _as(U_OWNER);
+    SELECT coalesce(b.runs, 0) AS runs, coalesce(b.balls_faced, 0) AS balls, coalesce(b.fours, 0) AS fours,
+           coalesce(b.sixes, 0) AS sixes INTO bat0 FROM player_batting_since(P_BAT, NULL) b;
+    SELECT coalesce(w.runs_conceded, 0) AS runs, coalesce(w.legal_balls, 0) AS balls,
+           coalesce(w.no_balls, 0) AS nb, coalesce(w.wickets, 0) AS wkts INTO bow0 FROM player_bowling_since(P_BOWL, NULL) w;
+    d_bat0 := coalesce(player_dismissals_since(P_BAT, NULL), 0);
+    d_out0 := coalesce(player_dismissals_since(P_OUT, NULL), 0);
+    SELECT coalesce(sum(dismissals), 0) INTO d_all0 FROM player_dismissals;
+    SELECT coalesce((SELECT matches FROM player_batting_career WHERE player_id = P_OUT), 0) INTO m_out0;
+    SELECT coalesce(sum(wickets), 0) INTO bw0 FROM player_wicket_breakdown WHERE player_id = P_BOWL;
+    SELECT coalesce(sum(dismissals) FILTER (WHERE dismissal = 'retired_out'), 0),
+           coalesce(sum(dismissals) FILTER (WHERE dismissal = 'timed_out'), 0)
+      INTO k_ro0, k_to0 FROM player_dismissal_breakdown WHERE player_id = P_BAT;
+    SELECT coalesce(sum(dismissals), 0) INTO k_out0 FROM player_dismissal_breakdown
+     WHERE player_id = P_OUT AND dismissal = 'timed_out';
+
+    PERFORM _as(U_SCORER);
+    INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                            idempotency_key, client_seq, client_ts, kind, ball_type, value,
+                            striker_id, bowler_id, dismissal, payload)
+    SELECT M_HANDOVER, match_school(M_HANDOVER), 9400 + x.k, v_epoch, 0, U_SCORER, 'verify-040',
+           'verify:040:' || x.k, x.k, now(), x.kind, x.bt, x.v,
+           CASE WHEN x.kind = 'ball' THEN P_BAT END, CASE WHEN x.kind = 'ball' THEN P_BOWL END,
+           x.dis, x.pl
+      FROM (VALUES
+        (1, 'ball',   'Nb', 4,    NULL,          '{}'::jsonb),
+        (2, 'ball',   'Nb', 4,    NULL,          '{"nbRuns":"byes"}'::jsonb),
+        (3, 'ball',   'Nb', 6,    NULL,          '{"nbRuns":"leg_byes"}'::jsonb),
+        (4, 'ball',   'W',  0,    'timed_out',   '{}'::jsonb),
+        (5, 'retire', 'W',  NULL, 'retired_out', jsonb_build_object('batter', P_BAT, 'reason', 'out')),
+        (6, 'retire', 'W',  NULL, 'timed_out',   jsonb_build_object('batter', P_OUT, 'reason', 'timed_out')),
+        (7, 'retire', 'W',  NULL, 'retired_out', '{"batter":"An Opposition Boy","reason":"out"}'::jsonb),
+        (8, 'retire', NULL, NULL, NULL,          jsonb_build_object('batter', P_OUT, 'reason', 'out'))
+      ) AS x(k, kind, bt, v, dis, pl);
+
+    PERFORM _as(U_OWNER);
+    SELECT coalesce(b.runs, 0) AS runs, coalesce(b.balls_faced, 0) AS balls, coalesce(b.fours, 0) AS fours,
+           coalesce(b.sixes, 0) AS sixes INTO bat1 FROM player_batting_since(P_BAT, NULL) b;
+    SELECT coalesce(w.runs_conceded, 0) AS runs, coalesce(w.legal_balls, 0) AS balls,
+           coalesce(w.no_balls, 0) AS nb, coalesce(w.wickets, 0) AS wkts INTO bow1 FROM player_bowling_since(P_BOWL, NULL) w;
+    d_bat1 := coalesce(player_dismissals_since(P_BAT, NULL), 0);
+    d_out1 := coalesce(player_dismissals_since(P_OUT, NULL), 0);
+    SELECT coalesce(sum(dismissals), 0) INTO d_all1 FROM player_dismissals;
+    SELECT coalesce((SELECT matches FROM player_batting_career WHERE player_id = P_OUT), 0) INTO m_out1;
+    SELECT coalesce(sum(wickets), 0) INTO bw1 FROM player_wicket_breakdown WHERE player_id = P_BOWL;
+    SELECT coalesce(sum(dismissals) FILTER (WHERE dismissal = 'retired_out'), 0),
+           coalesce(sum(dismissals) FILTER (WHERE dismissal = 'timed_out'), 0)
+      INTO k_ro1, k_to1 FROM player_dismissal_breakdown WHERE player_id = P_BAT;
+    SELECT coalesce(sum(dismissals), 0) INTO k_out1 FROM player_dismissal_breakdown
+     WHERE player_id = P_OUT AND dismissal = 'timed_out';
+    SELECT coalesce(i.runs, -1) AS runs, coalesce(i.balls_faced, -1) AS balls, coalesce(i.out, false) AS out
+      INTO inn_out FROM player_innings i WHERE i.player_id = P_OUT AND i.match_id = M_HANDOVER AND i.innings = 0;
+
+    -- (a) Whose runs: runsOffBat(). Only the no-ball hit for four is his.
+    PERFORM _assert(bat1.runs - bat0.runs = 4,
+      format('a no-ball''s byes / leg byes were credited to the batter: +%s runs, expected +4 (the no-ball off the bat only)', bat1.runs - bat0.runs));
+    PERFORM _assert(bat1.fours - bat0.fours = 1 AND bat1.sixes - bat0.sixes = 0,
+      format('a no-ball''s byes / leg byes were counted as the batter''s boundary: +%s fours, +%s sixes, expected +1, +0',
+             bat1.fours - bat0.fours, bat1.sixes - bat0.sixes));
+    -- (b) ...and every no-ball is still a ball he faced; the old W ball is one
+    --     too; a retirement is not.
+    PERFORM _assert(bat1.balls - bat0.balls = 4,
+      format('balls faced moved by %s, expected 4 (three no-balls and the old W ball; no retirement)', bat1.balls - bat0.balls));
+    -- (c) Every run of a no-ball is debited to the bowler (Law 21): 5 + 5 + 7;
+    --     the old timed-out W ball is a legal ball of his and not his wicket;
+    --     a retirement is no ball and nobody's wicket.
+    PERFORM _assert(bow1.runs - bow0.runs = 17 AND bow1.nb - bow0.nb = 3,
+      format('the bowler was charged %s runs for %s no-balls, expected 17 for 3 (byes off a no-ball are his too)',
+             bow1.runs - bow0.runs, bow1.nb - bow0.nb));
+    PERFORM _assert(bow1.balls - bow0.balls = 1 AND bow1.wkts - bow0.wkts = 0 AND bw1 - bw0 = 0,
+      format('the bowler''s legal balls / wickets / wicket breakdown moved by %s / %s / %s, expected 1 / 0 / 0',
+             bow1.balls - bow0.balls, bow1.wkts - bow0.wkts, bw1 - bw0));
+    -- (d) A retirement marked W is a dismissal of payload.batter — beside the
+    --     old W ball naming timed_out, which still is one.
+    PERFORM _assert(d_bat1 - d_bat0 = 2,
+      format('the batter''s dismissals moved by %s, expected 2 (the old timed-out W ball and a retirement marked W)', d_bat1 - d_bat0));
+    PERFORM _assert(d_out1 - d_out0 = 1,
+      format('a batter timed out without facing a ball has %s more dismissals, expected 1 (and the unmarked retire none)', d_out1 - d_out0));
+    -- (e) Nobody else: a typed name is not a player, and an unmarked retire
+    --     with reason out is not a wicket (retirementDismissal()).
+    PERFORM _assert(d_all1 - d_all0 = 3,
+      format('dismissals across every player moved by %s, expected 3', d_all1 - d_all0));
+    -- (f) A timed-out batter played an innings: 0 (0), out.
+    PERFORM _assert(inn_out.runs = 0 AND inn_out.balls = 0 AND inn_out.out,
+      format('a batter timed out has no innings of 0 (0), out: %s',
+             CASE WHEN inn_out.out IS NULL THEN 'no row' ELSE inn_out::text END));
+    PERFORM _assert(m_out1 - m_out0 = 1,
+      format('a batter timed out has %s more batting matches, expected 1', m_out1 - m_out0));
+    -- (g) By method.
+    PERFORM _assert(k_ro1 - k_ro0 = 1 AND k_to1 - k_to0 = 1 AND k_out1 - k_out0 = 1,
+      format('the dismissal breakdown moved retired_out %s / timed_out %s / timed_out (never faced) %s, expected 1 / 1 / 1',
+             k_ro1 - k_ro0, k_to1 - k_to0, k_out1 - k_out0));
+  END;
+  PERFORM set_config('app.device_id', '', true);
+
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 

@@ -24,6 +24,14 @@
  *   SCRBRD-069  A run out after a completed run asks which end; the survivor
  *               is placed from it and the new batter takes the empty end.
  *
+ * And what every one of those reaches beyond the board: the career read
+ * (/read/career, the SQL views db/40 brought into line with the fold). Every
+ * delivery the pad sends — the no-ball and wicket sheets' included, which
+ * used to send none — names its striker, non-striker and bowler, so a no-ball
+ * is in the batter's balls faced and, in the second innings where a SCRBRD
+ * side bowls, in its bowler's runs conceded; retired out and timed out are in
+ * the batters' careers as dismissals.
+ *
  * At every step the board, the server's fold and match_live_score (the SQL
  * fold the public score and the handover check read) must say the same.
  *
@@ -83,11 +91,25 @@ const pool = new pg.Pool({ connectionString: DB });
 const dbq = async (text, params) => (await pool.query(text, params)).rows;
 
 /** The server's log for this match, folded the way every reader folds it. */
-async function serverLog() {
+async function serverLog(innings = 0) {
   const rows = await dbq(`select ${EVENT_COLUMNS} from ball_event where match_id = $1 order by seq`, [MATCH]);
-  const evs = rows.map(fromRow).filter((e) => (e.innings ?? 0) === 0);
-  return { rows, evs, inn: deriveInnings(evs) };
+  const evs = rows.map(fromRow).filter((e) => (e.innings ?? 0) === innings);
+  return { rows: rows.filter((r) => (r.innings ?? 0) === innings), evs, inn: deriveInnings(evs) };
 }
+
+/** /read/career, as the 1XI coach reads it, by player id. Figures as numbers. */
+let coachToken = null;
+async function careerRead() {
+  coachToken ??= (await (await fetch(`${API}/api/auth/dev-login`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "coach@example.invalid", deviceId: "pad-laws-coach" }) })).json())?.token;
+  const r = await fetch(`${API}/api/read/career`, { headers: { authorization: `Bearer ${coachToken}` } });
+  const rows = (await r.json())?.rows ?? [];
+  const num = (x) => Object.fromEntries(Object.entries(x).map(([k, v]) => [k, typeof v === "string" && /^\d+$/.test(v) ? Number(v) : v]));
+  return Object.fromEntries(rows.map((x) => [x.player_id, num(x)]));
+}
+/** What moved in one player's career between two reads (a missing row is zeros). */
+const moved = (a, b, id, k) => (b[id]?.[k] ?? 0) - (a[id]?.[k] ?? 0);
 
 const browser = await chromium.launch({ ...launchOptions() });
 const ctx = await browser.newContext();
@@ -158,15 +180,15 @@ const makeReady = async () => {
 };
 /** Let the outbox send and the server answer. */
 const settle = async () => { await page.waitForTimeout(2500); };
-const agree = async (label) => {
+const agree = async (label, innings = 0) => {
   await settle();
-  const s = await serverLog();
+  const s = await serverLog(innings);
   const b = await board();
   ok(`${label}: the board and the server's fold agree (${b})`, b === boardOf(s.inn), `board ${b} / server ${boardOf(s.inn)}`);
   // ...and the SQL fold the public score and the handover check read
   // (match_live_score: a wicket is ball_type 'W', a ball is kind 'ball').
   const [live] = await dbq(`select runs::int, wickets::int, legal_balls::int from match_live_score
-                             where match_id = $1 and innings = 0`, [MATCH]);
+                             where match_id = $1 and innings = $2`, [MATCH, innings]);
   ok(`${label}: ...and so does match_live_score`,
      live?.runs === s.inn.runs && live?.wickets === s.inn.wickets && live?.legal_balls === s.inn.balls,
      `${JSON.stringify(live)} / ${boardOf(s.inn)}`);
@@ -182,6 +204,10 @@ try {
   await dbq(`insert into match_toss (match_id, school_id, won_by, decision)
              select id, school_id, 'home', 'bat' from match where id = $1
              on conflict (match_id) do nothing`, [MATCH]);
+
+  // Every career before a ball is bowled: what moves is this walk's.
+  const careerAt = await careerRead();
+  ok("the coach reads the career figures before a ball is bowled", Object.keys(careerAt).length > 0);
 
   await page.addInitScript(`window.__SCRBRD_API_BASE__ = ${JSON.stringify(API)};`);
   await page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "networkidle" });
@@ -365,6 +391,88 @@ try {
   ok("...and the new batter came in at the striker's end, the one left empty",
      ro2.inn.striker != null && ro2.inn.striker !== S && ro2.inn.striker !== N);
   ok("...with the run the striker's", ro2.inn.batsmen.find((b) => b.id === S)?.runs === (hitNb.inn.batsmen.find((b) => b.id === S)?.runs ?? 0) + 1);
+
+  // ── Every delivery names its players; the career read counts them ──
+  group("Every delivery names who faced it and who bowled it — the no-ball and wicket sheets' too");
+  const ballRows = ro2.rows.filter((r) => r.kind === "ball");
+  const named = (r) => (r.striker_id ?? r.payload?.striker) != null && (r.non_striker_id ?? r.payload?.nonStriker) != null
+    && (r.bowler_id ?? r.payload?.bowler) != null;
+  ok(`every ball the pad sent names the striker, the non-striker and the bowler (${ballRows.filter(named).length} of ${ballRows.length})`,
+     ballRows.length > 0 && ballRows.every(named),
+     JSON.stringify(ballRows.filter((r) => !named(r)).map((r) => ({ seq: r.seq, type: r.ball_type }))));
+  const nbRows = ballRows.filter((r) => r.ball_type === "Nb");
+  ok("...both no-balls name the man who faced them, and the bowler",
+     nbRows.length === 2 && nbRows.every((r) => r.striker_id === nbStriker && r.payload?.bowler === "C Mthembu"),
+     JSON.stringify(nbRows.map((r) => ({ striker: r.striker_id, bowler: r.payload?.bowler }))));
+  ok("...and so does the run out", roBall?.striker_id === S && roBall?.non_striker_id === N && roBall?.payload?.bowler === "C Mthembu",
+     JSON.stringify(roBall && { striker: roBall.striker_id, nonStriker: roBall.non_striker_id, bowler: roBall.payload?.bowler }));
+
+  const careerMid = await careerRead();
+  const facedNb = ro2.inn.batsmen.find((b) => b.id === nbStriker);
+  ok(`the career read counts his no-balls as balls faced (+${moved(careerAt, careerMid, nbStriker, "balls_faced")}; the card says ${facedNb?.balls})`,
+     facedNb != null && moved(careerAt, careerMid, nbStriker, "balls_faced") === facedNb.balls);
+  ok(`...and his runs as the card has them, the leg byes not his (+${moved(careerAt, careerMid, nbStriker, "runs")}; the card says ${facedNb?.runs})`,
+     facedNb != null && moved(careerAt, careerMid, nbStriker, "runs") === facedNb.runs);
+  ok("...and his run out is his dismissal", moved(careerAt, careerMid, nbStriker, "dismissals") === 1);
+  ok("the man retired out has it in his career (a retire marked W, not a ball)",
+     moved(careerAt, careerMid, nonStriker, "dismissals") === 1);
+  const timedOut = to.inn.batsmen.find((b) => b.dismissal === "timed out");
+  ok(`...and the man timed out: a dismissal, and an innings he never faced a ball in (${timedOut?.name})`,
+     timedOut != null && moved(careerAt, careerMid, timedOut.id, "dismissals") === 1
+     && moved(careerAt, careerMid, timedOut.id, "bat_matches") === 1 && moved(careerAt, careerMid, timedOut.id, "balls_faced") === 0);
+
+  // The first innings' bowlers are the opposition's, typed names SCRBRD holds
+  // no row for. In the second, the home side bowls, from its own squad.
+  group("The second innings: a no-ball is in a SCRBRD bowler's runs conceded");
+  await click(/Wicket/, 2500);
+  await tap("wicket-mode-bowled");
+  await tap("wicket-confirm");
+  await page.waitForTimeout(800);
+  ok("a fourth wicket ends the innings (a squad of five), and the review sheet opens", await tid("innings-review").count() === 1);
+  await tid("review-confirm").click({ timeout: 4000 });
+  await page.waitForTimeout(800);
+  ok("the scorer starts the second innings from the break sheet", await click(/Start 2nd Innings/, 4000));
+  await page.waitForTimeout(800);
+  // Michaelhouse has no seeded roster: its batters are typed in. The home
+  // side bowls from its own squad, picked from the sheet's list — not typed,
+  // which would make him a name SCRBRD holds no row for. (A squad button's
+  // text is "James WhitfieldBOWL" to a text match: no word boundary.)
+  for (let i = 0, n = 0; i < 10; i++) {
+    const body = await text();
+    if (DEBUG) console.log(`[debug] second innings, pass ${i}:\n` + body.slice(0, 300));
+    const squadBowler = page.locator("button:not([disabled])", { hasText: /BOWL$/ });
+    if (/Opening Bowler/i.test(body) && await squadBowler.count()) {
+      await squadBowler.first().click({ timeout: 3000 });
+      await page.waitForTimeout(600);
+      continue;
+    }
+    const nameField = page.locator('input[aria-label="Player name"]');
+    if (!(await nameField.count())) break;
+    await nameField.fill(`Batter ${++n}`);
+    await nameField.press("Enter");
+    await page.waitForTimeout(500);
+  }
+  if (!/\bDOT\b/i.test(await text())) await click(/QUICK MODE/i, 2500);
+  await page.waitForTimeout(400);
+  ok("the pad reopens for the second innings", /\bDOT\b/i.test(await text()));
+  const inn2 = await serverLog(1);
+  const homeBowler = inn2.inn.bowler;
+  ok(`the second innings' bowler is one of the home squad, by id (${homeBowler})`,
+     typeof homeBowler === "string" && /^[0-9a-f-]{36}$/.test(homeBowler));
+  await click(/^NB/, 3000);
+  await page.waitForTimeout(400);
+  await tap("nb-run-1");
+  await tap("nb-runs-bat");
+  await tap("nb-confirm");
+  const nb2 = await agree("after a no-ball in the second innings", 1);
+  const nb2Row = nb2.rows.filter((r) => r.kind === "ball" && r.ball_type === "Nb").at(-1);
+  ok("the no-ball names its bowler by id", nb2Row?.bowler_id === homeBowler && named(nb2Row ?? {}),
+     JSON.stringify(nb2Row && { bowler: nb2Row.bowler_id, striker: nb2Row.striker_id ?? nb2Row.payload?.striker }));
+  const careerEnd = await careerRead();
+  const card = nb2.inn.bowlers.find((b) => b.id === homeBowler);
+  ok(`the career read charges the bowler the no-ball: +${moved(careerMid, careerEnd, homeBowler, "runs_conceded")} conceded (the card says ${card?.runs}), no legal ball`,
+     card?.runs === 2 && moved(careerMid, careerEnd, homeBowler, "runs_conceded") === card.runs
+     && moved(careerMid, careerEnd, homeBowler, "balls_bowled") === 0);
 
   ok("no console errors on the pad", errors.length === 0, errors.slice(0, 3).join(" | "));
 } catch (e) {

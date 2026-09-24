@@ -3059,6 +3059,10 @@ keys: after the upgrade a re-offered, already-acknowledged ball reads as unsent 
   career views credit a no-ball's `value` to the striker (latent — the pad's no-ball carries no `striker_id`); fixing
   them needs a migration. Also found: the pad's no-ball carries no striker, non-striker or bowler at all, so no-balls
   are missing from every SQL career figure (batting balls faced, bowling runs conceded and no-balls).
+  **Closed 2026-09-24:** `db/40_career_follows_the_fold.sql` reads `payload.nbRuns` in every SQL batting figure
+  (`ball_runs_off_bat()`); the pad's no-ball — and its wicket ball, which had the same gap — now stamp striker,
+  non-striker and bowler (`crease()` in `scorer/engine.jsx`); proved in `smoke-browser-pad-laws` through
+  `/read/career`, `smoke-fold` and `db/99` §19.
 - **SCRBRD-069** (run-out end): decided — ask the scorer which end on a run out that completed runs — build.
   **Built 2026-09-24:** `outAt: "striker_end" | "bowler_end"` on the wicket; the laws-spec KNOWN_GAP is now passing
   cases for both ends (docs/SCORING_RULES.md, "Which end after a run out that completed runs").
@@ -3070,6 +3074,16 @@ keys: after the upgrade a re-offered, already-acknowledged ball reads as unsent 
   **Built 2026-09-24:** a `retire` marked `type: "W"` (docs/SCORING_RULES.md, "Timed out and retired out"). Left
   open: the career views (db/02, db/13) and the dismissal breakdown (db/26) read `kind = 'ball'`, so these
   dismissals are not in a player's SQL career dismissals — counting them needs those views redefined (a migration).
+  **Closed 2026-09-24:** `db/40` counts a retire marked W as a dismissal, an innings and a breakdown line of
+  `payload.batter`, credited to no bowler; the post-match report's key moments name them.
+- **Found 2026-09-24 (db/40), not fixed — older than SCRBRD-068/081, so fixing them moves shipped figures; each
+  needs a decision:** (1) a W ball on a free hit that the fold saves (`standsOnFreeHit`) is still a wicket to every SQL
+  reader, `match_live_score` and `scoring_verify_takeover` included — a handover after one would fail verification;
+  (2) `player_innings` marks `out` only when the dismissed batter was the striker of that ball, so a run out at the
+  non-striker's end is in `player_dismissals` but not in his innings row (form guide / passport average);
+  (3) `opposition_squad()`'s `balls` excludes no-balls, its fours/sixes count byes and wides worth four or six, and
+  its `runs_conceded` leaves out the wide/no-ball penalty run; (4) a NULL `ball_type` on a `ball` row is a run to the
+  fold and nothing to SQL (nothing writes one).
 
 ### Decided 2026-09-24 — screens to build next (from docs/redesign/SCREEN_MAP.md)
 - **SCRBRD-082 — Post-match report.** Scorecard, key moments, figures, generated from the log after a match.

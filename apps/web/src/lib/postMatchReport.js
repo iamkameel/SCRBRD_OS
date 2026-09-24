@@ -14,7 +14,7 @@
  * asserted against directly (test/postMatchReport.test.mjs) without a
  * database, a browser, or a mock fixture standing in for a real one.
  */
-import { BALL_TYPE, OFF_THE_BAT, fmtOvers, isLegal } from "@scrbrd/scoring";
+import { BALL_TYPE, DISMISSAL_LABEL, fmtOvers, isLegal, runsOffBat } from "@scrbrd/scoring";
 
 /**
  * The best batting line across a whole match — every innings' batsmen pooled,
@@ -48,10 +48,13 @@ export function matchBestBowling(innings = []) {
  * rather than guessed from the final total — the same reason phases.mjs reads
  * `ballLog` instead of recomputing from the innings' running total.
  *
- * `OFF_THE_BAT` is the fold's own set (a run, a wicket ball, or a no-ball
- * struck) — the exact three ball types that move `Batter.runs` in the fold
+ * `runsOffBat()` is the fold's own rule for whose runs a delivery's are — a
+ * run, a wicket ball, or a no-ball struck, and not a no-ball's byes or leg
+ * byes (SCRBRD-068) — the exact rule that moves `Batter.runs` in the fold
  * (replay.mjs's BALL case). A second, hand-written list here is how a
- * milestone-over could disagree with the runs column beside it.
+ * milestone-over could disagree with the runs column beside it: it used to
+ * be the set of ball types, which counted four byes off a no-ball towards a
+ * fifty the scorecard does not give him.
  *
  * @param {any} inn  one derived innings
  * @param {string} batterId
@@ -63,8 +66,9 @@ export function milestoneOver(inn, batterId, threshold) {
   let legalBalls = 0;
   for (const b of inn?.ballLog ?? []) {
     const legal = isLegal(b.type ?? BALL_TYPE.RUN);
-    if (b.strikerId === batterId && OFF_THE_BAT.has(b.type ?? BALL_TYPE.RUN)) {
-      runs += b.value ?? 0;
+    const off = b.strikerId === batterId ? runsOffBat(b) : 0;
+    if (off > 0) {
+      runs += off;
       if (runs >= threshold) return fmtOvers(legal ? legalBalls + 1 : legalBalls);
     }
     if (legal) legalBalls += 1;
@@ -84,17 +88,31 @@ export function milestoneOver(inn, batterId, threshold) {
  * the only place a fifty or a hundred's over is derived, so the two can never
  * print two different answers for the same ball.
  *
+ * A wicket with no ball — retired out, timed out (SCRBRD-081) — is in `fow`
+ * like any other, at the score and the over it fell, because the fold puts it
+ * there. What `fow` does not say is how, and "out" alone reads as if a ball
+ * took it; `nonBallWickets` is the fold's record of which those were, so the
+ * line says "retired out" or "timed out" and carries the dismissal.
+ *
  * @param {any[]} innings
  */
 export function keyMoments(innings = []) {
-  /** @type {{kind: string, innings: number, over: string | null, label: string}[]} */
+  /** @type {{kind: string, innings: number, over: string | null, label: string, dismissal?: string}[]} */
   const moments = [];
   innings.forEach((inn, i) => {
     if (!inn) return;
+    // The name `fow` carries for each, exactly as the fold wrote it there.
+    /** @type {Map<string, string>} */
+    const nonBall = new Map();
+    for (const nb of inn.nonBallWickets ?? []) {
+      nonBall.set(inn.batsmen?.find((b) => b.id === nb.batter)?.name ?? "?", nb.dismissal);
+    }
     for (const w of inn.fow ?? []) {
+      const how = nonBall.get(w.batsman);
       moments.push({
         kind: "wicket", innings: i, over: w.overs,
-        label: `${w.batsman} out — ${w.runs}/${w.wickets}`,
+        label: `${w.batsman} ${how ? DISMISSAL_LABEL[how].toLowerCase() : "out"} — ${w.runs}/${w.wickets}`,
+        ...(how ? { dismissal: how } : {}),
       });
     }
     for (const b of inn.batsmen ?? []) {

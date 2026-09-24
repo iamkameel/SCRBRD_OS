@@ -370,10 +370,13 @@ invariant), the scorecard and ball-by-ball text, the one-batter wagon wheel's ru
 `services/api/read/read-api.mjs` — which now counts only runs off the bat, and only fours and sixes off the bat: it
 used to count every ball worth four, four byes and five wides included.
 
-**Not moved.** The SQL career views (`player_batting_since`, `player_innings` in `db/02`, and their `db/08`/`db/13`
-siblings) credit a no-ball's `value` to the striker. A no-ball bye recorded with a `striker_id` would be over-credited
-there; the pad's no-ball does not carry a `striker_id` today (it never has), so none is yet. Reading `payload.nbRuns`
-there needs those views redefined — a migration.
+**The SQL career views (db/40).** They credited a no-ball's `value` to the striker. `db/40_career_follows_the_fold.sql`
+redefines every one that computes a batter's runs from the log (`player_batting_since`, `player_innings`,
+`opposition_squad`, and the milestone trigger) over `ball_runs_off_bat()`, which is `runsOffBat()` in SQL: a no-ball's
+byes and leg byes are not his runs, fours or sixes, are still a ball he faced, and are still every run debited to the
+bowler. A no-ball with no `nbRuns` scores exactly as before. The pad's no-ball, and its wicket ball, now carry the
+striker, non-striker and bowler like every other delivery (they carried none, so neither was in any SQL career figure
+— balls faced, runs conceded, no-balls).
 
 ### A bowler replaced during an over (SCRBRD-080)
 
@@ -436,6 +439,10 @@ end is empty after a wicket or a retirement ("Incoming batter timed out?"), offe
 it. The new batter is sent to the end that is empty (it used to be the striker's, always — which after a wicket on the
 last ball of an over dropped the not-out survivor from the crease, and the server refused it as `crease_occupied`).
 
-**Not moved.** The career views in `db/02`/`db/13` and the dismissal breakdown (`db/26`) read `kind = 'ball'`, so a
-retired out or timed out recorded this way is not in a player's career dismissals there. Counting it needs those views
-redefined (a migration); the live score, the handover check and every device fold already count it.
+**The SQL career views (db/40).** They read `kind = 'ball'`, so a retired out or timed out recorded this way was in no
+player's career. `db/40_career_follows_the_fold.sql` counts a `retire` marked W (`ball_retirement_dismissal()`, which
+is `retirementDismissal()` in SQL) as a dismissal of `payload.batter` in `player_dismissals_since`, an innings of 0 (0),
+out, in `player_innings` (a timed-out batter had no row), a batting match, and a line in the dismissal breakdown. It
+is nobody's wicket and no ball in any bowling figure — those read `kind = 'ball'` and are unchanged. A W ball naming
+timed out or retired out, and a `retire` with no W marker, read exactly as before. The live score, the handover check
+and every device fold already counted it. The post-match report's key moments say "retired out" / "timed out".

@@ -61,8 +61,12 @@ function eventsFromInnings(i){
     // Replay clears the bowler at the end of each over, so this re-announces
     // them exactly when a real over change would.
     if(bw&&bw!==st.bowler) evs.push(bowlerEvent({bowler:bw}));
+    // The crease this ball was bowled to, stamped like any delivery the pad
+    // records (crease() in the engine), after the arrivals above.
+    const at=deriveInnings(evs, ctx);
     evs.push(ballEvent({type:b.type,value:b.value,shot:b.shot,seg:b.seg,zone:b.zone,
-      bowlerApproach:b.bowlerApproach,dismissal:b.dismissal,fielder:b.fielder}));
+      bowlerApproach:b.bowlerApproach,dismissal:b.dismissal,fielder:b.fielder,
+      striker:at.striker??null,nonStriker:at.nonStriker??null,bowler:at.bowler??null}));
   }
   return evs;
 }
@@ -858,6 +862,21 @@ function SCRBRD({resume}={}){
   const onShotSelected=(shotId)=>{setSelShot(shotId);setModal(null);if(scoringCtx?.type==="W"){setModalCtx({shot:shotId});setModal("wicket");}};
   const onShotSkipped=()=>{setSelShot(null);setModal(null);if(scoringCtx?.type==="W"){setModalCtx({shot:null});setModal("wicket");}};
 
+  // WHO FACED IT, ON THE EVENT — for every delivery, not only the ones that
+  // come through commitBall(). The no-ball sheet and the wicket sheet build
+  // their own ball, and until SCRBRD-068's follow-up neither stamped the
+  // crease: a no-ball and a wicket ball reached the server with no striker,
+  // non-striker or bowler, so every SQL career figure left them out — balls
+  // faced, runs conceded, no-balls, dismissals. The fold never reads these
+  // (it tracks the crease itself), so the board is unchanged; the Laws never
+  // read them either. Taken from the innings BEFORE the ball: the striker who
+  // faced it is the one there before it rotated them.
+  const crease=(i)=>({
+    striker: i?.striker ?? null,
+    nonStriker: i?.nonStriker ?? null,
+    bowler: i?.bowler ?? null,
+  });
+
   // Called once shot AND field are both known.
   //
   // This used to be sixty lines of parallel bookkeeping: runs, extras, batter
@@ -904,9 +923,7 @@ function SCRBRD({resume}={}){
     // the one at the crease before it rotated them.
     const ev=ballEvent({
       type,value,shot,bowlerApproach:approach||null,freeHit,
-      striker: before?.striker ?? null,
-      nonStriker: before?.nonStriker ?? null,
-      bowler: before?.bowler ?? null,
+      ...crease(before),
       ...place,
     });
     const after=project(ev);
@@ -992,6 +1009,7 @@ function SCRBRD({resume}={}){
     const ev=ballEvent({type:"W",value:extra.runs??0,shot:modalCtx?.shot||null,
       seg:modalCtx?.seg??null,zone:modalCtx?.zone??null,
       dismissal:mode,fielder:fielder||null,freeHit,
+      ...crease(inn),
       ...(extra.dismissed?{dismissed:extra.dismissed}:{}),
       ...(extra.outAt?{outAt:extra.outAt}:{})});
     const before=inn;
@@ -1074,7 +1092,8 @@ function SCRBRD({resume}={}){
           // `nbRuns` only when the scorer said byes or leg byes (SCRBRD-068);
           // off the bat is the event's default and is left off it.
           emit(ballEvent({type:"Nb",value:runs,shot:selShot,
-            seg:selSeg?.seg??null,zone:selSeg?.zone??null,nbType,...(nbRuns?{nbRuns}:{})}));
+            seg:selSeg?.seg??null,zone:selSeg?.zone??null,nbType,...(nbRuns?{nbRuns}:{}),
+            ...crease(inn)}));
           setSelSeg(null);setModal(null);scoreKeyRef.current++;
           // A height no-ball or a beamer earns a free hit. The replay also
           // tracks this; setting it here keeps the banner immediate.

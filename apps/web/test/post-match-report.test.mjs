@@ -10,7 +10,7 @@
  *
  *   node apps/web/test/post-match-report.test.mjs
  */
-import { deriveInnings } from "@scrbrd/scoring";
+import { deriveInnings, retire, ball, RETIRE_REASON, NB_RUNS, BALL_TYPE } from "@scrbrd/scoring";
 import { keyMoments, matchBestBatting, matchBestBowling, milestoneOver } from "../src/lib/postMatchReport.js";
 
 let pass = 0, fail = 0;
@@ -101,6 +101,51 @@ group("Best batting picks the higher score, and the faster one on a tie");
   const best = matchBestBatting([inn0, inn1]);
   ok("the higher score (or the faster of two equal ones) wins — both scored 50, B in fewer balls",
      best?.id === "B" && best.balls === 10, best);
+}
+
+group("A wicket with no ball — retired out, timed out (SCRBRD-081) — is a key moment, and says how");
+{
+  const squad = ["A", "B", "C", "D", "E"].map((id) => ({ id, name: `${id} Player` }));
+  const events = [{ kind: "innings_start", overs: 20, squad, bowlingSquad: [{ id: "X", name: "X Bowler" }] },
+    { kind: "batters", striker: "A", nonStriker: "B" }, { kind: "bowler", bowler: "X" },
+    ball({ type: BALL_TYPE.RUN, value: 2 }),
+    // B walks off without the umpire's leave: retired out, the non-striker.
+    retire({ batter: "B", reason: RETIRE_REASON.OUT }),
+    // ...and D, due in at that empty end, does not arrive in time.
+    retire({ batter: "D", reason: RETIRE_REASON.TIMED_OUT }),
+    { kind: "batters", nonStriker: "C" },
+    ball({ type: BALL_TYPE.RUN, value: 0 }),
+    ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: "bowled" })];
+  const inn = deriveInnings(events);
+  ok("the fold has two wickets with no ball, and three in the fall of wickets",
+     inn.nonBallWickets.length === 2 && inn.fow.length === 3 && inn.wickets === 3, { nb: inn.nonBallWickets, fow: inn.fow });
+
+  const wickets = keyMoments([inn]).filter((m) => m.kind === "wicket");
+  ok("every wicket is on the feed, the two with no ball included", wickets.length === 3, wickets);
+  const ro = wickets.find((m) => m.dismissal === "retired_out");
+  const to = wickets.find((m) => m.dismissal === "timed_out");
+  ok("retired out is on it, by name, saying how", /^B Player retired out — 2\/1$/.test(ro?.label ?? ""), ro);
+  ok("timed out is on it, by name, saying how", /^D Player timed out — 2\/2$/.test(to?.label ?? ""), to);
+  ok("...each at the over the fold says it fell (no ball bowled since the first)",
+     ro?.over === inn.fow[0].overs && to?.over === inn.fow[1].overs && ro?.over === "0.1", { ro, to });
+  const bowled = wickets.find((m) => !m.dismissal);
+  ok("a wicket off a ball still reads as it did", /^A Player out — 2\/3$/.test(bowled?.label ?? ""), bowled);
+  ok("...and the feed keeps the order they fell in", wickets.map((m) => m.label.split(" ")[0]).join("") === "BDA", wickets);
+}
+
+group("A fifty is reached by runs off the bat — not by byes off a no-ball (SCRBRD-068)");
+{
+  const events = [{ kind: "innings_start", overs: 20, squad: [{ id: "A", name: "A Player" }], bowlingSquad: [] },
+                   { kind: "bowler", bowler: "X" }];
+  for (let i = 0; i < 12; i++) events.push(...battersBall("A", 4));
+  // Four byes off a no-ball: the side's, not his. He is still on 48.
+  events.push({ kind: "batters", striker: "A" }, ball({ type: BALL_TYPE.NO_BALL, value: 4, nbRuns: NB_RUNS.BYES }));
+  events.push(...battersBall("A", 2));
+  const inn = deriveInnings(events);
+  ok("the fold gives him fifty, the byes not his", inn.batsmen.find((b) => b.id === "A")?.runs === 50, inn.batsmen);
+  // Twelve legal balls, the no-ball (not legal), then the two: the 13th legal ball.
+  const over = milestoneOver(inn, "A", 50);
+  ok("the fifty is on the ball that took him there, not the no-ball", over === "2.1", over);
 }
 
 console.log("\n" + "─".repeat(52));
