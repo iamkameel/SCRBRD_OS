@@ -36,5 +36,6 @@
   "35_authz_suspension.sql",
   "36_commit_fingerprint.sql",
   "37_quarantine_loose_ends.sql",
-  "38_amendment_lock.sql"
+  "38_amendment_lock.sql",
+  "39_match_anchor_helpers.sql"
 ]

@@ -41,7 +41,34 @@
  * player policy is still making the anchor NULL; both have to be widened
  * before the write goes through. That is the correct behaviour and a confusing
  * afternoon if you do not expect it.
+ *
+ * THE FIXTURE ANCHORS ARE THE EXCEPTION, from db/39 on. Seven tables keyed on
+ * a match (viaMatch() below) resolve school and team through match_school()
+ * and match_team(), the SECURITY DEFINER helpers db/02 built for the scoring
+ * tables, rather than through a subquery under the caller's own RLS. For
+ * those seven the "defence" was never defence: for the six read under
+ * fixture.read the capability check IS the match's own read check, so the
+ * subquery added nothing, and for match_availability it hid a pupil's own
+ * declaration from him whenever his team assignment could not read the
+ * fixture. The anchor is metadata; app_can() still decides.
+ *
+ * `trip` and `match_squad` are NOT converted, deliberately: resolving their
+ * anchor would widen what a driver and a granted enquiry can read beyond what
+ * either role was meant to reach. docs/rls-anchor-audit.md has the whole
+ * table-by-table reasoning and the narrower rules proposed instead. The
+ * player-anchored tables keep their subqueries too — no role is blind through
+ * them, and the defence in depth above is real there.
  */
+
+/**
+ * A fixture's school and team, as the SECURITY DEFINER helpers answer them.
+ * See the note above; db/39 is where a live database received this.
+ * @param {string} table
+ */
+const viaMatch = (table) => ({
+  school: `(match_school(${table}.match_id))`,
+  team:   `(match_team(${table}.match_id))`,
+});
 /**
  * A scope-anchor map: resource dimension → SQL column or expression. A null
  * value declares the dimension absent on purpose.
@@ -346,6 +373,11 @@ export const TABLES = {
     // write a team sheet for a school SCRBRD does not host. That is the right
     // answer: their roster is their own school's business, exactly as their
     // registration and eligibility are.
+    //
+    // Left on the subquery by db/39, on purpose: resolving it would let a
+    // coach holding a granted `enquiry` about one boy read which of another
+    // side's fixtures that boy is named for. Whether that is what an enquiry
+    // should buy is the product owner's call — docs/rls-anchor-audit.md.
     anchors: {
       school:  "(SELECT CASE WHEN match_squad.side = 'away' THEN m.away_school_id ELSE m.school_id END FROM match m WHERE m.id = match_squad.match_id)",
       team:    "(SELECT CASE WHEN match_squad.side = 'away' THEN m.away_team_code ELSE m.team_code END FROM match m WHERE m.id = match_squad.match_id)",
@@ -573,8 +605,7 @@ export const TABLES = {
     read:  "fixture.read",
     write: "scoring.start",
     anchors: {
-      school:  "(SELECT m.school_id FROM match m WHERE m.id = match_toss.match_id)",
-      team:    "(SELECT m.team_code FROM match m WHERE m.id = match_toss.match_id)",
+      ...viaMatch("match_toss"),
       fixture: "match_id",
     },
     masked: {},
@@ -593,8 +624,7 @@ export const TABLES = {
     read:  "fixture.read",
     write: "broadcast.publish",
     anchors: {
-      school:  "(SELECT m.school_id FROM match m WHERE m.id = match_broadcast.match_id)",
-      team:    "(SELECT m.team_code FROM match m WHERE m.id = match_broadcast.match_id)",
+      ...viaMatch("match_broadcast"),
       fixture: "match_id",
     },
     masked: {},
@@ -618,8 +648,7 @@ export const TABLES = {
     read:  "fixture.read",
     write: "scoring.correct",
     anchors: {
-      school:  "(SELECT m.school_id FROM match m WHERE m.id = drs_review.match_id)",
-      team:    "(SELECT m.team_code FROM match m WHERE m.id = drs_review.match_id)",
+      ...viaMatch("drs_review"),
       fixture: "match_id",
     },
     masked: {},
@@ -678,8 +707,7 @@ export const TABLES = {
     read:  "fixture.read",
     write: "officiating.assign",
     anchors: {
-      school:  "(SELECT m.school_id FROM match m WHERE m.id = match_official.match_id)",
-      team:    "(SELECT m.team_code FROM match m WHERE m.id = match_official.match_id)",
+      ...viaMatch("match_official"),
       fixture: "match_id",
     },
     masked: {},
@@ -698,16 +726,17 @@ export const TABLES = {
     // umpires should file pitch reports, that is a third capability and a
     // deliberate decision, not a quiet edit here.
     //
-    // The school anchor is a subquery on the match, not the row's own
-    // school_id, even though that column exists and is NOT NULL. The column is
-    // there to make a write against a non-existent match fail loudly; the
-    // subquery is there because a denormalised anchor can drift from the match
-    // it claims and an RLS predicate must not be able to.
+    // The school anchor is the MATCH's school, not the row's own school_id,
+    // even though that column exists and is NOT NULL. The column is there to
+    // make a write against a non-existent match fail loudly; the match is read
+    // instead because a denormalised anchor can drift from the match it claims
+    // and an RLS predicate must not be able to. From db/39 it is read through
+    // match_school() rather than a subquery under the caller's RLS — see
+    // viaMatch() at the top of this file.
     read:  "fixture.read",
     write: "facility.manage",
     anchors: {
-      school:  "(SELECT m.school_id FROM match m WHERE m.id = match_pitch_report.match_id)",
-      team:    "(SELECT m.team_code FROM match m WHERE m.id = match_pitch_report.match_id)",
+      ...viaMatch("match_pitch_report"),
       fixture: "match_id",
     },
     masked: {},
@@ -736,6 +765,14 @@ export const TABLES = {
     // not to change one, so it goes through trip_mark() in db/08 and a driver
     // never holds UPDATE on the row. Otherwise the person who drives the bus
     // could re-time it, swap the vehicle, or cancel it.
+    //
+    // STILL A PLAIN SUBQUERY, and that is a held decision, not an oversight.
+    // It is why a driver-only account reads no trips at all (the driver holds
+    // transport.read but not fixture.read, so the anchor comes back NULL).
+    // Resolving it through match_school() would not give the driver HIS trip —
+    // his assignment is school-wide, so he would read EVERY trip at the school.
+    // docs/rls-anchor-audit.md proposes the narrower rule (the named driver
+    // reads his own trip) for the product owner to decide.
     read:  "transport.read",
     write: "transport.manage",
     anchors: {
@@ -767,11 +804,18 @@ export const TABLES = {
     // player: a U15A boy named in a 2XI fixture is answering about THAT
     // fixture, and anchoring on his usual side would put the row outside the
     // reach of the coach who is actually picking.
+    //
+    // Resolved through match_school()/match_team() since db/39. As a subquery
+    // under the caller's RLS it hid a pupil's OWN declaration from him: his
+    // selfaccess assignment carries availability.read and .declare but not
+    // fixture.read, so a boy called up to a side his team assignment cannot
+    // see could neither read nor make his own statement about that Saturday.
+    // The person anchor is what keeps the resolved anchor from reaching
+    // anybody else's row.
     read:  "availability.read",
     write: "availability.declare",
     anchors: {
-      school:  "(SELECT m.school_id FROM match m WHERE m.id = match_availability.match_id)",
-      team:    "(SELECT m.team_code FROM match m WHERE m.id = match_availability.match_id)",
+      ...viaMatch("match_availability"),
       person:  "player_id",
       fixture: "match_id",
     },
@@ -842,8 +886,7 @@ export const TABLES = {
     read:  "fixture.read",
     write: "fixture.update",
     anchors: {
-      school:  "(SELECT m.school_id FROM match m WHERE m.id = match_weather.match_id)",
-      team:    "(SELECT m.team_code FROM match m WHERE m.id = match_weather.match_id)",
+      ...viaMatch("match_weather"),
       fixture: "match_id",
     },
     masked: {},

@@ -10,7 +10,7 @@
 import { ROLES, ROLE_CAPABILITIES, roleGrants, SCORING_ROLES, SUBJECT_SCOPED_ROLES } from "@scrbrd/policy/roles";
 import { TABLES, referencedCapabilities, isCapabilityExpression, maskedColumns } from "@scrbrd/policy/tables";
 import { ALL_CAPABILITIES, SENSITIVE, isCapability } from "@scrbrd/policy/capabilities";
-import { main, authz, timeBox, suspension, WITHDRAWN_SINCE_01, ADDED_SINCE_01, ROLES_ADDED_SINCE_01 } from "./generate-rls.mjs";
+import { main, authz, policies, timeBox, suspension, matchAnchors, REANCHORED_IN_39, REANCHOR_FILE, WITHDRAWN_SINCE_01, ADDED_SINCE_01, ROLES_ADDED_SINCE_01 } from "./generate-rls.mjs";
 import { GRANTABLE_ROLES } from "@scrbrd/policy/roles";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -335,6 +335,50 @@ ok("no app_role\\(\\) remains",    !/app_role\(\)/.test(SQL));
      /git diff --exit-code db\/01_authz\.sql db\/09_rls_policies\.sql db\/23_authz_time_box\.sql db\/35_authz_suspension\.sql/.test(ci));
   const onDisk = join(here, "../../../db/35_authz_suspension.sql");
   ok("db/35 on disk is what the generator emits", existsSync(onDisk) && readFileSync(onDisk, "utf8") === running);
+}
+
+// ── db/39: fixture anchors through the definer helpers, where they run ──
+// tables.mjs declares match_school()/match_team() for the tables in
+// REANCHORED_IN_39; db/09 must keep emitting the subqueries it shipped, and
+// db/39 must carry exactly those tables' policies with the helpers. The
+// audit behind the list, including why trip and match_squad are NOT on it,
+// is docs/rls-anchor-audit.md.
+group("db/39. Fixture anchors through match_school()/match_team()");
+{
+  const shipped = policies(), running = matchAnchors();
+  const here = dirname(fileURLToPath(import.meta.url));
+  const policyText = (/** @type {string} */ sql, /** @type {string} */ name) =>
+    sql.match(new RegExp(`CREATE POLICY ${name} ON [\\s\\S]*?;`))?.[0] ?? "";
+  ok("the list names seven tables", REANCHORED_IN_39.length === 7);
+  for (const t of REANCHORED_IN_39) {
+    const sub = `(SELECT m.school_id FROM match m WHERE m.id = ${t}.match_id)`;
+    ok(`${t}: tables.mjs anchors through the helpers`,
+       TABLES[t].anchors.school === `(match_school(${t}.match_id))`
+       && TABLES[t].anchors.team === `(match_team(${t}.match_id))`);
+    for (const p of ["read", "insert", "update"]) {
+      ok(`${t}_${p}: db/09 still emits the subquery it shipped`, policyText(shipped, `${t}_${p}`).includes(sub));
+      const now = policyText(running, `${t}_${p}`);
+      ok(`${t}_${p}: db/39 anchors through match_school() and match_team()`,
+         now.includes(`match_school(${t}.match_id)`) && now.includes(`match_team(${t}.match_id)`)
+         && !now.includes("FROM match m"));
+    }
+  }
+  // Withheld, with a reason each — the audit's, not an accident of the list.
+  for (const t of ["trip", "match_squad"])
+    ok(`${t} is withheld from db/39 and still anchors on its subquery`,
+       !REANCHORED_IN_39.includes(t) && /FROM match m WHERE m\.id = /.test(TABLES[t].anchors.school ?? "")
+       && !running.includes(`CREATE POLICY ${t}_read`));
+  ok("db/39 re-creates nothing but those tables' policies",
+     (running.match(/CREATE POLICY /g) || []).length === REANCHORED_IN_39.length * 3);
+  ok("...and ends in a DO $check$ that asks pg_policies for the helpers",
+     /DO \$check\$[\s\S]*pg_policies[\s\S]*match_school\(%[\s\S]*END \$check\$;\n$/.test(running));
+  const ci = readFileSync(join(here, "../../../.github/workflows/ci.yml"), "utf8");
+  ok("CI regenerates and diffs db/39 with the other generated files",
+     /git diff --exit-code db\/01_authz\.sql db\/09_rls_policies\.sql db\/23_authz_time_box\.sql db\/35_authz_suspension\.sql db\/39_match_anchor_helpers\.sql/.test(ci));
+  const onDisk = join(here, "../../../db", REANCHOR_FILE);
+  ok("db/39 on disk is what the generator emits", existsSync(onDisk) && readFileSync(onDisk, "utf8") === running);
+  const expected = JSON.parse(readFileSync(join(here, "../expected-migrations.json"), "utf8"));
+  ok("db/39 is a migration the API expects", expected.includes(REANCHOR_FILE));
 }
 
 console.log(`\n${"─".repeat(52)}\nRLS SUITE: ${pass} passed, ${fail} failed`);

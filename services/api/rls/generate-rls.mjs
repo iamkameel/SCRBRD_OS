@@ -25,6 +25,11 @@
  *   6. db/35_authz_suspension.sql      — the decision functions as they run
  *                                        today: db/23's, plus the pause on a
  *                                        suspended duty (SCRBRD-034)
+ *   7. db/39_match_anchor_helpers.sql  — seven fixture-anchored tables'
+ *                                        policies as they run today: db/09's,
+ *                                        with the school/team anchor read
+ *                                        through match_school()/match_team()
+ *                                        (REANCHORED_IN_39)
  *
  * The decision is a SECURITY DEFINER lookup over role_assignment rather than
  * anything carried in the session. That is a deliberate choice (ADR 0001):
@@ -610,10 +615,42 @@ const readPredicate = (table, def) => {
   return `(${scoped})\n    OR (${def.visibleWhen.trim()})`;
 };
 
-function tablePolicies() {
-  const out = [banner("Per-table row-level security")];
-  for (const [table, def] of Object.entries(TABLES)) {
-    out.push(`
+/**
+ * Tables whose fixture anchors moved from a plain subquery to the SECURITY
+ * DEFINER helpers match_school()/match_team() (db/02), in db/39.
+ *
+ * db/09_rls_policies.sql shipped them as subqueries against `match`, run under
+ * the CALLER's row-level security — so a caller who held the table's own
+ * capability but could not read the match got a NULL anchor, and app_can()
+ * failed closed. tables.mjs now declares the helpers (viaMatch() there); this
+ * list is what lets the generator keep emitting db/09 exactly as it shipped,
+ * the same discipline as WITHDRAWN_SINCE_01, while db/39 carries the policies
+ * as they run.
+ *
+ * `trip` and `match_squad` are absent on purpose: resolving their anchor would
+ * widen what a driver and a granted enquiry read beyond what either role was
+ * meant to reach. docs/rls-anchor-audit.md is the audit behind every entry
+ * here and every table left out.
+ */
+export const REANCHORED_IN_39 = Object.freeze([
+  "match_toss", "match_broadcast", "drs_review", "match_official",
+  "match_pitch_report", "match_weather", "match_availability",
+]);
+export const REANCHOR_FILE = "39_match_anchor_helpers.sql";
+
+/**
+ * A table's definition as db/09 shipped it: the fixture anchors as the
+ * subqueries they were, whatever tables.mjs says today.
+ * @param {string} table @param {TableDef} def @returns {TableDef}
+ */
+const asShippedIn09 = (table, def) => (REANCHORED_IN_39.includes(table)
+  ? { ...def, anchors: { ...def.anchors,
+      school: `(SELECT m.school_id FROM match m WHERE m.id = ${table}.match_id)`,
+      team:   `(SELECT m.team_code FROM match m WHERE m.id = ${table}.match_id)` } }
+  : def);
+
+/** One table's four DROPs and three policies. @param {string} table @param {TableDef} def */
+const tablePolicy = (table, def) => `
 -- ${table} — read: ${def.read}${def.readAlso ? ` AND ${def.readAlso}` : ""}${def.readAnchors ? ` (from ${def.readAnchors.length + 1} scopes)` : ""} · write: ${def.write}${def.visibleWhen ? "\n-- plus a named exception on read — see readPredicate() in generate-rls.mjs" : ""}
 ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS ${table}_read   ON ${table};
@@ -629,7 +666,12 @@ CREATE POLICY ${table}_insert ON ${table}
 
 CREATE POLICY ${table}_update ON ${table}
   FOR UPDATE USING (${callCan(table, def, def.write)})
-           WITH CHECK (${callCan(table, def, def.write)});`);
+           WITH CHECK (${callCan(table, def, def.write)});`;
+
+function tablePolicies() {
+  const out = [banner("Per-table row-level security")];
+  for (const [table, def] of Object.entries(TABLES)) {
+    out.push(tablePolicy(table, asShippedIn09(table, def)));
     // No DELETE policy anywhere: records about minors are deactivated, never
     // removed, so that an audit trail survives.
   }
@@ -638,7 +680,8 @@ CREATE POLICY ${table}_update ON ${table}
 
 function maskViews() {
   const out = [banner("Column-masking views")];
-  for (const [table, def] of Object.entries(TABLES)) {
+  for (const [table, current] of Object.entries(TABLES)) {
+    const def = asShippedIn09(table, current);
     const masked = def.masked ?? {};
     const maskedAnyTeam = def.maskedAnyTeam ?? {};
     if (!Object.keys(masked).length && !Object.keys(maskedAnyTeam).length) continue;
@@ -1022,6 +1065,94 @@ export function suspension() {
   ].join("\n");
 }
 
+/**
+ * The fixture-anchored policies as they run from db/39 on: db/09's template,
+ * with the school and team anchors read through match_school()/match_team()
+ * instead of a subquery under the caller's RLS. Only REANCHORED_IN_39; every
+ * other policy stays exactly as db/09 made it.
+ *
+ * Ends in a generated DO $check$ like db/35: it asks pg_policies whether each
+ * of the policies just created really reads the helpers and no longer reads
+ * `match` directly — so a paste that half-applied, or a later file that put
+ * the subquery back, cannot pass for this one.
+ */
+export function matchAnchors() {
+  const policiesOf = REANCHORED_IN_39.flatMap((t) => [`${t}_read`, `${t}_insert`, `${t}_update`]);
+  return [
+    `-- ══════════════════════════════════════════════════════════════════`,
+    `--  39 · Fixture anchors through match_school() / match_team()`,
+    `-- ══════════════════════════════════════════════════════════════════`,
+    `-- GENERATED from packages/policy/ by services/api/rls/generate-rls.mjs — DO NOT EDIT BY HAND.`,
+    `-- Regenerate with \`pnpm rls:generate\`. Companion: db/09_rls_policies.sql, which`,
+    `-- stays exactly as it shipped; this file re-creates ${REANCHORED_IN_39.length} of its tables' policies`,
+    `-- with one change. Their school and team anchors were subqueries against`,
+    `-- \`match\`, run under the CALLER's row-level security:`,
+    `--`,
+    `--     (SELECT m.school_id FROM match m WHERE m.id = <table>.match_id)`,
+    `--`,
+    `-- and are now the SECURITY DEFINER helpers db/02 built for the scoring tables:`,
+    `--`,
+    `--     match_school(<table>.match_id), match_team(<table>.match_id)`,
+    `--`,
+    `-- The anchor is metadata; app_can() still decides every row. What changes is`,
+    `-- only that a caller who holds the table's capability but cannot read the`,
+    `-- match itself no longer gets a NULL anchor and a silent refusal. The audit`,
+    `-- that decides which tables that is safe for is docs/rls-anchor-audit.md:`,
+    `--`,
+    `--   match_toss, match_broadcast, drs_review, match_official,`,
+    `--   match_pitch_report, match_weather — no role's access changes. Each is`,
+    `--   read under fixture.read, which IS the match's own read check, and every`,
+    `--   role holding their write capability also holds fixture.read in the same`,
+    `--   bundle. Converted so the anchor stops depending on which OTHER`,
+    `--   assignments a person happens to hold.`,
+    `--`,
+    `--   match_availability — a pupil's selfaccess assignment holds`,
+    `--   availability.read and .declare but not fixture.read, so a boy called up`,
+    `--   to a side his team assignment cannot see could neither read nor make his`,
+    `--   OWN statement about that fixture. Now he can, for his own row only: the`,
+    `--   person anchor is unchanged and still decides whose row it is.`,
+    `--`,
+    `-- NOT HERE, on purpose: trip (a driver would read every trip at the school,`,
+    `-- not his own) and match_squad (a granted enquiry would read which of another`,
+    `-- side's fixtures a boy is named for). Both wait on a narrower rule the`,
+    `-- audit proposes.`,
+    ``,
+    ...REANCHORED_IN_39.map((t) => tablePolicy(t, TABLES[t])),
+    ``,
+    `-- ── Assertion ──────────────────────────────────────────────────────`,
+    `DO $check$`,
+    `DECLARE`,
+    `  p   text;`,
+    `  r   record;`,
+    `BEGIN`,
+    `  FOREACH p IN ARRAY ARRAY[${policiesOf.map(q).join(", ")}] LOOP`,
+    `    SELECT coalesce(qual, '') || ' ' || coalesce(with_check, '') AS body INTO r`,
+    `      FROM pg_policies WHERE schemaname = 'public' AND policyname = p;`,
+    `    IF NOT FOUND THEN`,
+    `      RAISE EXCEPTION 'db/39: policy % is missing', p;`,
+    `    END IF;`,
+    `    IF r.body NOT LIKE '%match_school(%' OR r.body NOT LIKE '%match_team(%' THEN`,
+    `      RAISE EXCEPTION 'db/39: policy % does not anchor through match_school()/match_team()', p;`,
+    `    END IF;`,
+    `    IF r.body LIKE '%FROM match %' THEN`,
+    `      RAISE EXCEPTION 'db/39: policy % still reads match under the caller''s RLS', p;`,
+    `    END IF;`,
+    `  END LOOP;`,
+    `  -- The helpers must still be what db/02 and db/16 made them: definer, pinned.`,
+    `  FOREACH p IN ARRAY ARRAY['match_school(uuid)', 'match_team(uuid)'] LOOP`,
+    `    IF NOT coalesce((SELECT prosecdef FROM pg_proc WHERE oid = to_regprocedure(p)), false) THEN`,
+    `      RAISE EXCEPTION 'db/39: % is missing or no longer SECURITY DEFINER', p;`,
+    `    END IF;`,
+    `    IF NOT EXISTS (SELECT 1 FROM pg_proc f, unnest(coalesce(f.proconfig, '{}')) c`,
+    `                    WHERE f.oid = to_regprocedure(p) AND c = 'search_path=pg_catalog, public, pg_temp') THEN`,
+    `      RAISE EXCEPTION 'db/39: % does not pin its search_path', p;`,
+    `    END IF;`,
+    `  END LOOP;`,
+    `END $check$;`,
+    ``,
+  ].join("\n");
+}
+
 /** Backwards-compatible single string, for the drift tests. */
 export function main() { return authz() + "\n" + policies(); }
 
@@ -1031,5 +1162,6 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   writeFileSync("db/09_rls_policies.sql", policies());
   writeFileSync("db/23_authz_time_box.sql", timeBox());
   writeFileSync("db/35_authz_suspension.sql", suspension());
-  console.log("wrote db/01_authz.sql, db/09_rls_policies.sql, db/23_authz_time_box.sql and db/35_authz_suspension.sql");
+  writeFileSync(`db/${REANCHOR_FILE}`, matchAnchors());
+  console.log(`wrote db/01_authz.sql, db/09_rls_policies.sql, db/23_authz_time_box.sql, db/35_authz_suspension.sql and db/${REANCHOR_FILE}`);
 }

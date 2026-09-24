@@ -176,7 +176,11 @@ try {
   // rows for a driver-only account regardless of what is arranged. See
   // DayOfView.jsx's file comment for the RLS chain this traces to
   // (trip's read policy resolving its school/team through a plain subquery
-  // against `match`, which is itself gated on fixture.read).
+  // against `match`, which is itself gated on fixture.read). db/39 moved seven
+  // fixture-anchored tables to match_school()/match_team() and deliberately
+  // NOT trip: with this driver's school-wide assignment the helpers would
+  // show him every trip at the school, not his. docs/rls-anchor-audit.md
+  // proposes the narrower rule; these assertions flip when it lands.
   ok("...not the pickup that really is arranged for them", !/Top gate/.test(landing));
   ok("...nor the vehicle", !/KZN\s?482\s?GP/.test(landing));
   ok("...no trip card at all — the read is empty, not the trip", await tid(driver.page, "driver-trip").count() === 0);

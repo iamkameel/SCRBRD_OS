@@ -223,6 +223,39 @@ CREATE OR REPLACE FUNCTION _session_xmax(p_match uuid) RETURNS text AS $$
   SELECT xmax::text FROM scoring_session WHERE match_id = p_match;
 $$ LANGUAGE sql SECURITY DEFINER;
 
+-- db/39. R Pillay (1XI, with a selfaccess assignment naming himself) called up
+-- to the U16B fixture his team assignment cannot see, beside a U16B boy's own
+-- declaration for the same Saturday; a second non-1XI fixture for him to
+-- declare against as himself; and a trip arranged for the seeded driver, for
+-- the case db/39 deliberately leaves alone. Owner-written, rolled back.
+INSERT INTO match (id, school_id, team_code, opponent, starts_at, format, overs, status) VALUES
+  ('77777777-0000-0000-0000-000000000039', '11111111-1111-1111-1111-111111111111', 'U15A',
+   'Verify 039 XI', now() + interval '5 days', 'T20', 20, 'scheduled')
+ON CONFLICT DO NOTHING;
+INSERT INTO match_availability (match_id, player_id, school_id, status, reason_kind) VALUES
+  ('77777777-0000-0000-0000-000000000003', 'aaaaaaaa-0000-0000-0000-000000000005',
+   '11111111-1111-1111-1111-111111111111', 'available', NULL),
+  ('77777777-0000-0000-0000-000000000003', 'aaaaaaaa-0000-0000-0000-000000000006',
+   '11111111-1111-1111-1111-111111111111', 'unavailable', 'family')
+ON CONFLICT DO NOTHING;
+INSERT INTO trip (id, match_id, school_id, driver_id, pickup) VALUES
+  ('39390000-0000-0000-0000-000000000001', '77777777-0000-0000-0000-000000000003',
+   '11111111-1111-1111-1111-111111111111', '88888888-0000-0000-0000-000000000017', 'db/99: the withheld case')
+ON CONFLICT DO NOTHING;
+INSERT INTO match_pitch_report (match_id, school_id, surface, favours) VALUES
+  ('77777777-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 'firm', 'seam')
+ON CONFLICT DO NOTHING;
+
+-- Past RLS, because each claim below is "exactly these rows and no others",
+-- and an RLS-scoped count cannot tell the rows that exist from the rows shown.
+CREATE OR REPLACE FUNCTION _count_availability_of(p_player uuid) RETURNS integer AS $$
+  SELECT count(*)::int FROM match_availability WHERE player_id = p_player;
+$$ LANGUAGE sql SECURITY DEFINER;
+CREATE OR REPLACE FUNCTION _count_rows(p_table text) RETURNS integer AS $$
+DECLARE n int;
+BEGIN EXECUTE format('SELECT count(*)::int FROM %I', p_table) INTO n; RETURN n; END
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -2588,6 +2621,110 @@ BEGIN
       format('the owner deciding their own amendment was answered %s', coalesce(v_reason, 'NULL')));
   END;
   PERFORM set_config('app.device_id', '', true);
+
+  -- ── db/39. Fixture anchors through match_school()/match_team() ──
+  --
+  -- Seven tables' anchors moved from a subquery on `match` under the caller's
+  -- RLS to the SECURITY DEFINER helpers. docs/rls-anchor-audit.md is the
+  -- audit: for six of them no role's access changes, and for
+  -- match_availability exactly one thing does — a pupil's selfaccess
+  -- assignment reaches his OWN declarations for fixtures his team assignment
+  -- cannot see. Each claim below is that and nothing more.
+  DECLARE
+    M_U16B  uuid := '77777777-0000-0000-0000-000000000003';  -- U16B v Kearsney; R Pillay is 1XI
+    M_39    uuid := '77777777-0000-0000-0000-000000000039';  -- U15A, nothing else here touches it
+    U_DRIVE uuid := '88888888-0000-0000-0000-000000000017';  -- B Ngcobo: transport.read, no fixture.read
+    t       text;
+    who     uuid;
+  BEGIN
+    -- Every policy db/39 made still reads the helpers — a later file that put
+    -- a subquery back would pass db/39's own check and fail here.
+    SELECT count(*) INTO n FROM pg_policies
+     WHERE schemaname = 'public'
+       AND policyname IN ('match_toss_read', 'match_toss_insert', 'match_toss_update',
+                          'match_broadcast_read', 'match_broadcast_insert', 'match_broadcast_update',
+                          'drs_review_read', 'drs_review_insert', 'drs_review_update',
+                          'match_official_read', 'match_official_insert', 'match_official_update',
+                          'match_pitch_report_read', 'match_pitch_report_insert', 'match_pitch_report_update',
+                          'match_weather_read', 'match_weather_insert', 'match_weather_update',
+                          'match_availability_read', 'match_availability_insert', 'match_availability_update')
+       AND coalesce(qual, '') || coalesce(with_check, '') LIKE '%match_school(%'
+       AND coalesce(qual, '') || coalesce(with_check, '') NOT LIKE '%FROM match %';
+    PERFORM _assert(n = 21, format('%s of db/39''s 21 policies anchor through match_school() — expected all of them', n));
+
+    -- (1) THE BLIND CASE, NOW SEEING. R Pillay's team assignment is 1XI, so
+    --     he cannot read the U16B fixture — and before db/39 that also hid his
+    --     own availability for it, because the anchor came back NULL.
+    PERFORM _as(U_SELF);
+    SELECT count(*) INTO n FROM match WHERE id = M_U16B;
+    PERFORM _assert(n = 0, 'the pupil reads the U16B fixture itself — the anchor must stay metadata, not a way to the match');
+    SELECT count(*) INTO n FROM match_availability WHERE match_id = M_U16B AND player_id = P_INJURED;
+    PERFORM _assert(n = 1, 'a pupil cannot read his own availability for a fixture his team assignment cannot see');
+    -- Tried here, before the reads below, so it is this write's own policy
+    -- that answers: an UPDATE also passes through the read policy, and a
+    -- widened read would otherwise be caught first and this line never ran.
+    UPDATE match_availability SET status = 'available' WHERE match_id = M_U16B AND player_id = P_U16B;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    PERFORM _assert(n = 0, 'a pupil changed another boy''s availability');
+    -- (2) ...and nothing more: not the U16B boy's statement beside it, and in
+    --     total exactly his own rows — every one of them, no one else's.
+    SELECT count(*) INTO n FROM match_availability WHERE match_id = M_U16B AND player_id <> P_INJURED;
+    PERFORM _assert(n = 0, 'a pupil reads another boy''s availability ("unavailable, family") through the resolved anchor');
+    SELECT count(*) INTO n FROM match_availability;
+    PERFORM _assert(n = _count_availability_of(P_INJURED),
+      format('a pupil reads %s availability rows; his own number %s', n, _count_availability_of(P_INJURED)));
+
+    -- (3) THE WRITE. He may make his own statement about that Saturday...
+    BEGIN
+      INSERT INTO match_availability (match_id, player_id, school_id, status, declared_by)
+      VALUES (M_39, P_INJURED, HIL, 'available', U_SELF);
+      v_ok := true;
+    EXCEPTION WHEN insufficient_privilege THEN v_ok := false;
+    END;
+    PERFORM _assert(v_ok, 'a pupil cannot declare his own availability for a fixture his team assignment cannot see');
+    -- (4) ...and not anybody else's, however the anchor resolves.
+    BEGIN
+      INSERT INTO match_availability (match_id, player_id, school_id, status, declared_by)
+      VALUES (M_39, P_U16B, HIL, 'unavailable', U_SELF);
+      v_ok := true;
+    EXCEPTION WHEN insufficient_privilege THEN v_ok := false;
+    END;
+    PERFORM _assert(NOT v_ok, 'a pupil declared availability for another boy');
+
+    -- (5) THE SIX WHOSE ACCESS DOES NOT CHANGE. Read under fixture.read, which
+    --     is the match's own check, so a row is visible only where its fixture
+    --     is — for every principal here, including the driver and the pupil
+    --     who each hold something on a fixture-anchored table but not the
+    --     fixture. If the resolved anchor ever became a way around the match,
+    --     this is where it shows.
+    PERFORM _assert(_count_rows('match_toss') > 0 AND _count_rows('match_weather') > 0
+                    AND _count_rows('match_official') > 0 AND _count_rows('match_pitch_report') > 0,
+      'db/39''s no-change claim has nothing to be tested against — a table is empty');
+    FOREACH who IN ARRAY ARRAY[U_DRIVE, U_SELF, U_PUPIL, U_WATCHER, U_COACH2, U_SCORER,
+                               U_UMPIRE, U_MEDIC, U_BURSAR, U_WES_ADM, U_HEAD_M]::uuid[] LOOP
+      PERFORM _as(who);
+      FOREACH t IN ARRAY ARRAY['match_toss', 'match_broadcast', 'drs_review', 'match_official',
+                               'match_pitch_report', 'match_weather'] LOOP
+        EXECUTE format('SELECT count(*) FROM %I x WHERE NOT EXISTS (SELECT 1 FROM match m WHERE m.id = x.match_id)', t)
+          INTO n;
+        PERFORM _assert(n = 0, format('%s reads %s %s row(s) for a fixture they cannot read', who, n, t));
+      END LOOP;
+    END LOOP;
+    -- The driver in particular: he reads none of them at all.
+    PERFORM _as(U_DRIVE);
+    SELECT (SELECT count(*) FROM match_toss) + (SELECT count(*) FROM match_weather)
+         + (SELECT count(*) FROM match_official) + (SELECT count(*) FROM match_pitch_report)
+      INTO n;
+    PERFORM _assert(n = 0, format('the driver reads %s fixture-condition row(s) with no fixture.read', n));
+
+    -- (6) WITHHELD, ON PURPOSE. trip keeps its subquery: resolving it would
+    --     show a school-wide driver every trip at the school, not his own
+    --     (docs/rls-anchor-audit.md, "trip"). Until the narrower rule is
+    --     decided he reads none — including the one arranged for him. When
+    --     that changes, this is the line to change with it.
+    SELECT count(*) INTO n FROM trip;
+    PERFORM _assert(n = 0, format('the driver reads %s trip(s): trip was withheld from db/39 — see docs/rls-anchor-audit.md', n));
+  END;
 
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
