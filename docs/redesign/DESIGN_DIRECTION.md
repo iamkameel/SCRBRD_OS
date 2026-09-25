@@ -1,8 +1,9 @@
 # Design direction — the front-end
 
-Status: **draft, for Kameel to react to** (2026-09-25). Nothing in this document is
-built. Once the decisions in §9 are made it becomes the brief every screen is built
-against, and `apps/web/src/design/tokens.js` is where its values live.
+Status: **agreed** (2026-09-25). The six decisions in §9 were made by Kameel the same
+day and are written into the sections below. This is now the brief every screen is
+built against, and `apps/web/src/design/tokens.js` is where its values live. Nothing
+in it is built yet; §8 is the order it will be.
 
 It builds on Design System 2.0 (`0be5ce8`, 14 Sep): the neutral-first palette, the
 computed contrast, the rationed lime, the glass budget, the motion scale, the focus
@@ -105,9 +106,10 @@ print area for the report; the bento spans; the glass budget; the contrast test.
 The board never changes: `board.face #0b0e0b`, `board.figure #f4f6f3`,
 `board.lime #b9f227`, `board.dim #8a94a5`, `board.rule rgba(255,255,255,0.14)`.
 
-Theme selection: the pad defaults to **Daylight** between sunrise and sunset on the
-device clock and Floodlit otherwise, with a one-tap toggle on the pad's own menu;
-every other screen follows the system setting. `design.test.mjs` checks every text
+Theme selection (decided): **the whole app** has both themes. It follows the device's
+system setting by default, and a person can override it — System, Daylight or
+Floodlit — in Settings, and from the pad's own menu, remembered on that device. The
+browser's `theme-color` follows the theme in use. `design.test.mjs` checks every text
 token clears AA against every surface **in both themes**.
 
 ### 3.2 Type
@@ -188,20 +190,23 @@ way 2.0 drifted.
 
 The screen the product is judged on. Principles:
 
-1. **One ball, one tap, under three seconds.** A normal delivery is recorded without
-   scrolling, without a sheet, with the thumb.
+1. **Every tap earns its place.** No scrolling to reach a key, no sheet for a normal
+   delivery, keys in the thumb zone.
 2. **The board once.** The score appears one time, at the top, drawn by `Board`.
-3. **Outcome first, detail after.** The quick keypad is the default. Shot, area and
-   contact are an "Add detail" step offered *after* the ball is saved, and the
-   scorer's chosen capture profile (`quick` / `standard` / `full`, already an
-   `innings_start` field) decides whether the pad opens that step by itself.
+3. **Three phases by default** (decided): **Shot → Area → Outcome**, as the pad asks
+   today, redrawn. Shot is a grid of words in its four groups (attacking, defensive,
+   edge and contact, special) with no emoji; Area is the field diagram; Outcome is the
+   run keys, extras and wicket. The phase stepper shows where the scorer is and lets
+   them step back. **Basic Scoring** is the quick keypad — outcome only — offered as
+   an option, not the default; it maps to the `quick` capture profile already on
+   `innings_start`, and the three-phase pad to `full`.
 4. **State in one line.** "Saved on this phone · 3 to send", "Held 1", "Sign in to
    send 4 balls" — the vocabulary from SCRBRD-078, unchanged, in `body` size under the
    board.
 5. **Daylight by default outdoors.** See §3.1.
 6. **Refusals stay in place and in words** (SCRBRD-070/077).
 
-Layout at 390 wide, top to bottom, nothing scrolling:
+The default pad at 390 wide, phase 1 (Shot), top to bottom, nothing scrolling:
 
 ```
 ┌──────────────────────────────────────────┐
@@ -215,16 +220,21 @@ Layout at 390 wide, top to bottom, nothing scrolling:
 ├──────────────────────────────────────────┤
 │  Saved on this phone · 3 to send         │  state, one line
 ├──────────────────────────────────────────┤
-│  ┌────┐ ┌────┐ ┌────┐                    │
-│  │ 0  │ │ 1  │ │ 2  │   run keys, 64 tall│
-│  ├────┤ ├────┤ ├────┤                    │
-│  │ 3  │ │ 4  │ │ 6  │                    │
-│  └────┘ └────┘ └────┘                    │
-│  [ Wd ] [ Nb ] [ B ] [ Lb ]   56 tall    │
-│  [ WICKET ]            [ Undo ]  64 tall │
-│  Add detail to the last ball ›           │
+│  [1 Shot]──[2 Area]──[3 Outcome]         │  stepper, current filled
+│  ATTACKING                               │  label
+│  Drive  Pull  Hook  Cut  Sweep  Ramp     │  word keys, 48 tall
+│  Flick  Glance  Loft  Slog               │
+│  DEFENSIVE  Fwd def  Back def  Padded    │
+│  EDGE  Out edge  In edge  Top edge ...   │
+│  SPECIAL  Rev sweep  Switch hit  Paddle  │
+│  [ Wd ] [ Nb ] [ Dot ball ] [ Undo ]     │  always there, 56 tall
 └──────────────────────────────────────────┘
 ```
+
+Phase 2 (Area) is the field, full width, tapped once. Phase 3 (Outcome) is the run
+keys (0 1 2 3 4 6, 64 tall), byes and leg byes, and the wicket key. Wide, no ball, a
+dot and undo stay on every phase, so the commonest deliveries never need the three
+steps. **Basic Scoring** replaces the three phases with the outcome keys alone.
 
 The wicket key opens one sheet: the eleven methods (the closed list), then who is
 out (the striker by default, the other end for a run out, with the end asked as
@@ -289,7 +299,8 @@ Each step is a PR, reviewed before it lands, behind the walks that already exist
 
 | # | Work | Who (CLAUDE.md) | Guard |
 |---|---|---|---|
-| 1 | Tokens 2.1: themes, type roles, `Board`, `flip`, icon set, the three a11y rules | Opus (cross-cutting) | `design.test`, `smoke-a11y`, `check-bundle` |
+| 1a | Tokens 2.1 and the theme engine: both themes across the whole app (System / Daylight / Floodlit), the hard-coded colours moved onto tokens, type roles, `Board`, `flip`; the type-floor check as a ratchet | Opus (cross-cutting) | `design.test` in both themes, `smoke-a11y`, `check-bundle`, every walk |
+| 1b | Icons: Lucide plus the twelve cricket glyphs; every emoji out of controls and labels; the emoji check as a ratchet | Opus | `smoke-a11y`, `check-bundle`, every walk |
 | 2 | The pad on the new foundations | Opus (scorer UI) | every `browser-*` walk that touches the pad; `browser-offline-day` both ways |
 | 3 | The day sheet and Match Centre | Sonnet build, Opus review | `browser-read`, `browser-dayof` |
 | 4 | Parent and pupil screens | Opus (minors' data) | `browser-read` guardian steps, `db/99` |
@@ -299,13 +310,22 @@ The 500 KB entry ceiling and the offline behaviour are non-negotiable throughout
 
 ---
 
-## 9. Decisions for Kameel
+## 9. Decisions (Kameel, 2026-09-25)
 
-1. **Typefaces.** Keep DM Mono / DM Sans / Syne and fix the scale, or change the
-   display face while we are here?
-2. **Daylight theme.** Pad only (auto by sun, toggle on the pad), or the whole app
-   following the system setting?
-3. **Quick keypad as the default pad**, with shot detail after the ball. Yes?
-4. **Icons.** Lucide plus twelve drawn cricket glyphs; every emoji goes. Yes?
-5. **The day sheet replaces the KPI dashboard.** Yes?
-6. **The board is always black**, in both themes, everywhere the score appears. Yes?
+1. **Typefaces:** keep DM Mono, DM Sans and Syne; fix the scale (§3.2).
+2. **Daylight theme:** the whole app, following the system setting, with an override
+   in Settings and on the pad (§3.1).
+3. **The pad:** the three-phase pad (Shot → Area → Outcome) stays the default.
+   The quick keypad is **Basic Scoring**, an option (§4).
+4. **Icons:** Lucide plus twelve drawn cricket glyphs; every emoji goes (§3.4).
+5. **The day sheet replaces the KPI dashboard** (§5).
+6. **The board is always black**, in both themes, everywhere the score appears (§1).
+
+### Measured before step 1 (2026-09-25)
+
+In `apps/web/src`, outside `design/tokens.js`: 160 hex colour literals and 126
+`rgba(255,255,255,…)` / `rgba(0,0,0,…)` in 26 files, every one wrong in one of the
+two themes; 249 places that make a translucent colour by appending two hex digits to
+a token (`D.emerald+"12"`), which is why the theme cannot simply become CSS custom
+properties without rewriting them; 437 emoji in 50 files, 50 of them in
+`design/roles.js`.
