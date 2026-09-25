@@ -38,7 +38,7 @@ const DB = process.env.DATABASE_URL || "postgres://scrbrd:scrbrd@127.0.0.1:5432/
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".jpg": "image/jpeg", ".map": "application/json" };
 
 let pass = 0, fail = 0;
-const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
+const ok = (n, c, d = "") => { if (c) pass++; else { fail++; console.log("  ✗", n, d !== "" ? `— ${String(d).slice(0, 300)}` : ""); } };
 const group = (t) => console.log("\n" + t);
 
 const api = spawn(process.execPath, ["services/api/server.mjs"], {
@@ -131,6 +131,27 @@ async function clearBlockers(page) {
   }
 }
 
+const MATCH = "77777777-0000-0000-0000-000000000002";
+
+/** The pad's log as persist.js saved it (`scrbrd` → `kv` → match:<id>), every innings, in order. */
+const padLog = (page) => page.evaluate((key) => new Promise((resolve) => {
+  const req = indexedDB.open("scrbrd", 1);
+  req.onupgradeneeded = () => { if (!req.result.objectStoreNames.contains("kv")) req.result.createObjectStore("kv"); };
+  req.onerror = () => resolve(null);
+  req.onsuccess = () => {
+    const db = req.result;
+    const g = db.transaction("kv", "readonly").objectStore("kv").get(key);
+    g.onsuccess = () => { db.close(); resolve((g.result?.events ?? []).flat()); };
+    g.onerror = () => { db.close(); resolve(null); };
+  };
+}), `match:${MATCH}`);
+/** The server's log, by key and kind, in seq order. */
+const serverLog = async () => dbq(`select idempotency_key as id, kind, device_id from ball_event where match_id = $1 order by seq`, [MATCH]);
+/** The pad's board, as the screen reader hears it: "6 for 0, 0.3 overs". */
+const board = async (page) => ((await page.locator('[role="status"][aria-live="polite"]').filter({ hasText: / for \d+, / })
+  .first().textContent({ timeout: 1500 }).catch(() => "")) || "").trim();
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
 const openMichaelhouse = async (page) => page.evaluate(() => {
   const isBtn = (b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || "");
   const btns = [...document.querySelectorAll("button")].filter(isBtn);
@@ -145,7 +166,7 @@ const openMichaelhouse = async (page) => page.evaluate(() => {
   return false;
 });
 
-let outgoing, incoming;
+let outgoing, incoming, third;
 try {
   for (let i = 0; i < 60; i++) {
     try { const r = await fetch(`${API}/api/health`); if ((await r.json()).db === "ok") break; } catch {}
@@ -260,15 +281,72 @@ try {
   ok("...and no longer offers a handover button of its own — there is nothing left to hand over",
      await outgoing.page.locator('[data-testid="open-handover"]').count() === 0);
 
-  ok("no console errors on either device",
-     outgoing.errors.length === 0 && incoming.errors.length === 0,
-     [...outgoing.errors, ...incoming.errors].slice(0, 3).join(" | "));
+  // SCRBRD-075. The incoming device opened this fixture with nothing saved,
+  // so it used to write a first-innings innings_start of its own, under a new
+  // id, and after the takeover send it: the server's log gained a second
+  // start, and the pad's board was 0/0 with nobody in while the server's was
+  // the outgoing scorer's innings. The spec (§4 step 2): the incoming device
+  // takes the server's log and rebuilds from it.
+  group("The incoming device scores on from the server's log — never one of its own (SCRBRD-075)");
+  const outgoingDevice = await outgoing.page.evaluate(() => localStorage.getItem("scrbrd:device-id"));
+  const incomingDevice = await incoming.page.evaluate(() => localStorage.getItem("scrbrd:device-id"));
+  const s0 = await serverLog();
+  const starts0 = s0.filter((r) => r.kind === "innings_start");
+  ok("the server's log has one innings_start, the outgoing device's",
+     starts0.length === 1 && starts0[0].device_id === outgoingDevice, JSON.stringify(starts0));
+  ok("...and nothing from the incoming device yet", !s0.some((r) => r.device_id === incomingDevice),
+     JSON.stringify(s0.filter((r) => r.device_id === incomingDevice)));
+  const p0 = await padLog(incoming.page);
+  ok("the incoming pad's saved log is the server's log, id for id",
+     same((p0 ?? []).map((e) => e?.id), s0.map((r) => r.id)), `${p0?.length} v ${s0.length}`);
+  ok("...with no innings_start it minted itself",
+     (p0 ?? []).filter((e) => e?.kind === "innings_start").every((e) => starts0.some((r) => r.id === e.id)));
+  const wantBoard = `${before.r} for ${before.w}, ${Math.floor(before.b / 6)}.${before.b % 6} overs`;
+  ok("its board is the server's score", (await board(incoming.page)) === wantBoard, `${await board(incoming.page)} v ${wantBoard}`);
+
+  await clearBlockers(incoming.page);
+  if (!/\bDOT\b/i.test(await incoming.text())) await incoming.page.locator("button", { hasText: /QUICK MODE/i }).first().click({ timeout: 2500 }).catch(() => {});
+  await incoming.page.waitForTimeout(400);
+  const one = incoming.page.locator("button:not([disabled])", { hasText: /^1$/ }).first();
+  const tapped = (await one.count()) > 0 && await one.click({ timeout: 2500 }).then(() => true, () => false);
+  await incoming.page.waitForTimeout(3000);
+  ok("the incoming scorer taps a ball", tapped);
+  const s1 = await serverLog();
+  const p1 = await padLog(incoming.page);
+  ok("...and it reaches the server", s1.length === s0.length + 1 && s1.at(-1)?.device_id === incomingDevice,
+     `${s1.length} v ${s0.length + 1}`);
+  ok("the server's log and the incoming pad's are the same, id for id",
+     same((p1 ?? []).map((e) => e?.id), s1.map((r) => r.id)), `${p1?.length} v ${s1.length}`);
+  ok("...still one innings_start", s1.filter((r) => r.kind === "innings_start").length === 1);
+
+  // The same rule without a handover: a device opening, for the first time,
+  // a fixture somebody else is scoring. The server has a log, so the pad
+  // replays it — and since the director holds a live lease, it sends nothing
+  // and says why.
+  group("A device that has never opened this fixture replays what the server has (SCRBRD-075)");
+  third = await openAs(/Head Coach/);
+  ok("the coach signs in", /Match Centre|Dashboard/i.test(await third.text()));
+  await third.page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
+  await third.page.waitForTimeout(1200);
+  ok("opens the same fixture", await openMichaelhouse(third.page));
+  await third.page.waitForTimeout(3000);
+  const s2 = await serverLog();
+  const p2 = await padLog(third.page);
+  ok("its pad's log is the server's log, id for id", same((p2 ?? []).map((e) => e?.id), s2.map((r) => r.id)), `${p2?.length} v ${s2.length}`);
+  ok("...no innings_start of its own", !(p2 ?? []).some((e) => e?.kind === "innings_start" && !s2.some((r) => r.id === e.id)));
+  ok("...and the server's log did not move", same(s2, s1));
+  ok("it says in words that someone else is scoring", /Someone else is scoring this match/i.test(await third.text()));
+
+  ok("no console errors on any device",
+     outgoing.errors.length === 0 && incoming.errors.length === 0 && third.errors.length === 0,
+     [...outgoing.errors, ...incoming.errors, ...third.errors].slice(0, 3).join(" | "));
 } catch (e) {
   ok(`the browser walk threw: ${e.message?.slice(0, 140)}`, false);
   if (DEBUG) console.log(e.stack?.split("\n").slice(0, 6).join("\n"));
 } finally {
   await outgoing?.ctx.close().catch(() => {});
   await incoming?.ctx.close().catch(() => {});
+  await third?.ctx.close().catch(() => {});
   await browser.close();
   web.close();
   api.kill("SIGTERM");
