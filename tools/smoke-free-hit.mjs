@@ -250,7 +250,9 @@ function expected(byInnings) {
       if (stood) {
         const out = ball.dismissed ?? ball.strikerId;
         bump(e.dismissals, out); bump(e.dismissalBy, `${out}|${mode}`);
-        if (out === ball.strikerId) e.outIn.add(`${out}|${no}`);
+        // Out on his own innings row, at either end (db/43): a run out at the
+        // non-striker's end is his, not nobody's.
+        e.outIn.add(`${out}|${no}`);
         if (onFreeHit && standsOnFreeHit(mode)) e.standingOnFreeHit++;
         if (chargedToBowler(mode) && ball.bowlerId) {
           bump(e.wickets, ball.bowlerId); bump(e.wicketBy, `${ball.bowlerId}|${mode}`);

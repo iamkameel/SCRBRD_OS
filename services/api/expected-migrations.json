@@ -40,5 +40,6 @@
   "39_match_anchor_helpers.sql",
   "40_career_follows_the_fold.sql",
   "41_trip_driver_own.sql",
-  "42_free_hit_wickets.sql"
+  "42_free_hit_wickets.sql",
+  "43_last_fold_disagreements.sql"
 ]

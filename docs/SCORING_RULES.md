@@ -454,3 +454,34 @@ out, in `player_innings` (a timed-out batter had no row), a batting match, and a
 is nobody's wicket and no ball in any bowling figure — those read `kind = 'ball'` and are unchanged. A W ball naming
 timed out or retired out, and a `retire` with no W marker, read exactly as before. The live score, the handover check
 and every device fold already counted it. The post-match report's key moments say "retired out" / "timed out".
+
+## SQL agrees with the fold: the last four (db/43)
+
+The fold is the truth and every SQL reader of `ball_event` agrees with it — db/40 (runs off the bat, non-ball wickets)
+and db/42 (the free hit) made that the rule; `db/43_last_fold_disagreements.sql` closes the four disagreements db/40
+wrote down and left:
+
+| | The fold | SQL before db/43 | SQL now |
+|---|---|---|---|
+| **Who is out** | `dismissed ?? striker` over `fromRow()` — `dismissed` is `payload.dismissed` when toRow() could not put a player id in the column (a typed name) | `coalesce(dismissed_id, striker_id)`; `player_innings.out` only on the striker's row | `ball_dismissed_batter()`, in every reader of who is out: a batter run out at the non-striker's end is out on his own innings row (0 (0), out, if he never faced), and counts the match; a typed name run out at the far end is nobody here — never the striker |
+| **The opposition's figures** | balls faced include no-balls, not wides; fours and sixes off the bat; the bowler is charged a wide's and a no-ball's penalty run | balls without no-balls; any ball worth four or six but a no-ball's byes; runs conceded without the penalty | as the fold, the same arithmetic as `player_batting_since` / `player_bowling_since` |
+| **A ball with no type** | `type ?? "run"`: a legal ball, its runs the striker's and the bowler's | nothing — no ball, no run, though the live total counted its value | refused at the door (`ball_event_ball_has_type`); a stored one is read as a run by `ball_event_live` (`ball_type_as_folded()`), so every reader over it agrees |
+| **A wicket with no method** | a wicket, the batter out, nobody's (`chargedToBowler(null)`), saved on a free hit | the bowler's wicket (`dismissal_is_bowlers(NULL)` was true) | nobody's; still saved on a free hit; refused at the door (`ball_event_wicket_has_method`) — the API has refused one since db/13 |
+
+`payload.outAt` (SCRBRD-069) decides which end empties, never who is out, so no SQL reader needs it: each reads the
+striker stamped on the ball. The door is a BEFORE INSERT trigger, `ball_event_names_its_delivery`, raising what a CHECK
+would (23514, naming the rule), so the API refuses such an event on its own and names it (`value_refused`, with the
+rule as `constraint`). It refuses and never rewrites: the write path fingerprints the event it holds (db/36), and a
+row changed on its way in would never match its own resend. And it is not a CHECK, not even NOT VALID: `ball_event` is
+append-only, its only UPDATEs are an owner's one-time backfills in a migration (db/13, db/36), and a CHECK is
+re-checked on every row one touches. Rows stored before the door are read as the fold reads them, never corrected.
+
+Still different, and each a decision for later: the matchups read's `balls` counts legal deliveries (a no-ball is not
+one), which `tools/smoke-matchups.mjs` pins; a batter who came to the crease and neither faced nor was out has no
+`player_innings` row (the fold lists him "0*"); and penalty runs are in the fold's total but in no SQL total —
+`match_live_score` and the handover check read `value`, which a `penalty` row does not carry; and the handover
+check sums every innings of the match where the sheet asks for this innings' figures, so a second-innings handover
+cannot verify.
+
+`tools/smoke-fold-figures.mjs` holds the fold to every SQL reader of a batter's and a bowler's figures over generated
+logs, legacy rows included; db/99 §21 holds each correction.

@@ -73,13 +73,13 @@ try {
 
   const stamp = `${Date.now()}-${Math.random()}`;
   let seq = 0;
-  const write = async (kind, { ballType = null, value = null, strikerId = null, payload = {} } = {}) => {
+  const write = async (kind, { ballType = null, value = null, strikerId = null, dismissal = null, payload = {} } = {}) => {
     seq += 1;
     await q(
       `insert into ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
-                               idempotency_key, client_seq, client_ts, kind, ball_type, value, striker_id, payload)
-       values ($1,$2,$3,1,0,$4,'device-scorecard',$5,$3,now(),$6,$7,$8,$9,$10::jsonb)`,
-      [m, HIL, seq, su, `scorecard-${stamp}-${seq}`, kind, ballType, value, strikerId, JSON.stringify(payload)]);
+                               idempotency_key, client_seq, client_ts, kind, ball_type, value, striker_id, dismissal, payload)
+       values ($1,$2,$3,1,0,$4,'device-scorecard',$5,$3,now(),$6,$7,$8,$9,$10,$11::jsonb)`,
+      [m, HIL, seq, su, `scorecard-${stamp}-${seq}`, kind, ballType, value, strikerId, dismissal, JSON.stringify(payload)]);
   };
 
   // A real, short innings: an opening pair, a boundary, a dot, a wicket. Every
@@ -101,7 +101,10 @@ try {
   await write("ball", { ballType: "run", value: 4, strikerId: p1.id });
   await write("ball", { ballType: "run", value: 2, strikerId: p1.id });
   await write("ball", { ballType: "run", value: 0, strikerId: p1.id });
-  await write("ball", { ballType: "W", value: 0, strikerId: p1.id, payload: { dismissal: "Bowled" } });
+  // The method in its column, canonical, as db/13 and db/43 require of a new
+  // wicket; the payload still carries the spelling an older client sent,
+  // which the replay reads over it (fromRow spreads the payload last).
+  await write("ball", { ballType: "W", value: 0, strikerId: p1.id, dismissal: "bowled", payload: { dismissal: "Bowled" } });
 
   group("A viewer who may read this fixture can read its ball log");
   const res = await api(`/api/matches/${m}/events`, { token: head });

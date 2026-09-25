@@ -135,6 +135,10 @@ const WALKS = [
   // A wicket the free hit saved: the fold and every SQL reader agree, over
   // generated logs (db/42).
   "free-hit",
+  // Every batting and bowling figure SQL keeps is the fold's — who is out at
+  // either end, the opposition's figures, a ball with no type, a wicket with
+  // no method — and the doors that refuse the last two (db/43).
+  "fold-figures",
   "commit",
   // The API refuses to start on a database missing a migration it was built
   // against, and starts on one that is ahead of it (SCRBRD-066).

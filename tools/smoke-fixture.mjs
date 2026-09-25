@@ -267,10 +267,11 @@ try {
     const m = (await arrange(head, {
       schoolId: HIL, teamCode: "1XI", startsAt: soon(13),
       awaySchoolId: WES, awayTeamCode: "1XI" })).body.id;
+    // A dot ball: a delivery says what it was (db/43 refuses one with no type).
     await q(`insert into ball_event (match_id, school_id, seq, epoch, scorer_user_id, device_id,
-                                     idempotency_key, client_seq, client_ts, kind)
+                                     idempotency_key, client_seq, client_ts, kind, ball_type, value)
              values ($1,$2,1,1,(select id from app_user where email='scorer@example.invalid'),
-                     'd','fx1',1, now(), 'ball')`, [m, HIL]);
+                     'd','fx1',1, now(), 'ball', 'run', 0)`, [m, HIL]);
     const moved = await q(`update match set away_school_id = null, away_team_code = null
                             where id = $1`, [m])
       .then(() => ({ ok: true })).catch((e) => ({ ok: false, code: e.code, message: e.message }));

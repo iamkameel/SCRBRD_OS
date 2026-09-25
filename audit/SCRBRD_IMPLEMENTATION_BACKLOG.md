@@ -3092,6 +3092,34 @@ keys: after the upgrade a re-offered, already-acknowledged ball reads as unsent 
   a saved wicket verifies) and `db/99` §20. Still open, found alongside: a W ball with no method (NULL `dismissal`)
   is the bowler's wicket to `dismissal_is_bowlers()` and not to the fold's `chargedToBowler()` — the API refuses one,
   so only a row written before db/13 or by hand can carry it.
+  **(2)–(4), and the W ball with no method, closed 2026-09-25:** `db/43_last_fold_disagreements.sql`
+  (docs/SCORING_RULES.md, "SQL agrees with the fold: the last four"). Who is out is `ball_dismissed_batter()` —
+  `dismissed ?? striker` over `fromRow()` — in `player_innings` (the non-striker's own row, out; 0 (0) if he never
+  faced), `player_batting_since` (his match), `player_dismissals_since`, `player_dismissal_breakdown`,
+  `opposition_squad` and the matchups read; a typed-name batter run out at the far end is no longer filed against the
+  striker (found while fixing (2)). `opposition_squad`'s balls, fours, sixes and runs conceded follow the fold. A ball
+  with no type and a wicket with no method are refused at the door (a BEFORE INSERT trigger,
+  `ball_event_names_its_delivery`, raising 23514 as `ball_event_ball_has_type` / `ball_event_wicket_has_method`; not a
+  CHECK, which a migration's backfill UPDATE of a legacy row would trip); stored ones are read as the fold reads them (`ball_event_live` through
+  `ball_type_as_folded()`; `dismissal_is_bowlers(NULL)` false, `dismissal_stands_on_free_hit(NULL)` still false).
+  Proved by `tools/smoke-fold-figures.mjs` (fold = SQL for every batting and bowling figure over generated logs with
+  legacy rows; 33 passed, 43 failed on the code before) and `db/99` §21.
+- **Found 2026-09-25 (db/43), not fixed — each needs a decision:** (1) the matchups read's `balls` counts legal
+  deliveries, so a no-ball is not a ball of the pair (the opposite of every other balls-faced figure now), and
+  `tools/smoke-matchups.mjs` pins it ("on one legal ball faced"); (2) a batter who came to the crease and neither
+  faced a ball nor was out has no `player_innings` row — the fold lists him "0*" — so his not-out innings is in no form
+  guide, passport innings count or batting match; the only SQL source for him is the `batters` event; (3) penalty runs
+  (a `penalty` event, which the pad emits) are in the fold's total and in no SQL total: `match_live_score`, and so the
+  public score and `scoring_verify_takeover`, sum `value`, which a penalty row does not carry — a handover after a
+  penalty award cannot verify; (4) a `ball_type` outside the six (the pad's `ball()` refuses one, but the API writes
+  whatever string it is sent) is a legal ball whose runs are the batter's and the bowler's to the fold's scorecard
+  (its `default` branch) and nobody's to `runsOffBat()` — the fold disagrees with itself, so SQL cannot agree with it
+  until that is decided; a door like db/43's would close it for new rows; (5) `scoring_verify_takeover` sums runs,
+  wickets and legal balls over every innings of the match, while the handover sheet asks the incoming scorer for
+  this innings' figures off the scoreboard (`handover.js`: "legal deliveries bowled this innings"; `sheets.jsx`:
+  overs × 6 + balls) and the fold keeps them per innings — so a handover in a second innings cannot verify (probed on
+  a two-innings log: the check expected 7/1 off 4, the fold's innings were 8/1 off 3 with a 5-run penalty and 4/0
+  off 1).
 
 ### Decided 2026-09-24 — screens to build next (from docs/redesign/SCREEN_MAP.md)
 - **SCRBRD-082 — Post-match report.** Scorecard, key moments, figures, generated from the log after a match.

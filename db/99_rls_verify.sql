@@ -346,6 +346,49 @@ CREATE OR REPLACE FUNCTION _count_trip_before_41() RETURNS integer AS $$
                  '00000000-0000-0000-0000-000000000000'::uuid, t.match_id);
 $$ LANGUAGE sql SECURITY DEFINER;
 
+-- db/43. A ball with no type and a wicket with no method are refused at the
+-- door now (the trigger ball_event_names_its_delivery), so the rows a
+-- database stored before it cannot be CREATED — only inherited, the position
+-- _born_constraint is in for db/11. Lifting the door for one INSERT is how
+-- such a row is reproduced honestly; it goes back on at once, and the file
+-- rolls back either way. Written as the owner, as a row past the API's own
+-- door would have been. Before db/43 there is no door to lift.
+CREATE OR REPLACE FUNCTION _insert_past_the_door(p_rows jsonb) RETURNS integer AS $$
+DECLARE n integer;
+  v_door boolean := EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'ball_event'::regclass
+                             AND tgname = 'ball_event_names_its_delivery' AND tgenabled = 'O');
+BEGIN
+  IF v_door THEN EXECUTE 'ALTER TABLE ball_event DISABLE TRIGGER ball_event_names_its_delivery'; END IF;
+  INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key,
+                          client_seq, client_ts, kind, ball_type, value, striker_id, bowler_id, dismissed_id,
+                          dismissal, payload)
+  SELECT r.match_id, match_school(r.match_id), r.seq, r.epoch, r.innings, r.scorer_user_id, r.device_id,
+         r.idempotency_key, r.client_seq, now(), r.kind, r.ball_type, r.value, r.striker_id, r.bowler_id,
+         r.dismissed_id, r.dismissal, coalesce(r.payload, '{}'::jsonb)
+    FROM jsonb_populate_recordset(null::ball_event, p_rows) r;
+  GET DIAGNOSTICS n = ROW_COUNT;
+  IF v_door THEN EXECUTE 'ALTER TABLE ball_event ENABLE TRIGGER ball_event_names_its_delivery'; END IF;
+  RETURN n;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- db/43. opposition_squad() opens only for a scheduled fixture a side is in,
+-- inside its window, with the feature on (db/08). A Hilton–Westville 1XI
+-- fixture a week out, and the feature on; called by §21 alone, owner-written,
+-- rolled back with everything else.
+CREATE OR REPLACE FUNCTION _opposition_fixture_43() RETURNS uuid AS $$
+BEGIN
+  INSERT INTO match (id, school_id, team_code, away_school_id, away_team_code, opponent, starts_at,
+                     sport, format, overs, status)
+  VALUES ('77777777-0000-0000-0000-0000000043a0', '11111111-1111-1111-1111-111111111111', '1XI',
+          '22222222-2222-2222-2222-222222222222', '1XI', 'Westville Boys'' High', now() + interval '7 days',
+          'cricket', 'T20', 20, 'scheduled')
+  ON CONFLICT DO NOTHING;
+  UPDATE feature_flag SET enabled = true, locked = false WHERE key = 'opposition';
+  DELETE FROM feature_suppression WHERE key = 'opposition';
+  DELETE FROM feature_grant WHERE key = 'opposition';
+  RETURN '77777777-0000-0000-0000-0000000043a0'::uuid;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
 -- Past RLS, because each claim below is "exactly these rows and no others",
 -- and an RLS-scoped count cannot tell the rows that exist from the rows shown.
 CREATE OR REPLACE FUNCTION _count_availability_of(p_player uuid) RETURNS integer AS $$
@@ -3283,6 +3326,263 @@ BEGIN
     SELECT v.ok INTO v_ok FROM scoring_verify_takeover(M_HANDOVER, 'verify-042-b', v_runs, all0::int + 5, v_balls) v;
     -- (b) scoring_verify_takeover
     PERFORM _assert(v_ok, 'db/42 (b) scoring_verify_takeover: the fold''s count did not verify after a saved wicket');
+  END;
+  PERFORM set_config('app.device_id', '', true);
+
+  -- ── 21. The last places SQL disagreed with the fold (db/43) ─────────
+  -- Who is out is the fold's `dismissed ?? striker`; the opposition's balls
+  -- faced, boundaries and runs conceded are the fold's; a ball with no type
+  -- is a run and a wicket with no method is nobody's; and a new row of either
+  -- shape is refused at the door. Eleven balls written live on the match §19
+  -- and §20 score, under a fresh claim, then two legacy rows written past the
+  -- door as the owner. Figures read before, after the live balls ("mid") and
+  -- after the legacy rows, as deltas, coalesced to a number: _assert()
+  -- refuses a NULL. Each assertion's label names what it guards; each was run
+  -- once, alone, against the definitions db/43 replaced (a database at db/42)
+  -- — (rule) against db/13's dismissal_is_bowlers() — and failed.
+  --
+  --    k  delivery                        striker  who is out       the fold
+  --    1  W run out, none run             S1       N0               N0: an innings of 0 (0), out
+  --    2  W run out, 1 run, bowler's end  S1       NF               NF out, having faced §20's over
+  --    3  W run out, none run             S1       a typed name     nobody here; S1 not out
+  --    4  no-ball, 4 off the bat          MK                        his four, a ball faced; 5 to BO
+  --    5  no-ball, 4 byes                 MK                        no four, a ball faced; 5 to BO
+  --    6  no-ball, 6 leg byes             MK                        no six, a ball faced; 7 to BO
+  --    7  wide, 4 run                     MK                        no ball faced, no four; 5 to BO
+  --    8  4 byes                          MK                        a ball faced, no four; 0 to BO
+  --    9  4 leg byes                      MK                        a ball faced, no four; 0 to BO
+  --   10  6                               MK                        his six
+  --   11  wide                            MK                        1 to BO
+  --      ── mid ──
+  --   12  NO TYPE, 3 (legacy)             MK                        a run: a legal ball, 3 to him and BO
+  --   13  W, NO METHOD (legacy)           MK                        MK out; nobody's wicket
+  --
+  -- Before db/43: N0 had no innings, NF read not out, S1 read out (the typed
+  -- name filed against him); MK had faced 3 balls with 4 fours, BO conceded
+  -- 25; the no-type ball was no legal ball and nobody's runs; the wicket with
+  -- no method was BO's; and either could be written anew.
+  PERFORM _scoring_session_reset(M_HANDOVER);
+  PERFORM _as(U_SCORER);
+  PERFORM set_config('app.device_id', 'verify-043', true);
+  SELECT c.ok, c.epoch INTO v_ok, v_epoch FROM scoring_claim(M_HANDOVER, 'verify-043') c;
+  PERFORM _assert(v_ok, 'the scorer could not claim the match the db/43 section scores');
+  DECLARE
+    S1 uuid := 'aaaaaaaa-0000-0000-0000-000000000002';  -- T Bekker: on strike for three run outs at the other end
+    N0 uuid := 'aaaaaaaa-0000-0000-0000-000000000013';  -- B Khumalo: run out at the far end, never faced a ball
+    NF uuid := 'aaaaaaaa-0000-0000-0000-000000000012';  -- J Sithole: faced §20's over, not out, run out here
+    MK uuid := 'bbbbbbbb-0000-0000-0000-000000000001';  -- D Mkhize, Westville: the opposition's batter
+    BO uuid := 'bbbbbbbb-0000-0000-0000-000000000002';  -- K Botha, Westville: the opposition's bowler
+    M_OPP uuid;
+    x record; v_con text;
+    i_n0 record; i_nf record; i_s1 record;
+    d_n0_0 bigint; d_nf_0 bigint; d_s1_0 bigint; d_n0_1 bigint; d_nf_1 bigint; d_s1_1 bigint;
+    k_n0_0 bigint; k_nf_0 bigint; k_s1_0 bigint; k_n0_1 bigint; k_nf_1 bigint; k_s1_1 bigint;
+    m_n0_0 bigint; m_n0_1 bigint; b_s1_0 record; b_s1_1 record;
+    o0 record; o1 record; o2 record;   -- the opposition's figures (MK batting, BO bowling): before, mid, after
+    l1 record; l2 record;               -- match_live_score, innings 0: mid, after
+    w1 record; w2 record;               -- player_bowling_since(BO): mid, after
+    f1 record; f2 record;               -- bowler_innings_figures(BO, this innings): mid, after
+    wb1 bigint; wb2 bigint;             -- BO's wicket breakdown, method not recorded: mid, after
+  BEGIN
+    M_OPP := _opposition_fixture_43();
+    PERFORM _as(U_OWNER);
+    d_n0_0 := coalesce(player_dismissals_since(N0, NULL), 0);
+    d_nf_0 := coalesce(player_dismissals_since(NF, NULL), 0);
+    d_s1_0 := coalesce(player_dismissals_since(S1, NULL), 0);
+    k_n0_0 := coalesce((SELECT sum(dismissals) FROM player_dismissal_breakdown WHERE player_id = N0 AND dismissal = 'run_out'), 0);
+    k_nf_0 := coalesce((SELECT sum(dismissals) FROM player_dismissal_breakdown WHERE player_id = NF AND dismissal = 'run_out'), 0);
+    k_s1_0 := coalesce((SELECT sum(dismissals) FROM player_dismissal_breakdown WHERE player_id = S1), 0);
+    m_n0_0 := coalesce((SELECT matches FROM player_batting_since(N0, NULL)), 0);
+    SELECT coalesce(max(b.runs), 0) AS runs, coalesce(max(b.balls_faced), 0) AS balls INTO b_s1_0 FROM player_batting_since(S1, NULL) b;
+    SELECT coalesce(max(o.balls) FILTER (WHERE o.player_id = MK), 0) AS balls,
+           coalesce(max(o.runs) FILTER (WHERE o.player_id = MK), 0) AS runs,
+           coalesce(max(o.fours) FILTER (WHERE o.player_id = MK), 0) AS fours,
+           coalesce(max(o.sixes) FILTER (WHERE o.player_id = MK), 0) AS sixes,
+           coalesce(max(o.dismissals) FILTER (WHERE o.player_id = MK), 0) AS dismissals,
+           coalesce(max(o.balls_bowled) FILTER (WHERE o.player_id = BO), 0) AS balls_bowled,
+           coalesce(max(o.runs_conceded) FILTER (WHERE o.player_id = BO), 0) AS runs_conceded,
+           coalesce(max(o.wickets) FILTER (WHERE o.player_id = BO), 0) AS wickets,
+           count(*) FILTER (WHERE o.player_id IN (MK, BO)) AS seen
+      INTO o0 FROM opposition_squad(M_OPP) o;
+    PERFORM _assert(o0.seen = 2, 'db/43: the opposition''s squad could not be read for the section''s fixture');
+
+    -- One statement per delivery, as they arrive (the milestone trigger is AFTER ROW).
+    PERFORM _as(U_SCORER);
+    FOR x IN SELECT * FROM (VALUES
+        ( 1, 'W',   0, 'S1', 'N0', 'run_out', '{}'::jsonb),
+        ( 2, 'W',   1, 'S1', 'NF', 'run_out', '{"outAt":"bowler_end"}'::jsonb),
+        ( 3, 'W',   0, 'S1', NULL, 'run_out', '{"dismissed":"A Typed Boy"}'::jsonb),
+        ( 4, 'Nb',  4, 'MK', NULL, NULL,      '{}'::jsonb),
+        ( 5, 'Nb',  4, 'MK', NULL, NULL,      '{"nbRuns":"byes"}'::jsonb),
+        ( 6, 'Nb',  6, 'MK', NULL, NULL,      '{"nbRuns":"leg_byes"}'::jsonb),
+        ( 7, 'Wd',  4, 'MK', NULL, NULL,      '{}'::jsonb),
+        ( 8, 'B',   4, 'MK', NULL, NULL,      '{}'::jsonb),
+        ( 9, 'LB',  4, 'MK', NULL, NULL,      '{}'::jsonb),
+        (10, 'run', 6, 'MK', NULL, NULL,      '{}'::jsonb),
+        (11, 'Wd',  0, 'MK', NULL, NULL,      '{}'::jsonb)
+      ) AS v(k, bt, val, who, outp, dis, pl) ORDER BY k
+    LOOP
+      INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                              idempotency_key, client_seq, client_ts, kind, ball_type, value,
+                              striker_id, bowler_id, dismissed_id, dismissal, payload)
+      VALUES (M_HANDOVER, match_school(M_HANDOVER), 9600 + x.k, v_epoch, 0, U_SCORER, 'verify-043',
+              'verify:043:' || x.k, 9600 + x.k, now(), 'ball', x.bt, x.val,
+              CASE x.who WHEN 'S1' THEN S1 WHEN 'MK' THEN MK END, BO,
+              CASE x.outp WHEN 'N0' THEN N0 WHEN 'NF' THEN NF END, x.dis, x.pl);
+    END LOOP;
+
+    PERFORM _as(U_OWNER);
+    d_n0_1 := coalesce(player_dismissals_since(N0, NULL), 0);
+    d_nf_1 := coalesce(player_dismissals_since(NF, NULL), 0);
+    d_s1_1 := coalesce(player_dismissals_since(S1, NULL), 0);
+    k_n0_1 := coalesce((SELECT sum(dismissals) FROM player_dismissal_breakdown WHERE player_id = N0 AND dismissal = 'run_out'), 0);
+    k_nf_1 := coalesce((SELECT sum(dismissals) FROM player_dismissal_breakdown WHERE player_id = NF AND dismissal = 'run_out'), 0);
+    k_s1_1 := coalesce((SELECT sum(dismissals) FROM player_dismissal_breakdown WHERE player_id = S1), 0);
+    m_n0_1 := coalesce((SELECT matches FROM player_batting_since(N0, NULL)), 0);
+    SELECT coalesce(max(b.runs), 0) AS runs, coalesce(max(b.balls_faced), 0) AS balls INTO b_s1_1 FROM player_batting_since(S1, NULL) b;
+    SELECT true AS found, i.runs, i.balls_faced AS balls, i.out INTO i_n0
+      FROM player_innings i WHERE i.player_id = N0 AND i.match_id = M_HANDOVER AND i.innings = 0;
+    SELECT true AS found, i.runs, i.balls_faced AS balls, i.out INTO i_nf
+      FROM player_innings i WHERE i.player_id = NF AND i.match_id = M_HANDOVER AND i.innings = 0;
+    SELECT true AS found, i.runs, i.balls_faced AS balls, i.out INTO i_s1
+      FROM player_innings i WHERE i.player_id = S1 AND i.match_id = M_HANDOVER AND i.innings = 0;
+    SELECT coalesce(max(o.balls) FILTER (WHERE o.player_id = MK), 0) AS balls,
+           coalesce(max(o.runs) FILTER (WHERE o.player_id = MK), 0) AS runs,
+           coalesce(max(o.fours) FILTER (WHERE o.player_id = MK), 0) AS fours,
+           coalesce(max(o.sixes) FILTER (WHERE o.player_id = MK), 0) AS sixes,
+           coalesce(max(o.dismissals) FILTER (WHERE o.player_id = MK), 0) AS dismissals,
+           coalesce(max(o.balls_bowled) FILTER (WHERE o.player_id = BO), 0) AS balls_bowled,
+           coalesce(max(o.runs_conceded) FILTER (WHERE o.player_id = BO), 0) AS runs_conceded,
+           coalesce(max(o.wickets) FILTER (WHERE o.player_id = BO), 0) AS wickets
+      INTO o1 FROM opposition_squad(M_OPP) o;
+    SELECT coalesce(max(legal_balls), 0) AS balls, coalesce(max(runs), 0) AS runs, coalesce(max(wickets), 0) AS wickets
+      INTO l1 FROM match_live_score WHERE match_id = M_HANDOVER AND innings = 0;
+    SELECT coalesce(max(w.runs_conceded), 0) AS runs, coalesce(max(w.legal_balls), 0) AS balls,
+           coalesce(max(w.wickets), 0) AS wickets INTO w1 FROM player_bowling_since(BO, NULL) w;
+    SELECT coalesce(max(f.wickets), 0) AS wickets, coalesce(max(f.runs_conceded), 0) AS runs
+      INTO f1 FROM bowler_innings_figures f WHERE f.player_id = BO AND f.match_id = M_HANDOVER AND f.innings = 0;
+    wb1 := coalesce((SELECT sum(wickets) FROM player_wicket_breakdown WHERE player_id = BO AND dismissal IS NULL), 0);
+
+    -- The legacy rows: what a database stored before the door.
+    PERFORM _insert_past_the_door(jsonb_build_array(
+      jsonb_build_object('match_id', M_HANDOVER, 'seq', 9612, 'epoch', v_epoch, 'innings', 0, 'scorer_user_id', U_SCORER,
+                         'device_id', 'verify-043', 'idempotency_key', 'verify:043:12', 'client_seq', 9612,
+                         'kind', 'ball', 'ball_type', NULL, 'value', 3, 'striker_id', MK, 'bowler_id', BO),
+      jsonb_build_object('match_id', M_HANDOVER, 'seq', 9613, 'epoch', v_epoch, 'innings', 0, 'scorer_user_id', U_SCORER,
+                         'device_id', 'verify-043', 'idempotency_key', 'verify:043:13', 'client_seq', 9613,
+                         'kind', 'ball', 'ball_type', 'W', 'value', 0, 'striker_id', MK, 'bowler_id', BO, 'dismissal', NULL)));
+
+    SELECT coalesce(max(o.balls) FILTER (WHERE o.player_id = MK), 0) AS balls,
+           coalesce(max(o.runs) FILTER (WHERE o.player_id = MK), 0) AS runs,
+           coalesce(max(o.dismissals) FILTER (WHERE o.player_id = MK), 0) AS dismissals,
+           coalesce(max(o.balls_bowled) FILTER (WHERE o.player_id = BO), 0) AS balls_bowled,
+           coalesce(max(o.runs_conceded) FILTER (WHERE o.player_id = BO), 0) AS runs_conceded,
+           coalesce(max(o.wickets) FILTER (WHERE o.player_id = BO), 0) AS wickets
+      INTO o2 FROM opposition_squad(M_OPP) o;
+    SELECT coalesce(max(legal_balls), 0) AS balls, coalesce(max(runs), 0) AS runs, coalesce(max(wickets), 0) AS wickets
+      INTO l2 FROM match_live_score WHERE match_id = M_HANDOVER AND innings = 0;
+    SELECT coalesce(max(w.runs_conceded), 0) AS runs, coalesce(max(w.legal_balls), 0) AS balls,
+           coalesce(max(w.wickets), 0) AS wickets INTO w2 FROM player_bowling_since(BO, NULL) w;
+    SELECT coalesce(max(f.wickets), 0) AS wickets, coalesce(max(f.runs_conceded), 0) AS runs
+      INTO f2 FROM bowler_innings_figures f WHERE f.player_id = BO AND f.match_id = M_HANDOVER AND f.innings = 0;
+    wb2 := coalesce((SELECT sum(wickets) FROM player_wicket_breakdown WHERE player_id = BO AND dismissal IS NULL), 0);
+
+    -- (a) player_innings: the non-striker run out before he faced a ball
+    PERFORM _assert(coalesce(i_n0.found AND i_n0.runs = 0 AND i_n0.balls = 0 AND i_n0.out, false),
+      format('db/43 (a) player_innings: a batter run out at the non-striker''s end before he faced a ball has no innings of 0 (0), out: %s',
+             CASE WHEN i_n0.found IS NULL THEN 'no row' ELSE i_n0::text END));
+    -- (b) player_innings: the non-striker run out after facing
+    PERFORM _assert(coalesce(i_nf.found AND i_nf.balls >= 1 AND i_nf.out, false),
+      format('db/43 (b) player_innings: a batter run out at the non-striker''s end after facing %s ball(s) reads out=%s',
+             coalesce(i_nf.balls::text, 'no'), coalesce(i_nf.out::text, 'no row')));
+    -- (c) player_innings: the striker of those balls
+    PERFORM _assert(coalesce(i_s1.found AND i_s1.runs = 1 AND i_s1.balls = 3 AND NOT i_s1.out, false),
+      format('db/43 (c) player_innings: the striker of three run outs at the other end — one of a batter SCRBRD holds no row for — reads %s, expected 1 (3), not out',
+             CASE WHEN i_s1.found IS NULL THEN 'no row' ELSE i_s1::text END));
+    -- (d) player_dismissals_since
+    PERFORM _assert(d_n0_1 - d_n0_0 = 1 AND d_nf_1 - d_nf_0 = 1 AND d_s1_1 - d_s1_0 = 0,
+      format('db/43 (d) player_dismissals_since: dismissals moved by %s (never faced), %s (had faced), %s (the striker); expected 1, 1, 0',
+             d_n0_1 - d_n0_0, d_nf_1 - d_nf_0, d_s1_1 - d_s1_0));
+    -- (e) player_dismissal_breakdown
+    PERFORM _assert(k_n0_1 - k_n0_0 = 1 AND k_nf_1 - k_nf_0 = 1 AND k_s1_1 - k_s1_0 = 0,
+      format('db/43 (e) player_dismissal_breakdown: run-out lines moved by %s and %s, the striker''s by %s; expected 1, 1, 0',
+             k_n0_1 - k_n0_0, k_nf_1 - k_nf_0, k_s1_1 - k_s1_0));
+    -- (f) player_batting_since
+    PERFORM _assert(m_n0_1 - m_n0_0 = 1 AND b_s1_1.runs - b_s1_0.runs = 1 AND b_s1_1.balls - b_s1_0.balls = 3,
+      format('db/43 (f) player_batting_since: the batter run out before facing has %s more batting matches (expected 1); the striker %s more runs off %s more balls (expected 1 off 3)',
+             m_n0_1 - m_n0_0, b_s1_1.runs - b_s1_0.runs, b_s1_1.balls - b_s1_0.balls));
+    -- (g) opposition_squad: balls faced
+    PERFORM _assert(o1.balls - o0.balls = 6,
+      format('db/43 (g) opposition_squad balls: the batter faced %s more balls, expected 6 (three no-balls, a bye, a leg bye, a six; not the wides)',
+             o1.balls - o0.balls));
+    -- (h) opposition_squad: fours and sixes
+    PERFORM _assert(o1.fours - o0.fours = 1 AND o1.sixes - o0.sixes = 1 AND o1.runs - o0.runs = 10,
+      format('db/43 (h) opposition_squad fours/sixes: %s fours, %s sixes and %s runs more, expected 1, 1 and 10 (off the bat only: no byes, leg byes, wide or no-ball byes to the rope)',
+             o1.fours - o0.fours, o1.sixes - o0.sixes, o1.runs - o0.runs));
+    -- (i) opposition_squad: runs conceded
+    PERFORM _assert(o1.runs_conceded - o0.runs_conceded = 30 AND o1.balls_bowled - o0.balls_bowled = 6,
+      format('db/43 (i) opposition_squad runs_conceded: the bowler conceded %s more off %s more balls, expected 30 off 6 (a wide or a no-ball is the penalty run and every run off it)',
+             o1.runs_conceded - o0.runs_conceded, o1.balls_bowled - o0.balls_bowled));
+    -- (j) match_live_score: the legacy rows
+    PERFORM _assert(l2.balls - l1.balls = 2 AND l2.runs - l1.runs = 3 AND l2.wickets - l1.wickets = 1,
+      format('db/43 (j) match_live_score: a ball with no type and a wicket with no method moved the legal balls / runs / wickets by %s / %s / %s; expected 2 / 3 / 1',
+             l2.balls - l1.balls, l2.runs - l1.runs, l2.wickets - l1.wickets));
+    -- (k) player_bowling_since: the legacy rows
+    PERFORM _assert(w2.runs - w1.runs = 3 AND w2.balls - w1.balls = 2 AND w2.wickets - w1.wickets = 0,
+      format('db/43 (k) player_bowling_since: the legacy rows moved the bowler''s runs / legal balls / wickets by %s / %s / %s; expected 3 / 2 / 0',
+             w2.runs - w1.runs, w2.balls - w1.balls, w2.wickets - w1.wickets));
+    -- (l) bowler_innings_figures: the legacy rows
+    PERFORM _assert(f2.wickets - f1.wickets = 0 AND f2.runs - f1.runs = 3,
+      format('db/43 (l) bowler_innings_figures: the legacy rows moved the bowler''s wickets / runs in the innings by %s / %s; expected 0 / 3',
+             f2.wickets - f1.wickets, f2.runs - f1.runs));
+    -- (m) player_wicket_breakdown: the legacy wicket
+    PERFORM _assert(wb2 - wb1 = 0,
+      format('db/43 (m) player_wicket_breakdown: a wicket with no method was filed as the bowler''s (%s more)', wb2 - wb1));
+    -- (n) opposition_squad: the legacy rows
+    PERFORM _assert(o2.balls - o1.balls = 2 AND o2.runs - o1.runs = 3 AND o2.dismissals - o1.dismissals = 0
+                    AND o2.balls_bowled - o1.balls_bowled = 2 AND o2.runs_conceded - o1.runs_conceded = 3
+                    AND o2.wickets - o1.wickets = 0,
+      format('db/43 (n) opposition_squad: the legacy rows moved the batter''s balls / runs / dismissals by %s / %s / %s (expected 2 / 3 / 0) and the bowler''s balls / runs / wickets by %s / %s / %s (expected 2 / 3 / 0)',
+             o2.balls - o1.balls, o2.runs - o1.runs, o2.dismissals - o1.dismissals,
+             o2.balls_bowled - o1.balls_bowled, o2.runs_conceded - o1.runs_conceded, o2.wickets - o1.wickets));
+    -- (rule) the rules themselves
+    PERFORM _assert(dismissal_is_bowlers(NULL) IS NOT DISTINCT FROM false
+                    AND dismissal_stands_on_free_hit(NULL) IS NOT DISTINCT FROM false
+                    AND ball_type_as_folded('ball', NULL) IS NOT DISTINCT FROM 'run'
+                    AND ball_type_as_folded('retire', NULL) IS NULL
+                    AND ball_dismissed_batter(S1, NULL, '{"dismissed":"A Typed Boy"}'::jsonb) IS NULL
+                    AND ball_dismissed_batter(S1, NULL, '{}'::jsonb) IS NOT DISTINCT FROM S1
+                    AND ball_dismissed_batter(S1, N0, '{}'::jsonb) IS NOT DISTINCT FROM N0,
+      'db/43 (rule): a wicket with no method is the bowler''s or stands on a free hit, a ball with no type is not a run, or who is out is not `dismissed ?? striker`');
+
+    -- (door-type) and (door-method): a client that writes either now is
+    -- refused by the table itself, whoever it is — 23514, naming the rule,
+    -- as a CHECK would (db/43's trigger).
+    PERFORM _as(U_SCORER);
+    v_con := NULL;
+    BEGIN
+      INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                              idempotency_key, client_seq, client_ts, kind, ball_type, value, striker_id, bowler_id)
+      VALUES (M_HANDOVER, match_school(M_HANDOVER), 9620, v_epoch, 0, U_SCORER, 'verify-043',
+              'verify:043:door-type', 9620, now(), 'ball', NULL, 1, MK, BO);
+    EXCEPTION WHEN check_violation THEN
+      GET STACKED DIAGNOSTICS v_con = CONSTRAINT_NAME;
+    END;
+    -- (door-type)
+    PERFORM _assert(v_con IS NOT DISTINCT FROM 'ball_event_ball_has_type',
+      format('db/43 (door-type): a new ball with no type was %s', coalesce('refused by ' || v_con, 'written')));
+    v_con := NULL;
+    BEGIN
+      INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                              idempotency_key, client_seq, client_ts, kind, ball_type, value, striker_id, bowler_id)
+      VALUES (M_HANDOVER, match_school(M_HANDOVER), 9621, v_epoch, 0, U_SCORER, 'verify-043',
+              'verify:043:door-method', 9621, now(), 'ball', 'W', 0, MK, BO);
+    EXCEPTION WHEN check_violation THEN
+      GET STACKED DIAGNOSTICS v_con = CONSTRAINT_NAME;
+    END;
+    -- (door-method)
+    PERFORM _assert(v_con IS NOT DISTINCT FROM 'ball_event_wicket_has_method',
+      format('db/43 (door-method): a new wicket ball with no method was %s', coalesce('refused by ' || v_con, 'written')));
   END;
   PERFORM set_config('app.device_id', '', true);
 

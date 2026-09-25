@@ -1816,11 +1816,16 @@ export const READ_QUERIES = {
                   count(*) filter (where b.value = 6 and b.ball_type <> 'W' and ${OFF_THE_BAT_SQL})::int as sixes,
                   -- A dismissal the free hit saved is not one: the fold's
                   -- rule, ball_wicket_stands() in db/42, which is what every
-                  -- SQL wicket count asks.
+                  -- SQL wicket count asks. A wicket with no method is not the
+                  -- bowler's (chargedToBowler(null) is false), and who is
+                  -- out is the fold's \`dismissed ?? striker\`,
+                  -- ball_dismissed_batter() in db/43: a typed-name batter run
+                  -- out at the far end is not the striker's dismissal.
                   count(*) filter (
                     where b.ball_type = 'W'
-                      and coalesce(b.dismissal,'') not in (${NOT_THE_BOWLERS})
-                      and coalesce(b.dismissed_id, b.striker_id) = b.striker_id
+                      and b.dismissal is not null
+                      and b.dismissal not in (${NOT_THE_BOWLERS})
+                      and ball_dismissed_batter(b.striker_id, b.dismissed_id, b.payload) = b.striker_id
                       and ball_wicket_stands(b.match_id, b.innings, b.seq, b.kind, b.ball_type, b.dismissal)
                   )::int                                                       as dismissals
              from ball_event_live b

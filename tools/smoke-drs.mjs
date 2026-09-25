@@ -89,15 +89,17 @@ try {
   const parent   = await login("parent@example.invalid");     // fixture.read only
   const su = (await q(`select id from app_user where email = 'scorer@example.invalid'`))[0].id;
 
-  // A completed match with one delivery to review.
+  // A completed match with one delivery to review — the lbw the review below
+  // overturns. It names its method: a wicket ball with none is refused at the
+  // table (db/43, ball_event_wicket_has_method).
   const m = (await q(
     `insert into match (school_id, team_code, opponent, starts_at, format, overs, status)
      values ($1,'1XI','Michaelhouse', now() - interval '1 day','T20',20,'complete') returning id`,
     [HIL]))[0].id;
   await q(
     `insert into ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
-                             idempotency_key, client_seq, client_ts, kind, ball_type, value, payload)
-     values ($1,$2,1,1,0,$3,'device-drs',$4,1,now(),'ball','W',0,'{}'::jsonb)`,
+                             idempotency_key, client_seq, client_ts, kind, ball_type, value, dismissal, payload)
+     values ($1,$2,1,1,0,$3,'device-drs',$4,1,now(),'ball','W',0,'lbw','{}'::jsonb)`,
     [m, HIL, su, `drs-${Date.now()}-${Math.random()}`]);
 
   group("It ships switched off, and says why");

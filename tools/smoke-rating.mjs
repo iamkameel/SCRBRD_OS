@@ -78,7 +78,8 @@ async function logBalls(player, { runs, balls, daysAgo, outs = 0 }) {
                now() - make_interval(days => $6), 'ball', $7, $8, $9, null, $10)`,
       [MATCH, HIL, seq, U_COACH, `rating-${seq}`, daysAgo,
        isOut ? "W" : "run", isOut ? 0 : Math.round(runs / Math.max(1, balls - outs)),
-       player, null]);
+       // A wicket names its method: db/43 refuses one with none at the table.
+       player, isOut ? "bowled" : null]);
   }
 }
 
@@ -131,11 +132,12 @@ try {
     `insert into ball_event
        (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
         idempotency_key, client_seq, client_ts, server_ts, kind, ball_type,
-        value, striker_id)
+        value, striker_id, dismissal)
      select $1,$2, 6000 + g, 1, 0, $3, 'device-rating', 'after-' || g, 6000 + g,
             now(), now() + interval '1 hour', 'ball',
             case when g <= 12 then 'W' else 'run' end,
-            case when g <= 12 then 0 else 1 end, $4
+            case when g <= 12 then 0 else 1 end, $4,
+            case when g <= 12 then 'bowled' end
        from generate_series(1, 120) g`,
     [MATCH, HIL, U_COACH, P_OWN]);
   const moved = await ratingFor(coach, P_OWN);
