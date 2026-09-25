@@ -27,8 +27,11 @@ const SUITES = [
   ["laws",     "packages/scoring/test/laws.test.mjs"],
   // What a person does about an event the server refused (SCRBRD-070).
   ["held",     "packages/sync/test/held.test.mjs"],
-  // Undo and the outbox: withdraw what never left, void what may have (SCRBRD-074/075).
+  // Undo and the outbox: withdraw what never left, void what may have (SCRBRD-074/075);
+  // an outbox that opens before the token, the flush gate, the toss first, the clear (SCRBRD-078/075/079).
   ["outbox",   "packages/sync/test/sync-engine.test.mjs"],
+  // A live pad attaching: never split, never merged, never taking another device's match (SCRBRD-078/075).
+  ["attach",   "packages/sync/test/attach.test.mjs"],
   // Who bats first on a live fixture: the recorded toss, never a default (SCRBRD-067).
   ["toss",     "packages/scoring/test/toss.test.mjs"],
   ["phases",   "packages/scoring/test/phases.test.mjs"],
@@ -45,6 +48,8 @@ const SUITES = [
   ["review",   "apps/web/test/innings-review.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Renders the pad's "can't score yet" panel from a folded innings, same transform.
   ["blocked",  "apps/web/test/scoring-blocked.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // What a live pad says about the server when it cannot send (SCRBRD-078), same transform.
+  ["sync-banner", "apps/web/test/sync-banner.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Renders the profile's dismissal-by-method card, same transform.
   ["dismissal-card", "apps/web/test/dismissal-breakdown.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Renders the placement charts and the capture-profile picker (SCRBRD-039).

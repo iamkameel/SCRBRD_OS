@@ -154,6 +154,9 @@ export default function SCRBRD_OS() {
   // be persisted: the resume payload carries a whole seeded innings and has no
   // business in storage, but its match id is all that's needed to rebuild it.
   const [scorerMatchId, setScorerMatchId] = useState(null);
+  // The login page was opened from a live pad (SCRBRD-078): it offers the
+  // real sign-in only — never the demo — and returns to the pad.
+  const [loginForPad, setLoginForPad] = useState(false);
   const restoredRef = useRef(false);
   const isMobile = useIsMobile();
 
@@ -179,6 +182,7 @@ export default function SCRBRD_OS() {
     setRole(r); setUserName(n || ROLES[r]?.label || "User");
     const nav = ROLES[r]?.nav || [];
     setPage(nav[0] || "dashboard");
+    setLoginForPad(false);
     setAppState("app");
   };
 
@@ -228,16 +232,20 @@ export default function SCRBRD_OS() {
   // the capability against the PREVIOUS role. The default role is superadmin,
   // which maps to platformadmin and cannot score, so the scorer silently
   // failed to reopen after a reload.
-  const openScorer = (m, asRole = role) => {
+  const openScorer = (m, asRole = role, { restored = false } = {}) => {
     if (!canScore(asRole)) return;   // RBAC: scoring is a write capability
     // A fixture that came from the server carries no seeded scorecard — there
     // is no stored score to seed from, by design. It opens with its match id
     // and the scorer builds the innings from the team sheet, which is what
-    // starting a real match looks like.
+    // starting a real match looks like. `live` says there is a server behind
+    // it (the pad queues and sends); `restored` that the session restore
+    // reopened it, not a person (SCRBRD-078: such a pad never takes a match
+    // another device has claimed since).
     if (m && m.live && m.id) {
       setScorerResume({ cfg: {
         matchId: m.id, team1: m.homeTeam, team2: m.awayTeam,
-        teamCode: m.homeTeam, overs: m.overs ?? 20,
+        teamCode: m.homeTeam, overs: m.overs ?? 20, live: true,
+        ...(restored ? { restored: true } : {}),
       } });
       setScorerMatchId(m.id);
       setScorerOpen(true);
@@ -287,26 +295,38 @@ export default function SCRBRD_OS() {
       if (s.page) setPage(s.page);
       if (s.scorerMatchId) {
         // A saved session must not become a way to reopen a fixture the person
-        // is no longer allowed to see — so the fixture is re-fetched and the
-        // SERVER decides, rather than the browser re-deriving it from a role
-        // stored in the same session that named the match.
-        //
-        // Falling back to the client-side scoping only when there is no
-        // session at all, which is the demo.
-        let m = null;
+        // is no longer allowed to see — so, with a session, the fixture is
+        // re-fetched and the SERVER decides, rather than the browser
+        // re-deriving it from a role stored in the same session that named
+        // the match.
+        let m = null, serverAnswered = false;
         if (signedIn()) {
           try {
             const { rows } = await api("/api/read/matches");
+            serverAnswered = true;
             const r = rows.find((x) => x.id === s.scorerMatchId);
             // The scorer wants the product's vocabulary, and asMatch lives in
             // lib/live.js behind a hook. Only three fields are needed here.
             if (r) m = { id: r.id, homeTeam: r.team_code, awayTeam: r.opponent,
                          overs: r.overs, live: true, status: r.status };
-          } catch { /* offline: fall through and let the scorer resume by id */ }
-        } else {
-          m = scoped("matches", s.role ?? role).find(x => x.id === s.scorerMatchId);
+          } catch { /* offline: fall through to what this device has */ }
         }
-        if (m) openScorer(m, s.role ?? role); else setScorerMatchId(s.scorerMatchId);
+        // SCRBRD-078. A live fixture's pad reopens from what this device
+        // already holds — the fixture's sides, saved with the session, and
+        // the ball log, saved by the pad — when there is no session (a reload
+        // loses the token, by design: lib/api.js) or no signal to ask. It
+        // shows nothing the device did not already have, and nothing it
+        // records is sent until the server has taken a claim from a signed-in
+        // scorer; until then it scores into its log and its outbox, and says
+        // so. This used to look the fixture up on the server and, finding
+        // nothing to ask, leave the scorer on the shell mid-over.
+        if (!m && !serverAnswered && s.scorerCfg?.live && s.scorerCfg.matchId === s.scorerMatchId) {
+          const c = s.scorerCfg;
+          m = { id: c.matchId, homeTeam: c.team1, awayTeam: c.team2, overs: c.overs, live: true };
+        }
+        // The demo: no session and no live fixture, so the client-side scoping.
+        if (!m && !signedIn()) m = scoped("matches", s.role ?? role).find(x => x.id === s.scorerMatchId);
+        if (m) openScorer(m, s.role ?? role, { restored: true }); else setScorerMatchId(s.scorerMatchId);
       }
       restoredRef.current = true;
     })();
@@ -315,8 +335,15 @@ export default function SCRBRD_OS() {
 
   useEffect(() => {
     if (!restoredRef.current) return;
-    saveSession({ appState, role, userName, page, scorerMatchId: scorerOpen ? scorerMatchId : null });
-  }, [appState, role, userName, page, scorerOpen, scorerMatchId]);
+    // A live fixture's sides go with its id (SCRBRD-078) — a handful of
+    // strings, not the resume payload — so the pad can reopen with no server
+    // to look the fixture up on.
+    const c = scorerOpen && scorerResume?.cfg?.live ? scorerResume.cfg : null;
+    // Signing in from the pad is a detour: a reload on the way comes back to
+    // the pad, which asks again.
+    saveSession({ appState: loginForPad ? "app" : appState, role, userName, page, scorerMatchId: scorerOpen ? scorerMatchId : null,
+      scorerCfg: c ? { matchId: c.matchId, team1: c.team1, team2: c.team2, teamCode: c.teamCode, overs: c.overs, live: true } : null });
+  }, [appState, role, userName, page, scorerOpen, scorerMatchId, scorerResume, loginForPad]);
 
   // Counted over the notices the SERVER agreed to send this person. A badge is
   // a disclosure: "3 unread" built from rows nobody authorised states a fact
@@ -339,7 +366,11 @@ export default function SCRBRD_OS() {
   );
   if (appState === "login") return (
     <><style>{GLOBAL_CSS}</style>
-      <LoginPage onLogin={handleLogin} onSignUp={handleLoginSignUp}/>
+      {/* From a live pad (SCRBRD-078): the real sign-in only, and back to
+          the pad after it — never the demo, whatever the server check said
+          while the phone had no signal. */}
+      <LoginPage onLogin={handleLogin} onSignUp={handleLoginSignUp} liveOnly={loginForPad}
+        onBack={loginForPad ? () => { setLoginForPad(false); setAppState("app"); } : undefined}/>
     </>
   );
   if (appState === "pending") return (
@@ -371,7 +402,8 @@ export default function SCRBRD_OS() {
         <Suspense fallback={<Loading what="the scorer"/>}>
           <ScorerApp
             key={scorerResume ? (scorerResume.cfg?.matchId ?? scorerResume.cfg?.team1 ?? "resume") : "new"}
-            resume={scorerResume}/>
+            resume={scorerResume}
+            onSignIn={() => { setLoginForPad(true); setAppState("login"); }}/>
         </Suspense>
       </div>
       <button className="os-exit-scorer pressBtn" onClick={()=>{setScorerOpen(false);setScorerResume(null);}}>

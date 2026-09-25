@@ -260,7 +260,7 @@ function RevisionSheet({overs,target,isChase,onConfirm,onClose}){
 // tab of their own screen.
 const HANDOVER_POLL_MS = 2500;
 
-function HandoverSheet({ matchId, device, epoch, pending, held = 0, onShowHeld, ballInFlight, startTab = "hand", onHandedOver, onTakenOver, onClose }) {
+function HandoverSheet({ matchId, device, epoch, pending, held = 0, onShowHeld, ballInFlight, startTab = "hand", onHandedOver, onClaimed, onTakenOver, onCancelled, onClose }) {
   const [tab, setTab] = useState(startTab);
   return (
     <Sheet title="Handover" accent={D.sky} onClose={onClose}>
@@ -277,35 +277,41 @@ function HandoverSheet({ matchId, device, epoch, pending, held = 0, onShowHeld, 
         </div>
         {tab==="hand"
           ? <HandOverTab matchId={matchId} device={device} epoch={epoch} pending={pending} held={held} onShowHeld={onShowHeld} ballInFlight={ballInFlight}
-              onHandedOver={onHandedOver} onClose={onClose}/>
-          : <TakeOverTab matchId={matchId} device={device} onTakenOver={onTakenOver} onClose={onClose}/>}
+              onHandedOver={onHandedOver} onCancelled={onCancelled} onClose={onClose}/>
+          : <TakeOverTab matchId={matchId} device={device} onClaimed={onClaimed} onTakenOver={onTakenOver} onClose={onClose}/>}
       </div>
     </Sheet>
   );
 }
 
 /** The outgoing scorer: arm, read the code aloud, wait, or change their mind. */
-function HandOverTab({ matchId, device, epoch, pending, held = 0, onShowHeld, ballInFlight, onHandedOver, onClose }) {
+function HandOverTab({ matchId, device, epoch, pending, held = 0, onShowHeld, ballInFlight, onHandedOver, onCancelled, onClose }) {
   const [code, setCode] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [waitingFor, setWaitingFor] = useState(null); // name of whoever claimed it, once known
   const pollRef = useRef(null);
+  // Set while this device takes its own token back: the "active" the poll
+  // then reads is its own cancel, not a handover that completed.
+  const cancellingRef = useRef(false);
 
   // Once armed, poll the session state a scorer may already read
-  // (match_duties, fixture.read) for the handover completing — the same
-  // field the pre-check in sync.js reads, so this needs no route of its own.
+  // (match_duties, fixture.read) for the handover completing, so this needs
+  // no route of its own.
   useEffect(() => {
     if (!code) return;
     let cancelled = false;
     pollRef.current = setInterval(async () => {
       const state = await sessionState(matchId);
-      if (cancelled) return;
+      if (cancelled || cancellingRef.current) return;
       if (state === "verifying") setWaitingFor("verifying");
-      else if (state === "active" || state === null) {
+      else if (state === "active") {
         // Either genuinely handed over, or this device's own reclaim already
         // fired and cleared the local code — either way there is nothing left
-        // to wait for on this screen.
+        // to wait for on this screen. A read that failed (null) is not an
+        // answer: it used to count as "handed over", and a blip of signal
+        // while the code was up stopped the outbox of a device that still
+        // held the token.
         clearInterval(pollRef.current);
         onHandedOver?.();
       }
@@ -325,9 +331,15 @@ function HandOverTab({ matchId, device, epoch, pending, held = 0, onShowHeld, ba
 
   const cancel = async () => {
     setBusy(true);
-    try { await cancelHandover(matchId, { device }); } catch { /* the poll above will settle it either way */ }
+    cancellingRef.current = true;
+    // The cancel is this device's own claim, and a claim bumps the epoch:
+    // the outbox must go on under the generation it returns, or every ball
+    // after the cancel is sent under the old one and quarantined (SCRBRD-078).
+    let r = null;
+    try { r = await cancelHandover(matchId, { device }); } catch { /* the poll above will settle it either way */ }
     clearInterval(pollRef.current);
     setCode(null); setBusy(false);
+    if (r?.ok && r.epoch != null) onCancelled?.(r.epoch);
     onClose?.();
   };
 
@@ -405,7 +417,7 @@ function HandOverTab({ matchId, device, epoch, pending, held = 0, onShowHeld, ba
 const REASON_FIELDS = { match_complete: 1, not_pending: 1, no_capability: 1, unreachable: 1 };
 
 /** The incoming scorer: the code, then an INDEPENDENT read of the physical scoreboard. */
-function TakeOverTab({ matchId, device, onTakenOver, onClose }) {
+function TakeOverTab({ matchId, device, onClaimed, onTakenOver, onClose }) {
   const [code, setCode] = useState("");
   const [claimed, setClaimed] = useState(false);
   const [claimError, setClaimError] = useState(null);
@@ -418,7 +430,10 @@ function TakeOverTab({ matchId, device, onTakenOver, onClose }) {
     setBusy(true); setClaimError(null);
     try {
       const r = await claimHandover(matchId, { device, code: code.trim() });
-      if (r.ok) setClaimed(true);
+      // The claim answers with the server's log (spec §4 step 2): the pad
+      // rebuilds from it before the scorer is asked to confirm anything, and
+      // never scores on over one of its own (SCRBRD-075).
+      if (r.ok) { await onClaimed?.(r.events ?? []); setClaimed(true); }
       else setClaimError(r.reason);
     } catch { setClaimError("unreachable"); }
     setBusy(false);

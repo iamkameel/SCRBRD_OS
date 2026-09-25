@@ -1,20 +1,22 @@
 import { useState, useEffect, useRef, useMemo } from "react";
+import { flushSync } from "react-dom";
 import {
   deriveInnings, inningsStart, batters as battersEvent, bowler as bowlerEvent,
   ball as ballEvent, penalty as penaltyEvent, revision as revisionEvent, retire as retireEvent, sealInnings,
-  newEventId, KIND, battingFirst, tossFromRow, firstInningsSides,
+  newEventId, KIND, battingFirst, tossFromRow, firstInningsSides, fromRow,
   noPlacement, NO_CONTACT_SHOTS, PLACEMENT_NULL, PLACEMENT_SOURCE, CAPTURE_PROFILE,
   DISMISSAL, DISMISSAL_LABEL, RETIRE_REASON, BOWLER_CHANGE_REASON, isMidOver, scoringReadiness, SCORING_BLOCK, lawsRefusal, REFUSAL_TEXT, LOCAL_ONLY,
 } from "@scrbrd/scoring";
 import { D } from "../design/tokens.js";
 import { deviceId } from "../lib/device.js";
-import { loadMatch, saveMatch, storageKind } from "../lib/persist.js";
+import { loadMatch, saveMatch, saveAside, storageKind } from "../lib/persist.js";
 import { api, signedIn } from "../lib/api.js";
 import { profile } from "../lib/session.js";
-import { resumeSync, startSync } from "../lib/sync.js";
+import { PadSync } from "../lib/sync.js";
 import { refusalWords } from "../lib/handover.js";
-import { withoutEvents, recordAgain, recordAgainRefusal, heldInOrder, undoOnPad } from "@scrbrd/sync";
+import { withoutEvents, recordAgain, recordAgainRefusal, heldInOrder, undoOnPad, reconcile, padLogFrom, inningsInPlay, withOrphans } from "@scrbrd/sync";
 import { HeldSheet } from "./held.jsx";
+import { SyncBanner } from "./syncBanner.jsx";
 import { TossSheet } from "./toss.jsx";
 import { SEGS } from "./field.js";
 import { fmtOv } from "./format.js";
@@ -119,35 +121,40 @@ async function liveToss(cfg) {
 }
 
 /**
- * Tell the server the toss the scorer just answered on the pad. SCRBRD-067.
+ * The server's log for a fixture, as events — or null when there is no
+ * session or no answer. SCRBRD-075.
  *
- * Recorded, not only used, because the toss is a fact about the match that
- * others read: the server derives the innings order and the result from it
- * (bats_first() in the result read), and a second device opening this
- * fixture reads it instead of asking again — and perhaps being answered
- * differently. The pad's user may write it: match_toss is written under
- * scoring.start (packages/policy tables.mjs), the capability the pad was
- * opened with and claims the token with, so there is no second gate here;
- * the server's policy decides and a refusal changes nothing on the pad.
- *
- * It cannot be locked at this point in the ordinary case: the trigger
- * (match_toss_before_first_ball, 23514 → 409 toss_locked) freezes the toss
- * once the server has a delivery, and the pad asks before its first innings
- * is open, so it has sent none. If the server has deliveries anyway (another
- * device scored this fixture without a toss) the write is refused and the
- * innings still opens from the answer — the scorer is standing at the ground
- * and the pad scores offline by design; the server's toss, if it ever gets
- * one, goes through a scoring amendment like any correction after play has
- * started. With no signal the write simply fails: best effort, like the read.
+ * A device opening a live fixture it has nothing saved for used to write a
+ * first-innings innings_start of its own, under a new id — the incoming side
+ * of a handover included, whose outbox then sent it after the takeover: the
+ * server's log gained a second start, and the pad's board read 0/0 with
+ * nobody in while the server's was the outgoing scorer's innings. If the
+ * server has a log, it is THE log, and the pad replays it; only a fixture the
+ * server has nothing for is started here. (With no signal the pad cannot ask,
+ * so it starts one — and the comparison before its first claim finds out,
+ * packages/sync attach.mjs, before anything is sent.)
  */
-async function recordToss(matchId, { wonBy, decision }) {
-  if (!matchId || !signedIn()) return null;
+async function liveLog(cfg) {
+  if (!cfg?.matchId || !signedIn()) return null;
   try {
-    return await api(`/api/matches/${matchId}/toss`, { method: "POST", body: { wonBy, decision } });
+    const r = await api(`/api/matches/${cfg.matchId}/events`);
+    return (r?.events ?? []).map(fromRow);
   } catch {
     return null;
   }
 }
+
+/*
+ * The toss the scorer answers on the pad (SCRBRD-067) is recorded, not only
+ * used: the server derives the innings order and the result from it, and a
+ * second device opening this fixture reads it instead of asking again. It
+ * used to be POSTed once, best effort, the moment it was answered, and with
+ * no signal it was simply lost (SCRBRD-075). It is now queued in the outbox,
+ * on disk, and is the first thing the outbox sends — before the innings_start,
+ * since the server freezes the toss once the match has any event — and it is
+ * compared with whatever toss the server already has before it is written
+ * (lib/sync.js settleToss, packages/sync tossDecision).
+ */
 
 /**
  * Has this over left the phone yet?
@@ -173,6 +180,11 @@ function SyncPill({ sync, storage, onOpenHeld }) {
     // disagreement a scorer must be told about.
     held:    { dot: D.rose, label: `Refused ${sync.held}`,
                title: `The server did not accept ${sync.held === 1 ? "one event" : `${sync.held} events`}${sync.heldReason ? ` — ${REFUSAL_TEXT[sync.heldReason] ?? sync.heldReason}` : ""}. They are kept on this device.` },
+    // The server took these into quarantine, not into its log: sent under a
+    // token this device no longer held. They used to leave the queue and the
+    // pill said "Sent" — true of the request, false of the scorebook.
+    quarantined: { dot: D.rose, label: `For review ${sync.rejected}`,
+               title: `The server held ${sync.rejected === 1 ? "one event" : `${sync.rejected} events`} for a supervisor to review. They are not in the scorebook.` },
     syncing: { dot: D.amber, label: `Sending ${sync.pending}`, title: "Balls still on their way" },
     waiting: { dot: D.amber, label: `Held ${sync.pending}`, title: "No connection — balls are saved and will send when there is one" },
     local:   sync.reason === "handed_over"
@@ -218,7 +230,9 @@ function SyncPill({ sync, storage, onOpenHeld }) {
 /* ═══════════════════════════════════════════════════════
    MAIN APP
 ═══════════════════════════════════════════════════════ */
-function SCRBRD({resume}={}){
+// `onSignIn` is the shell's way to its sign-in page and back to this pad
+// (App.jsx): a live pad that is signed out says so and offers it (SCRBRD-078).
+function SCRBRD({resume,onSignIn}={}){
   const[screen,setScreen]=useState("setup");
   const[match,setMatch]=useState(null);
   // ── The event log is the state ──────────────────────────
@@ -258,29 +272,63 @@ function SCRBRD({resume}={}){
   // and must never trigger a re-render of the scoring pad mid-tap.
   const deviceIdRef = useRef(deviceId());
   const matchIdRef = useRef(null);
-  // The outbox, once the match has been claimed. Null while offline-only —
-  // scoring never depends on it existing. Undo asks it what has left the
-  // device (undoOnPad); there is no second copy of that answer here.
+  // A pad with a server behind it: a real fixture, opened from the Match
+  // Centre or restored after a reload (App.jsx puts `live` on its cfg). The
+  // demo's seeded fixtures and a match started on the setup screen have
+  // none, and nothing of theirs is ever queued.
+  const live = resume?.cfg?.live === true && !!resume?.cfg?.matchId;
+  // Who opened it: a person, from the Match Centre ("open"), or the session
+  // restore after a reload ("restore"), which never takes a match another
+  // device has claimed since this one held it (packages/sync attach.mjs).
+  const intent = resume?.cfg?.restored ? "restore" : "open";
+  // This pad's connection to the server (lib/sync.js PadSync): the outbox,
+  // open from the moment the pad is — UNATTACHED until this device holds the
+  // token (SCRBRD-078) — and everything the pad needs to say about it. Undo
+  // asks its engine what has left the device (undoOnPad); there is no second
+  // copy of that answer here.
   const syncRef = useRef(null);
   // Undo withdrawals not yet on disk (SCRBRD-074), each resolving true once
   // its event is out of the stored outbox, or false when it could not be
   // taken out and is being put back in the log. A save of the log waits for
   // every one of them (the persist effect below).
   const withdrawalsRef = useRef(new Set());
-  const [sync, setSync] = useState({ state: "offline", pending: 0, reason: null });
-  // Bumped after a handover completes on THIS device (as the incoming
-  // scorer, once verifyTakeover succeeds) to re-run the sync effect below —
-  // the device now legitimately holds the token, and the plain claim it
-  // opened with only failed because a handover was pending at the time.
-  const [syncNonce, setSyncNonce] = useState(0);
-  // Set just before that bump, to the epoch verifyTakeover just returned.
-  // The effect below reads and clears it: present means "attach with THIS
-  // epoch, no reclaim" (resumeSync); absent means the ordinary mount path
-  // (startSync, which claims). Skipping the reclaim matters — the device
-  // calling it is already the holder, and scoring_claim()'s guard only
-  // refuses someone else, so a redundant claim here would still succeed and
-  // burn an epoch for nothing.
-  const resumeEpochRef = useRef(null);
+  // What PadSync last said (its status()): the pill and the banner read it.
+  const [padStatus, setPadStatus] = useState(null);
+  // Bumped once the outbox is open, so the log-watching effect offers it
+  // the log it already has.
+  const [outboxReady, setOutboxReady] = useState(0);
+  // Bumped when a finished match's outbox is cleared (SCRBRD-079), so the
+  // log is saved again with what the server had.
+  const [outboxCleared, setOutboxCleared] = useState(0);
+  // The pad's log as it stands, for code that runs outside a render: the
+  // comparison before a claim reads it (attach.mjs), and it must see what
+  // hydration loaded, not the empty log of the first render.
+  const eventsRef = useRef([[], []]);
+  // Ids this pad minted since it opened. While no token is held an event
+  // may be cut by undo only if it is one of these: nothing is sent while
+  // unattached, so they have certainly never left the device — while an
+  // event from an earlier session may have (SCRBRD-079: queued before the
+  // markers existed), and gets a void.
+  const mintedRef = useRef(new Set());
+  // Ids the server is known to have that the outbox need never be offered:
+  // a log taken from the server (SCRBRD-075), and the part of a finished
+  // match's log saved as sent when its outbox was cleared (SCRBRD-079).
+  const serverKnownRef = useRef(new Set());
+  // The first of those, taken at hydration before the outbox was open: marked
+  // sent on disk once it is, so no later session queues them either. (A
+  // cleared match's are not: marking them would put back the storage the
+  // clear just removed.)
+  const adoptedRef = useRef([]);
+  // How many events of each innings were on the server when the outbox was
+  // cleared (SCRBRD-079), saved with the log so a reload does not queue a
+  // finished match again.
+  const serverHasRef = useRef(null);
+  // A toss answered before the outbox opened; queued as soon as it does.
+  const pendingTossRef = useRef(null);
+  // Resolves when hydration has put the saved (or server's) log on the pad;
+  // nothing is compared or offered before.
+  const hydration = useRef(null);
+  if (!hydration.current) { let done; hydration.current = { promise: new Promise((r) => { done = r; }), done: () => done() }; }
   // A live fixture's first innings (SCRBRD-067): the home side's roster as
   // the server gave it, and the toss — read at hydration, or answered on the
   // pad. Refs, like the two above: read when the innings opens, never drawn.
@@ -294,32 +342,58 @@ function SCRBRD({resume}={}){
     () => events.map(evs => (evs.length ? deriveInnings(evs, scoringCtxRef.current) : null)),
     [events],
   );
+  eventsRef.current = events;
+
+  // What the pill says, from what PadSync last said. `local` is a pad that
+  // holds no token — with no signal, signed out, refused, or handed over;
+  // the banner says which, in words (SyncBanner).
+  const sync = useMemo(() => {
+    const st = padStatus;
+    if (!st) return { state: "offline", pending: 0, held: 0, heldList: [], reason: null };
+    const base = { pending: st.pending, held: st.held, heldReason: st.heldReason, heldList: st.heldList,
+                   rejected: st.rejected, reason: st.reason };
+    return { ...base,
+      state: st.held ? "held"
+        : st.rejected ? "quarantined"
+        : !st.attached ? "local"
+        : st.pending === 0 && !st.tossPending ? "synced"
+        : st.online ? "syncing" : "waiting" };
+  }, [padStatus]);
+  const attached = !!padStatus?.attached;
+  // Locked while a handover is waiting on this device (SCORING_HANDOVER_SPEC
+  // §4 step 2): the way in is the code, and the log is the one it brings.
+  const padLock = live && !attached && (padStatus?.reason === "handover_pending" || padStatus?.reason === "verifying");
+  const padLockRef = useRef(false);
+  padLockRef.current = padLock;
 
   /**
-   * Everything in the log that the server has not been offered yet goes to the
-   * outbox. One path, watching the log, rather than a call inside emit().
+   * Everything in the log that the outbox does not already answer for goes
+   * to it. One path, watching the log, rather than a call inside emit().
    *
    * emit() is not the only writer: the innings and its squad are written
-   * during hydration, and the outbox may not exist yet when they are — the
-   * claim is a round trip, and at a ground with no signal it may never
-   * complete at all. A scorer can be several overs in before the token lands.
-   * Watching the log covers every ordering; sending from emit() covered one.
+   * during hydration, and a log is taken from the server at a handover. The
+   * outbox opens with the pad, unattached (SCRBRD-078), so an event recorded
+   * with no signal and no session is on disk in the queue at once, and goes
+   * out when the device next holds the token. What the outbox already
+   * answers for — queued, held, or put in a request in some session — and
+   * what the server is known to have is never offered again.
    *
    * Nothing here is awaited. The queue writes to disk before it considers a
    * ball recorded and sends when there is a connection; the board moves on the
    * tap either way. A throw would be a scoring surface that stopped working
    * because the network did.
    */
-  const queuedRef = useRef(new Set());
+  const offeredRef = useRef(new Set());
   useEffect(() => {
-    const outbox = syncRef.current;
-    if (!outbox) return;
+    const outbox = syncRef.current?.engine;
+    if (!outbox || !hydratedRef.current) return;
     for (const ev of events.flat()) {
-      if (!ev?.id || queuedRef.current.has(ev.id)) continue;
-      queuedRef.current.add(ev.id);
+      if (!ev?.id || offeredRef.current.has(ev.id)) continue;
+      offeredRef.current.add(ev.id);
+      if (serverKnownRef.current.has(ev.id) || outbox.isKnown(ev.id)) continue;
       outbox.record(ev).catch(() => {});
     }
-  }, [events, sync.state]);
+  }, [events, outboxReady]);
 
   /**
    * Append to the current innings' log. This is the only way state changes.
@@ -329,17 +403,25 @@ function SCRBRD({resume}={}){
    * dedupes retries on it, and a `void` names its target with it. An event
    * without one cannot be undone once it has left the device, so minting it at
    * the single point of append is what keeps that from being possible.
+   *
+   * A pad waiting on a handover records nothing (SCORING_HANDOVER_SPEC §4
+   * step 2: scoring stays locked until the takeover): what it would record is
+   * a second log over the one it is about to be handed.
    */
-  const emit = (...evs) => setEvents(prev => {
-    const cp = [...prev];
-    const stamped = evs.map(e => ({
-      ...e,
-      innings: curIn,
-      id: e.id ?? newEventId(deviceIdRef.current, matchIdRef.current ?? "local"),
-    }));
-    cp[curIn] = [...cp[curIn], ...stamped];
-    return cp;
-  });
+  const emit = (...evs) => {
+    if (padLockRef.current) return;
+    setEvents(prev => {
+      const cp = [...prev];
+      const stamped = evs.map(e => ({
+        ...e,
+        innings: curIn,
+        id: e.id ?? newEventId(deviceIdRef.current, matchIdRef.current ?? "local"),
+      }));
+      for (const e of stamped) mintedRef.current.add(e.id);
+      cp[curIn] = [...cp[curIn], ...stamped];
+      return cp;
+    });
+  };
 
   /** What the innings WOULD be with these extra events — used to decide what
    *  happens next (over ended? innings ended?) without duplicating the rules. */
@@ -362,7 +444,7 @@ function SCRBRD({resume}={}){
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (!resume?.cfg) { hydratedRef.current = true; return; }
+      if (!resume?.cfg) { hydratedRef.current = true; hydration.current.done(); return; }
       const id = resume.cfg.matchId ?? null;
       setMatch(resume.cfg);
       setMatchId(id);
@@ -371,6 +453,14 @@ function SCRBRD({resume}={}){
       const saved = id ? await loadMatch(id) : null;
       if (cancelled) return;
       if (saved?.events?.some(e => e.length)) {
+        // A finished match whose outbox was cleared (SCRBRD-079): what was on
+        // the server then is known to be there, and is never queued again.
+        if (Array.isArray(saved.serverHas)) {
+          serverHasRef.current = saved.serverHas;
+          saved.events.forEach((evs, i) => (evs ?? []).slice(0, saved.serverHas[i] ?? 0)
+            .forEach(e => e?.id && serverKnownRef.current.add(e.id)));
+        }
+        eventsRef.current = saved.events;
         setEvents(saved.events);
         setCurIn(saved.curIn ?? 0);
         setSaveState({ kind: await storageKind(), restored: true, savedAt: saved.savedAt ?? null });
@@ -379,92 +469,134 @@ function SCRBRD({resume}={}){
         setCurIn(resume.curIn || 0);
         setSaveState({ kind: await storageKind(), restored: false, savedAt: null });
       } else {
-        // A real fixture nobody has scored yet. The squad comes from the
-        // server, and goes into the log rather than beside it: innings_start
-        // carries the players, so the scorecard replays correctly later on a
-        // device that never loaded a roster — including the one taking over at
-        // a handover.
-        //
-        // Which side bats is the recorded toss's answer (SCRBRD-067), never
-        // the order the fixture lists its sides in: innings_start is the one
-        // event undo will not walk past. No toss — none recorded, or no way
-        // to ask — and nothing opens: the scorer is asked first (TossSheet).
-        const [squad, toss] = await Promise.all([liveSquad(resume.cfg), liveToss(resume.cfg)]);
+        // A real fixture with nothing saved on this device. If the server
+        // has a log, it is THE log (SCRBRD-075): the pad replays it and never
+        // starts one of its own — a first visit, and the incoming side of a
+        // handover, which the protocol hands the log to (spec §4 step 2).
+        const server = live ? await liveLog(resume.cfg) : null;
         if (cancelled) return;
-        homeSquadRef.current = squad;
-        tossRef.current = toss;
-        setEvents([toss ? [inningsStart({
-          ...firstInningsSides({ batsFirst: toss.batsFirst, fixture: resume.cfg, homeSquad: squad }),
-          overs: resume.cfg.overs ?? 20,
-          // A fixture that carries a declaration passes it on; none does yet,
-          // so this innings opens undeclared — exactly as before — and the
-          // scorer declares it on the opener sheet before the first ball.
-          captureProfile: resume.cfg.captureProfile ?? undefined,
-          id: newEventId(deviceIdRef.current, id ?? "local"),
-        })] : [], []]);
-        setCurIn(0);
-        if (!toss) setModal("toss");
-        setSaveState({ kind: await storageKind(), restored: false, savedAt: null });
+        if (server?.length) {
+          for (const e of server) if (e?.id) { serverKnownRef.current.add(e.id); adoptedRef.current.push(e.id); }
+          const log = padLogFrom(server);
+          eventsRef.current = log;
+          setEvents(log);
+          setCurIn(inningsInPlay(log));
+          setSaveState({ kind: await storageKind(), restored: false, savedAt: null });
+        } else {
+          // A fixture nobody has scored yet (or none this pad can ask about,
+          // with no signal). The squad comes from the server, and goes into
+          // the log rather than beside it: innings_start carries the players,
+          // so the scorecard replays correctly later on a device that never
+          // loaded a roster.
+          //
+          // Which side bats is the recorded toss's answer (SCRBRD-067), never
+          // the order the fixture lists its sides in: innings_start is the one
+          // event undo will not walk past. No toss — none recorded, or no way
+          // to ask — and nothing opens: the scorer is asked first (TossSheet).
+          const [squad, toss] = await Promise.all([liveSquad(resume.cfg), liveToss(resume.cfg)]);
+          if (cancelled) return;
+          homeSquadRef.current = squad;
+          tossRef.current = toss;
+          const openId = newEventId(deviceIdRef.current, id ?? "local");
+          const log = [toss ? [inningsStart({
+            ...firstInningsSides({ batsFirst: toss.batsFirst, fixture: resume.cfg, homeSquad: squad }),
+            overs: resume.cfg.overs ?? 20,
+            // A fixture that carries a declaration passes it on; none does yet,
+            // so this innings opens undeclared — exactly as before — and the
+            // scorer declares it on the opener sheet before the first ball.
+            captureProfile: resume.cfg.captureProfile ?? undefined,
+            id: openId,
+          })] : [], []];
+          if (toss) mintedRef.current.add(openId);
+          eventsRef.current = log;
+          setEvents(log);
+          setCurIn(0);
+          if (!toss) setModal("toss");
+          setSaveState({ kind: await storageKind(), restored: false, savedAt: null });
+        }
       }
       setScreen("match");
       hydratedRef.current = true;
+      hydration.current.done();
     })();
     return () => { cancelled = true; };
   }, []);
 
-  // ── The outbox ──────────────────────────────────────────
-  // Claim the match and start syncing, once we know which match it is. Every
-  // outcome except success is survivable: no signal, not signed in, or a
-  // colleague already holding the token all leave the scorer working locally,
-  // which is the whole point of the offline design. Refusing to open the pad
-  // because sync is unavailable would be exactly the wrong failure.
-  useEffect(() => {
-    if (!matchId) return;
-    let stopped = false;
-    let handle = null;
-    (async () => {
-      const resumeEpoch = resumeEpochRef.current;
-      resumeEpochRef.current = null;
-      const onChange = (st) => {
-          if (stopped) return;
-          const heldEvs = handle?.engine?.held ?? [];
-          setSync({
-            state: st.heldCount ? "held" : st.pendingCount === 0 ? "synced" : (st.online ? "syncing" : "waiting"),
-            pending: st.pendingCount,
-            held: st.heldCount || 0,
-            heldReason: heldEvs.length ? heldEvs[heldEvs.length - 1].reason : null,
-            // The list itself, for the sheet that resolves them (SCRBRD-070).
-            heldList: heldEvs.slice(),
-            reason: st.lastError,
-          });
-      };
-      const started = resumeEpoch != null
-        ? await resumeSync({ matchId, userId: profile()?.user?.id, epoch: resumeEpoch, onChange })
-        : await startSync({ matchId, userId: profile()?.user?.id, onChange });
-      if (stopped) { started.ok && started.stop(); return; }
-      if (!started.ok) {
-        // handover_pending / verifying: NOT an error, this device simply
-        // isn't the holder yet — the top bar's Handover button reads
-        // sync.reason and opens straight on "take over" rather than the
-        // ordinary "sync unavailable" story.
-        setSync({ state: "local", pending: 0, reason: started.reason }); return;
-      }
-      handle = started;
-      syncRef.current = started;
+  /**
+   * The pad's log replaced by the server's (attach.mjs "behind"; a handover
+   * claim). Applied at once and only if nothing was recorded on the pad since
+   * the two were compared — a tap in between makes it two logs, which is not
+   * this function's to settle — and marked known, so it is never queued.
+   * @returns {boolean} whether it was taken
+   */
+  const adoptLog = (log, compared) => {
+    const ids = new Set(compared.flatMap((evs) => (evs ?? []).map((e) => e?.id)));
+    let took = false;
+    flushSync(() => setEvents((prev) => {
+      if (prev.some((evs) => (evs ?? []).some((e) => e?.id && !ids.has(e.id)))) return prev;
+      took = true;
+      return log;
+    }));
+    if (!took) return false;
+    for (const evs of log) for (const e of evs ?? []) if (e?.id) serverKnownRef.current.add(e.id);
+    eventsRef.current = log;
+    setCurIn(inningsInPlay(log));
+    return true;
+  };
 
-      // Held events survive a reload (packages/sync keeps them on disk), so a
-      // scorer who reopens the pad is told about them again, not shown "Sent".
-      const heldAtStart = started.engine?.held ?? [];
-      setSync({ state: heldAtStart.length ? "held" : started.pending() ? "syncing" : "synced",
-                pending: started.pending(), held: heldAtStart.length,
-                heldReason: heldAtStart.at(-1)?.reason ?? null, heldList: heldAtStart.slice(), reason: null });
+  // ── The outbox ──────────────────────────────────────────
+  // Opened with the pad for a live match, UNATTACHED (SCRBRD-078): what is
+  // recorded is queued on disk at once, whether or not there is a signal, a
+  // session or a token. Then it attaches — the comparison with the server's
+  // log, the claim, the flush — and keeps trying for as long as the reason
+  // is the network. Every outcome except success is survivable: no signal,
+  // signed out, or a colleague already holding the token all leave the scorer
+  // working locally, which is the whole point of the offline design, and the
+  // banner says which. Refusing to open the pad because sync is unavailable
+  // would be exactly the wrong failure.
+  useEffect(() => {
+    if (!matchId || !live) return;
+    let stopped = false;
+    const ps = new PadSync({
+      matchId, userId: profile()?.user?.id, intent,
+      hooks: {
+        padLog: () => eventsRef.current,
+        adopt: (log) => adoptLog(log, eventsRef.current),
+        restore: (orphans) => {
+          // Events the queue has and the saved log lost (the tab died between
+          // the two writes): put back where the scorer recorded them, so the
+          // pad shows every ball the server is about to be sent.
+          for (const o of orphans) offeredRef.current.add(o.idempotencyKey);
+          flushSync(() => setEvents((prev) => {
+            const onPad = new Set(prev.flatMap((evs) => (evs ?? []).map((e) => e?.id)));
+            const next = withOrphans(prev, orphans.filter((o) => !onPad.has(o.idempotencyKey)));
+            eventsRef.current = next;
+            return next;
+          }));
+        },
+        followToss: (server) => followServerToss(server),
+        onStatus: (st) => { if (!stopped) setPadStatus(st); },
+      },
+    });
+    syncRef.current = ps;
+    (async () => {
+      const engine = await ps.open();
+      if (stopped || !engine) return;
+      if (pendingTossRef.current) { await engine.queueToss(pendingTossRef.current); pendingTossRef.current = null; }
+      await hydration.current.promise;
+      if (stopped) return;
+      if (adoptedRef.current.length) { await engine.markSent(adoptedRef.current); adoptedRef.current = []; }
+      setOutboxReady((n) => n + 1);
+      ps.attach();
     })();
     return () => {
       stopped = true;
-      syncRef.current?.stop();
-      syncRef.current = null;
+      ps.stop();
+      if (syncRef.current === ps) syncRef.current = null;
     };
-  }, [matchId, syncNonce]);
+    // `live` and `intent` come from `resume`, which is fixed for the life of
+    // the pad (App.jsx keys it by match); listed so the rule has nothing to say.
+  }, [matchId, live, intent]);
 
   // Persist on every change to the log. Skipped until hydration has finished,
   // or the empty initial state would overwrite the very log being restored.
@@ -481,11 +613,39 @@ function SCRBRD({resume}={}){
     const gate = Promise.all([...withdrawalsRef.current]);
     (async () => {
       if (!(await gate).every(Boolean)) return;
-      const ok = await saveMatch(matchId, { events, curIn, cfg: match });
+      const ok = await saveMatch(matchId, { events, curIn, cfg: match,
+        ...(serverHasRef.current ? { serverHas: serverHasRef.current } : {}) });
       if (!cancelled && ok) setSaveState(s => ({ ...s, savedAt: Date.now() }));
     })();
     return () => { cancelled = true; };
-  }, [events, curIn, matchId]);
+  }, [events, curIn, matchId, outboxCleared]);
+
+  // ── A finished match's outbox goes (SCRBRD-079) ─────────
+  // Once the match is over on the pad — the second innings closed — or the
+  // server has declared it complete, and everything this device recorded is
+  // the server's (attached, or found all there by the comparison), and the
+  // queue holds nothing: no event waiting, none held for a person, no toss
+  // unsent — the outbox's storage for this match is removed, sent markers and
+  // all. The engine refuses the clear itself if anything is left. What was on
+  // the server is saved with the log (serverHas), so reopening the finished
+  // match queues none of it again; everything after it would be new.
+  const matchOver = innings[1]?.sealed === true;
+  useEffect(() => {
+    const ps = syncRef.current, engine = ps?.engine, st = padStatus;
+    if (!engine || !st || engine.cleared || !hydratedRef.current) return;
+    const done = matchOver || st.reason === "match_complete";
+    const onServer = st.attached
+      || (st.reason === "match_complete" && !!st.reconcile && st.reconcile.state !== "fork" && st.reconcile.mine.length === 0);
+    if (!done || !onServer || st.pending || st.held || st.tossPending || st.syncing) return;
+    let cancelled = false;
+    (async () => {
+      if (!(await engine.clearOutbox()) || cancelled) return;
+      serverHasRef.current = eventsRef.current.map((evs) => (evs ?? []).length);
+      for (const evs of eventsRef.current) for (const e of evs ?? []) if (e?.id) serverKnownRef.current.add(e.id);
+      setOutboxCleared((n) => n + 1);
+    })();
+    return () => { cancelled = true; };
+  }, [padStatus, matchOver]);
 
   const startMatch=cfg=>{
     setMatch(cfg);
@@ -559,15 +719,54 @@ function SCRBRD({resume}={}){
   };
   // The scorer's answer to the toss sheet. It opens the innings from the
   // answer at once — the same rule the server applies, so no round trip
-  // stands between the coin and the first ball — and is recorded as the
-  // toss (recordToss says why, and why it is allowed and not yet locked).
-  const answerToss=(toss)=>{
+  // stands between the coin and the first ball — and is queued as the toss
+  // (SCRBRD-075): on disk BEFORE the innings it opens exists, so no flush can
+  // carry the innings_start without it, and the outbox sends it first. With
+  // no signal it waits there, not in a request that failed and was dropped.
+  const answerToss=async(toss)=>{
     const batsFirst=battingFirst(toss);
     if(!batsFirst)return;
     tossRef.current={wonBy:toss.wonBy,decision:toss.decision,batsFirst};
-    recordToss(match?.matchId,toss);
+    if(live){
+      const engine=syncRef.current?.engine;
+      const answer={wonBy:toss.wonBy,decision:toss.decision};
+      if(engine) await engine.queueToss(answer).catch(()=>{ pendingTossRef.current=answer; });
+      else pendingTossRef.current=answer;
+    }
     openFirstInnings(batsFirst);
     setModal("opener");
+  };
+  // The server already had a different toss, and nothing on the pad depends
+  // on the side in yet (tossDecision "follow"): the pad takes the server's
+  // and, when it puts the other side in, re-opens the first innings from it —
+  // appended, as the capture declaration is, since innings_start is the one
+  // event undo will not walk past. Read through refs: this runs inside a
+  // flush, long after the render that made it.
+  const matchRef=useRef(null);
+  matchRef.current=match;
+  const followServerToss=(server)=>{
+    const batsFirst=battingFirst(server);
+    const fixture=matchRef.current;
+    if(!batsFirst||!fixture)return;
+    tossRef.current={wonBy:server.wonBy,decision:server.decision,batsFirst};
+    setEvents(prev=>{
+      const inn0=prev[0]??[];
+      if(!inn0.some(e=>e.kind===KIND.INNINGS_START))return prev;   // nothing open yet: it opens from tossRef
+      const cur=deriveInnings(inn0);
+      const homeKey=fixture.teamKey1??fixture.team1;
+      const homeIn=(cur.teamKey??cur.battingTeam)===homeKey;
+      if((homeIn?"home":"away")===batsFirst)return prev;              // the same side in: nothing to change
+      const id=newEventId(deviceIdRef.current,matchIdRef.current??"local");
+      mintedRef.current.add(id);
+      const cp=[...prev];
+      cp[0]=[...inn0,{...inningsStart({
+        ...firstInningsSides({batsFirst,fixture,homeSquad:homeIn?cur.squad:cur.bowlingSquad}),
+        overs:cur.overs??fixture.overs??20,
+        captureProfile:cur.declaredProfile??undefined,
+      }),innings:0,id}];
+      eventsRef.current=cp;
+      return cp;
+    });
   };
 
   // ── The gate ────────────────────────────────────────────
@@ -606,8 +805,10 @@ function SCRBRD({resume}={}){
   };
 
   // A tap on the pad while blocked still opens the fix — it is what the
-  // scorer's hand is asking for — but the pad now says why, above it.
+  // scorer's hand is asking for — but the pad now says why, above it. A pad
+  // waiting on a handover is blocked first: its fix is the code.
   const guardReady=()=>{
+    if(padLock){setModal("handover");return false;}
     if(readiness.ready)return true;
     fixBlock(readiness.blocked[0]);
     return false;
@@ -786,18 +987,28 @@ function SCRBRD({resume}={}){
   // await — so a flush cannot pick it up in between, and one already in
   // flight has marked it sent, which makes it a void instead. The shorter log
   // is saved only once the withdrawal is on disk (withdrawalsRef, the
-  // persist effect below). Which outbox: the attached one; none at all for a
-  // match with no server behind it (LOCAL_ONLY, every event may be cut); and
-  // for a live match whose claim has not succeeded this session, null — an
-  // earlier session may have sent anything here, so every undo is a void.
+  // persist effect below). Which outbox: see the start of undoLastBall.
   const undoLastBall=()=>{
-    const outbox=syncRef.current?.engine??null;
+    if(padLock)return;
+    const engine=syncRef.current?.engine??null;
+    // Which outbox undo asks. Attached: the engine, whose markers say what
+    // has left. A live pad holding no token (SCRBRD-078): the engine, but
+    // "never sent" only for what this pad minted since it opened — nothing is
+    // sent while unattached, so those have certainly not left, while an event
+    // from an earlier session may have (queued before the markers existed,
+    // SCRBRD-079) and is voided. No engine yet on a live pad: every undo a
+    // void. No server behind the match at all: LOCAL_ONLY.
+    const outbox=!live?(matchIdRef.current?null:LOCAL_ONLY)
+      :!engine?null
+      :engine.attached?engine
+      :{isHeld:k=>engine.isHeld(k),isUnsent:k=>mintedRef.current.has(k)&&engine.isUnsent(k)};
     // A void is appended here, not through emit(), so it is stamped here: the
     // log-watching effect offers the outbox only events with ids, and a void
     // without one was never sent — the server kept every ball undone by one.
-    const undone=undoOnPad(events,curIn,outbox??(matchIdRef.current?null:LOCAL_ONLY),
-      ()=>newEventId(deviceIdRef.current,matchIdRef.current??"local"));
-    if(undone.withdraw&&outbox){
+    const undone=undoOnPad(events,curIn,outbox,
+      ()=>{const id=newEventId(deviceIdRef.current,matchIdRef.current??"local");mintedRef.current.add(id);return id;});
+    if(undone.withdraw&&engine){
+      const outbox=engine;
       const target=undone.target, inn=curIn, at=events[curIn].length-1;
       // The withdrawal failed or was refused: the outbox still has the
       // event and will send it, so the log gets it back where it was.
@@ -816,7 +1027,7 @@ function SCRBRD({resume}={}){
       withdrawalsRef.current.add(w);
     }
     if(undone.action!=="none")setEvents(undone.log);
-    if(undone.discard)outbox?.discardHeld(undone.discard).catch(()=>{});
+    if(undone.discard)engine?.discardHeld(undone.discard).catch(()=>{});
     resetHub();
     setModal(null);
     scoreKeyRef.current++;
@@ -846,9 +1057,42 @@ function SCRBRD({resume}={}){
     // log may have moved since.
     if(!scope.length||recordAgainRefusal(events,outbox.held,scope))return;
     const {log}=recordAgain(events,outbox.held,scope,
-      ()=>newEventId(deviceIdRef.current,matchIdRef.current??"local"));
+      ()=>{const id=newEventId(deviceIdRef.current,matchIdRef.current??"local");mintedRef.current.add(id);return id;});
     setEvents(log);
     for(const h of scope)await outbox.discardHeld(h.idempotencyKey);
+  };
+
+  // ── Taking over (SCRBRD-075) ─────────────────────────────
+  // The incoming device's claim is answered with the server's log (spec §4
+  // step 2), and the pad takes it: nothing this pad minted may be sent over
+  // a log the server has already started, and the score the scorer is about
+  // to confirm is the server's. Anything the pad had that the server does not
+  // is saved aside on this device first, and said — never lost, never merged.
+  //
+  // Which rule the outbox then follows is the comparison's. The server has
+  // nothing the pad lacks: whatever the pad has beyond it is its own
+  // continuation of that log, and goes out under the new token (rebase). The
+  // server has moved on past the pad: the pad takes its log, and anything it
+  // queued under an older token goes to quarantine by the epoch rule — not
+  // into the log the scorer is confirming — along with its own unsent toss
+  // set aside with the rest.
+  const handoverLogRef=useRef(null);
+  const handoverRebaseRef=useRef(false);
+  const [asideCount,setAsideCount]=useState(0);
+  const takeHandedOverLog=async(rows)=>{
+    const server=(rows??[]).map(fromRow);
+    handoverLogRef.current=server;
+    const engine=syncRef.current?.engine;
+    if(engine)await engine.markSent(server.map(e=>e?.id).filter(Boolean));
+    const r=reconcile(eventsRef.current,server,{held:engine?.held??[],pending:engine?.pending??[]});
+    handoverRebaseRef.current=r.extra.length===0;
+    if(!r.extra.length)return;
+    if(r.mine.length){
+      const toss=engine?await engine.setTossAside():null;
+      await saveAside(matchIdRef.current,{events:eventsRef.current,notOnServer:r.mine,...(toss?{toss}:{})});
+      setAsideCount(r.mine.length);
+    }
+    adoptLog(padLogFrom(server),eventsRef.current);
   };
 
   // Legacy onScore kept for any remaining modal references
@@ -897,7 +1141,7 @@ function SCRBRD({resume}={}){
   const commitBall=(type,value,shot,seg,zone,approach,placement)=>{
     // Every delivery comes through here, including the hub's stage-2 paths
     // that were only checked at stage 0. The same answer the pad shows.
-    if(!readiness.ready)return;
+    if(!readiness.ready||padLock)return;
     const place=placement??(seg!=null
       ? {seg,zone,placementSource:PLACEMENT_SOURCE.SECTOR,captureProfile:CAPTURE_PROFILE.STANDARD}
       : noPlacement(
@@ -1123,7 +1367,7 @@ function SCRBRD({resume}={}){
         held={sync.heldList??[]}
         events={events}
         innings={innings}
-        live={!!syncRef.current}
+        live={attached}
         onDiscard={discardHeldEvents}
         onRecordAgain={recordHeldAgain}
         onClose={()=>setModal(null)}/>
@@ -1132,7 +1376,7 @@ function SCRBRD({resume}={}){
     if(modal==="handover")return (
       <HandoverSheet
         matchId={matchId} device={deviceIdRef.current}
-        epoch={syncRef.current?.epoch}
+        epoch={syncRef.current?.engine?.epoch}
         pending={sync.pending}
         held={sync.held??0}
         onShowHeld={()=>setModal("held")}
@@ -1140,16 +1384,28 @@ function SCRBRD({resume}={}){
         startTab={sync.reason==="handover_pending"||sync.reason==="verifying"?"take":"hand"}
         onHandedOver={()=>{
           // This device armed it and someone else has now claimed and
-          // verified it — its own token is gone. Stop trying to sync as a
-          // holder it no longer is; a stale lease heartbeat would only earn
-          // a confusing not_token_holder error for a device that already
-          // knows it handed over.
-          syncRef.current?.stop();
-          syncRef.current=null;
-          setSync({state:"local",pending:0,reason:"handed_over"});
+          // verified it — its own token is gone. It sends nothing more (a
+          // stale lease check would only earn a confusing not_token_holder
+          // for a device that already knows it handed over), and nothing it
+          // records from here is sent: the log is the other device's now.
+          syncRef.current?.handedOver();
           setModal(null);
         }}
-        onTakenOver={(newEpoch)=>{resumeEpochRef.current=newEpoch;setSyncNonce(n=>n+1);}}
+        onClaimed={takeHandedOverLog}
+        onTakenOver={(newEpoch)=>{
+          // The token is this device's, under the generation the transfer
+          // made — no claim of its own, which would only burn another. What
+          // the server had at the claim is marked sent; the rest follows the
+          // comparison made at the claim (takeHandedOverLog).
+          syncRef.current?.reattach(newEpoch,handoverLogRef.current??[],{rebase:handoverRebaseRef.current});
+          handoverLogRef.current=null;
+        }}
+        onCancelled={(newEpoch)=>{
+          // The arming device took the token back (the protocol's cancel is
+          // its own claim): the same device's continuation, under the new
+          // generation.
+          if(newEpoch!=null)syncRef.current?.reattach(newEpoch,[],{rebase:true});
+        }}
         onClose={()=>setModal(null)}/>
     );
 
@@ -1401,7 +1657,7 @@ function SCRBRD({resume}={}){
           {/* Visible to whoever currently holds the token (to offer it) and
               to whoever's own claim was refused because one is already
               pending (to take it) — anyone else has nothing to do here. */}
-          {(syncRef.current||sync.reason==="handover_pending"||sync.reason==="verifying")&&(
+          {(attached||sync.reason==="handover_pending"||sync.reason==="verifying")&&(
             <button onClick={()=>setModal("handover")} className="pressBtn" data-testid="open-handover"
               title={sync.reason==="handover_pending"||sync.reason==="verifying"?"A handover is pending — enter the code":"Hand scoring to someone else"}
               style={{flexShrink:0,padding:"4px 10px",borderRadius:D.pill,cursor:"pointer",
@@ -1450,6 +1706,13 @@ function SCRBRD({resume}={}){
         <div style={{maxWidth:"1320px",margin:"0 auto",padding:"16px"}}>
           {/* Not while a sheet is open: the sheet IS the fix in progress, and
               a second button offering the same fix behind it only competes. */}
+          {/* Where this pad stands with the server, in words, on every tab:
+              signed out, no signal, refused, forked, handed over (SCRBRD-078). */}
+          {live&&!modal&&<SyncBanner status={padStatus} match={match} asideCount={asideCount}
+            onSignIn={onSignIn&&padStatus?.online?onSignIn:null}
+            onRetry={()=>syncRef.current?.attach("open")}
+            onScoreHere={()=>syncRef.current?.attach("open")}
+            onTakeOver={()=>setModal("handover")}/>}
           {activeTab==="score"&&!modal&&<ScoringBlocked readiness={readiness} onFix={fixBlock}/>}
           {activeTab==="score"&&uiMode==="focus"&&(
             <FocusPad inn={inn} match={match} curIn={curIn} target={target2}

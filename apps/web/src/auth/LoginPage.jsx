@@ -60,7 +60,11 @@ const PILOT_ACCOUNTS = [
   { email: "registrar@example.invalid", label: "Registrar",    role: "schooladmin" },
 ];
 
-function LoginPage({ onLogin, onSignUp }) {
+// `liveOnly`: opened from the pad of a live fixture to send what it has saved
+// (SCRBRD-078). There is a server behind that pad whatever the check below
+// says — the phone may have had no signal when it asked — so the demo is never
+// offered and a failed sign-in is a failed sign-in. `onBack` returns to the pad.
+function LoginPage({ onLogin, onSignUp, liveOnly = false, onBack }) {
   const [email,    setEmail]    = useState("");
   const [password, setPassword] = useState("");
   // Whether THIS SERVER accepts the development sign-in. Asked, not assumed.
@@ -68,7 +72,8 @@ function LoginPage({ onLogin, onSignUp }) {
   const [error,    setError]    = useState("");
   const [loading,  setLoading]  = useState(false);
   const [oauthLoading, setOauthLoading] = useState(false);
-  const [live,     setLive]     = useState(null);   // null = still asking
+  const [liveState, setLive]    = useState(null);   // null = still asking
+  const live = liveOnly ? true : liveState;
 
   useEffect(() => { apiMode().then(m => setLive(m === "live")).catch(() => setLive(false)); }, []);
   useEffect(() => { devLoginAvailable().then(setDevLogin).catch(() => setDevLogin(false)); }, []);
@@ -184,7 +189,16 @@ function LoginPage({ onLogin, onSignUp }) {
         <div style={{textAlign:"center",marginBottom:"32px"}}>
           <img src={SCRBRD_LOGO} alt="SCRBRD" style={{height:"30px",objectFit:"contain",filter:"brightness(1.15)",marginBottom:"16px"}}/>
           <div style={{fontFamily:"'Syne',sans-serif",fontSize:"22px",fontWeight:800,color:"#fff",marginBottom:"6px"}}>Welcome back</div>
-          <div style={{fontFamily:"'DM Sans',sans-serif",fontSize:"13px",color:"rgba(255,255,255,0.45)"}}>Sign in to your SCRBRD account</div>
+          <div data-testid="login-subtitle" style={{fontFamily:"'DM Sans',sans-serif",fontSize:"13px",color:"rgba(255,255,255,0.45)"}}>
+            {liveOnly ? "Sign in to send what the scorer has saved on this device. Nothing is lost while you do."
+                      : "Sign in to your SCRBRD account"}
+          </div>
+          {onBack&&(
+            <button onClick={onBack} className="pressBtn" data-testid="login-back-to-pad"
+              style={{marginTop:"10px",background:"none",border:"none",cursor:"pointer",fontFamily:"'DM Sans',sans-serif",fontSize:"12px",color:"#a5b4fc"}}>
+              ‹ Back to the scorer
+            </button>
+          )}
         </div>
 
         <div style={{borderRadius:"20px",border:"1px solid rgba(255,255,255,0.08)",background:"rgba(255,255,255,0.02)",padding:"28px",backdropFilter:"blur(20px)"}}>
