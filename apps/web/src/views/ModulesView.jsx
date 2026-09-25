@@ -5,6 +5,7 @@ import { Badge, Btn, Card, Input, Modal, Pill, SectionHeader } from "../ui/primi
 import { api } from "../lib/api.js";
 import { useLive } from "../lib/live.js";
 import { schoolsWhere } from "../lib/session.js";
+import { Icon } from "../ui/icons.jsx";
 
 // ══════════════════════════════════════════════════════
 //  MODULES — what the product offers, and to whom
@@ -25,8 +26,8 @@ import { schoolsWhere } from "../lib/session.js";
 // somebody here hid it from two people" is three different conversations, and
 // collapsing them into one boolean is how a setting becomes unexplainable.
 const KIND = themed(() => ({
-  module:  { label: "Module",  icon: "▦", color: D.indigo, sub: "A destination in the menu" },
-  feature: { label: "Feature", icon: "⚙", color: D.violet, sub: "Something the product does" },
+  module:  { label: "Module",  icon: "layout-grid", color: D.indigo, sub: "A destination in the menu" },
+  feature: { label: "Feature", icon: "settings", color: D.violet, sub: "Something the product does" },
 }));
 
 function ModulesView({ role }) {
@@ -103,7 +104,7 @@ function ModulesView({ role }) {
               <Badge color={r.resolved ? D.emerald : D.textMuted}>
                 {r.resolved ? "ON" : "OFF"}
               </Badge>
-              {r.locked && <Badge color={D.amber}>🔒 Locked by the platform</Badge>}
+              {r.locked && <Badge color={D.amber}><Icon name="lock"/> Locked by the platform</Badge>}
             </div>
             {r.reason && (
               <div style={{ fontFamily: D.body, fontSize: "11px", color: D.textMuted, marginTop: "4px" }}>

@@ -5,6 +5,7 @@ import { dateStr, today } from "../lib/format.js";
 import { Badge, Card, SectionHeader } from "../ui/primitives.jsx";
 import { WeatherChip } from "./shared.jsx";
 import { useRows, useWeather } from "../lib/live.js";
+import { Icon } from "../ui/icons.jsx";
 
 // ══════════════════════════════════════════════════════
 //  ANALYTICS VIEW
@@ -160,14 +161,14 @@ function CalendarView({ role, onNav }) {
                   <div key={i} style={{marginBottom:"12px",padding:"12px",background:ev.status==="live"?D.emerald+"0a":D.surf2,borderRadius:D.md,border:`1px solid ${ev.status==="live"?D.emerald+"33":D.border}`}}>
                     <div style={{display:"flex",gap:"6px",marginBottom:"8px",flexWrap:"wrap"}}>
                       <Badge color={ev.status==="live"?D.emerald:ev.status==="complete"?D.textMuted:D.sky}>{ev.status}</Badge>
-                      <span style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>🏏 Match</span>
+                      <span style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}><Icon name="stumps"/> Match</span>
                     </div>
                     <div style={{fontFamily:D.body,fontSize:"13px",fontWeight:600,color:D.textPrimary,marginBottom:"3px"}}>{ev.homeTeam}</div>
                     <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginBottom:"3px"}}>vs {ev.awayTeam}</div>
-                    <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginBottom:"8px"}}>📍 {ev.venue}</div>
+                    <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginBottom:"8px"}}><Icon name="map-pin"/> {ev.venue}</div>
                     {w&&<WeatherChip w={w} compact/>}
                     {ev.transport?.bus&&(
-                      <div style={{marginTop:"6px",fontFamily:D.mono,fontSize:"10px",color:textOn(D.lime)}}>🚌 Bus {ev.transport.depart}</div>
+                      <div style={{marginTop:"6px",fontFamily:D.mono,fontSize:"10px",color:textOn(D.lime)}}><Icon name="bus"/> Bus {ev.transport.depart}</div>
                     )}
                   </div>
                 );
@@ -177,11 +178,11 @@ function CalendarView({ role, onNav }) {
                 <div key={i} style={{marginBottom:"12px",padding:"12px",background:D.surf2,borderRadius:D.md,border:`1px solid ${typeCol}22`}}>
                   <div style={{display:"flex",gap:"6px",marginBottom:"6px"}}>
                     <Badge color={typeCol}>{ev.type}</Badge>
-                    <span style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>💪 Training</span>
+                    <span style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}><Icon name="dumbbell"/> Training</span>
                   </div>
                   <div style={{fontFamily:D.body,fontSize:"13px",fontWeight:600,color:D.textPrimary,marginBottom:"3px"}}>{ev.title}</div>
                   <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>{ev.team} · {ev.time} · {ev.duration}min</div>
-                  <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>📍 {ev.venue}</div>
+                  <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}><Icon name="map-pin"/> {ev.venue}</div>
                 </div>
               );
             })}

@@ -5,6 +5,7 @@ import { useLive, useRows } from "../lib/live.js";
 import { api } from "../lib/api.js";
 import { holdsCapability } from "../rbac/index.js";
 import { resolveBirthDate, PLAUSIBLE_YEARS_OFFICIAL, BIRTH_DATE_MESSAGE } from "@scrbrd/policy/date-of-birth";
+import { Icon } from "../ui/icons.jsx";
 
 // ══════════════════════════════════════════════════════
 //  OFFICIALS — who is on the panel, and who actually stood
@@ -46,10 +47,10 @@ const LEVEL = themed(() => ({
 }));
 
 const DUTY = themed(() => ({
-  umpire:       { label: "Umpire",       icon: "🧑‍⚖️", color: D.sky },
-  third_umpire: { label: "Third umpire", icon: "📺", color: D.violet },
-  scorer:       { label: "Scorer",       icon: "📋", color: D.orange },
-  referee:      { label: "Referee",      icon: "⚖️", color: D.amber },
+  umpire:       { label: "Umpire",       icon: "hand", color: D.sky },
+  third_umpire: { label: "Third umpire", icon: "tv", color: D.violet },
+  scorer:       { label: "Scorer",       icon: "scorebook", color: D.orange },
+  referee:      { label: "Referee",      icon: "scale", color: D.amber },
 }));
 
 // ── A duty's authority: link, suspend, lift (SCRBRD-034) ─────────────
@@ -286,7 +287,7 @@ function OfficialsView({ role }) {
                     background: on ? c + "18" : D.surf1, border: `1px solid ${on ? c + "44" : D.border}`,
                     fontFamily: D.head, fontSize: "10px", fontWeight: 700, letterSpacing: "0.06em",
                     color: on ? D.textPrimary : D.textMuted }}>
-                  {d === "all" ? "ALL" : `${DUTY[d].icon} ${DUTY[d].label.toUpperCase()}`}
+                  {d === "all" ? "ALL" : <><Icon name={DUTY[d].icon}/> {DUTY[d].label.toUpperCase()}</>}
                 </button>
               );
             })}
@@ -294,7 +295,7 @@ function OfficialsView({ role }) {
 
           {shown.length === 0 ? (
             <EmptyState
-              icon="🧑‍⚖️"
+              icon="hand"
               title="Nobody has been appointed yet"
               sub={live
                 ? "Officials appear here once they are appointed to a fixture. A director of sport or competition administrator can name a panel from the match."
@@ -382,10 +383,10 @@ function OfficialsView({ role }) {
                   <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "16px" }}>
                     {[...selected.duties].map((d) => (
                       <Pill key={d} color={DUTY[d]?.color ?? D.textMuted}>
-                        {DUTY[d]?.icon ?? ""} {DUTY[d]?.label ?? d}
+                        {DUTY[d]?.icon && <Icon name={DUTY[d].icon}/>} {DUTY[d]?.label ?? d}
                       </Pill>
                     ))}
-                    {selected.panel && <Pill color={D.violet}>🎖 {selected.panel}</Pill>}
+                    {selected.panel && <Pill color={D.violet}><Icon name="award"/> {selected.panel}</Pill>}
                     {selected.registered && selected.level && (
                       <Pill color={LEVEL[selected.level]?.color ?? D.textMuted}>
                         {LEVEL[selected.level]?.label ?? selected.level}
@@ -398,7 +399,7 @@ function OfficialsView({ role }) {
                       </Pill>
                     )}
                     {!selected.registered && <Pill color={D.textMuted}>Not on the register</Pill>}
-                    <Pill color={D.textMuted}>🗓 Last {when(selected.lastAt)}</Pill>
+                    <Pill color={D.textMuted}><Icon name="calendar-days"/> Last {when(selected.lastAt)}</Pill>
                   </div>
 
                   <div style={{ fontFamily: D.head, fontSize: "9px", fontWeight: 700, letterSpacing: "0.1em",

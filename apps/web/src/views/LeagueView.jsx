@@ -15,6 +15,7 @@ import {
   ALL_SEASONS, awardSeasons, bestBattingAverages, bestBowlingEconomies, defaultAwardSeason, mvpRanking,
   playersForSeason, topRunScorers, topWicketTakers,
 } from "../lib/seasonAwards.js";
+import { Icon } from "../ui/icons.jsx";
 
 // ══════════════════════════════════════════════════════
 //  LEAGUE MANAGEMENT VIEW
@@ -249,10 +250,10 @@ function LeagueView({ role }) {
                     <div style={{display:"flex",gap:"16px",alignItems:"center",flexWrap:"wrap"}}>
                       <div style={{flex:1}}>
                         <div style={{fontFamily:D.head,fontSize:"14px",fontWeight:700,color:D.textPrimary,marginBottom:"3px"}}>{m.homeTeam} <span style={{color:D.textMuted,fontSize:"12px",fontWeight:400}}>vs</span> {m.awayTeam}</div>
-                        <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>📅 {m.date} · 📍 {m.venue}</div>
+                        <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}><Icon name="calendar"/> {m.date} · <Icon name="map-pin"/> {m.venue}</div>
                       </div>
                       {w&&<WeatherChip w={w} compact/>}
-                      {m.transport?.bus&&<Pill color={D.lime}>🚌 {m.transport.depart}</Pill>}
+                      {m.transport?.bus&&<Pill color={D.lime}><Icon name="bus"/> {m.transport.depart}</Pill>}
                       {canEdit&&<Btn size="sm" variant="ghost">Enter Result</Btn>}
                     </div>
                   </Card>
@@ -294,7 +295,7 @@ function LeagueView({ role }) {
           {tab==="performers"&&(
             <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"14px"}}>
               <Card>
-                <div style={{padding:"12px 14px",borderBottom:`1px solid ${D.border}`,fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary}}>🏏 Top Batters — {comp.ageGroup}</div>
+                <div style={{padding:"12px 14px",borderBottom:`1px solid ${D.border}`,fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary}}><Icon name="bat"/> Top Batters — {comp.ageGroup}</div>
                 {topBat.map((p,i)=>(
                   <div key={p.id} style={{padding:"10px 14px",borderBottom:`1px solid ${D.border}`,display:"flex",alignItems:"center",gap:"10px"}}>
                     <span style={{fontFamily:D.mono,fontSize:"11px",color:D.textMuted,width:"16px"}}>{i+1}</span>
@@ -315,7 +316,7 @@ function LeagueView({ role }) {
                 ))}
               </Card>
               <Card>
-                <div style={{padding:"12px 14px",borderBottom:`1px solid ${D.border}`,fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary}}>⚡ Top Bowlers — {comp.ageGroup}</div>
+                <div style={{padding:"12px 14px",borderBottom:`1px solid ${D.border}`,fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary}}><Icon name="ball"/> Top Bowlers — {comp.ageGroup}</div>
                 {topBowl.map((p,i)=>(
                   <div key={p.id} style={{padding:"10px 14px",borderBottom:`1px solid ${D.border}`,display:"flex",alignItems:"center",gap:"10px"}}>
                     <span style={{fontFamily:D.mono,fontSize:"11px",color:D.textMuted,width:"16px"}}>{i+1}</span>
@@ -376,23 +377,23 @@ function LeagueView({ role }) {
                 </Card>
               ) : (<>
               <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"14px"}}>
-                <RankedList testId="awards-run-scorers" title="🏏 Top Run-Scorers" color={D.sky}
+                <RankedList testId="awards-run-scorers" icon="bat" title="Top Run-Scorers" color={D.sky}
                   rows={topRunScorers(AWARD_PLAYERS, awardScope)}
                   primary={p=>p.runs} primaryLabel="runs" secondary={p=>p.avg} secondaryLabel="avg"/>
-                <RankedList testId="awards-wicket-takers" title="⚡ Top Wicket-Takers" color={D.violet}
+                <RankedList testId="awards-wicket-takers" icon="ball" title="Top Wicket-Takers" color={D.violet}
                   rows={topWicketTakers(AWARD_PLAYERS, awardScope)}
                   primary={p=>p.wkts} primaryLabel="wkts" secondary={p=>p.econ} secondaryLabel="econ"/>
-                <RankedList testId="awards-batting-index" title="📈 Best Batting Index" color={D.emerald}
+                <RankedList testId="awards-batting-index" icon="trending-up" title="Best Batting Index" color={D.emerald}
                   rows={bestBattingAverages(AWARD_PLAYERS, awardScope).map(x=>({...x.player,index:x.index.value}))}
                   primary={p=>p.index} primaryLabel="index" secondary={p=>p.avg} secondaryLabel="avg"
                   empty="Nobody here has faced the 30 balls the index needs yet."/>
-                <RankedList testId="awards-bowling-index" title="📉 Best Bowling Index" color={D.orange}
+                <RankedList testId="awards-bowling-index" icon="trending-down" title="Best Bowling Index" color={D.orange}
                   rows={bestBowlingEconomies(AWARD_PLAYERS, awardScope).map(x=>({...x.player,index:x.index.value}))}
                   primary={p=>p.index} primaryLabel="index" secondary={p=>p.econ} secondaryLabel="econ"
                   empty="Nobody here has bowled the 36 balls the index needs yet."/>
               </div>
               <div style={{marginTop:"14px"}}>
-                <RankedList testId="awards-mvp" title="🏆 MVP Ranking" color={D.amber}
+                <RankedList testId="awards-mvp" icon="trophy" title="MVP Ranking" color={D.amber}
                   rows={mvpRanking(AWARD_PLAYERS, awardScope).map(x=>({...x.player,mvp:x.score}))}
                   primary={p=>p.mvp} primaryLabel="rating" secondary={p=>p.team} secondaryLabel=""
                   empty="Nobody here clears the sample floor for either index yet."
@@ -475,11 +476,11 @@ function LiveLadder({ rows, comp }) {
  * apps/web/src/lib/seasonAwards.js: this component only draws it, the same
  * division of labour ScorecardModal keeps between the fold and the screen.
  */
-function RankedList({ testId, title, color, rows, primary, primaryLabel, secondary, secondaryLabel, empty, sub }) {
+function RankedList({ testId, icon, title, color, rows, primary, primaryLabel, secondary, secondaryLabel, empty, sub }) {
   return (
     <Card data-testid={testId}>
       <div style={{padding:"12px 14px",borderBottom:`1px solid ${D.border}`}}>
-        <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary}}>{title}</div>
+        <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary}}>{icon&&<Icon name={icon}/>} {title}</div>
         {sub&&<div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,marginTop:"2px"}}>{sub}</div>}
       </div>
       {rows.length===0

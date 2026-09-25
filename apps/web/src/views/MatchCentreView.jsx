@@ -13,6 +13,7 @@ import { DrsPanel } from "./drs.jsx";
 import { ReportIncident } from "./discipline.jsx";
 import { AddFixtureModal, RescheduleFixture, SCHOOL_TEAMS } from "./fixtures.jsx";
 import { useRows, useWeather } from "../lib/live.js";
+import { Icon } from "../ui/icons.jsx";
 
 function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
   // Read through the choke point: row-scoped and column-masked for this
@@ -68,7 +69,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
           <>
             {holdsCapability(role,"fixture.create")&&<Btn size="sm" onClick={()=>setScheduleOpen(true)}>+ Schedule Match</Btn>}
             {canScore(role)&&<button onClick={()=>onOpenScorer(null)} className="pressBtn" style={{padding:"5px 12px",borderRadius:D.pill,background:D.emerald+"18",border:`1px solid ${D.emerald}30`,color:D.emerald,fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:"0.05em",cursor:"pointer",display:"flex",alignItems:"center",gap:"5px"}}>
-              <div className="live-dot"/>Open SCRBRD Scorer ↗
+              <div className="live-dot"/>Open SCRBRD Scorer <Icon name="arrow-up-right"/>
             </button>}
           </>
         }/>
@@ -125,9 +126,9 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
                     </div>
                   </div>
                   <div style={{marginTop:"10px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:"6px"}}>
-                    <span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>📍 {m.venue}</span>
+                    <span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}><Icon name="map-pin"/> {m.venue}</span>
                     <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
-                      {m.transport?.bus&&<Pill color={D.sky}>🚌 Bus {m.transport.depart}</Pill>}
+                      {m.transport?.bus&&<Pill color={D.sky}><Icon name="bus"/> Bus {m.transport.depart}</Pill>}
                       {/* A scheduled fixture is offered too, because that is
                           when scoring actually begins — you open the pad at
                           the toss, not once someone has already marked the
@@ -212,7 +213,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
               )}
               {scorer&&(
                 <div style={{marginBottom:"10px",padding:"9px 12px",background:D.surf2,borderRadius:D.md,border:`1px solid ${D.orange}22`,display:"flex",alignItems:"center",gap:"9px"}}>
-                  <span style={{fontSize:"16px"}}>📋</span>
+                  <span style={{fontSize:"16px",color:D.orange}}><Icon name="scorebook"/></span>
                   <div>
                     <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.orange,letterSpacing:"0.06em"}}>SCORER</div>
                     <div style={{fontFamily:D.body,fontSize:"12px",color:D.textPrimary}}>{scorer.name}</div>

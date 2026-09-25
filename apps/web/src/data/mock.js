@@ -501,14 +501,14 @@ const USERS_INITIAL = [
 ];
 
 const WEATHER = {
-  m1: { condition:"Clear",       tempC:24, humidity:52, windKph:14, windDir:"SW", uvIndex:8,  rainChancePct:5,  forecast:"Fine morning. Clear skies. Low DLS risk.", icon:"☀️",  playable:true  },
-  m2: { condition:"Overcast",    tempC:19, humidity:74, windKph:22, windDir:"E",  uvIndex:4,  rainChancePct:40, forecast:"Cloud building from east. Light showers possible mid-afternoon.", icon:"🌥️", playable:true  },
-  m3: { condition:"Overcast",    tempC:22, humidity:70, windKph:15, windDir:"NE", uvIndex:4,  rainChancePct:30, forecast:"Earlier cell cleared to the south. Covers off, play underway. Low DLS risk.", icon:"🌥️", playable:true  },
-  m4: { condition:"Partly Cloudy",tempC:22,humidity:60, windKph:16, windDir:"SW", uvIndex:7,  rainChancePct:20, forecast:"Pleasant Midlands morning. Isolated cloud. Excellent conditions.", icon:"⛅", playable:true  },
-  m5: { condition:"Sunny",       tempC:26, humidity:45, windKph:10, windDir:"S",  uvIndex:9,  rainChancePct:8,  forecast:"Clear sunny day. High UV. Sunscreen recommended.", icon:"☀️",  playable:true  },
-  m6: { condition:"Drizzle",     tempC:17, humidity:82, windKph:18, windDir:"NE", uvIndex:3,  rainChancePct:55, forecast:"Persistent drizzle from coastal front. Toss delayed.", icon:"🌧️",  playable:false },
-  m7: { condition:"Clear",       tempC:25, humidity:50, windKph:12, windDir:"SW", uvIndex:8,  rainChancePct:8,  forecast:"Excellent coastal conditions. Low humidity, light winds.", icon:"☀️",  playable:true  },
-  m8: { condition:"Partly Cloudy",tempC:21,humidity:65, windKph:18, windDir:"E",  uvIndex:6,  rainChancePct:25, forecast:"Morning cloud clearing by 09:30. Good afternoon conditions.", icon:"⛅", playable:true  },
+  m1: { condition:"Clear",       tempC:24, humidity:52, windKph:14, windDir:"SW", uvIndex:8,  rainChancePct:5,  forecast:"Fine morning. Clear skies. Low DLS risk.", icon:"sun",  playable:true  },
+  m2: { condition:"Overcast",    tempC:19, humidity:74, windKph:22, windDir:"E",  uvIndex:4,  rainChancePct:40, forecast:"Cloud building from east. Light showers possible mid-afternoon.", icon:"cloud-sun", playable:true  },
+  m3: { condition:"Overcast",    tempC:22, humidity:70, windKph:15, windDir:"NE", uvIndex:4,  rainChancePct:30, forecast:"Earlier cell cleared to the south. Covers off, play underway. Low DLS risk.", icon:"cloud-sun", playable:true  },
+  m4: { condition:"Partly Cloudy",tempC:22,humidity:60, windKph:16, windDir:"SW", uvIndex:7,  rainChancePct:20, forecast:"Pleasant Midlands morning. Isolated cloud. Excellent conditions.", icon:"cloud-sun", playable:true  },
+  m5: { condition:"Sunny",       tempC:26, humidity:45, windKph:10, windDir:"S",  uvIndex:9,  rainChancePct:8,  forecast:"Clear sunny day. High UV. Sunscreen recommended.", icon:"sun",  playable:true  },
+  m6: { condition:"Drizzle",     tempC:17, humidity:82, windKph:18, windDir:"NE", uvIndex:3,  rainChancePct:55, forecast:"Persistent drizzle from coastal front. Toss delayed.", icon:"cloud-rain",  playable:false },
+  m7: { condition:"Clear",       tempC:25, humidity:50, windKph:12, windDir:"SW", uvIndex:8,  rainChancePct:8,  forecast:"Excellent coastal conditions. Low humidity, light winds.", icon:"sun",  playable:true  },
+  m8: { condition:"Partly Cloudy",tempC:21,humidity:65, windKph:18, windDir:"E",  uvIndex:6,  rainChancePct:25, forecast:"Morning cloud clearing by 09:30. Good afternoon conditions.", icon:"cloud-sun", playable:true  },
 };
 
 const MATCHES = [
@@ -629,7 +629,7 @@ const SKILLS_MATRIX = {
 const NOTIFICATIONS = [
   { id:"n1", type:"match",    urgency:"high",  time:"2m ago",  title:"Match Update",           body:"Hilton 1st XI vs Kearsney: 142/3 (14.2) — Hilton batting, in control", read:false, roles:["all"] },
   { id:"n2", type:"injury",   urgency:"high",  time:"1h ago",  title:"Injury Alert",           body:"Theo Pretorius cleared for light training from Monday",    read:false, roles:["coach","schooladmin","parent","superadmin","medical"] },
-  { id:"n3", type:"weather",  urgency:"low",   time:"2h ago",  title:"🌥️ Weather Update",       body:"Earlier storm cell cleared Hilton No.1 — covers off, play resumed. Conditions good.",read:false,roles:["all"] },
+  { id:"n3", type:"weather",  urgency:"low",   time:"2h ago",  title:"Weather Update",       body:"Earlier storm cell cleared Hilton No.1 — covers off, play resumed. Conditions good.",read:false,roles:["all"] },
   { id:"n4", type:"training", urgency:"low",   time:"3h ago",  title:"Training Reminder",      body:"1XI Pre-Match Prep today at 14:30 — Nets 1-3",           read:false, roles:["player","coach","superadmin"] },
   { id:"n5", type:"match",    urgency:"medium",time:"1d ago",  title:"Fixture Confirmed",      body:"Hilton U13A vs Michaelhouse Prep — Saturday 08:00",       read:true,  roles:["all"] },
   { id:"n6", type:"transport",urgency:"medium",time:"1d ago",  title:"Transport Confirmed",    body:"Coaster departs 06:30 for DHS away fixture. 30 seats. Driver: Themba.",read:true,roles:["parent","player","schooladmin","superadmin","driver"] },

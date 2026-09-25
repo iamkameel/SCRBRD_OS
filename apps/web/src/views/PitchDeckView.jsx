@@ -13,6 +13,7 @@ import { ALL_CAPABILITIES, PLATFORM_ONLY, SENSITIVE } from "@scrbrd/policy/capab
 import { ROLES, ROLE_CAPABILITIES } from "@scrbrd/policy/roles";
 import { MASKED_TABLES, TABLES } from "@scrbrd/policy/tables";
 import { FEATURES, MODULES, SPORTS } from "@scrbrd/policy/modules";
+import { Icon } from "../ui/icons.jsx";
 
 // ══════════════════════════════════════════════════════
 //  PITCH DECK
@@ -582,7 +583,7 @@ function PitchDeckView({ role, onNav }) {
           <button type="button" className="deck-btn" onClick={() => go((c) => c + 1)} disabled={i === n - 1} data-testid="deck-next" aria-label="Next slide">Next →</button>
           <span style={{ fontFamily: D.mono, fontSize: "11px", color: D.textMuted }}>{i + 1}/{n} · {s.label}</span>
           <span style={{ flex: 1 }}/>
-          <button type="button" className="deck-btn" aria-pressed={auto} onClick={() => setAuto((a) => !a)} data-testid="deck-auto">{auto ? "■ Stop" : "▶ Auto"}</button>
+          <button type="button" className="deck-btn" aria-pressed={auto} onClick={() => setAuto((a) => !a)} data-testid="deck-auto">{auto ? "■ Stop" : <><Icon name="play"/> Auto</>}</button>
           <button type="button" className="deck-btn" aria-pressed={want3d} onClick={() => setWant3d((v) => !v)} data-testid="deck-3d-toggle">{threeLabel}</button>
           <button type="button" className="deck-btn" onClick={toggleFull} aria-pressed={full} data-testid="deck-full">{full ? "Exit full screen" : "Present (F)"}</button>
         </div>

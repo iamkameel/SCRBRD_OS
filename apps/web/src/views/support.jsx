@@ -86,7 +86,7 @@ function SupportAccessPanel({ role }) {
   if (!signedIn()) {
     return (
       <Card sx={{ padding: "16px" }} data-testid="support-access">
-        <EmptyState icon="🛠️" message="Sign in to the live platform to begin a support session."/>
+        <EmptyState icon="life-buoy" message="Sign in to the live platform to begin a support session."/>
       </Card>
     );
   }
@@ -211,7 +211,7 @@ function SupportAccessLive({ role }) {
           : sessions.error
             ? <EmptyState error/>
             : mine.length === 0
-              ? <EmptyState icon="🛠️" message="You have not begun a support session."/>
+              ? <EmptyState icon="life-buoy" message="You have not begun a support session."/>
               : <>
                   {open.map(row)}
                   {past.length > 0 && <div style={{ ...MONO(), marginTop: "10px" }}>Recent</div>}

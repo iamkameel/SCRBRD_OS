@@ -6,6 +6,7 @@ import { D, textOn, themed } from "../design/tokens.js";
 import { roleColor } from "../lib/format.js";
 import { Avatar, Badge, Btn, Card, Pill, SectionHeader } from "../ui/primitives.jsx";
 import { useRows } from "../lib/live.js";
+import { Icon } from "../ui/icons.jsx";
 
 // ══════════════════════════════════════════════════════
 //  STAFF VIEW — scorers, medical, drivers, groundskeepers
@@ -24,7 +25,8 @@ function StaffView({ role }) {
   const [sel, setSel]       = useState(null);
   const canEdit = holdsCapability(role,"user.role.assign");
 
-  const roleIcon  = r => r==="scorer"?"📋":r==="medical"?"⚕️":r==="driver"?"🚌":r==="facilities"?"🌿":"👤";
+  // A name from ui/icons.jsx, drawn by <RoleIcon>.
+  const roleIcon  = r => r==="scorer"?"scorebook":r==="medical"?"stethoscope":r==="driver"?"bus":r==="facilities"?"sprout":"user";
   const roleColor = r => ROLES[r]?.color || D.textMuted;
   const filtered  = filter==="all" ? STAFF : STAFF.filter(s=>s.role===filter);
 
@@ -41,7 +43,7 @@ function StaffView({ role }) {
             background:filter===f?(ROLES[f]?.color||D.cyan)+"14":"transparent",
             fontFamily:D.body,fontSize:"11px",fontWeight:filter===f?600:400,
             color:filter===f?D.textPrimary:D.textMuted,
-          }}>{f==="all"?"All Staff":f==="facilities"?`${roleIcon(f)} Groundskeepers`:`${roleIcon(f)} ${f.charAt(0).toUpperCase()+f.slice(1)}s`}</button>
+          }}>{f==="all"?"All Staff":f==="facilities"?<><Icon name={roleIcon(f)}/> Groundskeepers</>:<><Icon name={roleIcon(f)}/> {f.charAt(0).toUpperCase()+f.slice(1)}s</>}</button>
         ))}
       </div>
 
@@ -63,12 +65,12 @@ function StaffView({ role }) {
                     <div style={{position:"absolute",bottom:-2,right:-2,width:"14px",height:"14px",borderRadius:"50%",
                       background:s.active?D.emerald:D.rose,border:`2px solid ${D.surf1}`,
                       display:"flex",alignItems:"center",justifyContent:"center",fontSize:"9px"}}>
-                      {roleIcon(s.role)}
+                      <Icon name={roleIcon(s.role)}/>
                     </div>
                   </div>
                   <div style={{flex:1}}>
                     <div style={{fontFamily:D.body,fontSize:"13px",fontWeight:700,color:D.textPrimary,marginBottom:"2px"}}>{s.name}</div>
-                    <Badge color={roleColor(s.role)}>{roleIcon(s.role)} {s.role}</Badge>
+                    <Badge color={roleColor(s.role)}><Icon name={roleIcon(s.role)}/> {s.role}</Badge>
                   </div>
                 </div>
                 <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginBottom:"8px",lineHeight:1.4}}>
@@ -95,7 +97,7 @@ function StaffView({ role }) {
                   <div>
                     <div style={{fontFamily:D.head,fontSize:"14px",fontWeight:700,color:D.textPrimary,lineHeight:1.2}}>{sel.name}</div>
                     <div style={{marginTop:"4px",display:"flex",gap:"4px",flexWrap:"wrap"}}>
-                      <Badge color={roleColor(sel.role)}>{roleIcon(sel.role)} {sel.role}</Badge>
+                      <Badge color={roleColor(sel.role)}><Icon name={roleIcon(sel.role)}/> {sel.role}</Badge>
                       <Badge color={sel.active?D.emerald:D.rose}>{sel.active?"Active":"Inactive"}</Badge>
                     </div>
                   </div>
@@ -105,9 +107,9 @@ function StaffView({ role }) {
 
               {/* Contact */}
               <div style={{background:D.surf2,borderRadius:D.md,padding:"10px 12px",marginBottom:"12px"}}>
-                {[["📞 Phone",sel.phone],["✉️ Email",sel.email],sel.age&&["🎂 Age",`${sel.age} years`]].filter(Boolean).map(([l,v])=>(
+                {[["phone","Phone",sel.phone],["mail","Email",sel.email],sel.age&&["cake","Age",`${sel.age} years`]].filter(Boolean).map(([ic,l,v])=>(
                   <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${D.border}`}}>
-                    <span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>{l}</span>
+                    <span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}><Icon name={ic}/> {l}</span>
                     <span style={{fontFamily:sel.email&&l.includes("Email")?D.mono:D.body,fontSize:"11px",color:D.textPrimary}}>{v}</span>
                   </div>
                 ))}

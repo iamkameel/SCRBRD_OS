@@ -23,10 +23,10 @@ function InjuryView({ role }) {
         actions={canEdit&&<Btn size="sm" onClick={()=>setAddModal(true)}>+ Log Injury</Btn>}/>
 
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:"12px",marginBottom:"24px"}}>
-        <KPICard label="Active Injuries" value={injV.filter(i=>i.restricted).length}  icon="🏥" color={D.rose}/>
-        <KPICard label="In Rehab"        value={injV.filter(i=>i.phase==="Reconditioning"||i.phase==="Strengthening").length} icon="💪" color={D.orange}/>
-        <KPICard label="Returning Soon"  value={injV.filter(i=>{const d=(new Date(i.rtw)-today)/(1000*60*60*24);return d>=0&&d<=7;}).length} icon="✅" color={D.amber}/>
-        <KPICard label="Available"       value={PLAYERS.filter(p=>p.fitness==="fit").length} icon="👟" color={D.emerald}/>
+        <KPICard label="Active Injuries" value={injV.filter(i=>i.restricted).length}  icon="bandage" color={D.rose}/>
+        <KPICard label="In Rehab"        value={injV.filter(i=>i.phase==="Reconditioning"||i.phase==="Strengthening").length} icon="dumbbell" color={D.orange}/>
+        <KPICard label="Returning Soon"  value={injV.filter(i=>{const d=(new Date(i.rtw)-today)/(1000*60*60*24);return d>=0&&d<=7;}).length} icon="circle-check" color={D.amber}/>
+        <KPICard label="Available"       value={PLAYERS.filter(p=>p.fitness==="fit").length} icon="footprints" color={D.emerald}/>
       </div>
 
       <div style={{display:"grid",gridTemplateColumns:"var(--g-side-r,1fr 340px)",gap:"16px",alignItems:"start"}}>

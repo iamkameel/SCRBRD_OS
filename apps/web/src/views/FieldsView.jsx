@@ -5,6 +5,7 @@ import { D, T, textOn } from "../design/tokens.js";
 import { Avatar, Badge, Btn, Card, EmptyState, Modal, Select, SectionHeader } from "../ui/primitives.jsx";
 import { useLive, useRows } from "../lib/live.js";
 import { api } from "../lib/api.js";
+import { Icon } from "../ui/icons.jsx";
 
 // ══════════════════════════════════════════════════════
 //  FIELDS VIEW — rich ground & pitch profiles
@@ -97,7 +98,7 @@ function FieldsView({ role }) {
             </div>
           ))}
         </div>
-        {p.history&&<div style={{marginTop:"10px",fontFamily:D.body,fontSize:"10px",color:D.textMuted,background:D.surf3,padding:"7px 10px",borderRadius:D.sm}}>📊 {p.history}</div>}
+        {p.history&&<div style={{marginTop:"10px",fontFamily:D.body,fontSize:"10px",color:D.textMuted,background:D.surf3,padding:"7px 10px",borderRadius:D.sm}}><Icon name="chart-column"/> {p.history}</div>}
         {p.lastRolled&&<div style={{marginTop:"6px",fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>Last rolled: {p.lastRolled}</div>}
       </div>
     );
@@ -109,7 +110,7 @@ function FieldsView({ role }) {
   if (!selGround) return (
     <div className="os-page">
       <SectionHeader title="Fields & Pitch Profiles" sub="Ground management, pitch preparation and surface data" color={D.teal}/>
-      <EmptyState loading={loading} error={error} icon="⬡" message="No grounds are in scope for you." />
+      <EmptyState loading={loading} error={error} icon="ground" message="No grounds are in scope for you." />
     </div>
   );
 
@@ -151,11 +152,11 @@ function FieldsView({ role }) {
                 <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginBottom:"8px"}}>
                   <Badge color={D.teal}>{selGround.type}</Badge>
                   <Badge color={selGround.available?D.emerald:D.rose}>{selGround.available?"Available":"Unavailable"}</Badge>
-                  {selGround.lights&&<Badge color={D.amber}>💡 Lights</Badge>}
+                  {selGround.lights&&<Badge color={D.amber}><Icon name="lightbulb"/> Lights</Badge>}
                   {selGround.homeTo?.map(t=><Badge key={t} color={D.sky}>{t}</Badge>)}
                 </div>
-                {selGround.orientation&&<div style={{fontFamily:D.mono,fontSize:"11px",color:D.textMuted}}>⬡ Orientation: {selGround.orientation}</div>}
-                {selGround.dimensions&&<div style={{fontFamily:D.mono,fontSize:"11px",color:D.textMuted}}>📐 {selGround.dimensions.straight}m straight · {selGround.dimensions.squareLeg}m sq-leg · {selGround.dimensions.squareOff}m sq-off</div>}
+                {selGround.orientation&&<div style={{fontFamily:D.mono,fontSize:"11px",color:D.textMuted}}><Icon name="compass"/> Orientation: {selGround.orientation}</div>}
+                {selGround.dimensions&&<div style={{fontFamily:D.mono,fontSize:"11px",color:D.textMuted}}><Icon name="ruler"/> {selGround.dimensions.straight}m straight · {selGround.dimensions.squareLeg}m sq-leg · {selGround.dimensions.squareOff}m sq-off</div>}
               </div>
               {gk&&(
                 <div style={{padding:"10px 12px",background:D.surf2,borderRadius:D.md,border:`1px solid ${D.border}`,minWidth:"150px"}}>

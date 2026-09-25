@@ -30,7 +30,7 @@ function SeasonHistory({ role }) {
   if (!signedIn()) {
     return (
       <Card data-testid="season-history">
-        <EmptyState message="Sign in to see your school's season history." icon="📅" />
+        <EmptyState message="Sign in to see your school's season history." icon="calendar" />
       </Card>
     );
   }
@@ -62,7 +62,7 @@ function SignedInSeasonHistory({ role, selected, setSelected }) {
   if (loading || error || seasons.length === 0) {
     return (
       <Card data-testid="season-history">
-        <EmptyState loading={loading} error={error} message="No seasons on record." icon="📅" />
+        <EmptyState loading={loading} error={error} message="No seasons on record." icon="calendar" />
       </Card>
     );
   }

@@ -70,7 +70,7 @@ function NewsView({ role }) {
       )}
 
       {!loading && rows.length===0 && (
-        <EmptyState icon="📰" title="Nothing posted yet"
+        <EmptyState icon="newspaper" title="Nothing posted yet"
           hint={canPublish
             ? "Notices you post appear here, and reach exactly the people the tier names."
             : "When your school or your side posts a notice, it appears here."}/>

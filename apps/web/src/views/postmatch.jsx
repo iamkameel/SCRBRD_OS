@@ -5,6 +5,7 @@ import { useLive } from "../lib/live.js";
 import { deriveMatch, fmtOvers, fromRow, PHASE_LABELS, PHASE_NAMES } from "@scrbrd/scoring";
 import { keyMoments, matchBestBatting, matchBestBowling } from "../lib/postMatchReport.js";
 import { Badge, Modal } from "../ui/primitives.jsx";
+import { Icon } from "../ui/icons.jsx";
 
 /**
  * SCRBRD-082 — the Post-Match Report.
@@ -92,7 +93,7 @@ function PostMatchReport({ match, role, onClose, onNavProfile }) {
       <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginBottom: "10px" }} className="os-print-hide">
         <button onClick={() => window.print()} className="pressBtn" data-testid="pmr-print"
           style={{ padding: "6px 14px", borderRadius: D.pill, border: `1px solid ${D.borderMed}`, background: D.surf2, color: D.textPrimary, fontFamily: D.head, fontSize: "10px", fontWeight: 700, letterSpacing: "0.06em", cursor: "pointer" }}>
-          🖨 Print
+          <Icon name="printer"/> Print
         </button>
       </div>
 
@@ -165,7 +166,9 @@ function describeResult(result) {
   return `${result.winner} won by ${result.margin}`;
 }
 
-const momentIcon = (kind) => ({ wicket: "🎯", fifty: "5️⃣0️⃣", hundred: "💯", "five-for": "🏆" })[kind] ?? "•";
+// A name from ui/icons.jsx per kind of moment; a kind with none gets a dot.
+const MOMENT_ICON = { wicket: "bails-off", fifty: "bat", hundred: "medal", "five-for": "ball" };
+const momentIcon = (kind) => MOMENT_ICON[kind] ? <Icon name={MOMENT_ICON[kind]}/> : "•";
 
 function Section({ title, children }) {
   return (

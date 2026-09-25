@@ -7,6 +7,7 @@ import { Avatar, Badge, Btn, Card, Input, Modal, Pill, SectionHeader, Select } f
 import { useLive, useRows } from "../lib/live.js";
 import { api } from "../lib/api.js";
 import { schoolsWhere } from "../lib/session.js";
+import { Icon } from "../ui/icons.jsx";
 
 // ══════════════════════════════════════════════════════
 //  TRAINING VIEW
@@ -113,7 +114,7 @@ function TrainingView({ role }) {
                   <div style={{display:"flex",gap:"5px",flexWrap:"wrap",marginBottom:"8px"}}>
                     {(s.drills??[]).map(d=><Pill key={d} color={typeCol}>{d}</Pill>)}
                   </div>
-                  {s.notes&&<div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,fontStyle:"italic",background:D.surf2,padding:"7px 10px",borderRadius:D.sm}}>📝 {s.notes}</div>}
+                  {s.notes&&<div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,fontStyle:"italic",background:D.surf2,padding:"7px 10px",borderRadius:D.sm}}><Icon name="notebook-pen"/> {s.notes}</div>}
                   <div style={{display:"flex",gap:"4px",marginTop:"10px"}}>
                     {roll.map(pid=>{
                       const p=PLAYERS.find(pl=>pl.id===pid) ?? { name: REGISTER.find(a=>a.playerId===pid)?.name };
@@ -142,7 +143,7 @@ function TrainingView({ role }) {
                 </div>
                 <p style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,lineHeight:1.5,marginBottom:"10px"}}>{d.desc}</p>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <Pill color={typeColor(d.category)}>⏱ {d.duration}min</Pill>
+                  <Pill color={typeColor(d.category)}><Icon name="timer"/> {d.duration}min</Pill>
                   {canEdit&&<button style={{background:"none",border:"none",cursor:"pointer",fontFamily:D.body,fontSize:"11px",color:D.sky}}>Add to session</button>}
                 </div>
               </Card>

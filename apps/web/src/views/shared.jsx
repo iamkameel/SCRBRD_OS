@@ -11,6 +11,7 @@ import { useRows } from "../lib/live.js";
 import { teamCodeIn } from "@scrbrd/policy/teams";
 import { api, signedIn } from "../lib/api.js";
 import { deriveInnings, fromRow } from "@scrbrd/scoring";
+import { Icon, isIcon } from "../ui/icons.jsx";
 
 // ══════════════════════════════════════════════════════
 //  MATCH CENTRE VIEW
@@ -20,38 +21,41 @@ import { deriveInnings, fromRow } from "@scrbrd/scoring";
 // ══════════════════════════════════════════════════════
 function WeatherChip({ w, compact }) {
   if (!w) return null;
+  // `w.icon` is a name from ui/icons.jsx; anything else falls back to the
+  // neutral sky rather than printing itself.
+  const sky = isIcon(w.icon) ? w.icon : "cloud-sun";
   const bc = w.playable ? D.emerald : D.rose;
   if (compact) return (
     <div style={{display:"flex",alignItems:"center",gap:"5px",padding:"3px 8px",borderRadius:D.pill,
       background:bc+"14",border:`1px solid ${bc}28`}}>
-      <span style={{fontSize:"13px"}}>{w.icon}</span>
+      <span style={{fontSize:"13px",color:bc}}><Icon name={sky}/></span>
       <span style={{fontFamily:D.mono,fontSize:"10px",color:bc,fontWeight:600}}>{w.tempC}°C</span>
       <span style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted}}>{w.condition}</span>
-      {!w.playable && <span style={{fontFamily:D.head,fontSize:"9px",color:D.roseText,fontWeight:700,letterSpacing:"0.05em"}}>⚠ NOT PLAYABLE</span>}
+      {!w.playable && <span style={{fontFamily:D.head,fontSize:"9px",color:D.roseText,fontWeight:700,letterSpacing:"0.05em"}}><Icon name="triangle-alert"/> NOT PLAYABLE</span>}
     </div>
   );
   return (
     <div style={{background:D.surf2,borderRadius:D.lg,padding:"14px 16px",border:`1px solid ${bc}22`}}>
       <div style={{display:"flex",alignItems:"center",gap:"12px",marginBottom:"10px"}}>
-        <span style={{fontSize:"32px"}}>{w.icon}</span>
+        <span style={{fontSize:"32px",color:D.textSecondary}}><Icon name={sky}/></span>
         <div>
           <div style={{fontFamily:D.head,fontSize:"20px",fontWeight:800,color:D.textPrimary}}>{w.tempC}°C</div>
           <div style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary}}>{w.condition}</div>
         </div>
         <div style={{marginLeft:"auto",padding:"5px 12px",borderRadius:D.pill,background:bc+"18",border:`1px solid ${bc}30`}}>
-          <span style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:bc}}>{w.playable?"✓ PLAYABLE":"⚠ NOT PLAYABLE"}</span>
+          <span style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:bc}}>{w.playable?"✓ PLAYABLE":<><Icon name="triangle-alert"/> NOT PLAYABLE</>}</span>
         </div>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"var(--g-4,repeat(4,1fr))",gap:"8px",marginBottom:"10px"}}>
-        {[["💧 Humidity",`${w.humidity}%`],["💨 Wind",`${w.windKph} km/h ${w.windDir}`],[`☂ Rain`,`${w.rainChancePct}%`],["☀️ UV",`${w.uvIndex}/11`]].map(([l,v])=>(
+        {[["droplet","Humidity",`${w.humidity}%`],["wind","Wind",`${w.windKph} km/h ${w.windDir}`],["umbrella","Rain",`${w.rainChancePct}%`],["sun","UV",`${w.uvIndex}/11`]].map(([ic,l,v])=>(
           <div key={l} style={{textAlign:"center",padding:"7px 4px",background:D.surf3,borderRadius:D.sm}}>
             <div style={{fontFamily:D.mono,fontSize:"12px",fontWeight:500,color:D.textPrimary}}>{v}</div>
-            <div style={{fontFamily:D.body,fontSize:"9px",color:D.textMuted,marginTop:"2px"}}>{l}</div>
+            <div style={{fontFamily:D.body,fontSize:"9px",color:D.textMuted,marginTop:"2px"}}><Icon name={ic}/> {l}</div>
           </div>
         ))}
       </div>
       <div style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary,background:D.surf3,padding:"8px 10px",borderRadius:D.sm,fontStyle:"italic"}}>
-        📋 {w.forecast}
+        <Icon name="clipboard-list"/> {w.forecast}
       </div>
     </div>
   );
@@ -179,7 +183,7 @@ function PlayerProfileModal({ player, role, skills = {}, onClose, onFullProfile 
           ))}
         </div>
       )}
-      {stripped&&<div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,marginBottom:"12px"}}>🔒 Some personal details are hidden for your role.</div>}
+      {stripped&&<div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,marginBottom:"12px"}}><Icon name="lock"/> Some personal details are hidden for your role.</div>}
       {/* Season + career stats */}
       <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginBottom:"12px"}}>
         <Stat l="Avg" v={player.avg} c={D.emerald}/>
@@ -383,21 +387,21 @@ function ScorecardModal({ match, onClose, role, onNavProfile }){
               <span style={{display:"flex",alignItems:"center",gap:"5px",padding:"3px 10px",borderRadius:D.pill,background:D.emerald+"18",border:`1px solid ${D.emerald}33`,fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",color:D.emerald}}>
                 <div className="live-dot"/>IN PROGRESS
               </span>
-              {match.result&&<span style={{padding:"3px 10px",borderRadius:D.pill,background:D.sky+"14",border:`1px solid ${D.sky}30`,fontFamily:D.body,fontSize:"11px",color:D.sky}}>⛈ {match.result}</span>}
+              {match.result&&<span style={{padding:"3px 10px",borderRadius:D.pill,background:D.sky+"14",border:`1px solid ${D.sky}30`,fontFamily:D.body,fontSize:"11px",color:D.sky}}><Icon name="cloud-lightning"/> {match.result}</span>}
             </div>
           : match.result&&<Badge color={D.amber}>{match.result}</Badge>}
       </div>
       <div style={{display:"flex",gap:"6px",flexWrap:"wrap",justifyContent:"center",marginBottom:"12px"}}>
-        {comp&&<Pill color={D.violet}>🏆 {comp.name}</Pill>}
-        <Pill color={D.sky}>📍 {match.venue}</Pill>
-        <Pill color={D.textMuted}>📅 {match.date}</Pill>
+        {comp&&<Pill color={D.violet}><Icon name="trophy"/> {comp.name}</Pill>}
+        <Pill color={D.sky}><Icon name="map-pin"/> {match.venue}</Pill>
+        <Pill color={D.textMuted}><Icon name="calendar"/> {match.date}</Pill>
         {officials.map((o)=>(
           <Pill key={o.duty+o.person_name} color={o.duty==="scorer"?D.orange:D.sky}>
-            {o.duty==="scorer"?"📋":"🧑‍⚖️"} {o.person_name}
+            <Icon name={o.duty==="scorer"?"scorebook":"hand"}/> {o.person_name}
             <span style={{color:D.textMuted}}> · {DUTY_LABEL[o.duty]??o.duty}</span>
           </Pill>
         ))}
-        {!officials.length&&scorerStaff&&<Pill color={D.orange}>📋 {scorerStaff.name}</Pill>}
+        {!officials.length&&scorerStaff&&<Pill color={D.orange}><Icon name="scorebook"/> {scorerStaff.name}</Pill>}
       </div>
       {/* Match worm — both innings */}
       {innings.length>1&&(

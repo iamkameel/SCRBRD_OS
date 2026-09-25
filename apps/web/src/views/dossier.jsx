@@ -147,7 +147,7 @@ function OppositionDossier({ match, role, onClose }) {
         {/* No standing. Nothing about the fixture, the opponent, or why. */}
         {!ctx.loading && !head && (
           <div data-testid="dossier-none">
-            <EmptyState icon="🔒" message="No dossier for you on this fixture."/>
+            <EmptyState icon="lock" message="No dossier for you on this fixture."/>
             <div style={{ fontFamily: D.body, fontSize: "11px", color: D.textMuted, textAlign: "center", maxWidth: "460px", margin: "0 auto", lineHeight: 1.6 }}>
               A dossier is for the coaching staff of the side actually playing, inside the window before the match.
             </div>
@@ -201,7 +201,7 @@ function OppositionDossier({ match, role, onClose }) {
             </div>
 
             {squad.rows.length === 0 ? (
-              <EmptyState icon="👥" message="Their side is not named yet — the window is open, and this school has no roster recorded for that team."/>
+              <EmptyState icon="users" message="Their side is not named yet — the window is open, and this school has no roster recorded for that team."/>
             ) : (
               <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse" }} data-testid="dossier-squad">

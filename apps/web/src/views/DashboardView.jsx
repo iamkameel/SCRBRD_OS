@@ -6,6 +6,7 @@ import { Avatar, Btn, Card, KPICard, Pill, StatusDot } from "../ui/primitives.js
 import { useRows, useSummary } from "../lib/live.js";
 import { featureOn, useFeatures } from "../lib/features.js";
 import { holdsCapability, readsOwnRecord } from "../rbac/index.js";
+import { Icon } from "../ui/icons.jsx";
 
 // ══════════════════════════════════════════════════════
 //  DASHBOARD VIEW
@@ -61,21 +62,21 @@ function DashboardView({ role, onNav }) {
   const own = readsOwnRecord(role);
   const tiles = [
     holds("player.roster.read") && {
-      label:"Active Players", icon:"👥", color:D.sky, value:kpi(summary?.activePlayers),
+      label:"Active Players", icon:"users", color:D.sky, value:kpi(summary?.activePlayers),
       sub: summaryLive?"In your scope":"Demo data" },
     holds("fixture.read") && {
-      label:"Upcoming", icon:"🏆", color:D.amber, value:kpi(summary?.upcomingMatches),
+      label:"Upcoming", icon:"trophy", color:D.amber, value:kpi(summary?.upcomingMatches),
       sub:"Fixtures scheduled" },
     // Counted over competition_entrant, which competition.read governs — so
     // that, not analytics.read, is what decides whether the figure exists.
     holds("competition.read") && {
-      label:"Win Rate", icon:"📈", color:D.emerald, value:pct(summary?.winRatePct),
+      label:"Win Rate", icon:"trending-up", color:D.emerald, value:pct(summary?.winRatePct),
       sub: summary?.winRatePct==null?"No completed matches":"Across your competitions" },
     holds("medical.status.read") && shows("injuries") && {
-      label:"Injuries", icon:"🏥", value:kpi(summary?.injuriesActive),
+      label:"Injuries", icon:"bandage", value:kpi(summary?.injuriesActive),
       color:(summary?.injuriesActive??0)>3?D.rose:D.orange, sub:"Active restrictions" },
     holds("team.read") && shows("training") && {
-      label:"Sessions This Wk", icon:"💪", color:D.violet, value:kpi(summary?.sessionsThisWeek),
+      label:"Sessions This Wk", icon:"dumbbell", color:D.violet, value:kpi(summary?.sessionsThisWeek),
       sub:"Training scheduled" },
     // The viewer's own playing record. Ungated by school scope because it is
     // not a school figure — it resolves through app_user.player_id, which is
@@ -83,17 +84,17 @@ function DashboardView({ role, onNav }) {
     // the same way; an account naming no pupil gets an em dash rather than
     // somebody else's average.
     own && holds("player.performance.read") && {
-      label:"Batting Avg", icon:"🏏", color:D.sky, value:kpi(summary?.myBattingAverage),
+      label:"Batting Avg", icon:"bat", color:D.sky, value:kpi(summary?.myBattingAverage),
       sub: summary?.myBattingAverage==null?"Not enough innings yet":"Career, from the ball log" },
     own && holds("player.performance.read") && {
-      label:"Strike Rate", icon:"⚡", color:D.amber, value:kpi(summary?.myStrikeRate),
+      label:"Strike Rate", icon:"zap", color:D.amber, value:kpi(summary?.myStrikeRate),
       sub: summary?.myStrikeRate==null?"No deliveries faced yet":"Career, from the ball log" },
     own && holds("player.performance.read") && {
-      label:"Runs", icon:"📊", color:D.teal, value:kpi(summary?.myRuns), sub:"Career total" },
+      label:"Runs", icon:"chart-column", color:D.teal, value:kpi(summary?.myRuns), sub:"Career total" },
     // Notifications are addressed to a person, not read out of a scoped table,
     // so every role that reaches a dashboard has them.
     {
-      label:"Alerts", icon:"🔔", color:D.rose, value:kpi(summary?.unreadAlerts),
+      label:"Alerts", icon:"bell", color:D.rose, value:kpi(summary?.unreadAlerts),
       sub:"Unread notifications" },
   ].filter(Boolean);
 
@@ -101,7 +102,7 @@ function DashboardView({ role, onNav }) {
     <div className="os-page">
       <div style={{marginBottom:"20px"}}>
         <h1 style={{fontFamily:D.head,fontSize:"22px",fontWeight:800,color:D.textPrimary,marginBottom:"3px"}}>
-          Welcome back, {rc.icon} <span style={{color:rc.color}}>{rc.label}</span>
+          Welcome back, <span style={{color:rc.color}}><Icon name={rc.icon}/> {rc.label}</span>
         </h1>
         <p style={{fontFamily:D.body,fontSize:"13px",color:D.textMuted}}>Hilton College, KZN · {new Date().toLocaleDateString("en-ZA",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}</p>
       </div>
@@ -159,9 +160,9 @@ function DashboardView({ role, onNav }) {
                 </div>
                 <div style={{flex:1}}>
                   <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:600,color:D.textPrimary,marginBottom:"2px"}}>{m.homeTeam} vs {m.awayTeam}</div>
-                  <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>📍 {m.venue}</div>
+                  <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}><Icon name="map-pin"/> {m.venue}</div>
                 </div>
-                {m.transport?.bus&&<Pill color={D.sky}>🚌 Bus</Pill>}
+                {m.transport?.bus&&<Pill color={D.sky}><Icon name="bus"/> Bus</Pill>}
                 <StatusDot status={m.status}/>
               </div>
             ))}
@@ -239,12 +240,12 @@ function DashboardView({ role, onNav }) {
               <button onClick={()=>onNav("notifications")} style={{background:"none",border:"none",cursor:"pointer",fontFamily:D.body,fontSize:"11px",color:D.sky}}>All →</button>
             </div>
             {NOTIFICATIONS.slice(0,4).map(n=>{
-              const ic = n.type==="match"?"🏏":n.type==="injury"?"🏥":n.type==="training"?"💪":n.type==="transport"?"🚌":"📢";
+              const ic = n.type==="match"?"stumps":n.type==="injury"?"bandage":n.type==="training"?"dumbbell":n.type==="transport"?"bus":"megaphone";
               const uc = n.urgency==="high"?D.rose:n.urgency==="medium"?D.amber:D.textMuted;
               return (
                 <div key={n.id} style={{padding:"9px 14px",borderBottom:`1px solid ${D.border}`,background:n.read?"transparent":D.indigo+"06"}}>
                   <div style={{display:"flex",gap:"8px",alignItems:"flex-start"}}>
-                    <span style={{fontSize:"13px",flexShrink:0,marginTop:"1px"}}>{ic}</span>
+                    <span style={{fontSize:"13px",flexShrink:0,marginTop:"1px",color:uc}}><Icon name={ic}/></span>
                     <div style={{flex:1}}>
                       <div style={{display:"flex",justifyContent:"space-between",marginBottom:"2px"}}>
                         <span style={{fontFamily:D.body,fontSize:"11px",fontWeight:n.read?400:600,color:D.textPrimary}}>{n.title}</span>

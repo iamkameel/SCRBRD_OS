@@ -5,6 +5,7 @@ import { addDays, dateStr, today } from "../lib/format.js";
 import { api } from "../lib/api.js";
 import { mode } from "../lib/session.js";
 import { teamsForLevel, teamLabel, compareTeams } from "@scrbrd/policy/teams";
+import { Icon } from "../ui/icons.jsx";
 
 /**
  * SCRBRD — arranging a fixture, in the client's own words.
@@ -192,7 +193,7 @@ function AddFixtureModal({ fixtureSchools, teamOptions, grounds, matches, onClos
           <Select label="Venue" value={groundId} onChange={setGroundId}
             options={[{value:"",label:"Not recorded"}, ...grounds.map(g=>({value:g.id,label:g.name}))]}/>
           {clash&&<div style={{fontFamily:D.body,fontSize:"11px",color:D.amber,marginTop:"-8px",marginBottom:"12px"}}>
-            ⚠ Another fixture is already down for {ground.name} that day.</div>}
+            <Icon name="triangle-alert"/> Another fixture is already down for {ground.name} that day.</div>}
 
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px"}}>
             <Select label="Format" value={format} onChange={setFmt} options={Object.keys(FORMATS)}/>

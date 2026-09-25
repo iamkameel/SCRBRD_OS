@@ -5,6 +5,7 @@ import { Badge, Btn, Card, EmptyState, Input, Modal, Pill, SectionHeader } from 
 import { api } from "../lib/api.js";
 import { useLive } from "../lib/live.js";
 import { schoolsWhere } from "../lib/session.js";
+import { Icon } from "../ui/icons.jsx";
 
 // ══════════════════════════════════════════════════════
 //  SPONSORS — the boards a school sells, and the terms behind them
@@ -21,13 +22,13 @@ import { schoolsWhere } from "../lib/session.js";
 // contract_value_zar null, and there is no field on it for a bug in this
 // component to reveal.
 const PLACEMENTS = themed(() => ({
-  broadcast_overlay: { label: "Broadcast overlay", icon: "📺", color: D.violet,
+  broadcast_overlay: { label: "Broadcast overlay", icon: "tv", color: D.violet,
                        sub: "On the stream, over the score" },
-  scorecard_footer:  { label: "Scorecard footer",  icon: "📋", color: D.sky,
+  scorecard_footer:  { label: "Scorecard footer",  icon: "scorebook", color: D.sky,
                        sub: "Under the scorecard" },
-  fixture_list:      { label: "Fixture list",      icon: "🗓", color: D.teal,
+  fixture_list:      { label: "Fixture list",      icon: "calendar-days", color: D.teal,
                        sub: "Beside the season's fixtures" },
-  ground_board:      { label: "Ground board",      icon: "🏟", color: D.emerald,
+  ground_board:      { label: "Ground board",      icon: "ground", color: D.emerald,
                        sub: "At the boundary" },
 }));
 
@@ -121,7 +122,7 @@ function SponsorsView({ role }) {
                 const on = committed.has(k);
                 return (
                   <Pill key={k} color={on ? p.color : D.textMuted}>
-                    {p.icon} {p.label}{on ? " · sold" : " · open"}
+                    <Icon name={p.icon}/> {p.label}{on ? " · sold" : " · open"}
                   </Pill>
                 );
               })}
@@ -133,7 +134,7 @@ function SponsorsView({ role }) {
 
           {sponsors.rows.length === 0 ? (
             <EmptyState
-              icon="🤝"
+              icon="handshake"
               title="No sponsors yet"
               sub={isLive
                 ? "A school administrator or the finance office can sign a sponsor and place them on a surface."
@@ -243,7 +244,7 @@ function SponsorsView({ role }) {
                   ) : (
                     <div style={{ border: `1px solid ${D.border}`, borderRadius: D.lg, overflow: "hidden" }}>
                       {(bySponsor.get(selected.id) ?? []).map((d, i) => {
-                        const p = PLACEMENTS[d.placement] ?? { label: d.placement, icon: "◻", color: D.textMuted };
+                        const p = PLACEMENTS[d.placement] ?? { label: d.placement, icon: "square", color: D.textMuted };
                         return (
                           <div key={d.id}
                             style={{ padding: "11px 13px", borderTop: i === 0 ? "none" : `1px solid ${D.border}`,
@@ -251,7 +252,7 @@ function SponsorsView({ role }) {
                             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
                               gap: "10px", marginBottom: "5px" }}>
                               <span style={{ fontFamily: D.body, fontSize: "12px", color: D.textPrimary }}>
-                                {p.icon} {p.label}
+                                <Icon name={p.icon}/> {p.label}
                                 {d.matchId && (
                                   <span style={{ color: D.textMuted }}> · one fixture</span>
                                 )}
@@ -526,7 +527,7 @@ function PlaceSponsor({ sponsor, entitledToTerms, onClose, onDone }) {
                   padding: "9px 12px", borderRadius: D.md, cursor: "pointer", textAlign: "left",
                   background: on ? p.color + "14" : D.surf2,
                   border: `1px solid ${on ? p.color + "44" : D.border}` }}>
-                <span style={{ fontSize: "15px" }}>{p.icon}</span>
+                <span style={{ fontSize: "15px", color: on ? p.color : D.textMuted }}><Icon name={p.icon}/></span>
                 <span style={{ flex: 1, minWidth: 0 }}>
                   <span style={{ display: "block", fontFamily: D.body, fontSize: "12px",
                     fontWeight: 600, color: D.textPrimary }}>{p.label}</span>

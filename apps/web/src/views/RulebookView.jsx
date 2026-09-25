@@ -2,6 +2,7 @@ import { useState } from "react";
 import { D, themed } from "../design/tokens.js";
 import { Badge } from "../ui/primitives.jsx";
 import { useLive } from "../lib/live.js";
+import { Icon } from "../ui/icons.jsx";
 
 // ══════════════════════════════════════════════════════
 //  RULEBOOK VIEW
@@ -19,7 +20,7 @@ import { useLive } from "../lib/live.js";
 // ══════════════════════════════════════════════════════
 
 const SEVERITY_TONE = themed(() => ({ "Mandatory": D.amber, "Penalty Enforced": D.rose, "Guideline": D.sky }));
-const CATEGORY_ICON = { "Medical & Safety": "⛑️", "Curator & Turf": "🌱", "Playing Conditions": "📏", "Conduct": "🤝" };
+const CATEGORY_ICON = { "Medical & Safety": "hard-hat", "Curator & Turf": "sprout", "Playing Conditions": "ruler", "Conduct": "handshake" };
 const bandLabel = (b) => b === "open" ? "Open" : b === "unknown" ? "No date of birth" : b;
 const limitText = (l) => l.maxSpell == null && l.maxDay == null
   ? `${bandLabel(l.ageBand)}: no platform limit`
@@ -59,7 +60,7 @@ function RulebookView({ role }) {
 
   const RULES = [
     {
-      id:"scoring", icon:"🏏", title:"Scoring & Run Counting",
+      id:"scoring", icon:"scorebook", title:"Scoring & Run Counting",
       rules:[
         { rule:"A run is scored each time both batsmen complete a run between the wickets after the ball has been struck by the bat or body of the striker." },
         { rule:"Boundaries: The ball reaching or crossing the boundary rope scores 4 runs (ground) or 6 runs (without touching the ground) in addition to any runs completed." },
@@ -70,7 +71,7 @@ function RulebookView({ role }) {
       ]
     },
     {
-      id:"dismissals", icon:"🎳", title:"Methods of Dismissal",
+      id:"dismissals", icon:"bails-off", title:"Methods of Dismissal",
       rules:[
         { rule:"Bowled: Ball delivered by the bowler hits the stumps directly, without any intervening wicket, and dislodges at least one bail." },
         { rule:"Caught: Ball touches the bat or glove and is caught by a fielder before touching the ground. A bowler may also take catches off their own bowling." },
@@ -85,7 +86,7 @@ function RulebookView({ role }) {
       ]
     },
     {
-      id:"fielding", icon:"🧤", title:"Fielding Restrictions",
+      id:"fielding", icon:"gloves", title:"Fielding Restrictions",
       rules:[
         { rule:"T20 / 50-over Powerplay: Only 2 fielders outside the 30-yard circle during the first 6 overs (T20) or 10 overs (50-over)." },
         { rule:"T20 overs 7–20: Maximum 5 fielders outside the 30-yard circle at the time of delivery." },
@@ -95,7 +96,7 @@ function RulebookView({ role }) {
       ]
     },
     {
-      id:"format", icon:"📋", title:"Format-Specific Rules",
+      id:"format", icon:"clipboard-list", title:"Format-Specific Rules",
       rules:[
         { rule:"T20: Each team faces 20 overs. Maximum 4 overs per bowler. Wide and No-Ball adds 1 run and an extra delivery." },
         { rule:"T10: Each team faces 10 overs. Maximum 2 overs per bowler. No-ball results in a Free Hit." },
@@ -105,7 +106,7 @@ function RulebookView({ role }) {
       ]
     },
     {
-      id:"pitch", icon:"🌿", title:"Pitch & Ground Conditions",
+      id:"pitch", icon:"ground", title:"Pitch & Ground Conditions",
       rules:[
         { rule:"The pitch: 22 yards long, 10 feet wide. Prepared in the centre of the square. The condition of the pitch affects pace, bounce, and turn." },
         { rule:"Pitch covering: In Tests, pitches may be left uncovered overnight in some competitions. In limited-overs, pitches are covered to protect from rain." },
@@ -115,7 +116,7 @@ function RulebookView({ role }) {
       ]
     },
     {
-      id:"scrbrd", icon:"📱", title:"SCRBRD Platform Rules",
+      id:"scrbrd", icon:"smartphone", title:"SCRBRD Platform Rules",
       rules:[
         { rule:"Ball-by-ball entry: Each delivery must be entered with type (run/wide/no-ball/bye/lb/wicket), value, and field placement (wagon wheel segment)." },
         { rule:"Shot selection: Shot type should be recorded for each legal delivery faced by the batsman for accurate shot analysis." },
@@ -146,7 +147,7 @@ function RulebookView({ role }) {
       {/* Header */}
       <div style={{borderRadius:D.lg,border:`1px solid ${D.amber}33`,background:`linear-gradient(135deg,${D.amber}0a,${D.surf1})`,padding:"24px"}}>
         <div style={{display:"flex",alignItems:"center",gap:"16px",flexWrap:"wrap"}}>
-          <div style={{fontSize:"40px"}}>📖</div>
+          <div style={{fontSize:"40px",color:D.amber}}><Icon name="book-open"/></div>
           <div>
             <div style={{fontFamily:D.head,fontSize:"24px",fontWeight:800,color:D.textPrimary,lineHeight:1.1}}>SCRBRD Rulebook</div>
             <div style={{fontFamily:D.body,fontSize:"13px",color:D.textMuted,marginTop:"4px"}}>The clauses the platform applies, and a summary of the Laws for reference</div>
@@ -154,7 +155,7 @@ function RulebookView({ role }) {
         </div>
         {groupLabel("Platform clauses")}
         <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginTop:"6px"}}>
-          {categories.map(c=>tab(`cat:${c}`, `${CATEGORY_ICON[c] ?? "📌"} ${c}`))}
+          {categories.map(c=>tab(`cat:${c}`, <><Icon name={CATEGORY_ICON[c] ?? "pin"}/>{c}</>))}
           {!categories.length&&(
             <span data-testid="rulebook-clauses-empty" style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>
               {clauses.loading ? "Loading…"
@@ -166,7 +167,7 @@ function RulebookView({ role }) {
         </div>
         {groupLabel("Laws summary — reference only")}
         <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginTop:"6px"}}>
-          {RULES.map(s=>tab(s.id, `${s.icon} ${s.title}`))}
+          {RULES.map(s=>tab(s.id, <><Icon name={s.icon}/>{s.title}</>))}
         </div>
       </div>
 
@@ -174,7 +175,7 @@ function RulebookView({ role }) {
       {categories.filter(c=>open===`cat:${c}`).map(c=>(
         <div key={c} data-testid="rulebook-category" data-category={c} style={{display:"flex",flexDirection:"column",gap:"10px"}}>
           <div style={{fontFamily:D.head,fontSize:"16px",fontWeight:800,color:D.textPrimary}}>
-            {CATEGORY_ICON[c] ?? "📌"} {c}
+            <Icon name={CATEGORY_ICON[c] ?? "pin"}/> {c}
           </div>
           {clauses.rows.filter(x=>x.category===c).map(x=><Clause key={x.code} c={x}/>)}
         </div>
@@ -184,7 +185,7 @@ function RulebookView({ role }) {
       {RULES.filter(s=>s.id===open).map(section=>(
         <div key={section.id} style={{display:"flex",flexDirection:"column",gap:"10px"}}>
           <div style={{fontFamily:D.head,fontSize:"16px",fontWeight:800,color:D.textPrimary}}>
-            {section.icon} {section.title}
+            <Icon name={section.icon}/> {section.title}
           </div>
           <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>A general summary kept in the app for reference. Unlike the platform's clauses, these are not stored or cited anywhere.</div>
           {section.rules.map((r,i)=>(

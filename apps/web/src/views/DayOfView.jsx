@@ -43,6 +43,7 @@ import { api } from "../lib/api.js";
 import { profile } from "../lib/session.js";
 import { useLive } from "../lib/live.js";
 import { Badge, Btn, Card, EmptyState, Select } from "../ui/primitives.jsx";
+import { Icon } from "../ui/icons.jsx";
 
 // HH:MM from a raw timestamp string, or an em dash. Sliced rather than run
 // through a Date object and a timezone conversion — the same convention
@@ -83,7 +84,7 @@ function TripCard({ trip, fixture, onMarked }) {
       <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "14px" }}>
         {fixture && (
           <div data-testid="driver-trip-fixture" style={{ fontFamily: D.body, fontSize: "14px", color: D.textPrimary }}>
-            🏏 <strong>{fixture.homeTeam} vs {fixture.awayTeam}</strong>
+            <Icon name="stumps"/> <strong>{fixture.homeTeam} vs {fixture.awayTeam}</strong>
             {fixture.time ? ` · starts ${fixture.time}` : ""}{fixture.format ? ` · ${fixture.format}` : ""}
             <div style={{ fontFamily: D.body, fontSize: "13px", color: D.textMuted }}>
               {fixture.venue || "Venue: check with your coordinator"}
@@ -91,11 +92,11 @@ function TripCard({ trip, fixture, onMarked }) {
           </div>
         )}
         <div style={{ fontFamily: D.body, fontSize: "14px", color: D.textPrimary }}>
-          📍 <strong>Pickup:</strong> {trip.pickup || "Not recorded — check with your coordinator"}
+          <Icon name="map-pin"/> <strong>Pickup:</strong> {trip.pickup || "Not recorded — check with your coordinator"}
         </div>
         {(trip.reg || trip.vehicleDescription) && (
           <div style={{ fontFamily: D.body, fontSize: "14px", color: D.textPrimary }}>
-            🚐 <strong>{trip.reg || "Vehicle"}</strong>{trip.vehicleDescription ? ` — ${trip.vehicleDescription}` : ""}
+            <Icon name="van"/> <strong>{trip.reg || "Vehicle"}</strong>{trip.vehicleDescription ? ` — ${trip.vehicleDescription}` : ""}
             {trip.capacity ? ` · ${trip.capacity} seats` : ""}
           </div>
         )}
@@ -146,7 +147,7 @@ function DriverDayView({ role }) {
     <div className="os-page" data-testid="dayof-driver" style={{ maxWidth: "480px" }}>
       <div style={{ marginBottom: "18px" }}>
         <h1 style={{ fontFamily: D.head, fontSize: "20px", fontWeight: 800, color: D.textPrimary, marginBottom: "3px" }}>
-          🚌 Your trips
+          <Icon name="bus"/> Your trips
         </h1>
         <p style={{ fontFamily: D.body, fontSize: "13px", color: D.textMuted }}>
           {new Date().toLocaleDateString("en-ZA", { weekday: "long", day: "numeric", month: "long" })}
@@ -156,7 +157,7 @@ function DriverDayView({ role }) {
       {loading && <EmptyState loading/>}
       {!loading && error && <EmptyState error/>}
       {!loading && !error && live && mine.length === 0 && (
-        <EmptyState icon="🚌" message="No trips are arranged for you."/>
+        <EmptyState icon="bus" message="No trips are arranged for you."/>
       )}
 
       {todays.length > 0 && (
@@ -280,7 +281,7 @@ function GroundskeeperDayView({ role }) {
     <div className="os-page" data-testid="dayof-groundskeeper" style={{ maxWidth: "480px" }}>
       <div style={{ marginBottom: "18px" }}>
         <h1 style={{ fontFamily: D.head, fontSize: "20px", fontWeight: 800, color: D.textPrimary, marginBottom: "3px" }}>
-          🌿 Today's grounds
+          <Icon name="ground"/> Today's grounds
         </h1>
         <p style={{ fontFamily: D.body, fontSize: "13px", color: D.textMuted }}>
           {new Date().toLocaleDateString("en-ZA", { weekday: "long", day: "numeric", month: "long" })}
@@ -290,7 +291,7 @@ function GroundskeeperDayView({ role }) {
       {loading && <EmptyState loading/>}
       {!loading && error && <EmptyState error/>}
       {!loading && !error && live && todays.length === 0 && (
-        <EmptyState icon="🌿" message="No fixtures at your grounds today."/>
+        <EmptyState icon="ground" message="No fixtures at your grounds today."/>
       )}
 
       {todays.map((m) => (
@@ -305,7 +306,7 @@ function GroundskeeperDayView({ role }) {
             {m.format && <Badge color={D.indigo}>{m.format}</Badge>}
           </div>
           <div style={{ fontFamily: D.body, fontSize: "14px", color: D.textSecondary, marginBottom: "12px" }}>
-            📍 {m.venue || "Ground not recorded"}
+            <Icon name="map-pin"/> {m.venue || "Ground not recorded"}
           </div>
 
           {openId === m.id ? (
