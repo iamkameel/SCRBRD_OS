@@ -51,68 +51,72 @@ import { themeName } from "./tokens.js";
    ROLES[r].color is right in both without knowing there are two.
 */
 
+// `icon` is a NAME from ui/icons.jsx (a Lucide icon or one of the cricket
+// glyphs), drawn by <Icon name={…}/> — never an emoji (DESIGN_DIRECTION §3.4;
+// apps/web/test/icons.test.mjs checks every one resolves). Siblings may share
+// one: Assistant Coach and Sponsorship both shake hands.
 const ROLE_IDENTITY = {
   // platform — operating the platform itself
   // The owner's key sits first and reads gold, because it is not a job at a
   // school and should not look like one. Gold is 21.6 dE from its nearest
   // neighbour (Match Official) and 8.83:1 on the darkest surface, so it clears
   // both bars the suite holds with room to spare — checked, not chosen by eye.
-  superadmin:             { label:"Super Admin", icon:"🗝️", color:"#f5c518", family:"platform" },  // 8.83:1
-  platformadmin:          { label:"Platform Admin", icon:"⚡", color:"#c5adfa", family:"platform" },  // 7.66:1
+  superadmin:             { label:"Super Admin", icon:"key-round", color:"#f5c518", family:"platform" },  // 8.83:1
+  platformadmin:          { label:"Platform Admin", icon:"zap", color:"#c5adfa", family:"platform" },  // 7.66:1
   // governance — running an institution
-  principal:              { label:"Principal", icon:"🎓", color:"#8a8cf4", family:"governance" },  // 5.1:1
-  directorofsport:        { label:"Director of Sport", icon:"🏅", color:"#a1a3f7", family:"governance" },  // 6.5:1
-  schooladmin:            { label:"School Admin", icon:"🏫", color:"#b9baf9", family:"governance" },  // 8.18:1
-  sportsadmin:            { label:"Sports Admin", icon:"📋", color:"#d0d1fb", family:"governance" },  // 10.13:1
+  principal:              { label:"Principal", icon:"graduation-cap", color:"#8a8cf4", family:"governance" },  // 5.1:1
+  directorofsport:        { label:"Director of Sport", icon:"medal", color:"#a1a3f7", family:"governance" },  // 6.5:1
+  schooladmin:            { label:"School Admin", icon:"school", color:"#b9baf9", family:"governance" },  // 8.18:1
+  sportsadmin:            { label:"Sports Admin", icon:"clipboard-list", color:"#d0d1fb", family:"governance" },  // 10.13:1
   // coaching — coaching a side
-  coach:                  { label:"Coach", icon:"🎯", color:"#0fae79", family:"coaching" },  // 5.25:1
-  assistantcoach:         { label:"Assistant Coach", icon:"🤝", color:"#11ca8d", family:"coaching" },  // 7.04:1
-  teammanager:            { label:"Team Manager", icon:"📣", color:"#14eba4", family:"coaching" },  // 9.6:1
+  coach:                  { label:"Coach", icon:"target", color:"#0fae79", family:"coaching" },  // 5.25:1
+  assistantcoach:         { label:"Assistant Coach", icon:"handshake", color:"#11ca8d", family:"coaching" },  // 7.04:1
+  teammanager:            { label:"Team Manager", icon:"megaphone", color:"#14eba4", family:"coaching" },  // 9.6:1
   // playing — playing, or belonging to someone who does
   // A pupil holds `player` for the things about the team and `selfaccess`
   // for his own record; the two together are the pupil. `also` says so, so
   // the persona's menu (and the demo's) carries his own screens without the
   // team role having to hold a capability across the side.
-  player:                 { label:"Player", icon:"🏏", color:"#08a3e8", family:"playing", also:["selfaccess"] },  // 5.29:1
-  guardian:               { label:"Parent / Guardian", icon:"👪", color:"#3fbff8", family:"playing" },  // 7.15:1
-  spectator:              { label:"Spectator", icon:"👁", color:"#8ed9fb", family:"playing" },  // 9.62:1
+  player:                 { label:"Player", icon:"bat", color:"#08a3e8", family:"playing", also:["selfaccess"] },  // 5.29:1
+  guardian:               { label:"Parent / Guardian", icon:"users-round", color:"#3fbff8", family:"playing" },  // 7.15:1
+  spectator:              { label:"Spectator", icon:"eye", color:"#8ed9fb", family:"playing" },  // 9.62:1
   // Not a job — it is the pupil's own file. A `selfaccess` assignment names one
   // person in assignment_subject and carries the capabilities that read their
   // medical, PII and development records, scoped to that one player row. It
   // rarely appears in a role switcher, but the model has 23 roles and every one
   // of them needs an identity or the shell renders a blank for it.
-  selfaccess:             { label:"My Record", icon:"🪪", color:"#f472b6", family:"playing" },  // 6.00:1
+  selfaccess:             { label:"My Record", icon:"id-card", color:"#f472b6", family:"playing" },  // 6.00:1
   // A temporary, single-player grant from another coach — not a job anyone
   // holds, but a role in the model, and every role in the model needs an
   // identity or the shell renders a blank for it. Deliberately the greyest
   // colour in the palette: it is borrowed access, and it should not look like
   // a position at the school.
-  enquiry:                { label:"Enquiry Access", icon:"🔑", color:"#a1a1aa", family:"admin" },  // 6.20:1
+  enquiry:                { label:"Enquiry Access", icon:"key", color:"#a1a1aa", family:"admin" },  // 6.20:1
   // match — officiating and recording a match
-  scorer:                 { label:"Scorer", icon:"✍️", color:"#d88b09", family:"match" },  // 5.44:1
-  official:               { label:"Match Official", icon:"🧭", color:"#f8b94f", family:"match" },  // 8.6:1
+  scorer:                 { label:"Scorer", icon:"scorebook", color:"#d88b09", family:"match" },  // 5.44:1
+  official:               { label:"Match Official", icon:"compass", color:"#f8b94f", family:"match" },  // 8.6:1
   // analysis — reading the game
-  analyst:                { label:"Performance Analyst", icon:"📈", color:"#f9761a", family:"analysis" },  // 5.45:1
-  scout:                  { label:"Scout", icon:"🔎", color:"#fcb483", family:"analysis" },  // 8.56:1
+  analyst:                { label:"Performance Analyst", icon:"trending-up", color:"#f9761a", family:"analysis" },  // 5.45:1
+  scout:                  { label:"Scout", icon:"search", color:"#fcb483", family:"analysis" },  // 8.56:1
   // clinical — clinical care
-  medical:                { label:"Medical Staff", icon:"⚕️", color:"#f99fae", family:"clinical" },  // 7.57:1
+  medical:                { label:"Medical Staff", icon:"stethoscope", color:"#f99fae", family:"clinical" },  // 7.57:1
   // operations — getting people and grounds ready
-  transportcoordinator:   { label:"Transport Coordinator", icon:"🗺️", color:"#13aa9a", family:"operations" },  // 5.17:1
-  driver:                 { label:"Driver", icon:"🚌", color:"#16cab7", family:"operations" },  // 7.26:1
-  facilities:             { label:"Groundskeeper", icon:"🌿", color:"#22e7d1", family:"operations" },  // 9.58:1
+  transportcoordinator:   { label:"Transport Coordinator", icon:"map", color:"#13aa9a", family:"operations" },  // 5.17:1
+  driver:                 { label:"Driver", icon:"bus", color:"#16cab7", family:"operations" },  // 7.26:1
+  facilities:             { label:"Groundskeeper", icon:"sprout", color:"#22e7d1", family:"operations" },  // 9.58:1
   // commercial — money
-  finance:                { label:"Finance Admin", icon:"💰", color:"#83cb16", family:"commercial" },  // 7.51:1
+  finance:                { label:"Finance Admin", icon:"banknote", color:"#83cb16", family:"commercial" },  // 7.51:1
   // SCRBRD-030 split the old `finance` bundle: this is the commercial half,
   // sponsorship.finance.read included, kept out of the school office's own
   // grantable list the same way finance itself is. Same family as finance —
   // both are "money" — a different hue so the two are never mistaken for one
   // another: 11.55 dE from its nearest neighbour (Super Admin's gold) and
   // 6.69:1 on the darkest surface, checked, not chosen by eye.
-  sponsorship:            { label:"Sponsorship", icon:"🤝", color:"#d1ae00", family:"commercial" },  // 6.69:1
+  sponsorship:            { label:"Sponsorship", icon:"handshake", color:"#d1ae00", family:"commercial" },  // 6.69:1
   // media — telling people about it
-  media:                  { label:"Media", icon:"📰", color:"#f59ec9", family:"media" },  // 7.58:1
+  media:                  { label:"Media", icon:"newspaper", color:"#f59ec9", family:"media" },  // 7.58:1
   // competition — running a competition
-  competitionadmin:       { label:"Competition Admin", icon:"🏆", color:"#07c8e9", family:"competition" },  // 7.46:1
+  competitionadmin:       { label:"Competition Admin", icon:"trophy", color:"#07c8e9", family:"competition" },  // 7.46:1
 };
 
 /**
@@ -300,30 +304,30 @@ const ROLE_FAMILIES = Object.entries(ROLE_IDENTITY).reduce((acc, [r, id]) => {
 }, {});
 
 const NAV_META = {
-  dashboard:    { icon:"⬡",  label:"Dashboard"    },
-  matches:      { icon:"🏏",  label:"Match Centre" },
-  competitions: { icon:"🏆",  label:"Competitions" },
-  leagues:      { icon:"📋",  label:"Leagues"      },
-  squad:        { icon:"👥",  label:"Squad"        },
-  profiles:     { icon:"👤",  label:"Profiles"     },
-  analytics:    { icon:"📊",  label:"Analytics"    },
-  skills:       { icon:"🎯",  label:"Skills"       },
-  training:     { icon:"💪",  label:"Training"     },
-  injuries:     { icon:"🏥",  label:"Injuries"     },
-  logistics:    { icon:"🚌",  label:"Logistics"    },
-  calendar:     { icon:"📅",  label:"Calendar"     },
-  fields:       { icon:"🌿",  label:"Fields"       },
-  readiness:    { icon:"🛡️",  label:"Readiness"    },
-  officials:    { icon:"🧑‍⚖️", label:"Officials"    },
-  staff:        { icon:"🔧",  label:"Staff"        },
-  sponsors:     { icon:"🤝",  label:"Sponsors"     },
-  news:         { icon:"📰",  label:"Newsfeed"     },
-  notifications:{ icon:"🔔",  label:"Alerts"       },
-  settings:     { icon:"⚙️",  label:"Settings"     },
-  management:   { icon:"🛠️",  label:"Management"   },
-  modules:      { icon:"🎛",  label:"Modules"      },
-  rulebook:     { icon:"📖",  label:"Rulebook"     },
-  pitchdeck:    { icon:"📐",  label:"Pitch Deck"   },
+  dashboard:    { icon:"layout-dashboard", label:"Dashboard"    },
+  matches:      { icon:"stumps", label:"Match Centre" },
+  competitions: { icon:"trophy", label:"Competitions" },
+  leagues:      { icon:"clipboard-list", label:"Leagues"      },
+  squad:        { icon:"users", label:"Squad"        },
+  profiles:     { icon:"user", label:"Profiles"     },
+  analytics:    { icon:"chart-column", label:"Analytics"    },
+  skills:       { icon:"target", label:"Skills"       },
+  training:     { icon:"dumbbell", label:"Training"     },
+  injuries:     { icon:"bandage", label:"Injuries"     },
+  logistics:    { icon:"bus", label:"Logistics"    },
+  calendar:     { icon:"calendar", label:"Calendar"     },
+  fields:       { icon:"ground", label:"Fields"       },
+  readiness:    { icon:"shield-check", label:"Readiness"    },
+  officials:    { icon:"hand", label:"Officials"    },
+  staff:        { icon:"wrench", label:"Staff"        },
+  sponsors:     { icon:"handshake", label:"Sponsors"     },
+  news:         { icon:"newspaper", label:"Newsfeed"     },
+  notifications:{ icon:"bell", label:"Alerts"       },
+  settings:     { icon:"settings", label:"Settings"     },
+  management:   { icon:"user-cog", label:"Management"   },
+  modules:      { icon:"sliders-horizontal", label:"Modules"      },
+  rulebook:     { icon:"book-open", label:"Rulebook"     },
+  pitchdeck:    { icon:"presentation", label:"Pitch Deck"   },
 };
 
 export { NAV_META, NAV_GROUPS, NAV_GROUP, NAV_ORDER, ROLES, ROLE_DAYLIGHT, ROLE_IDENTITY, ROLE_FAMILIES, NAV_CAPABILITY, canonicalRole, groupNav, navFor, navForRoles };

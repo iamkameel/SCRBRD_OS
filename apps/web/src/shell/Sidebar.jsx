@@ -4,6 +4,7 @@ import { NAV_META, ROLES, groupNav } from "../design/roles.js";
 import { useNav } from "../lib/features.js";
 import { D, T } from "../design/tokens.js";
 import { SportSwitcher } from "./MobileNav.jsx";
+import { Icon } from "../ui/icons.jsx";
 
 // ══════════════════════════════════════════════════════
 //  SIDEBAR
@@ -28,7 +29,7 @@ function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount, userNam
       {/* Logo */}
       <div style={{padding:"12px 14px",borderBottom:`1px solid ${D.border}`,display:"flex",alignItems:"center",gap:"10px",minHeight:"60px"}}>
         {collapsed
-          ? <div style={{width:"30px",height:"30px",borderRadius:D.md,background:D.gradMain,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"14px",flexShrink:0}}>🏏</div>
+          ? <div style={{width:"30px",height:"30px",borderRadius:D.md,background:D.gradMain,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"14px",flexShrink:0}}><Icon name="bat"/></div>
           : <img src={SCRBRD_LOGO} alt="SCRBRD" style={{height:"28px",objectFit:"contain",filter:"brightness(1.1)",flexShrink:0,maxWidth:"120px"}}/>
         }
         <button onClick={onToggle} className="pressBtn" data-testid="sidebar-toggle" aria-label={collapsed?"Expand navigation":"Collapse navigation"} aria-expanded={!collapsed} style={{marginLeft:"auto",background:"none",border:"none",cursor:"pointer",color:D.textMuted,fontSize:"14px",flexShrink:0}}>
@@ -94,7 +95,7 @@ function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount, userNam
                   transition:`all ${T.motion.micro} ${T.motion.swift}`,
                   position:"relative",
                 }}>
-                  <span style={{fontSize:"15px",textAlign:"center",width:collapsed?"100%":"auto",color:isActive?rc.color:T.content.secondary}}>{m.icon}</span>
+                  <span style={{fontSize:"15px",textAlign:"center",width:collapsed?"100%":"auto",color:isActive?rc.color:T.content.secondary}}><Icon name={m.icon}/></span>
                   {!collapsed&&<span style={{fontFamily:T.type.body,fontSize:"12px",fontWeight:isActive?600:400,color:isActive?T.content.primary:T.content.secondary}}>{m.label}</span>}
                   {isBell&&notifCount>0&&<span data-testid="nav-alerts-badge" style={{marginLeft:"auto",background:T.semantic.critical,color:T.surface.canvas,borderRadius:T.radius.pill,padding:"1px 6px",fontFamily:T.type.mono,fontSize:"9px",fontWeight:700}}>{notifCount}</span>}
                 </button>
@@ -114,7 +115,7 @@ function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount, userNam
       <div style={{borderTop:`1px solid ${D.border}`,padding:collapsed?"8px 0":"10px 10px"}}>
         {!collapsed&&(
           <div style={{display:"flex",alignItems:"center",gap:"8px",padding:"6px 8px",marginBottom:"6px"}}>
-            <span aria-hidden="true" style={{fontSize:"14px",flexShrink:0}}>{rc.icon}</span>
+            <span aria-hidden="true" style={{fontSize:"14px",flexShrink:0}}><Icon name={rc.icon}/></span>
             <div style={{minWidth:0,flex:1}}>
               {/* The NAME first and the role under it. The top bar carries the
                   same pair the other way up, because there it is a control for
@@ -143,7 +144,7 @@ function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount, userNam
             background:"transparent",border:`1px solid ${D.border}`,borderRadius:T.radius.md,
             cursor:"pointer",transition:`all ${T.motion.micro} ${T.motion.swift}`,
           }}>
-          <span aria-hidden="true" style={{fontSize:"14px",color:T.content.secondary}}>⏻</span>
+          <span aria-hidden="true" style={{fontSize:"14px",color:T.content.secondary}}><Icon name="log-out"/></span>
           {!collapsed&&<span style={{fontFamily:T.type.body,fontSize:"12px",color:T.content.secondary}}>Sign out</span>}
         </button>
         {/* Kept, because "what version are you on?" is the first question of

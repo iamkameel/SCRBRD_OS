@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { NAV_META, groupNav } from "../design/roles.js";
 import { useNav, useSports, sportBadge } from "../lib/features.js";
 import { D, T, inkOn, themed } from "../design/tokens.js";
+import { Icon } from "../ui/icons.jsx";
 
 // ══════════════════════════════════════════════════════
 //  MAIN APP
@@ -31,9 +32,11 @@ function useIsMobile(bp = 880) {
 // granted. The sports themselves now come from the database through
 // useSports(); what stays here is presentation, which is what a component is
 // for.
+// Lucide has no ball for most of these, and a borrowed picture of the wrong
+// sport is worse than a plain one: where there is no honest icon the sport
+// wears the kit (`shirt`), and its name says which.
 const SPORT_ICON = {
-  cricket:"🏏", football:"⚽", rugby:"🏉", hockey:"🏑",
-  netball:"🏐", athletics:"🏃", swimming:"🏊",
+  cricket:"bat", netball:"volleyball", athletics:"footprints", swimming:"waves",
 };
 const BADGE_TONE = themed(() => ({ emerald:D.emerald, sky:D.sky, amber:D.amber }));
 
@@ -51,7 +54,7 @@ function SportSwitcher() {
     <div style={{padding:"10px 14px",borderBottom:`1px solid ${D.border}`,position:"relative"}}>
       <div style={{fontFamily:D.head,fontSize:"8px",fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",color:D.textMuted,marginBottom:"6px"}}>ScrbrdOS · Sport</div>
       <button onClick={()=>setOpen(!open)} className="pressBtn" style={{width:"100%",display:"flex",alignItems:"center",gap:"8px",padding:"7px 10px",borderRadius:D.md,background:D.emerald+"10",border:`1px solid ${D.emerald}28`,cursor:"pointer"}}>
-        <span style={{fontSize:"14px"}}>{SPORT_ICON[current.code] ?? "🎽"}</span>
+        <span style={{fontSize:"14px",color:D.emerald}}><Icon name={SPORT_ICON[current.code] ?? "shirt"}/></span>
         <span style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.emerald}}>{current.label}</span>
         <span style={{marginLeft:"auto",fontSize:"9px",color:D.textMuted}}>{open?"▴":"▾"}</span>
       </button>
@@ -62,7 +65,7 @@ function SportSwitcher() {
             const tone = BADGE_TONE[b.tone] ?? D.textMuted;
             return (
             <button key={s.code} disabled={!s.enabled} onClick={()=>setOpen(false)} className="pressBtn" style={{width:"100%",display:"flex",alignItems:"center",gap:"8px",padding:"9px 12px",background:s.enabled?tone+"10":"transparent",border:"none",cursor:s.enabled?"pointer":"default",opacity:s.enabled?1:.55}}>
-              <span style={{fontSize:"13px"}}>{SPORT_ICON[s.code] ?? "🎽"}</span>
+              <span style={{fontSize:"13px",color:s.enabled?D.textPrimary:D.textSecondary}}><Icon name={SPORT_ICON[s.code] ?? "shirt"}/></span>
               <span style={{fontFamily:D.body,fontSize:"12px",fontWeight:s.enabled?600:400,color:s.enabled?D.textPrimary:D.textSecondary}}>{s.label}</span>
               <span style={{marginLeft:"auto",fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",color:tone,background:tone+"16",border:`1px solid ${tone}30`,borderRadius:D.pill,padding:"2px 6px"}}>{b.text}</span>
             </button>);
@@ -84,7 +87,7 @@ function MobileNav({ role, active, onNav, notifCount, userName, onSignOut }) {
   const rest = nav.slice(4);
   const moreActive = rest.includes(active);
   const Item = ({ k, isMore }) => {
-    const m = isMore ? { icon:"☰", label:"More" } : NAV_META[k];
+    const m = isMore ? { icon:"menu", label:"More" } : NAV_META[k];
     const isActive = isMore ? moreActive : active===k;
     const isBell = k==="notifications";
     return (
@@ -99,7 +102,7 @@ function MobileNav({ role, active, onNav, notifCount, userName, onSignOut }) {
         style={{
         flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:"3px",padding:"7px 2px",
         background:isActive?D.indigo+"16":"transparent",border:"none",borderRadius:D.md,cursor:"pointer",position:"relative",minHeight:"52px",justifyContent:"center"}}>
-        <span aria-hidden="true" style={{fontSize:"17px",lineHeight:1,filter:isActive?"none":"grayscale(.5) opacity(.75)"}}>{m.icon}</span>
+        <span aria-hidden="true" style={{fontSize:"17px",lineHeight:1,color:isActive?D.textPrimary:D.textSecondary}}><Icon name={m.icon}/></span>
         <span aria-hidden="true" style={{fontFamily:D.head,fontSize:"8px",fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:isActive?D.textPrimary:D.textSecondary}}>{m.label}</span>
         {isBell&&notifCount>0&&<span style={{position:"absolute",top:"4px",right:"calc(50% - 16px)",background:D.rose,color:inkOn(D.rose),borderRadius:D.pill,padding:"0 4px",fontFamily:D.mono,fontSize:"8px",fontWeight:700,minWidth:"13px"}}>{notifCount}</span>}
       </button>
@@ -120,7 +123,7 @@ function MobileNav({ role, active, onNav, notifCount, userName, onSignOut }) {
                 return (
                 <span key={s.code} style={{display:"flex",alignItems:"center",gap:"5px",padding:"5px 10px",borderRadius:D.pill,fontFamily:D.head,fontSize:"9px",fontWeight:700,
                   background:s.enabled?tone+"14":"transparent",border:`1px solid ${s.enabled?tone+"33":D.border}`,color:s.enabled?tone:D.textMuted}}>
-                  {SPORT_ICON[s.code] ?? "🎽"} {s.label}
+                  <Icon name={SPORT_ICON[s.code] ?? "shirt"}/> {s.label}
                   <span style={{fontSize:"9px",color:tone}}>{b.text}</span>
                 </span>);
               })}
@@ -138,7 +141,7 @@ function MobileNav({ role, active, onNav, notifCount, userName, onSignOut }) {
                         display:"flex",flexDirection:"column",alignItems:"center",gap:"6px",padding:"13px 6px",
                         background:isActive?D.indigo+"16":D.surf2,border:`1px solid ${isActive?D.indigo+"33":D.border}`,
                         borderRadius:D.lg,cursor:"pointer"}}>
-                        <span style={{fontSize:"18px"}}>{m.icon}</span>
+                        <span style={{fontSize:"18px",color:isActive?D.textPrimary:D.textSecondary}}><Icon name={m.icon}/></span>
                         <span style={{fontFamily:D.body,fontSize:"10px",fontWeight:isActive?600:400,color:isActive?D.textPrimary:D.textSecondary}}>{m.label}</span>
                       </button>
                     );
@@ -156,7 +159,7 @@ function MobileNav({ role, active, onNav, notifCount, userName, onSignOut }) {
                 data-testid="drawer-signout" aria-label="Sign out"
                 style={{width:"100%",display:"flex",alignItems:"center",gap:"10px",padding:"13px 12px",
                   background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.lg,cursor:"pointer"}}>
-                <span aria-hidden="true" style={{fontSize:"16px"}}>⏻</span>
+                <span aria-hidden="true" style={{fontSize:"16px",color:D.textSecondary}}><Icon name="log-out"/></span>
                 <span style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary}}>Sign out</span>
                 {userName&&<span style={{marginLeft:"auto",fontFamily:D.body,fontSize:"10px",color:D.textMuted,
                   overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"45%"}}>{userName}</span>}

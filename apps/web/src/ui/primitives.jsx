@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef } from "react";
 import { D, T, inkOn, px, textOn } from "../design/tokens.js";
 import { initials } from "../lib/format.js";
+import { Icon, isIcon } from "./icons.jsx";
 
 // ══════════════════════════════════════════════════════
 //  PRIMITIVE COMPONENTS
@@ -15,6 +16,7 @@ const Card = ({ children, sx, className="card-hover", onClick, ...rest }) => (
   }}>{children}</div>
 );
 
+// `icon` on a card or an empty state is a name from ui/icons.jsx.
 const KPICard = ({ label, value, sub, icon, color=D.indigo, trend }) => (
   <Card sx={{padding:"16px 18px",cursor:"default"}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
@@ -23,7 +25,7 @@ const KPICard = ({ label, value, sub, icon, color=D.indigo, trend }) => (
         <div style={{fontFamily:D.mono,fontSize:"26px",fontWeight:500,color:textOn(color),lineHeight:1}}>{value}</div>
         {sub&&<div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginTop:"5px"}}>{sub}</div>}
       </div>
-      <div style={{width:"38px",height:"38px",borderRadius:D.md,background:color+"18",border:`1px solid ${color}22`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"18px",flexShrink:0}}>{icon}</div>
+      <div style={{width:"38px",height:"38px",borderRadius:D.md,background:color+"18",border:`1px solid ${color}22`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"18px",flexShrink:0,color:textOn(color)}}>{isIcon(icon) ? <Icon name={icon}/> : icon}</div>
     </div>
     {trend!==undefined&&(
       <div style={{marginTop:"10px",display:"flex",alignItems:"center",gap:"5px"}}>
@@ -296,7 +298,7 @@ const EmptyState = ({ loading, error, message = "Nothing here yet", icon = "—"
                 fontFamily: D.body, fontSize: "12px",
                 color: error ? textOn(D.rose) : D.textMuted }}>
     <div style={{ fontSize: "20px", marginBottom: "8px", opacity: 0.6 }} aria-hidden="true">
-      {loading ? "…" : error ? "!" : icon}
+      {loading ? "…" : error ? "!" : isIcon(icon) ? <Icon name={icon}/> : icon}
     </div>
     {loading ? "Loading…"
      : error ? "Could not load this — the server did not answer. This is not the same as there being nothing."

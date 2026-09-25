@@ -51,7 +51,7 @@ import {
   Settings, ShieldCheck, Shirt, SlidersHorizontal, Smartphone, Sparkles, Sprout, Square,
   Stamp, Stethoscope, Sun, Telescope, Timer, Trash2, TrendingDown, TrendingUp,
   TriangleAlert, Trophy, Tv, Umbrella, Undo2, User, UserCog, Users, UsersRound, Van,
-  Volleyball, Waves, Wind, Wrench, Zap, Armchair,
+  Volleyball, Waves, Wind, Wrench, Zap, Armchair, LogOut, Menu, Send, Ban,
 } from "lucide-react";
 
 // ══════════════════════════════════════════════════════════════════
@@ -190,6 +190,7 @@ const LUCIDE = {
   "triangle-alert": TriangleAlert, "trophy": Trophy, "tv": Tv, "umbrella": Umbrella,
   "undo-2": Undo2, "user": User, "user-cog": UserCog, "users": Users, "users-round": UsersRound,
   "van": Van, "volleyball": Volleyball, "waves": Waves, "wind": Wind, "wrench": Wrench, "zap": Zap,
+  "log-out": LogOut, "menu": Menu, "send": Send, "ban": Ban,
 };
 
 const REGISTRY = { ...LUCIDE, ...GLYPHS };

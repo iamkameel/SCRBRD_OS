@@ -6,6 +6,7 @@ import SCRBRD_LOGO from "../assets/scrbrd-logo.jpg";
 import { SCHOOLS_REGISTRY } from "../data/institution.js";
 import { ROLES } from "../design/roles.js";
 import { D, T, inkOn } from "../design/tokens.js";
+import { Icon } from "../ui/icons.jsx";
 
 // ══════════════════════════════════════════════════════
 //  ONBOARDING FLOW  (smart, dynamic, role-aware)
@@ -88,16 +89,16 @@ function OnboardingFlow({ onComplete }) {
   // of the JS — a secret that was never actually checked by anything, and
   // an extra step in front of nothing.
   const PUBLIC_ROLES = [
-    { id:"schooladmin",  icon:"🏫", label:"School Admin",       desc:"Manage your school’s cricket programme" },
-    { id:"directorofsport", icon:"🏅", label:"Director of Sport", desc:"Oversee teams, fixtures & competitions" },
-    { id:"coach",        icon:"🎯", label:"Head Coach",         desc:"Player development, analytics & tactics" },
-    { id:"assistantcoach", icon:"🤝", label:"Coaching Assistant", desc:"Training support & squad management" },
-    { id:"player",       icon:"🏏", label:"Player",             desc:"Track your own stats, form & development" },
-    { id:"guardian",     icon:"👪", label:"Parent / Guardian",  desc:"Follow your child’s matches & logistics" },
-    { id:"scorer",       icon:"📋", label:"Official Scorer",    desc:"Score matches, submit scorecards" },
-    { id:"medical",      icon:"⚕️", label:"Medical Staff",      desc:"Manage injuries and player fitness" },
-    { id:"facilities",   icon:"🌿", label:"Groundskeeper",      desc:"Pitch prep, field management & tasks" },
-    { id:"spectator",    icon:"👁", label:"Spectator / Fan",    desc:"View scores, stats and fixtures" },
+    { id:"schooladmin",  icon:"school", label:"School Admin",       desc:"Manage your school’s cricket programme" },
+    { id:"directorofsport", icon:"medal", label:"Director of Sport", desc:"Oversee teams, fixtures & competitions" },
+    { id:"coach",        icon:"target", label:"Head Coach",         desc:"Player development, analytics & tactics" },
+    { id:"assistantcoach", icon:"handshake", label:"Coaching Assistant", desc:"Training support & squad management" },
+    { id:"player",       icon:"bat", label:"Player",             desc:"Track your own stats, form & development" },
+    { id:"guardian",     icon:"users-round", label:"Parent / Guardian",  desc:"Follow your child’s matches & logistics" },
+    { id:"scorer",       icon:"scorebook", label:"Official Scorer",    desc:"Score matches, submit scorecards" },
+    { id:"medical",      icon:"stethoscope", label:"Medical Staff",      desc:"Manage injuries and player fitness" },
+    { id:"facilities",   icon:"sprout", label:"Groundskeeper",      desc:"Pitch prep, field management & tasks" },
+    { id:"spectator",    icon:"eye", label:"Spectator / Fan",    desc:"View scores, stats and fixtures" },
   ];
 
   const ri = ROLES[data.role] || {};
@@ -166,7 +167,7 @@ function OnboardingFlow({ onComplete }) {
   if (sent === "ok") return (
     <div className="onboard-shell" data-testid="request-sent" style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px",background:D.surf0}}>
       <div style={{maxWidth:"440px",textAlign:"center"}}>
-        <div style={{fontSize:"40px",marginBottom:"12px"}}>📨</div>
+        <div style={{fontSize:"40px",marginBottom:"12px",color:D.indigoText}}><Icon name="send"/></div>
         <div style={{fontFamily:D.head,fontSize:"22px",fontWeight:800,color:T.content.primary,marginBottom:"8px"}}>Request sent</div>
         <div style={{fontFamily:D.body,fontSize:"13px",color:T.content.secondary,lineHeight:1.6}}>
           {data.schoolCustom} has your request to join as {ri.label||data.role}. Somebody there will answer it. Sign in once they have, with {data.email}.
@@ -177,12 +178,12 @@ function OnboardingFlow({ onComplete }) {
   );
 
   const TOUR_MAP = {
-    player:       [{icon:"📊",t:"Analytics",d:"Your wagon wheel, phase breakdown and shot analysis"},{icon:"💪",t:"Training",d:"Session plans and skill development goals"},{icon:"🏥",t:"Injuries",d:"Your fitness status and return-to-play timeline"}],
-    guardian:     [{icon:"🏏",t:"Match Centre",d:"Live scores and full scorecards"},{icon:"🚌",t:"Logistics",d:"Transport times and venues"},{icon:"🔔",t:"Notifications",d:"Real-time alerts for your child"}],
-    coach:        [{icon:"👥",t:"Squad View",d:"Full team with skills, form and availability"},{icon:"📊",t:"Analytics",d:"Team and player performance breakdowns"},{icon:"💪",t:"Training",d:"Session planner and attendance tracker"}],
-    scorer:       [{icon:"🏏",t:"Match Centre",d:"Open the live scoring interface"},{icon:"📅",t:"Calendar",d:"Your assigned match schedule"}],
-    facilities:   [{icon:"🌿",t:"Fields",d:"Pitch profiles and preparation status"},{icon:"🛠️",t:"Management",d:"Ground task assignments and scheduling"}],
-    default:      [{icon:"⬡",t:"Dashboard",d:"Live scores and team news at a glance"},{icon:"📅",t:"Calendar",d:"All fixtures, training and events"},{icon:"🔔",t:"Notifications",d:"Match alerts and announcements"}],
+    player:       [{icon:"chart-column",t:"Analytics",d:"Your wagon wheel, phase breakdown and shot analysis"},{icon:"dumbbell",t:"Training",d:"Session plans and skill development goals"},{icon:"bandage",t:"Injuries",d:"Your fitness status and return-to-play timeline"}],
+    guardian:     [{icon:"stumps",t:"Match Centre",d:"Live scores and full scorecards"},{icon:"bus",t:"Logistics",d:"Transport times and venues"},{icon:"bell",t:"Notifications",d:"Real-time alerts for your child"}],
+    coach:        [{icon:"users",t:"Squad View",d:"Full team with skills, form and availability"},{icon:"chart-column",t:"Analytics",d:"Team and player performance breakdowns"},{icon:"dumbbell",t:"Training",d:"Session planner and attendance tracker"}],
+    scorer:       [{icon:"stumps",t:"Match Centre",d:"Open the live scoring interface"},{icon:"calendar",t:"Calendar",d:"Your assigned match schedule"}],
+    facilities:   [{icon:"ground",t:"Fields",d:"Pitch profiles and preparation status"},{icon:"user-cog",t:"Management",d:"Ground task assignments and scheduling"}],
+    default:      [{icon:"layout-dashboard",t:"Dashboard",d:"Live scores and team news at a glance"},{icon:"calendar",t:"Calendar",d:"All fixtures, training and events"},{icon:"bell",t:"Notifications",d:"Match alerts and announcements"}],
   };
   const tourItems = TOUR_MAP[data.role] || TOUR_MAP.default;
 
@@ -208,7 +209,7 @@ function OnboardingFlow({ onComplete }) {
           {/* ── WELCOME ── */}
           {stepId==="welcome"&&(
             <div style={{textAlign:"center"}}>
-              <div style={{fontSize:"52px",marginBottom:"16px"}}>🏏</div>
+              <div style={{fontSize:"52px",marginBottom:"16px",color:D.indigoText}}><Icon name="bat"/></div>
               <div style={{fontFamily:D.head,fontSize:"24px",fontWeight:800,color:T.content.primary,marginBottom:"8px"}}>Welcome to SCRBRD</div>
               <div style={{fontFamily:D.body,fontSize:"14px",color:T.content.secondary,lineHeight:1.7,maxWidth:"420px",margin:"0 auto"}}>
                 Set up your account in under 2 minutes. We’ll tailor the platform to your role{onlySchool?"":" and school"}.
@@ -228,7 +229,7 @@ function OnboardingFlow({ onComplete }) {
                     cursor:"pointer",border:`1px solid ${data.role===r.id?`${D.indigo}8c`:T.line.subtle}`,
                     background:data.role===r.id?`${D.indigo}24`:T.fill.panel,textAlign:"left",transition:"all .18s",
                   }}>
-                    <span style={{fontSize:"20px",flexShrink:0,marginTop:"1px"}}>{r.icon}</span>
+                    <span style={{fontSize:"20px",flexShrink:0,marginTop:"1px",color:data.role===r.id?D.indigoText:T.content.secondary}}><Icon name={r.icon}/></span>
                     <div>
                       <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:data.role===r.id?D.indigoText:T.content.primary}}>{r.label}</div>
                       <div style={{fontFamily:D.body,fontSize:"10px",color:T.content.tertiary,marginTop:"2px",lineHeight:1.4}}>{r.desc}</div>
@@ -280,7 +281,7 @@ function OnboardingFlow({ onComplete }) {
             <div>
               <div style={{fontFamily:D.head,fontSize:"20px",fontWeight:800,color:T.content.primary,textAlign:"center",marginBottom:"6px"}}>Your Profile</div>
               {data.role&&<div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:"8px",marginBottom:"18px"}}>
-                <span style={{padding:"4px 12px",borderRadius:D.pill,background:`${ri.color||D.indigo}18`,border:`1px solid ${ri.color||D.indigo}33`,fontFamily:D.head,fontSize:"11px",fontWeight:700,color:ri.color||D.indigoText}}>{ri.icon} {ri.label}</span>
+                <span style={{padding:"4px 12px",borderRadius:D.pill,background:`${ri.color||D.indigo}18`,border:`1px solid ${ri.color||D.indigo}33`,fontFamily:D.head,fontSize:"11px",fontWeight:700,color:ri.color||D.indigoText,display:"inline-flex",alignItems:"center",gap:"5px"}}>{ri.icon&&<Icon name={ri.icon}/>} {ri.label}</span>
                 {data.schoolCustom&&<span style={{fontFamily:D.mono,fontSize:"10px",color:T.content.tertiary}}>{data.schoolCustom}</span>}
               </div>}
               {[
@@ -339,14 +340,14 @@ function OnboardingFlow({ onComplete }) {
           {stepId==="tour"&&(
             <div>
               <div style={{textAlign:"center",marginBottom:"20px"}}>
-                <div style={{fontSize:"36px",marginBottom:"10px"}}>{ri.icon||"🏏"}</div>
+                <div style={{fontSize:"36px",marginBottom:"10px",color:ri.color||D.indigoText}}><Icon name={ri.icon||"bat"}/></div>
                 <div style={{fontFamily:D.head,fontSize:"20px",fontWeight:800,color:T.content.primary,marginBottom:"6px"}}>You’re all set, {data.name.split(" ")[0]||"there"}!</div>
                 <div style={{fontFamily:D.body,fontSize:"13px",color:T.content.tertiary}}>Here’s what’s waiting for you as a <span style={{color:ri.color||D.indigoText,fontWeight:600}}>{ri.label}</span></div>
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
                 {tourItems.map((t,i)=>(
                   <div key={i} style={{display:"flex",alignItems:"center",gap:"14px",padding:"12px 16px",borderRadius:"12px",background:T.fill.panel,border:`1px solid ${T.line.subtle}`}}>
-                    <div style={{fontSize:"22px",width:"34px",textAlign:"center",flexShrink:0}}>{t.icon}</div>
+                    <div style={{fontSize:"22px",width:"34px",textAlign:"center",flexShrink:0,color:T.content.secondary}}><Icon name={t.icon}/></div>
                     <div>
                       <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:T.content.primary}}>{t.t}</div>
                       <div style={{fontFamily:D.body,fontSize:"11px",color:T.content.tertiary,marginTop:"2px"}}>{t.d}</div>
@@ -387,7 +388,7 @@ function OnboardingFlow({ onComplete }) {
           }}>
             {sending
               ? <><span className="live-dot" aria-hidden="true"/> Sending…</>
-              : stepId==="tour" ? "🏏 Enter SCRBRD →"
+              : stepId==="tour" ? "Enter SCRBRD →"
               : !canAdvance()&&stepId==="role" ? "Select a role →"
               : "Continue →"}
           </button>

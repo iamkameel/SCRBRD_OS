@@ -3,6 +3,7 @@ import { ROLES, ROLE_FAMILIES, canonicalRole } from "../design/roles.js";
 import { D, T } from "../design/tokens.js";
 import { GlobalSearch } from "./GlobalSearch.jsx";
 import { useRows } from "../lib/live.js";
+import { Icon } from "../ui/icons.jsx";
 
 function TopBar({ role, onRoleChange, onNav, userName }) {
   // The unread badge is built from the notices the SERVER agreed to send.
@@ -33,7 +34,7 @@ function TopBar({ role, onRoleChange, onNav, userName }) {
 
         {/* Search bar */}
         <button onClick={()=>setSearchOpen(true)} className="pressBtn" data-testid="topbar-search" style={{flex:1,maxWidth:"420px",display:"flex",alignItems:"center",gap:"8px",padding:"7px 12px",borderRadius:D.pill,background:D.surf2,border:`1px solid ${D.border}`,cursor:"pointer",textAlign:"left"}}>
-          <span style={{fontSize:"13px",color:D.textMuted}}>🔍</span>
+          <span style={{fontSize:"13px",color:D.textMuted}}><Icon name="search"/></span>
           <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,flex:1}}>Search or ask Stats-Magic…</span>
           <span className="os-kbd" style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted,background:D.surf3,padding:"2px 6px",borderRadius:"4px",flexShrink:0}}>⌘K</span>
         </button>
@@ -41,15 +42,15 @@ function TopBar({ role, onRoleChange, onNav, userName }) {
         <div style={{flex:1}}/>
 
         {/* Notifications */}
-        <button onClick={()=>onNav("notifications")} className="pressBtn" data-testid="topbar-alerts" aria-label={unread>0?`Alerts, ${unread} unread`:"Alerts"} style={{position:"relative",background:"none",border:"none",cursor:"pointer",fontSize:"16px",flexShrink:0}}>
-          🔔
+        <button onClick={()=>onNav("notifications")} className="pressBtn" data-testid="topbar-alerts" aria-label={unread>0?`Alerts, ${unread} unread`:"Alerts"} style={{position:"relative",background:"none",border:"none",cursor:"pointer",fontSize:"16px",flexShrink:0,color:D.textSecondary}}>
+          <Icon name="bell"/>
           {unread>0&&<span style={{position:"absolute",top:"-2px",right:"-2px",background:T.semantic.critical,color:T.surface.canvas,borderRadius:D.pill,padding:"0 4px",fontFamily:D.mono,fontSize:"8px",fontWeight:700,minWidth:"14px",textAlign:"center"}}>{unread}</span>}
         </button>
 
         {/* Role switcher */}
         <div style={{position:"relative",flexShrink:0}}>
           <button onClick={()=>setRoleOpen(!roleOpen)} className="pressBtn" data-testid="topbar-role" aria-haspopup="menu" aria-expanded={roleOpen} style={{display:"flex",alignItems:"center",gap:"6px",padding:"5px 10px",borderRadius:D.pill,background:D.surf2,border:`1px solid ${D.border}`,cursor:"pointer"}}>
-            <span style={{fontSize:"13px"}}>{ROLES[role]?.icon}</span>
+            <span style={{fontSize:"13px",color:D.textSecondary}}><Icon name={ROLES[role]?.icon}/></span>
             <span className="os-username" style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary,maxWidth:"90px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{userName||ROLES[role]?.label}</span>
             <span style={{fontSize:"9px",color:D.textMuted}}>▼</span>
           </button>
@@ -79,7 +80,7 @@ function TopBar({ role, onRoleChange, onNav, userName }) {
                         width:"100%",padding:"8px 12px",display:"flex",alignItems:"center",gap:"8px",
                         background:current?T.surface.interactive:"transparent",border:"none",cursor:"pointer",textAlign:"left",
                       }}>
-                        <span aria-hidden="true">{rc.icon}</span>
+                        <span aria-hidden="true" style={{color:T.content.secondary}}><Icon name={rc.icon}/></span>
                         <span style={{fontFamily:T.type.body,fontSize:"12px",color:current?rc.color:T.content.secondary}}>{rc.label}</span>
                         {current&&<span aria-hidden="true" style={{marginLeft:"auto",width:"6px",height:"6px",borderRadius:"50%",background:rc.color}}/>}
                       </button>

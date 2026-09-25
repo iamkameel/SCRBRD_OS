@@ -3,6 +3,7 @@ import SCRBRD_LOGO from "../assets/scrbrd-logo.jpg";
 import { ROLES } from "../design/roles.js";
 import { T, clr } from "../design/tokens.js";
 import { mode as apiMode, signIn, signInWithCode, devLoginAvailable } from "../lib/session.js";
+import { Icon } from "../ui/icons.jsx";
 
 // ══════════════════════════════════════════════════════
 //  LOGIN PAGE
@@ -206,7 +207,7 @@ function LoginPage({ onLogin, onSignUp, liveOnly = false, onBack }) {
           {/* Demo entry — only where there is no server. See handleDemoEntry. */}
           {live === false && <>
           <button onClick={handleDemoEntry} disabled={oauthLoading} data-testid="login-demo" className="pressBtn" style={{width:"100%",padding:"12px",borderRadius:"12px",cursor:"pointer",background:T.fill.field,border:`1px solid ${T.line.normal}`,display:"flex",alignItems:"center",justifyContent:"center",gap:"10px",marginBottom:"20px",transition:"all .2s"}}>
-            <span aria-hidden="true">🎬</span>
+            <span aria-hidden="true" style={{color:T.content.secondary,fontSize:"16px"}}><Icon name="play"/></span>
             <span style={{fontFamily:"'Syne',sans-serif",fontSize:"13px",fontWeight:700,color:T.content.primary}}>{oauthLoading?"Opening the demo…":"Explore the demo — nothing is saved"}</span>
           </button>
 
@@ -268,7 +269,7 @@ function LoginPage({ onLogin, onSignUp, liveOnly = false, onBack }) {
             {(live ? PILOT_ACCOUNTS : DEMO_ACCOUNTS).map(d=>(
               <button key={d.email} onClick={()=>{setEmail(d.email);setPassword(d.pw||"");setError("");}} className="pressBtn"
                 style={{padding:"7px 10px",borderRadius:"8px",cursor:"pointer",background:T.fill.panel,border:`1px solid ${T.line.subtle}`,textAlign:"left"}}>
-                <div style={{fontFamily:"'Syne',sans-serif",fontSize:"10px",fontWeight:700,color:T.content.secondary}}>{ROLES[d.role]?.icon} {d.label}</div>
+                <div style={{fontFamily:"'Syne',sans-serif",fontSize:"10px",fontWeight:700,color:T.content.secondary,display:"flex",alignItems:"center",gap:"5px"}}><Icon name={ROLES[d.role]?.icon}/> {d.label}</div>
                 <div style={{fontFamily:"'DM Mono',monospace",fontSize:"9px",color:T.content.tertiary,marginTop:"2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.email}</div>
               </button>
             ))}

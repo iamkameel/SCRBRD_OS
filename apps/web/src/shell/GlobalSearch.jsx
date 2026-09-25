@@ -5,6 +5,7 @@ import { SCHOOLS_REGISTRY } from "../data/institution.js";
 import { ROLES } from "../design/roles.js";
 import { D, T } from "../design/tokens.js";
 import { useRows } from "../lib/live.js";
+import { Icon } from "../ui/icons.jsx";
 
 // ══════════════════════════════════════════════════════
 //  TOPBAR + GLOBAL SEARCH
@@ -31,27 +32,27 @@ function GlobalSearch({ role, onNav, onClose }) {
 
   const results = q.length < 2 ? [] : [
     ...ALL_PLAYERS.filter(p=>p.name.toLowerCase().includes(q.toLowerCase())).slice(0,4).map(p=>({
-      type:"player", icon:ROLES[p.role==="WK"?"player":"player"]?.icon||"🏏",
+      type:"player", icon:ROLES.player?.icon ?? "bat",
       label:p.name, sub:`${p.role} · ${p.team} · ${p.school}`,
       action:()=>{ onNav("profiles"); onClose(); },
     })),
     ...ALL_STAFF.filter(s=>s.name.toLowerCase().includes(q.toLowerCase())).slice(0,3).map(s=>({
-      type:"staff", icon:"👤",
+      type:"staff", icon:"user",
       label:s.name, sub:`${s.role} · ${s.school||"Hilton College"}`,
       action:()=>{ onNav("staff"); onClose(); },
     })),
     ...ALL_MATCHES.filter(m=>(m.home+m.away+m.venue).toLowerCase().includes(q.toLowerCase())).slice(0,3).map(m=>({
-      type:"match", icon:"🏏",
+      type:"match", icon:"stumps",
       label:`${m.home} vs ${m.away}`, sub:`${m.date} · ${m.format} · ${m.status}`,
       action:()=>{ onNav("matches"); onClose(); },
     })),
     ...ALL_COMPS.filter(c=>c.name.toLowerCase().includes(q.toLowerCase())).slice(0,2).map(c=>({
-      type:"competition", icon:"🏆",
+      type:"competition", icon:"trophy",
       label:c.name, sub:c.format,
       action:()=>{ onNav("competitions"); onClose(); },
     })),
     ...SCHOOLS_REGISTRY.filter(s=>s.name.toLowerCase().includes(q.toLowerCase())).slice(0,2).map(s=>({
-      type:"school", icon:"🏫",
+      type:"school", icon:"school",
       label:s.name, sub:`${s.city} · ${s.province}`,
       action:()=>{ onClose(); },
     })),
@@ -84,7 +85,7 @@ function GlobalSearch({ role, onNav, onClose }) {
       <div style={{width:"100%",maxWidth:"640px",borderRadius:D.xl,border:`1px solid ${D.borderMed}`,background:D.surf1,overflow:"hidden",boxShadow:T.elevation.xl}}>
         {/* Input row */}
         <div style={{display:"flex",alignItems:"center",gap:"10px",padding:"14px 16px",borderBottom:`1px solid ${D.border}`}}>
-          <span style={{fontSize:"16px",color:D.textMuted}}>🔍</span>
+          <span style={{fontSize:"16px",color:D.textMuted}}><Icon name="search"/></span>
           <input ref={inputRef} value={q} onChange={e=>{setQ(e.target.value);setAiMode(false);setAiAnswer("");}} aria-label="Search, or ask Stats-Magic"
             onKeyDown={e=>{if(e.key==="Escape")onClose();if(e.key==="Enter")askGuru();}}
             placeholder="Search players, matches, staff… or ask Stats-Magic anything"
@@ -116,7 +117,7 @@ function GlobalSearch({ role, onNav, onClose }) {
           <div style={{maxHeight:"360px",overflowY:"auto"}}>
             {results.map((r,i)=>(
               <button key={i} onClick={r.action} className="pressBtn" style={{width:"100%",display:"flex",alignItems:"center",gap:"12px",padding:"10px 16px",background:"transparent",border:"none",cursor:"pointer",textAlign:"left",borderBottom:`1px solid ${D.border}44`}}>
-                <div style={{width:"28px",height:"28px",borderRadius:D.md,background:`${typeColor(r.type)}18`,border:`1px solid ${typeColor(r.type)}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"13px",flexShrink:0}}>{r.icon}</div>
+                <div style={{width:"28px",height:"28px",borderRadius:D.md,background:`${typeColor(r.type)}18`,border:`1px solid ${typeColor(r.type)}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"13px",flexShrink:0,color:typeColor(r.type)}}><Icon name={r.icon}/></div>
                 <div style={{flex:1}}>
                   <div style={{fontFamily:D.body,fontSize:"13px",fontWeight:600,color:D.textPrimary}}>{r.label}</div>
                   <div style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted,textTransform:"uppercase",letterSpacing:"0.04em"}}>{r.sub}</div>
@@ -132,8 +133,8 @@ function GlobalSearch({ role, onNav, onClose }) {
           <div style={{padding:"20px 16px"}}>
             <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:D.textMuted,marginBottom:"12px"}}>Quick Access</div>
             <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
-              {[["🏏 Players","profiles"],["📊 Analytics","analytics"],["🏆 Competitions","competitions"],["📅 Calendar","calendar"],["🌿 Fields","fields"]].map(([l,p])=>(
-                <button key={p} onClick={()=>{onNav(p);onClose();}} className="pressBtn" style={{padding:"6px 12px",borderRadius:D.pill,cursor:"pointer",background:D.surf2,border:`1px solid ${D.border}`,fontFamily:D.head,fontSize:"10px",color:D.textMuted}}>{l}</button>
+              {[["bat","Players","profiles"],["chart-column","Analytics","analytics"],["trophy","Competitions","competitions"],["calendar","Calendar","calendar"],["ground","Fields","fields"]].map(([ic,l,p])=>(
+                <button key={p} onClick={()=>{onNav(p);onClose();}} className="pressBtn" style={{display:"inline-flex",alignItems:"center",gap:"5px",padding:"6px 12px",borderRadius:D.pill,cursor:"pointer",background:D.surf2,border:`1px solid ${D.border}`,fontFamily:D.head,fontSize:"10px",color:D.textMuted}}><Icon name={ic}/>{l}</button>
               ))}
             </div>
             <div style={{marginTop:"14px",padding:"10px 14px",borderRadius:D.md,background:`${D.violet}08`,border:`1px solid ${D.violet}22`}}>

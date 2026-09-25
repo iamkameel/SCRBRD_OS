@@ -6,6 +6,7 @@ import { T, clr } from "../design/tokens.js";
 //  LANDING PAGE
 // ══════════════════════════════════════════════════════
 import { analyticsConsented, setAnalyticsConsent } from "../lib/firebase.js";
+import { Icon } from "../ui/icons.jsx";
 
 function LandingPage({ onEnter, onLogin }) {
   // Anonymous usage analytics: off until this device says otherwise. Asked
@@ -17,14 +18,14 @@ function LandingPage({ onEnter, onLogin }) {
 
   const [hov, setHov] = useState(null);
   const FEATURES = [
-    { icon:"🏏", title:"Live Scoring",     desc:"Ball-by-ball broadcast scoring with AI commentary" },
-    { icon:"📊", title:"Player Analytics", desc:"Wagon wheel, phase analysis, shot breakdown by zone" },
-    { icon:"👥", title:"Squad Management", desc:"Profiles, skills matrix, development tracking" },
-    { icon:"🏥", title:"Injury Tracking",  desc:"Medical logs, return-to-play, fitness reporting" },
-    { icon:"🚌", title:"Logistics",        desc:"Transport scheduling, venues, kit allocation" },
-    { icon:"📅", title:"Smart Calendar",   desc:"Fixtures, training, events in one unified view" },
-    { icon:"📋", title:"League Manager",   desc:"Standings, brackets, fixtures, top performers" },
-    { icon:"📡", title:"Alerts",           desc:"Push notifications to players, parents and staff" },
+    { icon:"scorebook", title:"Live Scoring",     desc:"Ball-by-ball broadcast scoring with AI commentary" },
+    { icon:"chart-column", title:"Player Analytics", desc:"Wagon wheel, phase analysis, shot breakdown by zone" },
+    { icon:"users", title:"Squad Management", desc:"Profiles, skills matrix, development tracking" },
+    { icon:"bandage", title:"Injury Tracking",  desc:"Medical logs, return-to-play, fitness reporting" },
+    { icon:"bus", title:"Logistics",        desc:"Transport scheduling, venues, kit allocation" },
+    { icon:"calendar", title:"Smart Calendar",   desc:"Fixtures, training, events in one unified view" },
+    { icon:"trophy", title:"League Manager",   desc:"Standings, brackets, fixtures, top performers" },
+    { icon:"bell", title:"Alerts",           desc:"Push notifications to players, parents and staff" },
   ];
   return (
     <div style={{minHeight:"100vh",background:T.surface.canvas,display:"flex",flexDirection:"column",overflowY:"auto"}}>
@@ -48,7 +49,7 @@ function LandingPage({ onEnter, onLogin }) {
           SCRBRD is the all-in-one cricket operating system for schools — live scoring, analytics, squad management, logistics and communication in a single platform.
         </div>
         <div style={{display:"flex",gap:"14px",justifyContent:"center",flexWrap:"wrap"}}>
-          <button onClick={onEnter} className="pressBtn" style={{padding:"14px 32px",borderRadius:"24px",cursor:"pointer",background:T.light.action,border:"none",fontFamily:"'Syne',sans-serif",fontSize:"14px",fontWeight:700,color:T.light.ink,boxShadow:`0 6px 32px ${clr(T.brand.blue,0.4)}`,letterSpacing:"0.04em"}}>🏏 Get Started — It's Free</button>
+          <button onClick={onEnter} className="pressBtn" style={{padding:"14px 32px",borderRadius:"24px",cursor:"pointer",background:T.light.action,border:"none",fontFamily:"'Syne',sans-serif",fontSize:"14px",fontWeight:700,color:T.light.ink,boxShadow:`0 6px 32px ${clr(T.brand.blue,0.4)}`,letterSpacing:"0.04em"}}>Get Started — It's Free</button>
           <button onClick={onLogin} className="pressBtn" style={{padding:"14px 32px",borderRadius:"24px",cursor:"pointer",background:"transparent",border:`1px solid ${T.line.strong}`,fontFamily:"'Syne',sans-serif",fontSize:"14px",fontWeight:700,color:T.content.secondary}}>Log In to My School →</button>
         </div>
       </div>
@@ -58,7 +59,7 @@ function LandingPage({ onEnter, onLogin }) {
           {FEATURES.map((f,i)=>(
             <div key={i} onMouseEnter={()=>setHov(i)} onMouseLeave={()=>setHov(null)}
               style={{borderRadius:"14px",border:`1px solid ${hov===i?clr(T.brand.blue,0.4):T.line.subtle}`,background:hov===i?clr(T.brand.blue,0.08):T.fill.panel,padding:"20px",transition:"all .2s"}}>
-              <div style={{fontSize:"26px",marginBottom:"10px"}}>{f.icon}</div>
+              <div style={{fontSize:"26px",marginBottom:"10px",color:T.brand.blueText}}><Icon name={f.icon}/></div>
               <div style={{fontFamily:"'Syne',sans-serif",fontSize:"13px",fontWeight:700,color:T.content.primary,marginBottom:"5px"}}>{f.title}</div>
               <div style={{fontFamily:"'DM Sans',sans-serif",fontSize:"12px",color:T.content.tertiary,lineHeight:1.5}}>{f.desc}</div>
             </div>
