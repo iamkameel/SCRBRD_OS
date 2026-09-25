@@ -27,6 +27,17 @@
 import { runAsPrincipal } from "../auth/auth-db.mjs";
 import { toRow, fromRow, normaliseDismissal, MatchFold, lawsRefusal, REFUSAL, REFUSAL_TEXT,
          PLACEMENT_SOURCE, PLACEMENT_NULL, CAPTURE_PROFILE } from "@scrbrd/scoring";
+/** @import { Pool, ApiRequest, ApiResponse, Handler, IdHandler, IdRequest, RouteDeps, DressedError } from "../api-types.mjs" */
+// A caught error is `any` to the checker (CaughtError in api-types.mjs): pg's
+// carry a SQLSTATE `code` (and `table`, `constraint`, `detail`), this
+// module's own carry an HTTP `status`.
+
+/**
+ * A reason that has words in REFUSAL_TEXT (packages/scoring/src/laws.mjs):
+ * every Law, the idempotency conflict, and each value the record cannot hold.
+ * Typing a refusal this way makes the checker prove it can be put in words.
+ * @typedef {keyof typeof REFUSAL_TEXT} RefusalCode
+ */
 
 /**
  * The columns an event is stored with, as ONE object, keyed by column name.
@@ -54,7 +65,7 @@ import { toRow, fromRow, normaliseDismissal, MatchFold, lawsRefusal, REFUSAL, RE
  * of an old ball still reads as a duplicate.
  *
  * @param {string} matchId
- * @param {any} ev  the envelope {innings, payload, ...}
+ * @param {IncomingEvent} ev  the envelope {innings, payload, ...}
  * @returns {Record<string, any>}
  */
 function columnsFor(matchId, ev) {
@@ -79,7 +90,7 @@ function columnsFor(matchId, ev) {
  * The placement vocabularies packages/scoring owns, checked at the door
  * (SCRBRD-077). Read from placement.mjs, never listed here: db/07's CHECKs
  * say the same, and the walk (tools/smoke-laws.mjs) fails if the two differ.
- * @type {[column: string, allowed: string[], reason: string][]}
+ * @type {[column: string, allowed: string[], reason: RefusalCode][]}
  */
 const PLACEMENT_VOCABULARY = [
   ["placement_source", Object.values(PLACEMENT_SOURCE), "placement_invalid"],
@@ -91,7 +102,7 @@ const PLACEMENT_VOCABULARY = [
  * Why this event's columns cannot be stored, by packages/scoring's own
  * vocabularies, or null.
  * @param {Record<string, any>} cols  columnsFor()
- * @returns {{reason: string, field: string, value: any} | null}
+ * @returns {{reason: RefusalCode, field: string, value: any} | null}
  */
 function vocabularyRefusal(cols) {
   for (const [field, allowed, reason] of PLACEMENT_VOCABULARY) {
@@ -105,7 +116,8 @@ function vocabularyRefusal(cols) {
  * The database's own answer, as a reason a person can read: the CHECK a row
  * broke is named by its constraint, and the refusal by what the scorer
  * recorded. Each reason has its words in REFUSAL_TEXT (packages/scoring/src/laws.mjs).
- * @type {Record<string, string>}
+ * Keyed by a constraint's name as pg reports it, so any string may index it.
+ * @type {Record<string, RefusalCode>}
  */
 const CHECK_REASON = {
   ball_event_contact: "contact_unknown",
@@ -127,7 +139,7 @@ const CHECK_REASON = {
  * (a policy, a missing function, a lost connection) is not the event's fault
  * and returns null, so the caller rethrows it.
  * @param {any} e  a pg error
- * @returns {{reason: string, constraint?: string} | null}
+ * @returns {{reason: RefusalCode, constraint?: string} | null}
  */
 function valueRefusal(e) {
   if (e?.code === "23514" && e.table === "ball_event") {
@@ -141,14 +153,58 @@ function valueRefusal(e) {
 const FINGERPRINT_OF = `ball_event_fingerprint(jsonb_populate_record(null::ball_event, $2::jsonb))`;
 
 /**
- * @param events array of {epoch, deviceId, scorerId, idempotencyKey, clientSeq, clientTs, innings, payload}
- * @returns {Promise<{
- *   accepted:    {idempotencyKey: string, seq: number}[],
- *   duplicates:  {idempotencyKey: string, seq: number}[],
- *   quarantined: {idempotencyKey: string, reason: string}[],
- *   conflicts:   {idempotencyKey: string, seq: number|null, reason: "idempotency_conflict"}[],
- *   refused:     {idempotencyKey: string, reason: string, field?: string, value?: any, constraint?: string}[],
- * }>}
+ * One event of a POST /matches/:id/events batch: the outbox's envelope
+ * (OutboxEvent in packages/sync) around a scoring event whose shape
+ * @scrbrd/scoring owns.
+ *
+ * What a batch is expected to hold, not what has been checked: the route hands
+ * the body over as it arrived. appendEvents() checks that the batch is a
+ * non-empty array, the dismissal on a wicket and the placement vocabularies;
+ * every other field is the database's to judge — a column's type or CHECK
+ * refuses the one event, the INSERT policies refuse what the token does not
+ * hold.
+ * @typedef {object} IncomingEvent
+ * @property {number} epoch            the token epoch the device believes it holds
+ * @property {string} deviceId
+ * @property {string} idempotencyKey   the event's identity (newEventId)
+ * @property {number} clientSeq
+ * @property {number} [clientTs]       ms since the epoch, on the device
+ * @property {number} [innings]        the outbox's own field; the event carries its innings in `payload`
+ * @property {string} [scorerId]       carried, not trusted: a row's scorer is app_user_id()
+ * @property {Record<string, any>} [payload]  the event itself (a LogEvent), read field by field as toRow() reads it
+ */
+
+/**
+ * appendEvents()'s answer: every event in the batch in exactly one bucket,
+ * named by its idempotency key.
+ * @typedef {object} AppendResult
+ * @property {{idempotencyKey: string, seq: number}[]} accepted     written now, at `seq`
+ * @property {{idempotencyKey: string, seq: number}[]} duplicates   the same event, already written at `seq`
+ * @property {{idempotencyKey: string, reason: "match_complete" | "stale_epoch_or_lease" | "no_session"}[]} quarantined  held for a person
+ * @property {{idempotencyKey: string, seq: number | null, reason: "idempotency_conflict"}[]} conflicts
+ *   the key names another event: `seq` is the stored one's, null when that one is held
+ * @property {{idempotencyKey: string, reason: RefusalCode, field?: string, value?: any, constraint?: string}[]} refused
+ *   the Laws, or the record, refused it
+ */
+
+/**
+ * scoring_lease_check()'s row (db/33): whether the match has a session,
+ * whether this caller holds its live lease on this device at this epoch, and
+ * the session's epoch and state — 'match_complete' once the match is over.
+ * @typedef {object} LeaseCheck
+ * @property {boolean} found
+ * @property {boolean} holds
+ * @property {number | null} epoch
+ * @property {string | null} [state]
+ */
+
+/**
+ * @param {Pool} pool
+ * @param {string} secret
+ * @param {string | undefined} bearer  the Authorization header, as sent
+ * @param {string} matchId
+ * @param {IncomingEvent[]} events  the batch: one device's queue, in order
+ * @returns {Promise<AppendResult>}
  *
  * Every event in the batch lands in exactly one bucket. `conflicts` and
  * `refused` are the two where NOTHING was written: the server has no copy,
@@ -156,7 +212,7 @@ const FINGERPRINT_OF = `ball_event_fingerprint(jsonb_populate_record(null::ball_
  * holds them durably, apart from the outbox, for exactly that).
  */
 export async function appendEvents(pool, secret, bearer, matchId, events) {
-  if (!Array.isArray(events) || events.length === 0) { const e = new Error("no_events"); e.status = 400; throw e; }
+  if (!Array.isArray(events) || events.length === 0) { const e = /** @type {DressedError} */ (new Error("no_events")); e.status = 400; throw e; }
 
   // THE VOCABULARY IS CLOSED AT THIS DOOR. A wicket names how the batter was
   // out from packages/scoring's DISMISSAL, or it is not recorded: the bowler's
@@ -169,7 +225,7 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
     if ((p.kind ?? "ball") !== "ball" || p.type !== "W") continue;
     const d = normaliseDismissal(p.dismissal);
     if (!d) {
-      const e = new Error("dismissal_unknown"); e.status = 400;
+      const e = /** @type {DressedError} */ (new Error("dismissal_unknown")); e.status = 400;
       e.detail = { field: "dismissal", value: p.dismissal ?? null, idempotencyKey: ev.idempotencyKey };
       throw e;
     }
@@ -190,7 +246,9 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
     const { rows: lrows } = await client.query(
       `select * from scoring_lease_check($1, $2, $3)`,
       [matchId, events[0].deviceId, events[0].epoch]);
+    /** @type {LeaseCheck} */
     const lease = lrows[0] || { found: false, holds: false, epoch: null };
+    /** @type {AppendResult} */
     const result = { accepted: [], duplicates: [], quarantined: [], conflicts: [], refused: [] };
 
     // The match as the Laws read it, folded ONCE, on the first event that
@@ -201,6 +259,7 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
     /** @type {MatchFold|null} */
     let fold = null;
     const loadFold = async () => {
+      /** @type {{ rows: BallEventRow[] }} */
       const { rows } = await client.query(
         `select ${EVENT_COLUMNS} from ball_event where match_id = $1 order by seq`, [matchId]);
       return new MatchFold(rows.map(fromRow));
@@ -210,7 +269,7 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
      * Steps 1–4 for one event: everything that touches the database. Run by the
      * loop below inside a savepoint, so a value the table refuses refuses this
      * event and not the batch.
-     * @param {any} ev  @param {Record<string, any>} cols
+     * @param {IncomingEvent} ev  @param {Record<string, any>} cols  columnsFor(ev)
      */
     const writeOne = async (ev, cols) => {
       const colsJson = JSON.stringify(cols);
@@ -366,6 +425,51 @@ export const EVENT_COLUMNS = `
   theta, radius, placement_source, placement_null, close_position, capture_profile,
   recovered`;   // a ball released from quarantine says so on the way out
 
+/**
+ * A ball_event row as EVENT_COLUMNS reads it, through pg's default parsers:
+ * smallint and integer arrive as numbers, numeric (radius) as a string,
+ * timestamptz as a Date, jsonb parsed. fromRow() turns it into an event.
+ * @typedef {object} BallEventRow
+ * @property {number} seq
+ * @property {number} epoch
+ * @property {number} innings
+ * @property {string} kind
+ * @property {string | null} ball_type
+ * @property {number | null} value
+ * @property {string | null} shot
+ * @property {string | null} contact
+ * @property {string | null} trajectory
+ * @property {number | null} seg
+ * @property {string | null} zone
+ * @property {string | null} striker_id
+ * @property {string | null} non_striker_id
+ * @property {string | null} bowler_id
+ * @property {string | null} dismissed_id
+ * @property {string | null} dismissal
+ * @property {string} idempotency_key
+ * @property {string} scorer_user_id
+ * @property {string} device_id
+ * @property {Date} client_ts
+ * @property {Date} server_ts
+ * @property {Record<string, any>} payload
+ * @property {number | null} theta
+ * @property {string | null} radius
+ * @property {string | null} placement_source
+ * @property {string | null} placement_null
+ * @property {string | null} close_position
+ * @property {string | null} capture_profile
+ * @property {boolean} recovered
+ */
+
+/**
+ * The log after `sinceSeq` (see above: raw rows, for fromRow()).
+ * @param {Pool} pool
+ * @param {string} secret
+ * @param {string | undefined} bearer  the Authorization header, as sent
+ * @param {string} matchId
+ * @param {number} [sinceSeq]
+ * @returns {Promise<BallEventRow[]>}  in seq order
+ */
 export async function readEvents(pool, secret, bearer, matchId, sinceSeq = 0) {
   return runAsPrincipal(pool, secret, bearer, async client => {
     const { rows } = await client.query(
@@ -378,6 +482,7 @@ export async function readEvents(pool, secret, bearer, matchId, sinceSeq = 0) {
 }
 
 // ── Routes ──
+/** @param {RouteDeps} deps @returns {Record<string, IdHandler>}  both are /matches/:id/events */
 export function eventRoutes({ pool, secret }) {
   return {
     // POST /matches/:id/events  { events: [...] }
@@ -385,7 +490,7 @@ export function eventRoutes({ pool, secret }) {
       try {
         const out = await appendEvents(pool, secret, req.headers?.authorization, req.params.id, req.body?.events || []);
         res.json(out);
-      } catch (e) {
+      } catch (/** @type {any} */ e) {
         if (!e.status) console.error("append →", e.code || "", e.message, e.detail || "", e.column || "");
         res.status(e.status || 500).json({ error: e.code || e.message });
       }
@@ -395,7 +500,7 @@ export function eventRoutes({ pool, secret }) {
       try {
         const rows = await readEvents(pool, secret, req.headers?.authorization, req.params.id, Number(req.query?.since || 0));
         res.json({ matchId: req.params.id, events: rows });
-      } catch (e) { res.status(e.status || 500).json({ error: e.code || e.message }); }
+      } catch (/** @type {any} */ e) { res.status(e.status || 500).json({ error: e.code || e.message }); }
     },
   };
 }
@@ -453,18 +558,29 @@ export function eventRoutes({ pool, secret }) {
  *
  * @param {import("@scrbrd/scoring").MatchView} match  the fold of the log before the void
  * @param {import("@scrbrd/scoring").LogEvent} voidEv  the void, as stored
- * @returns {string | null}
+ * @returns {import("@scrbrd/scoring").Refusal | null}
  */
 function amendmentRefusal(match, voidEv) {
   const why = lawsRefusal(match, voidEv);
   return why === REFUSAL.VOID_NOT_LATEST ? null : why;
 }
 
+/**
+ * scoring_amendment_decide()'s row (db/38). `void_key` is the void it wrote,
+ * on an approval that succeeded.
+ * @typedef {object} AmendmentDecision
+ * @property {boolean} ok
+ * @property {string | null} reason
+ * @property {string | null} [void_key]
+ */
+
+/** @param {RouteDeps} deps @returns {Record<string, IdHandler>}  /matches/:id/amendments, /amendments/:id/decide */
 export function amendmentRoutes({ pool, secret }) {
-  const err = (code, status = 400) => Object.assign(new Error(code), { status });
+  const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
+  /** @param {(req: IdRequest) => Promise<unknown>} fn @returns {IdHandler} */
   const handle = (fn) => async (req, res) => {
     try { res.json(await fn(req)); }
-    catch (e) {
+    catch (/** @type {any} */ e) {
       const status = e.code === "42501" ? 403 : (e.status || 500);
       res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
     }
@@ -500,11 +616,13 @@ export function amendmentRoutes({ pool, secret }) {
         const { rows } = await client.query(
           `select * from scoring_amendment_decide($1, $2, $3)`,
           [req.params.id, approve, req.body?.note ?? null]);
+        /** @type {AmendmentDecision} */
         const out = rows[0] ?? { ok: false, reason: "no_result" };
         if (!approve || !out.ok) { await client.query("release savepoint amendment_decide"); return out; }
 
         // Written, under the per-match lock (db/38). Now the Laws, over the
         // log the void landed on.
+        /** @type {{ rows: BallEventRow[] }} */
         const { rows: log } = await client.query(
           `select ${EVENT_COLUMNS} from ball_event
             where match_id = (select match_id from ball_event where idempotency_key = $1)
@@ -529,6 +647,15 @@ export function amendmentRoutes({ pool, secret }) {
   };
 }
 
+
+/**
+ * quarantine_resolve()'s row (db/37). `seq` is where an accepted ball was
+ * written.
+ * @typedef {object} QuarantineResolution
+ * @property {boolean} ok
+ * @property {string | null} reason
+ * @property {number | null} [seq]
+ */
 
 /**
  * The way out of quarantine. See db/14_quarantine_release.sql and
@@ -558,11 +685,13 @@ export function amendmentRoutes({ pool, secret }) {
  *      then has two honest choices, both theirs to make: discard it, or leave
  *      it held until the log changes (a bowler named, a batter in) and try
  *      again. Neither is taken for them.
+ * @param {RouteDeps} deps @returns {Record<string, IdHandler>}  /matches/:id/quarantine, /quarantine/:id/resolve
  */
 export function quarantineRoutes({ pool, secret }) {
+  /** @param {(req: IdRequest) => Promise<unknown>} fn @returns {IdHandler} */
   const handle = (fn) => async (req, res) => {
     try { res.json(await fn(req)); }
-    catch (e) {
+    catch (/** @type {any} */ e) {
       const status = e.code === "42501" ? 403 : (e.status || 500);
       res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
     }
@@ -589,13 +718,13 @@ export function quarantineRoutes({ pool, secret }) {
         // resolve it, and the function then applies the stricter rule.
         const { rows: q } = await client.query(
           `select match_id, body from ball_event_quarantine where id = $1`, [req.params.id]);
-        if (!q.length) { const e = new Error("no_such_quarantine"); e.status = 404; throw e; }
+        if (!q.length) { const e = /** @type {DressedError} */ (new Error("no_such_quarantine")); e.status = 404; throw e; }
         let row = null;
         if (accept) {
           const payload = q[0].body?.payload || {};
           if ((payload.kind ?? "ball") === "ball" && payload.type === "W") {
             const d = normaliseDismissal(payload.dismissal);
-            if (!d) { const e = new Error("dismissal_unknown"); e.status = 400; e.detail = { value: payload.dismissal ?? null }; throw e; }
+            if (!d) { const e = /** @type {DressedError} */ (new Error("dismissal_unknown")); e.status = 400; e.detail = { value: payload.dismissal ?? null }; throw e; }
             payload.dismissal = d;
           }
           row = { ...toRow(payload), innings: q[0].body?.innings };
@@ -617,16 +746,22 @@ export function quarantineRoutes({ pool, secret }) {
           await client.query("rollback to savepoint quarantine_release");
           return { ok: false, reason: "value_refused", value: bad.reason, text: REFUSAL_TEXT[bad.reason] ?? bad.reason };
         }
+        /** @type {QuarantineResolution} */
         const out = rows[0] ?? { ok: false, reason: "no_result" };
         if (!accept || !out.ok) { await client.query("release savepoint quarantine_release"); return out; }
 
         // Written, under the lock. Now the Laws, over the log it landed on.
+        /** @type {{ rows: BallEventRow[] }} */
         const { rows: log } = await client.query(
           `select ${EVENT_COLUMNS} from ball_event where match_id = $1 and seq <= $2 order by seq`,
           [q[0].match_id, out.seq]);
         const released = log.find((r) => r.seq === out.seq);
+        // `out.seq` is a number wherever `released` was found: it equals that
+        // row's seq, a NOT NULL integer. (quarantine_resolve() answers an
+        // accepted release with the seq it wrote; its only ok row without
+        // one is a rejection, returned above.)
         const why = released
-          ? lawsRefusal(new MatchFold(log.filter((r) => r.seq < out.seq).map(fromRow)).view(), fromRow(released))
+          ? lawsRefusal(new MatchFold(log.filter((r) => r.seq < /** @type {number} */ (out.seq)).map(fromRow)).view(), fromRow(released))
           // The approver cannot read the log they would be adding to. Nothing
           // can be judged, so nothing is written.
           : "log_unreadable";
@@ -664,9 +799,10 @@ export function quarantineRoutes({ pool, secret }) {
  * reason — "is 14 on 1 January and cannot play U13A: the limit is 13" — and a
  * coach who is told only "invalid" has to guess which of eleven names is the
  * problem.
+ * @param {RouteDeps} deps @returns {Record<string, IdHandler>}  /matches/:id/squad
  */
 export function squadRoutes({ pool, secret }) {
-  const err = (code, status = 400) => Object.assign(new Error(code), { status });
+  const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
   return {
     // POST /matches/:id/squad { side, players: [{ playerId, battingNo?, twelfth? }] }
     select: async (req, res) => {
@@ -720,7 +856,9 @@ export function squadRoutes({ pool, secret }) {
                returning player_id`,
               [req.params.id, p.playerId, side,
                p.battingNo == null ? null : Number(p.battingNo), p.twelfth === true]);
-            written += r.rowCount;
+            // An INSERT's command tag always carries a count; pg's type allows
+            // null only for commands that have none.
+            written += /** @type {number} */ (r.rowCount);
           }
           // Zero rows with no error means the policy refused every insert.
           // Reported as a refusal rather than a success with nothing in it.
@@ -728,7 +866,7 @@ export function squadRoutes({ pool, secret }) {
           return { matchId: req.params.id, side, selected: written };
         });
         res.json(out);
-      } catch (e) {
+      } catch (/** @type {any} */ e) {
         // 23514 is one of the two triggers. Its message names the player and
         // says why, which is the only useful thing to put in front of a coach.
         if (e.code === "23514") return res.status(400).json({ error: "not_eligible", detail: e.message });
@@ -763,9 +901,10 @@ export function squadRoutes({ pool, secret }) {
  * first ball the database refuses it, because reversing the innings order
  * under a scorecard people have already read is not an edit — it goes through
  * scoring_amendment, where it needs a second person.
+ * @param {RouteDeps} deps @returns {Record<string, IdHandler>}  /matches/:id/toss
  */
 export function tossRoutes({ pool, secret }) {
-  const err = (code, status = 400) => Object.assign(new Error(code), { status });
+  const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
   return {
     // POST /matches/:id/toss { wonBy: 'home'|'away', decision: 'bat'|'bowl' }
     record: async (req, res) => {
@@ -801,7 +940,7 @@ export function tossRoutes({ pool, secret }) {
           };
         });
         res.json(out);
-      } catch (e) {
+      } catch (/** @type {any} */ e) {
         // 23514 is the freeze trigger — play has started. Its message says so
         // and names the amendment route, which is the only way through.
         if (e.code === "23514") return res.status(409).json({ error: "toss_locked", detail: e.message });
@@ -847,9 +986,10 @@ export function tossRoutes({ pool, secret }) {
  * name — "unavailable, said so himself" and "unavailable, according to the
  * coach" are different degrees of certainty, and letting the caller name
  * somebody else would erase the difference.
+ * @param {RouteDeps} deps @returns {Record<string, IdHandler>}  /matches/:id/availability
  */
 export function availabilityRoutes({ pool, secret }) {
-  const err = (code, status = 400) => Object.assign(new Error(code), { status });
+  const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
   const STATUS = ["available", "unavailable", "doubtful"];
   const KINDS = ["illness", "family", "academic", "travel", "religious", "other_sport", "other"];
 
@@ -880,7 +1020,7 @@ export function availabilityRoutes({ pool, secret }) {
           return r.rows[0];
         });
         res.json(out);
-      } catch (e) {
+      } catch (/** @type {any} */ e) {
         // 23514 is the belongs-to-this-school trigger almost every time, and
         // its message says which question was actually asked.
         if (e.code === "23514") return res.status(422).json({ error: "wrong_school", detail: e.message });
@@ -902,20 +1042,23 @@ export function availabilityRoutes({ pool, secret }) {
  * because transport.drive is a capability to REPORT on a trip and not to
  * change one — a driver who could update the row could re-time the departure
  * or swap the vehicle.
+ * @param {RouteDeps} deps
+ * @returns {Record<string, Handler>}  POST /vehicles has no :id; the trip routes do
  */
 export function transportRoutes({ pool, secret }) {
-  const err = (code, status = 400) => Object.assign(new Error(code), { status });
+  const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
   // YYYY-MM-DD or nothing. A cover date typed as "March next year" is refused
   // rather than stored as null, because null means "not recorded" and a
   // coordinator who typed a date would read "unknown" as the system losing it.
-  const isoDate = (v) => {
+  const isoDate = (/** @type {unknown} */ v) => {
     if (v == null || v === "") return null;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(v))) throw err("date_must_be_yyyy_mm_dd");
     return String(v);
   };
+  /** @param {(req: ApiRequest) => Promise<unknown>} fn @returns {Handler} */
   const handle = (fn) => async (req, res) => {
     try { res.json(await fn(req)); }
-    catch (e) {
+    catch (/** @type {any} */ e) {
       // 23514 is one of the safety checks on the trip — a bus that seats
       // fourteen carrying fifteen, or another school's vehicle. The message
       // names the vehicle and the numbers, so it is passed through.
@@ -1000,6 +1143,7 @@ export function transportRoutes({ pool, secret }) {
       return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
         const { rows } = await client.query(`select * from trip_mark($1, $2)`,
                                             [req.params.id, event]);
+        /** @type {{ ok: boolean, reason: string | null }}  trip_mark()'s row (db/41) */
         const r = rows[0] ?? { ok: false, reason: "no_result" };
         // The function's own reason, not a flattened refusal: "already
         // departed" and "not this driver" send a person to different places.
@@ -1010,8 +1154,13 @@ export function transportRoutes({ pool, secret }) {
   };
 }
 
+/**
+ * Appointing the officials: the comment that says why is the one headed so,
+ * above availabilityRoutes().
+ * @param {RouteDeps} deps @returns {Record<string, IdHandler>}  /matches/:id/officials
+ */
 export function officialRoutes({ pool, secret }) {
-  const err = (code, status = 400) => Object.assign(new Error(code), { status });
+  const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
   const DUTIES = ["umpire", "third_umpire", "scorer", "referee"];
   const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   return {
@@ -1133,7 +1282,9 @@ export function officialRoutes({ pool, secret }) {
                values ($1, match_school($1), $2, $3, $4, $5, $6, app_user_id(), now())
                returning id`,
               [req.params.id, o.duty, name, o.personId ?? null, o.officialId ?? null, panel]);
-            written += r.rowCount;
+            // An INSERT's command tag always carries a count; pg's type allows
+            // null only for commands that have none.
+            written += /** @type {number} */ (r.rowCount);
           }
           // Zero rows and no error means the policy refused every insert. A
           // sheet that only re-submitted linked duties wrote nothing either,
@@ -1154,7 +1305,7 @@ export function officialRoutes({ pool, secret }) {
           return { matchId: req.params.id, appointed: written, kept: keep.size, standing };
         });
         res.json(out);
-      } catch (e) {
+      } catch (/** @type {any} */ e) {
         if (e.code === "23505") return res.status(409).json({ error: "duplicate_official" });
         // 23502: match_school() came back NULL. 23503: the match_id foreign key
         // found nothing. Both mean that match is not there, or not theirs.
@@ -1185,12 +1336,23 @@ export function officialRoutes({ pool, secret }) {
  * during a match — that is the whole point of recording them — and a scorer
  * who cannot write "rain arrived at 3pm" because play has started has been
  * given a worse tool than a notebook.
+ * @param {RouteDeps} deps
+ * @returns {Record<string, IdHandler>}  /matches/:id/weather, /matches/:id/pitch, /grounds/:id/condition
  */
 export function conditionsRoutes({ pool, secret }) {
-  const err = (code, status = 400) => Object.assign(new Error(code), { status });
+  const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
 
   // Shared shape for both handlers: derive school from the match, upsert on
   // match_id, report a policy refusal as a refusal rather than a silent no-op.
+  /**
+   * @template V  the fields build() validated out of the body
+   * @param {IdRequest} req
+   * @param {ApiResponse} res
+   * @param {object} spec
+   * @param {string} spec.sql                       $1 is the route's :id
+   * @param {(values: V) => unknown[]} spec.params  $2 onwards, in order
+   * @param {(req: IdRequest) => V} spec.build      throws err() on a bad field
+   */
   const upsert = async (req, res, { sql, params, build }) => {
     try {
       const values = build(req);
@@ -1200,7 +1362,7 @@ export function conditionsRoutes({ pool, secret }) {
         return { matchId: req.params.id, ...r.rows[0] };
       });
       res.json(out);
-    } catch (e) {
+    } catch (/** @type {any} */ e) {
       if (e.code === "23514") return res.status(400).json({ error: "invalid_value", detail: e.message });
       // school_id came back NULL: match_school() found nothing, so the match
       // does not exist or is not visible to this principal.
@@ -1212,21 +1374,28 @@ export function conditionsRoutes({ pool, secret }) {
 
   // Whole numbers only, within a range, or null. The database checks these too;
   // doing it here means the message names the field rather than the constraint.
+  /** @param {unknown} v  a body field as sent @param {number} lo @param {number} hi @param {string} field */
   const num = (v, lo, hi, field) => {
     if (v == null || v === "") return null;
     const n = Number(v);
     if (!Number.isInteger(n) || n < lo || n > hi) throw err(`${field}_out_of_range`);
     return n;
   };
+  /**
+   * @param {any} v  a body field as sent; returned only once it is on the list
+   * @param {readonly string[]} allowed
+   * @param {string} field
+   */
   const oneOf = (v, allowed, field) => {
     if (v == null || v === "") return null;
     if (!allowed.includes(v)) throw err(`${field}_invalid`);
     return v;
   };
-  const bool = (v) => (v == null ? null : v === true);
+  const bool = (/** @type {unknown} */ v) => (v == null ? null : v === true);
   // A calendar date, or nothing. Rejected rather than coerced: `new Date()` of
   // a typo yields Invalid Date, which Postgres refuses with a message about a
   // type rather than about the field the groundsman got wrong.
+  /** @param {any} v  a body field as sent; returned only once it reads as a date @param {string} field */
   const date = (v, field) => {
     if (v == null || v === "") return null;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(v))) throw err(`${field}_must_be_yyyy_mm_dd`);

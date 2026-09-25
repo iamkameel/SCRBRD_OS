@@ -10,6 +10,7 @@ import { appendEvents, readEvents } from "./events-api.mjs";
 import { SyncEngine, memoryStorage } from "@scrbrd/sync";
 import { signToken } from "../auth/auth.mjs";
 /** @import { Transport } from "@scrbrd/sync" */
+/** @import { Pool } from "../api-types.mjs" */
 
 let pass = 0, fail = 0;
 /** @type {(n: string, c: unknown, detail?: string) => void} — the detail is accepted and not printed */
@@ -78,7 +79,8 @@ function fakeDb({ session, existingKeys = new Set(), conflictKeys = new Set(), l
     release() { client.released = true; },
     released: false,
   };
-  return { pool: { connect: async () => client }, client, log, ballEvents, quarantine };
+  // A fake pool: connect() is all runAsPrincipal() asks of one.
+  return { pool: /** @type {Pool} */ (/** @type {unknown} */ ({ connect: async () => client })), client, log, ballEvents, quarantine };
 }
 const liveSession = { epoch: 3, state: "active", holder_user_id: "uScorer", holder_device: "devA", lease_until: new Date(Date.now() + 60000) };
 const ev = (/** @type {number} */ n, extra = {}) => ({ epoch: 3, deviceId: "devA", scorerId: "uScorer", clientSeq: n, clientTs: Date.now(),
