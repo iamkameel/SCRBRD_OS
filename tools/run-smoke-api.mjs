@@ -161,7 +161,11 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // SCRBRD-082 / SCRBRD-084: the Post-Match Report and the Season Awards tab.
   "browser-report", "browser-awards",
   // SCRBRD-068/069/080/081: the pad's four new Laws questions.
-  "browser-pad-laws"];
+  "browser-pad-laws",
+  // SCRBRD-078/075/079: a scorer's day with poor signal — the pad loads and
+  // reloads with none, says "sign in to send", retries its claim, sends the
+  // toss first, matches the server id for id, and clears its outbox at the end.
+  "browser-offline-day"];
 
 // Walks that need no database, run by `pnpm smoke` instead. Named here only so
 // the completeness check below knows they are accounted for.

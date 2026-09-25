@@ -223,16 +223,19 @@ const signIn = async () => {
 };
 /**
  * After a reload: back on the pad. The API token lives in memory only and is
- * lost on every reload by design (lib/api.js), so the scorer signs out of the
- * stale shell, signs in again and reopens the fixture — which is what a
- * scorer does. The ball log and the outbox are on disk and are not touched.
+ * lost on every reload by design (lib/api.js). The pad of a live fixture
+ * reopens by itself, signed out (SCRBRD-078), and says "sign in to send";
+ * its own prompt signs in and comes back to it — which is what a scorer
+ * does. The ball log and the outbox are on disk and are not touched.
  */
 const backOnPad = async () => {
-  await click(/Sign out/, 4000);
-  await page.waitForTimeout(600);
-  const inAgain = await signIn();
-  if (DEBUG && !inAgain) console.log("[debug] sign-in again failed:", (await text()).replace(/\s+/g, " ").slice(0, 300));
-  await openFixture();
+  for (let t = 0; t < 20 && !(await page.locator('[data-testid="sync-signin"]').count()); t++) await page.waitForTimeout(300);
+  await page.locator('[data-testid="sync-signin"]').first().click({ timeout: 4000 });
+  await page.waitForTimeout(800);
+  await click(/Scorer/, 4000);
+  await click(/^Sign In$/, 5000);
+  await page.waitForTimeout(2500);
+  if (DEBUG && !(await board())) console.log("[debug] not back on the pad:", (await text()).replace(/\s+/g, " ").slice(0, 300));
   return onPad();
 };
 /** Tap one run value on the one-tap pad; true when the board moved. */
@@ -304,10 +307,9 @@ try {
   group("C. Reload with no signal: neither the pad nor the outbox brings it back");
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForTimeout(3000);
-  // The app shell comes back from the service worker. A LIVE fixture's pad
-  // does not reopen with no signal (the session restore looks the fixture up
-  // on the server), so what persisted is read from disk, where the next load
-  // with signal will read it.
+  // The app shell comes back from the service worker, and the live fixture's
+  // pad reopens from what is on disk (SCRBRD-078) — it used to leave the
+  // scorer on the shell. What persisted is read from disk as well.
   ok("the app comes back with no signal", (await page.$eval("#root", (el) => el.innerHTML.length)) > 500);
   ok("the saved log is the one before the reload", same(await padIds(), afterUndo));
   ok("the outbox on disk still does not have the undone ball", !(await queuedOnDisk())?.includes(SIX), JSON.stringify(await queuedOnDisk()));
@@ -332,15 +334,17 @@ try {
 
   group("E. After a reload, undo a ball the server already has, with no way to send (SCRBRD-075)");
   // The pad claims on load, so it opens with the server reachable; then the
-  // ball log's route goes dark before its first flush can answer. The pad
-  // has re-offered its whole log, as it does on every load, and none of it
-  // has been acknowledged in THIS session — which is all the pad used to go
-  // on, so the last ball looked as if it had never left.
+  // ball log's route goes dark. None of the log has been acknowledged in
+  // THIS session — which is all the pad used to go on, so the last ball
+  // looked as if it had never left. (It used to re-offer its whole log on
+  // every load, too, and sit on "Sending N" for balls the server had; since
+  // SCRBRD-078 it offers only what the outbox does not already answer for,
+  // so there is nothing to send until the undo.)
   const cutEvents = (route) => (route.request().method() === "POST" ? route.abort("internetdisconnected") : route.continue());
   await page.route(`${API}/api/matches/*/events`, cutEvents);
   await page.reload({ waitUntil: "networkidle" });
   await page.waitForTimeout(2500);
-  ok("the pad comes back, and cannot send", (await backOnPad()) && /^Sending \d+$/.test(await pill()), await pill());
+  ok("the pad comes back, with nothing to send: the log is the server's", (await backOnPad()) && await pillSays(/^Sent$/), await pill());
   const beforeE = await padIds();
   const FOUR = beforeE.at(-1);
   ok("the last ball is on the server", (await serverIds()).includes(FOUR));
