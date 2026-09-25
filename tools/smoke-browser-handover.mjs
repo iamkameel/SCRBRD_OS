@@ -210,12 +210,15 @@ try {
   await outgoing.page.locator('[data-testid="open-handover"]').first().click({ timeout: 3000 });
   await outgoing.page.waitForTimeout(300);
   await outgoing.page.locator('[data-testid="handover-arm"]').click({ timeout: 3000 }).catch(() => {});
-  await outgoing.page.waitForTimeout(600);
-  const armed = (await dbq(`select state, epoch from scoring_session where match_id = $1`, [MATCH]))[0];
+  // Waited for, not slept on: under load the arm and the cancel each take a round trip.
+  const sessionRow = async () => (await dbq(`select state, epoch from scoring_session where match_id = $1`, [MATCH]))[0];
+  const waitFor = async (pred) => { for (let t = 0; t < 40; t++) { const r = await sessionRow(); if (pred(r)) return r; await outgoing.page.waitForTimeout(250); } return sessionRow(); };
+  await outgoing.page.locator('[data-testid="handover-code"]').waitFor({ timeout: 8000 }).catch(() => {});
+  const armed = await waitFor((r) => r?.state === "handover_pending");
   ok("armed", armed?.state === "handover_pending", JSON.stringify(armed));
-  await outgoing.page.locator('[data-testid="handover-cancel"]').click({ timeout: 3000 }).catch(() => {});
-  await outgoing.page.waitForTimeout(1000);
-  const back = (await dbq(`select state, epoch from scoring_session where match_id = $1`, [MATCH]))[0];
+  await outgoing.page.locator('[data-testid="handover-cancel"]').click({ timeout: 5000 }).catch(() => {});
+  const back = await waitFor((r) => r?.state === "active" && r?.epoch === armed?.epoch + 1);
+  await outgoing.page.waitForTimeout(800);
   ok("the cancel took the token back, under the next generation", back?.state === "active" && back?.epoch === armed?.epoch + 1, JSON.stringify(back));
   const n0 = (await serverLog()).length;
   await clearBlockers(outgoing.page);
