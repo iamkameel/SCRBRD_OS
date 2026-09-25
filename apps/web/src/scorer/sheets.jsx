@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { DISMISSAL, DISMISSAL_LABEL, INNINGS_END_REASON, NB_RUNS } from "@scrbrd/scoring";
-import { D } from "../design/tokens.js";
+import { D, T } from "../design/tokens.js";
 import { armHandover, cancelHandover, claimHandover, refusalWords, sessionState, verifyTakeover } from "../lib/handover.js";
 import { fmtOv } from "./format.js";
 import { SHOT_CATEGORIES } from "./shots.js";
@@ -270,7 +270,7 @@ function HandoverSheet({ matchId, device, epoch, pending, held = 0, onShowHeld, 
             <button key={id} data-testid={`handover-tab-${id}`} onClick={()=>setTab(id)} className="pressBtn" style={{
               flex:1,padding:"9px",borderRadius:D.pill,cursor:"pointer",border:"none",
               fontFamily:D.head,fontSize:"11px",fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",
-              background:tab===id?D.grad:D.surf2,color:tab===id?"#fff":D.textMuted}}>
+              background:tab===id?D.grad:D.surf2,color:tab===id?T.light.ink:D.textMuted}}>
               {label}
             </button>
           ))}
@@ -714,7 +714,7 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,onClose
   };
   const whoName=who===nonStriker?.id?nonStriker?.name:(striker?.name??batName);
   const pill=(on)=>({flex:1,padding:"10px",borderRadius:D.md,cursor:"pointer",fontFamily:D.body,fontSize:"13px",fontWeight:500,
-    border:"1px solid "+(on?D.rose+"55":D.border),background:on?D.rose+"1a":D.surf2,color:on?"#fca5a5":D.textSecondary});
+    border:"1px solid "+(on?D.rose+"55":D.border),background:on?D.rose+"1a":D.surf2,color:on?D.roseText:D.textSecondary});
   return (
     <Sheet title="WICKET!" accent={D.rose} onClose={onClose}>
       <div style={{color:D.textSecondary,fontSize:"13px",fontFamily:D.body,marginBottom:"14px",paddingTop:"4px"}}>
@@ -726,7 +726,7 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,onClose
             padding:"11px",borderRadius:D.md,cursor:"pointer",fontFamily:D.body,fontSize:"13px",fontWeight:500,
             border:"1px solid "+(mode===m?D.rose+"55":D.border),
             background:mode===m?D.rose+"1a":D.surf2,
-            color:mode===m?"#fca5a5":D.textSecondary,transition:"all .15s"}}>
+            color:mode===m?D.roseText:D.textSecondary,transition:"all .15s"}}>
             {DISMISSAL_LABEL[m]}
           </button>
         ))}

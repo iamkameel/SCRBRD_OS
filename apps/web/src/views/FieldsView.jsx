@@ -1,7 +1,7 @@
 
 import { useEffect, useState } from "react";
 import { holdsCapability } from "../rbac/index.js";
-import { D } from "../design/tokens.js";
+import { D, T, textOn } from "../design/tokens.js";
 import { Avatar, Badge, Btn, Card, EmptyState, Modal, Select, SectionHeader } from "../ui/primitives.jsx";
 import { useLive, useRows } from "../lib/live.js";
 import { api } from "../lib/api.js";
@@ -53,29 +53,29 @@ function FieldsView({ role }) {
         <div style={{display:"flex",justifyContent:"center",marginBottom:"14px"}}>
           <svg viewBox="0 0 80 220" style={{width:"60px",height:"165px"}}>
             {/* Pitch rectangle */}
-            <rect x={5} y={5} width={70} height={210} rx={2} fill="#c8a96a" stroke="#8a7040" strokeWidth={1}/>
+            <rect x={5} y={5} width={70} height={210} rx={2} fill={T.strip.clay} stroke={T.strip.edge} strokeWidth={1}/>
             {/* Crease lines */}
-            <line x1={5} y1={35}  x2={75} y2={35}  stroke="white" strokeWidth={1.5} opacity={0.8}/>
-            <line x1={5} y1={185} x2={75} y2={185} stroke="white" strokeWidth={1.5} opacity={0.8}/>
-            <line x1={5} y1={45}  x2={75} y2={45}  stroke="white" strokeWidth={1} opacity={0.5}/>
-            <line x1={5} y1={175} x2={75} y2={175} stroke="white" strokeWidth={1} opacity={0.5}/>
+            <line x1={5} y1={35}  x2={75} y2={35}  stroke={T.strip.paint} strokeWidth={1.5} opacity={0.8}/>
+            <line x1={5} y1={185} x2={75} y2={185} stroke={T.strip.paint} strokeWidth={1.5} opacity={0.8}/>
+            <line x1={5} y1={45}  x2={75} y2={45}  stroke={T.strip.paint} strokeWidth={1} opacity={0.5}/>
+            <line x1={5} y1={175} x2={75} y2={175} stroke={T.strip.paint} strokeWidth={1} opacity={0.5}/>
             {/* Stumps */}
             {[-8,0,8].map(x=>(
               <g key={x}>
-                <rect x={35+x-1} y={20}  width={2} height={14} rx={0.5} fill="white"/>
-                <rect x={35+x-1} y={186} width={2} height={14} rx={0.5} fill="white"/>
+                <rect x={35+x-1} y={20}  width={2} height={14} rx={0.5} fill={T.strip.paint}/>
+                <rect x={35+x-1} y={186} width={2} height={14} rx={0.5} fill={T.strip.paint}/>
               </g>
             ))}
             {/* Cracks simulation */}
             {cracksLevel>=1&&[30,70,110,150].map(y=>(
-              <line key={y} x1={10+Math.random()*10} y1={y} x2={30+Math.random()*20} y2={y+8} stroke="#6b4f20" strokeWidth={0.8} opacity={0.6}/>
+              <line key={y} x1={10+Math.random()*10} y1={y} x2={30+Math.random()*20} y2={y+8} stroke={T.strip.crack} strokeWidth={0.8} opacity={0.6}/>
             ))}
             {cracksLevel>=2&&[50,90,130,160].map(y=>(
-              <line key={y} x1={40+Math.random()*10} y1={y} x2={60+Math.random()*10} y2={y+10} stroke="#5a3e1a" strokeWidth={1.2} opacity={0.7}/>
+              <line key={y} x1={40+Math.random()*10} y1={y} x2={60+Math.random()*10} y2={y+10} stroke={T.strip.crackDeep} strokeWidth={1.2} opacity={0.7}/>
             ))}
             {/* Grass coverage */}
             {p.grass&&!p.grass.includes("N/A")&&(
-              <rect x={5} y={5} width={70} height={210} rx={2} fill="#4a8c30" opacity={p.grass?.includes("short")?0.12:0.22}/>
+              <rect x={5} y={5} width={70} height={210} rx={2} fill={T.strip.grass} opacity={p.grass?.includes("short")?0.12:0.22}/>
             )}
           </svg>
         </div>
@@ -93,7 +93,7 @@ function FieldsView({ role }) {
           ].map(([l,v,c])=>(
             <div key={l} style={{padding:"7px 10px",background:D.surf3,borderRadius:D.sm}}>
               <div style={{fontFamily:D.body,fontSize:"9px",color:D.textMuted,marginBottom:"3px"}}>{l}</div>
-              <div style={{fontFamily:D.mono,fontSize:"11px",fontWeight:600,color:c}}>{v}</div>
+              <div style={{fontFamily:D.mono,fontSize:"11px",fontWeight:600,color:textOn(c)}}>{v}</div>
             </div>
           ))}
         </div>

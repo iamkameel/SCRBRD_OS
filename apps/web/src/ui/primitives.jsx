@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef } from "react";
-import { D, px, textOn } from "../design/tokens.js";
+import { D, T, inkOn, px, textOn } from "../design/tokens.js";
 import { initials } from "../lib/format.js";
 
 // ══════════════════════════════════════════════════════
@@ -20,7 +20,7 @@ const KPICard = ({ label, value, sub, icon, color=D.indigo, trend }) => (
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
       <div>
         <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:"8px"}}>{label}</div>
-        <div style={{fontFamily:D.mono,fontSize:"26px",fontWeight:500,color,lineHeight:1}}>{value}</div>
+        <div style={{fontFamily:D.mono,fontSize:"26px",fontWeight:500,color:textOn(color),lineHeight:1}}>{value}</div>
         {sub&&<div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginTop:"5px"}}>{sub}</div>}
       </div>
       <div style={{width:"38px",height:"38px",borderRadius:D.md,background:color+"18",border:`1px solid ${color}22`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"18px",flexShrink:0}}>{icon}</div>
@@ -53,7 +53,10 @@ const SectionHeader = ({ title, sub, actions, color=D.indigo }) => (
 // up asserting against a control that does not exist.
 const Btn = ({ children, onClick, variant="primary", size="md", disabled, ...rest }) => {
   const bg = variant==="primary"?D.gradMain:variant==="success"?D.gradLive:variant==="danger"?D.rose:variant==="ghost"?"transparent":D.surf3;
-  const col = variant==="ghost"?D.textSecondary:"#fff";
+  const col = variant==="ghost"?D.textSecondary
+    : variant==="primary"||variant==="success"?T.light.ink
+    : variant==="danger"?inkOn(D.rose)
+    : D.textPrimary;
   const pad = size==="sm"?"5px 12px":size==="lg"?"12px 24px":"8px 18px";
   const fs  = size==="sm"?"11px":size==="lg"?"14px":"12px";
   return (
@@ -73,14 +76,14 @@ const Btn = ({ children, onClick, variant="primary", size="md", disabled, ...res
 const Badge = ({ children, color=D.indigo, ...rest }) => (
   <span {...rest} style={{
     padding:"2px 8px",borderRadius:D.pill,fontFamily:D.mono,fontSize:"9px",fontWeight:500,
-    background:color+"18",border:`1px solid ${color}30`,color,letterSpacing:"0.05em",textTransform:"uppercase",
+    background:color+"18",border:`1px solid ${color}30`,color:textOn(color),letterSpacing:"0.05em",textTransform:"uppercase",
   }}>{children}</span>
 );
 
 const Avatar = ({ name, size=32, color=D.indigo }) => (
   <div style={{width:px(size),height:px(size),borderRadius:"50%",background:`linear-gradient(135deg,${color}33,${color}55)`,
     border:`1px solid ${color}44`,display:"flex",alignItems:"center",justifyContent:"center",
-    fontFamily:D.mono,fontSize:px(Math.round(size*0.35)),fontWeight:700,color,flexShrink:0}}>
+    fontFamily:D.mono,fontSize:px(Math.round(size*0.35)),fontWeight:700,color:textOn(color),flexShrink:0}}>
     {initials(name)}
   </div>
 );
@@ -101,7 +104,7 @@ const SkillBar = ({ label, value, color=D.indigo }) => (
   <div style={{marginBottom:"8px"}}>
     <div style={{display:"flex",justifyContent:"space-between",marginBottom:"4px"}}>
       <span style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary}}>{label}</span>
-      <span style={{fontFamily:D.mono,fontSize:"11px",color}}>{value}</span>
+      <span style={{fontFamily:D.mono,fontSize:"11px",color:textOn(color)}}>{value}</span>
     </div>
     <ProgressBar pct={value} color={color}/>
   </div>
@@ -111,7 +114,7 @@ const Pill = ({ children, color=D.indigo, onClick }) => (
   <span onClick={onClick} style={{
     display:"inline-flex",alignItems:"center",padding:"3px 10px",borderRadius:D.pill,
     fontFamily:D.body,fontSize:"11px",fontWeight:500,cursor:onClick?"pointer":"default",
-    background:color+"15",border:`1px solid ${color}28`,color,
+    background:color+"15",border:`1px solid ${color}28`,color:textOn(color),
   }}>{children}</span>
 );
 
@@ -164,7 +167,7 @@ const Modal = ({ title, children, onClose, width="520px" }) => {
   return (
   <div className="os-modal" data-testid="modal-backdrop"
     onMouseDown={(e)=>{ if (e.target === e.currentTarget) onClose?.(); }}
-    style={{position:"fixed",inset:0,background:"rgba(0,0,0,.75)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:"20px"}}>
+    style={{position:"fixed",inset:0,background:T.glass.scrim,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:"20px"}}>
     <div className="os-modal-card" ref={card} role="dialog" aria-modal="true" aria-labelledby={headingId} tabIndex={-1}
       style={{background:D.surf1,borderRadius:D.xl,border:`1px solid ${D.borderMed}`,width:"100%",maxWidth:width,maxHeight:"90vh",overflow:"auto",outline:"none"}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 20px",borderBottom:`1px solid ${D.border}`}}>

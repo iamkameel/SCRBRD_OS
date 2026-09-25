@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { mayGrantRole } from "@scrbrd/policy/roles";
 import { ROLES } from "../design/roles.js";
-import { D } from "../design/tokens.js";
+import { D, T, inkOn } from "../design/tokens.js";
 import { can, holdsCapability } from "../rbac/index.js";
 import { useLive, useRows } from "../lib/live.js";
 import { api } from "../lib/api.js";
@@ -98,8 +98,8 @@ function ManagementView({ role, users, setUsers }) {
       r!=="superadmin"||isSuperAdmin  // Only SA can set SA
     );
     return (
-      <div style={{position:"fixed",inset:0,zIndex:600,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:"16px"}}>
-        <div style={{width:"100%",maxWidth:"480px",borderRadius:D.xl,border:`1px solid ${D.borderMed}`,background:D.surf1,overflow:"hidden",boxShadow:"0 24px 80px rgba(0,0,0,0.5)"}}>
+      <div style={{position:"fixed",inset:0,zIndex:600,background:T.glass.scrim,backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:"16px"}}>
+        <div style={{width:"100%",maxWidth:"480px",borderRadius:D.xl,border:`1px solid ${D.borderMed}`,background:D.surf1,overflow:"hidden",boxShadow:T.elevation.xl}}>
           {/* Header */}
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"18px 20px",borderBottom:`1px solid ${D.border}`,background:`${D.violet}08`}}>
             <div style={{fontFamily:D.head,fontSize:"15px",fontWeight:800,color:D.textPrimary}}>{editUser?"✏️ Edit User":"➕ Add New User"}</div>
@@ -164,7 +164,7 @@ function ManagementView({ role, users, setUsers }) {
           {/* Footer */}
           <div style={{display:"flex",gap:"10px",padding:"14px 20px",borderTop:`1px solid ${D.border}`,background:D.surf2}}>
             <button onClick={()=>{setEditUser(null);setAddOpen(false);}} className="pressBtn" style={{flex:1,padding:"10px",borderRadius:D.md,cursor:"pointer",background:"transparent",border:`1px solid ${D.border}`,fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted}}>Cancel</button>
-            <button onClick={saveUser} disabled={!(u.name&&u.email)} className="pressBtn" style={{flex:2,padding:"10px",borderRadius:D.md,cursor:"pointer",background:u.name&&u.email?D.violet:"rgba(255,255,255,0.08)",border:"none",fontFamily:D.head,fontSize:"11px",fontWeight:700,color:u.name&&u.email?"#fff":"rgba(255,255,255,0.3)"}}>
+            <button onClick={saveUser} disabled={!(u.name&&u.email)} className="pressBtn" style={{flex:2,padding:"10px",borderRadius:D.md,cursor:"pointer",background:u.name&&u.email?D.violet:T.fill.track,border:"none",fontFamily:D.head,fontSize:"11px",fontWeight:700,color:u.name&&u.email?inkOn(D.violet):T.content.tertiary}}>
               {editUser?"Save Changes":"Create User"}
             </button>
           </div>
@@ -178,14 +178,14 @@ function ManagementView({ role, users, setUsers }) {
     const u = (users||USERS_INITIAL).find(x=>x.id===delConf);
     if(!u) return null;
     return (
-      <div style={{position:"fixed",inset:0,zIndex:700,background:"rgba(0,0,0,0.8)",display:"flex",alignItems:"center",justifyContent:"center",padding:"16px"}}>
+      <div style={{position:"fixed",inset:0,zIndex:700,background:T.glass.scrim,display:"flex",alignItems:"center",justifyContent:"center",padding:"16px"}}>
         <div style={{width:"100%",maxWidth:"360px",borderRadius:D.xl,border:`1px solid ${D.rose}44`,background:D.surf1,padding:"24px",textAlign:"center"}}>
           <div style={{fontSize:"36px",marginBottom:"12px"}}>⚠️</div>
           <div style={{fontFamily:D.head,fontSize:"16px",fontWeight:800,color:D.textPrimary,marginBottom:"6px"}}>Delete User?</div>
           <div style={{fontFamily:D.body,fontSize:"13px",color:D.textMuted,marginBottom:"20px"}}>This will permanently remove <strong style={{color:D.textSecondary}}>{u.name}</strong>. This cannot be undone.</div>
           <div style={{display:"flex",gap:"10px"}}>
             <button onClick={()=>setDelConf(null)} className="pressBtn" style={{flex:1,padding:"10px",borderRadius:D.md,cursor:"pointer",background:"transparent",border:`1px solid ${D.border}`,fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted}}>Cancel</button>
-            <button onClick={()=>deleteUser(delConf)} className="pressBtn" style={{flex:1,padding:"10px",borderRadius:D.md,cursor:"pointer",background:D.rose,border:"none",fontFamily:D.head,fontSize:"11px",fontWeight:700,color:"#fff"}}>Delete</button>
+            <button onClick={()=>deleteUser(delConf)} className="pressBtn" style={{flex:1,padding:"10px",borderRadius:D.md,cursor:"pointer",background:D.rose,border:"none",fontFamily:D.head,fontSize:"11px",fontWeight:700,color:inkOn(D.rose)}}>Delete</button>
           </div>
         </div>
       </div>
@@ -413,7 +413,7 @@ function ManagementView({ role, users, setUsers }) {
                 </div>
               </div>
               <div style={{borderRadius:D.md,border:`1px solid ${D.border}`,background:D.surf2,padding:"10px 14px",fontFamily:D.body,fontSize:"12px",color:D.textMuted,minHeight:"60px"}}>Type broadcast message here…</div>
-              <button className="pressBtn" style={{alignSelf:"flex-start",padding:"8px 18px",borderRadius:D.pill,cursor:"pointer",background:D.rose,border:"none",fontFamily:D.head,fontSize:"10px",fontWeight:700,color:"#fff"}}>📡 Send Broadcast</button>
+              <button className="pressBtn" style={{alignSelf:"flex-start",padding:"8px 18px",borderRadius:D.pill,cursor:"pointer",background:D.rose,border:"none",fontFamily:D.head,fontSize:"10px",fontWeight:700,color:inkOn(D.rose)}}>📡 Send Broadcast</button>
             </div>
           </div>
         </div>

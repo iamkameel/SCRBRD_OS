@@ -1,6 +1,6 @@
 
 import { useState } from "react";
-import { D } from "../design/tokens.js";
+import { D, inkOn, textOn } from "../design/tokens.js";
 import { dateStr, today } from "../lib/format.js";
 import { Badge, Card, SectionHeader } from "../ui/primitives.jsx";
 import { WeatherChip } from "./shared.jsx";
@@ -109,7 +109,7 @@ function CalendarView({ role, onNav }) {
                     background: isToday ? D.indigo : "transparent",
                     display:"flex", alignItems:"center", justifyContent:"center", marginBottom:"4px",
                   }}>
-                    <span style={{fontFamily:D.mono,fontSize:"11px",fontWeight:isToday?700:400,color:isToday?"#fff":D.textSecondary}}>{day}</span>
+                    <span style={{fontFamily:D.mono,fontSize:"11px",fontWeight:isToday?700:400,color:isToday?inkOn(D.indigo):D.textSecondary}}>{day}</span>
                   </div>
                   <div style={{display:"flex",flexDirection:"column",gap:"2px"}}>
                     {events.slice(0,3).map((ev,i)=>{
@@ -167,7 +167,7 @@ function CalendarView({ role, onNav }) {
                     <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginBottom:"8px"}}>📍 {ev.venue}</div>
                     {w&&<WeatherChip w={w} compact/>}
                     {ev.transport?.bus&&(
-                      <div style={{marginTop:"6px",fontFamily:D.mono,fontSize:"10px",color:D.lime}}>🚌 Bus {ev.transport.depart}</div>
+                      <div style={{marginTop:"6px",fontFamily:D.mono,fontSize:"10px",color:textOn(D.lime)}}>🚌 Bus {ev.transport.depart}</div>
                     )}
                   </div>
                 );

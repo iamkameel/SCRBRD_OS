@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { D, textOn } from "../design/tokens.js";
+import { D, T, textOn } from "../design/tokens.js";
 import { Avatar, Btn, Card, Input, Modal, Select } from "../ui/primitives.jsx";
 import { addDays, dateStr, today } from "../lib/format.js";
 import { api } from "../lib/api.js";
@@ -157,7 +157,7 @@ function AddFixtureModal({ fixtureSchools, teamOptions, grounds, matches, onClos
               {[["free","Not on SCRBRD"],["school","A school here"]].map(([m,l])=>(
                 <button key={m} onClick={()=>setAwayMode(m)} className="pressBtn" style={{
                   flex:1,padding:"6px 10px",borderRadius:D.pill,border:"none",cursor:"pointer",
-                  background:awayMode===m?D.gradLive:"transparent",color:awayMode===m?"#fff":D.textMuted,
+                  background:awayMode===m?D.gradLive:"transparent",color:awayMode===m?T.light.ink:D.textMuted,
                   fontFamily:D.head,fontSize:"10px",fontWeight:700,
                 }}>{l}</button>
               ))}

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { placementFromTap, screenAngle, DISMISSAL_LABEL } from "@scrbrd/scoring";
-import { D, px, textOn } from "../design/tokens.js";
+import { D, T, clr, inkOn, px, textOn } from "../design/tokens.js";
 import { can } from "../rbac/index.js";
 import { CX, CY, LK_COLS, R_BND, R_IN, R_MID, R_PITCH, SEGS, ballAngle, heatColor, lineKey, pieSlice, ringArc, toXY, wagEnd } from "./field.js";
 import { RR, fmtOv, SR } from "./format.js";
@@ -218,9 +218,9 @@ function WagonWheel({ballLog=[],selSeg,onSel,onPlace,viewMode,onViewMode,hidden,
   const zoneFill=(id,zone)=>{
     const sel=isSel(id),hv=hov?.seg===id;
     if(viewMode==="heatmap")return heatColor(segRuns[id],maxR)||"transparent";
-    if(sel&&selSeg.zone===zone)return"rgba(99,102,241,.38)";
-    if(sel)return"rgba(99,102,241,.14)";
-    if(hv)return"rgba(14,165,233,.12)";
+    if(sel&&selSeg.zone===zone)return clr(D.indigo,.38);
+    if(sel)return clr(D.indigo,.14);
+    if(hv)return clr(D.sky,.12);
     return"transparent";
   };
   // A ball with neither a captured point nor a sector has no position at all
@@ -238,7 +238,7 @@ function WagonWheel({ballLog=[],selSeg,onSel,onPlace,viewMode,onViewMode,hidden,
             <button key={m} onClick={()=>onViewMode(m)} className="pressBtn" style={{
               padding:"4px 13px",borderRadius:D.pill,border:"none",cursor:"pointer",
               background:viewMode===m?D.grad:"transparent",
-              color:viewMode===m?"#fff":D.textMuted,
+              color:viewMode===m?T.light.ink:D.textMuted,
               fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:"0.06em",
               textTransform:"uppercase",transition:"all .25s",
             }}>{m==="wagon"?"Wheel":"Heat"}</button>
@@ -253,10 +253,10 @@ function WagonWheel({ballLog=[],selSeg,onSel,onPlace,viewMode,onViewMode,hidden,
             :`Wagon wheel, ${visLines.length} balls${pointCount?`, ${pointCount} placed exactly`:""}`}>
           <defs>
             <radialGradient id="gOuter" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="#0e1a10"/><stop offset="100%" stopColor="#060c08"/>
+              <stop offset="0%" stopColor={T.field.grass}/><stop offset="100%" stopColor={T.field.grassEdge}/>
             </radialGradient>
             <radialGradient id="gInner" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="#0c1610"/><stop offset="100%" stopColor="#050a07"/>
+              <stop offset="0%" stopColor={T.field.square}/><stop offset="100%" stopColor={T.field.squareEdge}/>
             </radialGradient>
             <filter id="glow"><feGaussianBlur stdDeviation="2.5" result="blur"/>
               <feComposite in="SourceGraphic" in2="blur" operator="over"/></filter>
@@ -264,8 +264,8 @@ function WagonWheel({ballLog=[],selSeg,onSel,onPlace,viewMode,onViewMode,hidden,
           <circle cx={CX} cy={CY} r={R_BND+3} fill="url(#gOuter)"/>
           {SEGS.map(seg=>{
             const sel=isSel(seg.id),hv=hov?.seg===seg.id;
-            const fill=viewMode==="heatmap"?(heatColor(segRuns[seg.id],maxR)||`${D.amber}0d`):sel?`rgba(99,102,241,.42)`:hv?`rgba(14,165,233,.16)`:`${D.amber}0c`;
-            const stroke=sel?`rgba(99,102,241,.7)`:hv?`rgba(14,165,233,.4)`:`${D.amber}25`;
+            const fill=viewMode==="heatmap"?(heatColor(segRuns[seg.id],maxR)||`${D.amber}0d`):sel?clr(D.indigo,.42):hv?clr(D.sky,.16):`${D.amber}0c`;
+            const stroke=sel?clr(D.indigo,.7):hv?clr(D.sky,.4):`${D.amber}25`;
             return(<path key={`b${seg.id}`} d={ringArc(seg.angle,R_BND,R_MID)} fill={fill} stroke={stroke}
               strokeWidth={sel?"1.5":"0.5"} style={{cursor:onPlace?"crosshair":"pointer",pointerEvents:onPlace?"none":"auto"}}
               onClick={()=>onSel(sel&&selSeg?.zone==="boundary"?null:{seg:seg.id,zone:"boundary"})}
@@ -274,20 +274,20 @@ function WagonWheel({ballLog=[],selSeg,onSel,onPlace,viewMode,onViewMode,hidden,
           <circle cx={CX} cy={CY} r={R_MID} fill="none" stroke={`${D.amber}50`} strokeWidth="1.5" strokeDasharray="4 3"/>
           {SEGS.map(seg=>(
             <path key={`o${seg.id}`} d={ringArc(seg.angle,R_MID,R_IN)} fill={zoneFill(seg.id,"outer")}
-              stroke={isSel(seg.id)?"rgba(99,102,241,.35)":"rgba(255,255,255,.04)"} strokeWidth="0.4" style={{cursor:onPlace?"crosshair":"pointer",pointerEvents:onPlace?"none":"auto"}}
+              stroke={isSel(seg.id)?clr(D.indigo,.35):T.field.hairline} strokeWidth="0.4" style={{cursor:onPlace?"crosshair":"pointer",pointerEvents:onPlace?"none":"auto"}}
               onClick={()=>onSel(isSel(seg.id)&&selSeg?.zone==="outer"?null:{seg:seg.id,zone:"outer"})}
               onMouseEnter={()=>setHov({seg:seg.id})} onMouseLeave={()=>setHov(null)}/>
           ))}
-          <circle cx={CX} cy={CY} r={R_IN} fill="url(#gInner)" stroke="rgba(255,255,255,.1)" strokeWidth="1" strokeDasharray="3 4"/>
+          <circle cx={CX} cy={CY} r={R_IN} fill="url(#gInner)" stroke={T.field.rule} strokeWidth="1" strokeDasharray="3 4"/>
           {SEGS.map(seg=>(
             <path key={`i${seg.id}`} d={pieSlice(seg.angle,R_IN)} fill={zoneFill(seg.id,"inner")}
-              stroke={isSel(seg.id)?"rgba(99,102,241,.25)":"rgba(255,255,255,.03)"} strokeWidth="0.4"
+              stroke={isSel(seg.id)?clr(D.indigo,.25):T.field.hairline} strokeWidth="0.4"
               style={{cursor:onPlace?"crosshair":"pointer",pointerEvents:onPlace?"none":"auto"}}
               onClick={()=>onSel(isSel(seg.id)&&selSeg?.zone==="inner"?null:{seg:seg.id,zone:"inner"})}
               onMouseEnter={()=>setHov({seg:seg.id})} onMouseLeave={()=>setHov(null)}/>
           ))}
           {SEGS.map(seg=>{const[xo,yo]=toXY(seg.angle-15,R_BND);return(
-            <line key={`sp${seg.id}`} x1={CX} y1={CY} x2={xo} y2={yo} stroke="rgba(255,255,255,.05)" strokeWidth="0.5" style={{pointerEvents:"none"}}/>
+            <line key={`sp${seg.id}`} x1={CX} y1={CY} x2={xo} y2={yo} stroke={T.field.hairline} strokeWidth="0.5" style={{pointerEvents:"none"}}/>
           );})}
           {viewMode==="wagon"&&visLines.map((b,i)=>{
             const{xy:[ex,ey],synthetic}=wagEnd(ballAngle(b,handOf(b)),b);
@@ -327,32 +327,32 @@ function WagonWheel({ballLog=[],selSeg,onSel,onPlace,viewMode,onViewMode,hidden,
                 r="5" fill={D.sky} opacity="0.95"/>
             </g>
           )}
-          <rect x={CX-4.5} y={CY-R_PITCH} width={9} height={R_PITCH*2} rx="2.5" fill="#7c6e45" stroke={`${D.amber}60`} strokeWidth="0.7" style={{pointerEvents:"none"}}/>
-          <line x1={CX-6} y1={CY-R_PITCH+3} x2={CX+6} y2={CY-R_PITCH+3} stroke="rgba(255,255,255,.55)" strokeWidth="0.8" style={{pointerEvents:"none"}}/>
-          <line x1={CX-6} y1={CY+R_PITCH-3} x2={CX+6} y2={CY+R_PITCH-3} stroke="rgba(255,255,255,.55)" strokeWidth="0.8" style={{pointerEvents:"none"}}/>
+          <rect x={CX-4.5} y={CY-R_PITCH} width={9} height={R_PITCH*2} rx="2.5" fill={T.field.pitch} stroke={`${D.amber}60`} strokeWidth="0.7" style={{pointerEvents:"none"}}/>
+          <line x1={CX-6} y1={CY-R_PITCH+3} x2={CX+6} y2={CY-R_PITCH+3} stroke={T.field.mark} strokeWidth="0.8" style={{pointerEvents:"none"}}/>
+          <line x1={CX-6} y1={CY+R_PITCH-3} x2={CX+6} y2={CY+R_PITCH-3} stroke={T.field.mark} strokeWidth="0.8" style={{pointerEvents:"none"}}/>
           {[-2.8,0,2.8].map(x=>[
-            <circle key={`st${x}`} cx={CX+x} cy={CY-R_PITCH+1.5} r="1.4" fill="rgba(255,255,255,.8)" style={{pointerEvents:"none"}}/>,
-            <circle key={`sb${x}`} cx={CX+x} cy={CY+R_PITCH-1.5} r="1.4" fill="rgba(255,255,255,.8)" style={{pointerEvents:"none"}}/>
+            <circle key={`st${x}`} cx={CX+x} cy={CY-R_PITCH+1.5} r="1.4" fill={T.field.stumps} style={{pointerEvents:"none"}}/>,
+            <circle key={`sb${x}`} cx={CX+x} cy={CY+R_PITCH-1.5} r="1.4" fill={T.field.stumps} style={{pointerEvents:"none"}}/>
           ])}
           {SEGS.map(seg=>{
             const[lx,ly]=toXY(seg.angle,(R_IN+R_MID)/2+4);
             const sel=isSel(seg.id),hv=hov?.seg===seg.id;
             return(<text key={`lb${seg.id}`} x={lx} y={ly} textAnchor="middle" dominantBaseline="middle"
               fontSize={sel||hv?"8":"7.5"} fontFamily="'Syne',sans-serif" fontWeight={sel||hv?"700":"400"}
-              fill={sel?"#818cf8":hv?"#7dd3fc":"rgba(255,255,255,.32)"} style={{pointerEvents:"none"}}>{seg.short}</text>);
+              fill={sel?D.indigoText:hv?D.sky:T.field.label} style={{pointerEvents:"none"}}>{seg.short}</text>);
           })}
           {viewMode==="heatmap"&&SEGS.map(seg=>{
             if(!segRuns[seg.id])return null;
             const[lx,ly]=toXY(seg.angle,(R_IN+R_MID)/2+12);
             return(<text key={`hr${seg.id}`} x={lx} y={ly} textAnchor="middle" dominantBaseline="middle"
               fontSize="8" fontFamily="'DM Mono',monospace" fontWeight="500"
-              fill="rgba(255,255,255,.65)" style={{pointerEvents:"none"}}>{segRuns[seg.id]}</text>);
+              fill={T.field.figure} style={{pointerEvents:"none"}}>{segRuns[seg.id]}</text>);
           })}
           <text x={9} y={CY} textAnchor="middle" dominantBaseline="middle" fontSize="6"
-            fontFamily="'Syne',sans-serif" letterSpacing="1" fill="rgba(255,255,255,.18)"
+            fontFamily="'Syne',sans-serif" letterSpacing="1" fill={T.field.watermark}
             transform={`rotate(-90,9,${CY})`} style={{pointerEvents:"none"}}>OFF</text>
           <text x={291} y={CY} textAnchor="middle" dominantBaseline="middle" fontSize="6"
-            fontFamily="'Syne',sans-serif" letterSpacing="1" fill="rgba(255,255,255,.18)"
+            fontFamily="'Syne',sans-serif" letterSpacing="1" fill={T.field.watermark}
             transform={`rotate(90,291,${CY})`} style={{pointerEvents:"none"}}>LEG</text>
         </svg>
       </div>
@@ -408,7 +408,7 @@ function IntelPanel({inn,overs,target,isChase}){
     <div style={{borderRadius:D.lg,overflow:"hidden",position:"relative",
       background:`linear-gradient(145deg,${D.surf1},${D.surf2})`,
       border:`1px solid ${card.accent}30`,
-      boxShadow:`0 8px 40px rgba(0,0,0,.4),0 0 60px ${card.accent}08`,
+      boxShadow:`${T.elevation.lg},0 0 60px ${card.accent}08`,
       transition:"border-color .5s,box-shadow .5s"}}>
       <div style={{height:"2px",background:`linear-gradient(90deg,${card.accent},${card.accent}00)`}}/>
       <div style={{padding:"12px 16px",borderBottom:`1px solid ${D.border}`,display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
@@ -729,7 +729,7 @@ function EventOverlay({event,onDone,suppressBlur}){
   const confetti=isMilestone?Array.from({length:18},(_,i)=>({
     x:Math.sin(i/18*Math.PI*2)*120,
     delay:(i*0.08)%0.7,
-    col:["#f59e0b","#0ea5e9","#10b981","#f43f5e","#7c3aed","#f97316"][i%6],
+    col:[D.amber,D.sky,D.emerald,D.rose,D.violet,D.orange][i%6],
     rot:i*23,
   })):[];
   // Blocking blur is suppressed whenever a sheet/modal is open, evaluated
@@ -738,7 +738,7 @@ function EventOverlay({event,onDone,suppressBlur}){
   return (
     <div style={{
       position:"fixed",inset:0,zIndex:nb?200:9999,pointerEvents:"none",
-      background:nb?"transparent":(bg||"rgba(0,0,0,.1)"),
+      background:nb?"transparent":(bg||clr(T.surface.canvas,.1)),
       backdropFilter:nb?"none":"blur(2px)",
     }}>
       <div style={{
@@ -755,7 +755,7 @@ function EventOverlay({event,onDone,suppressBlur}){
           fontSize:isMilestone?"clamp(52px,12vw,96px)":"clamp(60px,14vw,110px)",
           fontWeight:700,lineHeight:1,
           color,
-          textShadow:`0 0 40px ${glow||color+"88"},0 0 80px ${glow||color+"44"},0 4px 0 rgba(0,0,0,.5)`,
+          textShadow:`0 0 40px ${glow||color+"88"},0 0 80px ${glow||color+"44"},0 4px 0 ${clr(T.surface.canvas,.5)}`,
           letterSpacing:"-0.02em",
           ...(isMilestone?{
             background:"linear-gradient(135deg,"+color+","+color+"99,"+color+")",
@@ -803,9 +803,9 @@ function buildEventCfg(ballValue,milestone){
     color:milestone.color,bg:milestone.color+"08",
     icon:milestone.icon,isMilestone:true,
   };
-  if(ballValue===4)return{label:"FOUR!",sub:"Boundary",color:D.sky,glow:"rgba(14,165,233,.5)",bg:"rgba(14,165,233,.06)"};
-  if(ballValue===6)return{label:"SIX!",sub:"Maximum!",color:D.amber,glow:"rgba(245,158,11,.6)",bg:"rgba(245,158,11,.06)"};
-  if(ballValue==="W")return{label:"WICKET!",sub:"Out",color:D.roseText,glow:"rgba(244,63,94,.5)",bg:"rgba(244,63,94,.06)"};
+  if(ballValue===4)return{label:"FOUR!",sub:"Boundary",color:D.sky,glow:clr(D.sky,.5),bg:clr(D.sky,.06)};
+  if(ballValue===6)return{label:"SIX!",sub:"Maximum!",color:D.amber,glow:clr(D.amber,.6),bg:clr(D.amber,.06)};
+  if(ballValue==="W")return{label:"WICKET!",sub:"Out",color:D.roseText,glow:clr(D.rose,.5),bg:clr(D.rose,.06)};
   return null;
 }
 
@@ -832,7 +832,7 @@ function InningsOverBanner({onReview}){
       position:"fixed",top:"72px",left:"50%",transform:"translateX(-50%)",
       zIndex:1000,padding:"10px 20px",borderRadius:D.pill,
       background:D.surf3,border:`1px solid ${D.amber}66`,
-      boxShadow:"0 8px 28px rgba(0,0,0,.45)",
+      boxShadow:T.elevation.lg,
       display:"flex",alignItems:"center",gap:"14px",
       animation:"bounceIn .4s cubic-bezier(.22,1,.36,1)",
     }} data-testid="innings-over-banner">
@@ -842,7 +842,7 @@ function InningsOverBanner({onReview}){
       </div>
       <button onClick={onReview} className="pressBtn" data-testid="banner-review"
         style={{padding:"7px 16px",borderRadius:D.pill,cursor:"pointer",border:"none",
-          background:D.amber,color:textOn(D.amber),
+          background:D.amber,color:inkOn(D.amber),
           fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.04em"}}>
         Review
       </button>
@@ -858,15 +858,15 @@ function FreeHitBanner({onDismiss}){
     <div style={{
       position:"fixed",top:"72px",left:"50%",transform:"translateX(-50%)",
       zIndex:1000,padding:"10px 24px",borderRadius:D.pill,
-      background:"linear-gradient(135deg,#f97316,#f59e0b)",
-      boxShadow:"0 0 0 4px rgba(249,115,22,.3)",
+      background:T.light.alert,
+      boxShadow:`0 0 0 4px ${clr(D.orange,.3)}`,
       animation:"freeHitPulse 1s ease infinite, bounceIn .4s cubic-bezier(.22,1,.36,1)",
       display:"flex",alignItems:"center",gap:"10px",cursor:"pointer",
     }} onClick={onDismiss}>
       <span style={{fontSize:"20px"}}>⚡</span>
       <div>
-        <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:800,color:"#fff",letterSpacing:"0.1em"}}>FREE HIT!</div>
-        <div style={{fontFamily:D.body,fontSize:"10px",color:"rgba(255,255,255,.8)"}}>Next ball: batter can only be run out</div>
+        <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:800,color:T.light.ink,letterSpacing:"0.1em"}}>FREE HIT!</div>
+        <div style={{fontFamily:D.body,fontSize:"10px",color:T.light.ink,opacity:.8}}>Next ball: batter can only be run out</div>
       </div>
       <span style={{fontSize:"20px"}}>⚡</span>
     </div>

@@ -1,5 +1,5 @@
 import { useState, Fragment } from "react";
-import { D, textOn } from "../design/tokens.js";
+import { D, T, inkOn, textOn } from "../design/tokens.js";
 import { BatsmanChart, BowlerChart, ManhattanChart, RunRateChart, WormChart } from "./charts.jsx";
 import { SEGS } from "./field.js";
 import { RR, SR, fmtOv } from "./format.js";
@@ -39,7 +39,7 @@ function ScoringHub({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selSeg
               padding:"2px 9px",borderRadius:D.pill,
               fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",
               background:i===hubStage?D.grad:i<hubStage?D.emerald+"18":"transparent",
-              color:i===hubStage?"#fff":i<hubStage?D.emerald:D.textMuted,
+              color:i===hubStage?T.light.ink:i<hubStage?D.emerald:D.textMuted,
               border:"1px solid "+(i===hubStage?D.indigo+"55":i<hubStage?D.emerald+"33":D.border),
               transition:"all .25s",
             }}>{i<hubStage?"✓ ":""}{s}</div>
@@ -93,7 +93,7 @@ function ScoringHub({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selSeg
                     flex:1,padding:"8px 12px",borderRadius:D.pill,cursor:"pointer",border:"none",
                     fontFamily:D.body,fontSize:"12px",fontWeight:isActive?600:400,
                     background:isActive?"linear-gradient(135deg,"+D.indigo+","+D.sky+")"  :"transparent",
-                    color:isActive?"#fff":D.textMuted,
+                    color:isActive?T.light.ink:D.textMuted,
                     transition:"all .2s cubic-bezier(.34,1.56,.64,1)",
                     boxShadow:isActive?"0 2px 12px "+D.indigo+"40":"none",
                   }}>
@@ -294,7 +294,7 @@ function ScoringPanel({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selS
                   <span style={{fontFamily:D.head,fontSize:"8px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:D.textMuted}}>RR</span>
                 </div>
                 {freeHit&&<span style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.08em",
-                  color:"#fff",background:"linear-gradient(135deg,#f97316,#f59e0b)",
+                  color:T.light.ink,background:T.light.alert,
                   padding:"2px 8px",borderRadius:D.pill}}>⚡ FREE HIT</span>}
               </div>
             </div>
@@ -666,7 +666,7 @@ function ScoringBlocked({readiness,onFix}){
       {first.fix&&onFix&&(
         <button onClick={()=>onFix(first)} className="pressBtn" data-testid="scoring-blocked-fix"
           style={{flexShrink:0,minHeight:"40px",padding:"8px 16px",borderRadius:D.pill,cursor:"pointer",
-            border:"none",background:D.amber,color:textOn(D.amber),
+            border:"none",background:D.amber,color:inkOn(D.amber),
             fontFamily:D.head,fontSize:"13px",fontWeight:700,letterSpacing:"0.02em"}}>
           {first.fix}
         </button>

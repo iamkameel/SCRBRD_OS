@@ -1,4 +1,5 @@
 import { roleGrants } from "@scrbrd/policy/roles";
+import { themeName } from "./tokens.js";
 
 /* ═══════════════════════════════════════════════════════
    ROLE IDENTITY
@@ -39,6 +40,15 @@ import { roleGrants } from "@scrbrd/policy/roles";
 
    apps/web/test/design.test.mjs re-derives all of this on every run. A new
    role with a borrowed colour, or one that fails contrast, fails the build.
+
+   TWO VALUES PER ROLE (2.1). The colours below were chosen for contrast
+   UNDER LIGHTS — every one is a light tint that reads on near-black and
+   would all but vanish on the Daylight whitewash (Coach's green is 2.86:1 on
+   white, 2.28:1 on a hover row). ROLE_DAYLIGHT, after the table, is each role's daylight value:
+   the same family hue, deepened until it reads on the DARKEST daylight
+   surface, with siblings still stepping in lightness. `color` is a getter
+   that answers for the theme in force, so every screen that reads
+   ROLES[r].color is right in both without knowing there are two.
 */
 
 const ROLE_IDENTITY = {
@@ -104,6 +114,51 @@ const ROLE_IDENTITY = {
   // competition — running a competition
   competitionadmin:       { label:"Competition Admin", icon:"🏆", color:"#07c8e9", family:"competition" },  // 7.46:1
 };
+
+/**
+ * Each role's colour in DAYLIGHT. Same checks as the table above, against the
+ * daylight surfaces (the ratio is on the darkest of them, #e3e7dd): every one
+ * clears 4.5:1, and the closest pair is 8.9 dE apart (Assistant Coach and
+ * Team Manager, siblings in one family). Designed in CIELAB lightness /
+ * chroma / hue — one hue per family, siblings a lightness step apart — then
+ * darkened in L* only where a value fell short of 4.55:1.
+ */
+const ROLE_DAYLIGHT = {
+  superadmin:           "#6d5800",  // 5.50:1
+  platformadmin:        "#763f81",  // 5.98:1
+  principal:            "#38308a",  // 8.55:1
+  directorofsport:      "#48418d",  // 6.93:1
+  schooladmin:          "#575290",  // 5.55:1
+  sportsadmin:          "#63618f",  // 4.60:1
+  coach:                "#00491d",  // 8.49:1
+  assistantcoach:       "#005e2c",  // 6.35:1
+  teammanager:          "#007340",  // 4.75:1
+  player:               "#004785",  // 7.47:1
+  guardian:             "#005b8c",  // 5.82:1
+  spectator:            "#006e92",  // 4.59:1
+  selfaccess:           "#92175e",  // 6.68:1
+  enquiry:              "#4b4e52",  // 6.67:1
+  scorer:               "#743900",  // 7.19:1
+  official:             "#905a16",  // 4.57:1
+  analyst:              "#9c3407",  // 5.76:1
+  scout:                "#98552e",  // 4.56:1
+  medical:              "#992d3f",  // 5.98:1
+  transportcoordinator: "#004844",  // 8.33:1
+  driver:               "#005d56",  // 6.20:1
+  facilities:           "#00736a",  // 4.57:1
+  finance:              "#34650b",  // 5.56:1
+  sponsorship:          "#464a00",  // 7.47:1
+  media:                "#8e3e7c",  // 5.35:1
+  competitionadmin:     "#00626d",  // 5.64:1
+};
+
+// `color` answers for the theme in force. A getter, so a screen that read the
+// colour an hour ago under lights reads the daylight one on its next render.
+const colourFor = (r, floodlit) => ({
+  enumerable: true, configurable: true,
+  get: () => (themeName() === "daylight" ? ROLE_DAYLIGHT[r] ?? floodlit : floodlit),
+});
+for (const [r, id] of Object.entries(ROLE_IDENTITY)) Object.defineProperty(id, "color", colourFor(r, id.color));
 
 /* ── Navigation, derived from capabilities ──────────────────────────
    The nav used to be a hand-written list per role, which is a second place
@@ -232,8 +287,10 @@ const navFor = (role) => navForRoles([role, ...(ROLE_IDENTITY[role]?.also ?? [])
 const canonicalRole = (r) => r;
 
 /** The shape the shell reads: label, icon, colour and nav, per policy role. */
+// Descriptors, not a spread: `{ ...id }` would copy the colour getter's
+// VALUE at import time, and every role would keep the theme it loaded in.
 const ROLES = Object.fromEntries(
-  Object.entries(ROLE_IDENTITY).map(([r, id]) => [r, { ...id, nav: navFor(r) }]),
+  Object.entries(ROLE_IDENTITY).map(([r, id]) => [r, Object.defineProperties({ nav: navFor(r) }, Object.getOwnPropertyDescriptors(id))]),
 );
 
 /** Roles grouped by access domain — for a legend, or a role picker. */
@@ -269,4 +326,4 @@ const NAV_META = {
   pitchdeck:    { icon:"📐",  label:"Pitch Deck"   },
 };
 
-export { NAV_META, NAV_GROUPS, NAV_GROUP, NAV_ORDER, ROLES, ROLE_IDENTITY, ROLE_FAMILIES, NAV_CAPABILITY, canonicalRole, groupNav, navFor, navForRoles };
+export { NAV_META, NAV_GROUPS, NAV_GROUP, NAV_ORDER, ROLES, ROLE_DAYLIGHT, ROLE_IDENTITY, ROLE_FAMILIES, NAV_CAPABILITY, canonicalRole, groupNav, navFor, navForRoles };

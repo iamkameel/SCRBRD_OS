@@ -180,7 +180,7 @@ function LogisticsView({ role }) {
                           <>
                             <div style={{width:"1px",height:"32px",background:D.border}}/>
                             <div>
-                              <div style={{fontFamily:D.mono,fontSize:"12px",fontWeight:700,color:D.lime}}>{vehicle.reg}</div>
+                              <div style={{fontFamily:D.mono,fontSize:"12px",fontWeight:700,color:textOn(D.lime)}}>{vehicle.reg}</div>
                               <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>{vehicle.description} · {vehicle.capacity} seats{vehicle.condition?<> · <span style={{color:condColor(vehicle.condition)}}>{vehicle.condition}</span></>:null}</div>
                             </div>
                           </>

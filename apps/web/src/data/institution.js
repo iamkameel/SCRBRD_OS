@@ -1,4 +1,6 @@
 // ── MOCK DATA ────────────────────────────────────────────
+// `colors` are a school's kit colours: data, the same in both themes, never
+// a surface or a text colour. Read as text, one goes through textOn().
 const SCHOOL = {
   name:"Hilton College", abbr:"HIL", city:"Hilton, KwaZulu-Natal",
   founded:1872, colors:["#003366","#C8A951"],

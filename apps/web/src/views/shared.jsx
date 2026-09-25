@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 
 import { ROLES } from "../design/roles.js";
-import { D } from "../design/tokens.js";
+import { D, T } from "../design/tokens.js";
 import { mulberry32, strSeed } from "../lib/rng.js";
 import { can, filterRecord } from "../rbac/index.js";
 import { BatsmanChart, BowlerChart, ManhattanChart, ShotHeatMap, ShotSpider, ShotWheel, WormChart } from "../scorer/charts.jsx";
@@ -153,7 +153,7 @@ function PlayerProfileModal({ player, role, skills = {}, onClose, onFullProfile 
     <Modal title="Player Profile" onClose={onClose} width="560px">
       {/* Header */}
       <div style={{display:"flex",alignItems:"center",gap:"12px",marginBottom:"12px"}}>
-        <div style={{width:"52px",height:"52px",borderRadius:"50%",background:D.gradMain,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:D.head,fontSize:"17px",fontWeight:800,color:"#fff",flexShrink:0}}>
+        <div style={{width:"52px",height:"52px",borderRadius:"50%",background:D.gradMain,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:D.head,fontSize:"17px",fontWeight:800,color:T.light.ink,flexShrink:0}}>
           {player.name.split(" ").map(w=>w[0]).slice(0,2).join("")}
         </div>
         <div style={{minWidth:0}}>

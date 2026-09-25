@@ -3,7 +3,7 @@ import { askStatsMagic } from "../lib/ai.js";
 import { signedIn } from "../lib/api.js";
 import { SCHOOLS_REGISTRY } from "../data/institution.js";
 import { ROLES } from "../design/roles.js";
-import { D } from "../design/tokens.js";
+import { D, T } from "../design/tokens.js";
 import { useRows } from "../lib/live.js";
 
 // ══════════════════════════════════════════════════════
@@ -80,8 +80,8 @@ function GlobalSearch({ role, onNav, onClose }) {
   const typeColor = t => ({player:D.sky,staff:D.indigo,match:D.emerald,competition:D.amber,school:D.teal})[t]||D.textMuted;
 
   return (
-    <div style={{position:"fixed",inset:0,zIndex:400,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(8px)",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"80px 16px 0"}}>
-      <div style={{width:"100%",maxWidth:"640px",borderRadius:D.xl,border:`1px solid ${D.borderMed}`,background:D.surf1,overflow:"hidden",boxShadow:"0 24px 80px rgba(0,0,0,0.5)"}}>
+    <div style={{position:"fixed",inset:0,zIndex:400,background:T.glass.scrim,backdropFilter:"blur(8px)",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"80px 16px 0"}}>
+      <div style={{width:"100%",maxWidth:"640px",borderRadius:D.xl,border:`1px solid ${D.borderMed}`,background:D.surf1,overflow:"hidden",boxShadow:T.elevation.xl}}>
         {/* Input row */}
         <div style={{display:"flex",alignItems:"center",gap:"10px",padding:"14px 16px",borderBottom:`1px solid ${D.border}`}}>
           <span style={{fontSize:"16px",color:D.textMuted}}>🔍</span>

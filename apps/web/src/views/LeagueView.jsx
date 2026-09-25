@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { holdsCapability } from "../rbac/index.js";
 import { D } from "../design/tokens.js";
+
+// Hilton's navy: a kit colour, data rather than theme (data/institution.js).
+const HILTON_KIT = "#003366";
 import { SR } from "../scorer/format.js";
 import { Avatar, Badge, Btn, Card, Pill, SectionHeader } from "../ui/primitives.jsx";
 import { WeatherChip } from "./shared.jsx";
@@ -162,7 +165,7 @@ function LeagueView({ role }) {
                           </td>
                           <td style={{padding:"11px 12px"}}>
                             <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
-                              <div style={{width:"8px",height:"8px",borderRadius:"50%",background:isHilton?"#003366":"#888",flexShrink:0}}/>
+                              <div style={{width:"8px",height:"8px",borderRadius:"50%",background:isHilton?HILTON_KIT:D.textMuted,flexShrink:0}}/>
                               <span style={{fontFamily:D.body,fontSize:"12px",fontWeight:isHilton?700:400,color:isHilton?D.textPrimary:D.textSecondary}}>{t.team}</span>
                               {isHilton&&<Badge color={D.indigo}>Us</Badge>}
                             </div>

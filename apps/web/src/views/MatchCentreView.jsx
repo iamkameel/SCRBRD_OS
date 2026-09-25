@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { D } from "../design/tokens.js";
+import { D, textOn } from "../design/tokens.js";
 import { useLive } from "../lib/live.js";
 import { canScore, holdsCapability } from "../rbac/index.js";
 import { schoolsWhere } from "../lib/session.js";
@@ -222,14 +222,14 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
               )}
               {driver&&selMatch.transport?.bus&&(
                 <div style={{marginBottom:"10px",padding:"9px 12px",background:D.surf2,borderRadius:D.md,border:`1px solid ${D.lime}22`}}>
-                  <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.lime,letterSpacing:"0.06em",marginBottom:"5px"}}>TRANSPORT</div>
+                  <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:textOn(D.lime),letterSpacing:"0.06em",marginBottom:"5px"}}>TRANSPORT</div>
                   <div style={{display:"flex",justifyContent:"space-between",marginBottom:"4px"}}>
                     <span style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary}}>Driver</span>
                     <span style={{fontFamily:D.body,fontSize:"11px",color:D.textPrimary}}>{driver.name}</span>
                   </div>
                   <div style={{display:"flex",justifyContent:"space-between",marginBottom:"4px"}}>
                     <span style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary}}>Vehicle</span>
-                    <span style={{fontFamily:D.mono,fontSize:"11px",color:D.lime}}>{selMatch.transport.vehicle}</span>
+                    <span style={{fontFamily:D.mono,fontSize:"11px",color:textOn(D.lime)}}>{selMatch.transport.vehicle}</span>
                   </div>
                   <div style={{display:"flex",justifyContent:"space-between"}}>
                     <span style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary}}>Departs / Returns</span>

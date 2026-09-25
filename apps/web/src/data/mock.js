@@ -572,6 +572,7 @@ const COMPETITIONS = [
 ];
 
 // ── LEAGUE MANAGEMENT DATA ─────────────────────────────
+// `color` is the school's kit colour (data/institution.js): fixed, not theme.
 const LEAGUE_TEAMS = [
   { id:"lt1", name:"Hilton 1st XI",       school:"HIL", color:"#003366", wins:5, points:10 },
   { id:"lt2", name:"Michaelhouse",      school:"MIC", color:"#8B0000", wins:4, points:8  },
