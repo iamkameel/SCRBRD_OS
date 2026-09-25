@@ -179,9 +179,22 @@ async function open() {
     const t = m.text();
     if (!/Failed to load resource/.test(t)) errors.push(`console.error: ${t}`);
   });
+  // Every read the screen makes, and how it ended: printed beside a failed
+  // check, so a failure on a slower machine says which read did not arrive
+  // rather than only that a list was empty.
+  const reads = [];
+  const t0 = Date.now();
+  page.on("requestfinished", async (r) => {
+    if (!/\/api\/read\//.test(r.url())) return;
+    const res = await r.response().catch(() => null);
+    reads.push(`${r.url().replace(/^.*\/api\/read\//, "")} ${res?.status() ?? "?"} @${Date.now() - t0}ms`);
+  });
+  page.on("requestfailed", (r) => {
+    if (/\/api\/read\//.test(r.url())) reads.push(`${r.url().replace(/^.*\/api\/read\//, "")} FAILED ${r.failure()?.errorText} @${Date.now() - t0}ms`);
+  });
   await page.addInitScript(`window.__SCRBRD_API_BASE__ = ${JSON.stringify(API)};`);
   await page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "networkidle" });
-  return { ctx, page, errors };
+  return { ctx, page, errors, reads };
 }
 
 /** Click the first enabled button matching `re`, waiting for it to exist. */
@@ -438,7 +451,9 @@ try {
 
   group("All seasons is the tab as it was before seasons: the career read, ranked the same way");
   await dos.page.selectOption('[data-testid="awards-season-select"]', "all");
-  ok("the lists settle on every season: both seasons' stars", await settled(dos.page, "all", [LS, TS, OT]));
+  const allSettled = await settled(dos.page, "all", [LS, TS, OT]);
+  ok("the lists settle on every season: both seasons' stars", allSettled,
+     allSettled ? "" : `reads: ${dos.reads.filter((r) => /^(players|career)\b/.test(r)).join("; ")} | errors: ${dos.errors.join("; ").slice(0, 300)}`);
   s = await screen(dos.page);
   if (DEBUG) console.log("[debug] all seasons:", JSON.stringify(s));
   for (const list of ["runs", "wkts", "bat", "bowl", "mvp"])

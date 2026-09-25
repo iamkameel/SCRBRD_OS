@@ -296,7 +296,8 @@ try {
   ok("the toss answered with no signal is queued on disk (SCRBRD-075)", tossQueued?.includes(`${device}:toss:pending`), JSON.stringify(tossQueued));
   ok("the scorer is on the pad", await onPad());
   const b0 = await banner();
-  ok("the pad says there is no signal and nobody signed in", b0.reason === "not_signed_in" && /No signal/.test(b0.text), JSON.stringify(b0));
+  ok("the pad says there is no signal and nobody signed in", b0.reason === "not_signed_in" && /No signal/.test(b0.text),
+     `${JSON.stringify(b0)} navigator.onLine=${await page.evaluate(() => navigator.onLine)} sw=${await page.evaluate(() => !!navigator.serviceWorker?.controller)}`);
   ok("...and offers no sign-in it cannot do without signal", (await tid("sync-signin").count()) === 0);
   let tapped = 0;
   for (const f of ["1", "4", "0"]) if (await score(f)) tapped++;
