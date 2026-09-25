@@ -30,7 +30,7 @@ const DB = process.env.DATABASE_URL || "postgres://scrbrd:scrbrd@127.0.0.1:5432/
 const HIL = "11111111-1111-1111-1111-111111111111";
 
 let pass = 0, fail = 0;
-const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
+const ok = (n, c, d = "") => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${d}` : ""); } };
 const group = (t) => console.log("\n" + t);
 
 const server = spawn(process.execPath, ["services/api/server.mjs"], {
@@ -158,9 +158,16 @@ try {
      (await weather(m, head, { condition: "Fine", uvIndex: 99 })).status === 400);
   ok("a second reading replaces the first, it does not stack",
      (await q(`select 1 from match_weather where match_id = $1`, [m])).length === 1);
+  // The policy answers first: a match that is not there has no school to
+  // anchor on, so the write is not permitted (403) — which also says nothing
+  // about whether that id exists. The foreign key (23503 → 404) backs it for a
+  // caller the policy would admit. Either way, never a 500, and nothing written.
   const nowhere = await weather("00000000-0000-0000-0000-00000000dead", head, { condition: "Fine" });
-  ok("weather for a match that is not there is a 404, not a 500",
-     nowhere.status === 404 && nowhere.body?.error === "no_such_match", `${nowhere.status} ${JSON.stringify(nowhere.body)}`);
+  ok("weather for a match that is not there is refused by name, not a 500",
+     (nowhere.status === 403 && nowhere.body?.error === "not_permitted") || (nowhere.status === 404 && nowhere.body?.error === "no_such_match"),
+     `${nowhere.status} ${JSON.stringify(nowhere.body)}`);
+  ok("...and nothing was written for it",
+     (await q(`select 1 from match_weather where match_id = $1`, ["00000000-0000-0000-0000-00000000dead"])).length === 0);
 
   // ── PITCH REPORT ─────────────────────────────────────────────
   group("The pitch report");

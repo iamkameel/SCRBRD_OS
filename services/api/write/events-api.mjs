@@ -1443,9 +1443,11 @@ export function conditionsRoutes({ pool, secret }) {
     weather: (req, res) => upsert(req, res, {
       // No school_id column here, unlike ball_event and the pitch report:
       // match_weather's policy derives the school with a subquery on the match,
-      // so there is nothing to denormalise. It does mean a write against a
-      // match that does not exist fails the foreign key rather than a NOT NULL,
-      // which is why the error map below covers both.
+      // so there is nothing to denormalise. A write against a match that does
+      // not exist is refused by that policy first (no school to anchor on:
+      // 403, which also does not say whether the id exists); the foreign key
+      // behind it (23503) is mapped to 404 in upsert() for a caller the policy
+      // would admit, so neither case is a 500.
       sql: `insert into match_weather
               (match_id, condition, temp_c, humidity_pct, wind_kph,
                wind_dir, uv_index, rain_chance_pct, forecast, playable, observed_at)
