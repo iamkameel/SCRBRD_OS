@@ -33,7 +33,7 @@
  * Cricket; deriving made them visible.
  */
 
-import { KIND, BALL_TYPE, isLegal, normaliseDismissal, chargedToBowler, standsOnFreeHit, DISMISSAL, DISMISSAL_LABEL, INNINGS_END_REASON, DERIVED_END_REASONS, inningsEnd } from "./events.mjs";
+import { KIND, BALL_TYPE, isLegal, normaliseDismissal, chargedToBowler, standsOnFreeHit, DISMISSAL, DISMISSAL_LABEL, INNINGS_END_REASON, DERIVED_END_REASONS, RETIREMENT_DISMISSAL, RUN_OUT_END, runsOffBat, inningsEnd } from "./events.mjs";
 import { CAPTURE_PROFILE } from "./placement.mjs";
 
 /** @import { LogEvent, SquadMember } from "./events.mjs" */
@@ -112,6 +112,14 @@ const BAT_STATUS = { NOT_OUT: "batting", OUT: "out", RETIRED: "retired" };
  * @property {Batter[]} batsmen
  * @property {Bowler[]} bowlers
  * @property {{runs: number, wickets: number, batsman: string, overs: string}[]} fow
+ * @property {{over: number, batter: string | null, dismissal: string}[]} nonBallWickets
+ *   the wickets that fell with no delivery (retired out, timed out: SCRBRD-081),
+ *   each with the 0-based over the next delivery is in. They are in `wickets`
+ *   and `fow`, and in no ballLog entry.
+ * @property {{over: number, ballInOver: number, from: string | null, to: string, reason: string | null}[]} bowlerChanges
+ *   bowlers replaced during an over (SCRBRD-080): 0-based over, the legal balls
+ *   of it already bowled, who left, who took over, and why (null in a log from
+ *   before the pad asked)
  * @property {{bat1: string, bat2: string, runs: number, balls: number, wicket: number}[]} partnerships
  * @property {{runs: number, balls: number, bat1: string | null, bat2: string | null}} curPartner
  * @property {BallLogEntry[]} ballLog
@@ -139,6 +147,45 @@ const BAT_STATUS = { NOT_OUT: "batting", OUT: "out", RETIRED: "retired" };
 /** Overs in cricket's odd base: 17 legal balls is 2.5 overs.
  *  @param {number} balls */
 export const fmtOvers = (balls) => `${Math.floor(balls / 6)}.${balls % 6}`;
+
+/**
+ * Is an over under way, with a bowler on — has a delivery of the over the
+ * next ball is in been bowled, by the bowler the fold has? A bowler named now
+ * takes over from one who has started it (SCRBRD-080, Law 17.8.1); at an
+ * over's start there is nobody to take over from. A wide or no-ball counts: it
+ * is part of the over though not one of its six. The log is in order, so the
+ * last entry answers.
+ *
+ * With nobody on there is nobody to replace: a pad whose log holds balls the
+ * server refused for want of a bowler (SCRBRD-070's cascade) names one then,
+ * and that is naming the bowler, not changing him.
+ *
+ * @param {Pick<Innings, "balls" | "ballLog" | "bowler"> | Partial<Innings> | null | undefined} inn
+ * @returns {boolean}
+ */
+export function isMidOver(inn) {
+  if (inn?.bowler == null) return false;
+  const log = inn.ballLog ?? [];
+  const last = log[log.length - 1];
+  return last != null && last.over === Math.floor((inn.balls ?? 0) / 6);
+}
+
+/**
+ * The dismissal a retire event records, or null when it records none.
+ * SCRBRD-081: a retirement is a dismissal exactly when it is marked
+ * `type: "W"` — see retire() in events.mjs — and then it is retired out or
+ * timed out, nothing else: every other way out needs a delivery. The reason
+ * stands in for a dismissal a W-marked event does not spell out.
+ *
+ * @param {LogEvent} ev  a retire event
+ * @returns {"retired_out" | "timed_out" | null}
+ */
+export function retirementDismissal(ev) {
+  if (ev.kind !== KIND.RETIRE || ev.type !== BALL_TYPE.WICKET) return null;
+  const how = normaliseDismissal(ev.dismissal)
+    ?? (Object.hasOwn(RETIREMENT_DISMISSAL, ev.reason ?? "") ? RETIREMENT_DISMISSAL[/** @type {string} */ (ev.reason)] : null);
+  return how === DISMISSAL.RETIRED_OUT || how === DISMISSAL.TIMED_OUT ? how : null;
+}
 
 /** @param {string} id  @param {string} name  @returns {Batter} */
 const newBatter = (id, name) => ({
@@ -180,7 +227,7 @@ function inningsFolder(ctx = {}) {
     runs: 0, wickets: 0, balls: 0,
     extras: { wide: 0, noBall: 0, bye: 0, legBye: 0, penalty: 0 },
 
-    batsmen: [], bowlers: [], fow: [],
+    batsmen: [], bowlers: [], fow: [], nonBallWickets: [], bowlerChanges: [],
     partnerships: [], curPartner: { runs: 0, balls: 0, bat1: null, bat2: null },
     ballLog: [], overLog: [],
 
@@ -318,6 +365,16 @@ function inningsFolder(ctx = {}) {
       }
 
       case KIND.BOWLER:
+        // A change during an over (SCRBRD-080): recorded with the reason the
+        // event gives — none, in a log from before the pad asked — so a card
+        // can say who finished whose over, and why.
+        if (isMidOver(inn) && ev.bowler != null && ev.bowler !== inn.bowler) {
+          const last = inn.ballLog[inn.ballLog.length - 1];
+          inn.bowlerChanges.push({
+            over: Math.floor(inn.balls / 6), ballInOver: inn.balls % 6,
+            from: inn.bowler ?? last?.bowlerId ?? null, to: ev.bowler, reason: ev.reason ?? null,
+          });
+        }
         bowlerFor(ev.bowler);
         inn.bowler = ev.bowler;
         break;
@@ -330,6 +387,29 @@ function inningsFolder(ctx = {}) {
         break;
 
       case KIND.RETIRE: {
+        // A dismissal with no delivery (SCRBRD-081): retired out, timed out.
+        // A wicket falls; the over, the free hit and the bowler's figures do
+        // not move, because nothing was bowled. See retire() in events.mjs for
+        // why the `type: "W"` marker, and not the reason, decides it.
+        const how = retirementDismissal(ev);
+        if (how) {
+          const outBat = batterFor(ev.batter);
+          inn.wickets += 1;
+          if (outBat) { outBat.status = BAT_STATUS.OUT; outBat.dismissal = DISMISSAL_LABEL[how].toLowerCase(); }
+          inn.fow.push({ runs: inn.runs, wickets: inn.wickets, batsman: outBat?.name ?? "?", overs: fmtOvers(inn.balls) });
+          // The over the next delivery is in — where a phase breakdown files it.
+          inn.nonBallWickets.push({ over: Math.floor(inn.balls / 6), batter: ev.batter ?? null, dismissal: how });
+          // Retired out is a batter at the crease: his partnership ends and
+          // his end empties, as on a wicket ball. Timed out is the batter due
+          // in, who never reached it: nothing at the crease changes.
+          if (ev.batter != null && (inn.striker === ev.batter || inn.nonStriker === ev.batter)) {
+            closePartnership();
+            if (inn.striker === ev.batter) inn.striker = null; else inn.nonStriker = null;
+            inn.curPartner = { runs: 0, balls: 0, bat1: inn.striker, bat2: inn.nonStriker };
+            partnerStartRuns = inn.runs;
+          }
+          break;
+        }
         const b = batterFor(ev.batter);
         if (b) { b.status = BAT_STATUS.RETIRED; b.dismissal = `retired ${ev.reason ?? "hurt"}`; }
         closePartnership();
@@ -385,18 +465,24 @@ function inningsFolder(ctx = {}) {
             if (bow) bow.wides += 1;
             break;
 
-          case BALL_TYPE.NO_BALL:
+          case BALL_TYPE.NO_BALL: {
+            // `v` is the runs completed; they are the striker's only when they
+            // came off the bat (SCRBRD-068, NB_RUNS in events.mjs). Byes or
+            // leg byes off a no-ball are No-ball extras, and — like every run
+            // resulting from a no-ball — debited to the bowler (Law 21).
+            const offBat = runsOffBat(ev);
             inn.runs += penaltyRun + v;
-            inn.extras.noBall += penaltyRun;
+            inn.extras.noBall += penaltyRun + (v - offBat);
             bowlerCharged = penaltyRun + v;
             if (bow) bow.noBalls += 1;
             // A no-ball is a ball faced even when no run is scored off it.
             if (bat) {
-              bat.balls += 1; bat.runs += v;
-              if (v === 4) bat.fours += 1;
-              if (v === 6) bat.sixes += 1;
+              bat.balls += 1; bat.runs += offBat;
+              if (offBat === 4) bat.fours += 1;
+              if (offBat === 6) bat.sixes += 1;
             }
             break;
+          }
 
           case BALL_TYPE.BYE:
             inn.runs += v; inn.extras.bye += v;
@@ -455,7 +541,15 @@ function inningsFolder(ctx = {}) {
               batsman: outBat?.name ?? "?", overs: fmtOvers(inn.balls),
             });
             closePartnership();
-            if (inn.striker === outId) inn.striker = null; else inn.nonStriker = null;
+            // Which end is now empty. With the end recorded (SCRBRD-069, a
+            // run out that completed runs: the batters have crossed, Law 18),
+            // it is that end, and the survivor is at the other (Law 38.2).
+            // Without it — every log before the pad asked — the dismissed
+            // batter's end before the ball, as it always was.
+            const survivor = outId === inn.striker ? inn.nonStriker : outId === inn.nonStriker ? inn.striker : undefined;
+            if (survivor !== undefined && ev.outAt === RUN_OUT_END.STRIKER) { inn.striker = null; inn.nonStriker = survivor; }
+            else if (survivor !== undefined && ev.outAt === RUN_OUT_END.BOWLER) { inn.striker = survivor; inn.nonStriker = null; }
+            else if (inn.striker === outId) inn.striker = null; else inn.nonStriker = null;
             inn.curPartner = { runs: 0, balls: 0, bat1: inn.striker, bat2: inn.nonStriker };
             partnerStartRuns = inn.runs;
           } else {
@@ -466,8 +560,9 @@ function inningsFolder(ctx = {}) {
         // Strike rotation — odd runs actually run, then the change of ends at
         // the close of an over. Runs off a no-ball and byes run off a wide both
         // rotate: they were run between the wickets like any other. A wicket
-        // does not rotate; the incoming batter's end is set by the next
-        // `batters` event.
+        // does not rotate: the survivor's end is set above (from the end the
+        // batter was out at, when the event says), and the incoming batter's
+        // by the next `batters` event.
         if (type !== BALL_TYPE.WICKET && v % 2 === 1) rotate();
         if (legal && inn.balls % 6 === 0) { rotate(); inn.bowler = null; }
 

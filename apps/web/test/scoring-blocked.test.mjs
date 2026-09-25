@@ -92,9 +92,11 @@ group("The engine gates on the same answer the pad shows");
   const engine = readFileSync(join(ROOT, "apps/web/src/scorer/engine.jsx"), "utf8");
   ok("the engine derives readiness from the package", /const readiness=scoringReadiness\(inn\);/.test(engine));
   ok("...and the pad is handed that same value", /<ScoringBlocked readiness=\{readiness\}/.test(engine));
-  ok("guardReady decides on it", /const guardReady=\(\)=>\{\s*if\(readiness\.ready\)return true;/.test(engine));
+  // A pad waiting on a handover is locked first (SCRBRD-075, spec §4 step 2):
+  // its fix is the code; after that, readiness decides as before.
+  ok("guardReady decides on it", /const guardReady=\(\)=>\{\s*if\(padLock\)\{setModal\("handover"\);return false;\}\s*if\(readiness\.ready\)return true;/.test(engine));
   ok("commitBall refuses on it — the funnel every delivery goes through",
-     /const commitBall=\([^)]*\)=>\{[\s\S]{0,300}?if\(!readiness\.ready\)return;/.test(engine));
+     /const commitBall=\([^)]*\)=>\{[\s\S]{0,300}?if\(!readiness\.ready\|\|padLock\)return;/.test(engine));
   ok("confirmWicket refuses on it", /const confirmWicket=\([^)]*\)=>\{\s*if\(!readiness\.ready\)/.test(engine));
   // The old inline rule is gone: a second copy of it is how the two disagree.
   ok("no inline striker/bowler check survives beside it",

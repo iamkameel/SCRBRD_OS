@@ -57,7 +57,8 @@ export const KIND = /** @type {const} */ ({
   BOWLER:        "bowler",        // bowler set for the coming over
   BALL:          "ball",          // a delivery
   PENALTY:       "penalty",       // penalty runs, no delivery bowled
-  RETIRE:        "retire",        // batter leaves the crease without being dismissed
+  RETIRE:        "retire",        // an innings ends or pauses with no delivery: retired hurt, or —
+                                  // marked `type: "W"` — retired out / timed out (SCRBRD-081)
   INNINGS_END:   "innings_end",   // declaration, all out, overs complete, rain
   REVISION:      "revision",      // the umpires cut the overs and/or reset the target (rain)
   VOID:          "void",          // undoes an earlier event that has already synced
@@ -83,11 +84,77 @@ export const ILLEGAL = new Set([BALL_TYPE.WIDE, BALL_TYPE.NO_BALL]);
  *  @param {string} type */
 export const isLegal = (type) => !ILLEGAL.has(type);
 
-/** Runs credited to the batter (as opposed to the extras column).
+/** Runs credited to the batter (as opposed to the extras column) — on a
+ *  no-ball only when they came off the bat: see NB_RUNS and runsOffBat().
  *  @type {ReadonlySet<string>} */
 export const OFF_THE_BAT = new Set([BALL_TYPE.RUN, BALL_TYPE.WICKET, BALL_TYPE.NO_BALL]);
 
-export const RETIRE_REASON = { HURT: "hurt", OUT: "out" }; // retired hurt may resume
+/**
+ * Whose the runs off a no-ball are (SCRBRD-068). A no-ball's `value` is the
+ * runs the batters completed, or the boundary allowance — as for a wide, a
+ * bye or a leg bye. `nbRuns` says where they came from:
+ *
+ *   absent     off the bat — the striker's (Law 21.6). Every no-ball recorded
+ *              before this has no `nbRuns`, and that is what they were: the
+ *              pad's sheet asked for "runs scored off this ball", so an old
+ *              no-ball replays exactly as it always did.
+ *   "byes"     the ball did not touch the bat or the batter;
+ *   "leg_byes" it came off the batter's person, not the bat.
+ *
+ * Runs not off the bat are not the striker's (Law 23). By the Laws they are
+ * scored as No-ball extras, and every run resulting from a no-ball — the
+ * penalty, runs off the bat, byes, leg byes — is debited to the bowler; only a
+ * five-run penalty award is not (MCC Laws 2017, Law 21: "Runs resulting from
+ * a No ball – how scored"). So the team's total and the bowler's figures are
+ * the same whichever it is; the batter's runs, fours and sixes are not. The
+ * pad still records which of the two it was, because it is what the scorer saw
+ * and a competition playing other conditions can read it.
+ *
+ * Carried as a new field rather than by reading `value` differently, so the
+ * runs completed stay in one place — which is what strike is rotated by, and
+ * what every SQL fold already adds to the total and the bowler (`1 + value`).
+ */
+export const NB_RUNS = Object.freeze({ BYES: "byes", LEG_BYES: "leg_byes" });
+
+/**
+ * Where a batter was out, on a wicket that says (SCRBRD-069): the end the
+ * wicket was put down at (Law 38.2). With runs completed before a run out the
+ * batters have changed ends (Law 18), and the pre-ball crease no longer says
+ * which end is empty; this does. The survivor is at the other end.
+ *
+ * Asked by the pad on a run out that completed runs, and absent otherwise —
+ * then, as in every log before this, the dismissed batter's end before the
+ * ball is the one that empties.
+ */
+export const RUN_OUT_END = Object.freeze({ STRIKER: "striker_end", BOWLER: "bowler_end" });
+/** @typedef {typeof RUN_OUT_END[keyof typeof RUN_OUT_END]} RunOutEnd */
+/** @type {ReadonlySet<unknown>}  asked of whatever a producer wrote */
+export const RUN_OUT_ENDS = new Set(Object.values(RUN_OUT_END));
+/** @typedef {typeof NB_RUNS[keyof typeof NB_RUNS]} NbRuns */
+/** @type {ReadonlySet<unknown>}  asked of whatever a producer wrote */
+export const NB_RUNS_VALUES = new Set(Object.values(NB_RUNS));
+
+/**
+ * The runs off a delivery that are the striker's. A no-ball's are unless the
+ * event says they were byes or leg byes; a bye or leg bye's never are; a wide
+ * scores nothing to the batter.
+ * @param {{type?: string | null, value?: number | null, nbRuns?: unknown}} ev
+ * @returns {number}
+ */
+export function runsOffBat(ev) {
+  const t = ev.type ?? BALL_TYPE.RUN;
+  if (!OFF_THE_BAT.has(t)) return 0;
+  if (t === BALL_TYPE.NO_BALL && NB_RUNS_VALUES.has(ev.nbRuns)) return 0;
+  return ev.value ?? 0;
+}
+
+/**
+ * Why a batter's innings ended, or paused, with no delivery. Retired hurt is
+ * not out and may resume (Law 25.4.2). Retired out (Law 25.4.3) and timed out
+ * (Law 40) are dismissals: a wicket falls, the over does not move and the
+ * bowler takes nothing. retire() says how the event marks the difference.
+ */
+export const RETIRE_REASON = Object.freeze({ HURT: "hurt", OUT: "out", TIMED_OUT: "timed_out" });
 
 /*
  * HOW A BATTER IS OUT — a closed vocabulary.
@@ -238,8 +305,11 @@ export const INNINGS_END_REASON = {
 /** @typedef {EventBase & {kind: "batters", striker: string | null, nonStriker: string | null}} BattersEvent */
 /** @typedef {BaseInput & {striker?: string | null, nonStriker?: string | null}} BattersInput */
 
-/** @typedef {EventBase & {kind: "bowler", bowler: string | null}} BowlerEvent */
-/** @typedef {BaseInput & {bowler?: string | null}} BowlerInput */
+/**
+ * `reason` is present only on a change of bowler during an over (SCRBRD-080).
+ * @typedef {EventBase & {kind: "bowler", bowler: string | null, reason?: BowlerChangeReason}} BowlerEvent
+ */
+/** @typedef {BaseInput & {bowler?: string | null, reason?: string | null}} BowlerInput */
 
 /**
  * A delivery. Player references are ids where SCRBRD holds a row, typed names
@@ -257,6 +327,7 @@ export const INNINGS_END_REASON = {
  *   theta: number | null, radius: number | null,
  *   placementSource: string | null, placementNull: string | null,
  *   closePosition: string | null, captureProfile: string | null,
+ *   nbRuns?: NbRuns, outAt?: RunOutEnd,
  * }} BallEvent
  */
 /**
@@ -272,13 +343,19 @@ export const INNINGS_END_REASON = {
  *   theta?: number | null, radius?: number | null,
  *   placementSource?: string | null, placementNull?: string | null,
  *   closePosition?: string | null, captureProfile?: string | null,
+ *   nbRuns?: string | null, outAt?: string | null,
  * }} BallInput
  */
 
 /** @typedef {EventBase & {kind: "penalty", runs: number, toBattingTeam: boolean, reason: string | null}} PenaltyEvent */
 /** @typedef {BaseInput & {runs?: number, toBattingTeam?: boolean, reason?: string | null}} PenaltyInput */
 
-/** @typedef {EventBase & {kind: "retire", batter: string, reason: string}} RetireEvent */
+/**
+ * A retirement. `type` and `dismissal` are present exactly when it is a
+ * dismissal (retired out, timed out): see retire().
+ * @typedef {EventBase & {kind: "retire", batter: string, reason: string,
+ *   type?: "W", dismissal?: Dismissal}} RetireEvent
+ */
 /** @typedef {BaseInput & {batter: string, reason?: string}} RetireInput */
 
 /**
@@ -443,17 +520,44 @@ export const batters = (o) => ({
   nonStriker: o.nonStriker ?? null,
 });
 
-/** @param {BowlerInput} o  @returns {BowlerEvent} */
-export const bowler = (o) => ({
-  ...base(KIND.BOWLER, o),
-  bowler: o.bowler ?? null,
-});
+/**
+ * Why a bowler was replaced during an over. Law 17.8.1: only a bowler who is
+ * incapacitated (injured, taken ill) or suspended (Law 41) may be; the
+ * over is finished by another, who may not have bowled the previous over and
+ * may not bowl the next (17.8, "or parts thereof").
+ */
+export const BOWLER_CHANGE_REASON = Object.freeze({ INJURY: "injury", SUSPENDED: "suspended" });
+/** @typedef {typeof BOWLER_CHANGE_REASON[keyof typeof BOWLER_CHANGE_REASON]} BowlerChangeReason */
+/** @type {ReadonlySet<unknown>}  asked of whatever a producer wrote */
+export const BOWLER_CHANGE_REASONS = new Set(Object.values(BOWLER_CHANGE_REASON));
+
+/**
+ * The bowler for the coming over — or, with `reason`, the one who takes over
+ * DURING an over from a bowler injured or suspended (SCRBRD-080). The reason
+ * is omitted when not given, so a bowler event for a new over is the same
+ * object it always was; an unknown one is refused here, where the scorer who
+ * chose it is still looking at the screen (the server refuses one too).
+ *
+ * @param {BowlerInput} o
+ * @returns {BowlerEvent}
+ */
+export const bowler = (o) => {
+  if (o.reason != null && !BOWLER_CHANGE_REASONS.has(o.reason)) {
+    throw new TypeError(`unknown bowler change reason ${JSON.stringify(o.reason)} — expected one of ${[...BOWLER_CHANGE_REASONS].join(", ")}`);
+  }
+  return {
+    ...base(KIND.BOWLER, o),
+    bowler: o.bowler ?? null,
+    ...(o.reason != null ? { reason: /** @type {BowlerChangeReason} */ (o.reason) } : {}),
+  };
+};
 
 /**
  * A delivery.
  *
- * `value` means runs off the bat for `run`/`W`/`Nb`, and the number of extras
- * run for `B`/`LB`/`Wd`. The one-run penalty for a wide or no-ball is implicit
+ * `value` means runs off the bat for `run`/`W`, the number of extras run for
+ * `B`/`LB`/`Wd`, and for `Nb` the runs completed — off the bat unless
+ * `nbRuns` says byes or leg byes (NB_RUNS, SCRBRD-068). The one-run penalty for a wide or no-ball is implicit
  * and added during replay — never baked into `value`, so that the penalty can
  * never be double-counted by a caller that already added it.
  */
@@ -508,14 +612,49 @@ const checkedType = (t) => {
   return /** @type {BallType} */ (t);
 };
 
+/**
+ * Reject an `nbRuns` the model does not define, or one on a delivery that is
+ * not a no-ball: refused where the scorer who chose it can still see it.
+ * @param {string | null | undefined} n  @param {BallType} type
+ * @returns {NbRuns | null}
+ */
+const checkedNbRuns = (n, type) => {
+  if (n == null) return null;
+  if (!NB_RUNS_VALUES.has(n) || type !== BALL_TYPE.NO_BALL) {
+    throw new TypeError(`nbRuns ${JSON.stringify(n)} is for a no-ball, one of ${[...NB_RUNS_VALUES].join(", ")}`);
+  }
+  return /** @type {NbRuns} */ (n);
+};
+
+/**
+ * Reject an `outAt` the model does not define, or one on a delivery that is
+ * not a wicket.
+ * @param {string | null | undefined} e  @param {BallType} type
+ * @returns {RunOutEnd | null}
+ */
+const checkedOutAt = (e, type) => {
+  if (e == null) return null;
+  if (!RUN_OUT_ENDS.has(e) || type !== BALL_TYPE.WICKET) {
+    throw new TypeError(`outAt ${JSON.stringify(e)} is for a wicket, one of ${[...RUN_OUT_ENDS].join(", ")}`);
+  }
+  return /** @type {RunOutEnd} */ (e);
+};
+
 /** @param {BallInput} o  @returns {BallEvent} */
-export const ball = (o) => ({
+export const ball = (o) => {
+  const type = checkedType(o.type);
+  const nbRuns = checkedNbRuns(o.nbRuns, type);
+  const outAt = checkedOutAt(o.outAt, type);
+  return {
   ...base(KIND.BALL, o),
   // `type` is the delivery kind (run | W | Wd | Nb | B | LB). It is named to
   // match both the ball_event.ball_type column and the log entries the scoring
   // UI already reads, so a log entry needs no translation on either side.
-  type: checkedType(o.type),
+  type,
   value: o.value ?? 0,
+  // Runs off a no-ball that were not off the bat (SCRBRD-068). Omitted when
+  // they were, so a no-ball hit for runs is the same event it always was.
+  ...(nbRuns ? { nbRuns } : {}),
 
   // WHO WAS INVOLVED
   // ────────────────
@@ -554,6 +693,9 @@ export const ball = (o) => ({
   dismissal: normaliseDismissal(o.dismissal) ?? o.dismissal ?? null,
   fielder: o.fielder ?? null,
   dismissed: o.dismissed ?? null, // player id; defaults to the striker at replay
+  // The end the batter was out at (SCRBRD-069), when the scorer was asked.
+  // Omitted otherwise, so every other wicket is the event it always was.
+  ...(outAt ? { outAt } : {}),
   freeHit: o.freeHit ?? false,
 
   // ── Shot placement ──
@@ -565,7 +707,8 @@ export const ball = (o) => ({
   placementNull: o.placementNull ?? null,     // why there is no placement
   closePosition: o.closePosition ?? null,     // set only inside the catching ring
   captureProfile: o.captureProfile ?? null,   // "full" | "standard" | "quick"
-});
+  };
+};
 
 /** @param {PenaltyInput} o  @returns {PenaltyEvent} */
 export const penalty = (o) => ({
@@ -575,12 +718,63 @@ export const penalty = (o) => ({
   reason: o.reason ?? null,
 });
 
-/** @param {RetireInput} o  @returns {RetireEvent} */
-export const retire = (o) => ({
-  ...base(KIND.RETIRE, o),
-  batter: o.batter,
-  reason: o.reason ?? RETIRE_REASON.HURT,
+/**
+ * The dismissal each retirement reason is, when it is one.
+ * @type {Readonly<Record<string, Dismissal>>}
+ */
+export const RETIREMENT_DISMISSAL = Object.freeze({
+  [RETIRE_REASON.OUT]: DISMISSAL.RETIRED_OUT,
+  [RETIRE_REASON.TIMED_OUT]: DISMISSAL.TIMED_OUT,
 });
+
+/**
+ * A batter's innings ends, or pauses, without a delivery. SCRBRD-081.
+ *
+ * Retired hurt is the event as it always was: `{batter, reason: "hurt"}`, no
+ * wicket, and he may come back.
+ *
+ * Retired out (Law 25.4.3) and timed out (Law 40) are DISMISSALS WITHOUT A
+ * BALL. They used to be recorded as W deliveries — the pad's wicket sheet
+ * offered them beside bowled and caught — which counted a legal ball of the
+ * over and put the ball in the bowler's figures. Neither involves the bowler
+ * or a delivery: a boy who does not walk out within three minutes is out, and
+ * so is one who walks off without the umpire's leave to do so.
+ *
+ * So they are this event, marked with `type: "W"` and the canonical
+ * `dismissal`. Why a retirement and not a new kind:
+ *
+ *   - `retire` already IS "a batter's innings ends with no delivery". Retired
+ *     out was already one of its reasons; the server already judges it (the
+ *     batter must be in, and a batter retired out may not return), the sync
+ *     sheet already names it, and an older build that folds one still empties
+ *     the end instead of ignoring an unknown kind and leaving him at the crease.
+ *   - `type: "W"` is how every shipped SQL fold over ball_event says "a
+ *     wicket" (match_live_score, scoring_verify_takeover: ball_type = 'W'),
+ *     and `kind = 'ball'` is how each says "a delivery". A retire row with
+ *     ball_type 'W' is therefore, to every one of them, a wicket that is not a
+ *     ball — the public score and the handover check agree with the device
+ *     with no migration. A new kind would need the same marker to be counted,
+ *     and would be one more kind for every reader to learn.
+ *
+ * The marker is also what keeps old logs as they were: a `retire` with
+ * reason "out" written before this (none was ever emitted by the pad, but the
+ * model allowed it) has no `type`, and replays exactly as it always did — no
+ * wicket. Only a retirement built here, or by anything that says `type: "W"`,
+ * is a dismissal.
+ *
+ * @param {RetireInput} o
+ * @returns {RetireEvent}
+ */
+export const retire = (o) => {
+  const reason = o.reason ?? RETIRE_REASON.HURT;
+  const dismissal = Object.hasOwn(RETIREMENT_DISMISSAL, reason) ? RETIREMENT_DISMISSAL[reason] : null;
+  return {
+    ...base(KIND.RETIRE, o),
+    batter: o.batter,
+    reason,
+    ...(dismissal ? { type: /** @type {"W"} */ (BALL_TYPE.WICKET), dismissal } : {}),
+  };
+};
 
 /**
  * Undo an event the server already has.

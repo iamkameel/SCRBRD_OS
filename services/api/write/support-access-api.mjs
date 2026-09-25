@@ -16,10 +16,15 @@
  * a refusal is a fact the caller shows the person, not a 500.
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
+/** @import { RouteDeps, ApiRequest, ApiResponse, Handler, CaughtError } from "../api-types.mjs" */
+// A caught error is `any` to the checker (CaughtError in api-types.mjs):
+// pg's carry a SQLSTATE `code`, this module's own carry an HTTP `status`.
 
-const err = (code, status = 400) => Object.assign(new Error(code), { status });
+const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
+/** @type {Record<string, number>} */
 const STATUS = { not_permitted: 403, school_unknown: 404, no_such_access: 404 };
 
+/** @param {ApiResponse} res @param {CaughtError} e */
 const fail = (res, e) => {
   // The team-scoped CHECK on role_assignment: a coach must name a side.
   if (e.code === "23514") return res.status(422).json({ error: "refused", detail: e.message });
@@ -29,6 +34,7 @@ const fail = (res, e) => {
   res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
 };
 
+/** @param {RouteDeps} deps @returns {Record<string, Handler>} */
 export function supportAccessRoutes({ pool, secret }) {
   return {
     // POST /api/support/access { schoolId, role, reason, team?, minutes? }
@@ -43,7 +49,7 @@ export function supportAccessRoutes({ pool, secret }) {
           if (!r.ok) throw err(r.reason || "refused", STATUS[r.reason] ?? 422);
           res.json({ id: r.id, expiresAt: r.expires_at });
         });
-      } catch (e) { fail(res, e); }
+      } catch (/** @type {any} */ e) { fail(res, e); }
     },
 
     // POST /api/support/access/:id/end
@@ -55,7 +61,7 @@ export function supportAccessRoutes({ pool, secret }) {
           if (!r.ok) throw err(r.reason || "refused", STATUS[r.reason] ?? 422);
           res.json({ ok: true, ...(r.reason ? { note: r.reason } : {}) });
         });
-      } catch (e) { fail(res, e); }
+      } catch (/** @type {any} */ e) { fail(res, e); }
     },
   };
 }

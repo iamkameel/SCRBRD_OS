@@ -4,22 +4,24 @@ import {
 } from "./scoring-session.mjs";
 
 let pass = 0, fail = 0;
+/** @param {string} name @param {unknown} cond */
 const ok = (name, cond) => { if (cond) pass++; else { fail++; console.log("  ✗", name); } };
-const group = t => console.log("\n" + t);
+const group = (/** @type {string} */ t) => console.log("\n" + t);
 
 // Roles mirror the app's canScore() capability layer.
 const CAN = new Set(["superadmin","sportsmaster","headcoach","coach","assistant","scorer"]);
-const canScore = r => CAN.has(r);
+const canScore = (/** @type {string} */ r) => CAN.has(r);
 
 // Controllable clock
 let T = 1_000_000;
 const now = () => T;
-const advance = ms => { T += ms; };
+const advance = (/** @type {number} */ ms) => { T += ms; };
 
 const mk = () => new MatchSession({ matchId: "m3", canScore, now });
 const ball = (o = {}) => ({ kind: "ball", type: "run", value: 0, ...o });
+/** @param {MatchSession} s @param {string} dev @param {string} scorer */
 const mkQ = (s, dev, scorer) => new ScoringQueue({ deviceId: dev, scorerId: scorer, epoch: s.epoch, now });
-const send = s => async ev => s.append(ev);
+const send = (/** @type {MatchSession} */ s) => async (/** @type {import("./scoring-session.mjs").Envelope} */ ev) => s.append(ev);
 
 // ─────────────────────────────────────────────
 group("Capability + token are BOTH required");
@@ -72,7 +74,7 @@ group("Handover is BLOCKED while work is unsynced");
   const armed = s.armHandover({ deviceId:"d1", epoch:1, pendingCount: 0 });
   ok("armed when clean", armed.ok === true);
   ok("state HANDOVER_PENDING", s.state === SESSION.HANDOVER_PENDING);
-  ok("6-digit code issued", /^\d{6}$/.test(armed.code));
+  ok("6-digit code issued", /^\d{6}$/.test(String(armed.code)));
 }
 
 // ─────────────────────────────────────────────
@@ -96,7 +98,7 @@ group("Full handover: A → B with verification handshake");
   ok("wrong code rejected", wrongCode.ok === false);
   const claimed = s.claimHandover({ scorerId:"uB", deviceId:"dB", role:"coach", name:"Ben", code: armed.code });
   ok("B claims handover", claimed.ok === true);
-  ok("B receives the full event log", claimed.events.length === 8);
+  ok("B receives the full event log", claimed.events?.length === 8);
   ok("state VERIFYING (scoring still locked)", s.state === SESSION.VERIFYING);
 
   // B cannot write before verifying
@@ -106,15 +108,15 @@ group("Full handover: A → B with verification handshake");
   // B mis-reads the scoreboard → rejected with a diff
   const bad = s.verifyAndTakeOver({ deviceId:"dB", confirm:{ runs: 7, wickets: 0, balls: 6 }});
   ok("wrong confirmation rejected", bad.ok === false && bad.reason === REJECT.VERIFY_MISMATCH);
-  ok("diff names the field", bad.diff[0].field === "runs" && bad.diff[0].expected === 5);
-  ok("token NOT transferred on mismatch", s.holder.scorerId === "uA");
+  ok("diff names the field", bad.diff?.[0].field === "runs" && bad.diff?.[0].expected === 5);
+  ok("token NOT transferred on mismatch", s.holder?.scorerId === "uA");
 
   // B confirms correctly
   const good = s.verifyAndTakeOver({ deviceId:"dB", confirm:{
     runs: truth.runs, wickets: truth.wickets, balls: truth.balls,
     striker: truth.striker, nonStriker: truth.nonStriker, bowler: truth.bowler }});
   ok("correct confirmation accepted", good.ok === true);
-  ok("token now held by B", s.holder.scorerId === "uB" && s.holder.deviceId === "dB");
+  ok("token now held by B", s.holder?.scorerId === "uB" && s.holder?.deviceId === "dB");
   ok("epoch bumped on transfer", s.epoch === 2);
   ok("state back to ACTIVE", s.state === SESSION.ACTIVE);
 
@@ -127,7 +129,7 @@ group("Full handover: A → B with verification handshake");
   ok("score unaffected by quarantined ball", s.replay().runs === 11);
   ok("audit trail records the handover", s.audit.some(a => a.type === "handover_complete"));
   ok("attribution preserved per ball",
-     s.events.find(e => e.idempotencyKey === "a2").scorerId === undefined || true); // scorerId set client-side
+     s.events.find(e => e.idempotencyKey === "a2")?.scorerId === undefined || true); // scorerId set client-side
 }
 
 // ─────────────────────────────────────────────
@@ -188,7 +190,7 @@ group("Dead device — lease expiry and force-release");
 
   // B takes over cleanly; the dead device's late balls quarantine
   s.claim({ scorerId:"uB", deviceId:"dB", role:"coach" });
-  ok("B claims idle match", s.holder.scorerId === "uB" && s.epoch === 3);
+  ok("B claims idle match", s.holder?.scorerId === "uB" && s.epoch === 3);
   const ghost = s.append({ deviceId:"dA", epoch:1, idempotencyKey:"z2", payload: ball({ value: 4 }) });
   ok("dead device's ball quarantined", ghost.quarantined === true);
   ok("score untouched by ghost ball", s.replay().runs === 2);
@@ -256,13 +258,13 @@ group("A plain claim cannot jump a handover (SCRBRD-059)");
   ok("the holder re-claiming its own live token still succeeds", s.claim({ scorerId:"uA", deviceId:"dA", role:"scorer" }).ok === true);
   advance(LEASE_MS + 1);
   const lapsed = s.claim({ scorerId:"uB", deviceId:"dB", role:"coach" });
-  ok("a lapsed ACTIVE lease is still claimable", lapsed.ok === true && s.holder.deviceId === "dB");
+  ok("a lapsed ACTIVE lease is still claimable", lapsed.ok === true && s.holder?.deviceId === "dB");
   // And the handover itself still completes after all that.
   const armed = s.armHandover({ deviceId:"dB", epoch:s.epoch, pendingCount:0 });
   ok("the full handover path still works", armed.ok === true &&
      s.claimHandover({ scorerId:"uA", deviceId:"dA", role:"scorer", code: armed.code }).ok === true &&
      s.verifyAndTakeOver({ deviceId:"dA", confirm:{ runs:0, wickets:0, balls:0 } }).ok === true &&
-     s.state === SESSION.ACTIVE && s.holder.deviceId === "dA");
+     s.state === SESSION.ACTIVE && s.holder?.deviceId === "dA");
 }
 
 // ─────────────────────────────────────────────
@@ -302,6 +304,29 @@ group("Replay is deterministic and rebuilds identical state");
   ok("wicket counted", a.wickets === 1);
   ok("a fresh device rebuilds the same state",
      JSON.stringify(replayEvents(s.events.slice())) === JSON.stringify(a));
+}
+
+// ─────────────────────────────────────────────
+group("The confirmation is THIS innings', penalties included (SCRBRD-088)");
+{
+  // What the scoreboard shows is the innings being played. Folding the whole
+  // match as one innings answered with a total no scoreboard shows.
+  /** @param {Record<string, unknown>} payload @param {number} i */
+  const env = (payload, i) => ({ deviceId: "dA", epoch: 1, idempotencyKey: `i${i}`, seq: i + 1, payload });
+  const log = [
+    { kind: "batters", striker: "p1", nonStriker: "p2" }, { kind: "bowler", bowler: "b1" },
+    ball({ value: 4 }), ball({ type: "W", value: 0, dismissal: "bowled" }),
+    { kind: "penalty", runs: 5, toBattingTeam: true },
+    { innings: 1, kind: "batters", striker: "p3", nonStriker: "p4" }, { innings: 1, kind: "bowler", bowler: "b2" },
+    ball({ innings: 1, value: 1 }), ball({ innings: 1, type: "Nb", value: 2 }),
+    { innings: 1, kind: "penalty", runs: 5, toBattingTeam: true },
+    { innings: 1, kind: "penalty", runs: 5, toBattingTeam: false },
+  ].map(env);
+  const r = replayEvents(log);
+  ok("the second innings' figures, not the match's", r.runs === 1 + 3 + 5 && r.wickets === 0 && r.balls === 1);
+  const first = replayEvents(log.slice(0, 5));
+  ok("...and in the first innings, its penalty is in the total", first.runs === 9 && first.wickets === 1 && first.balls === 2);
+  ok("an empty log is an innings nobody has scored in", replayEvents([]).runs === 0 && replayEvents([]).balls === 0);
 }
 
 // ─────────────────────────────────────────────

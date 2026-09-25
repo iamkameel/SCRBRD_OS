@@ -15,22 +15,27 @@
  * player, awarded_by from the session; the request supplies none of them.
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
+/** @import { RouteDeps, ApiRequest, ApiResponse, Handler } from "../api-types.mjs" */
+// A caught error is `any` to the checker (CaughtError in api-types.mjs):
+// pg's carry a SQLSTATE `code`, this module's own carry an HTTP `status`.
 
-const err = (code, status = 400) => Object.assign(new Error(code), { status });
+const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
 const KINDS = ["colours", "half_colours", "honours", "captain", "vice_captain", "player_of_season", "award"];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SEASON = /^\d{4}(\/\d{2})?$/;
-const isoDate = (v, code) => {
+const isoDate = (/** @type {unknown} */ v, /** @type {string} */ code) => {
   if (v == null || String(v).trim() === "") return null;
   const s = String(v).trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s) || Number.isNaN(Date.parse(s))) throw err(code);
   return s;
 };
 
+/** @param {RouteDeps} deps @returns {Record<string, Handler>} */
 export function recognitionRoutes({ pool, secret }) {
+  /** @param {(req: ApiRequest) => Promise<unknown>} fn @returns {Handler} */
   const handle = (fn) => async (req, res) => {
     try { res.json(await fn(req)); }
-    catch (e) {
+    catch (/** @type {any} */ e) {
       // 23514 is the table's own rule — an unnamed award, an edit after the
       // fact — and 23505 is the one-a-season index. Both say which.
       if (e.code === "23514") return res.status(422).json({ error: "invalid_honour", detail: e.message });

@@ -15,12 +15,19 @@ import { toCsv } from "../io/csv.mjs";
 import {
   DISCIPLINES, battingIndex, bowlingIndex, coachIndex, adjustedRating,
   SCALE_MIN, SCALE_MAX,
-  fromRow, deriveInnings, deriveMatchPhases, NON_DELIVERY,
+  fromRow, deriveInnings, deriveMatchPhases, NON_DELIVERY, NB_RUNS_VALUES,
 } from "@scrbrd/scoring";
+/** @import { Pool, Handler, ApiRequest, RawResponse, DressedError } from "../api-types.mjs" */
+// A caught error is `any` to the checker (CaughtError in api-types.mjs).
 
 // The dismissals that are not the bowler's, as a SQL list, from the one set
 // the reducer reads — so a query cannot restate the law differently.
 const NOT_THE_BOWLERS = [...NON_DELIVERY].map((d) => `'${d}'`).join(", ");
+// Runs that are the striker's, as SQL over ball_event `b`: runsOffBat() in
+// packages/scoring. A no-ball's are, unless payload.nbRuns says byes or leg
+// byes (SCRBRD-068); a no-ball recorded before that has no nbRuns and was hit.
+const OFF_THE_BAT_SQL = `(b.ball_type in ('run','W') or (b.ball_type = 'Nb'
+  and coalesce(b.payload->>'nbRuns', '') not in (${[...NB_RUNS_VALUES].map((v) => `'${v}'`).join(", ")})))`;
 
 // resource → query. `masked: true` documents (and lets tests assert) that the
 // query reads a masking view. `params` maps request query → SQL params.
@@ -28,12 +35,23 @@ const NOT_THE_BOWLERS = [...NON_DELIVERY].map((d) => `'${d}'`).join(", ");
  * The four disciplines, in a fixed order, so the query's parameter positions
  * and the composer's reading of them cannot drift apart.
  */
-const DISCIPLINE_NAMES = Object.freeze(Object.keys(DISCIPLINES));
+// Object.keys() of a frozen literal is exactly its keys.
+const DISCIPLINE_NAMES = Object.freeze(/** @type {(keyof typeof DISCIPLINES)[]} */ (Object.keys(DISCIPLINES)));
 
 /** The directive's bands youngest first, then Open, then a boy with no date of birth. */
-const BAND_ORDER = (col) =>
+const BAND_ORDER = (/** @type {string} */ col) =>
   `case ${col} when 'U13' then 1 when 'U14' then 2 when 'U15' then 3 when 'U16' then 4 when 'open' then 5 else 6 end`;
 
+/**
+ * One governed read.
+ * @typedef {object} ReadQuery
+ * @property {string} text                                   the SQL
+ * @property {boolean} [masked]                              reads a *_masked view
+ * @property {(q: Record<string, string>) => unknown[]} [params]  request query → SQL params
+ * @property {(rows: any[]) => any[]} [compose]              rows → the answer, when judgement is applied in JS
+ */
+
+/** @type {Record<string, ReadQuery>} */
 export const READ_QUERIES = {
   matches: {
     // These column names are the real ones. The query named home_team,
@@ -55,7 +73,10 @@ export const READ_QUERIES = {
                   m.format, m.overs, m.status,
                   -- The school season the fixture falls in, by the calendar's
                   -- rule, so a screen never derives a season from a date.
-                  (select label from season_for((m.starts_at at time zone 'Africa/Johannesburg')::date, 'school')) as season,
+                  -- season_for() on the Johannesburg date, through the one
+                  -- function (db/44) that also files this fixture's runs and
+                  -- wickets under a season for the career_by_season read.
+                  school_season_of(m.starts_at) as season,
                   -- WHICH GAME. On the shared fixture read rather than behind a
                   -- per-sport one, because a school running cricket and hockey
                   -- needs both on one list — and a client that had to ask per
@@ -468,7 +489,7 @@ export const READ_QUERIES = {
     params: (q) => {
       const id = q?.playerId || null;
       if (id && !/^[0-9a-f-]{36}$/i.test(id)) {
-        const e = new Error("bad_param:playerId"); e.status = 400; throw e;
+        const e = /** @type {DressedError} */ (new Error("bad_param:playerId")); e.status = 400; throw e;
       }
       return [id];
     },
@@ -1753,8 +1774,9 @@ export const READ_QUERIES = {
    * bowler, and against bowling like his.
    *
    * The wicket rule is NOT restated here. `ball_type = 'W'` with a dismissal
-   * that is not a run out is exactly the predicate player_bowling_career uses
-   * (db/02_schema_scoring.sql), and two definitions of "wicket" that can drift
+   * that is the bowler's, and that the free hit did not save
+   * (ball_wicket_stands(), db/42), is exactly the predicate
+   * player_bowling_career uses, and two definitions of "wicket" that can drift
    * apart is precisely what this schema keeps removing. The dismissed player is
    * checked against the striker as well, because a run out at the far end
    * dismisses the other batter and would otherwise be filed against the wrong
@@ -1776,8 +1798,10 @@ export const READ_QUERIES = {
                   count(*) filter (where b.ball_type not in ('Wd','Nb'))::int  as balls,
                   -- Runs off the bat. Byes and leg byes are not the batter's,
                   -- which is the same split runs_conceded makes on the bowling
-                  -- side of the same delivery.
-                  coalesce(sum(case when b.ball_type in ('run','W','Nb')
+                  -- side of the same delivery — nor are byes or leg byes off a
+                  -- no-ball, which it records in payload.nbRuns (SCRBRD-068;
+                  -- runsOffBat() in packages/scoring is the same rule).
+                  coalesce(sum(case when ${OFF_THE_BAT_SQL}
                                     then coalesce(b.value,0) else 0 end), 0)::int as runs,
                   -- A dot is a legal delivery worth nothing, which is the rule
                   -- derivePhases already applies (packages/scoring/src/phases.mjs).
@@ -1788,12 +1812,24 @@ export const READ_QUERIES = {
                   -- anything.
                   count(*) filter (where b.ball_type not in ('Wd','Nb')
                                      and coalesce(b.value,0) = 0)::int          as dots,
-                  count(*) filter (where b.value = 4)::int                     as fours,
-                  count(*) filter (where b.value = 6)::int                     as sixes,
+                  -- The batter's fours and sixes, as the fold and the phases
+                  -- count them: off the bat. Counting every ball worth four
+                  -- called four byes, and five wides, a boundary.
+                  count(*) filter (where b.value = 4 and b.ball_type <> 'W' and ${OFF_THE_BAT_SQL})::int as fours,
+                  count(*) filter (where b.value = 6 and b.ball_type <> 'W' and ${OFF_THE_BAT_SQL})::int as sixes,
+                  -- A dismissal the free hit saved is not one: the fold's
+                  -- rule, ball_wicket_stands() in db/42, which is what every
+                  -- SQL wicket count asks. A wicket with no method is not the
+                  -- bowler's (chargedToBowler(null) is false), and who is
+                  -- out is the fold's \`dismissed ?? striker\`,
+                  -- ball_dismissed_batter() in db/43: a typed-name batter run
+                  -- out at the far end is not the striker's dismissal.
                   count(*) filter (
                     where b.ball_type = 'W'
-                      and coalesce(b.dismissal,'') not in (${NOT_THE_BOWLERS})
-                      and coalesce(b.dismissed_id, b.striker_id) = b.striker_id
+                      and b.dismissal is not null
+                      and b.dismissal not in (${NOT_THE_BOWLERS})
+                      and ball_dismissed_batter(b.striker_id, b.dismissed_id, b.payload) = b.striker_id
+                      and ball_wicket_stands(b.match_id, b.innings, b.seq, b.kind, b.ball_type, b.dismissal)
                   )::int                                                       as dismissals
              from ball_event_live b
              join player bat  on bat.id  = b.striker_id
@@ -1989,6 +2025,70 @@ export const READ_QUERIES = {
   },
 
   /**
+   * The same career figures, season by season (SCRBRD-086).
+   *
+   * One row per player per school season in which he has a figure, `season`
+   * being the label of the season his MATCHES are in — school_season_of()
+   * on each match's start, the rule the `matches` read files the fixture by
+   * (db/44). `?season=2026` narrows the rows to that one season; without it
+   * every season comes back, which is also how a screen learns which seasons
+   * have anything in them. `current_season` says which row's season is the
+   * one today is in, from the same rule, so no client works it out from a
+   * clock.
+   *
+   * A RESOURCE OF ITS OWN, NOT A PARAMETER ON `career`, for three reasons.
+   *   - `career` stays byte-for-byte what it was. Stats-Magic, the squad,
+   *     profile, analytics and competition screens, and the walks that prove
+   *     it against the fold (smoke-browser-pad-laws, smoke-dismissals,
+   *     smoke-summary) keep the exact query they were proven against, and
+   *     "All seasons" on the Awards tab IS that read — not a new computation
+   *     that would itself need proving equal.
+   *   - It is a different grain. `career` is a row per player; this is a row
+   *     per player per season. A parameter that changed a resource's shape
+   *     would give one name two answers, and the CSV export reads a resource's
+   *     columns off its single SELECT list.
+   *   - A read is one statement. `career` with an optional season would be
+   *     two computations behind one text, one of them always wasted.
+   *
+   * THE SAME SCOPE AS `career`, AND NOTHING NEW TO DECIDE. The three views are
+   * security_invoker over ball_event_live, match and player (db/44), so the
+   * figures cover exactly the deliveries this reader may see, and a player
+   * appears only when this reader may read the player — the lifetime views'
+   * rule, row for row. No module owns it, as none owns `career`. For every
+   * player and every reader, the rows summed over seasons equal `career`
+   * (db/99 §21, and the Awards walk checks it through this route).
+   *
+   * No form guide: a season's is not what the Awards tab ranks on, and
+   * player_innings is not this file's to re-slice.
+   */
+  career_by_season: {
+    text: `select p.id                                   as player_id,
+                  p.full_name, p.team_code, p.school_id,
+                  season,
+                  season = (select school_season_of(now())) as current_season,
+                  coalesce(bat.matches, 0)               as bat_matches,
+                  coalesce(bat.runs, 0)                  as runs,
+                  coalesce(bat.balls_faced, 0)           as balls_faced,
+                  coalesce(bat.fours, 0)                 as fours,
+                  coalesce(bat.sixes, 0)                 as sixes,
+                  coalesce(dis.dismissals, 0)            as dismissals,
+                  coalesce(bowl.matches, 0)              as bowl_matches,
+                  coalesce(bowl.runs_conceded, 0)        as runs_conceded,
+                  coalesce(bowl.legal_balls, 0)          as balls_bowled,
+                  coalesce(bowl.wickets, 0)              as wickets
+             from (select * from player_batting_by_season    where $1::text is null or season = $1) bat
+             -- USING merges the keys, so a player who only bowled in a season
+             -- still has one row for it, and each view is computed once.
+             full join (select * from player_dismissals_by_season where $1::text is null or season = $1) dis
+               using (player_id, season)
+             full join (select * from player_bowling_by_season    where $1::text is null or season = $1) bowl
+               using (player_id, season)
+             join player p on p.id = player_id
+            order by season desc, p.full_name`,
+    params: q => [q?.season || null],
+  },
+
+  /**
    * How a boy is out, and how a bowler takes wickets — by method.
    *
    * `career` above has `dismissals` and `wickets` as single counts.
@@ -2147,7 +2247,8 @@ export const READ_QUERIES = {
  * says correctly rather than inventing a half.
  */
 function ratingsQuery() {
-  const cols = [], joins = [];
+  /** @type {string[]} */
+  const cols = [], joins = /** @type {string[]} */ ([]);
   DISCIPLINE_NAMES.forEach((d, i) => {
     const n = i + 1;
     cols.push(`${d}_a.anchor as ${d}_anchor`, `${d}_a.scores as ${d}_scores`,
@@ -2224,19 +2325,22 @@ function ratingsQuery() {
  * twelve-over match, and a caller who could name the figure could move the
  * death overs and change what every number on the card means.
  */
+/** @param {any[]} rows  ball_event rows, with the match's over count joined in */
 function composePhases(rows) {
   // Every row carries the match's over count, joined in SQL. Twenty is the
   // fallback for a match with none recorded, not a default anyone can send.
   const overs = Number.isFinite(rows[0]?.overs) ? rows[0].overs : 20;
+  /** @type {Map<number, any[]>} */
   const byInnings = new Map();
   for (const r of rows) {
     const n = r.innings ?? 1;
     if (!byInnings.has(n)) byInnings.set(n, []);
-    byInnings.get(n).push(fromRow(r));
+    /** @type {any[]} */ (byInnings.get(n)).push(fromRow(r));   // set just above when absent
   }
   const innings = [...byInnings.keys()].sort((a, b) => a - b)
     .map((n) => deriveInnings(
-      [{ kind: "innings_start", overs, squad: [], bowlingSquad: [] }, ...byInnings.get(n)]));
+      // n came from byInnings.keys(), so get() finds it.
+      [{ kind: "innings_start", overs, squad: [], bowlingSquad: [] }, .../** @type {any[]} */ (byInnings.get(n))]));
   const { first, second } = deriveMatchPhases(innings);
   // One row per innings, so the shape matches every other read: a list.
   return [first, second]
@@ -2244,10 +2348,12 @@ function composePhases(rows) {
     .filter(Boolean);
 }
 
+/** @param {any[]} rows  ratingsQuery() rows */
 function composeRatings(rows) {
   return rows.map((r) => {
     // The two disciplines the ball log can speak to. The others have no index
     // and adjustedRating() reports "coach" rather than inventing a half.
+    /** @type {Partial<Record<string, { value: number | null }>>} */
     const index = {
       batting: battingIndex({
         runs: Number(r.runs), ballsFaced: Number(r.balls_faced), dismissals: Number(r.dismissals),
@@ -2257,8 +2363,10 @@ function composeRatings(rows) {
         wickets: Number(r.wickets),
       }),
     };
+    /** @type {Partial<Record<string, number>>} */
     const sample = { batting: Number(r.balls_faced), bowling: Number(r.balls_bowled) };
 
+    /** @type {Record<string, unknown>} */
     const out = {
       player_id: r.player_id, full_name: r.full_name,
       team_code: r.team_code, school_id: r.school_id,
@@ -2291,9 +2399,10 @@ function composeRatings(rows) {
   });
 }
 
+/** @param {Record<string, string> | undefined} q @param {string} key */
 function req(q, key) {
   const v = q?.[key];
-  if (v === undefined || v === null || v === "") { const e = new Error(`missing_param:${key}`); e.status = 400; throw e; }
+  if (v === undefined || v === null || v === "") { const e = /** @type {DressedError} */ (new Error(`missing_param:${key}`)); e.status = 400; throw e; }
   return v;
 }
 
@@ -2315,7 +2424,7 @@ function req(q, key) {
  * question — a column can be masked for tidiness and a column can be sensitive
  * without being masked from anyone who can already reach the row.
  */
-export const RESTRICTED_FIELDS = Object.freeze({
+export const RESTRICTED_FIELDS = Object.freeze(/** @type {Record<string, string[]>} */ ({
   players:  ["email", "phone", "born", "hometown", "houseatschool",
              "address", "guardian", "height", "weight", "id_number"],
   injuries: ["injury_type", "severity", "phase", "notes", "physio"],
@@ -2326,6 +2435,9 @@ export const RESTRICTED_FIELDS = Object.freeze({
   clearance_register: ["reference"],
   clearances:         ["reference"],
   career:   [],
+  // The same figures as `career`, one grain finer: nothing about a child
+  // beyond what `career` already discloses to the same reader.
+  career_by_season: [],
   dismissal_breakdown: [],
   skills:   ["score"],
   users:    ["email"],
@@ -2352,13 +2464,14 @@ export const RESTRICTED_FIELDS = Object.freeze({
   // the school that was read — school_id on every row is theirs, not the
   // reader's — so the disclosure lands in the right school's log.
   opposition_squad: ["full_name"],
-});
+}));
 
 /** Read a possibly-dotted path off a row. Flat names behave exactly as before. */
-const pick = (row, path) =>
+const pick = (/** @type {any} */ row, /** @type {string} */ path) =>
   path.split(".").reduce((v, k) => (v == null ? v : v[k]), row);
 
 /** Which id column identifies the CHILD a row is about, for the log. */
+/** @type {Record<string, string>} */
 const SUBJECT_ID = { players: "id", injuries: "player_id", skills: "player_id",
                      emergency_contacts: "player_id", trip_contacts: "player_id",
                      clearance_register: "person_id", clearances: "person_id",
@@ -2371,11 +2484,18 @@ const MAX_LOGGED_IDS = 500;
 
 /**
  * Read a resource under the caller's principal.
- * @returns rows already row-filtered (RLS) and column-masked (views).
+ * @returns {Promise<any[]>} rows already row-filtered (RLS) and column-masked (views).
+ * @param {Pool} pool @param {string} secret
+ * @param {string | undefined} bearer  the Authorization header, as sent
+ * @param {string} resource
+ * @param {Record<string, string>} [query]
  */
 export async function readResource(pool, secret, bearer, resource, query = {}) {
-  const def = READ_QUERIES[resource];
-  if (!def) { const e = new Error("unknown_resource"); e.status = 404; throw e; }
+  // Object.hasOwn, not a bare index: READ_QUERIES is a plain object, so a URL
+  // naming "constructor" or "__proto__" found Object.prototype's member, passed
+  // the 404 and opened a transaction as the caller before failing elsewhere.
+  const def = Object.hasOwn(READ_QUERIES, resource) ? READ_QUERIES[resource] : undefined;
+  if (!def) { const e = /** @type {DressedError} */ (new Error("unknown_resource")); e.status = 404; throw e; }
   const params = def.params ? def.params(query) : [];
   const module = OWNER_OF_READ[resource];
   return runAsPrincipal(pool, secret, bearer, async client => {
@@ -2401,7 +2521,7 @@ export async function readResource(pool, secret, bearer, resource, query = {}) {
       const { rows: [gate] } = await client.query(
         `select my_feature_enabled($1) as on`, [module]);
       if (!gate?.on) {
-        const e = new Error("module_disabled");
+        const e = /** @type {DressedError} */ (new Error("module_disabled"));
         e.status = 403; e.code = "module_disabled"; e.module = module;
         throw e;
       }
@@ -2415,7 +2535,7 @@ export async function readResource(pool, secret, bearer, resource, query = {}) {
     // that never happened for one of them.
     const watched = RESTRICTED_FIELDS[resource];
     const idCol = SUBJECT_ID[resource];
-    const idsIn = (some) => idCol
+    const idsIn = (/** @type {any[]} */ some) => idCol
       ? [...new Set(some.map((r) => r[idCol]).filter(Boolean))].slice(0, MAX_LOGGED_IDS)
       : [];
     // A PLATFORM-WIDE READER'S EVERY READ IS ON THE RECORD (db/20). For the
@@ -2473,6 +2593,10 @@ export function liveResources() { return Object.keys(READ_QUERIES); }
  *
  * The column order is the FIRST ROW's key order, which is the query's own
  * SELECT order, so a term's exports diff against each other.
+ * @param {Pool} pool @param {string} secret
+ * @param {string | undefined} bearer  the Authorization header, as sent
+ * @param {string} resource
+ * @param {Record<string, string>} [query]
  */
 export async function exportResource(pool, secret, bearer, resource, query = {}) {
   const rows = await readResource(pool, secret, bearer, resource, query);
@@ -2493,8 +2617,9 @@ export async function exportResource(pool, secret, bearer, resource, query = {})
  * cannot work them out it returns nothing rather than guessing, which produces
  * a headerless empty file instead of a file with invented columns.
  */
+/** @param {string} resource */
 function columnsOf(resource) {
-  const text = READ_QUERIES[resource]?.text ?? "";
+  const text = (Object.hasOwn(READ_QUERIES, resource) ? READ_QUERIES[resource]?.text : undefined) ?? "";
   const select = text.match(/select\s+([\s\S]*?)\s+from\s/i)?.[1];
   if (!select) return [];
   // Split on commas that are not inside brackets: the SELECT lists contain
@@ -2520,10 +2645,15 @@ function columnsOf(resource) {
 // A separate route rather than a query parameter on the read, because the two
 // have different response shapes and different headers, and a client that
 // forgot the parameter should get JSON rather than a download.
+/**
+ * @param {{ pool: Pool, secret: string }} deps
+ * @returns {(req: ApiRequest, res: RawResponse) => Promise<unknown>}
+ */
 export function exportRoute({ pool, secret }) {
   return async (req, res) => {
     try {
-      const resource = req.params.resource;
+      // The dispatcher always sets it, from the path.
+      const resource = /** @type {string} */ (req.params.resource);
       const { csv, rows } = await exportResource(
         pool, secret, req.headers?.authorization, resource, req.query || {});
       // A filename with the day in it, because a school will download the same
@@ -2538,7 +2668,7 @@ export function exportRoute({ pool, secret }) {
         "x-scrbrd-rows": String(rows),
       });
       res.end(csv);
-    } catch (e) {
+    } catch (/** @type {any} */ e) {
       res.status(e.status || 500).json({
         error: e.code || e.message, ...(e.module ? { module: e.module } : {}) });
     }
@@ -2546,12 +2676,13 @@ export function exportRoute({ pool, secret }) {
 }
 
 // ── Express/Fastify route: GET /read/:resource ──
+/** @param {{ pool: Pool, secret: string }} deps @returns {Handler} */
 export function readRoute({ pool, secret }) {
   return async (req, res) => {
     try {
-      const rows = await readResource(pool, secret, req.headers?.authorization, req.params.resource, req.query || {});
+      const rows = await readResource(pool, secret, req.headers?.authorization, /** @type {string} */ (req.params.resource), req.query || {});   // set by the dispatcher, from the path
       res.json({ resource: req.params.resource, rows });
-    } catch (e) {
+    } catch (/** @type {any} */ e) {
       // `module` rides along on a module refusal so a client can say WHICH
       // one is off instead of rendering "could not load" — a screen that
       // reports a switched-off module as a failure sends somebody looking for

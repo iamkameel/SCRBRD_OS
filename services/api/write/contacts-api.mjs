@@ -15,16 +15,21 @@
  * and the session; the request supplies neither.
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
+/** @import { RouteDeps, ApiRequest, ApiResponse, Handler } from "../api-types.mjs" */
+// A caught error is `any` to the checker (CaughtError in api-types.mjs):
+// pg's carry a SQLSTATE `code`, this module's own carry an HTTP `status`.
 
-const err = (code, status = 400) => Object.assign(new Error(code), { status });
+const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
 const RELATIONSHIPS = ["mother", "father", "guardian", "grandparent", "sibling", "family", "other"];
 const PHONE = /^\+?[0-9][0-9 ]{6,19}$/;
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
+/** @param {RouteDeps} deps @returns {Record<string, Handler>} */
 export function contactRoutes({ pool, secret }) {
+  /** @param {(req: ApiRequest) => Promise<unknown>} fn @returns {Handler} */
   const handle = (fn) => async (req, res) => {
     try { res.json(await fn(req)); }
-    catch (e) {
+    catch (/** @type {any} */ e) {
       // 23514 is one of the table's own rules — the vocabulary, the number
       // shape, a reactivated retired row — and its message names which.
       if (e.code === "23514") return res.status(422).json({ error: "invalid_contact", detail: e.message });

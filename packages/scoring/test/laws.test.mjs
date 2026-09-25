@@ -12,8 +12,8 @@
  *   - AG models a wicket ON a no-ball or a wide (extraType + isWicket). Here a
  *     wicket is its own delivery type, W, which is legal; "caught off a
  *     no-ball" and "stumped off a wide" cannot be written, so there is nothing
- *     to refuse. Nor can "a single bye off a no-ball" (Nb's value is runs off
- *     the bat).
+ *     to refuse. "A single bye off a no-ball" can be written since SCRBRD-068
+ *     (`nbRuns: "byes"`) — group M.
  *
  * Groups E onwards are the lifecycle and undo rules this repository adds.
  *
@@ -219,8 +219,9 @@ group("F. At the crease");
 
   // Law 17.8, "or parts thereof": a mid-over change bars BOTH bowlers from the next over.
   const shared = [...open(0), ...runs(0, 0, 0, 0), ...at(0, bowler({ bowler: "w3" })), ...runs(0, 0, 0, 0)];
-  ok("a mid-over change of bowler is accepted (Law 17.8.1 — not refused here)",
-     judge([...open(0), ...runs(0, 0)], at(0, bowler({ bowler: "w3" }))[0]) === null);
+  // SCRBRD-080: accepted with the reason Law 17.8.1 gives; refused without.
+  ok("a mid-over change of bowler is accepted with its reason (Law 17.8.1)",
+     judge([...open(0), ...runs(0, 0)], at(0, bowler({ bowler: "w3", reason: "injury" }))[0]) === null);
   ok("...and neither man who shared the over may bowl the next",
      judge(shared, at(0, bowler({ bowler: "w1" }))[0]) === REFUSAL.CONSECUTIVE_OVERS
      && judge(shared, at(0, bowler({ bowler: "w3" }))[0]) === REFUSAL.CONSECUTIVE_OVERS
@@ -292,6 +293,148 @@ group("I. The incremental fold agrees with the full one");
   ok("a revision can reopen an innings the view had settled as over",
      new MatchFold(all).view().innings[0].complete === true && reopened.view().innings[0].complete === false);
   ok("view() settles on a copy: the live fold is not marked complete", f.byInnings.get(0)?.inn.complete === false);
+}
+
+// ── K. Dismissals with no delivery (SCRBRD-081) ─────────────────
+group("K. Timed out and retired out: a retire marked W");
+{
+  const L = [...open(0), ...runs(0, 1, 0)];   // p2 on strike, p1 at the other end
+  ok("retired out of a batter who is in is accepted",
+     judge(L, at(0, retire({ batter: "p1", reason: "out" }))[0]) === null);
+  ok("...of one who is not, refused", judge(L, at(0, retire({ batter: "p4", reason: "out" }))[0]) === REFUSAL.NOT_AT_CREASE);
+
+  const out = [...L, ...at(0, ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" }))];
+  ok("timed out of the batter due in, after a wicket, is accepted",
+     judge(out, at(0, retire({ batter: "p3", reason: "timed_out" }))[0]) === null);
+  ok("...of a batter at the crease, refused: he got there", judge(out, at(0, retire({ batter: "p1", reason: "timed_out" }))[0]) === REFUSAL.NOT_NEXT_IN);
+  ok("...while both ends are filled, refused: nobody is due",
+     judge(L, at(0, retire({ batter: "p3", reason: "timed_out" }))[0]) === REFUSAL.NOT_NEXT_IN);
+  ok("...of an opener, refused: Law 40 is the incoming batter's",
+     judge(at(0, inningsStart({ battingTeam: "A", squad: SQ_A }), batters({ striker: "p1" }), bowler({ bowler: "w1" })),
+           at(0, retire({ batter: "p2", reason: "timed_out" }))[0]) === REFUSAL.NOT_NEXT_IN);
+  ok("...of a batter already out, refused", judge(out, at(0, retire({ batter: "p2", reason: "timed_out" }))[0]) === REFUSAL.BATTER_ALREADY_OUT);
+  const timed = [...out, ...at(0, retire({ batter: "p3", reason: "timed_out" }))];
+  ok("a batter timed out does not come in afterwards", judge(timed, at(0, batters({ striker: "p3" }))[0]) === REFUSAL.BATTER_ALREADY_OUT);
+  ok("...the next one does", judge(timed, at(0, batters({ striker: "p4" }))[0]) === null);
+  const retOut = [...L, ...at(0, retire({ batter: "p1", reason: "out" }))];
+  ok("a batter retired out does not come back", judge(retOut, at(0, batters({ nonStriker: "p1" }))[0]) === REFUSAL.BATTER_ALREADY_OUT);
+
+  /** @type {LogEvent} */
+  const bowledNoBall = { kind: "retire", batter: "p1", reason: "out", type: "W", dismissal: "bowled" };
+  ok("no other way out is recorded without a ball", judge(L, at(0, bowledNoBall)[0]) === REFUSAL.NEEDS_A_DELIVERY);
+
+  // The over does not move, so Law 17.8 reads the same after one.
+  const overDone = [...open(0), ...runs(0, 0, 0, 0, 0, 0, 0), ...at(0, retire({ batter: "p1", reason: "out" }), batters({ striker: "p3" }))];
+  ok("the over is still over: the same bowler may not start the next",
+     judge(overDone, at(0, bowler({ bowler: "w1" }))[0]) === REFUSAL.CONSECUTIVE_OVERS);
+  const midOver = [...open(0), ...runs(0, 0, 0), ...at(0, retire({ batter: "p1", reason: "out" }), batters({ striker: "p3" }))];
+  ok("...and mid-over the same bowler carries on", judge(midOver, at(0, ball({}))[0]) === null
+     && deriveInnings([...midOver, ...at(0, ball({}))]).bowler === "w1");
+
+  // The last man out on no ball ends the innings; nothing more is recorded.
+  const small = at(0, inningsStart({ battingTeam: "A", bowlingTeam: "B", squad: SQ_A.slice(0, 2), bowlingSquad: SQ_B, overs: 2 }),
+                   batters({ striker: "p1", nonStriker: "p2" }), bowler({ bowler: "w1" }), ball({}));
+  const allOut = [...small, ...at(0, retire({ batter: "p2", reason: "out" }))];
+  ok("retired out can end an innings", deriveInnings(allOut).complete === true);
+  ok("...after which a ball is refused", judge(allOut, at(0, ball({}))[0]) === REFUSAL.INNINGS_OVER);
+  ok("...and so is another dismissal without one", judge(allOut, at(0, retire({ batter: "p1", reason: "out" }))[0]) === REFUSAL.INNINGS_OVER);
+
+  // The shape before SCRBRD-081 is still taken: an older build's queue syncs.
+  ok("a W delivery naming timed out (the old shape) is still accepted",
+     judge(L, at(0, ball({ type: BALL_TYPE.WICKET, dismissal: "timed_out" }))[0]) === null);
+  ok("retired hurt is judged as it always was", judge(L, at(0, retire({ batter: "p1", reason: "hurt" }))[0]) === null);
+}
+
+// ── L. A mid-over change of bowler says why (SCRBRD-080) ────────
+group("L. A bowler replaced during an over: injury or suspended");
+{
+  const two = [...open(0), ...runs(0, 0, 0, 1)];   // three balls of the first over
+  ok("with no reason, refused", judge(two, at(0, bowler({ bowler: "w3" }))[0]) === REFUSAL.MID_OVER_NO_REASON);
+  ok("injured, accepted", judge(two, at(0, bowler({ bowler: "w3", reason: "injury" }))[0]) === null);
+  ok("suspended, accepted", judge(two, at(0, bowler({ bowler: "w3", reason: "suspended" }))[0]) === null);
+  /** @type {LogEvent} */
+  const odd = /** @type {LogEvent} */ (/** @type {unknown} */ ({ kind: "bowler", bowler: "w3", reason: "tired" }));
+  ok("a reason the model does not know, refused", judge(two, at(0, odd)[0]) === REFUSAL.MID_OVER_NO_REASON);
+  let threw = false;
+  try { bowler({ bowler: "w3", reason: "tired" }); } catch { threw = true; }
+  ok("...and the constructor will not build one", threw);
+  ok("naming the bowler already on is no change, and needs none", judge(two, at(0, bowler({ bowler: "w1" }))[0]) === null);
+  // A wide is part of the over: a change after it is mid-over too.
+  const wide = [...open(0), ...runs(0, 0, 0, 0, 0, 0), ...at(0, bowler({ bowler: "w2" }), ball({ type: BALL_TYPE.WIDE }))];
+  ok("after a wide that opened an over, a change is mid-over", judge(wide, at(0, bowler({ bowler: "w3" }))[0]) === REFUSAL.MID_OVER_NO_REASON);
+  // Not mid-over: the start of an over, or before the first ball.
+  const done = [...open(0), ...runs(0, 0, 0, 0, 0, 0, 0)];
+  ok("a new over needs no reason", judge(done, at(0, bowler({ bowler: "w2" }))[0]) === null);
+  ok("nor does correcting the opening bowler before a ball", judge(open(0), at(0, bowler({ bowler: "w2" }))[0]) === null);
+  // A pad holding balls the server refused for want of a bowler (the held
+  // cascade, SCRBRD-070) has balls in an over and nobody on: naming one then
+  // replaces nobody.
+  const nobodyOn = [...open(0), ...runs(0, 0, 0, 0, 0, 0, 0), ...runs(0, 4)];
+  ok("with balls in the over and nobody on, naming a bowler needs no reason",
+     deriveInnings(nobodyOn).bowler === null && judge(nobodyOn, at(0, bowler({ bowler: "w2" }))[0]) === null
+     && deriveInnings([...nobodyOn, ...at(0, bowler({ bowler: "w2" }))]).bowlerChanges.length === 0);
+  // Law 17.8, "or parts thereof", still binds the man who finished the over.
+  const finished = [...two, ...at(0, bowler({ bowler: "w3", reason: "injury" })), ...runs(0, 0, 0, 0)];
+  ok("the replacement may not bowl the next over", judge(finished, at(0, bowler({ bowler: "w3" }))[0]) === REFUSAL.CONSECUTIVE_OVERS);
+  ok("...nor the injured man", judge(finished, at(0, bowler({ bowler: "w1" }))[0]) === REFUSAL.CONSECUTIVE_OVERS);
+  // The fold records who took over, when, and why; the balls are his.
+  const inn = deriveInnings(finished);
+  ok("the fold records the change: over 1, after 3 balls, w1 to w3, injury",
+     inn.bowlerChanges.length === 1 && inn.bowlerChanges[0].over === 0 && inn.bowlerChanges[0].ballInOver === 3
+     && inn.bowlerChanges[0].from === "w1" && inn.bowlerChanges[0].to === "w3" && inn.bowlerChanges[0].reason === "injury");
+  ok("...and splits the over's balls between them",
+     inn.bowlers.find((b) => b.id === "w1")?.balls === 3 && inn.bowlers.find((b) => b.id === "w3")?.balls === 3);
+  // A log from before the pad asked still replays, and says it did not say.
+  const old = deriveInnings([...two, { kind: "bowler", bowler: "w3", innings: 0 }, ...runs(0, 0, 0)]);
+  ok("an old mid-over change with no reason replays, its reason unknown",
+     old.bowler === "w3" && old.bowlerChanges.length === 1 && old.bowlerChanges[0].reason === null && old.balls === 5);
+  ok("a bowler for a new over is not a change", deriveInnings(done).bowlerChanges.length === 0
+     && deriveInnings([...done, ...at(0, bowler({ bowler: "w2" }))]).bowlerChanges.length === 0);
+}
+
+// ── M. Whose the runs off a no-ball are (SCRBRD-068) ────────────
+group("M. No-ball byes and leg byes at commit");
+{
+  const L = [...open(0), ...runs(0, 1)];
+  ok("byes off a no-ball are accepted", judge(L, at(0, ball({ type: BALL_TYPE.NO_BALL, value: 2, nbRuns: "byes" }))[0]) === null);
+  ok("leg byes off one too", judge(L, at(0, ball({ type: BALL_TYPE.NO_BALL, value: 1, nbRuns: "leg_byes" }))[0]) === null);
+  ok("a no-ball hit for runs, as always", judge(L, at(0, ball({ type: BALL_TYPE.NO_BALL, value: 4 }))[0]) === null);
+  const odd = /** @type {LogEvent} */ (/** @type {unknown} */ ({ kind: "ball", type: "Nb", value: 2, nbRuns: "overthrows" }));
+  ok("anything else is refused: the fold would read it as off the bat", judge(L, at(0, odd)[0]) === REFUSAL.NB_RUNS_UNKNOWN);
+  const onBye = /** @type {LogEvent} */ (/** @type {unknown} */ ({ kind: "ball", type: "B", value: 2, nbRuns: "byes" }));
+  ok("...and so is the field on a delivery that is not a no-ball", judge(L, at(0, onBye)[0]) === REFUSAL.NB_RUNS_UNKNOWN);
+  // Both folds agree on what it scored.
+  const log = [...L, ...at(0, ball({ type: BALL_TYPE.NO_BALL, value: 3, nbRuns: "leg_byes" }))];
+  const server = new MatchFold(log).view().innings[0];
+  const client = deriveInnings(log);
+  ok("the server's fold and the pad's agree on it",
+     server.runs === client.runs && server.extras.noBall === client.extras.noBall && server.striker === client.striker
+     && server.batsmen.find((b) => b.id === "p2")?.runs === client.batsmen.find((b) => b.id === "p2")?.runs
+     && client.batsmen.find((b) => b.id === "p2")?.runs === 0);
+}
+
+// ── N. The end a run out happened at (SCRBRD-069) ─────────────
+group("N. A run out that completed runs, and the end it was at");
+{
+  const L = [...open(0), ...runs(0, 0)];
+  const ro = at(0, ball({ type: BALL_TYPE.WICKET, value: 1, dismissal: "run_out", dismissed: "p2", outAt: "striker_end" }))[0];
+  ok("a run out with its end is accepted", judge(L, ro) === null);
+  const bad = /** @type {LogEvent} */ (/** @type {unknown} */ ({ kind: "ball", type: "W", value: 1, dismissal: "run_out", outAt: "long_leg" }));
+  ok("an end that is neither is refused", judge(L, at(0, bad)[0]) === REFUSAL.OUT_AT_UNKNOWN);
+  const onRun = /** @type {LogEvent} */ (/** @type {unknown} */ ({ kind: "ball", type: "run", value: 1, outAt: "bowler_end" }));
+  ok("...and so is an end on a delivery that is not a wicket", judge(L, at(0, onRun)[0]) === REFUSAL.OUT_AT_UNKNOWN);
+  let threw = false;
+  try { ball({ type: BALL_TYPE.RUN, value: 1, outAt: "bowler_end" }); } catch { threw = true; }
+  ok("...which the constructor will not build", threw);
+  // Both folds put the survivor at the same end, and the next batter the
+  // server takes is the one sent to the empty end.
+  const log = [...L, ro];
+  const server = new MatchFold(log).view().innings[0];
+  const client = deriveInnings(log);
+  ok("server and pad agree: the striker's end is empty, p1 at the other",
+     server.striker === null && client.striker === null && server.nonStriker === "p1" && client.nonStriker === "p1");
+  ok("the new batter goes to the striker's end", judge(log, at(0, batters({ striker: "p3" }))[0]) === null);
+  ok("...not over the survivor", judge(log, at(0, batters({ nonStriker: "p3" }))[0]) === REFUSAL.CREASE_OCCUPIED);
 }
 
 group("J. Every reason has words for the person who has to clear it");

@@ -295,6 +295,47 @@ try {
   // not losing access to the fixture.
   const aStillReads = await readLog(tokenA);
   ok("the outgoing scorer can still follow the match", aStillReads.length === 14);
+
+  // ── A wicket the free hit saved, then a handover (db/42) ───────
+  group("A wicket the free hit saved, then the pen goes back");
+  // Recorded as it happened — the ball, the appeal, the method — and the
+  // batter is not out (docs/SCORING_RULES.md, product decision 1). Every
+  // device's fold says so. Until db/42 the server's own count, the one a
+  // handover is verified against, called it a wicket: n + 1 against the
+  // incoming device's n, a mismatch on every attempt, and the match could
+  // not change hands for the rest of the innings.
+  const P4 = "aaaaaaaa-0000-0000-0000-000000000004";
+  const gap = final.striker == null ? { striker: P4 } : { nonStriker: P4 };
+  const freeHit = await post(tokenB, DEV_B, epochB, [
+    batters(gap),
+    ball({ type: BALL_TYPE.NO_BALL, value: 0 }),
+    ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: "bowled" }),
+  ], 3);
+  ok("a no-ball and a bowled on the free hit are both accepted — the server does not refuse it",
+     freeHit.body?.accepted?.length === 3, JSON.stringify(freeHit.body));
+  const withSaved = deriveInnings((await readLog(tokenB)).map(fromRow), {});
+  ok("the fold saves the batter: still one wicket",
+     withSaved.wickets === 1 && withSaved.ballLog.at(-1)?.freeHitSaved === true);
+
+  const armB = await api(`/api/matches/${MATCH}/session/handover/arm`, {
+    method: "POST", token: tokenB, body: { device: DEV_B, pending: 0, ballInFlight: false },
+  });
+  ok("device B arms a handover back", armB.body?.ok === true);
+  const claimA2 = await api(`/api/matches/${MATCH}/session/handover/claim`, {
+    method: "POST", token: tokenA, body: { device: DEV_A, code: armB.body?.code },
+  });
+  ok("device A claims it with the code", claimA2.body?.ok === true);
+  const rebuiltA = deriveInnings((claimA2.body?.events || []).map(fromRow), {});
+  ok(`device A's replay reads ${rebuiltA.runs}/${rebuiltA.wickets} off ${rebuiltA.balls}`,
+     rebuiltA.wickets === 1 && rebuiltA.balls === 9);
+  const verifyA = await api(`/api/matches/${MATCH}/session/handover/verify`, {
+    method: "POST", token: tokenA,
+    body: { device: DEV_A, runs: rebuiltA.runs, wickets: rebuiltA.wickets, balls: rebuiltA.balls },
+  });
+  ok("the handover after a saved wicket verifies: the server counts the wickets the fold does",
+     verifyA.body?.ok === true,
+     `reason ${verifyA.body?.reason}, server expected ${verifyA.body?.exp_runs}/${verifyA.body?.exp_wkts} off ${verifyA.body?.exp_balls}`);
+  ok("...and the epoch advanced again", verifyA.body?.epoch === epochB + 1);
 } catch (e) {
   ok(`the handover threw: ${e.message?.slice(0, 100)}`, false);
   console.log(e.stack?.split("\n").slice(0, 4).join("\n"));

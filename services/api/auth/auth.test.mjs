@@ -16,8 +16,9 @@ import {
 } from "./auth.mjs";
 
 let pass = 0, fail = 0;
+/** @param {string} n @param {unknown} c */
 const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
-const group = t => console.log("\n" + t);
+const group = (/** @type {string} */ t) => console.log("\n" + t);
 const SECRET = "test-secret-do-not-use-in-prod";
 const ID = { userId: "u1", deviceId: "dev-a" };
 
@@ -30,21 +31,21 @@ group("Token integrity");
   ok("carries iss/aud/exp", claims.iss === TOKEN.iss && claims.aud === TOKEN.aud && typeof claims.exp === "number");
 
   // tamper: re-encode the payload with an added claim
-  const [h, p, s] = t.split(".");
+  const [h, _p, s] = t.split(".");
   const badP = Buffer.from(JSON.stringify({ ...claims, role: "superadmin" })).toString("base64url");
   let threw = false;
-  try { verifyToken(`${h}.${badP}.${s}`, SECRET); } catch (e) { threw = e.code === "bad_signature"; }
+  try { verifyToken(`${h}.${badP}.${s}`, SECRET); } catch (/** @type {any} */ e) { threw = e.code === "bad_signature"; }
   ok("privilege-escalation tamper rejected", threw);
 
   // wrong secret
   let threw2 = false;
-  try { verifyToken(t, "other-secret"); } catch (e) { threw2 = e.code === "bad_signature"; }
+  try { verifyToken(t, "other-secret"); } catch (/** @type {any} */ e) { threw2 = e.code === "bad_signature"; }
   ok("wrong secret rejected", threw2);
 
   // expired
   const old = signToken(ID, SECRET, () => 0);
   let threw3 = false;
-  try { verifyToken(old, SECRET, () => Date.now()); } catch (e) { threw3 = e.code === "token_expired"; }
+  try { verifyToken(old, SECRET, () => Date.now()); } catch (/** @type {any} */ e) { threw3 = e.code === "token_expired"; }
   ok("expired token rejected", threw3);
 
   // malformed
@@ -52,8 +53,10 @@ group("Token integrity");
   try { verifyToken("not.a.jwt.at.all", SECRET); } catch (e) { threw4 = e instanceof AuthError; }
   ok("malformed token rejected", threw4);
 
+  // @ts-expect-error — the point of the test: a call with no userId.
   ok("signToken demands a user", (() => { try { signToken({ deviceId: "d" }, SECRET); return false; } catch { return true; } })());
   // An unbound token is one that any device can score with — see auth.mjs (2).
+  // @ts-expect-error — the point of the test: a call with no deviceId.
   ok("signToken demands a device", (() => { try { signToken({ userId: "u1" }, SECRET); return false; } catch { return true; } })());
 }
 
@@ -69,7 +72,8 @@ group("Trust boundary — the token says WHO, never WHAT");
 
   // A token that somehow carried a role would still not be believed: nothing
   // downstream reads one.
-  const forged = principalFromClaims({ sub: "u1", did: "dev-a", role: "superadmin", school_id: "X" });
+  // A cast, not a claims object: the test hands over what a forged token would.
+  const forged = /** @type {Record<string, unknown>} */ (principalFromClaims(/** @type {any} */ ({ sub: "u1", did: "dev-a", role: "superadmin", school_id: "X" })));
   ok("a role in the claims is ignored", forged.role === undefined && forged.schoolId === undefined);
   ok("principal is exactly userId + deviceId",
      Object.keys(forged).sort().join(",") === "deviceId,userId");
@@ -79,7 +83,7 @@ group("Trust boundary — the token says WHO, never WHAT");
 group("Session config statements");
 {
   const stmts = sessionConfigStatements({ userId: "u1", deviceId: "dev-a" });
-  const vars = stmts.map(s => s.text.match(/'app\.\w+'/)[0]);
+  const vars = stmts.map(s => s.text.match(/'app\.\w+'/)?.[0]);
   ok("sets exactly two app.* vars", vars.length === 2);
   ok("sets app.user_id and app.device_id",
      vars.includes("'app.user_id'") && vars.includes("'app.device_id'"));
@@ -94,7 +98,7 @@ group("Session config statements");
 
   // Anonymous: empty string → app_user_id() is NULL → matches no assignment.
   const anon = sessionConfigStatements(null);
-  ok("null principal → empty user id", anon.find(s => s.text.includes("app.user_id")).params[0] === "");
+  ok("null principal → empty user id", anon.find(s => s.text.includes("app.user_id"))?.params[0] === "");
   ok("ANON carries no identity", ANON.userId === null && ANON.deviceId === null);
 }
 
@@ -103,7 +107,9 @@ group("No context bleed across a shared (pooled) connection");
 {
   // Fake client recording every statement; simulates one physical connection
   // reused by two requests, as a pool would.
+  /** @type {{ text: string, params: any[] | undefined }[]} */
   const log = [];
+  /** @type {import("../api-types.mjs").Db} */
   const client = { query: async (text, params) => { log.push({ text: text.trim(), params }); return { rows: [] }; } };
 
   const A = { userId: "uA", deviceId: "dev-a" };
@@ -116,13 +122,13 @@ group("No context bleed across a shared (pooled) connection");
   const commits = log.filter(l => l.text === "COMMIT").length;
   ok("each request has its own transaction", begins === 2 && commits === 2);
 
-  const aId = log.find(l => l.text.includes("app.user_id") && l.params[0] === "uA");
-  const bId = log.find(l => l.text.includes("app.user_id") && l.params[0] === "uB");
+  const aId = log.find(l => l.text.includes("app.user_id") && l.params?.[0] === "uA");
+  const bId = log.find(l => l.text.includes("app.user_id") && l.params?.[0] === "uB");
   ok("A sets uA, B sets uB (context re-established per txn)", !!aId && !!bId);
   ok("all config is LOCAL so it dies at COMMIT (no leak)", log.filter(l => l.text.includes("set_config")).every(l => /, true\)/.test(l.text)));
 
   // ordering: BEGIN before any set_config before the query before COMMIT
-  const idx = t => log.findIndex(l => l.text === t || l.text.includes(t));
+  const idx = (/** @type {string} */ t) => log.findIndex(l => l.text === t || l.text.includes(t));
   ok("ordering BEGIN → set_config → query → COMMIT",
      idx("BEGIN") < idx("set_config") && idx("set_config") < idx("select * from player") && idx("select * from player") < idx("COMMIT"));
 }
@@ -130,8 +136,9 @@ group("No context bleed across a shared (pooled) connection");
 // ── Rollback releases context even on error ──
 group("Rollback on error");
 {
+  /** @type {string[]} */
   const log = [];
-  const client = { query: async (t) => { log.push(t.trim()); if (t.includes("boom")) throw new Error("boom"); return { rows: [] }; } };
+  const client = { query: async (/** @type {string} */ t) => { log.push(t.trim()); if (t.includes("boom")) throw new Error("boom"); return { rows: [] }; } };
   let caught = false;
   try { await withPrincipal(client, { userId: "uA", deviceId: "dev-a" }, async c => c.query("boom")); }
   catch { caught = true; }
@@ -144,8 +151,13 @@ group("Rollback on error");
 group("Auth middleware");
 {
   const mw = authMiddleware({ secret: SECRET });
+  /** @param {Record<string, string>} headers */
   const run = async (headers) => {
-    const req = { headers }; let status = 200, body = null, nexted = false;
+    /** @type {{ headers: Record<string, string>, principal?: any }} */
+    const req = { headers }; let status = 200, nexted = false;
+    /** @type {any} */
+    let body = null;
+    /** @type {import("../api-types.mjs").ApiResponse} */
     const res = { status: c => (status = c, res), json: b => (body = b, res) };
     await mw(req, res, () => { nexted = true; });
     return { req, status, body, nexted };
@@ -166,8 +178,10 @@ group("Auth middleware");
   ok("a header cannot restate the device", r.req.principal.deviceId === "dev-a");
 
   const mwOpen = authMiddleware({ secret: SECRET, requireAuth: false });
+  /** @type {{ headers: {}, principal?: import("./auth.mjs").Principal }} */
   let req2 = { headers: {} }, ok2 = false;
-  await mwOpen(req2, { status: () => ({ json: () => {} }) }, () => { ok2 = req2.principal === ANON; });
+  // A response that must never be used: optional auth never answers.
+  await mwOpen(req2, /** @type {any} */ ({ status: () => ({ json: () => {} }) }), () => { ok2 = req2.principal === ANON; });
   ok("optional-auth route → ANON principal", ok2);
 }
 

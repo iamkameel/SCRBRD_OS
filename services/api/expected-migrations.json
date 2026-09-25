@@ -34,5 +34,14 @@
   "33_completion_ends_scoring.sql",
   "34_duty_authority.sql",
   "35_authz_suspension.sql",
-  "36_commit_fingerprint.sql"
+  "36_commit_fingerprint.sql",
+  "37_quarantine_loose_ends.sql",
+  "38_amendment_lock.sql",
+  "39_match_anchor_helpers.sql",
+  "40_career_follows_the_fold.sql",
+  "41_trip_driver_own.sql",
+  "42_free_hit_wickets.sql",
+  "43_last_fold_disagreements.sql",
+  "44_career_by_season.sql",
+  "45_handover_this_innings.sql"
 ]

@@ -38,6 +38,7 @@
  */
 import { readFileSync } from "node:fs";
 
+/** @type {string[]} */
 export const EXPECTED = JSON.parse(
   readFileSync(new URL("./expected-migrations.json", import.meta.url), "utf8"));
 
@@ -45,12 +46,12 @@ export const EXPECTED = JSON.parse(
 export const LEDGER_READER = "29_migration_ledger_read.sql";
 
 /** Expected names the database does not have, in migration order. */
-export const missingMigrations = (expected, applied) => {
+export const missingMigrations = (/** @type {readonly string[]} */ expected, /** @type {readonly string[]} */ applied) => {
   const have = new Set(applied);
   return expected.filter((name) => !have.has(name));
 };
 
-const applyStep = (name) =>
+const applyStep = (/** @type {string} */ name) =>
   `    node tools/bundle-sql.mjs --apply ${name.slice(0, 2)}   → scrbrd-supabase-apply-${name.slice(0, 2)}.sql  (${name})`;
 
 const FIX_TAIL =
@@ -62,6 +63,9 @@ const FIX_TAIL =
  * The operator's message for a database missing `missing`, or null when
  * nothing is missing. `ledgerUnreadable` is the case where even db/29 is
  * absent, so the database cannot say what else it lacks.
+ * @param {string[]} missing
+ * @param {{ ledgerUnreadable?: boolean, expected?: readonly string[] }} [opts]
+ * @returns {string | null}
  */
 export function refusalMessage(missing, { ledgerUnreadable = false, expected = EXPECTED } = {}) {
   if (ledgerUnreadable) {
@@ -92,12 +96,15 @@ export function refusalMessage(missing, { ledgerUnreadable = false, expected = E
  * everything this code expects. Any error other than "db/29 is not there" is
  * thrown: a ledger that cannot be read for an unknown reason is not evidence
  * that the schema is current.
+ * @param {import("./api-types.mjs").Db} pool
+ * @param {readonly string[]} [expected]
  */
 export async function schemaRefusal(pool, expected = EXPECTED) {
+  /** @type {{ name: string }[]} */
   let applied;
   try {
     ({ rows: applied } = await pool.query("SELECT schema_migrations_applied() AS name"));
-  } catch (e) {
+  } catch (/** @type {any} */ e) {   // pg's error: a SQLSTATE `code`
     if (e?.code === "42883") return refusalMessage([], { ledgerUnreadable: true, expected });
     throw e;
   }

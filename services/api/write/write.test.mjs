@@ -9,10 +9,13 @@
 import { appendEvents, readEvents } from "./events-api.mjs";
 import { SyncEngine, memoryStorage } from "@scrbrd/sync";
 import { signToken } from "../auth/auth.mjs";
+/** @import { Transport } from "@scrbrd/sync" */
+/** @import { Pool } from "../api-types.mjs" */
 
 let pass = 0, fail = 0;
+/** @type {(n: string, c: unknown, detail?: string) => void} — the detail is accepted and not printed */
 const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
-const group = t => console.log("\n" + t);
+const group = (/** @type {string} */ t) => console.log("\n" + t);
 const SECRET = "step4-secret";
 // The device is bound INTO the token, not sent alongside it: the ball_event
 // INSERT policy compares device_id against the live lease, so a device named in
@@ -31,13 +34,24 @@ const OPENED = [
 ];
 // existingKeys: stored with the SAME fingerprint (a retry). conflictKeys:
 // stored under that key with a DIFFERENT one.
+/**
+ * @param {object} [opts]
+ * @param {any} [opts.session]           a scoring_session row, or none
+ * @param {Set<string>} [opts.existingKeys]
+ * @param {Set<string>} [opts.conflictKeys]
+ * @param {any[]} [opts.log]             ball_event rows already stored
+ * @param {number} [opts.maxSeq]
+ */
 function fakeDb({ session, existingKeys = new Set(), conflictKeys = new Set(), log: stored = OPENED, maxSeq = stored.length } = {}) {
+  /** @type {{ text: string, params: any[] }[]} */
   const log = [];
+  /** @type {any[][]} */
   const ballEvents = [];
+  /** @type {any[][]} */
   const quarantine = [];
   let seq = maxSeq;
   const client = {
-    query: async (text, params) => {
+    query: async (/** @type {string} */ text, /** @type {any[]} */ params) => {
       log.push({ text: text.replace(/\s+/g, " ").trim(), params });
       const t = text;
       // The session row is read (and the lease refreshed) through
@@ -65,10 +79,11 @@ function fakeDb({ session, existingKeys = new Set(), conflictKeys = new Set(), l
     release() { client.released = true; },
     released: false,
   };
-  return { pool: { connect: async () => client }, client, log, ballEvents, quarantine };
+  // A fake pool: connect() is all runAsPrincipal() asks of one.
+  return { pool: /** @type {Pool} */ (/** @type {unknown} */ ({ connect: async () => client })), client, log, ballEvents, quarantine };
 }
 const liveSession = { epoch: 3, state: "active", holder_user_id: "uScorer", holder_device: "devA", lease_until: new Date(Date.now() + 60000) };
-const ev = (n, extra = {}) => ({ epoch: 3, deviceId: "devA", scorerId: "uScorer", clientSeq: n, clientTs: Date.now(),
+const ev = (/** @type {number} */ n, extra = {}) => ({ epoch: 3, deviceId: "devA", scorerId: "uScorer", clientSeq: n, clientTs: Date.now(),
   idempotencyKey: `devA:3:${n}`, innings: 0, payload: { kind: "ball", type: "run", value: n % 7 }, ...extra });
 
 // ── A. Server ──
@@ -76,6 +91,7 @@ group("A0. A wicket names how the batter was out, from the closed list, or is re
 {
   const db = fakeDb({ session: liveSession });
   const bad = ev(1, { payload: { kind: "ball", type: "W", value: 0, dismissal: "run away" } });
+  /** @type {any} */            // whatever appendEvents threw
   let err = null;
   try { await appendEvents(db.pool, SECRET, bearer(), "m1", [ev(0), bad]); } catch (e) { err = e; }
   ok("an unknown dismissal is a 400", err?.status === 400 && err?.message === "dismissal_unknown", String(err?.message));
@@ -188,7 +204,7 @@ group("A. Empty / read");
 {
   const db = fakeDb({ session: liveSession });
   let threw = false;
-  try { await appendEvents(db.pool, SECRET, bearer(), "m3", []); } catch (e) { threw = e.status === 400; }
+  try { await appendEvents(db.pool, SECRET, bearer(), "m3", []); } catch (/** @type {any} */ e) { threw = e.status === 400; }
   ok("empty batch rejected", threw);
   await readEvents(db.pool, SECRET, bearer("uSpectator"), "m3", 5);
   ok("readEvents queries since seq under principal",
@@ -198,7 +214,8 @@ group("A. Empty / read");
 // ── A. One identity per event ──
 group("A. The queue dedupes on the event's OWN id");
 {
-  const e = new SyncEngine({ matchId: "m3", deviceId: "devA", scorerId: "u1", epoch: 3, storage: memoryStorage() });
+  // No transport: this group only records, and never syncs.
+  const e = new SyncEngine(/** @type {any} */ ({ matchId: "m3", deviceId: "devA", scorerId: "u1", epoch: 3, storage: memoryStorage() }));
   const withId = await e.record({ kind: "ball", type: "run", value: 4, id: "devA:m3:xyz:1" });
   ok("an event that knows its id keeps it", withId.idempotencyKey === "devA:m3:xyz:1");
   // Two identities for one event is how a correction ends up pointing at
@@ -215,7 +232,9 @@ group("A. The queue dedupes on the event's OWN id");
 group("B. Durability — the queue survives a crash mid-over");
 {
   const storage = memoryStorage();
+  /** @type {number[]} */
   const sent = [];
+  /** @type {Transport} */
   const transport = async (mid, batch) => { sent.push(batch.length); return { accepted: batch.map(e => ({ idempotencyKey: e.idempotencyKey, seq: e.clientSeq })) }; };
 
   // Score 4 balls OFFLINE (no sync)
@@ -247,6 +266,7 @@ group("B. Ordered flush, retry, and partial acks");
 {
   const storage = memoryStorage();
   let calls = 0;
+  /** @type {Transport} */
   const transport = async (mid, batch) => {
     calls++;
     if (calls === 1) throw new Error("offline");                 // first attempt fails
@@ -274,8 +294,10 @@ group("B. Lost response — the server took the balls, the device never heard");
   const storage = memoryStorage();
   const serverHas = new Map();                    // idempotencyKey → seq, what Postgres would hold
   let calls = 0, acceptedTotal = 0;
+  /** @type {Transport} */
   const transport = async (mid, batch) => {
     calls++;
+    /** @type {{ idempotencyKey: string, seq: number }[]} */
     const accepted = [], duplicates = [];
     for (const e of batch) {
       if (serverHas.has(e.idempotencyKey)) duplicates.push({ idempotencyKey: e.idempotencyKey, seq: serverHas.get(e.idempotencyKey) });
@@ -302,6 +324,7 @@ group("B. Lost response — the server took the balls, the device never heard");
 group("B. Stale-epoch server response → moved to rejected, not lost silently");
 {
   const storage = memoryStorage();
+  /** @type {Transport} */
   const transport = async (mid, batch) => ({ quarantined: batch.map(e => ({ idempotencyKey: e.idempotencyKey, reason: "stale_epoch" })) });
   const e = new SyncEngine({ matchId: "m3", deviceId: "devA", scorerId: "uS", epoch: 3, storage, transport, isOnline: () => true });
   await e.init();
@@ -315,6 +338,7 @@ group("B. Refused and conflicting events are HELD for a person — not acked, no
 {
   const storage = memoryStorage();
   let calls = 0;
+  /** @type {Transport} */
   const transport = async (mid, batch) => {
     calls++;
     return {
@@ -325,6 +349,7 @@ group("B. Refused and conflicting events are HELD for a person — not acked, no
   };
   const e = new SyncEngine({ matchId: "m3", deviceId: "devA", scorerId: "uS", epoch: 3, storage, transport, isOnline: () => false });
   await e.init();
+  /** @type {import("@scrbrd/sync").OutboxStatus | null} */
   let seen = null;
   e.onChange = (st) => { seen = st; };
   for (let i = 0; i < 3; i++) await e.record({ kind: "ball", type: "run", value: 1 });
@@ -336,7 +361,8 @@ group("B. Refused and conflicting events are HELD for a person — not acked, no
      && e.held[1].state === "conflict" && e.held[1].reason === "idempotency_conflict");
   ok("...neither is acked (the server has no copy of either)", !e.acked.some(a => e.held.some(h => h.idempotencyKey === a.idempotencyKey)));
   ok("...neither is left pending to be resent forever", e.pendingCount === 0 && e.safeToHandOver === true);
-  ok("...and the scorer is told how many", seen?.heldCount === 2);
+  // Widened back: onChange assigned it, and the checker does not follow a callback.
+  ok("...and the scorer is told how many", /** @type {import("@scrbrd/sync").OutboxStatus | null} */ (seen)?.heldCount === 2);
   await e.sync();
   ok("a later sync does not send them again", calls === 1);
   ok("they are on disk, under their own prefix", (await storage.list("held:")).length === 2 && (await storage.list("evt:")).length === 0);
@@ -352,6 +378,7 @@ group("B. Refused and conflicting events are HELD for a person — not acked, no
 group("B. Optimistic score matches replay + checkpoints");
 {
   const storage = memoryStorage();
+  /** @type {Transport} */
   const transport = async (mid, batch) => ({ accepted: batch.map(e => ({ idempotencyKey: e.idempotencyKey, seq: e.clientSeq })) });
   const e = new SyncEngine({ matchId: "m3", deviceId: "devA", scorerId: "uS", epoch: 3, storage, transport, isOnline: () => false });
   await e.init();

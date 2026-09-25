@@ -66,13 +66,19 @@ const codeOf = (src) =>
     // JSX text that touches an {expression} — `>nobody can read it {x}<` —
     // which the line above cannot cross. Kept narrow on purpose: no ( ) ; =
     // inside, so an arrow body such as `if (xs.some(x => fmt(x))) {` is never
-    // read as prose and its references never swallowed. The `}` form also
-    // refuses a comma: `[{ default: S }, { parseBalls }]` is a destructuring
-    // list, and eating its `, ` glued two parameter names into one that
-    // nothing declared. Prose with brackets next to an expression is the one
-    // shape left to a false positive.
+    // read as prose and its references never swallowed.
     .replace(/>[^<>{}();=]*(?=[<{])/g, ">")
-    .replace(/}[^<>{}();=,]*(?=[<{])/g, "}")
+    // Text after a `}` splits on what it runs into. Heading for a `<` — a
+    // closing JSX tag, as in `{'x'}, you can see it</p>` — is prose and a
+    // comma in it is just punctuation: `can` used to survive here and read as
+    // the rbac helper. Heading for another `{` is the one shape that is NOT
+    // always prose: `[{ default: S }, { parseBalls }]` is a destructuring
+    // list, and eating its `, ` glued two parameter names into one that
+    // nothing declared — so that direction still refuses a comma. Prose with
+    // brackets on both sides of a comma before another {expression} is the
+    // one shape left to a false positive.
+    .replace(/}[^<>{}();=]*(?=<)/g, "}")
+    .replace(/}[^<>{}();=,]*(?=\{)/g, "}")
     .replace(/\.\.\./g, "   ")                          // spread/rest — see above
     .replace(/(\?\.|\.)\s*([A-Za-z_$][\w$]*)/g, "$1_");  // property accesses
 

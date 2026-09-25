@@ -164,9 +164,13 @@ export function battingIndex(c = {}) {
   const balls = Number(c.ballsFaced ?? 0);
   const outs = Number(c.dismissals ?? 0);
 
-  if (balls < MIN_BALLS_FACED) {
+  // A non-finite ballsFaced (NaN, an unparsed string, ±Infinity) must not
+  // slip past this floor: `NaN < 30` and `Infinity < 30` are both false, so
+  // the bare comparison alone would let a malformed count through.
+  if (!Number.isFinite(balls) || balls < MIN_BALLS_FACED) {
     return { value: null, confidence: "none",
-             reason: `only ${balls} balls faced; ${MIN_BALLS_FACED} needed`,
+             reason: Number.isFinite(balls) ? `only ${balls} balls faced; ${MIN_BALLS_FACED} needed`
+                                            : "balls faced is not a number",
              parts: { ballsFaced: balls } };
   }
 
@@ -185,11 +189,15 @@ export function battingIndex(c = {}) {
 
   const average = runs / outs;
   const avgScore = scoreFrom(STAT_ANCHORS.battingAverage, average);
-  // Numbers for any finite statistic. NOT proven for a non-numeric count: a
-  // NaN passes the sample floor (NaN < 30 is false), scoreFrom returns null,
-  // and null reads as 0 here. Cast rather than changed; see the type report.
-  const value = round1(/** @type {number} */ (avgScore) * BATTING_AVERAGE_WEIGHT
-    + /** @type {number} */ (srScore) * (1 - BATTING_AVERAGE_WEIGHT));
+  // A non-finite runs or dismissals count reaches here as a null score from
+  // scoreFrom, same as any other non-finite statistic. Refuse to produce an
+  // index rather than let the arithmetic below read that null as zero.
+  if (avgScore == null || srScore == null) {
+    return { value: null, confidence: "none",
+             reason: "a batting count (runs or dismissals) is not a number",
+             parts: { ballsFaced: balls } };
+  }
+  const value = round1(avgScore * BATTING_AVERAGE_WEIGHT + srScore * (1 - BATTING_AVERAGE_WEIGHT));
   return {
     value, confidence: confidence("batting", balls), reason: null,
     parts: { runs, ballsFaced: balls, dismissals: outs,
@@ -210,9 +218,12 @@ export function bowlingIndex(c = {}) {
   const balls = Number(c.ballsBowled ?? 0);
   const wkts = Number(c.wickets ?? 0);
 
-  if (balls < MIN_BALLS_BOWLED) {
+  // As in battingIndex: a non-finite ballsBowled must not slip past this
+  // floor, since `NaN < 36` and `Infinity < 36` are both false.
+  if (!Number.isFinite(balls) || balls < MIN_BALLS_BOWLED) {
     return { value: null, confidence: "none",
-             reason: `only ${balls} balls bowled; ${MIN_BALLS_BOWLED} needed`,
+             reason: Number.isFinite(balls) ? `only ${balls} balls bowled; ${MIN_BALLS_BOWLED} needed`
+                                            : "balls bowled is not a number",
              parts: { ballsBowled: balls } };
   }
 
@@ -230,8 +241,15 @@ export function bowlingIndex(c = {}) {
 
   const strikeRate = balls / wkts;
   const srScore = scoreFrom(STAT_ANCHORS.bowlingStrikeRate, strikeRate);
-  // As in battingIndex: numbers for finite counts, null (read as 0) for NaN ones.
-  const value = round1((/** @type {number} */ (ecoScore) + /** @type {number} */ (srScore)) / 2);
+  // As in battingIndex: a non-finite runsConceded or wickets count reaches
+  // here as a null score; refuse to produce an index rather than read it as
+  // zero.
+  if (ecoScore == null || srScore == null) {
+    return { value: null, confidence: "none",
+             reason: "a bowling count (runs conceded or wickets) is not a number",
+             parts: { ballsBowled: balls } };
+  }
+  const value = round1((ecoScore + srScore) / 2);
   return {
     value, confidence: confidence("bowling", balls), reason: null,
     parts: { runsConceded: conceded, ballsBowled: balls, wickets: wkts,

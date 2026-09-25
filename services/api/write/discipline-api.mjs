@@ -32,11 +32,14 @@
  * handed a key to it.
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
+/** @import { RouteDeps, ApiRequest, ApiResponse, Handler, Pool } from "../api-types.mjs" */
+// A caught error is `any` to the checker (CaughtError in api-types.mjs):
+// pg's carry a SQLSTATE `code`, this module's own carry an HTTP `status`.
 
 /** The states a matter can be in. Mirrors the CHECK on the column. */
 export const DISCIPLINE_STATES = Object.freeze(["open", "concluded", "withdrawn"]);
 
-const err = (code, status = 400) => Object.assign(new Error(code), { status });
+const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
 
 /**
  * Validate an incident before touching the database.
@@ -47,6 +50,7 @@ const err = (code, status = 400) => Object.assign(new Error(code), { status });
  * either: the INSERT policy's fixture anchor already refuses a match the
  * writer's appointment does not cover, and a second rule here would be a
  * different rule sooner or later.
+ * @param {any} body  the request body as sent; validated here
  */
 export function validateIncident(body) {
   const text = typeof body?.body === "string" ? body.body.trim() : "";
@@ -64,11 +68,12 @@ export function validateIncident(body) {
  * to say what happened — is the CHECK constraint's, not this function's: it
  * needs the row's existing outcome, and reading the row to validate a write
  * is how a handler starts making authorization decisions of its own.
+ * @param {any} body  the request body as sent; validated here
  */
 export function validateProgress(body) {
   const state = body?.state ?? null;
   if (state !== null && !DISCIPLINE_STATES.includes(state)) throw err(`unknown_state:${state}`);
-  const trim = (v) => (typeof v === "string" ? v.trim() || null : null);
+  const trim = (/** @type {unknown} */ v) => (typeof v === "string" ? v.trim() || null : null);
   const outcome = trim(body?.outcome);
   const text = trim(body?.body);
   if (text !== null && text.length > 4000) throw err("body_too_long");
@@ -84,6 +89,11 @@ export function validateProgress(body) {
  * the writer chooses is a row that can be filed against the wrong school, and
  * the policy anchors on it. player_school() is SECURITY DEFINER, so it
  * answers for an umpire who holds no capability to read the roster.
+ * @param {Pool} pool
+ * @param {string} secret
+ * @param {string | undefined} bearer  the Authorization header, as sent
+ * @param {string | undefined} playerId
+ * @param {any} body  the request body as sent; validated here
  */
 export async function recordIncident(pool, secret, bearer, playerId, body) {
   const n = validateIncident(body);
@@ -104,7 +114,12 @@ export async function recordIncident(pool, secret, bearer, playerId, body) {
   });
 }
 
-/** Progress one. The trigger refuses somebody else's account of it. */
+/** Progress one. The trigger refuses somebody else's account of it. * @param {Pool} pool
+ * @param {string} secret
+ * @param {string | undefined} bearer  the Authorization header, as sent
+ * @param {string | undefined} id
+ * @param {any} body  the request body as sent; validated here
+ */
 export async function progressMatter(pool, secret, bearer, id, body) {
   const n = validateProgress(body);
   return runAsPrincipal(pool, secret, bearer, async (client) => {
@@ -120,10 +135,12 @@ export async function progressMatter(pool, secret, bearer, id, body) {
   });
 }
 
+/** @param {RouteDeps} deps @returns {Record<string, Handler>} */
 export function disciplineRoutes({ pool, secret }) {
+  /** @param {(req: ApiRequest) => Promise<unknown>} fn @returns {Handler} */
   const handle = (fn) => async (req, res) => {
     try { res.json(await fn(req)); }
-    catch (e) {
+    catch (/** @type {any} */ e) {
       // Four refusals with four different fixes, and a handler that collapsed
       // them would leave whoever hit one unable to tell which. 42501 is
       // row-level security: this child, this school or this fixture is not

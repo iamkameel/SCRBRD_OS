@@ -13,10 +13,10 @@
  * the dedupe list. This file adds the rules AG's suite checks that
  * replay.test.mjs does not.
  *
- * KNOWN_GAP: a case below where OS's derived answer differs from what the
- * Laws of Cricket require. Kept as a real (skipped) test, named, and reported
- * — not weakened or deleted. See the KNOWN_GAP section for details and Law
- * citations.
+ * KNOWN_GAP: a case where OS's derived answer differs from what the Laws of
+ * Cricket require, kept as a real (skipped) test, named, and reported — not
+ * weakened or deleted. There are none now: the last one (the end a run out
+ * happened at) is group E, SCRBRD-069.
  */
 import {
   deriveInnings,
@@ -27,7 +27,8 @@ import {
 let pass = 0, fail = 0, skip = 0;
 /** @param {string} n  @param {unknown} c */
 const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
-const known = (/** @type {string} */ n) => { skip++; console.log("  ⚠ KNOWN_GAP (skipped):", n); };
+// A KNOWN_GAP is reported with this; none is open (see the header).
+const _known = (/** @type {string} */ n) => { skip++; console.log("  ⚠ KNOWN_GAP (skipped):", n); };
 const group = (/** @type {string} */ t) => console.log("\n" + t);
 
 // ── Fixtures ─────────────────────────────────────────────
@@ -169,57 +170,96 @@ group("C. Crease occupancy after a wicket");
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// KNOWN_GAP
+// D. Byes and leg byes off a no-ball are not the striker's (SCRBRD-068)
+//    (AG: liveProjectionRules.test.ts; Law 21, Law 23)
+//
+// A no-ball records the runs completed in `value` and, when they did not
+// come off the bat, `nbRuns: "byes" | "leg_byes"`. By the Laws they are
+// No-ball extras, and every run of a no-ball is debited to the bowler; the
+// striker gets the ball faced and none of the runs.
+// ═══════════════════════════════════════════════════════════════════════
+group("D. No-ball byes and leg byes (SCRBRD-068)");
+{
+  for (const nbRuns of /** @type {const} */ (["byes", "leg_byes"])) {
+    const inn = deriveInnings([...open(), ball({ type: BALL_TYPE.NO_BALL, value: 3, nbRuns })]);
+    const p1 = inn.batsmen.find((b) => b.id === "p1");
+    const w1 = inn.bowlers.find((b) => b.id === "w1");
+    ok(`${nbRuns}: the side has the penalty and the three`, inn.runs === 4);
+    ok(`${nbRuns}: all four are no-ball extras, none are byes`, inn.extras.noBall === 4 && inn.extras.bye === 0 && inn.extras.legBye === 0);
+    ok(`${nbRuns}: the striker faced it and scored none of it`, p1?.balls === 1 && p1?.runs === 0);
+    ok(`${nbRuns}: the bowler is charged all four, and no legal ball`, w1?.runs === 4 && w1?.balls === 0 && w1?.noBalls === 1);
+    ok(`${nbRuns}: three run is an odd number — they crossed`, inn.striker === "p2" && inn.nonStriker === "p1");
+    ok(`${nbRuns}: and it is still a free hit`, inn.freeHit === true);
+  }
+  const four = deriveInnings([...open(), ball({ type: BALL_TYPE.NO_BALL, value: 4, nbRuns: "byes" })]);
+  const p1 = four.batsmen.find((b) => b.id === "p1");
+  ok("four byes off a no-ball are not the striker's four", p1?.fours === 0 && p1?.runs === 0);
+  const hit = deriveInnings([...open(), ball({ type: BALL_TYPE.NO_BALL, value: 4 })]);
+  const h1 = hit.batsmen.find((b) => b.id === "p1");
+  ok("...a no-ball hit for four is, as it always was", h1?.fours === 1 && h1?.runs === 4 && hit.extras.noBall === 1);
+  ok("...and the side's total and the bowler's figures are the same either way",
+     four.runs === hit.runs && four.bowlers[0].runs === hit.bowlers[0].runs);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// E. Which end is empty after a run out that completed runs (SCRBRD-069)
 //    (AG: src/lib/scoring/__tests__/liveProjectionRules.test.ts,
 //     "non-striker run out after a completed single: the striker has
 //     changed ends")
 //
-// A run out can complete a run before the dismissal — e.g. the batters run
-// one, then are run out attempting a second. That run is credited on the
-// SAME wicket-type delivery (`value` on a KIND.BALL/WICKET event), because
-// OS logs one delivery per ball regardless of how it ended. Because the run
-// was completed, the batters have physically crossed by the time the
-// dismissal happens (Law 18: a run is scored, and the batters have crossed,
-// the moment both ground a bat or person beyond the popping crease at the
-// far end) — so the identity that ends up at "the striker's end" has
-// swapped, even though the delivery is recorded as a wicket.
+// Formerly this file's KNOWN_GAP. A run out can complete a run before the
+// dismissal — the batters run one, then are run out attempting a second.
+// The run is credited on the same wicket delivery (`value`), and because it
+// was completed the batters have crossed (Law 18), so "the dismissed
+// batter's end before the ball" is no longer the empty end. Which end is
+// depends on where the wicket was put down (Law 38.2), which the fold cannot
+// know from the runs: the pad now asks, on a run out that completed runs,
+// and records it as `outAt: "striker_end" | "bowler_end"`. The survivor goes
+// to the other end.
 //
-// deriveInnings()'s WICKET case (replay.mjs) never rotates for a wicket
-// ball, on purpose ("A wicket does not rotate" — a correct rule for a
-// dismissal off zero completed runs, which is the overwhelming majority of
-// wickets). It compares `dismissed` against inn.striker/inn.nonStriker as
-// they stood BEFORE this ball, which is only correct when no run was
-// completed on it. With one run completed and the batter who ends up at the
-// striker's end given as `dismissed`, OS gets the crease backwards.
+// A wicket with no `outAt` — every log before this, and every run out with
+// no run completed — empties the dismissed batter's end before the ball, as
+// it always has; that is the last case here, kept as it was.
 // ═══════════════════════════════════════════════════════════════════════
-group("KNOWN_GAP (skipped, reported — not weakened)");
+group("E. Run out after completed runs: the end it happened at (SCRBRD-069)");
 {
-  // p1 opens as striker, p2 as non-striker. They run a single, then p2 (now
-  // physically at the striker's end, having crossed) is run out attempting a
-  // second. By Law 18, the striker's end is the one that should now be
-  // empty, and p1 — the survivor, now at the non-striker's end — should be
-  // recorded there, not left at the striker's end unmoved.
-  const oneRunThenRunOut = deriveInnings([...open(),
+  // p1 opens as striker, p2 as non-striker. They run a single; p2, now at the
+  // striker's end, is run out there going for a second.
+  const atStrikers = deriveInnings([...open(),
+    ball({ type: BALL_TYPE.WICKET, value: 1, dismissal: "run_out", dismissed: "p2", outAt: "striker_end" }),
+  ]);
+  ok("out at the striker's end: that end is empty", atStrikers.striker === null);
+  ok("...and the survivor, crossed, is at the non-striker's end", atStrikers.nonStriker === "p1");
+  ok("...with the completed run his, and the wicket the side's",
+     atStrikers.runs === 1 && atStrikers.batsmen.find((b) => b.id === "p1")?.runs === 1 && atStrikers.wickets === 1);
+
+  // Same single; this time p1, now at the bowler's end, is run out there.
+  const atBowlers = deriveInnings([...open(),
+    ball({ type: BALL_TYPE.WICKET, value: 1, dismissal: "run_out", outAt: "bowler_end" }),
+  ]);
+  ok("out at the bowler's end: that end is empty", atBowlers.nonStriker === null);
+  ok("...and the survivor faces the next ball", atBowlers.striker === "p2");
+
+  // Two completed — back where they started — and the striker is run out at
+  // the bowler's end going for a third.
+  const two = deriveInnings([...open(),
+    ball({ type: BALL_TYPE.WICKET, value: 2, dismissal: "run_out", dismissed: "p1", outAt: "bowler_end" }),
+  ]);
+  ok("two run, out at the bowler's end: the non-striker holds strike", two.striker === "p2" && two.nonStriker === null);
+
+  // On the last ball of the over the ends change as for any wicket.
+  const last = deriveInnings([...open(), ...Array.from({ length: 5 }, dot),
+    ball({ type: BALL_TYPE.WICKET, value: 1, dismissal: "run_out", dismissed: "p2", outAt: "striker_end" }),
+  ]);
+  ok("on the last ball, the survivor at the non-striker's end faces the next over",
+     last.striker === "p1" && last.nonStriker === null && last.bowler === null);
+
+  // With no end recorded — an old log — the fold does what it always did.
+  const unrecorded = deriveInnings([...open(),
     ball({ type: BALL_TYPE.WICKET, value: 1, dismissal: "run_out", dismissed: "p2" }),
   ]);
-  // What OS actually derives (see replay.mjs's WICKET case: no rotation for
-  // any wicket ball, dismissed compared against the PRE-ball striker/
-  // non-striker):
-  ok("OS's current (Law-incorrect) answer: survivor kept at the striker's end",
-     oneRunThenRunOut.striker === "p1" && oneRunThenRunOut.nonStriker === null);
-  // What Law 18 actually requires, once the completed run is accounted for:
-  // the dismissed batter (now at the striker's end, having crossed) empties
-  // THAT end, and the survivor is the one now at the non-striker's end.
-  known("run out with a completed run: the crossed survivor should be recorded " +
-        "at the non-striker's end (Law 18, Scoring Runs — a run completes, and " +
-        "the batters have crossed, once both ground bat or person beyond the " +
-        "popping crease at the far end), but deriveInnings() never rotates on " +
-        "a wicket-type ball and so leaves the survivor at the striker's end " +
-        "unmoved. Low blast radius: the NEXT `batters` event always names the " +
-        "incoming batter's end explicitly, so this only matters while the " +
-        "over is still being scored ball-by-ball with the survivor's end read " +
-        "off deriveInnings() rather than supplied fresh — e.g. a live " +
-        "\"who's facing\" display, or a wagon wheel keyed to strike.");
+  ok("no end recorded: the dismissed batter's end before the ball empties, as before",
+     unrecorded.striker === "p1" && unrecorded.nonStriker === null);
 }
 
 console.log(`\n${"─".repeat(52)}\nLAWS-SPEC SUITE: ${pass} passed, ${fail} failed, ${skip} known gaps (skipped)`);

@@ -34,11 +34,15 @@
 import { readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const DB = "/home/user/SCRBRD_OS/db";
+// Relative to this file, not a hard-coded checkout: run from a worktree or a
+// clone elsewhere, a fixed path silently bundled a DIFFERENT tree's db/.
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+const DB = join(ROOT, "db");
 const sha = (f) => createHash("sha256").update(readFileSync(f)).digest("hex");
-const src = readFileSync("/home/user/SCRBRD_OS/tools/migrate.mjs", "utf8");
+const src = readFileSync(join(ROOT, "tools", "migrate.mjs"), "utf8");
 // SCRBRD-025. A bundle pasted into Supabase's SQL Editor otherwise leaves no
 // record of which commit produced it — the ledger says WHEN and WHAT
 // (sha256 per file), never which git state chose that file set. Best-effort:
@@ -106,7 +110,7 @@ ${readFileSync(join(DB, file), "utf8")}
 --    this bundle was generated from ──
 INSERT INTO schema_migration (name, sha256, note) VALUES ('${file}', '${sha(join(DB, file))}', ${noteSql});
 `;
-  const target = `/home/user/SCRBRD_OS/scrbrd-supabase-apply-${nn}.sql`;
+  const target = join(ROOT, `scrbrd-supabase-apply-${nn}.sql`);
   writeFileSync(target, out);
   console.log(`wrote scrbrd-supabase-apply-${nn}.sql (${file}, after ${prev ?? "nothing"})`);
   process.exit(0);
@@ -156,7 +160,7 @@ parts.push(`
 ${readFileSync(join(DB, "98_seed_pilot.sql"), "utf8")}
 `);
 
-writeFileSync("/home/user/SCRBRD_OS/scrbrd-supabase-rebuild.sql", parts.join("\n"));
+writeFileSync(join(ROOT, "scrbrd-supabase-rebuild.sql"), parts.join("\n"));
 
 // The verifier, with psql-only meta-commands stripped so it runs in the editor.
 //
@@ -235,5 +239,5 @@ SELECT
                 AND to_char(born, 'YYMMDD') <> substring(id_number FROM 1 FOR 6)) = 0
        THEN 'OK — all agree' ELSE 'PROBLEM' END                   AS "ID numbers match birthdays";
 `;
-writeFileSync("/home/user/SCRBRD_OS/scrbrd-supabase-verify.sql", verify);
+writeFileSync(join(ROOT, "scrbrd-supabase-verify.sql"), verify);
 console.log("wrote scrbrd-supabase-rebuild.sql and scrbrd-supabase-verify.sql");

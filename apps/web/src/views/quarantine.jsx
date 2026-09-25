@@ -33,11 +33,23 @@ const REFUSAL = {
   cannot_release_your_own: "You sent this ball yourself — somebody else has to decide it.",
   already_accepted: "Somebody already released this ball.",
   already_rejected: "Somebody already discarded this ball.",
+  already_superseded: "The scorer's device sent this ball again and it is already in the log.",
   already_recorded: "That ball is already in the log by another road; nothing was written.",
+  idempotency_conflict: "A different ball is already in the log under this ball's id. Nothing was written — discard this one.",
   no_such_quarantine: "That row is gone.",
   row_required: "Could not rebuild the delivery — nothing was written.",
   dismissal_unknown: "The dismissal on this ball is not one of the recognised kinds.",
 };
+
+/**
+ * A released ball meets the Laws, as a live one does (SCRBRD-071, db/37). The
+ * server answers `{ ok: false, reason: "laws_refused", law, text }`, where
+ * `text` is lawsRefusal()'s own words. Nothing was written and the ball is
+ * still held; what happens to it is the approver's call, so both choices are
+ * put in front of them and neither is made for them.
+ */
+const lawsSaid = (res) => `The Laws refuse this ball: ${res.text ?? res.law}. Nothing was written. `
+  + "Discard it, or leave it held until the scorecard allows it.";
 
 /** What was actually sitting in quarantine, for a decision made with eyes open. */
 function describeBall(body) {
@@ -100,8 +112,13 @@ function QuarantinePanel({ matchId, role }) {
     setSaid((s) => ({ ...s, [row.id]: null }));
     try {
       const res = await api(`/api/quarantine/${row.id}/resolve`, { method: "POST", body: { accept } });
-      if (!res?.ok) {
-        setSaid((s) => ({ ...s, [row.id]: REFUSAL[res?.reason] ?? res?.reason ?? "Refused." }));
+      if (res?.reason === "laws_refused") {
+        setSaid((s) => ({ ...s, [row.id]: { text: lawsSaid(res), laws: true } }));
+      } else if (!res?.ok) {
+        // value_refused carries the server's own words (SCRBRD-077).
+        setSaid((s) => ({ ...s, [row.id]: REFUSAL[res?.reason]
+          ?? (res?.text ? `The record cannot hold this ball: ${res.text}. Nothing was written — discard it.` : null)
+          ?? res?.reason ?? "Refused." }));
       } else {
         setNonce((n) => n + 1);
       }
@@ -135,7 +152,7 @@ function QuarantinePanel({ matchId, role }) {
             {said[row.id] && (
               <div role="alert" data-testid={`quarantine-${row.id}-refused`}
                    style={{ fontFamily: D.body, fontSize: "11px", color: textOn(D.rose), marginTop: "5px" }}>
-                {said[row.id]}
+                {said[row.id]?.text ?? said[row.id]}
               </div>
             )}
             <div style={{ display: "flex", gap: "8px", marginTop: "7px" }}>
@@ -147,6 +164,12 @@ function QuarantinePanel({ matchId, role }) {
                    onClick={() => resolve(row, false)} data-testid={`quarantine-${row.id}-discard`}>
                 Discard
               </Btn>
+              {said[row.id]?.laws && (
+                <Btn size="sm" variant="ghost" disabled={busy === row.id}
+                     onClick={() => setSaid((s) => ({ ...s, [row.id]: null }))} data-testid={`quarantine-${row.id}-leave`}>
+                  Leave it held
+                </Btn>
+              )}
             </div>
           </div>
         ))

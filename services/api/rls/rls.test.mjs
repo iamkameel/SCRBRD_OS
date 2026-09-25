@@ -10,15 +10,16 @@
 import { ROLES, ROLE_CAPABILITIES, roleGrants, SCORING_ROLES, SUBJECT_SCOPED_ROLES } from "@scrbrd/policy/roles";
 import { TABLES, referencedCapabilities, isCapabilityExpression, maskedColumns } from "@scrbrd/policy/tables";
 import { ALL_CAPABILITIES, SENSITIVE, isCapability } from "@scrbrd/policy/capabilities";
-import { main, authz, timeBox, suspension, WITHDRAWN_SINCE_01, ADDED_SINCE_01, ROLES_ADDED_SINCE_01 } from "./generate-rls.mjs";
+import { main, authz, policies, timeBox, suspension, matchAnchors, REANCHORED_IN_39, REANCHOR_FILE, WITHDRAWN_SINCE_01, ADDED_SINCE_01, ROLES_ADDED_SINCE_01 } from "./generate-rls.mjs";
 import { GRANTABLE_ROLES } from "@scrbrd/policy/roles";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 let pass = 0, fail = 0;
+/** @param {string} n @param {unknown} c */
 const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
-const group = (t) => console.log("\n" + t);
+const group = (/** @type {string} */ t) => console.log("\n" + t);
 
 const SQL = main();
 
@@ -129,7 +130,7 @@ group("B2. Capabilities added after db/01 shipped");
        new RegExp(`INSERT INTO capability \\(name\\) VALUES \\('${cap.replaceAll(".", "\\.")}'\\)`).test(ledger));
     const holders = ROLES.filter((r) => roleGrants(r, cap));
     // A ledger file may align its rows; the emitted db/01 never does.
-    const grants = (r) => new RegExp(`\\('${r}',\\s+'${cap.replaceAll(".", "\\.")}'\\)`).test(ledger);
+    const grants = (/** @type {string} */ r) => new RegExp(`\\('${r}',\\s+'${cap.replaceAll(".", "\\.")}'\\)`).test(ledger);
     const unlisted = holders.filter((r) => !grants(r));
     ok(`${file} grants it to every holder in roles.mjs (${holders.join(", ")}) — missing: ${unlisted.join(", ") || "none"}`,
        unlisted.length === 0);
@@ -152,7 +153,7 @@ group("B3. Roles added after db/01 shipped");
     const path = join(DB, file);
     ok(`${file} exists`, existsSync(path));
     const ledger = existsSync(path) ? readFileSync(path, "utf8") : "";
-    const row = (a, b) => new RegExp(`\\('${a}',\\s+'${b.replaceAll(".", "\\.")}'\\)`).test(ledger);
+    const row = (/** @type {string} */ a, /** @type {string} */ b) => new RegExp(`\\('${a}',\\s+'${b.replaceAll(".", "\\.")}'\\)`).test(ledger);
     const unlisted = ROLE_CAPABILITIES[role].filter((c) => !row(role, c));
     ok(`${file} grants ${role} its whole bundle — missing: ${unlisted.join(", ") || "none"}`, unlisted.length === 0);
     const extra = ALL_CAPABILITIES.filter((c) => !roleGrants(role, c) && row(role, c));
@@ -178,11 +179,11 @@ ok("every scoring role reaches scoring.edit through its bundle",
 
 // ── C. Per-table policies ────────────────────────────────
 group("C. Table policies");
-const rx = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const rx = (/** @type {string} */ s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 // A capability slot is a literal name, or a parenthesised SQL expression that
 // computes one from the row (notification declares its own). Both end up as
 // the first argument to app_can(); only the quoting differs.
-const capArg = (c) => (isCapabilityExpression(c) ? rx(c) : `'${rx(c)}'`);
+const capArg = (/** @type {string} */ c) => (isCapabilityExpression(c) ? rx(c) : `'${rx(c)}'`);
 
 for (const [table, def] of Object.entries(TABLES)) {
   ok(`${table}: RLS enabled`,      new RegExp(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY`).test(SQL));
@@ -299,7 +300,7 @@ ok("no app_role\\(\\) remains",    !/app_role\(\)/.test(SQL));
 {
   const shipped = authz(), running = timeBox();
   // Anchored to a body line: the file's header quotes the same line in a comment.
-  const inBodies = (sql) => (sql.match(/^ {7}AND \(a\.expires_at IS NULL OR a\.expires_at > now\(\)\)$/gm) || []).length;
+  const inBodies = (/** @type {string} */ sql) => (sql.match(/^ {7}AND \(a\.expires_at IS NULL OR a\.expires_at > now\(\)\)$/gm) || []).length;
   ok("db/01 is emitted without the hour hand", inBodies(shipped) === 0);
   ok("db/23 carries it in app_can, app_holds and app_may_grant", inBodies(running) === 3);
   // db/16 pinned search_path with ALTER FUNCTION, which CREATE OR REPLACE
@@ -316,8 +317,8 @@ ok("no app_role\\(\\) remains",    !/app_role\(\)/.test(SQL));
 // are shipped — and db/35 must not lose db/23's line on the way.
 {
   const shipped = authz(), hour = timeBox(), running = suspension();
-  const pause = (sql) => (sql.match(/^ {7}AND NOT EXISTS \(SELECT 1 FROM duty_suspension s\n {24}WHERE s\.assignment_id = a\.id AND s\.lifted_at IS NULL\)$/gm) || []).length;
-  const hand = (sql) => (sql.match(/^ {7}AND \(a\.expires_at IS NULL OR a\.expires_at > now\(\)\)$/gm) || []).length;
+  const pause = (/** @type {string} */ sql) => (sql.match(/^ {7}AND NOT EXISTS \(SELECT 1 FROM duty_suspension s\n {24}WHERE s\.assignment_id = a\.id AND s\.lifted_at IS NULL\)$/gm) || []).length;
+  const hand = (/** @type {string} */ sql) => (sql.match(/^ {7}AND \(a\.expires_at IS NULL OR a\.expires_at > now\(\)\)$/gm) || []).length;
   ok("db/01 is emitted without the pause", pause(shipped) === 0);
   ok("db/23 is emitted without the pause", pause(hour) === 0);
   ok("db/35 carries it in app_can, app_holds and app_may_grant", pause(running) === 3);
@@ -334,6 +335,50 @@ ok("no app_role\\(\\) remains",    !/app_role\(\)/.test(SQL));
      /git diff --exit-code db\/01_authz\.sql db\/09_rls_policies\.sql db\/23_authz_time_box\.sql db\/35_authz_suspension\.sql/.test(ci));
   const onDisk = join(here, "../../../db/35_authz_suspension.sql");
   ok("db/35 on disk is what the generator emits", existsSync(onDisk) && readFileSync(onDisk, "utf8") === running);
+}
+
+// ── db/39: fixture anchors through the definer helpers, where they run ──
+// tables.mjs declares match_school()/match_team() for the tables in
+// REANCHORED_IN_39; db/09 must keep emitting the subqueries it shipped, and
+// db/39 must carry exactly those tables' policies with the helpers. The
+// audit behind the list, including why trip and match_squad are NOT on it,
+// is docs/rls-anchor-audit.md.
+group("db/39. Fixture anchors through match_school()/match_team()");
+{
+  const shipped = policies(), running = matchAnchors();
+  const here = dirname(fileURLToPath(import.meta.url));
+  const policyText = (/** @type {string} */ sql, /** @type {string} */ name) =>
+    sql.match(new RegExp(`CREATE POLICY ${name} ON [\\s\\S]*?;`))?.[0] ?? "";
+  ok("the list names seven tables", REANCHORED_IN_39.length === 7);
+  for (const t of REANCHORED_IN_39) {
+    const sub = `(SELECT m.school_id FROM match m WHERE m.id = ${t}.match_id)`;
+    ok(`${t}: tables.mjs anchors through the helpers`,
+       TABLES[t].anchors.school === `(match_school(${t}.match_id))`
+       && TABLES[t].anchors.team === `(match_team(${t}.match_id))`);
+    for (const p of ["read", "insert", "update"]) {
+      ok(`${t}_${p}: db/09 still emits the subquery it shipped`, policyText(shipped, `${t}_${p}`).includes(sub));
+      const now = policyText(running, `${t}_${p}`);
+      ok(`${t}_${p}: db/39 anchors through match_school() and match_team()`,
+         now.includes(`match_school(${t}.match_id)`) && now.includes(`match_team(${t}.match_id)`)
+         && !now.includes("FROM match m"));
+    }
+  }
+  // Withheld, with a reason each — the audit's, not an accident of the list.
+  for (const t of ["trip", "match_squad"])
+    ok(`${t} is withheld from db/39 and still anchors on its subquery`,
+       !REANCHORED_IN_39.includes(t) && /FROM match m WHERE m\.id = /.test(TABLES[t].anchors.school ?? "")
+       && !running.includes(`CREATE POLICY ${t}_read`));
+  ok("db/39 re-creates nothing but those tables' policies",
+     (running.match(/CREATE POLICY /g) || []).length === REANCHORED_IN_39.length * 3);
+  ok("...and ends in a DO $check$ that asks pg_policies for the helpers",
+     /DO \$check\$[\s\S]*pg_policies[\s\S]*match_school\(%[\s\S]*END \$check\$;\n$/.test(running));
+  const ci = readFileSync(join(here, "../../../.github/workflows/ci.yml"), "utf8");
+  ok("CI regenerates and diffs db/39 with the other generated files",
+     /git diff --exit-code db\/01_authz\.sql db\/09_rls_policies\.sql db\/23_authz_time_box\.sql db\/35_authz_suspension\.sql db\/39_match_anchor_helpers\.sql/.test(ci));
+  const onDisk = join(here, "../../../db", REANCHOR_FILE);
+  ok("db/39 on disk is what the generator emits", existsSync(onDisk) && readFileSync(onDisk, "utf8") === running);
+  const expected = JSON.parse(readFileSync(join(here, "../expected-migrations.json"), "utf8"));
+  ok("db/39 is a migration the API expects", expected.includes(REANCHOR_FILE));
 }
 
 console.log(`\n${"─".repeat(52)}\nRLS SUITE: ${pass} passed, ${fail} failed`);

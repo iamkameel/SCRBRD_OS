@@ -21,6 +21,9 @@
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
 import { TREE, SCALE_MIN, SCALE_MAX, DISCIPLINES } from "@scrbrd/scoring";
+/** @import { RouteDeps, ApiRequest, ApiResponse, Handler, Pool } from "../api-types.mjs" */
+// A caught error is `any` to the checker (CaughtError in api-types.mjs):
+// pg's carry a SQLSTATE `code`, this module's own carry an HTTP `status`.
 
 /**
  * Groups and the attributes each may carry — TAKEN FROM THE RUBRIC, not
@@ -31,9 +34,10 @@ import { TREE, SCALE_MIN, SCALE_MAX, DISCIPLINES } from "@scrbrd/scoring";
  * store it, and nothing would render it. The rubric is the one place the
  * attribute set is decided.
  */
+/** @type {Record<string, readonly string[]>} */
 export const ASSESSMENT_SHAPE = TREE;
 
-const err = (code, status = 400) => Object.assign(new Error(code), { status });
+const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
 
 /**
  * Validate before touching the database.
@@ -42,6 +46,7 @@ const err = (code, status = 400) => Object.assign(new Error(code), { status });
  * the UNIQUE key on (player, date, category, metric) would then never collide
  * with the real one — so the same assessment could be recorded twice under a
  * typo and both would show.
+ * @param {any} body  the request body as sent; validated here
  */
 export function validateAssessment(body) {
   const scores = body?.scores;
@@ -75,6 +80,11 @@ export function validateAssessment(body) {
  * same day is correcting themselves, not filing a second opinion. A rating on
  * a LATER date is a new row, because the history is the point of a development
  * record — the trend is what a coach is actually looking at.
+ * @param {Pool} pool
+ * @param {string} secret
+ * @param {string | undefined} bearer  the Authorization header, as sent
+ * @param {string | undefined} playerId
+ * @param {any} body  the request body as sent; validated here
  */
 export async function recordAssessment(pool, secret, bearer, playerId, body) {
   const rows = validateAssessment(body);
@@ -94,7 +104,9 @@ export async function recordAssessment(pool, secret, bearer, playerId, body) {
                        assessed_by = excluded.assessed_by
          returning id`,
         [playerId, assessedOn, r.category, r.metric, r.score, note]);
-      written += res.rowCount;
+      // An INSERT's command tag always carries a count; pg's type allows null
+      // only for commands that have none.
+      written += /** @type {number} */ (res.rowCount);
     }
     // Zero rows written with no error means every INSERT was refused by the
     // row-level policy. Reported as a refusal rather than as a success with
@@ -115,6 +127,7 @@ export const NOTE_ADJUSTMENT_LIMIT = 3;
  * and this is not the place to have opinions about it. The SIGNAL is inspected
  * closely, because it is the part that moves a number attached to a child's
  * name.
+ * @param {any} body  the request body as sent; validated here
  */
 export function validateNote(body) {
   const text = typeof body?.body === "string" ? body.body.trim() : "";
@@ -146,6 +159,11 @@ export function validateNote(body) {
  * school_id is taken from the PLAYER inside the statement rather than from the
  * caller's payload. A row whose tenant the writer chooses is a row that can be
  * filed against the wrong school, and the policy anchors on it.
+ * @param {Pool} pool
+ * @param {string} secret
+ * @param {string | undefined} bearer  the Authorization header, as sent
+ * @param {string | undefined} playerId
+ * @param {any} body  the request body as sent; validated here
  */
 export async function recordNote(pool, secret, bearer, playerId, body) {
   const n = validateNote(body);
@@ -163,7 +181,12 @@ export async function recordNote(pool, secret, bearer, playerId, body) {
   });
 }
 
-/** Revise your own. The trigger refuses somebody else's. */
+/** Revise your own. The trigger refuses somebody else's. * @param {Pool} pool
+ * @param {string} secret
+ * @param {string | undefined} bearer  the Authorization header, as sent
+ * @param {string | undefined} noteId
+ * @param {any} body  the request body as sent; validated here
+ */
 export async function reviseNote(pool, secret, bearer, noteId, body) {
   const n = validateNote(body);
   return runAsPrincipal(pool, secret, bearer, async (client) => {
@@ -178,10 +201,12 @@ export async function reviseNote(pool, secret, bearer, noteId, body) {
   });
 }
 
+/** @param {RouteDeps} deps @returns {Record<string, Handler>} */
 export function developmentNoteRoutes({ pool, secret }) {
+  /** @param {(req: ApiRequest) => Promise<unknown>} fn @returns {Handler} */
   const handle = (fn) => async (req, res) => {
     try { res.json(await fn(req)); }
-    catch (e) {
+    catch (/** @type {any} */ e) {
       const status = (e.code === "42501" || e.code === "45001") ? 403 : (e.status || 500);
       // 42501 is row-level security: this player is not yours. 45001 is the
       // note trigger: the player is yours and the note is somebody else's.
@@ -201,6 +226,7 @@ export function developmentNoteRoutes({ pool, secret }) {
   };
 }
 
+/** @param {RouteDeps} deps @returns {Record<string, Handler>} */
 export function assessmentRoutes({ pool, secret }) {
   return {
     // POST /players/:id/assessment { assessedOn?, note?, scores: { technical: { footwork: 14, … } } }
@@ -208,7 +234,7 @@ export function assessmentRoutes({ pool, secret }) {
       try {
         res.json(await recordAssessment(
           pool, secret, req.headers?.authorization, req.params.id, req.body || {}));
-      } catch (e) {
+      } catch (/** @type {any} */ e) {
         // 42501 is the policy refusing the write outright.
         const status = e.code === "42501" ? 403 : (e.status || 500);
         res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
@@ -227,6 +253,7 @@ export function assessmentRoutes({ pool, secret }) {
  * current side before it creates anything. A check in JavaScript would be a
  * second opinion that can drift from the one that actually runs.
  */
+/** @param {RouteDeps} deps @returns {Record<string, Handler>} */
 export function accessRequestRoutes({ pool, secret }) {
   const REASONS = new Set(["promotion", "fill_in", "selection", "other"]);
   return {
@@ -256,7 +283,7 @@ export function accessRequestRoutes({ pool, secret }) {
             return rows[0];
           });
         res.json(out);
-      } catch (e) {
+      } catch (/** @type {any} */ e) {
         const status = e.code === "23505" ? 409 : e.code === "42501" ? 403 : (e.status || 500);
         res.status(status).json({
           error: e.code === "23505" ? "already_asked"
@@ -277,7 +304,7 @@ export function accessRequestRoutes({ pool, secret }) {
             return rows[0] || { ok: false, reason: "no_result" };
           });
         res.status(out.ok ? 200 : 403).json(out);
-      } catch (e) {
+      } catch (/** @type {any} */ e) {
         res.status(e.status || 500).json({ error: e.message || "error" });
       }
     },
@@ -297,6 +324,7 @@ export function accessRequestRoutes({ pool, secret }) {
  * self-creation, the coach-of-this-player rule and the last-verified-link rule
  * are all checked inside the functions, under the caller's identity.
  */
+/** @param {RouteDeps} deps @returns {Record<string, Handler>} */
 export function guardianLinkRoutes({ pool, secret }) {
   // Not every refusal is a refusal of AUTHORITY. These functions answer with a
   // reason, and a caller that is told 403 for all of them cannot tell "you may
@@ -307,12 +335,18 @@ export function guardianLinkRoutes({ pool, secret }) {
   // Anything not listed keeps the original 403. Reasons are only moved off it
   // here once their meaning has actually been checked, rather than by flipping
   // the default and hoping.
+  /** @type {Record<string, number>} */
   const REFUSAL_STATUS = {
     no_such_player: 404,
     player_date_of_birth_required: 422,
     player_is_an_adult: 422,
     already_linked: 409,
   };
+  /**
+   * @param {string} sql
+   * @param {(req: ApiRequest) => unknown[]} params
+   * @returns {(req: ApiRequest) => Promise<any>}  the function's result row
+   */
   const call = (sql, params) => (req) => runAsPrincipal(
     pool, secret, req.headers?.authorization,
     async (client) => {
@@ -324,9 +358,10 @@ export function guardianLinkRoutes({ pool, secret }) {
       }
       return r;
     });
+  /** @param {(req: ApiRequest) => Promise<unknown>} fn @returns {Handler} */
   const handle = (fn) => async (req, res) => {
     try { res.json(await fn(req)); }
-    catch (e) {
+    catch (/** @type {any} */ e) {
       const status = e.code === "42501" ? 403 : (e.status || 500);
       res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
     }

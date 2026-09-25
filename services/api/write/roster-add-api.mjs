@@ -15,8 +15,11 @@
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
 import { resolveBirthDate } from "@scrbrd/policy/date-of-birth";
+/** @import { RouteDeps, ApiRequest, ApiResponse, Handler } from "../api-types.mjs" */
+// A caught error is `any` to the checker (CaughtError in api-types.mjs):
+// pg's carry a SQLSTATE `code`, this module's own carry an HTTP `status`.
 
-const err = (code, status = 400) => Object.assign(new Error(code), { status });
+const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ROLES = ["batter", "bowler", "allrounder", "keeper"];
 // The same closed vocabularies the CHECK constraints on player enforce —
@@ -26,14 +29,15 @@ const ROLES = ["batter", "bowler", "allrounder", "keeper"];
 // why they are two fields.
 const HAND = ["R", "L"];
 const PACE = ["F", "M", "S"];
-const clean = (v, max) => (v == null || String(v).trim() === "" ? null : String(v).trim().slice(0, max));
-const oneOf = (v, allowed, code) => {
+const clean = (/** @type {unknown} */ v, /** @type {number} */ max) => (v == null || String(v).trim() === "" ? null : String(v).trim().slice(0, max));
+const oneOf = (/** @type {unknown} */ v, /** @type {string[]} */ allowed, /** @type {string} */ code) => {
   if (v == null || v === "") return null;
   const s = String(v).trim().toUpperCase();
   if (!allowed.includes(s)) throw err(code);
   return s;
 };
 
+/** @param {RouteDeps} deps @returns {Record<string, Handler>} */
 export function rosterAddRoutes({ pool, secret }) {
   return {
     // POST /api/players { schoolId, fullName, teamCode?, squadNo?, playingRole?,
@@ -94,7 +98,7 @@ export function rosterAddRoutes({ pool, secret }) {
                      // look. A warning the server keeps to itself is not a warning.
                      bornFrom: dob.source, ...(dob.warning ? { warning: dob.warning } : {}) });
         });
-      } catch (e) {
+      } catch (/** @type {any} */ e) {
         if (e.code === "23514") return res.status(422).json({ error: "refused", detail: e.message });
         if (e.code === "23503") return res.status(404).json({ error: "no_such_school" });
         const status = e.code === "42501" ? 403 : (e.status || 500);

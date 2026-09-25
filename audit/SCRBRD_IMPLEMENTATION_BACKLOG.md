@@ -2822,7 +2822,23 @@ application role only; no capability, policy or table changed.
 **Regression risk:** LOW for behaviour; the operational risk is the one intended — the first deploy
 after this merges will not start until `apply-29` has been pasted.
 
-### SCRBRD-067 — A real fixture opens its first innings without asking who won the toss
+### ~~SCRBRD-067~~ — CLOSED
+
+> **Closed 2026-09-24.** On a live fixture the pad reads the toss the server recorded — through the fixture
+> list it already reads (`GET /api/read/matches`, fixture.read, whose rows carry `toss_won_by`,
+> `toss_decision`, `bats_first`), no new endpoint — and opens the first `innings_start` with the side it put
+> in, the home roster going with the home side whether batting or bowling (`firstInningsSides`,
+> `packages/scoring/src/toss.mjs`). With no toss (none recorded, or no way to ask) nothing opens: the pad asks
+> for the winner and the election (`apps/web/src/scorer/toss.jsx`, nothing preselected), and the "can't score
+> yet" fix asks again rather than defaulting. The answer opens the innings at once by the server's rule
+> (`battingFirst` = `bats_first()`) and is recorded as the toss (`POST /matches/:id/toss`, written under
+> scoring.start — the pad's own capability; not locked, since the pad has sent no delivery; refused or
+> offline changes nothing on the pad). The second innings swaps sides and squads from the first rather than
+> assuming team2. The demo setup's innings now carry the batting side's name, not the first-picked side's.
+> Tests: `packages/scoring/test/toss.test.mjs` (suite `toss`), `tools/smoke-browser-toss.mjs` (browser set).
+> The walks that open the seeded Michaelhouse fixture record a home-bats toss first. No migration.
+
+#### (original entry) SCRBRD-067 — A real fixture opens its first innings without asking who won the toss
 **Title:** The scorer assumes the home side (`team1`) bats first on a live fixture, although the toss is recorded
 **Priority:** P2 · **Domain:** Scoring · **Type:** correctness
 **Affected files:** `apps/web/src/scorer/engine.jsx` (the "real fixture nobody has scored yet" hydration path,
@@ -2898,17 +2914,25 @@ after it refused too.
 
 ### SCRBRD-071 — Loose ends found building the commit-time Laws check
 **Priority:** P3 · **Domain:** Scoring · **Type:** correctness (each small)
-- `contact` and `trajectory` are mapped by `toRow` but not listed in the live INSERT or in `quarantine_resolve`, so they are dropped. The pad does not emit them today.
-- A ball released from quarantine (`quarantine_resolve`) is inserted without the Laws check.
-- A key already held in quarantine and re-sent while the device holds the token is written live; a later release of the held copy then hits the unique key.
+- ~~`contact` and `trajectory` are mapped by `toRow` but not listed in the live INSERT or in `quarantine_resolve`, so they are dropped.~~ **Done** (db/37, `events-api.mjs`): both are written on the live path and on release, and read back. Old rows' fingerprints do not move (stored NULL, pad sends null, NULLs stripped); `tools/smoke-laws.mjs` retries a row written by the old insert.
+- ~~A ball released from quarantine (`quarantine_resolve`) is inserted without the Laws check.~~ **Done**: the release route calls `quarantine_resolve()` in a savepoint (it keeps the authority check and now takes the per-match lock), folds the log and asks `lawsRefusal()`; a refusal rolls back, keeps the ball held and returns `laws_refused` with the reason in words. The panel offers Discard or Leave it held.
+- ~~A key already held in quarantine and re-sent while the device holds the token is written live; a later release of the held copy then hits the unique key.~~ **Done**: writing it live is right (lease, epoch and Laws all pass), and db/37's trigger closes the held copy as `superseded` in the same statement; rows already left open are closed by the migration. (The old release did not actually hit the unique key — db/14's own check answered `already_recorded` and closed the row as `rejected` — but until then the row sat open in the approver's queue.)
 - A batter returning after retiring hurt keeps "retired" on his record in the fold.
 - Timed out and retired out are recorded as `W` balls, which count as a legal delivery of the over.
-- Undoing a refused event that is not the last one still appends a `void`, which the server refuses and holds too (both can be discarded from the held sheet; undo could drop it locally instead).
-- `tools/smoke-a11y.mjs` and `tools/smoke-browser-read.mjs` both use port 4326, so they collide when run at the same time.
-- `tools/check-imports` reads the word "can" in JSX text as a call to the `can()` helper (false positive).
+- ~~Undoing a refused event that is not the last one still appends a `void`, which the server refuses and holds too.~~ Done 2026-09-24: undo drops a held event wherever it sits and lets its held copy go (`undoLast` `isHeld`, `undoOnPad`; `held.test.mjs` group I, `smoke-browser-held.mjs` group F).
+- ~~`tools/smoke-a11y.mjs` and `tools/smoke-browser-read.mjs` both use port 4326~~ — fixed 2026-09-24 (smoke-a11y → 4331).
+- ~~`tools/check-imports` reads the word "can" in JSX text as a call to the `can()` helper~~ — fixed 2026-09-24.
 **Tests required:** one case per item when it is taken up.
 
-### SCRBRD-072 — Phase wickets count a dismissal the free hit saved
+### ~~SCRBRD-072~~ — CLOSED
+**Closed 2026-09-24.** Phases now read the fold's own `freeHitSaved` flag instead of re-deciding, and three more
+divergences were fixed with it: fours and sixes count only runs off the bat (not four byes; a no-ball hit for four
+counts), a W ball with no mode written counts as the fold does, and a revision below the overs already bowled no
+longer drops the later balls. An invariant test over 60 generated innings holds runs, balls, wickets, dots, fours and
+sixes summed over phases equal to the innings. Penalty runs stay outside every phase (the fold keeps only their total);
+phase runs sum to `runs − extras.penalty`, documented in phases.mjs.
+
+Original entry — Phase wickets count a dismissal the free hit saved
 **Title:** `phases.mjs` counts every ball with a dismissal as a wicket, including one the fold saved on a free hit
 **Priority:** P2 · **Domain:** Scoring / analytics · **Type:** correctness
 **Affected files:** `packages/scoring/src/phases.mjs` (~line 193, `if (b.dismissal) acc.wickets += 1`)
@@ -2918,7 +2942,11 @@ innings; they do not. Phases should ask the same question the fold does (`stands
 **Tests required:** a phases case with a free hit, asserting phase wickets sum to the innings' wickets.
 **Data migration required:** NO.
 
-### SCRBRD-073 — Rating indices turn a non-numeric count into a number
+### ~~SCRBRD-073~~ — CLOSED
+**Closed 2026-09-24.** A non-finite balls count fails the sample floor, and a non-finite runs / dismissals /
+wickets / runs-conceded count yields no index, each with a reason naming the bad count. Tests in rating.test.mjs (B2).
+
+Original entry — Rating indices turn a non-numeric count into a number
 **Title:** `battingIndex` / `bowlingIndex` accept `NaN` counts past the sample floor and score them as 0
 **Priority:** P3 · **Domain:** Analytics · **Type:** input validation
 **Affected files:** `packages/scoring/src/rating.mjs` (~190, ~238)
@@ -2927,3 +2955,380 @@ then returns null, which the arithmetic reads as 0 (`battingIndex({runs:100, bal
 10.8, "good"). Today's callers pass numbers from the fold, so this bites only a bad caller.
 **Expected behaviour:** a non-finite count yields no index (null / "insufficient"), never a number.
 **Data migration required:** NO.
+
+### ~~SCRBRD-074~~ — CLOSED
+
+> **Closed 2026-09-24.** `SyncEngine.withdraw(key)` takes an event that has never left the device out of the
+> outbox, memory and storage. "Never left" is `SyncEngine.isUnsent`: queued AND never put in a request — every
+> key is marked `sent:` on disk before the request that carries it goes out, so an event in flight, or in a
+> request that never answered (the server may have written it), is not unsent. Undo's rule stays in one place:
+> `undoLast` reads the outbox through `boundaryOf` (held → drop, never sent and last → truncate, anything else →
+> void; no outbox visible on a live match → void), and `undoOnPad` names the key to `withdraw`. **Order:** the
+> withdrawal is durable before the shorter log is saved (the pad's persist effect waits on it); a crash between
+> leaves the ball in the saved log and out of the outbox, which the next start heals by re-offering the log —
+> never a ball sent that the pad does not show. A failed withdrawal puts the ball back in the log. **Mid-flush:**
+> never waits and never withdraws what is in flight — withdraw refuses it synchronously and the undo is a void.
+> Also fixed on the way: the pad's void had no id, so the log-watching effect never offered it to the outbox
+> and the server kept every ball undone by a void; and events queued offline and rehydrated after a reload
+> carried the previous epoch, so the first of them failed the batch's lease check and every ball queued
+> offline went to quarantine — events queued under `epoch - 1` (the device's own reclaim; nobody else held the
+> token) are restamped at `init`. Tests: `packages/sync/test/sync-engine.test.mjs` (suite `outbox`, incl.
+> mid-flush with a held-open transport), `replay.test.mjs` F, `held.test.mjs` I; browser walk
+> `tools/smoke-browser-offline-undo.mjs` (`browser-offline-undo`).
+
+**Title:** Undo drops an unsynced event from the pad's log but not from the outbox, so the server records a ball the pad does not show
+**Priority:** P1 · **Domain:** Scoring / sync · **Type:** correctness (silent divergence)
+**Affected files:** `packages/sync/src/sync-engine.mjs` (no way to withdraw a pending event), `packages/scoring/src/undo.mjs`
+("not synced → drop" rule), `apps/web/src/scorer/engine.jsx` (`undoLastBall`)
+**Found 2026-09-24** building SCRBRD-067 and confirmed by reading: `SyncEngine` has no method that removes an event
+from `pending`, and the pad's undo only cuts its own log. A mis-tap undone while offline (or before the next flush) is
+sent when signal returns; the server then holds a delivery the scorer undid, with nothing on the pad to show it.
+**Expected behaviour:** undoing an event still in the outbox withdraws it from the outbox (persisted storage too) in the
+same step, atomically with the log change; one implementation of the "never reached the server" rule covering both
+held and pending events. An event already in flight is the hard case: if a flush is in progress, undo must either wait
+for its answer or fall back to a `void`.
+**Tests required:** unit (sync-engine withdraw, including mid-flush); browser walk — go offline, score, undo, go online,
+server and pad agree.
+**Data migration required:** NO.
+
+### ~~SCRBRD-075~~ — CLOSED — Loose ends found building the toss fix
+**Priority:** P2/P3 · **Domain:** Scoring / sync
+- ~~**Acked ids are memory-only.**~~ **Closed 2026-09-24 with SCRBRD-074:** the outbox persists a `sent:` marker
+  per key before each request, and undo asks `isUnsent`, so a reload (which re-offers the whole log) no longer
+  makes an acknowledged ball look unsent; a live pad with no outbox attached voids. Was: After a reload, `syncedIds()` is empty, so offline, undo treats a ball the server already has as unsynced and cuts it locally instead of voiding it (heals online when duplicates come back acked). Persist acked ids, or ask the server before cutting. (P2)
+- ~~**A toss answered offline is never sent.**~~ **Closed 2026-09-25.** The answer is queued in the outbox, on
+  disk, before the innings it opens is recorded (`SyncEngine.queueToss`, key `toss:pending`), and every flush
+  settles it before sending any event (`settleToss`) — before the `innings_start` too, since the freeze trigger
+  (`match_toss_before_first_ball`) fires on ANY `ball_event` row, not only a delivery. Settling reads the
+  server's toss first and never writes over it (`tossDecision` in `packages/sync/src/attach.mjs`): none and no
+  event → recorded; the same → settled; different, nothing on the server and nothing on the pad but the
+  innings start → the pad follows the server's and re-opens its first innings from it (appended; the innings
+  start is never undone), in words; different with play recorded on the pad, or once the server has events →
+  STOPPED, in words, nothing more sent, no rule invented (below). Proved by `smoke-browser-offline-day` (the
+  toss answered with no signal is recorded before the first event reaches the server) and `sync-engine.test`
+  group J / `attach.test` group K. Was: If the pad cannot read the toss, asks the scorer, and the POST also fails, the answer is not retried; the server may also have held a different toss the pad could not read. The innings still follows the scorer's answer. Queue the toss like an event, or re-check on reconnect. (P3)
+  **Open, needs a product decision:** a toss conflict where the pad has recorded play under its own answer
+  (or the server already has events) has no resolution on the pad. The pad keeps everything and sends
+  nothing. Options: an explicit "record this pad's toss" (allowed by the server while it has no event), or a
+  scoring amendment when it has.
+- ~~**Incoming handover device mints its own `innings_start`**~~ **Closed 2026-09-25.** What happened, in the real
+  flow (`smoke-browser-handover`, run on the old code): the incoming device hydrated with nothing saved, read
+  the recorded toss and minted a first-innings `innings_start` under its own id; after the takeover its outbox
+  sent it and the server ACCEPTED it (the Laws do not refuse an `innings_start`) — the server's log gained a
+  second start, the incoming pad's log was 1 event against the server's 7, its board read 0/0 against 5/0,
+  and its next tap did not reach the server. The same for a device opening, for the first time, a fixture
+  someone else was scoring. Now a pad with nothing saved reads the server's log first and replays it (never
+  mints over it); the handover claim's log is taken by the pad before verification (anything the pad had
+  that the server did not is saved aside, `persist.js saveAside`); and before every claim the pad's log is
+  compared with the server's (`reconcile`, below), so a pad that could not ask at hydration (no signal)
+  cannot merge its own start into a started match. Was: when it opens a fixture with no saved log, with a new id. Check against docs/SCORING_HANDOVER_SPEC.md: the incoming device should replay the server's log, not start one. (P2 — needs a look)
+
+### ~~SCRBRD-076~~ — CLOSED
+**Closed 2026-09-24.** `db/38_amendment_lock.sql` replaces `scoring_amendment_decide()` with db/02's body plus the
+`scoring_session` row lock (after the authority checks, before max(seq); session row first, then the amendment row,
+re-checking its state), and pins `search_path`. The decide route judges the void with `lawsRefusal()` in a savepoint
+and rolls back with `laws_refused` in words — every void rule except `void_not_latest`, which is the pad's undo and
+would refuse every amendment (`amendmentRefusal()` in events-api.mjs says why). db/99 section 18; `smoke-amend.mjs`
+holds the session row and shows the approval waits for it, and refuses a void of an `innings_start`.
+Open, not decided here: the balls bowled after an amended delivery are not re-judged against the corrected log.
+
+Original entry — An approved amendment appends to the log without the per-match lock
+**Priority:** P2 · **Domain:** Scoring · **Type:** concurrency
+**Affected files:** `scoring_amendment_decide()` (db/02, frozen — would need a CREATE OR REPLACE in a new migration, as db/37 did for `quarantine_resolve`)
+**Found 2026-09-24** building db/37. A live batch that has already folded the log can append after an approved
+amendment's `void` without judging against it — the race db/37 closed for quarantine releases. Take the same
+`scoring_session` row lock first, and judge the amendment with `lawsRefusal` in its route the same way the release route does.
+
+### ~~SCRBRD-077~~ — CLOSED
+**Closed 2026-09-24.** `appendEvents` refuses such an event in `refused` and writes the rest: placement.mjs's
+vocabularies (placement source, placement null, capture profile) at the door, and every other column CHECK or
+malformed value (SQLSTATE 23514 / class 22) by running each event's write in a savepoint. Reasons
+`contact_unknown`, `trajectory_unknown`, `trajectory_without_contact`, `placement_invalid`,
+`capture_profile_unknown`, `value_refused`, with words in `REFUSAL_TEXT`. The release route answers `value_refused`
+instead of a 500 for a held ball carrying one. `smoke-laws.mjs` also fails if placement.mjs and db/07's CHECKs
+disagree. `close_position` has no CHECK and is not validated.
+
+Original entry — A placement value the database rejects fails the whole batch with a 500
+**Priority:** P3 · **Domain:** Scoring / sync
+A contact, trajectory or placement value that violates a column CHECK makes `appendEvents` throw, the batch returns
+500, and the device resends it forever. The pad sends none of these today. Validate the vocabulary at the door (as
+the dismissal vocabulary already is) and refuse per event.
+
+### SCRBRD-078 — A live pad that loads without signal never syncs until it is reloaded with signal
+**Two of three closed 2026-09-25; the third is a proposal awaiting a product decision (below).**
+
+> **Closed: the pad reopens offline, and the claim is retried.** A live fixture's pad reopens from what the device
+> holds — its sides saved with the session (`scorerCfg`), its log saved by the pad — when there is no session or no
+> signal (`App.jsx`). The outbox opens WITH the pad, unattached (`SyncEngine` built with `epoch: null`): every event
+> is queued on disk at once, stamped with the generation this device last held (`meta:epoch`), and nothing is sent
+> until it attaches. Attaching (`tryAttach`, `packages/sync/src/attach.mjs`; wired by `PadSync` in
+> `apps/web/src/lib/sync.js`) reads the session (the heartbeat, which now also answers `state`), compares the pad's
+> log with the server's by id (`in_step` / `behind` → the pad takes the server's / `fork` → nothing merged, nothing
+> claimed), then claims and attaches with the epoch rule. It is retried on `online` and on a backing-off timer
+> while the reason is the network; every refusal is an answer said in words (`SyncBanner`) and not repeated. A
+> handover under way is never claimed past (the arming device's claim is its cancel), and a pad that reopened by
+> itself never claims a match another device has claimed since (`moved_on`: a person may, "Score on this
+> device"). Signed out, the pad says "Sign in to send N balls", keeps everything queued, and its sign-in is the
+> real one (the login page opened from a live pad never offers the demo; `apiStatus()` no longer remembers a
+> failed check made with no signal). While unattached, undo cuts only what the pad minted since it opened and
+> voids the rest. Proved end to end by `tools/smoke-browser-offline-day.mjs` (browser set); unit:
+> `sync-engine.test` groups H–L, `attach.test`.
+>
+> **Found and fixed on the way:** (1) the server keeps a lease 90 s after the last write it took and the client
+> sent no heartbeat, so an ATTACHED pad offline for more than 90 s sent everything it had queued into quarantine
+> — and the pill said "Sent" (quarantined events left the queue silently). Every flush now passes a gate: a lease
+> not known to be fresh is checked; a lapsed one still this device's (same state `active`, same epoch) is taken
+> back and the queue restamped; anything else stops sending, in words. Quarantined events now show as
+> "For review N". (2) A cancelled handover (the arming device's own claim) bumped the epoch and left the outbox
+> on the old one: every ball after a cancel went to quarantine. The cancel now re-attaches with the claim's
+> epoch. (3) The handover sheet's poll read a failed session read (null) as "handed over" and stopped a device
+> that still held the token. (4) Events queued by the outbox and lost from the pad's saved log (the tab dying
+> between the two writes) would have been sent and not shown; the comparison before a claim puts them back.
+>
+> **Open — the session: "a scorer should not have to log in again mid-over".** Not built; for the product owner.
+> Two facts frame it: the API token lives in memory (`lib/api.js`: readable storage would expose a credential of
+> a person who can score and read minors' data to any injected script), so every reload signs out; and it
+> expires after 30 minutes (`auth.mjs TOKEN.ttlSec`), and a production sign-in is a one-time code from the school
+> office — so a scorer cannot today finish a three-hour match in production without new codes mid-match, reload
+> or not. Options:
+>
+> - **A. A refresh endpoint (AUTH_SPEC item 4).** A short access token plus a rotating, device-bound refresh
+>   token, stored hashed server-side (a table: a migration), one-time use with reuse detection revoking the
+>   family, an absolute lifetime (a school day), revoked on sign-out and by the office. Fixes expiry for every
+>   role. The hard part is where the refresh token lives: in memory it dies with the reload like the access
+>   token; in IndexedDB/localStorage it is a long-lived bearer credential any injected script can read and
+>   replay from anywhere — a strictly larger exposure than today's; as an HttpOnly, Secure, SameSite=Strict
+>   cookie it is unreadable by script but needs the API on the web app's site (today the API is a separate
+>   Cloud Run origin, i.e. a third-party cookie, which browsers block) and CSRF protection on the refresh route.
+> - **B. A narrowly scoped, device-bound resume credential for the pad.** Issued on a successful claim, bound to
+>   (user, device, match), good for exactly: the heartbeat/claim of that match while the token is still this
+>   device's (the same rules as `tryAttach`), appending that match's events, and reading that match's log and
+>   toss — nothing else (no pupils, no medical, no other match). Held with proof of possession: a
+>   non-extractable WebCrypto key pair made on the device, the private key kept as a CryptoKey in IndexedDB
+>   (usable by the page, not exportable), each request signed (DPoP-like), so a copied credential is useless
+>   off the device. Expires at the end of the match day, and is revoked when the match completes, the token
+>   moves (handover, force-release), the device signs out, or the office revokes it. A reloaded pad then
+>   re-attaches and sends by itself; the rest of the app stays signed out. Blast radius of misuse: scoring one
+>   match from one device, which that scorer could already do. Costs: a new credential type and principal
+>   scope in `auth-db`/RLS (a migration, Opus review), and WebCrypto needs a secure context — a laptop serving
+>   the app over plain http at a ground falls back to signing in.
+> - Rejected: storing the access token (the XSS reason in `lib/api.js`, and it still expires) and a longer TTL
+>   (widens every stolen token's window and does not survive a reload).
+>
+> Recommendation for the decision: B for the pad, A for everyone later — B fixes exactly the mid-over failure with
+> the smallest exposure. Questions for the owner: may a reloaded (or unlocked, lost) phone keep scoring its match
+> without the person re-entering anything until the credential ends; what that end is (the match day, the result);
+> and whether the API can move onto the web app's site (which is what makes the cookie variant of A possible).
+
+#### (original entry)
+**Priority:** P2 · **Domain:** Scoring / sync · **Type:** offline resilience
+**Found 2026-09-24** building the SCRBRD-074 walk. Three linked gaps, each by design or by omission:
+- The API token lives in memory only (`lib/api.js`), so every reload signs the scorer out of the server; the
+  pad reopens in demo mode and must be signed into again before anything is sent.
+- The session restore looks a live fixture up on the server (`App.jsx`), so after a reload with no signal the
+  pad for a live fixture does not reopen at all — the log is safe on disk, but the scorer lands on the shell.
+- The sync effect (`engine.jsx`) claims once, on mount; a claim that failed for want of signal is never retried
+  when signal returns (the outbox's own `online` listener only exists once a claim has succeeded).
+While unattached, undo on a live match voids every ball (SCRBRD-074: the outbox cannot be seen, so nothing is
+known never to have been sent) — correct, but it leaves a trace for each mis-tap.
+**Expected:** retry the claim on `online` / on a timer while the pad is `local` for want of signal; reopen a
+live fixture's pad from its saved log offline; decide whether a reload may keep the session (the handover
+spec's "a scorer should not have to log in again mid-over").
+
+### ~~SCRBRD-079~~ — CLOSED — Outbox `sent:` markers are never cleared
+
+> **Closed 2026-09-25.** Once the match is over on the pad (the second innings closed) or the server refuses the
+> claim as `match_complete`, and the device's log is the server's (attached, or found all there by the comparison
+> before a claim), and nothing waits — no event queued, none held, no toss unsent, no flush or record in progress —
+> the pad calls `SyncEngine.clearOutbox()`, which calls `indexedDbStorage.clearMatch()` and itself refuses while
+> anything waits. What the server had is saved with the log (`serverHas`), so reopening a finished match queues none
+> of it again. Devices that queued events before the markers existed: the first comparison before a claim marks
+> every event the server has as sent (`markSent`), and until then the pad treats as never-sent only what it minted
+> since it opened. Proved by `smoke-browser-offline-day` group F (the storage is empty after the last ball is
+> acknowledged, and stays empty across a reload) and `sync-engine.test` group K.
+
+#### (original entry)
+**Priority:** P3 · **Domain:** Scoring / sync
+SCRBRD-074 writes one `sent:<key>` entry per event per match+device to `scrbrd-outbox`, and keeps it for good
+(it is what tells undo, after a reload, that a ball has left the device). A few hundred small keys per match;
+`indexedDbStorage.clearMatch()` would remove them but nothing calls it. Clear a match's outbox once the match is
+complete and the queue is empty. Devices that queued events before the markers existed have none for those
+keys: after the upgrade a re-offered, already-acknowledged ball reads as unsent until its first flush.
+
+### Decided 2026-09-24 — scoring rules (see docs/SCORING_RULES.md "Product decisions, 2026-09-24")
+- **SCRBRD-068** (no-ball byes): approved — build. **Built 2026-09-24:** `nbRuns: "byes" | "leg_byes"` beside a
+  `value` that stays the runs completed (docs/SCORING_RULES.md, "Byes and leg byes off a no-ball"). Left open: the SQL
+  career views credit a no-ball's `value` to the striker (latent — the pad's no-ball carries no `striker_id`); fixing
+  them needs a migration. Also found: the pad's no-ball carries no striker, non-striker or bowler at all, so no-balls
+  are missing from every SQL career figure (batting balls faced, bowling runs conceded and no-balls).
+  **Closed 2026-09-24:** `db/40_career_follows_the_fold.sql` reads `payload.nbRuns` in every SQL batting figure
+  (`ball_runs_off_bat()`); the pad's no-ball — and its wicket ball, which had the same gap — now stamp striker,
+  non-striker and bowler (`crease()` in `scorer/engine.jsx`); proved in `smoke-browser-pad-laws` through
+  `/read/career`, `smoke-fold` and `db/99` §19.
+- **SCRBRD-069** (run-out end): decided — ask the scorer which end on a run out that completed runs — build.
+  **Built 2026-09-24:** `outAt: "striker_end" | "bowler_end"` on the wicket; the laws-spec KNOWN_GAP is now passing
+  cases for both ends (docs/SCORING_RULES.md, "Which end after a run out that completed runs").
+- **SCRBRD-080 — Mid-over bowler change records its reason.** Allowed (Law 17.8.1); the pad asks *Injury or suspended?* and records it on the `bowler` event. P2.
+  **Built 2026-09-24:** `bowler({ bowler, reason: "injury" | "suspended" })`; a mid-over change with no reason is
+  refused at commit (`mid_over_no_reason`); old logs replay. Not built: Law 41 says a suspended bowler does not bowl
+  again in the innings — nothing refuses him yet (a further product decision).
+- **SCRBRD-081 — Timed out and retired out are not deliveries.** A non-ball dismissal event; over count and bowler figures unaffected; old logs replay unchanged. P2.
+  **Built 2026-09-24:** a `retire` marked `type: "W"` (docs/SCORING_RULES.md, "Timed out and retired out"). Left
+  open: the career views (db/02, db/13) and the dismissal breakdown (db/26) read `kind = 'ball'`, so these
+  dismissals are not in a player's SQL career dismissals — counting them needs those views redefined (a migration).
+  **Closed 2026-09-24:** `db/40` counts a retire marked W as a dismissal, an innings and a breakdown line of
+  `payload.batter`, credited to no bowler; the post-match report's key moments name them.
+- **Found 2026-09-24 (db/40), not fixed — older than SCRBRD-068/081, so fixing them moves shipped figures; each
+  needs a decision:** (1) a W ball on a free hit that the fold saves (`standsOnFreeHit`) is still a wicket to every SQL
+  reader, `match_live_score` and `scoring_verify_takeover` included — a handover after one would fail verification;
+  (2) `player_innings` marks `out` only when the dismissed batter was the striker of that ball, so a run out at the
+  non-striker's end is in `player_dismissals` but not in his innings row (form guide / passport average);
+  (3) `opposition_squad()`'s `balls` excludes no-balls, its fours/sixes count byes and wides worth four or six, and
+  its `runs_conceded` leaves out the wide/no-ball penalty run; (4) a NULL `ball_type` on a `ball` row is a run to the
+  fold and nothing to SQL (nothing writes one).
+  **(1) Closed 2026-09-24:** `db/42_free_hit_wickets.sql` — `ball_wicket_stands()` / `ball_on_free_hit()` carry the
+  fold's rule, and `match_live_score`, `scoring_verify_takeover`, `player_dismissals_since`, `player_innings`,
+  `player_dismissal_breakdown`, `player_bowling_since`, `bowler_innings_figures`, `bowler_hat_trick`,
+  `player_wicket_breakdown`, `opposition_squad`, `milestone_watch` and the read API's `matchups` ask it. Proved by
+  `tools/smoke-free-hit.mjs` (fold = SQL over 64 generated/hand-written innings), `smoke-handover` (a handover after
+  a saved wicket verifies) and `db/99` §20. Still open, found alongside: a W ball with no method (NULL `dismissal`)
+  is the bowler's wicket to `dismissal_is_bowlers()` and not to the fold's `chargedToBowler()` — the API refuses one,
+  so only a row written before db/13 or by hand can carry it.
+  **(2)–(4), and the W ball with no method, closed 2026-09-25:** `db/43_last_fold_disagreements.sql`
+  (docs/SCORING_RULES.md, "SQL agrees with the fold: the last four"). Who is out is `ball_dismissed_batter()` —
+  `dismissed ?? striker` over `fromRow()` — in `player_innings` (the non-striker's own row, out; 0 (0) if he never
+  faced), `player_batting_since` (his match), `player_dismissals_since`, `player_dismissal_breakdown`,
+  `opposition_squad` and the matchups read; a typed-name batter run out at the far end is no longer filed against the
+  striker (found while fixing (2)). `opposition_squad`'s balls, fours, sixes and runs conceded follow the fold. A ball
+  with no type and a wicket with no method are refused at the door (a BEFORE INSERT trigger,
+  `ball_event_names_its_delivery`, raising 23514 as `ball_event_ball_has_type` / `ball_event_wicket_has_method`; not a
+  CHECK, which a migration's backfill UPDATE of a legacy row would trip); stored ones are read as the fold reads them (`ball_event_live` through
+  `ball_type_as_folded()`; `dismissal_is_bowlers(NULL)` false, `dismissal_stands_on_free_hit(NULL)` still false).
+  Proved by `tools/smoke-fold-figures.mjs` (fold = SQL for every batting and bowling figure over generated logs with
+  legacy rows; 33 passed, 43 failed on the code before) and `db/99` §21.
+- **Found 2026-09-25 (db/43), not fixed — each needs a decision:** (1) the matchups read's `balls` counts legal
+  deliveries, so a no-ball is not a ball of the pair (the opposite of every other balls-faced figure now), and
+  `tools/smoke-matchups.mjs` pins it ("on one legal ball faced"); (2) a batter who came to the crease and neither
+  faced a ball nor was out has no `player_innings` row — the fold lists him "0*" — so his not-out innings is in no form
+  guide, passport innings count or batting match; the only SQL source for him is the `batters` event; (3) penalty runs
+  (a `penalty` event, which the pad emits) are in the fold's total and in no SQL total: `match_live_score`, and so the
+  public score and `scoring_verify_takeover`, sum `value`, which a penalty row does not carry — a handover after a
+  penalty award cannot verify; (4) a `ball_type` outside the six (the pad's `ball()` refuses one, but the API writes
+  whatever string it is sent) is a legal ball whose runs are the batter's and the bowler's to the fold's scorecard
+  (its `default` branch) and nobody's to `runsOffBat()` — the fold disagrees with itself, so SQL cannot agree with it
+  until that is decided; a door like db/43's would close it for new rows; (5) `scoring_verify_takeover` sums runs,
+  wickets and legal balls over every innings of the match, while the handover sheet asks the incoming scorer for
+  this innings' figures off the scoreboard (`handover.js`: "legal deliveries bowled this innings"; `sheets.jsx`:
+  overs × 6 + balls) and the fold keeps them per innings — so a handover in a second innings cannot verify (probed on
+  a two-innings log: the check expected 7/1 off 4, the fold's innings were 8/1 off 3 with a 5-run penalty and 4/0
+  off 1).
+
+### Decided 2026-09-24 — screens to build next (from docs/redesign/SCREEN_MAP.md)
+- **SCRBRD-082 — Post-match report.** Scorecard, key moments, figures, generated from the log after a match.
+- **SCRBRD-083 — Public live match and league pages.** Signed-out. Needs a written rule first on what data about minors is ever public (names? photos? none?) — design with the policy package, not in the view.
+- **SCRBRD-084 — Season awards and MVP.** Season roll-up of figures and ratings already computed.
+- **SCRBRD-085 — Phone day-of views for drivers and groundskeepers.**
+
+### SCRBRD-086 — Season awards need a season-scoped career read
+**Priority:** P2 · **Domain:** Analytics · **Type:** gap (follows SCRBRD-084)
+The `career` read aggregates every match the reader can see, with no season parameter, so the Awards tab is correct
+only while a school has one season of history. Add a season-scoped read (RLS-reviewed, Opus) and a season selector.
+**Built 2026-09-25:** `db/44_career_by_season.sql` — `school_season_of()` (season_for() on the match's Johannesburg
+date; the `matches` read now asks it too) and three security_invoker views, `player_batting_by_season`,
+`player_bowling_by_season`, `player_dismissals_by_season`, each its lifetime view with the same predicates and rule
+functions, grouped by player and season. A new read, `career_by_season` (one row per player per season; `?season=`
+narrows it), rather than a parameter on `career`, which stays byte-for-byte what it was. The Awards tab opens on the
+current season, offers only seasons with figures and "All seasons" (= `career`, unchanged). Proved by `db/99` §22
+(invoker, school A sees nothing of school B, the Johannesburg calendar at the New Year line, exact per-season figures
+over every fold rule, and Σ seasons = lifetime for every player as seven principals — each assertion falsified once)
+and `smoke-browser-awards` (API invariant for three readers; each season's lists, row for row; "All seasons" = the
+career read's ranking). **Coupling to watch:** the views mirror the COMPOSITION inside `player_batting_since()`
+(db/40), `player_bowling_since()` and `player_dismissals_since()` (db/42) — a later change to one of those (e.g. a NULL
+`ball_type` counted as a run) must be mirrored in a new file, and §22 (which carries a NULL-type delivery and a W with
+no method) goes red until it is. A change to a rule FUNCTION (`ball_runs_off_bat`, `dismissal_is_bowlers`, ...) flows
+into both; dropping one would take the views with it. db/43 was such a change and landed first: db/44 mirrors it (who is out is
+`ball_dismissed_batter()` in the batting and dismissals views, and a batter run out at the other end has his match),
+and a NULL type and a W with no method reach the views through `ball_event_live` and `dismissal_is_bowlers()`.
+
+### SCRBRD-088 — A handover in the second innings cannot verify
+**Priority:** P1 · **Domain:** Scoring / handover · **Type:** bug (found by db/43, 2026-09-25)
+`scoring_verify_takeover()` compares the incoming scorer's runs, wickets and legal balls with `match_live_score`,
+which sums every innings of the match. The handover sheet asks for THIS innings' figures off the scoreboard
+(`handover.js`: "legal deliveries bowled this innings"; `sheets.jsx`: overs × 6 + balls), and the fold keeps them per
+innings. So after the first innings any honest answer is refused, and a scorer can take over only by reading a
+match total the scoreboard does not show. Probed on a two-innings log: the check expected 7/1 off 4, the fold's
+innings were 8/1 off 3 and 4/0 off 1. Penalty runs (db/43 finding 3) make it worse: no SQL total carries them.
+**Fix (Opus — handover is on the scoring list):** verify against the current innings — the innings the lock's
+latest ball is in, or the innings the sheet names — in a new db/NN, with penalties counted as the fold counts them;
+a two-innings handover walk that fails on today's code. Until then, match day depends on no scorer change after
+the first innings.
+**Fixed 2026-09-25:** `db/45_handover_this_innings.sql` replaces `scoring_verify_takeover()` (same signature,
+definer, pinned search_path, grants — a snapshot check at the end of the file refuses anything else moving) to
+compare with `innings_score_as_folded(match, match_current_innings(match))`. **Which innings:** the one the fold
+calls current — the highest innings the live log has reached (`deriveMatch().current`, and what `broadcast_state()`
+already shows) — not the innings of the highest seq, which a quarantine release into the first innings would move
+back. The sheet sends no innings and none is added. At the break, the second innings is current once its
+`innings_start` is written (0/0 off 0, as both pads show). **Penalties:** `penalty_runs_as_folded()` is the fold's
+PENALTY case over fromRow(): `payload.runs ?? 5`, nothing when `payload.toBattingTeam` is JSON `false`; a
+non-integer `runs` leaves the innings' runs unknown and nothing verifies. Runs read `value` on deliveries only;
+wickets are a delivery's that stands plus a retirement the fold reads as a dismissal (not any row marked W). The
+mismatch audit row now names the innings. `match_live_score` is untouched (SCRBRD-090). The reference double
+(`services/api/handover/scoring-session.mjs`, `replayEvents()`) folded the whole match as one innings too; it now
+answers for the current innings (unit test added). Proof: `tools/smoke-handover-innings.mjs` — two handovers through
+the API (first innings after a penalty; second innings after a penalty each way), the fold's figures verify, the
+match's totals, the figures without the penalty and the first innings' score are refused: **8 passed, 15 failed on
+the old code** (it accepted the penalty-less figure and cascaded), 23 passed on db/45; `db/99` §23 (current innings
+incl. a late first-innings seq, penalty and wicket rules, the second innings exact, invoker helpers, the handover's
+expectation, audit, refusals and acceptance — each of its 12 assertions falsified once, the unpatched run passing);
+`smoke-free-hit` and `smoke-fold-figures` asserted the old whole-match expectation and now hold the check to the
+fold's innings being played, and `innings_score_as_folded()` to the fold in every innings of their generated logs;
+`docs/SCORING_RULES.md`, "The handover check counts this innings". Rehearsed as production: a database built at the
+base commit, then `node tools/migrate.mjs` from this tree — "1 applied, 44 already applied" — and `--verify` green.
+
+### SCRBRD-090 — The live score and the target leave out penalty runs
+**Priority:** P2 · **Domain:** Scoring / broadcast · **Type:** bug (found fixing SCRBRD-088, 2026-09-25)
+`match_live_score` sums `value`, which a `penalty` row does not carry, so the public board (`broadcast_state()`),
+its chase target, the `matches` read's score and the summary read are short by every penalty award the pad's fold
+counts. Every reader probably wants the fold's total — `innings_score_as_folded()` (db/45) is it, per innings — but
+each should be checked before the view's meaning moves (a new db/NN, like db/42/43). Two fold questions ride along,
+for a decision rather than a fix: the fold drops a penalty awarded to the fielding side (`toBattingTeam: false`)
+from every innings, where Law 41 adds it to that side's innings; and nothing at the door checks a penalty's `runs`
+(a string or a fraction is stored, and the fold's total becomes unreadable — the handover then cannot verify).
+
+### SCRBRD-087 — The lease check trusts the device the batch names
+**Priority:** P3 · **Domain:** Scoring / sync · **Type:** hardening
+**Found 2026-09-25** typing `events-api.mjs`. `appendEvents` calls `scoring_lease_check(match, events[0].deviceId,
+events[0].epoch)` with the device from the request body, not the token's. Writes stay bound to the token's device by
+the ball_event INSERT policy, so nothing is written by it; but the same user on a second device can keep the first
+device's lease alive with a batch that writes nothing (all duplicates, conflicts or refusals), and that refresh
+commits. Pass the token's device (the principal carries it) and refuse a batch that names another.
+
+### Fixed 2026-09-25, found typing `events-api.mjs` (no backlog number needed)
+- **A held second-innings event was released into the first innings.** The release built its row with the envelope's
+  innings (the pad always sends 0), not the event's own. Now it uses `columnsFor()`, the live path's mapping; the held
+  copy's fingerprint was taken over the same object, so a resend after release is a duplicate, not a conflict.
+  `smoke-quarantine` proves it (50 passed, 3 failed on the old code).
+- The events routes answer a missing capability `403 not_permitted` (was `500 42501`); weather for a match that is not
+  there was already refused by its policy (`403`) — the unmapped `23503` behind it now maps to `404`, and the comment
+  says so; a date sent as a list is refused by name (was `500 22007`); a batch
+  with an event missing its key, device or client seq is `400 malformed_event` (was `500 23502`, resent for ever).
+
+### SCRBRD-089 — Loose ends found building the offline match day (SCRBRD-078/075/079)
+**Priority:** P2/P3 · **Domain:** Scoring / sync · **Found 2026-09-25**
+- **No heartbeat while the pad is open.** The spec's lease is refreshed "by heartbeat (~20s) and by any ball
+  written"; the client only writes. Every lull longer than 90 s (a drinks break, the innings break, rain) lapses
+  the lease, and `scoring_claim` hands a lapsed lease to any device that opens the pad. The flush gate now takes
+  back only the device's OWN lapsed token (same state, same epoch) and stops, in words, when another device has
+  claimed — but whether an open pad should hold the match through a break (and so block an admin's force-release
+  for as long as it is open) is a decision. (P2)
+- **A fork has no resolution on the pad.** When the pad's log and the server's each have events the other lacks,
+  nothing is merged, nothing is claimed, and both stay where they are (the pad's on the device, said in words).
+  The spec's route for such events is quarantine for a supervisor; a forked device does not send its side there
+  today. Decide whether it should (it needs a way to send as a non-holder on purpose), or whether a person
+  reconciles from the device. (P2 — product decision)
+- **"For review N" is memory-only.** Quarantined events are counted on the pill for the session they were sent in;
+  after a reload the pad no longer says so (the server's quarantine panel still does). (P3)
+- **A toss conflict with play recorded under the pad's answer stops sending** and has no resolution on the pad —
+  see SCRBRD-075. (P3 — product decision)
+- **The 30-minute token and one-time office codes** mean a production scorer must be issued a new code to go on
+  sending mid-match — see SCRBRD-078's open item. (P1 before launch)

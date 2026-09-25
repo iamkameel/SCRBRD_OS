@@ -93,19 +93,25 @@ export async function api(path, { method = "GET", body, timeoutMs = 10000 } = {}
 /**
  * Is there an API behind this build at all?
  *
- * Asked once and remembered. A ground with no signal is NOT the same question:
+ * A YES is remembered. A ground with no signal is NOT the same question:
  * this decides whether the app is a demo or a client, and that does not change
  * when a phone loses reception mid-over.
+ *
+ * A NO is not remembered (SCRBRD-078). It was, and a phone that opened the app
+ * at a ground with no signal therefore decided, once, that it was a demo: when
+ * the signal came back its sign-in page still offered the demo and the mock
+ * accounts, and a scorer with a pad full of balls to send could only "sign in"
+ * to nothing. A failed check is asked again next time; it costs one request.
  */
 export async function apiStatus() {
-  if (_reachable !== null) return _reachable;
+  if (_reachable?.live) return _reachable;
   try {
     const h = await api("/api/health", { timeoutMs: 3000 });
     _reachable = { live: !!h?.ok, health: h };
+    return _reachable;
   } catch {
-    _reachable = { live: false, health: null };
+    return { live: false, health: null };
   }
-  return _reachable;
 }
 
 /** For tests and for signing out on a shared device. */

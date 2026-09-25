@@ -33,19 +33,18 @@
  * a refusal the Laws do not require would strand a real scorer mid-match:
  *   - a dismissal the fold saves on a free hit (SCORING_RULES.md §6 records it
  *     and marks the batter saved; it is not refused);
- *   - a mid-over change of bowler (Law 17.8.1 allows it for an incapacitated or
- *     suspended bowler, and the event model does not say which a change is);
  *   - a stale or wrong seal (sealRefusal() in replay.mjs records and ignores
  *     it, by design, because an offline queue can replay one);
  *   - a late capture-profile declaration (the fold ignores it; SCRBRD-039);
  *   - how many innings a format has, and whether a player is in the squad
  *     (opposition players are typed names SCRBRD holds no row for).
  */
-import { KIND, BALL_TYPE } from "./events.mjs";
+import { KIND, BALL_TYPE, DISMISSAL, BOWLER_CHANGE_REASONS, NB_RUNS_VALUES, RUN_OUT_ENDS } from "./events.mjs";
+import { retirementDismissal, isMidOver } from "./replay.mjs";
 import { scoringReadiness } from "./readiness.mjs";
 import { voidedIds, lastUndoableIndex } from "./undo.mjs";
 
-/** @import { LogEvent, Loose, BallEvent, BattersEvent, VoidEvent } from "./events.mjs" */
+/** @import { LogEvent, Loose, BallEvent, BattersEvent, RetireEvent, VoidEvent } from "./events.mjs" */
 /** @import { Innings } from "./replay.mjs" */
 
 /** Every reason an event can be refused. The readiness codes are reused as-is. */
@@ -68,6 +67,14 @@ export const REFUSAL = Object.freeze({
   CREASE_OCCUPIED:        "crease_occupied",        // a not-out batter replaced without leaving
   NOT_AT_CREASE:          "not_at_crease",          // dismissed / retiring batter is not batting
   CONSECUTIVE_OVERS:      "consecutive_overs",      // Law 17.8: not two overs, or parts, running
+  MID_OVER_NO_REASON:     "mid_over_no_reason",     // Law 17.8.1: a change during an over says why (SCRBRD-080)
+  // A dismissal with no delivery (SCRBRD-081).
+  NEEDS_A_DELIVERY:       "needs_a_delivery",       // only retired out and timed out happen without a ball
+  NOT_NEXT_IN:            "not_next_in",            // timed out: the batter was not the one due in
+  // Whose the runs off a no-ball were (SCRBRD-068).
+  NB_RUNS_UNKNOWN:        "nb_runs_unknown",        // not off the bat, byes or leg byes, or not on a no-ball
+  // Where a batter was out (SCRBRD-069).
+  OUT_AT_UNKNOWN:         "out_at_unknown",         // not the striker's or the bowler's end, or not on a wicket
   // Undo.
   VOID_NO_TARGET:         "void_no_target",
   VOID_UNKNOWN_TARGET:    "void_unknown_target",    // names nothing in this innings of this match
@@ -96,6 +103,11 @@ export const REFUSAL_TEXT = Object.freeze({
   crease_occupied: "a batter who is not out was replaced",
   not_at_crease: "that batter is not at the crease",
   consecutive_overs: "a bowler may not bowl two overs in a row",
+  mid_over_no_reason: "the bowler was changed during an over without saying why — injury or suspension (Law 17.8.1)",
+  needs_a_delivery: "only retired out and timed out are recorded without a ball — every other way out needs a delivery",
+  not_next_in: "a batter can be timed out only while an end is empty and he is the one due in",
+  nb_runs_unknown: "runs off a no-ball were said to be something other than off the bat, byes or leg byes",
+  out_at_unknown: "the end the batter was out at was not the striker's or the bowler's",
   void_no_target: "the undo named no event",
   void_unknown_target: "the undo named an event this innings does not have",
   void_wrong_innings: "the undo named an event in a different innings",
@@ -105,6 +117,14 @@ export const REFUSAL_TEXT = Object.freeze({
   void_not_latest: "only the latest event can be undone; older ones need an amendment",
   // The idempotency conflict is not a Law, but it is held the same way.
   idempotency_conflict: "a different event was already recorded under this event's id",
+  // Nor are these: a value the record has no place for (SCRBRD-077,
+  // services/api/write/events-api.mjs), refused per event like a Law.
+  contact_unknown: "how the bat met the ball was not one the scorebook knows",
+  trajectory_unknown: "the path of the ball off the bat was not one the scorebook knows",
+  trajectory_without_contact: "a path off the bat was recorded for a ball the bat did not touch",
+  placement_invalid: "where the ball went was not recorded in a form the scorebook can hold",
+  capture_profile_unknown: "the capture profile was not one the scorebook knows",
+  value_refused: "a value in it is not one the scorebook can hold",
 });
 
 /**
@@ -149,10 +169,20 @@ export function lawsRefusal(match, ev) {
     case KIND.BATTERS: return inn?.battingTeam == null ? REFUSAL.NO_INNINGS : battersRefusal(inn, ev);
     case KIND.BOWLER: {
       if (inn?.battingTeam == null) return REFUSAL.NO_INNINGS;
-      return bowledLastOver(inn, ev.bowler) ? REFUSAL.CONSECUTIVE_OVERS : null;
+      if (bowledLastOver(inn, ev.bowler)) return REFUSAL.CONSECUTIVE_OVERS;
+      // Law 17.8.1: an over is finished by another bowler only when the one
+      // bowling it is incapacitated or suspended, and the event says which
+      // (SCRBRD-080). One with no reason, or one the model does not know, is
+      // refused: the reason is what makes the change lawful. A log from
+      // before the pad asked still replays; only a new event is judged.
+      if (isMidOver(inn) && ev.bowler != null && ev.bowler !== inn.bowler && !BOWLER_CHANGE_REASONS.has(ev.reason)) {
+        return REFUSAL.MID_OVER_NO_REASON;
+      }
+      return null;
     }
     case KIND.RETIRE: {
       if (inn?.battingTeam == null) return REFUSAL.NO_INNINGS;
+      if (ev.type === BALL_TYPE.WICKET) return offBallDismissalRefusal(inn, ev);
       // Only a batter who is in can retire; anyone else leaving the crease
       // is a fiction the scorecard would print as "retired".
       return ev.batter != null && (ev.batter === inn.striker || ev.batter === inn.nonStriker)
@@ -197,6 +227,21 @@ function ballRefusal(innings, inn, i, ev) {
   if (inPlay.striker === inPlay.nonStriker) return REFUSAL.SAME_BATTER_BOTH_ENDS;
   if (bowledLastOver(inPlay, inPlay.bowler)) return REFUSAL.CONSECUTIVE_OVERS;
 
+  // Runs off a no-ball are off the bat (no `nbRuns`), byes or leg byes
+  // (SCRBRD-068). Anything else — or the field on a delivery that is not a
+  // no-ball — the fold would read as off the bat, crediting a batter with
+  // runs the scorer said were not his.
+  if (ev.nbRuns != null && ((ev.type ?? BALL_TYPE.RUN) !== BALL_TYPE.NO_BALL || !NB_RUNS_VALUES.has(ev.nbRuns))) {
+    return REFUSAL.NB_RUNS_UNKNOWN;
+  }
+
+  // The end a batter was out at is the striker's or the bowler's, and only
+  // a wicket has one (SCRBRD-069). The fold ignores anything else — and would
+  // leave the survivor where the scorer said he was not.
+  if (ev.outAt != null && ((ev.type ?? BALL_TYPE.RUN) !== BALL_TYPE.WICKET || !RUN_OUT_ENDS.has(ev.outAt))) {
+    return REFUSAL.OUT_AT_UNKNOWN;
+  }
+
   // Whoever is out must be one of the two batting. `dismissed` defaults to
   // the striker at replay; one that names anyone else would record a wicket
   // for a boy who was not at the crease and leave the real pair untouched.
@@ -205,6 +250,54 @@ function ballRefusal(innings, inn, i, ev) {
     return REFUSAL.NOT_AT_CREASE;
   }
   return null;
+}
+
+/**
+ * A dismissal with no delivery: a retire event marked `type: "W"`
+ * (SCRBRD-081, retire() in events.mjs). It changes the wickets, so an innings
+ * that is over or closed takes none; and it is one of the two ways out that
+ * need no ball, of the batter the Law is about:
+ *
+ *   - retired out (Law 25.4.3): a batter who is in — the same rule as any
+ *     retirement;
+ *   - timed out (Law 40.1): the INCOMING batter, so an end must be empty
+ *     after a wicket or a retirement, and he must not be at the crease or
+ *     already out. Openers are not timed out: Law 40 applies to a batter
+ *     coming in after a wicket or a retirement.
+ *
+ * A W delivery that names either (the shape before SCRBRD-081) is not
+ * refused: an older build's queue must still sync, and the fold replays it
+ * as it always did.
+ *
+ * @param {Innings} inn
+ * @param {Loose<RetireEvent>} ev
+ * @returns {Refusal | null}
+ */
+function offBallDismissalRefusal(inn, ev) {
+  if (inn.sealed) return REFUSAL.INNINGS_CLOSED;
+  if (inn.complete) return REFUSAL.INNINGS_OVER;
+  const how = retirementDismissal(ev);
+  if (!how) return REFUSAL.NEEDS_A_DELIVERY;
+  const atCrease = ev.batter != null && (ev.batter === inn.striker || ev.batter === inn.nonStriker);
+  if (how === DISMISSAL.RETIRED_OUT) return atCrease ? null : REFUSAL.NOT_AT_CREASE;
+  // Timed out.
+  if (ev.batter == null || atCrease) return REFUSAL.NOT_NEXT_IN;
+  const endEmpty = inn.striker == null || inn.nonStriker == null;
+  const pastOpeners = (inn.batsmen?.length ?? 0) >= 2;
+  if (!endEmpty || !pastOpeners) return REFUSAL.NOT_NEXT_IN;
+  if (isOut(inn, ev.batter)) return REFUSAL.BATTER_ALREADY_OUT;
+  return null;
+}
+
+/**
+ * Out is out; retired out is out (Law 25.4.3). Retired hurt — "retired not
+ * out" — is not (Law 25.4.2). A retirement before SCRBRD-081 kept the two
+ * apart only in the text it wrote; one since is a dismissal, status "out".
+ * @param {Innings} inn  @param {string} id
+ */
+function isOut(inn, id) {
+  const b = inn.batsmen?.find((x) => x.id === id);
+  return b?.status === "out" || (b?.status === "retired" && b.dismissal === "retired out");
 }
 
 /**
@@ -221,13 +314,9 @@ function battersRefusal(inn, ev) {
   const at = new Set([inn.striker, inn.nonStriker].filter((x) => x != null));
   for (const id of [ev.striker, ev.nonStriker]) {
     if (id == null || at.has(id)) continue;
-    // A new arrival. Out is out; retired out is out (Law 25.4.3). Retired
-    // hurt — "retired not out" — may resume (Law 25.4.2), and the fold keeps
-    // the two apart only in the dismissal text it writes for a retirement.
-    const b = inn.batsmen?.find((x) => x.id === id);
-    if (b?.status === "out" || (b?.status === "retired" && b.dismissal === "retired out")) {
-      return REFUSAL.BATTER_ALREADY_OUT;
-    }
+    // A new arrival. A dismissed batter does not come back; one retired hurt
+    // may (Law 25.4.2). isOut() says which.
+    if (isOut(inn, id)) return REFUSAL.BATTER_ALREADY_OUT;
   }
 
   // Once play has started, a batter leaves the crease by being dismissed or
@@ -287,7 +376,9 @@ function laterPlay(innings, i) {
  * still at the crease — and that is what an amendment is for
  * (scoring_amendment: a second person, a reason, an approval). Amendments
  * write their void through scoring_amendment_decide(), not through this door,
- * and are not judged here.
+ * and their route judges it by this function less VOID_NOT_LATEST
+ * (amendmentRefusal() in services/api/write/events-api.mjs, SCRBRD-076) —
+ * which relies on the last-in-first-out question being asked LAST, below.
  *
  * @param {MatchView | null | undefined} match
  * @param {Loose<VoidEvent>} ev

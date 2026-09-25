@@ -23,6 +23,14 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { readResource } from "../read/read-api.mjs";
+/** @import { Pool } from "../api-types.mjs" */
+
+/**
+ * The one call that leaves the building: a Messages API request body in, a
+ * Message out. `any` both ways — it is the provider's wire format, and a
+ * test's fake provider stands in for the SDK here.
+ * @typedef {(params: any) => Promise<any>} Send
+ */
 
 /**
  * One place for model choice.
@@ -43,6 +51,7 @@ export const AI_MODELS = {
   commentary: { model: "claude-opus-5", maxTokens: 120, effort: "low" },
 };
 
+/** @type {Anthropic | null} */
 let _client = null;
 /** Lazily construct, so importing this module never requires a key. */
 function client() {
@@ -51,9 +60,11 @@ function client() {
 }
 
 /** The one call that leaves the building. Injectable, so a test can read what would have gone. */
+/** @type {Send} */
 const sendDefault = (params) => client().messages.create(params);
 
-const textOf = (msg) => msg?.content?.find((b) => b.type === "text")?.text?.trim() ?? null;
+/** @param {any} msg  a Message, as the provider returned it */
+const textOf = (msg) => msg?.content?.find((/** @type {any} */ b) => b.type === "text")?.text?.trim() ?? null;
 
 /*
  * NO CHILD'S NAME LEAVES THE PLATFORM.
@@ -71,17 +82,22 @@ const textOf = (msg) => msg?.content?.find((b) => b.type === "text")?.text?.trim
  * and the line reads oddly rather than leaking. Longest name first, so
  * "S Naidoo" is not left as "S PLAYER_2".
  */
-const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const escapeRe = (/** @type {string} */ s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+/**
+ * @param {string | null | undefined} text
+ * @param {unknown[]} [names]  anything that is not a non-empty string is skipped
+ */
 export function maskNames(text, names = []) {
-  const list = [...new Set(names.filter((n) => typeof n === "string" && n.trim()))]
+  // The filter keeps only strings.
+  const list = [...new Set(/** @type {string[]} */ (names.filter((n) => typeof n === "string" && n.trim())))]
     .sort((a, b) => b.length - a.length);
   let out = text ?? "";
   // Lookarounds rather than \b: a name that ends in a bracket or an initial's
   // full stop has no word boundary after it, and \b would leave it in clear.
-  const whole = (re) => new RegExp(`(?<![\\w])${re}(?![\\w])`, "gi");
+  const whole = (/** @type {string} */ re) => new RegExp(`(?<![\\w])${re}(?![\\w])`, "gi");
   list.forEach((name, i) => { out = out.replace(whole(escapeRe(name)), `PLAYER_${i + 1}`); });
-  const unmask = (t) => list.reduce((acc, name, i) =>
+  const unmask = (/** @type {string | null | undefined} */ t) => list.reduce((acc, name, i) =>
     acc.replace(whole(`PLAYER[_ ]?${i + 1}`), name), t ?? "");
   return { text: out, unmask, tokens: list.map((_, i) => `PLAYER_${i + 1}`) };
 }
@@ -99,8 +115,8 @@ const TOKEN_RULE = "People are referred to by tokens like PLAYER_1 and PLAYER_2.
  * ratio is null when its denominator is, and a null is written as a phrase
  * saying why rather than as a number.
  */
-const rate = (num, den, dp) => (den > 0 ? (num / den).toFixed(dp) : null);
-const matchesWord = (n) => `${n} ${n === 1 ? "match" : "matches"}`;
+const rate = (/** @type {number} */ num, /** @type {number} */ den, /** @type {number} */ dp) => (den > 0 ? (num / den).toFixed(dp) : null);
+const matchesWord = (/** @type {number} */ n) => `${n} ${n === 1 ? "match" : "matches"}`;
 
 /**
  * One player's figures as a line the model can quote from.
@@ -111,8 +127,9 @@ const matchesWord = (n) => `${n} ${n === 1 ? "match" : "matches"}`;
  * never faced one, and 0 runs off 12 balls in 1 match is a real duck. Printing
  * both as "0" would hand the model a fabricated figure and no way to tell.
  */
+/** @param {string} name @param {any} c  a /read/career row, or none */
 function careerLine(name, c) {
-  const n = (k) => Number(c?.[k] ?? 0);
+  const n = (/** @type {string} */ k) => Number(c?.[k] ?? 0);
   const bat = n("bat_matches") === 0 ? "no record" : [
     matchesWord(n("bat_matches")),
     `${n("runs")} runs off ${n("balls_faced")} balls`,
@@ -149,6 +166,7 @@ function careerLine(name, c) {
  * and a stats line that introduced a name the roster did not carry would go to
  * the provider in clear. Keying the other way round would be one join away
  * from doing precisely that.
+ * @param {{ players?: any[], matches?: any[], career?: any[] }} rows  read-path rows: players, matches, career
  */
 export function contextFrom({ players = [], matches = [], career = [] }) {
   const names = players.map((p) => p.full_name).filter(Boolean);
@@ -156,6 +174,7 @@ export function contextFrom({ players = [], matches = [], career = [] }) {
   const fixtures = matches.slice(0, 8).map((m) =>
     `${m.team_code ?? "?"} v ${m.opponent ?? m.away_team_code ?? "?"} ${m.starts_at ? String(m.starts_at).slice(0, 10) : ""} ${m.status ?? ""}`.trim()).join("; ");
   const byId = new Map(career.filter((c) => c?.player_id).map((c) => [String(c.player_id), c]));
+  /** @type {string[]} */
   const played = [], unplayed = [];
   for (const p of players) {
     if (!p.full_name) continue;
@@ -175,6 +194,11 @@ export function contextFrom({ players = [], matches = [], career = [] }) {
   return { names, context: `Players: ${roster || "(none)"}. Recent fixtures: ${fixtures || "(none)"}.${figures}` };
 }
 
+/**
+ * @param {Pool} pool @param {string} secret
+ * @param {string | undefined} bearer  the Authorization header, as sent
+ * @param {(pool: Pool, secret: string, bearer: string | undefined, resource: string) => Promise<any>} [read]
+ */
 export async function statsMagicContext(pool, secret, bearer, read = readResource) {
   const [players, matches, career] = await Promise.all([
     read(pool, secret, bearer, "players"),
@@ -192,6 +216,7 @@ export async function statsMagicContext(pool, secret, bearer, read = readResourc
  * Stats-Magic — a natural-language question over the school's own data.
  *
  * `context` and `names` come from statsMagicContext(), never from the client.
+ * @param {{ question?: string, context?: string, names?: unknown[], today?: Date, send?: Send }} args
  */
 export async function askStatsMagic({ question, context, names = [], today = new Date(), send = sendDefault }) {
   if (!question?.trim()) return null;
@@ -226,6 +251,7 @@ export async function askStatsMagic({ question, context, names = [], today = new
  *
  * `situation` is a pre-rendered description built by the caller from derived
  * state, so this module never needs to understand the scoring model.
+ * @param {{ situation?: string, names?: unknown[], send?: Send }} args
  */
 export async function describeDelivery({ situation, names = [], send = sendDefault }) {
   if (!situation?.trim()) return null;

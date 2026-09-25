@@ -306,6 +306,8 @@ try {
                        payload: ball({ type: BALL_TYPE.RUN, value: 4 }) }] },
   });
   ok("the medical officer cannot append a ball", medicWrite.status !== 200);
+  ok("...and is told so: 403 not_permitted, not a 500 logged as unexpected",
+     medicWrite.status === 403 && medicWrite.body?.error === "not_permitted", `${medicWrite.status} ${JSON.stringify(medicWrite.body)}`);
   const afterMedic = await api(`/api/matches/${MATCH}/events?since=0`, { token: scorerToken });
   ok("...and the log is untouched", (afterMedic.body?.events || []).length === LOG_LENGTH);
 

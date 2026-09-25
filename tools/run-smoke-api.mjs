@@ -24,6 +24,8 @@ import { readdirSync } from "node:fs";
 // previous walk's writes would make them pass or fail for the wrong reason.
 const WALKS = [
   "read", "sync", "handover", "handover-crash", "fold",
+  // A handover verifies against THIS innings, penalty runs included (SCRBRD-088, db/45).
+  "handover-innings",
   "assess", "access", "eligibility", "roster", "audit", "guardian",
   "rating", "notes", "amend", "login",
   // The owner's key, minted from outside the platform, and redeemed.
@@ -132,6 +134,13 @@ const WALKS = [
   // How a boy is out, and how a bowler takes wickets, by method rather than
   // as a single count.
   "dismissals",
+  // A wicket the free hit saved: the fold and every SQL reader agree, over
+  // generated logs (db/42).
+  "free-hit",
+  // Every batting and bowling figure SQL keeps is the fold's — who is out at
+  // either end, the opposition's figures, a ball with no type, a wicket with
+  // no method — and the doors that refuse the last two (db/43).
+  "fold-figures",
   "commit",
   // The API refuses to start on a database missing a migration it was built
   // against, and starts on one that is ahead of it (SCRBRD-066).
@@ -145,10 +154,20 @@ const WALKS = [
 // neither, and both jobs failed on a missing dist/index.html.
 // browser-held provokes a refusal on the pad and resolves it (SCRBRD-070):
 // discard, the cascade, record again, and the handover warning.
+// browser-pad-laws asks the pad the 2026-09-24 questions (SCRBRD-081, 080,
+// 068, 069) and holds the board to the server's fold of what it wrote.
 // browser-innings-end scores an innings to its end, which nothing else does:
 // browser-sync taps four deliveries of twenty overs, so the review gate between
 // the last ball and a closed innings was never exercised end to end.
-const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-dossier", "browser-handover", "browser-innings-end", "browser-quarantine", "browser-drs", "browser-dismissals", "browser-discipline", "browser-support", "browser-seasons", "browser-rulebook", "browser-duties", "browser-fixture-create", "browser-held"];
+const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-dossier", "browser-handover", "browser-innings-end", "browser-quarantine", "browser-drs", "browser-dismissals", "browser-discipline", "browser-support", "browser-seasons", "browser-rulebook", "browser-duties", "browser-fixture-create", "browser-held", "browser-toss", "browser-offline-undo", "browser-dayof",
+  // SCRBRD-082 / SCRBRD-084: the Post-Match Report and the Season Awards tab.
+  "browser-report", "browser-awards",
+  // SCRBRD-068/069/080/081: the pad's four new Laws questions.
+  "browser-pad-laws",
+  // SCRBRD-078/075/079: a scorer's day with poor signal — the pad loads and
+  // reloads with none, says "sign in to send", retries its claim, sends the
+  // toss first, matches the server id for id, and clears its outbox at the end.
+  "browser-offline-day"];
 
 // Walks that need no database, run by `pnpm smoke` instead. Named here only so
 // the completeness check below knows they are accounted for.

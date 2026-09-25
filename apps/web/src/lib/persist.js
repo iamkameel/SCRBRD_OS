@@ -160,6 +160,23 @@ export async function clearMatch(matchId) {
   try { await (await backend()).del(matchKey(matchId)); return true; } catch { return false; }
 }
 
+/**
+ * Keep a pad's log that is about to be replaced by the server's, beside it
+ * rather than over it (SCRBRD-075: the incoming side of a handover takes the
+ * server's log, and anything this device had that the server does not must
+ * not be lost with it). Never read back automatically: it is evidence for a
+ * person reconciling two logs, not a second truth.
+ */
+export async function saveAside(matchId, snapshot) {
+  if (!matchId) return false;
+  try {
+    await (await backend()).put(`aside:${matchId}:${Date.now()}`, { ...snapshot, matchId, savedAt: Date.now() });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Every match this device has a saved log for, newest first. */
 export async function listMatches() {
   try {

@@ -15,6 +15,7 @@ import { EXPECTED, LEDGER_READER, missingMigrations, refusalMessage, schemaRefus
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 let passes = 0, fails = 0;
+/** @param {string} label @param {unknown} cond @param {string} [detail] */
 const ok = (label, cond, detail = "") => {
   console.log(`${cond ? "✓" : "✗"} ${label}${cond || !detail ? "" : `\n    ${detail}`}`);
   if (cond) passes++; else fails++;
@@ -48,7 +49,8 @@ ok("a gap is named, in migration order",
 ok("a complete ledger produces no refusal", refusalMessage([], { expected: exp }) === null);
 
 // ── The message an operator acts on ──────────────────────────────
-const msg = refusalMessage(["24_amend_request.sql", "25_disciplinary_record.sql"]);
+// "?? ''" below: refusalMessage() answers null only for nothing missing.
+const msg = refusalMessage(["24_amend_request.sql", "25_disciplinary_record.sql"]) ?? "";
 ok("the refusal says it refuses", /Refusing to start/.test(msg ?? ""));
 ok("the refusal names every missing file",
    msg.includes("missing:  24_amend_request.sql") && msg.includes("missing:  25_disciplinary_record.sql"));
@@ -57,20 +59,21 @@ ok("the refusal names each paste, in order",
 ok("the refusal points at DEPLOYING.md's procedure and says to redeploy",
    msg.includes('DEPLOYING.md') && msg.includes('"The procedure"') && /redeploy/.test(msg));
 
-const blind = refusalMessage([], { ledgerUnreadable: true });
+const blind = refusalMessage([], { ledgerUnreadable: true }) ?? "";
 ok("a database without db/29 is refused, not waved through", /Refusing to start/.test(blind ?? ""));
 ok("…and told how to find where it is", blind.includes("SELECT name FROM schema_migration ORDER BY name") && blind.includes(LEDGER_READER));
 
 // ── schemaRefusal() over a fake pool ─────────────────────────────
-const pool = (rowsOrError) => ({
+const pool = (/** @type {string[] | Error} */ rowsOrError) => ({
   query: async () => { if (rowsOrError instanceof Error) throw rowsOrError; return { rows: rowsOrError.map((name) => ({ name })) }; },
 });
-const err = (code) => Object.assign(new Error(code), { code });
+const err = (/** @type {string} */ code) => Object.assign(new Error(code), { code });
 ok("complete → starts", (await schemaRefusal(pool(exp), exp)) === null);
 ok("ahead → starts", (await schemaRefusal(pool([...exp, "04_future.sql"]), exp)) === null);
 ok("behind → refuses, naming the gap", /missing:  02_c\.sql/.test((await schemaRefusal(pool(["00_a.sql", "01_b.sql", "03_d.sql"]), exp)) ?? ""));
 ok("an empty ledger → refuses everything", ((await schemaRefusal(pool([]), exp)) ?? "").split("missing:").length - 1 === exp.length);
 ok("no ledger function (42883) → refuses", /cannot say which migrations/.test((await schemaRefusal(pool(err("42883")), exp)) ?? ""));
+/** @type {any} */             // what schemaRefusal threw
 let thrown = null;
 try { await schemaRefusal(pool(err("08006")), exp); } catch (e) { thrown = e; }
 ok("any other error is thrown, never read as 'current'", thrown?.code === "08006");

@@ -10,8 +10,9 @@ import { createDataClient } from "./data-client.mjs";
 import { signToken } from "../auth/auth.mjs";
 
 let pass = 0, fail = 0;
+/** @param {string} n @param {unknown} c */
 const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
-const group = t => console.log("\n" + t);
+const group = (/** @type {string} */ t) => console.log("\n" + t);
 const SECRET = "read-test-secret";
 
 // Fake pool/connection recording every statement.
@@ -21,10 +22,15 @@ const SECRET = "read-test-secret";
 // answered the gate with "no rows" would refuse half of them for a reason none
 // of them is asking about. Group A-modules below overrides it deliberately,
 // which is the only place the answer should be interesting.
+/**
+ * @param {Record<string, any[]>} [rowsByPattern]  SQL fragment → the rows to answer with
+ * @param {{ moduleOn?: boolean }} [opts]
+ */
 function fakePool(rowsByPattern = {}, { moduleOn = true } = {}) {
+  /** @type {{ text: string, params: any[] | undefined }[]} */
   const log = [];
   const client = {
-    query: async (text, params) => {
+    query: async (/** @type {string} */ text, /** @type {any[] | undefined} */ params) => {
       log.push({ text: text.trim().replace(/\s+/g, " "), params });
       if (text.includes("my_feature_enabled")) return { rows: [{ on: moduleOn }] };
       const hit = Object.entries(rowsByPattern).find(([pat]) => text.includes(pat));
@@ -33,7 +39,9 @@ function fakePool(rowsByPattern = {}, { moduleOn = true } = {}) {
     release: () => { client.released = true; },
     released: false,
   };
-  return { pool: { connect: async () => client }, client, log };
+  // A fake pool: connect() is all runAsPrincipal() asks of one.
+  const pool = /** @type {import("../api-types.mjs").Pool} */ (/** @type {unknown} */ ({ connect: async () => client }));
+  return { pool, client, log };
 }
 // A bearer for a given person. The token names WHO, never what they may do —
 // which is why the tests below that once varied the role now vary the user id
@@ -50,7 +58,7 @@ group("A. Reads run under a principal transaction");
   const texts = log.map(l => l.text);
   ok("wrapped in BEGIN/COMMIT", texts.includes("BEGIN") && texts.includes("COMMIT"));
   ok("sets identity before querying", log.findIndex(l => l.text.includes("app.user_id")) < log.findIndex(l => l.text.includes("from match")));
-  ok("app.user_id is the token's subject", log.find(l => l.text.includes("app.user_id")).params[0] === "uSpectator");
+  ok("app.user_id is the token's subject", log.find(l => l.text.includes("app.user_id"))?.params?.[0] === "uSpectator");
   // The session states identity and nothing else; authority is looked up.
   ok("no app.role is set at all", !log.some(l => l.text.includes("app.role")));
   ok("all config transaction-local", log.filter(l => l.text.includes("set_config")).every(l => /, true\)/.test(l.text)));
@@ -73,8 +81,8 @@ group("A. The handler does no RBAC of its own");
   const med  = fakePool({ "injury_masked": [{ id: "i1", notes: "clinical" }] });
   await readResource(spec.pool, SECRET, bearer("uSpectator"), "injuries");
   await readResource(med.pool,  SECRET, bearer("uMedical"),   "injuries");
-  const specQ = spec.log.find(l => l.text.includes("injury_masked")).text;
-  const medQ  = med.log.find(l => l.text.includes("injury_masked")).text;
+  const specQ = spec.log.find(l => l.text.includes("injury_masked"))?.text;
+  const medQ  = med.log.find(l => l.text.includes("injury_masked"))?.text;
   ok("identical SQL for both callers", specQ === medQ);
   // (In the fake, RLS/mask is simulated by the canned rows; live DB does the real work.)
   ok("no role branching in handler code", true);
@@ -87,6 +95,7 @@ group("A. The module gate refuses before the query runs");
   // would be a lie — so the assertion is that the resource's OWN QUERY never
   // executed, not that the caller received nothing.
   const off = fakePool({ "injury_masked": [{ id: "i1", notes: "clinical" }] }, { moduleOn: false });
+  /** @type {any} */            // what readResource threw
   let refused = null;
   try { await readResource(off.pool, SECRET, bearer("uMedical"), "injuries"); }
   catch (e) { refused = e; }
@@ -113,14 +122,14 @@ group("A. Params + errors");
 {
   const { pool, log } = fakePool({ "match_live_score": [{ match_id: "m3", runs: 142 }] });
   const rows = await readResource(pool, SECRET, bearer("uCoach"), "live_score", { matchId: "m3" });
-  ok("live_score passes matchId param", log.find(l => l.text.includes("match_live_score")).params[0] === "m3" && rows[0].runs === 142);
+  ok("live_score passes matchId param", log.find(l => l.text.includes("match_live_score"))?.params?.[0] === "m3" && rows[0].runs === 142);
 
   let threw = false;
-  try { await readResource(pool, SECRET, bearer("uCoach"), "live_score", {}); } catch (e) { threw = /missing_param/.test(e.message); }
+  try { await readResource(pool, SECRET, bearer("uCoach"), "live_score", {}); } catch (/** @type {any} */ e) { threw = /missing_param/.test(e.message); }
   ok("missing required param → 400-class error", threw);
 
   let threw2 = false;
-  try { await readResource(pool, SECRET, bearer("uCoach"), "nonsense"); } catch (e) { threw2 = e.status === 404; }
+  try { await readResource(pool, SECRET, bearer("uCoach"), "nonsense"); } catch (/** @type {any} */ e) { threw2 = e.status === 404; }
   ok("unknown resource → 404", threw2);
 
   let threw3 = false;
@@ -130,17 +139,46 @@ group("A. Params + errors");
   ok("liveResources lists wired reads", liveResources().includes("matches") && liveResources().includes("injuries"));
 }
 
+group("A. career_by_season (SCRBRD-086): the career read's scope, one grain finer");
+{
+  const t = READ_QUERIES.career_by_season.text;
+  ok("reads the three season views db/44 defines",
+     ["player_batting_by_season", "player_bowling_by_season", "player_dismissals_by_season"].every((v) => t.includes(v)));
+  // The views are security_invoker over ball_event_live; a read that went
+  // round them to the log would be a second definition of the figures.
+  ok("never the ball log, nor the lifetime views", !/\bball_event\b|ball_event_live|_career\b|player_dismissals\b/.test(t));
+  ok("names a player only through the policed player table", /join player p on p\.id = player_id/.test(t));
+  ok("says which season is current from the same rule, not a client's clock",
+     /school_season_of\(now\(\)\)/.test(t) && /current_season/.test(t));
+
+  const { pool, log } = fakePool({ "player_batting_by_season": [{ player_id: "p1", season: "2026" }] });
+  const rows = await readResource(pool, SECRET, bearer("uCoach"), "career_by_season", { season: "2026" });
+  const q1 = log.filter((l) => l.text.includes("player_batting_by_season")).at(-1);
+  ok("?season= is a parameter, never spliced into the SQL", q1?.params?.[0] === "2026" && !q1?.text.includes("'2026'") && rows.length === 1);
+  await readResource(pool, SECRET, bearer("uCoach"), "career_by_season");
+  const q2 = log.filter((l) => l.text.includes("player_batting_by_season")).at(-1);
+  ok("no season is null — every season", q2?.params?.length === 1 && q2?.params?.[0] === null);
+  ok("no module gates it, as none gates career", !log.some((l) => l.text.includes("my_feature_enabled")));
+
+  ok("the fixture list files a match by the same function the season views do",
+     /school_season_of\(m\.starts_at\) as season/.test(READ_QUERIES.matches.text));
+  ok("`career` itself is untouched: no season anywhere in it", !/season/.test(READ_QUERIES.career.text));
+}
+
 // ── B. Client accessor ──
 group("B. Feature flags: mock vs live per resource");
 {
+  /** @type {string[]} */
   const mockCalls = [];
-  const mockSource = (r, p) => { mockCalls.push(r); return [{ mock: r }]; };
+  const mockSource = (/** @type {string} */ r, /** @type {unknown} */ _p) => { mockCalls.push(r); return [{ mock: r }]; };
+  /** @type {any} */            // the request the fake fetch saw
   let fetched = null;
-  const fetchImpl = async (url, opts) => { fetched = { url, opts }; return { ok: true, json: async () => ({ rows: [{ live: true }] }) }; };
+  const fetchImpl = async (/** @type {string} */ url, /** @type {unknown} */ opts) => { fetched = { url, opts }; return { ok: true, json: async () => ({ rows: [{ live: true }] }) }; };
 
   const dc = createDataClient({
     apiBase: "https://api.test", getToken: () => "TOKEN",
-    mockSource, fetchImpl,
+    // A fake fetch answers only what getData reads: ok, status, json().
+    mockSource, fetchImpl: /** @type {any} */ (fetchImpl),
     flags: { matches: true, injuries: false },
   });
 
@@ -156,9 +194,10 @@ group("B. Feature flags: mock vs live per resource");
 
 group("B. Params + runtime flip + shapes");
 {
+  /** @type {string | null} */
   let url = null;
-  const fetchImpl = async (u) => { url = u; return { ok: true, json: async () => [{ bare: 1 }] }; };
-  const dc = createDataClient({ apiBase: "https://api.test", getToken: () => "T", mockSource: () => [], fetchImpl, flags: { live_score: true } });
+  const fetchImpl = async (/** @type {string} */ u) => { url = u; return { ok: true, json: async () => [{ bare: 1 }] }; };
+  const dc = createDataClient({ apiBase: "https://api.test", getToken: () => "T", mockSource: () => [], fetchImpl: /** @type {any} */ (fetchImpl), flags: { live_score: true } });
   await dc.getData("live_score", { matchId: "m3", empty: "" });
   ok("params serialised, blanks dropped", url === "https://api.test/read/live_score?matchId=m3");
   const rows = await dc.getData("live_score", { matchId: "m3" });
@@ -172,14 +211,15 @@ group("B. Params + runtime flip + shapes");
 group("B. Failures never silently fall back to mock");
 {
   const mockSource = () => [{ stale: true }];
+  /** @type {[string, unknown][]} */
   const onErr = [];
   const dc = createDataClient({
     apiBase: "https://api.test", getToken: () => "T", mockSource,
-    fetchImpl: async () => ({ ok: false, status: 401, json: async () => ({}) }),
-    flags: { injuries: true }, onError: (r, e) => onErr.push([r, e.status]),
+    fetchImpl: /** @type {any} */ (async () => ({ ok: false, status: 401, json: async () => ({}) })),
+    flags: { injuries: true }, onError: (r, /** @type {any} */ e) => onErr.push([r, e.status]),
   });
   let threw = false;
-  try { await dc.getData("injuries"); } catch (e) { threw = e.status === 401; }
+  try { await dc.getData("injuries"); } catch (/** @type {any} */ e) { threw = e.status === 401; }
   ok("401 throws (does not return stale mock)", threw);
   ok("error surfaced to telemetry", onErr.length === 1 && onErr[0][1] === 401);
 
@@ -189,7 +229,7 @@ group("B. Failures never silently fall back to mock");
     flags: { matches: true },
   });
   let netThrew = false;
-  try { await dcNet.getData("matches"); } catch (e) { netThrew = e.message === "offline"; }
+  try { await dcNet.getData("matches"); } catch (/** @type {any} */ e) { netThrew = e.message === "offline"; }
   ok("network error propagates (caller handles offline)", netThrew);
 }
 

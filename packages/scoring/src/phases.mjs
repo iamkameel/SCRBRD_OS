@@ -12,6 +12,41 @@
  * codebase. Nothing is stored, so a phase breakdown cannot drift from the
  * scorecard it came from.
  *
+ * THE PHASES ADD UP TO THE INNINGS
+ * ────────────────────────────────
+ * Summed over the three phases, each figure is the fold's own (replay.mjs),
+ * asked the fold's question rather than a look-alike of it:
+ *
+ *   runs      inn.runs, less penalty runs (below). Extras are in, with the
+ *             one-run wide/no-ball penalty added exactly as the fold adds it.
+ *   balls     inn.balls: legal deliveries.
+ *   wickets   inn.wickets: the wickets the batting side lost. A run out is
+ *             one, though it is not the bowler's (chargedToBowler) — a phase
+ *             is the batting side's story. A dismissal a free hit saved is
+ *             not one: the fold decides that once, with standsOnFreeHit(),
+ *             and writes the answer on the log entry as `freeHitSaved`, so
+ *             reading that flag IS asking the fold. A second copy of the
+ *             rule here is how the two came apart (SCRBRD-072). Retired out
+ *             and timed out fall with no ball (SCRBRD-081); the fold files
+ *             them in inn.nonBallWickets with their over, and so do these.
+ *   fours, sixes  the batters' fours and sixes: off the bat, so a no-ball
+ *             hit for four is one, and four byes — off a no-ball or not —
+ *             are not (runsOffBat, SCRBRD-068).
+ *
+ * Every delivery lands in a phase. If more overs were bowled than the innings
+ * now has — the umpires cut it below where it stood — the phases are drawn
+ * over the overs actually bowled, rather than dropping the ones past the end.
+ *
+ * One figure deliberately does not add up: PENALTY RUNS (Law 41). They are
+ * awarded, not scored off a delivery, and the fold records their total
+ * (inn.extras.penalty) but not when they fell, so there is no phase to file
+ * them in. Guessing one would invent a fact; they are left out, and phase
+ * runs sum to inn.runs - inn.extras.penalty.
+ *
+ * Dots have no figure in the fold to agree with. A dot is a legal delivery
+ * worth nothing — a wicket ball included, two byes not — and the matchups read
+ * in services/api/read counts them by the same rule.
+ *
  * WHAT IS NOT HERE, AND WHY
  * ─────────────────────────
  * A "par score" as an absolute number. scrbrd-beta-2's model carries one, and
@@ -25,7 +60,7 @@
  * nothing to be level with. A card that says "14 behind where they were" is
  * worth more than one that says "par: 48" and cannot say why.
  */
-import { isLegal, BALL_TYPE } from "./events.mjs";
+import { isLegal, BALL_TYPE, runsOffBat } from "./events.mjs";
 
 /** @import { Innings } from "./replay.mjs" */
 
@@ -43,15 +78,15 @@ import { isLegal, BALL_TYPE } from "./events.mjs";
  * @property {string} label
  * @property {string} overs          "1-6", or "—" when the innings has no such phase
  * @property {boolean} played
- * @property {number} runs
- * @property {number} wickets
- * @property {number} balls
+ * @property {number} runs           team runs, extras in, penalty runs out
+ * @property {number} wickets        the batting side's, as the fold counts them
+ * @property {number} balls          legal deliveries
  * @property {number | null} runRate
  * @property {number} dots
- * @property {number} fours
- * @property {number} sixes
+ * @property {number} fours          off the bat, no-balls included
+ * @property {number} sixes          off the bat, no-balls included
  * @property {number | null} dotPct
- * @property {number | null} boundaryPct
+ * @property {number | null} boundaryPct  fours and sixes over legal deliveries
  * @property {number | null} strikeRotationPct
  * @property {number} assessed
  * @property {number} middled
@@ -165,12 +200,21 @@ const EMPTY = () => ({
 export function derivePhases(inn, { opposing = null } = {}) {
   // Number.isFinite proves inn is there and its overs a number; it is no guard to the checker.
   const overs = Number.isFinite(inn?.overs) ? /** @type {{overs: number}} */ (inn).overs : 20;
-  const spans = phasesFor(overs);
+  const log = inn?.ballLog ?? [];
+  // Wickets that fell with no delivery — retired out, timed out (SCRBRD-081).
+  // They are in the fold's wickets and in no ball, so they are filed by the
+  // over they fell in, which the fold records beside them.
+  const offBall = inn?.nonBallWickets ?? [];
+  // The overs actually reached. A revision below where the innings stood
+  // would otherwise leave its last overs outside every span, and those balls
+  // in no phase; the fold counts every ball it folds, so must this.
+  const reached = [...log, ...offBall].reduce((n, b) => Math.max(n, (b.over ?? 0) + 1), 0);
+  const spans = phasesFor(Math.max(overs, reached));
   if (!spans) return null;
 
   const buckets = { powerplay: EMPTY(), middle: EMPTY(), death: EMPTY() };
 
-  for (const b of inn?.ballLog ?? []) {
+  for (const b of log) {
     // `over` is 0-indexed on a log entry; the spans are the over numbers a
     // human says out loud. Off-by-one here would file every ball of the sixth
     // over into the middle, which is a wrong answer that looks plausible.
@@ -184,16 +228,30 @@ export function derivePhases(inn, { opposing = null } = {}) {
     const value = Number.isFinite(b.value) ? /** @type {number} */ (b.value) : 0;   // isFinite proves it
     // Team runs, not the batter's: an illegal delivery costs one before
     // anything run off it. Same arithmetic as the fold in replay.mjs, so the
-    // phases always add up to the innings total.
+    // phases add up to the innings total (penalty runs apart — see the top).
     acc.runs += value + (legal ? 0 : 1);
     if (legal) {
       acc.balls += 1;
       if (value === 0) acc.dots += 1;
       if (value === 1 || value === 3) acc.singles += 1;
-      if (value === 4) acc.fours += 1;
-      if (value === 6) acc.sixes += 1;
     }
-    if (b.dismissal) acc.wickets += 1;
+    // Boundaries are the batters' fours and sixes, credited where the fold
+    // credits them: off the bat, which a no-ball can be and a bye cannot.
+    // Counting any legal ball worth four called four byes a boundary and
+    // missed a no-ball struck for four, so the phases and the scorecard's
+    // 4s and 6s columns disagreed.
+    // Byes or leg byes off a no-ball are not (SCRBRD-068): runsOffBat() is
+    // the fold's own answer to "whose were they".
+    if (type === BALL_TYPE.RUN || type === BALL_TYPE.NO_BALL) {
+      const offBat = runsOffBat(b);
+      if (offBat === 4) acc.fours += 1;
+      if (offBat === 6) acc.sixes += 1;
+    }
+    // A wicket is a W ball the fold let stand. Not "a ball with a dismissal
+    // on it": a free hit saves the batter from the bowler's dismissals, the
+    // fold says so on the entry (`freeHitSaved`), and a phase that counted
+    // the ball anyway had a wicket the innings did not. SCRBRD-072.
+    if (type === BALL_TYPE.WICKET && !b.freeHitSaved) acc.wickets += 1;
 
     // Control, which runs do not measure. An edge for four and a cover drive
     // for four are the same row on a scorecard and opposite events in a net.
@@ -205,6 +263,12 @@ export function derivePhases(inn, { opposing = null } = {}) {
       // different things to work on.
       if (b.contact === "beat") acc.beaten += 1;
     }
+  }
+
+  for (const w of offBall) {
+    const overNo = (w.over ?? 0) + 1;
+    const name = PHASE_NAMES.find((p) => spans[p] && overNo >= spans[p].from && overNo <= spans[p].to);
+    if (name) buckets[name].wickets += 1;
   }
 
   /** @param {number} n  @param {number} d */

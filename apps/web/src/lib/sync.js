@@ -1,9 +1,9 @@
 /**
  * SCRBRD — the scorer's connection to the server.
  *
- * Claims the match, then runs a durable outbox: every ball is written to
- * IndexedDB before it counts as recorded, sent when there is a connection,
- * and retried with backoff when there is not.
+ * Runs a durable outbox: every ball is written to IndexedDB before it counts
+ * as recorded, sent when this device holds the scoring token and has a
+ * connection, and retried when it does not.
  *
  * WHAT THIS MODULE PROMISES, AND WHAT IT DOES NOT
  * ──────────────────────────────────────────────
@@ -24,113 +24,446 @@
  * A match that is fully synced has an empty outbox and a full log; a phone that
  * has been offline all afternoon has both. Losing either one loses something
  * different.
+ *
+ * THE OUTBOX EXISTS BEFORE THE TOKEN (SCRBRD-078)
+ * ──────────────────────────────────────────────
+ * It used to be created only once a claim succeeded, and the claim ran once,
+ * on mount. A pad that opened with no signal therefore recorded into its log
+ * and nowhere else, and never tried again when the signal came back. Now the
+ * outbox opens with the pad, UNATTACHED: everything recorded is queued on disk
+ * at once, stamped with the token generation this device last held, and sent
+ * only after the device holds the token again — which it keeps trying for,
+ * on `online` and on a backing-off timer, for as long as the reason is the
+ * network. A refusal (someone else is scoring, a handover is waiting, the
+ * match is finished, two logs have forked) is said in words and not asked
+ * again on a timer. The rules for attaching are packages/sync attach.mjs.
+ *
+ * THE LEASE (SCRBRD-078)
+ * ─────────────────────
+ * The server keeps a device's lease for 90 s after the last write it took.
+ * A phone that was offline for longer sent everything it had queued straight
+ * into quarantine — the lease check failed for the whole batch — and was told
+ * "Sent". Every flush now passes the gate below first: a lease not known to
+ * be fresh is checked, a lapsed lease that is still this device's (nobody has
+ * claimed since: the generation has not moved) is taken back and the queue
+ * goes out under it, and anything else is a stop, in words.
+ *
+ * THE SESSION (SCRBRD-078)
+ * ───────────────────────
+ * The API token lives in memory only (lib/api.js says why) and a reload
+ * loses it; it also expires. A pad that is signed out says so — "sign in to
+ * send 5 balls" — keeps everything queued, and never falls back to anything
+ * that is not the server.
  */
-import { SyncEngine, indexedDbStorage } from "@scrbrd/sync";
+import { SyncEngine, indexedDbStorage, tryAttach, tossDecision, RETRY } from "@scrbrd/sync";
+import { fromRow, tossFromRow } from "@scrbrd/scoring";
 import { api, signedIn } from "./api.js";
 import { deviceId } from "./device.js";
-import { sessionState } from "./handover.js";
 
 const RETRY_MS = 4000;
+/** Backoff for an attach that failed for want of the network, capped. */
+const ATTACH_BACKOFF = [2000, 5000, 15000, 30000, 60000];
+/** How often a signed-out pad with no server asks again whether there is one. */
+const REACH_MS = 5000;
+/**
+ * How long after the server last extended the lease the gate trusts it. The
+ * lease is 90 s. Any loss of signal, or a request that got no answer, ends
+ * the trust at once.
+ */
+const LEASE_TRUST_MS = 45000;
 
 /**
- * Start syncing a match, or explain why not.
+ * What went wrong with a request, as a reason the pad can say.
+ * `api()` throws ApiError on a non-2xx and the fetch's own error when there
+ * was no answer at all (no signal, a timeout).
+ * @param {any} e
+ * @returns {string}
+ */
+export function failureReason(e) {
+  if (e?.name === "ApiError") {
+    if (e.status === 401) return "session_expired";
+    if (e.status >= 500) return "server_error";
+    return e.code || `http_${e.status}`;
+  }
+  if (e?.message === "session_expired") return "session_expired";
+  return "unreachable";
+}
+
+const online = () => (typeof navigator === "undefined" ? true : navigator.onLine !== false);
+
+/**
+ * One pad's connection to the server: its outbox, and the token.
  *
- * Returns `{ ok: false, reason }` rather than throwing, because none of these
- * outcomes should stop someone scoring. A scorer who cannot reach the server,
- * or whose colleague already holds the token, still needs the pad to work —
- * they will hand the log over afterwards. Refusing to open the scorer because
- * sync is unavailable would be exactly the wrong failure.
+ * `hooks.padLog()` is the pad's log as it is now; `hooks.adopt(log)` replaces
+ * it with the server's; `hooks.restore(orphans)` puts back queued events its
+ * saved log lost; `hooks.followToss(serverToss)` re-opens the first innings
+ * from the server's toss; `hooks.onStatus(status)` is told everything the pad
+ * shows. None of them may throw.
  */
-export async function startSync({ matchId, userId, onChange }) {
-  if (!matchId) return { ok: false, reason: "no_match" };
-  if (!signedIn()) return { ok: false, reason: "not_signed_in" };
-
-  // A handover in progress: this device is not the holder, and the way in is
-  // the code. The database refuses the plain claim below in both states and
-  // names them (db/28, SCRBRD-059) — this read only saves the refused round
-  // trip, and returns the same reasons, so either answer lands the scorer on
-  // the same "take over" screen. Best effort: a read that fails falls through
-  // to the claim, which is now what enforces it.
-  const priorState = await sessionState(matchId);
-  if (priorState === "handover_pending" || priorState === "verifying") {
-    return { ok: false, reason: priorState };
-  }
-
-  let claim;
-  try {
-    claim = await api(`/api/matches/${matchId}/session/claim`, {
-      method: "POST", body: { device: deviceId() },
-    });
-  } catch (e) {
-    return { ok: false, reason: e.code || "unreachable" };
-  }
-  // A refusal here is an authorization answer from the database, not advice.
-  // `lease_active` means a colleague is scoring on another device right now —
-  // taking the token from them is a handover, not a claim. `handover_pending`
-  // and `verifying` (db/28) mean one is already under way: enter the code.
-  // `match_complete` (db/33) means the result is declared and scoring has
-  // closed for everyone — the pad stays usable, nothing is sent, and the
-  // scorer is told a correction is an amendment request (engine.jsx).
-  if (!claim?.ok) return { ok: false, reason: claim?.reason || "claim_refused" };
-
-  return attachEngine({ matchId, userId, epoch: claim.epoch, onChange });
-}
-
-/**
- * The takeover half of a completed handover reaches here with an epoch it
- * already has — `verifyTakeover`'s own response, the moment the token
- * transferred — and must NOT go back through `startSync`'s plain claim to
- * get it. `scoring_claim()`'s guard only refuses a device that is NOT the
- * current holder; called by the device that just legitimately became the
- * holder, it falls through to its unconditional UPDATE and bumps the epoch
- * again for no reason — a device re-affirming what it already correctly
- * holds should not cost a generation. Found by the handover browser walk:
- * the epoch after a takeover was two ahead of the arm, not one.
- */
-export function resumeSync({ matchId, userId, epoch, onChange }) {
-  return attachEngine({ matchId, userId, epoch, onChange });
-}
-
-function attachEngine({ matchId, userId, epoch, onChange }) {
-  const engine = new SyncEngine({
-    matchId, deviceId: deviceId(), scorerId: userId, epoch, innings: 0,
-    storage: indexedDbStorage({ matchId, deviceId: deviceId() }),
-    isOnline: () => (typeof navigator === "undefined" ? true : navigator.onLine !== false),
-    transport: (id, batch) => api(`/api/matches/${id}/events`, { method: "POST", body: { events: batch } }),
-    onChange,
-  });
-
-  // Rehydrate anything a previous session recorded and did not manage to send.
-  // This is the reason the outbox is on disk at all: the tab that recorded
-  // those balls may have been killed by the OS an hour ago.
-  return engine.init().then(({ recovered }) => {
-    // Two triggers, because neither is reliable alone. `online` fires the
-    // moment the OS thinks there is a network, which is often before there
-    // actually is one; the timer covers the case where it lies, and the case
-    // where the connection came back without an event.
-    const onOnline = () => { engine.sync().catch(() => {}); };
-    if (typeof window !== "undefined") window.addEventListener("online", onOnline);
-    const timer = setInterval(() => {
-      if (engine.pendingCount) engine.sync().catch(() => {});
-    }, RETRY_MS);
-
-    return {
-      ok: true,
-      epoch,
-      recovered,
-      engine,
-      /** Queue one scoring event. Resolves as soon as it is DURABLE, not sent. */
-      record: (event) => engine.record(event),
-      /** Which event ids the server has confirmed — the undo boundary reads this. */
-      syncedIds: () => new Set(engine.acked.map((e) => e.idempotencyKey)),
-      pending: () => engine.pendingCount,
-      /** Handover is only safe with an empty outbox (§ the handover spec). */
-      safeToHandOver: () => engine.safeToHandOver,
-      flush: () => engine.sync(),
-      stop() {
-        clearInterval(timer);
-        if (typeof window !== "undefined") window.removeEventListener("online", onOnline);
-      },
+export class PadSync {
+  /**
+   * @param {object} args
+   * @param {string} args.matchId
+   * @param {string|undefined} args.userId
+   * @param {"open"|"restore"} args.intent
+   * @param {{padLog: () => any[][], adopt: (log: any[][]) => boolean, restore: (orphans: any[]) => void,
+   *          followToss: (toss: any) => void, onStatus: (s: any) => void}} args.hooks
+   */
+  constructor({ matchId, userId, intent, hooks }) {
+    this.matchId = matchId;
+    this.userId = userId;
+    this.intent = intent;
+    this.hooks = hooks;
+    /** @type {SyncEngine|null} */
+    this.engine = null;
+    this.stopped = false;
+    /** Why the device is not attached, or why it stopped sending: a reason the pad says in words. */
+    this.reason = null;
+    /** A stop no timer lifts: a person acts (refusals, a fork, a toss conflict). */
+    this.halted = false;
+    this.attempt = 0;
+    this.leaseAt = 0;
+    this.attaching = null;
+    this.conflict = null;
+    this.timer = null;
+    this.retryTimer = null;
+    /**
+     * Whether the server answered the last time a signed-out pad asked
+     * (/api/health, which needs no session): null before it has asked.
+     * `navigator.onLine` alone is not the signal: it is true on a phone with
+     * a connection that reaches nothing (a ground's weak signal, a captive
+     * portal) and, under some browsers, in a tab its service worker serves.
+     * A pad that is signed out cannot learn it from a failed claim — it never
+     * makes one — so it asks, and offers a sign-in only when the server is
+     * there to take it.
+     * @type {boolean|null}
+     */
+    this.reachable = null;
+    this.onOnline = () => {
+      if (this.stopped) return;
+      this.reachable = null;
+      if (this.engine?.attached) { if (!this.halted) this.engine.sync().catch(() => {}); }
+      else if (!this.halted) this.attach();
+      this.status();
     };
-  });
+    // Losing the signal changes what the pad can offer (no sign-in without
+    // it), so the pad is told. And the lease is no longer known to be live —
+    // the server lets it lapse 90 s after the last write it took — so the
+    // next flush asks before it sends, however soon the signal comes back.
+    this.onOffline = () => {
+      if (this.stopped) return;
+      this.leaseAt = 0;
+      if (!this.engine?.attached && !this.halted && this.reason !== "not_signed_in" && this.reason !== "session_expired") this.reason = "offline";
+      this.status();
+    };
+  }
+
+  /** Open the outbox (unattached) from disk, then try to attach. */
+  async open() {
+    const device = deviceId();
+    const engine = new SyncEngine({
+      matchId: this.matchId, deviceId: device, scorerId: this.userId ?? "", epoch: null, innings: 0,
+      storage: indexedDbStorage({ matchId: this.matchId, deviceId: device }),
+      isOnline: online,
+      transport: (id, batch) => this.send(id, batch),
+      gate: () => this.gate(),
+      settleToss: (toss) => this.settleToss(toss),
+      onChange: () => this.status(),
+    });
+    await engine.init();
+    if (this.stopped) return null;
+    this.engine = engine;
+    if (typeof window !== "undefined") {
+      window.addEventListener("online", this.onOnline);
+      window.addEventListener("offline", this.onOffline);
+    }
+    this.timer = setInterval(() => {
+      if (this.stopped || this.halted || !engine.attached) return;
+      if (engine.pendingCount || engine.toss) engine.sync().catch(() => {});
+    }, RETRY_MS);
+    this.status();
+    return engine;
+  }
+
+  /**
+   * Try to take the token and attach. Safe to call at any time: one attempt
+   * runs at once, an attached pad does nothing, and a failure for want of
+   * the network schedules the next try.
+   * @param {"open"|"restore"} [intent]  a person's "score on this device" passes "open"
+   */
+  attach(intent) {
+    if (intent) { this.intent = intent; this.halted = false; }
+    if (this.stopped || !this.engine || this.engine.attached || this.attaching) return this.attaching;
+    this.attaching = this._attach().finally(() => { this.attaching = null; });
+    return this.attaching;
+  }
+
+  async _attach() {
+    const engine = /** @type {SyncEngine} */ (this.engine);
+    clearTimeout(this.retryTimer);
+    if (!signedIn()) { this.reason = "not_signed_in"; this.halted = false; this.status(); await this.checkReach(); return; }
+    if (!online()) { this.reason = "offline"; this.status(); return; }
+    this.reason = "attaching"; this.status();
+    let r;
+    try {
+      r = await tryAttach({
+        engine, intent: this.intent,
+        server: {
+          probe: (epoch) => this.probe(epoch),
+          log: () => this.serverLog(),
+          claim: () => api(`/api/matches/${this.matchId}/session/claim`, { method: "POST", body: { device: deviceId() } }),
+        },
+        padLog: () => this.hooks.padLog(),
+        adopt: (log) => this.hooks.adopt(log),
+        restore: (orphans) => this.hooks.restore(orphans),
+      });
+    } catch (e) {
+      r = { ok: false, reason: failureReason(e) };
+    }
+    if (this.stopped) return;
+    this.lastAttach = r;
+    if (r.ok) {
+      this.reason = null; this.halted = false; this.attempt = 0;
+      this.leaseAt = Date.now();
+      this.status();
+      engine.sync().catch(() => {});
+      return;
+    }
+    this.reason = r.reason;
+    if (RETRY.has(r.reason)) {
+      this.halted = false;
+      const wait = ATTACH_BACKOFF[Math.min(this.attempt, ATTACH_BACKOFF.length - 1)];
+      this.attempt += 1;
+      this.retryTimer = setTimeout(() => this.attach(), wait);
+    } else {
+      // An answer a person acts on — a refusal, or a session that has ended
+      // (only a sign-in, which reopens the pad, changes that).
+      this.halted = true;
+    }
+    this.status();
+  }
+
+  /**
+   * Signed out: is the server there? Asked of /api/health, and asked again
+   * every REACH_MS for as long as it is not (one small unauthenticated GET).
+   * The pad then says "no signal" rather than offering a sign-in that cannot
+   * reach anyone, and offers it the moment the server answers. A sign-in
+   * reopens the pad, which ends this.
+   */
+  async checkReach() {
+    if (!online()) { this.reachable = false; this.status(); return; }
+    let ok;
+    try { await api("/api/health", { timeoutMs: 3000 }); ok = true; } catch { ok = false; }
+    if (this.stopped || signedIn()) return;
+    this.reachable = ok;
+    this.status();
+    if (!ok) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = setTimeout(() => { if (!this.stopped && !signedIn()) this.checkReach(); }, REACH_MS);
+    }
+  }
+
+  /**
+   * The session as the server has it, changing nothing: the heartbeat, which
+   * refreshes only a live lease this device already holds.
+   * @param {number|null} epoch
+   */
+  async probe(epoch) {
+    const r = await api(`/api/matches/${this.matchId}/session/heartbeat`, {
+      method: "POST", body: { device: deviceId(), epoch: epoch ?? 0 },
+    });
+    return { ok: !!r?.ok, epoch: r?.epoch ?? null, state: r?.state ?? null, reason: r?.reason ?? null };
+  }
+
+  /** The server's log for this match, as events, in its order. */
+  async serverLog() {
+    const r = await api(`/api/matches/${this.matchId}/events`);
+    return (r?.events ?? []).map(fromRow);
+  }
+
+  /**
+   * The gate every flush passes (SCRBRD-078): is this device's lease live,
+   * and if it lapsed, is the token still this device's to take back?
+   */
+  async gate() {
+    const engine = /** @type {SyncEngine} */ (this.engine);
+    if (Date.now() - this.leaseAt < LEASE_TRUST_MS) return { ok: true };
+    let hb;
+    try { hb = await this.probe(engine.epoch); }
+    catch (e) { throw new Error(failureReason(e), { cause: e }); }
+    if (hb.ok) { this.leaseAt = Date.now(); return { ok: true }; }
+    if (hb.reason === "match_complete") return this.stop_("match_complete");
+    if (hb.state === "handover_pending" || hb.state === "verifying") return { ok: false, reason: hb.state };
+    if (hb.epoch === engine.epoch && hb.state === "active") {
+      // Lapsed, and nobody has claimed since: the generation has not moved,
+      // so this is still this device's token. Take it back; the queue goes
+      // out under the new generation (the epoch rule in engine.attach).
+      let c;
+      try { c = await api(`/api/matches/${this.matchId}/session/claim`, { method: "POST", body: { device: deviceId() } }); }
+      catch (e) { throw new Error(failureReason(e), { cause: e }); }
+      if (!c?.ok || c.epoch == null) return this.stop_(c?.reason ?? "claim_refused");
+      this.leaseAt = Date.now();
+      return { ok: true, epoch: c.epoch };
+    }
+    // Somebody else holds the token now. Nothing more goes out from here.
+    return this.stop_("token_moved");
+  }
+
+  /**
+   * The token is not this device's to use: stop sending, keep everything
+   * queued, and say why.
+   * @param {string} reason
+   */
+  stop_(reason) {
+    this.halted = true;
+    this.reason = reason;
+    this.engine?.detach(reason);
+    return { ok: /** @type {false} */ (false), reason };
+  }
+
+  /**
+   * One batch to the server. A 401 is a session that has ended (a reload, or
+   * the token's own expiry) and says so; everything the server did not take
+   * as this device's (quarantine) makes the gate ask about the lease next time.
+   * @param {string} id
+   * @param {any[]} batch
+   */
+  async send(id, batch) {
+    let res;
+    try { res = await api(`/api/matches/${id}/events`, { method: "POST", body: { events: batch } }); }
+    catch (e) {
+      const why = failureReason(e);
+      // The session has ended: nothing will send until the scorer signs in
+      // again (which reopens the pad), so the timer stops asking.
+      if (why === "session_expired") { this.reason = "session_expired"; this.halted = true; }
+      // No answer: the lease may have lapsed meanwhile, so it is asked about
+      // before the next try.
+      this.leaseAt = 0;
+      throw new Error(why, { cause: e });
+    }
+    if ((res?.quarantined ?? []).length) this.leaseAt = 0;
+    else if ((res?.accepted ?? []).length) this.leaseAt = Date.now();
+    return res;
+  }
+
+  /**
+   * A toss answered on this pad, settled against the server's before any
+   * event goes out (SCRBRD-075). The rule is tossDecision's.
+   * @param {{wonBy: "home"|"away", decision: "bat"|"bowl"}} mine
+   */
+  async settleToss(mine) {
+    let rows;
+    try { ({ rows } = await api("/api/read/matches")); }
+    catch (e) { throw new Error(failureReason(e), { cause: e }); }
+    const server = tossFromRow((rows ?? []).find((r) => r.id === this.matchId));
+    let serverHasEvents = false;
+    if (!server || server.wonBy !== mine.wonBy || server.decision !== mine.decision) {
+      try { serverHasEvents = (await this.serverLog()).length > 0; }
+      catch (e) { throw new Error(failureReason(e), { cause: e }); }
+    }
+    const d = tossDecision({ mine, server, serverHasEvents, log: this.hooks.padLog() });
+    if (d.action === "settled") return { settled: /** @type {true} */ (true) };
+    if (d.action === "send") {
+      try {
+        await api(`/api/matches/${this.matchId}/toss`, { method: "POST", body: { wonBy: mine.wonBy, decision: mine.decision } });
+        return { settled: /** @type {true} */ (true) };
+      } catch (e) {
+        // Frozen between the read and the write: something reached the
+        // match first. A person settles it; nothing is sent after it.
+        if (e?.status === 409) return this.tossStop({ mine, server: null, serverHasEvents: true }, "toss_locked");
+        throw new Error(failureReason(e), { cause: e });
+      }
+    }
+    if (d.action === "follow") {
+      this.conflict = { mine, server, serverHasEvents, reason: "toss_followed" };
+      this.hooks.followToss(server);
+      this.status();
+      return { settled: /** @type {true} */ (true) };
+    }
+    return this.tossStop({ mine, server, serverHasEvents }, d.reason);
+  }
+
+  /**
+   * Two tosses and no rule to choose: stop sending, keep everything, say so.
+   * @param {{mine: any, server: any, serverHasEvents: boolean}} c
+   * @param {string} reason
+   */
+  tossStop(c, reason) {
+    this.conflict = { ...c, reason };
+    this.halted = true;
+    this.reason = reason;
+    this.status();
+    return { settled: /** @type {false} */ (false), reason };
+  }
+
+  /**
+   * The device now holds the token under this generation without a claim of
+   * its own here: a completed takeover (verifyTakeover's epoch), or the
+   * arming device's cancel (its claim's epoch). What the server has is
+   * marked, so nothing it sent is queued again. `rebase` when what is queued
+   * here is this device's continuation of the server's log — its own cancel,
+   * or a takeover where the server had nothing the pad lacked; not when the
+   * pad took the server's log over its own, where anything queued under an
+   * older token goes to quarantine by the epoch rule (engine.jsx decides).
+   * @param {number} epoch
+   * @param {any[]} [serverEvents]
+   * @param {{rebase?: boolean}} [opts]
+   */
+  async reattach(epoch, serverEvents = [], { rebase = false } = {}) {
+    const engine = this.engine;
+    if (!engine || this.stopped) return;
+    clearTimeout(this.retryTimer);
+    await engine.markSent(serverEvents.map((e) => e?.id).filter((x) => x != null));
+    await engine.attach(epoch, { rebase });
+    this.reason = null; this.halted = false; this.attempt = 0;
+    this.leaseAt = Date.now();
+    this.status();
+    engine.sync().catch(() => {});
+  }
+
+  /** This device handed the match over: it sends nothing more. */
+  handedOver() {
+    this.halted = true;
+    this.reason = "handed_over";
+    this.engine?.detach("handed_over");
+    this.status();
+  }
+
+  /** Tell the pad what to say. */
+  status() {
+    if (this.stopped) return;
+    const e = this.engine;
+    this.hooks.onStatus({
+      open: !!e,
+      attached: !!e?.attached,
+      attaching: this.reason === "attaching",
+      reason: e?.attached ? (e.lastError ?? null) : this.reason,
+      halted: this.halted,
+      // Signed out, "online" also means the server answered (checkReach):
+      // the pad offers a sign-in only then.
+      online: online() && (signedIn() || this.reachable !== false),
+      signedIn: signedIn(),
+      pending: e?.pendingCount ?? 0,
+      pendingList: e ? e.pending.slice() : [],
+      held: e?.heldCount ?? 0,
+      heldList: e ? e.held.slice() : [],
+      heldReason: e?.held?.length ? e.held[e.held.length - 1].reason : null,
+      rejected: e?.rejected?.length ?? 0,
+      syncing: !!e?.syncing,
+      tossPending: !!e?.toss,
+      conflict: this.conflict,
+      reconcile: this.lastAttach?.reconcile ?? null,
+      cleared: !!e?.cleared,
+    });
+  }
+
+  stop() {
+    this.stopped = true;
+    clearInterval(this.timer);
+    clearTimeout(this.retryTimer);
+    if (typeof window !== "undefined") {
+      window.removeEventListener("online", this.onOnline);
+      window.removeEventListener("offline", this.onOffline);
+    }
+  }
 }

@@ -19,7 +19,7 @@
  * THE TWO RESOLUTIONS, AND WHY THERE IS NO THIRD
  * ──────────────────────────────────────────────
  * Discard. The event leaves the pad's log — the same move undo makes for an
- * event that never left the device (undo.mjs: truncation), through the same
+ * event the server never accepted (undo.mjs: HELD), through the same
  * setEvents → saveMatch path — and then the held copy is let go
  * (SyncEngine.discardHeld). Always available, for a refusal and a conflict.
  *
@@ -54,7 +54,7 @@
  * it is in no log to be re-queued from. A copy the server refuses in turn is
  * held under its new key — the count stays, nothing doubles.
  */
-import { deriveInnings, lawsRefusal, REFUSAL_TEXT, DISMISSAL_LABEL } from "@scrbrd/scoring";
+import { deriveInnings, lawsRefusal, undoLast, LOCAL_ONLY, REFUSAL_TEXT, DISMISSAL_LABEL } from "@scrbrd/scoring";
 
 /**
  * An event the server refused or conflicted on, as the engine holds it.
@@ -90,17 +90,18 @@ export function heldFrom(held, key) {
 
 /**
  * Is this event still in the pad's log? A held ball the scorer has since
- * undone (undo truncates an unsynced last event) is not.
+ * undone (undo drops a held event, undo.mjs HELD) is not.
  * @param {PadLog} log
  * @param {string} id
  */
 export const inLog = (log, id) => log.some((evs) => (evs ?? []).some((e) => e?.id === id));
 
 /**
- * The pad's log without these events. A held event never reached the server,
- * so like an unsynced event under undo it simply leaves — no void, which the
- * server would refuse anyway (it has nothing to void). Innings arrays that
- * lose nothing are returned as they were.
+ * The pad's log without these events: the held sheet's discard. A held event
+ * never reached the server, so it simply leaves — no void, which the server
+ * would refuse anyway (it has nothing to void). The same rule undo follows
+ * for one (undo.mjs, HELD; `undoOnPad` below). Innings arrays that lose
+ * nothing are returned as they were.
  * @param {PadLog} log
  * @param {Iterable<string>} ids
  * @returns {PadLog}
@@ -111,6 +112,47 @@ export function withoutEvents(log, ids) {
     if (!(evs ?? []).some((e) => drop.has(e?.id))) return evs;
     return evs.filter((e) => !drop.has(e?.id));
   });
+}
+
+/**
+ * The pad's undo, for the innings in play, asked of the device's outbox.
+ *
+ * Which undo applies is undo.mjs's rule (undoLast), asked with the outbox's
+ * two answers (`boundaryOf`): a held event is DROPPED from wherever it sits —
+ * the server never had it, so there is nothing to void, and a void would be
+ * refused and held in its turn (SCRBRD-071); an event that has never left the
+ * device is TRUNCATED when it is last; anything else is voided.
+ *
+ * What the caller does with the outbox afterwards is named, not implied:
+ *   `withdraw` — the key to take back out of the queue (SyncEngine.withdraw)
+ *     BEFORE the shorter log is saved, or the event is sent anyway and the
+ *     server records a ball the pad no longer shows (SCRBRD-074). Null when
+ *     there is no queue to take it from (LOCAL_ONLY).
+ *   `discard` — the held copy to let go (SyncEngine.discardHeld) once the log
+ *     is saved: the scorer has taken the event off the board with their own
+ *     hand, so it does not linger in the Refused list.
+ *
+ * @param {PadLog} log
+ * @param {number} innings        the innings in play
+ * @param {import("@scrbrd/scoring").OutboxView | null} outbox
+ *   the device's SyncEngine; LOCAL_ONLY for a match with no server behind
+ *   it; null for a live match whose outbox is not attached (every undo a void)
+ * @param {() => string} [mint]  the id for a void (the pad's newEventId). The
+ *   pad offers its outbox only events with ids, so a void without one is
+ *   never sent and the server keeps the ball the pad took back.
+ * @returns {{log: PadLog, action: "truncate"|"drop"|"void"|"none", target: any, discard: string|null, withdraw: string|null}}
+ */
+export function undoOnPad(log, innings, outbox, mint) {
+  const r = undoLast(log[innings] ?? [], { outbox, voidId: mint?.() });
+  if (r.action === "none") return { log, action: r.action, target: r.target, discard: null, withdraw: null };
+  const next = [...log];
+  next[innings] = r.events;
+  const id = r.target?.id ?? null;
+  return {
+    log: next, action: r.action, target: r.target,
+    discard: r.action === "drop" ? id : null,
+    withdraw: r.action === "truncate" && outbox !== LOCAL_ONLY ? id : null,
+  };
 }
 
 /**
@@ -273,22 +315,30 @@ export function describeEvent(ev, inn, find) {
         case "W": {
           const how = /** @type {Record<string, string>} */ (DISMISSAL_LABEL)[ev.dismissal] ?? ev.dismissal ?? "out";
           const who = ev.dismissed ?? ev.striker;
-          return `Wicket — ${who != null ? `${n(who)} ` : ""}${how}${v ? `, ${plural(v, "run")}` : ""}${ev.bowler != null ? ` (bowling: ${n(ev.bowler)})` : ""}`;
+          const end = ev.outAt === "striker_end" ? " at the striker's end" : ev.outAt === "bowler_end" ? " at the bowler's end" : "";
+          return `Wicket — ${who != null ? `${n(who)} ` : ""}${how}${end}${v ? `, ${plural(v, "run")}` : ""}${ev.bowler != null ? ` (bowling: ${n(ev.bowler)})` : ""}`;
         }
         case "Wd": return `Wide${v ? ` + ${plural(v, "run")}` : ""}${face}`;
-        case "Nb": return `No ball${v ? ` + ${plural(v, "run")}` : ""}${face}`;
+        case "Nb": return `No ball${v ? ` + ${ev.nbRuns === "byes" ? plural(v, "bye") : ev.nbRuns === "leg_byes" ? plural(v, "leg bye") : plural(v, "run")}` : ""}${face}`;
         case "B":  return `${plural(v, "bye")}${face}`;
         case "LB": return `${plural(v, "leg bye")}${face}`;
         default:   return `Ball — ${v ? plural(v, "run") : "dot ball"}${face}`;
       }
     }
-    case "bowler":  return `Bowler — ${n(ev.bowler)} to bowl`;
+    case "bowler":  return `Bowler — ${n(ev.bowler)} to bowl${ev.reason ? ` (takes over mid-over: ${ev.reason === "suspended" ? "bowler suspended" : "injury"})` : ""}`;
     case "batters": {
       const who = [ev.striker != null ? `${n(ev.striker)} (on strike)` : null,
                    ev.nonStriker != null ? n(ev.nonStriker) : null].filter(Boolean);
       return `Batters — ${who.length ? who.join(" and ") : "nobody named"}`;
     }
-    case "retire":  return `Retirement — ${n(ev.batter)} (${ev.reason === "out" ? "retired out" : "retired hurt"})`;
+    case "retire": {
+      // SCRBRD-081: marked W, it is a dismissal with no ball.
+      if (ev.type === "W") {
+        const how = ev.dismissal === "timed_out" || ev.reason === "timed_out" ? "timed out" : "retired out";
+        return `Wicket, no ball — ${n(ev.batter)} ${how}`;
+      }
+      return `Retirement — ${n(ev.batter)} (${ev.reason === "out" ? "retired out" : "retired hurt"})`;
+    }
     case "penalty": return `Penalty — ${plural(Number(ev.runs ?? 5), "run")} to the ${ev.toBattingTeam === false ? "fielding" : "batting"} side`;
     case "revision": {
       const parts = [ev.overs != null ? `${ev.overs} overs` : null, ev.target != null ? `target ${ev.target}` : null].filter(Boolean);

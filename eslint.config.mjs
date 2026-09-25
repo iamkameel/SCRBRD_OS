@@ -14,11 +14,13 @@
 import js from "@eslint/js";
 import globals from "globals";
 import reactHooks from "eslint-plugin-react-hooks";
-import { strictList, prefixOf } from "./tools/typecheck.mjs";
+import { strictList, prefixOf, excludedList } from "./tools/typecheck.mjs";
 
 // The typecheck's strict list (tsconfig.json `include`) is also where lint is
-// strictest. One list, so a package that joins one joins both.
+// strictest. One list, so a package that joins one joins both — and a file
+// excluded from one (tsconfig.json `exclude`) is excluded from both.
 const STRICT = strictList().map((g) => `${prefixOf(g)}**`);
+const HOLES = excludedList();
 
 const UNUSED = {
   args: "after-used",
@@ -87,6 +89,7 @@ export default [
 
   {
     files: STRICT,
+    ignores: HOLES,
     rules: {
       "no-unused-vars": ["error", UNUSED],
       "no-useless-assignment": "error",

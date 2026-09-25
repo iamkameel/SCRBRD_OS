@@ -12,7 +12,7 @@
  *   node tools/smoke-quarantine.mjs
  */
 import { spawn } from "node:child_process";
-import { inningsStart, batters, bowler, ball, BALL_TYPE, fromRow, deriveInnings } from "@scrbrd/scoring";
+import { inningsStart, batters, bowler, ball, BALL_TYPE, fromRow, deriveInnings, sealInnings, REFUSAL, REFUSAL_TEXT } from "@scrbrd/scoring";
 
 const PORT = 8886, BASE = `http://127.0.0.1:${PORT}`;
 const MATCH = "77777777-0000-0000-0000-000000000002";
@@ -26,7 +26,8 @@ const PRINCIPAL = "principal@example.invalid";  // scoring.amend.approve — dec
 const PLAIN     = "scorer@example.invalid";     // scoring.edit only — may not decide
 const COACH     = "coach@example.invalid";      // no correction capability over this match
 const DEV_A = "device-quarantine-a", DEV_B = "device-quarantine-b";
-const P = ["aaaaaaaa-0000-0000-0000-000000000001", "aaaaaaaa-0000-0000-0000-000000000002", "aaaaaaaa-0000-0000-0000-000000000003"];
+const P = ["aaaaaaaa-0000-0000-0000-000000000001", "aaaaaaaa-0000-0000-0000-000000000002", "aaaaaaaa-0000-0000-0000-000000000003",
+           "aaaaaaaa-0000-0000-0000-000000000004"];
 
 let pass = 0, fail = 0;
 const ok = (n, c, d = "") => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${d}` : ""); } };
@@ -51,6 +52,11 @@ const post = (token, device, epoch, evs, from = 1) => api(`/api/matches/${MATCH}
   method: "POST", token,
   body: { events: evs.map((payload, i) => ({ epoch, deviceId: device, idempotencyKey: `${device}:${epoch}:${from + i}`,
                                               clientSeq: from + i, clientTs: Date.now(), innings: 0, payload })) },
+});
+/** One event under a key chosen by the caller — a resend keeps the key it was first sent with. */
+const postKeyed = (token, device, epoch, key, payload, clientSeq = 1) => api(`/api/matches/${MATCH}/events`, {
+  method: "POST", token,
+  body: { events: [{ epoch, deviceId: device, idempotencyKey: key, clientSeq, clientTs: Date.now(), innings: 0, payload }] },
 });
 const log = async (token) => ((await api(`/api/matches/${MATCH}/events?since=0`, { token })).body?.events) || [];
 const list = (token) => api(`/api/matches/${MATCH}/quarantine`, { token });
@@ -139,6 +145,102 @@ try {
   ok("the same key with a different body is a conflict, naming the stored seq",
      other.body?.conflicts?.length === 1 && other.body.conflicts[0].seq === released?.seq
      && other.body?.duplicates?.length === 0, JSON.stringify(other.body));
+
+  group("A released ball meets the Laws, like a live one (SCRBRD-071)");
+  // The wicket released above emptied the striker's end, so any ball is
+  // illegal until somebody walks in — and P[0], who was run out, never can.
+  const heldNow = await post(scorer, DEV_A, epoch + 7, [
+    ball({ type: BALL_TYPE.RUN, value: 1, contact: "middle", trajectory: "ground", striker: P[3], nonStriker: P[1], bowler: P[2] }),
+    batters({ striker: P[0] }),
+  ], 20);
+  ok("a ball and a returning batter are held", heldNow.body?.quarantined?.length === 2, JSON.stringify(heldNow.body).slice(0, 200));
+  const keyOf = (n) => `${DEV_A}:${epoch + 7}:${n}`;
+  const rowFor = async (key) => (await list(dos)).body?.rows?.find((r) => r.idempotency_key === key);
+  const early = await rowFor(keyOf(20)), comeback = await rowFor(keyOf(21));
+  const logBefore = (await log(dos)).length;
+  const tooSoon = await resolve(early.id, dos, { accept: true });
+  ok("releasing a ball with nobody at the striker's end is refused, by the Laws",
+     tooSoon.body?.ok === false && tooSoon.body?.reason === "laws_refused" && tooSoon.body?.law === REFUSAL.NEXT_BATTER,
+     JSON.stringify(tooSoon.body));
+  ok("...and says why in words", tooSoon.body?.text === REFUSAL_TEXT.next_batter, tooSoon.body?.text);
+  ok("...nothing was written", (await log(dos)).length === logBefore);
+  ok("...and the ball is still held, for the approver to discard or leave", !(await rowFor(keyOf(20)))?.resolved_at);
+  const outAgain = await resolve(comeback.id, dos, { accept: true });
+  ok("releasing a batter who is already out is refused: batter_already_out",
+     outAgain.body?.reason === "laws_refused" && outAgain.body?.law === REFUSAL.BATTER_ALREADY_OUT
+     && outAgain.body?.text === REFUSAL_TEXT.batter_already_out, JSON.stringify(outAgain.body));
+  const discard = await resolve(comeback.id, dos, { accept: false, note: "he was run out" });
+  ok("...which the approver discards", discard.body?.ok === true && (await rowFor(keyOf(21)))?.resolution === "rejected");
+  // Left held, the ball waits for the log to change. A new batter walks in.
+  const walkIn = await post(scorer, DEV_A, epoch, [batters({ striker: P[3] })], 30);
+  ok("the scorer names the new batter, live", walkIn.body?.accepted?.length === 1, JSON.stringify(walkIn.body));
+  const nowLegal = await resolve(early.id, dos, { accept: true });
+  ok("the ball left held is released once the Laws allow it", nowLegal.body?.ok === true && Number.isInteger(nowLegal.body?.seq), JSON.stringify(nowLegal.body));
+  const releasedRun = (await log(dos)).find((e) => e.idempotency_key === keyOf(20));
+  ok("...at the end of the log, marked recovered", releasedRun?.seq === nowLegal.body?.seq && releasedRun?.recovered === true);
+  ok("...with contact and trajectory intact (db/37)", releasedRun?.contact === "middle" && releasedRun?.trajectory === "ground",
+     JSON.stringify(releasedRun).slice(0, 300));
+  ok("...and the replay scores the run", deriveInnings((await log(dos)).map(fromRow)).runs === 5);
+
+  group("Held, then sent again by the device that holds the token (SCRBRD-071)");
+  // A stale send, and the response lost; the device claims again and its
+  // outbox re-sends the same event under the same key, now with the token.
+  const h = ball({ type: BALL_TYPE.RUN, value: 2, striker: P[3], nonStriker: P[1], bowler: P[2] });
+  const heldH = await postKeyed(scorer, DEV_A, epoch + 7, keyOf(40), h, 40);
+  ok("the ball is held under the stale token", heldH.body?.quarantined?.length === 1);
+  const liveH = await postKeyed(scorer, DEV_A, epoch, keyOf(40), h, 40);
+  ok("re-sent with the token, the same event is judged and written live",
+     liveH.body?.accepted?.length === 1 && !liveH.body?.duplicates?.length, JSON.stringify(liveH.body));
+  const closedH = await rowFor(keyOf(40));
+  ok("...and its held copy is closed as superseded, not left for a person", closedH?.resolved_at && closedH?.resolution === "superseded",
+     JSON.stringify(closedH).slice(0, 200));
+  const lateRelease = await resolve(closedH.id, dos, { accept: true });
+  ok("a release of the held copy is refused, naming why: already_superseded",
+     lateRelease.body?.ok === false && lateRelease.body?.reason === "already_superseded", JSON.stringify(lateRelease.body));
+  ok("...and the ball is in the log once", (await log(dos)).filter((e) => e.idempotency_key === keyOf(40)).length === 1);
+  const again2 = await postKeyed(scorer, DEV_A, epoch, keyOf(40), h, 40);
+  ok("a further resend is a plain duplicate", again2.body?.duplicates?.length === 1, JSON.stringify(again2.body));
+  // db/36's rule still stands: the same key saying something else is a
+  // conflict, whether its first copy is live or held.
+  const h2 = ball({ type: BALL_TYPE.RUN, value: 3, striker: P[3], nonStriker: P[1], bowler: P[2] });
+  await postKeyed(scorer, DEV_A, epoch + 7, keyOf(41), h2, 41);
+  const lengthBefore = (await log(dos)).length;
+  const changedH = await postKeyed(scorer, DEV_A, epoch, keyOf(41), { ...h2, value: 6 }, 41);
+  ok("a different event under a held key is a conflict, written nowhere",
+     changedH.body?.conflicts?.length === 1 && !changedH.body?.accepted?.length && (await log(dos)).length === lengthBefore,
+     JSON.stringify(changedH.body));
+  ok("...and the held copy stays for a person", !(await rowFor(keyOf(41)))?.resolved_at);
+
+  group("A held ball from the second innings is released into the second innings");
+  // The pad's envelope always says innings 0 (apps/web/src/lib/sync.js builds
+  // its SyncEngine with innings: 0); the event's own innings rides in the
+  // payload, and the live path stores that. The release used to store the
+  // envelope's instead — a second-innings ball written into the first.
+  const firstOf = (rows) => deriveInnings(rows.filter((r) => (r.innings ?? 0) === 0).map(fromRow));
+  const inn0 = firstOf(await log(dos));
+  const second = await post(scorer, DEV_A, epoch, [
+    { ...sealInnings(inn0, "declared"), innings: 0 },
+    inningsStart({ innings: 1, battingTeam: "MHS", bowlingTeam: "HIL", overs: 20, target: inn0.runs + 1 }),
+    batters({ innings: 1, striker: P[2], nonStriker: P[3] }), bowler({ innings: 1, bowler: P[0] }),
+  ], 50);
+  ok("the first innings is sealed and the second opens, live", second.body?.accepted?.length === 4, JSON.stringify(second.body).slice(0, 300));
+  ok("...and the live path stores the second innings as innings 1", (await log(dos)).filter((r) => r.innings === 1).length === 3);
+  const late = ball({ innings: 1, type: BALL_TYPE.RUN, value: 2, striker: P[2], nonStriker: P[3], bowler: P[0] });
+  const held2 = await postKeyed(scorer, DEV_A, epoch + 7, keyOf(60), late, 60);
+  ok("a second-innings ball sent one handover behind is held", held2.body?.quarantined?.length === 1, JSON.stringify(held2.body));
+  const row2 = await rowFor(keyOf(60));
+  const released2 = row2 ? await resolve(row2.id, dos, { accept: true }) : null;
+  ok("...and released", released2?.body?.ok === true, JSON.stringify(released2?.body));
+  const logged2 = await log(dos);
+  const stored2 = logged2.find((r) => r.idempotency_key === keyOf(60) || r.idempotencyKey === keyOf(60));
+  ok("...into the second innings, where it was bowled — not the first", stored2?.innings === 1, `innings ${stored2?.innings}`);
+  const inn0After = firstOf(logged2);
+  ok("...and the first innings' figures did not move", inn0After.runs === inn0.runs && inn0After.balls === inn0.balls,
+     `runs ${inn0.runs} → ${inn0After.runs}, balls ${inn0.balls} → ${inn0After.balls}`);
+  const resent2 = await postKeyed(scorer, DEV_A, epoch, keyOf(60), late, 60);
+  ok("the device resending that ball live gets 'duplicate' — the released row says what the held one said",
+     resent2.body?.duplicates?.length === 1 && !resent2.body?.conflicts?.length, JSON.stringify(resent2.body));
+
   const unknown = await resolve(999999, dos, { accept: true });
   ok("an id that does not exist is a 404", unknown.status === 404);
 } catch (e) {

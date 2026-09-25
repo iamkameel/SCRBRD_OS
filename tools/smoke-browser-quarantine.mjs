@@ -241,6 +241,21 @@ try {
   ok("Postgres agrees — not just the read API's own opinion of itself",
      dbRow.length === 1 && dbRow[0].seq === before.n + 1 && dbRow[0].recovered === true, JSON.stringify(dbRow));
 
+  group("The Laws refuse the second, and the panel says why and offers both choices (SCRBRD-071)");
+  // The released wicket emptied the striker's end, so the held single cannot
+  // go in now: the server folds the log, asks lawsRefusal(), writes nothing.
+  ok("she tries to release the one left", await click(principal.page, /^Release$/, 4000));
+  await principal.page.waitForTimeout(1200);
+  const refusedByLaws = await panel(principal.page).innerText();
+  if (DEBUG) console.log("[debug] after the Laws refused:\n" + refusedByLaws);
+  ok("the refusal names the Law, in words", /The Laws refuse this ball: there was no batter at one end/.test(refusedByLaws), refusedByLaws.slice(0, 300));
+  ok("...it is still waiting", /1 waiting/.test(refusedByLaws));
+  ok("...and she is offered to leave it held, beside Discard",
+     /Leave it held/.test(refusedByLaws) && /Discard/.test(refusedByLaws));
+  ok("nothing reached the log", (await eventsLog(scorerTok)).length === afterLog.length);
+  ok("leaving it clears the message and keeps the ball", await click(principal.page, /^Leave it held$/, 4000)
+     && !/The Laws refuse/.test(await panel(principal.page).innerText()) && /1 waiting/.test(await panel(principal.page).innerText()));
+
   group("Discarding the second writes nothing, and it does not come back");
   ok("she discards the one left", await click(principal.page, /^Discard$/, 4000));
   await principal.page.waitForTimeout(1200);

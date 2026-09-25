@@ -30,7 +30,7 @@ const DB = process.env.DATABASE_URL || "postgres://scrbrd:scrbrd@127.0.0.1:5432/
 const HIL = "11111111-1111-1111-1111-111111111111";
 
 let pass = 0, fail = 0;
-const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
+const ok = (n, c, d = "") => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${d}` : ""); } };
 const group = (t) => console.log("\n" + t);
 
 const server = spawn(process.execPath, ["services/api/server.mjs"], {
@@ -158,6 +158,16 @@ try {
      (await weather(m, head, { condition: "Fine", uvIndex: 99 })).status === 400);
   ok("a second reading replaces the first, it does not stack",
      (await q(`select 1 from match_weather where match_id = $1`, [m])).length === 1);
+  // The policy answers first: a match that is not there has no school to
+  // anchor on, so the write is not permitted (403) — which also says nothing
+  // about whether that id exists. The foreign key (23503 → 404) backs it for a
+  // caller the policy would admit. Either way, never a 500, and nothing written.
+  const nowhere = await weather("00000000-0000-0000-0000-00000000dead", head, { condition: "Fine" });
+  ok("weather for a match that is not there is refused by name, not a 500",
+     (nowhere.status === 403 && nowhere.body?.error === "not_permitted") || (nowhere.status === 404 && nowhere.body?.error === "no_such_match"),
+     `${nowhere.status} ${JSON.stringify(nowhere.body)}`);
+  ok("...and nothing was written for it",
+     (await q(`select 1 from match_weather where match_id = $1`, ["00000000-0000-0000-0000-00000000dead"])).length === 0);
 
   // ── PITCH REPORT ─────────────────────────────────────────────
   group("The pitch report");
@@ -192,10 +202,11 @@ try {
   // The toss freezes at the first delivery. Weather must not: it changes, and
   // that is the reason for recording it at all.
   const scorerUser = (await q(`select id from app_user where email = 'scorer@example.invalid'`))[0].id;
+  // A dot ball: a delivery says what it was (db/43 refuses one with no type).
   await q(
     `insert into ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id,
-                             device_id, idempotency_key, client_seq, client_ts, kind, payload)
-     values ($1, $2, 1, 1, 1, $3, 'device-cond', $4, 1, now(), 'ball', '{}'::jsonb)`,
+                             device_id, idempotency_key, client_seq, client_ts, kind, ball_type, value, payload)
+     values ($1, $2, 1, 1, 1, $3, 'device-cond', $4, 1, now(), 'ball', 'run', 0, '{}'::jsonb)`,
     [m, HIL, scorerUser, `cond-smoke-${Date.now()}-${Math.random()}`]);
   ok("rain at three o'clock is still recordable",
      (await weather(m, head, { condition: "Rain", playable: false })).status === 200);
@@ -251,6 +262,9 @@ try {
      (await condition(head, { drainageMin: 601 })).status === 400);
   ok("a mistyped date is refused by name rather than by type",
      (await condition(head, { lastMown: "05/09/2026" })).status === 400);
+  const listDate = await condition(head, { lastMown: ["2026-09-05"] });
+  ok("a date sent as a list is refused by name too — it used to reach Postgres and come back 500",
+     listDate.status === 400 && listDate.body?.error === "last_mown_must_be_yyyy_mm_dd", JSON.stringify(listDate.body));
   ok("an empty report is not a report",
      (await condition(head, {})).status === 400);
   ok("a second report corrects the first rather than adding to it",

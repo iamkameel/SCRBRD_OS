@@ -21,8 +21,21 @@
  * pointed at another one by an import.
  */
 
+/**
+ * What a transport says about one device: sent, or not — and if not, whether
+ * the device itself disowned the token (`rejected`) or it may be retried.
+ * @typedef {{ ok: boolean, rejected?: boolean, detail?: string }} Verdict
+ *
+ * Anything that can put a message on a phone. `payload` is the FCM message
+ * body buildPayload() made; `sent` is the echo transport's record.
+ * @typedef {object} PushTransport
+ * @property {string} name
+ * @property {(msg: { token: string, platform?: string, payload: any }) => Promise<Verdict>} send
+ * @property {unknown[]} [sent]
+ */
+
 /** The FCM v1 endpoint for a project. */
-const endpoint = (projectId) =>
+const endpoint = (/** @type {string} */ projectId) =>
   `https://fcm.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/messages:send`;
 
 /**
@@ -32,6 +45,7 @@ const endpoint = (projectId) =>
  * instead of writing a delivery log full of attempts that never left the
  * building. A log of pretend sends is worse than an empty one: it will be read
  * later as evidence that a parent was told.
+ * @param {NodeJS.ProcessEnv} [env]
  */
 export function fcmConfigured(env = process.env) {
   return Boolean(env.FCM_PROJECT_ID && (env.FCM_ACCESS_TOKEN || env.FCM_SERVICE_ACCOUNT));
@@ -49,6 +63,8 @@ export function fcmConfigured(env = process.env) {
  * been wiped, and the caller retires the row on the strength of it. Anything
  * else is `failed` and the row stays live to be retried, because a 503 from
  * Google is not a statement about the device.
+ * @param {{ projectId: string, accessToken: () => Promise<string> | string, fetchImpl?: typeof fetch }} opts
+ * @returns {PushTransport}
  */
 export function fcmTransport({ projectId, accessToken, fetchImpl = fetch }) {
   return {
@@ -56,7 +72,7 @@ export function fcmTransport({ projectId, accessToken, fetchImpl = fetch }) {
     async send({ token, payload }) {
       let bearer;
       try { bearer = await accessToken(); }
-      catch (e) { return { ok: false, rejected: false, detail: `no_access_token: ${e.message}` }; }
+      catch (/** @type {any} */ e) { return { ok: false, rejected: false, detail: `no_access_token: ${e.message}` }; }
 
       let res;
       try {
@@ -65,7 +81,7 @@ export function fcmTransport({ projectId, accessToken, fetchImpl = fetch }) {
           headers: { authorization: `Bearer ${bearer}`, "content-type": "application/json" },
           body: JSON.stringify({ message: { token, ...payload } }),
         });
-      } catch (e) {
+      } catch (/** @type {any} */ e) {
         return { ok: false, rejected: false, detail: `transport_error: ${e.message}` };
       }
 
@@ -88,11 +104,13 @@ export function fcmTransport({ projectId, accessToken, fetchImpl = fetch }) {
  * FCM_ACCESS_TOKEN is the simple path — an operator or a sidecar refreshes it
  * — and is read at call time rather than captured, so a rotated token is
  * picked up without a restart.
+ * @param {NodeJS.ProcessEnv} [env]
+ * @returns {PushTransport | null}
  */
 export function transportFromEnv(env = process.env) {
   if (!fcmConfigured(env)) return null;
   return fcmTransport({
-    projectId: env.FCM_PROJECT_ID,
+    projectId: /** @type {string} */ (env.FCM_PROJECT_ID),   // fcmConfigured() just required it
     accessToken: async () => {
       if (env.FCM_ACCESS_TOKEN) return env.FCM_ACCESS_TOKEN;
       // A service-account key would be exchanged for a token here. Left

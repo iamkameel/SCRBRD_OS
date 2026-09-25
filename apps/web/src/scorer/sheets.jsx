@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { DISMISSAL, DISMISSAL_LABEL, INNINGS_END_REASON } from "@scrbrd/scoring";
+import { DISMISSAL, DISMISSAL_LABEL, INNINGS_END_REASON, NB_RUNS } from "@scrbrd/scoring";
 import { D } from "../design/tokens.js";
 import { armHandover, cancelHandover, claimHandover, refusalWords, sessionState, verifyTakeover } from "../lib/handover.js";
 import { fmtOv } from "./format.js";
@@ -54,6 +54,12 @@ function ShotSelectorSheet({onSelect,onSkip,onClose}){
 function NoBallSheet({onConfirm,onClose}){
   const[nbType,setNbType]=useState("front_foot");
   const[runs,setRuns]=useState(0);
+  // Whose the runs are (SCRBRD-068): off the bat they are the striker's; byes
+  // or leg byes off a no-ball are not (Law 23) — they are no-ball extras, and
+  // the bowler is charged every run of a no-ball either way (Law 21).
+  // null is off the bat, the event's default, so it is not written.
+  const[from,setFrom]=useState(null);
+  const FROM=[{id:null,label:"Off the bat"},{id:NB_RUNS.BYES,label:"Byes"},{id:NB_RUNS.LEG_BYES,label:"Leg byes"}];
   // Front foot NB: batter CAN be caught (only bowled/LBW/hit wicket protected)
   // Height NB (above shoulder): same + extra restrictions
   // Both: 1 penalty run + any runs scored, bat gets credit, doesn't count as legal delivery
@@ -91,10 +97,10 @@ function NoBallSheet({onConfirm,onClose}){
         </div>
         {/* Runs off the no ball */}
         <div>
-          <Lbl sx={{marginBottom:"8px"}}>Runs Scored Off This Ball</Lbl>
+          <Lbl sx={{marginBottom:"8px"}}>Runs Completed Off This Ball</Lbl>
           <div style={{display:"flex",gap:"6px"}}>
             {[0,1,2,3,4,5,6].map(r=>(
-              <button key={r} onClick={()=>setRuns(r)} className="pressBtn" style={{
+              <button key={r} data-testid={`nb-run-${r}`} onClick={()=>setRuns(r)} className="pressBtn" style={{
                 flex:1,padding:"11px 0",borderRadius:D.md,cursor:"pointer",
                 fontFamily:D.mono,fontSize:"15px",fontWeight:500,
                 border:`1px solid ${runs===r?D.amber+"77":D.border}`,
@@ -107,7 +113,23 @@ function NoBallSheet({onConfirm,onClose}){
             +1 penalty run added automatically. Total: <span style={{color:D.amber,fontFamily:D.mono,fontWeight:500}}>{runs+1}</span> runs to batting team.
           </div>
         </div>
-        <Btn variant="amber" size="lg" full onClick={()=>onConfirm(nbType,runs)} sx={{borderRadius:D.md}}>
+        {runs>0&&(
+          <div data-testid="nb-runs-from">
+            <Lbl sx={{marginBottom:"8px"}}>Off the bat, or byes / leg byes?</Lbl>
+            <div style={{display:"flex",gap:"6px"}}>
+              {FROM.map(f=>(
+                <button key={f.label} type="button" data-testid={`nb-runs-${f.id??"bat"}`} onClick={()=>setFrom(f.id)} className="pressBtn" style={{
+                  flex:1,padding:"10px 0",borderRadius:D.md,cursor:"pointer",fontFamily:D.body,fontSize:"12px",fontWeight:600,
+                  border:`1px solid ${from===f.id?D.amber+"77":D.border}`,background:from===f.id?`${D.amber}1a`:D.surf2,
+                  color:from===f.id?D.amber:D.textMuted}}>{f.label}</button>
+              ))}
+            </div>
+            <div style={{marginTop:"6px",color:D.textMuted,fontSize:"11px",fontFamily:D.body}}>
+              {from?"Not the batter's: no-ball extras, charged to the bowler.":"Credited to the batter."}
+            </div>
+          </div>
+        )}
+        <Btn variant="amber" size="lg" full data-testid="nb-confirm" onClick={()=>onConfirm(nbType,runs,runs>0?from:null)} sx={{borderRadius:D.md}}>
           Confirm No Ball ({runs+1} runs)
         </Btn>
       </div>
@@ -238,7 +260,7 @@ function RevisionSheet({overs,target,isChase,onConfirm,onClose}){
 // tab of their own screen.
 const HANDOVER_POLL_MS = 2500;
 
-function HandoverSheet({ matchId, device, epoch, pending, held = 0, onShowHeld, ballInFlight, startTab = "hand", onHandedOver, onTakenOver, onClose }) {
+function HandoverSheet({ matchId, device, epoch, pending, held = 0, onShowHeld, ballInFlight, startTab = "hand", onHandedOver, onClaimed, onTakenOver, onCancelled, onClose }) {
   const [tab, setTab] = useState(startTab);
   return (
     <Sheet title="Handover" accent={D.sky} onClose={onClose}>
@@ -255,35 +277,41 @@ function HandoverSheet({ matchId, device, epoch, pending, held = 0, onShowHeld, 
         </div>
         {tab==="hand"
           ? <HandOverTab matchId={matchId} device={device} epoch={epoch} pending={pending} held={held} onShowHeld={onShowHeld} ballInFlight={ballInFlight}
-              onHandedOver={onHandedOver} onClose={onClose}/>
-          : <TakeOverTab matchId={matchId} device={device} onTakenOver={onTakenOver} onClose={onClose}/>}
+              onHandedOver={onHandedOver} onCancelled={onCancelled} onClose={onClose}/>
+          : <TakeOverTab matchId={matchId} device={device} onClaimed={onClaimed} onTakenOver={onTakenOver} onClose={onClose}/>}
       </div>
     </Sheet>
   );
 }
 
 /** The outgoing scorer: arm, read the code aloud, wait, or change their mind. */
-function HandOverTab({ matchId, device, epoch, pending, held = 0, onShowHeld, ballInFlight, onHandedOver, onClose }) {
+function HandOverTab({ matchId, device, epoch, pending, held = 0, onShowHeld, ballInFlight, onHandedOver, onCancelled, onClose }) {
   const [code, setCode] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [waitingFor, setWaitingFor] = useState(null); // name of whoever claimed it, once known
   const pollRef = useRef(null);
+  // Set while this device takes its own token back: the "active" the poll
+  // then reads is its own cancel, not a handover that completed.
+  const cancellingRef = useRef(false);
 
   // Once armed, poll the session state a scorer may already read
-  // (match_duties, fixture.read) for the handover completing — the same
-  // field the pre-check in sync.js reads, so this needs no route of its own.
+  // (match_duties, fixture.read) for the handover completing, so this needs
+  // no route of its own.
   useEffect(() => {
     if (!code) return;
     let cancelled = false;
     pollRef.current = setInterval(async () => {
       const state = await sessionState(matchId);
-      if (cancelled) return;
+      if (cancelled || cancellingRef.current) return;
       if (state === "verifying") setWaitingFor("verifying");
-      else if (state === "active" || state === null) {
+      else if (state === "active") {
         // Either genuinely handed over, or this device's own reclaim already
         // fired and cleared the local code — either way there is nothing left
-        // to wait for on this screen.
+        // to wait for on this screen. A read that failed (null) is not an
+        // answer: it used to count as "handed over", and a blip of signal
+        // while the code was up stopped the outbox of a device that still
+        // held the token.
         clearInterval(pollRef.current);
         onHandedOver?.();
       }
@@ -303,9 +331,15 @@ function HandOverTab({ matchId, device, epoch, pending, held = 0, onShowHeld, ba
 
   const cancel = async () => {
     setBusy(true);
-    try { await cancelHandover(matchId, { device }); } catch { /* the poll above will settle it either way */ }
+    cancellingRef.current = true;
+    // The cancel is this device's own claim, and a claim bumps the epoch:
+    // the outbox must go on under the generation it returns, or every ball
+    // after the cancel is sent under the old one and quarantined (SCRBRD-078).
+    let r = null;
+    try { r = await cancelHandover(matchId, { device }); } catch { /* the poll above will settle it either way */ }
     clearInterval(pollRef.current);
     setCode(null); setBusy(false);
+    if (r?.ok && r.epoch != null) onCancelled?.(r.epoch);
     onClose?.();
   };
 
@@ -383,7 +417,7 @@ function HandOverTab({ matchId, device, epoch, pending, held = 0, onShowHeld, ba
 const REASON_FIELDS = { match_complete: 1, not_pending: 1, no_capability: 1, unreachable: 1 };
 
 /** The incoming scorer: the code, then an INDEPENDENT read of the physical scoreboard. */
-function TakeOverTab({ matchId, device, onTakenOver, onClose }) {
+function TakeOverTab({ matchId, device, onClaimed, onTakenOver, onClose }) {
   const [code, setCode] = useState("");
   const [claimed, setClaimed] = useState(false);
   const [claimError, setClaimError] = useState(null);
@@ -396,7 +430,10 @@ function TakeOverTab({ matchId, device, onTakenOver, onClose }) {
     setBusy(true); setClaimError(null);
     try {
       const r = await claimHandover(matchId, { device, code: code.trim() });
-      if (r.ok) setClaimed(true);
+      // The claim answers with the server's log (spec §4 step 2): the pad
+      // rebuilds from it before the scorer is asked to confirm anything, and
+      // never scores on over one of its own (SCRBRD-075).
+      if (r.ok) { await onClaimed?.(r.events ?? []); setClaimed(true); }
       else setClaimError(r.reason);
     } catch { setClaimError("unreachable"); }
     setBusy(false);
@@ -498,7 +535,15 @@ function TakeOverTab({ matchId, device, onTakenOver, onClose }) {
 // normalised at the door rather than being tested for at every use.
 const entry = (p) => (typeof p === "string" ? { id: p, name: p } : { id: p?.id ?? p?.name, name: p?.name ?? p?.id });
 
-function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,header=null}){
+/**
+ * `onTimedOut` is given only while an end is empty after a wicket or a
+ * retirement — when Law 40 can apply (SCRBRD-081; the pad asks lawsRefusal).
+ * It turns the sheet's pick into "this batter was timed out": a wicket with no
+ * ball, recorded, and the sheet stays open for the batter who comes in.
+ */
+function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,header=null,onTimedOut=null}){
+  const[timedOut,setTimedOut]=useState(false);
+  const send=timedOut&&onTimedOut?(id)=>{setTimedOut(false);onTimedOut(id);}:onSend;
   const teamInfo=INT_TEAMS[teamKey]||null;
   const roster=(squad||[]).map(entry);
   const available=roster.filter(p=>{
@@ -533,14 +578,22 @@ function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,head
             })}
           </div>
         )}
+        {onTimedOut&&(
+          <button type="button" data-testid="timed-out-toggle" onClick={()=>setTimedOut(v=>!v)} className="pressBtn" style={{
+            width:"100%",marginBottom:"12px",padding:"9px 12px",borderRadius:D.md,cursor:"pointer",textAlign:"left",
+            border:`1px solid ${timedOut?D.rose+"55":D.border}`,background:timedOut?`${D.rose}12`:"transparent",
+            fontFamily:D.body,fontSize:"12px",fontWeight:500,color:timedOut?D.roseText:D.textSecondary}}>
+            {timedOut?"Timed out — tap the batter who did not arrive in time (Law 40)":"Incoming batter timed out?"}
+          </button>
+        )}
         {/* Available */}
-        <Lbl sx={{marginBottom:"7px"}}>Available to Bat</Lbl>
+        <Lbl sx={{marginBottom:"7px"}}>{timedOut?"Who was timed out?":"Available to Bat"}</Lbl>
         <div style={{display:"flex",flexDirection:"column",gap:"4px",marginBottom:"12px"}}>
           {available.map((p,i)=>{
             const ri=getRoleInfo(p.name);
             const pos=roster.findIndex(r=>r.id===p.id)+1;
             return (
-              <button key={p.id} onClick={()=>onSend(p.id)} className="pressBtn" style={{
+              <button key={p.id} onClick={()=>send(p.id)} className="pressBtn" style={{
                 display:"flex",alignItems:"center",gap:"10px",
                 padding:"9px 12px",borderRadius:D.md,cursor:"pointer",textAlign:"left",width:"100%",
                 border:`1px solid ${i===0?D.emerald+"44":D.border}`,
@@ -596,7 +649,7 @@ function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,head
           </details>
         )}
         <Sep sx={{marginBottom:"12px"}}/>
-        <CustomBatEntry onSend={onSend}/>
+        <CustomBatEntry onSend={send}/>
       </div>
     </Sheet>
   );
@@ -621,13 +674,28 @@ function CustomBatEntry({onSend}){
 /* ═══════════════════════════════════════════════════════
    WICKET SHEET
 ═══════════════════════════════════════════════════════ */
-function WicketSheet({batName,fieldingSquad,onClose,onConfirm}){
+function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,onClose,onConfirm}){
   const[mode,setMode]=useState(DISMISSAL.BOWLED);
   const[fielder,setFielder]=useState("");
   const[fielterFilter,setFielderFilter]=useState("");
-  // The eleven in the Laws, from the one list the reducer and the API read.
-  // The button shows the label; the event carries the canonical value.
-  const modes=Object.keys(DISMISSAL_LABEL);
+  // Whose wicket, where the mode leaves it open. Retired out is either
+  // batter's; the rest default to the striker, as the event does.
+  const[who,setWho]=useState(striker?.id??null);
+  // The Laws' ways out, from the one list the reducer and the API read. The
+  // button shows the label; the event carries the canonical value. Timed out
+  // is not here: it is the INCOMING batter's (Law 40), who is never at the
+  // crease while this sheet is open — the batting-order sheet offers it while
+  // an end is empty (SCRBRD-081). Retired out is here, and is recorded as the
+  // dismissal with no ball it is, not as a delivery.
+  const modes=Object.keys(DISMISSAL_LABEL).filter(m=>m!==DISMISSAL.TIMED_OUT);
+  // A run out: who, how many runs were completed first, and — when some
+  // were, so the batters have crossed (Law 18) — at which end the wicket was
+  // put down (Law 38.2). That end is the one left empty (SCRBRD-069).
+  const[runs,setRuns]=useState(0);
+  const[end,setEnd]=useState(null);
+  const isRunOut=mode===DISMISSAL.RUN_OUT;
+  const asksWho=(mode===DISMISSAL.RETIRED_OUT||isRunOut)&&striker&&nonStriker;
+  const asksEnd=isRunOut&&runs>0;
   const needsFielder=mode===DISMISSAL.CAUGHT||mode===DISMISSAL.RUN_OUT;
   const isStumped=mode===DISMISSAL.STUMPED;
   // Find WK from fielding squad
@@ -640,16 +708,21 @@ function WicketSheet({batName,fieldingSquad,onClose,onConfirm}){
     setMode(m);
     setFielder("");
     setFielderFilter("");
+    setWho(striker?.id??null);
+    setRuns(0);setEnd(null);
     if(m===DISMISSAL.STUMPED&&wkName)setFielder(wkName);
   };
+  const whoName=who===nonStriker?.id?nonStriker?.name:(striker?.name??batName);
+  const pill=(on)=>({flex:1,padding:"10px",borderRadius:D.md,cursor:"pointer",fontFamily:D.body,fontSize:"13px",fontWeight:500,
+    border:"1px solid "+(on?D.rose+"55":D.border),background:on?D.rose+"1a":D.surf2,color:on?"#fca5a5":D.textSecondary});
   return (
     <Sheet title="WICKET!" accent={D.rose} onClose={onClose}>
       <div style={{color:D.textSecondary,fontSize:"13px",fontFamily:D.body,marginBottom:"14px",paddingTop:"4px"}}>
-        {batName} is dismissed
+        {asksWho?whoName:batName} is dismissed
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"7px",marginBottom:"14px"}}>
         {modes.map(m=>(
-          <button key={m} onClick={()=>handleMode(m)} className="pressBtn" style={{
+          <button key={m} data-testid={`wicket-mode-${m}`} onClick={()=>handleMode(m)} className="pressBtn" style={{
             padding:"11px",borderRadius:D.md,cursor:"pointer",fontFamily:D.body,fontSize:"13px",fontWeight:500,
             border:"1px solid "+(mode===m?D.rose+"55":D.border),
             background:mode===m?D.rose+"1a":D.surf2,
@@ -658,6 +731,42 @@ function WicketSheet({batName,fieldingSquad,onClose,onConfirm}){
           </button>
         ))}
       </div>
+      {asksWho&&(
+        <div style={{marginBottom:"12px"}}>
+          <Lbl sx={{marginBottom:"7px"}}>Who is out?</Lbl>
+          <div style={{display:"flex",gap:"7px"}}>
+            <button data-testid="wicket-who-striker" onClick={()=>setWho(striker.id)} className="pressBtn" style={pill(who===striker.id)}>{striker.name}</button>
+            <button data-testid="wicket-who-nonstriker" onClick={()=>setWho(nonStriker.id)} className="pressBtn" style={pill(who===nonStriker.id)}>{nonStriker.name}</button>
+          </div>
+          {mode===DISMISSAL.RETIRED_OUT&&(
+            <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginTop:"6px"}}>
+              Recorded between deliveries: no ball of the over, nothing to the bowler.
+            </div>
+          )}
+        </div>
+      )}
+      {isRunOut&&(
+        <div style={{marginBottom:"12px"}}>
+          <Lbl sx={{marginBottom:"7px"}}>Runs completed before the run out</Lbl>
+          <div style={{display:"flex",gap:"7px"}}>
+            {[0,1,2,3].map(r=>(
+              <button key={r} data-testid={`wicket-runs-${r}`} onClick={()=>{setRuns(r);if(r===0)setEnd(null);}} className="pressBtn" style={pill(runs===r)}>{r}</button>
+            ))}
+          </div>
+        </div>
+      )}
+      {asksEnd&&(
+        <div data-testid="wicket-end" style={{marginBottom:"12px"}}>
+          <Lbl sx={{marginBottom:"7px"}}>Out at the striker's end or the bowler's end?</Lbl>
+          <div style={{display:"flex",gap:"7px"}}>
+            <button data-testid="wicket-end-striker" onClick={()=>setEnd("striker_end")} className="pressBtn" style={pill(end==="striker_end")}>Striker's end</button>
+            <button data-testid="wicket-end-bowler" onClick={()=>setEnd("bowler_end")} className="pressBtn" style={pill(end==="bowler_end")}>Bowler's end</button>
+          </div>
+          <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginTop:"6px"}}>
+            The batters crossed for the runs; the end where the wicket was broken is the one left empty.
+          </div>
+        </div>
+      )}
       {isStumped&&(
         <div style={{marginBottom:"12px",padding:"10px 13px",borderRadius:D.md,
           background:D.violet+"0e",border:"1px solid "+D.violet+"33"}}>
@@ -704,7 +813,9 @@ function WicketSheet({batName,fieldingSquad,onClose,onConfirm}){
       )}
       <div style={{display:"flex",gap:"10px",marginTop:"4px"}}>
         <Btn variant="ghost" sx={{flex:1,borderRadius:D.md}} onClick={onClose}>Cancel</Btn>
-        <Btn variant="danger" sx={{flex:2,borderRadius:D.md}} onClick={()=>onConfirm(mode,displayFielder)}>Confirm Out</Btn>
+        <Btn variant="danger" sx={{flex:2,borderRadius:D.md}} data-testid="wicket-confirm" disabled={asksEnd&&!end}
+          onClick={()=>{if(asksEnd&&!end)return;onConfirm(mode,displayFielder,{dismissed:asksWho&&who!==striker?.id?who:null,
+            runs:isRunOut?runs:0,outAt:asksEnd?end:null});}}>Confirm Out</Btn>
       </div>
     </Sheet>
   );
@@ -713,9 +824,19 @@ function WicketSheet({batName,fieldingSquad,onClose,onConfirm}){
 /* ═══════════════════════════════════════════════════════
    NEW OVER / BOWLER SHEET
 ═══════════════════════════════════════════════════════ */
-function NewOverSheet({ovNum,prevBowlers,bowlingSquad,bowlingTeamKey,lastBowlerName,refuses,onClose,onConfirm}){
+/**
+ * `midOver` (SCRBRD-080): the over is under way, so this is a bowler taking
+ * over from one who cannot finish it. Law 17.8.1 allows that only for an
+ * injured or suspended bowler, so the sheet asks which before it offers
+ * anyone, and passes it on: onConfirm(id, reason).
+ */
+function NewOverSheet({ovNum,prevBowlers,bowlingSquad,bowlingTeamKey,lastBowlerName,refuses,onClose,onConfirm:confirm,midOver=false}){
   const[name,setName]=useState("");
   const[filter,setFilter]=useState("");
+  const[reason,setReason]=useState(null);
+  const onConfirm=(id)=>{if(midOver&&!reason)return;confirm(id,midOver?reason:undefined);};
+  const reasonPill=(on)=>({flex:1,padding:"10px",borderRadius:D.md,cursor:"pointer",fontFamily:D.body,fontSize:"13px",fontWeight:600,
+    border:`1px solid ${on?D.amber+"77":D.border}`,background:on?`${D.amber}1a`:D.surf2,color:on?D.amber:D.textSecondary});
   const teamInfo=INT_TEAMS[bowlingTeamKey]||null;
   // Build full list: team bowlers first, then all-rounders, then others
   // Same normalisation as the batting sheet: a demonstration squad is bare
@@ -732,16 +853,31 @@ function NewOverSheet({ovNum,prevBowlers,bowlingSquad,bowlingTeamKey,lastBowlerN
   // the rule the server applies when the bowler event arrives — asked by the
   // id that will be emitted. The name comparison is kept only for a caller
   // that does not pass it.
-  const canBowl=(p)=>refuses?!refuses(p.id??p.name):p.name!==lastBowlerName;
+  // Mid-over, nobody is offered until the reason is chosen.
+  const canBowl=(p)=>(!midOver||!!reason)&&(refuses?!refuses(p.id??p.name):p.name!==lastBowlerName);
   const prevBowlerMap={};
   prevBowlers.forEach(b=>{prevBowlerMap[b.name]=b;});
   return (
-    <Sheet title={ovNum===0?"Opening Bowler":`Over ${ovNum} Complete`} accent={D.amber} onClose={onClose}>
+    <Sheet title={midOver?"Change of Bowler":ovNum===0?"Opening Bowler":`Over ${ovNum} Complete`} accent={D.amber} onClose={onClose}>
       <div style={{paddingTop:"8px"}}>
+        {midOver&&(
+          <div data-testid="bowler-change-reason" style={{marginBottom:"14px"}}>
+            <Lbl sx={{marginBottom:"7px",color:D.amber}}>Injury or suspended?</Lbl>
+            <div style={{display:"flex",gap:"7px"}}>
+              <button type="button" data-testid="bowler-change-injury" onClick={()=>setReason("injury")} className="pressBtn" style={reasonPill(reason==="injury")}>Injury</button>
+              <button type="button" data-testid="bowler-change-suspended" onClick={()=>setReason("suspended")} className="pressBtn" style={reasonPill(reason==="suspended")}>Suspended</button>
+            </div>
+            <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginTop:"6px"}}>
+              Law 17.8.1: a bowler may be replaced during an over only when injured or suspended. Whoever finishes the over may not bowl the next.
+            </div>
+          </div>
+        )}
+        {!midOver&&(
         <div style={{color:D.textSecondary,fontSize:"12px",fontFamily:D.body,marginBottom:"14px"}}>
           {ovNum===0?"Select the opening bowler.":`Select bowler for over ${ovNum+1}.`}
           {lastBowlerName&&<span style={{color:D.textMuted}}> ({lastBowlerName} cannot bowl consecutive overs)</span>}
         </div>
+        )}
         {/* Search filter */}
         <div style={{marginBottom:"12px"}}>
           <input value={filter} onChange={e=>setFilter(e.target.value)} aria-label="Search bowlers"
@@ -769,7 +905,7 @@ function NewOverSheet({ovNum,prevBowlers,bowlingSquad,bowlingTeamKey,lastBowlerN
                     <div style={{flex:1}}>
                       <div style={{fontFamily:D.body,fontSize:"13px",fontWeight:500,
                         color:dis?D.textMuted:D.textPrimary}}>{b.name}</div>
-                      {dis&&<div style={{fontFamily:D.body,fontSize:"10px",color:D.roseText,marginTop:"1px"}}>Cannot bowl consecutive overs</div>}
+                      {dis&&(!midOver||reason)&&<div style={{fontFamily:D.body,fontSize:"10px",color:D.roseText,marginTop:"1px"}}>Cannot bowl consecutive overs</div>}
                     </div>
                     {ri&&<Badge color={ROLE_COLORS[ri.role]} sx={{fontSize:"8px"}}>{ri.role}</Badge>}
                     <div style={{display:"flex",gap:"12px",alignItems:"center"}}>

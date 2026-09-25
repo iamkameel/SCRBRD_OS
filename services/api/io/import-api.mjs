@@ -22,6 +22,27 @@
 import { runAsPrincipal } from "../auth/auth-db.mjs";
 import { resolveBirthDate, BIRTH_DATE_MESSAGE } from "@scrbrd/policy/date-of-birth";
 import { parseCsv, mapRows, asText, asDate, asInt, asOneOf, asEmail, asPhone } from "./csv.mjs";
+/** @import { Pool, Handler, ApiRequest, RawResponse, DressedError } from "../api-types.mjs" */
+/** @import { ColumnSpec, RowError } from "./csv.mjs" */
+// A caught error is `any` to the checker (CaughtError in api-types.mjs).
+
+/**
+ * One kind of file a school may send. Row values are `any`: they are what the
+ * column parsers returned, keyed by column.
+ * @typedef {object} ImportDef
+ * @property {string} table
+ * @property {string} label
+ * @property {boolean} [needsSchool]
+ * @property {Record<string, ColumnSpec>} spec
+ * @property {string[]} template
+ * @property {string} [example]
+ * @property {string} find
+ * @property {string} insert
+ * @property {string} update
+ * @property {(school: string | undefined, v: Record<string, any>) => unknown[]} params
+ * @property {(v: Record<string, any>, existing: any) => ({ ok: true, warning?: string, column?: undefined, message?: undefined }
+ *                                                          | { ok: false, column: string, message: string, warning?: undefined })} [resolve]
+ */
 
 /**
  * What may be imported, and how each column is read.
@@ -38,6 +59,7 @@ import { parseCsv, mapRows, asText, asDate, asInt, asOneOf, asEmail, asPhone } f
  * roster, not every sensitive field about four hundred children in one
  * unvalidated file. Adding them is a decision with a name on it.
  */
+/** @type {Record<string, ImportDef>} */
 export const IMPORTS = {
   players: {
     table: "player",
@@ -178,15 +200,19 @@ export const IMPORTS = {
  *
  * Returns the same shape either way — counts, per-row errors, unknown columns —
  * so a client renders one report and the only difference is a word.
+ * @param {Pool} pool @param {string} secret
+ * @param {string | undefined} bearer  the Authorization header, as sent
+ * @param {string | undefined} kind
+ * @param {{ csv?: unknown, schoolId?: string, commit?: unknown }} body  the request body as sent
  */
 export async function runImport(pool, secret, bearer, kind, { csv, schoolId, commit }) {
-  const def = IMPORTS[kind];
-  if (!def) { const e = new Error("unknown_import"); e.status = 404; throw e; }
+  const def = Object.hasOwn(IMPORTS, /** @type {string} */ (kind)) ? IMPORTS[/** @type {string} */ (kind)] : undefined;   // an absent kind finds nothing, as "undefined"
+  if (!def) { const e = /** @type {DressedError} */ (new Error("unknown_import")); e.status = 404; throw e; }
   if (def.needsSchool && !schoolId) {
-    const e = new Error("school_required"); e.status = 400; throw e;
+    const e = /** @type {DressedError} */ (new Error("school_required")); e.status = 400; throw e;
   }
   if (typeof csv !== "string" || !csv.trim()) {
-    const e = new Error("csv_required"); e.status = 400; throw e;
+    const e = /** @type {DressedError} */ (new Error("csv_required")); e.status = 400; throw e;
   }
 
   const parsed = parseCsv(csv);
@@ -195,26 +221,27 @@ export async function runImport(pool, secret, bearer, kind, { csv, schoolId, com
   // A FILE WITH ANY ERROR IS NEVER COMMITTED, even when asked. The caller
   // cannot opt into a partial load — that is the whole safety property, and
   // making it a flag would mean somebody sets the flag.
-  const clean = errors.length === 0;
 
   return runAsPrincipal(pool, secret, bearer, async (client) => {
     let inserted = 0, updated = 0;
+    /** @type {RowError[]} */
     const refused = [];
     // Not refusals: a row that went in and is worth a second look. Kept apart
     // from `refused` so a warning can never be mistaken for a rejected row.
+    /** @type {RowError[]} */
     const warnings = [];
 
     await client.query("SAVEPOINT bulk");
     for (const { line, values } of rows) {
       try {
-        const p = def.params(schoolId, values);
         // The lookup runs under the caller's own row-level security too, so a
         // name they may not read comes back as "none found" and they attempt
         // an insert — which the INSERT policy then refuses. That is the right
         // order: the refusal comes from the policy, and this path never learns
         // whether the row it could not see exists.
         const found = await client.query(def.find, [schoolId, values.full_name]);
-        if (found.rowCount > 1) {
+        // A SELECT's command tag always carries a count.
+        if (/** @type {number} */ (found.rowCount) > 1) {
           refused.push({ line, column: "full_name",
             message: `more than one player at this school is called ${values.full_name}; ` +
                      "the import cannot tell them apart" });
@@ -225,10 +252,10 @@ export async function runImport(pool, secret, bearer, kind, { csv, schoolId, com
         // coalesces, so a file carrying only names must not be refused for a
         // birthday that was typed in last term.
         //
-        // It mutates `values`, so def.params() is re-run afterwards — the
-        // copy taken above was made before the birthday was resolved from an
-        // ID number, and using it would write the row without one.
-        const checked = def.resolve ? def.resolve(values, found.rows[0] ?? null) : { ok: true };
+        // It mutates `values`, so def.params() runs only afterwards — a copy
+        // taken before the birthday was resolved from an ID number would
+        // write the row without one.
+        const checked = def.resolve ? def.resolve(values, found.rows[0] ?? null) : /** @type {{ ok: true, warning?: undefined }} */ ({ ok: true });
         if (!checked.ok) {
           refused.push({ line, column: checked.column, message: checked.message });
           continue;
@@ -246,7 +273,7 @@ export async function runImport(pool, secret, bearer, kind, { csv, schoolId, com
           refused.push({ line, column: null, message: "not permitted at this school" });
         } else if (found.rowCount === 1) updated += 1;
         else inserted += 1;
-      } catch (e) {
+      } catch (/** @type {any} */ e) {
         // 42501 is the policy; everything else is a constraint the CSV could
         // not know about. Both are reported against the line in their file.
         refused.push({ line, column: null,
@@ -267,7 +294,7 @@ export async function runImport(pool, secret, bearer, kind, { csv, schoolId, com
     // outer transaction, so raising is how this refuses to keep the writes —
     // and a report has to come back either way, so the error carries it.
     if (!committed) {
-      const e = new Error("dry_run");
+      const e = /** @type {Error & { report?: unknown, rollback?: boolean }} */ (new Error("dry_run"));
       e.report = { kind, committed: false, rows: rows.length, wouldInsert: inserted,
                    wouldUpdate: updated, errors: allErrors, unknownColumns: unknown,
                    warnings, clean: allErrors.length === 0 };
@@ -282,6 +309,10 @@ export async function runImport(pool, secret, bearer, kind, { csv, schoolId, com
   });
 }
 
+/**
+ * @param {{ pool: Pool, secret: string }} deps
+ * @returns {{ run: Handler, template: (req: ApiRequest, res: RawResponse) => unknown }}
+ */
 export function importRoutes({ pool, secret }) {
   return {
     // POST /import/:kind { csv, schoolId, commit }
@@ -293,7 +324,7 @@ export function importRoutes({ pool, secret }) {
         // answer to "what would this do", and a 4xx would make a client treat
         // a perfectly good validation pass as a failure.
         res.json(out);
-      } catch (e) {
+      } catch (/** @type {any} */ e) {
         const status = e.code === "42501" ? 403 : (e.status || 500);
         res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
       }
@@ -305,7 +336,8 @@ export function importRoutes({ pool, secret }) {
     // "full_name, team_code, born" will send "Name, Team, DOB", and the
     // support conversation that follows costs more than this route.
     template: async (req, res) => {
-      const def = IMPORTS[req.params.id];
+      const id = String(req.params.id);
+      const def = Object.hasOwn(IMPORTS, id) ? IMPORTS[id] : undefined;   // an absent id finds nothing, as "undefined"
       if (!def) return res.status(404).json({ error: "unknown_import" });
       const name = `scrbrd-${req.params.id}-template.csv`;
       res.writeHead(200, {

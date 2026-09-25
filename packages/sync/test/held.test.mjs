@@ -10,12 +10,12 @@
  *   node packages/sync/test/held.test.mjs
  */
 import {
-  inningsStart, batters, bowler, ball, voidEvent, BALL_TYPE, deriveInnings, MatchFold,
-  lawsRefusal, REFUSAL, REFUSAL_TEXT,
+  inningsStart, batters, bowler, ball, retire, voidEvent, BALL_TYPE, deriveInnings, MatchFold,
+  lawsRefusal, REFUSAL, REFUSAL_TEXT, undoLast,
 } from "@scrbrd/scoring";
 import {
   SyncEngine, memoryStorage, heldFrom, heldInOrder, withoutEvents, serverView, inLog,
-  recordAgainRefusal, recordAgain, describeHeld, describeEvent, reasonWords, CONFLICT_TEXT,
+  recordAgainRefusal, recordAgain, describeHeld, describeEvent, reasonWords, CONFLICT_TEXT, undoOnPad,
 } from "../src/index.mjs";
 
 let pass = 0, fail = 0;
@@ -52,6 +52,11 @@ const asHeld = (log, refused, state = "refused") => {
 };
 const fig = (inn) => inn && { runs: inn.runs, wickets: inn.wickets, balls: inn.balls, bowler: inn.bowler, striker: inn.striker };
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+/** An outbox as undo reads it (undo.mjs OutboxView): this held list, and "never sent" as !isSynced. */
+const outboxOf = (held, isSynced) => ({
+  isHeld: (/** @type {string} */ k) => held.some((h) => h.idempotencyKey === k),
+  isUnsent: (/** @type {string} */ k) => !isSynced({ id: k }),
+});
 
 // One over by A Nel, then A Nel again — Law 17.8 — and two balls after it.
 const OPEN = withId(inningsStart({ battingTeam: "HIL", bowlingTeam: "MHS", squad: SQUAD, bowlingSquad: [], overs: 20 }));
@@ -171,6 +176,21 @@ group("G. In words");
   ok("an undo names what it undid", describeEvent(voidEvent({ target: B1.id }), innings[0], (k) => LOG[0].find((e) => e.id === k))
      === "Undo — of \"Ball — 4 runs, K Naidoo facing A Nel\"");
   ok("an unknown player id is shown as itself", describeEvent(bowler({ bowler: "Z Unknown" }), innings[0]) === "Bowler — Z Unknown to bowl");
+  // SCRBRD-081: a dismissal with no ball says so; a retirement stays one.
+  ok("timed out, a wicket with no ball", describeEvent(retire({ batter: "p3", reason: "timed_out" }), innings[0])
+     === "Wicket, no ball — T Mokoena timed out");
+  ok("retired out, the same", describeEvent(retire({ batter: "p1", reason: "out" }), innings[0]) === "Wicket, no ball — S Dlamini retired out");
+  // SCRBRD-080: a bowler taking over mid-over says why.
+  ok("a mid-over change names its reason", describeEvent(bowler({ bowler: "Z Unknown", reason: "injury" }), innings[0])
+     === "Bowler — Z Unknown to bowl (takes over mid-over: injury)");
+  // SCRBRD-068: byes off a no-ball are named as byes, runs off the bat as runs.
+  ok("leg byes off a no-ball", describeEvent(ball({ type: "Nb", value: 2, nbRuns: "leg_byes" }), innings[0]) === "No ball + 2 leg byes");
+  ok("a no-ball hit for one", describeEvent(ball({ type: "Nb", value: 1 }), innings[0]) === "No ball + 1 run");
+  // SCRBRD-069: a run out that says where it happened.
+  ok("a run out at the striker's end, after a run",
+     describeEvent(ball({ type: "W", value: 1, dismissal: "run_out", dismissed: "p2", outAt: "striker_end" }), innings[0])
+     === "Wicket — K Naidoo Run Out at the striker's end, 1 run");
+  ok("retired hurt, a retirement", describeEvent(retire({ batter: "p1", reason: "hurt" }), innings[0]) === "Retirement — S Dlamini (retired hurt)");
 }
 
 group("H. The engine: a held event is not queued again when the pad re-offers its log");
@@ -210,6 +230,61 @@ group("H. The engine: a held event is not queued again when the pad re-offers it
   ok("discarding the original lets exactly that one go", await again.discardHeld(B1.id) === true
      && again.held.length === 1 && again.held[0].idempotencyKey === copy.id);
   ok("...and a second discard of it finds nothing", await again.discardHeld(B1.id) === false);
+}
+
+group("I. Undo of a held event drops it, wherever it sits — never a void (SCRBRD-071)");
+{
+  // Nel again (refused, Law 17.8); the scorer names Botha (accepted — the
+  // server had nobody bowling), thinks better of it and undoes him (a void,
+  // accepted: Botha was synced and last). The next undo reaches Nel: held,
+  // and NOT the last event in the log.
+  const nelAgain = withId(bowler({ bowler: "A Nel" }));
+  const botha = withId(bowler({ bowler: "B Botha" }));
+  const undoBotha = withId(voidEvent({ target: botha.id }));
+  const log = [[OPEN, PAIR, NEL, ...OVER1, nelAgain, botha, undoBotha], []];
+  const answered = serve(log[0]);
+  const held = asHeld(log, answered.refused);
+  const synced = new Set(answered.accepted.map((e) => e.id));
+  const isSynced = (/** @type {any} */ e) => synced.has(e.id);
+  ok("the server refused Nel and took Botha and the undo of him",
+     held.length === 1 && held[0].idempotencyKey === nelAgain.id && synced.has(botha.id) && synced.has(undoBotha.id), answered.refused);
+
+  // The bug: undo asked without the held list voids an event the server
+  // never had, and the server refuses the void too — a second held event.
+  const before = undoLast(log[0], { isSynced });
+  ok("without the held list, undo appends a void (the old behaviour)", before.action === "void" && before.target?.id === nelAgain.id);
+  const voidOfHeld = before.events.at(-1);
+  ok("...which the server refuses in its turn: it has no such event", lawsRefusal(answered.fold.view(), voidOfHeld) === REFUSAL.VOID_UNKNOWN_TARGET,
+     lawsRefusal(answered.fold.view(), voidOfHeld));
+
+  const r = undoOnPad(log, 0, outboxOf(held, isSynced));
+  ok("with it, the held event is dropped", r.action === "drop" && r.target?.id === nelAgain.id, r.action);
+  ok("...and no void is written", !r.log[0].some((e) => e.kind === "void" && e.target === nelAgain.id) && r.log[0].length === log[0].length - 1);
+  ok("...its held copy is named for the caller to let go", r.discard === nelAgain.id);
+  ok("...Botha and the undo of him stay where they were", same(r.log[0].slice(-2).map((e) => e.id), [botha.id, undoBotha.id]));
+  ok("...the other innings is untouched", r.log[1] === log[1]);
+  ok("the pad's log is now the server's log, event for event", same(r.log[0].map((e) => e.id), answered.accepted.map((e) => e.id)));
+  ok("...and figure for figure", same(fig(deriveInnings(r.log[0])), fig(answered.fold.view().innings[0])));
+  ok("the input log is not changed", log[0].length === 12 && log[0].includes(nelAgain));
+
+  // One rule for every position: last or not, held means dropped.
+  const cascade = undoOnPad(LOG, 0, outboxOf(HELD, () => false));
+  ok("a held event that IS last is dropped the same way, and let go", cascade.action === "drop" && cascade.discard === B2.id
+     && cascade.log[0].length === LOG[0].length - 1);
+
+  // Nothing else moves: the two rules undo.mjs already had.
+  const clean = [[OPEN, PAIR, NEL, ...OVER1], []];
+  const allSynced = undoOnPad(clean, 0, outboxOf([], () => true));
+  ok("an event the server accepted is still undone by a void", allSynced.action === "void" && allSynced.discard === null
+     && allSynced.log[0].at(-1).kind === "void");
+  const pending = undoOnPad(clean, 0, outboxOf([], () => false));
+  ok("an unsent last event is still truncated, and nothing is discarded", pending.action === "truncate" && pending.discard === null
+     && pending.log[0].length === clean[0].length - 1);
+  ok("...and its outbox copy is named to withdraw (SCRBRD-074)", pending.withdraw === clean[0].at(-1).id);
+  ok("a void or a drop withdraws nothing", allSynced.withdraw === null && cascade.withdraw === null);
+  ok("a held innings_start is not undone — undo never walks past one",
+     undoOnPad([[OPEN], []], 0, outboxOf(asHeld([[OPEN], []], [{ idempotencyKey: OPEN.id, reason: "x" }]), () => false)).action === "none");
+  ok("no held list at all: undo as before", undoOnPad(log, 0, outboxOf([], isSynced)).action === "void");
 }
 
 console.log(`\n${"─".repeat(52)}\nHELD: ${pass} passed, ${fail} failed`);

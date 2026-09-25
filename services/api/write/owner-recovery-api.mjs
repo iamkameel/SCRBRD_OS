@@ -21,18 +21,20 @@
  */
 import { timingSafeEqual, createHash } from "node:crypto";
 import { newMagicCode } from "../auth/auth.mjs";
+/** @import { RouteDeps, ExactHandler } from "../api-types.mjs" */
 
 // Comparing two strings of different lengths throws from timingSafeEqual
 // rather than differing only in timing, which leaks the length and defeats
 // the point of using it. Hashing both sides first makes every comparison the
 // same fixed length, so a wrong-length guess and a right-length wrong guess
 // look identical from outside.
-const sha256 = (s) => createHash("sha256").update(String(s)).digest();
-const secretsMatch = (given, expected) => !!expected && timingSafeEqual(sha256(given ?? ""), sha256(expected));
+const sha256 = (/** @type {unknown} */ s) => createHash("sha256").update(String(s)).digest();
+const secretsMatch = (/** @type {unknown} */ given, /** @type {string | undefined} */ expected) => !!expected && timingSafeEqual(sha256(given ?? ""), sha256(expected));
 
-const err = (code, status) => Object.assign(new Error(code), { status, code });
+const err = (/** @type {string} */ code, /** @type {number} */ status) => Object.assign(new Error(code), { status, code });
 
 /** POST /api/auth/owner/recover { email }, header x-owner-recovery-secret. */
+/** @param {RouteDeps} deps @returns {{ recover: ExactHandler }} */
 export function ownerRecoveryRoutes({ pool, secret }) {
   return {
     recover: async (body, req) => {

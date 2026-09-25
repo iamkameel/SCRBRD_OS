@@ -23,9 +23,13 @@
  * permitted. See player_team_history() in db/08.
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
+/** @import { RouteDeps, ApiRequest, ApiResponse, Handler } from "../api-types.mjs" */
+// A caught error is `any` to the checker (CaughtError in api-types.mjs):
+// pg's carry a SQLSTATE `code`, this module's own carry an HTTP `status`.
 
-const err = (code, status = 400) => Object.assign(new Error(code), { status });
+const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
 
+/** @param {RouteDeps} deps @returns {Record<string, Handler>} */
 export function rosterRoutes({ pool, secret }) {
   return {
     // POST /api/players/:id/team { teamCode, effectiveOn? }
@@ -72,7 +76,7 @@ export function rosterRoutes({ pool, secret }) {
           };
         });
         res.json(out);
-      } catch (e) {
+      } catch (/** @type {any} */ e) {
         // 23514 is the trigger refusing a backdate earlier than the membership
         // it would close, and its message says which dates collided.
         if (e.code === "23514") return res.status(422).json({ error: "invalid_move", detail: e.message });

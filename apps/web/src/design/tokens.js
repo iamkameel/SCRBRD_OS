@@ -409,6 +409,23 @@ button{touch-action:manipulation}
 @media(max-width:640px){
   .os-shell{--g-2:1fr;--g-3:1fr}
 }
+
+/* ── Print (SCRBRD-082) ──────────────────────────────────────────
+   Nothing else in the product ships a print stylesheet, so this is one
+   utility rather than a print theme for every screen: whichever element on
+   the page carries \`.os-print-area\` is the only thing a print of that page
+   shows, wherever it sits in the tree — a report opened as a modal over the
+   shell is still nested under the sidebar and the topbar, so hiding those two
+   by name would miss the next thing that opens the same way. The standard
+   "print just this element" rule instead: hide everything, then reveal one
+   subtree and pull it out of the page's normal flow so it prints from the
+   top of the sheet rather than wherever the modal happened to be centred. */
+@media print{
+  body *{visibility:hidden}
+  .os-print-area,.os-print-area *{visibility:visible}
+  .os-print-area{position:absolute;left:0;top:0;width:100%;margin:0;padding:0;background:#fff;color:#000;box-shadow:none}
+  .os-print-hide{display:none!important}
+}
 `;
 
 export { D, T, GLOBAL_CSS, clr, px, textOn };

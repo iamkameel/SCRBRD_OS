@@ -115,6 +115,29 @@ export function Probe({ x }) { return <p>{can(x)} either.</p>; }
      r.status === 1 && /__ci_probe_prose_bad__.*uses "can"/.test(r.stdout), r.stdout);
 });
 
+// SCRBRD-071: prose after an {expression} that happens to start with a comma
+// before running into the closing tag — `{'x'}, you can see it</p>` — was
+// read as code because the `}`-side strip refused any comma, a guard meant
+// only for a `}, {` destructuring list. `can` is rbac/index.js's helper, and
+// the bare word in this sentence used to be reported as a call to it.
+withScratch("__ci_probe_prose_comma__.jsx", `
+export function Probe() { return <p>{'x'}, you can see it</p>; }
+`, () => {
+  const r = run();
+  ok("prose starting with a comma after an {expression} is not read as a reference",
+     r.status === 0 && !/__ci_probe_prose_comma__/.test(r.stdout), r.stdout);
+});
+
+// The comma guard must still hold for the shape it exists to protect: text
+// after `}` that runs into another `{` rather than a closing tag.
+withScratch("__ci_probe_destructure_comma__.jsx", `
+export function Probe(p) { return p.then(([{ default: S }, { can }]) => can(S)); }
+`, () => {
+  const r = run();
+  ok("a name bound by destructuring after `}, {` before another {expression} is still declared",
+     r.status === 0 && !/__ci_probe_destructure_comma__/.test(r.stdout), r.stdout);
+});
+
 // A destructuring list is not prose. The first cut of the strip above ate
 // the `, ` between two patterns and App.jsx's dynamic-import handler lost a
 // parameter name to it.

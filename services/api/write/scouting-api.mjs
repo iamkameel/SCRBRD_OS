@@ -12,7 +12,11 @@
  * the reason rather than a generic failure.
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
+/** @import { RouteDeps, ApiRequest, ApiResponse, Handler } from "../api-types.mjs" */
+// A caught error is `any` to the checker (CaughtError in api-types.mjs):
+// pg's carry a SQLSTATE `code`, this module's own carry an HTTP `status`.
 
+/** @param {string} code @param {number} [status] */
 function err(code, status = 400) {
   return Object.assign(new Error(code), { status });
 }
@@ -29,11 +33,13 @@ function err(code, status = 400) {
  * to the same question that can drift from the first, and it is the database's
  * answer that a queued offline write and a stale client both eventually meet.
  */
+/** @param {RouteDeps} deps @returns {Record<string, Handler>} */
 export function featureRoutes({ pool, secret }) {
-  const err = (code, status = 400) => Object.assign(new Error(code), { status });
+  const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
+  /** @param {(req: ApiRequest) => Promise<unknown>} fn @returns {Handler} */
   const handle = (fn) => async (req, res) => {
     try { res.json(await fn(req)); }
-    catch (e) {
+    catch (/** @type {any} */ e) {
       const status = e.code === "42501" ? 403 : (e.status || 500);
       res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
     }
@@ -92,11 +98,13 @@ export function featureRoutes({ pool, secret }) {
  * feature_suppression do, under the caller's own identity, and a second check
  * here would be a copy that can drift from the one that decides.
  */
+/** @param {RouteDeps} deps @returns {Record<string, Handler>} */
 export function moduleAdminRoutes({ pool, secret }) {
-  const err = (code, status = 400) => Object.assign(new Error(code), { status });
+  const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
+  /** @param {(req: ApiRequest) => Promise<unknown>} fn @returns {Handler} */
   const handle = (fn) => async (req, res) => {
     try { res.json(await fn(req)); }
-    catch (e) {
+    catch (/** @type {any} */ e) {
       if (e.code === "23503") return res.status(404).json({ error: "no_such_module_or_school" });
       const status = e.code === "42501" ? 403 : (e.status || 500);
       res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
@@ -164,7 +172,9 @@ export function moduleAdminRoutes({ pool, secret }) {
           // caller changed nothing, and saying which would confirm whether a
           // suppression exists to somebody who may not manage it.
           return { key, schoolId: b.schoolId, personId: person, hidden: false,
-                   lifted: r.rowCount > 0 };
+                   // A DELETE's command tag always carries a count; pg's
+                   // type allows null only for commands that have none.
+                   lifted: /** @type {number} */ (r.rowCount) > 0 };
         }
         const r = await client.query(
           `insert into feature_suppression (key, school_id, person_id, reason, hidden_by)
@@ -200,8 +210,15 @@ export function moduleAdminRoutes({ pool, secret }) {
  * review that does not say how it was known is the one thing this feature must
  * never record — see drs_review in db/08 for why.
  */
+/** @param {RouteDeps} deps @returns {Record<string, Handler>} */
 export function drsRoutes({ pool, secret }) {
-  const err = (code, status = 400) => Object.assign(new Error(code), { status });
+  const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
+  /**
+   * @param {any} v  a body field as sent; returned only once it is on the list
+   * @param {readonly string[]} allowed
+   * @param {string} field
+   * @param {boolean} [required]
+   */
   const oneOf = (v, allowed, field, required = false) => {
     if (v == null || v === "") {
       if (required) throw err(`${field}_required`);
@@ -255,7 +272,7 @@ export function drsRoutes({ pool, secret }) {
           return { matchId: req.params.id, ...r.rows[0] };
         });
         res.json(out);
-      } catch (e) {
+      } catch (/** @type {any} */ e) {
         // 23514 is either a CHECK or the feature gate. The gate's message names
         // the flag and who can move it, so it is passed through rather than
         // flattened — a scorer told only "invalid" would go looking for a bug
@@ -288,8 +305,9 @@ export function drsRoutes({ pool, secret }) {
  * policy's decision (broadcast.publish), and what the overlay then shows is
  * broadcast_state()'s — this only shapes the request.
  */
+/** @param {RouteDeps} deps @returns {Record<string, Handler>} */
 export function broadcastRoutes({ pool, secret }) {
-  const err = (code, status = 400) => Object.assign(new Error(code), { status });
+  const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
   return {
     // POST /matches/:id/broadcast { published, nameDisplay?, showOfficials?, strapline? }
     publish: async (req, res) => {
@@ -320,7 +338,7 @@ export function broadcastRoutes({ pool, secret }) {
           return r.rows[0];
         });
         res.json(out);
-      } catch (e) {
+      } catch (/** @type {any} */ e) {
         if (e.code === "23514") return res.status(400).json({ error: "invalid_value", detail: e.message });
         if (e.code === "23502" || e.code === "23503") return res.status(404).json({ error: "no_such_match" });
         const status = e.code === "42501" ? 403 : (e.status || 500);
@@ -348,11 +366,13 @@ export function broadcastRoutes({ pool, secret }) {
  * against the school on the row, so naming somebody else's school produces a
  * refusal rather than a sponsor on their scoreboard.
  */
+/** @param {RouteDeps} deps @returns {Record<string, Handler>} */
 export function sponsorRoutes({ pool, secret }) {
-  const err = (code, status = 400) => Object.assign(new Error(code), { status });
+  const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
+  /** @param {(req: ApiRequest) => Promise<unknown>} fn @returns {Handler} */
   const handle = (fn) => async (req, res) => {
     try { res.json(await fn(req)); }
-    catch (e) {
+    catch (/** @type {any} */ e) {
       // 23514 here is the category gate almost every time, and its message is
       // the reason a school office needs to read. Passed through rather than
       // flattened to "invalid": "you may not advertise betting to children"
@@ -413,14 +433,14 @@ export function sponsorRoutes({ pool, secret }) {
       const PLACEMENTS = ["broadcast_overlay", "scorecard_footer", "fixture_list", "ground_board"];
       if (!b.sponsorId) throw err("sponsor_required");
       if (!PLACEMENTS.includes(b.placement)) throw err("placement_invalid");
-      const date = (v, f) => {
+      const date = (/** @type {unknown} */ v, /** @type {string} */ f) => {
         if (!v || !/^\d{4}-\d{2}-\d{2}$/.test(String(v))) throw err(`${f}_required`);
         return String(v);
       };
       const starts = date(b.startsOn, "starts_on");
       const ends   = date(b.endsOn, "ends_on");
       if (ends < starts) throw err("ends_before_starts");
-      const money = (v, f) => {
+      const money = (/** @type {unknown} */ v, /** @type {string} */ f) => {
         if (v == null || v === "") return null;
         const n = Number(v);
         if (!Number.isFinite(n) || n < 0) throw err(`${f}_invalid`);
@@ -474,7 +494,13 @@ export function sponsorRoutes({ pool, secret }) {
   };
 }
 
+/** @param {RouteDeps} deps @returns {Record<string, Handler>} */
 export function scoutingRoutes({ pool, secret }) {
+  /**
+   * @param {string} sql
+   * @param {(req: ApiRequest) => unknown[]} params
+   * @returns {(req: ApiRequest) => Promise<any>}  the function's result row
+   */
   const call = (sql, params) => (req) => runAsPrincipal(
     pool, secret, req.headers?.authorization,
     async (client) => {
@@ -483,9 +509,10 @@ export function scoutingRoutes({ pool, secret }) {
       if (r.ok === false) { throw err(r.reason || "refused", 403); }
       return r;
     });
+  /** @param {(req: ApiRequest) => Promise<unknown>} fn @returns {Handler} */
   const handle = (fn) => async (req, res) => {
     try { res.json(await fn(req)); }
-    catch (e) {
+    catch (/** @type {any} */ e) {
       const status = e.code === "42501" ? 403 : (e.status || 500);
       res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
     }

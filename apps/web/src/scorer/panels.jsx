@@ -536,6 +536,20 @@ function ScorecardPanel({innings,idx}){
             ))}
           </div>
         ))}
+        {/* A bowler replaced during an over, and why (SCRBRD-080). A log from
+            before the pad asked has no reason, and says so. */}
+        {(i.bowlerChanges||[]).length>0&&(
+          <div data-testid="bowler-changes" style={{padding:"7px 14px",display:"flex",flexDirection:"column",gap:"3px"}}>
+            {i.bowlerChanges.map((c,ci)=>{
+              const nm=id=>i.bowlers.find(b=>b.id===id)?.name??id??"?";
+              return (
+                <span key={ci} style={{color:D.textMuted,fontSize:"10px",fontFamily:D.body}}>
+                  Over {c.over+1}.{c.ballInOver}: {nm(c.to)} took over from {nm(c.from)}{c.reason?` (${c.reason==="suspended"?"suspended":"injured"})`:" (reason not recorded)"}
+                </span>
+              );
+            })}
+          </div>
+        )}
       </Card>
     </div>
   );
@@ -599,9 +613,9 @@ function CommentaryCard({inn}){
   },[lastBallKey]);
   const getBallKey=(b)=>b.over+"_"+b.ballInOver;
   const descBall=(b)=>{
-    if(b.type==="W")return "WICKET — "+(DISMISSAL_LABEL[b.dismissal]??b.dismissal);
+    if(b.type==="W")return "WICKET — "+(DISMISSAL_LABEL[b.dismissal]??b.dismissal)+(b.outAt?" at the "+(b.outAt==="bowler_end"?"bowler's":"striker's")+" end":"");
     if(b.type==="Wd")return "Wide ball";
-    if(b.type==="Nb")return "No Ball ("+(b.nbType||"front foot").replace("_"," ")+"), "+(b.value||0)+"+1 runs";
+    if(b.type==="Nb")return "No Ball ("+(b.nbType||"front foot").replace("_"," ")+"), "+(b.value||0)+"+1 runs"+(b.nbRuns?(b.nbRuns==="leg_byes"?" (leg byes)":" (byes)"):"");
     if(b.type==="Pen")return "Penalty "+b.value+" runs — "+(b.reason||"");
     if(b.type==="B")return "Bye — "+b.value+" run"+(b.value!==1?"s":"");
     if(b.type==="LB")return "Leg Bye — "+b.value+" run"+(b.value!==1?"s":"");

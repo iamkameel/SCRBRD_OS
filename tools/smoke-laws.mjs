@@ -32,13 +32,16 @@ import pg from "pg";
 import { SyncEngine, memoryStorage } from "@scrbrd/sync";
 import {
   deriveInnings, deriveMatch, fromRow, inningsStart, batters, bowler, ball, voidEvent, sealInnings,
-  BALL_TYPE, newEventId, REFUSAL,
+  BALL_TYPE, newEventId, REFUSAL, REFUSAL_TEXT, toRow, PLACEMENT_SOURCE, PLACEMENT_NULL, CAPTURE_PROFILE,
 } from "@scrbrd/scoring";
 
 const PORT = 8891;
 const BASE = `http://127.0.0.1:${PORT}`;
 const DB = process.env.DATABASE_URL || "postgres://scrbrd:scrbrd@127.0.0.1:5432/scrbrd";
 const MATCH = "77777777-0000-0000-0000-000000000002";
+// A second fixture for the contact/trajectory walk, so its deliveries do not
+// change the over and innings counts the walk above asserts.
+const SHOTS = "77777777-0000-0000-0000-000000000003";
 const SCORER = "scorer@example.invalid";
 const DEVICE = "device-laws-01";
 const P = ["aaaaaaaa-0000-0000-0000-000000000001", "aaaaaaaa-0000-0000-0000-000000000002",
@@ -227,6 +230,150 @@ try {
      JSON.stringify([live1, match.innings[1].runs]));
   const [unstamped] = await q(`select count(*)::int n from ball_event where match_id = $1 and fingerprint is null`, [MATCH]);
   ok("every event written carries its fingerprint", unstamped.n === 0);
+
+  group("How the bat met it: contact and trajectory reach the log (SCRBRD-071)");
+  // toRow() maps both to columns; the live INSERT used to list neither, so a
+  // captured edge arrived as nothing at all.
+  const sc = await api(`/api/matches/${SHOTS}/session/claim`, { method: "POST", token, body: { device: DEVICE } });
+  ok("the scorer claims a second fixture", sc.body?.ok === true, JSON.stringify(sc.body));
+  const shotsPost = async (...evs) => (await api(`/api/matches/${SHOTS}/events`, {
+    method: "POST", token, body: { events: evs.map((ev) => ({ ...envelope(ev), epoch: sc.body?.epoch })) } })).body;
+  const shotsLog = async () => ((await api(`/api/matches/${SHOTS}/events?since=0`, { token })).body?.events || []);
+  const setUp = await shotsPost(stamp(0, inningsStart({ battingTeam: "Hilton U16B", bowlingTeam: "Kearsney", squad, overs: 2 })),
+                                stamp(0, batters({ striker: P[0], nonStriker: P[1] })), stamp(0, bowler({ bowler: DLAMINI })));
+  ok("the innings is opened", setUp?.accepted?.length === 3, JSON.stringify(setUp));
+  const edged = stamp(0, ball({ type: BALL_TYPE.RUN, value: 4, contact: "outside_edge", trajectory: "aerial" }));
+  const e1 = await shotsPost(edged);
+  ok("an edge in the air is accepted", e1?.accepted?.length === 1, JSON.stringify(e1));
+  const [stored2] = await q(`select contact, trajectory from ball_event where idempotency_key = $1`, [edged.id]);
+  ok("...stored in its columns", stored2?.contact === "outside_edge" && stored2?.trajectory === "aerial", JSON.stringify(stored2));
+  const back = (await shotsLog()).map(fromRow).find((e) => e.id === edged.id);
+  ok("...and read back through the API as the scorer sent it",
+     back?.contact === "outside_edge" && back?.trajectory === "aerial", JSON.stringify(back));
+  const e2 = await shotsPost(edged);
+  ok("a retry of it is a duplicate", e2?.duplicates?.length === 1 && !e2?.conflicts?.length, JSON.stringify(e2));
+  const e3 = await shotsPost({ ...edged, contact: "middle" });
+  ok("the same key claiming the ball was middled is a conflict: contact is content", e3?.conflicts?.length === 1, JSON.stringify(e3));
+
+  // A ROW STORED BEFORE THIS FIX, retried now. The old write path listed
+  // neither column, so the row holds NULL for both whatever the event said.
+  // Written here exactly as that path wrote it — its column list, the same
+  // toRow() — and then retried through today's path.
+  const oldWriter = async (ev, seq) => {
+    const r = toRow(ev);
+    await q(`insert into ball_event
+               (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                idempotency_key, client_seq, client_ts, kind, ball_type, value, shot, seg, zone,
+                striker_id, non_striker_id, bowler_id, dismissed_id, dismissal, payload,
+                theta, radius, placement_source, placement_null, close_position, capture_profile)
+             select $1, match_school($1), $2, $3, r.innings, (select id from app_user where email = $4), $5,
+                    $6, $2, now(), r.kind, r.ball_type, r.value, r.shot, r.seg, r.zone,
+                    r.striker_id, r.non_striker_id, r.bowler_id, r.dismissed_id, r.dismissal, r.payload,
+                    r.theta, r.radius, r.placement_source, r.placement_null, r.close_position, r.capture_profile
+               from jsonb_populate_record(null::ball_event, $7::jsonb) r`,
+            [SHOTS, seq, sc.body?.epoch, SCORER, DEVICE, ev.id, JSON.stringify({ ...r, match_id: SHOTS })]);
+  };
+  const [{ n: top }] = await q(`select max(seq)::int n from ball_event where match_id = $1`, [SHOTS]);
+  // What the pad sends, and always has: ball() fills both with null.
+  const padBall = stamp(0, ball({ type: BALL_TYPE.RUN, value: 1 }));
+  ok("the pad's ball() carries contact and trajectory as null", padBall.contact === null && padBall.trajectory === null);
+  await oldWriter(padBall, top + 1);
+  const r1 = await shotsPost(padBall);
+  ok("a retry of a ball the OLD path stored is still a duplicate — its fingerprint did not move",
+     r1?.duplicates?.length === 1 && r1.duplicates[0].seq === top + 1 && !r1?.conflicts?.length, JSON.stringify(r1));
+  // The one case that would move: an event that DID carry a contact, stored
+  // by the old path without it. No client has ever sent one (the pad does
+  // not offer the capture), so no stored row is in this state — this shows
+  // what the risk would have looked like: loud, a conflict held for a
+  // person, never a silent drop.
+  const lost = stamp(0, ball({ type: BALL_TYPE.RUN, value: 0, contact: "beat" }));
+  await oldWriter(lost, top + 2);
+  const r2 = await shotsPost(lost);
+  ok("(an old row that had lost a contact would read as a conflict, not a duplicate)", r2?.conflicts?.length === 1, JSON.stringify(r2));
+
+  group("A value the record cannot hold refuses one event, not the batch (SCRBRD-077)");
+  // A value outside a column CHECK used to throw inside appendEvents: the
+  // whole batch a 500, and the device resending it forever. Now each is
+  // refused on its own, named, and the legal balls either side are written.
+  const bad = (name, fields) => ({ name, ev: stamp(0, ball({ type: BALL_TYPE.RUN, value: 0, ...fields })) });
+  const good1 = stamp(0, ball({ type: BALL_TYPE.RUN, value: 1 }));
+  const good2 = stamp(0, ball({ type: BALL_TYPE.RUN, value: 2 }));
+  const cases = [
+    [bad("contact", { contact: "thick_edge" }), "contact_unknown"],
+    [bad("trajectory", { contact: "middle", trajectory: "skied" }), "trajectory_unknown"],
+    [bad("a path off a bat that missed", { contact: "beat", trajectory: "aerial" }), "trajectory_without_contact"],
+    [bad("placement source", { placementSource: "guess" }), "placement_invalid"],
+    [bad("why there is no placement", { placementNull: "forgot" }), "placement_invalid"],
+    [bad("capture profile", { captureProfile: "extreme" }), "capture_profile_unknown"],
+    [bad("a bearing past 359", { placementSource: "point", theta: 400, radius: 0.5 }), "placement_invalid"],
+    [bad("a zone", { zone: "deep" }), "placement_invalid"],
+    [bad("a segment that is not a number", { seg: "abc" }), "value_refused"],
+  ];
+  const valueBatch = [good1, ...cases.map(([c]) => c.ev), good2];
+  const vr = await api(`/api/matches/${SHOTS}/events`, {
+    method: "POST", token, body: { events: valueBatch.map((ev) => ({ ...envelope(ev), epoch: sc.body?.epoch })) } });
+  ok("the batch is answered, not a 500", vr.status === 200, JSON.stringify(vr.body));
+  ok("the legal balls either side are written", vr.body?.accepted?.length === 2
+     && vr.body.accepted.every((a) => [good1.id, good2.id].includes(a.idempotencyKey)), JSON.stringify(vr.body?.accepted));
+  for (const [c, reason] of cases) {
+    const r = vr.body?.refused?.find((x) => x.idempotencyKey === c.ev.id);
+    ok(`${c.name}: refused as ${reason}`, r?.reason === reason, JSON.stringify(r));
+  }
+  ok("every refused reason has words for the person reading it",
+     (vr.body?.refused ?? []).every((r) => typeof REFUSAL_TEXT[r.reason] === "string"), JSON.stringify(vr.body?.refused));
+  const [{ n: wrote }] = await q(`select count(*)::int n from ball_event where idempotency_key = any($1)`,
+                                 [cases.map(([c]) => c.ev.id)]);
+  ok("...and none of the refused events was written", wrote === 0);
+  const resent = await api(`/api/matches/${SHOTS}/events`, {
+    method: "POST", token, body: { events: valueBatch.map((ev) => ({ ...envelope(ev), epoch: sc.body?.epoch })) } });
+  ok("resent, the batch settles the same way: two duplicates, the rest refused — nothing wedges",
+     resent.status === 200 && resent.body?.duplicates?.length === 2 && resent.body?.refused?.length === cases.length,
+     JSON.stringify(resent.body));
+
+  // A vocabulary packages/scoring owns is refused at the door, whatever the
+  // token: holding it would only move the failure to the day it is released.
+  const staleBad = stamp(0, ball({ type: BALL_TYPE.RUN, value: 0, captureProfile: "extreme" }));
+  const sb = await api(`/api/matches/${SHOTS}/events`, {
+    method: "POST", token, body: { events: [{ ...envelope(staleBad), epoch: (sc.body?.epoch ?? 0) + 99 }] } });
+  ok("a stale-token event with a value the record cannot hold is refused, not held",
+     sb.body?.refused?.[0]?.reason === "capture_profile_unknown" && !sb.body?.quarantined?.length, JSON.stringify(sb.body));
+  // One whose only vocabulary is the database's CHECK is held — the CHECK runs
+  // at the INSERT — and refused, in words, when somebody tries to release it.
+  const staleContact = stamp(0, ball({ type: BALL_TYPE.RUN, value: 0, contact: "thick_edge" }));
+  const sh = await api(`/api/matches/${SHOTS}/events`, {
+    method: "POST", token, body: { events: [{ ...envelope(staleContact), epoch: (sc.body?.epoch ?? 0) + 99 }] } });
+  ok("a stale-token event whose contact only the CHECK knows is held", sh.body?.quarantined?.length === 1, JSON.stringify(sh.body));
+  const [heldRow] = await q(`select id from ball_event_quarantine where idempotency_key = $1`, [staleContact.id]);
+  const approver = (await api("/api/auth/dev-login", { method: "POST", body: { email: "sarah@example.invalid", deviceId: "device-laws-approver" } })).body?.token;
+  const rel = await api(`/api/quarantine/${heldRow?.id}/resolve`, { method: "POST", token: approver, body: { accept: true } });
+  ok("...and releasing it is refused with the reason, not a 500", rel.status === 200 && rel.body?.ok === false
+     && rel.body?.reason === "value_refused" && rel.body?.value === "contact_unknown" && !!rel.body?.text, JSON.stringify(rel));
+  const [{ n: stillHeld }] = await q(`select count(*)::int n from ball_event_quarantine
+                                       where idempotency_key = $1 and resolved_at is null`, [staleContact.id]);
+  ok("...and it is still held, for a person to discard", stillHeld === 1);
+
+  // The door reads placement.mjs; the table's CHECKs say the same. If one
+  // moves without the other, this is where it shows.
+  for (const [constraint, vocab] of [["ball_event_placement_source", PLACEMENT_SOURCE],
+                                     ["ball_event_placement_null", PLACEMENT_NULL],
+                                     ["ball_event_capture_profile", CAPTURE_PROFILE]]) {
+    const [{ def }] = await q(`select pg_get_constraintdef(oid) def from pg_constraint
+                                where conrelid = 'ball_event'::regclass and conname = $1`, [constraint]);
+    const inCheck = [...def.matchAll(/'([^']+)'::text/g)].map((m) => m[1]).sort();
+    ok(`${constraint} and placement.mjs list the same values`,
+       JSON.stringify(inCheck) === JSON.stringify(Object.values(vocab).sort()), `${def} vs ${Object.values(vocab)}`);
+  }
+  group("An event without its identity is refused at the door, and nothing is written");
+  const rowsBeforeNameless = await rowCount();
+  const nameless = await api(`/api/matches/${MATCH}/events`, { method: "POST", token, body: { events: [
+    envelope(stamp(0, ball({ type: BALL_TYPE.RUN, value: 1 }))),                // well-formed
+    { epoch, deviceId: DEVICE, clientSeq: ++clientSeq, clientTs: Date.now(), innings: 0,
+      payload: ball({ innings: 0, type: BALL_TYPE.RUN, value: 1 }) },   // no idempotencyKey
+  ] } });
+  ok("a batch with an event missing its key is a 400 naming it — it used to be a 500 the device resent for ever",
+     nameless.status === 400 && nameless.body?.error === "malformed_event", `${nameless.status} ${JSON.stringify(nameless.body)}`);
+  ok("...and not even the well-formed event beside it was written", (await rowCount()) === rowsBeforeNameless);
+
 } catch (e) {
   ok(`the walk threw: ${e.message?.slice(0, 200)}`, false);
   console.log(e.stack?.split("\n").slice(0, 4).join("\n"));

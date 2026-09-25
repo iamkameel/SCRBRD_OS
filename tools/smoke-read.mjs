@@ -84,7 +84,7 @@ try {
     "matches", "players", "injuries", "competitions",
     "coaches", "staff", "users", "grounds",
     "training", "training_attendance", "skills", "notifications",
-    "league", "weather", "career",
+    "league", "weather", "career", "career_by_season",
   ]) {
     let ran = true, err = null;
     try { await read(resource, medic); } catch (e) { ran = false; err = e.message; }

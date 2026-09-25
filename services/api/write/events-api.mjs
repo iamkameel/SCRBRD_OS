@@ -9,6 +9,7 @@
  *     event under a key already used (db/36, the commit fingerprint),
  *   - judges every live event against the Laws before it is written
  *     (lawsRefusal() in packages/scoring, over the fold of the log so far),
+ *   - refuses, per event, a value the table cannot hold (SCRBRD-077),
  *   - allocates the authoritative per-match seq,
  *   - routes stale-epoch events to QUARANTINE instead of merging them,
  *   - refreshes the lease on activity (once per request, not once per ball).
@@ -24,7 +25,19 @@
  * Mirrors MatchSession.append() from scoring-session.mjs, against SQL.
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
-import { toRow, fromRow, normaliseDismissal, MatchFold, lawsRefusal } from "@scrbrd/scoring";
+import { toRow, fromRow, normaliseDismissal, MatchFold, lawsRefusal, REFUSAL, REFUSAL_TEXT,
+         PLACEMENT_SOURCE, PLACEMENT_NULL, CAPTURE_PROFILE } from "@scrbrd/scoring";
+/** @import { Pool, ApiRequest, ApiResponse, Handler, IdHandler, IdRequest, RouteDeps, DressedError } from "../api-types.mjs" */
+// A caught error is `any` to the checker (CaughtError in api-types.mjs): pg's
+// carry a SQLSTATE `code` (and `table`, `constraint`, `detail`), this
+// module's own carry an HTTP `status`.
+
+/**
+ * A reason that has words in REFUSAL_TEXT (packages/scoring/src/laws.mjs):
+ * every Law, the idempotency conflict, and each value the record cannot hold.
+ * Typing a refusal this way makes the checker prove it can be put in words.
+ * @typedef {keyof typeof REFUSAL_TEXT} RefusalCode
+ */
 
 /**
  * The columns an event is stored with, as ONE object, keyed by column name.
@@ -43,8 +56,16 @@ import { toRow, fromRow, normaliseDismissal, MatchFold, lawsRefusal } from "@scr
  * the table has no column for rides in payload, so capturing a new dimension
  * needs no migration.
  *
+ * Every column toRow() maps is listed here AND in the insert below. `contact`
+ * and `trajectory` were not (SCRBRD-071): toRow() took them out of the payload
+ * and nothing put them in a column, so they were dropped. Listing them does not
+ * move the fingerprint (db/36) of any row stored before: those were stored with
+ * both NULL, the pad's ball() sends both as null unless a scorer captured them
+ * (it has never offered to), and NULLs are stripped before hashing — so a retry
+ * of an old ball still reads as a duplicate.
+ *
  * @param {string} matchId
- * @param {any} ev  the envelope {innings, payload, ...}
+ * @param {IncomingEvent} ev  the envelope {innings, payload, ...}
  * @returns {Record<string, any>}
  */
 function columnsFor(matchId, ev) {
@@ -54,7 +75,8 @@ function columnsFor(matchId, ev) {
     innings: row.innings ?? ev.innings ?? 0,
     kind: row.kind || "ball",
     ball_type: row.ball_type ?? null, value: row.value ?? null,
-    shot: row.shot ?? null, seg: row.seg ?? null, zone: row.zone ?? null,
+    shot: row.shot ?? null, contact: row.contact ?? null, trajectory: row.trajectory ?? null,
+    seg: row.seg ?? null, zone: row.zone ?? null,
     striker_id: row.striker_id ?? null, non_striker_id: row.non_striker_id ?? null,
     bowler_id: row.bowler_id ?? null, dismissed_id: row.dismissed_id ?? null,
     dismissal: row.dismissal ?? null, payload: row.payload ?? {},
@@ -64,18 +86,125 @@ function columnsFor(matchId, ev) {
   };
 }
 
+/**
+ * The placement vocabularies packages/scoring owns, checked at the door
+ * (SCRBRD-077). Read from placement.mjs, never listed here: db/07's CHECKs
+ * say the same, and the walk (tools/smoke-laws.mjs) fails if the two differ.
+ * @type {[column: string, allowed: string[], reason: RefusalCode][]}
+ */
+const PLACEMENT_VOCABULARY = [
+  ["placement_source", Object.values(PLACEMENT_SOURCE), "placement_invalid"],
+  ["placement_null", Object.values(PLACEMENT_NULL), "placement_invalid"],
+  ["capture_profile", Object.values(CAPTURE_PROFILE), "capture_profile_unknown"],
+];
+
+/**
+ * Why this event's columns cannot be stored, by packages/scoring's own
+ * vocabularies, or null.
+ * @param {Record<string, any>} cols  columnsFor()
+ * @returns {{reason: RefusalCode, field: string, value: any} | null}
+ */
+function vocabularyRefusal(cols) {
+  for (const [field, allowed, reason] of PLACEMENT_VOCABULARY) {
+    const value = cols[field];
+    if (value != null && !allowed.includes(value)) return { reason, field, value };
+  }
+  return null;
+}
+
+/**
+ * The database's own answer, as a reason a person can read: the CHECK a row
+ * broke is named by its constraint, and the refusal by what the scorer
+ * recorded. Each reason has its words in REFUSAL_TEXT (packages/scoring/src/laws.mjs).
+ * Keyed by a constraint's name as pg reports it, so any string may index it.
+ * @type {Record<string, RefusalCode>}
+ */
+const CHECK_REASON = {
+  ball_event_contact: "contact_unknown",
+  ball_event_trajectory: "trajectory_unknown",
+  ball_event_trajectory_needs_contact: "trajectory_without_contact",
+  ball_event_placement_source: "placement_invalid",
+  ball_event_placement_null: "placement_invalid",
+  ball_event_theta_range: "placement_invalid",
+  ball_event_radius_range: "placement_invalid",
+  ball_event_point_is_complete: "placement_invalid",
+  ball_event_zone_check: "placement_invalid",
+  ball_event_capture_profile: "capture_profile_unknown",
+};
+
+/**
+ * A write the database refused because of a VALUE in the event — a column
+ * CHECK on ball_event (23514), or a value that is not the column's type or
+ * does not fit it (SQLSTATE class 22) — as a per-event refusal. Anything else
+ * (a policy, a missing function, a lost connection) is not the event's fault
+ * and returns null, so the caller rethrows it.
+ * @param {any} e  a pg error
+ * @returns {{reason: RefusalCode, constraint?: string} | null}
+ */
+function valueRefusal(e) {
+  if (e?.code === "23514" && e.table === "ball_event") {
+    return { reason: CHECK_REASON[e.constraint] ?? "value_refused", constraint: e.constraint };
+  }
+  if (typeof e?.code === "string" && e.code.startsWith("22")) return { reason: "value_refused" };
+  return null;
+}
+
 /** The fingerprint of an event that has not been stored: db/36's function over the row it would be. */
 const FINGERPRINT_OF = `ball_event_fingerprint(jsonb_populate_record(null::ball_event, $2::jsonb))`;
 
 /**
- * @param events array of {epoch, deviceId, scorerId, idempotencyKey, clientSeq, clientTs, innings, payload}
- * @returns {Promise<{
- *   accepted:    {idempotencyKey: string, seq: number}[],
- *   duplicates:  {idempotencyKey: string, seq: number}[],
- *   quarantined: {idempotencyKey: string, reason: string}[],
- *   conflicts:   {idempotencyKey: string, seq: number|null, reason: "idempotency_conflict"}[],
- *   refused:     {idempotencyKey: string, reason: string}[],
- * }>}
+ * One event of a POST /matches/:id/events batch: the outbox's envelope
+ * (OutboxEvent in packages/sync) around a scoring event whose shape
+ * @scrbrd/scoring owns.
+ *
+ * What a batch is expected to hold, not what has been checked: the route hands
+ * the body over as it arrived. appendEvents() checks that the batch is a
+ * non-empty array, the dismissal on a wicket and the placement vocabularies;
+ * every other field is the database's to judge — a column's type or CHECK
+ * refuses the one event, the INSERT policies refuse what the token does not
+ * hold.
+ * @typedef {object} IncomingEvent
+ * @property {number} epoch            the token epoch the device believes it holds
+ * @property {string} deviceId
+ * @property {string} idempotencyKey   the event's identity (newEventId)
+ * @property {number} clientSeq
+ * @property {number} [clientTs]       ms since the epoch, on the device
+ * @property {number} [innings]        the outbox's own field; the event carries its innings in `payload`
+ * @property {string} [scorerId]       carried, not trusted: a row's scorer is app_user_id()
+ * @property {Record<string, any>} [payload]  the event itself (a LogEvent), read field by field as toRow() reads it
+ */
+
+/**
+ * appendEvents()'s answer: every event in the batch in exactly one bucket,
+ * named by its idempotency key.
+ * @typedef {object} AppendResult
+ * @property {{idempotencyKey: string, seq: number}[]} accepted     written now, at `seq`
+ * @property {{idempotencyKey: string, seq: number}[]} duplicates   the same event, already written at `seq`
+ * @property {{idempotencyKey: string, reason: "match_complete" | "stale_epoch_or_lease" | "no_session"}[]} quarantined  held for a person
+ * @property {{idempotencyKey: string, seq: number | null, reason: "idempotency_conflict"}[]} conflicts
+ *   the key names another event: `seq` is the stored one's, null when that one is held
+ * @property {{idempotencyKey: string, reason: RefusalCode, field?: string, value?: any, constraint?: string}[]} refused
+ *   the Laws, or the record, refused it
+ */
+
+/**
+ * scoring_lease_check()'s row (db/33): whether the match has a session,
+ * whether this caller holds its live lease on this device at this epoch, and
+ * the session's epoch and state — 'match_complete' once the match is over.
+ * @typedef {object} LeaseCheck
+ * @property {boolean} found
+ * @property {boolean} holds
+ * @property {number | null} epoch
+ * @property {string | null} [state]
+ */
+
+/**
+ * @param {Pool} pool
+ * @param {string} secret
+ * @param {string | undefined} bearer  the Authorization header, as sent
+ * @param {string} matchId
+ * @param {IncomingEvent[]} events  the batch: one device's queue, in order
+ * @returns {Promise<AppendResult>}
  *
  * Every event in the batch lands in exactly one bucket. `conflicts` and
  * `refused` are the two where NOTHING was written: the server has no copy,
@@ -83,7 +212,24 @@ const FINGERPRINT_OF = `ball_event_fingerprint(jsonb_populate_record(null::ball_
  * holds them durably, apart from the outbox, for exactly that).
  */
 export async function appendEvents(pool, secret, bearer, matchId, events) {
-  if (!Array.isArray(events) || events.length === 0) { const e = new Error("no_events"); e.status = 400; throw e; }
+  if (!Array.isArray(events) || events.length === 0) { const e = /** @type {DressedError} */ (new Error("no_events")); e.status = 400; throw e; }
+
+  // AN EVENT WITHOUT ITS IDENTITY CANNOT BE ANSWERED FOR. Every result bucket
+  // is keyed by idempotencyKey, so an event missing its key, its device or its
+  // client seq cannot be settled on its own: the INSERT failed its NOT NULL
+  // (23502) and the whole batch came back 500 — which a device resends for
+  // ever. Refused here instead, before anything is written, as a 400 that names
+  // the first one. packages/sync always sets all three; this is for any other
+  // producer.
+  events.forEach((ev, i) => {
+    if (!ev || typeof ev.idempotencyKey !== "string" || ev.idempotencyKey === ""
+        || typeof ev.deviceId !== "string" || ev.deviceId === ""
+        || !Number.isInteger(ev.clientSeq)) {
+      const e = /** @type {DressedError} */ (new Error("malformed_event"));
+      e.status = 400; e.detail = { index: i };
+      throw e;
+    }
+  });
 
   // THE VOCABULARY IS CLOSED AT THIS DOOR. A wicket names how the batter was
   // out from packages/scoring's DISMISSAL, or it is not recorded: the bowler's
@@ -96,7 +242,7 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
     if ((p.kind ?? "ball") !== "ball" || p.type !== "W") continue;
     const d = normaliseDismissal(p.dismissal);
     if (!d) {
-      const e = new Error("dismissal_unknown"); e.status = 400;
+      const e = /** @type {DressedError} */ (new Error("dismissal_unknown")); e.status = 400;
       e.detail = { field: "dismissal", value: p.dismissal ?? null, idempotencyKey: ev.idempotencyKey };
       throw e;
     }
@@ -117,7 +263,9 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
     const { rows: lrows } = await client.query(
       `select * from scoring_lease_check($1, $2, $3)`,
       [matchId, events[0].deviceId, events[0].epoch]);
+    /** @type {LeaseCheck} */
     const lease = lrows[0] || { found: false, holds: false, epoch: null };
+    /** @type {AppendResult} */
     const result = { accepted: [], duplicates: [], quarantined: [], conflicts: [], refused: [] };
 
     // The match as the Laws read it, folded ONCE, on the first event that
@@ -128,13 +276,19 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
     /** @type {MatchFold|null} */
     let fold = null;
     const loadFold = async () => {
+      /** @type {{ rows: BallEventRow[] }} */
       const { rows } = await client.query(
         `select ${EVENT_COLUMNS} from ball_event where match_id = $1 order by seq`, [matchId]);
       return new MatchFold(rows.map(fromRow));
     };
 
-    for (const ev of events) {
-      const cols = columnsFor(matchId, ev);
+    /**
+     * Steps 1–4 for one event: everything that touches the database. Run by the
+     * loop below inside a savepoint, so a value the table refuses refuses this
+     * event and not the batch.
+     * @param {IncomingEvent} ev  @param {Record<string, any>} cols  columnsFor(ev)
+     */
+    const writeOne = async (ev, cols) => {
       const colsJson = JSON.stringify(cols);
 
       // 1. idempotency — is this key already stored, and is it THIS event?
@@ -149,7 +303,7 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
       if (dup[0]) {
         if (dup[0].same) result.duplicates.push({ idempotencyKey: ev.idempotencyKey, seq: dup[0].seq });
         else result.conflicts.push({ idempotencyKey: ev.idempotencyKey, seq: dup[0].seq, reason: "idempotency_conflict" });
-        continue;
+        return;
       }
       // ...and the same question of a key already HELD. A NULL fingerprint
       // is a row quarantined before db/36, which cannot be fingerprinted in
@@ -160,8 +314,16 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
         [ev.idempotencyKey, colsJson]);
       if (held[0] && !held[0].same) {
         result.conflicts.push({ idempotencyKey: ev.idempotencyKey, seq: null, reason: "idempotency_conflict" });
-        continue;
+        return;
       }
+      // The SAME event, held under a stale token and re-sent now, goes on
+      // like any other: if this device holds the token it is judged and
+      // written live below, exactly as a new ball would be, and writing it
+      // closes the held copy as 'superseded' in the same statement (db/37's
+      // trigger) — so nobody is later asked to release a ball already in the
+      // log. Answering "duplicate" instead would tell the device its ball was
+      // recorded while the log still lacked it, and every ball after it would
+      // be judged against a log one short.
 
       // 2. token/epoch/lease gate (the DB RLS enforces this too; we check here to
       //    ROUTE mismatches to quarantine rather than get an opaque RLS failure).
@@ -181,7 +343,7 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
           reason: lease.state === "match_complete" ? "match_complete"
                 : lease.found ? "stale_epoch_or_lease" : "no_session",
         });
-        continue;
+        return;
       }
 
       // 3. The Laws. Judged on the event exactly as it will be stored and read
@@ -202,7 +364,7 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
       if (!fold) fold = await loadFold();
       const candidate = fromRow({ ...cols, idempotency_key: ev.idempotencyKey });
       const why = lawsRefusal(fold.view(), candidate);
-      if (why) { result.refused.push({ idempotencyKey: ev.idempotencyKey, reason: why }); continue; }
+      if (why) { result.refused.push({ idempotencyKey: ev.idempotencyKey, reason: why }); return; }
 
       // 4. allocate the authoritative seq and insert (RLS WITH CHECK is the final guard)
       const { rows: mx } = await client.query(
@@ -211,11 +373,11 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
       await client.query(
         `insert into ball_event
            (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
-            idempotency_key, client_seq, client_ts, kind, ball_type, value, shot, seg, zone,
-            striker_id, non_striker_id, bowler_id, dismissed_id, dismissal, payload,
+            idempotency_key, client_seq, client_ts, kind, ball_type, value, shot, contact, trajectory,
+            seg, zone, striker_id, non_striker_id, bowler_id, dismissed_id, dismissal, payload,
             theta, radius, placement_source, placement_null, close_position, capture_profile)
          select $1, match_school($1), $2, $3, r.innings, app_user_id(), $4,
-                $5, $6, $7, r.kind, r.ball_type, r.value, r.shot, r.seg, r.zone,
+                $5, $6, $7, r.kind, r.ball_type, r.value, r.shot, r.contact, r.trajectory, r.seg, r.zone,
                 r.striker_id, r.non_striker_id, r.bowler_id, r.dismissed_id, r.dismissal, r.payload,
                 r.theta, r.radius, r.placement_source, r.placement_null, r.close_position, r.capture_profile
            from jsonb_populate_record(null::ball_event, $8::jsonb) r`,
@@ -224,6 +386,43 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
 
       fold.push({ ...candidate, seq });
       result.accepted.push({ idempotencyKey: ev.idempotencyKey, seq });
+    };
+
+    for (const ev of events) {
+      const cols = columnsFor(matchId, ev);
+
+      // 0. A VALUE THE RECORD CANNOT HOLD REFUSES THIS EVENT, NOT THE BATCH
+      //    (SCRBRD-077). A contact, trajectory or placement outside a column
+      //    CHECK used to make the INSERT throw: the whole batch was a 500, and
+      //    the device resent it forever — the wedge step 3 exists to prevent.
+      //    Two checks, neither holding a copy of a vocabulary:
+      //
+      //    - At the door, before the database is touched, the placement
+      //      vocabularies packages/scoring owns (placement.mjs:
+      //      PLACEMENT_SOURCE, PLACEMENT_NULL, CAPTURE_PROFILE), read from
+      //      there. A refused value is refused whether or not the device
+      //      holds the token: holding it would only move the failure to the
+      //      day somebody tried to release it.
+      //    - Everything else the table constrains — contact and trajectory,
+      //      whose only vocabulary is db/07's CHECK, theta and radius ranges,
+      //      a zone, a malformed number — is judged by those CHECKs
+      //      themselves: steps 1-4 run in a savepoint, and a CHECK violation
+      //      or malformed value (SQLSTATE 23514, class 22) rolls back that
+      //      one event and names it. Anything else still fails the request.
+      //      An event routed to quarantine meets them only when released
+      //      (quarantineRoutes answers value_refused then, not a 500).
+      const bad = vocabularyRefusal(cols);
+      if (bad) { result.refused.push({ idempotencyKey: ev.idempotencyKey, ...bad }); continue; }
+      await client.query("savepoint event_write");
+      try {
+        await writeOne(ev, cols);
+        await client.query("release savepoint event_write");
+      } catch (e) {
+        const why = valueRefusal(e);
+        if (!why) throw e;
+        await client.query("rollback to savepoint event_write");
+        result.refused.push({ idempotencyKey: ev.idempotencyKey, ...why });
+      }
     }
     return result;
   });
@@ -237,12 +436,57 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
  * reason a log that made the round trip replays to the same scorecard.
  */
 export const EVENT_COLUMNS = `
-  seq, epoch, innings, kind, ball_type, value, shot, seg, zone,
+  seq, epoch, innings, kind, ball_type, value, shot, contact, trajectory, seg, zone,
   striker_id, non_striker_id, bowler_id, dismissed_id, dismissal, idempotency_key,
   scorer_user_id, device_id, client_ts, server_ts, payload,
   theta, radius, placement_source, placement_null, close_position, capture_profile,
   recovered`;   // a ball released from quarantine says so on the way out
 
+/**
+ * A ball_event row as EVENT_COLUMNS reads it, through pg's default parsers:
+ * smallint and integer arrive as numbers, numeric (radius) as a string,
+ * timestamptz as a Date, jsonb parsed. fromRow() turns it into an event.
+ * @typedef {object} BallEventRow
+ * @property {number} seq
+ * @property {number} epoch
+ * @property {number} innings
+ * @property {string} kind
+ * @property {string | null} ball_type
+ * @property {number | null} value
+ * @property {string | null} shot
+ * @property {string | null} contact
+ * @property {string | null} trajectory
+ * @property {number | null} seg
+ * @property {string | null} zone
+ * @property {string | null} striker_id
+ * @property {string | null} non_striker_id
+ * @property {string | null} bowler_id
+ * @property {string | null} dismissed_id
+ * @property {string | null} dismissal
+ * @property {string} idempotency_key
+ * @property {string} scorer_user_id
+ * @property {string} device_id
+ * @property {Date} client_ts
+ * @property {Date} server_ts
+ * @property {Record<string, any>} payload
+ * @property {number | null} theta
+ * @property {string | null} radius
+ * @property {string | null} placement_source
+ * @property {string | null} placement_null
+ * @property {string | null} close_position
+ * @property {string | null} capture_profile
+ * @property {boolean} recovered
+ */
+
+/**
+ * The log after `sinceSeq` (see above: raw rows, for fromRow()).
+ * @param {Pool} pool
+ * @param {string} secret
+ * @param {string | undefined} bearer  the Authorization header, as sent
+ * @param {string} matchId
+ * @param {number} [sinceSeq]
+ * @returns {Promise<BallEventRow[]>}  in seq order
+ */
 export async function readEvents(pool, secret, bearer, matchId, sinceSeq = 0) {
   return runAsPrincipal(pool, secret, bearer, async client => {
     const { rows } = await client.query(
@@ -255,6 +499,7 @@ export async function readEvents(pool, secret, bearer, matchId, sinceSeq = 0) {
 }
 
 // ── Routes ──
+/** @param {RouteDeps} deps @returns {Record<string, IdHandler>}  both are /matches/:id/events */
 export function eventRoutes({ pool, secret }) {
   return {
     // POST /matches/:id/events  { events: [...] }
@@ -262,7 +507,11 @@ export function eventRoutes({ pool, secret }) {
       try {
         const out = await appendEvents(pool, secret, req.headers?.authorization, req.params.id, req.body?.events || []);
         res.json(out);
-      } catch (e) {
+      } catch (/** @type {any} */ e) {
+        // 42501: the database refused the caller (no scoring.edit here). Every
+        // other route in this file answers that 403 not_permitted; this one
+        // answered 500 and logged it as unexpected.
+        if (e.code === "42501") return res.status(403).json({ error: "not_permitted" });
         if (!e.status) console.error("append →", e.code || "", e.message, e.detail || "", e.column || "");
         res.status(e.status || 500).json({ error: e.code || e.message });
       }
@@ -272,7 +521,10 @@ export function eventRoutes({ pool, secret }) {
       try {
         const rows = await readEvents(pool, secret, req.headers?.authorization, req.params.id, Number(req.query?.since || 0));
         res.json({ matchId: req.params.id, events: rows });
-      } catch (e) { res.status(e.status || 500).json({ error: e.code || e.message }); }
+      } catch (/** @type {any} */ e) {
+        if (e.code === "42501") return res.status(403).json({ error: "not_permitted" });
+        res.status(e.status || 500).json({ error: e.code || e.message });
+      }
     },
   };
 }
@@ -286,12 +538,73 @@ export function eventRoutes({ pool, secret }) {
  * scoring_amendment_decide() checks the approver's authority — and that they
  * are not the requester — before it appends anything. A check in JavaScript
  * would be a second opinion that can drift from the one that runs.
+ *
+ * AN APPROVED AMENDMENT MEETS THE LAWS (SCRBRD-076), in the release route's
+ * order: scoring_amendment_decide() inside a SAVEPOINT decides WHO, and takes
+ * the live path's per-match lock before it appends (db/38); the log up to the
+ * void is folded and the void judged as it was stored; a refusal rolls the
+ * savepoint back — no void, the request still pending — and says why in
+ * words. See amendmentRefusal() for which Laws those are.
  */
+
+/**
+ * The Laws an amendment's void is judged by: lawsRefusal(), less the one rule
+ * that is about live undo and not about the log.
+ *
+ * An amendment is a correction to a match — usually a COMPLETED one — filed by
+ * one person and approved by another (scoring.amend.request, then
+ * scoring.amend.approve, never the same person: db/02, db/24). Its void names
+ * an OLDER delivery; that is the whole point of it. lawsRefusal() refuses any
+ * void but the latest event that still counts (`void_not_latest`), because on
+ * the pad an undo is last-in, first-out and anything older "needs an
+ * amendment" — its own words. Applied here that rule would refuse every
+ * amendment there is. So it is the one refusal an amendment is exempt from;
+ * lawsRefusal() itself is not bent, and the live path still enforces it.
+ *
+ * Every other void rule stands: the target must be an event of this match, in
+ * the innings the void is filed under, not a void, not already undone, and not
+ * an `innings_start` — voiding the start of an innings leaves its balls with no
+ * batting side, squad or overs, and an amendment can only void, never write the
+ * replacement, so that is never a correction. In practice the SQL function
+ * answers all but the last first, with its own reason (no_such_live_delivery);
+ * `void_foundation` is the one the Laws add.
+ *
+ * This leans on voidRefusal() (packages/scoring/src/laws.mjs) asking the LIFO
+ * question LAST — every other void rule is checked before `void_not_latest` is
+ * returned, so an exemption from it cannot excuse anything else. The walk
+ * (tools/smoke-amend.mjs) approves a non-latest void and refuses an
+ * innings_start one, and fails if that order ever changes.
+ *
+ * What an amendment does to the events AFTER its target — a wicket voided under
+ * the batter who came in for it — is not re-judged: the fold replays them as it
+ * always has. Deciding that a correction must also re-judge the balls bowled
+ * since would be a product decision, not a Law.
+ *
+ * @param {import("@scrbrd/scoring").MatchView} match  the fold of the log before the void
+ * @param {import("@scrbrd/scoring").LogEvent} voidEv  the void, as stored
+ * @returns {import("@scrbrd/scoring").Refusal | null}
+ */
+function amendmentRefusal(match, voidEv) {
+  const why = lawsRefusal(match, voidEv);
+  return why === REFUSAL.VOID_NOT_LATEST ? null : why;
+}
+
+/**
+ * scoring_amendment_decide()'s row (db/38). `void_key` is the void it wrote,
+ * on an approval that succeeded.
+ * @typedef {object} AmendmentDecision
+ * @property {boolean} ok
+ * @property {string | null} reason
+ * @property {string | null} [void_key]
+ */
+
+/** @param {RouteDeps} deps @returns {Record<string, IdHandler>}  /matches/:id/amendments, /amendments/:id/decide */
 export function amendmentRoutes({ pool, secret }) {
-  const err = (code, status = 400) => Object.assign(new Error(code), { status });
+  const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
+  /** @param {(req: IdRequest) => Promise<unknown>} fn @returns {IdHandler} */
   const handle = (fn) => async (req, res) => {
     try { res.json(await fn(req)); }
-    catch (e) {
+    catch (/** @type {any} */ e) {
       const status = e.code === "42501" ? 403 : (e.status || 500);
       res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
     }
@@ -318,13 +631,41 @@ export function amendmentRoutes({ pool, secret }) {
       });
     }),
     // POST /amendments/:id/decide { approve, note? }
+    //   → { ok: true, void_key } | { ok: false, reason }
+    //   | { ok: false, reason: "laws_refused", law, text }   (nothing written; still pending)
     decide: handle(async (req) => {
       const approve = req.body?.approve === true;
       return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+        await client.query("savepoint amendment_decide");
         const { rows } = await client.query(
           `select * from scoring_amendment_decide($1, $2, $3)`,
           [req.params.id, approve, req.body?.note ?? null]);
-        return rows[0] ?? { ok: false, reason: "no_result" };
+        /** @type {AmendmentDecision} */
+        const out = rows[0] ?? { ok: false, reason: "no_result" };
+        if (!approve || !out.ok) { await client.query("release savepoint amendment_decide"); return out; }
+
+        // Written, under the per-match lock (db/38). Now the Laws, over the
+        // log the void landed on.
+        /** @type {{ rows: BallEventRow[] }} */
+        const { rows: log } = await client.query(
+          `select ${EVENT_COLUMNS} from ball_event
+            where match_id = (select match_id from ball_event where idempotency_key = $1)
+              and seq <= (select seq from ball_event where idempotency_key = $1)
+            order by seq`, [out.void_key]);
+        const written = log.find((r) => r.idempotency_key === out.void_key);
+        const why = written
+          ? amendmentRefusal(new MatchFold(log.filter((r) => r.seq < written.seq).map(fromRow)).view(), fromRow(written))
+          // The approver cannot read the log they would be amending. Nothing
+          // can be judged, so nothing is written.
+          : "log_unreadable";
+        if (why) {
+          await client.query("rollback to savepoint amendment_decide");
+          return why === "log_unreadable"
+            ? { ok: false, reason: "not_permitted" }
+            : { ok: false, reason: "laws_refused", law: why, text: REFUSAL_TEXT[why] ?? why };
+        }
+        await client.query("release savepoint amendment_decide");
+        return out;
       });
     }),
   };
@@ -332,7 +673,17 @@ export function amendmentRoutes({ pool, secret }) {
 
 
 /**
- * The way out of quarantine. See db/14_quarantine_release.sql.
+ * quarantine_resolve()'s row (db/37). `seq` is where an accepted ball was
+ * written.
+ * @typedef {object} QuarantineResolution
+ * @property {boolean} ok
+ * @property {string | null} reason
+ * @property {number | null} [seq]
+ */
+
+/**
+ * The way out of quarantine. See db/14_quarantine_release.sql and
+ * db/37_quarantine_loose_ends.sql.
  *
  * Listing is the table's own read policy (scoring.correct over the match).
  * Resolving goes through quarantine_resolve(), which checks its own authority
@@ -340,11 +691,31 @@ export function amendmentRoutes({ pool, secret }) {
  * accepted ball is written with are produced HERE by toRow(), the same mapper
  * the live path uses, so a released delivery and a live one can never be two
  * different readings of the same event.
+ *
+ * A RELEASED BALL MEETS THE LAWS, the same function as a live one
+ * (SCRBRD-071). It used to be written with no judgement at all: a held ball
+ * from a bowler bowling his second over running, or one delivered after the
+ * match was decided, went straight into the log on an approver's click. SQL
+ * cannot run lawsRefusal(), so the order is:
+ *
+ *   1. quarantine_resolve() inside a SAVEPOINT. It decides WHO may release —
+ *      a caller it refuses learns nothing about the match from a Laws verdict
+ *      — and takes the live path's per-match lock, held to our commit, before
+ *      it writes the ball at the next seq.
+ *   2. The log up to that seq is folded (MatchFold, the live path's fold) and
+ *      lawsRefusal() is asked about the row exactly as it was stored.
+ *   3. Refused: ROLLBACK TO the savepoint. Nothing was written, the held row
+ *      is still open, and the answer says why in words. The person deciding
+ *      then has two honest choices, both theirs to make: discard it, or leave
+ *      it held until the log changes (a bowler named, a batter in) and try
+ *      again. Neither is taken for them.
+ * @param {RouteDeps} deps @returns {Record<string, IdHandler>}  /matches/:id/quarantine, /quarantine/:id/resolve
  */
 export function quarantineRoutes({ pool, secret }) {
+  /** @param {(req: IdRequest) => Promise<unknown>} fn @returns {IdHandler} */
   const handle = (fn) => async (req, res) => {
     try { res.json(await fn(req)); }
-    catch (e) {
+    catch (/** @type {any} */ e) {
       const status = e.code === "42501" ? 403 : (e.status || 500);
       res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
     }
@@ -362,27 +733,77 @@ export function quarantineRoutes({ pool, secret }) {
       return { rows };
     })),
     // POST /quarantine/:id/resolve { accept, note? }
+    //   → { ok: true, seq } | { ok: false, reason }
+    //   | { ok: false, reason: "laws_refused", law, text }   (nothing written; still held)
     resolve: handle(async (req) => {
       const accept = req.body?.accept === true;
       return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
         // The row is read under RLS first: a caller who may not see it may not
         // resolve it, and the function then applies the stricter rule.
-        const { rows: q } = await client.query(`select body from ball_event_quarantine where id = $1`, [req.params.id]);
-        if (!q.length) { const e = new Error("no_such_quarantine"); e.status = 404; throw e; }
+        const { rows: q } = await client.query(
+          `select match_id, body from ball_event_quarantine where id = $1`, [req.params.id]);
+        if (!q.length) { const e = /** @type {DressedError} */ (new Error("no_such_quarantine")); e.status = 404; throw e; }
         let row = null;
         if (accept) {
           const payload = q[0].body?.payload || {};
           if ((payload.kind ?? "ball") === "ball" && payload.type === "W") {
             const d = normaliseDismissal(payload.dismissal);
-            if (!d) { const e = new Error("dismissal_unknown"); e.status = 400; e.detail = { value: payload.dismissal ?? null }; throw e; }
+            if (!d) { const e = /** @type {DressedError} */ (new Error("dismissal_unknown")); e.status = 400; e.detail = { value: payload.dismissal ?? null }; throw e; }
             payload.dismissal = d;
           }
-          row = { ...toRow(payload), innings: q[0].body?.innings };
+          // The row the live path would have written: columnsFor(), the one
+          // mapping, so the event's own innings (in its payload) wins over the
+          // envelope's. This used to take the envelope's — which the web pad
+          // always sends as 0 — so a held second-innings ball was released
+          // into the first: refused as innings_closed if that innings was
+          // sealed, written into it if not. The same object is what the held
+          // copy's fingerprint was taken over, so a resend matches.
+          row = columnsFor(q[0].match_id, { ...q[0].body, payload });
         }
-        const { rows } = await client.query(
-          `select * from quarantine_resolve($1, $2, $3, $4)`,
-          [req.params.id, accept, row ? JSON.stringify(row) : null, req.body?.note ?? null]);
-        return rows[0] ?? { ok: false, reason: "no_result" };
+        await client.query("savepoint quarantine_release");
+        let rows;
+        try {
+          ({ rows } = await client.query(
+            `select * from quarantine_resolve($1, $2, $3, $4)`,
+            [req.params.id, accept, row ? JSON.stringify(row) : null, req.body?.note ?? null]));
+        } catch (e) {
+          // A held ball carrying a value the table cannot hold (SCRBRD-077).
+          // The live path refuses one when it writes it; a ball held under a
+          // stale token is held before any column CHECK runs, so the first
+          // CHECK it meets is this INSERT. Nothing written, still held, and
+          // the reason in words — not a 500.
+          const bad = valueRefusal(e);
+          if (!bad) throw e;
+          await client.query("rollback to savepoint quarantine_release");
+          return { ok: false, reason: "value_refused", value: bad.reason, text: REFUSAL_TEXT[bad.reason] ?? bad.reason };
+        }
+        /** @type {QuarantineResolution} */
+        const out = rows[0] ?? { ok: false, reason: "no_result" };
+        if (!accept || !out.ok) { await client.query("release savepoint quarantine_release"); return out; }
+
+        // Written, under the lock. Now the Laws, over the log it landed on.
+        /** @type {{ rows: BallEventRow[] }} */
+        const { rows: log } = await client.query(
+          `select ${EVENT_COLUMNS} from ball_event where match_id = $1 and seq <= $2 order by seq`,
+          [q[0].match_id, out.seq]);
+        const released = log.find((r) => r.seq === out.seq);
+        // `out.seq` is a number wherever `released` was found: it equals that
+        // row's seq, a NOT NULL integer. (quarantine_resolve() answers an
+        // accepted release with the seq it wrote; its only ok row without
+        // one is a rejection, returned above.)
+        const why = released
+          ? lawsRefusal(new MatchFold(log.filter((r) => r.seq < /** @type {number} */ (out.seq)).map(fromRow)).view(), fromRow(released))
+          // The approver cannot read the log they would be adding to. Nothing
+          // can be judged, so nothing is written.
+          : "log_unreadable";
+        if (why) {
+          await client.query("rollback to savepoint quarantine_release");
+          return why === "log_unreadable"
+            ? { ok: false, reason: "not_permitted" }
+            : { ok: false, reason: "laws_refused", law: why, text: REFUSAL_TEXT[why] ?? why };
+        }
+        await client.query("release savepoint quarantine_release");
+        return out;
       });
     }),
   };
@@ -409,9 +830,10 @@ export function quarantineRoutes({ pool, secret }) {
  * reason — "is 14 on 1 January and cannot play U13A: the limit is 13" — and a
  * coach who is told only "invalid" has to guess which of eleven names is the
  * problem.
+ * @param {RouteDeps} deps @returns {Record<string, IdHandler>}  /matches/:id/squad
  */
 export function squadRoutes({ pool, secret }) {
-  const err = (code, status = 400) => Object.assign(new Error(code), { status });
+  const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
   return {
     // POST /matches/:id/squad { side, players: [{ playerId, battingNo?, twelfth? }] }
     select: async (req, res) => {
@@ -465,7 +887,9 @@ export function squadRoutes({ pool, secret }) {
                returning player_id`,
               [req.params.id, p.playerId, side,
                p.battingNo == null ? null : Number(p.battingNo), p.twelfth === true]);
-            written += r.rowCount;
+            // An INSERT's command tag always carries a count; pg's type allows
+            // null only for commands that have none.
+            written += /** @type {number} */ (r.rowCount);
           }
           // Zero rows with no error means the policy refused every insert.
           // Reported as a refusal rather than a success with nothing in it.
@@ -473,7 +897,7 @@ export function squadRoutes({ pool, secret }) {
           return { matchId: req.params.id, side, selected: written };
         });
         res.json(out);
-      } catch (e) {
+      } catch (/** @type {any} */ e) {
         // 23514 is one of the two triggers. Its message names the player and
         // says why, which is the only useful thing to put in front of a coach.
         if (e.code === "23514") return res.status(400).json({ error: "not_eligible", detail: e.message });
@@ -508,9 +932,10 @@ export function squadRoutes({ pool, secret }) {
  * first ball the database refuses it, because reversing the innings order
  * under a scorecard people have already read is not an edit — it goes through
  * scoring_amendment, where it needs a second person.
+ * @param {RouteDeps} deps @returns {Record<string, IdHandler>}  /matches/:id/toss
  */
 export function tossRoutes({ pool, secret }) {
-  const err = (code, status = 400) => Object.assign(new Error(code), { status });
+  const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
   return {
     // POST /matches/:id/toss { wonBy: 'home'|'away', decision: 'bat'|'bowl' }
     record: async (req, res) => {
@@ -546,7 +971,7 @@ export function tossRoutes({ pool, secret }) {
           };
         });
         res.json(out);
-      } catch (e) {
+      } catch (/** @type {any} */ e) {
         // 23514 is the freeze trigger — play has started. Its message says so
         // and names the amendment route, which is the only way through.
         if (e.code === "23514") return res.status(409).json({ error: "toss_locked", detail: e.message });
@@ -592,9 +1017,10 @@ export function tossRoutes({ pool, secret }) {
  * name — "unavailable, said so himself" and "unavailable, according to the
  * coach" are different degrees of certainty, and letting the caller name
  * somebody else would erase the difference.
+ * @param {RouteDeps} deps @returns {Record<string, IdHandler>}  /matches/:id/availability
  */
 export function availabilityRoutes({ pool, secret }) {
-  const err = (code, status = 400) => Object.assign(new Error(code), { status });
+  const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
   const STATUS = ["available", "unavailable", "doubtful"];
   const KINDS = ["illness", "family", "academic", "travel", "religious", "other_sport", "other"];
 
@@ -625,7 +1051,7 @@ export function availabilityRoutes({ pool, secret }) {
           return r.rows[0];
         });
         res.json(out);
-      } catch (e) {
+      } catch (/** @type {any} */ e) {
         // 23514 is the belongs-to-this-school trigger almost every time, and
         // its message says which question was actually asked.
         if (e.code === "23514") return res.status(422).json({ error: "wrong_school", detail: e.message });
@@ -647,20 +1073,23 @@ export function availabilityRoutes({ pool, secret }) {
  * because transport.drive is a capability to REPORT on a trip and not to
  * change one — a driver who could update the row could re-time the departure
  * or swap the vehicle.
+ * @param {RouteDeps} deps
+ * @returns {Record<string, Handler>}  POST /vehicles has no :id; the trip routes do
  */
 export function transportRoutes({ pool, secret }) {
-  const err = (code, status = 400) => Object.assign(new Error(code), { status });
+  const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
   // YYYY-MM-DD or nothing. A cover date typed as "March next year" is refused
   // rather than stored as null, because null means "not recorded" and a
   // coordinator who typed a date would read "unknown" as the system losing it.
-  const isoDate = (v) => {
+  const isoDate = (/** @type {unknown} */ v) => {
     if (v == null || v === "") return null;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(v))) throw err("date_must_be_yyyy_mm_dd");
     return String(v);
   };
+  /** @param {(req: ApiRequest) => Promise<unknown>} fn @returns {Handler} */
   const handle = (fn) => async (req, res) => {
     try { res.json(await fn(req)); }
-    catch (e) {
+    catch (/** @type {any} */ e) {
       // 23514 is one of the safety checks on the trip — a bus that seats
       // fourteen carrying fifteen, or another school's vehicle. The message
       // names the vehicle and the numbers, so it is passed through.
@@ -745,6 +1174,7 @@ export function transportRoutes({ pool, secret }) {
       return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
         const { rows } = await client.query(`select * from trip_mark($1, $2)`,
                                             [req.params.id, event]);
+        /** @type {{ ok: boolean, reason: string | null }}  trip_mark()'s row (db/41) */
         const r = rows[0] ?? { ok: false, reason: "no_result" };
         // The function's own reason, not a flattened refusal: "already
         // departed" and "not this driver" send a person to different places.
@@ -755,8 +1185,13 @@ export function transportRoutes({ pool, secret }) {
   };
 }
 
+/**
+ * Appointing the officials: the comment that says why is the one headed so,
+ * above availabilityRoutes().
+ * @param {RouteDeps} deps @returns {Record<string, IdHandler>}  /matches/:id/officials
+ */
 export function officialRoutes({ pool, secret }) {
-  const err = (code, status = 400) => Object.assign(new Error(code), { status });
+  const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
   const DUTIES = ["umpire", "third_umpire", "scorer", "referee"];
   const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   return {
@@ -878,7 +1313,9 @@ export function officialRoutes({ pool, secret }) {
                values ($1, match_school($1), $2, $3, $4, $5, $6, app_user_id(), now())
                returning id`,
               [req.params.id, o.duty, name, o.personId ?? null, o.officialId ?? null, panel]);
-            written += r.rowCount;
+            // An INSERT's command tag always carries a count; pg's type allows
+            // null only for commands that have none.
+            written += /** @type {number} */ (r.rowCount);
           }
           // Zero rows and no error means the policy refused every insert. A
           // sheet that only re-submitted linked duties wrote nothing either,
@@ -899,7 +1336,7 @@ export function officialRoutes({ pool, secret }) {
           return { matchId: req.params.id, appointed: written, kept: keep.size, standing };
         });
         res.json(out);
-      } catch (e) {
+      } catch (/** @type {any} */ e) {
         if (e.code === "23505") return res.status(409).json({ error: "duplicate_official" });
         // 23502: match_school() came back NULL. 23503: the match_id foreign key
         // found nothing. Both mean that match is not there, or not theirs.
@@ -930,12 +1367,23 @@ export function officialRoutes({ pool, secret }) {
  * during a match — that is the whole point of recording them — and a scorer
  * who cannot write "rain arrived at 3pm" because play has started has been
  * given a worse tool than a notebook.
+ * @param {RouteDeps} deps
+ * @returns {Record<string, IdHandler>}  /matches/:id/weather, /matches/:id/pitch, /grounds/:id/condition
  */
 export function conditionsRoutes({ pool, secret }) {
-  const err = (code, status = 400) => Object.assign(new Error(code), { status });
+  const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
 
   // Shared shape for both handlers: derive school from the match, upsert on
   // match_id, report a policy refusal as a refusal rather than a silent no-op.
+  /**
+   * @template V  the fields build() validated out of the body
+   * @param {IdRequest} req
+   * @param {ApiResponse} res
+   * @param {object} spec
+   * @param {string} spec.sql                       $1 is the route's :id
+   * @param {(values: V) => unknown[]} spec.params  $2 onwards, in order
+   * @param {(req: IdRequest) => V} spec.build      throws err() on a bad field
+   */
   const upsert = async (req, res, { sql, params, build }) => {
     try {
       const values = build(req);
@@ -945,11 +1393,13 @@ export function conditionsRoutes({ pool, secret }) {
         return { matchId: req.params.id, ...r.rows[0] };
       });
       res.json(out);
-    } catch (e) {
+    } catch (/** @type {any} */ e) {
       if (e.code === "23514") return res.status(400).json({ error: "invalid_value", detail: e.message });
       // school_id came back NULL: match_school() found nothing, so the match
       // does not exist or is not visible to this principal.
-      if (e.code === "23502") return res.status(404).json({ error: "no_such_match" });
+      // 23503: match_weather has no school column, so a match that is not there
+      // fails its foreign key instead — the case the weather route's note means.
+      if (e.code === "23502" || e.code === "23503") return res.status(404).json({ error: "no_such_match" });
       const status = e.code === "42501" ? 403 : (e.status || 500);
       res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
     }
@@ -957,24 +1407,33 @@ export function conditionsRoutes({ pool, secret }) {
 
   // Whole numbers only, within a range, or null. The database checks these too;
   // doing it here means the message names the field rather than the constraint.
+  /** @param {unknown} v  a body field as sent @param {number} lo @param {number} hi @param {string} field */
   const num = (v, lo, hi, field) => {
     if (v == null || v === "") return null;
     const n = Number(v);
     if (!Number.isInteger(n) || n < lo || n > hi) throw err(`${field}_out_of_range`);
     return n;
   };
+  /**
+   * @param {any} v  a body field as sent; returned only once it is on the list
+   * @param {readonly string[]} allowed
+   * @param {string} field
+   */
   const oneOf = (v, allowed, field) => {
     if (v == null || v === "") return null;
     if (!allowed.includes(v)) throw err(`${field}_invalid`);
     return v;
   };
-  const bool = (v) => (v == null ? null : v === true);
+  const bool = (/** @type {unknown} */ v) => (v == null ? null : v === true);
   // A calendar date, or nothing. Rejected rather than coerced: `new Date()` of
   // a typo yields Invalid Date, which Postgres refuses with a message about a
   // type rather than about the field the groundsman got wrong.
+  /** @param {any} v  a body field as sent; returned only once it reads as a date @param {string} field */
   const date = (v, field) => {
     if (v == null || v === "") return null;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(v))) throw err(`${field}_must_be_yyyy_mm_dd`);
+    // typeof first: String(["2026-01-01"]) passes the pattern, and the array
+    // then reached Postgres, which answered 22007 — a 500 for a bad field.
+    if (typeof v !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(v)) throw err(`${field}_must_be_yyyy_mm_dd`);
     if (Number.isNaN(Date.parse(v))) throw err(`${field}_invalid`);
     return v;
   };
@@ -984,9 +1443,11 @@ export function conditionsRoutes({ pool, secret }) {
     weather: (req, res) => upsert(req, res, {
       // No school_id column here, unlike ball_event and the pitch report:
       // match_weather's policy derives the school with a subquery on the match,
-      // so there is nothing to denormalise. It does mean a write against a
-      // match that does not exist fails the foreign key rather than a NOT NULL,
-      // which is why the error map below covers both.
+      // so there is nothing to denormalise. A write against a match that does
+      // not exist is refused by that policy first (no school to anchor on:
+      // 403, which also does not say whether the id exists); the foreign key
+      // behind it (23503) is mapped to 404 in upsert() for a caller the policy
+      // would admit, so neither case is a 500.
       sql: `insert into match_weather
               (match_id, condition, temp_c, humidity_pct, wind_kph,
                wind_dir, uv_index, rain_chance_pct, forecast, playable, observed_at)

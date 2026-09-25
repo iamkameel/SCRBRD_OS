@@ -110,10 +110,11 @@ try {
   // The precondition is a delivery in the log, inserted directly: this is
   // about what the trigger does once one exists, not about how it got there.
   const scorerUser = (await q(`select id from app_user where email = 'scorer@example.invalid'`))[0].id;
+  // A dot ball: a delivery says what it was (db/43 refuses one with no type).
   await q(
     `insert into ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id,
-                             device_id, idempotency_key, client_seq, client_ts, kind, payload)
-     values ($1, $2, 1, 1, 1, $3, 'device-toss', $4, 1, now(), 'ball', '{}'::jsonb)`,
+                             device_id, idempotency_key, client_seq, client_ts, kind, ball_type, value, payload)
+     values ($1, $2, 1, 1, 1, $3, 'device-toss', $4, 1, now(), 'ball', 'run', 0, '{}'::jsonb)`,
     [m, HIL, scorerUser, `toss-smoke-${Date.now()}-${Math.random()}`]);
   const late = await callToss(m, scorer, "home", "bat");
   ok("the change is refused", late.status === 409);

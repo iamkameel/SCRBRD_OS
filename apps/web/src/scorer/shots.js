@@ -111,7 +111,7 @@ async function fetchAICommentary(ball,inn,milestone){
   let eventDesc="";
   if(ball.type==="W")eventDesc=`WICKET — ${batsman?.name||"batter"} dismissed ${ball.dismissal}${bowler?" bowled by "+bowler.name:""}`;
   else if(ball.type==="Wd")eventDesc="Wide delivery, sloppy line";
-  else if(ball.type==="Nb")eventDesc=`No ball (${(ball.nbType||"front foot").replace("_"," ")}), ${ball.value||0} runs off bat`;
+  else if(ball.type==="Nb")eventDesc=`No ball (${(ball.nbType||"front foot").replace("_"," ")}), ${ball.value||0} ${ball.nbRuns?(ball.nbRuns==="leg_byes"?"leg byes":"byes"):"runs off bat"}`;
   else if(ball.type==="B")eventDesc=`Byes — ${ball.value} run${ball.value!==1?"s":""}`;
   else if(ball.type==="LB")eventDesc=`Leg byes — ${ball.value} run${ball.value!==1?"s":""}`;
   else if(ball.value===6)eventDesc="SIX! Maximum — ball disappears into the crowd!";

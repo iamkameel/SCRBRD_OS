@@ -17,6 +17,10 @@
  *     and both names survive in the record
  *   the ordinary scoring path still cannot touch a finished match
  *
+ * And, since SCRBRD-076 (db/38): the approved void meets the Laws — every
+ * void rule but last-in-first-out, which is the pad's undo — and the approval
+ * waits for the per-match lock a live batch holds.
+ *
  *   node tools/migrate.mjs --reset --seed
  *   node tools/smoke-amend.mjs
  */
@@ -33,7 +37,7 @@ const U_HEAD   = "88888888-0000-0000-0000-000000000007";
 const P_BAT    = "aaaaaaaa-0000-0000-0000-000000000001";
 
 let pass = 0, fail = 0;
-const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
+const ok = (n, c, d = "") => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${String(d).slice(0, 300)}` : ""); } };
 const group = (t) => console.log("\n" + t);
 
 const server = spawn(process.execPath, ["services/api/server.mjs"], {
@@ -157,7 +161,13 @@ try {
   // gap and failed for a reason that had nothing to do with the fold.
   const justBefore = await runs();
   const done = await decide(req.body.id, head, { approve: true, note: "Confirmed against the book." });
-  ok("the head of sport approves the scorer's request", done.body?.ok === true);
+  ok("the head of sport approves the scorer's request", done.body?.ok === true, JSON.stringify(done.body));
+  // SCRBRD-076: the void is judged by the Laws — but an amendment is not an
+  // undo. `other-ball` was bowled after `wrong-six`, so the pad's rule (only
+  // the latest event) would refuse this; the amendment route does not apply it.
+  ok("...although it is not the latest delivery: last-in-first-out is the pad's undo, not an amendment's",
+     (await q(`select max(seq)::int n from ball_event
+                where match_id = $1 and kind <> 'void'`, [MATCH]))[0].n === 9003);
   ok("...and the void it wrote is named back", !!done.body?.void_key);
   ok("the six is gone from the fold", (await runs()) === justBefore - 6);
   ok("...and the delivery itself is out of the live log",
@@ -195,6 +205,63 @@ try {
   // still live can change between the two.
   ok("…and refused at approval, when the delivery cannot be found",
      ghostDecision.body?.reason === "no_such_live_delivery");
+
+  group("An approved amendment meets the Laws (SCRBRD-076)");
+  // The void is judged as it was stored, over the log it lands on. Every void
+  // rule stands but last-in-first-out — and the one the SQL function does not
+  // already answer is the start of an innings, which is never undone: voiding
+  // it leaves the innings' balls with no side, squad or overs, and an
+  // amendment cannot write the replacement.
+  await q(`insert into ball_event
+             (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+              idempotency_key, client_seq, client_ts, kind, payload)
+           values ($1,$2, 9100, 1, 3, $3, 'device-amend', 'fourth-innings-start', 9100, now(),
+                   'innings_start', '{"battingTeam":"Hilton 1st XI","bowlingTeam":"Westville","overs":20}')`,
+          [MATCH, HIL, U_SCORER]);
+  const found = await ask(MATCH, scorer, { targetKey: "fourth-innings-start", reason: "Opened by mistake." });
+  ok("a request to void the start of an innings is filed", found.status === 200, JSON.stringify(found.body));
+  const foundDecision = await decide(found.body?.id, head, { approve: true });
+  ok("...and refused at approval by the Laws", foundDecision.body?.ok === false
+     && foundDecision.body?.reason === "laws_refused" && foundDecision.body?.law === "void_foundation",
+     JSON.stringify(foundDecision.body));
+  ok("...with the reason in words", /start of an innings/.test(foundDecision.body?.text ?? ""));
+  ok("...nothing was written", (await q(
+    `select count(*)::int n from ball_event where payload->>'amendment' = $1`, [found.body?.id]))[0].n === 0);
+  ok("...the innings is still open", (await q(
+    `select count(*)::int n from ball_event_live where idempotency_key = 'fourth-innings-start'`))[0].n === 1);
+  ok("...and the request is still pending, for a person to decline",
+     (await q(`select state from scoring_amendment where id = $1`, [found.body?.id]))[0]?.state === "pending");
+  ok("declining it is still possible", (await decide(found.body?.id, head, { approve: false })).body?.ok === true);
+
+  group("An approval waits for the per-match lock a live batch holds (db/38)");
+  // A live batch holds the match's scoring_session row FOR UPDATE for its
+  // whole transaction (scoring_lease_check). Hold it here, as that batch
+  // would, and the approval must wait for it — so it appends after the batch,
+  // and the next batch folds the log with the void in it.
+  await q(`insert into scoring_session (match_id, school_id) values ($1, $2) on conflict do nothing`, [MATCH, HIL]);
+  await q(`insert into ball_event
+             (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+              idempotency_key, client_seq, client_ts, kind, ball_type, value, striker_id)
+           values ($1,$2, 9101, 1, 0, $3, 'device-amend', 'late-ball', 9101, now(),
+                   'ball', 'run', 1, $4)`, [MATCH, HIL, U_SCORER, P_BAT]);
+  const late = await ask(MATCH, scorer, { targetKey: "late-ball", reason: "Counted twice." });
+  const holder = await pool.connect();
+  let settled = false;
+  try {
+    await holder.query("begin");
+    await holder.query(`select 1 from scoring_session where match_id = $1 for update`, [MATCH]);
+    const pending = decide(late.body?.id, head, { approve: true }).then((r) => { settled = true; return r; });
+    await new Promise((r) => setTimeout(r, 750));
+    ok("the approval does not append while a live batch holds the match", settled === false);
+    ok("...and nothing is in the log yet", (await q(
+      `select count(*)::int n from ball_event where payload->>'amendment' = $1`, [late.body?.id]))[0].n === 0);
+    await holder.query("commit");
+    const lateDone = await pending;
+    ok("once the batch commits, the approval goes through", lateDone.body?.ok === true, JSON.stringify(lateDone.body));
+  } finally {
+    await holder.query("rollback").catch(() => {});
+    holder.release();
+  }
 } catch (e) {
   fail++;
   console.log("\n  ✗ the walk threw:", e.message);

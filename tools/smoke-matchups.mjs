@@ -91,14 +91,14 @@ try {
   let seq = 0;
   const stamp = `${Date.now()}-${Math.random()}`;
   const ball = async ({ type = "run", value = 0, striker = bat.id, bowler = bowl.id,
-                        dismissal = null, dismissed = null }) => {
+                        dismissal = null, dismissed = null, payload = {} }) => {
     seq += 1;
     await q(
       `insert into ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
                                idempotency_key, client_seq, client_ts, kind, ball_type, value,
                                striker_id, bowler_id, dismissal, dismissed_id, payload)
-       values ($1,$2,$3,1,0,$4,'device-matchups',$5,$3,now(),'ball',$6,$7,$8,$9,$10,$11,'{}'::jsonb)`,
-      [m, HIL, seq, scorer, `mu-${stamp}-${seq}`, type, value, striker, bowler, dismissal, dismissed]);
+       values ($1,$2,$3,1,0,$4,'device-matchups',$5,$3,now(),'ball',$6,$7,$8,$9,$10,$11,$12::jsonb)`,
+      [m, HIL, seq, scorer, `mu-${stamp}-${seq}`, type, value, striker, bowler, dismissal, dismissed, JSON.stringify(payload)]);
   };
 
   // Eight legal deliveries plus a wide: 1,4,0,0,6,1,0 off the bat, one wicket.
@@ -169,6 +169,18 @@ try {
      [401, 403].includes((await api(`/api/read/matchups?batterId=${bat.id}`)).status));
   ok("...and so is the coverage that would describe it",
      [401, 403].includes((await api(`/api/read/matchup_coverage?batterId=${bat.id}`)).status));
+
+  group("Byes are nobody's boundary, off a no-ball or not (SCRBRD-068)");
+  // The other batter, so the figures above stay as they are. Four byes, four
+  // byes off a no-ball, a no-ball hit for four, a leg bye off a no-ball.
+  await ball({ type: "B", value: 4, striker: other.id });
+  await ball({ type: "Nb", value: 4, striker: other.id, payload: { nbRuns: "byes" } });
+  await ball({ type: "Nb", value: 4, striker: other.id });
+  await ball({ type: "Nb", value: 1, striker: other.id, payload: { nbRuns: "leg_byes" } });
+  const byes = (await matchups(head, other.id)).find((r) => r.bowler_id === bowl.id);
+  ok("only the no-ball hit for four is his runs", byes?.runs === 4);
+  ok("...and his only four: four byes, off a no-ball or not, are not", byes?.fours === 1 && byes?.sixes === 0);
+  ok("...on one legal ball faced", byes?.balls === 1);
 
   group("A batter nobody has bowled to has no matchups, rather than empty ones");
   const fresh = (await q(

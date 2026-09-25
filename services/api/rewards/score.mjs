@@ -23,7 +23,7 @@
 import { weightsFor } from "./weights.mjs";
 
 const NIL = "00000000-0000-0000-0000-000000000000";
-const clamp01 = (x) => Math.max(0, Math.min(1, x));
+const clamp01 = (/** @type {number} */ x) => Math.max(0, Math.min(1, x));
 
 const INPUTS = `
 with boys as (
@@ -64,18 +64,23 @@ select b.id, b.full_name, b.team_code,
  order by b.full_name`;
 
 /** Cricket units for one match: runs and wickets on one scale, then capped. */
-const units = (m) => m.runs / 20 + 1.5 * m.wickets;
+const units = (/** @type {{ runs: number, wickets: number }} */ m) => m.runs / 20 + 1.5 * m.wickets;
 
-/** The figure for every boy the principal may read, ranked. */
+/**
+ * The figure for every boy the principal may read, ranked.
+ * @param {import("../api-types.mjs").Db} client
+ * @param {{ teamCode?: string | null }} [opts]
+ */
 export async function rewardFigures(client, { teamCode = null } = {}) {
   const w = await weightsFor(client);
   if (!w.ok) return { ok: false };
   const W = w.weights;
   const { rows } = await client.query(INPUTS, [teamCode]);
+  /** @type {{ playerId: string, name: string, team: string, figure: number, rank?: number }[]} */
   const out = rows.map((r) => {
     const matches = typeof r.matches === "string" ? JSON.parse(r.matches) : r.matches;
     // Three capped matches fill the term; more do not overflow it.
-    const performance = clamp01(matches.reduce((s, m) => s + Math.min(W.windowCap, units(m)), 0) / (3 * W.windowCap || 1));
+    const performance = clamp01(matches.reduce((/** @type {number} */ s, /** @type {{ runs: number, wickets: number }} */ m) => s + Math.min(W.windowCap, units(m)), 0) / (3 * W.windowCap || 1));
     const rating = r.rating == null ? 0 : clamp01(Number(r.rating) / 20);
     const evidence = r.rating == null ? 0
       : clamp01(Number(r.rated_metrics) / 8) * Math.exp(-Number(r.days_since_rated ?? 0) / 60);

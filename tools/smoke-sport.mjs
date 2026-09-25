@@ -189,13 +189,15 @@ try {
     ok("a hockey fixture cannot have a toss", !toss.ok && toss.code === "23514");
     ok("...and the refusal says why, naming the sport", /Hockey/.test(toss.message));
 
+    // A dot ball, complete in itself: the refusal has to be the sport's, not
+    // db/43's door for a delivery with no type (the same 23514).
     const ball = await q(
       `insert into ball_event (match_id, school_id, seq, epoch, scorer_user_id, device_id,
-                               idempotency_key, client_seq, client_ts, kind)
+                               idempotency_key, client_seq, client_ts, kind, ball_type, value)
        values ($1,$2,1,1,(select id from app_user where email='scorer@example.invalid'),
-               'd','k',1, now(), 'ball')`, [hk.id, HIL])
-      .then(() => ({ ok: true })).catch((e) => ({ ok: false, code: e.code }));
-    ok("...nor a ball log", !ball.ok && ball.code === "23514");
+               'd','k',1, now(), 'ball', 'run', 0)`, [hk.id, HIL])
+      .then(() => ({ ok: true })).catch((e) => ({ ok: false, code: e.code, message: e.message }));
+    ok("...nor a ball log", !ball.ok && ball.code === "23514" && /Hockey/.test(ball.message ?? ""));
 
     const sess = await q(
       `insert into scoring_session (match_id, school_id) values ($1,$2)`,
@@ -214,9 +216,9 @@ try {
   {
     const ck = await fixture("cricket");
     await q(`insert into ball_event (match_id, school_id, seq, epoch, scorer_user_id, device_id,
-                                     idempotency_key, client_seq, client_ts, kind)
+                                     idempotency_key, client_seq, client_ts, kind, ball_type, value)
              values ($1,$2,1,1,(select id from app_user where email='scorer@example.invalid'),
-                     'd','k2',1, now(), 'ball')`, [ck.id, HIL]);
+                     'd','k2',1, now(), 'ball', 'run', 0)`, [ck.id, HIL]);
     const moved = await q(`update match set sport = 'hockey' where id = $1`, [ck.id])
       .then(() => ({ ok: true })).catch((e) => ({ ok: false, code: e.code, message: e.message }));
     // Every replay over it would be deriving a cricket innings from a hockey

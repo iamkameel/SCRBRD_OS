@@ -31,6 +31,7 @@ import pg from "pg";
 import { SyncEngine, memoryStorage } from "@scrbrd/sync";
 import {
   deriveInnings, inningsStart, batters, bowler, ball, BALL_TYPE, undoLast, newEventId, sealInnings, INNINGS_END_REASON,
+  retire, RETIRE_REASON, NB_RUNS,
   noPlacement, placementEvidence, evidenceLabel, PLACEMENT_FIELD, PLACEMENT_NULL, CAPTURE_PROFILE,
 } from "@scrbrd/scoring";
 
@@ -170,6 +171,10 @@ try {
   await record(ball({ type: BALL_TYPE.RUN,    value: 4 }));
   await record(ball({ type: BALL_TYPE.WIDE,   value: 0 }));
   await record(ball({ type: BALL_TYPE.NO_BALL, value: 2 }));
+  // Two byes off a no-ball (SCRBRD-068): the side's three, the bowler's
+  // three, and none of them the batter's — the case the SQL career views
+  // got wrong until db/40.
+  await record(ball({ type: BALL_TYPE.NO_BALL, value: 2, nbRuns: NB_RUNS.BYES }));
   await record(ball({ type: BALL_TYPE.RUN,    value: 0 }));   // undone below
   await record(ball({ type: BALL_TYPE.RUN,    value: 6 }));   // undone below
 
@@ -188,6 +193,11 @@ try {
     await engine.record(appended);
     await engine.sync();
   }
+
+  // A wicket with no ball (SCRBRD-081): the striker retires out. A retire
+  // marked W — a wicket to both folds, and to neither a ball.
+  const retiring = deriveInnings(log, {}).striker;
+  await record(retire({ batter: retiring, reason: RETIRE_REASON.OUT }));
 
   // Let the outbox drain.
   for (let i = 0; i < 40 && engine.pendingCount > 0; i++) {
@@ -214,12 +224,14 @@ try {
 
   // The arithmetic, stated independently of both implementations, so this is
   // not just "two things agree" — they could agree and both be wrong.
-  //   Standing: 1, 4, a wide, a no-ball for 2. The 0 and the 6 were voided.
-  //   Runs = 1 + 4 + (1 wide) + (1 + 2 no-ball) = 9.
+  //   Standing: 1, 4, a wide, a no-ball for 2, a no-ball and 2 byes. The 0
+  //   and the 6 were voided.
+  //   Runs = 1 + 4 + (1 wide) + (1 + 2 no-ball) + (1 + 2 no-ball byes) = 12.
   //   Legal deliveries = the 1 and the 4. A wide and a no-ball are not legal,
   //   and the two voided balls did not happen. = 2.
-  ok(`the score is independently 9 off 2 legal balls (got ${local.runs}/${local.balls})`,
-     local.runs === 9 && local.balls === 2);
+  //   Wickets = the retirement, which is not a ball. = 1.
+  ok(`the score is independently 12 for 1 off 2 legal balls (got ${local.runs}/${local.wickets}, ${local.balls})`,
+     local.runs === 12 && local.wickets === 1 && local.balls === 2);
 
   group("The void is recorded, not hidden");
   const all = await dbq(
@@ -259,17 +271,18 @@ try {
     `select p.id as player_id,
             coalesce(bat.runs, 0)          as runs,
             coalesce(bat.balls_faced, 0)   as balls_faced,
+            coalesce(bat.out, false)       as out,
             coalesce(bowl.balls_bowled, 0) as balls_bowled,
             coalesce(bowl.runs_conceded, 0) as runs_conceded
        from player p
        left join (
-         -- Exactly the rules player_batting_career uses, so the two folds are
-         -- compared on one definition: runs off the bat only, and a no-ball IS
-         -- a ball faced while a wide is not.
-         select striker_id,
-                sum(case when ball_type in ('run','W','Nb') then coalesce(value,0) else 0 end)::int as runs,
-                sum(case when ball_type <> 'Wd' then 1 else 0 end)::int as balls_faced
-           from ball_event_live where match_id = $2 and kind = 'ball' group by striker_id
+         -- The view itself, not a copy of its rules: player_innings is what
+         -- the form guide, the passport and the milestones read, and since
+         -- db/40 it asks runsOffBat()'s question (a no-ball's byes are not
+         -- the batter's) and counts a retirement marked W as his innings, out.
+         select player_id as striker_id,
+                sum(runs)::int as runs, sum(balls_faced)::int as balls_faced, bool_or(out) as out
+           from player_innings where match_id = $2 group by player_id
        ) bat on bat.striker_id = p.id
        left join (
          -- Likewise player_bowling_career: an extra costs the bowler the run
@@ -304,7 +317,11 @@ try {
        Number(c.runs) === bat.runs);
     ok(`${bat.name}: balls faced agree — device ${bat.balls}, database ${c.balls_faced}`,
        Number(c.balls_faced) === bat.balls);
+    ok(`${bat.name}: out agrees — device ${bat.status}, database ${c.out}`,
+       (bat.status === "out") === (c.out === true));
   }
+  ok("the batter who retired out is out in both folds",
+     local.batsmen.find((b) => b.id === retiring)?.status === "out" && career[retiring]?.out === true);
   for (const bow of local.bowlers) {
     const c = career[bow.id];
     if (!c) continue;

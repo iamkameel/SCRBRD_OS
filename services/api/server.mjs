@@ -37,7 +37,7 @@ import { askStatsMagic, describeDelivery, statsMagicContext, aiConfigured } from
 import { sessionProfile, runAsPrincipal, issueLoginCode, redeemMagicLink } from "./auth/auth-db.mjs";
 import { signToken, AuthError } from "./auth/auth.mjs";
 import { readRoute, exportRoute, liveResources } from "./read/read-api.mjs";
-import { importRoutes, IMPORTS } from "./io/import-api.mjs";
+import { importRoutes } from "./io/import-api.mjs";
 import { eventRoutes, amendmentRoutes, quarantineRoutes, squadRoutes, tossRoutes, conditionsRoutes, officialRoutes, availabilityRoutes, transportRoutes } from "./write/events-api.mjs";
 import { scoutingRoutes, featureRoutes, drsRoutes, broadcastRoutes, sponsorRoutes, moduleAdminRoutes } from "./write/scouting-api.mjs";
 import { assessmentRoutes, accessRequestRoutes, developmentNoteRoutes, guardianLinkRoutes } from "./write/assessment-api.mjs";
@@ -64,6 +64,8 @@ import { trainingRoutes } from "./write/training-api.mjs";
 import { officialRegisterRoutes } from "./write/officials-register-api.mjs";
 import { MatchHub } from "./realtime/realtime.mjs";
 import { schemaRefusal } from "./schema-guard.mjs";
+/** @import { IncomingMessage, ServerResponse } from "node:http" */
+/** @import { Handler, IdHandler, ExactHandler } from "./api-types.mjs" */
 
 const PORT = Number(process.env.PORT || 8787);
 const ORIGIN = process.env.WEB_ORIGIN || "http://localhost:5173";
@@ -170,6 +172,7 @@ const CORS = {
   "vary": "origin",
 };
 
+/** @param {ServerResponse} res @param {number} status @param {unknown} body */
 const json = (res, status, body) => {
   if (res.writableEnded) return;
   res.writeHead(status, { "content-type": "application/json", ...CORS });
@@ -194,6 +197,17 @@ const json = (res, status, body) => {
  * threw, recorded 500 in its catch has answered 500 — the first answer was
  * never sent. rawRes() below overrides json() to write immediately, for the
  * two file responses that end with bytes of their own; both are reads.
+ *
+ * @typedef {{ status: number, body: unknown }} Sent
+ * @typedef {object} Shim
+ * @property {number} _status
+ * @property {Sent | null} _pending
+ * @property {(code: number) => Shim} status
+ * @property {(body: unknown) => Shim} json
+ * @property {() => Sent | null} flush
+ *
+ * @param {ServerResponse} res
+ * @returns {Shim}
  */
 const shim = (res) => ({
   _status: 200,
@@ -216,6 +230,18 @@ const shim = (res) => ({
  * with bytes rather than JSON, so they cannot use the plain shim — it has
  * status() and json() and nothing else. Handed the plain one they throw on
  * writeHead, which is exactly how this was found.
+ *
+ * @typedef {object} RawShim
+ * @property {number} _status
+ * @property {Sent | null} _pending
+ * @property {(code: number) => RawShim} status
+ * @property {(body: unknown) => RawShim} json
+ * @property {() => Sent | null} flush
+ * @property {(code: number, headers: Record<string, string | number>) => RawShim} writeHead
+ * @property {(body?: string | Buffer) => RawShim} end
+ *
+ * @param {ServerResponse} res
+ * @returns {RawShim}
  */
 const rawRes = (res) => ({
   ...shim(res),
@@ -226,6 +252,10 @@ const rawRes = (res) => ({
   end(body) { res.end(body); return this; },
 });
 
+/**
+ * @param {IncomingMessage} req
+ * @returns {Promise<any>}  parsed JSON from the wire: every handler validates what it reads
+ */
 async function readJson(req) {
   const chunks = [];
   let size = 0;
@@ -306,6 +336,7 @@ const training = trainingRoutes({ pool, secret: SECRET });
  * in the codebase that mints a token without proving possession of an inbox.
  * The real path is requestMagicLink/redeemMagicLink in auth/auth-db.mjs, which
  * needs the login_code table before it can be turned on.
+ * @param {any} body  the request body as sent
  */
 async function devLogin(body) {
   if (!DEV || process.env.ALLOW_DEV_LOGIN !== "1")
@@ -321,6 +352,7 @@ async function devLogin(body) {
 
 // Exact paths, then one pattern for the per-match routes. Kept as a table so
 // the mounted surface is readable at a glance.
+/** @type {Record<string, ExactHandler>} */
 const EXACT = {
   "POST /api/auth/dev-login": async (body) => devLogin(body),
 
@@ -355,6 +387,13 @@ const EXACT = {
   "POST /api/ai/commentary": async (body) => ({ line: await describeDelivery({ situation: body.situation, names: body.names }) }),
 };
 
+/**
+ * pattern, method, handler, and — for a route a module owns — that module's key.
+ * A pattern with no capture group hands its handler `id: undefined`; only the
+ * session routes, all /matches/:id/…, are typed as always having one.
+ * @typedef {[RegExp, string, Handler | IdHandler, string?]} Route
+ */
+/** @type {Route[]} */
 const MATCH_ROUTES = [
   [/^\/api\/matches\/([^/]+)\/session\/claim$/,     "POST", session.claim],
   [/^\/api\/matches\/([^/]+)\/session\/heartbeat$/, "POST", session.heartbeat],
@@ -440,6 +479,7 @@ const MATCH_ROUTES = [
 ];
 
 // Routes keyed on a player rather than a match. Same shape, same shim.
+/** @type {Route[]} */
 const PLAYER_ROUTES = [
   // Which side he is in, from a date. Writes only player.team_code; the
   // membership history is recorded by the trigger on that column.
@@ -548,6 +588,7 @@ const PLAYER_ROUTES = [
 // no id at all — it always means "me" — so its capture group is simply
 // absent; the dispatcher's params.id comes back undefined and the handler
 // never looks at it.
+/** @type {Route[]} */
 const SCOUT_ROUTES = [
   [/^\/api\/scouts\/accreditation$/,                      "POST", scouting.registerAccreditation, "scouting"],
   [/^\/api\/scouts\/([^/]+)\/accreditation\/decide$/,   "POST", scouting.decideAccreditation, "scouting"],
@@ -582,6 +623,7 @@ const SCOUT_ROUTES = [
  * disagree about a module. An unauthenticated caller gets false — but that is
  * not what refuses them: the handler's own authorization does, immediately
  * afterwards and for the right reason. This only ever narrows.
+ * @param {string | undefined} bearer @param {string} key
  */
 async function moduleOn(bearer, key) {
   try {
@@ -612,6 +654,7 @@ async function moduleOn(bearer, key) {
 const CLIENT_DIR = process.env.SERVE_CLIENT
   ? resolve(process.env.SERVE_CLIENT)
   : null;
+/** @type {Record<string, string>} */
 const MEDIA = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8",
@@ -630,6 +673,7 @@ const MEDIA = {
  * is compared against the directory plus a separator, which "/srv/dist-evil"
  * cannot satisfy for "/srv/dist". Anything outside is a 404, not a 403: a
  * different answer for a file that exists is itself a disclosure.
+ * @param {IncomingMessage} req @param {ServerResponse} res @param {string} path
  */
 async function serveClient(req, res, path) {
   if (!CLIENT_DIR || (req.method !== "GET" && req.method !== "HEAD")) return false;
@@ -661,7 +705,9 @@ async function serveClient(req, res, path) {
 const server = createServer(async (req, res) => {
   if (req.method === "OPTIONS") return json(res, 204, {});
 
-  const url = new URL(req.url, `http://${req.headers.host}`);
+  // An http.Server request always carries its url; the type allows undefined
+  // only for an IncomingMessage read on the client side of a connection.
+  const url = new URL(/** @type {string} */ (req.url), `http://${req.headers.host}`);
   const path = url.pathname;
 
   if (req.method === "GET" && path === "/api/health") {
@@ -766,21 +812,30 @@ const server = createServer(async (req, res) => {
       // it hears back finds what it was told about.
       const out = shim(res);
       await handler(request, out);
-      const sent = out.flush();
 
-      // The receipt, written from the answer that was actually SENT — after
-      // COMMIT, never before it. It used to be written the moment the handler
-      // called json(), inside the transaction: a write whose COMMIT then
-      // refused had already left a 200 receipt behind, and the client's
-      // retry with the same key would have been answered from it, "saved",
-      // with nothing saved. Only an answer the handler stood behind (not a
-      // 5xx), only under the person's own session.
-      if (keyed && sent && sent.status < 500) {
-        runAsPrincipal(pool, SECRET, req.headers.authorization, (client) =>
+      // The receipt, written from the answer about to be SENT — after COMMIT
+      // (the handler has resolved, so withPrincipal() has committed), never
+      // before it. It used to be written the moment the handler called
+      // json(), inside the transaction: a write whose COMMIT then refused had
+      // already left a 200 receipt behind, and the client's retry with the
+      // same key would have been answered from it, "saved", with nothing
+      // saved. Only an answer the handler stood behind (not a 5xx), only
+      // under the person's own session.
+      //
+      // AWAITED, and before the answer leaves. It used to be fired after the
+      // reply and not waited for, so a client that retried the moment it
+      // heard back could arrive before the receipt existed and run the
+      // handler a second time — the idempotency walk caught it as a 400 that
+      // did not replay. A receipt that fails to write costs only the replay,
+      // never the answer: the error is swallowed and the answer still goes.
+      const pending = out._pending;
+      if (keyed && pending && pending.status < 500) {
+        await runAsPrincipal(pool, SECRET, req.headers.authorization, (client) =>
           client.query(`insert into request_replay (person_id, key, route, status, body)
                         values (app_user_id(), $1, $2, $3, $4) on conflict do nothing`,
-                       [idem, route, sent.status, JSON.stringify(sent.body ?? null)])).catch(() => {});
+                       [idem, route, pending.status, JSON.stringify(pending.body ?? null)])).catch(() => {});
       }
+      out.flush();
       return;
     }
 
@@ -796,7 +851,7 @@ const server = createServer(async (req, res) => {
     if (!path.startsWith("/api/") && await serveClient(req, res, path)) return;
 
     return json(res, 404, { error: "not_found" });
-  } catch (err) {
+  } catch (/** @type {any} */ err) {   // CaughtError in api-types.mjs
     // A bare SQLSTATE in a response is unhelpful and a stack trace in one is
     // unsafe; the detail goes to the log, the code goes to the client.
     if (!err.status) console.error(`${req.method} ${path} →`, err.code || "", err.message, err.detail || "");

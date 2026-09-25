@@ -14,8 +14,9 @@ import { parseCsv, toCsv, neutralise, mapRows,
          asText, asDate, asInt, asOneOf, asEmail, asPhone } from "./csv.mjs";
 
 let pass = 0, fail = 0;
+/** @param {string} n @param {unknown} c */
 const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
-const group = (t) => console.log("\n" + t);
+const group = (/** @type {string} */ t) => console.log("\n" + t);
 
 group("A. Parsing what schools actually send");
 {
@@ -182,7 +183,7 @@ group("F. Mapping, and the line numbers a person is looking at");
 
 group("G. The field parsers refuse rather than guess");
 {
-  const t = (fn, v) => { try { return fn(v); } catch (e) { return "ERR:" + e.message; } };
+  const t = (/** @type {(v: string) => any} */ fn, /** @type {string} */ v) => { try { return fn(v); } catch (/** @type {any} */ e) { return "ERR:" + e.message; } };
   ok("a vocabulary takes the canonical spelling, not theirs",
      asOneOf(["batsman", "bowler"])("BATSMAN") === "batsman");
   ok("...and refuses what is not in it",

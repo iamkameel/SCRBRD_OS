@@ -22,9 +22,13 @@
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
 import { resolveBirthDate } from "@scrbrd/policy/date-of-birth";
+/** @import { RouteDeps, ApiRequest, ApiResponse, Handler } from "../api-types.mjs" */
+// A caught error is `any` to the checker (CaughtError in api-types.mjs):
+// pg's carry a SQLSTATE `code`, this module's own carry an HTTP `status`.
 
-const err = (code, status = 400) => Object.assign(new Error(code), { status });
+const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
 
+/** @param {RouteDeps} deps @returns {Record<string, Handler>} */
 export function dobCaptureRoutes({ pool, secret }) {
   return {
     // POST /api/players/:id/date-of-birth { born?, idNumber? }
@@ -50,7 +54,7 @@ export function dobCaptureRoutes({ pool, secret }) {
           res.json({ id: p.id, schoolId: p.school_id, teamCode: p.team_code, fullName: p.full_name,
                      born, bornFrom: dob.source, ...(dob.warning ? { warning: dob.warning } : {}) });
         });
-      } catch (e) {
+      } catch (/** @type {any} */ e) {
         if (e.code === "23514") return res.status(422).json({ error: "refused", detail: e.message });
         const status = e.code === "42501" ? 403 : (e.status || 500);
         res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });

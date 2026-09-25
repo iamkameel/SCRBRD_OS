@@ -18,14 +18,18 @@
  * writing the assignment itself.
  */
 import { runAsPrincipal, issueLoginCode } from "../auth/auth-db.mjs";
+/** @import { RouteDeps, ApiRequest, ApiResponse, Handler } from "../api-types.mjs" */
+// A caught error is `any` to the checker (CaughtError in api-types.mjs):
+// pg's carry a SQLSTATE `code`, this module's own carry an HTTP `status`.
 
-const err = (code, status = 400) => Object.assign(new Error(code), { status });
+const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const clean = (v, max) => (v == null || String(v).trim() === "" ? null : String(v).trim().slice(0, max));
+const clean = (/** @type {unknown} */ v, /** @type {number} */ max) => (v == null || String(v).trim() === "" ? null : String(v).trim().slice(0, max));
 
 // A refusal from enrol_person() that is not about authority is not a 403.
 // The office is told what cannot be done — this email is another school's,
 // this pupil already has an account — rather than that it lacks permission.
+/** @type {Record<string, number>} */
 const ENROL_STATUS = {
   not_permitted: 403,
   no_such_player: 404,
@@ -33,10 +37,12 @@ const ENROL_STATUS = {
   email_belongs_to_another_school: 409,
 };
 
+/** @param {RouteDeps} deps @returns {Record<string, Handler>} */
 export function requestRoutes({ pool, secret }) {
+  /** @param {(req: ApiRequest) => Promise<unknown>} fn @returns {Handler} */
   const handle = (fn) => async (req, res) => {
     try { res.json(await fn(req)); }
-    catch (e) {
+    catch (/** @type {any} */ e) {
       if (e.code === "23514") return res.status(422).json({ error: "not_requestable", detail: e.message });
       if (e.code === "23505") return res.status(422).json({ error: "already_pending" });
       if (e.code === "23503") return res.status(404).json({ error: "no_such_school" });
@@ -44,7 +50,7 @@ export function requestRoutes({ pool, secret }) {
       res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
     }
   };
-  const fields = (b) => {
+  const fields = (/** @type {any} */ b) => {   // the request body, unvalidated
     const role = String(b.role ?? "").trim();
     if (!/^[a-z]{3,30}$/.test(role)) throw err("role_invalid");
     if (!UUID.test(String(b.schoolId ?? ""))) throw err("school_required");
@@ -121,7 +127,7 @@ export function requestRoutes({ pool, secret }) {
         try {
           const { code, expiresAt } = await issueLoginCode(client, secret, { email });
           return { ...out, code, expiresAt };
-        } catch (e) {
+        } catch (/** @type {any} */ e) {
           return { ...out, code: null, codeError: e.message || "code_not_issued" };
         }
       });

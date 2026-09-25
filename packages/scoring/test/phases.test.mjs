@@ -16,6 +16,7 @@ import {
   PHASE_NAMES, PHASE_LABELS, phasesFor, phaseRange, derivePhases, deriveMatchPhases,
 } from "../src/phases.mjs";
 import { deriveInnings } from "../src/replay.mjs";
+import { isLegal } from "../src/events.mjs";
 
 /** @import { LogEvent } from "../src/events.mjs" */
 
@@ -237,6 +238,235 @@ group("G. The vocabulary is closed");
      PHASE_NAMES.every((p) => typeof ph[p].overs === "string" && ph[p].overs.length > 0));
   ok("...and whether the innings is long enough to have it",
      PHASE_NAMES.every((p) => typeof ph[p].played === "boolean"));
+}
+
+// ── H. The fold's question, not a look-alike ─────────────
+// SCRBRD-072. Each of these was a place the phases answered a question that
+// sounded like the fold's and was not: the sums disagreed with the scorecard.
+const START = /** @type {LogEvent} */ ({ kind: "innings_start", overs: 20, squad: [], bowlingSquad: [] });
+const PAIR = /** @type {LogEvent} */ ({ kind: "batters", striker: "a", nonStriker: "b" });
+const BOWLER = /** @type {LogEvent} */ ({ kind: "bowler", bowler: "x" });
+/** @param {LogEvent[]} ev  @param {PhaseKey} k */
+const phaseSum = (ev, k) => {
+  const ph = must(derivePhases(deriveInnings(ev)));
+  return PHASE_NAMES.reduce((a, p) => a + ph[p][k], 0);
+};
+/** @typedef {"runs" | "balls" | "wickets" | "dots" | "fours" | "sixes"} PhaseKey */
+
+group("H. A dismissal the free hit saved is not a phase wicket");
+{
+  // The case the backlog entry was found by: a no-ball, then "bowled" on the
+  // free hit. The fold saves the batter; the phases used to count the ball.
+  /** @type {LogEvent[]} */
+  const saved = [START, PAIR, BOWLER,
+    { kind: "ball", type: "Nb", value: 0 },
+    { kind: "ball", type: "W", value: 0, dismissal: "bowled" }];
+  const inn = deriveInnings(saved);
+  ok("the fold saves a batter bowled on a free hit", inn.wickets === 0);
+  ok("...and the phases agree: no wicket in any phase", phaseSum(saved, "wickets") === 0);
+  ok("...while the ball itself still counts, legal and a dot",
+     phaseSum(saved, "balls") === 1 && phaseSum(saved, "dots") === 1);
+
+  // Run out is out on a free hit (Law 21.19), so it stands in both.
+  /** @type {LogEvent[]} */
+  const runOut = [START, PAIR, BOWLER,
+    { kind: "ball", type: "Nb", value: 0 },
+    { kind: "ball", type: "W", value: 1, dismissal: "run_out" }];
+  ok("a run out on a free hit stands in the fold",
+     deriveInnings(runOut).wickets === 1);
+  ok("...and is a phase wicket", phaseSum(runOut, "wickets") === 1);
+
+  // The free hit is consumed by the next legal ball: a wide keeps it alive,
+  // a dot ends it. The phases do not re-derive that — they read the fold.
+  /** @type {LogEvent[]} */
+  const carried = [START, PAIR, BOWLER,
+    { kind: "ball", type: "Nb", value: 0 },
+    { kind: "ball", type: "Wd", value: 0 },
+    { kind: "ball", type: "W", value: 0, dismissal: "caught" },
+    { kind: "ball", type: "run", value: 0 },
+    { kind: "ball", type: "W", value: 0, dismissal: "caught" }];
+  ok("a free hit carried over a wide still saves, and the next ball is live again",
+     deriveInnings(carried).wickets === 1 && phaseSum(carried, "wickets") === 1);
+
+  // A W ball is a wicket to the fold whether or not the mode was written; the
+  // old test was the dismissal field, which is the wrong question.
+  /** @type {LogEvent[]} */
+  const unnamed = [START, PAIR, BOWLER, { kind: "ball", type: "W", value: 0 }];
+  ok("a wicket with no mode recorded counts in both",
+     deriveInnings(unnamed).wickets === 1 && phaseSum(unnamed, "wickets") === 1);
+
+  // A phase is the batting side's story: a run out is a wicket lost, though
+  // the bowler is not credited with it.
+  /** @type {LogEvent[]} */
+  const notTheBowlers = [START, PAIR, BOWLER, { kind: "ball", type: "W", value: 0, dismissal: "run_out" }];
+  const nb = deriveInnings(notTheBowlers);
+  ok("a run out is not the bowler's wicket", nb.bowlers[0].wickets === 0);
+  ok("...but it is a wicket the side lost, in the innings and in its phase",
+     nb.wickets === 1 && phaseSum(notTheBowlers, "wickets") === 1);
+}
+
+group("I. Boundaries are the batters' fours and sixes");
+{
+  const batters = (/** @type {LogEvent[]} */ ev) => deriveInnings(ev).batsmen;
+  /** @type {LogEvent[]} */
+  const byes = [START, PAIR, BOWLER,
+    { kind: "ball", type: "B", value: 4 }, { kind: "ball", type: "LB", value: 4 }];
+  ok("four byes and four leg byes are no batter's boundary",
+     batters(byes).every((b) => b.fours === 0) && phaseSum(byes, "fours") === 0);
+  ok("...though their runs are the side's", phaseSum(byes, "runs") === 8);
+
+  /** @type {LogEvent[]} */
+  const noBall = [START, PAIR, BOWLER,
+    { kind: "ball", type: "Nb", value: 4 }, { kind: "ball", type: "Nb", value: 6 }];
+  ok("a no-ball struck for four or six is the batter's boundary",
+     batters(noBall)[0].fours === 1 && batters(noBall)[0].sixes === 1);
+  ok("...and the phase's", phaseSum(noBall, "fours") === 1 && phaseSum(noBall, "sixes") === 1);
+  ok("...without being a legal ball", phaseSum(noBall, "balls") === 0);
+}
+
+group("J. Every ball lands in a phase, even past a revision");
+{
+  // The umpires cut the innings to ten overs after twelve were bowled. The
+  // fold keeps every ball; the phases used to drop overs 11 and 12.
+  /** @type {LogEvent[]} */
+  const ev = [START, PAIR];
+  for (let i = 0; i < 72; i++) ev.push({ kind: "ball", type: "run", value: 1 });
+  ev.push({ kind: "revision", overs: 10 });
+  const inn = deriveInnings(ev);
+  const ph = must(derivePhases(inn));
+  ok("the fold counts all seventy-two balls", inn.balls === 72 && inn.overs === 10);
+  ok("...and so do the phases", phaseSum(ev, "balls") === 72 && phaseSum(ev, "runs") === 72);
+  ok("...drawn over the twelve overs bowled", ph.death.overs.endsWith("-12"));
+  ok("an innings inside its overs keeps the spans its overs give it",
+     must(derivePhases(deriveInnings([START, PAIR, { kind: "ball", type: "run", value: 1 }]))).death.overs === "17-20");
+}
+
+group("K. Penalty runs are the one figure no phase carries");
+{
+  // Documented, not fixed: the fold records how many penalty runs were
+  // awarded but not when, so there is no phase to file them in.
+  /** @type {LogEvent[]} */
+  const ev = [START, PAIR, BOWLER, { kind: "ball", type: "run", value: 1 }, { kind: "penalty", runs: 5 }];
+  const inn = deriveInnings(ev);
+  ok("the innings has the five", inn.runs === 6 && inn.extras.penalty === 5);
+  ok("...the phases have everything but", phaseSum(ev, "runs") === inn.runs - inn.extras.penalty);
+}
+
+group("K2. A wicket with no ball is filed by the over it fell in (SCRBRD-081)");
+{
+  /** @type {LogEvent[]} */
+  const ev = [START, PAIR, BOWLER, ...Array.from({ length: 36 }, () => /** @type {LogEvent} */ ({ kind: "ball", type: "run", value: 0 })),
+              { kind: "bowler", bowler: "y" }, { kind: "ball", type: "run", value: 1 },
+              { kind: "retire", batter: "a", reason: "out", type: "W", dismissal: "retired_out" }];
+  const inn = deriveInnings(ev);
+  const ph = must(derivePhases(inn));
+  ok("the innings has the wicket, and no extra ball", inn.wickets === 1 && inn.balls === 37);
+  ok("...and so do the phases: in the seventh over, the middle", ph.middle.wickets === 1 && ph.powerplay.wickets === 0);
+  ok("...which sum to the innings", phaseSum(ev, "wickets") === 1 && phaseSum(ev, "balls") === 37);
+}
+
+group("L. The invariant, over many innings");
+{
+  // Deterministic, so a failure reproduces: a small LCG, not Math.random.
+  let s = 72;
+  const rnd = () => (s = (s * 1103515245 + 12345) % 2147483648) / 2147483648;
+  /** @template T  @param {T[]} xs  @returns {T} */
+  const pick = (xs) => xs[Math.floor(rnd() * xs.length)];
+  const MODES = ["bowled", "caught", "lbw", "run_out", "stumped", "hit_wicket", "handled_ball",
+                 "obstructing_field", "timed_out", "retired_out", "hit_twice", null];
+
+  /** @param {number} overs */
+  const innings = (overs) => {
+    /** @type {LogEvent[]} */
+    const ev = [{ kind: "innings_start", overs, squad: [], bowlingSquad: [] },
+                { kind: "batters", striker: "p1", nonStriker: "p2" }];
+    let next = 3, legal = 0, out = 0;
+    const toPlay = rnd() < 0.3 ? Math.ceil(rnd() * overs) : overs;
+    while (legal < toPlay * 6 && out < 10) {
+      if (legal % 6 === 0) ev.push({ kind: "bowler", bowler: `b${(legal / 6) % 2}` });
+      const r = rnd();
+      if (r < 0.05) ev.push({ kind: "ball", type: "Nb", value: pick([0, 0, 1, 4, 6]) });
+      // Byes or leg byes off a no-ball (SCRBRD-068): the side's, not a four.
+      else if (r < 0.06) ev.push({ kind: "ball", type: "Nb", value: pick([1, 2, 4]), nbRuns: pick(["byes", "leg_byes"]) });
+      else if (r < 0.10) ev.push({ kind: "ball", type: "Wd", value: pick([0, 0, 1, 4]) });
+      else if (r < 0.14) { ev.push({ kind: "ball", type: pick(["B", "LB"]), value: pick([1, 2, 4]) }); legal++; }
+      else if (r < 0.22) {
+        ev.push({ kind: "ball", type: "W", value: pick([0, 0, 1]), dismissal: pick(MODES) });
+        legal++;
+        // Whether it stood is the fold's to say; ask it, and send a batter
+        // in, at the end that is empty, only for one that did. (The end
+        // matters: a wicket on the last ball of an over has already swapped.)
+        const now = deriveInnings(ev);
+        if (now.wickets > out) {
+          out++;
+          // Now and then the batter due in is timed out (SCRBRD-081): a
+          // wicket with no ball, and the one after him comes in.
+          if (out < 10 && rnd() < 0.15) {
+            ev.push({ kind: "retire", batter: `p${next++}`, reason: "timed_out", type: "W", dismissal: "timed_out" });
+            out++;
+          }
+          if (out >= 10) break;
+          ev.push(now.striker == null ? { kind: "batters", striker: `p${next++}` }
+                                      : { kind: "batters", nonStriker: `p${next++}` });
+        }
+      } else if (r < 0.225 && out < 9) {
+        // Retired out, between two balls (SCRBRD-081).
+        const now = deriveInnings(ev);
+        const who = /** @type {string} */ (pick([now.striker, now.nonStriker]));
+        ev.push({ kind: "retire", batter: who, reason: "out", type: "W", dismissal: "retired_out" });
+        out++;
+        ev.push(who === now.striker ? { kind: "batters", striker: `p${next++}` } : { kind: "batters", nonStriker: `p${next++}` });
+      } else { ev.push({ kind: "ball", type: "run", value: pick([0, 0, 0, 1, 1, 1, 2, 3, 4, 6]) }); legal++; }
+      if (rnd() < 0.01) ev.push({ kind: "penalty", runs: 5 });
+    }
+    if (rnd() < 0.1 && legal > 12) ev.push({ kind: "revision", overs: Math.max(1, Math.floor(legal / 6) - 2) });
+    return ev;
+  };
+
+  let logs = 0, bad = 0, savedSeen = 0, standingSeen = 0, penaltiesSeen = 0, nbBoundaries = 0, byeFours = 0, revised = 0, offBallSeen = 0, nbByes = 0;
+  /** @type {string[]} */
+  const why = [];
+  for (const overs of [20, 50, 15, 8, 1, 20, 12, 30, 20, 6, 25, 20]) {
+    for (let rep = 0; rep < 5; rep++) {
+      const ev = innings(overs);
+      const inn = deriveInnings(ev);
+      const ph = must(derivePhases(inn));
+      /** @param {PhaseKey} k */
+      const sum = (k) => PHASE_NAMES.reduce((a, p) => a + ph[p][k], 0);
+      const bat = (/** @type {"fours" | "sixes"} */ k) => inn.batsmen.reduce((a, b) => a + b[k], 0);
+      const legalZeros = inn.ballLog.filter((b) => isLegal(b.type ?? "run") && (b.value ?? 0) === 0).length;
+      const checks = {
+        runs: sum("runs") === inn.runs - inn.extras.penalty,
+        balls: sum("balls") === inn.balls,
+        wickets: sum("wickets") === inn.wickets,
+        fours: sum("fours") === bat("fours"),
+        sixes: sum("sixes") === bat("sixes"),
+        dots: sum("dots") === legalZeros,
+        // The bowlers' wickets are the side's, less the ones that are not
+        // theirs: a phase is never short of a wicket a bowler took.
+        bowlers: inn.bowlers.reduce((a, b) => a + b.wickets, 0) <= sum("wickets"),
+      };
+      for (const [k, v] of Object.entries(checks)) if (!v) { bad++; why.push(`${overs} overs #${rep}: ${k}`); }
+      logs++;
+      savedSeen += inn.ballLog.filter((b) => b.freeHitSaved).length;
+      standingSeen += inn.wickets;
+      penaltiesSeen += inn.extras.penalty;
+      nbBoundaries += inn.ballLog.filter((b) => b.type === "Nb" && !b.nbRuns && (b.value === 4 || b.value === 6)).length;
+      byeFours += inn.ballLog.filter((b) => (b.type === "B" || b.type === "LB" || (b.type === "Nb" && b.nbRuns)) && b.value === 4).length;
+      nbByes += inn.ballLog.filter((b) => b.type === "Nb" && b.nbRuns && b.value === 4).length;
+      offBallSeen += inn.nonBallWickets.length;
+      if (inn.revised) revised++;
+    }
+  }
+  if (why.length) console.log("   ", why.slice(0, 10).join("\n    "));
+  ok(`every aggregate adds up over ${logs} varied innings`, bad === 0);
+  // Not vacuous: the logs contain the cases the invariant exists for.
+  ok("...which include dismissals a free hit saved", savedSeen > 0);
+  ok("...and wickets that stood", standingSeen > 0);
+  ok("...and no-ball boundaries, four byes, penalty runs and a revision",
+     nbBoundaries > 0 && byeFours > 0 && penaltiesSeen > 0 && revised > 0);
+  ok("...and wickets that fell with no ball (retired out, timed out)", offBallSeen > 0);
+  ok("...and four byes off a no-ball, which are nobody's four", nbByes > 0);
 }
 
 console.log(`\n${"─".repeat(52)}\nPHASES SUITE: ${pass} passed, ${fail} failed`);
