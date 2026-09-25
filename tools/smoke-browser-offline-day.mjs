@@ -266,6 +266,12 @@ try {
      && (await serverIds()).length === 0);
 
   await page.addInitScript(`window.__SCRBRD_API_BASE__ = ${JSON.stringify(API)};`);
+  // LIE_FI=1: navigator.onLine stays true through every cut, as it does on a
+  // phone whose weak signal reaches nothing — and as CI's Chromium reports it
+  // for a page its service worker serves. The pad must then learn "no signal"
+  // from the server not answering (sync.js checkReach; the pill's
+  // "unreachable"), never from navigator.onLine. Run both ways locally.
+  if (process.env.LIE_FI) await page.addInitScript(() => Object.defineProperty(Navigator.prototype, "onLine", { get: () => true }));
   await page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "networkidle" });
   // The service worker serves only what it fetched while in control, so let
   // it take over and load once more with signal (smoke-persist does this).

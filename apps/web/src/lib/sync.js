@@ -63,6 +63,8 @@ import { deviceId } from "./device.js";
 const RETRY_MS = 4000;
 /** Backoff for an attach that failed for want of the network, capped. */
 const ATTACH_BACKOFF = [2000, 5000, 15000, 30000, 60000];
+/** How often a signed-out pad with no server asks again whether there is one. */
+const REACH_MS = 5000;
 /**
  * How long after the server last extended the lease the gate trusts it. The
  * lease is 90 s. Any loss of signal, or a request that got no answer, ends
@@ -125,8 +127,21 @@ export class PadSync {
     this.conflict = null;
     this.timer = null;
     this.retryTimer = null;
+    /**
+     * Whether the server answered the last time a signed-out pad asked
+     * (/api/health, which needs no session): null before it has asked.
+     * `navigator.onLine` alone is not the signal: it is true on a phone with
+     * a connection that reaches nothing (a ground's weak signal, a captive
+     * portal) and, under some browsers, in a tab its service worker serves.
+     * A pad that is signed out cannot learn it from a failed claim — it never
+     * makes one — so it asks, and offers a sign-in only when the server is
+     * there to take it.
+     * @type {boolean|null}
+     */
+    this.reachable = null;
     this.onOnline = () => {
       if (this.stopped) return;
+      this.reachable = null;
       if (this.engine?.attached) { if (!this.halted) this.engine.sync().catch(() => {}); }
       else if (!this.halted) this.attach();
       this.status();
@@ -186,7 +201,7 @@ export class PadSync {
   async _attach() {
     const engine = /** @type {SyncEngine} */ (this.engine);
     clearTimeout(this.retryTimer);
-    if (!signedIn()) { this.reason = "not_signed_in"; this.halted = false; this.status(); return; }
+    if (!signedIn()) { this.reason = "not_signed_in"; this.halted = false; this.status(); await this.checkReach(); return; }
     if (!online()) { this.reason = "offline"; this.status(); return; }
     this.reason = "attaching"; this.status();
     let r;
@@ -226,6 +241,26 @@ export class PadSync {
       this.halted = true;
     }
     this.status();
+  }
+
+  /**
+   * Signed out: is the server there? Asked of /api/health, and asked again
+   * every REACH_MS for as long as it is not (one small unauthenticated GET).
+   * The pad then says "no signal" rather than offering a sign-in that cannot
+   * reach anyone, and offers it the moment the server answers. A sign-in
+   * reopens the pad, which ends this.
+   */
+  async checkReach() {
+    if (!online()) { this.reachable = false; this.status(); return; }
+    let ok;
+    try { await api("/api/health", { timeoutMs: 3000 }); ok = true; } catch { ok = false; }
+    if (this.stopped || signedIn()) return;
+    this.reachable = ok;
+    this.status();
+    if (!ok) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = setTimeout(() => { if (!this.stopped && !signedIn()) this.checkReach(); }, REACH_MS);
+    }
   }
 
   /**
@@ -404,7 +439,9 @@ export class PadSync {
       attaching: this.reason === "attaching",
       reason: e?.attached ? (e.lastError ?? null) : this.reason,
       halted: this.halted,
-      online: online(),
+      // Signed out, "online" also means the server answered (checkReach):
+      // the pad offers a sign-in only then.
+      online: online() && (signedIn() || this.reachable !== false),
       signedIn: signedIn(),
       pending: e?.pendingCount ?? 0,
       pendingList: e ? e.pending.slice() : [],

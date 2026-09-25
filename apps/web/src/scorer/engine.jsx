@@ -357,7 +357,9 @@ function SCRBRD({resume,onSignIn}={}){
         : st.rejected ? "quarantined"
         : !st.attached ? "local"
         : st.pending === 0 && !st.tossPending ? "synced"
-        : st.online ? "syncing" : "waiting" };
+        // The last send got no answer: waiting, whatever navigator.onLine
+        // says (it is true on a signal that reaches nothing).
+        : st.online && st.reason !== "unreachable" ? "syncing" : "waiting" };
   }, [padStatus]);
   const attached = !!padStatus?.attached;
   // Locked while a handover is waiting on this device (SCORING_HANDOVER_SPEC
