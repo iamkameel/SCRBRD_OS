@@ -82,10 +82,10 @@ const EMPTY_FORM = {
   evidenceSource: "", notes: "",
 };
 
-const fieldStyle = {
+const fieldStyle = () => ({
   padding: "7px 10px", borderRadius: D.md, background: D.surf2, border: `1px solid ${D.border}`,
   color: D.textPrimary, fontFamily: D.body, fontSize: "12px", width: "100%",
-};
+});
 
 function Field({ text, children }) {
   return (
@@ -185,53 +185,53 @@ function DrsPanelBody({ matchId, role }) {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: "8px" }}>
             <Field text="Ball">
               <input type="number" min="1" value={form.ballSeq} onChange={setField("ballSeq")}
-                     data-testid="drs-form-ball-seq" style={fieldStyle} />
+                     data-testid="drs-form-ball-seq" style={fieldStyle()} />
             </Field>
             <Field text="Called by">
-              <select value={form.calledBy} onChange={setField("calledBy")} data-testid="drs-form-called-by" style={fieldStyle}>
+              <select value={form.calledBy} onChange={setField("calledBy")} data-testid="drs-form-called-by" style={fieldStyle()}>
                 <option value="">—</option>
                 {CALLED_BY.map((v) => <option key={v} value={v}>{label(v)}</option>)}
               </select>
             </Field>
             <Field text="On-field decision">
-              <select value={form.onField} onChange={setField("onField")} data-testid="drs-form-on-field" style={fieldStyle}>
+              <select value={form.onField} onChange={setField("onField")} data-testid="drs-form-on-field" style={fieldStyle()}>
                 <option value="">—</option>
                 {ON_FIELD.map((v) => <option key={v} value={v}>{label(v)}</option>)}
               </select>
             </Field>
             <Field text="Outcome">
-              <select value={form.outcome} onChange={setField("outcome")} data-testid="drs-form-outcome" style={fieldStyle}>
+              <select value={form.outcome} onChange={setField("outcome")} data-testid="drs-form-outcome" style={fieldStyle()}>
                 <option value="">—</option>
                 {OUTCOME.map((v) => <option key={v} value={v}>{label(v)}</option>)}
               </select>
             </Field>
             <Field text="Evidence source">
-              <select value={form.evidenceSource} onChange={setField("evidenceSource")} data-testid="drs-form-evidence-source" style={fieldStyle}>
+              <select value={form.evidenceSource} onChange={setField("evidenceSource")} data-testid="drs-form-evidence-source" style={fieldStyle()}>
                 <option value="">—</option>
                 {EVIDENCE.map((v) => <option key={v} value={v}>{label(v)}</option>)}
               </select>
             </Field>
             <Field text="Shot offered">
-              <select value={form.shotOffered} onChange={setField("shotOffered")} data-testid="drs-form-shot-offered" style={fieldStyle}>
+              <select value={form.shotOffered} onChange={setField("shotOffered")} data-testid="drs-form-shot-offered" style={fieldStyle()}>
                 <option value="">Unknown</option>
                 <option value="true">Yes</option>
                 <option value="false">No</option>
               </select>
             </Field>
             <Field text="Pitching (ball-tracking)">
-              <select value={form.pitching} onChange={setField("pitching")} data-testid="drs-form-pitching" style={fieldStyle}>
+              <select value={form.pitching} onChange={setField("pitching")} data-testid="drs-form-pitching" style={fieldStyle()}>
                 <option value="">—</option>
                 {PITCHING.map((v) => <option key={v} value={v}>{label(v)}</option>)}
               </select>
             </Field>
             <Field text="Impact (ball-tracking)">
-              <select value={form.impact} onChange={setField("impact")} data-testid="drs-form-impact" style={fieldStyle}>
+              <select value={form.impact} onChange={setField("impact")} data-testid="drs-form-impact" style={fieldStyle()}>
                 <option value="">—</option>
                 {IMPACT.map((v) => <option key={v} value={v}>{label(v)}</option>)}
               </select>
             </Field>
             <Field text="Wickets (ball-tracking)">
-              <select value={form.wickets} onChange={setField("wickets")} data-testid="drs-form-wickets" style={fieldStyle}>
+              <select value={form.wickets} onChange={setField("wickets")} data-testid="drs-form-wickets" style={fieldStyle()}>
                 <option value="">—</option>
                 {WICKETS.map((v) => <option key={v} value={v}>{label(v)}</option>)}
               </select>
@@ -239,7 +239,7 @@ function DrsPanelBody({ matchId, role }) {
           </div>
           <textarea value={form.notes} onChange={setField("notes")} placeholder="Notes (optional)"
                     data-testid="drs-form-notes"
-                    style={{ ...fieldStyle, marginTop: "8px", minHeight: "48px", resize: "vertical" }} />
+                    style={{ ...fieldStyle(), marginTop: "8px", minHeight: "48px", resize: "vertical" }} />
           {said && (
             <div role="alert" data-testid="drs-form-refused"
                  style={{ fontFamily: D.body, fontSize: "11px", color: textOn(D.rose), marginTop: "6px" }}>

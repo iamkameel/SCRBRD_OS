@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import pkg from "../../package.json";
 import SCRBRD_LOGO from "../assets/scrbrd-logo.jpg";
-import { D, T, textOn } from "../design/tokens.js";
+import { D, T, clr, textOn, themeName, themed } from "../design/tokens.js";
 import { ROLE_FAMILIES, ROLE_IDENTITY } from "../design/roles.js";
 import { STATUS_LABEL, STATUS_TONE, UPGRADES } from "../data/roadmap.js";
 import { useSummary } from "../lib/live.js";
@@ -101,14 +101,16 @@ function useCount(target, ms = 900) {
   return Number.isFinite(target) ? n : target;
 }
 
-const CSS = `
+// A function, not a constant: it is built from the tokens, and a sheet built
+// once at import would hold whichever theme was current when the deck loaded.
+const css = () => `
 .deck{position:relative;border-radius:${D.xl};overflow:hidden;background:${D.bg};border:1px solid ${D.border};min-height:min(78vh,760px);display:flex;flex-direction:column;isolation:isolate}
 .deck:focus-visible{outline:2px solid ${D.cyan};outline-offset:2px}
 .deck:fullscreen{border-radius:0;border:none;min-height:100vh}
 .deck-stage{position:absolute;inset:0;z-index:0}
 .deck-stage[data-mode="fallback"]{background:${T.light.ambient},${D.bg}}
-.deck-scrim{position:absolute;inset:0;z-index:1;pointer-events:none;background:linear-gradient(180deg,rgba(5,7,10,.62),rgba(5,7,10,.28) 40%,rgba(5,7,10,.72))}
-.deck-scrim[data-side="right"]{background:linear-gradient(90deg,rgba(5,7,10,.05) 35%,rgba(5,7,10,.78) 62%)}
+.deck-scrim{position:absolute;inset:0;z-index:1;pointer-events:none;background:linear-gradient(180deg,${clr(T.surface.canvas,.62)},${clr(T.surface.canvas,.28)} 40%,${clr(T.surface.canvas,.72)})}
+.deck-scrim[data-side="right"]{background:linear-gradient(90deg,${clr(T.surface.canvas,.05)} 35%,${clr(T.surface.canvas,.78)} 62%)}
 .deck-bar{position:relative;z-index:3;display:flex;align-items:center;gap:10px;padding:12px 16px;flex-wrap:wrap}
 .deck-progress{position:absolute;left:0;top:0;height:2px;background:${D.cyan};transition:width ${T.motion.nav} ${T.motion.ease};z-index:4}
 .deck-body{position:relative;z-index:2;flex:1;display:flex;flex-direction:column;justify-content:center;padding:28px 40px 36px;pointer-events:none}
@@ -124,21 +126,21 @@ const CSS = `
 .deck-h{font-family:${D.head};font-weight:800;line-height:1.02;letter-spacing:-.02em;color:${D.textPrimary};font-size:clamp(28px,4.6vw,54px);margin:0 0 14px}
 .deck-lede{font-family:${D.body};font-size:clamp(14px,1.4vw,17px);color:${D.textSecondary};line-height:1.65;max-width:720px;margin:0}
 .deck-grid{display:grid;gap:12px}
-.deck-card{border-radius:${D.lg};border:1px solid ${D.border};background:rgba(17,21,29,.82);padding:14px 16px;backdrop-filter:blur(6px)}
+.deck-card{border-radius:${D.lg};border:1px solid ${D.border};background:${clr(T.surface.raised,.82)};padding:14px 16px;backdrop-filter:blur(6px)}
 .deck-num{font-family:${D.mono};font-weight:700;font-size:clamp(26px,3.2vw,40px);line-height:1;color:${D.textPrimary};font-variant-numeric:tabular-nums}
 .deck-cap{font-family:${D.head};font-size:11px;font-weight:700;color:${D.textPrimary};margin-top:6px}
 .deck-sub{font-family:${D.body};font-size:11px;color:${D.textMuted};margin-top:2px;line-height:1.45}
-.deck-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:${D.pill};border:1px solid ${D.border};background:rgba(17,21,29,.7);font-family:${D.mono};font-size:11px;color:${D.textSecondary};cursor:pointer;transition:border-color ${T.motion.micro} ${T.motion.swift},transform ${T.motion.micro} ${T.motion.swift}}
+.deck-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:${D.pill};border:1px solid ${D.border};background:${clr(T.surface.raised,.7)};font-family:${D.mono};font-size:11px;color:${D.textSecondary};cursor:pointer;transition:border-color ${T.motion.micro} ${T.motion.swift},transform ${T.motion.micro} ${T.motion.swift}}
 .deck-chip:hover{transform:translateY(-1px)}
 .deck-chip[aria-pressed="true"]{border-color:${D.cyan};color:${D.textPrimary}}
 .deck-row{display:grid;grid-template-columns:110px 1fr 40px;align-items:center;gap:10px;font-family:${D.mono};font-size:11px;color:${D.textSecondary}}
-.deck-track{height:8px;border-radius:4px;background:rgba(255,255,255,.06);overflow:hidden}
+.deck-track{height:8px;border-radius:4px;background:${T.line.subtle};overflow:hidden}
 .deck-fill{height:100%;border-radius:4px;transform-origin:left;animation:deckGrow ${T.motion.interrupt} ${T.motion.ease} both;animation-delay:calc(var(--i,0)*60ms);display:block}
 @keyframes deckGrow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
 .deck-nav{display:flex;gap:6px;align-items:center}
-.deck-dot{width:22px;height:6px;border-radius:3px;border:none;padding:0;cursor:pointer;background:rgba(255,255,255,.16);transition:background ${T.motion.control} ${T.motion.swift},width ${T.motion.control} ${T.motion.swift}}
+.deck-dot{width:22px;height:6px;border-radius:3px;border:none;padding:0;cursor:pointer;background:${T.line.strong};transition:background ${T.motion.control} ${T.motion.swift},width ${T.motion.control} ${T.motion.swift}}
 .deck-dot[aria-current="true"]{background:${D.cyan};width:34px}
-.deck-btn{padding:7px 14px;border-radius:${D.pill};border:1px solid ${D.border};background:rgba(17,21,29,.7);color:${D.textSecondary};font-family:${D.head};font-size:11px;font-weight:700;cursor:pointer;transition:border-color ${T.motion.micro} ${T.motion.swift},color ${T.motion.micro} ${T.motion.swift}}
+.deck-btn{padding:7px 14px;border-radius:${D.pill};border:1px solid ${D.border};background:${clr(T.surface.raised,.7)};color:${D.textSecondary};font-family:${D.head};font-size:11px;font-weight:700;cursor:pointer;transition:border-color ${T.motion.micro} ${T.motion.swift},color ${T.motion.micro} ${T.motion.swift}}
 .deck-btn:hover:not(:disabled){border-color:${D.cyan};color:${D.textPrimary}}
 .deck-btn:disabled{opacity:.35;cursor:default}
 .deck-btn[data-primary="true"]{background:${D.cyan};border-color:${D.cyan};color:${D.bg}}
@@ -157,6 +159,10 @@ function Stage({ view, balls, filter, want3d, onMode }) {
   const host = useRef(null);
   const stage = useRef(null);
   const [mode, setMode] = useState("loading");
+  // The scene's fog, grass and lines are read from the tokens when it is
+  // built, so a theme switch builds it again rather than leaving a night
+  // field on a day page.
+  const theme = themeName();
 
   useEffect(() => {
     if (!want3d) { setMode("fallback"); return; }
@@ -182,7 +188,7 @@ function Stage({ view, balls, filter, want3d, onMode }) {
     // The innings is fixed for the life of the deck; `view` and `filter` are
     // pushed by the effects below rather than remounting the renderer.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [want3d]);
+  }, [want3d, theme]);
 
   useEffect(() => { stage.current?.setView(view); }, [view, mode]);
   useEffect(() => { stage.current?.setFilter(filter); }, [filter, mode]);
@@ -315,7 +321,7 @@ function WheelSlide({ filter, setFilter }) {
         </div>
         <div className="deck-sub" style={{ marginTop: "14px", maxWidth: "440px" }}>{WHEEL_NOTE}</div>
       </div>
-      <div className="deck-card" style={{ background: "rgba(17,21,29,.9)" }}>
+      <div className="deck-card" style={{ background: clr(T.surface.raised, .9) }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: "10px" }}>
           <div className="deck-num" data-testid="deck-innings">{runs}/{DEMO.wickets}</div>
           <div className="deck-sub" style={{ fontSize: "12px" }}>{Math.floor(DEMO.legal / 6)}.{DEMO.legal % 6} overs, {DEMO.extras} extras</div>
@@ -364,7 +370,7 @@ function PlatformSlide() {
         <Mono sx={{ margin: "0 4px 0 12px" }}>Sports</Mono>
         {sports.map(([k, s]) => (
           <span key={k} className="deck-chip" style={{ cursor: "default" }}>
-            {s.label} <span style={{ color: s.engine === "scoring" ? D.lime : D.textMuted }}>{ENGINE_LABEL[s.engine] ?? s.engine}</span>
+            {s.label} <span style={{ color: s.engine === "scoring" ? textOn(D.lime) : D.textMuted }}>{ENGINE_LABEL[s.engine] ?? s.engine}</span>
           </span>
         ))}
       </div>
@@ -441,7 +447,7 @@ function SchoolSlide({ role }) {
   );
 }
 
-const CAT_TONE = { "AI & Analysis": D.violetText, "Integrations": D.cyan, "Comms": D.indigoText, "Fitness": D.emerald, "Admin": D.orange, "Media": D.amber };
+const CAT_TONE = themed(() => ({ "AI & Analysis": D.violetText, "Integrations": D.cyan, "Comms": D.indigoText, "Fitness": D.emerald, "Admin": D.orange, "Media": D.amber }));
 const ROADMAP_LEDE = "A thing is shipped when a walk would fail if it broke. The middle column is the honest one: data that exists and is permission-scoped, with no screen drawing it yet.";
 function RoadmapSlide() {
   const [open, setOpen] = useState(null);
@@ -560,7 +566,7 @@ function PitchDeckView({ role, onNav }) {
 
   return (
     <div>
-      <style>{CSS}</style>
+      <style>{css()}</style>
       <div ref={deck} className="deck" role="region" aria-roledescription="presentation" aria-label={`Pitch deck, slide ${i + 1} of ${n}: ${s.label}`} data-testid="deck" data-slide={s.id}>
         <div className="deck-progress" style={{ width: `${((i + 1) / n) * 100}%` }} aria-hidden="true"/>
         <Stage view={view} balls={DEMO.balls} filter={wheelFilter} want3d={want3d} onMode={setMode}/>

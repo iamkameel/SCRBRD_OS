@@ -10,7 +10,8 @@ import { LandingPage } from "./auth/LandingPage.jsx";
 import { LoginPage } from "./auth/LoginPage.jsx";
 import { OnboardingFlow } from "./auth/OnboardingFlow.jsx";
 import { ROLES } from "./design/roles.js";
-import { D, GLOBAL_CSS } from "./design/tokens.js";
+import { D, GLOBAL_CSS, clr } from "./design/tokens.js";
+import { useTheme } from "./design/theme.js";
 import { canScore, holdsCapability, scoped } from "./rbac/index.js";
 import { api, signedIn } from "./lib/api.js";
 import { useLive, useRows } from "./lib/live.js";
@@ -119,6 +120,11 @@ function PendingRequests({ name, onSignOut }) {
 }
 
 export default function SCRBRD_OS() {
+  // The theme (design/theme.js). Subscribing HERE, at the root, is what makes
+  // a switch reach every screen: the tokens change value in place, and this
+  // re-render is what makes every inline style — and GLOBAL_CSS — read them
+  // again. Nothing below needs to know the theme exists.
+  useTheme();
   // ── App-level state ──
   const [appState,  setAppState]  = useState("landing"); // landing|login|onboarding|app
   const [role,      setRole]      = useState("superadmin");
@@ -473,7 +479,7 @@ export default function SCRBRD_OS() {
               it a mock roster and a real one look the same. One line, above
               everything, for as long as there is no token. */}
           {!signedIn() && (
-            <div role="status" data-testid="demo-banner" style={{display:"flex",alignItems:"center",justifyContent:"center",gap:"12px",padding:"6px 16px",background:"rgba(245,158,11,0.14)",borderBottom:`1px solid ${D.amber}`,fontFamily:D.body,fontSize:"12px",color:D.textPrimary}}>
+            <div role="status" data-testid="demo-banner" style={{display:"flex",alignItems:"center",justifyContent:"center",gap:"12px",padding:"6px 16px",background:clr(D.amber,0.14),borderBottom:`1px solid ${D.amber}`,fontFamily:D.body,fontSize:"12px",color:D.textPrimary}}>
               <span><strong>Demonstration.</strong> Nothing on these screens is a school's, and nothing is saved.</span>
               <button onClick={()=>setAppState("login")} className="pressBtn" data-testid="demo-banner-signin" style={{padding:"3px 10px",borderRadius:D.pill,border:`1px solid ${D.amber}`,background:"transparent",color:D.textPrimary,fontFamily:D.head,fontSize:"11px",fontWeight:700,cursor:"pointer"}}>Sign in</button>
             </div>

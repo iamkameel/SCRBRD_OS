@@ -1,5 +1,5 @@
 import { screenAngle } from "@scrbrd/scoring";
-import { D } from "../design/tokens.js";
+import { D, clr, themed } from "../design/tokens.js";
 
 /* ═══════════════════════════════════════════════════════
    FIELD GEOMETRY
@@ -49,7 +49,7 @@ const SEGS=[
   {id:11,label:"Third Man",short:"3MN",angle:330,side:"off"},
 ];
 
-const LK_COLS={"4":D.indigo,"6":D.amber,"1-3":D.emerald,"0":D.textMuted,"W":D.rose,"extras":D.orange};
+const LK_COLS=themed(() => ({"4":D.indigo,"6":D.amber,"1-3":D.emerald,"0":D.textMuted,"W":D.rose,"extras":D.orange}));
 
 const lineKey=b=>{
   if(b.type==="W")return"W";
@@ -58,12 +58,15 @@ const lineKey=b=>{
   if(b.value===0)return"0";return"1-3";
 };
 
+// Cool to hot, from the theme's own accents — so a hot sector reads on a
+// day field as well as a night one. Alpha capped at 1: clr() writes two hex
+// digits, and 1.13 of 255 is three.
 const heatColor=(v,mx)=>{
   if(!mx||!v)return null;const t=v/mx;
-  if(t<.25)return`rgba(16,185,129,${.22+t*2})`;
-  if(t<.5) return`rgba(245,158,11,${.3+t*1.2})`;
-  if(t<.75)return`rgba(249,115,22,${.38+t})`;
-  return`rgba(244,63,94,${.5+t*.5})`;
+  if(t<.25)return clr(D.emerald,Math.min(1,.22+t*2));
+  if(t<.5) return clr(D.amber,Math.min(1,.3+t*1.2));
+  if(t<.75)return clr(D.orange,Math.min(1,.38+t));
+  return clr(D.rose,Math.min(1,.5+t*.5));
 };
 
 /**

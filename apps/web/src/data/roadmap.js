@@ -1,4 +1,4 @@
-import { D } from "../design/tokens.js";
+import { D, themed } from "../design/tokens.js";
 
 // ══════════════════════════════════════════════════════
 //  THE ROADMAP — one list, read by Settings › Roadmap and by the pitch deck
@@ -112,5 +112,5 @@ export const UPGRADES = [
   { id: "up50", category: "AI & Analysis", priority: "low",    status: "planned", title: "Bowling Analysis by Batting Order",
     desc: "A bowler's wickets split by where the batter they dismissed sat in the order — top, middle or tail — instead of one blended average, so a coach can tell a new-ball wicket-taker from a tail-ender. Derivable from the event log's own batting sequence; no position is stored anywhere today. howstat.com runs this as a standing page for Test, ODI and T20 bowling.", effort: "High" },
 ];
-export const STATUS_TONE  = { shipped: D.emerald, partial: D.amber, planned: D.textMuted };
+export const STATUS_TONE  = themed(() => ({ shipped: D.emerald, partial: D.amber, planned: D.textMuted }));
 export const STATUS_LABEL = { shipped: "Shipped", partial: "Built, not drawn", planned: "Planned" };

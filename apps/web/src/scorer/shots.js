@@ -1,11 +1,11 @@
 import { fetchCommentary } from "../lib/ai.js";
-import { D } from "../design/tokens.js";
+import { D, themed } from "../design/tokens.js";
 import { SEGS } from "./field.js";
 
 /* ═══════════════════════════════════════════════════════
    SHOT TYPES — for ball-by-ball commentary
 ═══════════════════════════════════════════════════════ */
-const SHOT_CATEGORIES = [
+const SHOT_CATEGORIES = themed(() => [
   {
     cat:"Attacking",color:D.amber,
     shots:[
@@ -52,15 +52,15 @@ const SHOT_CATEGORIES = [
       {id:"lap",label:"Lap"},
     ]
   },
-];
+], []);
 
-const ALL_SHOTS = SHOT_CATEGORIES.flatMap(c=>c.shots.map(s=>({...s,cat:c.cat,color:c.color})));
+const ALL_SHOTS = themed(() => SHOT_CATEGORIES.flatMap(c=>c.shots.map(s=>({...s,cat:c.cat,color:c.color}))), []);
 
 /* ═══════════════════════════════════════════════════════
    SHOT CATALOGUE  (icon grid for Scoring Hub stage 0)
 ═══════════════════════════════════════════════════════ */
-const SHOT_CATS = [
-  {cat:"Attacking", color:"#f59e0b", shots:[
+const SHOT_CATS = themed(() => [
+  {cat:"Attacking", color:D.amber, shots:[
     {id:"drive",       label:"Drive",      icon:"🏏"},
     {id:"pull",        label:"Pull",       icon:"💪"},
     {id:"hook",        label:"Hook",       icon:"🪝"},
@@ -72,12 +72,12 @@ const SHOT_CATS = [
     {id:"loft",        label:"Loft",       icon:"🌤️"},
     {id:"slog",        label:"Slog",       icon:"💥"},
   ]},
-  {cat:"Defensive", color:"#0ea5e9", shots:[
+  {cat:"Defensive", color:D.sky, shots:[
     {id:"fwd_def",     label:"Fwd Def",    icon:"🛡️"},
     {id:"back_def",    label:"Back Def",   icon:"🔙"},
     {id:"padded",      label:"Padded",     icon:"🦵"},
   ]},
-  {cat:"Edge / Contact", color:"#7c3aed", shots:[
+  {cat:"Edge / Contact", color:D.violet, shots:[
     {id:"outside_edge",label:"Out Edge",   icon:"🔪"},
     {id:"inside_edge", label:"In Edge",    icon:"↩️"},
     {id:"top_edge",    label:"Top Edge",   icon:"⬆️"},
@@ -85,14 +85,14 @@ const SHOT_CATS = [
     {id:"hit_glove",   label:"Hit Glove",  icon:"🧤"},
     {id:"missed",      label:"Missed",     icon:"❌"},
   ]},
-  {cat:"Special", color:"#f97316", shots:[
+  {cat:"Special", color:D.orange, shots:[
     {id:"reverse_sweep",label:"Rev Sweep", icon:"🔄"},
     {id:"switch_hit",  label:"Switch Hit", icon:"↔️"},
     {id:"paddle",      label:"Paddle",     icon:"🏓"},
   ]},
-];
+], []);
 
-const ALL_SHOTS_FLAT = SHOT_CATS.flatMap(c=>c.shots.map(s=>({...s,cat:c.cat,color:c.color})));
+const ALL_SHOTS_FLAT = themed(() => SHOT_CATS.flatMap(c=>c.shots.map(s=>({...s,cat:c.cat,color:c.color}))), []);
 
 /* ═══════════════════════════════════════════════════════
    AI COMMENTARY ENGINE

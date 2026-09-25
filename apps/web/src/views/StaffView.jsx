@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { holdsCapability } from "../rbac/index.js";
 import { ROLES } from "../design/roles.js";
-import { D, textOn } from "../design/tokens.js";
+import { D, textOn, themed } from "../design/tokens.js";
 import { roleColor } from "../lib/format.js";
 import { Avatar, Badge, Btn, Card, Pill, SectionHeader } from "../ui/primitives.jsx";
 import { useRows } from "../lib/live.js";
@@ -175,7 +175,7 @@ function StaffView({ role }) {
                   {sel.vehicles?.map(v=>(
                     <div key={v.reg} style={{padding:"10px 12px",background:D.surf2,borderRadius:D.md,marginBottom:"8px",border:`1px solid ${D.border}`}}>
                       <div style={{display:"flex",justifyContent:"space-between",marginBottom:"4px"}}>
-                        <span style={{fontFamily:D.mono,fontSize:"12px",fontWeight:700,color:D.lime}}>{v.reg}</span>
+                        <span style={{fontFamily:D.mono,fontSize:"12px",fontWeight:700,color:textOn(D.lime)}}>{v.reg}</span>
                         <Badge color={v.condition==="Excellent"?D.emerald:v.condition==="Good"?D.sky:D.amber}>{v.condition}</Badge>
                       </div>
                       <div style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary}}>{v.type} · {v.capacity} seats</div>
@@ -186,7 +186,7 @@ function StaffView({ role }) {
                     <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"5px"}}>REGULAR ROUTES</div>
                     {sel.regularRoutes?.map(r=>(
                       <div key={r} style={{padding:"4px 0",display:"flex",gap:"7px",alignItems:"center"}}>
-                        <span style={{color:D.lime}}>→</span>
+                        <span style={{color:textOn(D.lime)}}>→</span>
                         <span style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary}}>{r}</span>
                       </div>
                     ))}
@@ -226,7 +226,7 @@ function StaffView({ role }) {
 
 // One word per check, the server's word, in the server's order: the gaps
 // first. Nothing here derives a status from a date.
-const STATUS_TONE = { missing:D.rose, expired:D.rose, revoked:D.amber, expiring:D.amber, current:D.emerald };
+const STATUS_TONE = themed(() => ({ missing:D.rose, expired:D.rose, revoked:D.amber, expiring:D.amber, current:D.emerald }));
 function ClearanceRegister({ rows }) {
   const [open, setOpen] = useState(true);
   const gaps = rows.filter(r=>r.status!=="current").length;

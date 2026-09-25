@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { NAV_META, groupNav } from "../design/roles.js";
 import { useNav, useSports, sportBadge } from "../lib/features.js";
-import { D } from "../design/tokens.js";
+import { D, T, inkOn, themed } from "../design/tokens.js";
 
 // ══════════════════════════════════════════════════════
 //  MAIN APP
@@ -35,7 +35,7 @@ const SPORT_ICON = {
   cricket:"🏏", football:"⚽", rugby:"🏉", hockey:"🏑",
   netball:"🏐", athletics:"🏃", swimming:"🏊",
 };
-const BADGE_TONE = { emerald:D.emerald, sky:D.sky, amber:D.amber };
+const BADGE_TONE = themed(() => ({ emerald:D.emerald, sky:D.sky, amber:D.amber }));
 
 function SportSwitcher() {
   const [open, setOpen] = useState(false);
@@ -56,7 +56,7 @@ function SportSwitcher() {
         <span style={{marginLeft:"auto",fontSize:"9px",color:D.textMuted}}>{open?"▴":"▾"}</span>
       </button>
       {open&&(
-        <div style={{position:"absolute",left:"14px",right:"14px",top:"calc(100% - 4px)",zIndex:300,background:D.surf2,border:`1px solid ${D.borderMed}`,borderRadius:D.lg,overflow:"hidden",boxShadow:"0 12px 40px rgba(0,0,0,.5)"}}>
+        <div style={{position:"absolute",left:"14px",right:"14px",top:"calc(100% - 4px)",zIndex:300,background:D.surf2,border:`1px solid ${D.borderMed}`,borderRadius:D.lg,overflow:"hidden",boxShadow:T.elevation.lg}}>
           {sports.map(s=>{
             const b = sportBadge(s);
             const tone = BADGE_TONE[b.tone] ?? D.textMuted;
@@ -101,7 +101,7 @@ function MobileNav({ role, active, onNav, notifCount, userName, onSignOut }) {
         background:isActive?D.indigo+"16":"transparent",border:"none",borderRadius:D.md,cursor:"pointer",position:"relative",minHeight:"52px",justifyContent:"center"}}>
         <span aria-hidden="true" style={{fontSize:"17px",lineHeight:1,filter:isActive?"none":"grayscale(.5) opacity(.75)"}}>{m.icon}</span>
         <span aria-hidden="true" style={{fontFamily:D.head,fontSize:"8px",fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:isActive?D.textPrimary:D.textSecondary}}>{m.label}</span>
-        {isBell&&notifCount>0&&<span style={{position:"absolute",top:"4px",right:"calc(50% - 16px)",background:D.rose,color:"#fff",borderRadius:D.pill,padding:"0 4px",fontFamily:D.mono,fontSize:"8px",fontWeight:700,minWidth:"13px"}}>{notifCount}</span>}
+        {isBell&&notifCount>0&&<span style={{position:"absolute",top:"4px",right:"calc(50% - 16px)",background:D.rose,color:inkOn(D.rose),borderRadius:D.pill,padding:"0 4px",fontFamily:D.mono,fontSize:"8px",fontWeight:700,minWidth:"13px"}}>{notifCount}</span>}
       </button>
     );
   };

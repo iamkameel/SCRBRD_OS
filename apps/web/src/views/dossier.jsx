@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { D, textOn } from "../design/tokens.js";
+import { D, textOn, themed } from "../design/tokens.js";
 import { useLive } from "../lib/live.js";
 import { Badge, EmptyState, Modal } from "../ui/primitives.jsx";
 import { Metric, MetricGroup, dash } from "../ui/data.jsx";
@@ -62,13 +62,13 @@ const REASON = {
   },
 };
 
-const EVIDENCE = {
+const EVIDENCE = themed(() => ({
   none:         { label: "no log",   tone: D.textMuted },
   insufficient: { label: "too thin", tone: D.textMuted },
   low:          { label: "thin",     tone: D.amber },
   moderate:     { label: "fair",     tone: D.sky },
   high:         { label: "strong",   tone: D.emerald },
-};
+}));
 
 const day = (t) => (t ? new Date(t).toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" }) : "—");
 const dayTime = (t) => (t ? new Date(t).toLocaleString("en-ZA", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—");

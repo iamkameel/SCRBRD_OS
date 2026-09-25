@@ -7,7 +7,7 @@ import {
   noPlacement, NO_CONTACT_SHOTS, PLACEMENT_NULL, PLACEMENT_SOURCE, CAPTURE_PROFILE,
   DISMISSAL, DISMISSAL_LABEL, RETIRE_REASON, BOWLER_CHANGE_REASON, isMidOver, scoringReadiness, SCORING_BLOCK, lawsRefusal, REFUSAL_TEXT, LOCAL_ONLY,
 } from "@scrbrd/scoring";
-import { D } from "../design/tokens.js";
+import { D, T, clr } from "../design/tokens.js";
 import { deviceId } from "../lib/device.js";
 import { loadMatch, saveMatch, saveAside, storageKind } from "../lib/persist.js";
 import { api, signedIn } from "../lib/api.js";
@@ -16,6 +16,7 @@ import { PadSync } from "../lib/sync.js";
 import { refusalWords } from "../lib/handover.js";
 import { withoutEvents, recordAgain, recordAgainRefusal, heldInOrder, undoOnPad, reconcile, padLogFrom, inningsInPlay, withOrphans } from "@scrbrd/sync";
 import { HeldSheet } from "./held.jsx";
+import { PadMenu } from "./padMenu.jsx";
 import { SyncBanner } from "./syncBanner.jsx";
 import { TossSheet } from "./toss.jsx";
 import { SEGS } from "./field.js";
@@ -1667,6 +1668,10 @@ function SCRBRD({resume,onSignIn}={}){
             <span style={{color:D.emerald}}>{match?.team2}</span>
             <span style={{color:D.textMuted,fontSize:"11px"}}> · {inn?.overs??match?.overs}ov{inn?.revised&&<span style={{color:D.amber}} title={`revised: ${inn.revised.reason}`}> (revised)</span>}</span>
           </div>
+          {/* The pad's menu: today, the theme (DESIGN_DIRECTION §3.1). Ahead
+              of Revise so it stays on screen at phone width, where the end
+              of this bar runs off the right edge. */}
+          <PadMenu/>
           <button onClick={()=>setModal("revise")} className="pressBtn" data-testid="revise-innings" title="Revise overs / target (rain)"
             style={{flexShrink:0,padding:"4px 10px",borderRadius:D.pill,cursor:"pointer",background:"transparent",border:`1px solid ${D.border}`,fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted}}>
             ☔ Revise
@@ -1871,7 +1876,7 @@ function SCRBRD({resume,onSignIn}={}){
         <div style={{position:"fixed",bottom:"20px",left:"50%",transform:"translateX(-50%)",zIndex:150,
           background:D.glass,backdropFilter:"blur(28px) saturate(2)",WebkitBackdropFilter:"blur(28px) saturate(2)",
           border:`1px solid ${D.borderMed}`,borderRadius:D.pill,padding:"6px",display:"flex",gap:"2px",
-          boxShadow:"0 20px 60px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.08),inset 0 1px 0 rgba(255,255,255,.1)"}}>
+          boxShadow:`${T.elevation.xl},0 0 0 1px ${T.line.subtle},${T.elevation.sheen}`}}>
           {NAV.map(n=>{
             const active=activeTab===n.id;
             return (
@@ -1879,10 +1884,10 @@ function SCRBRD({resume,onSignIn}={}){
                 display:"flex",flexDirection:"column",alignItems:"center",gap:"3px",
                 padding:"9px 22px",borderRadius:D.pill,cursor:"pointer",border:"none",
                 background:active?D.grad:"transparent",
-                boxShadow:active?"0 4px 20px rgba(99,102,241,.5),0 0 28px rgba(99,102,241,.35)":"none",
+                boxShadow:active?`0 4px 20px ${clr(D.indigo,.5)},0 0 28px ${clr(D.indigo,.35)}`:"none",
                 transition:"all .3s cubic-bezier(.34,1.56,.64,1)"}}>
                 <span style={{fontSize:"16px",lineHeight:1,filter:active?"none":"grayscale(.6) opacity(.7)"}}>{n.icon}</span>
-                <span style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:active?"#fff":D.textMuted}}>{n.label}</span>
+                <span style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:active?T.light.ink:D.textMuted}}>{n.label}</span>
               </button>
             );
           })}

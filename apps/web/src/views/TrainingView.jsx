@@ -1,7 +1,7 @@
 
 import { Fragment, useState } from "react";
 import { holdsCapability } from "../rbac/index.js";
-import { D, textOn } from "../design/tokens.js";
+import { D, T, textOn, themed } from "../design/tokens.js";
 import { dateStr, today } from "../lib/format.js";
 import { Avatar, Badge, Btn, Card, Input, Modal, Pill, SectionHeader, Select } from "../ui/primitives.jsx";
 import { useLive, useRows } from "../lib/live.js";
@@ -68,7 +68,7 @@ function TrainingView({ role }) {
                 <button key={v} onClick={()=>setView(v)} className="pressBtn" style={{
                   padding:"5px 14px",borderRadius:D.pill,border:"none",cursor:"pointer",
                   background:view===v?D.gradLive:"transparent",
-                  color:view===v?"#fff":D.textMuted,fontFamily:D.head,fontSize:"10px",fontWeight:700,
+                  color:view===v?T.light.ink:D.textMuted,fontFamily:D.head,fontSize:"10px",fontWeight:700,
                   letterSpacing:"0.06em",textTransform:"capitalize",
                 }}>{v}</button>
               ))}
@@ -191,7 +191,7 @@ function TrainingView({ role }) {
 
 // One row per boy, the breaches and spikes first because the server put
 // them there. The word is the server's; the colour is ours.
-const LOAD_TONE = { spike:D.rose, rising:D.amber, steady:D.emerald, light:D.sky, rested:D.textMuted, "no bowling":D.textMuted };
+const LOAD_TONE = themed(() => ({ spike:D.rose, rising:D.amber, steady:D.emerald, light:D.sky, rested:D.textMuted, "no bowling":D.textMuted }));
 function LoadPanel({ rows }) {
   const flagged = rows.filter(r=>r.breaches28d>0||r.loadState==="spike").length;
   // Whose clause is open. The citation is the server's (workload → db/32);

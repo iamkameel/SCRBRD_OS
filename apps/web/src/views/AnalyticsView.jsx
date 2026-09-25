@@ -1,6 +1,6 @@
 
 import { useState } from "react";
-import { D, px, textOn } from "../design/tokens.js";
+import { D, px, textOn, themed } from "../design/tokens.js";
 import { fitnessColor } from "../lib/format.js";
 import { Avatar, Badge, Card, EmptyState, ProgressBar, SectionHeader } from "../ui/primitives.jsx";
 import { usePlayersWithCareer, useLive } from "../lib/live.js";
@@ -226,7 +226,7 @@ function AnalyticsView({ role }) {
 //  rivalry. A record "corrected" over matches the reader cannot see would
 //  disclose that those matches exist.
 // ══════════════════════════════════════════════════════
-const RESULT_TONE = { won: D.emerald, lost: D.rose, tied: D.amber, undecided: D.textMuted };
+const RESULT_TONE = themed(() => ({ won: D.emerald, lost: D.rose, tied: D.amber, undecided: D.textMuted }));
 const day = (t) => (t ? new Date(t).toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" }) : "—");
 
 function HeadToHead({ role, teamFilter }) {
@@ -456,7 +456,7 @@ function Matchups({ role }) {
 //  innings of zeros, which is the difference between "not scored yet" and
 //  "nobody scored".
 // ══════════════════════════════════════════════════════
-const PHASE_TONE = { powerplay: D.sky, middle: D.violet, death: D.orange };
+const PHASE_TONE = themed(() => ({ powerplay: D.sky, middle: D.violet, death: D.orange }));
 
 /**
  * A percentage, or an em dash where the fold withheld one.

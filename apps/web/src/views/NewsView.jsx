@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { D, T, textOn } from "../design/tokens.js";
+import { D, T, textOn, themed } from "../design/tokens.js";
 import { Badge, Btn, Card, EmptyState, Input, Modal, SectionHeader, Select } from "../ui/primitives.jsx";
 import { useLive } from "../lib/live.js";
 import { api } from "../lib/api.js";
@@ -19,11 +19,11 @@ import { holdsCapability } from "../rbac/index.js";
  * offered on the same capabilities the INSERT policy demands, so the button is
  * never there for somebody the database would then refuse.
  */
-const TIER = {
+const TIER = themed(() => ({
   team:        { cap: "news.publish.team",        label: "My side",     tone: D.emerald },
   school:      { cap: "news.publish.school",      label: "Whole school", tone: D.sky },
   competition: { cap: "news.publish.competition", label: "The league",  tone: D.amber },
-};
+}));
 
 function NewsView({ role }) {
   const [nonce, setNonce] = useState(0);

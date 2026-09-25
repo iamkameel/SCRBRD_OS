@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { KZN_SCHOOLS } from "../data/institution.js";
 import { ROLES } from "../design/roles.js";
-import { D, textOn } from "../design/tokens.js";
+import { D, inkOn, textOn, themed } from "../design/tokens.js";
 import { fitnessColor } from "../lib/format.js";
 import { signedIn } from "../lib/api.js";
 import { can, filterRecord } from "../rbac/index.js";
@@ -291,7 +291,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                       <div key={n} style={{width:"32px",height:"32px",borderRadius:D.sm,display:"flex",alignItems:"center",justifyContent:"center",
                         background:n===p.battingPos?rCol:"transparent",
                         border:`1px solid ${n===p.battingPos?rCol:D.border}`,}}>
-                        <span style={{fontFamily:D.mono,fontSize:"11px",fontWeight:n===p.battingPos?700:400,color:n===p.battingPos?"#fff":D.textMuted}}>{n}</span>
+                        <span style={{fontFamily:D.mono,fontSize:"11px",fontWeight:n===p.battingPos?700:400,color:n===p.battingPos?inkOn(rCol):D.textMuted}}>{n}</span>
                       </div>
                     ))}
                   </div>
@@ -661,7 +661,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
 
 // Honours, caps and milestones, in the server's order and the server's words.
 // Nothing here is a total: a cap number is a number, not a score.
-const FAMILY_TONE = { honour:D.amber, cap:D.sky, milestone:D.emerald };
+const FAMILY_TONE = themed(() => ({ honour:D.amber, cap:D.sky, milestone:D.emerald }));
 /**
  * Where this boy scores, across every innings rather than one.
  *
@@ -741,7 +741,7 @@ function RecognitionCard({ playerId, role }) {
 // His cricket record with its provenance on every line: where it was
 // recorded, by whom, and how sure the record is. Read through passport(),
 // which is the family's, his own school's, and a school the family named.
-const CONFIDENCE_TONE = { derived: D.emerald, verified: D.emerald, asserted: D.amber, seeded: D.textMuted };
+const CONFIDENCE_TONE = themed(() => ({ derived: D.emerald, verified: D.emerald, asserted: D.amber, seeded: D.textMuted }));
 function PassportCard({ playerId, role }) {
   const rows = useLive("passport", role, 0, { playerId }).rows;
   if (!rows.length) return null;

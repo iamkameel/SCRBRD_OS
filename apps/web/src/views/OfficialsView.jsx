@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { D } from "../design/tokens.js";
+import { D, themed } from "../design/tokens.js";
 import { Avatar, Badge, Btn, Card, EmptyState, Input, Modal, Pill, SectionHeader, Select } from "../ui/primitives.jsx";
 import { useLive, useRows } from "../lib/live.js";
 import { api } from "../lib/api.js";
@@ -38,19 +38,19 @@ import { resolveBirthDate, PLAUSIBLE_YEARS_OFFICIAL, BIRTH_DATE_MESSAGE } from "
 // second is a person who stood last season and needs to renew, and a screen
 // that says "unaccredited" for both tells a school to go looking for the wrong
 // thing.
-const LEVEL = {
+const LEVEL = themed(() => ({
   club:     { label: "Club Panel",     color: D.textMuted },
   level1:   { label: "Level 1",        color: D.sky },
   level2:   { label: "Level 2",        color: D.emerald },
   national: { label: "National Panel", color: D.amber },
-};
+}));
 
-const DUTY = {
+const DUTY = themed(() => ({
   umpire:       { label: "Umpire",       icon: "🧑‍⚖️", color: D.sky },
   third_umpire: { label: "Third umpire", icon: "📺", color: D.violet },
   scorer:       { label: "Scorer",       icon: "📋", color: D.orange },
   referee:      { label: "Referee",      icon: "⚖️", color: D.amber },
-};
+}));
 
 // ── A duty's authority: link, suspend, lift (SCRBRD-034) ─────────────
 //

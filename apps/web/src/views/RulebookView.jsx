@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { D } from "../design/tokens.js";
+import { D, themed } from "../design/tokens.js";
 import { Badge } from "../ui/primitives.jsx";
 import { useLive } from "../lib/live.js";
 
@@ -18,7 +18,7 @@ import { useLive } from "../lib/live.js";
 //  always was. Nothing stores it and nothing cites it.
 // ══════════════════════════════════════════════════════
 
-const SEVERITY_TONE = { "Mandatory": D.amber, "Penalty Enforced": D.rose, "Guideline": D.sky };
+const SEVERITY_TONE = themed(() => ({ "Mandatory": D.amber, "Penalty Enforced": D.rose, "Guideline": D.sky }));
 const CATEGORY_ICON = { "Medical & Safety": "⛑️", "Curator & Turf": "🌱", "Playing Conditions": "📏", "Conduct": "🤝" };
 const bandLabel = (b) => b === "open" ? "Open" : b === "unknown" ? "No date of birth" : b;
 const limitText = (l) => l.maxSpell == null && l.maxDay == null

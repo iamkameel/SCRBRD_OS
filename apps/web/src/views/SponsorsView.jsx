@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { roleGrants } from "@scrbrd/policy/roles";
-import { D } from "../design/tokens.js";
+import { D, inkOn, themed } from "../design/tokens.js";
 import { Badge, Btn, Card, EmptyState, Input, Modal, Pill, SectionHeader } from "../ui/primitives.jsx";
 import { api } from "../lib/api.js";
 import { useLive } from "../lib/live.js";
@@ -20,7 +20,7 @@ import { schoolsWhere } from "../lib/session.js";
 // by the time a row reaches here: a director of sport's placement arrives with
 // contract_value_zar null, and there is no field on it for a bug in this
 // component to reveal.
-const PLACEMENTS = {
+const PLACEMENTS = themed(() => ({
   broadcast_overlay: { label: "Broadcast overlay", icon: "📺", color: D.violet,
                        sub: "On the stream, over the score" },
   scorecard_footer:  { label: "Scorecard footer",  icon: "📋", color: D.sky,
@@ -29,7 +29,7 @@ const PLACEMENTS = {
                        sub: "Beside the season's fixtures" },
   ground_board:      { label: "Ground board",      icon: "🏟", color: D.emerald,
                        sub: "At the boundary" },
-};
+}));
 
 const rand = (n) =>
   "R" + Math.round(n).toLocaleString("en-ZA").replace(/,/g, " ");
@@ -163,7 +163,7 @@ function SponsorsView({ role }) {
                           width: "48px", height: "34px", borderRadius: D.sm, flexShrink: 0,
                           background: s.logoBg || D.surf3, border: `1px solid ${D.border}`,
                           fontFamily: D.head, fontSize: "8px", fontWeight: 800, letterSpacing: "0.04em",
-                          color: "#fff", overflow: "hidden", whiteSpace: "nowrap" }}>
+                          color: inkOn(s.logoBg || D.surf3), overflow: "hidden", whiteSpace: "nowrap" }}>
                           {s.logoText || s.name.slice(0, 8).toUpperCase()}
                         </span>
                         <div style={{ flex: 1, minWidth: 0 }}>
@@ -194,7 +194,7 @@ function SponsorsView({ role }) {
                     <span style={{ display: "flex", alignItems: "center", justifyContent: "center",
                       width: "70px", height: "48px", borderRadius: D.md, flexShrink: 0,
                       background: selected.logoBg || D.surf3, border: `1px solid ${D.borderMed}`,
-                      fontFamily: D.head, fontSize: "10px", fontWeight: 800, color: "#fff",
+                      fontFamily: D.head, fontSize: "10px", fontWeight: 800, color: inkOn(selected.logoBg || D.surf3),
                       overflow: "hidden", whiteSpace: "nowrap" }}>
                       {selected.logoText || selected.name.slice(0, 8).toUpperCase()}
                     </span>
@@ -449,7 +449,7 @@ function SignSponsor({ categories, schools, onClose, onDone }) {
           width: "88px", height: "40px", borderRadius: D.sm,
           background: /^#[0-9a-fA-F]{6}$/.test(logoBg) ? logoBg : D.surf3,
           border: `1px solid ${D.border}`, fontFamily: D.head, fontSize: "9px",
-          fontWeight: 800, color: "#fff", overflow: "hidden", whiteSpace: "nowrap" }}>
+          fontWeight: 800, color: inkOn(/^#[0-9a-fA-F]{6}$/.test(logoBg) ? logoBg : D.surf3), overflow: "hidden", whiteSpace: "nowrap" }}>
           {logoText || (name ? name.slice(0, 8).toUpperCase() : "BOARD")}
         </span>
         <span style={{ fontFamily: D.body, fontSize: "11px", color: D.textMuted }}>
