@@ -8,7 +8,10 @@ import { SeasonHistory } from "./SeasonHistoryView.jsx";
 import { AddFixtureModal } from "./fixtures.jsx";
 import { useLive, usePlayersWithCareer, useRows, useWeather } from "../lib/live.js";
 import { schoolsWhere } from "../lib/session.js";
-import { bestBattingAverages, bestBowlingEconomies, mvpRanking, topRunScorers, topWicketTakers } from "../lib/seasonAwards.js";
+import {
+  ALL_SEASONS, awardSeasons, bestBattingAverages, bestBowlingEconomies, defaultAwardSeason, mvpRanking,
+  playersForSeason, topRunScorers, topWicketTakers,
+} from "../lib/seasonAwards.js";
 
 // ══════════════════════════════════════════════════════
 //  LEAGUE MANAGEMENT VIEW
@@ -30,6 +33,13 @@ function LeagueView({ role }) {
   // several competitions and none at all for some sides.
   const [awardsSchool, setAwardsSchool] = useState("");
   const [awardsTeam,   setAwardsTeam]   = useState("");
+  // SCRBRD-086. Which season the Awards tab rolls up. null until somebody
+  // chooses: the tab then opens on defaultAwardSeason() — the current season
+  // when it has figures — once the season-scoped read has said which seasons
+  // do. The seasons, and which is current, come from the server
+  // (career_by_season), never from a date worked out in the browser.
+  const [awardsSeason, setAwardsSeason] = useState(null);
+  const SEASON_CAREER = useLive("career_by_season", role);
   const [editRow, setEditRow] = useState(null);  // team row being edited
   const [addFixture, setAddFixture] = useState(false);
   // fixture.create, not fixture.update: this offers the ARRANGE form, and a
@@ -60,6 +70,15 @@ function LeagueView({ role }) {
   const awardSchools = [...new Map(PLAYERS.filter(p=>p.school).map(p=>[p.school, p.schoolName || p.school])).entries()];
   const awardTeams = [...new Set(PLAYERS.filter(p=>awardsSchool ? p.school===awardsSchool : true).map(p=>p.team).filter(Boolean))].sort();
   const awardScope = { school: awardsSchool || null, team: awardsTeam || null };
+  // Every season is the `career` read, exactly as this tab has always ranked
+  // it; one season is that season's rows of `career_by_season`. The sample
+  // floors then apply to whichever the rankings are handed. Until the season
+  // read answers there is nothing to open on, and the lists wait rather than
+  // showing every season's figures under this season's name.
+  const seasonChoice = awardSeasons(SEASON_CAREER.rows);
+  const seasonPending = awardsSeason == null && SEASON_CAREER.loading;
+  const activeSeason = awardsSeason ?? defaultAwardSeason(seasonChoice);
+  const AWARD_PLAYERS = activeSeason === ALL_SEASONS ? PLAYERS : playersForSeason(PLAYERS, SEASON_CAREER.rows, activeSeason);
 
   const NRR = (nrr) => (
     <span style={{fontFamily:D.mono,fontSize:"12px",fontWeight:600,color:nrr>0?D.emerald:nrr<0?D.rose:D.textMuted}}>
@@ -316,10 +335,17 @@ function LeagueView({ role }) {
             </div>
           )}
 
-          {/* ── SEASON AWARDS / MVP (SCRBRD-084) ── */}
+          {/* ── SEASON AWARDS / MVP (SCRBRD-084), season by season (SCRBRD-086) ── */}
           {tab==="awards"&&(
             <div data-testid="season-awards">
-              <div style={{display:"flex",gap:"8px",flexWrap:"wrap",marginBottom:"16px"}}>
+              <div style={{display:"flex",gap:"8px",flexWrap:"wrap",marginBottom:"8px"}}>
+                <select value={seasonPending?"":activeSeason} onChange={e=>setAwardsSeason(e.target.value)}
+                  aria-label="Season" data-testid="awards-season-select" disabled={seasonPending}
+                  style={{padding:"6px 10px",borderRadius:D.md,background:D.surf2,border:`1px solid ${D.border}`,color:D.textPrimary,fontFamily:D.body,fontSize:"12px"}}>
+                  {seasonPending&&<option value="">Loading seasons…</option>}
+                  <option value={ALL_SEASONS}>All seasons</option>
+                  {seasonChoice.seasons.map(s=><option key={s} value={s}>{s}{s===seasonChoice.current?" (current)":""}</option>)}
+                </select>
                 {awardSchools.length>1&&(
                   <select value={awardsSchool} onChange={e=>{setAwardsSchool(e.target.value);setAwardsTeam("");}}
                     aria-label="School" data-testid="awards-school-select"
@@ -335,29 +361,41 @@ function LeagueView({ role }) {
                   {awardTeams.map(t=><option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
+              <div data-testid="awards-season-scope" style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginBottom:"16px"}}>
+                {seasonPending ? "Finding the seasons on record…"
+                  : SEASON_CAREER.error && activeSeason===ALL_SEASONS ? "The seasons could not be loaded, so these are the figures across every season."
+                  : activeSeason===ALL_SEASONS ? "Every season on record: every match you can see."
+                  : `The ${activeSeason} school season: the matches that started in it. The sample floors apply to this season's balls alone.`}
+              </div>
+              {seasonPending ? (
+                <Card data-testid="awards-loading">
+                  <div style={{padding:"20px 14px",textAlign:"center",fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>Loading this season's figures…</div>
+                </Card>
+              ) : (<>
               <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"14px"}}>
                 <RankedList testId="awards-run-scorers" title="🏏 Top Run-Scorers" color={D.sky}
-                  rows={topRunScorers(PLAYERS, awardScope)}
+                  rows={topRunScorers(AWARD_PLAYERS, awardScope)}
                   primary={p=>p.runs} primaryLabel="runs" secondary={p=>p.avg} secondaryLabel="avg"/>
                 <RankedList testId="awards-wicket-takers" title="⚡ Top Wicket-Takers" color={D.violet}
-                  rows={topWicketTakers(PLAYERS, awardScope)}
+                  rows={topWicketTakers(AWARD_PLAYERS, awardScope)}
                   primary={p=>p.wkts} primaryLabel="wkts" secondary={p=>p.econ} secondaryLabel="econ"/>
                 <RankedList testId="awards-batting-index" title="📈 Best Batting Index" color={D.emerald}
-                  rows={bestBattingAverages(PLAYERS, awardScope).map(x=>({...x.player,index:x.index.value}))}
+                  rows={bestBattingAverages(AWARD_PLAYERS, awardScope).map(x=>({...x.player,index:x.index.value}))}
                   primary={p=>p.index} primaryLabel="index" secondary={p=>p.avg} secondaryLabel="avg"
                   empty="Nobody here has faced the 30 balls the index needs yet."/>
                 <RankedList testId="awards-bowling-index" title="📉 Best Bowling Index" color={D.orange}
-                  rows={bestBowlingEconomies(PLAYERS, awardScope).map(x=>({...x.player,index:x.index.value}))}
+                  rows={bestBowlingEconomies(AWARD_PLAYERS, awardScope).map(x=>({...x.player,index:x.index.value}))}
                   primary={p=>p.index} primaryLabel="index" secondary={p=>p.econ} secondaryLabel="econ"
                   empty="Nobody here has bowled the 36 balls the index needs yet."/>
               </div>
               <div style={{marginTop:"14px"}}>
                 <RankedList testId="awards-mvp" title="🏆 MVP Ranking" color={D.amber}
-                  rows={mvpRanking(PLAYERS, awardScope).map(x=>({...x.player,mvp:x.score}))}
+                  rows={mvpRanking(AWARD_PLAYERS, awardScope).map(x=>({...x.player,mvp:x.score}))}
                   primary={p=>p.mvp} primaryLabel="rating" secondary={p=>p.team} secondaryLabel=""
                   empty="Nobody here clears the sample floor for either index yet."
                   sub="Batting and bowling index, averaged where a player has both — never a rating either index refused (packages/scoring's own sample floor)."/>
               </div>
+              </>)}
             </div>
           )}
 
@@ -444,7 +482,7 @@ function RankedList({ testId, title, color, rows, primary, primaryLabel, seconda
       {rows.length===0
         ? <div style={{padding:"20px 14px",textAlign:"center",fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{empty ?? "Nobody on record for this scope yet."}</div>
         : rows.map((p,i)=>(
-          <div key={p.id} data-testid={`${testId}-row`} style={{padding:"10px 14px",borderBottom:`1px solid ${D.border}`,display:"flex",alignItems:"center",gap:"10px"}}>
+          <div key={p.id} data-testid={`${testId}-row`} data-player={p.id} style={{padding:"10px 14px",borderBottom:`1px solid ${D.border}`,display:"flex",alignItems:"center",gap:"10px"}}>
             <span style={{fontFamily:D.mono,fontSize:"11px",color:D.textMuted,width:"16px"}}>{i+1}</span>
             <Avatar name={p.name} size={28} color={color}/>
             <div style={{flex:1,minWidth:0}}>

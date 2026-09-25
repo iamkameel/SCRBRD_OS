@@ -73,7 +73,10 @@ export const READ_QUERIES = {
                   m.format, m.overs, m.status,
                   -- The school season the fixture falls in, by the calendar's
                   -- rule, so a screen never derives a season from a date.
-                  (select label from season_for((m.starts_at at time zone 'Africa/Johannesburg')::date, 'school')) as season,
+                  -- season_for() on the Johannesburg date, through the one
+                  -- function (db/44) that also files this fixture's runs and
+                  -- wickets under a season for the career_by_season read.
+                  school_season_of(m.starts_at) as season,
                   -- WHICH GAME. On the shared fixture read rather than behind a
                   -- per-sport one, because a school running cricket and hockey
                   -- needs both on one list — and a client that had to ask per
@@ -2022,6 +2025,70 @@ export const READ_QUERIES = {
   },
 
   /**
+   * The same career figures, season by season (SCRBRD-086).
+   *
+   * One row per player per school season in which he has a figure, `season`
+   * being the label of the season his MATCHES are in — school_season_of()
+   * on each match's start, the rule the `matches` read files the fixture by
+   * (db/44). `?season=2026` narrows the rows to that one season; without it
+   * every season comes back, which is also how a screen learns which seasons
+   * have anything in them. `current_season` says which row's season is the
+   * one today is in, from the same rule, so no client works it out from a
+   * clock.
+   *
+   * A RESOURCE OF ITS OWN, NOT A PARAMETER ON `career`, for three reasons.
+   *   - `career` stays byte-for-byte what it was. Stats-Magic, the squad,
+   *     profile, analytics and competition screens, and the walks that prove
+   *     it against the fold (smoke-browser-pad-laws, smoke-dismissals,
+   *     smoke-summary) keep the exact query they were proven against, and
+   *     "All seasons" on the Awards tab IS that read — not a new computation
+   *     that would itself need proving equal.
+   *   - It is a different grain. `career` is a row per player; this is a row
+   *     per player per season. A parameter that changed a resource's shape
+   *     would give one name two answers, and the CSV export reads a resource's
+   *     columns off its single SELECT list.
+   *   - A read is one statement. `career` with an optional season would be
+   *     two computations behind one text, one of them always wasted.
+   *
+   * THE SAME SCOPE AS `career`, AND NOTHING NEW TO DECIDE. The three views are
+   * security_invoker over ball_event_live, match and player (db/44), so the
+   * figures cover exactly the deliveries this reader may see, and a player
+   * appears only when this reader may read the player — the lifetime views'
+   * rule, row for row. No module owns it, as none owns `career`. For every
+   * player and every reader, the rows summed over seasons equal `career`
+   * (db/99 §21, and the Awards walk checks it through this route).
+   *
+   * No form guide: a season's is not what the Awards tab ranks on, and
+   * player_innings is not this file's to re-slice.
+   */
+  career_by_season: {
+    text: `select p.id                                   as player_id,
+                  p.full_name, p.team_code, p.school_id,
+                  season,
+                  season = (select school_season_of(now())) as current_season,
+                  coalesce(bat.matches, 0)               as bat_matches,
+                  coalesce(bat.runs, 0)                  as runs,
+                  coalesce(bat.balls_faced, 0)           as balls_faced,
+                  coalesce(bat.fours, 0)                 as fours,
+                  coalesce(bat.sixes, 0)                 as sixes,
+                  coalesce(dis.dismissals, 0)            as dismissals,
+                  coalesce(bowl.matches, 0)              as bowl_matches,
+                  coalesce(bowl.runs_conceded, 0)        as runs_conceded,
+                  coalesce(bowl.legal_balls, 0)          as balls_bowled,
+                  coalesce(bowl.wickets, 0)              as wickets
+             from (select * from player_batting_by_season    where $1::text is null or season = $1) bat
+             -- USING merges the keys, so a player who only bowled in a season
+             -- still has one row for it, and each view is computed once.
+             full join (select * from player_dismissals_by_season where $1::text is null or season = $1) dis
+               using (player_id, season)
+             full join (select * from player_bowling_by_season    where $1::text is null or season = $1) bowl
+               using (player_id, season)
+             join player p on p.id = player_id
+            order by season desc, p.full_name`,
+    params: q => [q?.season || null],
+  },
+
+  /**
    * How a boy is out, and how a bowler takes wickets — by method.
    *
    * `career` above has `dismissals` and `wickets` as single counts.
@@ -2368,6 +2435,9 @@ export const RESTRICTED_FIELDS = Object.freeze(/** @type {Record<string, string[
   clearance_register: ["reference"],
   clearances:         ["reference"],
   career:   [],
+  // The same figures as `career`, one grain finer: nothing about a child
+  // beyond what `career` already discloses to the same reader.
+  career_by_season: [],
   dismissal_breakdown: [],
   skills:   ["score"],
   users:    ["email"],

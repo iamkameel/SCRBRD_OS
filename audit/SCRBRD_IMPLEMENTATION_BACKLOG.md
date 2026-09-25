@@ -3131,6 +3131,35 @@ keys: after the upgrade a re-offered, already-acknowledged ball reads as unsent 
 **Priority:** P2 · **Domain:** Analytics · **Type:** gap (follows SCRBRD-084)
 The `career` read aggregates every match the reader can see, with no season parameter, so the Awards tab is correct
 only while a school has one season of history. Add a season-scoped read (RLS-reviewed, Opus) and a season selector.
+**Built 2026-09-25:** `db/44_career_by_season.sql` — `school_season_of()` (season_for() on the match's Johannesburg
+date; the `matches` read now asks it too) and three security_invoker views, `player_batting_by_season`,
+`player_bowling_by_season`, `player_dismissals_by_season`, each its lifetime view with the same predicates and rule
+functions, grouped by player and season. A new read, `career_by_season` (one row per player per season; `?season=`
+narrows it), rather than a parameter on `career`, which stays byte-for-byte what it was. The Awards tab opens on the
+current season, offers only seasons with figures and "All seasons" (= `career`, unchanged). Proved by `db/99` §21
+(invoker, school A sees nothing of school B, the Johannesburg calendar at the New Year line, exact per-season figures
+over every fold rule, and Σ seasons = lifetime for every player as seven principals — each assertion falsified once)
+and `smoke-browser-awards` (API invariant for three readers; each season's lists, row for row; "All seasons" = the
+career read's ranking). **Coupling to watch:** the views mirror the COMPOSITION inside `player_batting_since()`
+(db/40), `player_bowling_since()` and `player_dismissals_since()` (db/42) — a later change to one of those (e.g. a NULL
+`ball_type` counted as a run) must be mirrored in a new file, and §22 (which carries a NULL-type delivery and a W with
+no method) goes red until it is. A change to a rule FUNCTION (`ball_runs_off_bat`, `dismissal_is_bowlers`, ...) flows
+into both; dropping one would take the views with it. db/43 was such a change and landed first: db/44 mirrors it (who is out is
+`ball_dismissed_batter()` in the batting and dismissals views, and a batter run out at the other end has his match),
+and a NULL type and a W with no method reach the views through `ball_event_live` and `dismissal_is_bowlers()`.
+
+### SCRBRD-088 — A handover in the second innings cannot verify
+**Priority:** P1 · **Domain:** Scoring / handover · **Type:** bug (found by db/43, 2026-09-25)
+`scoring_verify_takeover()` compares the incoming scorer's runs, wickets and legal balls with `match_live_score`,
+which sums every innings of the match. The handover sheet asks for THIS innings' figures off the scoreboard
+(`handover.js`: "legal deliveries bowled this innings"; `sheets.jsx`: overs × 6 + balls), and the fold keeps them per
+innings. So after the first innings any honest answer is refused, and a scorer can take over only by reading a
+match total the scoreboard does not show. Probed on a two-innings log: the check expected 7/1 off 4, the fold's
+innings were 8/1 off 3 and 4/0 off 1. Penalty runs (db/43 finding 3) make it worse: no SQL total carries them.
+**Fix (Opus — handover is on the scoring list):** verify against the current innings — the innings the lock's
+latest ball is in, or the innings the sheet names — in a new db/NN, with penalties counted as the fold counts them;
+a two-innings handover walk that fails on today's code. Until then, match day depends on no scorer change after
+the first innings.
 
 ### SCRBRD-087 — The lease check trusts the device the batch names
 **Priority:** P3 · **Domain:** Scoring / sync · **Type:** hardening

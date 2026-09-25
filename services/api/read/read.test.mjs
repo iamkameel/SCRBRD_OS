@@ -139,6 +139,32 @@ group("A. Params + errors");
   ok("liveResources lists wired reads", liveResources().includes("matches") && liveResources().includes("injuries"));
 }
 
+group("A. career_by_season (SCRBRD-086): the career read's scope, one grain finer");
+{
+  const t = READ_QUERIES.career_by_season.text;
+  ok("reads the three season views db/44 defines",
+     ["player_batting_by_season", "player_bowling_by_season", "player_dismissals_by_season"].every((v) => t.includes(v)));
+  // The views are security_invoker over ball_event_live; a read that went
+  // round them to the log would be a second definition of the figures.
+  ok("never the ball log, nor the lifetime views", !/\bball_event\b|ball_event_live|_career\b|player_dismissals\b/.test(t));
+  ok("names a player only through the policed player table", /join player p on p\.id = player_id/.test(t));
+  ok("says which season is current from the same rule, not a client's clock",
+     /school_season_of\(now\(\)\)/.test(t) && /current_season/.test(t));
+
+  const { pool, log } = fakePool({ "player_batting_by_season": [{ player_id: "p1", season: "2026" }] });
+  const rows = await readResource(pool, SECRET, bearer("uCoach"), "career_by_season", { season: "2026" });
+  const q1 = log.filter((l) => l.text.includes("player_batting_by_season")).at(-1);
+  ok("?season= is a parameter, never spliced into the SQL", q1?.params?.[0] === "2026" && !q1?.text.includes("'2026'") && rows.length === 1);
+  await readResource(pool, SECRET, bearer("uCoach"), "career_by_season");
+  const q2 = log.filter((l) => l.text.includes("player_batting_by_season")).at(-1);
+  ok("no season is null — every season", q2?.params?.length === 1 && q2?.params?.[0] === null);
+  ok("no module gates it, as none gates career", !log.some((l) => l.text.includes("my_feature_enabled")));
+
+  ok("the fixture list files a match by the same function the season views do",
+     /school_season_of\(m\.starts_at\) as season/.test(READ_QUERIES.matches.text));
+  ok("`career` itself is untouched: no season anywhere in it", !/season/.test(READ_QUERIES.career.text));
+}
+
 // ── B. Client accessor ──
 group("B. Feature flags: mock vs live per resource");
 {

@@ -399,6 +399,147 @@ DECLARE n int;
 BEGIN EXECUTE format('SELECT count(*)::int FROM %I', p_table) INTO n; RETURN n; END
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+-- db/44 (section 22). Figures that straddle school seasons. Three Hilton 2XI
+-- players; three 2XI fixtures — one in the 2025 school season, one starting
+-- at 23:30 UTC on 31 December 2025 (01:30 on 1 January 2026 in Johannesburg,
+-- so the 2026 season), one in 2026 — each carrying the same fifteen events,
+-- which between them exercise every rule the career views follow; and a
+-- Westville fixture in 2024, in which one delivery is bowled by a Hilton boy.
+-- Written as the owner, but only when section 22 calls this — after every
+-- other section, none of whose counts it may move — and rolled back with
+-- everything else.
+CREATE OR REPLACE FUNCTION _seed_44() RETURNS void AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  A   uuid := 'aaaaaaaa-0000-0000-0000-00000000044a';
+  B   uuid := 'aaaaaaaa-0000-0000-0000-00000000044b';
+  C   uuid := 'aaaaaaaa-0000-0000-0000-00000000044c';
+  m   record;
+  v_door boolean := EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'ball_event'::regclass
+                             AND tgname = 'ball_event_names_its_delivery' AND tgenabled = 'O');
+BEGIN
+  INSERT INTO player (id, school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (A, HIL, '2XI', 'V44 Opener',  44, 'batter', (current_date - interval '16 years')::date),
+    (B, HIL, '2XI', 'V44 Partner', 45, 'batter', (current_date - interval '16 years')::date),
+    (C, HIL, '2XI', 'V44 Seamer',  46, 'bowler', (current_date - interval '16 years')::date);
+  INSERT INTO match (id, school_id, team_code, opponent, starts_at, format, overs, status) VALUES
+    ('77777777-0000-0000-0000-000000044025', HIL, '2XI', 'Verify 044 (2025)',     '2025-06-14 09:00:00+02', 'T20', 20, 'complete'),
+    ('77777777-0000-0000-0000-0000000440e0', HIL, '2XI', 'Verify 044 (New Year)', '2025-12-31 23:30:00+00', 'T20', 20, 'complete'),
+    ('77777777-0000-0000-0000-000000044026', HIL, '2XI', 'Verify 044 (2026)',     '2026-03-07 09:00:00+02', 'T20', 20, 'complete'),
+    ('77777777-0000-0000-0000-000000044024', WES, '1XI', 'Verify 044 (2024)',     '2024-03-09 09:00:00+02', 'T20', 20, 'complete');
+  -- Per fixture, A on strike and B at the other end, C bowling:
+  --    k  event                                    batting            dismissals        bowling
+  --    1  run 4                                    A 4, a four        -                 4
+  --    2  no-ball, 4 off the bat                   A 4, a four        -                 5, a no-ball
+  --    3  W lbw — on the free hit 2 earned         A faced it         SAVED             legal, no wicket
+  --    4  no-ball, 4 byes (nbRuns)                 A faced, 0         -                 5, a no-ball
+  --    5  wide, 1                                  not faced          -                 2, a wide
+  --    6  run 6 (the free hit, carried by 5)       A 6, a six         -                 6
+  --    7  leg bye, 1                               A faced, 0         -                 legal, 0
+  --    8  W run out, B out at the other end        A faced            B                 legal, not his
+  --    9  retire marked W, retired out, A          an innings of A's  A                 -
+  --   10  a delivery with no ball type, 2, B       B 2, faced (a run) -                 2, legal
+  --   11  W with no method, B                      B faced            B                 legal, nobody's wicket
+  --   12  run 1, no striker on file                nobody's           -                 1
+  --   13  run 2, B ...                             (voided)
+  --   14  ... taken back by a void of 13           nothing            nothing           nothing
+  --   15  retire, hurt, B (no W marker)            nothing            nothing           -
+  -- One fixture: A 1 match, 14 runs, 7 balls, 2 fours, 1 six, 1 dismissal;
+  -- B 1 match, 2 runs, 2 balls, 2 dismissals; C 1 match, 25 conceded, 8 legal
+  -- balls, 1 wide, 2 no-balls, no wicket. 2025 holds one fixture, 2026 two.
+  -- Rows 10 and 11 are the shapes db/43's door refuses, so they go in with the
+  -- door lifted, as _insert_past_the_door() does: a legacy row, read as the
+  -- fold reads it (db/43).
+  IF v_door THEN EXECUTE 'ALTER TABLE ball_event DISABLE TRIGGER ball_event_names_its_delivery'; END IF;
+  FOR m IN SELECT * FROM (VALUES ('77777777-0000-0000-0000-000000044025'::uuid, '2025'),
+                                 ('77777777-0000-0000-0000-0000000440e0'::uuid, 'ny'),
+                                 ('77777777-0000-0000-0000-000000044026'::uuid, '2026')) AS f(id, tag) LOOP
+    INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                            idempotency_key, client_seq, client_ts, kind, ball_type, value,
+                            striker_id, bowler_id, dismissed_id, dismissal, payload)
+    SELECT m.id, HIL, x.k, 1, 0, '88888888-0000-0000-0000-000000000006', 'verify-044',
+           'verify:044:' || m.tag || ':' || x.k, x.k, now(), x.kind, x.bt, x.v,
+           x.striker, x.bowler, x.dismissed, x.dis, x.pl
+      FROM (VALUES
+        ( 1, 'ball',   'run', 4,    A,    C,    NULL::uuid, NULL,          '{}'::jsonb),
+        ( 2, 'ball',   'Nb',  4,    A,    C,    NULL,       NULL,          '{}'::jsonb),
+        ( 3, 'ball',   'W',   0,    A,    C,    NULL,       'lbw',         '{}'::jsonb),
+        ( 4, 'ball',   'Nb',  4,    A,    C,    NULL,       NULL,          '{"nbRuns":"byes"}'::jsonb),
+        ( 5, 'ball',   'Wd',  1,    A,    C,    NULL,       NULL,          '{}'::jsonb),
+        ( 6, 'ball',   'run', 6,    A,    C,    NULL,       NULL,          '{}'::jsonb),
+        ( 7, 'ball',   'LB',  1,    A,    C,    NULL,       NULL,          '{}'::jsonb),
+        ( 8, 'ball',   'W',   0,    A,    C,    B,          'run_out',     '{}'::jsonb),
+        ( 9, 'retire', 'W',   NULL, NULL, NULL, NULL,       'retired_out', jsonb_build_object('batter', A, 'reason', 'out')),
+        (10, 'ball',   NULL,  2,    B,    C,    NULL,       NULL,          '{}'::jsonb),
+        (11, 'ball',   'W',   0,    B,    C,    NULL,       NULL,          '{}'::jsonb),
+        (12, 'ball',   'run', 1,    NULL, C,    NULL,       NULL,          '{}'::jsonb),
+        (13, 'ball',   'run', 2,    B,    C,    NULL,       NULL,          '{}'::jsonb),
+        (14, 'void',   NULL,  NULL, NULL, NULL, NULL,       NULL,          jsonb_build_object('target', 'verify:044:' || m.tag || ':13')),
+        (15, 'retire', NULL,  NULL, NULL, NULL, NULL,       NULL,          jsonb_build_object('batter', B, 'reason', 'hurt'))
+      ) AS x(k, kind, bt, v, striker, bowler, dismissed, dis, pl);
+  END LOOP;
+  IF v_door THEN EXECUTE 'ALTER TABLE ball_event ENABLE TRIGGER ball_event_names_its_delivery'; END IF;
+  -- Westville, 2024: D Mkhize bats, K Botha bowls — and one delivery by C.
+  INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                          idempotency_key, client_seq, client_ts, kind, ball_type, value,
+                          striker_id, bowler_id, dismissal, payload)
+  SELECT '77777777-0000-0000-0000-000000044024', WES, x.k, 1, 0, '88888888-0000-0000-0000-000000000006',
+         'verify-044', 'verify:044:wes:' || x.k, x.k, now(), 'ball', x.bt, x.v,
+         'bbbbbbbb-0000-0000-0000-000000000001', x.bowler, x.dis, '{}'::jsonb
+    FROM (VALUES (1, 'run', 4, 'bbbbbbbb-0000-0000-0000-000000000002'::uuid, NULL),
+                 (2, 'run', 1, C,                                            NULL),
+                 (3, 'W',   0, 'bbbbbbbb-0000-0000-0000-000000000002'::uuid, 'bowled')) AS x(k, bt, v, bowler, dis);
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- db/44 (section 22). Deliveries stamped with a school that is not their
+-- fixture's. The season views file a delivery under its MATCH's season,
+-- reading the match under the caller's policy, and that covers every
+-- delivery the caller may read exactly when this is zero (db/44's header
+-- has the argument). Nothing in the schema forces it — every writer stamps
+-- match_school() — so it is counted, past RLS, because the claim is about
+-- the whole log, including a production log this file is pasted against.
+CREATE OR REPLACE FUNCTION _count_ball_school_mismatch() RETURNS integer AS $$
+  SELECT count(*)::int FROM ball_event b JOIN match m ON m.id = b.match_id
+   WHERE b.school_id IS DISTINCT FROM m.school_id;
+$$ LANGUAGE sql SECURITY DEFINER;
+
+-- db/44 (section 22). Every player whose lifetime figures, as the CURRENT
+-- reader sees them, are not the sum of that reader's figures season by
+-- season: batting, bowling and dismissals, every column. SECURITY INVOKER —
+-- deliberately, like everything it reads — so it answers for whoever
+-- section 22 has become. No rows is the invariant holding.
+CREATE OR REPLACE FUNCTION _career_season_drift()
+RETURNS TABLE (family text, player_id uuid, lifetime text, by_season text) AS $$
+  SELECT 'batting', coalesce(l.player_id, s.player_id),
+         row(l.matches, l.runs, l.balls_faced, l.fours, l.sixes, l.last_ball_at)::text,
+         row(s.matches, s.runs, s.balls_faced, s.fours, s.sixes, s.last_ball_at)::text
+    FROM player_batting_career l
+    FULL JOIN (SELECT b.player_id, sum(b.matches) AS matches, sum(b.runs) AS runs,
+                      sum(b.balls_faced) AS balls_faced, sum(b.fours) AS fours, sum(b.sixes) AS sixes,
+                      max(b.last_ball_at) AS last_ball_at
+                 FROM player_batting_by_season b GROUP BY b.player_id) s ON s.player_id = l.player_id
+   WHERE (l.matches, l.runs, l.balls_faced, l.fours, l.sixes, l.last_ball_at)
+         IS DISTINCT FROM (s.matches, s.runs, s.balls_faced, s.fours, s.sixes, s.last_ball_at)
+  UNION ALL
+  SELECT 'bowling', coalesce(l.player_id, s.player_id),
+         row(l.matches, l.runs_conceded, l.legal_balls, l.wides, l.no_balls, l.wickets)::text,
+         row(s.matches, s.runs_conceded, s.legal_balls, s.wides, s.no_balls, s.wickets)::text
+    FROM player_bowling_career l
+    FULL JOIN (SELECT b.player_id, sum(b.matches) AS matches, sum(b.runs_conceded) AS runs_conceded,
+                      sum(b.legal_balls) AS legal_balls, sum(b.wides) AS wides, sum(b.no_balls) AS no_balls,
+                      sum(b.wickets) AS wickets
+                 FROM player_bowling_by_season b GROUP BY b.player_id) s ON s.player_id = l.player_id
+   WHERE (l.matches, l.runs_conceded, l.legal_balls, l.wides, l.no_balls, l.wickets)
+         IS DISTINCT FROM (s.matches, s.runs_conceded, s.legal_balls, s.wides, s.no_balls, s.wickets)
+  UNION ALL
+  SELECT 'dismissals', coalesce(l.player_id, s.player_id), l.dismissals::text, s.dismissals::text
+    FROM player_dismissals l
+    FULL JOIN (SELECT d.player_id, sum(d.dismissals) AS dismissals
+                 FROM player_dismissals_by_season d GROUP BY d.player_id) s ON s.player_id = l.player_id
+   WHERE l.dismissals IS DISTINCT FROM s.dismissals
+$$ LANGUAGE sql STABLE;
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -3585,6 +3726,200 @@ BEGIN
       format('db/43 (door-method): a new wicket ball with no method was %s', coalesce('refused by ' || v_con, 'written')));
   END;
   PERFORM set_config('app.device_id', '', true);
+
+  -- ── 22. Career figures by season (SCRBRD-086, db/44) ───────────────
+  -- The season views are the lifetime views one grain finer: grouped by the
+  -- school season each match is in, on the Johannesburg calendar, and read
+  -- as the caller. _seed_44() (above) writes the fixture: three Hilton 2XI
+  -- matches — 2025, New Year (23:30 UTC on 31 December 2025), 2026 — of the
+  -- same fifteen events, and a Westville match in 2024 with one delivery by
+  -- a Hilton boy. The log by now also holds everything sections 19 and 20
+  -- wrote (no-ball byes, retirements, free-hit saves, a void), so the
+  -- invariant below runs over those rules too. Every figure is compared as
+  -- a row or a count: _assert() refuses a NULL, so a missing row fails
+  -- rather than passing. Each assertion's label names what it guards; each
+  -- was run once, alone (every other db/44 assertion switched off), with
+  -- db/44 broken the way this table says, and failed for that reason:
+  --
+  --   (a)   a season view without security_invoker; and one run as its owner
+  --         over ball_event itself (an unidentified session read 11 rows)
+  --   (b)   a season view without security_invoker (the Westville reader
+  --         saw the Hilton boy's row)
+  --   (c)   school_season_of() on the UTC date (New Year filed in 2025)
+  --   (d1)  batting runs and fours by `value`, as before db/40
+  --   (d2)  a delivery with no ball type counted as a ball faced (before
+  --         db/43; since db/43 it IS a run and a ball faced, as the fold
+  --         reads it, and (d2) holds that — db/43's §21 falsifies it)
+  --   (d3)  the dismissals view without ball_wicket_stands()
+  --   (d4)  the bowling view without ball_wicket_stands()
+  --   (e0)  one Hilton-fixture delivery stamped with Westville's school
+  --   (e)   one reader's composition drifting (a NULL ball type counted as
+  --         a legal ball); the retirement branch dropped; deliveries counted
+  --         as matches; and every match in one season, for the span check
+  PERFORM _seed_44();
+  DECLARE
+    P44_A  uuid := 'aaaaaaaa-0000-0000-0000-00000000044a';  -- on strike
+    P44_B  uuid := 'aaaaaaaa-0000-0000-0000-00000000044b';  -- the other end
+    P44_C  uuid := 'aaaaaaaa-0000-0000-0000-00000000044c';  -- bowling; once at Westville
+    M44_NY uuid := '77777777-0000-0000-0000-0000000440e0';  -- 01:30 on 1 January 2026, Johannesburg
+    who    uuid;
+    x      record;
+    y      record;
+    n      bigint;
+    n2     bigint;
+    n3     bigint;
+    n4     bigint;
+    detail text;
+  BEGIN
+    -- (a) Every season view runs as its caller, and so reads nothing for a
+    --     session that is nobody. The catalog is asked as well as the rows:
+    --     a view that lost security_invoker would still read DELIVERIES as
+    --     its caller — it reaches them through ball_event_live, which is
+    --     invoker — while reading match and player as its owner, past their
+    --     policies. No row count here can see that; (b) is what it looks
+    --     like from the other school.
+    SELECT count(*) INTO n3 FROM pg_class c JOIN pg_namespace ns ON ns.oid = c.relnamespace
+     WHERE ns.nspname = 'public' AND c.relkind = 'v'
+       AND c.relname IN ('player_batting_by_season', 'player_bowling_by_season', 'player_dismissals_by_season')
+       AND 'security_invoker=true' = ANY (c.reloptions);
+    SELECT count(*) INTO n4 FROM pg_proc p
+     WHERE p.oid = to_regprocedure('school_season_of(timestamptz)') AND NOT p.prosecdef;
+    PERFORM set_config('app.user_id', '', true);
+    SELECT (SELECT count(*) FROM player_batting_by_season) + (SELECT count(*) FROM player_bowling_by_season)
+         + (SELECT count(*) FROM player_dismissals_by_season) INTO n;
+    PERFORM _as(U_OWNER);
+    SELECT (SELECT count(*) FROM player_batting_by_season) + (SELECT count(*) FROM player_bowling_by_season)
+         + (SELECT count(*) FROM player_dismissals_by_season) INTO n2;
+    -- (a) nobody by default
+    PERFORM _assert(n3 = 3 AND n4 = 1 AND n = 0 AND n2 > 0,
+      format('db/44 (a) nobody by default: %s of the 3 season views are security_invoker and %s of 1 season function runs as its caller; '
+             || 'an unidentified session read %s rows of career figures by season (the owner reads %s)', n3, n4, n, n2));
+
+    -- (b) A coach at one school reads nothing of another's through them. The
+    --     Westville fixture is in 2024, a season no Hilton fixture is in, and
+    --     one of its deliveries is a Hilton boy's: a Hilton coach reads no
+    --     2024 row at all — not his own boy's either, from a match he cannot
+    --     read — and no Westville player; the Westville administrator reads
+    --     his own boys' 2024 figures and nothing of Hilton's. The owner reads
+    --     all of it, so none of this passes for want of a row.
+    PERFORM _as(U_OWNER);
+    SELECT count(*) INTO n FROM player_bowling_by_season WHERE player_id = P44_C AND season = '2024';
+    PERFORM _as(U_COACH2);
+    SELECT (SELECT count(*) FROM player_batting_by_season    WHERE season = '2024' OR player_id IN (P_WES, P_WES2))
+         + (SELECT count(*) FROM player_bowling_by_season    WHERE season = '2024' OR player_id IN (P_WES, P_WES2))
+         + (SELECT count(*) FROM player_dismissals_by_season WHERE season = '2024' OR player_id IN (P_WES, P_WES2))
+      INTO n2;
+    PERFORM _as(U_WES_ADM);
+    SELECT (SELECT count(*) FROM player_batting_by_season    WHERE player_id = P_WES  AND season = '2024')
+         + (SELECT count(*) FROM player_bowling_by_season    WHERE player_id = P_WES2 AND season = '2024')
+         + (SELECT count(*) FROM player_dismissals_by_season WHERE player_id = P_WES  AND season = '2024')
+      INTO n3;
+    SELECT (SELECT count(*) FROM player_batting_by_season    WHERE player_id IN (P44_A, P44_B, P44_C))
+         + (SELECT count(*) FROM player_bowling_by_season    WHERE player_id IN (P44_A, P44_B, P44_C))
+         + (SELECT count(*) FROM player_dismissals_by_season WHERE player_id IN (P44_A, P44_B, P44_C))
+      INTO n4;
+    -- (b) school A sees nothing of school B
+    PERFORM _assert(n = 1 AND n2 = 0 AND n3 = 3 AND n4 = 0,
+      format('db/44 (b) school A sees nothing of school B: the owner reads %s 2024 row(s) for the Hilton boy who bowled at Westville (expected 1); '
+             || 'the Hilton 2XI coach reads %s rows from Westville''s fixture or players (expected 0); '
+             || 'the Westville administrator reads %s of his own boys'' three 2024 rows and %s of Hilton''s (expected 3 and 0)', n, n2, n3, n4));
+
+    -- (c) The Johannesburg calendar: the New Year fixture is in 2026, though
+    --     its UTC date is still 31 December 2025 — the fixture straddles the
+    --     line, so this can tell the two rules apart. The matches read files
+    --     it with the same function.
+    PERFORM _as(U_SCORER);
+    SELECT school_season_of(m.starts_at) AS season, (m.starts_at AT TIME ZONE 'UTC')::date AS utc_day
+      INTO x FROM match m WHERE m.id = M44_NY;
+    -- (c) the Johannesburg calendar
+    PERFORM _assert(x.season = '2026' AND x.utc_day = date '2025-12-31',
+      format('db/44 (c) the Johannesburg calendar: a fixture at 01:30 on 1 January 2026 in Johannesburg (UTC day %s) is filed in season %s, expected 2026',
+             x.utc_day, x.season));
+
+    -- (d) The figures, season by season, as the school's scorer reads them:
+    --     one fixture in 2025, two in 2026 (the New Year one among them).
+    SELECT (SELECT row(matches, runs, balls_faced, fours, sixes)::text FROM player_batting_by_season
+             WHERE player_id = P44_A AND season = '2025') AS y2025,
+           (SELECT row(matches, runs, balls_faced, fours, sixes)::text FROM player_batting_by_season
+             WHERE player_id = P44_A AND season = '2026') AS y2026 INTO x;
+    -- (d1) batting by season: runs, fours and sixes off the bat
+    PERFORM _assert(x.y2025 = '(1,14,7,2,1)' AND x.y2026 = '(2,28,14,4,2)',
+      format('db/44 (d1) batting by season: the opener''s (matches, runs, balls, fours, sixes) are %s in 2025 and %s in 2026, expected (1,14,7,2,1) and (2,28,14,4,2) — '
+             || 'a no-ball''s byes are not his runs or his boundary, a wide is not a ball he faced, and the New Year fixture is 2026''s',
+             coalesce(x.y2025, 'no row'), coalesce(x.y2026, 'no row')));
+    SELECT (SELECT row(matches, runs, balls_faced, fours, sixes)::text FROM player_batting_by_season
+             WHERE player_id = P44_B AND season = '2025') AS y2025,
+           (SELECT row(matches, runs, balls_faced, fours, sixes)::text FROM player_batting_by_season
+             WHERE player_id = P44_B AND season = '2026') AS y2026 INTO x;
+    -- (d2) batting by season: a delivery with no type is a run; one taken back is nothing
+    PERFORM _assert(x.y2025 = '(1,2,2,0,0)' AND x.y2026 = '(2,4,4,0,0)',
+      format('db/44 (d2) batting by season: the partner''s (matches, runs, balls, fours, sixes) are %s in 2025 and %s in 2026, expected (1,2,2,0,0) and (2,4,4,0,0) — '
+             || 'a delivery with no ball type is a run, as the fold reads it (db/43), and a voided run is nothing to anybody',
+             coalesce(x.y2025, 'no row'), coalesce(x.y2026, 'no row')));
+    SELECT (SELECT row(a.dismissals, b.dismissals)::text
+              FROM player_dismissals_by_season a, player_dismissals_by_season b
+             WHERE a.player_id = P44_A AND a.season = '2025' AND b.player_id = P44_B AND b.season = '2025') AS y2025,
+           (SELECT row(a.dismissals, b.dismissals)::text
+              FROM player_dismissals_by_season a, player_dismissals_by_season b
+             WHERE a.player_id = P44_A AND a.season = '2026' AND b.player_id = P44_B AND b.season = '2026') AS y2026 INTO x;
+    -- (d3) dismissals by season: the free hit saves, a retirement marked W does not
+    PERFORM _assert(x.y2025 = '(1,2)' AND x.y2026 = '(2,4)',
+      format('db/44 (d3) dismissals by season: (opener, partner) are %s in 2025 and %s in 2026, expected (1,2) and (2,4) — '
+             || 'an lbw on a free hit is no dismissal, a retirement marked W is one, a run out at the other end is the non-striker''s, a W with no method still dismisses its batter',
+             coalesce(x.y2025, 'no row'), coalesce(x.y2026, 'no row')));
+    SELECT (SELECT row(matches, runs_conceded, legal_balls, wides, no_balls, wickets)::text FROM player_bowling_by_season
+             WHERE player_id = P44_C AND season = '2025') AS y2025,
+           (SELECT row(matches, runs_conceded, legal_balls, wides, no_balls, wickets)::text FROM player_bowling_by_season
+             WHERE player_id = P44_C AND season = '2026') AS y2026 INTO x;
+    -- (d4) bowling by season: every run of a wide or no-ball is his; a saved, a run-out or a methodless wicket is not
+    PERFORM _assert(x.y2025 = '(1,25,8,1,2,0)' AND x.y2026 = '(2,50,16,2,4,0)',
+      format('db/44 (d4) bowling by season: the seamer''s (matches, conceded, legal balls, wides, no-balls, wickets) are %s in 2025 and %s in 2026, expected (1,25,8,1,2,0) and (2,50,16,2,4,0) — '
+             || 'a delivery with no type is a legal ball and its runs his; an lbw the free hit saved, a run out and a W with no method are not his wickets (db/43)',
+             coalesce(x.y2025, 'no row'), coalesce(x.y2026, 'no row')));
+
+    -- (e0) Its precondition, over the whole log: every delivery carries its
+    --      fixture's school, so a delivery a reader may see is of a fixture
+    --      the reader may see, and filing it under the fixture's season
+    --      drops nothing.
+    n := _count_ball_school_mismatch();
+    n2 := _count_rows('ball_event');
+    -- (e0) every delivery is its fixture's school's
+    PERFORM _assert(n = 0 AND n2 > 0,
+      format('db/44 (e0) every delivery is its fixture''s school''s: %s of %s deliveries carry another school, '
+             || 'and a reader who may see one of those may not see its fixture — its season figures would leave it out', n, n2));
+
+    -- (e) THE INVARIANT. For every player each of seven principals may read,
+    --     the figures summed over seasons are the lifetime figures, column
+    --     by column, across the whole log — the seed's innings, sections 19
+    --     and 20, and this fixture. The owner reads every school; the
+    --     director, the scorer and the 2XI coach read Hilton at three
+    --     different widths; the Westville administrator reads Westville; the
+    --     1XI pupil reads his own side's deliveries; and a guardian, whose
+    --     assignment is about one child, reads fixtures but no deliveries
+    --     (ball_event_read asks about nobody in particular), so must get
+    --     nothing from either side.
+    FOREACH who IN ARRAY ARRAY[U_OWNER, U_SARAH, U_SCORER, U_COACH2, U_WES_ADM, U_PARENT, U_SELF] LOOP
+      PERFORM _as(who);
+      SELECT count(*), string_agg(format('%s %s: lifetime %s, by season %s', d.family, d.player_id, d.lifetime, d.by_season), '; ')
+        INTO n, detail FROM _career_season_drift() d;
+      -- (e) the invariant
+      PERFORM _assert(n = 0,
+        format('db/44 (e) the invariant, as %s: %s figure(s) are not the sum of their seasons — %s', who, n, left(detail, 600)));
+    END LOOP;
+    -- ...and it held over something: the fixture's three boys each have two
+    -- seasons to add up, for every Hilton reader who can see the 2XI.
+    FOREACH who IN ARRAY ARRAY[U_OWNER, U_SARAH, U_SCORER, U_COACH2] LOOP
+      PERFORM _as(who);
+      SELECT (SELECT count(DISTINCT season) FROM player_batting_by_season    WHERE player_id = P44_A)
+           + (SELECT count(DISTINCT season) FROM player_dismissals_by_season WHERE player_id = P44_B)
+           + (SELECT count(DISTINCT season) FROM player_bowling_by_season    WHERE player_id = P44_C AND season <> '2024')
+        INTO n;
+      -- (e) the invariant, over two seasons
+      PERFORM _assert(n = 6,
+        format('db/44 (e) the invariant, as %s: the fixture''s three boys span %s player-seasons, expected 6 — the sums above were not over two seasons', who, n));
+    END LOOP;
+  END;
+  PERFORM set_config('app.user_id', '', true);
 
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;

@@ -913,6 +913,18 @@ function asCareer(r) {
   };
 }
 
+/**
+ * A career line for ONE school season (SCRBRD-086): the same figures, derived
+ * the same way, over the matches in that season. `season` is the label the
+ * server filed the match under and `currentSeason` whether that is the season
+ * today is in — both decided in Postgres (school_season_of(), db/44), so no
+ * screen ever works out a season from a date or a clock. No form guide rides
+ * along; it is an empty array, as for a player who has not batted.
+ */
+function asSeasonCareer(r) {
+  return { ...asCareer(r), season: r.season ?? null, currentSeason: r.current_season === true };
+}
+
 function asSkill(r) {
   return { playerId: r.player_id, name: r.full_name, team: r.team_code,
            assessedOn: r.assessed_on, category: r.category, metric: r.metric,
@@ -1035,6 +1047,7 @@ const ADAPT = {
   injuries: asInjury,
   skills: asSkill,
   career: asCareer,
+  career_by_season: asSeasonCareer,
   ratings: asRating,
   notes: asNote,
   dismissal_breakdown: asDismissalBreakdown,
