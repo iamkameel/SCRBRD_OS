@@ -31,6 +31,15 @@ const kHeld = (/** @type {number} */ n) => `held:${String(n).padStart(9, "0")}`;
 // server acknowledged in an earlier session (SCRBRD-074, SCRBRD-075).
 const kSent = (/** @type {string} */ key) => `sent:${key}`;
 const kMeta = "meta:clientSeq";
+// The token generation this device last held for this match (SCRBRD-078).
+// Events recorded while the device holds no token — no signal, signed out —
+// are stamped with it, so the epoch rule at the next claim can tell this
+// device's own continuation from a log somebody else has moved on.
+const kEpoch = "meta:epoch";
+// A toss answered on this device and not yet on the server (SCRBRD-075). The
+// server freezes the toss once the match has any event at all, so it goes
+// out before the first event of a flush, or nothing goes out.
+const kToss = "toss:pending";
 
 /**
  * Where the queue is made durable. Values are whatever the adapter stores —
@@ -41,6 +50,7 @@ const kMeta = "meta:clientSeq";
  * @property {(key: string) => Promise<any>} get
  * @property {(key: string) => Promise<unknown>} delete
  * @property {(prefix: string) => Promise<{key: string, value: any}[]>} list
+ * @property {() => Promise<unknown>} [clearMatch]  remove every key of this match+device (SCRBRD-079)
  *
  * One queued ball, as persisted and as sent.
  * @typedef {object} OutboxEvent
@@ -73,28 +83,66 @@ const kMeta = "meta:clientSeq";
  * @property {string|null} lastError
  * @property {boolean} online
  * @property {number} heldCount       refused or conflicting events waiting on a person
+ * @property {number} rejectedCount   sent this session and held by the server for review (quarantine): not in its log
+ * @property {boolean} attached       this device holds the token and may send (SCRBRD-078)
+ * @property {boolean} tossPending    a toss answered here waits to go out first (SCRBRD-075)
+ *
+ * A toss as the pad answers it: which side won it, and what they chose.
+ * @typedef {{wonBy: "home"|"away", decision: "bat"|"bowl"}} PendingToss
+ *
+ * What the gate says before a flush (SCRBRD-078). `ok: false` sends nothing
+ * and says why; `epoch` is a token generation the device has just taken back
+ * for itself (its own lapsed lease), which the queue then goes out under.
+ * @typedef {{ok: true, epoch?: number, reason?: undefined} | {ok: false, reason: string, epoch?: undefined}} GateAnswer
+ *
+ * How a pending toss settled against the server's. `settled: false` keeps
+ * it, and nothing after it is sent.
+ * @typedef {{settled: true, reason?: undefined} | {settled: false, reason: string}} TossAnswer
  */
 
 export class SyncEngine {
   /**
+   * An engine built with an epoch holds the token and sends (the way it has
+   * always been built). One built with `epoch: null` is UNATTACHED
+   * (SCRBRD-078): the pad of a live match that has no token yet — no signal,
+   * signed out, or refused — still records every event durably, stamped with
+   * the generation this device last held, and sends nothing until `attach()`.
+   *
    * @param {object} options
    * @param {string} options.matchId
    * @param {string} options.deviceId
    * @param {string} options.scorerId
-   * @param {number} options.epoch
+   * @param {number|null} options.epoch   null: unattached until attach()
    * @param {number} [options.innings]
    * @param {OutboxStorage} options.storage
    * @param {Transport} options.transport
    * @param {() => boolean} [options.isOnline]
    * @param {() => number} [options.now]
    * @param {(status: OutboxStatus) => void} [options.onChange]
+   * @param {() => Promise<GateAnswer>} [options.gate]   asked before every flush: may this device send now
+   * @param {(toss: PendingToss) => Promise<TossAnswer>} [options.settleToss]  puts a pending toss on the server, or says why not
    */
   constructor({ matchId, deviceId, scorerId, epoch, innings = 0,
-                storage, transport, isOnline = () => true, now = () => Date.now(), onChange }) {
+                storage, transport, isOnline = () => true, now = () => Date.now(), onChange,
+                gate, settleToss }) {
     this.matchId = matchId; this.deviceId = deviceId; this.scorerId = scorerId;
-    this.epoch = epoch; this.innings = innings;
+    /** Whether this device holds the token and may send. */
+    this.attached = epoch != null;
+    /** The generation new events are stamped with: the token held, or (unattached) the last one held. */
+    this.epoch = epoch ?? 0;
+    /** @type {number|null} the generation this device last held for this match, from disk */
+    this.heldEpoch = null;
+    this.innings = innings;
     this.storage = storage; this.transport = transport;
     this.isOnline = isOnline; this.now = now; this.onChange = onChange;
+    this.gate = gate; this.settleToss = settleToss;
+    /** @type {PendingToss|null} a toss answered here, not yet on the server */
+    this.toss = null;
+    // Records whose storage writes have not finished: clearOutbox() waits for
+    // none of them, it refuses while any is out.
+    this._recording = 0;
+    /** The outbox's storage was cleared this session (SCRBRD-079). */
+    this.cleared = false;
 
     this.clientSeq = 0;
     /** @type {OutboxEvent[]} */
@@ -135,26 +183,165 @@ export class SyncEngine {
     const meta = await this.storage.get(kMeta);
     const persistedSeq = meta ? Number(typeof meta === "string" ? meta : meta.value ?? meta) : 0;
     this.clientSeq = Math.max(persistedSeq, this.pending.length ? this.pending[this.pending.length - 1].clientSeq : 0);
-    // Events queued under the token generation just before this one are this
-    // device's own, carried across its own reclaim: every claim, transfer and
-    // force-release bumps the epoch by exactly one, so `epoch - 1` means
-    // nobody else held the token in between and the server's log has not
-    // moved except by this device. They go out under the token it holds now.
-    // Left stale, the first of them decides the lease check for the whole
-    // batch (events-api reads events[0].epoch), so every ball the scorer
-    // queued offline — and every one re-offered behind them — went to
-    // quarantine on the first reload with signal. Anything older is left as
-    // it is: another device held the token since, and quarantine is what
-    // those are for (SCORING_HANDOVER_SPEC §4). The epoch is not part of an
-    // event's fingerprint, so a restamped resend of an event the server
-    // already has is still a duplicate, not a conflict.
-    for (const ev of this.pending) {
-      if (ev.epoch !== this.epoch - 1) continue;
-      ev.epoch = this.epoch;
-      await this.storage.put(kEvt(ev.clientSeq), JSON.stringify(ev));
+    const held = await this.storage.get(kEpoch);
+    this.heldEpoch = held == null ? null : Number(held);
+    const toss = await this.storage.get(kToss);
+    this.toss = toss == null ? null : (typeof toss === "string" ? JSON.parse(toss) : toss);
+    if (this.attached) {
+      // Built holding the token: the rule attach() applies, applied now.
+      await this._restamp(this.epoch, false);
+      await this._holdEpoch(this.epoch);
+    } else {
+      // No token yet: what is recorded now is stamped with the generation
+      // this device last held (0 if it never held one), so the claim that
+      // attaches it can tell whether anybody held the token in between.
+      this.epoch = this.heldEpoch ?? 0;
     }
     this._emit();
     return { recovered: this.pending.length };
+  }
+
+  /**
+   * The device now holds the token, generation `epoch`: record under it and
+   * send (SCRBRD-078). Called after a claim succeeds, and after a takeover.
+   *
+   * THE EPOCH RULE. Events queued under the generation just before this one
+   * are this device's own, carried across its own reclaim: every claim,
+   * transfer and force-release bumps the epoch by exactly one, so `epoch - 1`
+   * means nobody else held the token in between and the server's log has not
+   * moved except by this device. They go out under the token it holds now.
+   * Left stale, the first of them decides the lease check for the whole
+   * batch (events-api reads events[0].epoch), so every ball the scorer queued
+   * offline went to quarantine. Anything older is left as it is: another
+   * device held the token since, and quarantine is what those are for
+   * (SCORING_HANDOVER_SPEC §4). The epoch is not part of an event's
+   * fingerprint, so a restamped resend of an event the server already has is
+   * still a duplicate, not a conflict.
+   *
+   * `rebase` is for a caller that has just compared the server's log with the
+   * pad's and found nothing on the server this device does not have
+   * (reconcile(), "in_step"): nobody else has written, so every queued event
+   * is this device's continuation, whatever it was stamped — a first claim
+   * after a colleague merely opened the pad, say, bumped the epoch twice
+   * without writing anything.
+   *
+   * @param {number} epoch
+   * @param {{rebase?: boolean}} [opts]
+   */
+  async attach(epoch, { rebase = false } = {}) {
+    this.epoch = epoch;
+    this.attached = true;
+    this.lastError = null;
+    await this._holdEpoch(epoch);
+    await this._restamp(epoch, rebase);
+    this._emit();
+  }
+
+  /**
+   * The token is gone — handed over, or taken by another device — or was
+   * never this device's to use. Nothing more is sent; everything queued stays
+   * queued, on disk, and is still recorded into.
+   * @param {string|null} [reason]
+   */
+  detach(reason = null) {
+    this.attached = false;
+    this.lastError = reason;
+    this._emit();
+  }
+
+  /** @param {number} epoch  @param {boolean} all */
+  async _restamp(epoch, all) {
+    for (const ev of this.pending) {
+      if (ev.epoch === epoch || (!all && ev.epoch !== epoch - 1)) continue;
+      ev.epoch = epoch;
+      await this.storage.put(kEvt(ev.clientSeq), JSON.stringify(ev));
+    }
+  }
+
+  /** @param {number} epoch */
+  async _holdEpoch(epoch) {
+    if (this.heldEpoch === epoch) return;
+    this.heldEpoch = epoch;
+    await this.storage.put(kEpoch, String(epoch));
+  }
+
+  /**
+   * These keys are in the server's log: this device's own events from before
+   * the markers existed, or events it took from the server (a handover, a
+   * first visit — SCRBRD-075). Marked the way a request marks what it
+   * carries, so undo never cuts one and a reload never queues one again.
+   * In memory at once, on disk before this resolves.
+   * @param {Iterable<string>} keys
+   */
+  async markSent(keys) {
+    const fresh = [...keys].filter(k => k != null && !this.sent.has(k));
+    for (const k of fresh) this.sent.add(k);
+    for (const k of fresh) await this.storage.put(kSent(k), "1");
+  }
+
+  /**
+   * Does the outbox already answer for this event — queued, held, or put in
+   * a request in this session or an earlier one? The pad offers the queue
+   * only what it does not.
+   * @param {string} key
+   */
+  isKnown(key) {
+    return this.sent.has(key) || this.isHeld(key) || this.pending.some(e => e.idempotencyKey === key);
+  }
+
+  /**
+   * A toss answered on this device (SCRBRD-075): durable before this
+   * resolves, and the first thing the next flush sends. One toss per match;
+   * a second answer replaces an unsent first.
+   * @param {PendingToss} toss
+   */
+  async queueToss(toss) {
+    // In memory first, so a flush that begins while the write is out still
+    // sends it before anything; the caller waits for the write before it
+    // records the innings the toss opens.
+    this.toss = { wonBy: toss.wonBy, decision: toss.decision };
+    this._emit();
+    await this.storage.put(kToss, JSON.stringify(this.toss));
+    if (this.attached && this.isOnline()) this.sync().catch(() => {});
+  }
+
+  /**
+   * Let an unsent toss go, and hand it back: the pad took the server's log
+   * over its own at a handover (SCRBRD-075), and the toss it answered belongs
+   * to the log it set aside, not to the one it now scores on. The caller
+   * keeps what this returns with that log.
+   * @returns {Promise<PendingToss|null>}
+   */
+  async setTossAside() {
+    const t = this.toss;
+    if (!t) return null;
+    this.toss = null;
+    await this.storage.delete(kToss);
+    this._emit();
+    return t;
+  }
+
+  /**
+   * SCRBRD-079. Remove this match's outbox from the device once nothing in it
+   * is waiting: no event queued, none held for a person, no toss unsent, and
+   * no flush or record in progress. Refuses (false) otherwise — this is never
+   * the way something leaves the queue. The caller decides that the match is
+   * over and that the server has the log; in memory the engine goes on
+   * knowing what it knew, so nothing already sent is queued again this
+   * session.
+   * @returns {Promise<boolean>}
+   */
+  async clearOutbox() {
+    if (this.pending.length || this.held.length || this.toss || this._inflight || this._recording) return false;
+    if (typeof this.storage.clearMatch !== "function") return false;
+    await this.storage.clearMatch();
+    // A record that began while the delete ran may have lost its disk copy.
+    // It is still queued in memory, and the pad's saved log has it with no
+    // marker, so the next start offers it again: nothing is lost.
+    this.heldEpoch = null;
+    this.cleared = true;
+    this._emit();
+    return true;
   }
 
   get pendingCount() { return this.pending.length; }
@@ -183,10 +370,15 @@ export class SyncEngine {
    * This is the fact undo's NOT SYNCED rule rests on (undo.mjs), and
    * `withdraw` asks it again, in the same tick, before it acts.
    *
-   * It relies on what the pad guarantees today: every event it offers the
-   * queue was minted on this device. A log replayed FROM the server (the
-   * incoming device at a handover, SCRBRD-075) must mark those keys sent
-   * before offering them, or they would read as never sent.
+   * It relies on what the pad guarantees: every event it offers the queue
+   * was minted on this device. A log taken FROM the server (the incoming
+   * device at a handover, a first visit — SCRBRD-075) is marked sent
+   * (markSent) before it is on the pad, and so is never offered. One gap is
+   * the pad's to close, not this: a device that queued events before the
+   * markers existed has none for them, so until its first claim compares
+   * its log with the server's (and marks what the server has) a re-offered,
+   * acknowledged event reads as unsent here. The pad asks this only once
+   * attached, or of an event it minted since it opened (SCRBRD-079).
    * @param {string} key
    * @returns {boolean}
    */
@@ -235,6 +427,7 @@ export class SyncEngine {
 
   _emit() {
     this.onChange?.({ pendingCount: this.pending.length, heldCount: this.held.length,
+                      rejectedCount: this.rejected.length, attached: this.attached, tossPending: this.toss != null,
                       syncing: this.syncing, lastError: this.lastError, online: this.isOnline() });
   }
 
@@ -256,18 +449,24 @@ export class SyncEngine {
    * Record a ball. Persists FIRST, then queues. Always succeeds locally — this
    * is what keeps play going with no signal. Returns the event.
    *
+   * The pad offers only what the outbox does not already answer for
+   * (isKnown): an event put in a request in an earlier session and since
+   * settled — acknowledged, or quarantined for a person — is the server's,
+   * and offering it again used to make every reload re-send the whole match
+   * and count it as waiting (SCRBRD-078).
+   *
    * @param {any} payload  the scoring event
    * @returns {Promise<OutboxEvent>}
    */
   async record(payload) {
     // An event this device already holds is not recorded twice. The pad
-    // offers its whole log to the queue whenever it (re)attaches — it cannot
-    // know what an earlier session sent — so without this a reload would
-    // send every held event again, be refused again, and hold a second copy
-    // under the same key: the Refused count doubling on every reload, and a
-    // person asked to resolve the same event twice (SCRBRD-070). A held
-    // event leaves only by a person's hand (discardHeld); recording it again
-    // is a NEW event with a new id (held.mjs recordAgain), which passes.
+    // offers its log to the queue whenever it (re)opens — it cannot know
+    // what an earlier session sent — so without this a reload would send
+    // every held event again, be refused again, and hold a second copy under
+    // the same key: the Refused count doubling on every reload, and a person
+    // asked to resolve the same event twice (SCRBRD-070). A held event leaves
+    // only by a person's hand (discardHeld); recording it again is a NEW
+    // event with a new id (held.mjs recordAgain), which passes.
     //
     // The same for an event already waiting in the queue: after a reload the
     // queue rehydrates from disk AND the pad re-offers its log, and a second
@@ -277,6 +476,12 @@ export class SyncEngine {
       ? this.held.find(h => h.idempotencyKey === payload.id) ?? this.pending.find(e => e.idempotencyKey === payload.id)
       : null;
     if (known) return known;
+    this._recording += 1;
+    try { return await this._record(payload); } finally { this._recording -= 1; }
+  }
+
+  /** @param {any} payload @returns {Promise<OutboxEvent>} */
+  async _record(payload) {
     this.clientSeq += 1;
     /** @type {OutboxEvent} */
     const ev = {
@@ -300,8 +505,9 @@ export class SyncEngine {
     this.pending.push(ev);
     this._emit();
 
-    // Opportunistic sync; over-boundary is a forced checkpoint.
-    if (this.isOnline()) this.sync().catch(() => {});
+    // Opportunistic sync; over-boundary is a forced checkpoint. Unattached,
+    // it waits for attach(): recorded is recorded, sent comes later.
+    if (this.attached && this.isOnline()) this.sync().catch(() => {});
     return ev;
   }
 
@@ -322,11 +528,15 @@ export class SyncEngine {
    * be true only by luck of timing — the flush started by record() usually
    * finished within the microtasks a caller's await took, and the sent
    * markers written before each request make that no longer so.)
-   * @returns {Promise<{flushed: number, remaining: number, offline?: boolean, rejected?: number, held?: number}>}
+   *
+   * Unattached (SCRBRD-078) nothing is sent at all: the device holds no
+   * token, and the server would only put it in quarantine.
+   * @returns {Promise<{flushed: number, remaining: number, offline?: boolean, unattached?: boolean, blocked?: string, rejected?: number, held?: number}>}
    */
   sync() {
     if (this._inflight) return this._inflight;
-    if (this.pending.length === 0) return Promise.resolve({ flushed: 0, remaining: 0 });
+    if (!this.attached) return Promise.resolve({ flushed: 0, remaining: this.pending.length, unattached: true });
+    if (this.pending.length === 0 && !this.toss) return Promise.resolve({ flushed: 0, remaining: 0 });
     if (!this.isOnline()) return Promise.resolve({ flushed: 0, remaining: this.pending.length, offline: true });
     const p = this._flush().finally(() => { if (this._inflight === p) this._inflight = null; });
     this._inflight = p;
@@ -338,9 +548,40 @@ export class SyncEngine {
     this.syncing = true; this._emit();
     let flushed = 0;
     try {
+      // 1. May this device send now, and under which token? (SCRBRD-078.) The
+      //    gate is the pad's: it checks the lease, which the server lets lapse
+      //    90 s after the last write it took — a phone offline longer than
+      //    that sent every ball it queued into quarantine, and was told
+      //    "Sent" — and takes back only a token that is still this device's.
+      //    Asked before anything is marked sent, so an undo during it may
+      //    still withdraw what it has not yet carried.
+      if (this.gate) {
+        const g = await this.gate();
+        if (!g.ok) {
+          this.lastError = g.reason;
+          return { flushed: 0, remaining: this.pending.length, blocked: g.reason };
+        }
+        if (g.epoch != null && g.epoch !== this.epoch) await this.attach(g.epoch);
+      }
+      // 2. The toss before any event (SCRBRD-075). The server freezes it the
+      //    moment the match has an event, so a toss answered with no signal
+      //    and sent after the innings opened was lost; and one the server
+      //    already had differently must not be written over in silence. How
+      //    that is judged is the caller's (settleToss); that nothing follows
+      //    an unsettled toss is this.
+      if (this.toss) {
+        const t = this.settleToss ? await this.settleToss(this.toss) : { settled: false, reason: "toss_unsent" };
+        if (!t.settled) {
+          this.lastError = t.reason;
+          return { flushed: 0, remaining: this.pending.length, blocked: t.reason };
+        }
+        await this.storage.delete(kToss);
+        this.toss = null;
+      }
+      if (this.pending.length === 0) { this.lastError = null; this.attempt = 0; return { flushed: 0, remaining: 0 }; }
       const batch = this.pending.slice();          // ordered
-      // Sent is decided here, before the first await: from this line on an
-      // undo of any of these is a void (isUnsent, withdraw). Then it is made
+      // Sent is decided here, in the same tick the batch is taken: from this
+      // line on an undo of any of these is a void (isUnsent, withdraw). Then it is made
       // durable, and only then does the request go out — a crash after the
       // request left and before its marker was written would leave an event
       // the server may hold looking as if it had never left.
@@ -427,6 +668,7 @@ export function memoryStorage() {
     async get(k) { return m.has(k) ? m.get(k) : null; },
     async delete(k) { m.delete(k); },
     async list(prefix) { return [...m.entries()].filter(([k]) => k.startsWith(prefix)).map(([key, value]) => ({ key, value })); },
+    async clearMatch() { m.clear(); },
     _dump: () => m,
   };
 }

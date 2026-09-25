@@ -63,6 +63,14 @@ export function sessionRoutes({ pool, secret, hub }) {
 
     // POST /matches/:id/session/heartbeat { device, epoch }
     // Heartbeat is high-frequency and does NOT broadcast (no state change).
+    //
+    // It is also how a pad asks, without changing anything, where the token
+    // stands (SCRBRD-078): scoring_lease_check extends only a live lease the
+    // caller already holds, and otherwise just reports. So the answer carries
+    // the session's `state` as well as its epoch: a device whose lease has
+    // lapsed takes the token back only while the state is `active` and the
+    // epoch is the one it held — never while a handover it armed is pending,
+    // where its own claim would be the protocol's cancel.
     heartbeat: async (req, res) => {
       const { id } = req.params, b = req.headers?.authorization;
       try {
@@ -74,11 +82,18 @@ export function sessionRoutes({ pool, secret, hub }) {
           `select * from scoring_lease_check($1,$2,$3)`, [id, req.body.device, req.body.epoch]);
         // db/33: on a complete match the lease is never extended and the
         // function says so in `state` (its shape cannot grow a reason).
-        res.json({ ok: !!r.holds, epoch: r.epoch,
+        res.json({ ok: !!r.holds, epoch: r.epoch ?? null,
+                   state: r.state === "match_complete" ? null : (r.state ?? null),
                    reason: r.holds ? null
                          : r.state === "match_complete" ? "match_complete"
                          : (r.found ? "not_token_holder" : "no_session") });
-      } catch (/** @type {any} */ e) { res.status(e.status || 500).json({ error: e.code || e.message }); }
+      } catch (/** @type {any} */ e) {
+        // scoring_lease_check raises insufficient_privilege for a caller who
+        // may not score this match: an answer, like the claim's no_capability,
+        // not a server error.
+        if (e.code === "42501") { res.json({ ok: false, epoch: null, state: null, reason: "no_capability" }); return; }
+        res.status(e.status || 500).json({ error: e.code || e.message });
+      }
     },
 
     // POST /matches/:id/session/handover/arm { device, pending, ballInFlight, to? }
