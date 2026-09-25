@@ -3118,5 +3118,6 @@ commits. Pass the token's device (the principal carries it) and refuse a batch t
   copy's fingerprint was taken over the same object, so a resend after release is a duplicate, not a conflict.
   `smoke-quarantine` proves it (50 passed, 3 failed on the old code).
 - The events routes answer a missing capability `403 not_permitted` (was `500 42501`); weather for a match that is not
-  there is `404 no_such_match` (was `500 23503`); a date sent as a list is refused by name (was `500 22007`); a batch
+  there was already refused by its policy (`403`) — the unmapped `23503` behind it now maps to `404`, and the comment
+  says so; a date sent as a list is refused by name (was `500 22007`); a batch
   with an event missing its key, device or client seq is `400 malformed_event` (was `500 23502`, resent for ever).
