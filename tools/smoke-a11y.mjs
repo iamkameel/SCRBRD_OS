@@ -27,6 +27,10 @@
  *     against the background it is actually drawn on, per theme, may not rise
  *     above CONTRAST_CEILING. design.test.mjs proves the TOKENS read; this
  *     proves the SCREENS use them where they read.
+ *   - EMOJI IN CONTROLS, as a ratchet (§3.4, step 1b): emoji in the text of a
+ *     button, link, tab, label, heading or nav, or in a control's name, per
+ *     screen, may not rise above EMOJI_CEILING — which is 0. The static half,
+ *     for screens this walk never opens, is apps/web/test/icons.test.mjs.
  *
  *   pnpm build && node tools/smoke-a11y.mjs
  */
@@ -71,6 +75,27 @@ const CONTRAST_CEILING = {
   // emerald tint of itself, 9px (4.20:1 under lights, 4.39:1 in daylight).
   floodlit: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, pad: 1 },
   daylight: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, pad: 1 },
+};
+
+/**
+ * Emoji in the text of CONTROLS AND LABELS — buttons, links, tabs, menu
+ * items, radios, options, form labels, headings, and everything inside a
+ * <nav> — per screen, and in any control's aria-label (DESIGN_DIRECTION §3.4,
+ * §3.8). Step 1b took every one out and put icons in their place; the ceiling
+ * is where it left them, and like the type floor it may only go down. It is
+ * the same in both themes. Content somebody wrote (a notice's body, a note)
+ * is not a label and is not counted.
+ *
+ * Measured 2026-09-25 on the demo build, 1280×720, as Head Coach: 0 on every
+ * screen. The same walk over the build before step 1b counted landing 1,
+ * login 5, dashboard 24, match centre 24, pad 30 — in both themes.
+ */
+const EMOJI_CEILING = {
+  landing:     0,
+  login:       0,
+  dashboard:   0,
+  matchcentre: 0,
+  pad:         0,
 };
 
 // Each theme's own surfaces and inks — values the other theme never uses — so
@@ -127,7 +152,7 @@ const server = createServer(async (req, res) => {
 await new Promise((r) => server.listen(PORT, r));
 
 const browser = await chromium.launch({ ...launchOptions() });
-const measured = { floodlit: { type: {}, contrast: {} }, daylight: { type: {}, contrast: {} } };
+const measured = { floodlit: { type: {}, contrast: {}, emoji: {} }, daylight: { type: {}, contrast: {}, emoji: {} } };
 
 /** Every visible piece of text on the page: its element, size, and whether it reads. */
 const survey = (page) => page.evaluate(() => {
@@ -187,16 +212,47 @@ const survey = (page) => page.evaluate(() => {
   return out;
 });
 
-/** Record the floor and contrast counts for one screen. */
+/**
+ * Every emoji in a control's or a label's rendered text, or in a control's
+ * accessible name. The same definition as apps/web/test/icons.test.mjs:
+ * Unicode's pictographs, flags' regional indicators and the keycap mark;
+ * not ©, ® or ™, which are typography.
+ */
+const emojiInControls = (page) => page.evaluate(() => {
+  const EMOJI = /(?![©®™])\p{Extended_Pictographic}|\p{Regional_Indicator}|⃣/gu;
+  const CONTROL = "button, a[href], label, legend, summary, option, nav, h1, h2, h3, h4, h5, h6, th, " +
+    "[role=button], [role=tab], [role=menuitem], [role=menuitemradio], [role=menuitemcheckbox], [role=radio], [role=option], [role=link]";
+  const hits = [];
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    const el = n.parentElement;
+    if (!el || el.closest("script, style, noscript")) continue;
+    const host = el.closest(CONTROL);
+    if (!host) continue;
+    const r = el.getBoundingClientRect();
+    const cs = getComputedStyle(el);
+    if (r.width < 1 || r.height < 1 || cs.visibility === "hidden" || cs.display === "none") continue;
+    for (const m of n.nodeValue.match(EMOJI) ?? []) hits.push(`<${host.tagName.toLowerCase()}> "${host.textContent.trim().slice(0, 30)}" ${m}`);
+  }
+  for (const el of document.querySelectorAll(`${CONTROL}, input, select, textarea`)) {
+    for (const m of (el.getAttribute("aria-label") ?? "").match(EMOJI) ?? []) hits.push(`aria-label "${el.getAttribute("aria-label").slice(0, 30)}" ${m}`);
+  }
+  return hits;
+});
+
+/** Record the floor, contrast and emoji counts for one screen. */
 const measure = async (page, theme, screen) => {
   const items = await survey(page);
   const small = items.filter((i) => i.size < 12);
   const weak = items.filter((i) => i.ratio != null && i.ratio < i.need);
+  const emoji = await emojiInControls(page);
   measured[theme].type[screen] = small.length;
   measured[theme].contrast[screen] = weak.length;
+  measured[theme].emoji[screen] = emoji.length;
   if (process.env.A11Y_DEBUG) {
-    console.log(`[debug] ${theme}/${screen}: ${items.length} texts, ${small.length} under 12px, ${weak.length} below AA`);
+    console.log(`[debug] ${theme}/${screen}: ${items.length} texts, ${small.length} under 12px, ${weak.length} below AA, ${emoji.length} emoji in controls`);
     for (const w of weak.slice(0, 8)) console.log(`   weak ${w.ratio.toFixed(2)} <${w.tag}> ${w.size}px "${w.text}"`);
+    for (const e of emoji.slice(0, 8)) console.log(`   emoji ${e}`);
   }
 };
 
@@ -292,6 +348,16 @@ async function walk(theme) {
     await page.evaluate(() => document.body.lastElementChild.remove());
     ok("the floor count sees a 9px line", probed.some((i) => i.text === "probe small" && i.size < 12));
     ok("...and the contrast count sees pale grey on white", probed.some((i) => i.text === "probe pale" && i.ratio != null && i.ratio < 4.5));
+    // ...and the emoji count sees one on a button, in a nav and in a name,
+    // and not one in a paragraph somebody wrote.
+    await page.evaluate(() => {
+      const d = document.createElement("div");
+      d.innerHTML = '<button>🏏 Drive</button><nav><span>📅 Calendar</span></nav><button aria-label="🔔 Alerts">x</button><p>Great knock 🎉</p>';
+      document.body.appendChild(d);
+    });
+    const emojiProbe = await emojiInControls(page);
+    await page.evaluate(() => document.body.lastElementChild.remove());
+    ok("...and the emoji count sees them in controls and names, not in prose", emojiProbe.length === 3, emojiProbe.join(" · "));
     await measure(page, theme, "landing");
     let unnamed = await unnamedControls();
     ok("every control on the landing page has a name", unnamed.length === 0, unnamed.slice(0, 4).join(", "));
@@ -521,6 +587,16 @@ try {
   }
   const lower = Object.entries(TYPE_FLOOR_CEILING).filter(([s, c]) => measured.floodlit.type[s] != null && measured.floodlit.type[s] < c);
   if (lower.length) console.log(`  (lower the ceiling: ${lower.map(([s]) => `${s} ${measured.floodlit.type[s]}`).join(", ")})`);
+
+  group("Emoji in controls and labels (§3.4) — a ratchet");
+  for (const th of ["floodlit", "daylight"]) {
+    for (const [screen, ceiling] of Object.entries(EMOJI_CEILING)) {
+      const n = measured[th].emoji[screen];
+      ok(`${th} ${screen}: ${n} emoji in controls and labels (ceiling ${ceiling})`, n != null && n <= ceiling);
+    }
+  }
+  const fewer = Object.entries(EMOJI_CEILING).filter(([s, c]) => measured.floodlit.emoji[s] != null && measured.floodlit.emoji[s] < c);
+  if (fewer.length) console.log(`  (lower the ceiling: ${fewer.map(([s]) => `${s} ${measured.floodlit.emoji[s]}`).join(", ")})`);
 
   group("Rendered contrast, per theme — a ratchet");
   for (const th of ["floodlit", "daylight"]) {

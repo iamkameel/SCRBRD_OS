@@ -59,6 +59,9 @@ const SUITES = [
   ["capture-profile", "apps/web/test/capture-profile.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Renders the Board — always black, figures that flip (DESIGN_DIRECTION §1).
   ["board",    "apps/web/test/board.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // No emoji in the client outside a reasoned allow-list, every icon name
+  // resolves, and the glyphs sit on Lucide's grid (DESIGN_DIRECTION §3.4).
+  ["icons",    "apps/web/test/icons.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["client",   "apps/web/src/rbac/rbac.test.mjs"],
   ["handover", "services/api/handover/scoring-session.test.mjs"],
   ["rls",      "services/api/rls/rls.test.mjs"],
