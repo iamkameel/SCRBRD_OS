@@ -23,6 +23,10 @@
  *      want of a network once, is retried on its own, and the queue flushes.
  *      The toss reaches the server before any event does, and the server's
  *      log is the pad's, id for id. Nothing is quarantined.
+ *  E2. The attached pad loses its signal again and scores on, and the
+ *      server lets its lease lapse (90 s without a write): when the signal
+ *      returns the ball goes into the log under the token the device takes
+ *      back — it used to go to quarantine, with "Sent" on the pill.
  *   F. The match is played to its end (both innings cut to an over by the
  *      umpires): once the queue is empty the match's outbox storage is
  *      cleared — and a reload does not queue the finished match again.
@@ -358,6 +362,27 @@ try {
      `${toss?.called_at} v ${first?.at}`);
   ok("...and has left the outbox", !(await outboxKeys())?.some((k) => k.endsWith(":toss:pending")));
   ok(`the ${ballsWaiting} balls are on the server`, (await dbq(`select count(*)::int n from ball_event where match_id = $1 and kind = 'ball'`, [MATCH]))[0].n === ballsWaiting);
+
+  // The server keeps a lease 90 s after the last write it took, and nothing
+  // on the pad writes while there is no signal. A pad that went on scoring
+  // offline for longer used to send its whole queue into quarantine when the
+  // signal came back — and its pill said "Sent".
+  group("E2. Offline past the lease on an attached pad: the queue goes into the log under the token taken back");
+  const epochE = (await dbq(`select epoch from scoring_session where match_id = $1`, [MATCH]))[0]?.epoch;
+  await ctx.setOffline(true);
+  await page.waitForTimeout(300);
+  // One ball: the fifth of the over, so F's one-over cut still has one to play.
+  ok("a ball with no signal, on a pad that holds the token", await score("1"));
+  ok("...waiting on the pad", /^Held 1$/.test(await pill()), await pill());
+  // Ninety seconds without a write, as smoke-handover-crash moves the clock.
+  await dbq(`update scoring_session set lease_until = now() - interval '1 minute' where match_id = $1`, [MATCH]);
+  await ctx.setOffline(false);
+  ok("signal back: it is sent", await until(async () => (await pill()) === "Sent", 20000), await pill());
+  ok("...into the log, not quarantine", (await quarantined()).length === 0, JSON.stringify(await quarantined()));
+  ok("...under the token the device took back — its own, the next generation",
+     (await dbq(`select epoch from scoring_session where match_id = $1`, [MATCH]))[0]?.epoch === epochE + 1);
+  const sE2 = await serverIds(), pE2 = await padIds();
+  ok("the server's log is still the pad's, id for id", same(sE2, pE2), `${sE2.length} v ${pE2.length}`);
 
   group("F. The match played out: its outbox storage is cleared once nothing waits (SCRBRD-079)");
   ok("before the end, the outbox still keeps its sent markers", ((await outboxKeys())?.filter((k) => k.includes(":sent:")).length ?? 0) > 0);

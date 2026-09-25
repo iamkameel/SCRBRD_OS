@@ -63,7 +63,11 @@ import { deviceId } from "./device.js";
 const RETRY_MS = 4000;
 /** Backoff for an attach that failed for want of the network, capped. */
 const ATTACH_BACKOFF = [2000, 5000, 15000, 30000, 60000];
-/** How long after the server last extended the lease the gate trusts it. The lease is 90 s. */
+/**
+ * How long after the server last extended the lease the gate trusts it. The
+ * lease is 90 s. Any loss of signal, or a request that got no answer, ends
+ * the trust at once.
+ */
 const LEASE_TRUST_MS = 45000;
 
 /**
@@ -128,9 +132,12 @@ export class PadSync {
       this.status();
     };
     // Losing the signal changes what the pad can offer (no sign-in without
-    // it), so the pad is told.
+    // it), so the pad is told. And the lease is no longer known to be live —
+    // the server lets it lapse 90 s after the last write it took — so the
+    // next flush asks before it sends, however soon the signal comes back.
     this.onOffline = () => {
       if (this.stopped) return;
+      this.leaseAt = 0;
       if (!this.engine?.attached && !this.halted && this.reason !== "not_signed_in" && this.reason !== "session_expired") this.reason = "offline";
       this.status();
     };
@@ -294,6 +301,9 @@ export class PadSync {
       // The session has ended: nothing will send until the scorer signs in
       // again (which reopens the pad), so the timer stops asking.
       if (why === "session_expired") { this.reason = "session_expired"; this.halted = true; }
+      // No answer: the lease may have lapsed meanwhile, so it is asked about
+      // before the next try.
+      this.leaseAt = 0;
       throw new Error(why, { cause: e });
     }
     if ((res?.quarantined ?? []).length) this.leaseAt = 0;
