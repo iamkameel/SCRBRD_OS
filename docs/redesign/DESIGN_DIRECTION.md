@@ -275,8 +275,9 @@ after 4"), not a badge in a chip in a card.
 A parent's screen is about one child and is calm. "My boy": his next match with the
 bus time, his last innings in words ("17 off 12, run out"), what he needs to bring,
 and the alerts they have chosen. Two children are two sections, never one merged
-list. Nothing on the screen names another child (SCRBRD-083's public-data decision
-is still open; this design assumes nothing is public until it is decided).
+list. Nothing on the screen names another child. What a signed-out page may show
+about any child is decided in `docs/policy/PUBLIC_DATA.md` (SCRBRD-083): no name
+without recorded consent, initial and surname at most, never a photo.
 
 A pupil sees his own passport: caps, honours, career figures, the form guide, drawn
 with the same `Board` and figure roles, and nothing of anyone else's medical or

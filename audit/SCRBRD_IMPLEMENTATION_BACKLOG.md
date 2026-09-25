@@ -3226,6 +3226,12 @@ keys: after the upgrade a re-offered, already-acknowledged ball reads as unsent 
 ### Decided 2026-09-24 — screens to build next (from docs/redesign/SCREEN_MAP.md)
 - **SCRBRD-082 — Post-match report.** Scorecard, key moments, figures, generated from the log after a match.
 - **SCRBRD-083 — Public live match and league pages.** Signed-out. Needs a written rule first on what data about minors is ever public (names? photos? none?) — design with the policy package, not in the view.
+  **Rule decided 2026-09-25** (Kameel, 31 scenarios on the decision sheet): `docs/policy/PUBLIC_DATA.md`. In short:
+  off until a school publishes; each school speaks only for its own children; no name without recorded consent
+  (initial and surname, never more; a position otherwise); health, discipline, contact, date of birth and coaches'
+  judgements never public; withdrawal reaches past pages; noindex. Build order in its §6: the rule as
+  `packages/policy/src/public.mjs` with tests, then the consent / never-public / age-group / publish records (a
+  migration, Opus), then signed-out reads applying it server-side, then the overlay under it (D2).
 - **SCRBRD-084 — Season awards and MVP.** Season roll-up of figures and ratings already computed.
 - **SCRBRD-085 — Phone day-of views for drivers and groundskeepers.**
 
@@ -3284,6 +3290,20 @@ expectation, audit, refusals and acceptance — each of its 12 assertions falsif
 fold's innings being played, and `innings_score_as_folded()` to the fold in every innings of their generated logs;
 `docs/SCORING_RULES.md`, "The handover check counts this innings". Rehearsed as production: a database built at the
 base commit, then `node tools/migrate.mjs` from this tree — "1 applied, 44 already applied" — and `--verify` green.
+
+### SCRBRD-091 — The opposition window: 5 days or 14
+**Priority:** P2 · **Domain:** Scouting / privacy · **Type:** decision needed (from SCRBRD-083, 2026-09-25)
+Kameel's note on the public-data sheet (A7): "Opposing schools will have access to each other's team squads 5 days
+prior to their head-to-head fixtures." The built opposition dossier (signed-in, cross-school: squad and ball-log
+figures) opens `opposition_window_days()` = **14** days before (`db/08`). Choose 5 for everything, or 5 for the squad
+and 14 for the figures; then a migration replaces the function (it is IMMUTABLE and read by `opposition_side()`),
+and `db/99`'s dossier section moves with it.
+
+### SCRBRD-092 — Photo and video sharing for registered users
+**Priority:** P3 · **Domain:** Community · **Type:** feature (from SCRBRD-083, 2026-09-25)
+Kameel's note (A8): photos and videos shared socially, registered users only. Never on public pages (the rule's A8).
+Needs its own consent (a child's face is not covered by consent to be named), storage, and moderation; design with
+the policy package before any screen.
 
 ### SCRBRD-090 — The live score and the target leave out penalty runs
 **Priority:** P2 · **Domain:** Scoring / broadcast · **Type:** bug (found fixing SCRBRD-088, 2026-09-25)
