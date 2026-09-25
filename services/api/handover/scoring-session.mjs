@@ -15,7 +15,7 @@
  *  Both are required to write a ball.
  */
 
-import { deriveInnings } from "@scrbrd/scoring";
+import { deriveInnings, deriveMatch } from "@scrbrd/scoring";
 
 /**
  * Who holds the token.
@@ -390,7 +390,12 @@ export class ScoringQueue {
  * handover handshake exists to detect — so a corrected over would have made a
  * handover impossible, with both sides certain they were right.
  *
- * There is one fold now. This is a projection of it.
+ * There is one fold now. This is a projection of it — of the innings being
+ * played, which is what the scoreboard shows and the incoming scorer reads
+ * off it (SCRBRD-088). It used to fold every event of the match as one
+ * innings, so from the second innings on it answered with a match total no
+ * scoreboard shows; deriveMatch() splits the log by innings and `current` is
+ * the last one it has reached, the innings db/45's check verifies against.
  * @param {Logged[]} events
  */
 export function replayEvents(events) {
@@ -398,11 +403,13 @@ export function replayEvents(events) {
   // Envelopes carry the event in `payload` and its identity in
   // `idempotencyKey`; that identity is what a void names, so it has to travel
   // into the fold or the correction matches nothing.
-  const inn = deriveInnings(ordered.map((e) => ({
+  const match = deriveMatch(ordered.map((e) => ({
     ...(e.payload ?? e),
     ...(e.idempotencyKey != null ? { id: e.idempotencyKey } : {}),
     seq: e.seq,
   })));
+  // An empty log has no innings; it reads as an innings nobody has scored in.
+  const inn = match.innings[match.current] ?? deriveInnings([]);
   return {
     runs: inn.runs, wickets: inn.wickets, balls: inn.balls,
     striker: inn.striker, nonStriker: inn.nonStriker, bowler: inn.bowler,

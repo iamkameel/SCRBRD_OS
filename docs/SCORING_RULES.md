@@ -478,10 +478,36 @@ re-checked on every row one touches. Rows stored before the door are read as the
 
 Still different, and each a decision for later: the matchups read's `balls` counts legal deliveries (a no-ball is not
 one), which `tools/smoke-matchups.mjs` pins; a batter who came to the crease and neither faced nor was out has no
-`player_innings` row (the fold lists him "0*"); and penalty runs are in the fold's total but in no SQL total —
-`match_live_score` and the handover check read `value`, which a `penalty` row does not carry; and the handover
-check sums every innings of the match where the sheet asks for this innings' figures, so a second-innings handover
-cannot verify.
+`player_innings` row (the fold lists him "0*"); and penalty runs are in the fold's total but not in
+`match_live_score`'s — it reads `value`, which a `penalty` row does not carry (SCRBRD-090). The handover check had
+both of the last problems and more; db/45 closed them for it (below).
 
 `tools/smoke-fold-figures.mjs` holds the fold to every SQL reader of a batter's and a bowler's figures over generated
 logs, legacy rows included; db/99 §21 holds each correction.
+
+## The handover check counts this innings, as the fold does (db/45)
+
+The incoming scorer reads the physical scoreboard and states runs, wickets and legal balls — the sheet asks for overs
+and balls in the over and sends overs × 6 + balls. The scoreboard shows the innings being played, and the fold keeps
+each innings' figures apart. `scoring_verify_takeover()` summed every innings of the match and read only `value`, so
+from the second innings on, and after any penalty award, no honest statement could verify (SCRBRD-088).
+`db/45_handover_this_innings.sql` makes it compare with the fold's figures for one innings:
+
+- **Which innings** — the one the fold calls current: the highest innings number the live log has reached
+  (`match_current_innings()`; `deriveMatch().current`; what `broadcast_state()` shows on the board). Not the innings
+  of the highest seq: a ball released from quarantine into the first innings after the second began does not take
+  the scoreboard back. Once the second innings' `innings_start` is written it is current, at 0/0 off 0, which is
+  what both pads show; until then the first is. The client sends no innings and the signature is unchanged.
+- **Runs** — a delivery's `value`, plus one for a wide or a no-ball, on deliveries only; plus each `penalty` row's
+  `payload.runs`, 5 when absent or null (`ev.runs ?? 5`), and nothing when `payload.toBattingTeam` is `false`
+  (`penalty_runs_as_folded()`). The fold does not add an award to the fielding side to this innings or any other,
+  and neither does the check. A `runs` that is not an integer is a total the fold cannot make: the innings' runs are
+  unknown, and nothing verifies.
+- **Wickets** — a delivery whose wicket stands (the free hit, db/42), and a `retire` the fold reads as a dismissal
+  (retired out, timed out: `ball_retirement_dismissal()`, db/40) — not any other row marked W.
+- **Legal balls** — deliveries that are not wides or no-balls; a delivery with no type is a run (db/43).
+
+`innings_score_as_folded(match, innings)` is that count, and runs as its caller. A mismatch's audit row names the
+innings it was checked against. The reference double (`services/api/handover/scoring-session.mjs`,
+`replayEvents()`) answers for the same innings. `tools/smoke-handover-innings.mjs` hands over through the API in the
+first innings after a penalty and in the second after one each way; db/99 §23 holds each rule.

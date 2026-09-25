@@ -499,12 +499,25 @@ try {
   const ver1 = await verifyExpects();
   ok("scoring_verify_takeover answers the probe", ver0?.reason === "verify_mismatch" && ver1?.reason === "verify_mismatch",
      `${ver0?.reason} / ${ver1?.reason}`);
-  const foldRuns = [...byInnings.values()].reduce((a, i) => a + i.runs, 0);
-  const foldBalls = [...byInnings.values()].reduce((a, i) => a + i.balls, 0);
-  ok(`it expects the fold's wickets (${e.totalWickets})`, ver1.exp_wkts - ver0.exp_wkts === e.totalWickets,
-     `SQL ${ver1.exp_wkts - ver0.exp_wkts}`);
-  ok("...and the fold's runs and balls", ver1.exp_runs - ver0.exp_runs === foldRuns && ver1.exp_balls - ver0.exp_balls === foldBalls,
-     `runs ${ver1.exp_runs - ver0.exp_runs}/${foldRuns} balls ${ver1.exp_balls - ver0.exp_balls}/${foldBalls}`);
+  // The check verifies the innings being played, as the fold totals it
+  // (SCRBRD-088, db/45) — not the match: the incoming scorer reads it off the
+  // scoreboard. Every innings is held to the fold through the helper the
+  // check counts with, so the rules the probe proved over the whole log are
+  // still proved over the whole log, innings by innings.
+  const cur = Math.max(...byInnings.keys());
+  const now = byInnings.get(cur);
+  ok(`it expects the innings being played (innings ${cur}): the fold's ${now.runs}/${now.wickets} off ${now.balls}`,
+     ver1.exp_runs === now.runs && ver1.exp_wkts === now.wickets && ver1.exp_balls === now.balls,
+     `SQL ${ver1.exp_runs}/${ver1.exp_wkts} off ${ver1.exp_balls}`);
+  const perInnings = new Map((await q(`select i.n, f.runs, f.wickets, f.legal_balls
+                                      from (select distinct innings as n from ball_event where match_id = $1) i,
+                                           innings_score_as_folded($1, i.n) f`, [MATCH]))
+    .map((r) => [Number(r.n), r]));
+  const countBad = [...byInnings].filter(([n, inn]) => {
+    const r = perInnings.get(n);
+    return !r || Number(r.runs) !== inn.runs || Number(r.wickets) !== inn.wickets || Number(r.legal_balls) !== inn.balls;
+  }).map(([n, inn]) => `innings ${n}: fold ${inn.runs}/${inn.wickets} off ${inn.balls}, SQL ${JSON.stringify(perInnings.get(n))}`);
+  ok(`...and counts every innings as the fold does (${byInnings.size})`, countBad.length === 0, countBad.slice(0, 5).join("; "));
 
   group("The matchups read, as a coach");
   // The read joins player for both names, under the coach's own policies, so

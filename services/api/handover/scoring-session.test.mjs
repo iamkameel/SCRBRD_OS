@@ -307,6 +307,29 @@ group("Replay is deterministic and rebuilds identical state");
 }
 
 // ─────────────────────────────────────────────
+group("The confirmation is THIS innings', penalties included (SCRBRD-088)");
+{
+  // What the scoreboard shows is the innings being played. Folding the whole
+  // match as one innings answered with a total no scoreboard shows.
+  /** @param {Record<string, unknown>} payload @param {number} i */
+  const env = (payload, i) => ({ deviceId: "dA", epoch: 1, idempotencyKey: `i${i}`, seq: i + 1, payload });
+  const log = [
+    { kind: "batters", striker: "p1", nonStriker: "p2" }, { kind: "bowler", bowler: "b1" },
+    ball({ value: 4 }), ball({ type: "W", value: 0, dismissal: "bowled" }),
+    { kind: "penalty", runs: 5, toBattingTeam: true },
+    { innings: 1, kind: "batters", striker: "p3", nonStriker: "p4" }, { innings: 1, kind: "bowler", bowler: "b2" },
+    ball({ innings: 1, value: 1 }), ball({ innings: 1, type: "Nb", value: 2 }),
+    { innings: 1, kind: "penalty", runs: 5, toBattingTeam: true },
+    { innings: 1, kind: "penalty", runs: 5, toBattingTeam: false },
+  ].map(env);
+  const r = replayEvents(log);
+  ok("the second innings' figures, not the match's", r.runs === 1 + 3 + 5 && r.wickets === 0 && r.balls === 1);
+  const first = replayEvents(log.slice(0, 5));
+  ok("...and in the first innings, its penalty is in the total", first.runs === 9 && first.wickets === 1 && first.balls === 2);
+  ok("an empty log is an innings nobody has scored in", replayEvents([]).runs === 0 && replayEvents([]).balls === 0);
+}
+
+// ─────────────────────────────────────────────
 group("Handover code + confirmation helpers");
 {
   ok("code stable for same match+epoch", handoverCode("m3", 1) === handoverCode("m3", 1));

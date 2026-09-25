@@ -24,6 +24,8 @@ import { readdirSync } from "node:fs";
 // previous walk's writes would make them pass or fail for the wrong reason.
 const WALKS = [
   "read", "sync", "handover", "handover-crash", "fold",
+  // A handover verifies against THIS innings, penalty runs included (SCRBRD-088, db/45).
+  "handover-innings",
   "assess", "access", "eligibility", "roster", "audit", "guardian",
   "rating", "notes", "amend", "login",
   // The owner's key, minted from outside the platform, and redeemed.

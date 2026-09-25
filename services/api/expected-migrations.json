@@ -42,5 +42,6 @@
   "41_trip_driver_own.sql",
   "42_free_hit_wickets.sql",
   "43_last_fold_disagreements.sql",
-  "44_career_by_season.sql"
+  "44_career_by_season.sql",
+  "45_handover_this_innings.sql"
 ]

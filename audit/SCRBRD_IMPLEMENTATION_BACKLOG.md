@@ -3262,6 +3262,38 @@ innings were 8/1 off 3 and 4/0 off 1. Penalty runs (db/43 finding 3) make it wor
 latest ball is in, or the innings the sheet names — in a new db/NN, with penalties counted as the fold counts them;
 a two-innings handover walk that fails on today's code. Until then, match day depends on no scorer change after
 the first innings.
+**Fixed 2026-09-25:** `db/45_handover_this_innings.sql` replaces `scoring_verify_takeover()` (same signature,
+definer, pinned search_path, grants — a snapshot check at the end of the file refuses anything else moving) to
+compare with `innings_score_as_folded(match, match_current_innings(match))`. **Which innings:** the one the fold
+calls current — the highest innings the live log has reached (`deriveMatch().current`, and what `broadcast_state()`
+already shows) — not the innings of the highest seq, which a quarantine release into the first innings would move
+back. The sheet sends no innings and none is added. At the break, the second innings is current once its
+`innings_start` is written (0/0 off 0, as both pads show). **Penalties:** `penalty_runs_as_folded()` is the fold's
+PENALTY case over fromRow(): `payload.runs ?? 5`, nothing when `payload.toBattingTeam` is JSON `false`; a
+non-integer `runs` leaves the innings' runs unknown and nothing verifies. Runs read `value` on deliveries only;
+wickets are a delivery's that stands plus a retirement the fold reads as a dismissal (not any row marked W). The
+mismatch audit row now names the innings. `match_live_score` is untouched (SCRBRD-090). The reference double
+(`services/api/handover/scoring-session.mjs`, `replayEvents()`) folded the whole match as one innings too; it now
+answers for the current innings (unit test added). Proof: `tools/smoke-handover-innings.mjs` — two handovers through
+the API (first innings after a penalty; second innings after a penalty each way), the fold's figures verify, the
+match's totals, the figures without the penalty and the first innings' score are refused: **8 passed, 15 failed on
+the old code** (it accepted the penalty-less figure and cascaded), 23 passed on db/45; `db/99` §23 (current innings
+incl. a late first-innings seq, penalty and wicket rules, the second innings exact, invoker helpers, the handover's
+expectation, audit, refusals and acceptance — each of its 12 assertions falsified once, the unpatched run passing);
+`smoke-free-hit` and `smoke-fold-figures` asserted the old whole-match expectation and now hold the check to the
+fold's innings being played, and `innings_score_as_folded()` to the fold in every innings of their generated logs;
+`docs/SCORING_RULES.md`, "The handover check counts this innings". Rehearsed as production: a database built at the
+base commit, then `node tools/migrate.mjs` from this tree — "1 applied, 44 already applied" — and `--verify` green.
+
+### SCRBRD-090 — The live score and the target leave out penalty runs
+**Priority:** P2 · **Domain:** Scoring / broadcast · **Type:** bug (found fixing SCRBRD-088, 2026-09-25)
+`match_live_score` sums `value`, which a `penalty` row does not carry, so the public board (`broadcast_state()`),
+its chase target, the `matches` read's score and the summary read are short by every penalty award the pad's fold
+counts. Every reader probably wants the fold's total — `innings_score_as_folded()` (db/45) is it, per innings — but
+each should be checked before the view's meaning moves (a new db/NN, like db/42/43). Two fold questions ride along,
+for a decision rather than a fix: the fold drops a penalty awarded to the fielding side (`toBattingTeam: false`)
+from every innings, where Law 41 adds it to that side's innings; and nothing at the door checks a penalty's `runs`
+(a string or a fraction is stored, and the fold's total becomes unreadable — the handover then cannot verify).
 
 ### SCRBRD-087 — The lease check trusts the device the batch names
 **Priority:** P3 · **Domain:** Scoring / sync · **Type:** hardening

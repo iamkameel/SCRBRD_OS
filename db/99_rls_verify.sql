@@ -3921,6 +3921,205 @@ BEGIN
   END;
   PERFORM set_config('app.user_id', '', true);
 
+  -- ── 23. A handover verifies this innings, penalties included (SCRBRD-088, db/45) ──
+  -- The incoming scorer states the scoreboard's figures for the innings being
+  -- played, and the fold keeps them per innings with penalty awards in the
+  -- total. On the match §19–§21 score (every earlier row innings 0), under a
+  -- fresh claim: penalty and retirement rows in the first innings, then a
+  -- second innings, then a first-innings ball written at a later seq (as a
+  -- release from quarantine writes one), then a handover. Deltas and exact
+  -- rows, coalesced or compared as text: _assert() refuses a NULL. Each
+  -- assertion's label names what it guards; each was run once, alone, with
+  -- db/45 broken the way this table says, and failed for that reason:
+  --
+  --   (current)       match_current_innings() as the innings of the highest
+  --                   seq (the late first-innings ball took it back to 0)
+  --   (penalty)       penalty_runs_as_folded() returning 0 for every row, as
+  --                   `value` alone did; and, separately, with the
+  --                   `toBattingTeam` test dropped
+  --   (wickets)       innings_score_as_folded() counting every row marked W,
+  --                   as ball_wicket_stands() alone did
+  --   (innings)       the helper summing every innings up to this one
+  --   (nobody)        innings_score_as_folded() and match_current_innings()
+  --                   as SECURITY DEFINER, search path pinned (so the db/16
+  --                   check above does not catch it first)
+  --   (verify-expects) scoring_verify_takeover() as db/42 left it
+  --   (audit)         the mismatch's audit row without its innings
+  --   (verify-old)    a check that also accepts the match's totals
+  --   (verify-penalty) a check that also accepts this innings without its
+  --                   penalty runs
+  --   (verify-ok)     a check that refuses every statement in a second innings
+  --
+  --    k  innings  row                                        the fold, this innings
+  --    1  0        penalty, 5 to the batting side             +5
+  --    2  0        penalty, no runs named                     +5 (`runs ?? 5`)
+  --    3  0        penalty, 5 to the fielding side            nothing
+  --    4  0        penalty, runs 2, `value` 3 on the row      +2 — value is read on deliveries only
+  --    5  0        retire marked W, retired out               a wicket
+  --    6  0        retire marked W, method `bowled`, hurt     no wicket: not a retirement dismissal
+  --   10  1        innings_start                              the second innings is current, 0/0 off 0
+  --   11  1        6                                          6, a legal ball
+  --   12  1        W bowled                                   a wicket, a legal ball
+  --   13  1        no-ball, 1 run                             2 (the leg bye is on its free hit)
+  --   14  1        penalty, 5 to the batting side             5
+  --   15  1        penalty, 5 to the fielding side            nothing
+  --   16  1        leg bye, 1                                 1, a legal ball
+  --   17  1        4                                          ...taken back by
+  --   18  1        void of 17                                 nothing
+  --   19  0        1, written last                            the first innings' — the second is still current
+  --
+  -- The second innings reads 14/1 off 3. Before db/45 the check expected the
+  -- match: every innings' `value` and every row marked W.
+  PERFORM _scoring_session_reset(M_HANDOVER);
+  PERFORM _as(U_SCORER);
+  PERFORM set_config('app.device_id', 'verify-045', true);
+  SELECT c.ok, c.epoch INTO v_ok, v_epoch FROM scoring_claim(M_HANDOVER, 'verify-045') c;
+  PERFORM _assert(v_ok, 'the scorer could not claim the match the db/45 section scores');
+  DECLARE
+    B1 uuid := 'aaaaaaaa-0000-0000-0000-000000000006';  -- K Dlamini
+    B2 uuid := 'aaaaaaaa-0000-0000-0000-000000000012';  -- J Sithole
+    BO uuid := 'bbbbbbbb-0000-0000-0000-000000000002';  -- K Botha
+    x record;
+    cur0 smallint; cur1 smallint; cur2 smallint; cur3 smallint;
+    f0 record; f1 record; f2 record; g record;
+    n bigint; n2 bigint;
+    old_runs bigint; old_wkts bigint; old_balls bigint;
+    v_detail jsonb;
+  BEGIN
+    PERFORM _as(U_OWNER);
+    cur0 := match_current_innings(M_HANDOVER);
+    SELECT * INTO f0 FROM innings_score_as_folded(M_HANDOVER, 0::smallint);
+    SELECT count(*) INTO n FROM ball_event_live WHERE match_id = M_HANDOVER AND innings <> 0;
+    PERFORM _assert(n = 0 AND f0.runs IS NOT NULL,
+      format('db/45: the section expects a match scored in its first innings only (%s rows elsewhere, runs %s)', n, f0.runs));
+
+    PERFORM _as(U_SCORER);
+    FOR x IN SELECT * FROM (VALUES
+        ( 1, 0, 'penalty', NULL,  NULL::text, NULL::int, NULL, '{"runs":5,"toBattingTeam":true,"reason":"ball tampering"}'::jsonb),
+        ( 2, 0, 'penalty', NULL,  NULL,       NULL,      NULL, '{"reason":"time wasting"}'::jsonb),
+        ( 3, 0, 'penalty', NULL,  NULL,       NULL,      NULL, '{"runs":5,"toBattingTeam":false,"reason":"pitch damage"}'::jsonb),
+        ( 4, 0, 'penalty', NULL,  NULL,       3,         NULL, '{"runs":2,"toBattingTeam":true}'::jsonb),
+        ( 5, 0, 'retire',  'W',   'retired_out', NULL,   NULL, jsonb_build_object('batter', 'aaaaaaaa-0000-0000-0000-000000000006', 'reason', 'out')),
+        ( 6, 0, 'retire',  'W',   'bowled',   NULL,      NULL, jsonb_build_object('batter', 'aaaaaaaa-0000-0000-0000-000000000012', 'reason', 'hurt'))
+      ) AS v(k, inn, kind, bt, dis, val, who, pl) ORDER BY k
+    LOOP
+      INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                              idempotency_key, client_seq, client_ts, kind, ball_type, value, dismissal, payload)
+      VALUES (M_HANDOVER, match_school(M_HANDOVER), 9700 + x.k, v_epoch, x.inn, U_SCORER, 'verify-045',
+              'verify:045:' || x.k, 9700 + x.k, now(), x.kind, x.bt, x.val, x.dis, x.pl);
+    END LOOP;
+    PERFORM _as(U_OWNER);
+    cur1 := match_current_innings(M_HANDOVER);
+    SELECT * INTO f1 FROM innings_score_as_folded(M_HANDOVER, 0::smallint);
+
+    -- The second innings, then a first-innings ball at the highest seq.
+    PERFORM _as(U_SCORER);
+    FOR x IN SELECT * FROM (VALUES
+        (10, 1, 'innings_start', NULL, NULL::text, NULL::int, NULL, '{"battingTeam":"Kearsney","bowlingTeam":"Hilton U16B","overs":20}'::jsonb),
+        (11, 1, 'ball', 'run', NULL,     6,    'b1', '{}'::jsonb),
+        (12, 1, 'ball', 'W',   'bowled', 0,    'b1', '{}'::jsonb),
+        (13, 1, 'ball', 'Nb',  NULL,     1,    'b2', '{}'::jsonb),
+        (14, 1, 'penalty', NULL, NULL,   NULL, NULL, '{"runs":5,"toBattingTeam":true}'::jsonb),
+        (15, 1, 'penalty', NULL, NULL,   NULL, NULL, '{"runs":5,"toBattingTeam":false}'::jsonb),
+        (16, 1, 'ball', 'LB',  NULL,     1,    'b2', '{}'::jsonb),
+        (17, 1, 'ball', 'run', NULL,     4,    'b2', '{}'::jsonb),
+        (18, 1, 'void', NULL,  NULL,     NULL, NULL, '{"target":"verify:045:17"}'::jsonb)
+      ) AS v(k, inn, kind, bt, dis, val, who, pl) ORDER BY k
+    LOOP
+      INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                              idempotency_key, client_seq, client_ts, kind, ball_type, value,
+                              striker_id, bowler_id, dismissal, payload)
+      VALUES (M_HANDOVER, match_school(M_HANDOVER), 9700 + x.k, v_epoch, x.inn, U_SCORER, 'verify-045',
+              'verify:045:' || x.k, 9700 + x.k, now(), x.kind, x.bt, x.val,
+              CASE x.who WHEN 'b1' THEN B1 WHEN 'b2' THEN B2 END,
+              CASE WHEN x.kind = 'ball' THEN BO END, x.dis, x.pl);
+    END LOOP;
+    PERFORM _as(U_OWNER);
+    cur2 := match_current_innings(M_HANDOVER);
+    PERFORM _as(U_SCORER);
+    INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                            idempotency_key, client_seq, client_ts, kind, ball_type, value, striker_id, bowler_id)
+    VALUES (M_HANDOVER, match_school(M_HANDOVER), 9719, v_epoch, 0, U_SCORER, 'verify-045',
+            'verify:045:19', 9719, now(), 'ball', 'run', 1, B1, BO);
+    PERFORM _as(U_OWNER);
+    cur3 := match_current_innings(M_HANDOVER);
+    SELECT * INTO f2 FROM innings_score_as_folded(M_HANDOVER, 0::smallint);
+    SELECT * INTO g  FROM innings_score_as_folded(M_HANDOVER, 1::smallint);
+    -- What the check used to expect: the match, by `value`, every row marked W.
+    SELECT sum(CASE WHEN b.ball_type IN ('Wd','Nb') THEN 1 + coalesce(b.value,0) ELSE coalesce(b.value,0) END),
+           sum(CASE WHEN ball_wicket_stands(b.match_id, b.innings, b.seq, b.kind, b.ball_type, b.dismissal) THEN 1 ELSE 0 END),
+           sum(CASE WHEN b.kind = 'ball' AND b.ball_type NOT IN ('Wd','Nb') THEN 1 ELSE 0 END)
+      INTO old_runs, old_wkts, old_balls
+      FROM ball_event_live b WHERE b.match_id = M_HANDOVER;
+
+    -- (current) the innings the log has reached — not the innings of its last seq
+    PERFORM _assert(cur0 = 0 AND cur1 = 0 AND cur2 = 1 AND cur3 = 1,
+      format('db/45 (current): the current innings read %s, %s, %s, %s — expected 0 before the second innings, 0 after first-innings penalties, '
+             || '1 once it opened, and still 1 after a first-innings ball written at a later seq', cur0, cur1, cur2, cur3));
+    -- (penalty) the first innings: +5, +5, nothing to the fielding side, +2 not +5, and the late ball's 1
+    PERFORM _assert(f1.runs - f0.runs = 12 AND f2.runs - f0.runs = 13 AND f2.legal_balls - f0.legal_balls = 1,
+      format('db/45 (penalty): the first innings'' runs moved by %s and %s (expected 12 and 13) and its legal balls by %s (expected 1) — '
+             || 'penalty runs are `runs ?? 5` to the batting side, nothing to the fielding side, and a row''s `value` counts on a delivery only',
+             f1.runs - f0.runs, f2.runs - f0.runs, f2.legal_balls - f0.legal_balls));
+    -- (wickets) a retirement the fold reads as a dismissal is a wicket; a W marker on any other retirement is not
+    PERFORM _assert(f1.wickets - f0.wickets = 1,
+      format('db/45 (wickets): the first innings'' wickets moved by %s for one retired out and one retirement marked W with method bowled, expected 1',
+             f1.wickets - f0.wickets));
+    -- (innings) the second innings alone, as the fold totals it
+    PERFORM _assert(row(g.runs, g.wickets, g.legal_balls)::text = '(14,1,3)',
+      format('db/45 (innings): the second innings reads %s, expected (14,1,3) — 6, a wicket, a no-ball and its run, five penalty runs, a leg bye; '
+             || 'the fielding side''s penalty and a voided four are nothing', row(g.runs, g.wickets, g.legal_balls)::text));
+
+    -- (nobody) The helpers read as their caller: an unidentified session and
+    --          another school's office read nothing of this Hilton fixture.
+    PERFORM set_config('app.user_id', '', true);
+    SELECT count(*) INTO n FROM innings_score_as_folded(M_HANDOVER, 1::smallint) f
+     WHERE f.runs <> 0 OR f.wickets <> 0 OR f.legal_balls <> 0;
+    n := n + match_current_innings(M_HANDOVER);
+    PERFORM _as(U_WES_ADM);
+    SELECT count(*) INTO n2 FROM innings_score_as_folded(M_HANDOVER, 1::smallint) f
+     WHERE f.runs <> 0 OR f.wickets <> 0 OR f.legal_balls <> 0;
+    n2 := n2 + match_current_innings(M_HANDOVER);
+    -- (nobody)
+    PERFORM _assert(n = 0 AND n2 = 0,
+      format('db/45 (nobody): an unidentified session read %s and the Westville administrator %s of a Hilton fixture''s innings through the helpers, expected 0 and 0',
+             n, n2));
+
+    -- The pen goes to Sarah in the second innings.
+    PERFORM _as(U_SCORER);
+    SELECT a.code INTO v_code FROM scoring_arm_handover(M_HANDOVER, 'verify-045', 0, false) a;
+    PERFORM _assert(v_code IS NOT NULL, 'db/45: the scorer could not arm a handover in the second innings');
+    PERFORM _as(U_SARAH);
+    SELECT h.ok INTO v_ok FROM scoring_claim_handover(M_HANDOVER, 'verify-045-b', v_code) h;
+    PERFORM _assert(v_ok, 'db/45: Sarah could not claim the handover in the second innings');
+
+    -- (verify-expects) a wrong reading answers with this innings' figures
+    SELECT v.ok, v.exp_runs, v.exp_wkts, v.exp_balls INTO v_ok, v_runs, v_wkts, v_balls
+      FROM scoring_verify_takeover(M_HANDOVER, 'verify-045-b', -1, -1, -1) v;
+    PERFORM _assert(NOT v_ok AND row(v_runs, v_wkts, v_balls)::text = '(14,1,3)',
+      format('db/45 (verify-expects): a wrong reading was answered with %s, expected this innings'' (14,1,3)', row(v_runs, v_wkts, v_balls)::text));
+    -- (audit) and the refusal is on the record, naming the innings
+    PERFORM _as(U_OWNER);
+    SELECT a.detail INTO v_detail FROM scoring_audit a
+     WHERE a.match_id = M_HANDOVER AND a.event = 'handover_verify_failed' ORDER BY a.id DESC LIMIT 1;
+    PERFORM _assert(v_detail->>'innings' = '1' AND v_detail->'expected'->>'runs' = '14',
+      format('db/45 (audit): the refusal''s audit detail is %s, expected the second innings and its 14 runs', coalesce(v_detail::text, 'no row')));
+    -- (verify-old) the match's totals, which the check used to want, are refused
+    PERFORM _as(U_SARAH);
+    SELECT v.ok INTO v_ok FROM scoring_verify_takeover(M_HANDOVER, 'verify-045-b', old_runs::int, old_wkts::int, old_balls::int) v;
+    PERFORM _assert(NOT v_ok AND row(old_runs, old_wkts, old_balls)::text <> '(14,1,3)',
+      format('db/45 (verify-old): the match''s totals %s verified', row(old_runs, old_wkts, old_balls)::text));
+    -- (verify-penalty) this innings without its penalty runs is refused
+    SELECT v.ok INTO v_ok FROM scoring_verify_takeover(M_HANDOVER, 'verify-045-b', 9, 1, 3) v;
+    PERFORM _assert(NOT v_ok, 'db/45 (verify-penalty): the second innings without its five penalty runs verified');
+    -- (verify-ok) the fold's figures hand the pen over
+    SELECT v.ok, v.epoch INTO v_ok, n FROM scoring_verify_takeover(M_HANDOVER, 'verify-045-b', 14, 1, 3) v;
+    PERFORM _assert(v_ok AND n = v_epoch + 1,
+      format('db/45 (verify-ok): the second innings'' 14/1 off 3 did not verify (ok %s, epoch %s after %s)', v_ok, n, v_epoch));
+  END;
+  PERFORM set_config('app.device_id', '', true);
+  PERFORM set_config('app.user_id', '', true);
+
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 
