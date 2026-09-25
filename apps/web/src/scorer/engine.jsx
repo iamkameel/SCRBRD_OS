@@ -710,12 +710,23 @@ function SCRBRD({resume,onSignIn}={}){
   // The side the toss put in bats; the home roster (the one the pad reads)
   // goes with the home side, batting or bowling. firstInningsSides says which.
   const openFirstInnings=(batsFirst)=>{
-    if(!match||curIn!==0||events[0].some(e=>e.kind===KIND.INNINGS_START))return;
-    emit(inningsStart({
+    if(!match||curIn!==0||padLockRef.current)return;
+    // Decided against the log as it is when the update applies, not as this
+    // render saw it: the toss's answer waits for a disk write before it opens
+    // the innings, and a second tap in that time must find it already open —
+    // two first-innings starts would be two different sides in.
+    const open={...inningsStart({
       ...firstInningsSides({batsFirst,fixture:match,homeSquad:homeSquadRef.current}),
       overs:match.overs??20,
       captureProfile:match.captureProfile??undefined,
-    }));
+    }),innings:0,id:newEventId(deviceIdRef.current,matchIdRef.current??"local")};
+    setEvents(prev=>{
+      if((prev[0]??[]).some(e=>e.kind===KIND.INNINGS_START))return prev;
+      mintedRef.current.add(open.id);
+      const cp=[...prev];
+      cp[0]=[...(prev[0]??[]),open];
+      return cp;
+    });
   };
   // The scorer's answer to the toss sheet. It opens the innings from the
   // answer at once — the same rule the server applies, so no round trip
@@ -723,18 +734,22 @@ function SCRBRD({resume,onSignIn}={}){
   // (SCRBRD-075): on disk BEFORE the innings it opens exists, so no flush can
   // carry the innings_start without it, and the outbox sends it first. With
   // no signal it waits there, not in a request that failed and was dropped.
+  const answeringTossRef=useRef(false);
   const answerToss=async(toss)=>{
     const batsFirst=battingFirst(toss);
-    if(!batsFirst)return;
-    tossRef.current={wonBy:toss.wonBy,decision:toss.decision,batsFirst};
-    if(live){
-      const engine=syncRef.current?.engine;
-      const answer={wonBy:toss.wonBy,decision:toss.decision};
-      if(engine) await engine.queueToss(answer).catch(()=>{ pendingTossRef.current=answer; });
-      else pendingTossRef.current=answer;
-    }
-    openFirstInnings(batsFirst);
-    setModal("opener");
+    if(!batsFirst||answeringTossRef.current)return;
+    answeringTossRef.current=true;
+    try{
+      tossRef.current={wonBy:toss.wonBy,decision:toss.decision,batsFirst};
+      if(live){
+        const engine=syncRef.current?.engine;
+        const answer={wonBy:toss.wonBy,decision:toss.decision};
+        if(engine) await engine.queueToss(answer).catch(()=>{ pendingTossRef.current=answer; });
+        else pendingTossRef.current=answer;
+      }
+      openFirstInnings(batsFirst);
+      setModal("opener");
+    }finally{ answeringTossRef.current=false; }
   };
   // The server already had a different toss, and nothing on the pad depends
   // on the side in yet (tossDecision "follow"): the pad takes the server's

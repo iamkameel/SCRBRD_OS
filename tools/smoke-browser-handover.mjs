@@ -203,6 +203,30 @@ try {
   ok(`tapped ${scored} deliveries to hand over something real`, scored >= 2);
   await outgoing.page.waitForTimeout(3000); // let the outbox flush
 
+  // The cancel is the arming device's own claim, and a claim bumps the
+  // epoch. The pad used to go on under the old one: every ball after a
+  // cancelled handover went to quarantine, and the pill said "Sent".
+  group("A handover armed and cancelled: the pad goes on under the token the cancel took");
+  await outgoing.page.locator('[data-testid="open-handover"]').first().click({ timeout: 3000 });
+  await outgoing.page.waitForTimeout(300);
+  await outgoing.page.locator('[data-testid="handover-arm"]').click({ timeout: 3000 }).catch(() => {});
+  await outgoing.page.waitForTimeout(600);
+  const armed = (await dbq(`select state, epoch from scoring_session where match_id = $1`, [MATCH]))[0];
+  ok("armed", armed?.state === "handover_pending", JSON.stringify(armed));
+  await outgoing.page.locator('[data-testid="handover-cancel"]').click({ timeout: 3000 }).catch(() => {});
+  await outgoing.page.waitForTimeout(1000);
+  const back = (await dbq(`select state, epoch from scoring_session where match_id = $1`, [MATCH]))[0];
+  ok("the cancel took the token back, under the next generation", back?.state === "active" && back?.epoch === armed?.epoch + 1, JSON.stringify(back));
+  const n0 = (await serverLog()).length;
+  await clearBlockers(outgoing.page);
+  const next = outgoing.page.locator("button:not([disabled])", { hasText: /^1$/ }).first();
+  if (await next.count()) await next.click({ timeout: 2500 }).catch(() => {});
+  await outgoing.page.waitForTimeout(3000);
+  const afterCancel = await dbq(`select epoch from ball_event where match_id = $1 order by seq`, [MATCH]);
+  ok("the next ball reaches the log", afterCancel.length === n0 + 1, `${afterCancel.length} v ${n0 + 1}`);
+  ok("...under the generation the cancel took", afterCancel.at(-1)?.epoch === back?.epoch, JSON.stringify(afterCancel.at(-1)));
+  ok("...and nothing went to quarantine", (await dbq(`select 1 from ball_event_quarantine where match_id = $1`, [MATCH])).length === 0);
+
   const before = (await dbq(
     `select coalesce(sum(case when ball_type in ('run','W','Nb') then coalesce(value,0) else 0 end),0)::int r,
             coalesce(sum(case when ball_type='W' then 1 else 0 end),0)::int w,

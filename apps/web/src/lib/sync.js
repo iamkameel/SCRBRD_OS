@@ -100,8 +100,8 @@ export class PadSync {
    * @param {string} args.matchId
    * @param {string|undefined} args.userId
    * @param {"open"|"restore"} args.intent
-   * @param {{padLog: () => any[][], adopt: (log: any[][]) => void, restore: (orphans: any[]) => void,
-   *          followToss: (toss: any) => void, onStatus: (s: any) => void, onEngine?: (s: any) => void}} args.hooks
+   * @param {{padLog: () => any[][], adopt: (log: any[][]) => boolean, restore: (orphans: any[]) => void,
+   *          followToss: (toss: any) => void, onStatus: (s: any) => void}} args.hooks
    */
   constructor({ matchId, userId, intent, hooks }) {
     this.matchId = matchId;
@@ -214,9 +214,9 @@ export class PadSync {
       this.attempt += 1;
       this.retryTimer = setTimeout(() => this.attach(), wait);
     } else {
-      // Signed out waits for a sign-in, which reopens the pad. Everything
-      // else is an answer a person acts on.
-      this.halted = r.reason !== "session_expired";
+      // An answer a person acts on — a refusal, or a session that has ended
+      // (only a sign-in, which reopens the pad, changes that).
+      this.halted = true;
     }
     this.status();
   }
@@ -291,7 +291,9 @@ export class PadSync {
     try { res = await api(`/api/matches/${id}/events`, { method: "POST", body: { events: batch } }); }
     catch (e) {
       const why = failureReason(e);
-      if (why === "session_expired") { this.reason = "session_expired"; this.halted = false; }
+      // The session has ended: nothing will send until the scorer signs in
+      // again (which reopens the pad), so the timer stops asking.
+      if (why === "session_expired") { this.reason = "session_expired"; this.halted = true; }
       throw new Error(why, { cause: e });
     }
     if ((res?.quarantined ?? []).length) this.leaseAt = 0;
@@ -353,10 +355,11 @@ export class PadSync {
    * The device now holds the token under this generation without a claim of
    * its own here: a completed takeover (verifyTakeover's epoch), or the
    * arming device's cancel (its claim's epoch). What the server has is
-   * marked, so nothing it sent is queued again. `rebase` for the cancel —
-   * the same device going on; not for a takeover, where anything this device
-   * queued under an older token is not the continuation of the log it was
-   * just handed, and goes to quarantine by the epoch rule.
+   * marked, so nothing it sent is queued again. `rebase` when what is queued
+   * here is this device's continuation of the server's log — its own cancel,
+   * or a takeover where the server had nothing the pad lacked; not when the
+   * pad took the server's log over its own, where anything queued under an
+   * older token goes to quarantine by the epoch rule (engine.jsx decides).
    * @param {number} epoch
    * @param {any[]} [serverEvents]
    * @param {{rebase?: boolean}} [opts]
