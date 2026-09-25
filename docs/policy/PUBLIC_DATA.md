@@ -100,7 +100,7 @@ be placed on the list, or the test fails.
 ## 5a. How the rule reads in code (`packages/policy/src/public.mjs`)
 
 Encoded 2026-09-25. Where the decisions above left a gap, the code takes the reading
-below. Each is a product call Kameel can overturn; the code changes with it.
+below. Kameel confirmed all of them the same day.
 
 - **Consent is judged on the day a page is served, not the match day.** That is what
   makes a withdrawal reach past scorecards (C3). It also means a consent recorded
