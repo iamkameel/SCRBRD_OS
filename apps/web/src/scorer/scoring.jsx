@@ -10,6 +10,7 @@ import { ALL_SHOTS_FLAT, SHOT_CATS } from "./shots.js";
 import { getPhase } from "./signals.js";
 import { Badge, BallDot, Btn, Card, Glass, Lbl } from "./ui.jsx";
 import { Select } from "../ui/primitives.jsx";
+import { Icon } from "../ui/icons.jsx";
 
 /* ═══════════════════════════════════════════════════════
    SCORING HUB  — 3-stage inline card
@@ -71,7 +72,7 @@ function ScoringHub({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selSeg
           <div style={{marginBottom:"14px"}}>
             <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"8px"}}>
               <Lbl>Bowler Approach</Lbl>
-              {!hubApproach&&<span style={{fontFamily:D.body,fontSize:"10px",color:D.roseText,fontWeight:500}}>⚠ Required</span>}
+              {!hubApproach&&<span style={{fontFamily:D.body,fontSize:"10px",color:D.roseText,fontWeight:500}}><Icon name="triangle-alert"/> Required</span>}
               {hubApproach&&<span style={{fontFamily:D.body,fontSize:"10px",color:D.emerald,fontWeight:500}}>✓ Set</span>}
               <div style={{marginLeft:"auto",display:"flex",gap:"5px"}}>
                 <button onClick={onWide} className="pressBtn" style={{
@@ -97,7 +98,7 @@ function ScoringHub({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selSeg
                     transition:"all .2s cubic-bezier(.34,1.56,.64,1)",
                     boxShadow:isActive?"0 2px 12px "+D.indigo+"40":"none",
                   }}>
-                    {i===0?"🔄 Over the Wicket":"↩️ Around the Wicket"}
+                    {i===0?"Over the Wicket":"Around the Wicket"}
                   </button>
                 );
               })}
@@ -107,7 +108,7 @@ function ScoringHub({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selSeg
           {!hubApproach&&(
             <div style={{padding:"20px",textAlign:"center",borderRadius:D.md,border:"1px dashed "+D.border,
               background:D.surf2+"88",marginBottom:"10px"}}>
-              <div style={{fontSize:"24px",marginBottom:"8px"}}>🏏</div>
+              <div style={{fontSize:"24px",marginBottom:"8px",color:D.textMuted}}><Icon name="bat"/></div>
               <div style={{fontFamily:D.body,fontSize:"13px",color:D.textMuted}}>Select approach above to enable shot selection</div>
             </div>
           )}
@@ -120,7 +121,6 @@ function ScoringHub({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selSeg
                     display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
                     gap:"3px",padding:"9px 4px",borderRadius:D.md,cursor:"pointer",
                     border:"1px solid "+D.border,background:D.surf2,transition:"all .15s"}}>
-                    <span style={{fontSize:"18px",lineHeight:1}}>{shot.icon}</span>
                     <span style={{fontFamily:D.body,fontSize:"9px",fontWeight:500,
                       color:D.textSecondary,textAlign:"center",lineHeight:1.2}}>{shot.label}</span>
                   </button>
@@ -142,7 +142,6 @@ function ScoringHub({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selSeg
             {shotInfo&&(
               <div style={{display:"flex",alignItems:"center",gap:"5px",padding:"4px 10px",
                 borderRadius:D.md,background:shotInfo.color+"12",border:"1px solid "+shotInfo.color+"25"}}>
-                <span style={{fontSize:"14px"}}>{shotInfo.icon}</span>
                 <span style={{fontFamily:D.body,fontSize:"11px",color:textOn(shotInfo.color)}}>{shotInfo.label}</span>
               </div>
             )}
@@ -155,8 +154,8 @@ function ScoringHub({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selSeg
                 precision nobody can see. */}
             <span style={{fontFamily:D.body,fontSize:"11px",color:selSeg?D.emerald:D.amber,fontWeight:500,marginLeft:"auto"}}>
               {selSeg?.theta!=null
-                ? `📍 ${positionName(selSeg.theta,selSeg.radius) ?? "placed"}`
-                : "📍 Tap where it went"}
+                ? <><Icon name="map-pin"/> {positionName(selSeg.theta,selSeg.radius) ?? "placed"}</>
+                : <><Icon name="map-pin"/> Tap where it went</>}
             </span>
           </div>
           <WagonWheel
@@ -186,14 +185,13 @@ function ScoringHub({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selSeg
             {shotInfo&&(
               <div style={{display:"flex",alignItems:"center",gap:"5px",padding:"4px 10px",
                 borderRadius:D.md,background:shotInfo.color+"12",border:"1px solid "+shotInfo.color+"25"}}>
-                <span style={{fontSize:"13px"}}>{shotInfo.icon}</span>
                 <span style={{fontFamily:D.body,fontSize:"11px",color:textOn(shotInfo.color)}}>{shotInfo.label}</span>
               </div>
             )}
             {segInfo&&(
               <div style={{display:"flex",alignItems:"center",gap:"5px",padding:"4px 10px",
                 borderRadius:D.md,background:D.indigo+"10",border:"1px solid "+D.indigo+"22"}}>
-                <span style={{fontSize:"11px"}}>📍</span>
+                <span style={{fontSize:"11px",color:D.sky}}><Icon name="map-pin"/></span>
                 <span style={{fontFamily:D.body,fontSize:"11px",color:D.sky}}>
                   {segInfo.label+(selSeg?.zone==="boundary"?" · Boundary":selSeg?.zone==="outer"?" · Outfield":"")}
                 </span>
@@ -230,7 +228,7 @@ function ScoringHub({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selSeg
             color:D.roseText,fontFamily:D.head,fontSize:"13px",fontWeight:700,
             letterSpacing:"0.06em",textTransform:"uppercase",
             boxShadow:"0 4px 20px "+D.rose+"15",transition:"all .15s"}}>
-            ⚡ Wicket
+            <Icon name="bails-off"/> Wicket
           </button>
         </div>
       )}
@@ -295,7 +293,7 @@ function ScoringPanel({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selS
                 </div>
                 {freeHit&&<span style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.08em",
                   color:T.light.ink,background:T.light.alert,
-                  padding:"2px 8px",borderRadius:D.pill}}>⚡ FREE HIT</span>}
+                  padding:"2px 8px",borderRadius:D.pill}}><Icon name="zap"/> FREE HIT</span>}
               </div>
             </div>
             {target&&(
@@ -353,7 +351,7 @@ function ScoringPanel({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selS
           </div>
           <div style={{padding:"7px 13px",display:"grid",gridTemplateColumns:"1fr 34px 20px 28px 22px 38px",gap:"3px",alignItems:"center"}}>
             <div style={{display:"flex",alignItems:"center",gap:"5px"}}>
-              <span style={{color:D.orange,fontSize:"12px"}}>⚡</span>
+              <span style={{color:D.orange,fontSize:"12px"}}><Icon name="ball"/></span>
               <span style={{color:D.textPrimary,fontSize:"13px",fontFamily:D.body,fontWeight:500}}>{bow.name}</span>
               {bow.bowlArm&&<span style={{fontFamily:D.mono,fontSize:"8px",fontWeight:700,padding:"1px 4px",borderRadius:D.pill,
                 background:`${D.violet}15`,border:`1px solid ${D.violet}33`,color:D.violetText,flexShrink:0}}>
@@ -389,7 +387,7 @@ function ScoringPanel({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selS
           animation:"undoPop .3s cubic-bezier(.22,1,.36,1)",
           transition:"all .15s",
         }}>
-          <span style={{fontSize:"14px"}}>↩</span>
+          <span style={{fontSize:"14px"}}><Icon name="undo-2"/></span>
           <span>Undo last ball</span>
           <span style={{fontFamily:D.mono,fontSize:"10px",opacity:.5,marginLeft:"auto"}}>
             {inn.ballLog.length} ball{inn.ballLog.length!==1?"s":""}
@@ -447,7 +445,7 @@ function FocusPad({inn,match,curIn,target,onCommitDetailed,onWicketCtx,onWide,on
           <span style={{fontFamily:D.mono,color:D.textMuted}}>{ns?`${ns.runs} (${ns.balls})`:""}</span>
         </div>
         <div style={{display:"flex",justifyContent:"space-between",paddingTop:"5px",borderTop:`1px solid ${D.border}`}}>
-          <span style={{color:D.textSecondary}}>🎳 {bw?bw.name:"—"}</span>
+          <span style={{color:D.textSecondary}}><Icon name="ball"/> {bw?bw.name:"—"}</span>
           <span style={{fontFamily:D.mono,color:D.textMuted}}>{bw?`${bw.wickets}/${bw.runs} (${fmtOv(bw.balls)})`:""}</span>
         </div>
       </div>
@@ -464,7 +462,7 @@ function FocusPad({inn,match,curIn,target,onCommitDetailed,onWicketCtx,onWide,on
    * One key on the pad.
    *
    * `say` is the accessible name, and it is not optional dressing. Every key
-   * on this pad is one or two characters — "4", "·", "WD", "↩" — which a
+   * on this pad is one or two characters — "4", "·", "WD", an arrow — which a
    * screen reader announces literally: "four", "middle dot", "W D", "leftwards
    * arrow with hook". None of those is a cricket outcome. Worse, the sub-label
    * that makes them legible to a sighted user is 7px, which is itself the
@@ -513,13 +511,13 @@ function FocusPad({inn,match,curIn,target,onCommitDetailed,onWicketCtx,onWide,on
           <K label="WD" sub="Wide" say="Wide" onClick={onWide} bg={D.orange+"14"} fg={D.orange} border={D.orange+"33"}/>
           <K label="NB" sub="No ball" say="No ball" onClick={onNoBall} bg={D.amber+"10"} fg={D.amber} border={D.amber+"2a"}/>
           <K label="W" sub="Wicket" say="Wicket" onClick={()=>onWicketCtx(null,null,null)} bg={D.rose+"1c"} fg={D.rose} border={D.rose+"44"}/>
-          <K label="↩" sub="Undo" say="Undo the last ball" onClick={onUndo} span={2}/>
+          <K label={<Icon name="undo-2"/>} sub="Undo" say="Undo the last ball" onClick={onUndo} span={2}/>
           <button onClick={onToggleQuick} className="pressBtn" style={{minHeight:"60px",borderRadius:D.lg,cursor:"pointer",background:D.emerald+"12",border:`1px solid ${D.emerald}33`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:"3px"}}>
-            <span style={{fontSize:"14px"}}>🧭</span>
+            <span style={{fontSize:"14px",color:D.emerald}}><Icon name="compass"/></span>
             <span style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",color:D.emerald}}>3-PHASE</span>
           </button>
         </div>
-        <button onClick={onPro} className="pressBtn" style={{padding:"9px",borderRadius:D.lg,cursor:"pointer",background:"transparent",border:`1px dashed ${D.borderMed}`,fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",color:D.textSecondary}}>🎯 PRO MODE — full capture</button>
+        <button onClick={onPro} className="pressBtn" style={{padding:"9px",borderRadius:D.lg,cursor:"pointer",background:"transparent",border:`1px dashed ${D.borderMed}`,fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",color:D.textSecondary}}><Icon name="sliders-horizontal"/> PRO MODE — full capture</button>
       </div>
     );
   }
@@ -545,7 +543,6 @@ function FocusPad({inn,match,curIn,target,onCommitDetailed,onWicketCtx,onWide,on
       <button key={s.id} onClick={()=>{setShot(s.id);setPhase(2);}} className="pressBtn" style={{
         display:"flex",alignItems:"center",gap:"5px",padding:"9px 12px",borderRadius:D.md,cursor:"pointer",
         background:on?s.color+"22":D.surf2,border:`1px solid ${on?s.color+"66":D.border}`}}>
-        <span style={{fontSize:"13px"}}>{s.icon}</span>
         <span style={{fontFamily:D.body,fontSize:"12px",fontWeight:600,color:on?s.color:D.textPrimary}}>{s.label}</span>
       </button>
     );
@@ -608,7 +605,7 @@ function FocusPad({inn,match,curIn,target,onCommitDetailed,onWicketCtx,onWide,on
           {shot==="missed"&&<div style={{fontFamily:D.body,fontSize:"10px",color:D.orange,marginBottom:"8px",textAlign:"center"}}>Runs after a miss will be recorded as byes.</div>}
           <button onClick={commitWkt} className="pressBtn" style={{width:"100%",padding:"14px",borderRadius:D.lg,cursor:"pointer",
             background:D.rose+"1c",border:`1px solid ${D.rose}55`,color:D.roseText,fontFamily:D.head,fontSize:"13px",fontWeight:800,letterSpacing:"0.08em",marginBottom:"8px"}}>
-            🎯 WICKET
+            <Icon name="bails-off"/> WICKET
           </button>
           <button onClick={()=>setPhase(2)} className="pressBtn" style={{width:"100%",padding:"10px",borderRadius:D.lg,cursor:"pointer",background:D.surf2,border:`1px solid ${D.border}`,color:D.textSecondary,fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:"0.05em"}}>‹ AREA</button>
         </Card>
@@ -618,13 +615,13 @@ function FocusPad({inn,match,curIn,target,onCommitDetailed,onWicketCtx,onWide,on
       <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"8px"}}>
         <K label="WD" sub="Wide" say="Wide" onClick={onWide} bg={D.orange+"14"} fg={D.orange} border={D.orange+"33"}/>
         <K label="NB" sub="No ball" say="No ball" onClick={onNoBall} bg={D.amber+"10"} fg={D.amber} border={D.amber+"2a"}/>
-        <K label="↩" sub="Undo" say="Undo the last ball" onClick={()=>{ if(phase>1){reset();} else {onUndo();} }} bg={D.surf2}/>
+        <K label={<Icon name="undo-2"/>} sub="Undo" say="Undo the last ball" onClick={()=>{ if(phase>1){reset();} else {onUndo();} }} bg={D.surf2}/>
       </div>
 
       {/* Mode toggles */}
       <div style={{display:"flex",gap:"8px"}}>
-        <button onClick={onToggleQuick} className="pressBtn" style={{flex:1,padding:"9px",borderRadius:D.lg,cursor:"pointer",background:"transparent",border:`1px solid ${D.border}`,fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.08em",color:D.textSecondary}}>⚡ QUICK MODE</button>
-        <button onClick={onPro} className="pressBtn" style={{flex:1,padding:"9px",borderRadius:D.lg,cursor:"pointer",background:"transparent",border:`1px dashed ${D.borderMed}`,fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.08em",color:D.textSecondary}}>🎯 PRO MODE</button>
+        <button onClick={onToggleQuick} className="pressBtn" style={{flex:1,padding:"9px",borderRadius:D.lg,cursor:"pointer",background:"transparent",border:`1px solid ${D.border}`,fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.08em",color:D.textSecondary}}><Icon name="zap"/> QUICK MODE</button>
+        <button onClick={onPro} className="pressBtn" style={{flex:1,padding:"9px",borderRadius:D.lg,cursor:"pointer",background:"transparent",border:`1px dashed ${D.borderMed}`,fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.08em",color:D.textSecondary}}><Icon name="sliders-horizontal"/> PRO MODE</button>
       </div>
       <div style={{textAlign:"center",fontFamily:D.body,fontSize:"10px",color:D.textMuted}}>
         {phase===1?"Phase 1 of 3 — select the shot played.":phase===2?"Phase 2 of 3 — select where it landed.":"Phase 3 of 3 — score runs or a wicket."} · Undo backs out of the current ball.

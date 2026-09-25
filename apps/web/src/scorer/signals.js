@@ -73,6 +73,7 @@ const buildSignals=(inn,overs,target,isChase)=>{
 
 const buildNarratives=(sig,lastOver)=>{
   if(!sig)return[];const n=[];
+  // `icon` is a name from ui/icons.jsx.
   const push=(type,pri,hl,chips,accent=D.emerald,icon="")=>n.push({type,pri,hl,chips,accent,icon});
   if(lastOver?.balls.length===6){
     const ovR=lastOver.balls.reduce((s,b)=>s+(b.value||0),0);
@@ -82,39 +83,39 @@ const buildNarratives=(sig,lastOver)=>{
     const imp=ovR>=14?"HIGH":ovR>=8?"MED":"LOW";
     const ic=imp==="HIGH"?D.amber:imp==="MED"?D.orange:D.textSecondary;
     push("END_OF_OVER",92,`Over ${lastOver.over+1}: ${ovR} run${ovR!==1?"s":""}${ovW?" · "+ovW+"W":""}`,
-      [{l:"Runs",v:ovR,c:ic},{l:"Dots",v:ovD},{l:"Bnds",v:ovB},{l:"Impact",v:imp,c:ic}],ic,"📋");
+      [{l:"Runs",v:ovR,c:ic},{l:"Dots",v:ovD},{l:"Bnds",v:ovB},{l:"Impact",v:imp,c:ic}],ic,"overs");
   }
   if(sig.flags.includes("HAT_TRICK_POSSIBLE")&&sig.curBow)
-    push("HAT_TRICK",96,`Hat-trick ball — ${sig.curBow.name}`,[{l:"Wickets",v:sig.curBow.wickets,c:D.rose},{l:"This spell",v:sig.curBow.balls>0?fmtOv(sig.curBow.balls):"0"}],D.rose,"🎩");
+    push("HAT_TRICK",96,`Hat-trick ball — ${sig.curBow.name}`,[{l:"Wickets",v:sig.curBow.wickets,c:D.rose},{l:"This spell",v:sig.curBow.balls>0?fmtOv(sig.curBow.balls):"0"}],D.rose,"sparkles");
   if(sig.isChase&&sig.reqRr!=null){
     const need=(sig.target||0)-sig.runs;
     const ballsLeft=sig.maxBalls-sig.balls;
     if(sig.rrDelta<-1)push("CHASE_BEHIND",83,`Need ${need} off ${ballsLeft} balls`,
-      [{l:"RRR",v:sig.reqRr,c:D.rose},{l:"CRR",v:sig.rr},{l:"Behind",v:"+"+Math.abs(sig.rrDelta).toFixed(1),c:D.rose}],D.rose,"🎯");
+      [{l:"RRR",v:sig.reqRr,c:D.rose},{l:"CRR",v:sig.rr},{l:"Behind",v:"+"+Math.abs(sig.rrDelta).toFixed(1),c:D.rose}],D.rose,"target");
     else push("CHASE_ON_TRACK",66,`${need} from ${ballsLeft} — on track`,
-      [{l:"RRR",v:sig.reqRr,c:D.emerald},{l:"CRR",v:sig.rr,c:D.emerald},{l:"Ahead",v:sig.rrDelta>0?"+"+sig.rrDelta.toFixed(1):"—",c:D.emerald}],D.emerald,"✅");
+      [{l:"RRR",v:sig.reqRr,c:D.emerald},{l:"CRR",v:sig.rr,c:D.emerald},{l:"Ahead",v:sig.rrDelta>0?"+"+sig.rrDelta.toFixed(1):"—",c:D.emerald}],D.emerald,"circle-check");
   }
   if(sig.pressure>=75)push("PRESSURE",80,
     sig.pressureLabel==="EXTREME"?"Under extreme pressure":"Batting under pressure",
-    [{l:"Dots/6",v:sig.dotsL6,c:sig.pressureColor},{l:"Score",v:sig.pressure+"%",c:sig.pressureColor},{l:"Drought",v:sig.bndDrought+"b"}],sig.pressureColor,"🔥");
+    [{l:"Dots/6",v:sig.dotsL6,c:sig.pressureColor},{l:"Score",v:sig.pressure+"%",c:sig.pressureColor},{l:"Drought",v:sig.bndDrought+"b"}],sig.pressureColor,"flame");
   if(Math.abs(sig.mom)>40)push("MOMENTUM",70,
     sig.momLabel==="BAT"?"Bat dominating — bowler under pump":"Bowlers wrestling control back",
-    [{l:"Last 6",v:sig.runsL6+"r"},{l:"Bnds/12",v:sig.bndsL12},{l:"Wkts/12",v:sig.wktsL12}],sig.momColor,sig.momLabel==="BAT"?"💥":"⚡");
+    [{l:"Last 6",v:sig.runsL6+"r"},{l:"Bnds/12",v:sig.bndsL12},{l:"Wkts/12",v:sig.wktsL12}],sig.momColor,sig.momLabel==="BAT"?"bat":"ball");
   if(sig.flags.includes("COLLAPSE_RISK"))push("COLLAPSE",78,`${sig.wktsL12} wickets in last 12 balls — nervy`,
-    [{l:"Wickets",v:sig.wktsL12,c:D.rose},{l:"Dots/12",v:sig.dotsL12},{l:"New bat",v:sig.strikerBalls<10?"Yes":"—"}],D.rose,"📉");
+    [{l:"Wickets",v:sig.wktsL12,c:D.rose},{l:"Dots/12",v:sig.dotsL12},{l:"New bat",v:sig.strikerBalls<10?"Yes":"—"}],D.rose,"trending-down");
   if(sig.flags.includes("NEW_BATTER_SETTLING")&&sig.striker)push("SETTLING",55,`${sig.striker.name} at the crease`,
-    [{l:"Balls",v:sig.strikerBalls},{l:"Runs",v:sig.striker.runs},{l:"SR",v:sig.strikerSR}],D.sky,"🏏");
+    [{l:"Balls",v:sig.strikerBalls},{l:"Runs",v:sig.striker.runs},{l:"SR",v:sig.strikerSR}],D.sky,"bat");
   if(sig.flags.includes("PARTNERSHIP_STABILISING"))push("PARTNERSHIP",50,"Partnership steadying the ship",
-    [{l:"P'ship",v:sig.pshipRuns+"("+sig.pshipBalls+"b)"},{l:"Rate",v:sig.pshipBalls>0?(sig.pshipRuns/(sig.pshipBalls/6)).toFixed(1):"—"}],D.emerald,"🤝");
+    [{l:"P'ship",v:sig.pshipRuns+"("+sig.pshipBalls+"b)"},{l:"Rate",v:sig.pshipBalls>0?(sig.pshipRuns/(sig.pshipBalls/6)).toFixed(1):"—"}],D.emerald,"handshake");
   if(sig.flags.includes("BOUNDARY_DROUGHT")&&!sig.flags.includes("PRESSURE"))push("DROUGHT",52,
     `Boundary drought — ${sig.bndDrought} balls`,
-    [{l:"Drought",v:sig.bndDrought+"b",c:D.amber},{l:"Dots/6",v:sig.dotsL6},{l:"Proj",v:sig.projected}],D.amber,"🌵");
+    [{l:"Drought",v:sig.bndDrought+"b",c:D.amber},{l:"Dots/6",v:sig.dotsL6},{l:"Proj",v:sig.projected}],D.amber,"hourglass");
   if(!sig.isChase&&sig.balls>=24)push("PROJECTION",38,
     `At this rate: ${sig.projected} projected`,
-    [{l:"RR",v:sig.rr},{l:"Balls left",v:sig.maxBalls-sig.balls},{l:"Phase",v:sig.phase}],D.violet,"📊");
+    [{l:"RR",v:sig.rr},{l:"Balls left",v:sig.maxBalls-sig.balls},{l:"Phase",v:sig.phase}],D.violet,"chart-column");
   // Always push a baseline RR card
   if(!sig.isChase)push("RUN_RATE",10,`Run rate: ${sig.rr} rpo`,
-    [{l:"Runs",v:sig.runs},{l:"Overs",v:fmtOv(sig.balls)},{l:"Proj",v:sig.projected}],D.sky,"📈");
+    [{l:"Runs",v:sig.runs},{l:"Overs",v:fmtOv(sig.balls)},{l:"Proj",v:sig.projected}],D.sky,"trending-up");
   return n.sort((a,b)=>b.pri-a.pri);
 };
 

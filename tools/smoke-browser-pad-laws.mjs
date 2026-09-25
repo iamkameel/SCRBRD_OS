@@ -322,11 +322,11 @@ try {
   await page.waitForTimeout(500);
   const over2 = await agree("over two begins");
   ok("the server took the third bowler", over2.inn.bowler === "C Mthembu" && over2.inn.balls === 6);
-  await page.locator("button", { hasText: /^📋\s*Cards$/ }).first().click({ timeout: 3000 }).catch(() => {});
+  await page.locator("button", { hasText: /^\s*Cards$/ }).first().click({ timeout: 3000 }).catch(() => {});
   await page.waitForTimeout(500);
   const cards = await tid("bowler-changes").first().innerText().catch(() => "");
   ok(`the scorecard says it (${cards.trim()})`, /B Zulu took over from A Nel \(injured\)/.test(cards));
-  await page.locator("button", { hasText: /^🏏\s*Score$/ }).first().click({ timeout: 3000 }).catch(() => {});
+  await page.locator("button", { hasText: /^\s*Score$/ }).first().click({ timeout: 3000 }).catch(() => {});
   await page.waitForTimeout(400);
 
   // ── SCRBRD-068 ───────────────────────────────────────────────

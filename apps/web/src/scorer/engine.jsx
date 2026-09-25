@@ -29,6 +29,7 @@ import { SetupScreen } from "./setup.jsx";
 import { BattingOrderSheet, HandoverSheet, Innings2Sheet, InningsReviewSheet, NewOverSheet, NoBallSheet, PenaltySheet, RevisionSheet, ShotSelectorSheet, WicketSheet } from "./sheets.jsx";
 import { INT_TEAMS } from "./teams.js";
 import { BallDot, Btn, CaptureProfilePicker, Card, GS, Glass, Lbl } from "./ui.jsx";
+import { Icon } from "../ui/icons.jsx";
 
 // Reconstruct an event log from a seeded innings object.
 //
@@ -1625,7 +1626,7 @@ function SCRBRD({resume,onSignIn}={}){
   if(screen==="setup")return (<><GS/><SetupScreen onStart={startMatch}/></>);
 
   /* ── MATCH SCREEN ── */
-  const NAV=[{id:"score",icon:"🏏",label:"Score"},{id:"cards",icon:"📋",label:"Cards"},{id:"analysis",icon:"📊",label:"Analysis"},{id:"history",icon:"📜",label:"History"}];
+  const NAV=[{id:"score",icon:"bat",label:"Score"},{id:"cards",icon:"scorebook",label:"Cards"},{id:"analysis",icon:"chart-column",label:"Analysis"},{id:"history",icon:"scroll-text",label:"History"}];
   const target2=curIn===1?(inn?.target??((innings[0]?.runs||0)+1)):null;
   // Determine if shot selection is in progress (show field in "confirm shot" mode)
   const awaitingField=scoringCtx&&scoringCtx.type!=="W"&&scoringCtx.type!=="Wd"&&scoringCtx.type!=="Nb"&&modal===null;
@@ -1661,10 +1662,8 @@ function SCRBRD({resume,onSignIn}={}){
             letterSpacing:"0.04em",flexShrink:0}}>SCRBRD</div>
           <div style={{width:"1px",height:"16px",background:D.border,flexShrink:0}}/>
           <div style={{flex:1,fontFamily:D.body,fontSize:"13px",fontWeight:500,color:D.textSecondary,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>
-            <span style={{marginRight:"3px"}}>{innings[0]?.teamFlag||""}</span>
             <span style={{color:D.sky}}>{match?.team1}</span>
             <span style={{color:D.textMuted,fontSize:"11px"}}> vs </span>
-            <span style={{marginRight:"3px"}}>{innings[1]?.teamFlag||""}</span>
             <span style={{color:D.emerald}}>{match?.team2}</span>
             <span style={{color:D.textMuted,fontSize:"11px"}}> · {inn?.overs??match?.overs}ov{inn?.revised&&<span style={{color:D.amber}} title={`revised: ${inn.revised.reason}`}> (revised)</span>}</span>
           </div>
@@ -1674,7 +1673,7 @@ function SCRBRD({resume,onSignIn}={}){
           <PadMenu/>
           <button onClick={()=>setModal("revise")} className="pressBtn" data-testid="revise-innings" title="Revise overs / target (rain)"
             style={{flexShrink:0,padding:"4px 10px",borderRadius:D.pill,cursor:"pointer",background:"transparent",border:`1px solid ${D.border}`,fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted}}>
-            ☔ Revise
+            <Icon name="umbrella"/> Revise
           </button>
           {/* Visible to whoever currently holds the token (to offer it) and
               to whoever's own claim was refused because one is already
@@ -1761,7 +1760,7 @@ function SCRBRD({resume,onSignIn}={}){
               <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
                 <div style={{display:"flex",alignItems:"center",gap:"6px",padding:"2px 0"}}>
                   <Lbl sx={{color:D.textMuted,fontSize:"9px"}}>⠿ drag cards to reorder</Lbl>
-                  <button onClick={()=>setUiMode("focus")} className="pressBtn" style={{marginLeft:"auto",padding:"4px 10px",borderRadius:D.pill,background:D.emerald+"14",border:`1px solid ${D.emerald}33`,color:D.emerald,fontFamily:D.head,fontSize:"8px",fontWeight:700,letterSpacing:"0.1em",cursor:"pointer"}}>⚡ FOCUS MODE</button>
+                  <button onClick={()=>setUiMode("focus")} className="pressBtn" style={{marginLeft:"auto",padding:"4px 10px",borderRadius:D.pill,background:D.emerald+"14",border:`1px solid ${D.emerald}33`,color:D.emerald,fontFamily:D.head,fontSize:"8px",fontWeight:700,letterSpacing:"0.1em",cursor:"pointer"}}><Icon name="zap"/> FOCUS MODE</button>
                 </div>
                 {cardOrder.map(cardId=>{
                   const dragProps={
@@ -1831,8 +1830,8 @@ function SCRBRD({resume,onSignIn}={}){
                              `${b.value} run${b.value!==1?"s":""}`}
                           </div>
                           <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginTop:"2px",display:"flex",gap:"8px",flexWrap:"wrap"}}>
-                            {shot&&<span style={{color:shot.color}}>🏏 {shot.label}</span>}
-                            {seg&&<span>📍 {seg.label}{b.zone==="boundary"?" · Boundary":b.zone==="outer"?" · Outfield":""}</span>}
+                            {shot&&<span style={{color:shot.color}}>{shot.label}</span>}
+                            {seg&&<span><Icon name="map-pin"/> {seg.label}{b.zone==="boundary"?" · Boundary":b.zone==="outer"?" · Outfield":""}</span>}
                             <span style={{color:D.textMuted}}>Over {(b.over||0)+1}.{(b.ballInOver||0)+1}</span>
                           </div>
                         </div>
@@ -1886,7 +1885,7 @@ function SCRBRD({resume,onSignIn}={}){
                 background:active?D.grad:"transparent",
                 boxShadow:active?`0 4px 20px ${clr(D.indigo,.5)},0 0 28px ${clr(D.indigo,.35)}`:"none",
                 transition:"all .3s cubic-bezier(.34,1.56,.64,1)"}}>
-                <span style={{fontSize:"16px",lineHeight:1,filter:active?"none":"grayscale(.6) opacity(.7)"}}>{n.icon}</span>
+                <span style={{fontSize:"16px",lineHeight:1,color:active?T.light.ink:D.textMuted}}><Icon name={n.icon}/></span>
                 <span style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:active?T.light.ink:D.textMuted}}>{n.label}</span>
               </button>
             );

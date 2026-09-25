@@ -6,6 +6,7 @@ import { IntelPanel } from "./panels.jsx";
 import { buildSignals } from "./signals.js";
 import { Badge, Card, Lbl, SignalBar } from "./ui.jsx";
 import { batHandOf, hasPoint, positionName, screenAngle, shotDensity, directionalProfile, DISMISSAL_LABEL, placementEvidence, NOT_CAPTURED, PLACEMENT_FIELD, runsOffBat } from "@scrbrd/scoring";
+import { Icon } from "../ui/icons.jsx";
 
 /* ═══════════════════════════════════════════════════════
    INTEL DASHBOARD TAB
@@ -539,7 +540,7 @@ function AnalysisDashboard({inn,match,curIn,innings}){
     <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
       {/* Sub-nav */}
       <div style={{display:"flex",gap:"6px"}}>
-        {[["charts","📊 Charts"],["signals","📡 Signals"],["intelligence","🧠 Intelligence"]].map(([id,label])=>(
+        {[["charts","chart-column","Charts"],["signals","radio-tower","Signals"],["intelligence","brain","Intelligence"]].map(([id,ic,label])=>(
           <button key={id} onClick={()=>setActiveView(id)} className="pressBtn" style={{
             padding:"7px 16px",borderRadius:D.pill,cursor:"pointer",border:"none",
             fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",
@@ -547,7 +548,7 @@ function AnalysisDashboard({inn,match,curIn,innings}){
             color:activeView===id?T.light.ink:D.textMuted,
             boxShadow:activeView===id?"0 4px 16px "+D.indigo+"40":"none",
             transition:"all .2s"}}>
-            {label}
+            <Icon name={ic}/> {label}
           </button>
         ))}
       </div>

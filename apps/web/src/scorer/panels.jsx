@@ -7,6 +7,7 @@ import { RR, fmtOv, SR } from "./format.js";
 import { buildNarratives, buildSignals } from "./signals.js";
 import { ALL_SHOTS_FLAT, fetchAICommentary } from "./shots.js";
 import { Badge, BallDot, Card, Lbl, SignalBar } from "./ui.jsx";
+import { Icon } from "../ui/icons.jsx";
 
 /* ═══════════════════════════════════════════════════════
    DYNAMIC CONTENT BAR (DCB) — persistent smart strip
@@ -94,7 +95,7 @@ function DynamicBar({inn,match,target,isChase,lastOver}){
           padding:"8px 16px",overflow:"hidden",
           animation:"fadeIn .4s ease both",
         }}>
-          {card.icon&&<span style={{fontSize:"16px",flexShrink:0}}>{card.icon}</span>}
+          {card.icon&&<span style={{fontSize:"16px",flexShrink:0,color:card.accent}}><Icon name={card.icon}/></span>}
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:card.accent,
               whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",lineHeight:1.2}}>{card.hl}</div>
@@ -423,7 +424,7 @@ function IntelPanel({inn,overs,target,isChase}){
             padding:"3px 8px",borderRadius:D.pill,cursor:"pointer",fontFamily:D.head,fontSize:"9px",
             border:`1px solid ${auto?D.emerald+"44":D.border}`,background:"transparent",
             color:auto?D.emerald:D.textMuted,transition:"all .2s",
-          }}>{auto?"⏸":"▶"}</button>
+          }} aria-label={auto?"Pause the cards":"Play the cards"}><Icon name={auto?"pause":"play"}/></button>
         </div>
       </div>
       <div style={{padding:"16px 18px",position:"relative"}}>
@@ -565,27 +566,27 @@ function detectMilestone(ball,inn){
   if(bat&&ball.type!=="W"&&ball.type!=="Wd"&&ball.type!=="Nb"){
     const credit=ball.type==="run"?(ball.value||0):0; // byes/leg-byes don't credit the batter
     const prev=bat.runs, cur=bat.runs+credit;
-    if(prev<50&&cur>=50)milestones.push({type:"fifty",label:"FIFTY!",sub:bat.name+" reaches 50",color:D.sky,icon:"🏏"});
-    if(prev<100&&cur>=100)milestones.push({type:"century",label:"CENTURY!",sub:bat.name+" — 100 not out",color:D.amber,icon:"💯"});
-    if(prev<150&&cur>=150)milestones.push({type:"150",label:"150!",sub:bat.name+" on 150",color:D.amber,icon:"🔥"});
-    if(prev<200&&cur>=200)milestones.push({type:"200",label:"DOUBLE!",sub:bat.name+" — 200 runs!",color:D.amber,icon:"👑"});
+    if(prev<50&&cur>=50)milestones.push({type:"fifty",label:"FIFTY!",sub:bat.name+" reaches 50",color:D.sky,icon:"bat"});
+    if(prev<100&&cur>=100)milestones.push({type:"century",label:"CENTURY!",sub:bat.name+" — 100 not out",color:D.amber,icon:"medal"});
+    if(prev<150&&cur>=150)milestones.push({type:"150",label:"150!",sub:bat.name+" on 150",color:D.amber,icon:"flame"});
+    if(prev<200&&cur>=200)milestones.push({type:"200",label:"DOUBLE!",sub:bat.name+" — 200 runs!",color:D.amber,icon:"crown"});
   }
   if(bow&&ball.type==="W"){
     const wkts=(bow.wickets||0)+1; // including this dismissal
-    if(wkts===5)milestones.push({type:"fifer",label:"FIFER!",sub:bow.name+" takes 5 wickets",color:D.roseText,icon:"🎯"});
+    if(wkts===5)milestones.push({type:"fifer",label:"FIFER!",sub:bow.name+" takes 5 wickets",color:D.roseText,icon:"ball"});
     if(wkts>=3){
       const legal=(inn?.ballLog||[]).filter(b=>b.type!=="Wd"&&b.type!=="Nb").slice(-2);
       if(legal.length===2&&legal.every(b=>b.type==="W"&&b.bowler===bow.id))
-        milestones.push({type:"hattrick",label:"HAT-TRICK!",sub:bow.name+" — 3 in a row!",color:D.roseText,icon:"🎩"});
+        milestones.push({type:"hattrick",label:"HAT-TRICK!",sub:bow.name+" — 3 in a row!",color:D.roseText,icon:"sparkles"});
     }
-    if((inn?.wickets||0)+1>=10)milestones.push({type:"allout",label:"ALL OUT!",sub:(inn?.battingTeam||"")+" all out",color:D.roseText,icon:"💀"});
+    if((inn?.wickets||0)+1>=10)milestones.push({type:"allout",label:"ALL OUT!",sub:(inn?.battingTeam||"")+" all out",color:D.roseText,icon:"bails-off"});
   }
   // Team milestones — total includes extras
   if(inn){
     const added=(ball.type==="Wd"||ball.type==="Nb")?1+(ball.value||0):(ball.value||0);
     const prevRuns=inn.runs, postRuns=inn.runs+added;
     [50,100,150,200,250,300,350,400].forEach(n=>{
-      if(prevRuns<n&&postRuns>=n)milestones.push({type:"team"+n,label:n+"!",sub:inn.battingTeam+" reach "+n,color:D.indigoText,icon:"🏏"});
+      if(prevRuns<n&&postRuns>=n)milestones.push({type:"team"+n,label:n+"!",sub:inn.battingTeam+" reach "+n,color:D.indigoText,icon:"bat"});
     });
   }
   return milestones.length>0?milestones[0]:null;
@@ -689,9 +690,9 @@ function CommentaryCard({inn}){
               {/* Metadata tags */}
               <div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,marginTop:"2px",
                 display:"flex",gap:"7px",flexWrap:"wrap",alignItems:"center"}}>
-                {shot&&<span style={{color:shot.color}}>{shot.icon+" "+shot.label}</span>}
-                {seg&&<span>{"📍 "+seg.label+(b.zone==="boundary"?" · Boundary":"")}</span>}
-                {b.bowlerApproach&&<span style={{color:D.amber}}>{"⤵ "+b.bowlerApproach}</span>}
+                {shot&&<span style={{color:shot.color}}>{shot.label}</span>}
+                {seg&&<span><Icon name="map-pin"/>{" "+seg.label+(b.zone==="boundary"?" · Boundary":"")}</span>}
+                {b.bowlerApproach&&<span style={{color:D.amber}}><Icon name="corner-right-down"/>{" "+b.bowlerApproach}</span>}
                 <span>{"Ov "+(b.over+1)+"."+(b.ballInOver+1)}</span>
               </div>
             </div>
@@ -749,7 +750,7 @@ function EventOverlay({event,onDone,suppressBlur}){
         textAlign:"center",
       }}>
         {/* Icon for milestones */}
-        {icon&&<div style={{fontSize:"clamp(40px,8vw,70px)",lineHeight:1,marginBottom:"8px"}}>{icon}</div>}
+        {icon&&<div style={{fontSize:"clamp(40px,8vw,70px)",lineHeight:1,marginBottom:"8px",color}}><Icon name={icon}/></div>}
         <div style={{
           fontFamily:D.mono,
           fontSize:isMilestone?"clamp(52px,12vw,96px)":"clamp(60px,14vw,110px)",
@@ -863,12 +864,12 @@ function FreeHitBanner({onDismiss}){
       animation:"freeHitPulse 1s ease infinite, bounceIn .4s cubic-bezier(.22,1,.36,1)",
       display:"flex",alignItems:"center",gap:"10px",cursor:"pointer",
     }} onClick={onDismiss}>
-      <span style={{fontSize:"20px"}}>⚡</span>
+      <span style={{fontSize:"20px",color:T.light.ink}}><Icon name="zap"/></span>
       <div>
         <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:800,color:T.light.ink,letterSpacing:"0.1em"}}>FREE HIT!</div>
         <div style={{fontFamily:D.body,fontSize:"10px",color:T.light.ink,opacity:.8}}>Next ball: batter can only be run out</div>
       </div>
-      <span style={{fontSize:"20px"}}>⚡</span>
+      <span style={{fontSize:"20px",color:T.light.ink}}><Icon name="zap"/></span>
     </div>
   );
 }

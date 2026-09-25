@@ -7,6 +7,7 @@ import { SHOT_CATEGORIES } from "./shots.js";
 import { INT_TEAMS, ROLE_COLORS } from "./teams.js";
 import { Badge, Btn, CaptureProfilePicker, Lbl, Sep, Sheet } from "./ui.jsx";
 import { Select } from "../ui/primitives.jsx";
+import { Icon } from "../ui/icons.jsx";
 
 /* ═══════════════════════════════════════════════════════
    SHOT SELECTOR SHEET
@@ -91,7 +92,7 @@ function NoBallSheet({onConfirm,onClose}){
           </div>
           {(nbType==="height"||nbType==="beamer")&&(
             <div style={{marginTop:"6px",color:D.orange,fontSize:"11px",fontFamily:D.body,fontWeight:500}}>
-              ⚡ Free hit on next delivery (limited overs)
+              <Icon name="zap"/> Free hit on next delivery (limited overs)
             </div>
           )}
         </div>
@@ -345,7 +346,7 @@ function HandOverTab({ matchId, device, epoch, pending, held = 0, onShowHeld, ba
 
   if (pending > 0) return (
     <div data-testid="handover-blocked-pending" style={{textAlign:"center",padding:"18px 8px",color:D.textSecondary,fontFamily:D.body,fontSize:"13px",lineHeight:1.6}}>
-      <div style={{fontSize:"28px",marginBottom:"8px"}}>📡</div>
+      <div style={{fontSize:"28px",marginBottom:"8px"}}><Icon name="radio-tower"/></div>
       <strong style={{color:D.amber}}>{pending} ball{pending===1?"":"s"} not yet uploaded.</strong><br/>
       Move to better signal before handing over — a handover with unsynced balls would leave them on this
       device only.

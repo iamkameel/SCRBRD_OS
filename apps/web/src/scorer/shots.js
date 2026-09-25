@@ -57,38 +57,40 @@ const SHOT_CATEGORIES = themed(() => [
 const ALL_SHOTS = themed(() => SHOT_CATEGORIES.flatMap(c=>c.shots.map(s=>({...s,cat:c.cat,color:c.color}))), []);
 
 /* ═══════════════════════════════════════════════════════
-   SHOT CATALOGUE  (icon grid for Scoring Hub stage 0)
+   SHOT CATALOGUE  (the word grid for Scoring Hub stage 0)
+   Words, with no icon (DESIGN_DIRECTION §3.4): "Drive" reads faster than a
+   picture of a bat, and there are twenty-two of them.
 ═══════════════════════════════════════════════════════ */
 const SHOT_CATS = themed(() => [
   {cat:"Attacking", color:D.amber, shots:[
-    {id:"drive",       label:"Drive",      icon:"🏏"},
-    {id:"pull",        label:"Pull",       icon:"💪"},
-    {id:"hook",        label:"Hook",       icon:"🪝"},
-    {id:"cut",         label:"Cut",        icon:"✂️"},
-    {id:"sweep",       label:"Sweep",      icon:"🧹"},
-    {id:"ramp",        label:"Ramp",       icon:"🚀"},
-    {id:"flick",       label:"Flick",      icon:"👆"},
-    {id:"glance",      label:"Glance",     icon:"🎯"},
-    {id:"loft",        label:"Loft",       icon:"🌤️"},
-    {id:"slog",        label:"Slog",       icon:"💥"},
+    {id:"drive",       label:"Drive"},
+    {id:"pull",        label:"Pull"},
+    {id:"hook",        label:"Hook"},
+    {id:"cut",         label:"Cut"},
+    {id:"sweep",       label:"Sweep"},
+    {id:"ramp",        label:"Ramp"},
+    {id:"flick",       label:"Flick"},
+    {id:"glance",      label:"Glance"},
+    {id:"loft",        label:"Loft"},
+    {id:"slog",        label:"Slog"},
   ]},
   {cat:"Defensive", color:D.sky, shots:[
-    {id:"fwd_def",     label:"Fwd Def",    icon:"🛡️"},
-    {id:"back_def",    label:"Back Def",   icon:"🔙"},
-    {id:"padded",      label:"Padded",     icon:"🦵"},
+    {id:"fwd_def",     label:"Fwd Def"},
+    {id:"back_def",    label:"Back Def"},
+    {id:"padded",      label:"Padded"},
   ]},
   {cat:"Edge / Contact", color:D.violet, shots:[
-    {id:"outside_edge",label:"Out Edge",   icon:"🔪"},
-    {id:"inside_edge", label:"In Edge",    icon:"↩️"},
-    {id:"top_edge",    label:"Top Edge",   icon:"⬆️"},
-    {id:"hit_body",    label:"Hit Body",   icon:"🤕"},
-    {id:"hit_glove",   label:"Hit Glove",  icon:"🧤"},
-    {id:"missed",      label:"Missed",     icon:"❌"},
+    {id:"outside_edge",label:"Out Edge"},
+    {id:"inside_edge", label:"In Edge"},
+    {id:"top_edge",    label:"Top Edge"},
+    {id:"hit_body",    label:"Hit Body"},
+    {id:"hit_glove",   label:"Hit Glove"},
+    {id:"missed",      label:"Missed"},
   ]},
   {cat:"Special", color:D.orange, shots:[
-    {id:"reverse_sweep",label:"Rev Sweep", icon:"🔄"},
-    {id:"switch_hit",  label:"Switch Hit", icon:"↔️"},
-    {id:"paddle",      label:"Paddle",     icon:"🏓"},
+    {id:"reverse_sweep",label:"Rev Sweep"},
+    {id:"switch_hit",  label:"Switch Hit"},
+    {id:"paddle",      label:"Paddle"},
   ]},
 ], []);
 
