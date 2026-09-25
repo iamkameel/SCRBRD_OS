@@ -3298,6 +3298,10 @@ prior to their head-to-head fixtures." The built opposition dossier (signed-in, 
 figures) opens `opposition_window_days()` = **14** days before (`db/08`). Choose 5 for everything, or 5 for the squad
 and 14 for the figures; then a migration replaces the function (it is IMMUTABLE and read by `opposition_side()`),
 and `db/99`'s dossier section moves with it.
+**Decided 2026-09-25 (Kameel):** "14 days seems excessive; 5-7 days would be more than appropriate for an opposition
+to do their due diligence and homework." Set to **5 days**, one window for squad and figures: the shortest in the
+range, per POPIA's minimisation principle; 7 is a one-number change if coaches want a full week. Building as
+`db/46_opposition_window.sql`.
 
 ### SCRBRD-092 — Photo and video sharing for registered users
 **Priority:** P3 · **Domain:** Community · **Type:** feature (from SCRBRD-083, 2026-09-25)
