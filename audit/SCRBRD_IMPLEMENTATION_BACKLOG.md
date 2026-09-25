@@ -2991,13 +2991,37 @@ for its answer or fall back to a `void`.
 server and pad agree.
 **Data migration required:** NO.
 
-### SCRBRD-075 — Loose ends found building the toss fix
+### ~~SCRBRD-075~~ — CLOSED — Loose ends found building the toss fix
 **Priority:** P2/P3 · **Domain:** Scoring / sync
 - ~~**Acked ids are memory-only.**~~ **Closed 2026-09-24 with SCRBRD-074:** the outbox persists a `sent:` marker
   per key before each request, and undo asks `isUnsent`, so a reload (which re-offers the whole log) no longer
   makes an acknowledged ball look unsent; a live pad with no outbox attached voids. Was: After a reload, `syncedIds()` is empty, so offline, undo treats a ball the server already has as unsynced and cuts it locally instead of voiding it (heals online when duplicates come back acked). Persist acked ids, or ask the server before cutting. (P2)
-- **A toss answered offline is never sent.** If the pad cannot read the toss, asks the scorer, and the POST also fails, the answer is not retried; the server may also have held a different toss the pad could not read. The innings still follows the scorer's answer. Queue the toss like an event, or re-check on reconnect. (P3)
-- **Incoming handover device mints its own `innings_start`** when it opens a fixture with no saved log, with a new id. Check against docs/SCORING_HANDOVER_SPEC.md: the incoming device should replay the server's log, not start one. (P2 — needs a look)
+- ~~**A toss answered offline is never sent.**~~ **Closed 2026-09-25.** The answer is queued in the outbox, on
+  disk, before the innings it opens is recorded (`SyncEngine.queueToss`, key `toss:pending`), and every flush
+  settles it before sending any event (`settleToss`) — before the `innings_start` too, since the freeze trigger
+  (`match_toss_before_first_ball`) fires on ANY `ball_event` row, not only a delivery. Settling reads the
+  server's toss first and never writes over it (`tossDecision` in `packages/sync/src/attach.mjs`): none and no
+  event → recorded; the same → settled; different, nothing on the server and nothing on the pad but the
+  innings start → the pad follows the server's and re-opens its first innings from it (appended; the innings
+  start is never undone), in words; different with play recorded on the pad, or once the server has events →
+  STOPPED, in words, nothing more sent, no rule invented (below). Proved by `smoke-browser-offline-day` (the
+  toss answered with no signal is recorded before the first event reaches the server) and `sync-engine.test`
+  group J / `attach.test` group K. Was: If the pad cannot read the toss, asks the scorer, and the POST also fails, the answer is not retried; the server may also have held a different toss the pad could not read. The innings still follows the scorer's answer. Queue the toss like an event, or re-check on reconnect. (P3)
+  **Open, needs a product decision:** a toss conflict where the pad has recorded play under its own answer
+  (or the server already has events) has no resolution on the pad. The pad keeps everything and sends
+  nothing. Options: an explicit "record this pad's toss" (allowed by the server while it has no event), or a
+  scoring amendment when it has.
+- ~~**Incoming handover device mints its own `innings_start`**~~ **Closed 2026-09-25.** What happened, in the real
+  flow (`smoke-browser-handover`, run on the old code): the incoming device hydrated with nothing saved, read
+  the recorded toss and minted a first-innings `innings_start` under its own id; after the takeover its outbox
+  sent it and the server ACCEPTED it (the Laws do not refuse an `innings_start`) — the server's log gained a
+  second start, the incoming pad's log was 1 event against the server's 7, its board read 0/0 against 5/0,
+  and its next tap did not reach the server. The same for a device opening, for the first time, a fixture
+  someone else was scoring. Now a pad with nothing saved reads the server's log first and replays it (never
+  mints over it); the handover claim's log is taken by the pad before verification (anything the pad had
+  that the server did not is saved aside, `persist.js saveAside`); and before every claim the pad's log is
+  compared with the server's (`reconcile`, below), so a pad that could not ask at hydration (no signal)
+  cannot merge its own start into a started match. Was: when it opens a fixture with no saved log, with a new id. Check against docs/SCORING_HANDOVER_SPEC.md: the incoming device should replay the server's log, not start one. (P2 — needs a look)
 
 ### ~~SCRBRD-076~~ — CLOSED
 **Closed 2026-09-24.** `db/38_amendment_lock.sql` replaces `scoring_amendment_decide()` with db/02's body plus the
@@ -3031,6 +3055,72 @@ A contact, trajectory or placement value that violates a column CHECK makes `app
 the dismissal vocabulary already is) and refuse per event.
 
 ### SCRBRD-078 — A live pad that loads without signal never syncs until it is reloaded with signal
+**Two of three closed 2026-09-25; the third is a proposal awaiting a product decision (below).**
+
+> **Closed: the pad reopens offline, and the claim is retried.** A live fixture's pad reopens from what the device
+> holds — its sides saved with the session (`scorerCfg`), its log saved by the pad — when there is no session or no
+> signal (`App.jsx`). The outbox opens WITH the pad, unattached (`SyncEngine` built with `epoch: null`): every event
+> is queued on disk at once, stamped with the generation this device last held (`meta:epoch`), and nothing is sent
+> until it attaches. Attaching (`tryAttach`, `packages/sync/src/attach.mjs`; wired by `PadSync` in
+> `apps/web/src/lib/sync.js`) reads the session (the heartbeat, which now also answers `state`), compares the pad's
+> log with the server's by id (`in_step` / `behind` → the pad takes the server's / `fork` → nothing merged, nothing
+> claimed), then claims and attaches with the epoch rule. It is retried on `online` and on a backing-off timer
+> while the reason is the network; every refusal is an answer said in words (`SyncBanner`) and not repeated. A
+> handover under way is never claimed past (the arming device's claim is its cancel), and a pad that reopened by
+> itself never claims a match another device has claimed since (`moved_on`: a person may, "Score on this
+> device"). Signed out, the pad says "Sign in to send N balls", keeps everything queued, and its sign-in is the
+> real one (the login page opened from a live pad never offers the demo; `apiStatus()` no longer remembers a
+> failed check made with no signal). While unattached, undo cuts only what the pad minted since it opened and
+> voids the rest. Proved end to end by `tools/smoke-browser-offline-day.mjs` (browser set); unit:
+> `sync-engine.test` groups H–L, `attach.test`.
+>
+> **Found and fixed on the way:** (1) the server keeps a lease 90 s after the last write it took and the client
+> sent no heartbeat, so an ATTACHED pad offline for more than 90 s sent everything it had queued into quarantine
+> — and the pill said "Sent" (quarantined events left the queue silently). Every flush now passes a gate: a lease
+> not known to be fresh is checked; a lapsed one still this device's (same state `active`, same epoch) is taken
+> back and the queue restamped; anything else stops sending, in words. Quarantined events now show as
+> "For review N". (2) A cancelled handover (the arming device's own claim) bumped the epoch and left the outbox
+> on the old one: every ball after a cancel went to quarantine. The cancel now re-attaches with the claim's
+> epoch. (3) The handover sheet's poll read a failed session read (null) as "handed over" and stopped a device
+> that still held the token. (4) Events queued by the outbox and lost from the pad's saved log (the tab dying
+> between the two writes) would have been sent and not shown; the comparison before a claim puts them back.
+>
+> **Open — the session: "a scorer should not have to log in again mid-over".** Not built; for the product owner.
+> Two facts frame it: the API token lives in memory (`lib/api.js`: readable storage would expose a credential of
+> a person who can score and read minors' data to any injected script), so every reload signs out; and it
+> expires after 30 minutes (`auth.mjs TOKEN.ttlSec`), and a production sign-in is a one-time code from the school
+> office — so a scorer cannot today finish a three-hour match in production without new codes mid-match, reload
+> or not. Options:
+>
+> - **A. A refresh endpoint (AUTH_SPEC item 4).** A short access token plus a rotating, device-bound refresh
+>   token, stored hashed server-side (a table: a migration), one-time use with reuse detection revoking the
+>   family, an absolute lifetime (a school day), revoked on sign-out and by the office. Fixes expiry for every
+>   role. The hard part is where the refresh token lives: in memory it dies with the reload like the access
+>   token; in IndexedDB/localStorage it is a long-lived bearer credential any injected script can read and
+>   replay from anywhere — a strictly larger exposure than today's; as an HttpOnly, Secure, SameSite=Strict
+>   cookie it is unreadable by script but needs the API on the web app's site (today the API is a separate
+>   Cloud Run origin, i.e. a third-party cookie, which browsers block) and CSRF protection on the refresh route.
+> - **B. A narrowly scoped, device-bound resume credential for the pad.** Issued on a successful claim, bound to
+>   (user, device, match), good for exactly: the heartbeat/claim of that match while the token is still this
+>   device's (the same rules as `tryAttach`), appending that match's events, and reading that match's log and
+>   toss — nothing else (no pupils, no medical, no other match). Held with proof of possession: a
+>   non-extractable WebCrypto key pair made on the device, the private key kept as a CryptoKey in IndexedDB
+>   (usable by the page, not exportable), each request signed (DPoP-like), so a copied credential is useless
+>   off the device. Expires at the end of the match day, and is revoked when the match completes, the token
+>   moves (handover, force-release), the device signs out, or the office revokes it. A reloaded pad then
+>   re-attaches and sends by itself; the rest of the app stays signed out. Blast radius of misuse: scoring one
+>   match from one device, which that scorer could already do. Costs: a new credential type and principal
+>   scope in `auth-db`/RLS (a migration, Opus review), and WebCrypto needs a secure context — a laptop serving
+>   the app over plain http at a ground falls back to signing in.
+> - Rejected: storing the access token (the XSS reason in `lib/api.js`, and it still expires) and a longer TTL
+>   (widens every stolen token's window and does not survive a reload).
+>
+> Recommendation for the decision: B for the pad, A for everyone later — B fixes exactly the mid-over failure with
+> the smallest exposure. Questions for the owner: may a reloaded (or unlocked, lost) phone keep scoring its match
+> without the person re-entering anything until the credential ends; what that end is (the match day, the result);
+> and whether the API can move onto the web app's site (which is what makes the cookie variant of A possible).
+
+#### (original entry)
 **Priority:** P2 · **Domain:** Scoring / sync · **Type:** offline resilience
 **Found 2026-09-24** building the SCRBRD-074 walk. Three linked gaps, each by design or by omission:
 - The API token lives in memory only (`lib/api.js`), so every reload signs the scorer out of the server; the
@@ -3045,7 +3135,19 @@ known never to have been sent) — correct, but it leaves a trace for each mis-t
 live fixture's pad from its saved log offline; decide whether a reload may keep the session (the handover
 spec's "a scorer should not have to log in again mid-over").
 
-### SCRBRD-079 — Outbox `sent:` markers are never cleared
+### ~~SCRBRD-079~~ — CLOSED — Outbox `sent:` markers are never cleared
+
+> **Closed 2026-09-25.** Once the match is over on the pad (the second innings closed) or the server refuses the
+> claim as `match_complete`, and the device's log is the server's (attached, or found all there by the comparison
+> before a claim), and nothing waits — no event queued, none held, no toss unsent, no flush or record in progress —
+> the pad calls `SyncEngine.clearOutbox()`, which calls `indexedDbStorage.clearMatch()` and itself refuses while
+> anything waits. What the server had is saved with the log (`serverHas`), so reopening a finished match queues none
+> of it again. Devices that queued events before the markers existed: the first comparison before a claim marks
+> every event the server has as sent (`markSent`), and until then the pad treats as never-sent only what it minted
+> since it opened. Proved by `smoke-browser-offline-day` group F (the storage is empty after the last ball is
+> acknowledged, and stays empty across a reload) and `sync-engine.test` group K.
+
+#### (original entry)
 **Priority:** P3 · **Domain:** Scoring / sync
 SCRBRD-074 writes one `sent:<key>` entry per event per match+device to `scrbrd-outbox`, and keeps it for good
 (it is what tells undo, after a reload, that a ball has left the device). A few hundred small keys per match;
@@ -3136,7 +3238,7 @@ date; the `matches` read now asks it too) and three security_invoker views, `pla
 `player_bowling_by_season`, `player_dismissals_by_season`, each its lifetime view with the same predicates and rule
 functions, grouped by player and season. A new read, `career_by_season` (one row per player per season; `?season=`
 narrows it), rather than a parameter on `career`, which stays byte-for-byte what it was. The Awards tab opens on the
-current season, offers only seasons with figures and "All seasons" (= `career`, unchanged). Proved by `db/99` §21
+current season, offers only seasons with figures and "All seasons" (= `career`, unchanged). Proved by `db/99` §22
 (invoker, school A sees nothing of school B, the Johannesburg calendar at the New Year line, exact per-season figures
 over every fold rule, and Σ seasons = lifetime for every player as seven principals — each assertion falsified once)
 and `smoke-browser-awards` (API invariant for three readers; each season's lists, row for row; "All seasons" = the
@@ -3178,3 +3280,23 @@ commits. Pass the token's device (the principal carries it) and refuse a batch t
   there was already refused by its policy (`403`) — the unmapped `23503` behind it now maps to `404`, and the comment
   says so; a date sent as a list is refused by name (was `500 22007`); a batch
   with an event missing its key, device or client seq is `400 malformed_event` (was `500 23502`, resent for ever).
+
+### SCRBRD-089 — Loose ends found building the offline match day (SCRBRD-078/075/079)
+**Priority:** P2/P3 · **Domain:** Scoring / sync · **Found 2026-09-25**
+- **No heartbeat while the pad is open.** The spec's lease is refreshed "by heartbeat (~20s) and by any ball
+  written"; the client only writes. Every lull longer than 90 s (a drinks break, the innings break, rain) lapses
+  the lease, and `scoring_claim` hands a lapsed lease to any device that opens the pad. The flush gate now takes
+  back only the device's OWN lapsed token (same state, same epoch) and stops, in words, when another device has
+  claimed — but whether an open pad should hold the match through a break (and so block an admin's force-release
+  for as long as it is open) is a decision. (P2)
+- **A fork has no resolution on the pad.** When the pad's log and the server's each have events the other lacks,
+  nothing is merged, nothing is claimed, and both stay where they are (the pad's on the device, said in words).
+  The spec's route for such events is quarantine for a supervisor; a forked device does not send its side there
+  today. Decide whether it should (it needs a way to send as a non-holder on purpose), or whether a person
+  reconciles from the device. (P2 — product decision)
+- **"For review N" is memory-only.** Quarantined events are counted on the pill for the session they were sent in;
+  after a reload the pad no longer says so (the server's quarantine panel still does). (P3)
+- **A toss conflict with play recorded under the pad's answer stops sending** and has no resolution on the pad —
+  see SCRBRD-075. (P3 — product decision)
+- **The 30-minute token and one-time office codes** mean a production scorer must be issued a new code to go on
+  sending mid-match — see SCRBRD-078's open item. (P1 before launch)
