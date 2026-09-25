@@ -97,6 +97,34 @@ be placed on the list, or the test fails.
   in `db/08`). One number has to be chosen: 5 for everything, or 5 for the squad and
   14 for the figures. This is not a public-page question and does not block §1–§4.
 
+## 5a. How the rule reads in code (`packages/policy/src/public.mjs`)
+
+Encoded 2026-09-25. Where the decisions above left a gap, the code takes the reading
+below. Each is a product call Kameel can overturn; the code changes with it.
+
+- **Consent is judged on the day a page is served, not the match day.** That is what
+  makes a withdrawal reach past scorecards (C3). It also means a consent recorded
+  today names a boy on his old scorecards, and that pages carrying names cannot be
+  cached past the day.
+- **The latest record governs.** If two guardians disagree, the later one decides, and
+  a "no" is never outvoted by an earlier "yes".
+- **At 18 (C6):** once he has given his own record, only his records count, so his
+  "no" beats a guardian's standing "yes". A record he made before 18 counts for
+  nothing. No date of birth reaches the public read: the database works out
+  "he was 18 that day" and passes only yes or no (keeping N1 true).
+- **A boy playing up an age group (C4):** if either his own age group or the side's
+  has names switched off, he is not named.
+- **Never public, beyond §3's words:** bowling-workload breaches (a record about a
+  boy's body), the reason colours were withdrawn (can be a conduct matter), and a
+  pupil's login email and a guardian's list of linked children.
+- **Names:** the formatter guesses the surname from the full name. It is wrong for a
+  two-word surname with no particle ("Maria Santos Silva" → "M Silva") and for a
+  name stored surname-first without a comma ("Khumalo Sipho" → "K Sipho", which
+  shows a first name). The step 2 migration adds a stored surname so nothing is
+  guessed.
+- **Not covered by this rule yet:** a pupil who scores (the rule treats scorers as
+  adults) — his name as an official needs the same consent.
+
 ## 6. What has to be built before the first public page
 
 1. **The rule in code:** `packages/policy/src/public.mjs`, pure, with tests (the
