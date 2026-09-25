@@ -3292,7 +3292,8 @@ fold's innings being played, and `innings_score_as_folded()` to the fold in ever
 base commit, then `node tools/migrate.mjs` from this tree — "1 applied, 44 already applied" — and `--verify` green.
 
 ### SCRBRD-091 — The opposition window: 5 days or 14
-**Priority:** P2 · **Domain:** Scouting / privacy · **Type:** decision needed (from SCRBRD-083, 2026-09-25)
+**Priority:** P2 · **Domain:** Scouting / privacy · **Type:** decision (from SCRBRD-083, 2026-09-25) — **decided and
+built 2026-09-25**
 Kameel's note on the public-data sheet (A7): "Opposing schools will have access to each other's team squads 5 days
 prior to their head-to-head fixtures." The built opposition dossier (signed-in, cross-school: squad and ball-log
 figures) opens `opposition_window_days()` = **14** days before (`db/08`). Choose 5 for everything, or 5 for the squad
@@ -3300,8 +3301,32 @@ and 14 for the figures; then a migration replaces the function (it is IMMUTABLE 
 and `db/99`'s dossier section moves with it.
 **Decided 2026-09-25 (Kameel):** "14 days seems excessive; 5-7 days would be more than appropriate for an opposition
 to do their due diligence and homework." Set to **5 days**, one window for squad and figures: the shortest in the
-range, per POPIA's minimisation principle; 7 is a one-number change if coaches want a full week. Building as
-`db/46_opposition_window.sql`.
+range, per POPIA's minimisation principle; 7 is a one-number change if coaches want a full week.
+**Built 2026-09-25:** `db/46_opposition_window.sql` replaces `opposition_window_days()` to answer 5 — same signature,
+LANGUAGE sql, IMMUTABLE, oid, owner and grants (a snapshot check at the end of the file refuses anything else
+moving). **Dependents:** `opposition_side()` (db/08, plpgsql, definer) is the only caller and computes `opens_at` from
+it on every call; `opposition_context()` and `opposition_squad()` reach it only through that plpgsql definer, which is
+never inlined; no view, index, constraint, default, generated column, policy, trigger condition, statistics object or
+BEGIN ATOMIC body calls it (pg_depend and the text of every stored expression and function body searched); nothing
+stores a value derived from it, so there is no data to move. A plan cached in an open session is invalidated when the
+function is replaced (walked with two sessions on Postgres 16), so the API needs no restart. The dossier's shut-window
+text (`apps/web/src/views/dossier.jsx`) said "fourteen days" of its own; it now states the days between the
+`opens_at` and `closes_at` the server sends. **Proof:** the file's own check builds two schools, a coach and fixtures
+four and six days out inside a block it rolls back, reads `opposition_side()` as the coach (open / `not_yet_open`),
+and refuses to commit if anything was left behind — applied to an empty database and to a seeded one; falsified with
+the body at 14 (the value, and with that check skipped, "six days out answered open") and at 3 ("four days out
+answered not_yet_open"). `db/99` §24, as the Westville 1XI coach: four days out open with the squad read; six days out
+`not_yet_open`, opening later, no squad and no counts; the value 5, last — red with the function at 14 (six days),
+3 (four days) and 4 (the value: the edges cannot tell 4 from 5, the constant does). §21's fixture moved from a week
+out to a day inside the window, read from the function. **Walks moved** (7 days out was inside the old window, outside
+the new): `smoke-opposition` (`soon`, `solo` 7 → window − 1 = 4; a new fixture at window + 1 = 6 is not yet open,
+opens the window's length before the first ball, and reads no squad and no count; the window asserted to be 5 once),
+`smoke-browser-dossier` (`soon`, `solo`, `wrongSide` 7 → 4; the shut dossier moved from 40 days out to 6 and asserts
+the screen states the server's number, not "fourteen"), `smoke-free-hit` and `smoke-fold-figures` (their
+`opposition_squad()` fixture, 7 days → window − 1). Docs: `docs/policy/PUBLIC_DATA.md` §5 resolved, the screen map,
+the roadmap card. Rehearsed as production: a database built at the base commit (db/00–45), then `node
+tools/migrate.mjs` from this tree — "1 applied, 45 already applied" — and `--verify` green. **To ship:** paste
+`apply-46` and `verify` (DEPLOYING.md, "The procedure"), then record db/46 in `db/SHIPPED.sha256`.
 
 ### SCRBRD-092 — Photo and video sharing for registered users
 **Priority:** P3 · **Domain:** Community · **Type:** feature (from SCRBRD-083, 2026-09-25)

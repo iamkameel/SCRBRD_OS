@@ -12,7 +12,8 @@ import { Metric, MetricGroup, dash } from "../ui/data.jsx";
 //  say has already been decided before a row reaches here: two SECURITY
 //  DEFINER functions in db/08 check that this reader holds opposition.read at
 //  THEIR side of this exact fixture, that the fixture is a head-to-head
-//  between two tenants, and that the fourteen-day window before it is open.
+//  between two tenants, and that the window before it is open — five days
+//  since db/46 (SCRBRD-091), stated here only as the server reports it.
 //  No standing means no rows — not a refusal with a reason, because a reason
 //  would confirm the fixture exists.
 //
@@ -54,7 +55,7 @@ const REASON = {
   },
   not_yet_open: {
     title: "The window has not opened yet",
-    body: "A dossier opens fourteen days before the first ball. Until then it is a standing file on other people's children, which is not what this is for.",
+    body: (head) => `A dossier opens ${windowLength(head)} before the first ball. Until then it is a standing file on other people's children, which is not what this is for.`,
   },
   fixture_started: {
     title: "The window has closed",
@@ -69,6 +70,17 @@ const EVIDENCE = themed(() => ({
   moderate:     { label: "fair",     tone: D.sky },
   high:         { label: "strong",   tone: D.emerald },
 }));
+
+/**
+ * How long before the first ball the window opens, from the two ends the
+ * server sent rather than a number of this file's own: the length is
+ * opposition_window_days() (db/46), and a copy here is a copy that drifts.
+ * Rounded, because a day across a clock change is not 86 400 000 ms.
+ */
+function windowLength(head) {
+  const days = Math.round((Date.parse(head?.closesAt) - Date.parse(head?.opensAt)) / 86400000);
+  return Number.isFinite(days) && days > 0 ? `${days} day${days === 1 ? "" : "s"}` : "a set time";
+}
 
 const day = (t) => (t ? new Date(t).toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" }) : "—");
 const dayTime = (t) => (t ? new Date(t).toLocaleString("en-ZA", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—");
@@ -148,7 +160,7 @@ function OppositionDossier({ match, role, onClose }) {
           return (
             <div data-testid={`dossier-shut-${head.reason}`}>
               <div style={{ fontFamily: D.head, fontSize: "14px", fontWeight: 700, color: D.textPrimary, marginBottom: "6px" }}>{r.title}</div>
-              <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textSecondary, lineHeight: 1.6, maxWidth: "560px" }}>{r.body}</div>
+              <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textSecondary, lineHeight: 1.6, maxWidth: "560px" }}>{typeof r.body === "function" ? r.body(head) : r.body}</div>
               {head.reason === "not_yet_open" && head.opensAt && (
                 <div style={{ fontFamily: D.mono, fontSize: "12px", color: D.sky, marginTop: "12px" }}>Opens {dayTime(head.opensAt)}</div>
               )}

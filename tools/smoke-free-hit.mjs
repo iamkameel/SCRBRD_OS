@@ -304,14 +304,14 @@ async function career() {
   return { dismissals, wickets, dismissalBy, wicketBy };
 }
 
-/** opposition_squad() for a fixture against the other school, as a coach of this one. */
+/** opposition_squad() for a fixture against the other school, a day inside the window (db/46), as a coach of this one. */
 async function opposition(home, away, coachEmail) {
   const c = await pool.connect();
   try {
     await c.query("BEGIN");
     const m = (await c.query(
       `insert into match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
-       values ($1,'1XI',$2,'1XI','the other side', now() + interval '7 days', 'cricket','T20',20,'scheduled') returning id`,
+       values ($1,'1XI',$2,'1XI','the other side', now() + make_interval(days => opposition_window_days() - 1), 'cricket','T20',20,'scheduled') returning id`,
       [home, away])).rows[0].id;
     await c.query(`update feature_flag set enabled = true, locked = false where key = 'opposition'`);
     await c.query(`delete from feature_suppression where key = 'opposition'`);

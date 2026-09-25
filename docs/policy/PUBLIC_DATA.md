@@ -49,7 +49,7 @@ ground for publishing it on these pages is the prior consent of a competent pers
 | A4 | A public page per player | Never |
 | A5 | The honours board | Only honours marked public (`honour.is_public`), names by the L2 rule |
 | A6 | Milestones (fifty, five-for) | **Automatically on the live page, under the L2 rule** (the one answer that differs from the recommendation, which was news posts only) |
-| A7 | Team sheets before the match | Not public; the school's own channels. *Note: "Opposing schools will have access to each other's team squads 5 days prior to their head-to-head fixtures."* See §5. |
+| A7 | Team sheets before the match | Not public; the school's own channels. *Note: "Opposing schools will have access to each other's team squads 5 days prior to their head-to-head fixtures."* The signed-in dossier now opens 5 days before (§5). |
 | A8 | Photographs of pupils | None on public pages. *Note: photo and video sharing will come later, for registered users only.* |
 | D1 | Search engines | Public pages are not indexed |
 | D2 | The stream overlay (built) | Brought under the L2 consent rule |
@@ -91,11 +91,16 @@ be placed on the list, or the test fails.
 
 ## 5. Open
 
-- **The opposition window (A7 note).** The note says opposing schools see each other's
-  squads 5 days before their fixture. The opposition dossier that is built (signed-in,
-  cross-school: squad and figures) opens **14 days** before (`opposition_window_days()`
-  in `db/08`). One number has to be chosen: 5 for everything, or 5 for the squad and
-  14 for the figures. This is not a public-page question and does not block §1–§4.
+Nothing. The one item this section held is decided:
+
+- **The opposition window (A7 note) — decided 2026-09-25, built (SCRBRD-091).** The note
+  says opposing schools see each other's squads 5 days before their fixture; the
+  opposition dossier (signed-in, cross-school: squad and figures) opened 14 days before.
+  Kameel: "14 days seems excessive; 5-7 days would be more than appropriate for an
+  opposition to do their due diligence and homework." **Five days, for everything the
+  dossier opens — squad and figures alike.** `db/46_opposition_window.sql` sets
+  `opposition_window_days()` to 5. It was never a public-page question: the dossier is
+  signed-in, and nothing about it is public under §1–§4.
 
 ## 5a. How the rule reads in code (`packages/policy/src/public.mjs`)
 

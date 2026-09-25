@@ -371,22 +371,25 @@ BEGIN
   RETURN n;
 END $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- db/43. opposition_squad() opens only for a scheduled fixture a side is in,
--- inside its window, with the feature on (db/08). A Hilton–Westville 1XI
--- fixture a week out, and the feature on; called by §21 alone, owner-written,
--- rolled back with everything else.
-CREATE OR REPLACE FUNCTION _opposition_fixture_43() RETURNS uuid AS $$
+-- db/43, db/46. opposition_squad() opens only for a scheduled fixture a side
+-- is in, inside its window (opposition_window_days(), five days since db/46),
+-- with the feature on (db/08). A Hilton–Westville 1XI fixture p_days out, and
+-- the feature on; owner-written, rolled back with everything else. §21 reads
+-- a squad through one a day inside the window; §24 puts one either side of
+-- the window's edge.
+CREATE OR REPLACE FUNCTION _opposition_fixture(p_days integer) RETURNS uuid AS $$
+DECLARE v_id uuid;
 BEGIN
-  INSERT INTO match (id, school_id, team_code, away_school_id, away_team_code, opponent, starts_at,
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at,
                      sport, format, overs, status)
-  VALUES ('77777777-0000-0000-0000-0000000043a0', '11111111-1111-1111-1111-111111111111', '1XI',
-          '22222222-2222-2222-2222-222222222222', '1XI', 'Westville Boys'' High', now() + interval '7 days',
+  VALUES ('11111111-1111-1111-1111-111111111111', '1XI',
+          '22222222-2222-2222-2222-222222222222', '1XI', 'Westville Boys'' High', now() + make_interval(days => p_days),
           'cricket', 'T20', 20, 'scheduled')
-  ON CONFLICT DO NOTHING;
+  RETURNING id INTO v_id;
   UPDATE feature_flag SET enabled = true, locked = false WHERE key = 'opposition';
   DELETE FROM feature_suppression WHERE key = 'opposition';
   DELETE FROM feature_grant WHERE key = 'opposition';
-  RETURN '77777777-0000-0000-0000-0000000043a0'::uuid;
+  RETURN v_id;
 END $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Past RLS, because each claim below is "exactly these rows and no others",
@@ -3525,7 +3528,9 @@ BEGIN
     f1 record; f2 record;               -- bowler_innings_figures(BO, this innings): mid, after
     wb1 bigint; wb2 bigint;             -- BO's wicket breakdown, method not recorded: mid, after
   BEGIN
-    M_OPP := _opposition_fixture_43();
+    -- A day inside the window, whatever the window is: this section is about
+    -- the figures the squad read returns, and §24 about when it opens.
+    M_OPP := _opposition_fixture(opposition_window_days() - 1);
     PERFORM _as(U_OWNER);
     d_n0_0 := coalesce(player_dismissals_since(N0, NULL), 0);
     d_nf_0 := coalesce(player_dismissals_since(NF, NULL), 0);
@@ -4118,6 +4123,46 @@ BEGIN
       format('db/45 (verify-ok): the second innings'' 14/1 off 3 did not verify (ok %s, epoch %s after %s)', v_ok, n, v_epoch));
   END;
   PERFORM set_config('app.device_id', '', true);
+  PERFORM set_config('app.user_id', '', true);
+
+  -- ── 24. The opposition window is five days (SCRBRD-091, db/46) ──────
+  -- Kameel, 2026-09-25: "14 days seems excessive; 5-7 days would be more
+  -- than appropriate". Five, and one window for everything the dossier opens,
+  -- squad and figures alike. The edge from both sides, read by a coach of a
+  -- side actually playing (the Westville 1XI, the away side): four days out
+  -- the window is open and the squad reads; six days out it is not yet open,
+  -- says when it will be, and discloses nothing — no squad, no count. The
+  -- number itself is asserted last, so a window moved off five goes red on
+  -- the edge it moved, not only on the constant.
+  DECLARE
+    U_WES_COACH uuid := '88888888-0000-0000-0000-00000000001a';  -- S Pillay, coach, Westville 1XI
+    M_FOUR uuid; M_SIX uuid;
+    s4 record; s6 record; c6 record;
+    q4 int; q6 int;
+  BEGIN
+    M_FOUR := _opposition_fixture(4);
+    M_SIX  := _opposition_fixture(6);
+    PERFORM _as(U_WES_COACH);
+    SELECT s.open, s.reason, s.my_school INTO s4 FROM opposition_side(M_FOUR) s;
+    SELECT s.open, s.reason, s.opens_at, s.closes_at INTO s6 FROM opposition_side(M_SIX) s;
+    SELECT count(*) INTO q4 FROM opposition_squad(M_FOUR);
+    SELECT count(*) INTO q6 FROM opposition_squad(M_SIX);
+    SELECT c.open, c.reason, c.games_analysed, c.deliveries_analysed INTO c6 FROM opposition_context(M_SIX) c;
+
+    -- (four) inside the window: open, and their squad reads
+    PERFORM _assert(s4.open AND s4.reason = 'open' AND s4.my_school = WES AND q4 > 0,
+      format('db/46 (four): a fixture four days out answered open %s, reason %s, %s squad rows — expected open, with Hilton''s 1XI to read',
+             s4.open, s4.reason, q4));
+    -- (six) outside it: not yet open, saying when, and nothing read
+    PERFORM _assert(s6.open = false AND s6.reason = 'not_yet_open' AND s6.opens_at > now() AND q6 = 0
+                    AND c6.open = false AND c6.reason = 'not_yet_open'
+                    AND c6.games_analysed IS NULL AND c6.deliveries_analysed IS NULL,
+      format('db/46 (six): a fixture six days out answered open %s, reason %s, opening %s, %s squad rows, context %s — '
+             || 'expected not_yet_open, opening at a time still to come, no squad and no counts', s6.open, s6.reason, s6.opens_at, q6, c6::text));
+    -- (value) five days, the decision
+    PERFORM _assert(opposition_window_days() = 5,
+      format('db/46 (value): opposition_window_days() answers %s, expected 5', opposition_window_days()));
+  END;
   PERFORM set_config('app.user_id', '', true);
 
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
