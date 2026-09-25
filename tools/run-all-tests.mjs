@@ -20,6 +20,9 @@ const SUITES = [
   ["separation","packages/policy/test/separation.test.mjs"],
   ["sensitivity","packages/policy/test/sensitivity.test.mjs"],
   ["invariants","packages/policy/test/invariants.test.mjs"],
+  // What a signed-out page may show about a pupil (SCRBRD-083): the surfaces,
+  // the never-public list against every masked column, the name rule.
+  ["public",   "packages/policy/test/public.test.mjs"],
   ["rating",   "packages/scoring/test/rating.test.mjs"],
   ["rubric",   "packages/scoring/test/rubric.test.mjs"],
   ["readiness","packages/scoring/test/readiness.test.mjs"],
