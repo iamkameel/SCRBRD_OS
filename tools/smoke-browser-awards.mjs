@@ -196,7 +196,13 @@ try {
   ok("signs in as the director of sport", await signIn(dos.page, /sarah@example\.invalid|Director/));
   ok("Leagues opens", await nav(dos.page, /Leagues/));
   ok("the Awards tab is offered", await click(dos.page, /^Awards$/i, 4000));
-  await dos.page.waitForTimeout(1200);
+  // Wait for the DATA, not a fixed time: the lists come from /read/career,
+  // and on a slower machine (CI) 1.2 s was not enough, so every name check
+  // failed on an empty screen. A timeout here is not a pass: the checks
+  // below still run and fail on whatever did render.
+  await dos.page.waitForFunction(
+    () => /Leading Bowler/.test(document.querySelector('[data-testid="season-awards"]')?.textContent ?? ""),
+    null, { timeout: 20000 }).catch(() => {});
   const awards = dos.page.locator('[data-testid="season-awards"]');
   ok("the Awards screen renders", await awards.count() === 1);
 
@@ -220,7 +226,12 @@ try {
   group("Scoped to team 9XI: the other team's star disappears entirely");
   ok("the team selector is offered", await dos.page.locator('[data-testid="awards-team-select"]').count() === 1);
   await dos.page.selectOption('[data-testid="awards-team-select"]', "9XI");
-  await dos.page.waitForTimeout(600);
+  // Same: wait until the scope has applied (the other team's star is gone and
+  // this team's is shown), not a fixed 600 ms. On timeout the checks decide.
+  await dos.page.waitForFunction(() => {
+    const t = document.querySelector('[data-testid="season-awards"]')?.textContent ?? "";
+    return !/Other Team Star/.test(t) && /Top Scorer/.test(t);
+  }, null, { timeout: 20000 }).catch(() => {});
   const scopedText = await awards.innerText();
   if (DEBUG) console.log("[debug] awards (team 9XI):\n" + scopedText);
   ok("Other Team Star is gone from every list once scoped to 9XI", !/Other Team Star/.test(scopedText), scopedText.slice(0, 400));
