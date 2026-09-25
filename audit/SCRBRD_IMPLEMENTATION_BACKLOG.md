@@ -3103,3 +3103,20 @@ keys: after the upgrade a re-offered, already-acknowledged ball reads as unsent 
 **Priority:** P2 · **Domain:** Analytics · **Type:** gap (follows SCRBRD-084)
 The `career` read aggregates every match the reader can see, with no season parameter, so the Awards tab is correct
 only while a school has one season of history. Add a season-scoped read (RLS-reviewed, Opus) and a season selector.
+
+### SCRBRD-087 — The lease check trusts the device the batch names
+**Priority:** P3 · **Domain:** Scoring / sync · **Type:** hardening
+**Found 2026-09-25** typing `events-api.mjs`. `appendEvents` calls `scoring_lease_check(match, events[0].deviceId,
+events[0].epoch)` with the device from the request body, not the token's. Writes stay bound to the token's device by
+the ball_event INSERT policy, so nothing is written by it; but the same user on a second device can keep the first
+device's lease alive with a batch that writes nothing (all duplicates, conflicts or refusals), and that refresh
+commits. Pass the token's device (the principal carries it) and refuse a batch that names another.
+
+### Fixed 2026-09-25, found typing `events-api.mjs` (no backlog number needed)
+- **A held second-innings event was released into the first innings.** The release built its row with the envelope's
+  innings (the pad always sends 0), not the event's own. Now it uses `columnsFor()`, the live path's mapping; the held
+  copy's fingerprint was taken over the same object, so a resend after release is a duplicate, not a conflict.
+  `smoke-quarantine` proves it (50 passed, 3 failed on the old code).
+- The events routes answer a missing capability `403 not_permitted` (was `500 42501`); weather for a match that is not
+  there is `404 no_such_match` (was `500 23503`); a date sent as a list is refused by name (was `500 22007`); a batch
+  with an event missing its key, device or client seq is `400 malformed_event` (was `500 23502`, resent for ever).

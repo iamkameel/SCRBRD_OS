@@ -169,10 +169,12 @@ JSDoc.
 **What is checked.** `tsconfig.json`'s `include` is the strict list — today
 `packages/policy` (source and tests), `packages/sync`, `packages/scoring`
 (source and tests) and `services/api`. Every file on it must have zero errors.
-Its `exclude` holds the holes: `services/api/write/events-api.mjs`, which is the
-next file to bring in. An excluded file is loaded when a listed one imports it,
-but its own errors are not counted and lint treats it as off the list;
-`tools/typecheck-scope.test.mjs` refuses an exclusion it does not name. A file on the list that imports one off it (sync imports
+Its `exclude` holds the holes — none today but `**/node_modules`
+(`services/api/write/events-api.mjs`, the last, came onto the list on
+2026-09-25). An excluded file is loaded when a listed one imports it, but its
+own errors are not counted and lint treats it as off the list;
+`tools/typecheck-scope.test.mjs` refuses an exclusion it does not name
+(`HOLES_CEILING`) and one that reopens a closed hole (`CLOSED_HOLES`). A file on the list that imports one off it (sync imports
 `@scrbrd/scoring`) pulls it into the program so its inferred types flow in, but
 `tools/typecheck.mjs` does not count the outside file's own errors;
 `node tools/typecheck.mjs --all` shows them.

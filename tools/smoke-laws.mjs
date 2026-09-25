@@ -363,6 +363,17 @@ try {
     ok(`${constraint} and placement.mjs list the same values`,
        JSON.stringify(inCheck) === JSON.stringify(Object.values(vocab).sort()), `${def} vs ${Object.values(vocab)}`);
   }
+  group("An event without its identity is refused at the door, and nothing is written");
+  const rowsBeforeNameless = await rowCount();
+  const nameless = await api(`/api/matches/${MATCH}/events`, { method: "POST", token, body: { events: [
+    envelope(stamp(0, ball({ type: BALL_TYPE.RUN, value: 1 }))),                // well-formed
+    { epoch, deviceId: DEVICE, clientSeq: ++clientSeq, clientTs: Date.now(), innings: 0,
+      payload: ball({ innings: 0, type: BALL_TYPE.RUN, value: 1 }) },   // no idempotencyKey
+  ] } });
+  ok("a batch with an event missing its key is a 400 naming it — it used to be a 500 the device resent for ever",
+     nameless.status === 400 && nameless.body?.error === "malformed_event", `${nameless.status} ${JSON.stringify(nameless.body)}`);
+  ok("...and not even the well-formed event beside it was written", (await rowCount()) === rowsBeforeNameless);
+
 } catch (e) {
   ok(`the walk threw: ${e.message?.slice(0, 200)}`, false);
   console.log(e.stack?.split("\n").slice(0, 4).join("\n"));

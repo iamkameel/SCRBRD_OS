@@ -158,6 +158,9 @@ try {
      (await weather(m, head, { condition: "Fine", uvIndex: 99 })).status === 400);
   ok("a second reading replaces the first, it does not stack",
      (await q(`select 1 from match_weather where match_id = $1`, [m])).length === 1);
+  const nowhere = await weather("00000000-0000-0000-0000-00000000dead", head, { condition: "Fine" });
+  ok("weather for a match that is not there is a 404, not a 500",
+     nowhere.status === 404 && nowhere.body?.error === "no_such_match", `${nowhere.status} ${JSON.stringify(nowhere.body)}`);
 
   // ── PITCH REPORT ─────────────────────────────────────────────
   group("The pitch report");
@@ -251,6 +254,9 @@ try {
      (await condition(head, { drainageMin: 601 })).status === 400);
   ok("a mistyped date is refused by name rather than by type",
      (await condition(head, { lastMown: "05/09/2026" })).status === 400);
+  const listDate = await condition(head, { lastMown: ["2026-09-05"] });
+  ok("a date sent as a list is refused by name too — it used to reach Postgres and come back 500",
+     listDate.status === 400 && listDate.body?.error === "last_mown_must_be_yyyy_mm_dd", JSON.stringify(listDate.body));
   ok("an empty report is not a report",
      (await condition(head, {})).status === 400);
   ok("a second report corrects the first rather than adding to it",

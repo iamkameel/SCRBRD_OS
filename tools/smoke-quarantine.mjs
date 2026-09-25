@@ -12,7 +12,7 @@
  *   node tools/smoke-quarantine.mjs
  */
 import { spawn } from "node:child_process";
-import { inningsStart, batters, bowler, ball, BALL_TYPE, fromRow, deriveInnings, REFUSAL, REFUSAL_TEXT } from "@scrbrd/scoring";
+import { inningsStart, batters, bowler, ball, BALL_TYPE, fromRow, deriveInnings, sealInnings, REFUSAL, REFUSAL_TEXT } from "@scrbrd/scoring";
 
 const PORT = 8886, BASE = `http://127.0.0.1:${PORT}`;
 const MATCH = "77777777-0000-0000-0000-000000000002";
@@ -210,6 +210,36 @@ try {
      changedH.body?.conflicts?.length === 1 && !changedH.body?.accepted?.length && (await log(dos)).length === lengthBefore,
      JSON.stringify(changedH.body));
   ok("...and the held copy stays for a person", !(await rowFor(keyOf(41)))?.resolved_at);
+
+  group("A held ball from the second innings is released into the second innings");
+  // The pad's envelope always says innings 0 (apps/web/src/lib/sync.js builds
+  // its SyncEngine with innings: 0); the event's own innings rides in the
+  // payload, and the live path stores that. The release used to store the
+  // envelope's instead — a second-innings ball written into the first.
+  const firstOf = (rows) => deriveInnings(rows.filter((r) => (r.innings ?? 0) === 0).map(fromRow));
+  const inn0 = firstOf(await log(dos));
+  const second = await post(scorer, DEV_A, epoch, [
+    { ...sealInnings(inn0, "declared"), innings: 0 },
+    inningsStart({ innings: 1, battingTeam: "MHS", bowlingTeam: "HIL", overs: 20, target: inn0.runs + 1 }),
+    batters({ innings: 1, striker: P[2], nonStriker: P[3] }), bowler({ innings: 1, bowler: P[0] }),
+  ], 50);
+  ok("the first innings is sealed and the second opens, live", second.body?.accepted?.length === 4, JSON.stringify(second.body).slice(0, 300));
+  ok("...and the live path stores the second innings as innings 1", (await log(dos)).filter((r) => r.innings === 1).length === 3);
+  const late = ball({ innings: 1, type: BALL_TYPE.RUN, value: 2, striker: P[2], nonStriker: P[3], bowler: P[0] });
+  const held2 = await postKeyed(scorer, DEV_A, epoch + 7, keyOf(60), late, 60);
+  ok("a second-innings ball sent one handover behind is held", held2.body?.quarantined?.length === 1, JSON.stringify(held2.body));
+  const row2 = await rowFor(keyOf(60));
+  const released2 = row2 ? await resolve(row2.id, dos, { accept: true }) : null;
+  ok("...and released", released2?.body?.ok === true, JSON.stringify(released2?.body));
+  const logged2 = await log(dos);
+  const stored2 = logged2.find((r) => r.idempotency_key === keyOf(60) || r.idempotencyKey === keyOf(60));
+  ok("...into the second innings, where it was bowled — not the first", stored2?.innings === 1, `innings ${stored2?.innings}`);
+  const inn0After = firstOf(logged2);
+  ok("...and the first innings' figures did not move", inn0After.runs === inn0.runs && inn0After.balls === inn0.balls,
+     `runs ${inn0.runs} → ${inn0After.runs}, balls ${inn0.balls} → ${inn0After.balls}`);
+  const resent2 = await postKeyed(scorer, DEV_A, epoch, keyOf(60), late, 60);
+  ok("the device resending that ball live gets 'duplicate' — the released row says what the held one said",
+     resent2.body?.duplicates?.length === 1 && !resent2.body?.conflicts?.length, JSON.stringify(resent2.body));
 
   const unknown = await resolve(999999, dos, { accept: true });
   ok("an id that does not exist is a 404", unknown.status === 404);

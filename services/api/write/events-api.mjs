@@ -214,6 +214,23 @@ const FINGERPRINT_OF = `ball_event_fingerprint(jsonb_populate_record(null::ball_
 export async function appendEvents(pool, secret, bearer, matchId, events) {
   if (!Array.isArray(events) || events.length === 0) { const e = /** @type {DressedError} */ (new Error("no_events")); e.status = 400; throw e; }
 
+  // AN EVENT WITHOUT ITS IDENTITY CANNOT BE ANSWERED FOR. Every result bucket
+  // is keyed by idempotencyKey, so an event missing its key, its device or its
+  // client seq cannot be settled on its own: the INSERT failed its NOT NULL
+  // (23502) and the whole batch came back 500 — which a device resends for
+  // ever. Refused here instead, before anything is written, as a 400 that names
+  // the first one. packages/sync always sets all three; this is for any other
+  // producer.
+  events.forEach((ev, i) => {
+    if (!ev || typeof ev.idempotencyKey !== "string" || ev.idempotencyKey === ""
+        || typeof ev.deviceId !== "string" || ev.deviceId === ""
+        || !Number.isInteger(ev.clientSeq)) {
+      const e = /** @type {DressedError} */ (new Error("malformed_event"));
+      e.status = 400; e.detail = { index: i };
+      throw e;
+    }
+  });
+
   // THE VOCABULARY IS CLOSED AT THIS DOOR. A wicket names how the batter was
   // out from packages/scoring's DISMISSAL, or it is not recorded: the bowler's
   // figures and the free-hit rule both read that value, and a spelling
@@ -491,6 +508,10 @@ export function eventRoutes({ pool, secret }) {
         const out = await appendEvents(pool, secret, req.headers?.authorization, req.params.id, req.body?.events || []);
         res.json(out);
       } catch (/** @type {any} */ e) {
+        // 42501: the database refused the caller (no scoring.edit here). Every
+        // other route in this file answers that 403 not_permitted; this one
+        // answered 500 and logged it as unexpected.
+        if (e.code === "42501") return res.status(403).json({ error: "not_permitted" });
         if (!e.status) console.error("append →", e.code || "", e.message, e.detail || "", e.column || "");
         res.status(e.status || 500).json({ error: e.code || e.message });
       }
@@ -500,7 +521,10 @@ export function eventRoutes({ pool, secret }) {
       try {
         const rows = await readEvents(pool, secret, req.headers?.authorization, req.params.id, Number(req.query?.since || 0));
         res.json({ matchId: req.params.id, events: rows });
-      } catch (/** @type {any} */ e) { res.status(e.status || 500).json({ error: e.code || e.message }); }
+      } catch (/** @type {any} */ e) {
+        if (e.code === "42501") return res.status(403).json({ error: "not_permitted" });
+        res.status(e.status || 500).json({ error: e.code || e.message });
+      }
     },
   };
 }
@@ -727,7 +751,14 @@ export function quarantineRoutes({ pool, secret }) {
             if (!d) { const e = /** @type {DressedError} */ (new Error("dismissal_unknown")); e.status = 400; e.detail = { value: payload.dismissal ?? null }; throw e; }
             payload.dismissal = d;
           }
-          row = { ...toRow(payload), innings: q[0].body?.innings };
+          // The row the live path would have written: columnsFor(), the one
+          // mapping, so the event's own innings (in its payload) wins over the
+          // envelope's. This used to take the envelope's — which the web pad
+          // always sends as 0 — so a held second-innings ball was released
+          // into the first: refused as innings_closed if that innings was
+          // sealed, written into it if not. The same object is what the held
+          // copy's fingerprint was taken over, so a resend matches.
+          row = columnsFor(q[0].match_id, { ...q[0].body, payload });
         }
         await client.query("savepoint quarantine_release");
         let rows;
@@ -1366,7 +1397,9 @@ export function conditionsRoutes({ pool, secret }) {
       if (e.code === "23514") return res.status(400).json({ error: "invalid_value", detail: e.message });
       // school_id came back NULL: match_school() found nothing, so the match
       // does not exist or is not visible to this principal.
-      if (e.code === "23502") return res.status(404).json({ error: "no_such_match" });
+      // 23503: match_weather has no school column, so a match that is not there
+      // fails its foreign key instead — the case the weather route's note means.
+      if (e.code === "23502" || e.code === "23503") return res.status(404).json({ error: "no_such_match" });
       const status = e.code === "42501" ? 403 : (e.status || 500);
       res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
     }
@@ -1398,7 +1431,9 @@ export function conditionsRoutes({ pool, secret }) {
   /** @param {any} v  a body field as sent; returned only once it reads as a date @param {string} field */
   const date = (v, field) => {
     if (v == null || v === "") return null;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(v))) throw err(`${field}_must_be_yyyy_mm_dd`);
+    // typeof first: String(["2026-01-01"]) passes the pattern, and the array
+    // then reached Postgres, which answered 22007 — a 500 for a bad field.
+    if (typeof v !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(v)) throw err(`${field}_must_be_yyyy_mm_dd`);
     if (Number.isNaN(Date.parse(v))) throw err(`${field}_invalid`);
     return v;
   };
