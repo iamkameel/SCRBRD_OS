@@ -3369,6 +3369,17 @@ Two Law 41 questions Kameel is researching before deciding; nothing is built unt
    redesign's step 2 lands.
 2. A bowler suspended mid-over (SCRBRD-080's unbuilt half): Law 41 says he may not bowl again in the innings.
 
+### SCRBRD-095 — Loose ends from the pad redesign (step 2)
+**Priority:** P2/P3 · **Domain:** Scorer UI · **Found 2026-09-26** redrawing the pad.
+1. **Declared profile vs what is captured (P2).** The three-phase pad records a sector (stamped `standard` on each
+   ball) while setup declares `full` by default, so a default innings reads "declared full" while holding only sector
+   placements. Older than the redesign. Either default the declaration to `standard` or make Area capture a point;
+   the second changes events, so decide first.
+2. **Pro mode** keeps its old hub and cards styling with sub-12px text; smoke-a11y does not measure it.
+3. **The other sheets** (toss, openers, new over, innings end, handover) are not yet at the type and touch floors;
+   only the wicket sheet and the shared close button are.
+4. After choosing from the pad menu, the menu button keeps its focus ring.
+
 ### SCRBRD-090 — The live score and the target leave out penalty runs
 **Priority:** P2 · **Domain:** Scoring / broadcast · **Type:** bug (found fixing SCRBRD-088, 2026-09-25)
 `match_live_score` sums `value`, which a `penalty` row does not carry, so the public board (`broadcast_state()`),
