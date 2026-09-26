@@ -262,7 +262,7 @@ CREATE OR REPLACE FUNCTION public_name_giver_is_me(p_assignment uuid) RETURNS bo
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 REVOKE ALL ON FUNCTION public_name_giver_is_me(uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public_name_giver_is_me(uuid) TO PUBLIC;
+GRANT EXECUTE ON FUNCTION public_name_giver_is_me(uuid) TO scrbrd_app;
 
 -- Read: the office that records them (guardian.link.manage at the child's
 -- school, the same test db/08's link functions make), and a giver his own
@@ -433,7 +433,7 @@ BEGIN
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 REVOKE ALL ON FUNCTION public_name_consent_set(uuid, boolean, text, uuid, text, date) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public_name_consent_set(uuid, boolean, text, uuid, text, date) TO PUBLIC;
+GRANT EXECUTE ON FUNCTION public_name_consent_set(uuid, boolean, text, uuid, text, date) TO scrbrd_app;
 
 
 -- ── 3 · The never-public mark (C5) ─────────────────────────────────
@@ -496,7 +496,7 @@ BEGIN
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 REVOKE ALL ON FUNCTION player_never_public_set(uuid, text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION player_never_public_set(uuid, text) TO PUBLIC;
+GRANT EXECUTE ON FUNCTION player_never_public_set(uuid, text) TO scrbrd_app;
 
 /**
  * End a child's mark. The row stays, end-dated. The same capability as
@@ -520,7 +520,7 @@ BEGIN
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 REVOKE ALL ON FUNCTION player_never_public_end(uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION player_never_public_end(uuid) TO PUBLIC;
+GRANT EXECUTE ON FUNCTION player_never_public_end(uuid) TO scrbrd_app;
 
 
 -- ── 4 · A school's names-off switch, per age group (C4) ────────────
@@ -601,7 +601,7 @@ BEGIN
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 REVOKE ALL ON FUNCTION public_names_off_set(uuid, text, boolean) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public_names_off_set(uuid, text, boolean) TO PUBLIC;
+GRANT EXECUTE ON FUNCTION public_names_off_set(uuid, text, boolean) TO scrbrd_app;
 
 
 -- ── 5 · Publishing: a fixture side by side, and a competition (L1, A1) ──
@@ -683,7 +683,7 @@ BEGIN
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 REVOKE ALL ON FUNCTION fixture_publish(uuid, text, boolean) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION fixture_publish(uuid, text, boolean) TO PUBLIC;
+GRANT EXECUTE ON FUNCTION fixture_publish(uuid, text, boolean) TO scrbrd_app;
 
 /**
  * Whether one side of a fixture is published — for the signed-out read
@@ -701,7 +701,7 @@ CREATE OR REPLACE FUNCTION fixture_side_published(p_match uuid, p_side text) RET
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 REVOKE ALL ON FUNCTION fixture_side_published(uuid, text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION fixture_side_published(uuid, text) TO PUBLIC;
+GRANT EXECUTE ON FUNCTION fixture_side_published(uuid, text) TO scrbrd_app;
 
 CREATE TABLE IF NOT EXISTS competition_publication (
   competition_id uuid PRIMARY KEY REFERENCES competition(id) ON DELETE CASCADE,
@@ -741,7 +741,7 @@ BEGIN
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 REVOKE ALL ON FUNCTION competition_publish(uuid, boolean) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION competition_publish(uuid, boolean) TO PUBLIC;
+GRANT EXECUTE ON FUNCTION competition_publish(uuid, boolean) TO scrbrd_app;
 
 /** Whether a competition's page is published, for the signed-out read. */
 CREATE OR REPLACE FUNCTION competition_published(p_competition uuid) RETURNS boolean AS $$
@@ -749,7 +749,7 @@ CREATE OR REPLACE FUNCTION competition_published(p_competition uuid) RETURNS boo
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 REVOKE ALL ON FUNCTION competition_published(uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION competition_published(uuid) TO PUBLIC;
+GRANT EXECUTE ON FUNCTION competition_published(uuid) TO scrbrd_app;
 
 
 -- ── 6 · The facts publicName() needs, and nothing else ─────────────
@@ -837,7 +837,36 @@ RETURNS jsonb AS $$
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 REVOKE ALL ON FUNCTION public_name_facts(uuid, text, date) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public_name_facts(uuid, text, date) TO PUBLIC;
+GRANT EXECUTE ON FUNCTION public_name_facts(uuid, text, date) TO scrbrd_app;
+
+
+-- ── Who may call these: the application, and nobody else ──────────
+-- Each function above is granted to scrbrd_app only, the role the API connects
+-- as (services/api/server.mjs); the signed-out public read of §6 step 3 runs
+-- on the server as that role too. Not PUBLIC. On a managed host, the
+-- platform's API roles get EXECUTE on every new function in public by default
+-- privilege, directly and not through PUBLIC (db/29 found this), so they are
+-- taken back from those roles here. Otherwise anyone holding the platform's
+-- anonymous key could ask public_name_facts() whether any child carries a
+-- never-public mark: a safeguarding fact, reached by a player id.
+DO $revoke_platform_roles$
+DECLARE r text; f text;
+BEGIN
+  FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
+      FOREACH f IN ARRAY ARRAY[
+          'public_name_giver_is_me(uuid)', 'public_name_live_link(uuid,uuid,text)',
+          'public_name_consent_set(uuid,boolean,text,uuid,text,date)',
+          'player_never_public_set(uuid,text)', 'player_never_public_end(uuid)',
+          'public_names_off_set(uuid,text,boolean)',
+          'fixture_publish(uuid,text,boolean)', 'fixture_side_published(uuid,text)',
+          'competition_publish(uuid,boolean)', 'competition_published(uuid)',
+          'public_name_facts(uuid,text,date)'] LOOP
+        EXECUTE format('REVOKE ALL ON FUNCTION %s FROM %I', f, r);
+      END LOOP;
+    END IF;
+  END LOOP;
+END $revoke_platform_roles$;
 
 
 -- ── Refuse to commit a file that did not do what it says ───────────
@@ -849,6 +878,26 @@ DECLARE
   v_cols int;
   v_keys text;
 BEGIN
+  -- Nobody but the application (and the owner) may call any of them: not
+  -- PUBLIC, and not a managed host's API roles where they exist.
+  FOREACH f IN ARRAY ARRAY[
+      'public_name_giver_is_me(uuid)', 'public_name_live_link(uuid,uuid,text)',
+      'public_name_consent_set(uuid,boolean,text,uuid,text,date)',
+      'player_never_public_set(uuid,text)', 'player_never_public_end(uuid)',
+      'public_names_off_set(uuid,text,boolean)',
+      'fixture_publish(uuid,text,boolean)', 'fixture_side_published(uuid,text)',
+      'competition_publish(uuid,boolean)', 'competition_published(uuid)',
+      'public_name_facts(uuid,text,date)'] LOOP
+    IF EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
+                WHERE p.oid = f::regprocedure AND x.grantee = 0 AND x.privilege_type = 'EXECUTE') THEN
+      RAISE EXCEPTION 'db/47: % is executable by PUBLIC', f;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_roles r WHERE r.rolname IN ('anon', 'authenticated')
+                  AND has_function_privilege(r.oid, f::regprocedure, 'EXECUTE')) THEN
+      RAISE EXCEPTION 'db/47: % is executable by a managed host''s API role', f;
+    END IF;
+  END LOOP;
+
   -- Every definer here pins its search path (db/16).
   FOREACH f IN ARRAY ARRAY[
       'public_name_giver_is_me(uuid)', 'public_name_live_link(uuid,uuid,text)',
