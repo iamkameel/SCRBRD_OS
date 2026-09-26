@@ -55,7 +55,7 @@ const MATCH = "77777777-0000-0000-0000-000000000002";   // 1XI v Michaelhouse: n
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".jpg": "image/jpeg", ".map": "application/json" };
 
 const BATTING_REASONS = ["helmet_struck", "illegal_fielding", "ball_tampering", "fielding_time_wasting", "unfair_play", "fielding_restrictions", "other"];
-let HOME = "";
+let HOME;
 const FIELDING_REASONS = ["obstruction_distraction", "pitch_damage", "protected_area", "striking_pitch", "time_wasting", "other"];
 
 let pass = 0, fail = 0;
