@@ -3341,7 +3341,9 @@ the policy package before any screen.
 `packages/sync/src/attach.mjs`): the pad records the toss offline and settles it before any event; if the server
 has a different toss and nothing depends on it, the pad follows the server's; if play is already recorded under the
 pad's own toss, the pad stops sending and says so, and a person settles it through a scoring amendment. No code
-change. **Follow-up (UX):** a toss animation accompanies the recording on the pad (Kameel) — build with the pad's
+change. **"Live" means a real coin** (Kameel): the captains toss a physical coin at the ground; the scorer records
+who won and what they chose. **Follow-up (UX):** an animation accompanies that recording on the pad — it plays the
+result the scorer entered and never decides it (no random or virtual coin anywhere in the app). Build with the pad's
 toss sheet (`scorer/toss.jsx`), reduced motion honoured, after step 2 of the redesign lands.
 
 ### SCRBRD-094 — Awaiting Kameel's research: penalty runs to the fielding side, and a bowler suspended mid-over
