@@ -5,6 +5,11 @@
   "type": "module",
   "description": "The offline outbox: a durable queue that gets a scorer's ball log off the device, in order, exactly once.",
   "main": "./src/index.mjs",
-  "exports": { ".": "./src/index.mjs" },
-  "dependencies": { "@scrbrd/scoring": "workspace:*" }
+  "exports": {
+    ".": "./src/index.mjs",
+    "./pad-proof": "./src/pad-proof.mjs"
+  },
+  "dependencies": {
+    "@scrbrd/scoring": "workspace:*"
+  }
 }

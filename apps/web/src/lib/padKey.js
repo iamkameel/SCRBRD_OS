@@ -39,7 +39,10 @@
  */
 import { api } from "./api.js";
 import { deviceId } from "./device.js";
-import { padCryptoAvailable, newPadKeyPair, padPublicJwk, padProof, padAuthorization } from "@scrbrd/sync";
+// The subpath, not the package: the package's index re-exports the whole
+// outbox (and through it the scoring engine), and session.js, which is in the
+// entry chunk, imports this file. The signing module stands alone.
+import { padCryptoAvailable, newPadKeyPair, padPublicJwk, padProof, padAuthorization } from "@scrbrd/sync/pad-proof";
 
 const DB = "scrbrd-pad";
 const STORE = "credentials";
