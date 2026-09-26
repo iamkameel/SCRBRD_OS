@@ -573,4 +573,4 @@ fielding side but a short run's once the match is decided (`match_decided`: it w
 and the board's target (`broadcast_state()` states `innings_target_as_folded()`, the fold's `inn.target`, else the
 previous innings' credited total plus one). `penalty_credit_as_folded()` is `penaltyCredits()` in SQL. The live score
 and derby reads follow the view. `tools/smoke-fold-figures.mjs` holds the fold to every one of them over generated logs
-with awards to both sides; db/99 §25 holds each rule.
+with awards to both sides; db/99 §26 holds each rule.

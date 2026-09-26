@@ -3445,7 +3445,7 @@ back. The live_score and derby_record reads follow the view; the summary read ha
 checked: none wanted anything but the fold's total. The door: `lawsRefusal` refuses `runs` that are not a whole number
 above nought (`penalty_runs_invalid`). Proof: `tools/smoke-fold-figures.mjs` (awards to both sides over generated
 two-sided innings: credit, target, live score and handover count agree with the fold in every innings),
-`tools/smoke-handover-innings.mjs`, db/99 §25 (8 assertions, each falsified once), replay and laws suites.
+`tools/smoke-handover-innings.mjs`, db/99 §26 (8 assertions, each falsified once), replay and laws suites.
 
 ### SCRBRD-087 — The lease check trusts the device the batch names
 **Priority:** P3 · **Domain:** Scoring / sync · **Type:** hardening

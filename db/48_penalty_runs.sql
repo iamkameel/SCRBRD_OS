@@ -92,7 +92,7 @@
 -- PROVED BY: the block at the end of this file (a match it builds and rolls
 -- back: both sides' awards, a completed innings raised, a next innings
 -- opened on the award, a target raised mid-chase and one the umpires typed,
--- a two-innings match); db/99 §25; tools/smoke-fold-figures.mjs (the fold
+-- a two-innings match); db/99 §26; tools/smoke-fold-figures.mjs (the fold
 -- and every SQL total agree over generated logs with awards to both sides);
 -- tools/smoke-handover-innings.mjs.
 
