@@ -9,7 +9,7 @@ import { canScore, holdsCapability } from "../rbac/index.js";
 import { Btn, EmptyState } from "../ui/primitives.jsx";
 import { Bento, BentoCard } from "../ui/surfaces.jsx";
 import { Board } from "../ui/board.jsx";
-import { Icon } from "../ui/icons.jsx";
+import { Icon, isIcon } from "../ui/icons.jsx";
 
 // ══════════════════════════════════════════════════════
 //  THE DAY SHEET (DESIGN_DIRECTION §5) — replaces the KPI dashboard.
@@ -206,7 +206,7 @@ function DashboardView({ role, onNav, onOpenScorer }) {
                   {busTime && <div style={{ ...T.role.body, color: T.content.secondary }}><Icon name="bus"/> Bus {busTime}</div>}
                   {w && (
                     <div style={{ ...T.role.body, color: T.content.secondary }}>
-                      <Icon name={typeof w.icon === "string" ? w.icon : "cloud-sun"}/> {w.tempC}° {String(w.condition ?? "").toLowerCase()}
+                      <Icon name={isIcon(w.icon) ? w.icon : "cloud-sun"}/> {w.tempC}° {String(w.condition ?? "").toLowerCase()}
                       {w.rainChancePct >= 40 ? ", rain likely" : ""}
                     </div>
                   )}
