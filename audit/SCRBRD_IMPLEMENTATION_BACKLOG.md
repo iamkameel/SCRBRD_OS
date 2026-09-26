@@ -3367,11 +3367,38 @@ the roadmap card. Rehearsed as production: a database built at the base commit (
 tools/migrate.mjs` from this tree — "1 applied, 45 already applied" — and `--verify` green. **To ship:** paste
 `apply-46` and `verify` (DEPLOYING.md, "The procedure"), then record db/46 in `db/SHIPPED.sha256`.
 
-### SCRBRD-092 — Photo and video sharing for registered users
+### SCRBRD-092 — Photo and video sharing for registered users, and the consent to it at sign-up
 **Priority:** P3 · **Domain:** Community · **Type:** feature (from SCRBRD-083, 2026-09-25)
 Kameel's note (A8): photos and videos shared socially, registered users only. Never on public pages (the rule's A8).
 Needs its own consent (a child's face is not covered by consent to be named), storage, and moderation; design with
 the policy package before any screen.
+
+**Consent at sign-up, decided in shape 2026-09-26 (Kameel):** "we would need to find a way in our terms and conditions
+to allow us to get POPIA permissions from the parent/guardian by them agreeing to use the app." Schools post pupils'
+photos to social media freely today; the platform should capture permission at the guardian's sign-up, but not by
+bundling it into the terms. POPIA allows a child's information to be processed on the prior consent of a competent
+person, and consent must be voluntary, specific and informed. A consent that is a condition of using the app is
+neither voluntary nor specific. So: one sign-up flow, separate consents.
+1. **Terms and privacy notice (required).** They cover what running the service needs, inside the signed-in app:
+   fixtures, scores and team sheets. The school is the responsible party and SCRBRD its operator, under a data
+   processing agreement per school. The guardian-link consent (db/08, versioned) is this record already.
+2. **Separate opt-ins on the same screen, off by default, each optional, each withdrawable in Settings:**
+   - public name: built (db/47, `public_name_consent`);
+   - photos and video of my child shared inside the app with registered users: **new, this entry**;
+   - photos on public pages or the school's social media: **not built.** PUBLIC_DATA A8 decided "no photos on
+     public pages". A tick box here would reopen A8, which is Kameel's decision; until he makes it, the screen
+     does not offer it.
+3. **Records like db/47's:** versioned, end-dated and never deleted, with the giver being a verified guardian (or the
+   pupil himself from 18). The office may record consent from the school's own admission forms, naming the form and
+   its date. The never-public mark (C5) overrides every media consent, as it does names. Withdrawal takes effect
+   everywhere at once, including photos already shared.
+4. **Deliverables before any photo feature:**
+   - the consent records (a migration, Opus);
+   - the sign-up consent screen and a plain-language privacy notice;
+   - a data processing agreement template for schools.
+
+   The wording goes to the school's information officer, or a POPIA attorney, before it ships: the platform's
+   wording is not legal advice.
 
 ### SCRBRD-093 — The toss, decided: offline allowed, the server's toss wins
 **Priority:** P2 · **Domain:** Scoring / sync · **Type:** decision (Kameel, 2026-09-26)
