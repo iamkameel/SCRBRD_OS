@@ -33,6 +33,13 @@
  *
  * Checked against Postgres and IndexedDB, not the page.
  *
+ * This is the day of a phone WITHOUT the pad's resume credential (SCRBRD-078
+ * option B): one where none could be issued, as on a page served over plain
+ * http, which is not a secure context. The credential the claim in A earns
+ * is forgotten on the phone before the first reload, which leaves it exactly
+ * as such a phone would be: signed out on every reload, and saying so.
+ * smoke-browser-pad-resume.mjs is the same day with one.
+ *
  *   node tools/migrate.mjs --reset --seed
  *   pnpm build && node tools/smoke-browser-offline-day.mjs
  *   BROWSER_OFFLINE_DAY_DEBUG=1 node tools/smoke-browser-offline-day.mjs
@@ -288,6 +295,15 @@ try {
   ok("the pad claimed the match", await until(async () =>
     (await dbq(`select 1 from scoring_session where match_id = $1 and state = 'active'`, [MATCH])).length === 1, 6000));
 
+  // A phone with no resume credential (see the header): the one the claim
+  // earned is forgotten here, once the server has issued it.
+  ok("the claim earned a resume credential", await until(async () =>
+    (await dbq(`select 1 from pad_resume_credential where match_id = $1 and revoked_at is null`, [MATCH])).length === 1, 8000));
+  await page.evaluate(() => new Promise((resolve) => {
+    const q = indexedDB.deleteDatabase("scrbrd-pad");
+    q.onsuccess = q.onerror = q.onblocked = () => resolve(null);
+  }));
+
   group("B. The page loads with no signal: the pad reopens, the toss is answered, and play goes on");
   await ctx.setOffline(true);
   await page.reload({ waitUntil: "domcontentloaded" });
@@ -403,14 +419,19 @@ try {
   ok("...played out and closed: the match is over", await playOutTheOver(["0", "0", "0", "0", "0", "0"]));
   ok("the result is on screen", await until(async () => /Match Complete/i.test(await text()), 6000));
   ok("once the queue is empty, the match's outbox storage is gone — sent markers and all",
-     await until(async () => (await outboxKeys())?.length === 0, 15000), JSON.stringify(await outboxKeys()));
+     await until(async () => (await outboxKeys())?.length === 0, 15000), `${await pill()} ${JSON.stringify(await banner())} ${JSON.stringify(await outboxKeys()).slice(0, 80)}`);
   const sF = await serverIds();
   const pF = await padIds();
   ok("...and only then: the server has the whole log, id for id", sF.length > pE.length && same(sF, pF), `${sF.length} v ${pF.length}`);
   ok("...two innings closed on the server", (await dbq(`select count(*)::int n from ball_event where match_id = $1 and kind = 'innings_end'`, [MATCH]))[0].n === 2);
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForTimeout(3500);
-  ok("reopened, the finished match is not queued again", (await outboxKeys())?.length === 0, JSON.stringify(await outboxKeys()));
+  // The sign-in in E earned this phone a resume credential again, so the
+  // reopened pad re-attaches by itself: the comparison before its claim
+  // marks the server's events sent (storage, for a moment), and the finished
+  // match's outbox is cleared again once it is attached with nothing waiting.
+  ok("reopened, the finished match is not queued again",
+     await until(async () => (await outboxKeys())?.length === 0, 15000), `${await pill()} ${JSON.stringify(await banner())} ${JSON.stringify(await outboxKeys()).slice(0, 80)}`);
   ok("...and the pad does not ask to send anything", !/Sign in to send \d/.test((await banner()).text), JSON.stringify(await banner()));
   ok("no application errors", errors.length === 0, errors.slice(0, 3).join(" | "));
 } catch (e) {
