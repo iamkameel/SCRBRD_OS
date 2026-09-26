@@ -56,14 +56,21 @@ const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/cs
  *
  * Measured 2026-09-25 on the demo build, 1280×720, as Head Coach. The pad
  * was 44; step 2 (the pad on the new foundations, 2026-09-26) took it to 0.
+ * Step 3 (the day sheet, 2026-09-26) took the dashboard to 18 — the KPI
+ * tiles' own 8/9/10/11px labels are gone with them; the 18 that remain are
+ * the shell (Sidebar, TopBar) every screen carries, not the day sheet's own
+ * markup. Match Centre's own scores, dates and card buttons moved onto the
+ * 12px floor the same day, to 31; its remainder is the same shell plus
+ * Badge/Pill/WeatherChip, shared components step 3's "light touch" left for
+ * their own screens rather than widening this change into every user.
  */
 const TYPE_FLOOR_CEILING = {
   landing:     5,
   login:       13,
-  dashboard:   91,
-  matchcentre: 59,
+  dashboard:   18,
+  matchcentre: 31,
   pad:         0,
-};                   // 168 in all
+};                   // 68 in all
 
 /**
  * Things tapped under 44px, on the pad (§3.5, §3.8: "no tappable element

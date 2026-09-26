@@ -203,7 +203,7 @@ try {
   await driver.page.waitForTimeout(1000);
   const landing = await text(driver.page);
   ok("the day-of driver screen is drawn", await tid(driver.page, "dayof-driver").count() === 1);
-  ok("...not the ordinary dashboard", !/Upcoming Fixtures/.test(landing) && await tid(driver.page, "kpi-row").count() === 0);
+  ok("...not the ordinary dashboard (day sheet)", !/Next fixture/.test(landing) && await tid(driver.page, "day-sheet").count() === 0);
   ok("...with exactly one trip card for today", await tid(driver.page, "driver-trip").count() === 1,
      `${await tid(driver.page, "driver-trip").count()} cards`);
   ok("...and it is his", await tid(driver.page, "driver-trip").first().getAttribute("data-trip-id").catch(() => null) === tripId);
@@ -290,7 +290,7 @@ try {
   ok("the test groundskeeper signs in", await signIn(gk.page, gkEmail));
   const gkLanding = await text(gk.page);
   ok("the day-of groundskeeper screen is drawn", await tid(gk.page, "dayof-groundskeeper").count() === 1);
-  ok("...not the ordinary dashboard", !/Upcoming Fixtures/.test(gkLanding) && await tid(gk.page, "kpi-row").count() === 0);
+  ok("...not the ordinary dashboard (day sheet)", !/Next fixture/.test(gkLanding) && await tid(gk.page, "day-sheet").count() === 0);
   ok("...naming the fixture's time", /09:00/.test(gkLanding));
   ok("...the ground it is at", /Gordon Sherwood Oval/.test(gkLanding));
   ok("...and the format", /T20/.test(gkLanding));
@@ -322,10 +322,10 @@ try {
   const head = await open();
   ok("the director of sport signs in", await signIn(head.page, "sarah@example.invalid"));
   const headText = await text(head.page);
-  ok("the ordinary dashboard is drawn for them", await tid(head.page, "kpi-row").count() === 1);
+  ok("the ordinary dashboard (day sheet) is drawn for them", await tid(head.page, "day-sheet").count() === 1);
   ok("...not either day-of screen",
      await tid(head.page, "dayof-driver").count() === 0 && await tid(head.page, "dayof-groundskeeper").count() === 0);
-  ok("...with its own upcoming-fixtures card", /Upcoming Fixtures/.test(headText));
+  ok("...with its own next-fixture section", /Next fixture/.test(headText));
   ok("no console errors for the director of sport", head.errors.length === 0, head.errors.join(" | "));
   await head.ctx.close();
 } catch (e) {
