@@ -270,6 +270,9 @@ export function padCredentialRoutes({ pool, secret, now = Date.now }) {
     revoke: async (req, res) => {
       try {
         const userId = req.body?.userId ?? null;
+        if (userId !== null && (typeof userId !== "string" || !/^[0-9a-f-]{36}$/i.test(userId))) {
+          res.status(400).json({ error: "bad_user" }); return;
+        }
         const r = await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) =>
           (await client.query(`select * from pad_resume_revoke($1, $2)`, [req.params.id, userId])).rows[0]);
         if (!r?.ok) { res.status(403).json({ error: r?.reason ?? "not_permitted" }); return; }

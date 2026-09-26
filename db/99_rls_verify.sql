@@ -4871,6 +4871,7 @@ BEGIN
   -- was the FIRST assertion in the file to go red:
   --
   --   (guards)          pad_scope_select dropped from sport
+  --   (definers)        a new SECURITY DEFINER function asking fixture.read
   --   (issue-holder)    pad_resume_issue() without its token-holder check
   --   (issue-shape)     pad_jwk_is_public_p256() answering true
   --   (reissued)        the 'reissued' UPDATE and the one-live index gone
@@ -4927,6 +4928,20 @@ BEGIN
                           AND p.polname = 'pad_scope_' || cm.cmd AND p.polcmd = cm.code::"char");
     -- (guards)
     PERFORM _assert(n = 0, format('db/50 (guards): %s command(s) behind RLS have no pad guard: %s', n, detail));
+
+    -- (definers) The SECURITY DEFINER functions that ask about one of the
+    -- credential's own capabilities (fixture.read, scoring.edit) — or the
+    -- scoring.start it lacks — by name: app_can() narrows every one to the
+    -- credential's match, so each is a door the credential may reach there,
+    -- and db/50's header says why each is safe. A new one is a new door, and
+    -- fails here until somebody has looked at it and added it to this list.
+    SELECT string_agg(p.proname, ',' ORDER BY p.proname) INTO detail
+      FROM pg_proc p JOIN pg_namespace ns ON ns.oid = p.pronamespace
+     WHERE ns.nspname = 'public' AND p.prosecdef
+       AND (p.prosrc LIKE '%''fixture.read''%' OR p.prosrc LIKE '%''scoring.edit''%' OR p.prosrc LIKE '%''scoring.start''%');
+    PERFORM _assert(detail = 'duty_status,duty_suspended,pad_resume_issue,pad_resume_reclaim,scoring_arm_handover,scoring_claim,'
+                             || 'scoring_claim_handover,scoring_lease_check,scoring_verify_takeover,trip_fixture_driver_only',
+      format('db/50 (definers): the definer functions asking a pad capability by name are %s — a new one needs looking at', detail));
 
     -- ── Issued to the phone that holds the token, and only then ──
     PERFORM _scoring_session_reset(F1);
