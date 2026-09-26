@@ -456,6 +456,8 @@ try {
   ok("the review closes to the pad, the innings over and not yet sealed", !(await has("innings-review")));
   const rowsE0 = (await serverEvents()).length;
   const boardE0 = await board();
+  const subE0 = await said("board-sub");
+  const stateE0 = await said("pad-state");
   await openSheet("pad-penalty");
   await tap("penalty-side-fielding");
   const early = await said("penalty-refusal");
@@ -479,7 +481,10 @@ try {
   await closeSheet();
   await settle();
   ok("nothing was sent: the server has the same rows", (await serverEvents()).length === rowsE0);
-  ok("...and the board did not move", (await board()) === boardE0, `${boardE0} / ${await board()}`);
+  ok("...and the board did not move, nor its chase line", (await board()) === boardE0 && (await said("board-sub")) === subE0,
+     `${boardE0} · ${subE0} / ${await board()} · ${await said("board-sub")}`);
+  ok("...and the pad holds nothing refused: its state line is as it was", (await said("pad-state")) === stateE0 && !/Refused|Held/i.test(await said("pad-state")),
+     `${stateE0} / ${await said("pad-state")}`);
   ok("the batting side's award is not refused after the result (as the Laws have it)", await (async () => {
     await openSheet("pad-penalty"); await tap("penalty-side-batting"); await tap("penalty-reason-other");
     const r = !(await has("penalty-refusal")) && await awardEnabled();
