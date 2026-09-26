@@ -910,7 +910,8 @@ body{background:${T.surface.canvas};color:${T.content.primary};font-family:${T.t
   }
   .pressBtn:active{transform:none}
   .card-hover:hover{transform:none}
-  .os-insight-in,.mc-moment,.mc-moment-big{animation:none!important}
+  .os-insight-in{animation:none!important}
+  .mc-moment,.mc-moment-big{animation:none!important}
 }
 
 /* ── ScrbrdOS responsive layer — mobile first ── */
