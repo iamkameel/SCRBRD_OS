@@ -45,5 +45,6 @@
   "44_career_by_season.sql",
   "45_handover_this_innings.sql",
   "46_opposition_window.sql",
-  "47_public_data.sql"
+  "47_public_data.sql",
+  "48_penalty_runs.sql"
 ]
