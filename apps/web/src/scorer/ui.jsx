@@ -43,6 +43,20 @@ const GS = () => (
     .pad-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:${T.space.sm};padding:${T.space.sm} ${T.space.lg};max-width:640px;margin:0 auto}
     .pad-head{display:grid;gap:${T.space.sm};align-content:start;min-width:0}
     .pad-main{min-width:0}
+    /* The pad's strip (Wide, No ball, Dot, Undo) on a phone: where the pad
+       is taller than the screen — a small Android, the shot grid in four
+       columns — it docks 16px above the bottom bar (4px inset + 54px bar +
+       16px) instead of falling below the fold. Where the pad fits it sits in
+       its place and nothing moves. The canvas-coloured ring and the panel
+       under it mask the keys that scroll beneath, down to the bar, so no half
+       key shows between the strip and the bar. Phones only: a desktop pad
+       has room. */
+    @media(max-width:880px){
+      .pad-strip-dock{position:sticky;bottom:calc(74px + env(safe-area-inset-bottom));z-index:10;
+        background:${T.surface.canvas};box-shadow:0 0 0 ${T.space.sm} ${T.surface.canvas}}
+      .pad-strip-dock::after{content:"";position:absolute;left:-${T.space.lg};right:-${T.space.lg};top:100%;
+        height:calc(74px + env(safe-area-inset-bottom));background:${T.surface.canvas}}
+    }
     @media(min-width:1024px){
       .pad-layout{max-width:1320px}
       .pad-layout.pad-split{max-width:1200px;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:${T.space.xl};align-items:start}

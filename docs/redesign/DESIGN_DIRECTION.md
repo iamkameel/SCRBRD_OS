@@ -233,6 +233,28 @@ pair of chips and every pair of the semantic trio keeps ΔE of at least 20 under
 deficiencies that palette serves, and ordinary vision is never worse than 25. A new
 colour cannot land without clearing it.
 
+**Chosen, step 3b (2026-09-26)** — `tokens.js` `CHIPS` and `VISION`. The white wicket
+chip is counted as a chip. Worst pair, ΔE:
+
+| Chips | 1 | 2 | 3 | 4 (and 5) | 6 | extras | Normal | Protan | Deutan | Tritan |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Standard | `#ec4899` | `#b2e358` | `#f2c14b` | `#3b83f6` | `#dd514c` | `#8445f0` | 42 | 8 | 6 | 11 |
+| Red-green safe | `#cc6d99` | `#f7f08c` | `#f5b700` | `#56b4e9` | `#c8600a` | `#0062c4` | 41 | **25** | **30** | 13 |
+| Blue-yellow safe | `#dd44ae` | `#96da40` | `#f2c14b` | `#3b83f6` | `#f03a30` | `#8445f0` | 48 | 11 | 4 | **28** |
+
+Every chip is 3.28:1 or more on the board (the extras' purple in Standard, `#8445f0`, is
+3.8:1; the prototype's `#5200bc` was 1.9) and takes a figure at 4.7:1 or more: black on
+all of them, white on the extras. The semantic trio moves only where it failed: Red-green
+safe is sky blue / yellow / vermillion under lights (`#56b4e9`, `#f5d43f`, `#f0703c`,
+deutan worst 27) and blue / ochre / oxblood in daylight (`#1f5fa6`, `#7c5e00`, `#6a0e14`,
+deutan worst 28); Blue-yellow safe changes only the Floodlit critical text half, to
+`#ff5a5f` (tritan worst 45; the Daylight trio already clears it at 45). Every value still
+reads at AA on every surface of its theme. Batting, bowling and fielding already clear
+the floor in every palette and do not move. The wagon wheel's run colours became their
+own tokens (`T.run`), moved in the two safe palettes; Standard's are the wheel as it
+was, whose six and extras are the same amber (ΔE 4) — unchanged here, noted for its own
+step.
+
 ---
 
 ## 4. The pad
@@ -465,12 +487,13 @@ and where it lands:
     lighter purple or a `board.figure` ring.
 
   The prototype does not colour a dot, a 5, a wicket, a no-ball, byes or leg byes.
-  **Proposed, for Kameel to confirm:**
+  **Proposed, not objected to, built in step 3b:**
   - a dot is an unfilled dim "·";
   - a 5 is 4's blue;
   - a wicket is filled white with a black "W", the strongest mark on the board in
     every palette;
-  - a no-ball, byes and leg byes take the wide's purple, with their word on the chip.
+  - a no-ball, byes and leg byes take the wide's purple, with their word on the chip:
+    "wd", "nb" alone; with runs, the delivery's runs ("2wd", "5nb"); "2b", "1lb".
 - **School badges** (p1, p6, p7). A crest is not a pupil's data, so it may appear on
   public pages. `school` has no crest column yet: it needs a small migration and an
   upload, and the short code stands in until then, as p2 itself says.
@@ -506,6 +529,6 @@ and where it lands:
 | Step | Adds |
 |---|---|
 | 3b (new, small) | `Board`: `partnership` row, striker lit and dim, `insight` slot with rotation rules, ball chips in the prototype's colours; the colour-vision setting and its test (§3.9, SCRBRD-096); Opus, as `Board` sits on the pad and the setting is cross-cutting |
-| 3c (new, after step 3 lands) | Match Centre to the prototype: the match line (5), full names and codes (6), the scorecard layout (7), the tabs (9); Sonnet build, Opus review |
+| 3c (new, after step 3 lands) | Match Centre to the prototype: the match line (5), full names and codes (6), the scorecard layout (7), the tabs (9), and the Commentary tab on a shared, deterministic commentary engine (SCRBRD-098). Opus builds the generator in `packages/scoring`; Sonnet builds the screens; Opus reviews both |
 | SCRBRD-083 step 3 (public page) | the match line, the scorecard under the name rule, share, `noindex` |
 | later | school crest column and upload; the innings-break card; the opening player row |

@@ -4,7 +4,7 @@ import { T, inkOn } from "../design/tokens.js";
 import { Board } from "../ui/board.jsx";
 import { Icon } from "../ui/icons.jsx";
 import { SEGS } from "./field.js";
-import { RR, fmtOv } from "./format.js";
+import { boardFromInnings } from "./boardData.js";
 import { WagonWheel } from "./panels.jsx";
 import { ALL_SHOTS_FLAT, SHOT_CATS } from "./shots.js";
 
@@ -50,48 +50,15 @@ export function ExitKey({ onExit, inBar = false }) {
   );
 }
 
-/** The balls of an over as the board writes them. The same marks the ball dots used. */
-export function boardBall(b) {
-  if (b.type === "W") return "W";
-  if (b.type === "Wd") return b.value ? `Wd+${b.value}` : "Wd";
-  if (b.type === "Nb") return b.value ? `Nb+${b.value}` : "Nb";
-  if (b.type === "Pen") return `+${b.value}`;
-  if (b.type === "B") return `${b.value}b`;
-  if (b.type === "LB") return `${b.value}lb`;
-  return b.value ? String(b.value) : "·";
-}
-
 /**
- * The target, as a scorer says it: "Need 45 off 34". Null outside a chase.
- * @returns {{need: number, balls: number, rrr: string | null} | null}
+ * The board, fed from the fold. Every figure on it is the innings the log
+ * replays to. The pad gets the partnership, the striker lit and the chips, and
+ * NO insight: a line that changes by itself pulls the scorer's eye off the
+ * ball (§10). Tier 3 — the interrupt — is the pad's EventOverlay.
  */
-export function chaseLine(inn, target, overs) {
-  if (target == null || !inn) return null;
-  const balls = Math.max(0, overs * 6 - inn.balls);
-  const need = target - inn.runs;
-  return { need, balls, rrr: need > 0 && balls > 0 ? ((need / balls) * 6).toFixed(2) : null };
-}
-
-/** The board, fed from the fold. Every figure on it is the innings the log replays to. */
 export function PadBoard({ inn, match, target }) {
-  if (!inn) return null;
-  const st = inn.batsmen.find((b) => b.id === inn.striker);
-  const ns = inn.batsmen.find((b) => b.id === inn.nonStriker);
-  const bw = inn.bowlers.find((b) => b.id === inn.bowler);
-  const overs = inn.overs ?? match?.overs ?? 20;
-  const thisOver = inn.overLog.find((o) => o.over === Math.floor(inn.balls / 6))?.balls ?? [];
-  const crr = RR(inn.runs, inn.balls);
-  const chase = chaseLine(inn, target, overs);
-  const rates = [crr !== "—" ? `CRR ${crr}` : null, chase?.rrr ? `RRR ${chase.rrr}` : null].filter(Boolean).join(" · ");
-  const sub = chase
-    ? [chase.need > 0 ? `Need ${chase.need} off ${chase.balls}` : "Target reached", rates].filter(Boolean).join(" · ")
-    : rates || null;
-  return (
-    <Board team={inn.battingTeam} total={inn.runs} wickets={inn.wickets} overs={fmtOv(inn.balls)} sub={sub}
-      batters={[st, ns].filter(Boolean).map((b) => ({ name: b.name, runs: b.runs, balls: b.balls, onStrike: b.id === inn.striker }))}
-      bowler={bw ? { name: bw.name, wickets: bw.wickets, runs: bw.runs, overs: fmtOv(bw.balls) } : undefined}
-      thisOver={thisOver.map(boardBall)}/>
-  );
+  const props = boardFromInnings(inn, { target, overs: inn?.overs ?? match?.overs ?? 20 });
+  return props ? <Board {...props} compact/> : null;
 }
 
 // ── Keys ─────────────────────────────────────────────────────────
@@ -166,16 +133,27 @@ function Stepper({ phase, values, onStep }) {
 // ── Phase 1: the shot ────────────────────────────────────────────
 
 function ShotPhase({ shot, onShot }) {
+  const key = (s) => (
+    <Key key={s.id} face={s.label} testid={`shot-${s.id}`} pressed={shot === s.id} onClick={() => onShot(s.id)}
+      style={shot === s.id ? { border: `2px solid ${T.content.primary}`, fontWeight: 600 } : undefined}/>
+  );
   return (
     <div data-testid="phase-shot" style={{ display: "grid", gap: T.space.sm }}>
-      {SHOT_CATS.map((c) => (
+      {SHOT_CATS.map((c) => c.shots.length <= 3 ? (
+        // A group of three is one row with its word at the start of it — the
+        // way §4's drawing has "DEFENSIVE  Fwd def  Back def  Padded" — not a
+        // heading row over a row: the height it saves is what keeps the strip
+        // above the bottom bar on a phone, in a chase (step 3b).
+        <section key={c.cat} aria-label={c.cat}
+          style={{ display: "grid", gridTemplateColumns: "minmax(0,2fr) repeat(3,minmax(0,1fr))", gap: T.space.sm, alignItems: "center" }}>
+          <h3 style={{ ...sectionLabel(), margin: 0, overflowWrap: "anywhere" }}>{c.cat}</h3>
+          {c.shots.map(key)}
+        </section>
+      ) : (
         <section key={c.cat} aria-label={c.cat}>
           <h3 style={sectionLabel()}>{c.cat}</h3>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(64px,1fr))", gap: T.space.sm }}>
-            {c.shots.map((s) => (
-              <Key key={s.id} face={s.label} testid={`shot-${s.id}`} pressed={shot === s.id} onClick={() => onShot(s.id)}
-                style={shot === s.id ? { border: `2px solid ${T.content.primary}`, fontWeight: 600 } : undefined}/>
-            ))}
+            {c.shots.map(key)}
           </div>
         </section>
       ))}
@@ -257,7 +235,10 @@ function OutcomeKeys({ onRun, onExtra, onWicket, note }) {
 
 function Strip({ onWide, onNoBall, onDot, onUndo, midBall }) {
   return (
-    <div data-testid="pad-strip" style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: T.space.sm }}>
+    // `pad-strip-dock` (scorer/ui.jsx): on a phone the strip docks 16px above
+    // the bottom bar when the pad is taller than the screen, so Wide, No
+    // ball, Dot and Undo are never below the fold (§4 rule 1).
+    <div data-testid="pad-strip" className="pad-strip-dock" style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: T.space.sm }}>
       <Key face="Wide" say="Wide" testid="key-wide" h="56px" onClick={onWide}/>
       <Key face="No ball" say="No ball" testid="key-noball" h="56px" onClick={onNoBall}/>
       <Key face={<><span aria-hidden="true">·</span> Dot</>} say="Dot ball, no run" testid="key-dot" h="56px" onClick={onDot}/>

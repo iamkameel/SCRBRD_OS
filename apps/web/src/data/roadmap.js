@@ -93,7 +93,7 @@ export const UPGRADES = [
   { id: "up13", category: "Admin",         priority: "medium", status: "planned", title: "Invoicing & Subscriptions",
     desc: "invoice.read and invoice.manage are granted to schooladmin, principal and the finance role, with no table behind either. SCRBRD-030 split the old commercial `finance` bundle in two — this pair is now the entire reason the role exists — and a bursar holding it still cannot invoice anyone.", effort: "High" },
   { id: "up8",  category: "Integrations",  priority: "low",    status: "planned", title: "CricHQ / PlayCricket Import",
-    desc: "CSV import exists and goes through the ordinary write policies. A direct API sync does not.", effort: "High" },
+    desc: "Deferred to a later release (Kameel, 2026-09-26: not a priority). CSV import exists and goes through the ordinary write policies. A direct API sync does not.", effort: "High" },
   { id: "up10", category: "Admin",         priority: "low",    status: "planned", title: "PDF Scorecard Export",
     desc: "One-click export of any scorecard with the school's branding.", effort: "Low" },
   { id: "up14", category: "AI & Analysis", priority: "low",    status: "planned", title: "Training Recommendation Engine",

@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { T } from "../design/tokens.js";
-import { ThemeChoice } from "../ui/ThemeChoice.jsx";
+import { ThemeChoice, VisionChoice } from "../ui/ThemeChoice.jsx";
 
 /**
  * The pad's menu — the "⋯" at the end of its title bar.
@@ -10,7 +10,7 @@ import { ThemeChoice } from "../ui/ThemeChoice.jsx";
  * mode), what the umpires change (revise the overs or the target, penalty
  * runs), and the theme (§3.1, decision 2) — the pad is the screen used in
  * direct sun, and a scorer who needs Daylight should not have to leave the
- * match to find Settings.
+ * match to find Settings — with the colour-vision palette beside it (§3.9).
  *
  * A disclosure, not an ARIA menu: what opens is a small panel of ordinary
  * buttons and a radiogroup, which Tab reaches and arrow keys drive. Escape or
@@ -75,6 +75,10 @@ export function PadMenu({ children }) {
           <section aria-label="Appearance">
             <h3 style={menuHeading()}>Appearance</h3>
             <ThemeChoice testid="pad-theme-choice" label="Pad appearance"/>
+          </section>
+          <section aria-label="Colours">
+            <h3 style={menuHeading()}>Colours</h3>
+            <VisionChoice testid="pad-vision-choice" label="Pad colours"/>
           </section>
         </div>
       )}

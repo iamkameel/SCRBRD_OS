@@ -149,8 +149,18 @@ ok("...and GLOBAL_CSS draws it with those two, where reduced motion can cut it",
    new RegExp(`\\.os-board-flip\\{[^}]*animation:boardFlip ${T.motion.flip} ${T.motion.swift.replace(/[().,]/g, "\\$&")}`).test(tokens.GLOBAL_CSS)
    && /prefers-reduced-motion: reduce\)\{\s*\*,\*::before,\*::after\{\s*animation-duration:1ms!important/.test(tokens.GLOBAL_CSS));
 
-eachTheme((th) => {
-  group(`${th === "daylight" ? "Daylight" : "Floodlit"} — the semantic system holds its own contrast`);
+// ── Colour vision (DESIGN_DIRECTION §3.9, SCRBRD-096) ──────────────
+// The palette is a second axis beside the theme, so every contrast rule below
+// runs in every theme UNDER EVERY PALETTE — six looks. A palette that fixes a
+// colour-blind viewer's chips and breaks a sighted viewer's text is not a fix.
+const { CHIPS, VISION, VISION_NAMES, visionName } = tokens;
+const VISION_LABEL = { standard: "", redgreen: " · red-green safe", blueyellow: " · blue-yellow safe" };
+const lookName = (th, v) => `${th === "daylight" ? "Daylight" : "Floodlit"}${VISION_LABEL[v]}`;
+/** Run `fn` in every theme under every colour-vision palette, then return to Floodlit, Standard. */
+const eachLook = (fn) => { for (const v of VISION_NAMES) for (const th of THEME_NAMES) { applyTheme(th, v); fn(th, v); } applyTheme("floodlit", "standard"); };
+
+eachLook((th, vision) => {
+  group(`${lookName(th, vision)} — the semantic system holds its own contrast`);
   // Every value named for a job rather than a hue, measured against all five
   // surfaces. The fill-only ones are declared and must each have a readable
   // half; everything else in these four groups must read on its own.
@@ -172,7 +182,7 @@ eachTheme((th) => {
     }
   }
 
-  group(`${th === "daylight" ? "Daylight" : "Floodlit"} — the fill-only values are declared, and paired`);
+  group(`${lookName(th, vision)} — the fill-only values are declared, and paired`);
   // A colour that cannot be read is not a bug as long as it is never read. The
   // pairing is what makes that true, and textOn() is how a call site honours it
   // without knowing which value it was handed.
@@ -188,7 +198,7 @@ eachTheme((th) => {
   for (const kit of ["#003580", "#f4c430", "#000000"])
     ok(`textOn(${kit}), a kit colour, reads at ${worst(textOn(kit)).toFixed(2)}:1`, worst(textOn(kit)) >= 4.5);
 
-  group(`${th === "daylight" ? "Daylight" : "Floodlit"} — text sitting ON a fill is measured against that fill`);
+  group(`${lookName(th, vision)} — text sitting ON a fill is measured against that fill`);
   // The surfaces are not the only background in the app. A count badge puts type
   // directly on an accent, and the unread badge did it in white on the critical
   // red — 3.81:1, a fail, on the one element in the chrome whose whole job is to
@@ -215,7 +225,7 @@ eachTheme((th) => {
     ok("the lime fill takes the primary ink, as §3.1 says", inkOn(T.brand.lime) === T.content.primary);
   }
 
-  group(`${th === "daylight" ? "Daylight" : "Floodlit"} — D is an alias table, not a second palette`);
+  group(`${lookName(th, vision)} — D is an alias table, not a second palette`);
   // The one rule that keeps two token surfaces from becoming two design systems:
   // everything D exposes must be a value T already declares. A hex that appears
   // only in D is a colour nobody chose semantically.
@@ -225,7 +235,7 @@ eachTheme((th) => {
   // (sport.fieldingText), because it needs a daylight value too.
   ok("every D colour is a T colour", orphans.length === 0, orphans.join(", "));
 
-  group(`${th === "daylight" ? "Daylight" : "Floodlit"} — every token used as text clears AA on every surface`);
+  group(`${lookName(th, vision)} — every token used as text clears AA on every surface`);
   // 4.5:1 is the threshold for body text. Large display type would allow 3:1,
   // but these tokens are used at 10-13px far more often than they are used big.
   const HEX = hexOf();
@@ -234,7 +244,7 @@ eachTheme((th) => {
     ok(`${t} reads at ${worst(HEX[t]).toFixed(2)}:1`, worst(HEX[t]) >= 4.5);
   }
 
-  group(`${th === "daylight" ? "Daylight" : "Floodlit"} — the fill/text pairing is real, not cosmetic`);
+  group(`${lookName(th, vision)} — the fill/text pairing is real, not cosmetic`);
   for (const [fill, text] of [["indigo", "indigoText"], ["violet", "violetText"], ["rose", "roseText"]]) {
     ok(`${text} exists as the readable half of ${fill}`, !!HEX[text]);
     // "Readable half" means MORE contrast on the surfaces than the fill has:
@@ -244,6 +254,167 @@ eachTheme((th) => {
        HEX[text] && worst(HEX[text]) >= worst(HEX[fill]));
   }
 });
+
+// ── The colour-vision guard (§3.9) ────────────────────────────────
+// Contrast says a colour can be READ. It does not say two colours can be TOLD
+// APART, and for about one boy in twelve two of the prototype's chips are the
+// same colour. This is the simulation §3.9 was measured with, ported from the
+// reference script: Machado, Oliveira & Fernandes (2009) at full severity,
+// applied in linear RGB; CIELAB (D65); CIE76 ΔE between every pair.
+const MACHADO = {
+  protan: [[0.152286, 1.052583, -0.204868], [0.114503, 0.786281, 0.099216], [-0.003882, -0.048116, 1.051998]],
+  deutan: [[0.367322, 0.860646, -0.227968], [0.280085, 0.672501, 0.047413], [-0.011820, 0.042940, 0.968881]],
+  tritan: [[1.255528, -0.076749, -0.178779], [-0.078411, 0.930809, 0.147602], [0.004733, 0.691367, 0.303900]],
+};
+const linRGB = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255)
+  .map((x) => (x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4));
+const labOfLinear = ([r, g, b]) => {
+  const X = (0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047;
+  const Y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  const Z = (0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883;
+  const f = (t) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+  const [fx, fy, fz] = [f(X), f(Y), f(Z)];
+  return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
+};
+/** CIELAB of a colour as a viewer with `mode` sees it ("normal", or a Machado deficiency). */
+const labAs = (h, mode) => {
+  const v = linRGB(h);
+  const seen = mode === "normal" ? v : MACHADO[mode].map((row) => Math.min(1, Math.max(0, row[0] * v[0] + row[1] * v[1] + row[2] * v[2])));
+  return labOfLinear(seen);
+};
+const dEAs = (a, b, mode) => { const x = labAs(a, mode), y = labAs(b, mode); return Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]); };
+/** The two closest members of a set, as `mode` sees them: [ΔE, a, b]. */
+const closest = (set, mode) => {
+  const ks = Object.keys(set); let w = [Infinity, "", ""];
+  for (let i = 0; i < ks.length; i++) for (let j = i + 1; j < ks.length; j++) {
+    const d = dEAs(set[ks[i]], set[ks[j]], mode);
+    if (d < w[0]) w = [d, ks[i], ks[j]];
+  }
+  return w;
+};
+const SERVES = { standard: [], redgreen: ["protan", "deutan"], blueyellow: ["tritan"] };
+const CVD_FLOOR = 20, NORMAL_FLOOR = 25;
+/**
+ * Everything wrong with a set of colours that must be told apart: any pair
+ * under ΔE 25 in ordinary vision, or under 20 for a deficiency it serves.
+ */
+const apartFaults = (set, serves) => ["normal", ...serves].flatMap((mode) => {
+  const [d, a, b] = closest(set, mode);
+  const floor = mode === "normal" ? NORMAL_FLOOR : CVD_FLOOR;
+  return d < floor ? [`${a}/${b} ${d.toFixed(1)} apart ${mode === "normal" ? "in ordinary vision" : `under ${mode}`} (floor ${floor})`] : [];
+});
+/**
+ * Everything wrong with a chip palette on the board: every chip 3:1 against
+ * the face (WCAG 1.4.11, a shape), and a black or white figure on it at 4.5:1
+ * — the board's own face or figure, whichever the chip draws — plus the pairs.
+ * The white wicket chip is one of the set: it must be told from the rest too.
+ */
+const chipFaults = (chips, serves) => {
+  const out = [];
+  for (const [k, c] of Object.entries(chips)) {
+    const onBoard = ratio(c, T.board.face), ink = Math.max(ratio(c, T.board.face), ratio(c, T.board.figure));
+    if (onBoard < 3) out.push(`${k} ${c} is ${onBoard.toFixed(2)}:1 on the board (floor 3)`);
+    if (ink < 4.5) out.push(`${k} ${c} takes a figure at ${ink.toFixed(2)}:1 at best (floor 4.5)`);
+  }
+  return [...out, ...apartFaults({ ...chips, wicket: T.board.figure }, serves)];
+};
+const worstLine = (set, serves) => ["normal", ...serves].map((m) => { const [d, a, b] = closest(set, m); return `${m} ${a}/${b} ${d.toFixed(1)}`; }).join(" · ");
+
+group("Colour vision (§3.9) — every palette keeps its chips apart, as its viewers see them");
+ok("three palettes: Standard, Red-green safe, Blue-yellow safe", VISION_NAMES.join() === "standard,redgreen,blueyellow"
+   && Object.keys(CHIPS).join() === VISION_NAMES.join());
+ok("every palette names the same six chips", VISION_NAMES.every((v) => Object.keys(CHIPS[v]).sort().join() === "extra,four,one,six,three,two"));
+for (const v of VISION_NAMES) {
+  const faults = chipFaults(CHIPS[v], SERVES[v]);
+  ok(`${v} chips: ${worstLine({ ...CHIPS[v], wicket: T.board.figure }, SERVES[v])}`, faults.length === 0, faults.join("; "));
+}
+// Standard is exempt from the colour-vision floor — it is why the setting
+// exists — and the number is printed so nobody forgets what it is.
+console.log(`  (standard chips as colour-blind viewers see them: ${["protan", "deutan", "tritan"].map((m) => { const [d, a, b] = closest({ ...CHIPS.standard, wicket: T.board.figure }, m); return `${m} ${a}/${b} ${d.toFixed(1)}`; }).join(" · ")})`);
+
+group("Colour vision (§3.9) — saved, held and refused stay three states, in every theme");
+{
+  const trioOf = (text) => ({ positive: T.semantic.positive, warning: T.semantic.warning, critical: text ? T.semantic.criticalText : T.semantic.critical });
+  eachLook((th, v) => {
+    // The fill and the text half of critical are both drawn, so both trios.
+    for (const text of [false, true]) {
+      const set = trioOf(text);
+      if (text && set.critical === T.semantic.critical) continue;
+      const faults = apartFaults(set, SERVES[v]);
+      ok(`${lookName(th, v)}: positive, warning, ${text ? "criticalText" : "critical"} — ${worstLine(set, SERVES[v])}`, faults.length === 0, faults.join("; "));
+    }
+    // The sport colours already clear it, and must go on doing so.
+    const sport = { batting: T.sport.batting, bowling: T.sport.bowling, fielding: T.sport.fielding };
+    const sf = apartFaults(sport, SERVES[v]);
+    ok(`${lookName(th, v)}: batting, bowling, fielding — ${worstLine(sport, SERVES[v])}`, sf.length === 0, sf.join("; "));
+    // The wagon wheel: a line per ball on the field, a graphic (3:1 on the
+    // ground). Its run colours are held apart in the palettes that serve a
+    // deficiency; Standard's are the wheel's as it always was, printed.
+    const run = { ...T.run };
+    const faint = Object.entries(run).filter(([, c]) => ratio(c, T.field.ground) < 3);
+    ok(`${lookName(th, v)}: every run colour shows on the field (3:1)`, faint.length === 0,
+       faint.map(([k, c]) => `${k} ${c} ${ratio(c, T.field.ground).toFixed(2)}:1`).join(", "));
+    if (v === "standard") console.log(`  (${lookName(th, v)} wagon wheel runs: ${worstLine(run, ["protan", "deutan", "tritan"])})`);
+    else {
+      const rf = apartFaults(run, SERVES[v]);
+      ok(`${lookName(th, v)}: the wagon wheel's runs — ${worstLine(run, SERVES[v])}`, rf.length === 0, rf.join("; "));
+    }
+  });
+}
+
+group("Colour vision (§3.9) — the palette is an input, not a second engine");
+{
+  const boardBefore = JSON.stringify(T.board), chipRef = T.chip;
+  const seen = {};
+  eachLook((th, v) => { seen[`${th}/${v}`] = { board: JSON.stringify(T.board), chip: { ...T.chip }, surf: T.surface.canvas, ink: T.content.primary, lime: T.brand.lime, vision: visionName() }; });
+  ok("the board's black, white and lime never move", Object.values(seen).every((s) => s.board === boardBefore));
+  ok("the surfaces, the inks and the brand lime follow the theme alone",
+     THEME_NAMES.every((th) => VISION_NAMES.every((v) => seen[`${th}/${v}`].surf === THEMES[th].surface.canvas
+       && seen[`${th}/${v}`].ink === THEMES[th].content.primary && seen[`${th}/${v}`].lime === THEMES[th].brand.lime)));
+  ok("the chips follow the palette alone, whatever the theme",
+     VISION_NAMES.every((v) => THEME_NAMES.every((th) => JSON.stringify(seen[`${th}/${v}`].chip) === JSON.stringify(CHIPS[v]))));
+  ok("visionName() says which is in force", VISION_NAMES.every((v) => seen[`floodlit/${v}`].vision === v));
+  ok("T.chip is one object for the life of the page", T.chip === chipRef);
+  ok("a palette only names groups the theme has, or the chips",
+     VISION_NAMES.every((v) => Object.values(VISION[v]).every((per) => Object.keys(per).every((g) => g in FLOODLIT
+       && Object.keys(per[g]).every((k) => k in FLOODLIT[g])))));
+  applyTheme("daylight", "redgreen");
+  applyTheme("floodlit");
+  ok("a theme switch keeps the palette in force", visionName() === "redgreen" && T.chip.one === CHIPS.redgreen.one);
+  applyTheme("floodlit", "standard");
+  ok("...and Standard puts back every value the theme had",
+     Object.keys(FLOODLIT).every((g) => Object.keys(FLOODLIT[g]).every((k) => T[g][k] === FLOODLIT[g][k])) && T.chip.one === CHIPS.standard.one);
+}
+
+group("Colour vision (§3.9) — the guard can fail, for the right reason");
+// Three palettes broken on purpose, one fault each. Each must be caught, and
+// caught as THAT fault — not as some other rule the break happened to trip.
+{
+  // Written out, not read from CHIPS: the probes must not move when the
+  // palette does. This is the red-green palette as chosen on 2026-09-26.
+  const rg = { one: "#cc6d99", two: "#f7f08c", three: "#f5b700", four: "#56b4e9", six: "#c8600a", extra: "#0062c4" };
+  ok("...the probes start from a palette that passes", chipFaults(rg, SERVES.redgreen).length === 0);
+  // 1. Two chips too close under deutan: the two made a teal, 43 from every
+  //    other chip in ordinary vision and 25 under protan — and 2 from the
+  //    mauve one to a deutan eye.
+  const close = chipFaults({ ...rg, two: "#20a890" }, SERVES.redgreen);
+  ok("two chips too close under deutan are caught as that, and only that",
+     close.length === 1 && /^one\/two \d\.\d apart under deutan \(floor 20\)$/.test(close[0]), close.join("; "));
+  // 2. A figure under 4.5: a cornflower four, apart from every chip under
+  //    every vision, on which black reads at 4.40 and white at less.
+  const dim = chipFaults({ ...rg, four: "#4064f8" }, SERVES.redgreen);
+  ok("a chip no figure reads on is caught as that, and only that",
+     dim.length === 1 && /^four #4064f8 takes a figure at 4\.40:1 at best \(floor 4\.5\)$/.test(dim[0]), dim.join("; "));
+  // 3. A chip under 3:1 on the board: the prototype's own wide, #5200bc.
+  const std = { one: "#ec4899", two: "#b2e358", three: "#f2c14b", four: "#3b83f6", six: "#dd514c", extra: "#8445f0" };
+  const hole = chipFaults({ ...std, extra: "#5200bc" }, []);
+  ok("a chip under 3:1 on the board is caught as that, and only that — the prototype's wide",
+     hole.length === 1 && /^extra #5200bc is 1\.93:1 on the board \(floor 3\)$/.test(hole[0]), hole.join("; "));
+  // And the reason the setting exists, measured: Standard's 2 and 3 as a
+  // deutan viewer sees them.
+  ok("Standard's 2 and 3 are one colour to a deutan eye (the reason for the setting)",
+     dEAs(CHIPS.standard.two, CHIPS.standard.three, "deutan") < 10);
+}
 
 group("The theme engine and the page agree before React runs");
 // index.html makes the first decision (no flash of the wrong theme); the
@@ -278,6 +449,25 @@ ok("the engine listens for the system setting changing", /addEventListener\("cha
   ok("setting Daylight switches the tokens", themeName() === "daylight" && T.surface.canvas === DAYLIGHT.surface.canvas);
   theme.setPreference("system");
   ok("...and System switches them back", themeName() === "floodlit" && theme.getPreference() === "system");
+  // Colours (§3.9): the same engine, a third input.
+  ok("Colours offers Standard, Red-green safe, Blue-yellow safe",
+     theme.VISION_CHOICES.map((c) => c.label).join() === "Standard,Red-green safe,Blue-yellow safe"
+     && theme.VISION_CHOICES.map((c) => c.value).join() === VISION_NAMES.join());
+  ok("...stored under its own key, which is not the theme's", theme.VISION_KEY === "scrbrd:vision" && theme.VISION_KEY !== key);
+  ok("with nothing stored, the palette is Standard", theme.readVision() === "standard" && theme.getVision() === "standard");
+  theme.setPreference("daylight");
+  theme.setVision("blueyellow");
+  ok("choosing Blue-yellow safe swaps the chips and keeps the theme",
+     visionName() === "blueyellow" && themeName() === "daylight" && T.chip.six === CHIPS.blueyellow.six);
+  theme.setPreference("floodlit");
+  ok("...and a theme switch keeps the palette", visionName() === "blueyellow" && themeName() === "floodlit" && T.semantic.criticalText === VISION.blueyellow.floodlit.semantic.criticalText);
+  theme.setVision("not-a-palette");
+  ok("an unknown palette is Standard", visionName() === "standard" && T.chip.six === CHIPS.standard.six);
+  theme.setPreference("system");
+  const where = (f) => readFileSync(join(SRC, f), "utf8");
+  ok("Colours sits beside the theme in Settings and in the pad's menu",
+     /<ThemeChoice\/>[\s\S]{0,600}<VisionChoice\/>/.test(where("views/SettingsView.jsx"))
+     && /<ThemeChoice[^>]*pad-theme-choice[\s\S]{0,400}<VisionChoice[^>]*pad-vision-choice/.test(where("scorer/padMenu.jsx")));
 }
 
 const files = [];

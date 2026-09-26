@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import pkg from "../../package.json";
 import { ROLES, ROLE_FAMILIES, ROLE_IDENTITY, canonicalRole } from "../design/roles.js";
 import { boundaries, GRANTABLE_ROLES, ROLE_CAPABILITIES, SUBJECT_SCOPED_ROLES, TEAM_SCOPED_ROLES } from "@scrbrd/policy/roles";
-import { D, textOn } from "../design/tokens.js";
+import { D, T, textOn } from "../design/tokens.js";
 import { Avatar, Badge, Btn, Card, EmptyState, Input, Modal, SectionHeader, Select } from "../ui/primitives.jsx";
 import { Metric, MetricGroup } from "../ui/data.jsx";
 import { useLive, useRows } from "../lib/live.js";
@@ -14,7 +14,7 @@ import { disablePush, enablePush, pushSupported } from "../lib/push.js";
 import { resolveBirthDate, BIRTH_DATE_MESSAGE } from "@scrbrd/policy/date-of-birth";
 import { STATUS_LABEL, STATUS_TONE, UPGRADES } from "../data/roadmap.js";
 import { SupportAccessPanel } from "./support.jsx";
-import { ThemeChoice } from "../ui/ThemeChoice.jsx";
+import { ThemeChoice, VisionChoice } from "../ui/ThemeChoice.jsx";
 import { Icon } from "../ui/icons.jsx";
 
 // ══════════════════════════════════════════════════════
@@ -800,6 +800,12 @@ function MeTab({ role }) {
         <CardHead title="Appearance"
           sub="Daylight for the sun, Floodlit under lights. System follows this device's own light or dark setting, and changes with it."/>
         <div style={{ maxWidth: "420px" }}><ThemeChoice/></div>
+        {/* Colours sit beside the theme (DESIGN_DIRECTION §3.9): the same
+            device-only kind of choice, and one a person makes once. */}
+        <div style={{ maxWidth: "420px", marginTop: T.space.lg }} data-testid="appearance-colours">
+          <div style={{ ...T.role.label, color: T.content.secondary, marginBottom: T.space.sm }}>Colours</div>
+          <VisionChoice/>
+        </div>
       </Panel>
 
       <Panel>
