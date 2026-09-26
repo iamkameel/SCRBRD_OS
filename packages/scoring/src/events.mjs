@@ -242,6 +242,114 @@ export const INNINGS_END_REASON = {
   ABANDONED: "abandoned",
 };
 
+/*
+ * WHY FIVE PENALTY RUNS WERE AWARDED — a closed list (SCRBRD-094).
+ *
+ * The pad's penalty sheet offered free text ("Ball hit helmet on field",
+ * "Deliberate time wasting", …), stored as written. The reason decides
+ * nothing in the fold — who gets the runs is `toBattingTeam` — but it is
+ * what the umpires report to the offending side's executive (Law 41, db/25's
+ * disciplinary record), and one offence decides a delivery as well as an
+ * award: deliberate short running disallows the runs (shortRunning() below).
+ *
+ * Two sides, one list. An award to the FIELDING side is for something the
+ * batting side did — the Law 41 offences Kameel's research (2026-09-26)
+ * named; the clause numbers are as that research gives them. An award to
+ * the BATTING side is for something the fielding side did — the reasons the
+ * pad already offered, each under the Law it is. `other` is either side's,
+ * for an umpire's award the list does not name.
+ */
+export const PENALTY_REASON = Object.freeze({
+  // To the fielding side: the batting side's offences.
+  SHORT_RUNNING:           "short_running",           // 41.5 (and 18.5): deliberate short running
+  OBSTRUCTION_DISTRACTION: "obstruction_distraction", // 41.4: distracting, deceiving or obstructing a fielder
+  PITCH_DAMAGE:            "pitch_damage",            // 41.12: damaging the pitch on purpose
+  PROTECTED_AREA:          "protected_area",          // 41.14: running on the protected area, after the final warning
+  STRIKING_PITCH:          "striking_pitch",          // 41.15: striking the pitch unfairly
+  TIME_WASTING:            "time_wasting",            // 41.17: a batter wasting time, after the final warning
+  // To the batting side: the fielding side's offences (the pad's existing reasons).
+  HELMET_STRUCK:           "helmet_struck",           // 28.3: the ball struck a fielder's helmet on the ground
+  ILLEGAL_FIELDING:        "illegal_fielding",        // 28.2: fielding the ball with clothing or anything but the person
+  BALL_TAMPERING:          "ball_tampering",          // 41.3: changing the condition of the ball
+  FIELDING_TIME_WASTING:   "fielding_time_wasting",   // 41.9: the fielding side wasting time, after the final warning
+  UNFAIR_PLAY:             "unfair_play",             // 41.1: dangerous or unfair play by a fielder
+  FIELDING_RESTRICTIONS:   "fielding_restrictions",   // the competition's fielding restrictions
+  // Either side.
+  OTHER:                   "other",
+});
+/** @typedef {typeof PENALTY_REASON[keyof typeof PENALTY_REASON]} PenaltyReason */
+/** @type {ReadonlySet<unknown>}  asked of whatever a producer wrote */
+export const PENALTY_REASONS = new Set(Object.values(PENALTY_REASON));
+
+/**
+ * Which side each reason's five runs go to: `false` the fielding side, `true`
+ * the batting side (the event's `toBattingTeam`), `null` either.
+ * @type {Readonly<Record<string, boolean | null>>}
+ */
+export const PENALTY_REASON_SIDE = Object.freeze({
+  short_running: false, obstruction_distraction: false, pitch_damage: false,
+  protected_area: false, striking_pitch: false, time_wasting: false,
+  helmet_struck: true, illegal_fielding: true, ball_tampering: true,
+  fielding_time_wasting: true, unfair_play: true, fielding_restrictions: true,
+  other: null,
+});
+
+/** Words for each reason, for a scorecard, the held sheet and a report. Finishes "Five penalty runs for …".
+ *  @type {Readonly<Record<string, string>>} */
+export const PENALTY_REASON_TEXT = Object.freeze({
+  short_running: "deliberate short running (Law 41.5)",
+  obstruction_distraction: "distracting, deceiving or obstructing the fielders (Law 41.4)",
+  pitch_damage: "damaging the pitch on purpose (Law 41.12)",
+  protected_area: "running on the protected area after a first and final warning (Law 41.14)",
+  striking_pitch: "striking the pitch unfairly (Law 41.15)",
+  time_wasting: "a batter wasting time after a first and final warning (Law 41.17)",
+  helmet_struck: "the ball striking a fielder's helmet on the ground (Law 28.3)",
+  illegal_fielding: "fielding the ball illegally (Law 28.2)",
+  ball_tampering: "changing the condition of the ball (Law 41.3)",
+  fielding_time_wasting: "the fielding side wasting time after a first and final warning (Law 41.9)",
+  unfair_play: "dangerous or unfair play (Law 41.1)",
+  fielding_restrictions: "breaking the fielding restrictions",
+  other: "an award the umpires made for another reason",
+});
+
+/**
+ * The pad's free-text reasons, as its penalty sheet offered them before the
+ * list closed, → the reason each one is. An event already in a queue or a
+ * log carries one of these, and an older build still sends them; they are
+ * read, never refused. "Deliberate time wasting" is either side's offence,
+ * so the side the runs went to says whose.
+ * @type {Readonly<Record<string, PenaltyReason | ((toBattingTeam: boolean) => PenaltyReason)>>}
+ */
+const PENALTY_REASON_LEGACY = Object.freeze({
+  "ball hit helmet on field": PENALTY_REASON.HELMET_STRUCK,
+  "ball hitting fielder's helmet on ground": PENALTY_REASON.HELMET_STRUCK,
+  "deliberate time wasting": (toBat) => (toBat ? PENALTY_REASON.FIELDING_TIME_WASTING : PENALTY_REASON.TIME_WASTING),
+  "changing condition of ball": PENALTY_REASON.BALL_TAMPERING,
+  "ball going into fielder's clothing": PENALTY_REASON.ILLEGAL_FIELDING,
+  "dangerous/unfair play": PENALTY_REASON.UNFAIR_PLAY,
+  "fielding restrictions violation": PENALTY_REASON.FIELDING_RESTRICTIONS,
+  "other": PENALTY_REASON.OTHER,
+  "penalty runs": PENALTY_REASON.OTHER,   // the sheet's text when nothing was chosen
+});
+
+/**
+ * Whatever a producer wrote → one of PENALTY_REASON, or null for "not a
+ * reason we know". `toBattingTeam` is the event's (anything but `false`
+ * awards the batting side, as the fold reads it).
+ * @param {unknown} text
+ * @param {unknown} [toBattingTeam]
+ * @returns {PenaltyReason | null}
+ */
+export function normalisePenaltyReason(text, toBattingTeam = true) {
+  if (typeof text !== "string") return null;
+  const t = text.trim().toLowerCase().replace(/\s+/g, " ");
+  // PENALTY_REASONS holds exactly the PenaltyReason values.
+  if (PENALTY_REASONS.has(t)) return /** @type {PenaltyReason} */ (t);
+  if (!Object.hasOwn(PENALTY_REASON_LEGACY, t)) return null;
+  const hit = PENALTY_REASON_LEGACY[t];
+  return typeof hit === "function" ? hit(toBattingTeam !== false) : hit;
+}
+
 // ── Event shapes ─────────────────────────────────────────
 // The constructors below are the source of truth for these: each typedef is
 // exactly what its constructor returns. What the FOLD accepts is looser — see
@@ -347,7 +455,11 @@ export const INNINGS_END_REASON = {
  * }} BallInput
  */
 
-/** @typedef {EventBase & {kind: "penalty", runs: number, toBattingTeam: boolean, reason: string | null}} PenaltyEvent */
+/**
+ * `reason` is one of PENALTY_REASON (see penalty()); a log from before the list
+ * closed may carry the pad's free text, which the fold does not read.
+ * @typedef {EventBase & {kind: "penalty", runs: number, toBattingTeam: boolean, reason: PenaltyReason | null}} PenaltyEvent
+ */
 /** @typedef {BaseInput & {runs?: number, toBattingTeam?: boolean, reason?: string | null}} PenaltyInput */
 
 /**
@@ -710,13 +822,66 @@ export const ball = (o) => {
   };
 };
 
-/** @param {PenaltyInput} o  @returns {PenaltyEvent} */
-export const penalty = (o) => ({
-  ...base(KIND.PENALTY, o),
-  runs: o.runs ?? 5,
-  toBattingTeam: o.toBattingTeam ?? true,
-  reason: o.reason ?? null,
-});
+/**
+ * Penalty runs: five (Law 41.18), awarded to the batting side or — with
+ * `toBattingTeam: false` — to the fielding side. No ball is bowled.
+ *
+ * Where the runs go is the fold's (replay.mjs): an award to the batting side
+ * is in this innings' total; one to the fielding side is in THEIR total —
+ * their most recently completed innings, or, if they have not batted yet,
+ * their next innings, which opens on the award (SCRBRD-094). The award is
+ * recorded in the innings it was made in; the event names no other innings.
+ *
+ * `reason` is one of PENALTY_REASON. One of the pad's free-text reasons from
+ * before the list closed is read as the reason it is (normalisePenaltyReason);
+ * anything else is refused here, where the scorer who chose it can still see
+ * it — as bowler() refuses an unknown change reason. The server refuses one
+ * too, and a reason that belongs to the other side (lawsRefusal).
+ *
+ * @param {PenaltyInput} o
+ * @returns {PenaltyEvent}
+ */
+export const penalty = (o) => {
+  const toBattingTeam = o.toBattingTeam ?? true;
+  const reason = o.reason == null ? null : normalisePenaltyReason(o.reason, toBattingTeam);
+  if (o.reason != null && reason == null) {
+    throw new TypeError(`unknown penalty reason ${JSON.stringify(o.reason)} — expected one of ${[...PENALTY_REASONS].join(", ")}`);
+  }
+  return {
+    ...base(KIND.PENALTY, o),
+    runs: o.runs ?? 5,
+    toBattingTeam,
+    reason,
+  };
+};
+
+/**
+ * Deliberate short running (Law 18.5.2, Law 41.5): the umpire calls dead
+ * ball, disallows every run completed off the delivery, returns the batters
+ * to the ends they started from, and awards five penalty runs to the
+ * fielding side. The delivery still counts.
+ *
+ * TWO EVENTS, NOT A NEW SHAPE. The delivery as it stands after the call — a
+ * ball of the type it was, with no runs completed (`value: 0`) — and the
+ * award, reason `short_running`, to the fielding side. So the fold needs
+ * nothing new for the delivery: no runs to the batter, the bowler or the
+ * side; no change of ends (nothing was run, and the ends are the ones the
+ * batters started from); a legal delivery counts in the over and is a ball
+ * faced; a no-ball's or a wide's one-run penalty stands (18.5.2 keeps it).
+ * Every SQL reader of a delivery — the live score, the handover check, every
+ * career figure — reads a dot ball too, with no migration. The five are the
+ * award's, credited like any award to the fielding side. The server takes
+ * the award only straight after a delivery that scored no run completed
+ * (lawsRefusal, `short_run_unmatched`).
+ *
+ * @param {BallInput} o  the delivery, as bowled: type, who was involved, where
+ *   it went. `value` is ignored — every run completed is disallowed.
+ * @returns {[BallEvent, PenaltyEvent]}  append both, in this order, to the same innings
+ */
+export const shortRunning = (o) => [
+  ball({ ...o, value: 0 }),
+  penalty({ innings: o.innings, clientTs: o.clientTs, runs: 5, toBattingTeam: false, reason: PENALTY_REASON.SHORT_RUNNING }),
+];
 
 /**
  * The dismissal each retirement reason is, when it is one.

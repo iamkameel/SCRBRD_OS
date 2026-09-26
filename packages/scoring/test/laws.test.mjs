@@ -28,6 +28,7 @@ import {
   deriveInnings, deriveMatch, MatchFold, lawsRefusal, REFUSAL, REFUSAL_TEXT,
   inningsStart, batters, bowler, ball, retire, penalty, revision, voidEvent, sealInnings, inningsEnd,
   BALL_TYPE, INNINGS_END_REASON, standsOnFreeHit, DISMISSAL,
+  deriveInningsList, shortRunning, PENALTY_REASON, PENALTY_REASON_SIDE, PENALTY_REASON_TEXT, normalisePenaltyReason,
 } from "../src/index.mjs";
 
 /** @import { LogEvent, InningsStartInput } from "../src/events.mjs" */
@@ -65,7 +66,10 @@ const open = (innings = 0, /** @type {InningsStartInput} */ o = {}) => at(inning
 const runs = (innings, ...vs) => at(innings, ...vs.map((v) => ball({ type: BALL_TYPE.RUN, value: v })));
 
 /**
- * The scorer's view: per-innings logs, each folded by deriveInnings().
+ * The scorer's view: per-innings logs, folded by deriveInningsList() — each
+ * innings' own fold, with penalty runs to a fielding side credited across
+ * innings (SCRBRD-094); deriveInnings() per innings where no such award is
+ * in the log, which is every group but N.
  * @param {LogEvent[]} log
  * @returns {MatchView}
  */
@@ -73,7 +77,7 @@ function clientView(log) {
   /** @type {LogEvent[][]} */
   const events = [];
   for (const e of log) (events[e.innings ?? 0] ??= []).push(e);
-  return { events, innings: [...events].map((l) => (l ? deriveInnings(l) : null)) };
+  return { events, innings: deriveInningsList([...events].map((l) => l ?? [])) };
 }
 
 /**
@@ -435,6 +439,79 @@ group("N. A run out that completed runs, and the end it was at");
      server.striker === null && client.striker === null && server.nonStriker === "p1" && client.nonStriker === "p1");
   ok("the new batter goes to the striker's end", judge(log, at(0, batters({ striker: "p3" }))[0]) === null);
   ok("...not over the survivor", judge(log, at(0, batters({ nonStriker: "p3" }))[0]) === REFUSAL.CREASE_OCCUPIED);
+}
+
+group("O. Penalty runs: whole runs, a reason from the list, the right side (SCRBRD-090/094)");
+{
+  const L = [...open(0), ...runs(0, 1)];
+  const pen = (/** @type {Parameters<typeof penalty>[0]} */ o) => at(0, penalty(o))[0];
+  ok("five to the batting side, for a fielding offence, is taken", judge(L, pen({ reason: "helmet_struck" })) === null);
+  ok("five to the fielding side, for a batting offence, is taken",
+     judge(L, pen({ toBattingTeam: false, reason: "pitch_damage" })) === null);
+  ok("...and one with no reason (a log from elsewhere)", judge(L, pen({})) === null);
+  for (const [runs_, label] of /** @type {[unknown, string][]} */ ([["5", "a string"], [2.5, "a fraction"], [0, "nought"], [-5, "negative"]])) {
+    const ev = /** @type {LogEvent} */ (/** @type {unknown} */ ({ ...pen({}), runs: runs_ }));
+    ok(`runs that are ${label} are refused`, judge(L, ev, label) === REFUSAL.PENALTY_RUNS_INVALID);
+  }
+  const unknown = /** @type {LogEvent} */ (/** @type {unknown} */ ({ ...pen({}), reason: "being cheeky" }));
+  ok("a reason the list does not name is refused", judge(L, unknown) === REFUSAL.PENALTY_REASON_UNKNOWN);
+  let threw = false;
+  try { penalty({ reason: "being cheeky" }); } catch { threw = true; }
+  ok("...which the constructor will not build", threw);
+  ok("a batting side's offence awarded to the batting side is refused",
+     judge(L, pen({ toBattingTeam: true, reason: "short_running" })) === REFUSAL.PENALTY_REASON_SIDE);
+  ok("...and a fielding side's to the fielding side",
+     judge(L, pen({ toBattingTeam: false, reason: "ball_tampering" })) === REFUSAL.PENALTY_REASON_SIDE);
+  ok("'other' is either side's", judge(L, pen({ toBattingTeam: false, reason: "other" })) === null
+     && judge(L, pen({ reason: "other" })) === null);
+
+  // The pad's free text from before the list closed: read, never refused.
+  const legacy = /** @type {LogEvent} */ (/** @type {unknown} */ ({ ...pen({}), reason: "Ball hit helmet on field" }));
+  ok("the pad's old free-text reasons are read as the reason they are", judge(L, legacy) === null
+     && normalisePenaltyReason("Ball going into fielder's clothing") === "illegal_fielding"
+     && normalisePenaltyReason("Penalty runs") === "other");
+  ok("...'Deliberate time wasting' is whichever side wasted it",
+     normalisePenaltyReason("Deliberate time wasting", true) === "fielding_time_wasting"
+     && normalisePenaltyReason("Deliberate time wasting", false) === "time_wasting");
+  ok("...and the constructor stores the reason, not the text", penalty({ reason: "Changing condition of ball" }).reason === "ball_tampering");
+  ok("every reason has a side and words", Object.values(PENALTY_REASON).every((r) => r in PENALTY_REASON_SIDE && typeof PENALTY_REASON_TEXT[r] === "string"));
+  ok("the fielding side's reasons are Kameel's Law 41 list",
+     JSON.stringify(Object.values(PENALTY_REASON).filter((r) => PENALTY_REASON_SIDE[r] === false).sort())
+     === JSON.stringify(["obstruction_distraction", "pitch_damage", "protected_area", "short_running", "striking_pitch", "time_wasting"]));
+
+  // Deliberate short running: the delivery with no run, then the award.
+  const [dot, award] = at(0, ...shortRunning({ type: BALL_TYPE.RUN, value: 2 }));
+  ok("the short-run delivery is an ordinary ball", judge(L, dot) === null);
+  ok("...and its award, straight after it, is taken", judge([...L, dot], award) === null);
+  ok("the award with no delivery before it is refused", judge(open(0), award) === REFUSAL.SHORT_RUN_UNMATCHED);
+  ok("...and after a delivery that scored", judge([...L, ...runs(0, 2)], award) === REFUSAL.SHORT_RUN_UNMATCHED);
+  ok("...and after anything else", judge([...L, dot, ...at(0, penalty({ reason: "helmet_struck" }))], award) === REFUSAL.SHORT_RUN_UNMATCHED);
+  const scored = runs(0, 2);
+  ok("...a delivery undone is not the one it follows: the one before it that counts is",
+     judge([...L, dot, ...scored, ...at(0, voidEvent({ target: scored[0].id }))], award) === null
+     && judge([...L, ...runs(0, 1), dot, ...at(0, voidEvent({ target: dot.id }))], award) === REFUSAL.SHORT_RUN_UNMATCHED);
+
+  // Once the match is decided, an award to the fielding side would move a
+  // target nobody is chasing any more; short running's belongs to its ball.
+  const decided = [...open(0), ...runs(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1), ...open(1, { target: 2 }), ...runs(1, 2)];
+  ok("the chase is over", new MatchFold(decided).view().innings[1]?.complete === true);
+  ok("an award to the fielding side is refused: the match is decided",
+     judge(decided, at(1, penalty({ toBattingTeam: false, reason: "pitch_damage" }))[0]) === REFUSAL.MATCH_DECIDED);
+  ok("...an award to the batting side is judged as it always was",
+     judge(decided, at(1, penalty({ reason: "helmet_struck" }))[0]) === null);
+  const lastBall = [...open(0), ...runs(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1), ...open(1, { target: 3 }), ...runs(1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)];
+  const [lastDot, lastAward] = at(1, ...shortRunning({ type: BALL_TYPE.RUN, value: 2 }));
+  ok("short running on the last ball: the ball ends the chase", new MatchFold([...lastBall, lastDot]).view().innings[1]?.complete === true);
+  ok("...and its award is still taken", judge([...lastBall, lastDot], lastAward) === null);
+  const after = new MatchFold([...lastBall, lastDot, lastAward]).view();
+  ok("...A's innings rises and the margin with it", after.innings[0].runs === 6
+     && deriveMatch([...lastBall, lastDot, lastAward]).result?.margin === "7 runs");
+
+  // Credited across innings on both sides of the wire alike: B open on 5.
+  const carried = [...open(0), ...runs(0, 0), ...at(0, penalty({ toBattingTeam: false, reason: "pitch_damage" })),
+                   ...runs(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1), ...open(1, { target: 2 })];
+  ok("B open on 5 against a target of 2: the chase is over before a ball", new MatchFold(carried).view().innings[1]?.complete === true);
+  ok("...so a ball is refused, by the server and by a pad folding the match", judge(carried, at(1, ball({}))[0]) === REFUSAL.MATCH_DECIDED);
 }
 
 group("J. Every reason has words for the person who has to clear it");

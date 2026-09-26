@@ -21,9 +21,11 @@ import {
   thetaFromClock, clockFromTheta, fieldingCircle, depthBand, positionName,
   PLACEMENT_SOURCE, PLACEMENT_NULL, CLOSE_RADIUS, DISMISSAL, chargedToBowler, normaliseDismissal, revision,
   CAPTURE_PROFILE, PLACEMENT_FIELD, NOT_CAPTURED, evidenceLabel, placementEvidence, profileCollects,
+  MatchFold, deriveInningsList, penaltyCredits, shortRunning,
 } from "../src/index.mjs";
 
 /** @import { LogEvent, Loose, BallEvent, BallInput, BattersEvent, BowlerEvent, InningsStartEvent, InningsStartInput } from "../src/events.mjs" */
+/** @import { Innings } from "../src/replay.mjs" */
 
 let pass = 0, fail = 0;
 // A third argument (a detail to print) is passed in places and ignored here.
@@ -1178,6 +1180,175 @@ group("K. Whose the runs off a no-ball are (SCRBRD-068)");
   const back = fromRow({ ...row, seq: 5, client_ts: new Date().toISOString() });
   ok("...and back", back.kind === "ball" && "nbRuns" in back && back.nbRuns === "leg_byes");
   ok("an old no-ball's row gains no payload key", !("nbRuns" in toRow({ ...oldNb, innings: 0 }).payload));
+}
+
+// ── L. Penalty runs to the fielding side (SCRBRD-094) ────
+group("L. Five to the fielding side: their last completed innings, or their next (Law 41.18)");
+{
+  const A = SQ_A.concat([{ id: "p6", name: "P6" }, { id: "p7", name: "P7" }]);
+  const B = SQ_B.concat([{ id: "w4", name: "W4" }, { id: "w5", name: "W5" }]);
+  /** @param {number} i  @param {"A" | "B"} bat  @param {InningsStartInput} [o] */
+  const start = (i, bat, o = {}) => [
+    inningsStart({ innings: i, battingTeam: bat, bowlingTeam: bat === "A" ? "B" : "A",
+                   squad: bat === "A" ? A : B, bowlingSquad: bat === "A" ? B : A, overs: 1, ...o }),
+    batters({ innings: i, striker: bat === "A" ? "p1" : "w1", nonStriker: bat === "A" ? "p2" : "w2" }),
+    bowler({ innings: i, bowler: bat === "A" ? "w3" : "p3" }),
+  ];
+  /** @param {number} i  @param {...number} vs */
+  const r = (i, ...vs) => vs.map((v) => runs(v, { innings: i }));
+  let awards = 0;
+  const toField = (/** @type {number} */ i) => penalty({ id: `award-${++awards}`, innings: i, runs: 5, toBattingTeam: false, reason: "time_wasting" });
+
+  // 1. Awarded while B fields first: B has not batted, so their innings opens on it.
+  {
+    const log = [...start(0, "A"), ...r(0, 1, 2), toField(0), ...r(0, 0, 1, 0, 1)];
+    const first = deriveMatch(log).innings[0];
+    ok("an award to the fielding side is not in the batting side's total", first.runs === 5 && first.extras.penalty === 0);
+    ok("...the innings counts it as the fielding side's", first.penaltyToFielding === 5 && first.penaltyCarried === 0);
+    ok("...deriveInnings() alone says the same of that innings", deriveInnings(log).runs === 5 && deriveInnings(log).penaltyToFielding === 5);
+    const credits = penaltyCredits([[0, first]]);
+    ok("with the second innings not opened, the award is pending for B", credits.pending.length === 1
+       && credits.pending[0].team === "B" && credits.pending[0].runs === 5 && credits.carried.size === 0 && credits.added.size === 0);
+
+    const opened = [...log, ...start(1, "B", { target: 6 })];
+    const m = deriveMatch(opened);
+    ok("B's innings opens on 5, before a ball is bowled", m.innings[1].runs === 5 && m.innings[1].balls === 0);
+    ok("...as penalty extras carried from the other innings", m.innings[1].extras.penalty === 5 && m.innings[1].penaltyCarried === 5);
+    ok("...and the side that fielded keeps its own total", m.innings[0].runs === 5);
+
+    const chase = [...opened, runs(0, { innings: 1 }), ball({ innings: 1, type: BALL_TYPE.WICKET, dismissal: "bowled" })];
+    const fow = deriveMatch(chase).innings[1].fow[0];
+    ok("a wicket that falls at 0 runs scored falls at 5 on the card", fow.runs === 5 && fow.wickets === 1);
+    const won = deriveMatch([...chase, batters({ innings: 1, striker: "w4" }), runs(1, { innings: 1 })]);
+    ok("...and the chase ends when the 5 and the runs reach the target (6)",
+       won.innings[1].runs === 6 && won.innings[1].complete && won.innings[1].endReason === "target_reached");
+    ok("...B win by wickets", won.result?.winner === "B" && won.result.margin === "3 wickets", won.result);
+    const plain = deriveMatch([...start(0, "A"), ...r(0, 1, 2, 0, 1, 0, 1), ...start(1, "B", { target: 6 }), ...r(1, 0, 0, 1)]);
+    ok("...where without the award B would still be 5 short", plain.innings[1].runs === 1 && !plain.innings[1].complete);
+
+    // The seal confirms the figures the innings holds — the 5 among them.
+    const inn1 = deriveMatch(chase).innings[1];
+    const sealedWith = deriveMatch([...chase, { ...sealInnings(inn1, "declared"), innings: 1 }]).innings[1];
+    ok("a seal confirming the total with the carried 5 closes the innings", sealedWith.sealed === true);
+    const sealedWithout = deriveMatch([...chase, { ...sealInnings({ ...inn1, runs: inn1.runs - 5 }, "declared"), innings: 1 }]).innings[1];
+    ok("...one confirming it without them is refused as moved", sealedWithout.sealRefused === SEAL_REFUSAL.FIGURES_MOVED);
+  }
+
+  // 2. Awarded while A fields second: A batted first and is complete, so
+  //    their total — and the target — rise mid-chase.
+  {
+    const first = [...start(0, "A"), ...r(0, 1, 2, 4, 0, 2, 1)];          // 10 off the over
+    const chase = [...start(1, "B", { target: 11 }), ...r(1, 4)];
+    const before = deriveMatch([...first, ...chase]);
+    ok("A made 10; B chase 11", before.innings[0].runs === 10 && before.innings[1].target === 11);
+
+    // Deliberate short running: the delivery with no run, and 5 to A.
+    const [dot, award] = shortRunning({ innings: 1, type: BALL_TYPE.RUN, value: 2 });
+    const mid = deriveMatch([...first, ...chase, dot, award]);
+    ok("A's completed innings rises to 15", mid.innings[0].runs === 15 && mid.innings[0].extras.penalty === 5
+       && mid.innings[0].penaltyCarried === 5);
+    ok("...its fall of wickets and balls are as they were", mid.innings[0].balls === 6 && mid.innings[0].fow.length === 0);
+    ok("...the target moves to 16 mid-chase", mid.innings[1].target === 16);
+    ok("...B's total has none of it", mid.innings[1].runs === 4 && mid.innings[1].extras.penalty === 0
+       && mid.innings[1].penaltyToFielding === 5);
+
+    // B then take 4, 4, 1, 0: 13 — past the old target, short of the new.
+    const tail = r(1, 4, 4, 1, 0);
+    const end = deriveMatch([...first, ...chase, dot, award, ...tail]);
+    ok("the chase is not over at 12 (the old target was 11): it runs to the overs",
+       end.innings[1].runs === 13 && end.innings[1].complete && end.innings[1].endReason === "overs_complete");
+    ok("...A win by 2 runs, against the moved target (16 − 1 − 13)", end.result?.winner === "A" && end.result.margin === "2 runs", end.result);
+    const noAward = deriveMatch([...first, ...chase, dot, ...r(1, 4, 4)]);
+    ok("...where with no award B had won at 12", noAward.innings[1].complete && noAward.innings[1].endReason === "target_reached"
+       && noAward.result?.winner === "B");
+
+    // A chase with no target on its innings_start is judged against A's total + 1 — the credited one.
+    const unstamped = deriveMatch([...first, ...start(1, "B"), ...r(1, 4), dot, award, ...tail]);
+    ok("with no stamped target the result reads A's credited total", unstamped.result?.winner === "A" && unstamped.result.margin === "2 runs",
+       unstamped.result);
+
+    // The umpires' revised target is theirs: an award after it does not move it.
+    const revised = deriveMatch([...first, ...chase, revision({ innings: 1, target: 9, reason: "rain" }), dot, award]);
+    ok("a revised target does not move with a later award", revised.innings[1].target === 9 && revised.innings[0].runs === 15);
+    const reopened = deriveMatch([...first, ...chase, revision({ innings: 1, target: 9 }),
+                                  inningsStart({ innings: 1, battingTeam: "B", bowlingTeam: "A", squad: B, bowlingSquad: A, overs: 1, target: 11 }), dot, award]);
+    ok("...but one re-stamped by innings_start after it does", reopened.innings[1].target === 16);
+
+    // An award to the batting side is where it always was.
+    const toBat = deriveMatch([...first, ...chase, penalty({ innings: 1, runs: 5, reason: "helmet_struck" })]);
+    ok("an award to the batting side stays in its own innings", toBat.innings[1].runs === 9 && toBat.innings[0].runs === 10
+       && toBat.innings[1].target === 11);
+  }
+
+  // 3. The fold, three ways: deriveMatch, deriveInningsList, MatchFold (whole and event by event).
+  {
+    const log = [...start(0, "A"), ...r(0, 1), toField(0), ...r(0, 2, 0, 0, 1, 1),
+                 ...start(1, "B", { target: 6 }), ...r(1, 1), toField(1), ...r(1, 0)];
+    const m = deriveMatch(log);
+    ok("both ways at once: B opened on 5, A's 5 rose to 10, the target 11",
+       m.innings[1].runs === 6 && m.innings[0].runs === 10 && m.innings[1].target === 11, m.innings.map((x) => [x.runs, x.target]));
+    /** @type {LogEvent[][]} */ const byInn = [];
+    for (const e of log) (byInn[e.innings ?? 0] ??= []).push(e);
+    const list = deriveInningsList(byInn);
+    ok("deriveInningsList() is deriveMatch's innings, by number", list.every((x, i) => JSON.stringify(x) === JSON.stringify(m.innings[i])));
+    ok("...and null for an innings with no log", deriveInningsList([byInn[0], [], byInn[1]])[1] === null);
+    /** @param {Innings | null | undefined} x */
+    const figures = (x) => JSON.stringify(x && [x.runs, x.wickets, x.balls, x.extras, x.target, x.complete, x.fow, x.penaltyToFielding, x.penaltyCarried]);
+    const whole = new MatchFold(log).view();
+    const inc = new MatchFold([]);
+    let agreeing = true;
+    for (let k = 0; k < log.length; k++) {
+      inc.push(log[k]);
+      const want = deriveMatch(log.slice(0, k + 1)).innings;
+      const got = inc.view().innings;
+      agreeing &&= want.every((x, i) => figures(x) === figures(got[i]));
+    }
+    ok("MatchFold, whole, credits as deriveMatch does", whole.innings.every((x, i) => figures(x) === figures(m.innings[i])));
+    ok("...and event by event, as the server judges a batch", agreeing);
+    const undone = new MatchFold(log);
+    const last = must(log.findLast((e) => e.kind === KIND.PENALTY)?.id);
+    undone.push(voidEvent({ innings: 1, target: last }));
+    ok("...a void of the award takes the credit and the target back",
+       undone.view().innings[0].runs === 5 && undone.view().innings[1].target === 6);
+  }
+
+  // 4. Two-innings (two-day) matches: A, B, A, B — and the follow-on, A, B, B, A.
+  {
+    const A1 = [...start(0, "A"), ...r(0, 1, 1, 1, 1, 1, 1)];
+    const B1 = [...start(1, "B"), ...r(1, 2, 2, 2, 2, 2, 2)];
+    const A2 = [...start(2, "A"), ...r(2, 0, 0, 0, 0, 0, 3)];
+    const B2 = [...start(3, "B"), ...r(3, 1)];
+    const four = deriveMatch([...A1, ...B1, toField(1), ...A2, toField(2), ...B2, toField(3)]);
+    ok("an award in B's first innings goes to A's first", four.innings[0].runs === 11);
+    ok("...one in A's second goes to B's first (their most recent)", four.innings[1].runs === 17);
+    ok("...one in B's second goes to A's second", four.innings[2].runs === 8);
+    ok("...B's second has none", four.innings[3].runs === 1);
+    ok("...each where the innings made it is counted there", four.innings.slice(1).every((x) => x.penaltyToFielding === 5));
+
+    const openers = deriveMatch([...A1, toField(0), ...B1, ...A2]);
+    ok("an award in the first innings goes to B's next innings, their first", openers.innings[1].runs === 17
+       && openers.innings[1].penaltyCarried === 5 && openers.innings[3] === undefined);
+
+    const followOn = deriveMatch([...A1, ...B1, ...start(2, "B"), ...r(2, 1), toField(2), ...start(3, "A")]);
+    ok("the follow-on: an award in B's second innings goes to A's first, their most recent",
+       followOn.innings[0].runs === 11 && followOn.innings[3].runs === 0);
+  }
+
+  // 5. Deliberate short running, as the fold reads it.
+  {
+    const log = [...open(), runs(1)];
+    const [dot, award] = shortRunning({ type: BALL_TYPE.RUN, value: 3, striker: "p2", bowler: "w1" });
+    ok("the delivery has no runs and the award is 5 to the fielding side, reason short_running",
+       dot.kind === KIND.BALL && dot.value === 0 && award.kind === KIND.PENALTY && award.runs === 5
+       && award.toBattingTeam === false && award.reason === "short_running");
+    const inn = deriveInnings([...log, dot, award]);
+    ok("every run is disallowed: the side, the striker and the bowler have none of them",
+       inn.runs === 1 && inn.batsmen.find((b) => b.id === "p2")?.runs === 0 && inn.bowlers[0].runs === 1);
+    ok("...the delivery counts: a ball of the over and a ball faced", inn.balls === 2 && inn.batsmen.find((b) => b.id === "p2")?.balls === 1);
+    ok("...the batters are at the ends they started from", inn.striker === "p2" && inn.nonStriker === "p1");
+    const nb = shortRunning({ type: BALL_TYPE.NO_BALL, value: 1 });
+    ok("off a no-ball the one-run penalty stands (Law 18.5.2)", deriveInnings([...log, ...nb]).runs === 2);
+  }
 }
 
 console.log(`\n${"─".repeat(52)}\nSCORING SUITE: ${pass} passed, ${fail} failed`);
