@@ -449,6 +449,25 @@ ok("the engine listens for the system setting changing", /addEventListener\("cha
   ok("setting Daylight switches the tokens", themeName() === "daylight" && T.surface.canvas === DAYLIGHT.surface.canvas);
   theme.setPreference("system");
   ok("...and System switches them back", themeName() === "floodlit" && theme.getPreference() === "system");
+  // Colours (§3.9): the same engine, a third input.
+  ok("Colours offers Standard, Red-green safe, Blue-yellow safe",
+     theme.VISION_CHOICES.map((c) => c.label).join() === "Standard,Red-green safe,Blue-yellow safe"
+     && theme.VISION_CHOICES.map((c) => c.value).join() === VISION_NAMES.join());
+  ok("...stored under its own key, which is not the theme's", theme.VISION_KEY === "scrbrd:vision" && theme.VISION_KEY !== key);
+  ok("with nothing stored, the palette is Standard", theme.readVision() === "standard" && theme.getVision() === "standard");
+  theme.setPreference("daylight");
+  theme.setVision("blueyellow");
+  ok("choosing Blue-yellow safe swaps the chips and keeps the theme",
+     visionName() === "blueyellow" && themeName() === "daylight" && T.chip.six === CHIPS.blueyellow.six);
+  theme.setPreference("floodlit");
+  ok("...and a theme switch keeps the palette", visionName() === "blueyellow" && themeName() === "floodlit" && T.semantic.criticalText === VISION.blueyellow.floodlit.semantic.criticalText);
+  theme.setVision("not-a-palette");
+  ok("an unknown palette is Standard", visionName() === "standard" && T.chip.six === CHIPS.standard.six);
+  theme.setPreference("system");
+  const where = (f) => readFileSync(join(SRC, f), "utf8");
+  ok("Colours sits beside the theme in Settings and in the pad's menu",
+     /<ThemeChoice\/>[\s\S]{0,600}<VisionChoice\/>/.test(where("views/SettingsView.jsx"))
+     && /<ThemeChoice[^>]*pad-theme-choice[\s\S]{0,400}<VisionChoice[^>]*pad-vision-choice/.test(where("scorer/padMenu.jsx")));
 }
 
 const files = [];
