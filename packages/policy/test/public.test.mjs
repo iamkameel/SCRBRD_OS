@@ -578,7 +578,7 @@ group("§1.4 — initial and surname");
      multi.every((n) => {
        const out = initialAndSurname(n);
        return !/Andile|Pieter|Louise|Hendrik|Anne|Sipho/.test(out.slice(1)) && !/^\S+ \p{Lu}\b(?! *$)/u.test(out);
-     }), multi.map(initialAndSurname).join(" | "));
+     }), multi.map((n) => initialAndSurname(n)).join(" | "));
 }
 
 // ═══════════════════════════════════════════════════════════════════
