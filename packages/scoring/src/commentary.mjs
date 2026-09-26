@@ -341,10 +341,10 @@ export function deriveCommentary(events = [], options = {}) {
       const parts = [`End of over ${over + 1}: ${what}.`, score(s)];
       const atCrease = [s.striker, s.nonStriker].filter((id) => id != null)
         .map((id) => { const b = s.bat.get(/** @type {string} */ (id)); return `${who(id, "batter")} ${b?.runs ?? 0} (${b?.balls ?? 0})`; });
-      if (atCrease.length) parts.push(`${atCrease.join(", ")}.`);
+      if (atCrease.length) parts.push(cap(`${atCrease.join(", ")}.`));
       if (bowlerId != null) {
         const f = s.bowl.get(bowlerId);
-        if (f) parts.push(`${who(bowlerId, "bowler")} ${oversText(f.balls)}-${maidens.get(bowlerId) ?? 0}-${f.runs}-${f.wickets}.`);
+        if (f) parts.push(`${cap(who(bowlerId, "bowler"))} ${oversText(f.balls)}-${maidens.get(bowlerId) ?? 0}-${f.runs}-${f.wickets}.`);
       }
       if (s.target != null) {
         const need = s.target - s.runs, left = s.overs * 6 - s.balls;
@@ -396,8 +396,10 @@ export function deriveCommentary(events = [], options = {}) {
           }
           for (const id of fresh) {
             const had = prev.bat.get(/** @type {string} */ (id));
+            // Named only by the role, a new batter is simply that.
             const text = had?.status === "retired"
               ? `${who(id, "batter")} resumes, on ${had.runs} (${had.balls}).`
+              : who(id, "batter") === ROLE_WORDS.batter ? "A new batter comes in."
               : choose(key, `in:${fresh.indexOf(id)}`, [
                 `${who(id, "batter")} comes in.`,
                 `${who(id, "batter")} is the new batter.`,
@@ -730,8 +732,8 @@ function deliveryLine(ev, entry, c) {
       const f = outId != null ? cur.bat.get(outId) : undefined;
       const r = f?.runs ?? 0, b = f?.balls ?? 0;
       const gone = r === 0
-        ? `${D} is out for a duck, from ${b} ${plural(b, "ball")}.`
-        : choose(key, "gone", [`${D} goes for ${r} from ${b} ${plural(b, "ball")}.`, `${D} is out for ${r}, from ${b} ${plural(b, "ball")}.`]);
+        ? `${cap(D)} is out for a duck, from ${b} ${plural(b, "ball")}.`
+        : choose(key, "gone", [`${cap(D)} goes for ${r} from ${b} ${plural(b, "ball")}.`, `${cap(D)} is out for ${r}, from ${b} ${plural(b, "ball")}.`]);
       const leadWord = choose(key, "out", ["out", "and that's out"]);
       const body = mode === DISMISSAL.RUN_OUT ? `${leadWord}: ${method}` : `${leadWord}, ${method}`;
       return { kind: COMMENTARY_KIND.WICKET, text: `${line(body)}. ${gone} ${score}` };

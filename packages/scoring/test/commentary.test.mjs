@@ -463,6 +463,7 @@ group("G. Public mode: role words for names, and no pupil's name anywhere");
     ok(`${label}: no pupil's name, typed name or id`, !pupils.some((p) => all.includes(p)), pupils.find((p) => all.includes(p)));
     ok(`${label}: people are role words`, /the bowler to the striker|The bowler to the striker/i.test(all) && /the keeper/.test(all), all.slice(0, 300));
     ok(`${label}: nothing about health`, !/hurt|injur/i.test(all));
+    ok(`${label}: and so does every sentence in it`, !/[.!?]\s+[a-z]/.test(all), /[^\n]*[.!?]\s+[a-z][^\n]*/.exec(all)?.[0]);
     ok(`${label}: every line starts with a capital`, /** @type {CommentaryItem[]} */ (out).every((x) => /^[A-Z0-9]/.test(x.text)),
        /** @type {CommentaryItem[]} */ (out).find((x) => !/^[A-Z0-9]/.test(x.text))?.text);
   }
