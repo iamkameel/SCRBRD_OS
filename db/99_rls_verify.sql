@@ -4368,6 +4368,20 @@ BEGIN
     SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_name_consent_set(P_JW, true, V) s;
     PERFORM _assert(NOT v_ok AND v_reason = 'already_given' AND _consent_open_rows(P_JW) = 1,
       format('db/47 (again): a repeated consent was written (ok %s, %s)', v_ok, v_reason));
+    -- (adult) a guardian answers for a minor: James made nineteen, as the
+    -- owner, and his guardian's link still open (a link written before links
+    -- ended at majority), the guardian's answer is refused and the consent
+    -- he gave today is not a competent one; made sixteen again, it is
+    v_born := _born_of(P_JW);
+    PERFORM _set_born(P_JW, (current_date - interval '19 years')::date);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_name_consent_set(P_JW, false, V) s;
+    v_facts := public_name_facts(P_JW);
+    PERFORM _assert(NOT v_ok AND v_reason = 'player_is_an_adult' AND _consent_open_rows(P_JW) = 1
+                    AND v_facts #> '{consents,0,competent}' = 'false'::jsonb,
+      format('db/47 (adult): a guardian answered for, or counted for, a boy of nineteen (ok %s, %s, facts %s)', v_ok, v_reason, v_facts));
+    PERFORM _set_born(P_JW, v_born);
+    PERFORM _assert(public_name_facts(P_JW) #> '{consents,0,competent}' = 'true'::jsonb,
+      'db/47 (adult): the consent is not competent again once he is sixteen');
     -- (refused) a "no" with nothing open is a record that ends the day it begins
     PERFORM _as(U_SARAH);
     SELECT s.ok INTO v_ok FROM public_name_consent_set(P_U16B, false, V) s;

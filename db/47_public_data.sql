@@ -98,10 +98,13 @@
 --
 --     guardian  the link the record names was a live, verified guardian link
 --               on given_on (verified that day or earlier, begun, not yet
---               ended) and is STILL 'verified' — not since rejected or
---               revoked. A link that simply ran to its end date at his
---               majority stays 'verified', so his guardian's consent stands
---               past his birthday (C6). Revocation (guardian_link_revoke())
+--               ended), he was still a minor that day, and the link is STILL
+--               'verified' — not since rejected or revoked. A link that simply
+--               ran to its end date at his majority stays 'verified', so his
+--               guardian's consent stands past his birthday (C6); a consent
+--               a guardian gave ON or after it does not — every link now ends
+--               there (db/08, db/10), and this holds even for one that was
+--               written before they did. Revocation (guardian_link_revoke())
 --               records no reason, so "revoked as untrue" cannot be told from
 --               "revoked because custody changed": every revocation counts as
 --               untrue, which fails closed — his name comes off until someone
@@ -309,10 +312,10 @@ REVOKE ALL ON FUNCTION public_name_live_link(uuid, uuid, text) FROM PUBLIC;
  * TWO WAYS IN, and each checks its own authority:
  *
  *   p_guardian NULL — the caller answers for himself. He must hold a live,
- *     verified guardian link to THIS child (a guardian of another child is
- *     refused), or be this child through his own verified 'self' link AND be
- *     eighteen today (C6: "his own consent counts from his birthday"; before
- *     it he is refused, not recorded).
+ *     verified guardian link to THIS child while the child is a minor (a
+ *     guardian of another child is refused), or be this child through his
+ *     own verified 'self' link AND be eighteen today (C6: "his own consent
+ *     counts from his birthday"; before it he is refused, not recorded).
  *
  *   p_guardian set — the office, on that guardian's behalf, from its own
  *     forms (C1). guardian.link.manage at the child's school; the guardian
@@ -360,6 +363,11 @@ BEGIN
     SELECT l.assignment_id, l.link_id INTO v_asg, v_link
       FROM public_name_live_link(app_user_id(), p_player, 'guardian') l;
     IF v_link IS NOT NULL THEN
+      -- A guardian answers for a minor. From his eighteenth birthday the
+      -- answer is his own (C6), whatever an old link still says.
+      IF v_born IS NOT NULL AND majority_on(v_born) <= v_today THEN
+        RETURN QUERY SELECT false, 'player_is_an_adult'; RETURN;
+      END IF;
       v_by := 'guardian';
     ELSE
       SELECT l.assignment_id, l.link_id INTO v_asg, v_link
@@ -380,6 +388,9 @@ BEGIN
     SELECT l.assignment_id, l.link_id INTO v_asg, v_link
       FROM public_name_live_link(p_guardian, p_player, 'guardian') l;
     IF v_link IS NULL THEN RETURN QUERY SELECT false, 'no_verified_link'; RETURN; END IF;
+    IF v_born IS NOT NULL AND majority_on(v_born) <= v_today THEN
+      RETURN QUERY SELECT false, 'player_is_an_adult'; RETURN;
+    END IF;
     IF (p_form_name IS NULL) <> (p_form_date IS NULL)
        OR (p_yes AND p_form_name IS NULL) THEN
       RETURN QUERY SELECT false, 'form_required'; RETURN;
@@ -802,6 +813,7 @@ RETURNS jsonb AS $$
                    AND (g.verified_at AT TIME ZONE 'Africa/Johannesburg')::date <= c.given_on
                    AND CASE c.given_by
                          WHEN 'guardian' THEN a.role = 'guardian' AND g.relationship IS DISTINCT FROM 'self'
+                                              AND (p.born IS NULL OR c.given_on < majority_on(p.born))
                          WHEN 'pupil'    THEN a.role = 'selfaccess' AND g.relationship = 'self'
                                               AND p.born IS NOT NULL AND majority_on(p.born) <= c.given_on
                        END, false) AS competent

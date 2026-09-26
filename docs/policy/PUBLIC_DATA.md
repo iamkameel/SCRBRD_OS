@@ -139,6 +139,20 @@ below. Kameel confirmed all of them the same day.
    versioned and end-dated, with the guardian or the pupil at 18 as the giver); the
    never-public mark (C5, reason held away from every page); a school's per-age-group
    switch (C4); a publish flag per fixture and competition (L1, A1).
+   **Built: `db/47_public_data.sql`**, proved live in `db/99` §25. Consent is written
+   only through `public_name_consent_set()` (a verified guardian; the pupil from his
+   eighteenth birthday; the office under `guardian.link.manage`, naming the form and
+   its date). The mark is `player_never_public`, set, ended and read only under a new
+   capability, `player.public.withhold` (principal, school office, director of sport).
+   Names-off (`public_names_off`) and each side of a fixture (`fixture_publication`,
+   home and away published separately, L5) are under `broadcast.publish`; a
+   competition page (`competition_publication`) under `competition.manage`. A stored
+   `player.surname` and `known_as` feed the formatter. `public_name_facts(player,
+   side)` returns the three facts `publicName()` needs — `consents`, `neverPublic`,
+   `namesOff` — and nothing else: no date of birth, no reason, no guardian.
+   Two readings it takes: every revoked guardian link counts as "revoked as untrue"
+   (the schema records no reason for a revocation), and a guardian's consent given on
+   or after the boy's eighteenth birthday is refused and does not count.
 3. **Signed-out reads** that apply the rule on the server, never in the browser, and a
    `noindex` on every public page.
 4. **The overlay brought under the rule** (D2).
