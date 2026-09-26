@@ -146,6 +146,8 @@ const BUNDLES = {
     "player.performance.read", "medical.status.read", "medical.nature.read", "audit.read",
     "player.age.read", "player.roster.read", "guardian.link.manage",
     "player.note.read", "scoring.amend.approve",
+    // A child who must never appear on a public page (db/47, C5).
+    "player.public.withhold",
   ],
   directorofsport: ["recognition.manage", "player.workload.read", "player.workload.manage", "clearance.read", "clearance.manage",
     "availability.read", "availability.declare",
@@ -167,6 +169,8 @@ const BUNDLES = {
     "scoring.amend.approve",
     "news.publish.team", "news.publish.school", "audit.read",
     "opposition.read",
+    // The one most often told "this boy must not appear" (db/47, C5).
+    "player.public.withhold",
   ],
   schooladmin: ["recognition.manage", "player.workload.manage", "clearance.read", "clearance.manage",
     "availability.read", "availability.declare",
@@ -184,6 +188,8 @@ const BUNDLES = {
     "discipline.read", "facility.read", "facility.manage",
     "transport.read", "transport.manage", "invoice.read",
     "competition.read", "news.publish.school", "audit.read",
+    // The office holds the family file a safeguarding order arrives in (db/47, C5).
+    "player.public.withhold",
   ],
   sportsadmin: ["clearance.read",
     "availability.read", "availability.declare",

@@ -438,6 +438,7 @@ const roleIn01 = (/** @type {string} */ role) => !(role in ROLES_ADDED_SINCE_01)
  */
 export const ADDED_SINCE_01 = {
   "scoring.amend.request": "24_amend_request.sql",
+  "player.public.withhold": "47_public_data.sql",
 };
 const shippedIn01 = (/** @type {string} */ cap) => !(cap in ADDED_SINCE_01);
 

@@ -44,5 +44,6 @@
   "43_last_fold_disagreements.sql",
   "44_career_by_season.sql",
   "45_handover_this_innings.sql",
-  "46_opposition_window.sql"
+  "46_opposition_window.sql",
+  "47_public_data.sql"
 ]
