@@ -191,7 +191,7 @@ way 2.0 drifted.
 Decided 2026-09-26 (Kameel: "We should consider theme options for colorblind users").
 About one boy in twelve, and one girl in two hundred, has a colour-vision deficiency. On
 a team sheet of fifteen, that is likely one of the players, and a parent or two on the
-parents.
+boundary.
 
 **A second axis beside the theme.** Settings, and the pad's menu, offer:
 - **Colours:** Standard / Red-green safe (protan and deutan) / Blue-yellow safe (tritan).
