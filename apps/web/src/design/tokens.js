@@ -910,7 +910,7 @@ body{background:${T.surface.canvas};color:${T.content.primary};font-family:${T.t
   }
   .pressBtn:active{transform:none}
   .card-hover:hover{transform:none}
-  .os-insight-in{animation:none!important}
+  .os-insight-in,.mc-moment,.mc-moment-big{animation:none!important}
 }
 
 /* ── ScrbrdOS responsive layer — mobile first ── */
@@ -952,6 +952,12 @@ button{touch-action:manipulation}
    (school.code, "HIL 1XI") where there is not. Both are in the page; one
    shows. display:none, so a screen reader reads only the one on screen. */
 .mc-short{display:none}
+/* The spectator board's moments (step 3c): a four, a six, a wicket is a short
+   beat; a milestone the bigger, the interrupt. Reduced motion makes both a cut
+   (the reduced-motion rule below). Never on the pad. */
+@keyframes mcBeat{from{transform:scale(.9);opacity:0}to{transform:none;opacity:1}}
+.mc-moment{animation:mcBeat ${T.motion.control} ${T.motion.swift} both}
+.mc-moment-big{animation:interruptIn ${T.motion.interrupt} ${T.motion.ease} both}
 @media(max-width:640px){.mc-full{display:none}.mc-short{display:inline}}
 
 /* ── Print (SCRBRD-082) ──────────────────────────────────────────

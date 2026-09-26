@@ -96,6 +96,28 @@ function scoreInnings({ innings, idp, start, openers, order, attack, tokens }) {
 }
 
 /**
+ * Append events to a fixture's log, as the pad's outbox would have sent them:
+ * each through toRow(), at the next seq after `seq0`.
+ * @param {(text: string, params?: any[]) => Promise<any[]>} q
+ * @param {string} matchId  @param {any[]} log  @param {number} [seq0]
+ */
+export async function writeEvents(q, matchId, log, seq0 = 0) {
+  let seq = seq0;
+  for (const ev of log) {
+    seq += 1;
+    const row = toRow(ev);
+    const cols = Object.keys(row).filter((k) => !["kind", "innings", "client_ts", "payload"].includes(k));
+    const vals = cols.map((k) => row[k]);
+    await q(
+      `insert into ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key, client_seq,
+                               client_ts, kind, payload${cols.map((c) => `, ${c}`).join("")})
+       values ($1, $2, $3, 1, $4, $5, $6, $7, $3, $8, $9, $10::jsonb${cols.map((_, i) => `, $${11 + i}`).join("")})`,
+      [matchId, HIL, seq, ev.innings, SCORER, ev.id.startsWith("amendment:") ? "amendment" : "mc-pad", ev.id,
+        row.client_ts, row.kind, JSON.stringify(row.payload), ...vals]);
+  }
+}
+
+/**
  * Build both fixtures. `q(text, params)` runs SQL as the database owner.
  * @returns {Promise<{live: string, brk: string, events: Record<string, any[]>, players: Record<string, string>}>}
  */
@@ -188,22 +210,7 @@ export async function buildMatchCentreFixture(q) {
   const brkSealed = deriveInnings(brkLog);
   brkLog.push({ ...sealInnings(brkSealed, brkSealed.endReason ?? "overs_complete"), innings: 0, id: "mc-break-0-seal", clientTs: Date.now() });
 
-  const write = async (matchId, log) => {
-    let seq = 0;
-    for (const ev of log) {
-      seq += 1;
-      const row = toRow(ev);
-      const cols = Object.keys(row).filter((k) => !["kind", "innings", "client_ts", "payload"].includes(k));
-      const vals = cols.map((k) => row[k]);
-      await q(
-        `insert into ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key, client_seq,
-                                 client_ts, kind, payload${cols.map((c) => `, ${c}`).join("")})
-         values ($1, $2, $3, 1, $4, $5, $6, $7, $3, $8, $9, $10::jsonb${cols.map((_, i) => `, $${11 + i}`).join("")})`,
-        [matchId, HIL, seq, ev.innings, SCORER, ev.id.startsWith("amendment:") ? "amendment" : "mc-pad", ev.id,
-          row.client_ts, row.kind, JSON.stringify(row.payload), ...vals]);
-    }
-  };
-  await write(live, [...first, ...second]);
-  await write(brk, brkLog);
+  await writeEvents(q, live, [...first, ...second]);
+  await writeEvents(q, brk, brkLog);
   return { live, brk, events: { [live]: [...first, ...second], [brk]: brkLog }, players };
 }

@@ -22,7 +22,12 @@
  *      and the amended deliveries have none;
  *   6. Partnerships and Match details;
  *   7. the innings break (a second fixture): the break card on Summary;
- *   8. at 390 wide: the sides by code, and nothing wider than the screen.
+ *   8. at 390 wide: the sides by code, and nothing wider than the screen;
+ *   9. the spectator's side (Kameel's premium-feel checklist): the highlights
+ *      in order; nothing replays on a fresh load; balls that arrive while the
+ *      page is open give a moment on the board, tick the run count up, and
+ *      end the over with a summary that shows and clears; big-screen mode
+ *      draws the board full screen and leaves on Escape or its button.
  *
  * MC_SHOTS=<dir> also saves every tab at 390 and 1366 wide, in Daylight and
  * Floodlit, into <dir>.
@@ -39,8 +44,8 @@ import { createServer } from "node:http";
 import { readFile, mkdir } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
-import { deriveMatch, deriveCommentary, runsOffBat } from "@scrbrd/scoring";
-import { buildMatchCentreFixture } from "./fixture-matchcentre.mjs";
+import { deriveMatch, deriveCommentary, runsOffBat, ball, placementFromTap } from "@scrbrd/scoring";
+import { buildMatchCentreFixture, writeEvents } from "./fixture-matchcentre.mjs";
 
 const WEB_PORT = 5361;
 const API_PORT = 8961;
@@ -84,8 +89,8 @@ const pool = new pg.Pool({ connectionString: DB });
 const q = async (t, p) => (await pool.query(t, p)).rows;
 const browser = await chromium.launch({ ...launchOptions() });
 
-/** A fresh session, at a width and in a theme (the device's colour scheme). */
-async function open({ viewport = DESK, scheme = "dark" } = {}) {
+/** A fresh session, at a width and in a theme (the device's colour scheme). `liveMs` reads a live match that often. */
+async function open({ viewport = DESK, scheme = "dark", liveMs = null } = {}) {
   const ctx = await browser.newContext({ viewport, colorScheme: scheme });
   await offline(ctx);
   const page = await ctx.newPage();
@@ -97,9 +102,14 @@ async function open({ viewport = DESK, scheme = "dark" } = {}) {
     if (!/Failed to load resource/.test(t)) errors.push(`console.error: ${t}`);
   });
   await page.addInitScript(`window.__SCRBRD_API_BASE__ = ${JSON.stringify(API)};`);
+  if (liveMs) await page.addInitScript(`window.__SCRBRD_LIVE_MS__ = ${liveMs};`);
   await page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "networkidle" });
   return { ctx, page, errors };
 }
+/** Wait for a condition in the page's own time, up to `ms`. */
+const until = async (page, fn, ms = 8000, arg = undefined) => {
+  try { await page.waitForFunction(fn, arg, { timeout: ms, polling: 50 }); return true; } catch { return false; }
+};
 const text = (page) => page.$eval("body", (el) => el.innerText);
 const tid = (page, id) => page.locator(`[data-testid="${id}"]`);
 const click = async (page, re, ms = 4000) => {
@@ -289,6 +299,67 @@ try {
   ok("no console errors (desktop)", dos.errors.length === 0, dos.errors.join(" | "));
   await dos.ctx.close();
 
+  group("The spectator's side: highlights, and nothing replayed on a fresh load");
+  const lv = await open({ liveMs: 1500 });
+  await signIn(lv.page, /sarah@example\.invalid|Director/);
+  ok("the fixture opens, read every 1.5 s", await openMatch(lv.page, fx.live));
+  const L = lv.page;
+  const wantHi = expected.filter((c) => ["four", "six", "wicket", "milestone"].includes(c.kind));
+  const hi = await L.locator('[data-testid="mc-highlight"]').evaluateAll((els) => els.map((e) => ({ key: e.getAttribute("data-key"), kind: e.getAttribute("data-kind"), text: e.innerText })));
+  ok(`every boundary, wicket and milestone, in order (${wantHi.length})`, hi.length === wantHi.length
+     && hi.every((h, i) => h.key === wantHi[i].key && h.text.includes(wantHi[i].text)), hi.slice(0, 3).map((h) => h.key).join(","));
+  ok("...wickets among them", hi.some((h) => h.kind === "wicket") && hi.some((h) => h.kind === "six"));
+  await L.waitForTimeout(3500);
+  ok("a fresh load plays no moment and no over summary (two reads later)",
+     await tid(L, "mc-moment").count() === 0 && await tid(L, "mc-over-summary").count() === 0);
+
+  group("What arrives while the page is open: a moment, the runs ticking, the over's summary");
+  const before = (await tid(L, "mc-board-total").innerText()).replace(/\s/g, "");
+  const late = [
+    { ...ball({ value: 4, shot: "drive", ...placementFromTap({ angle: 250, radius: 1 }) }), innings: 1, id: "mc-live-late-1" },
+    { ...ball({ value: 1 }), innings: 1, id: "mc-live-late-2" },
+    { ...ball({ value: 0 }), innings: 1, id: "mc-live-late-3" },
+  ];
+  await writeEvents(q, fx.live, late, evs.length);
+  const after = deriveMatch([...evs, ...late]).innings[1];
+  const seen = new Set();
+  const watch = setInterval(async () => { seen.add((await tid(L, "mc-board-runs").innerText().catch(() => "")).trim()); }, 60);
+  ok("a four gets its beat on the board", await until(L, () => !!document.querySelector('[data-testid="mc-moment"][data-kind="four"]'), 8000));
+  ok("...beside the total, which stays in view", await tid(L, "mc-board-total").isVisible());
+  ok(`the board reaches the new total (${after.runs}/${after.wickets})`, await until(L, (want) =>
+    document.querySelector('[data-testid="mc-board-total"]')?.innerText.replace(/\s/g, "") === want, 6000, `${after.runs}/${after.wickets}`), before);
+  clearInterval(watch);
+  const ticks = [...seen].filter((v) => /^\d+$/.test(v)).map(Number).filter((v) => v > Number(before.split("/")[0]) && v <= after.runs);
+  ok(`...ticking up through the runs between, not jumping (${[...new Set(ticks)].join(" ")})`, new Set(ticks).size >= 2, [...seen].join(","));
+  ok("the over's summary shows", await until(L, () => /End of over 5:/.test(document.querySelector('[data-testid="mc-over-summary"]')?.innerText ?? ""), 8000));
+  ok("...the generator's own line, with the score", (await tid(L, "mc-over-summary").innerText().catch(() => "")).includes(`${after.runs}/${after.wickets}`));
+  ok("the moment clears within a second and a half", await until(L, () => !document.querySelector('[data-testid="mc-moment"]'), 2500));
+  ok("the over summary clears after a few seconds", await until(L, () => !document.querySelector('[data-testid="mc-over-summary"]'), 9000));
+
+  group("Big-screen mode: the board, full screen, from the boundary");
+  await tid(L, "mc-bigscreen-open").click();
+  await L.waitForTimeout(500);
+  const bigBox = await tid(L, "mc-bigscreen").evaluate((e) => {
+    const r = e.getBoundingClientRect(), t = document.querySelector('[data-testid="mc-bigscreen-total"]');
+    return { w: r.width, h: r.height, bg: getComputedStyle(e).backgroundColor, font: t ? parseFloat(getComputedStyle(t).fontSize) : 0,
+      text: t?.innerText.replace(/\s/g, "") ?? "", vw: innerWidth, vh: innerHeight, modal: e.getAttribute("aria-modal") };
+  }).catch(() => null);
+  ok("it fills the screen", bigBox && bigBox.w >= bigBox.vw - 1 && bigBox.h >= bigBox.vh - 1, JSON.stringify(bigBox));
+  ok("...in the board's own black", bigBox?.bg === "rgb(11, 14, 11)", bigBox?.bg);
+  ok(`...the total in figures large enough for the boundary (${bigBox?.font}px)`, (bigBox?.font ?? 0) >= 96);
+  ok("...and it is the live total", bigBox?.text === `${after.runs}/${after.wickets}`, bigBox?.text);
+  ok("...a labelled way out", (await tid(L, "mc-bigscreen-close").innerText()).trim() === "Exit big screen");
+  await L.keyboard.press("Escape");
+  await L.waitForTimeout(300);
+  ok("Escape leaves it", await tid(L, "mc-bigscreen").count() === 0 && await tid(L, "match-view").count() === 1);
+  await tid(L, "mc-bigscreen-open").click();
+  await L.waitForTimeout(300);
+  await tid(L, "mc-bigscreen-close").click();
+  await L.waitForTimeout(300);
+  ok("...and so does its button", await tid(L, "mc-bigscreen").count() === 0);
+  ok("no console errors (live)", lv.errors.length === 0, lv.errors.join(" | "));
+  await lv.ctx.close();
+
   group("At 390 wide: the sides by code, and nothing wider than the screen");
   const ph = await open({ viewport: PHONE, scheme: "light" });
   await signIn(ph.page, /sarah@example\.invalid|Director/);
@@ -320,6 +391,11 @@ try {
           if (t === "scorecard") { await tid(s.page, "mc-innings-0").click().catch(() => {}); await tid(s.page, "mc-bat-open").nth(1).click().catch(() => {}); await s.page.waitForTimeout(400); }
           await s.page.screenshot({ path: join(SHOTS, `after-${t}-${w}-${theme}.png`), fullPage: true });
         }
+        await tab(s.page, "summary");
+        await tid(s.page, "mc-bigscreen-open").click().catch(() => {});
+        await s.page.waitForTimeout(600);
+        await s.page.screenshot({ path: join(SHOTS, `after-bigscreen-${w}-${theme}.png`) });
+        await tid(s.page, "mc-bigscreen-close").click().catch(() => {});
         await tid(s.page, "mc-back").click().catch(() => {});
         await openMatch(s.page, fx.brk);
         await s.page.screenshot({ path: join(SHOTS, `after-break-${w}-${theme}.png`), fullPage: true });

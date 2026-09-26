@@ -49,7 +49,7 @@
  */
 
 import { KIND, BALL_TYPE, ILLEGAL, NB_RUNS, RUN_OUT_END, DISMISSAL, INNINGS_END_REASON, PENALTY_REASON,
-  PENALTY_REASON_TEXT, BOWLER_CHANGE_REASON, normaliseDismissal, normalisePenaltyReason, runsOffBat } from "./events.mjs";
+  PENALTY_REASON_TEXT, BOWLER_CHANGE_REASON, normaliseDismissal, normalisePenaltyReason, runsOffBat, chargedToBowler } from "./events.mjs";
 import { deriveMatch, foldSteps, penaltyCredits, retirementDismissal, isMaiden, fmtOvers } from "./replay.mjs";
 import { positionName } from "./placement.mjs";
 import { SHOT_WORDS, NO_STROKE, SECTOR_WORDS } from "./words.mjs";
@@ -308,6 +308,9 @@ export function deriveCommentary(events = [], options = {}) {
     let wicketsAtOverStart = 0;
     /** @type {Map<string, number>} */ const maidens = new Map();
     /** @type {Map<number, string>} */ const overBowler = new Map();
+    // Each bowler's legal deliveries, in order: was it a wicket that is his?
+    // For the hat-trick: three in three, as the pad's own overlay counts it.
+    /** @type {Map<string, boolean[]>} */ const bowlerRun = new Map();
     /** @type {{at: number, balls: number} | null} */ let lastAnnounce = null;
     let batTeam = "";
 
@@ -496,6 +499,18 @@ export function deriveCommentary(events = [], options = {}) {
             if (b && b.wickets > a && b.wickets >= 5) {
               push(key, pos.over, pos.ball, COMMENTARY_KIND.MILESTONE,
                 `${cap(words(b.wickets))} wickets for ${who(bowlerId, "bowler")}: ${b.wickets}/${b.runs}.`);
+            }
+            if (!ILLEGAL.has(ev.type ?? BALL_TYPE.RUN)) {
+              const mine = ev.type === BALL_TYPE.WICKET && !entry.freeHitSaved && chargedToBowler(normaliseDismissal(ev.dismissal));
+              const run = bowlerRun.get(bowlerId) ?? [];
+              run.push(mine);
+              bowlerRun.set(bowlerId, run);
+              const [x, y, z] = run.slice(-3);
+              if (mine && run.length >= 3 && x && y && z && !run[run.length - 4]) {
+                push(key, pos.over, pos.ball, COMMENTARY_KIND.MILESTONE, `A hat-trick for ${who(bowlerId, "bowler")}.`);
+              } else if (mine && run.length >= 2 && run[run.length - 2] && !(run.length >= 3 && run[run.length - 3])) {
+                push(key, pos.over, pos.ball, COMMENTARY_KIND.MILESTONE, `${who(bowlerId, "bowler")} is on a hat-trick.`);
+              }
             }
           }
           // The over is done: its summary goes out with whatever happens next.

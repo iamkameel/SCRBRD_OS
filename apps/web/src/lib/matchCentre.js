@@ -111,6 +111,17 @@ export function inningsPhase(innings = [], result = null) {
   return played.length === 2 ? (last.complete ? "Result" : "2nd innings") : `Innings ${played.length}`;
 }
 
+/**
+ * Which innings the board shows: the one in play — or, at the innings break,
+ * the one just finished.
+ * @param {any[]} innings  @param {any} [result]
+ * @returns {{index: number, atBreak: boolean}}
+ */
+export function boardInnings(innings = [], result = null) {
+  const atBreak = inningsPhase(innings, result) === "Innings break";
+  return { index: atBreak ? 0 : Math.max(0, innings.length - 1), atBreak };
+}
+
 /** The age group of a side: "U16", or "1st XI" for an open side. @param {string | null | undefined} team */
 export function ageGroupOf(team) {
   const t = parseTeam(team);

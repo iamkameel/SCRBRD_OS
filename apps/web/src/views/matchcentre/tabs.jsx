@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { T, contrast } from "../../design/tokens.js";
 import { api, signedIn } from "../../lib/api.js";
-import { commentaryByOver, inningsBreak, inningsPhase, oversOf, teamOf } from "../../lib/matchCentre.js";
+import { boardInnings, commentaryByOver, inningsBreak, oversOf, teamOf } from "../../lib/matchCentre.js";
 import { humanDateTime } from "../../lib/format.js";
 import { Board, chipFill } from "../../ui/board.jsx";
 import { boardFromInnings } from "../../scorer/boardData.js";
@@ -10,6 +10,7 @@ import { BatsmanChart, BowlerChart, ManhattanChart, ShotHeatMap, ShotSpider, Sho
 import { WeatherChip } from "../shared.jsx";
 import { InningsToggle } from "./scorecard.jsx";
 import { CardHead, Panel, Quiet, SideName } from "./bits.jsx";
+import { Highlights, MomentMark, OverSummary } from "./spectator.jsx";
 
 /**
  * The Match Centre's other five tabs (the Scorecard is scorecard.jsx).
@@ -73,11 +74,10 @@ function InningsBreakCard({ match, innings, overs }) {
   );
 }
 
-export function SummaryTab({ match, innings, result, commentary, overs, phone, setTab }) {
+export function SummaryTab({ match, innings, result, commentary, overs, phone, setTab, moment, overSummary, shownRuns }) {
   if (!innings.length) return <Quiet testid="mc-summary-empty">Nothing has been scored yet. The board opens with the first ball.</Quiet>;
-  const phase = inningsPhase(innings, result ? {} : null);
-  const atBreak = phase === "Innings break";
-  const inn = atBreak ? innings[0] : innings[innings.length - 1];
+  const { index, atBreak } = boardInnings(innings, result ? {} : null);
+  const inn = innings[index];
   const chase = innings.length >= 2 && inn === innings[1];
   const target = chase ? targetOf(innings) : null;
   const inOvers = inn.overs ?? overs;
@@ -87,8 +87,14 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
   const latest = [...commentary].reverse().filter((c) => c.kind !== "over_end").slice(0, 3);
   return (
     <div style={{ display: "grid", gap: T.space.lg }} data-testid="mc-summary">
-      {props && <Board {...props} team={phone ? side.short : side.full} size="card" testid="mc-board"
-        insight={insight.length ? insight : undefined}/>}
+      {props && (
+        <div style={{ position: "relative" }}>
+          <Board {...props} total={shownRuns ?? props.total} team={phone ? side.short : side.full} size="card" testid="mc-board"
+            insight={insight.length ? insight : undefined}/>
+          <MomentMark moment={moment}/>
+        </div>
+      )}
+      <OverSummary item={overSummary}/>
       {atBreak && <InningsBreakCard match={match} innings={innings} overs={overs}/>}
       {latest.length > 0 && (
         <Panel testid="mc-latest">
@@ -106,6 +112,7 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
           </div>
         </Panel>
       )}
+      <Highlights match={match} innings={innings} commentary={commentary}/>
     </div>
   );
 }

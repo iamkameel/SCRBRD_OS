@@ -5,7 +5,7 @@ import { deriveMatch, fromRow } from "@scrbrd/scoring";
 import { deriveCommentary } from "@scrbrd/scoring/commentary";
 import { api, signedIn } from "../../lib/api.js";
 import { useRows, useWeather } from "../../lib/live.js";
-import { inningsPhase, matchLine, nameBook, sidesOf, teamOf } from "../../lib/matchCentre.js";
+import { boardInnings, inningsPhase, matchLine, nameBook, sidesOf, teamOf } from "../../lib/matchCentre.js";
 import { seedCompletedMatch } from "../../scorer/seed.js";
 import { parseBalls, parseScore, teamSquad } from "../shared.jsx";
 import { useIsMobile } from "../../shell/MobileNav.jsx";
@@ -13,6 +13,8 @@ import { Icon } from "../../ui/icons.jsx";
 import { AnalyticsTab, CommentaryTab, DetailsTab, PartnershipsTab, SummaryTab } from "./tabs.jsx";
 import { ScorecardTab } from "./scorecard.jsx";
 import { Quiet, SideName } from "./bits.jsx";
+import { liveRefreshMs, useMoments, useTicker } from "./live.js";
+import { BigScreen } from "./spectator.jsx";
 
 /**
  * THE MATCH CENTRE — one fixture, followed (DESIGN_DIRECTION §10, step 3c).
@@ -46,8 +48,6 @@ const TABS = [
   { id: "details",      label: "Match details" },
 ];
 
-/** How often a live match is read again while it is open. */
-const LIVE_REFRESH_MS = 30000;
 
 /**
  * The match's log and its fold. A signed-in session reads the real log and
@@ -60,7 +60,7 @@ function useMatchLog(match, players) {
   const [tick, setTick] = useState(0);
   useEffect(() => {
     if (!live || !signedIn()) return undefined;
-    const t = setInterval(() => { if (!document.hidden) setTick((x) => x + 1); }, LIVE_REFRESH_MS);
+    const t = setInterval(() => { if (!document.hidden) setTick((x) => x + 1); }, liveRefreshMs());
     return () => clearInterval(t);
   }, [live]);
   useEffect(() => {
@@ -170,13 +170,24 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [log.events, PLAYERS, match.id]);
 
+  // The spectator's moments: only what arrives while the page is open, so a
+  // reload replays nothing. And the board's run count, ticking up to a new
+  // total rather than jumping to it.
+  const { moment, overSummary } = useMoments(commentary, !log.loading && !!log.events);
+  const bi = boardInnings(played, log.result);
+  const boardInn = played[bi.index] ?? null;
+  const shownRuns = useTicker(boardInn?.runs, `${match.id}:${bi.index}`);
+  const boardTarget = bi.index === 1 && played[1] ? (played[1].target ?? played[0].runs + 1) : null;
+  const [big, setBig] = useState(false);
+
   const result = log.result
     ? (log.result.winner == null ? "Match tied" : `${teamOf(match, log.result.winner).full} won by ${log.result.margin}`)
     : (match.status === "complete" ? match.result : null);
   const isLive = match.status === "live";
 
   const ctx = { match, role, innings: played, result, commentary, events: log.events, demo: log.demo, overs: log.overs,
-    inningsSel, setInningsSel: setPicked, phone, players: PLAYERS, weather, competition: comp, onNavProfile, setTab };
+    inningsSel, setInningsSel: setPicked, phone, players: PLAYERS, weather, competition: comp, onNavProfile, setTab,
+    moment, overSummary, shownRuns };
 
   return (
     <div className="os-page" data-testid="match-view" data-match={match.id}>
@@ -187,6 +198,15 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
             color: T.content.primary, fontFamily: T.type.body, fontSize: "14px", fontWeight: 500 }}>
           <Icon name="chevron-left"/> All matches
         </button>
+        <span style={{ display: "flex", gap: T.space.sm, flexWrap: "wrap" }}>
+        {!log.demo && played.length > 0 && (
+          <button type="button" onClick={() => setBig(true)} data-testid="mc-bigscreen-open" className="pressBtn os-state"
+            style={{ minHeight: "44px", padding: `0 ${T.space.lg}`, display: "inline-flex", alignItems: "center", gap: T.space.xs,
+              background: T.board.face, color: T.board.figure, border: `1px solid ${T.board.rule}`, borderRadius: T.radius.pill,
+              cursor: "pointer", fontFamily: T.type.body, fontSize: "14px", fontWeight: 600 }}>
+            <Icon name="tv"/> Big screen
+          </button>
+        )}
         {canScoreIt && (isLive || match.status === "upcoming") && onOpenScorer && (
           <button type="button" onClick={() => onOpenScorer(match)} className="pressBtn"
             style={{ minHeight: "44px", padding: `0 ${T.space.lg}`, background: T.brand.green, color: T.surface.canvas,
@@ -194,7 +214,10 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
             {isLive ? "Open scorer" : "Start scoring"}
           </button>
         )}
+        </span>
       </div>
+      {big && <BigScreen match={match} inn={boardInn} target={boardTarget} overs={boardInn?.overs ?? log.overs} shownRuns={shownRuns}
+        moment={moment} overSummary={overSummary} line={line} onClose={() => setBig(false)}/>}
 
       <header style={{ display: "grid", gap: T.space.sm }}>
         <div style={{ display: "flex", alignItems: "center", gap: T.space.sm, flexWrap: "wrap" }}>

@@ -232,6 +232,19 @@ group("A. Every event kind has its line, with the fold's figures");
   ];
   const fo = ofKind(deriveCommentary(five, { nameOf: (r) => NAMES[r] ?? "Another Reader-name" }), K.MILESTONE);
   ok("a five-for", fo.some((x) => x.text === "Five wickets for K Naidoo: 5/0."), fo.map((x) => x.text));
+  ok("two in two: on a hat-trick, said once", fo.filter((x) => x.text === "K Naidoo is on a hat-trick.").length === 1, fo.map((x) => x.text));
+  ok("three in three: a hat-trick, said once", fo.filter((x) => x.text === "A hat-trick for K Naidoo.").length === 1, fo.map((x) => x.text));
+  seq = 650;
+  const broken = [
+    I(inningsStart({ battingTeam: "Hilton College", bowlingTeam: "Westville", squad: SQUAD, overs: 20 })),
+    I(batters({ striker: H[0], nonStriker: H[1] })), I(bowler({ bowler: TYPED[0] })),
+    I(ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: "bowled" })), I(batters({ striker: H[2] })),
+    I(ball({ type: BALL_TYPE.WIDE, value: 0 })),                                                    // a wide does not break it
+    I(ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: "run_out", fielder: FIELDER })), I(batters({ striker: H[3] })), // not his
+    I(ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: "lbw" })), I(batters({ striker: H[4] })),
+  ];
+  const hb = ofKind(deriveCommentary(broken, { nameOf }), K.MILESTONE).map((x) => x.text);
+  ok("a run out between is not his: no hat-trick ball", !hb.some((t) => /hat-trick/.test(t)), hb);
 }
 
 // ── B. Voids and amendments ──────────────────────────────

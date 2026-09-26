@@ -10,7 +10,7 @@ import {
 } from "@scrbrd/scoring";
 import {
   nameCode, sideName, sidesOf, sideOfTeam, teamOf, inningsPhase, ageGroupOf, matchLine, nameBook, fowLines,
-  didNotBat, extrasOf, runCounts, dismissalKey, inningsBreak, commentaryByOver, oversOf,
+  didNotBat, extrasOf, runCounts, dismissalKey, inningsBreak, commentaryByOver, oversOf, boardInnings,
 } from "../src/lib/matchCentre.js";
 
 let pass = 0, fail = 0;
@@ -47,6 +47,8 @@ const done = deriveInnings([...open, ...[4, 6, 1, 0, 2, 2].map((v) => ball({ val
 ok("the first innings over: the break", inningsPhase([done]) === "Innings break");
 ok("...still the break with the second opened and no ball bowled", inningsPhase([done, deriveInnings([inningsStart({ battingTeam: "Opp" })])]) === "Innings break");
 ok("a result", inningsPhase([done, done], { winner: "x" }) === "Result");
+ok("the board shows the innings in play", boardInnings([done, one]).index === 1);
+ok("...and at the break, the one just finished", JSON.stringify(boardInnings([done])) === JSON.stringify({ index: 0, atBreak: true }));
 
 group("The scorecard's parts, from the fold");
 const log = [...open, ball({ value: 4 }), ball({ value: 1 }), ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" }),
