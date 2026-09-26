@@ -3411,7 +3411,15 @@ runs players × balls times in each:
 Also: the comment on `career_by_season` (db/44) cites "db/99 §21" for the Σ-seasons check, which is §22.
 `tools/bench-career.mjs` measures the career read at volume; use it before and after either fix.
 
-### SCRBRD-096 — Colour vision: a palette setting beside the theme
+### ~~SCRBRD-096~~ — CLOSED · Colour vision: a palette setting beside the theme
+**Built 2026-09-26** (redesign step 3b). A Colours setting in Settings and in the pad's menu (Standard, Red-green safe,
+Blue-yellow safe), stored per device and combined with either theme, is the third input to `applyTheme()`. It swaps
+the ball chips, the semantic trio and the wagon wheel's run colours (`T.run`); the board's black, white and lime do
+not move. `design.test.mjs` simulates colour vision (Machado 2009, CIE76) in six looks (two themes × three palettes).
+Worst pairs under the deficiencies each palette serves: red-green 25.1 (protan) and 30.3 (deutan); blue-yellow 27.9
+(tritan). Every chip is at least 3.28:1 on the board, and every figure on a chip at least 4.72:1. Three permanent
+probes (chips too close, figure contrast under 4.5, a chip under 3:1 on the board) prove the guard bites. The
+numbers are in DESIGN_DIRECTION §3.9.
 **Priority:** P2 · **Domain:** Design system / accessibility · **Decided 2026-09-26** (Kameel)
 Kameel asked for the prototype's colour-coded ball chips back, and for theme options for colour-blind users
 (DESIGN_DIRECTION §3.9, §10).
