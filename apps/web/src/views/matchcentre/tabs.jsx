@@ -73,7 +73,7 @@ function InningsBreakCard({ match, innings, overs }) {
   );
 }
 
-export function SummaryTab({ match, innings, result, commentary, demo, overs, phone, setTab }) {
+export function SummaryTab({ match, innings, result, commentary, overs, phone, setTab }) {
   if (!innings.length) return <Quiet testid="mc-summary-empty">Nothing has been scored yet. The board opens with the first ball.</Quiet>;
   const phase = inningsPhase(innings, result ? {} : null);
   const atBreak = phase === "Innings break";
@@ -83,7 +83,7 @@ export function SummaryTab({ match, innings, result, commentary, demo, overs, ph
   const inOvers = inn.overs ?? overs;
   const props = boardFromInnings(inn, { target, overs: inOvers });
   const side = teamOf(match, inn.battingTeam);
-  const insight = demo || !props ? [] : boardInsights(inn, { target, overs: inOvers });
+  const insight = !props ? [] : boardInsights(inn, { target, overs: inOvers });
   const latest = [...commentary].reverse().filter((c) => c.kind !== "over_end").slice(0, 3);
   return (
     <div style={{ display: "grid", gap: T.space.lg }} data-testid="mc-summary">
@@ -200,8 +200,13 @@ export function PartnershipsTab({ match, innings, inningsSel, setInningsSel }) {
   // The stand in progress, while both of the pair are in.
   const cp = inn.curPartner;
   const nm = (id) => inn.batsmen.find((b) => b.id === id)?.name;
-  if (!inn.complete && cp && cp.bat1 && cp.bat2 && (cp.runs > 0 || cp.balls > 0)) {
-    rows.push({ bat1: nm(cp.bat1) ?? "?", bat2: nm(cp.bat2) ?? "?", runs: cp.runs, balls: cp.balls, wicket: inn.wickets + 1, open: true });
+  // An innings that ended with a pair in (overs up, a declaration) has its
+  // last stand too: unbroken, as the card says.
+  // (The demonstration's seeder already lists a finished innings' last stand.)
+  const last = { bat1: nm(cp?.bat1) ?? "?", bat2: nm(cp?.bat2) ?? "?" };
+  const listed = rows.some((r) => r.bat1 === last.bat1 && r.bat2 === last.bat2 && r.runs === cp?.runs && r.balls === cp?.balls);
+  if (cp && cp.bat1 && cp.bat2 && (cp.runs > 0 || cp.balls > 0) && !listed) {
+    rows.push({ ...last, runs: cp.runs, balls: cp.balls, wicket: inn.wickets + 1, open: true });
   }
   const most = Math.max(1, ...rows.map((r) => r.runs));
   return (

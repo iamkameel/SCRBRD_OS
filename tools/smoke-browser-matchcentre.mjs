@@ -262,7 +262,11 @@ try {
   group("Partnerships, Analytics and Match details");
   await tab(p, "partnerships");
   await tid(p, "mc-innings-0").click(); await p.waitForTimeout(200);
-  ok(`a row per stand of the first innings (${inn1.partnerships.length})`, await tid(p, "mc-partnership").count() === inn1.partnerships.length);
+  // The fold closes a stand at a wicket; the pair still in at the end of the
+  // overs is the innings' last stand, unbroken.
+  const stands = inn1.partnerships.length + (inn1.striker && inn1.nonStriker ? 1 : 0);
+  ok(`a row per stand of the first innings, the last unbroken (${stands})`, await tid(p, "mc-partnership").count() === stands
+     && /unbroken/i.test(await tid(p, "mc-partnership").last().innerText()));
   await tab(p, "analytics");
   ok("the analytics draw", await tid(p, "mc-analytics").count() === 1);
   await tab(p, "details");
