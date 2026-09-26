@@ -118,16 +118,23 @@ export function Highlights({ match, innings, commentary }) {
  */
 export function BigScreen({ match, inn, target, overs, shownRuns, moment, overSummary, line, onClose }) {
   const closeRef = useRef(null);
+  // Held, not watched: the board re-renders on every live read, and the
+  // lock and the focus are taken once, when it opens.
+  const leave = useRef(onClose);
+  leave.current = onClose;
   useEffect(() => {
-    const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } };
+    const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); leave.current(); } };
     document.addEventListener("keydown", onKey);
     closeRef.current?.focus();
     // A screen at a ground must not go dark mid-over. Where the browser has
     // no wake lock, or refuses one, the board simply carries on.
     let lock = null, alive = true;
     const ask = async () => {
-      try { if (alive && document.visibilityState === "visible" && navigator.wakeLock) lock = await navigator.wakeLock.request("screen"); }
-      catch { lock = null; }
+      try {
+        if (!alive || document.visibilityState !== "visible" || !navigator.wakeLock) return;
+        const got = await navigator.wakeLock.request("screen");
+        if (alive) lock = got; else got.release().catch(() => {});   // closed while it was asked for
+      } catch { lock = null; }
     };
     const onVis = () => { if (document.visibilityState === "visible") ask(); };
     ask();
@@ -138,7 +145,7 @@ export function BigScreen({ match, inn, target, overs, shownRuns, moment, overSu
       document.removeEventListener("visibilitychange", onVis);
       lock?.release?.().catch(() => {});
     };
-  }, [onClose]);
+  }, []);
 
   const props = inn ? boardFromInnings(inn, { target, overs }) : null;
   const B = T.board;
