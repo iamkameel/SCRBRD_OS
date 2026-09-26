@@ -3391,6 +3391,21 @@ Two Law 41 questions Kameel is researching before deciding; nothing is built unt
    on 5").
 2. A bowler suspended mid-over (SCRBRD-080's unbuilt half): Law 41 says he may not bowl again in the innings.
 
+### SCRBRD-097 — The rest of the players × balls readers
+**Priority:** P2 · **Domain:** Scoring / performance · **Found 2026-09-26** building db/49
+db/49 made the lifetime career views one pass over the log: the career read at a school's volume (70 players,
+about 5,000 deliveries) went from 83 s to 2.2 s. Two readers keep the old shape, and the RLS check on `ball_event`
+runs players × balls times in each:
+1. **The assessment read** (`services/api/read/read-api.mjs`, around line 2290) calls `player_*_since()` per player
+   as a LATERAL with a window. Fix it the same way db/49 did: one pass grouped by player, with the window as a
+   predicate, proved equal to the functions.
+2. **`milestone_watch()`** reads `player_innings` for the striker on every inserted ball. Loading 5,000 balls took
+   about 48 s, mostly in this per-row trigger. A live match inserts one ball at a time, so it is fine today; a bulk
+   import or replay is not. Consider a statement-level trigger, or a check bounded to the ball's own match.
+
+Also: the comment on `career_by_season` (db/44) cites "db/99 §21" for the Σ-seasons check, which is §22.
+`tools/bench-career.mjs` measures the career read at volume; use it before and after either fix.
+
 ### SCRBRD-096 — Colour vision: a palette setting beside the theme
 **Priority:** P2 · **Domain:** Design system / accessibility · **Decided 2026-09-26** (Kameel)
 Kameel asked for the prototype's colour-coded ball chips back, and for theme options for colour-blind users
