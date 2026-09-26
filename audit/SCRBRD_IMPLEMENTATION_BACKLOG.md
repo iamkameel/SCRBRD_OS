@@ -3490,6 +3490,51 @@ Two Law 41 questions Kameel is researching before deciding; nothing is built unt
    penalty-runs research gave repeated protected-area infractions as 41.14. The screens show the reason in words
    only, not clause numbers, until Kameel confirms them against the current Code.
 
+### SCRBRD-100 — The premium-feel checklist: what is left after step 3c
+**Priority:** P2 · **Domain:** Front-end · **Type:** product polish (Kameel, 2026-09-26; checklist at
+https://claude.ai/artifact/63zVkqVAotrYYQk9dGUhAp; the rule is DESIGN_DIRECTION §1a)
+Already true and ticked in the checklist: strike rotation, instant taps, fixed button positions, one icon style,
+fixed colour meanings, the innings break's target, offline scoring that says when it will sync, the Daylight theme,
+44px targets, the chase's required rate, the projected score, the partnership and bowler figures on the board, and
+motion timings as tokens.
+In flight:
+- the pad's full-screen celebration overlay becomes a flash on its own board (with the penalty sheet);
+- the scoreboard's moments, ticking run count, over summary, innings-break card, highlights list and big-screen
+  mode (step 3c).
+
+**Left, on the pad:**
+1. Dot and 1 are the largest, most reachable run keys.
+2. The new-bowler prompt lists the likely bowler first (from the rotation and the over-before-last rule). The
+   new-batter prompt lists the batting order's next name first.
+3. An extra takes two taps: the kind, then the runs.
+4. A haptic tick (`navigator.vibrate`, where the device has it) plus the visual change on every recorded ball.
+   Nothing more, and off when the device is set to reduce motion.
+5. Undo shows what it will reverse ("Undo: 4 to R Pillay").
+6. The Laws check's refusals say the likely cause in words ("7 balls in this over — was one a wide or no-ball?").
+
+**Left, on the scoreboard and the match summary:**
+1. **Empty states that never dead-end:**
+   - before the toss: teams, ground, start and "follow this match";
+   - a rain delay or interruption: its status and the expected restart (a revision already records the new
+     overs);
+   - no live matches: upcoming fixtures and recent results.
+2. **Sharing:**
+   - milestone cards and a match card sized for WhatsApp and Instagram stories;
+   - personal-best and season-first notes.
+
+   These are public by nature, so they wait for the public-data rule's step 3 and consent (PUBLIC_DATA,
+   SCRBRD-092). Names on a card follow `publicName()`.
+3. **The result revealed in one clear moment:** winner, margin, player of the match.
+4. **The full-time screen links onward:** the next fixture for both teams, each player's season, and the team's
+   results.
+5. **Coaches and scorers are prompted to confirm or correct the final scorecard** (the amendment flow exists).
+
+**Left, shared:**
+1. One type, spacing and icon scale everywhere. The admin screens migrate `D` to `T` in step 5.
+2. Every empty state offers a next step ("Add your first team", "Create your first fixture").
+3. Every error says what happened and how to fix it.
+4. Loading states show the layout's shape (skeletons), not a blank screen.
+
 ### SCRBRD-099 — Backfill handwritten scorecards into the historical record
 **Priority:** P2 · **Domain:** Scoring / history · **Type:** feature (Kameel, 2026-09-26: "a tool for
 inputting/scanning/photographing and back-dating handwritten scorecards into data that fits our model, to build a

@@ -35,6 +35,29 @@ So the direction is: **figures first, words second, decoration never.**
 Everything else on a screen is the things a person does next, in the order they need
 them, with nothing competing.
 
+### 1a. The pad is for speed, the board is for emotion
+
+Decided by Kameel on 2026-09-26, from his "SCRBRD Premium-Feel Checklist"
+(https://claude.ai/artifact/63zVkqVAotrYYQk9dGUhAp). **The scoring pad is built for speed and trust; the scoreboard
+is built for emotion. Delight lives on the scoreboard only. Nothing on the pad may ever delay, or visually cover,
+the next input.**
+
+On the pad:
+- every tap registers at once;
+- a moment is a flash on the pad's own board (§3.6);
+- anything that interrupts waits for a natural pause (end of over, wicket, innings end), where a guided sheet
+  opens;
+- errors say what probably happened and how to fix it ("7 balls in this over — was one a wide or no-ball?").
+
+On the scoreboard:
+- the pacing: the run count ticks, and an over summary shows between overs;
+- the moments;
+- the innings-break card;
+- highlights;
+- a big-screen mode that runs itself.
+
+The checklist is the running list of what is and isn't shipped; its unbuilt items are SCRBRD-100 and step 3c.
+
 ---
 
 ## 2. Where the app is now (evidence, not opinion)
@@ -168,6 +191,16 @@ The 2.0 scale stays. One addition: `flip` (190 ms, `swift`) on a board figure wh
 value changes — a vertical half-turn, like the logo. `interrupt` (1100 ms) stays
 reserved for a wicket, a fifty, a hundred and the result. Reduced motion collapses
 both to a cut, as it does today.
+
+**Where each lives (decided 2026-09-26, §1a).** Celebration is the scoreboard's, never the pad's:
+- **On the pad,** a four, six, wicket or milestone is a flash on the pad's own board, at most about 600 ms,
+  never over the keys and never full-screen. Its words go to screen readers through a polite live region.
+- **On spectator surfaces** (Match Centre, the day sheet, big-screen mode, and later the public page),
+  `interrupt` carries the moment:
+  - a short beat for a four, six or wicket;
+  - a bigger one for a milestone;
+  - never hiding the score for more than about 1.5 s;
+  - only for events that arrive while the page is open, never replayed on a reload.
 
 ### 3.7 Colour discipline
 
