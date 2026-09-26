@@ -47,5 +47,6 @@
   "46_opposition_window.sql",
   "47_public_data.sql",
   "48_penalty_runs.sql",
-  "49_career_single_pass.sql"
+  "49_career_single_pass.sql",
+  "50_pad_resume.sql"
 ]
