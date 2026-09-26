@@ -47,6 +47,9 @@
  * @property {Record<string, string>} [query]
  * @property {any} [body]
  * @property {import("node:http").IncomingHttpHeaders} [headers]
+ * @property {import("./auth/auth.mjs").Principal} [principal]
+ *   set only by the dispatcher, only on the five routes a pad resume
+ *   credential may use, from its verified signature (auth/pad-resume.mjs)
  */
 
 /**

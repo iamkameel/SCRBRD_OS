@@ -200,6 +200,41 @@ group("A. Wrong device / expired lease → quarantined");
   ok("no session → quarantined with reason", o3.quarantined[0].reason === "no_session");
 }
 
+// SCRBRD-087. The lease check used to be asked about events[0].deviceId from
+// the body. The ball_event INSERT policy kept every write on the token's own
+// device, but the same person on a second device could keep the FIRST
+// device's lease alive with a batch that wrote nothing, and that refresh
+// committed. Now the lease is asked about the principal's device — the
+// token's, or a resume credential's — and a batch naming another is refused.
+group("A. The lease is asked about the principal's device; a batch naming another is refused (SCRBRD-087)");
+{
+  // uScorer holds the token on devA; the same person, signed in on devB,
+  // sends a batch that names devA.
+  const db = fakeDb({ session: liveSession });
+  /** @type {any} */ let err = null;
+  try { await appendEvents(db.pool, SECRET, bearer("uScorer", "devB"), "m3", [ev(1)]); } catch (e) { err = e; }
+  const asked = db.log.filter(l => /scoring_lease_check/.test(l.text));
+  ok("a batch naming a device the token is not bound to is refused, 403 device_mismatch",
+     err?.status === 403 && err?.message === "device_mismatch", String(err?.message));
+  ok("...before the lease is asked about, so it cannot keep that device's lease alive",
+     asked.every(l => l.params[1] === "devB") && !asked.some(l => l.params[1] === "devA"));
+  ok("...and nothing was written or held", db.ballEvents.length === 0 && db.quarantine.length === 0);
+  ok("...inside the transaction, which rolled back", db.log.some(l => l.text === "ROLLBACK"));
+
+  // One event in the batch naming another device is enough to refuse it all.
+  const mixed = fakeDb({ session: liveSession });
+  /** @type {any} */ let err2 = null;
+  try { await appendEvents(mixed.pool, SECRET, bearer(), "m3", [ev(1), ev(2, { deviceId: "devB" })]); } catch (e) { err2 = e; }
+  ok("a batch with one event naming another device is refused whole", err2?.status === 403 && err2?.detail?.index === 1);
+  ok("...nothing written", mixed.ballEvents.length === 0 && mixed.quarantine.length === 0);
+
+  // The honest batch asks about the token's device.
+  const honest = fakeDb({ session: liveSession });
+  await appendEvents(honest.pool, SECRET, bearer(), "m3", [ev(1)]);
+  ok("the lease check names the principal's device",
+     honest.log.find(l => /scoring_lease_check/.test(l.text))?.params[1] === "devA");
+}
+
 group("A. Empty / read");
 {
   const db = fakeDb({ session: liveSession });

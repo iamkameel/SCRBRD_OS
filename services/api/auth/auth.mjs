@@ -58,7 +58,13 @@ const fromB64url = (/** @type {string} */ s) => Buffer.from(s.replace(/-/g, "+")
 
 /**
  * Who a request runs as: a person on a device, or nobody (ANON).
- * @typedef {{ userId: string | null, deviceId: string | null }} Principal
+ *
+ * `scope` and `matchId` are set on one kind of principal only: a request
+ * signed with the pad's resume credential (SCRBRD-078, pad-resume.mjs). It is
+ * the same person on the same device, narrowed by the database to one match
+ * (app.scope = 'pad', app.match_id; db/50). A principal from a token never
+ * carries either, and sets neither.
+ * @typedef {{ userId: string | null, deviceId: string | null, scope?: "pad", matchId?: string, credentialId?: string }} Principal
  */
 
 // ── Token claims contract ──
@@ -146,14 +152,28 @@ export const ANON = Object.freeze(/** @type {Principal} */ ({ userId: null, devi
  * An anonymous principal sets both to the empty string, which app_user_id()
  * turns into NULL, which matches no role_assignment row. Default deny falls
  * out of the data model rather than out of a branch someone has to remember.
+ *
+ * A resume-credential principal sets two more, app.scope and app.match_id,
+ * and the database narrows it to that match (db/50). They are set ONLY for
+ * such a principal, and only transaction-locally like the rest, so no other
+ * request on the connection can inherit them; a principal that says it is
+ * pad-scoped with no match is refused here rather than sent with an empty
+ * one (the database would fail it closed, but it is a bug in the caller).
  * @param {Principal | null | undefined} principal
  */
 export function sessionConfigStatements(principal) {
   const p = principal || ANON;
-  return [
+  const statements = [
     { text: "select set_config('app.user_id',   $1, true)", params: [p.userId || ""] },
     { text: "select set_config('app.device_id', $1, true)", params: [p.deviceId || ""] },
   ];
+  if (p.scope === "pad") {
+    if (!p.matchId) throw new AuthError("pad_scope_without_match");
+    statements.push(
+      { text: "select set_config('app.scope',     $1, true)", params: ["pad"] },
+      { text: "select set_config('app.match_id',  $1, true)", params: [p.matchId] });
+  }
+  return statements;
 }
 
 /**
