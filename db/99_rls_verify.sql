@@ -4549,6 +4549,161 @@ BEGIN
     PERFORM _assert(NOT v_ok, 'db/47 (signed-out): an unauthenticated session set a never-public mark');
   END;
   PERFORM set_config('app.user_id', '', true);
+  PERFORM set_config('app.device_id', '', true);
+
+  -- ── 26. Penalty runs to the fielding side, in every total (SCRBRD-094, db/48) ──
+  -- Law 41.18, as the fold credits it: five to the fielding side go to its
+  -- most recently completed innings, or, if it has not batted, to its next,
+  -- which opens on them; a chase's target rises with an award made after it
+  -- was set, unless the umpires typed it. On §23's match, which it leaves at
+  -- 14/1 off 3 in the second innings (Kearsney), with a five to the fielding
+  -- side — Hilton U16B, who have no innings yet — in it (row 15), and one in
+  -- the first innings, whose innings_start was never written (row 3: an
+  -- innings with no side, so nobody's). The pen goes back to the scorer, then:
+  --
+  --    k  innings  row                                        the fold
+  --   20  2        innings_start, Hilton U16B bat             row 15's five: they open on 5
+  --   21  2        3                                          8/0 off 1
+  --   22  2        penalty, 5 to the fielding side            Kearsney's second innings: 14 → 19
+  --   23  3        innings_start, Kearsney bat, target 20     the target 20
+  --   24  3        penalty, 5 to the fielding side            Hilton's innings 2: 13; the target 25
+  --   25  3        revision, target 40                        the umpires' 40
+  --   26  3        penalty, no runs named, to the fielding    Hilton's innings 2: 18; the target stays 40
+  --   27  3        2                                          2/0 off 1
+  --
+  -- A handover in the third innings expects the carried five. Each assertion
+  -- was run once, alone, with db/48 broken the way its label says, and failed
+  -- for that reason:
+  --
+  --   (last)     penalty_credit_as_folded() never crediting an earlier innings
+  --   (next)     ...never crediting a later one
+  --   (live)     match_live_score without the batting side's penalties
+  --   (handover) innings_score_as_folded() without the credit
+  --   (target)   innings_target_as_folded() not raised by an award
+  --   (typed)    ...raised even when the umpires typed it
+  --   (after)    match_live_score without the credit
+  --   (nobody)   the helpers as SECURITY DEFINER, search path pinned
+  DECLARE
+    e int;
+    t20 int; t25 int; t40 int;
+    g1 record; g2 record; g2b record; g3 record;
+    l1 bigint; l2 bigint; l2b bigint;
+    c1 int; c2 int;
+    v_without boolean; v_with boolean;
+    n int; n2 int;
+    x record;
+  BEGIN
+    -- The pen from Sarah (§23's holder) back to the scorer, in the second innings.
+    PERFORM _as(U_SARAH);
+    SELECT a.code INTO v_code FROM scoring_arm_handover(M_HANDOVER, 'verify-045-b', 0, false) a;
+    PERFORM _as(U_SCORER);
+    SELECT h.ok INTO v_ok FROM scoring_claim_handover(M_HANDOVER, 'verify-048', v_code) h;
+    SELECT v.ok, v.epoch INTO v_ok, e FROM scoring_verify_takeover(M_HANDOVER, 'verify-048', 14, 1, 3) v;
+    PERFORM _assert(v_ok, 'db/48: the scorer could not take the pen back at 14/1 off 3 in the second innings');
+    -- The live score before anything is credited to that innings: its own
+    -- deliveries and row 14's five to the batting side.
+    PERFORM _as(U_OWNER);
+    SELECT l.runs INTO l1 FROM match_live_score l WHERE l.match_id = M_HANDOVER AND l.innings = 1;
+    PERFORM _as(U_SCORER);
+    PERFORM set_config('app.device_id', 'verify-048', true);
+    FOR x IN SELECT * FROM (VALUES
+        (20, 2, 'innings_start', NULL::text, NULL::int, '{"battingTeam":"Hilton U16B","bowlingTeam":"Kearsney","overs":20}'::jsonb),
+        (21, 2, 'ball',    'run', 3,    '{}'::jsonb),
+        (22, 2, 'penalty', NULL,  NULL, '{"runs":5,"toBattingTeam":false,"reason":"pitch_damage"}'::jsonb)
+      ) AS v(k, inn, kind, bt, val, pl) ORDER BY k
+    LOOP
+      INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                              idempotency_key, client_seq, client_ts, kind, ball_type, value, payload)
+      VALUES (M_HANDOVER, match_school(M_HANDOVER), 9700 + x.k, e, x.inn, U_SCORER, 'verify-048',
+              'verify:048:' || x.k, 9700 + x.k, now(), x.kind, x.bt, x.val, x.pl);
+    END LOOP;
+    PERFORM _as(U_OWNER);
+    SELECT * INTO g2 FROM innings_score_as_folded(M_HANDOVER, 2::smallint);
+    c1 := penalty_credit_as_folded(M_HANDOVER, 1::smallint);
+    c2 := penalty_credit_as_folded(M_HANDOVER, 2::smallint);
+
+    -- (last) Kearsney's second innings, completed, is credited the five Hilton's third made
+    PERFORM _assert(c1 = 5,
+      format('db/48 (last): %s runs credited to Kearsney''s innings, expected 5 — the award Hilton''s innings made to them', c1));
+    -- (next) Hilton's third innings is credited the five Kearsney's made while Hilton had not batted
+    PERFORM _assert(c2 = 5,
+      format('db/48 (next): %s runs credited to Hilton''s innings, expected 5 — the award it opens on', c2));
+    -- (live) the live score has the batting side's own penalty runs (row 14), as the fold's total does
+    PERFORM _assert(l1 = 14,
+      format('db/48 (live): match_live_score read %s for Kearsney''s innings, expected the fold''s 14 — six, a no-ball and its run, five penalty runs, a leg bye', l1));
+
+    -- (handover) The pen to Sarah in the third innings: the carried five are on the board.
+    PERFORM _as(U_SCORER);
+    SELECT a.code INTO v_code FROM scoring_arm_handover(M_HANDOVER, 'verify-048', 0, false) a;
+    PERFORM _as(U_SARAH);
+    SELECT h.ok INTO v_ok FROM scoring_claim_handover(M_HANDOVER, 'verify-048-b', v_code) h;
+    PERFORM _assert(v_ok, 'db/48: Sarah could not claim the handover in the third innings');
+    SELECT v.ok INTO v_without FROM scoring_verify_takeover(M_HANDOVER, 'verify-048-b', 3, 0, 1) v;
+    SELECT v.ok INTO v_with FROM scoring_verify_takeover(M_HANDOVER, 'verify-048-b', 8, 0, 1) v;
+    -- (handover)
+    PERFORM _assert(NOT v_without AND v_with AND row(g2.runs, g2.wickets, g2.legal_balls)::text = '(8,0,1)',
+      format('db/48 (handover): the third innings reads %s; without its carried five it verified %s, with them %s — expected (8,0,1), refused, then verified',
+             row(g2.runs, g2.wickets, g2.legal_balls)::text, v_without, v_with));
+
+    -- And back to the scorer, for the fourth innings: a chase with a target.
+    PERFORM _as(U_SARAH);
+    SELECT a.code INTO v_code FROM scoring_arm_handover(M_HANDOVER, 'verify-048-b', 0, false) a;
+    PERFORM _as(U_SCORER);
+    SELECT h.ok INTO v_ok FROM scoring_claim_handover(M_HANDOVER, 'verify-048-c', v_code) h;
+    SELECT v.ok, v.epoch INTO v_ok, e FROM scoring_verify_takeover(M_HANDOVER, 'verify-048-c', 8, 0, 1) v;
+    PERFORM _assert(v_ok, 'db/48: the scorer could not take the pen back at 8/0 off 1 in the third innings');
+    PERFORM set_config('app.device_id', 'verify-048-c', true);
+    FOR x IN SELECT * FROM (VALUES
+        (23, 3, 'innings_start', NULL::text, NULL::int, '{"battingTeam":"Kearsney","bowlingTeam":"Hilton U16B","overs":20,"target":20}'::jsonb),
+        (24, 3, 'penalty',  NULL,  NULL, '{"runs":5,"toBattingTeam":false,"reason":"time_wasting"}'::jsonb),
+        (25, 3, 'revision', NULL,  NULL, '{"target":40,"reason":"rain"}'::jsonb),
+        (26, 3, 'penalty',  NULL,  NULL, '{"toBattingTeam":false,"reason":"protected_area"}'::jsonb),
+        (27, 3, 'ball',     'run', 2,    '{}'::jsonb)
+      ) AS v(k, inn, kind, bt, val, pl) ORDER BY k
+    LOOP
+      INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                              idempotency_key, client_seq, client_ts, kind, ball_type, value, payload)
+      VALUES (M_HANDOVER, match_school(M_HANDOVER), 9700 + x.k, e, x.inn, U_SCORER, 'verify-048-c',
+              'verify:048:' || x.k, 9700 + x.k, now(), x.kind, x.bt, x.val, x.pl);
+      IF x.k = 23 THEN t20 := innings_target_as_folded(M_HANDOVER, 3::smallint); END IF;
+      IF x.k = 24 THEN t25 := innings_target_as_folded(M_HANDOVER, 3::smallint); END IF;
+    END LOOP;
+    t40 := innings_target_as_folded(M_HANDOVER, 3::smallint);
+    PERFORM _as(U_OWNER);
+    SELECT * INTO g1 FROM innings_score_as_folded(M_HANDOVER, 1::smallint);
+    SELECT * INTO g2b FROM innings_score_as_folded(M_HANDOVER, 2::smallint);
+    SELECT * INTO g3 FROM innings_score_as_folded(M_HANDOVER, 3::smallint);
+    SELECT l.runs INTO l2 FROM match_live_score l WHERE l.match_id = M_HANDOVER AND l.innings = 1;
+    SELECT l.runs INTO l2b FROM match_live_score l WHERE l.match_id = M_HANDOVER AND l.innings = 2;
+
+    -- (target) the chase opened at 20 and an award to the side that set it made it 25
+    PERFORM _assert(t20 = 20 AND t25 = 25,
+      format('db/48 (target): the fourth innings'' target read %s, then %s — expected 20, then 25 after five to the fielding side', t20, t25));
+    -- (typed) the umpires' 40 does not move with a later award
+    PERFORM _assert(t40 = 40,
+      format('db/48 (typed): the target read %s after the umpires'' 40 and another award, expected 40', t40));
+    -- (after) every total, as the fold's: Kearsney's second innings 19 (its 14 and
+    --         Hilton's award); Hilton's third 18 (the five it opened on, a 3, and
+    --         both awards the chase made); the chase itself neither
+    PERFORM _assert(g1.runs = 19 AND l2 = 19 AND g2b.runs = 18 AND l2b = 18
+                    AND row(g3.runs, g3.wickets, g3.legal_balls)::text = '(2,0,1)',
+      format('db/48 (after): Kearsney''s second innings read %s (live %s), expected 19; Hilton''s third %s (live %s), expected 18; '
+             || 'the fourth %s, expected (2,0,1)', g1.runs, l2, g2b.runs, l2b, row(g3.runs, g3.wickets, g3.legal_balls)::text));
+
+    -- (nobody) An unidentified session and another school's office read none of it through the helpers.
+    PERFORM set_config('app.user_id', '', true);
+    n := coalesce(penalty_credit_as_folded(M_HANDOVER, 2::smallint), -1)
+       + coalesce(innings_target_as_folded(M_HANDOVER, 3::smallint), 0);
+    PERFORM _as(U_WES_ADM);
+    n2 := coalesce(penalty_credit_as_folded(M_HANDOVER, 2::smallint), -1)
+        + coalesce(innings_target_as_folded(M_HANDOVER, 3::smallint), 0);
+    -- (nobody)
+    PERFORM _assert(n = 0 AND n2 = 0,
+      format('db/48 (nobody): an unidentified session read %s and the Westville administrator %s of a Hilton fixture''s credits and target, expected 0 and 0',
+             n, n2));
+  END;
+  PERFORM set_config('app.device_id', '', true);
+  PERFORM set_config('app.user_id', '', true);
 
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
