@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { flushSync } from "react-dom";
 import {
   deriveInnings, inningsStart, batters as battersEvent, bowler as bowlerEvent,
-  ball as ballEvent, penalty as penaltyEvent, revision as revisionEvent, retire as retireEvent, sealInnings,
+  ball as ballEvent, revision as revisionEvent, retire as retireEvent, sealInnings,
   newEventId, KIND, battingFirst, tossFromRow, firstInningsSides, fromRow,
   noPlacement, NO_CONTACT_SHOTS, PLACEMENT_NULL, PLACEMENT_SOURCE, CAPTURE_PROFILE,
   DISMISSAL, DISMISSAL_LABEL, RETIRE_REASON, BOWLER_CHANGE_REASON, isMidOver, scoringReadiness, SCORING_BLOCK, lawsRefusal, REFUSAL_TEXT, LOCAL_ONLY,
@@ -16,7 +16,8 @@ import { PadSync } from "../lib/sync.js";
 import { refusalWords } from "../lib/handover.js";
 import { withoutEvents, recordAgain, recordAgainRefusal, heldInOrder, undoOnPad, reconcile, padLogFrom, inningsInPlay, withOrphans } from "@scrbrd/sync";
 import { HeldSheet } from "./held.jsx";
-import { foldPad, projectPad } from "./penalty.js";
+import { awardEvent, awardRefusal, foldPad, pendingCredits, projectPad, shortRunEvents } from "./penalty.js";
+import { PenaltySheet } from "./penaltySheet.jsx";
 import { MenuItem, MenuSection, PadMenu } from "./padMenu.jsx";
 import { ExitKey, Pad, PadBoard } from "./pad.jsx";
 import { SyncBanner } from "./syncBanner.jsx";
@@ -28,7 +29,7 @@ import { AnalysisDashboard, ManhattanChart } from "./charts.jsx";
 import { EventOverlay, FreeHitBanner, InningsOverBanner, PartnershipCard, ScorecardPanel, buildEventCfg, detectMilestone } from "./panels.jsx";
 import { ScoringBlocked, ScoringPanel } from "./scoring.jsx";
 import { SetupScreen } from "./setup.jsx";
-import { BattingOrderSheet, HandoverSheet, Innings2Sheet, InningsReviewSheet, NewOverSheet, NoBallSheet, PenaltySheet, RevisionSheet, ShotSelectorSheet, WicketSheet } from "./sheets.jsx";
+import { BattingOrderSheet, HandoverSheet, Innings2Sheet, InningsReviewSheet, NewOverSheet, NoBallSheet, RevisionSheet, ShotSelectorSheet, WicketSheet } from "./sheets.jsx";
 import { INT_TEAMS } from "./teams.js";
 import { BallDot, Btn, CaptureProfilePicker, Card, GS, Glass, Lbl } from "./ui.jsx";
 import { Icon } from "../ui/icons.jsx";
@@ -1219,7 +1220,7 @@ function SCRBRD({resume,onSignIn,onExit}={}){
    * one-tap pad, which never asks where the ball went) get an explicit
    * "not required" rather than a silent blank.
    */
-  const commitBall=(type,value,shot,seg,zone,approach,placement)=>{
+  const commitBall=(type,value,shot,seg,zone,approach,placement,{shortRun=false}={})=>{
     // Every delivery comes through here, including the hub's stage-2 paths
     // that were only checked at stage 0. The same answer the pad shows.
     if(!readiness.ready||padLock)return;
@@ -1246,17 +1247,24 @@ function SCRBRD({resume,onSignIn,onExit}={}){
     //
     // Taken from `before`, not `after`: the striker who faced this delivery is
     // the one at the crease before it rotated them.
-    const ev=ballEvent({
+    //
+    // A SHORT RUN (SCRBRD-094) is this delivery with every run disallowed and
+    // five penalty runs to the fielding side: the two events of shortRunning(),
+    // recorded together, in order, in this innings — so what follows the ball
+    // (the over, the innings) is read from the projection with both in it.
+    const delivery={
       type,value,shot,bowlerApproach:approach||null,freeHit,
       ...crease(before),
       ...place,
-    });
-    const after=project(ev);
+    };
+    const evs=shortRun?shortRunEvents(curIn,delivery):[ballEvent(delivery)];
+    const ev=evs[0];
+    const after=project(...evs);
     const endedOver=after.balls>before.balls&&after.balls%6===0;
     const endedInnings=after.complete;
     const lastBowlerId=before?.bowler||null; // cleared by the projection at over end
 
-    emit(ev);
+    emit(...evs);
 
     setSelSeg(null);setSelShot(null);setScoringCtx(null);setHubStage(0);setHubShot(null);
     scoreKeyRef.current++;
@@ -1381,9 +1389,20 @@ function SCRBRD({resume,onSignIn,onExit}={}){
   // here is the rest (Law 17.8), so it offers a reason the server will take.
   const bowlerRefusal=id=>lawsRefusal({innings,events},bowlerEvent({innings:curIn,bowler:id,...(midOver?{reason:BOWLER_CHANGE_REASON.INJURY}:{})}));
 
-  const awardPenalty=(runs,to,reason)=>{
-    emit(penaltyEvent({runs,toBattingTeam:to==="batting",reason}));
+  // Penalty runs (Law 41, SCRBRD-094): five, to the side the sheet chose, for
+  // a reason that side can be awarded. The sheet asked the Laws before it
+  // offered the button; asked again here, at the tap, against the log as it
+  // is — a refused award is never recorded to be refused by the server.
+  const awardPenalty=(choice)=>{
+    if(padLock||awardRefusal({innings,events},curIn,choice))return;
+    emit(awardEvent(curIn,choice));
     setModal(null);
+  };
+  // A short run: the delivery, with no runs, and five to the fielding side —
+  // through commitBall, the one funnel every delivery goes through.
+  const recordShortRun=(type)=>{
+    setModal(null);
+    commitBall(type,0,null,null,null,null);
   };
   // The umpires' revision goes into the log like a ball. Everything that
   // reads the innings — the over count on the pad, the innings-over rule, the
@@ -1488,13 +1507,19 @@ function SCRBRD({resume,onSignIn,onExit}={}){
         onClose={()=>setModal(null)}/>
     );
 
-    if(modal==="penalty")return (
-      <PenaltySheet
-        battingTeam={inn?.battingTeam||"Batting"}
-        bowlingTeam={inn?.bowlingTeam||"Bowling"}
-        onConfirm={awardPenalty}
-        onClose={()=>setModal(null)}/>
-    );
+    if(modal==="penalty"||modal==="shortRun"){
+      const nameOf=id=>id==null?null:(inn?.batsmen?.find(b=>b.id===id)?.name??inn?.bowlers?.find(b=>b.id===id)?.name??String(id));
+      return (
+        <PenaltySheet
+          mode={modal==="shortRun"?"shortRun":"award"}
+          innings={innings} events={events} curIn={curIn} ctx={scoringCtxRef.current}
+          crease={crease(inn)}
+          names={{striker:nameOf(inn?.striker),nonStriker:nameOf(inn?.nonStriker),bowler:nameOf(inn?.bowler)}}
+          onAward={awardPenalty}
+          onShortRun={recordShortRun}
+          onClose={()=>setModal(null)}/>
+      );
+    }
 
     if(modal==="opener")return (
       <BattingOrderSheet
@@ -1602,6 +1627,9 @@ function SCRBRD({resume,onSignIn,onExit}={}){
         teamName={innings[1]?.battingTeam||innings[0]?.bowlingTeam||match?.team2||""}
         overs={match?.overs||20}
         declared={innings[1]?.declaredProfile??innings[0]?.declaredProfile??null}
+        note={innings[1]?.penaltyCarried>0
+          ?`${innings[1].battingTeam} start their innings on ${innings[1].penaltyCarried} (penalty runs).`
+          :pendingCredits(innings).map(p=>`${p.words} (penalty runs).`).join(" ")||null}
         onClose={()=>setModal(null)}
         onStart={(captureProfile)=>{
           // SCRBRD-063. The second innings never got its own INNINGS_START —
@@ -1689,6 +1717,7 @@ function SCRBRD({resume,onSignIn,onExit}={}){
   /* ── MATCH SCREEN ── */
   const NAV=[{id:"score",icon:"bat",label:"Score"},{id:"cards",icon:"scorebook",label:"Cards"},{id:"analysis",icon:"chart-column",label:"Analysis"},{id:"history",icon:"scroll-text",label:"History"}];
   const target2=curIn===1?(inn?.target??((innings[0]?.runs||0)+1)):null;
+  const pendingPenalty=pendingCredits(innings);
   // Handover: offered to whoever holds the token, and to whoever's own claim
   // was refused because one is already pending (to take it) — anyone else
   // has nothing to do here.
@@ -1760,7 +1789,10 @@ function SCRBRD({resume,onSignIn,onExit}={}){
               <MenuSection title="This innings">
                 <MenuItem testid="revise-innings" label="Revise overs or target" hint="Rain, or the umpires' decision"
                   onClick={()=>{close();setModal("revise");}}/>
-                <MenuItem testid="pad-penalty" label="Penalty runs" onClick={()=>{close();setModal("penalty");}}/>
+                <MenuItem testid="pad-penalty" label="Penalty runs" hint="Five runs the umpires award to either side"
+                  onClick={()=>{close();setModal("penalty");}}/>
+                <MenuItem testid="pad-short-run" label="Short run" hint="The umpire gave five to the fielding side. The ball counts, with no runs."
+                  onClick={()=>{close();setModal("shortRun");}}/>
               </MenuSection>
             </>
           )}</PadMenu>
@@ -1788,6 +1820,14 @@ function SCRBRD({resume,onSignIn,onExit}={}){
             <div data-testid="pad-state" style={{display:"flex",alignItems:"center",gap:T.space.sm,flexWrap:"wrap"}}>
               <SyncPill sync={sync} storage={saveState.kind} onOpenHeld={()=>setModal("held")}/>
             </div>
+            {/* Five penalty runs awarded to a side that has not batted, whose
+                innings is not in the log yet: it opens on them (SCRBRD-094). */}
+            {pendingPenalty.map(p=>(
+              <div key={p.team} data-testid="pad-penalty-pending" style={{display:"flex",alignItems:"center",gap:T.space.sm,
+                fontFamily:T.type.body,fontSize:"15px",lineHeight:1.4,color:T.content.primary}}>
+                <Icon name="gavel"/><span>{p.words} (penalty runs)</span>
+              </div>
+            ))}
             {/* Where this pad stands with the server, in words, on every tab:
                 signed out, no signal, refused, forked, handed over (SCRBRD-078).
                 Not while a sheet is open: the sheet IS the fix in progress,

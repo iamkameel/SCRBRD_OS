@@ -57,6 +57,9 @@ const SUITES = [
   ["dismissal-card", "apps/web/test/dismissal-breakdown.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Renders the placement charts and the capture-profile picker (SCRBRD-039).
   ["capture-profile", "apps/web/test/capture-profile.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // The pad's penalty runs: the match's fold, the Laws asked before an award
+  // is offered, and the sheet as drawn (SCRBRD-094), same transform.
+  ["penalty-sheet", "apps/web/test/penalty-sheet.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Renders the Board — always black, figures that flip (DESIGN_DIRECTION §1).
   ["board",    "apps/web/test/board.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // No emoji in the client outside a reasoned allow-list, every icon name

@@ -110,6 +110,15 @@ const SHEET_WORDS = Object.freeze({
   [REFUSAL.PENALTY_RUNS_INVALID]: "Penalty runs are a whole number above nought.",
   [REFUSAL.SHORT_RUN_UNMATCHED]: "The five for short running go straight after the delivery, recorded with no runs.",
   [REFUSAL.NO_INNINGS]: "Nobody has said who is batting in this innings yet.",
+  // A short run is a delivery first: the pad's own gate (readiness.mjs).
+  [REFUSAL.INNINGS_CLOSED]: "This innings is closed.",
+  [REFUSAL.INNINGS_OVER]: "This innings is over.",
+  [REFUSAL.OPENERS]: "The opening batters have not been chosen.",
+  [REFUSAL.NEXT_BATTER]: "There is no batter at one end.",
+  [REFUSAL.OPENING_BOWLER]: "The opening bowler has not been chosen.",
+  [REFUSAL.NEXT_BOWLER]: "Nobody has been named to bowl this over.",
+  [REFUSAL.PREVIOUS_INNINGS_OPEN]: "The previous innings has not ended.",
+  [REFUSAL.LATER_INNINGS_STARTED]: "A later innings has already started.",
 });
 
 /** @param {string | null | undefined} code  a lawsRefusal() answer */
