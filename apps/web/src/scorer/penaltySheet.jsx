@@ -1,4 +1,5 @@
 import { useId, useState } from "react";
+import { PENALTY_REASON } from "@scrbrd/scoring";
 import { T } from "../design/tokens.js";
 import { useTheme } from "../design/theme.js";
 import { Icon } from "../ui/icons.jsx";
@@ -174,10 +175,15 @@ export function PenaltySheet({ mode = "award", innings, events, curIn, ctx, crea
 
   // ── An award ────────────────────────────────────────────────
   const reasons = side == null ? [] : reasonsFor(side);
-  const code = side != null && reason != null ? awardRefusal(match, curIn, { toBattingTeam: side, reason }) : null;
+  // Asked as soon as the side is chosen: "other" is either side's reason, so
+  // a refusal of it is the side's (the match is decided, no innings), said
+  // before the scorer reads down a list none of which can be awarded. Then
+  // asked again of the reason chosen.
+  const code = side == null ? null
+    : awardRefusal(match, curIn, { toBattingTeam: side, reason: reason ?? PENALTY_REASON.OTHER });
   const words = refusalWords(code);
   const ready = side != null && reason != null && !code;
-  const hint = side == null ? "Choose who gets the five runs." : reason == null ? "Choose what the runs are for." : null;
+  const hint = side == null ? "Choose who gets the five runs." : reason == null && !code ? "Choose what the runs are for." : null;
   const pick = (s) => { if (s !== side) { setSide(s); setReason(null); } };
   const to = side == null ? null : side ? batting : fielding;
 
@@ -198,8 +204,10 @@ export function PenaltySheet({ mode = "award", innings, events, curIn, ctx, crea
               </button>
             ))}
           </div>
-          {side != null && <p data-testid="penalty-where" style={{ ...body(), color: T.content.primary, marginTop: T.space.sm }}>{whereTheRunsGo(innings, curIn, side)}</p>}
+          {side != null && !code && <p data-testid="penalty-where" style={{ ...body(), color: T.content.primary, marginTop: T.space.sm }}>{whereTheRunsGo(innings, curIn, side)}</p>}
         </section>
+
+        <Refusal id={refusalId} words={words}/>
 
         {side != null && (
           <section aria-label="What for?">
@@ -223,7 +231,6 @@ export function PenaltySheet({ mode = "award", innings, events, curIn, ctx, crea
           </section>
         )}
 
-        <Refusal id={refusalId} words={words}/>
         <div style={{ display: "grid", gap: T.space.sm }}>
           <button type="button" data-testid="penalty-award" disabled={!ready}
             aria-describedby={code ? refusalId : hint ? hintId : undefined}

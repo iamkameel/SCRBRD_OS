@@ -458,6 +458,9 @@ try {
   const boardE0 = await board();
   await openSheet("pad-penalty");
   await tap("penalty-side-fielding");
+  const early = await said("penalty-refusal");
+  ok("the refusal is said as soon as the side is chosen, before a reason", /The match is decided/.test(early), early);
+  ok("...in place of where the runs would go", !(await has("penalty-where")));
   await tap("penalty-reason-protected_area");
   const refusal = await said("penalty-refusal");
   ok("the Laws' refusal is on the sheet, in words", /The match is decided/.test(refusal), refusal);
@@ -466,6 +469,10 @@ try {
   ok("...and described by the refusal",
      (await tid("penalty-award").getAttribute("aria-describedby")) === (await tid("penalty-refusal").getAttribute("id")));
   await shoot("refused", async () => { await openSheet("pad-penalty"); await tap("penalty-side-fielding"); await tap("penalty-reason-protected_area"); });
+  await shoot("refused-award", async () => {
+    await openSheet("pad-penalty"); await tap("penalty-side-fielding"); await tap("penalty-reason-protected_area");
+    await tid("penalty-award").scrollIntoViewIfNeeded();
+  });
   await tid("penalty-award").click({ force: true, timeout: 2000 }).catch(() => {});
   await page.waitForTimeout(300);
   ok("a forced tap on it does nothing: the sheet stays", await has("penalty-sheet"));

@@ -3450,6 +3450,16 @@ Two Law 41 questions Kameel is researching before deciding; nothing is built unt
    toBattingTeam, reason })` with a `PENALTY_REASON` code, and short running as the two events of
    `shortRunning(ball)`; ask `lawsRefusal` before offering a reason; show `penaltyCredits().pending` ("Westville start
    on 5").
+   **Built 2026-09-26 (the pad's sheet):** the pad folds with `deriveInningsList` (`scorer/penalty.js` `foldPad`,
+   `projectPad`; the board, the seal, the break's target and every Laws question read it). `scorer/penaltySheet.jsx`:
+   the side first, then only that side's reasons, in words from `PENALTY_REASON_TEXT` with the Law clause numbers
+   taken off (Kameel is checking them); Award is `penalty({ runs: 5, toBattingTeam, reason })`, disabled with the
+   Laws' refusal said on the sheet when `lawsRefusal` refuses. Short run is its own action (the pad menu, and the
+   fielding side's list): the two events of `shortRunning()` through `commitBall`. A pending credit is said under
+   the board and on the innings break. At the type and touch floors. The umpires' report to the offending side (a
+   discipline record, `db/25`) is NOT built: one line on the sheet says the umpires report it. Proof:
+   `apps/web/test/penalty-sheet.test.mjs`, `tools/smoke-browser-penalty.mjs` (the board against the API's live
+   score and target at every step), and every existing walk unchanged.
 2. A bowler suspended mid-over (SCRBRD-080's unbuilt half): Law 41 says he may not bowl again in the innings.
    **Decided 2026-09-26 (Kameel's research, MCC Law 41, Unfair Play).** A bowler is suspended as soon as the ball is
    dead, on these grounds, as Kameel gives them:
@@ -3666,7 +3676,7 @@ Built in redesign step 3b, with `Board`'s chip row. Opus (cross-cutting theme en
    the second changes events, so decide first.
 2. **Pro mode** keeps its old hub and cards styling with sub-12px text; smoke-a11y does not measure it.
 3. **The other sheets** (toss, openers, new over, innings end, handover) are not yet at the type and touch floors;
-   only the wicket sheet and the shared close button are.
+   only the wicket sheet, the penalty runs sheet (SCRBRD-094) and the shared close button are.
 4. After choosing from the pad menu, the menu button keeps its focus ring.
 
 ### ~~SCRBRD-090~~ — CLOSED · The live score and the target leave out penalty runs
