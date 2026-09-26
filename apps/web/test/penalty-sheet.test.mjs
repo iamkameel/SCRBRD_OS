@@ -23,6 +23,9 @@
  */
 import { createElement as h } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import {
   deriveInnings, inningsStart, batters, bowler, ball, penalty, sealInnings, lawsRefusal,
   PENALTY_REASON, PENALTY_REASON_SIDE, REFUSAL, BALL_TYPE, KIND,
@@ -238,6 +241,16 @@ group("The sheet: sides first, Award disabled with its reason, floors, no Law nu
     const tall = btns.map((b) => Number(b.match(/min-height:\s*(\d+)px/)?.[1] ?? 0));
     ok(`${name}: every control is 44px or taller (${Math.min(...tall)}px)`, btns.length > 0 && tall.every((x) => x >= 44), btns.filter((_, i) => tall[i] < 44));
   }
+}
+
+group("The engine records a short run through its one ball funnel, as a short run");
+{
+  const engine = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "scorer", "engine.jsx"), "utf8");
+  ok("the sheet's short run reaches commitBall with shortRun set",
+     /const recordShortRun=\(type\)=>\{[\s\S]{0,120}?commitBall\(type,0,null,null,null,null,undefined,\{shortRun:true\}\)/.test(engine));
+  ok("...and commitBall emits shortRunning's two events for it",
+     /shortRun\?shortRunEvents\(curIn,delivery\):\[ballEvent\(delivery\)\]/.test(engine) && /emit\(\.\.\.evs\);/.test(engine));
+  ok("the pad folds the whole match", /const innings = useMemo\(\s*\(\) => foldPad\(events/.test(engine));
 }
 
 console.log("\n" + "─".repeat(52));

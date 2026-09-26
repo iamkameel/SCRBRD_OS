@@ -175,7 +175,11 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // SCRBRD-078 option B: a reloaded pad re-attaches with its resume
   // credential and sends by itself, nobody signed in; force-released, it
   // stops in words; signed in again, it goes on.
-  "browser-pad-resume"];
+  "browser-pad-resume",
+  // SCRBRD-094 item 1: the pad's penalty runs sheet — five to either side,
+  // a short run, a credit the next innings opens on, a target raised
+  // mid-chase, a refusal said in place — held to the API's live score.
+  "browser-penalty"];
 
 // Walks that need no database, run by `pnpm smoke` instead. Named here only so
 // the completeness check below knows they are accounted for.

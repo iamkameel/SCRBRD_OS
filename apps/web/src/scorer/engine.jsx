@@ -1402,7 +1402,7 @@ function SCRBRD({resume,onSignIn,onExit}={}){
   // through commitBall, the one funnel every delivery goes through.
   const recordShortRun=(type)=>{
     setModal(null);
-    commitBall(type,0,null,null,null,null);
+    commitBall(type,0,null,null,null,null,undefined,{shortRun:true});
   };
   // The umpires' revision goes into the log like a ball. Everything that
   // reads the innings — the over count on the pad, the innings-over rule, the
