@@ -5,7 +5,7 @@ import { humanDate } from "../lib/format.js";
 import { useLive } from "../lib/live.js";
 import { canScore, holdsCapability } from "../rbac/index.js";
 import { schoolsWhere } from "../lib/session.js";
-import { Btn, Card, Pill, SectionHeader, StatusDot } from "../ui/primitives.jsx";
+import { Btn, Card, SectionHeader, StatusDot } from "../ui/primitives.jsx";
 import { WeatherChip } from "./shared.jsx";
 import { MatchView } from "./matchcentre/MatchView.jsx";
 import { SideName } from "./matchcentre/bits.jsx";
@@ -146,7 +146,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
                   <div style={{marginTop:"10px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:"6px"}}>
                     <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}><Icon name="map-pin"/> {m.venue}</span>
                     <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
-                      {m.transport?.bus&&<Pill color={D.sky}><Icon name="bus"/> Bus {m.transport.depart}</Pill>}
+                      {m.transport?.bus&&<span style={{display:"inline-flex",alignItems:"center",gap:T.space.xs,...T.role.body,fontSize:"12px",color:T.content.secondary}}><Icon name="bus"/> Bus {m.transport.depart}</span>}
                       {/* A scheduled fixture is offered too, because that is
                           when scoring actually begins — you open the pad at
                           the toss, not once someone has already marked the

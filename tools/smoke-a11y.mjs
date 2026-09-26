@@ -63,17 +63,23 @@ const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/cs
  * 12px floor the same day, to 31; its remainder is the same shell plus
  * Badge/Pill/WeatherChip, shared components step 3's "light touch" left for
  * their own screens rather than widening this change into every user.
+ * Step 3c (the Match Centre rebuilt, 2026-09-26) took it to 18: the card's
+ * competition and bus are body text now and WeatherChip is on the floor, so
+ * what remains is the shell, as on the day sheet. `matchview` is the
+ * fixture's own view (views/matchcentre/), its Scorecard tab, measured from
+ * step 3c on: the shell and nothing of its own.
  */
 const TYPE_FLOOR_CEILING = {
   landing:     5,
   login:       13,
   dashboard:   18,
-  matchcentre: 31,
+  matchcentre: 18,
+  matchview:   18,
   pad:         0,
   // Step 3b: the pad again, after an over is recorded, so the chips on the
   // board are on screen and counted. 0, like the pad.
   padOver:     0,
-};                   // 68 in all
+};                   // 72 in all
 
 /**
  * Things tapped under 44px, on the pad (§3.5, §3.8: "no tappable element
@@ -101,8 +107,8 @@ const CONTRAST_CEILING = {
   // 2: "this over" is on the board now, board.dim on board.face (6.34:1).
   // padOver (step 3b): the chips' figures, black or white on the chip's own
   // fill, and the day sheet's board with its Tier 2 line, are in these.
-  floodlit: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, pad: 0, padOver: 0 },
-  daylight: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, pad: 0, padOver: 0 },
+  floodlit: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, matchview: 0, pad: 0, padOver: 0 },
+  daylight: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, matchview: 0, pad: 0, padOver: 0 },
 };
 
 /**
@@ -123,6 +129,7 @@ const EMOJI_CEILING = {
   login:       0,
   dashboard:   0,
   matchcentre: 0,
+  matchview:   0,
   pad:         0,
   padOver:     0,
 };
@@ -520,6 +527,15 @@ async function walk(theme) {
     await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
     await page.waitForTimeout(900);
     await measure(page, theme, "matchcentre");
+    // The fixture's own view (step 3c): its Scorecard, the densest tab.
+    await page.locator('[data-testid^="mc-open-"]').first().click({ timeout: 4000 }).catch(() => {});
+    await page.waitForTimeout(900);
+    await page.locator('[data-testid="mc-tab-scorecard"]').click({ timeout: 3000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    ok("the Match Centre opens a fixture into its own view", await page.locator('[data-testid="mc-scorecard"]').count() === 1);
+    await measure(page, theme, "matchview");
+    await page.locator('[data-testid="mc-back"]').click({ timeout: 3000 }).catch(() => {});
+    await page.waitForTimeout(600);
     await click(/^Live$/, 2500);
     await click(/Open Live Scorer|Start Scoring/i, 5000);
     await page.waitForTimeout(1600);
