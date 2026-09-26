@@ -3412,7 +3412,7 @@ who won and what they chose. **Follow-up (UX):** an animation accompanies that r
 result the scorer entered and never decides it (no random or virtual coin anywhere in the app). Build with the pad's
 toss sheet (`scorer/toss.jsx`), reduced motion honoured, after step 2 of the redesign lands.
 
-### SCRBRD-094 — Law 41: penalty runs to the fielding side (item 1 built), and a bowler suspended mid-over (item 2, awaiting Kameel's research)
+### SCRBRD-094 — Law 41: penalty runs to the fielding side (item 1 built), and a bowler suspended mid-over (item 2, decided 2026-09-26; to build after the penalty sheet)
 **Priority:** P2 · **Domain:** Scoring · **Type:** decision needed (2026-09-26)
 Two Law 41 questions Kameel is researching before deciding; nothing is built until he does:
 1. Penalty runs awarded to the fielding side (SCRBRD-090's second point): the fold leaves them out of every innings,
@@ -3451,6 +3451,44 @@ Two Law 41 questions Kameel is researching before deciding; nothing is built unt
    `shortRunning(ball)`; ask `lawsRefusal` before offering a reason; show `penaltyCredits().pending` ("Westville start
    on 5").
 2. A bowler suspended mid-over (SCRBRD-080's unbuilt half): Law 41 says he may not bowl again in the innings.
+   **Decided 2026-09-26 (Kameel's research, MCC Law 41, Unfair Play).** A bowler is suspended as soon as the ball is
+   dead, on these grounds, as Kameel gives them:
+   - dangerous non-pitching deliveries (beamers), 41.7: on a second dangerous full toss above waist height, or at
+     once if the umpire deems it deliberate. For the rest of the innings.
+   - dangerous short-pitched bowling repeated after a warning, 41.6. For the rest of the innings.
+   - a deliberate front-foot no-ball, 41.8: at once. For the rest of the innings.
+   - running on the protected area, 41.13: on a third offence, after a first and final warning. For the rest of the
+     innings.
+   - time wasting by the fielding side repeated after warnings, 41.9. For the rest of the innings.
+   - unfair changes to the condition of the ball (ball tampering), 41.3: at once, **for the rest of the match**,
+     not just the innings.
+
+   **The over:** another fielder completes it. That bowler must not have bowled any part of the previous over, and
+   may not bowl any part of the next one. The suspended bowler may not bowl again for the rest of the innings (the
+   match, for 41.3).
+
+   **Administration:** the umpire informs the other umpire, the batters and the batting captain. After the match
+   the umpires report it to the competition's executive body (or the match referee).
+
+   **Build (Opus: engine, then pad):**
+   - a `bowler_suspended` event (bowler, reason from a closed list, scope innings or match), with the reasons in
+     words;
+   - the fold records it;
+   - `lawsRefusal` refuses a suspended bowler for the rest of the innings (or match), and refuses a replacement who
+     bowled any part of the previous over;
+   - it also refuses the replacement for the next over;
+   - a split over credits each bowler with the balls he bowled;
+   - the pad offers "Umpire suspended the bowler" with the reason, then asks for the replacement, offering only
+     eligible bowlers;
+   - after the match it offers to open the report as a discipline record (db/25), which stays with the school;
+   - commentary (SCRBRD-098) gets a line.
+
+   Warnings are not tracked by the platform: the umpire decides when a suspension is due, and the scorer records
+   it.
+
+   **Clause numbers to verify before any words ship:** this research gives the protected area as 41.13, and the
+   penalty-runs research gave repeated protected-area infractions as 41.14. The screens show the reason in words
+   only, not clause numbers, until Kameel confirms them against the current Code.
 
 ### SCRBRD-099 — Backfill handwritten scorecards into the historical record
 **Priority:** P2 · **Domain:** Scoring / history · **Type:** feature (Kameel, 2026-09-26: "a tool for
