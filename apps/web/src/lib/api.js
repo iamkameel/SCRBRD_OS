@@ -42,6 +42,11 @@ const BASE = import.meta.env?.VITE_API_BASE
 // reload — the session restore path signs in again rather than resurrecting a
 // credential. What survives a reload is the ball log, which is the part that
 // cannot be regenerated.
+//
+// The one exception is narrow and is not this token (SCRBRD-078): a live
+// pad's resume credential, padKey.js — one match, one device, five routes,
+// until midnight, held with a key the page can use but never read. A reload
+// keeps the pad scoring; it does not keep anybody signed in.
 let _token = null;
 let _reachable = null;   // null = not yet asked
 
@@ -68,22 +73,37 @@ export class ApiError extends Error {
  * treat a refusal as data — the read path in particular must never fall back
  * to mock rows when the server said no, because "no" is an authorization
  * answer and mock rows are not scoped to anybody.
+ *
+ * `authorize`, when given, replaces the bearer token for this one request:
+ * it is handed the exact body text and returns the Authorization header. The
+ * pad's resume credential (padKey.js) signs that text, so it has to be the
+ * text that is sent. Without it the header is the in-memory token, built
+ * before the first await — signOut() relies on that to send its last request
+ * with the token it is about to forget.
  */
-export async function api(path, { method = "GET", body, timeoutMs = 10000 } = {}) {
+export async function api(path, { method = "GET", body, timeoutMs = 10000, authorize } = {}) {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), timeoutMs);
+  const text = body === undefined ? undefined : JSON.stringify(body);
   try {
+    const authorization = authorize ? await authorize(text ?? "") : (_token ? `Bearer ${_token}` : null);
     const res = await fetch(`${BASE}${path}`, {
       method,
       headers: {
         "content-type": "application/json",
-        ...(_token ? { authorization: `Bearer ${_token}` } : {}),
+        ...(authorization ? { authorization } : {}),
       },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: text,
       signal: ctl.signal,
     });
     const data = await res.json().catch(() => null);
-    if (!res.ok) throw new ApiError(res.status, data?.error, path, data?.detail);
+    if (!res.ok) {
+      const err = new ApiError(res.status, data?.error, path, data?.detail);
+      // A resume credential's stale proof is answered with the server's
+      // clock, which the pad signs by from then on (padKey.js).
+      if (typeof data?.serverTime === "number") err.serverTime = data.serverTime;
+      throw err;
+    }
     return data;
   } finally {
     clearTimeout(timer);

@@ -73,5 +73,27 @@ group("C. The toss, and what is sent");
   ok("not open yet: nothing to say", bannerFor({ open: false }, MATCH) === null);
 }
 
+group("D. The pad's resume credential (SCRBRD-078 option B)");
+{
+  const ended = render(st({ reason: "pad_ended", padEnd: "released", pendingList: [ball, ball, ball] }));
+  ok("its end is one clear line", /Scoring ended for today on this phone — sign in to continue\./.test(ended), ended);
+  ok("...with why, as the server said", /A supervisor released this match from this phone/.test(ended), ended);
+  ok("...what is still saved here", /3 balls are saved on this device/.test(ended), ended);
+  ok("...and the sign-in", /Sign in/.test(ended) && /sync-signin/.test(renderToStaticMarkup(h(SyncBanner, { status: st({ reason: "pad_ended", padEnd: "released" }), match: MATCH, onSignIn() {} }))));
+  for (const [why, words] of [["expired", /until midnight on the match day/], ["token_moved", /Another device holds this match now/],
+                              ["match_complete", /The match is over/], ["signed_out", /This phone was signed out/], ["office", /The school office ended it/]])
+    ok(`...${why}: ${words.source}`, words.test(render(st({ reason: "pad_ended", padEnd: why }))));
+  ok("an end the pad has no words for still reads as the day's end",
+     /Scoring ended for today/.test(render(st({ reason: "pad_ended", padEnd: "something_new" }))));
+  const offEnded = renderToStaticMarkup(h(SyncBanner, { status: st({ reason: "pad_ended", padEnd: "expired", online: false }), match: MATCH, onSignIn() {} }));
+  ok("with no signal it offers no sign-in", !/sync-signin/.test(offEnded));
+  const insecure = render(st({ reason: "not_signed_in", padResume: "unavailable", pendingList: [ball] }));
+  ok("no secure context: the reload asks for a sign-in, and the pad says why",
+     /Sign in to send 1 ball/.test(insecure) && /not secure \(plain http\)/.test(insecure) && /sign in each time/.test(insecure), insecure);
+  ok("...and says nothing about it where there is one", !/plain http/.test(render(st({ reason: "not_signed_in", padResume: "none", pendingList: [ball] }))));
+  const toss = render(st({ reason: "toss_needs_sign_in", attached: true, pendingList: [ball] }));
+  ok("a toss to record, signed out: sign in to send it", /Sign in to send the toss/.test(toss) && /nothing is sent before it/.test(toss), toss);
+}
+
 console.log(`\n${"─".repeat(52)}\nSYNC BANNER: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

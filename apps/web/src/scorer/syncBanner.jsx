@@ -54,6 +54,20 @@ export function SyncBanner({ status, match, asideCount = 0, onSignIn, onRetry, o
  * @param {number} [asideCount]
  * @returns {{reason: string, tone: "wait"|"stop"|"note", lead?: string, text: string, action?: string} | null}
  */
+/** Why the pad's resume credential ended, as the server said (db/50 revoked_reason). */
+const PAD_END_WORDS = {
+  expired: "This phone kept scoring by itself until midnight on the match day.",
+  token_moved: "Another device holds this match now.",
+  released: "A supervisor released this match from this phone.",
+  match_complete: "The match is over.",
+  match_abandoned: "The match was abandoned.",
+  signed_out: "This phone was signed out.",
+  office: "The school office ended it.",
+  reissued: "A newer one replaced it.",
+  pad_unknown: "The server does not know this phone's sign-in.",
+  pad_bad_signature: "The server does not recognise this phone's key.",
+};
+
 export function bannerFor(st, match, asideCount = 0) {
   if (!st?.open) return null;
   const waiting = st.pendingList?.length ? waitingPhrase(st.pendingList) : null;
@@ -63,12 +77,29 @@ export function bannerFor(st, match, asideCount = 0) {
   const conflict = st.conflict;
   const reason = st.reason;
 
+  // The pad's resume credential has ended (SCRBRD-078 option B): midnight,
+  // the token moved, the match over, a sign-out or the office. Only a
+  // sign-in goes on from here, and the pad says which of those it was.
+  if (reason === "pad_ended") {
+    const why = PAD_END_WORDS[st.padEnd] ?? PAD_END_WORDS.expired;
+    return { reason, tone: "stop", lead: "Scoring ended for today on this phone — sign in to continue.",
+      ...(st.online ? { action: "signin" } : {}),
+      text: `${why}${saved ? ` ${saved[0].toUpperCase()}${saved.slice(1)}.` : ""}` };
+  }
   if (reason === "not_signed_in" || reason === "session_expired") {
     const lead = reason === "session_expired" ? "Your session has ended." : "Signed out.";
+    // Without a secure context (a laptop serving the pad over plain http)
+    // there is no resume credential, so every reload asks for a sign-in.
+    const insecure = st.padResume === "unavailable"
+      ? " This connection is not secure (plain http), so the pad cannot keep scoring by itself after a reload: sign in each time." : "";
     if (!st.online) return { reason, tone: "wait", lead: `No signal, and ${reason === "session_expired" ? "your session has ended" : "signed out"}.`,
-      text: saved ? `${saved}; sign in when there is signal to send ${one ? "it" : "them"}.` : "Scoring here is saved on this device; sign in when there is signal to send it." };
+      text: (saved ? `${saved}; sign in when there is signal to send ${one ? "it" : "them"}.` : "Scoring here is saved on this device; sign in when there is signal to send it.") + insecure };
     return { reason, tone: "wait", lead, action: "signin",
-      text: waiting ? `Sign in to send ${waiting} — ${one ? "it is" : "they are"} saved on this device.` : "Sign in to send what is scored here — it is saved on this device until then." };
+      text: (waiting ? `Sign in to send ${waiting} — ${one ? "it is" : "they are"} saved on this device.` : "Sign in to send what is scored here — it is saved on this device until then.") + insecure };
+  }
+  if (reason === "toss_needs_sign_in") {
+    return { reason, tone: "wait", lead: "Sign in to send the toss.", ...(st.online ? { action: "signin" } : {}),
+      text: `The server has no toss for this match yet, and nothing is sent before it${saved ? `; ${saved}` : ""}.` };
   }
   if (reason === "toss_conflict" || reason === "toss_locked") {
     const mine = tossLine(conflict?.mine, home, away);
