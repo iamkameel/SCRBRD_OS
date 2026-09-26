@@ -592,6 +592,38 @@ CREATE OR REPLACE FUNCTION _link_47(p_player uuid) RETURNS void AS $$
           '88888888-0000-0000-0000-00000000000c', now(), 'granted', 'popia-2026-01', now(),
           '88888888-0000-0000-0000-00000000000c');
 $$ LANGUAGE sql SECURITY DEFINER;
+-- db/49 (section 27). Every player whose lifetime figures, as the CURRENT
+-- reader sees them, are not what the per-player functions say — the three
+-- views exactly as db/02 defined them over player_batting_since(),
+-- player_bowling_since() and player_dismissals_since() with no window, which
+-- db/49 left untouched. SECURITY INVOKER, like _career_season_drift(), so it
+-- answers for whoever section 27 has become. No rows is the invariant.
+CREATE OR REPLACE FUNCTION _career_lifetime_drift()
+RETURNS TABLE (family text, player_id uuid, one_pass text, per_player text) AS $$
+  SELECT 'batting', coalesce(l.player_id, o.player_id),
+         row(l.matches, l.runs, l.balls_faced, l.fours, l.sixes, l.last_ball_at)::text,
+         row(o.matches, o.runs, o.balls_faced, o.fours, o.sixes, o.last_ball_at)::text
+    FROM player_batting_career l
+    FULL JOIN (SELECT p.id AS player_id, c.* FROM player p CROSS JOIN LATERAL player_batting_since(p.id, NULL) c
+                WHERE c.matches > 0) o ON o.player_id = l.player_id
+   WHERE (l.matches, l.runs, l.balls_faced, l.fours, l.sixes, l.last_ball_at)
+         IS DISTINCT FROM (o.matches, o.runs, o.balls_faced, o.fours, o.sixes, o.last_ball_at)
+  UNION ALL
+  SELECT 'bowling', coalesce(l.player_id, o.player_id),
+         row(l.matches, l.runs_conceded, l.legal_balls, l.wides, l.no_balls, l.wickets)::text,
+         row(o.matches, o.runs_conceded, o.legal_balls, o.wides, o.no_balls, o.wickets)::text
+    FROM player_bowling_career l
+    FULL JOIN (SELECT p.id AS player_id, c.* FROM player p CROSS JOIN LATERAL player_bowling_since(p.id, NULL) c
+                WHERE c.matches > 0) o ON o.player_id = l.player_id
+   WHERE (l.matches, l.runs_conceded, l.legal_balls, l.wides, l.no_balls, l.wickets)
+         IS DISTINCT FROM (o.matches, o.runs_conceded, o.legal_balls, o.wides, o.no_balls, o.wickets)
+  UNION ALL
+  SELECT 'dismissals', coalesce(l.player_id, o.player_id), l.dismissals::text, o.dismissals::text
+    FROM player_dismissals l
+    FULL JOIN (SELECT p.id AS player_id, player_dismissals_since(p.id, NULL) AS dismissals FROM player p
+                WHERE player_dismissals_since(p.id, NULL) > 0) o ON o.player_id = l.player_id
+   WHERE l.dismissals IS DISTINCT FROM o.dismissals
+$$ LANGUAGE sql STABLE;
 
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
@@ -4703,6 +4735,99 @@ BEGIN
              n, n2));
   END;
   PERFORM set_config('app.device_id', '', true);
+  PERFORM set_config('app.user_id', '', true);
+  -- ── 27. A career in one pass over the log (db/49) ───────────────────
+  -- The three lifetime views were one pass of ball_event per PLAYER (db/02,
+  -- over the *_since() functions), so the policy on ball_event ran players ×
+  -- balls times and the `career` read outgrew the client's ten seconds. db/49
+  -- made each one pass, grouped by player — db/44's season views without the
+  -- season — and left the functions as they were. They are the reference:
+  -- for every player each of eight readers may read, the views are what the
+  -- functions say, column by column, over the whole log — the seed, sections
+  -- 19 to 23 and §22's fixture, which between them carry every rule (no-ball
+  -- byes, retirements marked W, free-hit saves, voids, run outs at the other
+  -- end, typed names, a ball with no type, a wicket with no method). §22's
+  -- (e) holds the season views to the same lifetime views, so the three
+  -- readers of one composition cannot drift apart. Each assertion's label
+  -- names what it guards; each was run once, alone, with db/49 broken the way
+  -- this table says, and failed for that reason:
+  --
+  --   (one-pass)  a view put back over its *_since() function; and one
+  --               without security_invoker
+  --   (nobody)    a view run as its owner (an unidentified session read rows)
+  --   (same)      the batting view with its second arm's NULLIF dropped (a
+  --               striker's own wicket ball counted twice in no figure, so it
+  --               did NOT fail — see below); with the retirement arm dropped;
+  --               the dismissals view without ball_wicket_stands(); the
+  --               bowling view counting a run out as the bowler's
+  --   (over)      every reader's figures empty (the same, vacuously)
+  --
+  -- The NULLIF on the batting view's second arm changes no figure: `faced`
+  -- is false there, so its row adds nothing to runs, balls, fours or sixes,
+  -- and count(DISTINCT), max() ignore a repeat. It is kept so the view reads
+  -- as db/44's does, row for row. The dismissals view's NULLIF is load-bearing
+  -- and (same) catches it dropped only if a retirement and a wicket ball were
+  -- ever one row, which they cannot be; db/44's header has the argument.
+  DECLARE
+    who uuid;
+    n bigint; n2 bigint; n3 bigint; n4 bigint;
+    detail text;
+  BEGIN
+    SELECT count(*) INTO n FROM pg_class c JOIN pg_namespace ns ON ns.oid = c.relnamespace
+     WHERE ns.nspname = 'public' AND c.relkind = 'v'
+       AND c.relname IN ('player_batting_career', 'player_bowling_career', 'player_dismissals')
+       AND 'security_invoker=true' = ANY (c.reloptions)
+       AND pg_get_viewdef(c.oid) !~ '_since\(';
+    -- (one-pass) three invoker views, none of them a function call per player
+    PERFORM _assert(n = 3,
+      format('db/49 (one-pass): %s of the 3 lifetime views are security_invoker and read the log in one pass, expected 3', n));
+
+    PERFORM set_config('app.user_id', '', true);
+    SELECT (SELECT count(*) FROM player_batting_career) + (SELECT count(*) FROM player_bowling_career)
+         + (SELECT count(*) FROM player_dismissals) INTO n;
+    -- (nobody) an unidentified session reads nothing through them
+    PERFORM _assert(n = 0,
+      format('db/49 (nobody): an unidentified session read %s rows of lifetime figures, expected 0', n));
+
+    -- (same) THE INVARIANT, as eight readers: the owner (every school), the
+    -- director, the scorer and the 2XI coach (Hilton at three widths), the
+    -- Westville administrator, the 1XI pupil, a guardian (fixtures, no
+    -- deliveries) and nobody at all.
+    FOREACH who IN ARRAY ARRAY[U_OWNER, U_SARAH, U_SCORER, U_COACH2, U_WES_ADM, U_PARENT, U_SELF] LOOP
+      PERFORM _as(who);
+      SELECT count(*), string_agg(format('%s %s: one pass %s, per player %s', d.family, d.player_id, d.one_pass, d.per_player), '; ')
+        INTO n, detail FROM _career_lifetime_drift() d;
+      -- (same)
+      PERFORM _assert(n = 0,
+        format('db/49 (same), as %s: %s lifetime figure(s) are not what the per-player functions say — %s', who, n, left(detail, 600)));
+    END LOOP;
+    PERFORM set_config('app.user_id', '', true);
+    SELECT count(*) INTO n FROM _career_lifetime_drift();
+    -- (same), as nobody
+    PERFORM _assert(n = 0, format('db/49 (same), as nobody: %s lifetime figure(s) differ', n));
+
+    -- (over) ...and it held over something: the owner and the director read
+    -- batting, bowling and dismissals for §22's three boys, whose log carries
+    -- every rule, and the Westville administrator reads his own boys.
+    PERFORM _as(U_OWNER);
+    SELECT (SELECT count(*) FROM player_batting_career WHERE player_id IN ('aaaaaaaa-0000-0000-0000-00000000044a', 'aaaaaaaa-0000-0000-0000-00000000044b'))
+         + (SELECT count(*) FROM player_bowling_career WHERE player_id = 'aaaaaaaa-0000-0000-0000-00000000044c')
+         + (SELECT count(*) FROM player_dismissals     WHERE player_id IN ('aaaaaaaa-0000-0000-0000-00000000044a', 'aaaaaaaa-0000-0000-0000-00000000044b'))
+      INTO n;
+    PERFORM _as(U_SARAH);
+    SELECT (SELECT count(*) FROM player_batting_career WHERE player_id IN ('aaaaaaaa-0000-0000-0000-00000000044a', 'aaaaaaaa-0000-0000-0000-00000000044b'))
+         + (SELECT count(*) FROM player_bowling_career WHERE player_id = 'aaaaaaaa-0000-0000-0000-00000000044c')
+         + (SELECT count(*) FROM player_dismissals     WHERE player_id IN ('aaaaaaaa-0000-0000-0000-00000000044a', 'aaaaaaaa-0000-0000-0000-00000000044b'))
+      INTO n2;
+    SELECT count(*) INTO n3 FROM player_batting_career;
+    PERFORM _as(U_WES_ADM);
+    SELECT (SELECT count(*) FROM player_batting_career WHERE player_id = P_WES)
+         + (SELECT count(*) FROM player_bowling_career WHERE player_id = P_WES2) INTO n4;
+    -- (over)
+    PERFORM _assert(n = 5 AND n2 = 5 AND n3 > 2 AND n4 = 2,
+      format('db/49 (over): the owner reads %s and the director %s of §22''s five lifetime rows (expected 5 and 5), the director %s batting rows in all '
+             || '(expected more than §22''s two), the Westville administrator %s of his two boys'' rows (expected 2)', n, n2, n3, n4));
+  END;
   PERFORM set_config('app.user_id', '', true);
 
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
