@@ -582,6 +582,16 @@ $$ LANGUAGE sql SECURITY DEFINER;
 CREATE OR REPLACE FUNCTION _born_of(p_player uuid) RETURNS date AS $$
   SELECT born FROM player WHERE id = p_player;
 $$ LANGUAGE sql SECURITY DEFINER;
+-- H Whitfield is also made guardian of the 2XI boy section 22 seeds, so a
+-- consent record exists about a boy the 2XI coach actually coaches: "a coach
+-- cannot read it" is then about his own player, not somebody else's.
+CREATE OR REPLACE FUNCTION _link_47(p_player uuid) RETURNS void AS $$
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state,
+                                  verified_by, verified_at, consent_state, consent_version, consent_at, created_by)
+  VALUES ('a5510000-0000-0000-0000-000000000010', p_player, 'parent', 'verified',
+          '88888888-0000-0000-0000-00000000000c', now(), 'granted', 'popia-2026-01', now(),
+          '88888888-0000-0000-0000-00000000000c');
+$$ LANGUAGE sql SECURITY DEFINER;
 
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
@@ -4237,6 +4247,10 @@ BEGIN
     PERFORM _assert(v_row.given_by = 'guardian' AND v_row.given_on = sa_today() AND v_row.ended_on IS NULL
                     AND v_row.recorded_by = U_WHIT AND v_row.form_name IS NULL,
       format('db/47 (guardian): the record is not his, today''s and open: %s', row(v_row.given_by, v_row.given_on, v_row.ended_on, v_row.recorded_by)::text));
+    -- ...and for the 2XI boy he is also guardian of
+    PERFORM _link_47(P_2XI);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_name_consent_set(P_2XI, true, V) s;
+    PERFORM _assert(v_ok, format('db/47 (guardian-2): a verified guardian could not consent for his second child (%s)', v_reason));
     -- (other-child) ...and cannot write another child's
     SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_name_consent_set(P_OTHER, true, V) s;
     PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted' AND _consent_rows(P_OTHER) = 0,
@@ -4309,26 +4323,31 @@ BEGIN
     PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted',
       format('db/47 (coach): a coach consented for a boy he is no guardian of (ok %s, %s)', v_ok, v_reason));
     -- (direct) the application has no way to write the table but the door
+    -- (a write that gets past the privilege and fails on anything else has
+    -- still got through the door, and is reported as such)
     PERFORM _as(U_REGISTRAR);
     v_raised := false;
     BEGIN
       INSERT INTO public_name_consent (player_id, given_by, giver_assignment_id, giver_link_id, version, given_on, recorded_by)
-      SELECT P_JW, 'guardian', g.assignment_id, g.id, V, sa_today(), U_REGISTRAR
-        FROM assignment_subject g WHERE g.player_id = P_JW LIMIT 1;
+      SELECT P_U16B, 'guardian', g.assignment_id, g.id, V, sa_today(), U_REGISTRAR
+        FROM assignment_subject g WHERE g.player_id = P_U16B LIMIT 1;
     EXCEPTION WHEN insufficient_privilege THEN v_raised := true;
+              WHEN OTHERS THEN v_raised := false;
     END;
-    PERFORM _assert(v_raised, 'db/47 (direct): the office wrote public_name_consent without its door');
+    PERFORM _assert(v_raised AND _consent_rows(P_U16B) = 0, 'db/47 (direct): the office wrote public_name_consent without its door');
 
     -- ── Who reads a consent record ──
     PERFORM _as(U_WHIT);
     SELECT count(*) INTO n FROM public_name_consent;
-    PERFORM _assert(n = 1, format('db/47 (read-own): a guardian reads %s consent records, expected his own one', n));
+    PERFORM _assert(n = 2, format('db/47 (read-own): a guardian reads %s consent records, expected his own two', n));
     PERFORM _as(U_REGISTRAR);
-    SELECT count(*) INTO n FROM public_name_consent WHERE player_id IN (P_JW, P_OTHER, P_INJURED);
-    PERFORM _assert(n = 3, format('db/47 (read-office): the office reads %s of the school''s 3 consent records', n));
+    SELECT count(*) INTO n FROM public_name_consent WHERE player_id IN (P_JW, P_2XI, P_OTHER, P_INJURED);
+    PERFORM _assert(n = 4, format('db/47 (read-office): the office reads %s of the school''s 4 consent records', n));
+    -- (read-coach) not even the record about a boy in the side he coaches
     PERFORM _as(U_COACH2);
     SELECT count(*) INTO n FROM public_name_consent;
-    PERFORM _assert(n = 0, format('db/47 (read-coach): a coach reads %s consent records — they name a child''s guardian', n));
+    PERFORM _assert(n = 0 AND _consent_rows(P_2XI) = 1,
+      format('db/47 (read-coach): the 2XI coach reads %s consent records — they name a child''s guardian', n));
 
     -- ── A "no" is immediate, and ends a record rather than deleting it (C3) ──
     PERFORM _as(U_WHIT);
