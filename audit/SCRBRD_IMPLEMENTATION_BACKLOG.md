@@ -3119,6 +3119,11 @@ the dismissal vocabulary already is) and refuse per event.
 > the smallest exposure. Questions for the owner: may a reloaded (or unlocked, lost) phone keep scoring its match
 > without the person re-entering anything until the credential ends; what that end is (the match day, the result);
 > and whether the API can move onto the web app's site (which is what makes the cookie variant of A possible).
+>
+> **Decided 2026-09-26 (Kameel): B.** A reloaded phone keeps scoring its match without the scorer re-entering
+> anything, and the credential ends at the end of the match day (and on every revocation listed above, the match
+> completing included). Built after db/47 lands, as its own migration and security review (Opus). Not decided,
+> and not needed for B: A for every other role, and moving the API onto the web app's site.
 
 #### (original entry)
 **Priority:** P2 · **Domain:** Scoring / sync · **Type:** offline resilience
