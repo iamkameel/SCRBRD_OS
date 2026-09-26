@@ -309,7 +309,7 @@ The screen the product is judged on. Principles:
    board.
 5. **Daylight by default outdoors.** See §3.1.
 6. **Refusals stay in place and in words** (SCRBRD-070/077).
-7. **Nothing on the pad delays or covers the next input** (Kameel, 2026-09-26, binding). The
+7. **Nothing on the pad delays or covers the next input** (§1a, binding). The
    pad is built for speed and trust; the scoreboard for emotion. A four, a six, a wicket or a
    milestone (Tier 3 below) is a flash on the pad's board only — its frame in lime and the
    words in its own space, for 600 ms at most, a cut under reduced motion, the words to a
