@@ -330,3 +330,115 @@ two themes; 249 places that make a translucent colour by appending two hex digit
 a token (`D.emerald+"12"`), which is why the theme cannot simply become CSS custom
 properties without rewriting them; 437 emoji in 50 files, 50 of them in
 `design/roles.js`.
+
+---
+
+## 10. From the first prototypes (live scoring interface 2.0)
+
+Kameel's earlier designs (`live_scoring_interface_2.0.pdf`, 10 pages, read 2026-09-26):
+a broadcast scorebug, a spectator Match Center, the old OS scoring console, and a
+public mobile match page with its scorecard. They got a lot right. What carries over,
+and where it lands:
+
+### Taken as drawn
+
+1. **Three tiers of information** (p10) — the clearest idea in the set, and it maps
+   onto the board directly:
+   - **Tier 1, always there:** total, wickets, overs, run rate, required rate. This is
+     `Board`'s fixed rows.
+   - **Tier 2, one rotating line:** partnership, projected score, a milestone in reach
+     ("needs 4 for fifty"), a match-up, a record. `Board` gains one `insight` slot.
+     `scorer/signals.js` already works out most of it (projected, droughts, dots).
+   - **Tier 3, the interrupt:** wicket, milestone, hat-trick ball, pressure spike.
+     This is the `interrupt` slot §3.6 already reserves; hat-trick ball joins the list.
+2. **The partnership on the board** (p1, p9): "Partnership 43 (27)" as a `Board` row
+   under the batters. It is the figure a coach asks for most, and it has no home yet.
+3. **The striker marked** (p1, p9): the striker's row is lit and the other is dim.
+   The board's ● stays. The striker's figures take `board.figure` and the
+   non-striker's `board.dim`, so the mark is not colour alone.
+4. **Target in words on the board** (p1): "Target 143", then "Need 45 off 34" once
+   the chase starts. This is `Board`'s `sub` line, as drawn.
+5. **A match line under the board** (p1, p4): competition · age group · ground ·
+   start · weather · innings, one line in `body` below the board, never inside it.
+   It goes on the Match Centre and the public page. The pad keeps only its title bar.
+6. **Full names where there is room, the short code where there is not** (p1, p2).
+   Use "Westville Boys' High School 1st XI" on the Match Centre header and "WBHS" on
+   the board at 390 wide. The short code is `school.code`, which already exists.
+7. **The scorecard** (p7–p9):
+   - an innings toggle (one tab per side);
+   - the dismissal on a second line under the name;
+   - not-out batters shaded;
+   - "Did not bat" rows;
+   - extras broken out as NB · WD · B · LB · PEN (PEN now matters, with Law 41);
+   - a total bar, bowling, then fall of wickets as "43/3 · R Rickelton · 5.5".
+
+   The Match Centre is rebuilt to this layout (step 3c).
+8. **A player row that opens** (p8): tap a batter to open 1s/2s/3s/4s/6s counts, his
+   wagon wheel and the commentary line for his dismissal. This is signed-in only (see
+   below).
+9. **Match Centre tabs** (p4, p7):
+   - Summary
+   - Scorecard
+   - Commentary
+   - Partnerships
+   - Analytics
+   - Match details
+
+   Six tabs, in that order.
+10. **Innings-break card** (p2): top scorers, best bowling, most boundaries and best
+    strike rate from the first innings. This is the Tier 2 line's content between
+    innings.
+11. **Share** (p6, p7): a share action on the public page (D3 expects the WhatsApp
+    link).
+
+### Taken, bent to the rules already decided
+
+- **Ball chips in the current over** (p1, p4) drew each outcome in its own colour, with
+  ten colours to learn, which §3.7's one-accent rule forbids. The rule is also right on
+  its own terms: about one boy in twelve cannot reliably tell the lime from the amber. Kept, but
+  coded by shape and fill (**Kameel to confirm**):
+  - a dot is a dim "·";
+  - runs are an outlined figure;
+  - a four or a six is filled lime with a black figure;
+  - a wicket is filled white with a black "W";
+  - an extra is outlined with its suffix ("2wd", "nb").
+
+  That gives three fills and readable words, and nobody needs a legend.
+- **School badges** (p1, p6, p7). A crest is not a pupil's data, so it may appear on
+  public pages. `school` has no crest column yet: it needs a small migration and an
+  upload, and the short code stands in until then, as p2 itself says.
+- **Tier 2 rotation** goes on spectator screens only: the Match Centre, the public
+  page and the overlay. On the pad a line that changes by itself pulls the scorer's eye
+  off the ball, so the pad shows Tier 1 and Tier 3 only. Where it rotates:
+  - it changes every 8 s;
+  - it holds while hovered or focused, and has a pause button (WCAG 2.2.2);
+  - under reduced motion it cuts rather than slides.
+- **Win probability and predictor** (p5): parked. It needs a model we don't have, and a
+  number that says a school side is losing, shown to its own parents, is a product
+  call and not a layout one.
+
+### Not taken: the public data rule decides (`docs/policy/PUBLIC_DATA.md`)
+
+- **Player photos** in every row (p4, p6–p9): none on public pages (A8). Signed-in
+  rows get an initials monogram until photo sharing (SCRBRD-092) exists.
+- **Full names** on the public scorecard ("Aiden Markram (c)"): at most "A Markram",
+  and only with consent. Otherwise the row is "Batter 1" (L2, A2).
+- **Player of the match** banner (p7): on the public page under the same name rule;
+  on signed-in pages as drawn.
+- **Per-player wagon wheel and stats** on the public page (p8): team-level only (L7).
+  The opening row in item 8 is signed-in.
+- **Squads before the match** with role icons (p6): not public (A7). Signed in, the
+  opposition sees them 5 days out (db/46). The role icons are the cricket glyphs from
+  step 1b: `bat`, `gloves`, `ball`, and bat with ball for an all-rounder.
+- **Colour-coded brand palette** (p1's ten swatches): the board's black, white and
+  lime stand, and so does the "approved" pill on p3 (green on black), which is what
+  the board already is.
+
+### Where it goes in the sequence (§8)
+
+| Step | Adds |
+|---|---|
+| 3b (new, small) | `Board`: `partnership` row, striker lit and dim, `insight` slot with rotation rules, ball chips by shape; Opus, as `Board` sits on the pad |
+| 3c (new, after step 3 lands) | Match Centre to the prototype: the match line (5), full names and codes (6), the scorecard layout (7), the tabs (9); Sonnet build, Opus review |
+| SCRBRD-083 step 3 (public page) | the match line, the scorecard under the name rule, share, `noindex` |
+| later | school crest column and upload; the innings-break card; the opening player row |
