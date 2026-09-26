@@ -230,8 +230,9 @@ export async function padPrincipal({ pool, secret, authorization, method, target
   const spent = (await pool.query(`select * from pad_resume_spend($1, $2)`, [c.credential, proof.payload.jti])).rows[0];
   if (!spent?.ok) {
     const r = spent?.reason ?? "unknown";
-    throw new PadError(r === "replay" ? "pad_replay" : r === "expired" ? "pad_expired" : r === "bad_jti" ? "pad_malformed"
-                       : r === "unknown" ? "pad_unknown" : "pad_revoked", 401, { detail: r });
+    const code = r === "replay" ? "pad_replay" : r === "expired" ? "pad_expired" : r === "bad_jti" ? "pad_malformed"
+               : r === "unknown" ? "pad_unknown" : "pad_revoked";
+    throw new PadError(code, 401, code === "pad_revoked" || code === "pad_expired" ? { detail: r } : {});
   }
   return { userId: c.user_id, deviceId: c.device_id, scope: "pad", matchId: c.match_id, credentialId: c.credential };
 }

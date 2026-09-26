@@ -66,6 +66,9 @@ const SUITES = [
   ["handover", "services/api/handover/scoring-session.test.mjs"],
   ["rls",      "services/api/rls/rls.test.mjs"],
   ["auth",     "services/api/auth/auth.test.mjs"],
+  // The pad's resume credential (SCRBRD-078): the device signs, the server
+  // verifies, and a signed request reaches five routes and nothing else.
+  ["pad-resume", "services/api/auth/pad-resume.test.mjs"],
   ["read",     "services/api/read/read.test.mjs"],
   ["csv",      "services/api/io/csv.test.mjs"],
   ["write",    "services/api/write/write.test.mjs"],
