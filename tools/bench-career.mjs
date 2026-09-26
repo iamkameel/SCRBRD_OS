@@ -21,7 +21,7 @@
  *
  * THE LOAD writes plain rows into ball_event as the migration owner, the way
  * the seed and the smoke walks do (every trigger fires, the fingerprint and
- * db/43's door included): a Hilton "BENCH" side of --players boys, --matches
+ * db/43's door included): a Hilton 12XI side (a team code nothing else uses) of --players boys, --matches
  * complete fixtures a week apart, each an innings batting (the opposition's
  * bowler held by nobody) and an innings bowling (its batters typed names).
  * A small LCG makes the same log every time: wides, no-balls (some of whose
@@ -100,7 +100,7 @@ async function load() {
   for (let i = 0; i < N_PLAYERS; i++) {
     players.push((await owner.query(
       `insert into player (school_id, team_code, full_name, squad_no, playing_role, born)
-       values ($1, 'BENCH', $2, $3, 'allrounder', current_date - interval '16 years') returning id`,
+       values ($1, '12XI', $2, $3, 'allrounder', current_date - interval '16 years') returning id`,
       [HIL, `Bench ${tag} ${String(i + 1).padStart(2, "0")}`, 100 + i])).rows[0].id);
   }
   const cols = ["match_id", "school_id", "seq", "epoch", "innings", "scorer_user_id", "device_id", "idempotency_key",
@@ -111,7 +111,7 @@ async function load() {
   for (let m = 0; m < N_MATCHES; m++) {
     const match = (await owner.query(
       `insert into match (school_id, team_code, opponent, starts_at, format, overs, status)
-       values ($1, 'BENCH', $2, now() - make_interval(days => $3), 'T20', 20, 'complete') returning id`,
+       values ($1, '12XI', $2, now() - make_interval(days => $3), 'T20', 20, 'complete') returning id`,
       [HIL, `Bench XI ${m + 1}`, 7 * (m + 1)])).rows[0].id;
     const xi = Array.from({ length: 11 }, (_, k) => players[(m * 11 + k) % players.length]);
     /** @type {any[][]} */ const rows = [];
