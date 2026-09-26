@@ -126,6 +126,26 @@ Never auto-merge two divergent ball logs. A wrong scorecard that looks authorita
 
 Write authorisation is enforced at **three** layers: API check, `SECURITY DEFINER` function, and an RLS `WITH CHECK` policy that requires capability **and** token **and** matching epoch **and** a live lease. `ball_event` has no UPDATE or DELETE policy and immutability triggers — append-only at the database.
 
+**The device is the principal's.** The heartbeat, the claim and the events route take the device from the signed token (or the resume credential below), never from the body: a body or batch that names another device is refused, `device_mismatch` (SCRBRD-087 — the same person on a second phone could otherwise keep the first phone's lease alive with a batch that wrote nothing).
+
+| Endpoint | Purpose | Key failure modes |
+|---|---|---|
+| `GET  /matches/:id/toss` | This match's toss, for the pad | — |
+| `POST /matches/:id/session/pad-credential` | Issue the pad's resume credential, just after a claim | `not_token_holder`, `bad_key`, `match_complete` |
+| `POST /matches/:id/pad-credentials/revoke` | The school office ends them (`user.invite`) | `not_permitted` |
+
+### 6a. Surviving a reload: the pad's resume credential (SCRBRD-078 option B)
+
+"A scorer should not have to log in again mid-over." The API token lives in memory and lasts thirty minutes, and a production sign-in is a one-time code from the office, so a reloaded pad — or a match past half an hour — could not send without a new code. Decided 2026-09-26 (Kameel): a reloaded, or unlocked and lost, phone keeps scoring its match without the scorer re-entering anything, until the credential ends.
+
+- **Issued** to the device holding the token, right after a claim made signed in (and after a takeover): bound to (person, device, match), held with a non-extractable WebCrypto key on the device; the server keeps the public key and a hash of the id.
+- **Good for** the heartbeat, the re-claim of this device's own token (state `active`, this person, this device — the rule `tryAttach` and the flush gate already apply, enforced by `pad_resume_reclaim()`), appending the match's events, and reading its log and toss. Never a handover (arming, claiming or verifying one), a force-release, a toss written, another match, or any other route.
+- **After a reload** the pad re-attaches with it and sends by itself; every request after the reload is signed with the device's key and none carries a token. The rest of the app stays signed out.
+- **Ends** at midnight (Africa/Johannesburg), and when the match completes, **the token moves** — a completed handover, a claim by another device, a force-release — the device signs out, or the office revokes it. Arming or cancelling a handover does not move the token and does not end it. The pad then says, in words, *"Scoring ended for today on this phone — sign in to continue"*, keeps everything it has recorded, and sends nothing until a sign-in.
+- **Without a secure context** (a laptop serving the pad over plain http) there is no credential; the pad asks for a sign-in on every reload, and says why.
+
+The protocol, the request signature and the threat model are in `docs/AUTH_SPEC.md`; the database's half is `db/50_pad_resume.sql`, proved by db/99 §28.
+
 ---
 
 ## 7. Corrections
@@ -136,7 +156,7 @@ Because the log is append-only, a mistake is fixed by a **compensating event**, 
 
 ## 8. UI requirements
 
-- **Persistent session badge:** who holds the token, sync state, pending count.
+- **Persistent session badge:** who holds the token, sync state, pending count — in one line: "Saved on this phone · 3 to send", "Held 1", "Sent", and when the resume credential has ended, "Scoring ended for today on this phone — sign in to continue".
 - **Sync indicator on every ball:** pending vs confirmed. Scorers must be able to see, at a glance, that their work is safe.
 - **Handover blocked state:** never a bare error — always the count and the remedy.
 - **Verification screen:** large, readable figures to check against the physical board; explicit Confirm.

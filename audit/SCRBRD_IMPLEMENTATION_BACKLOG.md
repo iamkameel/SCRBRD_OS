@@ -3056,8 +3056,9 @@ A contact, trajectory or placement value that violates a column CHECK makes `app
 500, and the device resends it forever. The pad sends none of these today. Validate the vocabulary at the door (as
 the dismissal vocabulary already is) and refuse per event.
 
-### SCRBRD-078 — A live pad that loads without signal never syncs until it is reloaded with signal
-**Two of three closed 2026-09-25; the third is a proposal awaiting a product decision (below).**
+### ~~SCRBRD-078~~ — CLOSED · A live pad that loads without signal never syncs until it is reloaded with signal
+**Closed 2026-09-26** in `f47c5c9` (db/50), `d1213dd` (API), `ddc9216` (pad): the third item, the session, built as
+option B — the pad's resume credential (build note below). Two of three were closed 2026-09-25.
 
 > **Closed: the pad reopens offline, and the claim is retried.** A live fixture's pad reopens from what the device
 > holds — its sides saved with the session (`scorerCfg`), its log saved by the pad — when there is no session or no
@@ -3126,6 +3127,34 @@ the dismissal vocabulary already is) and refuse per event.
 > anything, and the credential ends at the end of the match day (and on every revocation listed above, the match
 > completing included). Built after db/47 lands, as its own migration and security review (Opus). Not decided,
 > and not needed for B: A for every other role, and moving the API onto the web app's site.
+>
+> **Built 2026-09-26 (option B).** `db/50_pad_resume.sql`: `pad_resume_credential` (the public key, its RFC 7638
+> thumbprint, an HMAC of the id — never the id; revocation and expiry columns) and `pad_resume_jti` (one-time ids),
+> written only by SECURITY DEFINER functions, EXECUTE to `scrbrd_app` only. Issued by
+> `POST /api/matches/:id/session/pad-credential { jwk }` to the device holding the token right now, signed in
+> (`pad_resume_issue()`), right after a claim; the device keeps an ECDSA P-256 key made with `extractable = false`
+> as a CryptoKey in IndexedDB (`apps/web/src/lib/padKey.js`). Each request is `Authorization: ScrbrdPad <ES256 JWS>`
+> over method, request-target, body hash, `iat` and a `jti` (±120 s, spent once), verified by
+> `services/api/auth/pad-resume.mjs` against the stored public key; the principal runs as the person on the device
+> with `app.scope = 'pad'` and `app.match_id`. Good for five routes on its own match — heartbeat, the re-claim of
+> this device's own token (`pad_resume_reclaim()`), events both ways, the toss read (`GET /matches/:id/toss`, new)
+> — and `403 pad_scope` on every other route, decided before any routing. The database narrows it twice: db/35's
+> `app_can()`/`app_holds()`/`app_may_grant()` recreated verbatim with a pad guard (fixture.read and scoring.edit on
+> its fixture, nothing else), and a RESTRICTIVE `pad_scope_<cmd>` policy on every table behind RLS
+> (`pad_scope_guard_install()`, db/41's precedent); `scoring_arm_handover()` refuses it by its own first line. Ends
+> at midnight (Africa/Johannesburg); revoked by triggers when the match completes or is abandoned and when the token
+> moves (handover, another device's claim, force-release), by `POST /api/auth/sign-out` (and the client forgets
+> every key), and by the office under `user.invite` (`POST /api/matches/:id/pad-credentials/revoke`). After a
+> reload the pad re-attaches and sends by itself; the rest of the app stays signed out; the state line says "Saved
+> on this phone · N to send", and the end "Scoring ended for today on this phone — sign in to continue". Without a
+> secure context the pad signs in as before and says why. Threat model: the migration header and
+> `docs/AUTH_SPEC.md`. Proof: `services/api/auth/pad-resume.test.mjs` (188: replay, stale either way, wrong key,
+> wrong match, wrong device, expired/revoked, a proof for another request, malformed and `alg` swaps, and a signed
+> request to every mounted route read out of `server.mjs`), `tools/smoke-pad-resume.mjs` (80, live: the same, every
+> route and read resource refused with nothing written, and every way it ends), db/99 §28 (every assertion
+> falsified once, listed in its header), `tools/smoke-browser-pad-resume.mjs` (sign in, claim, score, reload —
+> sends with no sign-in; force-release, reload — stops in words), `sync-banner.test`. `smoke-browser-offline-day` is
+> now the day of a phone without one.
 
 #### (original entry)
 **Priority:** P2 · **Domain:** Scoring / sync · **Type:** offline resilience
@@ -3509,7 +3538,13 @@ above nought (`penalty_runs_invalid`). Proof: `tools/smoke-fold-figures.mjs` (aw
 two-sided innings: credit, target, live score and handover count agree with the fold in every innings),
 `tools/smoke-handover-innings.mjs`, db/99 §26 (8 assertions, each falsified once), replay and laws suites.
 
-### SCRBRD-087 — The lease check trusts the device the batch names
+### ~~SCRBRD-087~~ — CLOSED · The lease check trusts the device the batch names
+**Closed 2026-09-26** in `d1213dd`: `appendEvents` asks `scoring_lease_check` about the principal's device (the
+token's, or the pad resume credential's) and refuses a batch any event of which names another, `403
+device_mismatch`, before anything — the lease included — is touched; the heartbeat takes the principal's device and
+refuses a body naming another, and the claim refuses a named device the token is not bound to. `write.test` group
+"The lease is asked about the principal's device" failed 6 assertions on the old code; `smoke-pad-resume` E proves
+it live (phone B's token cannot keep phone A's lease alive: batch, heartbeat and claim refused, lease unmoved).
 **Priority:** P3 · **Domain:** Scoring / sync · **Type:** hardening
 **Found 2026-09-25** typing `events-api.mjs`. `appendEvents` calls `scoring_lease_check(match, events[0].deviceId,
 events[0].epoch)` with the device from the request body, not the token's. Writes stay bound to the token's device by
@@ -3544,5 +3579,6 @@ commits. Pass the token's device (the principal carries it) and refuse a batch t
   after a reload the pad no longer says so (the server's quarantine panel still does). (P3)
 - **A toss conflict with play recorded under the pad's answer stops sending** and has no resolution on the pad —
   see SCRBRD-075. (P3 — product decision)
-- **The 30-minute token and one-time office codes** mean a production scorer must be issued a new code to go on
-  sending mid-match — see SCRBRD-078's open item. (P1 before launch)
+- ~~**The 30-minute token and one-time office codes** mean a production scorer must be issued a new code to go on
+  sending mid-match — see SCRBRD-078's open item. (P1 before launch)~~ **Closed 2026-09-26** with SCRBRD-078
+  option B (db/50, the pad's resume credential).

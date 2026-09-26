@@ -161,6 +161,21 @@ const liveness = (/** @type {boolean} */ timeBoxed, suspendable = false) => (tim
  */
 const SUSPENSION = "\n       AND NOT EXISTS (SELECT 1 FROM duty_suspension s"
   + "\n                        WHERE s.assignment_id = a.id AND s.lifted_at IS NULL)";
+
+/*
+ * NOT EMITTED HERE, AND THE NEXT GENERATED FILE MUST CARRY IT: the pad scope.
+ *
+ * db/50_pad_resume.sql (hand-written, SCRBRD-078 option B) recreates db/35's
+ * three functions verbatim with one guard in front of each — app_can() true
+ * under pad scope only for fixture.read and scoring.edit on the credential's
+ * fixture, app_holds() and app_may_grant() false — so the functions RUNNING
+ * today are db/50's, not the last file this generator wrote. None of db/01,
+ * db/23 or db/35 changes. But the day a new decision-function file is
+ * generated (a third liveness line, say), it replaces db/50's definitions,
+ * and it must include those guards or the resume credential stops being
+ * narrowed at the decision function. db/99 §28 (doors, holds) goes red if it
+ * does not.
+ */
 // db/16 pinned every SECURITY DEFINER function's search_path with ALTER
 // FUNCTION — and CREATE OR REPLACE discards that, so a re-emitted function
 // has to carry the pin in its own definition or it comes back unpinned. The
