@@ -3396,6 +3396,39 @@ Two Law 41 questions Kameel is researching before deciding; nothing is built unt
    on 5").
 2. A bowler suspended mid-over (SCRBRD-080's unbuilt half): Law 41 says he may not bowl again in the innings.
 
+### SCRBRD-098 — A commentary engine every viewer shares
+**Priority:** P2 · **Domain:** Scoring / Match Centre · **Type:** product gap (Kameel, 2026-09-26: fold into
+redesign step 3c)
+**Today:** the pad's Commentary card (`scorer/panels.jsx` `CommentaryCard`, in the Score tab) asks
+`POST /api/ai/commentary` (`services/api/ai/ai-service.mjs`) for one line per ball, built from the fold's state by
+`fetchAICommentary()` (`scorer/shots.js`). Names are tokenised before the call and restored after it, so no pupil's
+name reaches the provider, and it fails soft to a plain description (`descBall`) when there is no signal. But:
+- only the scorer sees it: the lines live in that phone's memory and are never stored, so Match Centre, parents,
+  the public page and a finished scorecard have no commentary;
+- it is one model call per ball from the scorer's phone at the ground (about 250 a T20), on an Opus-class model,
+  which the service's own cost note says to measure before a season;
+- nothing stored means nothing the public-data rule (PUBLIC_DATA L4) can filter.
+
+**Build (in step 3c):**
+1. **A deterministic commentary generator** in `packages/scoring`, pure, from the fold and the events: one line
+   per delivery plus lines for wickets, milestones, a bowling change, a new batter, the innings end, and penalty
+   awards (with the Law 41 reason in words). The same events give the same lines on every device, offline, free,
+   and on a replay of a finished match. It is tested like the fold: every event kind, a void, an amendment and a
+   free hit.
+2. **Match Centre's Commentary tab** (DESIGN_DIRECTION §10 item 9) draws it, newest first, by over. The pad's card
+   draws the same generator, so the scorer and the ground read the same words.
+3. **Names follow the reader.** Signed-in readers see names under the usual read rules. A public page runs every
+   name through `publicName()` (PUBLIC_DATA L2/L4): "D Erasmus" only with consent, otherwise the role ("the
+   batter", "the bowler"). The generator takes the names from the caller and never reads them itself.
+4. **AI enrichment is optional and a separate decision.** If kept, it runs server-side, once per ball (never once
+   per device), is stored beside the ball it describes, and keeps the name tokenising. The model and cost are
+   chosen deliberately (a smaller model is the likely trade), and whether AI lines appear to spectators at all is
+   Kameel's call. Until he decides, spectators see the deterministic lines only.
+
+**Guard:** a generator test over generated logs (every line names only players in the events, and a void removes
+its line); a browser walk for the Commentary tab signed in and, when the public page exists, signed out without
+consent.
+
 ### SCRBRD-097 — The rest of the players × balls readers
 **Priority:** P2 · **Domain:** Scoring / performance · **Found 2026-09-26** building db/49
 db/49 made the lifetime career views one pass over the log: the career read at a school's volume (70 players,

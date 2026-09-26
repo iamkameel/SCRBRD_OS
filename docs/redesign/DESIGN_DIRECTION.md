@@ -529,6 +529,6 @@ and where it lands:
 | Step | Adds |
 |---|---|
 | 3b (new, small) | `Board`: `partnership` row, striker lit and dim, `insight` slot with rotation rules, ball chips in the prototype's colours; the colour-vision setting and its test (§3.9, SCRBRD-096); Opus, as `Board` sits on the pad and the setting is cross-cutting |
-| 3c (new, after step 3 lands) | Match Centre to the prototype: the match line (5), full names and codes (6), the scorecard layout (7), the tabs (9); Sonnet build, Opus review |
+| 3c (new, after step 3 lands) | Match Centre to the prototype: the match line (5), full names and codes (6), the scorecard layout (7), the tabs (9), and the Commentary tab on a shared, deterministic commentary engine (SCRBRD-098). Opus builds the generator in `packages/scoring`; Sonnet builds the screens; Opus reviews both |
 | SCRBRD-083 step 3 (public page) | the match line, the scorecard under the name rule, share, `noindex` |
 | later | school crest column and upload; the innings-break card; the opening player row |
