@@ -3334,6 +3334,23 @@ Kameel's note (A8): photos and videos shared socially, registered users only. Ne
 Needs its own consent (a child's face is not covered by consent to be named), storage, and moderation; design with
 the policy package before any screen.
 
+### SCRBRD-093 — The toss, decided: offline allowed, the server's toss wins
+**Priority:** P2 · **Domain:** Scoring / sync · **Type:** decision (Kameel, 2026-09-26)
+"A toss will always be live and will be recorded on the app." Asked what the pad does with no signal at the toss:
+**offline allowed, the server's toss wins** — which is how SCRBRD-075 already built it (`tossDecision()` in
+`packages/sync/src/attach.mjs`): the pad records the toss offline and settles it before any event; if the server
+has a different toss and nothing depends on it, the pad follows the server's; if play is already recorded under the
+pad's own toss, the pad stops sending and says so, and a person settles it through a scoring amendment. No code
+change. **Follow-up (UX):** a toss animation accompanies the recording on the pad (Kameel) — build with the pad's
+toss sheet (`scorer/toss.jsx`), reduced motion honoured, after step 2 of the redesign lands.
+
+### SCRBRD-094 — Awaiting Kameel's research: penalty runs to the fielding side, and a bowler suspended mid-over
+**Priority:** P2 · **Domain:** Scoring · **Type:** decision needed (2026-09-26)
+Two Law 41 questions Kameel is researching before deciding; nothing is built until he does:
+1. Penalty runs awarded to the fielding side (SCRBRD-090's second point): the fold leaves them out of every innings,
+   where Law 41 adds them to that side's own innings.
+2. A bowler suspended mid-over (SCRBRD-080's unbuilt half): Law 41 says he may not bowl again in the innings.
+
 ### SCRBRD-090 — The live score and the target leave out penalty runs
 **Priority:** P2 · **Domain:** Scoring / broadcast · **Type:** bug (found fixing SCRBRD-088, 2026-09-25)
 `match_live_score` sums `value`, which a `penalty` row does not carry, so the public board (`broadcast_state()`),
