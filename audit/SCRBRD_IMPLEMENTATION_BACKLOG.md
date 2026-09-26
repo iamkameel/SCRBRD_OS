@@ -2853,7 +2853,8 @@ with no toss recorded, the scorer is asked (toss winner and election) before the
 **Tests required:** a walk that records a toss where the away side bats first and asserts the opened innings.
 **Data migration required:** NO (reads the existing toss).
 
-### SCRBRD-068 — Byes or leg byes run off a no-ball are credited to the batter
+### ~~SCRBRD-068~~ — CLOSED · Byes or leg byes run off a no-ball are credited to the batter
+**Closed 2026-09-25** in `105e467` (#37): `nbRuns` (NB_RUNS) on a no-ball says the runs were byes or leg byes, the fold and the Laws check read it (`events.mjs`, `laws.mjs`), and db/40 carries it into every SQL reader.
 **Title:** A no-ball's `value` is always runs off the bat, so the event model cannot record no-ball byes
 **Priority:** P2 · **Domain:** Scoring · **Type:** correctness (event model)
 **Affected files:** `packages/scoring/src/events.mjs` (`BALL_TYPE.NO_BALL`), `packages/scoring/src/replay.mjs`
@@ -2867,7 +2868,8 @@ credited only with the first, the bowler charged per the Laws, and old logs repl
 **Tests required:** laws-spec cases for no-ball + byes and no-ball + leg byes (batter, bowler, extras, strike).
 **Data migration required:** NO if the new field rides in the payload; the fold must default it for old events.
 
-### SCRBRD-069 — Which end is empty after a run out that completed runs
+### ~~SCRBRD-069~~ — CLOSED · Which end is empty after a run out that completed runs
+**Closed 2026-09-25** in `105e467` (#37): a wicket may record the end the batter was out at (the pad asks on a run out), and the fold places the survivor from it and the runs completed. `laws-spec.test.mjs`'s KNOWN_GAP is now passing cases, and none is open.
 **Title:** The fold never changes ends on a wicket ball, so a run out after a completed run leaves the survivor at the wrong end
 **Priority:** P3 · **Domain:** Scoring · **Type:** correctness (display between events)
 **Affected files:** `packages/scoring/src/replay.mjs` (`deriveInnings`, the wicket case)
@@ -3240,7 +3242,8 @@ keys: after the upgrade a re-offered, already-acknowledged ball reads as unsent 
 - **SCRBRD-084 — Season awards and MVP.** Season roll-up of figures and ratings already computed.
 - **SCRBRD-085 — Phone day-of views for drivers and groundskeepers.**
 
-### SCRBRD-086 — Season awards need a season-scoped career read
+### ~~SCRBRD-086~~ — CLOSED · Season awards need a season-scoped career read
+**Closed 2026-09-25** in `105e467` (#37): db/44 and the Awards season selector, as the build note below records. db/49 (`2534bda`, #38) later made the lifetime views one pass as well.
 **Priority:** P2 · **Domain:** Analytics · **Type:** gap (follows SCRBRD-084)
 The `career` read aggregates every match the reader can see, with no season parameter, so the Awards tab is correct
 only while a school has one season of history. Add a season-scoped read (RLS-reviewed, Opus) and a season selector.
@@ -3261,7 +3264,8 @@ into both; dropping one would take the views with it. db/43 was such a change an
 `ball_dismissed_batter()` in the batting and dismissals views, and a batter run out at the other end has his match),
 and a NULL type and a W with no method reach the views through `ball_event_live` and `dismissal_is_bowlers()`.
 
-### SCRBRD-088 — A handover in the second innings cannot verify
+### ~~SCRBRD-088~~ — CLOSED · A handover in the second innings cannot verify
+**Closed 2026-09-25** in `105e467` (#37): db/45, as the build note below records.
 **Priority:** P1 · **Domain:** Scoring / handover · **Type:** bug (found by db/43, 2026-09-25)
 `scoring_verify_takeover()` compares the incoming scorer's runs, wickets and legal balls with `match_live_score`,
 which sums every innings of the match. The handover sheet asks for THIS innings' figures off the scoreboard
@@ -3296,7 +3300,8 @@ fold's innings being played, and `innings_score_as_folded()` to the fold in ever
 `docs/SCORING_RULES.md`, "The handover check counts this innings". Rehearsed as production: a database built at the
 base commit, then `node tools/migrate.mjs` from this tree — "1 applied, 44 already applied" — and `--verify` green.
 
-### SCRBRD-091 — The opposition window: 5 days or 14
+### ~~SCRBRD-091~~ — CLOSED · The opposition window: 5 days or 14
+**Closed 2026-09-26** in `2534bda` (#38): five days, db/46, applied on production.
 **Priority:** P2 · **Domain:** Scouting / privacy · **Type:** decision (from SCRBRD-083, 2026-09-25) — **decided and
 built 2026-09-25**
 Kameel's note on the public-data sheet (A7): "Opposing schools will have access to each other's team squads 5 days
@@ -3351,7 +3356,7 @@ who won and what they chose. **Follow-up (UX):** an animation accompanies that r
 result the scorer entered and never decides it (no random or virtual coin anywhere in the app). Build with the pad's
 toss sheet (`scorer/toss.jsx`), reduced motion honoured, after step 2 of the redesign lands.
 
-### SCRBRD-094 — Awaiting Kameel's research: penalty runs to the fielding side, and a bowler suspended mid-over
+### SCRBRD-094 — Law 41: penalty runs to the fielding side (item 1 built), and a bowler suspended mid-over (item 2, awaiting Kameel's research)
 **Priority:** P2 · **Domain:** Scoring · **Type:** decision needed (2026-09-26)
 Two Law 41 questions Kameel is researching before deciding; nothing is built until he does:
 1. Penalty runs awarded to the fielding side (SCRBRD-090's second point): the fold leaves them out of every innings,
@@ -3441,7 +3446,8 @@ Built in redesign step 3b, with `Board`'s chip row. Opus (cross-cutting theme en
    only the wicket sheet and the shared close button are.
 4. After choosing from the pad menu, the menu button keeps its focus ring.
 
-### SCRBRD-090 — The live score and the target leave out penalty runs
+### ~~SCRBRD-090~~ — CLOSED · The live score and the target leave out penalty runs
+**Closed 2026-09-26** in `2534bda` (#38): db/48 puts penalty runs in every SQL total where the fold puts them, with Law 41's cross-innings credit (SCRBRD-094 item 1); the door now refuses a penalty whose runs are not a whole number above nought.
 **Priority:** P2 · **Domain:** Scoring / broadcast · **Type:** bug (found fixing SCRBRD-088, 2026-09-25)
 `match_live_score` sums `value`, which a `penalty` row does not carry, so the public board (`broadcast_state()`),
 its chase target, the `matches` read's score and the summary read are short by every penalty award the pad's fold
