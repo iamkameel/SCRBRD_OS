@@ -381,7 +381,24 @@ async function career() {
   const wicketBy = new Map((await q(
     `select player_id || '|' || coalesce(dismissal, 'null') k, wickets n from player_wicket_breakdown where player_id = any($1)`,
     [PLAYERS])).map((r) => [r.k, Number(r.n)]));
-  return { bat, bowl, dismissals, dismissalBy, wicketBy };
+  // The lifetime views, which db/49 made one pass over the log rather than
+  // one call of the functions above per player: the same figures, read
+  // through the views every career screen reads.
+  /** @type {Map<string, any>} */ const batView = new Map();
+  /** @type {Map<string, any>} */ const bowlView = new Map();
+  /** @type {Map<string, number>} */ const dismissalsView = new Map();
+  for (const r of await q(`select * from player_batting_career where player_id = any($1)`, [PLAYERS])) {
+    batView.set(r.player_id, { matches: Number(r.matches), runs: Number(r.runs), balls: Number(r.balls_faced),
+                               fours: Number(r.fours), sixes: Number(r.sixes) });
+  }
+  for (const r of await q(`select * from player_bowling_career where player_id = any($1)`, [PLAYERS])) {
+    bowlView.set(r.player_id, { runs: Number(r.runs_conceded), balls: Number(r.legal_balls), wides: Number(r.wides),
+                                noBalls: Number(r.no_balls), wickets: Number(r.wickets) });
+  }
+  for (const r of await q(`select * from player_dismissals where player_id = any($1)`, [PLAYERS])) {
+    dismissalsView.set(r.player_id, Number(r.dismissals));
+  }
+  return { bat, bowl, dismissals, dismissalBy, wicketBy, batView, bowlView, dismissalsView };
 }
 
 /** opposition_squad() for a fixture against the other school, a day inside the window (db/46), as a coach of this one. */
@@ -646,6 +663,31 @@ try {
   }
   const wmBad = differences(e.wicketBy, delta(car0.wicketBy, car1.wicketBy));
   ok("player_wicket_breakdown, per bowler per method — a wicket with no method is nobody's", wmBad.length === 0, show(wmBad));
+
+  group("A career through the lifetime views (db/49): the fold, and the functions, figure for figure");
+  // What moved through the views is what the fold did...
+  const batVD = deltas(car0.batView, car1.batView, ["matches", "runs", "balls", "fours", "sixes"]);
+  for (const f of ["matches", "runs", "balls", "fours", "sixes"]) {
+    const bad = fieldDifferences(wantBat, batVD, [f]);
+    ok(`player_batting_career ${f}, per batter`, bad.length === 0, show(bad));
+  }
+  const dVBad = differences(new Map([...e.dismissals].filter(([p]) => PLAYERS.includes(p))), delta(car0.dismissalsView, car1.dismissalsView));
+  ok("player_dismissals, per batter", dVBad.length === 0, show(dVBad));
+  const bowlVD = deltas(car0.bowlView, car1.bowlView, ["runs", "balls", "wides", "noBalls", "wickets"]);
+  for (const f of ["runs", "balls", "wides", "noBalls", "wickets"]) {
+    const bad = fieldDifferences(wantBowl, bowlVD, [f]);
+    ok(`player_bowling_career ${f}, per bowler`, bad.length === 0, show(bad));
+  }
+  // ...and, before and after, the views ARE the functions: every figure, not
+  // just the change. (A player with no row in a view reads 0 here, which is
+  // what the function answers for him.)
+  for (const [when, car] of /** @type {[string, any][]} */ ([["before the logs", car0], ["after them", car1]])) {
+    const bBad = fieldDifferences(car.bat, car.batView, ["matches", "runs", "balls", "fours", "sixes"]);
+    const wBad = fieldDifferences(car.bowl, car.bowlView, ["runs", "balls", "wides", "noBalls", "wickets"]);
+    const dBad2 = differences(car.dismissals, car.dismissalsView);
+    ok(`the three lifetime views are the three functions, ${when}`, bBad.length + wBad.length + dBad2.length === 0,
+       show([...bBad, ...wBad, ...dBad2]));
+  }
 
   group("Per bowler per innings: bowler_innings_figures is the fold");
   const figs = new Map((await q(`select player_id, innings, wickets, runs_conceded from bowler_innings_figures where match_id = $1`, [MATCH]))
