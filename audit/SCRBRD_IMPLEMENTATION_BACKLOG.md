@@ -3367,6 +3367,28 @@ Two Law 41 questions Kameel is researching before deciding; nothing is built unt
    side's executive authority (the pad offers to start that report; `db/25` disciplinary record). Building: the fold
    and the SQL now (with SCRBRD-090, penalties missing from the live score), the pad's penalty sheet after the
    redesign's step 2 lands.
+   **Built 2026-09-26 (the fold and the SQL; the pad's sheet waits for the redesign):** the event is unchanged — a
+   `penalty` with `toBattingTeam: false`, recorded in the innings it was awarded in. `deriveInnings()` counts it in
+   `penaltyToFielding`; the match folds (`deriveMatch`, the new `deriveInningsList` for the pad's per-innings shape,
+   `MatchFold`) credit it through one function, `penaltyCredits()`: to the highest innings before it that the
+   fielding side batted (**added at the end** — fall of wickets and seal as recorded; total and target rise
+   mid-chase), else to the lowest after it that they bat (**opened on** — in the total from before the first ball, so
+   a chase completes and a seal confirms with it), else pending until that innings' `innings_start`. A chase's
+   `inn.target` rises with an award made after it was set, unless the umpires typed it (a revision). Short running is
+   two events, `shortRunning()`: the delivery with `value: 0` and an award, reason `short_running` — no new ball shape
+   anywhere. `PENALTY_REASON` closes the reasons (Kameel's six fielding-side offences; the pad's existing batting-side
+   reasons as `helmet_struck`, `illegal_fielding`, `ball_tampering`, `fielding_time_wasting`, `unfair_play`,
+   `fielding_restrictions`; `other`), with words and sides; the pad's old free text is read as its reason.
+   `lawsRefusal` refuses non-whole runs, an unknown reason, a reason on the wrong side, a short-run award not straight
+   after its dot delivery, and any other award to the fielding side once the match is decided. Logs with no award to
+   a fielding side replay identically (proved against the previous fold over generated logs). SQL:
+   `db/48_penalty_runs.sql` (see SCRBRD-090). `docs/SCORING_RULES.md`, "Penalty runs to the fielding side cross
+   innings". **For the pad (after step 2):** fold with `deriveInningsList(events)` instead of `deriveInnings` per
+   innings (else a seal in an innings that opened on an award is refused as `figures_moved`, and the second innings'
+   target at the break must be stamped from the credited first-innings total); emit `penalty({ runs: 5,
+   toBattingTeam, reason })` with a `PENALTY_REASON` code, and short running as the two events of
+   `shortRunning(ball)`; ask `lawsRefusal` before offering a reason; show `penaltyCredits().pending` ("Westville start
+   on 5").
 2. A bowler suspended mid-over (SCRBRD-080's unbuilt half): Law 41 says he may not bowl again in the innings.
 
 ### SCRBRD-096 — Colour vision: a palette setting beside the theme
@@ -3413,6 +3435,17 @@ each should be checked before the view's meaning moves (a new db/NN, like db/42/
 for a decision rather than a fix: the fold drops a penalty awarded to the fielding side (`toBattingTeam: false`)
 from every innings, where Law 41 adds it to that side's innings; and nothing at the door checks a penalty's `runs`
 (a string or a fraction is stored, and the fold's total becomes unreadable — the handover then cannot verify).
+**Fixed 2026-09-26** with SCRBRD-094's decision: `db/48_penalty_runs.sql` replaces `match_live_score` (runs: + the
+batting side's awards, `penalty_runs_as_folded()`, + awards to fielding sides credited to this innings,
+`penalty_credit_as_folded()` — the fold's `penaltyCredits()`), `innings_score_as_folded()` (+ the credit, so the
+handover check expects it) and `broadcast_state()` (target: `innings_target_as_folded()`, the fold's `inn.target`,
+else the previous innings' credited total + 1) — same names, signatures, security, search paths, grants and view
+options, checked against a snapshot; the file's own block proves the totals on two matches it builds and rolls
+back. The live_score and derby_record reads follow the view; the summary read has no score. Every reader was
+checked: none wanted anything but the fold's total. The door: `lawsRefusal` refuses `runs` that are not a whole number
+above nought (`penalty_runs_invalid`). Proof: `tools/smoke-fold-figures.mjs` (awards to both sides over generated
+two-sided innings: credit, target, live score and handover count agree with the fold in every innings),
+`tools/smoke-handover-innings.mjs`, db/99 §25 (8 assertions, each falsified once), replay and laws suites.
 
 ### SCRBRD-087 — The lease check trusts the device the batch names
 **Priority:** P3 · **Domain:** Scoring / sync · **Type:** hardening
