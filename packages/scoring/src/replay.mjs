@@ -657,6 +657,40 @@ function foldLog(events, ctx, carried) {
 }
 
 /**
+ * The fold of one innings, event by event, for a reader that narrates it
+ * (commentary.mjs). The same fold as deriveInnings() — the same filter, the
+ * same apply — with the innings handed out after each event that counts, so
+ * the reader sees what that event changed without a second set of rules.
+ *
+ * A void and every event it undoes are skipped, exactly as foldLog skips
+ * them, so the steps are the corrected history and nothing else.
+ *
+ * `inn` is the fold's live object: read what you need before asking for the
+ * next step, which changes it. The generator returns the settled innings —
+ * deriveInnings() of the same log, opening on `carried` penalty runs (see
+ * inningsFolder) — when it is done.
+ *
+ * @param {LogEvent[]} events  one innings' log
+ * @param {{carried?: number, ctx?: FoldContext}} [o]
+ * @returns {Generator<{ev: LogEvent, index: number, inn: Innings}, Innings, void>}
+ *   `index` is the event's position in `events`
+ */
+export function* foldSteps(events, { carried = 0, ctx = {} } = {}) {
+  const { inn, apply } = inningsFolder(ctx, carried);
+  const voided = voidedTargets(events);
+  inn.voided = voided.size;
+  for (let index = 0; index < events.length; index++) {
+    const ev = events[index];
+    if (ev.kind === KIND.VOID) continue;
+    if (ev.id != null && voided.has(ev.id)) continue;
+    apply(ev);
+    yield { ev, index, inn };
+  }
+  settleInnings(inn);
+  return inn;
+}
+
+/**
  * The targets of every void in this log.
  * @param {LogEvent[]} events
  */
@@ -706,24 +740,36 @@ function describeDismissal(ev, bowlerName) {
 }
 
 /**
- * A maiden is a completed over off which the bowler conceded nothing. Byes and
- * leg byes are not the bowler's, so they do not spoil it; wides and no-balls
- * are, so they do.
+ * Is this over a maiden: six legal balls, and nothing charged to the bowler?
+ * Byes and leg byes are not the bowler's, so they do not spoil it; wides and
+ * no-balls are, so they do. One rule, read by the fold's maiden count and by
+ * the commentary's end-of-over line.
+ *
+ * @param {ReadonlyArray<{type?: string | null, value?: number | null}>} balls  one over's deliveries
+ * @returns {boolean}
+ */
+export function isMaiden(balls) {
+  const legalCount = balls.filter((b) => isLegal(b.type ?? BALL_TYPE.RUN)).length;
+  if (legalCount < 6) return false;
+  const charged = balls.reduce((sum, b) => {
+    const t = b.type ?? BALL_TYPE.RUN;
+    if (t === BALL_TYPE.BYE || t === BALL_TYPE.LEG_BYE) return sum;
+    return sum + (isLegal(t) ? 0 : 1) + (b.value ?? 0);
+  }, 0);
+  return charged === 0;
+}
+
+/**
+ * A maiden is a completed over off which the bowler conceded nothing
+ * (isMaiden), credited to the bowler of that over.
  *
  * @param {Innings} inn
  */
 function computeMaidens(inn) {
   for (const b of inn.bowlers) b.maidens = 0;
   for (const over of inn.overLog) {
-    const legalCount = over.balls.filter((b) => isLegal(b.type ?? BALL_TYPE.RUN)).length;
-    if (legalCount < 6) continue;
+    if (!isMaiden(over.balls)) continue;
     const bowlerId = over.balls[0]?.bowlerId ?? over.balls[0]?.bowler ?? null;
-    const charged = over.balls.reduce((sum, b) => {
-      const t = b.type ?? BALL_TYPE.RUN;
-      if (t === BALL_TYPE.BYE || t === BALL_TYPE.LEG_BYE) return sum;
-      return sum + (isLegal(t) ? 0 : 1) + (b.value ?? 0);
-    }, 0);
-    if (charged !== 0) continue;
     const bow = bowlerId != null
       ? inn.bowlers.find((x) => x.id === bowlerId)
       : inn.bowlers.find((x) => x.balls >= 6);

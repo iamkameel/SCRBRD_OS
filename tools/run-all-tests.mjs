@@ -38,6 +38,9 @@ const SUITES = [
   // Who bats first on a live fixture: the recorded toss, never a default (SCRBRD-067).
   ["toss",     "packages/scoring/test/toss.test.mjs"],
   ["phases",   "packages/scoring/test/phases.test.mjs"],
+  // The commentary every viewer shares (SCRBRD-098): lines from the fold,
+  // names only from the caller, a void has none, the same log the same words.
+  ["commentary", "packages/scoring/test/commentary.test.mjs"],
   ["spatial",  "packages/scoring/test/spatial.test.mjs"],
   ["wheel",    "apps/web/test/wheel.test.mjs"],
   ["roadmap",  "apps/web/test/roadmap.test.mjs"],

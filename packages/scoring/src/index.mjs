@@ -16,3 +16,5 @@ export * from "./spatial.mjs";
 export * from "./readiness.mjs";
 export * from "./laws.mjs";
 export * from "./toss.mjs";
+export * from "./words.mjs";
+export * from "./commentary.mjs";
