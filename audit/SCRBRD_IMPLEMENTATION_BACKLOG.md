@@ -3056,8 +3056,9 @@ A contact, trajectory or placement value that violates a column CHECK makes `app
 500, and the device resends it forever. The pad sends none of these today. Validate the vocabulary at the door (as
 the dismissal vocabulary already is) and refuse per event.
 
-### SCRBRD-078 — A live pad that loads without signal never syncs until it is reloaded with signal
-**Two of three closed 2026-09-25; the third is a proposal awaiting a product decision (below).**
+### ~~SCRBRD-078~~ — CLOSED · A live pad that loads without signal never syncs until it is reloaded with signal
+**Closed 2026-09-26** in `f47c5c9` (db/50), `d1213dd` (API), `ddc9216` (pad): the third item, the session, built as
+option B — the pad's resume credential (build note below). Two of three were closed 2026-09-25.
 
 > **Closed: the pad reopens offline, and the claim is retried.** A live fixture's pad reopens from what the device
 > holds — its sides saved with the session (`scorerCfg`), its log saved by the pad — when there is no session or no
@@ -3126,6 +3127,34 @@ the dismissal vocabulary already is) and refuse per event.
 > anything, and the credential ends at the end of the match day (and on every revocation listed above, the match
 > completing included). Built after db/47 lands, as its own migration and security review (Opus). Not decided,
 > and not needed for B: A for every other role, and moving the API onto the web app's site.
+>
+> **Built 2026-09-26 (option B).** `db/50_pad_resume.sql`: `pad_resume_credential` (the public key, its RFC 7638
+> thumbprint, an HMAC of the id — never the id; revocation and expiry columns) and `pad_resume_jti` (one-time ids),
+> written only by SECURITY DEFINER functions, EXECUTE to `scrbrd_app` only. Issued by
+> `POST /api/matches/:id/session/pad-credential { jwk }` to the device holding the token right now, signed in
+> (`pad_resume_issue()`), right after a claim; the device keeps an ECDSA P-256 key made with `extractable = false`
+> as a CryptoKey in IndexedDB (`apps/web/src/lib/padKey.js`). Each request is `Authorization: ScrbrdPad <ES256 JWS>`
+> over method, request-target, body hash, `iat` and a `jti` (±120 s, spent once), verified by
+> `services/api/auth/pad-resume.mjs` against the stored public key; the principal runs as the person on the device
+> with `app.scope = 'pad'` and `app.match_id`. Good for five routes on its own match — heartbeat, the re-claim of
+> this device's own token (`pad_resume_reclaim()`), events both ways, the toss read (`GET /matches/:id/toss`, new)
+> — and `403 pad_scope` on every other route, decided before any routing. The database narrows it twice: db/35's
+> `app_can()`/`app_holds()`/`app_may_grant()` recreated verbatim with a pad guard (fixture.read and scoring.edit on
+> its fixture, nothing else), and a RESTRICTIVE `pad_scope_<cmd>` policy on every table behind RLS
+> (`pad_scope_guard_install()`, db/41's precedent); `scoring_arm_handover()` refuses it by its own first line. Ends
+> at midnight (Africa/Johannesburg); revoked by triggers when the match completes or is abandoned and when the token
+> moves (handover, another device's claim, force-release), by `POST /api/auth/sign-out` (and the client forgets
+> every key), and by the office under `user.invite` (`POST /api/matches/:id/pad-credentials/revoke`). After a
+> reload the pad re-attaches and sends by itself; the rest of the app stays signed out; the state line says "Saved
+> on this phone · N to send", and the end "Scoring ended for today on this phone — sign in to continue". Without a
+> secure context the pad signs in as before and says why. Threat model: the migration header and
+> `docs/AUTH_SPEC.md`. Proof: `services/api/auth/pad-resume.test.mjs` (188: replay, stale either way, wrong key,
+> wrong match, wrong device, expired/revoked, a proof for another request, malformed and `alg` swaps, and a signed
+> request to every mounted route read out of `server.mjs`), `tools/smoke-pad-resume.mjs` (80, live: the same, every
+> route and read resource refused with nothing written, and every way it ends), db/99 §28 (every assertion
+> falsified once, listed in its header), `tools/smoke-browser-pad-resume.mjs` (sign in, claim, score, reload —
+> sends with no sign-in; force-release, reload — stops in words), `sync-banner.test`. `smoke-browser-offline-day` is
+> now the day of a phone without one.
 
 #### (original entry)
 **Priority:** P2 · **Domain:** Scoring / sync · **Type:** offline resilience
@@ -3338,11 +3367,38 @@ the roadmap card. Rehearsed as production: a database built at the base commit (
 tools/migrate.mjs` from this tree — "1 applied, 45 already applied" — and `--verify` green. **To ship:** paste
 `apply-46` and `verify` (DEPLOYING.md, "The procedure"), then record db/46 in `db/SHIPPED.sha256`.
 
-### SCRBRD-092 — Photo and video sharing for registered users
+### SCRBRD-092 — Photo and video sharing for registered users, and the consent to it at sign-up
 **Priority:** P3 · **Domain:** Community · **Type:** feature (from SCRBRD-083, 2026-09-25)
 Kameel's note (A8): photos and videos shared socially, registered users only. Never on public pages (the rule's A8).
 Needs its own consent (a child's face is not covered by consent to be named), storage, and moderation; design with
 the policy package before any screen.
+
+**Consent at sign-up, decided in shape 2026-09-26 (Kameel):** "we would need to find a way in our terms and conditions
+to allow us to get POPIA permissions from the parent/guardian by them agreeing to use the app." Schools post pupils'
+photos to social media freely today; the platform should capture permission at the guardian's sign-up, but not by
+bundling it into the terms. POPIA allows a child's information to be processed on the prior consent of a competent
+person, and consent must be voluntary, specific and informed. A consent that is a condition of using the app is
+neither voluntary nor specific. So: one sign-up flow, separate consents.
+1. **Terms and privacy notice (required).** They cover what running the service needs, inside the signed-in app:
+   fixtures, scores and team sheets. The school is the responsible party and SCRBRD its operator, under a data
+   processing agreement per school. The guardian-link consent (db/08, versioned) is this record already.
+2. **Separate opt-ins on the same screen, off by default, each optional, each withdrawable in Settings:**
+   - public name: built (db/47, `public_name_consent`);
+   - photos and video of my child shared inside the app with registered users: **new, this entry**;
+   - photos on public pages or the school's social media: **not built.** PUBLIC_DATA A8 decided "no photos on
+     public pages". A tick box here would reopen A8, which is Kameel's decision; until he makes it, the screen
+     does not offer it.
+3. **Records like db/47's:** versioned, end-dated and never deleted, with the giver being a verified guardian (or the
+   pupil himself from 18). The office may record consent from the school's own admission forms, naming the form and
+   its date. The never-public mark (C5) overrides every media consent, as it does names. Withdrawal takes effect
+   everywhere at once, including photos already shared.
+4. **Deliverables before any photo feature:**
+   - the consent records (a migration, Opus);
+   - the sign-up consent screen and a plain-language privacy notice;
+   - a data processing agreement template for schools.
+
+   The wording goes to the school's information officer, or a POPIA attorney, before it ships: the platform's
+   wording is not legal advice.
 
 ### SCRBRD-093 — The toss, decided: offline allowed, the server's toss wins
 **Priority:** P2 · **Domain:** Scoring / sync · **Type:** decision (Kameel, 2026-09-26)
@@ -3356,7 +3412,7 @@ who won and what they chose. **Follow-up (UX):** an animation accompanies that r
 result the scorer entered and never decides it (no random or virtual coin anywhere in the app). Build with the pad's
 toss sheet (`scorer/toss.jsx`), reduced motion honoured, after step 2 of the redesign lands.
 
-### SCRBRD-094 — Law 41: penalty runs to the fielding side (item 1 built), and a bowler suspended mid-over (item 2, awaiting Kameel's research)
+### SCRBRD-094 — Law 41: penalty runs to the fielding side (item 1 built), and a bowler suspended mid-over (item 2, decided 2026-09-26; to build after the penalty sheet)
 **Priority:** P2 · **Domain:** Scoring · **Type:** decision needed (2026-09-26)
 Two Law 41 questions Kameel is researching before deciding; nothing is built until he does:
 1. Penalty runs awarded to the fielding side (SCRBRD-090's second point): the fold leaves them out of every innings,
@@ -3395,6 +3451,87 @@ Two Law 41 questions Kameel is researching before deciding; nothing is built unt
    `shortRunning(ball)`; ask `lawsRefusal` before offering a reason; show `penaltyCredits().pending` ("Westville start
    on 5").
 2. A bowler suspended mid-over (SCRBRD-080's unbuilt half): Law 41 says he may not bowl again in the innings.
+   **Decided 2026-09-26 (Kameel's research, MCC Law 41, Unfair Play).** A bowler is suspended as soon as the ball is
+   dead, on these grounds, as Kameel gives them:
+   - dangerous non-pitching deliveries (beamers), 41.7: on a second dangerous full toss above waist height, or at
+     once if the umpire deems it deliberate. For the rest of the innings.
+   - dangerous short-pitched bowling repeated after a warning, 41.6. For the rest of the innings.
+   - a deliberate front-foot no-ball, 41.8: at once. For the rest of the innings.
+   - running on the protected area, 41.13: on a third offence, after a first and final warning. For the rest of the
+     innings.
+   - time wasting by the fielding side repeated after warnings, 41.9. For the rest of the innings.
+   - unfair changes to the condition of the ball (ball tampering), 41.3: at once, **for the rest of the match**,
+     not just the innings.
+
+   **The over:** another fielder completes it. That bowler must not have bowled any part of the previous over, and
+   may not bowl any part of the next one. The suspended bowler may not bowl again for the rest of the innings (the
+   match, for 41.3).
+
+   **Administration:** the umpire informs the other umpire, the batters and the batting captain. After the match
+   the umpires report it to the competition's executive body (or the match referee).
+
+   **Build (Opus: engine, then pad):**
+   - a `bowler_suspended` event (bowler, reason from a closed list, scope innings or match), with the reasons in
+     words;
+   - the fold records it;
+   - `lawsRefusal` refuses a suspended bowler for the rest of the innings (or match), and refuses a replacement who
+     bowled any part of the previous over;
+   - it also refuses the replacement for the next over;
+   - a split over credits each bowler with the balls he bowled;
+   - the pad offers "Umpire suspended the bowler" with the reason, then asks for the replacement, offering only
+     eligible bowlers;
+   - after the match it offers to open the report as a discipline record (db/25), which stays with the school;
+   - commentary (SCRBRD-098) gets a line.
+
+   Warnings are not tracked by the platform: the umpire decides when a suspension is due, and the scorer records
+   it.
+
+   **Clause numbers to verify before any words ship:** this research gives the protected area as 41.13, and the
+   penalty-runs research gave repeated protected-area infractions as 41.14. The screens show the reason in words
+   only, not clause numbers, until Kameel confirms them against the current Code.
+
+### SCRBRD-099 — Backfill handwritten scorecards into the historical record
+**Priority:** P2 · **Domain:** Scoring / history · **Type:** feature (Kameel, 2026-09-26: "a tool for
+inputting/scanning/photographing and back-dating handwritten scorecards into data that fits our model, to build a
+historical record")
+**Today:** the only bulk import is a CSV of players (`services/api/io/import-api.mjs`): dry run by default, all or
+nothing on commit, every row under the caller's own row policy. There is no import of fixtures, results or
+scorecards, no photo or scan reading, and no way to record a past match.
+
+**The constraint that shapes it:** careers, awards, milestones and figures are derived from the ball log. A
+handwritten sheet is one of two kinds:
+- a **summary scorecard** (each batter's runs, balls, 4s, 6s and how out; each bowler's O-M-R-W; extras, fall of
+  wickets, totals), which is most sheets. It cannot become balls without inventing them, and we will not invent
+  them. It is stored as a **transcribed innings summary**, marked as such, and the career views add it in;
+- a **scorebook's ball-by-ball grid**, which can be rebuilt as real ball events. Where the book does not say who
+  faced a ball, the reviewer confirms it.
+
+**Flow:**
+1. Enter it, or photograph it and let a vision model draft it (phase 2).
+2. A person reviews it beside the photo. The screen refuses a card that does not reconcile: batters' runs plus
+   extras equal the total; bowlers' runs plus byes and leg byes equal the total; wickets and overs are consistent.
+3. A second person approves it, the same separation of duties as a scoring amendment
+   (`scoring.amend.request` / `approve`). It is stored with its source photo and provenance ("transcribed"), and
+   stays correctable. It never looks like a live-scored match.
+4. Past fixtures are created as part of the backfill. An opposition not on the platform stays a typed name
+   (PUBLIC_DATA L5/L6: never named publicly).
+
+**Phases:**
+1. Manual entry of a summary scorecard, with the reconciliation checks and two-person approval.
+2. Photograph to draft.
+3. Full scorebook (ball-by-ball) transcription.
+
+**Decisions for Kameel before building:**
+1. **Photos of pupils' names to the AI provider.** Live commentary masks names before they leave the platform
+   (`maskNames`), but names written on a photo cannot be masked. Phase 2 needs either the school's agreement under
+   its data processing terms, or a manual-only mode. Recommendation: phase 1 first; it needs no decision.
+2. **Whether backfilled records are public.** They name old boys (now adults) and current pupils, and the consent
+   rule (PUBLIC_DATA) was written for current records. Recommendation: signed-in only until decided.
+3. **Fidelity:** summaries only, or also full scorebook transcription for schools that kept books.
+
+**Build notes:** a migration (Opus) for the transcribed-summary tables and their provenance, and the career views
+extended to add them in, proved against the fold for ball-by-ball backfills. The review screen is built to the
+design direction.
 
 ### SCRBRD-098 — A commentary engine every viewer shares
 **Priority:** P2 · **Domain:** Scoring / Match Centre · **Type:** product gap (Kameel, 2026-09-26: fold into
@@ -3509,7 +3646,13 @@ above nought (`penalty_runs_invalid`). Proof: `tools/smoke-fold-figures.mjs` (aw
 two-sided innings: credit, target, live score and handover count agree with the fold in every innings),
 `tools/smoke-handover-innings.mjs`, db/99 §26 (8 assertions, each falsified once), replay and laws suites.
 
-### SCRBRD-087 — The lease check trusts the device the batch names
+### ~~SCRBRD-087~~ — CLOSED · The lease check trusts the device the batch names
+**Closed 2026-09-26** in `d1213dd`: `appendEvents` asks `scoring_lease_check` about the principal's device (the
+token's, or the pad resume credential's) and refuses a batch any event of which names another, `403
+device_mismatch`, before anything — the lease included — is touched; the heartbeat takes the principal's device and
+refuses a body naming another, and the claim refuses a named device the token is not bound to. `write.test` group
+"The lease is asked about the principal's device" failed 6 assertions on the old code; `smoke-pad-resume` E proves
+it live (phone B's token cannot keep phone A's lease alive: batch, heartbeat and claim refused, lease unmoved).
 **Priority:** P3 · **Domain:** Scoring / sync · **Type:** hardening
 **Found 2026-09-25** typing `events-api.mjs`. `appendEvents` calls `scoring_lease_check(match, events[0].deviceId,
 events[0].epoch)` with the device from the request body, not the token's. Writes stay bound to the token's device by
@@ -3544,5 +3687,6 @@ commits. Pass the token's device (the principal carries it) and refuse a batch t
   after a reload the pad no longer says so (the server's quarantine panel still does). (P3)
 - **A toss conflict with play recorded under the pad's answer stops sending** and has no resolution on the pad —
   see SCRBRD-075. (P3 — product decision)
-- **The 30-minute token and one-time office codes** mean a production scorer must be issued a new code to go on
-  sending mid-match — see SCRBRD-078's open item. (P1 before launch)
+- ~~**The 30-minute token and one-time office codes** mean a production scorer must be issued a new code to go on
+  sending mid-match — see SCRBRD-078's open item. (P1 before launch)~~ **Closed 2026-09-26** with SCRBRD-078
+  option B (db/50, the pad's resume credential).

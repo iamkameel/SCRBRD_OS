@@ -54,11 +54,25 @@
  * loses it; it also expires. A pad that is signed out says so — "sign in to
  * send 5 balls" — keeps everything queued, and never falls back to anything
  * that is not the server.
+ *
+ * THE RESUME CREDENTIAL (SCRBRD-078 option B)
+ * ─────────────────────────────────────────
+ * Unless it holds this match's resume credential (lib/padKey.js): issued
+ * right after a claim made signed in, it signs this match's heartbeat,
+ * claim, events and toss read, and nothing else. Once the pad has one, those
+ * five go out under it whether or not anybody is signed in — so a reload, or
+ * a token that ran out mid-match, changes nothing: the pad re-attaches and
+ * sends by itself. When the server says it has ended (midnight, the token
+ * moved, the match over, a sign-out, the office), the pad forgets it and
+ * falls back to the sign-in if there is one, and otherwise says, in words,
+ * that scoring on this phone has ended until somebody signs in. The rest of
+ * the app is signed out throughout: nothing else can use it.
  */
 import { SyncEngine, indexedDbStorage, tryAttach, tossDecision, RETRY } from "@scrbrd/sync";
 import { fromRow, tossFromRow } from "@scrbrd/scoring";
 import { api, signedIn } from "./api.js";
 import { deviceId } from "./device.js";
+import { padResumeSupported, loadPadCredential, mintPadCredential, forgetPadCredential, padApi, padEnded } from "./padKey.js";
 
 const RETRY_MS = 4000;
 /** Backoff for an attach that failed for want of the network, capped. */
@@ -81,6 +95,8 @@ const LEASE_TRUST_MS = 45000;
  */
 export function failureReason(e) {
   if (e?.name === "ApiError") {
+    // The resume credential has ended (SCRBRD-078): only a sign-in changes that.
+    if (padEnded(e)) return "pad_ended";
     if (e.status === 401) return "session_expired";
     if (e.status >= 500) return "server_error";
     return e.code || `http_${e.status}`;
@@ -125,6 +141,16 @@ export class PadSync {
     this.leaseAt = 0;
     this.attaching = null;
     this.conflict = null;
+    /**
+     * This match's resume credential (lib/padKey.js): undefined until the
+     * store has been asked, null when there is none (or it has ended).
+     * @type {any}
+     */
+    this.pad = undefined;
+    /** Why the server ended the last one ("expired", "token_moved", …), or null. */
+    this.padEnd = null;
+    /** An issue in flight, so two claims do not ask twice. */
+    this.minting = null;
     this.timer = null;
     this.retryTimer = null;
     /**
@@ -201,7 +227,12 @@ export class PadSync {
   async _attach() {
     const engine = /** @type {SyncEngine} */ (this.engine);
     clearTimeout(this.retryTimer);
-    if (!signedIn()) { this.reason = "not_signed_in"; this.halted = false; this.status(); await this.checkReach(); return; }
+    // Signed out, with no credential to sign by: a sign-in is the only way
+    // on — and when the credential this pad had has ended, the pad says so.
+    if (!signedIn() && !(await this.padRecord())) {
+      this.reason = this.padEnd ? "pad_ended" : "not_signed_in";
+      this.halted = false; this.status(); await this.checkReach(); return;
+    }
     if (!online()) { this.reason = "offline"; this.status(); return; }
     this.reason = "attaching"; this.status();
     let r;
@@ -211,7 +242,7 @@ export class PadSync {
         server: {
           probe: (epoch) => this.probe(epoch),
           log: () => this.serverLog(),
-          claim: () => api(`/api/matches/${this.matchId}/session/claim`, { method: "POST", body: { device: deviceId() } }),
+          claim: () => this.claimCall(),
         },
         padLog: () => this.hooks.padLog(),
         adopt: (log) => this.hooks.adopt(log),
@@ -269,7 +300,7 @@ export class PadSync {
    * @param {number|null} epoch
    */
   async probe(epoch) {
-    const r = await api(`/api/matches/${this.matchId}/session/heartbeat`, {
+    const r = await this.call(`/api/matches/${this.matchId}/session/heartbeat`, {
       method: "POST", body: { device: deviceId(), epoch: epoch ?? 0 },
     });
     return { ok: !!r?.ok, epoch: r?.epoch ?? null, state: r?.state ?? null, reason: r?.reason ?? null };
@@ -277,7 +308,7 @@ export class PadSync {
 
   /** The server's log for this match, as events, in its order. */
   async serverLog() {
-    const r = await api(`/api/matches/${this.matchId}/events`);
+    const r = await this.call(`/api/matches/${this.matchId}/events`);
     return (r?.events ?? []).map(fromRow);
   }
 
@@ -299,8 +330,12 @@ export class PadSync {
       // so this is still this device's token. Take it back; the queue goes
       // out under the new generation (the epoch rule in engine.attach).
       let c;
-      try { c = await api(`/api/matches/${this.matchId}/session/claim`, { method: "POST", body: { device: deviceId() } }); }
-      catch (e) { throw new Error(failureReason(e), { cause: e }); }
+      try { c = await this.claimCall(); }
+      catch (e) {
+        const why = failureReason(e);
+        if (why === "pad_ended") return this.stop_(why);
+        throw new Error(why, { cause: e });
+      }
       if (!c?.ok || c.epoch == null) return this.stop_(c?.reason ?? "claim_refused");
       this.leaseAt = Date.now();
       return { ok: true, epoch: c.epoch };
@@ -330,12 +365,13 @@ export class PadSync {
    */
   async send(id, batch) {
     let res;
-    try { res = await api(`/api/matches/${id}/events`, { method: "POST", body: { events: batch } }); }
+    try { res = await this.call(`/api/matches/${id}/events`, { method: "POST", body: { events: batch } }); }
     catch (e) {
       const why = failureReason(e);
-      // The session has ended: nothing will send until the scorer signs in
-      // again (which reopens the pad), so the timer stops asking.
-      if (why === "session_expired") { this.reason = "session_expired"; this.halted = true; }
+      // The session has ended, or the resume credential has: nothing will
+      // send until the scorer signs in again (which reopens the pad), so the
+      // timer stops asking.
+      if (why === "session_expired" || why === "pad_ended") { this.reason = why; this.halted = true; }
       // No answer: the lease may have lapsed meanwhile, so it is asked about
       // before the next try.
       this.leaseAt = 0;
@@ -352,10 +388,12 @@ export class PadSync {
    * @param {{wonBy: "home"|"away", decision: "bat"|"bowl"}} mine
    */
   async settleToss(mine) {
-    let rows;
-    try { ({ rows } = await api("/api/read/matches")); }
+    // This match's toss only — which the resume credential may read, where
+    // every fixture's (/api/read/matches) it may not.
+    let row;
+    try { ({ toss: row } = await this.call(`/api/matches/${this.matchId}/toss`)); }
     catch (e) { throw new Error(failureReason(e), { cause: e }); }
-    const server = tossFromRow((rows ?? []).find((r) => r.id === this.matchId));
+    const server = tossFromRow(row);
     let serverHasEvents = false;
     if (!server || server.wonBy !== mine.wonBy || server.decision !== mine.decision) {
       try { serverHasEvents = (await this.serverLog()).length > 0; }
@@ -364,6 +402,10 @@ export class PadSync {
     const d = tossDecision({ mine, server, serverHasEvents, log: this.hooks.padLog() });
     if (d.action === "settled") return { settled: /** @type {true} */ (true) };
     if (d.action === "send") {
+      // Recording a toss is not something the resume credential does: it
+      // reads the toss and never writes one. Signed out, the pad asks for a
+      // sign-in and sends nothing behind the toss meanwhile.
+      if (!signedIn()) return { settled: /** @type {false} */ (false), reason: "toss_needs_sign_in" };
       try {
         await api(`/api/matches/${this.matchId}/toss`, { method: "POST", body: { wonBy: mine.wonBy, decision: mine.decision } });
         return { settled: /** @type {true} */ (true) };
@@ -419,6 +461,65 @@ export class PadSync {
     this.leaseAt = Date.now();
     this.status();
     engine.sync().catch(() => {});
+    // A takeover is a claim: this device holds the token now, signed in.
+    if (!(await this.padRecord()) && signedIn()) this.ensurePad();
+  }
+
+  // ── The resume credential (SCRBRD-078 option B) ─────────────────
+
+  /** This match's credential, read from the device once. */
+  async padRecord() {
+    if (this.pad === undefined) this.pad = await loadPadCredential(this.matchId);
+    return this.pad;
+  }
+
+  /**
+   * One request to this match's pad routes: under the resume credential when
+   * the pad has one, else under the sign-in. A credential the server says has
+   * ended is forgotten here, and the request goes again signed in if somebody
+   * is — or fails as "pad_ended" if nobody is.
+   * @param {string} path
+   * @param {{method?: string, body?: any}} [opts]
+   */
+  async call(path, opts = {}) {
+    const rec = await this.padRecord();
+    if (rec) {
+      try { return await padApi(rec, path, opts); }
+      catch (e) {
+        if (!padEnded(e)) throw e;
+        this.endPad(/** @type {any} */ (e));
+        if (!signedIn()) throw e;
+      }
+    }
+    return api(path, opts);
+  }
+
+  /**
+   * The claim, under whichever credential call() picks. One made signed in
+   * is followed by an issue: that is the moment the pad earns a credential,
+   * holding the token on this device.
+   */
+  async claimCall() {
+    const r = await this.call(`/api/matches/${this.matchId}/session/claim`, { method: "POST", body: { device: deviceId() } });
+    if (r?.ok && !this.pad && signedIn()) this.ensurePad();
+    return r;
+  }
+
+  /** The server ended the credential: forget it here too, and remember why. @param {any} e */
+  endPad(e) {
+    this.pad = null;
+    this.padEnd = e?.detail || e?.code || "ended";
+    forgetPadCredential(this.matchId).catch(() => {});
+  }
+
+  /** Ask for a credential, once at a time; a page that cannot hold one says so (status). */
+  ensurePad() {
+    if (this.minting || this.stopped || !padResumeSupported()) { this.status(); return this.minting; }
+    this.minting = mintPadCredential(this.matchId)
+      .then((rec) => { if (rec && !this.stopped) { this.pad = rec; this.padEnd = null; } })
+      .catch(() => { /* the pad goes on signed in; a reload will ask it to sign in again */ })
+      .finally(() => { this.minting = null; this.status(); });
+    return this.minting;
   }
 
   /** This device handed the match over: it sends nothing more. */
@@ -441,8 +542,13 @@ export class PadSync {
       halted: this.halted,
       // Signed out, "online" also means the server answered (checkReach):
       // the pad offers a sign-in only then.
-      online: online() && (signedIn() || this.reachable !== false),
+      online: online() && (signedIn() || !!this.pad || this.reachable !== false),
       signedIn: signedIn(),
+      // The resume credential: "live" (the pad sends by itself after a
+      // reload), "none", or "unavailable" (no secure context: a reload asks
+      // for a sign-in); and why the last one ended, if it did.
+      padResume: !padResumeSupported() ? "unavailable" : this.pad ? "live" : "none",
+      padEnd: this.padEnd,
       pending: e?.pendingCount ?? 0,
       pendingList: e ? e.pending.slice() : [],
       held: e?.heldCount ?? 0,

@@ -10,7 +10,7 @@
  * and force-release) is specified in SCORING_HANDOVER_SPEC.md and proven in
  * scoring-session.test.mjs. This just exposes it and keeps the hub in sync.
  */
-import { runAsPrincipal } from "../auth/auth-db.mjs";
+import { runAsPrincipal, who } from "../auth/auth-db.mjs";
 import { EVENT_COLUMNS } from "../write/events-api.mjs";
 /** @import { Pool, IdHandler } from "../api-types.mjs" */
 /** @import { MatchHub } from "./realtime.mjs" */
@@ -30,7 +30,7 @@ async function callFn(pool, secret, bearer, sql, params) {
 
 /**
  * After any successful transition, read the fresh session row and broadcast it.
- * @param {Pool} pool @param {string} secret @param {string | undefined} bearer
+ * @param {Pool} pool @param {string} secret @param {string | import("../auth/auth.mjs").Principal | undefined} bearer
  * @param {MatchHub} hub @param {string} matchId
  */
 async function broadcastState(pool, secret, bearer, hub, matchId) {
@@ -45,7 +45,7 @@ async function broadcastState(pool, secret, bearer, hub, matchId) {
  * @returns {Record<string, IdHandler>}  every route here is /matches/:id/session/…
  */
 export function sessionRoutes({ pool, secret, hub }) {
-  /** @param {string} matchId @param {string | undefined} bearer @param {any} result */
+  /** @param {string} matchId @param {string | import("../auth/auth.mjs").Principal | undefined} bearer @param {any} result */
   const withBroadcast = async (matchId, bearer, result) => {
     if (result.ok) await broadcastState(pool, secret, bearer, hub, matchId);
     return result;
@@ -53,10 +53,31 @@ export function sessionRoutes({ pool, secret, hub }) {
 
   return {
     // POST /matches/:id/session/claim { device }
+    //
+    // Also reached with a pad resume credential (SCRBRD-078, db/50), whose one
+    // claim is its own device's token taken back — pad_resume_reclaim(), which
+    // refuses anything else — never a claim of a match another device holds.
+    //
+    // A device the principal is not bound to is refused by name, as the
+    // events route refuses a batch naming one (SCRBRD-087): the claim would
+    // set a holder this token cannot write as. An absent or blank device is
+    // still the database's to refuse (no_device).
     claim: async (req, res) => {
-      const { id } = req.params, b = req.headers?.authorization;
+      const { id } = req.params, b = who(req);
       try {
-        const r = await callFn(pool, secret, b, `select * from scoring_claim($1,$2)`, [id, req.body.device]);
+        const r = await runAsPrincipal(pool, secret, b, async (client, principal) => {
+          if (principal.scope === "pad")
+            return (await client.query(`select * from pad_resume_reclaim($1)`, [id])).rows[0] || {};
+          const named = typeof req.body?.device === "string" ? req.body.device.trim() : "";
+          if (named && named !== principal.deviceId) {
+            // Capability first, as scoring_claim() asks it (db/33): a caller
+            // with no standing over the match learns nothing more.
+            const can = (await client.query(
+              `select app_can('scoring.start', match_school($1), match_team($1), NULL, $1) as can`, [id])).rows[0]?.can;
+            return { ok: false, reason: can ? "device_mismatch" : "no_capability", epoch: null };
+          }
+          return (await client.query(`select * from scoring_claim($1,$2)`, [id, req.body?.device])).rows[0] || {};
+        });
         res.json(await withBroadcast(id, b, r));
       } catch (/** @type {any} */ e) { res.status(e.status || 500).json({ error: e.code || e.message }); }
     },
@@ -71,15 +92,25 @@ export function sessionRoutes({ pool, secret, hub }) {
     // lapsed takes the token back only while the state is `active` and the
     // epoch is the one it held — never while a handover it armed is pending,
     // where its own claim would be the protocol's cancel.
+    //
+    // The lease asked about is the PRINCIPAL's device — the token's, or a pad
+    // resume credential's — never one the body names (SCRBRD-087: the same
+    // person on a second device could otherwise keep the first device's lease
+    // alive). A body naming another device is refused by name.
     heartbeat: async (req, res) => {
-      const { id } = req.params, b = req.headers?.authorization;
+      const { id } = req.params, b = who(req);
       try {
         // Through scoring_lease_check, not a direct UPDATE: scoring_session
         // has no UPDATE policy by design, so the old statement matched nothing
         // and every heartbeat reported "not_token_holder" while the scorer was
         // holding the token perfectly well.
-        const r = await callFn(pool, secret, b,
-          `select * from scoring_lease_check($1,$2,$3)`, [id, req.body.device, req.body.epoch]);
+        const r = await runAsPrincipal(pool, secret, b, async (client, principal) => {
+          const named = req.body?.device;
+          if (named != null && named !== principal.deviceId) return { mismatch: true };
+          return (await client.query(`select * from scoring_lease_check($1,$2,$3)`,
+                                     [id, principal.deviceId, req.body?.epoch])).rows[0] || {};
+        });
+        if (r.mismatch) { res.json({ ok: false, epoch: null, state: null, reason: "device_mismatch" }); return; }
         // db/33: on a complete match the lease is never extended and the
         // function says so in `state` (its shape cannot grow a reason).
         res.json({ ok: !!r.holds, epoch: r.epoch ?? null,

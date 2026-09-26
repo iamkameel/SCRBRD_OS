@@ -199,6 +199,14 @@ function SyncPill({ sync, storage, onOpenHeld }) {
       // know retrying will not help and where a correction goes instead.
       : sync.reason === "match_complete"
       ? { dot: D.sky, label: "Match complete", title: refusalWords("match_complete") }
+      // SCRBRD-078 option B: the phone's resume credential has ended; the
+      // banner says why and offers the sign-in.
+      : sync.reason === "pad_ended"
+      ? { dot: D.rose, label: sync.pending ? `Saved on this phone · ${sync.pending} to send` : "Scoring ended",
+          title: "Scoring ended for today on this phone — sign in to continue" }
+      // The state line's words (DESIGN_DIRECTION §4, SCRBRD-078).
+      : sync.pending
+      ? { dot: D.textMuted, label: `Saved on this phone · ${sync.pending} to send`, title: `Saved here only (${sync.reason ?? "no server"})` }
       : { dot: D.textMuted, label: "On device", title: `Saved here only (${sync.reason ?? "no server"})` },
     offline: { dot: D.textMuted, label: "On device", title: "Saved here only" },
   }[sync.state] ?? { dot: D.textMuted, label: "On device", title: "Saved here only" };
@@ -363,6 +371,9 @@ function SCRBRD({resume,onSignIn,onExit}={}){
     return { ...base,
       state: st.held ? "held"
         : st.rejected ? "quarantined"
+        // The resume credential ended mid-send (SCRBRD-078): nothing more
+        // goes from here until a sign-in, attached or not.
+        : st.reason === "pad_ended" ? "local"
         : !st.attached ? "local"
         : st.pending === 0 && !st.tossPending ? "synced"
         // The last send got no answer: waiting, whatever navigator.onLine
@@ -597,6 +608,14 @@ function SCRBRD({resume,onSignIn,onExit}={}){
       if (stopped) return;
       if (adoptedRef.current.length) { await engine.markSent(adoptedRef.current); adoptedRef.current = []; }
       setOutboxReady((n) => n + 1);
+      // A finished match whose outbox was cleared (SCRBRD-079), reopened
+      // with nothing the server lacks, has nothing to send and no token to
+      // take. Signed out it used to wait; with the pad's resume credential
+      // (SCRBRD-078) it would claim its finished match again on every reopen
+      // and — the cleared outbox having forgotten which generation it held —
+      // write sent markers back and say another device had moved it on.
+      const has = serverHasRef.current;
+      if (has && eventsRef.current.every((evs, i) => (evs ?? []).length <= (has[i] ?? 0))) return;
       ps.attach();
     })();
     return () => {

@@ -11,7 +11,8 @@
  * input to layout. If a view uses it to gate a fetch, that is an optimisation
  * for the person's own benefit — the server refuses regardless.
  */
-import { api, setToken, apiStatus, resetApi } from "./api.js";
+import { api, setToken, apiStatus, resetApi, getToken } from "./api.js";
+import { forgetAllPadCredentials } from "./padKey.js";
 import { resetFeatures } from "./features.js";
 import { roleGrants } from "@scrbrd/policy/roles";
 import { deviceId } from "./device.js";
@@ -77,6 +78,13 @@ export async function devLoginAvailable() {
 }
 
 export function signOut() {
+  // The pad's resume credentials on this device end (SCRBRD-078): the server
+  // is told, with the token about to be forgotten — api() builds the header
+  // before its first await, so resetApi() below cannot race it — and the
+  // keys are forgotten here, which ends them on this device even when the
+  // request never arrives (no signal): without the key nothing can sign.
+  if (getToken()) api("/api/auth/sign-out", { method: "POST" }).catch(() => {});
+  forgetAllPadCredentials().catch(() => {});
   _profile = null;
   resetApi();
   // The module switches too. They are one school's settings, and a shared

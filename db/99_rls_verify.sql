@@ -139,6 +139,26 @@ CREATE OR REPLACE FUNCTION _lapse_scoring_lease(p_match uuid) RETURNS void AS $$
   UPDATE scoring_session SET lease_until = now() - interval '1 minute' WHERE match_id = p_match;
 $$ LANGUAGE sql SECURITY DEFINER;
 
+-- §28 (db/50). A fresh fixture copied from another — same school, team,
+-- sport and format, nothing scored, no toss — so the pad's credential is
+-- tested on a match nothing else here has touched. And the three facts about
+-- a credential only the owner can state: why it ended, how many one-time ids
+-- it has spent, and a match day already over.
+CREATE OR REPLACE FUNCTION _db50_fixture(p_id uuid, p_src uuid) RETURNS void AS $$
+  INSERT INTO match SELECT (jsonb_populate_record(NULL::match,
+    to_jsonb(m) || jsonb_build_object('id', p_id, 'status', 'scheduled'))).* FROM match m WHERE m.id = p_src;
+$$ LANGUAGE sql SECURITY DEFINER;
+CREATE OR REPLACE FUNCTION _db50_reason(p_credential uuid) RETURNS text AS $$
+  SELECT coalesce(revoked_reason, 'live') FROM pad_resume_credential WHERE id = p_credential;
+$$ LANGUAGE sql SECURITY DEFINER;
+CREATE OR REPLACE FUNCTION _db50_jtis(p_credential uuid) RETURNS integer AS $$
+  SELECT count(*)::int FROM pad_resume_jti WHERE credential_id = p_credential;
+$$ LANGUAGE sql SECURITY DEFINER;
+CREATE OR REPLACE FUNCTION _db50_expire(p_credential uuid) RETURNS void AS $$
+  UPDATE pad_resume_credential SET issued_at = now() - interval '2 days', expires_at = now() - interval '1 second'
+   WHERE id = p_credential;
+$$ LANGUAGE sql SECURITY DEFINER;
+
 -- SCRBRD-034. A fixture's status is what duty_status() (db/30) and the
 -- completion gate (db/33) read, and moving it is an owner edit here — the
 -- section needs one match walked scheduled → live → complete → abandoned.
@@ -4835,6 +4855,324 @@ BEGIN
       format('db/49 (over): the owner reads %s and the director %s of §22''s five lifetime rows (expected 5 and 5), the director %s batting rows in all '
              || '(expected more than §22''s two), the Westville administrator %s of his two boys'' rows (expected 2)', n, n2, n3, n4));
   END;
+  PERFORM set_config('app.user_id', '', true);
+
+  -- ── 28. The pad's resume credential (SCRBRD-078 option B, db/50) ────
+  -- A request signed with the credential runs as the scorer, on his phone,
+  -- with app.scope = 'pad' and app.match_id — its match. db/50 narrows that
+  -- principal at two layers: app_can() (fixture.read and scoring.edit, on its
+  -- fixture, and nothing else; app_holds/app_may_grant false) and a
+  -- RESTRICTIVE pad_scope_<cmd> policy on every table behind RLS. Each claim
+  -- below is one of those, on two fixtures nothing else here touches (F1 and
+  -- F2, copies of M_HANDOVER), and then every way a credential ends.
+  --
+  -- Each labelled assertion was falsified once — the one thing it guards
+  -- broken, as the owner, on a fresh seed, and the whole file run — and each
+  -- was the FIRST assertion in the file to go red:
+  --
+  --   (guards)          pad_scope_select dropped from sport
+  --   (definers)        a new SECURITY DEFINER function asking fixture.read
+  --   (issue-holder)    pad_resume_issue() without its token-holder check
+  --   (issue-shape)     pad_jwk_is_public_p256() answering true
+  --   (reissued)        the 'reissued' UPDATE and the one-live index gone
+  --   (reads-log)       both layers on ball_event: a permissive policy true
+  --                     under pad scope, and its pad_scope_select true
+  --   (reads-toss)      the same, on match_toss
+  --   (reads-else)      pad_scope_select on sport made true (a policy that
+  --                     never asks app_can(): only the guard stands there)
+  --   (writes-toss)     both layers on match_toss UPDATE
+  --   (writes-other)    both layers on ball_event INSERT
+  --   (writes-own)      ball_event's INSERT carve-out removed
+  --   (writes-own-row)  pad_scope_insert on request_replay made true
+  --   (arm)             scoring_arm_handover() without db/50's first line
+  --   (doors)           app_can() restored to db/35's (no pad guard)
+  --   (holds)           app_holds() restored to db/35's
+  --   (reclaim)         pad_resume_reclaim() without its own-match check
+  --   (spend)           pad_resume_spend() without its replay refusal
+  --   (end-claimed)     the scoring_session UPDATE trigger dropped
+  --   (end-handover)    the trigger revoking on ANY state change (so arming
+  --                     ended it)
+  --   (end-release)     a force-release recorded as token_moved
+  --   (end-sign-out)    pad_resume_sign_out() revoking nothing
+  --   (end-office)      pad_resume_revoke() asking scoring.edit, not user.invite
+  --   (end-day)         pad_resume_ended() without the expiry arm
+  --   (end-match)       the match.status trigger dropped
+  --
+  -- Several are closed at BOTH layers (app_can() and the restrictive guard);
+  -- for those the break had to take both away before anything could read or
+  -- write, which is the point of having two.
+  DECLARE
+    F1  uuid := '77777777-0000-0000-0000-00000000050a';
+    F2  uuid := '77777777-0000-0000-0000-00000000050b';
+    DEV text := 'verify-050';
+    JWK jsonb := '{"kty":"EC","crv":"P-256","x":"MKBCTNIcKUSDii11ySs3526iDZ8AiTo7Tu6KPAqv7D4","y":"4Etl6SRW2YiLUrN5vfvVHuhp7x8PxltmWWlbbM4IFyM"}';
+    C1  uuid; C1b uuid; C2 uuid; C3 uuid; C4 uuid; C5 uuid; C6 uuid; C7 uuid;
+    e1  integer; e2 integer;
+    n   bigint; n2 bigint;
+    t   record;
+    x   record;
+    detail text;
+  BEGIN
+    PERFORM _db50_fixture(F1, M_HANDOVER);
+    PERFORM _db50_fixture(F2, M_HANDOVER);
+
+    -- (guards) Every table behind RLS carries a restrictive pad guard for
+    -- every command a permissive policy there admits. db/50 checked this when
+    -- it ran; a table added since without pad_scope_guard_install() is here.
+    SELECT count(*), string_agg(format('%s.%s', c.relname, cm.cmd), ', ') INTO n, detail
+      FROM pg_class c JOIN pg_namespace ns ON ns.oid = c.relnamespace
+     CROSS JOIN (VALUES ('r', 'select'), ('a', 'insert'), ('w', 'update'), ('d', 'delete')) AS cm(code, cmd)
+     WHERE ns.nspname = 'public' AND c.relkind IN ('r', 'p') AND c.relrowsecurity
+       AND EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid AND p.polpermissive AND p.polcmd IN ('*', cm.code::"char"))
+       AND NOT EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid AND NOT p.polpermissive
+                          AND p.polname = 'pad_scope_' || cm.cmd AND p.polcmd = cm.code::"char");
+    -- (guards)
+    PERFORM _assert(n = 0, format('db/50 (guards): %s command(s) behind RLS have no pad guard: %s', n, detail));
+
+    -- (definers) The SECURITY DEFINER functions that ask about one of the
+    -- credential's own capabilities (fixture.read, scoring.edit) — or the
+    -- scoring.start it lacks — by name: app_can() narrows every one to the
+    -- credential's match, so each is a door the credential may reach there,
+    -- and db/50's header says why each is safe. A new one is a new door, and
+    -- fails here until somebody has looked at it and added it to this list.
+    SELECT string_agg(p.proname, ',' ORDER BY p.proname) INTO detail
+      FROM pg_proc p JOIN pg_namespace ns ON ns.oid = p.pronamespace
+     WHERE ns.nspname = 'public' AND p.prosecdef
+       -- not app_can() itself (its guard names both), nor this file's own helpers
+       AND p.proname <> 'app_can' AND p.proname !~ '^_'
+       AND (p.prosrc LIKE '%''fixture.read''%' OR p.prosrc LIKE '%''scoring.edit''%' OR p.prosrc LIKE '%''scoring.start''%');
+    PERFORM _assert(detail = 'duty_status,duty_suspended,pad_resume_issue,pad_resume_reclaim,scoring_arm_handover,scoring_claim,'
+                             || 'scoring_claim_handover,scoring_lease_check,scoring_verify_takeover,trip_fixture_driver_only',
+      format('db/50 (definers): the definer functions asking a pad capability by name are %s — a new one needs looking at', detail));
+
+    -- ── Issued to the phone that holds the token, and only then ──
+    PERFORM _scoring_session_reset(F1);
+    PERFORM _as(U_SCORER);
+    PERFORM set_config('app.device_id', DEV, true);
+    SELECT i.reason INTO v_reason FROM pad_resume_issue(F1, repeat('1', 64), JWK) i;
+    -- (issue-holder)
+    PERFORM _assert(v_reason = 'not_token_holder', format('db/50 (issue-holder): a credential was issued with no claim (%s)', v_reason));
+    SELECT c.ok, c.epoch INTO v_ok, e1 FROM scoring_claim(F1, DEV) c;
+    PERFORM _assert(v_ok, 'db/50: the scorer could not claim the fixture §28 scores');
+    SELECT c.ok, c.epoch INTO v_ok, e2 FROM scoring_claim(F2, DEV) c;
+    PERFORM _assert(v_ok, 'db/50: the scorer could not claim the second fixture §28 scores');
+    SELECT i.reason INTO v_reason FROM pad_resume_issue(F1, repeat('1', 64), JWK || '{"d":"870MB6gfuTJ4HtUnUvYMyJpr5eUZNP4Bk43bVdj3eAE"}') i;
+    SELECT i.reason INTO detail FROM pad_resume_issue(F1, 'not-a-hash', JWK) i;
+    -- (issue-shape)
+    PERFORM _assert(v_reason = 'bad_key' AND detail = 'bad_credential',
+      format('db/50 (issue-shape): a private key read %s and a malformed hash %s, expected bad_key and bad_credential', v_reason, detail));
+    SELECT i.credential INTO C1 FROM pad_resume_issue(F1, repeat('1', 64), JWK) i;
+    SELECT i.credential INTO C1b FROM pad_resume_issue(F1, repeat('2', 64), JWK) i;
+    -- (reissued) one live credential per person, phone and match
+    PERFORM _assert(C1 IS NOT NULL AND C1b IS NOT NULL AND _db50_reason(C1) = 'reissued' AND _db50_reason(C1b) = 'live',
+      format('db/50 (reissued): the first credential is %s and the second %s, expected reissued and live', _db50_reason(C1), _db50_reason(C1b)));
+
+    -- ── Reads: its match's log, session and toss, and nothing else ──
+    -- A toss on F1, by the scorer signed in, so there is one to read — and a
+    -- ball on F2 (which he holds too), so there is another match's log.
+    INSERT INTO match_toss (match_id, school_id, won_by, decision, called_by)
+    VALUES (F1, match_school(F1), 'home', 'bat', U_SCORER);
+    INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                            idempotency_key, client_seq, client_ts, kind, payload)
+    VALUES (F2, match_school(F2), 1, e2, 0, U_SCORER, DEV, 'verify:050:f2:1', 1, now(), 'innings_start', '{}'::jsonb);
+    SELECT count(*) INTO n2 FROM ball_event WHERE match_id <> F1;
+    PERFORM set_config('app.scope', 'pad', true);
+    PERFORM set_config('app.match_id', F1::text, true);
+    SELECT count(*) INTO n FROM ball_event WHERE match_id <> F1;
+    -- (reads-log) another match's balls: none, where the same scorer signed in reads them
+    PERFORM _assert(n = 0 AND n2 > 0,
+      format('db/50 (reads-log): as a credential for F1 the scorer read %s balls of other matches (signed in: %s)', n, n2));
+    SELECT count(*) INTO n FROM match_toss WHERE match_id = F1;
+    SELECT count(*) INTO n2 FROM (SELECT 1 FROM match_toss WHERE match_id <> F1 UNION ALL SELECT 1 FROM scoring_session WHERE match_id <> F1) o;
+    -- (reads-toss) its toss and session, and no other match's
+    PERFORM _assert(n = 1 AND n2 = 0 AND (SELECT count(*) FROM scoring_session WHERE match_id = F1) = 1,
+      format('db/50 (reads-toss): its toss read %s (expected 1), other matches'' tosses and sessions %s (expected 0)', n, n2));
+    -- (reads-else) every other table behind RLS the application may read:
+    -- nothing at all — the pupils, the medical record, the scorer's own rows,
+    -- the fixture itself and its squad, availability and officials included.
+    n := 0; detail := '';
+    FOR t IN SELECT c.oid, c.relname FROM pg_class c JOIN pg_namespace ns ON ns.oid = c.relnamespace
+              WHERE ns.nspname = 'public' AND c.relkind IN ('r', 'p') AND c.relrowsecurity
+                AND c.relname NOT IN ('ball_event', 'ball_event_quarantine', 'scoring_session', 'match_toss')
+                AND has_table_privilege('scrbrd_app', c.oid, 'SELECT')
+              ORDER BY 1 LOOP
+      EXECUTE format('SELECT count(*) FROM %I', t.relname) INTO n2;
+      IF n2 > 0 THEN n := n + n2; detail := detail || format('%s %s; ', t.relname, n2); END IF;
+    END LOOP;
+    PERFORM _assert(n = 0, format('db/50 (reads-else): a credential read %s rows beyond its match''s log: %s', n, left(detail, 400)));
+    PERFORM set_config('app.scope', '', true);
+    SELECT (SELECT count(*) FROM player) + (SELECT count(*) FROM match) + (SELECT count(*) FROM app_user) INTO n;
+    PERFORM set_config('app.scope', 'pad', true);
+    -- (reads-else), the control: signed in, the same scorer reads them
+    PERFORM _assert(n > 0, 'db/50 (reads-else): the control read nothing signed in, so the pad''s nothing proved nothing');
+
+    -- ── Writes: its match's events, and nothing else ──
+    -- (writes-toss) the toss is read, never written, with a credential. F1
+    -- has no ball yet, so nothing but the two layers stands in the way.
+    BEGIN
+      UPDATE match_toss SET decision = 'bowl' WHERE match_id = F1;
+      GET DIAGNOSTICS n = ROW_COUNT;
+      PERFORM _assert(n = 0, 'db/50 (writes-toss): a credential changed its match''s toss');
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    BEGIN
+      INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                              idempotency_key, client_seq, client_ts, kind, payload)
+      VALUES (F2, match_school(F2), 2, e2, 0, U_SCORER, DEV, 'verify:050:f2:2', 2, now(), 'innings_start', '{}'::jsonb);
+      -- (writes-other) the scorer holds F2's token on this phone, signed in: only the pad scope stops this
+      PERFORM _assert(false, 'db/50 (writes-other): a credential for F1 wrote a ball on F2');
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    detail := NULL;
+    BEGIN
+      INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                              idempotency_key, client_seq, client_ts, kind, payload)
+      VALUES (F1, match_school(F1), 1, e1, 0, U_SCORER, DEV, 'verify:050:f1:1', 1, now(), 'innings_start', '{}'::jsonb);
+    EXCEPTION WHEN insufficient_privilege THEN detail := SQLERRM;
+    END;
+    SELECT count(*) INTO n FROM ball_event WHERE match_id = F1;
+    -- (writes-own) its own match's ball, under the token, goes in
+    PERFORM _assert(n = 1, format('db/50 (writes-own): the credential''s ball on F1 is %s rows, expected 1 (%s)', n, detail));
+    BEGIN
+      INSERT INTO request_replay (person_id, key, route, status, body)
+      VALUES (U_SCORER, 'verify:050:replay', 'POST /x', 200, '{}'::jsonb);
+      -- (writes-own-row) a policy that asks only who the caller is: the restrictive guard closes it
+      PERFORM _assert(false, 'db/50 (writes-own-row): a credential wrote a row of its person''s own (request_replay)');
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+
+    -- ── The doors: app_can() narrowed, and the one claim a credential makes ──
+    SELECT a.reason INTO v_reason FROM scoring_arm_handover(F1, DEV, 0, false) a;
+    -- (arm) arming asks scoring.edit, which the credential has: db/50's guard refuses it
+    PERFORM _assert(v_reason = 'no_capability', format('db/50 (arm): a credential armed a handover (%s)', v_reason));
+    SELECT (SELECT c.reason FROM scoring_claim(F1, DEV) c) || '/' || (SELECT h.reason FROM scoring_claim_handover(F1, DEV, '000000') h)
+           || '/' || (SELECT v.reason FROM scoring_verify_takeover(F1, DEV, 0, 0, 0) v) || '/' || (SELECT f.reason FROM scoring_force_release(F1) f)
+      INTO detail;
+    v_ok := false;
+    BEGIN
+      PERFORM scoring_lease_check(F2, DEV, e2);
+    EXCEPTION WHEN insufficient_privilege THEN v_ok := true;
+    END;
+    -- (doors) app_can() itself, and every door that asks it: a direct claim,
+    -- a handover claimed or verified, a force-release, another match's
+    -- heartbeat — refused; its own two capabilities on its own fixture — not
+    PERFORM _assert(detail = 'no_capability/no_capability/no_capability/no_capability' AND v_ok
+                    AND NOT app_can('fixture.read', match_school(F2), match_team(F2), NULL, F2)
+                    AND NOT app_can('player.read', HIL, NULL, '00000000-0000-0000-0000-000000000000'::uuid, NULL)
+                    AND NOT app_can('scoring.start', match_school(F1), match_team(F1), NULL, F1)
+                    AND app_can('scoring.edit', match_school(F1), match_team(F1), NULL, F1)
+                    AND app_can('fixture.read', match_school(F1), match_team(F1), NULL, F1),
+      format('db/50 (doors): claim/handover-claim/verify/force-release answered %s, another match''s heartbeat refused: %s, '
+             || 'or app_can() answered outside the credential''s two capabilities on its fixture', detail, v_ok));
+    SELECT l.holds INTO v_ok FROM scoring_lease_check(F1, DEV, e1) l;
+    -- the control: its own heartbeat holds
+    PERFORM _assert(v_ok, 'db/50 (doors): the credential''s heartbeat does not hold its own lease');
+    -- (holds) nothing platform-wide, nothing to grant, no second credential
+    PERFORM _assert(NOT app_holds('fixture.read') AND NOT app_may_grant('scorer')
+                    AND (SELECT i.reason FROM pad_resume_issue(F1, repeat('3', 64), JWK) i) = 'not_permitted'
+                    AND pad_resume_sign_out() = 0,
+      'db/50 (holds): under pad scope app_holds/app_may_grant answered true, or a credential minted or signed out');
+    SELECT c.ok, c.epoch INTO v_ok, n FROM pad_resume_reclaim(F1) c;
+    SELECT c.reason INTO v_reason FROM pad_resume_reclaim(F2) c;
+    -- (reclaim) its own token taken back (the next generation), never another match's
+    PERFORM _assert(v_ok AND n = e1 + 1 AND v_reason = 'not_permitted' AND _db50_reason(C1b) = 'live'
+                    AND current_setting('app.scope', true) = 'pad',
+      format('db/50 (reclaim): F1 %s at %s (expected true at %s), F2 %s, credential %s, scope after %s',
+             v_ok, n, e1 + 1, v_reason, _db50_reason(C1b), current_setting('app.scope', true)));
+    e1 := e1 + 1;
+
+    -- ── Spending a one-time id ──
+    SELECT s.ok INTO v_ok FROM pad_resume_spend(C1b, 'verify-050-jti-0001') s;
+    SELECT s.reason INTO v_reason FROM pad_resume_spend(C1b, 'verify-050-jti-0001') s;
+    SELECT s.reason INTO detail FROM pad_resume_spend(C1b, 'short') s;
+    -- (spend) once, and never again
+    PERFORM _assert(v_ok AND v_reason = 'replay' AND detail = 'bad_jti' AND _db50_jtis(C1b) = 1,
+      format('db/50 (spend): first %s, again %s, a short id %s, %s kept', v_ok, v_reason, detail, _db50_jtis(C1b)));
+    PERFORM set_config('app.scope', '', true);
+    PERFORM set_config('app.match_id', '', true);
+
+    -- ── Every way it ends ──
+    -- (end-claimed) another phone claims after the lease lapsed: the token moved
+    PERFORM _lapse_scoring_lease(F1);
+    PERFORM set_config('app.device_id', 'verify-050-other', true);
+    SELECT c.ok INTO v_ok FROM scoring_claim(F1, 'verify-050-other') c;
+    PERFORM set_config('app.device_id', DEV, true);
+    PERFORM set_config('app.scope', 'pad', true);
+    PERFORM set_config('app.match_id', F1::text, true);
+    SELECT c.reason INTO v_reason FROM pad_resume_reclaim(F1) c;
+    PERFORM set_config('app.scope', '', true);
+    PERFORM set_config('app.match_id', '', true);
+    PERFORM _assert(v_ok AND _db50_reason(C1b) = 'token_moved' AND v_reason = 'token_moved',
+      format('db/50 (end-claimed): the other phone claimed %s; the credential is %s and its re-claim %s', v_ok, _db50_reason(C1b), v_reason));
+
+    -- (end-handover) armed, the credential stands; taken over, it ends
+    SELECT i.credential INTO C2 FROM pad_resume_issue(F2, repeat('4', 64), JWK) i;
+    SELECT a.ok, a.code INTO v_ok, v_code FROM scoring_arm_handover(F2, DEV, 0, false) a;
+    detail := _db50_reason(C2);
+    PERFORM _as(U_SARAH);
+    PERFORM set_config('app.device_id', 'verify-050-sarah', true);
+    PERFORM scoring_claim_handover(F2, 'verify-050-sarah', v_code);
+    SELECT v.ok INTO v_ok FROM scoring_verify_takeover(F2, 'verify-050-sarah', 0, 0, 0) v;
+    PERFORM _assert(v_ok AND detail = 'live' AND _db50_reason(C2) = 'token_moved',
+      format('db/50 (end-handover): taken over %s; armed %s, then %s', v_ok, detail, _db50_reason(C2)));
+
+    -- (end-release) force-released: it ends
+    SELECT i.credential INTO C3 FROM pad_resume_issue(F2, repeat('5', 64), JWK) i;
+    PERFORM _lapse_scoring_lease(F2);
+    SELECT f.ok INTO v_ok FROM scoring_force_release(F2) f;
+    PERFORM _assert(C3 IS NOT NULL AND v_ok AND _db50_reason(C3) = 'released',
+      format('db/50 (end-release): issued %s, released %s, then %s', C3 IS NOT NULL, v_ok, _db50_reason(C3)));
+
+    -- (end-sign-out) the phone signs out: its credentials end, nobody else's
+    PERFORM _as(U_SCORER);
+    PERFORM set_config('app.device_id', DEV, true);
+    SELECT c.ok INTO v_ok FROM scoring_claim(F2, DEV) c;
+    SELECT i.credential INTO C4 FROM pad_resume_issue(F2, repeat('6', 64), JWK) i;
+    n := pad_resume_sign_out();
+    PERFORM _assert(v_ok AND n = 1 AND _db50_reason(C4) = 'signed_out' AND _db50_reason(C3) = 'released',
+      format('db/50 (end-sign-out): signed out %s, the credential %s', n, _db50_reason(C4)));
+
+    -- (end-office) the school office ends it, under user.invite at the match's
+    -- school — and nobody else can: not the scorer, not the 2XI coach, not
+    -- Westville's office. The office reads the table; the scorer does not.
+    SELECT i.credential INTO C5 FROM pad_resume_issue(F2, repeat('7', 64), JWK) i;
+    SELECT count(*) INTO n2 FROM pad_resume_credential;
+    detail := (SELECT r.reason FROM pad_resume_revoke(F2) r);
+    PERFORM _as(U_COACH2);
+    detail := detail || '/' || (SELECT r.reason FROM pad_resume_revoke(F2) r);
+    PERFORM _as(U_WES_ADM);
+    detail := detail || '/' || (SELECT r.reason FROM pad_resume_revoke(F2) r);
+    v_state := _db50_reason(C5);
+    PERFORM _as(U_REGISTRAR);
+    SELECT count(*) INTO n FROM pad_resume_credential WHERE match_id IN (F1, F2);
+    SELECT r.revoked INTO e2 FROM pad_resume_revoke(F2) r;
+    PERFORM _assert(detail = 'not_permitted/not_permitted/not_permitted' AND v_state = 'live' AND n2 = 0 AND n >= 5
+                    AND e2 = 1 AND _db50_reason(C5) = 'office',
+      format('db/50 (end-office): scorer/2XI coach/Westville answered %s (credential then %s); the scorer read %s rows, the office %s; '
+             || 'the office revoked %s and it is %s', detail, v_state, n2, n, e2, _db50_reason(C5)));
+
+    -- (end-day) past midnight, Johannesburg: expired, whatever else is true
+    PERFORM _as(U_SCORER);
+    PERFORM set_config('app.device_id', DEV, true);
+    SELECT i.credential INTO C6 FROM pad_resume_issue(F2, repeat('8', 64), JWK) i;
+    PERFORM _db50_expire(C6);
+    SELECT l.ended INTO v_reason FROM pad_resume_lookup(repeat('8', 64)) l;
+    SELECT s.reason INTO detail FROM pad_resume_spend(C6, 'verify-050-jti-0002') s;
+    PERFORM _assert(v_reason = 'expired' AND detail = 'expired',
+      format('db/50 (end-day): looked up %s, spent %s, expected expired and expired', v_reason, detail));
+
+    -- (end-match) the match completes: it ends, and none is issued after
+    SELECT i.credential INTO C7 FROM pad_resume_issue(F2, repeat('9', 64), JWK) i;
+    PERFORM _as(U_SARAH);
+    UPDATE match SET status = 'complete' WHERE id = F2;
+    PERFORM _as(U_SCORER);
+    SELECT i.reason INTO v_reason FROM pad_resume_issue(F2, repeat('a', 64), JWK) i;
+    PERFORM _assert(C7 IS NOT NULL AND _db50_reason(C7) = 'match_complete' AND v_reason = 'match_complete',
+      format('db/50 (end-match): the credential is %s, a new issue %s', _db50_reason(C7), v_reason));
+  END;
+  PERFORM set_config('app.scope', '', true);
+  PERFORM set_config('app.match_id', '', true);
+  PERFORM set_config('app.device_id', '', true);
   PERFORM set_config('app.user_id', '', true);
 
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';

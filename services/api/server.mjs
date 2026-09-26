@@ -20,6 +20,10 @@
  *   POST /api/matches/:id/session/handover/verify confirm the score, then take over
  *   POST /api/matches/:id/session/force-release   recover a dead device (supervisory)
  *   POST /api/matches/:id/events                  append balls (the write path)
+ *   GET  /api/matches/:id/toss                    one match's toss
+ *   POST /api/matches/:id/session/pad-credential  the pad's resume credential, on a claim (SCRBRD-078)
+ *   POST /api/matches/:id/pad-credentials/revoke  the school office ends them
+ *   POST /api/auth/sign-out                       this device's credentials end
  *   POST /api/players/:id/assessment              record a coach's skill assessment
  *   POST /api/players/:id/access-request          ask that player's coach for access
  *   POST /api/access-requests/:id/decide          answer such a request
@@ -27,6 +31,10 @@
  *   POST /api/ai/stats-magic, /api/ai/commentary
  *
  *   node services/api/server.mjs        # PORT=8787 by default
+ *
+ * A request signed with the pad's resume credential (Authorization:
+ * ScrbrdPad …) is answered by servePad() below and nowhere else: five routes,
+ * its own match, and a 403 for every other path before anything is read.
  */
 
 import { createServer } from "node:http";
@@ -36,6 +44,7 @@ import pg from "pg";
 import { askStatsMagic, describeDelivery, statsMagicContext, aiConfigured } from "./ai/ai-service.mjs";
 import { sessionProfile, runAsPrincipal, issueLoginCode, redeemMagicLink } from "./auth/auth-db.mjs";
 import { signToken, AuthError } from "./auth/auth.mjs";
+import { isPadAuthorization, padRoute, padPrincipal, padRefusal, padCredentialRoutes } from "./auth/pad-resume.mjs";
 import { readRoute, exportRoute, liveResources } from "./read/read-api.mjs";
 import { importRoutes } from "./io/import-api.mjs";
 import { eventRoutes, amendmentRoutes, quarantineRoutes, squadRoutes, tossRoutes, conditionsRoutes, officialRoutes, availabilityRoutes, transportRoutes } from "./write/events-api.mjs";
@@ -253,10 +262,12 @@ const rawRes = (res) => ({
 });
 
 /**
+ * The body's exact bytes. A pad resume credential signs their hash, so the
+ * bytes are kept rather than only the parse of them.
  * @param {IncomingMessage} req
- * @returns {Promise<any>}  parsed JSON from the wire: every handler validates what it reads
+ * @returns {Promise<Buffer>}
  */
-async function readJson(req) {
+async function readRaw(req) {
   const chunks = [];
   let size = 0;
   for await (const c of req) {
@@ -264,9 +275,25 @@ async function readJson(req) {
     if (size > MAX_BODY) throw Object.assign(new Error("payload_too_large"), { status: 413 });
     chunks.push(c);
   }
-  if (!chunks.length) return {};
-  try { return JSON.parse(Buffer.concat(chunks).toString("utf8")); }
+  return Buffer.concat(chunks);
+}
+
+/**
+ * @param {Buffer} raw
+ * @returns {any}  parsed JSON from the wire: every handler validates what it reads
+ */
+function parseJson(raw) {
+  if (!raw.length) return {};
+  try { return JSON.parse(raw.toString("utf8")); }
   catch { throw Object.assign(new Error("invalid_json"), { status: 400 }); }
+}
+
+/**
+ * @param {IncomingMessage} req
+ * @returns {Promise<any>}  parsed JSON from the wire: every handler validates what it reads
+ */
+async function readJson(req) {
+  return parseJson(await readRaw(req));
 }
 
 // ── Routes ───────────────────────────────────────────────────────
@@ -296,6 +323,9 @@ const drs      = drsRoutes({ pool, secret: SECRET });
 const bcast    = broadcastRoutes({ pool, secret: SECRET });
 const sponsors = sponsorRoutes({ pool, secret: SECRET });
 const modAdmin = moduleAdminRoutes({ pool, secret: SECRET });
+// The pad's resume credential (SCRBRD-078): issued on a claim, revoked by the
+// office or a sign-out. Signed-in routes; a credential reaches none of them.
+const padCreds = padCredentialRoutes({ pool, secret: SECRET });
 // Push delivery. The transport is resolved once at boot so an unconfigured
 // deployment answers "not configured" on the fan-out rather than discovering
 // it per request — and so a walk can read back what a dev transport sent.
@@ -375,6 +405,10 @@ const EXACT = {
     (client) => issueLoginCode(client, SECRET, { email: body?.email })),
   "POST /api/auth/redeem": async (body) => redeemMagicLink(
     pool, SECRET, { email: body?.email, code: body?.code, deviceId: body?.deviceId }),
+  // Signing out ends this person's pad resume credentials on this device
+  // (db/50). The client also forgets the keys, which ends them there even
+  // when this cannot reach the server.
+  "POST /api/auth/sign-out": padCreds.signOut,
   // Stats-Magic's data is built server-side from the read path under the
   // caller's identity — no session, no answer — and every pupil's name is
   // swapped for a token before the model sees it. Commentary stays open (the
@@ -422,6 +456,12 @@ const MATCH_ROUTES = [
   [/^\/api\/trips\/([^/]+)\/mark$/,               "POST", trips.mark, "logistics"],
   // The toss. Frozen by the database once a delivery exists.
   [/^\/api\/matches\/([^/]+)\/toss$/,              "POST", toss.record],
+  // One match's toss, which is what the pad reads (not every fixture's).
+  [/^\/api\/matches\/([^/]+)\/toss$/,              "GET",  toss.read],
+  // The pad's resume credential (SCRBRD-078, db/50): issued to the device
+  // that holds the token, with an ordinary token; ended by the office.
+  [/^\/api\/matches\/([^/]+)\/session\/pad-credential$/, "POST", padCreds.issue],
+  [/^\/api\/matches\/([^/]+)\/pad-credentials\/revoke$/,  "POST", padCreds.revoke],
   // Conditions. Unlike the toss, these stay writable during play — weather
   // changes, and that is the reason for recording it.
   [/^\/api\/matches\/([^/]+)\/weather$/,           "POST", cond.weather],
@@ -702,8 +742,58 @@ async function serveClient(req, res, path) {
   return true;
 }
 
+/**
+ * The five handlers a pad resume credential reaches (pad-resume.mjs
+ * PAD_ROUTES names them). Each runs as who(req): the principal built here.
+ * @type {Record<string, IdHandler>}
+ */
+const PAD_HANDLERS = {
+  heartbeat: session.heartbeat, claim: session.claim,
+  append: events.append, list: events.list, toss: toss.read,
+};
+
+/**
+ * A request signed with a resume credential, answered here and nowhere else.
+ *
+ * FIRST the route: a credential is good for five, on its own match, and any
+ * other path — every read, every write, /api/session, /api/health, a static
+ * file — is 403 pad_scope before its body is read or a credential looked up.
+ * Then the proof (padPrincipal: the credential, the signature, this request,
+ * now, its match, once). Then the handler, with the Authorization header
+ * taken away, so a handler that reached for it instead of who(req) would
+ * find no identity at all rather than a credential it does not understand.
+ * No module gate (none of the five has one) and no Idempotency-Key receipts
+ * (the events carry their own keys; the heartbeat and claim are not retried
+ * blind).
+ * @param {IncomingMessage} req @param {ServerResponse} res
+ */
+async function servePad(req, res) {
+  const target = /** @type {string} */ (req.url);
+  const url = new URL(target, `http://${req.headers.host}`);
+  const route = padRoute(req.method, url.pathname);
+  if (!route) return json(res, 403, { error: "pad_scope" });
+  try {
+    const raw = req.method === "POST" ? await readRaw(req) : Buffer.alloc(0);
+    const principal = await padPrincipal({
+      pool, secret: SECRET, authorization: String(req.headers.authorization), method: String(req.method),
+      target, rawBody: raw, matchId: route.matchId });
+    const out = shim(res);
+    await PAD_HANDLERS[route.name]({
+      params: { id: route.matchId }, query: Object.fromEntries(url.searchParams), body: parseJson(raw),
+      headers: { ...req.headers, authorization: undefined }, principal }, out);
+    out.flush();
+  } catch (/** @type {any} */ err) {
+    const r = padRefusal(err);
+    if (r.status >= 500) console.error(`${req.method} ${url.pathname} (pad) →`, err.code || "", err.message);
+    json(res, r.status, r.body);
+  }
+}
+
 const server = createServer(async (req, res) => {
   if (req.method === "OPTIONS") return json(res, 204, {});
+
+  // A resume credential goes no further than servePad(): see there.
+  if (isPadAuthorization(req.headers.authorization)) return servePad(req, res);
 
   // An http.Server request always carries its url; the type allows undefined
   // only for an IncomingMessage read on the client side of a connection.

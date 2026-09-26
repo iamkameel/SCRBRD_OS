@@ -224,16 +224,21 @@ const signIn = async () => {
 /**
  * After a reload: back on the pad. The API token lives in memory only and is
  * lost on every reload by design (lib/api.js). The pad of a live fixture
- * reopens by itself, signed out (SCRBRD-078), and says "sign in to send";
- * its own prompt signs in and comes back to it — which is what a scorer
- * does. The ball log and the outbox are on disk and are not touched.
+ * reopens by itself, signed out (SCRBRD-078). Holding its resume credential
+ * (SCRBRD-078 option B) it re-attaches and sends by itself, and there is no
+ * sign-in to press; without one it says "sign in to send", and its own
+ * prompt signs in and comes back to it — which is what a scorer does. The
+ * ball log and the outbox are on disk and are not touched either way.
  */
 const backOnPad = async () => {
-  for (let t = 0; t < 20 && !(await page.locator('[data-testid="sync-signin"]').count()); t++) await page.waitForTimeout(300);
-  await page.locator('[data-testid="sync-signin"]').first().click({ timeout: 4000 });
-  await page.waitForTimeout(800);
-  await click(/Scorer/, 4000);
-  await click(/^Sign In$/, 5000);
+  const signIn = page.locator('[data-testid="sync-signin"]');
+  for (let t = 0; t < 20 && !(await signIn.count()) && (await pill()) !== "Sent"; t++) await page.waitForTimeout(300);
+  if (await signIn.count()) {
+    await signIn.first().click({ timeout: 4000 });
+    await page.waitForTimeout(800);
+    await click(/Scorer/, 4000);
+    await click(/^Sign In$/, 5000);
+  }
   await page.waitForTimeout(2500);
   if (DEBUG && !(await board())) console.log("[debug] not back on the pad:", (await text()).replace(/\s+/g, " ").slice(0, 300));
   return onPad();

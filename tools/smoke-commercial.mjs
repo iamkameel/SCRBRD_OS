@@ -353,9 +353,11 @@ try {
     `select count(*)::int c from pg_policies
       where tablename = 'sponsor_category' and cmd <> 'SELECT'`);
   ok("sponsor_category has no write policy for anyone", wr[0].c === 0);
+  // PERMISSIVE: db/50 adds a restrictive pad_scope_select to every table,
+  // which narrows the read and grants nothing.
   ok("...and its read policy exists",
      (await q(`select count(*)::int c from pg_policies
-                where tablename = 'sponsor_category' and cmd = 'SELECT'`))[0].c === 1);
+                where tablename = 'sponsor_category' and cmd = 'SELECT' and permissive = 'PERMISSIVE'`))[0].c === 1);
 
 } catch (e) {
   fail++; console.log("\n  ✗ threw:", e.message);

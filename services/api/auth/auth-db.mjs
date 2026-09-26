@@ -167,18 +167,31 @@ export async function sessionProfile(pool, secret, bearer) {
  * `fn` receives (client, principal). The connection is dedicated for the
  * duration and returned to the pool with no lingering context, because
  * withPrincipal sets everything transaction-locally and commits.
+ *
+ * `bearer` is the Authorization header as sent — or, for the five routes a
+ * pad resume credential may use, the principal the dispatcher already built
+ * from its signed request (pad-resume.mjs; `who(req)` below picks it). Only
+ * a principal carrying scope "pad" is accepted that way: anything else must
+ * come through a verified token.
  * @template T
  * @param {Pool} pool
  * @param {string} secret
- * @param {string | undefined} bearer  the Authorization header, as sent
+ * @param {string | Principal | undefined} bearer
  * @param {(client: Db, principal: Principal) => T | Promise<T>} fn
  * @returns {Promise<T>}
  */
 export async function runAsPrincipal(pool, secret, bearer, fn) {
-  // startsWith() on (bearer || "") was true, so bearer is a string here.
-  const token = (bearer || "").startsWith("Bearer ") ? /** @type {string} */ (bearer).slice(7) : null;
-  if (!token) throw new AuthError("missing_token");
-  const principal = principalFromClaims(verifyToken(token, secret));
+  /** @type {Principal} */
+  let principal;
+  if (typeof bearer === "object" && bearer !== null) {
+    if (bearer.scope !== "pad" || !bearer.userId || !bearer.deviceId || !bearer.matchId) throw new AuthError("unauthorized");
+    principal = bearer;
+  } else {
+    // startsWith() on (bearer || "") was true, so bearer is a string here.
+    const token = (bearer || "").startsWith("Bearer ") ? /** @type {string} */ (bearer).slice(7) : null;
+    if (!token) throw new AuthError("missing_token");
+    principal = principalFromClaims(verifyToken(token, secret));
+  }
   const client = await pool.connect();          // one dedicated connection
   try {
     return await withPrincipal(client, principal, (c) => fn(c, principal));
@@ -192,3 +205,16 @@ export async function runAsPrincipal(pool, secret, bearer, fn) {
 // this comment for the whole life of the project, which meant the redeem path
 // above was written, correct, unit-tested — and could not run, because the
 // table it selects from was never created.
+
+/**
+ * Who a request to one of the pad's routes runs as: the principal the
+ * dispatcher built from a signed resume credential, when there is one, else
+ * the Authorization header for runAsPrincipal() to verify. The five handlers
+ * a credential reaches pass this; every other handler passes the header, and
+ * never sees a credential (the dispatcher refuses it first).
+ * @param {{ principal?: Principal, headers?: { authorization?: string } }} req
+ * @returns {string | Principal | undefined}
+ */
+export function who(req) {
+  return req.principal ?? req.headers?.authorization;
+}

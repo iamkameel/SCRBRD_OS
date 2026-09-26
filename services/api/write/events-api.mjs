@@ -24,7 +24,7 @@
  *
  * Mirrors MatchSession.append() from scoring-session.mjs, against SQL.
  */
-import { runAsPrincipal } from "../auth/auth-db.mjs";
+import { runAsPrincipal, who } from "../auth/auth-db.mjs";
 import { toRow, fromRow, normaliseDismissal, MatchFold, lawsRefusal, REFUSAL, REFUSAL_TEXT,
          PLACEMENT_SOURCE, PLACEMENT_NULL, CAPTURE_PROFILE } from "@scrbrd/scoring";
 /** @import { Pool, ApiRequest, ApiResponse, Handler, IdHandler, IdRequest, RouteDeps, DressedError } from "../api-types.mjs" */
@@ -201,7 +201,9 @@ const FINGERPRINT_OF = `ball_event_fingerprint(jsonb_populate_record(null::ball_
 /**
  * @param {Pool} pool
  * @param {string} secret
- * @param {string | undefined} bearer  the Authorization header, as sent
+ * @param {string | import("../auth/auth.mjs").Principal | undefined} bearer
+ *   the Authorization header, as sent — or a pad resume credential's
+ *   principal (auth-db.mjs who())
  * @param {string} matchId
  * @param {IncomingEvent[]} events  the batch: one device's queue, in order
  * @returns {Promise<AppendResult>}
@@ -249,7 +251,23 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
     p.dismissal = d;
   }
 
-  return runAsPrincipal(pool, secret, bearer, async client => {
+  return runAsPrincipal(pool, secret, bearer, async (client, principal) => {
+    // THE DEVICE IS THE PRINCIPAL'S (SCRBRD-087). It is bound into the token
+    // (or the resume credential), never restated by the body. The lease check
+    // used to be asked about events[0].deviceId: every write stayed on the
+    // token's device (the ball_event INSERT policy), but the same person on a
+    // second device could keep the FIRST device's lease alive with a batch
+    // that wrote nothing, and that refresh committed. A batch is one device's
+    // queue; one that names any other device is not this device's, and is
+    // refused whole, before anything — the lease included — is touched.
+    const device = principal.deviceId;
+    const other = events.findIndex((ev) => ev.deviceId !== device);
+    if (!device || other !== -1) {
+      const e = /** @type {DressedError} */ (new Error("device_mismatch"));
+      e.status = 403; e.detail = { index: Math.max(other, 0) };
+      throw e;
+    }
+
     // Serialise all writes for this match, and refresh the lease if this
     // caller holds the token. Both happen inside scoring_lease_check because
     // scoring_session has no UPDATE policy by design, and Postgres will not
@@ -262,7 +280,7 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
     // below and routed to quarantine.
     const { rows: lrows } = await client.query(
       `select * from scoring_lease_check($1, $2, $3)`,
-      [matchId, events[0].deviceId, events[0].epoch]);
+      [matchId, device, events[0].epoch]);
     /** @type {LeaseCheck} */
     const lease = lrows[0] || { found: false, holds: false, epoch: null };
     /** @type {AppendResult} */
@@ -327,7 +345,7 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
 
       // 2. token/epoch/lease gate (the DB RLS enforces this too; we check here to
       //    ROUTE mismatches to quarantine rather than get an opaque RLS failure).
-      const authed = lease.holds && ev.epoch === lease.epoch && ev.deviceId === events[0].deviceId;
+      const authed = lease.holds && ev.epoch === lease.epoch && ev.deviceId === device;
       if (!authed) {
         await client.query(
           `insert into ball_event_quarantine
@@ -482,7 +500,8 @@ export const EVENT_COLUMNS = `
  * The log after `sinceSeq` (see above: raw rows, for fromRow()).
  * @param {Pool} pool
  * @param {string} secret
- * @param {string | undefined} bearer  the Authorization header, as sent
+ * @param {string | import("../auth/auth.mjs").Principal | undefined} bearer
+ *   the Authorization header, as sent — or a pad resume credential's principal
  * @param {string} matchId
  * @param {number} [sinceSeq]
  * @returns {Promise<BallEventRow[]>}  in seq order
@@ -505,7 +524,9 @@ export function eventRoutes({ pool, secret }) {
     // POST /matches/:id/events  { events: [...] }
     append: async (req, res) => {
       try {
-        const out = await appendEvents(pool, secret, req.headers?.authorization, req.params.id, req.body?.events || []);
+        // who(): a pad resume credential's principal (its match, its device)
+        // when the dispatcher verified one, else the Authorization header.
+        const out = await appendEvents(pool, secret, who(req), req.params.id, req.body?.events || []);
         res.json(out);
       } catch (/** @type {any} */ e) {
         // 42501: the database refused the caller (no scoring.edit here). Every
@@ -519,7 +540,7 @@ export function eventRoutes({ pool, secret }) {
     // GET /matches/:id/events?since=seq
     list: async (req, res) => {
       try {
-        const rows = await readEvents(pool, secret, req.headers?.authorization, req.params.id, Number(req.query?.since || 0));
+        const rows = await readEvents(pool, secret, who(req), req.params.id, Number(req.query?.since || 0));
         res.json({ matchId: req.params.id, events: rows });
       } catch (/** @type {any} */ e) {
         if (e.code === "42501") return res.status(403).json({ error: "not_permitted" });
@@ -932,11 +953,32 @@ export function squadRoutes({ pool, secret }) {
  * first ball the database refuses it, because reversing the innings order
  * under a scorecard people have already read is not an edit — it goes through
  * scoring_amendment, where it needs a second person.
- * @param {RouteDeps} deps @returns {Record<string, IdHandler>}  /matches/:id/toss
+ * @param {RouteDeps} deps @returns {Record<string, IdHandler>}  /matches/:id/toss (POST record, GET read)
  */
 export function tossRoutes({ pool, secret }) {
   const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
   return {
+    // GET /matches/:id/toss → { matchId, toss: { id, toss_won_by, toss_decision, bats_first } | null }
+    //
+    // The toss of ONE match, in the columns the matches read gives it
+    // (tossFromRow() in @scrbrd/scoring reads either). The pad used to learn
+    // it from /api/read/matches — every fixture the person can see — which a
+    // resume credential may not read (SCRBRD-078: its match's log and toss,
+    // nothing else). match_toss_read decides who sees it; a toss the caller
+    // may not read is the same answer as no toss at all.
+    read: async (req, res) => {
+      try {
+        const rows = await runAsPrincipal(pool, secret, who(req), async (client) =>
+          (await client.query(
+            `select match_id as id, won_by as toss_won_by, decision as toss_decision,
+                    bats_first(won_by, decision) as bats_first
+               from match_toss where match_id = $1`, [req.params.id])).rows);
+        res.json({ matchId: req.params.id, toss: rows[0] ?? null });
+      } catch (/** @type {any} */ e) {
+        if (e.code === "22P02") return res.status(404).json({ error: "no_such_match" });
+        res.status(e.code === "42501" ? 403 : (e.status || 500)).json({ error: e.code === "42501" ? "not_permitted" : (e.code || e.message) });
+      }
+    },
     // POST /matches/:id/toss { wonBy: 'home'|'away', decision: 'bat'|'bowl' }
     record: async (req, res) => {
       try {
