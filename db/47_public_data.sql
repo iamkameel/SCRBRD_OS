@@ -193,6 +193,10 @@ $mask_player$;
 -- ── 2 · Public-name consent (C1, C3, C6) ───────────────────────────
 CREATE TABLE IF NOT EXISTS public_name_consent (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  -- The order records were made in. now() is the transaction's clock, so two
+  -- acts in one transaction share a recorded_at; "a giver's most recent act"
+  -- (the header) needs an order that cannot tie.
+  seq         bigint GENERATED ALWAYS AS IDENTITY UNIQUE,
   player_id   uuid NOT NULL REFERENCES player(id) ON DELETE CASCADE,
   -- Who gave it, in public.mjs's words.
   given_by    text NOT NULL CHECK (given_by IN ('guardian', 'pupil')),
@@ -786,10 +790,10 @@ RETURNS jsonb AS $$
                'competent', x.competent,
                'givenOn',   to_char(x.given_on, 'YYYY-MM-DD'),
                'endedOn',   to_char(x.ended_on, 'YYYY-MM-DD'))
-             ORDER BY x.given_on, x.recorded_at, x.id)
+             ORDER BY x.given_on, x.seq)
         FROM (
           SELECT DISTINCT ON (c.giver_link_id)
-                 c.id, c.given_by, c.given_on, c.ended_on, c.recorded_at,
+                 c.seq, c.given_by, c.given_on, c.ended_on,
                  coalesce(
                    g.verification_state = 'verified'
                    AND g.valid_from <= c.given_on
@@ -806,7 +810,7 @@ RETURNS jsonb AS $$
                                      AND g.player_id = c.player_id
             JOIN role_assignment a ON a.id = c.giver_assignment_id
            WHERE c.player_id = p.id
-           ORDER BY c.giver_link_id, c.recorded_at DESC, c.id DESC
+           ORDER BY c.giver_link_id, c.seq DESC
         ) x), '[]'::jsonb),
     'neverPublic', EXISTS (
       SELECT 1 FROM player_never_public m

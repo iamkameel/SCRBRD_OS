@@ -543,6 +543,46 @@ RETURNS TABLE (family text, player_id uuid, lifetime text, by_season text) AS $$
    WHERE l.dismissals IS DISTINCT FROM s.dismissals
 $$ LANGUAGE sql STABLE;
 
+-- db/47 (section 25). The public-data records. A sports administrator at
+-- Westville (a test-only account, like the umpire above), so the away school
+-- has somebody who may publish its own side; and a Hilton 1XI v Westville 1XI
+-- fixture ten days out that nothing else here touches. Owner-written, rolled
+-- back with everything else.
+INSERT INTO app_user (id, school_id, email, name, role) VALUES
+  ('88888888-0000-0000-0000-00000000047a', '22222222-2222-2222-2222-222222222222',
+   'sport47@example.invalid', 'W Publisher', 'sportsadmin')
+ON CONFLICT DO NOTHING;
+INSERT INTO role_assignment (id, person_id, role, school_id, team_code) VALUES
+  ('a5510000-0000-0000-0000-00000000047a', '88888888-0000-0000-0000-00000000047a', 'sportsadmin',
+   '22222222-2222-2222-2222-222222222222', NULL)
+ON CONFLICT DO NOTHING;
+INSERT INTO match (id, school_id, team_code, away_school_id, away_team_code, opponent, starts_at,
+                   format, overs, status) VALUES
+  ('77777777-0000-0000-0000-000000000047', '11111111-1111-1111-1111-111111111111', '1XI',
+   '22222222-2222-2222-2222-222222222222', '1XI', 'Westville Boys'' High', now() + interval '10 days',
+   'T20', 20, 'scheduled')
+ON CONFLICT DO NOTHING;
+
+-- Past RLS: what db/47's tables hold for one child, whatever a reader sees.
+-- The claims below are "the refused write left nothing" and "the withdrawal
+-- ended a row, it did not delete one", which a reader's policy could not
+-- tell from a hidden row.
+CREATE OR REPLACE FUNCTION _consent_rows(p_player uuid) RETURNS integer AS $$
+  SELECT count(*)::int FROM public_name_consent WHERE player_id = p_player;
+$$ LANGUAGE sql SECURITY DEFINER;
+CREATE OR REPLACE FUNCTION _consent_open_rows(p_player uuid) RETURNS integer AS $$
+  SELECT count(*)::int FROM public_name_consent WHERE player_id = p_player AND ended_on IS NULL;
+$$ LANGUAGE sql SECURITY DEFINER;
+CREATE OR REPLACE FUNCTION _consent_last(p_player uuid) RETURNS public_name_consent AS $$
+  SELECT * FROM public_name_consent WHERE player_id = p_player ORDER BY seq DESC LIMIT 1;
+$$ LANGUAGE sql SECURITY DEFINER;
+CREATE OR REPLACE FUNCTION _mark_rows(p_player uuid) RETURNS integer AS $$
+  SELECT count(*)::int FROM player_never_public WHERE player_id = p_player;
+$$ LANGUAGE sql SECURITY DEFINER;
+CREATE OR REPLACE FUNCTION _born_of(p_player uuid) RETURNS date AS $$
+  SELECT born FROM player WHERE id = p_player;
+$$ LANGUAGE sql SECURITY DEFINER;
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -4162,6 +4202,318 @@ BEGIN
     -- (value) five days, the decision
     PERFORM _assert(opposition_window_days() = 5,
       format('db/46 (value): opposition_window_days() answers %s, expected 5', opposition_window_days()));
+  END;
+  PERFORM set_config('app.user_id', '', true);
+
+  -- ── 25. The records the public-data rule reads (SCRBRD-083, db/47) ──
+  -- docs/policy/PUBLIC_DATA.md §4 and §6 step 2. Every write goes through a
+  -- door that checks its own authority, and each refusal below is asserted to
+  -- have left nothing behind (counted past RLS). What a stranger's page will
+  -- read, public_name_facts(), is asserted to carry the three facts the rule
+  -- needs and never a date of birth, a reason or a guardian.
+  DECLARE
+    U_WHIT    uuid := '88888888-0000-0000-0000-000000000010';  -- H Whitfield, guardian of James
+    U_BEKKER  uuid := '88888888-0000-0000-0000-000000000011';  -- A Bekker, guardian of T Bekker
+    U_WES_PUB uuid := '88888888-0000-0000-0000-00000000047a';  -- sportsadmin, Westville (above)
+    P_JW      uuid := 'aaaaaaaa-0000-0000-0000-000000000001';  -- James Whitfield, 1XI, sixteen
+    P_2XI     uuid := 'aaaaaaaa-0000-0000-0000-00000000044a';  -- V44 Opener, 2XI (section 22)
+    M_47      uuid := '77777777-0000-0000-0000-000000000047';  -- Hilton 1XI v Westville 1XI
+    C_KZN     uuid := '99999999-0000-0000-0000-000000000001';  -- the shared league, no organiser
+    V         text := 'public-names-2026-09';
+    v_today   text := to_char(sa_today(), 'YYYY-MM-DD');
+    v_facts   jsonb;
+    v_row     public_name_consent;
+    v_grp     text;
+    v_born    date;
+    v_raised  boolean;
+    who       uuid;
+  BEGIN
+    -- ── Consent: who may give it ──
+    -- (guardian) a verified guardian consents for his own child
+    PERFORM _as(U_WHIT);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_name_consent_set(P_JW, true, V) s;
+    PERFORM _assert(v_ok, format('db/47 (guardian): a verified guardian could not consent for his own child (%s)', v_reason));
+    v_row := _consent_last(P_JW);
+    PERFORM _assert(v_row.given_by = 'guardian' AND v_row.given_on = sa_today() AND v_row.ended_on IS NULL
+                    AND v_row.recorded_by = U_WHIT AND v_row.form_name IS NULL,
+      format('db/47 (guardian): the record is not his, today''s and open: %s', row(v_row.given_by, v_row.given_on, v_row.ended_on, v_row.recorded_by)::text));
+    -- (other-child) ...and cannot write another child's
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_name_consent_set(P_OTHER, true, V) s;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted' AND _consent_rows(P_OTHER) = 0,
+      format('db/47 (other-child): a guardian of one child wrote another''s consent (ok %s, %s, %s rows)', v_ok, v_reason, _consent_rows(P_OTHER)));
+    -- ...nor pass himself off as the office to do it
+    SELECT s.ok, s.reason INTO v_ok, v_reason
+      FROM public_name_consent_set(P_OTHER, true, V, U_BEKKER, 'Admission form', current_date) s;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted' AND _consent_rows(P_OTHER) = 0,
+      format('db/47 (other-child-office): a guardian recorded another family''s consent as the office (ok %s, %s)', v_ok, v_reason));
+
+    -- (minor) a pupil under eighteen cannot give his own
+    PERFORM _as(U_SELF);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_name_consent_set(P_INJURED, true, V) s;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_yet_eighteen' AND _consent_rows(P_INJURED) = 0,
+      format('db/47 (minor): a pupil of sixteen gave his own consent (ok %s, %s, %s rows)', v_ok, v_reason, _consent_rows(P_INJURED)));
+    -- (eighteen) ...and can from his birthday (C6): his date of birth moved
+    -- back, as the owner, so R Pillay is nineteen
+    v_born := _born_of(P_INJURED);
+    PERFORM _set_born(P_INJURED, (current_date - interval '19 years')::date);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_name_consent_set(P_INJURED, true, V) s;
+    PERFORM _assert(v_ok, format('db/47 (eighteen): a pupil of nineteen could not give his own consent (%s)', v_reason));
+    v_facts := public_name_facts(P_INJURED);
+    PERFORM _assert(v_facts -> 'consents' @> jsonb_build_array(jsonb_build_object('by', 'pupil', 'competent', true, 'givenOn', v_today)),
+      format('db/47 (eighteen): his own consent is not in the facts as competent: %s', v_facts));
+    -- (competent-live) competence is worked out on every read, from the
+    -- record as it stands: put his birthday back and the same consent is one
+    -- a sixteen-year-old gave, which counts for nothing
+    PERFORM _set_born(P_INJURED, v_born);
+    v_facts := public_name_facts(P_INJURED);
+    PERFORM _assert(v_facts -> 'consents' @> jsonb_build_array(jsonb_build_object('by', 'pupil', 'competent', false)),
+      format('db/47 (competent-live): a consent given "at eighteen" by a boy the record says is sixteen still counts: %s', v_facts));
+
+    -- ── The office, from its own forms (C1) ──
+    PERFORM _as(U_REGISTRAR);
+    -- (form-required) a yes from the office names the form
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_name_consent_set(P_OTHER, true, V, U_BEKKER) s;
+    PERFORM _assert(NOT v_ok AND v_reason = 'form_required' AND _consent_rows(P_OTHER) = 0,
+      format('db/47 (form-required): the office recorded a consent naming no form (ok %s, %s)', v_ok, v_reason));
+    -- (form-future) ...signed on a day that has happened
+    SELECT s.ok, s.reason INTO v_ok, v_reason
+      FROM public_name_consent_set(P_OTHER, true, V, U_BEKKER, 'Admission form 2026', current_date + 30) s;
+    PERFORM _assert(NOT v_ok AND v_reason = 'form_in_future' AND _consent_rows(P_OTHER) = 0,
+      format('db/47 (form-future): the office recorded a form dated next month (ok %s, %s)', v_ok, v_reason));
+    -- (office) ...and records it, on the guardian's behalf, form and date named
+    SELECT s.ok, s.reason INTO v_ok, v_reason
+      FROM public_name_consent_set(P_OTHER, true, V, U_BEKKER, 'Admission form 2026', current_date - 30) s;
+    v_row := _consent_last(P_OTHER);
+    PERFORM _assert(v_ok AND v_row.given_by = 'guardian' AND v_row.form_name = 'Admission form 2026'
+                    AND v_row.form_date = current_date - 30 AND v_row.recorded_by = U_REGISTRAR
+                    AND v_row.given_on = sa_today(),
+      format('db/47 (office): the office could not record a guardian''s consent from its form (ok %s, %s, %s)',
+             v_ok, v_reason, row(v_row.given_by, v_row.form_name, v_row.form_date, v_row.recorded_by, v_row.given_on)::text));
+    -- (office-no-link) ...but only for a guardian with a verified link to him
+    SELECT s.ok, s.reason INTO v_ok, v_reason
+      FROM public_name_consent_set(P_OTHER, true, V, U_WHIT, 'Admission form 2026', current_date) s;
+    PERFORM _assert(NOT v_ok AND v_reason = 'no_verified_link',
+      format('db/47 (office-no-link): the office recorded a consent from somebody who is not his guardian (ok %s, %s)', v_ok, v_reason));
+    -- (other-office) another school's office cannot
+    PERFORM _as(U_WES_ADM);
+    SELECT s.ok, s.reason INTO v_ok, v_reason
+      FROM public_name_consent_set(P_JW, false, V, U_WHIT) s;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted' AND _consent_open_rows(P_JW) = 1,
+      format('db/47 (other-office): Westville''s office withdrew a Hilton child''s consent (ok %s, %s)', v_ok, v_reason));
+    -- (coach) nor can a coach, either way in
+    PERFORM _as(U_COACH2);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_name_consent_set(P_JW, false, V, U_WHIT) s;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted',
+      format('db/47 (coach): a coach recorded a guardian''s answer (ok %s, %s)', v_ok, v_reason));
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_name_consent_set(P_JW, true, V) s;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted',
+      format('db/47 (coach): a coach consented for a boy he is no guardian of (ok %s, %s)', v_ok, v_reason));
+    -- (direct) the application has no way to write the table but the door
+    PERFORM _as(U_REGISTRAR);
+    v_raised := false;
+    BEGIN
+      INSERT INTO public_name_consent (player_id, given_by, giver_assignment_id, giver_link_id, version, given_on, recorded_by)
+      SELECT P_JW, 'guardian', g.assignment_id, g.id, V, sa_today(), U_REGISTRAR
+        FROM assignment_subject g WHERE g.player_id = P_JW LIMIT 1;
+    EXCEPTION WHEN insufficient_privilege THEN v_raised := true;
+    END;
+    PERFORM _assert(v_raised, 'db/47 (direct): the office wrote public_name_consent without its door');
+
+    -- ── Who reads a consent record ──
+    PERFORM _as(U_WHIT);
+    SELECT count(*) INTO n FROM public_name_consent;
+    PERFORM _assert(n = 1, format('db/47 (read-own): a guardian reads %s consent records, expected his own one', n));
+    PERFORM _as(U_REGISTRAR);
+    SELECT count(*) INTO n FROM public_name_consent WHERE player_id IN (P_JW, P_OTHER, P_INJURED);
+    PERFORM _assert(n = 3, format('db/47 (read-office): the office reads %s of the school''s 3 consent records', n));
+    PERFORM _as(U_COACH2);
+    SELECT count(*) INTO n FROM public_name_consent;
+    PERFORM _assert(n = 0, format('db/47 (read-coach): a coach reads %s consent records — they name a child''s guardian', n));
+
+    -- ── A "no" is immediate, and ends a record rather than deleting it (C3) ──
+    PERFORM _as(U_WHIT);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_name_consent_set(P_JW, false, V) s;
+    v_facts := public_name_facts(P_JW);
+    PERFORM _assert(v_ok AND _consent_rows(P_JW) = 1 AND _consent_open_rows(P_JW) = 0
+                    AND v_facts -> 'consents' = jsonb_build_array(jsonb_build_object(
+                          'by', 'guardian', 'competent', true, 'givenOn', v_today, 'endedOn', v_today)),
+      format('db/47 (withdraw): a withdrawal did not end the one record today (ok %s, %s rows, facts %s)', v_ok, _consent_rows(P_JW), v_facts));
+    -- (same-day) consenting again the same day names him again: the facts
+    -- carry his latest act, not a tie with his own withdrawal
+    SELECT s.ok INTO v_ok FROM public_name_consent_set(P_JW, true, V) s;
+    v_facts := public_name_facts(P_JW);
+    PERFORM _assert(v_ok AND _consent_rows(P_JW) = 2 AND jsonb_array_length(v_facts -> 'consents') = 1
+                    AND v_facts #>> '{consents,0,endedOn}' IS NULL,
+      format('db/47 (same-day): a same-day consent after a withdrawal is not his latest act (%s rows, facts %s)', _consent_rows(P_JW), v_facts));
+    -- (again) a second yes to the same wording is refused, not duplicated
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_name_consent_set(P_JW, true, V) s;
+    PERFORM _assert(NOT v_ok AND v_reason = 'already_given' AND _consent_open_rows(P_JW) = 1,
+      format('db/47 (again): a repeated consent was written (ok %s, %s)', v_ok, v_reason));
+    -- (refused) a "no" with nothing open is a record that ends the day it begins
+    PERFORM _as(U_SARAH);
+    SELECT s.ok INTO v_ok FROM public_name_consent_set(P_U16B, false, V) s;
+    v_row := _consent_last(P_U16B);
+    PERFORM _assert(v_ok AND v_row.end_reason = 'refused' AND v_row.given_on = sa_today() AND v_row.ended_on = sa_today(),
+      format('db/47 (refused): a refusal is not a record ending the day it begins: %s', row(v_row.end_reason, v_row.given_on, v_row.ended_on)::text));
+
+    -- ── The never-public mark (C5) ──
+    -- (mark-coach) a coach cannot set one
+    PERFORM _as(U_COACH2);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM player_never_public_set(P_2XI, 'verify-047: coach') s;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted' AND _mark_rows(P_2XI) = 0,
+      format('db/47 (mark-coach): a coach set a never-public mark (ok %s, %s)', v_ok, v_reason));
+    -- (mark-dos) the director of sport can, with a reason
+    PERFORM _as(U_SARAH);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM player_never_public_set(P_2XI, '   ') s;
+    PERFORM _assert(NOT v_ok AND v_reason = 'no_reason', format('db/47 (mark-reason): a mark with no reason was set (%s)', v_reason));
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM player_never_public_set(P_2XI, 'verify-047: a protection order') s;
+    PERFORM _assert(v_ok, format('db/47 (mark-dos): the director of sport could not set a mark (%s)', v_reason));
+    v_facts := public_name_facts(P_2XI);
+    PERFORM _assert((v_facts ->> 'neverPublic')::boolean,
+      format('db/47 (mark-facts): the facts do not carry the mark: %s', v_facts));
+    -- (reason-coach) the reason is unreadable by the coach of that boy's own side
+    PERFORM _as(U_COACH2);
+    SELECT count(*) INTO n FROM player_never_public;
+    PERFORM _assert(n = 0, format('db/47 (reason-coach): the 2XI coach reads %s never-public mark(s), reason and all', n));
+    -- ...or by a guardian, or by another school's office
+    FOREACH who IN ARRAY ARRAY[U_WHIT, U_WES_ADM, U_WES_PUB, U_WATCHER] LOOP
+      PERFORM _as(who);
+      SELECT count(*) INTO n FROM player_never_public;
+      PERFORM _assert(n = 0, format('db/47 (reason-others): %s reads %s never-public mark(s)', who, n));
+    END LOOP;
+    -- ...and readable by the people who set such marks
+    FOREACH who IN ARRAY ARRAY[U_SARAH, U_REGISTRAR, U_HEAD_M] LOOP
+      PERFORM _as(who);
+      SELECT count(*) INTO n FROM player_never_public WHERE player_id = P_2XI AND reason = 'verify-047: a protection order';
+      PERFORM _assert(n = 1, format('db/47 (reason-setters): %s, who may set a mark, cannot read this one', who));
+    END LOOP;
+    -- (facts-clean) the facts carry the three keys, the consents their four,
+    -- and never the reason, a date of birth or a guardian
+    PERFORM set_config('app.user_id', '', true);
+    FOREACH who IN ARRAY ARRAY[P_2XI, P_JW, P_INJURED, P_OTHER, P_U16B] LOOP
+      v_facts := public_name_facts(who);
+      PERFORM _assert(
+        (SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(v_facts) k) = ARRAY['consents', 'namesOff', 'neverPublic']
+        AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v_facts -> 'consents') c
+                         WHERE (SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(c) k)
+                               <> ARRAY['by', 'competent', 'endedOn', 'givenOn'])
+        AND v_facts::text NOT LIKE '%protection order%'
+        AND v_facts::text NOT LIKE ('%' || to_char(_born_of(who), 'YYYY-MM-DD') || '%')
+        AND v_facts::text !~* ('born|reason|guardian_|link|form|recorded|' || U_WHIT::text || '|' || U_BEKKER::text),
+        format('db/47 (facts-clean): the facts about %s carry more than the rule needs: %s', who, v_facts));
+    END LOOP;
+
+    -- ── Names off, per age group (C4) ──
+    PERFORM _as(U_COACH2);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_names_off_set(HIL, 'open', true) s;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted',
+      format('db/47 (names-coach): a coach switched names off for an age group (ok %s, %s)', v_ok, v_reason));
+    -- K Dlamini: U16B by registration, younger by birth. 'open' switched off
+    -- names him when he plays in his own sides and not when he plays up into
+    -- the 1st XI (the side's age group, §5a).
+    v_grp := birth_age_group(_born_of(P_U16B));
+    PERFORM _assert(v_grp NOT IN ('U16', 'open'), format('db/47: K Dlamini''s own age group is %s — the fixture needs one that is neither his side''s nor open', v_grp));
+    PERFORM _as(U_SARAH);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_names_off_set(HIL, 'open', true) s;
+    PERFORM _assert(v_ok, format('db/47 (names-dos): the director of sport could not switch names off (%s)', v_reason));
+    PERFORM _assert(NOT (public_name_facts(P_U16B) ->> 'namesOff')::boolean
+                    AND NOT (public_name_facts(P_U16B, 'U16B') ->> 'namesOff')::boolean,
+      'db/47 (names-own): switching the open age group off unnamed a boy playing in his own U16B');
+    PERFORM _assert((public_name_facts(P_U16B, '1XI') ->> 'namesOff')::boolean,
+      'db/47 (names-side): a boy playing up into the 1st XI was named with the open age group switched off');
+    -- (names-birth) his own age group by birth holds him back in any side
+    SELECT s.ok INTO v_ok FROM public_names_off_set(HIL, v_grp, true) s;
+    PERFORM _assert(v_ok AND (public_name_facts(P_U16B, 'U16B') ->> 'namesOff')::boolean,
+      format('db/47 (names-birth): %s switched off did not hold back a %s boy playing U16B', v_grp, v_grp));
+    -- (names-back) switched back on, the switch is off again
+    SELECT s.ok INTO v_ok FROM public_names_off_set(HIL, v_grp, false) s;
+    PERFORM _assert(v_ok AND NOT (public_name_facts(P_U16B, 'U16B') ->> 'namesOff')::boolean,
+      'db/47 (names-back): switching an age group back did not name him again');
+    -- (names-school) Westville's switches are not Hilton's: D Mkhize is named
+    PERFORM _assert(NOT (public_name_facts(P_WES, '1XI') ->> 'namesOff')::boolean,
+      'db/47 (names-school): Hilton''s open switch held back a Westville boy');
+    PERFORM _as(U_COACH2);
+    SELECT count(*) INTO n FROM public_names_off WHERE school_id = HIL;
+    PERFORM _assert(n = 2, format('db/47 (names-read): a coach reads %s of his school''s 2 names-off settings', n));
+
+    -- ── Publishing, side by side (L1, L5) ──
+    -- (publish-default) nothing is published until somebody publishes it
+    PERFORM _assert(NOT fixture_side_published(M_47, 'home') AND NOT fixture_side_published(M_47, 'away')
+                    AND NOT competition_published(C_KZN),
+      'db/47 (publish-default): a fixture or competition nobody published reads as published');
+    PERFORM _assert((SELECT column_default FROM information_schema.columns
+                      WHERE table_schema = 'public' AND table_name = 'fixture_publication' AND column_name = 'published') = 'false'
+                    AND (SELECT column_default FROM information_schema.columns
+                      WHERE table_schema = 'public' AND table_name = 'competition_publication' AND column_name = 'published') = 'false',
+      'db/47 (publish-default): a publication row does not default to unpublished');
+    -- (away-home) the away school cannot publish the home side...
+    PERFORM _as(U_WES_PUB);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM fixture_publish(M_47, 'home', true) s;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted' AND NOT fixture_side_published(M_47, 'home'),
+      format('db/47 (away-home): Westville published Hilton''s side (ok %s, %s)', v_ok, v_reason));
+    -- (away-own) ...and publishes its own
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM fixture_publish(M_47, 'away', true) s;
+    PERFORM _assert(v_ok AND fixture_side_published(M_47, 'away') AND NOT fixture_side_published(M_47, 'home'),
+      format('db/47 (away-own): Westville could not publish its own side, or doing so published Hilton''s (ok %s, %s)', v_ok, v_reason));
+    -- (home-away) the home school cannot publish the away side either
+    PERFORM _as(U_SARAH);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM fixture_publish(M_47, 'away', false) s;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted' AND fixture_side_published(M_47, 'away'),
+      format('db/47 (home-away): Hilton unpublished Westville''s side (ok %s, %s)', v_ok, v_reason));
+    SELECT s.ok INTO v_ok FROM fixture_publish(M_47, 'home', true) s;
+    PERFORM _assert(v_ok AND fixture_side_published(M_47, 'home'), 'db/47 (home-own): Hilton could not publish its own side');
+    -- (off-platform) a side whose school is not on the platform has nobody to publish it
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM fixture_publish(M_DUTY, 'away', true) s;
+    PERFORM _assert(NOT v_ok AND v_reason = 'side_not_on_platform',
+      format('db/47 (off-platform): a side with no school on the platform was published (ok %s, %s)', v_ok, v_reason));
+    -- (publish-coach) a coach and the office do not publish
+    FOREACH who IN ARRAY ARRAY[U_COACH2, U_REGISTRAR] LOOP
+      PERFORM _as(who);
+      SELECT s.ok INTO v_ok FROM fixture_publish(M_47, 'home', false) s;
+      PERFORM _assert(NOT v_ok AND fixture_side_published(M_47, 'home'),
+        format('db/47 (publish-coach): %s, who holds no broadcast.publish, unpublished a side', who));
+    END LOOP;
+    -- (competition) the league's page: its administrator, and nobody at a school
+    FOREACH who IN ARRAY ARRAY[U_SARAH, U_COACH2, U_REGISTRAR] LOOP
+      PERFORM _as(who);
+      SELECT s.ok INTO v_ok FROM competition_publish(C_KZN, true) s;
+      PERFORM _assert(NOT v_ok AND NOT competition_published(C_KZN),
+        format('db/47 (competition-others): %s published a league it does not run', who));
+    END LOOP;
+    PERFORM _as(U_LEAGUE);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM competition_publish(C_KZN, true) s;
+    PERFORM _assert(v_ok AND competition_published(C_KZN),
+      format('db/47 (competition): the league administrator could not publish its page (%s)', v_reason));
+    -- (publication-read) each school reads its own side's row
+    PERFORM _as(U_WES_PUB);
+    SELECT count(*) INTO n FROM fixture_publication WHERE match_id = M_47;
+    PERFORM _assert(n = 1, format('db/47 (publication-read): Westville reads %s publication rows of the fixture, expected its own', n));
+
+    -- ── The mark ends; the row stays ──
+    PERFORM _as(U_COACH2);
+    SELECT s.ok INTO v_ok FROM player_never_public_end(P_2XI) s;
+    PERFORM _assert(NOT v_ok AND (public_name_facts(P_2XI) ->> 'neverPublic')::boolean,
+      'db/47 (end-coach): a coach ended a never-public mark');
+    PERFORM _as(U_HEAD_M);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM player_never_public_end(P_2XI) s;
+    PERFORM _assert(v_ok AND NOT (public_name_facts(P_2XI) ->> 'neverPublic')::boolean AND _mark_rows(P_2XI) = 1,
+      format('db/47 (end): the principal''s ending did not lift the mark and keep its row (ok %s, %s, %s rows)', v_ok, v_reason, _mark_rows(P_2XI)));
+
+    -- ── Signed out: nothing (§1 "public" means signed out) ──
+    PERFORM set_config('app.user_id', '', true);
+    FOREACH v_grp IN ARRAY ARRAY['public_name_consent', 'player_never_public', 'public_names_off',
+                                 'fixture_publication', 'competition_publication'] LOOP
+      EXECUTE format('SELECT count(*) FROM %I', v_grp) INTO n;
+      PERFORM _assert(n = 0 AND _count_rows(v_grp) > 0,
+        format('db/47 (signed-out): an unauthenticated session reads %s of %s''s %s rows', n, v_grp, _count_rows(v_grp)));
+    END LOOP;
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_name_consent_set(P_JW, false, V) s;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_signed_in',
+      format('db/47 (signed-out): an unauthenticated session answered for a child (%s)', v_reason));
+    SELECT s.ok INTO v_ok FROM fixture_publish(M_47, 'home', false) s;
+    PERFORM _assert(NOT v_ok, 'db/47 (signed-out): an unauthenticated session unpublished a fixture');
+    SELECT s.ok INTO v_ok FROM player_never_public_set(P_JW, 'signed out') s;
+    PERFORM _assert(NOT v_ok, 'db/47 (signed-out): an unauthenticated session set a never-public mark');
   END;
   PERFORM set_config('app.user_id', '', true);
 
