@@ -1,11 +1,15 @@
 import { useState } from "react";
 import { D, T, textOn } from "../design/tokens.js";
+import { useTheme } from "../design/theme.js";
 import { humanDate } from "../lib/format.js";
 import { useLive } from "../lib/live.js";
 import { canScore, holdsCapability } from "../rbac/index.js";
 import { schoolsWhere } from "../lib/session.js";
-import { Badge, Btn, Card, Pill, SectionHeader, StatusDot } from "../ui/primitives.jsx";
-import { ScorecardModal, WeatherChip } from "./shared.jsx";
+import { Btn, Card, Pill, SectionHeader, StatusDot } from "../ui/primitives.jsx";
+import { WeatherChip } from "./shared.jsx";
+import { MatchView } from "./matchcentre/MatchView.jsx";
+import { SideName } from "./matchcentre/bits.jsx";
+import { sidesOf } from "../lib/matchCentre.js";
 import { PostMatchReport } from "./postmatch.jsx";
 import { OppositionDossier } from "./dossier.jsx";
 import { DutyRoster } from "./duties.jsx";
@@ -17,6 +21,7 @@ import { useRows, useWeather } from "../lib/live.js";
 import { Icon } from "../ui/icons.jsx";
 
 function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
+  useTheme();
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
   const COMPETITIONS = useRows("competitions", role);
@@ -33,7 +38,10 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
   const WEATHER = useWeather(role);
   const [filter, setFilter] = useState("all");
   const [selMatch, setSelMatch] = useState(null);
-  const [cardM,    setCardM]    = useState(null);
+  // The fixture open in the Match Centre's own view (views/matchcentre/):
+  // the board, the scorecard, the commentary and the rest, in six tabs. It
+  // replaced the Scorecard modal (step 3c).
+  const [openM,    setOpenM]    = useState(null);
   // The Post-Match Report (SCRBRD-082) — a fixture's own screen, opened from
   // its card the same way the Scorecard is. Offered only once a match is
   // complete: a live fixture's report would be reporting on a game still
@@ -61,6 +69,15 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
   // same way canScore() offers a scorer button the database may still refuse.
   const [dossierM, setDossierM] = useState(null);
   const filtered = MATCHES.filter(m=>filter==="all"||m.status===filter);
+  if (openM) {
+    // The row as the list has it now, so a live fixture that has moved on
+    // (a result, a new status) is the one the view shows.
+    const fresh = MATCHES.find((m) => m.id === openM.id) ?? openM;
+    return (
+      <MatchView match={fresh} role={role} onClose={() => setOpenM(null)} canScoreIt={canScore(role)}
+        onOpenScorer={onOpenScorer} onNavProfile={onNavProfile}/>
+    );
+  }
   return (
     <div className="os-page">
       <SectionHeader title="Match Centre"
@@ -84,7 +101,6 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
           }}>{f}</button>
         ))}
       </div>
-      {cardM&&<ScorecardModal match={cardM} role={role} onClose={()=>setCardM(null)} onNavProfile={(id)=>{setCardM(null);onNavProfile&&onNavProfile(id);}}/>}
       {reportM&&<PostMatchReport match={reportM} role={role} onClose={()=>setReportM(null)} onNavProfile={(id)=>{setReportM(null);onNavProfile&&onNavProfile(id);}}/>}
       {dossierM&&<OppositionDossier match={dossierM} role={role} onClose={()=>setDossierM(null)}/>}
       {scheduleOpen&&(
@@ -99,6 +115,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
             const w = WEATHER[m.id];
             const isLive = m.status==="live";
             const isSel = selMatch?.id===m.id;
+            const sides = sidesOf(m);
             return (
               <Card key={m.id} data-testid={`match-card-${m.id}`} onClick={()=>setSelMatch(isSel?null:m)} sx={{
                 background:isLive?`linear-gradient(135deg,${D.emerald}08,${D.surf1})`:D.surf1,
@@ -107,14 +124,14 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
                 <div style={{padding:"14px 16px"}}>
                   <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"10px",flexWrap:"wrap"}}>
                     <StatusDot status={m.status}/>
-                    <span style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:isLive?D.emerald:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase"}}>{m.status}</span>
-                    {comp&&<Badge color={D.sky}>{comp.name}</Badge>}
+                    <span style={{...T.role.label,color:isLive?T.brand.accentText:T.content.secondary}}>{m.status}</span>
+                    {comp&&<span style={{...T.role.body,fontSize:"12px",color:T.content.secondary}}>{comp.name}</span>}
                     {w&&<WeatherChip w={w} compact/>}
                     <span style={{marginLeft:"auto",fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{humanDate(m.date)}</span>
                   </div>
                   <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",gap:"12px",alignItems:"center"}}>
                     <div>
-                      <div style={{fontFamily:D.head,fontSize:"15px",fontWeight:700,color:D.textPrimary}}>{m.homeTeam}</div>
+                      <div style={{fontFamily:D.body,fontSize:"15px",fontWeight:700,color:D.textPrimary}}><SideName side={sides.home}/></div>
                       {m.scorecard?.home&&<div style={{...T.role.figure.md,color:isLive?D.emerald:D.textPrimary,marginTop:"4px"}}>{m.scorecard.home.score} <span style={{fontSize:"12px",color:D.textMuted}}>({m.scorecard.home.overs})</span></div>}
                     </div>
                     <div style={{textAlign:"center"}}>
@@ -122,7 +139,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
                       {m.result&&<div style={{fontFamily:D.body,fontSize:"12px",color:isLive?D.emerald:D.amber,marginTop:"4px",maxWidth:"120px"}}>{m.result}</div>}
                     </div>
                     <div style={{textAlign:"right"}}>
-                      <div style={{fontFamily:D.head,fontSize:"15px",fontWeight:700,color:D.textPrimary}}>{m.awayTeam}</div>
+                      <div style={{fontFamily:D.body,fontSize:"15px",fontWeight:700,color:D.textPrimary}}><SideName side={sides.away}/></div>
                       {m.scorecard?.away&&<div style={{...T.role.figure.md,color:D.textPrimary,marginTop:"4px"}}>{m.scorecard.away.score} <span style={{fontSize:"12px",color:D.textMuted}}>({m.scorecard.away.overs})</span></div>}
                     </div>
                   </div>
@@ -139,16 +156,14 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
                           and being wrong here shows a button that then says
                           no, never the wrong data. */}
                       {(isLive||m.status==="upcoming")&&canScore(role)&&<Btn variant="success" onClick={e=>{e.stopPropagation();onOpenScorer&&onOpenScorer(m);}}>{isLive?"Open Live Scorer →":"Start Scoring →"}</Btn>}
-                      {/* Offered for any match that has been played or is being
-                          played — NOT gated on `m.scorecard`, which is a mock-only
+                      {/* The fixture's own Match Centre (step 3c), for every
+                          fixture — NOT gated on `m.scorecard`, which is a mock-only
                           field: asMatch() sets it null for every live row because
                           a score is derived from the ball log rather than stored.
-                          Gating on it meant that in a signed-in session the button
-                          never appeared at all, so the real scorecard was
-                          unreachable for every real fixture. The modal reads the
-                          log itself and says so honestly when a match has not been
-                          scored yet, which is the right answer to give here. */}
-                      {(isLive||m.status==="complete")&&<Btn variant="ghost" onClick={e=>{e.stopPropagation();setCardM(m);}}>{m.status==="complete"?"Scorecard":"Live Scorecard"}</Btn>}
+                          The view reads the log itself and says so honestly when
+                          a match has not been scored yet, and a fixture still to
+                          be played has its match details to show. */}
+                      <Btn variant="ghost" data-testid={`mc-open-${m.id}`} onClick={e=>{e.stopPropagation();setOpenM(m);}}>Open match</Btn>
                       {/* SCRBRD-082. Only once the match is complete — the
                           same reasoning canScore()'s own comment gives for
                           every other offered-but-checked-server-side button:

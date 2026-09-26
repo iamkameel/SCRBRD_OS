@@ -1,16 +1,9 @@
-import { useState, useMemo, useEffect } from "react";
-
 import { ROLES } from "../design/roles.js";
-import { D, T } from "../design/tokens.js";
+import { D, T, textOn } from "../design/tokens.js";
 import { mulberry32, strSeed } from "../lib/rng.js";
-import { can, filterRecord } from "../rbac/index.js";
-import { BatsmanChart, BowlerChart, ManhattanChart, ShotHeatMap, ShotSpider, ShotWheel, WormChart } from "../scorer/charts.jsx";
-import { seedCompletedMatch } from "../scorer/seed.js";
-import { Badge, Modal, Pill, SkillBar } from "../ui/primitives.jsx";
-import { useRows } from "../lib/live.js";
+import { can } from "../rbac/index.js";
+import { Modal, Pill } from "../ui/primitives.jsx";
 import { teamCodeIn } from "@scrbrd/policy/teams";
-import { api, signedIn } from "../lib/api.js";
-import { deriveInnings, fromRow } from "@scrbrd/scoring";
 import { Icon, isIcon } from "../ui/icons.jsx";
 
 // ══════════════════════════════════════════════════════
@@ -29,9 +22,9 @@ function WeatherChip({ w, compact }) {
     <div style={{display:"flex",alignItems:"center",gap:"5px",padding:"3px 8px",borderRadius:D.pill,
       background:bc+"14",border:`1px solid ${bc}28`}}>
       <span style={{fontSize:"13px",color:bc}}><Icon name={sky}/></span>
-      <span style={{fontFamily:D.mono,fontSize:"10px",color:bc,fontWeight:600}}>{w.tempC}°C</span>
-      <span style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted}}>{w.condition}</span>
-      {!w.playable && <span style={{fontFamily:D.head,fontSize:"9px",color:D.roseText,fontWeight:700,letterSpacing:"0.05em"}}><Icon name="triangle-alert"/> NOT PLAYABLE</span>}
+      <span style={{fontFamily:D.mono,fontSize:"12px",color:textOn(bc),fontWeight:600}}>{w.tempC}°C</span>
+      <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{w.condition}</span>
+      {!w.playable && <span style={{fontFamily:D.body,fontSize:"12px",color:D.roseText,fontWeight:700}}><Icon name="triangle-alert"/> Not playable</span>}
     </div>
   );
   return (
@@ -43,18 +36,18 @@ function WeatherChip({ w, compact }) {
           <div style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary}}>{w.condition}</div>
         </div>
         <div style={{marginLeft:"auto",padding:"5px 12px",borderRadius:D.pill,background:bc+"18",border:`1px solid ${bc}30`}}>
-          <span style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:bc}}>{w.playable?"✓ PLAYABLE":<><Icon name="triangle-alert"/> NOT PLAYABLE</>}</span>
+          <span style={{fontFamily:D.body,fontSize:"12px",fontWeight:700,color:textOn(bc)}}>{w.playable?<><Icon name="circle-check"/> Playable</>:<><Icon name="triangle-alert"/> Not playable</>}</span>
         </div>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"var(--g-4,repeat(4,1fr))",gap:"8px",marginBottom:"10px"}}>
         {[["droplet","Humidity",`${w.humidity}%`],["wind","Wind",`${w.windKph} km/h ${w.windDir}`],["umbrella","Rain",`${w.rainChancePct}%`],["sun","UV",`${w.uvIndex}/11`]].map(([ic,l,v])=>(
           <div key={l} style={{textAlign:"center",padding:"7px 4px",background:D.surf3,borderRadius:D.sm}}>
             <div style={{fontFamily:D.mono,fontSize:"12px",fontWeight:500,color:D.textPrimary}}>{v}</div>
-            <div style={{fontFamily:D.body,fontSize:"9px",color:D.textMuted,marginTop:"2px"}}><Icon name={ic}/> {l}</div>
+            <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"2px"}}><Icon name={ic}/> {l}</div>
           </div>
         ))}
       </div>
-      <div style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary,background:D.surf3,padding:"8px 10px",borderRadius:D.sm,fontStyle:"italic"}}>
+      <div style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,background:D.surf3,padding:"8px 10px",borderRadius:D.sm,fontStyle:"italic"}}>
         <Icon name="clipboard-list"/> {w.forecast}
       </div>
     </div>
@@ -234,272 +227,4 @@ function PlayerProfileModal({ player, role, skills = {}, onClose, onFullProfile 
   );
 }
 
-function ScorecardModal({ match, onClose, role, onNavProfile }){
-  const [tab, setTab] = useState(0);
-  const [prof, setProf] = useState(null);
-  // Whose shots the wheel is showing; null is the whole innings. Cleared when
-  // the innings tab changes — a batter picked in the first innings did not bat
-  // in the second, and carrying the selection across would show an empty wheel
-  // that looks like a batter who never scored rather than one who never batted.
-  const [wheelOf, setWheelOf] = useState(null);
-  // Read here, in a component, where hooks are legal — then hand the rows to
-  // the helpers below. Every one of these was a scoped() call inside a plain
-  // function a moment ago, which is how a module-scope helper ended up making
-  // authorization decisions.
-  const PLAYERS      = useRows("players", role);
-  const COMPETITIONS = useRows("competitions", role);
-  const STAFF        = useRows("staff", role);
-  // Name → RBAC-gated profile opener. Opponent (synthetic) names have no
-  // profile; roles without players-resource access get no links at all.
-  const linkFor = name => {
-    if(!can(role,"players","r").allowed) return null;
-    const p = PLAYERS.find(x=>x.name===name);
-    return p ? ()=>setProf(filterRecord(role,"players",p)) : null;
-  };
-  const isLive = match.status!=="complete";
-
-  // The real ball log, for a session that can actually read one. A signed-in
-  // session never sees a reconstruction of a real fixture — the same rule
-  // useRatings()/useNotes() (lib/live.js) already apply to a rating and a
-  // coach's note: no mock fallback once there is a session, because a
-  // fabricated number beside a real name reads exactly like a true one. Demo
-  // matches (signed out) have no ball_event rows anywhere to fetch, so they
-  // keep the seeded reconstruction below — a declared demo affordance, not a
-  // claim about a real match.
-  const [replay, setReplay] = useState(null);
-  // Who stood in the middle. A separate read from the ball log, and allowed to
-  // fail on its own: an unappointed panel is a blank line on the card, never a
-  // reason to withhold the scorecard.
-  const [officials, setOfficials] = useState([]);
-  useEffect(() => {
-    if (!signedIn()) { setReplay(null); setOfficials([]); return; }
-    let cancelled = false;
-    setReplay({ loading: true, error: null, innings: null });
-    (async () => {
-      try {
-        const { events: rows } = await api(`/api/matches/${match.id}/events`);
-        if (cancelled) return;
-        const evs = (rows || []).map(fromRow);
-        const innings = [0, 1]
-          .map((i) => evs.filter((e) => e.innings === i))
-          .filter((list) => list.length)
-          .map((list) => deriveInnings(list));
-        setReplay({ loading: false, error: null, innings });
-      } catch (e) {
-        if (!cancelled) setReplay({ loading: false, error: e.code || "unreachable", innings: null });
-      }
-    })();
-    (async () => {
-      try {
-        const { rows } = await api(`/api/read/officials?matchId=${match.id}`);
-        if (!cancelled) setOfficials(rows || []);
-      } catch { if (!cancelled) setOfficials([]); }
-    })();
-    return () => { cancelled = true; };
-  }, [match.id]);
-
-  const seeded = useMemo(()=>{
-    if (replay) return null; // a real session renders from `replay` below
-    const inns=[];
-    if(match.scorecard?.home) inns.push({...parseScore(match.scorecard.home.score), balls:parseBalls(match.scorecard.home.overs)});
-    if(match.scorecard?.away) inns.push({...parseScore(match.scorecard.away.score), balls:parseBalls(match.scorecard.away.overs)});
-    return seedCompletedMatch({
-      matchId: match.id, team1: match.homeTeam, team2: match.awayTeam,
-      squad1: teamSquad(match.homeTeam, PLAYERS), squad2: teamSquad(match.awayTeam, PLAYERS),
-      inns: inns.map(x=>({ runs:x.runs, wickets:x.wkts, balls:x.balls })),
-      liveLast: isLive,
-    });
-  },[match.id,isLive,PLAYERS,replay]);
-
-  const innings = replay ? (replay.innings || []) : (seeded?.innings || []);
-  const cfg = replay ? { overs: match.overs || innings[0]?.overs || 20 } : seeded?.cfg;
-  const inn = innings[tab];
-
-  if (replay?.loading) return (
-    <Modal title="Scorecard" onClose={onClose} width="720px">
-      <div style={{textAlign:"center",padding:"40px 0",color:D.textMuted,fontFamily:D.body,fontSize:"13px"}}>Loading scorecard…</div>
-    </Modal>
-  );
-  if (replay && replay.error) return (
-    <Modal title="Scorecard" onClose={onClose} width="720px">
-      <div style={{textAlign:"center",padding:"40px 0",color:D.textMuted,fontFamily:D.body,fontSize:"13px"}}>Could not load the scorecard ({replay.error}).</div>
-    </Modal>
-  );
-  // No innings, from either source. Said out loud rather than rendered as an
-  // empty modal: the Match Centre now offers this card for any match that is
-  // live or complete, so "opened too early" is a normal thing to land on and
-  // a blank sheet would read as the app being broken.
-  if (!replay?.error && innings.length===0) return (
-    <Modal title="Scorecard" onClose={onClose} width="720px">
-      <div style={{textAlign:"center",padding:"40px 0",color:D.textMuted,fontFamily:D.body,fontSize:"13px"}}>Nothing has been scored yet.</div>
-    </Modal>
-  );
-  const comp = COMPETITIONS.find(c=>c.id===match.competition);
-  // `match.scorerId` is a mock-only field — no live fixture has ever carried
-  // one — so the demo keeps its staff lookup and a real session uses the
-  // appointment sheet, which is where officials actually live now.
-  const scorerStaff = STAFF.find(s=>s.id===match.scorerId);
-  const DUTY_LABEL = { umpire:"Umpire", third_umpire:"Third umpire", scorer:"Scorer", referee:"Referee" };
-  const extrasSum = i => Object.values(i.extras).reduce((a,b)=>a+b,0);
-  const legal = i => i.ballLog.filter(b=>b.type!=="Wd"&&b.type!=="Nb");
-  const topBat = i => [...i.batsmen].sort((a,b)=>b.runs-a.runs)[0];
-  const topBowl = i => [...i.bowlers].sort((a,b)=>b.wickets-a.wickets||a.runs-b.runs)[0];
-  const Row = ({cells, head, hi, onName}) => (
-    <div style={{display:"grid",gridTemplateColumns:"minmax(0,2.4fr) 44px 40px 34px 34px 52px",gap:"6px",padding:head?"8px 12px":"9px 12px",
-      borderTop:head?"none":`1px solid ${D.border}`,background:head?D.surf2:hi?D.indigo+"0a":"transparent",alignItems:"center"}}>
-      {cells.map((c,i)=>(
-        <div key={i} style={{fontFamily:i===0?D.body:D.mono,fontSize:head?"9px":i===0?"12px":"11px",
-          fontWeight:head?700:i===0?500:400,letterSpacing:head?"0.08em":0,textTransform:head?"uppercase":"none",
-          color:head?D.textMuted:i===0?D.textPrimary:D.textSecondary,textAlign:i===0?"left":"right",
-          overflow:"hidden",textOverflow:"ellipsis",whiteSpace:i===0?"normal":"nowrap"}}>
-          {i===0&&onName
-            ? <button onClick={onName} className="pressBtn" style={{background:"none",border:"none",padding:0,cursor:"pointer",fontFamily:D.body,fontSize:"12px",fontWeight:600,color:D.sky,textDecoration:"underline",textDecorationStyle:"dotted",textUnderlineOffset:"3px",textAlign:"left"}}>{c}</button>
-            : c}
-        </div>
-      ))}
-    </div>
-  );
-  const Kpi = ({l,v,c}) => (
-    <div style={{flex:1,minWidth:"86px",background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,padding:"8px 10px",textAlign:"center"}}>
-      <div style={{fontFamily:D.mono,fontSize:"15px",fontWeight:700,color:c||D.textPrimary}}>{v}</div>
-      <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",color:D.textMuted,marginTop:"2px"}}>{l}</div>
-    </div>
-  );
-  const SecLbl = ({children}) => (
-    <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:D.textMuted,margin:"14px 0 6px"}}>{children}</div>
-  );
-  if(!inn) return null;
-  const lb = legal(inn);
-  const dots = lb.filter(b=>b.type==="run"&&b.value===0).length;
-  const bnds = lb.filter(b=>b.value===4||b.value===6).length;
-  const tb = topBat(inn), tw = topBowl(inn);
-  return (
-    <Modal title={isLive?"Live Scorecard & Analysis":"Match Scorecard & Analysis"} onClose={onClose} width="720px">
-      {/* Result banner */}
-      <div style={{textAlign:"center",marginBottom:"12px"}}>
-        <div style={{fontFamily:D.head,fontSize:"15px",fontWeight:800,color:D.textPrimary}}>{match.homeTeam} <span style={{color:D.textMuted,fontSize:"11px"}}>vs</span> {match.awayTeam}</div>
-        <div style={{display:"flex",justifyContent:"center",gap:"18px",marginTop:"6px",fontFamily:D.mono,fontSize:"16px",color:D.textPrimary}}>
-          {match.scorecard?.home&&<span>{match.scorecard.home.score} <span style={{fontSize:"11px",color:D.textMuted}}>({match.scorecard.home.overs})</span></span>}
-          {match.scorecard?.away&&<span>{match.scorecard.away.score} <span style={{fontSize:"11px",color:D.textMuted}}>({match.scorecard.away.overs})</span></span>}
-        </div>
-        {isLive
-          ? <div style={{display:"flex",gap:"6px",justifyContent:"center",alignItems:"center",flexWrap:"wrap",marginTop:"4px"}}>
-              <span style={{display:"flex",alignItems:"center",gap:"5px",padding:"3px 10px",borderRadius:D.pill,background:D.emerald+"18",border:`1px solid ${D.emerald}33`,fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",color:D.emerald}}>
-                <div className="live-dot"/>IN PROGRESS
-              </span>
-              {match.result&&<span style={{padding:"3px 10px",borderRadius:D.pill,background:D.sky+"14",border:`1px solid ${D.sky}30`,fontFamily:D.body,fontSize:"11px",color:D.sky}}><Icon name="cloud-lightning"/> {match.result}</span>}
-            </div>
-          : match.result&&<Badge color={D.amber}>{match.result}</Badge>}
-      </div>
-      <div style={{display:"flex",gap:"6px",flexWrap:"wrap",justifyContent:"center",marginBottom:"12px"}}>
-        {comp&&<Pill color={D.violet}><Icon name="trophy"/> {comp.name}</Pill>}
-        <Pill color={D.sky}><Icon name="map-pin"/> {match.venue}</Pill>
-        <Pill color={D.textMuted}><Icon name="calendar"/> {match.date}</Pill>
-        {officials.map((o)=>(
-          <Pill key={o.duty+o.person_name} color={o.duty==="scorer"?D.orange:D.sky}>
-            <Icon name={o.duty==="scorer"?"scorebook":"hand"}/> {o.person_name}
-            <span style={{color:D.textMuted}}> · {DUTY_LABEL[o.duty]??o.duty}</span>
-          </Pill>
-        ))}
-        {!officials.length&&scorerStaff&&<Pill color={D.orange}><Icon name="scorebook"/> {scorerStaff.name}</Pill>}
-      </div>
-      {/* Match worm — both innings */}
-      {innings.length>1&&(
-        <>
-          <SecLbl>Match worm</SecLbl>
-          <WormChart innings={innings} curIn={innings.length-1} match={cfg}/>
-        </>
-      )}
-      {/* Innings tabs */}
-      <div style={{display:"flex",gap:"6px",margin:"14px 0 10px"}}>
-        {innings.map((x,i)=>(
-          <button key={i} onClick={()=>{setTab(i);setWheelOf(null);}} className="pressBtn" style={{flex:1,padding:"7px 10px",borderRadius:D.md,cursor:"pointer",
-            background:tab===i?D.indigo+"18":D.surf2,border:`1px solid ${tab===i?D.indigo+"44":D.border}`,
-            fontFamily:D.head,fontSize:"10px",fontWeight:700,color:tab===i?D.textPrimary:D.textMuted}}>
-            {i+1}ST INN · {x.battingTeam}{!x.complete&&<span style={{color:D.emerald}}> · LIVE</span>}
-          </button>
-        ))}
-      </div>
-      {/* Innings analysis KPIs */}
-      <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginBottom:"10px"}}>
-        <Kpi l="Run rate" v={((inn.runs/Math.max(1,inn.balls))*6).toFixed(2)} c={D.emerald}/>
-        <Kpi l="Dot %" v={`${Math.round(dots/Math.max(1,lb.length)*100)}%`}/>
-        <Kpi l="Boundaries" v={bnds} c={D.indigo}/>
-        <Kpi l="Top bat" v={tb?`${tb.runs}`:"–"} c={D.amber}/>
-        <Kpi l="Best bowl" v={tw?`${tw.wickets}/${tw.runs}`:"–"} c={D.rose}/>
-      </div>
-      {/* Per-innings charts from the scorer engine */}
-      <SecLbl>Runs per over</SecLbl>
-      <ManhattanChart inn={inn} match={cfg}/>
-      <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"10px",marginTop:"10px"}}>
-        <div><SecLbl>Batting impact</SecLbl><BatsmanChart inn={inn}/></div>
-        <div><SecLbl>Bowling economy</SecLbl><BowlerChart inn={inn}/></div>
-      </div>
-      {/* Where the runs went. Whole innings by default; one batter when a
-          reader picks one — which is the question a parent actually opens
-          this modal to ask, and until now only the scorer could answer. */}
-      <SecLbl>Shot placement</SecLbl>
-      <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginBottom:"8px"}}>
-        {[{id:null,name:"Whole innings"},...inn.batsmen.filter(b=>b.balls>0)].map((b)=>(
-          <button key={b.id??"all"} onClick={()=>setWheelOf(b.id??null)} className="pressBtn" style={{
-            padding:"5px 11px",borderRadius:D.pill,cursor:"pointer",
-            background:wheelOf===(b.id??null)?D.indigo+"1e":D.surf2,
-            border:`1px solid ${wheelOf===(b.id??null)?D.indigo+"55":D.border}`,
-            fontFamily:D.body,fontSize:"11px",fontWeight:500,
-            color:wheelOf===(b.id??null)?D.textPrimary:D.textMuted}}>
-            {b.name}
-          </button>
-        ))}
-      </div>
-      <ShotWheel inn={inn} playerId={wheelOf}
-        title={wheelOf?(inn.batsmen.find(b=>b.id===wheelOf)?.name??"Wagon wheel"):"Wagon wheel"}/>
-      <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"10px",marginTop:"10px"}}>
-        <ShotHeatMap inn={inn} playerId={wheelOf}/>
-        <ShotSpider inn={inn} playerId={wheelOf}/>
-      </div>
-      {/* Batting card */}
-      <SecLbl>Batting</SecLbl>
-      <div style={{border:`1px solid ${D.border}`,borderRadius:D.lg,overflow:"hidden",marginBottom:"12px"}}>
-        <Row head cells={["Batter","R","B","4s","6s","SR"]}/>
-        {inn.batsmen.map((b,i)=>(
-          <div key={i}>
-            <Row hi={b.runs>=50} onName={linkFor(b.name)} cells={[b.name,b.runs,b.balls,b.fours,b.sixes,b.balls?((b.runs/b.balls)*100).toFixed(1):"–"]}/>
-            <div style={{padding:"0 12px 7px",fontFamily:D.body,fontSize:"10px",color:b.status==="out"?D.textMuted:D.emerald,marginTop:"-4px"}}>{b.status==="out"?b.dismissal:"not out"}</div>
-          </div>
-        ))}
-        <div style={{display:"flex",justifyContent:"space-between",padding:"10px 12px",borderTop:`1px solid ${D.borderMed}`,background:D.surf2}}>
-          <span style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary}}>Extras {extrasSum(inn)} (w {inn.extras.wide})</span>
-          <span style={{fontFamily:D.mono,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>{inn.runs}/{inn.wickets} <span style={{fontSize:"10px",color:D.textMuted}}>({fmtOvOS(inn.balls)} ov{inn.complete?"":", in progress"})</span></span>
-        </div>
-      </div>
-      {inn.fow.length>0&&(
-        <div style={{marginBottom:"12px"}}>
-          <SecLbl>Fall of wickets</SecLbl>
-          <div style={{fontFamily:D.mono,fontSize:"11px",color:D.textSecondary,lineHeight:1.9}}>
-            {inn.fow.map((f,i)=>{
-              const lk = linkFor(f.batsman);
-              return (
-                <span key={i}>{i>0&&"  ·  "}{f.runs}/{f.wickets} (
-                  {lk?<button onClick={lk} className="pressBtn" style={{background:"none",border:"none",padding:0,cursor:"pointer",fontFamily:D.mono,fontSize:"11px",color:D.sky,textDecoration:"underline",textDecorationStyle:"dotted",textUnderlineOffset:"3px"}}>{f.batsman}</button>:f.batsman}
-                , {f.overs})</span>
-              );
-            })}
-          </div>
-        </div>
-      )}
-      {prof&&<PlayerProfileModal player={prof} role={role}
-        onClose={()=>setProf(null)}
-        onFullProfile={onNavProfile?(id)=>{setProf(null);onNavProfile(id);}:null}/>}
-      {/* Bowling card */}
-      <SecLbl>Bowling</SecLbl>
-      <div style={{border:`1px solid ${D.border}`,borderRadius:D.lg,overflow:"hidden"}}>
-        <Row head cells={["Bowler","O","M","R","W","Econ"]}/>
-        {inn.bowlers.map((bw,i)=>(
-          <Row key={i} hi={bw.wickets>=3} onName={linkFor(bw.name)} cells={[bw.name,fmtOvOS(bw.balls),bw.maidens,bw.runs,bw.wickets,(bw.runs/Math.max(1,bw.balls/6)).toFixed(2)]}/>
-        ))}
-      </div>
-    </Modal>
-  );
-}
-
-export { OPP_POOL, PlayerProfileModal, ScorecardModal, WeatherChip, fmtOvOS, parseBalls, parseScore, skillsFor, teamSquad };
+export { OPP_POOL, PlayerProfileModal, WeatherChip, fmtOvOS, parseBalls, parseScore, skillsFor, teamSquad };

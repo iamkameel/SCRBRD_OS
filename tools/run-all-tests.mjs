@@ -48,6 +48,9 @@ const SUITES = [
   // (SCRBRD-082/084) — no DOM, no database, just the fold's own shapes.
   ["post-match-report", "apps/web/test/post-match-report.test.mjs"],
   ["season-awards",     "apps/web/test/season-awards.test.mjs"],
+  // The Match Centre's own derivations (redesign step 3c): sides named in
+  // full and by code, the match line, the scorecard's parts, the break.
+  ["match-centre",      "apps/web/test/match-centre.test.mjs"],
   // Renders components, so it needs the .jsx transform hook.
   ["system",   "apps/web/test/system.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Renders the scorer's review sheet, so it needs the same transform.

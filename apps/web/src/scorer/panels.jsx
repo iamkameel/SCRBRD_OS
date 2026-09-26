@@ -1,5 +1,7 @@
-import { useState, useEffect, useRef } from "react";
-import { chargedToBowler, normaliseDismissal, placementFromTap, screenAngle, DISMISSAL_LABEL } from "@scrbrd/scoring";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { chargedToBowler, normaliseDismissal, placementFromTap, screenAngle } from "@scrbrd/scoring";
+import { deriveCommentary } from "@scrbrd/scoring/commentary";
+import { nameBook } from "../lib/matchCentre.js";
 import { D, T, clr, inkOn, px, textOn } from "../design/tokens.js";
 import { can } from "../rbac/index.js";
 import { CX, CY, LK_COLS, R_BND, R_IN, R_MID, R_PITCH, SEGS, ballAngle, heatColor, lineKey, pieSlice, ringArc, toXY, wagEnd } from "./field.js";
@@ -457,8 +459,24 @@ function detectMilestone(ball,inn){
 /* ═══════════════════════════════════════════════════════
    COMMENTARY CARD  (top-level, used inside Score tab)
 ═══════════════════════════════════════════════════════ */
-function CommentaryCard({inn}){
-  const log=[...(inn?.ballLog||[])].reverse().slice(0,8);
+// The base lines are the shared generator's (@scrbrd/scoring/commentary,
+// SCRBRD-098): the words the Match Centre's Commentary tab shows, from the
+// same log, so the scorer and the ground read the same thing. The scorer is
+// the one reader who is told health and discipline (`sensitive`): who retired
+// hurt, why a bowler came off. The optional AI line for the latest ball is as
+// it was: asked for once, shown over the base line when it comes back, and
+// never shown anywhere but here.
+function CommentaryCard({inn,innings,events}){
+  const items=useMemo(()=>{
+    const logs=events??[];
+    if(!logs.some(l=>l?.length))return[];
+    const nameOf=nameBook(innings??[inn]);
+    return deriveCommentary(logs,{nameOf:(ref)=>nameOf(ref),sensitive:true});
+  // The fold is derived from `events`; the names come with it.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[events]);
+  const log=[...items].reverse().slice(0,8);
+  const entryOf=(item)=>(inn?.ballLog||[]).find(b=>b.id!=null&&(item.key===`e:${b.id}`));
   const[aiLines,setAiLines]=useState({});
   const[loading,setLoading]=useState(false);
   // Generate AI commentary for the latest ball when ballLog changes
@@ -475,24 +493,13 @@ function CommentaryCard({inn}){
     });
   },[lastBallKey]);
   const getBallKey=(b)=>b.over+"_"+b.ballInOver;
-  const descBall=(b)=>{
-    if(b.type==="W")return "WICKET — "+(DISMISSAL_LABEL[b.dismissal]??b.dismissal)+(b.outAt?" at the "+(b.outAt==="bowler_end"?"bowler's":"striker's")+" end":"");
-    if(b.type==="Wd")return "Wide ball";
-    if(b.type==="Nb")return "No Ball ("+(b.nbType||"front foot").replace("_"," ")+"), "+(b.value||0)+"+1 runs"+(b.nbRuns?(b.nbRuns==="leg_byes"?" (leg byes)":" (byes)"):"");
-    if(b.type==="Pen")return "Penalty "+b.value+" runs — "+(b.reason||"");
-    if(b.type==="B")return "Bye — "+b.value+" run"+(b.value!==1?"s":"");
-    if(b.type==="LB")return "Leg Bye — "+b.value+" run"+(b.value!==1?"s":"");
-    if(b.value===6)return "SIX! Maximum";
-    if(b.value===4)return "FOUR! Boundary";
-    if(b.value===0)return "Dot ball";
-    return b.value+" run"+(b.value!==1?"s":"");
-  };
+  const lastBall=inn?.ballLog?.[inn.ballLog.length-1];
   return (
     <Card style={{overflow:"hidden"}}>
       <div style={{padding:"10px 14px 9px",borderBottom:"1px solid "+D.border,
         display:"flex",alignItems:"center",gap:"8px"}}>
         <Lbl>Commentary</Lbl>
-        {loading&&<div style={{fontFamily:D.body,fontSize:"9px",color:D.textMuted,fontStyle:"italic"}}>AI writing…</div>}
+        {loading&&<div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,fontStyle:"italic"}}>AI writing…</div>}
         <div className="liveDot" style={{width:"5px",height:"5px",borderRadius:"50%",
           background:D.emerald,marginLeft:"auto",flexShrink:0}}/>
       </div>
@@ -501,40 +508,40 @@ function CommentaryCard({inn}){
           No balls bowled yet.
         </div>
       )}
-      {log.map((b,i)=>{
-        const shot=b.shot?ALL_SHOTS_FLAT.find(s=>s.id===b.shot):null;
-        const seg=b.seg!=null?SEGS[b.seg]:null;
+      {log.map((item,i)=>{
+        const b=entryOf(item);
+        const shot=b?.shot?ALL_SHOTS_FLAT.find(s=>s.id===b.shot):null;
+        const seg=b?.seg!=null?SEGS[b.seg]:null;
         const first=i===0;
-        const isWkt=b.type==="W";
-        const isSix=b.value===6&&b.type==="run";
-        const isFour=b.value===4&&b.type==="run";
+        const isWkt=item.kind==="wicket";
+        const isSix=item.kind==="six";
+        const isFour=item.kind==="four";
         const accentCol=isWkt?D.rose:isSix?D.amber:isFour?D.sky:null;
-        const bkey=getBallKey(b);
-        const aiLine=aiLines[bkey];
+        const aiLine=b?aiLines[getBallKey(b)]:null;
         // Left accent stripe colour
         const stripeCol=isWkt?D.rose:isSix?D.amber:isFour?D.sky:first?D.indigo+"55":"transparent";
         return (
-          <div key={i} style={{
+          <div key={item.key} data-testid="pad-commentary-line" data-kind={item.kind} style={{
             display:"flex",alignItems:"flex-start",gap:"0",
             background:first?(isWkt?D.rose+"07":isSix?D.amber+"07":isFour?D.sky+"06":D.indigo+"07"):"transparent",
             borderBottom:i<log.length-1?"1px solid "+D.border:"none",
             opacity:Math.max(0.25,1-i*0.1),
             borderLeft:"3px solid "+stripeCol,
           }}>
-            <div style={{padding:"9px 10px 9px 12px",flexShrink:0}}>
-              <BallDot ball={b} size={22}/>
+            <div style={{padding:"9px 10px 9px 12px",flexShrink:0,width:"22px"}}>
+              {b&&<BallDot ball={b} size={22}/>}
             </div>
             <div style={{flex:1,minWidth:0,padding:"9px 12px 9px 0"}}>
               {/* Over + ball indicator */}
-              <div style={{display:"flex",alignItems:"center",gap:"6px",marginBottom:"3px"}}>
-                <span style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted,flexShrink:0}}>
-                  {(b.over+1)}.{b.ballInOver+1}
+              {b&&<div style={{display:"flex",alignItems:"center",gap:"6px",marginBottom:"3px"}}>
+                <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted,flexShrink:0}}>
+                  {item.over}.{item.ball}
                 </span>
-                {b.bowlerApproach&&<Badge color={D.amber} sx={{fontSize:"9px",padding:"1px 5px"}}>{b.bowlerApproach==="Around the wicket"?"Around":"Over"}</Badge>}
-                {isWkt&&<Badge color={D.rose} sx={{fontSize:"9px",padding:"1px 5px"}}>WICKET</Badge>}
-                {isSix&&<Badge color={D.amber} sx={{fontSize:"9px",padding:"1px 5px"}}>SIX</Badge>}
-                {isFour&&<Badge color={D.sky} sx={{fontSize:"9px",padding:"1px 5px"}}>FOUR</Badge>}
-              </div>
+                {b.bowlerApproach&&<Badge color={D.amber} sx={{fontSize:"12px",padding:"1px 5px"}}>{b.bowlerApproach==="Around the wicket"?"Around":"Over"}</Badge>}
+                {isWkt&&<Badge color={D.rose} sx={{fontSize:"12px",padding:"1px 5px"}}>WICKET</Badge>}
+                {isSix&&<Badge color={D.amber} sx={{fontSize:"12px",padding:"1px 5px"}}>SIX</Badge>}
+                {isFour&&<Badge color={D.sky} sx={{fontSize:"12px",padding:"1px 5px"}}>FOUR</Badge>}
+              </div>}
               {/* AI commentary line */}
               {aiLine&&(
                 <div style={{fontFamily:D.body,fontSize:first?"13px":"12px",fontWeight:first?500:400,
@@ -542,21 +549,20 @@ function CommentaryCard({inn}){
                   {aiLine}
                 </div>
               )}
-              {/* Fallback mechanical description */}
+              {/* The shared generator's line */}
               {!aiLine&&(
-                <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:first?600:400,
+                <div style={{fontFamily:D.body,fontSize:"13px",fontWeight:first?600:400,lineHeight:1.45,
                   color:accentCol||D.textPrimary}}>
-                  {first&&loading?"Generating commentary…":descBall(b)}
+                  {first&&loading&&b===lastBall?"Generating commentary…":item.text}
                 </div>
               )}
               {/* Metadata tags */}
-              <div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,marginTop:"2px",
+              {b&&<div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"2px",
                 display:"flex",gap:"7px",flexWrap:"wrap",alignItems:"center"}}>
                 {shot&&<span style={{color:shot.color}}>{shot.label}</span>}
                 {seg&&<span><Icon name="map-pin"/>{" "+seg.label+(b.zone==="boundary"?" · Boundary":"")}</span>}
                 {b.bowlerApproach&&<span style={{color:D.amber}}><Icon name="corner-right-down"/>{" "+b.bowlerApproach}</span>}
-                <span>{"Ov "+(b.over+1)+"."+(b.ballInOver+1)}</span>
-              </div>
+              </div>}
             </div>
           </div>
         );

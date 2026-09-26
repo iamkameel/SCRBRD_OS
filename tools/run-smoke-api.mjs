@@ -166,6 +166,9 @@ const WALKS = [
 const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-dossier", "browser-handover", "browser-innings-end", "browser-quarantine", "browser-drs", "browser-dismissals", "browser-discipline", "browser-support", "browser-seasons", "browser-rulebook", "browser-duties", "browser-fixture-create", "browser-held", "browser-toss", "browser-offline-undo", "browser-dayof",
   // SCRBRD-082 / SCRBRD-084: the Post-Match Report and the Season Awards tab.
   "browser-report", "browser-awards",
+  // Redesign step 3c / SCRBRD-098: the Match Centre's six tabs, the
+  // scorecard's layout and the shared commentary, on a real scored match.
+  "browser-matchcentre",
   // SCRBRD-068/069/080/081: the pad's four new Laws questions.
   "browser-pad-laws",
   // SCRBRD-078/075/079: a scorer's day with poor signal — the pad loads and

@@ -703,7 +703,11 @@ function deliveryLine(ev, entry, c) {
         case DISMISSAL.CAUGHT: {
           const shot = ev.shot != null && Object.hasOwn(SHOT_WORDS, ev.shot) && !NO_STROKE.has(ev.shot) ? SHOT_WORDS[ev.shot] : null;
           const where = area == null ? "" : area === "the keeper" ? (F ? "" : " by the keeper") : ` at ${area}`;
-          method = `${shot ? `${shot} and ` : ""}caught${F ? ` by ${F}` : ""}${where}`;
+          // The catcher named as the bowler is named: caught and bowled. A
+          // role word never matches ("a fielder", "the bowler"), so a public
+          // line does not claim it.
+          method = F != null && F === B ? `${shot ? `${shot} and ` : ""}caught and bowled`
+            : `${shot ? `${shot} and ` : ""}caught${F ? ` by ${F}` : ""}${where}`;
           break;
         }
         case DISMISSAL.STUMPED: method = `stumped${F ? ` by ${F}` : ""}`; break;

@@ -948,6 +948,11 @@ button{touch-action:manipulation}
 @media(max-width:640px){
   .os-shell{--g-2:1fr;--g-3:1fr}
 }
+/* §10 item 6 — a side's full name where there is room, its short code
+   (school.code, "HIL 1XI") where there is not. Both are in the page; one
+   shows. display:none, so a screen reader reads only the one on screen. */
+.mc-short{display:none}
+@media(max-width:640px){.mc-full{display:none}.mc-short{display:inline}}
 
 /* ── Print (SCRBRD-082) ──────────────────────────────────────────
    Nothing else in the product ships a print stylesheet, so this is one

@@ -41,7 +41,7 @@
 import {
   createLucideIcon,
   ArrowUpRight, Award, Bandage, Banknote, Bell, BookOpen, Brain, Cake, Calendar,
-  CalendarDays, ChartColumn, CircleCheck, Clapperboard, ClipboardList, CloudLightning,
+  CalendarDays, ChartColumn, ChevronDown, ChevronLeft, CircleCheck, Clapperboard, ClipboardList, CloudLightning,
   CloudRain, CloudSun, Compass, CornerRightDown, Crown, Droplet, Dumbbell, Eye, Flame,
   Footprints, Gavel, GraduationCap, Hammer, Hand, HandHeart, HardHat, Handshake,
   HeartPulse, Hourglass, House, IdCard, Key, KeyRound, Landmark, LayoutDashboard,
@@ -168,7 +168,7 @@ const GLYPH_NAMES = Object.freeze(Object.keys(GLYPHS));
 const LUCIDE = {
   "armchair": Armchair, "arrow-up-right": ArrowUpRight, "award": Award, "bandage": Bandage,
   "banknote": Banknote, "bell": Bell, "book-open": BookOpen, "brain": Brain, "cake": Cake,
-  "calendar": Calendar, "calendar-days": CalendarDays, "chart-column": ChartColumn,
+  "calendar": Calendar, "calendar-days": CalendarDays, "chart-column": ChartColumn, "chevron-down": ChevronDown, "chevron-left": ChevronLeft,
   "circle-check": CircleCheck, "clapperboard": Clapperboard, "clipboard-list": ClipboardList,
   "cloud-lightning": CloudLightning, "cloud-rain": CloudRain, "cloud-sun": CloudSun,
   "compass": Compass, "corner-right-down": CornerRightDown, "crown": Crown, "droplet": Droplet,

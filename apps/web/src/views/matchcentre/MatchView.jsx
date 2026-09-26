@@ -1,0 +1,249 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import { T } from "../../design/tokens.js";
+import { useTheme } from "../../design/theme.js";
+import { deriveMatch, fromRow } from "@scrbrd/scoring";
+import { deriveCommentary } from "@scrbrd/scoring/commentary";
+import { api, signedIn } from "../../lib/api.js";
+import { useRows, useWeather } from "../../lib/live.js";
+import { inningsPhase, matchLine, nameBook, sidesOf, teamOf } from "../../lib/matchCentre.js";
+import { seedCompletedMatch } from "../../scorer/seed.js";
+import { parseBalls, parseScore, teamSquad } from "../shared.jsx";
+import { useIsMobile } from "../../shell/MobileNav.jsx";
+import { Icon } from "../../ui/icons.jsx";
+import { AnalyticsTab, CommentaryTab, DetailsTab, PartnershipsTab, SummaryTab } from "./tabs.jsx";
+import { ScorecardTab } from "./scorecard.jsx";
+import { Quiet, SideName } from "./bits.jsx";
+
+/**
+ * THE MATCH CENTRE — one fixture, followed (DESIGN_DIRECTION §10, step 3c).
+ *
+ * Kameel's 2.0 spectator Match Center, rebuilt on the redesign's foundations:
+ * the sides named in full where there is room and by code where not, the
+ * match line under the title, and six tabs in the prototype's order —
+ * Summary (the Board, with its Tier 2 line), Scorecard (p7–p9), Commentary
+ * (the shared generator, SCRBRD-098), Partnerships, Analytics and Match
+ * details.
+ *
+ * SIGNED IN. Everything here is read from the match's own ball log —
+ * `GET /api/matches/:id/events`, folded by @scrbrd/scoring — the read the
+ * scorecard always used. Names are the ones the log carries (the squads the
+ * scorer's pad wrote), exactly as the scorecard shows them; the commentary
+ * takes them through its `nameOf` hook, which is the door a future public
+ * page (SCRBRD-083 step 3) will pass publicName() through instead. Nothing
+ * here is public.
+ *
+ * Signed out (the demonstration), the fixture's summary score is
+ * reconstructed by the seeder, as the Scorecard always was, and says so; it
+ * has no log, so it has no commentary.
+ */
+
+const TABS = [
+  { id: "summary",      label: "Summary" },
+  { id: "scorecard",    label: "Scorecard" },
+  { id: "commentary",   label: "Commentary" },
+  { id: "partnerships", label: "Partnerships" },
+  { id: "analytics",    label: "Analytics" },
+  { id: "details",      label: "Match details" },
+];
+
+/** How often a live match is read again while it is open. */
+const LIVE_REFRESH_MS = 30000;
+
+/**
+ * The match's log and its fold. A signed-in session reads the real log and
+ * never falls back to a reconstruction (a fabricated number beside a real
+ * name reads exactly like a true one); the demonstration seeds one.
+ */
+function useMatchLog(match, players) {
+  const [state, setState] = useState(() => ({ loading: signedIn(), error: null, events: null }));
+  const live = match.status === "live";
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (!live || !signedIn()) return undefined;
+    const t = setInterval(() => { if (!document.hidden) setTick((x) => x + 1); }, LIVE_REFRESH_MS);
+    return () => clearInterval(t);
+  }, [live]);
+  useEffect(() => {
+    if (!signedIn()) { setState({ loading: false, error: null, events: null }); return undefined; }
+    let cancelled = false;
+    setState((s) => ({ ...s, loading: s.events == null, error: null }));
+    (async () => {
+      try {
+        const { events: rows } = await api(`/api/matches/${match.id}/events`);
+        if (!cancelled) setState({ loading: false, error: null, events: (rows || []).map(fromRow) });
+      } catch (e) {
+        if (!cancelled) setState((s) => ({ ...s, loading: false, error: e.code || "unreachable" }));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [match.id, tick]);
+
+  const demo = useMemo(() => {
+    if (signedIn()) return null;
+    const inns = [];
+    if (match.scorecard?.home) inns.push({ ...parseScore(match.scorecard.home.score), balls: parseBalls(match.scorecard.home.overs) });
+    if (match.scorecard?.away) inns.push({ ...parseScore(match.scorecard.away.score), balls: parseBalls(match.scorecard.away.overs) });
+    if (!inns.length) return { innings: [], cfg: { overs: match.overs || 20 } };
+    return seedCompletedMatch({
+      matchId: match.id, team1: match.homeTeam, team2: match.awayTeam,
+      squad1: teamSquad(match.homeTeam, players), squad2: teamSquad(match.awayTeam, players),
+      inns: inns.map((x) => ({ runs: x.runs, wickets: x.wkts, balls: x.balls })),
+      liveLast: match.status !== "complete",
+    });
+  }, [match, players]);
+
+  const folded = useMemo(() => (state.events ? deriveMatch(state.events) : null), [state.events]);
+  return {
+    loading: state.loading, error: state.error, events: state.events, demo: !!demo,
+    innings: folded ? folded.innings : (demo?.innings ?? []),
+    result: folded ? folded.result : null,
+    overs: match.overs || folded?.innings?.[0]?.overs || demo?.cfg?.overs || 20,
+  };
+}
+
+/** The tablist: arrow keys move along it, Home and End to its ends (WAI-ARIA tabs). */
+function TabBar({ tab, setTab }) {
+  const refs = useRef({});
+  const onKey = (e, i) => {
+    const n = TABS.length;
+    const to = e.key === "ArrowRight" ? (i + 1) % n : e.key === "ArrowLeft" ? (i - 1 + n) % n
+      : e.key === "Home" ? 0 : e.key === "End" ? n - 1 : null;
+    if (to == null) return;
+    e.preventDefault();
+    setTab(TABS[to].id);
+    refs.current[TABS[to].id]?.focus();
+  };
+  return (
+    <div role="tablist" aria-label="Match Centre" data-testid="mc-tabs"
+      style={{ display: "flex", gap: T.space.xs, overflowX: "auto", borderBottom: `1px solid ${T.line.normal}`,
+        margin: `${T.space.lg} 0`, scrollbarWidth: "thin" }}>
+      {TABS.map((t, i) => {
+        const on = t.id === tab;
+        return (
+          <button key={t.id} ref={(el) => { refs.current[t.id] = el; }} role="tab" type="button"
+            id={`mc-tab-${t.id}`} data-testid={`mc-tab-${t.id}`} aria-selected={on} aria-controls={`mc-panel-${t.id}`}
+            tabIndex={on ? 0 : -1} onClick={() => setTab(t.id)} onKeyDown={(e) => onKey(e, i)}
+            className="os-state"
+            style={{ minHeight: "44px", padding: `0 ${T.space.lg}`, flexShrink: 0, cursor: "pointer",
+              background: "transparent", border: "none", borderBottom: `2px solid ${on ? T.brand.accentText : "transparent"}`,
+              marginBottom: "-1px", color: on ? T.content.primary : T.content.secondary,
+              fontFamily: T.type.body, fontSize: "14px", fontWeight: on ? 600 : 500, whiteSpace: "nowrap" }}>
+            {t.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreIt }) {
+  useTheme();
+  const COMPETITIONS = useRows("competitions", role);
+  const PLAYERS = useRows("players", role);
+  const WEATHER = useWeather(role);
+  const log = useMatchLog(match, PLAYERS);
+  const phone = useIsMobile(640);
+  const [tab, setTab] = useState("summary");
+  const played = log.innings.filter(Boolean);
+  // The innings the Scorecard, Partnerships and Analytics tabs are on: the
+  // one in play, until the reader picks another.
+  const [picked, setPicked] = useState(null);
+  const inningsSel = picked ?? Math.max(0, played.length - 1);
+
+  const sides = sidesOf(match);
+  const comp = COMPETITIONS.find((c) => c.id === match.competition);
+  const weather = WEATHER[match.id] ?? null;
+  const phase = inningsPhase(played, log.result);
+  const line = matchLine({ match, competition: comp?.name ?? null, weather, phase: log.demo ? null : phase });
+
+  // The commentary: the shared generator, over the same log the scorecard
+  // folds, with the names the log carries. Health and discipline are not
+  // said here (a spectator surface); the pad, the scorer's own, says them.
+  const commentary = useMemo(() => {
+    if (!log.events) return [];
+    const nameOf = nameBook(played, PLAYERS);
+    return deriveCommentary(log.events, {
+      nameOf: (ref) => nameOf(ref),
+      teamName: (_key, name) => teamOf(match, name).full,
+    });
+    // `played` is derived from log.events; PLAYERS is the roster read.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [log.events, PLAYERS, match.id]);
+
+  const result = log.result
+    ? (log.result.winner == null ? "Match tied" : `${teamOf(match, log.result.winner).full} won by ${log.result.margin}`)
+    : (match.status === "complete" ? match.result : null);
+  const isLive = match.status === "live";
+
+  const ctx = { match, role, innings: played, result, commentary, events: log.events, demo: log.demo, overs: log.overs,
+    inningsSel, setInningsSel: setPicked, phone, players: PLAYERS, weather, competition: comp, onNavProfile, setTab };
+
+  return (
+    <div className="os-page" data-testid="match-view" data-match={match.id}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: T.space.sm, flexWrap: "wrap", marginBottom: T.space.md }}>
+        <button type="button" onClick={onClose} data-testid="mc-back" className="pressBtn os-state"
+          style={{ minHeight: "44px", padding: `0 ${T.space.md}`, display: "inline-flex", alignItems: "center", gap: T.space.xs,
+            background: "transparent", border: `1px solid ${T.line.normal}`, borderRadius: T.radius.pill, cursor: "pointer",
+            color: T.content.primary, fontFamily: T.type.body, fontSize: "14px", fontWeight: 500 }}>
+          <Icon name="chevron-left"/> All matches
+        </button>
+        {canScoreIt && (isLive || match.status === "upcoming") && onOpenScorer && (
+          <button type="button" onClick={() => onOpenScorer(match)} className="pressBtn"
+            style={{ minHeight: "44px", padding: `0 ${T.space.lg}`, background: T.brand.green, color: T.surface.canvas,
+              border: "none", borderRadius: T.radius.pill, cursor: "pointer", fontFamily: T.type.body, fontSize: "14px", fontWeight: 600 }}>
+            {isLive ? "Open scorer" : "Start scoring"}
+          </button>
+        )}
+      </div>
+
+      <header style={{ display: "grid", gap: T.space.sm }}>
+        <div style={{ display: "flex", alignItems: "center", gap: T.space.sm, flexWrap: "wrap" }}>
+          <span data-testid="mc-status" style={{ ...T.role.label, color: isLive ? T.brand.accentText : T.content.secondary,
+            display: "inline-flex", alignItems: "center", gap: T.space.xs }}>
+            {isLive && <span className="live-dot" aria-hidden="true"/>}
+            {isLive ? "Live" : match.status === "complete" ? "Result" : "Fixture"}
+          </span>
+          {log.demo && <span style={{ ...T.role.label, color: T.content.tertiary }}>Demonstration</span>}
+        </div>
+        <h1 data-testid="mc-title" style={{ ...T.role.title.md, fontSize: phone ? "18px" : "22px", color: T.content.primary, margin: 0 }}>
+          {sides.home.full} <span style={{ color: T.content.tertiary, fontWeight: 400 }}>v</span> {sides.away.full}
+        </h1>
+        {played.length > 0 && (
+          <div data-testid="mc-scores" style={{ display: "grid", gap: "2px" }}>
+            {played.map((inn, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: T.space.md, maxWidth: "520px" }}>
+                <span style={{ ...T.role.body, color: T.content.secondary, minWidth: 0 }}>
+                  <SideName side={teamOf(match, inn.battingTeam)}/>
+                </span>
+                <span style={{ ...T.role.figure.sm, fontSize: "16px", color: T.content.primary, whiteSpace: "nowrap" }}>
+                  {inn.runs}/{inn.wickets} <span style={{ color: T.content.tertiary }}>({oversShort(inn.balls)})</span>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+        {result && <p data-testid="mc-result" style={{ ...T.role.body, fontWeight: 600, color: T.content.primary, margin: 0 }}>{result}</p>}
+        {line && <p data-testid="mc-match-line" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{line}</p>}
+      </header>
+
+      <TabBar tab={tab} setTab={setTab}/>
+
+      <div role="tabpanel" id={`mc-panel-${tab}`} aria-labelledby={`mc-tab-${tab}`} data-testid={`mc-panel-${tab}`} tabIndex={0}
+        style={{ outline: "none" }}>
+        {log.loading ? <Quiet>Loading the match…</Quiet>
+          : log.error ? <Quiet>Could not load this match ({log.error}). This is not the same as there being nothing.</Quiet>
+          : tab === "summary" ? <SummaryTab {...ctx}/>
+          : tab === "scorecard" ? <ScorecardTab {...ctx}/>
+          : tab === "commentary" ? <CommentaryTab {...ctx}/>
+          : tab === "partnerships" ? <PartnershipsTab {...ctx}/>
+          : tab === "analytics" ? <AnalyticsTab {...ctx}/>
+          : <DetailsTab {...ctx}/>}
+      </div>
+    </div>
+  );
+}
+
+/** "17.5", or "20" for whole overs. @param {number} balls */
+const oversShort = (balls) => (balls % 6 === 0 ? String(balls / 6) : `${Math.floor(balls / 6)}.${balls % 6}`);
+
+export { MatchView };

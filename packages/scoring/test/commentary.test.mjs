@@ -169,6 +169,10 @@ group("A. Every event kind has its line, with the fold's figures");
     const out = deriveCommentary([...openA(), I(ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: d, fielder: FIELDER }))], { nameOf });
     ok(`${d}: said`, re.test(ofKind(out, K.WICKET)[0]?.text ?? ""), ofKind(out, K.WICKET)[0]?.text);
   }
+  seq = 250;
+  const cab = deriveCommentary([...openA(), I(ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: "caught", fielder: TYPED[0] }))], { nameOf });
+  ok("caught by the bowler is caught and bowled", /, caught and bowled\./.test(ofKind(cab, K.WICKET)[0]?.text ?? ""), ofKind(cab, K.WICKET)[0]?.text);
+  ok("...but never between role words", !/caught and bowled/.test(texts(deriveCommentary([...openA(), I(ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: "caught", fielder: TYPED[0] }))]))));
 }
 {
   // A change of bowler: during an over, with the reason only when sensitive;

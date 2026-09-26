@@ -1862,7 +1862,7 @@ function SCRBRD({resume,onSignIn,onExit}={}){
             <div className="pro-score-grid">
               {/* Left column: fixed scoring panel */}
               <ScoringPanel
-                inn={inn} innings={innings} curIn={curIn} match={match}
+                inn={inn} innings={innings} events={events} curIn={curIn} match={match}
                 hubStage={hubStage} hubShot={hubShot} hubApproach={hubApproach}
                 selSeg={selSeg}
                 fieldView={fieldView} setFieldView={setFieldView}
