@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { D, textOn } from "../design/tokens.js";
+import { D, T, textOn } from "../design/tokens.js";
 import { CX, CY, LK_COLS, R_BND, R_IN, R_MID, R_PITCH, SEGS, ballAngle, lineKey, toXY, wagEnd } from "./field.js";
 import { RR, SR } from "./format.js";
 import { IntelPanel } from "./panels.jsx";
 import { buildSignals } from "./signals.js";
 import { Badge, Card, Lbl, SignalBar } from "./ui.jsx";
 import { batHandOf, hasPoint, positionName, screenAngle, shotDensity, directionalProfile, DISMISSAL_LABEL, placementEvidence, NOT_CAPTURED, PLACEMENT_FIELD, runsOffBat } from "@scrbrd/scoring";
+import { Icon } from "../ui/icons.jsx";
 
 /* ═══════════════════════════════════════════════════════
    INTEL DASHBOARD TAB
@@ -328,12 +329,12 @@ function ShotWheel({inn,playerId=null,title="Wagon wheel"}){
           <svg viewBox="0 0 300 300" style={{width:"100%",height:"100%",display:"block"}}
             role="img"
             aria-label={`Wagon wheel: ${drawn.length} shot${drawn.length===1?"":"s"}, ${exact} placed exactly, ${runs} runs`}>
-            <circle cx={CX} cy={CY} r={R_BND+3} fill="#070d09" stroke={`${D.amber}30`} strokeWidth="1"/>
+            <circle cx={CX} cy={CY} r={R_BND+3} fill={T.field.ground} stroke={`${D.amber}30`} strokeWidth="1"/>
             <circle cx={CX} cy={CY} r={R_MID} fill="none" stroke={`${D.amber}30`} strokeWidth="1" strokeDasharray="4 3"/>
-            <circle cx={CX} cy={CY} r={R_IN} fill="none" stroke="rgba(255,255,255,.08)" strokeWidth="1" strokeDasharray="3 4"/>
+            <circle cx={CX} cy={CY} r={R_IN} fill="none" stroke={T.field.rule} strokeWidth="1" strokeDasharray="3 4"/>
             {/* Sector guides, faint. Orientation only — the shots are the data. */}
             {SEGS.map(s=>{const[x,y]=toXY(s.angle-15,R_BND);return(
-              <line key={`g${s.id}`} x1={CX} y1={CY} x2={x} y2={y} stroke="rgba(255,255,255,.05)" strokeWidth="0.5"/>);})}
+              <line key={`g${s.id}`} x1={CX} y1={CY} x2={x} y2={y} stroke={T.field.hairline} strokeWidth="0.5"/>);})}
             {drawn.map((b,i)=>{
               const{xy:[ex,ey],synthetic}=wagEnd(ballAngle(b,batHandOf(inn,b.strikerId)),b);
               const col=LK_COLS[lineKey(b)];
@@ -354,7 +355,7 @@ function ShotWheel({inn,playerId=null,title="Wagon wheel"}){
               const{xy:[ex,ey]}=wagEnd(ballAngle(b,batHandOf(inn,b.strikerId)),b);
               return(<circle key={`d${i}`} cx={ex} cy={ey} r={b.value===6?5:3.5} fill={LK_COLS[lineKey(b)]} opacity="0.95"/>);
             })}
-            <rect x={CX-4.5} y={CY-R_PITCH} width={9} height={R_PITCH*2} rx="2.5" fill="#7c6e45" stroke={`${D.amber}60`} strokeWidth="0.7"/>
+            <rect x={CX-4.5} y={CY-R_PITCH} width={9} height={R_PITCH*2} rx="2.5" fill={T.field.pitch} stroke={`${D.amber}60`} strokeWidth="0.7"/>
           </svg>
         </div>
       )}
@@ -449,7 +450,7 @@ function ShotHeatMap({inn,playerId=null,title="Where he makes contact"}){
           <svg viewBox="0 0 300 300" style={{width:"100%",height:"100%",display:"block"}} role="img"
             aria-label={`Contact density: ${d.n} placed shots, bandwidth ${d.bandwidth}`}>
             <defs><clipPath id={`heat-clip-${playerId??"all"}`}><circle cx={CX} cy={CY} r={R_BND}/></clipPath></defs>
-            <circle cx={CX} cy={CY} r={R_BND+3} fill="#070d09" stroke={`${D.amber}30`} strokeWidth="1"/>
+            <circle cx={CX} cy={CY} r={R_BND+3} fill={T.field.ground} stroke={`${D.amber}30`} strokeWidth="1"/>
             <g clipPath={`url(#heat-clip-${playerId??"all"})`}>
               {cells.map((c,i)=>{
                 const px=CX+(c.x-c.size/2)*R_BND, py=CY+(c.y-c.size/2)*R_BND, w=c.size*R_BND;
@@ -459,9 +460,9 @@ function ShotHeatMap({inn,playerId=null,title="Where he makes contact"}){
                 </rect>);
               })}
             </g>
-            <circle cx={CX} cy={CY} r={R_MID} fill="none" stroke="rgba(255,255,255,.12)" strokeWidth="1" strokeDasharray="4 3"/>
-            <circle cx={CX} cy={CY} r={R_IN} fill="none" stroke="rgba(255,255,255,.10)" strokeWidth="1" strokeDasharray="3 4"/>
-            <rect x={CX-4.5} y={CY-R_PITCH} width={9} height={R_PITCH*2} rx="2.5" fill="#7c6e45" stroke={`${D.amber}60`} strokeWidth="0.7"/>
+            <circle cx={CX} cy={CY} r={R_MID} fill="none" stroke={T.field.rule} strokeWidth="1" strokeDasharray="4 3"/>
+            <circle cx={CX} cy={CY} r={R_IN} fill="none" stroke={T.field.rule} strokeWidth="1" strokeDasharray="3 4"/>
+            <rect x={CX-4.5} y={CY-R_PITCH} width={9} height={R_PITCH*2} rx="2.5" fill={T.field.pitch} stroke={`${D.amber}60`} strokeWidth="0.7"/>
           </svg>
         </div>
       )}
@@ -494,17 +495,17 @@ function ShotSpider({inn,playerId=null,title="Reach by direction"}){
         <div style={{width:"100%",maxWidth:"280px",margin:"0 auto",aspectRatio:"1"}}>
           <svg viewBox="0 0 300 300" style={{width:"100%",height:"100%",display:"block"}} role="img"
             aria-label={`Reach by direction: ${p.n} placed shots, strongest ${p.strongest?.replace(/_/g," ")}`}>
-            <circle cx={CX} cy={CY} r={R_BND} fill="#070d09" stroke={`${D.amber}30`} strokeWidth="1"/>
-            <circle cx={CX} cy={CY} r={R_MID} fill="none" stroke="rgba(255,255,255,.08)" strokeWidth="1" strokeDasharray="4 3"/>
-            <circle cx={CX} cy={CY} r={R_IN} fill="none" stroke="rgba(255,255,255,.08)" strokeWidth="1" strokeDasharray="3 4"/>
+            <circle cx={CX} cy={CY} r={R_BND} fill={T.field.ground} stroke={`${D.amber}30`} strokeWidth="1"/>
+            <circle cx={CX} cy={CY} r={R_MID} fill="none" stroke={T.field.rule} strokeWidth="1" strokeDasharray="4 3"/>
+            <circle cx={CX} cy={CY} r={R_IN} fill="none" stroke={T.field.rule} strokeWidth="1" strokeDasharray="3 4"/>
             {p.directions.map(d=>{const[x,y]=at(d.mid,R_BND);return(
-              <line key={`a${d.key}`} x1={CX} y1={CY} x2={x} y2={y} stroke="rgba(255,255,255,.07)" strokeWidth="0.6"/>);})}
+              <line key={`a${d.key}`} x1={CX} y1={CY} x2={x} y2={y} stroke={T.field.hairline} strokeWidth="0.6"/>);})}
             <polygon className="spider-shape" points={pts.map(q=>q.join(",")).join(" ")}
               fill={`${D.indigo}30`} stroke={D.indigo} strokeWidth="1.5" strokeLinejoin="round"/>
             {p.directions.map((d,i)=>{
               const[x,y]=pts[i];const[lx,ly]=at(d.mid,R_BND+15);
               return(<g key={d.key} data-testid={`spider-axis-${d.key}`} data-shots={d.shots} data-reach={d.reach==null?"":d.reach.toFixed(2)} data-x={lx.toFixed(1)}>
-                {d.shots>0&&<circle cx={x} cy={y} r="3.5" fill={D.indigo} stroke="#070d09" strokeWidth="1.5">
+                {d.shots>0&&<circle cx={x} cy={y} r="3.5" fill={D.indigo} stroke={T.field.ground} strokeWidth="1.5">
                   <title>{`${d.label}: ${d.shots} shot${d.shots===1?"":"s"}, reach ${Math.round(d.reach*100)}% of the rope, ${d.runs} run${d.runs===1?"":"s"}`}</title>
                 </circle>}
                 <text x={lx} y={ly} textAnchor="middle" dominantBaseline="middle" fontSize="7" fontFamily={D.body}
@@ -513,7 +514,7 @@ function ShotSpider({inn,playerId=null,title="Reach by direction"}){
                 </text>
               </g>);
             })}
-            <rect x={CX-4.5} y={CY-R_PITCH} width={9} height={R_PITCH*2} rx="2.5" fill="#7c6e45" stroke={`${D.amber}60`} strokeWidth="0.7"/>
+            <rect x={CX-4.5} y={CY-R_PITCH} width={9} height={R_PITCH*2} rx="2.5" fill={T.field.pitch} stroke={`${D.amber}60`} strokeWidth="0.7"/>
           </svg>
         </div>
       )}
@@ -539,15 +540,15 @@ function AnalysisDashboard({inn,match,curIn,innings}){
     <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
       {/* Sub-nav */}
       <div style={{display:"flex",gap:"6px"}}>
-        {[["charts","📊 Charts"],["signals","📡 Signals"],["intelligence","🧠 Intelligence"]].map(([id,label])=>(
+        {[["charts","chart-column","Charts"],["signals","radio-tower","Signals"],["intelligence","brain","Intelligence"]].map(([id,ic,label])=>(
           <button key={id} onClick={()=>setActiveView(id)} className="pressBtn" style={{
             padding:"7px 16px",borderRadius:D.pill,cursor:"pointer",border:"none",
             fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",
-            background:activeView===id?D.grad:"rgba(255,255,255,0.05)",
-            color:activeView===id?"#fff":D.textMuted,
+            background:activeView===id?D.grad:T.fill.field,
+            color:activeView===id?T.light.ink:D.textMuted,
             boxShadow:activeView===id?"0 4px 16px "+D.indigo+"40":"none",
             transition:"all .2s"}}>
-            {label}
+            <Icon name={ic}/> {label}
           </button>
         ))}
       </div>

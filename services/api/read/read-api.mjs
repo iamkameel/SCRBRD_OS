@@ -2009,18 +2009,24 @@ export const READ_QUERIES = {
              left join player_batting_career bat on bat.player_id = p.id
              left join player_dismissals      d   on d.player_id  = p.id
              left join player_bowling_career  bowl on bowl.player_id = p.id
-             -- The form guide: the last eight innings, most recent first. A
-             -- LATERAL rather than a join, because it is a different grain —
-             -- one row per innings — and joining it would multiply the career
-             -- totals above by the number of innings played.
-             left join lateral (
-               select array_agg(x.runs order by x.ended_at desc) as form
-                 from (select i.runs, i.ended_at
-                         from player_innings i
-                        where i.player_id = p.id
-                        order by i.ended_at desc
-                        limit 8) x
-             ) f on true
+             -- The form guide: the last eight innings, most recent first.
+             -- Folded to one row per player BEFORE the join, because it is a
+             -- different grain — one row per innings — and joining it raw
+             -- would multiply the career totals above by the innings played.
+             -- One pass over player_innings for every player (db/49), not a
+             -- LATERAL per player: that was a scan of the ball log per player,
+             -- quadratic in a school's size. A tie in ended_at is broken by
+             -- match and innings, so the same log always reads the same.
+             left join (
+               select r.player_id,
+                      array_agg(r.runs order by r.ended_at desc, r.match_id desc, r.innings desc) as form
+                 from (select i.player_id, i.runs, i.ended_at, i.match_id, i.innings,
+                              row_number() over (partition by i.player_id
+                                                 order by i.ended_at desc, i.match_id desc, i.innings desc) as n
+                         from player_innings i) r
+                where r.n <= 8
+                group by r.player_id
+             ) f on f.player_id = p.id
             order by p.full_name`,
   },
 
@@ -2037,7 +2043,8 @@ export const READ_QUERIES = {
    * clock.
    *
    * A RESOURCE OF ITS OWN, NOT A PARAMETER ON `career`, for three reasons.
-   *   - `career` stays byte-for-byte what it was. Stats-Magic, the squad,
+   *   - `career` stays what it was, row for row (db/49 made it one pass over
+   *     the log, and proves the answer did not move). Stats-Magic, the squad,
    *     profile, analytics and competition screens, and the walks that prove
    *     it against the fold (smoke-browser-pad-laws, smoke-dismissals,
    *     smoke-summary) keep the exact query they were proven against, and

@@ -1,166 +1,14 @@
 import { useState, useEffect, useRef } from "react";
 import { placementFromTap, screenAngle, DISMISSAL_LABEL } from "@scrbrd/scoring";
-import { D, px, textOn } from "../design/tokens.js";
+import { D, T, clr, inkOn, px, textOn } from "../design/tokens.js";
 import { can } from "../rbac/index.js";
 import { CX, CY, LK_COLS, R_BND, R_IN, R_MID, R_PITCH, SEGS, ballAngle, heatColor, lineKey, pieSlice, ringArc, toXY, wagEnd } from "./field.js";
 import { RR, fmtOv, SR } from "./format.js";
 import { buildNarratives, buildSignals } from "./signals.js";
 import { ALL_SHOTS_FLAT, fetchAICommentary } from "./shots.js";
 import { Badge, BallDot, Card, Lbl, SignalBar } from "./ui.jsx";
+import { Icon } from "../ui/icons.jsx";
 
-/* ═══════════════════════════════════════════════════════
-   DYNAMIC CONTENT BAR (DCB) — persistent smart strip
-═══════════════════════════════════════════════════════ */
-function DynamicBar({inn,match,target,isChase,lastOver}){
-  const[cardIdx,setCardIdx]=useState(0);
-  const[prevCard,setPrevCard]=useState(null);
-  const[animKey,setAnimKey]=useState(0);
-  const timerRef=useRef(null);
-  const sig=buildSignals(inn,inn?.overs??match?.overs??20,target,isChase);
-  const cards=buildNarratives(sig,lastOver);
-
-  useEffect(()=>{
-    if(cards.length===0)return;
-    clearInterval(timerRef.current);
-    timerRef.current=setInterval(()=>{
-      setCardIdx(p=>{const next=(p+1)%cards.length;return next;});
-      setAnimKey(k=>k+1);
-    },7000);
-    return()=>clearInterval(timerRef.current);
-  },[cards.length,sig?.balls]);
-
-  // Snap to top card when a new high-priority event arrives.
-  // Compare by content key — cards are rebuilt fresh every render, so
-  // identity comparison re-fires setPrevCard each render (infinite loop
-  // whenever the innings has any balls, e.g. a resumed live match).
-  const topCard=cards[0];
-  const topKey=topCard?`${topCard.type}|${topCard.hl}`:null;
-  useEffect(()=>{
-    if(topKey&&topKey!==prevCard){
-      if(topCard.pri>=70){setCardIdx(0);setAnimKey(k=>k+1);}
-      setPrevCard(topKey);
-    }
-  },[topKey]);
-
-  if(!sig||!inn)return null;
-  const card=cards[Math.min(cardIdx,cards.length-1)]||cards[0];
-  if(!card)return null;
-
-  // RR section — always visible on left
-  const rrCol=isChase?(sig.rrDelta!=null&&sig.rrDelta<-1?D.rose:D.emerald):D.sky;
-  const rrrDelta=sig.rrDelta!=null?sig.rrDelta:null;
-  const phaseCol=sig.phase==="POWERPLAY"?D.emerald:sig.phase==="MIDDLE"?D.amber:D.orange;
-
-  return (
-    <div style={{
-      position:"sticky",top:"45px",zIndex:95,
-      background:`linear-gradient(180deg,${D.base}f8 0%,${D.base}e0 100%)`,
-      backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)",
-      borderBottom:`1px solid ${D.border}`,
-    }}>
-      <div style={{maxWidth:"1320px",margin:"0 auto",
-        display:"grid",gridTemplateColumns:"auto 1fr auto",
-        alignItems:"stretch",gap:0,minHeight:"52px"}}>
-
-        {/* LEFT — RR always visible */}
-        <div style={{
-          display:"flex",alignItems:"center",gap:0,
-          borderRight:`1px solid ${D.border}`,
-          padding:"0 16px",flexShrink:0,
-        }}>
-          {/* CRR */}
-          <div style={{textAlign:"center",padding:"0 10px",borderRight:`1px solid ${D.border}66`}}>
-            <div style={{fontFamily:D.mono,fontSize:"21px",fontWeight:500,color:rrCol,lineHeight:1,letterSpacing:"-0.02em"}}>{sig.rr}</div>
-            <div style={{fontFamily:D.head,fontSize:"8px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:D.textMuted,marginTop:"2px"}}>CRR</div>
-          </div>
-          {/* RRR if chasing */}
-          {isChase&&sig.reqRr!=null&&(
-            <div style={{textAlign:"center",padding:"0 10px",borderRight:`1px solid ${D.border}66`}}>
-              <div style={{fontFamily:D.mono,fontSize:"21px",fontWeight:500,color:sig.rrDelta<-1?textOn(D.rose):sig.rrDelta>0.5?D.emerald:D.amber,lineHeight:1,letterSpacing:"-0.02em"}}>{sig.reqRr}</div>
-              <div style={{fontFamily:D.head,fontSize:"8px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:D.textMuted,marginTop:"2px"}}>RRR</div>
-            </div>
-          )}
-          {/* Phase badge */}
-          <div style={{padding:"0 10px",display:"flex",flexDirection:"column",alignItems:"center",gap:"3px"}}>
-            <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,color:phaseCol,letterSpacing:"0.08em",textTransform:"uppercase",
-              padding:"2px 8px",borderRadius:D.pill,border:`1px solid ${phaseCol}33`,background:phaseCol+"10"}}>{sig.phase}</div>
-            <div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>{fmtOv(sig.balls)} ov</div>
-          </div>
-        </div>
-
-        {/* CENTRE — rotating narrative card */}
-        <div key={animKey} style={{
-          display:"flex",alignItems:"center",gap:"12px",
-          padding:"8px 16px",overflow:"hidden",
-          animation:"fadeIn .4s ease both",
-        }}>
-          {card.icon&&<span style={{fontSize:"16px",flexShrink:0}}>{card.icon}</span>}
-          <div style={{flex:1,minWidth:0}}>
-            <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:card.accent,
-              whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",lineHeight:1.2}}>{card.hl}</div>
-            <div style={{display:"flex",gap:"8px",marginTop:"5px",flexWrap:"nowrap",overflow:"hidden"}}>
-              {card.chips.slice(0,3).map((chip,i)=>(
-                <div key={i} style={{display:"flex",alignItems:"baseline",gap:"3px",flexShrink:0}}>
-                  <span style={{fontFamily:D.mono,fontSize:"13px",fontWeight:500,color:chip.c||D.textPrimary,lineHeight:1}}>{chip.v}</span>
-                  <span style={{fontFamily:D.head,fontSize:"8px",fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:D.textMuted}}>{chip.l}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* RIGHT — pressure + momentum micro-bars + dot nav */}
-        <div style={{
-          display:"flex",alignItems:"center",gap:"8px",
-          borderLeft:`1px solid ${D.border}`,padding:"0 12px",flexShrink:0,
-        }}>
-          {/* Momentum indicator */}
-          <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"3px",width:"38px"}}>
-            <div style={{width:"100%",height:"4px",background:D.surf3,borderRadius:"4px",overflow:"hidden"}}>
-              <div style={{height:"100%",borderRadius:"4px",
-                width:Math.min(100,Math.max(0,50+sig.mom/2))+"%",
-                background:sig.momColor,transition:"width .5s ease"}}/>
-            </div>
-            <span style={{fontFamily:D.head,fontSize:"7.5px",fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:sig.momColor}}>{sig.momLabel}</span>
-          </div>
-          {/* Pressure indicator */}
-          <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"3px",width:"38px"}}>
-            <div style={{width:"100%",height:"4px",background:D.surf3,borderRadius:"4px",overflow:"hidden"}}>
-              <div style={{height:"100%",borderRadius:"4px",
-                width:sig.pressure+"%",
-                background:sig.pressureColor,transition:"width .5s ease"}}/>
-            </div>
-            <span style={{fontFamily:D.head,fontSize:"7.5px",fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:sig.pressureColor}}>{sig.pressureLabel}</span>
-          </div>
-          {/* Card nav dots.
-              These were 5x5 buttons with no text, which is two failures at
-              once: nothing to announce, and a target a third the size anyone
-              can reliably hit — on a phone, one-handed, at a cricket ground.
-              The dot stays 5px because that is the design; the BUTTON around
-              it is padded out to a real target, which costs no layout because
-              the padding is transparent. */}
-          {cards.length>1&&(
-            <div role="tablist" aria-label="Match insight cards" style={{display:"flex",flexDirection:"column",gap:"3px",margin:"-6px"}}>
-              {cards.slice(0,5).map((c,i)=>(
-                <button key={i} onClick={()=>{setCardIdx(i);setAnimKey(k=>k+1);}}
-                  role="tab" aria-selected={i===cardIdx}
-                  aria-label={c?.hl ? `${c.hl}` : `Card ${i+1} of ${Math.min(cards.length,5)}`}
-                  style={{border:"none",padding:"6px",background:"transparent",cursor:"pointer",
-                    display:"flex",alignItems:"center",justifyContent:"center"}}>
-                  <span aria-hidden="true" style={{display:"block",width:i===cardIdx?"14px":"5px",height:"5px",borderRadius:"4px",
-                    background:i===cardIdx?(cards[i]?.accent||D.indigo):`${D.textMuted}55`,transition:"all .25s"}}/>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Accent line — colour from top card */}
-      <div style={{height:"1.5px",background:`linear-gradient(90deg,${card.accent},${card.accent}55,transparent)`,transition:"background .5s"}}/>
-    </div>
-  );
-}
 
 /* ═══════════════════════════════════════════════════════
    WAGON WHEEL
@@ -181,7 +29,10 @@ function DynamicBar({inn,match,target,isChase,lastOver}){
  *   stored value was right; the render re-introduced the very defect the
  *   batter-relative frame exists to prevent. See placement.mjs.
  */
-function WagonWheel({ballLog=[],selSeg,onSel,onPlace,viewMode,onViewMode,hidden,onToggle,batHand="R",handFor}){
+// `bare`: the field alone, as wide as its column allows — the pad's Area
+// phase (step 2 of the redesign), where the heat toggle and the legend are
+// not what the scorer is being asked.
+function WagonWheel({ballLog=[],selSeg,onSel,onPlace,viewMode,onViewMode,hidden,onToggle,batHand="R",handFor,bare=false}){
   const handOf=handFor??(()=>batHand);
   // A live point being placed, before commit. Drag refines it; release commits.
   const [placing,setPlacing]=useState(null);
@@ -218,9 +69,9 @@ function WagonWheel({ballLog=[],selSeg,onSel,onPlace,viewMode,onViewMode,hidden,
   const zoneFill=(id,zone)=>{
     const sel=isSel(id),hv=hov?.seg===id;
     if(viewMode==="heatmap")return heatColor(segRuns[id],maxR)||"transparent";
-    if(sel&&selSeg.zone===zone)return"rgba(99,102,241,.38)";
-    if(sel)return"rgba(99,102,241,.14)";
-    if(hv)return"rgba(14,165,233,.12)";
+    if(sel&&selSeg.zone===zone)return clr(D.indigo,.38);
+    if(sel)return clr(D.indigo,.14);
+    if(hv)return clr(D.sky,.12);
     return"transparent";
   };
   // A ball with neither a captured point nor a sector has no position at all
@@ -231,21 +82,21 @@ function WagonWheel({ballLog=[],selSeg,onSel,onPlace,viewMode,onViewMode,hidden,
   const pointCount=visLines.filter(b=>b.placementSource==="point").length;
   return (
     <div style={{display:"flex",flexDirection:"column",gap:"11px"}}>
-      <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
+      {!bare&&<div style={{display:"flex",alignItems:"center",gap:"8px"}}>
         <Lbl>Field Map</Lbl>
         <div style={{marginLeft:"auto",display:"flex",gap:"2px",background:D.surf3,borderRadius:D.pill,padding:"3px"}}>
           {["wagon","heatmap"].map(m=>(
             <button key={m} onClick={()=>onViewMode(m)} className="pressBtn" style={{
               padding:"4px 13px",borderRadius:D.pill,border:"none",cursor:"pointer",
               background:viewMode===m?D.grad:"transparent",
-              color:viewMode===m?"#fff":D.textMuted,
+              color:viewMode===m?T.light.ink:D.textMuted,
               fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:"0.06em",
               textTransform:"uppercase",transition:"all .25s",
             }}>{m==="wagon"?"Wheel":"Heat"}</button>
           ))}
         </div>
-      </div>
-      <div style={{width:"100%",maxWidth:"272px",margin:"0 auto",aspectRatio:"1",userSelect:"none"}}>
+      </div>}
+      <div style={{width:"100%",maxWidth:bare?"min(100%, 332px)":"272px",margin:"0 auto",aspectRatio:"1",userSelect:"none"}}>
         <svg ref={svgRef} viewBox="0 0 300 300" style={{width:"100%",height:"100%",display:"block"}}
           role={onPlace?"application":"img"}
           aria-label={onPlace
@@ -253,10 +104,10 @@ function WagonWheel({ballLog=[],selSeg,onSel,onPlace,viewMode,onViewMode,hidden,
             :`Wagon wheel, ${visLines.length} balls${pointCount?`, ${pointCount} placed exactly`:""}`}>
           <defs>
             <radialGradient id="gOuter" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="#0e1a10"/><stop offset="100%" stopColor="#060c08"/>
+              <stop offset="0%" stopColor={T.field.grass}/><stop offset="100%" stopColor={T.field.grassEdge}/>
             </radialGradient>
             <radialGradient id="gInner" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="#0c1610"/><stop offset="100%" stopColor="#050a07"/>
+              <stop offset="0%" stopColor={T.field.square}/><stop offset="100%" stopColor={T.field.squareEdge}/>
             </radialGradient>
             <filter id="glow"><feGaussianBlur stdDeviation="2.5" result="blur"/>
               <feComposite in="SourceGraphic" in2="blur" operator="over"/></filter>
@@ -264,8 +115,8 @@ function WagonWheel({ballLog=[],selSeg,onSel,onPlace,viewMode,onViewMode,hidden,
           <circle cx={CX} cy={CY} r={R_BND+3} fill="url(#gOuter)"/>
           {SEGS.map(seg=>{
             const sel=isSel(seg.id),hv=hov?.seg===seg.id;
-            const fill=viewMode==="heatmap"?(heatColor(segRuns[seg.id],maxR)||`${D.amber}0d`):sel?`rgba(99,102,241,.42)`:hv?`rgba(14,165,233,.16)`:`${D.amber}0c`;
-            const stroke=sel?`rgba(99,102,241,.7)`:hv?`rgba(14,165,233,.4)`:`${D.amber}25`;
+            const fill=viewMode==="heatmap"?(heatColor(segRuns[seg.id],maxR)||`${D.amber}0d`):sel?clr(D.indigo,.42):hv?clr(D.sky,.16):`${D.amber}0c`;
+            const stroke=sel?clr(D.indigo,.7):hv?clr(D.sky,.4):`${D.amber}25`;
             return(<path key={`b${seg.id}`} d={ringArc(seg.angle,R_BND,R_MID)} fill={fill} stroke={stroke}
               strokeWidth={sel?"1.5":"0.5"} style={{cursor:onPlace?"crosshair":"pointer",pointerEvents:onPlace?"none":"auto"}}
               onClick={()=>onSel(sel&&selSeg?.zone==="boundary"?null:{seg:seg.id,zone:"boundary"})}
@@ -274,20 +125,20 @@ function WagonWheel({ballLog=[],selSeg,onSel,onPlace,viewMode,onViewMode,hidden,
           <circle cx={CX} cy={CY} r={R_MID} fill="none" stroke={`${D.amber}50`} strokeWidth="1.5" strokeDasharray="4 3"/>
           {SEGS.map(seg=>(
             <path key={`o${seg.id}`} d={ringArc(seg.angle,R_MID,R_IN)} fill={zoneFill(seg.id,"outer")}
-              stroke={isSel(seg.id)?"rgba(99,102,241,.35)":"rgba(255,255,255,.04)"} strokeWidth="0.4" style={{cursor:onPlace?"crosshair":"pointer",pointerEvents:onPlace?"none":"auto"}}
+              stroke={isSel(seg.id)?clr(D.indigo,.35):T.field.hairline} strokeWidth="0.4" style={{cursor:onPlace?"crosshair":"pointer",pointerEvents:onPlace?"none":"auto"}}
               onClick={()=>onSel(isSel(seg.id)&&selSeg?.zone==="outer"?null:{seg:seg.id,zone:"outer"})}
               onMouseEnter={()=>setHov({seg:seg.id})} onMouseLeave={()=>setHov(null)}/>
           ))}
-          <circle cx={CX} cy={CY} r={R_IN} fill="url(#gInner)" stroke="rgba(255,255,255,.1)" strokeWidth="1" strokeDasharray="3 4"/>
+          <circle cx={CX} cy={CY} r={R_IN} fill="url(#gInner)" stroke={T.field.rule} strokeWidth="1" strokeDasharray="3 4"/>
           {SEGS.map(seg=>(
             <path key={`i${seg.id}`} d={pieSlice(seg.angle,R_IN)} fill={zoneFill(seg.id,"inner")}
-              stroke={isSel(seg.id)?"rgba(99,102,241,.25)":"rgba(255,255,255,.03)"} strokeWidth="0.4"
+              stroke={isSel(seg.id)?clr(D.indigo,.25):T.field.hairline} strokeWidth="0.4"
               style={{cursor:onPlace?"crosshair":"pointer",pointerEvents:onPlace?"none":"auto"}}
               onClick={()=>onSel(isSel(seg.id)&&selSeg?.zone==="inner"?null:{seg:seg.id,zone:"inner"})}
               onMouseEnter={()=>setHov({seg:seg.id})} onMouseLeave={()=>setHov(null)}/>
           ))}
           {SEGS.map(seg=>{const[xo,yo]=toXY(seg.angle-15,R_BND);return(
-            <line key={`sp${seg.id}`} x1={CX} y1={CY} x2={xo} y2={yo} stroke="rgba(255,255,255,.05)" strokeWidth="0.5" style={{pointerEvents:"none"}}/>
+            <line key={`sp${seg.id}`} x1={CX} y1={CY} x2={xo} y2={yo} stroke={T.field.hairline} strokeWidth="0.5" style={{pointerEvents:"none"}}/>
           );})}
           {viewMode==="wagon"&&visLines.map((b,i)=>{
             const{xy:[ex,ey],synthetic}=wagEnd(ballAngle(b,handOf(b)),b);
@@ -327,36 +178,36 @@ function WagonWheel({ballLog=[],selSeg,onSel,onPlace,viewMode,onViewMode,hidden,
                 r="5" fill={D.sky} opacity="0.95"/>
             </g>
           )}
-          <rect x={CX-4.5} y={CY-R_PITCH} width={9} height={R_PITCH*2} rx="2.5" fill="#7c6e45" stroke={`${D.amber}60`} strokeWidth="0.7" style={{pointerEvents:"none"}}/>
-          <line x1={CX-6} y1={CY-R_PITCH+3} x2={CX+6} y2={CY-R_PITCH+3} stroke="rgba(255,255,255,.55)" strokeWidth="0.8" style={{pointerEvents:"none"}}/>
-          <line x1={CX-6} y1={CY+R_PITCH-3} x2={CX+6} y2={CY+R_PITCH-3} stroke="rgba(255,255,255,.55)" strokeWidth="0.8" style={{pointerEvents:"none"}}/>
+          <rect x={CX-4.5} y={CY-R_PITCH} width={9} height={R_PITCH*2} rx="2.5" fill={T.field.pitch} stroke={`${D.amber}60`} strokeWidth="0.7" style={{pointerEvents:"none"}}/>
+          <line x1={CX-6} y1={CY-R_PITCH+3} x2={CX+6} y2={CY-R_PITCH+3} stroke={T.field.mark} strokeWidth="0.8" style={{pointerEvents:"none"}}/>
+          <line x1={CX-6} y1={CY+R_PITCH-3} x2={CX+6} y2={CY+R_PITCH-3} stroke={T.field.mark} strokeWidth="0.8" style={{pointerEvents:"none"}}/>
           {[-2.8,0,2.8].map(x=>[
-            <circle key={`st${x}`} cx={CX+x} cy={CY-R_PITCH+1.5} r="1.4" fill="rgba(255,255,255,.8)" style={{pointerEvents:"none"}}/>,
-            <circle key={`sb${x}`} cx={CX+x} cy={CY+R_PITCH-1.5} r="1.4" fill="rgba(255,255,255,.8)" style={{pointerEvents:"none"}}/>
+            <circle key={`st${x}`} cx={CX+x} cy={CY-R_PITCH+1.5} r="1.4" fill={T.field.stumps} style={{pointerEvents:"none"}}/>,
+            <circle key={`sb${x}`} cx={CX+x} cy={CY+R_PITCH-1.5} r="1.4" fill={T.field.stumps} style={{pointerEvents:"none"}}/>
           ])}
           {SEGS.map(seg=>{
             const[lx,ly]=toXY(seg.angle,(R_IN+R_MID)/2+4);
             const sel=isSel(seg.id),hv=hov?.seg===seg.id;
             return(<text key={`lb${seg.id}`} x={lx} y={ly} textAnchor="middle" dominantBaseline="middle"
               fontSize={sel||hv?"8":"7.5"} fontFamily="'Syne',sans-serif" fontWeight={sel||hv?"700":"400"}
-              fill={sel?"#818cf8":hv?"#7dd3fc":"rgba(255,255,255,.32)"} style={{pointerEvents:"none"}}>{seg.short}</text>);
+              fill={sel?D.indigoText:hv?D.sky:T.field.label} style={{pointerEvents:"none"}}>{seg.short}</text>);
           })}
           {viewMode==="heatmap"&&SEGS.map(seg=>{
             if(!segRuns[seg.id])return null;
             const[lx,ly]=toXY(seg.angle,(R_IN+R_MID)/2+12);
             return(<text key={`hr${seg.id}`} x={lx} y={ly} textAnchor="middle" dominantBaseline="middle"
               fontSize="8" fontFamily="'DM Mono',monospace" fontWeight="500"
-              fill="rgba(255,255,255,.65)" style={{pointerEvents:"none"}}>{segRuns[seg.id]}</text>);
+              fill={T.field.figure} style={{pointerEvents:"none"}}>{segRuns[seg.id]}</text>);
           })}
           <text x={9} y={CY} textAnchor="middle" dominantBaseline="middle" fontSize="6"
-            fontFamily="'Syne',sans-serif" letterSpacing="1" fill="rgba(255,255,255,.18)"
+            fontFamily="'Syne',sans-serif" letterSpacing="1" fill={T.field.watermark}
             transform={`rotate(-90,9,${CY})`} style={{pointerEvents:"none"}}>OFF</text>
           <text x={291} y={CY} textAnchor="middle" dominantBaseline="middle" fontSize="6"
-            fontFamily="'Syne',sans-serif" letterSpacing="1" fill="rgba(255,255,255,.18)"
+            fontFamily="'Syne',sans-serif" letterSpacing="1" fill={T.field.watermark}
             transform={`rotate(90,291,${CY})`} style={{pointerEvents:"none"}}>LEG</text>
         </svg>
       </div>
-      <div style={{display:"flex",justifyContent:"center",gap:"5px",flexWrap:"wrap"}}>
+      {!bare&&<div style={{display:"flex",justifyContent:"center",gap:"5px",flexWrap:"wrap"}}>
         {Object.entries(LK_COLS).map(([k,col])=>{
           const off=hidden.has(k);
           return(<button key={k} onClick={()=>onToggle(k)} className="pressBtn" style={{
@@ -368,7 +219,7 @@ function WagonWheel({ballLog=[],selSeg,onSel,onPlace,viewMode,onViewMode,hidden,
             <span style={{color:off?D.textMuted:D.textSecondary,fontSize:"10px",fontFamily:D.head,fontWeight:600,letterSpacing:"0.05em"}}>{k}</span>
           </button>);
         })}
-      </div>
+      </div>}
     </div>
   );
 }
@@ -408,7 +259,7 @@ function IntelPanel({inn,overs,target,isChase}){
     <div style={{borderRadius:D.lg,overflow:"hidden",position:"relative",
       background:`linear-gradient(145deg,${D.surf1},${D.surf2})`,
       border:`1px solid ${card.accent}30`,
-      boxShadow:`0 8px 40px rgba(0,0,0,.4),0 0 60px ${card.accent}08`,
+      boxShadow:`${T.elevation.lg},0 0 60px ${card.accent}08`,
       transition:"border-color .5s,box-shadow .5s"}}>
       <div style={{height:"2px",background:`linear-gradient(90deg,${card.accent},${card.accent}00)`}}/>
       <div style={{padding:"12px 16px",borderBottom:`1px solid ${D.border}`,display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
@@ -423,7 +274,7 @@ function IntelPanel({inn,overs,target,isChase}){
             padding:"3px 8px",borderRadius:D.pill,cursor:"pointer",fontFamily:D.head,fontSize:"9px",
             border:`1px solid ${auto?D.emerald+"44":D.border}`,background:"transparent",
             color:auto?D.emerald:D.textMuted,transition:"all .2s",
-          }}>{auto?"⏸":"▶"}</button>
+          }} aria-label={auto?"Pause the cards":"Play the cards"}><Icon name={auto?"pause":"play"}/></button>
         </div>
       </div>
       <div style={{padding:"16px 18px",position:"relative"}}>
@@ -565,27 +416,27 @@ function detectMilestone(ball,inn){
   if(bat&&ball.type!=="W"&&ball.type!=="Wd"&&ball.type!=="Nb"){
     const credit=ball.type==="run"?(ball.value||0):0; // byes/leg-byes don't credit the batter
     const prev=bat.runs, cur=bat.runs+credit;
-    if(prev<50&&cur>=50)milestones.push({type:"fifty",label:"FIFTY!",sub:bat.name+" reaches 50",color:D.sky,icon:"🏏"});
-    if(prev<100&&cur>=100)milestones.push({type:"century",label:"CENTURY!",sub:bat.name+" — 100 not out",color:D.amber,icon:"💯"});
-    if(prev<150&&cur>=150)milestones.push({type:"150",label:"150!",sub:bat.name+" on 150",color:D.amber,icon:"🔥"});
-    if(prev<200&&cur>=200)milestones.push({type:"200",label:"DOUBLE!",sub:bat.name+" — 200 runs!",color:D.amber,icon:"👑"});
+    if(prev<50&&cur>=50)milestones.push({type:"fifty",label:"FIFTY!",sub:bat.name+" reaches 50",color:D.sky,icon:"bat"});
+    if(prev<100&&cur>=100)milestones.push({type:"century",label:"CENTURY!",sub:bat.name+" — 100 not out",color:D.amber,icon:"medal"});
+    if(prev<150&&cur>=150)milestones.push({type:"150",label:"150!",sub:bat.name+" on 150",color:D.amber,icon:"flame"});
+    if(prev<200&&cur>=200)milestones.push({type:"200",label:"DOUBLE!",sub:bat.name+" — 200 runs!",color:D.amber,icon:"crown"});
   }
   if(bow&&ball.type==="W"){
     const wkts=(bow.wickets||0)+1; // including this dismissal
-    if(wkts===5)milestones.push({type:"fifer",label:"FIFER!",sub:bow.name+" takes 5 wickets",color:D.roseText,icon:"🎯"});
+    if(wkts===5)milestones.push({type:"fifer",label:"FIFER!",sub:bow.name+" takes 5 wickets",color:D.roseText,icon:"ball"});
     if(wkts>=3){
       const legal=(inn?.ballLog||[]).filter(b=>b.type!=="Wd"&&b.type!=="Nb").slice(-2);
       if(legal.length===2&&legal.every(b=>b.type==="W"&&b.bowler===bow.id))
-        milestones.push({type:"hattrick",label:"HAT-TRICK!",sub:bow.name+" — 3 in a row!",color:D.roseText,icon:"🎩"});
+        milestones.push({type:"hattrick",label:"HAT-TRICK!",sub:bow.name+" — 3 in a row!",color:D.roseText,icon:"sparkles"});
     }
-    if((inn?.wickets||0)+1>=10)milestones.push({type:"allout",label:"ALL OUT!",sub:(inn?.battingTeam||"")+" all out",color:D.roseText,icon:"💀"});
+    if((inn?.wickets||0)+1>=10)milestones.push({type:"allout",label:"ALL OUT!",sub:(inn?.battingTeam||"")+" all out",color:D.roseText,icon:"bails-off"});
   }
   // Team milestones — total includes extras
   if(inn){
     const added=(ball.type==="Wd"||ball.type==="Nb")?1+(ball.value||0):(ball.value||0);
     const prevRuns=inn.runs, postRuns=inn.runs+added;
     [50,100,150,200,250,300,350,400].forEach(n=>{
-      if(prevRuns<n&&postRuns>=n)milestones.push({type:"team"+n,label:n+"!",sub:inn.battingTeam+" reach "+n,color:D.indigoText,icon:"🏏"});
+      if(prevRuns<n&&postRuns>=n)milestones.push({type:"team"+n,label:n+"!",sub:inn.battingTeam+" reach "+n,color:D.indigoText,icon:"bat"});
     });
   }
   return milestones.length>0?milestones[0]:null;
@@ -689,9 +540,9 @@ function CommentaryCard({inn}){
               {/* Metadata tags */}
               <div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,marginTop:"2px",
                 display:"flex",gap:"7px",flexWrap:"wrap",alignItems:"center"}}>
-                {shot&&<span style={{color:shot.color}}>{shot.icon+" "+shot.label}</span>}
-                {seg&&<span>{"📍 "+seg.label+(b.zone==="boundary"?" · Boundary":"")}</span>}
-                {b.bowlerApproach&&<span style={{color:D.amber}}>{"⤵ "+b.bowlerApproach}</span>}
+                {shot&&<span style={{color:shot.color}}>{shot.label}</span>}
+                {seg&&<span><Icon name="map-pin"/>{" "+seg.label+(b.zone==="boundary"?" · Boundary":"")}</span>}
+                {b.bowlerApproach&&<span style={{color:D.amber}}><Icon name="corner-right-down"/>{" "+b.bowlerApproach}</span>}
                 <span>{"Ov "+(b.over+1)+"."+(b.ballInOver+1)}</span>
               </div>
             </div>
@@ -729,7 +580,7 @@ function EventOverlay({event,onDone,suppressBlur}){
   const confetti=isMilestone?Array.from({length:18},(_,i)=>({
     x:Math.sin(i/18*Math.PI*2)*120,
     delay:(i*0.08)%0.7,
-    col:["#f59e0b","#0ea5e9","#10b981","#f43f5e","#7c3aed","#f97316"][i%6],
+    col:[D.amber,D.sky,D.emerald,D.rose,D.violet,D.orange][i%6],
     rot:i*23,
   })):[];
   // Blocking blur is suppressed whenever a sheet/modal is open, evaluated
@@ -738,7 +589,7 @@ function EventOverlay({event,onDone,suppressBlur}){
   return (
     <div style={{
       position:"fixed",inset:0,zIndex:nb?200:9999,pointerEvents:"none",
-      background:nb?"transparent":(bg||"rgba(0,0,0,.1)"),
+      background:nb?"transparent":(bg||clr(T.surface.canvas,.1)),
       backdropFilter:nb?"none":"blur(2px)",
     }}>
       <div style={{
@@ -749,13 +600,13 @@ function EventOverlay({event,onDone,suppressBlur}){
         textAlign:"center",
       }}>
         {/* Icon for milestones */}
-        {icon&&<div style={{fontSize:"clamp(40px,8vw,70px)",lineHeight:1,marginBottom:"8px"}}>{icon}</div>}
+        {icon&&<div style={{fontSize:"clamp(40px,8vw,70px)",lineHeight:1,marginBottom:"8px",color}}><Icon name={icon}/></div>}
         <div style={{
           fontFamily:D.mono,
           fontSize:isMilestone?"clamp(52px,12vw,96px)":"clamp(60px,14vw,110px)",
           fontWeight:700,lineHeight:1,
           color,
-          textShadow:`0 0 40px ${glow||color+"88"},0 0 80px ${glow||color+"44"},0 4px 0 rgba(0,0,0,.5)`,
+          textShadow:`0 0 40px ${glow||color+"88"},0 0 80px ${glow||color+"44"},0 4px 0 ${clr(T.surface.canvas,.5)}`,
           letterSpacing:"-0.02em",
           ...(isMilestone?{
             background:"linear-gradient(135deg,"+color+","+color+"99,"+color+")",
@@ -803,9 +654,9 @@ function buildEventCfg(ballValue,milestone){
     color:milestone.color,bg:milestone.color+"08",
     icon:milestone.icon,isMilestone:true,
   };
-  if(ballValue===4)return{label:"FOUR!",sub:"Boundary",color:D.sky,glow:"rgba(14,165,233,.5)",bg:"rgba(14,165,233,.06)"};
-  if(ballValue===6)return{label:"SIX!",sub:"Maximum!",color:D.amber,glow:"rgba(245,158,11,.6)",bg:"rgba(245,158,11,.06)"};
-  if(ballValue==="W")return{label:"WICKET!",sub:"Out",color:D.roseText,glow:"rgba(244,63,94,.5)",bg:"rgba(244,63,94,.06)"};
+  if(ballValue===4)return{label:"FOUR!",sub:"Boundary",color:D.sky,glow:clr(D.sky,.5),bg:clr(D.sky,.06)};
+  if(ballValue===6)return{label:"SIX!",sub:"Maximum!",color:D.amber,glow:clr(D.amber,.6),bg:clr(D.amber,.06)};
+  if(ballValue==="W")return{label:"WICKET!",sub:"Out",color:D.roseText,glow:clr(D.rose,.5),bg:clr(D.rose,.06)};
   return null;
 }
 
@@ -832,18 +683,18 @@ function InningsOverBanner({onReview}){
       position:"fixed",top:"72px",left:"50%",transform:"translateX(-50%)",
       zIndex:1000,padding:"10px 20px",borderRadius:D.pill,
       background:D.surf3,border:`1px solid ${D.amber}66`,
-      boxShadow:"0 8px 28px rgba(0,0,0,.45)",
+      boxShadow:T.elevation.lg,
       display:"flex",alignItems:"center",gap:"14px",
       animation:"bounceIn .4s cubic-bezier(.22,1,.36,1)",
     }} data-testid="innings-over-banner">
       <div>
         <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:800,color:D.textPrimary,letterSpacing:"0.04em"}}>INNINGS OVER</div>
-        <div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted}}>Not closed yet — check the figures first</div>
+        <div style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary}}>Not closed yet — check the figures first</div>
       </div>
       <button onClick={onReview} className="pressBtn" data-testid="banner-review"
-        style={{padding:"7px 16px",borderRadius:D.pill,cursor:"pointer",border:"none",
-          background:D.amber,color:textOn(D.amber),
-          fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.04em"}}>
+        style={{minHeight:"44px",padding:"7px 16px",borderRadius:D.pill,cursor:"pointer",border:"none",
+          background:D.amber,color:inkOn(D.amber),
+          fontFamily:D.body,fontSize:"15px",fontWeight:700}}>
         Review
       </button>
     </div>
@@ -858,17 +709,17 @@ function FreeHitBanner({onDismiss}){
     <div style={{
       position:"fixed",top:"72px",left:"50%",transform:"translateX(-50%)",
       zIndex:1000,padding:"10px 24px",borderRadius:D.pill,
-      background:"linear-gradient(135deg,#f97316,#f59e0b)",
-      boxShadow:"0 0 0 4px rgba(249,115,22,.3)",
+      background:T.light.alert,
+      boxShadow:`0 0 0 4px ${clr(D.orange,.3)}`,
       animation:"freeHitPulse 1s ease infinite, bounceIn .4s cubic-bezier(.22,1,.36,1)",
       display:"flex",alignItems:"center",gap:"10px",cursor:"pointer",
     }} onClick={onDismiss}>
-      <span style={{fontSize:"20px"}}>⚡</span>
+      <span style={{fontSize:"20px",color:T.light.ink}}><Icon name="zap"/></span>
       <div>
-        <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:800,color:"#fff",letterSpacing:"0.1em"}}>FREE HIT!</div>
-        <div style={{fontFamily:D.body,fontSize:"10px",color:"rgba(255,255,255,.8)"}}>Next ball: batter can only be run out</div>
+        <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:800,color:T.light.ink,letterSpacing:"0.1em"}}>FREE HIT!</div>
+        <div style={{fontFamily:D.body,fontSize:"12px",color:T.light.ink}}>Next ball: batter can only be run out</div>
       </div>
-      <span style={{fontSize:"20px"}}>⚡</span>
+      <span style={{fontSize:"20px",color:T.light.ink}}><Icon name="zap"/></span>
     </div>
   );
 }
@@ -955,4 +806,4 @@ function PartnershipCard({inn}){
   );
 }
 
-export { CommentaryCard, DynamicBar, EventOverlay, FreeHitBanner, InningsOverBanner, IntelPanel, PartnershipCard, ScorecardPanel, WagonWheel, buildEventCfg, detectMilestone };
+export { CommentaryCard, EventOverlay, FreeHitBanner, InningsOverBanner, IntelPanel, PartnershipCard, ScorecardPanel, WagonWheel, buildEventCfg, detectMilestone };

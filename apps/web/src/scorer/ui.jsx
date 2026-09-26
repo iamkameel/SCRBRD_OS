@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef } from "react";
-import { D } from "../design/tokens.js";
+import { D, T, clr, inkOn, textOn } from "../design/tokens.js";
 
 /* ═══════════════════════════════════════════════════════
    DESIGN SYSTEM
@@ -9,12 +9,12 @@ const GS = () => (
     @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;600;700;800&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap');
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
     html{font-size:14px;-webkit-font-smoothing:antialiased}
-    body{background:#060910;overflow-x:hidden}
+    body{background:${T.surface.canvas};overflow-x:hidden}
     ::-webkit-scrollbar{width:2px;height:2px}
-    ::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:99px}
+    ::-webkit-scrollbar-thumb{background:${T.line.normal};border-radius:99px}
     input,button,textarea,select{font-family:'DM Sans',sans-serif}
     @keyframes dotPulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(.75);opacity:.45}}
-    @keyframes pulseGlow{0%,100%{box-shadow:0 0 6px rgba(52,211,153,.6)}50%{box-shadow:0 0 18px rgba(52,211,153,.3)}}
+    @keyframes pulseGlow{0%,100%{box-shadow:0 0 6px ${clr(D.emerald,.6)}}50%{box-shadow:0 0 18px ${clr(D.emerald,.3)}}}
     @keyframes slideUp{from{transform:translateY(24px);opacity:0}to{transform:translateY(0);opacity:1}}
     @keyframes scoreReveal{from{transform:translateY(-8px) scale(.95);opacity:0}to{transform:translateY(0) scale(1);opacity:1}}
     @keyframes gradShift{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
@@ -23,7 +23,7 @@ const GS = () => (
     @keyframes fadeIn{from{opacity:0}to{opacity:1}}
     @keyframes overlayIn{0%{opacity:0;transform:translate(-50%,-50%) scale(.6)}60%{transform:translate(-50%,-50%) scale(1.08)}100%{opacity:1;transform:translate(-50%,-50%) scale(1)}}
     @keyframes overlayOut{0%{opacity:1;transform:translate(-50%,-50%) scale(1)}100%{opacity:0;transform:translate(-50%,-50%) scale(1.3)}}
-    @keyframes freeHitPulse{0%,100%{box-shadow:0 0 0 0 rgba(249,115,22,.5)}50%{box-shadow:0 0 0 18px rgba(249,115,22,0)}}
+    @keyframes freeHitPulse{0%,100%{box-shadow:0 0 0 0 ${clr(D.orange,.5)}}50%{box-shadow:0 0 0 18px ${clr(D.orange,0)}}}
     @keyframes bounceIn{0%{transform:translateY(20px);opacity:0}60%{transform:translateY(-8px)}100%{transform:translateY(0);opacity:1}}
     @keyframes shimmer{0%{background-position:-200% center}100%{background-position:200% center}}
     @keyframes milestoneIn{0%{opacity:0;transform:translate(-50%,-60%) scale(.5) rotate(-6deg)}60%{transform:translate(-50%,-50%) scale(1.05) rotate(1deg)}100%{opacity:1;transform:translate(-50%,-50%) scale(1) rotate(0deg)}}
@@ -40,6 +40,14 @@ const GS = () => (
     .wagonLine{stroke-dasharray:320;animation:wagonDraw .38s ease both}
     .fadeIn{animation:fadeIn .22s ease both}
     .pressBtn{transition:transform .1s ease,opacity .1s ease}
+    .pad-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:${T.space.sm};padding:${T.space.sm} ${T.space.lg};max-width:640px;margin:0 auto}
+    .pad-head{display:grid;gap:${T.space.sm};align-content:start;min-width:0}
+    .pad-main{min-width:0}
+    @media(min-width:1024px){
+      .pad-layout{max-width:1320px}
+      .pad-layout.pad-split{max-width:1200px;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:${T.space.xl};align-items:start}
+      .pad-split .pad-head{position:sticky;top:72px}
+    }
     .pro-score-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
     .sc-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
     @media(max-width:900px){.sc-grid-2{grid-template-columns:1fr}}
@@ -47,8 +55,8 @@ const GS = () => (
     .pressBtn:active:not(:disabled){transform:scale(.95);opacity:.85}
     .pressBtn:disabled{cursor:not-allowed!important;opacity:.38!important}
     .shotBtn{transition:all .15s ease;border:1px solid transparent}
-    .shotBtn:hover{border-color:rgba(255,255,255,.15)!important}
-    .shotBtn.active{border-color:rgba(99,102,241,.7)!important;background:D.indigo+"33"!important}
+    .shotBtn:hover{border-color:${T.line.strong}!important}
+    .shotBtn.active{border-color:${clr(D.indigo,.7)}!important}
   `}</style>
 );
 
@@ -62,8 +70,8 @@ const Glass = ({ children, style, glow, onClick }) => (
     WebkitBackdropFilter:"blur(20px) saturate(1.6)",
     border:`1px solid ${D.border}`, borderRadius:D.xl,
     boxShadow: glow
-      ? `0 12px 48px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.07),0 0 60px ${glow}10`
-      : "0 8px 32px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.06)",
+      ? `${T.elevation.lg},${T.elevation.sheen},0 0 60px ${glow}10`
+      : `${T.elevation.lg},${T.elevation.sheen}`,
     position:"relative", overflow:"hidden", ...style,
   }}>{children}</div>
 );
@@ -73,8 +81,8 @@ const Card = ({ children, style, accent }) => (
     background:D.surf1, border:`1px solid ${accent?`${accent}28`:D.border}`,
     borderRadius:D.lg,
     boxShadow: accent
-      ? `0 6px 24px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.05),0 0 32px ${accent}0c`
-      : "0 4px 20px rgba(0,0,0,.3),inset 0 1px 0 rgba(255,255,255,.04)",
+      ? `${T.elevation.md},${T.elevation.sheen},0 0 32px ${accent}0c`
+      : `${T.elevation.md},${T.elevation.sheen}`,
     position:"relative", overflow:"hidden", ...style,
   }}>{children}</div>
 );
@@ -93,18 +101,18 @@ const Sep = ({ sx }) => <div style={{height:"1px",background:D.border,...sx}} />
 const Badge = ({ children, color, sx, ...rest }) => (
   <span {...rest} style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.12em",
     textTransform:"uppercase",padding:"3px 8px",borderRadius:D.pill,
-    background:`${color||D.indigo}1e`,color:color||D.indigo,
+    background:`${color||D.indigo}1e`,color:textOn(color||D.indigo),
     border:`1px solid ${color||D.indigo}30`,flexShrink:0,...sx}}>{children}</span>
 );
 
 const BallDot = ({ ball, size=28 }) => {
   const m = b => {
-    if(b.type==="W")  return {bg:D.rose,   fg:"#fff",   tx:"W"};
-    if(b.type==="Wd") return {bg:D.orange,  fg:"#fff",   tx:"Wd"};
-    if(b.type==="Nb") return {bg:D.amber,   fg:"#000",   tx:"NB"};
-    if(b.type==="Pen")return {bg:D.violet,  fg:"#fff",   tx:`+${b.value}`};
-    if(b.value===6)   return {bg:D.amber,   fg:"#000",   tx:"6"};
-    if(b.value===4)   return {bg:D.indigo,  fg:"#fff",   tx:"4"};
+    if(b.type==="W")  return {bg:D.rose,   fg:inkOn(D.rose),   tx:"W"};
+    if(b.type==="Wd") return {bg:D.orange,  fg:inkOn(D.orange), tx:"Wd"};
+    if(b.type==="Nb") return {bg:D.amber,   fg:inkOn(D.amber),  tx:"NB"};
+    if(b.type==="Pen")return {bg:D.violet,  fg:inkOn(D.violet), tx:`+${b.value}`};
+    if(b.value===6)   return {bg:D.amber,   fg:inkOn(D.amber),  tx:"6"};
+    if(b.value===4)   return {bg:D.indigo,  fg:inkOn(D.indigo), tx:"4"};
     if(b.value===0)   return {bg:D.surf3,   fg:D.textMuted,tx:"·"};
     return {bg:`${D.emerald}33`,fg:D.emerald,tx:String(b.value)};
   };
@@ -127,11 +135,11 @@ const Btn = ({ children, onClick, disabled, variant="primary", size="md", full, 
   const pad = size==="xs"?"5px 10px":size==="sm"?"8px 14px":size==="lg"?"15px 28px":"11px 20px";
   const fs  = size==="xs"?"10px":size==="sm"?"12px":size==="lg"?"15px":"13px";
   const V = {
-    primary:{background:disabled?D.surf2:D.grad,color:disabled?D.textMuted:"#fff",border:"none",boxShadow:disabled?"none":"0 4px 24px rgba(99,102,241,.4)"},
-    danger: {background:disabled?D.surf2:`linear-gradient(135deg,${D.rose},#dc2626)`,color:disabled?D.textMuted:"#fff",border:"none",boxShadow:disabled?"none":`0 4px 20px ${D.rose}40`},
+    primary:{background:disabled?D.surf2:D.grad,color:disabled?D.textMuted:T.light.ink,border:"none",boxShadow:disabled?"none":`0 4px 24px ${clr(D.indigo,.4)}`},
+    danger: {background:disabled?D.surf2:T.light.critical,color:disabled?D.textMuted:T.light.ink,border:"none",boxShadow:disabled?"none":`0 4px 20px ${D.rose}40`},
     ghost:  {background:"transparent",color:D.textSecondary,border:`1px solid ${D.border}`},
     tonal:  {background:D.surf2,color:D.textPrimary,border:`1px solid ${D.borderMed}`},
-    live:   {background:disabled?D.surf2:D.gradLive,color:disabled?D.textMuted:"#fff",border:"none",boxShadow:disabled?"none":`0 4px 20px ${D.emerald}40`},
+    live:   {background:disabled?D.surf2:D.gradLive,color:disabled?D.textMuted:T.light.ink,border:"none",boxShadow:disabled?"none":`0 4px 20px ${D.emerald}40`},
     amber:  {background:disabled?D.surf2:`${D.amber}1a`,color:disabled?D.textMuted:D.amber,border:`1px solid ${disabled?D.border:D.amber+"44"}`},
     s4:     {background:disabled?D.surf2:`${D.indigo}1a`,color:disabled?D.textMuted:D.sky,border:`1px solid ${disabled?D.border:D.indigo+"44"}`},
     s6:     {background:disabled?D.surf2:`${D.amber}1a`,color:disabled?D.textMuted:D.amber,border:`1px solid ${disabled?D.border:D.amber+"44"}`},
@@ -152,7 +160,7 @@ const SignalBar = ({ label, value, pct, color, center }) => (
   <div>
     <div style={{display:"flex",justifyContent:"space-between",marginBottom:"5px"}}>
       <Lbl>{label}</Lbl>
-      <span style={{fontFamily:D.mono,fontSize:"11px",color:color||D.textPrimary}}>{value}</span>
+      <span style={{fontFamily:D.mono,fontSize:"11px",color:textOn(color||D.textPrimary)}}>{value}</span>
     </div>
     <div style={{height:"3px",borderRadius:"2px",background:D.surf3,overflow:"hidden",position:"relative"}}>
       {center
@@ -223,13 +231,13 @@ const Sheet = ({ children, title, accent, onClose }) => {
   <div style={{position:"fixed",inset:0,zIndex:200,display:"flex",flexDirection:"column",justifyContent:"flex-end"}}>
     {/* The scrim is decorative and is not a control: a keyboard user closes
         with Escape, and giving this a tab stop would just add a mystery one. */}
-    <div onClick={onClose} aria-hidden="true" style={{position:"absolute",inset:0,background:"rgba(3,5,12,.75)",backdropFilter:"blur(6px)",WebkitBackdropFilter:"blur(6px)"}}/>
+    <div onClick={onClose} aria-hidden="true" style={{position:"absolute",inset:0,background:T.glass.scrim,backdropFilter:"blur(6px)",WebkitBackdropFilter:"blur(6px)"}}/>
     <div ref={panel} className="slideUp" role="dialog" aria-modal="true" tabIndex={-1}
       {...(title ? { "aria-labelledby": titleId } : {})}
       style={{position:"relative",background:D.glass,backdropFilter:"blur(28px) saturate(1.8)",
       WebkitBackdropFilter:"blur(28px) saturate(1.8)",border:`1px solid ${D.borderMed}`,
       borderBottom:"none",borderRadius:`${D.xxl} ${D.xxl} 0 0`,
-      boxShadow:"0 -32px 80px rgba(0,0,0,.65),inset 0 1px 0 rgba(255,255,255,.1)",
+      boxShadow:`${T.elevation.xl},${T.elevation.sheen}`,
       maxHeight:"92vh",display:"flex",flexDirection:"column"}}>
       <div aria-hidden="true" style={{display:"flex",justifyContent:"center",paddingTop:"12px",paddingBottom:"4px",flexShrink:0}}>
         <div style={{width:"36px",height:"4px",borderRadius:"2px",background:D.borderMed}}/>
@@ -237,7 +245,7 @@ const Sheet = ({ children, title, accent, onClose }) => {
       {title&&(
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 24px 4px",flexShrink:0}}>
           <h2 id={titleId} style={{fontFamily:D.head,fontSize:"18px",fontWeight:700,color:accent||D.textPrimary,margin:0}}>{title}</h2>
-          <button onClick={onClose} aria-label={`Close ${title}`} style={{background:"transparent",border:"none",color:D.textMuted,fontSize:"22px",cursor:"pointer",lineHeight:1,padding:"4px 6px"}}>&times;</button>
+          <button onClick={onClose} aria-label={`Close ${title}`} style={{width:"44px",height:"44px",marginRight:"-10px",display:"flex",alignItems:"center",justifyContent:"center",background:"transparent",border:"none",color:D.textSecondary,fontSize:"26px",cursor:"pointer",lineHeight:1,padding:0}}>&times;</button>
         </div>
       )}
       <div style={{overflow:"auto",padding:"0 24px 32px"}}>{children}</div>
@@ -258,30 +266,34 @@ const Sheet = ({ children, title, accent, onClose }) => {
  * `value` may be null: an innings nobody declared, which reads exactly as
  * every innings did before this existed. Nothing is chosen for the scorer.
  */
+//
+// `quick` is BASIC SCORING (DESIGN_DIRECTION §4, decision 3): the pad opens
+// on the one-tap keys — the outcome alone — for an innings declared quick.
+// The other two open on the three-phase pad, which is the default.
 const CAPTURE_CHOICES = [
-  { id: "full",     label: "Full",     hint: "exact point" },
-  { id: "standard", label: "Standard", hint: "sector only" },
-  { id: "quick",    label: "Quick",    hint: "runs only" },
+  { id: "full",     label: "Full",          hint: "shot, exact point" },
+  { id: "standard", label: "Standard",      hint: "shot, sector" },
+  { id: "quick",    label: "Basic Scoring", hint: "runs only" },
 ];
 const CaptureProfilePicker = ({ value, onChange, label = "What will you capture?" }) => (
   <div data-testid="capture-profile-picker">
-    <Lbl sx={{ marginBottom: "8px" }}>{label}</Lbl>
+    <Lbl sx={{ marginBottom: "8px", fontFamily: T.type.body, fontSize: "12px", letterSpacing: "0.06em", color: T.content.secondary }}>{label}</Lbl>
     <div role="radiogroup" aria-label={label} style={{ display: "flex", gap: "6px" }}>
       {CAPTURE_CHOICES.map(c => (
         <button key={c.id} type="button" role="radio" aria-checked={value === c.id}
           data-testid={`capture-profile-${c.id}`} onClick={() => onChange(c.id)} className="pressBtn" style={{
-            flex: 1, padding: "9px 0", borderRadius: D.md, cursor: "pointer",
-            border: `1px solid ${value === c.id ? D.indigo + "77" : D.border}`,
-            background: value === c.id ? `${D.indigo}1a` : D.surf2,
-            color: value === c.id ? D.sky : D.textMuted, transition: "all .2s",
+            flex: 1, minWidth: 0, minHeight: "52px", padding: "6px 4px", borderRadius: D.md, cursor: "pointer",
+            border: `1px solid ${value === c.id ? T.content.primary : T.line.normal}`,
+            background: value === c.id ? T.surface.raised : T.surface.interactive,
+            color: value === c.id ? T.content.primary : T.content.secondary, transition: "all .2s",
           }}>
-          <div style={{ fontFamily: D.body, fontSize: "13px", fontWeight: 600 }}>{c.label}</div>
-          <div style={{ fontFamily: D.body, fontSize: "10px", marginTop: "2px" }}>{c.hint}</div>
+          <div style={{ fontFamily: T.type.body, fontSize: "15px", fontWeight: 600, lineHeight: 1.2 }}>{c.label}</div>
+          <div style={{ fontFamily: T.type.body, fontSize: "12px", marginTop: "2px" }}>{c.hint}</div>
         </button>
       ))}
     </div>
     {value == null && (
-      <div style={{ fontFamily: D.body, fontSize: "10px", color: D.textMuted, marginTop: "6px" }}>
+      <div style={{ fontFamily: T.type.body, fontSize: "12px", color: T.content.tertiary, marginTop: "6px" }}>
         Not declared — read as it always has been.
       </div>
     )}

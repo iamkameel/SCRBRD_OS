@@ -228,7 +228,7 @@ try {
   ok("the 1XI fixture offers the scorer", opened);
   await page.waitForTimeout(2500);
   await clearBlockers();
-  if (!/\bDOT\b/i.test(await text())) await click(/QUICK MODE/i, 2500);
+  if (!(await page.locator('[data-testid="basic-pad"]').count())) { await page.locator('[data-testid="pad-menu"]').click({ timeout: 2500 }).catch(() => {}); await page.locator('[data-testid="pad-basic-scoring"]').click({ timeout: 2500 }).catch(() => {}); }
   await page.waitForTimeout(400);
   ok("the scorer opens on the pad", /\bDOT\b/i.test(await text()));
 
@@ -279,7 +279,7 @@ try {
   await page.waitForTimeout(800);
 
   await clearBlockers();
-  if (!/\bDOT\b/i.test(await text())) await click(/QUICK MODE/i, 2500);
+  if (!(await page.locator('[data-testid="basic-pad"]').count())) { await page.locator('[data-testid="pad-menu"]').click({ timeout: 2500 }).catch(() => {}); await page.locator('[data-testid="pad-basic-scoring"]').click({ timeout: 2500 }).catch(() => {}); }
   await page.waitForTimeout(400);
   ok("the pad reopens for the second innings", /\bDOT\b/i.test(await text()));
   ok("...with the real target on screen", /Need \d+ off/i.test(await text()));

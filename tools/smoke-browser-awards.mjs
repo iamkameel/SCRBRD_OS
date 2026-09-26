@@ -484,6 +484,34 @@ try {
 
   ok("no console errors on the director of sport's session", dos.errors.length === 0, dos.errors.join(" | "));
   await dos.ctx.close().catch(() => {});
+
+  // CI once saw exactly this: `career FAILED net::ERR_ABORTED` at the client's
+  // ten seconds. Five empty lists would say nobody scored; the tab must say
+  // the figures did not arrive, and offer to ask again.
+  group("A career read that fails is said, with a Retry — never drawn as empty lists");
+  const bad = await open();
+  let failing = true;
+  await bad.page.route(/\/api\/read\/career(\?.*)?$/, (route) => (failing ? route.abort("timedout") : route.continue()));
+  ok("signs in as the director of sport", await signIn(bad.page, /sarah@example\.invalid|Director/));
+  ok("Leagues opens", await nav(bad.page, /Leagues/));
+  ok("the Awards tab is offered", await press(bad.page, /^Awards$/i));
+  ok(`this season still ranks: it is career_by_season's (${cur})`, await settled(bad.page, cur, [TS], [LS]));
+  await bad.page.selectOption('[data-testid="awards-season-select"]', "all");
+  const said = await until(bad.page, () => !!document.querySelector('[data-testid="awards-error"]'));
+  ok("every season, whose read failed, says the figures could not be loaded", said,
+     (await bad.page.locator('[data-testid="season-awards"]').innerText().catch(() => "")).slice(0, 300));
+  const errText = said ? await bad.page.locator('[data-testid="awards-error"]').innerText() : "";
+  ok("...in plain words", /could not be loaded/i.test(errText) && /not a season in which nobody scored/i.test(errText), errText);
+  ok("...and draws no list at all", await bad.page.locator('[data-testid="awards-run-scorers"]').count() === 0);
+  const retry = bad.page.locator('[data-testid="awards-retry"]');
+  const box = said ? await retry.boundingBox() : null;
+  ok("a Retry button, at least 44px tall and wide", !!box && box.height >= 44 && box.width >= 44, JSON.stringify(box));
+  failing = false;
+  if (said) await retry.click();
+  const back = await settled(bad.page, "all", [LS, TS, OT]);
+  ok("Retry reads again, and the lists arrive", back, bad.reads.filter((r) => /^career\b/.test(r)).join("; "));
+  ok("...and the error is gone", back && await bad.page.locator('[data-testid="awards-error"]').count() === 0);
+  await bad.ctx.close().catch(() => {});
 } catch (e) {
   ok(`the browser awards walk threw: ${e.message?.slice(0, 200)}`, false);
   if (DEBUG) console.log(e.stack?.split("\n").slice(0, 10).join("\n"));

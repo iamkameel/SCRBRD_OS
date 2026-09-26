@@ -219,6 +219,18 @@ export const CAPABILITIES = {
   // grant and nothing else.
   "guardian.link.manage":        "Record, verify and end a child's guardian links",
 
+  // ── A child who must never appear in public (PUBLIC_DATA.md C5) ──
+  // A mark that keeps a child off every public page whatever the consent,
+  // and the reason for it — a court order, a custody dispute, a protection
+  // order. Its own capability because no existing one is the right set of
+  // people: guardian.link.manage leaves out the director of sport and would
+  // hand safeguarding reasons to whoever verifies links; discipline.write is
+  // held by a one-fixture umpire; broadcast.publish by the people under
+  // pressure to name a star player. Reading the reason and setting or ending
+  // the mark are one capability: the people who set it are the only people
+  // who read why (db/47).
+  "player.public.withhold":      "Mark a child never to appear on a public page, and read why",
+
   // ── Asking another coach ──
   // A coach reaches a player through the side they coach. When a player is
   // wanted for a different side — a promotion, or a fill-in on Saturday — the
@@ -448,6 +460,8 @@ export const LEVEL = Object.freeze({
   "player.identity.read": 4,
 
   "guardian.link.manage": 2,
+  // The reason is a safeguarding matter: candid, and about a child's home.
+  "player.public.withhold": 3,
 
   "player.access.request": 1, "player.access.grant": 1,
 

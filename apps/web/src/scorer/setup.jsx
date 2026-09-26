@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { D } from "../design/tokens.js";
+import { D, T, textOn } from "../design/tokens.js";
 import { INT_TEAMS, ROLE_COLORS } from "./teams.js";
 import { Badge, Btn, CaptureProfilePicker, GS, Glass, Lbl } from "./ui.jsx";
 import { Select } from "../ui/primitives.jsx";
@@ -57,7 +57,6 @@ function OpeningSetupStep({batKey,bowlKey,batOrder,setBatOrder,bowlingSquad,bowl
       {subStep===0&&(
         <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
           <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
-            <span style={{fontSize:"20px"}}>{batTeam?.flag}</span>
             <div style={{fontFamily:D.head,fontSize:"14px",fontWeight:700,color:D.textPrimary}}>{batKey}</div>
             <Lbl sx={{color:D.amber}}>Batting First</Lbl>
           </div>
@@ -177,7 +176,6 @@ function OpeningSetupStep({batKey,bowlKey,batOrder,setBatOrder,bowlingSquad,bowl
       {subStep===2&&(
         <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
           <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
-            <span style={{fontSize:"20px"}}>{bowlTeam?.flag}</span>
             <div style={{fontFamily:D.head,fontSize:"14px",fontWeight:700,color:D.textPrimary}}>{bowlKey}</div>
             <Lbl sx={{color:D.roseText}}>Opening Bowler</Lbl>
           </div>
@@ -245,8 +243,7 @@ function TeamSelector({value, onChange, accent, label}){
         boxShadow:selected?`0 0 16px ${accent}10`:"none",
       }}>
         {selected
-          ?<><span style={{fontSize:"20px",lineHeight:1}}>{selected.flag}</span>
-            <div style={{flex:1,textAlign:"left"}}>
+          ?<><div style={{flex:1,textAlign:"left"}}>
               <div style={{fontFamily:D.body,fontSize:"14px",fontWeight:600,color:D.textPrimary}}>{value}</div>
               <div style={{fontFamily:D.mono,fontSize:"10px",color:accent}}>{selected.abbr}</div>
             </div></>
@@ -258,7 +255,7 @@ function TeamSelector({value, onChange, accent, label}){
         <div className="fadeIn" style={{position:"absolute",top:"calc(100% + 6px)",left:0,right:0,zIndex:300,
           background:D.glass,backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",
           border:`1px solid ${D.borderMed}`,borderRadius:D.lg,overflow:"hidden",
-          boxShadow:"0 24px 60px rgba(0,0,0,.7)"}}>
+          boxShadow:T.elevation.xl}}>
           <div style={{maxHeight:"260px",overflow:"auto"}}>
             {Object.entries(INT_TEAMS).map(([name,info])=>(
               <button key={name} onClick={()=>{onChange(name);setOpen(false);}} className="pressBtn" style={{
@@ -266,10 +263,9 @@ function TeamSelector({value, onChange, accent, label}){
                 border:"none",cursor:"pointer",display:"flex",alignItems:"center",gap:"10px",
                 borderBottom:`1px solid ${D.border}`,transition:"background .15s",
               }}>
-                <span style={{fontSize:"18px",lineHeight:1}}>{info.flag}</span>
                 <span style={{fontFamily:D.body,fontSize:"13px",fontWeight:value===name?600:400,
                   color:value===name?D.textPrimary:D.textSecondary,flex:1,textAlign:"left"}}>{name}</span>
-                <span style={{fontFamily:D.mono,fontSize:"10px",color:value===name?accent:D.textMuted}}>{info.abbr}</span>
+                <span style={{fontFamily:D.mono,fontSize:"10px",color:value===name?textOn(accent):D.textMuted}}>{info.abbr}</span>
               </button>
             ))}
           </div>
@@ -365,7 +361,7 @@ function SquadBuilder({teamKey, selected11, setSelected11, twelfthMan, setTwelft
                 border:`1px solid ${inXI?accent+"44":is12th?D.violet+"44":D.border}`,
                 display:"flex",alignItems:"center",justifyContent:"center",
                 fontFamily:D.mono,fontSize:"10px",fontWeight:600,
-                color:inXI?accent:is12th?D.violet:D.textMuted}}>
+                color:inXI?textOn(accent):is12th?D.violet:D.textMuted}}>
                 {inXI?xiPos+1:is12th?"12":"·"}
               </div>
               <span style={{flex:1,fontFamily:D.body,fontSize:"13px",fontWeight:inXI?600:400,
@@ -414,7 +410,7 @@ function SquadBuilder({teamKey, selected11, setSelected11, twelfthMan, setTwelft
                     transform:isDraggingThis?"scale(1.02)":"scale(1)",
                     opacity:isDraggingThis?0.7:1,
                     transition:"transform .1s,opacity .1s,border-color .15s,background .15s",
-                    boxShadow:isDraggingThis?`0 8px 24px rgba(0,0,0,.4)`:isDragTarget?`0 0 0 2px ${accent}33`:"none",
+                    boxShadow:isDraggingThis?T.elevation.lg:isDragTarget?`0 0 0 2px ${accent}33`:"none",
                   }}>
                   <span style={{color:D.textMuted,fontSize:"14px",lineHeight:1,cursor:"grab",flexShrink:0}}>⠿</span>
                   <div style={{width:"20px",height:"20px",borderRadius:"50%",flexShrink:0,
@@ -477,7 +473,7 @@ function SetupScreen({onStart}){
               width:"22px",height:"22px",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",
               fontFamily:D.mono,fontSize:"10px",fontWeight:600,cursor:i<step?"pointer":"default",
               background:i===step?D.grad:i<step?`${D.emerald}22`:D.surf2,
-              color:i===step?"#fff":i<step?D.emerald:D.textMuted,
+              color:i===step?T.light.ink:i<step?D.emerald:D.textMuted,
               border:`1px solid ${i===step?D.indigo+"66":i<step?D.emerald+"44":D.border}`,
               transition:"all .3s",
             }} onClick={()=>i<step&&setStep(i)}>{i<step?"✓":i+1}</div>
@@ -512,14 +508,13 @@ function SetupScreen({onStart}){
               <CaptureProfilePicker value={captureProfile} onChange={setCaptureProfile}/>
               <Btn variant="primary" size="lg" full disabled={!canContinue0}
                 onClick={()=>canContinue0&&setStep(1)} sx={{borderRadius:D.md}}>
-                Select {INT_TEAMS[team1Key]?.flag} {team1Key||"Team 1"} XI →
+                Select {team1Key||"Team 1"} XI →
               </Btn>
             </div>
           )}
           {step===1&&(
             <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
               <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
-                <span style={{fontSize:"22px"}}>{INT_TEAMS[team1Key]?.flag}</span>
                 <div style={{fontFamily:D.head,fontSize:"16px",fontWeight:700,color:D.textPrimary}}>{team1Key}</div>
                 <Badge color={D.sky}>XI + 12th</Badge>
               </div>
@@ -530,14 +525,13 @@ function SetupScreen({onStart}){
                 battingOrder={order1} setBattingOrder={setOrder1}/>
               <Btn variant="primary" size="lg" full disabled={!canContinue1}
                 onClick={()=>canContinue1&&setStep(2)} sx={{borderRadius:D.md}}>
-                {canContinue1?"Select "+INT_TEAMS[team2Key]?.flag+" "+team2Key+" XI →":"Select 11 players first"}
+                {canContinue1?"Select "+team2Key+" XI →":"Select 11 players first"}
               </Btn>
             </div>
           )}
           {step===2&&(
             <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
               <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
-                <span style={{fontSize:"22px"}}>{INT_TEAMS[team2Key]?.flag}</span>
                 <div style={{fontFamily:D.head,fontSize:"16px",fontWeight:700,color:D.textPrimary}}>{team2Key}</div>
                 <Badge color={D.emerald}>XI + 12th</Badge>
               </div>
@@ -558,7 +552,6 @@ function SetupScreen({onStart}){
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
                 background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.lg,padding:"14px 16px"}}>
                 <div style={{textAlign:"center",flex:1}}>
-                  <div style={{fontSize:"24px",marginBottom:"4px"}}>{INT_TEAMS[team1Key]?.flag}</div>
                   <div style={{fontFamily:D.body,fontSize:"13px",fontWeight:600,color:D.textPrimary}}>{team1Key}</div>
                   <div style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>{INT_TEAMS[team1Key]?.abbr}</div>
                 </div>
@@ -567,7 +560,6 @@ function SetupScreen({onStart}){
                   <div style={{fontFamily:D.mono,fontSize:"11px",color:D.amber,marginTop:"4px"}}>{overs} ov</div>
                 </div>
                 <div style={{textAlign:"center",flex:1}}>
-                  <div style={{fontSize:"24px",marginBottom:"4px"}}>{INT_TEAMS[team2Key]?.flag}</div>
                   <div style={{fontFamily:D.body,fontSize:"13px",fontWeight:600,color:D.textPrimary}}>{team2Key}</div>
                   <div style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>{INT_TEAMS[team2Key]?.abbr}</div>
                 </div>
@@ -575,14 +567,14 @@ function SetupScreen({onStart}){
               <div>
                 <Lbl sx={{marginBottom:"8px"}}>Toss Won By</Lbl>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px"}}>
-                  {[[team1Key,INT_TEAMS[team1Key]?.flag],[team2Key,INT_TEAMS[team2Key]?.flag]].map(([t,flag],i)=>(
+                  {[team1Key,team2Key].map((t,i)=>(
                     <button key={i} onClick={()=>setToss(i)} className="pressBtn" style={{
                       padding:"12px",borderRadius:D.md,cursor:"pointer",
                       fontFamily:D.body,fontSize:"13px",fontWeight:600,
                       border:`1px solid ${toss===i?D.emerald+"66":D.border}`,
                       background:toss===i?`${D.emerald}14`:D.surf2,
                       color:toss===i?D.emerald:D.textSecondary,transition:"all .2s",
-                    }}>{flag} {t}</button>
+                    }}>{t}</button>
                   ))}
                 </div>
               </div>

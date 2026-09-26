@@ -4,7 +4,7 @@
  *
  * tools/smoke-opposition.mjs proves the API and the two SECURITY DEFINER
  * functions behind it: off by default, a head-to-head fixture you are in or
- * nothing, a fourteen-day window, cricket columns only, figures withheld
+ * nothing, a five-day window (db/46), cricket columns only, figures withheld
  * below the evidence floor, every read written down. All of that was true
  * before this walk existed and NOTHING DREW IT — for months the largest gap
  * in the product was a dossier nobody could open.
@@ -182,7 +182,7 @@ const closeDossier = async (page) => {
   await page.waitForTimeout(400);
 };
 
-let soon, later, solo, wrongSide, nets;
+let soon, later, solo, wrongSide, nets, WINDOW;
 
 try {
   for (let i = 0; i < 60; i++) {
@@ -226,10 +226,14 @@ try {
   nets = await fixture(HIL, "1XI", { opponent: "Michaelhouse 2nd XI", days: -4, status: "complete" });
   await balls(nets, HIL, 24, { striker: hilPair[0].id, bowler: hilBowler, wicketsAt: [20] });
 
-  soon      = await fixture(HIL, "1XI", { awaySchool: WES, awayTeam: "1XI", days: 7 });
-  later     = await fixture(HIL, "1XI", { awaySchool: WES, awayTeam: "1XI", days: 40 });
-  solo      = await fixture(HIL, "1XI", { opponent: "Michaelhouse 1st XI", days: 7 });
-  wrongSide = await fixture(HIL, "2XI", { awaySchool: WES, awayTeam: "2XI", days: 7 });
+  // A day either side of the window's edge, read from the function
+  // (opposition_window_days(), db/46), so the walk follows the number rather
+  // than restating it. tools/smoke-opposition.mjs and db/99 §24 hold it to five.
+  WINDOW    = (await q(`select opposition_window_days() d`))[0].d;
+  soon      = await fixture(HIL, "1XI", { awaySchool: WES, awayTeam: "1XI", days: WINDOW - 1 });
+  later     = await fixture(HIL, "1XI", { awaySchool: WES, awayTeam: "1XI", days: WINDOW + 1 });
+  solo      = await fixture(HIL, "1XI", { opponent: "Michaelhouse 1st XI", days: WINDOW - 1 });
+  wrongSide = await fixture(HIL, "2XI", { awaySchool: WES, awayTeam: "2XI", days: WINDOW - 1 });
 
   // ── Off by default, on screen ───────────────────────────────────
   group("Switched off, the coach is told so rather than shown a blank");
@@ -259,7 +263,7 @@ try {
   const coach = await open();
   ok("the coach signs in again", await signIn(coach.page, "coach@example.invalid"));
   ok("Match Centre opens", await nav(coach.page, /Match Centre/));
-  ok("the dossier opens for the fixture next week", await openDossier(coach.page, soon));
+  ok("the dossier opens for the fixture inside the window", await openDossier(coach.page, soon));
   const dossier = coach.page.locator('[data-testid="dossier"]');
   const body = await dossier.innerText();
   if (DEBUG) console.log("[debug] dossier:\n" + body);
@@ -376,11 +380,12 @@ try {
   group("A window that has not opened says when it will");
   {
     await closeDossier(coach.page);
-    ok("the dossier for a fixture forty days out opens", await openDossier(coach.page, later));
+    ok("the dossier for a fixture a day beyond the window opens", await openDossier(coach.page, later));
     const shut = await coach.page.locator('[data-testid="dossier-shut-not_yet_open"]').count();
     ok("...and is shut with the reason named", shut === 1);
     const t = await coach.page.locator('[data-testid="dossier"]').innerText();
-    ok("...saying the window opens fourteen days before", /fourteen days/i.test(t));
+    ok(`...saying the window opens ${WINDOW} days before, as the server has it`,
+       new RegExp(`opens ${WINDOW} days before the first ball`).test(t), t.replace(/\s+/g, " ").slice(0, 200));
     ok("...and when", /Opens/.test(t));
     ok("...naming no pupil of theirs", !/Mkhize|Botha/.test(t), t.replace(/\s+/g, " ").slice(0, 160));
     // The count a shut window must NOT give: how much there would be to read.

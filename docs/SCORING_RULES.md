@@ -480,7 +480,8 @@ Still different, and each a decision for later: the matchups read's `balls` coun
 one), which `tools/smoke-matchups.mjs` pins; a batter who came to the crease and neither faced nor was out has no
 `player_innings` row (the fold lists him "0*"); and penalty runs are in the fold's total but not in
 `match_live_score`'s — it reads `value`, which a `penalty` row does not carry (SCRBRD-090). The handover check had
-both of the last problems and more; db/45 closed them for it (below).
+both of the last problems and more; db/45 closed them for it, and db/48 closed the penalty runs for the live score
+(both below).
 
 `tools/smoke-fold-figures.mjs` holds the fold to every SQL reader of a batter's and a bowler's figures over generated
 logs, legacy rows included; db/99 §21 holds each correction.
@@ -500,8 +501,8 @@ from the second innings on, and after any penalty award, no honest statement cou
   what both pads show; until then the first is. The client sends no innings and the signature is unchanged.
 - **Runs** — a delivery's `value`, plus one for a wide or a no-ball, on deliveries only; plus each `penalty` row's
   `payload.runs`, 5 when absent or null (`ev.runs ?? 5`), and nothing when `payload.toBattingTeam` is `false`
-  (`penalty_runs_as_folded()`). The fold does not add an award to the fielding side to this innings or any other,
-  and neither does the check. A `runs` that is not an integer is a total the fold cannot make: the innings' runs are
+  (`penalty_runs_as_folded()`). The fold does not add an award to the fielding side to this innings, and neither
+  does the check; since db/48 both add it to the fielding side's own innings (below). A `runs` that is not an integer is a total the fold cannot make: the innings' runs are
   unknown, and nothing verifies.
 - **Wickets** — a delivery whose wicket stands (the free hit, db/42), and a `retire` the fold reads as a dismissal
   (retired out, timed out: `ball_retirement_dismissal()`, db/40) — not any other row marked W.
@@ -511,3 +512,65 @@ from the second innings on, and after any penalty award, no honest statement cou
 innings it was checked against. The reference double (`services/api/handover/scoring-session.mjs`,
 `replayEvents()`) answers for the same innings. `tools/smoke-handover-innings.mjs` hands over through the API in the
 first innings after a penalty and in the second after one each way; db/99 §23 holds each rule.
+
+## Penalty runs to the fielding side cross innings (SCRBRD-094, db/48)
+
+**Decided (Kameel, from MCC Law 41).** Five penalty runs awarded to the fielding side are added to the fielding side's
+total: to its **most recently completed innings**, or, if it has not batted yet, to its **next innings**. The fold used
+to drop them (`toBattingTeam: false` added to no innings).
+
+**The event is unchanged.** A `penalty` is recorded in the innings being played when it was awarded, with
+`toBattingTeam: false`; it names no other innings. `deriveInnings()` counts it in that innings' `penaltyToFielding`,
+never in its `runs`. Where it goes is a question about the whole match, so the match folds answer it —
+`deriveMatch()`, `deriveInningsList()` (the pad's shape: one log per innings) and `MatchFold` (the server's), all
+through one function, `penaltyCredits()`:
+
+| | Where the runs go | How the fold adds them |
+|---|---|---|
+| The fielding side has batted before this innings | its highest-numbered innings before this one — the most recently completed, since innings are played in order | **added at the end**, after its last event: its fall of wickets, partnerships and seal stand as recorded. Batting first and complete, their total rises mid-chase |
+| It has not batted yet | its lowest-numbered innings after this one | **opened on**: in its total from before its first ball (`inningsFolder`'s `carried`), so its fall of wickets, the chase it completes and the figures a seal confirms include them. Batting second, they start on 5 |
+| Its next innings is not in the log yet | nowhere until that innings' `innings_start` is written | `penaltyCredits().pending` lists it, so a screen can say the next innings opens on it |
+
+Sides are the `innings_start`'s keys: an innings is the fielding side's when its `teamKey` equals this innings'
+`bowlingTeamKey` (each falls back to the team's name). An innings with no keys is nobody's. Either way the runs are in
+the receiving innings' `extras.penalty` and its `penaltyCarried`. Two-innings matches follow the same rule: in A, B, A, B
+an award in B's second innings goes to A's second; with the follow-on (A, B, B, A) one in B's second goes to A's first.
+
+**The target moves with it.** A chase's target is the other side's total plus one, so an award to the fielding side —
+the side that set it — raises `inn.target` by the same runs, from the award on: the innings-over rule and the result
+read the new figure (a chase of 11 that reaches 12 after a short run gave 5 to the fielding side is not over; the
+margin is counted against 16). The target an innings opened with is taken to include every award made before it was
+set (a pad folding the match stamps the credited total). A target the umpires typed (a `revision`) is theirs and does
+not move; they revise it again. A chase with no stamped target is judged against the credited total plus one.
+
+**Logs with no award to a fielding side replay identically** — `deriveInnings()`, `deriveMatch()` and `MatchFold`,
+whole and event by event, over thousands of generated logs, against the fold before this change; the two new fields
+are 0.
+
+**Deliberate short running (Law 18.5.2, 41.5)** is two events, built by `shortRunning()`: the delivery as bowled with
+no run completed (`value: 0`) and an award, reason `short_running`, to the fielding side. So the delivery needs nothing
+new anywhere: no run to the side, the batter or the bowler; the batters at the ends they started from; a legal ball
+of the over and a ball faced; a no-ball's or wide's one-run penalty stands. Every SQL reader of a delivery reads a dot
+ball. The server takes the award only straight after a delivery of the same innings that scored no run
+(`short_run_unmatched`), and takes it even when that delivery ended the match.
+
+**The reasons are a closed list,** `PENALTY_REASON`, with words in `PENALTY_REASON_TEXT` and the side each award goes
+to in `PENALTY_REASON_SIDE`:
+
+| To the fielding side (the batting side's offence) | To the batting side (the fielding side's offence) | Either |
+|---|---|---|
+| `short_running` 41.5 · `obstruction_distraction` 41.4 · `pitch_damage` 41.12 · `protected_area` 41.14 · `striking_pitch` 41.15 · `time_wasting` 41.17 | `helmet_struck` 28.3 · `illegal_fielding` 28.2 · `ball_tampering` 41.3 · `fielding_time_wasting` 41.9 · `unfair_play` 41.1 · `fielding_restrictions` | `other` |
+
+The batting side's reasons are the ones the pad's sheet already offered, under the Law each is. The pad's free text
+from before the list closed is read as the reason it is (`normalisePenaltyReason`: "Deliberate time wasting" by the
+side the runs went to); the constructor refuses anything else. At commit (`lawsRefusal`): runs that are not a whole
+number above nought (`penalty_runs_invalid` — SCRBRD-090's last point), a reason not on the list
+(`penalty_reason_unknown`), one awarded to the side that committed it (`penalty_reason_side`), and any award to the
+fielding side but a short run's once the match is decided (`match_decided`: it would move a target nobody is chasing).
+
+**SQL (db/48).** Every total that must agree with the fold now counts penalty runs as it does: `match_live_score`
+(the awards to the batting side, and the credits — SCRBRD-090), `innings_score_as_folded()` and so the handover check,
+and the board's target (`broadcast_state()` states `innings_target_as_folded()`, the fold's `inn.target`, else the
+previous innings' credited total plus one). `penalty_credit_as_folded()` is `penaltyCredits()` in SQL. The live score
+and derby reads follow the view. `tools/smoke-fold-figures.mjs` holds the fold to every one of them over generated logs
+with awards to both sides; db/99 §26 holds each rule.

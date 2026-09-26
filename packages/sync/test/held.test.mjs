@@ -176,6 +176,15 @@ group("G. In words");
   ok("an undo names what it undid", describeEvent(voidEvent({ target: B1.id }), innings[0], (k) => LOG[0].find((e) => e.id === k))
      === "Undo — of \"Ball — 4 runs, K Naidoo facing A Nel\"");
   ok("an unknown player id is shown as itself", describeEvent(bowler({ bowler: "Z Unknown" }), innings[0]) === "Bowler — Z Unknown to bowl");
+  // SCRBRD-094: an award says whose it is and why, in words — the pad's old free text too.
+  ok("penalty runs to the fielding side, with the reason in words",
+     describeEvent({ kind: "penalty", runs: 5, toBattingTeam: false, reason: "short_running" }, innings[0])
+     === "Penalty — 5 runs to the fielding side, for deliberate short running (Law 41.5)");
+  ok("...an old free-text reason is read as the reason it is",
+     describeEvent({ kind: "penalty", toBattingTeam: true, reason: "Ball hit helmet on field" }, innings[0])
+     === "Penalty — 5 runs to the batting side, for the ball striking a fielder's helmet on the ground (Law 28.3)");
+  ok("...and one with no reason says only whose",
+     describeEvent({ kind: "penalty", runs: 5 }, innings[0]) === "Penalty — 5 runs to the batting side");
   // SCRBRD-081: a dismissal with no ball says so; a retirement stays one.
   ok("timed out, a wicket with no ball", describeEvent(retire({ batter: "p3", reason: "timed_out" }), innings[0])
      === "Wicket, no ball — T Mokoena timed out");

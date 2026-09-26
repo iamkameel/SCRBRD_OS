@@ -54,7 +54,8 @@
  * it is in no log to be re-queued from. A copy the server refuses in turn is
  * held under its new key — the count stays, nothing doubles.
  */
-import { deriveInnings, lawsRefusal, undoLast, LOCAL_ONLY, REFUSAL_TEXT, DISMISSAL_LABEL } from "@scrbrd/scoring";
+import { deriveInnings, deriveInningsList, lawsRefusal, undoLast, LOCAL_ONLY, REFUSAL_TEXT, DISMISSAL_LABEL,
+  PENALTY_REASON_TEXT, normalisePenaltyReason } from "@scrbrd/scoring";
 
 /**
  * An event the server refused or conflicted on, as the engine holds it.
@@ -210,7 +211,9 @@ export function recordAgainRefusal(log, held, evs) {
     if (!inLog(log, h.idempotencyKey)) return { key: h.idempotencyKey, reason: "not_on_board" };
     const ev = asRecordedNow(view, h.payload);
     const i = ev.innings ?? 0;
-    const innings = view.map((a) => (a.length ? deriveInnings(a) : null));
+    // The match's fold, as the server's: an award to a fielding side is in
+    // that side's own innings (SCRBRD-094).
+    const innings = deriveInningsList(view);
     const why = lawsRefusal({ innings, events: view }, ev);
     if (why) return { key: h.idempotencyKey, reason: why };
     while (view.length <= i) view.push([]);
@@ -339,7 +342,11 @@ export function describeEvent(ev, inn, find) {
       }
       return `Retirement — ${n(ev.batter)} (${ev.reason === "out" ? "retired out" : "retired hurt"})`;
     }
-    case "penalty": return `Penalty — ${plural(Number(ev.runs ?? 5), "run")} to the ${ev.toBattingTeam === false ? "fielding" : "batting"} side`;
+    case "penalty": {
+      const why = normalisePenaltyReason(ev.reason, ev.toBattingTeam);
+      return `Penalty — ${plural(Number(ev.runs ?? 5), "run")} to the ${ev.toBattingTeam === false ? "fielding" : "batting"} side`
+        + (why ? `, for ${PENALTY_REASON_TEXT[why]}` : "");
+    }
     case "revision": {
       const parts = [ev.overs != null ? `${ev.overs} overs` : null, ev.target != null ? `target ${ev.target}` : null].filter(Boolean);
       return `Revision — ${parts.length ? parts.join(", ") : "no change"}`;

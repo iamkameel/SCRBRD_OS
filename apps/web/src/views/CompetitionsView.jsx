@@ -4,6 +4,7 @@ import { holdsCapability } from "../rbac/index.js";
 import { D } from "../design/tokens.js";
 import { Avatar, Badge, Btn, Card, SectionHeader, StatusDot } from "../ui/primitives.jsx";
 import { usePlayersWithCareer, useRows } from "../lib/live.js";
+import { Icon } from "../ui/icons.jsx";
 
 function CompetitionsView({ role }) {
   // Read through the choke point: row-scoped and column-masked for this
@@ -54,7 +55,7 @@ function CompetitionsView({ role }) {
                       <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
                         <span style={{fontFamily:D.mono,fontSize:"12px",fontWeight:700,color:i===0?D.amber:D.textMuted,width:"16px"}}>{i+1}</span>
                         <span style={{fontFamily:D.body,fontSize:"12px",fontWeight:t.team.includes("Hilton")?700:400,color:t.team.includes("Hilton")?D.textPrimary:D.textSecondary}}>{t.team}</span>
-                        {i===0&&<span style={{fontSize:"11px"}}>👑</span>}
+                        {i===0&&<span style={{fontSize:"11px",color:D.amber}}><Icon name="crown" label="Top of the table"/></span>}
                       </div>
                       {[t.P,t.W,t.L,t.NR,<span style={{color:t.team.includes("Hilton")?D.emerald:D.textPrimary,fontWeight:700}}>{t.pts}</span>,<span style={{color:t.nrr>=0?D.emerald:D.rose}}>{t.nrr>=0?"+":""}{t.nrr.toFixed(2)}</span>].map((v,j)=>(
                         <div key={j} style={{fontFamily:D.mono,fontSize:"12px",color:D.textSecondary,textAlign:"center"}}>{v}</div>

@@ -14,6 +14,8 @@ import { disablePush, enablePush, pushSupported } from "../lib/push.js";
 import { resolveBirthDate, BIRTH_DATE_MESSAGE } from "@scrbrd/policy/date-of-birth";
 import { STATUS_LABEL, STATUS_TONE, UPGRADES } from "../data/roadmap.js";
 import { SupportAccessPanel } from "./support.jsx";
+import { ThemeChoice } from "../ui/ThemeChoice.jsx";
+import { Icon } from "../ui/icons.jsx";
 
 // ══════════════════════════════════════════════════════
 //  SETTINGS & ACCESS CONTROL
@@ -50,16 +52,16 @@ const TABS = [
 // screenshots read "ccounts" and "ilton College"). Every card on this
 // screen is a padded one; an explicit padding in sx still wins.
 const Panel = ({ sx, ...rest }) => <Card sx={{ padding: "16px", ...sx }} {...rest}/>;
-const H = { fontFamily: D.head, fontSize: "13px", fontWeight: 700, color: D.textPrimary };
-const SUB = { fontFamily: D.body, fontSize: "11px", color: D.textMuted, lineHeight: 1.5 };
-const MONO = { fontFamily: D.mono, fontSize: "10px", color: D.textMuted };
-const EYEBROW = { fontFamily: D.head, fontSize: "9px", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: D.textMuted };
+const H = () => ({ fontFamily: D.head, fontSize: "13px", fontWeight: 700, color: D.textPrimary });
+const SUB = () => ({ fontFamily: D.body, fontSize: "11px", color: D.textMuted, lineHeight: 1.5 });
+const MONO = () => ({ fontFamily: D.mono, fontSize: "10px", color: D.textMuted });
+const EYEBROW = () => ({ fontFamily: D.head, fontSize: "9px", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: D.textMuted });
 
 const CardHead = ({ title, sub, aside }) => (
   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px", flexWrap: "wrap", marginBottom: sub ? "12px" : "10px" }}>
     <div style={{ minWidth: 0 }}>
-      <div style={H}>{title}</div>
-      {sub && <div style={{ ...SUB, marginTop: "3px", maxWidth: "62ch" }}>{sub}</div>}
+      <div style={H()}>{title}</div>
+      {sub && <div style={{ ...SUB(), marginTop: "3px", maxWidth: "62ch" }}>{sub}</div>}
     </div>
     {aside && <div style={{ flexShrink: 0 }}>{aside}</div>}
   </div>
@@ -314,7 +316,7 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, on
           that quietly discards it. */}
       {addUser && (
         <Modal title="Enrol a person" onClose={() => { setAddUser(false); setEnrolError(null); }}>
-          <div style={{ ...SUB, marginBottom: "10px" }}>
+          <div style={{ ...SUB(), marginBottom: "10px" }}>
             This opens a real account and links it to their record. There is no email yet —
             ask for a sign-in code and hand it over in person.
           </div>
@@ -323,7 +325,7 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, on
                     options={enrolSchools.map((sc) => ({ value: sc.id, label: sc.name }))}/>
           )}
           <Select label="Role" value={newUser.role} onChange={(v) => setNewUser((p) => ({ ...p, role: v }))}
-                  options={grantable.map((v) => ({ value: v, label: `${ROLES[v].icon} ${ROLES[v].label}` }))}/>
+                  options={grantable.map((v) => ({ value: v, label: ROLES[v].label }))}/>
           {/* The roster, narrowed to the people who have no account — the list
               this screen already shows as the problem. */}
           <Select label={newUser.role === "player" ? "Who this account is for" : "Linked person (optional)"}
@@ -360,7 +362,7 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, on
       {captureFor && (
         <Modal title={captureFor.guardianId ? "Capture & re-establish" : "Capture date of birth"}
                onClose={() => { setCaptureFor(null); setCaptureError(null); }}>
-          <div style={{ ...SUB, marginBottom: "10px" }}>
+          <div style={{ ...SUB(), marginBottom: "10px" }}>
             <strong style={{ color: D.textPrimary }}>{captureFor.name}</strong> has no date of birth on record.
             {captureFor.guardianId
               ? ` Once it is captured, ${captureFor.guardianName || "the guardian"}'s link (${captureFor.relationship || "parent"}) is re-established in the same step.`
@@ -409,7 +411,7 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, on
                 textAlign: "center", padding: "14px", borderRadius: D.sm, color: D.textPrimary,
                 background: D.emerald + "14", border: `1px solid ${D.emerald}44` }}>{issued.code}</div>
               {issued.expiresAt && (
-                <div style={{ ...SUB, marginTop: "8px", textAlign: "center" }}>Expires {new Date(issued.expiresAt).toLocaleString()}</div>
+                <div style={{ ...SUB(), marginTop: "8px", textAlign: "center" }}>Expires {new Date(issued.expiresAt).toLocaleString()}</div>
               )}
             </>
           ) : (
@@ -465,10 +467,10 @@ function PeopleTab({ users, players, staff, coaches, noAccount, noDob, linkEnded
           an access-control fact, not an absence, and the chip IS the way in. */}
       {noAccount.length > 0 && (
         <Panel sx={{ padding: "14px", marginBottom: "14px", borderLeft: `3px solid ${D.amber}` }} data-testid="people-without-accounts">
-          <div style={{ ...H, fontSize: "12px", marginBottom: "4px" }}>
+          <div style={{ ...H(), fontSize: "12px", marginBottom: "4px" }}>
             On a roster, no account — {noAccount.length} of {players.length}
           </div>
-          <div style={{ ...SUB, marginBottom: "10px" }}>
+          <div style={{ ...SUB(), marginBottom: "10px" }}>
             These people appear in Squad and Profiles and hold a passport, but cannot sign in.
             An account is what links the two: without one, nobody can read their own record.
             {canEdit ? " Choose somebody to open an account for them." : ""}
@@ -484,7 +486,7 @@ function PeopleTab({ users, players, staff, coaches, noAccount, noDob, linkEnded
                     fontFamily: D.body, fontSize: "11px", color: D.textSecondary, cursor: canEdit ? "pointer" : "default" }}>
                   <Avatar name={p.name} size={18} color={D.amber}/>
                   {p.name}
-                  <span style={{ ...MONO, fontSize: "9px" }}>{p.team}</span>
+                  <span style={{ ...MONO(), fontSize: "9px" }}>{p.team}</span>
                 </Tag>
               );
             })}
@@ -498,10 +500,10 @@ function PeopleTab({ users, players, staff, coaches, noAccount, noDob, linkEnded
           above it is captured. */}
       {(noDob.length > 0 || linkEnded.length > 0) && (
         <Panel sx={{ padding: "14px", marginBottom: "14px", borderLeft: `3px solid ${D.rose}` }} data-testid="dob-gaps">
-          <div style={{ ...H, fontSize: "12px", marginBottom: "4px" }}>
+          <div style={{ ...H(), fontSize: "12px", marginBottom: "4px" }}>
             No date of birth on record — {noDob.length} of {players.length}
           </div>
-          <div style={{ ...SUB, marginBottom: "10px" }}>
+          <div style={{ ...SUB(), marginBottom: "10px" }}>
             Nobody's family can be linked to them and no guardian link can be given an end date until this is captured.
             {canEdit ? " Choose somebody to capture it." : ""}
           </div>
@@ -517,7 +519,7 @@ function PeopleTab({ users, players, staff, coaches, noAccount, noDob, linkEnded
                       fontFamily: D.body, fontSize: "11px", color: D.textSecondary, cursor: canEdit ? "pointer" : "default" }}>
                     <Avatar name={p.name} size={18} color={D.rose}/>
                     {p.name}
-                    <span style={{ ...MONO, fontSize: "9px" }}>{p.team}</span>
+                    <span style={{ ...MONO(), fontSize: "9px" }}>{p.team}</span>
                   </Tag>
                 );
               })}
@@ -525,10 +527,10 @@ function PeopleTab({ users, players, staff, coaches, noAccount, noDob, linkEnded
           )}
           {linkEnded.length > 0 && (
             <>
-              <div style={{ ...H, fontSize: "11px", marginBottom: "4px" }}>
+              <div style={{ ...H(), fontSize: "11px", marginBottom: "4px" }}>
                 Guardian access ended for want of it — {linkEnded.length}
               </div>
-              <div style={{ ...SUB, marginBottom: "10px" }}>
+              <div style={{ ...SUB(), marginBottom: "10px" }}>
                 These links were live once. Capturing the birthday and re-establishing the link is one step.
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
@@ -538,7 +540,7 @@ function PeopleTab({ users, players, staff, coaches, noAccount, noDob, linkEnded
                       padding: "6px 10px", borderRadius: D.sm, background: D.amber + "0c", border: `1px solid ${D.amber}22` }}>
                     <Avatar name={g.name} size={18} color={D.amber}/>
                     <span style={{ fontFamily: D.body, fontSize: "11px", color: D.textSecondary }}>{g.name}</span>
-                    <span style={{ ...MONO, fontSize: "9px" }}>
+                    <span style={{ ...MONO(), fontSize: "9px" }}>
                       {g.relationship} · {g.guardianName || g.guardianEmail || "unknown guardian"} · ended {g.endedOn}
                     </span>
                     {canEdit && (
@@ -568,10 +570,10 @@ function PeopleTab({ users, players, staff, coaches, noAccount, noDob, linkEnded
             <option value="">Every role</option>
             {rolesPresent.map((r) => <option key={r} value={r}>{ROLES[r]?.label ?? r}</option>)}
           </select>
-          <span style={MONO}>{shown.length === users.length ? `${users.length} accounts` : `${shown.length} of ${users.length}`}</span>
+          <span style={MONO()}>{shown.length === users.length ? `${users.length} accounts` : `${shown.length} of ${users.length}`}</span>
         </div>
         {shown.length === 0
-          ? <EmptyState icon="👤" message={users.length === 0 ? "No accounts to show. Enrol somebody from the roster above." : "Nobody matches that search."}/>
+          ? <EmptyState icon="user" message={users.length === 0 ? "No accounts to show. Enrol somebody from the roster above." : "Nobody matches that search."}/>
           : (
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -590,11 +592,11 @@ function PeopleTab({ users, players, staff, coaches, noAccount, noDob, linkEnded
                             <Avatar name={u.name} size={30} color={rc?.color || D.textMuted}/>
                             <div style={{ minWidth: 0 }}>
                               <div style={{ fontFamily: D.body, fontSize: "12px", fontWeight: 500, color: D.textPrimary, whiteSpace: "nowrap" }}>{u.name}</div>
-                              <div style={{ ...MONO, whiteSpace: "nowrap" }}>{u.email}</div>
+                              <div style={{ ...MONO(), whiteSpace: "nowrap" }}>{u.email}</div>
                             </div>
                           </div>
                         </TD>
-                        <TD><Badge color={rc?.color || D.textMuted}>{rc?.icon} {rc?.label ?? u.role}</Badge></TD>
+                        <TD><Badge color={rc?.color || D.textMuted}>{rc?.icon && <Icon name={rc.icon}/>} {rc?.label ?? u.role}</Badge></TD>
                         {manySchools && <TD mono>{schoolName.get(u.school) ?? "—"}</TD>}
                         <TD sx={{ color: D.textSecondary, fontSize: "11px" }}>{linkedName(u) ?? "—"}</TD>
                         <TD align="center" mono title={u.lastLogin ? new Date(u.lastLogin).toLocaleString() : undefined}>{ago(u.lastLogin)}</TD>
@@ -676,7 +678,7 @@ function RolesTab({ users, grantable }) {
         if (list.length === 0) return null;
         return (
           <div key={fam} style={{ marginBottom: "18px" }}>
-            <div style={{ ...EYEBROW, marginBottom: "8px" }}>{fam} <span style={{ ...MONO, letterSpacing: 0, textTransform: "none" }}>· {list.length}</span></div>
+            <div style={{ ...EYEBROW(), marginBottom: "8px" }}>{fam} <span style={{ ...MONO(), letterSpacing: 0, textTransform: "none" }}>· {list.length}</span></div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(270px,1fr))", gap: "12px" }}>
               {list.map((r) => {
                 const rc = ROLES[r];
@@ -688,28 +690,28 @@ function RolesTab({ users, grantable }) {
                   <Panel key={r} sx={{ padding: "16px", border: mine ? `1px solid ${D.violet}33` : undefined }} data-testid={`role-card-${r}`}>
                     <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px" }}>
                       <div style={{ width: "38px", height: "38px", borderRadius: D.md, background: rc.color + "18", border: `1px solid ${rc.color}22`,
-                                    display: "flex", alignItems: "center", justifyContent: "center", fontSize: "20px", flexShrink: 0 }}>{rc.icon}</div>
+                                    display: "flex", alignItems: "center", justifyContent: "center", fontSize: "20px", flexShrink: 0, color: rc.color }}><Icon name={rc.icon}/></div>
                       <div style={{ minWidth: 0, flex: 1 }}>
                         <div style={{ fontFamily: D.head, fontSize: "13px", fontWeight: 700, color: rc.color }}>{rc.label}</div>
-                        <div style={{ ...MONO, fontSize: "9px" }}>
+                        <div style={{ ...MONO(), fontSize: "9px" }}>
                           {n} capabilit{n === 1 ? "y" : "ies"} · {rc.nav.length} screens · {held} account{held === 1 ? "" : "s"}
                         </div>
                       </div>
                       {mine && <Badge color={D.violet}>You can appoint</Badge>}
                     </div>
-                    <div style={{ ...MONO, fontSize: "9px", marginBottom: "9px", letterSpacing: "0.04em" }}>{scopeNote(r)}</div>
+                    <div style={{ ...MONO(), fontSize: "9px", marginBottom: "9px", letterSpacing: "0.04em" }}>{scopeNote(r)}</div>
                     {doms.length === 0
-                      ? <div style={SUB}>No capabilities.</div>
+                      ? <div style={SUB()}>No capabilities.</div>
                       : doms.map(([dom, list2]) => (
                           <details key={dom} style={{ padding: "2px 0" }}>
                             <summary style={{ cursor: "pointer", listStyle: "none", display: "flex", alignItems: "center", gap: "7px",
                                               fontFamily: D.body, fontSize: "11px", color: D.textSecondary, lineHeight: 1.5 }}>
                               <span style={{ width: "5px", height: "5px", borderRadius: "50%", background: rc.color, flexShrink: 0 }}/>
                               {DOMAIN_LABEL[dom] ?? dom}
-                              <span style={{ ...MONO, fontSize: "9px" }}>· {list2.length}</span>
+                              <span style={{ ...MONO(), fontSize: "9px" }}>· {list2.length}</span>
                             </summary>
                             <div style={{ padding: "2px 0 4px 12px", display: "flex", flexWrap: "wrap", gap: "4px" }}>
-                              {list2.map((c) => <code key={c} style={{ ...MONO, fontSize: "9px", padding: "1px 6px", borderRadius: D.pill, background: D.surf2, border: `1px solid ${D.border}` }}>{c}</code>)}
+                              {list2.map((c) => <code key={c} style={{ ...MONO(), fontSize: "9px", padding: "1px 6px", borderRadius: D.pill, background: D.surf2, border: `1px solid ${D.border}` }}>{c}</code>)}
                             </div>
                           </details>
                         ))}
@@ -761,11 +763,11 @@ function BoundariesSection({ role }) {
                  style={{ padding: "10px 12px", borderRadius: D.md, background: D.surf2 + "66",
                           border: `1px solid ${D.border}` }}>
               <div style={{ fontFamily: D.body, fontSize: "12px", fontWeight: 600, color: D.textPrimary }}>{b.what}</div>
-              <div style={{ ...SUB, marginTop: "3px" }}>
+              <div style={{ ...SUB(), marginTop: "3px" }}>
                 Ask <span style={{ color: D.textSecondary }}>{shown.join(", ")}</span>
                 {rest > 0 ? ` or ${rest} other${rest === 1 ? "" : "s"}` : ""}.
               </div>
-              <div style={{ ...MONO, marginTop: "3px" }}>{b.capability}</div>
+              <div style={{ ...MONO(), marginTop: "3px" }}>{b.capability}</div>
             </div>
           );
         })}
@@ -784,18 +786,27 @@ function MeTab({ role }) {
         <div style={{ display: "flex", alignItems: "center", gap: "14px", flexWrap: "wrap" }}>
           <Avatar name={me?.user?.name || ROLES[role]?.label || "You"} size={48} color={ROLES[role]?.color || D.violet}/>
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ ...H, fontSize: "15px" }}>{me?.user?.name || (live ? "Signed in" : "Demonstration")}</div>
-            <div style={MONO}>{me?.user?.email || (live ? "" : "Nothing on these screens is yours, and nothing is saved.")}</div>
+            <div style={{ ...H(), fontSize: "15px" }}>{me?.user?.name || (live ? "Signed in" : "Demonstration")}</div>
+            <div style={MONO()}>{me?.user?.email || (live ? "" : "Nothing on these screens is yours, and nothing is saved.")}</div>
           </div>
           <Badge color={live ? D.emerald : D.amber}>{live ? "Signed in" : "Demo"}</Badge>
         </div>
+      </Panel>
+
+      {/* This device's theme (DESIGN_DIRECTION §3.1): second, under who you
+          are, because it is the one setting here somebody changes standing
+          in the sun. It belongs to the device, not the account. */}
+      <Panel data-testid="appearance">
+        <CardHead title="Appearance"
+          sub="Daylight for the sun, Floodlit under lights. System follows this device's own light or dark setting, and changes with it."/>
+        <div style={{ maxWidth: "420px" }}><ThemeChoice/></div>
       </Panel>
 
       <Panel>
         <CardHead title="My access"
           sub="Every appointment you hold, as the database sees it. Revoking one takes effect on your next request, not your next sign-in; ask the school office if one is wrong."/>
         {assignments.length === 0
-          ? <EmptyState icon="🗝️" message={live ? "You hold no appointment yet. Your requests are answered by the school." : "Sign in to see your appointments."}/>
+          ? <EmptyState icon="key-round" message={live ? "You hold no appointment yet. Your requests are answered by the school." : "Sign in to see your appointments."}/>
           : (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: "10px" }}>
               {assignments.map((a) => {
@@ -803,11 +814,11 @@ function MeTab({ role }) {
                 return (
                   <div key={a.id} style={{ display: "flex", gap: "10px", alignItems: "flex-start", padding: "10px 12px", borderRadius: D.md,
                                            background: D.surf2 + "66", border: `1px solid ${D.border}` }}>
-                    <div style={{ fontSize: "18px", lineHeight: 1 }}>{rc?.icon ?? "•"}</div>
+                    <div style={{ fontSize: "18px", lineHeight: 1, color: rc?.color || D.textPrimary }}>{rc?.icon ? <Icon name={rc.icon}/> : "•"}</div>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontFamily: D.head, fontSize: "12px", fontWeight: 700, color: rc?.color || D.textPrimary }}>{rc?.label ?? a.role}</div>
                       <div style={{ fontFamily: D.body, fontSize: "11px", color: D.textSecondary }}>{a.school ? (a.schoolName || "This school") : "Platform-wide — every school"}</div>
-                      <div style={MONO}>{[a.team && `side ${a.team}`, a.season, a.fixture && "one fixture"].filter(Boolean).join(" · ") || scopeNote(a.role)}</div>
+                      <div style={MONO()}>{[a.team && `side ${a.team}`, a.season, a.fixture && "one fixture"].filter(Boolean).join(" · ") || scopeNote(a.role)}</div>
                     </div>
                   </div>
                 );
@@ -833,7 +844,7 @@ function MyClearancesSection({ role }) {
       <CardHead title="My clearances"
         sub="What the school has on record that it checked, and the date it will ask again. The office records these; if one is wrong, ask them."/>
       {rows.length === 0
-        ? <EmptyState icon="🪪" message="Nothing recorded for you."/>
+        ? <EmptyState icon="id-card" message="Nothing recorded for you."/>
         : rows.map((r) => (
           <div key={r.id} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 0", borderTop: `1px solid ${D.border}` }}>
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -924,9 +935,9 @@ function AlertsSection({ role }) {
           background: (said.ok ? D.emerald : D.amber) + "12", border: `1px solid ${(said.ok ? D.emerald : D.amber)}33`,
           color: said.ok ? D.emerald : D.amber }}>{said.text}</div>
       )}
-      <div style={{ ...EYEBROW, marginBottom: "8px" }}>My devices</div>
+      <div style={{ ...EYEBROW(), marginBottom: "8px" }}>My devices</div>
       {ordered.length === 0
-        ? <EmptyState icon="📱" message="No devices registered yet. Turn alerts on above and this one will appear here."/>
+        ? <EmptyState icon="smartphone" message="No devices registered yet. Turn alerts on above and this one will appear here."/>
         : (
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -936,7 +947,7 @@ function AlertsSection({ role }) {
               <tbody>
                 {ordered.map((d) => (
                   <tr key={d.id} style={{ borderTop: `1px solid ${D.border}`, opacity: d.active ? 1 : 0.55 }}>
-                    <TD>{d.label || d.platform}<span style={{ ...MONO, marginLeft: "8px" }}>…{d.tokenTail}</span></TD>
+                    <TD>{d.label || d.platform}<span style={{ ...MONO(), marginLeft: "8px" }}>…{d.tokenTail}</span></TD>
                     <TD align="center" mono>{when(d.registeredAt)}</TD>
                     <TD align="center" mono>{when(d.lastSeenAt)}</TD>
                     <TD align="center"><Badge color={d.active ? D.emerald : D.textMuted}>{stateOf(d)}</Badge></TD>
@@ -992,7 +1003,7 @@ function ScoutingConsentSection({ role, players }) {
         sub="Only an accredited scout, only with a family's yes, and only ever the cricket record. A boy nobody has decided for is not shown — there is no default yes here."/>
       {said && <div role="alert" style={{ fontFamily: D.body, fontSize: "11px", color: textOn(D.rose), marginBottom: "8px" }}>{said}</div>}
       {players.length === 0
-        ? <EmptyState icon="🔭" message="No player to decide for."/>
+        ? <EmptyState icon="telescope" message="No player to decide for."/>
         : players.map((p) => {
             const c = decided.get(p.id);
             const on = c?.granted === true;
@@ -1059,7 +1070,7 @@ function PassportTab({ role }) {
       </div>
       {said && <div role="alert" style={{ fontFamily: D.body, fontSize: "11px", color: textOn(D.rose), marginBottom: "8px" }}>{said}</div>}
       {rows.length === 0
-        ? <EmptyState icon="🛂" message="No school has been named."/>
+        ? <EmptyState icon="stamp" message="No school has been named."/>
         : [...open, ...closed].map((r) => (
           <div key={r.id} data-testid={`passport-consent-${r.id}`} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 0", borderTop: `1px solid ${D.border}`, opacity: r.withdrawnAt ? 0.6 : 1 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -1108,7 +1119,7 @@ function SchoolTab({ role, users, players, staff, coaches, canAudit }) {
   return (
     <div style={{ display: "grid", gap: "16px" }}>
       {schools.length === 0
-        ? <Panel><EmptyState icon="🏫" message={live ? "You belong to no school yet." : "Sign in to see your schools."}/></Panel>
+        ? <Panel><EmptyState icon="school" message={live ? "You belong to no school yet." : "Sign in to see your schools."}/></Panel>
         : schools.map((s) => {
           const at = (rows) => rows.filter((r) => r.school === s.id);
           const teams = [...new Set(at(players).map((p) => p.team).filter(Boolean))].sort();
@@ -1125,7 +1136,7 @@ function SchoolTab({ role, users, players, staff, coaches, canAudit }) {
               </MetricGroup>
               {teams.length > 0 && (
                 <div style={{ marginTop: "12px" }}>
-                  <div style={{ ...EYEBROW, marginBottom: "6px" }}>Sides</div>
+                  <div style={{ ...EYEBROW(), marginBottom: "6px" }}>Sides</div>
                   <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
                     {teams.map((t) => <Badge key={t} color={D.indigo}>{t}</Badge>)}
                   </div>
@@ -1139,12 +1150,12 @@ function SchoolTab({ role, users, players, staff, coaches, canAudit }) {
         <Panel>
           <CardHead title="Sports" sub="What the platform has granted, and how much of each is in use — a sport that is on and empty is not the same as one adopted."/>
           {sports.length === 0
-            ? <EmptyState icon="🏏" message={live ? "No sport has been granted." : "Sign in to see granted sports."}/>
+            ? <EmptyState icon="bat" message={live ? "No sport has been granted." : "Sign in to see granted sports."}/>
             : sports.map((sp) => (
               <div key={sp.code} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "7px 0", borderTop: `1px solid ${D.border}` }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textPrimary, fontWeight: 600 }}>{sp.label ?? sp.code}</div>
-                  <div style={MONO}>{sp.engine ? `${sp.engine} engine` : "no scoring engine"} · {sp.fixtures ?? 0} fixture{sp.fixtures === 1 ? "" : "s"}</div>
+                  <div style={MONO()}>{sp.engine ? `${sp.engine} engine` : "no scoring engine"} · {sp.fixtures ?? 0} fixture{sp.fixtures === 1 ? "" : "s"}</div>
                 </div>
                 <Badge color={sp.enabled ? D.emerald : D.textMuted}>{sp.enabled ? "On" : "Off"}</Badge>
               </div>
@@ -1153,7 +1164,7 @@ function SchoolTab({ role, users, players, staff, coaches, canAudit }) {
         <Panel>
           <CardHead title="Modules" sub="What is switched on for you, resolved across every school you belong to: off at any of them is off. The Modules screen is where a school changes this."/>
           {features.length === 0
-            ? <EmptyState icon="🧩" message={live ? "Nothing to show." : "Sign in to see your modules."}/>
+            ? <EmptyState icon="puzzle" message={live ? "Nothing to show." : "Sign in to see your modules."}/>
             : (
               <>
                 <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: modulesOff.length ? "10px" : 0 }}>
@@ -1161,7 +1172,7 @@ function SchoolTab({ role, users, players, staff, coaches, canAudit }) {
                 </div>
                 {modulesOff.length > 0 && (
                   <>
-                    <div style={{ ...EYEBROW, marginBottom: "6px" }}>Off</div>
+                    <div style={{ ...EYEBROW(), marginBottom: "6px" }}>Off</div>
                     <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
                       {modulesOff.map((f) => <Badge key={f.key} color={D.textMuted}>{f.label ?? f.key}</Badge>)}
                     </div>
@@ -1186,7 +1197,7 @@ function SchoolTab({ role, users, players, staff, coaches, canAudit }) {
             ["Capabilities", String(new Set(Object.values(ROLE_CAPABILITIES).flat()).size)],
           ].map(([l, v]) => (
             <div key={l} style={{ padding: "8px 10px", borderRadius: D.sm, background: D.surf2 + "66", border: `1px solid ${D.border}` }}>
-              <div style={EYEBROW}>{l}</div>
+              <div style={EYEBROW()}>{l}</div>
               <div style={{ fontFamily: D.mono, fontSize: "11px", color: D.textPrimary, marginTop: "3px" }}>{v}</div>
             </div>
           ))}
@@ -1228,7 +1239,7 @@ function AuditSection({ role }) {
         <CardHead title="On the record: who read what"
           sub="Every read of a restricted field — a date of birth, a clinical note — and every read made from outside the school. What was actually received, not what was asked for."/>
         {recent.length === 0
-          ? <EmptyState icon="📖" message="Nothing restricted has been read yet."/>
+          ? <EmptyState icon="book-open" message="Nothing restricted has been read yet."/>
           : (
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -1257,13 +1268,13 @@ function AuditSection({ role }) {
         <CardHead title="Support access"
           sub="When the platform reached this school as one of its own roles: who, why, for how long, and who ended it. A session stops by itself within its minutes; the office can end one sooner."/>
         {sessions.length === 0
-          ? <EmptyState icon="🛠️" message="No support session has reached this school."/>
+          ? <EmptyState icon="life-buoy" message="No support session has reached this school."/>
           : sessions.map((s) => (
             <div key={s.id} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 0", borderTop: `1px solid ${D.border}`, flexWrap: "wrap" }}>
               <div style={{ flex: 1, minWidth: "200px" }}>
                 <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textPrimary, fontWeight: 600 }}>{s.actorName ?? "Platform support"} as {ROLES[s.role]?.label ?? s.role}</div>
                 <div style={{ fontFamily: D.body, fontSize: "11px", color: D.textSecondary }}>{s.reason}</div>
-                <div style={MONO}>began {ago(s.startedAt)} · {s.endedAt ? `ended ${ago(s.endedAt)}${s.endedByName ? ` by ${s.endedByName}` : ""}` : s.live ? `until ${new Date(s.expiresAt).toLocaleTimeString()}` : "expired"}</div>
+                <div style={MONO()}>began {ago(s.startedAt)} · {s.endedAt ? `ended ${ago(s.endedAt)}${s.endedByName ? ` by ${s.endedByName}` : ""}` : s.live ? `until ${new Date(s.expiresAt).toLocaleTimeString()}` : "expired"}</div>
               </div>
               <Badge color={s.live ? D.amber : D.textMuted}>{s.live ? "Live now" : "Over"}</Badge>
               {s.live && canEnd && <Btn size="sm" variant="danger" onClick={() => endSession(s)} data-testid="school-support-end">End now</Btn>}
@@ -1342,8 +1353,8 @@ function RoadmapTab() {
         <div key={st} style={{ marginBottom: "20px" }} data-testid={`roadmap-${st}`}>
           <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px", flexWrap: "wrap" }}>
             <Badge color={STATUS_TONE[st]}>{STATUS_LABEL[st]}</Badge>
-            <span style={MONO}>{counts[st]} items</span>
-            {st === "partial" && <span style={SUB}>— the data is built and permission-scoped; no screen reads it yet</span>}
+            <span style={MONO()}>{counts[st]} items</span>
+            {st === "partial" && <span style={SUB()}>— the data is built and permission-scoped; no screen reads it yet</span>}
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: "10px" }}>
             {UPGRADES.filter((u) => u.status === st).map((up) => (
@@ -1354,7 +1365,7 @@ function RoadmapTab() {
                 </div>
                 <div style={{ fontFamily: D.body, fontSize: "11px", color: D.textSecondary, lineHeight: 1.5, marginBottom: "10px" }}>{up.desc}</div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                  <div style={MONO}>
+                  <div style={MONO()}>
                     {up.priority} priority · effort <span style={{ color: up.effort === "Low" ? D.emerald : up.effort === "Medium" ? D.amber : textOn(D.rose) }}>{up.effort}</span>
                   </div>
                   <span style={{ fontFamily: D.mono, fontSize: "10px", color: STATUS_TONE[st] }}>{STATUS_LABEL[st]}</span>

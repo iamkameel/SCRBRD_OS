@@ -233,7 +233,7 @@ try {
   ok("the 1XI fixture offers the scorer", opened);
   await page.waitForTimeout(2500);
   await clearBlockers();
-  if (!/\bDOT\b/i.test(await text())) await click(/QUICK MODE/i, 2500);
+  if (!(await page.locator('[data-testid="basic-pad"]').count())) { await page.locator('[data-testid="pad-menu"]').click({ timeout: 2500 }).catch(() => {}); await page.locator('[data-testid="pad-basic-scoring"]').click({ timeout: 2500 }).catch(() => {}); }
   await page.waitForTimeout(400);
   ok("the scorer opens on the pad", /\bDOT\b/i.test(await text()));
 
@@ -286,7 +286,8 @@ try {
   // ── SCRBRD-080 ───────────────────────────────────────────────
   group("SCRBRD-080: a bowler replaced mid-over — the pad asks why");
   await makeReady();
-  await click(/PRO MODE/, 3000);
+  await tap("pad-menu");   // pro mode is in the pad menu since step 2 of the redesign
+  await click(/PRO MODE/i, 3000);
   await page.waitForTimeout(500);
   ok("the over is under way", to.inn.balls % 6 !== 0);
   ok("the pro pad offers a change of bowler", await click(/Chg Bowler/, 3000));
@@ -300,7 +301,7 @@ try {
   ok("...then the replacement may be named", !(await goBtn.isDisabled()));
   await goBtn.click({ timeout: 3000 });
   await page.waitForTimeout(500);
-  await click(/FOCUS MODE/, 3000);
+  await click(/FOCUS MODE/i, 3000);   // "Focus mode" since step 2
   const ch = await agree("after the change");
   const bowlerRow = ch.rows.filter((r) => r.kind === "bowler").at(-1);
   ok("the server stored the change with its reason",
@@ -322,11 +323,11 @@ try {
   await page.waitForTimeout(500);
   const over2 = await agree("over two begins");
   ok("the server took the third bowler", over2.inn.bowler === "C Mthembu" && over2.inn.balls === 6);
-  await page.locator("button", { hasText: /^📋\s*Cards$/ }).first().click({ timeout: 3000 }).catch(() => {});
+  await page.locator("button", { hasText: /^\s*Cards$/ }).first().click({ timeout: 3000 }).catch(() => {});
   await page.waitForTimeout(500);
   const cards = await tid("bowler-changes").first().innerText().catch(() => "");
   ok(`the scorecard says it (${cards.trim()})`, /B Zulu took over from A Nel \(injured\)/.test(cards));
-  await page.locator("button", { hasText: /^🏏\s*Score$/ }).first().click({ timeout: 3000 }).catch(() => {});
+  await page.locator("button", { hasText: /^\s*Score$/ }).first().click({ timeout: 3000 }).catch(() => {});
   await page.waitForTimeout(400);
 
   // ── SCRBRD-068 ───────────────────────────────────────────────
@@ -335,7 +336,7 @@ try {
   const nbStriker = over2.inn.striker;
   const runsBefore = over2.inn.batsmen.find((b) => b.id === nbStriker)?.runs ?? 0;
   const ballsBefore = over2.inn.batsmen.find((b) => b.id === nbStriker)?.balls ?? 0;
-  await click(/^NB/, 3000);
+  await click(/^(NB|No ball)/, 3000);
   await page.waitForTimeout(400);
   ok("the no-ball sheet opens", await tid("nb-confirm").count() === 1);
   ok("...and asks nothing about runs nobody ran", await tid("nb-runs-from").count() === 0);
@@ -354,7 +355,7 @@ try {
   ok("...the bowler is charged all three", lb.inn.bowlers.find((b) => b.id === "C Mthembu")?.runs === 3);
   ok("...two run, so the striker kept strike", lb.inn.striker === nbStriker);
 
-  await click(/^NB/, 3000);
+  await click(/^(NB|No ball)/, 3000);
   await page.waitForTimeout(400);
   await tap("nb-run-1");
   await tap("nb-runs-bat");
@@ -452,14 +453,14 @@ try {
     await nameField.press("Enter");
     await page.waitForTimeout(500);
   }
-  if (!/\bDOT\b/i.test(await text())) await click(/QUICK MODE/i, 2500);
+  if (!(await page.locator('[data-testid="basic-pad"]').count())) { await page.locator('[data-testid="pad-menu"]').click({ timeout: 2500 }).catch(() => {}); await page.locator('[data-testid="pad-basic-scoring"]').click({ timeout: 2500 }).catch(() => {}); }
   await page.waitForTimeout(400);
   ok("the pad reopens for the second innings", /\bDOT\b/i.test(await text()));
   const inn2 = await serverLog(1);
   const homeBowler = inn2.inn.bowler;
   ok(`the second innings' bowler is one of the home squad, by id (${homeBowler})`,
      typeof homeBowler === "string" && /^[0-9a-f-]{36}$/.test(homeBowler));
-  await click(/^NB/, 3000);
+  await click(/^(NB|No ball)/, 3000);
   await page.waitForTimeout(400);
   await tap("nb-run-1");
   await tap("nb-runs-bat");

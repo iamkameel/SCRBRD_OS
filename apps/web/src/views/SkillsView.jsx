@@ -7,6 +7,7 @@ import { Avatar, Badge, Btn, Card, EmptyState, Modal, RadarChart, SectionHeader 
 import { useLive, useNotes, useRatings, useSkills } from "../lib/live.js";
 import { recordAssessment, writeNote, NOTE_ADJUSTMENT_LIMIT } from "../lib/development.js";
 import { TREE, DISCIPLINES, ANCHOR_POINTS, anchorFor, SCALE_MIN, SCALE_MAX } from "@scrbrd/scoring";
+import { Icon } from "../ui/icons.jsx";
 
 /**
  * The anchor sentence for a value, and whether anybody has approved it.
@@ -127,7 +128,7 @@ function SkillsView({ role }) {
   if (!selPlayer) return (
     <div className="os-page">
       <SectionHeader title="Skills Matrix" sub="Player development tracking & assessment" color={D.violet}/>
-      <EmptyState loading={loading} error={error} icon="◎" message="No players are in scope for you." />
+      <EmptyState loading={loading} error={error} icon="target" message="No players are in scope for you." />
     </div>
   );
 
@@ -458,7 +459,7 @@ function SkillsView({ role }) {
             </>
           ):(
             <Card sx={{padding:"32px",textAlign:"center"}}>
-              <div style={{fontSize:"32px",marginBottom:"12px"}}>🎯</div>
+              <div style={{fontSize:"32px",marginBottom:"12px",color:D.textMuted}}><Icon name="target"/></div>
               <div style={{fontFamily:D.body,fontSize:"14px",color:D.textMuted}}>No skills assessment available for this player yet.</div>
               {canEdit&&<div style={{marginTop:"14px"}}><Btn size="sm" onClick={()=>{setWriteError(null);setAssessing(true);}}>Run Assessment</Btn></div>}
             </Card>

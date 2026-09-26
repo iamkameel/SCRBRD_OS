@@ -371,22 +371,25 @@ BEGIN
   RETURN n;
 END $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- db/43. opposition_squad() opens only for a scheduled fixture a side is in,
--- inside its window, with the feature on (db/08). A Hilton–Westville 1XI
--- fixture a week out, and the feature on; called by §21 alone, owner-written,
--- rolled back with everything else.
-CREATE OR REPLACE FUNCTION _opposition_fixture_43() RETURNS uuid AS $$
+-- db/43, db/46. opposition_squad() opens only for a scheduled fixture a side
+-- is in, inside its window (opposition_window_days(), five days since db/46),
+-- with the feature on (db/08). A Hilton–Westville 1XI fixture p_days out, and
+-- the feature on; owner-written, rolled back with everything else. §21 reads
+-- a squad through one a day inside the window; §24 puts one either side of
+-- the window's edge.
+CREATE OR REPLACE FUNCTION _opposition_fixture(p_days integer) RETURNS uuid AS $$
+DECLARE v_id uuid;
 BEGIN
-  INSERT INTO match (id, school_id, team_code, away_school_id, away_team_code, opponent, starts_at,
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at,
                      sport, format, overs, status)
-  VALUES ('77777777-0000-0000-0000-0000000043a0', '11111111-1111-1111-1111-111111111111', '1XI',
-          '22222222-2222-2222-2222-222222222222', '1XI', 'Westville Boys'' High', now() + interval '7 days',
+  VALUES ('11111111-1111-1111-1111-111111111111', '1XI',
+          '22222222-2222-2222-2222-222222222222', '1XI', 'Westville Boys'' High', now() + make_interval(days => p_days),
           'cricket', 'T20', 20, 'scheduled')
-  ON CONFLICT DO NOTHING;
+  RETURNING id INTO v_id;
   UPDATE feature_flag SET enabled = true, locked = false WHERE key = 'opposition';
   DELETE FROM feature_suppression WHERE key = 'opposition';
   DELETE FROM feature_grant WHERE key = 'opposition';
-  RETURN '77777777-0000-0000-0000-0000000043a0'::uuid;
+  RETURN v_id;
 END $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Past RLS, because each claim below is "exactly these rows and no others",
@@ -538,6 +541,88 @@ RETURNS TABLE (family text, player_id uuid, lifetime text, by_season text) AS $$
     FULL JOIN (SELECT d.player_id, sum(d.dismissals) AS dismissals
                  FROM player_dismissals_by_season d GROUP BY d.player_id) s ON s.player_id = l.player_id
    WHERE l.dismissals IS DISTINCT FROM s.dismissals
+$$ LANGUAGE sql STABLE;
+
+-- db/47 (section 25). The public-data records. A sports administrator at
+-- Westville (a test-only account, like the umpire above), so the away school
+-- has somebody who may publish its own side; and a Hilton 1XI v Westville 1XI
+-- fixture ten days out that nothing else here touches. Owner-written, rolled
+-- back with everything else.
+INSERT INTO app_user (id, school_id, email, name, role) VALUES
+  ('88888888-0000-0000-0000-00000000047a', '22222222-2222-2222-2222-222222222222',
+   'sport47@example.invalid', 'W Publisher', 'sportsadmin')
+ON CONFLICT DO NOTHING;
+INSERT INTO role_assignment (id, person_id, role, school_id, team_code) VALUES
+  ('a5510000-0000-0000-0000-00000000047a', '88888888-0000-0000-0000-00000000047a', 'sportsadmin',
+   '22222222-2222-2222-2222-222222222222', NULL)
+ON CONFLICT DO NOTHING;
+INSERT INTO match (id, school_id, team_code, away_school_id, away_team_code, opponent, starts_at,
+                   format, overs, status) VALUES
+  ('77777777-0000-0000-0000-000000000047', '11111111-1111-1111-1111-111111111111', '1XI',
+   '22222222-2222-2222-2222-222222222222', '1XI', 'Westville Boys'' High', now() + interval '10 days',
+   'T20', 20, 'scheduled')
+ON CONFLICT DO NOTHING;
+
+-- Past RLS: what db/47's tables hold for one child, whatever a reader sees.
+-- The claims below are "the refused write left nothing" and "the withdrawal
+-- ended a row, it did not delete one", which a reader's policy could not
+-- tell from a hidden row.
+CREATE OR REPLACE FUNCTION _consent_rows(p_player uuid) RETURNS integer AS $$
+  SELECT count(*)::int FROM public_name_consent WHERE player_id = p_player;
+$$ LANGUAGE sql SECURITY DEFINER;
+CREATE OR REPLACE FUNCTION _consent_open_rows(p_player uuid) RETURNS integer AS $$
+  SELECT count(*)::int FROM public_name_consent WHERE player_id = p_player AND ended_on IS NULL;
+$$ LANGUAGE sql SECURITY DEFINER;
+CREATE OR REPLACE FUNCTION _consent_last(p_player uuid) RETURNS public_name_consent AS $$
+  SELECT * FROM public_name_consent WHERE player_id = p_player ORDER BY seq DESC LIMIT 1;
+$$ LANGUAGE sql SECURITY DEFINER;
+CREATE OR REPLACE FUNCTION _mark_rows(p_player uuid) RETURNS integer AS $$
+  SELECT count(*)::int FROM player_never_public WHERE player_id = p_player;
+$$ LANGUAGE sql SECURITY DEFINER;
+CREATE OR REPLACE FUNCTION _born_of(p_player uuid) RETURNS date AS $$
+  SELECT born FROM player WHERE id = p_player;
+$$ LANGUAGE sql SECURITY DEFINER;
+-- H Whitfield is also made guardian of the 2XI boy section 22 seeds, so a
+-- consent record exists about a boy the 2XI coach actually coaches: "a coach
+-- cannot read it" is then about his own player, not somebody else's.
+CREATE OR REPLACE FUNCTION _link_47(p_player uuid) RETURNS void AS $$
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state,
+                                  verified_by, verified_at, consent_state, consent_version, consent_at, created_by)
+  VALUES ('a5510000-0000-0000-0000-000000000010', p_player, 'parent', 'verified',
+          '88888888-0000-0000-0000-00000000000c', now(), 'granted', 'popia-2026-01', now(),
+          '88888888-0000-0000-0000-00000000000c');
+$$ LANGUAGE sql SECURITY DEFINER;
+-- db/49 (section 27). Every player whose lifetime figures, as the CURRENT
+-- reader sees them, are not what the per-player functions say — the three
+-- views exactly as db/02 defined them over player_batting_since(),
+-- player_bowling_since() and player_dismissals_since() with no window, which
+-- db/49 left untouched. SECURITY INVOKER, like _career_season_drift(), so it
+-- answers for whoever section 27 has become. No rows is the invariant.
+CREATE OR REPLACE FUNCTION _career_lifetime_drift()
+RETURNS TABLE (family text, player_id uuid, one_pass text, per_player text) AS $$
+  SELECT 'batting', coalesce(l.player_id, o.player_id),
+         row(l.matches, l.runs, l.balls_faced, l.fours, l.sixes, l.last_ball_at)::text,
+         row(o.matches, o.runs, o.balls_faced, o.fours, o.sixes, o.last_ball_at)::text
+    FROM player_batting_career l
+    FULL JOIN (SELECT p.id AS player_id, c.* FROM player p CROSS JOIN LATERAL player_batting_since(p.id, NULL) c
+                WHERE c.matches > 0) o ON o.player_id = l.player_id
+   WHERE (l.matches, l.runs, l.balls_faced, l.fours, l.sixes, l.last_ball_at)
+         IS DISTINCT FROM (o.matches, o.runs, o.balls_faced, o.fours, o.sixes, o.last_ball_at)
+  UNION ALL
+  SELECT 'bowling', coalesce(l.player_id, o.player_id),
+         row(l.matches, l.runs_conceded, l.legal_balls, l.wides, l.no_balls, l.wickets)::text,
+         row(o.matches, o.runs_conceded, o.legal_balls, o.wides, o.no_balls, o.wickets)::text
+    FROM player_bowling_career l
+    FULL JOIN (SELECT p.id AS player_id, c.* FROM player p CROSS JOIN LATERAL player_bowling_since(p.id, NULL) c
+                WHERE c.matches > 0) o ON o.player_id = l.player_id
+   WHERE (l.matches, l.runs_conceded, l.legal_balls, l.wides, l.no_balls, l.wickets)
+         IS DISTINCT FROM (o.matches, o.runs_conceded, o.legal_balls, o.wides, o.no_balls, o.wickets)
+  UNION ALL
+  SELECT 'dismissals', coalesce(l.player_id, o.player_id), l.dismissals::text, o.dismissals::text
+    FROM player_dismissals l
+    FULL JOIN (SELECT p.id AS player_id, player_dismissals_since(p.id, NULL) AS dismissals FROM player p
+                WHERE player_dismissals_since(p.id, NULL) > 0) o ON o.player_id = l.player_id
+   WHERE l.dismissals IS DISTINCT FROM o.dismissals
 $$ LANGUAGE sql STABLE;
 
 -- From here on we are the unprivileged application role, so every read below
@@ -3525,7 +3610,9 @@ BEGIN
     f1 record; f2 record;               -- bowler_innings_figures(BO, this innings): mid, after
     wb1 bigint; wb2 bigint;             -- BO's wicket breakdown, method not recorded: mid, after
   BEGIN
-    M_OPP := _opposition_fixture_43();
+    -- A day inside the window, whatever the window is: this section is about
+    -- the figures the squad read returns, and §24 about when it opens.
+    M_OPP := _opposition_fixture(opposition_window_days() - 1);
     PERFORM _as(U_OWNER);
     d_n0_0 := coalesce(player_dismissals_since(N0, NULL), 0);
     d_nf_0 := coalesce(player_dismissals_since(NF, NULL), 0);
@@ -4118,6 +4205,636 @@ BEGIN
       format('db/45 (verify-ok): the second innings'' 14/1 off 3 did not verify (ok %s, epoch %s after %s)', v_ok, n, v_epoch));
   END;
   PERFORM set_config('app.device_id', '', true);
+  PERFORM set_config('app.user_id', '', true);
+
+  -- ── 24. The opposition window is five days (SCRBRD-091, db/46) ──────
+  -- Kameel, 2026-09-25: "14 days seems excessive; 5-7 days would be more
+  -- than appropriate". Five, and one window for everything the dossier opens,
+  -- squad and figures alike. The edge from both sides, read by a coach of a
+  -- side actually playing (the Westville 1XI, the away side): four days out
+  -- the window is open and the squad reads; six days out it is not yet open,
+  -- says when it will be, and discloses nothing — no squad, no count. The
+  -- number itself is asserted last, so a window moved off five goes red on
+  -- the edge it moved, not only on the constant.
+  DECLARE
+    U_WES_COACH uuid := '88888888-0000-0000-0000-00000000001a';  -- S Pillay, coach, Westville 1XI
+    M_FOUR uuid; M_SIX uuid;
+    s4 record; s6 record; c6 record;
+    q4 int; q6 int;
+  BEGIN
+    M_FOUR := _opposition_fixture(4);
+    M_SIX  := _opposition_fixture(6);
+    PERFORM _as(U_WES_COACH);
+    SELECT s.open, s.reason, s.my_school INTO s4 FROM opposition_side(M_FOUR) s;
+    SELECT s.open, s.reason, s.opens_at, s.closes_at INTO s6 FROM opposition_side(M_SIX) s;
+    SELECT count(*) INTO q4 FROM opposition_squad(M_FOUR);
+    SELECT count(*) INTO q6 FROM opposition_squad(M_SIX);
+    SELECT c.open, c.reason, c.games_analysed, c.deliveries_analysed INTO c6 FROM opposition_context(M_SIX) c;
+
+    -- (four) inside the window: open, and their squad reads
+    PERFORM _assert(s4.open AND s4.reason = 'open' AND s4.my_school = WES AND q4 > 0,
+      format('db/46 (four): a fixture four days out answered open %s, reason %s, %s squad rows — expected open, with Hilton''s 1XI to read',
+             s4.open, s4.reason, q4));
+    -- (six) outside it: not yet open, saying when, and nothing read
+    PERFORM _assert(s6.open = false AND s6.reason = 'not_yet_open' AND s6.opens_at > now() AND q6 = 0
+                    AND c6.open = false AND c6.reason = 'not_yet_open'
+                    AND c6.games_analysed IS NULL AND c6.deliveries_analysed IS NULL,
+      format('db/46 (six): a fixture six days out answered open %s, reason %s, opening %s, %s squad rows, context %s — '
+             || 'expected not_yet_open, opening at a time still to come, no squad and no counts', s6.open, s6.reason, s6.opens_at, q6, c6::text));
+    -- (value) five days, the decision
+    PERFORM _assert(opposition_window_days() = 5,
+      format('db/46 (value): opposition_window_days() answers %s, expected 5', opposition_window_days()));
+  END;
+  PERFORM set_config('app.user_id', '', true);
+
+  -- ── 25. The records the public-data rule reads (SCRBRD-083, db/47) ──
+  -- docs/policy/PUBLIC_DATA.md §4 and §6 step 2. Every write goes through a
+  -- door that checks its own authority, and each refusal below is asserted to
+  -- have left nothing behind (counted past RLS). What a stranger's page will
+  -- read, public_name_facts(), is asserted to carry the three facts the rule
+  -- needs and never a date of birth, a reason or a guardian.
+  DECLARE
+    U_WHIT    uuid := '88888888-0000-0000-0000-000000000010';  -- H Whitfield, guardian of James
+    U_BEKKER  uuid := '88888888-0000-0000-0000-000000000011';  -- A Bekker, guardian of T Bekker
+    U_WES_PUB uuid := '88888888-0000-0000-0000-00000000047a';  -- sportsadmin, Westville (above)
+    P_JW      uuid := 'aaaaaaaa-0000-0000-0000-000000000001';  -- James Whitfield, 1XI, sixteen
+    P_2XI     uuid := 'aaaaaaaa-0000-0000-0000-00000000044a';  -- V44 Opener, 2XI (section 22)
+    M_47      uuid := '77777777-0000-0000-0000-000000000047';  -- Hilton 1XI v Westville 1XI
+    C_KZN     uuid := '99999999-0000-0000-0000-000000000001';  -- the shared league, no organiser
+    V         text := 'public-names-2026-09';
+    v_today   text := to_char(sa_today(), 'YYYY-MM-DD');
+    v_facts   jsonb;
+    v_row     public_name_consent;
+    v_grp     text;
+    v_born    date;
+    v_raised  boolean;
+    who       uuid;
+  BEGIN
+    -- ── Consent: who may give it ──
+    -- (guardian) a verified guardian consents for his own child
+    PERFORM _as(U_WHIT);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_name_consent_set(P_JW, true, V) s;
+    PERFORM _assert(v_ok, format('db/47 (guardian): a verified guardian could not consent for his own child (%s)', v_reason));
+    v_row := _consent_last(P_JW);
+    PERFORM _assert(v_row.given_by = 'guardian' AND v_row.given_on = sa_today() AND v_row.ended_on IS NULL
+                    AND v_row.recorded_by = U_WHIT AND v_row.form_name IS NULL,
+      format('db/47 (guardian): the record is not his, today''s and open: %s', row(v_row.given_by, v_row.given_on, v_row.ended_on, v_row.recorded_by)::text));
+    -- ...and for the 2XI boy he is also guardian of
+    PERFORM _link_47(P_2XI);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_name_consent_set(P_2XI, true, V) s;
+    PERFORM _assert(v_ok, format('db/47 (guardian-2): a verified guardian could not consent for his second child (%s)', v_reason));
+    -- (other-child) ...and cannot write another child's
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_name_consent_set(P_OTHER, true, V) s;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted' AND _consent_rows(P_OTHER) = 0,
+      format('db/47 (other-child): a guardian of one child wrote another''s consent (ok %s, %s, %s rows)', v_ok, v_reason, _consent_rows(P_OTHER)));
+    -- ...nor pass himself off as the office to do it
+    SELECT s.ok, s.reason INTO v_ok, v_reason
+      FROM public_name_consent_set(P_OTHER, true, V, U_BEKKER, 'Admission form', current_date) s;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted' AND _consent_rows(P_OTHER) = 0,
+      format('db/47 (other-child-office): a guardian recorded another family''s consent as the office (ok %s, %s)', v_ok, v_reason));
+
+    -- (minor) a pupil under eighteen cannot give his own
+    PERFORM _as(U_SELF);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_name_consent_set(P_INJURED, true, V) s;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_yet_eighteen' AND _consent_rows(P_INJURED) = 0,
+      format('db/47 (minor): a pupil of sixteen gave his own consent (ok %s, %s, %s rows)', v_ok, v_reason, _consent_rows(P_INJURED)));
+    -- (eighteen) ...and can from his birthday (C6): his date of birth moved
+    -- back, as the owner, so R Pillay is nineteen
+    v_born := _born_of(P_INJURED);
+    PERFORM _set_born(P_INJURED, (current_date - interval '19 years')::date);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_name_consent_set(P_INJURED, true, V) s;
+    PERFORM _assert(v_ok, format('db/47 (eighteen): a pupil of nineteen could not give his own consent (%s)', v_reason));
+    v_facts := public_name_facts(P_INJURED);
+    PERFORM _assert(v_facts -> 'consents' @> jsonb_build_array(jsonb_build_object('by', 'pupil', 'competent', true, 'givenOn', v_today)),
+      format('db/47 (eighteen): his own consent is not in the facts as competent: %s', v_facts));
+    -- (competent-live) competence is worked out on every read, from the
+    -- record as it stands: put his birthday back and the same consent is one
+    -- a sixteen-year-old gave, which counts for nothing
+    PERFORM _set_born(P_INJURED, v_born);
+    v_facts := public_name_facts(P_INJURED);
+    PERFORM _assert(v_facts -> 'consents' @> jsonb_build_array(jsonb_build_object('by', 'pupil', 'competent', false)),
+      format('db/47 (competent-live): a consent given "at eighteen" by a boy the record says is sixteen still counts: %s', v_facts));
+
+    -- ── The office, from its own forms (C1) ──
+    PERFORM _as(U_REGISTRAR);
+    -- (form-required) a yes from the office names the form
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_name_consent_set(P_OTHER, true, V, U_BEKKER) s;
+    PERFORM _assert(NOT v_ok AND v_reason = 'form_required' AND _consent_rows(P_OTHER) = 0,
+      format('db/47 (form-required): the office recorded a consent naming no form (ok %s, %s)', v_ok, v_reason));
+    -- (form-future) ...signed on a day that has happened
+    SELECT s.ok, s.reason INTO v_ok, v_reason
+      FROM public_name_consent_set(P_OTHER, true, V, U_BEKKER, 'Admission form 2026', current_date + 30) s;
+    PERFORM _assert(NOT v_ok AND v_reason = 'form_in_future' AND _consent_rows(P_OTHER) = 0,
+      format('db/47 (form-future): the office recorded a form dated next month (ok %s, %s)', v_ok, v_reason));
+    -- (office) ...and records it, on the guardian's behalf, form and date named
+    SELECT s.ok, s.reason INTO v_ok, v_reason
+      FROM public_name_consent_set(P_OTHER, true, V, U_BEKKER, 'Admission form 2026', current_date - 30) s;
+    v_row := _consent_last(P_OTHER);
+    PERFORM _assert(v_ok AND v_row.given_by = 'guardian' AND v_row.form_name = 'Admission form 2026'
+                    AND v_row.form_date = current_date - 30 AND v_row.recorded_by = U_REGISTRAR
+                    AND v_row.given_on = sa_today(),
+      format('db/47 (office): the office could not record a guardian''s consent from its form (ok %s, %s, %s)',
+             v_ok, v_reason, row(v_row.given_by, v_row.form_name, v_row.form_date, v_row.recorded_by, v_row.given_on)::text));
+    -- (office-no-link) ...but only for a guardian with a verified link to him
+    SELECT s.ok, s.reason INTO v_ok, v_reason
+      FROM public_name_consent_set(P_OTHER, true, V, U_WHIT, 'Admission form 2026', current_date) s;
+    PERFORM _assert(NOT v_ok AND v_reason = 'no_verified_link',
+      format('db/47 (office-no-link): the office recorded a consent from somebody who is not his guardian (ok %s, %s)', v_ok, v_reason));
+    -- (other-office) another school's office cannot
+    PERFORM _as(U_WES_ADM);
+    SELECT s.ok, s.reason INTO v_ok, v_reason
+      FROM public_name_consent_set(P_JW, false, V, U_WHIT) s;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted' AND _consent_open_rows(P_JW) = 1,
+      format('db/47 (other-office): Westville''s office withdrew a Hilton child''s consent (ok %s, %s)', v_ok, v_reason));
+    -- (coach) nor can a coach, either way in
+    PERFORM _as(U_COACH2);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_name_consent_set(P_JW, false, V, U_WHIT) s;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted',
+      format('db/47 (coach): a coach recorded a guardian''s answer (ok %s, %s)', v_ok, v_reason));
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_name_consent_set(P_JW, true, V) s;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted',
+      format('db/47 (coach): a coach consented for a boy he is no guardian of (ok %s, %s)', v_ok, v_reason));
+    -- (direct) the application has no way to write the table but the door
+    -- (a write that gets past the privilege and fails on anything else has
+    -- still got through the door, and is reported as such)
+    PERFORM _as(U_REGISTRAR);
+    v_raised := false;
+    BEGIN
+      INSERT INTO public_name_consent (player_id, given_by, giver_assignment_id, giver_link_id, version, given_on, recorded_by)
+      SELECT P_U16B, 'guardian', g.assignment_id, g.id, V, sa_today(), U_REGISTRAR
+        FROM assignment_subject g WHERE g.player_id = P_U16B LIMIT 1;
+    EXCEPTION WHEN insufficient_privilege THEN v_raised := true;
+              WHEN OTHERS THEN v_raised := false;
+    END;
+    PERFORM _assert(v_raised AND _consent_rows(P_U16B) = 0, 'db/47 (direct): the office wrote public_name_consent without its door');
+
+    -- ── Who reads a consent record ──
+    PERFORM _as(U_WHIT);
+    SELECT count(*) INTO n FROM public_name_consent;
+    PERFORM _assert(n = 2, format('db/47 (read-own): a guardian reads %s consent records, expected his own two', n));
+    PERFORM _as(U_REGISTRAR);
+    SELECT count(*) INTO n FROM public_name_consent WHERE player_id IN (P_JW, P_2XI, P_OTHER, P_INJURED);
+    PERFORM _assert(n = 4, format('db/47 (read-office): the office reads %s of the school''s 4 consent records', n));
+    -- (read-coach) not even the record about a boy in the side he coaches
+    PERFORM _as(U_COACH2);
+    SELECT count(*) INTO n FROM public_name_consent;
+    PERFORM _assert(n = 0 AND _consent_rows(P_2XI) = 1,
+      format('db/47 (read-coach): the 2XI coach reads %s consent records — they name a child''s guardian', n));
+
+    -- ── A "no" is immediate, and ends a record rather than deleting it (C3) ──
+    PERFORM _as(U_WHIT);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_name_consent_set(P_JW, false, V) s;
+    v_facts := public_name_facts(P_JW);
+    PERFORM _assert(v_ok AND _consent_rows(P_JW) = 1 AND _consent_open_rows(P_JW) = 0
+                    AND v_facts -> 'consents' = jsonb_build_array(jsonb_build_object(
+                          'by', 'guardian', 'competent', true, 'givenOn', v_today, 'endedOn', v_today)),
+      format('db/47 (withdraw): a withdrawal did not end the one record today (ok %s, %s rows, facts %s)', v_ok, _consent_rows(P_JW), v_facts));
+    -- (same-day) consenting again the same day names him again: the facts
+    -- carry his latest act, not a tie with his own withdrawal
+    SELECT s.ok INTO v_ok FROM public_name_consent_set(P_JW, true, V) s;
+    v_facts := public_name_facts(P_JW);
+    PERFORM _assert(v_ok AND _consent_rows(P_JW) = 2 AND jsonb_array_length(v_facts -> 'consents') = 1
+                    AND v_facts #>> '{consents,0,endedOn}' IS NULL,
+      format('db/47 (same-day): a same-day consent after a withdrawal is not his latest act (%s rows, facts %s)', _consent_rows(P_JW), v_facts));
+    -- (again) a second yes to the same wording is refused, not duplicated
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_name_consent_set(P_JW, true, V) s;
+    PERFORM _assert(NOT v_ok AND v_reason = 'already_given' AND _consent_open_rows(P_JW) = 1,
+      format('db/47 (again): a repeated consent was written (ok %s, %s)', v_ok, v_reason));
+    -- (adult) a guardian answers for a minor: James made nineteen, as the
+    -- owner, and his guardian's link still open (a link written before links
+    -- ended at majority), the guardian's answer is refused and the consent
+    -- he gave today is not a competent one; made sixteen again, it is
+    v_born := _born_of(P_JW);
+    PERFORM _set_born(P_JW, (current_date - interval '19 years')::date);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_name_consent_set(P_JW, false, V) s;
+    v_facts := public_name_facts(P_JW);
+    PERFORM _assert(NOT v_ok AND v_reason = 'player_is_an_adult' AND _consent_open_rows(P_JW) = 1
+                    AND v_facts #> '{consents,0,competent}' = 'false'::jsonb,
+      format('db/47 (adult): a guardian answered for, or counted for, a boy of nineteen (ok %s, %s, facts %s)', v_ok, v_reason, v_facts));
+    PERFORM _set_born(P_JW, v_born);
+    PERFORM _assert(public_name_facts(P_JW) #> '{consents,0,competent}' = 'true'::jsonb,
+      'db/47 (adult): the consent is not competent again once he is sixteen');
+    -- (refused) a "no" with nothing open is a record that ends the day it begins
+    PERFORM _as(U_SARAH);
+    SELECT s.ok INTO v_ok FROM public_name_consent_set(P_U16B, false, V) s;
+    v_row := _consent_last(P_U16B);
+    PERFORM _assert(v_ok AND v_row.end_reason = 'refused' AND v_row.given_on = sa_today() AND v_row.ended_on = sa_today(),
+      format('db/47 (refused): a refusal is not a record ending the day it begins: %s', row(v_row.end_reason, v_row.given_on, v_row.ended_on)::text));
+
+    -- ── The never-public mark (C5) ──
+    -- (mark-coach) a coach cannot set one
+    PERFORM _as(U_COACH2);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM player_never_public_set(P_2XI, 'verify-047: coach') s;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted' AND _mark_rows(P_2XI) = 0,
+      format('db/47 (mark-coach): a coach set a never-public mark (ok %s, %s)', v_ok, v_reason));
+    -- (mark-dos) the director of sport can, with a reason
+    PERFORM _as(U_SARAH);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM player_never_public_set(P_2XI, '   ') s;
+    PERFORM _assert(NOT v_ok AND v_reason = 'no_reason', format('db/47 (mark-reason): a mark with no reason was set (%s)', v_reason));
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM player_never_public_set(P_2XI, 'verify-047: a protection order') s;
+    PERFORM _assert(v_ok, format('db/47 (mark-dos): the director of sport could not set a mark (%s)', v_reason));
+    v_facts := public_name_facts(P_2XI);
+    PERFORM _assert((v_facts ->> 'neverPublic')::boolean,
+      format('db/47 (mark-facts): the facts do not carry the mark: %s', v_facts));
+    -- (reason-coach) the reason is unreadable by the coach of that boy's own side
+    PERFORM _as(U_COACH2);
+    SELECT count(*) INTO n FROM player_never_public;
+    PERFORM _assert(n = 0, format('db/47 (reason-coach): the 2XI coach reads %s never-public mark(s), reason and all', n));
+    -- ...or by a guardian, or by another school's office
+    FOREACH who IN ARRAY ARRAY[U_WHIT, U_WES_ADM, U_WES_PUB, U_WATCHER] LOOP
+      PERFORM _as(who);
+      SELECT count(*) INTO n FROM player_never_public;
+      PERFORM _assert(n = 0, format('db/47 (reason-others): %s reads %s never-public mark(s)', who, n));
+    END LOOP;
+    -- ...and readable by the people who set such marks
+    FOREACH who IN ARRAY ARRAY[U_SARAH, U_REGISTRAR, U_HEAD_M] LOOP
+      PERFORM _as(who);
+      SELECT count(*) INTO n FROM player_never_public WHERE player_id = P_2XI AND reason = 'verify-047: a protection order';
+      PERFORM _assert(n = 1, format('db/47 (reason-setters): %s, who may set a mark, cannot read this one', who));
+    END LOOP;
+    -- (facts-clean) the facts carry the three keys, the consents their four,
+    -- and never the reason, a date of birth or a guardian
+    PERFORM set_config('app.user_id', '', true);
+    FOREACH who IN ARRAY ARRAY[P_2XI, P_JW, P_INJURED, P_OTHER, P_U16B] LOOP
+      v_facts := public_name_facts(who);
+      PERFORM _assert(
+        (SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(v_facts) k) = ARRAY['consents', 'namesOff', 'neverPublic']
+        AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v_facts -> 'consents') c
+                         WHERE (SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(c) k)
+                               <> ARRAY['by', 'competent', 'endedOn', 'givenOn'])
+        AND v_facts::text NOT LIKE '%protection order%'
+        AND v_facts::text NOT LIKE ('%' || to_char(_born_of(who), 'YYYY-MM-DD') || '%')
+        AND v_facts::text !~* ('born|reason|guardian_|link|form|recorded|' || U_WHIT::text || '|' || U_BEKKER::text),
+        format('db/47 (facts-clean): the facts about %s carry more than the rule needs: %s', who, v_facts));
+    END LOOP;
+
+    -- ── Names off, per age group (C4) ──
+    PERFORM _as(U_COACH2);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_names_off_set(HIL, 'open', true) s;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted',
+      format('db/47 (names-coach): a coach switched names off for an age group (ok %s, %s)', v_ok, v_reason));
+    -- K Dlamini: U16B by registration, younger by birth. 'open' switched off
+    -- names him when he plays in his own sides and not when he plays up into
+    -- the 1st XI (the side's age group, §5a).
+    v_grp := birth_age_group(_born_of(P_U16B));
+    PERFORM _assert(v_grp NOT IN ('U16', 'open'), format('db/47: K Dlamini''s own age group is %s — the fixture needs one that is neither his side''s nor open', v_grp));
+    PERFORM _as(U_SARAH);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_names_off_set(HIL, 'open', true) s;
+    PERFORM _assert(v_ok, format('db/47 (names-dos): the director of sport could not switch names off (%s)', v_reason));
+    PERFORM _assert(NOT (public_name_facts(P_U16B) ->> 'namesOff')::boolean
+                    AND NOT (public_name_facts(P_U16B, 'U16B') ->> 'namesOff')::boolean,
+      'db/47 (names-own): switching the open age group off unnamed a boy playing in his own U16B');
+    PERFORM _assert((public_name_facts(P_U16B, '1XI') ->> 'namesOff')::boolean,
+      'db/47 (names-side): a boy playing up into the 1st XI was named with the open age group switched off');
+    -- (names-birth) his own age group by birth holds him back in any side
+    SELECT s.ok INTO v_ok FROM public_names_off_set(HIL, v_grp, true) s;
+    PERFORM _assert(v_ok AND (public_name_facts(P_U16B, 'U16B') ->> 'namesOff')::boolean,
+      format('db/47 (names-birth): %s switched off did not hold back a %s boy playing U16B', v_grp, v_grp));
+    -- (names-back) switched back on, the switch is off again
+    SELECT s.ok INTO v_ok FROM public_names_off_set(HIL, v_grp, false) s;
+    PERFORM _assert(v_ok AND NOT (public_name_facts(P_U16B, 'U16B') ->> 'namesOff')::boolean,
+      'db/47 (names-back): switching an age group back did not name him again');
+    -- (names-school) Westville's switches are not Hilton's: D Mkhize is named
+    PERFORM _assert(NOT (public_name_facts(P_WES, '1XI') ->> 'namesOff')::boolean,
+      'db/47 (names-school): Hilton''s open switch held back a Westville boy');
+    PERFORM _as(U_COACH2);
+    SELECT count(*) INTO n FROM public_names_off WHERE school_id = HIL;
+    PERFORM _assert(n = 2, format('db/47 (names-read): a coach reads %s of his school''s 2 names-off settings', n));
+
+    -- ── Publishing, side by side (L1, L5) ──
+    -- (publish-default) nothing is published until somebody publishes it
+    PERFORM _assert(NOT fixture_side_published(M_47, 'home') AND NOT fixture_side_published(M_47, 'away')
+                    AND NOT competition_published(C_KZN),
+      'db/47 (publish-default): a fixture or competition nobody published reads as published');
+    PERFORM _assert((SELECT column_default FROM information_schema.columns
+                      WHERE table_schema = 'public' AND table_name = 'fixture_publication' AND column_name = 'published') = 'false'
+                    AND (SELECT column_default FROM information_schema.columns
+                      WHERE table_schema = 'public' AND table_name = 'competition_publication' AND column_name = 'published') = 'false',
+      'db/47 (publish-default): a publication row does not default to unpublished');
+    -- (away-home) the away school cannot publish the home side...
+    PERFORM _as(U_WES_PUB);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM fixture_publish(M_47, 'home', true) s;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted' AND NOT fixture_side_published(M_47, 'home'),
+      format('db/47 (away-home): Westville published Hilton''s side (ok %s, %s)', v_ok, v_reason));
+    -- (away-own) ...and publishes its own
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM fixture_publish(M_47, 'away', true) s;
+    PERFORM _assert(v_ok AND fixture_side_published(M_47, 'away') AND NOT fixture_side_published(M_47, 'home'),
+      format('db/47 (away-own): Westville could not publish its own side, or doing so published Hilton''s (ok %s, %s)', v_ok, v_reason));
+    -- (home-away) the home school cannot publish the away side either
+    PERFORM _as(U_SARAH);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM fixture_publish(M_47, 'away', false) s;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted' AND fixture_side_published(M_47, 'away'),
+      format('db/47 (home-away): Hilton unpublished Westville''s side (ok %s, %s)', v_ok, v_reason));
+    SELECT s.ok INTO v_ok FROM fixture_publish(M_47, 'home', true) s;
+    PERFORM _assert(v_ok AND fixture_side_published(M_47, 'home'), 'db/47 (home-own): Hilton could not publish its own side');
+    -- (off-platform) a side whose school is not on the platform has nobody to publish it
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM fixture_publish(M_DUTY, 'away', true) s;
+    PERFORM _assert(NOT v_ok AND v_reason = 'side_not_on_platform',
+      format('db/47 (off-platform): a side with no school on the platform was published (ok %s, %s)', v_ok, v_reason));
+    -- (publish-coach) a coach and the office do not publish
+    FOREACH who IN ARRAY ARRAY[U_COACH2, U_REGISTRAR] LOOP
+      PERFORM _as(who);
+      SELECT s.ok INTO v_ok FROM fixture_publish(M_47, 'home', false) s;
+      PERFORM _assert(NOT v_ok AND fixture_side_published(M_47, 'home'),
+        format('db/47 (publish-coach): %s, who holds no broadcast.publish, unpublished a side', who));
+    END LOOP;
+    -- (competition) the league's page: its administrator, and nobody at a school
+    FOREACH who IN ARRAY ARRAY[U_SARAH, U_COACH2, U_REGISTRAR] LOOP
+      PERFORM _as(who);
+      SELECT s.ok INTO v_ok FROM competition_publish(C_KZN, true) s;
+      PERFORM _assert(NOT v_ok AND NOT competition_published(C_KZN),
+        format('db/47 (competition-others): %s published a league it does not run', who));
+    END LOOP;
+    PERFORM _as(U_LEAGUE);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM competition_publish(C_KZN, true) s;
+    PERFORM _assert(v_ok AND competition_published(C_KZN),
+      format('db/47 (competition): the league administrator could not publish its page (%s)', v_reason));
+    -- (publication-read) each school reads its own side's row
+    PERFORM _as(U_WES_PUB);
+    SELECT count(*) INTO n FROM fixture_publication WHERE match_id = M_47;
+    PERFORM _assert(n = 1, format('db/47 (publication-read): Westville reads %s publication rows of the fixture, expected its own', n));
+
+    -- ── The mark ends; the row stays ──
+    PERFORM _as(U_COACH2);
+    SELECT s.ok INTO v_ok FROM player_never_public_end(P_2XI) s;
+    PERFORM _assert(NOT v_ok AND (public_name_facts(P_2XI) ->> 'neverPublic')::boolean,
+      'db/47 (end-coach): a coach ended a never-public mark');
+    PERFORM _as(U_HEAD_M);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM player_never_public_end(P_2XI) s;
+    PERFORM _assert(v_ok AND NOT (public_name_facts(P_2XI) ->> 'neverPublic')::boolean AND _mark_rows(P_2XI) = 1,
+      format('db/47 (end): the principal''s ending did not lift the mark and keep its row (ok %s, %s, %s rows)', v_ok, v_reason, _mark_rows(P_2XI)));
+
+    -- ── Signed out: nothing (§1 "public" means signed out) ──
+    PERFORM set_config('app.user_id', '', true);
+    FOREACH v_grp IN ARRAY ARRAY['public_name_consent', 'player_never_public', 'public_names_off',
+                                 'fixture_publication', 'competition_publication'] LOOP
+      EXECUTE format('SELECT count(*) FROM %I', v_grp) INTO n;
+      PERFORM _assert(n = 0 AND _count_rows(v_grp) > 0,
+        format('db/47 (signed-out): an unauthenticated session reads %s of %s''s %s rows', n, v_grp, _count_rows(v_grp)));
+    END LOOP;
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_name_consent_set(P_JW, false, V) s;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_signed_in',
+      format('db/47 (signed-out): an unauthenticated session answered for a child (%s)', v_reason));
+    SELECT s.ok INTO v_ok FROM fixture_publish(M_47, 'home', false) s;
+    PERFORM _assert(NOT v_ok, 'db/47 (signed-out): an unauthenticated session unpublished a fixture');
+    SELECT s.ok INTO v_ok FROM player_never_public_set(P_JW, 'signed out') s;
+    PERFORM _assert(NOT v_ok, 'db/47 (signed-out): an unauthenticated session set a never-public mark');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  PERFORM set_config('app.device_id', '', true);
+
+  -- ── 26. Penalty runs to the fielding side, in every total (SCRBRD-094, db/48) ──
+  -- Law 41.18, as the fold credits it: five to the fielding side go to its
+  -- most recently completed innings, or, if it has not batted, to its next,
+  -- which opens on them; a chase's target rises with an award made after it
+  -- was set, unless the umpires typed it. On §23's match, which it leaves at
+  -- 14/1 off 3 in the second innings (Kearsney), with a five to the fielding
+  -- side — Hilton U16B, who have no innings yet — in it (row 15), and one in
+  -- the first innings, whose innings_start was never written (row 3: an
+  -- innings with no side, so nobody's). The pen goes back to the scorer, then:
+  --
+  --    k  innings  row                                        the fold
+  --   20  2        innings_start, Hilton U16B bat             row 15's five: they open on 5
+  --   21  2        3                                          8/0 off 1
+  --   22  2        penalty, 5 to the fielding side            Kearsney's second innings: 14 → 19
+  --   23  3        innings_start, Kearsney bat, target 20     the target 20
+  --   24  3        penalty, 5 to the fielding side            Hilton's innings 2: 13; the target 25
+  --   25  3        revision, target 40                        the umpires' 40
+  --   26  3        penalty, no runs named, to the fielding    Hilton's innings 2: 18; the target stays 40
+  --   27  3        2                                          2/0 off 1
+  --
+  -- A handover in the third innings expects the carried five. Each assertion
+  -- was run once, alone, with db/48 broken the way its label says, and failed
+  -- for that reason:
+  --
+  --   (last)     penalty_credit_as_folded() never crediting an earlier innings
+  --   (next)     ...never crediting a later one
+  --   (live)     match_live_score without the batting side's penalties
+  --   (handover) innings_score_as_folded() without the credit
+  --   (target)   innings_target_as_folded() not raised by an award
+  --   (typed)    ...raised even when the umpires typed it
+  --   (after)    match_live_score without the credit
+  --   (nobody)   the helpers as SECURITY DEFINER, search path pinned
+  DECLARE
+    e int;
+    t20 int; t25 int; t40 int;
+    g1 record; g2 record; g2b record; g3 record;
+    l1 bigint; l2 bigint; l2b bigint;
+    c1 int; c2 int;
+    v_without boolean; v_with boolean;
+    n int; n2 int;
+    x record;
+  BEGIN
+    -- The pen from Sarah (§23's holder) back to the scorer, in the second innings.
+    PERFORM _as(U_SARAH);
+    SELECT a.code INTO v_code FROM scoring_arm_handover(M_HANDOVER, 'verify-045-b', 0, false) a;
+    PERFORM _as(U_SCORER);
+    SELECT h.ok INTO v_ok FROM scoring_claim_handover(M_HANDOVER, 'verify-048', v_code) h;
+    SELECT v.ok, v.epoch INTO v_ok, e FROM scoring_verify_takeover(M_HANDOVER, 'verify-048', 14, 1, 3) v;
+    PERFORM _assert(v_ok, 'db/48: the scorer could not take the pen back at 14/1 off 3 in the second innings');
+    -- The live score before anything is credited to that innings: its own
+    -- deliveries and row 14's five to the batting side.
+    PERFORM _as(U_OWNER);
+    SELECT l.runs INTO l1 FROM match_live_score l WHERE l.match_id = M_HANDOVER AND l.innings = 1;
+    PERFORM _as(U_SCORER);
+    PERFORM set_config('app.device_id', 'verify-048', true);
+    FOR x IN SELECT * FROM (VALUES
+        (20, 2, 'innings_start', NULL::text, NULL::int, '{"battingTeam":"Hilton U16B","bowlingTeam":"Kearsney","overs":20}'::jsonb),
+        (21, 2, 'ball',    'run', 3,    '{}'::jsonb),
+        (22, 2, 'penalty', NULL,  NULL, '{"runs":5,"toBattingTeam":false,"reason":"pitch_damage"}'::jsonb)
+      ) AS v(k, inn, kind, bt, val, pl) ORDER BY k
+    LOOP
+      INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                              idempotency_key, client_seq, client_ts, kind, ball_type, value, payload)
+      VALUES (M_HANDOVER, match_school(M_HANDOVER), 9700 + x.k, e, x.inn, U_SCORER, 'verify-048',
+              'verify:048:' || x.k, 9700 + x.k, now(), x.kind, x.bt, x.val, x.pl);
+    END LOOP;
+    PERFORM _as(U_OWNER);
+    SELECT * INTO g2 FROM innings_score_as_folded(M_HANDOVER, 2::smallint);
+    c1 := penalty_credit_as_folded(M_HANDOVER, 1::smallint);
+    c2 := penalty_credit_as_folded(M_HANDOVER, 2::smallint);
+
+    -- (last) Kearsney's second innings, completed, is credited the five Hilton's third made
+    PERFORM _assert(c1 = 5,
+      format('db/48 (last): %s runs credited to Kearsney''s innings, expected 5 — the award Hilton''s innings made to them', c1));
+    -- (next) Hilton's third innings is credited the five Kearsney's made while Hilton had not batted
+    PERFORM _assert(c2 = 5,
+      format('db/48 (next): %s runs credited to Hilton''s innings, expected 5 — the award it opens on', c2));
+    -- (live) the live score has the batting side's own penalty runs (row 14), as the fold's total does
+    PERFORM _assert(l1 = 14,
+      format('db/48 (live): match_live_score read %s for Kearsney''s innings, expected the fold''s 14 — six, a no-ball and its run, five penalty runs, a leg bye', l1));
+
+    -- (handover) The pen to Sarah in the third innings: the carried five are on the board.
+    PERFORM _as(U_SCORER);
+    SELECT a.code INTO v_code FROM scoring_arm_handover(M_HANDOVER, 'verify-048', 0, false) a;
+    PERFORM _as(U_SARAH);
+    SELECT h.ok INTO v_ok FROM scoring_claim_handover(M_HANDOVER, 'verify-048-b', v_code) h;
+    PERFORM _assert(v_ok, 'db/48: Sarah could not claim the handover in the third innings');
+    SELECT v.ok INTO v_without FROM scoring_verify_takeover(M_HANDOVER, 'verify-048-b', 3, 0, 1) v;
+    SELECT v.ok INTO v_with FROM scoring_verify_takeover(M_HANDOVER, 'verify-048-b', 8, 0, 1) v;
+    -- (handover)
+    PERFORM _assert(NOT v_without AND v_with AND row(g2.runs, g2.wickets, g2.legal_balls)::text = '(8,0,1)',
+      format('db/48 (handover): the third innings reads %s; without its carried five it verified %s, with them %s — expected (8,0,1), refused, then verified',
+             row(g2.runs, g2.wickets, g2.legal_balls)::text, v_without, v_with));
+
+    -- And back to the scorer, for the fourth innings: a chase with a target.
+    PERFORM _as(U_SARAH);
+    SELECT a.code INTO v_code FROM scoring_arm_handover(M_HANDOVER, 'verify-048-b', 0, false) a;
+    PERFORM _as(U_SCORER);
+    SELECT h.ok INTO v_ok FROM scoring_claim_handover(M_HANDOVER, 'verify-048-c', v_code) h;
+    SELECT v.ok, v.epoch INTO v_ok, e FROM scoring_verify_takeover(M_HANDOVER, 'verify-048-c', 8, 0, 1) v;
+    PERFORM _assert(v_ok, 'db/48: the scorer could not take the pen back at 8/0 off 1 in the third innings');
+    PERFORM set_config('app.device_id', 'verify-048-c', true);
+    FOR x IN SELECT * FROM (VALUES
+        (23, 3, 'innings_start', NULL::text, NULL::int, '{"battingTeam":"Kearsney","bowlingTeam":"Hilton U16B","overs":20,"target":20}'::jsonb),
+        (24, 3, 'penalty',  NULL,  NULL, '{"runs":5,"toBattingTeam":false,"reason":"time_wasting"}'::jsonb),
+        (25, 3, 'revision', NULL,  NULL, '{"target":40,"reason":"rain"}'::jsonb),
+        (26, 3, 'penalty',  NULL,  NULL, '{"toBattingTeam":false,"reason":"protected_area"}'::jsonb),
+        (27, 3, 'ball',     'run', 2,    '{}'::jsonb)
+      ) AS v(k, inn, kind, bt, val, pl) ORDER BY k
+    LOOP
+      INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                              idempotency_key, client_seq, client_ts, kind, ball_type, value, payload)
+      VALUES (M_HANDOVER, match_school(M_HANDOVER), 9700 + x.k, e, x.inn, U_SCORER, 'verify-048-c',
+              'verify:048:' || x.k, 9700 + x.k, now(), x.kind, x.bt, x.val, x.pl);
+      IF x.k = 23 THEN t20 := innings_target_as_folded(M_HANDOVER, 3::smallint); END IF;
+      IF x.k = 24 THEN t25 := innings_target_as_folded(M_HANDOVER, 3::smallint); END IF;
+    END LOOP;
+    t40 := innings_target_as_folded(M_HANDOVER, 3::smallint);
+    PERFORM _as(U_OWNER);
+    SELECT * INTO g1 FROM innings_score_as_folded(M_HANDOVER, 1::smallint);
+    SELECT * INTO g2b FROM innings_score_as_folded(M_HANDOVER, 2::smallint);
+    SELECT * INTO g3 FROM innings_score_as_folded(M_HANDOVER, 3::smallint);
+    SELECT l.runs INTO l2 FROM match_live_score l WHERE l.match_id = M_HANDOVER AND l.innings = 1;
+    SELECT l.runs INTO l2b FROM match_live_score l WHERE l.match_id = M_HANDOVER AND l.innings = 2;
+
+    -- (target) the chase opened at 20 and an award to the side that set it made it 25
+    PERFORM _assert(t20 = 20 AND t25 = 25,
+      format('db/48 (target): the fourth innings'' target read %s, then %s — expected 20, then 25 after five to the fielding side', t20, t25));
+    -- (typed) the umpires' 40 does not move with a later award
+    PERFORM _assert(t40 = 40,
+      format('db/48 (typed): the target read %s after the umpires'' 40 and another award, expected 40', t40));
+    -- (after) every total, as the fold's: Kearsney's second innings 19 (its 14 and
+    --         Hilton's award); Hilton's third 18 (the five it opened on, a 3, and
+    --         both awards the chase made); the chase itself neither
+    PERFORM _assert(g1.runs = 19 AND l2 = 19 AND g2b.runs = 18 AND l2b = 18
+                    AND row(g3.runs, g3.wickets, g3.legal_balls)::text = '(2,0,1)',
+      format('db/48 (after): Kearsney''s second innings read %s (live %s), expected 19; Hilton''s third %s (live %s), expected 18; '
+             || 'the fourth %s, expected (2,0,1)', g1.runs, l2, g2b.runs, l2b, row(g3.runs, g3.wickets, g3.legal_balls)::text));
+
+    -- (nobody) An unidentified session and another school's office read none of it through the helpers.
+    PERFORM set_config('app.user_id', '', true);
+    n := coalesce(penalty_credit_as_folded(M_HANDOVER, 2::smallint), -1)
+       + coalesce(innings_target_as_folded(M_HANDOVER, 3::smallint), 0);
+    PERFORM _as(U_WES_ADM);
+    n2 := coalesce(penalty_credit_as_folded(M_HANDOVER, 2::smallint), -1)
+        + coalesce(innings_target_as_folded(M_HANDOVER, 3::smallint), 0);
+    -- (nobody)
+    PERFORM _assert(n = 0 AND n2 = 0,
+      format('db/48 (nobody): an unidentified session read %s and the Westville administrator %s of a Hilton fixture''s credits and target, expected 0 and 0',
+             n, n2));
+  END;
+  PERFORM set_config('app.device_id', '', true);
+  PERFORM set_config('app.user_id', '', true);
+  -- ── 27. A career in one pass over the log (db/49) ───────────────────
+  -- The three lifetime views were one pass of ball_event per PLAYER (db/02,
+  -- over the *_since() functions), so the policy on ball_event ran players ×
+  -- balls times and the `career` read outgrew the client's ten seconds. db/49
+  -- made each one pass, grouped by player — db/44's season views without the
+  -- season — and left the functions as they were. They are the reference:
+  -- for every player each of eight readers may read, the views are what the
+  -- functions say, column by column, over the whole log — the seed, sections
+  -- 19 to 23 and §22's fixture, which between them carry every rule (no-ball
+  -- byes, retirements marked W, free-hit saves, voids, run outs at the other
+  -- end, typed names, a ball with no type, a wicket with no method). §22's
+  -- (e) holds the season views to the same lifetime views, so the three
+  -- readers of one composition cannot drift apart. Each assertion's label
+  -- names what it guards. db/49 was broken each of these ways, one at a
+  -- time, and the whole file run; what went red first is recorded, because
+  -- an earlier section often catches a composition that moved before this
+  -- one is reached — which is the point of having three readers held to one:
+  --
+  --   the batting view over player_batting_since() again  → (one-pass)
+  --   the bowling view without security_invoker           → §22 (e), as the
+  --                                                          director; (one-pass)
+  --                                                          names it too
+  --   the batting view without its retirement arm         → §19 (a batter timed
+  --                                                          out has no innings)
+  --   the dismissals view without ball_wicket_stands()    → §22 (e)
+  --   the bowling view counting a run out as the bowler's → §22 (e)
+  --   the batting view's second arm without its NULLIF    → nothing, by design
+  --                                                          (below)
+  --
+  -- and (same) alone, over a generated log (tools/bench-career.mjs --load),
+  -- went red for the last two as the owner and the director, and stayed
+  -- green for a Westville reader and a pupil, who could see none of it.
+  --
+  -- The NULLIF on the batting view's second arm changes no figure: `faced`
+  -- is false there, so its row adds nothing to runs, balls, fours or sixes,
+  -- and count(DISTINCT), max() ignore a repeat. It is kept so the view reads
+  -- as db/44's does, row for row. The dismissals view's NULLIF is load-bearing
+  -- and (same) catches it dropped only if a retirement and a wicket ball were
+  -- ever one row, which they cannot be; db/44's header has the argument.
+  DECLARE
+    who uuid;
+    n bigint; n2 bigint; n3 bigint; n4 bigint;
+    detail text;
+  BEGIN
+    SELECT count(*) INTO n FROM pg_class c JOIN pg_namespace ns ON ns.oid = c.relnamespace
+     WHERE ns.nspname = 'public' AND c.relkind = 'v'
+       AND c.relname IN ('player_batting_career', 'player_bowling_career', 'player_dismissals')
+       AND 'security_invoker=true' = ANY (c.reloptions)
+       AND pg_get_viewdef(c.oid) !~ '_since\(';
+    -- (one-pass) three invoker views, none of them a function call per player
+    PERFORM _assert(n = 3,
+      format('db/49 (one-pass): %s of the 3 lifetime views are security_invoker and read the log in one pass, expected 3', n));
+
+    PERFORM set_config('app.user_id', '', true);
+    SELECT (SELECT count(*) FROM player_batting_career) + (SELECT count(*) FROM player_bowling_career)
+         + (SELECT count(*) FROM player_dismissals) INTO n;
+    -- (nobody) an unidentified session reads nothing through them
+    PERFORM _assert(n = 0,
+      format('db/49 (nobody): an unidentified session read %s rows of lifetime figures, expected 0', n));
+
+    -- (same) THE INVARIANT, as eight readers: the owner (every school), the
+    -- director, the scorer and the 2XI coach (Hilton at three widths), the
+    -- Westville administrator, the 1XI pupil, a guardian (fixtures, no
+    -- deliveries) and nobody at all.
+    FOREACH who IN ARRAY ARRAY[U_OWNER, U_SARAH, U_SCORER, U_COACH2, U_WES_ADM, U_PARENT, U_SELF] LOOP
+      PERFORM _as(who);
+      SELECT count(*), string_agg(format('%s %s: one pass %s, per player %s', d.family, d.player_id, d.one_pass, d.per_player), '; ')
+        INTO n, detail FROM _career_lifetime_drift() d;
+      -- (same)
+      PERFORM _assert(n = 0,
+        format('db/49 (same), as %s: %s lifetime figure(s) are not what the per-player functions say — %s', who, n, left(detail, 600)));
+    END LOOP;
+    PERFORM set_config('app.user_id', '', true);
+    SELECT count(*) INTO n FROM _career_lifetime_drift();
+    -- (same), as nobody
+    PERFORM _assert(n = 0, format('db/49 (same), as nobody: %s lifetime figure(s) differ', n));
+
+    -- (over) ...and it held over something: the owner and the director read
+    -- batting, bowling and dismissals for §22's three boys, whose log carries
+    -- every rule, and the Westville administrator reads his own boys.
+    PERFORM _as(U_OWNER);
+    SELECT (SELECT count(*) FROM player_batting_career WHERE player_id IN ('aaaaaaaa-0000-0000-0000-00000000044a', 'aaaaaaaa-0000-0000-0000-00000000044b'))
+         + (SELECT count(*) FROM player_bowling_career WHERE player_id = 'aaaaaaaa-0000-0000-0000-00000000044c')
+         + (SELECT count(*) FROM player_dismissals     WHERE player_id IN ('aaaaaaaa-0000-0000-0000-00000000044a', 'aaaaaaaa-0000-0000-0000-00000000044b'))
+      INTO n;
+    PERFORM _as(U_SARAH);
+    SELECT (SELECT count(*) FROM player_batting_career WHERE player_id IN ('aaaaaaaa-0000-0000-0000-00000000044a', 'aaaaaaaa-0000-0000-0000-00000000044b'))
+         + (SELECT count(*) FROM player_bowling_career WHERE player_id = 'aaaaaaaa-0000-0000-0000-00000000044c')
+         + (SELECT count(*) FROM player_dismissals     WHERE player_id IN ('aaaaaaaa-0000-0000-0000-00000000044a', 'aaaaaaaa-0000-0000-0000-00000000044b'))
+      INTO n2;
+    SELECT count(*) INTO n3 FROM player_batting_career;
+    PERFORM _as(U_WES_ADM);
+    SELECT (SELECT count(*) FROM player_batting_career WHERE player_id = P_WES)
+         + (SELECT count(*) FROM player_bowling_career WHERE player_id = P_WES2) INTO n4;
+    -- (over)
+    PERFORM _assert(n = 5 AND n2 = 5 AND n3 > 2 AND n4 = 2,
+      format('db/49 (over): the owner reads %s and the director %s of §22''s five lifetime rows (expected 5 and 5), the director %s batting rows in all '
+             || '(expected more than §22''s two), the Westville administrator %s of his two boys'' rows (expected 2)', n, n2, n3, n4));
+  END;
   PERFORM set_config('app.user_id', '', true);
 
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';

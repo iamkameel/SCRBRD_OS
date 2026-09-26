@@ -39,7 +39,7 @@ function ReadinessOverview({ role }) {
       <SectionHeader title="Readiness" sub="Duty-roster coverage across the coming fixtures — one glance instead of one screen each" color={D.sky}/>
 
       {upcoming.length === 0 ? (
-        <EmptyState message="No upcoming fixtures are scheduled in your scope." icon="🛡️"/>
+        <EmptyState message="No upcoming fixtures are scheduled in your scope." icon="shield-check"/>
       ) : loading ? (
         <EmptyState loading/>
       ) : (

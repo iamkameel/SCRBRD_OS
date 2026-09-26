@@ -191,7 +191,7 @@ async function openFixture() {
     return false;
   });
   await page.waitForTimeout(2500);
-  if (!/\bDOT\b/i.test(await text())) await click(/QUICK MODE/i, 2500);
+  if (!(await page.locator('[data-testid="basic-pad"]').count())) { await page.locator('[data-testid="pad-menu"]').click({ timeout: 2500 }).catch(() => {}); await page.locator('[data-testid="pad-basic-scoring"]').click({ timeout: 2500 }).catch(() => {}); }
   // Let the pad offer its log and the server answer.
   await page.waitForTimeout(3500);
   return opened;

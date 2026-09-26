@@ -58,9 +58,9 @@ const SUPPORT_ROLES = POLICY_ROLES.filter((r) =>
   !SUBJECT_SCOPED_ROLES.includes(r) && !TEAM_SCOPED_ROLES.includes(r) && r !== "player");
 
 const MINUTES = [15, 30, 60, 120, 240];
-const H = { fontFamily: D.head, fontSize: "13px", fontWeight: 700, color: D.textPrimary };
-const SUB = { fontFamily: D.body, fontSize: "11px", color: D.textMuted, lineHeight: 1.5 };
-const MONO = { fontFamily: D.mono, fontSize: "10px", color: D.textMuted };
+const H = () => ({ fontFamily: D.head, fontSize: "13px", fontWeight: 700, color: D.textPrimary });
+const SUB = () => ({ fontFamily: D.body, fontSize: "11px", color: D.textMuted, lineHeight: 1.5 });
+const MONO = () => ({ fontFamily: D.mono, fontSize: "10px", color: D.textMuted });
 const clock = (t) => (t ? new Date(t).toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit" }) : "—");
 const roleLabel = (r) => ROLES[r]?.label ?? r;
 
@@ -86,7 +86,7 @@ function SupportAccessPanel({ role }) {
   if (!signedIn()) {
     return (
       <Card sx={{ padding: "16px" }} data-testid="support-access">
-        <EmptyState icon="🛠️" message="Sign in to the live platform to begin a support session."/>
+        <EmptyState icon="life-buoy" message="Sign in to the live platform to begin a support session."/>
       </Card>
     );
   }
@@ -160,7 +160,7 @@ function SupportAccessLive({ role }) {
           {s.schoolName ?? "A school"} as {roleLabel(s.role)}
         </div>
         <div style={{ fontFamily: D.body, fontSize: "11px", color: D.textSecondary }}>{s.reason}</div>
-        <div style={MONO}>
+        <div style={MONO()}>
           began {clock(s.startedAt)} · {s.live
             ? <>until {clock(s.expiresAt)} · <Countdown expiresAt={s.expiresAt} onZero={again}/></>
             : s.endedAt ? `ended ${clock(s.endedAt)}${s.endedByName ? ` by ${s.endedByName}` : ""}`
@@ -176,8 +176,8 @@ function SupportAccessLive({ role }) {
   return (
     <div style={{ display: "grid", gap: "16px" }} data-testid="support-access">
       <Card sx={{ padding: "16px" }}>
-        <div style={H}>Begin a support session</div>
-        <div style={{ ...SUB, marginTop: "3px", marginBottom: "12px", maxWidth: "66ch" }}>
+        <div style={H()}>Begin a support session</div>
+        <div style={{ ...SUB(), marginTop: "3px", marginBottom: "12px", maxWidth: "66ch" }}>
           One school, as one of its own roles, for the minutes you choose — an hour unless you say otherwise, four at most.
           It stops by itself. The school sees who you are, the role and your reason, and can end it sooner.
           Every read you make while it is live is written to that school's own record.
@@ -186,7 +186,7 @@ function SupportAccessLive({ role }) {
           <Select label="School" value={form.schoolId} onChange={set("schoolId")} data-testid="support-school"
             options={[{ value: "", label: schools.loading ? "Loading schools…" : "Choose a school" },
                       ...schools.rows.map((s) => ({ value: s.id, label: s.name }))]}/>
-          {schools.error && <div role="alert" style={{ ...SUB, color: textOn(D.rose), marginTop: "-8px", marginBottom: "10px" }}>Could not load the schools ({schools.error}).</div>}
+          {schools.error && <div role="alert" style={{ ...SUB(), color: textOn(D.rose), marginTop: "-8px", marginBottom: "10px" }}>Could not load the schools ({schools.error}).</div>}
           <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "12px" }}>
             <Select label="As" value={form.role} onChange={set("role")} data-testid="support-role"
               options={[{ value: "", label: "Choose a role" }, ...SUPPORT_ROLES.map((r) => ({ value: r, label: roleLabel(r) }))]}/>
@@ -202,8 +202,8 @@ function SupportAccessLive({ role }) {
       </Card>
 
       <Card sx={{ padding: "16px" }}>
-        <div style={H}>Your sessions</div>
-        <div style={{ ...SUB, marginTop: "3px", marginBottom: "8px" }}>
+        <div style={H()}>Your sessions</div>
+        <div style={{ ...SUB(), marginTop: "3px", marginBottom: "8px" }}>
           Live or not is the server's answer, re-read every half minute. A session the school ends shows here as ended, by them.
         </div>
         {sessions.loading && !mine.length
@@ -211,10 +211,10 @@ function SupportAccessLive({ role }) {
           : sessions.error
             ? <EmptyState error/>
             : mine.length === 0
-              ? <EmptyState icon="🛠️" message="You have not begun a support session."/>
+              ? <EmptyState icon="life-buoy" message="You have not begun a support session."/>
               : <>
                   {open.map(row)}
-                  {past.length > 0 && <div style={{ ...MONO, marginTop: "10px" }}>Recent</div>}
+                  {past.length > 0 && <div style={{ ...MONO(), marginTop: "10px" }}>Recent</div>}
                   {past.map(row)}
                 </>}
       </Card>

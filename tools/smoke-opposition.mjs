@@ -8,7 +8,9 @@
  *      cannot decide to start reading its rivals.
  *   2. A HEAD-TO-HEAD FIXTURE the reader's team is in, or nothing. Not a
  *      refusal — nothing, because a reason confirms the fixture exists.
- *   3. A WINDOW. Opens fourteen days before the start, closes at the start.
+ *   3. A WINDOW. Opens five days before the start, closes at the start
+ *      (opposition_window_days(), db/46 — SCRBRD-091). The fixtures below
+ *      sit a day either side of its edge, read from the function.
  *   4. CRICKET COLUMNS AND AGGREGATES. Name, role, styles, and what the log
  *      says. Never born, id, address, fitness, injury, notes.
  *   5. THE WHOLE LOG, GRADED. Every fixture the player has been logged in,
@@ -128,10 +130,14 @@ try {
   // face a ball and then asserted he was 'insufficient'; he was 'none', and
   // the walk was right to say so.
   await balls(kears, WES, 10, { striker: BOTHA, nonStriker: MKHIZE });
-  // The fixtures being prepared for.
-  const soon   = await fixture(HIL, "1XI", { awaySchool: WES, awayTeam: "1XI", days: 7 });
+  // The fixtures being prepared for, a day either side of the window's edge.
+  // The window is read from the function, so the walk states the number once
+  // and every fixture follows it.
+  const WINDOW = (await q(`select opposition_window_days() d`))[0].d;
+  const soon   = await fixture(HIL, "1XI", { awaySchool: WES, awayTeam: "1XI", days: WINDOW - 1 });
+  const edge   = await fixture(HIL, "1XI", { awaySchool: WES, awayTeam: "1XI", days: WINDOW + 1 });
   const later  = await fixture(HIL, "1XI", { awaySchool: WES, awayTeam: "1XI", days: 40 });
-  const solo   = await fixture(HIL, "1XI", { opponent: "Michaelhouse 1st XI", days: 7 });
+  const solo   = await fixture(HIL, "1XI", { opponent: "Michaelhouse 1st XI", days: WINDOW - 1 });
 
   group("Off by default, and off means off");
   {
@@ -167,8 +173,17 @@ try {
     ok("nothing at all reaches a spectator's squad read", rows(await squad(soon, watcher)).length === 0);
   }
 
-  group("A window: fourteen days before, until the first ball");
+  group("A window: five days before, until the first ball");
   {
+    // Kameel, 2026-09-25 (SCRBRD-091): five days, for the squad and the
+    // figures alike. The one place this walk states the number.
+    ok("the window is five days, as decided", WINDOW === 5);
+    const out = rows(await context(edge, coach))[0];
+    ok("a fixture a day beyond the window is not yet open", out?.open === false && out?.reason === "not_yet_open");
+    ok("...and opens the window's length before the first ball",
+       Date.parse(out?.closes_at) - Date.parse(out?.opens_at) === WINDOW * 86400000);
+    ok("...with no squad to read", rows(await squad(edge, coach)).length === 0);
+    ok("...and no count of what it is not showing", out?.games_analysed === null && out?.deliveries_analysed === null);
     const far = rows(await context(later, coach))[0];
     ok("a fixture forty days out is not yet open", far?.open === false && far?.reason === "not_yet_open");
     ok("...and says when it opens", !!far?.opens_at);
@@ -181,7 +196,8 @@ try {
     const none = rows(await context(solo, coach))[0];
     ok("a school not on SCRBRD has nothing to read", none?.open === false && none?.reason === "opponent_not_on_scrbrd");
     const now = rows(await context(soon, coach))[0];
-    ok("a fixture next week is open", now?.open === true && now?.reason === "open");
+    ok("a fixture a day inside the window is open", now?.open === true && now?.reason === "open");
+    ok("...and its squad reads", rows(await squad(soon, coach)).length > 0);
   }
 
   group("Cricket columns, and nothing else about a child");

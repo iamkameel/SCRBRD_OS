@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react";
 import SCRBRD_LOGO from "../assets/scrbrd-logo.jpg";
 import { ROLES } from "../design/roles.js";
+import { T, clr } from "../design/tokens.js";
 import { mode as apiMode, signIn, signInWithCode, devLoginAvailable } from "../lib/session.js";
+import { Icon } from "../ui/icons.jsx";
 
 // ══════════════════════════════════════════════════════
 //  LOGIN PAGE
@@ -184,35 +186,35 @@ function LoginPage({ onLogin, onSignUp, liveOnly = false, onBack }) {
   ];
 
   return (
-    <div style={{minHeight:"100vh",background:"#03050c",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px"}}>
+    <div style={{minHeight:"100vh",background:T.surface.canvas,display:"flex",alignItems:"center",justifyContent:"center",padding:"24px"}}>
       <div style={{width:"100%",maxWidth:"420px"}}>
         <div style={{textAlign:"center",marginBottom:"32px"}}>
           <img src={SCRBRD_LOGO} alt="SCRBRD" style={{height:"30px",objectFit:"contain",filter:"brightness(1.15)",marginBottom:"16px"}}/>
-          <div style={{fontFamily:"'Syne',sans-serif",fontSize:"22px",fontWeight:800,color:"#fff",marginBottom:"6px"}}>Welcome back</div>
-          <div data-testid="login-subtitle" style={{fontFamily:"'DM Sans',sans-serif",fontSize:"13px",color:"rgba(255,255,255,0.45)"}}>
+          <div style={{fontFamily:"'Syne',sans-serif",fontSize:"22px",fontWeight:800,color:T.content.primary,marginBottom:"6px"}}>Welcome back</div>
+          <div data-testid="login-subtitle" style={{fontFamily:"'DM Sans',sans-serif",fontSize:"13px",color:T.content.tertiary}}>
             {liveOnly ? "Sign in to send what the scorer has saved on this device. Nothing is lost while you do."
                       : "Sign in to your SCRBRD account"}
           </div>
           {onBack&&(
             <button onClick={onBack} className="pressBtn" data-testid="login-back-to-pad"
-              style={{marginTop:"10px",background:"none",border:"none",cursor:"pointer",fontFamily:"'DM Sans',sans-serif",fontSize:"12px",color:"#a5b4fc"}}>
+              style={{marginTop:"10px",background:"none",border:"none",cursor:"pointer",fontFamily:"'DM Sans',sans-serif",fontSize:"12px",color:T.brand.blueText}}>
               ‹ Back to the scorer
             </button>
           )}
         </div>
 
-        <div style={{borderRadius:"20px",border:"1px solid rgba(255,255,255,0.08)",background:"rgba(255,255,255,0.02)",padding:"28px",backdropFilter:"blur(20px)"}}>
+        <div style={{borderRadius:"20px",border:`1px solid ${T.line.normal}`,background:T.fill.panel,padding:"28px",backdropFilter:"blur(20px)"}}>
           {/* Demo entry — only where there is no server. See handleDemoEntry. */}
           {live === false && <>
-          <button onClick={handleDemoEntry} disabled={oauthLoading} data-testid="login-demo" className="pressBtn" style={{width:"100%",padding:"12px",borderRadius:"12px",cursor:"pointer",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",display:"flex",alignItems:"center",justifyContent:"center",gap:"10px",marginBottom:"20px",transition:"all .2s"}}>
-            <span aria-hidden="true">🎬</span>
-            <span style={{fontFamily:"'Syne',sans-serif",fontSize:"13px",fontWeight:700,color:"rgba(255,255,255,0.85)"}}>{oauthLoading?"Opening the demo…":"Explore the demo — nothing is saved"}</span>
+          <button onClick={handleDemoEntry} disabled={oauthLoading} data-testid="login-demo" className="pressBtn" style={{width:"100%",padding:"12px",borderRadius:"12px",cursor:"pointer",background:T.fill.field,border:`1px solid ${T.line.normal}`,display:"flex",alignItems:"center",justifyContent:"center",gap:"10px",marginBottom:"20px",transition:"all .2s"}}>
+            <span aria-hidden="true" style={{color:T.content.secondary,fontSize:"16px"}}><Icon name="play"/></span>
+            <span style={{fontFamily:"'Syne',sans-serif",fontSize:"13px",fontWeight:700,color:T.content.primary}}>{oauthLoading?"Opening the demo…":"Explore the demo — nothing is saved"}</span>
           </button>
 
           <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"20px"}}>
-            <div style={{flex:1,height:"1px",background:"rgba(255,255,255,0.08)"}}/>
-            <span style={{fontFamily:"'DM Mono',monospace",fontSize:"10px",color:"rgba(255,255,255,0.3)"}}>or email</span>
-            <div style={{flex:1,height:"1px",background:"rgba(255,255,255,0.08)"}}/>
+            <div style={{flex:1,height:"1px",background:T.fill.track}}/>
+            <span style={{fontFamily:"'DM Mono',monospace",fontSize:"10px",color:T.content.tertiary}}>or email</span>
+            <div style={{flex:1,height:"1px",background:T.fill.track}}/>
           </div>
           </>}
 
@@ -230,14 +232,14 @@ function LoginPage({ onLogin, onSignUp, liveOnly = false, onBack }) {
               {/* A real <label htmlFor>, not a styled div. The div looked the
                   same and did none of the work: no accessible name, no click
                   target, nothing for voice control to say. */}
-              <label htmlFor={f.id} style={{display:"block",fontFamily:"'Syne',sans-serif",fontSize:"10px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",marginBottom:"6px"}}>{f.label}</label>
+              <label htmlFor={f.id} style={{display:"block",fontFamily:"'Syne',sans-serif",fontSize:"10px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.content.tertiary,marginBottom:"6px"}}>{f.label}</label>
               <input id={f.id} value={f.value} type={f.type} autoComplete={f.autoComplete}
                 onChange={e=>f.onChange(e.target.value)}
                 onKeyDown={e=>e.key==="Enter"&&handleLogin()}
                 placeholder={f.placeholder}
                 aria-invalid={error?true:undefined}
                 aria-describedby={error?"login-error":undefined}
-                style={{width:"100%",padding:"11px 14px",borderRadius:"10px",background:"rgba(255,255,255,0.05)",border:`1px solid ${error?"rgba(244,63,94,0.5)":"rgba(255,255,255,0.1)"}`,fontFamily:"'DM Sans',sans-serif",fontSize:"14px",color:"#fff",boxSizing:"border-box"}}/>
+                style={{width:"100%",padding:"11px 14px",borderRadius:"10px",background:T.fill.field,border:`1px solid ${error?clr(T.semantic.critical,0.5):T.line.normal}`,fontFamily:"'DM Sans',sans-serif",fontSize:"14px",color:T.content.primary,boxSizing:"border-box"}}/>
             </div>
           ))}
 
@@ -245,36 +247,36 @@ function LoginPage({ onLogin, onSignUp, liveOnly = false, onBack }) {
               only signal is a colour change, which someone using a screen
               reader never learns about at all — they press Sign In and
               nothing appears to happen. */}
-          {error&&<div id="login-error" role="alert" style={{fontFamily:"'DM Sans',sans-serif",fontSize:"12px",color:"#f87171",marginBottom:"12px",padding:"8px 12px",borderRadius:"8px",background:"rgba(244,63,94,0.1)",border:"1px solid rgba(244,63,94,0.2)"}}>{error}</div>}
+          {error&&<div id="login-error" role="alert" style={{fontFamily:"'DM Sans',sans-serif",fontSize:"12px",color:T.semantic.criticalText,marginBottom:"12px",padding:"8px 12px",borderRadius:"8px",background:clr(T.semantic.critical,0.1),border:`1px solid ${clr(T.semantic.critical,0.2)}`}}>{error}</div>}
 
-          <button onClick={handleLogin} disabled={loading} className="pressBtn" style={{width:"100%",padding:"12px",borderRadius:"12px",cursor:"pointer",background:"linear-gradient(135deg,#6366f1,#8b5cf6)",border:"none",fontFamily:"'Syne',sans-serif",fontSize:"13px",fontWeight:700,color:"#fff",marginBottom:"14px",boxShadow:"0 4px 20px rgba(99,102,241,0.35)"}}>
+          <button onClick={handleLogin} disabled={loading} className="pressBtn" style={{width:"100%",padding:"12px",borderRadius:"12px",cursor:"pointer",background:T.light.action,border:"none",fontFamily:"'Syne',sans-serif",fontSize:"13px",fontWeight:700,color:T.light.ink,marginBottom:"14px",boxShadow:`0 4px 20px ${clr(T.brand.blue,0.35)}`}}>
             {loading?"Signing in…":"Sign In"}
           </button>
 
           <div style={{textAlign:"center"}}>
-            <button onClick={onSignUp} className="pressBtn" style={{background:"none",border:"none",cursor:"pointer",fontFamily:"'DM Sans',sans-serif",fontSize:"12px",color:"rgba(255,255,255,0.4)"}}>
-              New to SCRBRD? <span style={{color:"#a5b4fc",fontWeight:600}}>Create an account →</span>
+            <button onClick={onSignUp} className="pressBtn" style={{background:"none",border:"none",cursor:"pointer",fontFamily:"'DM Sans',sans-serif",fontSize:"12px",color:T.content.tertiary}}>
+              New to SCRBRD? <span style={{color:T.brand.blueText,fontWeight:600}}>Create an account →</span>
             </button>
           </div>
         </div>
 
         {/* Accounts. Which list depends on whether there is a server. */}
-        <div style={{marginTop:"20px",borderRadius:"14px",border:"1px solid rgba(99,102,241,0.2)",background:"rgba(99,102,241,0.05)",padding:"16px"}}>
-          <div style={{fontFamily:"'Syne',sans-serif",fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(99,102,241,0.7)",marginBottom:"10px"}}>
+        <div style={{marginTop:"20px",borderRadius:"14px",border:`1px solid ${clr(T.brand.blue,0.2)}`,background:clr(T.brand.blue,0.05),padding:"16px"}}>
+          <div style={{fontFamily:"'Syne',sans-serif",fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.brand.blueText,marginBottom:"10px"}}>
             {live ? "✦ Pilot accounts — click to fill" : "✦ Demo accounts — click to fill"}
           </div>
           <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"6px"}}>
             {(live ? PILOT_ACCOUNTS : DEMO_ACCOUNTS).map(d=>(
               <button key={d.email} onClick={()=>{setEmail(d.email);setPassword(d.pw||"");setError("");}} className="pressBtn"
-                style={{padding:"7px 10px",borderRadius:"8px",cursor:"pointer",background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",textAlign:"left"}}>
-                <div style={{fontFamily:"'Syne',sans-serif",fontSize:"10px",fontWeight:700,color:"rgba(255,255,255,0.7)"}}>{ROLES[d.role]?.icon} {d.label}</div>
-                <div style={{fontFamily:"'DM Mono',monospace",fontSize:"9px",color:"rgba(255,255,255,0.3)",marginTop:"2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.email}</div>
+                style={{padding:"7px 10px",borderRadius:"8px",cursor:"pointer",background:T.fill.panel,border:`1px solid ${T.line.subtle}`,textAlign:"left"}}>
+                <div style={{fontFamily:"'Syne',sans-serif",fontSize:"10px",fontWeight:700,color:T.content.secondary,display:"flex",alignItems:"center",gap:"5px"}}><Icon name={ROLES[d.role]?.icon}/> {d.label}</div>
+                <div style={{fontFamily:"'DM Mono',monospace",fontSize:"9px",color:T.content.tertiary,marginTop:"2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.email}</div>
               </button>
             ))}
           </div>
           {/* Said out loud, because a demo that looks like the product is how
               someone comes to believe a roster on screen is their school's. */}
-          <div style={{fontFamily:"'DM Mono',monospace",fontSize:"9px",color:"rgba(255,255,255,0.32)",marginTop:"10px",lineHeight:1.5}}>
+          <div style={{fontFamily:"'DM Mono',monospace",fontSize:"9px",color:T.content.tertiary,marginTop:"10px",lineHeight:1.5}}>
             {live === null ? "Checking for a server…"
               : live ? "Signed in against the live API. Data is real and permission-checked."
                      : "No server reachable — demonstration data only. Nothing is saved beyond this device."}

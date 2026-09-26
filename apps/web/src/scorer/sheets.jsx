@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { DISMISSAL, DISMISSAL_LABEL, INNINGS_END_REASON, NB_RUNS } from "@scrbrd/scoring";
-import { D } from "../design/tokens.js";
+import { D, T } from "../design/tokens.js";
 import { armHandover, cancelHandover, claimHandover, refusalWords, sessionState, verifyTakeover } from "../lib/handover.js";
 import { fmtOv } from "./format.js";
 import { SHOT_CATEGORIES } from "./shots.js";
 import { INT_TEAMS, ROLE_COLORS } from "./teams.js";
 import { Badge, Btn, CaptureProfilePicker, Lbl, Sep, Sheet } from "./ui.jsx";
 import { Select } from "../ui/primitives.jsx";
+import { Icon } from "../ui/icons.jsx";
 
 /* ═══════════════════════════════════════════════════════
    SHOT SELECTOR SHEET
@@ -91,7 +92,7 @@ function NoBallSheet({onConfirm,onClose}){
           </div>
           {(nbType==="height"||nbType==="beamer")&&(
             <div style={{marginTop:"6px",color:D.orange,fontSize:"11px",fontFamily:D.body,fontWeight:500}}>
-              ⚡ Free hit on next delivery (limited overs)
+              <Icon name="zap"/> Free hit on next delivery (limited overs)
             </div>
           )}
         </div>
@@ -270,7 +271,7 @@ function HandoverSheet({ matchId, device, epoch, pending, held = 0, onShowHeld, 
             <button key={id} data-testid={`handover-tab-${id}`} onClick={()=>setTab(id)} className="pressBtn" style={{
               flex:1,padding:"9px",borderRadius:D.pill,cursor:"pointer",border:"none",
               fontFamily:D.head,fontSize:"11px",fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",
-              background:tab===id?D.grad:D.surf2,color:tab===id?"#fff":D.textMuted}}>
+              background:tab===id?D.grad:D.surf2,color:tab===id?T.light.ink:D.textMuted}}>
               {label}
             </button>
           ))}
@@ -345,7 +346,7 @@ function HandOverTab({ matchId, device, epoch, pending, held = 0, onShowHeld, ba
 
   if (pending > 0) return (
     <div data-testid="handover-blocked-pending" style={{textAlign:"center",padding:"18px 8px",color:D.textSecondary,fontFamily:D.body,fontSize:"13px",lineHeight:1.6}}>
-      <div style={{fontSize:"28px",marginBottom:"8px"}}>📡</div>
+      <div style={{fontSize:"28px",marginBottom:"8px"}}><Icon name="radio-tower"/></div>
       <strong style={{color:D.amber}}>{pending} ball{pending===1?"":"s"} not yet uploaded.</strong><br/>
       Move to better signal before handing over — a handover with unsynced balls would leave them on this
       device only.
@@ -713,8 +714,8 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,onClose
     if(m===DISMISSAL.STUMPED&&wkName)setFielder(wkName);
   };
   const whoName=who===nonStriker?.id?nonStriker?.name:(striker?.name??batName);
-  const pill=(on)=>({flex:1,padding:"10px",borderRadius:D.md,cursor:"pointer",fontFamily:D.body,fontSize:"13px",fontWeight:500,
-    border:"1px solid "+(on?D.rose+"55":D.border),background:on?D.rose+"1a":D.surf2,color:on?"#fca5a5":D.textSecondary});
+  const pill=(on)=>({flex:1,minHeight:"44px",padding:"10px",borderRadius:D.md,cursor:"pointer",fontFamily:D.body,fontSize:"15px",fontWeight:500,
+    border:"1px solid "+(on?D.rose+"55":D.border),background:on?D.rose+"1a":D.surf2,color:on?D.roseText:D.textSecondary});
   return (
     <Sheet title="WICKET!" accent={D.rose} onClose={onClose}>
       <div style={{color:D.textSecondary,fontSize:"13px",fontFamily:D.body,marginBottom:"14px",paddingTop:"4px"}}>
@@ -723,10 +724,10 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,onClose
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"7px",marginBottom:"14px"}}>
         {modes.map(m=>(
           <button key={m} data-testid={`wicket-mode-${m}`} onClick={()=>handleMode(m)} className="pressBtn" style={{
-            padding:"11px",borderRadius:D.md,cursor:"pointer",fontFamily:D.body,fontSize:"13px",fontWeight:500,
+            minHeight:"48px",padding:"8px",borderRadius:D.md,cursor:"pointer",fontFamily:D.body,fontSize:"15px",fontWeight:500,
             border:"1px solid "+(mode===m?D.rose+"55":D.border),
             background:mode===m?D.rose+"1a":D.surf2,
-            color:mode===m?"#fca5a5":D.textSecondary,transition:"all .15s"}}>
+            color:mode===m?D.roseText:D.textSecondary,transition:"all .15s"}}>
             {DISMISSAL_LABEL[m]}
           </button>
         ))}
@@ -812,8 +813,8 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,onClose
         </div>
       )}
       <div style={{display:"flex",gap:"10px",marginTop:"4px"}}>
-        <Btn variant="ghost" sx={{flex:1,borderRadius:D.md}} onClick={onClose}>Cancel</Btn>
-        <Btn variant="danger" sx={{flex:2,borderRadius:D.md}} data-testid="wicket-confirm" disabled={asksEnd&&!end}
+        <Btn variant="ghost" sx={{flex:1,minHeight:"48px",fontSize:"15px",borderRadius:D.md}} onClick={onClose}>Cancel</Btn>
+        <Btn variant="danger" sx={{flex:2,minHeight:"48px",fontSize:"16px",borderRadius:D.md}} data-testid="wicket-confirm" disabled={asksEnd&&!end}
           onClick={()=>{if(asksEnd&&!end)return;onConfirm(mode,displayFielder,{dismissed:asksWho&&who!==striker?.id?who:null,
             runs:isRunOut?runs:0,outAt:asksEnd?end:null});}}>Confirm Out</Btn>
       </div>

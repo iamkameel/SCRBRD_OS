@@ -9,6 +9,7 @@ import { useLive, useRows, useWeather } from "../lib/live.js";
 import { api } from "../lib/api.js";
 import { schoolsWhere } from "../lib/session.js";
 import { textOn } from "../design/tokens.js";
+import { Icon } from "../ui/icons.jsx";
 
 // A timestamp as a departure time. Absent renders as an em dash, never as a
 // time: a trip with no departure recorded has none, and "00:00" would be a
@@ -98,15 +99,15 @@ function LogisticsView({ role }) {
       {tab==="transport"&&(
         <div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:"12px",marginBottom:"20px"}}>
-            <KPICard label="Upcoming Away Trips" value={upcomingTransport.length} icon="🚌" color={D.sky}/>
-            <KPICard label="Drivers Available"   value={STAFF.filter(s=>s.role==="driver"&&s.active).length} icon="🚌" color={D.lime}/>
-            <KPICard label="Vehicles In Service" value={VEHICLES.filter(v=>v.active).length} icon="🚐" color={D.teal}/>
-            <KPICard label="Total Seats"         value={VEHICLES.filter(v=>v.active).reduce((a,v)=>a+(v.capacity||0),0)} icon="💺" color={D.violet}/>
+            <KPICard label="Upcoming Away Trips" value={upcomingTransport.length} icon="bus" color={D.sky}/>
+            <KPICard label="Drivers Available"   value={STAFF.filter(s=>s.role==="driver"&&s.active).length} icon="user" color={D.lime}/>
+            <KPICard label="Vehicles In Service" value={VEHICLES.filter(v=>v.active).length} icon="van" color={D.teal}/>
+            <KPICard label="Total Seats"         value={VEHICLES.filter(v=>v.active).reduce((a,v)=>a+(v.capacity||0),0)} icon="armchair" color={D.violet}/>
             {/* Only vehicles with a recorded service date can be counted. A bus
                 nobody has booked in is not "due today" — it is unknown, and the
                 mock version counted it as due because an absent date parsed to
                 the epoch. */}
-            <KPICard label="Services Due"        value={VEHICLES.filter(v=>v.nextService&&(new Date(v.nextService)-today)/86400000<=14).length} icon="🔧" color={D.amber} sub="Within 14 days"/>
+            <KPICard label="Services Due"        value={VEHICLES.filter(v=>v.nextService&&(new Date(v.nextService)-today)/86400000<=14).length} icon="wrench" color={D.amber} sub="Within 14 days"/>
           </div>
 
           <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
@@ -137,7 +138,7 @@ function LogisticsView({ role }) {
                         <div style={{fontFamily:D.head,fontSize:"15px",fontWeight:700,color:D.textPrimary,marginBottom:"3px"}}>
                           {m.homeTeam} <span style={{color:D.textMuted,fontSize:"12px",fontWeight:400}}>vs</span> {m.awayTeam}
                         </div>
-                        <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginBottom:"2px"}}>📅 {m.date} · 📍 {m.venue}</div>
+                        <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginBottom:"2px"}}><Icon name="calendar"/> {m.date} · <Icon name="map-pin"/> {m.venue}</div>
                       </div>
                       {/* Timing block */}
                       <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
@@ -180,14 +181,14 @@ function LogisticsView({ role }) {
                           <>
                             <div style={{width:"1px",height:"32px",background:D.border}}/>
                             <div>
-                              <div style={{fontFamily:D.mono,fontSize:"12px",fontWeight:700,color:D.lime}}>{vehicle.reg}</div>
+                              <div style={{fontFamily:D.mono,fontSize:"12px",fontWeight:700,color:textOn(D.lime)}}>{vehicle.reg}</div>
                               <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>{vehicle.description} · {vehicle.capacity} seats{vehicle.condition?<> · <span style={{color:condColor(vehicle.condition)}}>{vehicle.condition}</span></>:null}</div>
                             </div>
                           </>
                         )}
                         <div style={{marginLeft:"auto",display:"flex",gap:"6px"}}>
                           <Btn size="sm" variant="ghost" onClick={()=>setManifest(isManifest?null:m)}>
-                            {isManifest?"Close Manifest":"📋 Manifest"}
+                            {isManifest?"Close Manifest":<><Icon name="clipboard-list"/> Manifest</>}
                           </Btn>
                           {canEdit&&<Btn size="sm" variant="ghost">Edit</Btn>}
                         </div>
@@ -226,7 +227,7 @@ function LogisticsView({ role }) {
                             ))}
                           </div>
                           <div style={{marginTop:"10px",fontFamily:D.body,fontSize:"10px",color:D.textMuted,fontStyle:"italic"}}>
-                            ⚠ All players must have signed indemnity forms. Medical kit carried by {STAFF.find(s=>s.role==="medical"&&s.active)?.name||"medical staff"}.
+                            <Icon name="triangle-alert"/> All players must have signed indemnity forms. Medical kit carried by {STAFF.find(s=>s.role==="medical"&&s.active)?.name||"medical staff"}.
                           </div>
                         </div>
                       );
@@ -237,7 +238,7 @@ function LogisticsView({ role }) {
             })}
             {upcomingTransport.length===0&&(
               <Card sx={{padding:"32px",textAlign:"center"}}>
-                <div style={{fontSize:"32px",marginBottom:"10px"}}>🚌</div>
+                <div style={{fontSize:"32px",marginBottom:"10px",color:D.textMuted}}><Icon name="bus"/></div>
                 <div style={{fontFamily:D.body,fontSize:"14px",color:D.textMuted}}>No bus trips scheduled for upcoming fixtures.</div>
               </Card>
             )}
@@ -249,10 +250,10 @@ function LogisticsView({ role }) {
       {tab==="equipment"&&(
         <div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:"12px",marginBottom:"20px"}}>
-            <KPICard label="Total Line Items"  value={EQUIPMENT_INVENTORY.length} icon="📦" color={D.sky}/>
-            <KPICard label="Needs Attention"   value={EQUIPMENT_INVENTORY.filter(e=>e.condition==="Fair"||e.condition==="Mixed").length} icon="⚠️" color={D.amber}/>
-            <KPICard label="Match Balls"       value={EQUIPMENT_INVENTORY.find(e=>e.id==="eq1")?.qty||0} icon="🏏" color={D.indigo}/>
-            <KPICard label="Safety Items"      value={EQUIPMENT_INVENTORY.filter(e=>e.category==="Safety").length} icon="🏥" color={D.rose}/>
+            <KPICard label="Total Line Items"  value={EQUIPMENT_INVENTORY.length} icon="package" color={D.sky}/>
+            <KPICard label="Needs Attention"   value={EQUIPMENT_INVENTORY.filter(e=>e.condition==="Fair"||e.condition==="Mixed").length} icon="triangle-alert" color={D.amber}/>
+            <KPICard label="Match Balls"       value={EQUIPMENT_INVENTORY.find(e=>e.id==="eq1")?.qty||0} icon="ball" color={D.indigo}/>
+            <KPICard label="Safety Items"      value={EQUIPMENT_INVENTORY.filter(e=>e.category==="Safety").length} icon="hard-hat" color={D.rose}/>
           </div>
           <KitRegister role={role}/>
           <Card>
@@ -301,7 +302,7 @@ function LogisticsView({ role }) {
                     <div style={{display:"flex",gap:"4px",flexWrap:"wrap"}}>
                       <Badge color={g.type==="turf"?D.emerald:g.type==="nets"?D.sky:D.amber}>{g.type}</Badge>
                       <Badge color={g.available?D.emerald:D.rose}>{g.available?"Open":"Closed"}</Badge>
-                      {g.lights&&<Badge color={D.amber}>💡 Lights</Badge>}
+                      {g.lights&&<Badge color={D.amber}><Icon name="lightbulb"/> Lights</Badge>}
                     </div>
                   </div>
                 </div>
@@ -315,13 +316,13 @@ function LogisticsView({ role }) {
                     ))}
                   </div>
                 )}
-                {todayMatches.length>0&&<div style={{marginBottom:"8px",padding:"6px 10px",background:D.emerald+"10",borderRadius:D.sm,border:`1px solid ${D.emerald}22`}}><span style={{fontFamily:D.body,fontSize:"11px",color:D.emerald}}>🏏 Match today: {todayMatches[0].homeTeam} vs {todayMatches[0].awayTeam}</span></div>}
+                {todayMatches.length>0&&<div style={{marginBottom:"8px",padding:"6px 10px",background:D.emerald+"10",borderRadius:D.sm,border:`1px solid ${D.emerald}22`}}><span style={{fontFamily:D.body,fontSize:"11px",color:D.emerald}}><Icon name="stumps"/> Match today: {todayMatches[0].homeTeam} vs {todayMatches[0].awayTeam}</span></div>}
                 {upcomingMatchesG.length>0&&<div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginBottom:"8px"}}>Next match: {upcomingMatchesG[0].date}</div>}
                 {gk&&(
                   <div style={{display:"flex",alignItems:"center",gap:"7px",marginTop:"8px",paddingTop:"8px",borderTop:`1px solid ${D.border}`}}>
                     <Avatar name={gk.name} size={24} color={D.teal}/>
                     <span style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary}}>{gk.name}</span>
-                    <span style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted,marginLeft:"auto"}}>🌿 GK</span>
+                    <span style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted,marginLeft:"auto"}}><Icon name="sprout"/> GK</span>
                   </div>
                 )}
               </Card>

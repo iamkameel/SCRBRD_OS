@@ -49,7 +49,7 @@
 import { spawn } from "node:child_process";
 import pg from "pg";
 import {
-  MatchFold, deriveInnings, toRow, fromRow, isLegal, normaliseDismissal, chargedToBowler, runsOffBat,
+  MatchFold, deriveInnings, deriveMatch, toRow, fromRow, isLegal, normaliseDismissal, chargedToBowler, runsOffBat,
   inningsStart, batters, bowler, ball, newEventId,
 } from "@scrbrd/scoring";
 
@@ -86,6 +86,11 @@ const isId = (/** @type {unknown} */ v) => typeof v === "string" && /^[0-9a-f]{8
 // ── The logs ─────────────────────────────────────────────────────
 let s = 4343;
 const rnd = () => (s = (s * 1103515245 + 12345) % 2147483648) / 2147483648;
+// Penalty runs, targets and revisions (SCRBRD-094, db/48) draw on a stream of
+// their own, so every innings the walk generated before them is the same
+// innings, event for event, with them added.
+let s2 = 4848;
+const rnd2 = () => (s2 = (s2 * 1103515245 + 12345) % 2147483648) / 2147483648;
 /** @template T @param {T[]} xs @returns {T} */
 const pick = (xs) => xs[Math.floor(rnd() * xs.length)];
 /** @template T @param {T[]} xs */
@@ -98,7 +103,8 @@ let eventNo = 0;
 /**
  * One innings under construction. `order` is the batting order (openers
  * first); `bowling` the bowlers, a typed name among them.
- * @param {number} no @param {number} overs @param {{order?: string[], bowling?: string[]}} [o]
+ * `start` is carried on the innings_start: the sides and a target.
+ * @param {number} no @param {number} overs @param {{order?: string[], bowling?: string[], start?: Record<string, any>}} [o]
  */
 function builder(no, overs, o = {}) {
   /** @type {any[]} */
@@ -109,10 +115,17 @@ function builder(no, overs, o = {}) {
   /** @param {any} e */
   const push = (e) => { const x = { id: `ff-${++eventNo}`, innings: no, ...e }; ev.push(x); return x; };
   const now = () => deriveInnings(ev);
-  push({ kind: "innings_start", overs, squad: [], bowlingSquad: [] });
+  push({ kind: "innings_start", overs, squad: [], bowlingSquad: [], ...(o.start ?? {}) });
   push({ kind: "batters", striker: order[0], nonStriker: order[1] });
   const b = {
     ev, now, order,
+    /** Penalty runs (Law 41): five, or `runs` named, to the batting side or the fielding side. */
+    award(/** @type {boolean} */ toBattingTeam, /** @type {number | undefined} */ runs) {
+      push({ kind: "penalty", toBattingTeam, ...(runs != null ? { runs } : {}),
+             reason: toBattingTeam ? "helmet_struck" : "time_wasting" });
+    },
+    /** The umpires' revised target. */
+    revise(/** @type {number} */ target) { push({ kind: "revision", target, reason: "rain" }); },
     /** A delivery, stamped with who was on strike and bowling, as the pad stamps it. */
     deliver(/** @type {any} */ e) {
       if (now().bowler == null) push({ kind: "bowler", bowler: bowling[overIdx++ % bowling.length] });
@@ -149,9 +162,18 @@ function builder(no, overs, o = {}) {
   return b;
 }
 
-/** A generated innings, leaning on what db/43 closes. `legacy` adds the rows the door now refuses. */
-function generated(/** @type {number} */ no, /** @type {number} */ overs, legacy = false) {
-  const b = builder(no, overs);
+/**
+ * A generated innings, leaning on what db/43 closes. `legacy` adds the rows
+ * the door now refuses. `start` gives it sides (and perhaps a target): then
+ * penalty runs are awarded to both sides as it goes, now and then the umpires
+ * revise the target, and `awardFirst` opens it with an award to the fielding
+ * side (SCRBRD-094, db/48).
+ * @param {number} no @param {number} overs @param {boolean} [legacy]
+ * @param {Record<string, any>} [start] @param {boolean} [awardFirst]
+ */
+function generated(no, overs, legacy = false, start = undefined, awardFirst = false) {
+  const b = builder(no, overs, start ? { start } : {});
+  if (awardFirst) b.award(false);
   let guard = 0;
   while (guard++ < 3000) {
     const st = b.now();
@@ -182,6 +204,12 @@ function generated(/** @type {number} */ no, /** @type {number} */ overs, legacy
     else b.deliver({ type: "run", value: pick([0, 0, 0, 1, 1, 1, 2, 3, 4, 6]) });
     // Taken back: the last event, a wicket or a retirement as often as a run.
     if (rnd() < 0.04) b.undo();
+    if (start) {
+      const p = rnd2();
+      if (p < 0.02) b.award(false, rnd2() < 0.3 ? undefined : 5);
+      else if (p < 0.035) b.award(true, rnd2() < 0.3 ? undefined : 5);
+      else if (p < 0.04) b.revise(40 + Math.floor(rnd2() * 120));
+    }
   }
   return b.ev;
 }
@@ -353,17 +381,34 @@ async function career() {
   const wicketBy = new Map((await q(
     `select player_id || '|' || coalesce(dismissal, 'null') k, wickets n from player_wicket_breakdown where player_id = any($1)`,
     [PLAYERS])).map((r) => [r.k, Number(r.n)]));
-  return { bat, bowl, dismissals, dismissalBy, wicketBy };
+  // The lifetime views, which db/49 made one pass over the log rather than
+  // one call of the functions above per player: the same figures, read
+  // through the views every career screen reads.
+  /** @type {Map<string, any>} */ const batView = new Map();
+  /** @type {Map<string, any>} */ const bowlView = new Map();
+  /** @type {Map<string, number>} */ const dismissalsView = new Map();
+  for (const r of await q(`select * from player_batting_career where player_id = any($1)`, [PLAYERS])) {
+    batView.set(r.player_id, { matches: Number(r.matches), runs: Number(r.runs), balls: Number(r.balls_faced),
+                               fours: Number(r.fours), sixes: Number(r.sixes) });
+  }
+  for (const r of await q(`select * from player_bowling_career where player_id = any($1)`, [PLAYERS])) {
+    bowlView.set(r.player_id, { runs: Number(r.runs_conceded), balls: Number(r.legal_balls), wides: Number(r.wides),
+                                noBalls: Number(r.no_balls), wickets: Number(r.wickets) });
+  }
+  for (const r of await q(`select * from player_dismissals where player_id = any($1)`, [PLAYERS])) {
+    dismissalsView.set(r.player_id, Number(r.dismissals));
+  }
+  return { bat, bowl, dismissals, dismissalBy, wicketBy, batView, bowlView, dismissalsView };
 }
 
-/** opposition_squad() for a fixture against the other school, as a coach of this one. */
+/** opposition_squad() for a fixture against the other school, a day inside the window (db/46), as a coach of this one. */
 async function opposition(/** @type {string} */ home, /** @type {string} */ away, /** @type {string} */ coachEmail) {
   const c = await pool.connect();
   try {
     await c.query("BEGIN");
     const m = (await c.query(
       `insert into match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
-       values ($1,'1XI',$2,'1XI','the other side', now() + interval '7 days', 'cricket','T20',20,'scheduled') returning id`,
+       values ($1,'1XI',$2,'1XI','the other side', now() + make_interval(days => opposition_window_days() - 1), 'cricket','T20',20,'scheduled') returning id`,
       [home, away])).rows[0].id;
     await c.query(`update feature_flag set enabled = true, locked = false where key = 'opposition'`);
     await c.query(`delete from feature_suppression where key = 'opposition'`);
@@ -525,8 +570,19 @@ try {
   // every case above many times over; not so many that the per-row triggers
   // (the milestone and bowling-breach watches each read the whole log) make
   // the load quadratic in minutes rather than seconds.
+  // They are played by two sides in turn, Hilton first (SCRBRD-094): penalty
+  // runs are awarded to both, and an award to the fielding side goes to its
+  // last innings — or, in the first, to Westville's first, which opens on
+  // it. Half of them carry a target.
+  let g = 0;
   for (const overs of [20, 8, 15, 5]) {
-    for (let rep = 0; rep < 4; rep++) { no++; logs.push(generated(no, overs, rep % 2 === 1)); }
+    for (let rep = 0; rep < 4; rep++) {
+      no++;
+      const [bat, bowl] = g % 2 ? ["Westville 1XI", "Hilton 1XI"] : ["Hilton 1XI", "Westville 1XI"];
+      const start = { battingTeam: bat, bowlingTeam: bowl, ...(rnd2() < 0.5 ? { target: 40 + Math.floor(rnd2() * 120) } : {}) };
+      logs.push(generated(no, overs, rep % 2 === 1, start, g === 0));
+      g++;
+    }
   }
   const lifted = await writeLogs(logs, scorer);
   console.log(lifted ? "  (the door lifted for the legacy rows, and put back)" : "  (no door to lift: the code before db/43)");
@@ -534,8 +590,11 @@ try {
   // ── The fold, over the rows as the database holds them ──
   const rows = await q(`select * from ball_event where match_id = $1 order by seq`, [MATCH]);
   const fold = new MatchFold(rows.map(fromRow));
+  // The match's view: each innings as the laws read it, penalty runs to a
+  // fielding side credited across innings (SCRBRD-094).
   /** @type {Map<number, any>} */
-  const byInnings = new Map([...fold.byInnings].map(([k, b]) => [k, b.inn]));
+  const byInnings = new Map();
+  fold.view().innings.forEach((inn, k) => byInnings.set(k, inn));
   const e = expected(byInnings);
 
   group(`The fold, over ${logs.length} innings (${EDGES.length} written by hand) and ${rows.length} events`);
@@ -605,6 +664,31 @@ try {
   const wmBad = differences(e.wicketBy, delta(car0.wicketBy, car1.wicketBy));
   ok("player_wicket_breakdown, per bowler per method — a wicket with no method is nobody's", wmBad.length === 0, show(wmBad));
 
+  group("A career through the lifetime views (db/49): the fold, and the functions, figure for figure");
+  // What moved through the views is what the fold did...
+  const batVD = deltas(car0.batView, car1.batView, ["matches", "runs", "balls", "fours", "sixes"]);
+  for (const f of ["matches", "runs", "balls", "fours", "sixes"]) {
+    const bad = fieldDifferences(wantBat, batVD, [f]);
+    ok(`player_batting_career ${f}, per batter`, bad.length === 0, show(bad));
+  }
+  const dVBad = differences(new Map([...e.dismissals].filter(([p]) => PLAYERS.includes(p))), delta(car0.dismissalsView, car1.dismissalsView));
+  ok("player_dismissals, per batter", dVBad.length === 0, show(dVBad));
+  const bowlVD = deltas(car0.bowlView, car1.bowlView, ["runs", "balls", "wides", "noBalls", "wickets"]);
+  for (const f of ["runs", "balls", "wides", "noBalls", "wickets"]) {
+    const bad = fieldDifferences(wantBowl, bowlVD, [f]);
+    ok(`player_bowling_career ${f}, per bowler`, bad.length === 0, show(bad));
+  }
+  // ...and, before and after, the views ARE the functions: every figure, not
+  // just the change. (A player with no row in a view reads 0 here, which is
+  // what the function answers for him.)
+  for (const [when, car] of /** @type {[string, any][]} */ ([["before the logs", car0], ["after them", car1]])) {
+    const bBad = fieldDifferences(car.bat, car.batView, ["matches", "runs", "balls", "fours", "sixes"]);
+    const wBad = fieldDifferences(car.bowl, car.bowlView, ["runs", "balls", "wides", "noBalls", "wickets"]);
+    const dBad2 = differences(car.dismissals, car.dismissalsView);
+    ok(`the three lifetime views are the three functions, ${when}`, bBad.length + wBad.length + dBad2.length === 0,
+       show([...bBad, ...wBad, ...dBad2]));
+  }
+
   group("Per bowler per innings: bowler_innings_figures is the fold");
   const figs = new Map((await q(`select player_id, innings, wickets, runs_conceded from bowler_innings_figures where match_id = $1`, [MATCH]))
     .map((r) => [`${r.player_id}|${r.innings}`, { wickets: Number(r.wickets), runs: Number(r.runs_conceded) }]));
@@ -649,6 +733,44 @@ try {
     return !r || Number(r.runs) !== inn.runs || Number(r.wickets) !== inn.wickets || Number(r.legal_balls) !== inn.balls;
   }).map(([n, inn]) => `innings ${n}: fold ${inn.runs}/${inn.wickets} off ${inn.balls}, SQL ${JSON.stringify(perInnings.get(n))}`);
   ok(`...and counts every innings as the fold does (${byInnings.size})`, countBad.length === 0, countBad.slice(0, 5).join("; "));
+
+  group("Penalty runs, both sides: every SQL total is the fold's (SCRBRD-090, SCRBRD-094, db/48)");
+  {
+    const all = [...byInnings.values()];
+    const awardsToField = all.reduce((n, inn) => n + (inn.penaltyToFielding > 0 ? 1 : 0), 0);
+    const carriedIn = [...byInnings].filter(([, inn]) => inn.penaltyCarried > 0);
+    const opened = carriedIn.filter(([n, inn]) => inn.penaltyCarried > 0 && [...byInnings].some(([k, x]) => k < n && x.bowlingTeamKey === inn.teamKey && x.penaltyToFielding > 0)
+                                                 && ![...byInnings].some(([k, x]) => k < n && x.teamKey === inn.teamKey));
+    const toBat = rows.filter((r) => r.kind === "penalty" && r.payload?.toBattingTeam === true).length;
+    const toField = rows.filter((r) => r.kind === "penalty" && r.payload?.toBattingTeam === false).length;
+    const targets = all.filter((inn) => inn.target != null).length;
+    console.log(`  ${toBat} awards to the batting side, ${toField} to the fielding side (made in ${awardsToField} innings); ` +
+                `${carriedIn.length} innings credited, ${opened.length} of them opening on the award; ${targets} with a target`);
+    ok(`...not vacuous: awards both ways (${toBat}, ${toField}), innings credited (${carriedIn.length}), one opened on it (${opened.length}), targets (${targets})`,
+       toBat >= 5 && toField >= 5 && carriedIn.length >= 5 && opened.length >= 1 && targets >= 3);
+
+    // The whole-log fold (deriveMatch) and the server's (MatchFold) credit alike.
+    const whole = deriveMatch(rows.map(fromRow)).innings;
+    const idx = [...byInnings.keys()].sort((a, b) => a - b);
+    const foldsBad = idx.filter((n, i) => {
+      const a = byInnings.get(n), b = whole[i];
+      return a.runs !== b.runs || a.target !== b.target || a.penaltyCarried !== b.penaltyCarried;
+    });
+    ok(`deriveMatch and MatchFold credit every innings alike (${idx.length})`, foldsBad.length === 0, foldsBad.slice(0, 5).join(", "));
+
+    const sql = new Map((await q(`select i.n, penalty_credit_as_folded($1, i.n) credit, innings_target_as_folded($1, i.n) target,
+                                          (select l.runs from match_live_score l where l.match_id = $1 and l.innings = i.n) live,
+                                          (select f.runs from innings_score_as_folded($1, i.n) f) folded
+                                     from (select distinct innings as n from ball_event where match_id = $1) i`, [MATCH]))
+      .map((r) => [Number(r.n), r]));
+    const bad = [...byInnings].filter(([n, inn]) => {
+      const r = sql.get(n);
+      return !r || Number(r.credit) !== inn.penaltyCarried || (r.target == null ? null : Number(r.target)) !== (inn.target ?? null)
+          || Number(r.live) !== inn.runs || Number(r.folded) !== inn.runs;
+    }).map(([n, inn]) => `innings ${n}: fold ${inn.runs} (carried ${inn.penaltyCarried}, target ${inn.target}), SQL ${JSON.stringify(sql.get(n))}`);
+    ok(`the credit, the target, the live score and the handover's count agree in every innings (${byInnings.size})`,
+       bad.length === 0, bad.slice(0, 4).join("; "));
+  }
 
   group("The matchups read, as a coach");
   // Both names are joined under the coach's own policies, so the pairs are

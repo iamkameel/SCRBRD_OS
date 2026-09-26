@@ -1,283 +1,299 @@
-
+import { useEffect, useState } from "react";
+import { deriveMatch, fmtOvers, fromRow } from "@scrbrd/scoring";
 import { ROLES } from "../design/roles.js";
-import { D } from "../design/tokens.js";
-import { dateStr, fitnessColor, today } from "../lib/format.js";
-import { Avatar, Btn, Card, KPICard, Pill, StatusDot } from "../ui/primitives.jsx";
-import { useRows, useSummary } from "../lib/live.js";
-import { featureOn, useFeatures } from "../lib/features.js";
-import { holdsCapability, readsOwnRecord } from "../rbac/index.js";
+import { D, T } from "../design/tokens.js";
+import { addDays, dateStr, humanDate, humanDateTime, today } from "../lib/format.js";
+import { api, signedIn } from "../lib/api.js";
+import { useDutyCoverage, useLive, useRows, useWeather } from "../lib/live.js";
+import { canScore, holdsCapability } from "../rbac/index.js";
+import { Btn, EmptyState } from "../ui/primitives.jsx";
+import { Bento, BentoCard } from "../ui/surfaces.jsx";
+import { Board } from "../ui/board.jsx";
+import { Icon, isIcon } from "../ui/icons.jsx";
 
 // ══════════════════════════════════════════════════════
-//  DASHBOARD VIEW
+//  THE DAY SHEET (DESIGN_DIRECTION §5) — replaces the KPI dashboard.
+//
+// Six equal tiles used to open this screen: "Active players 8 — Demo data",
+// "Win rate —", each with its own accent, telling a coach nothing about what
+// to do next. The day sheet is the day in the order it happens instead:
+//
+//   1. Now         a live fixture, on the board, full width.
+//   2. Today/next  the next fixture — human date, ground, bus, weather,
+//                  who is ready.
+//   3. Who is out  injuries, from the availability tier only.
+//   4. This week   training and fixtures, as a list.
+//   5. Alerts      last, unread only.
+//
+// EVERY READ HERE IS ONE THE APP ALREADY HAD. There is no new capability and
+// no new API route: a section a role's capabilities do not reach is not
+// drawn, exactly as the KPI tiles used to gate themselves with holds(). "Win
+// rate" and the per-player career figures had no home in this shape and are
+// gone — a batter's own passport is step 4's job (parent and pupil screens),
+// not this one's.
 // ══════════════════════════════════════════════════════
-function DashboardView({ role, onNav }) {
+
+/** "142/3" → { runs: 142, wkts: 3 } — the demo's own scorecard shape (data/mock.js). */
+const parseScore = (s) => { const [r, w] = String(s).split("/").map(Number); return { runs: r, wkts: Number.isNaN(w) ? 10 : w }; };
+
+/** HH:MM off a raw timestamp, sliced the way asMatch()'s own `time` field is — never through a Date object. */
+const hm = (ts) => (ts ? String(ts).slice(11, 16) : null);
+
+/** The chase line and run rate, in words — the same shape PadBoard (scorer/pad.jsx) draws on the pad itself. */
+function boardSub(inn, target, overs) {
+  const crr = inn.balls ? (inn.runs / (inn.balls / 6)).toFixed(2) : null;
+  if (target == null) return crr ? `CRR ${crr}` : null;
+  const need = target - inn.runs;
+  const ballsLeft = Math.max(0, (overs || 20) * 6 - inn.balls);
+  const rrr = need > 0 && ballsLeft > 0 ? ((need / ballsLeft) * 6).toFixed(2) : null;
+  return [need > 0 ? `Need ${need} off ${ballsLeft}` : "Target reached", rrr ? `RRR ${rrr}` : null, crr ? `CRR ${crr}` : null]
+    .filter(Boolean).join(" · ");
+}
+
+/**
+ * The four readiness chips §5 names, grouped from DutyRoster's eight duty
+ * slots (duties.jsx SLOTS) into the words a coach actually asks in. Each is a
+ * word and a state — never a percentage — from the same match_duties read
+ * DutyRoster and ReadinessOverview already run.
+ */
+const READY_SLOTS = [
+  { key: "squad",     label: "Team sheet",    on: (has) => has("squad") },
+  { key: "transport", label: "Transport",     on: (has) => has("transport") },
+  { key: "officials", label: "Officials",     on: (has) => has("umpire") || has("third_umpire") || has("referee") },
+  { key: "ground",    label: "Ground report", on: (has) => has("ground") },
+];
+
+/**
+ * The live match's own score, folded from the ball log — the same
+ * `GET /matches/:id/events` read and `deriveMatch()` fold ScorecardModal and
+ * the Post-Match Report already run (packages/scoring). A stored total is
+ * never the source: asMatch() sets `scorecard: null` for every real fixture on
+ * purpose, because a live score is derived, not a column.
+ */
+function useLiveScore(matchId) {
+  const [state, setState] = useState({ loading: false, error: null, inn: null, target: null });
+  useEffect(() => {
+    if (!matchId || !signedIn()) { setState({ loading: false, error: null, inn: null, target: null }); return; }
+    let cancelled = false;
+    setState((s) => ({ ...s, loading: true }));
+    (async () => {
+      try {
+        const { events: rows } = await api(`/api/matches/${matchId}/events`);
+        if (cancelled) return;
+        const evs = (rows || []).map(fromRow);
+        const { innings } = deriveMatch(evs);
+        const curIn = innings.length - 1;
+        const inn = curIn >= 0 ? innings[curIn] : null;
+        const target = curIn === 1 ? (inn?.target ?? ((innings[0]?.runs || 0) + 1)) : null;
+        setState({ loading: false, error: null, inn, target });
+      } catch (e) {
+        if (!cancelled) setState({ loading: false, error: e.code || "unreachable", inn: null, target: null });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [matchId]);
+  return state;
+}
+
+function DashboardView({ role, onNav, onOpenScorer }) {
   // Read through the choke point: row-scoped and column-masked for this
-  // principal. Importing the raw constant here would bypass both.
-  const COMPETITIONS = useRows("competitions", role);
+  // principal, same as the KPI dashboard this replaces.
+  const { rows: MATCHES, live: matchesAreLive } = useLive("matches", role);
   const INJURIES = useRows("injuries", role);
-  const MATCHES = useRows("matches", role);
   const NOTIFICATIONS = useRows("notifications", role);
+  const TRAINING = useRows("training", role);
   const PLAYERS = useRows("players", role);
-  const TRAINING_SESSIONS = useRows("training", role);
-  // Every KPI figure below comes from here. In a live session that is one
-  // scoped query per number in Postgres; nothing on this screen counts
-  // anything. The cards used to be hard-coded literals ("53", "72%") that
-  // rendered identically for a superadmin and a team coach, and the two that
-  // were real were counted in the browser over whatever rows had been fetched.
-  const { summary, live: summaryLive } = useSummary(role);
-  // Called for the fetch, not the value: featureOn() below reads the same
-  // module-level map this hook fills, and without something mounting the hook
-  // it would answer "on" for everything forever.
-  useFeatures();
-  const rc = ROLES[role];
-  const liveMatch = MATCHES.find(m=>m.status==="live");
-  const upcomingMatches = MATCHES.filter(m=>m.status==="upcoming").slice(0,3);
-  const injuries = INJURIES.filter(i=>i.restricted);
-  // An absent figure renders as an em dash, never as 0. A card showing zero
-  // because a request failed has stated something false about the school.
-  const kpi = (v) => (v == null ? "—" : String(v));
-  // A card for a module this school switched off is not an em dash — it is
-  // absent. The server already returns null for those figures, so the dash
-  // would be correct and useless: "—" beside "Active restrictions" reads as a
-  // number that failed to load, and somebody rings the school office about an
-  // outage that is a setting. Presentation only; the figure is already gone by
-  // the time it reaches here.
-  const shows = (module) => featureOn(module);
-  const pct = (v) => (v == null ? "—" : `${v}%`);
+  const WEATHER = useWeather(role);
 
-  // Each figure names the capability that governs the table it is counted
-  // over, so a role that cannot read that table is not shown the card at all.
-  //
-  // Absent, not an em dash, and for the same reason a switched-off module's
-  // card is absent: these are COUNTS, and a count over rows the reader may not
-  // see comes back 0, not null. "Upcoming: 0" on a platform admin's dashboard
-  // — a role holding no fixture.read whatsoever — states that no fixtures are
-  // scheduled anywhere. It is a confident, specific, wrong sentence, and it is
-  // the one the old row printed, because the row was gated on role NAMES:
-  // "superadmin" and "parent", which exist only in the demonstration. Signed
-  // in for real, twenty-one of twenty-four roles matched nothing and got no
-  // row at all.
   const holds = (capability) => holdsCapability(role, capability);
-  const own = readsOwnRecord(role);
-  const tiles = [
-    holds("player.roster.read") && {
-      label:"Active Players", icon:"👥", color:D.sky, value:kpi(summary?.activePlayers),
-      sub: summaryLive?"In your scope":"Demo data" },
-    holds("fixture.read") && {
-      label:"Upcoming", icon:"🏆", color:D.amber, value:kpi(summary?.upcomingMatches),
-      sub:"Fixtures scheduled" },
-    // Counted over competition_entrant, which competition.read governs — so
-    // that, not analytics.read, is what decides whether the figure exists.
-    holds("competition.read") && {
-      label:"Win Rate", icon:"📈", color:D.emerald, value:pct(summary?.winRatePct),
-      sub: summary?.winRatePct==null?"No completed matches":"Across your competitions" },
-    holds("medical.status.read") && shows("injuries") && {
-      label:"Injuries", icon:"🏥", value:kpi(summary?.injuriesActive),
-      color:(summary?.injuriesActive??0)>3?D.rose:D.orange, sub:"Active restrictions" },
-    holds("team.read") && shows("training") && {
-      label:"Sessions This Wk", icon:"💪", color:D.violet, value:kpi(summary?.sessionsThisWeek),
-      sub:"Training scheduled" },
-    // The viewer's own playing record. Ungated by school scope because it is
-    // not a school figure — it resolves through app_user.player_id, which is
-    // set for a pupil account and nobody else. A guardian reaches their child's
-    // the same way; an account naming no pupil gets an em dash rather than
-    // somebody else's average.
-    own && holds("player.performance.read") && {
-      label:"Batting Avg", icon:"🏏", color:D.sky, value:kpi(summary?.myBattingAverage),
-      sub: summary?.myBattingAverage==null?"Not enough innings yet":"Career, from the ball log" },
-    own && holds("player.performance.read") && {
-      label:"Strike Rate", icon:"⚡", color:D.amber, value:kpi(summary?.myStrikeRate),
-      sub: summary?.myStrikeRate==null?"No deliveries faced yet":"Career, from the ball log" },
-    own && holds("player.performance.read") && {
-      label:"Runs", icon:"📊", color:D.teal, value:kpi(summary?.myRuns), sub:"Career total" },
-    // Notifications are addressed to a person, not read out of a scoped table,
-    // so every role that reaches a dashboard has them.
-    {
-      label:"Alerts", icon:"🔔", color:D.rose, value:kpi(summary?.unreadAlerts),
-      sub:"Unread notifications" },
-  ].filter(Boolean);
+  const rc = ROLES[role];
+
+  const liveMatch = MATCHES.find((m) => m.status === "live");
+  const liveScore = useLiveScore(liveMatch?.id);
+
+  const upcoming = MATCHES.filter((m) => m.status === "upcoming").sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""));
+  const next = upcoming[0];
+
+  // The bus for the next fixture — real trips when there is a session,
+  // trip_mark's own read; the demo's seeded `transport` field otherwise
+  // (data/mock.js, the field MatchCentreView already draws its own bus chip
+  // from). No demo trip rows exist to fetch, so useLive("trips") answers []
+  // signed out and this falls back on purpose.
+  const { rows: TRIPS } = useLive("trips", role, 0, next ? { matchId: next.id } : null);
+  const { coverage } = useDutyCoverage(next ? [next.id] : [], role);
+
+  // ── this week: training and fixtures, as a list ──
+  const weekStart = dateStr(today);
+  const weekEnd = dateStr(addDays(today, 6));
+  const weekMatches = upcoming.filter((m) => m.date && m.date >= weekStart && m.date <= weekEnd);
+  const weekTraining = TRAINING.filter((s) => s.date && s.date >= weekStart && s.date <= weekEnd)
+    .sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""));
+
+  // ── who is out: the availability tier alone (packages/policy/src/tables.mjs
+  // — injury.read is medical.status.read; injury_type/severity/phase sit
+  // behind medical.nature.read and are never read here) ──
+  const out = INJURIES.filter((i) => i.restricted);
+
+  const unread = NOTIFICATIONS.filter((n) => !n.read);
+
+  // ── the board for "Now" ──
+  let board = null;
+  if (liveMatch) {
+    if (signedIn()) {
+      if (liveScore.inn) {
+        board = {
+          team: liveScore.inn.battingTeam || liveMatch.homeTeam,
+          total: liveScore.inn.runs, wickets: liveScore.inn.wickets,
+          overs: fmtOvers(liveScore.inn.balls),
+          sub: boardSub(liveScore.inn, liveScore.target, liveMatch.overs),
+        };
+      }
+    } else if (liveMatch.scorecard?.home) {
+      const { runs, wkts } = parseScore(liveMatch.scorecard.home.score);
+      board = { team: liveMatch.homeTeam, total: runs, wickets: wkts, overs: liveMatch.scorecard.home.overs, sub: null };
+    }
+  }
+
+  const nextTrip = TRIPS.find((t) => t.matchId === next?.id);
+  const busTime = next ? (signedIn() ? hm(nextTrip?.departAt) : (next.transport?.bus ? next.transport.depart : null)) : null;
+  const dutyRows = next ? (coverage.get(next.id)?.rows ?? []) : [];
+  const hasDuty = (key) => dutyRows.some((r) => r.duty === key);
+  const w = next ? WEATHER[next.id] : null;
 
   return (
-    <div className="os-page">
-      <div style={{marginBottom:"20px"}}>
-        <h1 style={{fontFamily:D.head,fontSize:"22px",fontWeight:800,color:D.textPrimary,marginBottom:"3px"}}>
-          Welcome back, {rc.icon} <span style={{color:rc.color}}>{rc.label}</span>
+    <div className="os-page" data-testid="day-sheet">
+      <div style={{ marginBottom: T.space.lg }}>
+        <h1 style={{ ...T.role.title.lg, color: T.content.primary, marginBottom: "3px", display: "flex", alignItems: "center", gap: T.space.sm }}>
+          <Icon name={rc?.icon ?? "layout-dashboard"} style={{ color: rc?.color }}/>
+          {rc?.label ?? "Today"}
         </h1>
-        <p style={{fontFamily:D.body,fontSize:"13px",color:D.textMuted}}>Hilton College, KZN · {new Date().toLocaleDateString("en-ZA",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}</p>
+        <p style={{ ...T.role.body, color: T.content.secondary }}>
+          {new Date().toLocaleDateString("en-ZA", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
+          {!matchesAreLive && " · Demonstration — no server connected"}
+        </p>
       </div>
 
-      {/* KPI row */}
-      {tiles.length>0&&(
-        <div data-testid="kpi-row" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:"12px",marginBottom:"24px"}}>
-          {tiles.map(t=>(
-            <KPICard key={t.label} label={t.label} value={t.value} icon={t.icon} color={t.color} sub={t.sub}/>
-          ))}
-        </div>
-      )}
+      <Bento>
+        {/* 1. Now — a live fixture, on the board, full width. */}
+        {liveMatch && (
+          <BentoCard level="a" title="Now" data-testid="day-now">
+            {board ? (
+              <>
+                <Board team={board.team} total={board.total} wickets={board.wickets} overs={board.overs} sub={board.sub} testid="day-board"/>
+                <div style={{ marginTop: T.space.md }}>
+                  {canScore(role)
+                    ? <Btn variant="success" onClick={() => onOpenScorer && onOpenScorer(liveMatch)}>Open scorer</Btn>
+                    : <Btn variant="ghost" onClick={() => onNav && onNav("matches")}>Match Centre</Btn>}
+                </div>
+              </>
+            ) : (
+              <EmptyState loading={liveScore.loading} error={liveScore.error} message="The live score is not available yet." icon="scorebook"/>
+            )}
+          </BentoCard>
+        )}
 
-      <div style={{display:"grid",gridTemplateColumns:"var(--g-side-r,1fr 340px)",gap:"16px",alignItems:"start"}}>
-        {/* Left column */}
-        <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
-
-          {/* Live match */}
-          {liveMatch&&(
-            <Card sx={{background:`linear-gradient(135deg,${D.emerald}0a,${D.surf1})`,border:`1px solid ${D.emerald}22`}}>
-              <div style={{padding:"14px 16px"}}>
-                <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"12px"}}>
-                  <div className="live-dot"/>
-                  <span style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.emerald,letterSpacing:"0.1em"}}>LIVE MATCH</span>
-                  <span style={{marginLeft:"auto",fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>Hilton vs Kearsney · T20</span>
+        {/* 2. Today / next — the next fixture, ready or not. */}
+        {holds("fixture.read") && (
+          <BentoCard level="b" title="Next fixture" data-testid="day-next">
+            {next ? (
+              <div data-testid={`next-fixture-${next.id}`}>
+                <div style={{ ...T.role.title.md, color: T.content.primary }}>{next.homeTeam} v {next.awayTeam}</div>
+                <div style={{ ...T.role.body, color: T.content.secondary, marginTop: T.space.xs }}>
+                  {humanDateTime(next.date, next.time)}
                 </div>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                  <div>
-                    <div style={{fontFamily:D.head,fontSize:"28px",fontWeight:800,color:D.textPrimary}}>{liveMatch.scorecard.home.score}</div>
-                    <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>({liveMatch.scorecard.home.overs} overs) · Hilton 1st XI</div>
-                  </div>
-                  <div style={{textAlign:"right"}}>
-                    <div style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,marginBottom:"6px"}}>Target: 187 to win</div>
-                    <div style={{fontFamily:D.mono,fontSize:"12px",color:D.amber}}>CRR: 9.95 · RRR: 8.21</div>
-                  </div>
-                </div>
-                <div style={{marginTop:"12px"}}>
-                  <Btn onClick={()=>onNav("matches")} variant="success" size="sm">Open Match Centre →</Btn>
-                </div>
-              </div>
-            </Card>
-          )}
-
-          {/* Upcoming fixtures */}
-          <Card>
-            <div style={{padding:"14px 16px",borderBottom:`1px solid ${D.border}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-              <span style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>Upcoming Fixtures</span>
-              <button onClick={()=>onNav("logistics")} style={{background:"none",border:"none",cursor:"pointer",fontFamily:D.body,fontSize:"11px",color:D.sky}}>View all →</button>
-            </div>
-            {upcomingMatches.map(m=>(
-              <div key={m.id} style={{padding:"12px 16px",borderBottom:`1px solid ${D.border}`,display:"flex",alignItems:"center",gap:"12px"}}>
-                <div style={{width:"42px",textAlign:"center",flexShrink:0}}>
-                  <div style={{fontFamily:D.mono,fontSize:"16px",fontWeight:700,color:D.textPrimary}}>{new Date(m.date).getDate()}</div>
-                  <div style={{fontFamily:D.body,fontSize:"9px",color:D.textMuted,textTransform:"uppercase"}}>{new Date(m.date).toLocaleString("en",{month:"short"})}</div>
-                </div>
-                <div style={{flex:1}}>
-                  <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:600,color:D.textPrimary,marginBottom:"2px"}}>{m.homeTeam} vs {m.awayTeam}</div>
-                  <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>📍 {m.venue}</div>
-                </div>
-                {m.transport?.bus&&<Pill color={D.sky}>🚌 Bus</Pill>}
-                <StatusDot status={m.status}/>
-              </div>
-            ))}
-          </Card>
-
-          {/* Squad fitness overview */}
-          {holds("player.roster.read")&&(
-            <Card>
-              <div style={{padding:"14px 16px",borderBottom:`1px solid ${D.border}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                <span style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>Squad Fitness — 1XI</span>
-                <button onClick={()=>onNav("injuries")} style={{background:"none",border:"none",cursor:"pointer",fontFamily:D.body,fontSize:"11px",color:D.sky}}>Injury log →</button>
-              </div>
-              <div style={{padding:"12px 16px",display:"flex",flexWrap:"wrap",gap:"10px"}}>
-                {PLAYERS.filter(p=>p.team==="1XI").map(p=>(
-                  <div key={p.id} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"4px"}}>
-                    <div style={{position:"relative"}}>
-                      <Avatar name={p.name} size={36} color={fitnessColor(p.fitness)}/>
-                      <div style={{position:"absolute",bottom:-2,right:-2,width:"10px",height:"10px",borderRadius:"50%",background:fitnessColor(p.fitness),border:`1.5px solid ${D.surf1}`}}/>
+                <div style={{ display: "flex", flexDirection: "column", gap: T.space.xs, marginTop: T.space.sm }}>
+                  {next.venue && <div style={{ ...T.role.body, color: T.content.secondary }}><Icon name="map-pin"/> {next.venue}</div>}
+                  {busTime && <div style={{ ...T.role.body, color: T.content.secondary }}><Icon name="bus"/> Bus {busTime}</div>}
+                  {w && (
+                    <div style={{ ...T.role.body, color: T.content.secondary }}>
+                      <Icon name={isIcon(w.icon) ? w.icon : "cloud-sun"}/> {w.tempC}° {String(w.condition ?? "").toLowerCase()}
+                      {w.rainChancePct >= 40 ? ", rain likely" : ""}
                     </div>
-                    <span style={{fontFamily:D.mono,fontSize:"8px",color:D.textMuted}}>{p.name.split(" ").pop()}</span>
+                  )}
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: T.space.xs, marginTop: T.space.md }}>
+                  {READY_SLOTS.map((s) => {
+                    const on = s.on(hasDuty);
+                    return (
+                      <span key={s.key} data-testid={`ready-${s.key}`} style={{
+                        padding: "3px 10px", borderRadius: T.radius.pill,
+                        ...T.role.label, textTransform: "none", letterSpacing: 0, fontWeight: 500,
+                        background: on ? D.emerald + "14" : T.surface.interactive,
+                        border: `1px solid ${on ? D.emerald + "38" : T.line.normal}`,
+                        color: on ? D.emerald : T.content.tertiary,
+                      }}>{s.label} · {on ? "on record" : "nothing on record"}</span>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <EmptyState message="No fixture is arranged yet." icon="calendar-days"/>
+            )}
+          </BentoCard>
+        )}
+
+        {/* 3. Who is out — availability, never the clinical tier. */}
+        {holds("medical.status.read") && (
+          <BentoCard level="c" title="Who is out" data-testid="day-out">
+            {out.length === 0 ? (
+              <EmptyState message="Nobody is out." icon="circle-check"/>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: T.space.sm }}>
+                {out.map((i) => (
+                  <div key={i.id} data-testid={`out-${i.id}`} style={{ display: "flex", justifyContent: "space-between", gap: T.space.sm }}>
+                    <span style={{ ...T.role.body, color: T.content.primary }}>{PLAYERS.find((p) => p.id === i.player)?.name ?? "—"}</span>
+                    <span style={{ ...T.role.body, color: T.content.secondary }}>{i.rtw ? `back ${humanDate(i.rtw)}` : "—"}</span>
                   </div>
                 ))}
               </div>
-              <div style={{padding:"8px 16px",borderTop:`1px solid ${D.border}`,display:"flex",gap:"16px"}}>
-                {[["fit",D.emerald],["rehab",D.orange],["injured",D.rose]].map(([s,c])=>(
-                  <div key={s} style={{display:"flex",alignItems:"center",gap:"5px"}}>
-                    <div style={{width:"7px",height:"7px",borderRadius:"50%",background:c}}/>
-                    <span style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,textTransform:"capitalize"}}>{s}: {PLAYERS.filter(p=>p.team==="1XI"&&p.fitness===s).length}</span>
+            )}
+          </BentoCard>
+        )}
+
+        {/* 4. This week — training and fixtures, as a list, not a grid. */}
+        {(holds("team.read") || holds("fixture.read")) && (
+          <BentoCard level="c" title="This week" data-testid="day-week">
+            {weekMatches.length === 0 && weekTraining.length === 0 ? (
+              <EmptyState message="Nothing scheduled this week." icon="calendar"/>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: T.space.sm }}>
+                {holds("fixture.read") && weekMatches.map((m) => (
+                  <div key={m.id} data-testid={`week-fixture-${m.id}`} style={{ display: "flex", alignItems: "baseline", gap: T.space.sm }}>
+                    <Icon name="trophy"/>
+                    <span style={{ ...T.role.body, color: T.content.primary, flex: 1 }}>{m.homeTeam} v {m.awayTeam}</span>
+                    <span style={{ ...T.role.body, color: T.content.secondary }}>{humanDateTime(m.date, m.time)}</span>
+                  </div>
+                ))}
+                {holds("team.read") && weekTraining.map((s) => (
+                  <div key={s.id} data-testid={`week-training-${s.id}`} style={{ display: "flex", alignItems: "baseline", gap: T.space.sm }}>
+                    <Icon name="dumbbell"/>
+                    <span style={{ ...T.role.body, color: T.content.primary, flex: 1 }}>{s.title}</span>
+                    <span style={{ ...T.role.body, color: T.content.secondary }}>{humanDate(s.date)}{s.time ? ` · ${s.time}` : ""}</span>
                   </div>
                 ))}
               </div>
-            </Card>
-          )}
-        </div>
+            )}
+          </BentoCard>
+        )}
 
-        {/* Right column */}
-        <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
-
-          {/* League table mini.
-              Rendered only when this person can actually read a competition
-              with standings in it. COMPETITIONS comes through the choke point,
-              so for a role without competition.read it is EMPTY — and reading
-              [0].table off an empty array threw, taking the whole dashboard
-              down. A scorer is exactly such a role, which is why nobody found
-              it until one signed in.
-
-              This is the shape of bug that scoped reads create: the data
-              correctly disappears, and a card written when it could not
-              disappear falls over. A card with nothing to show should render
-              nothing. */}
-          {COMPETITIONS[0]?.table?.length>0&&(
-          <Card>
-            <div style={{padding:"12px 14px",borderBottom:`1px solid ${D.border}`}}>
-              <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary}}>{COMPETITIONS[0].name}</div>
-              <div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted,marginTop:"2px"}}>TOP 6</div>
-            </div>
-            {COMPETITIONS[0].table.map((t,i)=>(
-              <div key={t.team} style={{padding:"8px 14px",borderBottom:`1px solid ${D.border}`,display:"flex",alignItems:"center",gap:"8px",background:t.team.includes("Hilton")?D.indigo+"0a":"transparent"}}>
-                <span style={{fontFamily:D.mono,fontSize:"11px",fontWeight:700,color:i===0?D.amber:D.textMuted,width:"14px"}}>{i+1}</span>
-                <span style={{flex:1,fontFamily:D.body,fontSize:"11px",fontWeight:t.team.includes("Hilton")?600:400,color:t.team.includes("Hilton")?D.textPrimary:D.textSecondary}}>{t.team}</span>
-                <span style={{fontFamily:D.mono,fontSize:"11px",color:D.textMuted}}>{t.W}W</span>
-                <span style={{fontFamily:D.mono,fontSize:"11px",fontWeight:700,color:t.team.includes("Hilton")?D.emerald:D.textSecondary}}>{t.pts}</span>
-              </div>
-            ))}
-            <div style={{padding:"8px 14px"}}>
-              <button onClick={()=>onNav("competitions")} style={{background:"none",border:"none",cursor:"pointer",fontFamily:D.body,fontSize:"11px",color:D.sky}}>Full standings →</button>
-            </div>
-          </Card>
-          )}
-
-          {/* Recent notifications */}
-          <Card>
-            <div style={{padding:"12px 14px",borderBottom:`1px solid ${D.border}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-              <span style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary}}>Recent Alerts</span>
-              <button onClick={()=>onNav("notifications")} style={{background:"none",border:"none",cursor:"pointer",fontFamily:D.body,fontSize:"11px",color:D.sky}}>All →</button>
-            </div>
-            {NOTIFICATIONS.slice(0,4).map(n=>{
-              const ic = n.type==="match"?"🏏":n.type==="injury"?"🏥":n.type==="training"?"💪":n.type==="transport"?"🚌":"📢";
-              const uc = n.urgency==="high"?D.rose:n.urgency==="medium"?D.amber:D.textMuted;
-              return (
-                <div key={n.id} style={{padding:"9px 14px",borderBottom:`1px solid ${D.border}`,background:n.read?"transparent":D.indigo+"06"}}>
-                  <div style={{display:"flex",gap:"8px",alignItems:"flex-start"}}>
-                    <span style={{fontSize:"13px",flexShrink:0,marginTop:"1px"}}>{ic}</span>
-                    <div style={{flex:1}}>
-                      <div style={{display:"flex",justifyContent:"space-between",marginBottom:"2px"}}>
-                        <span style={{fontFamily:D.body,fontSize:"11px",fontWeight:n.read?400:600,color:D.textPrimary}}>{n.title}</span>
-                        {!n.read&&<div style={{width:"5px",height:"5px",borderRadius:"50%",background:uc,flexShrink:0,marginTop:"3px"}}/>}
-                      </div>
-                      <span style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted}}>{n.body}</span>
-                    </div>
-                  </div>
+        {/* 5. Alerts — last, and only unread. Addressed to a person rather
+            than read out of a scoped table, so every role that reaches this
+            screen has the section; what is IN it is still scoped by news.read. */}
+        <BentoCard level="c" title="Alerts" data-testid="day-alerts">
+          {unread.length === 0 ? (
+            <EmptyState message="Nothing unread." icon="bell"/>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: T.space.sm }}>
+              {unread.slice(0, 6).map((n) => (
+                <div key={n.id} data-testid={`alert-${n.id}`}>
+                  <div style={{ ...T.role.body, fontWeight: 600, color: T.content.primary }}>{n.title}</div>
+                  <div style={{ ...T.role.body, color: T.content.secondary }}>{n.body}</div>
                 </div>
-              );
-            })}
-          </Card>
-
-          {/* Today's training */}
-          <Card>
-            <div style={{padding:"12px 14px",borderBottom:`1px solid ${D.border}`}}>
-              <span style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary}}>Today's Sessions</span>
+              ))}
             </div>
-            {TRAINING_SESSIONS.filter(s=>s.date===dateStr(today)).map(s=>(
-              <div key={s.id} style={{padding:"10px 14px",borderBottom:`1px solid ${D.border}`}}>
-                <div style={{display:"flex",justifyContent:"space-between",marginBottom:"3px"}}>
-                  <span style={{fontFamily:D.body,fontSize:"12px",fontWeight:600,color:D.textPrimary}}>{s.title}</span>
-                  <span style={{fontFamily:D.mono,fontSize:"11px",color:D.amber}}>{s.time}</span>
-                </div>
-                <div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted}}>{s.team} · {s.venue} · {s.duration}min</div>
-              </div>
-            ))}
-            <div style={{padding:"8px 14px"}}>
-              <button onClick={()=>onNav("training")} style={{background:"none",border:"none",cursor:"pointer",fontFamily:D.body,fontSize:"11px",color:D.sky}}>Full schedule →</button>
-            </div>
-          </Card>
-        </div>
-      </div>
+          )}
+        </BentoCard>
+      </Bento>
     </div>
   );
 }

@@ -1,17 +1,23 @@
 import { useState } from "react";
 import { holdsCapability } from "../rbac/index.js";
 import { D } from "../design/tokens.js";
+
+// Hilton's navy: a kit colour, data rather than theme (data/institution.js).
+const HILTON_KIT = "#003366";
 import { SR } from "../scorer/format.js";
 import { Avatar, Badge, Btn, Card, Pill, SectionHeader } from "../ui/primitives.jsx";
 import { WeatherChip } from "./shared.jsx";
 import { SeasonHistory } from "./SeasonHistoryView.jsx";
 import { AddFixtureModal } from "./fixtures.jsx";
-import { useLive, usePlayersWithCareer, useRows, useWeather } from "../lib/live.js";
+import { useLive, usePlayersWithCareerState, useRows, useWeather } from "../lib/live.js";
+import { T } from "../design/tokens.js";
+import { useTheme } from "../design/theme.js";
 import { schoolsWhere } from "../lib/session.js";
 import {
   ALL_SEASONS, awardSeasons, bestBattingAverages, bestBowlingEconomies, defaultAwardSeason, mvpRanking,
   playersForSeason, topRunScorers, topWicketTakers,
 } from "../lib/seasonAwards.js";
+import { Icon } from "../ui/icons.jsx";
 
 // ══════════════════════════════════════════════════════
 //  LEAGUE MANAGEMENT VIEW
@@ -23,7 +29,10 @@ function LeagueView({ role }) {
   const [fixtureNonce, setFixtureNonce] = useState(0);
   const MATCHES = useLive("matches", role, fixtureNonce).rows;
   const GROUNDS = useRows("grounds", role);
-  const PLAYERS = usePlayersWithCareer(role);
+  // Bumped by the Awards tab's Retry: every read the tab ranks from, again.
+  const [careerNonce, setCareerNonce] = useState(0);
+  const CAREER = usePlayersWithCareerState(role, careerNonce);
+  const PLAYERS = CAREER.rows;
   const WEATHER = useWeather(role);
   const [selComp, setSelComp] = useState("comp1");
   const [tab,     setTab]     = useState("table");
@@ -39,7 +48,7 @@ function LeagueView({ role }) {
   // do. The seasons, and which is current, come from the server
   // (career_by_season), never from a date worked out in the browser.
   const [awardsSeason, setAwardsSeason] = useState(null);
-  const SEASON_CAREER = useLive("career_by_season", role);
+  const SEASON_CAREER = useLive("career_by_season", role, careerNonce);
   const [editRow, setEditRow] = useState(null);  // team row being edited
   const [addFixture, setAddFixture] = useState(false);
   // fixture.create, not fixture.update: this offers the ARRANGE form, and a
@@ -79,6 +88,16 @@ function LeagueView({ role }) {
   const seasonPending = awardsSeason == null && SEASON_CAREER.loading;
   const activeSeason = awardsSeason ?? defaultAwardSeason(seasonChoice);
   const AWARD_PLAYERS = activeSeason === ALL_SEASONS ? PLAYERS : playersForSeason(PLAYERS, SEASON_CAREER.rows, activeSeason);
+  // What the lists on screen are ranked from, and whether it arrived. Every
+  // season is the players read with `career` over it; one season is that
+  // season's rows of `career_by_season`. A read that failed or timed out is
+  // said, with a way to ask again — never drawn as empty lists, which would
+  // read as "nobody has scored a run".
+  const awardsSource = activeSeason === ALL_SEASONS
+    ? { loading: CAREER.players.loading || CAREER.career.loading, error: CAREER.players.error || CAREER.career.error }
+    : { loading: SEASON_CAREER.loading, error: SEASON_CAREER.error };
+  const awardsFailed = !seasonPending && !!awardsSource.error;
+  const awardsLoading = seasonPending || (!awardsFailed && awardsSource.loading);
 
   const NRR = (nrr) => (
     <span style={{fontFamily:D.mono,fontSize:"12px",fontWeight:600,color:nrr>0?D.emerald:nrr<0?D.rose:D.textMuted}}>
@@ -162,7 +181,7 @@ function LeagueView({ role }) {
                           </td>
                           <td style={{padding:"11px 12px"}}>
                             <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
-                              <div style={{width:"8px",height:"8px",borderRadius:"50%",background:isHilton?"#003366":"#888",flexShrink:0}}/>
+                              <div style={{width:"8px",height:"8px",borderRadius:"50%",background:isHilton?HILTON_KIT:D.textMuted,flexShrink:0}}/>
                               <span style={{fontFamily:D.body,fontSize:"12px",fontWeight:isHilton?700:400,color:isHilton?D.textPrimary:D.textSecondary}}>{t.team}</span>
                               {isHilton&&<Badge color={D.indigo}>Us</Badge>}
                             </div>
@@ -246,10 +265,10 @@ function LeagueView({ role }) {
                     <div style={{display:"flex",gap:"16px",alignItems:"center",flexWrap:"wrap"}}>
                       <div style={{flex:1}}>
                         <div style={{fontFamily:D.head,fontSize:"14px",fontWeight:700,color:D.textPrimary,marginBottom:"3px"}}>{m.homeTeam} <span style={{color:D.textMuted,fontSize:"12px",fontWeight:400}}>vs</span> {m.awayTeam}</div>
-                        <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>📅 {m.date} · 📍 {m.venue}</div>
+                        <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}><Icon name="calendar"/> {m.date} · <Icon name="map-pin"/> {m.venue}</div>
                       </div>
                       {w&&<WeatherChip w={w} compact/>}
-                      {m.transport?.bus&&<Pill color={D.lime}>🚌 {m.transport.depart}</Pill>}
+                      {m.transport?.bus&&<Pill color={D.lime}><Icon name="bus"/> {m.transport.depart}</Pill>}
                       {canEdit&&<Btn size="sm" variant="ghost">Enter Result</Btn>}
                     </div>
                   </Card>
@@ -291,7 +310,7 @@ function LeagueView({ role }) {
           {tab==="performers"&&(
             <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"14px"}}>
               <Card>
-                <div style={{padding:"12px 14px",borderBottom:`1px solid ${D.border}`,fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary}}>🏏 Top Batters — {comp.ageGroup}</div>
+                <div style={{padding:"12px 14px",borderBottom:`1px solid ${D.border}`,fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary}}><Icon name="bat"/> Top Batters — {comp.ageGroup}</div>
                 {topBat.map((p,i)=>(
                   <div key={p.id} style={{padding:"10px 14px",borderBottom:`1px solid ${D.border}`,display:"flex",alignItems:"center",gap:"10px"}}>
                     <span style={{fontFamily:D.mono,fontSize:"11px",color:D.textMuted,width:"16px"}}>{i+1}</span>
@@ -312,7 +331,7 @@ function LeagueView({ role }) {
                 ))}
               </Card>
               <Card>
-                <div style={{padding:"12px 14px",borderBottom:`1px solid ${D.border}`,fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary}}>⚡ Top Bowlers — {comp.ageGroup}</div>
+                <div style={{padding:"12px 14px",borderBottom:`1px solid ${D.border}`,fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary}}><Icon name="ball"/> Top Bowlers — {comp.ageGroup}</div>
                 {topBowl.map((p,i)=>(
                   <div key={p.id} style={{padding:"10px 14px",borderBottom:`1px solid ${D.border}`,display:"flex",alignItems:"center",gap:"10px"}}>
                     <span style={{fontFamily:D.mono,fontSize:"11px",color:D.textMuted,width:"16px"}}>{i+1}</span>
@@ -367,29 +386,33 @@ function LeagueView({ role }) {
                   : activeSeason===ALL_SEASONS ? "Every season on record: every match you can see."
                   : `The ${activeSeason} school season: the matches that started in it. The sample floors apply to this season's balls alone.`}
               </div>
-              {seasonPending ? (
+              {awardsFailed ? (
+                <AwardsReadFailed onRetry={()=>setCareerNonce(n=>n+1)}/>
+              ) : awardsLoading ? (
                 <Card data-testid="awards-loading">
-                  <div style={{padding:"20px 14px",textAlign:"center",fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>Loading this season's figures…</div>
+                  <div style={{padding:"20px 14px",textAlign:"center",fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>
+                    {seasonPending||activeSeason!==ALL_SEASONS ? "Loading this season's figures…" : "Loading the figures…"}
+                  </div>
                 </Card>
               ) : (<>
               <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"14px"}}>
-                <RankedList testId="awards-run-scorers" title="🏏 Top Run-Scorers" color={D.sky}
+                <RankedList testId="awards-run-scorers" icon="bat" title="Top Run-Scorers" color={D.sky}
                   rows={topRunScorers(AWARD_PLAYERS, awardScope)}
                   primary={p=>p.runs} primaryLabel="runs" secondary={p=>p.avg} secondaryLabel="avg"/>
-                <RankedList testId="awards-wicket-takers" title="⚡ Top Wicket-Takers" color={D.violet}
+                <RankedList testId="awards-wicket-takers" icon="ball" title="Top Wicket-Takers" color={D.violet}
                   rows={topWicketTakers(AWARD_PLAYERS, awardScope)}
                   primary={p=>p.wkts} primaryLabel="wkts" secondary={p=>p.econ} secondaryLabel="econ"/>
-                <RankedList testId="awards-batting-index" title="📈 Best Batting Index" color={D.emerald}
+                <RankedList testId="awards-batting-index" icon="trending-up" title="Best Batting Index" color={D.emerald}
                   rows={bestBattingAverages(AWARD_PLAYERS, awardScope).map(x=>({...x.player,index:x.index.value}))}
                   primary={p=>p.index} primaryLabel="index" secondary={p=>p.avg} secondaryLabel="avg"
                   empty="Nobody here has faced the 30 balls the index needs yet."/>
-                <RankedList testId="awards-bowling-index" title="📉 Best Bowling Index" color={D.orange}
+                <RankedList testId="awards-bowling-index" icon="trending-down" title="Best Bowling Index" color={D.orange}
                   rows={bestBowlingEconomies(AWARD_PLAYERS, awardScope).map(x=>({...x.player,index:x.index.value}))}
                   primary={p=>p.index} primaryLabel="index" secondary={p=>p.econ} secondaryLabel="econ"
                   empty="Nobody here has bowled the 36 balls the index needs yet."/>
               </div>
               <div style={{marginTop:"14px"}}>
-                <RankedList testId="awards-mvp" title="🏆 MVP Ranking" color={D.amber}
+                <RankedList testId="awards-mvp" icon="trophy" title="MVP Ranking" color={D.amber}
                   rows={mvpRanking(AWARD_PLAYERS, awardScope).map(x=>({...x.player,mvp:x.score}))}
                   primary={p=>p.mvp} primaryLabel="rating" secondary={p=>p.team} secondaryLabel=""
                   empty="Nobody here clears the sample floor for either index yet."
@@ -466,17 +489,41 @@ function LiveLadder({ rows, comp }) {
 }
 
 /**
+ * The Awards tab when the figures it ranks could not be read — the request
+ * failed, or the client gave up on it. Said plainly, with a way to ask again:
+ * five empty lists would read as a season in which nobody scored a run.
+ */
+function AwardsReadFailed({ onRetry }) {
+  useTheme();
+  return (
+    <Card data-testid="awards-error" role="alert">
+      <div style={{padding:`${T.space.xl} ${T.space.lg}`,textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:T.space.md}}>
+        <div style={{...T.role.title.md,color:T.content.primary}}>The figures could not be loaded.</div>
+        <div style={{...T.role.body,color:T.content.secondary,maxWidth:"44ch"}}>
+          Nothing is ranked until they are. This is not a season in which nobody scored a run or took a wicket.
+        </div>
+        <button type="button" onClick={onRetry} data-testid="awards-retry" className="pressBtn" style={{
+          ...T.role.control,minHeight:`${T.floor.target}px`,minWidth:`${T.floor.target}px`,padding:`0 ${T.space.xl}`,
+          borderRadius:T.radius.pill,border:`1px solid ${T.line.normal}`,background:T.surface.interactive,
+          color:T.content.primary,cursor:"pointer",
+        }}>Retry</button>
+      </div>
+    </Card>
+  );
+}
+
+/**
  * One ranked list on the Awards tab — a title, up to ten rows, each with a
  * primary figure (what the list is ranked on) and a secondary one beside it.
  * `rows` arrives already ranked and already floor-checked, by
  * apps/web/src/lib/seasonAwards.js: this component only draws it, the same
  * division of labour ScorecardModal keeps between the fold and the screen.
  */
-function RankedList({ testId, title, color, rows, primary, primaryLabel, secondary, secondaryLabel, empty, sub }) {
+function RankedList({ testId, icon, title, color, rows, primary, primaryLabel, secondary, secondaryLabel, empty, sub }) {
   return (
     <Card data-testid={testId}>
       <div style={{padding:"12px 14px",borderBottom:`1px solid ${D.border}`}}>
-        <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary}}>{title}</div>
+        <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary}}>{icon&&<Icon name={icon}/>} {title}</div>
         {sub&&<div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,marginTop:"2px"}}>{sub}</div>}
       </div>
       {rows.length===0

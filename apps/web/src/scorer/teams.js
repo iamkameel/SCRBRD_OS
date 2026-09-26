@@ -1,4 +1,4 @@
-import { D } from "../design/tokens.js";
+import { D, themed } from "../design/tokens.js";
 
 /* ═══════════════════════════════════════════════════════
    SETUP SCREEN — with full squad entry
@@ -6,6 +6,9 @@ import { D } from "../design/tokens.js";
 /* ═══════════════════════════════════════════════════════
    INTERNATIONAL TEAMS DATABASE
 ═══════════════════════════════════════════════════════ */
+// `accent` is each side's kit colour — data, fixed in both themes, like a
+// school's colours in data/institution.js. Where one is read as text it goes
+// through textOn(), which makes it legible on the theme in force.
 const INT_TEAMS = {
   "Australia": {
     flag:"🇦🇺", abbr:"AUS", accent:"#f4c430",
@@ -249,9 +252,9 @@ const INT_TEAMS = {
   },
 };
 
-const ROLE_COLORS = {
+const ROLE_COLORS = themed(() => ({
   BAT: D.sky, WK: D.emerald, ALL: D.amber, BOWL: D.orange,
-};
+}));
 
 const ROLE_LABELS = {
   BAT:"Batter", WK:"Wicket-keeper", ALL:"All-rounder", BOWL:"Bowler",

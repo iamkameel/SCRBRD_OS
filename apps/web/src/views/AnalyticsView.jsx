@@ -1,6 +1,6 @@
 
 import { useState } from "react";
-import { D, px, textOn } from "../design/tokens.js";
+import { D, px, textOn, themed } from "../design/tokens.js";
 import { fitnessColor } from "../lib/format.js";
 import { Avatar, Badge, Card, EmptyState, ProgressBar, SectionHeader } from "../ui/primitives.jsx";
 import { usePlayersWithCareer, useLive } from "../lib/live.js";
@@ -226,15 +226,15 @@ function AnalyticsView({ role }) {
 //  rivalry. A record "corrected" over matches the reader cannot see would
 //  disclose that those matches exist.
 // ══════════════════════════════════════════════════════
-const RESULT_TONE = { won: D.emerald, lost: D.rose, tied: D.amber, undecided: D.textMuted };
+const RESULT_TONE = themed(() => ({ won: D.emerald, lost: D.rose, tied: D.amber, undecided: D.textMuted }));
 const day = (t) => (t ? new Date(t).toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" }) : "—");
 
 function HeadToHead({ role, teamFilter }) {
   const { rows, live, loading, error, disabled } = useLive("derby_record", role, 0, { teamCode: teamFilter });
   if (loading) return <EmptyState loading/>;
-  if (disabled) return <EmptyState icon="⊘" message="Analytics is switched off for this school."/>;
+  if (disabled) return <EmptyState icon="ban" message="Analytics is switched off for this school."/>;
   if (error) return <EmptyState error/>;
-  if (!rows.length) return <EmptyState icon="🏏" message={`No completed fixtures for ${teamFilter} that you may see — a record is derived from them, so there is nothing to derive one from yet.`}/>;
+  if (!rows.length) return <EmptyState icon="bat" message={`No completed fixtures for ${teamFilter} that you may see — a record is derived from them, so there is nothing to derive one from yet.`}/>;
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:"12px"}} data-testid="h2h">
@@ -333,7 +333,7 @@ function Matchups({ role }) {
   const batters = [...new Map(pairs.rows.map(p=>[p.batterId,p.batterName])).entries()];
 
   if (pairs.loading) return <EmptyState loading/>;
-  if (pairs.disabled) return <EmptyState icon="⊘" message="Analytics is switched off for this school."/>;
+  if (pairs.disabled) return <EmptyState icon="ban" message="Analytics is switched off for this school."/>;
   if (pairs.error) return <EmptyState error/>;
 
   return (
@@ -374,7 +374,7 @@ function Matchups({ role }) {
       )}
 
       {pairs.rows.length===0 ? (
-        <EmptyState icon="🎯" message="No attributed pairs yet — a match-up needs both a striker and a bowler on record for the same delivery."/>
+        <EmptyState icon="target" message="No attributed pairs yet — a match-up needs both a striker and a bowler on record for the same delivery."/>
       ) : (
         <Card>
           <div style={{overflowX:"auto"}}>
@@ -456,7 +456,7 @@ function Matchups({ role }) {
 //  innings of zeros, which is the difference between "not scored yet" and
 //  "nobody scored".
 // ══════════════════════════════════════════════════════
-const PHASE_TONE = { powerplay: D.sky, middle: D.violet, death: D.orange };
+const PHASE_TONE = themed(() => ({ powerplay: D.sky, middle: D.violet, death: D.orange }));
 
 /**
  * A percentage, or an em dash where the fold withheld one.
@@ -481,7 +481,7 @@ function Phases({ role }) {
   const match = played.find((m) => m.id === chosen);
 
   if (!played.length) {
-    return <EmptyState icon="🏏" message="No played fixture you may see — a phase breakdown is folded from a ball log, so there is nothing to fold yet."/>;
+    return <EmptyState icon="bat" message="No played fixture you may see — a phase breakdown is folded from a ball log, so there is nothing to fold yet."/>;
   }
 
   return (
@@ -501,11 +501,11 @@ function Phases({ role }) {
       </div>
 
       {loading&&<EmptyState loading/>}
-      {disabled&&<EmptyState icon="⊘" message="Analytics is switched off for this school."/>}
+      {disabled&&<EmptyState icon="ban" message="Analytics is switched off for this school."/>}
       {error&&<EmptyState error/>}
 
       {!loading&&!error&&!disabled&&rows.length===0&&(
-        <EmptyState icon="📋" message={`${match?.awayTeam ?? "This fixture"} has no deliveries on record — it has not been scored, which is not the same as nobody scoring.`}/>
+        <EmptyState icon="scorebook" message={`${match?.awayTeam ?? "This fixture"} has no deliveries on record — it has not been scored, which is not the same as nobody scoring.`}/>
       )}
 
       {rows.map((inn) => (

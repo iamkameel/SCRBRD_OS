@@ -1,4 +1,4 @@
-import { D, textOn } from "../design/tokens.js";
+import { D, inkOn } from "../design/tokens.js";
 import { refusalWords } from "../lib/handover.js";
 import { waitingPhrase, tossLine } from "@scrbrd/sync";
 
@@ -37,7 +37,7 @@ export function SyncBanner({ status, match, asideCount = 0, onSignIn, onRetry, o
       {action&&(
         <button onClick={action.on} className="pressBtn" data-testid={action.testid}
           style={{flexShrink:0,minHeight:"40px",padding:"8px 16px",borderRadius:D.pill,cursor:"pointer",
-            border:"none",background:tone,color:textOn(tone),
+            border:"none",background:tone,color:inkOn(tone),
             fontFamily:D.head,fontSize:"13px",fontWeight:700,letterSpacing:"0.02em"}}>
           {action.label}
         </button>

@@ -3,7 +3,39 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#05070f" />
+    <meta name="theme-color" content="#05070a" />
+    <meta name="color-scheme" content="dark light" />
+    <!--
+      The theme, decided before anything paints (DESIGN_DIRECTION §3.1).
+      The app is a module script, which runs after the document is parsed; by
+      then a phone in daylight would already have painted the dark page and
+      would flip. So these few lines make the engine's first decision here:
+      the override stored on this device, else the device's own setting.
+      src/design/theme.js is the engine and reads the same key; tokens.js
+      starts in whatever <html data-theme> says. design.test.mjs checks that
+      the key and the two page colours here match theirs.
+      Inline and classic on purpose: no request, nothing to wait for. There is
+      no Content-Security-Policy on the site today; one that forbids inline
+      script must carry this block's hash.
+    -->
+    <script>
+      (function () {
+        var t = "floodlit", m;
+        try {
+          var p = localStorage.getItem("scrbrd:theme");
+          if (p === "daylight" || p === "floodlit") t = p;
+          else if (window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches) t = "daylight";
+        } catch (e) {
+          try { if (matchMedia("(prefers-color-scheme: light)").matches) t = "daylight"; } catch (e2) { /* floodlit */ }
+        }
+        var d = document.documentElement, bg = t === "daylight" ? "#eef0ea" : "#05070a";
+        d.setAttribute("data-theme", t);
+        d.style.colorScheme = t === "daylight" ? "light" : "dark";
+        d.style.background = bg;
+        m = document.querySelector('meta[name="theme-color"]');
+        if (m) m.setAttribute("content", bg);
+      })();
+    </script>
     <title>SCRBRD — CricketOS</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

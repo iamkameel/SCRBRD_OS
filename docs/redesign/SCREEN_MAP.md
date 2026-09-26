@@ -127,7 +127,7 @@ nothing in OS today.
 | Phase | Job | AG routes | OS status |
 |---|---|---|---|
 | Before season | Manage a competition, rankings | `competitions/rankings`, `rankings`, `(authenticated)/rankings` | **partial** — `LeagueView.jsx`/`CompetitionsView.jsx` cover standings; no cross-competition "global rankings" screen the way AG's `GlobalRankingsClient` frames it |
-| Anytime | Opposition scouting dossier | `scouting/dossier`, `(authenticated)/scouting` | **has** — `up5` Opposition Dossier: squad + ball-log-derived figures inside a 14-day pre-match window, floor of 30 balls before a figure is shown, every cross-school read logged |
+| Anytime | Opposition scouting dossier | `scouting/dossier`, `(authenticated)/scouting` | **has** — `up5` Opposition Dossier: squad + ball-log-derived figures inside a 5-day pre-match window (db/46, SCRBRD-091), floor of 30 balls before a figure is shown, every cross-school read logged |
 | Anytime | AI query/analysis over the data | `analysis` | **has** — `up47` Stats-Magic (`contextFrom()` folds `/read/career` in, never fabricates a zero for a batter never dismissed) |
 | Anytime | Player/team comparison tools | `players/compare`, `teams/compare` | **missing** — no head-to-head player/team comparison screen; the closest is the Head-to-Head figure inside the Opposition Dossier, which is fixture-derived, not a general compare tool |
 

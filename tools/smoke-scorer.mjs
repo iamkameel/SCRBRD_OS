@@ -108,8 +108,9 @@ try {
   // Quick mode is the one-tap pad a school scorer actually uses: · 1 2 3 4 6.
   // The default three-phase flow needs three taps a ball, which is not what
   // this check is about.
-  const alreadyQuick = /\bDOT\b/i.test(await text());
-  const inQuick = alreadyQuick || (await click(/QUICK MODE/i, 2500));
+  // It is Basic Scoring now, a switch in the pad menu (step 2 of the redesign).
+  const alreadyQuick = (await page.locator('[data-testid="basic-pad"]').count()) > 0;
+  const inQuick = alreadyQuick || (await page.locator('[data-testid="pad-menu"]').click({ timeout: 2500 }).then(() => click(/^\s*Basic Scoring/, 2500), () => false));
   await page.waitForTimeout(500);
   await dump("quick pad");
   ok("one-tap quick pad is reachable", inQuick && /\bDOT\b/i.test(await text()));
@@ -167,6 +168,10 @@ try {
   let undone = 0;
   for (let i = 0; i < 12; i++) {
     await clearBlockers();
+    // A new-over sheet left open is closed first. The forced click below
+    // used to land on its scrim and close it by accident; since step 2 the
+    // undo key sits where the sheet has a bowler's row instead.
+    if (await page.locator('[role="dialog"]').count()) { await page.keyboard.press("Escape"); await page.waitForTimeout(250); }
     // Force past any residual overlay: the assertion is about the log
     // truncating, not about the celebration animation's z-index.
     const u = page.locator("button", { hasText: /UNDO/i }).first();
@@ -183,6 +188,8 @@ try {
   // so the pad's over count follows it and the innings ends where the
   // umpires said — from the log, not from a number stored beside it.
   const errsBeforeRevise = errors.length;
+  // Revise is in the pad menu since step 2 of the redesign.
+  await page.locator('[data-testid="pad-menu"]').click({ timeout: 2500 }).catch(() => {});
   const reviseBtn = page.locator('[data-testid="revise-innings"]');
   ok("the pad offers a way to revise the innings", (await reviseBtn.count()) === 1);
   await reviseBtn.click({ timeout: 2500 }); await page.waitForTimeout(400);
@@ -210,6 +217,8 @@ try {
   // stopped at the focus pad. A whole half of the scorer had no coverage at
   // all, which is the actual defect this group closes.
   const errsBeforePro = errors.length;
+  // Pro mode is in the pad menu since step 2 of the redesign.
+  await page.locator('[data-testid="pad-menu"]').click({ timeout: 2500 }).catch(() => {});
   const proOpened = await click(/PRO MODE/i, 4000);
   await page.waitForTimeout(1200);
   ok("pro mode is offered on the pad", proOpened);

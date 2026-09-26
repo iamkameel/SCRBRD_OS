@@ -22,6 +22,30 @@ const fitnessColor  = (f) => f==="fit"?D.emerald:f==="injured"?D.rose:f==="rehab
 
 const roleColor = (r) => ROLES[r]?.color||D.textMuted;
 
+// ── HUMAN DATES (DESIGN_DIRECTION §3, §5) ──
+// "2026-09-26" reads as a row in a spreadsheet; a person reads "Sat 26 Sep".
+// Built from a fixed table rather than toLocaleDateString(): Intl's "short"
+// month for en-ZA and en-GB both come back "Sept" (four letters), and the
+// brief's own wording is the three-letter form. Parsed as UTC midnight, the
+// same convention asMatch() already keeps for `date` — a fixture's day never
+// rolls backward for a reader west of Greenwich.
+const WEEKDAY_SHORT = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+const MONTH_SHORT   = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+/** "2026-09-26" → "Sat 26 Sep". An absent or unparsable date is an em dash, never blank. */
+const humanDate = (isoDate) => {
+  if (!isoDate) return "—";
+  const d = new Date(`${isoDate}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return "—";
+  return `${WEEKDAY_SHORT[d.getUTCDay()]} ${d.getUTCDate()} ${MONTH_SHORT[d.getUTCMonth()]}`;
+};
+
+/** "2026-09-26", "10:00" → "Sat 26 Sep · 10:00". No time: just the day. */
+const humanDateTime = (isoDate, time) => {
+  const day = humanDate(isoDate);
+  return time ? `${day} · ${time}` : day;
+};
+
 /**
  * A derived figure, or an em dash when there isn't one.
  *
@@ -53,4 +77,4 @@ const stat = (v, suffix = "") => (v === null || v === undefined ? "—" : `${v}$
 const withheld = (v, label = "Not shown at your access level") =>
   (v === null || v === undefined ? label : v);
 
-export { addDays, dateStr, fitnessColor, initials, pctDays, roleColor, severityColor, stat, today, withheld };
+export { addDays, dateStr, fitnessColor, humanDate, humanDateTime, initials, pctDays, roleColor, severityColor, stat, today, withheld };

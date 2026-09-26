@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { KZN_SCHOOLS } from "../data/institution.js";
 import { ROLES } from "../design/roles.js";
-import { D, textOn } from "../design/tokens.js";
+import { D, inkOn, textOn, themed } from "../design/tokens.js";
 import { fitnessColor } from "../lib/format.js";
 import { signedIn } from "../lib/api.js";
 import { can, filterRecord } from "../rbac/index.js";
@@ -10,6 +10,7 @@ import { ShotHeatMap, ShotSpider, ShotWheel } from "../scorer/charts.jsx";
 import { useLive, usePlayersWithCareer, useRows, useSkills } from "../lib/live.js";
 import { ConductTab } from "./discipline.jsx";
 import { readsConduct } from "../rbac/conduct.js";
+import { Icon } from "../ui/icons.jsx";
 
 // ══════════════════════════════════════════════════════
 //  SETTINGS / RBAC VIEW
@@ -291,7 +292,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                       <div key={n} style={{width:"32px",height:"32px",borderRadius:D.sm,display:"flex",alignItems:"center",justifyContent:"center",
                         background:n===p.battingPos?rCol:"transparent",
                         border:`1px solid ${n===p.battingPos?rCol:D.border}`,}}>
-                        <span style={{fontFamily:D.mono,fontSize:"11px",fontWeight:n===p.battingPos?700:400,color:n===p.battingPos?"#fff":D.textMuted}}>{n}</span>
+                        <span style={{fontFamily:D.mono,fontSize:"11px",fontWeight:n===p.battingPos?700:400,color:n===p.battingPos?inkOn(rCol):D.textMuted}}>{n}</span>
                       </div>
                     ))}
                   </div>
@@ -403,7 +404,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                 </>
               ):(
                 <Card sx={{padding:"32px",textAlign:"center"}}>
-                  <div style={{fontSize:"28px",marginBottom:"10px"}}>🎯</div>
+                  <div style={{fontSize:"28px",marginBottom:"10px",color:D.textMuted}}><Icon name="target"/></div>
                   <div style={{fontFamily:D.body,fontSize:"13px",color:D.textMuted}}>No skills assessment on file. Coach can add via Skills module.</div>
                 </Card>
               )}
@@ -467,9 +468,9 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                 </Card>
                 <Card sx={{padding:"14px"}}>
                   <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"10px"}}>CONTACT</div>
-                  {[["📞 Phone",c.phone],["✉️ Email",c.email],["🏠 Hometown",c.hometown||"—"],["🎂 Born",c.born||"—"]].map(([l,v])=>(
+                  {[["phone","Phone",c.phone],["mail","Email",c.email],["house","Hometown",c.hometown||"—"],["cake","Born",c.born||"—"]].map(([ic,l,v])=>(
                     <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${D.border}`}}>
-                      <span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>{l}</span>
+                      <span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}><Icon name={ic}/> {l}</span>
                       <span style={{fontFamily:D.body,fontSize:"11px",color:D.textPrimary}}>{v}</span>
                     </div>
                   ))}
@@ -508,7 +509,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
               <Card sx={{padding:"14px",marginTop:"4px"}}>
                 <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"8px"}}>SPECIALISATION</div>
                 <p style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,lineHeight:1.6}}>{c.specialisation}</p>
-                <div style={{marginTop:"10px",fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>📅 Availability: {c.availability}</div>
+                <div style={{marginTop:"10px",fontFamily:D.body,fontSize:"11px",color:D.textMuted}}><Icon name="calendar"/> Availability: {c.availability}</div>
                 {c.notes&&<div style={{marginTop:"8px",padding:"8px 10px",background:D.amber+"0a",borderRadius:D.sm,fontFamily:D.body,fontSize:"11px",color:D.textSecondary,fontStyle:"italic"}}>{c.notes}</div>}
               </Card>
             </div>
@@ -637,7 +638,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
         <div style={{minHeight:"500px",display:"flex",flexDirection:"column"}}>
           {!selId&&(
             <Card sx={{padding:"60px",textAlign:"center",flex:1}}>
-              <div style={{fontSize:"48px",marginBottom:"16px"}}>👤</div>
+              <div style={{fontSize:"48px",marginBottom:"16px",color:D.textMuted}}><Icon name="user"/></div>
               <div style={{fontFamily:D.head,fontSize:"16px",fontWeight:700,color:D.textPrimary,marginBottom:"8px"}}>Select a Profile</div>
               <div style={{fontFamily:D.body,fontSize:"13px",color:D.textMuted}}>Choose a player, coach or staff member from the list to view their full profile.</div>
             </Card>
@@ -649,7 +650,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
               <div style={{fontFamily:D.head,fontSize:"18px",fontWeight:800,color:D.textPrimary,marginBottom:"6px"}}>{selStaff.name}</div>
               <Badge color={ROLES[selStaff.role]?.color||D.cyan}>{selStaff.role}</Badge>
               <div style={{marginTop:"12px",fontFamily:D.body,fontSize:"13px",color:D.textSecondary,lineHeight:1.6}}>{selStaff.experience}</div>
-              <div style={{marginTop:"10px",fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>📞 {selStaff.phone} · ✉️ {selStaff.email}</div>
+              <div style={{marginTop:"10px",fontFamily:D.body,fontSize:"12px",color:D.textMuted}}><Icon name="phone"/> {selStaff.phone} · <Icon name="mail"/> {selStaff.email}</div>
               <div style={{marginTop:"8px",fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>Full staff profile available in the Staff module →</div>
             </Card>
           )}
@@ -661,7 +662,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
 
 // Honours, caps and milestones, in the server's order and the server's words.
 // Nothing here is a total: a cap number is a number, not a score.
-const FAMILY_TONE = { honour:D.amber, cap:D.sky, milestone:D.emerald };
+const FAMILY_TONE = themed(() => ({ honour:D.amber, cap:D.sky, milestone:D.emerald }));
 /**
  * Where this boy scores, across every innings rather than one.
  *
@@ -729,7 +730,7 @@ function RecognitionCard({ playerId, role }) {
                 background:FAMILY_TONE[r.family]+"14",border:`1px solid ${FAMILY_TONE[r.family]}33`,color:textOn(FAMILY_TONE[r.family])}}>
               {r.label}
               <span style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>{r.season??r.on}</span>
-              {r.isPublic&&<span aria-label="on the public board" style={{fontSize:"9px"}}>🏛</span>}
+              {r.isPublic&&<span style={{fontSize:"9px"}}><Icon name="landmark" label="on the public board"/></span>}
             </span>
           ))}
         </div>
@@ -741,7 +742,7 @@ function RecognitionCard({ playerId, role }) {
 // His cricket record with its provenance on every line: where it was
 // recorded, by whom, and how sure the record is. Read through passport(),
 // which is the family's, his own school's, and a school the family named.
-const CONFIDENCE_TONE = { derived: D.emerald, verified: D.emerald, asserted: D.amber, seeded: D.textMuted };
+const CONFIDENCE_TONE = themed(() => ({ derived: D.emerald, verified: D.emerald, asserted: D.amber, seeded: D.textMuted }));
 function PassportCard({ playerId, role }) {
   const rows = useLive("passport", role, 0, { playerId }).rows;
   if (!rows.length) return null;

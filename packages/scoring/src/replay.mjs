@@ -109,6 +109,15 @@ const BAT_STATUS = { NOT_OUT: "batting", OUT: "out", RETIRED: "retired" };
  * @property {number} wickets
  * @property {number} balls          legal deliveries
  * @property {{wide: number, noBall: number, bye: number, legBye: number, penalty: number}} extras
+ *   `penalty` is every penalty run in this innings' total: those awarded to
+ *   the batting side here, and `penaltyCarried`
+ * @property {number} penaltyToFielding  penalty runs awarded in this innings to
+ *   the FIELDING side (SCRBRD-094). Not in this innings' total: the match's
+ *   fold credits them to that side's own innings — see penaltyCredits()
+ * @property {number} penaltyCarried    penalty runs in this innings' total that
+ *   were awarded in another innings: the batting side's award made while they
+ *   were fielding. Only the match's fold (deriveMatch, deriveInningsList,
+ *   MatchFold) sets it; deriveInnings() alone knows one innings and says 0
  * @property {Batter[]} batsmen
  * @property {Bowler[]} bowlers
  * @property {{runs: number, wickets: number, batsman: string, overs: string}[]} fow
@@ -213,10 +222,17 @@ const newBowler = (id, name) => ({
  * `apply` never sees a void or a voided event; the caller filters them, because
  * which events are voided is a property of the whole log, not of one event.
  *
+ * `carried` is penalty runs this innings opens on: an award to its batting
+ * side made in an earlier innings, before they had batted (SCRBRD-094; the
+ * match's fold works it out — penaltyCredits()). They are in the total from
+ * before the first ball, so a chase reaches its target, and a wicket's fall
+ * is recorded, with them in.
+ *
  * @param {FoldContext} [ctx]
+ * @param {number} [carried]
  * @returns {{ inn: Innings, apply: (ev: LogEvent) => void }}
  */
-function inningsFolder(ctx = {}) {
+function inningsFolder(ctx = {}, carried = 0) {
   /** @type {Innings} */
   const inn = {
     battingTeam: null, bowlingTeam: null,
@@ -224,8 +240,9 @@ function inningsFolder(ctx = {}) {
     squad: [], bowlingSquad: [], twelfthMan: null,
     overs: 20, target: null,
 
-    runs: 0, wickets: 0, balls: 0,
-    extras: { wide: 0, noBall: 0, bye: 0, legBye: 0, penalty: 0 },
+    runs: carried, wickets: 0, balls: 0,
+    extras: { wide: 0, noBall: 0, bye: 0, legBye: 0, penalty: carried },
+    penaltyToFielding: 0, penaltyCarried: carried,
 
     batsmen: [], bowlers: [], fow: [], nonBallWickets: [], bowlerChanges: [],
     partnerships: [], curPartner: { runs: 0, balls: 0, bat1: null, bat2: null },
@@ -273,6 +290,12 @@ function inningsFolder(ctx = {}) {
   };
 
   const rotate = () => { const s = inn.striker; inn.striker = inn.nonStriker; inn.nonStriker = s; };
+
+  // Whether the target now standing is one the umpires typed (a revision)
+  // rather than the one the innings opened with. An award to the fielding
+  // side moves the second; the first is the umpires' figure and stands until
+  // they revise it again. See the PENALTY case.
+  let targetTyped = false;
 
   // Partnership is measured as the run delta while a pair is together, so it
   // includes extras — which is how partnerships are actually reported.
@@ -326,6 +349,7 @@ function inningsFolder(ctx = {}) {
           twelfthMan: ev.twelfthMan ?? null,
           overs: ev.overs ?? 20, target: ev.target ?? null,
         });
+        targetTyped = false;
         if (ctx.flagFor) inn.teamFlag = ctx.flagFor(inn.teamKey) ?? "🏏";
         // THE DECLARED CAPTURE PROFILE. SCRBRD-039. Three rules, each one a
         // way a declaration could otherwise rewrite what the evidence means:
@@ -379,10 +403,24 @@ function inningsFolder(ctx = {}) {
         inn.bowler = ev.bowler;
         break;
 
+      // Law 41.18. To the batting side: in this total, now. To the fielding
+      // side (SCRBRD-094): in THEIR total — their most recently completed
+      // innings, or their next if they have not batted — which is the match's
+      // fold's to credit (penaltyCredits()); this innings only counts it.
+      //
+      // A chase's target is the total it is chasing plus one, so an award
+      // to the fielding side here — the side that set it — raises it by the
+      // same runs, from this event on: the innings-over rule and the result
+      // read the new figure. The target the innings opened with is taken to
+      // include every award made before it was set; an umpires' revised
+      // target is their figure and does not move (they revise it again).
       case KIND.PENALTY:
         if (ev.toBattingTeam !== false) {
           inn.runs += ev.runs ?? 5;
           inn.extras.penalty += ev.runs ?? 5;
+        } else {
+          inn.penaltyToFielding += ev.runs ?? 5;
+          if (inn.target != null && !targetTyped) inn.target += ev.runs ?? 5;
         }
         break;
 
@@ -439,7 +477,7 @@ function inningsFolder(ctx = {}) {
       // not from anything stored beside the log.
       case KIND.REVISION:
         if (ev.overs != null) inn.overs = ev.overs;
-        if (ev.target != null) inn.target = ev.target;
+        if (ev.target != null) { inn.target = ev.target; targetTyped = true; }
         inn.revised = { overs: ev.overs ?? null, target: ev.target ?? null, reason: ev.reason ?? null };
         break;
 
@@ -586,7 +624,16 @@ function inningsFolder(ctx = {}) {
  * @returns {Innings} innings state, shaped as the views already expect
  */
 export function deriveInnings(events = [], ctx = {}) {
-  const { inn, apply } = inningsFolder(ctx);
+  return foldLog(events, ctx, 0);
+}
+
+/**
+ * deriveInnings(), opening on `carried` penalty runs (see inningsFolder).
+ * @param {LogEvent[]} events  @param {FoldContext} ctx  @param {number} carried
+ * @returns {Innings}
+ */
+function foldLog(events, ctx, carried) {
+  const { inn, apply } = inningsFolder(ctx, carried);
   // A `void` event undoes an earlier one. Collect the targets in one pass
   // first, because a void necessarily appears AFTER the event it undoes and
   // the fold below is single-pass and order-dependent — a ball that has been
@@ -784,10 +831,114 @@ export function sealInnings(inn, reason = inn?.endReason ?? null) {
 
 // ── Match-level derivation ───────────────────────────────
 
+/*
+ * PENALTY RUNS TO THE FIELDING SIDE CROSS INNINGS (SCRBRD-094, Law 41.18).
+ *
+ * Five runs awarded to the fielding side are added to the fielding side's
+ * total: to its most recently completed innings, or, if it has not batted
+ * yet, to its next innings. An innings is one side's, so the award made in
+ * innings N — which the event records, and which deriveInnings() counts in
+ * N's `penaltyToFielding` — belongs in another innings' total, and only a
+ * fold of the whole match can put it there. penaltyCredits() says where; the
+ * three match folds below (deriveMatch, deriveInningsList, MatchFold) apply
+ * it the same way:
+ *
+ *   THE FIELDING SIDE is N's `bowlingTeamKey`, and an innings is theirs when
+ *     its `teamKey` is the same — the keys innings_start carries (the batting
+ *     team's name when it carries no key). An innings with no key, or an
+ *     award in one whose fielding side has none, is nobody's: nothing moves.
+ *   MOST RECENTLY COMPLETED is the highest-numbered innings before N that
+ *     they batted. Innings are played in order — no play in one until the
+ *     one before it has ended (lawsRefusal) — so every innings before N has
+ *     ended. The runs are added to its total at the END, after its last
+ *     event: its fall of wickets, partnerships and seal were recorded before
+ *     them and stay as they were. Batting first and complete, their total
+ *     rises mid-chase, and the chase's target with it (the PENALTY case in
+ *     inningsFolder, from the award on).
+ *   THEIR NEXT INNINGS, when they have none before N, is the lowest-numbered
+ *     innings after N that they bat. It OPENS on the runs: they are in its
+ *     total from before its first ball (inningsFolder's `carried`), so its
+ *     fall of wickets, the target it reaches and the figures a seal confirms
+ *     include them. Batting second, they start their chase on 5.
+ *   NOT YET: an award whose side has no innings on either side of N yet —
+ *     the first innings, with the second not opened — is in nobody's total
+ *     until that innings' innings_start is in the log; penaltyCredits()
+ *     lists it as `pending` so a screen can say the next innings opens on it.
+ *
+ * Where no award to the fielding side is in the log, all three folds are
+ * exactly what they were: nothing is credited and nothing is re-folded.
+ */
+
+/**
+ * Where each award to a fielding side goes.
+ *
+ * @param {Iterable<[number, Pick<Innings, "teamKey" | "bowlingTeamKey" | "penaltyToFielding">]>} innings
+ *   each innings of the match that has a log, with its number
+ * @returns {{
+ *   carried: Map<number, number>,
+ *   added: Map<number, number>,
+ *   pending: {from: number, team: string, runs: number}[],
+ * }}  `carried`: innings number → runs it opens on; `added`: innings number →
+ *   runs added to its total after its last event; `pending`: awards whose
+ *   side's next innings is not in the log yet
+ */
+export function penaltyCredits(innings) {
+  const list = [...innings].sort((a, b) => a[0] - b[0]);
+  /** @type {Map<number, number>} */ const carried = new Map();
+  /** @type {Map<number, number>} */ const added = new Map();
+  /** @type {{from: number, team: string, runs: number}[]} */ const pending = [];
+  for (const [n, inn] of list) {
+    const runs = inn.penaltyToFielding;
+    const side = inn.bowlingTeamKey;
+    if (!runs || side == null) continue;
+    const before = list.filter(([k, x]) => k < n && x.teamKey === side).pop();
+    const after = before ? undefined : list.find(([k, x]) => k > n && x.teamKey === side);
+    if (before) added.set(before[0], (added.get(before[0]) ?? 0) + runs);
+    else if (after) carried.set(after[0], (carried.get(after[0]) ?? 0) + runs);
+    else pending.push({ from: n, team: side, runs });
+  }
+  return { carried, added, pending };
+}
+
+/**
+ * An innings with `runs` more penalty runs in its total, awarded while its
+ * side was fielding after it had batted. A copy: the fold's own object is
+ * left as it was.
+ * @param {Innings} inn  @param {number} runs
+ * @returns {Innings}
+ */
+function withAdded(inn, runs) {
+  return {
+    ...inn,
+    runs: inn.runs + runs,
+    extras: { ...inn.extras, penalty: inn.extras.penalty + runs },
+    penaltyCarried: inn.penaltyCarried + runs,
+  };
+}
+
+/**
+ * Fold each innings' own log, then credit the awards to fielding sides.
+ * @param {Map<number, LogEvent[]>} byInnings
+ * @param {FoldContext} ctx
+ * @returns {Map<number, Innings>}
+ */
+function foldMatch(byInnings, ctx) {
+  /** @type {Map<number, Innings>} */
+  const folded = new Map();
+  for (const [i, evs] of byInnings) folded.set(i, foldLog(evs, ctx, 0));
+  // Who fields and who bats, and what was awarded to whom, are the same
+  // whatever an innings opens on, so one pass decides every credit.
+  const { carried, added } = penaltyCredits(folded);
+  for (const [i, runs] of carried) folded.set(i, foldLog(/** @type {LogEvent[]} */ (byInnings.get(i)), ctx, runs));
+  for (const [i, runs] of added) folded.set(i, withAdded(/** @type {Innings} */ (folded.get(i)), runs));
+  return folded;
+}
+
 /**
  * Split a flat event log by innings index and derive each.
  * The log is one stream per match — `innings` on each event is the selector —
  * which is what lets a single `since` cursor drive realtime catch-up.
+ * Penalty runs to a fielding side are credited across innings (above).
  *
  * @param {LogEvent[]} [events]
  * @param {FoldContext} [ctx]
@@ -802,10 +953,32 @@ export function deriveMatch(events = [], ctx = {}) {
     // Set on the line above when it was missing.
     /** @type {LogEvent[]} */ (byInnings.get(i)).push(ev);
   }
+  const folded = foldMatch(byInnings, ctx);
   const indices = [...byInnings.keys()].sort((a, b) => a - b);
-  // `indices` are byInnings' own keys.
-  const innings = indices.map((i) => deriveInnings(/** @type {LogEvent[]} */ (byInnings.get(i)), ctx));
+  // `indices` are byInnings' own keys, and foldMatch folds each.
+  const innings = indices.map((i) => /** @type {Innings} */ (folded.get(i)));
   return { innings, current: innings.length ? innings.length - 1 : 0, result: describeResult(innings) };
+}
+
+/**
+ * Each innings of a match from its own log, indexed by innings number — the
+ * shape the pad holds (`events[i]` is innings i's log) — with penalty runs to
+ * a fielding side credited across innings. An innings with no events is
+ * null, as the pad has it. This is deriveInnings() for a screen that shows
+ * more than one innings, or any innings' total once an award to a fielding
+ * side may be in the log: deriveInnings() alone cannot see an award made in
+ * another innings.
+ *
+ * @param {LogEvent[][]} [eventsByInnings]
+ * @param {FoldContext} [ctx]
+ * @returns {(Innings | null)[]}
+ */
+export function deriveInningsList(eventsByInnings = [], ctx = {}) {
+  /** @type {Map<number, LogEvent[]>} */
+  const byInnings = new Map();
+  eventsByInnings.forEach((evs, i) => { if (evs?.length) byInnings.set(i, evs); });
+  const folded = foldMatch(byInnings, ctx);
+  return eventsByInnings.map((_, i) => folded.get(i) ?? null);
 }
 
 /**
@@ -829,10 +1002,16 @@ export function deriveMatch(events = [], ctx = {}) {
  *     exists to avoid. `complete` and `endReason` ARE settled, on a copy, so a
  *     later revision can still reopen an innings the way it does in a full
  *     replay.
+ *
+ * Penalty runs to a fielding side are credited as deriveMatch() credits them
+ * (penaltyCredits()), when view() is asked: an innings that opens on an award
+ * made earlier is folded again from its own log with it, once, when that
+ * changes; one that gains an award after it ended has it added on the copy.
  */
 /**
- * One innings of a MatchFold: its own log, the voids in it, and its fold.
- * @typedef {{events: LogEvent[], voided: Set<string>, inn: Innings, apply: (ev: LogEvent) => void}} FoldBucket
+ * One innings of a MatchFold: its own log, the voids in it, its fold, and the
+ * penalty runs it opens on.
+ * @typedef {{events: LogEvent[], voided: Set<string>, inn: Innings, apply: (ev: LogEvent) => void, carried: number}} FoldBucket
  */
 
 export class MatchFold {
@@ -850,7 +1029,7 @@ export class MatchFold {
     let b = this.byInnings.get(i);
     if (!b) {
       const { inn, apply } = inningsFolder(this.ctx);
-      b = { events: [], voided: new Set(), inn, apply };
+      b = { events: [], voided: new Set(), inn, apply, carried: 0 };
       this.byInnings.set(i, b);
     }
     return b;
@@ -859,7 +1038,7 @@ export class MatchFold {
   /** Fold one innings again from its own log — exactly deriveInnings' loop.
    *  @param {FoldBucket} b */
   _refold(b) {
-    const { inn, apply } = inningsFolder(this.ctx);
+    const { inn, apply } = inningsFolder(this.ctx, b.carried);
     b.inn = inn; b.apply = apply;
     b.voided = voidedTargets(b.events);
     inn.voided = b.voided.size;
@@ -889,12 +1068,19 @@ export class MatchFold {
    * @returns {{ innings: Innings[], events: LogEvent[][] }}
    */
   view() {
+    const credits = penaltyCredits([...this.byInnings].map(([i, b]) => [i, b.inn]));
+    for (const [i, b] of this.byInnings) {
+      const carried = credits.carried.get(i) ?? 0;
+      if (carried !== b.carried) { b.carried = carried; this._refold(b); }
+    }
     /** @type {Innings[]} */ const innings = [];
     /** @type {LogEvent[][]} */ const events = [];
     for (const [i, b] of this.byInnings) {
       const inn = b.inn;
       const why = inn.complete ? null : inningsOverReason(inn);
-      innings[i] = why ? { ...inn, complete: true, endReason: why } : { ...inn };
+      const settled = why ? { ...inn, complete: true, endReason: why } : { ...inn };
+      const added = credits.added.get(i);
+      innings[i] = added ? withAdded(settled, added) : settled;
       events[i] = b.events;
     }
     return { innings, events };

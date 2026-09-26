@@ -3119,6 +3119,11 @@ the dismissal vocabulary already is) and refuse per event.
 > the smallest exposure. Questions for the owner: may a reloaded (or unlocked, lost) phone keep scoring its match
 > without the person re-entering anything until the credential ends; what that end is (the match day, the result);
 > and whether the API can move onto the web app's site (which is what makes the cookie variant of A possible).
+>
+> **Decided 2026-09-26 (Kameel): B.** A reloaded phone keeps scoring its match without the scorer re-entering
+> anything, and the credential ends at the end of the match day (and on every revocation listed above, the match
+> completing included). Built after db/47 lands, as its own migration and security review (Opus). Not decided,
+> and not needed for B: A for every other role, and moving the API onto the web app's site.
 
 #### (original entry)
 **Priority:** P2 · **Domain:** Scoring / sync · **Type:** offline resilience
@@ -3226,6 +3231,12 @@ keys: after the upgrade a re-offered, already-acknowledged ball reads as unsent 
 ### Decided 2026-09-24 — screens to build next (from docs/redesign/SCREEN_MAP.md)
 - **SCRBRD-082 — Post-match report.** Scorecard, key moments, figures, generated from the log after a match.
 - **SCRBRD-083 — Public live match and league pages.** Signed-out. Needs a written rule first on what data about minors is ever public (names? photos? none?) — design with the policy package, not in the view.
+  **Rule decided 2026-09-25** (Kameel, 31 scenarios on the decision sheet): `docs/policy/PUBLIC_DATA.md`. In short:
+  off until a school publishes; each school speaks only for its own children; no name without recorded consent
+  (initial and surname, never more; a position otherwise); health, discipline, contact, date of birth and coaches'
+  judgements never public; withdrawal reaches past pages; noindex. Build order in its §6: the rule as
+  `packages/policy/src/public.mjs` with tests, then the consent / never-public / age-group / publish records (a
+  migration, Opus), then signed-out reads applying it server-side, then the overlay under it (D2).
 - **SCRBRD-084 — Season awards and MVP.** Season roll-up of figures and ratings already computed.
 - **SCRBRD-085 — Phone day-of views for drivers and groundskeepers.**
 
@@ -3285,6 +3296,151 @@ fold's innings being played, and `innings_score_as_folded()` to the fold in ever
 `docs/SCORING_RULES.md`, "The handover check counts this innings". Rehearsed as production: a database built at the
 base commit, then `node tools/migrate.mjs` from this tree — "1 applied, 44 already applied" — and `--verify` green.
 
+### SCRBRD-091 — The opposition window: 5 days or 14
+**Priority:** P2 · **Domain:** Scouting / privacy · **Type:** decision (from SCRBRD-083, 2026-09-25) — **decided and
+built 2026-09-25**
+Kameel's note on the public-data sheet (A7): "Opposing schools will have access to each other's team squads 5 days
+prior to their head-to-head fixtures." The built opposition dossier (signed-in, cross-school: squad and ball-log
+figures) opens `opposition_window_days()` = **14** days before (`db/08`). Choose 5 for everything, or 5 for the squad
+and 14 for the figures; then a migration replaces the function (it is IMMUTABLE and read by `opposition_side()`),
+and `db/99`'s dossier section moves with it.
+**Decided 2026-09-25 (Kameel):** "14 days seems excessive; 5-7 days would be more than appropriate for an opposition
+to do their due diligence and homework." Set to **5 days**, one window for squad and figures: the shortest in the
+range, per POPIA's minimisation principle; 7 is a one-number change if coaches want a full week.
+**Built 2026-09-25:** `db/46_opposition_window.sql` replaces `opposition_window_days()` to answer 5 — same signature,
+LANGUAGE sql, IMMUTABLE, oid, owner and grants (a snapshot check at the end of the file refuses anything else
+moving). **Dependents:** `opposition_side()` (db/08, plpgsql, definer) is the only caller and computes `opens_at` from
+it on every call; `opposition_context()` and `opposition_squad()` reach it only through that plpgsql definer, which is
+never inlined; no view, index, constraint, default, generated column, policy, trigger condition, statistics object or
+BEGIN ATOMIC body calls it (pg_depend and the text of every stored expression and function body searched); nothing
+stores a value derived from it, so there is no data to move. A plan cached in an open session is invalidated when the
+function is replaced (walked with two sessions on Postgres 16), so the API needs no restart. The dossier's shut-window
+text (`apps/web/src/views/dossier.jsx`) said "fourteen days" of its own; it now states the days between the
+`opens_at` and `closes_at` the server sends. **Proof:** the file's own check builds two schools, a coach and fixtures
+four and six days out inside a block it rolls back, reads `opposition_side()` as the coach (open / `not_yet_open`),
+and refuses to commit if anything was left behind — applied to an empty database and to a seeded one; falsified with
+the body at 14 (the value, and with that check skipped, "six days out answered open") and at 3 ("four days out
+answered not_yet_open"). `db/99` §24, as the Westville 1XI coach: four days out open with the squad read; six days out
+`not_yet_open`, opening later, no squad and no counts; the value 5, last — red with the function at 14 (six days),
+3 (four days) and 4 (the value: the edges cannot tell 4 from 5, the constant does). §21's fixture moved from a week
+out to a day inside the window, read from the function. **Walks moved** (7 days out was inside the old window, outside
+the new): `smoke-opposition` (`soon`, `solo` 7 → window − 1 = 4; a new fixture at window + 1 = 6 is not yet open,
+opens the window's length before the first ball, and reads no squad and no count; the window asserted to be 5 once),
+`smoke-browser-dossier` (`soon`, `solo`, `wrongSide` 7 → 4; the shut dossier moved from 40 days out to 6 and asserts
+the screen states the server's number, not "fourteen"), `smoke-free-hit` and `smoke-fold-figures` (their
+`opposition_squad()` fixture, 7 days → window − 1). Docs: `docs/policy/PUBLIC_DATA.md` §5 resolved, the screen map,
+the roadmap card. Rehearsed as production: a database built at the base commit (db/00–45), then `node
+tools/migrate.mjs` from this tree — "1 applied, 45 already applied" — and `--verify` green. **To ship:** paste
+`apply-46` and `verify` (DEPLOYING.md, "The procedure"), then record db/46 in `db/SHIPPED.sha256`.
+
+### SCRBRD-092 — Photo and video sharing for registered users
+**Priority:** P3 · **Domain:** Community · **Type:** feature (from SCRBRD-083, 2026-09-25)
+Kameel's note (A8): photos and videos shared socially, registered users only. Never on public pages (the rule's A8).
+Needs its own consent (a child's face is not covered by consent to be named), storage, and moderation; design with
+the policy package before any screen.
+
+### SCRBRD-093 — The toss, decided: offline allowed, the server's toss wins
+**Priority:** P2 · **Domain:** Scoring / sync · **Type:** decision (Kameel, 2026-09-26)
+"A toss will always be live and will be recorded on the app." Asked what the pad does with no signal at the toss:
+**offline allowed, the server's toss wins** — which is how SCRBRD-075 already built it (`tossDecision()` in
+`packages/sync/src/attach.mjs`): the pad records the toss offline and settles it before any event; if the server
+has a different toss and nothing depends on it, the pad follows the server's; if play is already recorded under the
+pad's own toss, the pad stops sending and says so, and a person settles it through a scoring amendment. No code
+change. **"Live" means a real coin** (Kameel): the captains toss a physical coin at the ground; the scorer records
+who won and what they chose. **Follow-up (UX):** an animation accompanies that recording on the pad — it plays the
+result the scorer entered and never decides it (no random or virtual coin anywhere in the app). Build with the pad's
+toss sheet (`scorer/toss.jsx`), reduced motion honoured, after step 2 of the redesign lands.
+
+### SCRBRD-094 — Awaiting Kameel's research: penalty runs to the fielding side, and a bowler suspended mid-over
+**Priority:** P2 · **Domain:** Scoring · **Type:** decision needed (2026-09-26)
+Two Law 41 questions Kameel is researching before deciding; nothing is built until he does:
+1. Penalty runs awarded to the fielding side (SCRBRD-090's second point): the fold leaves them out of every innings,
+   where Law 41 adds them to that side's own innings.
+   **Decided 2026-09-26 (Kameel's research, MCC Law 41):** five penalty runs to the fielding side are added to the
+   fielding side's total: to its most recently completed innings, or, if it has not batted yet, to its next innings
+   (so batting second, they start their chase on 5; batting first and complete, their total and the target rise).
+   The infractions, as the closed list of reasons the pad offers: deliberate short running (41.5: dead ball, every
+   completed run disallowed, batters back to their original ends, and the delivery counts); distracting, deceiving or
+   obstructing the fielders (41.4/41.5); intentional damage to the pitch (41.12); running on the protected area after
+   a first and final warning (41.14); striking the pitch unfairly (41.15); time wasting after a first and final
+   warning (41.17). The ball is dead when the offence is called; the umpires report the incident to the batting
+   side's executive authority (the pad offers to start that report; `db/25` disciplinary record). Building: the fold
+   and the SQL now (with SCRBRD-090, penalties missing from the live score), the pad's penalty sheet after the
+   redesign's step 2 lands.
+   **Built 2026-09-26 (the fold and the SQL; the pad's sheet waits for the redesign):** the event is unchanged — a
+   `penalty` with `toBattingTeam: false`, recorded in the innings it was awarded in. `deriveInnings()` counts it in
+   `penaltyToFielding`; the match folds (`deriveMatch`, the new `deriveInningsList` for the pad's per-innings shape,
+   `MatchFold`) credit it through one function, `penaltyCredits()`: to the highest innings before it that the
+   fielding side batted (**added at the end** — fall of wickets and seal as recorded; total and target rise
+   mid-chase), else to the lowest after it that they bat (**opened on** — in the total from before the first ball, so
+   a chase completes and a seal confirms with it), else pending until that innings' `innings_start`. A chase's
+   `inn.target` rises with an award made after it was set, unless the umpires typed it (a revision). Short running is
+   two events, `shortRunning()`: the delivery with `value: 0` and an award, reason `short_running` — no new ball shape
+   anywhere. `PENALTY_REASON` closes the reasons (Kameel's six fielding-side offences; the pad's existing batting-side
+   reasons as `helmet_struck`, `illegal_fielding`, `ball_tampering`, `fielding_time_wasting`, `unfair_play`,
+   `fielding_restrictions`; `other`), with words and sides; the pad's old free text is read as its reason.
+   `lawsRefusal` refuses non-whole runs, an unknown reason, a reason on the wrong side, a short-run award not straight
+   after its dot delivery, and any other award to the fielding side once the match is decided. Logs with no award to
+   a fielding side replay identically (proved against the previous fold over generated logs). SQL:
+   `db/48_penalty_runs.sql` (see SCRBRD-090). `docs/SCORING_RULES.md`, "Penalty runs to the fielding side cross
+   innings". **For the pad (after step 2):** fold with `deriveInningsList(events)` instead of `deriveInnings` per
+   innings (else a seal in an innings that opened on an award is refused as `figures_moved`, and the second innings'
+   target at the break must be stamped from the credited first-innings total); emit `penalty({ runs: 5,
+   toBattingTeam, reason })` with a `PENALTY_REASON` code, and short running as the two events of
+   `shortRunning(ball)`; ask `lawsRefusal` before offering a reason; show `penaltyCredits().pending` ("Westville start
+   on 5").
+2. A bowler suspended mid-over (SCRBRD-080's unbuilt half): Law 41 says he may not bowl again in the innings.
+
+### SCRBRD-097 — The rest of the players × balls readers
+**Priority:** P2 · **Domain:** Scoring / performance · **Found 2026-09-26** building db/49
+db/49 made the lifetime career views one pass over the log: the career read at a school's volume (70 players,
+about 5,000 deliveries) went from 83 s to 2.2 s. Two readers keep the old shape, and the RLS check on `ball_event`
+runs players × balls times in each:
+1. **The assessment read** (`services/api/read/read-api.mjs`, around line 2290) calls `player_*_since()` per player
+   as a LATERAL with a window. Fix it the same way db/49 did: one pass grouped by player, with the window as a
+   predicate, proved equal to the functions.
+2. **`milestone_watch()`** reads `player_innings` for the striker on every inserted ball. Loading 5,000 balls took
+   about 48 s, mostly in this per-row trigger. A live match inserts one ball at a time, so it is fine today; a bulk
+   import or replay is not. Consider a statement-level trigger, or a check bounded to the ball's own match.
+
+Also: the comment on `career_by_season` (db/44) cites "db/99 §21" for the Σ-seasons check, which is §22.
+`tools/bench-career.mjs` measures the career read at volume; use it before and after either fix.
+
+### SCRBRD-096 — Colour vision: a palette setting beside the theme
+**Priority:** P2 · **Domain:** Design system / accessibility · **Decided 2026-09-26** (Kameel)
+Kameel asked for the prototype's colour-coded ball chips back, and for theme options for colour-blind users
+(DESIGN_DIRECTION §3.9, §10).
+1. **A Colours setting** in Settings and the pad menu: Standard, Red-green safe, Blue-yellow safe. It is stored per
+   device and combines with any theme. It is a third input to `applyTheme()`.
+2. **It swaps only the hue-carried tokens:**
+   - the ball chips;
+   - the semantic trio;
+   - the sport and chart colours.
+
+   The board's black, white and lime stay.
+3. **Measured problems it fixes:**
+   - the prototype chips 2 and 3 are ΔE 6–8 apart under protan and deutan, and 1 and 6 are ΔE 11 apart under tritan;
+   - the Daylight semantic tokens: positive and critical are ΔE 15 apart under protan, and critical and warning 12 under deutan.
+4. **Guard:** `design.test.mjs` simulates the deficiencies (Machado 2009). In each palette, every chip pair and every
+   semantic pair keeps ΔE ≥ 20 under the deficiencies that palette serves, and ≥ 25 in ordinary vision. Chips keep a
+   4.5:1 figure and 3:1 against the board.
+5. **Standard chip fixes:**
+   - black figures on 1, 4 and 6 (white fails AA);
+   - the wide chip lightened or ringed (`#5200bc` is 1.9:1 on the board).
+
+Built in redesign step 3b, with `Board`'s chip row. Opus (cross-cutting theme engine).
+
+### SCRBRD-095 — Loose ends from the pad redesign (step 2)
+**Priority:** P2/P3 · **Domain:** Scorer UI · **Found 2026-09-26** redrawing the pad.
+1. **Declared profile vs what is captured (P2).** The three-phase pad records a sector (stamped `standard` on each
+   ball) while setup declares `full` by default, so a default innings reads "declared full" while holding only sector
+   placements. Older than the redesign. Either default the declaration to `standard` or make Area capture a point;
+   the second changes events, so decide first.
+2. **Pro mode** keeps its old hub and cards styling with sub-12px text; smoke-a11y does not measure it.
+3. **The other sheets** (toss, openers, new over, innings end, handover) are not yet at the type and touch floors;
+   only the wicket sheet and the shared close button are.
+4. After choosing from the pad menu, the menu button keeps its focus ring.
+
 ### SCRBRD-090 — The live score and the target leave out penalty runs
 **Priority:** P2 · **Domain:** Scoring / broadcast · **Type:** bug (found fixing SCRBRD-088, 2026-09-25)
 `match_live_score` sums `value`, which a `penalty` row does not carry, so the public board (`broadcast_state()`),
@@ -3294,6 +3450,17 @@ each should be checked before the view's meaning moves (a new db/NN, like db/42/
 for a decision rather than a fix: the fold drops a penalty awarded to the fielding side (`toBattingTeam: false`)
 from every innings, where Law 41 adds it to that side's innings; and nothing at the door checks a penalty's `runs`
 (a string or a fraction is stored, and the fold's total becomes unreadable — the handover then cannot verify).
+**Fixed 2026-09-26** with SCRBRD-094's decision: `db/48_penalty_runs.sql` replaces `match_live_score` (runs: + the
+batting side's awards, `penalty_runs_as_folded()`, + awards to fielding sides credited to this innings,
+`penalty_credit_as_folded()` — the fold's `penaltyCredits()`), `innings_score_as_folded()` (+ the credit, so the
+handover check expects it) and `broadcast_state()` (target: `innings_target_as_folded()`, the fold's `inn.target`,
+else the previous innings' credited total + 1) — same names, signatures, security, search paths, grants and view
+options, checked against a snapshot; the file's own block proves the totals on two matches it builds and rolls
+back. The live_score and derby_record reads follow the view; the summary read has no score. Every reader was
+checked: none wanted anything but the fold's total. The door: `lawsRefusal` refuses `runs` that are not a whole number
+above nought (`penalty_runs_invalid`). Proof: `tools/smoke-fold-figures.mjs` (awards to both sides over generated
+two-sided innings: credit, target, live score and handover count agree with the fold in every innings),
+`tools/smoke-handover-innings.mjs`, db/99 §26 (8 assertions, each falsified once), replay and laws suites.
 
 ### SCRBRD-087 — The lease check trusts the device the batch names
 **Priority:** P3 · **Domain:** Scoring / sync · **Type:** hardening

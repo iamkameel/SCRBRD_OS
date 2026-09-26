@@ -1,10 +1,11 @@
 
 import { useEffect, useState } from "react";
 import { holdsCapability } from "../rbac/index.js";
-import { D } from "../design/tokens.js";
+import { D, T, textOn } from "../design/tokens.js";
 import { Avatar, Badge, Btn, Card, EmptyState, Modal, Select, SectionHeader } from "../ui/primitives.jsx";
 import { useLive, useRows } from "../lib/live.js";
 import { api } from "../lib/api.js";
+import { Icon } from "../ui/icons.jsx";
 
 // ══════════════════════════════════════════════════════
 //  FIELDS VIEW — rich ground & pitch profiles
@@ -53,29 +54,29 @@ function FieldsView({ role }) {
         <div style={{display:"flex",justifyContent:"center",marginBottom:"14px"}}>
           <svg viewBox="0 0 80 220" style={{width:"60px",height:"165px"}}>
             {/* Pitch rectangle */}
-            <rect x={5} y={5} width={70} height={210} rx={2} fill="#c8a96a" stroke="#8a7040" strokeWidth={1}/>
+            <rect x={5} y={5} width={70} height={210} rx={2} fill={T.strip.clay} stroke={T.strip.edge} strokeWidth={1}/>
             {/* Crease lines */}
-            <line x1={5} y1={35}  x2={75} y2={35}  stroke="white" strokeWidth={1.5} opacity={0.8}/>
-            <line x1={5} y1={185} x2={75} y2={185} stroke="white" strokeWidth={1.5} opacity={0.8}/>
-            <line x1={5} y1={45}  x2={75} y2={45}  stroke="white" strokeWidth={1} opacity={0.5}/>
-            <line x1={5} y1={175} x2={75} y2={175} stroke="white" strokeWidth={1} opacity={0.5}/>
+            <line x1={5} y1={35}  x2={75} y2={35}  stroke={T.strip.paint} strokeWidth={1.5} opacity={0.8}/>
+            <line x1={5} y1={185} x2={75} y2={185} stroke={T.strip.paint} strokeWidth={1.5} opacity={0.8}/>
+            <line x1={5} y1={45}  x2={75} y2={45}  stroke={T.strip.paint} strokeWidth={1} opacity={0.5}/>
+            <line x1={5} y1={175} x2={75} y2={175} stroke={T.strip.paint} strokeWidth={1} opacity={0.5}/>
             {/* Stumps */}
             {[-8,0,8].map(x=>(
               <g key={x}>
-                <rect x={35+x-1} y={20}  width={2} height={14} rx={0.5} fill="white"/>
-                <rect x={35+x-1} y={186} width={2} height={14} rx={0.5} fill="white"/>
+                <rect x={35+x-1} y={20}  width={2} height={14} rx={0.5} fill={T.strip.paint}/>
+                <rect x={35+x-1} y={186} width={2} height={14} rx={0.5} fill={T.strip.paint}/>
               </g>
             ))}
             {/* Cracks simulation */}
             {cracksLevel>=1&&[30,70,110,150].map(y=>(
-              <line key={y} x1={10+Math.random()*10} y1={y} x2={30+Math.random()*20} y2={y+8} stroke="#6b4f20" strokeWidth={0.8} opacity={0.6}/>
+              <line key={y} x1={10+Math.random()*10} y1={y} x2={30+Math.random()*20} y2={y+8} stroke={T.strip.crack} strokeWidth={0.8} opacity={0.6}/>
             ))}
             {cracksLevel>=2&&[50,90,130,160].map(y=>(
-              <line key={y} x1={40+Math.random()*10} y1={y} x2={60+Math.random()*10} y2={y+10} stroke="#5a3e1a" strokeWidth={1.2} opacity={0.7}/>
+              <line key={y} x1={40+Math.random()*10} y1={y} x2={60+Math.random()*10} y2={y+10} stroke={T.strip.crackDeep} strokeWidth={1.2} opacity={0.7}/>
             ))}
             {/* Grass coverage */}
             {p.grass&&!p.grass.includes("N/A")&&(
-              <rect x={5} y={5} width={70} height={210} rx={2} fill="#4a8c30" opacity={p.grass?.includes("short")?0.12:0.22}/>
+              <rect x={5} y={5} width={70} height={210} rx={2} fill={T.strip.grass} opacity={p.grass?.includes("short")?0.12:0.22}/>
             )}
           </svg>
         </div>
@@ -93,11 +94,11 @@ function FieldsView({ role }) {
           ].map(([l,v,c])=>(
             <div key={l} style={{padding:"7px 10px",background:D.surf3,borderRadius:D.sm}}>
               <div style={{fontFamily:D.body,fontSize:"9px",color:D.textMuted,marginBottom:"3px"}}>{l}</div>
-              <div style={{fontFamily:D.mono,fontSize:"11px",fontWeight:600,color:c}}>{v}</div>
+              <div style={{fontFamily:D.mono,fontSize:"11px",fontWeight:600,color:textOn(c)}}>{v}</div>
             </div>
           ))}
         </div>
-        {p.history&&<div style={{marginTop:"10px",fontFamily:D.body,fontSize:"10px",color:D.textMuted,background:D.surf3,padding:"7px 10px",borderRadius:D.sm}}>📊 {p.history}</div>}
+        {p.history&&<div style={{marginTop:"10px",fontFamily:D.body,fontSize:"10px",color:D.textMuted,background:D.surf3,padding:"7px 10px",borderRadius:D.sm}}><Icon name="chart-column"/> {p.history}</div>}
         {p.lastRolled&&<div style={{marginTop:"6px",fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>Last rolled: {p.lastRolled}</div>}
       </div>
     );
@@ -109,7 +110,7 @@ function FieldsView({ role }) {
   if (!selGround) return (
     <div className="os-page">
       <SectionHeader title="Fields & Pitch Profiles" sub="Ground management, pitch preparation and surface data" color={D.teal}/>
-      <EmptyState loading={loading} error={error} icon="⬡" message="No grounds are in scope for you." />
+      <EmptyState loading={loading} error={error} icon="ground" message="No grounds are in scope for you." />
     </div>
   );
 
@@ -151,11 +152,11 @@ function FieldsView({ role }) {
                 <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginBottom:"8px"}}>
                   <Badge color={D.teal}>{selGround.type}</Badge>
                   <Badge color={selGround.available?D.emerald:D.rose}>{selGround.available?"Available":"Unavailable"}</Badge>
-                  {selGround.lights&&<Badge color={D.amber}>💡 Lights</Badge>}
+                  {selGround.lights&&<Badge color={D.amber}><Icon name="lightbulb"/> Lights</Badge>}
                   {selGround.homeTo?.map(t=><Badge key={t} color={D.sky}>{t}</Badge>)}
                 </div>
-                {selGround.orientation&&<div style={{fontFamily:D.mono,fontSize:"11px",color:D.textMuted}}>⬡ Orientation: {selGround.orientation}</div>}
-                {selGround.dimensions&&<div style={{fontFamily:D.mono,fontSize:"11px",color:D.textMuted}}>📐 {selGround.dimensions.straight}m straight · {selGround.dimensions.squareLeg}m sq-leg · {selGround.dimensions.squareOff}m sq-off</div>}
+                {selGround.orientation&&<div style={{fontFamily:D.mono,fontSize:"11px",color:D.textMuted}}><Icon name="compass"/> Orientation: {selGround.orientation}</div>}
+                {selGround.dimensions&&<div style={{fontFamily:D.mono,fontSize:"11px",color:D.textMuted}}><Icon name="ruler"/> {selGround.dimensions.straight}m straight · {selGround.dimensions.squareLeg}m sq-leg · {selGround.dimensions.squareOff}m sq-off</div>}
               </div>
               {gk&&(
                 <div style={{padding:"10px 12px",background:D.surf2,borderRadius:D.md,border:`1px solid ${D.border}`,minWidth:"150px"}}>

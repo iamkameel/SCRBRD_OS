@@ -39,12 +39,13 @@
  *   - how many innings a format has, and whether a player is in the squad
  *     (opposition players are typed names SCRBRD holds no row for).
  */
-import { KIND, BALL_TYPE, DISMISSAL, BOWLER_CHANGE_REASONS, NB_RUNS_VALUES, RUN_OUT_ENDS } from "./events.mjs";
+import { KIND, BALL_TYPE, DISMISSAL, BOWLER_CHANGE_REASONS, NB_RUNS_VALUES, RUN_OUT_ENDS,
+  PENALTY_REASON, PENALTY_REASON_SIDE, normalisePenaltyReason } from "./events.mjs";
 import { retirementDismissal, isMidOver } from "./replay.mjs";
 import { scoringReadiness } from "./readiness.mjs";
 import { voidedIds, lastUndoableIndex } from "./undo.mjs";
 
-/** @import { LogEvent, Loose, BallEvent, BattersEvent, RetireEvent, VoidEvent } from "./events.mjs" */
+/** @import { LogEvent, Loose, BallEvent, BattersEvent, RetireEvent, VoidEvent, PenaltyEvent } from "./events.mjs" */
 /** @import { Innings } from "./replay.mjs" */
 
 /** Every reason an event can be refused. The readiness codes are reused as-is. */
@@ -75,6 +76,11 @@ export const REFUSAL = Object.freeze({
   NB_RUNS_UNKNOWN:        "nb_runs_unknown",        // not off the bat, byes or leg byes, or not on a no-ball
   // Where a batter was out (SCRBRD-069).
   OUT_AT_UNKNOWN:         "out_at_unknown",         // not the striker's or the bowler's end, or not on a wicket
+  // Penalty runs (Law 41, SCRBRD-090/094).
+  PENALTY_RUNS_INVALID:   "penalty_runs_invalid",   // runs that are not a whole number above nought
+  PENALTY_REASON_UNKNOWN: "penalty_reason_unknown", // not one of PENALTY_REASON
+  PENALTY_REASON_SIDE:    "penalty_reason_side",    // the reason is the offence of the side awarded the runs
+  SHORT_RUN_UNMATCHED:    "short_run_unmatched",    // short running's award follows its delivery, recorded with no run
   // Undo.
   VOID_NO_TARGET:         "void_no_target",
   VOID_UNKNOWN_TARGET:    "void_unknown_target",    // names nothing in this innings of this match
@@ -108,6 +114,10 @@ export const REFUSAL_TEXT = Object.freeze({
   not_next_in: "a batter can be timed out only while an end is empty and he is the one due in",
   nb_runs_unknown: "runs off a no-ball were said to be something other than off the bat, byes or leg byes",
   out_at_unknown: "the end the batter was out at was not the striker's or the bowler's",
+  penalty_runs_invalid: "penalty runs were not a whole number of runs",
+  penalty_reason_unknown: "the reason for the penalty runs was not one the scorebook knows",
+  penalty_reason_side: "the penalty runs were awarded to the side that committed the offence",
+  short_run_unmatched: "the award for deliberate short running must come straight after its delivery, recorded with no runs",
   void_no_target: "the undo named no event",
   void_unknown_target: "the undo named an event this innings does not have",
   void_wrong_innings: "the undo named an event in a different innings",
@@ -192,12 +202,56 @@ export function lawsRefusal(match, ev) {
     // limits; with no innings_start there is no innings for them to belong to,
     // and a later innings_start would overwrite the revised overs anyway.
     case KIND.PENALTY:
+      return inn?.battingTeam == null ? REFUSAL.NO_INNINGS : penaltyRefusal(innings, match?.events?.[i], ev);
     case KIND.REVISION:
     case KIND.INNINGS_END:
       return inn?.battingTeam == null ? REFUSAL.NO_INNINGS : null;
     default:
       return null;
   }
+}
+
+/**
+ * Penalty runs (Law 41; SCRBRD-090, SCRBRD-094).
+ *
+ *   - The runs are a whole number above nought, or absent (five). The fold
+ *     adds them (`ev.runs ?? 5`): a string or a fraction made a total nothing
+ *     could read, and a handover that could never verify (SCRBRD-090).
+ *   - The reason is one of PENALTY_REASON, or one of the pad's free-text
+ *     reasons from before the list closed (normalisePenaltyReason), or none
+ *     (a log from elsewhere; the pad always sent one).
+ *   - The runs go to the side that did NOT commit the offence the reason
+ *     names: the fielding side for the batting side's (short running,
+ *     damaging the pitch …), the batting side for the fielding side's.
+ *   - Deliberate short running (Law 18.5.2) is two events, the delivery with
+ *     every run disallowed and then this award (shortRunning() in
+ *     events.mjs): the award must come straight after a delivery of this
+ *     innings that scored no run completed. It is part of that delivery, so
+ *     it is taken even when that delivery ended the match.
+ *   - Any other award to the fielding side once the match is decided is
+ *     refused: it would move the target of a chase that is over — the result
+ *     stands, as it does for a ball. An award to the batting side is judged
+ *     as it always was.
+ *
+ * @param {(Innings | null | undefined)[]} innings
+ * @param {LogEvent[] | undefined} log  this innings' own log, when the caller has it
+ * @param {Loose<PenaltyEvent>} ev
+ * @returns {Refusal | null}
+ */
+function penaltyRefusal(innings, log, ev) {
+  if (ev.runs != null && !(Number.isInteger(ev.runs) && ev.runs > 0)) return REFUSAL.PENALTY_RUNS_INVALID;
+  const toFielding = ev.toBattingTeam === false;
+  const reason = ev.reason == null ? null : normalisePenaltyReason(ev.reason, ev.toBattingTeam);
+  if (ev.reason != null && reason == null) return REFUSAL.PENALTY_REASON_UNKNOWN;
+  const side = reason == null ? null : PENALTY_REASON_SIDE[reason];
+  if (side != null && side === toFielding) return REFUSAL.PENALTY_REASON_SIDE;
+  if (reason === PENALTY_REASON.SHORT_RUNNING) {
+    const events = log ?? [];
+    const prev = events[lastUndoableIndex(events)];
+    return prev?.kind === KIND.BALL && (prev.value ?? 0) === 0 ? null : REFUSAL.SHORT_RUN_UNMATCHED;
+  }
+  if (toFielding && innings[1]?.complete) return REFUSAL.MATCH_DECIDED;
+  return null;
 }
 
 /**

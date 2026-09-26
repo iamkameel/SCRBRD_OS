@@ -1,5 +1,5 @@
 import { useId } from "react";
-import { T, textOn } from "../design/tokens.js";
+import { T, textOn, themed } from "../design/tokens.js";
 
 // ══════════════════════════════════════════════════════════════════
 //  DATA DISPLAY — Design System 2.0
@@ -171,13 +171,13 @@ const StatRow = ({ label, value, tone, mono = true }) => (
  * The dot matters: colour alone fails for a red-green colour-blind reader, and
  * "live" versus "complete" is exactly the distinction they would lose.
  */
-const STATUS = {
+const STATUS = themed(() => ({
   live:     { tone: T.brand.green,        label: "Live",      dot: true  },
   upcoming: { tone: T.semantic.info,      label: "Upcoming",  dot: false },
   complete: { tone: T.content.tertiary,   label: "Complete",  dot: false },
   warning:  { tone: T.semantic.warning,   label: "Attention", dot: false },
   critical: { tone: T.semantic.critical,  label: "Urgent",    dot: false },
-};
+}));
 
 const StatusPill = ({ status = "upcoming", children }) => {
   const s = STATUS[status] ?? STATUS.upcoming;

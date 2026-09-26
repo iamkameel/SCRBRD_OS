@@ -1,8 +1,9 @@
 
 import { useState } from "react";
-import { D } from "../design/tokens.js";
+import { D, textOn } from "../design/tokens.js";
 import { Badge, Btn, Card, SectionHeader } from "../ui/primitives.jsx";
 import { useRows } from "../lib/live.js";
+import { Icon } from "../ui/icons.jsx";
 
 function NotificationsView({ role }) {
   // Read through the choke point: row-scoped and column-masked for this
@@ -21,7 +22,7 @@ function NotificationsView({ role }) {
   const notifs = NOTIFICATIONS.map(n => (readIds.has(n.id) ? { ...n, read: true } : n));
   const markAll = () => setReadIds(new Set(NOTIFICATIONS.map(n => n.id)));
   const unread = notifs.filter(n=>!n.read).length;
-  const ic = t => t==="match"?"🏏":t==="injury"?"🏥":t==="training"?"💪":t==="transport"?"🚌":t==="skills"?"🎯":"📢";
+  const ic = t => t==="match"?"stumps":t==="injury"?"bandage":t==="training"?"dumbbell":t==="transport"?"bus":t==="skills"?"target":"megaphone";
   const uc = u => u==="high"?D.rose:u==="medium"?D.amber:D.textMuted;
   return (
     <div className="os-page">
@@ -32,8 +33,8 @@ function NotificationsView({ role }) {
           <Card key={n.id} sx={{padding:"14px 16px",background:n.read?"transparent":D.indigo+"08",border:`1px solid ${n.read?D.border:D.indigo+"22"}`}}
             onClick={()=>setReadIds(prev=>new Set(prev).add(n.id))}>
             <div style={{display:"flex",gap:"12px",alignItems:"flex-start"}}>
-              <div style={{width:"36px",height:"36px",borderRadius:D.md,background:uc(n.urgency)+"18",border:`1px solid ${uc(n.urgency)}22`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"16px",flexShrink:0}}>
-                {ic(n.type)}
+              <div style={{width:"36px",height:"36px",borderRadius:D.md,background:uc(n.urgency)+"18",border:`1px solid ${uc(n.urgency)}22`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"16px",flexShrink:0,color:textOn(uc(n.urgency))}}>
+                <Icon name={ic(n.type)}/>
               </div>
               <div style={{flex:1}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"3px"}}>

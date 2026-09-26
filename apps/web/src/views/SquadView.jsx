@@ -189,7 +189,7 @@ function SquadView({ role }) {
               <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"8px"}}>RECENT FORM</div>
               <div style={{display:"flex",gap:"4px"}}>
                 {(selected.form ?? []).map((v,i)=>{
-                  const bg = v===0?"rgba(244,63,94,.3)":v>=5?D.amber+"44":v>=3?D.emerald+"33":D.sky+"22";
+                  const bg = v===0?D.rose+"4d":v>=5?D.amber+"44":v>=3?D.emerald+"33":D.sky+"22";
                   const tc = v===0?D.rose:v>=5?D.amber:v>=3?D.emerald:D.sky;
                   return <div key={i} style={{flex:1,textAlign:"center",padding:"5px 2px",borderRadius:D.sm,background:bg}}>
                     <span style={{fontFamily:D.mono,fontSize:"11px",fontWeight:700,color:tc}}>{v===0?"W":v}</span>

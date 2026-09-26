@@ -1,4 +1,4 @@
-import { D } from "../design/tokens.js";
+import { D, themed } from "../design/tokens.js";
 import { useLive } from "../lib/live.js";
 import { Card, EmptyState } from "../ui/primitives.jsx";
 
@@ -44,11 +44,11 @@ const STATE_WORD = {
   handover_pending: "handover offered", verifying: "verifying handover",
   arranged: "arranged", departed: "departed", arrived: "arrived", cancelled: "cancelled",
 };
-const TONE = {
+const TONE = themed(() => ({
   active: D.emerald, arrived: D.emerald, named: D.sky, recorded: D.sky, arranged: D.sky,
   departed: D.amber, handover_pending: D.amber, verifying: D.amber,
   idle: D.textMuted, cancelled: D.rose,
-};
+}));
 
 // An appointment's lifecycle (SCRBRD-034), as the server derived it
 // (duty_status, db/30) — never worked out here. It says where the DUTY
@@ -60,10 +60,10 @@ const STATUS_WORD = {
   pending: "to come", active: "on duty", delegated: "handed over",
   completed: "completed", expired: "fixture abandoned", revoked: "stood down", suspended: "suspended",
 };
-const STATUS_TONE = {
+const STATUS_TONE = themed(() => ({
   pending: D.textMuted, active: D.emerald, delegated: D.amber,
   completed: D.sky, expired: D.textMuted, revoked: D.rose, suspended: D.rose,
-};
+}));
 
 function DutyRoster({ matchId, role }) {
   const { rows, loading, error } = useLive("match_duties", role, 0, { matchId });

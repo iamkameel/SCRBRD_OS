@@ -5,7 +5,8 @@ import { mode } from "../lib/session.js";
 import SCRBRD_LOGO from "../assets/scrbrd-logo.jpg";
 import { SCHOOLS_REGISTRY } from "../data/institution.js";
 import { ROLES } from "../design/roles.js";
-import { D } from "../design/tokens.js";
+import { D, T, inkOn } from "../design/tokens.js";
+import { Icon } from "../ui/icons.jsx";
 
 // ══════════════════════════════════════════════════════
 //  ONBOARDING FLOW  (smart, dynamic, role-aware)
@@ -88,16 +89,16 @@ function OnboardingFlow({ onComplete }) {
   // of the JS — a secret that was never actually checked by anything, and
   // an extra step in front of nothing.
   const PUBLIC_ROLES = [
-    { id:"schooladmin",  icon:"🏫", label:"School Admin",       desc:"Manage your school’s cricket programme" },
-    { id:"directorofsport", icon:"🏅", label:"Director of Sport", desc:"Oversee teams, fixtures & competitions" },
-    { id:"coach",        icon:"🎯", label:"Head Coach",         desc:"Player development, analytics & tactics" },
-    { id:"assistantcoach", icon:"🤝", label:"Coaching Assistant", desc:"Training support & squad management" },
-    { id:"player",       icon:"🏏", label:"Player",             desc:"Track your own stats, form & development" },
-    { id:"guardian",     icon:"👪", label:"Parent / Guardian",  desc:"Follow your child’s matches & logistics" },
-    { id:"scorer",       icon:"📋", label:"Official Scorer",    desc:"Score matches, submit scorecards" },
-    { id:"medical",      icon:"⚕️", label:"Medical Staff",      desc:"Manage injuries and player fitness" },
-    { id:"facilities",   icon:"🌿", label:"Groundskeeper",      desc:"Pitch prep, field management & tasks" },
-    { id:"spectator",    icon:"👁", label:"Spectator / Fan",    desc:"View scores, stats and fixtures" },
+    { id:"schooladmin",  icon:"school", label:"School Admin",       desc:"Manage your school’s cricket programme" },
+    { id:"directorofsport", icon:"medal", label:"Director of Sport", desc:"Oversee teams, fixtures & competitions" },
+    { id:"coach",        icon:"target", label:"Head Coach",         desc:"Player development, analytics & tactics" },
+    { id:"assistantcoach", icon:"handshake", label:"Coaching Assistant", desc:"Training support & squad management" },
+    { id:"player",       icon:"bat", label:"Player",             desc:"Track your own stats, form & development" },
+    { id:"guardian",     icon:"users-round", label:"Parent / Guardian",  desc:"Follow your child’s matches & logistics" },
+    { id:"scorer",       icon:"scorebook", label:"Official Scorer",    desc:"Score matches, submit scorecards" },
+    { id:"medical",      icon:"stethoscope", label:"Medical Staff",      desc:"Manage injuries and player fitness" },
+    { id:"facilities",   icon:"sprout", label:"Groundskeeper",      desc:"Pitch prep, field management & tasks" },
+    { id:"spectator",    icon:"eye", label:"Spectator / Fan",    desc:"View scores, stats and fixtures" },
   ];
 
   const ri = ROLES[data.role] || {};
@@ -166,27 +167,27 @@ function OnboardingFlow({ onComplete }) {
   if (sent === "ok") return (
     <div className="onboard-shell" data-testid="request-sent" style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px",background:D.surf0}}>
       <div style={{maxWidth:"440px",textAlign:"center"}}>
-        <div style={{fontSize:"40px",marginBottom:"12px"}}>📨</div>
-        <div style={{fontFamily:D.head,fontSize:"22px",fontWeight:800,color:"#fff",marginBottom:"8px"}}>Request sent</div>
-        <div style={{fontFamily:D.body,fontSize:"13px",color:"rgba(255,255,255,0.6)",lineHeight:1.6}}>
+        <div style={{fontSize:"40px",marginBottom:"12px",color:D.indigoText}}><Icon name="send"/></div>
+        <div style={{fontFamily:D.head,fontSize:"22px",fontWeight:800,color:T.content.primary,marginBottom:"8px"}}>Request sent</div>
+        <div style={{fontFamily:D.body,fontSize:"13px",color:T.content.secondary,lineHeight:1.6}}>
           {data.schoolCustom} has your request to join as {ri.label||data.role}. Somebody there will answer it. Sign in once they have, with {data.email}.
         </div>
-        <button onClick={()=>onComplete(null, data.name, null, { requested:true })} className="pressBtn" style={{marginTop:"18px",padding:"10px 18px",borderRadius:"999px",border:"none",cursor:"pointer",background:D.indigo,color:"#fff",fontFamily:D.head,fontWeight:700}}>Back to sign in</button>
+        <button onClick={()=>onComplete(null, data.name, null, { requested:true })} className="pressBtn" style={{marginTop:"18px",padding:"10px 18px",borderRadius:"999px",border:"none",cursor:"pointer",background:D.indigo,color:inkOn(D.indigo),fontFamily:D.head,fontWeight:700}}>Back to sign in</button>
       </div>
     </div>
   );
 
   const TOUR_MAP = {
-    player:       [{icon:"📊",t:"Analytics",d:"Your wagon wheel, phase breakdown and shot analysis"},{icon:"💪",t:"Training",d:"Session plans and skill development goals"},{icon:"🏥",t:"Injuries",d:"Your fitness status and return-to-play timeline"}],
-    guardian:     [{icon:"🏏",t:"Match Centre",d:"Live scores and full scorecards"},{icon:"🚌",t:"Logistics",d:"Transport times and venues"},{icon:"🔔",t:"Notifications",d:"Real-time alerts for your child"}],
-    coach:        [{icon:"👥",t:"Squad View",d:"Full team with skills, form and availability"},{icon:"📊",t:"Analytics",d:"Team and player performance breakdowns"},{icon:"💪",t:"Training",d:"Session planner and attendance tracker"}],
-    scorer:       [{icon:"🏏",t:"Match Centre",d:"Open the live scoring interface"},{icon:"📅",t:"Calendar",d:"Your assigned match schedule"}],
-    facilities:   [{icon:"🌿",t:"Fields",d:"Pitch profiles and preparation status"},{icon:"🛠️",t:"Management",d:"Ground task assignments and scheduling"}],
-    default:      [{icon:"⬡",t:"Dashboard",d:"Live scores and team news at a glance"},{icon:"📅",t:"Calendar",d:"All fixtures, training and events"},{icon:"🔔",t:"Notifications",d:"Match alerts and announcements"}],
+    player:       [{icon:"chart-column",t:"Analytics",d:"Your wagon wheel, phase breakdown and shot analysis"},{icon:"dumbbell",t:"Training",d:"Session plans and skill development goals"},{icon:"bandage",t:"Injuries",d:"Your fitness status and return-to-play timeline"}],
+    guardian:     [{icon:"stumps",t:"Match Centre",d:"Live scores and full scorecards"},{icon:"bus",t:"Logistics",d:"Transport times and venues"},{icon:"bell",t:"Notifications",d:"Real-time alerts for your child"}],
+    coach:        [{icon:"users",t:"Squad View",d:"Full team with skills, form and availability"},{icon:"chart-column",t:"Analytics",d:"Team and player performance breakdowns"},{icon:"dumbbell",t:"Training",d:"Session planner and attendance tracker"}],
+    scorer:       [{icon:"stumps",t:"Match Centre",d:"Open the live scoring interface"},{icon:"calendar",t:"Calendar",d:"Your assigned match schedule"}],
+    facilities:   [{icon:"ground",t:"Fields",d:"Pitch profiles and preparation status"},{icon:"user-cog",t:"Management",d:"Ground task assignments and scheduling"}],
+    default:      [{icon:"layout-dashboard",t:"Dashboard",d:"Live scores and team news at a glance"},{icon:"calendar",t:"Calendar",d:"All fixtures, training and events"},{icon:"bell",t:"Notifications",d:"Match alerts and announcements"}],
   };
   const tourItems = TOUR_MAP[data.role] || TOUR_MAP.default;
 
-  const INP = { width:"100%",padding:"11px 14px",borderRadius:"10px",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",fontFamily:D.body,fontSize:"14px",color:"#fff",boxSizing:"border-box" };
+  const INP = { width:"100%",padding:"11px 14px",borderRadius:"10px",background:T.fill.field,border:`1px solid ${T.line.normal}`,fontFamily:D.body,fontSize:"14px",color:T.content.primary,boxSizing:"border-box" };
   const sending = sent === "sending";
   const submitError = sent && sent !== "ok" && sent !== "sending" ? sent : null;
 
@@ -196,11 +197,11 @@ function OnboardingFlow({ onComplete }) {
         {/* Progress */}
         <div style={{display:"flex",gap:"3px",marginBottom:"28px"}}>
           {steps.map((_,i)=>(
-            <div key={i} style={{flex:1,height:"3px",borderRadius:"2px",background:i<=step?`linear-gradient(90deg,${D.indigo},${D.violet})`:"rgba(255,255,255,0.08)",transition:"background .3s"}}/>
+            <div key={i} style={{flex:1,height:"3px",borderRadius:"2px",background:i<=step?`linear-gradient(90deg,${D.indigo},${D.violet})`:T.fill.track,transition:"background .3s"}}/>
           ))}
         </div>
 
-        <div style={{borderRadius:"20px",border:"1px solid rgba(255,255,255,0.08)",background:"rgba(255,255,255,0.02)",padding:"32px",backdropFilter:"blur(20px)"}}>
+        <div style={{borderRadius:"20px",border:`1px solid ${T.line.normal}`,background:T.fill.panel,padding:"32px",backdropFilter:"blur(20px)"}}>
           <div style={{textAlign:"center",marginBottom:"24px"}}>
             <img src={SCRBRD_LOGO} alt="SCRBRD" style={{height:"28px",objectFit:"contain",filter:"brightness(1.15)"}}/>
           </div>
@@ -208,9 +209,9 @@ function OnboardingFlow({ onComplete }) {
           {/* ── WELCOME ── */}
           {stepId==="welcome"&&(
             <div style={{textAlign:"center"}}>
-              <div style={{fontSize:"52px",marginBottom:"16px"}}>🏏</div>
-              <div style={{fontFamily:D.head,fontSize:"24px",fontWeight:800,color:"#fff",marginBottom:"8px"}}>Welcome to SCRBRD</div>
-              <div style={{fontFamily:D.body,fontSize:"14px",color:"rgba(255,255,255,0.5)",lineHeight:1.7,maxWidth:"420px",margin:"0 auto"}}>
+              <div style={{fontSize:"52px",marginBottom:"16px",color:D.indigoText}}><Icon name="bat"/></div>
+              <div style={{fontFamily:D.head,fontSize:"24px",fontWeight:800,color:T.content.primary,marginBottom:"8px"}}>Welcome to SCRBRD</div>
+              <div style={{fontFamily:D.body,fontSize:"14px",color:T.content.secondary,lineHeight:1.7,maxWidth:"420px",margin:"0 auto"}}>
                 Set up your account in under 2 minutes. We’ll tailor the platform to your role{onlySchool?"":" and school"}.
               </div>
             </div>
@@ -219,19 +220,19 @@ function OnboardingFlow({ onComplete }) {
           {/* ── ROLE SELECTION ── */}
           {stepId==="role"&&(
             <div>
-              <div style={{fontFamily:D.head,fontSize:"20px",fontWeight:800,color:"#fff",textAlign:"center",marginBottom:"6px"}}>What’s your role?</div>
-              <div style={{fontFamily:D.body,fontSize:"13px",color:"rgba(255,255,255,0.4)",textAlign:"center",marginBottom:"20px"}}>This shapes your experience. Every role here is a request — someone at your school approves it before it takes effect.</div>
+              <div style={{fontFamily:D.head,fontSize:"20px",fontWeight:800,color:T.content.primary,textAlign:"center",marginBottom:"6px"}}>What’s your role?</div>
+              <div style={{fontFamily:D.body,fontSize:"13px",color:T.content.tertiary,textAlign:"center",marginBottom:"20px"}}>This shapes your experience. Every role here is a request — someone at your school approves it before it takes effect.</div>
               <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"8px",maxHeight:"380px",overflowY:"auto",paddingRight:"4px"}}>
                 {PUBLIC_ROLES.map(r=>(
                   <button key={r.id} onClick={()=>chooseAndAdvance({ role: r.id })} className="pressBtn" style={{
                     display:"flex",alignItems:"flex-start",gap:"10px",padding:"12px 14px",borderRadius:"12px",
-                    cursor:"pointer",border:`1px solid ${data.role===r.id?`${D.indigo}8c`:"rgba(255,255,255,0.07)"}`,
-                    background:data.role===r.id?`${D.indigo}24`:"rgba(255,255,255,0.02)",textAlign:"left",transition:"all .18s",
+                    cursor:"pointer",border:`1px solid ${data.role===r.id?`${D.indigo}8c`:T.line.subtle}`,
+                    background:data.role===r.id?`${D.indigo}24`:T.fill.panel,textAlign:"left",transition:"all .18s",
                   }}>
-                    <span style={{fontSize:"20px",flexShrink:0,marginTop:"1px"}}>{r.icon}</span>
+                    <span style={{fontSize:"20px",flexShrink:0,marginTop:"1px",color:data.role===r.id?D.indigoText:T.content.secondary}}><Icon name={r.icon}/></span>
                     <div>
-                      <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:data.role===r.id?D.indigoText:"rgba(255,255,255,0.85)"}}>{r.label}</div>
-                      <div style={{fontFamily:D.body,fontSize:"10px",color:"rgba(255,255,255,0.35)",marginTop:"2px",lineHeight:1.4}}>{r.desc}</div>
+                      <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:data.role===r.id?D.indigoText:T.content.primary}}>{r.label}</div>
+                      <div style={{fontFamily:D.body,fontSize:"10px",color:T.content.tertiary,marginTop:"2px",lineHeight:1.4}}>{r.desc}</div>
                     </div>
                   </button>
                 ))}
@@ -242,8 +243,8 @@ function OnboardingFlow({ onComplete }) {
           {/* ── SCHOOL SELECTION ── */}
           {stepId==="school"&&(
             <div>
-              <div style={{fontFamily:D.head,fontSize:"20px",fontWeight:800,color:"#fff",textAlign:"center",marginBottom:"6px"}}>Your School</div>
-              <div style={{fontFamily:D.body,fontSize:"13px",color:"rgba(255,255,255,0.4)",textAlign:"center",marginBottom:"16px"}}>Search from {schoolPool.length} school{schoolPool.length===1?"":"s"}{live?"":" across South Africa"}</div>
+              <div style={{fontFamily:D.head,fontSize:"20px",fontWeight:800,color:T.content.primary,textAlign:"center",marginBottom:"6px"}}>Your School</div>
+              <div style={{fontFamily:D.body,fontSize:"13px",color:T.content.tertiary,textAlign:"center",marginBottom:"16px"}}>Search from {schoolPool.length} school{schoolPool.length===1?"":"s"}{live?"":" across South Africa"}</div>
               <input value={schoolSearch} onChange={e=>setSchoolSearch(e.target.value)}
                 placeholder="Search by name, city or province…"
                 style={{...INP,marginBottom:"10px"}}/>
@@ -251,23 +252,23 @@ function OnboardingFlow({ onComplete }) {
                 {filteredSchools.map(s=>(
                   <button key={s.id} onClick={()=>chooseAndAdvance({ schoolId: s.id, schoolCustom: s.name })} className="pressBtn" style={{
                     display:"flex",alignItems:"center",gap:"12px",padding:"10px 14px",borderRadius:"10px",
-                    cursor:"pointer",border:`1px solid ${data.schoolId===s.id?`${D.indigo}80`:"rgba(255,255,255,0.06)"}`,
-                    background:data.schoolId===s.id?`${D.indigo}1e`:"rgba(255,255,255,0.02)",textAlign:"left",transition:"all .15s",
+                    cursor:"pointer",border:`1px solid ${data.schoolId===s.id?`${D.indigo}80`:T.line.subtle}`,
+                    background:data.schoolId===s.id?`${D.indigo}1e`:T.fill.panel,textAlign:"left",transition:"all .15s",
                   }}>
                     <div style={{flex:1}}>
-                      <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:data.schoolId===s.id?D.indigoText:"rgba(255,255,255,0.85)"}}>{s.name}</div>
-                      <div style={{fontFamily:D.mono,fontSize:"10px",color:"rgba(255,255,255,0.3)",marginTop:"2px"}}>{s.city} · {s.province} · {s.type}</div>
+                      <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:data.schoolId===s.id?D.indigoText:T.content.primary}}>{s.name}</div>
+                      <div style={{fontFamily:D.mono,fontSize:"10px",color:T.content.tertiary,marginTop:"2px"}}>{s.city} · {s.province} · {s.type}</div>
                     </div>
                     {data.schoolId===s.id&&<span style={{color:D.indigoText,fontSize:"16px"}}>✓</span>}
                   </button>
                 ))}
                 {filteredSchools.length===0&&!live&&(
-                  <div style={{padding:"16px",textAlign:"center",fontFamily:D.body,fontSize:"13px",color:"rgba(255,255,255,0.3)"}}>
+                  <div style={{padding:"16px",textAlign:"center",fontFamily:D.body,fontSize:"13px",color:T.content.tertiary}}>
                     No schools found. <button onClick={()=>chooseAndAdvance({ schoolId:"OTH", schoolCustom: schoolSearch })} className="pressBtn" style={{background:"none",border:"none",cursor:"pointer",color:D.indigoText,fontFamily:D.body,fontSize:"13px"}}>Add "{schoolSearch}" manually →</button>
                   </div>
                 )}
                 {filteredSchools.length===0&&live&&(
-                  <div style={{padding:"16px",textAlign:"center",fontFamily:D.body,fontSize:"13px",color:"rgba(255,255,255,0.3)"}}>
+                  <div style={{padding:"16px",textAlign:"center",fontFamily:D.body,fontSize:"13px",color:T.content.tertiary}}>
                     No school matches that search.
                   </div>
                 )}
@@ -278,17 +279,17 @@ function OnboardingFlow({ onComplete }) {
           {/* ── PROFILE ── */}
           {stepId==="profile"&&(
             <div>
-              <div style={{fontFamily:D.head,fontSize:"20px",fontWeight:800,color:"#fff",textAlign:"center",marginBottom:"6px"}}>Your Profile</div>
+              <div style={{fontFamily:D.head,fontSize:"20px",fontWeight:800,color:T.content.primary,textAlign:"center",marginBottom:"6px"}}>Your Profile</div>
               {data.role&&<div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:"8px",marginBottom:"18px"}}>
-                <span style={{padding:"4px 12px",borderRadius:D.pill,background:`${ri.color||D.indigo}18`,border:`1px solid ${ri.color||D.indigo}33`,fontFamily:D.head,fontSize:"11px",fontWeight:700,color:ri.color||D.indigoText}}>{ri.icon} {ri.label}</span>
-                {data.schoolCustom&&<span style={{fontFamily:D.mono,fontSize:"10px",color:"rgba(255,255,255,0.35)"}}>{data.schoolCustom}</span>}
+                <span style={{padding:"4px 12px",borderRadius:D.pill,background:`${ri.color||D.indigo}18`,border:`1px solid ${ri.color||D.indigo}33`,fontFamily:D.head,fontSize:"11px",fontWeight:700,color:ri.color||D.indigoText,display:"inline-flex",alignItems:"center",gap:"5px"}}>{ri.icon&&<Icon name={ri.icon}/>} {ri.label}</span>
+                {data.schoolCustom&&<span style={{fontFamily:D.mono,fontSize:"10px",color:T.content.tertiary}}>{data.schoolCustom}</span>}
               </div>}
               {[
                 {label:"Full Name",       key:"name",   type:"text",  placeholder:"e.g. James Whitfield",      required:true},
                 {label:"Email Address",   key:"email",  type:"email", placeholder:"james@school.co.za",         required:live},
               ].map(f=>(
                 <div key={f.key} style={{marginBottom:"14px"}}>
-                  <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",marginBottom:"6px"}}>{f.label}{f.required&&" *"}</div>
+                  <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.content.tertiary,marginBottom:"6px"}}>{f.label}{f.required&&" *"}</div>
                   <input value={data[f.key]} type={f.type} onChange={e=>set(f.key,e.target.value)} placeholder={f.placeholder} style={INP}/>
                 </div>
               ))}
@@ -298,25 +299,25 @@ function OnboardingFlow({ onComplete }) {
           {/* ── PLAYER DETAIL ── */}
           {stepId==="player_detail"&&(
             <div>
-              <div style={{fontFamily:D.head,fontSize:"20px",fontWeight:800,color:"#fff",textAlign:"center",marginBottom:"20px"}}>Player Details</div>
+              <div style={{fontFamily:D.head,fontSize:"20px",fontWeight:800,color:T.content.primary,textAlign:"center",marginBottom:"20px"}}>Player Details</div>
               {[
                 {label:"Team / Age Group",  key:"team",   placeholder:"e.g. 1XI, U15B, 1st XI"},
                 {label:"Jersey Number",     key:"jersey", placeholder:"e.g. 7"},
               ].map(f=>(
                 <div key={f.key} style={{marginBottom:"14px"}}>
-                  <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",marginBottom:"6px"}}>{f.label}</div>
+                  <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.content.tertiary,marginBottom:"6px"}}>{f.label}</div>
                   <input value={data[f.key]} onChange={e=>set(f.key,e.target.value)} placeholder={f.placeholder} style={INP}/>
                 </div>
               ))}
               <div style={{marginBottom:"14px"}}>
-                <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",marginBottom:"8px"}}>Batting / Bowling Role</div>
+                <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.content.tertiary,marginBottom:"8px"}}>Batting / Bowling Role</div>
                 <div style={{display:"grid",gridTemplateColumns:"var(--g-3,repeat(3,1fr))",gap:"6px"}}>
                   {["Batsman","Bowler","All-rounder","Wicketkeeper","Opening Bat","Pace Bowler"].map(r=>(
-                    <button key={r} onClick={()=>set("playerRole",r)} className="pressBtn" style={{padding:"8px 6px",borderRadius:"8px",cursor:"pointer",border:`1px solid ${data.playerRole===r?`${D.indigo}80`:"rgba(255,255,255,0.07)"}`,background:data.playerRole===r?`${D.indigo}24`:"transparent",fontFamily:D.head,fontSize:"10px",fontWeight:600,color:data.playerRole===r?D.indigoText:"rgba(255,255,255,0.5)"}}>{r}</button>
+                    <button key={r} onClick={()=>set("playerRole",r)} className="pressBtn" style={{padding:"8px 6px",borderRadius:"8px",cursor:"pointer",border:`1px solid ${data.playerRole===r?`${D.indigo}80`:T.line.subtle}`,background:data.playerRole===r?`${D.indigo}24`:"transparent",fontFamily:D.head,fontSize:"10px",fontWeight:600,color:data.playerRole===r?D.indigoText:T.content.secondary}}>{r}</button>
                   ))}
                 </div>
               </div>
-              {live&&<div style={{marginTop:"12px",fontFamily:D.body,fontSize:"11px",color:"rgba(255,255,255,0.3)",lineHeight:1.5}}>
+              {live&&<div style={{marginTop:"12px",fontFamily:D.body,fontSize:"11px",color:T.content.tertiary,lineHeight:1.5}}>
                 These travel with your request — whoever approves it sees them, so your team and role are on record from the start.
               </div>}
             </div>
@@ -325,12 +326,12 @@ function OnboardingFlow({ onComplete }) {
           {/* ── PARENT LINK ── */}
           {stepId==="parent_link"&&(
             <div>
-              <div style={{fontFamily:D.head,fontSize:"20px",fontWeight:800,color:"#fff",textAlign:"center",marginBottom:"8px"}}>Link to Player</div>
-              <div style={{fontFamily:D.body,fontSize:"13px",color:"rgba(255,255,255,0.4)",textAlign:"center",marginBottom:"20px"}}>
+              <div style={{fontFamily:D.head,fontSize:"20px",fontWeight:800,color:T.content.primary,textAlign:"center",marginBottom:"8px"}}>Link to Player</div>
+              <div style={{fontFamily:D.body,fontSize:"13px",color:T.content.tertiary,textAlign:"center",marginBottom:"20px"}}>
                 Optionally name your child. Nobody at your school can be searched from here before your account exists — whoever approves your
                 request will match this to the right player.
               </div>
-              <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",marginBottom:"8px"}}>Child’s Name</div>
+              <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.content.tertiary,marginBottom:"8px"}}>Child’s Name</div>
               <input value={data.playerLink} onChange={e=>set("playerLink",e.target.value)} placeholder="e.g. James Whitfield" style={INP}/>
             </div>
           )}
@@ -339,17 +340,17 @@ function OnboardingFlow({ onComplete }) {
           {stepId==="tour"&&(
             <div>
               <div style={{textAlign:"center",marginBottom:"20px"}}>
-                <div style={{fontSize:"36px",marginBottom:"10px"}}>{ri.icon||"🏏"}</div>
-                <div style={{fontFamily:D.head,fontSize:"20px",fontWeight:800,color:"#fff",marginBottom:"6px"}}>You’re all set, {data.name.split(" ")[0]||"there"}!</div>
-                <div style={{fontFamily:D.body,fontSize:"13px",color:"rgba(255,255,255,0.4)"}}>Here’s what’s waiting for you as a <span style={{color:ri.color||D.indigoText,fontWeight:600}}>{ri.label}</span></div>
+                <div style={{fontSize:"36px",marginBottom:"10px",color:ri.color||D.indigoText}}><Icon name={ri.icon||"bat"}/></div>
+                <div style={{fontFamily:D.head,fontSize:"20px",fontWeight:800,color:T.content.primary,marginBottom:"6px"}}>You’re all set, {data.name.split(" ")[0]||"there"}!</div>
+                <div style={{fontFamily:D.body,fontSize:"13px",color:T.content.tertiary}}>Here’s what’s waiting for you as a <span style={{color:ri.color||D.indigoText,fontWeight:600}}>{ri.label}</span></div>
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
                 {tourItems.map((t,i)=>(
-                  <div key={i} style={{display:"flex",alignItems:"center",gap:"14px",padding:"12px 16px",borderRadius:"12px",background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)"}}>
-                    <div style={{fontSize:"22px",width:"34px",textAlign:"center",flexShrink:0}}>{t.icon}</div>
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:"14px",padding:"12px 16px",borderRadius:"12px",background:T.fill.panel,border:`1px solid ${T.line.subtle}`}}>
+                    <div style={{fontSize:"22px",width:"34px",textAlign:"center",flexShrink:0,color:T.content.secondary}}><Icon name={t.icon}/></div>
                     <div>
-                      <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:"rgba(255,255,255,0.85)"}}>{t.t}</div>
-                      <div style={{fontFamily:D.body,fontSize:"11px",color:"rgba(255,255,255,0.38)",marginTop:"2px"}}>{t.d}</div>
+                      <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:T.content.primary}}>{t.t}</div>
+                      <div style={{fontFamily:D.body,fontSize:"11px",color:T.content.tertiary,marginTop:"2px"}}>{t.d}</div>
                     </div>
                   </div>
                 ))}
@@ -373,21 +374,21 @@ function OnboardingFlow({ onComplete }) {
               the "request sent" screen uses to return to sign-in, reused here
               so App.jsx has one path back to the login screen, not two. */}
           {step===0
-            ? <button onClick={()=>onComplete(null, "", null, { requested:true })} className="pressBtn" style={{padding:"11px 22px",borderRadius:"14px",cursor:"pointer",background:"transparent",border:"1px solid rgba(255,255,255,0.1)",fontFamily:D.head,fontSize:"12px",fontWeight:700,color:"rgba(255,255,255,0.45)"}}>← Sign in instead</button>
-            : <button onClick={()=>{setStep(s=>s-1);}} disabled={sending} className="pressBtn" style={{padding:"11px 22px",borderRadius:"14px",cursor:sending?"not-allowed":"pointer",background:"transparent",border:"1px solid rgba(255,255,255,0.1)",fontFamily:D.head,fontSize:"12px",fontWeight:700,color:"rgba(255,255,255,0.45)",opacity:sending?0.5:1}}>← Back</button>}
+            ? <button onClick={()=>onComplete(null, "", null, { requested:true })} className="pressBtn" style={{padding:"11px 22px",borderRadius:"14px",cursor:"pointer",background:"transparent",border:`1px solid ${T.line.normal}`,fontFamily:D.head,fontSize:"12px",fontWeight:700,color:T.content.tertiary}}>← Sign in instead</button>
+            : <button onClick={()=>{setStep(s=>s-1);}} disabled={sending} className="pressBtn" style={{padding:"11px 22px",borderRadius:"14px",cursor:sending?"not-allowed":"pointer",background:"transparent",border:`1px solid ${T.line.normal}`,fontFamily:D.head,fontSize:"12px",fontWeight:700,color:T.content.tertiary,opacity:sending?0.5:1}}>← Back</button>}
           <div style={{flex:1}}/>
-          <div style={{fontFamily:D.mono,fontSize:"10px",color:"rgba(255,255,255,0.25)"}}>{step+1} / {steps.length}</div>
+          <div style={{fontFamily:D.mono,fontSize:"10px",color:T.content.tertiary}}>{step+1} / {steps.length}</div>
           <button onClick={handleNext} disabled={(!canAdvance()&&stepId!=="tour")||sending} className="pressBtn" style={{
             padding:"11px 26px",borderRadius:"14px",cursor:(canAdvance()||stepId==="tour")&&!sending?"pointer":"not-allowed",
-            background:(canAdvance()||stepId==="tour")&&!sending?`linear-gradient(135deg,${D.indigo},${D.violet})`:"rgba(255,255,255,0.08)",
+            background:(canAdvance()||stepId==="tour")&&!sending?T.light.action:T.fill.track,
             border:"none",fontFamily:D.head,fontSize:"12px",fontWeight:700,
-            color:(canAdvance()||stepId==="tour")&&!sending?"#fff":"rgba(255,255,255,0.3)",
+            color:(canAdvance()||stepId==="tour")&&!sending?T.light.ink:T.content.tertiary,
             boxShadow:(canAdvance()||stepId==="tour")&&!sending?`0 4px 20px ${D.indigo}59`:"none",
             letterSpacing:"0.04em",transition:"all .2s",display:"inline-flex",alignItems:"center",gap:"8px",
           }}>
             {sending
               ? <><span className="live-dot" aria-hidden="true"/> Sending…</>
-              : stepId==="tour" ? "🏏 Enter SCRBRD →"
+              : stepId==="tour" ? "Enter SCRBRD →"
               : !canAdvance()&&stepId==="role" ? "Select a role →"
               : "Continue →"}
           </button>

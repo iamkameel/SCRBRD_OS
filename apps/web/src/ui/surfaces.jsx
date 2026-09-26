@@ -73,7 +73,10 @@ const BentoCard = ({ level = "c", accent, title, action, children, sx, className
       }}>
         <h2 style={{
           fontFamily: T.type.head, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase",
-          fontSize: level === "a" ? "12px" : "10px",
+          // §3.2's floor — nothing read below 12px — reaches this eyebrow too:
+          // a hero's title and a utility tile's were 12/10, and 10 is a failure
+          // wherever it is drawn. Level still differs by weight and colour.
+          fontSize: T.role.label.fontSize,
           color: level === "a" ? T.content.secondary : T.content.tertiary,
         }}>{title}</h2>
         {action}

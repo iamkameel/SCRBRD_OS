@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { D, textOn } from "../design/tokens.js";
+import { D, textOn, themed } from "../design/tokens.js";
 import { api, signedIn } from "../lib/api.js";
 import { useLive } from "../lib/live.js";
 import { filesConduct } from "../rbac/conduct.js";
@@ -48,15 +48,15 @@ const refusal = (e) =>
     : e?.status ? `Not recorded — the server said ${e.code || `HTTP ${e.status}`}.`
     : "Could not reach the server. Nothing was recorded.");
 
-const STATE_TONE = { open: D.amber, concluded: D.emerald, withdrawn: D.textMuted };
+const STATE_TONE = themed(() => ({ open: D.amber, concluded: D.emerald, withdrawn: D.textMuted }));
 
-const field = {
+const field = () => ({
   width: "100%", padding: "9px 10px", borderRadius: D.md, background: D.surf2,
   border: `1px solid ${D.border}`, color: D.textPrimary, fontFamily: D.body, fontSize: "12px",
   boxSizing: "border-box",
-};
-const label = { fontFamily: D.head, fontSize: "10px", fontWeight: 700, color: D.textMuted,
-                letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "6px" };
+});
+const label = () => ({ fontFamily: D.head, fontSize: "10px", fontWeight: 700, color: D.textMuted,
+                letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "6px" });
 
 function Refused({ said, testid }) {
   if (!said) return null;
@@ -114,7 +114,7 @@ function Matter({ m, fixture, canProgress, onChanged }) {
       </div>
       {m.outcome && (
         <div style={{ marginTop: "8px", padding: "8px 10px", background: D.surf2, borderRadius: D.md, border: `1px solid ${D.border}` }}>
-          <div style={label}>Outcome</div>
+          <div style={label()}>Outcome</div>
           <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textPrimary, whiteSpace: "pre-wrap" }}
                data-testid={`conduct-outcome-${m.id}`}>{m.outcome}</div>
         </div>
@@ -124,7 +124,7 @@ function Matter({ m, fixture, canProgress, onChanged }) {
           <textarea value={outcome} onChange={(e) => setOutcome(e.target.value)} rows={2}
             aria-label="What was decided" data-testid={`conduct-outcome-input-${m.id}`}
             placeholder="What was decided — required to conclude or withdraw."
-            style={{ ...field, resize: "vertical" }}/>
+            style={{ ...field(), resize: "vertical" }}/>
           <div style={{ display: "flex", gap: "8px", marginTop: "6px" }}>
             <Btn size="sm" variant="success" disabled={busy} onClick={() => progress("concluded")}
                  data-testid={`conduct-conclude-${m.id}`}>Conclude</Btn>
@@ -169,10 +169,10 @@ function RecordMatter({ playerId, onFiled }) {
       <textarea value={body} onChange={(e) => { setBody(e.target.value); setFiled(false); }} rows={3}
         aria-label="What happened" data-testid="conduct-record-body"
         placeholder="What happened, as you would say it to his parents."
-        style={{ ...field, resize: "vertical" }}/>
+        style={{ ...field(), resize: "vertical" }}/>
       <div style={{ display: "flex", gap: "8px", alignItems: "center", marginTop: "8px", flexWrap: "wrap" }}>
         <input type="date" value={on} onChange={(e) => setOn(e.target.value)} aria-label="When it happened"
-          data-testid="conduct-record-date" style={{ ...field, width: "auto" }}/>
+          data-testid="conduct-record-date" style={{ ...field(), width: "auto" }}/>
         <Btn size="sm" disabled={busy} onClick={submit} data-testid="conduct-record-submit">Record</Btn>
         {filed && <span data-testid="conduct-record-done" style={{ fontFamily: D.body, fontSize: "11px", color: D.emerald }}>Recorded.</span>}
       </div>
@@ -370,9 +370,9 @@ function ReportIncident({ match, role }) {
             </div>
           ) : (
             <>
-              <div style={label}>About</div>
+              <div style={label()}>About</div>
               <select value={playerId} onChange={(e) => setPlayerId(e.target.value)} aria-label="Who the report is about"
-                      data-testid="incident-player" style={field}>
+                      data-testid="incident-player" style={field()}>
                 <option value="">{who.people.length ? "Choose a player…" : "Nobody on record for this fixture"}</option>
                 {who.people.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
               </select>
@@ -382,11 +382,11 @@ function ReportIncident({ match, role }) {
                   the ball log. Anyone not in it — a fielder, a substitute — report to the school directly.
                 </div>
               )}
-              <div style={{ ...label, marginTop: "10px" }}>What happened</div>
+              <div style={{ ...label(), marginTop: "10px" }}>What happened</div>
               <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={3}
                 aria-label="What happened" data-testid="incident-body"
                 placeholder="Your account, as you saw it."
-                style={{ ...field, resize: "vertical" }}/>
+                style={{ ...field(), resize: "vertical" }}/>
               <div style={{ fontFamily: D.body, fontSize: "10px", color: D.textMuted, marginTop: "4px" }}>
                 Filed against this fixture{match.date ? `, dated ${match.date}` : ""}. Once sent, it is readable by the school and not by you.
               </div>
