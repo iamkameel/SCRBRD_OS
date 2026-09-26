@@ -4,7 +4,7 @@ import { T, inkOn } from "../design/tokens.js";
 import { Board } from "../ui/board.jsx";
 import { Icon } from "../ui/icons.jsx";
 import { SEGS } from "./field.js";
-import { RR, fmtOv } from "./format.js";
+import { boardFromInnings } from "./boardData.js";
 import { WagonWheel } from "./panels.jsx";
 import { ALL_SHOTS_FLAT, SHOT_CATS } from "./shots.js";
 
@@ -50,48 +50,15 @@ export function ExitKey({ onExit, inBar = false }) {
   );
 }
 
-/** The balls of an over as the board writes them. The same marks the ball dots used. */
-export function boardBall(b) {
-  if (b.type === "W") return "W";
-  if (b.type === "Wd") return b.value ? `Wd+${b.value}` : "Wd";
-  if (b.type === "Nb") return b.value ? `Nb+${b.value}` : "Nb";
-  if (b.type === "Pen") return `+${b.value}`;
-  if (b.type === "B") return `${b.value}b`;
-  if (b.type === "LB") return `${b.value}lb`;
-  return b.value ? String(b.value) : "·";
-}
-
 /**
- * The target, as a scorer says it: "Need 45 off 34". Null outside a chase.
- * @returns {{need: number, balls: number, rrr: string | null} | null}
+ * The board, fed from the fold. Every figure on it is the innings the log
+ * replays to. The pad gets the partnership, the striker lit and the chips, and
+ * NO insight: a line that changes by itself pulls the scorer's eye off the
+ * ball (§10). Tier 3 — the interrupt — is the pad's EventOverlay.
  */
-export function chaseLine(inn, target, overs) {
-  if (target == null || !inn) return null;
-  const balls = Math.max(0, overs * 6 - inn.balls);
-  const need = target - inn.runs;
-  return { need, balls, rrr: need > 0 && balls > 0 ? ((need / balls) * 6).toFixed(2) : null };
-}
-
-/** The board, fed from the fold. Every figure on it is the innings the log replays to. */
 export function PadBoard({ inn, match, target }) {
-  if (!inn) return null;
-  const st = inn.batsmen.find((b) => b.id === inn.striker);
-  const ns = inn.batsmen.find((b) => b.id === inn.nonStriker);
-  const bw = inn.bowlers.find((b) => b.id === inn.bowler);
-  const overs = inn.overs ?? match?.overs ?? 20;
-  const thisOver = inn.overLog.find((o) => o.over === Math.floor(inn.balls / 6))?.balls ?? [];
-  const crr = RR(inn.runs, inn.balls);
-  const chase = chaseLine(inn, target, overs);
-  const rates = [crr !== "—" ? `CRR ${crr}` : null, chase?.rrr ? `RRR ${chase.rrr}` : null].filter(Boolean).join(" · ");
-  const sub = chase
-    ? [chase.need > 0 ? `Need ${chase.need} off ${chase.balls}` : "Target reached", rates].filter(Boolean).join(" · ")
-    : rates || null;
-  return (
-    <Board team={inn.battingTeam} total={inn.runs} wickets={inn.wickets} overs={fmtOv(inn.balls)} sub={sub}
-      batters={[st, ns].filter(Boolean).map((b) => ({ name: b.name, runs: b.runs, balls: b.balls, onStrike: b.id === inn.striker }))}
-      bowler={bw ? { name: bw.name, wickets: bw.wickets, runs: bw.runs, overs: fmtOv(bw.balls) } : undefined}
-      thisOver={thisOver.map(boardBall)}/>
-  );
+  const props = boardFromInnings(inn, { target, overs: inn?.overs ?? match?.overs ?? 20 });
+  return props ? <Board {...props}/> : null;
 }
 
 // ── Keys ─────────────────────────────────────────────────────────

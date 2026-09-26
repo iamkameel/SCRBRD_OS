@@ -844,6 +844,10 @@ body{background:${T.surface.canvas};color:${T.content.primary};font-family:${T.t
 @media(min-width:${T.role.wide.figureBoard.minWidth}){.os-board-total{font-size:${T.role.wide.figureBoard.fontSize}}}
 .os-board-flip{display:inline-block;transform-origin:50% 50%;backface-visibility:hidden;
   animation:boardFlip ${T.motion.flip} ${T.motion.swift} both}
+/* §10 — the board's Tier 2 line: the next one slides up into place. Spectator
+   screens only; reduced motion (below) makes it a cut. */
+@keyframes insightIn{from{transform:translateY(8px);opacity:0}to{transform:none;opacity:1}}
+.os-insight-in{animation:insightIn ${T.motion.panel} ${T.motion.ease} both}
 
 /* ── Keyboard focus ─────────────────────────────────────────────
    There were 164 buttons in this app and not one visible focus state,
@@ -906,6 +910,7 @@ body{background:${T.surface.canvas};color:${T.content.primary};font-family:${T.t
   }
   .pressBtn:active{transform:none}
   .card-hover:hover{transform:none}
+  .os-insight-in{animation:none!important}
 }
 
 /* ── ScrbrdOS responsive layer — mobile first ── */
