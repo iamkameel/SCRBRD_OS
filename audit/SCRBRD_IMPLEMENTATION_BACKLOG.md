@@ -3356,6 +3356,17 @@ toss sheet (`scorer/toss.jsx`), reduced motion honoured, after step 2 of the red
 Two Law 41 questions Kameel is researching before deciding; nothing is built until he does:
 1. Penalty runs awarded to the fielding side (SCRBRD-090's second point): the fold leaves them out of every innings,
    where Law 41 adds them to that side's own innings.
+   **Decided 2026-09-26 (Kameel's research, MCC Law 41):** five penalty runs to the fielding side are added to the
+   fielding side's total: to its most recently completed innings, or, if it has not batted yet, to its next innings
+   (so batting second, they start their chase on 5; batting first and complete, their total and the target rise).
+   The infractions, as the closed list of reasons the pad offers: deliberate short running (41.5: dead ball, every
+   completed run disallowed, batters back to their original ends, and the delivery counts); distracting, deceiving or
+   obstructing the fielders (41.4/41.5); intentional damage to the pitch (41.12); running on the protected area after
+   a first and final warning (41.14); striking the pitch unfairly (41.15); time wasting after a first and final
+   warning (41.17). The ball is dead when the offence is called; the umpires report the incident to the batting
+   side's executive authority (the pad offers to start that report; `db/25` disciplinary record). Building: the fold
+   and the SQL now (with SCRBRD-090, penalties missing from the live score), the pad's penalty sheet after the
+   redesign's step 2 lands.
 2. A bowler suspended mid-over (SCRBRD-080's unbuilt half): Law 41 says he may not bowl again in the innings.
 
 ### SCRBRD-090 — The live score and the target leave out penalty runs
