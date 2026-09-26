@@ -142,6 +142,10 @@ const WALKS = [
   // no method — and the doors that refuse the last two (db/43).
   "fold-figures",
   "commit",
+  // The pad's resume credential (SCRBRD-078 option B, db/50): issued on a
+  // claim, good for five routes on one match, refused on every other route,
+  // and ended by every path that ends it. SCRBRD-087 with an ordinary token.
+  "pad-resume",
   // The API refuses to start on a database missing a migration it was built
   // against, and starts on one that is ahead of it (SCRBRD-066).
   "schema-guard",
