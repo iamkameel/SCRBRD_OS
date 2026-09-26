@@ -14,7 +14,11 @@
  *                            public read may select, whatever the consent.
  *   publicName(facts)        §1.2–1.4 and §4. What a public page shows for one
  *                            player: "D Erasmus", or his position.
- *   initialAndSurname(name)  §1.4. The "D Erasmus" formatter.
+ *   initialAndSurname(name, stored)
+ *                            §1.4. The "D Erasmus" formatter: the stored
+ *                            surname and known-as when the office recorded
+ *                            them (db/47), a heuristic over the full name
+ *                            when it did not.
  *
  * PURE. No database, no network, no clock. The facts a decision needs are
  * gathered on the server by the read that serves the page (§6 step 3) and
@@ -206,6 +210,23 @@ export const NEVER_PUBLIC = Object.freeze({
   // lists whose guardian they are.
   "app_user.email": "N4",
   "app_user.child_ids": "N4",
+
+  // ── db/47, the records this rule reads (§6 step 2) ──
+  // N4, and the rule's own words (C5): "no page shows or records the
+  // reason". The never-public mark is a WHOLE table: its reason is a
+  // safeguarding matter — a court order, a custody dispute, a protection
+  // order, which is a child's home and who he must be kept from — and the
+  // row's existence is itself the disclosure a stranger must not be able to
+  // tell from "no consent yet". A public read learns the mark only as the
+  // boolean public_name_facts() returns, and only publicName() sees that.
+  player_never_public: "N4",
+  // N4: who a child's guardian is. The consent's giver is a guardian's link
+  // (or the pupil's own account), and whoever recorded or ended it is the
+  // guardian, the pupil, or the office acting for them.
+  "public_name_consent.giver_assignment_id": "N4",
+  "public_name_consent.giver_link_id": "N4",
+  "public_name_consent.recorded_by": "N4",
+  "public_name_consent.ended_by": "N4",
 });
 
 /**
@@ -293,6 +314,9 @@ export const POSITION_LABELS = Object.freeze({
  *   stands"). For the pupil: he was eighteen that day (C6). Computed where
  *   the date of birth lives — `majority_on(born) <= given_on` in SQL — so no
  *   date of birth reaches a public read (N1), and none reaches this module.
+ *   public_name_facts() (db/47) computes it on every read. The schema records
+ *   no reason for a revocation, so every revoked link counts as untrue there:
+ *   it fails closed.
  * @property {string} givenOn  YYYY-MM-DD, the day it began to count
  * @property {string|null} [endedOn]
  *   YYYY-MM-DD, the day it stopped: withdrawn, or superseded by a newer
@@ -326,10 +350,16 @@ export const POSITION_LABELS = Object.freeze({
  *   passed here, so it cannot come back out.
  * @property {boolean} [namesOff]
  *   C4: his school has switched names off for this age group — or, for the
- *   overlay, set this fixture's name_display to 'none'. Which age group, when
- *   a boy plays up, the document does not say; until it does, pass true if
- *   the switch is off for either the side's age group or his own.
- * @property {readonly NameConsent[]} [consents]  every consent record for him, current and ended
+ *   overlay, set this fixture's name_display to 'none'. When a boy plays up,
+ *   true if the switch is off for either the side's age group or his own
+ *   (§5a). public_name_facts(player, side) (db/47) answers it, asking his
+ *   age group by birth, the side he is registered in, and the side passed.
+ * @property {readonly NameConsent[]} [consents]
+ *   his consent records, current and ended. public_name_facts() passes each
+ *   giver's most recent act: one person's own acts are ordered, and a
+ *   same-day withdrawal and re-consent must not tie with each other.
+ * @property {string|null} [surname]  player.surname, when the office recorded one (db/47)
+ * @property {string|null} [knownAs]  player.known_as: the name he goes by, which gives the initial
  * @property {string} [label]  shown instead of a name: "Batter", "Bowler", "Fielder" …
  */
 
@@ -392,7 +422,7 @@ export function publicName(facts) {
     && consentStands(facts.consents, on);           // C1, C2, C3, C6
 
   // A consenting boy whose record has no usable name is still a position.
-  return (named && initialAndSurname(facts.fullName)) || label;
+  return (named && initialAndSurname(facts.fullName, { surname: facts.surname, knownAs: facts.knownAs })) || label;
 }
 
 /**
@@ -461,6 +491,12 @@ const SUFFIX = /^(jnr|jr|snr|sr|ii|iii|iv)\.?$/i;
 /** @param {string} s */
 const words = (s) => s.split(/[\s,]+/u).filter(Boolean);
 
+/** Brackets and quotes set aside: a known-as written into the full name. @param {string} s */
+const unbracket = (s) => s.normalize("NFC").replace(/\([^)]*\)|\[[^\]]*\]|"[^"]*"|“[^”]*”/gu, " ");
+
+/** A stored name as a display string, or "" when nothing usable is stored. @param {unknown} s */
+const stored = (s) => (typeof s === "string" ? s.normalize("NFC").replace(/\s+/gu, " ").trim() : "");
+
 /** @param {string[]} ws */
 const dropSuffix = (ws) => {
   while (ws.length > 1 && SUFFIX.test(ws[ws.length - 1])) ws.pop();
@@ -478,8 +514,17 @@ const compose = (given, surname) =>
  * "D Erasmus": the first given name's initial and the surname. Never more —
  * not a second initial, not a first name.
  *
- * `player.full_name` is the only name the schema holds, with no split between
- * given names and surname, so the surname here is a HEURISTIC:
+ * THE STORED SURNAME FIRST. db/47 gave player a `surname` and a `known_as`,
+ * filled by the office. When the surname is there it is used as stored, and
+ * nothing about it is guessed: "Maria Santos Silva" with surname "Santos
+ * Silva" is "M Santos Silva", "Khumalo Sipho" with surname "Khumalo" is
+ * "S Khumalo". The initial is then the known-as's, when there is one (a boy
+ * registered "Johannes" and known as "Hannes" is "H Botha" — still one
+ * letter), or else the first word of the full name once the surname is taken
+ * out of it, wherever it stood.
+ *
+ * THE HEURISTIC, when no surname is stored. `full_name` has no split between
+ * given names and surname, so the surname is guessed:
  *
  *   - the last word, with any lower-case particles before it ("van der
  *     Merwe", "de la Rey", "du Plessis"), and a capitalised particle heading
@@ -491,11 +536,11 @@ const compose = (given, surname) =>
  *     never shown (§1.4);
  *   - a name that is all surname ("van der Merwe") shows the surname alone.
  *
- * A STORED SURNAME WOULD BE BETTER, and should come with §6 step 2's
- * migration: a surname column (and a known-as), filled by the office. The
- * heuristic cannot know that "Andile" in "Sipho Andile Khumalo" is a second
- * given name rather than part of the surname — it guesses, correctly there,
- * that the surname is one word — and it gets these wrong:
+ * A stored known-as gives the initial here too, once a surname has been
+ * found. The heuristic cannot know that "Andile" in "Sipho Andile Khumalo" is
+ * a second given name rather than part of the surname — it guesses,
+ * correctly there, that the surname is one word — and without a stored
+ * surname it gets these wrong:
  *
  *   "Pieter De Villiers"   → "P Villiers"   capitalised particle, no run after it
  *   "Maria Santos Silva"   → "M Silva"      a two-word surname with no particle
@@ -504,16 +549,26 @@ const compose = (given, surname) =>
  *   "Jan VAN DER MERWE"    → "J MERWE"      particles in capitals
  *
  * @param {string|null|undefined} fullName
+ * @param {{surname?: string|null, knownAs?: string|null}} [names]
+ *   player.surname and player.known_as, as stored; either may be absent
  * @returns {string}  "" when there is no name to show
  */
-export function initialAndSurname(fullName) {
+export function initialAndSurname(fullName, names = {}) {
+  const surname = stored(names?.surname);
+  const knownAs = stored(names?.knownAs);
+  const alias = knownAs ? initialOf(words(unbracket(knownAs))[0] ?? "") : "";
+
+  if (surname) {
+    return [alias || initialOf(givenOutside(fullName, surname)), surname].filter(Boolean).join(" ");
+  }
+
   if (typeof fullName !== "string") return "";
-  const s = fullName.normalize("NFC").replace(/\([^)]*\)|\[[^\]]*\]|"[^"]*"|“[^”]*”/gu, " ");
+  const s = unbracket(fullName);
 
   const comma = s.indexOf(",");
   if (comma >= 0) {
-    const surname = dropSuffix(words(s.slice(0, comma)));
-    if (surname.length) return compose(words(s.slice(comma + 1)), surname);
+    const sur = dropSuffix(words(s.slice(0, comma)));
+    if (sur.length) return alias ? compose([alias], sur) : compose(words(s.slice(comma + 1)), sur);
   }
 
   const ws = dropSuffix(words(s));
@@ -525,5 +580,30 @@ export function initialAndSurname(fullName) {
   while (i > 0 && isParticle(ws[i - 1]) && ws[i - 1] === ws[i - 1].toLowerCase()) i--;
   // "Van der Merwe": a capitalised particle that heads a lower-case run.
   if (i > 0 && i < ws.length - 1 && isParticle(ws[i - 1])) i--;
-  return compose(ws.slice(0, i), ws.slice(i));
+  return compose(alias ? [alias] : ws.slice(0, i), ws.slice(i));
+}
+
+/**
+ * The first given name in a full name, once a stored surname is taken out of
+ * it — wherever it stands, and whatever its capitals. "" when nothing is left.
+ *
+ * @param {string|null|undefined} fullName
+ * @param {string} surname  as stored, non-empty
+ */
+function givenOutside(fullName, surname) {
+  if (typeof fullName !== "string") return "";
+  const s = unbracket(fullName);
+  const comma = s.indexOf(",");
+  // "Surname, Given names": the given names are after the comma.
+  const ws = dropSuffix(words(comma >= 0 ? s.slice(comma + 1) : s));
+  const sur = words(surname).map((w) => w.toLowerCase());
+  if (comma < 0 && sur.length) {
+    for (let at = 0; at + sur.length <= ws.length; at++) {
+      if (sur.every((w, k) => ws[at + k].toLowerCase() === w)) {
+        ws.splice(at, sur.length);
+        break;
+      }
+    }
+  }
+  return ws[0] ?? "";
 }

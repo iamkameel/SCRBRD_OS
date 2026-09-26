@@ -17,7 +17,9 @@
  *       turning eighteen (C6).
  *
  * Falsified by: dropping `player.hometown` from NEVER_PUBLIC (the coverage
- * group names it); misspelling an entry (the schema group names it); letting
+ * group names it); dropping `public_name_consent.giver_link_id`, or the whole
+ * of `player_never_public` (the db/47 group names them); misspelling an
+ * entry (the schema group names it); letting
  * a never-public boy through publicName() (the C5 group fails); and judging
  * consent on the match day instead of the serving day (the C3 group fails).
  * The checker's own ability to fail is also asserted below, against lists
@@ -234,7 +236,8 @@ group("§3 — the never-public list");
        .every((c) => NEVER_PUBLIC[`player.${c}`] === "N4"));
 
   // The list must not grow over what a public page is FOR.
-  const needed = ["player.id", "player.full_name", "player.team_code", "player.playing_role",
+  const needed = ["player.id", "player.full_name", "player.surname", "player.known_as",
+                  "player.team_code", "player.playing_role",
                   "player.squad_no", "honour.kind", "honour.is_public", "match.id"];
   ok("what a public page needs stays selectable", needed.every((r) => {
     const [t, c] = r.split("."); return exists(r) && neverPublicRule(t, c) === null;
@@ -379,6 +382,111 @@ group("...and the check can fail");
 }
 
 // ═══════════════════════════════════════════════════════════════════
+//  §3 against the tables db/47 wrote by hand — the rule's own records.
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Tables about a pupil whose policies are hand-written from db/47 on, and so
+ * outside tables.mjs and the coverage check above. Every column of each is
+ * placed here: on NEVER_PUBLIC (the table whole, or the column), or named
+ * below as harmless with the reason. A column added to one of these tables,
+ * or a table about a pupil added by hand in db/47 or later, fails this suite
+ * until somebody places it.
+ *
+ * None of them is read by a public page directly: the signed-out read calls
+ * public_name_facts(), which returns three facts and nothing else (db/47,
+ * asserted live in db/99 §25). The list is the second wall, for the day a
+ * read reaches for the table.
+ *
+ * @type {Record<string, Record<string, string>>}
+ */
+const HAND_WRITTEN_SINCE_47 = {
+  public_name_consent: {
+    id: "a surrogate key",
+    seq: "the order records were made in",
+    player_id: "whom the record is about, which the page already knows",
+    given_by: "\"guardian\" or \"pupil\": the fact the rule reads, and no person",
+    version: "the wording agreed to",
+    given_on: "a date the rule reads; not a date of birth",
+    ended_on: "a date the rule reads",
+    end_reason: "withdrawn, superseded or refused",
+    form_name: "the school's own form, not the family's",
+    form_date: "the day the form was signed, not a date of birth",
+    recorded_at: "when it was recorded",
+    ended_at: "when it was ended",
+  },
+  player_never_public: {},
+};
+
+/** The db/NN files from 47 on, which is where hand-written pupil tables are held to this. */
+const since47 = readdirSync(DB).filter((f) => /^\d\d_.*\.sql$/.test(f) && !/^9[89]_/.test(f) && Number(f.slice(0, 2)) >= 47);
+
+/**
+ * Every column of a hand-written pupil table that is placed on neither list.
+ * @param {Readonly<Record<string, string>>} never
+ * @param {Record<string, Record<string, string>>} harmless
+ */
+function unplacedSince47(never, harmless) {
+  const out = [];
+  for (const [t, ok] of Object.entries(harmless)) {
+    for (const c of SCHEMA.get(t) ?? []) {
+      if (!Object.hasOwn(never, t) && !Object.hasOwn(never, `${t}.${c}`) && !Object.hasOwn(ok, c)) out.push(`${t}.${c}`);
+    }
+  }
+  return out.sort();
+}
+
+group("§3 against db/47 — the rule's own records are placed column by column");
+{
+  const created = since47.flatMap((f) => [...stripComments(readFileSync(join(DB, f), "utf8"))
+    .matchAll(/\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:public\.)?(\w+)/gi)].map((m) => m[1].toLowerCase()));
+  ok(`db/47 on creates ${created.length} tables`, created.length >= 5, created.join(" "));
+  const aboutAPupilByHand = created.filter((t) => !(t in TABLES) && SCHEMA.get(t)?.has("player_id"));
+  ok("every one about a pupil and written by hand is listed here",
+     aboutAPupilByHand.every((t) => Object.hasOwn(HAND_WRITTEN_SINCE_47, t)),
+     aboutAPupilByHand.filter((t) => !Object.hasOwn(HAND_WRITTEN_SINCE_47, t)).join(", "));
+  ok("...and everything listed is a real table, about a pupil, not generated from tables.mjs",
+     Object.keys(HAND_WRITTEN_SINCE_47).every((t) => SCHEMA.has(t) && !(t in TABLES) && SCHEMA.get(t)?.has("player_id")));
+  const stale = Object.entries(HAND_WRITTEN_SINCE_47)
+    .flatMap(([t, cols]) => Object.keys(cols).filter((c) => !SCHEMA.get(t)?.has(c)).map((c) => `${t}.${c}`));
+  ok("every column named harmless is a real column", stale.length === 0, stale.join(", "));
+  const both = Object.entries(HAND_WRITTEN_SINCE_47)
+    .flatMap(([t, cols]) => Object.keys(cols).filter((c) => neverPublicRule(t, c)).map((c) => `${t}.${c}`));
+  ok("...and none of them is also never public", both.length === 0, both.join(", "));
+
+  const gaps = unplacedSince47(NEVER_PUBLIC, HAND_WRITTEN_SINCE_47);
+  ok("every column is never public, or named harmless with the reason", gaps.length === 0,
+     `place each on NEVER_PUBLIC or HAND_WRITTEN_SINCE_47: ${gaps.join(", ")}`);
+
+  ok("the never-public mark, reason and all, is off every page: N4, the whole table",
+     neverPublicRule("player_never_public") === "N4" && neverPublicRule("player_never_public", "reason") === "N4");
+  ok("the consent's giver is never public: who a child's guardian is (N4)",
+     ["giver_assignment_id", "giver_link_id", "recorded_by", "ended_by"]
+       .every((c) => neverPublicRule("public_name_consent", c) === "N4"));
+  ok("...and a public read asking for the giver is refused, naming it",
+     throws(() => assertPublicSelect("public_name_consent", ["given_on", "giver_link_id"]))
+     && !throws(() => assertPublicSelect("public_name_consent", ["given_by", "given_on", "ended_on"])));
+  ok("...and one asking for the reason is refused", throws(() => assertPublicSelect("player_never_public", ["reason"])));
+  ok("the stored surname and known-as follow full_name: selectable",
+     neverPublicRule("player", "surname") === null && neverPublicRule("player", "known_as") === null
+     && exists("player.surname") && exists("player.known_as"));
+}
+
+group("...and it can fail");
+{
+  const noLink = /** @type {Record<string, string>} */ ({ ...NEVER_PUBLIC });
+  delete noLink["public_name_consent.giver_link_id"];
+  ok("a giver column dropped from the list is named",
+     unplacedSince47(noLink, HAND_WRITTEN_SINCE_47).join() === "public_name_consent.giver_link_id");
+  const noMark = /** @type {Record<string, string>} */ ({ ...NEVER_PUBLIC });
+  delete noMark.player_never_public;
+  const named = unplacedSince47(noMark, HAND_WRITTEN_SINCE_47);
+  ok("the mark's table dropped names every column on it, the reason among them",
+     named.includes("player_never_public.reason") && named.includes("player_never_public.set_by")
+     && named.every((r) => r.startsWith("player_never_public.")), named.join(", "));
+}
+
+// ═══════════════════════════════════════════════════════════════════
 group("§1.4 — initial and surname");
 // ═══════════════════════════════════════════════════════════════════
 {
@@ -430,6 +538,37 @@ group("§1.4 — initial and surname");
   ];
   for (const [input, got, why] of knownWrong)
     ok(`KNOWN WRONG, pinned: ${JSON.stringify(input)} → ${JSON.stringify(got)} — ${why}`, initialAndSurname(input) === got);
+
+  // A stored surname (db/47): nothing guessed, and the pinned wrongs above
+  // put right by it. [full name, {surname, knownAs}, want, why]
+  /** @type {[string|null|undefined, {surname?: string|null, knownAs?: string|null}|undefined, string, string][]} */
+  const storedCases = [
+    ["Pieter De Villiers", { surname: "De Villiers" }, "P De Villiers", "a capitalised particle, stored"],
+    ["Maria Santos Silva", { surname: "Santos Silva" }, "M Santos Silva", "a two-word surname, stored"],
+    ["Khumalo Sipho", { surname: "Khumalo" }, "S Khumalo", "surname first, no comma: the given name found around it"],
+    ["Jan VAN DER MERWE", { surname: "van der Merwe" }, "J van der Merwe", "shown as stored, found whatever its capitals"],
+    ["Khumalo, Sipho Andile", { surname: "Khumalo" }, "S Khumalo", "a register's form, with a stored surname"],
+    ["Sipho Andile Khumalo", { surname: "Andile Khumalo" }, "S Andile Khumalo", "the office says the surname is two words"],
+    ["Johannes Botha", { surname: "Botha", knownAs: "Hannes" }, "H Botha", "the known-as gives the initial"],
+    ["Johannes Botha", { surname: "Botha", knownAs: "Hannes Pieter" }, "H Botha", "...one letter of it, never more"],
+    ["Johannes Botha (Hannes)", { knownAs: "Hannes" }, "H Botha", "a known-as with the surname guessed"],
+    ["Botha, Johannes", { knownAs: "Hannes" }, "H Botha", "...and with a register's form"],
+    ["Dewald Erasmus", { surname: "  " }, "D Erasmus", "a blank surname is not one: the heuristic"],
+    ["Dewald Erasmus", { surname: null, knownAs: null }, "D Erasmus", "nothing stored: the heuristic"],
+    ["Dewald Erasmus", undefined, "D Erasmus", "no second argument: the heuristic"],
+    ["van der Merwe", { surname: "van der Merwe" }, "van der Merwe", "all surname: the surname alone"],
+    [null, { surname: "Botha" }, "Botha", "no full name: the surname alone, never a guess"],
+    [null, { surname: "Botha", knownAs: "Hannes" }, "H Botha", "...or with the known-as's initial"],
+    ["Sipho", { knownAs: "Andile" }, "S", "one word and no stored surname: still the initial alone"],
+    ["  Thabo  Mahlangu ", { surname: "  Mahlangu  " }, "T Mahlangu", "stored with odd spacing"],
+  ];
+  for (const [input, stored, want, why] of storedCases) {
+    const got = initialAndSurname(input, stored);
+    ok(`${JSON.stringify(input)} + ${JSON.stringify(stored)} → ${JSON.stringify(want)} — ${why}`, got === want, `got ${JSON.stringify(got)}`);
+  }
+  ok("a non-object second argument is ignored",
+     initialAndSurname("Dewald Erasmus", /** @type {any} */ ("Smith")) === "D Erasmus"
+     && initialAndSurname("Dewald Erasmus", /** @type {any} */ (null)) === "D Erasmus");
 
   // Never more: nothing of a second given name — not the name, not its
   // initial ("S A Khumalo", which is what db/08's broadcast_name() shows).
@@ -486,6 +625,12 @@ group("§4 — the name rule, branch by branch");
      name({ consents: [guardian({ endedOn: "2026-12-31" })] }) === "D Erasmus");
   ok("an unreadable end is an end", name({ consents: [guardian({ endedOn: "soon" })] }) === "Batter");
   ok("a consenting boy with no usable name is still a position", name({ fullName: "   " }) === "Batter");
+  ok("a stored surname is used: surname first with no comma is not a first name shown",
+     name({ fullName: "Khumalo Sipho", surname: "Khumalo" }) === "S Khumalo");
+  ok("...and a known-as gives the initial", name({ fullName: "Johannes Botha", surname: "Botha", knownAs: "Hannes" }) === "H Botha");
+  ok("...but never names a boy the rule does not",
+     name({ neverPublic: true, surname: "Erasmus", knownAs: "Dewi" }) === "Batter"
+     && name({ consents: [], surname: "Erasmus" }) === "Batter");
   ok("the caller's label is used", name({ neverPublic: true, label: "Fielder" }) === "Fielder");
   ok("...and with none, \"Player\"", name({ neverPublic: true, label: undefined }) === POSITION_LABELS.player);
   ok("the day served is required, as a day", throws(() => name({ on: "" }))
