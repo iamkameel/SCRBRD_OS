@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { batHandOf } from "@scrbrd/scoring";
 import { T, inkOn } from "../design/tokens.js";
 import { Board } from "../ui/board.jsx";
@@ -54,11 +54,58 @@ export function ExitKey({ onExit, inBar = false }) {
  * The board, fed from the fold. Every figure on it is the innings the log
  * replays to. The pad gets the partnership, the striker lit and the chips, and
  * NO insight: a line that changes by itself pulls the scorer's eye off the
- * ball (§10). Tier 3 — the interrupt — is the pad's EventOverlay.
+ * ball (§10).
+ *
+ * THE MOMENT (a four, a six, a wicket, a milestone) is a flash on this board
+ * and nowhere else (Kameel, 2026-09-26: the pad is built for speed and trust,
+ * the scoreboard for emotion, and nothing on the pad may ever delay or cover
+ * the next input). It was a full-screen overlay for 1.7–2.4 s that, though
+ * taps passed through it, covered the keys. Now the board's frame takes the
+ * accent and the words sit in the board's own space for FLASH_MS, then go;
+ * with reduced motion it is a cut. The full celebration belongs to the
+ * spectator surfaces. The words reach a screen reader through the pad's
+ * polite live region (engine.jsx, `pad-moment`), not through this.
  */
-export function PadBoard({ inn, match, target }) {
+export function PadBoard({ inn, match, target, flash = null, onFlashDone }) {
   const props = boardFromInnings(inn, { target, overs: inn?.overs ?? match?.overs ?? 20 });
-  return props ? <Board {...props} compact/> : null;
+  if (!props) return null;
+  return (
+    <div data-testid="pad-board" style={{ position: "relative" }}>
+      <Board {...props} compact/>
+      <BoardFlash event={flash} onDone={onFlashDone}/>
+    </div>
+  );
+}
+
+/** How long the moment stays on the board. */
+export const FLASH_MS = 600;
+
+/**
+ * The moment, inside the board's box: its frame in lime (the accent that
+ * means "the ball just recorded", §3.7) and its words in the board's top
+ * corner. `pointer-events: none`, and never larger than the board.
+ */
+export function BoardFlash({ event, onDone }) {
+  useEffect(() => {
+    if (!event) return undefined;
+    const t = setTimeout(() => onDone?.(), FLASH_MS);
+    return () => clearTimeout(t);
+    // One flash per event; a queued one (SIX then FIFTY) arrives as a new object.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [event]);
+  if (!event?.label) return null;
+  const B = T.board;
+  return (
+    <div data-testid="board-flash" aria-hidden="true" className="os-board-flash"
+      style={{ position: "absolute", inset: 0, pointerEvents: "none", borderRadius: T.radius.lg,
+        boxShadow: `inset 0 0 0 3px ${B.lime}`, display: "flex", alignItems: "flex-start", justifyContent: "flex-start",
+        padding: `${T.space.xs} ${T.space.sm}` }}>
+      <span data-testid="board-flash-label" style={{ ...T.role.label, fontSize: "16px", lineHeight: 1.2, letterSpacing: "0.08em",
+        color: B.lime, background: B.face, padding: `2px ${T.space.sm}`, borderRadius: T.radius.sm, whiteSpace: "nowrap" }}>
+        {event.label}
+      </span>
+    </div>
+  );
 }
 
 // ── Keys ─────────────────────────────────────────────────────────

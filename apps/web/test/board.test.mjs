@@ -246,5 +246,20 @@ ok("a figure whose value has moved on turns over, once", /class="os-board-flip"/
 ok("...and one drawn at the value it had does not", !/os-board-flip/.test(html(h(Figure, { value: 142, was: 142 }))));
 ok("the flip is motion.flip, 190ms", T.motion.flip === "190ms");
 
+// ── The moment on the pad: a flash on the board, never over the keys ──
+{
+  const { BoardFlash, FLASH_MS } = await import("../src/scorer/pad.jsx");
+  const { buildEventCfg } = await import("../src/scorer/panels.jsx");
+  const four = html(h(BoardFlash, { event: buildEventCfg(4, null), onDone() {} }));
+  ok("a four flashes on the board, in words", /data-testid="board-flash"/.test(four) && /FOUR!/.test(four));
+  ok("...inside the board's own box, taps passing through", /position:absolute;inset:0;pointer-events:none/.test(four.replace(/\s/g, "")));
+  ok("...in lime, the accent for the ball just recorded", four.includes(T.board.lime));
+  ok("...hidden from a screen reader here (the pad's live region says it)", /aria-hidden="true"/.test(four));
+  ok("the milestone's words survive (HAT-TRICK BALL)", /HAT-TRICK BALL/.test(html(h(BoardFlash, {
+    event: buildEventCfg(null, { label: "HAT-TRICK BALL", sub: "two in two", color: "#fff", icon: "sparkles" }), onDone() {} }))));
+  ok("nothing at all without a moment", html(h(BoardFlash, { event: null, onDone() {} })) === "");
+  ok(`about 600ms at most (${FLASH_MS})`, FLASH_MS > 0 && FLASH_MS <= 600);
+}
+
 console.log(`\n${"─".repeat(52)}\nBOARD: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

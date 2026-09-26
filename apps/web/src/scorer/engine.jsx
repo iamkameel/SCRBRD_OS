@@ -26,13 +26,16 @@ import { SEGS } from "./field.js";
 import { fmtOv } from "./format.js";
 import { ALL_SHOTS } from "./shots.js";
 import { AnalysisDashboard, ManhattanChart } from "./charts.jsx";
-import { EventOverlay, FreeHitBanner, InningsOverBanner, PartnershipCard, ScorecardPanel, buildEventCfg, detectMilestone } from "./panels.jsx";
+import { FreeHitBanner, InningsOverBanner, PartnershipCard, ScorecardPanel, buildEventCfg, detectMilestone } from "./panels.jsx";
 import { ScoringBlocked, ScoringPanel } from "./scoring.jsx";
 import { SetupScreen } from "./setup.jsx";
 import { BattingOrderSheet, HandoverSheet, Innings2Sheet, InningsReviewSheet, NewOverSheet, NoBallSheet, RevisionSheet, ShotSelectorSheet, WicketSheet } from "./sheets.jsx";
 import { INT_TEAMS } from "./teams.js";
 import { BallDot, Btn, CaptureProfilePicker, Card, GS, Glass, Lbl } from "./ui.jsx";
 import { Icon } from "../ui/icons.jsx";
+
+/** A moment in words, for the live region: "FOUR. Boundary", "HAT-TRICK BALL. K Naidoo — two in two". */
+const momentWords=(cfg)=>`${cfg.label.replace(/!+$/,"")}${cfg.sub?`. ${cfg.sub}`:""}`;
 
 // Reconstruct an event log from a seeded innings object.
 //
@@ -268,10 +271,19 @@ function SCRBRD({resume,onSignIn,onExit}={}){
   const[hubApproach,setHubApproach]=useState(null);
   const[selShot,setSelShot]=useState(null);
   const[scoringCtx,setScoringCtx]=useState(null);
-  // Overlay: config object {label,sub,color,...} | null
+  // The moment on the board (a four, a six, a wicket, a milestone): config
+  // object {label,sub,...} | null. A flash on the pad's board only, for
+  // FLASH_MS (pad.jsx BoardFlash) — never an overlay over the keys.
   const[eventOverlay,setEventOverlay]=useState(null);
+  // Its words, for a screen reader: kept after the flash has gone, so the
+  // polite live region has something to say when it gets round to it.
+  const[moment,setMoment]=useState("");
   // Milestone queue — show one at a time
   const milestoneQRef=useRef([]);
+  const playMoment=(cfg)=>{
+    setEventOverlay(cfg);
+    if(cfg?.label)setMoment(momentWords(cfg));
+  };
   // Free hit: true after a height/front-foot no-ball
   const[freeHit,setFreeHit]=useState(false);
   // Undo truncates the event log; there is no snapshot stack to keep.
@@ -988,25 +1000,23 @@ function SCRBRD({resume,onSignIn,onExit}={}){
     else if(hubStage===1){setHubStage(0);setHubShot(null);}
   };
 
-  // Drain milestone queue — called when EventOverlay completes
+  // Drain milestone queue — called when the board's flash completes
   const onOverlayDone=()=>{
     const next=milestoneQRef.current.shift();
-    if(next)setEventOverlay(next);
-    else setEventOverlay(null);
+    if(next)playMoment(next);
+    else playMoment(null);
   };
-  // Watchdog: whatever happens to the animation timers, no overlay may be
-  // left on screen. Bounded slightly above the longest milestone duration.
+  // Watchdog: whatever happens to the flash's timer, no moment may be left
+  // on the board. Bounded well above FLASH_MS.
   useEffect(()=>{
     if(!eventOverlay)return;
     const t=setTimeout(()=>{
       const next=milestoneQRef.current.shift();
       setEventOverlay(next||null);
-    },3200);
+      if(next?.label)setMoment(momentWords(next));
+    },1500);
     return()=>clearTimeout(t);
   },[eventOverlay]);
-  // (Blur suppression while a modal is open is handled at render time by
-  //  EventOverlay's `suppressBlur` prop — mutating the event object here
-  //  used to re-arm its dismiss timers and strand queued overlays.)
 
   // Whether THIS innings has been closed, as opposed to merely being over. The
   // two come apart for as long as the scorer has not confirmed the review,
@@ -1279,7 +1289,7 @@ function SCRBRD({resume,onSignIn,onExit}={}){
     if(queue.length>0){
       const q=modalPending?queue.map(c=>({...c,noBlur:true})):queue;
       milestoneQRef.current=q.slice(1);
-      setEventOverlay(q[0]);
+      playMoment(q[0]);
     }
     setFreeHit(after.freeHit);
     if(endedInnings)setModal("inningsReview");
@@ -1311,7 +1321,7 @@ function SCRBRD({resume,onSignIn,onExit}={}){
     setSelSeg(null);setSelShot(null);setScoringCtx(null);setModalCtx({});
     scoreKeyRef.current++;setHubStage(0);setHubShot(null);
     milestoneQRef.current=[];
-    setEventOverlay({...buildEventCfg("W",null),noBlur:true});
+    playMoment({...buildEventCfg("W",null),noBlur:true});
     if(after.complete)setModal("inningsReview");
     else if(keepModal)return;
     else if(after.striker==null||after.nonStriker==null)setModal("newBatsman");
@@ -1359,7 +1369,7 @@ function SCRBRD({resume,onSignIn,onExit}={}){
       // save the batter), so a hat-trick ball is never called off a not-out.
       const mile=detectMilestone({type:"W",value:0,striker:before?.striker,bowler:before?.bowler,...(stood?{dismissal:mode}:{})},before);
       milestoneQRef.current=(mile?[mile]:[]).map(m=>({...buildEventCfg(null,m),noBlur:true}));
-      setEventOverlay(wicketCfg);
+      playMoment(wicketCfg);
     }
     setFreeHit(after.freeHit);
     if(endedInnings)setModal("inningsReview");
@@ -1743,7 +1753,6 @@ function SCRBRD({resume,onSignIn,onExit}={}){
   return (
     <>
       <GS/>
-      {eventOverlay&&<EventOverlay event={eventOverlay} onDone={onOverlayDone} suppressBlur={!!modal}/>}
       {freeHit&&<FreeHitBanner onDismiss={()=>setFreeHit(false)}/>}
       {inn?.complete&&!inningsClosed&&!modal&&<InningsOverBanner onReview={()=>setModal("inningsReview")}/>}
       {renderModal()}
@@ -1815,7 +1824,10 @@ function SCRBRD({resume,onSignIn,onExit}={}){
         <div className={`pad-layout${split?" pad-split":""}`}>
           <div className="pad-head">
             {/* The board, once (§1, §4). Always black, in both themes. */}
-            {inn&&<PadBoard inn={inn} match={match} target={target2}/>}
+            {inn&&<PadBoard inn={inn} match={match} target={target2} flash={eventOverlay} onFlashDone={onOverlayDone}/>}
+            {/* The moment's words, heard and not seen: the flash is on the
+                board, the celebration on the spectators' screens. */}
+            <div className="sr-only" role="status" aria-live="polite" data-testid="pad-moment">{moment}</div>
             {/* The state in one line, under the board: the SCRBRD-078 words. */}
             <div data-testid="pad-state" style={{display:"flex",alignItems:"center",gap:T.space.sm,flexWrap:"wrap"}}>
               <SyncPill sync={sync} storage={saveState.kind} onOpenHeld={()=>setModal("held")}/>
