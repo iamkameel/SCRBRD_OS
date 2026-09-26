@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { D, textOn } from "../design/tokens.js";
+import { D, T, textOn } from "../design/tokens.js";
+import { humanDate } from "../lib/format.js";
 import { useLive } from "../lib/live.js";
 import { canScore, holdsCapability } from "../rbac/index.js";
 import { schoolsWhere } from "../lib/session.js";
@@ -67,8 +68,8 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
         color={D.emerald}
         actions={
           <>
-            {holdsCapability(role,"fixture.create")&&<Btn size="sm" onClick={()=>setScheduleOpen(true)}>+ Schedule Match</Btn>}
-            {canScore(role)&&<button onClick={()=>onOpenScorer(null)} className="pressBtn" style={{padding:"5px 12px",borderRadius:D.pill,background:D.emerald+"18",border:`1px solid ${D.emerald}30`,color:D.emerald,fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:"0.05em",cursor:"pointer",display:"flex",alignItems:"center",gap:"5px"}}>
+            {holdsCapability(role,"fixture.create")&&<Btn onClick={()=>setScheduleOpen(true)}>+ Schedule Match</Btn>}
+            {canScore(role)&&<button onClick={()=>onOpenScorer(null)} className="pressBtn" style={{padding:"5px 12px",borderRadius:D.pill,background:D.emerald+"18",border:`1px solid ${D.emerald}30`,color:D.emerald,fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.05em",cursor:"pointer",display:"flex",alignItems:"center",gap:"5px"}}>
               <div className="live-dot"/>Open SCRBRD Scorer <Icon name="arrow-up-right"/>
             </button>}
           </>
@@ -78,7 +79,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
           <button key={f} onClick={()=>setFilter(f)} className="pressBtn" style={{
             padding:"5px 14px",borderRadius:D.pill,border:`1px solid ${filter===f?D.indigo+"55":D.border}`,
             background:filter===f?D.indigo+"18":"transparent",cursor:"pointer",
-            fontFamily:D.body,fontSize:"11px",fontWeight:filter===f?600:400,
+            fontFamily:D.body,fontSize:"12px",fontWeight:filter===f?600:400,
             color:filter===f?D.textPrimary:D.textMuted,textTransform:"capitalize",
           }}>{f}</button>
         ))}
@@ -106,27 +107,27 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
                 <div style={{padding:"14px 16px"}}>
                   <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"10px",flexWrap:"wrap"}}>
                     <StatusDot status={m.status}/>
-                    <span style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:isLive?D.emerald:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase"}}>{m.status}</span>
+                    <span style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:isLive?D.emerald:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase"}}>{m.status}</span>
                     {comp&&<Badge color={D.sky}>{comp.name}</Badge>}
                     {w&&<WeatherChip w={w} compact/>}
-                    <span style={{marginLeft:"auto",fontFamily:D.mono,fontSize:"11px",color:D.textMuted}}>{m.date}</span>
+                    <span style={{marginLeft:"auto",fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{humanDate(m.date)}</span>
                   </div>
                   <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",gap:"12px",alignItems:"center"}}>
                     <div>
                       <div style={{fontFamily:D.head,fontSize:"15px",fontWeight:700,color:D.textPrimary}}>{m.homeTeam}</div>
-                      {m.scorecard?.home&&<div style={{fontFamily:D.mono,fontSize:"18px",fontWeight:500,color:isLive?D.emerald:D.textPrimary,marginTop:"4px"}}>{m.scorecard.home.score} <span style={{fontSize:"12px",color:D.textMuted}}>({m.scorecard.home.overs})</span></div>}
+                      {m.scorecard?.home&&<div style={{...T.role.figure.md,color:isLive?D.emerald:D.textPrimary,marginTop:"4px"}}>{m.scorecard.home.score} <span style={{fontSize:"12px",color:D.textMuted}}>({m.scorecard.home.overs})</span></div>}
                     </div>
                     <div style={{textAlign:"center"}}>
                       <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:800,color:D.textMuted,letterSpacing:"0.06em"}}>VS</div>
-                      {m.result&&<div style={{fontFamily:D.body,fontSize:"10px",color:isLive?D.emerald:D.amber,marginTop:"4px",maxWidth:"120px"}}>{m.result}</div>}
+                      {m.result&&<div style={{fontFamily:D.body,fontSize:"12px",color:isLive?D.emerald:D.amber,marginTop:"4px",maxWidth:"120px"}}>{m.result}</div>}
                     </div>
                     <div style={{textAlign:"right"}}>
                       <div style={{fontFamily:D.head,fontSize:"15px",fontWeight:700,color:D.textPrimary}}>{m.awayTeam}</div>
-                      {m.scorecard?.away&&<div style={{fontFamily:D.mono,fontSize:"18px",fontWeight:500,color:D.textPrimary,marginTop:"4px"}}>{m.scorecard.away.score} <span style={{fontSize:"12px",color:D.textMuted}}>({m.scorecard.away.overs})</span></div>}
+                      {m.scorecard?.away&&<div style={{...T.role.figure.md,color:D.textPrimary,marginTop:"4px"}}>{m.scorecard.away.score} <span style={{fontSize:"12px",color:D.textMuted}}>({m.scorecard.away.overs})</span></div>}
                     </div>
                   </div>
                   <div style={{marginTop:"10px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:"6px"}}>
-                    <span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}><Icon name="map-pin"/> {m.venue}</span>
+                    <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}><Icon name="map-pin"/> {m.venue}</span>
                     <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
                       {m.transport?.bus&&<Pill color={D.sky}><Icon name="bus"/> Bus {m.transport.depart}</Pill>}
                       {/* A scheduled fixture is offered too, because that is
@@ -137,7 +138,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
                           canScore() only decides whether to offer the button,
                           and being wrong here shows a button that then says
                           no, never the wrong data. */}
-                      {(isLive||m.status==="upcoming")&&canScore(role)&&<Btn size="sm" variant="success" onClick={e=>{e.stopPropagation();onOpenScorer&&onOpenScorer(m);}}>{isLive?"Open Live Scorer →":"Start Scoring →"}</Btn>}
+                      {(isLive||m.status==="upcoming")&&canScore(role)&&<Btn variant="success" onClick={e=>{e.stopPropagation();onOpenScorer&&onOpenScorer(m);}}>{isLive?"Open Live Scorer →":"Start Scoring →"}</Btn>}
                       {/* Offered for any match that has been played or is being
                           played — NOT gated on `m.scorecard`, which is a mock-only
                           field: asMatch() sets it null for every live row because
@@ -147,14 +148,14 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
                           unreachable for every real fixture. The modal reads the
                           log itself and says so honestly when a match has not been
                           scored yet, which is the right answer to give here. */}
-                      {(isLive||m.status==="complete")&&<Btn size="sm" variant="ghost" onClick={e=>{e.stopPropagation();setCardM(m);}}>{m.status==="complete"?"Scorecard":"Live Scorecard"}</Btn>}
+                      {(isLive||m.status==="complete")&&<Btn variant="ghost" onClick={e=>{e.stopPropagation();setCardM(m);}}>{m.status==="complete"?"Scorecard":"Live Scorecard"}</Btn>}
                       {/* SCRBRD-082. Only once the match is complete — the
                           same reasoning canScore()'s own comment gives for
                           every other offered-but-checked-server-side button:
                           a report on a match still being played would be
                           reporting on the wrong thing, not merely early. */}
-                      {m.status==="complete"&&<Btn size="sm" variant="ghost" onClick={e=>{e.stopPropagation();setReportM(m);}} data-testid={`report-open-${m.id}`}>Post-match report</Btn>}
-                      {m.status==="upcoming"&&holdsCapability(role,"opposition.read")&&<Btn size="sm" variant="ghost" onClick={e=>{e.stopPropagation();setDossierM(m);}} data-testid={`dossier-open-${m.id}`}>Dossier</Btn>}
+                      {m.status==="complete"&&<Btn variant="ghost" onClick={e=>{e.stopPropagation();setReportM(m);}} data-testid={`report-open-${m.id}`}>Post-match report</Btn>}
+                      {m.status==="upcoming"&&holdsCapability(role,"opposition.read")&&<Btn variant="ghost" onClick={e=>{e.stopPropagation();setDossierM(m);}} data-testid={`dossier-open-${m.id}`}>Dossier</Btn>}
                     </div>
                   </div>
                 </div>
@@ -202,11 +203,11 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
               <ReportIncident match={selMatch} role={role}/>
               {ground&&pitch&&(
                 <div style={{marginBottom:"12px",background:D.surf2,borderRadius:D.md,padding:"10px 12px",border:`1px solid ${D.teal}22`}}>
-                  <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.teal,letterSpacing:"0.08em",marginBottom:"7px"}}>PITCH REPORT</div>
+                  <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.teal,letterSpacing:"0.08em",marginBottom:"7px"}}>PITCH REPORT</div>
                   {[["Ground",ground.shortName],["Strip",`No. ${pitch.num}`],["Surface",pitch.surface],["Condition",pitch.condition],["Bounce",pitch.bounce],["Seam Move",pitch.seamMovement||"—"],["Orientation",ground.orientation]].map(([l,v])=>(
                     <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${D.border}`}}>
-                      <span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>{l}</span>
-                      <span style={{fontFamily:D.mono,fontSize:"11px",color:D.textPrimary,fontWeight:500}}>{v}</span>
+                      <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{l}</span>
+                      <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textPrimary,fontWeight:500}}>{v}</span>
                     </div>
                   ))}
                 </div>
@@ -215,26 +216,26 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
                 <div style={{marginBottom:"10px",padding:"9px 12px",background:D.surf2,borderRadius:D.md,border:`1px solid ${D.orange}22`,display:"flex",alignItems:"center",gap:"9px"}}>
                   <span style={{fontSize:"16px",color:D.orange}}><Icon name="scorebook"/></span>
                   <div>
-                    <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.orange,letterSpacing:"0.06em"}}>SCORER</div>
+                    <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.orange,letterSpacing:"0.06em"}}>SCORER</div>
                     <div style={{fontFamily:D.body,fontSize:"12px",color:D.textPrimary}}>{scorer.name}</div>
-                    <div style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>{scorer.scoringSystem}</div>
+                    <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{scorer.scoringSystem}</div>
                   </div>
                 </div>
               )}
               {driver&&selMatch.transport?.bus&&(
                 <div style={{marginBottom:"10px",padding:"9px 12px",background:D.surf2,borderRadius:D.md,border:`1px solid ${D.lime}22`}}>
-                  <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:textOn(D.lime),letterSpacing:"0.06em",marginBottom:"5px"}}>TRANSPORT</div>
+                  <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:textOn(D.lime),letterSpacing:"0.06em",marginBottom:"5px"}}>TRANSPORT</div>
                   <div style={{display:"flex",justifyContent:"space-between",marginBottom:"4px"}}>
-                    <span style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary}}>Driver</span>
-                    <span style={{fontFamily:D.body,fontSize:"11px",color:D.textPrimary}}>{driver.name}</span>
+                    <span style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary}}>Driver</span>
+                    <span style={{fontFamily:D.body,fontSize:"12px",color:D.textPrimary}}>{driver.name}</span>
                   </div>
                   <div style={{display:"flex",justifyContent:"space-between",marginBottom:"4px"}}>
-                    <span style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary}}>Vehicle</span>
-                    <span style={{fontFamily:D.mono,fontSize:"11px",color:textOn(D.lime)}}>{selMatch.transport.vehicle}</span>
+                    <span style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary}}>Vehicle</span>
+                    <span style={{fontFamily:D.mono,fontSize:"12px",color:textOn(D.lime)}}>{selMatch.transport.vehicle}</span>
                   </div>
                   <div style={{display:"flex",justifyContent:"space-between"}}>
-                    <span style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary}}>Departs / Returns</span>
-                    <span style={{fontFamily:D.mono,fontSize:"11px",color:D.amber}}>{selMatch.transport.depart} / {selMatch.transport.return}</span>
+                    <span style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary}}>Departs / Returns</span>
+                    <span style={{fontFamily:D.mono,fontSize:"12px",color:D.amber}}>{selMatch.transport.depart} / {selMatch.transport.return}</span>
                   </div>
                 </div>
               )}
