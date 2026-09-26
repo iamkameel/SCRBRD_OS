@@ -1328,14 +1328,30 @@ export function useWeather(role) {
  * scored 0 at an average of 0. They have not batted.
  */
 export function usePlayersWithCareer(role, nonce = 0) {
-  const players = useRows("players", role, nonce);
-  const career = useRows("career", role, nonce);
-  if (!career.length) return players;
-  const byId = new Map(career.map((c) => [c.id, c]));
-  return players.map((p) => {
+  return usePlayersWithCareerState(role, nonce).rows;
+}
+
+/**
+ * The same rows, with the state of both reads beside them — for a screen
+ * whose whole content IS the figures (the Awards tab), where a read that
+ * failed or timed out must be said, not drawn as lists nobody is on. `rows`
+ * is exactly usePlayersWithCareer()'s; `players` and `career` are each read's
+ * { loading, error }, so the screen can tell "still coming", "could not be
+ * read" and "nobody has played" apart.
+ */
+export function usePlayersWithCareerState(role, nonce = 0) {
+  const players = useLive("players", role, nonce);
+  const career = useLive("career", role, nonce);
+  const byId = new Map(career.rows.map((c) => [c.id, c]));
+  const rows = !career.rows.length ? players.rows : players.rows.map((p) => {
     const c = byId.get(p.id);
     return c ? { ...p, ...c, name: p.name ?? c.name } : p;
   });
+  return {
+    rows,
+    players: { loading: players.loading, error: players.error },
+    career: { loading: career.loading, error: career.error },
+  };
 }
 
 /** The common case: just the rows. Views that need the state use useLive(). */
