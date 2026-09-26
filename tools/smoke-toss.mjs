@@ -201,7 +201,9 @@ try {
   // is a new decision that should be made deliberately, not discovered later.
   // schema_migration is the migrator's ledger (tools/migrate.mjs): the owner
   // writes and reads it, and the application role has no business with it.
-  const DELIBERATELY_NO_POLICY = new Set(["login_code", "schema_migration"]);
+  // pad_resume_jti (db/50) is the resume credential's spent one-time ids:
+  // read and written only inside pad_resume_spend(), by nobody else.
+  const DELIBERATELY_NO_POLICY = new Set(["login_code", "schema_migration", "pad_resume_jti"]);
   const policyless = (await q(
     `select c.relname, count(p.polname)::int as policies
        from pg_class c

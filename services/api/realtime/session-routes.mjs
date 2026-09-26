@@ -69,7 +69,13 @@ export function sessionRoutes({ pool, secret, hub }) {
           if (principal.scope === "pad")
             return (await client.query(`select * from pad_resume_reclaim($1)`, [id])).rows[0] || {};
           const named = typeof req.body?.device === "string" ? req.body.device.trim() : "";
-          if (named && named !== principal.deviceId) return { ok: false, reason: "device_mismatch", epoch: null };
+          if (named && named !== principal.deviceId) {
+            // Capability first, as scoring_claim() asks it (db/33): a caller
+            // with no standing over the match learns nothing more.
+            const can = (await client.query(
+              `select app_can('scoring.start', match_school($1), match_team($1), NULL, $1) as can`, [id])).rows[0]?.can;
+            return { ok: false, reason: can ? "device_mismatch" : "no_capability", epoch: null };
+          }
           return (await client.query(`select * from scoring_claim($1,$2)`, [id, req.body?.device])).rows[0] || {};
         });
         res.json(await withBroadcast(id, b, r));
