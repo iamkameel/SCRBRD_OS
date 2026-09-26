@@ -16,19 +16,22 @@
  *
  *   1. in the first innings, after five penalty runs to the batting side;
  *   2. in the second innings — after the first was sealed — after a penalty
- *      to the batting side and one to the fielding side (which the fold does
- *      not add to this innings).
+ *      to the batting side, one to the fielding side and a deliberate short
+ *      run. The fielding side's fives are not in this innings: they are in
+ *      the fielding side's own completed innings, the first, and raise the
+ *      target (SCRBRD-094, db/48) — which the live score read says too.
  *
  * And the old wrong answers are refused: the match's totals across both
- * innings, and this innings without its penalty runs.
+ * innings, and this innings without its penalty runs. The server takes a
+ * short run's award only straight after its dot delivery.
  *
  *   node tools/migrate.mjs --reset --seed
  *   node tools/smoke-handover-innings.mjs
  */
 import { spawn } from "node:child_process";
 import {
-  deriveMatch, fromRow, inningsStart, batters, bowler, ball, penalty, sealInnings,
-  BALL_TYPE, INNINGS_END_REASON,
+  deriveMatch, fromRow, inningsStart, batters, bowler, ball, penalty, sealInnings, shortRunning,
+  BALL_TYPE, INNINGS_END_REASON, REFUSAL,
 } from "@scrbrd/scoring";
 
 const PORT = 8893;
@@ -140,7 +143,7 @@ try {
     ball({ type: BALL_TYPE.RUN, value: 0 }),
     // Law 41: five penalty runs to the batting side. No ball bowled, so
     // nothing but the total moves.
-    penalty({ runs: 5, toBattingTeam: true, reason: "ball tampering" }),
+    penalty({ runs: 5, toBattingTeam: true, reason: "ball_tampering" }),
     ball({ type: BALL_TYPE.RUN, value: 2 }),
     ball({ type: BALL_TYPE.RUN, value: 6 }),
     ball({ type: BALL_TYPE.RUN, value: 4 }),
@@ -177,10 +180,12 @@ try {
     batters({ innings: 1, striker: "T Dube" }),
     ball({ innings: 1, type: BALL_TYPE.NO_BALL, value: 1 }),
     // Five to the batting side: in this innings' total.
-    penalty({ innings: 1, runs: 5, toBattingTeam: true, reason: "fielder's helmet struck" }),
-    // Five to the fielding side: the fold does not add it to this innings.
-    penalty({ innings: 1, runs: 5, toBattingTeam: false, reason: "batter damaged the pitch" }),
+    penalty({ innings: 1, runs: 5, toBattingTeam: true, reason: "helmet_struck" }),
+    // Five to the fielding side: in Hilton's first innings, not this one.
+    penalty({ innings: 1, runs: 5, toBattingTeam: false, reason: "pitch_damage" }),
     ball({ innings: 1, type: BALL_TYPE.LEG_BYE, value: 1 }),
+    // A deliberate short run: the delivery counts with no run, and five more to Hilton.
+    ...shortRunning({ innings: 1, type: BALL_TYPE.RUN, value: 2 }),
   ];
   const w2 = await post(tokenB, DEV_B, epochB, second);
   ok("the second innings' events are accepted", w2.body?.accepted?.length === second.length, JSON.stringify(w2.body));
@@ -189,8 +194,13 @@ try {
   ok("device A claims a handover in the second innings", h2.claim.body?.ok === true, JSON.stringify(h2.claim.body));
   const b2 = onBoard(h2.claim.body?.events || []);
   ok(`device A's fold reads innings ${b2.innings + 1}: ${b2.runs}/${b2.wickets} off ${b2.balls}`,
-     b2.innings === 1 && b2.runs === 14 && b2.wickets === 1 && b2.balls === 3);
-  ok("...and the first innings, sealed, is 23/0 off 6", b2.all[0]?.runs === 23 && b2.all[0]?.balls === 6 && b2.all[0]?.sealed === true);
+     b2.innings === 1 && b2.runs === 14 && b2.wickets === 1 && b2.balls === 4);
+  ok("...the first innings, sealed at 23/0 off 6, has the fielding side's two fives: 33",
+     b2.all[0]?.runs === 33 && b2.all[0]?.balls === 6 && b2.all[0]?.sealed === true && b2.all[0]?.penaltyCarried === 10);
+  ok("...and the chase's target rose from 24 to 34", b2.all[1]?.target === 34, `${b2.all[1]?.target}`);
+  const live = (await api(`/api/read/live_score?matchId=${MATCH}`, { token: tokenA })).body?.rows || [];
+  ok("the live score read says the same: 33 and 14",
+     live.length === 2 && Number(live[0].runs) === 33 && Number(live[1].runs) === 14, JSON.stringify(live));
 
   // The answers the old check wanted: every innings of the match, by value.
   const byValue = (h2.claim.body?.events || []).filter((r) => r.kind !== "void");
@@ -200,7 +210,7 @@ try {
     balls: byValue.filter((r) => r.kind === "ball" && r.ball_type !== "Wd" && r.ball_type !== "Nb").length,
   };
   ok(`the match's totals by value read ${matchTotals.runs}/${matchTotals.wickets} off ${matchTotals.balls} — no scoreboard shows that`,
-     matchTotals.runs === 27 && matchTotals.wickets === 1 && matchTotals.balls === 9);
+     matchTotals.runs === 27 && matchTotals.wickets === 1 && matchTotals.balls === 10);
   const old = await verify(tokenA, DEV_A, matchTotals);
   ok("the match's totals are refused", old.body?.ok === false && old.body?.reason === "verify_mismatch", said(old));
   ok("...and the server expects this innings' figures",
@@ -209,7 +219,7 @@ try {
   ok("this innings without its penalty is refused", noPen2.body?.ok === false && noPen2.body?.reason === "verify_mismatch", said(noPen2));
   const bothPen = await verify(tokenA, DEV_A, { ...b2, runs: b2.runs + 5 });
   ok("...and so is one that adds the fielding side's penalty to it", bothPen.body?.ok === false, said(bothPen));
-  const firstInn = await verify(tokenA, DEV_A, { runs: 23, wickets: 0, balls: 6 });
+  const firstInn = await verify(tokenA, DEV_A, { runs: 33, wickets: 0, balls: 6 });
   ok("...and so is the first innings' score, now that the second is under way", firstInn.body?.ok === false, said(firstInn));
   const v2 = await verify(tokenA, DEV_A, b2);
   ok("the second innings' figures, off the incoming device's fold, verify", v2.body?.ok === true, said(v2));
@@ -220,7 +230,13 @@ try {
   ok("device A scores on in the second innings", on.body?.accepted?.length === 1, JSON.stringify(on.body));
   const after = onBoard(await readLog(tokenA));
   ok(`the second innings reads ${after.runs}/${after.wickets} off ${after.balls}`,
-     after.innings === 1 && after.runs === 18 && after.balls === 4);
+     after.innings === 1 && after.runs === 18 && after.balls === 5);
+  // A short run's award with no dot delivery before it is refused, by name.
+  const stray = await post(tokenA, DEV_A, v2.body?.epoch,
+    [penalty({ innings: 1, runs: 5, toBattingTeam: false, reason: "short_running" })]);
+  ok("a short-running award after a scoring ball is refused: short_run_unmatched",
+     stray.body?.refused?.length === 1 && stray.body.refused[0].reason === REFUSAL.SHORT_RUN_UNMATCHED && !stray.body?.accepted?.length,
+     JSON.stringify(stray.body));
 } catch (e) {
   ok(`the walk threw: ${e.message?.slice(0, 100)}`, false);
   console.log(e.stack?.split("\n").slice(0, 4).join("\n"));
