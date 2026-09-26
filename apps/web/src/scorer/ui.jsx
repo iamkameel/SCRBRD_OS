@@ -40,6 +40,14 @@ const GS = () => (
     .wagonLine{stroke-dasharray:320;animation:wagonDraw .38s ease both}
     .fadeIn{animation:fadeIn .22s ease both}
     .pressBtn{transition:transform .1s ease,opacity .1s ease}
+    .pad-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:${T.space.sm};padding:${T.space.sm} ${T.space.lg};max-width:640px;margin:0 auto}
+    .pad-head{display:grid;gap:${T.space.sm};align-content:start;min-width:0}
+    .pad-main{min-width:0}
+    @media(min-width:1024px){
+      .pad-layout{max-width:1320px}
+      .pad-layout.pad-split{max-width:1200px;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:${T.space.xl};align-items:start}
+      .pad-split .pad-head{position:sticky;top:72px}
+    }
     .pro-score-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
     .sc-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
     @media(max-width:900px){.sc-grid-2{grid-template-columns:1fr}}

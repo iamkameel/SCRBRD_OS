@@ -1,4 +1,4 @@
-import { useState, Fragment } from "react";
+import { Fragment } from "react";
 import { D, T, inkOn, textOn } from "../design/tokens.js";
 import { BatsmanChart, BowlerChart, ManhattanChart, RunRateChart, WormChart } from "./charts.jsx";
 import { SEGS } from "./field.js";
@@ -7,8 +7,7 @@ import { batHandOf, positionName } from "@scrbrd/scoring";
 import { CommentaryCard, WagonWheel } from "./panels.jsx";
 import { seedCompletedMatch } from "./seed.js";
 import { ALL_SHOTS_FLAT, SHOT_CATS } from "./shots.js";
-import { getPhase } from "./signals.js";
-import { Badge, BallDot, Btn, Card, Glass, Lbl } from "./ui.jsx";
+import { Badge, Btn, Card, Lbl } from "./ui.jsx";
 import { Select } from "../ui/primitives.jsx";
 import { Icon } from "../ui/icons.jsx";
 
@@ -246,77 +245,18 @@ function ScoringHub({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selSeg
 }
 
 /* ═══════════════════════════════════════════════════════
-   SCORING PANEL  (assembles hero, batsmen, bowler, hub, commentary)
+   SCORING PANEL  (pro mode: batsmen, bowler, hub, commentary)
+   The score itself is on the board above the pad (pad.jsx), drawn once;
+   this panel no longer repeats it.
 ═══════════════════════════════════════════════════════ */
 function ScoringPanel({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selSeg,
-  freeHit,fieldView,setFieldView,hidden,toggleLine,setModal,scoreKey,
+  fieldView,setFieldView,hidden,toggleLine,setModal,
   onApproach,onShot,onShotSkip,onFieldSel,onRun,onBye,onLegBye,onWicket,onWide,onNoBall,onReset,onBack,onUndo}){
   const bat1=inn?.batsmen.find(b=>b.id===inn.striker);
   const bat2=inn?.batsmen.find(b=>b.id===inn.nonStriker);
   const bow=inn?.bowlers.find(b=>b.id===inn.bowler);
-  const overBalls=(()=>{
-    if(!inn)return[];
-    const ov=Math.floor(inn.balls/6);
-    return inn.overLog.find(o=>o.over===ov)?.balls||[];
-  })();
-  const target=curIn===1?(innings[0]?.runs||0)+1:null;
-  const maxBalls=(match?.overs||20)*6;
-  const phase=inn?getPhase(inn.balls,match?.overs||20):"POWERPLAY";
-  const phaseCol=phase==="POWERPLAY"?D.emerald:phase==="MIDDLE"?D.amber:D.orange;
-  const rrr=target&&inn?.balls<maxBalls?((target-(inn?.runs||0))/((maxBalls-(inn?.balls||0))/6)).toFixed(2):"—";
   return (
     <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
-      <Glass glow={D.indigo} style={{padding:0}}>
-        <div className="gradAnim" style={{height:"3px",background:"linear-gradient(90deg,"+D.indigo+","+D.sky+","+D.emerald+","+D.indigo+")",backgroundSize:"200% 100%"}}/>
-        <div style={{padding:"16px 18px"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}}>
-            <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
-              <div className="liveDot liveGlow" style={{width:"8px",height:"8px",borderRadius:"50%",background:D.emerald}}/>
-              <span style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.emerald,letterSpacing:"0.18em",textTransform:"uppercase"}}>LIVE</span>
-              <Badge color={phaseCol}>{phase}</Badge>
-              <Badge color={D.sky}>{"Inn "+(curIn+1)}</Badge>
-            </div>
-            <Badge color={D.textMuted}>{(match?.overs||20)+" ov"}</Badge>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",gap:"12px"}}>
-            <div style={{flex:1}}>
-              <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginBottom:"2px"}}>{inn?.battingTeam}</div>
-              <div key={scoreKey} className="scoreAnim" style={{fontFamily:D.mono,fontSize:"clamp(42px,5vw,54px)",fontWeight:500,color:D.textPrimary,lineHeight:1,letterSpacing:"-0.025em"}}>
-                {inn?.runs||0}<span style={{color:D.textMuted,fontSize:"clamp(28px,3.5vw,36px)",fontWeight:400}}>{"/"+(inn?.wickets||0)}</span>
-              </div>
-              <div style={{marginTop:"6px",display:"flex",gap:"7px",alignItems:"center",flexWrap:"wrap"}}>
-                <span style={{fontFamily:D.mono,fontSize:"11px",color:D.textMuted}}>{fmtOv(inn?.balls||0)} ov</span>
-                <span style={{width:"1px",height:"10px",background:D.border,flexShrink:0}}/>
-                <div style={{display:"flex",alignItems:"baseline",gap:"3px"}}>
-                  <span style={{fontFamily:D.mono,fontSize:"15px",fontWeight:500,color:D.sky,lineHeight:1}}>{RR(inn?.runs||0,inn?.balls||0)}</span>
-                  <span style={{fontFamily:D.head,fontSize:"8px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:D.textMuted}}>RR</span>
-                </div>
-                {freeHit&&<span style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.08em",
-                  color:T.light.ink,background:T.light.alert,
-                  padding:"2px 8px",borderRadius:D.pill}}><Icon name="zap"/> FREE HIT</span>}
-              </div>
-            </div>
-            {target&&(
-              <div style={{background:D.surf2,border:"1px solid "+D.border,borderRadius:D.lg,padding:"9px 13px",textAlign:"right",flexShrink:0}}>
-                <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.textMuted,letterSpacing:"0.15em",textTransform:"uppercase",marginBottom:"2px"}}>Target</div>
-                <div style={{fontFamily:D.mono,fontSize:"24px",fontWeight:500,background:D.grad,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text",lineHeight:1}}>{target}</div>
-                <div style={{color:D.orange,fontSize:"10px",fontFamily:D.body,marginTop:"3px"}}>{"Need "+Math.max(0,target-(inn?.runs||0))+" off "+(maxBalls-(inn?.balls||0))+"b"}</div>
-                <div style={{color:D.textMuted,fontSize:"10px",fontFamily:D.mono,marginTop:"1px"}}>{"RRR "+rrr}</div>
-              </div>
-            )}
-          </div>
-          <div style={{marginTop:"12px",paddingTop:"10px",borderTop:"1px solid "+D.border}}>
-            <div style={{display:"flex",alignItems:"center",gap:"7px",flexWrap:"wrap"}}>
-              <Lbl>This over</Lbl>
-              {overBalls.length===0
-                ?<span style={{color:D.textMuted,fontSize:"10px",fontFamily:D.body,fontStyle:"italic"}}>new over</span>
-                :overBalls.map((b,i)=>(<BallDot key={i} ball={b} size={24}/>))
-              }
-              {overBalls.length>0&&<span style={{color:D.textSecondary,fontSize:"10px",fontFamily:D.mono,marginLeft:"auto"}}>{overBalls.reduce((s,b)=>s+(b.value||0),0)+" runs"}</span>}
-            </div>
-          </div>
-        </div>
-      </Glass>
       <Card accent={D.emerald}>
         <div style={{padding:"8px 13px 5px",display:"grid",gridTemplateColumns:"1fr 28px 28px 22px 22px 38px",gap:"3px",borderBottom:"1px solid "+D.border}}>
           {["Batsman","R","B","4s","6s","SR"].map(h=>(<Lbl key={h} sx={{textAlign:h==="Batsman"?"left":"right"}}>{h}</Lbl>))}
@@ -398,238 +338,6 @@ function ScoringPanel({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selS
   );
 }
 
-/* ═══════════════════════════════════════════════════════
-   FOCUS PAD — distraction-free one-tap scoring surface.
-   Rich shot/field capture lives one toggle away in Pro mode.
-═══════════════════════════════════════════════════════ */
-function FocusPad({inn,match,curIn,target,onCommitDetailed,onWicketCtx,onWide,onNoBall,onUndo,onPro,quick,onToggleQuick}){
-  const [phase,setPhase]=useState(1);      // 1 Shot · 2 Area · 3 Outcome
-  const [shot,setShot]=useState(null);
-  const [area,setArea]=useState(null);     // {seg,zone} | null (didn't travel)
-  const [wagonView,setWagonView]=useState("wagon");
-  const [hidden]=useState(()=>new Set());
-  if(!inn)return null;
-
-  const reset=()=>{setPhase(1);setShot(null);setArea(null);};
-  const shotMeta=shot?ALL_SHOTS_FLAT.find(s=>s.id===shot):null;
-  // Off pads/body = leg byes; beaten & ran = byes; otherwise off the bat.
-  const runType=(v)=>{ if(v<=0)return "run"; if(shot==="padded"||shot==="hit_body")return "LB"; if(shot==="missed")return "B"; return "run"; };
-  const commitRun=(v)=>{ onCommitDetailed(runType(v), v, shot, area?.seg??null, area?.zone??null); reset(); };
-  const commitWkt=()=>{ onWicketCtx(shot, area?.seg??null, area?.zone??null); reset(); };
-
-  const st=inn.batsmen.find(b=>b.id===inn.striker);
-  const ns=inn.batsmen.find(b=>b.id===inn.nonStriker);
-  const bw=inn.bowlers.find(b=>b.id===inn.bowler);
-  const crr=inn.balls?((inn.runs/inn.balls)*6).toFixed(2):"0.00";
-  const lastBalls=inn.ballLog.slice(-8);
-  const req=target!=null?target-inn.runs:null;
-  const ballsLeft=(match?.overs||20)*6-inn.balls;
-
-  const ContextStrip=(
-    <Card style={{padding:"14px 16px"}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:"10px"}}>
-        <div style={{fontFamily:D.mono,fontSize:"26px",fontWeight:700,color:D.textPrimary}}>
-          {inn.runs}/{inn.wickets}<span style={{fontSize:"13px",color:D.textMuted}}> ({fmtOv(inn.balls)})</span>
-        </div>
-        <div style={{fontFamily:D.mono,fontSize:"11px",color:D.textSecondary,textAlign:"right"}}>
-          CRR {crr}{req!=null&&<div style={{color:req<=ballsLeft?D.emerald:D.rose}}>{req>0?`need ${req} off ${ballsLeft}`:"target reached"}</div>}
-        </div>
-      </div>
-      <div style={{display:"flex",flexDirection:"column",gap:"4px",fontFamily:D.body,fontSize:"12px"}}>
-        <div style={{display:"flex",justifyContent:"space-between"}}>
-          <span style={{color:D.textPrimary,fontWeight:600}}>● {st?st.name:"—"}</span>
-          <span style={{fontFamily:D.mono,color:D.textSecondary}}>{st?`${st.runs} (${st.balls})`:""}</span>
-        </div>
-        <div style={{display:"flex",justifyContent:"space-between"}}>
-          <span style={{color:D.textSecondary}}>{ns?ns.name:"—"}</span>
-          <span style={{fontFamily:D.mono,color:D.textMuted}}>{ns?`${ns.runs} (${ns.balls})`:""}</span>
-        </div>
-        <div style={{display:"flex",justifyContent:"space-between",paddingTop:"5px",borderTop:`1px solid ${D.border}`}}>
-          <span style={{color:D.textSecondary}}><Icon name="ball"/> {bw?bw.name:"—"}</span>
-          <span style={{fontFamily:D.mono,color:D.textMuted}}>{bw?`${bw.wickets}/${bw.runs} (${fmtOv(bw.balls)})`:""}</span>
-        </div>
-      </div>
-      {lastBalls.length>0&&(
-        <div style={{display:"flex",gap:"5px",marginTop:"10px",overflowX:"auto"}}>
-          {lastBalls.map((b,i)=><BallDot key={i} ball={b} size={24}/>)}
-        </div>
-      )}
-    </Card>
-  );
-
-  // ── Quick mode: one-tap pad (speed over detail) ──
-  /**
-   * One key on the pad.
-   *
-   * `say` is the accessible name, and it is not optional dressing. Every key
-   * on this pad is one or two characters — "4", "·", "WD", an arrow — which a
-   * screen reader announces literally: "four", "middle dot", "W D", "leftwards
-   * arrow with hook". None of those is a cricket outcome. Worse, the sub-label
-   * that makes them legible to a sighted user is 7px, which is itself the
-   * contrast failure design.md flags.
-   *
-   * So the visible face stays terse — a scorer is glancing at it between
-   * deliveries — and the name says what actually happens.
-   */
-  const K=({label,sub,say,onClick,bg,fg,border,span,disabled})=>(
-    <button onClick={onClick} disabled={disabled} className="pressBtn"
-      aria-label={say ?? (sub ? `${label} — ${sub}` : label)} style={{
-      gridColumn:span?`span ${span}`:"auto",minHeight:"60px",borderRadius:D.lg,cursor:disabled?"default":"pointer",opacity:disabled?.4:1,
-      background:bg||D.surf2,border:`1px solid ${border||D.border}`,
-      display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:"2px"}}>
-      {/* aria-hidden on the face: the button already has a name, and without
-          this a screen reader reads the label, then the name, then the sub. */}
-      <span aria-hidden="true" style={{fontFamily:D.mono,fontSize:"21px",fontWeight:700,color:fg||D.textPrimary,lineHeight:1}}>{label}</span>
-      {/* §6.3 of the design audit, which calls this the single highest-priority
-          visual fix in the product — and it is right. These are read by an
-          untrained volunteer, outdoors, in direct sunlight, on a phone, under
-          time pressure, where a mistap is unrecoverable data loss. They were
-          simultaneously the smallest and lowest-contrast text in the system:
-          7px at 2.26:1.
-
-          WD and NB are two-letter tokens differentiated primarily by this
-          caption, with W sitting next to both. At 2.26:1 in sunlight the
-          caption is simply not there.
-
-          10px minimum, the key's own accent where it has one, and the 0.12em
-          tracking dropped — at this size it was costing legibility rather than
-          adding refinement. */}
-      {sub&&<span aria-hidden="true" style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:"0.02em",color:fg?textOn(fg):D.textSecondary}}>{sub}</span>}
-    </button>
-  );
-  if(quick){
-    return (
-      <div style={{maxWidth:"560px",margin:"0 auto",display:"flex",flexDirection:"column",gap:"12px"}}>
-        {ContextStrip}
-        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"8px"}}>
-          <K label="·" sub="Dot" say="Dot ball, no run" onClick={()=>onCommitDetailed("run",0,null,null,null)}/>
-          <K label="1" say="One run" onClick={()=>onCommitDetailed("run",1,null,null,null)}/>
-          <K label="2" say="Two runs" onClick={()=>onCommitDetailed("run",2,null,null,null)}/>
-          <K label="3" say="Three runs" onClick={()=>onCommitDetailed("run",3,null,null,null)}/>
-          <K label="4" say="Four, boundary" onClick={()=>onCommitDetailed("run",4,null,null,null)} bg={D.indigo+"1c"} fg={D.indigo} border={D.indigo+"44"}/>
-          <K label="6" say="Six, maximum" onClick={()=>onCommitDetailed("run",6,null,null,null)} bg={D.amber+"1c"} fg={D.amber} border={D.amber+"44"}/>
-          <K label="WD" sub="Wide" say="Wide" onClick={onWide} bg={D.orange+"14"} fg={D.orange} border={D.orange+"33"}/>
-          <K label="NB" sub="No ball" say="No ball" onClick={onNoBall} bg={D.amber+"10"} fg={D.amber} border={D.amber+"2a"}/>
-          <K label="W" sub="Wicket" say="Wicket" onClick={()=>onWicketCtx(null,null,null)} bg={D.rose+"1c"} fg={D.rose} border={D.rose+"44"}/>
-          <K label={<Icon name="undo-2"/>} sub="Undo" say="Undo the last ball" onClick={onUndo} span={2}/>
-          <button onClick={onToggleQuick} className="pressBtn" style={{minHeight:"60px",borderRadius:D.lg,cursor:"pointer",background:D.emerald+"12",border:`1px solid ${D.emerald}33`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:"3px"}}>
-            <span style={{fontSize:"14px",color:D.emerald}}><Icon name="compass"/></span>
-            <span style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",color:D.emerald}}>3-PHASE</span>
-          </button>
-        </div>
-        <button onClick={onPro} className="pressBtn" style={{padding:"9px",borderRadius:D.lg,cursor:"pointer",background:"transparent",border:`1px dashed ${D.borderMed}`,fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",color:D.textSecondary}}><Icon name="sliders-horizontal"/> PRO MODE — full capture</button>
-      </div>
-    );
-  }
-
-  // ── 3-phase guided flow ──
-  const StepChip=({n,label,val,done,onClick})=>{
-    const active=phase===n;
-    return (
-      <button onClick={done?onClick:undefined} className="pressBtn" style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",alignItems:"center",gap:"2px",
-        padding:"7px 6px",borderRadius:D.md,cursor:done?"pointer":"default",
-        background:active?D.indigo+"1c":done?D.emerald+"12":D.surf2,
-        border:`1px solid ${active?D.indigo+"55":done?D.emerald+"33":D.border}`}}>
-        <span style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",color:active?D.indigo:done?D.emerald:D.textMuted}}>
-          {done?"✓ ":""}{n} · {label}
-        </span>
-        <span style={{fontFamily:D.body,fontSize:"11px",fontWeight:600,color:val?D.textPrimary:D.textMuted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:"100%"}}>{val||"—"}</span>
-      </button>
-    );
-  };
-  const shotChip=(s)=>{
-    const on=shot===s.id;
-    return (
-      <button key={s.id} onClick={()=>{setShot(s.id);setPhase(2);}} className="pressBtn" style={{
-        display:"flex",alignItems:"center",gap:"5px",padding:"9px 12px",borderRadius:D.md,cursor:"pointer",
-        background:on?s.color+"22":D.surf2,border:`1px solid ${on?s.color+"66":D.border}`}}>
-        <span style={{fontFamily:D.body,fontSize:"12px",fontWeight:600,color:on?s.color:D.textPrimary}}>{s.label}</span>
-      </button>
-    );
-  };
-
-  return (
-    <div style={{maxWidth:"560px",margin:"0 auto",display:"flex",flexDirection:"column",gap:"12px"}}>
-      {ContextStrip}
-
-      {/* Phase stepper */}
-      <div style={{display:"flex",gap:"6px"}}>
-        <StepChip n={1} label="SHOT"    val={shotMeta?shotMeta.label:null} done={phase>1} onClick={()=>setPhase(1)}/>
-        <StepChip n={2} label="AREA"    val={area?SEGS[area.seg].label:(phase>2?"Didn’t travel":null)} done={phase>2} onClick={()=>setPhase(2)}/>
-        <StepChip n={3} label="OUTCOME" val={null} done={false}/>
-      </div>
-
-      {/* PHASE 1 — shot played */}
-      {phase===1&&(
-        <Card style={{padding:"12px 14px"}}>
-          {SHOT_CATS.map(c=>(
-            <div key={c.cat} style={{marginBottom:"10px"}}>
-              <div style={{fontFamily:D.head,fontSize:"8px",fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",color:c.color,marginBottom:"6px"}}>{c.cat}</div>
-              <div style={{display:"flex",flexWrap:"wrap",gap:"6px"}}>{c.shots.map(shotChip)}</div>
-            </div>
-          ))}
-          <div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,marginTop:"2px"}}>Tap the shot the batter played → then mark where it went.</div>
-        </Card>
-      )}
-
-      {/* PHASE 2 — area on the field */}
-      {phase===2&&(
-        <Card style={{padding:"14px"}}>
-          <WagonWheel ballLog={inn.ballLog} selSeg={area} onSel={(s)=>{setArea(s);setPhase(3);}}
-            batHand={batHandOf(inn)} handFor={b=>batHandOf(inn,b.strikerId)}
-            viewMode={wagonView} onViewMode={setWagonView} hidden={hidden} onToggle={()=>{}}/>
-          <div style={{display:"flex",gap:"8px",marginTop:"12px"}}>
-            <button onClick={()=>setPhase(1)} className="pressBtn" style={{flex:1,padding:"12px",borderRadius:D.lg,cursor:"pointer",background:D.surf2,border:`1px solid ${D.border}`,color:D.textSecondary,fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:"0.05em"}}>‹ SHOT</button>
-            <button onClick={()=>{setArea(null);setPhase(3);}} className="pressBtn" style={{flex:2,padding:"12px",borderRadius:D.lg,cursor:"pointer",background:D.surf3,border:`1px solid ${D.borderMed}`,color:D.textSecondary,fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:"0.05em"}}>DIDN’T TRAVEL / BLOCKED ›</button>
-          </div>
-          <div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,marginTop:"8px",textAlign:"center"}}>Tap where the ball went on the field.</div>
-        </Card>
-      )}
-
-      {/* PHASE 3 — runs or wicket */}
-      {phase===3&&(
-        <Card style={{padding:"14px"}}>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"8px",marginBottom:"8px"}}>
-            {[0,1,2,3,4,6].map(v=>(
-              <button key={v} onClick={()=>commitRun(v)} className="pressBtn" style={{minHeight:"62px",borderRadius:D.lg,cursor:"pointer",
-                background:v===6?D.amber+"1c":v===4?D.indigo+"1c":v===0?D.surf2:D.emerald+"14",
-                border:`1px solid ${v===6?D.amber+"44":v===4?D.indigo+"44":v===0?D.border:D.emerald+"33"}`,
-                display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
-                <span style={{fontFamily:D.mono,fontSize:"22px",fontWeight:700,color:v===6?D.amber:v===4?D.indigo:v===0?D.textPrimary:D.emerald}}>{v===0?"·":v}</span>
-                {v===0&&<span style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",color:D.textSecondary}}>DOT</span>}
-              </button>
-            ))}
-          </div>
-          {/* byes / leg-byes transparency */}
-          {(shot==="padded"||shot==="hit_body")&&<div style={{fontFamily:D.body,fontSize:"10px",color:D.orange,marginBottom:"8px",textAlign:"center"}}>Runs off the pads will be recorded as leg-byes.</div>}
-          {shot==="missed"&&<div style={{fontFamily:D.body,fontSize:"10px",color:D.orange,marginBottom:"8px",textAlign:"center"}}>Runs after a miss will be recorded as byes.</div>}
-          <button onClick={commitWkt} className="pressBtn" style={{width:"100%",padding:"14px",borderRadius:D.lg,cursor:"pointer",
-            background:D.rose+"1c",border:`1px solid ${D.rose}55`,color:D.roseText,fontFamily:D.head,fontSize:"13px",fontWeight:800,letterSpacing:"0.08em",marginBottom:"8px"}}>
-            <Icon name="bails-off"/> WICKET
-          </button>
-          <button onClick={()=>setPhase(2)} className="pressBtn" style={{width:"100%",padding:"10px",borderRadius:D.lg,cursor:"pointer",background:D.surf2,border:`1px solid ${D.border}`,color:D.textSecondary,fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:"0.05em"}}>‹ AREA</button>
-        </Card>
-      )}
-
-      {/* Extras strip — not shots, always available */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"8px"}}>
-        <K label="WD" sub="Wide" say="Wide" onClick={onWide} bg={D.orange+"14"} fg={D.orange} border={D.orange+"33"}/>
-        <K label="NB" sub="No ball" say="No ball" onClick={onNoBall} bg={D.amber+"10"} fg={D.amber} border={D.amber+"2a"}/>
-        <K label={<Icon name="undo-2"/>} sub="Undo" say="Undo the last ball" onClick={()=>{ if(phase>1){reset();} else {onUndo();} }} bg={D.surf2}/>
-      </div>
-
-      {/* Mode toggles */}
-      <div style={{display:"flex",gap:"8px"}}>
-        <button onClick={onToggleQuick} className="pressBtn" style={{flex:1,padding:"9px",borderRadius:D.lg,cursor:"pointer",background:"transparent",border:`1px solid ${D.border}`,fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.08em",color:D.textSecondary}}><Icon name="zap"/> QUICK MODE</button>
-        <button onClick={onPro} className="pressBtn" style={{flex:1,padding:"9px",borderRadius:D.lg,cursor:"pointer",background:"transparent",border:`1px dashed ${D.borderMed}`,fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.08em",color:D.textSecondary}}><Icon name="sliders-horizontal"/> PRO MODE</button>
-      </div>
-      <div style={{textAlign:"center",fontFamily:D.body,fontSize:"10px",color:D.textMuted}}>
-        {phase===1?"Phase 1 of 3 — select the shot played.":phase===2?"Phase 2 of 3 — select where it landed.":"Phase 3 of 3 — score runs or a wicket."} · Undo backs out of the current ball.
-      </div>
-    </div>
-  );
-}
-
 
 /* ═══════════════════════════════════════════════════════
    SCORING BLOCKED — SCRBRD-040
@@ -672,4 +380,4 @@ function ScoringBlocked({readiness,onFix}){
   );
 }
 
-export { FocusPad, ScoringBlocked, ScoringHub, ScoringPanel };
+export { ScoringBlocked, ScoringHub, ScoringPanel };

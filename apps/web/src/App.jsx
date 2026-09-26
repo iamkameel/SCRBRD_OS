@@ -409,12 +409,13 @@ export default function SCRBRD_OS() {
           <ScorerApp
             key={scorerResume ? (scorerResume.cfg?.matchId ?? scorerResume.cfg?.team1 ?? "resume") : "new"}
             resume={scorerResume}
-            onSignIn={() => { setLoginForPad(true); setAppState("login"); }}/>
+            onSignIn={() => { setLoginForPad(true); setAppState("login"); }}
+            // The way back is the scorer's own: the first key in the pad's
+            // title bar (step 2 of the redesign), floating on its setup and
+            // result screens. It used to float over the pad's bar from here.
+            onExit={() => { setScorerOpen(false); setScorerResume(null); }}/>
         </Suspense>
       </div>
-      <button className="os-exit-scorer pressBtn" onClick={()=>{setScorerOpen(false);setScorerResume(null);}}>
-        ‹ SCRBRD OS
-      </button>
     </>
   );
 

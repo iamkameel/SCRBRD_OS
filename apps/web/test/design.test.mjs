@@ -389,11 +389,18 @@ group("The scoring pad's captions are legible");
 // §6.3 — the audit's highest-priority visual fix. These are read by an
 // untrained volunteer, outdoors, in sunlight, under time pressure, where a
 // mistap is unrecoverable data loss. They were 7px at 2.26:1.
+//
+// Step 2 of the redesign (DESIGN_DIRECTION §4) moved the pad to scorer/pad.jsx
+// and put the words on the keys themselves — "Wide", "No ball", "Dot" — so
+// there is no caption under a two-letter face to squint at any more. The
+// check follows it: every size the pad sets is at or above the 12px floor,
+// and a key's word is 16px (§3.2, control).
 const scoring = readFileSync(join(SRC, "scorer/scoring.jsx"), "utf8");
-const keyCaption = scoring.match(/\{sub&&<span[^>]*fontSize:"(\d+)px"[^>]*letterSpacing:"([^"]+)"/);
-ok("the key caption is at least 10px", keyCaption && Number(keyCaption[1]) >= 10, keyCaption?.[1] + "px");
-ok("...and the 0.12em tracking is gone", keyCaption && parseFloat(keyCaption[2]) <= 0.05, keyCaption?.[2]);
-ok("nothing on the pad is 7px any more", !/fontSize:"7px"/.test(scoring));
+const pad = readFileSync(join(SRC, "scorer/pad.jsx"), "utf8");
+const padSizes = [...pad.matchAll(/fontSize:\s*"(\d+(?:\.\d+)?)px"/g)].map((m) => Number(m[1]));
+ok("every size the pad sets is at or above the 12px floor", padSizes.length > 0 && padSizes.every((n) => n >= 12), padSizes.join(", "));
+ok("...and a key's word is 16px", /fontSize: "16px"/.test(pad.match(/const keyBase = [\s\S]*?\n\}\);/)?.[0] ?? ""));
+ok("nothing on the pad is 7px any more", !/fontSize:"7px"/.test(scoring) && !padSizes.includes(7));
 
 group("The pairing is applied where colour is data");
 // A colour chosen from a table — a shot category, a role — is still text when

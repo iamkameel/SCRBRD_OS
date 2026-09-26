@@ -799,10 +799,10 @@ button{touch-action:manipulation}
   border-top:1px solid ${T.line.normal};border-radius:20px 20px 0 0;max-height:78vh;overflow-y:auto;
   padding:14px 14px calc(18px + env(safe-area-inset-bottom));animation:drawerIn ${T.motion.panel} ${T.motion.ease}}
 .os-exit-scorer{position:fixed;top:calc(10px + env(safe-area-inset-top));left:10px;z-index:9999;
-  display:flex;align-items:center;gap:6px;padding:7px 13px;border-radius:999px;cursor:pointer;
+  display:flex;align-items:center;gap:6px;min-height:44px;padding:8px 16px;border-radius:999px;cursor:pointer;
   background:${T.glass.film};backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
-  border:1px solid ${T.glass.edge};color:${T.content.primary};font-family:${T.type.head};font-size:10px;
-  font-weight:700;letter-spacing:.1em;box-shadow:${T.elevation.lg}}
+  border:1px solid ${T.glass.edge};color:${T.content.primary};font-family:${T.type.body};font-size:14px;
+  font-weight:600;box-shadow:${T.elevation.lg}}
 @media(max-width:1180px) and (min-width:881px){
   .os-shell{--g-4:repeat(2,1fr);--g-5:repeat(3,1fr)}
 }

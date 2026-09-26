@@ -182,7 +182,10 @@ function DynamicBar({inn,match,target,isChase,lastOver}){
  *   stored value was right; the render re-introduced the very defect the
  *   batter-relative frame exists to prevent. See placement.mjs.
  */
-function WagonWheel({ballLog=[],selSeg,onSel,onPlace,viewMode,onViewMode,hidden,onToggle,batHand="R",handFor}){
+// `bare`: the field alone, as wide as its column allows — the pad's Area
+// phase (step 2 of the redesign), where the heat toggle and the legend are
+// not what the scorer is being asked.
+function WagonWheel({ballLog=[],selSeg,onSel,onPlace,viewMode,onViewMode,hidden,onToggle,batHand="R",handFor,bare=false}){
   const handOf=handFor??(()=>batHand);
   // A live point being placed, before commit. Drag refines it; release commits.
   const [placing,setPlacing]=useState(null);
@@ -232,7 +235,7 @@ function WagonWheel({ballLog=[],selSeg,onSel,onPlace,viewMode,onViewMode,hidden,
   const pointCount=visLines.filter(b=>b.placementSource==="point").length;
   return (
     <div style={{display:"flex",flexDirection:"column",gap:"11px"}}>
-      <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
+      {!bare&&<div style={{display:"flex",alignItems:"center",gap:"8px"}}>
         <Lbl>Field Map</Lbl>
         <div style={{marginLeft:"auto",display:"flex",gap:"2px",background:D.surf3,borderRadius:D.pill,padding:"3px"}}>
           {["wagon","heatmap"].map(m=>(
@@ -245,8 +248,8 @@ function WagonWheel({ballLog=[],selSeg,onSel,onPlace,viewMode,onViewMode,hidden,
             }}>{m==="wagon"?"Wheel":"Heat"}</button>
           ))}
         </div>
-      </div>
-      <div style={{width:"100%",maxWidth:"272px",margin:"0 auto",aspectRatio:"1",userSelect:"none"}}>
+      </div>}
+      <div style={{width:"100%",maxWidth:bare?"min(100%, 332px)":"272px",margin:"0 auto",aspectRatio:"1",userSelect:"none"}}>
         <svg ref={svgRef} viewBox="0 0 300 300" style={{width:"100%",height:"100%",display:"block"}}
           role={onPlace?"application":"img"}
           aria-label={onPlace
@@ -357,7 +360,7 @@ function WagonWheel({ballLog=[],selSeg,onSel,onPlace,viewMode,onViewMode,hidden,
             transform={`rotate(90,291,${CY})`} style={{pointerEvents:"none"}}>LEG</text>
         </svg>
       </div>
-      <div style={{display:"flex",justifyContent:"center",gap:"5px",flexWrap:"wrap"}}>
+      {!bare&&<div style={{display:"flex",justifyContent:"center",gap:"5px",flexWrap:"wrap"}}>
         {Object.entries(LK_COLS).map(([k,col])=>{
           const off=hidden.has(k);
           return(<button key={k} onClick={()=>onToggle(k)} className="pressBtn" style={{
@@ -369,7 +372,7 @@ function WagonWheel({ballLog=[],selSeg,onSel,onPlace,viewMode,onViewMode,hidden,
             <span style={{color:off?D.textMuted:D.textSecondary,fontSize:"10px",fontFamily:D.head,fontWeight:600,letterSpacing:"0.05em"}}>{k}</span>
           </button>);
         })}
-      </div>
+      </div>}
     </div>
   );
 }
@@ -839,12 +842,12 @@ function InningsOverBanner({onReview}){
     }} data-testid="innings-over-banner">
       <div>
         <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:800,color:D.textPrimary,letterSpacing:"0.04em"}}>INNINGS OVER</div>
-        <div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted}}>Not closed yet — check the figures first</div>
+        <div style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary}}>Not closed yet — check the figures first</div>
       </div>
       <button onClick={onReview} className="pressBtn" data-testid="banner-review"
-        style={{padding:"7px 16px",borderRadius:D.pill,cursor:"pointer",border:"none",
+        style={{minHeight:"44px",padding:"7px 16px",borderRadius:D.pill,cursor:"pointer",border:"none",
           background:D.amber,color:inkOn(D.amber),
-          fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.04em"}}>
+          fontFamily:D.body,fontSize:"15px",fontWeight:700}}>
         Review
       </button>
     </div>
@@ -867,7 +870,7 @@ function FreeHitBanner({onDismiss}){
       <span style={{fontSize:"20px",color:T.light.ink}}><Icon name="zap"/></span>
       <div>
         <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:800,color:T.light.ink,letterSpacing:"0.1em"}}>FREE HIT!</div>
-        <div style={{fontFamily:D.body,fontSize:"10px",color:T.light.ink,opacity:.8}}>Next ball: batter can only be run out</div>
+        <div style={{fontFamily:D.body,fontSize:"12px",color:T.light.ink}}>Next ball: batter can only be run out</div>
       </div>
       <span style={{fontSize:"20px",color:T.light.ink}}><Icon name="zap"/></span>
     </div>

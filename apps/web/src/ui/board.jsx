@@ -83,28 +83,32 @@ export function Board({ team, total, wickets, overs, sub, batters = [], bowler, 
     <section data-testid={testid} aria-label={`Scoreboard: ${said}`}
       style={{ background: B.face, color: B.figure, borderRadius: T.radius.lg, padding: `${T.space.md} ${T.space.lg}`,
         fontFamily: mono, fontVariantNumeric: "tabular-nums", border: `1px solid ${B.rule}` }}>
-      {/* The total: team on the left, the figures on the right, as a board has them. */}
+      {/* The total: the team, the overs and the target or rates on the left,
+          the figures on the right, as a board has them. The left column sits
+          beside the total rather than under it, so the board is no taller
+          than its figures need (step 2: the pad fits a phone). */}
       <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: T.space.md }}>
-        <div style={{ ...T.role.label, color: B.dim, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {team}
+        <div style={{ minWidth: 0, display: "grid", gap: "2px" }}>
+          <div style={{ ...T.role.label, color: B.dim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {team}
+          </div>
+          {(overs != null || sub) && (
+            <div style={{ display: "flex", alignItems: "baseline", gap: `0 ${T.space.sm}`, flexWrap: "wrap" }}>
+              {overs != null && (
+                <span style={{ ...T.role.figure.md, color: B.figure }}>
+                  <Figure value={overs} testid={`${testid}-overs`}/>
+                </span>
+              )}
+              {sub && <span style={{ ...T.role.body, fontSize: "14px", lineHeight: 1.35, color: B.dim }} data-testid={`${testid}-sub`}>{sub}</span>}
+            </div>
+          )}
         </div>
-        <div className={pad ? "os-board-total" : undefined} style={{ ...big, color: B.figure, whiteSpace: "nowrap" }} data-testid={`${testid}-total`}>
+        <div className={pad ? "os-board-total" : undefined} style={{ ...big, color: B.figure, whiteSpace: "nowrap", flexShrink: 0 }} data-testid={`${testid}-total`}>
           <Figure value={total ?? 0} testid={`${testid}-runs`}/>
           <span style={{ color: B.dim }}>/</span>
           <Figure value={wickets ?? 0} testid={`${testid}-wickets`}/>
         </div>
       </div>
-
-      {(overs != null || sub) && (
-        <div style={{ display: "flex", alignItems: "baseline", gap: T.space.sm, flexWrap: "wrap", marginTop: T.space.xs }}>
-          {overs != null && (
-            <span style={{ ...T.role.figure.md, color: B.figure }}>
-              <Figure value={overs} testid={`${testid}-overs`}/>
-            </span>
-          )}
-          {sub && <span style={{ ...T.role.body, fontSize: "14px", color: B.dim }} data-testid={`${testid}-sub`}>{sub}</span>}
-        </div>
-      )}
 
       {(batters.length > 0 || bowler || thisOver.length > 0) && (
         <div style={{ borderTop: `1px solid ${B.rule}`, marginTop: T.space.md, paddingTop: T.space.sm, display: "grid", gap: T.space.xs }}>

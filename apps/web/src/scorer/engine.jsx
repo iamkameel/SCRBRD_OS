@@ -7,7 +7,7 @@ import {
   noPlacement, NO_CONTACT_SHOTS, PLACEMENT_NULL, PLACEMENT_SOURCE, CAPTURE_PROFILE,
   DISMISSAL, DISMISSAL_LABEL, RETIRE_REASON, BOWLER_CHANGE_REASON, isMidOver, scoringReadiness, SCORING_BLOCK, lawsRefusal, REFUSAL_TEXT, LOCAL_ONLY,
 } from "@scrbrd/scoring";
-import { D, T, clr } from "../design/tokens.js";
+import { D, T, inkOn } from "../design/tokens.js";
 import { deviceId } from "../lib/device.js";
 import { loadMatch, saveMatch, saveAside, storageKind } from "../lib/persist.js";
 import { api, signedIn } from "../lib/api.js";
@@ -16,15 +16,16 @@ import { PadSync } from "../lib/sync.js";
 import { refusalWords } from "../lib/handover.js";
 import { withoutEvents, recordAgain, recordAgainRefusal, heldInOrder, undoOnPad, reconcile, padLogFrom, inningsInPlay, withOrphans } from "@scrbrd/sync";
 import { HeldSheet } from "./held.jsx";
-import { PadMenu } from "./padMenu.jsx";
+import { MenuItem, MenuSection, PadMenu } from "./padMenu.jsx";
+import { ExitKey, Pad, PadBoard } from "./pad.jsx";
 import { SyncBanner } from "./syncBanner.jsx";
 import { TossSheet } from "./toss.jsx";
 import { SEGS } from "./field.js";
 import { fmtOv } from "./format.js";
 import { ALL_SHOTS } from "./shots.js";
 import { AnalysisDashboard, ManhattanChart } from "./charts.jsx";
-import { DynamicBar, EventOverlay, FreeHitBanner, InningsOverBanner, PartnershipCard, ScorecardPanel, buildEventCfg, detectMilestone } from "./panels.jsx";
-import { FocusPad, ScoringBlocked, ScoringPanel } from "./scoring.jsx";
+import { EventOverlay, FreeHitBanner, InningsOverBanner, PartnershipCard, ScorecardPanel, buildEventCfg, detectMilestone } from "./panels.jsx";
+import { ScoringBlocked, ScoringPanel } from "./scoring.jsx";
 import { SetupScreen } from "./setup.jsx";
 import { BattingOrderSheet, HandoverSheet, Innings2Sheet, InningsReviewSheet, NewOverSheet, NoBallSheet, PenaltySheet, RevisionSheet, ShotSelectorSheet, WicketSheet } from "./sheets.jsx";
 import { INT_TEAMS } from "./teams.js";
@@ -192,7 +193,7 @@ function SyncPill({ sync, storage, onOpenHeld }) {
     local:   sync.reason === "handed_over"
       ? { dot: D.sky, label: "Handed over", title: "You gave the scoring token to someone else" }
       : sync.reason === "handover_pending" || sync.reason === "verifying"
-      ? { dot: D.amber, label: "Handover pending", title: "Someone has armed a handover — use ⇄ Take over to claim it" }
+      ? { dot: D.amber, label: "Handover pending", title: "Someone has armed a handover — use Take over to claim it" }
       // db/33 (SCRBRD-034): the result is declared and the database refuses
       // every claim. Not "On device (match_complete)": the scorer should
       // know retrying will not help and where a correction goes instead.
@@ -202,12 +203,14 @@ function SyncPill({ sync, storage, onOpenHeld }) {
     offline: { dot: D.textMuted, label: "On device", title: "Saved here only" },
   }[sync.state] ?? { dot: D.textMuted, label: "On device", title: "Saved here only" };
 
-  const pillStyle = {display:"flex",alignItems:"center",gap:"6px",background:D.surf1,
-    border:`1px solid ${D.border}`,borderRadius:D.pill,padding:"4px 11px",flexShrink:0};
+  // The state in one line, under the board (DESIGN_DIRECTION §4): the word and
+  // the count, in body size. The words are SCRBRD-078's, unchanged.
+  const pillStyle = {display:"inline-flex",alignItems:"center",gap:T.space.sm,background:T.surface.raised,
+    border:`1px solid ${T.line.normal}`,borderRadius:T.radius.pill,padding:`${T.space.xs} ${T.space.md}`,minHeight:"36px",flexShrink:0};
   const inner = (
     <>
-      <div style={{width:"6px",height:"6px",borderRadius:"50%",background:S.dot}}/>
-      <span style={{fontFamily:D.mono,fontSize:"11px",color:D.textSecondary}}>{S.label}</span>
+      <span aria-hidden="true" style={{width:"8px",height:"8px",borderRadius:"50%",background:S.dot,flexShrink:0}}/>
+      <span style={{...T.role.body,fontWeight:600,color:T.content.primary}}>{S.label}</span>
     </>
   );
   // Held events wait on a person, so the pill that names them is also the
@@ -216,7 +219,7 @@ function SyncPill({ sync, storage, onOpenHeld }) {
     <button type="button" onClick={onOpenHeld} className="pressBtn" data-testid="held-open"
       title={`${S.title} Tap to see them.`}
       aria-label={`Sync status: ${S.label}. ${S.title} Open the list.`}
-      style={{...pillStyle,cursor:"pointer",border:`1px solid ${D.rose}55`}}>
+      style={{...pillStyle,minHeight:"44px",cursor:"pointer",border:`1px solid ${T.semantic.critical}`}}>
       {inner}
     </button>
   );
@@ -234,7 +237,9 @@ function SyncPill({ sync, storage, onOpenHeld }) {
 ═══════════════════════════════════════════════════════ */
 // `onSignIn` is the shell's way to its sign-in page and back to this pad
 // (App.jsx): a live pad that is signed out says so and offers it (SCRBRD-078).
-function SCRBRD({resume,onSignIn}={}){
+// `onExit` is the way back to the shell (App.jsx): the first thing in the
+// pad's title bar, and a floating key on the setup and result screens.
+function SCRBRD({resume,onSignIn,onExit}={}){
   const[screen,setScreen]=useState("setup");
   const[match,setMatch]=useState(null);
   // ── The event log is the state ──────────────────────────
@@ -257,7 +262,6 @@ function SCRBRD({resume,onSignIn}={}){
   const[eventOverlay,setEventOverlay]=useState(null);
   // Milestone queue — show one at a time
   const milestoneQRef=useRef([]);
-  const[lastOverDCB,setLastOverDCB]=useState(null);
   // Free hit: true after a height/front-foot no-ball
   const[freeHit,setFreeHit]=useState(false);
   // Undo truncates the event log; there is no snapshot stack to keep.
@@ -267,8 +271,10 @@ function SCRBRD({resume,onSignIn}={}){
   const[fieldView,setFieldView]=useState("wagon");
   const[hidden,setHidden]=useState(new Set());
   const scoreKeyRef=useRef(0);
-  const [uiMode,setUiMode]=useState("focus"); // focus = one-tap pad · pro = full shot capture
-  const [focusQuick,setFocusQuick]=useState(false); // one-tap speed mode inside focus scoring
+  const [uiMode,setUiMode]=useState("focus"); // focus = the pad (three phases, or Basic Scoring) · pro = full shot capture
+  // Basic Scoring, chosen on the pad's menu for one innings: {innings, basic}.
+  // Unchosen, the pad follows the innings' declaration (see `basic` below).
+  const [basicChoice,setBasicChoice]=useState(null);
   // ── Identity of this device, and what the server has seen ──
   // Both are refs rather than state: they are read while appending an event
   // and must never trigger a re-render of the scoring pad mid-tap.
@@ -709,6 +715,29 @@ function SCRBRD({resume,onSignIn}={}){
       overs:inn.overs, target:inn.target, captureProfile,
     }));
   };
+
+  // ── Basic Scoring (DESIGN_DIRECTION §4, decision 3) ─────
+  // The three-phase pad is the default; Basic Scoring is the one-tap pad,
+  // outcome only, and an option. It IS the `quick` capture profile: an
+  // innings declared quick opens on it, and choosing it while the innings can
+  // still be declared (canDeclare: no ball, no batter yet) declares the
+  // innings quick — and choosing the three phases back declares it full —
+  // through declareCapture, the same innings_start the opener sheet's picker
+  // writes. Once play has started the declaration is fixed (the fold ignores
+  // a late one), so from then the switch changes only how the pad asks, for
+  // this innings on this device. Each ball records its own profile either
+  // way, exactly as it always has (commitBall).
+  const basic=basicChoice?.innings===curIn?basicChoice.basic:inn?.declaredProfile===CAPTURE_PROFILE.QUICK;
+  const toggleBasic=()=>{
+    const next=!basic;
+    setBasicChoice({innings:curIn,basic:next});
+    setUiMode("focus");
+    if(canDeclare)declareCapture(next?CAPTURE_PROFILE.QUICK:CAPTURE_PROFILE.FULL);
+  };
+  const PROFILE_WORD={full:"Full",standard:"Standard",quick:"Basic Scoring"};
+  const basicHint=canDeclare
+    ?(basic?"On: runs, extras and wickets. This innings is declared Basic Scoring (runs only).":"Runs, extras and wickets only — no shot, no area. Chosen now, it declares this innings Basic Scoring (runs only).")
+    :`${inn?.declaredProfile?`This innings is declared ${PROFILE_WORD[inn.declaredProfile]}`:"This innings has no declaration"}; play has started, so switching changes only how the pad asks.`;
 
   // ── The first innings of a live fixture (SCRBRD-067) ─────
   // The side the toss put in bats; the home roster (the one the pad reads)
@@ -1198,10 +1227,6 @@ function SCRBRD({resume,onSignIn}={}){
 
     setSelSeg(null);setSelShot(null);setScoringCtx(null);setHubStage(0);setHubShot(null);
     scoreKeyRef.current++;
-    if(endedOver){
-      const ovLog=after.overLog[after.overLog.length-1];
-      if(ovLog)setLastOverDCB(ovLog);
-    }
     const mile=detectMilestone(ev,before);
     const showBallOverlay=type==="run"&&(value===4||value===6);
     const queue=[];
@@ -1604,6 +1629,7 @@ function SCRBRD({resume,onSignIn}={}){
     return (
       <div style={{minHeight:"100vh",background:D.base,padding:"24px",display:"flex",flexDirection:"column",alignItems:"center"}}>
         <GS/>
+        <ExitKey onExit={onExit}/>
         <div style={{width:"100%",maxWidth:"920px"}}>
           <Glass style={{padding:"36px",textAlign:"center",marginBottom:"28px"}}>
             <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.2em",textTransform:"uppercase",marginBottom:"12px"}}>Match Complete</div>
@@ -1623,13 +1649,19 @@ function SCRBRD({resume,onSignIn}={}){
     );
   }
 
-  if(screen==="setup")return (<><GS/><SetupScreen onStart={startMatch}/></>);
+  if(screen==="setup")return (<><GS/><SetupScreen onStart={startMatch}/><ExitKey onExit={onExit}/></>);
 
   /* ── MATCH SCREEN ── */
   const NAV=[{id:"score",icon:"bat",label:"Score"},{id:"cards",icon:"scorebook",label:"Cards"},{id:"analysis",icon:"chart-column",label:"Analysis"},{id:"history",icon:"scroll-text",label:"History"}];
   const target2=curIn===1?(inn?.target??((innings[0]?.runs||0)+1)):null;
-  // Determine if shot selection is in progress (show field in "confirm shot" mode)
-  const awaitingField=scoringCtx&&scoringCtx.type!=="W"&&scoringCtx.type!=="Wd"&&scoringCtx.type!=="Nb"&&modal===null;
+  // Handover: offered to whoever holds the token, and to whoever's own claim
+  // was refused because one is already pending (to take it) — anyone else
+  // has nothing to do here.
+  const takeOver=sync.reason==="handover_pending"||sync.reason==="verifying";
+  const showHandover=attached||takeOver;
+  // At a desktop or a tablet on its side, the board and its state sit beside
+  // the pad instead of above it (the `pad-split` rule in GS).
+  const split=activeTab==="score"&&uiMode==="focus";
 
   /* Drag-to-reorder cards in score tab */
   const handleCardDragStart=(e,id)=>{cardDragRef.current=id;e.dataTransfer.effectAllowed="move";};
@@ -1651,59 +1683,52 @@ function SCRBRD({resume,onSignIn}={}){
       {freeHit&&<FreeHitBanner onDismiss={()=>setFreeHit(false)}/>}
       {inn?.complete&&!inningsClosed&&!modal&&<InningsOverBanner onReview={()=>setModal("inningsReview")}/>}
       {renderModal()}
-      <div style={{minHeight:"100vh",background:D.base,paddingBottom:"88px"}}>
-        {/* Top bar */}
-        <div style={{position:"sticky",top:0,zIndex:100,background:D.glass,
-          backdropFilter:"blur(24px) saturate(1.8)",WebkitBackdropFilter:"blur(24px) saturate(1.8)",
-          borderBottom:`1px solid ${D.border}`,padding:"10px 18px",
-          display:"flex",alignItems:"center",gap:"12px"}}>
-          <div style={{fontFamily:D.head,fontSize:"17px",fontWeight:800,
-            background:D.grad,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text",
-            letterSpacing:"0.04em",flexShrink:0}}>SCRBRD</div>
-          <div style={{width:"1px",height:"16px",background:D.border,flexShrink:0}}/>
-          <div style={{flex:1,fontFamily:D.body,fontSize:"13px",fontWeight:500,color:D.textSecondary,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>
-            <span style={{color:D.sky}}>{match?.team1}</span>
-            <span style={{color:D.textMuted,fontSize:"11px"}}> vs </span>
-            <span style={{color:D.emerald}}>{match?.team2}</span>
-            <span style={{color:D.textMuted,fontSize:"11px"}}> · {inn?.overs??match?.overs}ov{inn?.revised&&<span style={{color:D.amber}} title={`revised: ${inn.revised.reason}`}> (revised)</span>}</span>
+      <div style={{minHeight:"100vh",background:T.surface.canvas,paddingBottom:"72px"}}>
+        {/* The title bar: one row that fits a phone (DESIGN_DIRECTION §4) —
+            back, the match, the handover when there is one, and the pad's
+            menu, which holds everything occasional. The score is not here:
+            it is on the board, once. */}
+        <header data-testid="pad-titlebar" style={{position:"sticky",top:0,zIndex:100,minHeight:"52px",
+          display:"flex",alignItems:"center",gap:T.space.sm,padding:`${T.space.xs} ${T.space.sm}`,
+          background:T.surface.base,borderBottom:`1px solid ${T.line.normal}`}}>
+          <ExitKey onExit={onExit} inBar/>
+          <div style={{flex:1,minWidth:0}}>
+            <h1 style={{margin:0,fontFamily:T.type.body,fontSize:"16px",fontWeight:600,lineHeight:1.25,color:T.content.primary,
+              whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+              {match?.team1} v {match?.team2}
+            </h1>
+            <div style={{fontFamily:T.type.body,fontSize:"13px",lineHeight:1.3,color:T.content.secondary,
+              whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+              Innings {curIn+1} · {inn?.overs??match?.overs}ov{inn?.revised&&<span style={{color:T.semantic.warning}} title={`revised: ${inn.revised.reason}`}> (revised)</span>}
+            </div>
           </div>
-          {/* The pad's menu: today, the theme (DESIGN_DIRECTION §3.1). Ahead
-              of Revise so it stays on screen at phone width, where the end
-              of this bar runs off the right edge. */}
-          <PadMenu/>
-          <button onClick={()=>setModal("revise")} className="pressBtn" data-testid="revise-innings" title="Revise overs / target (rain)"
-            style={{flexShrink:0,padding:"4px 10px",borderRadius:D.pill,cursor:"pointer",background:"transparent",border:`1px solid ${D.border}`,fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted}}>
-            <Icon name="umbrella"/> Revise
-          </button>
-          {/* Visible to whoever currently holds the token (to offer it) and
-              to whoever's own claim was refused because one is already
-              pending (to take it) — anyone else has nothing to do here. */}
-          {(attached||sync.reason==="handover_pending"||sync.reason==="verifying")&&(
-            <button onClick={()=>setModal("handover")} className="pressBtn" data-testid="open-handover"
-              title={sync.reason==="handover_pending"||sync.reason==="verifying"?"A handover is pending — enter the code":"Hand scoring to someone else"}
-              style={{flexShrink:0,padding:"4px 10px",borderRadius:D.pill,cursor:"pointer",
-                background:sync.reason==="handover_pending"?`${D.amber}14`:"transparent",
-                border:`1px solid ${sync.reason==="handover_pending"?D.amber+"55":D.border}`,
-                fontFamily:D.head,fontSize:"10px",fontWeight:700,color:sync.reason==="handover_pending"?D.amber:D.textMuted}}>
-              ⇄ {sync.reason==="handover_pending"||sync.reason==="verifying"?"Take over":"Handover"}
+          {showHandover&&(
+            <button onClick={()=>setModal("handover")} className="pressBtn os-state" data-testid="open-handover"
+              title={takeOver?"A handover is pending — enter the code":"Hand scoring to someone else"}
+              style={{flexShrink:0,minHeight:"44px",padding:`0 ${T.space.md}`,borderRadius:T.radius.md,cursor:"pointer",
+                background:takeOver?T.semantic.warning:"transparent",
+                border:`1px solid ${takeOver?T.semantic.warning:T.line.normal}`,
+                fontFamily:T.type.body,fontSize:"15px",fontWeight:600,whiteSpace:"nowrap",
+                color:takeOver?inkOn(T.semantic.warning):T.content.primary}}>
+              {takeOver?"Take over":"Hand over"}
             </button>
           )}
-          {/* Awaiting field prompt */}
-          {awaitingField&&(
-            <div style={{background:`${D.amber}14`,border:`1px solid ${D.amber}44`,borderRadius:D.pill,padding:"4px 12px",
-              fontFamily:D.body,fontSize:"11px",fontWeight:500,color:D.amber,flexShrink:0}}>
-              {selShot?ALL_SHOTS.find(s=>s.id===selShot)?.label||"Shot selected":"Select field position"}
-            </div>
-          )}
-          {inn&&(
-            <div style={{display:"flex",alignItems:"center",gap:"7px",background:D.surf1,
-              border:`1px solid ${D.border}`,borderRadius:D.pill,padding:"4px 13px",flexShrink:0}}>
-              <div className="liveDot" style={{width:"6px",height:"6px",borderRadius:"50%",background:D.emerald}}/>
-              <span style={{fontFamily:D.mono,fontSize:"14px",fontWeight:500,color:D.textPrimary,letterSpacing:"-0.01em"}}>{inn.runs}/{inn.wickets}</span>
-              <span style={{color:D.textMuted,fontSize:"11px",fontFamily:D.mono}}>{fmtOv(inn.balls)}</span>
-            </div>
-          )}
-          <SyncPill sync={sync} storage={saveState.kind} onOpenHeld={()=>setModal("held")}/>
+          <PadMenu>{close=>(
+            <>
+              <MenuSection title="Scoring">
+                <MenuItem testid="pad-basic-scoring" label="Basic Scoring" checked={basic&&uiMode==="focus"} hint={basicHint}
+                  onClick={()=>{toggleBasic();close();}}/>
+                <MenuItem testid="pad-pro-mode" label="Pro mode — full capture" checked={uiMode==="pro"}
+                  hint="Approach, shot and the exact point, with the scorecards beside the pad."
+                  onClick={()=>{setUiMode(m=>m==="pro"?"focus":"pro");setActiveTab("score");close();}}/>
+              </MenuSection>
+              <MenuSection title="This innings">
+                <MenuItem testid="revise-innings" label="Revise overs or target" hint="Rain, or the umpires' decision"
+                  onClick={()=>{close();setModal("revise");}}/>
+                <MenuItem testid="pad-penalty" label="Penalty runs" onClick={()=>{close();setModal("penalty");}}/>
+              </MenuSection>
+            </>
+          )}</PadMenu>
           {/* The score, announced.
               Tapping a key on the pad changes numbers in three places and
               says nothing. For a screen-reader user that is the entire
@@ -1718,29 +1743,33 @@ function SCRBRD({resume,onSignIn}={}){
               {`${inn.runs} for ${inn.wickets}, ${fmtOv(inn.balls)} overs`}
             </div>
           )}
-        </div>
+        </header>
 
-        {/* Dynamic Content Bar — always visible when match active */}
-        {inn&&<DynamicBar inn={inn} match={match} target={target2} isChase={curIn===1} lastOver={lastOverDCB}/>}
-
-        {/* Content */}
-        <div style={{maxWidth:"1320px",margin:"0 auto",padding:"16px"}}>
-          {/* Not while a sheet is open: the sheet IS the fix in progress, and
-              a second button offering the same fix behind it only competes. */}
-          {/* Where this pad stands with the server, in words, on every tab:
-              signed out, no signal, refused, forked, handed over (SCRBRD-078). */}
-          {live&&!modal&&<SyncBanner status={padStatus} match={match} asideCount={asideCount}
-            onSignIn={onSignIn&&padStatus?.online?onSignIn:null}
-            onRetry={()=>syncRef.current?.attach("open")}
-            onScoreHere={()=>syncRef.current?.attach("open")}
-            onTakeOver={()=>setModal("handover")}/>}
-          {activeTab==="score"&&!modal&&<ScoringBlocked readiness={readiness} onFix={fixBlock}/>}
+        <div className={`pad-layout${split?" pad-split":""}`}>
+          <div className="pad-head">
+            {/* The board, once (§1, §4). Always black, in both themes. */}
+            {inn&&<PadBoard inn={inn} match={match} target={target2}/>}
+            {/* The state in one line, under the board: the SCRBRD-078 words. */}
+            <div data-testid="pad-state" style={{display:"flex",alignItems:"center",gap:T.space.sm,flexWrap:"wrap"}}>
+              <SyncPill sync={sync} storage={saveState.kind} onOpenHeld={()=>setModal("held")}/>
+            </div>
+            {/* Where this pad stands with the server, in words, on every tab:
+                signed out, no signal, refused, forked, handed over (SCRBRD-078).
+                Not while a sheet is open: the sheet IS the fix in progress,
+                and a second button offering the same fix behind it only
+                competes. */}
+            {live&&!modal&&<SyncBanner status={padStatus} match={match} asideCount={asideCount}
+              onSignIn={onSignIn&&padStatus?.online?onSignIn:null}
+              onRetry={()=>syncRef.current?.attach("open")}
+              onScoreHere={()=>syncRef.current?.attach("open")}
+              onTakeOver={()=>setModal("handover")}/>}
+            {activeTab==="score"&&!modal&&<ScoringBlocked readiness={readiness} onFix={fixBlock}/>}
+          </div>
+          <div className="pad-main">
           {activeTab==="score"&&uiMode==="focus"&&(
-            <FocusPad inn={inn} match={match} curIn={curIn} target={target2}
+            <Pad inn={inn} basic={basic}
               onCommitDetailed={onCommitDetailed} onWicketCtx={onWicketCtx}
-              onWide={onWide} onNoBall={onNoBall}
-              onUndo={undoLastBall} onPro={()=>setUiMode("pro")}
-              quick={focusQuick} onToggleQuick={()=>setFocusQuick(v=>!v)}/>
+              onWide={onWide} onNoBall={onNoBall} onUndo={undoLastBall}/>
           )}
           {activeTab==="score"&&uiMode!=="focus"&&(
             <div className="pro-score-grid">
@@ -1748,10 +1777,10 @@ function SCRBRD({resume,onSignIn}={}){
               <ScoringPanel
                 inn={inn} innings={innings} curIn={curIn} match={match}
                 hubStage={hubStage} hubShot={hubShot} hubApproach={hubApproach}
-                selSeg={selSeg} freeHit={freeHit}
+                selSeg={selSeg}
                 fieldView={fieldView} setFieldView={setFieldView}
                 hidden={hidden} toggleLine={toggleLine}
-                setModal={setModal} scoreKey={scoreKeyRef.current}
+                setModal={setModal}
                 onApproach={onApproach} onShot={onShot} onShotSkip={onShotSkip}
                 onFieldSel={onFieldSel} onRun={onRun} onBye={onBye} onLegBye={onLegBye}
                 onWicket={onHubWicket} onWide={onWide} onNoBall={onNoBall} onReset={resetHub}
@@ -1759,8 +1788,8 @@ function SCRBRD({resume,onSignIn}={}){
               {/* Right column: draggable cards */}
               <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
                 <div style={{display:"flex",alignItems:"center",gap:"6px",padding:"2px 0"}}>
-                  <Lbl sx={{color:D.textMuted,fontSize:"9px"}}>⠿ drag cards to reorder</Lbl>
-                  <button onClick={()=>setUiMode("focus")} className="pressBtn" style={{marginLeft:"auto",padding:"4px 10px",borderRadius:D.pill,background:D.emerald+"14",border:`1px solid ${D.emerald}33`,color:D.emerald,fontFamily:D.head,fontSize:"8px",fontWeight:700,letterSpacing:"0.1em",cursor:"pointer"}}><Icon name="zap"/> FOCUS MODE</button>
+                  <span style={{fontFamily:T.type.body,fontSize:"13px",color:T.content.secondary}}>Drag the cards to reorder them</span>
+                  <button onClick={()=>setUiMode("focus")} className="pressBtn os-state" style={{marginLeft:"auto",minHeight:"44px",padding:`0 ${T.space.md}`,borderRadius:T.radius.md,background:"transparent",border:`1px solid ${T.line.strong}`,color:T.content.primary,fontFamily:T.type.body,fontSize:"15px",fontWeight:600,cursor:"pointer"}}>Focus mode</button>
                 </div>
                 {cardOrder.map(cardId=>{
                   const dragProps={
@@ -1869,28 +1898,31 @@ function SCRBRD({resume,onSignIn}={}){
               </Card>
             </div>
           )}
+          </div>
         </div>
 
-        {/* Stadium Bar */}
-        <div style={{position:"fixed",bottom:"20px",left:"50%",transform:"translateX(-50%)",zIndex:150,
-          background:D.glass,backdropFilter:"blur(28px) saturate(2)",WebkitBackdropFilter:"blur(28px) saturate(2)",
-          border:`1px solid ${D.borderMed}`,borderRadius:D.pill,padding:"6px",display:"flex",gap:"2px",
-          boxShadow:`${T.elevation.xl},0 0 0 1px ${T.line.subtle},${T.elevation.sheen}`}}>
+        {/* The pad's four views: the score, the cards, the analysis, the
+            history. A bar along the bottom, every tab 44 tall with its word
+            at 13px; the one in use is filled, not lit. */}
+        <nav aria-label="Scorer views" data-testid="pad-tabs" style={{position:"fixed",left:"50%",transform:"translateX(-50%)",
+          bottom:`calc(${T.space.xs} + env(safe-area-inset-bottom))`,zIndex:150,width:`min(calc(100% - ${T.space.lg}), 440px)`,
+          background:T.glass.film,backdropFilter:T.glass.blur,WebkitBackdropFilter:T.glass.blur,
+          border:`1px solid ${T.glass.edge}`,borderRadius:T.radius.xl,padding:T.space.xs,
+          display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:T.space.xs,boxShadow:T.elevation.lg}}>
           {NAV.map(n=>{
             const active=activeTab===n.id;
             return (
-              <button key={n.id} onClick={()=>setActiveTab(n.id)} className="pressBtn" style={{
-                display:"flex",flexDirection:"column",alignItems:"center",gap:"3px",
-                padding:"9px 22px",borderRadius:D.pill,cursor:"pointer",border:"none",
-                background:active?D.grad:"transparent",
-                boxShadow:active?`0 4px 20px ${clr(D.indigo,.5)},0 0 28px ${clr(D.indigo,.35)}`:"none",
-                transition:"all .3s cubic-bezier(.34,1.56,.64,1)"}}>
-                <span style={{fontSize:"16px",lineHeight:1,color:active?T.light.ink:D.textMuted}}><Icon name={n.icon}/></span>
-                <span style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:active?T.light.ink:D.textMuted}}>{n.label}</span>
+              <button key={n.id} type="button" onClick={()=>setActiveTab(n.id)} className="pressBtn os-state"
+                aria-current={active?"page":undefined}
+                style={{minHeight:"44px",minWidth:0,display:"flex",alignItems:"center",justifyContent:"center",gap:"6px",
+                  padding:`0 ${T.space.xs}`,borderRadius:T.radius.lg,cursor:"pointer",border:"none",
+                  background:active?T.content.primary:"transparent",color:active?T.surface.canvas:T.content.secondary}}>
+                <span style={{fontSize:"16px",lineHeight:1}}><Icon name={n.icon}/></span>
+                <span style={{fontFamily:T.type.body,fontSize:"13px",fontWeight:600,lineHeight:1.2}}>{n.label}</span>
               </button>
             );
           })}
-        </div>
+        </nav>
       </div>
     </>
   );
