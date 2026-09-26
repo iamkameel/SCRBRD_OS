@@ -198,15 +198,15 @@ const onPad = async () => {
   const fix = tid("scoring-blocked-fix");
   if (await fix.count()) { await fix.first().click({ timeout: 3000 }).catch(() => {}); await page.waitForTimeout(500); }
   await clearBlockers();
-  if (!/\bDOT\b/i.test(await text())) await click(/QUICK MODE/i, 2500);
+  if (!(await page.locator('[data-testid="basic-pad"]').count())) { await page.locator('[data-testid="pad-menu"]').click({ timeout: 2500 }).catch(() => {}); await page.locator('[data-testid="pad-basic-scoring"]').click({ timeout: 2500 }).catch(() => {}); }
   await page.waitForTimeout(300);
   return /\bDOT\b/i.test(await text());
 };
 /** Tap one run value on the one-tap pad; true when the board moved. The dot ball's key reads "· Dot". */
 const score = async (face) => {
   await clearBlockers();
-  // A remounted pad opens in three-phase mode; the one-tap keys are behind QUICK MODE.
-  if (await page.locator("button", { hasText: /QUICK MODE/i }).count()) await click(/QUICK MODE/i, 2500);
+  // A remounted pad opens in three-phase mode; the one-tap keys are Basic Scoring, in the pad menu.
+  if (!(await page.locator('[data-testid="basic-pad"]').count())) { await page.locator('[data-testid="pad-menu"]').click({ timeout: 2500 }).catch(() => {}); await page.locator('[data-testid="pad-basic-scoring"]').click({ timeout: 2500 }).catch(() => {}); }
   const before = await board();
   if (!(await click(face === "0" ? /^\s*·\s*dot\s*$/i : new RegExp(`^${face}$`), 2500))) {
     if (DEBUG) console.log(`[debug] no "${face}" key; buttons:`, JSON.stringify(await page.$$eval("button", (bs) => bs.map((b) => b.innerText.replace(/\s+/g, " ").trim()).filter(Boolean).slice(0, 40))));
@@ -238,8 +238,9 @@ const openFixture = async () => {
   await page.waitForTimeout(2500);
   return opened;
 };
-/** Cut the innings to one over, from the pad's Revise sheet. */
+/** Cut the innings to one over, from the pad's Revise sheet (in the pad menu since step 2). */
 const reviseToOneOver = async () => {
+  await tap("pad-menu");
   if (!(await tap("revise-innings"))) return false;
   await tid("revise-overs").fill("1").catch(() => {});
   return tap("revise-confirm");

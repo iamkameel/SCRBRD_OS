@@ -714,7 +714,7 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,onClose
     if(m===DISMISSAL.STUMPED&&wkName)setFielder(wkName);
   };
   const whoName=who===nonStriker?.id?nonStriker?.name:(striker?.name??batName);
-  const pill=(on)=>({flex:1,padding:"10px",borderRadius:D.md,cursor:"pointer",fontFamily:D.body,fontSize:"13px",fontWeight:500,
+  const pill=(on)=>({flex:1,minHeight:"44px",padding:"10px",borderRadius:D.md,cursor:"pointer",fontFamily:D.body,fontSize:"15px",fontWeight:500,
     border:"1px solid "+(on?D.rose+"55":D.border),background:on?D.rose+"1a":D.surf2,color:on?D.roseText:D.textSecondary});
   return (
     <Sheet title="WICKET!" accent={D.rose} onClose={onClose}>
@@ -724,7 +724,7 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,onClose
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"7px",marginBottom:"14px"}}>
         {modes.map(m=>(
           <button key={m} data-testid={`wicket-mode-${m}`} onClick={()=>handleMode(m)} className="pressBtn" style={{
-            padding:"11px",borderRadius:D.md,cursor:"pointer",fontFamily:D.body,fontSize:"13px",fontWeight:500,
+            minHeight:"48px",padding:"8px",borderRadius:D.md,cursor:"pointer",fontFamily:D.body,fontSize:"15px",fontWeight:500,
             border:"1px solid "+(mode===m?D.rose+"55":D.border),
             background:mode===m?D.rose+"1a":D.surf2,
             color:mode===m?D.roseText:D.textSecondary,transition:"all .15s"}}>
@@ -813,8 +813,8 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,onClose
         </div>
       )}
       <div style={{display:"flex",gap:"10px",marginTop:"4px"}}>
-        <Btn variant="ghost" sx={{flex:1,borderRadius:D.md}} onClick={onClose}>Cancel</Btn>
-        <Btn variant="danger" sx={{flex:2,borderRadius:D.md}} data-testid="wicket-confirm" disabled={asksEnd&&!end}
+        <Btn variant="ghost" sx={{flex:1,minHeight:"48px",fontSize:"15px",borderRadius:D.md}} onClick={onClose}>Cancel</Btn>
+        <Btn variant="danger" sx={{flex:2,minHeight:"48px",fontSize:"16px",borderRadius:D.md}} data-testid="wicket-confirm" disabled={asksEnd&&!end}
           onClick={()=>{if(asksEnd&&!end)return;onConfirm(mode,displayFielder,{dismissed:asksWho&&who!==striker?.id?who:null,
             runs:isRunOut?runs:0,outAt:asksEnd?end:null});}}>Confirm Out</Btn>
       </div>

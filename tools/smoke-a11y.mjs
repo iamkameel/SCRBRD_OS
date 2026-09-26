@@ -23,6 +23,8 @@
  *   - the override on the pad's menu wins over the device, and is remembered;
  *   - THE TYPE FLOOR, as a ratchet: rendered text under 12px is counted on
  *     every screen this walk visits, and may not rise above TYPE_FLOOR_CEILING;
+ *   - THE TAP FLOOR on the pad (§3.5, step 2): anything tapped under 44px,
+ *     against TAP_FLOOR_CEILING — 0;
  *   - RENDERED CONTRAST, as a ratchet: text whose colour does not clear AA
  *     against the background it is actually drawn on, per theme, may not rise
  *     above CONTRAST_CEILING. design.test.mjs proves the TOKENS read; this
@@ -52,15 +54,27 @@ const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/cs
  * failure. The count is the same in both themes (a theme changes colour, not
  * size), and both are checked against it.
  *
- * Measured 2026-09-25 on the demo build, 1280×720, as Head Coach.
+ * Measured 2026-09-25 on the demo build, 1280×720, as Head Coach. The pad
+ * was 44; step 2 (the pad on the new foundations, 2026-09-26) took it to 0.
  */
 const TYPE_FLOOR_CEILING = {
   landing:     5,
   login:       13,
   dashboard:   91,
   matchcentre: 59,
-  pad:         44,
-};                   // 212 in all
+  pad:         0,
+};                   // 168 in all
+
+/**
+ * Things tapped under 44px, on the pad (§3.5, §3.8: "no tappable element
+ * under 44px on the pad"): every visible button, link, input and control
+ * whose box is under 44 in either dimension. The pad is the screen used
+ * one-handed, outdoors, under time pressure; step 2 took it to 0 and it
+ * stays there. The same in both themes.
+ */
+const TAP_FLOOR_CEILING = {
+  pad:         0,
+};
 
 /**
  * Text that does not clear AA (4.5:1; 3:1 at 24px, or 18.66px bold) against
@@ -71,10 +85,11 @@ const TYPE_FLOOR_CEILING = {
  * or set as a gradient, is not measured — its background is not one colour.
  */
 const CONTRAST_CEILING = {
-  // The one on the pad, in both: a run in "this over" — emerald figure on an
-  // emerald tint of itself, 9px (4.20:1 under lights, 4.39:1 in daylight).
-  floodlit: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, pad: 1 },
-  daylight: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, pad: 1 },
+  // The pad's one — a run in "this over", emerald figure on an emerald tint
+  // of itself, 9px (4.20:1 under lights, 4.39:1 in daylight) — went with step
+  // 2: "this over" is on the board now, board.dim on board.face (6.34:1).
+  floodlit: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, pad: 0 },
+  daylight: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, pad: 0 },
 };
 
 /**
@@ -152,7 +167,7 @@ const server = createServer(async (req, res) => {
 await new Promise((r) => server.listen(PORT, r));
 
 const browser = await chromium.launch({ ...launchOptions() });
-const measured = { floodlit: { type: {}, contrast: {}, emoji: {} }, daylight: { type: {}, contrast: {}, emoji: {} } };
+const measured = { floodlit: { type: {}, contrast: {}, emoji: {}, tap: {} }, daylight: { type: {}, contrast: {}, emoji: {}, tap: {} } };
 
 /** Every visible piece of text on the page: its element, size, and whether it reads. */
 const survey = (page) => page.evaluate(() => {
@@ -240,17 +255,37 @@ const emojiInControls = (page) => page.evaluate(() => {
   return hits;
 });
 
-/** Record the floor, contrast and emoji counts for one screen. */
+/**
+ * Every visible thing a person taps whose box is under 44px either way
+ * (§3.5): buttons, links, inputs, and anything with a control's role. What is
+ * hidden from everyone (aria-hidden, display:none, a zero box) is not a target.
+ */
+const smallTargets = (page) => page.evaluate(() => {
+  const TAPPED = "button, a[href], input:not([type=hidden]), select, textarea, [role=button], [role=tab], [role=radio], [role=switch], [role=checkbox]";
+  const out = [];
+  for (const el of document.querySelectorAll(TAPPED)) {
+    if (el.closest("[aria-hidden=true]")) continue;
+    const r = el.getBoundingClientRect(), cs = getComputedStyle(el);
+    if (r.width < 1 || r.height < 1 || cs.visibility === "hidden") continue;
+    if (r.width < 44 || r.height < 44) out.push(`${Math.round(r.width)}x${Math.round(r.height)} "${(el.getAttribute("aria-label") || el.textContent || "").trim().slice(0, 24)}"`);
+  }
+  return out;
+});
+
+/** Record the floor, contrast and emoji counts for one screen, and the tap floor where it is ratcheted. */
 const measure = async (page, theme, screen) => {
   const items = await survey(page);
   const small = items.filter((i) => i.size < 12);
   const weak = items.filter((i) => i.ratio != null && i.ratio < i.need);
   const emoji = await emojiInControls(page);
+  const tiny = screen in TAP_FLOOR_CEILING ? await smallTargets(page) : [];
   measured[theme].type[screen] = small.length;
   measured[theme].contrast[screen] = weak.length;
   measured[theme].emoji[screen] = emoji.length;
+  if (screen in TAP_FLOOR_CEILING) measured[theme].tap[screen] = tiny.length;
   if (process.env.A11Y_DEBUG) {
-    console.log(`[debug] ${theme}/${screen}: ${items.length} texts, ${small.length} under 12px, ${weak.length} below AA, ${emoji.length} emoji in controls`);
+    console.log(`[debug] ${theme}/${screen}: ${items.length} texts, ${small.length} under 12px, ${weak.length} below AA, ${emoji.length} emoji in controls${screen in TAP_FLOOR_CEILING ? `, ${tiny.length} targets under 44px` : ""}`);
+    for (const t of tiny.slice(0, 8)) console.log(`   small target ${t}`);
     for (const w of weak.slice(0, 8)) console.log(`   weak ${w.ratio.toFixed(2)} <${w.tag}> ${w.size}px "${w.text}"`);
     for (const e of emoji.slice(0, 8)) console.log(`   emoji ${e}`);
   }
@@ -358,6 +393,15 @@ async function walk(theme) {
     const emojiProbe = await emojiInControls(page);
     await page.evaluate(() => document.body.lastElementChild.remove());
     ok("...and the emoji count sees them in controls and names, not in prose", emojiProbe.length === 3, emojiProbe.join(" · "));
+    // ...and the tap floor sees a 30px key, and not one hidden from everyone.
+    await page.evaluate(() => {
+      const d = document.createElement("div");
+      d.innerHTML = '<button style="width:30px;height:30px">probe key</button><button aria-hidden="true" style="width:30px;height:30px">hidden</button>';
+      document.body.appendChild(d);
+    });
+    const tapProbe = await smallTargets(page);
+    await page.evaluate(() => document.body.lastElementChild.remove());
+    ok("...and the tap floor sees a 30px key, not a hidden one", tapProbe.some((t) => /probe key/.test(t)) && !tapProbe.some((t) => /hidden/.test(t)), tapProbe.join(" · "));
     await measure(page, theme, "landing");
     let unnamed = await unnamedControls();
     ok("every control on the landing page has a name", unnamed.length === 0, unnamed.slice(0, 4).join(", "));
@@ -452,7 +496,7 @@ async function walk(theme) {
     // pad. Recording a wicket opens the dismissal sheet, which is the modal a
     // scorer meets most often and under the most time pressure.
     await measure(page, theme, "pad");
-    if (!/\bDOT\b/i.test(await page.$eval("body", (e) => e.innerText))) await click(/QUICK MODE/i, 2500);
+    if (!(await page.locator('[data-testid="basic-pad"]').count())) { await page.locator('[data-testid="pad-menu"]').click({ timeout: 2500 }).catch(() => {}); await page.locator('[data-testid="pad-basic-scoring"]').click({ timeout: 2500 }).catch(() => {}); }
     await page.waitForTimeout(400);
     await page.locator('button[aria-label="Wicket"]').first().click({ timeout: 4000 }).catch(() => {});
     await page.waitForTimeout(800);
@@ -474,7 +518,7 @@ async function walk(theme) {
       const b = page.locator("button:not([disabled])", { hasText: /\bBOWL\b/ }).first();
       if (await b.count()) { try { await b.click({ timeout: 1500 }); } catch {} await page.waitForTimeout(500); }
     }
-    if (!/\bDOT\b/i.test(await page.$eval("body", (e) => e.innerText))) await click(/QUICK MODE/i, 2500);
+    if (!(await page.locator('[data-testid="basic-pad"]').count())) { await page.locator('[data-testid="pad-menu"]').click({ timeout: 2500 }).catch(() => {}); await page.locator('[data-testid="pad-basic-scoring"]').click({ timeout: 2500 }).catch(() => {}); }
     await page.waitForTimeout(500);
 
     unnamed = await unnamedControls();
@@ -587,6 +631,14 @@ try {
   }
   const lower = Object.entries(TYPE_FLOOR_CEILING).filter(([s, c]) => measured.floodlit.type[s] != null && measured.floodlit.type[s] < c);
   if (lower.length) console.log(`  (lower the ceiling: ${lower.map(([s]) => `${s} ${measured.floodlit.type[s]}`).join(", ")})`);
+
+  group("The tap floor on the pad (§3.5) — a ratchet");
+  for (const th of ["floodlit", "daylight"]) {
+    for (const [screen, ceiling] of Object.entries(TAP_FLOOR_CEILING)) {
+      const n = measured[th].tap[screen];
+      ok(`${th} ${screen}: ${n} tapped under 44px (ceiling ${ceiling})`, n != null && n <= ceiling);
+    }
+  }
 
   group("Emoji in controls and labels (§3.4) — a ratchet");
   for (const th of ["floodlit", "daylight"]) {

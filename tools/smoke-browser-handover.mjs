@@ -188,7 +188,7 @@ try {
   ok("opened the real fixture", await openMichaelhouse(outgoing.page));
   await outgoing.page.waitForTimeout(2000);
   await clearBlockers(outgoing.page);
-  if (!/\bDOT\b/i.test(await outgoing.text())) await outgoing.page.locator("button", { hasText: /QUICK MODE/i }).first().click({ timeout: 2500 }).catch(() => {});
+  if (!(await outgoing.page.locator('[data-testid="basic-pad"]').count())) { await outgoing.page.locator('[data-testid="pad-menu"]').click({ timeout: 2500 }).catch(() => {}); await outgoing.page.locator('[data-testid="pad-basic-scoring"]').click({ timeout: 2500 }).catch(() => {}); }
   await outgoing.page.waitForTimeout(400);
   ok("the pad is open", /\bDOT\b/i.test(await outgoing.text()));
 
@@ -332,7 +332,7 @@ try {
   ok("its board is the server's score", (await board(incoming.page)) === wantBoard, `${await board(incoming.page)} v ${wantBoard}`);
 
   await clearBlockers(incoming.page);
-  if (!/\bDOT\b/i.test(await incoming.text())) await incoming.page.locator("button", { hasText: /QUICK MODE/i }).first().click({ timeout: 2500 }).catch(() => {});
+  if (!(await incoming.page.locator('[data-testid="basic-pad"]').count())) { await incoming.page.locator('[data-testid="pad-menu"]').click({ timeout: 2500 }).catch(() => {}); await incoming.page.locator('[data-testid="pad-basic-scoring"]').click({ timeout: 2500 }).catch(() => {}); }
   await incoming.page.waitForTimeout(400);
   const one = incoming.page.locator("button:not([disabled])", { hasText: /^1$/ }).first();
   const tapped = (await one.count()) > 0 && await one.click({ timeout: 2500 }).then(() => true, () => false);

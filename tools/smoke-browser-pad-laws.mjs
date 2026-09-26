@@ -233,7 +233,7 @@ try {
   ok("the 1XI fixture offers the scorer", opened);
   await page.waitForTimeout(2500);
   await clearBlockers();
-  if (!/\bDOT\b/i.test(await text())) await click(/QUICK MODE/i, 2500);
+  if (!(await page.locator('[data-testid="basic-pad"]').count())) { await page.locator('[data-testid="pad-menu"]').click({ timeout: 2500 }).catch(() => {}); await page.locator('[data-testid="pad-basic-scoring"]').click({ timeout: 2500 }).catch(() => {}); }
   await page.waitForTimeout(400);
   ok("the scorer opens on the pad", /\bDOT\b/i.test(await text()));
 
@@ -286,7 +286,8 @@ try {
   // ── SCRBRD-080 ───────────────────────────────────────────────
   group("SCRBRD-080: a bowler replaced mid-over — the pad asks why");
   await makeReady();
-  await click(/PRO MODE/, 3000);
+  await tap("pad-menu");   // pro mode is in the pad menu since step 2 of the redesign
+  await click(/PRO MODE/i, 3000);
   await page.waitForTimeout(500);
   ok("the over is under way", to.inn.balls % 6 !== 0);
   ok("the pro pad offers a change of bowler", await click(/Chg Bowler/, 3000));
@@ -452,7 +453,7 @@ try {
     await nameField.press("Enter");
     await page.waitForTimeout(500);
   }
-  if (!/\bDOT\b/i.test(await text())) await click(/QUICK MODE/i, 2500);
+  if (!(await page.locator('[data-testid="basic-pad"]').count())) { await page.locator('[data-testid="pad-menu"]').click({ timeout: 2500 }).catch(() => {}); await page.locator('[data-testid="pad-basic-scoring"]').click({ timeout: 2500 }).catch(() => {}); }
   await page.waitForTimeout(400);
   ok("the pad reopens for the second innings", /\bDOT\b/i.test(await text()));
   const inn2 = await serverLog(1);

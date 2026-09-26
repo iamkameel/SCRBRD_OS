@@ -245,7 +245,7 @@ const Sheet = ({ children, title, accent, onClose }) => {
       {title&&(
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 24px 4px",flexShrink:0}}>
           <h2 id={titleId} style={{fontFamily:D.head,fontSize:"18px",fontWeight:700,color:accent||D.textPrimary,margin:0}}>{title}</h2>
-          <button onClick={onClose} aria-label={`Close ${title}`} style={{background:"transparent",border:"none",color:D.textMuted,fontSize:"22px",cursor:"pointer",lineHeight:1,padding:"4px 6px"}}>&times;</button>
+          <button onClick={onClose} aria-label={`Close ${title}`} style={{width:"44px",height:"44px",marginRight:"-10px",display:"flex",alignItems:"center",justifyContent:"center",background:"transparent",border:"none",color:D.textSecondary,fontSize:"26px",cursor:"pointer",lineHeight:1,padding:0}}>&times;</button>
         </div>
       )}
       <div style={{overflow:"auto",padding:"0 24px 32px"}}>{children}</div>
@@ -266,30 +266,34 @@ const Sheet = ({ children, title, accent, onClose }) => {
  * `value` may be null: an innings nobody declared, which reads exactly as
  * every innings did before this existed. Nothing is chosen for the scorer.
  */
+//
+// `quick` is BASIC SCORING (DESIGN_DIRECTION §4, decision 3): the pad opens
+// on the one-tap keys — the outcome alone — for an innings declared quick.
+// The other two open on the three-phase pad, which is the default.
 const CAPTURE_CHOICES = [
-  { id: "full",     label: "Full",     hint: "exact point" },
-  { id: "standard", label: "Standard", hint: "sector only" },
-  { id: "quick",    label: "Quick",    hint: "runs only" },
+  { id: "full",     label: "Full",          hint: "shot, exact point" },
+  { id: "standard", label: "Standard",      hint: "shot, sector" },
+  { id: "quick",    label: "Basic Scoring", hint: "runs only" },
 ];
 const CaptureProfilePicker = ({ value, onChange, label = "What will you capture?" }) => (
   <div data-testid="capture-profile-picker">
-    <Lbl sx={{ marginBottom: "8px" }}>{label}</Lbl>
+    <Lbl sx={{ marginBottom: "8px", fontFamily: T.type.body, fontSize: "12px", letterSpacing: "0.06em", color: T.content.secondary }}>{label}</Lbl>
     <div role="radiogroup" aria-label={label} style={{ display: "flex", gap: "6px" }}>
       {CAPTURE_CHOICES.map(c => (
         <button key={c.id} type="button" role="radio" aria-checked={value === c.id}
           data-testid={`capture-profile-${c.id}`} onClick={() => onChange(c.id)} className="pressBtn" style={{
-            flex: 1, padding: "9px 0", borderRadius: D.md, cursor: "pointer",
-            border: `1px solid ${value === c.id ? D.indigo + "77" : D.border}`,
-            background: value === c.id ? `${D.indigo}1a` : D.surf2,
-            color: value === c.id ? D.sky : D.textMuted, transition: "all .2s",
+            flex: 1, minWidth: 0, minHeight: "52px", padding: "6px 4px", borderRadius: D.md, cursor: "pointer",
+            border: `1px solid ${value === c.id ? T.content.primary : T.line.normal}`,
+            background: value === c.id ? T.surface.raised : T.surface.interactive,
+            color: value === c.id ? T.content.primary : T.content.secondary, transition: "all .2s",
           }}>
-          <div style={{ fontFamily: D.body, fontSize: "13px", fontWeight: 600 }}>{c.label}</div>
-          <div style={{ fontFamily: D.body, fontSize: "10px", marginTop: "2px" }}>{c.hint}</div>
+          <div style={{ fontFamily: T.type.body, fontSize: "15px", fontWeight: 600, lineHeight: 1.2 }}>{c.label}</div>
+          <div style={{ fontFamily: T.type.body, fontSize: "12px", marginTop: "2px" }}>{c.hint}</div>
         </button>
       ))}
     </div>
     {value == null && (
-      <div style={{ fontFamily: D.body, fontSize: "10px", color: D.textMuted, marginTop: "6px" }}>
+      <div style={{ fontFamily: T.type.body, fontSize: "12px", color: T.content.tertiary, marginTop: "6px" }}>
         Not declared — read as it always has been.
       </div>
     )}

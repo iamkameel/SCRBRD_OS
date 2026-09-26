@@ -97,7 +97,7 @@ const intoScorer = async () => {
   await click(/Open Live Scorer/i, 5000);
   await page.waitForTimeout(1500);
   await clearBlockers();
-  if (!/\bDOT\b/i.test(await text())) await click(/QUICK MODE/i, 2500);
+  if (!(await page.locator('[data-testid="basic-pad"]').count())) { await page.locator('[data-testid="pad-menu"]').click({ timeout: 2500 }).catch(() => {}); await page.locator('[data-testid="pad-basic-scoring"]').click({ timeout: 2500 }).catch(() => {}); }
   await page.waitForTimeout(400);
 };
 
@@ -169,7 +169,7 @@ try {
     // Already on the scoring surface — just make sure it is the one-tap pad,
     // since the mode is UI preference and is not part of the saved match.
     await clearBlockers();
-    if (!/\bDOT\b/i.test(await text())) await click(/QUICK MODE/i, 2500);
+    if (!(await page.locator('[data-testid="basic-pad"]').count())) { await page.locator('[data-testid="pad-menu"]').click({ timeout: 2500 }).catch(() => {}); await page.locator('[data-testid="pad-basic-scoring"]').click({ timeout: 2500 }).catch(() => {}); }
   } else {
     // Session restored the shell but not the scorer: walk back in.
     if (!/Match Centre/i.test(await text())) await click(/Get Started|Log In/, 3000);
@@ -201,7 +201,7 @@ try {
     await intoScorer();
   }
   await clearBlockers();
-  if (!/\bDOT\b/i.test(await text())) await click(/QUICK MODE/i, 2500);
+  if (!(await page.locator('[data-testid="basic-pad"]').count())) { await page.locator('[data-testid="pad-menu"]').click({ timeout: 2500 }).catch(() => {}); await page.locator('[data-testid="pad-basic-scoring"]').click({ timeout: 2500 }).catch(() => {}); }
   const afterReopen = await scoreOf();
   if (DEBUG) console.log(`[debug] ${afterReopen} after close and reopen`);
   ok("the match is still on the device after the browser was closed", afterReopen !== null);

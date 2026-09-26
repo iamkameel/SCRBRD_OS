@@ -204,7 +204,7 @@ try {
   ok("...and its fix opens the batting sheet", /Available to Bat|Batting Order/i.test(await text()));
   await clearBlockers();
   ok("...and once openers and bowler are named, it is gone", (await blocked.count()) === 0);
-  if (!/\bDOT\b/i.test(await text())) await click(/QUICK MODE/i, 2500);
+  if (!(await page.locator('[data-testid="basic-pad"]').count())) { await page.locator('[data-testid="pad-menu"]').click({ timeout: 2500 }).catch(() => {}); await page.locator('[data-testid="pad-basic-scoring"]').click({ timeout: 2500 }).catch(() => {}); }
   await page.waitForTimeout(400);
   ok("the scorer opens on the pad", /\bDOT\b/i.test(await text()));
 
