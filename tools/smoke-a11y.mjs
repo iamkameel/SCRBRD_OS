@@ -70,6 +70,9 @@ const TYPE_FLOOR_CEILING = {
   dashboard:   18,
   matchcentre: 31,
   pad:         0,
+  // Step 3b: the pad again, after an over is recorded, so the chips on the
+  // board are on screen and counted. 0, like the pad.
+  padOver:     0,
 };                   // 68 in all
 
 /**
@@ -81,6 +84,7 @@ const TYPE_FLOOR_CEILING = {
  */
 const TAP_FLOOR_CEILING = {
   pad:         0,
+  padOver:     0,
 };
 
 /**
@@ -95,8 +99,10 @@ const CONTRAST_CEILING = {
   // The pad's one — a run in "this over", emerald figure on an emerald tint
   // of itself, 9px (4.20:1 under lights, 4.39:1 in daylight) — went with step
   // 2: "this over" is on the board now, board.dim on board.face (6.34:1).
-  floodlit: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, pad: 0 },
-  daylight: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, pad: 0 },
+  // padOver (step 3b): the chips' figures, black or white on the chip's own
+  // fill, and the day sheet's board with its Tier 2 line, are in these.
+  floodlit: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, pad: 0, padOver: 0 },
+  daylight: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, pad: 0, padOver: 0 },
 };
 
 /**
@@ -118,6 +124,7 @@ const EMOJI_CEILING = {
   dashboard:   0,
   matchcentre: 0,
   pad:         0,
+  padOver:     0,
 };
 
 // Each theme's own surfaces and inks — values the other theme never uses — so
@@ -453,6 +460,28 @@ async function walk(theme) {
     unnamed = await unnamedControls();
     ok("every control in the shell has a name", unnamed.length === 0, unnamed.slice(0, 5).join(", "));
 
+    // The day sheet's board carries the Tier 2 line (DESIGN_DIRECTION §10),
+    // which rotates by itself — so it has a pause button (WCAG 2.2.2). Its
+    // type and contrast are in the dashboard's counts above; its size and its
+    // name are checked here, and that it does what it says.
+    const pause = page.locator('[data-testid="day-board-insight-pause"]');
+    ok("the day sheet's board has its rotating line, and a pause button for it", (await pause.count()) === 1);
+    if (await pause.count()) {
+      const box = await pause.boundingBox();
+      ok(`...44px or more (${Math.round(box?.width ?? 0)}x${Math.round(box?.height ?? 0)})`, box && box.width >= 44 && box.height >= 44);
+      ok("...named for what it does", await pause.getAttribute("aria-label") === "Pause the rotating line");
+      await pause.click({ timeout: 2000 });
+      ok("...and does it: paused, it offers to play",
+         await pause.getAttribute("aria-label") === "Play the rotating line"
+         && await page.locator('[data-testid="day-board-insight"]').getAttribute("data-paused") === "true");
+      await pause.click({ timeout: 2000 });
+      ok("...and the line is not a live region",
+         await page.evaluate(() => !document.querySelector('[data-testid="day-board-insight"]')?.closest("[aria-live]")));
+    }
+    const boardTargets = await page.evaluate(() =>
+      [...document.querySelectorAll('[data-testid="day-board"] button')].filter((b) => { const r = b.getBoundingClientRect(); return r.width < 44 || r.height < 44; }).length);
+    ok("nothing tapped on the board is under 44px", boardTargets === 0, String(boardTargets));
+
     const landmarks = await page.evaluate(() => ({
       nav: document.querySelectorAll("nav").length,
       main: document.querySelectorAll("main").length,
@@ -541,6 +570,26 @@ async function walk(theme) {
     ok("the score is in a live region",
        await page.evaluate(() => !!document.querySelector('[aria-live="polite"]')));
 
+    // ── The over as chips (DESIGN_DIRECTION §10, step 3b) ──
+    // A run, a four and a wide, so the board draws chips of three kinds; then
+    // the pad is measured again as "padOver", against the same floors as the
+    // pad: the chips' figures are text on their own fill, so the contrast
+    // count measures them on the colour they sit on.
+    for (const key of ["run-1", "run-4", "key-wide"]) {
+      await page.locator(`[data-testid="${key}"]`).first().click({ timeout: 3000 }).catch(() => {});
+      await page.waitForTimeout(2000);
+    }
+    const chips = await page.evaluate(() => [...document.querySelectorAll('[data-testid="board-over"] [data-chip]')].map((c) => {
+      const r = c.getBoundingClientRect();
+      return { kind: c.dataset.chip, text: c.textContent, w: r.width, h: r.height, tab: getComputedStyle(c).fontVariantNumeric };
+    }));
+    ok(`the over is drawn as chips, each carrying its figure (${chips.map((c) => c.text).join(" ")})`,
+       chips.length >= 3 && chips.every((c) => c.text.trim().length > 0) && chips.some((c) => c.kind === "four") && chips.some((c) => c.kind === "extra"));
+    ok("...every chip at least 24px, with tabular figures",
+       chips.every((c) => c.w >= 24 && c.h >= 24 && /tabular-nums/.test(c.tab)), JSON.stringify(chips.filter((c) => c.w < 24 || c.h < 24)));
+    ok("...and the over is said in words", /This over: .*4 runs.*wide/.test(await page.locator('[data-testid="board-over"] .sr-only').textContent().catch(() => "")));
+    await measure(page, theme, "padOver");
+
     // ── A switch while the app is open ──
     const flipTo = theme === "daylight" ? "floodlit" : "daylight";
     group(`${T_} → ${flipTo === "daylight" ? "Daylight" : "Floodlit"} while the app is open`);
@@ -618,6 +667,46 @@ async function walk(theme) {
     ok("choosing System hands the decision back to the device",
        await page.evaluate(() => document.documentElement.dataset.theme) === theme
        && await page.evaluate(() => { try { return localStorage.getItem("scrbrd:theme"); } catch { return null; } }) === null);
+
+    // ── Colours (§3.9): beside the theme on the pad's menu ──
+    group(`${T_} — Colours on the pad's menu`);
+    const chipFills = () => page.evaluate(() => [...document.querySelectorAll('[data-testid="board-over"] [data-chip]')]
+      .filter((c) => c.dataset.chip !== "dot").map((c) => `${c.dataset.chip}:${getComputedStyle(c).backgroundColor}`).join("|"));
+    const standardFills = await chipFills();
+    if (!(await page.locator('[data-testid="pad-vision-choice"]').count())) {
+      await page.locator('[data-testid="pad-menu"]').click({ timeout: 3000 }).catch(() => {});
+      await page.waitForTimeout(300);
+    }
+    ok("the menu offers Colours as one radiogroup: Standard, Red-green safe, Blue-yellow safe",
+       await page.evaluate(() => [...document.querySelectorAll('[data-testid="pad-vision-choice"][role="radiogroup"] [role="radio"]')]
+         .map((b) => b.textContent.trim()).join()) === "Standard,Red-green safe,Blue-yellow safe");
+    await page.locator('[data-testid="pad-vision-choice-redgreen"]').click({ timeout: 3000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const rg = await page.evaluate(() => ({
+      vision: document.documentElement.dataset.vision, theme: document.documentElement.dataset.theme,
+      stored: (() => { try { return localStorage.getItem("scrbrd:vision"); } catch { return "x"; } })(),
+    }));
+    ok("choosing Red-green safe applies it, and keeps the theme", rg.vision === "redgreen" && rg.theme === theme, JSON.stringify(rg));
+    ok("...is stored on this device", rg.stored === "redgreen");
+    const rgFills = await chipFills();
+    ok("...and the chips change colour (and nothing else about them)", standardFills !== "" && rgFills !== standardFills
+       && rgFills.split("|").map((x) => x.split(":")[0]).join() === standardFills.split("|").map((x) => x.split(":")[0]).join(), `${standardFills} → ${rgFills}`);
+    await page.keyboard.press("Escape");
+    await page.reload({ waitUntil: "networkidle" });
+    await page.waitForTimeout(1200);
+    ok("Colours survives a reload", await page.evaluate(() => document.documentElement.dataset.vision) === "redgreen");
+    if (await page.locator('[data-testid="pad-menu"]').count()) {
+      await page.locator('[data-testid="pad-menu"]').click({ timeout: 3000 });
+      await page.waitForTimeout(300);
+      await page.locator('[data-testid="pad-vision-choice-standard"]').click({ timeout: 3000 });
+    } else {
+      await page.evaluate(() => { try { localStorage.removeItem("scrbrd:vision"); } catch { /* nothing to remove */ } });
+      await page.reload({ waitUntil: "networkidle" });
+    }
+    await page.waitForTimeout(400);
+    ok("choosing Standard puts the colours back and stores nothing",
+       await page.evaluate(() => document.documentElement.dataset.vision) === "standard"
+       && await page.evaluate(() => { try { return localStorage.getItem("scrbrd:vision"); } catch { return "x"; } }) === null);
   } catch (e) {
     ok(`the ${theme} accessibility walk threw: ${e.message?.slice(0, 100)}`, false);
   } finally {
