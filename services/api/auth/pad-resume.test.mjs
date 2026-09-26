@@ -48,8 +48,8 @@ function fakePool({ ended = null, spendEnded = null } = {}) {
   const log = [];
   return {
     log, seen,
-    /** @param {string} text @param {any[]} params */
-    query: async (text, params) => {
+    /** @param {string} text @param {any[]} [params] */
+    query: async (text, params = []) => {
       log.push({ text, params });
       if (/pad_resume_lookup/.test(text)) {
         if (params[0] !== padIdHash(CID, SECRET)) return { rows: [] };
@@ -267,7 +267,7 @@ group("J. The principal the database is given");
   // no scope, because the first's was local to its transaction.
   /** @type {{ text: string, params?: any[] }[]} */
   const log = [];
-  const client = { query: async (/** @type {string} */ text, /** @type {any[]} */ params) => { log.push({ text, params }); return { rows: [] }; } };
+  const client = { query: async (/** @type {string} */ text, /** @type {any[] | undefined} */ params) => { log.push({ text, params }); return { rows: [] }; } };
   await withPrincipal(client, { userId: "u", deviceId: "d", scope: "pad", matchId: MATCH }, async () => {});
   const second = log.length;
   await withPrincipal(client, { userId: "u2", deviceId: "d2" }, async () => {});

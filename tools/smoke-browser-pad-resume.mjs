@@ -157,8 +157,7 @@ const padStore = () => page.evaluate((matchId) => new Promise((resolve) => {
       db.close();
       const rec = g.result;
       if (!rec) return resolve(null);
-      let exported = false;
-      try { await crypto.subtle.exportKey("jwk", rec.privateKey); exported = true; } catch { exported = false; }
+      const exported = await crypto.subtle.exportKey("jwk", rec.privateKey).then(() => true, () => false);
       resolve({ keys: Object.keys(rec).sort(), isKey: rec.privateKey instanceof CryptoKey,
                 extractable: rec.privateKey?.extractable, usages: rec.privateKey?.usages, type: rec.privateKey?.type,
                 exported, expiresAt: rec.expiresAt });

@@ -180,7 +180,7 @@ export function parsePadProof(authorization) {
  * @returns {"pad_bad_signature" | "pad_wrong_request" | "pad_stale" | null}
  */
 export function checkPadProof({ proof, jwk, method, target, bodyHash, nowSec }) {
-  let good = false;
+  let good;
   try {
     const key = createPublicKey({ key: /** @type {any} */ (jwk), format: "jwk" });
     good = proof.signature.length === 64
