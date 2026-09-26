@@ -3452,6 +3452,49 @@ Two Law 41 questions Kameel is researching before deciding; nothing is built unt
    on 5").
 2. A bowler suspended mid-over (SCRBRD-080's unbuilt half): Law 41 says he may not bowl again in the innings.
 
+### SCRBRD-099 — Backfill handwritten scorecards into the historical record
+**Priority:** P2 · **Domain:** Scoring / history · **Type:** feature (Kameel, 2026-09-26: "a tool for
+inputting/scanning/photographing and back-dating handwritten scorecards into data that fits our model, to build a
+historical record")
+**Today:** the only bulk import is a CSV of players (`services/api/io/import-api.mjs`): dry run by default, all or
+nothing on commit, every row under the caller's own row policy. There is no import of fixtures, results or
+scorecards, no photo or scan reading, and no way to record a past match.
+
+**The constraint that shapes it:** careers, awards, milestones and figures are derived from the ball log. A
+handwritten sheet is one of two kinds:
+- a **summary scorecard** (each batter's runs, balls, 4s, 6s and how out; each bowler's O-M-R-W; extras, fall of
+  wickets, totals), which is most sheets. It cannot become balls without inventing them, and we will not invent
+  them. It is stored as a **transcribed innings summary**, marked as such, and the career views add it in;
+- a **scorebook's ball-by-ball grid**, which can be rebuilt as real ball events. Where the book does not say who
+  faced a ball, the reviewer confirms it.
+
+**Flow:**
+1. Enter it, or photograph it and let a vision model draft it (phase 2).
+2. A person reviews it beside the photo. The screen refuses a card that does not reconcile: batters' runs plus
+   extras equal the total; bowlers' runs plus byes and leg byes equal the total; wickets and overs are consistent.
+3. A second person approves it, the same separation of duties as a scoring amendment
+   (`scoring.amend.request` / `approve`). It is stored with its source photo and provenance ("transcribed"), and
+   stays correctable. It never looks like a live-scored match.
+4. Past fixtures are created as part of the backfill. An opposition not on the platform stays a typed name
+   (PUBLIC_DATA L5/L6: never named publicly).
+
+**Phases:**
+1. Manual entry of a summary scorecard, with the reconciliation checks and two-person approval.
+2. Photograph to draft.
+3. Full scorebook (ball-by-ball) transcription.
+
+**Decisions for Kameel before building:**
+1. **Photos of pupils' names to the AI provider.** Live commentary masks names before they leave the platform
+   (`maskNames`), but names written on a photo cannot be masked. Phase 2 needs either the school's agreement under
+   its data processing terms, or a manual-only mode. Recommendation: phase 1 first; it needs no decision.
+2. **Whether backfilled records are public.** They name old boys (now adults) and current pupils, and the consent
+   rule (PUBLIC_DATA) was written for current records. Recommendation: signed-in only until decided.
+3. **Fidelity:** summaries only, or also full scorebook transcription for schools that kept books.
+
+**Build notes:** a migration (Opus) for the transcribed-summary tables and their provenance, and the career views
+extended to add them in, proved against the fold for ball-by-ball backfills. The review screen is built to the
+design direction.
+
 ### SCRBRD-098 — A commentary engine every viewer shares
 **Priority:** P2 · **Domain:** Scoring / Match Centre · **Type:** product gap (Kameel, 2026-09-26: fold into
 redesign step 3c)
