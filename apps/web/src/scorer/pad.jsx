@@ -58,7 +58,7 @@ export function ExitKey({ onExit, inBar = false }) {
  */
 export function PadBoard({ inn, match, target }) {
   const props = boardFromInnings(inn, { target, overs: inn?.overs ?? match?.overs ?? 20 });
-  return props ? <Board {...props}/> : null;
+  return props ? <Board {...props} compact/> : null;
 }
 
 // ── Keys ─────────────────────────────────────────────────────────
@@ -133,16 +133,27 @@ function Stepper({ phase, values, onStep }) {
 // ── Phase 1: the shot ────────────────────────────────────────────
 
 function ShotPhase({ shot, onShot }) {
+  const key = (s) => (
+    <Key key={s.id} face={s.label} testid={`shot-${s.id}`} pressed={shot === s.id} onClick={() => onShot(s.id)}
+      style={shot === s.id ? { border: `2px solid ${T.content.primary}`, fontWeight: 600 } : undefined}/>
+  );
   return (
     <div data-testid="phase-shot" style={{ display: "grid", gap: T.space.sm }}>
-      {SHOT_CATS.map((c) => (
+      {SHOT_CATS.map((c) => c.shots.length <= 3 ? (
+        // A group of three is one row with its word at the start of it — the
+        // way §4's drawing has "DEFENSIVE  Fwd def  Back def  Padded" — not a
+        // heading row over a row: the height it saves is what keeps the strip
+        // above the bottom bar on a phone, in a chase (step 3b).
+        <section key={c.cat} aria-label={c.cat}
+          style={{ display: "grid", gridTemplateColumns: "minmax(0,2fr) repeat(3,minmax(0,1fr))", gap: T.space.sm, alignItems: "center" }}>
+          <h3 style={{ ...sectionLabel(), margin: 0, overflowWrap: "anywhere" }}>{c.cat}</h3>
+          {c.shots.map(key)}
+        </section>
+      ) : (
         <section key={c.cat} aria-label={c.cat}>
           <h3 style={sectionLabel()}>{c.cat}</h3>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(64px,1fr))", gap: T.space.sm }}>
-            {c.shots.map((s) => (
-              <Key key={s.id} face={s.label} testid={`shot-${s.id}`} pressed={shot === s.id} onClick={() => onShot(s.id)}
-                style={shot === s.id ? { border: `2px solid ${T.content.primary}`, fontWeight: 600 } : undefined}/>
-            ))}
+            {c.shots.map(key)}
           </div>
         </section>
       ))}
@@ -224,7 +235,10 @@ function OutcomeKeys({ onRun, onExtra, onWicket, note }) {
 
 function Strip({ onWide, onNoBall, onDot, onUndo, midBall }) {
   return (
-    <div data-testid="pad-strip" style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: T.space.sm }}>
+    // `pad-strip-dock` (scorer/ui.jsx): on a phone the strip docks 16px above
+    // the bottom bar when the pad is taller than the screen, so Wide, No
+    // ball, Dot and Undo are never below the fold (§4 rule 1).
+    <div data-testid="pad-strip" className="pad-strip-dock" style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: T.space.sm }}>
       <Key face="Wide" say="Wide" testid="key-wide" h="56px" onClick={onWide}/>
       <Key face="No ball" say="No ball" testid="key-noball" h="56px" onClick={onNoBall}/>
       <Key face={<><span aria-hidden="true">·</span> Dot</>} say="Dot ball, no run" testid="key-dot" h="56px" onClick={onDot}/>

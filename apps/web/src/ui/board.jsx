@@ -42,6 +42,9 @@ import { Icon } from "./icons.jsx";
  *               for fifty"). SPECTATOR SCREENS ONLY — never the pad, where a
  *               line that changes by itself pulls the scorer's eye off the ball
  *   size        "pad" (the total at figure.board) or "card" (figure.lg)
+ *   compact     the scorer's pad: 4px less above and below, and above the
+ *               batters, so the pad's keys stay above the bottom bar on a
+ *               phone (§4 rule 1). Nothing is dropped
  */
 
 /**
@@ -189,7 +192,7 @@ export function Insight({ lines = [], testid = "board-insight" }) {
   );
 }
 
-export function Board({ team, total, wickets, overs, sub, batters = [], partnership, bowler, thisOver = [], insight,
+export function Board({ team, total, wickets, overs, sub, batters = [], partnership, bowler, thisOver = [], insight, compact = false,
   size = "pad", testid = "board" }) {
   // On the pad the total is figure.board, 56 on a phone and 72 on a tablet;
   // the size comes from `.os-board-total` because an inline style cannot say
@@ -208,7 +211,7 @@ export function Board({ team, total, wickets, overs, sub, batters = [], partners
   const chips = thisOver.map(chipFor);
   return (
     <section data-testid={testid} aria-label={`Scoreboard: ${said}`}
-      style={{ background: B.face, color: B.figure, borderRadius: T.radius.lg, padding: `${T.space.md} ${T.space.lg}`,
+      style={{ background: B.face, color: B.figure, borderRadius: T.radius.lg, padding: `${compact ? T.space.sm : T.space.md} ${T.space.lg}`,
         fontFamily: mono, fontVariantNumeric: "tabular-nums", border: `1px solid ${B.rule}` }}>
       {/* The total: the team, the overs and the target or rates on the left,
           the figures on the right, as a board has them. The left column sits
@@ -238,7 +241,7 @@ export function Board({ team, total, wickets, overs, sub, batters = [], partners
       </div>
 
       {(batters.length > 0 || partnership || bowler || chips.length > 0) && (
-        <div style={{ borderTop: `1px solid ${B.rule}`, marginTop: T.space.sm, paddingTop: T.space.sm, display: "grid", gap: T.space.xs }}>
+        <div style={{ borderTop: `1px solid ${B.rule}`, marginTop: T.space.sm, paddingTop: compact ? T.space.xs : T.space.sm, display: "grid", gap: T.space.xs }}>
           {batters.length > 0 && (
             <div style={{ display: "flex", flexWrap: "wrap", gap: `${T.space.xs} ${T.space.lg}` }}>
               {batters.map((b) => {

@@ -714,9 +714,90 @@ async function walk(theme) {
   }
 }
 
+/**
+ * §4 rule 1 — no scrolling to reach a key — for the strip the pad always
+ * carries (Wide, No ball, Dot, Undo), on phones, where the bottom bar sits
+ * over the page. Step 3b grew the board (the partnership, the chips) and
+ * a chase's two-line target pushed the strip 19px under the bar at 390×844;
+ * this keeps it from coming back.
+ *
+ *   390×844  the strip's bottom at least STRIP_CLEAR above the bar's top,
+ *            in its own place (no key under it or below it), page unscrolled —
+ *            three-phase (the Shot phase it opens on, and Outcome) and Basic
+ *            Scoring, first innings and a chase;
+ *   360×740  a small Android: the strip on screen above the bar without
+ *            scrolling (it docks there: .pad-strip-dock), the number printed.
+ *
+ * The chase is the board's own sub-line element given a chase's words —
+ * "Need 45 off 34 · CRR 9.91 · RRR 7.94", two lines at 390 — because the
+ * demo has no second innings to open. The over is a real one: a run, a four,
+ * a six, a wide and a no-ball, recorded on the pad.
+ */
+const STRIP_CLEAR = 16;
+async function padFit() {
+  for (const [w, hgt] of [[390, 844], [360, 740]]) {
+    const ctx = await browser.newContext({ colorScheme: "dark", viewport: { width: w, height: hgt } });
+    await offline(ctx);
+    const page = await ctx.newPage();
+    try {
+      await page.goto(`http://localhost:${PORT}/`, { waitUntil: "networkidle" });
+      const click = async (re) => { const l = page.locator("button:not([disabled])", { hasText: re }).first(); if (await l.count()) { await l.click({ timeout: 4000 }).catch(() => {}); await page.waitForTimeout(400); } };
+      await click(/Get Started|Log In/); await click("Head Coach"); await click(/^Sign In$/); await page.waitForTimeout(1500);
+      await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
+      await page.waitForTimeout(800); await click(/^Live$/); await click(/Open Live Scorer|Start Scoring/i); await page.waitForTimeout(1600);
+      const basic = async (on) => {
+        if (((await page.locator('[data-testid="basic-pad"]').count()) > 0) === on) return;
+        await page.locator('[data-testid="pad-menu"]').click({ timeout: 2500 });
+        await page.locator('[data-testid="pad-basic-scoring"]').click({ timeout: 2500 });
+        await page.keyboard.press("Escape");
+        await page.waitForTimeout(400);
+      };
+      await basic(true);
+      for (const k of ["run-1", "run-4", "run-6", "key-wide"]) { await page.locator(`[data-testid="${k}"]`).click({ timeout: 3000 }); await page.waitForTimeout(1900); }
+      await page.locator('[data-testid="key-noball"]').click({ timeout: 3000 });
+      await page.locator("button", { hasText: "Confirm No Ball" }).click({ timeout: 3000 });
+      await page.waitForTimeout(2500);
+      const where = () => page.evaluate(() => {
+        scrollTo(0, 0);
+        const strip = document.querySelector('[data-testid="pad-strip"]').getBoundingClientRect();
+        const bar = document.querySelector('[data-testid="pad-tabs"]').getBoundingClientRect();
+        const pad = document.querySelector('[data-testid="three-phase-pad"], [data-testid="basic-pad"]');
+        const keys = [...pad.querySelectorAll("button")].filter((k) => !k.closest('[data-testid="pad-strip"]')).map((k) => k.getBoundingClientRect());
+        return { clear: Math.round(bar.top - strip.bottom), stripBottom: Math.round(strip.bottom), barTop: Math.round(bar.top), scrollY: scrollY,
+                 covered: keys.filter((k) => k.bottom > strip.top).length, chips: document.querySelectorAll('[data-testid="board-over"] [data-chip]').length };
+      });
+      const chase = () => page.evaluate(() => { document.querySelector('[data-testid="board-sub"]').textContent = "Need 45 off 34 · CRR 9.91 · RRR 7.94"; });
+      const cases = [["three-phase, Shot", false, null], ["three-phase, Outcome", false, "outcome"], ["Basic Scoring", true, null]];
+      for (const [name, isBasic, phase] of cases) {
+        for (const innings of ["first innings", "a chase"]) {
+          await page.reload({ waitUntil: "networkidle" }); await page.waitForTimeout(1500);
+          await basic(isBasic);
+          if (phase === "outcome") {
+            await page.locator('[data-testid="shot-drive"]').click({ timeout: 3000 });
+            await page.locator('[data-testid="area-none"]').click({ timeout: 3000 });
+          }
+          if (innings === "a chase") await chase();
+          const m = await where();
+          const at = `${w}×${hgt} ${name}, ${innings}: strip ${m.clear}px above the bar (${m.chips} chips; ${m.covered} key${m.covered === 1 ? "" : "s"} under or below it)`;
+          console.log(`  (${at})`);
+          if (w === 390) ok(`${at} — at least ${STRIP_CLEAR}, in its place, unscrolled`, m.clear >= STRIP_CLEAR && m.covered === 0 && m.scrollY === 0 && m.chips >= 6, JSON.stringify(m));
+          else ok(`${at} — on screen without scrolling`, m.clear >= 0 && m.stripBottom <= hgt && m.scrollY === 0, JSON.stringify(m));
+        }
+      }
+    } catch (e) {
+      ok(`the ${w}×${hgt} pad-fit walk threw: ${e.message?.slice(0, 100)}`, false);
+    } finally {
+      await ctx.close();
+    }
+  }
+}
+
 try {
   await walk("floodlit");
   await walk("daylight");
+
+  group("The pad's strip on a phone (§4 rule 1) — no scrolling to reach it");
+  await padFit();
 
   group("The type floor (§3.2) — a ratchet");
   for (const th of ["floodlit", "daylight"]) {
