@@ -16,6 +16,7 @@ import { PadSync } from "../lib/sync.js";
 import { refusalWords } from "../lib/handover.js";
 import { withoutEvents, recordAgain, recordAgainRefusal, heldInOrder, undoOnPad, reconcile, padLogFrom, inningsInPlay, withOrphans } from "@scrbrd/sync";
 import { HeldSheet } from "./held.jsx";
+import { foldPad, projectPad } from "./penalty.js";
 import { MenuItem, MenuSection, PadMenu } from "./padMenu.jsx";
 import { ExitKey, Pad, PadBoard } from "./pad.jsx";
 import { SyncBanner } from "./syncBanner.jsx";
@@ -353,9 +354,16 @@ function SCRBRD({resume,onSignIn,onExit}={}){
 
 
   // ── Derivation ──────────────────────────────────────────
+  // The whole match, folded at once (deriveInningsList, through foldPad):
+  // five penalty runs to the fielding side belong in THEIR innings — the one
+  // they last batted, or the next, which opens on them (SCRBRD-094) — and a
+  // fold of one innings cannot see an award made in another. Folded one
+  // innings at a time, an innings that opened on an award had its seal
+  // refused (figures_moved) and a chase its target stamped short. With no
+  // such award in the log, every innings is exactly what deriveInnings gave.
   const scoringCtxRef = useRef({ flagFor: k => INT_TEAMS[k]?.flag });
   const innings = useMemo(
-    () => events.map(evs => (evs.length ? deriveInnings(evs, scoringCtxRef.current) : null)),
+    () => foldPad(events, scoringCtxRef.current),
     [events],
   );
   eventsRef.current = events;
@@ -445,8 +453,10 @@ function SCRBRD({resume,onSignIn,onExit}={}){
   };
 
   /** What the innings WOULD be with these extra events — used to decide what
-   *  happens next (over ended? innings ended?) without duplicating the rules. */
-  const project = (...evs) => deriveInnings([...events[curIn], ...evs], scoringCtxRef.current);
+   *  happens next (over ended? innings ended?) without duplicating the rules.
+   *  The match's fold, like `innings`: a chase that opened on five penalty
+   *  runs reaches its target with them in. */
+  const project = (...evs) => projectPad(events, curIn, evs, scoringCtxRef.current);
 
   const inn=innings[curIn];
 
