@@ -184,6 +184,8 @@ DECLARE
   p_a        uuid := gen_random_uuid();   -- on strike
   p_b        uuid := gen_random_uuid();   -- at the other end
   p_c        uuid := gen_random_uuid();   -- bowling
+  p_d        uuid := gen_random_uuid();   -- timed out, never faced
+  p_e        uuid := gen_random_uuid();   -- run out at the other end, never faced
   v_door   boolean := EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'ball_event'::regclass
                                AND tgname = 'ball_event_names_its_delivery' AND tgenabled = 'O');
   v_setting text := coalesce(current_setting('app.user_id', true), '');
@@ -271,9 +273,13 @@ BEGIN
   --   13  run 2, B ...                             (voided)
   --   14  ... taken back by a void of 13           nothing            nothing           nothing
   --   15  retire, hurt, B (no W marker)            nothing            nothing           -
-  -- Per match: A 14 runs off 7 balls, 2 fours, 1 six, 1 dismissal; B 2 runs
-  -- off 2 balls, 2 dismissals; C 25 conceded off 8 legal balls, 1 wide,
-  -- 2 no-balls, no wicket.
+  --   16  retire marked W, timed out, D            D's only innings   D                 -
+  --   17  W run out, A on strike, E out at the     A faced            E                 legal, not his
+  --       other end before he faced a ball         E's only innings
+  -- Per match: A 14 runs off 8 balls, 2 fours, 1 six, 1 dismissal; B 2 runs
+  -- off 2 balls, 2 dismissals; D and E an innings of nothing and a
+  -- dismissal each (the retirement arm, and the other-end arm, alone); C 25
+  -- conceded off 9 legal balls, 1 wide, 2 no-balls, no wicket.
   BEGIN
     INSERT INTO school (id, code, name) VALUES (v_school, 'db49-' || v_school, 'db/49 proof');
     INSERT INTO app_user (id, email, name, role, school_id)
@@ -281,7 +287,9 @@ BEGIN
     INSERT INTO player (id, school_id, team_code, full_name, squad_no, playing_role, born) VALUES
       (p_a, v_school, '1XI', 'db/49 Opener',  1, 'batter', (current_date - interval '16 years')::date),
       (p_b, v_school, '1XI', 'db/49 Partner', 2, 'batter', (current_date - interval '16 years')::date),
-      (p_c, v_school, '1XI', 'db/49 Seamer',  3, 'bowler', (current_date - interval '16 years')::date);
+      (p_c, v_school, '1XI', 'db/49 Seamer',  3, 'bowler', (current_date - interval '16 years')::date),
+      (p_d, v_school, '1XI', 'db/49 Late',    4, 'batter', (current_date - interval '16 years')::date),
+      (p_e, v_school, '1XI', 'db/49 Backer',  5, 'batter', (current_date - interval '16 years')::date);
     INSERT INTO match (id, school_id, team_code, opponent, starts_at, sport, format, overs, status) VALUES
       (m_a, v_school, '1XI', 'db/49 proof', now() - interval '14 days', 'cricket', 'T20', 20, 'complete'),
       (m_b, v_school, '1XI', 'db/49 proof', now() - interval '7 days',  'cricket', 'T20', 20, 'complete');
@@ -311,50 +319,53 @@ BEGIN
         (12, 'ball',   'run', 1,    NULL, p_c,    NULL,       NULL,          '{}'::jsonb),
         (13, 'ball',   'run', 2,    p_b,    p_c,    NULL,       NULL,          '{}'::jsonb),
         (14, 'void',   NULL,  NULL, NULL, NULL, NULL,       NULL,          '{}'::jsonb),
-        (15, 'retire', NULL,  NULL, NULL, NULL, NULL,       NULL,          jsonb_build_object('batter', p_b, 'reason', 'hurt'))
+        (15, 'retire', NULL,  NULL, NULL, NULL, NULL,       NULL,          jsonb_build_object('batter', p_b, 'reason', 'hurt')),
+        (16, 'retire', 'W',   NULL, NULL, NULL, NULL,       'timed_out',   jsonb_build_object('batter', p_d, 'reason', 'timed_out')),
+        (17, 'ball',   'W',   0,    p_a,  p_c,  p_e,        'run_out',     '{}'::jsonb)
       ) AS x(k, kind, bt, v, striker, bowler, dismissed, dis, pl);
     IF v_door THEN EXECUTE 'ALTER TABLE ball_event ENABLE TRIGGER ball_event_names_its_delivery'; END IF;
 
     -- The figures the rules above give, per player, over both matches.
     SELECT string_agg(f, ' ' ORDER BY f) INTO fixture_drift FROM (
-      SELECT 'bat:' || CASE l.player_id WHEN p_a THEN 'A' WHEN p_b THEN 'B' ELSE 'C' END
+      SELECT 'bat:' || CASE l.player_id WHEN p_a THEN 'A' WHEN p_b THEN 'B' WHEN p_c THEN 'C' WHEN p_d THEN 'D' ELSE 'E' END
              || row(l.matches, l.runs, l.balls_faced, l.fours, l.sixes, l.last_ball_at IS NOT NULL)::text AS f
-        FROM player_batting_career l WHERE l.player_id IN (p_a, p_b, p_c)
+        FROM player_batting_career l WHERE l.player_id IN (p_a, p_b, p_c, p_d, p_e)
       UNION ALL
-      SELECT 'bowl:' || CASE l.player_id WHEN p_a THEN 'A' WHEN p_b THEN 'B' ELSE 'C' END
+      SELECT 'bowl:' || CASE l.player_id WHEN p_a THEN 'A' WHEN p_b THEN 'B' WHEN p_c THEN 'C' WHEN p_d THEN 'D' ELSE 'E' END
              || row(l.matches, l.runs_conceded, l.legal_balls, l.wides, l.no_balls, l.wickets)::text
-        FROM player_bowling_career l WHERE l.player_id IN (p_a, p_b, p_c)
+        FROM player_bowling_career l WHERE l.player_id IN (p_a, p_b, p_c, p_d, p_e)
       UNION ALL
-      SELECT 'out:' || CASE l.player_id WHEN p_a THEN 'A' WHEN p_b THEN 'B' ELSE 'C' END || '(' || l.dismissals || ')'
-        FROM player_dismissals l WHERE l.player_id IN (p_a, p_b, p_c)) s;
+      SELECT 'out:' || CASE l.player_id WHEN p_a THEN 'A' WHEN p_b THEN 'B' WHEN p_c THEN 'C' WHEN p_d THEN 'D' ELSE 'E' END || '(' || l.dismissals || ')'
+        FROM player_dismissals l WHERE l.player_id IN (p_a, p_b, p_c, p_d, p_e)) s;
     -- And the same comparison as above, over the fixture's players only, so
     -- a database whose log already disagreed cannot hide this one.
     SELECT count(*) INTO fixture_rows FROM (
       SELECT 1 FROM player_batting_career l
         FULL JOIN (SELECT p.id AS player_id, c.* FROM player p CROSS JOIN LATERAL player_batting_since(p.id, NULL) c
-                    WHERE c.matches > 0 AND p.id IN (p_a, p_b, p_c)) o ON o.player_id = l.player_id
-       WHERE coalesce(l.player_id, o.player_id) IN (p_a, p_b, p_c)
+                    WHERE c.matches > 0 AND p.id IN (p_a, p_b, p_c, p_d, p_e)) o ON o.player_id = l.player_id
+       WHERE coalesce(l.player_id, o.player_id) IN (p_a, p_b, p_c, p_d, p_e)
          AND (l.matches, l.runs, l.balls_faced, l.fours, l.sixes, l.last_ball_at)
              IS DISTINCT FROM (o.matches, o.runs, o.balls_faced, o.fours, o.sixes, o.last_ball_at)
       UNION ALL
       SELECT 1 FROM player_bowling_career l
         FULL JOIN (SELECT p.id AS player_id, c.* FROM player p CROSS JOIN LATERAL player_bowling_since(p.id, NULL) c
-                    WHERE c.matches > 0 AND p.id IN (p_a, p_b, p_c)) o ON o.player_id = l.player_id
-       WHERE coalesce(l.player_id, o.player_id) IN (p_a, p_b, p_c)
+                    WHERE c.matches > 0 AND p.id IN (p_a, p_b, p_c, p_d, p_e)) o ON o.player_id = l.player_id
+       WHERE coalesce(l.player_id, o.player_id) IN (p_a, p_b, p_c, p_d, p_e)
          AND (l.matches, l.runs_conceded, l.legal_balls, l.wides, l.no_balls, l.wickets)
              IS DISTINCT FROM (o.matches, o.runs_conceded, o.legal_balls, o.wides, o.no_balls, o.wickets)
       UNION ALL
       SELECT 1 FROM player_dismissals l
         FULL JOIN (SELECT p.id AS player_id, player_dismissals_since(p.id, NULL) AS dismissals FROM player p
-                    WHERE p.id IN (p_a, p_b, p_c) AND player_dismissals_since(p.id, NULL) > 0) o ON o.player_id = l.player_id
-       WHERE coalesce(l.player_id, o.player_id) IN (p_a, p_b, p_c)
+                    WHERE p.id IN (p_a, p_b, p_c, p_d, p_e) AND player_dismissals_since(p.id, NULL) > 0) o ON o.player_id = l.player_id
+       WHERE coalesce(l.player_id, o.player_id) IN (p_a, p_b, p_c, p_d, p_e)
          AND l.dismissals IS DISTINCT FROM o.dismissals) x;
 
     RAISE EXCEPTION USING ERRCODE = 'ZZ049', MESSAGE = 'db/49: undo the proof';
   EXCEPTION WHEN sqlstate 'ZZ049' THEN NULL;
   END;
 
-  fixture_want := 'bat:A(2,28,14,4,2,t) bat:B(2,4,4,0,0,t) bowl:C(2,50,16,2,4,0) out:A(2) out:B(4)';
+  fixture_want := 'bat:A(2,28,16,4,2,t) bat:B(2,4,4,0,0,t) bat:D(2,0,0,0,0,t) bat:E(2,0,0,0,0,t) '
+               || 'bowl:C(2,50,18,2,4,0) out:A(2) out:B(4) out:D(2) out:E(2)';
   IF fixture_drift IS DISTINCT FROM fixture_want THEN
     RAISE EXCEPTION 'db/49: the fixture reads %, expected % — a rule moved in the one-pass views', fixture_drift, fixture_want;
   END IF;
@@ -365,7 +376,7 @@ BEGIN
   -- And nothing of the proof is left: no row, no lifted door, no setting.
   IF EXISTS (SELECT 1 FROM school WHERE id = v_school)
      OR EXISTS (SELECT 1 FROM app_user WHERE id = v_user)
-     OR EXISTS (SELECT 1 FROM player WHERE id IN (p_a, p_b, p_c))
+     OR EXISTS (SELECT 1 FROM player WHERE id IN (p_a, p_b, p_c, p_d, p_e))
      OR EXISTS (SELECT 1 FROM match WHERE id IN (m_a, m_b))
      OR EXISTS (SELECT 1 FROM ball_event WHERE match_id IN (m_a, m_b))
      OR v_door IS DISTINCT FROM EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'ball_event'::regclass

@@ -4749,18 +4749,25 @@ BEGIN
   -- end, typed names, a ball with no type, a wicket with no method). §22's
   -- (e) holds the season views to the same lifetime views, so the three
   -- readers of one composition cannot drift apart. Each assertion's label
-  -- names what it guards; each was run once, alone, with db/49 broken the way
-  -- this table says, and failed for that reason:
+  -- names what it guards. db/49 was broken each of these ways, one at a
+  -- time, and the whole file run; what went red first is recorded, because
+  -- an earlier section often catches a composition that moved before this
+  -- one is reached — which is the point of having three readers held to one:
   --
-  --   (one-pass)  a view put back over its *_since() function; and one
-  --               without security_invoker
-  --   (nobody)    a view run as its owner (an unidentified session read rows)
-  --   (same)      the batting view with its second arm's NULLIF dropped (a
-  --               striker's own wicket ball counted twice in no figure, so it
-  --               did NOT fail — see below); with the retirement arm dropped;
-  --               the dismissals view without ball_wicket_stands(); the
-  --               bowling view counting a run out as the bowler's
-  --   (over)      every reader's figures empty (the same, vacuously)
+  --   the batting view over player_batting_since() again  → (one-pass)
+  --   the bowling view without security_invoker           → §22 (e), as the
+  --                                                          director; (one-pass)
+  --                                                          names it too
+  --   the batting view without its retirement arm         → §19 (a batter timed
+  --                                                          out has no innings)
+  --   the dismissals view without ball_wicket_stands()    → §22 (e)
+  --   the bowling view counting a run out as the bowler's → §22 (e)
+  --   the batting view's second arm without its NULLIF    → nothing, by design
+  --                                                          (below)
+  --
+  -- and (same) alone, over a generated log (tools/bench-career.mjs --load),
+  -- went red for the last two as the owner and the director, and stayed
+  -- green for a Westville reader and a pupil, who could see none of it.
   --
   -- The NULLIF on the batting view's second arm changes no figure: `faced`
   -- is false there, so its row adds nothing to runs, balls, fours or sixes,
