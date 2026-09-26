@@ -3369,6 +3369,30 @@ Two Law 41 questions Kameel is researching before deciding; nothing is built unt
    redesign's step 2 lands.
 2. A bowler suspended mid-over (SCRBRD-080's unbuilt half): Law 41 says he may not bowl again in the innings.
 
+### SCRBRD-096 — Colour vision: a palette setting beside the theme
+**Priority:** P2 · **Domain:** Design system / accessibility · **Decided 2026-09-26** (Kameel)
+Kameel asked for the prototype's colour-coded ball chips back, and for theme options for colour-blind users
+(DESIGN_DIRECTION §3.9, §10).
+1. **A Colours setting** in Settings and the pad menu: Standard, Red-green safe, Blue-yellow safe. It is stored per
+   device and combines with any theme. It is a third input to `applyTheme()`.
+2. **It swaps only the hue-carried tokens:**
+   - the ball chips;
+   - the semantic trio;
+   - the sport and chart colours.
+
+   The board's black, white and lime stay.
+3. **Measured problems it fixes:**
+   - the prototype chips 2 and 3 are ΔE 6–8 apart under protan and deutan, and 1 and 6 are ΔE 11 apart under tritan;
+   - the Daylight semantic tokens: positive and critical are ΔE 15 apart under protan, and critical and warning 12 under deutan.
+4. **Guard:** `design.test.mjs` simulates the deficiencies (Machado 2009). In each palette, every chip pair and every
+   semantic pair keeps ΔE ≥ 20 under the deficiencies that palette serves, and ≥ 25 in ordinary vision. Chips keep a
+   4.5:1 figure and 3:1 against the board.
+5. **Standard chip fixes:**
+   - black figures on 1, 4 and 6 (white fails AA);
+   - the wide chip lightened or ringed (`#5200bc` is 1.9:1 on the board).
+
+Built in redesign step 3b, with `Board`'s chip row. Opus (cross-cutting theme engine).
+
 ### SCRBRD-095 — Loose ends from the pad redesign (step 2)
 **Priority:** P2/P3 · **Domain:** Scorer UI · **Found 2026-09-26** redrawing the pad.
 1. **Declared profile vs what is captured (P2).** The three-phase pad records a sector (stamped `standard` on each

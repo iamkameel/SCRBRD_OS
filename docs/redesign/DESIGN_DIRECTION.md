@@ -176,6 +176,8 @@ both to a cut, as it does today.
 - Sport colours (batting, bowling, fielding) appear only in charts and table columns,
   where the reader learns the mapping once.
 - A tile is not coloured to be a tile. A card gets a border, not a tint.
+- One exception, decided 2026-09-26: the ball chips keep the prototype's colours
+  (§10). Each chip carries its figure, and §3.9 swaps the palette for colour vision.
 
 ### 3.8 What makes it stick
 
@@ -183,6 +185,53 @@ both to a cut, as it does today.
 adds three rules: no rendered text under 12px, no tappable element under 44px on the
 pad, no emoji in button text. These fail the build, so the direction cannot drift the
 way 2.0 drifted.
+
+### 3.9 Colour vision
+
+Decided 2026-09-26 (Kameel: "We should consider theme options for colorblind users").
+About one boy in twelve, and one girl in two hundred, has a colour-vision deficiency. On
+a team sheet of fifteen, that is likely one of the players, and a parent or two on the
+parents.
+
+**A second axis beside the theme.** Settings, and the pad's menu, offer:
+- **Colours:** Standard / Red-green safe (protan and deutan) / Blue-yellow safe (tritan).
+
+It is remembered on the device like the theme, and it combines with any theme (a
+Daylight red-green page, a Floodlit tritan page). `applyTheme()` already mutates the
+tokens in place, so this is a third input to it, not a new engine.
+
+**What it swaps:** only the tokens whose meaning rides on hue:
+- the ball chips;
+- the semantic trio (positive, warning, critical);
+- the sport colours in charts: wagon wheel runs, batting, bowling and fielding columns;
+- the Match Centre's worm and Manhattan series.
+
+The board's black, white and lime do not move. Layout, words and icons never change
+with it.
+
+**Measured, 2026-09-26** (Machado 2009 simulation at full severity, CIE76 ΔE between
+the two closest chips; under about 10 two colours read as one):
+
+| Palette | Normal | Protan | Deutan | Tritan |
+|---|---|---|---|---|
+| Prototype (Standard) | 42 | **8** (2 vs 3) | **6** (2 vs 3) | **11** (1 vs 6) |
+| A searched red-green set* | ≥ 46 | ≥ 46 | ≥ 46 | — |
+| A searched blue-yellow set* | ≥ 48 | — | — | ≥ 48 |
+
+\*Existence proofs from a random search held to the same limits as the build: a black
+or white figure at 4.5:1 on the chip, and the chip at 3:1 against the board. They show
+the target is reachable. They are not the final colours, which step 3b chooses.
+
+The prototype's 2 and 3 are the same colour to a red-green colour-blind viewer, and its
+1 and 6 nearly so to a tritan viewer. The semantic trio has the same fault today. In
+Daylight, positive `#1e6b3a` and critical `#b3122a` (saved and refused) are ΔE 15
+apart for a protan viewer, and critical and warning 12 for a deutan viewer. The state
+line always has its words, but the colour is a lie to those users.
+
+**What makes it stick:** `design.test.mjs` gains the simulation. In each palette, every
+pair of chips and every pair of the semantic trio keeps ΔE of at least 20 under the
+deficiencies that palette serves, and ordinary vision is never worse than 25. A new
+colour cannot land without clearing it.
 
 ---
 
@@ -393,17 +442,35 @@ and where it lands:
 
 ### Taken, bent to the rules already decided
 
-- **Ball chips in the current over** (p1, p4) drew each outcome in its own colour, with
-  ten colours to learn, which §3.7's one-accent rule forbids. The rule is also right on
-  its own terms: about one boy in twelve cannot reliably tell the lime from the amber. Kept, but
-  coded by shape and fill (**Kameel to confirm**):
-  - a dot is a dim "·";
-  - runs are an outlined figure;
-  - a four or a six is filled lime with a black figure;
-  - a wicket is filled white with a black "W";
-  - an extra is outlined with its suffix ("2wd", "nb").
+- **Ball chips in the current over** (p1, p4): **the prototype's colours, as drawn**
+  (Kameel, 2026-09-26: "I'd like the colours back"). This is a named exception to §3.7:
+  the chips are a fixed vocabulary, like a chart's legend, learned once. Every chip
+  still carries its figure or word ("4", "W", "2wd"), so colour is never the only
+  signal (WCAG 1.4.1), and the colour-vision setting (§3.9) swaps the palette for
+  people who need it. As drawn, in the Standard palette:
 
-  That gives three fills and readable words, and nobody needs a legend.
+  | Outcome | Chip | Figure on it |
+  |---|---|---|
+  | 1 | `#ec4899` pink | black (6.0:1; white is 3.5, fails) |
+  | 2 | `#b2e358` green-lime | black |
+  | 3 | `#f2c14b` amber | black |
+  | 4 | `#3b83f6` blue | black (5.8:1; white is 3.6, fails) |
+  | 6 | `#dd514c` red | black (5.4:1; white is 3.9, fails) |
+  | Wide | `#5200bc` purple, **lightened or ringed** | white |
+
+  Two fixes to the drawing, both measured:
+  - **Figures on 1, 4 and 6 are black.** White fails AA on all three.
+  - **The wide chip changes.** `#5200bc` is 1.9:1 against the board, under the 3:1 a
+    shape needs (WCAG 1.4.11), so a wide would read as a hole in the over. It gets a
+    lighter purple or a `board.figure` ring.
+
+  The prototype does not colour a dot, a 5, a wicket, a no-ball, byes or leg byes.
+  **Proposed, for Kameel to confirm:**
+  - a dot is an unfilled dim "·";
+  - a 5 is 4's blue;
+  - a wicket is filled white with a black "W", the strongest mark on the board in
+    every palette;
+  - a no-ball, byes and leg byes take the wide's purple, with their word on the chip.
 - **School badges** (p1, p6, p7). A crest is not a pupil's data, so it may appear on
   public pages. `school` has no crest column yet: it needs a small migration and an
   upload, and the short code stands in until then, as p2 itself says.
@@ -438,7 +505,7 @@ and where it lands:
 
 | Step | Adds |
 |---|---|
-| 3b (new, small) | `Board`: `partnership` row, striker lit and dim, `insight` slot with rotation rules, ball chips by shape; Opus, as `Board` sits on the pad |
+| 3b (new, small) | `Board`: `partnership` row, striker lit and dim, `insight` slot with rotation rules, ball chips in the prototype's colours; the colour-vision setting and its test (§3.9, SCRBRD-096); Opus, as `Board` sits on the pad and the setting is cross-cutting |
 | 3c (new, after step 3 lands) | Match Centre to the prototype: the match line (5), full names and codes (6), the scorecard layout (7), the tabs (9); Sonnet build, Opus review |
 | SCRBRD-083 step 3 (public page) | the match line, the scorecard under the name rule, share, `noindex` |
 | later | school crest column and upload; the innings-break card; the opening player row |
