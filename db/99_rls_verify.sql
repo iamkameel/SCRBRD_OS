@@ -4938,6 +4938,8 @@ BEGIN
     SELECT string_agg(p.proname, ',' ORDER BY p.proname) INTO detail
       FROM pg_proc p JOIN pg_namespace ns ON ns.oid = p.pronamespace
      WHERE ns.nspname = 'public' AND p.prosecdef
+       -- not app_can() itself (its guard names both), nor this file's own helpers
+       AND p.proname <> 'app_can' AND p.proname !~ '^_'
        AND (p.prosrc LIKE '%''fixture.read''%' OR p.prosrc LIKE '%''scoring.edit''%' OR p.prosrc LIKE '%''scoring.start''%');
     PERFORM _assert(detail = 'duty_status,duty_suspended,pad_resume_issue,pad_resume_reclaim,scoring_arm_handover,scoring_claim,'
                              || 'scoring_claim_handover,scoring_lease_check,scoring_verify_takeover,trip_fixture_driver_only',
