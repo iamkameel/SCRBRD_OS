@@ -4866,10 +4866,40 @@ BEGIN
   -- below is one of those, on two fixtures nothing else here touches (F1 and
   -- F2, copies of M_HANDOVER), and then every way a credential ends.
   --
-  -- Each labelled assertion was falsified once, by breaking the one thing it
-  -- guards and running the whole file, and went red for the right reason;
-  -- the break, and the label that caught it first, are in the backlog's
-  -- SCRBRD-078 build note.
+  -- Each labelled assertion was falsified once — the one thing it guards
+  -- broken, as the owner, on a fresh seed, and the whole file run — and each
+  -- was the FIRST assertion in the file to go red:
+  --
+  --   (guards)          pad_scope_select dropped from sport
+  --   (issue-holder)    pad_resume_issue() without its token-holder check
+  --   (issue-shape)     pad_jwk_is_public_p256() answering true
+  --   (reissued)        the 'reissued' UPDATE and the one-live index gone
+  --   (reads-log)       both layers on ball_event: a permissive policy true
+  --                     under pad scope, and its pad_scope_select true
+  --   (reads-toss)      the same, on match_toss
+  --   (reads-else)      pad_scope_select on sport made true (a policy that
+  --                     never asks app_can(): only the guard stands there)
+  --   (writes-toss)     both layers on match_toss UPDATE
+  --   (writes-other)    both layers on ball_event INSERT
+  --   (writes-own)      ball_event's INSERT carve-out removed
+  --   (writes-own-row)  pad_scope_insert on request_replay made true
+  --   (arm)             scoring_arm_handover() without db/50's first line
+  --   (doors)           app_can() restored to db/35's (no pad guard)
+  --   (holds)           app_holds() restored to db/35's
+  --   (reclaim)         pad_resume_reclaim() without its own-match check
+  --   (spend)           pad_resume_spend() without its replay refusal
+  --   (end-claimed)     the scoring_session UPDATE trigger dropped
+  --   (end-handover)    the trigger revoking on ANY state change (so arming
+  --                     ended it)
+  --   (end-release)     a force-release recorded as token_moved
+  --   (end-sign-out)    pad_resume_sign_out() revoking nothing
+  --   (end-office)      pad_resume_revoke() asking scoring.edit, not user.invite
+  --   (end-day)         pad_resume_ended() without the expiry arm
+  --   (end-match)       the match.status trigger dropped
+  --
+  -- Several are closed at BOTH layers (app_can() and the restrictive guard);
+  -- for those the break had to take both away before anything could read or
+  -- write, which is the point of having two.
   DECLARE
     F1  uuid := '77777777-0000-0000-0000-00000000050a';
     F2  uuid := '77777777-0000-0000-0000-00000000050b';
@@ -4976,12 +5006,16 @@ BEGIN
       PERFORM _assert(false, 'db/50 (writes-other): a credential for F1 wrote a ball on F2');
     EXCEPTION WHEN insufficient_privilege THEN NULL;
     END;
-    INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
-                            idempotency_key, client_seq, client_ts, kind, payload)
-    VALUES (F1, match_school(F1), 1, e1, 0, U_SCORER, DEV, 'verify:050:f1:1', 1, now(), 'innings_start', '{}'::jsonb);
+    detail := NULL;
+    BEGIN
+      INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                              idempotency_key, client_seq, client_ts, kind, payload)
+      VALUES (F1, match_school(F1), 1, e1, 0, U_SCORER, DEV, 'verify:050:f1:1', 1, now(), 'innings_start', '{}'::jsonb);
+    EXCEPTION WHEN insufficient_privilege THEN detail := SQLERRM;
+    END;
     SELECT count(*) INTO n FROM ball_event WHERE match_id = F1;
     -- (writes-own) its own match's ball, under the token, goes in
-    PERFORM _assert(n = 1, format('db/50 (writes-own): the credential''s ball on F1 is %s rows, expected 1', n));
+    PERFORM _assert(n = 1, format('db/50 (writes-own): the credential''s ball on F1 is %s rows, expected 1 (%s)', n, detail));
     BEGIN
       INSERT INTO request_replay (person_id, key, route, status, body)
       VALUES (U_SCORER, 'verify:050:replay', 'POST /x', 200, '{}'::jsonb);
