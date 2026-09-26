@@ -238,7 +238,7 @@ export function Board({ team, total, wickets, overs, sub, batters = [], partners
       </div>
 
       {(batters.length > 0 || partnership || bowler || chips.length > 0) && (
-        <div style={{ borderTop: `1px solid ${B.rule}`, marginTop: T.space.md, paddingTop: T.space.sm, display: "grid", gap: T.space.xs }}>
+        <div style={{ borderTop: `1px solid ${B.rule}`, marginTop: T.space.sm, paddingTop: T.space.sm, display: "grid", gap: T.space.xs }}>
           {batters.length > 0 && (
             <div style={{ display: "flex", flexWrap: "wrap", gap: `${T.space.xs} ${T.space.lg}` }}>
               {batters.map((b) => {
@@ -257,29 +257,33 @@ export function Board({ team, total, wickets, overs, sub, batters = [], partners
               })}
             </div>
           )}
-          {partnership && (
-            <div data-testid={`${testid}-partnership`} style={{ ...T.role.figure.sm, color: B.figure, whiteSpace: "nowrap" }}>
-              <span style={{ fontFamily: T.type.body, color: B.dim }}>Partnership</span>{" "}
-              <Figure value={partnership.runs ?? 0}/>
-              {partnership.balls != null && <span style={{ color: B.dim }}> ({partnership.balls})</span>}
-            </div>
-          )}
-          {(bowler || chips.length > 0) && (
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: T.space.sm }}>
+          {/* The stand under the batters, the bowler across from it, and his
+              over on a row of its own beneath him: a full over of chips does
+              not fit beside a name at 390 wide, and a row that wraps only
+              sometimes would move the pad's keys under the scorer's thumb. */}
+          {(partnership || bowler) && (
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: `${T.space.xs} ${T.space.sm}` }}>
+              {partnership && (
+                <span data-testid={`${testid}-partnership`} style={{ ...T.role.figure.sm, color: B.figure, whiteSpace: "nowrap" }}>
+                  <span style={{ fontFamily: T.type.body, color: B.dim }}>Partnership</span>{" "}
+                  <Figure value={partnership.runs ?? 0}/>
+                  {partnership.balls != null && <span style={{ color: B.dim }}> ({partnership.balls})</span>}
+                </span>
+              )}
               {bowler && (
-                <span data-testid={`${testid}-bowler`} style={{ ...T.role.figure.sm, color: B.figure, whiteSpace: "nowrap" }}>
+                <span data-testid={`${testid}-bowler`} style={{ ...T.role.figure.sm, color: B.figure, whiteSpace: "nowrap", marginLeft: "auto" }}>
                   <span style={{ fontFamily: T.type.body }}>{bowler.name}</span>{" "}
                   <Figure value={`${bowler.wickets ?? 0}/${bowler.runs ?? 0}`}/>
                   {bowler.overs != null && <span style={{ color: B.dim }}> ({bowler.overs})</span>}
                 </span>
               )}
-              {chips.length > 0 && (
-                <span data-testid={`${testid}-over`}
-                  style={{ display: "inline-flex", flexWrap: "wrap", alignItems: "center", gap: T.space.xs, marginLeft: "auto" }}>
-                  <span className="sr-only">This over: {chips.map((c) => c.say).join(", ")}</span>
-                  {thisOver.map((b, i) => <Chip key={i} mark={b}/>)}
-                </span>
-              )}
+            </div>
+          )}
+          {chips.length > 0 && (
+            <div data-testid={`${testid}-over`}
+              style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "flex-end", gap: T.space.xs }}>
+              <span className="sr-only">This over: {chips.map((c) => c.say).join(", ")}</span>
+              {thisOver.map((b, i) => <Chip key={i} mark={b}/>)}
             </div>
           )}
         </div>
