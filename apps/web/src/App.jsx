@@ -435,7 +435,7 @@ export default function SCRBRD_OS() {
     && holdsCapability(role, "facility.manage") && !holdsCapability(role, "team.manage");
   const dashboardView = isDriverLanding ? <DriverDayView role={role}/>
     : isGroundskeeperLanding ? <GroundskeeperDayView role={role}/>
-    : <DashboardView role={role} onNav={setPage}/>;
+    : <DashboardView role={role} onNav={setPage} onOpenScorer={openScorer}/>;
   const VIEW_MAP = {
     dashboard:    dashboardView,
     matches:      <MatchCentreView   role={role} onOpenScorer={openScorer} onNavProfile={(id)=>{setProfileTarget(id);setPage("profiles");}}/>,
