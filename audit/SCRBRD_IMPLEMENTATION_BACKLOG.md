@@ -3603,6 +3603,9 @@ it; the pad's AI line is unchanged and spectators never see one. Guards: `packag
 (every kind, void, amendment, free hit, penalty credits both ways, determinism, 60 generated matches with no id or
 typed name reaching a line, public mode) and `tools/smoke-browser-matchcentre.mjs`. Still open: the signed-out walk
 (with the public page, SCRBRD-083 step 3) and item 4.
+The same lines feed the Match Centre's spectator side (Kameel's premium-feel checklist, step 3c): the highlights on
+Summary, a moment on the board for a boundary, a wicket or a milestone (the hat-trick ball among them) that arrives
+while the page is open, the end-of-over line between overs, and big-screen mode (`views/matchcentre/spectator.jsx`).
 **Priority:** P2 · **Domain:** Scoring / Match Centre · **Type:** product gap (Kameel, 2026-09-26: fold into
 redesign step 3c)
 **Today:** the pad's Commentary card (`scorer/panels.jsx` `CommentaryCard`, in the Score tab) asks
