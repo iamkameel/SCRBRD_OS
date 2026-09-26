@@ -181,9 +181,9 @@ DECLARE
   v_user   uuid := gen_random_uuid();
   m_a      uuid := gen_random_uuid();
   m_b      uuid := gen_random_uuid();
-  A        uuid := gen_random_uuid();   -- on strike
-  B        uuid := gen_random_uuid();   -- at the other end
-  C        uuid := gen_random_uuid();   -- bowling
+  p_a        uuid := gen_random_uuid();   -- on strike
+  p_b        uuid := gen_random_uuid();   -- at the other end
+  p_c        uuid := gen_random_uuid();   -- bowling
   v_door   boolean := EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'ball_event'::regclass
                                AND tgname = 'ball_event_names_its_delivery' AND tgenabled = 'O');
   v_setting text := coalesce(current_setting('app.user_id', true), '');
@@ -279,9 +279,9 @@ BEGIN
     INSERT INTO app_user (id, email, name, role, school_id)
     VALUES (v_user, 'db49-' || v_user || '@example.invalid', 'db/49 proof, scorer', 'coach', v_school);
     INSERT INTO player (id, school_id, team_code, full_name, squad_no, playing_role, born) VALUES
-      (A, v_school, '1XI', 'db/49 Opener',  1, 'batter', (current_date - interval '16 years')::date),
-      (B, v_school, '1XI', 'db/49 Partner', 2, 'batter', (current_date - interval '16 years')::date),
-      (C, v_school, '1XI', 'db/49 Seamer',  3, 'bowler', (current_date - interval '16 years')::date);
+      (p_a, v_school, '1XI', 'db/49 Opener',  1, 'batter', (current_date - interval '16 years')::date),
+      (p_b, v_school, '1XI', 'db/49 Partner', 2, 'batter', (current_date - interval '16 years')::date),
+      (p_c, v_school, '1XI', 'db/49 Seamer',  3, 'bowler', (current_date - interval '16 years')::date);
     INSERT INTO match (id, school_id, team_code, opponent, starts_at, sport, format, overs, status) VALUES
       (m_a, v_school, '1XI', 'db/49 proof', now() - interval '14 days', 'cricket', 'T20', 20, 'complete'),
       (m_b, v_school, '1XI', 'db/49 proof', now() - interval '7 days',  'cricket', 'T20', 20, 'complete');
@@ -297,57 +297,57 @@ BEGIN
            CASE WHEN x.k = 14 THEN jsonb_build_object('target', 'db49:' || m.id || ':13') ELSE x.pl END
       FROM (VALUES (m_a), (m_b)) AS m(id)
       CROSS JOIN (VALUES
-        ( 1, 'ball',   'run', 4,    A,    C,    NULL::uuid, NULL,          '{}'::jsonb),
-        ( 2, 'ball',   'Nb',  4,    A,    C,    NULL,       NULL,          '{}'::jsonb),
-        ( 3, 'ball',   'W',   0,    A,    C,    NULL,       'lbw',         '{}'::jsonb),
-        ( 4, 'ball',   'Nb',  4,    A,    C,    NULL,       NULL,          '{"nbRuns":"byes"}'::jsonb),
-        ( 5, 'ball',   'Wd',  1,    A,    C,    NULL,       NULL,          '{}'::jsonb),
-        ( 6, 'ball',   'run', 6,    A,    C,    NULL,       NULL,          '{}'::jsonb),
-        ( 7, 'ball',   'LB',  1,    A,    C,    NULL,       NULL,          '{}'::jsonb),
-        ( 8, 'ball',   'W',   0,    A,    C,    B,          'run_out',     '{}'::jsonb),
-        ( 9, 'retire', 'W',   NULL, NULL, NULL, NULL,       'retired_out', jsonb_build_object('batter', A, 'reason', 'out')),
-        (10, 'ball',   NULL,  2,    B,    C,    NULL,       NULL,          '{}'::jsonb),
-        (11, 'ball',   'W',   0,    B,    C,    NULL,       NULL,          '{}'::jsonb),
-        (12, 'ball',   'run', 1,    NULL, C,    NULL,       NULL,          '{}'::jsonb),
-        (13, 'ball',   'run', 2,    B,    C,    NULL,       NULL,          '{}'::jsonb),
+        ( 1, 'ball',   'run', 4,    p_a,    p_c,    NULL::uuid, NULL,          '{}'::jsonb),
+        ( 2, 'ball',   'Nb',  4,    p_a,    p_c,    NULL,       NULL,          '{}'::jsonb),
+        ( 3, 'ball',   'W',   0,    p_a,    p_c,    NULL,       'lbw',         '{}'::jsonb),
+        ( 4, 'ball',   'Nb',  4,    p_a,    p_c,    NULL,       NULL,          '{"nbRuns":"byes"}'::jsonb),
+        ( 5, 'ball',   'Wd',  1,    p_a,    p_c,    NULL,       NULL,          '{}'::jsonb),
+        ( 6, 'ball',   'run', 6,    p_a,    p_c,    NULL,       NULL,          '{}'::jsonb),
+        ( 7, 'ball',   'LB',  1,    p_a,    p_c,    NULL,       NULL,          '{}'::jsonb),
+        ( 8, 'ball',   'W',   0,    p_a,    p_c,    p_b,          'run_out',     '{}'::jsonb),
+        ( 9, 'retire', 'W',   NULL, NULL, NULL, NULL,       'retired_out', jsonb_build_object('batter', p_a, 'reason', 'out')),
+        (10, 'ball',   NULL,  2,    p_b,    p_c,    NULL,       NULL,          '{}'::jsonb),
+        (11, 'ball',   'W',   0,    p_b,    p_c,    NULL,       NULL,          '{}'::jsonb),
+        (12, 'ball',   'run', 1,    NULL, p_c,    NULL,       NULL,          '{}'::jsonb),
+        (13, 'ball',   'run', 2,    p_b,    p_c,    NULL,       NULL,          '{}'::jsonb),
         (14, 'void',   NULL,  NULL, NULL, NULL, NULL,       NULL,          '{}'::jsonb),
-        (15, 'retire', NULL,  NULL, NULL, NULL, NULL,       NULL,          jsonb_build_object('batter', B, 'reason', 'hurt'))
+        (15, 'retire', NULL,  NULL, NULL, NULL, NULL,       NULL,          jsonb_build_object('batter', p_b, 'reason', 'hurt'))
       ) AS x(k, kind, bt, v, striker, bowler, dismissed, dis, pl);
     IF v_door THEN EXECUTE 'ALTER TABLE ball_event ENABLE TRIGGER ball_event_names_its_delivery'; END IF;
 
     -- The figures the rules above give, per player, over both matches.
     SELECT string_agg(f, ' ' ORDER BY f) INTO fixture_drift FROM (
-      SELECT 'bat:' || CASE l.player_id WHEN A THEN 'A' WHEN B THEN 'B' ELSE 'C' END
+      SELECT 'bat:' || CASE l.player_id WHEN p_a THEN 'A' WHEN p_b THEN 'B' ELSE 'C' END
              || row(l.matches, l.runs, l.balls_faced, l.fours, l.sixes, l.last_ball_at IS NOT NULL)::text AS f
-        FROM player_batting_career l WHERE l.player_id IN (A, B, C)
+        FROM player_batting_career l WHERE l.player_id IN (p_a, p_b, p_c)
       UNION ALL
-      SELECT 'bowl:' || CASE l.player_id WHEN A THEN 'A' WHEN B THEN 'B' ELSE 'C' END
+      SELECT 'bowl:' || CASE l.player_id WHEN p_a THEN 'A' WHEN p_b THEN 'B' ELSE 'C' END
              || row(l.matches, l.runs_conceded, l.legal_balls, l.wides, l.no_balls, l.wickets)::text
-        FROM player_bowling_career l WHERE l.player_id IN (A, B, C)
+        FROM player_bowling_career l WHERE l.player_id IN (p_a, p_b, p_c)
       UNION ALL
-      SELECT 'out:' || CASE l.player_id WHEN A THEN 'A' WHEN B THEN 'B' ELSE 'C' END || '(' || l.dismissals || ')'
-        FROM player_dismissals l WHERE l.player_id IN (A, B, C)) s;
+      SELECT 'out:' || CASE l.player_id WHEN p_a THEN 'A' WHEN p_b THEN 'B' ELSE 'C' END || '(' || l.dismissals || ')'
+        FROM player_dismissals l WHERE l.player_id IN (p_a, p_b, p_c)) s;
     -- And the same comparison as above, over the fixture's players only, so
     -- a database whose log already disagreed cannot hide this one.
     SELECT count(*) INTO fixture_rows FROM (
       SELECT 1 FROM player_batting_career l
         FULL JOIN (SELECT p.id AS player_id, c.* FROM player p CROSS JOIN LATERAL player_batting_since(p.id, NULL) c
-                    WHERE c.matches > 0 AND p.id IN (A, B, C)) o ON o.player_id = l.player_id
-       WHERE coalesce(l.player_id, o.player_id) IN (A, B, C)
+                    WHERE c.matches > 0 AND p.id IN (p_a, p_b, p_c)) o ON o.player_id = l.player_id
+       WHERE coalesce(l.player_id, o.player_id) IN (p_a, p_b, p_c)
          AND (l.matches, l.runs, l.balls_faced, l.fours, l.sixes, l.last_ball_at)
              IS DISTINCT FROM (o.matches, o.runs, o.balls_faced, o.fours, o.sixes, o.last_ball_at)
       UNION ALL
       SELECT 1 FROM player_bowling_career l
         FULL JOIN (SELECT p.id AS player_id, c.* FROM player p CROSS JOIN LATERAL player_bowling_since(p.id, NULL) c
-                    WHERE c.matches > 0 AND p.id IN (A, B, C)) o ON o.player_id = l.player_id
-       WHERE coalesce(l.player_id, o.player_id) IN (A, B, C)
+                    WHERE c.matches > 0 AND p.id IN (p_a, p_b, p_c)) o ON o.player_id = l.player_id
+       WHERE coalesce(l.player_id, o.player_id) IN (p_a, p_b, p_c)
          AND (l.matches, l.runs_conceded, l.legal_balls, l.wides, l.no_balls, l.wickets)
              IS DISTINCT FROM (o.matches, o.runs_conceded, o.legal_balls, o.wides, o.no_balls, o.wickets)
       UNION ALL
       SELECT 1 FROM player_dismissals l
         FULL JOIN (SELECT p.id AS player_id, player_dismissals_since(p.id, NULL) AS dismissals FROM player p
-                    WHERE p.id IN (A, B, C) AND player_dismissals_since(p.id, NULL) > 0) o ON o.player_id = l.player_id
-       WHERE coalesce(l.player_id, o.player_id) IN (A, B, C)
+                    WHERE p.id IN (p_a, p_b, p_c) AND player_dismissals_since(p.id, NULL) > 0) o ON o.player_id = l.player_id
+       WHERE coalesce(l.player_id, o.player_id) IN (p_a, p_b, p_c)
          AND l.dismissals IS DISTINCT FROM o.dismissals) x;
 
     RAISE EXCEPTION USING ERRCODE = 'ZZ049', MESSAGE = 'db/49: undo the proof';
@@ -365,7 +365,7 @@ BEGIN
   -- And nothing of the proof is left: no row, no lifted door, no setting.
   IF EXISTS (SELECT 1 FROM school WHERE id = v_school)
      OR EXISTS (SELECT 1 FROM app_user WHERE id = v_user)
-     OR EXISTS (SELECT 1 FROM player WHERE id IN (A, B, C))
+     OR EXISTS (SELECT 1 FROM player WHERE id IN (p_a, p_b, p_c))
      OR EXISTS (SELECT 1 FROM match WHERE id IN (m_a, m_b))
      OR EXISTS (SELECT 1 FROM ball_event WHERE match_id IN (m_a, m_b))
      OR v_door IS DISTINCT FROM EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'ball_event'::regclass
