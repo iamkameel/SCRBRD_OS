@@ -119,4 +119,60 @@ const buildNarratives=(sig,lastOver)=>{
   return n.sort((a,b)=>b.pri-a.pri);
 };
 
-export { buildNarratives, buildSignals, getPhase };
+/* ═══════════════════════════════════════════════════════
+   THE BOARD'S TIER 2 LINE (DESIGN_DIRECTION §10)
+═══════════════════════════════════════════════════════ */
+const MILESTONE_WORD = { 50: "fifty", 100: "a hundred", 150: "150", 200: "200" };
+/** The next landmark above `runs` and how far off it is, when it is within `reach`. */
+const inReach = (runs, reach, marks = [50, 100, 150, 200]) => {
+  const m = marks.find((x) => x > runs);
+  return m != null && m - runs <= reach ? { mark: m, need: m - runs } : null;
+};
+
+/**
+ * The lines the board's `insight` slot takes turns with, from the fold alone:
+ * a milestone in reach for a batter, for the stand or for a bowler; the
+ * projected total in a first innings; a boundary drought; the last wicket.
+ * Only what the innings can say — a line with nothing behind it is not
+ * written, so an innings too young to say anything gives none and the slot is
+ * not drawn. Spectator screens only (the pad never shows Tier 2).
+ *
+ * @param {object} inn  a folded innings
+ * @param {{target?: number|null, overs?: number}} [o]
+ * @returns {string[]}
+ */
+const boardInsights = (inn, { target = null, overs = 20 } = {}) => {
+  if (!inn || !inn.balls || inn.complete) return [];
+  const out = [];
+  const pair = [inn.striker, inn.nonStriker].map((id) => inn.batsmen?.find((b) => b.id === id)).filter(Boolean);
+  for (const b of pair) {
+    const r = inReach(b.runs ?? 0, 10);
+    if (r) out.push(`${b.name} needs ${r.need} for ${MILESTONE_WORD[r.mark]}`);
+  }
+  const cp = inn.curPartner;
+  if (pair.length === 2 && cp) {
+    const r = inReach(cp.runs ?? 0, 10, [50, 100, 150]);
+    if (r) out.push(`The stand needs ${r.need} for a ${r.mark === 50 ? "fifty" : r.mark === 100 ? "hundred" : r.mark} partnership`);
+  }
+  const bw = inn.bowlers?.find((b) => b.id === inn.bowler);
+  if (bw && bw.wickets === 4) out.push(`${bw.name} needs one more for five wickets`);
+  // The projection only in a first innings, and only once four overs have
+  // given it something to project from.
+  if (target == null && inn.balls >= 24 && inn.balls < overs * 6) {
+    const rr = inn.runs / (inn.balls / 6);
+    out.push(`Projected ${Math.round(rr * overs)} at ${rr.toFixed(2)} an over`);
+  }
+  // Legal deliveries since the last four or six off the bat.
+  let dry = 0;
+  for (let i = (inn.ballLog?.length ?? 0) - 1; i >= 0; i--) {
+    const b = inn.ballLog[i];
+    if ((b.type === "run" || b.type == null) && (b.value === 4 || b.value === 6)) break;
+    if (b.type !== "Wd" && b.type !== "Nb") dry++;
+  }
+  if (dry >= 18) out.push(`No boundary for ${dry} balls`);
+  const fw = inn.fow?.[inn.fow.length - 1];
+  if (fw) out.push(`Last wicket: ${fw.batsman} at ${fw.runs}/${fw.wickets}, ${fw.overs} overs`);
+  return out;
+};
+
+export { boardInsights, buildNarratives, buildSignals, getPhase };

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { deriveMatch, fmtOvers, fromRow } from "@scrbrd/scoring";
+import { deriveMatch, fromRow } from "@scrbrd/scoring";
 import { ROLES } from "../design/roles.js";
 import { D, T } from "../design/tokens.js";
 import { addDays, dateStr, humanDate, humanDateTime, today } from "../lib/format.js";
@@ -10,6 +10,10 @@ import { Btn, EmptyState } from "../ui/primitives.jsx";
 import { Bento, BentoCard } from "../ui/surfaces.jsx";
 import { Board } from "../ui/board.jsx";
 import { Icon, isIcon } from "../ui/icons.jsx";
+import { boardFromInnings } from "../scorer/boardData.js";
+import { seedCompletedMatch } from "../scorer/seed.js";
+import { boardInsights } from "../scorer/signals.js";
+import { parseBalls, parseScore, teamSquad } from "./shared.jsx";
 
 // ══════════════════════════════════════════════════════
 //  THE DAY SHEET (DESIGN_DIRECTION §5) — replaces the KPI dashboard.
@@ -33,21 +37,25 @@ import { Icon, isIcon } from "../ui/icons.jsx";
 // not this one's.
 // ══════════════════════════════════════════════════════
 
-/** "142/3" → { runs: 142, wkts: 3 } — the demo's own scorecard shape (data/mock.js). */
-const parseScore = (s) => { const [r, w] = String(s).split("/").map(Number); return { runs: r, wkts: Number.isNaN(w) ? 10 : w }; };
-
 /** HH:MM off a raw timestamp, sliced the way asMatch()'s own `time` field is — never through a Date object. */
 const hm = (ts) => (ts ? String(ts).slice(11, 16) : null);
 
-/** The chase line and run rate, in words — the same shape PadBoard (scorer/pad.jsx) draws on the pad itself. */
-function boardSub(inn, target, overs) {
-  const crr = inn.balls ? (inn.runs / (inn.balls / 6)).toFixed(2) : null;
-  if (target == null) return crr ? `CRR ${crr}` : null;
-  const need = target - inn.runs;
-  const ballsLeft = Math.max(0, (overs || 20) * 6 - inn.balls);
-  const rrr = need > 0 && ballsLeft > 0 ? ((need / ballsLeft) * 6).toFixed(2) : null;
-  return [need > 0 ? `Need ${need} off ${ballsLeft}` : "Target reached", rrr ? `RRR ${rrr}` : null, crr ? `CRR ${crr}` : null]
-    .filter(Boolean).join(" · ");
+/**
+ * The demo's live innings, reconstructed from its scorecard line exactly as
+ * Match Centre's demo scorecard reconstructs it (views/shared.jsx,
+ * scorer/seed.js: deterministic per match), so the two demo screens agree
+ * ball for ball. Signed in, the fold is the source and this is never used.
+ */
+function demoInnings(match, players) {
+  const home = match?.scorecard?.home;
+  if (!home) return null;
+  const { runs, wkts } = parseScore(home.score);
+  const seeded = seedCompletedMatch({
+    matchId: match.id, team1: match.homeTeam, team2: match.awayTeam,
+    squad1: teamSquad(match.homeTeam, players), squad2: teamSquad(match.awayTeam, players),
+    inns: [{ runs, wickets: wkts, balls: parseBalls(home.overs) }], liveLast: true,
+  });
+  return seeded.innings[0] ?? null;
 }
 
 /**
@@ -137,20 +145,18 @@ function DashboardView({ role, onNav, onOpenScorer }) {
   const unread = NOTIFICATIONS.filter((n) => !n.read);
 
   // ── the board for "Now" ──
+  // The whole board, from the fold: batters (the striker lit), the stand, the
+  // bowler, the over as chips — and, this being a spectator screen, the Tier 2
+  // line (§10). The pad draws the same board from the same function.
   let board = null;
   if (liveMatch) {
-    if (signedIn()) {
-      if (liveScore.inn) {
-        board = {
-          team: liveScore.inn.battingTeam || liveMatch.homeTeam,
-          total: liveScore.inn.runs, wickets: liveScore.inn.wickets,
-          overs: fmtOvers(liveScore.inn.balls),
-          sub: boardSub(liveScore.inn, liveScore.target, liveMatch.overs),
-        };
-      }
-    } else if (liveMatch.scorecard?.home) {
-      const { runs, wkts } = parseScore(liveMatch.scorecard.home.score);
-      board = { team: liveMatch.homeTeam, total: runs, wickets: wkts, overs: liveMatch.scorecard.home.overs, sub: null };
+    const inn = signedIn() ? liveScore.inn : demoInnings(liveMatch, PLAYERS);
+    const target = signedIn() ? liveScore.target : null;
+    const overs = liveMatch.overs || inn?.overs || 20;
+    const props = boardFromInnings(inn, { target, overs });
+    if (props) {
+      const insight = boardInsights(inn, { target, overs });
+      board = { ...props, team: props.team || liveMatch.homeTeam, insight: insight.length ? insight : undefined };
     }
   }
 
@@ -179,7 +185,7 @@ function DashboardView({ role, onNav, onOpenScorer }) {
           <BentoCard level="a" title="Now" data-testid="day-now">
             {board ? (
               <>
-                <Board team={board.team} total={board.total} wickets={board.wickets} overs={board.overs} sub={board.sub} testid="day-board"/>
+                <Board {...board} testid="day-board"/>
                 <div style={{ marginTop: T.space.md }}>
                   {canScore(role)
                     ? <Btn variant="success" onClick={() => onOpenScorer && onOpenScorer(liveMatch)}>Open scorer</Btn>

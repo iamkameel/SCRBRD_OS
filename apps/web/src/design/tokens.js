@@ -243,6 +243,22 @@ const FLOODLIT = {
     rule:        "rgba(255,255,255,.08)", // ring lines
     hairline:    "rgba(255,255,255,.04)", // sector edges
   },
+
+  /**
+   * The wagon wheel's run colours: a line per ball, drawn on the field. DATA
+   * colours, like `sport`, and until 3b they were aliases of the semantic trio
+   * (field.js LK_COLS) — which is why they are a group of their own now: the
+   * colour-vision setting (§3.9) moves the trio, and a wheel whose 1–3 went
+   * blue beside a blue four would be worse than before. Standard keeps the
+   * values the wheel always drew.
+   */
+  run: {
+    four:   "#3b6ef5",   // brand.blue
+    six:    "#f9b233",   // semantic.warning
+    few:    "#3ddc84",   // 1–3; semantic.positive
+    wicket: "#f4374f",   // semantic.critical
+    extras: "#f7b733",   // sport.batting
+  },
 };
 
 /**
@@ -344,11 +360,98 @@ const DAYLIGHT = {
     rule:        "rgba(16,20,15,.14)",
     hairline:    "rgba(16,20,15,.07)",
   },
+  run: {
+    four:   "#2e5bd6",
+    six:    "#8a5a00",
+    few:    "#1e6b3a",
+    wicket: "#b3122a",
+    extras: "#9a4f00",
+  },
 };
 
 /** The theme names, as stored and as set on <html data-theme>. */
 const THEMES = { daylight: DAYLIGHT, floodlit: FLOODLIT };
 const THEMED_GROUPS = Object.keys(FLOODLIT);
+
+// ══════════════════════════════════════════════════════════════════
+//  Colour vision (DESIGN_DIRECTION §3.9, SCRBRD-096)
+// ══════════════════════════════════════════════════════════════════
+//
+// A second axis beside the theme: Standard, Red-green safe (protan and deutan)
+// and Blue-yellow safe (tritan). It moves ONLY the tokens whose meaning rides
+// on hue — the ball chips, the semantic trio, the wagon wheel's runs — and
+// combines with either theme. The board's black, white and lime never move;
+// nor do layout, words or icons.
+//
+// Every value below is measured, not chosen by eye, and design.test.mjs holds
+// it there: under the deficiencies a palette serves (Machado 2009, full
+// severity), every pair of chips and every pair of the semantic trio is at
+// least ΔE (CIE76) 20 apart, and at least 25 in ordinary vision; every chip
+// is 3:1 against the board and takes a black or white figure at 4.5:1; every
+// semantic value still reads on every surface of its theme.
+
+/**
+ * The ball chips, in the order a scorer reads them. Theme-independent: they
+ * sit on the always-black board. The wicket chip is `board.figure` and the dot
+ * is an unfilled `board.dim` mark in every palette; a 5 takes the four's
+ * colour; a no-ball, a bye and a leg bye take the wide's.
+ *
+ * STANDARD is the prototype's (§10, Kameel 2026-09-26: "I'd like the colours
+ * back"), with one fix: the wide's #5200bc was 1.9:1 on the board, a hole in
+ * the over, and is lightened to 3.8:1 — still purple, still a white figure.
+ */
+const CHIPS = {
+  standard:   { one: "#ec4899", two: "#b2e358", three: "#f2c14b", four: "#3b83f6", six: "#dd514c", extra: "#8445f0" },
+  // Okabe–Ito's hues: a reddish purple, a lemon, an amber, a sky blue, a
+  // vermillion and a royal blue. Red-green vision reads them as a yellow
+  // ramp and a blue ramp, so each ramp is spaced by lightness.
+  redgreen:   { one: "#cc6d99", two: "#f7f08c", three: "#f5b700", four: "#56b4e9", six: "#c8600a", extra: "#0062c4" },
+  // The prototype's, moved only where tritan vision collapsed them: the one
+  // more magenta and the six a clearer red (they were 11 apart), the two a
+  // deeper green (it paled into the white wicket).
+  blueyellow: { one: "#dd44ae", two: "#96da40", three: "#f2c14b", four: "#3b83f6", six: "#f03a30", extra: "#8445f0" },
+};
+
+/**
+ * What each palette changes in the themed groups, per theme. Standard changes
+ * nothing. A group or a key not named here keeps the theme's own value.
+ *
+ * `sport` is not here on purpose: batting, bowling and fielding already clear
+ * the rule under every deficiency in both themes (design.test.mjs measures it
+ * and fails if that stops being true).
+ */
+const VISION = {
+  standard: {},
+  redgreen: {
+    floodlit: {
+      // Saved is sky blue, held is yellow, refused is vermillion: the GitHub
+      // colour-blind themes' answer, and the one the Okabe–Ito set gives.
+      // Critical reads as well as fills here, so its text half is itself.
+      semantic: { positive: "#56b4e9", warning: "#f5d43f", critical: "#f0703c", criticalText: "#f0703c" },
+      run: { four: CHIPS.redgreen.four, six: CHIPS.redgreen.six, few: CHIPS.redgreen.two, wicket: "#f4f6f3", extras: CHIPS.redgreen.extra },
+    },
+    daylight: {
+      // Three dark inks that must all read on the hover surface: a blue, an
+      // ochre at the top of the AA range, and an oxblood at the bottom of it,
+      // so that where the hue is lost the lightness still tells them apart.
+      semantic: { positive: "#1f5fa6", warning: "#7c5e00", critical: "#6a0e14", criticalText: "#6a0e14" },
+      run: { four: "#0062c4", six: "#a76100", few: "#a0406e", wicket: "#10140f", extras: "#4d3400" },
+    },
+  },
+  blueyellow: {
+    floodlit: {
+      // Only the pink text half moves: #ff9aa6 and the amber warning are 11
+      // apart to a tritan eye. A red that reads replaces it.
+      semantic: { criticalText: "#ff5a5f" },
+      run: { four: CHIPS.blueyellow.four, six: CHIPS.blueyellow.six, few: CHIPS.blueyellow.two, wicket: "#f4f6f3", extras: CHIPS.blueyellow.extra },
+    },
+    daylight: {
+      // The Daylight trio already clears tritan vision (45 apart at worst).
+      run: { four: "#3067f4", six: "#c0282d", few: "#005110", wicket: "#10140f", extras: "#8c13db" },
+    },
+  },
+};
+const VISION_NAMES = Object.keys(VISION);
 
 // ══════════════════════════════════════════════════════════════════
 //  T — the semantic system
@@ -370,6 +473,15 @@ const T = {
     dim:    "#8a94a5",                 //  6.34:1 — labels on the board
     rule:   "rgba(255,255,255,0.14)",  // the lines between rows
   },
+
+  /**
+   * THE BALL CHIPS in "this over" — the prototype's colours (§10), a named
+   * exception to one-accent-per-screen: a fixed vocabulary, learned once,
+   * like a chart's legend. On the board, so they do not switch with the
+   * theme; they switch with the colour-vision setting (CHIPS, above). Every
+   * chip carries its figure or word, so colour is never the only signal.
+   */
+  chip: { ...CHIPS.standard },
 
   /**
    * A pitch strip as the groundsman's report draws it: clay, painted creases
@@ -583,10 +695,13 @@ const clr = (hex, a) => hex + Math.round(a*255).toString(16).padStart(2,"0");
 //  The theme, applied
 // ══════════════════════════════════════════════════════════════════
 let current = "floodlit";
+let currentVision = "standard";
 let revision = 0;
 
 /** The theme in force: "daylight" or "floodlit". */
 const themeName = () => current;
+/** The colour-vision palette in force: "standard", "redgreen" or "blueyellow". */
+const visionName = () => currentVision;
 /** Bumped on every switch; themed() and anything else caching a derived value keys on it. */
 const themeRevision = () => revision;
 
@@ -619,18 +734,26 @@ function themed(build, shape = {}) {
 }
 
 /**
- * Switch every token to a theme's values, in place.
+ * Switch every token to a theme's values, and a colour-vision palette's, in
+ * place.
  *
- * `T`'s themed groups and `D`'s aliases are rewritten on the same objects, so
- * every module that imported them sees the new values on its next read, and
- * GLOBAL_CSS (a live binding) is rebuilt. The caller re-renders — design/
- * theme.js does that for the app.
+ * `T`'s themed groups, `T.chip` and `D`'s aliases are rewritten on the same
+ * objects, so every module that imported them sees the new values on its next
+ * read, and GLOBAL_CSS (a live binding) is rebuilt. The caller re-renders —
+ * design/theme.js does that for the app.
+ *
+ * `vision` is the third input (§3.9): the palette laid over the theme. Left
+ * out, the one in force stays, so a theme switch never resets it.
  */
-function applyTheme(name) {
+function applyTheme(name, vision = currentVision) {
   const set = THEMES[name] ? name : "floodlit";
-  for (const g of THEMED_GROUPS) Object.assign(T[g], THEMES[set][g]);
+  const v = VISION[vision] ? vision : "standard";
+  const over = VISION[v][set] ?? {};
+  for (const g of THEMED_GROUPS) Object.assign(T[g], THEMES[set][g], over[g]);
+  Object.assign(T.chip, CHIPS[v]);
   Object.assign(D, aliases());
   current = set;
+  currentVision = v;
   revision++;
   GLOBAL_CSS = buildGlobalCss();
   return set;
@@ -721,6 +844,10 @@ body{background:${T.surface.canvas};color:${T.content.primary};font-family:${T.t
 @media(min-width:${T.role.wide.figureBoard.minWidth}){.os-board-total{font-size:${T.role.wide.figureBoard.fontSize}}}
 .os-board-flip{display:inline-block;transform-origin:50% 50%;backface-visibility:hidden;
   animation:boardFlip ${T.motion.flip} ${T.motion.swift} both}
+/* §10 — the board's Tier 2 line: the next one slides up into place. Spectator
+   screens only; reduced motion (below) makes it a cut. */
+@keyframes insightIn{from{transform:translateY(8px);opacity:0}to{transform:none;opacity:1}}
+.os-insight-in{animation:insightIn ${T.motion.panel} ${T.motion.ease} both}
 
 /* ── Keyboard focus ─────────────────────────────────────────────
    There were 164 buttons in this app and not one visible focus state,
@@ -783,6 +910,7 @@ body{background:${T.surface.canvas};color:${T.content.primary};font-family:${T.t
   }
   .pressBtn:active{transform:none}
   .card-hover:hover{transform:none}
+  .os-insight-in{animation:none!important}
 }
 
 /* ── ScrbrdOS responsive layer — mobile first ── */
@@ -843,4 +971,4 @@ button{touch-action:manipulation}
 applyTheme(booted === "daylight" ? "daylight" : "floodlit");
 
 // One line: tools/check-imports.mjs reads a module's exports from it.
-export { D, T, GLOBAL_CSS, FLOODLIT, DAYLIGHT, THEMES, applyTheme, themeName, themeRevision, themed, clr, contrast, inkOn, luminance, px, textOn };
+export { D, T, GLOBAL_CSS, FLOODLIT, DAYLIGHT, THEMES, CHIPS, VISION, VISION_NAMES, applyTheme, themeName, visionName, themeRevision, themed, clr, contrast, inkOn, luminance, px, textOn };

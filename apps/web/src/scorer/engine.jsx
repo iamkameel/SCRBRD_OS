@@ -1318,7 +1318,9 @@ function SCRBRD({resume,onSignIn,onExit}={}){
       // A wicket always opens a follow-up sheet (new batsman / new over /
       // innings break), so every overlay in this chain is non-blocking.
       const wicketCfg={...buildEventCfg("W",null),noBlur:true};
-      const mile=detectMilestone({type:"W",value:0,striker:before?.striker,bowler:before?.bowler},before);
+      // The method rides along only when the wicket stood (a free hit can
+      // save the batter), so a hat-trick ball is never called off a not-out.
+      const mile=detectMilestone({type:"W",value:0,striker:before?.striker,bowler:before?.bowler,...(stood?{dismissal:mode}:{})},before);
       milestoneQRef.current=(mile?[mile]:[]).map(m=>({...buildEventCfg(null,m),noBlur:true}));
       setEventOverlay(wicketCfg);
     }

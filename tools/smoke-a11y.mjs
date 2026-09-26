@@ -70,6 +70,9 @@ const TYPE_FLOOR_CEILING = {
   dashboard:   18,
   matchcentre: 31,
   pad:         0,
+  // Step 3b: the pad again, after an over is recorded, so the chips on the
+  // board are on screen and counted. 0, like the pad.
+  padOver:     0,
 };                   // 68 in all
 
 /**
@@ -81,6 +84,7 @@ const TYPE_FLOOR_CEILING = {
  */
 const TAP_FLOOR_CEILING = {
   pad:         0,
+  padOver:     0,
 };
 
 /**
@@ -95,8 +99,10 @@ const CONTRAST_CEILING = {
   // The pad's one — a run in "this over", emerald figure on an emerald tint
   // of itself, 9px (4.20:1 under lights, 4.39:1 in daylight) — went with step
   // 2: "this over" is on the board now, board.dim on board.face (6.34:1).
-  floodlit: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, pad: 0 },
-  daylight: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, pad: 0 },
+  // padOver (step 3b): the chips' figures, black or white on the chip's own
+  // fill, and the day sheet's board with its Tier 2 line, are in these.
+  floodlit: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, pad: 0, padOver: 0 },
+  daylight: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, pad: 0, padOver: 0 },
 };
 
 /**
@@ -118,6 +124,7 @@ const EMOJI_CEILING = {
   dashboard:   0,
   matchcentre: 0,
   pad:         0,
+  padOver:     0,
 };
 
 // Each theme's own surfaces and inks — values the other theme never uses — so
@@ -453,6 +460,28 @@ async function walk(theme) {
     unnamed = await unnamedControls();
     ok("every control in the shell has a name", unnamed.length === 0, unnamed.slice(0, 5).join(", "));
 
+    // The day sheet's board carries the Tier 2 line (DESIGN_DIRECTION §10),
+    // which rotates by itself — so it has a pause button (WCAG 2.2.2). Its
+    // type and contrast are in the dashboard's counts above; its size and its
+    // name are checked here, and that it does what it says.
+    const pause = page.locator('[data-testid="day-board-insight-pause"]');
+    ok("the day sheet's board has its rotating line, and a pause button for it", (await pause.count()) === 1);
+    if (await pause.count()) {
+      const box = await pause.boundingBox();
+      ok(`...44px or more (${Math.round(box?.width ?? 0)}x${Math.round(box?.height ?? 0)})`, box && box.width >= 44 && box.height >= 44);
+      ok("...named for what it does", await pause.getAttribute("aria-label") === "Pause the rotating line");
+      await pause.click({ timeout: 2000 });
+      ok("...and does it: paused, it offers to play",
+         await pause.getAttribute("aria-label") === "Play the rotating line"
+         && await page.locator('[data-testid="day-board-insight"]').getAttribute("data-paused") === "true");
+      await pause.click({ timeout: 2000 });
+      ok("...and the line is not a live region",
+         await page.evaluate(() => !document.querySelector('[data-testid="day-board-insight"]')?.closest("[aria-live]")));
+    }
+    const boardTargets = await page.evaluate(() =>
+      [...document.querySelectorAll('[data-testid="day-board"] button')].filter((b) => { const r = b.getBoundingClientRect(); return r.width < 44 || r.height < 44; }).length);
+    ok("nothing tapped on the board is under 44px", boardTargets === 0, String(boardTargets));
+
     const landmarks = await page.evaluate(() => ({
       nav: document.querySelectorAll("nav").length,
       main: document.querySelectorAll("main").length,
@@ -541,6 +570,26 @@ async function walk(theme) {
     ok("the score is in a live region",
        await page.evaluate(() => !!document.querySelector('[aria-live="polite"]')));
 
+    // ── The over as chips (DESIGN_DIRECTION §10, step 3b) ──
+    // A run, a four and a wide, so the board draws chips of three kinds; then
+    // the pad is measured again as "padOver", against the same floors as the
+    // pad: the chips' figures are text on their own fill, so the contrast
+    // count measures them on the colour they sit on.
+    for (const key of ["run-1", "run-4", "key-wide"]) {
+      await page.locator(`[data-testid="${key}"]`).first().click({ timeout: 3000 }).catch(() => {});
+      await page.waitForTimeout(2000);
+    }
+    const chips = await page.evaluate(() => [...document.querySelectorAll('[data-testid="board-over"] [data-chip]')].map((c) => {
+      const r = c.getBoundingClientRect();
+      return { kind: c.dataset.chip, text: c.textContent, w: r.width, h: r.height, tab: getComputedStyle(c).fontVariantNumeric };
+    }));
+    ok(`the over is drawn as chips, each carrying its figure (${chips.map((c) => c.text).join(" ")})`,
+       chips.length >= 3 && chips.every((c) => c.text.trim().length > 0) && chips.some((c) => c.kind === "four") && chips.some((c) => c.kind === "extra"));
+    ok("...every chip at least 24px, with tabular figures",
+       chips.every((c) => c.w >= 24 && c.h >= 24 && /tabular-nums/.test(c.tab)), JSON.stringify(chips.filter((c) => c.w < 24 || c.h < 24)));
+    ok("...and the over is said in words", /This over: .*4 runs.*wide/.test(await page.locator('[data-testid="board-over"] .sr-only').textContent().catch(() => "")));
+    await measure(page, theme, "padOver");
+
     // ── A switch while the app is open ──
     const flipTo = theme === "daylight" ? "floodlit" : "daylight";
     group(`${T_} → ${flipTo === "daylight" ? "Daylight" : "Floodlit"} while the app is open`);
@@ -618,6 +667,46 @@ async function walk(theme) {
     ok("choosing System hands the decision back to the device",
        await page.evaluate(() => document.documentElement.dataset.theme) === theme
        && await page.evaluate(() => { try { return localStorage.getItem("scrbrd:theme"); } catch { return null; } }) === null);
+
+    // ── Colours (§3.9): beside the theme on the pad's menu ──
+    group(`${T_} — Colours on the pad's menu`);
+    const chipFills = () => page.evaluate(() => [...document.querySelectorAll('[data-testid="board-over"] [data-chip]')]
+      .filter((c) => c.dataset.chip !== "dot").map((c) => `${c.dataset.chip}:${getComputedStyle(c).backgroundColor}`).join("|"));
+    const standardFills = await chipFills();
+    if (!(await page.locator('[data-testid="pad-vision-choice"]').count())) {
+      await page.locator('[data-testid="pad-menu"]').click({ timeout: 3000 }).catch(() => {});
+      await page.waitForTimeout(300);
+    }
+    ok("the menu offers Colours as one radiogroup: Standard, Red-green safe, Blue-yellow safe",
+       await page.evaluate(() => [...document.querySelectorAll('[data-testid="pad-vision-choice"][role="radiogroup"] [role="radio"]')]
+         .map((b) => b.textContent.trim()).join()) === "Standard,Red-green safe,Blue-yellow safe");
+    await page.locator('[data-testid="pad-vision-choice-redgreen"]').click({ timeout: 3000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const rg = await page.evaluate(() => ({
+      vision: document.documentElement.dataset.vision, theme: document.documentElement.dataset.theme,
+      stored: (() => { try { return localStorage.getItem("scrbrd:vision"); } catch { return "x"; } })(),
+    }));
+    ok("choosing Red-green safe applies it, and keeps the theme", rg.vision === "redgreen" && rg.theme === theme, JSON.stringify(rg));
+    ok("...is stored on this device", rg.stored === "redgreen");
+    const rgFills = await chipFills();
+    ok("...and the chips change colour (and nothing else about them)", standardFills !== "" && rgFills !== standardFills
+       && rgFills.split("|").map((x) => x.split(":")[0]).join() === standardFills.split("|").map((x) => x.split(":")[0]).join(), `${standardFills} → ${rgFills}`);
+    await page.keyboard.press("Escape");
+    await page.reload({ waitUntil: "networkidle" });
+    await page.waitForTimeout(1200);
+    ok("Colours survives a reload", await page.evaluate(() => document.documentElement.dataset.vision) === "redgreen");
+    if (await page.locator('[data-testid="pad-menu"]').count()) {
+      await page.locator('[data-testid="pad-menu"]').click({ timeout: 3000 });
+      await page.waitForTimeout(300);
+      await page.locator('[data-testid="pad-vision-choice-standard"]').click({ timeout: 3000 });
+    } else {
+      await page.evaluate(() => { try { localStorage.removeItem("scrbrd:vision"); } catch { /* nothing to remove */ } });
+      await page.reload({ waitUntil: "networkidle" });
+    }
+    await page.waitForTimeout(400);
+    ok("choosing Standard puts the colours back and stores nothing",
+       await page.evaluate(() => document.documentElement.dataset.vision) === "standard"
+       && await page.evaluate(() => { try { return localStorage.getItem("scrbrd:vision"); } catch { return "x"; } }) === null);
   } catch (e) {
     ok(`the ${theme} accessibility walk threw: ${e.message?.slice(0, 100)}`, false);
   } finally {
@@ -625,9 +714,90 @@ async function walk(theme) {
   }
 }
 
+/**
+ * §4 rule 1 — no scrolling to reach a key — for the strip the pad always
+ * carries (Wide, No ball, Dot, Undo), on phones, where the bottom bar sits
+ * over the page. Step 3b grew the board (the partnership, the chips) and
+ * a chase's two-line target pushed the strip 19px under the bar at 390×844;
+ * this keeps it from coming back.
+ *
+ *   390×844  the strip's bottom at least STRIP_CLEAR above the bar's top,
+ *            in its own place (no key under it or below it), page unscrolled —
+ *            three-phase (the Shot phase it opens on, and Outcome) and Basic
+ *            Scoring, first innings and a chase;
+ *   360×740  a small Android: the strip on screen above the bar without
+ *            scrolling (it docks there: .pad-strip-dock), the number printed.
+ *
+ * The chase is the board's own sub-line element given a chase's words —
+ * "Need 45 off 34 · CRR 9.91 · RRR 7.94", two lines at 390 — because the
+ * demo has no second innings to open. The over is a real one: a run, a four,
+ * a six, a wide and a no-ball, recorded on the pad.
+ */
+const STRIP_CLEAR = 16;
+async function padFit() {
+  for (const [w, hgt] of [[390, 844], [360, 740]]) {
+    const ctx = await browser.newContext({ colorScheme: "dark", viewport: { width: w, height: hgt } });
+    await offline(ctx);
+    const page = await ctx.newPage();
+    try {
+      await page.goto(`http://localhost:${PORT}/`, { waitUntil: "networkidle" });
+      const click = async (re) => { const l = page.locator("button:not([disabled])", { hasText: re }).first(); if (await l.count()) { await l.click({ timeout: 4000 }).catch(() => {}); await page.waitForTimeout(400); } };
+      await click(/Get Started|Log In/); await click("Head Coach"); await click(/^Sign In$/); await page.waitForTimeout(1500);
+      await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
+      await page.waitForTimeout(800); await click(/^Live$/); await click(/Open Live Scorer|Start Scoring/i); await page.waitForTimeout(1600);
+      const basic = async (on) => {
+        if (((await page.locator('[data-testid="basic-pad"]').count()) > 0) === on) return;
+        await page.locator('[data-testid="pad-menu"]').click({ timeout: 2500 });
+        await page.locator('[data-testid="pad-basic-scoring"]').click({ timeout: 2500 });
+        await page.keyboard.press("Escape");
+        await page.waitForTimeout(400);
+      };
+      await basic(true);
+      for (const k of ["run-1", "run-4", "run-6", "key-wide"]) { await page.locator(`[data-testid="${k}"]`).click({ timeout: 3000 }); await page.waitForTimeout(1900); }
+      await page.locator('[data-testid="key-noball"]').click({ timeout: 3000 });
+      await page.locator("button", { hasText: "Confirm No Ball" }).click({ timeout: 3000 });
+      await page.waitForTimeout(2500);
+      const where = () => page.evaluate(() => {
+        scrollTo(0, 0);
+        const strip = document.querySelector('[data-testid="pad-strip"]').getBoundingClientRect();
+        const bar = document.querySelector('[data-testid="pad-tabs"]').getBoundingClientRect();
+        const pad = document.querySelector('[data-testid="three-phase-pad"], [data-testid="basic-pad"]');
+        const keys = [...pad.querySelectorAll("button")].filter((k) => !k.closest('[data-testid="pad-strip"]')).map((k) => k.getBoundingClientRect());
+        return { clear: Math.round(bar.top - strip.bottom), stripBottom: Math.round(strip.bottom), barTop: Math.round(bar.top), scrollY: scrollY,
+                 covered: keys.filter((k) => k.bottom > strip.top).length, chips: document.querySelectorAll('[data-testid="board-over"] [data-chip]').length };
+      });
+      const chase = () => page.evaluate(() => { document.querySelector('[data-testid="board-sub"]').textContent = "Need 45 off 34 · CRR 9.91 · RRR 7.94"; });
+      const cases = [["three-phase, Shot", false, null], ["three-phase, Outcome", false, "outcome"], ["Basic Scoring", true, null]];
+      for (const [name, isBasic, phase] of cases) {
+        for (const innings of ["first innings", "a chase"]) {
+          await page.reload({ waitUntil: "networkidle" }); await page.waitForTimeout(1500);
+          await basic(isBasic);
+          if (phase === "outcome") {
+            await page.locator('[data-testid="shot-drive"]').click({ timeout: 3000 });
+            await page.locator('[data-testid="area-none"]').click({ timeout: 3000 });
+          }
+          if (innings === "a chase") await chase();
+          const m = await where();
+          const at = `${w}×${hgt} ${name}, ${innings}: strip ${m.clear}px above the bar (${m.chips} chips; ${m.covered} key${m.covered === 1 ? "" : "s"} under or below it)`;
+          console.log(`  (${at})`);
+          if (w === 390) ok(`${at} — at least ${STRIP_CLEAR}, in its place, unscrolled`, m.clear >= STRIP_CLEAR && m.covered === 0 && m.scrollY === 0 && m.chips >= 6, JSON.stringify(m));
+          else ok(`${at} — on screen without scrolling`, m.clear >= 0 && m.stripBottom <= hgt && m.scrollY === 0, JSON.stringify(m));
+        }
+      }
+    } catch (e) {
+      ok(`the ${w}×${hgt} pad-fit walk threw: ${e.message?.slice(0, 100)}`, false);
+    } finally {
+      await ctx.close();
+    }
+  }
+}
+
 try {
   await walk("floodlit");
   await walk("daylight");
+
+  group("The pad's strip on a phone (§4 rule 1) — no scrolling to reach it");
+  await padFit();
 
   group("The type floor (§3.2) — a ratchet");
   for (const th of ["floodlit", "daylight"]) {

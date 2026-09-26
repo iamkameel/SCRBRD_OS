@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { placementFromTap, screenAngle, DISMISSAL_LABEL } from "@scrbrd/scoring";
+import { chargedToBowler, normaliseDismissal, placementFromTap, screenAngle, DISMISSAL_LABEL } from "@scrbrd/scoring";
 import { D, T, clr, inkOn, px, textOn } from "../design/tokens.js";
 import { can } from "../rbac/index.js";
 import { CX, CY, LK_COLS, R_BND, R_IN, R_MID, R_PITCH, SEGS, ballAngle, heatColor, lineKey, pieSlice, ringArc, toXY, wagEnd } from "./field.js";
@@ -430,6 +430,18 @@ function detectMilestone(ball,inn){
         milestones.push({type:"hattrick",label:"HAT-TRICK!",sub:bow.name+" — 3 in a row!",color:D.roseText,icon:"sparkles"});
     }
     if((inn?.wickets||0)+1>=10)milestones.push({type:"allout",label:"ALL OUT!",sub:(inn?.battingTeam||"")+" all out",color:D.roseText,icon:"bails-off"});
+    // Tier 3 (DESIGN_DIRECTION §10): the HAT-TRICK BALL joins the interrupt —
+    // this overlay queue is the one the pad already has. Two of the bowler's
+    // wickets off his last two legal balls, not three (that is the hat-trick
+    // itself), with the innings still going. Only a wicket that is the
+    // bowler's counts: a run out on the second ball puts no one on a hat-trick.
+    // A caller that does not say how the batter was out is not trusted with it.
+    else{
+      const mine=(b)=>b?.type==="W"&&!b.freeHitSaved&&b.bowler===bow.id&&chargedToBowler(normaliseDismissal(b.dismissal));
+      const legal=(inn?.ballLog||[]).filter(b=>b.type!=="Wd"&&b.type!=="Nb").slice(-2);
+      if(ball.dismissal!=null&&chargedToBowler(normaliseDismissal(ball.dismissal))&&mine(legal.at(-1))&&!mine(legal.at(-2)))
+        milestones.push({type:"hattrickball",label:"HAT-TRICK BALL",sub:bow.name+" — two in two",color:D.roseText,icon:"sparkles"});
+    }
   }
   // Team milestones — total includes extras
   if(inn){
