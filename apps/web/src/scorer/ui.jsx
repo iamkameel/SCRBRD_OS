@@ -47,11 +47,15 @@ const GS = () => (
        is taller than the screen — a small Android, the shot grid in four
        columns — it docks 16px above the bottom bar (4px inset + 54px bar +
        16px) instead of falling below the fold. Where the pad fits it sits in
-       its place and nothing moves. The canvas-coloured ring masks the keys
-       that scroll under it. Phones only: a desktop pad has room. */
+       its place and nothing moves. The canvas-coloured ring and the panel
+       under it mask the keys that scroll beneath, down to the bar, so no half
+       key shows between the strip and the bar. Phones only: a desktop pad
+       has room. */
     @media(max-width:880px){
       .pad-strip-dock{position:sticky;bottom:calc(74px + env(safe-area-inset-bottom));z-index:10;
         background:${T.surface.canvas};box-shadow:0 0 0 ${T.space.sm} ${T.surface.canvas}}
+      .pad-strip-dock::after{content:"";position:absolute;left:-${T.space.lg};right:-${T.space.lg};top:100%;
+        height:calc(74px + env(safe-area-inset-bottom));background:${T.surface.canvas}}
     }
     @media(min-width:1024px){
       .pad-layout{max-width:1320px}
