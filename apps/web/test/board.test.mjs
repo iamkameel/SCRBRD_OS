@@ -150,6 +150,16 @@ group("From the fold: one function for the pad and the day sheet");
   ok("with one of the pair out and the next not in, there is no partnership row", gone.partnership === undefined);
 }
 
+group("The pad's board is compact; every other board is not (§4 rule 1)");
+{
+  const pad = html(h(Board, { ...PROPS, partnership: { runs: 43, balls: 27 }, compact: true }));
+  const day = html(h(Board, { ...PROPS, partnership: { runs: 43, balls: 27 } }));
+  ok("compact: 8px above and below, 4px over the batters", /data-testid="board"[^>]*padding:8px 16px/.test(pad) && /padding-top:4px/.test(pad));
+  ok("...and not otherwise: 12px, 8px", /data-testid="board"[^>]*padding:12px 16px/.test(day) && !/padding-top:4px/.test(day));
+  ok("...with nothing dropped: the partnership, the batters, the bowler and the chips are all there",
+     ["board-partnership", "board-batter", "board-bowler", "board-over"].every((t) => pad.includes(`data-testid="${t}"`)));
+}
+
 group("Tier 2 lines come from the fold, and say nothing the fold cannot");
 {
   const { boardInsights } = await import("../src/scorer/signals.js");
