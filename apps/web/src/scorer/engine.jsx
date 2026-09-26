@@ -718,26 +718,30 @@ function SCRBRD({resume,onSignIn,onExit}={}){
 
   // ── Basic Scoring (DESIGN_DIRECTION §4, decision 3) ─────
   // The three-phase pad is the default; Basic Scoring is the one-tap pad,
-  // outcome only, and an option. It IS the `quick` capture profile: an
-  // innings declared quick opens on it, and choosing it while the innings can
-  // still be declared (canDeclare: no ball, no batter yet) declares the
-  // innings quick — and choosing the three phases back declares it full —
-  // through declareCapture, the same innings_start the opener sheet's picker
-  // writes. Once play has started the declaration is fixed (the fold ignores
-  // a late one), so from then the switch changes only how the pad asks, for
-  // this innings on this device. Each ball records its own profile either
-  // way, exactly as it always has (commitBall).
+  // outcome only, and an option. It IS the `quick` capture profile: the
+  // innings setup declares it (the setup screen, the openers sheet and the
+  // innings break, whose picker names quick "Basic Scoring"), through the
+  // innings_start they have always written, and an innings declared quick
+  // opens on it; full and standard open on the three phases.
+  //
+  // The menu's switch does NOT declare. The QUICK MODE toggle it replaces
+  // never touched the declaration, and a switch that did would write an
+  // innings_start from a preference — the one event undo will not walk past
+  // — wherever a scorer flips it before the openers are named (the handover
+  // walk does exactly that, and its log gained a second innings_start). So
+  // the switch changes how the pad asks, for this innings on this device,
+  // and says what the innings is declared; each ball records its own profile
+  // either way, exactly as it always has (commitBall).
   const basic=basicChoice?.innings===curIn?basicChoice.basic:inn?.declaredProfile===CAPTURE_PROFILE.QUICK;
   const toggleBasic=()=>{
-    const next=!basic;
-    setBasicChoice({innings:curIn,basic:next});
+    setBasicChoice({innings:curIn,basic:!basic});
     setUiMode("focus");
-    if(canDeclare)declareCapture(next?CAPTURE_PROFILE.QUICK:CAPTURE_PROFILE.FULL);
   };
   const PROFILE_WORD={full:"Full",standard:"Standard",quick:"Basic Scoring"};
+  const declaredWords=inn?.declaredProfile?`This innings is declared ${PROFILE_WORD[inn.declaredProfile]}`:"This innings has no declaration";
   const basicHint=canDeclare
-    ?(basic?"On: runs, extras and wickets. This innings is declared Basic Scoring (runs only).":"Runs, extras and wickets only — no shot, no area. Chosen now, it declares this innings Basic Scoring (runs only).")
-    :`${inn?.declaredProfile?`This innings is declared ${PROFILE_WORD[inn.declaredProfile]}`:"This innings has no declaration"}; play has started, so switching changes only how the pad asks.`;
+    ?`Runs, extras and wickets only. ${declaredWords}; to declare it Basic Scoring, choose that on the openers sheet.`
+    :`Runs, extras and wickets only. ${declaredWords}; switching changes only how the pad asks.`;
 
   // ── The first innings of a live fixture (SCRBRD-067) ─────
   // The side the toss put in bats; the home roster (the one the pad reads)

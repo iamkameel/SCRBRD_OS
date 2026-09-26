@@ -132,16 +132,16 @@ function Stepper({ phase, values, onStep }) {
       style={{ listStyle: "none", display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: T.space.sm, margin: 0, padding: 0 }}>
       {STEPS.map((s) => {
         const now = phase === s.n, done = phase > s.n;
+        // Only a done step does anything — it steps back — so only a done
+        // step is a button. The current one and those ahead are where the
+        // scorer is and where they are going: said, not offered (and not a
+        // greyed-out disabled control either).
+        const Tag = done ? "button" : "div";
         return (
           <li key={s.n} style={{ minWidth: 0 }}>
-            {/* Not `disabled`: a step not yet reached is ahead, not greyed out,
-                and the current one is where the scorer is. Only a done step
-                does anything — it steps back. */}
-            <button type="button" data-testid={`step-${s.n}`} aria-disabled={done ? undefined : "true"}
-              onClick={done ? () => onStep(s.n) : undefined}
-              aria-current={now ? "step" : undefined}
-              aria-label={done ? `Step ${s.n}, ${s.label}: ${values[s.n - 1] ?? "none"}. Go back to it` : `Step ${s.n}, ${s.label}${now ? ", now" : ""}`}
-              className="pressBtn"
+            <Tag {...(done ? { type: "button", onClick: () => onStep(s.n), className: "pressBtn",
+                  "aria-label": `Step ${s.n}, ${s.label}: ${values[s.n - 1] ?? "none"}. Go back to it` } : {})}
+              data-testid={`step-${s.n}`} aria-current={now ? "step" : undefined}
               style={{ width: "100%", minHeight: "44px", borderRadius: T.radius.md, padding: `${T.space.xs} ${T.space.sm}`,
                 display: "flex", flexDirection: "column", alignItems: "flex-start", justifyContent: "center", gap: "2px",
                 cursor: done ? "pointer" : "default", textAlign: "left",
@@ -155,7 +155,7 @@ function Stepper({ phase, values, onStep }) {
                 color: now ? T.surface.canvas : done ? T.content.primary : T.content.tertiary }}>
                 {values[s.n - 1] ?? (now ? "Now" : "—")}
               </span>
-            </button>
+            </Tag>
           </li>
         );
       })}
@@ -173,7 +173,7 @@ function ShotPhase({ shot, onShot }) {
           <h3 style={sectionLabel()}>{c.cat}</h3>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(64px,1fr))", gap: T.space.sm }}>
             {c.shots.map((s) => (
-              <Key key={s.id} face={s.label} testid={`shot-${s.label}`} pressed={shot === s.id} onClick={() => onShot(s.id)}
+              <Key key={s.id} face={s.label} testid={`shot-${s.id}`} pressed={shot === s.id} onClick={() => onShot(s.id)}
                 style={shot === s.id ? { border: `2px solid ${T.content.primary}`, fontWeight: 600 } : undefined}/>
             ))}
           </div>

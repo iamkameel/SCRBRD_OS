@@ -301,7 +301,7 @@ try {
   ok("...then the replacement may be named", !(await goBtn.isDisabled()));
   await goBtn.click({ timeout: 3000 });
   await page.waitForTimeout(500);
-  await click(/FOCUS MODE/, 3000);
+  await click(/FOCUS MODE/i, 3000);   // "Focus mode" since step 2
   const ch = await agree("after the change");
   const bowlerRow = ch.rows.filter((r) => r.kind === "bowler").at(-1);
   ok("the server stored the change with its reason",
@@ -336,7 +336,7 @@ try {
   const nbStriker = over2.inn.striker;
   const runsBefore = over2.inn.batsmen.find((b) => b.id === nbStriker)?.runs ?? 0;
   const ballsBefore = over2.inn.batsmen.find((b) => b.id === nbStriker)?.balls ?? 0;
-  await click(/^NB/, 3000);
+  await click(/^(NB|No ball)/, 3000);
   await page.waitForTimeout(400);
   ok("the no-ball sheet opens", await tid("nb-confirm").count() === 1);
   ok("...and asks nothing about runs nobody ran", await tid("nb-runs-from").count() === 0);
@@ -355,7 +355,7 @@ try {
   ok("...the bowler is charged all three", lb.inn.bowlers.find((b) => b.id === "C Mthembu")?.runs === 3);
   ok("...two run, so the striker kept strike", lb.inn.striker === nbStriker);
 
-  await click(/^NB/, 3000);
+  await click(/^(NB|No ball)/, 3000);
   await page.waitForTimeout(400);
   await tap("nb-run-1");
   await tap("nb-runs-bat");
@@ -460,7 +460,7 @@ try {
   const homeBowler = inn2.inn.bowler;
   ok(`the second innings' bowler is one of the home squad, by id (${homeBowler})`,
      typeof homeBowler === "string" && /^[0-9a-f-]{36}$/.test(homeBowler));
-  await click(/^NB/, 3000);
+  await click(/^(NB|No ball)/, 3000);
   await page.waitForTimeout(400);
   await tap("nb-run-1");
   await tap("nb-runs-bat");
