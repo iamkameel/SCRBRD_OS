@@ -150,6 +150,48 @@ group("From the fold: one function for the pad and the day sheet");
   ok("with one of the pair out and the next not in, there is no partnership row", gone.partnership === undefined);
 }
 
+group("Tier 2 lines come from the fold, and say nothing the fold cannot");
+{
+  const { boardInsights } = await import("../src/scorer/signals.js");
+  const inn = {
+    runs: 142, wickets: 3, balls: 86, complete: false, striker: "a", nonStriker: "b", bowler: "k",
+    batsmen: [{ id: "a", name: "D Erasmus", runs: 46, balls: 30 }, { id: "b", name: "R Pillay", runs: 17, balls: 12 }],
+    bowlers: [{ id: "k", name: "K Naidoo", wickets: 4, runs: 31, balls: 20 }],
+    curPartner: { runs: 43, balls: 27 },
+    fow: [{ runs: 99, wickets: 3, batsman: "T Botha", overs: "11.2" }],
+    ballLog: [{ type: "run", value: 4 }, ...Array.from({ length: 19 }, () => ({ type: "run", value: 1 }))],
+  };
+  const lines = boardInsights(inn, { overs: 20 });
+  ok("a batter's fifty in reach: \"D Erasmus needs 4 for fifty\"", lines.includes("D Erasmus needs 4 for fifty"), lines.join(" | "));
+  ok("...not one ten or more short", !lines.some((l) => /R Pillay needs/.test(l)));
+  ok("the stand's fifty in reach", lines.includes("The stand needs 7 for a fifty partnership"));
+  ok("a bowler on four", lines.includes("K Naidoo needs one more for five wickets"));
+  ok("the projection in a first innings", lines.includes("Projected 198 at 9.91 an over"));
+  ok("a boundary drought, in legal balls", lines.includes("No boundary for 19 balls"));
+  ok("the last wicket", lines.includes("Last wicket: T Botha at 99/3, 11.2 overs"));
+  ok("no projection in a chase", !boardInsights(inn, { overs: 20, target: 180 }).some((l) => /Projected/.test(l)));
+  ok("an innings with no balls, or a finished one, says nothing",
+     boardInsights({ ...inn, balls: 0 }).length === 0 && boardInsights({ ...inn, complete: true }).length === 0);
+}
+
+group("Tier 3: the hat-trick ball joins the pad's own interrupt (§10)");
+{
+  const { detectMilestone } = await import("../src/scorer/panels.jsx");
+  const bow = { id: "k", name: "K Naidoo", wickets: 1 };
+  const before = (log) => ({ runs: 60, wickets: 2, battingTeam: "Hilton", batsmen: [{ id: "s", name: "S", runs: 3 }], bowlers: [bow], ballLog: log });
+  const W = (dismissal = "bowled", extra = {}) => ({ type: "W", value: 0, bowler: "k", dismissal, ...extra });
+  const now = (dismissal) => ({ type: "W", value: 0, striker: "s", bowler: "k", ...(dismissal ? { dismissal } : {}) });
+  ok("two in two: HAT-TRICK BALL", detectMilestone(now("caught"), before([{ type: "run", value: 1 }, W()]))?.type === "hattrickball");
+  ok("...over a wide in between", detectMilestone(now("lbw"), before([W(), { type: "Wd", value: 0 }]))?.type === "hattrickball");
+  ok("not when the first was a run out", detectMilestone(now("bowled"), before([W("run_out")]))?.type !== "hattrickball");
+  ok("not when this one is a run out", detectMilestone(now("run_out"), before([W()]))?.type !== "hattrickball");
+  ok("not when the first was saved by a free hit", detectMilestone(now("bowled"), before([W("bowled", { freeHitSaved: true })]))?.type !== "hattrickball");
+  ok("not when the caller does not say how he was out", detectMilestone(now(null), before([W()]))?.type !== "hattrickball");
+  ok("not another bowler's", detectMilestone(now("bowled"), before([W("bowled", { bowler: "x" })]))?.type !== "hattrickball");
+  ok("three in three is the hat-trick itself",
+     detectMilestone(now("bowled"), { ...before([W(), W()]), bowlers: [{ ...bow, wickets: 2 }] })?.type === "hattrick");
+}
+
 group("It is always black (decision 6)");
 for (const th of ["floodlit", "daylight"]) {
   applyTheme(th);
