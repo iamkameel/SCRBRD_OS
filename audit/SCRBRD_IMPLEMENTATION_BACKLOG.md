@@ -3589,6 +3589,20 @@ extended to add them in, proved against the fold for ball-by-ball backfills. The
 design direction.
 
 ### SCRBRD-098 — A commentary engine every viewer shares
+**Built 2026-09-26** (redesign step 3c), items 1–3; item 4 and the signed-out walk wait on their own decisions.
+`packages/scoring/src/commentary.mjs` `deriveCommentary(events, {nameOf, teamName, sensitive})` walks each innings
+with `foldSteps()` (the fold, one event at a time, in `replay.mjs`) and returns `{innings, over, ball, kind, text,
+key}` lines: every delivery, wickets (method, catcher, the end a run out fell at), milestones, bowlers on and back,
+a bowler taking over mid-over, new batters, the end of each over, the innings end and the result, revisions,
+penalty awards in `PENALTY_REASON_TEXT`'s words with the cross-innings credit ("Westville start their innings on
+5"), and short running. A void and whatever it undoes have no line; an amendment reads as the corrected history.
+Names come only from `nameOf` (a role word without one); health and discipline only with `sensitive`, which the
+pad passes and the Match Centre does not. Wording varies by a seed from the event key. `words.mjs` carries the
+shot and sector vocabulary out of the pad. The Match Centre's Commentary tab and the pad's Commentary card draw
+it; the pad's AI line is unchanged and spectators never see one. Guards: `packages/scoring/test/commentary.test.mjs`
+(every kind, void, amendment, free hit, penalty credits both ways, determinism, 60 generated matches with no id or
+typed name reaching a line, public mode) and `tools/smoke-browser-matchcentre.mjs`. Still open: the signed-out walk
+(with the public page, SCRBRD-083 step 3) and item 4.
 **Priority:** P2 · **Domain:** Scoring / Match Centre · **Type:** product gap (Kameel, 2026-09-26: fold into
 redesign step 3c)
 **Today:** the pad's Commentary card (`scorer/panels.jsx` `CommentaryCard`, in the Score tab) asks

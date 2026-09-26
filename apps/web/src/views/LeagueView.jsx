@@ -517,7 +517,7 @@ function AwardsReadFailed({ onRetry }) {
  * primary figure (what the list is ranked on) and a secondary one beside it.
  * `rows` arrives already ranked and already floor-checked, by
  * apps/web/src/lib/seasonAwards.js: this component only draws it, the same
- * division of labour ScorecardModal keeps between the fold and the screen.
+ * division of labour the Match Centre (views/matchcentre/) keeps between the fold and the screen.
  */
 function RankedList({ testId, icon, title, color, rows, primary, primaryLabel, secondary, secondaryLabel, empty, sub }) {
   return (
