@@ -1,5 +1,5 @@
 import { screenAngle } from "@scrbrd/scoring";
-import { D, clr, themed } from "../design/tokens.js";
+import { D, T, clr, themed } from "../design/tokens.js";
 
 /* ═══════════════════════════════════════════════════════
    FIELD GEOMETRY
@@ -49,7 +49,11 @@ const SEGS=[
   {id:11,label:"Third Man",short:"3MN",angle:330,side:"off"},
 ];
 
-const LK_COLS=themed(() => ({"4":D.indigo,"6":D.amber,"1-3":D.emerald,"0":D.textMuted,"W":D.rose,"extras":D.orange}));
+// The wagon wheel's run colours are their own tokens (T.run), so the
+// colour-vision setting (DESIGN_DIRECTION §3.9) can move them with the
+// semantic trio they used to borrow from, without a 1-3 turning the four's
+// blue. Standard draws exactly what it always drew.
+const LK_COLS=themed(() => ({"4":T.run.four,"6":T.run.six,"1-3":T.run.few,"0":D.textMuted,"W":T.run.wicket,"extras":T.run.extras}));
 
 const lineKey=b=>{
   if(b.type==="W")return"W";
