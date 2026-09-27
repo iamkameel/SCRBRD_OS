@@ -577,8 +577,17 @@ Each phase's `tables.mjs` entries regenerate `db/09`'s successor policies into t
 - **Q9, Q10, Q11, Q12 — as recommended.** No match intensity in phase 1; a share lasts 14 days by default, 30 at
   most; an open flag never hides him from selection or marks him unavailable; the coaches and the physio see that a
   share happened, the office does not.
-- **Q4 and Q6 — open.** Kameel asked for more context (2026-09-27). On Q6 his steer: "I don't think this needs to
-  run like the military."
+- **Q4 — hidden for 12 months, then deleted.** After consent is withdrawn or he leaves, his check-ins, flags,
+  tests and notes are unreadable for twelve months, then deleted by a job the information officer signs off. His
+  match figures are the scorecard's and are not touched. Kameel's longer aim, not phase 1: ask permission to keep the
+  record for his whole time in the school system, so patterns across years can flag health risks early. That is a
+  purpose of its own, needing its own explicit consent and the information officer (SCRBRD-112).
+- **Q6 — the check-in is his own, or his parent's.** He records it himself, on his phone or in a browser (the web
+  portal). A boy without a phone may have a parent record it for him. A coach does not record one. The entry says
+  who recorded it ("recorded by his mother"), he sees it when he next signs in, and the flags read it the same way.
+  This gives `guardian` a write on check-ins for her own child only: a new capability line (`ADDED_SINCE_01`) and a
+  `db/NN` (Opus), and it follows the consent rule in Q7 past 18.
+- **Later: smart health devices** (wearables) feeding the same record — SCRBRD-111.
 
 Each remaining question with the recommendation the design assumes.
 

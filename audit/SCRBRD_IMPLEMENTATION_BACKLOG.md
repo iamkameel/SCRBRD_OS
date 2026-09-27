@@ -3809,6 +3809,23 @@ It sits under `player.workload.read`.
 
 **Order:** an Opus design pass first (tables, policy, consent, the load model), for Kameel's review; then the build in phases 1 → 5.
 
+### SCRBRD-111 — Smart health devices: wearables feeding the workload record
+**Priority:** P3 · **Domain:** Health / integrations · **Type:** feature (Kameel, 2026-09-27: "at some point we want to
+introduce smart health devices and connect them into our system for a better homogenous ecosystem")
+Heart rate, sleep and training load from a bowler's own device, read into the SCRBRD-110 record beside his check-ins
+and the ball log. **Before any build:** it is health data about minors, so it sits under the health consent (and a
+device-specific one), a device vendor becomes a processor under POPIA, and each vendor needs a data processing
+agreement. Design pass first (Fable tier, with Kameel's say), after SCRBRD-110 phase 1 is in use.
+
+### SCRBRD-112 — Keep a pupil's health record for his whole time at school, for early detection
+**Priority:** P3 · **Domain:** Health / privacy · **Type:** decision, then feature (Kameel, 2026-09-27)
+Kameel's aim: with permission, keep the workload and health record for a player's whole time in the school system,
+so patterns across seasons can flag health risks early and support long-term health. Today's rule (SCRBRD-110 Q4) is
+twelve months hidden, then deleted, after consent ends or he leaves. **Needs:** its own purpose and its own explicit
+consent (POPIA: consent is specific to purpose; this is minors' special personal information), the information
+officer's sign-off, and a statement of what the pattern detection does and who sees its output. Nothing is built
+until those are settled.
+
 ### SCRBRD-100 — The premium-feel checklist: what is left after step 3c
 **Priority:** P2 · **Domain:** Front-end · **Type:** product polish (Kameel, 2026-09-26; checklist at
 https://claude.ai/artifact/63zVkqVAotrYYQk9dGUhAp; the rule is DESIGN_DIRECTION §1a)
