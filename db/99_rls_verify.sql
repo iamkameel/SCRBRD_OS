@@ -5445,11 +5445,13 @@ BEGIN
   -- follows: the live score, the handover's count, player_innings, the
   -- dismissal readers. Read as the owner of the platform, under RLS.
   -- _seed_53() writes the fixtures; _void_53() undoes M1's return. db/53 was
-  -- broken each of these ways and this file run:
-  --   the view's CASEs answering false (no retirement ever resumed) → (a) and (b)
+  -- broken each of these ways and this file run, with db/53's own proof
+  -- lifted (it refuses all but the third itself):
+  --   the view's CASEs answering false (no retirement ever resumed) → (b)
   --   retirement_resumed() ignoring voids                          → (c)
-  --   retirement_resumed() not checking the batter                 → (d)
-  --   retirement_resumed() reading payload ids only (not the columns) → (b)
+  --   retirement_resumed() not checking the batter                 → (b): A's career
+  --     lost M2's retirement, which C's return does not take back
+  --   retirement_resumed() reading payload names only (not the id columns) → (b)
   PERFORM set_config('app.user_id', '', true);
   PERFORM _seed_53();
   PERFORM _as(U_OWNER);
