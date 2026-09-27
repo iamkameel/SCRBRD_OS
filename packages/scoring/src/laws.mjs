@@ -40,12 +40,13 @@
  *     (opposition players are typed names SCRBRD holds no row for).
  */
 import { KIND, BALL_TYPE, DISMISSAL, BOWLER_CHANGE_REASONS, NB_RUNS_VALUES, RUN_OUT_ENDS,
-  PENALTY_REASON, PENALTY_REASON_SIDE, normalisePenaltyReason } from "./events.mjs";
+  PENALTY_REASON, PENALTY_REASON_SIDE, normalisePenaltyReason,
+  SUSPENSION_REASONS, SUSPENSION_REASON_SCOPE, SUSPENSION_SCOPE } from "./events.mjs";
 import { retirementDismissal, isMidOver } from "./replay.mjs";
 import { scoringReadiness } from "./readiness.mjs";
 import { voidedIds, lastUndoableIndex } from "./undo.mjs";
 
-/** @import { LogEvent, Loose, BallEvent, BattersEvent, RetireEvent, VoidEvent, PenaltyEvent } from "./events.mjs" */
+/** @import { LogEvent, Loose, BallEvent, BattersEvent, RetireEvent, VoidEvent, PenaltyEvent, BowlerSuspendedEvent } from "./events.mjs" */
 /** @import { Innings } from "./replay.mjs" */
 
 /** Every reason an event can be refused. The readiness codes are reused as-is. */
@@ -58,6 +59,9 @@ export const REFUSAL = Object.freeze({
   NEXT_BATTER:    "next_batter",
   OPENING_BOWLER: "opening_bowler",
   NEXT_BOWLER:    "next_bowler",
+  // ...and, by the Laws below as well as the pad's gate: a suspended bowler
+  // does not bowl again in the innings, or the match (SCRBRD-094 item 2).
+  BOWLER_SUSPENDED: "bowler_suspended",
   // The match and its innings, in order.
   MATCH_DECIDED:          "match_decided",          // the chase is over; the result stands
   LATER_INNINGS_STARTED:  "later_innings_started",  // play in an innings after this one
@@ -81,6 +85,9 @@ export const REFUSAL = Object.freeze({
   PENALTY_REASON_UNKNOWN: "penalty_reason_unknown", // not one of PENALTY_REASON
   PENALTY_REASON_SIDE:    "penalty_reason_side",    // the reason is the offence of the side awarded the runs
   SHORT_RUN_UNMATCHED:    "short_run_unmatched",    // short running's award follows its delivery, recorded with no run
+  // A bowler suspended (Law 41, SCRBRD-094 item 2).
+  SUSPENSION_UNKNOWN:     "suspension_unknown",     // not a reason on the list, or not the scope its reason carries
+  NOT_BOWLING:            "not_bowling",            // only the bowler on, or who bowled the last ball, can be suspended
   // Undo.
   VOID_NO_TARGET:         "void_no_target",
   VOID_UNKNOWN_TARGET:    "void_unknown_target",    // names nothing in this innings of this match
@@ -101,6 +108,7 @@ export const REFUSAL_TEXT = Object.freeze({
   next_batter: "there was no batter at one end",
   opening_bowler: "the opening bowler had not been chosen",
   next_bowler: "nobody had been named to bowl the over",
+  bowler_suspended: "that bowler had been suspended by the umpires and may not bowl again in this innings — after ball tampering, in this match",
   match_decided: "the match was already decided",
   later_innings_started: "a later innings had already started",
   previous_innings_open: "the previous innings had not ended",
@@ -118,6 +126,8 @@ export const REFUSAL_TEXT = Object.freeze({
   penalty_reason_unknown: "the reason for the penalty runs was not one the scorebook knows",
   penalty_reason_side: "the penalty runs were awarded to the side that committed the offence",
   short_run_unmatched: "the award for deliberate short running must come straight after its delivery, recorded with no runs",
+  suspension_unknown: "the reason for suspending the bowler, or how long it was for, was not one the scorebook knows",
+  not_bowling: "only the bowler who is bowling, or who bowled the last ball, can be suspended",
   void_no_target: "the undo named no event",
   void_unknown_target: "the undo named an event this innings does not have",
   void_wrong_innings: "the undo named an event in a different innings",
@@ -145,7 +155,7 @@ export const REFUSAL_TEXT = Object.freeze({
 
 /** Events that happen at the crease and so need the innings to be in play.
  *  @type {ReadonlySet<unknown>}  asked of any event's kind, or of none */
-const PLAY = new Set([KIND.BALL, KIND.BATTERS, KIND.BOWLER, KIND.RETIRE, KIND.INNINGS_END]);
+const PLAY = new Set([KIND.BALL, KIND.BATTERS, KIND.BOWLER, KIND.RETIRE, KIND.INNINGS_END, KIND.BOWLER_SUSPENDED]);
 
 /**
  * Why this event may not be added to this match, or null when it may.
@@ -179,6 +189,14 @@ export function lawsRefusal(match, ev) {
     case KIND.BATTERS: return inn?.battingTeam == null ? REFUSAL.NO_INNINGS : battersRefusal(inn, ev);
     case KIND.BOWLER: {
       if (inn?.battingTeam == null) return REFUSAL.NO_INNINGS;
+      // Suspended by the umpires (Law 41, SCRBRD-094 item 2): not again in
+      // this innings, or — ball tampering — in this match. Asked first: it
+      // is the stronger rule, and the words the scorer needs.
+      if (ev.bowler != null && suspendedBowlers(innings, i).has(ev.bowler)) return REFUSAL.BOWLER_SUSPENDED;
+      // Law 17.8, "or parts thereof". This is also the whole of the
+      // suspension's rule for the man who finishes the over: he may not have
+      // bowled any of the over before it, and — having bowled part of this
+      // one — may not bowl the next. Nothing new is needed for either.
       if (bowledLastOver(inn, ev.bowler)) return REFUSAL.CONSECUTIVE_OVERS;
       // Law 17.8.1: an over is finished by another bowler only when the one
       // bowling it is incapacitated or suspended, and the event says which
@@ -206,9 +224,66 @@ export function lawsRefusal(match, ev) {
     case KIND.REVISION:
     case KIND.INNINGS_END:
       return inn?.battingTeam == null ? REFUSAL.NO_INNINGS : null;
+    case KIND.BOWLER_SUSPENDED:
+      return inn?.battingTeam == null ? REFUSAL.NO_INNINGS : suspensionRefusal(innings, inn, i, ev);
     default:
       return null;
   }
+}
+
+/**
+ * Every bowler suspended for innings `i` of this match, by id: those
+ * suspended in innings `i` itself, for whatever scope, and those suspended
+ * for the MATCH (ball tampering) in any innings before it (SCRBRD-094 item
+ * 2). Read from the fold's own record (`inn.suspensions`), so the server
+ * (MatchFold.view()) and the pad (its per-innings fold) answer alike.
+ *
+ * @param {(Innings | null | undefined)[]} innings
+ * @param {number} i
+ * @returns {Map<string, {reason: string, scope: string, innings: number}>}
+ */
+export function suspendedBowlers(innings, i) {
+  /** @type {Map<string, {reason: string, scope: string, innings: number}>} */
+  const out = new Map();
+  for (let j = 0; j <= i && j < innings.length; j++) {
+    for (const s of innings[j]?.suspensions ?? []) {
+      if (s.bowler == null || out.has(s.bowler)) continue;
+      if (j === i || s.scope === SUSPENSION_SCOPE.MATCH) out.set(s.bowler, { reason: s.reason, scope: s.scope, innings: j });
+    }
+  }
+  return out;
+}
+
+/**
+ * A suspension (Law 41; SCRBRD-094 item 2).
+ *
+ *   - The reason is one of SUSPENSION_REASON, and the scope the one it
+ *     carries (ball tampering: the match; every other: the innings). The
+ *     scorer does not choose how long; the Law does.
+ *   - The bowler is the one on, or — the ball dead on the last of an over,
+ *     with nobody on yet — the one who bowled the last delivery. Nobody else
+ *     is bowling to be suspended.
+ *   - Not one already suspended for this innings.
+ *
+ * Not refused once the innings is over: an offence on its last ball is
+ * recorded all the same, and a suspension for the match must reach the
+ * innings after. A later innings with play in it is refused above
+ * (LATER_INNINGS_STARTED), as for every event at the crease.
+ *
+ * @param {(Innings | null | undefined)[]} innings
+ * @param {Innings} inn  innings[i]
+ * @param {number} i
+ * @param {Loose<BowlerSuspendedEvent>} ev
+ * @returns {Refusal | null}
+ */
+function suspensionRefusal(innings, inn, i, ev) {
+  if (!SUSPENSION_REASONS.has(ev.reason)) return REFUSAL.SUSPENSION_UNKNOWN;
+  if (ev.scope != null && ev.scope !== SUSPENSION_REASON_SCOPE[/** @type {string} */ (ev.reason)]) return REFUSAL.SUSPENSION_UNKNOWN;
+  const log = inn.ballLog ?? [];
+  const lastBowler = log[log.length - 1]?.bowlerId ?? null;
+  if (ev.bowler == null || (ev.bowler !== inn.bowler && ev.bowler !== lastBowler)) return REFUSAL.NOT_BOWLING;
+  if (suspendedBowlers(innings, i).has(ev.bowler)) return REFUSAL.BOWLER_SUSPENDED;
+  return null;
 }
 
 /**
@@ -279,6 +354,10 @@ function ballRefusal(innings, inn, i, ev) {
   const inPlay = /** @type {Innings} */ (inn);
 
   if (inPlay.striker === inPlay.nonStriker) return REFUSAL.SAME_BATTER_BOTH_ENDS;
+  // A bowler suspended in this innings is already the gate's (readiness
+  // BOWLER_SUSPENDED); one suspended for the match in an earlier innings is
+  // this: the gate sees one innings, the Laws the whole match.
+  if (inPlay.bowler != null && suspendedBowlers(innings, i).has(inPlay.bowler)) return REFUSAL.BOWLER_SUSPENDED;
   if (bowledLastOver(inPlay, inPlay.bowler)) return REFUSAL.CONSECUTIVE_OVERS;
 
   // Runs off a no-ball are off the bat (no `nbRuns`), byes or leg byes

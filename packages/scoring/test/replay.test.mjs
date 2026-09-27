@@ -21,7 +21,7 @@ import {
   thetaFromClock, clockFromTheta, fieldingCircle, depthBand, positionName,
   PLACEMENT_SOURCE, PLACEMENT_NULL, CLOSE_RADIUS, DISMISSAL, chargedToBowler, normaliseDismissal, revision,
   CAPTURE_PROFILE, PLACEMENT_FIELD, NOT_CAPTURED, evidenceLabel, placementEvidence, profileCollects,
-  MatchFold, deriveInningsList, penaltyCredits, shortRunning,
+  MatchFold, deriveInningsList, penaltyCredits, shortRunning, bowlerSuspended, suspensionWords,
 } from "../src/index.mjs";
 
 /** @import { LogEvent, Loose, BallEvent, BallInput, BattersEvent, BowlerEvent, InningsStartEvent, InningsStartInput } from "../src/events.mjs" */
@@ -1372,6 +1372,59 @@ group("L. Five to the fielding side: their last completed innings, or their next
     const nb = shortRunning({ type: BALL_TYPE.NO_BALL, value: 1 });
     ok("off a no-ball the one-run penalty stands (Law 18.5.2)", deriveInnings([...log, ...nb]).runs === 2);
   }
+}
+
+// ── M. A bowler suspended (Law 41, SCRBRD-094 item 2) ─────
+group("M. A bowler suspended: the fold records it; a split over credits each his own balls");
+{
+  // Over 1: w1, a maiden. Over 2: w2 bowls 0, 1 and a no-ball, and is
+  // suspended; w3 finishes it with 4 legal balls.
+  const log = [...open(), runs(0), runs(0), runs(0), runs(0), runs(0), runs(0),
+    bowler({ bowler: "w2" }), runs(0), runs(1), ball({ type: BALL_TYPE.NO_BALL }),
+    bowlerSuspended({ bowler: "w2", reason: "deliberate_no_ball" }),
+    bowler({ bowler: "w3", reason: "suspended" }), runs(0), runs(2), runs(0), runs(0)];
+  const inn = deriveInnings(log);
+  ok("the fold records the suspension: who, why, for how long, at which ball",
+     inn.suspensions.length === 1 && inn.suspensions[0].bowler === "w2" && inn.suspensions[0].reason === "deliberate_no_ball"
+     && inn.suspensions[0].scope === "innings" && inn.suspensions[0].over === 1 && inn.suspensions[0].ballInOver === 2);
+  ok("...and the change that follows it, reason suspended",
+     inn.bowlerChanges.length === 1 && inn.bowlerChanges[0].from === "w2" && inn.bowlerChanges[0].to === "w3" && inn.bowlerChanges[0].reason === "suspended");
+  const w2 = must(inn.bowlers.find((b) => b.id === "w2")), w3 = must(inn.bowlers.find((b) => b.id === "w3"));
+  ok("each bowler has the balls he bowled: w2 two legal balls, w3 four", w2.balls === 2 && w3.balls === 4 && inn.balls === 12);
+  ok("...and the runs off them: w2 1 + the no-ball's 1, w3 2", w2.runs === 2 && w2.noBalls === 1 && w3.runs === 2);
+  ok("...so economy reads right: w2 2 off 0.2, w3 2 off 0.4", fmtOvers(w2.balls) === "0.2" && fmtOvers(w3.balls) === "0.4");
+  ok("a suspension moves no figure: the innings as it would be without the event",
+     (() => { const without = deriveInnings(log.filter((e) => e.kind !== KIND.BOWLER_SUSPENDED));
+              return without.runs === inn.runs && without.balls === inn.balls && without.wickets === inn.wickets
+                && JSON.stringify(without.bowlers) === JSON.stringify(inn.bowlers); })());
+  ok("the suspended bowler stays on until another is named", deriveInnings(log.slice(0, 14)).bowler === "w2");
+
+  // Maidens: a completed over by one bowler with nothing charged to him.
+  // An over two bowlers shared is a maiden for neither (SCORING_RULES.md §4).
+  const quiet = [...open(), runs(0), runs(0), runs(0), runs(0), runs(0), runs(0),
+    bowler({ bowler: "w2" }), runs(0), runs(0),
+    bowlerSuspended({ bowler: "w2", reason: "beamers" }), bowler({ bowler: "w3", reason: "suspended" }),
+    runs(0), runs(0), runs(0), runs(0)];
+  const q = deriveInnings(quiet);
+  ok("w1's scoreless over is his maiden", must(q.bowlers.find((b) => b.id === "w1")).maidens === 1);
+  ok("the scoreless over w2 and w3 shared is a maiden for neither",
+     must(q.bowlers.find((b) => b.id === "w2")).maidens === 0 && must(q.bowlers.find((b) => b.id === "w3")).maidens === 0);
+  ok("...the same after an injury (SCRBRD-080): shared, so nobody's maiden",
+     deriveInnings([...open(), runs(0), runs(0), bowler({ bowler: "w2", reason: "injury" }), runs(0), runs(0), runs(0), runs(0)])
+       .bowlers.every((b) => b.maidens === 0));
+
+  // Through the wire and back, and old logs unchanged.
+  const ev = { ...bowlerSuspended({ bowler: "w2", reason: "ball_tampering" }), innings: 0, id: "s1" };
+  const row = toRow(ev);
+  ok("stored: kind bowler_suspended, the reason and scope in the payload",
+     row.kind === "bowler_suspended" && row.ball_type === null && row.value === null
+     && row.payload.reason === "ball_tampering" && row.payload.scope === "match" && row.payload.bowler === "w2");
+  const back = fromRow({ ...row, seq: 5, idempotency_key: "s1", client_ts: new Date().toISOString() });
+  ok("...and back, the same suspension", back.kind === KIND.BOWLER_SUSPENDED && back.bowler === "w2"
+     && deriveInnings([...open(), runs(0), back]).suspensions[0]?.scope === "match");
+  ok("an innings with no suspension has none", deriveInnings(open()).suspensions.length === 0);
+  ok("the words for the commentary: reason and how long, no names and no clause numbers",
+     suspensionWords(ev) === "Suspended for changing the condition of the ball (ball tampering), for the rest of the match.");
 }
 
 console.log(`\n${"─".repeat(52)}\nSCORING SUITE: ${pass} passed, ${fail} failed`);

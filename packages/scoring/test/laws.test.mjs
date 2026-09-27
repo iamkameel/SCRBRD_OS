@@ -30,6 +30,7 @@ import {
   BALL_TYPE, INNINGS_END_REASON, standsOnFreeHit, DISMISSAL,
   deriveInningsList, shortRunning, PENALTY_REASON, PENALTY_REASON_SIDE, PENALTY_REASON_TEXT, normalisePenaltyReason,
   penaltyReasonWords, withoutLawClause,
+  bowlerSuspended, suspendedBowlers, suspensionWords, SUSPENSION_REASON, SUSPENSION_REASON_TEXT, scoringReadiness,
 } from "../src/index.mjs";
 
 /** @import { LogEvent, InningsStartInput } from "../src/events.mjs" */
@@ -520,6 +521,97 @@ group("O. Penalty runs: whole runs, a reason from the list, the right side (SCRB
                    ...runs(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1), ...open(1, { target: 2 })];
   ok("B open on 5 against a target of 2: the chase is over before a ball", new MatchFold(carried).view().innings[1]?.complete === true);
   ok("...so a ball is refused, by the server and by a pad folding the match", judge(carried, at(1, ball({}))[0]) === REFUSAL.MATCH_DECIDED);
+}
+
+// ── P. A bowler suspended by the umpires (Law 41, SCRBRD-094 item 2) ──
+group("P. A bowler suspended: not again this innings (the match, for ball tampering); the over finished lawfully");
+{
+  const S = (/** @type {string} */ who, /** @type {string} */ reason) => bowlerSuspended({ bowler: who, reason });
+  // The constructor: the scope is the reason's.
+  ok("ball tampering is for the match", bowlerSuspended({ bowler: "w1", reason: "ball_tampering" }).scope === "match");
+  ok("...every other reason for the innings",
+     ["beamers", "short_pitched", "deliberate_no_ball", "protected_area", "fielding_time_wasting"]
+       .every((r) => bowlerSuspended({ bowler: "w1", reason: r }).scope === "innings"));
+  let threw = 0;
+  try { bowlerSuspended({ bowler: "w1", reason: "rudeness" }); } catch { threw++; }
+  try { bowlerSuspended({ bowler: "w1", reason: "beamers", scope: "match" }); } catch { threw++; }
+  ok("...an unknown reason, or a scope the reason does not carry, is not built", threw === 2);
+  ok("every reason has words, and no words carry a Law clause number",
+     Object.values(SUSPENSION_REASON).every((r) => typeof SUSPENSION_REASON_TEXT[r] === "string" && !/\bLaws?\s+\d/.test(SUSPENSION_REASON_TEXT[r])
+       && !/\bLaws?\s+\d/.test(suspensionWords(bowlerSuspended({ bowler: "w1", reason: r })))));
+
+  // Over 1 by w1; over 2: w2 bowls two, and is suspended.
+  const over1 = [...open(0, { overs: 3 }), ...runs(0, 0, 0, 0, 0, 0, 0)];
+  const twoIn = [...over1, ...at(0, bowler({ bowler: "w2" })), ...runs(0, 0, 1)];
+  const susp = at(0, S("w2", "short_pitched"))[0];
+  ok("the bowler on may be suspended", judge(twoIn, susp) === null);
+  ok("...nobody else: a bowler not bowling", judge(twoIn, at(0, S("w3", "short_pitched"))[0]) === REFUSAL.NOT_BOWLING);
+  /** @type {LogEvent} */
+  const oddReason = /** @type {LogEvent} */ (/** @type {unknown} */ ({ kind: "bowler_suspended", bowler: "w2", reason: "rudeness", scope: "innings" }));
+  /** @type {LogEvent} */
+  const oddScope = { kind: "bowler_suspended", bowler: "w2", reason: "short_pitched", scope: "match" };
+  ok("a reason the list does not know is refused", judge(twoIn, at(0, oddReason)[0]) === REFUSAL.SUSPENSION_UNKNOWN);
+  /** @type {LogEvent} */
+  const noScope = /** @type {LogEvent} */ (/** @type {unknown} */ ({ kind: "bowler_suspended", bowler: "w2", reason: "rudeness" }));
+  ok("...with no scope as well", judge(twoIn, at(0, noScope)[0]) === REFUSAL.SUSPENSION_UNKNOWN);
+  ok("...and a scope the reason does not carry", judge(twoIn, at(0, oddScope)[0]) === REFUSAL.SUSPENSION_UNKNOWN);
+  ok("with no innings open, refused", judge([], at(0, S("w1", "beamers"))[0]) === REFUSAL.NO_INNINGS);
+
+  const suspended = [...twoIn, susp];
+  ok("once suspended, a ball from him is refused", judge(suspended, at(0, ball({}))[0]) === REFUSAL.BOWLER_SUSPENDED);
+  ok("...and suspending him twice", judge(suspended, at(0, S("w2", "beamers"))[0]) === REFUSAL.BOWLER_SUSPENDED);
+  ok("he may not be named again, whatever the reason", judge(suspended, at(0, bowler({ bowler: "w2", reason: "injury" }))[0]) === REFUSAL.BOWLER_SUSPENDED);
+  // The replacement: not one who bowled any part of the previous over (Law 17.8).
+  ok("a replacement who bowled the previous over is refused",
+     judge(suspended, at(0, bowler({ bowler: "w1", reason: "suspended" }))[0]) === REFUSAL.CONSECUTIVE_OVERS);
+  ok("...one who did not is taken, with the reason", judge(suspended, at(0, bowler({ bowler: "w3", reason: "suspended" }))[0]) === null);
+  ok("...and without one, refused as any change during an over", judge(suspended, at(0, bowler({ bowler: "w3" }))[0]) === REFUSAL.MID_OVER_NO_REASON);
+
+  // w3 finishes the over; the next over is not his, nor w2's.
+  const finished = [...suspended, ...at(0, bowler({ bowler: "w3", reason: "suspended" })), ...runs(0, 0, 0, 0, 0)];
+  ok("the replacement finishes the over", judge([...suspended, ...at(0, bowler({ bowler: "w3", reason: "suspended" }))], at(0, ball({}))[0]) === null
+     && deriveInnings(finished).balls === 12);
+  ok("the replacement may not bowl any part of the next over", judge(finished, at(0, bowler({ bowler: "w3" }))[0]) === REFUSAL.CONSECUTIVE_OVERS);
+  ok("...nor the suspended bowler — refused as suspended", judge(finished, at(0, bowler({ bowler: "w2" }))[0]) === REFUSAL.BOWLER_SUSPENDED);
+  ok("...a third bowler may", judge(finished, at(0, bowler({ bowler: "w4" }))[0]) === null);
+  // Later in the innings, still no.
+  const later = [...finished, ...at(0, bowler({ bowler: "w4" })), ...runs(0, 0, 0, 0)];
+  ok("later in the innings the suspended bowler is still refused", judge(later, at(0, bowler({ bowler: "w2", reason: "injury" }))[0]) === REFUSAL.BOWLER_SUSPENDED);
+
+  // Suspended on the last ball of an over: the ball is dead, nobody is on.
+  const lastBall = [...over1];
+  ok("the bowler of the last ball, with nobody on yet, may be suspended",
+     deriveInnings(lastBall).bowler === null && judge(lastBall, at(0, S("w1", "beamers"))[0]) === null);
+
+  // Ball tampering: the rest of the MATCH, a later innings included. A, then B, then A again.
+  const tamper = [...later, ...at(0, S("w4", "ball_tampering"), bowler({ bowler: "w1", reason: "suspended" })), ...runs(0, 0, 0, 0)];
+  const inn0 = new MatchFold(tamper).view().innings[0];
+  ok("the first innings is over, w1 finishing w4's over", inn0.complete && inn0.balls === 18);
+  const B1 = [...at(1, inningsStart({ battingTeam: "B", bowlingTeam: "A", squad: SQ_B, bowlingSquad: SQ_A, overs: 1 }),
+                   batters({ striker: "w1", nonStriker: "w2" }), bowler({ bowler: "p5" })), ...runs(1, 0, 0, 0, 0, 0, 0)];
+  const A2open = at(2, inningsStart({ battingTeam: "A", bowlingTeam: "B", squad: SQ_A, bowlingSquad: SQ_B, overs: 2 }),
+                    batters({ striker: "p1", nonStriker: "p2" }));
+  const A2 = [...tamper, ...B1, ...A2open];
+  ok("in A's second innings, a bowler suspended for the innings may bowl again", judge(A2, at(2, bowler({ bowler: "w2" }))[0]) === null);
+  ok("...one suspended for the match may not", judge(A2, at(2, bowler({ bowler: "w4" }))[0]) === REFUSAL.BOWLER_SUSPENDED);
+  // A log that names him anyway (an older build): his ball in a later
+  // innings is refused too. Asked in the second innings: a ball in a third
+  // is refused before this rule by the Laws' two-innings reading
+  // (MATCH_DECIDED once the second is complete), which is not this item's.
+  /** @type {LogEvent} */
+  const named = { kind: "bowler", bowler: "w4" };
+  const B1open = at(1, inningsStart({ battingTeam: "B", bowlingTeam: "A", squad: SQ_B, bowlingSquad: SQ_B, overs: 1 }),
+                    batters({ striker: "w3", nonStriker: "w5" }), named);
+  ok("...and a ball from him in a later innings, if a log names him anyway",
+     judge([...tamper, ...B1open], at(1, ball({}))[0]) === REFUSAL.BOWLER_SUSPENDED);
+  ok("...while one suspended for the innings only bowls there",
+     judge([...tamper, ...B1open.slice(0, 2), ...at(1, { kind: "bowler", bowler: "w2" })], at(1, ball({}))[0]) === null);
+  ok("suspendedBowlers reads the match: w4 for innings 2, not w2",
+     suspendedBowlers(new MatchFold(A2).view().innings, 2).has("w4") && !suspendedBowlers(new MatchFold(A2).view().innings, 2).has("w2"));
+  // A later innings with play in it: a suspension in an earlier one is too late.
+  ok("a suspension in an innings play has moved on from is refused",
+     judge([...A2, ...at(2, bowler({ bowler: "w5" })), ...runs(2, 0)], at(0, S("w1", "beamers"))[0]) === REFUSAL.LATER_INNINGS_STARTED);
+  ok("the pad's gate says why, in its own words", scoringReadiness(deriveInnings(suspended)).blocked[0]?.code === "bowler_suspended");
 }
 
 group("J. Every reason has words for the person who has to clear it");
