@@ -1,421 +1,649 @@
-# Law clause check (2026-09-27)
+# Law clause check (2026-09-27, against the 4th Edition)
 
-Every MCC Law clause the codebase cites, checked against the current Code. This is research only. No code was changed.
+Every MCC Law clause the codebase cites, checked against the Code in force from **1 October 2026**: the **2017 Code,
+4th Edition (2026)**. The 3rd Edition (2022) column is kept for reference. This is research only. No code was changed.
+
+## First: what the 4th Edition does to the three changes in flight
+
+1. **Byes and leg byes off a no-ball: unchanged, but the clause number moved.** The rule is the same. Cite **21.15**
+   (the 3rd Edition's 21.16). 4th, 21.15: "Any runs completed by the batters or any boundary allowance shall be credited
+   to the striker if the ball has been struck by the bat; otherwise they shall also be scored as Byes or Leg byes as
+   appropriate." The 4th also states it in Law 18. **18.10.2**: "If Byes or Leg byes accrue from a No ball, only the
+   one-run penalty for No ball shall be scored as such, and the remainder as Byes or Leg byes." **18.10.3**: the bowler
+   is debited with "all runs scored by the striker", "all runs scored as No ball extras" and "all runs scored as Wides",
+   and nothing else. Any comment the change writes should cite 21.15 and 18.10.2–18.10.3, not 21.16.
+2. **The penalty-reason list is affected, in four ways.**
+   - **Unfair action by either side** is now **41.2.1** ("Unfair actions"). It was 41.2.2 in the 3rd. The warning
+     applies "for the remainder of the match". A second offence gives 5 Penalty runs "to the opposing side".
+   - **41.4 is wider.** Its title is now "Deliberate attempt to distract or obstruct striker". 21.9 sends a fielder's
+     deliberate interception of a delivery to it: "if the fielder's action is a deliberate attempt to obstruct the
+     striker from playing the ball, Law 41.4 shall apply." That covers the bowler who grabs a looping delivery before
+     the striker can play it. It is a fielding-side offence: 5 to the batting side, and the ball does not count.
+   - **Awards after the result (41.17.2) are new.** Penalty runs are awarded "up until the umpires leave the field at
+     the end of the match, even if a result has already been achieved … if the award of Penalty runs means that a
+     result has no longer been achieved, the match continues." The code refuses an award to the fielding side once the
+     chase is over (`match_decided`, `laws.mjs` `penaltyRefusal`). The 4th Edition requires it to be accepted. See
+     build item 6.
+   - **Short running's award now comes with a choice of striker (18.5.2).** The fielding captain decides who faces
+     next. See build item 4. The reason's clause is still 18.5 (18.5.2), not 41.5.
+   - The other Law 41 numbers are the same as the 3rd's: 41.3, 41.9, 41.10, 41.12, 41.13, 41.14, 41.15, 41.16 and
+     41.17 (41.17.4). Law 18.6 lists every source of penalty runs; the full list is under Law 41 below.
+3. **Retired hurt and retired out resuming (25.4): no change.** The 4th has the same four sub-clauses with the same
+   numbers. Only the wording is now gender-neutral. 25.4.4: "If after retiring a batter resumes their innings, subject
+   to the requirements of 25.4.2 and 25.4.3, it shall be only at the fall of a wicket or the retirement of another
+   batter." The commits for SCRBRD-071 already cite 25.4.4, which is right for both Editions.
 
 ## Summary
 
-**Edition read:** the MCC Laws of Cricket, **2017 Code, 3rd Edition (2022)**, as published Law by Law on lords.org
-(`https://www.lords.org/mcc/the-laws/...`). This edition is in force until 30 September 2026. The **2017 Code, 4th Edition
-(2026)** comes into force on **1 October 2026**, four days from today. I could not read its full text. What this report
-says about it comes from MCC's own change summaries (links under "Sources").
+**Edition read:** the full text of the MCC **Laws of Cricket, 2017 Code 4th Edition (2026)**, supplied by Kameel. It
+comes into force on 1 October 2026. Clause numbers are taken from the **body text**. The index at the back is out of step
+after 21.10: it still has the 3rd Edition's numbers there, 21.12 to 21.18. The body has 21.11 to 21.17. For example, the
+index gives "21.16 Runs resulting from a No ball" and the body gives 21.15. The document has no "what's new" section.
+What changed from the 3rd Edition comes from comparing the text with the 3rd-Edition pass below, and from MCC's change
+summaries on lords.org, read through web searches (the site itself is blocked by this session's proxy). The 3rd
+Edition column is the earlier pass, which was made through web searches.
 
-**How it was read:** a direct fetch of www.lords.org was **blocked by this session's network egress proxy**. Every clause
-below was checked through web searches limited to lords.org, which return text taken from MCC's Law pages and PDFs.
-Quotations are as those searches returned them: close paraphrase, occasionally verbatim. Each row gives the page URL.
-Before changing any wording, spot-check the WRONG rows on the page itself. It takes a minute a row.
+**Counts:** 37 distinct citations (one clause number cited for one meaning), counting 25.4.4, which today's SCRBRD-071
+commits added. Against the 4th Edition: **24 CORRECT, 13 WRONG, 0 MOVED.** No number the code cites was right in the 3rd and changed in the 4th. But three numbers the
+3rd-Edition pass *recommended* have moved, so its corrections cannot be applied as written:
 
-**Counts:** 34 distinct citations (a clause number cited for one meaning). **21 CORRECT, 13 WRONG, 0 UNVERIFIED**
-against the 3rd Edition. Against the 4th Edition, clause numbering is confirmed only for Law 41's penalty runs (41.17).
-Everything else is **UNVERIFIED for the 4th Edition**. The 4th Edition may renumber Law 21, because a bouncer over head
-height moves from No ball to Wide.
+- runs from a no-ball: **21.16 → 21.15**
+- out from a no-ball: **21.18 → 21.17**
+- an unfair action: **41.2.2 → 41.2.1**
 
-**The wrong ones, with the right numbers:**
+Three of the CORRECT numbers are clauses whose **content** changed in the 4th, and the code must follow: 18.5.2, 41.7
+and 41.8. 17.8 changed in a helpful way. Its proviso now reads "provided that **no bowler** delivers two overs
+consecutively …", where the 3rd had "he/she". So in the 4th, 17.8 itself bars both the bowler who left and the one who
+finished the over.
 
-| Cited | Used for | Right clause |
+**The wrong ones, with the 4th Edition's numbers:**
+
+| Cited | Used for | Right clause, 4th Edition (3rd in brackets where different) |
 |---|---|---|
-| 17.8 | no bowler bowls two overs, or parts of two, in a row (the general rule) | **17.6** (17.8 is right only for the replacement who finishes an over) |
-| 17.8.1 | a bowler may be replaced during an over only if incapacitated or suspended | **17.7.1** (must finish the over unless incapacitated or suspended) and **17.8** (another bowler finishes it). There is no 17.8.1. |
-| 21.6 | runs off the bat from a no-ball are the striker's | **21.16** (21.6 is "Bowler breaking wicket in delivering ball") |
-| 21.19 | the ways out off a free hit | No such clause. Law 21 ends at **21.18** "Out from a No ball". The free hit is a playing condition, not a Law. |
-| 25.4.2 (in the backlog, for the resume rule) | a retired batter resumes only at the fall of a wicket or the retirement of another batter | **25.4.4** |
-| 38.2 | which batter is out on a run out: the end where the wicket was put down | **38.4** "Which batter is out" (38.2 is "Batter not Run out") |
-| 41.1 | `unfair_play`: dangerous or unfair play (5 to the batting side) | **41.2** (41.2.2: an unfair action not covered by the Laws). 41.1 is the captains' responsibility and carries no penalty. |
-| 41.4 | `obstruction_distraction`: the batting side distracting, deceiving or obstructing fielders (5 to the fielding side) | No Law 41 clause. 41.4 is a **fielder** distracting the striker (5 to the batting side). A batter who obstructs fielders is out under **Law 37**. |
-| 41.5 | `short_running`: deliberate short running | **18.5** (18.5.1/18.5.2). 41.5 is a fielder distracting, deceiving or obstructing a batter. |
-| 41.12 | `pitch_damage`: a batter damaging the pitch (5 to the fielding side) | **41.14** "Batter damaging the pitch". 41.12 is the **fielder** damaging the pitch. |
-| 41.15 | `striking_pitch`: striking the pitch unfairly | No such offence. 41.15 is "Striker in protected area" (taking guard in or near it). A batter damaging the pitch is **41.14**. |
-| 41.17 | `time_wasting`: a batter wasting time | **41.10** "Batter wasting time". 41.17 is Penalty runs. |
-| 41.18 | penalty runs; the fielding side's five go to its last completed innings, or its next | **41.17** (41.17.4 for the fielding side's award). It was 41.18 in the 1st and 2nd Editions. It is 41.17 in both the 3rd and the 4th. |
+| 17.8 | no bowler bowls two overs, or parts of two, in a row (the general rule) | **17.6** (17.8 is right for the over finished by another bowler) |
+| 17.8.1 | a bowler may be replaced during an over only if incapacitated or suspended | **17.7.1** (and 17.8). There is no 17.8.1. |
+| 21.6 | runs off the bat from a no-ball are the striker's | **21.15** (3rd: 21.16). Also 18.10.1. 21.6 is "Bowler breaking wicket in delivering ball". |
+| 21.19 | the ways out off a free hit | No such clause. **21.17** "Out from a No ball" (3rd: 21.18). The free hit is not in the Laws. |
+| 25.4.2 (backlog only, for the resume rule) | resume only at a wicket or another retirement | **25.4.4** |
+| 38.2 | a run out empties the end where the wicket was put down | **38.4** "Which batter is out" |
+| 41.1 | `unfair_play` | **41.2.1** (3rd: 41.2.2). 41.1 is the captains' responsibility and carries no penalty. |
+| 41.4 | `obstruction_distraction`: the batting side obstructing fielders | No clause. 41.4 is a **fielder** distracting or obstructing the striker. A batter who obstructs is out under **Law 37**. |
+| 41.5 | `short_running` | **18.5** (18.5.2). 41.5 is a fielder distracting, deceiving or obstructing a batter. |
+| 41.12 | `pitch_damage` by a batter | **41.14** "Batter damaging the pitch". 41.12 is the fielder. |
+| 41.15 | `striking_pitch` | No such offence. 41.15 is "Striker in protected area": taking guard in or too near it. |
+| 41.17 | `time_wasting` by a batter | **41.10** "Batter wasting time". 41.17 is Penalty runs. |
+| 41.18 | penalty runs to the fielding side | **41.17** (41.17.4). There is no 41.18. |
 
-**41.13 against 41.14, settled: both are right, for different offences.** **41.13** is the *bowler* running on the
-protected area after delivering the ball: a caution, then a final warning, then suspension from bowling for the innings.
-That is the right number for `SUSPENSION_REASON.protected_area`. **41.14** is the *batter* damaging the pitch, which
-includes being on the protected area without reasonable cause: a first and final warning, then 5 penalty runs to the
-fielding side. That is the right number for `PENALTY_REASON.protected_area`. The two earlier research passes were each
-right about a different offence. The comment at `events.mjs:406-407` can be resolved that way.
+**41.13 against 41.14, settled again in the 4th Edition's numbering: both numbers are right, for different
+offences.** The numbering is unchanged from the 3rd.
 
-**The most important behaviour mismatches** (full list at the end):
+- **41.13 "Bowler running on protected area"** is the bowler's offence. 41.13.1: "It is unfair for a bowler to enter
+  the protected area in their follow-through without reasonable cause, whether or not the ball is delivered." The
+  umpire cautions, then gives a final warning. On a third contravention, 41.13.4: the bowler "shall not be allowed to
+  bowl again in that innings". This is the number for `SUSPENSION_REASON.protected_area`.
+- **41.14 "Batter damaging the pitch"** is the batters' offence. 41.14.1: "If the striker enters the protected area
+  in playing or playing at the ball, the striker must move from it immediately thereafter." A first and final warning
+  comes first. On a further instance, 41.14.3: disallow all runs, return the batters to their original ends, and award
+  5 Penalty runs to the fielding side. This is the number for `PENALTY_REASON.protected_area`.
 
-1. **Byes and leg byes off a no-ball.** The current 21.16 scores them as byes or leg byes, and only the one-run no-ball
-   penalty is debited to the bowler. The code scores them as no-ball extras and debits all of them to the bowler. That
-   is the 2000 Code's rule.
-2. **Resuming after retiring hurt (25.4.4).** The server lets him back at any empty end. The pad only avoids offering
-   him straight back into his own vacancy.
-3. **Retired out (25.4.3).** The Law lets him resume with the opposing captain's consent. The code never does.
-4. **The penalty-reason list** puts two fielding-side offences (41.4/41.5, 41.12) on the batting side's list. It
-   includes one offence that does not exist ("striking the pitch"). It leaves out batters stealing a run (41.16).
-5. **"Handled the ball"** is still offered as a way out. It was removed in the 2017 Code and folded into Obstructing the
-   field (Law 37).
-6. **From 1 October 2026 (4th Edition):** a deliberate front-foot no-ball (41.8) suspends the bowler for the whole
-   match, not the innings. `SUSPENSION_REASON_SCOPE` says innings.
+The comment at `events.mjs:405-407` ("41.13 in this research; the penalty research gave 41.14 — to be confirmed") can
+say 41.13 and drop the rest.
+
+**What the 4th Edition changes that the code must do** (details in "4th Edition: changes to build"):
+
+1. A deliberate front-foot no-ball suspends the bowler **for the match** (41.8). The code says the innings.
+2. A deliberate non-landing delivery (a deliberate beamer) suspends the bowler **for the match** (41.7.6). The code
+   has one `beamers` reason, scoped to the innings, for both the dangerous and the deliberate kind.
+3. A bouncer over head height is a **Wide**, not a No ball (22.1.3). The fold needs no change. The words on the pad
+   and in the rules need changing.
+4. After deliberate short running, **the fielding captain chooses who faces** (18.5.2, 18.13.2). The batters are no
+   longer simply returned to their original ends.
+5. After an obstruction that prevents a catch, **the fielding captain chooses** whether the non-striker or the
+   incoming batter faces (37.5.2).
+6. **Penalty runs after the result** stand until the umpires leave the field, and can reopen the match (41.17.2).
+   The result can be "a win … by Penalty runs" (16.7).
+
+Candidates checked and refuted, or not scoring matters: the free hit is still not in the Laws. Retiring (25.4) is
+unchanged. Byes and leg byes off a no-ball are unchanged (21.15). These 4th Edition changes are real but move no
+figure the code keeps: "finally settled" (20.1.2), overthrows defined (19.8.2), airborne catches at the boundary
+(19.5.2), hit wicket while regaining balance (35.1.1.2), last over after a wicket at close of play (12.5.2), laminated
+bats (Law 5).
 
 ---
 
 ## Law 2: The umpires
 
-| Cited | Where (file:line) | What the code does there | What the Law says | Verdict |
-|---|---|---|---|---|
-| 2.7 | db/08_schema_programme.sql:1434 | Comment: whether a match goes ahead is the umpires' call | 2.7 "Fitness of ground, weather and light": it is solely for the umpires together to decide whether conditions make play dangerous or unreasonable. https://www.lords.org/mcc/the-laws/the-umpires | CORRECT |
+| Cited | Where | What the code does there | 3rd Edition | 4th Edition | Verdict |
+|---|---|---|---|---|---|
+| 2.7 | db/08_schema_programme.sql:1434 (frozen, shipped) | Comment: whether a match goes ahead is the umpires' call | 2.7 "Fitness of ground, weather and light" | 2.7 "Fitness for play". 2.7.1: "It is solely for the umpires together to decide whether either conditions of ground, weather or light or exceptional circumstances mean that it would be dangerous or unreasonable for play to take place." | CORRECT |
 
 ## Law 17: The over
 
-Source: https://www.lords.org/mcc/the-laws/the-over
+4th Edition, body:
 
-- **17.6 Bowler changing ends:** a bowler may change ends as often as desired, "provided he/she does not bowl two overs
-  consecutively, nor bowl parts of each of two consecutive overs, in the same innings."
+- **17.6 Bowler changing ends:** "… provided they do not bowl two overs consecutively, nor bowl parts of each of two
+  consecutive overs, in the same innings."
 - **17.7.1:** "Other than at the end of an innings, a bowler shall finish an over in progress unless incapacitated or
   suspended under any of the Laws."
-- **17.8 Bowler incapacitated or suspended during an over:** the umpire calls Dead ball. "Another bowler shall complete
-  the over from the same end, provided that he/she does not bowl two overs consecutively, nor bowl parts of each of two
-  consecutive overs, in that innings." 17.8 has no sub-clauses. There is no 17.8.1.
-- 4th Edition: MCC lists only a wording correction to 17.5.2 for Law 17. The numbers of 17.6, 17.7.1 and 17.8 are
-  UNVERIFIED for the 4th Edition.
+- **17.8 Bowler incapacitated or suspended during an over:** "another bowler shall complete the over from the same
+  end, provided that no bowler delivers two overs consecutively, nor delivers parts of each of two consecutive overs, in
+  that innings." It has no sub-clauses.
 
-The code's quotation "a bowler shall not bowl two overs, or parts thereof, consecutively" (laws.mjs:472) is older
-wording. The meaning is the same.
+The numbers are the same as in the 3rd. What changed is 17.8's proviso: "no bowler" (4th) where the 3rd had "he/she",
+meaning the replacement only. The 4th's 17.8 therefore covers both men who shared the over. The code's quotation at
+`laws.mjs:526` ("a bowler shall not bowl two overs, or parts thereof, consecutively") is the older wording. The meaning
+is the same.
 
-### 17.8, the general rule (no two overs, or parts of two, in a row). Verdict: WRONG, should be 17.6
+| Cited | Where | What the code does there | 3rd | 4th | Verdict |
+|---|---|---|---|---|---|
+| 17.8 (general rule) | laws.mjs:75, 202, 526; laws.test.mjs:332; sync/test/held.test.mjs:61, 85, 248; sheets.jsx:809; SCORING_RULES.md:189, 232; tools/smoke-laws.mjs:171; tools/smoke-browser-held.mjs:235, 374; tools/smoke-fold-figures.mjs:152 | No bowler bowls two overs, or parts of two, running (`bowledLastOver`, `consecutive_overs`) | 17.6 | 17.6 | **WRONG, should be 17.6** |
+| 17.8 (the over finished by another bowler; both men barred) | events.mjs:755, 794; commentary.mjs:68; laws.test.mjs:226, 382, 564; engine.jsx:1437, 1439; SCORING_RULES.md:415, 615; tools/smoke-browser-pad-laws.mjs:19, 319 | The replacement may not have bowled the previous over and may not bowl the next; the man who left may not bowl the next either | 17.8 (the replacement only) | 17.8 ("no bowler …": both) | CORRECT |
+| 17.8.1 | events.mjs:752; replay.mjs:176; laws.mjs:76, 125, 207; laws.test.mjs:228, 229; sheets.jsx:790; SCORING_RULES.md:190, 325, 407 | A change during an over only for an injured or suspended bowler, with the reason recorded | 17.7.1 (and 17.8) | 17.7.1 (and 17.8) | **WRONG, should be 17.7.1**. The substance matches. |
 
-| Where | What the code does there |
-|---|---|
-| packages/scoring/src/laws.mjs:74 | `REFUSAL.CONSECUTIVE_OVERS`: "not two overs, or parts, running" |
-| packages/scoring/src/laws.mjs:199 | `bowledLastOver()` check run on every `bowler` event |
-| packages/scoring/src/laws.mjs:472 | doc of `bowledLastOver()`, with the quotation above |
-| packages/scoring/test/laws.test.mjs:332 | test: a wicket with no ball does not move the over, so the rule reads the same |
-| packages/sync/test/held.test.mjs:61, 85, 248 | test: the same bowler named for the next over is refused |
-| apps/web/src/scorer/sheets.jsx:806 | new-over sheet: "Can't bowl consecutive overs" (asks `lawsRefusal`) |
-| docs/SCORING_RULES.md:189, 232 | rule table: "No bowler bowls two overs, or parts of two, running" |
+Test strings, not claims about the Laws (leave them): `apps/web/test/pad-feel.test.mjs:212, 213` and
+`apps/web/test/law-clauses.test.mjs:40, 51, 52, 161`. They prove the clause-stripping and the clause sweep work.
 
-### 17.8, the replacement who finishes an over. Verdict: CORRECT
-
-| Where | What the code does there |
-|---|---|
-| packages/scoring/src/events.mjs:755 | `BOWLER_CHANGE_REASON` doc: the one who finishes may not have bowled the previous over or bowl the next |
-| packages/scoring/src/events.mjs:794 | `bowlerSuspended()` doc: the replacement's two rules |
-| packages/scoring/src/commentary.mjs:68 | `BOWLER_CHANGE`: a bowler taking over during an over |
-| packages/scoring/test/laws.test.mjs:226, 382, 564 | tests: a mid-over change bars both men from the next over; the replacement may not have bowled the previous one |
-| apps/web/src/scorer/engine.jsx:1437, 1439 | pad asks `lawsRefusal` for a mid-over replacement |
-| docs/SCORING_RULES.md:415, 615 | mid-over change and suspension: "or parts thereof" |
-
-### 17.8.1. Verdict: WRONG, should be 17.7.1 (and 17.8)
-
-The substance matches the Law: a change during an over only for an incapacitated or suspended bowler. Only the number
-is wrong.
-
-| Where | What the code does there |
-|---|---|
-| packages/scoring/src/events.mjs:752 | `BOWLER_CHANGE_REASON` (injury, suspended) |
-| packages/scoring/src/replay.mjs:168 | `isMidOver()` doc |
-| packages/scoring/src/laws.mjs:75 | `REFUSAL.MID_OVER_NO_REASON` |
-| packages/scoring/src/laws.mjs:122 | comment above `REFUSAL_TEXT.mid_over_no_reason` |
-| packages/scoring/src/laws.mjs:204 | the check that refuses a mid-over change with no reason |
-| packages/scoring/test/laws.test.mjs:228, 229 | test: accepted with a reason, refused without |
-| apps/web/src/scorer/sheets.jsx:787 | new-over sheet asks "injury or suspended" mid-over |
-| docs/SCORING_RULES.md:190, 325, 407 | rule table and SCRBRD-080 write-up |
-
-Behaviour: matches. `bowledLastOver()` bars the man who left and the man who finished from the next over, which is
-what 17.6 and 17.8 require.
+Behaviour: matches 17.6, 17.7.1 and 17.8 in both Editions.
 
 ## Law 18: Scoring runs
 
-Source: https://www.lords.org/mcc/the-laws/scoring-runs
+4th Edition, body:
 
-- **18.5 Deliberate short running.** 18.5.1: the umpire calls and signals Short run and applies 18.5.2. 18.5.2: the
-  bowler's end umpire shall "disallow all runs to the batting side; return any not out batter to his/her original end;
-  signal No ball or Wide to the scorers if applicable; award 5 Penalty runs to the fielding side", together with any
-  other applicable 5-run penalty except under 28.3, and inform the scorers and the captains.
-- 4th Edition: MCC notes a clarification that batters may turn back and abandon a run without penalty. Deliberate short
-  running must be an attempt to deceive. No renumbering was found (UNVERIFIED for the 4th Edition).
+- **18.5.1.1** (a new definition): "A deliberate short run is an attempt by the batters to appear to run more than one
+  run, while at least one batter deliberately does not make good their ground at one end." **18.5.1.2:** abandoning
+  an attempted run is not deliberate short running, "provided the umpires believe that there was no intention … to
+  deceive".
+- **18.5.2**, the bowler's end umpire's actions. It keeps disallowing all runs, signalling No ball or Wide, awarding
+  5 Penalty runs to the fielding side, and any other 5-run penalty except under 28.3. It **drops** the 3rd's "return
+  any not out batter to his/her original end". It **adds**: "Instruct the fielding captain to decide which of the
+  batters at the wicket, including the incoming batter if applicable, shall face the next delivery (see 18.13)."
+- **18.10 Crediting of runs scored:** 18.10.1, runs off the bat are the striker's, except the 5-run penalty and the
+  one-run No ball penalty. 18.10.2, byes and leg byes off a No ball (quoted at the top). 18.10.3, what the bowler is
+  debited with.
+- **18.11.2.2:** the batters return to their original ends when runs are disallowed, "except under Law 18.5.2".
+- **18.12.1.2:** after a Run out, the not-out batter returns to the wicket they left "only if the batters had not
+  already crossed".
+- **18.13 Batters going to an end determined by players:** 18.13.1, an obstruction that prevents a catch; 18.13.2,
+  deliberate short running; 18.13.3, a fielder's obstruction under 41.5 (there the batters choose).
 
-| Cited | Where | What the code does there | Verdict |
-|---|---|---|---|
-| 18 | packages/scoring/src/events.mjs:123; packages/scoring/src/replay.mjs:616; apps/web/src/scorer/sheets.jsx:650; packages/scoring/test/laws-spec.test.mjs:213; docs/SCORING_RULES.md:343 | With runs completed before a run out the batters have crossed, so the pre-ball crease does not say which end is empty | CORRECT at the level of the Law (Law 18 is Scoring runs). The precise "whose ground is whose" rule is Law 30.2. I did not verify that number. |
-| 18.5 | packages/scoring/src/events.mjs:278 | `PENALTY_REASON.SHORT_RUNNING` comment "41.5 (and 18.5)" | CORRECT (18.5 is the clause; the 41.5 half is wrong, see Law 41) |
-| 18.5.2 | packages/scoring/src/events.mjs:1053, 1064; packages/scoring/src/laws.mjs:304; packages/scoring/test/replay.test.mjs:1373; docs/SCORING_RULES.md:557 | `shortRunning()`: the delivery with no runs, batters at their original ends, the no-ball or wide penalty stands, 5 to the fielding side | CORRECT. Behaviour matches 18.5.2. |
+| Cited | Where | What the code does there | 3rd | 4th | Verdict |
+|---|---|---|---|---|---|
+| 18 | events.mjs:123; replay.mjs:627; sheets.jsx:653; laws-spec.test.mjs:213; SCORING_RULES.md:343 | With runs completed before a run out, the batters have crossed, so the pre-ball crease does not say which end is empty | Law 18 | Law 18 (precisely 18.12.1.2 with 30.2) | CORRECT |
+| 18.5 | events.mjs:278 ("41.5 (and 18.5)") | `PENALTY_REASON.SHORT_RUNNING` | 18.5 | 18.5 | CORRECT (the 41.5 half is wrong, see Law 41) |
+| 18.5.2 | events.mjs:1053, 1064; laws.mjs:313; replay.test.mjs:1381; SCORING_RULES.md:557 | `shortRunning()`: the delivery with no runs, batters at their original ends, the no-ball or wide penalty stands, 5 to the fielding side | 18.5.2 (batters returned to original ends) | 18.5.2 (the fielding captain decides who faces) | CORRECT number. **Content changed**: see build item 4. |
 
 ## Law 21: No ball
 
-Source: https://www.lords.org/mcc/the-laws/no-ball
+4th Edition, body. **21.10 in the 3rd ("Ball bouncing over head height of striker") is gone.** That delivery is now a
+Wide (22.1.3). Every later clause moves down one:
 
-- **21.6** is "Bowler breaking wicket in delivering ball".
-- **21.16 Runs resulting from a No ball, how scored:** "The one run penalty for a No ball shall be scored as a No ball
-  extra and shall be debited against the bowler. Any runs completed by the batters or any boundary allowance shall be
-  credited to the striker if the ball has been struck by the bat; otherwise they shall also be scored as Byes or Leg
-  byes as appropriate."
-- **21.18 Out from a No ball:** neither batter is out except under Law 34 (Hit the ball twice), 37 (Obstructing the
-  field) or 38 (Run out).
-- There is no 21.19. The **free hit is not in the MCC Laws**. It is a playing condition (ICC, or the competition's).
-- 4th Edition: "a bouncer over head height will now be a Wide in Law, not a No ball", so today's 21.10 leaves Law 21.
-  Whether the later clauses are renumbered is **UNVERIFIED**.
+| 3rd | 4th | Title |
+|---|---|---|
+| 21.10 | (none) | Ball bouncing over head height of striker. Now 22.1.3 (Wide). |
+| 21.11 | 21.10 | Call of No ball for infringement of other Laws |
+| 21.12 | 21.11 | Revoking a call of No ball |
+| 21.13 | 21.12 | No ball to override Wide |
+| 21.14 | 21.13 | Ball not dead |
+| 21.15 | 21.14 | Penalty for a No ball |
+| 21.16 | **21.15** | Runs resulting from a No ball – how scored |
+| 21.17 | 21.16 | No ball not to count |
+| 21.18 | **21.17** | Out from a No ball |
 
-| Cited | Where | What the code does there | Verdict |
-|---|---|---|---|
-| 21 | packages/scoring/src/events.mjs:108; packages/scoring/src/replay.mjs:543; apps/web/src/scorer/sheets.jsx:61; packages/scoring/test/laws-spec.test.mjs:174; db/99_rls_verify.sql:3454; docs/SCORING_RULES.md:368 | Byes and leg byes off a no-ball are no-ball extras, and every run of a no-ball is debited to the bowler | CORRECT Law number (the clause is 21.16). The behaviour does **not** match the current 21.16. See mismatch 1. |
-| 21.6 | packages/scoring/src/events.mjs:98; docs/SCORING_RULES.md:331 | Runs off the bat from a no-ball are the striker's (`NB_RUNS` absent) | **WRONG, should be 21.16** |
-| 21.19 | packages/scoring/src/events.mjs:210; packages/scoring/test/phases.test.mjs:270 | `NON_DELIVERY`: the ways out that stand on a free hit (run out, handled, obstructing, hit twice) | **WRONG.** No 21.19 exists. The nearest Law is 21.18 (out from a no-ball: hit twice, obstructing, run out). The free hit comes from the playing conditions and should be cited as such. |
+- **21.9 Fielder intercepting a delivery** now ends: "However, if the fielder's action is a deliberate attempt to
+  obstruct the striker from playing the ball, Law 41.4 shall apply."
+- **21.15**, quoted at the top. It adds one sentence: "If other Penalty runs have been awarded to either side these
+  shall be scored as stated in Law 41.17 (Penalty runs)."
+- **21.17:** "When No ball has been called, neither batter shall be out under any of the Laws except 34 (Hit the ball
+  twice), 37 (Obstructing the field) or 38 (Run out)."
+- The free hit is still **not in the Laws**. The text has no "free hit". It is a playing condition.
+
+| Cited | Where | What the code does there | 3rd | 4th | Verdict |
+|---|---|---|---|---|---|
+| 21 | events.mjs:108; replay.mjs:554; sheets.jsx:61; laws-spec.test.mjs:174; db/99_rls_verify.sql:3454; SCORING_RULES.md:368 | Byes and leg byes off a no-ball are no-ball extras, and every run of a no-ball is debited to the bowler | Law 21 (21.16) | Law 21 (**21.15**) | CORRECT Law number. The behaviour does not match 21.15. This is change 1 in flight. |
+| 21.6 | events.mjs:98; SCORING_RULES.md:331 | Runs off the bat from a no-ball are the striker's | 21.16 | **21.15** (and 18.10.1) | **WRONG, should be 21.15** |
+| 21.19 | events.mjs:210; phases.test.mjs:270 | `NON_DELIVERY`: the ways out that stand on a free hit | 21.18 | **21.17** | **WRONG.** No 21.19. 21.17 lists hit the ball twice, obstructing and run out; "handled" is not a way out. The free hit comes from the playing conditions and should be cited as such. |
+
+## Law 22: Wide ball (not cited; new rule)
+
+- **22.1.3 (new):** "The ball will be considered as passing wide of the striker if any delivery, after landing, passes
+  over head height of the striker standing upright at the popping crease."
+- **22.3.1:** the Wide is revoked "if there is any contact between the ball and the striker's bat or person before the
+  ball comes into contact with any fielder".
+- **22.9 Out from a Wide:** only Hit wicket, Obstructing the field, Run out or Stumped.
+- **41.6.2** still makes short deliveries unfair "if they repeatedly pass above head height". Those are called No ball
+  under 41.6.3.
 
 ## Law 23: Bye and Leg bye
 
-Source: https://www.lords.org/mcc/the-laws/bye-and-leg-bye
+**23.1:** runs from a ball that passes the striker without touching bat or person are "credited as Byes … Additionally,
+if the delivery is a No ball, the one-run penalty for such a delivery shall be incurred." **23.2.3:** the same for Leg
+byes. The numbers are the same as in the 3rd.
 
-23.1: if the ball, not being a Wide, passes the striker without touching bat or person, runs completed or a boundary
-allowance are credited as Byes. 23.2: runs off the person are Leg byes if the conditions in 23.2.1 are met. The
-lords.org search text adds: if Byes or Leg byes accrue from a No ball, only the one-run penalty is scored as a No ball
-and the remainder as Byes or Leg byes.
-
-| Cited | Where | What the code does there | Verdict |
-|---|---|---|---|
-| 23 | packages/scoring/src/events.mjs:105; apps/web/src/scorer/sheets.jsx:60; packages/scoring/test/laws-spec.test.mjs:174; docs/SCORING_RULES.md:331 | Runs off a no-ball not off the bat are not the striker's, and are scored as no-ball extras | CORRECT Law number. The first half matches. The second half ("no-ball extras") does not. See mismatch 1. |
+| Cited | Where | What the code does there | 3rd | 4th | Verdict |
+|---|---|---|---|---|---|
+| 23 | events.mjs:105; sheets.jsx:60; laws-spec.test.mjs:174; SCORING_RULES.md:331 | Runs off a no-ball not off the bat are not the striker's, and are scored as no-ball extras | Law 23 | Law 23 | CORRECT Law number. The first half matches. "No-ball extras" does not (change 1 in flight). |
 
 ## Law 25: Batter's innings; runners
 
-Source: https://www.lords.org/mcc/the-laws/batsman-s-innings;-runners
+4th Edition, body. The same as the 3rd except for gender-neutral wording:
 
-- **25.4.2:** "If a batter retires because of illness, injury or any other unavoidable cause, that batter is entitled
-  to resume his/her innings. If for any reason this does not happen, that batter is to be recorded as 'Retired – not
-  out'."
-- **25.4.3:** "If a batter retires for any reason other than as in 25.4.2, the innings of that batter may be resumed
-  only with the consent of the opposing captain. If for any reason his/her innings is not resumed, that batter is to
-  be recorded as 'Retired – out'."
-- **25.4.4:** "If after retiring a batter resumes his/her innings, subject to the requirements of 25.4.2 and 25.4.3,
-  it shall be only at the fall of a wicket or the retirement of another batter." **This is the resume rule.**
-- 4th Edition: MCC lists changes to 25.6.5 and 25.8. No change to 25.4 was found (UNVERIFIED for the 4th Edition).
+- **25.4.2:** "If a batter retires because of illness, injury or any other unavoidable cause, that batter is entitled to
+  resume their innings. If for any reason this does not happen, that batter is to be recorded as 'Retired – not out'."
+- **25.4.3:** "… may be resumed only with the consent of the opposing captain. If for any reason their innings is not
+  resumed, that batter is to be recorded as 'Retired - out'."
+- **25.4.4:** the resume rule, quoted at the top.
+- Related, not new in the 4th: a Level 3 conduct suspension of a batter who does not come back is recorded "Retired –
+  not out" (42.4.2.3.5). A Level 4 offence is recorded "Retired – out" (42.5.2.3.3).
 
-| Cited | Where | What the code does there | Verdict |
-|---|---|---|---|
-| 25.4 | docs/SCORING_RULES.md:196 | Rule table: a batter dismissed or retired out does not come back; retired hurt may | CORRECT |
-| 25.4.2 | packages/scoring/src/events.mjs:167; packages/scoring/src/replay.mjs:299; packages/scoring/src/laws.mjs:430, 454; packages/scoring/test/laws.test.mjs:221; apps/web/src/scorer/retire.js:2; apps/web/src/scorer/sheets.jsx:498; apps/web/src/scorer/engine.jsx:1476; docs/SCORING_RULES.md:633 | Retired hurt is not out and may resume; the fold puts him back on his old line | CORRECT |
-| 25.4.2 (for the resume-only-at-a-wicket rule) | audit/SCRBRD_IMPLEMENTATION_BACKLOG.md:2943 | Backlog note: "Not modelled: Law 25.4.2's 'only at the fall of a wicket or the retirement of another batter'" | **WRONG, should be 25.4.4** |
-| 25.4.3 | packages/scoring/src/events.mjs:167, 1095; packages/scoring/src/laws.mjs:397, 429; packages/scoring/test/laws.test.mjs:223 | Retired out is a dismissal with no ball, and the batter may not return | CORRECT number. The behaviour differs (consent to resume). See mismatch 3. |
+| Cited | Where | What the code does there | 3rd | 4th | Verdict |
+|---|---|---|---|---|---|
+| 25.4 | SCORING_RULES.md:196 | Rule table: a batter dismissed or retired out does not come back; retired hurt may, at a wicket or another's retirement | 25.4 | 25.4 | CORRECT |
+| 25.4.2 | events.mjs:167; replay.mjs:307; laws.mjs:439, 507; laws.test.mjs:221; retire.js:2; engine.jsx:1476; SCORING_RULES.md:633 | Retired hurt is not out and may resume | 25.4.2 | 25.4.2 | CORRECT |
+| 25.4.2 (for the resume-only-at-a-wicket rule) | audit/SCRBRD_IMPLEMENTATION_BACKLOG.md:2943 | Backlog note (the entry at :2953 already says "Law 25.4.4, not 25.4.2") | 25.4.4 | 25.4.4 | **WRONG, should be 25.4.4** |
+| 25.4.3 | events.mjs:167, 1095; laws.mjs:406, 438; laws.test.mjs:223 | Retired out is a dismissal with no ball, and the batter may not return | 25.4.3 | 25.4.3 | CORRECT number. The code never allows a resume with the opposing captain's consent. The backlog records that consent needs SQL. |
+| 25.4.4 | laws.mjs:120, 449; SCORING_RULES.md:638 (added by SCRBRD-071 today) | A retired-hurt batter resumes only at a wicket or another's retirement | 25.4.4 | 25.4.4 | CORRECT |
 
 ## Law 28: The fielder
 
-Source: https://www.lords.org/mcc/the-laws/the-fielder
+- **28.2.3:** if a fielder illegally fields the ball, it "shall immediately become dead". The No ball or Wide penalty
+  stands, runs completed are credited, "the ball shall not count as one of the over", and the umpire awards 5 Penalty
+  runs to the batting side.
+- **28.3.2:** a helmet on the ground struck by the ball: dead ball, 5 Penalty runs to the batting side.
+- **28.6.3** (unfair movement by a fielder) and **27.4.2** (by the wicket-keeper): dead ball and 5 Penalty runs to the
+  batting side. Both are listed in 18.6. The 3rd Edition, as amended in 2022, had these awards too, as I recall; they
+  are not in MCC's 2026 change summaries.
 
-- **28.2 Fielding the ball:** fielding the ball illegally means, while the ball is in play, wilfully using anything
-  other than part of the person, extending clothing with the hands to field it, or discarding clothing or equipment that
-  then touches the ball. The ball is dead and 5 Penalty runs are awarded.
-- **28.3 Protective helmets belonging to the fielding side:** a helmet not in use may be placed on the ground only
-  behind the wicket-keeper, in line with both sets of stumps. If the ball in play strikes it, the ball is dead and
-  5 Penalty runs are awarded.
-
-| Cited | Where | What the code does there | Verdict |
-|---|---|---|---|
-| 28.2 | packages/scoring/src/events.mjs:286, 321; docs/SCORING_RULES.md:569 | `PENALTY_REASON.ILLEGAL_FIELDING`, 5 to the batting side | CORRECT |
-| 28.3 | packages/scoring/src/events.mjs:285, 320; docs/SCORING_RULES.md:569 | `PENALTY_REASON.HELMET_STRUCK`, 5 to the batting side | CORRECT |
+| Cited | Where | What the code does there | 3rd | 4th | Verdict |
+|---|---|---|---|---|---|
+| 28.2 | events.mjs:286, 321; SCORING_RULES.md:569 | `illegal_fielding`, 5 to the batting side | 28.2 | 28.2 (28.2.3) | CORRECT |
+| 28.3 | events.mjs:285, 320; SCORING_RULES.md:569 | `helmet_struck`, 5 to the batting side | 28.3 | 28.3 (28.3.2) | CORRECT |
 
 ## Law 36: Leg before wicket
 
-| Cited | Where | What the code does there | Verdict |
-|---|---|---|---|
-| 36 | db/08_schema_programme.sql:2641, 2673; apps/web/src/data/roadmap.js:65; docs/redesign/SCREEN_MAP.md:122 | The review panel's LBW components (pitched, impact, hitting) | CORRECT. Law 36 is LBW. https://www.lords.org/mcc/laws-of-cricket/laws/law-36-leg-before-wicket/ |
+| Cited | Where | What the code does there | 3rd | 4th | Verdict |
+|---|---|---|---|---|---|
+| 36 | db/08_schema_programme.sql:2641, 2673 (frozen); apps/web/src/data/roadmap.js:65; docs/redesign/SCREEN_MAP.md:122; tools/smoke-drs.mjs:14, 155; tools/smoke-browser-drs.mjs:236 | The review panel's LBW components | Law 36 | Law 36 "Leg before wicket" (36.1.1 to 36.1.5) | CORRECT |
+
+## Law 37: Obstructing the field (not cited; new rule)
+
+- **37.5.2 (new):** if the obstruction or distraction prevents the striker being out Caught, "any runs completed by the
+  batters shall not be scored but any award of 5 Penalty Runs to either side shall stand", and "the fielding captain
+  shall decide whether the non-striker, or the incoming batter, is to face the next delivery."
+- **37.1.3:** the striker is out if, "while receiving the ball, they deliberately drop or throw the bat in an attempt to
+  either impact the ball or prevent any dismissal except Hit wicket". MCC's summaries do not say whether this is new;
+  it changes nothing the code records.
+- Handled the ball is still not a way out. It is inside 37.1.2 (striking the ball with a hand not holding the bat).
 
 ## Law 38: Run out
 
-Source: https://www.lords.org/mcc/the-laws/run-out
+**38.4 Which batter is out:** "The batter out in the circumstances of 38.1 is the one whose ground is at the end where
+the wicket is fairly broken." 38.2 is still "Batter not out Run out". **38.5 Runs scored:** the order of the umpire's
+actions was changed; the runs rule is not.
 
-- **38.2** is "Batter not Run out": the exceptions, such as a batter who was in the ground and left it to avoid injury.
-- **38.4 Which batter is out:** "The batter out in the circumstances of 38.1 is the one whose ground is at the end
-  where the wicket is put down."
-- 4th Edition: MCC lists changes to the order of an umpire's actions in Law 38. Numbering is UNVERIFIED.
-
-| Cited | Where | What the code does there | Verdict |
-|---|---|---|---|
-| 38.2 | packages/scoring/src/events.mjs:122; packages/scoring/src/replay.mjs:617; apps/web/src/scorer/sheets.jsx:651; packages/scoring/test/laws-spec.test.mjs:215; docs/SCORING_RULES.md:329, 339 | `RUN_OUT_END` / `outAt`: the end the wicket was put down at is the one left empty; the survivor is at the other | **WRONG, should be 38.4.** The behaviour matches 38.4. |
+| Cited | Where | What the code does there | 3rd | 4th | Verdict |
+|---|---|---|---|---|---|
+| 38.2 | events.mjs:122; replay.mjs:628; sheets.jsx:654; laws-spec.test.mjs:215; SCORING_RULES.md:329, 339 | `RUN_OUT_END` / `outAt`: the end where the wicket was put down is left empty | 38.4 | 38.4 | **WRONG, should be 38.4.** The behaviour matches. |
 
 ## Law 40: Timed out
 
-Source: https://www.lords.org/mcc/the-laws/timed-out
-
 **40.1.1:** "After the fall of a wicket or the retirement of a batter, the incoming batter must, unless Time has been
 called, be ready to receive the ball, or for the other batter to be ready to receive the next ball within 3 minutes of
-the dismissal or retirement. If this requirement is not met, the incoming batter will be out, Timed out." 40.1.2
-covers an extended delay (Law 16.3). The bowler does not get credit.
+the dismissal or retirement." The same as in the 3rd.
 
-| Cited | Where | What the code does there | Verdict |
-|---|---|---|---|
-| 40 | packages/scoring/src/events.mjs:168, 1095; packages/scoring/src/laws.mjs:401; packages/scoring/test/laws.test.mjs:318; apps/web/src/scorer/sheets.jsx:480, 644; docs/SCORING_RULES.md:199, 441 | Timed out is the incoming batter's, a wicket with no ball, offered only while an end is empty after a wicket or a retirement, never for openers | CORRECT. The behaviour matches. |
-| 40.1 | packages/scoring/src/laws.mjs:399 | The same rule, in `offBallDismissalRefusal()` | CORRECT (40.1.1 is the exact sub-clause) |
+| Cited | Where | What the code does there | 3rd | 4th | Verdict |
+|---|---|---|---|---|---|
+| 40 | events.mjs:168, 1095; laws.mjs:410; laws.test.mjs:318; sheets.jsx:480, 647; SCORING_RULES.md:199, 441; tools/smoke-browser-pad-laws.mjs:265 | Timed out is the incoming batter's, a wicket with no ball, only while an end is empty after a wicket or a retirement | 40 | 40 | CORRECT |
+| 40.1 | laws.mjs:408 | The same rule, in `offBallDismissalRefusal()` | 40.1.1 | 40.1.1 | CORRECT |
 
 ## Law 41: Unfair play
 
-Source: https://www.lords.org/mcc/the-laws/unfair-play (3rd Edition). The clause titles as the lords.org text gives them:
+4th Edition clause titles (body), the 3rd's where different, and who gets the five:
 
-| Clause | Title (3rd Edition) | Who offends, who gets the 5 |
-|---|---|---|
-| 41.1 | Fair and unfair play: responsibility of captains | none (no penalty) |
-| 41.2 | Fair and unfair play: responsibility of umpires. 41.2.2: an unfair action not covered by the Laws, first and final warning to the side, then 5 to the opponents | either side |
-| 41.3 | The match ball: changing its condition. First instance: 5 to the opposing side. A further instance in the match by the fielding side also suspends the bowler of the preceding ball **for the match** | either side |
-| 41.4 | Deliberate attempt to distract striker (by a fielder). 4th Edition: "Deliberate attempt to distract or obstruct striker" | fielding side offends, 5 to batting side |
-| 41.5 | Deliberate distraction, deception or obstruction of batter (by a fielder) | fielding side offends, 5 to batting side |
-| 41.6 | Bowling of dangerous and unfair short pitched deliveries. Caution, final warning, then suspension for the innings | bowler |
-| 41.7 | Bowling of dangerous and unfair non-pitching deliveries (above waist height). Caution and warning (41.7.3), dispensed with if deliberate | bowler |
-| 41.8 | Bowling of deliberate front foot No ball. Suspended at once, for the innings (**the match from 1 Oct 2026**) | bowler |
-| 41.9 | Time wasting by the fielding side. Warning, then 5 to the batting side. Waste during an over leads to suspension of the bowler for the innings | fielding side |
-| 41.10 | Batter wasting time. Warning, then 5 to the fielding side | batting side |
-| 41.11 | The protected area (definition) | none |
-| 41.12 | Fielder damaging the pitch. Warnings, then 5 to the batting side | fielding side |
-| 41.13 | Bowler running on the protected area after delivering the ball. Caution, final warning, then suspension for the innings | bowler |
-| 41.14 | Batter damaging the pitch, including presence on the pitch without reasonable cause. First and final warning, then 5 to the fielding side | batting side |
-| 41.15 | Striker in protected area (taking a batting position in or too near it). First and final warning, then 5 to the fielding side | batting side |
-| 41.16 | Batters stealing a run. Dead ball, run disallowed, 5 to the fielding side | batting side |
-| 41.17 | Penalty runs. 41.17.4: the fielding side's five go to its most recently completed innings, or its next if it has none | none |
+| Clause | Title (4th) | Change from the 3rd | Sanction (4th) |
+|---|---|---|---|
+| 41.1 | Fair and unfair play – responsibility of captains | | none |
+| 41.2 | **Unfair actions** (41.2.1: an unfair action not covered by the Laws) | Was "responsibility of umpires", with the offence at 41.2.2 | First and final warning to the side for the match (41.2.1.1), then 5 to the opposing side (41.2.1.2). Either side. |
+| 41.3 | The match ball – changing its condition | 41.3.4: the opposing captain now chooses whether the ball is replaced | 5 to the opposing side (41.3.4.2). A further instance by the fielding side suspends the bowler of the preceding ball "again in the match" (41.3.5.2). Either side. |
+| 41.4 | Deliberate attempt to distract **or obstruct** striker | 21.9 now sends a deliberate interception here | Dead ball, 5 to the batting side, the ball does not count (41.4.2) |
+| 41.5 | Deliberate distraction, deception or obstruction of batter | | 5 to the batting side (41.5.6), the ball does not count (41.5.7), the batters choose who faces (41.5.9) |
+| 41.6 | Bowling of dangerous and unfair short **deliveries** | Was "short pitched deliveries" | Caution (a first and final warning, 41.6.3), then suspension "in that innings" (41.6.4) |
+| 41.7 | Bowling of dangerous and unfair **non-landing** deliveries | Was "non-pitching" | Dangerous: caution (41.7.3), then suspension for the innings (41.7.4). **Deliberate: at once, "not be allowed to bowl again in the match" (41.7.6)** |
+| 41.8 | Bowling of deliberate front-foot No ball | **Match, not innings** | At once; "not be allowed to bowl again in the match" |
+| 41.9 | Time wasting by the fielding side | | A first and final warning, then 5 to the batting side, or during an over a suspension for the innings (41.9.3) |
+| 41.10 | Batter wasting time | | A first and final warning, then 5 to the fielding side (41.10.3) |
+| 41.11 | The protected area | | definition |
+| 41.12 | Fielder damaging the pitch | | A first and final warning, then 5 to the batting side (41.12.3) |
+| 41.13 | Bowler running on protected area | | Caution, final warning, then suspension for the innings (41.13.4) |
+| 41.14 | Batter damaging the pitch | | A first and final warning, then all runs disallowed, batters to their original ends, 5 to the fielding side (41.14.3) |
+| 41.15 | Striker in protected area | | A first and final warning, then the same as 41.14.3 (41.15.3) |
+| 41.16 | Batters stealing a run | 41.16: the order of the umpire's actions changed | Dead ball, the run disallowed, 5 to the fielding side |
+| 41.17 | Penalty runs | **41.17.2: awards continue after a result until the umpires leave the field; the match continues if the result is undone; awards in the order the offences happened** | 41.17.4: the fielding side's five go to "its most recently completed innings", or its next |
 
-The 4th Edition keeps Penalty runs at 41.17 (41.17.3 and 41.17.4 confirmed in the 4th Edition text returned by the
-search). It changes 41.8 (whole match), 41.16 (the order of the umpire's actions) and 41.17.2 (penalty runs at the end
-of a match). Other numbers are UNVERIFIED for the 4th Edition.
+Other sources of 5 Penalty runs (18.6): 18.5 (short running), 24.4 (a player returning without permission touches the
+ball), 26.4 (practice after a warning, to the opposing side), 27.4.2 (the wicket-keeper's unfair movement), 28.2, 28.3,
+28.6.3 (a fielder's unfair movement) and Law 42 (players' conduct, to the opposing team).
+
+Every place a bowler is suspended, in the 4th:
+
+| Clause | Scope |
+|---|---|
+| 21.3.2 (throwing) | innings |
+| 41.3.5.2 (ball tampering) | match |
+| 41.6.4 | innings |
+| 41.7.4 | innings |
+| **41.7.6** | **match** |
+| **41.8** | **match** |
+| 41.9.3 | innings |
+| 41.13.4 | innings |
 
 ### Law 41 cited generally. Verdict: CORRECT
 
-packages/scoring/src/events.mjs:65, 138, 265, 270, 395, 753, 784; packages/scoring/src/replay.mjs:425;
-packages/scoring/src/laws.mjs:83, 88, 195, 261, 293; packages/scoring/src/phases.mjs:40;
-packages/scoring/test/laws.test.mjs:487, 526; packages/scoring/test/replay.test.mjs:1377;
-apps/web/src/scorer/penalty.js:2; apps/web/src/scorer/engine.jsx:1442, 1458; apps/web/src/scorer/suspension.js:2;
-apps/web/src/scorer/penaltySheet.jsx:12; apps/web/src/scorer/suspendSheet.jsx:14; db/45_handover_this_innings.sql:19;
-db/48_penalty_runs.sql:6, 17; docs/redesign/DESIGN_DIRECTION.md:495; docs/SCORING_RULES.md:525, 587.
-These are penalty runs, suspensions and the reporting of them, all of which are in Law 41. One exception in content,
-not number: events.mjs:138 says "a second beamer" is grounds for suspension. See mismatch 7.
+events.mjs:65, 138, 265, 270, 395, 753, 784; replay.mjs:433; laws.mjs:84, 89, 198, 270, 302; phases.mjs:40;
+laws.test.mjs:487, 526; replay.test.mjs:1385; penalty.js:2; engine.jsx:1442, 1458; suspension.js:2; penaltySheet.jsx:12;
+suspendSheet.jsx:14; db/45_handover_this_innings.sql:19 and db/48_penalty_runs.sql:6, 17 (both frozen);
+docs/redesign/DESIGN_DIRECTION.md:495; SCORING_RULES.md:525, 587; tools/smoke-browser-suspension.mjs:3;
+tools/smoke-handover-innings.mjs:145; tools/smoke-browser-penalty.mjs:3; tools/smoke-fold-figures.mjs:170. These are
+penalty runs, suspensions and the reporting of them, all in Law 41. (Line numbers in this subsection are from
+`6158091` and may have moved.)
 
 ### Each Law 41 clause
 
-| Cited | Where | What the code does there | What the clause is | Verdict |
-|---|---|---|---|---|
-| 41.1 | events.mjs:289, 324 (`PENALTY_REASON_TEXT.unfair_play`); docs/SCORING_RULES.md:569 | `unfair_play`: "dangerous or unfair play", 5 to the batting side | Captains' responsibility; no penalty | **WRONG, should be 41.2** (41.2.2). If the pad means a fielder distracting or obstructing a batter, then 41.4 or 41.5. |
-| 41.3 | events.mjs:287, 322, 410; docs/SCORING_RULES.md:569 | `ball_tampering`: penalty to the batting side; suspension reason with scope "match" | Changing the condition of the ball | CORRECT. See mismatch 5 on "at once" and on the batting side's offence. |
-| 41.4 | events.mjs:279, 315; docs/SCORING_RULES.md:569 | `obstruction_distraction`: the **batting side** distracting, deceiving or obstructing fielders, 5 to the fielding side | A **fielder** attempting to distract the striker, 5 to the batting side | **WRONG.** There is no Law 41 clause for this. A batter wilfully obstructing or distracting the fielding side is out, Obstructing the field (Law 37), with no penalty runs. The words mirror 41.5's title with the sides reversed. |
-| 41.5 | events.mjs:278, 314, 1053; commentary.mjs:667; apps/web/src/scorer/penalty.js:48 (example in a doc comment); packages/scoring/test/laws.test.mjs:484 (test string); docs/SCORING_RULES.md:557, 569 | `short_running`: deliberate short running | A fielder distracting, deceiving or obstructing a batter | **WRONG, should be 18.5** (18.5.2 for the actions) |
-| 41.6 | events.mjs:403; laws.test.mjs:485 (fixture string only) | `SUSPENSION_REASON.short_pitched` | Dangerous and unfair short-pitched deliveries | CORRECT |
-| 41.7 | events.mjs:401; laws.test.mjs:485 (fixture string only) | `SUSPENSION_REASON.beamers`: "a second, or at once if deliberate" | Dangerous and unfair non-pitching deliveries | CORRECT number. The comment's "a second" is off. See mismatch 7. |
-| 41.8 | events.mjs:404 | `SUSPENSION_REASON.deliberate_no_ball`, at once, scope innings | Deliberate front-foot No ball: suspended at once, for the innings | CORRECT. The scope changes on 1 Oct 2026, see mismatch 8. |
-| 41.9 | events.mjs:288, 323, 409; docs/SCORING_RULES.md:569 | `fielding_time_wasting` (penalty to the batting side, and suspension reason) | Time wasting by the fielding side | CORRECT |
-| 41.12 | events.mjs:280, 316; docs/SCORING_RULES.md:569 | `pitch_damage`: the **batting side** damaging the pitch, 5 to the fielding side | **Fielder** damaging the pitch, 5 to the batting side | **WRONG, should be 41.14** (Batter damaging the pitch) |
-| 41.13 | events.mjs:406 | `SUSPENSION_REASON.protected_area`: the bowler | Bowler running on the protected area after delivering the ball | CORRECT (settles the "41.13 or 41.14" question for the suspension) |
-| 41.14 | events.mjs:281, 317, 407; docs/SCORING_RULES.md:569 | `PENALTY_REASON.protected_area`: a batter running on the protected area after a first and final warning, 5 to the fielding side | Batter damaging the pitch, including presence on the pitch without reasonable cause; first and final warning, then 5 to the fielding side | CORRECT (for the batter's penalty) |
-| 41.15 | events.mjs:282, 318; docs/SCORING_RULES.md:569 | `striking_pitch`: "striking the pitch unfairly" | Striker in protected area (taking guard in or too near it) | **WRONG.** The Laws have no "striking the pitch" offence. A batter damaging the pitch is 41.14. If the reason is meant to be the striker's stance, the number is right but the words are wrong. |
-| 41.17 | events.mjs:283, 319; docs/SCORING_RULES.md:569 | `time_wasting`: a batter wasting time after a first and final warning | Penalty runs | **WRONG, should be 41.10** (Batter wasting time) |
-| 41.18 | events.mjs:1020; replay.mjs:439, 924; packages/scoring/test/replay.test.mjs:1209; db/99_rls_verify.sql:4696 | Five penalty runs; the fielding side's go to its most recently completed innings, or its next | 3rd and 4th Editions: 41.17 is Penalty runs. There is no 41.18. | **WRONG, should be 41.17** (41.17.4). The behaviour matches 41.17.4. |
+| Cited | Where | What the code does there | 3rd | 4th | Verdict |
+|---|---|---|---|---|---|
+| 41.1 | events.mjs:289, 324; SCORING_RULES.md:569 | `unfair_play`: "dangerous or unfair play", 5 to the batting side | 41.2.2 | **41.2.1** | **WRONG, should be 41.2.1.** If the pad means a fielder distracting or obstructing a batter, then 41.4 or 41.5. |
+| 41.3 | events.mjs:287, 322, 410; SCORING_RULES.md:569 | `ball_tampering`: award to the batting side; suspension scoped to the match | 41.3 | 41.3 | CORRECT. Either side can offend (41.3.4). Suspension comes only on a further instance by the fielding side (41.3.5), not "at once". |
+| 41.4 | events.mjs:279, 315; SCORING_RULES.md:569 | `obstruction_distraction`: the batting side obstructing fielders, 5 to the fielding side | no such offence | no such offence | **WRONG.** 41.4 is a fielder distracting or obstructing the striker, 5 to the batting side. A batter who obstructs is out (Law 37). |
+| 41.5 | events.mjs:278, 314, 331, 1053; commentary.mjs:667; SCORING_RULES.md:557, 569 | `short_running` | 18.5 | 18.5 (18.5.2) | **WRONG, should be 18.5** |
+| 41.6 | events.mjs:403 | `SUSPENSION_REASON.short_pitched` | 41.6 | 41.6 (41.6.4) | CORRECT |
+| 41.7 | events.mjs:401 | `SUSPENSION_REASON.beamers`: "a second, or at once if deliberate" | 41.7 | 41.7 (41.7.4, 41.7.6) | CORRECT number. "A second" is right in the 4th: one caution (41.7.3), then suspension on the next dangerous one (41.7.4). But **41.7.6 (deliberate) is now for the match**. See build item 2. |
+| 41.8 | events.mjs:404 | `SUSPENSION_REASON.deliberate_no_ball`, at once, scope innings | 41.8 (innings) | 41.8 (**match**) | CORRECT number. **The scope is wrong from 1 October 2026.** See build item 1. |
+| 41.9 | events.mjs:288, 323, 409; SCORING_RULES.md:569 | `fielding_time_wasting` (penalty and suspension) | 41.9 | 41.9 (41.9.3) | CORRECT |
+| 41.12 | events.mjs:280, 316; SCORING_RULES.md:569 | `pitch_damage` by the batting side, 5 to the fielding side | 41.14 | 41.14 | **WRONG, should be 41.14** (41.12 is the fielder, 5 to the batting side) |
+| 41.13 | events.mjs:406 | `SUSPENSION_REASON.protected_area`, the bowler | 41.13 | 41.13 (41.13.4) | CORRECT |
+| 41.14 | events.mjs:281, 317, 407; SCORING_RULES.md:569 | `PENALTY_REASON.protected_area`, the batter, 5 to the fielding side | 41.14 | 41.14 (41.14.3) | CORRECT |
+| 41.15 | events.mjs:282, 318; SCORING_RULES.md:569 | `striking_pitch`: "striking the pitch unfairly" | no such offence | no such offence | **WRONG.** 41.15 is the striker's batting position in or near the protected area. A batter damaging the pitch is 41.14. |
+| 41.17 | events.mjs:283, 319; SCORING_RULES.md:569 | `time_wasting` by a batter | 41.10 | 41.10 (41.10.3) | **WRONG, should be 41.10** |
+| 41.18 | events.mjs:1020; replay.mjs:447, 935; replay.test.mjs:1217; db/99_rls_verify.sql:4696 | Five penalty runs; the fielding side's to its most recently completed innings, or its next | 41.17 (41.17.4) | 41.17 (41.17.4) | **WRONG, should be 41.17** (41.17.4). The behaviour matches 41.17.4. |
 
-Not cited anywhere, but relevant to the lists: **41.16 Batters stealing a run** (5 to the fielding side) has no
-`PENALTY_REASON`. **41.10** is missing too: it is there, but as `time_wasting` under the wrong number.
+Test strings only (leave them): `laws.test.mjs:485` ("Laws 41.6 and 41.7"), `law-clauses.test.mjs:53` ("41.13.2")
+and `:165, 167` ("Law 41.13").
 
 ---
 
-## Behaviour mismatches noticed
+## 4th Edition: changes to build
 
-I did not fix any of these. They are ordered by how much they change a score or a scorecard.
+Each item gives what the 4th Edition says, what changed from the 3rd, what the code does today (file:line at
+`6158091`), and what it must do. The document itself has no summary of changes. "What changed" comes from comparing
+the texts and from MCC's change summaries on lords.org.
 
-1. **Byes and leg byes off a no-ball: scored and debited against the 2000 Code, not the current one.**
-   The current 21.16 (3rd Edition, and the same words appear in the 4th Edition text returned by the search) says runs
-   not off the bat from a no-ball "shall also be scored as Byes or Leg byes as appropriate". The one-run penalty is the
-   No ball extra "debited against the bowler". The code scores those runs as no-ball extras and debits every one to
-   the bowler: `events.mjs:105-109`, `replay.mjs:540-546` (`inn.extras.noBall += penaltyRun + (v - offBat)`),
-   `sheets.jsx:59-61`, `db/99_rls_verify.sql:3454` ("5 + 5 + 7"), and `docs/SCORING_RULES.md:368-374`, which says
-   outright "not byes or leg byes" and gives a table. The heading it quotes, "Runs resulting from a No ball – how
-   scored", exists in both Codes. The rule it describes ("all runs resulting from a No ball … debited against the
-   bowler") is the 2000 Code's Law 24.13. The team total is right either way. The extras split (nb against b/lb) and
-   the bowler's runs conceded are not, and every SQL fold that adds `1 + value` to the bowler follows the fold. Check
-   the wording of 21.16 on the page before acting. This is the biggest one.
+**A question every item below raises: which Edition applies to a match.** A match played on 30 September 2026 is
+under the 3rd Edition, and one on 1 October under the 4th. Suspensions already carry their scope on the event, and the
+fold reads `ev.scope` (`replay.mjs:442`), so a log written under the 3rd replays unchanged. But the constructor
+(`events.mjs:810-824`) and the server (`laws.mjs` `suspensionRefusal`, about line 291) both insist the scope is the
+reason's one fixed scope. Whatever changes that table either refuses a queued 3rd-Edition event or accepts a wrong
+4th-Edition one. The rule needs to be keyed on the Edition in force for the match (its start date, or an explicit
+edition on `innings_start`). That is a design decision for Opus before any item below is built.
 
-2. **Resuming after retiring hurt: 25.4.4 is only half enforced.** The Law allows a return "only at the fall of a
-   wicket or the retirement of another batter". The server (`battersRefusal`, `laws.mjs:445-466`) lets a
-   retired-hurt batter in at any empty end. The pad (`sheets.jsx:503`, `notResuming` from `engine.jsx:1675`) only
-   declines to offer him back into the end he has just left. Because an end is empty only after a wicket or a
-   retirement, the one case the Law forbids and the server takes is his return into his own vacancy: from another
-   client, an older build, or a correction. The backlog already notes this at `audit/SCRBRD_IMPLEMENTATION_BACKLOG.md:2943`,
-   under the wrong clause (25.4.2; it is 25.4.4). Also: 25.4.2 covers "illness, injury or any other unavoidable cause",
-   not injury only. The pad's "retired hurt" is the right bucket, but the label is narrower than the Law.
+### 1. A deliberate front-foot no-ball: suspended for the match (Law 41.8)
 
-3. **Retired out can resume under the Law; the code never allows it.** 25.4.3: a batter who retires for any other
-   reason "may be resumed only with the consent of the opposing captain", and is recorded "Retired – out" only if he
-   does not resume. The code makes retired out a dismissal at once and refuses his return (`isOut()`, `laws.mjs:429-433`;
-   `laws.test.mjs:223`; `SCORING_RULES.md:196`). This may be the right product call for school cricket. It is not the Law.
+- **4th:** "The suspended bowler shall not be allowed to bowl again in the match."
+- **What changed:** the 3rd said "in that innings". MCC's own note: "Law 41.8 – one of a few instances in this edition
+  where penalties for deliberate unfair play will be applied to the whole match, not just an innings."
+- **Code today:** `SUSPENSION_REASON_SCOPE.deliberate_no_ball: "innings"` (events.mjs:437). The words that tell the
+  scorer only ball tampering is for the match: `REFUSAL_TEXT.bowler_suspended` (laws.mjs:114), `suspension.js:69`,
+  the doc comments at events.mjs:412-413 and 790-791, and SCORING_RULES.md:191 and 587-590.
+- **Must:** scope `match` for a 4th-Edition match (see the Edition question above). `suspendedBowlers()` already
+  carries a match-scoped suspension into later innings. Update the words.
 
-4. **The penalty-reason list has sides and offences the Laws do not.** (`PENALTY_REASON`, `PENALTY_REASON_SIDE`,
-   `events.mjs:276-307`)
-   - `obstruction_distraction` and `pitch_damage` are on the batting side's list (5 to the fielding side). Under Law 41
-     both are **fielding-side** offences: 41.4/41.5 a fielder distracting or obstructing a batter, 41.12 a fielder
-     damaging the pitch, each 5 to the **batting** side. With the sides as they are, `lawsRefusal`
-     (`penalty_reason_side`) would refuse the lawful award, 5 to the batting side for a fielder damaging the pitch,
-     and the scorer would have to use `other`. A batter obstructing fielders is out under Law 37, not a penalty.
-   - `striking_pitch` is not an offence in the Laws.
-   - Missing: 41.16 batters stealing a run (5 to the fielding side); 41.2.2 unfair action by either side; 41.4 and
-     41.5 as the fielding side's offences.
-   - `fielding_restrictions` is a playing condition, not a Law. That is fine, but no Law number applies.
+### 2. A deliberate beamer: suspended for the match (Law 41.7.6)
 
-5. **Ball tampering (41.3).** Either side can change the ball's condition. The first instance gives 5 to the
-   *opposing* side, and suspension comes only on a *further* instance in the match by the fielding side. The code
-   allows `ball_tampering` only as an award to the batting side, so the batting side's tampering can only be recorded
-   as `other`. The suspension comment says "at once" (`events.mjs:410`). The scope (the match) is right. Because
-   warnings are not tracked and the umpire decides when to suspend, the "at once" wording is the only practical
-   effect of the suspension half.
+- **4th:** 41.7.6, for a bowler who "deliberately bowled a non-landing delivery": the caution and warning are dispensed
+  with, and "The suspended bowler shall not be allowed to bowl again in the match." 41.7.4, a further *dangerous*
+  (not deliberate) one: "in that innings".
+- **What changed:** the deliberate one is now for the match (it was the innings in the 3rd). MCC's 41.8 note says
+  there are "a few" such instances; 41.7.6 is the other bowling one in the text. 41.3.5.2 was already for the match.
+- **Code today:** one reason, `beamers` ("a second, or at once if deliberate", events.mjs:400-401), scoped `innings`
+  (events.mjs:437), with the words "dangerous full tosses above waist height" (events.mjs:447). One reason with one
+  fixed scope cannot be both.
+- **Must:** split it. `beamers` becomes the dangerous series (41.7.4, innings). Add a reason for the deliberate one
+  (41.7.6, match) to the list, `SUSPENSION_REASON_TEXT`, the pad's suspend sheet and SCORING_RULES. Old `beamers`
+  events keep their recorded scope. Also change "full tosses above waist height" to "non-landing deliveries above
+  waist height" (the 4th's term) at events.mjs:447.
 
-6. **"Handled the ball" is not a way out any more.** The 2017 Code folded it into Obstructing the field (Law 37).
-   MCC's own summary: "reducing the list of dismissals from ten to nine". `DISMISSAL.HANDLED_BALL` is still in the
-   vocabulary, the comment says "The eleven in the Laws" (`events.mjs:185`), and the wicket sheet offers
-   every `DISMISSAL_LABEL` except timed out (`sheets.jsx:648`), so a scorer can record "Handled Ball". Keep it for
-   reading old logs. Whether to stop offering it is a product question.
+### 3. A bouncer over head height is a Wide, not a No ball (Law 22.1.3)
 
-7. **Suspension words and comments that do not match the procedure.**
-   - Beamers (41.7): the comment and `SCORING_RULES.md:587` say a bowler is suspended on "a second" dangerous
-     full toss. Since the 2019 amendment, 41.7 has a caution and a warning (41.7.3), so suspension comes on the third,
-     or at once if deliberate. `events.mjs:138` says "a second beamer" too.
-   - Bowler on the protected area (41.13): a caution, then a final warning, then suspension.
-     `SUSPENSION_REASON_TEXT.protected_area`, which a screen shows, says "after a first and final warning". That is the
-     batter's procedure under 41.14.
-   - All of these are words only: warnings are not tracked and the scorer records what the umpire decided.
+- **4th:** 22.1.3, quoted under Law 22. The 3rd's 21.10 (No ball) is removed, and Law 21 is renumbered after it.
+- **What changed:** MCC: "a bouncer over head height will now be a Wide in Law, not a No ball." Three consequences for
+  a scorer:
+  1. If the striker hits it, it is no Wide (22.3.1). It is a fair delivery: it counts in the over, the runs are the
+     striker's, and he can be caught.
+  2. If he does not hit it, it is a Wide. Runs run are wides (22.7), not byes, and not off the bat.
+  3. Only *repeated* short deliveries over head height are a No ball, under 41.6.2 and 41.6.3, with a caution and
+     then suspension.
+- **Code today:** confirmed, and the fold needs no change. There is no head-height no-ball kind: `NB_TYPE` is front
+  foot, a waist-high full toss and a beamer (events.mjs:143), and a scorer records a Wide as a Wide. What might
+  mislead a scorer:
+  - The quick pad's no-ball kinds show a bare **"Height"** (`apps/web/src/scorer/extras.js:38`). Under the 3rd, a
+    scorer could have used it for a head-high bouncer.
+  - The no-ball sheet's note says a batter can be "dismissed caught, run out, stumped, handled ball" off a no-ball
+    (`sheets.jsx:70`, repeated for the other kinds at :72). That is wrong in both Editions (21.17).
+  - `RulebookView.jsx:68` lists the no-ball causes.
+- **Must:**
+  - Relabel "Height" as a waist-high full toss.
+  - Say in SCORING_RULES and the rulebook screen that a head-high bouncer is a Wide.
+  - Optionally add a no-ball kind for 41.6 (unfair or dangerous short deliveries). None of the current kinds fits it.
+  - Knock-on: the pad cannot record a wicket off a Wide. `BALL_TYPE.WICKET` is always a legal ball
+    (`ILLEGAL` at events.mjs:82 holds only Wd and Nb; replay.mjs:579-594). Stumped or hit wicket off a head-high Wide (22.9, 39.4) becomes more likely.
+  - Whether a head-high bouncer still earns a free hit is for the competition's playing conditions. As a Wide it does
+    not, unless they say so.
 
-8. **From 1 October 2026 (4th Edition).** MCC's change list: "Law 41.8 – one of a few instances in this edition where
-   penalties for deliberate unfair play will be applied to the whole match, not just an innings".
-   `SUSPENSION_REASON_SCOPE.deliberate_no_ball` is `"innings"`. I could not find which other clauses moved to the whole
-   match (UNVERIFIED). Also from 1 October: a bouncer over head height is a Wide, not a No ball. The pad's no-ball
-   types (front foot, height, beamer) do not model it, so nothing breaks. And 41.17.2 changes penalty runs at the end
-   of a match. The code's rule refusing an award to the fielding side once the match is decided (`match_decided`)
-   should be checked against the new wording.
+### 4. Deliberate short running: the fielding captain chooses who faces (Laws 18.5.2, 18.13.2)
 
-9. **The free hit is cited as a Law.** "Every no-ball is followed by a free hit" (`events.mjs:139-140`, §6 of
-   `SCORING_RULES.md`) and "Law 21.19" (`events.mjs:210`). The MCC Laws have no free hit. If the competition's
-   playing conditions (CSA or the schools' league) have one, the code is right and the citation should name those
-   conditions. If they do not, every no-ball's free hit is wrong for that competition.
+- **4th:** 18.5.2 no longer returns the batters to their original ends. It ends: "Instruct the fielding captain to
+  decide which of the batters at the wicket, including the incoming batter if applicable, shall face the next delivery
+  (see 18.13)." 18.11.2.2 makes the exception explicit.
+- **What changed:** MCC: "the fielding side will also get to determine which of the batters takes strike."
+- **Code today:** `shortRunning()` (events.mjs:1053-1078) records the delivery with no runs, so the batters stay at
+  their original ends. The doc comment says so ("returns the batters to the ends they started from", events.mjs:1054-1055),
+  and so does the pad's sheet ("The batters go back to the ends they started from", penaltySheet.jsx:144-145), and
+  SCORING_RULES.md:557.
+- **Must:**
+  - After the award, the pad asks who the fielding captain chose to face.
+  - If it is the other batter, the pad records a change of ends: a `batters` event with the same two swapped. The
+    server already accepts one (`battersRefusal`, "a change of ends … is always allowed").
+  - If a wicket fell on the same delivery, the choice includes the incoming batter.
+  - At an over's end, the choice is who faces the first ball of the next over.
+  - Change the words above.
+  - 18.5.1.2 (abandoning a run is not short running) needs no code.
 
-**Checked and matching:** no consecutive overs and the mid-over replacement (17.6, 17.7.1, 17.8); timed out applying
-to the incoming batter after a wicket or a retirement, and not to openers (40.1.1); which end is empty after a run out
-(38.4); deliberate short running (18.5.2); the fielding side's penalty runs going to its most recently completed innings
-or its next (41.17.4); ball tampering's match-long suspension (41.3); a deliberate front-foot no-ball suspending at once
-(41.8, 3rd Edition).
+### 5. An obstruction that prevents a catch: the fielding captain chooses who faces (Law 37.5.2)
 
-## Outside the folders searched
+- **4th:** 37.5.2, quoted under Law 37. 18.13.1 is the same rule.
+- **What changed:** MCC: "Law 37.5.2, when a batter is out obstructing a catch, will now give that power to the
+  fielding captain."
+- **Code today:** the wicket sheet records Obstructing the field against the striker (it asks "who" only for a run out
+  or retired out, `asksWho` at sheets.jsx:658). The fold empties the striker's end (replay.mjs:632-634), so
+  the incoming batter always faces.
+- **Must:** when the obstruction prevented a catch, the pad asks which of the two the fielding captain chose. If it
+  was the non-striker, the pad places the incoming batter at the non-striker's end. No runs count: `value` 0, with any
+  5-run award standing. A separate gap, not new in the 4th: under 37.1.1 either batter can be out Obstructing the
+  field, and the sheet cannot record the non-striker.
 
-The brief named `packages/`, `apps/web/src/`, `services/`, `db/` and `docs/`. `services/` cites no clause. The same
-numbers also appear in `apps/web/test/` (law-clauses.test.mjs: 17.8.1, 40, 41.13; penalty-sheet.test.mjs: 41.5;
-pad-feel.test.mjs: 17.8, 17.8.1), `tools/` (smoke scripts: 17.8, 36, 40, 41) and `audit/SCRBRD_IMPLEMENTATION_BACKLOG.md`
-(17.8, 17.8.1, 18, 21.6, 23, 38.2, 40, 41, and 25.4.2 at line 2943). Their verdicts are the same as above. Most of these
-are test strings that prove clause numbers stay off screen, not claims about the Laws.
+### 6. Penalty runs after the result (Laws 41.17.2, 16.6.1, 16.7)
+
+- **4th:** 41.17.2, quoted at the top. It adds: "Where more than one award of Penalty runs is required during the same
+  delivery, the umpires shall award them in the order that the offences took place." 16.6.1 points to it: nothing
+  after the result is part of the match, "except as in Law 41.17.2". 16.7: if the side batting last has completed its
+  innings short of the total, "but as the result of an award of 5 Penalty runs its total of runs is then sufficient to
+  win, the result shall be stated as a win to that side by Penalty runs."
+- **What changed:** MCC's change summary: if a side offends after a result has been reached but before the umpires
+  leave the field, penalty runs can be awarded, and if that undoes the result, the match continues.
+- **Code today:**
+  - `penaltyRefusal` refuses an award to the fielding side once the chase is complete: `if (toFielding &&
+    innings[1]?.complete) return REFUSAL.MATCH_DECIDED` (laws.mjs:340). The pad explains why in `penalty.js:107`.
+  - `ballRefusal` refuses every delivery after it (laws.mjs:356).
+  - A chase that reached its target stays complete (`settleInnings`, replay.mjs:758-761; `inningsOverReason`,
+    replay.mjs:853).
+  - `describeResult` (replay.mjs:1196) has no "by Penalty runs".
+- **Must:**
+  - Accept either side's award until the match is concluded. The app has no "umpires left the field" event, so the
+    cut-off needs a decision: the match's completion, or the last innings' seal.
+  - When an award to the fielding side lifts the target above a chase that ended by reaching it, the innings is no
+    longer over and play resumes. The target-reached ending has to be re-derived, not sticky.
+  - When an award to the batting side makes a completed chase sufficient, the result reads "by Penalty runs".
+  - Several awards on one delivery are recorded in the order given; the log order already does this.
+
+### 7. Words and numbers to follow the 4th (no behaviour change)
+
+- 41.2 is "Unfair actions" (41.2.1).
+- 41.6 is "short deliveries". 41.7 is "non-landing deliveries".
+- The no-ball clauses are 21.15 and 21.17.
+- `SUSPENSION_REASON_TEXT.protected_area` says "after a first and final warning". That is the batter's procedure. The
+  bowler's (41.13) is a caution, a final warning, and suspension on the third, as in the 3rd.
+
+## Also found in the 4th text: not new in the 4th, but wrong in the code
+
+These were probably the same in the 3rd, so they are not 4th-Edition changes. They matter to the penalty-reason list in
+flight.
+
+- **Some deliveries with a penalty do not count in the over.** 17.3.2.5: when 24.4, 28.2, 41.4 or 41.5 is applied.
+  The code records the award apart from the delivery, which still counts.
+- **41.14.3 and 41.15.3 disallow the delivery's runs**, like short running: "disallow all runs to the batting side;
+  return any not out batter to their original end". The `protected_area` award does not. The same two-event shape as
+  `shortRunning()` would fit.
+- **Penalty reasons missing from the list:**
+  - to the batting side: 24.4, 27.4.2, 28.6.3, 41.4, 41.5 and 41.12 (the fielder);
+  - to the fielding side: 41.16 (stealing a run);
+  - to either side: 26.4.2, 41.2.1, 41.3 (by the batting side) and Law 42.
+- **Suspension reasons missing from the list:** 21.3.2 (throwing, the innings) and Law 42.4 and 42.5 (a player
+  suspended for conduct, which can include the bowler mid-over).
+- **Ball tampering (41.3.5)** suspends only on a further instance by the fielding side, not "at once" (events.mjs:410).
+- **Handled the ball** is still not a way out (37.1.2), and `DISMISSAL.HANDLED_BALL` is still offered.
+
+---
+
+## Renumbering map
+
+Computed at commit **`6158091`** (branch `claude/scrbrd-os-03vb2m`). Other sessions are committing to this branch, so
+**match each row by its file and the exact text in "Cites now"**, and use the line number only to find it. There is one
+row per citation: a line that cites two clauses has two rows. "Should cite" is the 4th Edition's number.
+
+Three kinds of file need no change:
+
+- **Frozen files.** `db/08`, `db/45` and `db/48` are in `db/SHIPPED.sha256` and must not be edited. Every citation in
+  them (2.7, 36, 41) is already right.
+- **Correct citations.** Everything not listed here is right in the 4th Edition: 2.7, 17.8 where it means the over
+  finished by another bowler, 18, 18.5.2, 21, 23, 25.4, 25.4.2, 25.4.3, 25.4.4, 28.2, 28.3, 36, 40, 40.1, 41, 41.3, 41.6,
+  41.7, 41.8, 41.9, 41.13 and 41.14.
+- **Lines that also change in behaviour.** Some lines cite a correct number but describe a behaviour the 4th Edition
+  changes: 18.5.2 (short running), 41.7 and 41.8 (scope), and the no-ball's byes. Their words change with build items
+  1, 2 and 4, and with change 1 in flight. They are not part of this map.
+
+### A. Code, tests, tools and docs
+
+| # | Location | Cites now (exact text) | Should cite |
+|---|---|---|---|
+| 1 | packages/scoring/src/laws.mjs:75 | `// Law 17.8: not two overs, or parts, running` | `Law 17.6` |
+| 2 | packages/scoring/src/laws.mjs:76 | `// Law 17.8.1: a change during an over says why` | `Law 17.7.1` |
+| 3 | packages/scoring/src/laws.mjs:125 | `// Law 17.8.1. No clause number in the words` | `Law 17.7.1` |
+| 4 | packages/scoring/src/laws.mjs:202 | `// Law 17.8, "or parts thereof". This is also the whole of the` | `Law 17.6` (the rest of the comment, about the man who finishes the over, is 17.8 and can say so) |
+| 5 | packages/scoring/src/laws.mjs:207 | `// Law 17.8.1: an over is finished by another bowler` | `Law 17.7.1` |
+| 6 | packages/scoring/src/laws.mjs:526-527 | `Law 17.8: "a bowler shall not bowl two overs, or parts thereof, consecutively in the same innings"` | `Law 17.6: "… provided they do not bowl two overs consecutively, nor bowl parts of each of two consecutive overs, in the same innings"` |
+| 7 | packages/scoring/src/events.mjs:98 | `off the bat — the striker's (Law 21.6)` | `Law 21.15` |
+| 8 | packages/scoring/src/events.mjs:122 | `wicket was put down at (Law 38.2)` | `Law 38.4` |
+| 9 | packages/scoring/src/events.mjs:210-211 | `(Law 21.19 lists the ways out off a free hit — run out, handled, obstructing, hit twice; …)` | `Law 21.17`, which lists the ways out from a No ball: hit the ball twice, obstructing the field, run out. "Handled" is not one. The free hit itself is the playing conditions', not a Law. |
+| 10 | packages/scoring/src/events.mjs:278 | `// 41.5 (and 18.5): deliberate short running` | `// 18.5:` (18.5.2) |
+| 11 | packages/scoring/src/events.mjs:279 | `// 41.4: distracting, deceiving or obstructing a fielder` | No Law clause: a batter who obstructs is out under Law 37. The penalty-reason change in flight decides the reason's fate. |
+| 12 | packages/scoring/src/events.mjs:280 | `// 41.12: damaging the pitch on purpose` | `// 41.14:` |
+| 13 | packages/scoring/src/events.mjs:282 | `// 41.15: striking the pitch unfairly` | No such offence. `41.15` only if the reason becomes the striker's batting position in or near the protected area. Decided by the penalty-reason change. |
+| 14 | packages/scoring/src/events.mjs:283 | `// 41.17: a batter wasting time` | `// 41.10:` |
+| 15 | packages/scoring/src/events.mjs:289 | `// 41.1: dangerous or unfair play by a fielder` | `// 41.2.1:` |
+| 16 | packages/scoring/src/events.mjs:314 | `"deliberate short running (Law 41.5)"` | `(Law 18.5)` |
+| 17 | packages/scoring/src/events.mjs:315 | `"… obstructing the fielders (Law 41.4)"` | No Law clause (as row 11) |
+| 18 | packages/scoring/src/events.mjs:316 | `"damaging the pitch on purpose (Law 41.12)"` | `(Law 41.14)` |
+| 19 | packages/scoring/src/events.mjs:318 | `"striking the pitch unfairly (Law 41.15)"` | No such offence (as row 13) |
+| 20 | packages/scoring/src/events.mjs:319 | `"a batter wasting time after a first and final warning (Law 41.17)"` | `(Law 41.10)` |
+| 21 | packages/scoring/src/events.mjs:324 | `"dangerous or unfair play (Law 41.1)"` | `(Law 41.2.1)` |
+| 22 | packages/scoring/src/events.mjs:330-331 | the example `"deliberate short running (Law` / `41.5)"` | `18.5)"`, to match row 16 |
+| 23 | packages/scoring/src/events.mjs:406-407 | `(41.13 in this research; the penalty research gave 41.14 — to be confirmed)` | `(41.13)` |
+| 24 | packages/scoring/src/events.mjs:752 | `Law 17.8.1: only a bowler who is` | `Law 17.7.1` |
+| 25 | packages/scoring/src/events.mjs:1020 | `Penalty runs: five (Law 41.18)` | `Law 41.17` |
+| 26 | packages/scoring/src/events.mjs:1053 | `Deliberate short running (Law 18.5.2, Law 41.5)` | `(Law 18.5.2)` |
+| 27 | packages/scoring/src/replay.mjs:176 | `(SCRBRD-080, Law 17.8.1)` | `Law 17.7.1` |
+| 28 | packages/scoring/src/replay.mjs:447 | `// Law 41.18. To the batting side` | `Law 41.17` |
+| 29 | packages/scoring/src/replay.mjs:628 | `the survivor is at the other (Law 38.2)` | `Law 38.4` |
+| 30 | packages/scoring/src/replay.mjs:935 | `CROSS INNINGS (SCRBRD-094, Law 41.18)` | `Law 41.17` |
+| 31 | packages/scoring/src/commentary.mjs:667 | `disallows this ball's runs (Law 41.5)` | `Law 18.5` |
+| 32 | packages/scoring/test/laws.test.mjs:228 | `the reason Law 17.8.1 gives` | `Law 17.7.1` |
+| 33 | packages/scoring/test/laws.test.mjs:229 | `accepted with its reason (Law 17.8.1)` | `Law 17.7.1` |
+| 34 | packages/scoring/test/laws.test.mjs:332 | `so Law 17.8 reads the same after one` | `Law 17.6` |
+| 35 | packages/scoring/test/replay.test.mjs:1217 | `or their next (Law 41.18)` | `Law 41.17` |
+| 36 | packages/scoring/test/laws-spec.test.mjs:215 | `where the wicket was put down (Law 38.2)` | `Law 38.4` |
+| 37 | packages/scoring/test/phases.test.mjs:270 | `Run out is out on a free hit (Law 21.19)` | `Law 21.17` (out from a No ball; the free hit is the playing conditions') |
+| 38 | packages/sync/test/held.test.mjs:61 | `then A Nel again — Law 17.8 —` | `Law 17.6` |
+| 39 | packages/sync/test/held.test.mjs:85 | `is refused (Law 17.8)` | `Law 17.6` |
+| 40 | packages/sync/test/held.test.mjs:248 | `Nel again (refused, Law 17.8)` | `Law 17.6` |
+| 41 | apps/web/src/scorer/sheets.jsx:654 | `put down (Law 38.2)` | `Law 38.4` |
+| 42 | apps/web/src/scorer/sheets.jsx:790 | `Law 17.8.1 allows that only for an` | `Law 17.7.1` |
+| 43 | apps/web/src/scorer/sheets.jsx:809 | `// Can't bowl consecutive overs (Law 17.8)` | `Law 17.6` |
+| 44 | db/99_rls_verify.sql:4696 | `-- Law 41.18, as the fold credits it` | `Law 41.17` (not ledgered; free to edit) |
+| 45 | tools/smoke-laws.mjs:171 | `a second over running is refused (Law 17.8)` | `Law 17.6` |
+| 46 | tools/smoke-browser-held.mjs:235 | `// Law 17.8: not two overs running` | `Law 17.6` |
+| 47 | tools/smoke-browser-held.mjs:374 | `(refused, Law 17.8)` | `Law 17.6` |
+| 48 | tools/smoke-fold-figures.mjs:152 | `the one the next ball is in (Law 17.8)` | `Law 17.6` |
+| 49 | docs/SCORING_RULES.md:189 | `or parts of two, running (Law 17.8)` | `Law 17.6` |
+| 50 | docs/SCORING_RULES.md:190 | `injury or suspension (Law 17.8.1)` | `Law 17.7.1` |
+| 51 | docs/SCORING_RULES.md:232 | `refused under Law 17.8` | `Law 17.6` |
+| 52 | docs/SCORING_RULES.md:325 | `Law 17.8.1: a bowler incapacitated or suspended` | `Law 17.7.1` |
+| 53 | docs/SCORING_RULES.md:329 | `the bowler's end (Law 38.2)` | `Law 38.4` |
+| 54 | docs/SCORING_RULES.md:331 | `(Law 21.6, Law 23)` | `(Law 21.15, Law 23)` |
+| 55 | docs/SCORING_RULES.md:339 | `at (Law 38.2)` | `Law 38.4` |
+| 56 | docs/SCORING_RULES.md:407 | `Law 17.8.1 lets a bowler be replaced` | `Law 17.7.1` |
+| 57 | docs/SCORING_RULES.md:557 | `(Law 18.5.2, 41.5)` | `(Law 18.5.2)` |
+| 58 | docs/SCORING_RULES.md:569 | `` `short_running` 41.5 `` | `18.5` |
+| 59 | docs/SCORING_RULES.md:569 | `` `obstruction_distraction` 41.4 `` | none (as row 11) |
+| 60 | docs/SCORING_RULES.md:569 | `` `pitch_damage` 41.12 `` | `41.14` |
+| 61 | docs/SCORING_RULES.md:569 | `` `striking_pitch` 41.15 `` | none (as row 13) |
+| 62 | docs/SCORING_RULES.md:569 | `` `time_wasting` 41.17 `` | `41.10` |
+| 63 | docs/SCORING_RULES.md:569 | `` `unfair_play` 41.1 `` | `41.2.1` |
+
+### B. Test fixtures: leave as they are
+
+These strings test the clause-stripping (`withoutLawClause`, `noClause`) and the on-screen clause sweep. They are not
+claims about the Laws.
+
+- apps/web/test/pad-feel.test.mjs:212, 213
+- apps/web/test/law-clauses.test.mjs:40, 51, 52, 53, 161, 165, 167
+- packages/scoring/test/laws.test.mjs:485 ("Laws 41.6 and 41.7")
+
+Optional, to match row 16 if its text changes: the example `"deliberate short running (Law 41.5)"` at
+apps/web/src/scorer/penalty.js:48, packages/scoring/test/laws.test.mjs:484 and apps/web/test/penalty-sheet.test.mjs:169.
+The assertions compare against the stripped words, so they pass either way.
+
+### C. The backlog (outside the searched folders; a historical record)
+
+| Location | Cites now | Should cite |
+|---|---|---|
+| audit/SCRBRD_IMPLEMENTATION_BACKLOG.md:2864 | `(Law 21.6, Law 23)` | `(Law 21.15, Law 23)` |
+| audit/SCRBRD_IMPLEMENTATION_BACKLOG.md:2878 | `which end is empty (Law 38.2)` | `Law 38.4` |
+| audit/SCRBRD_IMPLEMENTATION_BACKLOG.md:2943 | `25.4.2's "only at the fall of a wicket …"` | `25.4.4's` (the entry at :2953 already says so) |
+| audit/SCRBRD_IMPLEMENTATION_BACKLOG.md:3273 | `Allowed (Law 17.8.1)` | `Law 17.7.1` |
+
+Leave lines 3576–3602 and 3994 as they are. They record what a screen said at the time, and which numbers were then
+still to verify.
 
 ## Sources
 
-- Law pages (3rd Edition, 2022): [The Over](https://www.lords.org/mcc/the-laws/the-over) ·
-  [Scoring Runs](https://www.lords.org/mcc/the-laws/scoring-runs) · [No Ball](https://www.lords.org/mcc/the-laws/no-ball) ·
-  [Bye and Leg Bye](https://www.lords.org/mcc/the-laws/bye-and-leg-bye) ·
-  [Batter's Innings; Runners](https://www.lords.org/mcc/the-laws/batsman-s-innings;-runners) ·
-  [The Fielder](https://www.lords.org/mcc/the-laws/the-fielder) · [Run Out](https://www.lords.org/mcc/the-laws/run-out) ·
-  [Timed Out](https://www.lords.org/mcc/the-laws/timed-out) · [Unfair Play](https://www.lords.org/mcc/the-laws/unfair-play) ·
-  [The Umpires](https://www.lords.org/mcc/the-laws/the-umpires) ·
-  [Leg Before Wicket](https://www.lords.org/mcc/laws-of-cricket/laws/law-36-leg-before-wicket/) ·
-  [Obstructing the Field](https://www.lords.org/mcc/the-laws/obstructing-the-field)
-- 4th Edition (2026): [announcement](https://www.lords.org/lords/news-stories/mcc-announces-new-edition-of-laws-from-1-october-2026) ·
-  [full text PDF](https://www.lords.org/getmedia/1d908298-5c44-468d-b6a7-e1414a1296e0/Laws-of-Cricket-2017-Code-4th-Edition-(2026)_3.pdf) ·
-  [changes explained](https://www.lords.org/getmedia/5ff72819-c9ef-448c-87e3-b051408e1803/Changes-to-Laws-for-2026-edition-explained_2.pdf) ·
-  [list of changes](https://www.lords.org/getmedia/0855ddfe-e219-4363-8652-2d7de233c4b9/Changes-to-Laws-for-2026-edition_1.pdf)
-- 2017 Code changes (Handled the ball merged into Obstructing the field):
+- **4th Edition (2026), full text:** the PDF Kameel supplied (Laws of Cricket, 2017 Code 4th Edition, © MCC 2026),
+  read in full for Laws 2, 16–42. Published at
+  [lords.org](https://www.lords.org/getmedia/1d908298-5c44-468d-b6a7-e1414a1296e0/Laws-of-Cricket-2017-Code-4th-Edition-(2026)_3.pdf).
+- MCC's change summaries, read through web searches (lords.org is blocked by the proxy):
+  - [changes explained](https://www.lords.org/getmedia/5ff72819-c9ef-448c-87e3-b051408e1803/Changes-to-Laws-for-2026-edition-explained_2.pdf)
+  - [list of changes](https://www.lords.org/getmedia/0855ddfe-e219-4363-8652-2d7de233c4b9/Changes-to-Laws-for-2026-edition_1.pdf)
+  - [ten major changes](https://www.lords.org/getmedia/72990a68-98cd-4c6e-89ac-a2dce54533ad/Ten-major-changes-to-Laws-for-2026-edition_5.pdf)
+  - [announcement](https://www.lords.org/lords/news-stories/mcc-announces-new-edition-of-laws-from-1-october-2026)
+- **3rd Edition (2022) column:** the earlier pass of this document (commit `1268224`), made through web searches of
+  lords.org's Law pages, for example [No Ball](https://www.lords.org/mcc/the-laws/no-ball),
+  [Unfair Play](https://www.lords.org/mcc/the-laws/unfair-play) and [The Over](https://www.lords.org/mcc/the-laws/the-over).
+- 2017 Code (Handled the ball merged into Obstructing the field):
   [summary paper](https://apps.lords.org/assets/Uploads/Law-Summary-Paper-updated-28-June.pdf)
-- Law 41.7 amendment (2019): [MCC announcement](https://www.lords.org/lords/news-stories/mcc-announces-intended-changes-to-law-41-7)
