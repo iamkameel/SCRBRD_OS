@@ -18,6 +18,10 @@ import {
 } from "@scrbrd/scoring";
 import { NoBallSheet, WicketSheet } from "../src/scorer/sheets.jsx";
 import { NB_TYPES } from "../src/scorer/extras.js";
+import { MATCH_FORMAT, freeHitsApply } from "@scrbrd/scoring";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 let pass = 0, fail = 0;
 const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${String(d).slice(0, 200)}` : ""); } };
@@ -53,6 +57,23 @@ group("The no-ball sheet's ways out: the Law's three");
   ok("the height no-ball is named as the full toss it is, in both", /Waist-high Full Toss/.test(out) && /without landing/.test(out) && /Waist-high Full Toss/.test(fourth));
   ok("the quick pad's kind reads Waist high, never a bare Height",
      NB_TYPES.find((t) => t.id === "height")?.label === "Waist high" && !NB_TYPES.some((t) => t.label === "Height"));
+}
+
+group("The free hit follows the match's format (SCRBRD-113)");
+{
+  const decl = renderToStaticMarkup(h(NoBallSheet, { onConfirm: noop, onClose: noop, freeHits: false }));
+  const t20 = renderToStaticMarkup(h(NoBallSheet, { onConfirm: noop, onClose: noop }));
+  ok("a declaration match's no-ball sheet promises no free hit, and says so", !/Free hit on the next delivery/.test(decl)
+     && /No free hit in this match/.test(decl) && /Free hit on the next delivery/.test(t20) && !/No free hit/.test(t20));
+  // The fixture screen offers the formats the fold knows (MATCH_FORMAT), a
+  // one-day declaration match among them, each with the overs it starts at.
+  const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "views", "fixtures.jsx"), "utf8");
+  const offered = src.match(/const FORMATS = \{([^}]*)\}/)?.[1] ?? "";
+  const names = [...offered.matchAll(/"([^"]+)"\s*:|\b(T20)\s*:/g)].map((m) => m[1] ?? m[2]);
+  ok("the fixture screen offers the four formats, One-Day Declaration among them",
+     JSON.stringify(names) === JSON.stringify(Object.values(MATCH_FORMAT)), names.join(","));
+  ok("...the two declaration formats give no free hit, the two limited ones do",
+     names.filter((f) => !freeHitsApply(f)).join() === "One-Day Declaration,Two-Day");
 }
 
 group("The wicket sheet under the 4th Edition: nothing new until an obstruction");
