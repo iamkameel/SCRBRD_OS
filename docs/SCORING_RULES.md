@@ -193,9 +193,9 @@ Refused, with the reason named:
 | No ball once the second innings is complete — the match is decided | AntiGravity `recordBallAction` |
 | An innings starts only when the one before it has ended (by the laws or a seal) | new, from the model |
 | No play in an innings once a later one has a delivery | new |
-| A dismissed batter, or one retired out, does not come back; retired hurt may (Law 25.4) | new |
+| A dismissed batter, or one retired out, does not come back; retired hurt may, but only at the fall of a wicket or another batter's retirement since he went (Law 25.4) | new; the timing SCRBRD-071 |
 | Once play starts, a not-out batter leaves only by dismissal or retirement — no replacing him; swapping ends is allowed | new |
-| Only a batter at the crease can retire; nothing is recorded for an innings nobody opened | new |
+| Only a batter at the crease can retire, and not once the innings is over or closed; nothing is recorded for an innings nobody opened | new; over/closed SCRBRD-071 |
 | A wicket with no ball is retired out (a batter who is in) or timed out (the batter due in, Law 40) — nothing else | SCRBRD-081 |
 | Runs off a no-ball are off the bat, byes or leg byes — nothing else | SCRBRD-068 |
 | The end a batter was out at is the striker's or the bowler's, and only on a wicket | SCRBRD-069 |
@@ -634,6 +634,24 @@ Retired hurt is "retired, not out" (Law 25.4.2): he may come back. The fold now 
 `batters` event names him — status batting, no dismissal line, his runs and balls going on from where he left them. A
 retirement the Laws read as out (an unmarked legacy `retire` "out", which wrote "retired out") is left as it was; the
 Laws refuse that return anyway. SQL never read the retirement (its figures come from the balls), so nothing there moves.
+
+**When he may come back.** Only "at the fall of a wicket or the retirement of another batter" (the Law's resuming
+clause, 25.4.4 in the 2017 Code). The fold records each retirement that is not out in `inn.retirements` — who, why,
+the innings' wickets when he went, and the ball — and `lawsRefusal` takes a `batters` event naming a batter retired
+hurt only if, since his latest retirement, the wickets have moved or another batter has retired; otherwise
+`resume_not_yet`. An end is only ever empty after a wicket or a retirement, so what this refuses is his walking
+straight back into the vacancy his own retirement made. A wicket with no ball (retired out, timed out) counts; two
+batters off at once — the first may return at the second's retirement, the second may not. The pad's batting-order
+sheet lists under "Retired hurt — may resume" exactly those the Laws take (`resumeChoices()` in
+`apps/web/src/scorer/retire.js`); it used to leave out only "the one who has just retired", a rule of its own.
+
+**Not once the innings is over.** A retirement (hurt, or an unmarked legacy one) in an innings that is over is
+refused `innings_over`, and in one that is sealed `innings_closed` — the same codes, in the same order, as a
+dismissal with no ball.
+
+Not modelled: the last batter retiring hurt with nobody left to come in. The Laws end the innings there; the fold
+does not derive that ending (`inningsOverReason` counts wickets, not retirements), and the Laws now refuse his
+walking straight back, as the pad's sheet never offered it.
 
 ## What kind of no-ball (`nbType`)
 

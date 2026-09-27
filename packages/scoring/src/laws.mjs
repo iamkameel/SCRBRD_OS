@@ -69,6 +69,7 @@ export const REFUSAL = Object.freeze({
   // At the crease.
   SAME_BATTER_BOTH_ENDS:  "same_batter_both_ends",
   BATTER_ALREADY_OUT:     "batter_already_out",     // dismissed, or retired out
+  RESUME_NOT_YET:         "resume_not_yet",         // retired hurt, and no wicket or other retirement since (SCRBRD-071)
   CREASE_OCCUPIED:        "crease_occupied",        // a not-out batter replaced without leaving
   NOT_AT_CREASE:          "not_at_crease",          // dismissed / retiring batter is not batting
   CONSECUTIVE_OVERS:      "consecutive_overs",      // Law 17.8: not two overs, or parts, running
@@ -116,6 +117,8 @@ export const REFUSAL_TEXT = Object.freeze({
   previous_innings_open: "the previous innings had not ended",
   same_batter_both_ends: "the same batter was named at both ends",
   batter_already_out: "that batter is already out",
+  // Law 25.4 — the resuming clause (25.4.4 in the 2017 Code). No clause number in the words.
+  resume_not_yet: "a batter who retired hurt may resume only after a wicket has fallen, or another batter has retired, since he went off",
   crease_occupied: "a batter who is not out was replaced",
   not_at_crease: "that batter is not at the crease",
   consecutive_overs: "a bowler may not bowl two overs in a row",
@@ -214,6 +217,12 @@ export function lawsRefusal(match, ev) {
     case KIND.RETIRE: {
       if (inn?.battingTeam == null) return REFUSAL.NO_INNINGS;
       if (ev.type === BALL_TYPE.WICKET) return offBallDismissalRefusal(inn, ev);
+      // An innings that is over, or closed, takes no retirement: nobody is
+      // batting in it any more, and one recorded now would print "retired
+      // hurt" on the card of a batter who was not out when it ended. The same
+      // codes, in the same order, as a dismissal with no delivery (below).
+      if (inn.sealed) return REFUSAL.INNINGS_CLOSED;
+      if (inn.complete) return REFUSAL.INNINGS_OVER;
       // Only a batter who is in can retire; anyone else leaving the crease
       // is a fiction the scorecard would print as "retired".
       return ev.batter != null && (ev.batter === inn.striker || ev.batter === inn.nonStriker)
@@ -437,6 +446,51 @@ function isOut(inn, id) {
 }
 
 /**
+ * May a batter who retired hurt resume now? Law 25.4 (the resuming clause,
+ * 25.4.4 in the 2017 Code): "only at the fall of a wicket or the retirement
+ * of another batter". SCRBRD-071.
+ *
+ * Read from the fold's own record of retirements (`inn.retirements`, in
+ * order, each with the innings' wickets when he went): he may come back once,
+ * since HIS LATEST retirement, a wicket has fallen (the wickets have moved) or
+ * another batter has retired. Anything else is the end he left, straight
+ * back: an end is only ever empty after a wicket or a retirement, so with
+ * neither since he went, the vacancy he would fill is his own.
+ *
+ *   - A wicket with no delivery (retired out, timed out) is a wicket: it
+ *     counts, as the Law's "fall of a wicket" does.
+ *   - Two batters retired hurt at once: the first may come back at the
+ *     second's retirement; the second waits for a wicket or a third.
+ *   - A batter who resumed and retired again is judged from the second
+ *     retirement.
+ *   - Any retirement of another batter counts, whatever its reason: the Law
+ *     says "the retirement of another batter".
+ *   - A batter with no retirement on the record is not judged here.
+ *
+ * Not modelled: the last batter retiring hurt with nobody left to come in.
+ * The Laws end the innings there; the fold does not derive that ending yet
+ * (SCRBRD-071's note in the backlog). This refuses only his walking straight
+ * back, which the pad's sheet never offered either.
+ *
+ * @param {Innings} inn  @param {string} id
+ */
+function mayResume(inn, id) {
+  const list = inn.retirements ?? [];
+  let k = -1;
+  for (let j = list.length - 1; j >= 0; j--) if (list[j].batter === id) { k = j; break; }
+  if (k < 0) return true;
+  if ((inn.wickets ?? 0) > list[k].wickets) return true;
+  // Any retirement after his latest is another batter's.
+  return k < list.length - 1;
+}
+
+/** Retired, and not out: the batter mayResume() is asked about. @param {Innings} inn  @param {string} id */
+function isRetiredNotOut(inn, id) {
+  const b = inn.batsmen?.find((x) => x.id === id);
+  return b?.status === "retired" && b.dismissal !== "retired out";
+}
+
+/**
  * A new batter, the openers, or a change of ends.
  * @param {Innings} inn
  * @param {Loose<BattersEvent>} ev
@@ -451,8 +505,9 @@ function battersRefusal(inn, ev) {
   for (const id of [ev.striker, ev.nonStriker]) {
     if (id == null || at.has(id)) continue;
     // A new arrival. A dismissed batter does not come back; one retired hurt
-    // may (Law 25.4.2). isOut() says which.
+    // may (Law 25.4.2). isOut() says which — and mayResume() says when.
     if (isOut(inn, id)) return REFUSAL.BATTER_ALREADY_OUT;
+    if (isRetiredNotOut(inn, id) && !mayResume(inn, id)) return REFUSAL.RESUME_NOT_YET;
   }
 
   // Once play has started, a batter leaves the crease by being dismissed or

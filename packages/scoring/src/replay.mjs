@@ -134,6 +134,14 @@ const BAT_STATUS = { NOT_OUT: "batting", OUT: "out", RETIRED: "retired" };
  *   why (SUSPENSION_REASON), for how long (SUSPENSION_SCOPE), and at which
  *   ball — the 0-based over the next delivery is in and the legal balls of it
  *   already bowled, as bowlerChanges. A suspension moves no figure.
+ * @property {{batter: string | null, reason: string, wickets: number, over: number, ballInOver: number}[]} retirements
+ *   batters who retired and were NOT out (retired hurt; a legacy unmarked
+ *   retire of any reason), in order: who, why, the innings' wickets when he
+ *   went, and at which ball, as suspensions. Retired out and timed out are
+ *   wickets, in nonBallWickets instead. It is what the Laws read to say when
+ *   a batter retired hurt may resume (laws.mjs, SCRBRD-071): only once a
+ *   wicket has fallen, or another batter has retired, since he went. It
+ *   moves no figure.
  * @property {{bat1: string, bat2: string, runs: number, balls: number, wicket: number}[]} partnerships
  * @property {{runs: number, balls: number, bat1: string | null, bat2: string | null}} curPartner
  * @property {BallLogEntry[]} ballLog
@@ -249,7 +257,7 @@ function inningsFolder(ctx = {}, carried = 0) {
     extras: { wide: 0, noBall: 0, bye: 0, legBye: 0, penalty: carried },
     penaltyToFielding: 0, penaltyCarried: carried,
 
-    batsmen: [], bowlers: [], fow: [], nonBallWickets: [], bowlerChanges: [], suspensions: [],
+    batsmen: [], bowlers: [], fow: [], nonBallWickets: [], bowlerChanges: [], suspensions: [], retirements: [],
     partnerships: [], curPartner: { runs: 0, balls: 0, bat1: null, bat2: null },
     ballLog: [], overLog: [],
 
@@ -483,6 +491,9 @@ function inningsFolder(ctx = {}, carried = 0) {
         }
         const b = batterFor(ev.batter);
         if (b) { b.status = BAT_STATUS.RETIRED; b.dismissal = `retired ${ev.reason ?? "hurt"}`; }
+        // When he went, for the Laws' "may he resume yet?" (laws.mjs).
+        inn.retirements.push({ batter: ev.batter ?? null, reason: String(ev.reason ?? "hurt"), wickets: inn.wickets,
+                               over: Math.floor(inn.balls / 6), ballInOver: inn.balls % 6 });
         closePartnership();
         if (inn.striker === ev.batter) inn.striker = null;
         if (inn.nonStriker === ev.batter) inn.nonStriker = null;

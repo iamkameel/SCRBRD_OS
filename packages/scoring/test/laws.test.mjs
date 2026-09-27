@@ -614,6 +614,79 @@ group("P. A bowler suspended: not again this innings (the match, for ball tamper
   ok("the pad's gate says why, in its own words", scoringReadiness(deriveInnings(suspended)).blocked[0]?.code === "bowler_suspended");
 }
 
+// ── Q. Retired hurt: when he may resume; no retirement once it is over (SCRBRD-071) ──
+group("Q. Retired hurt resumes only at a wicket or another's retirement; none once the innings is over");
+{
+  // p1 on strike, p2 at the other end, two dots.
+  const L = [...open(0), ...runs(0, 0, 0)];
+  const hurt = (/** @type {string} */ id) => retire({ batter: id, reason: "hurt" });
+  const p2Off = [...L, ...at(0, hurt("p2"))];
+  ok("his own vacancy, straight back: refused",
+     judge(p2Off, at(0, batters({ nonStriker: "p2" }))[0]) === REFUSAL.RESUME_NOT_YET);
+  ok("...at either end", judge(p2Off, at(0, batters({ striker: "p2", nonStriker: "p1" }))[0]) === REFUSAL.RESUME_NOT_YET);
+  ok("...while the next batter in is taken", judge(p2Off, at(0, batters({ nonStriker: "p3" }))[0]) === null);
+
+  // The next batter's arrival undone: the end is his own again.
+  const arrival = at(0, batters({ nonStriker: "p3" }))[0];
+  const undone = [...p2Off, arrival, ...at(0, voidEvent({ target: arrival.id }))];
+  ok("the next batter's arrival undone: still his own vacancy, still refused",
+     judge(undone, at(0, batters({ nonStriker: "p2" }))[0]) === REFUSAL.RESUME_NOT_YET);
+
+  const p3In = [...p2Off, arrival, ...runs(0, 0)];
+  const wicket = [...p3In, ...at(0, ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" }))];
+  ok("after a wicket: taken", judge(wicket, at(0, batters({ striker: "p2" }))[0]) === null);
+
+  const p3Off = [...p3In, ...at(0, hurt("p3"))];
+  ok("after another batter's retirement: taken", judge(p3Off, at(0, batters({ nonStriker: "p2" }))[0]) === null);
+  ok("...but not the batter who has just retired", judge(p3Off, at(0, batters({ nonStriker: "p3" }))[0]) === REFUSAL.RESUME_NOT_YET);
+
+  const outNoBall = [...p2Off, ...at(0, retire({ batter: "p1", reason: "out" }))];
+  ok("after a wicket with no ball (retired out): taken",
+     judge(outNoBall, at(0, batters({ striker: "p2", nonStriker: "p3" }))[0]) === null);
+  const timedOut = [...p2Off, ...at(0, retire({ batter: "p3", reason: "timed_out" }))];
+  ok("after the incoming batter is timed out: taken", judge(timedOut, at(0, batters({ nonStriker: "p2" }))[0]) === null);
+
+  // Two off at once: the first went before the second.
+  const bothOff = [...L, ...at(0, hurt("p2"), hurt("p1"))];
+  ok("two retired at once: the first may resume, at the second's retirement",
+     judge(bothOff, at(0, batters({ striker: "p2", nonStriker: "p3" }))[0]) === null);
+  ok("...the second may not", judge(bothOff, at(0, batters({ striker: "p3", nonStriker: "p1" }))[0]) === REFUSAL.RESUME_NOT_YET);
+  ok("...nor both together", judge(bothOff, at(0, batters({ striker: "p2", nonStriker: "p1" }))[0]) === REFUSAL.RESUME_NOT_YET);
+
+  // Two retired, one after the other: the first comes back when the second goes.
+  const later = [...p3In, ...at(0, hurt("p1"))];
+  ok("two retired in turn: the first resumes after the second retires",
+     judge(later, at(0, batters({ striker: "p2" }))[0]) === null);
+  ok("...and the second, straight back, is refused", judge(later, at(0, batters({ striker: "p1" }))[0]) === REFUSAL.RESUME_NOT_YET);
+
+  // Back once, off again: judged from the second retirement.
+  const backAgain = [...wicket, ...at(0, batters({ striker: "p2" })), ...runs(0, 0), ...at(0, hurt("p2"))];
+  ok("resumed, retired again, straight back: refused (his latest retirement counts)",
+     judge(backAgain, at(0, batters({ striker: "p2" }))[0]) === REFUSAL.RESUME_NOT_YET);
+  ok("the fold records each retirement with the wickets when he went",
+     JSON.stringify(deriveInnings(backAgain).retirements.map((r) => [r.batter, r.wickets])) === JSON.stringify([["p2", 0], ["p2", 1]]),
+     deriveInnings(backAgain).retirements);
+
+  // Retired out does not come back at all (group K); nor at a later wicket.
+  const roLater = [...L, ...at(0, retire({ batter: "p2", reason: "out" }), batters({ nonStriker: "p3" })),
+                   ...runs(0, 0), ...at(0, ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" }))];
+  ok("retired out, even after a later wicket: out", judge(roLater, at(0, batters({ striker: "p2" }))[0]) === REFUSAL.BATTER_ALREADY_OUT);
+
+  // No retirement once the innings is over or closed.
+  const overs = [...open(0), ...runs(0, 1, 0, 0, 0, 0, 0), ...at(0, bowler({ bowler: "w2" })), ...runs(0, 0, 0, 0, 0, 0, 0)];
+  ok("the overs are done: a retirement is refused as over", judge(overs, at(0, hurt("p1"))[0]) === REFUSAL.INNINGS_OVER);
+  const sealed = [...overs, ...at(0, sealInnings(deriveInnings(overs)))];
+  ok("...and as closed once sealed", judge(sealed, at(0, hurt("p1"))[0]) === REFUSAL.INNINGS_CLOSED);
+  const small = at(0, inningsStart({ battingTeam: "A", bowlingTeam: "B", squad: SQ_A.slice(0, 2), bowlingSquad: SQ_B, overs: 2 }),
+                   batters({ striker: "p1", nonStriker: "p2" }), bowler({ bowler: "w1" }), ball({}),
+                   ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" }));
+  ok("all out: the batter left is refused as over", deriveInnings(small).complete === true
+     && judge(small, at(0, hurt("p2"))[0]) === REFUSAL.INNINGS_OVER);
+  const early = [...L, ...at(0, inningsEnd({ reason: INNINGS_END_REASON.DECLARED, confirmed: { runs: 0, wickets: 0, balls: 2 } }))];
+  ok("declared: refused as closed", judge(early, at(0, hurt("p1"))[0]) === REFUSAL.INNINGS_CLOSED);
+  ok("...a retirement in play is taken as it always was", judge(L, at(0, hurt("p1"))[0]) === null);
+}
+
 group("J. Every reason has words for the person who has to clear it");
 {
   const missing = Object.values(REFUSAL).filter((r) => typeof REFUSAL_TEXT[r] !== "string");

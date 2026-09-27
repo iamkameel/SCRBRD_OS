@@ -380,6 +380,14 @@ group("D. Strike rotation and innings end");
   const stays = deriveInnings([...open(), runs(1), legacyOut, batters({ striker: "p2" })]);
   ok("an unmarked retire 'out' named again keeps its line (the Laws refuse the return)",
      must(stays.batsmen.find((b) => b.id === "p2")).status === "retired");
+  // The record the Laws read for "may he resume yet?" (laws.mjs, SCRBRD-071):
+  // each retirement not out, with the wickets when he went; a wicket with no
+  // ball (retired out) is a wicket, not one of these.
+  const rec = back.retirements;
+  ok("the fold records the retirement: who, why, the wickets then, the ball",
+     rec.length === 1 && rec[0].batter === "p2" && rec[0].reason === "hurt" && rec[0].wickets === 0
+     && rec[0].over === 0 && rec[0].ballInOver === 2, rec);
+  ok("...and a retired out is not in it", deriveInnings([...open(), runs(1), retire({ batter: "p1", reason: "out" })]).retirements.length === 0);
 }
 
 // ── D. Order-independence, given seq ─────────────────────
