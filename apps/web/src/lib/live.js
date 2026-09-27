@@ -687,7 +687,11 @@ function asShotPoint(r) {
            // the charts read each ball against what its innings asked for.
            declaredProfile: r.declared_profile ?? null,
            strikerId: r.striker_id, bowlerId: r.bowler_id,
-           matchId: r.match_id, innings: r.innings, seq: r.seq, live: true };
+           // The match's own start (SCRBRD-102): the query already joins
+           // match for it (starts_at orders the career read), so a match
+           // filter can label its options by date without a second read.
+           matchId: r.match_id, startsAt: r.starts_at ?? null,
+           innings: r.innings, seq: r.seq, live: true };
 }
 function asCap(r) {
   return { school: r.school_id, team: r.team_code, playerId: r.player_id, name: r.full_name, capNo: r.cap_no,

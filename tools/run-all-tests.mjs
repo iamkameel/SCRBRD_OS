@@ -49,6 +49,9 @@ const SUITES = [
   ["placement", "packages/scoring/test/placement.test.mjs"],
   ["spatial",  "packages/scoring/test/spatial.test.mjs"],
   ["wheel",    "apps/web/test/wheel.test.mjs"],
+  // The wagon-wheel analysis panel's counting rules (SCRBRD-102): sides,
+  // areas, run chips and filters, over hand-built balls.
+  ["wagon-analysis", "apps/web/test/wagon-analysis.test.mjs"],
   // The pad's Area step records a point, the same event as the Pro hub's for
   // the same tap (SCRBRD-101). Imports pad.jsx, so it needs the transform.
   ["pad-point", "apps/web/test/pad-point.test.mjs", ["--import", "./tools/register-jsx.mjs"]],

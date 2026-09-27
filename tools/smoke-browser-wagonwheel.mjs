@@ -417,6 +417,32 @@ try {
   const pointLine = lines.find((l) => /Naidoo/.test(l) && /cut to deep point/.test(l));
   ok("...the same words as his point-era balls there", !!pointLine, lines.slice(0, 6).join(" | "));
 
+  // ── F ────────────────────────────────────────────────────────
+  group("F. SCRBRD-102: the wagon-wheel analysis panel — a filter, a chip, sides and areas");
+  await tap("mc-tab-analytics").catch(() => {});
+  await page.waitForTimeout(800);
+  balls = await serverBalls();   // re-read: E's sector-era row went in by SQL, after the last fetch
+  const panel = '[data-testid="wagon-analysis"]';
+  await page.locator(panel).scrollIntoViewIfNeeded({ timeout: 4000 }).catch(() => {});
+  ok("the panel is on the Analytics tab", await has("wagon-analysis"));
+  const everyPlaced = balls.filter((r) => r.theta != null || r.seg != null).length;
+  ok(`the "all" chip's count is every placed ball on the server (${everyPlaced})`, (await said("wagon-chip-all")).includes(String(everyPlaced)), await said("wagon-chip-all"));
+  const naidooBalls = balls.filter((r) => r.striker_id === NAIDOO);
+  const naidooRuns = naidooBalls.reduce((s, r) => s + (Number(r.value) || 0), 0);
+  // A filter: narrow the panel to the left-hander. Every one of his balls is
+  // point, off side (SCRBRD-101's mirror puts his screen-sector-3 tap there).
+  await tid(`wagon-batter-${NAIDOO}`).first().click({ timeout: 4000 }).catch(() => {});
+  await page.waitForTimeout(400);
+  const pointCell = (await page.locator(`${panel} [data-testid="wagon-area-point"]`).first().innerText({ timeout: 2000 }).catch(() => "")).replace(/\s+/g, " ");
+  ok(`his balls are all point, off side, for ${naidooRuns} runs (area cell: "${pointCell}")`, pointCell.includes(String(naidooRuns)), pointCell);
+  // A chip: only his sector-era single (the same ball E just re-worded) is a 1.
+  await tid("wagon-chip-1").first().click({ timeout: 4000 }).catch(() => {});
+  await page.waitForTimeout(400);
+  const chipSpokes = await spokes(`${panel} [data-testid="wagon-analysis-wheel"]`);
+  ok("tapping the 1s chip shows only the one spoke, in the chip's own colour",
+     chipSpokes.length === 1 && chipSpokes[0].key === "1" && chipSpokes[0].stroke === chipSpokes[0].colour, JSON.stringify(chipSpokes));
+  await shoot("wagon-analysis-naidoo-1s");
+
   ok("no console errors across the walk", errors.length === 0, errors.slice(0, 3).join(" | "));
 } catch (e) {
   ok(`the browser walk threw: ${e.message?.slice(0, 200)}`, false);

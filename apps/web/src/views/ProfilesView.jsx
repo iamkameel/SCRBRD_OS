@@ -2,11 +2,12 @@ import { useState, useEffect } from "react";
 import { KZN_SCHOOLS } from "../data/institution.js";
 import { ROLES } from "../design/roles.js";
 import { D, inkOn, textOn, themed } from "../design/tokens.js";
-import { fitnessColor } from "../lib/format.js";
+import { fitnessColor, humanDate } from "../lib/format.js";
 import { signedIn } from "../lib/api.js";
 import { can, filterRecord } from "../rbac/index.js";
 import { Avatar, Badge, Card, EmptyState, Pill, RadarChart, SectionHeader, Select } from "../ui/primitives.jsx";
 import { ShotHeatMap, ShotSpider, ShotWheel } from "../scorer/charts.jsx";
+import { WagonAnalysisPanel } from "../scorer/wagonAnalysisPanel.jsx";
 import { useLive, usePlayersWithCareer, useRows, useSkills } from "../lib/live.js";
 import { ConductTab } from "./discipline.jsx";
 import { readsConduct } from "../rbac/conduct.js";
@@ -681,6 +682,11 @@ const FAMILY_TONE = themed(() => ({ honour:D.amber, cap:D.sky, milestone:D.emera
  */
 function CareerWagonWheel({ player, role }) {
   const { rows, loading, error } = useLive("player_shot_points", role, 0, { playerId: player?.id });
+  // The bowlers this boy has actually faced, and their names — a read this
+  // panel needs only for the filter's labels, since player_shot_points itself
+  // carries bowlerId but no name (SCRBRD-102). batterId narrows it to rows
+  // that are already this boy's, so it is one bowler per row.
+  const { rows: matchups } = useLive("matchups", role, 0, { batterId: player?.id });
   if (!player?.id) return null;
 
   // Already in the chart's vocabulary: the column names are translated by
@@ -692,6 +698,18 @@ function CareerWagonWheel({ player, role }) {
   // stated there as the safe-because-common choice — the fix for a left-hander
   // is his roster entry, not a guess in a chart.
   const inn = { ballLog: rows, squad: [{ id: player.id, batHand: player.batHand }] };
+
+  // A match filter, cheaply — the read already carries matchId and the
+  // match's own start (SCRBRD-102), so the options come from the rows in
+  // hand rather than a second read. One row per match, oldest first, as the
+  // rows themselves are already ordered.
+  const matchOptions = [];
+  const seenMatch = new Set();
+  for (const b of rows) {
+    if (b.matchId == null || seenMatch.has(b.matchId)) continue;
+    seenMatch.add(b.matchId);
+    matchOptions.push({ id: b.matchId, label: b.startsAt ? humanDate(b.startsAt) : "Unknown date" });
+  }
 
   return (
     <>
@@ -710,6 +728,19 @@ function CareerWagonWheel({ player, role }) {
           <ShotHeatMap inn={inn} playerId={player.id}/>
           <ShotSpider inn={inn} playerId={player.id}/>
         </div>
+      )}
+      {/* SCRBRD-102: the batter is this boy, fixed — a bowler filter (named
+          from the matchups read above) and, cheaply, a match filter; run
+          chips, off side against on side, and the eight named areas. */}
+      {!loading && !error && (
+        <WagonAnalysisPanel
+          balls={rows}
+          handOf={() => player.batHand === "L" ? "L" : "R"}
+          fixedBatter={{ id: player.id, name: player.name }}
+          bowlers={matchups.filter((m) => m.bowlerId).map((m) => ({ id: m.bowlerId, name: m.bowlerName }))}
+          matches={matchOptions}
+          title="Wagon-wheel analysis"
+        />
       )}
     </>
   );
