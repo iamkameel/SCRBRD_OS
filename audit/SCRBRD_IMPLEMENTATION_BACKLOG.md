@@ -4087,10 +4087,40 @@ Built in redesign step 3b, with `Board`'s chip row. Opus (cross-cutting theme en
    records the point tapped (`placementFromTap`, profile `full`), the same event as the Pro hub's, so the default
    `full` declaration ("shot, exact point") is what the pad captures. Basic Scoring still records no placement
    (`quick` per ball), as the scorer chose.
-2. **Pro mode** keeps its old hub and cards styling with sub-12px text; smoke-a11y does not measure it.
-3. **The other sheets** (toss, openers, new over, innings end, handover) are not yet at the type and touch floors;
-   only the wicket sheet, the penalty runs sheet (SCRBRD-094) and the shared close button are.
-4. After choosing from the pad menu, the menu button keeps its focus ring.
+2. ~~**Pro mode** keeps its old hub and cards styling with sub-12px text; smoke-a11y does not measure it.~~ **Done
+   2026-09-27** in `e18610c`: `scoring.jsx`'s `ScoringHub`/`ScoringPanel`/`ScoringBlocked` and the cards the Pro hub
+   shows (`panels.jsx`'s `WagonWheel` legend, `ScorecardPanel`, `PartnershipCard`; `charts.jsx`'s `ManhattanChart`) are
+   onto the same 12px type floor and 44px tap floor as the rest of the pad. The last few (a "Wd"/"4"/"1" at 8.36px)
+   traced to one root cause: `BallDot` (`ui.jsx`) set its figure's size to `size*0.38` with no floor, so every small
+   caller — `CommentaryCard`'s `size={22}` inside the hub, and every other use of it — rendered under 12px; floored
+   at `Math.max(12, size*.38)`, the dot's own diameter untouched. `tools/smoke-a11y.mjs` now opens Pro mode after
+   every run, in both themes (`pro` joins `TYPE_FLOOR_CEILING`, `TAP_FLOOR_CEILING`, `EMOJI_CEILING`, all `0`), and
+   falsifies the new check on that exact screen (a planted 9px line, a 30×30 button and an emoji-carrying button,
+   confirmed seen and removed) before trusting the real measurement. 214 passed, 0 failed, both themes.
+3. ~~**The other sheets** (toss, openers, new over, innings end, handover) are not yet at the type and touch floors;
+   only the wicket sheet, the penalty runs sheet (SCRBRD-094) and the shared close button are.~~ **Done 2026-09-27**
+   in `93a6f45`: the root cause of most of it was the shared `Lbl` and `Badge` (`ui.jsx`, used by nearly every
+   sheet), set in the Syne display face at 10px/9px — under the floor and, per §3.2, the wrong face for it at that
+   size; both now spread `T.role.label` (12px, DM Sans 600). `Btn` gained a per-size `minHeight` (44px for
+   xs/sm/md, 48px for `lg`), since every non-`lg` size rendered under the 44px tap floor on its own padding alone.
+   That alone cleared most of toss.jsx, the batting-order sheet (openers), the new-over sheet's header and pills
+   (its bowler list already met the floor), the innings-review sheet ("innings end") and the handover sheet; the
+   rest were fixed by hand — the no-ball, revision and shot-selector sheets (this item's own catch-all), and the
+   wicket sheet's remaining 8px role badge and 11px notes. The wicket sheet's timed-out toggle (BattingOrderSheet)
+   and its own dismissal-mode text were left alone throughout — the scoring engine's own strings, not styling.
+4. ~~After choosing from the pad menu, the menu button keeps its focus ring.~~ **Done 2026-09-27** in `a3a76df`:
+   `:focus-visible`'s own heuristic rings any script-focused element the pointer never touched, and `close()`'s
+   `button.current.focus()` always lands on the "…" button, not on whichever menu item was tapped. Padmenu now
+   tracks the last input modality (`pointerdown` vs `keydown`) and, only when the close was pointer-driven, quiets
+   the ring on that one `focus()` inline — never in the stylesheet, so a keyboard close (Enter/Space on an item, or
+   Escape) still rings exactly as `:focus-visible` intends.
+
+**Verification (2026-09-27, this pass):** `pnpm typecheck` 0 errors · `pnpm lint` 0 errors/82 warnings (unchanged) ·
+`pnpm build` and `check:bundle` clean · `pnpm smoke` — `SMOKE: 8/0`, `SCORER SMOKE: 25/0`, `PERSISTENCE SMOKE: 16/0`,
+`ACCESSIBILITY SMOKE: 214/0` (both themes; was 198/0 before Pro mode was reachable by this walk at all). The
+database-backed suite (`migrate --reset --seed --verify`, `run-all-tests`, both `run-smoke-api` runs, the `LIE_FI`
+offline-day walk) ran separately against this worktree's own database; see that run for its own numbers. This pass
+is styling only — no event, capability or schema change, and the walks' event checks are unchanged.
 
 ### ~~SCRBRD-090~~ — CLOSED · The live score and the target leave out penalty runs
 **Closed 2026-09-26** in `2534bda` (#38): db/48 puts penalty runs in every SQL total where the fold puts them, with Law 41's cross-innings credit (SCRBRD-094 item 1); the door now refuses a penalty whose runs are not a whole number above nought.
