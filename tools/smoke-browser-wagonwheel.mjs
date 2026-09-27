@@ -139,8 +139,10 @@ const clearBlockers = async () => {
   for (let i = 0; i < 12; i++) {
     const body = await text();
     if (/Available to Bat|Batting Order/i.test(body)) {
-      const pick = page.locator("button:not([disabled])", { hasText: /James Whitfield/ });
-      const next = (await pick.count()) ? pick : page.locator("button:not([disabled])", { hasText: /S Naidoo/ });
+      // The batting-order sheet's own choices: the pad behind it names the
+      // striker on a button of its own, which the sheet covers.
+      const pick = page.locator('[data-testid="batter-choice"]:not([disabled])', { hasText: /James Whitfield/ });
+      const next = (await pick.count()) ? pick : page.locator('[data-testid="batter-choice"]:not([disabled])', { hasText: /S Naidoo/ });
       if (await next.count()) { try { await next.first().click({ timeout: 1500 }); } catch {} await page.waitForTimeout(500); continue; }
     }
     if (/Opening Bowler|Over \d+ Complete/i.test(body)) {

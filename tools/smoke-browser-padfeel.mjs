@@ -37,7 +37,7 @@ import { chromium } from "playwright-core";
 import { launchOptions } from "./chromium.mjs";
 import { offline } from "./offline-browser.mjs";
 import { deriveInnings, fromRow, toRow } from "@scrbrd/scoring";
-import { deliveryEvents, noBallEvent } from "../apps/web/src/scorer/delivery.js";
+import { deliveryEvents, didNotTravel, noBallEvent } from "../apps/web/src/scorer/delivery.js";
 import { EVENT_COLUMNS } from "../services/api/write/events-api.mjs";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
@@ -182,8 +182,8 @@ const expected = {
   // commitBall(type, value, shot, null, null, approach): the one-tap wide
   // (runs 0; with runs, the engine's onScore("Wd", n)), Basic Scoring's byes,
   // the outcome phase's byes with their shot. No pro-hub approach here.
-  commit: (before, type, value, shot = null) =>
-    deliveryEvents({ curIn: 0, before, freeHit: false, type, value, shot, seg: null, zone: null, approach: null })[0],
+  commit: (before, type, value, shot = null, placement = undefined) =>
+    deliveryEvents({ curIn: 0, before, freeHit: false, type, value, shot, seg: null, zone: null, approach: null, placement })[0],
   // The no-ball sheet's confirm: whose the runs are only for runs taken.
   noBall: (before, nbType, value, nbRuns) =>
     noBallEvent({ inn: before, nbType, runs: value, nbRuns: value > 0 ? nbRuns : null, selShot: null, selSeg: null }),
@@ -372,7 +372,7 @@ try {
   tp = await extra("a wide mid-ball drops the shot, as it always did", "key-wide", "extra-run-0", { kind: "Wd", before: tp.inn, want: (b) => expected.commit(b, "Wd", 0) });
   ok("...and the pad starts the next ball", (await attr("three-phase-pad", "data-phase")) === "1");
   await tap("shot-missed"); await tap("area-none");
-  tp = await extra("a bye after a miss carries the shot", "key-byes", "extra-run-1", { kind: "B", before: tp.inn, want: (b) => expected.commit(b, "B", 1, "missed") });
+  tp = await extra("a bye after a miss carries the shot", "key-byes", "extra-run-1", { kind: "B", before: tp.inn, want: (b) => expected.commit(b, "B", 1, "missed", didNotTravel("missed")) });
   for (let i = 0; i < 4; i++) { await tap("key-dot"); await page.waitForTimeout(250); }
   await agree("over two done");
 
@@ -384,7 +384,7 @@ try {
   ok(`A Nel, who bowled the over before last, is first and marked likely (${rows.map((r) => `${r.text}${r.likely ? "*" : ""}${r.disabled ? "!" : ""}`).join(", ")})`,
      rows[0]?.text === "A Nel" && rows[0].likely && !rows[0].disabled);
   ok(`...B Zulu, who bowled the last over, is there, unavailable, in words ("${rows.find((r) => r.text === "B Zulu")?.why}")`,
-     rows.some((r) => r.text === "B Zulu" && r.disabled && r.why === "Bowled the last over"));
+     rows.some((r) => r.text === "B Zulu" && r.disabled && /^Bowled (part of )?the last over/.test(r.why ?? "")));
   await page.locator('[data-testid="bowler-choice"]').first().click({ timeout: 3000 });
   await page.waitForTimeout(600);
   const o3 = await serverLog(0);
