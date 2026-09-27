@@ -270,8 +270,9 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
           {/* A rain delay or interruption (item 1): a clear status, not a frozen board. */}
           {notice && <RevisionBanner notice={notice}/>}
           {/* The full-time screen links onward (item 4) and the confirm-or-correct prompt (item 5) —
-              both true of the fixture once it is decided, not of any one tab of it. */}
-          {match.status === "complete" && (
+              both true of the fixture once it is decided, not of any one tab of it. Never on a
+              demonstration fixture: its "log" is a reconstruction with no real amendment to file. */}
+          {match.status === "complete" && !log.demo && (
             <>
               <OnwardLinks match={match} sides={sides} matches={matches} onOpenFixture={onOpenFixture} onTeamResults={onTeamResults}/>
               <ConfirmScorecardPrompt match={match} role={role} commentary={commentary} innings={played}/>
