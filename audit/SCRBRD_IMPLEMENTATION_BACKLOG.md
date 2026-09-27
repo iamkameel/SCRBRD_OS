@@ -3689,8 +3689,9 @@ SCRBRD-097's one open remainder, noted at the end.
    arms, and windowed by a predicate on the join to each player's anchors; `ball_wicket_stands()` is asked once per
    delivery. The `*_since()` functions are untouched and are the reference. `tools/bench-assessment.mjs --check`
    compares the read with the pre-change statement (verbatim) row for row, raw, as nine readers. As the director:
-   seed 90 ms / 18.8k shared hits → 25–36 ms / 1.7–2.2k; seed + eight walks (3,640 deliveries) 6.3–7.9 s / 1.57M →
-   1.37 s / 251k; bench (70 players, 4,967 deliveries) 34–42 s / 5.4–7.4M → 1.5 s / 95k.
+   seed 93–99 ms / 18.5–18.8k shared hits → 22–25 ms / 1.7–2.2k; seed + eight walks (3,640 deliveries) 6.3–7.8 s /
+   1.55–1.65M → 1.26–1.29 s / 250–280k; bench (70 players, 4,967 deliveries) 34–42 s / 5.4–7.4M → 0.61–0.68 s /
+   67–69k.
 2. **`milestone_watch()`** (db/51) asks two owner-only invoker helpers, `innings_runs_off_bat()` and
    `career_runs_off_bat()`, in place of `player_innings`: sums of runs off the bat over the balls he faced, the only
    arm of `player_innings` that carries runs, so the same numbers decide the same notices. Three partial indexes
