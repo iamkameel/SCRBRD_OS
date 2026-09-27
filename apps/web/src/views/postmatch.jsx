@@ -41,10 +41,11 @@ function PostMatchReport({ match, role, onClose, onNavProfile, matches, onOpenFi
     setReplay((s) => ({ ...s, loading: true }));
     (async () => {
       try {
-        const { events: rows } = await api(`/api/matches/${match.id}/events`);
+        const { events: rows, fold } = await api(`/api/matches/${match.id}/events`);
         if (cancelled) return;
         const evs = (rows || []).map(fromRow);
-        const { innings, result } = deriveMatch(evs);
+        // Folded as the server folds it: the fixture's start and format (SCRBRD-113).
+        const { innings, result } = deriveMatch(evs, fold ?? {});
         setReplay({ loading: false, error: null, innings, result });
       } catch (e) {
         if (!cancelled) setReplay({ loading: false, error: e.code || "unreachable", innings: null, result: null });

@@ -94,7 +94,11 @@ function AddFixtureModal({ fixtureSchools, teamOptions, grounds, matches, onClos
     if (!off && r?.rows) setLiveSchools(r.rows);
   })(); return () => { off = true; }; }, []);
 
-  const FORMATS = { T20: 20, "One-Day": 50, "Two-Day": 80 };
+  // The formats a fixture states (MATCH_FORMAT in packages/scoring
+  // format.mjs), each with the overs an innings starts at. A limited-overs
+  // format gives a free hit after a no-ball; a declaration or timed one — one
+  // day or two — does not (SCRBRD-113). The overs are editable below.
+  const FORMATS = { T20: 20, "One-Day": 50, "One-Day Declaration": 100, "Two-Day": 80 };
   const setFmt = (f) => { setFormat(f); setOvers(String(FORMATS[f] ?? 20)); };
 
   const ground = grounds.find(g=>g.id===groundId);

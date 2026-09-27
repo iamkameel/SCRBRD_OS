@@ -86,10 +86,11 @@ function useLiveScore(matchId) {
     setState((s) => ({ ...s, loading: true }));
     (async () => {
       try {
-        const { events: rows } = await api(`/api/matches/${matchId}/events`);
+        const { events: rows, fold } = await api(`/api/matches/${matchId}/events`);
         if (cancelled) return;
         const evs = (rows || []).map(fromRow);
-        const { innings } = deriveMatch(evs);
+        // Folded as the server folds it: the fixture's start and format (SCRBRD-113).
+        const { innings } = deriveMatch(evs, fold ?? {});
         const curIn = innings.length - 1;
         const inn = curIn >= 0 ? innings[curIn] : null;
         const target = curIn === 1 ? (inn?.target ?? ((innings[0]?.runs || 0) + 1)) : null;

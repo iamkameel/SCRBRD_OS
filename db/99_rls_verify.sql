@@ -792,6 +792,74 @@ CREATE OR REPLACE FUNCTION _void_53() RETURNS void AS $$
           jsonb_build_object('target', 'verify:053:77777777-0000-0000-0000-000000053001:6'));
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
+-- db/54 (SCRBRD-113). A school, a T20 match with a delivery fielded
+-- illegally and a hat-trick across a delivery that does not count, and a T20
+-- and a One-Day Declaration match each with a no-ball and then a bowled:
+-- owner-written, rolled back with everything else, read through every reader
+-- db/54 moved. The same fixture db/54's own proof builds; this one proves it
+-- on every verify paste, after every file since.
+CREATE OR REPLACE FUNCTION _laws_fixture_54() RETURNS text AS $$
+DECLARE
+  S uuid := gen_random_uuid(); U uuid := gen_random_uuid();
+  MA uuid := gen_random_uuid(); MT uuid := gen_random_uuid(); MD uuid := gen_random_uuid();
+  PX uuid := gen_random_uuid(); PY uuid := gen_random_uuid(); BA uuid := gen_random_uuid(); BC uuid := gen_random_uuid();
+  v text;
+BEGIN
+  INSERT INTO school (id, code, name) VALUES (S, 'verify-054', 'Verify 054');
+  INSERT INTO app_user (id, email, name, role, school_id) VALUES (U, 'verify54@example.invalid', 'V54 Scorer', 'coach', S);
+  INSERT INTO player (id, school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (PX, S, '1XI', 'V54 Opener',  1, 'batter', (current_date - interval '16 years')::date),
+    (PY, S, '1XI', 'V54 Partner', 2, 'batter', (current_date - interval '16 years')::date),
+    (BA, S, '1XI', 'V54 Seamer',  3, 'bowler', (current_date - interval '16 years')::date),
+    (BC, S, '1XI', 'V54 Spinner', 4, 'bowler', (current_date - interval '16 years')::date);
+  INSERT INTO match (id, school_id, team_code, opponent, starts_at, sport, format, overs, status) VALUES
+    (MA, S, '1XI', 'Verify 054', now() - interval '7 days', 'cricket', 'T20', 20, 'complete'),
+    (MT, S, '1XI', 'Verify 054 T20', now() - interval '6 days', 'cricket', 'T20', 20, 'complete'),
+    (MD, S, '1XI', 'Verify 054 declaration', now() - interval '5 days', 'cricket', 'One-Day Declaration', 100, 'complete');
+  INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                          idempotency_key, client_seq, client_ts, kind, ball_type, value,
+                          striker_id, non_striker_id, bowler_id, dismissal, payload)
+  SELECT x.m, S, x.k, 1, 0, U, 'verify-054', 'verify:054:' || x.m || ':' || x.k, x.k, now(), x.kind, x.bt, x.v,
+         CASE WHEN x.kind = 'ball' THEN PX END, CASE WHEN x.kind = 'ball' THEN PY END,
+         CASE x.who WHEN 'A' THEN BA WHEN 'C' THEN BC END, x.dis, x.pl
+    FROM (VALUES
+      (MA,  1, 'ball',    'run', 0,    'A', NULL,     '{}'::jsonb),
+      (MA,  2, 'ball',    'run', 0,    'A', NULL,     '{}'::jsonb),
+      (MA,  3, 'ball',    'run', 0,    'A', NULL,     '{}'::jsonb),
+      (MA,  4, 'ball',    'run', 0,    'A', NULL,     '{}'::jsonb),
+      (MA,  5, 'ball',    'run', 0,    'A', NULL,     '{}'::jsonb),
+      (MA,  6, 'ball',    'run', 2,    'A', NULL,     '{"notInOver":"illegal_fielding"}'::jsonb),
+      (MA,  7, 'penalty', NULL,  NULL, NULL, NULL,    '{"runs":5,"toBattingTeam":true,"reason":"illegal_fielding"}'::jsonb),
+      (MA,  8, 'ball',    'run', 0,    'A', NULL,     '{}'::jsonb),
+      (MA,  9, 'ball',    'W',   0,    'C', 'bowled', '{}'::jsonb),
+      (MA, 10, 'ball',    'W',   0,    'C', 'bowled', '{}'::jsonb),
+      (MA, 11, 'ball',    'run', 0,    'C', NULL,     '{"notInOver":"distracting_striker"}'::jsonb),
+      (MA, 12, 'penalty', NULL,  NULL, NULL, NULL,    '{"runs":5,"toBattingTeam":true,"reason":"distracting_striker"}'::jsonb),
+      (MA, 13, 'ball',    'W',   0,    'C', 'bowled', '{}'::jsonb),
+      (MT,  1, 'ball',    'Nb',  0,    'A', NULL,     '{}'::jsonb),
+      (MT,  2, 'ball',    'W',   0,    'A', 'bowled', '{}'::jsonb),
+      (MD,  1, 'ball',    'Nb',  0,    'A', NULL,     '{}'::jsonb),
+      (MD,  2, 'ball',    'W',   0,    'A', 'bowled', '{}'::jsonb)
+    ) AS x(m, k, kind, bt, v, who, dis, pl);
+  SELECT concat_ws(' ',
+           (SELECT 'live' || row(l.runs, l.wickets, l.legal_balls)::text FROM match_live_score l WHERE l.match_id = MA AND l.innings = 0),
+           (SELECT 'folded' || row(f.runs, f.wickets, f.legal_balls)::text FROM innings_score_as_folded(MA, 0::smallint) f),
+           (SELECT 'overs(' || string_agg(format('%s:%s:%s/%s', CASE o.bowler_id WHEN BA THEN 'A' ELSE 'C' END,
+                                                  o.over_no, o.legal_balls, o.deliveries), ' ' ORDER BY o.over_no, o.bowler_id = BC) || ')'
+              FROM bowler_over o WHERE o.match_id = MA),
+           (SELECT 'hattrick(' || coalesce(string_agg(CASE h.player_id WHEN BC THEN 'C' ELSE 'A' END || '@' || h.completed_at_seq, ','), '') || ')'
+              FROM bowler_hat_trick h WHERE h.match_id = MA),
+           (SELECT 'career(' || string_agg(l.legal_balls::text, ',' ORDER BY l.player_id = BC) || ')'
+              FROM player_bowling_career l WHERE l.player_id IN (BA, BC)),
+           (SELECT 't20(' || l.wickets || ',' || ball_on_free_hit(MT, 0::smallint, 2)::text || ')' FROM match_live_score l WHERE l.match_id = MT),
+           (SELECT 'declaration(' || l.wickets || ',' || ball_on_free_hit(MD, 0::smallint, 2)::text || ','
+                   || (SELECT f.wickets FROM innings_score_as_folded(MD, 0::smallint) f) || ','
+                   || (SELECT b.wickets FROM bowler_innings_figures b WHERE b.match_id = MD AND b.player_id = BA) || ')'
+              FROM match_live_score l WHERE l.match_id = MD))
+    INTO v;
+  RETURN v;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -5496,6 +5564,71 @@ BEGIN
              (SELECT 'A' || row(i.out)::text FROM player_innings i WHERE i.player_id = A AND i.match_id = M1))
       INTO got;
     PERFORM _assert(got = 'live(2) A(t)', format('db/53 (c): with the return voided, M1 reads %s; expected live(2) A(t)', got));
+  END;
+
+  -- ── 32. A delivery that does not count in the over; the free hit by the format (SCRBRD-113, db/54) ──
+  -- Law 17.3.2.5: a delivery under 24.4, 28.2, 41.4 or 41.5 is not one of the
+  -- six (payload.notInOver); ball_counts_in_over() is countsInOver() in SQL,
+  -- and every reader of the balls of the over asks it. The free hit is a
+  -- limited-overs playing condition: none in a declaration or timed match
+  -- (free_hits_apply(), freeHitsApply() in SQL), so ball_on_free_hit() asks
+  -- the match's format. The fixture (_laws_fixture_54()) is db/54's own; the
+  -- invariants run over the whole log this reader sees. db/54 was broken each
+  -- of these ways and this file run: bowler_over counting a delivery that
+  -- does not count (→ fixture, same), player_bowling_career keeping the old
+  -- CASE (→ readers, same), ball_on_free_hit() not asking the format
+  -- (→ fixture, readers).
+  DECLARE
+    n bigint;
+    detail text;
+    v_want text := 'live(12,3,9) folded(12,3,9) overs(A:0:6/7 C:1:3/4) hattrick(C@13) career(8,3) '
+                || 't20(0,true) declaration(1,false,1,1)';
+  BEGIN
+    -- (rule) countsInOver()'s table (edition.test.mjs, E) and freeHitsApply()'s (G)
+    PERFORM _assert(ball_counts_in_over('run', '{}') AND ball_counts_in_over('B', '{}') AND ball_counts_in_over('W', '{}')
+                    AND NOT ball_counts_in_over('Wd', '{}') AND NOT ball_counts_in_over('Nb', '{}')
+                    AND NOT ball_counts_in_over('run', '{"notInOver":"illegal_fielding"}')
+                    AND NOT ball_counts_in_over('LB', '{"notInOver":"obstructing_batter"}')
+                    AND ball_counts_in_over('run', '{"notInOver":"helmet_struck"}')
+                    AND ball_counts_in_over(NULL, '{}') IS NULL,
+      'db/54 (rule): ball_counts_in_over() is not countsInOver() — a delivery under 24.4, 28.2, 41.4 or 41.5 is not one of the six');
+    PERFORM _assert(free_hits_apply('T20') AND free_hits_apply('One-Day') AND free_hits_apply(NULL) AND free_hits_apply('50-over')
+                    AND NOT free_hits_apply('One-Day Declaration') AND NOT free_hits_apply('Two-Day')
+                    AND NOT free_hits_apply(' multi-day ') AND NOT free_hits_apply('Timed'),
+      'db/54 (rule): free_hits_apply() is not freeHitsApply() — no free hit in a declaration or timed match, one in every other');
+
+    -- (readers) every reader of the balls of the over asks the rule; the free hit asks the format
+    SELECT count(*), string_agg(o, ', ') INTO n, detail FROM (
+      SELECT 'match_live_score' AS o, pg_get_viewdef('match_live_score'::regclass) AS src
+      UNION ALL SELECT 'innings_score_as_folded', prosrc FROM pg_proc WHERE oid = 'innings_score_as_folded(uuid,smallint)'::regprocedure
+      UNION ALL SELECT 'bowler_over', pg_get_viewdef('bowler_over'::regclass)
+      UNION ALL SELECT 'bowler_hat_trick', pg_get_viewdef('bowler_hat_trick'::regclass)
+      UNION ALL SELECT 'player_bowling_since', prosrc FROM pg_proc WHERE oid = 'player_bowling_since(uuid,timestamptz)'::regprocedure
+      UNION ALL SELECT 'opposition_squad', prosrc FROM pg_proc WHERE oid = 'opposition_squad(uuid)'::regprocedure
+      UNION ALL SELECT 'player_bowling_by_season', pg_get_viewdef('player_bowling_by_season'::regclass)
+      UNION ALL SELECT 'player_bowling_career', pg_get_viewdef('player_bowling_career'::regclass)) d
+     WHERE d.src NOT LIKE '%ball_counts_in_over(%';
+    PERFORM _assert(n = 0, format('db/54 (readers): %s do(es) not count the balls of the over through ball_counts_in_over(): %s', n, coalesce(detail, '')));
+    PERFORM _assert((SELECT prosrc FROM pg_proc WHERE oid = 'ball_on_free_hit(uuid,smallint,integer)'::regprocedure) LIKE '%match_free_hits_apply(p_match)%',
+      'db/54 (readers): ball_on_free_hit() does not ask the match''s format');
+
+    -- (fixture) db/54's, read through every reader it moved
+    detail := _laws_fixture_54();
+    PERFORM _assert(detail IS NOT DISTINCT FROM v_want, format('db/54 (fixture): the fixture reads %s, the fold reads %s', detail, v_want));
+
+    -- (same) over the whole log, as this reader sees it: the live score and
+    -- the handover check's count, innings by innings; a bowler's career balls
+    -- and the overs he bowled
+    SELECT count(*), string_agg(k, '; ') INTO n, detail FROM (
+      SELECT 'live/folded ' || l.match_id || '/' || l.innings AS k
+        FROM match_live_score l CROSS JOIN LATERAL innings_score_as_folded(l.match_id, l.innings::smallint) f
+       WHERE l.legal_balls IS DISTINCT FROM f.legal_balls::bigint OR l.wickets IS DISTINCT FROM f.wickets::bigint
+      UNION ALL
+      SELECT 'career/overs ' || c.player_id
+        FROM player_bowling_career c
+        JOIN (SELECT bowler_id, sum(legal_balls) AS balls FROM bowler_over GROUP BY bowler_id) o ON o.bowler_id = c.player_id
+       WHERE c.legal_balls IS DISTINCT FROM o.balls) d;
+    PERFORM _assert(n = 0, format('db/54 (same): %s figure(s) disagree between the readers — %s', n, left(coalesce(detail, ''), 600)));
   END;
 
   PERFORM set_config('app.user_id', '', true);

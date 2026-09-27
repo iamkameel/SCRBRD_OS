@@ -37,6 +37,7 @@ import { KIND, BALL_TYPE, isLegal, normaliseDismissal, chargedToBowler, standsOn
 import { NB_RUNS, runsToBowler } from "./events.mjs";
 import { countsInOver, FACES_NEXT } from "./events.mjs";
 import { lawsEdition, LAWS_EDITION } from "./edition.mjs";
+import { freeHitsApply } from "./format.mjs";
 import { CAPTURE_PROFILE } from "./placement.mjs";
 
 /** @import { LogEvent, SquadMember } from "./events.mjs" */
@@ -170,6 +171,9 @@ const BAT_STATUS = { NOT_OUT: "batting", OUT: "out", RETIRED: "retired" };
  * @property {3 | 4} lawsEdition     the Edition of the Laws the match is scored under
  *   (edition.mjs, SCRBRD-113), resolved once per match by the fold and the
  *   same on every innings of it; what lawsEdition(match) reads back
+ * @property {boolean} freeHits      whether a no-ball gives a free hit in this match:
+ *   its format's answer (format.mjs, SCRBRD-113) — false in a declaration or
+ *   timed match, true in every other and in one whose format is not known
  * @property {boolean} penaltyWin    4th Edition, a chase: this innings had
  *   been completed short of its target, and an award of penalty runs to it
  *   then made its total enough (Law 16.7). The result reads "by penalty runs"
@@ -185,7 +189,25 @@ const BAT_STATUS = { NOT_OUT: "batting", OUT: "out", RETIRED: "retired" };
  *   Laws (edition.mjs). Without it, the log's first event dates the match
  * @property {3 | 4} [edition]     the Edition, already resolved for the whole
  *   match; the fold resolves it itself when it is not given (withEdition())
+ * @property {unknown} [format]    the fixture's format (match.format): whether a
+ *   no-ball gives a free hit (format.mjs, freeHitsApply()). Not given — the
+ *   pad's own match, a caller that does not hold the fixture — a free hit
+ *   after every no-ball, as before
  */
+
+/**
+ * The rules a match's fold was made under (SCRBRD-113), as a context another
+ * fold of the same log can be given so it folds alike: the Edition it
+ * stamped, and — where no-balls gave no free hit — a declaration format.
+ * For a reader that holds a fold but not the fixture (the pad's commentary).
+ * @param {(Innings | null | undefined)[] | null | undefined} innings
+ * @returns {FoldContext}
+ */
+export function rulesOf(innings) {
+  const inn = (innings ?? []).find((x) => x != null);
+  if (!inn) return {};
+  return { edition: inn.lawsEdition, ...(inn.freeHits === false ? { format: "declaration" } : {}) };
+}
 
 /**
  * The context with the match's Edition resolved: as given, or from the
@@ -316,6 +338,9 @@ function inningsFolder(ctx = {}, carried = 0) {
     // without one is the 4th's only in a context that says so.
     lawsEdition: ctx.edition === LAWS_EDITION.THIRD ? LAWS_EDITION.THIRD : LAWS_EDITION.FOURTH,
     penaltyWin: false,
+    // A free hit after a no-ball is a limited-overs playing condition, not a
+    // Law: the match's format decides it (format.mjs, SCRBRD-113).
+    freeHits: freeHitsApply(ctx.format),
   };
 
   // Name resolution comes from the squads carried on innings_start, so a
@@ -814,11 +839,12 @@ function inningsFolder(ctx = {}, carried = 0) {
         if (type !== BALL_TYPE.WICKET && v % 2 === 1) rotate();
         if (counts && inn.balls % 6 === 0) { rotate(); inn.bowler = null; }
 
-        // Free hit is set by a no-ball and consumed by the next legal delivery
-        // — by its type: a fair delivery that does not count in the over
-        // (17.3.2.5) was still the free-hit ball bowled, as SQL's
-        // ball_wicket_stands() reads it too.
-        inn.freeHit = type === BALL_TYPE.NO_BALL ? true : (legal ? false : inn.freeHit);
+        // Free hit is set by a no-ball — in a match whose format gives one
+        // (inn.freeHits; a declaration or timed match does not) — and
+        // consumed by the next legal delivery, by its type: a fair delivery
+        // that does not count in the over (17.3.2.5) was still the free-hit
+        // ball bowled, as SQL's ball_wicket_stands() reads it too.
+        inn.freeHit = type === BALL_TYPE.NO_BALL ? inn.freeHits : (legal ? false : inn.freeHit);
 
         // Who faces next, where the Laws let someone choose (FACES_NEXT,
         // SCRBRD-113): placed last, after the change of ends at an over's

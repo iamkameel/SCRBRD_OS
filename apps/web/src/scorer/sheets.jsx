@@ -53,7 +53,7 @@ function ShotSelectorSheet({onSelect,onSkip,onClose}){
 /* ═══════════════════════════════════════════════════════
    NO BALL SHEET — different rules for front foot vs height
 ═══════════════════════════════════════════════════════ */
-function NoBallSheet({onConfirm,onClose,edition=3}){
+function NoBallSheet({onConfirm,onClose,edition=3,freeHits=true}){
   const[nbType,setNbType]=useState("front_foot");
   const[runs,setRuns]=useState(0);
   // Whose the runs are (SCRBRD-068): off the bat they are the striker's, and
@@ -94,9 +94,18 @@ function NoBallSheet({onConfirm,onClose,edition=3}){
           </div>
           {/* Every no-ball, whatever its kind: the fold gives the free hit
               (SCORING_RULES §6), so the sheet says so for each. */}
-          <div style={{marginTop:"6px",color:D.orange,fontSize:"12px",fontFamily:D.body,fontWeight:500}}>
-            <Icon name="zap"/> Free hit on the next delivery
-          </div>
+          {/* The fold's answer (inn.freeHits): a free hit is a limited-overs
+              playing condition, not given in a declaration or timed match
+              (SCRBRD-113). */}
+          {freeHits?(
+            <div style={{marginTop:"6px",color:D.orange,fontSize:"12px",fontFamily:D.body,fontWeight:500}}>
+              <Icon name="zap"/> Free hit on the next delivery
+            </div>
+          ):(
+            <div data-testid="nb-no-free-hit" style={{marginTop:"6px",color:D.textSecondary,fontSize:"12px",fontFamily:D.body}}>
+              No free hit in this match: the no ball is its run and another delivery.
+            </div>
+          )}
           {/* The Laws' 4th Edition (from 1 October 2026, SCRBRD-113). */}
           {edition===4&&(
             <div data-testid="nb-head-height" style={{marginTop:"6px",color:D.textSecondary,fontSize:"12px",fontFamily:D.body}}>

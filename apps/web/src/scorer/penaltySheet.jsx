@@ -255,7 +255,7 @@ export function PenaltySheet({ mode = "award", innings, events, curIn, ctx, crea
                   </button>
                 ))}
               </div>
-              <p style={{ ...body(), fontSize: "14px", marginTop: T.space.sm }}>The next delivery is a free hit.</p>
+              {inn?.freeHits !== false && <p style={{ ...body(), fontSize: "14px", marginTop: T.space.sm }}>The next delivery is a free hit.</p>}
             </section>
           )}
           {who && <p data-testid="short-run-crease" style={body()}>{who}.</p>}

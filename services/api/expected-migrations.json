@@ -51,5 +51,6 @@
   "50_pad_resume.sql",
   "51_milestone_watch_own_balls.sql",
   "52_noball_byes.sql",
-  "53_retired_out_resume.sql"
+  "53_retired_out_resume.sql",
+  "54_laws_4th_edition.sql"
 ]

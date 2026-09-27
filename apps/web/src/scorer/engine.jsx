@@ -504,12 +504,14 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
       setMatchId(id);
       matchIdRef.current = id;
       // The fixture's start dates the match, and the date decides the
-      // Edition of the Laws it is scored under (SCRBRD-113) — for the fold
-      // and every question the pad asks the Laws, as the server dates it.
-      // Set before the log is, so the first fold is dated. Without it (the
-      // pad's own match, a session saved before this), the log's first event
-      // dates it.
+      // Edition of the Laws it is scored under; its format says whether a
+      // no-ball gives a free hit (SCRBRD-113) — for the fold and every
+      // question the pad asks the Laws, as the server folds it. Set before
+      // the log is, so the first fold has them. Without them (the pad's own
+      // match, a session saved before this), the log's first event dates it
+      // and every no-ball gives a free hit, as before.
       if(resume.cfg.startsAt)scoringCtxRef.current={...scoringCtxRef.current,startsAt:resume.cfg.startsAt};
+      if(resume.cfg.format)scoringCtxRef.current={...scoringCtxRef.current,format:resume.cfg.format};
 
       const saved = id ? await loadMatch(id) : null;
       if (cancelled) return;
@@ -1546,7 +1548,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
 
     if(modal==="noBall")return (
       <NoBallSheet
-        edition={lawsEdition({innings,events})}
+        edition={lawsEdition({innings,events})} freeHits={inn?.freeHits!==false}
         onConfirm={recordNoBall}
         onClose={()=>setModal(null)}/>
     );

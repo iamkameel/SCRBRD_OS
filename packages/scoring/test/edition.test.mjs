@@ -30,7 +30,10 @@ import {
   FACES_NEXT, PENALTY_REASON, penaltyReasonWords,
   lawsEdition, lawsEditionOn, matchDay, firstEventTs, LAWS_EDITION, FOURTH_EDITION_FROM,
   toRow, fromRow,
+  MATCH_FORMAT, DECLARATION_FORMATS, freeHitsApply, formatKind, rulesOf,
 } from "../src/index.mjs";
+import { deriveCommentary } from "../src/commentary.mjs";
+import { readFileSync } from "node:fs";
 
 /** @import { LogEvent, InningsStartInput } from "../src/events.mjs" */
 /** @import { MatchView } from "../src/laws.mjs" */
@@ -427,6 +430,53 @@ group("F. A further offence on the pitch or in the protected area disallows the 
     }
     ok(`${label}: a no-ball's one run stands`,
        deriveInnings([...L, ...at(0, ...runsDisallowed({ type: BALL_TYPE.NO_BALL, value: 2 }, "pitch_damage"))]).runs === 1);
+  }
+}
+
+// ── G. The free hit follows the match's format ────────────────────
+group("G. The free hit follows the format: limited overs yes, declaration or timed no (a correction, not an Edition)");
+{
+  ok("the formats the fixture screen offers", Object.values(MATCH_FORMAT).join() === "T20,One-Day,One-Day Declaration,Two-Day");
+  ok("limited overs give a free hit: T20, One-Day, 50-over, T10",
+     ["T20", "One-Day", "50-over", "T10", "t20"].every(freeHitsApply) && formatKind("One-Day") === "limited");
+  ok("declaration and timed matches do not: One-Day Declaration, Two-Day, multi-day, timed, test",
+     ["One-Day Declaration", "Two-Day", "multi-day", "Timed", "TEST", " two  DAY ", "Three-Day"].every((f) => !freeHitsApply(f))
+     && formatKind("Two-Day") === "declaration");
+  ok("no format stated keeps a free hit after every no-ball, as before", freeHitsApply(null) && freeHitsApply(undefined) && freeHitsApply("") && formatKind(null) === null);
+  // The one list, in both languages: db/54's free_hits_apply() spells the same.
+  const sql = readFileSync(new URL("../../../db/54_laws_4th_edition.sql", import.meta.url), "utf8");
+  const body = sql.slice(sql.indexOf("CREATE OR REPLACE FUNCTION free_hits_apply"), sql.indexOf("$$ LANGUAGE sql IMMUTABLE", sql.indexOf("CREATE OR REPLACE FUNCTION free_hits_apply")));
+  const listed = [...body.slice(body.indexOf("NOT IN")).matchAll(/'([^']+)'/g)].map((m) => m[1]).sort();
+  ok("db/54's free_hits_apply() lists exactly DECLARATION_FORMATS", JSON.stringify(listed) === JSON.stringify([...DECLARATION_FORMATS].sort()), listed);
+
+  for (const [, day, label] of DAYS) {
+    const { at, open, runs } = on(day);
+    const nbThenBowled = [...open(0), ...runs(0, 1), ...at(0, ball({ type: BALL_TYPE.NO_BALL }), ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" }))];
+    const t20 = deriveInnings(nbThenBowled, { format: "T20" });
+    const decl = deriveInnings(nbThenBowled, { format: "One-Day Declaration" });
+    const none = deriveInnings(nbThenBowled);
+    ok(`${label}: a T20 — the no-ball gives a free hit, and the bowled batter is saved`, t20.wickets === 0 && t20.ballLog.at(-1)?.freeHitSaved === true && t20.freeHits === true);
+    ok(`${label}: a One-Day Declaration — no free hit: the wicket stands, the bowler's`, decl.wickets === 1 && !decl.ballLog.at(-1)?.freeHitSaved
+       && decl.bowlers[0].wickets === 1 && decl.freeHits === false);
+    ok(`${label}: a match whose format nobody stated folds as today: saved`, none.wickets === 0 && none.freeHits === true);
+    const afterNb = deriveInnings(nbThenBowled.slice(0, -1), { format: "Two-Day" });
+    ok(`${label}: after a no-ball in a Two-Day match the pad's banner has nothing to show`, afterNb.freeHit === false
+       && deriveInnings(nbThenBowled.slice(0, -1), { format: "T20" }).freeHit === true);
+    // Every fold agrees: the server's, the pad's, the whole match's.
+    ok(`${label}: MatchFold, deriveMatch and deriveInningsList agree`,
+       new MatchFold(nbThenBowled, { format: "Two-Day" }).view().innings[0].wickets === 1
+       && deriveMatch(nbThenBowled, { format: "Two-Day" }).innings[0].wickets === 1
+       && deriveInningsList([nbThenBowled], { format: "Two-Day" })[0]?.wickets === 1
+       && new MatchFold(nbThenBowled, { format: "T20" }).view().innings[0].wickets === 0);
+    // The commentary folds as the scorecard does.
+    const said = deriveCommentary(nbThenBowled, { ctx: { format: "Two-Day" } }).map((c) => c.text).join(" ");
+    const saidT20 = deriveCommentary(nbThenBowled, { ctx: { format: "T20" } }).map((c) => c.text).join(" ");
+    ok(`${label}: the commentary says no free hit in a declaration match, and one in a T20`,
+       !/free hit/i.test(said) && /Free hit to come/.test(saidT20) && /free hit: not out/.test(saidT20), said);
+    // rulesOf(): a fold's rules, handed to another fold of the same log.
+    ok(`${label}: rulesOf() carries the Edition and the missing free hit`,
+       rulesOf([decl]).format === "declaration" && rulesOf([decl]).edition === decl.lawsEdition && rulesOf([t20]).format === undefined
+       && deriveInnings(nbThenBowled, rulesOf([decl])).wickets === 1);
   }
 }
 

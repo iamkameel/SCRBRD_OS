@@ -87,23 +87,26 @@ function columnsFor(matchId, ev) {
 }
 
 /**
- * The fixture's start, which dates the match and so decides the Edition of
- * the Laws it is scored under (SCRBRD-113; packages/scoring edition.mjs). The
- * fold is told it (FoldContext.startsAt) so the server judges by the date the
- * school scheduled, as the pad does for a fixture it opened from here. Read
- * as the caller, under the match's own read policy; a match the caller
- * cannot see answers null, and the fold then dates the match by its first
- * event, as it does a match with no fixture.
+ * What the fold is told about the fixture (SCRBRD-113; FoldContext in
+ * packages/scoring replay.mjs): its start, which dates the match and so
+ * decides the Edition of the Laws it is scored under (edition.mjs), and its
+ * format, which decides whether a no-ball gives a free hit (format.mjs). So
+ * the server judges and folds by the date the school scheduled and the
+ * format it stated, as the pad does for a fixture it opened from here, and
+ * as SQL reads the same row (db/54). Read as the caller, under the match's
+ * own read policy; a match the caller cannot see answers nulls, and the fold
+ * then dates the match by its first event and gives a free hit after every
+ * no-ball, as it does a match with no fixture.
  * @param {{ query: Function }} client
  * @param {string | null | undefined} matchId
- * @returns {Promise<string | null>}  an ISO timestamp, or null
+ * @returns {Promise<{startsAt: string | null, format: string | null}>}
  */
-async function matchStartsAt(client, matchId) {
-  if (!matchId) return null;
-  /** @type {{ rows: {starts_at: Date | string | null}[] }} */
-  const { rows } = await client.query(`select starts_at from match where id = $1`, [matchId]);
+export async function matchFoldContext(client, matchId) {
+  if (!matchId) return { startsAt: null, format: null };
+  /** @type {{ rows: {starts_at: Date | string | null, format: string | null}[] }} */
+  const { rows } = await client.query(`select starts_at, format from match where id = $1`, [matchId]);
   const t = rows[0]?.starts_at ?? null;
-  return t == null ? null : new Date(t).toISOString();
+  return { startsAt: t == null ? null : new Date(t).toISOString(), format: rows[0]?.format ?? null };
 }
 
 /**
@@ -317,7 +320,7 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
       /** @type {{ rows: BallEventRow[] }} */
       const { rows } = await client.query(
         `select ${EVENT_COLUMNS} from ball_event where match_id = $1 order by seq`, [matchId]);
-      return new MatchFold(rows.map(fromRow), { startsAt: await matchStartsAt(client, matchId) });
+      return new MatchFold(rows.map(fromRow), await matchFoldContext(client, matchId));
     };
 
     /**
@@ -538,6 +541,18 @@ export async function readEvents(pool, secret, bearer, matchId, sinceSeq = 0) {
 }
 
 /**
+ * How to fold this match (matchFoldContext()), as the caller reads the
+ * fixture — for the events read, so a reader that folds the log (the pad,
+ * the Match Centre) folds it as the server does.
+ * @param {Pool} pool @param {string} secret
+ * @param {string | import("../auth/auth.mjs").Principal | undefined} bearer
+ * @param {string} matchId
+ */
+export async function readFoldContext(pool, secret, bearer, matchId) {
+  return runAsPrincipal(pool, secret, bearer, (client) => matchFoldContext(client, matchId));
+}
+
+/**
  * How many of this device's events the server holds for review on this
  * match, not yet released or discarded (SCRBRD-089). The device is the
  * principal's (app_device_id(), set by runAsPrincipal from the token or the
@@ -594,7 +609,10 @@ export function eventRoutes({ pool, secret }) {
         const principal = who(req);
         const rows = await readEvents(pool, secret, principal, req.params.id, Number(req.query?.since || 0));
         const quarantined = await quarantinedHere(pool, secret, principal, req.params.id);
-        res.json({ matchId: req.params.id, events: rows, quarantined });
+        // How to fold it (SCRBRD-113): the fixture's start and format, so
+        // every reader of the log folds it as the server does.
+        const fold = await readFoldContext(pool, secret, principal, req.params.id);
+        res.json({ matchId: req.params.id, events: rows, quarantined, fold });
       } catch (/** @type {any} */ e) {
         if (e.code === "42501") return res.status(403).json({ error: "not_permitted" });
         res.status(e.status || 500).json({ error: e.code || e.message });
@@ -729,9 +747,9 @@ export function amendmentRoutes({ pool, secret }) {
         const written = log.find((r) => r.idempotency_key === out.void_key);
         const { rows: owner } = await client.query(
           `select match_id from ball_event where idempotency_key = $1`, [out.void_key]);
-        const startsAt = await matchStartsAt(client, owner[0]?.match_id);
+        const ctx = await matchFoldContext(client, owner[0]?.match_id);
         const why = written
-          ? amendmentRefusal(new MatchFold(log.filter((r) => r.seq < written.seq).map(fromRow), { startsAt }).view(), fromRow(written))
+          ? amendmentRefusal(new MatchFold(log.filter((r) => r.seq < written.seq).map(fromRow), ctx).view(), fromRow(written))
           // The approver cannot read the log they would be amending. Nothing
           // can be judged, so nothing is written.
           : "log_unreadable";
@@ -868,9 +886,9 @@ export function quarantineRoutes({ pool, secret }) {
         // row's seq, a NOT NULL integer. (quarantine_resolve() answers an
         // accepted release with the seq it wrote; its only ok row without
         // one is a rejection, returned above.)
-        const startsAt = await matchStartsAt(client, q[0].match_id);
+        const ctx = await matchFoldContext(client, q[0].match_id);
         const why = released
-          ? lawsRefusal(new MatchFold(log.filter((r) => r.seq < /** @type {number} */ (out.seq)).map(fromRow), { startsAt }).view(), fromRow(released))
+          ? lawsRefusal(new MatchFold(log.filter((r) => r.seq < /** @type {number} */ (out.seq)).map(fromRow), ctx).view(), fromRow(released))
           // The approver cannot read the log they would be adding to. Nothing
           // can be judged, so nothing is written.
           : "log_unreadable";

@@ -251,8 +251,10 @@ export default function SCRBRD_OS() {
       setScorerResume({ cfg: {
         matchId: m.id, team1: m.homeTeam, team2: m.awayTeam,
         teamCode: m.homeTeam, overs: m.overs ?? 20, live: true,
-        // The fixture's start dates the match for the Laws (SCRBRD-113).
+        // The fixture's start dates the match for the Laws, and its format
+        // says whether a no-ball gives a free hit (SCRBRD-113).
         ...(m.startsAt ? { startsAt: m.startsAt } : {}),
+        ...(m.format ? { format: m.format } : {}),
         ...(restored ? { restored: true } : {}),
       } });
       setScorerMatchId(m.id);
@@ -316,7 +318,7 @@ export default function SCRBRD_OS() {
             // The scorer wants the product's vocabulary, and asMatch lives in
             // lib/live.js behind a hook. Only three fields are needed here.
             if (r) m = { id: r.id, homeTeam: r.team_code, awayTeam: r.opponent,
-                         overs: r.overs, live: true, status: r.status, startsAt: r.starts_at ?? null };
+                         overs: r.overs, live: true, status: r.status, startsAt: r.starts_at ?? null, format: r.format ?? null };
           } catch { /* offline: fall through to what this device has */ }
         }
         // SCRBRD-078. A live fixture's pad reopens from what this device
@@ -330,7 +332,7 @@ export default function SCRBRD_OS() {
         // nothing to ask, leave the scorer on the shell mid-over.
         if (!m && !serverAnswered && s.scorerCfg?.live && s.scorerCfg.matchId === s.scorerMatchId) {
           const c = s.scorerCfg;
-          m = { id: c.matchId, homeTeam: c.team1, awayTeam: c.team2, overs: c.overs, live: true, startsAt: c.startsAt ?? null };
+          m = { id: c.matchId, homeTeam: c.team1, awayTeam: c.team2, overs: c.overs, live: true, startsAt: c.startsAt ?? null, format: c.format ?? null };
         }
         // The demo: no session and no live fixture, so the client-side scoping.
         if (!m && !signedIn()) m = scoped("matches", s.role ?? role).find(x => x.id === s.scorerMatchId);
@@ -351,7 +353,7 @@ export default function SCRBRD_OS() {
     // the pad, which asks again.
     saveSession({ appState: loginForPad ? "app" : appState, role, userName, page, scorerMatchId: scorerOpen ? scorerMatchId : null,
       scorerCfg: c ? { matchId: c.matchId, team1: c.team1, team2: c.team2, teamCode: c.teamCode, overs: c.overs, live: true,
-                       ...(c.startsAt ? { startsAt: c.startsAt } : {}) } : null });
+                       ...(c.startsAt ? { startsAt: c.startsAt } : {}), ...(c.format ? { format: c.format } : {}) } : null });
   }, [appState, role, userName, page, scorerOpen, scorerMatchId, scorerResume, loginForPad]);
 
   // Counted over the notices the SERVER agreed to send this person. A badge is

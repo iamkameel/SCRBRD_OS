@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { batHandOf, chargedToBowler, normaliseDismissal, placementFromTap, screenAngle, suspensionWords } from "@scrbrd/scoring";
 import { deriveCommentary } from "@scrbrd/scoring/commentary";
+import { rulesOf } from "@scrbrd/scoring";
 import { nameBook } from "../lib/matchCentre.js";
 import { D, T, clr, inkOn, px, textOn } from "../design/tokens.js";
 import { can } from "../rbac/index.js";
@@ -488,7 +489,9 @@ function CommentaryCard({inn,innings,events}){
     const logs=events??[];
     if(!logs.some(l=>l?.length))return[];
     const nameOf=nameBook(innings??[inn]);
-    return deriveCommentary(logs,{nameOf:(ref)=>nameOf(ref),sensitive:true});
+    // Folded under the rules the pad's own fold was (the Edition, the free
+    // hit: SCRBRD-113), so the words and the scorecard agree.
+    return deriveCommentary(logs,{nameOf:(ref)=>nameOf(ref),sensitive:true,ctx:rulesOf(innings)});
   // The fold is derived from `events`; the names come with it.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[events]);
