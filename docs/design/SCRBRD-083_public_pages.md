@@ -767,6 +767,10 @@ say what was decided (the rule document is the record, this design is not).
 
 ## 9 · Open questions for Kameel
 
+### Decided (Kameel, 2026-09-27)
+
+- **Q8 — no page-view counter.** Public pages count nothing per match or per visitor; a builder adds none.
+
 | # | Question | Recommendation |
 |---|---|---|
 | **Q1** | **"At once."** C3 says a withdrawal reaches every page at once. The design gives: the next request in the ordinary case (notify-driven cache flush), 60 s in the worst case (a dropped LISTEN connection), and `no-store` at the edge so no copy lives longer. Acceptable? | **Yes.** Anything tighter means no cache, and one viral link would then take the API down for the scorer too. |
