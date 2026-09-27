@@ -3,7 +3,8 @@ import { batHandOf } from "@scrbrd/scoring";
 import { T, inkOn } from "../design/tokens.js";
 import { Board } from "../ui/board.jsx";
 import { Icon } from "../ui/icons.jsx";
-import { SEGS } from "./field.js";
+import { didNotTravel } from "./delivery.js";
+import { placeWords } from "./field.js";
 import { boardFromInnings } from "./boardData.js";
 import { WagonWheel } from "./panels.jsx";
 import { ALL_SHOTS_FLAT, SHOT_CATS } from "./shots.js";
@@ -213,22 +214,42 @@ function ShotPhase({ shot, onShot }) {
 
 // ── Phase 2: the area ───────────────────────────────────────────
 
+/**
+ * Where the ball went: a POINT, not a sector (SCRBRD-101, closing SCRBRD-095
+ * item 1). One tap on the field, no snapping, through the same wheel and the
+ * same placementFromTap() the Pro hub records a point with — so the ball is
+ * the same event whichever wheel the scorer used. The field is laid out for
+ * the striker's hand (OFF and LEG follow him), and the position is named, in
+ * the engine's words, while the finger is down; the stepper keeps it after.
+ */
 function AreaPhase({ inn, area, onArea, onNone }) {
-  const [view, setView] = useState("wagon");
+  const [preview, setPreview] = useState(null);
+  const words = preview ? placeWords(preview) : null;
   return (
     <div data-testid="phase-area" style={{ display: "grid", gap: T.space.sm }}>
       <div style={{ display: "flex", alignItems: "center", gap: T.space.sm }}>
-        <p style={{ ...T.role.body, flex: 1, color: T.content.secondary, margin: 0 }}>Tap where the ball went.</p>
+        <p data-testid="area-prompt" aria-live="polite" style={{ ...T.role.body, flex: 1, color: words ? T.content.primary : T.content.secondary,
+          fontWeight: words ? 600 : undefined, margin: 0 }}>{words ?? "Tap where the ball went."}</p>
         <Key face="Didn’t travel" testid="area-none" onClick={onNone} say="Didn’t travel: blocked, or no stroke"
           style={{ padding: `0 ${T.space.md}`, flexShrink: 0 }}/>
       </div>
-      <WagonWheel bare ballLog={inn.ballLog} selSeg={area} onSel={(s) => s && onArea(s)}
+      <WagonWheel bare ballLog={inn.ballLog} selSeg={area?.theta != null ? area : null}
+        onPlace={(p) => { setPreview(null); onArea(p); }} onPlacing={setPreview}
         batHand={batHandOf(inn)} handFor={(b) => batHandOf(inn, b.strikerId)}
-        viewMode={view} onViewMode={setView} hidden={EMPTY} onToggle={() => {}}/>
+        viewMode="wagon" onViewMode={() => {}} hidden={EMPTY} onToggle={() => {}}/>
     </div>
   );
 }
 const EMPTY = new Set();
+
+/**
+ * What the pad hands the engine's onCommitDetailed for a ball: the area goes
+ * WHOLE — the point placementFromTap() built, or didNotTravel() — exactly as
+ * the Pro hub hands its point to commitBall, so the two wheels record one
+ * event (apps/web/test/pad-point.test.mjs). No area (Basic Scoring, or the
+ * one-tap dot) is no placement, and the engine says why as it always has.
+ */
+export const padCommit = (type, value, shot, area) => [type, value, shot, area?.seg ?? null, area?.zone ?? null, area ?? undefined];
 
 // ── Phase 3: the outcome (and Basic Scoring, which is this alone) ──
 
@@ -398,7 +419,7 @@ function Strip({ extra, onExtra, onDot, onUndo, undoWhat, midBall, panel = null 
 export function Pad({ inn, basic, onCommitDetailed, onWicketCtx, onWide, onNoBall, onUndo, guard, undoWhat = null }) {
   const [phase, setPhase] = useState(1);      // 1 Shot · 2 Area · 3 Outcome
   const [shot, setShot] = useState(null);
-  const [area, setArea] = useState(null);     // {seg, zone} | null (didn't travel)
+  const [area, setArea] = useState(null);     // a placement: the point tapped, or didNotTravel() | null (not asked yet)
   const [extra, setExtra] = useState(null);   // the kind whose runs are being asked
   if (!inn) return null;
 
@@ -406,8 +427,8 @@ export function Pad({ inn, basic, onCommitDetailed, onWicketCtx, onWide, onNoBal
   // Off the pads or the body are leg byes; beaten and ran are byes; otherwise
   // off the bat. Unchanged from the pad before the redesign.
   const runType = (v) => { if (v <= 0) return "run"; if (shot === "padded" || shot === "hit_body") return "LB"; if (shot === "missed") return "B"; return "run"; };
-  const commitRun = (v) => { onCommitDetailed(runType(v), v, shot, area?.seg ?? null, area?.zone ?? null); reset(); };
-  const commitWicket = () => { onWicketCtx(shot, area?.seg ?? null, area?.zone ?? null); reset(); };
+  const commitRun = (v) => { onCommitDetailed(...padCommit(runType(v), v, shot, area)); reset(); };
+  const commitWicket = () => { onWicketCtx(shot, area?.seg ?? null, area?.zone ?? null, area ?? undefined); reset(); };
 
   // Basic Scoring never has a shot or an area: these are the one-tap pad's calls.
   const basicRun = (v) => { setExtra(null); onCommitDetailed("run", v, null, null, null); };
@@ -432,8 +453,7 @@ export function Pad({ inn, basic, onCommitDetailed, onWicketCtx, onWide, onNoBal
   };
 
   const shotMeta = shot ? ALL_SHOTS_FLAT.find((s) => s.id === shot) : null;
-  const areaWord = area ? SEGS[area.seg]?.label + (area.zone === "boundary" ? " · boundary" : area.zone === "outer" ? " · outfield" : "")
-    : phase > 2 ? "Didn’t travel" : null;
+  const areaWord = area ? (placeWords(area) ?? "Didn’t travel") : phase > 2 ? "Didn’t travel" : null;
   const note = shot === "padded" || shot === "hit_body" ? "Runs off the pads or body are recorded as leg byes."
     : shot === "missed" ? "Runs after a miss are recorded as byes." : null;
 
@@ -467,7 +487,7 @@ export function Pad({ inn, basic, onCommitDetailed, onWicketCtx, onWide, onNoBal
       )}
       <div style={behind}>
         {phase === 1 && <ShotPhase shot={shot} onShot={(id) => { setShot(id); setArea(null); setPhase(2); }}/>}
-        {phase === 2 && <AreaPhase inn={inn} area={area} onArea={(s) => { setArea(s); setPhase(3); }} onNone={() => { setArea(null); setPhase(3); }}/>}
+        {phase === 2 && <AreaPhase inn={inn} area={area} onArea={(s) => { setArea(s); setPhase(3); }} onNone={() => { setArea(didNotTravel(shot)); setPhase(3); }}/>}
         {phase === 3 && <OutcomeKeys onRun={commitRun} onWicket={commitWicket} note={note}/>}
       </div>
       {strip}

@@ -49,6 +49,9 @@ const SUITES = [
   ["placement", "packages/scoring/test/placement.test.mjs"],
   ["spatial",  "packages/scoring/test/spatial.test.mjs"],
   ["wheel",    "apps/web/test/wheel.test.mjs"],
+  // The pad's Area step records a point, the same event as the Pro hub's for
+  // the same tap (SCRBRD-101). Imports pad.jsx, so it needs the transform.
+  ["pad-point", "apps/web/test/pad-point.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["roadmap",  "apps/web/test/roadmap.test.mjs"],
   // Pure derivations behind the Post-Match Report and Season Awards screens
   // (SCRBRD-082/084) — no DOM, no database, just the fold's own shapes.

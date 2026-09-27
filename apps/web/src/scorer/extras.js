@@ -84,7 +84,10 @@ export function extraCall(kind, runs, { basic = false, shot = null, area = null,
       // what was chosen before the extra (nothing, on the idle pad).
       return basic
         ? { to: "commit", args: [kind, runs, null, null, null] }
-        : { to: "commit", args: [kind, runs, shot, area?.seg ?? null, area?.zone ?? null] };
+        // A point from the Area step (SCRBRD-101) goes on whole, as the runs'
+        // does; a bare {seg, zone} is a sector, recorded as it always was.
+        : { to: "commit", args: [kind, runs, shot, area?.seg ?? null, area?.zone ?? null,
+            ...(area?.placementSource || area?.placementNull ? [area] : [])] };
     default: return null;
   }
 }

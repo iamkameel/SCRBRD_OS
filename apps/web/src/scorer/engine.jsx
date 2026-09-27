@@ -4,7 +4,7 @@ import {
   deriveInnings, inningsStart, batters as battersEvent, bowler as bowlerEvent,
   ball as ballEvent, revision as revisionEvent, retire as retireEvent, sealInnings,
   newEventId, KIND, battingFirst, tossFromRow, firstInningsSides, fromRow,
-  CAPTURE_PROFILE,
+  CAPTURE_PROFILE, batHandOf,
   DISMISSAL, DISMISSAL_LABEL, RETIRE_REASON, BOWLER_CHANGE_REASON, isMidOver, scoringReadiness, SCORING_BLOCK, lawsRefusal, REFUSAL_TEXT, LOCAL_ONLY,
   lastUndoableIndex, likelyCause,
 } from "@scrbrd/scoring";
@@ -26,7 +26,8 @@ import { MenuItem, MenuSection, PadMenu } from "./padMenu.jsx";
 import { ExitKey, Pad, PadBoard } from "./pad.jsx";
 import { SyncBanner } from "./syncBanner.jsx";
 import { TossSheet } from "./toss.jsx";
-import { SEGS } from "./field.js";
+import { areaWords } from "./field.js";
+import { deliveryOf } from "./delivery.js";
 import { fmtOv } from "./format.js";
 import { ALL_SHOTS } from "./shots.js";
 import { AnalysisDashboard, ManhattanChart } from "./charts.jsx";
@@ -958,15 +959,19 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
     if(!guardReady())return;
     commitBall("run",value,null,null,null,null);
   };
-  // 3-phase commit: type may be run / B (bye) / LB (leg-bye), with shot + area
-  const onCommitDetailed=(type,value,shot,seg,zone)=>{
+  // 3-phase commit: type may be run / B (bye) / LB (leg-bye), with shot + area.
+  // `placement` is the Area step's whole placement (SCRBRD-101): a point from
+  // placementFromTap(), exactly as the Pro hub's wheel records one, or the
+  // "didn't travel" noPlacement(). Basic Scoring passes none.
+  const onCommitDetailed=(type,value,shot,seg,zone,placement)=>{
     if(!guardReady())return;
-    commitBall(type,value,shot,seg,zone,null);
+    commitBall(type,value,shot,seg,zone,null,placement);
   };
-  // Wicket carrying the shot + area context captured in phases 1–2
-  const onWicketCtx=(shot,seg,zone)=>{
+  // Wicket carrying the shot + area context captured in phases 1–2 — the
+  // point too, so a catch keeps where it was taken.
+  const onWicketCtx=(shot,seg,zone,placement)=>{
     if(!guardReady())return;
-    setModalCtx({shot,seg:seg??null,zone:zone??null});
+    setModalCtx({shot,seg:seg??null,zone:zone??null,placement:placement??null});
     setModal("wicket");
   };
 
@@ -983,7 +988,10 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
   // Hub stage 2: wicket
   const onHubWicket=()=>{
     if(!guardReady())return;
-    setModalCtx({shot:hubShot,seg:selSeg?.seg??null,zone:selSeg?.zone??null});
+    // selSeg is the wheel's whole placement (onFieldSel), point and all: it
+    // used to reach the wicket as seg and zone only, and a caught ball lost
+    // where it was caught (SCRBRD-101).
+    setModalCtx({shot:hubShot,seg:selSeg?.seg??null,zone:selSeg?.zone??null,placement:selSeg?.placementSource?selSeg:null});
     setModal("wicket");
   };
 
@@ -1368,8 +1376,10 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
     // A run out carries the runs completed before it, who was out when it
     // was not the striker, and — when runs were completed — the end the
     // wicket was put down at (SCRBRD-069), which the fold empties.
+    // Where the ball went: the whole placement when the pad or the hub captured
+    // one (a point, or "didn't travel"), else the bare seg and zone as before.
     const ev=ballEvent({type:"W",value:extra.runs??0,shot:modalCtx?.shot||null,
-      seg:modalCtx?.seg??null,zone:modalCtx?.zone??null,
+      ...(modalCtx?.placement??{seg:modalCtx?.seg??null,zone:modalCtx?.zone??null}),
       dismissal:mode,fielder:fielder||null,freeHit,
       ...crease(inn),
       ...(extra.dismissed?{dismissed:extra.dismissed}:{}),
@@ -1992,7 +2002,9 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
                 <div style={{padding:"12px 16px",display:"flex",flexDirection:"column",gap:"6px"}}>
                   {[...(inn?.ballLog||[])].reverse().slice(0,30).map((b,i)=>{
                     const shot=b.shot?ALL_SHOTS.find(s=>s.id===b.shot):null;
-                    const seg=b.seg!=null?SEGS[b.seg]:null;
+                    // Where it went, for the batter who faced it: a stored seg
+                    // is the screen's, mirrored for a left-hander (SCRBRD-101).
+                    const where=areaWords(b,batHandOf(inn,b.strikerId));
                     return (
                       <div key={i} style={{display:"flex",alignItems:"flex-start",gap:"10px",padding:"8px 0",
                         borderBottom:`1px solid ${D.border}`,opacity:1-i*.025}}>
@@ -2009,7 +2021,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
                           </div>
                           <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginTop:"2px",display:"flex",gap:"8px",flexWrap:"wrap"}}>
                             {shot&&<span style={{color:shot.color}}>{shot.label}</span>}
-                            {seg&&<span><Icon name="map-pin"/> {seg.label}{b.zone==="boundary"?" · Boundary":b.zone==="outer"?" · Outfield":""}</span>}
+                            {where&&<span><Icon name="map-pin"/> {where}</span>}
                             <span style={{color:D.textMuted}}>Over {(b.over||0)+1}.{(b.ballInOver||0)+1}</span>
                           </div>
                         </div>
