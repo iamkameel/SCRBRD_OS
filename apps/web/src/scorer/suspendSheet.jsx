@@ -304,7 +304,7 @@ function ReportItem({ s, canFile, matchId }) {
       )}
       {canFile && !s.playerId && (
         <p style={{ ...body(), fontSize: "14px" }}>
-          {s.name} has no record on SCRBRD (his name was typed), so there is no record to file here. Report it to his school.
+          {s.name} was typed by name, not picked from a roster, so there is no record here to file against. Report it to his school.
         </p>
       )}
       {state.done && <p role="status" data-testid="suspend-report-done" style={{ ...body(), color: T.content.primary }}>Filed. The school has it.</p>}
