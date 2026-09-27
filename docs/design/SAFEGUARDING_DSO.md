@@ -871,6 +871,14 @@ school asks.
 
 ## 10 · Open questions for Kameel
 
+**Decided (Kameel, 2026-09-27): every recommendation below** ("as per recommendation"). So: a DSO's removal
+takes seven days' notice confirmed by the provincial DSO (phase 5; the trigger's generic wording until then); a
+suspension reaches one tenant, and the provincial DSO acts elsewhere by hand; the DSO reaches a family only through
+an open concern, logged; one union per province, with a test; Kameel makes the first union and federation
+principal assignments with CSA's names, and they appoint the DSOs; purge is pressed by the tenant's DSO from a due
+list, never a job; the office records a pupil's own consent from the signed Annexure C form; `enquiry` loses
+`medical.status.read` in K3's file too.
+
 Only what the decisions leave open. Each has a recommendation.
 
 1. **Ending a DSO appointment: an immediate refusal, or a notice period?** The decided
