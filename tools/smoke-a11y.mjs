@@ -80,7 +80,12 @@ const TYPE_FLOOR_CEILING = {
   // Step 3b: the pad again, after an over is recorded, so the chips on the
   // board are on screen and counted. 0, like the pad.
   padOver:     0,
-};                   // 72 in all
+  // SCRBRD-095 item 2: the Pro hub — scoring.jsx's ScoringHub/ScoringPanel
+  // and the cards it shows (panels.jsx, charts.jsx' ManhattanChart) — which
+  // this walk never opened before. Measured 2026-09-27 at 0, once the hub's
+  // own Lbl/Badge eyebrows and pills were brought onto the shared floor.
+  pro:         0,
+};                   // 80 in all
 
 /**
  * Things tapped under 44px, on the pad (§3.5, §3.8: "no tappable element
@@ -92,6 +97,8 @@ const TYPE_FLOOR_CEILING = {
 const TAP_FLOOR_CEILING = {
   pad:         0,
   padOver:     0,
+  // SCRBRD-095 item 2: the Pro hub's own keys and pills, not only the pad's.
+  pro:         0,
 };
 
 /**
@@ -133,6 +140,8 @@ const EMOJI_CEILING = {
   matchview:   0,
   pad:         0,
   padOver:     0,
+  // SCRBRD-095 item 2: the Pro hub was never opened by this walk before.
+  pro:         0,
 };
 
 // Each theme's own surfaces and inks — values the other theme never uses — so
@@ -607,6 +616,47 @@ async function walk(theme) {
        chips.every((c) => c.w >= 24 && c.h >= 24 && /tabular-nums/.test(c.tab)), JSON.stringify(chips.filter((c) => c.w < 24 || c.h < 24)));
     ok("...and the over is said in words", /This over: .*4 runs.*wide/.test(await page.locator('[data-testid="board-over"] .sr-only').textContent().catch(() => "")));
     await measure(page, theme, "padOver");
+
+    // ── Pro mode (SCRBRD-095 item 2) ──
+    // The hub (scoring.jsx) and the cards it shows (panels.jsx, charts.jsx'
+    // ManhattanChart) kept their pre-2.1 styling — sub-12px labels, badges and
+    // pills below the tap floor — because this walk never opened them: the
+    // pad it measures every run is the three-phase or Basic Scoring one.
+    // Falsified below, on this exact screen, before it is trusted.
+    group(`${T_} — Pro mode`);
+    await page.locator('[data-testid="pad-menu"]').click({ timeout: 2500 });
+    await page.waitForTimeout(300);
+    await page.locator('[data-testid="pad-pro-mode"]').click({ timeout: 2500 });
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(500);
+    ok("Pro mode replaces the three-phase pad with the hub",
+       await page.evaluate(() => !document.querySelector('[data-testid="three-phase-pad"]') && !document.querySelector('[data-testid="basic-pad"]')));
+    // The falsification: a 9px line, a 30px key and an emoji, planted on THIS
+    // screen — proving the plumbing a "pro" ceiling relies on actually sees
+    // what is on it, not only what the landing page's own probe (above)
+    // already proved of the shared survey/smallTargets/emoji functions.
+    await page.evaluate(() => {
+      const d = document.createElement("div");
+      d.innerHTML = '<p style="font-size:9px">pro probe small</p><button style="width:30px;height:30px">🎯</button>';
+      document.body.appendChild(d);
+    });
+    const proProbeText = await survey(page);
+    const proProbeTiny = await smallTargets(page);
+    const proProbeEmoji = await emojiInControls(page);
+    await page.evaluate(() => document.body.lastElementChild.remove());
+    ok("...the Pro mode probe: a 9px line is seen", proProbeText.some((i) => i.text === "pro probe small" && i.size < 12));
+    ok("...a 30px key is seen", proProbeTiny.some((t) => /30x30/.test(t)));
+    ok("...and an emoji in a control is seen", proProbeEmoji.length > 0, proProbeEmoji.join(" · "));
+    await measure(page, theme, "pro");
+    unnamed = await unnamedControls();
+    ok("every control in Pro mode has a name", unnamed.length === 0, unnamed.slice(0, 5).join(", "));
+    // Back to the ordinary pad, so the rest of this walk (menu, theme,
+    // Colours) drives the screen it always has.
+    await page.locator('[data-testid="pad-menu"]').click({ timeout: 2500 });
+    await page.waitForTimeout(300);
+    await page.locator('[data-testid="pad-pro-mode"]').click({ timeout: 2500 });
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(500);
 
     // ── A switch while the app is open ──
     const flipTo = theme === "daylight" ? "floodlit" : "daylight";

@@ -146,7 +146,12 @@ const BallDot = ({ ball, size=28 }) => {
   return (
     <div style={{width:size,height:size,borderRadius:"50%",background:bg,
       display:"flex",alignItems:"center",justifyContent:"center",
-      color:fg,fontSize:size*.38,fontFamily:D.mono,fontWeight:500,flexShrink:0,
+      // The dot's own diameter is decorative and stays whatever a caller
+      // asks for; the figure inside it is read, so it never drops below the
+      // §3.2 floor even where that makes the label tight against the dot's
+      // edge — the small dots (22-24px) were rendering their "Wd"/"4"/"W" at
+      // 8-9px before this.
+      color:fg,fontSize:Math.max(12,size*.38),fontFamily:D.mono,fontWeight:500,flexShrink:0,
       boxShadow:(ball.value===6||ball.value===4)?`0 0 10px ${bg}66`:"none"}}>
       {lbl}
     </div>

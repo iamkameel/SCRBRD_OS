@@ -150,7 +150,7 @@ function ManhattanChart({inn,match}){
         {[{c:D.indigo,l:"0–7"},{c:D.sky,l:"8–11"},{c:D.amber,l:"12+"},{c:D.rose,l:"Wicket"}].map(({c,l})=>(
           <div key={l} style={{display:"flex",alignItems:"center",gap:"4px"}}>
             <div style={{width:"10px",height:"10px",borderRadius:"2px",background:c,opacity:.85}}/>
-            <span style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted}}>{l}</span>
+            <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{l}</span>
           </div>
         ))}
       </div>

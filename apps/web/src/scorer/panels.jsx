@@ -97,10 +97,10 @@ function WagonWheel({ballLog=[],selSeg,onSel,onPlace,onPlacing,viewMode,onViewMo
         <div style={{marginLeft:"auto",display:"flex",gap:"2px",background:D.surf3,borderRadius:D.pill,padding:"3px"}}>
           {["wagon","heatmap"].map(m=>(
             <button key={m} onClick={()=>onViewMode(m)} className="pressBtn" style={{
-              padding:"4px 13px",borderRadius:D.pill,border:"none",cursor:"pointer",
+              minHeight:"44px",padding:"4px 15px",borderRadius:D.pill,border:"none",cursor:"pointer",
               background:viewMode===m?D.grad:"transparent",
               color:viewMode===m?T.light.ink:D.textMuted,
-              fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:"0.06em",
+              fontFamily:T.type.body,fontSize:"12px",fontWeight:700,letterSpacing:"0.04em",
               textTransform:"uppercase",transition:"all .25s",
             }}>{m==="wagon"?"Wheel":"Heat"}</button>
           ))}
@@ -218,12 +218,12 @@ function WagonWheel({ballLog=[],selSeg,onSel,onPlace,onPlacing,viewMode,onViewMo
         {legend.map(k=>{
           const col=LK_COLS[k],off=hidden.has(k);
           return(<button key={k} onClick={()=>onToggle(k)} className="pressBtn" style={{
-            display:"flex",alignItems:"center",gap:"5px",padding:"4px 10px",borderRadius:D.pill,
+            minHeight:"44px",display:"flex",alignItems:"center",gap:"5px",padding:"4px 12px",borderRadius:D.pill,
             cursor:"pointer",background:off?"transparent":`${col}12`,
             border:`1px solid ${off?D.border:`${col}38`}`,opacity:off?0.3:1,transition:"all .2s",
           }}>
             <div style={{width:"12px",height:"2px",borderRadius:"2px",background:off?D.textMuted:col}}/>
-            <span style={{color:off?D.textMuted:D.textSecondary,fontSize:"10px",fontFamily:D.head,fontWeight:600,letterSpacing:"0.05em"}}>{LEGEND_WORD[k]??k}</span>
+            <span style={{color:off?D.textMuted:D.textSecondary,fontSize:"12px",fontFamily:T.type.body,fontWeight:600,letterSpacing:"0.03em"}}>{LEGEND_WORD[k]??k}</span>
           </button>);
         })}
       </div>}
@@ -351,9 +351,9 @@ function ScorecardPanel({innings,idx}){
               <div style={{display:"flex",alignItems:"center",gap:"5px"}}>
                 {b.status==="batting"&&<div className="liveDot" style={{width:"5px",height:"5px",borderRadius:"50%",background:D.emerald,flexShrink:0}}/>}
                 <span style={{color:D.textPrimary,fontSize:"13px",fontFamily:D.body,fontWeight:500}}>{b.name}</span>
-                {b.status==="dnb"&&<span style={{color:D.textMuted,fontSize:"10px",fontFamily:D.body}}>(dnb)</span>}
+                {b.status==="dnb"&&<span style={{color:D.textMuted,fontSize:"12px",fontFamily:D.body}}>(dnb)</span>}
               </div>
-              {b.dismissal&&<div style={{color:D.textMuted,fontSize:"10px",marginTop:"2px",fontFamily:D.body,fontStyle:"italic"}}>{b.dismissal}</div>}
+              {b.dismissal&&<div style={{color:D.textMuted,fontSize:"12px",marginTop:"2px",fontFamily:D.body,fontStyle:"italic"}}>{b.dismissal}</div>}
             </div>
             {[b.runs,b.balls,b.fours,b.sixes,SR(b.runs,b.balls)].map((v,j)=>(
               <div key={j} style={{textAlign:"right",fontFamily:D.mono,fontSize:"12px",fontWeight:j===0?"500":"400",
@@ -362,7 +362,7 @@ function ScorecardPanel({innings,idx}){
           </div>
         ))}
         <div style={{padding:"7px 14px",display:"flex",justifyContent:"space-between"}}>
-          <span style={{color:D.textMuted,fontSize:"10px",fontFamily:D.body}}>
+          <span style={{color:D.textMuted,fontSize:"12px",fontFamily:D.body}}>
             Extras: Wd {i.extras.wide} · NB {i.extras.noBall} · B {i.extras.bye} · LB {i.extras.legBye}{i.extras.penalty>0?` · Pen ${i.extras.penalty}`:""}
           </span>
           <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textSecondary}}>{xtra}</span>
@@ -376,7 +376,7 @@ function ScorecardPanel({innings,idx}){
             {i.fow.map((f,ii)=>(
               <div key={ii} style={{background:`${D.rose}10`,border:`1px solid ${D.rose}28`,borderRadius:D.sm,padding:"4px 10px"}}>
                 <span style={{color:D.roseText,fontFamily:D.mono,fontSize:"12px",fontWeight:500}}>{f.runs}/{f.wickets}</span>
-                <span style={{color:D.textMuted,fontSize:"10px",fontFamily:D.body,marginLeft:"5px"}}>{f.batsman} ({f.overs})</span>
+                <span style={{color:D.textMuted,fontSize:"12px",fontFamily:D.body,marginLeft:"5px"}}>{f.batsman} ({f.overs})</span>
               </div>
             ))}
           </div>
@@ -402,7 +402,7 @@ function ScorecardPanel({innings,idx}){
             {i.bowlerChanges.map((c,ci)=>{
               const nm=id=>i.bowlers.find(b=>b.id===id)?.name??id??"?";
               return (
-                <span key={ci} style={{color:D.textMuted,fontSize:"10px",fontFamily:D.body}}>
+                <span key={ci} style={{color:D.textMuted,fontSize:"12px",fontFamily:D.body}}>
                   Over {c.over+1}.{c.ballInOver}: {nm(c.to)} took over from {nm(c.from)}{c.reason?` (${c.reason==="suspended"?"suspended":"injured"})`:" (reason not recorded)"}
                 </span>
               );
@@ -697,12 +697,12 @@ function PartnershipCard({inn}){
             <div style={{display:"flex",gap:"14px",alignItems:"baseline"}}>
               <div style={{textAlign:"right"}}>
                 <div style={{fontFamily:D.mono,fontSize:"22px",fontWeight:500,color:D.textPrimary,lineHeight:1}}>{cur?.runs||0}</div>
-                <div style={{fontFamily:D.body,fontSize:"9px",color:D.textMuted,textAlign:"center"}}>{cur?.balls||0}b</div>
+                <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,textAlign:"center"}}>{cur?.balls||0}b</div>
               </div>
               {(cur?.balls||0)>0&&(
                 <div style={{textAlign:"right"}}>
                   <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textSecondary}}>{RR(cur.runs,cur.balls)}</div>
-                  <div style={{fontFamily:D.body,fontSize:"9px",color:D.textMuted}}>RR</div>
+                  <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>RR</div>
                 </div>
               )}
             </div>
@@ -724,13 +724,13 @@ function PartnershipCard({inn}){
             <div key={i} style={{marginBottom:"8px"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"3px"}}>
                 <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
-                  <span style={{fontFamily:D.mono,fontSize:"10px",color:D.roseText,fontWeight:600}}>{p.wicket-1}/{p.wicket}</span>
-                  <span style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary}}>{p.bat1} & {p.bat2}</span>
+                  <span style={{fontFamily:D.mono,fontSize:"12px",color:D.roseText,fontWeight:600}}>{p.wicket-1}/{p.wicket}</span>
+                  <span style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary}}>{p.bat1} & {p.bat2}</span>
                 </div>
                 <div style={{display:"flex",gap:"10px",alignItems:"baseline"}}>
                   <span style={{fontFamily:D.mono,fontSize:"13px",fontWeight:500,color:D.textPrimary}}>{p.runs}</span>
-                  <span style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>{p.balls}b</span>
-                  <span style={{fontFamily:D.mono,fontSize:"10px",color:D.textSecondary}}>{RR(p.runs,p.balls)}</span>
+                  <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{p.balls}b</span>
+                  <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textSecondary}}>{RR(p.runs,p.balls)}</span>
                 </div>
               </div>
               <div style={{height:"3px",background:D.surf3,borderRadius:"3px",overflow:"hidden"}}>

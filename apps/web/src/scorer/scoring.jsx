@@ -37,8 +37,8 @@ function ScoringHub({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selSeg
         {STAGE_LABELS.map((s,i)=>(
           <Fragment key={s}>
             <div style={{
-              padding:"2px 9px",borderRadius:D.pill,
-              fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",
+              padding:"2px 9px",minHeight:"24px",display:"flex",alignItems:"center",borderRadius:D.pill,
+              fontFamily:T.type.body,fontSize:"12px",fontWeight:700,letterSpacing:"0.04em",textTransform:"uppercase",
               background:i===hubStage?D.grad:i<hubStage?D.emerald+"18":"transparent",
               color:i===hubStage?T.light.ink:i<hubStage?D.emerald:D.textMuted,
               border:"1px solid "+(i===hubStage?D.indigo+"55":i<hubStage?D.emerald+"33":D.border),
@@ -50,15 +50,15 @@ function ScoringHub({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selSeg
         <div style={{marginLeft:"auto",display:"flex",gap:"6px"}}>
           {hubStage>0&&(
             <button onClick={onBack} className="pressBtn" style={{
-              padding:"3px 11px",borderRadius:D.pill,border:"1px solid "+D.border,
-              background:"transparent",cursor:"pointer",fontFamily:D.body,fontSize:"11px",color:D.textSecondary}}>
+              minHeight:"44px",padding:"3px 14px",borderRadius:D.pill,border:"1px solid "+T.line.normal,
+              background:"transparent",cursor:"pointer",fontFamily:T.type.body,fontSize:"12px",color:T.content.secondary}}>
               ← Back
             </button>
           )}
           {hubStage>0&&(
-            <button onClick={onReset} className="pressBtn" style={{
-              padding:"3px 10px",borderRadius:D.pill,border:"1px solid "+D.border,
-              background:"transparent",cursor:"pointer",fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>
+            <button onClick={onReset} aria-label="Clear this ball's selection" className="pressBtn" style={{
+              minHeight:"44px",minWidth:"44px",padding:"3px 10px",borderRadius:D.pill,border:"1px solid "+T.line.normal,
+              background:"transparent",cursor:"pointer",fontFamily:T.type.body,fontSize:"12px",color:T.content.tertiary}}>
               ✕
             </button>
           )}
@@ -72,17 +72,17 @@ function ScoringHub({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selSeg
           <div style={{marginBottom:"14px"}}>
             <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"8px"}}>
               <Lbl>Bowler Approach</Lbl>
-              {!hubApproach&&<span style={{fontFamily:D.body,fontSize:"10px",color:D.roseText,fontWeight:500}}><Icon name="triangle-alert"/> Required</span>}
-              {hubApproach&&<span style={{fontFamily:D.body,fontSize:"10px",color:D.emerald,fontWeight:500}}>✓ Set</span>}
+              {!hubApproach&&<span style={{fontFamily:T.type.body,fontSize:"12px",color:D.roseText,fontWeight:500}}><Icon name="triangle-alert"/> Required</span>}
+              {hubApproach&&<span style={{fontFamily:T.type.body,fontSize:"12px",color:D.emerald,fontWeight:500}}>✓ Set</span>}
               <div style={{marginLeft:"auto",display:"flex",gap:"5px"}}>
                 <button onClick={onWide} className="pressBtn" style={{
-                  padding:"4px 10px",borderRadius:D.pill,border:"1px solid "+D.orange+"44",
+                  minHeight:"44px",padding:"4px 12px",borderRadius:D.pill,border:"1px solid "+D.orange+"44",
                   background:D.orange+"10",color:D.orange,cursor:"pointer",
-                  fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.05em"}}>WIDE</button>
+                  fontFamily:T.type.body,fontSize:"12px",fontWeight:700,letterSpacing:"0.03em"}}>WIDE</button>
                 <button onClick={onNoBall} className="pressBtn" style={{
-                  padding:"4px 10px",borderRadius:D.pill,border:"1px solid "+D.amber+"44",
+                  minHeight:"44px",padding:"4px 12px",borderRadius:D.pill,border:"1px solid "+D.amber+"44",
                   background:D.amber+"10",color:D.amber,cursor:"pointer",
-                  fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.05em"}}>NO BALL</button>
+                  fontFamily:T.type.body,fontSize:"12px",fontWeight:700,letterSpacing:"0.03em"}}>NO BALL</button>
               </div>
             </div>
             {/* Toggle switch */}
@@ -91,7 +91,7 @@ function ScoringHub({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selSeg
                 const isActive=hubApproach===a;
                 return (
                   <button key={a} onClick={()=>onApproach(a)} className="pressBtn" style={{
-                    flex:1,padding:"8px 12px",borderRadius:D.pill,cursor:"pointer",border:"none",
+                    flex:1,minHeight:"44px",padding:"8px 12px",borderRadius:D.pill,cursor:"pointer",border:"none",
                     fontFamily:D.body,fontSize:"12px",fontWeight:isActive?600:400,
                     background:isActive?"linear-gradient(135deg,"+D.indigo+","+D.sky+")"  :"transparent",
                     color:isActive?T.light.ink:D.textMuted,
@@ -119,9 +119,9 @@ function ScoringHub({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selSeg
                 {cat.shots.map(shot=>(
                   <button key={shot.id} onClick={()=>onShot(shot.id)} className="pressBtn" style={{
                     display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
-                    gap:"3px",padding:"9px 4px",borderRadius:D.md,cursor:"pointer",
+                    minHeight:"44px",gap:"3px",padding:"9px 4px",borderRadius:D.md,cursor:"pointer",
                     border:"1px solid "+D.border,background:D.surf2,transition:"all .15s"}}>
-                    <span style={{fontFamily:D.body,fontSize:"9px",fontWeight:500,
+                    <span style={{fontFamily:D.body,fontSize:"12px",fontWeight:500,
                       color:D.textSecondary,textAlign:"center",lineHeight:1.2}}>{shot.label}</span>
                   </button>
                 ))}
@@ -129,9 +129,9 @@ function ScoringHub({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selSeg
             </div>
           ))}
           {hubApproach&&<button onClick={onShotSkip} className="pressBtn" style={{
-            width:"100%",padding:"8px",borderRadius:D.md,border:"1px solid "+D.border,
+            width:"100%",minHeight:"44px",padding:"8px",borderRadius:D.md,border:"1px solid "+D.border,
             background:"transparent",cursor:"pointer",color:D.textMuted,
-            fontFamily:D.body,fontSize:"11px",marginTop:"4px"}}>Skip shot →</button>}
+            fontFamily:D.body,fontSize:"12px",marginTop:"4px"}}>Skip shot →</button>}
         </div>
       )}
 
@@ -142,17 +142,17 @@ function ScoringHub({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selSeg
             {shotInfo&&(
               <div style={{display:"flex",alignItems:"center",gap:"5px",padding:"4px 10px",
                 borderRadius:D.md,background:shotInfo.color+"12",border:"1px solid "+shotInfo.color+"25"}}>
-                <span style={{fontFamily:D.body,fontSize:"11px",color:textOn(shotInfo.color)}}>{shotInfo.label}</span>
+                <span style={{fontFamily:D.body,fontSize:"12px",color:textOn(shotInfo.color)}}>{shotInfo.label}</span>
               </div>
             )}
-            {!shotInfo&&<span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>No shot</span>}
-            {hubApproach&&<Badge color={D.amber} sx={{fontSize:"8px"}}>{hubApproach==="Around the wicket"?"Around":"Over"}</Badge>}
+            {!shotInfo&&<span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>No shot</span>}
+            {hubApproach&&<Badge color={D.amber}>{hubApproach==="Around the wicket"?"Around":"Over"}</Badge>}
             {/* The derived name, echoed back on tap. The sector model gave
                 the scorer this reassurance for free — you pressed a wedge
                 labelled "Cover" — and point capture has to keep it, or the
                 interface feels like it lost something in exchange for
                 precision nobody can see. */}
-            <span style={{fontFamily:D.body,fontSize:"11px",color:selSeg?D.emerald:D.amber,fontWeight:500,marginLeft:"auto"}}>
+            <span style={{fontFamily:D.body,fontSize:"12px",color:selSeg?D.emerald:D.amber,fontWeight:500,marginLeft:"auto"}}>
               {selSeg?.theta!=null
                 ? <><Icon name="map-pin"/> {positionName(selSeg.theta,selSeg.radius) ?? "placed"}</>
                 : <><Icon name="map-pin"/> Tap where it went</>}
@@ -185,19 +185,19 @@ function ScoringHub({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selSeg
             {shotInfo&&(
               <div style={{display:"flex",alignItems:"center",gap:"5px",padding:"4px 10px",
                 borderRadius:D.md,background:shotInfo.color+"12",border:"1px solid "+shotInfo.color+"25"}}>
-                <span style={{fontFamily:D.body,fontSize:"11px",color:textOn(shotInfo.color)}}>{shotInfo.label}</span>
+                <span style={{fontFamily:D.body,fontSize:"12px",color:textOn(shotInfo.color)}}>{shotInfo.label}</span>
               </div>
             )}
             {segWords&&(
               <div style={{display:"flex",alignItems:"center",gap:"5px",padding:"4px 10px",
                 borderRadius:D.md,background:D.indigo+"10",border:"1px solid "+D.indigo+"22"}}>
-                <span style={{fontSize:"11px",color:D.sky}}><Icon name="map-pin"/></span>
-                <span style={{fontFamily:D.body,fontSize:"11px",color:D.sky}}>
+                <span style={{fontSize:"12px",color:D.sky}}><Icon name="map-pin"/></span>
+                <span style={{fontFamily:D.body,fontSize:"12px",color:D.sky}}>
                   {segWords}
                 </span>
               </div>
             )}
-            {hubApproach&&<Badge color={D.amber} sx={{fontSize:"8px"}}>{hubApproach==="Around the wicket"?"Around":"Over"}</Badge>}
+            {hubApproach&&<Badge color={D.amber}>{hubApproach==="Around the wicket"?"Around":"Over"}</Badge>}
           </div>
           <Lbl sx={{marginBottom:"8px"}}>Runs Scored</Lbl>
           <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:"5px",marginBottom:"9px"}}>
@@ -216,14 +216,14 @@ function ScoringHub({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selSeg
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px",marginBottom:"9px"}}>
             {[["Bye","B"],["Leg Bye","LB"]].map(([l,t])=>(
               <button key={t} onClick={()=>t==="B"?onBye():onLegBye()} className="pressBtn" style={{
-                padding:"9px",borderRadius:D.md,cursor:"pointer",
+                minHeight:"44px",padding:"9px",borderRadius:D.md,cursor:"pointer",
                 border:"1px solid "+D.violet+"33",background:D.violet+"08",
-                color:D.violetText,fontFamily:D.head,fontSize:"10px",fontWeight:700,
-                letterSpacing:"0.05em",textTransform:"uppercase"}}>{l}</button>
+                color:D.violetText,fontFamily:T.type.body,fontSize:"12px",fontWeight:700,
+                letterSpacing:"0.03em",textTransform:"uppercase"}}>{l}</button>
             ))}
           </div>
           <button onClick={onWicket} className="pressBtn" style={{
-            width:"100%",padding:"13px",borderRadius:D.md,cursor:"pointer",
+            width:"100%",minHeight:"44px",padding:"13px",borderRadius:D.md,cursor:"pointer",
             border:"1px solid "+D.rose+"44",background:D.rose+"0e",
             color:D.roseText,fontFamily:D.head,fontSize:"13px",fontWeight:700,
             letterSpacing:"0.06em",textTransform:"uppercase",
@@ -279,7 +279,7 @@ function ScoringPanel({inn,innings,events,curIn,match,hubStage,hubShot,hubApproa
           </div>
         ))}
         {!bat1&&(
-          <button onClick={()=>setModal("opener")} style={{width:"100%",padding:"10px",background:"transparent",
+          <button onClick={()=>setModal("opener")} style={{width:"100%",minHeight:"44px",padding:"10px",background:"transparent",
             border:"none",color:D.textMuted,cursor:"pointer",fontFamily:D.body,fontSize:"13px"}}>
             + Set opening pair
           </button>
@@ -294,7 +294,7 @@ function ScoringPanel({inn,innings,events,curIn,match,hubStage,hubShot,hubApproa
             <div style={{display:"flex",alignItems:"center",gap:"5px"}}>
               <span style={{color:D.orange,fontSize:"12px"}}><Icon name="ball"/></span>
               <span style={{color:D.textPrimary,fontSize:"13px",fontFamily:D.body,fontWeight:500}}>{bow.name}</span>
-              {bow.bowlArm&&<span style={{fontFamily:D.mono,fontSize:"8px",fontWeight:700,padding:"1px 4px",borderRadius:D.pill,
+              {bow.bowlArm&&<span style={{fontFamily:D.mono,fontSize:"12px",fontWeight:700,padding:"1px 4px",borderRadius:D.pill,
                 background:`${D.violet}15`,border:`1px solid ${D.violet}33`,color:D.violetText,flexShrink:0}}>
                 {bow.bowlArm==="L"?"LA":"RA"}{bow.bowlStyle==="S"?"S":bow.bowlStyle==="M"?"M":"F"}
               </span>}
@@ -322,7 +322,7 @@ function ScoringPanel({inn,innings,events,curIn,match,hubStage,hubShot,hubApproa
       {inn?.ballLog?.length>0&&onUndo&&(
         <button onClick={onUndo} className="pressBtn" style={{
           display:"flex",alignItems:"center",justifyContent:"center",gap:"7px",
-          width:"100%",padding:"10px",borderRadius:D.md,cursor:"pointer",
+          width:"100%",minHeight:"44px",padding:"10px",borderRadius:D.md,cursor:"pointer",
           border:"1px solid "+D.border,background:"transparent",
           color:D.textMuted,fontFamily:D.body,fontSize:"12px",
           animation:"undoPop .3s cubic-bezier(.22,1,.36,1)",
@@ -330,7 +330,7 @@ function ScoringPanel({inn,innings,events,curIn,match,hubStage,hubShot,hubApproa
         }}>
           <span style={{fontSize:"14px"}}><Icon name="undo-2"/></span>
           <span>Undo last ball</span>
-          <span style={{fontFamily:D.mono,fontSize:"10px",opacity:.5,marginLeft:"auto"}}>
+          <span style={{fontFamily:D.mono,fontSize:"12px",opacity:.5,marginLeft:"auto"}}>
             {inn.ballLog.length} ball{inn.ballLog.length!==1?"s":""}
           </span>
         </button>
@@ -381,7 +381,7 @@ function ScoringBlocked({readiness,onFix,cause=null}){
       </div>
       {first.fix&&onFix&&(
         <button onClick={()=>onFix(first)} className="pressBtn" data-testid="scoring-blocked-fix"
-          style={{flexShrink:0,minHeight:"40px",padding:"8px 16px",borderRadius:D.pill,cursor:"pointer",
+          style={{flexShrink:0,minHeight:"44px",padding:"8px 16px",borderRadius:D.pill,cursor:"pointer",
             border:"none",background:D.amber,color:inkOn(D.amber),
             fontFamily:D.head,fontSize:"13px",fontWeight:700,letterSpacing:"0.02em"}}>
           {first.fix}
