@@ -363,7 +363,7 @@ try {
   ok("the menu offers it once a suspension is recorded", await has("suspend-report"));
   const rep = await said("suspend-report");
   ok(`...naming ${B}, where, why and for how long`, rep.includes(`${B} · innings 1, over 1.2`) && /A deliberate front-foot no-ball\. He may not bowl again for the rest of the innings/.test(rep), rep.slice(0, 300));
-  ok("...a scorer does not file it: the sheet says who does, and where", /The umpires file the record: in the Match Centre, open this fixture, then Report an incident/.test(await said("suspend-report-who")),
+  ok("...not filed from here (a reloaded pad is on its resume credential, and a scorer does not file conduct): the sheet says who does, and where", /[Uu]mpires (file the record: in|can also file it from) the Match Centre[:,]? open this fixture, then Report an incident/.test(await said("suspend-report-who")),
      await said("suspend-report-who"));
   ok("...no Law clause numbers", !lawNumbers(rep));
   await shoot("3-report", async () => { await openMenu("pad-suspend-report"); });
