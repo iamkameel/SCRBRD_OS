@@ -169,8 +169,8 @@ group("1. Every extra, both ways: the same bytes");
   ok("engine: recordWide(runs) is commitBall(\"Wd\",runs,null,null,null,hubApproach)",
      /const recordWide=\(runs\)=>\{\s*if\(!guardReady\(\)\)return;\s*commitBall\("Wd",runs,null,null,null,hubApproach\);/.test(eng));
   ok("engine: the one-tap wide is recordWide(0)", /const onWide=\(\)=>recordWide\(0\);/.test(eng));
-  ok("engine: onCommitDetailed is commitBall(type,value,shot,seg,zone,null)",
-     /const onCommitDetailed=\(type,value,shot,seg,zone\)=>\{\s*if\(!guardReady\(\)\)return;\s*commitBall\(type,value,shot,seg,zone,null\);/.test(eng));
+  ok("engine: onCommitDetailed is commitBall(type,value,shot,seg,zone,null,placement)",
+     /const onCommitDetailed=\(type,value,shot,seg,zone,placement\)=>\{\s*if\(!guardReady\(\)\)return;\s*commitBall\(type,value,shot,seg,zone,null,placement\);/.test(eng));
   ok("engine: recordNoBall emits noBallEvent({inn,nbType,runs,nbRuns,selShot,selSeg})",
      /const recordNoBall=\(nbType,runs,nbRuns\)=>\{\s*const nb=noBallEvent\(\{inn,nbType,runs,nbRuns,selShot,selSeg\}\);\s*emit\(nb\);/.test(eng));
   ok("engine: the no-ball sheet confirms through the same recordNoBall", /<NoBallSheet\s+onConfirm=\{recordNoBall\}/.test(eng));

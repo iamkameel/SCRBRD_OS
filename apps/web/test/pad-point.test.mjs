@@ -33,6 +33,7 @@ import {
 import { deliveryOf, didNotTravel } from "../src/scorer/delivery.js";
 import { tapAt } from "../src/scorer/field.js";
 import { padCommit } from "../src/scorer/pad.jsx";
+import { extraCall } from "../src/scorer/extras.js";
 
 let pass = 0, fail = 0;
 const ok = (n, c, why = "") => { if (c) pass++; else { fail++; console.log("  ✗", n, why); } };
@@ -84,7 +85,9 @@ group("C. The engine is wired the way this test assumes");
   ok("onCommitDetailed forwards the pad's placement to commitBall",
      /const onCommitDetailed=\(type,value,shot,seg,zone,placement\)=>\{[^}]*commitBall\(type,value,shot,seg,zone,null,placement\);/.test(engine));
   ok("the hub records its held point the same way", /commitBall\(effectiveType,value,hubShot,null,null,hubApproach,selSeg\)/.test(engine));
-  ok("commitBall builds every delivery with deliveryOf()", /const delivery=deliveryOf\(\{type,value,shot,approach,freeHit,crease:crease\(before\),seg,zone,placement\}\)/.test(engine));
+  ok("commitBall builds every delivery through deliveryEvents(), which is deliveryOf()",
+     /const evs=deliveryEvents\(\{curIn,before,freeHit,type,value,shot,seg,zone,approach,placement,shortRun,nbType\}\);/.test(engine)
+     && /const delivery = deliveryOf\(\{ type, value, shot, approach, freeHit, crease: crease\(before\), seg, zone, placement, nbType \}\);/.test(src("delivery.js")));
   ok("a wicket keeps the whole placement, from the pad (onWicketCtx) and the hub",
      /const onWicketCtx=\(shot,seg,zone,placement\)=>\{[^}]*placement:placement\?\?null/.test(engine)
        && /placement:selSeg\?\.placementSource\?selSeg:null/.test(engine)
@@ -92,7 +95,9 @@ group("C. The engine is wired the way this test assumes");
   const pad = src("pad.jsx").replace(/\s+/g, " ");
   ok("the pad's Area step captures with onPlace, not a sector's onSel", /<WagonWheel bare [^>]*onPlace=/.test(pad) && !/<WagonWheel bare [^>]*onSel=/.test(pad));
   ok("the pad commits through padCommit, runs and extras, and a wicket carries the area",
-     /onCommitDetailed\(\.\.\.padCommit\(runType\(v\), v, shot, area\)\)/.test(pad) && /onCommitDetailed\(\.\.\.padCommit\(type, v, shot, area\)\)/.test(pad)
+     /onCommitDetailed\(\.\.\.padCommit\(runType\(v\), v, shot, area\)\)/.test(pad)
+       && /extraCall\(extra, n, \{ basic, shot, area, nb \}\)/.test(pad)
+       && /\.\.\.\(area\?\.placementSource \|\| area\?\.placementNull \? \[area\] : \[\]\)/.test(src("extras.js"))
        && /onWicketCtx\(shot, area\?\.seg \?\? null, area\?\.zone \?\? null, area \?\? undefined\)/.test(pad));
   // A wicket event, as confirmWicket builds it, from each path's modalCtx.
   const placed = placementFromTap({ ...tapAt(TAP.x, TAP.y, BOX), batHand: "L" });
@@ -111,6 +116,18 @@ group("D. \"Didn't travel\" says why there is no point");
   ok("and no point is made up at the feet", [miss, pad, block].every((p) => p.theta === null && p.radius === null && p.placementSource === null && p.seg === null));
   const b = padBall(block, 0, "fwd_def");
   ok("the ball it records: no placement, the reason, full", b.placementNull === "not_applicable" && b.captureProfile === "full" && b.theta === null);
+}
+
+group("D2. A bye or leg bye after the Area step keeps the point (the two-tap extras meet point capture)");
+{
+  const placed = placementFromTap({ ...tapAt(TAP.x, TAP.y, BOX), batHand: "R" });
+  const call = extraCall("LB", 1, { shot: "flick", area: placed });
+  ok("the leg bye's commit carries the whole placement", call.to === "commit" && call.args[5] === placed, JSON.stringify(call.args));
+  const [t, v, sh, seg, zone, placement] = call.args;
+  const b = ballEvent(deliveryOf({ type: t, value: v, shot: sh, approach: null, freeHit: false, crease, seg, zone, placement }));
+  ok("...and records the point, as the runs would", b.type === "LB" && b.theta === placed.theta && b.placementSource === "point");
+  const legacy = extraCall("B", 2, { shot: null, area: { seg: 3, zone: "outer" } });
+  ok("a bare sector is still a sector, exactly as before", legacy.args.length === 5 && legacy.args[3] === 3);
 }
 
 group("E. The Laws check takes a good point (SCRBRD-077)");
