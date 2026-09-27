@@ -2939,10 +2939,49 @@ after it refused too.
   Laws, mid-over; 12 in its run, 10 back later, plus a written-out innings); every figure agrees, each row is stored
   with no W marker, and `ball_retired_batter()` / `ball_retirement_dismissal()` count none of them. Proof:
   `apps/web/test/retire-sheet.test.mjs` (the event, the refusals, the fold after a mid-over retirement and a return,
-  the sheet at the floors; falsified five ways), `tools/smoke-browser-retire.mjs` (new, registered). Not modelled: Law
+  the sheet at the floors; falsified five ways), `tools/smoke-browser-retire.mjs` (new, registered). ~~Not modelled: Law
   25.4.2's "only at the fall of a wicket or the retirement of another batter" — the Laws take a return at any empty
   end; the pad only declines to offer him straight back to the end he left. The Laws also take a retirement in an
-  innings that is over or sealed.
+  innings that is over or sealed.~~ **Built 2026-09-27**: (1) *Resuming.* The fold records each retirement that is not
+  out in `inn.retirements` (who, why, the innings' wickets when he went, the ball; it moves no figure), and
+  `lawsRefusal` takes a `batters` event naming a batter retired hurt only if, since his LATEST retirement, the wickets
+  have moved or another batter has retired — otherwise the new `resume_not_yet` ("a batter who retired hurt may resume
+  only after a wicket has fallen, or another batter has retired, since he went off"; on the pad "He can resume only
+  once a wicket has fallen or another batter has retired."; a likely cause in `causes.mjs`). An end is only ever empty
+  after a wicket or a retirement, so this refuses exactly his walking straight back into the vacancy his own
+  retirement made. A wicket with no ball counts; two off at once — the first may return at the second's retirement.
+  The clause (Law 25.4.4, not 25.4.2) is in code comments only. (2) *Over or
+  sealed.* A retirement (hurt, or an unmarked legacy one) in an innings that is over is `innings_over`, sealed
+  `innings_closed` — the codes and order a dismissal with no ball already used. The pad: the batting-order sheet's
+  "Retired hurt — may resume" list is now the Laws' answer (`retire.js` `resumeChoices`/`resumeRefusal`, asked with
+  the event the sheet would send), passed to every `BattingOrderSheet` as `resumable`; `notResuming` is gone (the Laws
+  cover it, and it forgot nothing they do not). SQL: no change — no SQL judges events (the Laws run in JS at commit
+  and at quarantine release) and no SQL reads when a batter resumed; db/98 has no retirement; db/49's and db/99's
+  fixtures write rows past the Laws and contain no resume. Found in `smoke-fold-figures`' generator (a test bug, not a
+  legitimate case): 3 resumes straight back into the batter's own vacancy (its generic `retire("hurt")` never set
+  `justRetired`) and 2 retirements hurt after a chase was won (it plays on past a target). It now asks the Laws for
+  both, after its random draws, so its stream is identical up to the first event the rules refuse (event 179 of
+  1281) and differs after it only because a different batter is in; a new assertion asks the Laws of every retirement
+  hurt and every return in its logs (12 and 12 in its run, 0 refused). Proof: `laws.test` group Q (the server's fold and the pad's
+  agreeing), `replay.test` (the record), `retire-sheet.test` (the resume list, the sheet, the over), `smoke-browser-retire`
+  G (partner retires and is not offered back; next batter in; the first retires too; the partner, whose retirement came
+  first, is offered and the server takes him; the other is not). Falsified: the rule, its record, the over and sealed checks, the sheet and the generator,
+  each mutated in turn and failing its tests. Found, not fixed: the last batter retiring hurt with nobody
+  left to come in ends the innings under the Laws; `inningsOverReason` counts wickets only, so the fold does not derive
+  that ending (the pad never offered him straight back either, so nothing new is stranded).
+  **Not built, needs SQL (2026-09-27): resuming after retired out, with the opposing captain's consent (Law 25.4.3).**
+  Proposed model: a `batters` event carrying `captainConsent: true`, which the Laws take only for a batter retired
+  out (W-marked retire, reason out — never timed out), under the same 25.4.4 timing; the fold on it takes the
+  wicket back (wickets − 1, his `fow` and `nonBallWickets` entries removed, status batting, no dismissal line, his
+  line going on), and the 25.4.4 check moves from `inn.wickets` to a counter that only rises. Stopped before building:
+  every SQL reader counts a W-marked retire as a standing wicket and dismissal from the row alone
+  (`ball_wicket_stands` → `match_live_score`; `innings_score_as_folded` → the handover check; `ball_retired_batter()`
+  / `ball_retirement_dismissal()` → `player_innings`, `player_dismissals_since`, `player_dismissal_breakdown`,
+  `player_batting_since`, `player_*_by_season`, `player_batting_career`, `player_dismissals`, `milestone_watch`), so
+  a resume the Laws took would make the live score and the handover check disagree with the fold. It needs a
+  migration: a `retirement_resumed(match, innings, seq)` predicate (a later live consented `batters` row naming the
+  retire's `payload.batter`) and those readers redefined to leave a resumed retirement out. Sequencing with db/52 is
+  the coordinator's call.
 - ~~Timed out and retired out are recorded as `W` balls, which count as a legal delivery of the over.~~ **Already done by
   SCRBRD-081 (2026-09-24)**, checked 2026-09-27: both are a `retire` marked `type: "W"` (no ball, no bowler figure, no
   ball faced), through the `nonBallWickets` path; an old W *ball* naming either still folds as history
