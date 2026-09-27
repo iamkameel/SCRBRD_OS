@@ -162,7 +162,7 @@ function WagonAnalysisPanel({ balls = [], handOf = () => "R", batters = null, fi
           <div data-testid="wagon-analysis-wheel" data-frame={frame.hand} style={{ position: "relative", width: "100%", maxWidth: "280px", margin: "0 auto", aspectRatio: "1" }}>
             <svg viewBox="0 0 300 300" style={{ width: "100%", height: "100%", display: "block" }} role="img"
               aria-label={`Wagon wheel: ${a.shown.length} shot${a.shown.length === 1 ? "" : "s"} shown of ${a.chips.all} placed. ${fieldSentence(frame.hand, frame.mixed)}`}>
-              <circle cx={CX} cy={CY} r={R_BND + 3} fill={T.field.ground} stroke={`${T.field.rule}`} strokeWidth="1"/>
+              <circle cx={CX} cy={CY} r={R_BND + 3} fill={T.field.ground} stroke={T.field.rule} strokeWidth="1"/>
               <circle cx={CX} cy={CY} r={R_MID} fill="none" stroke={T.field.rule} strokeWidth="1" strokeDasharray="4 3"/>
               <circle cx={CX} cy={CY} r={R_IN} fill="none" stroke={T.field.rule} strokeWidth="1" strokeDasharray="3 4"/>
               {SEGS.map((s) => { const [x, y] = toXY(s.angle - 15, R_BND); return (
