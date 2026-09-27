@@ -187,7 +187,12 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // the replacement only from the bowlers the Laws take, the suspended man
   // and the replacement refused after, split-over figures on the scorecard,
   // the API and SQL, a reload, and the umpires' report.
-  "browser-suspension"];
+  "browser-suspension",
+  // SCRBRD-100 "Left, on the pad": dot and 1 the biggest keys, every extra in
+  // two taps stored as the event it always was, undo in words, the likely
+  // bowler and the next batter first, a refusal's likely cause, the haptic
+  // tick — held to the API's live score at 390 × 844.
+  "browser-padfeel"];
 
 // Walks that need no database, run by `pnpm smoke` instead. Named here only so
 // the completeness check below knows they are accounted for.

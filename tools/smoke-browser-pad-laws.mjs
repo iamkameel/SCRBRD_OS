@@ -337,15 +337,16 @@ try {
   const nbStriker = over2.inn.striker;
   const runsBefore = over2.inn.batsmen.find((b) => b.id === nbStriker)?.runs ?? 0;
   const ballsBefore = over2.inn.batsmen.find((b) => b.id === nbStriker)?.balls ?? 0;
+  // Two taps since SCRBRD-100: No ball, then the runs. Whose the runs are is
+  // asked on the same panel, off the bat already chosen, and is written only
+  // for runs taken (a no-ball of 0 with "byes" chosen is the plain no-ball).
   await click(/^(NB|No ball)/, 3000);
   await page.waitForTimeout(400);
-  ok("the no-ball sheet opens", await tid("nb-confirm").count() === 1);
-  ok("...and asks nothing about runs nobody ran", await tid("nb-runs-from").count() === 0);
-  await tap("nb-run-2");
-  ok("with runs taken, it asks: off the bat, or byes / leg byes?", await tid("nb-runs-from").count() === 1
-     && /Off the bat, or byes \/ leg byes/i.test(await text()));
+  ok("the no-ball asks its runs", (await tid("extra-panel").getAttribute("data-kind").catch(() => null)) === "Nb");
+  ok("...and whose they are: off the bat, or byes / leg byes, off the bat chosen", await tid("nb-runs-from").count() === 1
+     && (await tid("nb-runs-bat").getAttribute("aria-checked")) === "true" && /Leg byes/.test(await tid("nb-runs-from").innerText()));
   await tap("nb-runs-leg_byes");
-  await tap("nb-confirm");
+  await tap("extra-run-2");
   const lb = await agree("after a no-ball and two leg byes");
   const nbRow = lb.rows.filter((r) => r.kind === "ball" && r.ball_type === "Nb").at(-1);
   ok("the server stored the runs completed and whose they were",
@@ -358,9 +359,8 @@ try {
 
   await click(/^(NB|No ball)/, 3000);
   await page.waitForTimeout(400);
-  await tap("nb-run-1");
   await tap("nb-runs-bat");
-  await tap("nb-confirm");
+  await tap("extra-run-1");
   const hitNb = await agree("after a no-ball hit for one");
   const hitRow = hitNb.rows.filter((r) => r.kind === "ball" && r.ball_type === "Nb").at(-1);
   ok("off the bat is the default, and is not written", hitRow?.value === 1 && !("nbRuns" in (hitRow?.payload ?? {})));
@@ -463,9 +463,8 @@ try {
      typeof homeBowler === "string" && /^[0-9a-f-]{36}$/.test(homeBowler));
   await click(/^(NB|No ball)/, 3000);
   await page.waitForTimeout(400);
-  await tap("nb-run-1");
   await tap("nb-runs-bat");
-  await tap("nb-confirm");
+  await tap("extra-run-1");
   const nb2 = await agree("after a no-ball in the second innings", 1);
   const nb2Row = nb2.rows.filter((r) => r.kind === "ball" && r.ball_type === "Nb").at(-1);
   ok("the no-ball names its bowler by id", nb2Row?.bowler_id === homeBowler && named(nb2Row ?? {}),

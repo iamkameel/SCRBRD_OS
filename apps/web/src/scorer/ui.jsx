@@ -57,6 +57,7 @@ const GS = () => (
        under it mask the keys that scroll beneath, down to the bar, so no half
        key shows between the strip and the bar. Phones only: a desktop pad
        has room. */
+    .pad-strip-dock{position:relative}
     @media(max-width:880px){
       .pad-strip-dock{position:sticky;bottom:calc(74px + env(safe-area-inset-bottom));z-index:10;
         background:${T.surface.canvas};box-shadow:0 0 0 ${T.space.sm} ${T.surface.canvas}}

@@ -3747,6 +3747,53 @@ In flight:
 5. Undo shows what it will reverse ("Undo: 4 to R Pillay").
 6. The Laws check's refusals say the likely cause in words ("7 balls in this over — was one a wide or no-ball?").
 
+**Built 2026-09-27** (items 1–6), with every event the pad sends unchanged:
+1. **Dot and 1** (`scorer/pad.jsx` `OutcomeKeys`, Basic Scoring and the three-phase outcome): two wide and 88 tall,
+   the lowest run keys, next to the strip; 2, 3, 4 and 6 one row above; the wicket key heads the block. The strip's
+   Dot is 3/5 of its width. No key moves from ball to ball. `padFit` (smoke-a11y) still holds at 390 × 844 (Shot
+   phase in a chase: 24px clear, was 28) and 360 × 740 (docked).
+2. **The likely bowler and the next batter first** (`scorer/prompts.js` `bowlerChoices`, `batterChoices`; the sheets
+   in `scorer/sheets.jsx`): one list, the bowler of the over before last first and marked "Likely next" when
+   `lawsRefusal()` lets him bowl, then the rotation as they first bowled, then those who have not; anyone the Laws
+   refuse stays in place, unavailable, with the reason in words (`unavailableWords`, no clause numbers; a refusal
+   code the build does not know reads "Cannot bowl this over", so the Laws batch's suspended bowler is honoured).
+   Nobody is likely before the third over, or mid-over. The batting order's next name is first, marked Next. One tap
+   confirms either.
+3. **An extra in two taps** (`scorer/extras.js`, `scorer/delivery.js`): Wide, No ball, Bye and Leg bye are the
+   strip's first row on every phase and under Basic Scoring; a kind opens its runs on the strip's top edge, over the
+   phase keys (the strip never moves, docked or not), the likely runs marked and focused (0 for a wide or no-ball, 1
+   for a bye); a tap records. The no-ball panel asks its type (the free hit) and whose the runs are, each on its
+   commonest answer. `extraCall()` names the engine call the pad made before; commitBall's event code and the no-ball
+   sheet's confirm moved to `delivery.js` line for line. A wide now takes runs (0–4), through the engine's existing
+   `commitBall("Wd", n, …)`. The idle three-phase pad no longer shows the stepper (nothing to step back to); its row
+   is the extras'.
+4. **The haptic tick** (`scorer/haptic.js`): `navigator.vibrate(10)` on every recorded ball (commitBall, the
+   no-ball, the wicket), never under reduced motion, fire and forget; the pad menu's Feel switch turns it off on the
+   device (`scrbrd:haptic`).
+5. **Undo in words** (`prompts.js` `undoWords`, from `lastUndoableIndex()` of the innings in play): "Undo: 4 to R
+   Pillay", "Undo: wide", "Undo: 3 leg byes", "Undo: M Botha to bowl"; mid-ball "Undo: start this ball again". Names
+   from the fold's batters and bowlers (`foldName`), never an id.
+6. **A refusal's likely cause** (`packages/scoring/src/causes.mjs` `likelyCause`, `REFUSAL_CAUSE`, beside
+   `REFUSAL_TEXT`): on the pad's blocked panel ("8 balls in this over? Six legal balls are already recorded in over
+   1. Was one of them a wide or no-ball?") and the held sheet (from the event alone). No clause numbers.
+
+**Guards:** `apps/web/test/pad-feel.test.mjs` builds 1424 extras both ways (the old pad's call through the delivery
+code as it stood at 0f31ee0, and the two taps through `delivery.js`) and compares the bytes, and reads the engine's
+wiring from its source; plus the ordering, the undo words, the key sizes and the tick. `packages/scoring/test/
+causes.test.mjs`. `tools/smoke-browser-padfeel.mjs` walks all six at 390 × 844 against the API's live score, each
+extra's stored row compared field for field with the event `ball()` builds from the old call. Every unit guard was
+falsified once. `smoke-a11y` and `smoke-browser-pad-laws` drive the two-tap extras.
+
+**Found, not fixed:**
+- `ball()` does not keep `nbType`: the no-ball type the pad asks is never recorded. The fold gives a free hit after
+  every no-ball, while the pad sets its own free-hit flag (the banner, and the next ball's `freeHit` field) only for
+  height and beamer. Kept as it was here: the events had to stay the same.
+- A no-ball is recorded outside commitBall, so when it wins a chase the review sheet does not open by itself (the
+  innings-over banner does show). Older than this change.
+- The batting-order sheet does not offer a retired-hurt batter back (he can only be typed).
+- Clause numbers still on screen, outside this change: the mid-over bowler note ("Law 17.8.1: …"), the timed-out
+  toggle ("(Law 40)") and `REFUSAL_TEXT.mid_over_no_reason` (the held sheet's words).
+
 **Left, on the scoreboard and the match summary:**
 1. **Empty states that never dead-end — built 2026-09-27.** `apps/web/src/views/matchcentre/fulltime.jsx`
    (`PreTossCard`, `RevisionBanner`) and `MatchCentreView.jsx`'s `NoMatchesPanel`:

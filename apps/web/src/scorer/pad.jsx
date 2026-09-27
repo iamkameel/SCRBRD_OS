@@ -29,7 +29,7 @@ import { EXTRAS, NB_DEFAULT, NB_FROM, NB_TYPES, extraCall, extraOf, nbFreeHit, r
  *
  * Floors (§3.2, §3.5): nothing read under 12px, nothing tapped under 44px;
  * shot keys 44 tall at 16px, the run keys and the wicket key 64 (dot and 1
- * 88), the strip's extras 48 and its Dot and Undo 56.
+ * 88), the strip's extras 48 and its Dot and Undo 56, an extra's runs 56.
  */
 
 /**
@@ -276,9 +276,10 @@ const segment = (on) => ({ minHeight: "44px", padding: `0 ${T.space.xs}`, fontSi
   ...(on ? { background: T.content.primary, color: T.surface.canvas, border: `1px solid ${T.content.primary}`, fontWeight: 600 } : {}) });
 
 /**
- * The runs of the extra whose kind was just tapped, in the pad's own space
- * (over the phase it was tapped on, which it does not need). The likely runs
- * are marked and focused; a tap on any runs key records. The no-ball also
+ * The runs of the extra whose kind was just tapped, in the pad's own space:
+ * right above the strip, over the phase keys it does not need (the strip
+ * draws it, so it follows the strip wherever a small phone docks it). The
+ * likely runs are marked and focused; a tap on any runs key records. The no-ball also
  * asks its type — a height no-ball or a beamer is a free hit — and whose the
  * runs are, each already on its commonest answer, as the no-ball sheet asked.
  */
@@ -292,8 +293,7 @@ function ExtraRuns({ kind, onRuns, onCancel }) {
   const question = isNb ? "No ball: runs completed?" : kind === "Wd" ? "Wide: runs taken?" : `${x.label}s: how many?`;
   return (
     <div role="group" aria-label={question} data-testid="extra-panel" data-kind={kind}
-      style={{ position: "absolute", left: 0, right: 0, bottom: 0, display: "grid", gap: T.space.sm,
-        padding: `${T.space.sm} 0 0`, background: T.surface.canvas }}>
+      style={{ display: "grid", gap: T.space.sm, background: T.surface.canvas }}>
       <div style={{ display: "flex", alignItems: "center", gap: T.space.sm }}>
         <h3 style={{ ...T.role.title.md, fontSize: "18px", flex: 1, margin: 0, color: T.content.primary }}>{question}</h3>
         <Key face="Cancel" testid="extra-cancel" onClick={onCancel} style={{ padding: `0 ${T.space.md}`, flexShrink: 0 }}/>
@@ -330,7 +330,7 @@ function ExtraRuns({ kind, onRuns, onCancel }) {
             <button key={n} ref={likely ? likelyRef : undefined} type="button" data-testid={`extra-run-${n}`} data-likely={likely || undefined}
               aria-label={`${runsWords(kind, n)}${likely ? " (the usual)" : ""}`}
               className="pressBtn os-state" onClick={() => onRuns(n, nb)}
-              style={{ ...keyBase("64px"), ...T.role.figure.md, fontSize: "24px",
+              style={{ ...keyBase("56px"), ...T.role.figure.md, fontSize: "24px",
                 ...(likely ? { background: T.content.primary, color: T.surface.canvas, border: `2px solid ${T.content.primary}` } : {}) }}>
               {n}
             </button>
@@ -348,13 +348,16 @@ function ExtraRuns({ kind, onRuns, onCancel }) {
  * extras' kinds (SCRBRD-100 item 3), then Dot — wide, the ball a scorer
  * records most — and Undo, which says what it will take back (item 5).
  */
-function Strip({ extra, onExtra, onDot, onUndo, undoWhat, midBall }) {
+function Strip({ extra, onExtra, onDot, onUndo, undoWhat, midBall, panel = null }) {
   const label = midBall ? "Undo: start this ball again" : undoWhat ? `Undo: ${undoWhat}` : "Undo: nothing to undo";
   return (
     // `pad-strip-dock` (scorer/ui.jsx): on a phone the strip docks 16px above
     // the bottom bar when the pad is taller than the screen, so the extras,
     // Dot and Undo are never below the fold (§4 rule 1).
     <div data-testid="pad-strip" className="pad-strip-dock" style={{ display: "grid", gap: T.space.sm }}>
+      {/* An extra's runs sit on the strip's top edge, over the keys above
+          it: the strip never moves, docked or in its place. */}
+      {panel && <div style={{ position: "absolute", left: 0, right: 0, bottom: `calc(100% + ${T.space.sm})` }}>{panel}</div>}
       <div data-testid="pad-extras" role="group" aria-label="Extras"
         style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: T.space.sm }}>
         {EXTRAS.map((x) => (
@@ -434,8 +437,9 @@ export function Pad({ inn, basic, onCommitDetailed, onWicketCtx, onWide, onNoBal
   const note = shot === "padded" || shot === "hit_body" ? "Runs off the pads or body are recorded as leg byes."
     : shot === "missed" ? "Runs after a miss are recorded as byes." : null;
 
+  const runs = extra && <ExtraRuns key={extra} kind={extra} onRuns={recordExtra} onCancel={() => setExtra(null)}/>;
   const strip = (
-    <Strip extra={extra} onExtra={openExtra} undoWhat={undoWhat} midBall={extra != null || (!basic && phase > 1)}
+    <Strip extra={extra} onExtra={openExtra} undoWhat={undoWhat} midBall={extra != null || (!basic && phase > 1)} panel={runs}
       // A dot mid-ball carries what the scorer has told the pad so far — the
       // same event as the outcome's 0; with nothing chosen it is the one-tap dot.
       onDot={() => (basic ? basicRun(0) : commitRun(0))}
@@ -444,15 +448,11 @@ export function Pad({ inn, basic, onCommitDetailed, onWicketCtx, onWide, onNoBal
   // The phase's own keys stay where they are, out of sight and out of reach,
   // while an extra's runs are asked over them: the strip does not move.
   const behind = extra ? { visibility: "hidden" } : undefined;
-  const runs = extra && <ExtraRuns key={extra} kind={extra} onRuns={recordExtra} onCancel={() => setExtra(null)}/>;
 
   if (basic) return (
     <div data-testid="basic-pad" style={{ display: "grid", gap: T.space.sm }}>
       <h2 style={{ ...sectionLabel(), margin: 0 }}>Basic Scoring</h2>
-      <div style={{ position: "relative" }}>
-        <div style={behind}><OutcomeKeys onRun={basicRun} onWicket={() => onWicketCtx(null, null, null)}/></div>
-        {runs}
-      </div>
+      <div style={behind}><OutcomeKeys onRun={basicRun} onWicket={() => onWicketCtx(null, null, null)}/></div>
       {strip}
     </div>
   );
@@ -465,13 +465,10 @@ export function Pad({ inn, basic, onCommitDetailed, onWicketCtx, onWide, onNoBal
         <Stepper phase={phase} values={[shotMeta?.label ?? null, areaWord, null]}
           onStep={(n) => { setExtra(null); setPhase(n); if (n === 1) setArea(null); }}/>
       )}
-      <div style={{ position: "relative" }}>
-        <div style={behind}>
-          {phase === 1 && <ShotPhase shot={shot} onShot={(id) => { setShot(id); setArea(null); setPhase(2); }}/>}
-          {phase === 2 && <AreaPhase inn={inn} area={area} onArea={(s) => { setArea(s); setPhase(3); }} onNone={() => { setArea(null); setPhase(3); }}/>}
-          {phase === 3 && <OutcomeKeys onRun={commitRun} onWicket={commitWicket} note={note}/>}
-        </div>
-        {runs}
+      <div style={behind}>
+        {phase === 1 && <ShotPhase shot={shot} onShot={(id) => { setShot(id); setArea(null); setPhase(2); }}/>}
+        {phase === 2 && <AreaPhase inn={inn} area={area} onArea={(s) => { setArea(s); setPhase(3); }} onNone={() => { setArea(null); setPhase(3); }}/>}
+        {phase === 3 && <OutcomeKeys onRun={commitRun} onWicket={commitWicket} note={note}/>}
       </div>
       {strip}
     </div>
