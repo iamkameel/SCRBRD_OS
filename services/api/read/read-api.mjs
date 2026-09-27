@@ -425,7 +425,8 @@ export const READ_QUERIES = {
    * attributes revises those four and leaves the rest standing.
    *
    * A NULL anchor — nobody has assessed this discipline — makes the window
-   * NULL, which player_batting_since() reads as no window at all. That is the
+   * NULL, which the evidence reads as no window at all, as
+   * player_batting_since() does (ratingsQuery() has how). That is the
    * right answer rather than a special case: with no judgement to anchor on,
    * the rating is the performance index over everything on record.
    */
@@ -2289,24 +2290,98 @@ function ratingsQuery() {
                   and (${d}_a.anchor is null or dn.observed_on >= ${d}_a.anchor)
              ) ${d}_n on true`);
   });
-  return `select p.id as player_id, p.full_name, p.team_code, p.school_id,
-                  ${cols.join(",\n                  ")},
-                  coalesce(bs.runs, 0)          as runs,
-                  coalesce(bs.balls_faced, 0)   as balls_faced,
-                  coalesce(bd.dismissals, 0)    as dismissals,
-                  coalesce(ws.runs_conceded, 0) as runs_conceded,
-                  coalesce(ws.legal_balls, 0)   as balls_bowled,
-                  coalesce(ws.wickets, 0)       as wickets
-             from player p${joins.join("")}
-             -- Evidence since the coach last looked. A date cast to timestamptz
-             -- is midnight, so a match on the afternoon of the assessment day
-             -- counts towards it — which is the right way round: the coach
-             -- rated him in the nets that morning.
-             left join lateral player_batting_since(p.id, batting_a.anchor::timestamptz) bs on true
-             left join lateral (select player_dismissals_since(p.id, batting_a.anchor::timestamptz)
-                                  as dismissals) bd on true
-             left join lateral player_bowling_since(p.id, bowling_a.anchor::timestamptz) ws on true
-            order by p.full_name`;
+  // THE EVIDENCE, IN ONE PASS OVER THE LOG (SCRBRD-097). This was one
+  // player_batting_since(), player_dismissals_since() and
+  // player_bowling_since() call per player, each its own scan of
+  // ball_event_live, and none of their per-player predicates is leakproof —
+  // so ball_event's policy, app_can('fixture.read', …), ran on every ball for
+  // every player, three times over. It is now db/49's shape: the deliveries
+  // this reader may see are read ONCE (`ev`, materialized, so the planner
+  // cannot turn it back into a scan per player), each row is attributed to
+  // the players it counts for, and the window is a predicate on the join to
+  // that player's own anchors. The functions are untouched and are the
+  // reference this is proved against (tools/bench-assessment.mjs --check).
+  //
+  // Row for row what the three functions sum:
+  //   bat   player_batting_since(): runs off the bat and balls faced come only
+  //         from a delivery he FACED (`kind = 'ball' AND striker_id = p` in
+  //         every CASE). Its other two arms — a wicket at the other end, a
+  //         retirement marked W — put rows in its FROM that add 0 to both, and
+  //         only `matches` and `last_ball_at` read them; neither is read here.
+  //   out   player_dismissals_since(): a wicket that stood dismissed him, or a
+  //         retirement did — db/49's player_dismissals arms, NULLIF'd so a row
+  //         counts once per player, as the function's OR does.
+  //   bowl  player_bowling_since(): every delivery he bowled, the same CASEs.
+  // `bat` and `out` take the batting anchor, `bowl` the bowling one, exactly
+  // as the calls did. A date cast to timestamptz is midnight, so a match on
+  // the afternoon of the assessment day counts towards it — which is the
+  // right way round: the coach rated him in the nets that morning. A NULL
+  // anchor is no window, as p_from IS NULL is in the functions.
+  //
+  // `sum` over an integer is bigint and `count` is bigint, as the functions
+  // return, and a player with no row in `f` reads 0, as coalesce(…, 0) over
+  // the functions' always-one-row answer did. Ties in full_name are broken by
+  // id, where before they came out in whatever order the plan met them.
+  //
+  // ball_wicket_stands() is asked ONCE per delivery (`s`, fenced by OFFSET 0
+  // so the planner cannot copy the call into each arm that reads it): on a
+  // wicket whose method a free hit would save it looks up the ball before,
+  // under the reader's policy, and the three arms that need the answer would
+  // otherwise each ask. It is STABLE — one answer per row within a statement
+  // — and for any row not marked W it is false without a lookup.
+  const stoodOut = `case when b.kind = 'ball' and b.ball_type = 'W' and s.stands
+                          then ball_dismissed_batter(b.striker_id, b.dismissed_id, b.payload) end`;
+  return `with r as materialized (
+             select p.id as player_id, p.full_name, p.team_code, p.school_id,
+                    ${cols.join(",\n                    ")}
+               from player p${joins.join("")}
+           ),
+           ev as materialized (
+             select who.player_id, who.fam, b.server_ts, who.runs, who.balls, who.wickets
+               from ball_event_live b
+               cross join lateral (select ball_wicket_stands(b.match_id, b.innings, b.seq, b.kind, b.ball_type, b.dismissal)
+                                            as stands offset 0) s
+               cross join lateral (values
+                 ('bat',  case when b.kind = 'ball' then b.striker_id end,
+                          ball_runs_off_bat(b.ball_type, b.value, b.payload),
+                          case when b.ball_type <> 'Wd' then 1 else 0 end,
+                          0),
+                 ('out',  ${stoodOut}, 0, 0, 0),
+                 ('out',  nullif(ball_retired_batter(b.kind, b.ball_type, b.dismissal, b.payload), ${stoodOut}), 0, 0, 0),
+                 ('bowl', case when b.kind = 'ball' then b.bowler_id end,
+                          case when b.ball_type in ('Wd','Nb') then 1 + coalesce(b.value,0)
+                               when b.ball_type in ('run','W')  then coalesce(b.value,0)
+                               else 0 end,
+                          case when b.ball_type not in ('Wd','Nb') then 1 else 0 end,
+                          case when b.ball_type = 'W' and dismissal_is_bowlers(b.dismissal)
+                                and s.stands then 1 else 0 end)
+               ) as who(fam, player_id, runs, balls, wickets)
+              where who.player_id is not null
+           ),
+           f as (
+             select e.player_id,
+                    sum(e.runs)    filter (where e.fam = 'bat')  as runs,
+                    sum(e.balls)   filter (where e.fam = 'bat')  as balls_faced,
+                    count(*)       filter (where e.fam = 'out')  as dismissals,
+                    sum(e.runs)    filter (where e.fam = 'bowl') as runs_conceded,
+                    sum(e.balls)   filter (where e.fam = 'bowl') as legal_balls,
+                    sum(e.wickets) filter (where e.fam = 'bowl') as wickets
+               from ev e
+               join r on r.player_id = e.player_id
+              where (case when e.fam = 'bowl' then r.bowling_anchor else r.batting_anchor end) is null
+                 or e.server_ts >= (case when e.fam = 'bowl' then r.bowling_anchor else r.batting_anchor end)::timestamptz
+              group by e.player_id
+           )
+           select r.*,
+                  coalesce(f.runs, 0)          as runs,
+                  coalesce(f.balls_faced, 0)   as balls_faced,
+                  coalesce(f.dismissals, 0)    as dismissals,
+                  coalesce(f.runs_conceded, 0) as runs_conceded,
+                  coalesce(f.legal_balls, 0)   as balls_bowled,
+                  coalesce(f.wickets, 0)       as wickets
+             from r
+             left join f on f.player_id = r.player_id
+            order by r.full_name, r.player_id`;
 }
 
 /**

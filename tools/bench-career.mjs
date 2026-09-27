@@ -27,7 +27,8 @@
  * A small LCG makes the same log every time: wides, no-balls (some of whose
  * runs are byes, db/40), byes and leg byes, every method of dismissal, run
  * outs at the non-striker's end, wickets on a free hit that the free hit
- * saves (db/42), a retirement marked W (db/40) and voided deliveries.
+ * saves (db/42), a retirement marked W (db/40) and voided deliveries. The
+ * load itself is tools/bench-log.mjs, which bench-assessment.mjs shares.
  *
  * --check runs the read beside its REFERENCE — the same statement with the
  * lifetime views written as db/02 and db/40 defined them (each player's own
@@ -44,10 +45,10 @@
 import pg from "pg";
 import { writeFileSync } from "node:fs";
 import { READ_QUERIES } from "../services/api/read/read-api.mjs";
+import { loadBench } from "./bench-log.mjs";
 
 const OWNER_URL = process.env.DATABASE_URL || "postgres://scrbrd:scrbrd@127.0.0.1:5432/scrbrd";
 const APP_URL = process.env.APP_DATABASE_URL || "postgres://scrbrd_app:scrbrd_app@127.0.0.1:5432/scrbrd";
-const HIL = "11111111-1111-1111-1111-111111111111";
 const DIRECTOR = "88888888-0000-0000-0000-000000000007";
 // The readers --check and --dump read as (db/99's principals).
 const READERS = {
@@ -88,93 +89,9 @@ async function asReader(who, text, params = []) {
 }
 
 // ── The load ─────────────────────────────────────────────────────
-let seed = 49;
-const rnd = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
-const pick = (xs) => xs[Math.floor(rnd() * xs.length)];
-
-async function load() {
-  const tag = Date.now().toString(36);
-  const scorer = (await owner.query(`select id from app_user where email = 'scorer@example.invalid'`)).rows[0]?.id;
-  if (!scorer) throw new Error("no seeded scorer — run node tools/migrate.mjs --reset --seed first");
-  const players = [];
-  for (let i = 0; i < N_PLAYERS; i++) {
-    players.push((await owner.query(
-      `insert into player (school_id, team_code, full_name, squad_no, playing_role, born)
-       values ($1, '12XI', $2, $3, 'allrounder', current_date - interval '16 years') returning id`,
-      [HIL, `Bench ${tag} ${String(i + 1).padStart(2, "0")}`, 100 + i])).rows[0].id);
-  }
-  const cols = ["match_id", "school_id", "seq", "epoch", "innings", "scorer_user_id", "device_id", "idempotency_key",
-                "client_seq", "client_ts", "kind", "ball_type", "value", "striker_id", "non_striker_id", "bowler_id",
-                "dismissed_id", "dismissal", "payload"];
-  let total = 0;
-  const t0 = Date.now();
-  for (let m = 0; m < N_MATCHES; m++) {
-    const match = (await owner.query(
-      `insert into match (school_id, team_code, opponent, starts_at, format, overs, status)
-       values ($1, '12XI', $2, now() - make_interval(days => $3), 'T20', 20, 'complete') returning id`,
-      [HIL, `Bench XI ${m + 1}`, 7 * (m + 1)])).rows[0].id;
-    const xi = Array.from({ length: 11 }, (_, k) => players[(m * 11 + k) % players.length]);
-    /** @type {any[][]} */ const rows = [];
-    let seq = 0;
-    const key = () => `bench:${tag}:${m}:${seq}`;
-    const push = (innings, r) => {
-      seq++;
-      rows.push([match, HIL, seq, 1, innings, scorer, "bench", key(), seq, new Date(), r.kind ?? "ball",
-                 r.type ?? null, r.value ?? null, r.striker ?? null, r.nonStriker ?? null, r.bowler ?? null,
-                 r.dismissed ?? null, r.dismissal ?? null, JSON.stringify(r.payload ?? {})]);
-    };
-    for (const innings of [0, 1]) {
-      const batting = innings === 0;             // Hilton bat first, then bowl
-      let striker = 0, nonStriker = 1, next = 2, legal = 0, freeHit = false;
-      let bowler = batting ? null : xi[6];
-      const target = Math.floor(N_BALLS / 2);
-      for (let b = 0; b < target; b++) {
-        const who = batting ? { striker: xi[striker], nonStriker: xi[nonStriker] } : { striker: null, nonStriker: null };
-        const r = rnd();
-        let row;
-        if (r < 0.04) row = { type: "Wd", value: rnd() < 0.15 ? 4 : 0 };
-        else if (r < 0.07) row = { type: "Nb", value: pick([0, 1, 4, 6]), payload: rnd() < 0.3 ? { nbRuns: pick(["byes", "leg_byes"]) } : {} };
-        else if (r < 0.10) row = { type: pick(["B", "LB"]), value: pick([1, 1, 4]) };
-        else if (r < 0.145 || (freeHit && r < 0.30)) {
-          const method = pick(["bowled", "caught", "caught", "lbw", "stumped", "run_out"]);
-          row = { type: "W", value: method === "run_out" ? pick([0, 1]) : 0, dismissal: method };
-          // A run out at the other end: the non-striker is out (SCRBRD-069).
-          if (method === "run_out" && rnd() < 0.5) {
-            if (batting) row.dismissed = xi[nonStriker];
-            else row.payload = { dismissed: `Opposition ${b}` };
-          }
-        } else row = { type: "run", value: pick([0, 0, 0, 1, 1, 1, 2, 2, 3, 4, 4, 6]) };
-        push(innings, { ...row, ...who, bowler });
-        // The free hit the fold keeps: a no-ball earns it, a wide carries it,
-        // any other delivery consumes it (db/42).
-        if (row.type === "Nb") freeHit = true; else if (row.type !== "Wd") freeHit = false;
-        const saved = row.type === "W" && row.dismissal !== "run_out" && rows.length > 1 && rows[rows.length - 2][11] === "Nb";
-        if (batting && row.type === "W" && !saved) {
-          if (next > 10) break;                  // all out
-          if (row.dismissed === xi[nonStriker]) nonStriker = next++; else striker = next++;
-        }
-        if (row.type !== "Wd" && row.type !== "Nb") {
-          if (++legal % 6 === 0) {
-            [striker, nonStriker] = [nonStriker, striker];
-            if (!batting) bowler = xi[6 + (legal / 6) % 5];
-          }
-        }
-        if (batting && row.type === "run" && row.value % 2 === 1) [striker, nonStriker] = [nonStriker, striker];
-        // Now and then the scorer takes the last delivery back.
-        if (b % 61 === 60) push(innings, { kind: "void", payload: { target: key() } });
-        // Once a match, a batter retires out (db/40): a W marker, no ball.
-        if (batting && b === 40 && next <= 10) {
-          push(innings, { kind: "retire", type: "W", dismissal: "retired_out", payload: { batter: xi[striker], reason: "out" } });
-          striker = next++;
-        }
-      }
-    }
-    const values = rows.map((r, i) => `(${r.map((_, j) => `$${i * cols.length + j + 1}`).join(",")})`);
-    await owner.query(`insert into ball_event (${cols.join(",")}) values ${values.join(",")}`, rows.flat());
-    total += rows.length;
-  }
-  console.log(`loaded ${N_PLAYERS} players, ${N_MATCHES} matches, ${total} ball_event rows in ${((Date.now() - t0) / 1000).toFixed(1)} s`);
-}
+// tools/bench-log.mjs, shared with bench-assessment.mjs: the same log, the
+// same volume.
+const load = () => loadBench(owner, { players: N_PLAYERS, matches: N_MATCHES, balls: N_BALLS });
 
 // ── The read ─────────────────────────────────────────────────────
 const median = (xs) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];

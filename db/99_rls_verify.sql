@@ -645,6 +645,95 @@ RETURNS TABLE (family text, player_id uuid, one_pass text, per_player text) AS $
    WHERE l.dismissals IS DISTINCT FROM o.dismissals
 $$ LANGUAGE sql STABLE;
 
+-- db/51 (section 29). The two figures the milestone trigger reads, as the
+-- trigger reads them — as the owner, past RLS, which is who a SECURITY
+-- DEFINER trigger is — against player_innings, the composition it read
+-- before: every innings in the log, and every player's career, including a
+-- player with none. No rows is the invariant.
+CREATE OR REPLACE FUNCTION _milestone_figure_drift()
+RETURNS TABLE (figure text, player_id uuid, match_id uuid, innings smallint, own_balls bigint, player_innings numeric) AS $$
+  SELECT 'innings', i.player_id, i.match_id, i.innings,
+         innings_runs_off_bat(i.player_id, i.match_id, i.innings), coalesce(i.runs, 0)
+    FROM player_innings i
+   WHERE innings_runs_off_bat(i.player_id, i.match_id, i.innings) IS DISTINCT FROM coalesce(i.runs, 0)
+  UNION ALL
+  SELECT 'career', p.id, NULL, NULL, career_runs_off_bat(p.id), c.runs
+    FROM player p
+    CROSS JOIN LATERAL (SELECT coalesce(sum(i.runs), 0) AS runs FROM player_innings i WHERE i.player_id = p.id) c
+   WHERE career_runs_off_bat(p.id) IS DISTINCT FROM c.runs
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- db/51 (section 29). A school of its own, three boys and three fixtures,
+-- scored one INSERT per delivery as a match arrives, raising every notice
+-- the trigger writes: the batter's fifty and hundred in two fixtures and 500
+-- career runs in the second (the first fixture's first six voided, a
+-- no-ball's byes, a retirement, and a run out at the other end in each of
+-- the last two, one of them in a fixture where he never faces; and a second
+-- innings in the second fixture, as a two-innings match gives him, with a
+-- fifty of its own beside the 402 of his first); the bowler's
+-- hat-trick and five-for in two fixtures (a saved lbw on a free hit and a
+-- run out between) and 25 career wickets. Returns the notices, in the order
+-- written. Owner-written; the file rolls it back with everything else.
+CREATE OR REPLACE FUNCTION _milestone_fixture_51() RETURNS text AS $$
+DECLARE
+  S  uuid := '51515151-0000-0000-0000-000000000051';
+  U  uuid := '88888888-0000-0000-0000-000000000051';
+  MA uuid := '77777777-0000-0000-0000-0000000051a0';
+  MB uuid := '77777777-0000-0000-0000-0000000051b0';
+  MC uuid := '77777777-0000-0000-0000-0000000051c0';
+  A  uuid := 'aaaaaaaa-0000-0000-0000-00000000051a';
+  B  uuid := 'aaaaaaaa-0000-0000-0000-00000000051b';
+  C  uuid := 'aaaaaaaa-0000-0000-0000-00000000051c';
+  x  record;
+  v  text;
+BEGIN
+  INSERT INTO school (id, code, name) VALUES (S, 'verify-051', 'Verify 051');
+  INSERT INTO app_user (id, email, name, role, school_id) VALUES (U, 'verify51@example.invalid', 'V51 Scorer', 'coach', S);
+  INSERT INTO player (id, school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (A, S, '1XI', 'V51 Opener',  1, 'batter', (current_date - interval '16 years')::date),
+    (B, S, '1XI', 'V51 Partner', 2, 'batter', (current_date - interval '16 years')::date),
+    (C, S, '1XI', 'V51 Seamer',  3, 'bowler', (current_date - interval '16 years')::date);
+  INSERT INTO match (id, school_id, team_code, opponent, starts_at, sport, format, overs, status) VALUES
+    (MA, S, '1XI', 'Verify 051 A', now() - interval '21 days', 'cricket', 'T20', 20, 'complete'),
+    (MB, S, '1XI', 'Verify 051 B', now() - interval '14 days', 'cricket', 'T20', 20, 'complete'),
+    (MC, S, '1XI', 'Verify 051 C', now() - interval '7 days',  'cricket', 'T20', 20, 'complete');
+  FOR x IN
+    SELECT e.m, e.inn, e.kind, e.bt, e.v, e.striker, e.bowler, e.dismissed, e.dis,
+           CASE WHEN e.kind = 'void' THEN jsonb_build_object('target', 'verify:051:' || e.m || ':1') ELSE e.pl END AS pl,
+           row_number() OVER (PARTITION BY e.m ORDER BY e.ord, g)::int AS seq
+      FROM (VALUES
+        ( 1, MA, 0, 'ball',   'run', 6,    A,    NULL::uuid, NULL::uuid, NULL,          '{}'::jsonb,         1),
+        ( 2, MA, 0, 'void',   NULL,  NULL, NULL, NULL,       NULL,       NULL,          '{}'::jsonb,         1),
+        ( 3, MA, 0, 'ball',   'run', 6,    A,    NULL,       NULL,       NULL,          '{}'::jsonb,        17),
+        ( 4, MA, 0, 'ball',   'Nb',  4,    A,    NULL,       NULL,       NULL,          '{"nbRuns":"byes"}', 1),
+        ( 5, MA, 0, 'retire', 'W',   NULL, NULL, NULL,       NULL,       'retired_out', jsonb_build_object('batter', A, 'reason', 'out'), 1),
+        ( 6, MA, 1, 'ball',   'W',   0,    B,    C,          NULL,       'bowled',      '{}'::jsonb,         5),
+        ( 7, MB, 0, 'ball',   'run', 6,    A,    NULL,       NULL,       NULL,          '{}'::jsonb,        67),
+        ( 8, MB, 0, 'ball',   'W',   0,    A,    NULL,       B,          'run_out',     '{}'::jsonb,         1),
+        ( 9, MB, 1, 'ball',   'Nb',  0,    B,    C,          NULL,       NULL,          '{}'::jsonb,         1),
+        (10, MB, 1, 'ball',   'W',   0,    B,    C,          NULL,       'lbw',         '{}'::jsonb,         1),
+        (11, MB, 1, 'ball',   'W',   0,    B,    C,          NULL,       'run_out',     '{}'::jsonb,         1),
+        (12, MB, 1, 'ball',   'W',   0,    B,    C,          NULL,       'bowled',      '{}'::jsonb,        20),
+        (13, MB, 2, 'ball',   'run', 6,    A,    NULL,       NULL,       NULL,          '{}'::jsonb,         9),
+        (14, MC, 0, 'ball',   'W',   0,    B,    NULL,       A,          'run_out',     '{}'::jsonb,         1)
+      ) AS e(ord, m, inn, kind, bt, v, striker, bowler, dismissed, dis, pl, times)
+      CROSS JOIN LATERAL generate_series(1, e.times) AS g
+     ORDER BY e.m = MC, e.m = MB, e.ord, g
+  LOOP
+    INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                            idempotency_key, client_seq, client_ts, kind, ball_type, value,
+                            striker_id, bowler_id, dismissed_id, dismissal, payload)
+    VALUES (x.m, S, x.seq, 1, x.inn, U, 'verify-051', 'verify:051:' || x.m || ':' || x.seq, x.seq, now(),
+            x.kind, x.bt, x.v, x.striker, x.bowler, x.dismissed, x.dis, x.pl);
+  END LOOP;
+  SELECT string_agg(format('%s:%s:%s:%s:%s',
+                           CASE n.player_id WHEN A THEN 'A' WHEN B THEN 'B' ELSE 'C' END, n.kind,
+                           CASE n.match_id WHEN MA THEN 'a' WHEN MB THEN 'b' ELSE 'c' END, n.innings, n.value),
+                    ' ' ORDER BY n.ctid)
+    INTO v FROM (SELECT ctid, * FROM milestone_notice WHERE player_id IN (A, B, C)) n;
+  RETURN v;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -5173,6 +5262,64 @@ BEGIN
   PERFORM set_config('app.scope', '', true);
   PERFORM set_config('app.match_id', '', true);
   PERFORM set_config('app.device_id', '', true);
+  PERFORM set_config('app.user_id', '', true);
+
+  -- ── 29. The milestone trigger reads the striker's own balls (SCRBRD-097, db/51) ──
+  -- milestone_watch() asked player_innings for the striker's innings and his
+  -- career on every scoring ball, and the career question read every
+  -- delivery in the log through two of its three arms — the bulk load's
+  -- players × balls. db/51 asks two helpers instead, each a sum of runs off
+  -- the bat over the balls he faced: the only arm that carries runs. They
+  -- are held here to the composition they replace, as the trigger reads it
+  -- (the owner, past RLS): every innings in the log — the seed, sections 19
+  -- to 23, §22's and this section's fixtures, which carry voids, no-ball
+  -- byes, retirements marked W and run outs at the other end, including an
+  -- innings with no ball faced in it — and every player's career. And the
+  -- trigger is held to the notices it calls, one INSERT per delivery. Each
+  -- assertion's label names what it guards; db/51 was broken each of these
+  -- ways, one at a time, and the whole file run. Each first stops db/51's own
+  -- self-check (named on the right); each was run again with that check
+  -- lifted, to see this section go red on its own:
+  --
+  --   milestone_watch() reading player_innings again         → (shape)    db/51: still reads player_innings
+  --   career_runs_off_bat() executable by PUBLIC              → (shape)    db/51: executable by PUBLIC
+  --   career_runs_off_bat() over ball_event, voids included   → (same)     db/51: the fixture's figures
+  --                                                             (§19–§23's voided balls, and this fixture's)
+  --   career_runs_off_bat() without its coalesce              → (same)     db/51: the fixture's figures
+  --   innings_runs_off_bat() without its innings              → (notices)  db/51: the fixture's notices
+  --                                                             (no fifty in the second innings)
+  --   the career threshold compared against the innings figure → (notices) db/51: the fixture's notices
+  --   the five-for asked of the bowler's career               → (notices)  db/51: the fixture's notices
+  DECLARE
+    n bigint;
+    detail text;
+    v_want text := 'A:fifty:a:0:54 A:hundred:a:0:102 C:hat_trick:a:1:3 C:five_for:a:1:5 '
+                || 'A:fifty:b:0:54 A:hundred:b:0:102 A:career_runs:b:0:500 '
+                || 'C:hat_trick:b:1:3 C:five_for:b:1:5 C:career_wickets:b:0:25 A:fifty:b:2:54';
+  BEGIN
+    SELECT count(*) INTO n FROM pg_proc p
+     WHERE p.oid IN ('innings_runs_off_bat(uuid,uuid,smallint)'::regprocedure, 'career_runs_off_bat(uuid)'::regprocedure)
+       AND NOT p.prosecdef
+       AND NOT has_function_privilege('scrbrd_app', p.oid, 'EXECUTE')
+       AND NOT EXISTS (SELECT 1 FROM aclexplode(p.proacl) x WHERE x.grantee = 0 AND x.privilege_type = 'EXECUTE');
+    -- (shape) the trigger no longer reads player_innings; the two helpers are invoker, and nobody's but the owner's
+    PERFORM _assert(n = 2 AND (SELECT prosrc FROM pg_proc WHERE oid = 'milestone_watch()'::regprocedure) !~ 'player_innings',
+      format('db/51 (shape): %s of the 2 helpers are invoker and callable by nobody but the owner (expected 2); '
+             || 'milestone_watch() reads player_innings: %s', n,
+             (SELECT prosrc FROM pg_proc WHERE oid = 'milestone_watch()'::regprocedure) ~ 'player_innings'));
+
+    -- (notices) one INSERT per delivery, every kind the trigger writes
+    detail := _milestone_fixture_51();
+    PERFORM _assert(detail IS NOT DISTINCT FROM v_want,
+      format('db/51 (notices): the fixture raised %s, expected %s', detail, v_want));
+
+    -- (same) THE INVARIANT, over the whole log, this section's fixture included
+    SELECT count(*), string_agg(format('%s %s/%s/%s: own balls %s, player_innings %s', d.figure, d.player_id,
+                                       d.match_id, d.innings, d.own_balls, d.player_innings), '; ')
+      INTO n, detail FROM _milestone_figure_drift() d;
+    PERFORM _assert(n = 0,
+      format('db/51 (same): %s figure(s) the milestone trigger reads are not what player_innings says — %s', n, left(detail, 600)));
+  END;
   PERFORM set_config('app.user_id', '', true);
 
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';

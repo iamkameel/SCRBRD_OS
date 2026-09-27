@@ -3500,6 +3500,187 @@ Two Law 41 questions Kameel is researching before deciding; nothing is built unt
    penalty-runs research gave repeated protected-area infractions as 41.14. The screens show the reason in words
    only, not clause numbers, until Kameel confirms them against the current Code.
 
+### SCRBRD-102 — A wagon-wheel analysis panel: filters, run chips, off and on side, areas per side
+**Priority:** P2 · **Domain:** Front-end / analytics · **Type:** feature (Kameel's earlier SCRBRD designs, 2026-09-27)
+Kameel's earlier designs had a wagon-wheel analysis panel. It should appear in the Match Centre's Performance tab and on a player's profile:
+- **Filters:** by batter and by bowler.
+- **Run chips:** All, 1s, 2s, 3s, 4s and 6s, each with its count. Tapping a chip shows only those spokes, in the chip colours.
+- **Off side against on side:** each side's runs and its share of the total, as a percentage.
+- **Areas per side:** four for each side, each with its runs and boundaries.
+  - The off side: third man, point, cover and long off.
+  - The on side: fine leg, square leg, mid-wicket and long on.
+
+Everything is relative to the batter, so a left-hander's areas are his own (SCRBRD-101). Build it after SCRBRD-101 lands; it is screen work over the fold and the existing reads.
+
+### SCRBRD-103 — A run map and a catch map
+**Priority:** P3 · **Domain:** Front-end / analytics · **Type:** feature (Kameel's references, 2026-09-27)
+Two views, from broadcast graphics:
+- **The run map:** the field in wedges, each labelled with its share of the batter's runs as a percentage.
+- **The catch map:** where a fielder or a side took its catches, drawn as a heat map with the leading positions named ("backward point 20%"). Built from caught dismissals that carry a point.
+
+Both need point-era balls; sector-era balls are left out and said to be. That is a reason the pad now captures points (SCRBRD-101). Position names come from `positionName()`. On a public page they follow the public-data rule (SCRBRD-083).
+
+### SCRBRD-104 — A live-stream overlay (a scorebug for schools' streams)
+**Priority:** P3 · **Domain:** Broadcast · **Type:** feature (Kameel's earlier designs, 2026-09-27)
+Schools stream matches to YouTube and Facebook. The overlay is a transparent page that streaming software (such as OBS) adds as a browser source. It shows:
+- the batting side, its score and the overs;
+- the other side and the current bowler's figures;
+- this over's balls;
+- a short "FOUR 4 FOUR" or "SIX 6 SIX" banner, following DESIGN_DIRECTION §3.6.
+
+**Blocked:** a stream is public, so the names it shows wait on the public-data rule's step 3 and on consent (SCRBRD-083, SCRBRD-092). Until then it can show role words only. It reads `broadcast_state()`, which is already public-safe.
+
+### SCRBRD-105 — Match Centre summary: what Kameel's earlier design had that step 3c may not
+**Priority:** P2 · **Domain:** Front-end · **Type:** gap check, then build (2026-09-27)
+Check each against step 3c, and build what is missing:
+1. **A details row:** status, competition, age group, division, date, start time and ground.
+2. **Minutes batted** for each batter, taken from the event timestamps.
+3. **The yet-to-bat order and the available bowlers.** An available bowler is one the Laws check allows next over.
+4. **Each bowler's balls this over,** as chips on the bowling card.
+5. **A conditions card** fed from the groundskeeper's pitch report (SCRBRD-085), next to the weather chip.
+
+Names follow the Match Centre's public mode.
+
+### SCRBRD-106 — A graphics pack: broadcast-style cards from the fold
+**Priority:** P2 · **Domain:** Front-end · **Type:** feature (Kameel's broadcast references, 2026-09-27)
+Each graphic is one component, drawn from the fold (partnerships, fow, phases.mjs, per-batter and per-bowler figures) and the career reads. They are used in four places:
+- the Match Centre;
+- big-screen mode;
+- the post-match report;
+- later, the stream overlay (SCRBRD-104).
+
+The graphics:
+1. **Partnerships:** every stand, the pair, a bar for each batter's share, runs and balls, then who is still to bat, extras, overs and the total.
+2. **The batter lower-third:** runs, balls, dots, fours, sixes, strike rate and minutes (from the ball timestamps), with the surname in bold.
+3. **The bowler card:** overs, dots, runs, wickets and economy; one bowler's runs per over as a bar chart; economy by phase; the fall-of-wickets strip.
+4. **The innings story:** each phase with its score, run rate and top performers.
+5. **The scorecard's focus ring:** one batter's dots, ones, twos, threes, fours and sixes, in the chip colours (DESIGN_DIRECTION §3.9).
+6. **Leaderboards:** the season's and the school's records, such as fewest balls to a fifty and highest scores (balls as a subscript, * for not out, the match as context).
+7. **The match summary:** the top three batters and bowlers per innings, and one closing line ("need 23 from 18", "trail by 149", "won by 4 wickets"). Lead and trail are new arithmetic on the fold.
+
+The shared style:
+- balls faced as a subscript next to the runs;
+- right-aligned figures in tabular numerals;
+- the current row highlighted;
+- one footer strip (extras, overs, then the total in a pill);
+- one closing line;
+- a sponsor slot on each graphic, from the sponsors screen (commercial: schools' sponsors).
+
+**Never on any graphic:**
+- a pupil's photo (SCRBRD-092, A8);
+- an age or a date of birth (minors);
+- a name on a public surface except as the public-data rule allows (`publicName()`, SCRBRD-083).
+
+**Portrait first** (the ICC's 2023 vertical feed): design each graphic for a phone held upright, then widen it for
+big screen. Don't shrink a TV layout.
+
+There is no migration. Build it after SCRBRD-101: the ring and the chip colours are shared.
+
+### SCRBRD-107 — A ground data desk: the commentator's screen
+**Priority:** P3 · **Domain:** Front-end · **Type:** feature (Kameel's reference: the commentator's data feed at a ground, 2026-09-27)
+A dense, glanceable screen for a school's announcer, commentator or scorer's box. It shows:
+- the score, overs, run rate and over rate;
+- the projected score at the current rate and at 6, 8 and 10 an over;
+- the batters, with runs, balls, 4s, 6s, strike rate and minutes;
+- the partnership and the last wicket;
+- extras by type (B, LB, W, NB);
+- the bowlers, with overs, maidens, runs, wickets, economy, dots, 4s and 6s;
+- this over, and the runs from the last over;
+- runs per over as a bar chart.
+
+It is signed-in only, for a role that may already read the match, so names are shown in full. It updates live from the same source as the Match Centre. Ball speeds are out of scope: nothing records them.
+
+It reuses SCRBRD-106's components where they fit. There is no migration.
+
+### SCRBRD-108 — A pitch map, entered by hand: line and length per delivery
+**Priority:** P2 · **Domain:** Analytics / coaching · **Type:** feature (Kameel, 2026-09-27; the roadmap's "Pitch Map", up18)
+This is the bowling half of the wagon wheel. The ICC gets it from Hawk-Eye; a school gets it from a person tapping where the ball pitched.
+
+**Who records it and how:**
+- A coach, analyst or second scorer taps on a drawing of the pitch, seen from the bowler's end.
+- It is batter-relative, like the wagon wheel (SCRBRD-101): off and leg follow the striker's hand.
+- **Never on the scorer's pad.** It would delay the next input (DESIGN_DIRECTION §1a).
+- It is its own capture, keyed to the ball's event id. It adds to a delivery and never changes one.
+
+**The readouts:** each bowler's map, the batter's map against him, the length bands (full, good, short, yorker, bouncer), line bands, and the wickets on it.
+Band thresholds are measured values, not guesses, as `placement.mjs` does for depth.
+
+**Needs** a table (a new migration) and RLS. Readers follow the match's readers.
+
+### SCRBRD-109 — A field plot: a coach's fields, laid over where the batter actually scores
+**Priority:** P3 · **Domain:** Coaching · **Type:** feature (Kameel, 2026-09-27; from the ICC's field plot)
+**Setting a field:**
+- A coach drags nine fielders onto the batter-relative field (SCRBRD-101), with the keeper and the bowler fixed.
+- Names come from `positionName()`.
+- The coach saves it as a named field, e.g. "new-ball field v left-hander".
+
+**Laying it over:** a saved field goes over a batter's wagon-wheel points and catch map (SCRBRD-102, SCRBRD-103). The coach sees where the field leaves runs, and where a batter gets out.
+
+**Rules:**
+- A coaching tool only. The scorer never sets fields during play.
+- Saving fields needs a table (a new migration). The overlay alone needs nothing new.
+- Build after SCRBRD-101.
+
+### SCRBRD-110 — Fast-bowler workload, individually: every delivery, the bowler's voice, his own baseline
+**Priority:** P1 design, then P2 build · **Domain:** Player welfare · **Type:** feature (Kameel, 2026-09-27, from Vincent Barnes' "Keeping fast bowlers on the park")
+
+**The case.** Injury risk comes less from how much a bowler bowls than from:
+- sudden jumps after little bowling;
+- intensity;
+- recovery;
+- previous injury.
+
+Consistent exposure protects. Each bowler is monitored individually, the bowler has a voice, and pace is kept, not coached out.
+
+**What exists:** db/08's `workload()` gives, per bowler:
+- match overs over 7 and 28 days, the longest spell, and days since he last bowled;
+- age-band breaches, written as facts;
+- a this-week-against-four-weeks ratio with a word (rested, light, steady, rising, spike);
+- training minutes.
+
+It sits under `player.workload.read`.
+
+**The gaps, and what to build:**
+1. **Every delivery, nets included.**
+   - A nets or training entry per bowler: deliveries, intensity (low, medium or high, or an effort score of 1–10) and minutes.
+   - **Decided: both the coach and the bowler record it.** The coach enters for a group; the bowler enters his own. Each entry says who recorded it.
+   - Match deliveries count wides and no-balls, which are full-effort balls that are not legal deliveries.
+2. **The windows:**
+   - 7, 14, 28 and 42 days;
+   - the change from week to week;
+   - the days between bowling days;
+   - a trend over 3–6 months.
+
+   The ratio stays as a guide, never a diagnosis. Also consider a rolling-average form: the uncoupled ratio or an exponentially weighted average, since the literature has moved on from the coupled 7:28.
+3. **The bowler's voice:**
+   - a short daily check-in: sleep, soreness on a simple body map, fatigue;
+   - a one-tap "something doesn't feel right". It tells the physio and the coach to investigate, and never marks him injured.
+4. **The individual profile:**
+   - injury history, linked from the injury record, feeds his monitoring;
+   - limits set for that bowler by the physio or coach;
+   - a flag when his figures depart from his own baseline;
+   - an optional preseason ramp, so progress is read against a plan.
+5. **Capacity and pace:**
+   - hamstring and strength tests (physio or S&C);
+   - action reviews ("efficient, repeatable, sustainable?");
+   - optional speed-gun readings, so pace is tracked as an asset and a drop can flag fatigue.
+
+**Who reads what.**
+- **Decided:** wellness check-ins, tests and reviews are read by the physio and the coach. They may share with parents when necessary. The share is an explicit act, recorded, not a standing permission.
+- The bowler sees his own.
+- Team-mates never see any of it.
+- The overs themselves stay as public as a scorecard is. What they mean does not.
+
+**Privacy (hard).** Wellness, injury and test results are a child's health information: POPIA special personal information, processed on a competent person's prior consent. The consent is unbundled from the terms, as SCRBRD-092 designs it. Every new table is governed by `packages/policy` sensitivity, with RLS, before any screen. This is Opus work under CLAUDE.md.
+
+**Scope.**
+- **Decided:** schools first, and designed to extend beyond them. Club, provincial and academy programmes, and other sports later: SCRBRD means to become the definitive sport ecosystem globally.
+- So nothing is hard-wired to school age bands or to cricket alone:
+  - an age band is one input to a limit, not the limit;
+  - "delivery" is cricket's unit of load inside a general load model (session, units, intensity, minutes).
+
+**Order:** an Opus design pass first (tables, policy, consent, the load model), for Kameel's review; then the build in phases 1 → 5.
+
 ### SCRBRD-100 — The premium-feel checklist: what is left after step 3c
 **Priority:** P2 · **Domain:** Front-end · **Type:** product polish (Kameel, 2026-09-26; checklist at
 https://claude.ai/artifact/63zVkqVAotrYYQk9dGUhAp; the rule is DESIGN_DIRECTION §1a)
@@ -3638,7 +3819,38 @@ name reaches the provider, and it fails soft to a plain description (`descBall`)
 its line); a browser walk for the Commentary tab signed in and, when the public page exists, signed out without
 consent.
 
-### SCRBRD-097 — The rest of the players × balls readers
+### ~~SCRBRD-097~~ — CLOSED · The rest of the players × balls readers
+**Closed 2026-09-27** on `worktree-agent-a1d43c359c21ee146` (to be cherry-picked): the read's text and
+`db/51_milestone_watch_own_balls.sql`, as the build note below records. The bowling-breach trigger it uncovered is
+SCRBRD-097's one open remainder, noted at the end.
+**Built 2026-09-27:**
+1. **The assessment read** (`READ_QUERIES.ratings`) is one pass in its own text, no migration: the deliveries the
+   reader may see are read once (a materialized CTE), attributed to players with the functions' own CASEs and db/49's
+   arms, and windowed by a predicate on the join to each player's anchors; `ball_wicket_stands()` is asked once per
+   delivery. The `*_since()` functions are untouched and are the reference. `tools/bench-assessment.mjs --check`
+   compares the read with the pre-change statement (verbatim) row for row, raw, as nine readers. As the director:
+   seed 93–99 ms / 18.5–18.8k shared hits → 22–25 ms / 1.7–2.2k; seed + eight walks (3,640 deliveries) 6.3–7.8 s /
+   1.55–1.65M → 1.26–1.29 s / 250–280k; bench (70 players, 4,967 deliveries) 34–42 s / 5.4–7.4M → 0.61–0.68 s /
+   67–69k.
+2. **`milestone_watch()`** (db/51) asks two owner-only invoker helpers, `innings_runs_off_bat()` and
+   `career_runs_off_bat()`, in place of `player_innings`: sums of runs off the bat over the balls he faced, the only
+   arm of `player_innings` that carries runs, so the same numbers decide the same notices. Three partial indexes
+   (striker, bowler, a void's target) bound those reads to the player's own balls. The trigger alone, bench load:
+   6.6–7.3 s → 1.0–1.2 s; a 10,109-row load with careers crossing 500 runs and 25 wickets: 22–42 s → 3.0–3.6 s.
+   db/51 proves the shape unchanged, the helpers equal to `player_innings` over the whole log, and ten notices on a
+   rolled-back fixture (sentinel `ZZ051`); db/99 §29 holds the same, and records which of seven breaks each
+   assertion caught.
+3. **Before/after diff**, a database built at `e2faf46` against one built with db/51, the read and every milestone
+   notice, notification and bowling breach in the order written, ids replaced by names: empty at the seed, the seed
+   plus eight walks, the bench volume, and the 12-boy/40-fixture volume. Plain `node tools/migrate.mjs` over the
+   `e2faf46` database applies only db/51, and `--verify` passes.
+
+**Open, found here:** `bowling_breach_watch()` (db/08) is most of a bulk load, not `milestone_watch()`: 13–80 s of
+the bench load, fivefold between identical runs (autovacuum's statistics land mid-load). Its day check reads
+`bowler_over` for the bowler, whose over numbering is a window per innings, so the bowler cannot be pushed below it:
+the whole log per delivery bowled. `ball_on_free_hit()` under a reader's policy costs ~2.5 ms per wicket in every
+reader that asks `ball_wicket_stands()`, db/49's views included.
+
 **Priority:** P2 · **Domain:** Scoring / performance · **Found 2026-09-26** building db/49
 db/49 made the lifetime career views one pass over the log: the career read at a school's volume (70 players,
 about 5,000 deliveries) went from 83 s to 2.2 s. Two readers keep the old shape, and the RLS check on `ball_event`
@@ -3649,6 +3861,8 @@ runs players × balls times in each:
 2. **`milestone_watch()`** reads `player_innings` for the striker on every inserted ball. Loading 5,000 balls took
    about 48 s, mostly in this per-row trigger. A live match inserts one ball at a time, so it is fine today; a bulk
    import or replay is not. Consider a statement-level trigger, or a check bounded to the ball's own match.
+   (Built: bounded to the striker's and bowler's own balls instead. A statement-level trigger would move every
+   milestone notification after the bowling-breach notifications a row-level one interleaves with.)
 
 Also: the comment on `career_by_season` (db/44) cites "db/99 §21" for the Σ-seasons check, which is §22.
 `tools/bench-career.mjs` measures the career read at volume; use it before and after either fix.
