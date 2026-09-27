@@ -48,9 +48,10 @@ import { writeFileSync } from "node:fs";
 import { DISCIPLINES } from "@scrbrd/scoring";
 import { READ_QUERIES } from "../services/api/read/read-api.mjs";
 import { loadBench } from "./bench-log.mjs";
+import { ownerUrl, appUrl } from "./db-url.mjs";
 
-const OWNER_URL = process.env.DATABASE_URL || "postgres://scrbrd:scrbrd@127.0.0.1:5432/scrbrd";
-const APP_URL = process.env.APP_DATABASE_URL || "postgres://scrbrd_app:scrbrd_app@127.0.0.1:5432/scrbrd";
+const OWNER_URL = ownerUrl();
+const APP_URL = appUrl();
 const DIRECTOR = "88888888-0000-0000-0000-000000000007";
 // db/49's eight readers (tools/bench-career.mjs), and the 1XI coach.
 const READERS = {

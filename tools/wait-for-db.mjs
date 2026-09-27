@@ -15,8 +15,9 @@
  * pg_isready, which is not installed everywhere psql is.
  */
 import pg from "pg";
+import { ownerUrl } from "./db-url.mjs";
 
-const URL = process.env.DATABASE_URL || "postgres://scrbrd:scrbrd@127.0.0.1:5432/scrbrd";
+const URL = ownerUrl();
 const DEADLINE_MS = Number(process.env.DB_WAIT_MS || 60_000);
 const started = Date.now();
 
