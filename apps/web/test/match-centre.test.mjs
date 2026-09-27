@@ -11,6 +11,7 @@ import {
 import {
   nameCode, sideName, sidesOf, sideOfTeam, teamOf, inningsPhase, ageGroupOf, matchLine, nameBook, fowLines,
   didNotBat, extrasOf, runCounts, dismissalKey, inningsBreak, commentaryByOver, oversOf, boardInnings,
+  resultText, revisionNotice, upcomingAndRecent, nextFixtureOf, deliveryOptions,
 } from "../src/lib/matchCentre.js";
 
 let pass = 0, fail = 0;
@@ -87,6 +88,47 @@ ok("...a typed name as typed", names("Typed Bowler") === "Typed Bowler");
 ok("...and an id nobody names is nobody, never the id", names("0a1b2c3d-0000-4000-8000-0000000000ff") === null);
 ok("the generator then says the role", deriveCommentary([{ ...batters({ striker: "0a1b2c3d-0000-4000-8000-0000000000ff", nonStriker: "b" }), id: "q" }],
   { nameOf: names })[0].text.startsWith("The striker"));
+
+group("SCRBRD-100: the result in one clear moment");
+ok("a winner and the margin, in words", resultText(live, { winner: "1XI", margin: "23 runs" }) === "Hilton College 1XI won by 23 runs");
+ok("...4 wickets, the fold's own words", resultText(live, { winner: "Westville Boys' High 1XI", margin: "4 wickets" })
+   === "Westville Boys' High 1XI won by 4 wickets");
+ok("a tie", resultText(live, { winner: null, margin: "tie" }) === "Match tied");
+ok("no result yet", resultText(live, null) === null);
+
+group("SCRBRD-100: a rain delay or interruption");
+ok("overs and target both revised", JSON.stringify(revisionNotice({ revised: { overs: 42, target: 180, reason: "rain" } }))
+   === JSON.stringify({ label: "Rain delay", text: "Overs revised to 42; target 180" }));
+ok("overs alone", revisionNotice({ revised: { overs: 15, target: null, reason: "ground unfit" } }).text === "Overs revised to 15");
+ok("target alone", revisionNotice({ revised: { overs: null, target: 90, reason: "bad_light" } }).text === "Target revised to 90");
+ok("a reason with no mapped word: still says a status", revisionNotice({ revised: { overs: 10, target: null, reason: "other" } }).label === "Play interrupted");
+ok("no revision on record: nothing to say", revisionNotice({ revised: null }) === null && revisionNotice(null) === null);
+
+group("SCRBRD-100: no live matches — upcoming and recent, from the list's own read");
+const MS = [
+  { id: "u1", status: "upcoming", date: "2026-10-05" }, { id: "u2", status: "upcoming", date: "2026-10-01" },
+  { id: "c1", status: "complete", date: "2026-09-01" }, { id: "c2", status: "complete", date: "2026-09-20" },
+  { id: "l1", status: "live", date: "2026-09-27" },
+];
+const ur = upcomingAndRecent(MS, { limit: 3 });
+ok("upcoming, soonest first", ur.upcoming.map((m) => m.id).join() === "u2,u1");
+ok("recent results, latest first", ur.recent.map((m) => m.id).join() === "c2,c1");
+
+group("SCRBRD-100: the full-time screen links onward");
+const withNext = [...MS, { id: "n1", status: "upcoming", date: "2026-10-10", homeLabel: "Hilton College 1XI" },
+  { id: "n2", status: "upcoming", date: "2026-10-02", homeLabel: "Hilton College 1XI" }];
+ok("a side's own next fixture, soonest first", nextFixtureOf(withNext, { label: "Hilton College 1XI" }).id === "n2");
+ok("never the fixture itself", nextFixtureOf(withNext, { label: "Hilton College 1XI", excludeId: "n2" }).id === "n1");
+ok("a side that never appears as a home label: nothing to find, honestly", nextFixtureOf(withNext, { label: "Some Other School 1st XI" }) === null);
+ok("no label at all (an untenanted opponent)", nextFixtureOf(withNext, { label: null }) === null);
+
+group("SCRBRD-100: the amendment flow's delivery picker");
+const commentary100 = deriveCommentary(evs, { nameOf: nameBook(deriveMatch(evs).innings) });
+const opts = deliveryOptions(commentary100, 0);
+ok("every real delivery, oldest first", opts.length > 0 && opts.every((o, i) => i === 0 || opts[i - 1].over < o.over || (opts[i - 1].over === o.over && opts[i - 1].ball <= o.ball)));
+ok("no milestone or over-end line among them", opts.every((o) => !/#/.test(o.key)));
+ok("the target key is the raw event id, with no e: prefix", opts[0].targetKey === opts[0].key.slice(2));
+ok("a wicket's dismissal is not among the deliveries of an innings never played", deliveryOptions(commentary100, 9).length === 0);
 
 console.log(`\n${"─".repeat(52)}\nMATCH CENTRE SUITE: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

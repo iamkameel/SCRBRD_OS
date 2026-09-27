@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { T } from "../design/tokens.js";
 import { ThemeChoice, VisionChoice } from "../ui/ThemeChoice.jsx";
+import { hapticOn, hapticUnavailable, setHapticOn } from "./haptic.js";
 
 /**
  * The pad's menu — the "⋯" at the end of its title bar.
@@ -80,9 +81,28 @@ export function PadMenu({ children }) {
             <h3 style={menuHeading()}>Colours</h3>
             <VisionChoice testid="pad-vision-choice" label="Pad colours"/>
           </section>
+          <section aria-label="Feel">
+            <h3 style={menuHeading()}>Feel</h3>
+            <HapticSwitch/>
+          </section>
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * The haptic tick on every recorded ball (SCRBRD-100 item 4), on or off for
+ * this device, like the theme and the colours beside it. The hint says when
+ * the device will not buzz whatever the switch says.
+ */
+function HapticSwitch() {
+  const [on, setOn] = useState(hapticOn);
+  const why = hapticUnavailable();
+  return (
+    <MenuItem testid="pad-haptic" label="Buzz on every ball" checked={on}
+      hint={why ?? "A short buzz when a ball is recorded. Kept on this device."}
+      onClick={() => { setHapticOn(!on); setOn(!on); }}/>
   );
 }
 

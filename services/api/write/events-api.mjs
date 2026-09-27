@@ -517,6 +517,28 @@ export async function readEvents(pool, secret, bearer, matchId, sinceSeq = 0) {
   });
 }
 
+/**
+ * How many of this device's events the server holds for review on this
+ * match, not yet released or discarded (SCRBRD-089). The device is the
+ * principal's (app_device_id(), set by runAsPrincipal from the token or the
+ * pad's resume credential), and the rows are whatever the caller's own
+ * policies let him read — so an approver, who can read every held row, is
+ * still told only this device's.
+ * @param {Pool} pool @param {string} secret
+ * @param {string | import("../auth/auth.mjs").Principal | undefined} bearer  a header, or a principal (who(req))
+ * @param {string} matchId
+ * @returns {Promise<number>}
+ */
+export async function quarantinedHere(pool, secret, bearer, matchId) {
+  return runAsPrincipal(pool, secret, bearer, async (client) => {
+    const { rows } = await client.query(
+      `select count(*)::int as n
+         from ball_event_quarantine
+        where match_id = $1 and resolved_at is null and device_id = app_device_id()`, [matchId]);
+    return rows[0]?.n ?? 0;
+  });
+}
+
 // ── Routes ──
 /** @param {RouteDeps} deps @returns {Record<string, IdHandler>}  both are /matches/:id/events */
 export function eventRoutes({ pool, secret }) {
@@ -538,10 +560,21 @@ export function eventRoutes({ pool, secret }) {
       }
     },
     // GET /matches/:id/events?since=seq
+    //
+    // `quarantined` (SCRBRD-089): how many events THIS device sent that the
+    // server holds for review, unresolved — so a pad that reloads can still
+    // say "For review N" (the count used to live only in the memory of the
+    // session that sent them). Read under the caller's own policies, nothing
+    // widened: a scorer reads his own quarantined rows (db/17
+    // quarantine_read_own), a pad resume credential those of its own match
+    // (db/50 pad_scope_select); the device is the principal's, never the
+    // request's. A caller who can read none gets 0.
     list: async (req, res) => {
       try {
-        const rows = await readEvents(pool, secret, who(req), req.params.id, Number(req.query?.since || 0));
-        res.json({ matchId: req.params.id, events: rows });
+        const principal = who(req);
+        const rows = await readEvents(pool, secret, principal, req.params.id, Number(req.query?.since || 0));
+        const quarantined = await quarantinedHere(pool, secret, principal, req.params.id);
+        res.json({ matchId: req.params.id, events: rows, quarantined });
       } catch (/** @type {any} */ e) {
         if (e.code === "42501") return res.status(403).json({ error: "not_permitted" });
         res.status(e.status || 500).json({ error: e.code || e.message });

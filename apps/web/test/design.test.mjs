@@ -45,6 +45,8 @@ const group = (t) => console.log("\n" + t);
 // really is.
 const tokens = await import(join(SRC, "design/tokens.js"));
 const { D, T, FLOODLIT, DAYLIGHT, THEMES, applyTheme, themeName, themed, textOn, inkOn } = tokens;
+// The wagon wheel's colours are the chips' (SCRBRD-101); field.js reads the same live tokens.
+const { LK_COLS } = await import(join(SRC, "scorer/field.js"));
 const THEME_NAMES = ["floodlit", "daylight"];
 const isHex = (v) => typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v);
 const hexOf = () => Object.fromEntries(Object.entries(D).filter(([, v]) => isHex(v)));
@@ -318,6 +320,10 @@ const chipFaults = (chips, serves) => {
   }
   return [...out, ...apartFaults({ ...chips, wicket: T.board.figure }, serves)];
 };
+/** The wagon wheel's drawn colours, in the look in force (field.js LK_COLS). */
+const wheelColours = () => ({ one: LK_COLS["1"], two: LK_COLS["2"], three: LK_COLS["3"], four: LK_COLS["4"], six: LK_COLS["6"], extras: LK_COLS.extras, wicket: LK_COLS.W });
+/** A spoke's colour shows on the field: 3:1 on the ground, or 3:1 on the casing it is drawn on where that casing is 3:1 on the ground. */
+const showsOnField = (c) => ratio(c, T.field.ground) >= 3 || (ratio(T.field.casing, T.field.ground) >= 3 && ratio(c, T.field.casing) >= 3);
 const worstLine = (set, serves) => ["normal", ...serves].map((m) => { const [d, a, b] = closest(set, m); return `${m} ${a}/${b} ${d.toFixed(1)}`; }).join(" · ");
 
 group("Colour vision (§3.9) — every palette keeps its chips apart, as its viewers see them");
@@ -347,17 +353,29 @@ group("Colour vision (§3.9) — saved, held and refused stay three states, in e
     const sport = { batting: T.sport.batting, bowling: T.sport.bowling, fielding: T.sport.fielding };
     const sf = apartFaults(sport, SERVES[v]);
     ok(`${lookName(th, v)}: batting, bowling, fielding — ${worstLine(sport, SERVES[v])}`, sf.length === 0, sf.join("; "));
-    // The wagon wheel: a line per ball on the field, a graphic (3:1 on the
-    // ground). Its run colours are held apart in the palettes that serve a
-    // deficiency; Standard's are the wheel's as it always was, printed.
-    const run = { ...T.run };
-    const faint = Object.entries(run).filter(([, c]) => ratio(c, T.field.ground) < 3);
-    ok(`${lookName(th, v)}: every run colour shows on the field (3:1)`, faint.length === 0,
-       faint.map(([k, c]) => `${k} ${c} ${ratio(c, T.field.ground).toFixed(2)}:1`).join(", "));
-    if (v === "standard") console.log(`  (${lookName(th, v)} wagon wheel runs: ${worstLine(run, ["protan", "deutan", "tritan"])})`);
+    // The wagon wheel (SCRBRD-101): a line per ball on the field, a graphic.
+    // Its runs and extras ARE the ball chips — a 1 is the board's pink, a 4
+    // its blue — in every palette; the wicket keeps the wheel's own.
+    const run = wheelColours();
+    ok(`${lookName(th, v)}: the wheel's runs and extras are the chips, a 5 the four's`,
+       run.one === T.chip.one && run.two === T.chip.two && run.three === T.chip.three && run.four === T.chip.four
+         && run.six === T.chip.six && run.extras === T.chip.extra && LK_COLS["5"] === T.chip.four && run.wicket === T.run.wicket,
+       JSON.stringify(run));
+    // Shows on the field at 3:1 — on the ground itself, or on the casing each
+    // spoke is drawn on, where the casing shows on the ground.
+    const faint = Object.entries(run).filter(([, c]) => !showsOnField(c));
+    ok(`${lookName(th, v)}: every wheel colour shows on the field (3:1 on the ground, or on its casing)`, faint.length === 0,
+       faint.map(([k, c]) => `${k} ${c} ${ratio(c, T.field.ground).toFixed(2)}:1 on the ground, ${ratio(c, T.field.casing).toFixed(2)}:1 on the casing`).join(", "));
+    // Told apart in the palettes that serve a deficiency: the chips are apart
+    // already (above); this adds the wheel's wicket, which is not the board's
+    // white. Standard is printed, as it always was: its wicket red is
+    // ΔE 16 from the six's red in ordinary vision — better than the ΔE 4
+    // between the six and the extras it replaced, and still under the floor
+    // (the wicket was kept as it was; see SCRBRD-101).
+    if (v === "standard") console.log(`  (${lookName(th, v)} wagon wheel: ${worstLine(run, ["protan", "deutan", "tritan"])})`);
     else {
       const rf = apartFaults(run, SERVES[v]);
-      ok(`${lookName(th, v)}: the wagon wheel's runs — ${worstLine(run, SERVES[v])}`, rf.length === 0, rf.join("; "));
+      ok(`${lookName(th, v)}: the wagon wheel's colours — ${worstLine(run, SERVES[v])}`, rf.length === 0, rf.join("; "));
     }
   });
 }

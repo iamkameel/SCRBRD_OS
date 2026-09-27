@@ -33,7 +33,7 @@
  * Cricket; deriving made them visible.
  */
 
-import { KIND, BALL_TYPE, isLegal, normaliseDismissal, chargedToBowler, standsOnFreeHit, DISMISSAL, DISMISSAL_LABEL, INNINGS_END_REASON, DERIVED_END_REASONS, RETIREMENT_DISMISSAL, RUN_OUT_END, runsOffBat, inningsEnd } from "./events.mjs";
+import { KIND, BALL_TYPE, isLegal, normaliseDismissal, chargedToBowler, standsOnFreeHit, DISMISSAL, DISMISSAL_LABEL, INNINGS_END_REASON, DERIVED_END_REASONS, RETIREMENT_DISMISSAL, RUN_OUT_END, SUSPENSION_SCOPE, runsOffBat, inningsEnd } from "./events.mjs";
 import { CAPTURE_PROFILE } from "./placement.mjs";
 
 /** @import { LogEvent, SquadMember } from "./events.mjs" */
@@ -129,6 +129,11 @@ const BAT_STATUS = { NOT_OUT: "batting", OUT: "out", RETIRED: "retired" };
  *   bowlers replaced during an over (SCRBRD-080): 0-based over, the legal balls
  *   of it already bowled, who left, who took over, and why (null in a log from
  *   before the pad asked)
+ * @property {{bowler: string | null, reason: string, scope: string, over: number, ballInOver: number}[]} suspensions
+ *   bowlers the umpires suspended in this innings (SCRBRD-094 item 2): who,
+ *   why (SUSPENSION_REASON), for how long (SUSPENSION_SCOPE), and at which
+ *   ball — the 0-based over the next delivery is in and the legal balls of it
+ *   already bowled, as bowlerChanges. A suspension moves no figure.
  * @property {{bat1: string, bat2: string, runs: number, balls: number, wicket: number}[]} partnerships
  * @property {{runs: number, balls: number, bat1: string | null, bat2: string | null}} curPartner
  * @property {BallLogEntry[]} ballLog
@@ -244,7 +249,7 @@ function inningsFolder(ctx = {}, carried = 0) {
     extras: { wide: 0, noBall: 0, bye: 0, legBye: 0, penalty: carried },
     penaltyToFielding: 0, penaltyCarried: carried,
 
-    batsmen: [], bowlers: [], fow: [], nonBallWickets: [], bowlerChanges: [],
+    batsmen: [], bowlers: [], fow: [], nonBallWickets: [], bowlerChanges: [], suspensions: [],
     partnerships: [], curPartner: { runs: 0, balls: 0, bat1: null, bat2: null },
     ballLog: [], overLog: [],
 
@@ -290,6 +295,20 @@ function inningsFolder(ctx = {}, carried = 0) {
   };
 
   const rotate = () => { const s = inn.striker; inn.striker = inn.nonStriker; inn.nonStriker = s; };
+
+  // A batter who retired hurt and walks back in (Law 25.4.2: "retired, not
+  // out" may resume) is batting again, on the same line: his runs and balls
+  // go on from where he left them (SCRBRD-071). Only a retirement that was
+  // not a dismissal — a legacy unmarked retire "out" wrote "retired out" as
+  // its line and is out to the Laws (laws.mjs isOut), so it stays as it was;
+  // one marked W is status OUT already and never matches here.
+  /** @param {Batter | null} b */
+  const resume = (b) => {
+    if (b?.status === BAT_STATUS.RETIRED && b.dismissal !== "retired out") {
+      b.status = BAT_STATUS.NOT_OUT;
+      b.dismissal = null;
+    }
+  };
 
   // Whether the target now standing is one the umpires typed (a revision)
   // rather than the one the innings opened with. An award to the fielding
@@ -380,8 +399,8 @@ function inningsFolder(ctx = {}, carried = 0) {
 
       case KIND.BATTERS: {
         const hadPair = inn.striker != null && inn.nonStriker != null;
-        if (ev.striker != null) { batterFor(ev.striker); inn.striker = ev.striker; }
-        if (ev.nonStriker != null) { batterFor(ev.nonStriker); inn.nonStriker = ev.nonStriker; }
+        if (ev.striker != null) { resume(batterFor(ev.striker)); inn.striker = ev.striker; }
+        if (ev.nonStriker != null) { resume(batterFor(ev.nonStriker)); inn.nonStriker = ev.nonStriker; }
         // Opening the innings, or a new arrival after a wicket: either way the
         // pair changed, so a fresh partnership starts here.
         if (!hadPair || ev.striker != null || ev.nonStriker != null) openPartnership();
@@ -401,6 +420,20 @@ function inningsFolder(ctx = {}, carried = 0) {
         }
         bowlerFor(ev.bowler);
         inn.bowler = ev.bowler;
+        break;
+
+      // The umpires suspended a bowler (Law 41; SCRBRD-094 item 2). Recorded,
+      // and nothing else: no figure moves, and the bowler stays "on" until
+      // someone else is named — so the one who finishes the over is a change
+      // during it (bowlerChanges, reason "suspended"), exactly as for an
+      // injury. That he may not bowl again is the Laws' to refuse
+      // (lawsRefusal), from this record; the fold does not second-guess a log.
+      case KIND.BOWLER_SUSPENDED:
+        inn.suspensions.push({
+          bowler: ev.bowler ?? null, reason: String(ev.reason ?? ""),
+          scope: ev.scope === SUSPENSION_SCOPE.MATCH ? SUSPENSION_SCOPE.MATCH : SUSPENSION_SCOPE.INNINGS,
+          over: Math.floor(inn.balls / 6), ballInOver: inn.balls % 6,
+        });
         break;
 
       // Law 41.18. To the batting side: in this total, now. To the fielding
@@ -740,17 +773,27 @@ function describeDismissal(ev, bowlerName) {
 }
 
 /**
- * Is this over a maiden: six legal balls, and nothing charged to the bowler?
- * Byes and leg byes are not the bowler's, so they do not spoil it; wides and
- * no-balls are, so they do. One rule, read by the fold's maiden count and by
- * the commentary's end-of-over line.
+ * Is this over a maiden: six legal balls, all by ONE bowler, and nothing
+ * charged to him? Byes and leg byes are not the bowler's, so they do not
+ * spoil it; wides and no-balls are, so they do. One rule, read by the fold's
+ * maiden count and by the commentary's end-of-over line.
  *
- * @param {ReadonlyArray<{type?: string | null, value?: number | null}>} balls  one over's deliveries
+ * An over two bowlers shared — one injured or suspended during it, another
+ * finishing it (SCRBRD-080, SCRBRD-094 item 2) — is a maiden for neither:
+ * neither bowled a completed over, which is what a maiden is
+ * (docs/SCORING_RULES.md §4). Before this the first of them was credited
+ * with it. A delivery the fold stamped with no bowler (nobody on: a pad's held
+ * cascade) is not a second bowler.
+ *
+ * @param {ReadonlyArray<{type?: string | null, value?: number | null, bowlerId?: string | null, bowler?: string | null}>} balls
+ *   one over's deliveries (overLog), each with the bowler the fold stamped
  * @returns {boolean}
  */
 export function isMaiden(balls) {
   const legalCount = balls.filter((b) => isLegal(b.type ?? BALL_TYPE.RUN)).length;
   if (legalCount < 6) return false;
+  const by = new Set(balls.map((b) => ("bowlerId" in b ? b.bowlerId : b.bowler) ?? null).filter((x) => x != null));
+  if (by.size > 1) return false;
   const charged = balls.reduce((sum, b) => {
     const t = b.type ?? BALL_TYPE.RUN;
     if (t === BALL_TYPE.BYE || t === BALL_TYPE.LEG_BYE) return sum;

@@ -49,9 +49,9 @@
  */
 
 import { KIND, BALL_TYPE, ILLEGAL, NB_RUNS, RUN_OUT_END, DISMISSAL, INNINGS_END_REASON, PENALTY_REASON,
-  PENALTY_REASON_TEXT, BOWLER_CHANGE_REASON, normaliseDismissal, normalisePenaltyReason, runsOffBat, chargedToBowler } from "./events.mjs";
+  penaltyReasonWords, BOWLER_CHANGE_REASON, normaliseDismissal, normalisePenaltyReason, runsOffBat, chargedToBowler } from "./events.mjs";
 import { deriveMatch, foldSteps, penaltyCredits, retirementDismissal, isMaiden, fmtOvers } from "./replay.mjs";
-import { positionName } from "./placement.mjs";
+import { positionName, sectorOf, batHandOf } from "./placement.mjs";
 import { SHOT_WORDS, NO_STROKE, SECTOR_WORDS } from "./words.mjs";
 
 /** @import { LogEvent } from "./events.mjs" */
@@ -154,10 +154,16 @@ const choose = (key, slot, options) => options[seedOf(`${key}|${slot}`) % option
  * Where the ball went, in words, when the scorer recorded it: a point by its
  * fielding position (positionName), a sector-era ball by its sector. Null
  * when neither was recorded.
+ *
+ * A stored seg is the SCREEN's sector, mirrored for a left-hander, so it is
+ * read through the hand of the batter who faced the ball (sectorOf): his
+ * cover drive is "through cover", not "through mid-wicket". A point's theta
+ * is batter-relative already.
  * @param {{theta?: number | null, radius?: number | null, placementSource?: string | null, seg?: number | null}} b
+ * @param {string} [batHand]  "R" | "L", the striker's
  * @returns {string | null}
  */
-function areaOf(b) {
+function areaOf(b, batHand = "R") {
   if (b.placementSource === "point" && b.theta != null && b.radius != null) {
     const p = positionName(b.theta, b.radius);
     if (p == null || p === "at feet") return null;
@@ -166,8 +172,8 @@ function areaOf(b) {
     if (slip) return `${ordinal(Number(slip[1]))} slip`;
     return p;
   }
-  if (b.seg != null && Number.isInteger(b.seg) && b.seg >= 0 && b.seg < SECTOR_WORDS.length) return SECTOR_WORDS[b.seg];
-  return null;
+  const s = sectorOf(b, batHand);
+  return s == null ? null : SECTOR_WORDS[s];
 }
 
 /**
@@ -186,10 +192,11 @@ function toArea(area, prep) {
  * (beaten, padded away) is not sent anywhere.
  * @param {{shot?: string | null, theta?: number | null, radius?: number | null, placementSource?: string | null, seg?: number | null}} b
  * @param {"to" | "through" | "over"} prep
+ * @param {string} [batHand]  the striker's, for a sector-era ball (areaOf)
  */
-function shotPhrase(b, prep = "to") {
+function shotPhrase(b, prep = "to", batHand = "R") {
   const shot = b.shot != null && Object.hasOwn(SHOT_WORDS, b.shot) ? SHOT_WORDS[b.shot] : null;
-  const area = shot != null && NO_STROKE.has(/** @type {string} */ (b.shot)) ? null : areaOf(b);
+  const area = shot != null && NO_STROKE.has(/** @type {string} */ (b.shot)) ? null : areaOf(b, batHand);
   return [shot, area ? toArea(area, prep) : null].filter(Boolean).join(" ");
 }
 
@@ -462,6 +469,7 @@ export function deriveCommentary(events = [], options = {}) {
             && normalisePenaltyReason(next.reason, false) === PENALTY_REASON.SHORT_RUNNING;
           const { kind, text } = deliveryLine(ev, entry, {
             key, B: who(bowlerId, "bowler"), S: who(strikerId, "striker"), who, prev, cur, shortRun, score: score(cur),
+            hand: batHandOf(inn, strikerId),
           });
           push(key, entry.over, entry.ballInOver + 1, kind, text);
 
@@ -526,7 +534,7 @@ export function deriveCommentary(events = [], options = {}) {
           const reason = normalisePenaltyReason(ev.reason, toBat);
           // No Law clause numbers in anything a spectator reads (Kameel, 2026-09-26: he is
           // checking them against the current Code). The words stand without the bracket.
-          const why = reason ? `, for ${PENALTY_REASON_TEXT[reason].replace(/\s*\((?:Law|Laws)\s[^)]*\)/g, "")}` : "";
+          const why = reason ? `, for ${penaltyReasonWords(reason)}` : "";
           const pos = afterLast();
           const head = `${cap(words(runs))} penalty ${plural(runs, "run")}`;
           if (toBat) {
@@ -658,6 +666,7 @@ function countedAfter(evs) {
  * @property {Snap} prev  @property {Snap} cur
  * @property {boolean} shortRun  the next event disallows this ball's runs (Law 41.5)
  * @property {string} score  "Hilton 43/3." after the ball
+ * @property {"R" | "L"} hand  the striker's (batHandOf): which way a sector-era ball's seg reads
  */
 
 /**
@@ -668,12 +677,12 @@ function countedAfter(evs) {
  * @returns {{kind: string, text: string}}
  */
 function deliveryLine(ev, entry, c) {
-  const { key, B, S, who, prev, cur, score } = c;
+  const { key, B, S, who, prev, cur, score, hand } = c;
   const type = ev.type ?? BALL_TYPE.RUN;
   const v = ev.value ?? 0;
   const lead = `${prev.freeHit ? "Free hit: " : ""}${B} to ${S}`;
   const free = type === BALL_TYPE.NO_BALL ? " Free hit to come." : "";
-  const sa = shotPhrase(entry);
+  const sa = shotPhrase(entry, "to", hand);
   /** @param {string} body */
   const line = (body) => `${lead}, ${body}`;
   /** @param {string[]} parts */
@@ -697,7 +706,7 @@ function deliveryLine(ev, entry, c) {
       }
       const off = runsOffBat(ev);
       const body = off === 0 ? "no-ball"
-        : (off === 4 || off === 6) && sa ? `no-ball, ${shotPhrase(entry, off === 6 ? "over" : "through")} for ${words(off)}`
+        : (off === 4 || off === 6) && sa ? `no-ball, ${shotPhrase(entry, off === 6 ? "over" : "through", hand)} for ${words(off)}`
           : off === 4 || off === 6 ? `no-ball, and ${words(off)} off the bat`
             : `no-ball, ${sa ? `${sa}, ` : ""}and they run ${words(off)}`;
       return { kind: off === 6 ? COMMENTARY_KIND.SIX : off === 4 ? COMMENTARY_KIND.FOUR : COMMENTARY_KIND.BALL, text: `${line(body)}.${free}` };
@@ -713,7 +722,7 @@ function deliveryLine(ev, entry, c) {
       const mode = normaliseDismissal(ev.dismissal);
       const outId = ev.dismissed ?? entry.strikerId ?? null;
       const F = ev.fielder ? who(ev.fielder, mode === DISMISSAL.STUMPED ? "keeper" : "fielder") : null;
-      const area = areaOf(entry);
+      const area = areaOf(entry, hand);
       /** @type {string} */
       let method;
       switch (mode) {
@@ -757,7 +766,7 @@ function deliveryLine(ev, entry, c) {
     }
     default: {
       if (v === 4 || v === 6) {
-        const p = shotPhrase(entry, v === 6 ? "over" : "through");
+        const p = shotPhrase(entry, v === 6 ? "over" : "through", hand);
         const word = v === 6 ? choose(key, "six", ["six", "six runs", "that's six"]) : choose(key, "four", ["four", "four runs", "that's four"]);
         return { kind: v === 6 ? COMMENTARY_KIND.SIX : COMMENTARY_KIND.FOUR, text: `${line(join(word, p))}.` };
       }

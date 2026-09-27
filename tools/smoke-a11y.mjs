@@ -592,8 +592,9 @@ async function walk(theme) {
     // the pad is measured again as "padOver", against the same floors as the
     // pad: the chips' figures are text on their own fill, so the contrast
     // count measures them on the colour they sit on.
-    for (const key of ["run-1", "run-4", "key-wide"]) {
-      await page.locator(`[data-testid="${key}"]`).first().click({ timeout: 3000 }).catch(() => {});
+    // An extra is two taps since SCRBRD-100: the kind, then its runs.
+    for (const keys of [["run-1"], ["run-4"], ["key-wide", "extra-run-0"]]) {
+      for (const key of keys) await page.locator(`[data-testid="${key}"]`).first().click({ timeout: 3000 }).catch(() => {});
       await page.waitForTimeout(2000);
     }
     const chips = await page.evaluate(() => [...document.querySelectorAll('[data-testid="board-over"] [data-chip]')].map((c) => {
@@ -770,10 +771,14 @@ async function padFit() {
         await page.waitForTimeout(400);
       };
       await basic(true);
-      for (const k of ["run-1", "run-4", "run-6", "key-wide"]) { await page.locator(`[data-testid="${k}"]`).click({ timeout: 3000 }); await page.waitForTimeout(1900); }
-      await page.locator('[data-testid="key-noball"]').click({ timeout: 3000 });
-      await page.locator("button", { hasText: "Confirm No Ball" }).click({ timeout: 3000 });
-      await page.waitForTimeout(2500);
+      for (const k of ["run-1", "run-4", "run-6"]) { await page.locator(`[data-testid="${k}"]`).click({ timeout: 3000 }); await page.waitForTimeout(1900); }
+      // The extras in two taps (SCRBRD-100): the kind, then the runs.
+      for (const k of ["key-wide", "key-noball"]) {
+        await page.locator(`[data-testid="${k}"]`).click({ timeout: 3000 });
+        await page.locator('[data-testid="extra-run-0"]').click({ timeout: 3000 });
+        await page.waitForTimeout(1900);
+      }
+      await page.waitForTimeout(600);
       const where = () => page.evaluate(() => {
         scrollTo(0, 0);
         const strip = document.querySelector('[data-testid="pad-strip"]').getBoundingClientRect();
@@ -799,6 +804,24 @@ async function padFit() {
           console.log(`  (${at})`);
           if (w === 390) ok(`${at} — at least ${STRIP_CLEAR}, in its place, unscrolled`, m.clear >= STRIP_CLEAR && m.covered === 0 && m.scrollY === 0 && m.chips >= 6, JSON.stringify(m));
           else ok(`${at} — on screen without scrolling`, m.clear >= 0 && m.stripBottom <= hgt && m.scrollY === 0, JSON.stringify(m));
+          // An extra's second tap (SCRBRD-100 item 3) asks its runs in the
+          // pad's own space: the strip stays where the thumb is, and the
+          // runs are on screen above it. The no-ball's is the tallest.
+          if (innings === "a chase") {
+            const before = await page.evaluate(() => Math.round(document.querySelector('[data-testid="pad-strip"]').getBoundingClientRect().top));
+            await page.locator('[data-testid="key-noball"]').click({ timeout: 3000 });
+            await page.waitForTimeout(250);
+            const open = await page.evaluate(() => {
+              const strip = document.querySelector('[data-testid="pad-strip"]').getBoundingClientRect();
+              const keys = [...document.querySelectorAll('[data-testid="extra-panel"] button')].map((k) => k.getBoundingClientRect());
+              const board = document.querySelector('[data-testid="pad-board"]').getBoundingClientRect();
+              return { stripTop: Math.round(strip.top), keys: keys.length, above: keys.every((k) => k.bottom <= strip.top + 1),
+                       onScreen: keys.every((k) => k.top >= 0), overBoard: keys.some((k) => k.top < board.bottom), scrollY };
+            });
+            ok(`${w}×${hgt} ${name}: the no-ball's runs open over the pad's keys, the strip unmoved (${before} → ${open.stripTop}), none over the board`,
+               open.keys >= 10 && open.stripTop === before && open.above && open.onScreen && !open.overBoard && open.scrollY === 0, JSON.stringify(open));
+            await page.locator('[data-testid="extra-cancel"]').click({ timeout: 3000 });
+          }
         }
       }
     } catch (e) {

@@ -30,6 +30,7 @@ export const SCORING_BLOCK = Object.freeze({
   NEXT_BATTER:    "next_batter",     // an end is empty after a wicket or a retirement
   OPENING_BOWLER: "opening_bowler",  // nobody has bowled yet and nobody is named to
   NEXT_BOWLER:    "next_bowler",     // the over ended and replay cleared the bowler
+  BOWLER_SUSPENDED: "bowler_suspended", // the umpires suspended the bowler on; another must be named (SCRBRD-094)
 });
 /** @typedef {typeof SCORING_BLOCK[keyof typeof SCORING_BLOCK]} ScoringBlock */
 
@@ -52,6 +53,7 @@ export const SCORING_BLOCK_TEXT = Object.freeze({
   [SCORING_BLOCK.NEXT_BATTER]:    { says: "there is no batter at one end", fix: "Send in the next batter" },
   [SCORING_BLOCK.OPENING_BOWLER]: { says: "the opening bowler has not been chosen", fix: "Choose the opening bowler" },
   [SCORING_BLOCK.NEXT_BOWLER]:    { says: "nobody is bowling the next over", fix: "Choose the bowler" },
+  [SCORING_BLOCK.BOWLER_SUSPENDED]: { says: "the umpires suspended the bowler — another bowler finishes the over", fix: "Choose who finishes the over" },
 });
 
 /**
@@ -98,6 +100,12 @@ export function scoringReadiness(inn) {
     blocked.push(opening
       ? reason(SCORING_BLOCK.OPENING_BOWLER)
       : reason(SCORING_BLOCK.NEXT_BOWLER, { over: Math.floor((inn.balls ?? 0) / 6) + 1 }));
+  } else if ((inn.suspensions ?? []).some((s) => s.bowler === inn.bowler)) {
+    // Suspended by the umpires in this innings (SCRBRD-094 item 2): the fold
+    // keeps him on until another is named, so the pad asks for one. A bowler
+    // suspended for the match in an earlier innings is the Laws' to refuse
+    // (lawsRefusal reads the whole match); this gate sees one innings.
+    blocked.push(reason(SCORING_BLOCK.BOWLER_SUSPENDED));
   }
   return { ready: blocked.length === 0, blocked };
 }

@@ -2919,8 +2919,19 @@ after it refused too.
 - ~~`contact` and `trajectory` are mapped by `toRow` but not listed in the live INSERT or in `quarantine_resolve`, so they are dropped.~~ **Done** (db/37, `events-api.mjs`): both are written on the live path and on release, and read back. Old rows' fingerprints do not move (stored NULL, pad sends null, NULLs stripped); `tools/smoke-laws.mjs` retries a row written by the old insert.
 - ~~A ball released from quarantine (`quarantine_resolve`) is inserted without the Laws check.~~ **Done**: the release route calls `quarantine_resolve()` in a savepoint (it keeps the authority check and now takes the per-match lock), folds the log and asks `lawsRefusal()`; a refusal rolls back, keeps the ball held and returns `laws_refused` with the reason in words. The panel offers Discard or Leave it held.
 - ~~A key already held in quarantine and re-sent while the device holds the token is written live; a later release of the held copy then hits the unique key.~~ **Done**: writing it live is right (lease, epoch and Laws all pass), and db/37's trigger closes the held copy as `superseded` in the same statement; rows already left open are closed by the migration. (The old release did not actually hit the unique key — db/14's own check answered `already_recorded` and closed the row as `rejected` — but until then the row sat open in the approver's queue.)
-- A batter returning after retiring hurt keeps "retired" on his record in the fold.
-- Timed out and retired out are recorded as `W` balls, which count as a legal delivery of the over.
+- ~~A batter returning after retiring hurt keeps "retired" on his record in the fold.~~ **Done 2026-09-27**: a
+  `batters` event naming a batter retired hurt puts him back on his own line — status batting, no dismissal line, his
+  runs and balls going on (`replay.mjs` `resume`). An unmarked legacy `retire` "out" (the Laws read it as out and refuse
+  the return) is left as it was. The batting-order sheet lists a retired-hurt batter under "Retired hurt — may resume".
+  SQL never read the retirement, so nothing moved there: `smoke-fold-figures` now brings batters back from retired hurt
+  in its generated logs (5 in its run) and every SQL figure still agrees. `replay.test` (two cases, each falsified: no
+  resume, and resuming the legacy "retired out"). Found, not fixed: the pad has no way to RECORD retired hurt (nothing
+  emits `retire` with reason `hurt`), so the resume list shows only for a log that came with one.
+- ~~Timed out and retired out are recorded as `W` balls, which count as a legal delivery of the over.~~ **Already done by
+  SCRBRD-081 (2026-09-24)**, checked 2026-09-27: both are a `retire` marked `type: "W"` (no ball, no bowler figure, no
+  ball faced), through the `nonBallWickets` path; an old W *ball* naming either still folds as history
+  (`replay.test` J pins both). db/40 made SQL count them; `smoke-fold-figures` (timed out and retired out in its
+  generated logs) agrees. No change was needed.
 - ~~Undoing a refused event that is not the last one still appends a `void`, which the server refuses and holds too.~~ Done 2026-09-24: undo drops a held event wherever it sits and lets its held copy go (`undoLast` `isHeld`, `undoOnPad`; `held.test.mjs` group I, `smoke-browser-held.mjs` group F).
 - ~~`tools/smoke-a11y.mjs` and `tools/smoke-browser-read.mjs` both use port 4326~~ — fixed 2026-09-24 (smoke-a11y → 4331).
 - ~~`tools/check-imports` reads the word "can" in JSX text as a call to the `can()` helper~~ — fixed 2026-09-24.
@@ -3207,7 +3218,8 @@ keys: after the upgrade a re-offered, already-acknowledged ball reads as unsent 
 - **SCRBRD-080 — Mid-over bowler change records its reason.** Allowed (Law 17.8.1); the pad asks *Injury or suspended?* and records it on the `bowler` event. P2.
   **Built 2026-09-24:** `bowler({ bowler, reason: "injury" | "suspended" })`; a mid-over change with no reason is
   refused at commit (`mid_over_no_reason`); old logs replay. Not built: Law 41 says a suspended bowler does not bowl
-  again in the innings — nothing refuses him yet (a further product decision).
+  again in the innings — nothing refuses him yet (a further product decision). **Built 2026-09-27** as SCRBRD-094
+  item 2 (`bowler_suspended`); an over shared after an injury is now a maiden for neither bowler.
 - **SCRBRD-081 — Timed out and retired out are not deliveries.** A non-ball dismissal event; over count and bowler figures unaffected; old logs replay unchanged. P2.
   **Built 2026-09-24:** a `retire` marked `type: "W"` (docs/SCORING_RULES.md, "Timed out and retired out"). Left
   open: the career views (db/02, db/13) and the dismissal breakdown (db/26) read `kind = 'ball'`, so these
@@ -3412,7 +3424,7 @@ who won and what they chose. **Follow-up (UX):** an animation accompanies that r
 result the scorer entered and never decides it (no random or virtual coin anywhere in the app). Build with the pad's
 toss sheet (`scorer/toss.jsx`), reduced motion honoured, after step 2 of the redesign lands.
 
-### SCRBRD-094 — Law 41: penalty runs to the fielding side (item 1 built), and a bowler suspended mid-over (item 2, decided 2026-09-26; to build after the penalty sheet)
+### SCRBRD-094 — Law 41: penalty runs to the fielding side (item 1 built), and a bowler suspended mid-over (item 2, built 2026-09-27)
 **Priority:** P2 · **Domain:** Scoring · **Type:** decision needed (2026-09-26)
 Two Law 41 questions Kameel is researching before deciding; nothing is built until he does:
 1. Penalty runs awarded to the fielding side (SCRBRD-090's second point): the fold leaves them out of every innings,
@@ -3460,6 +3472,11 @@ Two Law 41 questions Kameel is researching before deciding; nothing is built unt
    discipline record, `db/25`) is NOT built: one line on the sheet says the umpires report it. Proof:
    `apps/web/test/penalty-sheet.test.mjs`, `tools/smoke-browser-penalty.mjs` (the board against the API's live
    score and target at every step), and every existing walk unchanged.
+   **Its three loose ends, 2026-09-27:** the Match Centre's scorecard already folds the whole match (step 3c replaced
+   `views/shared.jsx`'s per-innings fold with `deriveMatch`); the held sheet's reason words lost their clause numbers,
+   through one helper, `penaltyReasonWords()` in `events.mjs`, which the pad's sheet and the commentary now use too; and
+   a short run off a no-ball asks the no-ball's kind — `ball()` used to drop `nbType` on every no-ball and now keeps it
+   (the free hit was never the kind's: the fold gives one after every no-ball, and the pad's banner now reads it there).
 2. A bowler suspended mid-over (SCRBRD-080's unbuilt half): Law 41 says he may not bowl again in the innings.
    **Decided 2026-09-26 (Kameel's research, MCC Law 41, Unfair Play).** A bowler is suspended as soon as the ball is
    dead, on these grounds, as Kameel gives them:
@@ -3499,6 +3516,87 @@ Two Law 41 questions Kameel is researching before deciding; nothing is built unt
    **Clause numbers to verify before any words ship:** this research gives the protected area as 41.13, and the
    penalty-runs research gave repeated protected-area infractions as 41.14. The screens show the reason in words
    only, not clause numbers, until Kameel confirms them against the current Code.
+
+   **Built 2026-09-27.** Engine: `bowler_suspended` (`bowlerSuspended()` in `events.mjs`): the bowler, a reason from
+   `SUSPENSION_REASON` (beamers, short_pitched, deliberate_no_ball, protected_area, fielding_time_wasting,
+   ball_tampering) with words in `SUSPENSION_REASON_TEXT`, and the scope the reason carries (`SUSPENSION_REASON_SCOPE`:
+   ball tampering the match, the rest the innings — filled in, and a different one refused). `suspensionWords()` is the
+   sentence for the commentary generator (SCRBRD-098: `commentary.mjs` was not touched beyond the helper below; it has
+   no suspension line yet — the words are ready for it). No clause number in any shown text; they are in comments. The
+   fold records `inn.suspensions` (who, why, scope, over and ball) and moves no figure; the bowler stays on until
+   another is named, so the replacement is a change during the over (`bowlerChanges`, reason `suspended`). A split over
+   credits each his own balls and runs and is a maiden for neither (`isMaiden()` wants one bowler — this also changes an
+   over shared after an injury, SCRBRD-080, whose first bowler used to get the maiden). `lawsRefusal`: a ball from, or a
+   `bowler` naming, a bowler suspended this innings or for the match in an earlier one (`bowler_suspended`,
+   `suspendedBowlers()`); a suspension of anyone but the bowler on or of the last ball (`not_bowling`); an unknown
+   reason or a scope the reason does not carry (`suspension_unknown`); the same bowler twice. The replacement's two
+   rules are the existing Law 17.8 check (`bowledLastOver`), unchanged; the pad's gate blocks a ball while the
+   suspended man is on (`SCORING_BLOCK.BOWLER_SUSPENDED`). Pad: "Umpire suspended the bowler" on the menu (and
+   "Suspended" on the change-of-bowler sheet): the reason in words, how long, Record; then at once who finishes the
+   over, only the bowlers the Laws take, the rest with why not (`scorer/suspension.js`, `suspendSheet.jsx`); the new-over
+   sheet now says why each refused bowler is refused. The umpires' report: from the menu once recorded, and after the
+   match (under the board, and on the result screen) — never during play; filed through the existing discipline route
+   (`POST /api/players/:id/discipline`, db/25) with the bowler and the words filled in by an account that files conduct
+   (the pad now receives the role), else it says who files it and where (Match Centre → the fixture → Report an
+   incident). The scorecard lists the suspension in words. SQL: nothing moved, no migration — `smoke-fold-figures`
+   generates suspensions mid-over (17 in its run) and every SQL figure agrees with the fold. Proof: `laws.test` P (each
+   rule falsified), `replay.test` M, `apps/web/test/suspension-sheet.test.mjs`, `tools/smoke-browser-suspension.mjs`.
+   Not modelled: the Laws' two-innings reading refuses any ball in a third innings (MATCH_DECIDED), so "the rest of the
+   match" is proved for a bowler event there and for a ball in the second innings.
+
+### SCRBRD-101 — The wagon wheel: accurate names, off and leg by the batter's hand, point capture on the pad
+**Built 2026-09-27.** **Priority:** P1 · **Domain:** Scoring / Scorer UI / analytics · **Type:** correctness + feature
+(Kameel, 2026-09-27: batter's end at the top, bowler's at the bottom, keeper behind the batter; off and leg follow
+the batter's hand; the pad's Area step captures a point)
+
+**The frame, checked.** `placement.mjs` stores `theta` clockwise from directly behind the batter, batter-relative.
+Drawn with the batter at the top, a right-hander (left shoulder to the bowler) faces the screen's left: off side left,
+leg side right, theta 90 is square leg. A left-hander is the mirror (`screenAngle`). Kept as it was.
+
+**Found and fixed:**
+1. **The sector names were about 30° off.** `SEGS` (field.js) and `SECTOR_WORDS` (words.mjs) named 90° "Mid On" (it
+   is square leg), 120° "Long On" (mid-wicket), 240° "Mid Off" (cover), 270° "Cover" (point), 300° "Point" (backward
+   point), so the commentary said "through mid-on" for a ball hit square. Now one source of truth: `SECTORS` in
+   placement.mjs names each sector by `angularFamily()` at its centre (0° long stop, 30° fine leg, 60° backward
+   square leg, 90° square leg, 120° mid-wicket, 150° mid on, 180° straight, 210° mid off, 240° cover, 270° point,
+   300° backward point, 330° third). field.js and words.mjs derive from it.
+2. **A stored `seg` is the screen's sector, not the batter's.** A sector tap stored the wedge tapped, and
+   `placementFromTap` derives seg from the screen angle, so for a left-hander every sector word, side, heat-map wedge
+   and per-sector sum had off and leg swapped. The stored meaning is kept (no row moves, no migration); readers go
+   through `batterSector(seg, hand)` = `(12 − seg) % 12` for "L", or `sectorOf(ball, hand)`, which reads a point's
+   theta (the two roundings differ on the 15° lines). Every reader of `seg` was checked; see the report for the list.
+   No SQL view or function groups `seg` into sides or names (grep of db/), so there is no db/53.
+   **Cannot be corrected:** a batter with no recorded hand is read as right-handed (`batHandOf`), and so are his
+   balls; a sector-era ball also assumes the scorer tapped where the ball went on the field as drawn, not the label.
+3. **OFF and LEG were fixed on the wheel** (6px SVG text, always left and right). `FieldLabels` (new) lays OFF and
+   LEG by the hand, the rim positions (third, point, cover, long off, long on, mid-wicket, square leg, fine leg, from
+   the engine's families) and the Batter and Bowler ends, as 12px HTML over the field. A view draws in one frame
+   (`frameOf`): the striker's while capturing, one batter's hand, or a right-hander's with the left-handers mirrored
+   and "Left-handers' shots mirrored so leg side is always on the right" under it. The heat map follows the same frame.
+4. **The wheel's colours did not match the chips.** The spokes are now `T.chip` for each run value in every palette
+   (5 takes the four's, every extra the extras'); the wicket and the dot are unchanged. Each spoke sits on a casing
+   (`T.field.casing`, the board's black in daylight). `T.run` keeps only the wicket. design.test.mjs measures it.
+
+**Point capture.** The Area step uses the wheel's point capture (one tap, no snapping), names the position while
+the finger is down, and hands the whole placement through `onCommitDetailed` (`padCommit`) to `commitBall`, as the
+Pro hub does; `deliveryOf()` (delivery.js) builds every delivery. "Didn't travel" records `no_contact` after a shot
+that missed the bat, else `not_applicable`, profile `full`. A wicket keeps the placement on both paths (the hub's
+used to reach the wicket sheet as seg and zone only). SCRBRD-095 item 1 is closed by this.
+
+**Guards:** `packages/scoring/test/placement.test.mjs` (new), `commentary.test.mjs` group J,
+`apps/web/test/wheel.test.mjs` groups E–G, `apps/web/test/pad-point.test.mjs` (new: the pad's ball equals the hub's
+for the same tap), `design.test.mjs` (the wheel's colours), `tools/smoke-browser-wagonwheel.mjs` (new, registered).
+
+**Left open:**
+- `third` on the rim, where Kameel's list says "third man": the engine's families use "third" (modern usage) and
+  so do `positionName` and the commentary. One word in `FAMILIES` if he prefers the other.
+- Standard's wheel: the six's red and the wicket's red are ΔE 16 apart in ordinary vision (under the 25 floor, better
+  than the six/extras ΔE 4 before). The wicket was kept as asked; the safe palettes clear the floor.
+- db/07's column comment and db/98's seed comments describe theta as "from straight down the ground"; the engine's
+  frame is from behind the batter. The seed's "through the covers" balls (300–330°) read as backward point and third.
+  Comments in a shipped file and a seed; not changed here.
+- A no-ball hit from the three-phase pad still loses its area (the no-ball sheet reads the hub's selection).
+- The one-tap Dot mid-ball, with no area chosen, records `not_required` / `quick` as before, not `skipped`.
 
 ### SCRBRD-102 — A wagon-wheel analysis panel: filters, run chips, off and on side, areas per side
 **Priority:** P2 · **Domain:** Front-end / analytics · **Type:** feature (Kameel's earlier SCRBRD designs, 2026-09-27)
@@ -3703,22 +3801,104 @@ In flight:
 5. Undo shows what it will reverse ("Undo: 4 to R Pillay").
 6. The Laws check's refusals say the likely cause in words ("7 balls in this over — was one a wide or no-ball?").
 
+**Built 2026-09-27** (items 1–6), with every event the pad sends unchanged:
+1. **Dot and 1** (`scorer/pad.jsx` `OutcomeKeys`, Basic Scoring and the three-phase outcome): two wide and 88 tall,
+   the lowest run keys, next to the strip; 2, 3, 4 and 6 one row above; the wicket key heads the block. The strip's
+   Dot is 3/5 of its width. No key moves from ball to ball. `padFit` (smoke-a11y) still holds at 390 × 844 (Shot
+   phase in a chase: 24px clear, was 28) and 360 × 740 (docked).
+2. **The likely bowler and the next batter first** (`scorer/prompts.js` `bowlerChoices`, `batterChoices`; the sheets
+   in `scorer/sheets.jsx`): one list, the bowler of the over before last first and marked "Likely next" when
+   `lawsRefusal()` lets him bowl, then the rotation as they first bowled, then those who have not; anyone the Laws
+   refuse stays in place, unavailable, with the reason in words (`unavailableWords`, no clause numbers; a refusal
+   code the build does not know reads "Cannot bowl this over", so the Laws batch's suspended bowler is honoured).
+   Nobody is likely before the third over, or mid-over. The batting order's next name is first, marked Next. One tap
+   confirms either.
+3. **An extra in two taps** (`scorer/extras.js`, `scorer/delivery.js`): Wide, No ball, Bye and Leg bye are the
+   strip's first row on every phase and under Basic Scoring; a kind opens its runs on the strip's top edge, over the
+   phase keys (the strip never moves, docked or not), the likely runs marked and focused (0 for a wide or no-ball, 1
+   for a bye); a tap records. The no-ball panel asks its type (the free hit) and whose the runs are, each on its
+   commonest answer. `extraCall()` names the engine call the pad made before; commitBall's event code and the no-ball
+   sheet's confirm moved to `delivery.js` line for line. A wide now takes runs (0–4), through the engine's existing
+   `commitBall("Wd", n, …)`. The idle three-phase pad no longer shows the stepper (nothing to step back to); its row
+   is the extras'.
+4. **The haptic tick** (`scorer/haptic.js`): `navigator.vibrate(10)` on every recorded ball (commitBall, the
+   no-ball, the wicket), never under reduced motion, fire and forget; the pad menu's Feel switch turns it off on the
+   device (`scrbrd:haptic`).
+5. **Undo in words** (`prompts.js` `undoWords`, from `lastUndoableIndex()` of the innings in play): "Undo: 4 to R
+   Pillay", "Undo: wide", "Undo: 3 leg byes", "Undo: M Botha to bowl"; mid-ball "Undo: start this ball again". Names
+   from the fold's batters and bowlers (`foldName`), never an id.
+6. **A refusal's likely cause** (`packages/scoring/src/causes.mjs` `likelyCause`, `REFUSAL_CAUSE`, beside
+   `REFUSAL_TEXT`): on the pad's blocked panel ("8 balls in this over? Six legal balls are already recorded in over
+   1. Was one of them a wide or no-ball?") and the held sheet (from the event alone). No clause numbers.
+
+**Guards:** `apps/web/test/pad-feel.test.mjs` builds 1424 extras both ways (the old pad's call through the delivery
+code as it stood at 0f31ee0, and the two taps through `delivery.js`, both through today's `ball()`) and compares the
+bytes, and reads the engine's wiring from its source; plus the ordering, the undo words, the key sizes and the tick.
+`packages/scoring/test/causes.test.mjs`. `tools/smoke-browser-padfeel.mjs` walks all six at 390 × 844 against the
+API's live score, each extra's stored row compared field for field with what the pad's own path (`delivery.js`)
+builds from the old call — the path, not a written-out shape, so a field `ball()` comes to keep (the Laws batch's
+`nbType`) is expected on both sides. Every unit guard was falsified once. `smoke-a11y` and
+`smoke-browser-pad-laws` drive the two-tap extras.
+Design calls to review: the idle three-phase pad's stepper gives its row to the extras; the wicket key heads the
+outcome block; Basic Scoring stays top-anchored, so on a 390 × 844 phone the strip ends about 140px above the bottom
+bar (dot and 1 centred at 455 of 844). Anchoring the pad to the bottom would bring them lower, and move the strip
+from where it sits on the three-phase pad.
+
+**Found, not fixed:**
+- At this build `ball()` does not keep `nbType`: the no-ball type the pad asks is not recorded (the Laws batch adds
+  it). The fold gives a free hit after every no-ball, while the pad sets its own free-hit flag (the banner, and the
+  next ball's `freeHit` field) only for height and beamer. Kept as it was here: the events had to stay the same.
+- A no-ball is recorded outside commitBall, so when it wins a chase the review sheet does not open by itself (the
+  innings-over banner does show). Older than this change.
+- The batting-order sheet does not offer a retired-hurt batter back (he can only be typed).
+- Clause numbers still on screen, outside this change: the mid-over bowler note ("Law 17.8.1: …"), the timed-out
+  toggle ("(Law 40)") and `REFUSAL_TEXT.mid_over_no_reason` (the held sheet's words).
+
 **Left, on the scoreboard and the match summary:**
-1. **Empty states that never dead-end:**
-   - before the toss: teams, ground, start and "follow this match";
-   - a rain delay or interruption: its status and the expected restart (a revision already records the new
-     overs);
-   - no live matches: upcoming fixtures and recent results.
+1. **Empty states that never dead-end — built 2026-09-27.** `apps/web/src/views/matchcentre/fulltime.jsx`
+   (`PreTossCard`, `RevisionBanner`) and `MatchCentreView.jsx`'s `NoMatchesPanel`:
+   - before the toss: the ground and the start (the teams are already in the header), from the fixture the
+     Match Centre already reads. **"Follow this match" is not built:** searched `apps/web/src/lib/push.js` and
+     the `notifications` table/read — the platform can turn alerts on or off for a *device*, never subscribe a
+     person to one *fixture*. No mechanism exists, so nothing was faked in its place;
+   - a rain delay or interruption: `revisionNotice()` (lib/matchCentre.js) reads the one signal the log actually
+     carries — `inn.revised`, off a `revision` event (replay.mjs) — and says "Overs revised to N; target T",
+     with the umpires' own reason ("Rain delay", "Bad light", …). There is no "play is stopped now, resuming
+     at…" event anywhere on the platform, so that is not what this says;
+   - no live matches: whatever filter emptied the list, it points to the next few upcoming fixtures and the
+     last few results, from the list's own `matches` read (`upcomingAndRecent()`) — never a second fetch, never
+     a blank panel.
 2. **Sharing:**
    - milestone cards and a match card sized for WhatsApp and Instagram stories;
    - personal-best and season-first notes.
 
    These are public by nature, so they wait for the public-data rule's step 3 and consent (PUBLIC_DATA,
-   SCRBRD-092). Names on a card follow `publicName()`.
-3. **The result revealed in one clear moment:** winner, margin, player of the match.
-4. **The full-time screen links onward:** the next fixture for both teams, each player's season, and the team's
-   results.
-5. **Coaches and scorers are prompted to confirm or correct the final scorecard** (the amendment flow exists).
+   SCRBRD-092). Names on a card follow `publicName()`. **Not touched — out of scope.**
+3. **The result revealed in one clear moment — built 2026-09-27.** The winner and the margin in words were
+   already right (`MatchView`'s header, the post-match report's `describeResult()`) — both read
+   `deriveMatch()`'s own `result`, never a second guess, now shared as `resultText()` (lib/matchCentre.js). New:
+   a brief moment on the board when the result is decided while the page is open (`useMoments`/`MomentMark`,
+   `views/matchcentre/live.js` and `spectator.jsx`, kind `"result"`) — the same milestone-sized, held-no-longer-
+   than-1.5s slot §3.6 already reserves, never replayed on a reload. **Player of the match: no data exists
+   anywhere on the platform** — no column, no table, no read gives one. Nothing was built for it and nothing was
+   invented; it is reported here as the gap it is.
+4. **The full-time screen links onward — built 2026-09-27.** `OnwardLinks` (matchcentre/fulltime.jsx), on
+   `MatchView` and the post-match report: each side's own next fixture, matched on its `fixture_side_label()`
+   (the same string the matches list already reads — `nextFixtureOf()`, no new query); and "the team's results",
+   which opens the Match Centre list itself, filtered to that side and to `complete` (there is no dedicated
+   team-results screen to link to). A side that is not a SCRBRD tenant gets neither link — honestly, rather than
+   one that would answer "not you". Each player's own season was already one tap away (the Scorecard tab's
+   opening row, the post-match report's "Best performances", both via `onNavProfile`) and is not duplicated.
+5. **Coaches and scorers confirm or correct the final scorecard — built 2026-09-27.** `ConfirmScorecardPrompt`
+   (matchcentre/fulltime.jsx), after full time, to whoever holds `scoring.finalise` (scorer, coach, director of
+   sport) and nobody else. **There is no "confirmed" state anywhere in the schema** — as instructed, none was
+   built: "Looks right" dismisses the prompt on that device only (`localStorage`) and writes nothing to the
+   server. "Something to correct" opens the amendment flow that already exists (`POST /matches/:id/amendments`,
+   `scoring.amend.request` — the scorer role only), naming a delivery picked from the innings' own commentary.
+   **Gap found, not worked around:** there is no `GET` route to list pending `scoring_amendment` rows, so a
+   director of sport or principal (who hold `scoring.amend.approve`) has no screen anywhere in this product to
+   see or decide a filed correction — `POST /amendments/:id/decide` exists but needs an id the client has no way
+   to read. Reported for its own decision; no route was added to close it.
 
 **Left, shared:**
 1. One type, spacing and icon scale everywhere. The admin screens migrate `D` to `T` in step 5.
@@ -3901,10 +4081,12 @@ Built in redesign step 3b, with `Board`'s chip row. Opus (cross-cutting theme en
 
 ### SCRBRD-095 — Loose ends from the pad redesign (step 2)
 **Priority:** P2/P3 · **Domain:** Scorer UI · **Found 2026-09-26** redrawing the pad.
-1. **Declared profile vs what is captured (P2).** The three-phase pad records a sector (stamped `standard` on each
-   ball) while setup declares `full` by default, so a default innings reads "declared full" while holding only sector
-   placements. Older than the redesign. Either default the declaration to `standard` or make Area capture a point;
-   the second changes events, so decide first.
+1. ~~**Declared profile vs what is captured (P2).**~~ **Decided 2026-09-27 (Kameel): Area captures a point. Built in
+   SCRBRD-101.** The three-phase pad recorded a sector (stamped `standard` on each ball) while setup declares `full`
+   by default, so a default innings read "declared full" while holding only sector placements. The Area step now
+   records the point tapped (`placementFromTap`, profile `full`), the same event as the Pro hub's, so the default
+   `full` declaration ("shot, exact point") is what the pad captures. Basic Scoring still records no placement
+   (`quick` per ball), as the scorer chose.
 2. **Pro mode** keeps its old hub and cards styling with sub-12px text; smoke-a11y does not measure it.
 3. **The other sheets** (toss, openers, new over, innings end, handover) are not yet at the type and touch floors;
    only the wicket sheet, the penalty runs sheet (SCRBRD-094) and the shared close button are.
@@ -3969,8 +4151,16 @@ commits. Pass the token's device (the principal carries it) and refuse a batch t
   The spec's route for such events is quarantine for a supervisor; a forked device does not send its side there
   today. Decide whether it should (it needs a way to send as a non-holder on purpose), or whether a person
   reconciles from the device. (P2 — product decision)
-- **"For review N" is memory-only.** Quarantined events are counted on the pill for the session they were sent in;
-  after a reload the pad no longer says so (the server's quarantine panel still does). (P3)
+- ~~**"For review N" is memory-only.** Quarantined events are counted on the pill for the session they were sent in;
+  after a reload the pad no longer says so (the server's quarantine panel still does). (P3)~~ **Done 2026-09-27**: `GET
+  /matches/:id/events` — one of the pad's five routes, so no new route and nothing widened — answers `quarantined`, the
+  count of THIS device's events held for review and unresolved (`quarantinedHere()`: `device_id = app_device_id()`,
+  under the caller's own policies: a scorer's own rows, db/17; a resume credential's own match, db/50). The pad
+  (`lib/sync.js` `serverLog`) takes it at every read of the server's log — every attach — and the pill is that count
+  plus what this session sends to review after it, never one event twice; settled by a supervisor, the next read drops
+  it. Proof: `smoke-pad-resume` B (0, then 1 after a stale-generation ball, the same signed in, 0 on phone B) and
+  `smoke-browser-pad-resume` C2 (a held ball: "For review 1" after a reload with nobody signed in, read through the
+  pad's own route; settled: "Sent" after the next). Between reads the count is as of the last one.
 - **A toss conflict with play recorded under the pad's answer stops sending** and has no resolution on the pad —
   see SCRBRD-075. (P3 — product decision)
 - ~~**The 30-minute token and one-time office codes** mean a production scorer must be issued a new code to go on

@@ -409,6 +409,9 @@ export default function SCRBRD_OS() {
           <ScorerApp
             key={scorerResume ? (scorerResume.cfg?.matchId ?? scorerResume.cfg?.team1 ?? "resume") : "new"}
             resume={scorerResume}
+            // The pad asks it once: whether this account files the umpires'
+            // report of a suspension itself (SCRBRD-094; rbac/conduct.js).
+            role={role}
             onSignIn={() => { setLoginForPad(true); setAppState("login"); }}
             // The way back is the scorer's own: the first key in the pad's
             // title bar (step 2 of the redesign), floating on its setup and

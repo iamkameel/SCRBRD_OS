@@ -242,22 +242,22 @@ const FLOODLIT = {
     watermark:   "rgba(255,255,255,.18)", // OFF / LEG
     rule:        "rgba(255,255,255,.08)", // ring lines
     hairline:    "rgba(255,255,255,.04)", // sector edges
+    // What a wagon-wheel spoke is drawn on (SCRBRD-101): the spokes are the
+    // ball chips' colours, chosen for the black board, and under lights the
+    // ground already is that, so the casing is the ground and adds nothing.
+    casing:      "#070d09",
   },
 
   /**
-   * The wagon wheel's run colours: a line per ball, drawn on the field. DATA
-   * colours, like `sport`, and until 3b they were aliases of the semantic trio
-   * (field.js LK_COLS) — which is why they are a group of their own now: the
-   * colour-vision setting (§3.9) moves the trio, and a wheel whose 1–3 went
-   * blue beside a blue four would be worse than before. Standard keeps the
-   * values the wheel always drew.
+   * The wagon wheel's wicket colour. Its runs and extras are the ball chips'
+   * (T.chip, field.js LK_COLS) since SCRBRD-101 — a 1 on the wheel is the pink
+   * a 1 is on the board — and its dot is a muted ink; the wicket keeps its
+   * own, moved by the colour-vision setting (§3.9) with the rest.
    */
   run: {
-    four:   "#3b6ef5",   // brand.blue
-    six:    "#f9b233",   // semantic.warning
-    few:    "#3ddc84",   // 1–3; semantic.positive
-    wicket: "#f4374f",   // semantic.critical
-    extras: "#f7b733",   // sport.batting
+    // White, as the wicket chip is (board.figure) — no longer a red beside the
+    // six's red (Kameel, 2026-09-27). The same in every palette.
+    wicket: "#f4f6f3",
   },
 };
 
@@ -359,13 +359,14 @@ const DAYLIGHT = {
     watermark:   "rgba(16,20,15,.22)",
     rule:        "rgba(16,20,15,.14)",
     hairline:    "rgba(16,20,15,.07)",
+    // In daylight the chips' pinks and yellows vanish into the grass, so each
+    // spoke carries a thin edge of the board's own black (design.test.mjs).
+    casing:      "#0b0e0b",
   },
   run: {
-    four:   "#2e5bd6",
-    six:    "#8a5a00",
-    few:    "#1e6b3a",
-    wicket: "#b3122a",
-    extras: "#9a4f00",
+    // In daylight the white would vanish on the pale surface: the board's own
+    // black, the inverse of the floodlit white.
+    wicket: "#10140f",
   },
 };
 
@@ -428,14 +429,14 @@ const VISION = {
       // colour-blind themes' answer, and the one the Okabe–Ito set gives.
       // Critical reads as well as fills here, so its text half is itself.
       semantic: { positive: "#56b4e9", warning: "#f5d43f", critical: "#f0703c", criticalText: "#f0703c" },
-      run: { four: CHIPS.redgreen.four, six: CHIPS.redgreen.six, few: CHIPS.redgreen.two, wicket: "#f4f6f3", extras: CHIPS.redgreen.extra },
+      run: { wicket: "#f4f6f3" },
     },
     daylight: {
       // Three dark inks that must all read on the hover surface: a blue, an
       // ochre at the top of the AA range, and an oxblood at the bottom of it,
       // so that where the hue is lost the lightness still tells them apart.
       semantic: { positive: "#1f5fa6", warning: "#7c5e00", critical: "#6a0e14", criticalText: "#6a0e14" },
-      run: { four: "#0062c4", six: "#a76100", few: "#a0406e", wicket: "#10140f", extras: "#4d3400" },
+      run: { wicket: "#10140f" },
     },
   },
   blueyellow: {
@@ -443,11 +444,11 @@ const VISION = {
       // Only the pink text half moves: #ff9aa6 and the amber warning are 11
       // apart to a tritan eye. A red that reads replaces it.
       semantic: { criticalText: "#ff5a5f" },
-      run: { four: CHIPS.blueyellow.four, six: CHIPS.blueyellow.six, few: CHIPS.blueyellow.two, wicket: "#f4f6f3", extras: CHIPS.blueyellow.extra },
+      run: { wicket: "#f4f6f3" },
     },
     daylight: {
       // The Daylight trio already clears tritan vision (45 apart at worst).
-      run: { four: "#3067f4", six: "#c0282d", few: "#005110", wicket: "#10140f", extras: "#8c13db" },
+      run: { wicket: "#10140f" },
     },
   },
 };

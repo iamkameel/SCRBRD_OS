@@ -19,12 +19,13 @@
  * with it; the event is never built into the log to be refused.
  *
  * NO LAW CLAUSE NUMBERS on the pad (Kameel, 2026-09-26: he is checking them
- * against the current Code). PENALTY_REASON_TEXT carries them in brackets for
- * the scorecard and the report; the pad reads the same words without them.
+ * against the current Code). PENALTY_REASON_TEXT carries them in brackets;
+ * the pad reads the same words without them, through the scoring package's
+ * penaltyReasonWords() — the one helper the held sheet and the commentary use too.
  */
 import {
-  PENALTY_REASON, PENALTY_REASON_SIDE, PENALTY_REASON_TEXT, REFUSAL, REFUSAL_TEXT,
-  deriveInningsList, lawsRefusal, penalty, penaltyCredits, shortRunning,
+  PENALTY_REASON, PENALTY_REASON_SIDE, REFUSAL, REFUSAL_TEXT,
+  deriveInningsList, lawsRefusal, penalty, penaltyCredits, shortRunning, withoutLawClause, penaltyReasonWords,
 } from "@scrbrd/scoring";
 
 /** Each innings of the pad's log, credits across innings applied. */
@@ -44,16 +45,15 @@ export function projectPad(events, curIn, evs, ctx) {
   return foldPad(withAppended(events, curIn, evs), ctx)[curIn];
 }
 
-/** Words without a Law clause: "deliberate short running (Law 41.5)" → "deliberate short running". */
-export function withoutLaw(text) {
-  return String(text ?? "").replace(/\s*\((?:Law|Laws)\s[^)]*\)/g, "").trim();
-}
+/** Words without a Law clause: "deliberate short running (Law 41.5)" → "deliberate short running".
+ *  The scoring package's one rule for it (withoutLawClause), under the pad's old name. */
+export const withoutLaw = withoutLawClause;
 
 const upperFirst = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 
-/** A reason in words, for a button: capitalised, no clause number. */
+/** A reason in words, for a button: capitalised, no clause number (penaltyReasonWords). */
 export function reasonWords(reason) {
-  return upperFirst(withoutLaw(PENALTY_REASON_TEXT[reason] ?? reason));
+  return upperFirst(penaltyReasonWords(reason));
 }
 
 /**

@@ -62,6 +62,7 @@ export const KIND = /** @type {const} */ ({
   INNINGS_END:   "innings_end",   // declaration, all out, overs complete, rain
   REVISION:      "revision",      // the umpires cut the overs and/or reset the target (rain)
   VOID:          "void",          // undoes an earlier event that has already synced
+  BOWLER_SUSPENDED: "bowler_suspended", // the umpires suspended a bowler (Law 41, SCRBRD-094 item 2)
 });
 /** @typedef {typeof KIND[keyof typeof KIND]} Kind */
 
@@ -130,6 +131,19 @@ export const RUN_OUT_END = Object.freeze({ STRIKER: "striker_end", BOWLER: "bowl
 /** @typedef {typeof RUN_OUT_END[keyof typeof RUN_OUT_END]} RunOutEnd */
 /** @type {ReadonlySet<unknown>}  asked of whatever a producer wrote */
 export const RUN_OUT_ENDS = new Set(Object.values(RUN_OUT_END));
+/**
+ * What kind of no-ball it was, as the umpire called it and the pad's no-ball
+ * sheet asks: over the popping crease, a full toss above waist height, or a
+ * dangerous one. Recorded because the scorer saw it (a deliberate front-foot
+ * no-ball and a second beamer are grounds for suspending the bowler, Law 41);
+ * the fold decides nothing by it — every no-ball is followed by a free hit
+ * (§6 of docs/SCORING_RULES.md). Omitted when not asked, so a no-ball
+ * recorded before is the event it always was.
+ */
+export const NB_TYPE = Object.freeze({ FRONT_FOOT: "front_foot", HEIGHT: "height", BEAMER: "beamer" });
+/** @typedef {typeof NB_TYPE[keyof typeof NB_TYPE]} NbType */
+/** @type {ReadonlySet<unknown>}  asked of whatever a producer wrote */
+export const NB_TYPES = new Set(Object.values(NB_TYPE));
 /** @typedef {typeof NB_RUNS[keyof typeof NB_RUNS]} NbRuns */
 /** @type {ReadonlySet<unknown>}  asked of whatever a producer wrote */
 export const NB_RUNS_VALUES = new Set(Object.values(NB_RUNS));
@@ -313,6 +327,31 @@ export const PENALTY_REASON_TEXT = Object.freeze({
 });
 
 /**
+ * Words with any Law clause number taken off: "deliberate short running (Law
+ * 41.5)" → "deliberate short running". Kameel is verifying the clause numbers
+ * against the current Code (2026-09-26), so no screen, report line or
+ * commentary shows them until he has; this is the one place that takes them
+ * off, and every reader of the reasons' words goes through it.
+ * @param {unknown} text
+ * @returns {string}
+ */
+export function withoutLawClause(text) {
+  return String(text ?? "").replace(/\s*\((?:Law|Laws)\s[^)]*\)/g, "").trim();
+}
+
+/**
+ * A penalty reason in words, with no Law clause number — for a screen, the
+ * held sheet, a report or the commentary. A reason the list does not know is
+ * shown as itself.
+ * @param {unknown} reason  one of PENALTY_REASON
+ * @returns {string}
+ */
+export function penaltyReasonWords(reason) {
+  const key = String(reason ?? "");
+  return withoutLawClause(Object.hasOwn(PENALTY_REASON_TEXT, key) ? PENALTY_REASON_TEXT[key] : key);
+}
+
+/**
  * The pad's free-text reasons, as its penalty sheet offered them before the
  * list closed, → the reason each one is. An event already in a queue or a
  * log carries one of these, and an older build still sends them; they are
@@ -349,6 +388,78 @@ export function normalisePenaltyReason(text, toBattingTeam = true) {
   const hit = PENALTY_REASON_LEGACY[t];
   return typeof hit === "function" ? hit(toBattingTeam !== false) : hit;
 }
+
+/*
+ * WHY THE UMPIRES SUSPENDED A BOWLER — a closed list (SCRBRD-094 item 2).
+ *
+ * Law 41 (Unfair Play) has the umpire suspend a bowler as soon as the ball is
+ * dead, on these grounds, as Kameel's research (2026-09-26) gives them. The
+ * clause numbers are in the comments only: Kameel is verifying them against
+ * the current Code, so no text a screen shows carries one.
+ *
+ *   beamers                 dangerous non-pitching deliveries above waist
+ *                           height: a second, or at once if deliberate (41.7)
+ *   short_pitched           dangerous short-pitched bowling repeated after a
+ *                           warning (41.6)
+ *   deliberate_no_ball      a deliberate front-foot no-ball, at once (41.8)
+ *   protected_area          running on the protected area after a first and
+ *                           final warning (41.13 in this research; the
+ *                           penalty research gave 41.14 — to be confirmed)
+ *   fielding_time_wasting   time wasting by the fielding side repeated after
+ *                           warnings (41.9)
+ *   ball_tampering          changing the condition of the ball, at once (41.3)
+ *
+ * Every one is for the rest of the innings, but ball tampering, which is for
+ * the rest of the MATCH (SUSPENSION_REASON_SCOPE). Warnings are not tracked:
+ * the umpire decides when a suspension is due, and the scorer records it.
+ */
+export const SUSPENSION_REASON = Object.freeze({
+  BEAMERS:               "beamers",
+  SHORT_PITCHED:         "short_pitched",
+  DELIBERATE_NO_BALL:    "deliberate_no_ball",
+  PROTECTED_AREA:        "protected_area",
+  FIELDING_TIME_WASTING: "fielding_time_wasting",
+  BALL_TAMPERING:        "ball_tampering",
+});
+/** @typedef {typeof SUSPENSION_REASON[keyof typeof SUSPENSION_REASON]} SuspensionReason */
+/** @type {ReadonlySet<unknown>}  asked of whatever a producer wrote */
+export const SUSPENSION_REASONS = new Set(Object.values(SUSPENSION_REASON));
+
+/** How long a suspension lasts: the rest of the innings, or of the match. */
+export const SUSPENSION_SCOPE = Object.freeze({ INNINGS: "innings", MATCH: "match" });
+/** @typedef {typeof SUSPENSION_SCOPE[keyof typeof SUSPENSION_SCOPE]} SuspensionScope */
+
+/**
+ * The scope each reason carries. Not the scorer's choice: the Law decides it.
+ * @type {Readonly<Record<string, SuspensionScope>>}
+ */
+export const SUSPENSION_REASON_SCOPE = Object.freeze({
+  beamers: "innings", short_pitched: "innings", deliberate_no_ball: "innings",
+  protected_area: "innings", fielding_time_wasting: "innings", ball_tampering: "match",
+});
+
+/**
+ * Words for each reason, for the pad's sheet, the scorecard, a report and the
+ * commentary. Finishes "Suspended for …". No Law clause numbers (above).
+ * @type {Readonly<Record<string, string>>}
+ */
+export const SUSPENSION_REASON_TEXT = Object.freeze({
+  beamers: "dangerous full tosses above waist height (beamers)",
+  short_pitched: "dangerous short-pitched bowling, repeated after a warning",
+  deliberate_no_ball: "a deliberate front-foot no-ball",
+  protected_area: "running on the protected area after a first and final warning",
+  fielding_time_wasting: "the fielding side wasting time, repeated after warnings",
+  ball_tampering: "changing the condition of the ball (ball tampering)",
+});
+
+/**
+ * How long, in words. Finishes "He may not bowl again …".
+ * @type {Readonly<Record<string, string>>}
+ */
+export const SUSPENSION_SCOPE_TEXT = Object.freeze({
+  innings: "for the rest of the innings",
+  match: "for the rest of the match",
+});
 
 // ── Event shapes ─────────────────────────────────────────
 // The constructors below are the source of truth for these: each typedef is
@@ -420,6 +531,14 @@ export function normalisePenaltyReason(text, toBattingTeam = true) {
 /** @typedef {BaseInput & {bowler?: string | null, reason?: string | null}} BowlerInput */
 
 /**
+ * The umpires suspended a bowler (SCRBRD-094 item 2). `scope` is the reason's
+ * (SUSPENSION_REASON_SCOPE); see bowlerSuspended().
+ * @typedef {EventBase & {kind: "bowler_suspended", bowler: string | null, reason: SuspensionReason,
+ *   scope: SuspensionScope}} BowlerSuspendedEvent
+ */
+/** @typedef {BaseInput & {bowler?: string | null, reason: string, scope?: string | null}} BowlerSuspendedInput */
+
+/**
  * A delivery. Player references are ids where SCRBRD holds a row, typed names
  * where it does not (see asPlayerId). `dismissal` is canonical where it can
  * be, and otherwise the producer's own spelling, kept so the API can refuse it
@@ -435,7 +554,7 @@ export function normalisePenaltyReason(text, toBattingTeam = true) {
  *   theta: number | null, radius: number | null,
  *   placementSource: string | null, placementNull: string | null,
  *   closePosition: string | null, captureProfile: string | null,
- *   nbRuns?: NbRuns, outAt?: RunOutEnd,
+ *   nbRuns?: NbRuns, nbType?: NbType, outAt?: RunOutEnd,
  * }} BallEvent
  */
 /**
@@ -451,7 +570,7 @@ export function normalisePenaltyReason(text, toBattingTeam = true) {
  *   theta?: number | null, radius?: number | null,
  *   placementSource?: string | null, placementNull?: string | null,
  *   closePosition?: string | null, captureProfile?: string | null,
- *   nbRuns?: string | null, outAt?: string | null,
+ *   nbRuns?: string | null, nbType?: string | null, outAt?: string | null,
  * }} BallInput
  */
 
@@ -494,7 +613,7 @@ export function normalisePenaltyReason(text, toBattingTeam = true) {
 /**
  * Any event a constructor here can build.
  * @typedef {InningsStartEvent | BattersEvent | BowlerEvent | BallEvent | PenaltyEvent
- *   | RetireEvent | VoidEvent | RevisionEvent | InningsEndEvent} ScoringEvent
+ *   | RetireEvent | VoidEvent | RevisionEvent | InningsEndEvent | BowlerSuspendedEvent} ScoringEvent
  */
 
 /**
@@ -517,7 +636,7 @@ export function normalisePenaltyReason(text, toBattingTeam = true) {
  *
  * @typedef {Loose<InningsStartEvent> | Loose<BattersEvent> | Loose<BowlerEvent>
  *   | Loose<BallEvent> | Loose<PenaltyEvent> | Loose<RetireEvent> | Loose<VoidEvent>
- *   | Loose<RevisionEvent> | Loose<InningsEndEvent>} LogEvent
+ *   | Loose<RevisionEvent> | Loose<InningsEndEvent> | Loose<BowlerSuspendedEvent>} LogEvent
  */
 
 // ── Constructors ─────────────────────────────────────────
@@ -662,6 +781,65 @@ export const bowler = (o) => {
 };
 
 /**
+ * The umpires suspended a bowler (Law 41; SCRBRD-094 item 2). Recorded as
+ * soon as the ball is dead, before anything else happens.
+ *
+ * What it does, in the fold and at commit (replay.mjs, laws.mjs):
+ *   - the fold records who, why, for how long and at which ball
+ *     (`inn.suspensions`); no figure moves — a suspension bowls nothing;
+ *   - he may not bowl again for the rest of the innings, or, for ball
+ *     tampering, the rest of the match — a later innings included;
+ *   - if the over is not finished, another bowler finishes it: a `bowler`
+ *     event with reason "suspended", who may not have bowled any part of the
+ *     previous over and may not bowl any part of the next (Law 17.8, "or parts
+ *     thereof" — the rule the Laws check already applies to every change).
+ *
+ * `scope` is the reason's (SUSPENSION_REASON_SCOPE), not a choice: omitted,
+ * it is filled in; given and different, it is refused here, where the scorer
+ * who chose it can still see it — as the server refuses one too.
+ *
+ * A new kind rather than a flag on `bowler`: the suspension is a fact about
+ * the man who LEFT, and it must stand whether or not anyone finishes the over
+ * (the offence can come on the last ball of one). Every SQL reader of
+ * ball_event counts deliveries (`kind = 'ball'`), so a row of this kind moves
+ * no figure anywhere; the bowler rides in bowler_id like a `bowler` row's.
+ *
+ * @param {BowlerSuspendedInput} o
+ * @returns {BowlerSuspendedEvent}
+ */
+export const bowlerSuspended = (o) => {
+  if (!SUSPENSION_REASONS.has(o.reason)) {
+    throw new TypeError(`unknown suspension reason ${JSON.stringify(o.reason)} — expected one of ${[...SUSPENSION_REASONS].join(", ")}`);
+  }
+  const reason = /** @type {SuspensionReason} */ (o.reason);
+  const scope = SUSPENSION_REASON_SCOPE[reason];
+  if (o.scope != null && o.scope !== scope) {
+    throw new TypeError(`a suspension for ${reason} is for the ${scope}, not ${JSON.stringify(o.scope)}`);
+  }
+  return {
+    ...base(KIND.BOWLER_SUSPENDED, o),
+    bowler: o.bowler ?? null,
+    reason,
+    scope,
+  };
+};
+
+/**
+ * A suspension in words, for the commentary generator (SCRBRD-098) and a
+ * report: "Suspended for a deliberate front-foot no-ball, for the rest of the
+ * innings." No names — the caller has them — and no Law clause numbers.
+ * @param {{reason?: unknown, scope?: unknown}} ev  a bowler_suspended event
+ * @returns {string}
+ */
+export function suspensionWords(ev) {
+  const reason = String(ev.reason ?? "");
+  const scope = String(ev.scope ?? SUSPENSION_REASON_SCOPE[reason] ?? SUSPENSION_SCOPE.INNINGS);
+  const why = Object.hasOwn(SUSPENSION_REASON_TEXT, reason) ? SUSPENSION_REASON_TEXT[reason] : "a reason the scorebook does not know";
+  const long = Object.hasOwn(SUSPENSION_SCOPE_TEXT, scope) ? SUSPENSION_SCOPE_TEXT[scope] : SUSPENSION_SCOPE_TEXT.innings;
+  return `Suspended for ${why}, ${long}.`;
+}
+
+/**
  * A delivery.
  *
  * `value` means runs off the bat for `run`/`W`, the number of extras run for
@@ -749,10 +927,25 @@ const checkedOutAt = (e, type) => {
   return /** @type {RunOutEnd} */ (e);
 };
 
+/**
+ * Reject an `nbType` the model does not define, or one on a delivery that is
+ * not a no-ball.
+ * @param {string | null | undefined} n  @param {BallType} type
+ * @returns {NbType | null}
+ */
+const checkedNbType = (n, type) => {
+  if (n == null) return null;
+  if (!NB_TYPES.has(n) || type !== BALL_TYPE.NO_BALL) {
+    throw new TypeError(`nbType ${JSON.stringify(n)} is for a no-ball, one of ${[...NB_TYPES].join(", ")}`);
+  }
+  return /** @type {NbType} */ (n);
+};
+
 /** @param {BallInput} o  @returns {BallEvent} */
 export const ball = (o) => {
   const type = checkedType(o.type);
   const nbRuns = checkedNbRuns(o.nbRuns, type);
+  const nbType = checkedNbType(o.nbType, type);
   const outAt = checkedOutAt(o.outAt, type);
   return {
   ...base(KIND.BALL, o),
@@ -764,6 +957,10 @@ export const ball = (o) => {
   // Runs off a no-ball that were not off the bat (SCRBRD-068). Omitted when
   // they were, so a no-ball hit for runs is the same event it always was.
   ...(nbRuns ? { nbRuns } : {}),
+  // What kind of no-ball (NB_TYPE), when the pad asked. The pad's no-ball
+  // sheet always passed it; the constructor dropped it until now, so no
+  // stored no-ball carries it and every one reads as it did.
+  ...(nbType ? { nbType } : {}),
 
   // WHO WAS INVOLVED
   // ────────────────

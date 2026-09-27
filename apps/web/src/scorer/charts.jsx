@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { D, T, textOn } from "../design/tokens.js";
-import { CX, CY, LK_COLS, R_BND, R_IN, R_MID, R_PITCH, SEGS, ballAngle, lineKey, toXY, wagEnd } from "./field.js";
+import { CX, CY, LK_COLS, R_BND, R_IN, R_MID, R_PITCH, SEGS, areaWords, ballAngle, frameOf, lineKey, toXY, wagEnd } from "./field.js";
+import { FieldLabels, MIRROR_NOTE, fieldSentence } from "./fieldLabels.jsx";
 import { RR, SR } from "./format.js";
 import { IntelPanel } from "./panels.jsx";
 import { buildSignals } from "./signals.js";
@@ -296,7 +297,11 @@ function BowlerChart({inn}){
  * distance anyone measured. See wagEnd() in field.js.
  *
  * Handedness is resolved PER BALL from the striker each one carries, because
- * an innings has two ends and a side has both kinds of batter.
+ * an innings has two ends and a side has both kinds of batter — and the view
+ * is laid out in ONE frame (SCRBRD-101): one batter's wheel is drawn for his
+ * hand, and a wheel of both kinds draws every ball as a right-hander's, the
+ * left-handers' mirrored, and says so. Either way OFF and LEG on the field
+ * are true of every spoke on it.
  */
 function ShotWheel({inn,playerId=null,title="Wagon wheel"}){
   if(!inn)return null;
@@ -307,6 +312,9 @@ function ShotWheel({inn,playerId=null,title="Wagon wheel"}){
   const drawn=mine.filter(b=>b.theta!=null||b.seg!=null);
   const exact=drawn.filter(hasPoint).length;
   const missing=mine.length-drawn.length;
+  const handOf=b=>batHandOf(inn,b.strikerId);
+  const frame=playerId?{hand:batHandOf(inn,playerId),mixed:false}:frameOf(drawn.map(handOf));
+  const angleOf=b=>ballAngle(b,handOf(b),frame.hand);
   // One batter's wheel counts his runs — not byes, even off a no-ball
   // (runsOffBat, SCRBRD-068); the side's counts everything run.
   const runs=mine.reduce((s,b)=>s+(playerId?runsOffBat(b):(b.value||0)),0);
@@ -325,10 +333,10 @@ function ShotWheel({inn,playerId=null,title="Wagon wheel"}){
             :"No balls faced."}
         </div>
       ):(
-        <div style={{width:"100%",maxWidth:"260px",margin:"0 auto",aspectRatio:"1"}}>
+        <div data-testid="shot-wheel" data-frame={frame.hand} style={{position:"relative",width:"100%",maxWidth:"260px",margin:"0 auto",aspectRatio:"1"}}>
           <svg viewBox="0 0 300 300" style={{width:"100%",height:"100%",display:"block"}}
             role="img"
-            aria-label={`Wagon wheel: ${drawn.length} shot${drawn.length===1?"":"s"}, ${exact} placed exactly, ${runs} runs`}>
+            aria-label={`Wagon wheel: ${drawn.length} shot${drawn.length===1?"":"s"}, ${exact} placed exactly, ${runs} runs. ${fieldSentence(frame.hand,frame.mixed)}`}>
             <circle cx={CX} cy={CY} r={R_BND+3} fill={T.field.ground} stroke={`${D.amber}30`} strokeWidth="1"/>
             <circle cx={CX} cy={CY} r={R_MID} fill="none" stroke={`${D.amber}30`} strokeWidth="1" strokeDasharray="4 3"/>
             <circle cx={CX} cy={CY} r={R_IN} fill="none" stroke={T.field.rule} strokeWidth="1" strokeDasharray="3 4"/>
@@ -336,34 +344,41 @@ function ShotWheel({inn,playerId=null,title="Wagon wheel"}){
             {SEGS.map(s=>{const[x,y]=toXY(s.angle-15,R_BND);return(
               <line key={`g${s.id}`} x1={CX} y1={CY} x2={x} y2={y} stroke={T.field.hairline} strokeWidth="0.5"/>);})}
             {drawn.map((b,i)=>{
-              const{xy:[ex,ey],synthetic}=wagEnd(ballAngle(b,batHandOf(inn,b.strikerId)),b);
-              const col=LK_COLS[lineKey(b)];
+              const{xy:[ex,ey],synthetic}=wagEnd(angleOf(b),b);
+              const key=lineKey(b),col=LK_COLS[key];
+              const w=b.value===6?2.5:b.value===4?2:1.2,op=b.value===0?0.25:0.72;
               // The fielding position, DERIVED from the point rather than
-              // stored on it — so the naming table can be corrected later
-              // without touching a single ball. Only a captured point has one;
-              // a sector-era ball knows its wedge, not its position.
-              const where=hasPoint(b)?positionName(b.theta,b.radius):null;
+              // stored on it; a sector-era ball, its sector, read through the
+              // hand of the batter who faced it (SCRBRD-101).
+              const where=areaWords(b,handOf(b));
               const over=b.over!=null?` (${b.over+1}.${(b.ballInOver??0)+1})`:"";
-              return(<line key={`l${i}`} x1={CX} y1={CY} x2={ex} y2={ey} stroke={col}
-                strokeWidth={b.value===6?2.5:b.value===4?2:1.2}
-                strokeDasharray={synthetic?"2 2":undefined}
-                opacity={b.value===0?0.25:0.72} strokeLinecap="round">
+              // Each spoke on a casing: the chip colours were chosen for the
+              // black board (T.field.casing, design.test.mjs).
+              return(<g key={`l${i}`} data-spoke={key} data-colour={col}>
                 <title>{`${b.type==="W"?"Wicket":`${b.value||0} run${b.value===1?"":"s"}`}${where?` — ${where}`:""}${over}`}</title>
-              </line>);
+                <line x1={CX} y1={CY} x2={ex} y2={ey} stroke={T.field.casing} strokeWidth={w+1.6}
+                  strokeDasharray={synthetic?"2 2":undefined} opacity={op} strokeLinecap="round"/>
+                <line x1={CX} y1={CY} x2={ex} y2={ey} stroke={col} strokeWidth={w}
+                  strokeDasharray={synthetic?"2 2":undefined} opacity={op} strokeLinecap="round"/>
+              </g>);
             })}
             {drawn.filter(b=>b.value>=4).map((b,i)=>{
-              const{xy:[ex,ey]}=wagEnd(ballAngle(b,batHandOf(inn,b.strikerId)),b);
-              return(<circle key={`d${i}`} cx={ex} cy={ey} r={b.value===6?5:3.5} fill={LK_COLS[lineKey(b)]} opacity="0.95"/>);
+              const{xy:[ex,ey]}=wagEnd(angleOf(b),b);
+              return(<circle key={`d${i}`} cx={ex} cy={ey} r={b.value===6?5:3.5} fill={LK_COLS[lineKey(b)]} opacity="0.95" stroke={T.field.casing} strokeWidth="0.8"/>);
             })}
             <rect x={CX-4.5} y={CY-R_PITCH} width={9} height={R_PITCH*2} rx="2.5" fill={T.field.pitch} stroke={`${D.amber}60`} strokeWidth="0.7"/>
           </svg>
+          <FieldLabels hand={frame.hand}/>
         </div>
       )}
+      {drawn.length>0&&frame.mixed&&(
+        <p data-testid="wheel-mirror-note" style={{margin:"8px 0 0",textAlign:"center",fontFamily:T.type.body,fontSize:"12px",lineHeight:1.4,color:T.content.secondary}}>{MIRROR_NOTE}</p>
+      )}
       <div style={{display:"flex",gap:"10px",flexWrap:"wrap",marginTop:"10px",justifyContent:"center"}}>
-        {[{c:LK_COLS["6"],l:"6"},{c:LK_COLS["4"],l:"4"},{c:LK_COLS["1-3"],l:"1–3"},{c:LK_COLS["0"],l:"Dot"},{c:LK_COLS.W,l:"Wicket"}].map(({c,l})=>(
-          <div key={l} style={{display:"flex",alignItems:"center",gap:"4px"}}>
-            <div style={{width:"10px",height:"2px",background:c,borderRadius:"1px"}}/>
-            <span style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted}}>{l}</span>
+        {[["1","1"],["2","2"],["3","3"],["4","4"],["6","6"],["0","Dot"],["W","Wicket"],["extras","Extras"]].map(([k,l])=>(
+          <div key={k} style={{display:"flex",alignItems:"center",gap:"4px"}}>
+            <div style={{width:"10px",height:"3px",background:LK_COLS[k],borderRadius:"1px",boxShadow:`0 0 0 1px ${T.field.casing}`}}/>
+            <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{l}</span>
           </div>
         ))}
       </div>
@@ -371,7 +386,7 @@ function ShotWheel({inn,playerId=null,title="Wagon wheel"}){
           sector-era bands, or that is missing half the innings, says so here
           rather than looking complete. */}
       {(drawn.length>0)&&(
-        <div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,marginTop:"8px",textAlign:"center",lineHeight:1.5}}>
+        <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"8px",textAlign:"center",lineHeight:1.5}}>
           {exact===drawn.length
             ?"Every shot placed exactly."
             :exact===0
@@ -433,7 +448,10 @@ const NothingHere=({mine,ev,declared})=>(
 function ShotHeatMap({inn,playerId=null,title="Where he makes contact"}){
   if(!inn)return null;
   const mine=shotsOf(inn,playerId);
-  const d=shotDensity(mine,{batHandFor:handFor(inn)});
+  // One frame for the surface, as for the wheel (SCRBRD-101): one batter's
+  // hand, or a right-hander's with the left-handers mirrored, and said.
+  const frame=playerId?{hand:batHandOf(inn,playerId),mixed:false}:frameOf(mine.filter(hasPoint).map(handFor(inn)));
+  const d=shotDensity(mine,{batHandFor:()=>frame.hand});
   const ev=pointEvidence(inn,mine);
   // One hue, light to dark: a sequential surface is magnitude, and magnitude
   // is a single ramp. The amber is the ground's own colour on the wheel.
@@ -466,6 +484,7 @@ function ShotHeatMap({inn,playerId=null,title="Where he makes contact"}){
           </svg>
         </div>
       )}
+      {d.n>0&&frame.mixed&&<p data-testid="heat-mirror-note" style={{margin:"8px 0 0",textAlign:"center",fontFamily:T.type.body,fontSize:"12px",lineHeight:1.4,color:T.content.secondary}}>{MIRROR_NOTE}</p>}
       {d.n>0&&<Provenance n={d.n} missing={ev.missing} notCaptured={ev.notCaptured}/>}
     </Card>
     </div>

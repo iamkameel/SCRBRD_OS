@@ -9,8 +9,10 @@ import { T } from "../../design/tokens.js";
  * nothing: only a line that ARRIVES while the page is open is a moment.
  */
 
-/** A four, a six or a wicket: a short beat. A milestone: a bigger one. */
+/** A four, a six or a wicket: a short beat. A milestone or the result: a bigger one. */
 const BEAT = new Set(["four", "six", "wicket"]);
+/** The bigger moments — never longer than the milestone slot (§3.6: never over about 1.5s). */
+const BIG = new Set(["milestone", "result"]);
 /**
  * How long each shows: over the board's left-hand corner, never its total,
  * and under a second and a half, so the score is never kept from anyone.
@@ -53,7 +55,7 @@ export function useMoments(items, ready) {
 
   useEffect(() => {
     if (!arrived.n) return;
-    const next = arrived.items.filter((i) => BEAT.has(i.kind) || i.kind === "milestone");
+    const next = arrived.items.filter((i) => BEAT.has(i.kind) || BIG.has(i.kind));
     queue.current = [...queue.current, ...next].slice(-QUEUE_MAX);
     if (!moment && queue.current.length) setMoment(queue.current.shift());
     const end = arrived.items.filter((i) => i.kind === "over_end").pop();
@@ -64,7 +66,7 @@ export function useMoments(items, ready) {
 
   useEffect(() => {
     if (!moment) return undefined;
-    const t = setTimeout(() => setMoment(queue.current.shift() ?? null), moment.kind === "milestone" ? MILESTONE_MS : BEAT_MS);
+    const t = setTimeout(() => setMoment(queue.current.shift() ?? null), BIG.has(moment.kind) ? MILESTONE_MS : BEAT_MS);
     return () => clearTimeout(t);
   }, [moment]);
 

@@ -439,9 +439,11 @@ function SetupScreen({onStart}){
   const[team1Key,setTeam1Key]=useState("");
   const[team2Key,setTeam2Key]=useState("");
   const[overs,setOvers]=useState(20);
-  // Declared for both innings (SCRBRD-039). Full is what the pad already
-  // does on every ball — it asks where the ball went — so the default declares
-  // today's behaviour rather than changing it.
+  // Declared for both innings (SCRBRD-039). Full — "shot, exact point" — is
+  // what the three-phase pad does on every ball: since SCRBRD-101 its Area
+  // step records the point tapped, where it used to record a sector stamped
+  // `standard` under a `full` declaration (SCRBRD-095 item 1). So the default
+  // declares what is captured.
   const[captureProfile,setCaptureProfile]=useState("full");
   const[xi1,setXi1]=useState([]);const[order1,setOrder1]=useState([]);const[twelfth1,setTwelfth1]=useState(null);
   const[xi2,setXi2]=useState([]);const[order2,setOrder2]=useState([]);const[twelfth2,setTwelfth2]=useState(null);

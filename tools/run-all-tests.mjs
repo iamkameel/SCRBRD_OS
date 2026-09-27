@@ -28,6 +28,9 @@ const SUITES = [
   ["readiness","packages/scoring/test/readiness.test.mjs"],
   // What a scoring command may be: the Laws the server enforces at commit.
   ["laws",     "packages/scoring/test/laws.test.mjs"],
+  // A refusal's likely cause, in words beside REFUSAL_TEXT (SCRBRD-100): names
+  // from the fold and never an id, no Law clause numbers.
+  ["causes",   "packages/scoring/test/causes.test.mjs"],
   // What a person does about an event the server refused (SCRBRD-070).
   ["held",     "packages/sync/test/held.test.mjs"],
   // Undo and the outbox: withdraw what never left, void what may have (SCRBRD-074/075);
@@ -41,8 +44,14 @@ const SUITES = [
   // The commentary every viewer shares (SCRBRD-098): lines from the fold,
   // names only from the caller, a void has none, the same log the same words.
   ["commentary", "packages/scoring/test/commentary.test.mjs"],
+  // Where the ball went, relative to the batter (SCRBRD-101): the sectors
+  // named by the fielding families, and a stored seg read through the hand.
+  ["placement", "packages/scoring/test/placement.test.mjs"],
   ["spatial",  "packages/scoring/test/spatial.test.mjs"],
   ["wheel",    "apps/web/test/wheel.test.mjs"],
+  // The pad's Area step records a point, the same event as the Pro hub's for
+  // the same tap (SCRBRD-101). Imports pad.jsx, so it needs the transform.
+  ["pad-point", "apps/web/test/pad-point.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["roadmap",  "apps/web/test/roadmap.test.mjs"],
   // Pure derivations behind the Post-Match Report and Season Awards screens
   // (SCRBRD-082/084) — no DOM, no database, just the fold's own shapes.
@@ -66,6 +75,13 @@ const SUITES = [
   // The pad's penalty runs: the match's fold, the Laws asked before an award
   // is offered, and the sheet as drawn (SCRBRD-094), same transform.
   ["penalty-sheet", "apps/web/test/penalty-sheet.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // The pad's "Umpire suspended the bowler": the Laws asked before a reason or
+  // a replacement is offered, why-not in words, the report (SCRBRD-094 item 2).
+  ["suspension-sheet", "apps/web/test/suspension-sheet.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // The pad's premium feel (SCRBRD-100): every extra's two taps build the
+  // event the pad always sent, byte for byte; the likely bowler and the next
+  // batter first; undo in words; dot and 1 the biggest keys; the haptic tick.
+  ["pad-feel", "apps/web/test/pad-feel.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Renders the Board — always black, figures that flip (DESIGN_DIRECTION §1).
   ["board",    "apps/web/test/board.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // No emoji in the client outside a reasoned allow-list, every icon name

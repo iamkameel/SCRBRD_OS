@@ -142,6 +142,13 @@ export class PadSync {
     this.attaching = null;
     this.conflict = null;
     /**
+     * The server's count of this device's events held for review, at the last
+     * read of its log, and how many this session's engine had then (SCRBRD-089;
+     * serverLog(), status()). null until the server has been asked.
+     * @type {{server: number, seen: number} | null}
+     */
+    this.review = null;
+    /**
      * This match's resume credential (lib/padKey.js): undefined until the
      * store has been asked, null when there is none (or it has ended).
      * @type {any}
@@ -306,9 +313,21 @@ export class PadSync {
     return { ok: !!r?.ok, epoch: r?.epoch ?? null, state: r?.state ?? null, reason: r?.reason ?? null };
   }
 
-  /** The server's log for this match, as events, in its order. */
+  /**
+   * The server's log for this match, as events, in its order.
+   *
+   * It also says how many of this device's events the server holds for
+   * review (SCRBRD-089): the count the pill's "For review N" is, which used
+   * to live only in the memory of the session that sent them. Taken as of
+   * this read, beside how many this session's engine had counted by then, so
+   * the pill is the server's count plus whatever this session sends to
+   * review after it — never the same event twice (see status()).
+   */
   async serverLog() {
     const r = await this.call(`/api/matches/${this.matchId}/events`);
+    if (Number.isInteger(r?.quarantined)) {
+      this.review = { server: r.quarantined, seen: this.engine?.rejected?.length ?? 0 };
+    }
     return (r?.events ?? []).map(fromRow);
   }
 
@@ -554,7 +573,12 @@ export class PadSync {
       held: e?.heldCount ?? 0,
       heldList: e ? e.held.slice() : [],
       heldReason: e?.held?.length ? e.held[e.held.length - 1].reason : null,
-      rejected: e?.rejected?.length ?? 0,
+      // For review: the server's count at the last read of its log, plus what
+      // this session has sent to review since (SCRBRD-089). With no read yet,
+      // what this session sent.
+      rejected: this.review
+        ? this.review.server + Math.max(0, (e?.rejected?.length ?? 0) - this.review.seen)
+        : e?.rejected?.length ?? 0,
       syncing: !!e?.syncing,
       tossPending: !!e?.toss,
       conflict: this.conflict,

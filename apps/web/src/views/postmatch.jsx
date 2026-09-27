@@ -4,6 +4,8 @@ import { api, signedIn } from "../lib/api.js";
 import { useLive } from "../lib/live.js";
 import { deriveMatch, fmtOvers, fromRow, PHASE_LABELS, PHASE_NAMES } from "@scrbrd/scoring";
 import { keyMoments, matchBestBatting, matchBestBowling } from "../lib/postMatchReport.js";
+import { sidesOf } from "../lib/matchCentre.js";
+import { OnwardLinks } from "./matchcentre/fulltime.jsx";
 import { Badge, Modal } from "../ui/primitives.jsx";
 import { Icon } from "../ui/icons.jsx";
 
@@ -30,7 +32,7 @@ import { Icon } from "../ui/icons.jsx";
  * page — headed paper, no navigation, no button chrome — without a separate
  * print view to keep in sync with the screen one.
  */
-function PostMatchReport({ match, role, onClose, onNavProfile }) {
+function PostMatchReport({ match, role, onClose, onNavProfile, matches, onOpenFixture, onTeamResults }) {
   const [replay, setReplay] = useState({ loading: true, error: null, innings: null, result: null });
 
   useEffect(() => {
@@ -111,6 +113,15 @@ function PostMatchReport({ match, role, onClose, onNavProfile }) {
               : <span data-testid="pmr-result-pending" style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>Result not yet decided</span>}
           </div>
         </div>
+
+        {/* SCRBRD-100 item 4: the full-time screen links onward. Each
+            player's own season is already one tap away below ("Best
+            performances", and every batter's name in the innings cards). */}
+        {(onOpenFixture || onTeamResults) && (
+          <div style={{ marginTop: "16px" }} className="os-print-hide">
+            <OnwardLinks match={match} sides={sidesOf(match)} matches={matches} onOpenFixture={onOpenFixture} onTeamResults={onTeamResults}/>
+          </div>
+        )}
 
         {(bestBat || bestBowl) && (
           <Section title="Best performances">

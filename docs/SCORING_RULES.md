@@ -89,6 +89,12 @@ A maiden here is a completed over (six legal deliveries) off which the bowler
 conceded nothing. Byes and leg byes are **not** charged to the bowler and so do
 not spoil a maiden; wides and no-balls **are**, and do.
 
+**An over two bowlers shared is a maiden for neither** (SCRBRD-094 item 2): one
+was injured or suspended during it and another finished it, so neither bowled a
+completed over. `isMaiden()` asks that all six balls are one bowler's; before,
+the first of them was credited with it. No SQL reader counts maidens, so nothing
+there moves.
+
 ### 5. The fielder survives replay
 
 The artifact's wicket log entry carried `dismissal: mode` but dropped the
@@ -182,6 +188,7 @@ Refused, with the reason named:
 | Striker and non-striker are different players | AntiGravity `validateDelivery` |
 | No bowler bowls two overs, or parts of two, running (Law 17.8) | AntiGravity; "parts thereof" added |
 | A bowler replaced during an over says why: injury or suspension (Law 17.8.1) | SCRBRD-080 |
+| A bowler the umpires suspended does not bowl again in the innings — for ball tampering, in the match, later innings included; a suspension names the bowler on (or of the last ball), a reason from the list and the scope that reason carries | SCRBRD-094 item 2 |
 | Whoever is out on a wicket must be one of the two batting | AntiGravity |
 | No ball once the second innings is complete — the match is decided | AntiGravity `recordBallAction` |
 | An innings starts only when the one before it has ended (by the laws or a seal) | new, from the model |
@@ -574,3 +581,63 @@ and the board's target (`broadcast_state()` states `innings_target_as_folded()`,
 previous innings' credited total plus one). `penalty_credit_as_folded()` is `penaltyCredits()` in SQL. The live score
 and derby reads follow the view. `tools/smoke-fold-figures.mjs` holds the fold to every one of them over generated logs
 with awards to both sides; db/99 §26 holds each rule.
+
+## A bowler suspended by the umpires (SCRBRD-094 item 2)
+
+**Decided (Kameel, from MCC Law 41).** The umpire suspends a bowler as soon as the ball is dead, for beamers (a second,
+or at once if deliberate), dangerous short-pitched bowling repeated after a warning, a deliberate front-foot no-ball,
+running on the protected area after a first and final warning, the fielding side wasting time after warnings, or ball
+tampering. He may not bowl again for the rest of the innings — for ball tampering, the rest of the match. Another bowler
+finishes the over; he may not have bowled any part of the previous over and may not bowl any part of the next. Warnings
+are not tracked: the umpire decides when a suspension is due, and the scorer records it.
+
+**The shape.** A new kind, `bowler_suspended` (`bowlerSuspended()`): the bowler, a reason from `SUSPENSION_REASON` with
+words in `SUSPENSION_REASON_TEXT`, and a scope, `innings` or `match`, which is the reason's
+(`SUSPENSION_REASON_SCOPE`: ball tampering is the match), not the scorer's choice — the constructor fills it in and
+refuses another. `suspensionWords()` says it for the commentary generator and a report ("Suspended for a deliberate
+front-foot no-ball, for the rest of the innings."). No text a screen shows carries a Law clause number: Kameel is
+verifying them against the current Code, and they are in the code's comments only.
+
+**Why a kind of its own, not a flag on `bowler`.** The suspension is a fact about the man who left, and must stand
+whether or not anyone finishes the over — the offence can come on the last ball of one. Every SQL reader of `ball_event`
+counts deliveries (`kind = 'ball'`), so a row of this kind moves no figure; the bowler rides in `bowler_id` as a
+`bowler` row's does.
+
+**The fold.** `inn.suspensions`: who, why, for how long, and at which ball (the over the next delivery is in and the
+legal balls of it bowled, as `bowlerChanges`). Nothing else moves, and the bowler stays on until another is named, so
+the one who finishes the over is a change during it — `bowlerChanges`, reason `suspended`, as for an injury. A split
+over credits each bowler with the balls he bowled and the runs off them, and is a maiden for neither (§4).
+
+**The Laws at commit** (`lawsRefusal`, one rule each, read from the fold): a ball from, or a `bowler` event naming, a
+bowler suspended in this innings, or for the match in an earlier one (`bowler_suspended`; `suspendedBowlers()` reads
+the match); a suspension of anyone but the bowler on, or — nobody on, at an over's end — the bowler of the last ball
+(`not_bowling`); a reason not on the list, or a scope the reason does not carry (`suspension_unknown`); the same bowler
+twice (`bowler_suspended`). The replacement's two rules are Law 17.8's "or parts thereof", which the check already
+applied to every change: `bowledLastOver()` refuses a man who bowled any of the previous over, and the next over
+refuses both men who shared this one. Nothing new was needed for either. The pad's gate (`scoringReadiness`) blocks a
+ball while the suspended bowler is on (`bowler_suspended`, "Choose who finishes the over").
+
+**The pad.** "Umpire suspended the bowler" on the pad's menu (and "Suspended" on the change-of-bowler sheet) opens a
+sheet that asks why, in words, says how long, and records the event; then at once who finishes the over — only the
+bowlers the Laws take are offered, the rest listed with why not. The umpires' report is offered from the menu once a
+suspension is recorded and after the match, never during play: filed through the existing discipline route
+(`POST /api/players/:id/discipline`, db/25) with the bowler and the words filled in, by an account that files conduct;
+anyone else is told who files it and where.
+
+**SQL.** Nothing moved: no migration. `tools/smoke-fold-figures.mjs` now suspends bowlers mid-over in its generated logs
+and has the replacement finish the over, and every figure it holds SQL to — live score, handover count, player and
+bowler figures, opposition, matchups — still agrees with the fold.
+
+## A batter back from retired hurt (SCRBRD-071)
+
+Retired hurt is "retired, not out" (Law 25.4.2): he may come back. The fold now puts him back on the same line when a
+`batters` event names him — status batting, no dismissal line, his runs and balls going on from where he left them. A
+retirement the Laws read as out (an unmarked legacy `retire` "out", which wrote "retired out") is left as it was; the
+Laws refuse that return anyway. SQL never read the retirement (its figures come from the balls), so nothing there moves.
+
+## What kind of no-ball (`nbType`)
+
+The pad's no-ball sheet always asked front foot, full toss height or beamer, and passed the answer to `ball()` — which
+dropped it. `ball()` now keeps it (`NB_TYPE`, on a no-ball only; omitted when not asked). The fold decides nothing by it:
+every no-ball is followed by a free hit (§6), and the pad's free-hit banner now reads that from the fold, as after any
+ball (it used to appear only for height and beamers). A short run off a no-ball asks the kind too.

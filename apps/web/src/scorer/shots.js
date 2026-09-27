@@ -1,6 +1,7 @@
 import { fetchCommentary } from "../lib/ai.js";
+import { batHandOf } from "@scrbrd/scoring";
 import { D, themed } from "../design/tokens.js";
-import { SEGS } from "./field.js";
+import { areaWords } from "./field.js";
 
 /* ═══════════════════════════════════════════════════════
    SHOT TYPES — for ball-by-ball commentary
@@ -101,7 +102,9 @@ const ALL_SHOTS_FLAT = themed(() => SHOT_CATS.flatMap(c=>c.shots.map(s=>({...s,c
 ═══════════════════════════════════════════════════════ */
 async function fetchAICommentary(ball,inn,milestone){
   const shot=ball.shot?ALL_SHOTS_FLAT.find(s=>s.id===ball.shot):null;
-  const seg=ball.seg!=null?SEGS[ball.seg]:null;
+  // Where it went, for the batter who faced it (SCRBRD-101): a stored seg is
+  // the screen's, mirrored for a left-hander, and a point has its position.
+  const where=areaWords(ball,batHandOf(inn,ball.strikerId??ball.striker));
   const batsman=inn?.batsmen.find(b=>b.id===ball.striker);
   const bowler=inn?.bowlers.find(b=>b.id===ball.bowler);
   const score=inn?inn.runs+"/"+inn.wickets:"?";
@@ -135,7 +138,7 @@ async function fetchAICommentary(ball,inn,milestone){
   // formatting rules are the service's system prompt, so they are versioned
   // in one place rather than rebuilt per ball here.
   const prompt=`Match context: ${score} off ${over}, ${phase}${hasMomentum?" — batting team on a roll":""}
-Ball: ${eventDesc}${shot?" | Shot: "+shot.label:""}${seg?" | "+seg.label+(ball.zone==="boundary"?" (boundary)":ball.zone==="outer"?" (outfield)":""):""}${ball.bowlerApproach?" | Bowling "+ball.bowlerApproach:""}${batContext}${bowlContext}${partnerInfo}${milestoneCtx}`;
+Ball: ${eventDesc}${shot?" | Shot: "+shot.label:""}${where?" | "+where:""}${ball.bowlerApproach?" | Bowling "+ball.bowlerApproach:""}${batContext}${bowlContext}${partnerInfo}${milestoneCtx}`;
   // Enhancement layer only: returns null on any failure, and no scoring path
   // awaits it. A ball must be recordable with the network entirely absent.
   // The names the situation mentions, so the service can token them out

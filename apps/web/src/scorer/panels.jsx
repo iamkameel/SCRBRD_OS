@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { chargedToBowler, normaliseDismissal, placementFromTap, screenAngle } from "@scrbrd/scoring";
+import { batHandOf, chargedToBowler, normaliseDismissal, placementFromTap, screenAngle, suspensionWords } from "@scrbrd/scoring";
 import { deriveCommentary } from "@scrbrd/scoring/commentary";
 import { nameBook } from "../lib/matchCentre.js";
 import { D, T, clr, inkOn, px, textOn } from "../design/tokens.js";
 import { can } from "../rbac/index.js";
-import { CX, CY, LK_COLS, R_BND, R_IN, R_MID, R_PITCH, SEGS, ballAngle, heatColor, lineKey, pieSlice, ringArc, toXY, wagEnd } from "./field.js";
+import { CX, CY, LEGEND_KEYS, LK_COLS, R_BND, R_IN, R_MID, R_PITCH, SEGS, areaWords, ballAngle, frameOf, frameSeg, heatColor, lineKey, pieSlice, ringArc, tapAt, toXY, wagEnd } from "./field.js";
+import { FieldLabels, MIRROR_NOTE, fieldSentence } from "./fieldLabels.jsx";
 import { RR, fmtOv, SR } from "./format.js";
 import { buildNarratives, buildSignals } from "./signals.js";
 import { ALL_SHOTS_FLAT, fetchAICommentary } from "./shots.js";
@@ -16,25 +17,28 @@ import { Icon } from "../ui/icons.jsx";
    WAGON WHEEL
 ═══════════════════════════════════════════════════════ */
 /**
- * @param batHand handedness of the batter AT THE CREASE NOW. Used only for
+ * @param batHand handedness of the batter AT THE CREASE NOW. Used for
  *   capture: a tap belongs to whoever is facing, and its theta is stored
- *   relative to them.
+ *   relative to them. While capturing, the field is laid out for him.
  * @param handFor handedness of the batter who played a GIVEN ball, resolved
  *   per ball. Defaults to `batHand` for every ball, which is correct only
  *   while one batter has faced the whole log.
+ * @param onPlacing called with the point under the finger while it is down
+ *   (and null when it lifts), so the Area step can name the position as the
+ *   tap lands.
  *
- *   These are two different questions and conflating them was a real defect.
+ *   These are different questions and conflating them was a real defect.
  *   Placements are stored batter-relative and mirrored at render, so drawing a
  *   whole innings with the current striker's handedness put every ball a
- *   left-hander faced on the wrong side of the ground — and moved the
- *   right-hander's shots across the field every time the strike rotated. The
- *   stored value was right; the render re-introduced the very defect the
- *   batter-relative frame exists to prevent. See placement.mjs.
+ *   left-hander faced on the wrong side of the ground. Each ball is read with
+ *   its own batter's hand and drawn in the FRAME of the field on screen
+ *   (SCRBRD-101): the striker's while capturing, so every spoke sits under
+ *   the OFF and LEG the scorer is reading. See placement.mjs.
  */
 // `bare`: the field alone, as wide as its column allows — the pad's Area
 // phase (step 2 of the redesign), where the heat toggle and the legend are
 // not what the scorer is being asked.
-function WagonWheel({ballLog=[],selSeg,onSel,onPlace,viewMode,onViewMode,hidden,onToggle,batHand="R",handFor,bare=false}){
+function WagonWheel({ballLog=[],selSeg,onSel,onPlace,onPlacing,viewMode,onViewMode,hidden,onToggle,batHand="R",handFor,bare=false}){
   const handOf=handFor??(()=>batHand);
   // A live point being placed, before commit. Drag refines it; release commits.
   const [placing,setPlacing]=useState(null);
@@ -53,19 +57,20 @@ function WagonWheel({ballLog=[],selSeg,onSel,onPlace,viewMode,onViewMode,hidden,
   const pointFromEvent=(e)=>{
     const svg=svgRef.current;
     if(!svg)return null;
-    const r=svg.getBoundingClientRect();
     const t=e.touches?.[0]??e.changedTouches?.[0]??e;
-    // Client pixels → the SVG's own 300x300 user space.
-    const x=((t.clientX-r.left)/r.width)*300-CX;
-    const y=((t.clientY-r.top)/r.height)*300-CY;
-    // Inverse of toXY: x = r·sin(a), y = -r·cos(a).
-    const angle=(Math.atan2(x,-y)*180/Math.PI+360)%360;
-    const radius=Math.min(Math.hypot(x,y)/R_BND,1);
-    return placementFromTap({angle,radius,batHand});
+    return placementFromTap({...tapAt(t.clientX,t.clientY,svg.getBoundingClientRect()),batHand});
   };
+  const place=(p)=>{setPlacing(p);onPlacing?.(p);};
   const[hov,setHov]=useState(null);
+  // The frame: the striker's while capturing (the tap is his), else the one
+  // hand the log shares, else a right-hander's with the left-handers mirrored.
+  const placed=ballLog.filter(b=>b.seg!=null||b.theta!=null);
+  const frame=onPlace?{hand:batHand==="L"?"L":"R",mixed:false}:frameOf(placed.map(b=>handOf(b)));
+  const angleOf=b=>ballAngle(b,handOf(b),frame.hand);
+  // Runs per wedge as the field on screen shows them: each ball's own sector,
+  // relative to its batter, laid out for the frame.
   const segRuns=Array(12).fill(0);
-  ballLog.forEach(b=>{if(b.seg!=null)segRuns[b.seg]+=(b.value||0);});
+  placed.forEach(b=>{const s=frameSeg(b,handOf(b),frame.hand);if(s!=null)segRuns[s]+=(b.value||0);});
   const maxR=Math.max(...segRuns,1);
   const isSel=id=>selSeg?.seg===id;
   const zoneFill=(id,zone)=>{
@@ -78,10 +83,13 @@ function WagonWheel({ballLog=[],selSeg,onSel,onPlace,viewMode,onViewMode,hidden,
   };
   // A ball with neither a captured point nor a sector has no position at all
   // — a leave, a ball that hit the pad — and belongs on no wheel.
-  const visLines=ballLog.filter(b=>(b.seg!=null||b.theta!=null)&&!hidden.has(lineKey(b)));
+  const visLines=placed.filter(b=>!hidden.has(lineKey(b)));
   // How many of these were captured as points rather than sectors. Shown
   // rather than hidden: a wheel mixing eras should say so.
   const pointCount=visLines.filter(b=>b.placementSource==="point").length;
+  // The legend offers a 5 only when there is one; it is drawn in the four's colour.
+  const legend=LEGEND_KEYS.flatMap(k=>k==="4"&&placed.some(b=>lineKey(b)==="5")?["4","5"]:[k]);
+  const at=(p)=>toXY(/** @type {number} */(screenAngle(p.theta,batHand)),p.radius*R_BND);
   return (
     <div style={{display:"flex",flexDirection:"column",gap:"11px"}}>
       {!bare&&<div style={{display:"flex",alignItems:"center",gap:"8px"}}>
@@ -98,12 +106,13 @@ function WagonWheel({ballLog=[],selSeg,onSel,onPlace,viewMode,onViewMode,hidden,
           ))}
         </div>
       </div>}
-      <div style={{width:"100%",maxWidth:bare?"min(100%, 332px)":"272px",margin:"0 auto",aspectRatio:"1",userSelect:"none"}}>
+      <div data-testid="wagon-wheel" data-frame={frame.hand} style={{position:"relative",width:"100%",maxWidth:bare?"min(100%, 332px)":"272px",margin:"0 auto",aspectRatio:"1",userSelect:"none"}}>
         <svg ref={svgRef} viewBox="0 0 300 300" style={{width:"100%",height:"100%",display:"block"}}
+          data-testid="wagon-field"
           role={onPlace?"application":"img"}
           aria-label={onPlace
-            ?"Field. Tap where the ball went."
-            :`Wagon wheel, ${visLines.length} balls${pointCount?`, ${pointCount} placed exactly`:""}`}>
+            ?`Field. Tap where the ball went. ${fieldSentence(frame.hand)}`
+            :`Wagon wheel, ${visLines.length} balls${pointCount?`, ${pointCount} placed exactly`:""}. ${fieldSentence(frame.hand,frame.mixed)}`}>
           <defs>
             <radialGradient id="gOuter" cx="50%" cy="50%" r="50%">
               <stop offset="0%" stopColor={T.field.grass}/><stop offset="100%" stopColor={T.field.grassEdge}/>
@@ -121,14 +130,14 @@ function WagonWheel({ballLog=[],selSeg,onSel,onPlace,viewMode,onViewMode,hidden,
             const stroke=sel?clr(D.indigo,.7):hv?clr(D.sky,.4):`${D.amber}25`;
             return(<path key={`b${seg.id}`} d={ringArc(seg.angle,R_BND,R_MID)} fill={fill} stroke={stroke}
               strokeWidth={sel?"1.5":"0.5"} style={{cursor:onPlace?"crosshair":"pointer",pointerEvents:onPlace?"none":"auto"}}
-              onClick={()=>onSel(sel&&selSeg?.zone==="boundary"?null:{seg:seg.id,zone:"boundary"})}
+              onClick={()=>onSel?.(sel&&selSeg?.zone==="boundary"?null:{seg:seg.id,zone:"boundary"})}
               onMouseEnter={()=>setHov({seg:seg.id})} onMouseLeave={()=>setHov(null)}/>);
           })}
           <circle cx={CX} cy={CY} r={R_MID} fill="none" stroke={`${D.amber}50`} strokeWidth="1.5" strokeDasharray="4 3"/>
           {SEGS.map(seg=>(
             <path key={`o${seg.id}`} d={ringArc(seg.angle,R_MID,R_IN)} fill={zoneFill(seg.id,"outer")}
               stroke={isSel(seg.id)?clr(D.indigo,.35):T.field.hairline} strokeWidth="0.4" style={{cursor:onPlace?"crosshair":"pointer",pointerEvents:onPlace?"none":"auto"}}
-              onClick={()=>onSel(isSel(seg.id)&&selSeg?.zone==="outer"?null:{seg:seg.id,zone:"outer"})}
+              onClick={()=>onSel?.(isSel(seg.id)&&selSeg?.zone==="outer"?null:{seg:seg.id,zone:"outer"})}
               onMouseEnter={()=>setHov({seg:seg.id})} onMouseLeave={()=>setHov(null)}/>
           ))}
           <circle cx={CX} cy={CY} r={R_IN} fill="url(#gInner)" stroke={T.field.rule} strokeWidth="1" strokeDasharray="3 4"/>
@@ -136,27 +145,35 @@ function WagonWheel({ballLog=[],selSeg,onSel,onPlace,viewMode,onViewMode,hidden,
             <path key={`i${seg.id}`} d={pieSlice(seg.angle,R_IN)} fill={zoneFill(seg.id,"inner")}
               stroke={isSel(seg.id)?clr(D.indigo,.25):T.field.hairline} strokeWidth="0.4"
               style={{cursor:onPlace?"crosshair":"pointer",pointerEvents:onPlace?"none":"auto"}}
-              onClick={()=>onSel(isSel(seg.id)&&selSeg?.zone==="inner"?null:{seg:seg.id,zone:"inner"})}
+              onClick={()=>onSel?.(isSel(seg.id)&&selSeg?.zone==="inner"?null:{seg:seg.id,zone:"inner"})}
               onMouseEnter={()=>setHov({seg:seg.id})} onMouseLeave={()=>setHov(null)}/>
           ))}
           {SEGS.map(seg=>{const[xo,yo]=toXY(seg.angle-15,R_BND);return(
             <line key={`sp${seg.id}`} x1={CX} y1={CY} x2={xo} y2={yo} stroke={T.field.hairline} strokeWidth="0.5" style={{pointerEvents:"none"}}/>
           );})}
           {viewMode==="wagon"&&visLines.map((b,i)=>{
-            const{xy:[ex,ey],synthetic}=wagEnd(ballAngle(b,handOf(b)),b);
-            const col=LK_COLS[lineKey(b)];
+            const{xy:[ex,ey],synthetic}=wagEnd(angleOf(b),b);
+            const key=lineKey(b),col=LK_COLS[key];
             const w=b.value===6?2.5:b.value===4?2:1.2;
+            const op=b.value===0?0.25:0.72;
             // Sector-era spokes are dashed. Their length is the band the ball
             // was recorded in, not a distance anyone measured, and a solid
-            // line beside a captured one would claim otherwise.
-            return(<line key={`wl${i}`} x1={CX} y1={CY} x2={ex} y2={ey} stroke={col} strokeWidth={w}
-              strokeDasharray={synthetic?"2 2":undefined}
-              opacity={b.value===0?0.25:0.72} strokeLinecap="round" className="wagonLine" style={{animationDelay:`${i*.02}s`}}/>);
+            // line beside a captured one would claim otherwise. Each spoke
+            // sits on a casing (T.field.casing): the chip colours were chosen
+            // for the black board, and in daylight the grass is not black.
+            const anim={animationDelay:`${i*.02}s`};
+            return(<g key={`wl${i}`} style={{pointerEvents:"none"}} data-spoke={key} data-colour={col}>
+              <line x1={CX} y1={CY} x2={ex} y2={ey} stroke={T.field.casing} strokeWidth={w+1.6}
+                strokeDasharray={synthetic?"2 2":undefined} opacity={op} strokeLinecap="round" className="wagonLine" style={anim}/>
+              <line x1={CX} y1={CY} x2={ex} y2={ey} stroke={col} strokeWidth={w}
+                strokeDasharray={synthetic?"2 2":undefined} opacity={op} strokeLinecap="round" className="wagonLine" style={anim}/>
+            </g>);
           })}
           {viewMode==="wagon"&&visLines.filter(b=>b.value>=4).map((b,i)=>{
-            const{xy:[ex,ey]}=wagEnd(ballAngle(b,handOf(b)),b);
+            const{xy:[ex,ey]}=wagEnd(angleOf(b),b);
             const col=LK_COLS[lineKey(b)];
             return(<circle key={`dt${i}`} cx={ex} cy={ey} r={b.value===6?5.5:4} fill={col} opacity="0.95"
+              stroke={T.field.casing} strokeWidth="0.8"
               style={{pointerEvents:"none",filter:b.value===6?"url(#glow)":"none"}}/>);
           })}
           {/* The capture surface. One transparent circle covering the whole
@@ -164,20 +181,19 @@ function WagonWheel({ballLog=[],selSeg,onSel,onPlace,viewMode,onViewMode,hidden,
               sector paths underneath keep their hover and selection behaviour
               only when point capture is off. */}
           {onPlace&&(
-            <circle cx={CX} cy={CY} r={150} fill="transparent" style={{cursor:"crosshair"}}
-              onPointerDown={(e)=>{e.currentTarget.setPointerCapture?.(e.pointerId);setPlacing(pointFromEvent(e));}}
-              onPointerMove={(e)=>{if(placing)setPlacing(pointFromEvent(e));}}
-              onPointerUp={(e)=>{const p=pointFromEvent(e)??placing;setPlacing(null);if(p)onPlace(p);}}
-              onPointerCancel={()=>setPlacing(null)}/>
+            <circle cx={CX} cy={CY} r={150} fill="transparent" style={{cursor:"crosshair"}} data-testid="wagon-capture"
+              onPointerDown={(e)=>{e.currentTarget.setPointerCapture?.(e.pointerId);place(pointFromEvent(e));}}
+              onPointerMove={(e)=>{if(placing)place(pointFromEvent(e));}}
+              onPointerUp={(e)=>{const p=pointFromEvent(e)??placing;place(null);if(p)onPlace(p);}}
+              onPointerCancel={()=>place(null)}/>
           )}
           {/* The live point, and the line to it. Shown before commit so the
               scorer can see what they are about to record and drag to refine. */}
           {placing&&(
             <g style={{pointerEvents:"none"}}>
-              <line x1={CX} y1={CY} {...(()=>{const[x,y]=toXY(screenAngle(placing.theta,batHand),placing.radius*R_BND);return{x2:x,y2:y};})()}
+              <line x1={CX} y1={CY} x2={at(placing)[0]} y2={at(placing)[1]}
                 stroke={D.sky} strokeWidth="1.6" strokeLinecap="round" opacity="0.85"/>
-              <circle {...(()=>{const[x,y]=toXY(screenAngle(placing.theta,batHand),placing.radius*R_BND);return{cx:x,cy:y};})()}
-                r="5" fill={D.sky} opacity="0.95"/>
+              <circle cx={at(placing)[0]} cy={at(placing)[1]} r="5" fill={D.sky} opacity="0.95"/>
             </g>
           )}
           <rect x={CX-4.5} y={CY-R_PITCH} width={9} height={R_PITCH*2} rx="2.5" fill={T.field.pitch} stroke={`${D.amber}60`} strokeWidth="0.7" style={{pointerEvents:"none"}}/>
@@ -187,44 +203,34 @@ function WagonWheel({ballLog=[],selSeg,onSel,onPlace,viewMode,onViewMode,hidden,
             <circle key={`st${x}`} cx={CX+x} cy={CY-R_PITCH+1.5} r="1.4" fill={T.field.stumps} style={{pointerEvents:"none"}}/>,
             <circle key={`sb${x}`} cx={CX+x} cy={CY+R_PITCH-1.5} r="1.4" fill={T.field.stumps} style={{pointerEvents:"none"}}/>
           ])}
-          {SEGS.map(seg=>{
-            const[lx,ly]=toXY(seg.angle,(R_IN+R_MID)/2+4);
-            const sel=isSel(seg.id),hv=hov?.seg===seg.id;
-            return(<text key={`lb${seg.id}`} x={lx} y={ly} textAnchor="middle" dominantBaseline="middle"
-              fontSize={sel||hv?"8":"7.5"} fontFamily="'Syne',sans-serif" fontWeight={sel||hv?"700":"400"}
-              fill={sel?D.indigoText:hv?D.sky:T.field.label} style={{pointerEvents:"none"}}>{seg.short}</text>);
-          })}
           {viewMode==="heatmap"&&SEGS.map(seg=>{
             if(!segRuns[seg.id])return null;
             const[lx,ly]=toXY(seg.angle,(R_IN+R_MID)/2+12);
             return(<text key={`hr${seg.id}`} x={lx} y={ly} textAnchor="middle" dominantBaseline="middle"
-              fontSize="8" fontFamily="'DM Mono',monospace" fontWeight="500"
+              fontSize="12" fontFamily="'DM Mono',monospace" fontWeight="500"
               fill={T.field.figure} style={{pointerEvents:"none"}}>{segRuns[seg.id]}</text>);
           })}
-          <text x={9} y={CY} textAnchor="middle" dominantBaseline="middle" fontSize="6"
-            fontFamily="'Syne',sans-serif" letterSpacing="1" fill={T.field.watermark}
-            transform={`rotate(-90,9,${CY})`} style={{pointerEvents:"none"}}>OFF</text>
-          <text x={291} y={CY} textAnchor="middle" dominantBaseline="middle" fontSize="6"
-            fontFamily="'Syne',sans-serif" letterSpacing="1" fill={T.field.watermark}
-            transform={`rotate(90,291,${CY})`} style={{pointerEvents:"none"}}>LEG</text>
         </svg>
+        <FieldLabels hand={frame.hand}/>
       </div>
+      {frame.mixed&&<p data-testid="wheel-mirror-note" style={{margin:0,textAlign:"center",fontFamily:T.type.body,fontSize:"12px",lineHeight:1.4,color:T.content.secondary}}>{MIRROR_NOTE}</p>}
       {!bare&&<div style={{display:"flex",justifyContent:"center",gap:"5px",flexWrap:"wrap"}}>
-        {Object.entries(LK_COLS).map(([k,col])=>{
-          const off=hidden.has(k);
+        {legend.map(k=>{
+          const col=LK_COLS[k],off=hidden.has(k);
           return(<button key={k} onClick={()=>onToggle(k)} className="pressBtn" style={{
             display:"flex",alignItems:"center",gap:"5px",padding:"4px 10px",borderRadius:D.pill,
             cursor:"pointer",background:off?"transparent":`${col}12`,
             border:`1px solid ${off?D.border:`${col}38`}`,opacity:off?0.3:1,transition:"all .2s",
           }}>
             <div style={{width:"12px",height:"2px",borderRadius:"2px",background:off?D.textMuted:col}}/>
-            <span style={{color:off?D.textMuted:D.textSecondary,fontSize:"10px",fontFamily:D.head,fontWeight:600,letterSpacing:"0.05em"}}>{k}</span>
+            <span style={{color:off?D.textMuted:D.textSecondary,fontSize:"10px",fontFamily:D.head,fontWeight:600,letterSpacing:"0.05em"}}>{LEGEND_WORD[k]??k}</span>
           </button>);
         })}
       </div>}
     </div>
   );
 }
+const LEGEND_WORD={"0":"Dot","W":"Wicket","extras":"Extras"};
 
 /* ═══════════════════════════════════════════════════════
    INTEL PANEL
@@ -380,7 +386,7 @@ function ScorecardPanel({innings,idx}){
       <Card>
         {thRow(["Bowler","O","M","R","W","Econ"],"1fr 38px 24px 32px 26px 42px")}
         {bowled.map((b,ii)=>(
-          <div key={b.id} style={{padding:"8px 14px",display:"grid",gridTemplateColumns:"1fr 38px 24px 32px 26px 42px",gap:"4px",
+          <div key={b.id} data-testid={`card-bowler-${b.id}`} style={{padding:"8px 14px",display:"grid",gridTemplateColumns:"1fr 38px 24px 32px 26px 42px",gap:"4px",
             background:ii%2?`${D.surf2}60`:"transparent",borderBottom:`1px solid ${D.border}`,alignItems:"center"}}>
             <span style={{color:D.textPrimary,fontSize:"13px",fontFamily:D.body,fontWeight:500}}>{b.name}</span>
             {[fmtOv(b.balls),b.maidens,b.runs,b.wickets,RR(b.runs,b.balls)].map((v,j)=>(
@@ -401,6 +407,17 @@ function ScorecardPanel({innings,idx}){
                 </span>
               );
             })}
+          </div>
+        )}
+        {/* A bowler the umpires suspended (SCRBRD-094 item 2): why, and for
+            how long, in words — no Law clause numbers. */}
+        {(i.suspensions||[]).length>0&&(
+          <div data-testid="bowler-suspensions" style={{padding:"7px 14px",display:"flex",flexDirection:"column",gap:"3px"}}>
+            {i.suspensions.map((s,si)=>(
+              <span key={si} style={{color:D.textSecondary,fontSize:"12px",fontFamily:D.body}}>
+                {i.bowlers.find(b=>b.id===s.bowler)?.name??s.bowler} {suspensionWords(s).replace(/^Suspended/,"suspended")}
+              </span>
+            ))}
           </div>
         )}
       </Card>
@@ -511,7 +528,8 @@ function CommentaryCard({inn,innings,events}){
       {log.map((item,i)=>{
         const b=entryOf(item);
         const shot=b?.shot?ALL_SHOTS_FLAT.find(s=>s.id===b.shot):null;
-        const seg=b?.seg!=null?SEGS[b.seg]:null;
+        // Where it went, for the batter who faced it (SCRBRD-101).
+        const where=b?areaWords(b,batHandOf(inn,b.strikerId)):null;
         const first=i===0;
         const isWkt=item.kind==="wicket";
         const isSix=item.kind==="six";
@@ -560,7 +578,7 @@ function CommentaryCard({inn,innings,events}){
               {b&&<div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"2px",
                 display:"flex",gap:"7px",flexWrap:"wrap",alignItems:"center"}}>
                 {shot&&<span style={{color:shot.color}}>{shot.label}</span>}
-                {seg&&<span><Icon name="map-pin"/>{" "+seg.label+(b.zone==="boundary"?" · Boundary":"")}</span>}
+                {where&&<span><Icon name="map-pin"/>{" "+where}</span>}
                 {b.bowlerApproach&&<span style={{color:D.amber}}><Icon name="corner-right-down"/>{" "+b.bowlerApproach}</span>}
               </div>}
             </div>

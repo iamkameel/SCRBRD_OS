@@ -288,6 +288,18 @@ own tokens (`T.run`), moved in the two safe palettes; Standard's are the wheel a
 was, whose six and extras are the same amber (ΔE 4) — unchanged here, noted for its own
 step.
 
+**The wheel takes the chips (SCRBRD-101, 2026-09-27).** A spoke is the colour of the chip
+for its run value: 1 pink, 2 green, 3 yellow, 4 (and 5) blue, 6 red, every extra the
+extras' purple, in every palette (`field.js` `LK_COLS` reads `T.chip`). The wicket keeps
+its own colour (`T.run.wicket`, now the only `T.run` token) and the dot its muted ink. The
+chips were chosen for the black board, so each spoke is drawn on a casing,
+`T.field.casing`: the ground itself under lights, the board's black in daylight, where
+most chips are under 3:1 on the grass. `design.test.mjs` requires every wheel colour to
+show at 3:1 on the ground or on its casing, and the safe palettes to keep the wheel's
+colours apart. Standard's closest pair on the wheel is now the six and the wicket, two
+reds, ΔE 16 in ordinary vision (it was the six and the extras, ΔE 4): better, still under
+the floor, and printed rather than failed, as before.
+
 ---
 
 ## 4. The pad

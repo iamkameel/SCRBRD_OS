@@ -21,7 +21,7 @@ import {
   thetaFromClock, clockFromTheta, fieldingCircle, depthBand, positionName,
   PLACEMENT_SOURCE, PLACEMENT_NULL, CLOSE_RADIUS, DISMISSAL, chargedToBowler, normaliseDismissal, revision,
   CAPTURE_PROFILE, PLACEMENT_FIELD, NOT_CAPTURED, evidenceLabel, placementEvidence, profileCollects,
-  MatchFold, deriveInningsList, penaltyCredits, shortRunning,
+  MatchFold, deriveInningsList, penaltyCredits, shortRunning, bowlerSuspended, suspensionWords,
 } from "../src/index.mjs";
 
 /** @import { LogEvent, Loose, BallEvent, BallInput, BattersEvent, BowlerEvent, InningsStartEvent, InningsStartInput } from "../src/events.mjs" */
@@ -358,6 +358,29 @@ group("D. Strike rotation and innings end");
   ok("retired batter marked",   r.batsmen.find(b => b.id === "p1")?.status === "retired");
   ok("retirement is not a wicket", r.wickets === 0);
 }
+{
+  // SCRBRD-071: a batter who retired hurt and comes back is batting again,
+  // on the same line — his figures go on from where he left them.
+  const hurtLog = [...open(), runs(1), runs(4), retire({ batter: "p2", reason: "hurt" }), batters({ striker: "p3" }), runs(2)];
+  const away = deriveInnings(hurtLog);
+  const p2Away = must(away.batsmen.find((b) => b.id === "p2"));
+  ok("retired hurt: off the field, 4 (1), retired hurt", p2Away.status === "retired" && p2Away.dismissal === "retired hurt"
+     && p2Away.runs === 4 && p2Away.balls === 1);
+  // p3 is out; p2 walks back in at the empty end.
+  const back = deriveInnings([...hurtLog, ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" }), batters({ striker: "p2" }), runs(6), runs(1)]);
+  const p2 = must(back.batsmen.find((b) => b.id === "p2"));
+  ok("...and back in: batting, no dismissal line", p2.status === "batting" && p2.dismissal === null);
+  ok("...his figures continue on the same line: 4 + 6 + 1 off 3", p2.runs === 11 && p2.balls === 3 && p2.sixes === 1 && p2.fours === 1);
+  ok("...one line on the card, not two", back.batsmen.filter((b) => b.id === "p2").length === 1);
+  ok("...and a retirement is still no wicket: one wicket, p3's", back.wickets === 1);
+  // A legacy unmarked retire "out" wrote "retired out" and is out to the
+  // Laws (nothing in the Laws brings him back); the fold leaves it alone.
+  /** @type {LogEvent} */
+  const legacyOut = { kind: "retire", batter: "p2", reason: "out" };
+  const stays = deriveInnings([...open(), runs(1), legacyOut, batters({ striker: "p2" })]);
+  ok("an unmarked retire 'out' named again keeps its line (the Laws refuse the return)",
+     must(stays.batsmen.find((b) => b.id === "p2")).status === "retired");
+}
 
 // ── D. Order-independence, given seq ─────────────────────
 //
@@ -672,7 +695,7 @@ group("G. Where the ball went");
   ok("...and deep backward point outside the circle",
      positionName(295, 0.5) === "deep backward point");
   ok("off side behind square is `third`, not third man",
-     positionName(325, 0.8) === "deep third");
+     positionName(325, 0.8) === "deep third man");
 
   // The catching ring, where the outfield taxonomy means nothing.
   ok("a ball at the batter's feet has somewhere to sit",
@@ -1349,6 +1372,74 @@ group("L. Five to the fielding side: their last completed innings, or their next
     const nb = shortRunning({ type: BALL_TYPE.NO_BALL, value: 1 });
     ok("off a no-ball the one-run penalty stands (Law 18.5.2)", deriveInnings([...log, ...nb]).runs === 2);
   }
+}
+
+// ── M. A bowler suspended (Law 41, SCRBRD-094 item 2) ─────
+group("M. A bowler suspended: the fold records it; a split over credits each his own balls");
+{
+  // Over 1: w1, a maiden. Over 2: w2 bowls 0, 1 and a no-ball, and is
+  // suspended; w3 finishes it with 4 legal balls.
+  const log = [...open(), runs(0), runs(0), runs(0), runs(0), runs(0), runs(0),
+    bowler({ bowler: "w2" }), runs(0), runs(1), ball({ type: BALL_TYPE.NO_BALL }),
+    bowlerSuspended({ bowler: "w2", reason: "deliberate_no_ball" }),
+    bowler({ bowler: "w3", reason: "suspended" }), runs(0), runs(2), runs(0), runs(0)];
+  const inn = deriveInnings(log);
+  ok("the fold records the suspension: who, why, for how long, at which ball",
+     inn.suspensions.length === 1 && inn.suspensions[0].bowler === "w2" && inn.suspensions[0].reason === "deliberate_no_ball"
+     && inn.suspensions[0].scope === "innings" && inn.suspensions[0].over === 1 && inn.suspensions[0].ballInOver === 2);
+  ok("...and the change that follows it, reason suspended",
+     inn.bowlerChanges.length === 1 && inn.bowlerChanges[0].from === "w2" && inn.bowlerChanges[0].to === "w3" && inn.bowlerChanges[0].reason === "suspended");
+  const w2 = must(inn.bowlers.find((b) => b.id === "w2")), w3 = must(inn.bowlers.find((b) => b.id === "w3"));
+  ok("each bowler has the balls he bowled: w2 two legal balls, w3 four", w2.balls === 2 && w3.balls === 4 && inn.balls === 12);
+  ok("...and the runs off them: w2 1 + the no-ball's 1, w3 2", w2.runs === 2 && w2.noBalls === 1 && w3.runs === 2);
+  ok("...so economy reads right: w2 2 off 0.2, w3 2 off 0.4", fmtOvers(w2.balls) === "0.2" && fmtOvers(w3.balls) === "0.4");
+  ok("a suspension moves no figure: the innings as it would be without the event",
+     (() => { const without = deriveInnings(log.filter((e) => e.kind !== KIND.BOWLER_SUSPENDED));
+              return without.runs === inn.runs && without.balls === inn.balls && without.wickets === inn.wickets
+                && JSON.stringify(without.bowlers) === JSON.stringify(inn.bowlers); })());
+  ok("the suspended bowler stays on until another is named", deriveInnings(log.slice(0, 14)).bowler === "w2");
+
+  // Maidens: a completed over by one bowler with nothing charged to him.
+  // An over two bowlers shared is a maiden for neither (SCORING_RULES.md §4).
+  const quiet = [...open(), runs(0), runs(0), runs(0), runs(0), runs(0), runs(0),
+    bowler({ bowler: "w2" }), runs(0), runs(0),
+    bowlerSuspended({ bowler: "w2", reason: "beamers" }), bowler({ bowler: "w3", reason: "suspended" }),
+    runs(0), runs(0), runs(0), runs(0)];
+  const q = deriveInnings(quiet);
+  ok("w1's scoreless over is his maiden", must(q.bowlers.find((b) => b.id === "w1")).maidens === 1);
+  ok("the scoreless over w2 and w3 shared is a maiden for neither",
+     must(q.bowlers.find((b) => b.id === "w2")).maidens === 0 && must(q.bowlers.find((b) => b.id === "w3")).maidens === 0);
+  ok("...the same after an injury (SCRBRD-080): shared, so nobody's maiden",
+     deriveInnings([...open(), runs(0), runs(0), bowler({ bowler: "w2", reason: "injury" }), runs(0), runs(0), runs(0), runs(0)])
+       .bowlers.every((b) => b.maidens === 0));
+
+  // Through the wire and back, and old logs unchanged.
+  const ev = { ...bowlerSuspended({ bowler: "w2", reason: "ball_tampering" }), innings: 0, id: "s1" };
+  const row = toRow(ev);
+  ok("stored: kind bowler_suspended, the reason and scope in the payload",
+     row.kind === "bowler_suspended" && row.ball_type === null && row.value === null
+     && row.payload.reason === "ball_tampering" && row.payload.scope === "match" && row.payload.bowler === "w2");
+  const back = fromRow({ ...row, seq: 5, idempotency_key: "s1", client_ts: new Date().toISOString() });
+  ok("...and back, the same suspension", back.kind === KIND.BOWLER_SUSPENDED && back.bowler === "w2"
+     && deriveInnings([...open(), runs(0), back]).suspensions[0]?.scope === "match");
+  ok("an innings with no suspension has none", deriveInnings(open()).suspensions.length === 0);
+  ok("the words for the commentary: reason and how long, no names and no clause numbers",
+     suspensionWords(ev) === "Suspended for changing the condition of the ball (ball tampering), for the rest of the match.");
+}
+
+group("N. A no-ball's kind is recorded as asked, and decides nothing in the fold");
+{
+  const nb = ball({ type: BALL_TYPE.NO_BALL, nbType: "front_foot" });
+  ok("the constructor keeps it on a no-ball", nb.nbType === "front_foot");
+  ok("...leaves it off when not asked, so an old no-ball is the same event", !("nbType" in ball({ type: BALL_TYPE.NO_BALL })));
+  let threw = 0;
+  try { ball({ type: BALL_TYPE.NO_BALL, nbType: "waist" }); } catch { threw++; }
+  try { ball({ type: BALL_TYPE.RUN, nbType: "height" }); } catch { threw++; }
+  ok("...and refuses an unknown kind, or one on anything but a no-ball", threw === 2);
+  const a = deriveInnings([...open(), ball({ type: BALL_TYPE.NO_BALL, nbType: "front_foot" })]);
+  const b = deriveInnings([...open(), ball({ type: BALL_TYPE.NO_BALL })]);
+  ok("a front-foot no-ball gives the free hit, as every no-ball does", a.freeHit === true && b.freeHit === true && a.runs === b.runs);
+  ok("...and rides in the payload", toRow({ ...nb, innings: 0 }).payload.nbType === "front_foot");
 }
 
 console.log(`\n${"─".repeat(52)}\nSCORING SUITE: ${pass} passed, ${fail} failed`);

@@ -151,7 +151,8 @@ export function depthBand(radius, { boundaryM } = {}) {
  *   - straight breaks the pattern — `long on` / `long off`, never "deep mid on"
  *   - `backward` denotes behind square and applies only to some families
  *   - behind square on the leg side is crowded: four positions in ~60°
- *   - off side behind square is `third` in modern usage, not third man
+ *   - off side behind square is `third man` (Kameel, 2026-09-27: the name the
+ *     game in South African schools uses; the key stays `third`)
  *
  * @type {[from: number, to: number, key: string, ring: string, deep: string, short: string, silly: string | null][]}
  */
@@ -167,8 +168,8 @@ const FAMILIES = [
   [185, 215, "mid_off",         "mid off",     "long off",        "short mid off", "silly mid off"],
   [215, 255, "cover",           "cover",       "deep cover",      "short cover", null],
   [255, 275, "point",           "point",       "deep point",      "short point", "silly point"],
-  [275, 310, "backward_point",  "backward point", "deep backward point", "short third", null],
-  [310, 345, "third",           "third",       "deep third",      "short third", null],
+  [275, 310, "backward_point",  "backward point", "deep backward point", "short third man", null],
+  [310, 345, "third",           "third man",   "deep third man",  "short third man", null],
 ];
 
 /**
@@ -305,6 +306,93 @@ export function segFromScreenAngle(angle) {
   return Math.round(norm(angle) / 30) % 12;
 }
 
+// ── Sides, sectors, and the batter's hand (SCRBRD-101) ───────────
+/**
+ * The two sides of the ground, and the line between them. Batter-relative,
+ * like theta: a left-hander's leg side is his leg side, wherever it is on
+ * the screen.
+ */
+export const SIDE = Object.freeze({ LEG: "leg", OFF: "off", STRAIGHT: "straight" });
+
+/**
+ * Which side a batter-relative bearing is on. Theta runs clockwise from
+ * behind the batter with the leg side positive (see THE FRAME), so 1–179 is
+ * the leg side, 181–359 the off side, and 0 and 180 — behind him and straight
+ * back at the bowler — are neither.
+ *
+ * @param {number | null | undefined} theta
+ * @returns {"leg" | "off" | "straight" | null}
+ */
+export function sideOf(theta) {
+  if (theta == null) return null;
+  const t = norm(theta);
+  if (t === 0 || t === 180) return SIDE.STRAIGHT;
+  return t < 180 ? SIDE.LEG : SIDE.OFF;
+}
+
+/**
+ * The twelve 30° sectors of the sector era, named BY THE FAMILIES above — one
+ * source of truth for "where is mid-wicket". A sector is named by the family
+ * its centre falls in, and its side is its centre's side.
+ *
+ * `seg` here is BATTER-RELATIVE. The stored `seg` column is not — see
+ * batterSector() — which is why nothing should index this table with a raw
+ * stored seg to get a word. (The names this replaced, in field.js and
+ * words.mjs, were also about 30° off: "Mid On" at 90°, which is square leg,
+ * and "Cover" at 270°, which is point.)
+ *
+ * @type {ReadonlyArray<Readonly<{seg: number, angle: number, key: string, label: string, side: string}>>}
+ */
+export const SECTORS = Object.freeze(Array.from({ length: 12 }, (_, seg) => {
+  const angle = seg * 30;
+  const key = /** @type {string} */ (angularFamily(angle));
+  const fam = /** @type {{label: string}} */ (ANGULAR_FAMILIES.find((f) => f.key === key));
+  return Object.freeze({ seg, angle, key, label: fam.label, side: /** @type {string} */ (sideOf(angle)) });
+}));
+
+/**
+ * A stored `seg` → the sector it is RELATIVE TO THE BATTER.
+ *
+ * The stored seg is where the scorer tapped ON THE SCREEN: a sector tap
+ * recorded the wedge's own index, and placementFromTap() derives seg from the
+ * screen angle. Both are kept exactly as they are, so no row moves. But the
+ * screen is mirrored for a left-hander (screenAngle), so his screen sector is
+ * not his sector: a cover drive tapped at the screen's 90° is his 270°.
+ *
+ * Screen sector s is centred at 30s; a left-hander's theta there is 360 − 30s,
+ * whose sector is (360 − 30s) / 30 = 12 − s, mod 12 so that 0 stays 0. It is
+ * its own inverse, so the same function maps a batter-relative sector back to
+ * the screen for a given hand.
+ *
+ * A batter whose hand was never recorded is read as right-handed (batHandOf),
+ * and his balls cannot be corrected by this or anything else: the fix is the
+ * roster.
+ *
+ * @param {number | null | undefined} seg  0–11, as stored
+ * @param {string} [batHand]  "R" | "L" — the hand of the batter who faced it
+ * @returns {number | null}
+ */
+export function batterSector(seg, batHand = "R") {
+  if (seg == null || !Number.isInteger(seg) || seg < 0 || seg > 11) return null;
+  return batHand === "L" ? (12 - seg) % 12 : seg;
+}
+
+/**
+ * The batter-relative sector a ball went to: from its point when it has one
+ * (theta is batter-relative already), else from its stored seg and the hand
+ * of the batter who faced it. Reading theta rather than the seg derived from
+ * it matters on the 15° lines, where the screen's rounding and the mirror's
+ * do not agree.
+ *
+ * @param {PlacedBall | null | undefined} b
+ * @param {string} [batHand]
+ * @returns {number | null}
+ */
+export function sectorOf(b, batHand = "R") {
+  if (b?.placementSource === PLACEMENT_SOURCE.POINT && b.theta != null) return segFromScreenAngle(b.theta);
+  return batterSector(b?.seg, batHand);
+}
+
 /**
  * Build the placement fields for a captured point.
  *
@@ -330,6 +418,8 @@ export function placementFromTap({ angle, radius, batHand = "R", profile = CAPTU
     closePosition: closePositionFor(theta, r),
     captureProfile: profile,
     // Derived, not captured. Kept so the sector-era read path is untouched.
+    // It is the SCREEN sector, as a sector tap always recorded: a word, a
+    // side or a per-sector sum reads it through batterSector() / sectorOf().
     // screenAngle is null only for a null theta, and theta is a number here.
     seg: segFromScreenAngle(/** @type {number} */ (screenAngle(theta, batHand))),
     zone: zoneFromRadius(r),

@@ -55,7 +55,7 @@
  * held under its new key — the count stays, nothing doubles.
  */
 import { deriveInnings, deriveInningsList, lawsRefusal, undoLast, LOCAL_ONLY, REFUSAL_TEXT, DISMISSAL_LABEL,
-  PENALTY_REASON_TEXT, normalisePenaltyReason } from "@scrbrd/scoring";
+  penaltyReasonWords, normalisePenaltyReason } from "@scrbrd/scoring";
 
 /**
  * An event the server refused or conflicted on, as the engine holds it.
@@ -345,7 +345,9 @@ export function describeEvent(ev, inn, find) {
     case "penalty": {
       const why = normalisePenaltyReason(ev.reason, ev.toBattingTeam);
       return `Penalty — ${plural(Number(ev.runs ?? 5), "run")} to the ${ev.toBattingTeam === false ? "fielding" : "batting"} side`
-        + (why ? `, for ${PENALTY_REASON_TEXT[why]}` : "");
+        // In words, no Law clause number (penaltyReasonWords: Kameel is
+        // verifying the numbers against the current Code).
+        + (why ? `, for ${penaltyReasonWords(why)}` : "");
     }
     case "revision": {
       const parts = [ev.overs != null ? `${ev.overs} overs` : null, ev.target != null ? `target ${ev.target}` : null].filter(Boolean);
