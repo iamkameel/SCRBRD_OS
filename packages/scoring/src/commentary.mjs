@@ -524,7 +524,9 @@ export function deriveCommentary(events = [], options = {}) {
           const runs = ev.runs ?? 5;
           const toBat = ev.toBattingTeam !== false;
           const reason = normalisePenaltyReason(ev.reason, toBat);
-          const why = reason ? `, for ${PENALTY_REASON_TEXT[reason]}` : "";
+          // No Law clause numbers in anything a spectator reads (Kameel, 2026-09-26: he is
+          // checking them against the current Code). The words stand without the bracket.
+          const why = reason ? `, for ${PENALTY_REASON_TEXT[reason].replace(/\s*\((?:Law|Laws)\s[^)]*\)/g, "")}` : "";
           const pos = afterLast();
           const head = `${cap(words(runs))} penalty ${plural(runs, "run")}`;
           if (toBat) {

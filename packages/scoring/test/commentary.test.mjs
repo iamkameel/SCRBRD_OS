@@ -21,6 +21,9 @@ import {
   sealInnings, deriveInnings, foldSteps, placementFromTap, BALL_TYPE, PENALTY_REASON_TEXT,
 } from "../src/index.mjs";
 
+/** Words without a Law clause bracket, escaped for a RegExp. */
+const noLaw = (/** @type {string} */ t) => t.replace(/\s*\((?:Law|Laws)\s[^)]*\)/g, "").replace(/[()]/g, "\\$&");
+
 /** @import { LogEvent } from "../src/events.mjs" */
 /** @import { CommentaryItem, CommentaryRole } from "../src/commentary.mjs" */
 
@@ -132,7 +135,7 @@ group("A. Every event kind has its line, with the fold's figures");
      && out.indexOf(end1) < out.findIndex((x) => /^S Naidoo/.test(x.text)));
   ok("a second bowler from the other end", at(/^L Botha to bowl from the other end\.$/));
   ok("retired hurt, said to a signed-in reader", at(/^D Erasmus retires hurt, on \d+ \(\d+\)\.$/));
-  ok("a penalty to the batting side, with the Law's words", at(new RegExp(`^Five penalty runs to Hilton College, for ${PENALTY_REASON_TEXT.helmet_struck.replace(/[()]/g, "\\$&")}\\. Hilton College \\d+/1\\.$`)));
+  ok("a penalty to the batting side, in words, with no Law clause number", at(new RegExp(`^Five penalty runs to Hilton College, for ${noLaw(PENALTY_REASON_TEXT.helmet_struck)}\\. Hilton College \\d+/1\\.$`)));
   ok("a revision, with its reason", at(/^Revision for rain: the innings is now 3 overs\.$/));
   const ro = ofKind(out, K.WICKET)[1];
   ok("a run out: the runs completed, the batter, the end the Laws say, the fielder", ro &&
@@ -315,8 +318,8 @@ group("D. Penalty runs to a fielding side, across innings");
   const sr = ofKind(out1, K.SHORT_RUNNING)[0];
   ok("short running: the ball's runs are disallowed in its own line",
      out1.some((x) => x.kind === K.BALL && /cut, they run, but the umpire calls deliberate short running and no runs count\./.test(x.text)));
-  ok("short running: five to the fielding side, in the Law's words",
-     sr?.text.startsWith(`Five penalty runs to Westville, for ${PENALTY_REASON_TEXT.short_running}; the runs are disallowed.`), sr?.text);
+  ok("short running: five to the fielding side, in words",
+     sr?.text.startsWith(`Five penalty runs to Westville, for ${noLaw(PENALTY_REASON_TEXT.short_running)}; the runs are disallowed.`), sr?.text);
   ok("...who will start their innings on 5", /Westville will start their innings on 5\.$/.test(sr?.text ?? ""), sr?.text);
   const pd = ofKind(out1, K.PENALTY)[0];
   ok("a second award to them: on 10", /Westville will start their innings on 10\.$/.test(pd?.text ?? ""), pd?.text);
@@ -346,7 +349,7 @@ group("D. Penalty runs to a fielding side, across innings");
   const p = ofKind(out, K.PENALTY).find((x) => x.innings === 1);
   ok("an award to the side that batted goes on their total", /They go on Hilton College's total, now 13\./.test(p?.text ?? ""), p?.text);
   ok("...and the chase's target moves with it", /The target is now 14\.$/.test(p?.text ?? ""), p?.text);
-  ok("...in the Law's words", p?.text.includes(PENALTY_REASON_TEXT.time_wasting));
+  ok("...in words, with no Law clause number", p?.text.includes(noLaw(PENALTY_REASON_TEXT.time_wasting)) && !/\bLaws?\s+\d/.test(p?.text ?? ""));
 }
 
 // ── E. Determinism and keys ──────────────────────────────
@@ -388,6 +391,7 @@ group("F. Over generated logs: every name is nameOf's, and nothing leaks");
   const SHOTS = Object.keys(SHOT_WORDS);
   let checked = 0, leaks = 0, foreign = 0, voidedSeen = 0, voidedLeft = 0;
   /** @type {string[]} */ const firstLeak = [];
+  let clauses = 0; /** @type {string[]} */ const firstClause = [];
   for (let s = 1; s <= 60; s++) {
     const r = rng(s);
     const pick = /** @template T @param {T[]} xs @returns {T} */ (xs) => xs[Math.floor(r() * xs.length)];
@@ -450,10 +454,12 @@ group("F. Over generated logs: every name is nameOf's, and nothing leaks");
       const stray = /Typedname|Keyboardson|Enteredby|Freetext|Fieldtyped|[0-9a-f]{8}-[0-9a-f]{4}/.test(rest)
         || SQUAD_NAMES.some((n) => rest.includes(n.split(" ")[1]));
       if (bad.length || stray) { leaks++; if (!firstLeak.length) firstLeak.push(`seed ${s}: ${x.text}`); }
+      if (/\bLaws?\s+\d/.test(x.text)) { clauses++; if (!firstClause.length) firstClause.push(`seed ${s}: ${x.text}`); }
     }
   }
   ok(`${checked} lines over 60 generated matches: no id, squad name or typed name`, leaks === 0, firstLeak[0]);
   ok("nameOf is asked only about players in the events", foreign === 0, `${foreign} foreign refs`);
+  ok("no line carries a Law clause number", clauses === 0, firstClause[0]);
   ok(`every voided ball (${voidedSeen}) has no line`, voidedSeen > 0 && voidedLeft === 0, `${voidedLeft} lines survived a void`);
   ok("the generator exercised enough lines to mean something", checked > 2000, checked);
 }
