@@ -3541,6 +3541,54 @@ Check each against step 3c, and build what is missing:
 
 Names follow the Match Centre's public mode.
 
+### SCRBRD-106 — A graphics pack: broadcast-style cards from the fold
+**Priority:** P2 · **Domain:** Front-end · **Type:** feature (Kameel's broadcast references, 2026-09-27)
+Each graphic is one component, drawn from the fold (partnerships, fow, phases.mjs, per-batter and per-bowler figures) and the career reads. They are used in four places:
+- the Match Centre;
+- big-screen mode;
+- the post-match report;
+- later, the stream overlay (SCRBRD-104).
+
+The graphics:
+1. **Partnerships:** every stand, the pair, a bar for each batter's share, runs and balls, then who is still to bat, extras, overs and the total.
+2. **The batter lower-third:** runs, balls, dots, fours, sixes, strike rate and minutes (from the ball timestamps), with the surname in bold.
+3. **The bowler card:** overs, dots, runs, wickets and economy; one bowler's runs per over as a bar chart; economy by phase; the fall-of-wickets strip.
+4. **The innings story:** each phase with its score, run rate and top performers.
+5. **The scorecard's focus ring:** one batter's dots, ones, twos, threes, fours and sixes, in the chip colours (DESIGN_DIRECTION §3.9).
+6. **Leaderboards:** the season's and the school's records, such as fewest balls to a fifty and highest scores (balls as a subscript, * for not out, the match as context).
+7. **The match summary:** the top three batters and bowlers per innings, and one closing line ("need 23 from 18", "trail by 149", "won by 4 wickets"). Lead and trail are new arithmetic on the fold.
+
+The shared style:
+- balls faced as a subscript next to the runs;
+- right-aligned figures in tabular numerals;
+- the current row highlighted;
+- one footer strip (extras, overs, then the total in a pill);
+- one closing line;
+- a sponsor slot on each graphic, from the sponsors screen (commercial: schools' sponsors).
+
+**Never on any graphic:**
+- a pupil's photo (SCRBRD-092, A8);
+- an age or a date of birth (minors);
+- a name on a public surface except as the public-data rule allows (`publicName()`, SCRBRD-083).
+
+There is no migration. Build it after SCRBRD-101: the ring and the chip colours are shared.
+
+### SCRBRD-107 — A ground data desk: the commentator's screen
+**Priority:** P3 · **Domain:** Front-end · **Type:** feature (Kameel's reference: the commentator's data feed at a ground, 2026-09-27)
+A dense, glanceable screen for a school's announcer, commentator or scorer's box. It shows:
+- the score, overs, run rate and over rate;
+- the projected score at the current rate and at 6, 8 and 10 an over;
+- the batters, with runs, balls, 4s, 6s, strike rate and minutes;
+- the partnership and the last wicket;
+- extras by type (B, LB, W, NB);
+- the bowlers, with overs, maidens, runs, wickets, economy, dots, 4s and 6s;
+- this over, and the runs from the last over;
+- runs per over as a bar chart.
+
+It is signed-in only, for a role that may already read the match, so names are shown in full. It updates live from the same source as the Match Centre. Ball speeds are out of scope: nothing records them.
+
+It reuses SCRBRD-106's components where they fit. There is no migration.
+
 ### SCRBRD-100 — The premium-feel checklist: what is left after step 3c
 **Priority:** P2 · **Domain:** Front-end · **Type:** product polish (Kameel, 2026-09-26; checklist at
 https://claude.ai/artifact/63zVkqVAotrYYQk9dGUhAp; the rule is DESIGN_DIRECTION §1a)
