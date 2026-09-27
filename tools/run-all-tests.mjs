@@ -28,6 +28,9 @@ const SUITES = [
   ["readiness","packages/scoring/test/readiness.test.mjs"],
   // What a scoring command may be: the Laws the server enforces at commit.
   ["laws",     "packages/scoring/test/laws.test.mjs"],
+  // A refusal's likely cause, in words beside REFUSAL_TEXT (SCRBRD-100): names
+  // from the fold and never an id, no Law clause numbers.
+  ["causes",   "packages/scoring/test/causes.test.mjs"],
   // What a person does about an event the server refused (SCRBRD-070).
   ["held",     "packages/sync/test/held.test.mjs"],
   // Undo and the outbox: withdraw what never left, void what may have (SCRBRD-074/075);

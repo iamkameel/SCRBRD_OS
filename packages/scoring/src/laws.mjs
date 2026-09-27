@@ -99,7 +99,9 @@ export const REFUSAL = Object.freeze({
 });
 /** @typedef {typeof REFUSAL[keyof typeof REFUSAL]} Refusal */
 
-/** Words for a person reading a held event. Finishes "The server refused this: …". */
+/** Words for a person reading a held event. Finishes "The server refused this: …".
+ *  What probably caused one, where the fold can tell, is likelyCause() beside
+ *  it (causes.mjs): the same codes, for every screen that shows a refusal. */
 export const REFUSAL_TEXT = Object.freeze({
   no_innings: "nobody had said who was batting in this innings",
   innings_closed: "the innings had already been closed",
