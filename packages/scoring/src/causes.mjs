@@ -24,6 +24,7 @@
  *   - a question where it is a guess.
  */
 
+import { countsInOver } from "./events.mjs";
 /** @import { Innings } from "./replay.mjs" */
 
 /**
@@ -58,7 +59,7 @@ function lastOver(inn) {
   if (balls === 0 || balls % 6 !== 0) return null;
   const over = balls / 6 - 1;
   const log = (inn.ballLog ?? []).filter((b) => b.over === over);
-  return { number: over + 1, deliveries: log.length, extras: log.filter((b) => b.type === "Wd" || b.type === "Nb").length };
+  return { number: over + 1, deliveries: log.length, extras: log.filter((b) => !countsInOver(b)).length };
 }
 
 /**

@@ -41,8 +41,10 @@
  */
 import { KIND, BALL_TYPE, DISMISSAL, BOWLER_CHANGE_REASONS, NB_RUNS_VALUES, RUN_OUT_ENDS,
   PENALTY_REASON, PENALTY_REASON_SIDE, normalisePenaltyReason,
-  SUSPENSION_REASONS, SUSPENSION_REASON_SCOPE, SUSPENSION_SCOPE } from "./events.mjs";
+  SUSPENSION_REASONS, SUSPENSION_SCOPE } from "./events.mjs";
 import { WITHDRAWN_PENALTY_REASONS } from "./events.mjs";
+import { FACES_NEXT, FACES_NEXT_VALUES, NOT_IN_OVER, suspensionScope, normaliseDismissal } from "./events.mjs";
+import { lawsEdition, LAWS_EDITION } from "./edition.mjs";
 import { retirementDismissal, isMidOver } from "./replay.mjs";
 import { scoringReadiness } from "./readiness.mjs";
 import { voidedIds, lastUndoableIndex } from "./undo.mjs";
@@ -89,8 +91,12 @@ export const REFUSAL = Object.freeze({
   PENALTY_REASON_SIDE:    "penalty_reason_side",    // the reason is the offence of the side awarded the runs
   PENALTY_REASON_WITHDRAWN: "penalty_reason_withdrawn", // a reason the list no longer offers (PENALTY_REASON_WITHDRAWN)
   SHORT_RUN_UNMATCHED:    "short_run_unmatched",    // short running's award follows its delivery, recorded with no run
+  // Who faces next, and a delivery that does not count (SCRBRD-113).
+  FACES_NEXT_UNKNOWN:     "faces_next_unknown",     // not the striker, the non-striker or the incoming batter — or one who cannot face
+  FACES_NEXT_NOT_A_CHOICE: "faces_next_not_a_choice", // the Laws (of this match's Edition) give nobody the choice on this delivery
+  NOT_IN_OVER_UNKNOWN:    "not_in_over_unknown",    // not one of the offences that keep a delivery out of the over, or on a wicket
   // A bowler suspended (Law 41, SCRBRD-094 item 2).
-  SUSPENSION_UNKNOWN:     "suspension_unknown",     // not a reason on the list, or not the scope its reason carries
+  SUSPENSION_UNKNOWN:     "suspension_unknown",     // not a reason on the list, or not the scope its reason carries in this match's Edition
   NOT_BOWLING:            "not_bowling",            // only the bowler on, or who bowled the last ball, can be suspended
   // Undo.
   VOID_NO_TARGET:         "void_no_target",
@@ -114,7 +120,7 @@ export const REFUSAL_TEXT = Object.freeze({
   next_batter: "there was no batter at one end",
   opening_bowler: "the opening bowler had not been chosen",
   next_bowler: "nobody had been named to bowl the over",
-  bowler_suspended: "that bowler had been suspended by the umpires and may not bowl again in this innings — after ball tampering, in this match",
+  bowler_suspended: "that bowler had been suspended by the umpires and may not bowl again in this innings — or, for some offences, in this match",
   match_decided: "the match was already decided",
   later_innings_started: "a later innings had already started",
   previous_innings_open: "the previous innings had not ended",
@@ -138,6 +144,9 @@ export const REFUSAL_TEXT = Object.freeze({
   penalty_reason_side: "the penalty runs were awarded to the side that committed the offence",
   penalty_reason_withdrawn: "the reason for the penalty runs is no longer one the Laws give for penalty runs",
   short_run_unmatched: "the award for deliberate short running must come straight after its delivery, recorded with no runs",
+  faces_next_unknown: "who was to face next was not one of the batters who could",
+  faces_next_not_a_choice: "nobody chooses who faces next after that delivery — the batters stay where the delivery left them",
+  not_in_over_unknown: "the reason a delivery did not count in the over was not one the scorebook knows, or it was on a wicket",
   suspension_unknown: "the reason for suspending the bowler, or how long it was for, was not one the scorebook knows",
   not_bowling: "only the bowler who is bowling, or who bowled the last ball, can be suspended",
   void_no_target: "the undo named no event",
@@ -185,6 +194,10 @@ export function lawsRefusal(match, ev) {
   const innings = match?.innings ?? [];
   const i = ev?.innings ?? 0;
   const inn = innings[i] ?? null;
+  // The Edition of the Laws this match is scored under (SCRBRD-113): the
+  // fixture's date, as the fold stamped it on the innings, or the log's first
+  // event (edition.mjs). Read by the three rules that differ by Edition.
+  const edition = lawsEdition(match);
 
   if (ev?.kind === KIND.VOID) return voidRefusal(match, ev);
 
@@ -197,12 +210,12 @@ export function lawsRefusal(match, ev) {
   }
 
   switch (ev?.kind) {
-    case KIND.BALL: return ballRefusal(innings, inn, i, ev);
+    case KIND.BALL: return ballRefusal(innings, inn, i, ev, edition);
     case KIND.BATTERS: return inn?.battingTeam == null ? REFUSAL.NO_INNINGS : battersRefusal(inn, ev);
     case KIND.BOWLER: {
       if (inn?.battingTeam == null) return REFUSAL.NO_INNINGS;
       // Suspended by the umpires (Law 41, SCRBRD-094 item 2): not again in
-      // this innings, or — ball tampering — in this match. Asked first: it
+      // this innings, or — where its scope is the match — in this match. Asked first: it
       // is the stronger rule, and the words the scorer needs.
       if (ev.bowler != null && suspendedBowlers(innings, i).has(ev.bowler)) return REFUSAL.BOWLER_SUSPENDED;
       // Law 17.8, "or parts thereof". This is also the whole of the
@@ -238,12 +251,12 @@ export function lawsRefusal(match, ev) {
     // limits; with no innings_start there is no innings for them to belong to,
     // and a later innings_start would overwrite the revised overs anyway.
     case KIND.PENALTY:
-      return inn?.battingTeam == null ? REFUSAL.NO_INNINGS : penaltyRefusal(innings, match?.events?.[i], ev);
+      return inn?.battingTeam == null ? REFUSAL.NO_INNINGS : penaltyRefusal(innings, match?.events?.[i], ev, edition);
     case KIND.REVISION:
     case KIND.INNINGS_END:
       return inn?.battingTeam == null ? REFUSAL.NO_INNINGS : null;
     case KIND.BOWLER_SUSPENDED:
-      return inn?.battingTeam == null ? REFUSAL.NO_INNINGS : suspensionRefusal(innings, inn, i, ev);
+      return inn?.battingTeam == null ? REFUSAL.NO_INNINGS : suspensionRefusal(innings, inn, i, ev, edition);
     default:
       return null;
   }
@@ -252,7 +265,7 @@ export function lawsRefusal(match, ev) {
 /**
  * Every bowler suspended for innings `i` of this match, by id: those
  * suspended in innings `i` itself, for whatever scope, and those suspended
- * for the MATCH (ball tampering) in any innings before it (SCRBRD-094 item
+ * for the MATCH (suspensionScope()) in any innings before it (SCRBRD-094 item
  * 2). Read from the fold's own record (`inn.suspensions`), so the server
  * (MatchFold.view()) and the pad (its per-innings fold) answer alike.
  *
@@ -276,8 +289,14 @@ export function suspendedBowlers(innings, i) {
  * A suspension (Law 41; SCRBRD-094 item 2).
  *
  *   - The reason is one of SUSPENSION_REASON, and the scope the one it
- *     carries (ball tampering: the match; every other: the innings). The
- *     scorer does not choose how long; the Law does.
+ *     carries under the Edition this match is scored under
+ *     (suspensionScope(); SCRBRD-113): a deliberate front-foot no-ball or a
+ *     deliberate beamer is the match under the 4th and the innings under the
+ *     3rd; ball tampering and a Level 4 conduct offence the match; every
+ *     other the innings. The scorer does not choose how long; the Law does.
+ *     An event with no scope reads as the innings (the fold's default), so
+ *     it is taken only where the innings is the Law's scope. A stored
+ *     event is never judged again: it keeps the scope it carries.
  *   - The bowler is the one on, or — the ball dead on the last of an over,
  *     with nobody on yet — the one who bowled the last delivery. Nobody else
  *     is bowling to be suspended.
@@ -292,11 +311,12 @@ export function suspendedBowlers(innings, i) {
  * @param {Innings} inn  innings[i]
  * @param {number} i
  * @param {Loose<BowlerSuspendedEvent>} ev
+ * @param {3 | 4} edition  lawsEdition(match)
  * @returns {Refusal | null}
  */
-function suspensionRefusal(innings, inn, i, ev) {
+function suspensionRefusal(innings, inn, i, ev, edition) {
   if (!SUSPENSION_REASONS.has(ev.reason)) return REFUSAL.SUSPENSION_UNKNOWN;
-  if (ev.scope != null && ev.scope !== SUSPENSION_REASON_SCOPE[/** @type {string} */ (ev.reason)]) return REFUSAL.SUSPENSION_UNKNOWN;
+  if ((ev.scope ?? SUSPENSION_SCOPE.INNINGS) !== suspensionScope(ev.reason, edition)) return REFUSAL.SUSPENSION_UNKNOWN;
   const log = inn.ballLog ?? [];
   const lastBowler = log[log.length - 1]?.bowlerId ?? null;
   if (ev.bowler == null || (ev.bowler !== inn.bowler && ev.bowler !== lastBowler)) return REFUSAL.NOT_BOWLING;
@@ -324,17 +344,26 @@ function suspensionRefusal(innings, inn, i, ev) {
  *     events.mjs): the award must come straight after a delivery of this
  *     innings that scored no run completed. It is part of that delivery, so
  *     it is taken even when that delivery ended the match.
- *   - Any other award to the fielding side once the match is decided is
- *     refused: it would move the target of a chase that is over — the result
- *     stands, as it does for a ball. An award to the batting side is judged
- *     as it always was.
+ *   - Under the 3rd Edition, any other award to the fielding side once the
+ *     match is decided is refused: it would move the target of a chase that
+ *     is over — the result stands, as it does for a ball. Under the 4th
+ *     (SCRBRD-113; Law 41.17.2) penalty runs are awarded "up until the
+ *     umpires leave the field at the end of the match, even if a result has
+ *     already been achieved", and an award that undoes the result reopens
+ *     the match (the fold: the PENALTY case of replay.mjs). So it is taken.
+ *     The umpires leaving the field is the match being concluded: once the
+ *     fixture is marked complete (match.status, db/33), the write path holds
+ *     every event for a person to decide — this one too — and nothing more
+ *     is scored. An award to the batting side is judged as it always was,
+ *     in either Edition.
  *
  * @param {(Innings | null | undefined)[]} innings
  * @param {LogEvent[] | undefined} log  this innings' own log, when the caller has it
  * @param {Loose<PenaltyEvent>} ev
+ * @param {3 | 4} edition  lawsEdition(match)
  * @returns {Refusal | null}
  */
-function penaltyRefusal(innings, log, ev) {
+function penaltyRefusal(innings, log, ev, edition) {
   if (ev.runs != null && !(Number.isInteger(ev.runs) && ev.runs > 0)) return REFUSAL.PENALTY_RUNS_INVALID;
   const toFielding = ev.toBattingTeam === false;
   const reason = ev.reason == null ? null : normalisePenaltyReason(ev.reason, ev.toBattingTeam);
@@ -347,7 +376,7 @@ function penaltyRefusal(innings, log, ev) {
     const prev = events[lastUndoableIndex(events)];
     return prev?.kind === KIND.BALL && (prev.value ?? 0) === 0 ? null : REFUSAL.SHORT_RUN_UNMATCHED;
   }
-  if (toFielding && innings[1]?.complete) return REFUSAL.MATCH_DECIDED;
+  if (toFielding && innings[1]?.complete && edition === LAWS_EDITION.THIRD) return REFUSAL.MATCH_DECIDED;
   return null;
 }
 
@@ -357,9 +386,10 @@ function penaltyRefusal(innings, log, ev) {
  * @param {Innings | null} inn  innings[i]
  * @param {number} i
  * @param {Loose<BallEvent>} ev
+ * @param {3 | 4} edition  lawsEdition(match)
  * @returns {Refusal | null}
  */
-function ballRefusal(innings, inn, i, ev) {
+function ballRefusal(innings, inn, i, ev, edition) {
   // The chase is over: the result is decided. The AntiGravity rule
   // (recordBallAction: "the match is complete"), and the reason a phone that
   // was offline for the winning run cannot keep adding balls after it.
@@ -404,7 +434,61 @@ function ballRefusal(innings, inn, i, ev) {
       && ev.dismissed !== inPlay.striker && ev.dismissed !== inPlay.nonStriker) {
     return REFUSAL.NOT_AT_CREASE;
   }
+
+  // A delivery that does not count in the over (Law 17.3.2.5; SCRBRD-113):
+  // one of the four offences that keep it out, and never a wicket — nobody
+  // is out off one. The fold ignores a reason it does not know, and would
+  // count the ball the scorer said did not.
+  if (ev.notInOver != null
+      && (!NOT_IN_OVER.has(ev.notInOver) || (ev.type ?? BALL_TYPE.RUN) === BALL_TYPE.WICKET)) {
+    return REFUSAL.NOT_IN_OVER_UNKNOWN;
+  }
+  if (ev.facesNext != null) return facesNextRefusal(inPlay, ev, edition);
   return null;
+}
+
+/**
+ * Who faces next (FACES_NEXT; SCRBRD-113), where the Laws give someone the
+ * choice, and only there:
+ *
+ *   - a fielder's obstruction of a batter (41.5.9, both Editions): the
+ *     batters choose — a delivery marked `notInOver: "obstructing_batter"`;
+ *   - deliberate short running (4th Edition, 18.5.2): the fielding captain
+ *     chooses — the delivery recorded with no runs, whose award follows it
+ *     (the award is refused unless it comes straight after:
+ *     short_run_unmatched). A choice on a delivery with runs is no choice
+ *     the Laws give;
+ *   - a wicket with no runs, Obstructing the field (4th Edition, 37.5.2: an
+ *     obstruction that prevented a catch) or Run out (short running with a
+ *     wicket on the same delivery, 18.5.2's "including the incoming batter"):
+ *     the fielding captain chooses the not-out batter or the incoming one.
+ *
+ * Under the 3rd Edition short running returns the batters to their original
+ * ends and an obstruction's incoming batter takes the dismissed batter's
+ * end: no choice. The value must name a batter who can face: the dismissed
+ * batter cannot, and nobody is incoming without a wicket.
+ *
+ * @param {Innings} inn  the innings in play
+ * @param {Loose<BallEvent>} ev
+ * @param {3 | 4} edition
+ * @returns {Refusal | null}
+ */
+function facesNextRefusal(inn, ev, edition) {
+  const type = ev.type ?? BALL_TYPE.RUN;
+  const choice = ev.facesNext;
+  if (!FACES_NEXT_VALUES.has(choice)) return REFUSAL.FACES_NEXT_UNKNOWN;
+  const noRuns = (ev.value ?? 0) === 0;
+  if (type === BALL_TYPE.WICKET) {
+    const outId = ev.dismissed ?? inn.striker;
+    const outRole = outId === inn.striker ? FACES_NEXT.STRIKER : FACES_NEXT.NON_STRIKER;
+    if (choice === outRole) return REFUSAL.FACES_NEXT_UNKNOWN;
+    const how = normaliseDismissal(ev.dismissal);
+    const chosenAfter = how === DISMISSAL.OBSTRUCTING_FIELD || how === DISMISSAL.RUN_OUT;
+    return edition === LAWS_EDITION.FOURTH && noRuns && chosenAfter ? null : REFUSAL.FACES_NEXT_NOT_A_CHOICE;
+  }
+  if (choice === FACES_NEXT.INCOMING) return REFUSAL.FACES_NEXT_UNKNOWN;
+  if (ev.notInOver === PENALTY_REASON.OBSTRUCTING_BATTER) return null;
+  return edition === LAWS_EDITION.FOURTH && noRuns ? null : REFUSAL.FACES_NEXT_NOT_A_CHOICE;
 }
 
 /**

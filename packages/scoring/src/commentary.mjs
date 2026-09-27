@@ -51,6 +51,7 @@
 import { KIND, BALL_TYPE, ILLEGAL, NB_RUNS, RUN_OUT_END, DISMISSAL, INNINGS_END_REASON, PENALTY_REASON,
   penaltyReasonWords, BOWLER_CHANGE_REASON, normaliseDismissal, normalisePenaltyReason, runsOffBat, chargedToBowler } from "./events.mjs";
 import { deriveMatch, foldSteps, penaltyCredits, retirementDismissal, isMaiden, fmtOvers } from "./replay.mjs";
+import { countsInOver } from "./events.mjs";
 import { positionName, sectorOf, batHandOf } from "./placement.mjs";
 import { SHOT_WORDS, NO_STROKE, SECTOR_WORDS } from "./words.mjs";
 
@@ -512,7 +513,10 @@ export function deriveCommentary(events = [], options = {}) {
               push(key, pos.over, pos.ball, COMMENTARY_KIND.MILESTONE,
                 `${cap(words(b.wickets))} wickets for ${who(bowlerId, "bowler")}: ${b.wickets}/${b.runs}.`);
             }
-            if (!ILLEGAL.has(ev.type ?? BALL_TYPE.RUN)) {
+            // A hat-trick is three of the bowler's balls of the over in a
+            // row: one that does not count (a wide, a no-ball, 17.3.2.5)
+            // neither makes nor breaks it, as SQL's bowler_hat_trick reads it.
+            if (countsInOver(ev)) {
               const mine = ev.type === BALL_TYPE.WICKET && !entry.freeHitSaved && chargedToBowler(normaliseDismissal(ev.dismissal));
               const run = bowlerRun.get(bowlerId) ?? [];
               run.push(mine);
@@ -526,7 +530,7 @@ export function deriveCommentary(events = [], options = {}) {
             }
           }
           // The over is done: its summary goes out with whatever happens next.
-          if (!ILLEGAL.has(ev.type ?? BALL_TYPE.RUN) && cur.balls % 6 === 0) {
+          if (countsInOver(ev) && cur.balls % 6 === 0) {
             overDue = { over: entry.over, wicketsAtStart: wicketsAtOverStart };
           }
           break;

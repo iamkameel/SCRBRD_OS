@@ -54,12 +54,21 @@ const SQ_B = ["w1", "w2", "w3", "w4", "w5"].map((id) => ({ id, name: id.toUpperC
 
 let n = 0;
 /**
- * Give every event an id and an innings, the way the scorer's emit() does.
+ * Every match here is dated 15 September 2026, under the 3rd Edition of the
+ * Laws (SCRBRD-113: the Edition follows the match date, and the fold dates a
+ * match with no fixture by its first event), so what these groups prove does
+ * not change on 1 October. The 4th Edition's rules, and both Editions side by
+ * side, are edition.test.mjs.
+ */
+const THIRD_EDITION_DAY = Date.parse("2026-09-15T08:00:00Z");
+/**
+ * Give every event an id and an innings, the way the scorer's emit() does,
+ * and the match's date.
  * @param {number} innings
  * @param {...LogEvent} evs
  * @returns {(LogEvent & {innings: number, id: string})[]}
  */
-const at = (innings, ...evs) => evs.map((e) => ({ ...e, innings, id: e.id ?? `e${++n}` }));
+const at = (innings, ...evs) => evs.map((e) => ({ ...e, innings, id: e.id ?? `e${++n}`, clientTs: THIRD_EDITION_DAY }));
 const open = (innings = 0, /** @type {InningsStartInput} */ o = {}) => at(innings,
   inningsStart({ battingTeam: innings ? "B" : "A", bowlingTeam: innings ? "A" : "B",
                  squad: innings ? SQ_B : SQ_A, bowlingSquad: innings ? SQ_A : SQ_B, overs: 2, ...o }),
@@ -488,8 +497,8 @@ group("O. Penalty runs: whole runs, a reason from the list, the right side (SCRB
   // The list as the 4th Edition (in force 1 October 2026) has it: docs/laws/CLAUSE_CHECK.md,
   // Law 41 and Law 18.6's sources of penalty runs (Kameel, 2026-09-27).
   const side = (/** @type {boolean | null} */ v) => JSON.stringify(Object.values(PENALTY_REASON).filter((r) => PENALTY_REASON_SIDE[r] === v).sort());
-  ok("the batting side's offences, five to the fielding side: short running (18.5), time wasting (41.10), the pitch (41.14), stealing a run (41.16)",
-     side(false) === JSON.stringify(["pitch_damage", "short_running", "stealing_run", "time_wasting"]), side(false));
+  ok("the batting side's offences, five to the fielding side: short running (18.5), time wasting (41.10), the pitch (41.14), the striker's position (41.15), stealing a run (41.16)",
+     side(false) === JSON.stringify(["pitch_damage", "short_running", "stealing_run", "striker_position", "time_wasting"]), side(false));
   ok("the fielding side's, five to the batting side: 24.4, 27.4.2, 28.2, 28.3, 28.6.3, 41.4, 41.5, 41.9, 41.12 and the fielding restrictions",
      side(true) === JSON.stringify(["distracting_striker", "fielder_movement", "fielder_returning", "fielding_pitch_damage",
                                     "fielding_restrictions", "fielding_time_wasting", "helmet_struck", "illegal_fielding",
@@ -576,10 +585,12 @@ group("P. A bowler suspended: not again this innings (the match, for ball tamper
 {
   const S = (/** @type {string} */ who, /** @type {string} */ reason) => bowlerSuspended({ bowler: who, reason });
   // The constructor: the scope is the reason's.
-  ok("ball tampering is for the match", bowlerSuspended({ bowler: "w1", reason: "ball_tampering" }).scope === "match");
+  // Under the 3rd Edition, which this group is (the 4th's: edition.test.mjs).
+  ok("ball tampering is for the match", bowlerSuspended({ bowler: "w1", reason: "ball_tampering", edition: 3 }).scope === "match"
+     && bowlerSuspended({ bowler: "w1", reason: "conduct", edition: 3 }).scope === "match");
   ok("...every other reason for the innings",
-     ["beamers", "short_pitched", "deliberate_no_ball", "protected_area", "fielding_time_wasting"]
-       .every((r) => bowlerSuspended({ bowler: "w1", reason: r }).scope === "innings"));
+     ["beamers", "deliberate_beamer", "short_pitched", "deliberate_no_ball", "protected_area", "fielding_time_wasting", "throwing"]
+       .every((r) => bowlerSuspended({ bowler: "w1", reason: r, edition: 3 }).scope === "innings"));
   let threw = 0;
   try { bowlerSuspended({ bowler: "w1", reason: "rudeness" }); } catch { threw++; }
   try { bowlerSuspended({ bowler: "w1", reason: "beamers", scope: "match" }); } catch { threw++; }

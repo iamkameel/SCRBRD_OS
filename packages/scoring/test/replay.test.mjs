@@ -1477,7 +1477,7 @@ group("M. A bowler suspended: the fold records it; a split over credits each his
   // suspended; w3 finishes it with 4 legal balls.
   const log = [...open(), runs(0), runs(0), runs(0), runs(0), runs(0), runs(0),
     bowler({ bowler: "w2" }), runs(0), runs(1), ball({ type: BALL_TYPE.NO_BALL }),
-    bowlerSuspended({ bowler: "w2", reason: "deliberate_no_ball" }),
+    bowlerSuspended({ bowler: "w2", reason: "deliberate_no_ball", edition: 3 }),
     bowler({ bowler: "w3", reason: "suspended" }), runs(0), runs(2), runs(0), runs(0)];
   const inn = deriveInnings(log);
   ok("the fold records the suspension: who, why, for how long, at which ball",

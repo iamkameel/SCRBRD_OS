@@ -35,6 +35,8 @@
 
 import { KIND, BALL_TYPE, isLegal, normaliseDismissal, chargedToBowler, standsOnFreeHit, DISMISSAL, DISMISSAL_LABEL, INNINGS_END_REASON, DERIVED_END_REASONS, RETIREMENT_DISMISSAL, RUN_OUT_END, SUSPENSION_SCOPE, runsOffBat, inningsEnd } from "./events.mjs";
 import { NB_RUNS, runsToBowler } from "./events.mjs";
+import { countsInOver, FACES_NEXT } from "./events.mjs";
+import { lawsEdition, LAWS_EDITION } from "./edition.mjs";
 import { CAPTURE_PROFILE } from "./placement.mjs";
 
 /** @import { LogEvent, SquadMember } from "./events.mjs" */
@@ -165,6 +167,12 @@ const BAT_STATUS = { NOT_OUT: "batting", OUT: "out", RETIRED: "retired" };
  * @property {{overs: number | null, target: number | null, reason: string | null} | null} revised
  * @property {string | null} declaredProfile  one of CAPTURE_PROFILE, or null: never declared
  * @property {number} voided         how many earlier events this log undoes
+ * @property {3 | 4} lawsEdition     the Edition of the Laws the match is scored under
+ *   (edition.mjs, SCRBRD-113), resolved once per match by the fold and the
+ *   same on every innings of it; what lawsEdition(match) reads back
+ * @property {boolean} penaltyWin    4th Edition, a chase: this innings had
+ *   been completed short of its target, and an award of penalty runs to it
+ *   then made its total enough (Law 16.7). The result reads "by penalty runs"
  */
 
 /**
@@ -172,7 +180,28 @@ const BAT_STATUS = { NOT_OUT: "batting", OUT: "out", RETIRED: "retired" };
  * @typedef {object} FoldContext
  * @property {(teamKey: string | null | undefined) => string | null | undefined} [flagFor]
  *   team key → flag emoji, for the UI
+ * @property {unknown} [startsAt]  the fixture's start (match.starts_at), where the
+ *   caller has it: it dates the match, and the date decides the Edition of the
+ *   Laws (edition.mjs). Without it, the log's first event dates the match
+ * @property {3 | 4} [edition]     the Edition, already resolved for the whole
+ *   match; the fold resolves it itself when it is not given (withEdition())
  */
+
+/**
+ * The context with the match's Edition resolved: as given, or from the
+ * fixture's start, or from the first event of `events` (the match's log, by
+ * innings or flat). One answer per match, so every innings of it is folded
+ * under the same Edition — the second day of a two-day match included.
+ * @param {FoldContext} ctx
+ * @param {unknown} events
+ * @returns {FoldContext & {edition: 3 | 4}}
+ */
+function withEdition(ctx, events) {
+  if (ctx.edition === LAWS_EDITION.THIRD || ctx.edition === LAWS_EDITION.FOURTH) {
+    return /** @type {FoldContext & {edition: 3 | 4}} */ (ctx);
+  }
+  return { ...ctx, edition: lawsEdition({ startsAt: ctx.startsAt, events }) };
+}
 
 /** Overs in cricket's odd base: 17 legal balls is 2.5 overs.
  *  @param {number} balls */
@@ -282,6 +311,11 @@ function inningsFolder(ctx = {}, carried = 0) {
     // exactly as they always did: nothing is excused as "not captured".
     declaredProfile: null,
     voided: 0,   // how many earlier events this log undoes — see the fold below
+    // The Edition of the Laws this match is scored under (SCRBRD-113): the
+    // caller resolved it for the whole match (withEdition()). A folder built
+    // without one is the 4th's only in a context that says so.
+    lawsEdition: ctx.edition === LAWS_EDITION.THIRD ? LAWS_EDITION.THIRD : LAWS_EDITION.FOURTH,
+    penaltyWin: false,
   };
 
   // Name resolution comes from the squads carried on innings_start, so a
@@ -311,6 +345,39 @@ function inningsFolder(ctx = {}, carried = 0) {
   };
 
   const rotate = () => { const s = inn.striker; inn.striker = inn.nonStriker; inn.nonStriker = s; };
+
+  /**
+   * Put whoever was chosen on strike for the next ball (FACES_NEXT). `s0`
+   * and `n0` are the striker and non-striker the delivery was bowled to.
+   *
+   *   Both still in (no wicket stood): "striker" puts the batter who faced
+   *     it on strike, "non_striker" the other; "incoming" has nobody to name.
+   *   A wicket fell (an end is empty — a delivery is only bowled with both
+   *     filled): "incoming" leaves the striker's end for the batter coming
+   *     in and puts the not-out batter at the other; the not-out batter's own
+   *     role puts him on strike and leaves the other end for the incoming
+   *     batter. The dismissed batter's role names nobody.
+   *
+   * Anything else is left as the delivery left it.
+   * @param {unknown} choice  @param {string | null} s0  @param {string | null} n0
+   */
+  const placeFacing = (choice, s0, n0) => {
+    if (s0 == null || n0 == null) return;
+    if (inn.striker != null && inn.nonStriker != null) {
+      const same = (inn.striker === s0 && inn.nonStriker === n0) || (inn.striker === n0 && inn.nonStriker === s0);
+      if (!same) return;
+      if (choice === FACES_NEXT.STRIKER) { inn.striker = s0; inn.nonStriker = n0; }
+      else if (choice === FACES_NEXT.NON_STRIKER) { inn.striker = n0; inn.nonStriker = s0; }
+      return;
+    }
+    const survivor = inn.striker ?? inn.nonStriker;
+    if (survivor == null) return;
+    const survivorRole = survivor === s0 ? FACES_NEXT.STRIKER : survivor === n0 ? FACES_NEXT.NON_STRIKER : null;
+    if (choice === FACES_NEXT.INCOMING) { inn.striker = null; inn.nonStriker = survivor; }
+    else if (survivorRole != null && choice === survivorRole) { inn.striker = survivor; inn.nonStriker = null; }
+    else return;
+    inn.curPartner = { ...inn.curPartner, bat1: inn.striker, bat2: inn.nonStriker };
+  };
 
   // A batter who retired hurt and walks back in (Law 25.4.2: "retired, not
   // out" may resume) is batting again, on the same line: his runs and balls
@@ -503,15 +570,45 @@ function inningsFolder(ctx = {}, carried = 0) {
       // read the new figure. The target the innings opened with is taken to
       // include every award made before it was set; an umpires' revised
       // target is their figure and does not move (they revise it again).
-      case KIND.PENALTY:
+      //
+      // AFTER A RESULT (4th Edition, SCRBRD-113; Laws 41.17.2, 16.6.1, 16.7).
+      // Penalty runs are awarded until the umpires leave the field, even
+      // once a result has been reached, and "if the award of Penalty runs
+      // means that a result has no longer been achieved, the match
+      // continues". Two things follow here, and only for a 4th-Edition match
+      // (inn.lawsEdition), so a 3rd-Edition log folds exactly as it did:
+      //
+      //   - A chase that ended by reaching its target, and was sealed, is
+      //     reopened by an award to the fielding side that lifts the target
+      //     above its runs: the seal no longer closes it (it was checked
+      //     against figures that no longer decide the match), and play
+      //     resumes. Unsealed, nothing is needed: whether the innings is
+      //     over is re-derived after the last event (settleInnings), from
+      //     the target as it now stands — it was never sticky.
+      //   - A chase whose innings had been completed short — all out, or its
+      //     overs bowled — made enough by an award to it: the result is a
+      //     win "by Penalty runs" (16.7), not by wickets (`penaltyWin`).
+      case KIND.PENALTY: {
+        const r = ev.runs ?? 5;
         if (ev.toBattingTeam !== false) {
-          inn.runs += ev.runs ?? 5;
-          inn.extras.penalty += ev.runs ?? 5;
+          const endedShort = inn.lawsEdition === LAWS_EDITION.FOURTH && inn.target != null && inn.runs < inn.target
+            ? inningsOverReason(inn) : null;
+          inn.runs += r;
+          inn.extras.penalty += r;
+          if ((endedShort === INNINGS_END_REASON.ALL_OUT || endedShort === INNINGS_END_REASON.OVERS)
+              && inn.target != null && inn.runs >= inn.target) inn.penaltyWin = true;
         } else {
-          inn.penaltyToFielding += ev.runs ?? 5;
-          if (inn.target != null && !targetTyped) inn.target += ev.runs ?? 5;
+          inn.penaltyToFielding += r;
+          if (inn.target != null && !targetTyped) inn.target += r;
+          if (inn.lawsEdition === LAWS_EDITION.FOURTH && inn.sealed && inn.endReason === INNINGS_END_REASON.TARGET
+              && inn.target != null && inn.runs < inn.target) {
+            inn.sealed = false;
+            inn.complete = false;
+            inn.endReason = null;
+          }
         }
         break;
+      }
 
       case KIND.RETIRE: {
         // A dismissal with no delivery (SCRBRD-081): retired out, timed out.
@@ -586,11 +683,19 @@ function inningsFolder(ctx = {}, carried = 0) {
       case KIND.BALL: {
         const type = ev.type ?? BALL_TYPE.RUN;
         const v = ev.value ?? 0;
+        // Two questions that were one until SCRBRD-113. `legal`: not a wide or
+        // a no-ball — the one-run penalty, and the free hit, are the TYPE's.
+        // `counts`: one of the six balls of the over (Law 17.3), which a fair
+        // delivery marked `notInOver` (17.3.2.5) is not. A delivery with no
+        // such mark counts exactly when it is legal, as every one before did.
         const legal = isLegal(type);
+        const counts = countsInOver(ev);
         const bat = batterFor(inn.striker);
         const bow = bowlerFor(inn.bowler);
         const wasFreeHit = inn.freeHit;
         const at = inn.balls; // legal-ball index of this delivery, before it counts
+        // Who stood where when it was bowled, for a choice of who faces next.
+        const s0 = inn.striker, n0 = inn.nonStriker;
 
         // The one-run penalty for a wide/no-ball is applied here and only here,
         // so `value` never has to carry it and can never double-count it.
@@ -652,13 +757,13 @@ function inningsFolder(ctx = {}, carried = 0) {
             break;
         }
 
-        if (legal) inn.balls += 1;
-        if (bow) { bow.runs += bowlerCharged; if (legal) bow.balls += 1; }
+        if (counts) inn.balls += 1;
+        if (bow) { bow.runs += bowlerCharged; if (counts) bow.balls += 1; }
 
-        // Partnership: run delta keeps extras in, balls counts legal deliveries.
+        // Partnership: run delta keeps extras in, balls counts the balls of the over.
         if (inn.curPartner) {
           inn.curPartner.runs = inn.runs - partnerStartRuns;
-          if (legal) inn.curPartner.balls += 1;
+          if (counts) inn.curPartner.balls += 1;
         }
 
         const entry = logBall(ev, at);
@@ -707,10 +812,20 @@ function inningsFolder(ctx = {}, carried = 0) {
         // batter was out at, when the event says), and the incoming batter's
         // by the next `batters` event.
         if (type !== BALL_TYPE.WICKET && v % 2 === 1) rotate();
-        if (legal && inn.balls % 6 === 0) { rotate(); inn.bowler = null; }
+        if (counts && inn.balls % 6 === 0) { rotate(); inn.bowler = null; }
 
-        // Free hit is set by a no-ball and consumed by the next legal delivery.
+        // Free hit is set by a no-ball and consumed by the next legal delivery
+        // — by its type: a fair delivery that does not count in the over
+        // (17.3.2.5) was still the free-hit ball bowled, as SQL's
+        // ball_wicket_stands() reads it too.
         inn.freeHit = type === BALL_TYPE.NO_BALL ? true : (legal ? false : inn.freeHit);
+
+        // Who faces next, where the Laws let someone choose (FACES_NEXT,
+        // SCRBRD-113): placed last, after the change of ends at an over's
+        // close, because it is who faces the NEXT ball. The server takes the
+        // field only where the Laws give the choice; the fold places whatever
+        // a log says, and ignores what it cannot place.
+        if (ev.facesNext != null) placeFacing(ev.facesNext, s0, n0);
         break;
       }
 
@@ -738,7 +853,7 @@ export function deriveInnings(events = [], ctx = {}) {
  * @returns {Innings}
  */
 function foldLog(events, ctx, carried) {
-  const { inn, apply } = inningsFolder(ctx, carried);
+  const { inn, apply } = inningsFolder(withEdition(ctx, events), carried);
   // A `void` event undoes an earlier one. Collect the targets in one pass
   // first, because a void necessarily appears AFTER the event it undoes and
   // the fold below is single-pass and order-dependent — a ball that has been
@@ -781,7 +896,7 @@ function foldLog(events, ctx, carried) {
  *   `index` is the event's position in `events`
  */
 export function* foldSteps(events, { carried = 0, ctx = {} } = {}) {
-  const { inn, apply } = inningsFolder(ctx, carried);
+  const { inn, apply } = inningsFolder(withEdition(ctx, events), carried);
   const voided = voidedTargets(events);
   inn.voided = voided.size;
   for (let index = 0; index < events.length; index++) {
@@ -857,12 +972,15 @@ function describeDismissal(ev, bowlerName) {
  * with it. A delivery the fold stamped with no bowler (nobody on: a pad's held
  * cascade) is not a second bowler.
  *
- * @param {ReadonlyArray<{type?: string | null, value?: number | null, bowlerId?: string | null, bowler?: string | null}>} balls
+ * @param {ReadonlyArray<{type?: string | null, value?: number | null, bowlerId?: string | null, bowler?: string | null, notInOver?: unknown}>} balls
  *   one over's deliveries (overLog), each with the bowler the fold stamped
  * @returns {boolean}
  */
 export function isMaiden(balls) {
-  const legalCount = balls.filter((b) => isLegal(b.type ?? BALL_TYPE.RUN)).length;
+  // The balls of the over: not a wide or a no-ball, nor one that does not
+  // count (countsInOver(), Law 17.3.2.5) — whose runs, if charged to the
+  // bowler, still spoil it below.
+  const legalCount = balls.filter((b) => countsInOver(b)).length;
   if (legalCount < 6) return false;
   const by = new Set(balls.map((b) => ("bowlerId" in b ? b.bowlerId : b.bowler) ?? null).filter((x) => x != null));
   if (by.size > 1) return false;
@@ -1079,7 +1197,10 @@ function withAdded(inn, runs) {
  * @param {FoldContext} ctx
  * @returns {Map<number, Innings>}
  */
-function foldMatch(byInnings, ctx) {
+function foldMatch(byInnings, ctx0) {
+  // One Edition for the whole match: dated by the fixture, or by the first
+  // event of its lowest-numbered innings (edition.mjs).
+  const ctx = withEdition(ctx0, [...byInnings.keys()].sort((a, b) => a - b).map((i) => byInnings.get(i)));
   /** @type {Map<number, Innings>} */
   const folded = new Map();
   for (const [i, evs] of byInnings) folded.set(i, foldLog(evs, ctx, 0));
@@ -1174,7 +1295,13 @@ export function deriveInningsList(eventsByInnings = [], ctx = {}) {
 export class MatchFold {
   /** @param {LogEvent[]} [events] the match's log in seq order  @param {FoldContext} [ctx] */
   constructor(events = [], ctx = {}) {
-    this.ctx = ctx;
+    // The match's Edition (edition.mjs), resolved from the fixture's start
+    // or the log's first event before any innings is folded; a fold opened
+    // on an empty log resolves it from the first event pushed. A copy: the
+    // caller's context is not written to.
+    /** @type {FoldContext} */
+    this.ctx = { ...ctx };
+    if (events.length > 0 || this.ctx.startsAt != null) this.ctx = withEdition(this.ctx, events);
     /** @type {Map<number, FoldBucket>} */
     this.byInnings = new Map();
     for (const ev of events) this._bucket(ev.innings ?? 0).events.push(ev);
@@ -1209,6 +1336,7 @@ export class MatchFold {
   /** Extend the fold with an event the log has just accepted.
    *  @param {LogEvent} ev */
   push(ev) {
+    if (this.ctx.edition == null) this.ctx = withEdition(this.ctx, [ev]);
     const b = this._bucket(ev.innings ?? 0);
     b.events.push(ev);
     if (ev.kind === KIND.VOID) { this._refold(b); return; }
@@ -1246,7 +1374,8 @@ export class MatchFold {
 
 /**
  * @typedef {{winner: string | null | undefined, margin: string}} MatchResult
- *   `winner` is a battingTeam (null on a tie); `margin` reads "3 wickets", "12 runs" or "tie"
+ *   `winner` is a battingTeam (null on a tie); `margin` reads "3 wickets", "12 runs", "tie"
+ *   or — 4th Edition, Law 16.7 — "penalty runs"
  */
 
 /** @param {Innings[]} innings  @returns {MatchResult | null} */
@@ -1259,6 +1388,9 @@ function describeResult(innings) {
   // only while those were the same number; in a rain-cut chase of 90 to beat
   // a 150, 100 is a win, not a loss by fifty.
   const target = b.target ?? a.runs + 1;
+  // Law 16.7 (4th Edition, SCRBRD-113): the chase's innings was completed
+  // short, and an award of penalty runs then made it enough.
+  if (b.runs >= target && b.penaltyWin) return { winner: b.battingTeam, margin: "penalty runs" };
   if (b.runs >= target) {
     const wktsLeft = Math.min(10, (b.squad?.length || 11) - 1) - b.wickets;
     return { winner: b.battingTeam, margin: `${wktsLeft} wicket${wktsLeft === 1 ? "" : "s"}` };

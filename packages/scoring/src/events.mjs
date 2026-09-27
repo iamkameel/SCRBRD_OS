@@ -44,6 +44,7 @@
  */
 
 import { CAPTURE_PROFILE } from "./placement.mjs";
+import { LAWS_EDITIONS, lawsEditionOn } from "./edition.mjs";
 
 /** The three declarable profiles. Mirrors the CHECK on ball_event.capture_profile. */
 const CAPTURE_PROFILES = new Set(Object.values(CAPTURE_PROFILE));
@@ -139,6 +140,47 @@ export const RUN_OUT_END = Object.freeze({ STRIKER: "striker_end", BOWLER: "bowl
 /** @typedef {typeof RUN_OUT_END[keyof typeof RUN_OUT_END]} RunOutEnd */
 /** @type {ReadonlySet<unknown>}  asked of whatever a producer wrote */
 export const RUN_OUT_ENDS = new Set(Object.values(RUN_OUT_END));
+
+/**
+ * WHO FACES THE NEXT DELIVERY, where the Laws let someone choose (SCRBRD-113;
+ * Law 18.13). Recorded on the delivery the choice follows, as `facesNext`,
+ * and applied by the fold once the delivery is done — after the change of
+ * ends at an over's close, since it is who faces the NEXT ball, from
+ * whichever end that is. Named by where the batter stood when this delivery
+ * was bowled, so it needs no player id (an opposition batter has none):
+ *
+ *   striker       the batter who faced this delivery faces the next
+ *   non_striker   the other batter at the wicket faces the next
+ *   incoming      the batter coming in after a wicket on this delivery faces
+ *                 the next; the not-out batter goes to the other end
+ *
+ * Three occasions, and the server takes the field only on these
+ * (lawsRefusal, `faces_next_not_a_choice`):
+ *
+ *   - deliberate short running (4th Edition, 18.5.2 and 18.13.2): the
+ *     fielding captain chooses which batter at the wicket faces — the
+ *     incoming batter too, if a wicket fell on the delivery. The 3rd Edition
+ *     returned the batters to their original ends, which is the delivery
+ *     with no runs and no choice (shortRunning()).
+ *   - an obstruction that prevented a catch (4th Edition, 37.5.2 and
+ *     18.13.1): a wicket, Obstructing the field, with no runs; the fielding
+ *     captain chooses the non-striker or the incoming batter. Without the
+ *     field the incoming batter takes the dismissed batter's end, as every
+ *     obstruction before this did.
+ *   - a fielder's wilful obstruction of a batter (41.5.9 and 18.13.3, both
+ *     Editions): the batters choose. The delivery does not count
+ *     (`notInOver`, below).
+ *
+ * Omitted when nobody chose, so every delivery before this is the event it
+ * always was. The effect is never more than the pad could already record: a
+ * change of ends (a `batters` event with the same two swapped) is always
+ * allowed. What the field adds is the record of whose choice it was, on the
+ * delivery it follows.
+ */
+export const FACES_NEXT = Object.freeze({ STRIKER: "striker", NON_STRIKER: "non_striker", INCOMING: "incoming" });
+/** @typedef {typeof FACES_NEXT[keyof typeof FACES_NEXT]} FacesNext */
+/** @type {ReadonlySet<unknown>}  asked of whatever a producer wrote */
+export const FACES_NEXT_VALUES = new Set(Object.values(FACES_NEXT));
 /**
  * What kind of no-ball it was, as the umpire called it and the pad's no-ball
  * sheet asks: over the popping crease, a full toss above waist height, or a
@@ -301,11 +343,25 @@ export const INNINGS_END_REASON = {
  * 2026-09-27 (docs/laws/CLAUSE_CHECK.md, Law 41): in these comments and in
  * PENALTY_REASON_TEXT only — no screen shows one (penaltyReasonWords()).
  *
- * Each reason is a plain award: five runs, to one side. Where the Law does
- * more — a delivery that does not count (17.3.2.5: 24.4, 28.2, 41.4, 41.5),
- * a delivery's runs disallowed (41.14.3, 41.15.3), a choice of who faces —
- * the award records the five and nothing else. Short running is the one that
- * also records its delivery (shortRunning()).
+ * Each reason is an award: five runs, to one side. Where the Law does more
+ * to the delivery it happened on, the delivery says so, recorded with the
+ * award straight after it (SCRBRD-113):
+ *
+ *   - its runs disallowed and the batters at their original ends: deliberate
+ *     short running (18.5.2), and a further offence on the pitch or in the
+ *     protected area by a batter (41.14.3, 41.15.3) — RUNS_DISALLOWED,
+ *     runsDisallowed(): the delivery with no runs completed;
+ *   - it does not count as one of the over (17.3.2.5): a fielder returning
+ *     without permission touching the ball (24.4), fielding it illegally
+ *     (28.2), distracting or obstructing the striker (41.4) or a batter
+ *     (41.5) — NOT_IN_OVER, notInOverDelivery(): the delivery marked
+ *     `notInOver`;
+ *   - who faces next is chosen: after short running, by the fielding captain
+ *     (4th Edition), and after 41.5 by the batters (FACES_NEXT).
+ *
+ * An award of one of these reasons with no delivery (41.4 called before the
+ * ball was bowled, 41.15.3 before the delivery stride, a batter on the pitch
+ * between deliveries) is the award alone, as every award was before.
  *
  * THE LIST OFFERED FOR A NEW AWARD. The reasons below; the pad's sheet
  * offers each side its own and either side's (PENALTY_REASON_SIDE). Three
@@ -319,6 +375,8 @@ export const PENALTY_REASON = Object.freeze({
   PITCH_DAMAGE:            "pitch_damage",            // 41.14: a batter damaging the pitch — which includes being on the
                                                       //   protected area without reasonable cause — after a first and final warning
   STEALING_RUN:            "stealing_run",            // 41.16: the batters attempting to steal a run during the bowler's run-up
+  STRIKER_POSITION:        "striker_position",        // 41.15: the striker's batting position in or too near the protected
+                                                      //   area, after a first and final warning (SCRBRD-113)
   // To the batting side: the fielding side's offences.
   HELMET_STRUCK:           "helmet_struck",           // 28.3: the ball struck a fielder's helmet on the ground
   ILLEGAL_FIELDING:        "illegal_fielding",        // 28.2: fielding the ball with clothing or anything but the person
@@ -381,7 +439,7 @@ export const WITHDRAWN_PENALTY_REASONS = new Set(Object.values(PENALTY_REASON_WI
  * @type {Readonly<Record<string, boolean | null>>}
  */
 export const PENALTY_REASON_SIDE = Object.freeze({
-  short_running: false, time_wasting: false, pitch_damage: false, stealing_run: false,
+  short_running: false, time_wasting: false, pitch_damage: false, stealing_run: false, striker_position: false,
   helmet_struck: true, illegal_fielding: true, fielder_returning: true, keeper_movement: true, fielder_movement: true,
   distracting_striker: true, obstructing_batter: true, fielding_time_wasting: true, fielding_pitch_damage: true,
   fielding_restrictions: true,
@@ -397,6 +455,7 @@ export const PENALTY_REASON_TEXT = Object.freeze({
   time_wasting: "a batter wasting time after a first and final warning (Law 41.10)",
   pitch_damage: "a batter damaging the pitch, or on the protected area without reasonable cause, after a first and final warning (Law 41.14)",
   stealing_run: "the batters attempting to steal a run (Law 41.16)",
+  striker_position: "the striker taking guard in or too near the protected area, after a first and final warning (Law 41.15)",
   helmet_struck: "the ball striking a fielder's helmet on the ground (Law 28.3)",
   illegal_fielding: "fielding the ball illegally (Law 28.2)",
   fielder_returning: "a fielder back on the field without permission touching the ball (Law 24.4)",
@@ -443,6 +502,52 @@ export function penaltyReasonWords(reason) {
 }
 
 /**
+ * The offences whose delivery does not count as one of the over (Law
+ * 17.3.2.5, the same in both Editions; SCRBRD-113): 24.4, 28.2, 41.4 and
+ * 41.5, each five penalty runs to the batting side. A delivery marked
+ * `notInOver: <one of these>` is bowled and recorded — the runs the Law
+ * credits stand, a no-ball's or a wide's one run stands, the striker has
+ * received it — but it is not one of the six: not a ball of the over, not a
+ * ball in the bowler's figures, and the over does not end on it
+ * (countsInOver()). No batter can be out off it (41.4.2, 41.5.4; under 24.4
+ * and 28.2 the ball is dead at the offence), so no wicket carries the mark.
+ * @type {ReadonlySet<unknown>}  asked of whatever a producer wrote
+ */
+export const NOT_IN_OVER = new Set([
+  PENALTY_REASON.FIELDER_RETURNING, PENALTY_REASON.ILLEGAL_FIELDING,
+  PENALTY_REASON.DISTRACTING_STRIKER, PENALTY_REASON.OBSTRUCTING_BATTER,
+]);
+
+/**
+ * The offences that disallow every run of the delivery they happened on,
+ * with the batters back at their original ends and five penalty runs to the
+ * fielding side: deliberate short running (18.5.2), and a further instance
+ * of a batter damaging the pitch (41.14.3) or of the striker's position in
+ * the protected area (41.15.3). A no-ball's or a wide's one run stands in
+ * each. The delivery is recorded with no runs completed (runsDisallowed()).
+ * Under the 4th Edition, short running alone then lets the fielding captain
+ * choose who faces (FACES_NEXT); 41.14.3 and 41.15.3 still return the
+ * batters to their ends.
+ * @type {ReadonlySet<unknown>}
+ */
+export const RUNS_DISALLOWED = new Set([
+  PENALTY_REASON.SHORT_RUNNING, PENALTY_REASON.PITCH_DAMAGE, PENALTY_REASON.STRIKER_POSITION,
+]);
+
+/**
+ * Does this delivery count as one of the six balls of the over? A wide and a
+ * no-ball do not (17.3.2.3, 17.3.2.4), nor does one marked `notInOver` with
+ * a reason NOT_IN_OVER knows (17.3.2.5). The fold's over count, the bowler's
+ * balls, the end of an over and a maiden all read this; SQL asks
+ * ball_counts_in_over() (db/54) the same question of a stored row.
+ * @param {{type?: string | null, notInOver?: unknown} | null | undefined} ev  a delivery
+ * @returns {boolean}
+ */
+export function countsInOver(ev) {
+  return isLegal(ev?.type ?? BALL_TYPE.RUN) && !NOT_IN_OVER.has(ev?.notInOver);
+}
+
+/**
  * The pad's free-text reasons, as its penalty sheet offered them before the
  * list closed, → the reason each one is. An event already in a queue or a
  * log carries one of these, and an older build still sends them; they are
@@ -485,37 +590,62 @@ export function normalisePenaltyReason(text, toBattingTeam = true) {
 }
 
 /*
- * WHY THE UMPIRES SUSPENDED A BOWLER — a closed list (SCRBRD-094 item 2).
+ * WHY THE UMPIRES SUSPENDED A BOWLER — a closed list (SCRBRD-094 item 2;
+ * SCRBRD-113 for the Editions).
  *
- * Law 41 (Unfair Play) has the umpire suspend a bowler as soon as the ball is
- * dead, on these grounds, as Kameel's research (2026-09-26) gives them. The
- * clause numbers are in the comments only: Kameel is verifying them against
- * the current Code, so no text a screen shows carries one.
+ * The Laws have the umpire suspend a bowler as soon as the ball is dead, on
+ * these grounds. The clause numbers are the 4th Edition's (2026), in the
+ * comments only: no text a screen shows carries one.
  *
- *   beamers                 dangerous non-pitching deliveries above waist
- *                           height: a second, or at once if deliberate (41.7)
- *   short_pitched           dangerous short-pitched bowling repeated after a
- *                           warning (41.6)
+ *   beamers                 dangerous non-landing deliveries above waist
+ *                           height: a further one after the caution (41.7.4)
+ *   deliberate_beamer       a deliberate non-landing delivery above waist
+ *                           height, at once (41.7.6)
+ *   short_pitched           dangerous short deliveries, repeated after the
+ *                           caution (41.6.4)
  *   deliberate_no_ball      a deliberate front-foot no-ball, at once (41.8)
- *   protected_area          the bowler running on the protected area after
- *                           delivering the ball (41.13; the batter's offence
- *                           on the protected area is 41.14, a penalty —
- *                           pitch_damage above)
- *   fielding_time_wasting   time wasting by the fielding side repeated after
- *                           warnings (41.9)
- *   ball_tampering          changing the condition of the ball, at once (41.3)
+ *   protected_area          the bowler running on the protected area, a third
+ *                           time: after a caution and a final warning (41.13;
+ *                           the batter's offence on the protected area is
+ *                           41.14, a penalty — pitch_damage above)
+ *   fielding_time_wasting   time wasting by the fielding side during an over,
+ *                           after the final warning (41.9.3)
+ *   ball_tampering          changing the condition of the ball, a further
+ *                           instance by the fielding side (41.3.5)
+ *   throwing                a further delivery thrown, or bowled underarm
+ *                           when that is not agreed, after the first and
+ *                           final warning (21.3.2)
+ *   conduct                 a Level 4 conduct offence: the player is removed
+ *                           from the field for the rest of the match (42.5,
+ *                           42.5.2.3.2 for a bowler mid-over). A Level 3
+ *                           offence (42.4) suspends a player for a number of
+ *                           overs, which no scope here can say: not modelled.
  *
- * Every one is for the rest of the innings, but ball tampering, which is for
- * the rest of the MATCH (SUSPENSION_REASON_SCOPE). Warnings are not tracked:
- * the umpire decides when a suspension is due, and the scorer records it.
+ * Until SCRBRD-113 (2026-09-27) there was one reason, `beamers`, for the
+ * dangerous series and the deliberate beamer both. It is now the dangerous series only,
+ * which is what it always meant for its scope (the innings, in both
+ * Editions); a deliberate beamer is `deliberate_beamer`. A stored `beamers`
+ * suspension keeps the scope it was recorded with.
+ *
+ * HOW LONG is the Law's, not the scorer's, and it follows the Edition the
+ * match is scored under (SUSPENSION_REASON_SCOPE, suspensionScope()). The 4th
+ * Edition (from 1 October 2026) makes a deliberate front-foot no-ball (41.8)
+ * and a deliberate beamer (41.7.6) a suspension for the rest of the MATCH;
+ * the 3rd had both for the innings. Ball tampering and a Level 4 conduct
+ * offence are for the match in both. Every other is for the innings.
+ * Warnings are not tracked: the umpire decides when a suspension is due, and
+ * the scorer records it.
  */
 export const SUSPENSION_REASON = Object.freeze({
   BEAMERS:               "beamers",
+  DELIBERATE_BEAMER:     "deliberate_beamer",
   SHORT_PITCHED:         "short_pitched",
   DELIBERATE_NO_BALL:    "deliberate_no_ball",
   PROTECTED_AREA:        "protected_area",
   FIELDING_TIME_WASTING: "fielding_time_wasting",
   BALL_TAMPERING:        "ball_tampering",
+  THROWING:              "throwing",
+  CONDUCT:               "conduct",
 });
 /** @typedef {typeof SUSPENSION_REASON[keyof typeof SUSPENSION_REASON]} SuspensionReason */
 /** @type {ReadonlySet<unknown>}  asked of whatever a producer wrote */
@@ -526,13 +656,38 @@ export const SUSPENSION_SCOPE = Object.freeze({ INNINGS: "innings", MATCH: "matc
 /** @typedef {typeof SUSPENSION_SCOPE[keyof typeof SUSPENSION_SCOPE]} SuspensionScope */
 
 /**
- * The scope each reason carries. Not the scorer's choice: the Law decides it.
- * @type {Readonly<Record<string, SuspensionScope>>}
+ * The scope each reason carries, by the Edition of the Laws the match is
+ * scored under (edition.mjs): `SUSPENSION_REASON_SCOPE[edition][reason]`.
+ * Not the scorer's choice: the Law decides it. Read it through
+ * suspensionScope(), which the constructor and the server both ask.
+ * @type {Readonly<Record<3 | 4, Readonly<Record<string, SuspensionScope>>>>}
  */
 export const SUSPENSION_REASON_SCOPE = Object.freeze({
-  beamers: "innings", short_pitched: "innings", deliberate_no_ball: "innings",
-  protected_area: "innings", fielding_time_wasting: "innings", ball_tampering: "match",
+  3: Object.freeze({
+    beamers: "innings", deliberate_beamer: "innings", short_pitched: "innings", deliberate_no_ball: "innings",
+    protected_area: "innings", fielding_time_wasting: "innings", ball_tampering: "match",
+    throwing: "innings", conduct: "match",
+  }),
+  4: Object.freeze({
+    beamers: "innings", deliberate_beamer: "match", short_pitched: "innings", deliberate_no_ball: "match",
+    protected_area: "innings", fielding_time_wasting: "innings", ball_tampering: "match",
+    throwing: "innings", conduct: "match",
+  }),
 });
+
+/**
+ * How long a suspension for `reason` lasts under the Edition a match is
+ * scored under: "innings" or "match". A reason the list does not know is
+ * the innings (as the fold reads a scope it does not know).
+ * @param {unknown} reason  one of SUSPENSION_REASON
+ * @param {unknown} edition 3 or 4 (lawsEdition(match)); anything else is the 4th
+ * @returns {SuspensionScope}
+ */
+export function suspensionScope(reason, edition) {
+  const table = SUSPENSION_REASON_SCOPE[edition === 3 ? 3 : 4];
+  const key = String(reason ?? "");
+  return Object.hasOwn(table, key) ? table[key] : SUSPENSION_SCOPE.INNINGS;
+}
 
 /**
  * Words for each reason, for the pad's sheet, the scorecard, a report and the
@@ -540,12 +695,15 @@ export const SUSPENSION_REASON_SCOPE = Object.freeze({
  * @type {Readonly<Record<string, string>>}
  */
 export const SUSPENSION_REASON_TEXT = Object.freeze({
-  beamers: "dangerous full tosses above waist height (beamers)",
-  short_pitched: "dangerous short-pitched bowling, repeated after a warning",
+  beamers: "dangerous non-landing deliveries above waist height (beamers), after a caution",
+  deliberate_beamer: "a deliberate non-landing delivery above waist height (a deliberate beamer)",
+  short_pitched: "dangerous short deliveries, repeated after a caution",
   deliberate_no_ball: "a deliberate front-foot no-ball",
-  protected_area: "running on the protected area after a first and final warning",
+  protected_area: "running on the protected area after a caution and a final warning",
   fielding_time_wasting: "the fielding side wasting time, repeated after warnings",
   ball_tampering: "changing the condition of the ball (ball tampering)",
+  throwing: "throwing the ball, repeated after a warning",
+  conduct: "a Level 4 conduct offence (removed from the field)",
 });
 
 /**
@@ -632,7 +790,7 @@ export const SUSPENSION_SCOPE_TEXT = Object.freeze({
  * @typedef {EventBase & {kind: "bowler_suspended", bowler: string | null, reason: SuspensionReason,
  *   scope: SuspensionScope}} BowlerSuspendedEvent
  */
-/** @typedef {BaseInput & {bowler?: string | null, reason: string, scope?: string | null}} BowlerSuspendedInput */
+/** @typedef {BaseInput & {bowler?: string | null, reason: string, scope?: string | null, edition?: number | null}} BowlerSuspendedInput */
 
 /**
  * A delivery. Player references are ids where SCRBRD holds a row, typed names
@@ -651,6 +809,7 @@ export const SUSPENSION_SCOPE_TEXT = Object.freeze({
  *   placementSource: string | null, placementNull: string | null,
  *   closePosition: string | null, captureProfile: string | null,
  *   nbRuns?: NbRuns, nbType?: NbType, outAt?: RunOutEnd,
+ *   facesNext?: FacesNext, notInOver?: PenaltyReason,
  * }} BallEvent
  */
 /**
@@ -667,6 +826,7 @@ export const SUSPENSION_SCOPE_TEXT = Object.freeze({
  *   placementSource?: string | null, placementNull?: string | null,
  *   closePosition?: string | null, captureProfile?: string | null,
  *   nbRuns?: string | null, nbType?: string | null, outAt?: string | null,
+ *   facesNext?: string | null, notInOver?: string | null,
  * }} BallInput
  */
 
@@ -897,16 +1057,21 @@ export const bowler = (o) => {
  * What it does, in the fold and at commit (replay.mjs, laws.mjs):
  *   - the fold records who, why, for how long and at which ball
  *     (`inn.suspensions`); no figure moves — a suspension bowls nothing;
- *   - he may not bowl again for the rest of the innings, or, for ball
- *     tampering, the rest of the match — a later innings included;
+ *   - he may not bowl again for the rest of the innings, or, where the
+ *     scope is the match (suspensionScope()), the rest of the match — a
+ *     later innings included;
  *   - if the over is not finished, another bowler finishes it: a `bowler`
  *     event with reason "suspended", who may not have bowled any part of the
  *     previous over and may not bowl any part of the next (Law 17.8, "or parts
  *     thereof" — the rule the Laws check already applies to every change).
  *
- * `scope` is the reason's (SUSPENSION_REASON_SCOPE), not a choice: omitted,
- * it is filled in; given and different, it is refused here, where the scorer
- * who chose it can still see it — as the server refuses one too.
+ * `scope` is the reason's under the Edition of the Laws the match is scored
+ * under (suspensionScope(); SCRBRD-113), not a choice: omitted, it is filled
+ * in; given and different, it is refused here, where the scorer who chose it
+ * can still see it — as the server refuses one too. `edition` is the match's
+ * (lawsEdition(match), which the pad passes); without one, the Edition on the
+ * event's own day. It is not stored: the scope is, and a stored event keeps
+ * the scope it was recorded with whatever Edition a later reader is under.
  *
  * A new kind rather than a flag on `bowler`: the suspension is a fact about
  * the man who LEFT, and it must stand whether or not anyone finishes the over
@@ -922,7 +1087,8 @@ export const bowlerSuspended = (o) => {
     throw new TypeError(`unknown suspension reason ${JSON.stringify(o.reason)} — expected one of ${[...SUSPENSION_REASONS].join(", ")}`);
   }
   const reason = /** @type {SuspensionReason} */ (o.reason);
-  const scope = SUSPENSION_REASON_SCOPE[reason];
+  const edition = LAWS_EDITIONS.has(o.edition) ? o.edition : lawsEditionOn(o.clientTs ?? Date.now());
+  const scope = suspensionScope(reason, edition);
   if (o.scope != null && o.scope !== scope) {
     throw new TypeError(`a suspension for ${reason} is for the ${scope}, not ${JSON.stringify(o.scope)}`);
   }
@@ -943,7 +1109,9 @@ export const bowlerSuspended = (o) => {
  */
 export function suspensionWords(ev) {
   const reason = String(ev.reason ?? "");
-  const scope = String(ev.scope ?? SUSPENSION_REASON_SCOPE[reason] ?? SUSPENSION_SCOPE.INNINGS);
+  // The scope the event was recorded with; one that carries none (never built
+  // here) reads as the fold reads it — the innings.
+  const scope = String(ev.scope ?? SUSPENSION_SCOPE.INNINGS);
   const why = Object.hasOwn(SUSPENSION_REASON_TEXT, reason) ? SUSPENSION_REASON_TEXT[reason] : "a reason the scorebook does not know";
   const long = Object.hasOwn(SUSPENSION_SCOPE_TEXT, scope) ? SUSPENSION_SCOPE_TEXT[scope] : SUSPENSION_SCOPE_TEXT.innings;
   return `Suspended for ${why}, ${long}.`;
@@ -1051,12 +1219,44 @@ const checkedNbType = (n, type) => {
   return /** @type {NbType} */ (n);
 };
 
+/**
+ * Reject a `facesNext` the model does not define, or "incoming" on a
+ * delivery that is not a wicket (nobody is coming in). Whether the Laws give
+ * anyone the choice on this delivery is the server's question
+ * (lawsRefusal, `faces_next_not_a_choice`): it needs the match.
+ * @param {string | null | undefined} f  @param {BallType} type
+ * @returns {FacesNext | null}
+ */
+const checkedFacesNext = (f, type) => {
+  if (f == null) return null;
+  if (!FACES_NEXT_VALUES.has(f) || (f === FACES_NEXT.INCOMING && type !== BALL_TYPE.WICKET)) {
+    throw new TypeError(`facesNext ${JSON.stringify(f)} is one of ${[...FACES_NEXT_VALUES].join(", ")} ("incoming" only on a wicket)`);
+  }
+  return /** @type {FacesNext} */ (f);
+};
+
+/**
+ * Reject a `notInOver` that is not one of NOT_IN_OVER, or one on a wicket:
+ * nobody is out off a delivery that does not count (41.4.2, 41.5.4).
+ * @param {string | null | undefined} r  @param {BallType} type
+ * @returns {PenaltyReason | null}
+ */
+const checkedNotInOver = (r, type) => {
+  if (r == null) return null;
+  if (!NOT_IN_OVER.has(r) || type === BALL_TYPE.WICKET) {
+    throw new TypeError(`notInOver ${JSON.stringify(r)} is one of ${[...NOT_IN_OVER].join(", ")}, never on a wicket`);
+  }
+  return /** @type {PenaltyReason} */ (r);
+};
+
 /** @param {BallInput} o  @returns {BallEvent} */
 export const ball = (o) => {
   const type = checkedType(o.type);
   const nbRuns = checkedNbRuns(o.nbRuns, type);
   const nbType = checkedNbType(o.nbType, type);
   const outAt = checkedOutAt(o.outAt, type);
+  const facesNext = checkedFacesNext(o.facesNext, type);
+  const notInOver = checkedNotInOver(o.notInOver, type);
   return {
   ...base(KIND.BALL, o),
   // `type` is the delivery kind (run | W | Wd | Nb | B | LB). It is named to
@@ -1112,6 +1312,11 @@ export const ball = (o) => {
   // The end the batter was out at (SCRBRD-069), when the scorer was asked.
   // Omitted otherwise, so every other wicket is the event it always was.
   ...(outAt ? { outAt } : {}),
+  // Who faces next, where someone chose (FACES_NEXT, SCRBRD-113), and why
+  // this delivery is not one of the over (NOT_IN_OVER). Omitted otherwise,
+  // so every other delivery is the event it always was.
+  ...(facesNext ? { facesNext } : {}),
+  ...(notInOver ? { notInOver } : {}),
   freeHit: o.freeHit ?? false,
 
   // ── Shot placement ──
@@ -1161,32 +1366,88 @@ export const penalty = (o) => {
 };
 
 /**
- * Deliberate short running (Law 18.5.2): the umpire calls dead
- * ball, disallows every run completed off the delivery, returns the batters
- * to the ends they started from, and awards five penalty runs to the
- * fielding side. The delivery still counts.
+ * A delivery whose runs the umpire disallowed, and the five penalty runs to
+ * the fielding side that go with it (RUNS_DISALLOWED): deliberate short
+ * running (Law 18.5.2), a further instance of a batter damaging the pitch
+ * (41.14.3) or of the striker's position in the protected area (41.15.3).
+ * The umpire disallows every run completed off the delivery and awards five
+ * to the fielding side; a no-ball's or a wide's one run stands; the delivery
+ * still counts.
  *
  * TWO EVENTS, NOT A NEW SHAPE. The delivery as it stands after the call — a
  * ball of the type it was, with no runs completed (`value: 0`) — and the
- * award, reason `short_running`, to the fielding side. So the fold needs
- * nothing new for the delivery: no runs to the batter, the bowler or the
- * side; no change of ends (nothing was run, and the ends are the ones the
- * batters started from); a legal delivery counts in the over and is a ball
- * faced; a no-ball's or a wide's one-run penalty stands (18.5.2 keeps it).
- * Every SQL reader of a delivery — the live score, the handover check, every
- * career figure — reads a dot ball too, with no migration. The five are the
- * award's, credited like any award to the fielding side. The server takes
- * the award only straight after a delivery that scored no run completed
- * (lawsRefusal, `short_run_unmatched`).
+ * award, to the fielding side. So the fold needs nothing new for the
+ * delivery: no runs to the batter, the bowler or the side; no change of ends
+ * (nothing was run, and the ends are the ones the batters started from); a
+ * legal delivery counts in the over and is a ball faced; a no-ball's or a
+ * wide's one-run penalty stands. Every SQL reader of a delivery — the live
+ * score, the handover check, every career figure — reads a dot ball too,
+ * with no migration. The five are the award's, credited like any award to
+ * the fielding side. The server takes a short-running award only straight
+ * after a delivery that scored no run completed (lawsRefusal,
+ * `short_run_unmatched`); the other two may also be awarded alone, for an
+ * offence with no delivery (41.15.3 before the delivery stride, a batter on
+ * the pitch between deliveries).
+ *
+ * WHO FACES NEXT. Under the 3rd Edition, and for 41.14.3 and 41.15.3 under
+ * either, the batters return to their original ends: the delivery as it is.
+ * Under the 4th Edition, after deliberate short running the fielding captain
+ * chooses which batter faces (18.5.2, 18.13.2): `facesNext` on the delivery
+ * (FACES_NEXT) says whom, and the fold places him. The server takes the
+ * field only where the Laws give the choice.
  *
  * @param {BallInput} o  the delivery, as bowled: type, who was involved, where
- *   it went. `value` is ignored — every run completed is disallowed.
+ *   it went, and `facesNext` where the fielding captain chose. `value` is
+ *   ignored — every run completed is disallowed.
+ * @param {string} [reason]  one of RUNS_DISALLOWED; short running when omitted
  * @returns {[BallEvent, PenaltyEvent]}  append both, in this order, to the same innings
  */
-export const shortRunning = (o) => [
-  ball({ ...o, value: 0 }),
-  penalty({ innings: o.innings, clientTs: o.clientTs, runs: 5, toBattingTeam: false, reason: PENALTY_REASON.SHORT_RUNNING }),
-];
+export const runsDisallowed = (o, reason = PENALTY_REASON.SHORT_RUNNING) => {
+  if (!RUNS_DISALLOWED.has(reason)) {
+    throw new TypeError(`runs are disallowed for ${[...RUNS_DISALLOWED].join(", ")}, not ${JSON.stringify(reason)}`);
+  }
+  return [
+    ball({ ...o, value: 0 }),
+    penalty({ innings: o.innings, clientTs: o.clientTs, runs: 5, toBattingTeam: false, reason }),
+  ];
+};
+
+/**
+ * Deliberate short running (Law 18.5.2): runsDisallowed() for its reason.
+ * @param {BallInput} o
+ * @returns {[BallEvent, PenaltyEvent]}
+ */
+export const shortRunning = (o) => runsDisallowed(o, PENALTY_REASON.SHORT_RUNNING);
+
+/**
+ * A delivery that does not count as one of the over, and the five penalty
+ * runs to the batting side that go with it (NOT_IN_OVER, Law 17.3.2.5):
+ * a fielder returning without permission touches the ball (24.4), a fielder
+ * fields it illegally (28.2), a fielder distracts or obstructs the striker
+ * (41.4) or a batter (41.5). Both Editions (SCRBRD-113).
+ *
+ * TWO EVENTS. The delivery, marked `notInOver` with the reason, carrying the
+ * runs the Law lets stand — completed runs, and the run in progress where
+ * the Law says (24.4, 28.2.3, 41.5.8); none where the ball was dead before
+ * any (41.4) — and a no-ball's or a wide's one run; then the award to the
+ * batting side. The fold scores the delivery as its type says and does not
+ * count it in the over (countsInOver()): not a ball of the six, not one of
+ * the bowler's balls, and no over ends on it. After 41.5 the batters choose
+ * who faces next (41.5.9): `facesNext`.
+ *
+ * @param {BallInput} o  the delivery, as bowled, with the runs that stand
+ * @param {string} reason  one of NOT_IN_OVER
+ * @returns {[BallEvent, PenaltyEvent]}  append both, in this order, to the same innings
+ */
+export const notInOverDelivery = (o, reason) => {
+  if (!NOT_IN_OVER.has(reason)) {
+    throw new TypeError(`a delivery is not one of the over for ${[...NOT_IN_OVER].join(", ")}, not ${JSON.stringify(reason)}`);
+  }
+  return [
+    ball({ ...o, notInOver: reason }),
+    penalty({ innings: o.innings, clientTs: o.clientTs, runs: 5, toBattingTeam: true, reason }),
+  ];
+};
 
 /**
  * The dismissal each retirement reason is, when it is one.
