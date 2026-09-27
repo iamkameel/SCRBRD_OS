@@ -1212,6 +1212,17 @@ group("K. Whose the runs off a no-ball are (SCRBRD-068)");
     [{ type: "Nb", value: 0 }, 1], [{ type: "Wd", value: 2 }, 3], [{ type: "B", value: 4 }, 0], [{ type: "LB", value: 1 }, 0],
     [{ type: "run", value: 6 }, 6], [{ type: "W", value: 1 }, 1], [{ value: 2 }, 2],
   ];
+  // The db/52 fixture: db/52_noball_byes.sql's proof inserts these ten
+  // deliveries and holds every SQL bowler reader to what the fold says here.
+  const db52 = deriveInnings([...open(),
+    ball({ type: BALL_TYPE.NO_BALL, value: 0 }), ball({ type: BALL_TYPE.NO_BALL, value: 4 }),
+    ball({ type: BALL_TYPE.NO_BALL, value: 4, nbRuns: "byes" }), ball({ type: BALL_TYPE.NO_BALL, value: 3, nbRuns: "leg_byes" }),
+    ball({ type: BALL_TYPE.NO_BALL, value: 2, nbRuns: "byes" }), ball({ type: BALL_TYPE.WIDE, value: 1 }),
+    ball({ type: BALL_TYPE.BYE, value: 4 }), ball({ type: BALL_TYPE.LEG_BYE, value: 1 }),
+    runs(6), ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: "bowled" })]);
+  const w52 = db52.bowlers[0];
+  ok("the db/52 fixture: 17 conceded off 4 legal balls, 1 wide, 5 no-balls, 1 wicket (SQL reads the same)",
+     w52.runs === 17 && w52.balls === 4 && w52.wides === 1 && w52.noBalls === 5 && w52.wickets === 1);
   const wrong = charged.filter(([e, want]) => runsToBowler(/** @type {any} */ (e)) !== want);
   ok("runsToBowler(): a no-ball is its penalty run and the runs off the bat, never its byes or leg byes"
      + (wrong.length ? ` — wrong for ${JSON.stringify(wrong)}` : ""), wrong.length === 0);
