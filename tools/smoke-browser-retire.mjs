@@ -22,7 +22,12 @@
  *   F  the next wicket; he walks back in from "Retired hurt — may resume",
  *      and his line goes on: the scorecard, SQL's player_innings (not out)
  *      and his career dismissals, which did not move;
- *   G  every step: the board and the API's live score (runs, wickets, legal
+ *   G  who may resume is the Laws' answer (SCRBRD-071): his partner retires
+ *      hurt and is not offered back to his own end; the next batter comes in;
+ *      then he retires too — and the partner, whose retirement came first,
+ *      is offered and walks back in at HIS; he himself is not. The server
+ *      takes the return, and no wicket moves;
+ *   H  every step: the board and the API's live score (runs, wickets, legal
  *      balls) agree.
  *
  *   node tools/migrate.mjs --reset --seed
@@ -344,6 +349,41 @@ try {
   ok(`SQL's player_innings: ${want.runs} off ${want.balls}, not out`, Number(pi?.runs) === want.runs && Number(pi?.balls_faced) === want.balls && pi?.out === false,
      JSON.stringify(pi));
   ok("...and his career dismissals did not move", (await dismissals(S1)) === career0, `${career0} → ${await dismissals(S1)}`);
+
+  // ── G ────────────────────────────────────────────────────────
+  group("G. Who may resume is the Laws': not straight back, but at another batter's retirement");
+  const endOf = async (id) => (await tid("retire-pick-striker").getAttribute("data-batter")) === id ? "striker" : "nonStriker";
+  await openMenu("pad-retire-hurt");
+  const P = [await tid("retire-pick-striker").getAttribute("data-batter"), await tid("retire-pick-nonStriker").getAttribute("data-batter")]
+    .find((x) => x && x !== S1);
+  ok(`his partner is in, beside ${names[S1]}`, !!P, P);
+  await tap(`retire-pick-${await endOf(P)}`);
+  await tap("retire-confirm");
+  await settle();
+  ok("the partner's retirement is stored", (await serverEvents()).at(-1)?.kind === "retire" && (await serverEvents()).at(-1)?.batter === P);
+  const firstSheet = await dialog();
+  ok("the batting-order sheet opens, and does not offer him back to the end he has just left",
+     /Batting Order/.test(firstSheet) && !(await has(`resume-${P}`)) && !(await has("resume-list")) && await has("batter-choice"),
+     firstSheet.slice(0, 200));
+  ok("the next batter comes in", await sendNext());
+  const S4 = (await serverEvents()).at(-1);
+  ok("...a new batter, at the end the partner left", S4?.kind === "batters" && ![S1, S2, S3, P].includes(S4.striker ?? S4.nonStriker), JSON.stringify(S4));
+  await agree("still one wicket", { runs: onStrike ? 9 : 10, wickets: 1, balls: onStrike ? 8 : 9 });
+
+  await openMenu("pad-retire-hurt");
+  await tap(`retire-pick-${await endOf(S1)}`);
+  await tap("retire-confirm");
+  await settle();
+  const second = await dialog();
+  ok(`${names[S1]} retires too: the sheet offers the partner, whose retirement came first — and not ${names[S1]}`,
+     /Retired hurt — may resume/i.test(second) && await has(`resume-${P}`) && !(await has(`resume-${S1}`)), second.slice(0, 240));
+  ok("...no Law clause numbers", !lawNumbers(second));
+  await tap(`resume-${P}`);
+  await settle();
+  const back2 = (await serverEvents()).at(-1);
+  ok("the server takes him back at the empty end", back2?.kind === "batters" && (back2.striker === P || back2.nonStriker === P), JSON.stringify(back2));
+  ok("...nothing held: the pad can score", !(await has("scoring-blocked")), await said("scoring-blocked"));
+  await agree("two retirements and a return: still one wicket", { runs: onStrike ? 9 : 10, wickets: 1, balls: onStrike ? 8 : 9 });
 
   ok("no console errors across the walk", errors.length === 0, errors.slice(0, 3).join(" | "));
 } catch (e) {

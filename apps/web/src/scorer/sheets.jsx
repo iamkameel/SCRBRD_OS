@@ -480,8 +480,12 @@ const entry = (p) => (typeof p === "string" ? { id: p, name: p } : { id: p?.id ?
  * retirement — when Law 40 can apply (SCRBRD-081; the pad asks lawsRefusal).
  * It turns the sheet's pick into "this batter was timed out": a wicket with no
  * ball, recorded, and the sheet stays open for the batter who comes in.
+ *
+ * `resumable` is the batters retired hurt whom the Laws would take back at
+ * the end this sheet fills (retire.js resumeChoices, SCRBRD-071) — the
+ * engine asks; the sheet offers exactly those, and none when not told.
  */
-function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,header=null,onTimedOut=null,notResuming=null}){
+function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,header=null,onTimedOut=null,resumable=[]}){
   const[timedOut,setTimedOut]=useState(false);
   const send=timedOut&&onTimedOut?(id)=>{setTimedOut(false);onTimedOut(id);}:onSend;
   const teamInfo=INT_TEAMS[teamKey]||null;
@@ -495,12 +499,11 @@ function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,head
   };
   const dismissed=batsmen.filter(b=>b.status==="out");
   const atCrease=batsmen.filter(b=>b.status==="batting");
-  // Retired hurt — "retired, not out" — may come back (Law 25.4.2), on the
-  // same line: the fold carries his runs and balls on (SCRBRD-071). A
-  // retirement the Laws read as out (an old unmarked "retired out") is not
-  // offered; the server would refuse it. Nor is `notResuming`, the batter
-  // who has just retired: this sheet is filling the end he left.
-  const mayResume=timedOut?[]:batsmen.filter(b=>b.status==="retired"&&b.dismissal!=="retired out"&&b.id!==notResuming);
+  // Retired hurt — "retired, not out" — may come back, on the same line:
+  // the fold carries his runs and balls on (SCRBRD-071). Whom, and when, is
+  // the Laws' (`resumable`): not a retirement they read as out, and not
+  // straight back into the end he has just left.
+  const mayResume=timedOut?[]:resumable;
   return (
     <Sheet title="Batting Order" accent={D.emerald} onClose={onClose}>
       <div style={{paddingTop:"12px"}}>
