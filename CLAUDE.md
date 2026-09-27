@@ -14,9 +14,11 @@ Brought in 2026-09-27 (Kameel), with cost still a constraint:
 
 - **Only design passes** on the cross-cutting problems where a wrong model is
   expensive to unwind: SCRBRD-110 (fast-bowler workload: health data, POPIA
-  consent, the load model), redesign step 4 (parent and pupil screens) and
-  SCRBRD-083 (what minors' data may be public). A new problem joins this list
-  only with Kameel's say.
+  consent, the load model), redesign step 4 (parent and pupil screens),
+  SCRBRD-083 (what minors' data may be public) and safeguarding (added
+  2026-09-27: Designated Safeguarding Officers, raising and routing a concern,
+  and who may see it, under CSA's Safeguarding Policy). A new problem joins
+  this list only with Kameel's say.
 - **The output is a design document** for Kameel's review. Opus builds from
   it; Fable does not build, run test suites, wait on the database lock, write
   screens or do searches.
