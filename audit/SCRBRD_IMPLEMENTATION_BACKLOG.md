@@ -3500,6 +3500,47 @@ Two Law 41 questions Kameel is researching before deciding; nothing is built unt
    penalty-runs research gave repeated protected-area infractions as 41.14. The screens show the reason in words
    only, not clause numbers, until Kameel confirms them against the current Code.
 
+### SCRBRD-102 — A wagon-wheel analysis panel: filters, run chips, off and on side, areas per side
+**Priority:** P2 · **Domain:** Front-end / analytics · **Type:** feature (Kameel's earlier SCRBRD designs, 2026-09-27)
+Kameel's earlier designs had a wagon-wheel analysis panel. It should appear in the Match Centre's Performance tab and on a player's profile:
+- **Filters:** by batter and by bowler.
+- **Run chips:** All, 1s, 2s, 3s, 4s and 6s, each with its count. Tapping a chip shows only those spokes, in the chip colours.
+- **Off side against on side:** each side's runs and its share of the total, as a percentage.
+- **Areas per side:** four for each side, each with its runs and boundaries.
+  - The off side: third man, point, cover and long off.
+  - The on side: fine leg, square leg, mid-wicket and long on.
+
+Everything is relative to the batter, so a left-hander's areas are his own (SCRBRD-101). Build it after SCRBRD-101 lands; it is screen work over the fold and the existing reads.
+
+### SCRBRD-103 — A run map and a catch map
+**Priority:** P3 · **Domain:** Front-end / analytics · **Type:** feature (Kameel's references, 2026-09-27)
+Two views, from broadcast graphics:
+- **The run map:** the field in wedges, each labelled with its share of the batter's runs as a percentage.
+- **The catch map:** where a fielder or a side took its catches, drawn as a heat map with the leading positions named ("backward point 20%"). Built from caught dismissals that carry a point.
+
+Both need point-era balls; sector-era balls are left out and said to be. That is a reason the pad now captures points (SCRBRD-101). Position names come from `positionName()`. On a public page they follow the public-data rule (SCRBRD-083).
+
+### SCRBRD-104 — A live-stream overlay (a scorebug for schools' streams)
+**Priority:** P3 · **Domain:** Broadcast · **Type:** feature (Kameel's earlier designs, 2026-09-27)
+Schools stream matches to YouTube and Facebook. The overlay is a transparent page that streaming software (such as OBS) adds as a browser source. It shows:
+- the batting side, its score and the overs;
+- the other side and the current bowler's figures;
+- this over's balls;
+- a short "FOUR 4 FOUR" or "SIX 6 SIX" banner, following DESIGN_DIRECTION §3.6.
+
+**Blocked:** a stream is public, so the names it shows wait on the public-data rule's step 3 and on consent (SCRBRD-083, SCRBRD-092). Until then it can show role words only. It reads `broadcast_state()`, which is already public-safe.
+
+### SCRBRD-105 — Match Centre summary: what Kameel's earlier design had that step 3c may not
+**Priority:** P2 · **Domain:** Front-end · **Type:** gap check, then build (2026-09-27)
+Check each against step 3c, and build what is missing:
+1. **A details row:** status, competition, age group, division, date, start time and ground.
+2. **Minutes batted** for each batter, taken from the event timestamps.
+3. **The yet-to-bat order and the available bowlers.** An available bowler is one the Laws check allows next over.
+4. **Each bowler's balls this over,** as chips on the bowling card.
+5. **A conditions card** fed from the groundskeeper's pitch report (SCRBRD-085), next to the weather chip.
+
+Names follow the Match Centre's public mode.
+
 ### SCRBRD-100 — The premium-feel checklist: what is left after step 3c
 **Priority:** P2 · **Domain:** Front-end · **Type:** product polish (Kameel, 2026-09-26; checklist at
 https://claude.ai/artifact/63zVkqVAotrYYQk9dGUhAp; the rule is DESIGN_DIRECTION §1a)
