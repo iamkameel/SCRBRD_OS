@@ -112,7 +112,8 @@ on the event, and `describeDismissal()` renders proper scorecard notation.
 The artifact tracked a free-hit banner in UI state but did not apply the rule to
 dismissals. A free hit now saves the batter from every mode of dismissal except
 those that stand on a free hit — run out, and the other non-delivery
-dismissals — and is consumed by the next legal delivery.
+dismissals — and is consumed by the next legal delivery. Only in a limited-overs match: a declaration or timed match
+has no free hit (SCRBRD-113, below).
 
 **In SQL (db/42).** Every SQL reader of `ball_event` that counts a wicket asks `ball_wicket_stands()`, the fold's
 rule in SQL: a W ball on a free hit stands only when its method is one of `NON_DELIVERY` (run out, handled the ball,
@@ -628,7 +629,8 @@ with awards to both sides; db/99 §26 holds each rule.
 **Decided (Kameel, from MCC Law 41).** The umpire suspends a bowler as soon as the ball is dead, for beamers (a second,
 or at once if deliberate), dangerous short-pitched bowling repeated after a warning, a deliberate front-foot no-ball,
 running on the protected area after a first and final warning, the fielding side wasting time after warnings, or ball
-tampering. He may not bowl again for the rest of the innings — for ball tampering, the rest of the match. Another bowler
+tampering. He may not bowl again for the rest of the innings — for ball tampering, the rest of the match (and, in a
+match under the Laws' 4th Edition, for a deliberate front-foot no-ball or a deliberate beamer: SCRBRD-113). Another bowler
 finishes the over; he may not have bowled any part of the previous over and may not bowl any part of the next. Warnings
 are not tracked: the umpire decides when a suspension is due, and the scorer records it.
 
@@ -712,5 +714,82 @@ walking straight back, as the pad's sheet never offered it.
 
 The pad's no-ball sheet always asked front foot, full toss height or beamer, and passed the answer to `ball()` — which
 dropped it. `ball()` now keeps it (`NB_TYPE`, on a no-ball only; omitted when not asked). The fold decides nothing by it:
-every no-ball is followed by a free hit (§6), and the pad's free-hit banner now reads that from the fold, as after any
+every no-ball in a limited-overs match is followed by a free hit (§6), and the pad's free-hit banner now reads that from the fold, as after any
 ball (it used to appear only for height and beamers). A short run off a no-ball asks the kind too.
+
+## The Laws' 4th Edition (SCRBRD-113)
+
+**Decided (Kameel, 2026-09-27).** The MCC Laws, 2017 Code, 4th Edition (2026), are in force from 1 October 2026. **The
+Edition follows the match date**: a match that starts before 1 October 2026 is scored under the 3rd Edition, one that
+starts on or after it under the 4th. Old logs replay exactly as they were scored. There is no per-competition setting.
+
+**One helper.** `lawsEdition(match)` (`packages/scoring/src/edition.mjs`) answers 3 or 4, and every rule that differs
+by Edition reads it. It dates the match, in South African time, by the first of: the fixture's `starts_at` (the fold is
+told it: `FoldContext.startsAt`); the Edition an innings was already folded under (`inn.lawsEdition`); the log's first
+event; today. The pad takes `starts_at` from the fixture; the server asks `match_fold_context()` (db/54), which answers
+a caller who may read the fixture — a pad's resume credential for that match included, which cannot read the `match`
+row itself — and nobody else. A log with no fixture is dated by its first event.
+
+| Rule | 3rd Edition (before 1 Oct 2026) | 4th Edition (from 1 Oct 2026) |
+|---|---|---|
+| A deliberate front-foot no-ball (41.8) | bowler suspended for the innings | for the **match** |
+| A deliberate beamer (41.7.6) | for the innings | for the **match** |
+| Dangerous beamers after a caution (41.7.4) | the innings | the innings |
+| Deliberate short running (18.5.2) | batters back to their original ends | the **fielding captain** chooses who faces |
+| An obstruction that stops a catch (37.5.2) | the not-out batter at his end | the **fielding captain** chooses who faces |
+| Penalty runs after the result (41.17.2, 16.7) | refused once the match is decided | taken until the umpires leave the field |
+
+**Suspensions.** `SUSPENSION_REASON` splits beamers in two: `beamers` (dangerous non-landing deliveries after a
+caution, the innings in both) and `deliberate_beamer`. `SUSPENSION_REASON_SCOPE` is keyed by Edition and
+`suspensionScope(reason, edition)` answers it; `bowlerSuspended()` fills the scope in from the Edition of its own
+`clientTs` when not told, the pad passes the match's, and the Laws check refuses a scope the reason does not carry
+under the match's Edition. A stored event keeps the scope it was recorded with, and `suspensionWords()` says that one.
+Two reasons were added for both Editions: `throwing` (21.3.2, the innings) and `conduct` (a Level 4 conduct offence
+under Law 42, the match). Law 42's Level 3 (a player suspended for a number of overs) is not modelled.
+
+**Who faces next.** `ball()` takes `facesNext` — `striker`, `non_striker`, or `incoming` (on a wicket only) — and the
+fold places the batters by it last, after the runs and the dismissal. Under the 4th the Laws check takes it on a
+delivery whose runs are nothing (a deliberate short run's, `runsDisallowed()`) and on an obstructing-the-field or run-out
+wicket with no runs (the obstruction that stopped a catch), and refuses it anywhere else; under the 3rd it is refused
+everywhere but a 41.5 delivery, where in both Editions the batters decide who faces. The pad asks for it and will not
+record without it: the short-run sheet's "Who faces the next ball?" under the 4th, and the wicket sheet's "Did the
+obstruction stop a catch?" and then the captain's choice.
+
+**Penalty runs after the result.** "Until the umpires leave the field" is represented as **the match concluded**:
+`match.status = 'complete'`, after which the write path quarantines every event (db/33). Until then, under the 4th, a
+fielding-side award is taken after the result. An award to the fielding side that lifts the target above a chase already
+reached reopens it (`sealed` and `complete` cleared, `endReason` null) and play goes on; an award to the chasing side
+after its innings ended short — all out, or its overs bowled — that makes its total enough is a win **by penalty runs**
+(`inn.penaltyWin`; `describeResult()` margin "penalty runs"). Under the 3rd, a fielding-side award after the result is
+still refused (`match_decided`), and neither follows.
+
+**Both Editions: a delivery that does not count in the over (17.3.2.5).** When 24.4, 28.2, 41.4 or 41.5 is applied the
+delivery is not one of the over. `ball()` takes `notInOver` (one of `NOT_IN_OVER`), and `notInOverDelivery()` records it
+with its five penalty runs to the batting side. `countsInOver()` is the fold's one question: not a wide or a no-ball and
+not so marked. Balls of the over, the bowler's balls, maidens, dots, the hat-trick run and the end of the over read it;
+the striker still received the ball. SQL asks `ball_counts_in_over()` (db/54).
+
+**Both Editions: runs disallowed (41.14.3, 41.15.3).** A second offence of damaging the pitch or of the striker taking
+guard in the protected area disallows the delivery's runs and returns the batters to their ends, as short running
+does: `runsDisallowed(delivery, reason)` records the delivery with no runs and the award to the fielding side
+(`striker_position` joined the fielding side's penalty reasons).
+
+**The bouncer over head height is a Wide (22.1.3, 4th).** Words only: the fold never judged height. The pad's quick
+no-ball pad and its sheet speak of a waist-high full toss and a beamer, and under the 4th say a bouncer over head
+height is a Wide; the rulebook says so.
+
+**The free hit follows the match's format (Kameel, 2026-09-27).** Not an Edition rule, and not keyed to a date: a
+correction, applied to every match by its stored format. A limited-overs match (T20, 50-over, any overs-limited
+format) gives a free hit after a no-ball; a declaration or timed match, of one day or more, does not. `freeHitsApply(format)`
+(`packages/scoring/src/format.mjs`) answers it and the fold stamps it on the innings (`inn.freeHits`); the Laws check,
+the pad's banner and no-ball sheet, and the commentary read the fold. A match with **no format** keeps today's
+behaviour: a free hit after every no-ball. "One-Day Declaration" was added to the fixture screen's formats (a one-day
+timed match). SQL asks `free_hits_apply()` of `match.format` inside `ball_on_free_hit()` (db/54), so every reader of a
+wicket stands a bowled off the ball after a no-ball in a declaration match.
+
+**SQL (db/54).** The balls of the over and the free hit by format, as the fold has them; `match_fold_context()`. Its
+proof block, db/99 section 32 and `tools/smoke-fold-figures.mjs` hold live score, handover count, bowler overs,
+hat-trick, player and season and career figures, opposition and matchups to the fold.
+
+**To be decided (recorded, not built).** Some primary-school leagues cap an over at a maximum number of balls (for
+example 8), and a free hit earned on the last allowed ball falls away. See SCRBRD-113 in the backlog.
