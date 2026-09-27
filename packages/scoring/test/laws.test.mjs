@@ -29,6 +29,7 @@ import {
   inningsStart, batters, bowler, ball, retire, penalty, revision, voidEvent, sealInnings, inningsEnd,
   BALL_TYPE, INNINGS_END_REASON, standsOnFreeHit, DISMISSAL,
   deriveInningsList, shortRunning, PENALTY_REASON, PENALTY_REASON_SIDE, PENALTY_REASON_TEXT, normalisePenaltyReason,
+  penaltyReasonWords, withoutLawClause,
 } from "../src/index.mjs";
 
 /** @import { LogEvent, InningsStartInput } from "../src/events.mjs" */
@@ -475,6 +476,13 @@ group("O. Penalty runs: whole runs, a reason from the list, the right side (SCRB
      && normalisePenaltyReason("Deliberate time wasting", false) === "time_wasting");
   ok("...and the constructor stores the reason, not the text", penalty({ reason: "Changing condition of ball" }).reason === "ball_tampering");
   ok("every reason has a side and words", Object.values(PENALTY_REASON).every((r) => r in PENALTY_REASON_SIDE && typeof PENALTY_REASON_TEXT[r] === "string"));
+  // One helper takes the clause numbers off (Kameel is verifying them): the
+  // pad's sheet, the held sheet and the commentary all read through it.
+  ok("penaltyReasonWords: the words, with no Law clause number, for every reason",
+     Object.values(PENALTY_REASON).every((r) => { const w = penaltyReasonWords(r); return w.length > 0 && !/\bLaws?\s+\d/.test(w) && PENALTY_REASON_TEXT[r].startsWith(w); }));
+  ok("...'deliberate short running (Law 41.5)' → 'deliberate short running'", penaltyReasonWords("short_running") === "deliberate short running"
+     && withoutLawClause("dangerous (Laws 41.6 and 41.7) bowling") === "dangerous bowling");
+  ok("...an unknown reason is shown as itself", penaltyReasonWords("brand_new") === "brand_new");
   ok("the fielding side's reasons are Kameel's Law 41 list",
      JSON.stringify(Object.values(PENALTY_REASON).filter((r) => PENALTY_REASON_SIDE[r] === false).sort())
      === JSON.stringify(["obstruction_distraction", "pitch_damage", "protected_area", "short_running", "striking_pitch", "time_wasting"]));

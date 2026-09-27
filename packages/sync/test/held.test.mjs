@@ -11,7 +11,7 @@
  */
 import {
   inningsStart, batters, bowler, ball, retire, voidEvent, BALL_TYPE, deriveInnings, MatchFold,
-  lawsRefusal, REFUSAL, REFUSAL_TEXT, undoLast,
+  lawsRefusal, REFUSAL, REFUSAL_TEXT, undoLast, PENALTY_REASON_TEXT, PENALTY_REASON_SIDE,
 } from "@scrbrd/scoring";
 import {
   SyncEngine, memoryStorage, heldFrom, heldInOrder, withoutEvents, serverView, inLog,
@@ -179,10 +179,12 @@ group("G. In words");
   // SCRBRD-094: an award says whose it is and why, in words — the pad's old free text too.
   ok("penalty runs to the fielding side, with the reason in words",
      describeEvent({ kind: "penalty", runs: 5, toBattingTeam: false, reason: "short_running" }, innings[0])
-     === "Penalty — 5 runs to the fielding side, for deliberate short running (Law 41.5)");
+     === "Penalty — 5 runs to the fielding side, for deliberate short running");
   ok("...an old free-text reason is read as the reason it is",
      describeEvent({ kind: "penalty", toBattingTeam: true, reason: "Ball hit helmet on field" }, innings[0])
-     === "Penalty — 5 runs to the batting side, for the ball striking a fielder's helmet on the ground (Law 28.3)");
+     === "Penalty — 5 runs to the batting side, for the ball striking a fielder's helmet on the ground");
+  ok("...and no reason's words carry a Law clause number (Kameel is verifying them)",
+     Object.keys(PENALTY_REASON_TEXT).every((r) => !/\bLaws?\s+\d/.test(describeEvent({ kind: "penalty", toBattingTeam: PENALTY_REASON_SIDE[r] ?? true, reason: r }, innings[0]))));
   ok("...and one with no reason says only whose",
      describeEvent({ kind: "penalty", runs: 5 }, innings[0]) === "Penalty — 5 runs to the batting side");
   // SCRBRD-081: a dismissal with no ball says so; a retirement stays one.

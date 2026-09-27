@@ -313,6 +313,31 @@ export const PENALTY_REASON_TEXT = Object.freeze({
 });
 
 /**
+ * Words with any Law clause number taken off: "deliberate short running (Law
+ * 41.5)" → "deliberate short running". Kameel is verifying the clause numbers
+ * against the current Code (2026-09-26), so no screen, report line or
+ * commentary shows them until he has; this is the one place that takes them
+ * off, and every reader of the reasons' words goes through it.
+ * @param {unknown} text
+ * @returns {string}
+ */
+export function withoutLawClause(text) {
+  return String(text ?? "").replace(/\s*\((?:Law|Laws)\s[^)]*\)/g, "").trim();
+}
+
+/**
+ * A penalty reason in words, with no Law clause number — for a screen, the
+ * held sheet, a report or the commentary. A reason the list does not know is
+ * shown as itself.
+ * @param {unknown} reason  one of PENALTY_REASON
+ * @returns {string}
+ */
+export function penaltyReasonWords(reason) {
+  const key = String(reason ?? "");
+  return withoutLawClause(Object.hasOwn(PENALTY_REASON_TEXT, key) ? PENALTY_REASON_TEXT[key] : key);
+}
+
+/**
  * The pad's free-text reasons, as its penalty sheet offered them before the
  * list closed, → the reason each one is. An event already in a queue or a
  * log carries one of these, and an older build still sends them; they are

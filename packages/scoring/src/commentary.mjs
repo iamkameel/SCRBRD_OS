@@ -49,7 +49,7 @@
  */
 
 import { KIND, BALL_TYPE, ILLEGAL, NB_RUNS, RUN_OUT_END, DISMISSAL, INNINGS_END_REASON, PENALTY_REASON,
-  PENALTY_REASON_TEXT, BOWLER_CHANGE_REASON, normaliseDismissal, normalisePenaltyReason, runsOffBat, chargedToBowler } from "./events.mjs";
+  penaltyReasonWords, BOWLER_CHANGE_REASON, normaliseDismissal, normalisePenaltyReason, runsOffBat, chargedToBowler } from "./events.mjs";
 import { deriveMatch, foldSteps, penaltyCredits, retirementDismissal, isMaiden, fmtOvers } from "./replay.mjs";
 import { positionName } from "./placement.mjs";
 import { SHOT_WORDS, NO_STROKE, SECTOR_WORDS } from "./words.mjs";
@@ -526,7 +526,7 @@ export function deriveCommentary(events = [], options = {}) {
           const reason = normalisePenaltyReason(ev.reason, toBat);
           // No Law clause numbers in anything a spectator reads (Kameel, 2026-09-26: he is
           // checking them against the current Code). The words stand without the bracket.
-          const why = reason ? `, for ${PENALTY_REASON_TEXT[reason].replace(/\s*\((?:Law|Laws)\s[^)]*\)/g, "")}` : "";
+          const why = reason ? `, for ${penaltyReasonWords(reason)}` : "";
           const pos = afterLast();
           const head = `${cap(words(runs))} penalty ${plural(runs, "run")}`;
           if (toBat) {
