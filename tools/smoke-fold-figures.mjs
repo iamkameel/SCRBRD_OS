@@ -109,7 +109,12 @@ const SUSPENSION_REASONS = ["beamers", "short_pitched", "deliberate_no_ball", "p
 // fourth, for the same reason.
 let s4 = 7171;
 const rnd4 = () => (s4 = (s4 * 1103515245 + 12345) % 2147483648) / 2147483648;
-const gen = { suspensions: 0, splitOvers: 0, hurtReturns: 0, padRetires: 0, padMidOver: 0, padReturns: 0, hurtWaits: 0, hurtRefused: 0 };
+// Batters retired out coming back with the captain's consent (Law 25.4.3,
+// SCRBRD-071, db/53) draw on a fifth: until the first of them, every innings
+// is the one it was.
+let s5 = 5353;
+const rnd5 = () => (s5 = (s5 * 1103515245 + 12345) % 2147483648) / 2147483648;
+const gen = { suspensions: 0, splitOvers: 0, hurtReturns: 0, padRetires: 0, padMidOver: 0, padReturns: 0, hurtWaits: 0, hurtRefused: 0, consentReturns: 0 };
 /** @template T @param {T[]} xs @returns {T} */
 const pick = (xs) => xs[Math.floor(rnd() * xs.length)];
 /** @template T @param {T[]} xs */
@@ -236,6 +241,23 @@ function builder(no, overs, o = {}) {
         }
         gen.hurtWaits++;
       }
+      // Now and then a batter who retired out comes back with the opposing
+      // captain's consent (Law 25.4.3; db/53): his wicket is taken back, in
+      // the fold and — through ball_event_live — in every SQL reader. Only one
+      // the Laws take: a wicket or another's retirement since he went.
+      const outOnes = at.wickets < 10 ? at.batsmen.filter((x) => x.status === "out" && x.dismissal === "retired out"
+        && x.id !== at.striker && x.id !== at.nonStriker) : [];
+      if (outOnes.length > 0 && (at.striker == null || at.nonStriker == null) && rnd5() < 0.9) {
+        const consent = (/** @type {string} */ id) => (at.striker == null ? { kind: "batters", striker: id, captainConsent: true }
+                                                                          : { kind: "batters", nonStriker: id, captainConsent: true });
+        const hit = outOnes.find((x) => refused(consent(x.id)) === null);
+        if (hit) {
+          push(consent(hit.id));
+          gen.consentReturns++;
+          justRetired = null;
+          return;
+        }
+      }
       justRetired = null;
       if (at.wickets >= 10 || next >= order.length) return;
       if (at.striker == null) push({ kind: "batters", striker: order[next++] });
@@ -273,14 +295,30 @@ function builder(no, overs, o = {}) {
       if (at.balls % 6 > 0) gen.padMidOver++;
       return push(ev);
     },
-    /** A batter back from retired hurt, at the empty end — one the Laws take. @param {string} id */
-    comeBack(id) {
+    /**
+     * A batter back from retired hurt — or, with `consent`, from retired out
+     * (Law 25.4.3) — at the empty end: one the Laws take.
+     * @param {string} id @param {boolean} [consent]
+     */
+    comeBack(id, consent = false) {
       const at = now();
-      const e = at.striker == null ? { kind: "batters", striker: id } : { kind: "batters", nonStriker: id };
+      const e = { ...(at.striker == null ? { kind: "batters", striker: id } : { kind: "batters", nonStriker: id }),
+                  ...(consent ? { captainConsent: true } : {}) };
       if (refused(e) !== null) throw new Error(`the Laws refused the written-out return: ${refused(e)}`);
       push(e);
       gen.hurtReturns++;
       if (padRetired.delete(id)) gen.padReturns++;
+    },
+    /**
+     * A batter retires out (Law 25.4.3), on the fifth stream only — so the
+     * innings before the first of these is the one it always was — for the
+     * consented returns above to come back from.
+     */
+    retireOut() {
+      const at = now();
+      if (at.striker == null || at.nonStriker == null) return;
+      const batter = rnd5() < 0.5 ? at.striker : at.nonStriker;
+      push({ kind: "retire", batter, reason: "out", type: "W", dismissal: "retired_out" });
     },
     timedOut() {
       if (next >= order.length - 1 || now().wickets >= 9) return;
@@ -336,6 +374,8 @@ function generated(no, overs, legacy = false, start = undefined, awardFirst = fa
     if (rnd3() < 0.03) b.suspend();
     // A batter retires hurt, mid-over, as the pad records it (SCRBRD-071).
     if (rnd4() < 0.03 && b.now().balls % 6 > 0) b.padRetire();
+    // A batter retires out, to come back later with consent (Law 25.4.3).
+    if (rnd5() < 0.012 && b.now().wickets < 8) b.retireOut();
     if (start) {
       const p = rnd2();
       if (p < 0.02) b.award(false, rnd2() < 0.3 ? undefined : 5);
@@ -408,6 +448,25 @@ function padRetireEdge(/** @type {number} */ no) {
   b.deliver({ type: "run", value: 1 });
   b.deliver({ type: "W", value: 0, dismissal: "bowled" });
   b.comeBack(P1);
+  b.deliver({ type: "run", value: 2 });
+  return b.ev;
+}
+
+/**
+ * Retired out, and back with the captain's consent (Law 25.4.3; SCRBRD-071,
+ * db/53), written out: P1 hits a four and retires out; P3 comes in; P2 is
+ * bowled; P1 walks back in with consent and hits two. His line: 6 (2), not
+ * out; one wicket in the innings, P2's.
+ */
+function consentEdge(/** @type {number} */ no) {
+  const b = builder(no, 20, { order: [P1, P2, P3, HIL_1XI[3]], bowling: [WES_1XI[0], WES_1XI[1]],
+                              start: { battingTeam: "Retired Out XI", bowlingTeam: "Consent XI" } });
+  b.deliver({ type: "run", value: 4 });
+  b.ev.push({ id: `ff-${++eventNo}`, innings: no, kind: "retire", batter: P1, reason: "out", type: "W", dismissal: "retired_out" });
+  b.fill();
+  b.deliver({ type: "run", value: 0 });
+  b.deliver({ type: "W", value: 0, dismissal: "bowled" });
+  b.comeBack(P1, true);
   b.deliver({ type: "run", value: 2 });
   return b.ev;
 }
@@ -750,6 +809,10 @@ try {
       g++;
     }
   }
+  // After the generated innings, so their numbers and ids are what they were.
+  no++;
+  edgeInnings.push({ no, what: "a batter retired out, and back with the opposing captain's consent after the next wicket" });
+  logs.push(consentEdge(no));
   const lifted = await writeLogs(logs, scorer);
   console.log(lifted ? "  (the door lifted for the legacy rows, and put back)" : "  (no door to lift: the code before db/43)");
 
@@ -806,16 +869,17 @@ try {
   // Laws take (SCRBRD-071): none once the innings is over, and nobody straight
   // back into the end he left. Asked of each, at its own point in its log.
   /** @type {string[]} */ const lawless = [];
-  let judgedRetire = 0, judgedReturn = 0;
+  let judgedRetire = 0, judgedReturn = 0, judgedConsent = 0;
   for (const log of logs) {
     for (let k = 0; k < log.length; k++) {
       const x = log[k];
       if (x.kind !== "retire" && x.kind !== "batters") continue;
       if (x.kind === "retire" && x.type === "W") continue;
       const before = deriveInnings(log.slice(0, k));
-      const returning = x.kind === "batters" && [x.striker, x.nonStriker].some((id) => before.batsmen.some((b) => b.id === id && b.status === "retired"));
+      const returning = x.kind === "batters" && [x.striker, x.nonStriker].some((id) => before.batsmen.some((b) => b.id === id
+        && (b.status === "retired" || (x.captainConsent === true && b.status === "out"))));
       if (x.kind === "batters" && !returning) continue;
-      if (x.kind === "retire") judgedRetire++; else judgedReturn++;
+      if (x.kind === "retire") judgedRetire++; else if (x.captainConsent === true) judgedConsent++; else judgedReturn++;
       /** @type {any[]} */ const innings = [];
       innings[x.innings] = before;
       const why = lawsRefusal({ innings, events: [] }, x);
@@ -824,8 +888,14 @@ try {
   }
   console.log(`  ${judgedRetire} retirements hurt and ${judgedReturn} returns asked of the Laws; the generator held back ` +
               `${gen.hurtWaits} returns the Laws would refuse and ${gen.hurtRefused} retirements in an innings already over`);
-  ok(`...every retirement hurt (${judgedRetire}) and every return (${judgedReturn}) is one the Laws take`,
-     lawless.length === 0 && judgedRetire >= 5 && judgedReturn >= 2, lawless.slice(0, 5));
+  ok(`...every retirement hurt (${judgedRetire}), every return (${judgedReturn}) and every return with consent (${judgedConsent}) is one the Laws take`,
+     lawless.length === 0 && judgedRetire >= 5 && judgedReturn >= 2 && judgedConsent >= 3, lawless.slice(0, 5));
+  // Law 25.4.3 (db/53): batters retired out, back with consent — their
+  // wickets taken back in the fold, and every SQL figure above agreeing.
+  const resumedOut = [...byInnings.values()].reduce((n, inn) => n + (inn.resumedWithConsent?.length ?? 0), 0);
+  console.log(`  ${gen.consentReturns} batters back from retired out with the captain's consent (generated), ${resumedOut} in the fold`);
+  ok(`...batters back from retired out with consent (${gen.consentReturns} generated, ${resumedOut} in the fold), their wickets taken back`,
+     gen.consentReturns >= 2 && resumedOut >= gen.consentReturns);
 
   // SCRBRD-071: retired hurt as the pad records it. Stored as a retire with
   // no W marker, which every SQL reader of a career answers with nothing:
