@@ -182,7 +182,7 @@ async function shoot(name, pg = page) {
 const SQUARE_RIGHT = 0.97;   // of the half-width: past the rope (124 of 150), so radius clamps to 1.00
 async function fieldBox(scope) {
   const svg = page.locator(`${scope} svg`).first();
-  const b = await svg.boundingBox();
+  const b = await svg.boundingBox({ timeout: 4000 }).catch(() => null);
   return b && { ...b, cx: b.x + b.width / 2, cy: b.y + b.height / 2 };
 }
 /** Press on the field, read what the pad says while the finger is down, release. */
@@ -260,7 +260,7 @@ try {
   ok("OFF on the left, LEG on the right", (await said("field-side-left")) === "OFF" && (await said("field-side-right")) === "LEG",
      `${await said("field-side-left")} / ${await said("field-side-right")}`);
   ok("the ends are marked: Batter at the top, Bowler at the bottom", await (async () => {
-    const t = await tid("field-end-batter").boundingBox(), bw = await tid("field-end-bowler").boundingBox();
+    const t = await tid("field-end-batter").boundingBox({ timeout: 2000 }).catch(() => null), bw = await tid("field-end-bowler").boundingBox({ timeout: 2000 }).catch(() => null);
     return !!t && !!bw && t.y < bw.y && (await said("field-end-batter")) === "Batter" && (await said("field-end-bowler")) === "Bowler";
   })());
   const rimR = await page.locator('[data-testid="phase-area"] [data-rim]').evaluateAll((els) => Object.fromEntries(els.map((e) => {
@@ -374,8 +374,8 @@ try {
   ok("the whole innings is laid out for a right-hander", (await page.locator(wheel).first().getAttribute("data-frame").catch(() => null)) === "R");
   const note = await said("wheel-mirror-note");
   ok(`...and says so: "${note}"`, /Left-handers.*mirrored so leg side is always on the right/.test(note), note);
-  ok("OFF on the left and LEG on the right stay true", await page.locator(`${wheel} [data-testid="field-side-left"]`).first().innerText() === "OFF"
-     && await page.locator(`${wheel} [data-testid="field-side-right"]`).first().innerText() === "LEG");
+  ok("OFF on the left and LEG on the right stay true", await page.locator(`${wheel} [data-testid="field-side-left"]`).first().innerText({ timeout: 2000 }).catch(() => "") === "OFF"
+     && await page.locator(`${wheel} [data-testid="field-side-right"]`).first().innerText({ timeout: 2000 }).catch(() => "") === "LEG");
   const all = await spokes(wheel);
   const points = all.filter((s) => s.key !== "0");
   ok(`the right-hander's square leg is on the right, the left-hander's points mirrored to the left (${all.map((s) => `${s.key}:${s.side}`).join(" ")})`,
@@ -388,7 +388,7 @@ try {
   await page.waitForTimeout(500);
   ok("the left-hander's own wheel is laid out for him, OFF on the right, no note",
      (await page.locator(wheel).first().getAttribute("data-frame").catch(() => null)) === "L"
-       && await page.locator(`${wheel} [data-testid="field-side-right"]`).first().innerText() === "OFF" && !(await has("wheel-mirror-note")));
+       && await page.locator(`${wheel} [data-testid="field-side-right"]`).first().innerText({ timeout: 2000 }).catch(() => "") === "OFF" && !(await has("wheel-mirror-note")));
   const his = await spokes(wheel);
   ok("...his balls on HIS off side, the right", his.length === 3 && his.every((s) => s.side === "right"), JSON.stringify(his));
   await shoot("left-hander-wheel");
