@@ -505,6 +505,25 @@ function consentEdge(/** @type {number} */ no) {
   return b.ev;
 }
 
+/**
+ * Rows the Laws refuse, as a table can still hold them (db/54, 4): P1 hits a
+ * four; P2 is recorded retired with a W marker and the method bowled (reason
+ * hurt), which the fold reads as retired hurt, not a wicket; a penalty of two
+ * whose row carries a value of three, which the fold reads as two; then P3
+ * comes in and P1 is bowled. The innings: 4 + 2 = 6 for 1 — the live score,
+ * the handover's count and every player reader must say so.
+ */
+function refusedRowsEdge(/** @type {number} */ no) {
+  const b = builder(no, 20, { order: [P1, P2, P3, HIL_1XI[3]], bowling: [WES_1XI[0], WES_1XI[1]],
+                              start: { battingTeam: "Refused Rows XI", bowlingTeam: "Table XI" } });
+  b.deliver({ type: "run", value: 4 });
+  b.ev.push({ id: `ff-${++eventNo}`, innings: no, kind: "retire", batter: P2, reason: "hurt", type: "W", dismissal: "bowled" });
+  b.ev.push({ id: `ff-${++eventNo}`, innings: no, kind: "penalty", runs: 2, toBattingTeam: true, value: 3 });
+  b.fill();
+  b.deliver({ type: "W", value: 0, dismissal: "bowled" });
+  return b.ev;
+}
+
 // ── Expectations, from the fold ──────────────────────────────────
 /** @param {Map<string, any>} m @param {string} k @param {() => any} init */
 const at = (m, k, init) => { if (!m.has(k)) m.set(k, init()); return m.get(k); };
@@ -861,6 +880,10 @@ try {
   no++;
   edgeInnings.push({ no, what: "a batter retired out, and back with the opposing captain's consent after the next wicket" });
   logs.push(consentEdge(no));
+  no++;
+  const refusedNo = no;
+  edgeInnings.push({ no, what: "rows the Laws refuse: a retire marked W with the method bowled, a penalty row carrying a value" });
+  logs.push(refusedRowsEdge(no));
   const lifted = await writeLogs(logs, scorer);
   console.log(lifted ? "  (the door lifted for the legacy rows, and put back)" : "  (no door to lift: the code before db/43)");
 
@@ -976,6 +999,14 @@ try {
     return !r || Number(r.runs) !== f.runs || Number(r.wickets) !== f.wickets || Number(r.legal_balls) !== f.balls;
   }).map(([n, f]) => `innings ${n}: fold ${f.runs}/${f.wickets} off ${f.balls}, SQL ${live.get(n)?.runs}/${live.get(n)?.wickets} off ${live.get(n)?.legal_balls}`);
   ok(`runs, wickets and legal balls agree in every innings (${e.live.size})`, liveBad.length === 0, show(liveBad));
+
+  const refused = byInnings.get(refusedNo);
+  const refusedLive = live.get(refusedNo);
+  ok("rows the Laws refuse (db/54, 4): the fold reads 6 for 1, P2 retired hurt — and so does the live score",
+     refused?.runs === 6 && refused.wickets === 1
+     && refused.batsmen.find((/** @type {any} */ x) => x.id === P2)?.dismissal === "retired hurt"
+     && Number(refusedLive?.runs) === 6 && Number(refusedLive?.wickets) === 1,
+     `fold ${refused?.runs}/${refused?.wickets}, SQL ${refusedLive?.runs}/${refusedLive?.wickets}`);
 
   group("The balls of the over: a delivery that does not count (Law 17.3.2.5, SCRBRD-113, db/54)");
   {

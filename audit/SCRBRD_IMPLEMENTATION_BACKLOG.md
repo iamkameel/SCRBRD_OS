@@ -4033,7 +4033,12 @@ fold (`FoldContext`); the server asks `match_fold_context()` (db/54), since a pa
 (`match_live_score`, `innings_score_as_folded`, `bowler_over`, `bowler_hat_trick`, `player_bowling_since`,
 `opposition_squad`, `player_bowling_by_season`, `player_bowling_career`; the matchups and career reads in read-api);
 `free_hits_apply()` and `match_free_hits_apply()` inside `ball_on_free_hit()`; `match_fold_context()`. Idempotent, with a
-proof block; db/99 section 32.
+proof block; db/99 section 32. **Found on the combined branch (with db/53):** §32 ran as whoever §31 left, and once it
+compared every match it found the live score counting a `retire` marked W with method bowled (the fold: retired hurt,
+no wicket) and a penalty row's `value` (the fold: its `runs` only), where the handover's count did not. db/54 (4) makes
+`match_live_score` count as `innings_score_as_folded()` does; §32 now sets its principal, compares runs too, and
+refuses an empty comparison. Falsified: the old live score, its wickets alone, its runs alone, and §32 with no
+principal, each red; `replay.test.mjs` O and a `smoke-fold-figures` innings hold the fold's reading.
 **Proof:** `packages/scoring/test/edition.test.mjs` (220, both Editions side by side, 30 September against 1 October
 2026, pad and server folds agreeing); 18 JS and 7 SQL falsifications, each caught; `tools/smoke-fold-figures.mjs` (113,
 with deliveries that do not count and a declaration match whose bowled off the ball after a no-ball stands);

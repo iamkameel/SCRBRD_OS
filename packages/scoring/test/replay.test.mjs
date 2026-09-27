@@ -1538,5 +1538,31 @@ group("N. A no-ball's kind is recorded as asked, and decides nothing in the fold
   ok("...and rides in the payload", toRow({ ...nb, innings: 0 }).payload.nbType === "front_foot");
 }
 
+group("O. Rows the Laws refuse, as the database can still hold them: what the fold reads (db/54, 4)");
+{
+  // A retire marked W whose method is neither retired out nor timed out (the
+  // row db/99's db/45 section writes: `bowled`, reason hurt). Every other way
+  // out needs a delivery, so it is a retirement, not a wicket: his line
+  // "retired hurt", the wickets unmoved, and he may come back. SQL reads it
+  // the same way in every reader (ball_retirement_dismissal(), db/40; the
+  // live score since db/54).
+  const odd = { kind: KIND.RETIRE, batter: "p2", reason: "hurt", type: BALL_TYPE.WICKET, dismissal: "bowled" };
+  const inn = deriveInnings([...open(), runs(1), /** @type {any} */ (odd)]);
+  const p2 = inn.batsmen.find((/** @type {any} */ b) => b.id === "p2");
+  ok("a retire marked W, method bowled, reason hurt: no wicket, no fall of wicket",
+     inn.wickets === 0 && inn.fow.length === 0 && inn.nonBallWickets.length === 0);
+  ok("...his line retired hurt, and on the record of retirements not out",
+     p2?.dismissal === "retired hurt" && inn.retirements.some((r) => r.batter === "p2" && !r.out));
+  const back = deriveInnings([...open(), runs(1), /** @type {any} */ (odd), batters({ nonStriker: "p3" }),
+                              ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" }), batters({ striker: "p2" }), runs(2)]);
+  ok("...and he may come back, as a batter retired hurt does",
+     back.wickets === 1 && back.batsmen.find((/** @type {any} */ b) => b.id === "p2")?.runs === 2);
+  // A penalty row carrying a `value`: the fold reads a row's value on a
+  // delivery only, so the award is its own `runs` (db/45; the live score
+  // since db/54).
+  const pen = deriveInnings([...open(), runs(1), /** @type {any} */ ({ ...penalty({ runs: 2 }), value: 3 })]);
+  ok("a penalty row's value is not runs: 1 + 2, not 1 + 3 + 2", pen.runs === 3);
+}
+
 console.log(`\n${"─".repeat(52)}\nSCORING SUITE: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

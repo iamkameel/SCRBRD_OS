@@ -5580,6 +5580,19 @@ BEGIN
   -- does not count (→ fixture, same), player_bowling_career keeping the old
   -- CASE (→ readers, same), ball_on_free_hit() not asking the format
   -- (→ fixture, readers).
+  -- Read as the owner of the platform, named here: the invariants compare
+  -- every match, whoever the section before left in the session. With no
+  -- principal they compared nothing (an empty user sees no row), and passed.
+  -- Once they compared, they found the db/45 section's first innings: a
+  -- retire marked W with method bowled, which the live score counted and the
+  -- handover's count, as the fold, did not; and a penalty row carrying a
+  -- value, which the live score added. db/54 (4) makes the live score count
+  -- as the handover does. Broken each way and this file run: the old live
+  -- score (→ same, 81/15 against 78/14), its wickets alone (→ same, 15
+  -- against 14), its runs alone (→ same, 81 against 78), and the old live
+  -- score with no principal set here (→ same, the count below); db/54's own
+  -- proof refuses the old live score on its refused rows first.
+  PERFORM _as(U_OWNER);
   DECLARE
     n bigint;
     detail text;
@@ -5618,19 +5631,24 @@ BEGIN
     detail := _laws_fixture_54();
     PERFORM _assert(detail IS NOT DISTINCT FROM v_want, format('db/54 (fixture): the fixture reads %s, the fold reads %s', detail, v_want));
 
-    -- (same) over the whole log, as this reader sees it: the live score and
-    -- the handover check's count, innings by innings; a bowler's career balls
-    -- and the overs he bowled
+    -- (same) over the whole log, as the owner sees it: the live score and
+    -- the handover check's count, innings by innings — runs, wickets and
+    -- balls of the over; a bowler's career balls and the overs he bowled.
+    -- And that there is a whole log to compare: an empty session passes.
     SELECT count(*), string_agg(k, '; ') INTO n, detail FROM (
-      SELECT 'live/folded ' || l.match_id || '/' || l.innings AS k
+      SELECT 'live/folded ' || l.match_id || '/' || l.innings
+             || ' ' || row(l.runs, l.wickets, l.legal_balls)::text || ' vs ' || row(f.runs, f.wickets, f.legal_balls)::text AS k
         FROM match_live_score l CROSS JOIN LATERAL innings_score_as_folded(l.match_id, l.innings::smallint) f
        WHERE l.legal_balls IS DISTINCT FROM f.legal_balls::bigint OR l.wickets IS DISTINCT FROM f.wickets::bigint
+          OR l.runs IS DISTINCT FROM f.runs::bigint
       UNION ALL
       SELECT 'career/overs ' || c.player_id
         FROM player_bowling_career c
         JOIN (SELECT bowler_id, sum(legal_balls) AS balls FROM bowler_over GROUP BY bowler_id) o ON o.bowler_id = c.player_id
        WHERE c.legal_balls IS DISTINCT FROM o.balls) d;
     PERFORM _assert(n = 0, format('db/54 (same): %s figure(s) disagree between the readers — %s', n, left(coalesce(detail, ''), 600)));
+    SELECT count(*) INTO n FROM match_live_score;
+    PERFORM _assert(n >= 10, format('db/54 (same): this section sees %s innings in the live score — the comparison compared nothing', n));
 
     -- (context) how the server folds a match: its start and format, for a
     -- caller who may read the fixture, and nothing for one who may not

@@ -1,13 +1,16 @@
 -- ══════════════════════════════════════════════════════════════════
 --  54 · A delivery that does not count in the over (Law 17.3.2.5), and
---       the free hit by the match's format, as the fold has them (SCRBRD-113)
+--       the free hit by the match's format, as the fold has them (SCRBRD-113);
+--       the live score counts what the handover check counts, on any log
 -- ══════════════════════════════════════════════════════════════════
 --
 -- SCRBRD-113 moved the scoring engine to the MCC Laws of Cricket, 2017 Code,
 -- 4th Edition (2026), in force from 1 October 2026, keyed to the match date
 -- (packages/scoring/src/edition.mjs). Of what it built, TWO things change a
--- figure SQL keeps, and this file is those two things: the balls of the over
--- (1, below) and the free hit (2).
+-- figure SQL keeps: the balls of the over (1, below) and the free hit (2).
+-- This file is those two; how the server learns a match's date and format
+-- (3); and one disagreement between the live score and the handover check
+-- that the combined verify found (4).
 --
 -- 1. THE BALLS OF THE OVER.
 --
@@ -83,6 +86,13 @@
 --     reader of a wicket — the live score, the handover check, every career
 --     figure, the hat-trick, the opposition's squad — follows.
 --
+-- This is a correction, not a change of Edition: it follows the STORED
+-- format and not the match date. A stored declaration match (a fixture made
+-- as "Two-Day", say) now stands the wicket a bowler took off the ball after a
+-- no-ball, where every reader saved it before; a match whose format is a
+-- limited-overs one, or none at all, reads exactly as it did. (Every fixture
+-- the seed holds is T20.)
+--
 -- 3. HOW THE SERVER FOLDS A MATCH: ITS DATE AND ITS FORMAT.
 --
 -- The fold is told the fixture's start (which dates the match, and so
@@ -99,12 +109,32 @@
 --     no row for anyone else. SECURITY DEFINER, as match_school() is: two
 --     facts about the fixture, nothing about a person.
 --
--- This is a correction, not a change of Edition: it follows the STORED
--- format and not the match date. A stored declaration match (a fixture made
--- as "Two-Day", say) now stands the wicket a bowler took off the ball after a
--- no-ball, where every reader saved it before; a match whose format is a
--- limited-overs one, or none at all, reads exactly as it did. (Every fixture
--- the seed holds is T20.)
+-- 4. THE LIVE SCORE COUNTS WHAT THE HANDOVER CHECK COUNTS, ON ANY LOG.
+--
+-- The live score (the board) and the handover check's count
+-- (innings_score_as_folded(), db/45) must agree on every log the database
+-- can hold, lawful or not, or a handover can be refused on a figure the
+-- board showed. On two rows the Laws refuse at commit, but a table can hold
+-- (a direct insert, an old build, a release), they did not:
+--
+--   a `retire` marked W whose method is neither retired out nor timed out
+--     (`bowled`, reason hurt, say). The fold (replay.mjs,
+--     retirementDismissal()) reads a retirement as a wicket only when it is
+--     one of those two — every other way out needs a delivery — so it is a
+--     retirement not out: no wicket, his line "retired hurt", and he may
+--     come back. The handover's count and every player reader already asked
+--     ball_retirement_dismissal() (db/40); the live score asked
+--     ball_wicket_stands() of every kind, which answers true for any non-ball
+--     W, and counted it.
+--   a row that is not a delivery carrying a `value` (a penalty row, say).
+--     The fold reads a row's value on a delivery only (the award is its own
+--     `runs`); the handover's count did the same (db/45); the live score
+--     summed every row's value.
+--
+-- match_live_score now counts both as the handover's count does, the same
+-- expressions: runs off deliveries only, and a wicket when a delivery's
+-- stands or a retirement is a dismissal. No lawful log moves: the pad never
+-- writes either row.
 --
 -- WHAT DOES NOT MOVE. Runs, anywhere: a delivery that does not count is
 -- scored as its type says, as before. Wickets: none is ever taken off one
@@ -116,7 +146,9 @@
 -- STORED ROWS ARE NOT REWRITTEN, and none moves: no row stored before this
 -- carries payload.notInOver — nothing wrote one — so every figure on every
 -- existing log is the number it was. Only a delivery recorded with the mark
--- from now on is counted differently.
+-- from now on is counted differently. The two exceptions are named above: a
+-- declaration match's free hit (2), and the live score of a log holding one
+-- of the rows in 4 — which now reads what the handover check already did.
 --
 -- NOTHING ELSE OF SCRBRD-113 IS SQL. The Edition decides three things, none
 -- a figure SQL keeps: how long a suspension lasts (a bowler_suspended row
@@ -244,18 +276,23 @@ RETURNS boolean AS $$
 $$ LANGUAGE sql STABLE PARALLEL SAFE;
 
 -- ── The live score (db/48) ───────────────────────────────────────
--- db/48's, with the balls of the over the fold's. Nothing else moved.
+-- db/48's, with the balls of the over the fold's; and (header, 4) its runs
+-- and wickets counted as innings_score_as_folded() counts them, the same
+-- expressions: a row's value on a delivery only, and a wicket when a
+-- delivery's stands or a retirement is a dismissal. Nothing else moved.
 CREATE OR REPLACE VIEW match_live_score WITH (security_invoker = true) AS
 SELECT
   match_id,
   innings,
   CASE WHEN bool_and(penalty_runs_as_folded(kind, payload) IS NOT NULL)
-       THEN sum(CASE WHEN ball_type IN ('Wd','Nb') THEN 1 + coalesce(value,0)
+       THEN sum(CASE WHEN kind <> 'ball'               THEN 0
+                     WHEN ball_type IN ('Wd','Nb')    THEN 1 + coalesce(value,0)
                      ELSE coalesce(value,0) END)
             + sum(penalty_runs_as_folded(kind, payload))
             + penalty_credit_as_folded(match_id, innings)
   END                                                                     AS runs,
-  sum(CASE WHEN ball_wicket_stands(match_id, innings, seq, kind, ball_type, dismissal)
+  sum(CASE WHEN (kind = 'ball' AND ball_wicket_stands(match_id, innings, seq, kind, ball_type, dismissal))
+                OR ball_retirement_dismissal(kind, ball_type, dismissal, payload) IS NOT NULL
            THEN 1 ELSE 0 END)                                             AS wickets,
   sum(CASE WHEN kind='ball' AND ball_counts_in_over(ball_type, payload) THEN 1 ELSE 0 END) AS legal_balls,
   max(seq)                                                                AS last_seq,
@@ -473,6 +510,7 @@ DECLARE
   m_a      uuid := gen_random_uuid();
   m_t      uuid := gen_random_uuid();   -- a T20: a no-ball, then a free hit
   m_d      uuid := gen_random_uuid();   -- a One-Day Declaration: no free hit
+  m_r      uuid := gen_random_uuid();   -- rows the Laws refuse (header, 4)
   p_x      uuid := gen_random_uuid();   -- on strike
   p_y      uuid := gen_random_uuid();   -- at the other end
   p_a      uuid := gen_random_uuid();   -- bowls the first over
@@ -606,7 +644,25 @@ BEGIN
     INSERT INTO match (id, school_id, team_code, opponent, starts_at, sport, format, overs, status) VALUES
       (m_a, v_school, '1XI', 'db/54 proof', now() - interval '7 days', 'cricket', 'T20', 20, 'complete'),
       (m_t, v_school, '1XI', 'db/54 proof, T20', now() - interval '6 days', 'cricket', 'T20', 20, 'complete'),
-      (m_d, v_school, '1XI', 'db/54 proof, declaration', now() - interval '5 days', 'cricket', 'One-Day Declaration', 100, 'complete');
+      (m_d, v_school, '1XI', 'db/54 proof, declaration', now() - interval '5 days', 'cricket', 'One-Day Declaration', 100, 'complete'),
+      (m_r, v_school, '1XI', 'db/54 proof, refused rows', now() - interval '4 days', 'cricket', 'T20', 20, 'complete');
+    -- Rows the Laws refuse (header, 4): a single; a retire marked W, method
+    -- bowled, reason hurt (no wicket to the fold); a penalty of 2 whose row
+    -- carries a value of 3 (2 to the fold); P_X retired out (a wicket). The
+    -- fold: 3 runs, 1 wicket, 1 ball of the over.
+    INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                            idempotency_key, client_seq, client_ts, kind, ball_type, value,
+                            striker_id, non_striker_id, bowler_id, dismissal, payload)
+    SELECT m_r, v_school, x.k, 1, 0, v_user, 'db54-proof',
+           'db54:' || m_r || ':' || x.k, x.k, now(), x.kind, x.bt, x.v,
+           CASE WHEN x.kind = 'ball' THEN p_x END, CASE WHEN x.kind = 'ball' THEN p_y END,
+           NULL::uuid, x.dis, x.pl   -- nobody's ball: the bowlers' figures above stay the first match's
+      FROM (VALUES
+        (1, 'ball',    'run', 1,    NULL,          '{}'::jsonb),
+        (2, 'retire',  'W',   NULL, 'bowled',      jsonb_build_object('batter', p_y, 'reason', 'hurt')),
+        (3, 'penalty', NULL,  3,    NULL,          '{"runs":2,"toBattingTeam":true}'::jsonb),
+        (4, 'retire',  'W',   NULL, 'retired_out', jsonb_build_object('batter', p_x, 'reason', 'out'))
+      ) AS x(k, kind, bt, v, dis, pl);
     INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
                             idempotency_key, client_seq, client_ts, kind, ball_type, value,
                             striker_id, non_striker_id, bowler_id, dismissal, payload)
@@ -656,13 +712,16 @@ BEGIN
                 FROM match_live_score l WHERE l.match_id = m_t),
              (SELECT 'declaration(' || l.wickets || ',' || ball_on_free_hit(m_d, 0::smallint, 2) || ','
                      || (SELECT count(*) FROM bowler_innings_figures f WHERE f.match_id = m_d AND f.wickets > 0) || ')'
-                FROM match_live_score l WHERE l.match_id = m_d))
+                FROM match_live_score l WHERE l.match_id = m_d),
+             (SELECT 'refused(live' || row(l.runs, l.wickets, l.legal_balls)::text
+                     || ' folded' || (SELECT row(f.runs, f.wickets, f.legal_balls)::text FROM innings_score_as_folded(m_r, 0::smallint) f) || ')'
+                FROM match_live_score l WHERE l.match_id = m_r AND l.innings = 0))
       INTO got;
     RAISE EXCEPTION USING ERRCODE = 'ZZ054', MESSAGE = 'db/54: undo the proof';
   EXCEPTION WHEN sqlstate 'ZZ054' THEN NULL;
   END;
   want := 'live(12,3,9) folded(12,3,9) overs(A:0:6/7 C:1:3/4) since(8,3) career(8,3) season(8,3) hattrick(C@13) '
-       || 't20(0,true,0) declaration(1,false,1)';
+       || 't20(0,true,0) declaration(1,false,1) refused(live(3,1,1) folded(3,1,1))';
   IF got IS DISTINCT FROM want THEN
     RAISE EXCEPTION 'db/54: the fixture reads %, the fold reads % — a delivery that does not count is still counted, or a reader moved', got, want;
   END IF;
@@ -671,8 +730,8 @@ BEGIN
   IF EXISTS (SELECT 1 FROM school WHERE id = v_school)
      OR EXISTS (SELECT 1 FROM app_user WHERE id = v_user)
      OR EXISTS (SELECT 1 FROM player WHERE id IN (p_x, p_y, p_a, p_c))
-     OR EXISTS (SELECT 1 FROM match WHERE id IN (m_a, m_t, m_d))
-     OR EXISTS (SELECT 1 FROM ball_event WHERE match_id IN (m_a, m_t, m_d))
+     OR EXISTS (SELECT 1 FROM match WHERE id IN (m_a, m_t, m_d, m_r))
+     OR EXISTS (SELECT 1 FROM ball_event WHERE match_id IN (m_a, m_t, m_d, m_r))
      OR v_door IS DISTINCT FROM EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'ball_event'::regclass
                                          AND tgname = 'ball_event_names_its_delivery' AND tgenabled = 'O')
      OR coalesce(current_setting('app.user_id', true), '') IS DISTINCT FROM v_setting THEN

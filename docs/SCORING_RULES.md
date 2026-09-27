@@ -791,5 +791,16 @@ wicket stands a bowled off the ball after a no-ball in a declaration match.
 proof block, db/99 section 32 and `tools/smoke-fold-figures.mjs` hold live score, handover count, bowler overs,
 hat-trick, player and season and career figures, opposition and matchups to the fold.
 
+**The live score counts what the handover check counts, on any log (db/54, 4).** Two rows the Laws refuse at commit
+can still sit in the table (a direct insert, an old build, a release from quarantine). A `retire` marked W whose method
+is neither retired out nor timed out (say `bowled`, reason hurt) is, to the fold, a retirement not out: no wicket, his
+line "retired hurt", and he may come back — every other way out needs a delivery (`retirementDismissal()`). A row that
+is not a delivery carrying a `value` (a penalty row, say) adds only its own `runs`: the fold reads `value` on
+deliveries only. The handover's count and the player readers already read both so; `match_live_score` counted the
+first as a wicket and added the second's value, so the board and the handover check disagreed on such a log. It now
+uses the handover's own expressions. db/99 section 32 compares every innings' runs, wickets and balls of the over
+between the two, as the platform owner (it had run as whoever the section before left, once nobody, and compared
+nothing); `replay.test.mjs` group O and a `smoke-fold-figures` innings hold the fold's reading.
+
 **To be decided (recorded, not built).** Some primary-school leagues cap an over at a maximum number of balls (for
 example 8), and a free hit earned on the last allowed ball falls away. See SCRBRD-113 in the backlog.
