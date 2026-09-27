@@ -255,7 +255,9 @@ const FLOODLIT = {
    * own, moved by the colour-vision setting (§3.9) with the rest.
    */
   run: {
-    wicket: "#f4374f",   // semantic.critical
+    // White, as the wicket chip is (board.figure) — no longer a red beside the
+    // six's red (Kameel, 2026-09-27). The same in every palette.
+    wicket: "#f4f6f3",
   },
 };
 
@@ -362,7 +364,9 @@ const DAYLIGHT = {
     casing:      "#0b0e0b",
   },
   run: {
-    wicket: "#b3122a",
+    // In daylight the white would vanish on the pale surface: the board's own
+    // black, the inverse of the floodlit white.
+    wicket: "#10140f",
   },
 };
 

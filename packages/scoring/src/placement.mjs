@@ -151,7 +151,8 @@ export function depthBand(radius, { boundaryM } = {}) {
  *   - straight breaks the pattern — `long on` / `long off`, never "deep mid on"
  *   - `backward` denotes behind square and applies only to some families
  *   - behind square on the leg side is crowded: four positions in ~60°
- *   - off side behind square is `third` in modern usage, not third man
+ *   - off side behind square is `third man` (Kameel, 2026-09-27: the name the
+ *     game in South African schools uses; the key stays `third`)
  *
  * @type {[from: number, to: number, key: string, ring: string, deep: string, short: string, silly: string | null][]}
  */
@@ -167,8 +168,8 @@ const FAMILIES = [
   [185, 215, "mid_off",         "mid off",     "long off",        "short mid off", "silly mid off"],
   [215, 255, "cover",           "cover",       "deep cover",      "short cover", null],
   [255, 275, "point",           "point",       "deep point",      "short point", "silly point"],
-  [275, 310, "backward_point",  "backward point", "deep backward point", "short third", null],
-  [310, 345, "third",           "third",       "deep third",      "short third", null],
+  [275, 310, "backward_point",  "backward point", "deep backward point", "short third man", null],
+  [310, 345, "third",           "third man",   "deep third man",  "short third man", null],
 ];
 
 /**

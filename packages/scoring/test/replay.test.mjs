@@ -695,7 +695,7 @@ group("G. Where the ball went");
   ok("...and deep backward point outside the circle",
      positionName(295, 0.5) === "deep backward point");
   ok("off side behind square is `third`, not third man",
-     positionName(325, 0.8) === "deep third");
+     positionName(325, 0.8) === "deep third man");
 
   // The catching ring, where the outfield taxonomy means nothing.
   ok("a ball at the batter's feet has somewhere to sit",
