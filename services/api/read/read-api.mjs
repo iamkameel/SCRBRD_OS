@@ -2322,8 +2322,14 @@ function ratingsQuery() {
   // return, and a player with no row in `f` reads 0, as coalesce(…, 0) over
   // the functions' always-one-row answer did. Ties in full_name are broken by
   // id, where before they came out in whatever order the plan met them.
-  const W = "b.match_id, b.innings, b.seq, b.kind, b.ball_type, b.dismissal";
-  const stoodOut = `case when b.kind = 'ball' and b.ball_type = 'W' and ball_wicket_stands(${W})
+  //
+  // ball_wicket_stands() is asked ONCE per delivery (`s`, fenced by OFFSET 0
+  // so the planner cannot copy the call into each arm that reads it): on a
+  // wicket whose method a free hit would save it looks up the ball before,
+  // under the reader's policy, and the three arms that need the answer would
+  // otherwise each ask. It is STABLE — one answer per row within a statement
+  // — and for any row not marked W it is false without a lookup.
+  const stoodOut = `case when b.kind = 'ball' and b.ball_type = 'W' and s.stands
                           then ball_dismissed_batter(b.striker_id, b.dismissed_id, b.payload) end`;
   return `with r as materialized (
              select p.id as player_id, p.full_name, p.team_code, p.school_id,
@@ -2333,6 +2339,8 @@ function ratingsQuery() {
            ev as materialized (
              select who.player_id, who.fam, b.server_ts, who.runs, who.balls, who.wickets
                from ball_event_live b
+               cross join lateral (select ball_wicket_stands(b.match_id, b.innings, b.seq, b.kind, b.ball_type, b.dismissal)
+                                            as stands offset 0) s
                cross join lateral (values
                  ('bat',  case when b.kind = 'ball' then b.striker_id end,
                           ball_runs_off_bat(b.ball_type, b.value, b.payload),
@@ -2346,7 +2354,7 @@ function ratingsQuery() {
                                else 0 end,
                           case when b.ball_type not in ('Wd','Nb') then 1 else 0 end,
                           case when b.ball_type = 'W' and dismissal_is_bowlers(b.dismissal)
-                                and ball_wicket_stands(${W}) then 1 else 0 end)
+                                and s.stands then 1 else 0 end)
                ) as who(fam, player_id, runs, balls, wickets)
               where who.player_id is not null
            ),
