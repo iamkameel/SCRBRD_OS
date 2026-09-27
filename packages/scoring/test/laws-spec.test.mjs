@@ -171,11 +171,12 @@ group("C. Crease occupancy after a wicket");
 
 // ═══════════════════════════════════════════════════════════════════════
 // D. Byes and leg byes off a no-ball are not the striker's, nor the bowler's
-//    (SCRBRD-068; AG: liveProjectionRules.test.ts; Law 21.16, Law 23)
+//    (SCRBRD-068; AG: liveProjectionRules.test.ts; Law 21.15, Law 23)
 //
 // A no-ball records the runs completed in `value` and, when they did not
 // come off the bat, `nbRuns: "byes" | "leg_byes"`. By the current Code
-// (2017 Code, 3rd Edition, 21.16): the one-run penalty is a No-ball extra
+// (2017 Code, 4th Edition 2026, 21.15 and 18.10.2–18.10.3; 21.16 in the
+// 3rd): the one-run penalty is a No-ball extra
 // debited to the bowler; runs off the bat are the striker's and debited to
 // the bowler; runs not off the bat are Byes or Leg byes, as appropriate, and
 // not debited to the bowler. The no-ball is not a legal ball, the striker has
@@ -183,7 +184,7 @@ group("C. Crease occupancy after a wicket");
 // built to the 2000 Code, where all of them were No-ball extras and the
 // bowler's; Kameel moved it to the current Code on 2026-09-27, db/52.)
 // ═══════════════════════════════════════════════════════════════════════
-group("D. No-ball byes and leg byes (SCRBRD-068, Law 21.16)");
+group("D. No-ball byes and leg byes (SCRBRD-068, Law 21.15)");
 {
   /** The figures a check reads, from one innings. @param {ReturnType<typeof deriveInnings>} inn */
   const read = (inn) => {

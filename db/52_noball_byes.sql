@@ -1,13 +1,16 @@
 -- ══════════════════════════════════════════════════════════════════
---  52 · Byes and leg byes off a no-ball are not the bowler's (Law 21.16)
+--  52 · Byes and leg byes off a no-ball are not the bowler's (Law 21.15)
 -- ══════════════════════════════════════════════════════════════════
 --
--- THE RULE, AS THE CURRENT CODE HAS IT (MCC Laws, 2017 Code, 3rd Edition
--- 2022, 21.16 "Runs resulting from a No ball – how scored"; Law 23): the
+-- THE RULE, AS THE CODE IN FORCE FROM 1 OCTOBER 2026 HAS IT (MCC Laws, 2017
+-- Code, 4th Edition 2026: 21.15 "Runs resulting from a No ball – how scored",
+-- 18.10.2 and 18.10.3; Law 23. The 3rd Edition had the same rule at 21.16): the
 -- one-run penalty for a no-ball is a No-ball extra, debited to the bowler.
 -- Runs the batters complete, or a boundary, when the ball was hit are the
 -- striker's, and debited to the bowler. When it was NOT hit they are Byes
--- or Leg byes, as appropriate, and are NOT debited to the bowler.
+-- or Leg byes, as appropriate, and are NOT debited to the bowler. 18.10.3:
+-- the bowler is debited the striker's runs, No-ball extras and Wides, and
+-- nothing else.
 --
 -- WHAT SQL DID. SCRBRD-068 (db/40) was built from 2000 Code research
 -- (Law 24.13: every run resulting from a no-ball a No-ball extra, and every
@@ -194,7 +197,7 @@ RETURNS TABLE (player_id uuid, school_id uuid, full_name text, team_code text,
            -- What the bowler conceded, as the fold charges him (runsToBowler()):
            -- a wide is its penalty run and every run off it; a no-ball its
            -- penalty run and the runs off the bat, not its byes or leg byes
-           -- (Law 21.16); a run or a wicket ball its runs; byes and leg byes
+           -- (Law 21.15); a run or a wicket ball its runs; byes and leg byes
            -- are not his.
            coalesce(sum(ball_runs_to_bowler(b.ball_type, b.value, b.payload)),0)::int AS runs_conceded,
            count(*) FILTER (WHERE b.ball_type = 'W' AND dismissal_is_bowlers(b.dismissal)

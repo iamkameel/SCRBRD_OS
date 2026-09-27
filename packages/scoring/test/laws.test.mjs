@@ -32,6 +32,7 @@ import {
   penaltyReasonWords, withoutLawClause,
   bowlerSuspended, suspendedBowlers, suspensionWords, SUSPENSION_REASON, SUSPENSION_REASON_TEXT, scoringReadiness,
 } from "../src/index.mjs";
+import { PENALTY_REASON_WITHDRAWN } from "../src/index.mjs";
 
 /** @import { LogEvent, InningsStartInput } from "../src/events.mjs" */
 /** @import { Innings } from "../src/replay.mjs" */
@@ -463,7 +464,7 @@ group("O. Penalty runs: whole runs, a reason from the list, the right side (SCRB
   ok("a batting side's offence awarded to the batting side is refused",
      judge(L, pen({ toBattingTeam: true, reason: "short_running" })) === REFUSAL.PENALTY_REASON_SIDE);
   ok("...and a fielding side's to the fielding side",
-     judge(L, pen({ toBattingTeam: false, reason: "ball_tampering" })) === REFUSAL.PENALTY_REASON_SIDE);
+     judge(L, pen({ toBattingTeam: false, reason: "helmet_struck" })) === REFUSAL.PENALTY_REASON_SIDE);
   ok("'other' is either side's", judge(L, pen({ toBattingTeam: false, reason: "other" })) === null
      && judge(L, pen({ reason: "other" })) === null);
 
@@ -481,12 +482,59 @@ group("O. Penalty runs: whole runs, a reason from the list, the right side (SCRB
   // pad's sheet, the held sheet and the commentary all read through it.
   ok("penaltyReasonWords: the words, with no Law clause number, for every reason",
      Object.values(PENALTY_REASON).every((r) => { const w = penaltyReasonWords(r); return w.length > 0 && !/\bLaws?\s+\d/.test(w) && PENALTY_REASON_TEXT[r].startsWith(w); }));
-  ok("...'deliberate short running (Law 41.5)' → 'deliberate short running'", penaltyReasonWords("short_running") === "deliberate short running"
+  ok("...'deliberate short running (Law 18.5)' → 'deliberate short running'", penaltyReasonWords("short_running") === "deliberate short running"
      && withoutLawClause("dangerous (Laws 41.6 and 41.7) bowling") === "dangerous bowling");
   ok("...an unknown reason is shown as itself", penaltyReasonWords("brand_new") === "brand_new");
-  ok("the fielding side's reasons are Kameel's Law 41 list",
-     JSON.stringify(Object.values(PENALTY_REASON).filter((r) => PENALTY_REASON_SIDE[r] === false).sort())
-     === JSON.stringify(["obstruction_distraction", "pitch_damage", "protected_area", "short_running", "striking_pitch", "time_wasting"]));
+  // The list as the 4th Edition (in force 1 October 2026) has it: docs/laws/CLAUSE_CHECK.md,
+  // Law 41 and Law 18.6's sources of penalty runs (Kameel, 2026-09-27).
+  const side = (/** @type {boolean | null} */ v) => JSON.stringify(Object.values(PENALTY_REASON).filter((r) => PENALTY_REASON_SIDE[r] === v).sort());
+  ok("the batting side's offences, five to the fielding side: short running (18.5), time wasting (41.10), the pitch (41.14), stealing a run (41.16)",
+     side(false) === JSON.stringify(["pitch_damage", "short_running", "stealing_run", "time_wasting"]), side(false));
+  ok("the fielding side's, five to the batting side: 24.4, 27.4.2, 28.2, 28.3, 28.6.3, 41.4, 41.5, 41.9, 41.12 and the fielding restrictions",
+     side(true) === JSON.stringify(["distracting_striker", "fielder_movement", "fielder_returning", "fielding_pitch_damage",
+                                    "fielding_restrictions", "fielding_time_wasting", "helmet_struck", "illegal_fielding",
+                                    "keeper_movement", "obstructing_batter"]), side(true));
+  ok("either side's: changing the ball (41.3), unfair actions (41.2.1), practice (26.4.2), conduct (Law 42) and other",
+     side(null) === JSON.stringify(["ball_tampering", "other", "player_conduct", "practice_on_field", "unfair_play"]), side(null));
+  ok("...each is taken for its own side and refused for the other",
+     Object.values(PENALTY_REASON).filter((r) => r !== "short_running").every((r) => {
+       const own = PENALTY_REASON_SIDE[r];
+       const to = (/** @type {boolean} */ bat) => judge(L, pen({ toBattingTeam: bat, reason: r }));
+       return own == null ? to(true) === null && to(false) === null
+         : to(own) === null && to(!own) === REFUSAL.PENALTY_REASON_SIDE;
+     }));
+
+  // Withdrawn: the Laws do not give them. A new award is refused; one
+  // already stored folds and reads as it did.
+  ok("the withdrawn reasons: obstruction_distraction (Law 37 makes it a dismissal), striking_pitch (no such offence), protected_area (in pitch_damage)",
+     JSON.stringify(Object.values(PENALTY_REASON_WITHDRAWN).sort()) === JSON.stringify(["obstruction_distraction", "protected_area", "striking_pitch"])
+     && Object.values(PENALTY_REASON_WITHDRAWN).every((r) => !Object.values(PENALTY_REASON).includes(/** @type {any} */ (r))));
+  for (const r of Object.values(PENALTY_REASON_WITHDRAWN)) {
+    const stored = /** @type {LogEvent} */ (/** @type {unknown} */ ({ ...pen({ toBattingTeam: false, reason: "time_wasting" }), reason: r }));
+    ok(`${r}: a new award is refused (penalty_reason_withdrawn), to either side`,
+       judge(L, stored) === REFUSAL.PENALTY_REASON_WITHDRAWN
+       && judge(L, /** @type {LogEvent} */ ({ ...stored, toBattingTeam: true })) === REFUSAL.PENALTY_REASON_WITHDRAWN);
+    let built = true;
+    try { penalty({ toBattingTeam: false, reason: r }); } catch { built = false; }
+    ok(`${r}: ...and the constructor will not build one`, !built);
+    const withOld = new MatchFold([...L, stored]).view().innings[0];
+    const withNew = new MatchFold([...L, pen({ toBattingTeam: false, reason: "time_wasting" })]).view().innings[0];
+    ok(`${r}: one already stored folds as any award to the fielding side`,
+       withOld.penaltyToFielding === 5 && withOld.penaltyToFielding === withNew.penaltyToFielding && withOld.runs === withNew.runs);
+    ok(`${r}: ...and reads: its side, its words with no clause number`,
+       normalisePenaltyReason(r, false) === r && PENALTY_REASON_SIDE[r] === false
+       && penaltyReasonWords(r).length > 0 && penaltyReasonWords(r) !== r && !/\bLaws?\s+\d/.test(penaltyReasonWords(r)));
+  }
+
+  // Stealing a run (41.16): dead ball, the batters back at their ends, five to
+  // the fielding side. No ball was bowled, so there is no delivery and no run
+  // to disallow: the award alone is the whole of it, unlike short running.
+  const steal = pen({ toBattingTeam: false, reason: "stealing_run" });
+  ok("stealing a run: taken with no delivery before it", judge(L, steal) === null && judge(open(0), at(0, penalty({ toBattingTeam: false, reason: "stealing_run" }))[0]) === null);
+  const stolen = new MatchFold([...L, steal]).view().innings[0], before = new MatchFold(L).view().innings[0];
+  ok("...five to the fielding side, no ball, no run, the ends as they were",
+     stolen.penaltyToFielding === 5 && stolen.balls === before.balls && stolen.runs === before.runs
+     && stolen.striker === before.striker && stolen.nonStriker === before.nonStriker);
 
   // Deliberate short running: the delivery with no run, then the award.
   const [dot, award] = at(0, ...shortRunning({ type: BALL_TYPE.RUN, value: 2 }));

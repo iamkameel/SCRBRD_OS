@@ -30,7 +30,7 @@
  *     striker);
  *   - no-balls hit for four and six, their byes and leg byes run and to the
  *     rope, on a free hit and off it — byes and leg byes, not the bowler's
- *     (Law 21.16, db/52) — wides worth four, byes and leg byes worth four, a
+ *     (Law 21.15, db/52) — wides worth four, byes and leg byes worth four, a
  *     wicket ball with runs;
  *   - legacy rows, written past db/43's door as a row stored before it
  *     would have been: a ball with no type (a run, to the fold) and a wicket
@@ -384,7 +384,7 @@ const EDGES = [
   [["run:0", "RO:ns:1:bowler_end"],               [TYPED[0], P2, P3], "a typed-name striker, a player run out at the other end"],
   [["Nb:4", "Nb:4:byes", "Nb:6:leg_byes", "Nb:6"], [P1, P2, P3], "no-balls: four and six off the bat are his, byes to the rope are not"],
   [["Nb:0", "Nb:1:byes", "Nb:2:leg_byes", "Nb:4:leg_byes", "Nb:3:byes", "run:0"], [P1, P2, P3],
-   "no-balls on a free hit, byes and leg byes run and to the rope: neither the batter's nor the bowler's (Law 21.16)"],
+   "no-balls on a free hit, byes and leg byes run and to the rope: neither the batter's nor the bowler's (Law 21.15)"],
   [["Wd:4", "B:4", "LB:4", "run:4"],              [P1, P2, P3], "a wide worth four, byes and leg byes worth four: only the hit is a four"],
   [["W:run_out:3", "run:0"],                      [P1, P2, P3], "a wicket ball with three run: his runs, no boundary"],
   [["noType:2", "noType:4", "noType:0", "noType:6"], [P1, P2, P3], "balls with no type: runs, a four, a dot and a six"],

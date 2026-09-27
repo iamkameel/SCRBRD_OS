@@ -18,8 +18,8 @@
  * send. A refusal is said in words on the sheet and the button is disabled
  * with it; the event is never built into the log to be refused.
  *
- * NO LAW CLAUSE NUMBERS on the pad (Kameel, 2026-09-26: he is checking them
- * against the current Code). PENALTY_REASON_TEXT carries them in brackets;
+ * NO LAW CLAUSE NUMBERS on the pad (Kameel, 2026-09-26). PENALTY_REASON_TEXT
+ * carries them in brackets, the current Code's (checked 2026-09-27);
  * the pad reads the same words without them, through the scoring package's
  * penaltyReasonWords() — the one helper the held sheet and the commentary use too.
  */
@@ -45,7 +45,7 @@ export function projectPad(events, curIn, evs, ctx) {
   return foldPad(withAppended(events, curIn, evs), ctx)[curIn];
 }
 
-/** Words without a Law clause: "deliberate short running (Law 41.5)" → "deliberate short running".
+/** Words without a Law clause: "deliberate short running (Law 18.5)" → "deliberate short running".
  *  The scoring package's one rule for it (withoutLawClause), under the pad's old name. */
 export const withoutLaw = withoutLawClause;
 
@@ -107,6 +107,7 @@ const SHEET_WORDS = Object.freeze({
   [REFUSAL.MATCH_DECIDED]: "The match is decided. Five runs to the fielding side now would move a target nobody is chasing.",
   [REFUSAL.PENALTY_REASON_SIDE]: "That offence is this side's own. The five runs go to the other side.",
   [REFUSAL.PENALTY_REASON_UNKNOWN]: "The scorebook does not know that reason.",
+  [REFUSAL.PENALTY_REASON_WITHDRAWN]: "That reason is no longer one the Laws give for penalty runs. Choose another.",
   [REFUSAL.PENALTY_RUNS_INVALID]: "Penalty runs are a whole number above nought.",
   [REFUSAL.SHORT_RUN_UNMATCHED]: "The five for short running go straight after the delivery, recorded with no runs.",
   [REFUSAL.NO_INNINGS]: "Nobody has said who is batting in this innings yet.",

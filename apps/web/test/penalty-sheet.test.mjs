@@ -166,7 +166,20 @@ group("Each side is offered only its own reasons, in words, with no Law numbers"
   const words = Object.values(PENALTY_REASON).map(reasonWords);
   ok("every reason has words", words.every((w) => w && w.length > 3), words);
   ok("...with no Law and no clause number in any of them", words.every((w) => !/\bLaws?\b|\d/.test(w)), words.filter((w) => /\bLaws?\b|\d/.test(w)));
-  ok("withoutLaw takes the bracket off", withoutLaw("deliberate short running (Law 41.5)") === "deliberate short running");
+  ok("withoutLaw takes the bracket off", withoutLaw("deliberate short running (Law 18.5)") === "deliberate short running");
+  // Law 41 as the current Code has it (2026-09-27): three reasons withdrawn,
+  // four added; unfair play is either side's.
+  const all = [...bat, ...field];
+  ok("the withdrawn reasons are offered to neither side", ["obstruction_distraction", "striking_pitch", "protected_area"].every((r) => !all.includes(r)), all.join());
+  ok("...stealing a run is offered to the fielding side", field.includes("stealing_run") && !bat.includes("stealing_run"));
+  ok("...a fielder distracting the striker, obstructing a batter, or damaging the pitch, to the batting side",
+     ["distracting_striker", "obstructing_batter", "fielding_pitch_damage"].every((r) => bat.includes(r) && !field.includes(r)));
+  ok("...a fielder back without permission, the keeper's or a fielder's unfair movement, to the batting side",
+     ["fielder_returning", "keeper_movement", "fielder_movement"].every((r) => bat.includes(r) && !field.includes(r)));
+  ok("...unfair actions, changing the ball, practice and conduct to either",
+     ["unfair_play", "ball_tampering", "practice_on_field", "player_conduct"].every((r) => bat.includes(r) && field.includes(r)));
+  ok("...a withdrawn reason, from an older pad, is said in words when refused",
+     refusalWords(REFUSAL.PENALTY_REASON_WITHDRAWN) === "That reason is no longer one the Laws give for penalty runs. Choose another.");
 }
 
 group("The Laws are asked before an award is offered, and their answer has words");

@@ -3452,7 +3452,7 @@ BEGIN
     PERFORM _assert(bat1.balls - bat0.balls = 4,
       format('balls faced moved by %s, expected 4 (three no-balls and the old W ball; no retirement)', bat1.balls - bat0.balls));
     -- (c) The bowler is debited a no-ball's penalty run and the runs off the
-    --     bat, not its byes or leg byes (Law 21.16, db/52): 5 + 1 + 1; the
+    --     bat, not its byes or leg byes (Law 21.15, db/52): 5 + 1 + 1; the
     --     old timed-out W ball is a legal ball of his and not his wicket; a
     --     retirement is no ball and nobody's wicket.
     PERFORM _assert(bow1.runs - bow0.runs = 7 AND bow1.nb - bow0.nb = 3,
@@ -4695,7 +4695,7 @@ BEGIN
   PERFORM set_config('app.device_id', '', true);
 
   -- ── 26. Penalty runs to the fielding side, in every total (SCRBRD-094, db/48) ──
-  -- Law 41.18, as the fold credits it: five to the fielding side go to its
+  -- Law 41.17.4, as the fold credits it: five to the fielding side go to its
   -- most recently completed innings, or, if it has not batted, to its next,
   -- which opens on them; a chase's target rises with an award made after it
   -- was set, unless the umpires typed it. On §23's match, which it leaves at
@@ -5322,7 +5322,7 @@ BEGIN
     PERFORM _assert(n = 0,
       format('db/51 (same): %s figure(s) the milestone trigger reads are not what player_innings says — %s', n, left(detail, 600)));
   END;
-  -- ── 30. A no-ball's byes and leg byes are not the bowler's (Law 21.16, db/52) ──
+  -- ── 30. A no-ball's byes and leg byes are not the bowler's (Law 21.15, db/52) ──
   -- The rule as the current Code has it: a no-ball's penalty run and the runs
   -- off the bat are debited to the bowler; runs not off the bat are byes or
   -- leg byes, and not his. ball_runs_to_bowler() is runsToBowler() in SQL

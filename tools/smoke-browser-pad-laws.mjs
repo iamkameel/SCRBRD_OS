@@ -353,7 +353,7 @@ try {
      nbRow?.value === 2 && nbRow?.payload?.nbRuns === "leg_byes", JSON.stringify(nbRow && { value: nbRow.value, payload: nbRow.payload }));
   const faced = lb.inn.batsmen.find((b) => b.id === nbStriker);
   ok("...the striker faced it and has none of the two", faced?.runs === runsBefore && faced?.balls === ballsBefore + 1);
-  // Law 21.16 (db/52): the no-ball's run is a no-ball extra and the bowler's;
+  // Law 21.15 (db/52): the no-ball's run is a no-ball extra and the bowler's;
   // the two run are leg byes, and not the bowler's.
   ok("...the side has three: one no-ball extra and two leg byes", lb.inn.runs === over2.inn.runs + 3
      && lb.inn.extras.noBall === over2.inn.extras.noBall + 1 && lb.inn.extras.legBye === over2.inn.extras.legBye + 2);
@@ -478,7 +478,7 @@ try {
   ok(`the career read charges the bowler the no-ball: +${moved(careerMid, careerEnd, homeBowler, "runs_conceded")} conceded (the card says ${card?.runs}), no legal ball`,
      card?.runs === 2 && moved(careerMid, careerEnd, homeBowler, "runs_conceded") === card.runs
      && moved(careerMid, careerEnd, homeBowler, "balls_bowled") === 0);
-  // Two byes off the next no-ball (Law 21.16, db/52): the side's three, the
+  // Two byes off the next no-ball (Law 21.15, db/52): the side's three, the
   // bowler's one — on the card and in the career read alike.
   await click(/^(NB|No ball)/, 3000);
   await page.waitForTimeout(400);

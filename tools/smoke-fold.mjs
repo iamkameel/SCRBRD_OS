@@ -173,7 +173,7 @@ try {
   await record(ball({ type: BALL_TYPE.WIDE,   value: 0 }));
   await record(ball({ type: BALL_TYPE.NO_BALL, value: 2 }));
   // Two byes off a no-ball (SCRBRD-068): the side's three, the bowler's
-  // one (Law 21.16, db/52), and none of them the batter's — the case the SQL
+  // one (Law 21.15, db/52), and none of them the batter's — the case the SQL
   // career views got wrong until db/40.
   await record(ball({ type: BALL_TYPE.NO_BALL, value: 2, nbRuns: NB_RUNS.BYES }));
   await record(ball({ type: BALL_TYPE.RUN,    value: 0 }));   // undone below

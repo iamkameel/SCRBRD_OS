@@ -81,7 +81,7 @@ group("This over as chips, in the palette in force (§10, §3.9)");
      kinds(["wd", "2wd", "nb", "5nb", "2b", "1lb"]) === "extra extra extra extra extra extra");
   ok("...and are said as words", ["wd", "2wd", "nb", "5nb", "2b", "1lb"].map((m) => chipFor(m).say).join("|")
      === "wide|2 wides|no ball|no ball, 5 runs|2 byes|1 leg bye");
-  ok("a no-ball's byes and leg byes are an extra chip, said as the no-ball and its byes (Law 21.16)",
+  ok("a no-ball's byes and leg byes are an extra chip, said as the no-ball and its byes (Law 21.15)",
      ["nb+4b", "nb+1lb", "nb+2lb"].map((m) => `${chipFor(m).kind}:${chipFor(m).text}:${chipFor(m).say}`).join("|")
      === "extra:nb+4b:no ball, 4 byes|extra:nb+1lb:no ball, 1 leg bye|extra:nb+2lb:no ball, 2 leg byes");
   // Every chip carries its figure or its word: colour is never the only signal.

@@ -55,9 +55,13 @@ const DIST = process.env.PENALTY_DIST || "apps/web/dist";
 const MATCH = "77777777-0000-0000-0000-000000000002";   // 1XI v Michaelhouse: nothing scored in the seed
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".jpg": "image/jpeg", ".map": "application/json" };
 
-const BATTING_REASONS = ["helmet_struck", "illegal_fielding", "ball_tampering", "fielding_time_wasting", "unfair_play", "fielding_restrictions", "other"];
+// The 4th Edition's list (2026-09-27): the fielding side's offences, then either side's.
+const EITHER_REASONS = ["ball_tampering", "unfair_play", "practice_on_field", "player_conduct", "other"];
+const BATTING_REASONS = ["helmet_struck", "illegal_fielding", "fielder_returning", "keeper_movement", "fielder_movement",
+                         "distracting_striker", "obstructing_batter", "fielding_time_wasting", "fielding_pitch_damage",
+                         "fielding_restrictions", ...EITHER_REASONS];
 let HOME;
-const FIELDING_REASONS = ["obstruction_distraction", "pitch_damage", "protected_area", "striking_pitch", "time_wasting", "other"];
+const FIELDING_REASONS = ["time_wasting", "pitch_damage", "stealing_run", ...EITHER_REASONS];
 
 let pass = 0, fail = 0;
 const ok = (n, c, d = "") => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${String(d).slice(0, 300)}` : ""); } };
@@ -308,7 +312,7 @@ try {
   const batReasons = await shownReasons();
   ok(`the batting side is offered exactly its own reasons (${batReasons.length})`,
      JSON.stringify(batReasons) === JSON.stringify([...BATTING_REASONS].sort()), batReasons.join(","));
-  ok("...none of the fielding side's", !batReasons.some((r) => FIELDING_REASONS.includes(r) && r !== "other"));
+  ok("...none of the fielding side's", !batReasons.some((r) => FIELDING_REASONS.includes(r) && !EITHER_REASONS.includes(r)));
   ok("...nor short running, which is its own action", !(await has("penalty-short-run")));
   const sheetText = await said("penalty-sheet");
   ok("the reasons are in words", /The ball striking a fielder's helmet on the ground/.test(sheetText) && /Changing the condition of the ball/.test(sheetText));
@@ -464,16 +468,16 @@ try {
   const early = await said("penalty-refusal");
   ok("the refusal is said as soon as the side is chosen, before a reason", /The match is decided/.test(early), early);
   ok("...in place of where the runs would go", !(await has("penalty-where")));
-  await tap("penalty-reason-protected_area");
+  await tap("penalty-reason-stealing_run");
   const refusal = await said("penalty-refusal");
   ok("the Laws' refusal is on the sheet, in words", /The match is decided/.test(refusal), refusal);
   ok("...with no Law clause numbers", !lawNumbers(refusal));
   ok("Award is disabled, not hidden", await has("penalty-award") && !(await awardEnabled()));
   ok("...and described by the refusal",
      (await tid("penalty-award").getAttribute("aria-describedby")) === (await tid("penalty-refusal").getAttribute("id")));
-  await shoot("refused", async () => { await openSheet("pad-penalty"); await tap("penalty-side-fielding"); await tap("penalty-reason-protected_area"); });
+  await shoot("refused", async () => { await openSheet("pad-penalty"); await tap("penalty-side-fielding"); await tap("penalty-reason-stealing_run"); });
   await shoot("refused-award", async () => {
-    await openSheet("pad-penalty"); await tap("penalty-side-fielding"); await tap("penalty-reason-protected_area");
+    await openSheet("pad-penalty"); await tap("penalty-side-fielding"); await tap("penalty-reason-stealing_run");
     await tid("penalty-award").scrollIntoViewIfNeeded();
   });
   await tid("penalty-award").click({ force: true, timeout: 2000 }).catch(() => {});

@@ -445,7 +445,7 @@ function inningsFolder(ctx = {}, carried = 0) {
         });
         break;
 
-      // Law 41.18. To the batting side: in this total, now. To the fielding
+      // Law 41.17 (41.17.4). To the batting side: in this total, now. To the fielding
       // side (SCRBRD-094): in THEIR total — their most recently completed
       // innings, or their next if they have not batted — which is the match's
       // fold's to credit (penaltyCredits()); this innings only counts it.
@@ -550,7 +550,7 @@ function inningsFolder(ctx = {}, carried = 0) {
 
           case BALL_TYPE.NO_BALL: {
             // `v` is the runs completed; they are the striker's only when they
-            // came off the bat (SCRBRD-068, NB_RUNS in events.mjs). Law 21.16:
+            // came off the bat (SCRBRD-068, NB_RUNS in events.mjs). Law 21.15:
             // the one-run penalty is a No-ball extra, debited to the bowler;
             // runs off the bat are the striker's, debited to the bowler; runs
             // not off the bat are Byes or Leg byes, and not the bowler's.
@@ -932,7 +932,7 @@ export function sealInnings(inn, reason = inn?.endReason ?? null) {
 // ── Match-level derivation ───────────────────────────────
 
 /*
- * PENALTY RUNS TO THE FIELDING SIDE CROSS INNINGS (SCRBRD-094, Law 41.18).
+ * PENALTY RUNS TO THE FIELDING SIDE CROSS INNINGS (SCRBRD-094, Law 41.17.4).
  *
  * Five runs awarded to the fielding side are added to the fielding side's
  * total: to its most recently completed innings, or, if it has not batted

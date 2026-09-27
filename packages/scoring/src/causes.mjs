@@ -119,6 +119,7 @@ export const REFUSAL_CAUSE = Object.freeze({
   void_not_latest: () => "Something was recorded after it. Undo that first, or ask for an amendment.",
   void_already_voided: () => "It was already undone, perhaps on another device.",
   short_run_unmatched: () => "The five for short running go straight after that delivery, recorded with no runs.",
+  penalty_reason_withdrawn: () => "An older copy of the pad offered that reason; the Laws do not give it. Award the runs again with another reason.",
 });
 
 /**

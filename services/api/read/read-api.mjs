@@ -2349,7 +2349,7 @@ function ratingsQuery() {
                  ('out',  ${stoodOut}, 0, 0, 0),
                  ('out',  nullif(ball_retired_batter(b.kind, b.ball_type, b.dismissal, b.payload), ${stoodOut}), 0, 0, 0),
                  ('bowl', case when b.kind = 'ball' then b.bowler_id end,
-                          -- runsToBowler(): a no-ball's byes and leg byes are not his (Law 21.16, db/52)
+                          -- runsToBowler(): a no-ball's byes and leg byes are not his (Law 21.15, db/52)
                           ball_runs_to_bowler(b.ball_type, b.value, b.payload),
                           case when b.ball_type not in ('Wd','Nb') then 1 else 0 end,
                           case when b.ball_type = 'W' and dismissal_is_bowlers(b.dismissal)

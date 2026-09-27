@@ -95,15 +95,16 @@ export const OFF_THE_BAT = new Set([BALL_TYPE.RUN, BALL_TYPE.WICKET, BALL_TYPE.N
  * runs the batters completed, or the boundary allowance — as for a wide, a
  * bye or a leg bye. `nbRuns` says where they came from:
  *
- *   absent     off the bat — the striker's (Law 21.16). Every no-ball recorded
+ *   absent     off the bat — the striker's (Law 21.15). Every no-ball recorded
  *              before this has no `nbRuns`, and that is what they were: the
  *              pad's sheet asked for "runs scored off this ball", so an old
  *              no-ball replays exactly as it always did.
  *   "byes"     the ball did not touch the bat or the batter;
  *   "leg_byes" it came off the batter's person, not the bat.
  *
- * How they are scored, by the current Code (MCC Laws 2017 Code, 3rd Edition
- * 2022, Law 21.16 "Runs resulting from a No ball – how scored", and Law 23):
+ * How they are scored, by the Code in force from 1 October 2026 (MCC Laws,
+ * 2017 Code, 4th Edition 2026: Law 21.15 "Runs resulting from a No ball – how
+ * scored", 18.10.2–18.10.3, and Law 23; the 3rd Edition had it at 21.16):
  * the one-run penalty is a No-ball extra, debited to the bowler. Runs off the
  * bat are the striker's, and debited to the bowler. Runs the batters complete,
  * or a boundary, when the ball was NOT hit are Byes or Leg byes — extras of
@@ -170,7 +171,8 @@ export function runsOffBat(ev) {
 }
 
 /**
- * The runs of a delivery debited to the bowler (Law 21.16, Law 22, Law 23):
+ * The runs of a delivery debited to the bowler (Law 18.10.3: the striker's
+ * runs, No-ball extras and Wides, and nothing else; Law 21.15, 22, 23):
  * a wide's penalty run and every run off it; a no-ball's penalty run and the
  * runs off the bat (not its byes or leg byes); a run or a wicket ball's runs;
  * never a bye or a leg bye. A delivery with no type is a run, as the fold
@@ -291,28 +293,50 @@ export const INNINGS_END_REASON = {
  * award: deliberate short running disallows the runs (shortRunning() below).
  *
  * Two sides, one list. An award to the FIELDING side is for something the
- * batting side did — the Law 41 offences Kameel's research (2026-09-26)
- * named; the clause numbers are as that research gives them. An award to
- * the BATTING side is for something the fielding side did — the reasons the
- * pad already offered, each under the Law it is. `other` is either side's,
- * for an umpire's award the list does not name.
+ * batting side did; an award to the BATTING side is for something the
+ * fielding side did. Either side can commit some offences. `other` is either
+ * side's, for an umpire's award the list does not name. The clause numbers
+ * are the Code in force from 1 October 2026 (MCC Laws, 2017 Code, 4th Edition
+ * 2026; Law 18.6 lists every source of penalty runs), checked by Kameel on
+ * 2026-09-27 (docs/laws/CLAUSE_CHECK.md, Law 41): in these comments and in
+ * PENALTY_REASON_TEXT only — no screen shows one (penaltyReasonWords()).
+ *
+ * Each reason is a plain award: five runs, to one side. Where the Law does
+ * more — a delivery that does not count (17.3.2.5: 24.4, 28.2, 41.4, 41.5),
+ * a delivery's runs disallowed (41.14.3, 41.15.3), a choice of who faces —
+ * the award records the five and nothing else. Short running is the one that
+ * also records its delivery (shortRunning()).
+ *
+ * THE LIST OFFERED FOR A NEW AWARD. The reasons below; the pad's sheet
+ * offers each side its own and either side's (PENALTY_REASON_SIDE). Three
+ * reasons an earlier list offered are withdrawn — PENALTY_REASON_WITHDRAWN,
+ * after it.
  */
 export const PENALTY_REASON = Object.freeze({
   // To the fielding side: the batting side's offences.
-  SHORT_RUNNING:           "short_running",           // 41.5 (and 18.5): deliberate short running
-  OBSTRUCTION_DISTRACTION: "obstruction_distraction", // 41.4: distracting, deceiving or obstructing a fielder
-  PITCH_DAMAGE:            "pitch_damage",            // 41.12: damaging the pitch on purpose
-  PROTECTED_AREA:          "protected_area",          // 41.14: running on the protected area, after the final warning
-  STRIKING_PITCH:          "striking_pitch",          // 41.15: striking the pitch unfairly
-  TIME_WASTING:            "time_wasting",            // 41.17: a batter wasting time, after the final warning
-  // To the batting side: the fielding side's offences (the pad's existing reasons).
+  SHORT_RUNNING:           "short_running",           // 18.5 (18.5.2): deliberate short running; the runs are disallowed (shortRunning())
+  TIME_WASTING:            "time_wasting",            // 41.10: a batter wasting time, after a first and final warning
+  PITCH_DAMAGE:            "pitch_damage",            // 41.14: a batter damaging the pitch — which includes being on the
+                                                      //   protected area without reasonable cause — after a first and final warning
+  STEALING_RUN:            "stealing_run",            // 41.16: the batters attempting to steal a run during the bowler's run-up
+  // To the batting side: the fielding side's offences.
   HELMET_STRUCK:           "helmet_struck",           // 28.3: the ball struck a fielder's helmet on the ground
   ILLEGAL_FIELDING:        "illegal_fielding",        // 28.2: fielding the ball with clothing or anything but the person
-  BALL_TAMPERING:          "ball_tampering",          // 41.3: changing the condition of the ball
+  FIELDER_RETURNING:       "fielder_returning",       // 24.4: a fielder back on the field without permission touches the ball
+  KEEPER_MOVEMENT:         "keeper_movement",         // 27.4.2: the wicket-keeper's unfair movement before the ball reaches the striker
+  FIELDER_MOVEMENT:        "fielder_movement",        // 28.6.3: a fielder's unfair movement before the ball reaches the striker
+  DISTRACTING_STRIKER:     "distracting_striker",     // 41.4: a fielder, the bowler included, deliberately distracting or
+                                                      //   obstructing the striker — a delivery deliberately intercepted too (21.9)
+  OBSTRUCTING_BATTER:      "obstructing_batter",      // 41.5: a fielder deliberately distracting, deceiving or obstructing a batter
   FIELDING_TIME_WASTING:   "fielding_time_wasting",   // 41.9: the fielding side wasting time, after the final warning
-  UNFAIR_PLAY:             "unfair_play",             // 41.1: dangerous or unfair play by a fielder
-  FIELDING_RESTRICTIONS:   "fielding_restrictions",   // the competition's fielding restrictions
+  FIELDING_PITCH_DAMAGE:   "fielding_pitch_damage",   // 41.12: a fielder damaging the pitch, after a first and final warning
+  FIELDING_RESTRICTIONS:   "fielding_restrictions",   // the competition's fielding restrictions (a playing condition, not a Law)
   // Either side.
+  BALL_TAMPERING:          "ball_tampering",          // 41.3 (41.3.4): changing the condition of the ball — by either side
+  UNFAIR_PLAY:             "unfair_play",             // 41.2.1: an unfair action the Laws do not otherwise cover,
+                                                      //   after a first and final warning to the side
+  PRACTICE:                "practice_on_field",       // 26.4.2: practice on the field after a warning
+  PLAYER_CONDUCT:          "player_conduct",          // Law 42: a player's conduct (42.3 to 42.5), to the opposing side
   OTHER:                   "other",
 });
 /** @typedef {typeof PENALTY_REASON[keyof typeof PENALTY_REASON]} PenaltyReason */
@@ -320,42 +344,85 @@ export const PENALTY_REASON = Object.freeze({
 export const PENALTY_REASONS = new Set(Object.values(PENALTY_REASON));
 
 /**
+ * Reasons an earlier list offered (SCRBRD-094, 2026-09-26) that the Laws do
+ * not give, withdrawn on 2026-09-27. An award already stored with one still
+ * folds (the fold never reads a reason) and still reads — its side and its
+ * words are below — but a new award may not use one: penalty() refuses it,
+ * and so does the server (lawsRefusal(), `penalty_reason_withdrawn`).
+ *
+ *   obstruction_distraction  the batting side distracting or obstructing the
+ *                            fielders. Not a Law 41 penalty: a batter who
+ *                            wilfully obstructs or distracts the fielding side
+ *                            is out, Obstructing the field (Law 37), with no
+ *                            penalty runs. (41.4 and 41.5 are the FIELDERS'
+ *                            offences, 5 to the batting side: above.)
+ *   striking_pitch           "striking the pitch unfairly": no such offence.
+ *                            A batter damaging the pitch is pitch_damage.
+ *   protected_area           a batter on the protected area without reasonable
+ *                            cause: part of the one 41.14 offence, with the
+ *                            one first and final warning, so it is merged
+ *                            into pitch_damage — two reasons for one offence
+ *                            read as two warnings, and the name was also the
+ *                            BOWLER's suspension reason (41.13) below.
+ */
+export const PENALTY_REASON_WITHDRAWN = Object.freeze({
+  OBSTRUCTION_DISTRACTION: "obstruction_distraction",
+  STRIKING_PITCH:          "striking_pitch",
+  PROTECTED_AREA:          "protected_area",
+});
+/** @typedef {typeof PENALTY_REASON_WITHDRAWN[keyof typeof PENALTY_REASON_WITHDRAWN]} WithdrawnPenaltyReason */
+/** @type {ReadonlySet<unknown>}  asked of whatever a producer wrote */
+export const WITHDRAWN_PENALTY_REASONS = new Set(Object.values(PENALTY_REASON_WITHDRAWN));
+
+/**
  * Which side each reason's five runs go to: `false` the fielding side, `true`
- * the batting side (the event's `toBattingTeam`), `null` either.
+ * the batting side (the event's `toBattingTeam`), `null` either. A withdrawn
+ * reason keeps the side it was recorded for.
  * @type {Readonly<Record<string, boolean | null>>}
  */
 export const PENALTY_REASON_SIDE = Object.freeze({
-  short_running: false, obstruction_distraction: false, pitch_damage: false,
-  protected_area: false, striking_pitch: false, time_wasting: false,
-  helmet_struck: true, illegal_fielding: true, ball_tampering: true,
-  fielding_time_wasting: true, unfair_play: true, fielding_restrictions: true,
-  other: null,
+  short_running: false, time_wasting: false, pitch_damage: false, stealing_run: false,
+  helmet_struck: true, illegal_fielding: true, fielder_returning: true, keeper_movement: true, fielder_movement: true,
+  distracting_striker: true, obstructing_batter: true, fielding_time_wasting: true, fielding_pitch_damage: true,
+  fielding_restrictions: true,
+  ball_tampering: null, unfair_play: null, practice_on_field: null, player_conduct: null, other: null,
+  // Withdrawn: read, never offered.
+  obstruction_distraction: false, striking_pitch: false, protected_area: false,
 });
 
 /** Words for each reason, for a scorecard, the held sheet and a report. Finishes "Five penalty runs for …".
  *  @type {Readonly<Record<string, string>>} */
 export const PENALTY_REASON_TEXT = Object.freeze({
-  short_running: "deliberate short running (Law 41.5)",
-  obstruction_distraction: "distracting, deceiving or obstructing the fielders (Law 41.4)",
-  pitch_damage: "damaging the pitch on purpose (Law 41.12)",
-  protected_area: "running on the protected area after a first and final warning (Law 41.14)",
-  striking_pitch: "striking the pitch unfairly (Law 41.15)",
-  time_wasting: "a batter wasting time after a first and final warning (Law 41.17)",
+  short_running: "deliberate short running (Law 18.5)",
+  time_wasting: "a batter wasting time after a first and final warning (Law 41.10)",
+  pitch_damage: "a batter damaging the pitch, or on the protected area without reasonable cause, after a first and final warning (Law 41.14)",
+  stealing_run: "the batters attempting to steal a run (Law 41.16)",
   helmet_struck: "the ball striking a fielder's helmet on the ground (Law 28.3)",
   illegal_fielding: "fielding the ball illegally (Law 28.2)",
-  ball_tampering: "changing the condition of the ball (Law 41.3)",
+  fielder_returning: "a fielder back on the field without permission touching the ball (Law 24.4)",
+  keeper_movement: "the wicket-keeper moving unfairly before the ball reached the striker (Law 27.4.2)",
+  fielder_movement: "a fielder moving unfairly before the ball reached the striker (Law 28.6.3)",
+  distracting_striker: "a fielder deliberately distracting or obstructing the striker, or intercepting the ball before the striker could play it (Law 41.4)",
+  obstructing_batter: "a fielder deliberately distracting, deceiving or obstructing a batter (Law 41.5)",
   fielding_time_wasting: "the fielding side wasting time after a first and final warning (Law 41.9)",
-  unfair_play: "dangerous or unfair play (Law 41.1)",
+  fielding_pitch_damage: "a fielder damaging the pitch after a first and final warning (Law 41.12)",
   fielding_restrictions: "breaking the fielding restrictions",
+  ball_tampering: "changing the condition of the ball (Law 41.3)",
+  unfair_play: "any other unfair action, after a first and final warning (Law 41.2.1)",
+  practice_on_field: "practice on the field after a warning (Law 26.4.2)",
+  player_conduct: "a player's misconduct (Law 42)",
   other: "an award the umpires made for another reason",
+  // Withdrawn (PENALTY_REASON_WITHDRAWN): how an award stored with one reads.
+  obstruction_distraction: "distracting or obstructing the fielders",
+  striking_pitch: "striking the pitch",
+  protected_area: "a batter on the protected area without reasonable cause (Law 41.14)",
 });
 
 /**
  * Words with any Law clause number taken off: "deliberate short running (Law
- * 41.5)" → "deliberate short running". Kameel is verifying the clause numbers
- * against the current Code (2026-09-26), so no screen, report line or
- * commentary shows them until he has; this is the one place that takes them
- * off, and every reader of the reasons' words goes through it.
+ * 18.5)" → "deliberate short running". No screen, report line or commentary
+ * shows a clause number (Kameel, 2026-09-26); this is the one place that
+ * takes them off, and every reader of the reasons' words goes through it.
  * @param {unknown} text
  * @returns {string}
  */
@@ -396,18 +463,22 @@ const PENALTY_REASON_LEGACY = Object.freeze({
 });
 
 /**
- * Whatever a producer wrote → one of PENALTY_REASON, or null for "not a
- * reason we know". `toBattingTeam` is the event's (anything but `false`
- * awards the batting side, as the fold reads it).
+ * Whatever a producer wrote → one of PENALTY_REASON, one of
+ * PENALTY_REASON_WITHDRAWN (a stored award still reads as what it was), or
+ * null for "not a reason we know". `toBattingTeam` is the event's (anything
+ * but `false` awards the batting side, as the fold reads it). Whether a
+ * withdrawn reason may be used for a NEW award is not this function's
+ * question: penalty() and lawsRefusal() answer it.
  * @param {unknown} text
  * @param {unknown} [toBattingTeam]
- * @returns {PenaltyReason | null}
+ * @returns {PenaltyReason | WithdrawnPenaltyReason | null}
  */
 export function normalisePenaltyReason(text, toBattingTeam = true) {
   if (typeof text !== "string") return null;
   const t = text.trim().toLowerCase().replace(/\s+/g, " ");
   // PENALTY_REASONS holds exactly the PenaltyReason values.
   if (PENALTY_REASONS.has(t)) return /** @type {PenaltyReason} */ (t);
+  if (WITHDRAWN_PENALTY_REASONS.has(t)) return /** @type {WithdrawnPenaltyReason} */ (t);
   if (!Object.hasOwn(PENALTY_REASON_LEGACY, t)) return null;
   const hit = PENALTY_REASON_LEGACY[t];
   return typeof hit === "function" ? hit(toBattingTeam !== false) : hit;
@@ -426,9 +497,10 @@ export function normalisePenaltyReason(text, toBattingTeam = true) {
  *   short_pitched           dangerous short-pitched bowling repeated after a
  *                           warning (41.6)
  *   deliberate_no_ball      a deliberate front-foot no-ball, at once (41.8)
- *   protected_area          running on the protected area after a first and
- *                           final warning (41.13 in this research; the
- *                           penalty research gave 41.14 — to be confirmed)
+ *   protected_area          the bowler running on the protected area after
+ *                           delivering the ball (41.13; the batter's offence
+ *                           on the protected area is 41.14, a penalty —
+ *                           pitch_damage above)
  *   fielding_time_wasting   time wasting by the fielding side repeated after
  *                           warnings (41.9)
  *   ball_tampering          changing the condition of the ball, at once (41.3)
@@ -600,8 +672,9 @@ export const SUSPENSION_SCOPE_TEXT = Object.freeze({
 
 /**
  * `reason` is one of PENALTY_REASON (see penalty()); a log from before the list
- * closed may carry the pad's free text, which the fold does not read.
- * @typedef {EventBase & {kind: "penalty", runs: number, toBattingTeam: boolean, reason: PenaltyReason | null}} PenaltyEvent
+ * closed may carry the pad's free text, and one from before 2026-09-27 one of
+ * PENALTY_REASON_WITHDRAWN — neither of which the fold reads.
+ * @typedef {EventBase & {kind: "penalty", runs: number, toBattingTeam: boolean, reason: PenaltyReason | WithdrawnPenaltyReason | null}} PenaltyEvent
  */
 /** @typedef {BaseInput & {runs?: number, toBattingTeam?: boolean, reason?: string | null}} PenaltyInput */
 
@@ -1041,7 +1114,7 @@ export const ball = (o) => {
 };
 
 /**
- * Penalty runs: five (Law 41.18), awarded to the batting side or — with
+ * Penalty runs: five (Law 41.17), awarded to the batting side or — with
  * `toBattingTeam: false` — to the fielding side. No ball is bowled.
  *
  * Where the runs go is the fold's (replay.mjs): an award to the batting side
@@ -1052,9 +1125,10 @@ export const ball = (o) => {
  *
  * `reason` is one of PENALTY_REASON. One of the pad's free-text reasons from
  * before the list closed is read as the reason it is (normalisePenaltyReason);
- * anything else is refused here, where the scorer who chose it can still see
- * it — as bowler() refuses an unknown change reason. The server refuses one
- * too, and a reason that belongs to the other side (lawsRefusal).
+ * anything else — a withdrawn reason (PENALTY_REASON_WITHDRAWN) included —
+ * is refused here, where the scorer who chose it can still see it — as
+ * bowler() refuses an unknown change reason. The server refuses one too, and
+ * a reason that belongs to the other side (lawsRefusal).
  *
  * @param {PenaltyInput} o
  * @returns {PenaltyEvent}
@@ -1062,8 +1136,8 @@ export const ball = (o) => {
 export const penalty = (o) => {
   const toBattingTeam = o.toBattingTeam ?? true;
   const reason = o.reason == null ? null : normalisePenaltyReason(o.reason, toBattingTeam);
-  if (o.reason != null && reason == null) {
-    throw new TypeError(`unknown penalty reason ${JSON.stringify(o.reason)} — expected one of ${[...PENALTY_REASONS].join(", ")}`);
+  if (o.reason != null && (reason == null || WITHDRAWN_PENALTY_REASONS.has(reason))) {
+    throw new TypeError(`${reason == null ? "unknown" : "withdrawn"} penalty reason ${JSON.stringify(o.reason)} — expected one of ${[...PENALTY_REASONS].join(", ")}`);
   }
   return {
     ...base(KIND.PENALTY, o),
@@ -1074,7 +1148,7 @@ export const penalty = (o) => {
 };
 
 /**
- * Deliberate short running (Law 18.5.2, Law 41.5): the umpire calls dead
+ * Deliberate short running (Law 18.5.2): the umpire calls dead
  * ball, disallows every run completed off the delivery, returns the batters
  * to the ends they started from, and awards five penalty runs to the
  * fielding side. The delivery still counts.

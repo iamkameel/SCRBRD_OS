@@ -1200,7 +1200,7 @@ group("K. Whose the runs off a no-ball are (SCRBRD-068)");
   const withLb = deriveInnings([...open(), runs(1), lb]);
   const p2 = must(withLb.batsmen.find((b) => b.id === "p2"));
   ok("leg byes off a no-ball: the striker faced it and has none of them", p2.balls === 1 && p2.runs === 0);
-  // Law 21.16 (current Code, db/52): the penalty run is the no-ball extra,
+  // Law 21.15 (current Code, db/52): the penalty run is the no-ball extra,
   // the two run are leg byes, and only the penalty run is the bowler's.
   ok("...the side has 1 + 1 + 2: one no-ball extra, two leg byes", withLb.runs === 4
      && withLb.extras.noBall === 1 && withLb.extras.legBye === 2 && withLb.extras.bye === 0);
@@ -1238,7 +1238,7 @@ group("K. Whose the runs off a no-ball are (SCRBRD-068)");
 }
 
 // ── L. Penalty runs to the fielding side (SCRBRD-094) ────
-group("L. Five to the fielding side: their last completed innings, or their next (Law 41.18)");
+group("L. Five to the fielding side: their last completed innings, or their next (Law 41.17.4)");
 {
   const A = SQ_A.concat([{ id: "p6", name: "P6" }, { id: "p7", name: "P7" }]);
   const B = SQ_B.concat([{ id: "w4", name: "W4" }, { id: "w5", name: "W5" }]);

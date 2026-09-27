@@ -42,6 +42,7 @@
 import { KIND, BALL_TYPE, DISMISSAL, BOWLER_CHANGE_REASONS, NB_RUNS_VALUES, RUN_OUT_ENDS,
   PENALTY_REASON, PENALTY_REASON_SIDE, normalisePenaltyReason,
   SUSPENSION_REASONS, SUSPENSION_REASON_SCOPE, SUSPENSION_SCOPE } from "./events.mjs";
+import { WITHDRAWN_PENALTY_REASONS } from "./events.mjs";
 import { retirementDismissal, isMidOver } from "./replay.mjs";
 import { scoringReadiness } from "./readiness.mjs";
 import { voidedIds, lastUndoableIndex } from "./undo.mjs";
@@ -85,6 +86,7 @@ export const REFUSAL = Object.freeze({
   PENALTY_RUNS_INVALID:   "penalty_runs_invalid",   // runs that are not a whole number above nought
   PENALTY_REASON_UNKNOWN: "penalty_reason_unknown", // not one of PENALTY_REASON
   PENALTY_REASON_SIDE:    "penalty_reason_side",    // the reason is the offence of the side awarded the runs
+  PENALTY_REASON_WITHDRAWN: "penalty_reason_withdrawn", // a reason the list no longer offers (PENALTY_REASON_WITHDRAWN)
   SHORT_RUN_UNMATCHED:    "short_run_unmatched",    // short running's award follows its delivery, recorded with no run
   // A bowler suspended (Law 41, SCRBRD-094 item 2).
   SUSPENSION_UNKNOWN:     "suspension_unknown",     // not a reason on the list, or not the scope its reason carries
@@ -131,6 +133,7 @@ export const REFUSAL_TEXT = Object.freeze({
   penalty_runs_invalid: "penalty runs were not a whole number of runs",
   penalty_reason_unknown: "the reason for the penalty runs was not one the scorebook knows",
   penalty_reason_side: "the penalty runs were awarded to the side that committed the offence",
+  penalty_reason_withdrawn: "the reason for the penalty runs is no longer one the Laws give for penalty runs",
   short_run_unmatched: "the award for deliberate short running must come straight after its delivery, recorded with no runs",
   suspension_unknown: "the reason for suspending the bowler, or how long it was for, was not one the scorebook knows",
   not_bowling: "only the bowler who is bowling, or who bowled the last ball, can be suspended",
@@ -306,7 +309,10 @@ function suspensionRefusal(innings, inn, i, ev) {
  *     could read, and a handover that could never verify (SCRBRD-090).
  *   - The reason is one of PENALTY_REASON, or one of the pad's free-text
  *     reasons from before the list closed (normalisePenaltyReason), or none
- *     (a log from elsewhere; the pad always sent one).
+ *     (a log from elsewhere; the pad always sent one). One of
+ *     PENALTY_REASON_WITHDRAWN is refused: the Laws do not give it (Law 41,
+ *     2026-09-27). An award already stored with one is never judged again —
+ *     only a new event is — so it folds and reads as it did.
  *   - The runs go to the side that did NOT commit the offence the reason
  *     names: the fielding side for the batting side's (short running,
  *     damaging the pitch …), the batting side for the fielding side's.
@@ -330,6 +336,7 @@ function penaltyRefusal(innings, log, ev) {
   const toFielding = ev.toBattingTeam === false;
   const reason = ev.reason == null ? null : normalisePenaltyReason(ev.reason, ev.toBattingTeam);
   if (ev.reason != null && reason == null) return REFUSAL.PENALTY_REASON_UNKNOWN;
+  if (WITHDRAWN_PENALTY_REASONS.has(reason)) return REFUSAL.PENALTY_REASON_WITHDRAWN;
   const side = reason == null ? null : PENALTY_REASON_SIDE[reason];
   if (side != null && side === toFielding) return REFUSAL.PENALTY_REASON_SIDE;
   if (reason === PENALTY_REASON.SHORT_RUNNING) {
