@@ -3544,6 +3544,60 @@ Two Law 41 questions Kameel is researching before deciding; nothing is built unt
    Not modelled: the Laws' two-innings reading refuses any ball in a third innings (MATCH_DECIDED), so "the rest of the
    match" is proved for a bowler event there and for a ball in the second innings.
 
+### SCRBRD-101 — The wagon wheel: accurate names, off and leg by the batter's hand, point capture on the pad
+**Built 2026-09-27.** **Priority:** P1 · **Domain:** Scoring / Scorer UI / analytics · **Type:** correctness + feature
+(Kameel, 2026-09-27: batter's end at the top, bowler's at the bottom, keeper behind the batter; off and leg follow
+the batter's hand; the pad's Area step captures a point)
+
+**The frame, checked.** `placement.mjs` stores `theta` clockwise from directly behind the batter, batter-relative.
+Drawn with the batter at the top, a right-hander (left shoulder to the bowler) faces the screen's left: off side left,
+leg side right, theta 90 is square leg. A left-hander is the mirror (`screenAngle`). Kept as it was.
+
+**Found and fixed:**
+1. **The sector names were about 30° off.** `SEGS` (field.js) and `SECTOR_WORDS` (words.mjs) named 90° "Mid On" (it
+   is square leg), 120° "Long On" (mid-wicket), 240° "Mid Off" (cover), 270° "Cover" (point), 300° "Point" (backward
+   point), so the commentary said "through mid-on" for a ball hit square. Now one source of truth: `SECTORS` in
+   placement.mjs names each sector by `angularFamily()` at its centre (0° long stop, 30° fine leg, 60° backward
+   square leg, 90° square leg, 120° mid-wicket, 150° mid on, 180° straight, 210° mid off, 240° cover, 270° point,
+   300° backward point, 330° third). field.js and words.mjs derive from it.
+2. **A stored `seg` is the screen's sector, not the batter's.** A sector tap stored the wedge tapped, and
+   `placementFromTap` derives seg from the screen angle, so for a left-hander every sector word, side, heat-map wedge
+   and per-sector sum had off and leg swapped. The stored meaning is kept (no row moves, no migration); readers go
+   through `batterSector(seg, hand)` = `(12 − seg) % 12` for "L", or `sectorOf(ball, hand)`, which reads a point's
+   theta (the two roundings differ on the 15° lines). Every reader of `seg` was checked; see the report for the list.
+   No SQL view or function groups `seg` into sides or names (grep of db/), so there is no db/53.
+   **Cannot be corrected:** a batter with no recorded hand is read as right-handed (`batHandOf`), and so are his
+   balls; a sector-era ball also assumes the scorer tapped where the ball went on the field as drawn, not the label.
+3. **OFF and LEG were fixed on the wheel** (6px SVG text, always left and right). `FieldLabels` (new) lays OFF and
+   LEG by the hand, the rim positions (third, point, cover, long off, long on, mid-wicket, square leg, fine leg, from
+   the engine's families) and the Batter and Bowler ends, as 12px HTML over the field. A view draws in one frame
+   (`frameOf`): the striker's while capturing, one batter's hand, or a right-hander's with the left-handers mirrored
+   and "Left-handers' shots mirrored so leg side is always on the right" under it. The heat map follows the same frame.
+4. **The wheel's colours did not match the chips.** The spokes are now `T.chip` for each run value in every palette
+   (5 takes the four's, every extra the extras'); the wicket and the dot are unchanged. Each spoke sits on a casing
+   (`T.field.casing`, the board's black in daylight). `T.run` keeps only the wicket. design.test.mjs measures it.
+
+**Point capture.** The Area step uses the wheel's point capture (one tap, no snapping), names the position while
+the finger is down, and hands the whole placement through `onCommitDetailed` (`padCommit`) to `commitBall`, as the
+Pro hub does; `deliveryOf()` (delivery.js) builds every delivery. "Didn't travel" records `no_contact` after a shot
+that missed the bat, else `not_applicable`, profile `full`. A wicket keeps the placement on both paths (the hub's
+used to reach the wicket sheet as seg and zone only). SCRBRD-095 item 1 is closed by this.
+
+**Guards:** `packages/scoring/test/placement.test.mjs` (new), `commentary.test.mjs` group J,
+`apps/web/test/wheel.test.mjs` groups E–G, `apps/web/test/pad-point.test.mjs` (new: the pad's ball equals the hub's
+for the same tap), `design.test.mjs` (the wheel's colours), `tools/smoke-browser-wagonwheel.mjs` (new, registered).
+
+**Left open:**
+- `third` on the rim, where Kameel's list says "third man": the engine's families use "third" (modern usage) and
+  so do `positionName` and the commentary. One word in `FAMILIES` if he prefers the other.
+- Standard's wheel: the six's red and the wicket's red are ΔE 16 apart in ordinary vision (under the 25 floor, better
+  than the six/extras ΔE 4 before). The wicket was kept as asked; the safe palettes clear the floor.
+- db/07's column comment and db/98's seed comments describe theta as "from straight down the ground"; the engine's
+  frame is from behind the batter. The seed's "through the covers" balls (300–330°) read as backward point and third.
+  Comments in a shipped file and a seed; not changed here.
+- A no-ball hit from the three-phase pad still loses its area (the no-ball sheet reads the hub's selection).
+- The one-tap Dot mid-ball, with no area chosen, records `not_required` / `quick` as before, not `skipped`.
+
 ### SCRBRD-102 — A wagon-wheel analysis panel: filters, run chips, off and on side, areas per side
 **Priority:** P2 · **Domain:** Front-end / analytics · **Type:** feature (Kameel's earlier SCRBRD designs, 2026-09-27)
 Kameel's earlier designs had a wagon-wheel analysis panel. It should appear in the Match Centre's Performance tab and on a player's profile:
@@ -4027,10 +4081,12 @@ Built in redesign step 3b, with `Board`'s chip row. Opus (cross-cutting theme en
 
 ### SCRBRD-095 — Loose ends from the pad redesign (step 2)
 **Priority:** P2/P3 · **Domain:** Scorer UI · **Found 2026-09-26** redrawing the pad.
-1. **Declared profile vs what is captured (P2).** The three-phase pad records a sector (stamped `standard` on each
-   ball) while setup declares `full` by default, so a default innings reads "declared full" while holding only sector
-   placements. Older than the redesign. Either default the declaration to `standard` or make Area capture a point;
-   the second changes events, so decide first.
+1. ~~**Declared profile vs what is captured (P2).**~~ **Decided 2026-09-27 (Kameel): Area captures a point. Built in
+   SCRBRD-101.** The three-phase pad recorded a sector (stamped `standard` on each ball) while setup declares `full`
+   by default, so a default innings read "declared full" while holding only sector placements. The Area step now
+   records the point tapped (`placementFromTap`, profile `full`), the same event as the Pro hub's, so the default
+   `full` declaration ("shot, exact point") is what the pad captures. Basic Scoring still records no placement
+   (`quick` per ball), as the scorer chose.
 2. **Pro mode** keeps its old hub and cards styling with sub-12px text; smoke-a11y does not measure it.
 3. **The other sheets** (toss, openers, new over, innings end, handover) are not yet at the type and touch floors;
    only the wicket sheet, the penalty runs sheet (SCRBRD-094) and the shared close button are.
