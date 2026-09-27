@@ -34,7 +34,7 @@ const HOST = process.env.SCRBRD_DB_HOST || "127.0.0.1";
 const DB_PORT = process.env.SCRBRD_DB_PORT || "5432";
 const DB = process.env.SCRBRD_DB || "scrbrd";
 
-const urlFor = (role) => `postgres://${role}:${role}@${HOST}:${DB_PORT}/${DB}`;
+const urlFor = (/** @type {string} */ role) => `postgres://${role}:${role}@${HOST}:${DB_PORT}/${DB}`;
 
 /** The schema owner: migrations, seeding, the live RLS verifier, benches. */
 export const ownerUrl = () => process.env.DATABASE_URL || urlFor("scrbrd");
@@ -76,7 +76,7 @@ const UNSAFE_PORTS = new Set([
  * unset or 0, port(8829) is still 8829 — today's default, unchanged — and a
  * shifted result that lands on an unsafe port steps forward until it does not.
  */
-export const port = (base) => {
+export const port = (/** @type {number} */ base) => {
   let p = base + (Number(process.env.SCRBRD_PORT_OFFSET) || 0);
   while (UNSAFE_PORTS.has(p)) p += 1;
   return p;
