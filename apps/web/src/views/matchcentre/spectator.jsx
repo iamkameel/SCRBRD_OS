@@ -27,19 +27,22 @@ const BEAT_WORD = { four: "Four", six: "Six", wicket: "Wicket" };
  */
 export function MomentMark({ moment, big = false }) {
   if (!moment) return null;
-  const milestone = moment.kind === "milestone";
-  const fill = milestone ? T.board.lime : moment.kind === "wicket" ? T.board.figure : chipFill(moment.kind);
+  // The result — the match's own decided moment (SCRBRD-100 item 3) — reads
+  // the same big, held slot a milestone does: never longer, never hiding the
+  // score for more than about 1.5s (§3.6).
+  const bigMark = moment.kind === "milestone" || moment.kind === "result";
+  const fill = bigMark ? T.board.lime : moment.kind === "wicket" ? T.board.figure : chipFill(moment.kind);
   const ink = inkFor(fill);
   return (
     <div data-testid="mc-moment" data-kind={moment.kind} role="status" aria-live="polite"
-      className={milestone ? "mc-moment-big" : "mc-moment"}
+      className={bigMark ? "mc-moment-big" : "mc-moment"}
       style={{ position: "absolute", top: big ? T.space.xl : T.space.sm, left: big ? T.space.xl : T.space.lg, zIndex: 2,
-        maxWidth: milestone ? "58%" : "none", padding: milestone ? `${T.space.sm} ${T.space.lg}` : `${T.space.xs} ${T.space.md}`,
-        borderRadius: milestone ? T.radius.md : T.radius.pill, background: fill, color: ink, boxShadow: T.elevation.md,
+        maxWidth: bigMark ? "58%" : "none", padding: bigMark ? `${T.space.sm} ${T.space.lg}` : `${T.space.xs} ${T.space.md}`,
+        borderRadius: bigMark ? T.radius.md : T.radius.pill, background: fill, color: ink, boxShadow: T.elevation.md,
         fontFamily: T.type.body, fontWeight: 700, lineHeight: 1.25,
-        fontSize: big ? (milestone ? "clamp(20px, 3.4vmin, 44px)" : "clamp(18px, 3vmin, 36px)") : (milestone ? "16px" : "14px") }}>
-      {milestone ? moment.text : (BEAT_WORD[moment.kind] ?? moment.text)}
-      {!milestone && <span className="sr-only">: {moment.text}</span>}
+        fontSize: big ? (bigMark ? "clamp(20px, 3.4vmin, 44px)" : "clamp(18px, 3vmin, 36px)") : (bigMark ? "16px" : "14px") }}>
+      {bigMark ? moment.text : (BEAT_WORD[moment.kind] ?? moment.text)}
+      {!bigMark && <span className="sr-only">: {moment.text}</span>}
     </div>
   );
 }

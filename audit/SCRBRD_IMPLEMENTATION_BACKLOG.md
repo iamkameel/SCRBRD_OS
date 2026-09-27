@@ -3748,21 +3748,50 @@ In flight:
 6. The Laws check's refusals say the likely cause in words ("7 balls in this over — was one a wide or no-ball?").
 
 **Left, on the scoreboard and the match summary:**
-1. **Empty states that never dead-end:**
-   - before the toss: teams, ground, start and "follow this match";
-   - a rain delay or interruption: its status and the expected restart (a revision already records the new
-     overs);
-   - no live matches: upcoming fixtures and recent results.
+1. **Empty states that never dead-end — built 2026-09-27.** `apps/web/src/views/matchcentre/fulltime.jsx`
+   (`PreTossCard`, `RevisionBanner`) and `MatchCentreView.jsx`'s `NoMatchesPanel`:
+   - before the toss: the ground and the start (the teams are already in the header), from the fixture the
+     Match Centre already reads. **"Follow this match" is not built:** searched `apps/web/src/lib/push.js` and
+     the `notifications` table/read — the platform can turn alerts on or off for a *device*, never subscribe a
+     person to one *fixture*. No mechanism exists, so nothing was faked in its place;
+   - a rain delay or interruption: `revisionNotice()` (lib/matchCentre.js) reads the one signal the log actually
+     carries — `inn.revised`, off a `revision` event (replay.mjs) — and says "Overs revised to N; target T",
+     with the umpires' own reason ("Rain delay", "Bad light", …). There is no "play is stopped now, resuming
+     at…" event anywhere on the platform, so that is not what this says;
+   - no live matches: whatever filter emptied the list, it points to the next few upcoming fixtures and the
+     last few results, from the list's own `matches` read (`upcomingAndRecent()`) — never a second fetch, never
+     a blank panel.
 2. **Sharing:**
    - milestone cards and a match card sized for WhatsApp and Instagram stories;
    - personal-best and season-first notes.
 
    These are public by nature, so they wait for the public-data rule's step 3 and consent (PUBLIC_DATA,
-   SCRBRD-092). Names on a card follow `publicName()`.
-3. **The result revealed in one clear moment:** winner, margin, player of the match.
-4. **The full-time screen links onward:** the next fixture for both teams, each player's season, and the team's
-   results.
-5. **Coaches and scorers are prompted to confirm or correct the final scorecard** (the amendment flow exists).
+   SCRBRD-092). Names on a card follow `publicName()`. **Not touched — out of scope.**
+3. **The result revealed in one clear moment — built 2026-09-27.** The winner and the margin in words were
+   already right (`MatchView`'s header, the post-match report's `describeResult()`) — both read
+   `deriveMatch()`'s own `result`, never a second guess, now shared as `resultText()` (lib/matchCentre.js). New:
+   a brief moment on the board when the result is decided while the page is open (`useMoments`/`MomentMark`,
+   `views/matchcentre/live.js` and `spectator.jsx`, kind `"result"`) — the same milestone-sized, held-no-longer-
+   than-1.5s slot §3.6 already reserves, never replayed on a reload. **Player of the match: no data exists
+   anywhere on the platform** — no column, no table, no read gives one. Nothing was built for it and nothing was
+   invented; it is reported here as the gap it is.
+4. **The full-time screen links onward — built 2026-09-27.** `OnwardLinks` (matchcentre/fulltime.jsx), on
+   `MatchView` and the post-match report: each side's own next fixture, matched on its `fixture_side_label()`
+   (the same string the matches list already reads — `nextFixtureOf()`, no new query); and "the team's results",
+   which opens the Match Centre list itself, filtered to that side and to `complete` (there is no dedicated
+   team-results screen to link to). A side that is not a SCRBRD tenant gets neither link — honestly, rather than
+   one that would answer "not you". Each player's own season was already one tap away (the Scorecard tab's
+   opening row, the post-match report's "Best performances", both via `onNavProfile`) and is not duplicated.
+5. **Coaches and scorers confirm or correct the final scorecard — built 2026-09-27.** `ConfirmScorecardPrompt`
+   (matchcentre/fulltime.jsx), after full time, to whoever holds `scoring.finalise` (scorer, coach, director of
+   sport) and nobody else. **There is no "confirmed" state anywhere in the schema** — as instructed, none was
+   built: "Looks right" dismisses the prompt on that device only (`localStorage`) and writes nothing to the
+   server. "Something to correct" opens the amendment flow that already exists (`POST /matches/:id/amendments`,
+   `scoring.amend.request` — the scorer role only), naming a delivery picked from the innings' own commentary.
+   **Gap found, not worked around:** there is no `GET` route to list pending `scoring_amendment` rows, so a
+   director of sport or principal (who hold `scoring.amend.approve`) has no screen anywhere in this product to
+   see or decide a filed correction — `POST /amendments/:id/decide` exists but needs an id the client has no way
+   to read. Reported for its own decision; no route was added to close it.
 
 **Left, shared:**
 1. One type, spacing and icon scale everywhere. The admin screens migrate `D` to `T` in step 5.

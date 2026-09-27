@@ -260,6 +260,115 @@ export function inningsBreak(inn) {
   return { topScorers, bestBowling, boundaries, strikeRate };
 }
 
+// ── The result, in one clear moment (SCRBRD-100 item 3) ──
+
+/**
+ * The result, in the words the fold already gives ("Team X won by 23 runs",
+ * "Team X won by 4 wickets", "Match tied"). Never a second guess at a winner
+ * or a margin — `deriveMatch()`'s `result` is the only source, exactly as
+ * `MatchView` and the post-match report already compose it.
+ * @param {any} match  @param {{winner: string | null, margin: string} | null} result
+ * @returns {string | null}
+ */
+export function resultText(match, result) {
+  if (!result) return null;
+  if (result.winner == null) return result.margin && result.margin !== "tie" ? `Match tied (${result.margin})` : "Match tied";
+  return `${teamOf(match, result.winner).full} won by ${result.margin}`;
+}
+
+// ── A rain delay or interruption (SCRBRD-100 item 1) ──
+
+/**
+ * The umpires' own words for a revision's reason (mirrors the closed list on
+ * the pad's RevisionSheet, `scorer/sheets.jsx`, and the label
+ * `commentary.mjs`'s REVISION_REASON_WORDS carries for the same reasons — that
+ * map is private to the generator, so this is its own copy of the same short
+ * vocabulary, for a banner rather than a sentence).
+ * @type {Readonly<Record<string, string>>}
+ */
+const REVISION_LABEL = Object.freeze({
+  rain: "Rain delay", bad_light: "Bad light", "bad light": "Bad light",
+  late_start: "Late start", "late start": "Late start",
+  ground_unfit: "Ground unfit", "ground unfit": "Ground unfit",
+});
+
+/**
+ * A clear status for an interrupted innings — the one signal the log
+ * actually carries. There is no "play is stopped right now" event: only a
+ * `revision` the umpires recorded, after the fact, cutting the overs and/or
+ * resetting the target (`inn.revised`, replay.mjs). This reads honestly as
+ * "the innings WAS revised", not "play is paused and will resume at…", which
+ * nothing in the log says.
+ * @param {any} inn  the fold's, or null
+ * @returns {{label: string, text: string} | null}
+ */
+export function revisionNotice(inn) {
+  const r = inn?.revised;
+  if (!r || (r.overs == null && r.target == null)) return null;
+  const text = r.overs != null && r.target != null ? `Overs revised to ${r.overs}; target ${r.target}`
+    : r.overs != null ? `Overs revised to ${r.overs}`
+      : `Target revised to ${r.target}`;
+  return { label: REVISION_LABEL[String(r.reason ?? "").toLowerCase()] ?? "Play interrupted", text };
+}
+
+// ── No live matches (SCRBRD-100 item 1) ──
+
+/**
+ * The next few upcoming fixtures and the last few results, from the list's
+ * own read — never a second fetch. Sorted properly rather than trusting the
+ * read's own order, which is newest-first across every status.
+ * @param {any[]} matches  @param {{limit?: number}} [o]
+ */
+export function upcomingAndRecent(matches = [], { limit = 3 } = {}) {
+  const key = (m) => `${m.date ?? ""}T${m.time ?? "00:00"}`;
+  const upcoming = matches.filter((m) => m.status === "upcoming" && m.date)
+    .sort((a, b) => key(a).localeCompare(key(b))).slice(0, limit);
+  const recent = matches.filter((m) => m.status === "complete" && m.date)
+    .sort((a, b) => key(b).localeCompare(key(a))).slice(0, limit);
+  return { upcoming, recent };
+}
+
+// ── The full-time screen links onward (SCRBRD-100 item 4) ──
+
+/**
+ * A side's own next fixture, from the SAME list read the Match Centre already
+ * has — never a second one. Matched on its own home label
+ * (`fixture_side_label()`'s output, which is the same string for the same
+ * school and team every time), because the list read never carries the away
+ * side's school id: only a side that is itself a SCRBRD tenant (whose label
+ * therefore ever appears as somebody's HOME side) can be found this way. An
+ * opponent typed in free text — not a tenant — has no fixture to find, and
+ * this honestly returns null for one rather than guessing.
+ * @param {any[]} matches  @param {{label: string | null, excludeId?: string | null, today?: string | null}} o
+ * @returns {any | null}
+ */
+export function nextFixtureOf(matches = [], { label, excludeId = null, today = null } = {}) {
+  if (!label) return null;
+  const cands = matches.filter((m) => m.id !== excludeId && m.status === "upcoming" && m.homeLabel === label
+    && (!today || (m.date ?? "") >= today));
+  cands.sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""));
+  return cands[0] ?? null;
+}
+
+// ── The amendment flow's delivery picker (SCRBRD-100 item 5) ──
+
+/**
+ * The deliveries of one innings a coach or scorer could name in a correction
+ * request — every commentary line that is a real delivery (its key is the
+ * ball's own event id, `e:<id>`, unsuffixed: a milestone line pushed for the
+ * same ball carries the same id with a `#n` suffix and is not a second
+ * delivery to pick), oldest first, so a form reads the over as it was bowled.
+ * `targetKey` is exactly what `POST /matches/:id/amendments` wants.
+ * @param {{innings: number, over: number, ball: number, key: string, text: string}[]} commentary
+ * @param {number} inningsIndex
+ */
+export function deliveryOptions(commentary = [], inningsIndex) {
+  return commentary
+    .filter((c) => c.innings === inningsIndex && /^e:[^#]+$/.test(c.key))
+    .map((c) => ({ key: c.key, over: c.over, ball: c.ball, text: c.text, targetKey: c.key.slice(2) }))
+    .sort((a, b) => a.over - b.over || a.ball - b.ball);
+}
+
 // ── The commentary, grouped (the Commentary tab) ──
 
 /**

@@ -5,7 +5,7 @@ import { deriveMatch, fromRow } from "@scrbrd/scoring";
 import { deriveCommentary } from "@scrbrd/scoring/commentary";
 import { api, signedIn } from "../../lib/api.js";
 import { useRows, useWeather } from "../../lib/live.js";
-import { boardInnings, inningsPhase, matchLine, nameBook, sidesOf, teamOf } from "../../lib/matchCentre.js";
+import { boardInnings, inningsPhase, matchLine, nameBook, resultText, revisionNotice, sidesOf, teamOf } from "../../lib/matchCentre.js";
 import { seedCompletedMatch } from "../../scorer/seed.js";
 import { parseBalls, parseScore, teamSquad } from "../shared.jsx";
 import { useIsMobile } from "../../shell/MobileNav.jsx";
@@ -13,6 +13,7 @@ import { Icon } from "../../ui/icons.jsx";
 import { AnalyticsTab, CommentaryTab, DetailsTab, PartnershipsTab, SummaryTab } from "./tabs.jsx";
 import { ScorecardTab } from "./scorecard.jsx";
 import { Quiet, SideName } from "./bits.jsx";
+import { ConfirmScorecardPrompt, OnwardLinks, PreTossCard, RevisionBanner } from "./fulltime.jsx";
 import { liveRefreshMs, useMoments, useTicker } from "./live.js";
 import { BigScreen } from "./spectator.jsx";
 
@@ -136,7 +137,7 @@ function TabBar({ tab, setTab }) {
   );
 }
 
-function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreIt }) {
+function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreIt, matches, onOpenFixture, onTeamResults }) {
   useTheme();
   const COMPETITIONS = useRows("competitions", role);
   const PLAYERS = useRows("players", role);
@@ -170,19 +171,32 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [log.events, PLAYERS, match.id]);
 
+  const result = resultText(match, log.result) ?? (match.status === "complete" ? match.result : null);
+
+  // The result, in one clear moment (SCRBRD-100 item 3): a synthetic line,
+  // added only once the fold has actually decided the match, so it arrives
+  // through the SAME "only while the page is open" gate every other moment
+  // does — a reload never replays it. Its key is stable per match, so it can
+  // only ever fire once.
+  const momentsFeed = useMemo(() => {
+    if (!log.result || !commentary.length) return commentary;
+    return [...commentary, { innings: Math.max(0, played.length - 1), over: 0, ball: 0, kind: "result", text: result, key: `result:${match.id}` }];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [commentary, log.result, result, match.id]);
+
   // The spectator's moments: only what arrives while the page is open, so a
   // reload replays nothing. And the board's run count, ticking up to a new
   // total rather than jumping to it.
-  const { moment, overSummary } = useMoments(commentary, !log.loading && !!log.events);
+  const { moment, overSummary } = useMoments(momentsFeed, !log.loading && !!log.events);
   const bi = boardInnings(played, log.result);
   const boardInn = played[bi.index] ?? null;
   const shownRuns = useTicker(boardInn?.runs, `${match.id}:${bi.index}`);
   const boardTarget = bi.index === 1 && played[1] ? (played[1].target ?? played[0].runs + 1) : null;
   const [big, setBig] = useState(false);
 
-  const result = log.result
-    ? (log.result.winner == null ? "Match tied" : `${teamOf(match, log.result.winner).full} won by ${log.result.margin}`)
-    : (match.status === "complete" ? match.result : null);
+  // A rain delay or interruption (SCRBRD-100 item 1): the one signal the log
+  // actually carries, off the innings the board is showing.
+  const notice = revisionNotice(boardInn);
   const isLive = match.status === "live";
 
   const ctx = { match, role, innings: played, result, commentary, events: log.events, demo: log.demo, overs: log.overs,
@@ -248,6 +262,23 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
         {result && <p data-testid="mc-result" style={{ ...T.role.body, fontWeight: 600, color: T.content.primary, margin: 0 }}>{result}</p>}
         {line && <p data-testid="mc-match-line" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{line}</p>}
       </header>
+
+      {!log.loading && !log.error && (
+        <div style={{ display: "grid", gap: T.space.md, margin: `${T.space.md} 0` }}>
+          {/* Before the toss (item 1): the pre-toss facts, in place of a dead end. */}
+          {match.status === "upcoming" && played.length === 0 && <PreTossCard match={match} weather={weather}/>}
+          {/* A rain delay or interruption (item 1): a clear status, not a frozen board. */}
+          {notice && <RevisionBanner notice={notice}/>}
+          {/* The full-time screen links onward (item 4) and the confirm-or-correct prompt (item 5) —
+              both true of the fixture once it is decided, not of any one tab of it. */}
+          {match.status === "complete" && (
+            <>
+              <OnwardLinks match={match} sides={sides} matches={matches} onOpenFixture={onOpenFixture} onTeamResults={onTeamResults}/>
+              <ConfirmScorecardPrompt match={match} role={role} commentary={commentary} innings={played}/>
+            </>
+          )}
+        </div>
+      )}
 
       <TabBar tab={tab} setTab={setTab}/>
 

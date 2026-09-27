@@ -9,7 +9,7 @@ import { Btn, Card, SectionHeader, StatusDot } from "../ui/primitives.jsx";
 import { WeatherChip } from "./shared.jsx";
 import { MatchView } from "./matchcentre/MatchView.jsx";
 import { SideName } from "./matchcentre/bits.jsx";
-import { sidesOf } from "../lib/matchCentre.js";
+import { sidesOf, upcomingAndRecent } from "../lib/matchCentre.js";
 import { PostMatchReport } from "./postmatch.jsx";
 import { OppositionDossier } from "./dossier.jsx";
 import { DutyRoster } from "./duties.jsx";
@@ -68,14 +68,24 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
   // open a panel that says "not you", "not yet" or "not this opponent", the
   // same way canScore() offers a scorer button the database may still refuse.
   const [dossierM, setDossierM] = useState(null);
-  const filtered = MATCHES.filter(m=>filter==="all"||m.status===filter);
+  // A side's own results, opened from a fixture's "Onward" links
+  // (SCRBRD-100 item 4) — the Match Centre list, already filtered to
+  // "complete" and to that side. Cleared by picking any other status pill.
+  const [teamFilter, setTeamFilter] = useState(null);
+  const filtered = MATCHES.filter(m=>filter==="all"||m.status===filter)
+    .filter(m=>!teamFilter || sidesOf(m).home.full===teamFilter || sidesOf(m).away.full===teamFilter);
+  // Opens a fixture's own Match Centre — the "next fixture" links (item 4)
+  // and, from the list itself, the ordinary "Open match" button.
+  const openFixture = (m) => { setSelMatch(null); setOpenM(m); };
+  const teamResults = (label) => { setOpenM(null); setTeamFilter(label); setFilter("complete"); };
   if (openM) {
     // The row as the list has it now, so a live fixture that has moved on
     // (a result, a new status) is the one the view shows.
     const fresh = MATCHES.find((m) => m.id === openM.id) ?? openM;
     return (
       <MatchView match={fresh} role={role} onClose={() => setOpenM(null)} canScoreIt={canScore(role)}
-        onOpenScorer={onOpenScorer} onNavProfile={onNavProfile}/>
+        onOpenScorer={onOpenScorer} onNavProfile={onNavProfile}
+        matches={MATCHES} onOpenFixture={openFixture} onTeamResults={teamResults}/>
     );
   }
   return (
@@ -91,17 +101,30 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
             </button>}
           </>
         }/>
-      <div style={{display:"flex",gap:"6px",marginBottom:"20px"}}>
+      <div style={{display:"flex",gap:"6px",marginBottom:"20px",flexWrap:"wrap",alignItems:"center"}}>
         {["all","live","upcoming","complete"].map(f=>(
-          <button key={f} onClick={()=>setFilter(f)} className="pressBtn" style={{
-            padding:"5px 14px",borderRadius:D.pill,border:`1px solid ${filter===f?D.indigo+"55":D.border}`,
-            background:filter===f?D.indigo+"18":"transparent",cursor:"pointer",
+          <button key={f} onClick={()=>{setFilter(f);setTeamFilter(null);}} data-testid={`mc-filter-${f}`} className="pressBtn" style={{
+            padding:"5px 14px",borderRadius:D.pill,border:`1px solid ${filter===f&&!teamFilter?D.indigo+"55":D.border}`,
+            background:filter===f&&!teamFilter?D.indigo+"18":"transparent",cursor:"pointer",
             fontFamily:D.body,fontSize:"12px",fontWeight:filter===f?600:400,
             color:filter===f?D.textPrimary:D.textMuted,textTransform:"capitalize",
           }}>{f}</button>
         ))}
+        {/* SCRBRD-100 item 4: "the team's results", opened from a fixture's
+            onward links. There is no dedicated team-results screen — this is
+            the Match Centre list itself, narrowed — so the chip says exactly
+            that and clears back to the ordinary filters on a click. */}
+        {teamFilter&&(
+          <button onClick={()=>setTeamFilter(null)} data-testid="mc-team-filter-clear" className="pressBtn" style={{
+            padding:"5px 12px",borderRadius:D.pill,border:`1px solid ${D.emerald}55`,background:D.emerald+"18",
+            cursor:"pointer",fontFamily:D.body,fontSize:"12px",fontWeight:600,color:D.emerald,
+            display:"flex",alignItems:"center",gap:"5px",
+          }}>{teamFilter}&apos;s results <span aria-hidden="true">✕</span></button>
+        )}
       </div>
-      {reportM&&<PostMatchReport match={reportM} role={role} onClose={()=>setReportM(null)} onNavProfile={(id)=>{setReportM(null);onNavProfile&&onNavProfile(id);}}/>}
+      {reportM&&<PostMatchReport match={reportM} role={role} onClose={()=>setReportM(null)}
+        onNavProfile={(id)=>{setReportM(null);onNavProfile&&onNavProfile(id);}}
+        matches={MATCHES} onOpenFixture={(m)=>{setReportM(null);openFixture(m);}} onTeamResults={(l)=>{setReportM(null);teamResults(l);}}/>}
       {dossierM&&<OppositionDossier match={dossierM} role={role} onClose={()=>setDossierM(null)}/>}
       {scheduleOpen&&(
         <AddFixtureModal fixtureSchools={fixtureSchools} teamOptions={SCHOOL_TEAMS} grounds={GROUNDS} matches={MATCHES}
@@ -177,6 +200,11 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
               </Card>
             );
           })}
+          {/* SCRBRD-100 item 1: never a blank panel. Whatever emptied this
+              list — no live match, no fixture of this status, or a team
+              filter with nothing to show — it points at what the list's own
+              read already has: the next fixtures and the last results. */}
+          {filtered.length===0&&<NoMatchesPanel matches={MATCHES} filter={filter} teamFilter={teamFilter} onOpen={openFixture}/>}
         </div>
 
         {/* Match detail with full weather */}
@@ -259,6 +287,52 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile }) {
         })()}
       </div>
     </div>
+  );
+}
+
+/**
+ * "The Match Centre list with nothing live points to upcoming fixtures and
+ * recent results" (SCRBRD-100 item 1) — using `matches`, the same rows the
+ * list already read; never a second fetch, and never a blank panel.
+ */
+function NoMatchesPanel({ matches, filter, teamFilter, onOpen }) {
+  const { upcoming, recent } = upcomingAndRecent(matches, { limit: 3 });
+  const heading = teamFilter ? `No results yet for ${teamFilter}.`
+    : filter==="live" ? "Nothing live right now."
+    : filter==="upcoming" ? "No upcoming fixtures scheduled."
+    : filter==="complete" ? "No results yet."
+    : "No fixtures yet.";
+  const Row = ({ m }) => {
+    const sides = sidesOf(m);
+    return (
+      <button onClick={()=>onOpen(m)} data-testid="mc-nomatches-row" className="pressBtn" style={{
+        display:"flex",width:"100%",justifyContent:"space-between",alignItems:"center",gap:"10px",
+        padding:"8px 10px",borderRadius:D.md,border:`1px solid ${D.border}`,background:D.surf2,
+        cursor:"pointer",textAlign:"left",fontFamily:D.body,fontSize:"12px",color:D.textPrimary,
+      }}>
+        <span><SideName side={sides.home}/> v <SideName side={sides.away}/></span>
+        <span style={{fontFamily:D.mono,fontSize:"11px",color:D.textMuted,whiteSpace:"nowrap"}}>{humanDate(m.date)}</span>
+      </button>
+    );
+  };
+  return (
+    <Card data-testid="mc-nomatches" sx={{padding:"18px 16px"}}>
+      <div style={{fontFamily:D.body,fontSize:"13px",color:D.textMuted,marginBottom:"14px"}}>{heading}</div>
+      <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"16px"}}>
+        <div>
+          <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,letterSpacing:"0.08em",color:D.textMuted,marginBottom:"8px"}}>UPCOMING FIXTURES</div>
+          {upcoming.length
+            ? <div style={{display:"grid",gap:"6px"}}>{upcoming.map(m=><Row key={m.id} m={m}/>)}</div>
+            : <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>Nothing scheduled.</div>}
+        </div>
+        <div>
+          <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,letterSpacing:"0.08em",color:D.textMuted,marginBottom:"8px"}}>RECENT RESULTS</div>
+          {recent.length
+            ? <div style={{display:"grid",gap:"6px"}}>{recent.map(m=><Row key={m.id} m={m}/>)}</div>
+            : <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>No results yet.</div>}
+        </div>
+      </div>
+    </Card>
   );
 }
 
