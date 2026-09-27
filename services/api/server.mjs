@@ -96,7 +96,10 @@ const DEV = process.env.NODE_ENV !== "production";
 // security does not apply to a table's owner, so an owner connection runs with
 // every policy in db/ silently inert. assertRlsApplies() below refuses to start
 // on such a connection; see db/05_app_role.sql for how this was found.
-const DATABASE_URL = appUrl();
+// DATABASE_URL first: it is how every deployment names the application role
+// (DEPLOYING.md, Cloud Run). appUrl() is only the local default — this
+// worktree's database when SCRBRD_DB is set, the plain local one otherwise.
+const DATABASE_URL = process.env.DATABASE_URL || appUrl();
 const pool = new pg.Pool({ connectionString: DATABASE_URL, max: 10 });
 
 /**

@@ -52,5 +52,24 @@ for (const file of files) {
 ok(`no file under ${DIRS.join("/, ")}/ hard-codes 127.0.0.1:5432 or localhost:5432 outside tools/db-url.mjs`,
    offenders.length === 0, offenders.join("\n    "));
 
+// Production names the application role through DATABASE_URL (DEPLOYING.md,
+// Cloud Run). The server must honour it before any local default, or a
+// deploy connects to a database that is not there.
+const server = readFileSync(join(ROOT, "services", "api", "server.mjs"), "utf8");
+ok("the API server connects to DATABASE_URL when a deployment sets it (appUrl() is only the local default)",
+   /const DATABASE_URL = process\.env\.DATABASE_URL \|\| appUrl\(\);/.test(server));
+
+// The production image: whatever the server imports from tools/ must be
+// copied in by the Dockerfile AND let through by .dockerignore, which
+// excludes tools/ as a whole. Either missing breaks the build or the boot.
+{
+  const imported = [...server.matchAll(/from "\.\.\/\.\.\/(tools\/[\w.-]+\.mjs)"/g)].map((m) => m[1]);
+  const dockerfile = readFileSync(join(ROOT, "Dockerfile"), "utf8");
+  const ignore = readFileSync(join(ROOT, ".dockerignore"), "utf8").split("\n").map((l) => l.trim());
+  const missing = imported.filter((f) => !dockerfile.includes(`COPY ${f} ./${f}`) || !ignore.includes(`!${f}`));
+  ok("every file the server imports from tools/ reaches the production image (Dockerfile COPY and a .dockerignore exception)",
+     missing.length === 0, missing.join(", "));
+}
+
 console.log(`\nDB-URL GUARD: ${passes} passed, ${fails} failed`);
 process.exit(fails ? 1 : 0);
