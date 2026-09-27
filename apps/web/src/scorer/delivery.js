@@ -1,5 +1,6 @@
 import { ball as ballEvent, noPlacement, NO_CONTACT_SHOTS, PLACEMENT_NULL, PLACEMENT_SOURCE, CAPTURE_PROFILE } from "@scrbrd/scoring";
 import { shortRunEvents } from "./penalty.js";
+import { disallowedEvents, notInOverEvents } from "./penalty.js";
 
 /**
  * The events a delivery records — the pad's, built here and nowhere else.
@@ -28,7 +29,14 @@ export const crease = (i) => ({
 /**
  * A delivery through commitBall: one ball event, or — a short run
  * (SCRBRD-094) — the ball with every run disallowed and the five to the
- * fielding side.
+ * fielding side. SCRBRD-113 adds, from the penalty sheet: `disallowed`, the
+ * reason the runs were disallowed (short running, or a batter's further
+ * offence on the pitch or in the protected area: runsDisallowed()); and
+ * `notInOver`, the reason the delivery does not count in the over, with the
+ * five to the batting side (notInOverDelivery()). `facesNext` is who was
+ * chosen to face the next ball, where the Laws give the choice (FACES_NEXT);
+ * none of the three is on the delivery unless given, so every other ball is
+ * the event it always was.
  *
  * `placement` is the whole set of shot-placement fields, built by
  * placementFromTap() or noPlacement() — never assembled here. Callers that
@@ -36,8 +44,12 @@ export const crease = (i) => ({
  * neither (the one-tap pad, which never asks where the ball went) gets an
  * explicit "not required", or "no contact" for a shot the bat never touched.
  */
-export function deliveryEvents({ curIn, before, freeHit, type, value, shot, seg, zone, approach, placement, shortRun = false, nbType = null }) {
-  const delivery = deliveryOf({ type, value, shot, approach, freeHit, crease: crease(before), seg, zone, placement, nbType });
+export function deliveryEvents({ curIn, before, freeHit, type, value, shot, seg, zone, approach, placement, shortRun = false, nbType = null,
+  facesNext = null, disallowed = null, notInOver = null }) {
+  const bowled = deliveryOf({ type, value, shot, approach, freeHit, crease: crease(before), seg, zone, placement, nbType });
+  const delivery = facesNext ? { ...bowled, facesNext } : bowled;
+  if (notInOver) return notInOverEvents(curIn, delivery, notInOver);
+  if (disallowed) return disallowedEvents(curIn, delivery, disallowed);
   return shortRun ? shortRunEvents(curIn, delivery) : [ballEvent(delivery)];
 }
 

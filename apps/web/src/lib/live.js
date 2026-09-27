@@ -51,6 +51,9 @@ function asMatch(r) {
     // one thing worse than naming none: this is the raw instant the fixture
     // was scheduled at, exactly as written.
     time: r.starts_at ? String(r.starts_at).slice(11, 16) : null,
+    // The instant itself, for the scorer: it dates the match, and the date
+    // decides the Edition of the Laws the match is scored under (SCRBRD-113).
+    startsAt: r.starts_at ?? null,
     status: MATCH_STATUS[r.status] ?? "upcoming",
     result: null,
     competition: null,

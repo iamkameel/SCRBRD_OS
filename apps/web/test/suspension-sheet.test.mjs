@@ -39,11 +39,20 @@ const match = (log) => ({ innings: foldPad(log), events: log });
 
 group("The reasons, and who can be suspended");
 {
-  ok("six reasons, the closed list", SUSPENSION_REASONS_OFFERED.length === 6);
+  ok("nine reasons, the closed list (SCRBRD-113: the deliberate beamer apart from the dangerous series; throwing; Level 4 conduct)",
+     SUSPENSION_REASONS_OFFERED.length === 9 && SUSPENSION_REASONS_OFFERED.includes("deliberate_beamer")
+     && SUSPENSION_REASONS_OFFERED.includes("throwing") && SUSPENSION_REASONS_OFFERED.includes("conduct"));
   const words = SUSPENSION_REASONS_OFFERED.map(suspensionReasonWords);
   ok("each in words, capitalised, no Law clause number", words.every((w) => /^[A-Z]/.test(w) && !/\bLaws?\s+\d/.test(w)), words);
-  ok("ball tampering is for the rest of the match", scopeWords(SUSPENSION_REASON.BALL_TAMPERING) === "for the rest of the match");
-  ok("...a beamer for the rest of the innings", scopeWords(SUSPENSION_REASON.BEAMERS) === "for the rest of the innings");
+  ok("ball tampering is for the rest of the match, in both Editions",
+     scopeWords(SUSPENSION_REASON.BALL_TAMPERING, 3) === "for the rest of the match" && scopeWords(SUSPENSION_REASON.BALL_TAMPERING, 4) === "for the rest of the match");
+  ok("...a dangerous beamer for the rest of the innings, in both",
+     scopeWords(SUSPENSION_REASON.BEAMERS, 3) === "for the rest of the innings" && scopeWords(SUSPENSION_REASON.BEAMERS, 4) === "for the rest of the innings");
+  ok("...a deliberate front-foot no-ball or beamer: the innings under the 3rd Edition, the match under the 4th (SCRBRD-113)",
+     scopeWords(SUSPENSION_REASON.DELIBERATE_NO_BALL, 3) === "for the rest of the innings" && scopeWords(SUSPENSION_REASON.DELIBERATE_NO_BALL, 4) === "for the rest of the match"
+     && scopeWords(SUSPENSION_REASON.DELIBERATE_BEAMER, 3) === "for the rest of the innings" && scopeWords(SUSPENSION_REASON.DELIBERATE_BEAMER, 4) === "for the rest of the match");
+  ok("...and the event the sheet sends carries that scope",
+     suspendEvent(0, B1, SUSPENSION_REASON.DELIBERATE_NO_BALL, 3).scope === "innings" && suspendEvent(0, B1, SUSPENSION_REASON.DELIBERATE_NO_BALL, 4).scope === "match");
   const m = match([log0, []]);
   ok("the bowler on is the one to suspend", bowlerToSuspend(m.innings[0]) === B1);
   ok("the Laws take it", suspendRefusal(m, 0, B1, SUSPENSION_REASON.SHORT_PITCHED) === null);
@@ -53,7 +62,8 @@ group("The reasons, and who can be suspended");
 
 group("The replacement: only who the Laws take, the rest with why not");
 {
-  const ev = suspendEvent(0, B1, SUSPENSION_REASON.DELIBERATE_NO_BALL);
+  // A 3rd-Edition match (the report's words below are the innings').
+  const ev = suspendEvent(0, B1, SUSPENSION_REASON.DELIBERATE_NO_BALL, 3);
   const after = withAppended([log0, []], 0, [ev]);
   const m = match(after);
   const opts = replacementOptions(m, 0, bowlingCandidates(m.innings[0]));

@@ -17,6 +17,7 @@ import {
   deriveInnings, inningsStart, batters, bowler, ball, lawsRefusal, MatchFold,
 } from "@scrbrd/scoring";
 import { NoBallSheet, WicketSheet } from "../src/scorer/sheets.jsx";
+import { NB_TYPES } from "../src/scorer/extras.js";
 
 let pass = 0, fail = 0;
 const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${String(d).slice(0, 200)}` : ""); } };
@@ -44,6 +45,22 @@ group("The no-ball sheet's ways out: the Law's three");
   ok("no handled the ball", !/handled/i.test(out));
   ok("run out, hit the ball twice, obstructing the field", /run out, hit the ball twice, or obstructing the field/.test(out));
   ok("...and not caught or stumped, which a no-ball cannot be", !/caught|stumped/i.test(out));
+  // SCRBRD-113: from 1 October 2026 (the Laws' 4th Edition) a bouncer over
+  // head height is a wide. The height no-ball is a waist-high full toss.
+  const fourth = renderToStaticMarkup(h(NoBallSheet, { onConfirm: noop, onClose: noop, edition: 4 }));
+  ok("a 4th-Edition match: the sheet says a bouncer over head height is a wide", /A bouncer over head height is a wide, not a no ball/.test(fourth));
+  ok("...a 3rd-Edition match's does not", !/over head height/.test(out));
+  ok("the height no-ball is named as the full toss it is, in both", /Waist-high Full Toss/.test(out) && /without landing/.test(out) && /Waist-high Full Toss/.test(fourth));
+  ok("the quick pad's kind reads Waist high, never a bare Height",
+     NB_TYPES.find((t) => t.id === "height")?.label === "Waist high" && !NB_TYPES.some((t) => t.label === "Height"));
+}
+
+group("The wicket sheet under the 4th Edition: nothing new until an obstruction");
+{
+  const props = { batName: "D Erasmus", striker: { id: "a", name: "D Erasmus" }, nonStriker: { id: "b", name: "R Pillay" }, fieldingSquad: [], onClose: noop, onConfirm: noop };
+  const three = renderToStaticMarkup(h(WicketSheet, { ...props, edition: 3 }));
+  const four = renderToStaticMarkup(h(WicketSheet, { ...props, edition: 4 }));
+  ok("bowled (the sheet's first way out) reads the same in both Editions", three === four && !/wicket-obstruct-catch/.test(four));
 }
 
 group("The engine still reads it: old events and pre-2017 scorecards");

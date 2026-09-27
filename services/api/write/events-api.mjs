@@ -87,6 +87,26 @@ function columnsFor(matchId, ev) {
 }
 
 /**
+ * The fixture's start, which dates the match and so decides the Edition of
+ * the Laws it is scored under (SCRBRD-113; packages/scoring edition.mjs). The
+ * fold is told it (FoldContext.startsAt) so the server judges by the date the
+ * school scheduled, as the pad does for a fixture it opened from here. Read
+ * as the caller, under the match's own read policy; a match the caller
+ * cannot see answers null, and the fold then dates the match by its first
+ * event, as it does a match with no fixture.
+ * @param {{ query: Function }} client
+ * @param {string | null | undefined} matchId
+ * @returns {Promise<string | null>}  an ISO timestamp, or null
+ */
+async function matchStartsAt(client, matchId) {
+  if (!matchId) return null;
+  /** @type {{ rows: {starts_at: Date | string | null}[] }} */
+  const { rows } = await client.query(`select starts_at from match where id = $1`, [matchId]);
+  const t = rows[0]?.starts_at ?? null;
+  return t == null ? null : new Date(t).toISOString();
+}
+
+/**
  * The placement vocabularies packages/scoring owns, checked at the door
  * (SCRBRD-077). Read from placement.mjs, never listed here: db/07's CHECKs
  * say the same, and the walk (tools/smoke-laws.mjs) fails if the two differ.
@@ -297,7 +317,7 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
       /** @type {{ rows: BallEventRow[] }} */
       const { rows } = await client.query(
         `select ${EVENT_COLUMNS} from ball_event where match_id = $1 order by seq`, [matchId]);
-      return new MatchFold(rows.map(fromRow));
+      return new MatchFold(rows.map(fromRow), { startsAt: await matchStartsAt(client, matchId) });
     };
 
     /**
@@ -707,8 +727,11 @@ export function amendmentRoutes({ pool, secret }) {
               and seq <= (select seq from ball_event where idempotency_key = $1)
             order by seq`, [out.void_key]);
         const written = log.find((r) => r.idempotency_key === out.void_key);
+        const { rows: owner } = await client.query(
+          `select match_id from ball_event where idempotency_key = $1`, [out.void_key]);
+        const startsAt = await matchStartsAt(client, owner[0]?.match_id);
         const why = written
-          ? amendmentRefusal(new MatchFold(log.filter((r) => r.seq < written.seq).map(fromRow)).view(), fromRow(written))
+          ? amendmentRefusal(new MatchFold(log.filter((r) => r.seq < written.seq).map(fromRow), { startsAt }).view(), fromRow(written))
           // The approver cannot read the log they would be amending. Nothing
           // can be judged, so nothing is written.
           : "log_unreadable";
@@ -845,8 +868,9 @@ export function quarantineRoutes({ pool, secret }) {
         // row's seq, a NOT NULL integer. (quarantine_resolve() answers an
         // accepted release with the seq it wrote; its only ok row without
         // one is a rejection, returned above.)
+        const startsAt = await matchStartsAt(client, q[0].match_id);
         const why = released
-          ? lawsRefusal(new MatchFold(log.filter((r) => r.seq < /** @type {number} */ (out.seq)).map(fromRow)).view(), fromRow(released))
+          ? lawsRefusal(new MatchFold(log.filter((r) => r.seq < /** @type {number} */ (out.seq)).map(fromRow), { startsAt }).view(), fromRow(released))
           // The approver cannot read the log they would be adding to. Nothing
           // can be judged, so nothing is written.
           : "log_unreadable";

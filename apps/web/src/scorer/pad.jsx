@@ -304,7 +304,7 @@ const segment = (on) => ({ minHeight: "44px", padding: `0 ${T.space.xs}`, fontSi
  * asks its type — a height no-ball or a beamer is a free hit — and whose the
  * runs are, each already on its commonest answer, as the no-ball sheet asked.
  */
-function ExtraRuns({ kind, onRuns, onCancel }) {
+function ExtraRuns({ kind, onRuns, onCancel, fourth = false }) {
   const x = extraOf(kind);
   const [nb, setNb] = useState(NB_DEFAULT);
   const likelyRef = useRef(null);
@@ -343,6 +343,13 @@ function ExtraRuns({ kind, onRuns, onCancel }) {
             </p>
           )}
         </>
+      )}
+      {/* The Laws' 4th Edition (a match from 1 October 2026, SCRBRD-113):
+          a bouncer over head height is a wide, not a no ball. */}
+      {fourth && (kind === "Wd" || kind === "Nb") && (
+        <p data-testid="extra-head-height" style={{ ...T.role.body, fontSize: "14px", lineHeight: 1.3, margin: 0, color: T.content.secondary }}>
+          A bouncer over head height is a wide.
+        </p>
       )}
       <div data-testid="extra-runs" style={{ display: "grid", gridTemplateColumns: `repeat(auto-fit,minmax(44px,1fr))`, gap: T.space.xs }}>
         {x.runs.map((n) => {
@@ -457,7 +464,8 @@ export function Pad({ inn, basic, onCommitDetailed, onWicketCtx, onWide, onNoBal
   const note = shot === "padded" || shot === "hit_body" ? "Runs off the pads or body are recorded as leg byes."
     : shot === "missed" ? "Runs after a miss are recorded as byes." : null;
 
-  const runs = extra && <ExtraRuns key={extra} kind={extra} onRuns={recordExtra} onCancel={() => setExtra(null)}/>;
+  const runs = extra && <ExtraRuns key={extra} kind={extra} onRuns={recordExtra} onCancel={() => setExtra(null)}
+    fourth={inn?.lawsEdition === 4}/>;
   const strip = (
     <Strip extra={extra} onExtra={openExtra} undoWhat={undoWhat} midBall={extra != null || (!basic && phase > 1)} panel={runs}
       // A dot mid-ball carries what the scorer has told the pad so far — the

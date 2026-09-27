@@ -34,6 +34,7 @@ import {
   foldPad, projectPad, withoutLaw, reasonWords, reasonsFor, awardRefusal, awardEvent, shortRunEvents,
   shortRunRefusal, refusalWords, pendingCredits, whereTheRunsGo,
 } from "../src/scorer/penalty.js";
+import { DISALLOWED_REASONS, NOT_IN_OVER_REASONS, disallowedEvents, notInOverEvents, pairRefusal } from "../src/scorer/penalty.js";
 import { PenaltySheet } from "../src/scorer/penaltySheet.jsx";
 
 let pass = 0, fail = 0;
@@ -42,8 +43,13 @@ const group = (t) => console.log("\n" + t);
 
 const SQ_A = ["a1", "a2", "a3", "a4", "a5"].map((id) => ({ id, name: `Hilton ${id}` }));
 const SQ_B = ["b1", "b2", "b3", "b4", "b5"].map((id) => ({ id, name: `Mhouse ${id}` }));
+// Every match here opens on 15 September 2026, under the 3rd Edition of the
+// Laws: the fold dates a match with no fixture by its first event, and the
+// Edition follows the date (SCRBRD-113). The 4th's sheet is the last group.
+const SEP15 = Date.parse("2026-09-15T08:00:00Z");
+const OCT1 = Date.parse("2026-10-01T08:00:00Z");
 const open0 = (x = {}) => inningsStart({ innings: 0, battingTeam: "Hilton", bowlingTeam: "Michaelhouse", teamKey: "HIL", bowlingTeamKey: "MIC",
-  squad: SQ_A, bowlingSquad: SQ_B, overs: 2, ...x });
+  squad: SQ_A, bowlingSquad: SQ_B, overs: 2, clientTs: SEP15, ...x });
 const open1 = (x = {}) => inningsStart({ innings: 1, battingTeam: "Michaelhouse", bowlingTeam: "Hilton", teamKey: "MIC", bowlingTeamKey: "HIL",
   squad: SQ_B, bowlingSquad: SQ_A, overs: 2, ...x });
 const runs = (n, i = 0) => ball({ innings: i, type: BALL_TYPE.RUN, value: n });
@@ -260,22 +266,83 @@ group("The engine records a short run through its one ball funnel, as a short ru
 {
   const engine = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "scorer", "engine.jsx"), "utf8");
   ok("the sheet's short run reaches commitBall with shortRun set",
-     /const recordShortRun=\(type,nbType=null\)=>\{[\s\S]{0,120}?commitBall\(type,0,null,null,null,null,undefined,\{shortRun:true,nbType\}\)/.test(engine));
+     /const recordShortRun=\(type,nbType=null,\{reason=null,facesNext=null\}=\{\}\)=>\{[\s\S]{0,120}?commitBall\(type,0,null,null,null,null,undefined,\{shortRun:true,nbType,disallowed:reason,facesNext\}\)/.test(engine));
   // A short run off a no-ball asks its kind, as the no-ball sheet does, and
   // the delivery carries it (SCRBRD-094's loose end: nbType was null).
   // commitBall's event code lives in delivery.js since SCRBRD-100 (moved as it was).
   const delivery = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "scorer", "delivery.js"), "utf8");
   ok("...with a no-ball's kind, which the delivery carries",
-     /\.\.\.\(type === "Nb" && nbType \? \{ nbType \} : \{\}\)/.test(delivery) && /const evs=deliveryEvents\(\{[^}]*nbType\}\);/.test(engine));
+     /\.\.\.\(type === "Nb" && nbType \? \{ nbType \} : \{\}\)/.test(delivery) && /const evs=deliveryEvents\(\{[^}]*nbType[^}]*\}\);/.test(engine));
   const [nbBall] = shortRunEvents(0, { type: "Nb", nbType: "height", striker: "a1", nonStriker: "a2", bowler: "b1" });
   ok("...and the short-run pair's delivery keeps it", nbBall.type === "Nb" && nbBall.nbType === "height" && nbBall.value === 0);
   const sheet = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "scorer", "penaltySheet.jsx"), "utf8");
   ok("the sheet asks the kind when the delivery is a no-ball, and passes it on",
-     /delivery === "Nb" && \([\s\S]{0,200}What kind of no ball\?/.test(sheet) && /onShortRun\(delivery, kind\)/.test(sheet));
+     /delivery === "Nb" && \([\s\S]{0,200}What kind of no ball\?/.test(sheet) && /onShortRun\(delivery, kind, \{ reason: why, facesNext \}\)/.test(sheet));
   ok("...and commitBall emits shortRunning's two events for it",
      /return shortRun \? shortRunEvents\(curIn, delivery\) : \[ballEvent\(delivery\)\];/.test(delivery)
      && /const evs=deliveryEvents\(\{[^}]*shortRun[^}]*\}\);/.test(engine) && /emit\(\.\.\.evs\);/.test(engine));
   ok("the pad folds the whole match", /const innings = useMemo\(\s*\(\) => foldPad\(events/.test(engine));
+}
+
+group("SCRBRD-113: the 4th Edition's sheet, by the match date");
+{
+  const at = (/** @type {number} */ day) => [[open0({ clientTs: day }), batters({ innings: 0, striker: "a1", nonStriker: "a2" }), bowler({ innings: 0, bowler: "b1" }), runs(1)], []];
+  const base = { curIn: 0, crease: { striker: "a2", nonStriker: "a1", bowler: "b1" },
+    names: { striker: "Hilton a2", nonStriker: "Hilton a1", bowler: "Mhouse b1" }, onAward() {}, onShortRun() {}, onNotInOver() {}, onClose() {} };
+  const sheet = (/** @type {number} */ day, /** @type {string} */ mode) => {
+    const log = at(day);
+    return renderToStaticMarkup(h(PenaltySheet, { ...base, innings: foldPad(log), events: log, mode }));
+  };
+  const s3 = sheet(SEP15, "shortRun"), s4 = sheet(OCT1, "shortRun");
+  ok("30 Sep: short running sends the batters back to their ends, no choice asked",
+     /The batters go back to the ends they started from/.test(s3) && !/faces-next-/.test(s3)
+     && /<button[^>]*data-testid="short-run-confirm"(?![^>]*disabled)[^>]*>/.test(s3));
+  ok("1 Oct: the fielding captain chooses who faces, by name", /The fielding captain chooses who faces the next ball/.test(s4)
+     && /data-testid="faces-next-striker"/.test(s4) && /data-testid="faces-next-non_striker"/.test(s4) && /Hilton a2/.test(s4) && /Hilton a1/.test(s4));
+  ok("...and Record waits for the choice, saying so", /<button[^>]*data-testid="short-run-confirm"[^>]*disabled/.test(s4) && /Choose who faces the next ball/.test(s4));
+  ok("the runs-disallowed view offers the three calls", DISALLOWED_REASONS.every((r) => new RegExp(`data-testid="disallowed-reason-${r}"`).test(s4)));
+  const n4 = sheet(OCT1, "notInOver"), n3 = sheet(SEP15, "notInOver");
+  ok("a delivery that does not count: the four offences, the kinds, the runs that stand",
+     NOT_IN_OVER_REASONS.every((r) => new RegExp(`data-testid="not-in-over-reason-${r}"`).test(n4))
+     && /data-testid="not-in-over-type-run"/.test(n4) && /data-testid="not-in-over-type-Wd"/.test(n4) && /data-testid="not-in-over-runs-6"/.test(n4)
+     && /does not count as one of the over/.test(n4) && /Five penalty runs go to Hilton/.test(n4));
+  ok("...the same in both Editions, Record waiting for the offence", n3 === n4 && /<button[^>]*data-testid="not-in-over-confirm"[^>]*disabled/.test(n4) && /Choose what the fielder did/.test(n4));
+  for (const [name, out] of [["short run, 4th", s4], ["not in the over", n4]]) {
+    ok(`${name}: no Law clause numbers`, !/\bLaws? \d/.test(out) && !/\(Law/.test(out) && !/\d+\.\d+\.\d/.test(out));
+    const sizes = [...out.matchAll(/font-size:\s*([\d.]+)px/g)].map((x) => Number(x[1]));
+    ok(`${name}: nothing under 12px`, sizes.length > 0 && sizes.every((s) => s >= 12), sizes);
+    const btns = [...out.matchAll(/<button[^>]*>/g)].map((x) => x[0]).filter((b) => !/aria-label="Close/.test(b));
+    const tall = btns.map((b) => Number(b.match(/min-height:\s*(\d+)px/)?.[1] ?? 0));
+    ok(`${name}: every control is 44px or taller`, btns.length > 0 && tall.every((x) => x >= 44), btns.filter((_, i) => tall[i] < 44));
+  }
+
+  // The pairs, and the Laws asked of them as the server asks them.
+  const log4 = at(OCT1), m4 = { innings: foldPad(log4), events: log4 };
+  const log3 = at(SEP15), m3 = { innings: foldPad(log3), events: log3 };
+  const crease = { striker: "a2", nonStriker: "a1", bowler: "b1" };
+  ok("a short run with the captain's choice: taken on 1 Oct, refused on 30 Sep",
+     shortRunRefusal(m4, 0, { type: "run", ...crease, facesNext: "non_striker" }) === null
+     && shortRunRefusal(m3, 0, { type: "run", ...crease, facesNext: "non_striker" }) === REFUSAL.FACES_NEXT_NOT_A_CHOICE);
+  const [pd, pdAward] = disallowedEvents(0, { type: "run", value: 4, ...crease }, "pitch_damage");
+  ok("runs disallowed for the pitch: no runs, then five to the fielding side, taken in both",
+     pd.value === 0 && pdAward.toBattingTeam === false && pdAward.reason === "pitch_damage"
+     && pairRefusal(m3, 0, [pd, pdAward]) === null && pairRefusal(m4, 0, [pd, pdAward]) === null);
+  const [ni, niAward] = notInOverEvents(0, { type: "run", value: 2, ...crease }, "illegal_fielding");
+  ok("a delivery not counted: marked, then five to the batting side, taken in both",
+     ni.notInOver === "illegal_fielding" && niAward.toBattingTeam === true && pairRefusal(m3, 0, [ni, niAward]) === null && pairRefusal(m4, 0, [ni, niAward]) === null);
+  const after = projectPad(log4, 0, [ni, niAward]);
+  ok("...the over does not move, the runs and the five are in", after.balls === 1 && after.runs === 1 + 2 + 5);
+
+  // After the result: an award to the fielding side (41.17.2).
+  const decided = (/** @type {number} */ day) => [[open0({ clientTs: day }), batters({ innings: 0, striker: "a1", nonStriker: "a2" }), bowler({ innings: 0, bowler: "b1" }),
+    runs(1), runs(0), runs(0), runs(0), runs(0), runs(0), bowler({ innings: 0, bowler: "b2" }), runs(0), runs(0), runs(0), runs(0), runs(0), runs(0)],
+    [...start1({ target: 2 }), runs(2, 1)]];
+  const d3 = decided(SEP15), d4 = decided(OCT1);
+  ok("after the result, five to the fielding side: refused on 30 Sep, taken on 1 Oct",
+     awardRefusal({ innings: foldPad(d3), events: d3 }, 1, { toBattingTeam: false, reason: PENALTY_REASON.TIME_WASTING }) === REFUSAL.MATCH_DECIDED
+     && awardRefusal({ innings: foldPad(d4), events: d4 }, 1, { toBattingTeam: false, reason: PENALTY_REASON.TIME_WASTING }) === null);
+  const reopened = projectPad(d4, 1, [awardEvent(1, { toBattingTeam: false, reason: PENALTY_REASON.TIME_WASTING })]);
+  ok("...and the chase is on again", reopened.complete === false && reopened.target === 7);
 }
 
 console.log("\n" + "─".repeat(52));

@@ -53,7 +53,7 @@ function ShotSelectorSheet({onSelect,onSkip,onClose}){
 /* ═══════════════════════════════════════════════════════
    NO BALL SHEET — different rules for front foot vs height
 ═══════════════════════════════════════════════════════ */
-function NoBallSheet({onConfirm,onClose}){
+function NoBallSheet({onConfirm,onClose,edition=3}){
   const[nbType,setNbType]=useState("front_foot");
   const[runs,setRuns]=useState(0);
   // Whose the runs are (SCRBRD-068): off the bat they are the striker's, and
@@ -69,7 +69,7 @@ function NoBallSheet({onConfirm,onClose}){
   const types=[
     {id:"front_foot",label:"Front Foot",sub:"Bowler overstepped the crease",
       note:"Off a no ball a batter can be out only run out, hit the ball twice, or obstructing the field"},
-    {id:"height",label:"Full Toss Height",sub:"Above waist height on the full",
+    {id:"height",label:"Waist-high Full Toss",sub:"Passed above waist height without landing",
       note:"Same dismissals as front foot. Free hit applies in limited overs."},
     {id:"beamer",label:"Beamer (Dangerous)",sub:"Full toss above waist — dangerous delivery",
       note:"Umpire warning issued. Bowler may be removed. Same dismissal rules apply."},
@@ -97,6 +97,12 @@ function NoBallSheet({onConfirm,onClose}){
           <div style={{marginTop:"6px",color:D.orange,fontSize:"12px",fontFamily:D.body,fontWeight:500}}>
             <Icon name="zap"/> Free hit on the next delivery
           </div>
+          {/* The Laws' 4th Edition (from 1 October 2026, SCRBRD-113). */}
+          {edition===4&&(
+            <div data-testid="nb-head-height" style={{marginTop:"6px",color:D.textSecondary,fontSize:"12px",fontFamily:D.body}}>
+              A bouncer over head height is a wide, not a no ball.
+            </div>
+          )}
         </div>
         {/* Runs off the no ball */}
         <div>
@@ -680,8 +686,16 @@ function CustomBatEntry({onSend}){
 /* ═══════════════════════════════════════════════════════
    WICKET SHEET
 ═══════════════════════════════════════════════════════ */
-function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,onClose,onConfirm}){
+function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition=3,onClose,onConfirm}){
   const[mode,setMode]=useState(DISMISSAL.BOWLED);
+  // An obstruction that stopped a catch (4th Edition, from 1 October 2026;
+  // SCRBRD-113): no runs count, and the fielding captain chooses whether the
+  // non-striker or the incoming batter faces the next ball. The 3rd Edition
+  // gave no choice: the incoming batter takes the striker's end, as before.
+  const[stopped,setStopped]=useState(false);
+  const[faces,setFaces]=useState(null);
+  const asksCatch=mode===DISMISSAL.OBSTRUCTING_FIELD&&edition===4&&!!striker&&!!nonStriker;
+  const asksFaces=asksCatch&&stopped;
   const[fielder,setFielder]=useState("");
   const[fielterFilter,setFielderFilter]=useState("");
   // Whose wicket, where the mode leaves it open. Retired out is either
@@ -719,6 +733,7 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,onClose
     setFielderFilter("");
     setWho(striker?.id??null);
     setRuns(0);setEnd(null);
+    setStopped(false);setFaces(null);
     if(m===DISMISSAL.STUMPED&&wkName)setFielder(wkName);
   };
   const whoName=who===nonStriker?.id?nonStriker?.name:(striker?.name??batName);
@@ -776,6 +791,29 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,onClose
           </div>
         </div>
       )}
+      {asksCatch&&(
+        <div data-testid="wicket-obstruct-catch" style={{marginBottom:"12px"}}>
+          <Lbl sx={{marginBottom:"7px"}}>Did the obstruction stop a catch?</Lbl>
+          <div style={{display:"flex",gap:"7px"}}>
+            <button data-testid="wicket-catch-no" onClick={()=>{setStopped(false);setFaces(null);}} className="pressBtn" style={pill(!stopped)}>No</button>
+            <button data-testid="wicket-catch-yes" onClick={()=>setStopped(true)} className="pressBtn" style={pill(stopped)}>Yes</button>
+          </div>
+          {stopped&&(
+            <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"6px"}}>
+              No runs count. The fielding captain chooses who faces the next ball.
+            </div>
+          )}
+        </div>
+      )}
+      {asksFaces&&(
+        <div data-testid="wicket-faces" style={{marginBottom:"12px"}}>
+          <Lbl sx={{marginBottom:"7px"}}>Who faces the next ball?</Lbl>
+          <div style={{display:"flex",gap:"7px"}}>
+            <button data-testid="wicket-faces-non_striker" onClick={()=>setFaces("non_striker")} className="pressBtn" style={pill(faces==="non_striker")}>{nonStriker.name}</button>
+            <button data-testid="wicket-faces-incoming" onClick={()=>setFaces("incoming")} className="pressBtn" style={pill(faces==="incoming")}>The incoming batter</button>
+          </div>
+        </div>
+      )}
       {isStumped&&(
         <div style={{marginBottom:"12px",padding:"10px 13px",borderRadius:D.md,
           background:D.violet+"0e",border:"1px solid "+D.violet+"33"}}>
@@ -822,9 +860,9 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,onClose
       )}
       <div style={{display:"flex",gap:"10px",marginTop:"4px"}}>
         <Btn variant="ghost" sx={{flex:1,minHeight:"48px",fontSize:"15px",borderRadius:D.md}} onClick={onClose}>Cancel</Btn>
-        <Btn variant="danger" sx={{flex:2,minHeight:"48px",fontSize:"16px",borderRadius:D.md}} data-testid="wicket-confirm" disabled={asksEnd&&!end}
-          onClick={()=>{if(asksEnd&&!end)return;onConfirm(mode,displayFielder,{dismissed:asksWho&&who!==striker?.id?who:null,
-            runs:isRunOut?runs:0,outAt:asksEnd?end:null});}}>Confirm Out</Btn>
+        <Btn variant="danger" sx={{flex:2,minHeight:"48px",fontSize:"16px",borderRadius:D.md}} data-testid="wicket-confirm" disabled={(asksEnd&&!end)||(asksFaces&&!faces)}
+          onClick={()=>{if(asksEnd&&!end)return;if(asksFaces&&!faces)return;onConfirm(mode,displayFielder,{dismissed:asksWho&&who!==striker?.id?who:null,
+            runs:isRunOut?runs:0,outAt:asksEnd?end:null,facesNext:asksFaces?faces:null});}}>Confirm Out</Btn>
       </div>
     </Sheet>
   );

@@ -1194,7 +1194,7 @@ function withAdded(inn, runs) {
 /**
  * Fold each innings' own log, then credit the awards to fielding sides.
  * @param {Map<number, LogEvent[]>} byInnings
- * @param {FoldContext} ctx
+ * @param {FoldContext} ctx0
  * @returns {Map<number, Innings>}
  */
 function foldMatch(byInnings, ctx0) {

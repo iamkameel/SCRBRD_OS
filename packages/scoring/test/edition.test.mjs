@@ -25,7 +25,7 @@ import {
   inningsStart, batters, bowler, ball, penalty, sealInnings,
   BALL_TYPE, DISMISSAL, KIND, INNINGS_END_REASON,
   bowlerSuspended, suspendedBowlers, suspensionWords, suspensionScope, SUSPENSION_REASON, SUSPENSION_REASON_TEXT,
-  SUSPENSION_REASON_SCOPE, SUSPENSION_SCOPE,
+  SUSPENSION_REASON_SCOPE,
   shortRunning, runsDisallowed, notInOverDelivery, countsInOver, isMaiden, NOT_IN_OVER, RUNS_DISALLOWED,
   FACES_NEXT, PENALTY_REASON, penaltyReasonWords,
   lawsEdition, lawsEditionOn, matchDay, firstEventTs, LAWS_EDITION, FOURTH_EDITION_FROM,
@@ -206,7 +206,7 @@ group("B. A deliberate front-foot no-ball and a deliberate beamer: the match (4t
   ok("the words carry no clause number, for every reason in both Editions",
      Object.values(SUSPENSION_REASON).every((r) => [3, 4].every((e) => !/\d+\.\d+/.test(suspensionWords(bowlerSuspended({ bowler: "w1", reason: r, edition: e }))))));
   ok("through the wire and back, the scope is the event's",
-     fromRow(toRow({ ...bowlerSuspended({ bowler: "w1", reason: "deliberate_beamer", edition: 4 }), innings: 0 })).scope === "match");
+     /** @type {any} */ (fromRow(toRow({ ...bowlerSuspended({ bowler: "w1", reason: "deliberate_beamer", edition: 4 }), innings: 0 }))).scope === "match");
 }
 
 // ── C. Who faces next ─────────────────────────────────────────────
@@ -287,7 +287,7 @@ group("C. Who faces next: after short running and an obstructed catch (4th), aft
   const L = [...open(0), ...runs(0, 0, 3, 1)];
   const a = deriveInnings(L), b = deriveInnings(L.map((e) => ({ ...e })));
   ok("no choice, no change", a.striker === b.striker && a.nonStriker === b.nonStriker && JSON.stringify(a.batsmen) === JSON.stringify(b.batsmen));
-  ok("through the wire and back", fromRow(toRow({ ...ball({ type: BALL_TYPE.WICKET, dismissal: "obstructing_field", facesNext: "incoming" }), innings: 0 })).facesNext === "incoming");
+  ok("through the wire and back", /** @type {any} */ (fromRow(toRow({ ...ball({ type: BALL_TYPE.WICKET, dismissal: "obstructing_field", facesNext: "incoming" }), innings: 0 }))).facesNext === "incoming");
   void at;
 }
 
@@ -399,7 +399,7 @@ group("E. A delivery that does not count in the over: 24.4, 28.2, 41.4, 41.5 (bo
     const plain = deriveInnings([...L, ...runs(0, 2), ...at(0, penalty({ toBattingTeam: true, reason: "illegal_fielding" }))]);
     ok(`${label}: an award alone, as before, leaves the ball in the over`, plain.balls === 6 && plain.runs === 7);
   }
-  ok("through the wire and back", fromRow(toRow({ ...ball({ notInOver: "distracting_striker" }), innings: 0 })).notInOver === "distracting_striker");
+  ok("through the wire and back", /** @type {any} */ (fromRow(toRow({ ...ball({ notInOver: "distracting_striker" }), innings: 0 }))).notInOver === "distracting_striker");
 }
 
 // ── F. Runs disallowed: 41.14.3 and 41.15.3 ──────────────────────
@@ -416,7 +416,7 @@ group("F. A further offence on the pitch or in the protected area disallows the 
     const { at, open, runs } = on(day);
     const L = [...open(0), ...runs(0, 0)];
     for (const reason of ["pitch_damage", "striker_position"]) {
-      const [dot, award] = at(0, ...runsDisallowed({ type: BALL_TYPE.RUN, value: 3 }, reason));
+      const [dot, award] = /** @type {any[]} */ (at(0, ...runsDisallowed({ type: BALL_TYPE.RUN, value: 3 }, reason)));
       ok(`${label}: ${reason}: the delivery with no runs, then five to the fielding side`,
          dot.value === 0 && award.toBattingTeam === false && award.reason === reason
          && judge(L, dot, label) === null && judge([...L, dot], award, label) === null);
