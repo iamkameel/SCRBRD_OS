@@ -172,10 +172,10 @@ group("1. Every extra, both ways: the same bytes");
   ok("engine: onCommitDetailed is commitBall(type,value,shot,seg,zone,null)",
      /const onCommitDetailed=\(type,value,shot,seg,zone\)=>\{\s*if\(!guardReady\(\)\)return;\s*commitBall\(type,value,shot,seg,zone,null\);/.test(eng));
   ok("engine: recordNoBall emits noBallEvent({inn,nbType,runs,nbRuns,selShot,selSeg})",
-     /const recordNoBall=\(nbType,runs,nbRuns\)=>\{\s*emit\(noBallEvent\(\{inn,nbType,runs,nbRuns,selShot,selSeg\}\)\);/.test(eng));
+     /const recordNoBall=\(nbType,runs,nbRuns\)=>\{\s*const nb=noBallEvent\(\{inn,nbType,runs,nbRuns,selShot,selSeg\}\);\s*emit\(nb\);/.test(eng));
   ok("engine: the no-ball sheet confirms through the same recordNoBall", /<NoBallSheet\s+onConfirm=\{recordNoBall\}/.test(eng));
   ok("engine: commitBall builds through deliveryEvents with the engine's own state",
-     /const evs=deliveryEvents\(\{curIn,before,freeHit,type,value,shot,seg,zone,approach,placement,shortRun\}\);/.test(eng));
+     /const evs=deliveryEvents\(\{curIn,before,freeHit,type,value,shot,seg,zone,approach,placement,shortRun,nbType\}\);/.test(eng));
   ok("engine: the pad's wide and no-ball are those two", /onWide=\{recordWide\} onNoBall=\{recordNoBall\}/.test(eng));
   ok("pad: an extra's second tap dispatches extraCall() as named",
      /if \(call\.to === "wide"\) onWide\(\.\.\.call\.args\);\s*else if \(call\.to === "noBall"\) onNoBall\(\.\.\.call\.args\);\s*else onCommitDetailed\(\.\.\.call\.args\);/.test(pad)
@@ -203,8 +203,9 @@ group("2. The new-over prompt: the likely bowler first");
   const suspended = (id) => (id === "b2" ? "bowler_suspended" : refuses(id));
   const s = bowlerChoices({ inn, roster, refuses: suspended });
   ok("a bowler the Laws refuse for any reason is not the likely one", s.likelyId === null && s.rows[0].id === "b1");
-  ok("...he stays listed, unavailable, with words even for a code this build does not know",
-     s.rows.find((r) => r.id === "b2").refusal === "bowler_suspended" && unavailableWords("bowler_suspended") === "Cannot bowl this over");
+  ok("...he stays listed, unavailable, with the suspension in words",
+     s.rows.find((r) => r.id === "b2").refusal === "bowler_suspended" && /suspended/.test(unavailableWords("bowler_suspended")));
+  ok("...and a code this build does not know still reads in words", unavailableWords("a_code_from_a_later_build") === "Cannot bowl this over");
   ok("REFUSAL_TEXT's words are used where they exist, without a clause number",
      unavailableWords("mid_over_no_reason") === "Say injury or suspended first"
      && unavailableWords("same_batter_both_ends") === "The same batter was named at both ends"
