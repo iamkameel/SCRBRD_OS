@@ -194,7 +194,7 @@ Refused, with the reason named:
 | No ball once the second innings is complete — the match is decided | AntiGravity `recordBallAction` |
 | An innings starts only when the one before it has ended (by the laws or a seal) | new, from the model |
 | No play in an innings once a later one has a delivery | new |
-| A dismissed batter, or one retired out, does not come back; retired hurt may, but only at the fall of a wicket or another batter's retirement since he went (Law 25.4) | new; the timing SCRBRD-071 |
+| A dismissed batter does not come back; retired hurt may, and retired out only with the opposing captain's consent — either only at the fall of a wicket or another batter's retirement since he went (Law 25.4) | new; the timing and the consent SCRBRD-071 |
 | Once play starts, a not-out batter leaves only by dismissal or retirement — no replacing him; swapping ends is allowed | new |
 | Only a batter at the crease can retire, and not once the innings is over or closed; nothing is recorded for an innings nobody opened | new; over/closed SCRBRD-071 |
 | A wicket with no ball is retired out (a batter who is in) or timed out (the batter due in, Law 40) — nothing else | SCRBRD-081 |
@@ -688,6 +688,21 @@ sheet lists under "Retired hurt — may resume" exactly those the Laws take (`re
 **Not once the innings is over.** A retirement (hurt, or an unmarked legacy one) in an innings that is over is
 refused `innings_over`, and in one that is sealed `innings_closed` — the same codes, in the same order, as a
 dismissal with no ball.
+
+**Retired out, back with the opposing captain's consent (Law 25.4.3).** A batter who retires for any reason other
+than illness, injury or another unavoidable cause is recorded retired out at once — a `retire` marked W, a wicket
+with no ball (SCRBRD-081) — and may resume only with the opposing captain's consent. The return is
+`batters({ ..., captainConsent: true })`. `lawsRefusal` takes it only for a batter whose latest retirement is a
+retired out that still stands, under the same 25.4.4 timing, and not once the innings is over or sealed; consent
+recorded for anyone else (a new batter, one retired hurt, one timed out, an old W delivery naming retired out) is
+`consent_not_retired_out` or `batter_already_out`. The fold takes his wicket back: one fewer in `wickets`, his
+entry off the fall of wickets (the later ones renumbered) and off `nonBallWickets`, his line batting again with
+his runs and balls going on, and the return in `inn.resumedWithConsent`. The 25.4.4 timing counts wickets fallen,
+including any taken back, so it only rises. SQL does the same in one place (`db/53`): `ball_event_live` reads a
+retirement that a later live consented return names with ball type and dismissal NULL, so the live score, the
+handover's count, `player_innings` and every dismissal and career reader follow. The pad: the batting-order sheet
+lists "Retired out — may resume if the opposing captain agrees" (`consentChoices()` in `retire.js`); a tap asks the
+scorer to confirm the captain agreed, and only the confirm sends.
 
 Not modelled: the last batter retiring hurt with nobody left to come in. The Laws end the innings there; the fold
 does not derive that ending (`inningsOverReason` counts wickets, not retirements), and the Laws now refuse his

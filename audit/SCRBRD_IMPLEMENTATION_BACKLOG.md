@@ -2982,7 +2982,7 @@ after it refused too.
   each mutated in turn and failing its tests. Found, not fixed: the last batter retiring hurt with nobody
   left to come in ends the innings under the Laws; `inningsOverReason` counts wickets only, so the fold does not derive
   that ending (the pad never offered him straight back either, so nothing new is stranded).
-  **Not built, needs SQL (2026-09-27): resuming after retired out, with the opposing captain's consent (Law 25.4.3).**
+  ~~**Not built, needs SQL (2026-09-27): resuming after retired out, with the opposing captain's consent (Law 25.4.3).**
   Proposed model: a `batters` event carrying `captainConsent: true`, which the Laws take only for a batter retired
   out (W-marked retire, reason out — never timed out), under the same 25.4.4 timing; the fold on it takes the
   wicket back (wickets − 1, his `fow` and `nonBallWickets` entries removed, status batting, no dismissal line, his
@@ -2994,7 +2994,29 @@ after it refused too.
   a resume the Laws took would make the live score and the handover check disagree with the fold. It needs a
   migration: a `retirement_resumed(match, innings, seq)` predicate (a later live consented `batters` row naming the
   retire's `payload.batter`) and those readers redefined to leave a resumed retirement out. Sequencing with db/52 is
-  the coordinator's call.
+  the coordinator's call.~~ **Built 2026-09-27, after db/52.** The event and the Laws: `batters({..., captainConsent:
+  true})`, taken only for a batter whose latest retirement is a retired out still standing, at a wicket or another's
+  retirement since (25.4.4), not in an innings over or sealed; consent for anyone else is `consent_not_retired_out`.
+  The fold takes the wicket back as proposed, with new arrays (a view already handed out keeps its own); retired out
+  is now on `inn.retirements` (`out: true`), and the 25.4.4 timing reads wickets fallen (`wickets` +
+  `resumedWithConsent.length`). SQL, simpler than proposed: not twelve readers redefined but one view —
+  `db/53_retired_out_resume.sql` adds `retirement_resumed(match, innings, seq, batter)` (invoker, STABLE: a later
+  live consented `batters` row naming him, by id column or typed name) and redefines `ball_event_live` (db/43's text,
+  same columns, options, owner and grants, checked against a snapshot) to read such a retirement with ball type and
+  dismissal NULL; every reader already reads `ball_event_live`, so the live score, the handover's count,
+  `player_innings`, the dismissal, career and season readers and `milestone_watch` follow unchanged. Nothing in db/52
+  is redefined. The pad: "Retired out — may resume if the opposing captain agrees" on the batting-order sheet
+  (`retire.js` `consentChoices`, the Laws' answer), a confirm step, "Not agreed". Proof: `laws.test` R, `replay.test`
+  (the fold, and "the db/53 fixture"), `held.test`, `retire-sheet.test`, db/53's own proof (the fixture through every
+  reader, then the return voided), db/99 §31 (as the platform owner under RLS; a return naming somebody else; a typed
+  name; the void), `smoke-fold-figures` (a fifth random stream: 7 consented returns generated plus a written-out
+  innings, every SQL figure agreeing with the fold, every return asked of the Laws), `smoke-browser-retire` H (from
+  the wicket sheet to the confirm; the board and SQL's live score take the wicket back; player_innings not out).
+  Falsified: nine mutations of the Laws, the fold and the pad's choices; four of db/53 (each refused by db/53's own
+  proof but one, and each turning db/99 §31 red with that proof lifted); the pad's confirm sending no consent (walk
+  H, four failures); the smoke's SQL agreement with db/53's view disabled (seven failures). Paste rehearsed on a
+  database built from origin/main (01–51, seeded): apply-53 before apply-52 refuses; apply-52, apply-53, verify —
+  `ALL RLS LIVE ASSERTIONS PASSED`; the migrator then reports 0 to apply.
 - ~~Timed out and retired out are recorded as `W` balls, which count as a legal delivery of the over.~~ **Already done by
   SCRBRD-081 (2026-09-24)**, checked 2026-09-27: both are a `retire` marked `type: "W"` (no ball, no bowler figure, no
   ball faced), through the `nonBallWickets` path; an old W *ball* naming either still folds as history
