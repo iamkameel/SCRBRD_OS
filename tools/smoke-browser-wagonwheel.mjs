@@ -125,7 +125,11 @@ const click = async (re, ms = 3000) => {
   return true;
 };
 const tid = (id) => page.locator(`[data-testid="${id}"]`);
-const tap = async (id, ms = 4000) => { await tid(id).first().click({ timeout: ms }); await page.waitForTimeout(350); };
+// On an older build (WHEEL_BEFORE) a key that is not there is skipped and said, so the shots still come.
+const tap = async (id, ms = 4000) => {
+  try { await tid(id).first().click({ timeout: ms }); } catch (e) { if (!BEFORE) throw e; console.log(`  (before: no ${id})`); }
+  await page.waitForTimeout(350);
+};
 const has = async (id) => (await tid(id).count()) > 0;
 const said = async (id) => ((await tid(id).first().innerText({ timeout: 2000 }).catch(() => "")) || "").trim();
 const settle = async () => { await page.waitForTimeout(2600); };
@@ -179,7 +183,9 @@ async function shoot(name, pg = page) {
 }
 
 /** The field's box on screen, and the point just outside its rope, square on the right. */
-const SQUARE_RIGHT = 0.97;   // of the half-width: past the rope (124 of 150), so radius clamps to 1.00
+// Of the half-width: past the rope (124 of 150), so radius clamps to 1.00. An older build
+// (WHEEL_BEFORE) took sector taps, and only inside the rope, so its tap is just inside it.
+const SQUARE_RIGHT = BEFORE ? 0.78 : 0.97;
 async function fieldBox(scope) {
   const svg = page.locator(`${scope} svg`).first();
   const b = await svg.boundingBox({ timeout: 4000 }).catch(() => null);
