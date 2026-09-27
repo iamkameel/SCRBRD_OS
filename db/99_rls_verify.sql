@@ -893,10 +893,11 @@ DECLARE
   P_U16B    uuid := 'aaaaaaaa-0000-0000-0000-000000000006';  -- K Dlamini, U16B
   P_WES     uuid := 'bbbbbbbb-0000-0000-0000-000000000001';  -- D Mkhize, Westville
   P_WES2    uuid := 'bbbbbbbb-0000-0000-0000-000000000002';  -- K Botha, Westville
-  -- The falsifying principal for the notification capability gate. It has to
-  -- be a real spectator: the user seeded as spectator@example.invalid holds a
-  -- PLAYER assignment, and the player bundle includes medical.status.read, so
-  -- it would pass the assertion below for the wrong reason and prove nothing.
+  -- The falsifying principal for the notification capability gate. It is a
+  -- real spectator: the user seeded as spectator@example.invalid holds a
+  -- PLAYER assignment. (The player bundle held medical.status.read until
+  -- db/55; it holds no medical tier now, but a spectator is still the plainer
+  -- principal for "news.read and nothing medical".)
   U_WATCHER uuid := '88888888-0000-0000-0000-000000000008';
   -- Seeded as spectator@example.invalid, but the ASSIGNMENT is role `player`
   -- at Hilton — a pupil. The one principal that separates the availability
@@ -1072,29 +1073,17 @@ BEGIN
   SELECT count(*) INTO n FROM injury_masked WHERE notes IS NOT NULL;
   PERFORM _assert(n > 0, 'medical staff cannot read clinical notes');
 
-  -- ── 3b. A pupil knows WHO is out, not WHAT is wrong ─────────────
-  -- The tier that was missing. `injury_type` reads "Grade 2 hamstring strain"
-  -- — it IS the diagnosis — and it sat unmasked behind medical.status.read,
-  -- which the player bundle holds. A pupil could read what was wrong with a
-  -- teammate. Only notes and physio were protected, so the split meant to
-  -- separate availability from clinical information was letting the clinical
-  -- fact through in a column called "type".
+  -- ── 3b. A pupil reads no team-mate's injury at all (K3, db/55) ────
+  -- It used to be "who is out, not what is wrong": the player bundle held
+  -- medical.status.read, so a pupil read every team-mate's date_injured,
+  -- rtw_date and restricted. CSA p52: a child's medical needs are "not in
+  -- general view to other ... children". db/55 withdrew it; the row itself is
+  -- now out of his reach, at every tier. (Section 33 has the rest of K3.)
   PERFORM _as(U_PUPIL);
   SELECT count(*) INTO n FROM injury_masked;
-  PERFORM _assert(n > 0, 'a pupil cannot see that a team mate is unavailable at all');
-  SELECT count(*) INTO n FROM injury_masked WHERE rtw_date IS NOT NULL;
-  PERFORM _assert(n > 0, 'a pupil cannot see when a team mate is expected back');
-  SELECT count(*) INTO n FROM injury_masked WHERE restricted IS NOT NULL;
-  PERFORM _assert(n > 0, 'a pupil cannot see that a team mate is restricted');
-
-  SELECT count(*) INTO n FROM injury_masked WHERE injury_type IS NOT NULL;
-  PERFORM _assert(n = 0, 'a pupil can read WHAT is wrong with a team mate');
-  SELECT count(*) INTO n FROM injury_masked WHERE severity IS NOT NULL;
-  PERFORM _assert(n = 0, 'a pupil can read how severe a team mate''s injury is');
-  SELECT count(*) INTO n FROM injury_masked WHERE phase IS NOT NULL;
-  PERFORM _assert(n = 0, 'a pupil can read a team mate''s rehabilitation stage');
-  SELECT count(*) INTO n FROM injury_masked WHERE notes IS NOT NULL;
-  PERFORM _assert(n = 0, 'a pupil can read clinical notes');
+  PERFORM _assert(n = 0, 'a pupil reads a team-mate''s injury row — that he is out, and until when (K3)');
+  SELECT count(*) INTO n FROM injury;
+  PERFORM _assert(n = 0, 'a pupil reads the injury table under his player assignment (K3)');
 
   -- A parent needs to know what is wrong with their OWN child. Their
   -- assignment names that child, so the capability reaches no further — the
@@ -1135,11 +1124,13 @@ BEGIN
    WHERE player_id = P_OTHER AND notes IS NOT NULL;
   PERFORM _assert(n = 0, 'self-access reads another player''s clinical notes');
 
-  -- They still see that the other player is UNAVAILABLE, through their
-  -- separate `player` assignment. The two assignments are doing different
-  -- jobs at different scopes, in the same session, on the same table.
+  -- Nor that the other player is out at all. Their separate `player`
+  -- assignment reaches the side, and since db/55 (K3, CSA p52) it carries no
+  -- medical tier, so the row itself is out of reach: the two assignments do
+  -- different jobs at different scopes, in the same session, and only the
+  -- one naming him reads an injury.
   SELECT count(*) INTO n FROM injury_masked WHERE player_id = P_OTHER;
-  PERFORM _assert(n = 1, 'a player cannot see that a team mate is unavailable');
+  PERFORM _assert(n = 0, 'a player sees that a team mate is unavailable (K3)');
 
   -- Their own PII, likewise: their date of birth is theirs.
   SELECT count(*) INTO n FROM player_masked WHERE id = P_INJURED AND born IS NOT NULL;
@@ -1424,16 +1415,17 @@ BEGIN
    WHERE kind = 'injury' AND subject_person_id = P_OTHER;
   PERFORM _assert(n = 0, 'self-access received an alert about a team mate');
 
-  -- And NOT a team mate. The player bundle holds medical.status.read and not
-  -- medical.nature.read, so the nature-tier alert does not reach them — while
-  -- the status-tier availability notice does. The tier decides the audience.
+  -- And NOT a team mate, at either tier. The player bundle holds no medical
+  -- tier since db/55 (K3), so neither the nature-tier alert nor the
+  -- status-tier availability notice reaches another pupil. The tier decides
+  -- the audience.
   PERFORM _as(U_PUPIL);
   SELECT count(*) INTO n FROM notification
    WHERE kind = 'injury' AND required_capability = 'medical.nature.read';
   PERFORM _assert(n = 0, 'a team mate was alerted to what is wrong with a player');
   SELECT count(*) INTO n FROM notification
    WHERE kind = 'injury' AND required_capability = 'medical.status.read';
-  PERFORM _assert(n = 1, 'a team mate was not told the player is unavailable');
+  PERFORM _assert(n = 0, 'a team mate was told the player is unavailable (K3)');
 
   -- A spectator holds neither.
   PERFORM _as(U_WATCHER);
@@ -5658,6 +5650,78 @@ BEGIN
     PERFORM _as(U_WES_ADM);
     SELECT count(*) INTO n FROM match_fold_context('77777777-0000-0000-0000-000000000002');
     PERFORM _assert(n = 0, format('db/54 (context): another school''s admin reads %s row(s) of a fixture he may not read', n));
+  END;
+
+  -- ── 33. A pupil reads no team-mate's injury status (K3, db/55) ──────
+  -- CSA Safeguarding Policy p52 item 6: a child's medical needs are for
+  -- "staff and coaches who need it, but not in general view to other ...
+  -- children". db/55 withdrew medical.status.read from `player` (held across
+  -- a side) and from `enquiry` (another side's coach, granted one boy). Each
+  -- refusal below is paired with a read that proves the principal is live,
+  -- so a zero is the capability refusing and not an empty fixture. db/55 was
+  -- undone (its two role_capability rows put back) and this file run: (pupil)
+  -- and (enquiry) failed, and 3b and 11 above with them.
+  DECLARE
+    n       bigint;
+    v_req   uuid;
+    v_ok    boolean;
+    v_why   text;
+    v_asg   uuid;
+    I_OTHER uuid := 'cccccccc-0000-0000-0000-000000000002';  -- T Bekker's injury, 1XI
+  BEGIN
+    -- (catalogue) the two rows are gone, and nobody else's went with them
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM role_capability
+                                 WHERE role IN ('player', 'enquiry') AND capability = 'medical.status.read'),
+      'db/55 (catalogue): player or enquiry still holds medical.status.read');
+    PERFORM _assert((SELECT count(*) FROM role_capability
+                      WHERE capability = 'medical.status.read'
+                        AND role IN ('coach', 'assistantcoach', 'teammanager', 'medical', 'guardian', 'selfaccess',
+                                     'principal', 'directorofsport', 'schooladmin', 'sportsadmin')) = 10,
+      'db/55 (catalogue): a role that needs the status tier lost it');
+
+    -- (pupil) R Pillay, 1XI, injured, beside T Bekker, 1XI, also injured. His
+    -- player assignment is the 1XI's; his selfaccess names him alone.
+    PERFORM _as(U_SELF);
+    SELECT count(*) INTO n FROM injury_masked WHERE player_id = P_INJURED AND injury_type IS NOT NULL AND notes IS NOT NULL;
+    PERFORM _assert(n = 1, format('db/55 (pupil): R Pillay reads %s of his own injury rows at every tier, expected 1 — selfaccess must still reach him', n));
+    SELECT count(*) INTO n FROM injury_masked WHERE player_id = P_OTHER;
+    PERFORM _assert(n = 0, format('db/55 (pupil): R Pillay reads %s row(s) of his 1XI team-mate''s injury — that he is out, and until when', n));
+    SELECT count(*) INTO n FROM injury_masked WHERE player_id <> P_INJURED;
+    PERFORM _assert(n = 0, format('db/55 (pupil): R Pillay reads %s injury row(s) about somebody else', n));
+    SELECT count(*) INTO n FROM player_masked WHERE id = P_OTHER;
+    PERFORM _assert(n = 1, 'db/55 (pupil): R Pillay cannot read his team-mate''s profile at all — the refusal above proves nothing');
+    -- a pupil school-wide, with no selfaccess: nothing, and the team sheet still
+    PERFORM _as(U_PUPIL);
+    SELECT count(*) INTO n FROM injury_masked;
+    PERFORM _assert(n = 0, format('db/55 (pupil): a pupil reads %s injury row(s) at his school', n));
+    SELECT count(*) INTO n FROM player_masked WHERE id IN (P_INJURED, P_OTHER);
+    PERFORM _assert(n = 2, 'db/55 (pupil): a pupil cannot read the side at all — the refusal above proves nothing');
+
+    -- (staff) whoever should, still does
+    PERFORM _as(U_MEDICAL);
+    SELECT count(*) INTO n FROM injury_masked WHERE id IN (I_OWN, I_OTHER) AND notes IS NOT NULL;
+    PERFORM _assert(n = 2, format('db/55 (staff): the physio reads %s of the two 1XI injuries in full', n));
+    PERFORM _as(U_SARAH);   -- directorofsport, school-wide
+    SELECT count(*) INTO n FROM injury_masked WHERE id IN (I_OWN, I_OTHER) AND rtw_date IS NOT NULL AND injury_type IS NOT NULL;
+    PERFORM _assert(n = 2, format('db/55 (staff): the director of sport reads %s of the two 1XI injuries, status and nature', n));
+    -- (A guardian's read of his own child is 3b's, above: by this point in
+    -- the file earlier sections have moved U_PARENT's link.)
+
+    -- (enquiry) the 2XI coach asks for R Pillay (1XI) and is told yes: the
+    -- granted assignment reaches his profile and not whether he is out
+    PERFORM _as(U_COACH2);
+    SELECT count(*) INTO n FROM injury_masked WHERE player_id = P_INJURED;
+    PERFORM _assert(n = 0, 'db/55 (enquiry): the 2XI coach reads a 1XI injury before any grant');
+    INSERT INTO access_request (player_id, school_id, for_team, requested_by, reason)
+      VALUES (P_INJURED, HIL, '2XI', U_COACH2, 'fill_in') RETURNING id INTO v_req;
+    PERFORM _as(U_OWNER);   -- holds player.access.grant everywhere
+    SELECT d.ok, d.reason, d.assignment INTO v_ok, v_why, v_asg FROM access_request_decide(v_req, true, NULL, 14) d;
+    PERFORM _assert(v_ok AND v_asg IS NOT NULL, format('db/55 (enquiry): the grant was refused (%s)', v_why));
+    PERFORM _as(U_COACH2);
+    SELECT count(*) INTO n FROM player_masked WHERE id = P_INJURED;
+    PERFORM _assert(n = 1, 'db/55 (enquiry): the granted enquiry does not reach the boy''s profile — the refusal below proves nothing');
+    SELECT count(*) INTO n FROM injury_masked WHERE player_id = P_INJURED;
+    PERFORM _assert(n = 0, format('db/55 (enquiry): a granted enquiry reads %s of the boy''s injury row(s) — that he is out, and until when', n));
   END;
 
   PERFORM set_config('app.user_id', '', true);

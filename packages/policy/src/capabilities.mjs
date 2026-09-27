@@ -23,8 +23,9 @@
  * safe summary and a sensitive detail, they are separate capabilities —
  * `medical.status.read` (available / unavailable) is not
  * `medical.nature.read` (a hamstring strain) is not `medical.details.read`
- * (the physio's clinical notes). A pupil gets only the first about a team
- * mate; a head of sport the first two; the coach of that child's own side, the
+ * (the physio's clinical notes). A pupil gets none of them about a team
+ * mate (K3, db/55: not in general view to other children, CSA p52) and all
+ * three about himself; a head of sport the first two; the coach of that child's own side, the
  * child's parent, the child themselves and medical staff get all three.
  *
  * The tiers are what make that expressible. Getting the boundary wrong once —

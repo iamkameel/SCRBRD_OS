@@ -387,9 +387,9 @@ INSERT INTO role_assignment (id, person_id, role, school_id, team_code) VALUES
   ('a5510000-0000-0000-0000-000000000009', '88888888-0000-0000-0000-000000000007', 'guardian',        '11111111-1111-1111-1111-111111111111', NULL),
   ('a5510000-0000-0000-0000-00000000000a', '88888888-0000-0000-0000-000000000007', 'guardian',        '22222222-2222-2222-2222-222222222222', NULL),
   -- A genuine spectator. The user seeded as spectator@example.invalid above
-  -- holds a PLAYER assignment, and the player bundle includes
-  -- medical.status.read — a pupil can see who is available — so it cannot
-  -- falsify a claim about medical information. The spectator bundle is
+  -- holds a PLAYER assignment — a pupil — whose bundle included
+  -- medical.status.read until db/55 (K3) withdrew it; a spectator is still
+  -- the plainer principal for a claim about medical information. The spectator bundle is
   -- fixture.read, news.read and competition.read and nothing else, which makes
   -- it the principal that proves the notification capability gate does
   -- something: it holds news.read and must still not receive a medical notice.

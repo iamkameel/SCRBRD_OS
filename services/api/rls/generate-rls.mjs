@@ -420,6 +420,10 @@ export const WITHDRAWN_SINCE_01 = {
     { after: "sponsorship.read",   capability: "sponsorship.manage" },
     { after: "sponsorship.manage", capability: "sponsorship.finance.read" },
   ],
+  // K3 (CSA Safeguarding Policy p52): a pupil, and a granted enquiry, no
+  // longer read whether a team-mate is out and until when; db/55 withdraws them.
+  player:  [{ after: "player.performance.read", capability: "medical.status.read" }],
+  enquiry: [{ after: "player.profile.read",     capability: "medical.status.read" }],
 };
 
 /**

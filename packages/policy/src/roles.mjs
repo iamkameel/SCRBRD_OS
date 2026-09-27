@@ -269,17 +269,16 @@ const BUNDLES = {
   official: ["fixture.read", "team.read", "news.read", "officiating.report", "discipline.write"],
 
   // ── The people the data is about ──
-  // A pupil knows WHO is unavailable and until when — they need that to read a
-  // team sheet — and not what is wrong with them. medical.status.read without
-  // medical.nature.read is exactly that line: `injury_type` ("Grade 2
-  // hamstring strain"), `severity` and `phase` are masked, `rtw_date` and
-  // `restricted` are not.
+  // NO medical.status.read — not even WHO is out and until when (K3, db/55).
+  // This role is held across a side, so that capability here meant every
+  // pupil read every team-mate's date_injured, rtw_date and restricted. CSA's
+  // Safeguarding Policy (p52 item 6): children's medical needs are for "staff
+  // and coaches who need it, but not in general view to other
+  // parents/caregivers or children"; and PUBLIC_DATA N2 already treats even
+  // the bare word "unavailable" as health. A pupil learns the side from the
+  // team sheet. His OWN injury, at every tier, still reaches him through
+  // `selfaccess` below, which names him and nobody else.
   //
-  // It costs a pupil sight of their OWN diagnosis too, because a capability is
-  // held at a scope and this model has no way for a player assignment to mean
-  // "myself only" — only guardian assignments carry a person list. A pupil
-  // learns their diagnosis from the physio rather than from the app, which is
-  // the safe side of that limitation to be on.
   // THE THINGS ABOUT THE TEAM. Not player.development.read: this role is
   // held across a side, and a boy does not read a team-mate's attribute
   // scores for playing in the same XI. His own come through selfaccess,
@@ -289,7 +288,7 @@ const BUNDLES = {
     "availability.declare",
     "fixture.read", "team.read", "news.read", "facility.read", "competition.read",
     "player.profile.read", "player.performance.read",
-    "medical.status.read", "transport.read",
+    "transport.read",
   ],
   // WHAT A GRANTED REQUEST BUYS.
   //
@@ -300,12 +299,15 @@ const BUNDLES = {
   // app_can() as everything else, revocation is immediate, and it expires on
   // its own without anybody remembering to tidy up.
   //
-  // The bundle is deliberately two capabilities. The question being answered
-  // is "is this boy available on Saturday" — availability and a name — and NOT
-  // what is wrong with him, which stays with the coach who actually coaches
-  // him. A granted enquiry can never carry medical.nature.read, because the
-  // role does not name it and a grant cannot exceed the role it grants.
-  enquiry: ["player.profile.read", "medical.status.read"],
+  // The bundle is one capability: his profile. It used to carry
+  // medical.status.read as well — the question being "is this boy available
+  // on Saturday" — and K3 (db/55, Kameel 2026-09-27, SAFEGUARDING_DSO §10
+  // Q8) withdrew it: whether a boy is out, and until when, is his health,
+  // and it stays with the coach who actually coaches him, who answers the
+  // request. A granted enquiry never carried medical.nature.read either,
+  // because the role does not name it and a grant cannot exceed the role it
+  // grants.
+  enquiry: ["player.profile.read"],
 
   // YOUR OWN FILE.
   //

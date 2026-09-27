@@ -1,7 +1,7 @@
 import { ROLES } from "../design/roles.js";
 import { D, T, textOn } from "../design/tokens.js";
 import { mulberry32, strSeed } from "../lib/rng.js";
-import { can } from "../rbac/index.js";
+import { can, holdsCapability } from "../rbac/index.js";
 import { Modal, Pill } from "../ui/primitives.jsx";
 import { teamCodeIn } from "@scrbrd/policy/teams";
 import { Icon, isIcon } from "../ui/icons.jsx";
@@ -161,7 +161,8 @@ function PlayerProfileModal({ player, role, skills = {}, onClose, onFullProfile 
             <Pill color={D.indigo}>{player.team}</Pill>
             <Pill color={D.violet}>{player.role}</Pill>
             {player.age&&<Pill color={D.textMuted}>{player.age} yrs</Pill>}
-            {player.fitness&&<Pill color={player.fitness==="fit"?D.emerald:D.rose}>{player.fitness}</Pill>}
+            {/* His fitness is his health (K3): only for a role reading the injury status tier. */}
+            {player.fitness&&holdsCapability(role,"medical.status.read")&&<Pill color={player.fitness==="fit"?D.emerald:D.rose}>{player.fitness}</Pill>}
           </div>
         </div>
       </div>

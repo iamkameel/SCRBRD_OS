@@ -153,21 +153,17 @@ try {
      coachInjuries.every((i) => i.id !== "cccccccc-0000-0000-0000-000000000003"));
   ok("the scorer reads no injuries at all", (await read("injuries", scorer)).length === 0);
 
-  // ── Three tiers, not two ────────────────────────────────────────
-  // `injury_type` reads "Grade 2 hamstring strain" — it IS the diagnosis — and
-  // it used to sit unmasked behind medical.status.read, which the player
-  // bundle holds. A pupil could read what was wrong with a team mate from a
-  // column called "type", while notes and physio were carefully protected.
+  // ── A team-mate's injury is not in general view (K3) ────────────
+  // It used to be three tiers with the pupil on the first: he read that a
+  // team-mate was out and until when, and not what was wrong. CSA's
+  // Safeguarding Policy p52: a child's medical needs are "not in general view
+  // to other ... children". db/55 withdrew medical.status.read from `player`,
+  // so a pupil reads no team-mate's injury row at all, at any tier.
   const pupil = await login("spectator@example.invalid");   // assignment: player
   const pupilInjuries = await read("injuries", pupil);
-  ok("a pupil sees that a team mate is unavailable", pupilInjuries.length > 0);
-  ok("...and when they are expected back",
-     pupilInjuries.every((i) => i.rtw_date != null));
-  ok("...and NOT what is wrong with them",
-     pupilInjuries.every((i) => i.injury_type == null));
-  ok("...nor how severe it is", pupilInjuries.every((i) => i.severity == null));
-  ok("...nor what stage of rehabilitation they are at",
-     pupilInjuries.every((i) => i.phase == null));
+  ok("a pupil reads no team-mate's injury — not that he is out, nor until when (K3)",
+     pupilInjuries.length === 0);
+  ok("...while the same pupil still reads the side", (await read("players", pupil)).length > 0);
 
   // A coach picks a side and manages a bowling load, so they need the nature.
   ok("a coach reads what the injury is", coachInjuries.every((i) => i.injury_type != null));
@@ -190,13 +186,9 @@ try {
      mine.every((i) => i.notes != null));
   ok("...and who is treating them", mine.every((i) => i.physio != null));
 
-  ok("a team mate's unavailability is still visible", theirs.length > 0);
-  ok("...but not what is wrong with them",
-     theirs.every((i) => i.injury_type == null));
-  ok("...and certainly not their clinical notes",
-     theirs.every((i) => i.notes == null));
-  ok("a pupil's own record is the only one they read in full",
-     mine.length === 1 && theirs.every((i) => i.injury_type == null));
+  ok("a team mate's injury is not visible at all, not even that he is out (K3)", theirs.length === 0);
+  ok("a pupil's own record is the only one they read",
+     mine.length === 1 && own.length === 1);
 
   // A parent needs to know what is wrong with their OWN child — same row, same
   // policy, different answer, because their assignment names that child.
@@ -308,12 +300,13 @@ try {
   const medicAlerts = injuryAlerts(await read("notifications", medic));
   ok("medical staff are alerted", medicAlerts.length > 0);
 
-  // A team mate learns that someone is unavailable and not what is wrong with
-  // them — the tier the notice declares decides who receives it, and the
-  // player bundle holds medical.status.read and not medical.nature.read.
+  // A team mate learns nothing of an injury from the feed, at either tier —
+  // the tier the notice declares decides who receives it, and the player
+  // bundle holds no medical tier since db/55 (K3).
   const pupilAlerts = injuryAlerts(await read("notifications", pupil));
   ok("a team mate is not alerted to the nature of an injury",
      pupilAlerts.every((n) => !/hamstring|impingement/i.test(n.body)));
+  ok("...nor that a team mate is unavailable (K3)", pupilAlerts.length === 0);
 
   ok("a spectator receives no injury alert at all",
      injuryAlerts(await read("notifications", watcher)).length === 0);

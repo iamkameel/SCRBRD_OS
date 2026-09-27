@@ -911,6 +911,13 @@ try {
       { who: /watcher@example\.invalid/, role: "spectator",
         sees:   ["day-next", "day-week", "day-alerts"],
         cannot: ["day-out"] },
+      // A pupil: fixture.read and team.read, and since db/55 (K3, CSA p52)
+      // no medical.status.read — who is out on his side is his team-mates'
+      // health, not his to read. His own injury is on Injuries, through
+      // selfaccess.
+      { who: /pillay@example\.invalid/, role: "player",
+        sees:   ["day-next", "day-week", "day-alerts"],
+        cannot: ["day-out"] },
       // The bursar holds none of fixture.read, team.read or
       // medical.status.read — invoices and sponsorship are not on this
       // sheet. Alerts alone, and it should be the only section.
