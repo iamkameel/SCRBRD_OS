@@ -1427,5 +1427,20 @@ group("M. A bowler suspended: the fold records it; a split over credits each his
      suspensionWords(ev) === "Suspended for changing the condition of the ball (ball tampering), for the rest of the match.");
 }
 
+group("N. A no-ball's kind is recorded as asked, and decides nothing in the fold");
+{
+  const nb = ball({ type: BALL_TYPE.NO_BALL, nbType: "front_foot" });
+  ok("the constructor keeps it on a no-ball", nb.nbType === "front_foot");
+  ok("...leaves it off when not asked, so an old no-ball is the same event", !("nbType" in ball({ type: BALL_TYPE.NO_BALL })));
+  let threw = 0;
+  try { ball({ type: BALL_TYPE.NO_BALL, nbType: "waist" }); } catch { threw++; }
+  try { ball({ type: BALL_TYPE.RUN, nbType: "height" }); } catch { threw++; }
+  ok("...and refuses an unknown kind, or one on anything but a no-ball", threw === 2);
+  const a = deriveInnings([...open(), ball({ type: BALL_TYPE.NO_BALL, nbType: "front_foot" })]);
+  const b = deriveInnings([...open(), ball({ type: BALL_TYPE.NO_BALL })]);
+  ok("a front-foot no-ball gives the free hit, as every no-ball does", a.freeHit === true && b.freeHit === true && a.runs === b.runs);
+  ok("...and rides in the payload", toRow({ ...nb, innings: 0 }).payload.nbType === "front_foot");
+}
+
 console.log(`\n${"─".repeat(52)}\nSCORING SUITE: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

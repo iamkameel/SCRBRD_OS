@@ -131,6 +131,19 @@ export const RUN_OUT_END = Object.freeze({ STRIKER: "striker_end", BOWLER: "bowl
 /** @typedef {typeof RUN_OUT_END[keyof typeof RUN_OUT_END]} RunOutEnd */
 /** @type {ReadonlySet<unknown>}  asked of whatever a producer wrote */
 export const RUN_OUT_ENDS = new Set(Object.values(RUN_OUT_END));
+/**
+ * What kind of no-ball it was, as the umpire called it and the pad's no-ball
+ * sheet asks: over the popping crease, a full toss above waist height, or a
+ * dangerous one. Recorded because the scorer saw it (a deliberate front-foot
+ * no-ball and a second beamer are grounds for suspending the bowler, Law 41);
+ * the fold decides nothing by it — every no-ball is followed by a free hit
+ * (§6 of docs/SCORING_RULES.md). Omitted when not asked, so a no-ball
+ * recorded before is the event it always was.
+ */
+export const NB_TYPE = Object.freeze({ FRONT_FOOT: "front_foot", HEIGHT: "height", BEAMER: "beamer" });
+/** @typedef {typeof NB_TYPE[keyof typeof NB_TYPE]} NbType */
+/** @type {ReadonlySet<unknown>}  asked of whatever a producer wrote */
+export const NB_TYPES = new Set(Object.values(NB_TYPE));
 /** @typedef {typeof NB_RUNS[keyof typeof NB_RUNS]} NbRuns */
 /** @type {ReadonlySet<unknown>}  asked of whatever a producer wrote */
 export const NB_RUNS_VALUES = new Set(Object.values(NB_RUNS));
@@ -541,7 +554,7 @@ export const SUSPENSION_SCOPE_TEXT = Object.freeze({
  *   theta: number | null, radius: number | null,
  *   placementSource: string | null, placementNull: string | null,
  *   closePosition: string | null, captureProfile: string | null,
- *   nbRuns?: NbRuns, outAt?: RunOutEnd,
+ *   nbRuns?: NbRuns, nbType?: NbType, outAt?: RunOutEnd,
  * }} BallEvent
  */
 /**
@@ -557,7 +570,7 @@ export const SUSPENSION_SCOPE_TEXT = Object.freeze({
  *   theta?: number | null, radius?: number | null,
  *   placementSource?: string | null, placementNull?: string | null,
  *   closePosition?: string | null, captureProfile?: string | null,
- *   nbRuns?: string | null, outAt?: string | null,
+ *   nbRuns?: string | null, nbType?: string | null, outAt?: string | null,
  * }} BallInput
  */
 
@@ -914,10 +927,25 @@ const checkedOutAt = (e, type) => {
   return /** @type {RunOutEnd} */ (e);
 };
 
+/**
+ * Reject an `nbType` the model does not define, or one on a delivery that is
+ * not a no-ball.
+ * @param {string | null | undefined} n  @param {BallType} type
+ * @returns {NbType | null}
+ */
+const checkedNbType = (n, type) => {
+  if (n == null) return null;
+  if (!NB_TYPES.has(n) || type !== BALL_TYPE.NO_BALL) {
+    throw new TypeError(`nbType ${JSON.stringify(n)} is for a no-ball, one of ${[...NB_TYPES].join(", ")}`);
+  }
+  return /** @type {NbType} */ (n);
+};
+
 /** @param {BallInput} o  @returns {BallEvent} */
 export const ball = (o) => {
   const type = checkedType(o.type);
   const nbRuns = checkedNbRuns(o.nbRuns, type);
+  const nbType = checkedNbType(o.nbType, type);
   const outAt = checkedOutAt(o.outAt, type);
   return {
   ...base(KIND.BALL, o),
@@ -929,6 +957,10 @@ export const ball = (o) => {
   // Runs off a no-ball that were not off the bat (SCRBRD-068). Omitted when
   // they were, so a no-ball hit for runs is the same event it always was.
   ...(nbRuns ? { nbRuns } : {}),
+  // What kind of no-ball (NB_TYPE), when the pad asked. The pad's no-ball
+  // sheet always passed it; the constructor dropped it until now, so no
+  // stored no-ball carries it and every one reads as it did.
+  ...(nbType ? { nbType } : {}),
 
   // WHO WAS INVOLVED
   // ────────────────

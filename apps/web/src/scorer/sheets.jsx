@@ -90,11 +90,11 @@ function NoBallSheet({onConfirm,onClose}){
           <div style={{color:D.textSecondary,fontSize:"11px",fontFamily:D.body,lineHeight:1.5}}>
             {types.find(t=>t.id===nbType)?.note}
           </div>
-          {(nbType==="height"||nbType==="beamer")&&(
-            <div style={{marginTop:"6px",color:D.orange,fontSize:"11px",fontFamily:D.body,fontWeight:500}}>
-              <Icon name="zap"/> Free hit on next delivery (limited overs)
-            </div>
-          )}
+          {/* Every no-ball, whatever its kind: the fold gives the free hit
+              (SCORING_RULES §6), so the sheet says so for each. */}
+          <div style={{marginTop:"6px",color:D.orange,fontSize:"12px",fontFamily:D.body,fontWeight:500}}>
+            <Icon name="zap"/> Free hit on the next delivery
+          </div>
         </div>
         {/* Runs off the no ball */}
         <div>
@@ -788,7 +788,7 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,onClose
  * injured or suspended bowler, so the sheet asks which before it offers
  * anyone, and passes it on: onConfirm(id, reason).
  */
-function NewOverSheet({ovNum,prevBowlers,bowlingSquad,bowlingTeamKey,lastBowlerName,refuses,onClose,onConfirm:confirm,midOver=false}){
+function NewOverSheet({ovNum,prevBowlers,bowlingSquad,bowlingTeamKey,lastBowlerName,refuses,why=null,onSuspended=null,onClose,onConfirm:confirm,midOver=false}){
   const[name,setName]=useState("");
   const[filter,setFilter]=useState("");
   const[reason,setReason]=useState(null);
@@ -823,7 +823,10 @@ function NewOverSheet({ovNum,prevBowlers,bowlingSquad,bowlingTeamKey,lastBowlerN
             <Lbl sx={{marginBottom:"7px",color:D.amber}}>Injury or suspended?</Lbl>
             <div style={{display:"flex",gap:"7px"}}>
               <button type="button" data-testid="bowler-change-injury" onClick={()=>setReason("injury")} className="pressBtn" style={reasonPill(reason==="injury")}>Injury</button>
-              <button type="button" data-testid="bowler-change-suspended" onClick={()=>setReason("suspended")} className="pressBtn" style={reasonPill(reason==="suspended")}>Suspended</button>
+              {/* Suspended by the umpires (SCRBRD-094 item 2): the suspension
+                  is its own record — he may not bowl again — so the pad's
+                  suspension sheet takes it from here when there is one. */}
+              <button type="button" data-testid="bowler-change-suspended" onClick={()=>onSuspended?onSuspended():setReason("suspended")} className="pressBtn" style={reasonPill(reason==="suspended")}>Suspended</button>
             </div>
             <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginTop:"6px"}}>
               Law 17.8.1: a bowler may be replaced during an over only when injured or suspended. Whoever finishes the over may not bowl the next.
@@ -863,7 +866,7 @@ function NewOverSheet({ovNum,prevBowlers,bowlingSquad,bowlingTeamKey,lastBowlerN
                     <div style={{flex:1}}>
                       <div style={{fontFamily:D.body,fontSize:"13px",fontWeight:500,
                         color:dis?D.textMuted:D.textPrimary}}>{b.name}</div>
-                      {dis&&(!midOver||reason)&&<div style={{fontFamily:D.body,fontSize:"10px",color:D.roseText,marginTop:"1px"}}>Cannot bowl consecutive overs</div>}
+                      {dis&&(!midOver||reason)&&<div data-testid={`bowler-why-${b.id}`} style={{fontFamily:D.body,fontSize:"12px",color:D.roseText,marginTop:"1px"}}>{(why&&refuses&&why(refuses(b.id)))||"Cannot bowl consecutive overs"}</div>}
                     </div>
                     {ri&&<Badge color={ROLE_COLORS[ri.role]} sx={{fontSize:"8px"}}>{ri.role}</Badge>}
                     <div style={{display:"flex",gap:"12px",alignItems:"center"}}>

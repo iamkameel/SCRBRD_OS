@@ -66,6 +66,9 @@ const SUITES = [
   // The pad's penalty runs: the match's fold, the Laws asked before an award
   // is offered, and the sheet as drawn (SCRBRD-094), same transform.
   ["penalty-sheet", "apps/web/test/penalty-sheet.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // The pad's "Umpire suspended the bowler": the Laws asked before a reason or
+  // a replacement is offered, why-not in words, the report (SCRBRD-094 item 2).
+  ["suspension-sheet", "apps/web/test/suspension-sheet.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Renders the Board — always black, figures that flip (DESIGN_DIRECTION §1).
   ["board",    "apps/web/test/board.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // No emoji in the client outside a reasoned allow-list, every icon name

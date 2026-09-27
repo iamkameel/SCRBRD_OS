@@ -1,5 +1,5 @@
 import { useId, useState } from "react";
-import { PENALTY_REASON } from "@scrbrd/scoring";
+import { NB_TYPE, PENALTY_REASON } from "@scrbrd/scoring";
 import { T } from "../design/tokens.js";
 import { useTheme } from "../design/theme.js";
 import { Icon } from "../ui/icons.jsx";
@@ -36,6 +36,13 @@ const DELIVERIES = [
   { type: "run", label: "Fair ball" },
   { type: "Nb", label: "No ball" },
   { type: "Wd", label: "Wide" },
+];
+
+/** A no-ball's kind, asked as the no-ball sheet asks it (NB_TYPE). */
+const NO_BALL_KINDS = [
+  { type: NB_TYPE.FRONT_FOOT, label: "Front foot" },
+  { type: NB_TYPE.HEIGHT, label: "Full toss height" },
+  { type: NB_TYPE.BEAMER, label: "Beamer" },
 ];
 
 const label = () => ({ ...T.role.label, color: T.content.secondary, margin: `0 0 ${T.space.sm}` });
@@ -90,7 +97,7 @@ function Hint({ id, words }) {
  * @param {{striker: any, nonStriker: any, bowler: any}} p.crease  who is in, as the next ball's event names them
  * @param {{striker?: string, nonStriker?: string, bowler?: string}} [p.names]  the same, as names
  * @param {(c: {toBattingTeam: boolean, reason: string}) => void} p.onAward
- * @param {(type: string) => void} p.onShortRun
+ * @param {(type: string, nbType: string | null) => void} p.onShortRun  the delivery, and a no-ball's kind
  * @param {() => void} p.onClose
  */
 export function PenaltySheet({ mode = "award", innings, events, curIn, ctx, crease, names = {}, onAward, onShortRun, onClose }) {
@@ -99,6 +106,7 @@ export function PenaltySheet({ mode = "award", innings, events, curIn, ctx, crea
   const [side, setSide] = useState(/** @type {boolean | null} */ (null));
   const [reason, setReason] = useState(/** @type {string | null} */ (null));
   const [delivery, setDelivery] = useState("run");
+  const [nbType, setNbType] = useState(/** @type {string} */ (NB_TYPE.FRONT_FOOT));
   const refusalId = useId(), hintId = useId();
 
   const inn = innings?.[curIn] ?? null;
@@ -124,7 +132,8 @@ export function PenaltySheet({ mode = "award", innings, events, curIn, ctx, crea
 
   // ── A short run ─────────────────────────────────────────────
   if (view === "shortRun") {
-    const code = shortRunRefusal(match, curIn, { type: delivery, value: 0, ...crease }, ctx);
+    const kind = delivery === "Nb" ? nbType : null;
+    const code = shortRunRefusal(match, curIn, { type: delivery, value: 0, ...crease, ...(kind ? { nbType: kind } : {}) }, ctx);
     const words = refusalWords(code);
     const who = [names.striker && `Faced by ${names.striker}`, names.nonStriker && `${names.nonStriker} at the other end`,
       names.bowler && `bowled by ${names.bowler}`].filter(Boolean).join(", ");
@@ -152,12 +161,27 @@ export function PenaltySheet({ mode = "award", innings, events, curIn, ctx, crea
               </p>
             )}
           </section>
+          {delivery === "Nb" && (
+            <section aria-label="What kind of no ball?">
+              <h3 style={label()}>What kind of no ball?</h3>
+              <div role="radiogroup" aria-label="What kind of no ball?" style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: T.space.sm }}>
+                {NO_BALL_KINDS.map((k) => (
+                  <button key={k.type} type="button" role="radio" aria-checked={nbType === k.type}
+                    data-testid={`short-run-nb-${k.type}`} onClick={() => setNbType(k.type)} className="pressBtn os-state"
+                    style={{ ...choice(nbType === k.type), justifyContent: "center", textAlign: "center" }}>
+                    {k.label}
+                  </button>
+                ))}
+              </div>
+              <p style={{ ...body(), fontSize: "14px", marginTop: T.space.sm }}>The next delivery is a free hit.</p>
+            </section>
+          )}
           {who && <p data-testid="short-run-crease" style={body()}>{who}.</p>}
           <p style={{ ...body(), color: T.content.primary }}>{whereTheRunsGo(innings, curIn, false)}</p>
           <Refusal id={refusalId} words={words}/>
           <button type="button" data-testid="short-run-confirm" disabled={!!code}
             aria-describedby={code ? refusalId : undefined}
-            onClick={() => { if (!code) onShortRun(delivery); }} className="os-state" style={commit(!code)}>
+            onClick={() => { if (!code) onShortRun(delivery, kind); }} className="os-state" style={commit(!code)}>
             Record the ball and 5 to {fielding}
           </button>
           {mode === "award" && (

@@ -18,6 +18,8 @@ import { withoutEvents, recordAgain, recordAgainRefusal, heldInOrder, undoOnPad,
 import { HeldSheet } from "./held.jsx";
 import { awardEvent, awardRefusal, foldPad, pendingCredits, projectPad, shortRunEvents } from "./penalty.js";
 import { PenaltySheet } from "./penaltySheet.jsx";
+import { ReportOffer, SuspendSheet } from "./suspendSheet.jsx";
+import { bowlerToSuspend, replacementEvent, suspendEvent, suspensionRefusalWords, suspensionsInMatch } from "./suspension.js";
 import { MenuItem, MenuSection, PadMenu } from "./padMenu.jsx";
 import { ExitKey, Pad, PadBoard } from "./pad.jsx";
 import { SyncBanner } from "./syncBanner.jsx";
@@ -252,7 +254,7 @@ function SyncPill({ sync, storage, onOpenHeld }) {
 // (App.jsx): a live pad that is signed out says so and offers it (SCRBRD-078).
 // `onExit` is the way back to the shell (App.jsx): the first thing in the
 // pad's title bar, and a floating key on the setup and result screens.
-function SCRBRD({resume,onSignIn,onExit}={}){
+function SCRBRD({resume,onSignIn,onExit,role=null}={}){
   const[screen,setScreen]=useState("setup");
   const[match,setMatch]=useState(null);
   // ── The event log is the state ──────────────────────────
@@ -894,6 +896,9 @@ function SCRBRD({resume,onSignIn,onExit}={}){
       case SCORING_BLOCK.NEXT_BOWLER:
         setModalCtx({lastBowlerId:inn?.ballLog?.[inn.ballLog.length-1]?.bowlerId??null});
         setModal("newOver");return;
+      // The umpires suspended the bowler on (SCRBRD-094 item 2): the sheet
+      // that asks who finishes the over, offering only who the Laws take.
+      case SCORING_BLOCK.BOWLER_SUSPENDED: setModal("suspendReplace");return;
       default: return; // innings closed: nothing to fix, only to say
     }
   };
@@ -1230,7 +1235,7 @@ function SCRBRD({resume,onSignIn,onExit}={}){
    * one-tap pad, which never asks where the ball went) get an explicit
    * "not required" rather than a silent blank.
    */
-  const commitBall=(type,value,shot,seg,zone,approach,placement,{shortRun=false}={})=>{
+  const commitBall=(type,value,shot,seg,zone,approach,placement,{shortRun=false,nbType=null}={})=>{
     // Every delivery comes through here, including the hub's stage-2 paths
     // that were only checked at stage 0. The same answer the pad shows.
     if(!readiness.ready||padLock)return;
@@ -1266,6 +1271,9 @@ function SCRBRD({resume,onSignIn,onExit}={}){
       type,value,shot,bowlerApproach:approach||null,freeHit,
       ...crease(before),
       ...place,
+      // What kind of no-ball, as the no-ball sheet records it (a short run
+      // off a no-ball asks it too).
+      ...(type==="Nb"&&nbType?{nbType}:{}),
     };
     const evs=shortRun?shortRunEvents(curIn,delivery):[ballEvent(delivery)];
     const ev=evs[0];
@@ -1409,11 +1417,30 @@ function SCRBRD({resume,onSignIn,onExit}={}){
     setModal(null);
   };
   // A short run: the delivery, with no runs, and five to the fielding side —
-  // through commitBall, the one funnel every delivery goes through.
-  const recordShortRun=(type)=>{
+  // through commitBall, the one funnel every delivery goes through. Off a
+  // no-ball the sheet asks its type, as the no-ball sheet does.
+  const recordShortRun=(type,nbType=null)=>{
     setModal(null);
-    commitBall(type,0,null,null,null,null,undefined,{shortRun:true});
+    commitBall(type,0,null,null,null,null,undefined,{shortRun:true,nbType});
   };
+  // A bowler suspended by the umpires (Law 41, SCRBRD-094 item 2): the
+  // event, for whoever is bowling (or bowled the last ball), then — the
+  // sheet moves on to it at once — who takes the ball: reason "suspended"
+  // while the over is under way. The sheet asked the Laws before it offered
+  // either; asked again here, at the tap, against the log as it is.
+  const recordSuspension=(reason)=>{
+    const who=bowlerToSuspend(inn);
+    const ev=suspendEvent(curIn,who,reason);
+    if(padLock||lawsRefusal({innings,events},ev))return;
+    emit(ev);
+  };
+  const recordReplacement=(id,midOverNow)=>{
+    const ev=replacementEvent(curIn,id,midOverNow);
+    if(padLock||lawsRefusal({innings,events},ev))return;
+    emit(ev);
+    setModal(null);
+  };
+  const suspensions=suspensionsInMatch(innings);
   // The umpires' revision goes into the log like a ball. Everything that
   // reads the innings — the over count on the pad, the innings-over rule, the
   // result, the other device, the server — derives it from there.
@@ -1443,13 +1470,16 @@ function SCRBRD({resume,onSignIn,onExit}={}){
         onConfirm={(nbType,runs,nbRuns)=>{
           // `nbRuns` only when the scorer said byes or leg byes (SCRBRD-068);
           // off the bat is the event's default and is left off it.
-          emit(ballEvent({type:"Nb",value:runs,shot:selShot,
+          const nb=ballEvent({type:"Nb",value:runs,shot:selShot,
             seg:selSeg?.seg??null,zone:selSeg?.zone??null,nbType,...(nbRuns?{nbRuns}:{}),
-            ...crease(inn)}));
+            ...crease(inn)});
+          emit(nb);
           setSelSeg(null);setModal(null);scoreKeyRef.current++;
-          // A height no-ball or a beamer earns a free hit. The replay also
-          // tracks this; setting it here keeps the banner immediate.
-          if(nbType==="height"||nbType==="beamer")setFreeHit(true);
+          // The free hit is the fold's (every no-ball is followed by one,
+          // SCORING_RULES §6), read from the projection as after any ball —
+          // it used to be set here only for a height no-ball or a beamer, so
+          // a front-foot no-ball's free hit had no banner.
+          setFreeHit(project(nb).freeHit);
         }}
         onClose={()=>setModal(null)}/>
     );
@@ -1530,6 +1560,16 @@ function SCRBRD({resume,onSignIn,onExit}={}){
           onClose={()=>setModal(null)}/>
       );
     }
+
+    if(modal==="suspend"||modal==="suspendReplace"||modal==="suspendReport")return (
+      <SuspendSheet
+        view={modal==="suspendReplace"?"replace":modal==="suspendReport"?"report":"reason"}
+        innings={innings} events={events} curIn={curIn}
+        role={role} matchId={live?matchId:null}
+        onSuspend={recordSuspension}
+        onReplace={recordReplacement}
+        onClose={()=>setModal(null)}/>
+    );
 
     if(modal==="opener")return (
       <BattingOrderSheet
@@ -1617,6 +1657,10 @@ function SCRBRD({resume,onSignIn,onExit}={}){
           bowlingTeamKey={inn?.bowlingTeamKey}
           lastBowlerName={lastBowler?.name||null}
           refuses={bowlerRefusal}
+          why={suspensionRefusalWords}
+          // "Suspended" mid-over is the umpires' suspension: its own sheet,
+          // which records it and then asks who finishes the over.
+          onSuspended={midOver?()=>setModal("suspend"):null}
           midOver={midOver}
           onClose={()=>setModal(null)}
           onConfirm={(name,reason)=>{addBowler(name,reason);setModal(null);}}/>
@@ -1703,12 +1747,14 @@ function SCRBRD({resume,onSignIn,onExit}={}){
       <div style={{minHeight:"100vh",background:D.base,padding:"24px",display:"flex",flexDirection:"column",alignItems:"center"}}>
         <GS/>
         <ExitKey onExit={onExit}/>
+        {renderModal()}
         <div style={{width:"100%",maxWidth:"920px"}}>
           <Glass style={{padding:"36px",textAlign:"center",marginBottom:"28px"}}>
             <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.2em",textTransform:"uppercase",marginBottom:"12px"}}>Match Complete</div>
             <div style={{fontFamily:D.mono,fontSize:"clamp(28px,5vw,48px)",fontWeight:500,background:D.grad,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text",marginBottom:"6px"}}>{winner}</div>
             {!tie&&<div style={{color:D.emerald,fontSize:"16px",fontFamily:D.body,fontWeight:500}}>{margin}</div>}
           </Glass>
+          {suspensions.length>0&&<ReportOffer count={suspensions.length} onOpen={()=>setModal("suspendReport")}/>}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"20px",marginBottom:"28px"}}>
             {[0,1].map(ii=>innings[ii]&&<ScorecardPanel key={ii} innings={innings} idx={ii}/>)}
           </div>
@@ -1802,6 +1848,12 @@ function SCRBRD({resume,onSignIn,onExit}={}){
                   onClick={()=>{close();setModal("penalty");}}/>
                 <MenuItem testid="pad-short-run" label="Short run" hint="The umpire gave five to the fielding side. The ball counts, with no runs."
                   onClick={()=>{close();setModal("shortRun");}}/>
+                <MenuItem testid="pad-suspend" label="Umpire suspended the bowler" hint="He may not bowl again. Another bowler finishes the over."
+                  onClick={()=>{close();setModal("suspend");}}/>
+                {suspensions.length>0&&(
+                  <MenuItem testid="pad-suspend-report" label="Umpires' report" hint="The suspension, for the school's discipline record"
+                    onClick={()=>{close();setModal("suspendReport");}}/>
+                )}
               </MenuSection>
             </>
           )}</PadMenu>
@@ -1851,6 +1903,11 @@ function SCRBRD({resume,onSignIn,onExit}={}){
               onScoreHere={()=>syncRef.current?.attach("open")}
               onTakeOver={()=>setModal("handover")}/>}
             {activeTab==="score"&&!modal&&<ScoringBlocked readiness={readiness} onFix={fixBlock}/>}
+            {/* After the match, a suspension's report is offered here — never
+                during play, where nothing may stand between a tap and the
+                next ball (§1a); the pad's menu has it from the moment it is
+                recorded. */}
+            {matchOver&&suspensions.length>0&&!modal&&<ReportOffer count={suspensions.length} onOpen={()=>setModal("suspendReport")}/>}
           </div>
           <div className="pad-main">
           {activeTab==="score"&&uiMode==="focus"&&(
