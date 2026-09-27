@@ -668,7 +668,9 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 -- the trigger writes: the batter's fifty and hundred in two fixtures and 500
 -- career runs in the second (the first fixture's first six voided, a
 -- no-ball's byes, a retirement, and a run out at the other end in each of
--- the last two, one of them in a fixture where he never faces); the bowler's
+-- the last two, one of them in a fixture where he never faces; and a second
+-- innings in the second fixture, as a two-innings match gives him, with a
+-- fifty of its own beside the 402 of his first); the bowler's
 -- hat-trick and five-for in two fixtures (a saved lbw on a free hit and a
 -- run out between) and 25 career wickets. Returns the notices, in the order
 -- written. Owner-written; the file rolls it back with everything else.
@@ -712,7 +714,8 @@ BEGIN
         (10, MB, 1, 'ball',   'W',   0,    B,    C,          NULL,       'lbw',         '{}'::jsonb,         1),
         (11, MB, 1, 'ball',   'W',   0,    B,    C,          NULL,       'run_out',     '{}'::jsonb,         1),
         (12, MB, 1, 'ball',   'W',   0,    B,    C,          NULL,       'bowled',      '{}'::jsonb,        20),
-        (13, MC, 0, 'ball',   'W',   0,    B,    NULL,       A,          'run_out',     '{}'::jsonb,         1)
+        (13, MB, 2, 'ball',   'run', 6,    A,    NULL,       NULL,       NULL,          '{}'::jsonb,         9),
+        (14, MC, 0, 'ball',   'W',   0,    B,    NULL,       A,          'run_out',     '{}'::jsonb,         1)
       ) AS e(ord, m, inn, kind, bt, v, striker, bowler, dismissed, dis, pl, times)
       CROSS JOIN LATERAL generate_series(1, e.times) AS g
      ORDER BY e.m = MC, e.m = MB, e.ord, g
@@ -5274,22 +5277,25 @@ BEGIN
   -- innings with no ball faced in it — and every player's career. And the
   -- trigger is held to the notices it calls, one INSERT per delivery. Each
   -- assertion's label names what it guards; db/51 was broken each of these
-  -- ways, one at a time, and the whole file run — the fixture falsifications
-  -- first stop db/51's own self-check, so they were run with that check
+  -- ways, one at a time, and the whole file run. Each first stops db/51's own
+  -- self-check (named on the right); each was run again with that check
   -- lifted, to see this section go red on its own:
   --
-  --   milestone_watch() reading player_innings again            → (shape)
-  --   the helpers executable by PUBLIC                          → (shape)
-  --   career_runs_off_bat() over ball_event, voids included      → (same)
-  --   innings_runs_off_bat() without its innings                 → (same), (notices)
-  --   the career threshold compared against the innings figure   → (notices)
-  --   the five-for asked of the bowler's career                  → (notices)
+  --   milestone_watch() reading player_innings again         → (shape)    db/51: still reads player_innings
+  --   career_runs_off_bat() executable by PUBLIC              → (shape)    db/51: executable by PUBLIC
+  --   career_runs_off_bat() over ball_event, voids included   → (same)     db/51: the fixture's figures
+  --                                                             (§19–§23's voided balls, and this fixture's)
+  --   career_runs_off_bat() without its coalesce              → (same)     db/51: the fixture's figures
+  --   innings_runs_off_bat() without its innings              → (notices)  db/51: the fixture's notices
+  --                                                             (no fifty in the second innings)
+  --   the career threshold compared against the innings figure → (notices) db/51: the fixture's notices
+  --   the five-for asked of the bowler's career               → (notices)  db/51: the fixture's notices
   DECLARE
     n bigint;
     detail text;
     v_want text := 'A:fifty:a:0:54 A:hundred:a:0:102 C:hat_trick:a:1:3 C:five_for:a:1:5 '
                 || 'A:fifty:b:0:54 A:hundred:b:0:102 A:career_runs:b:0:500 '
-                || 'C:hat_trick:b:1:3 C:five_for:b:1:5 C:career_wickets:b:0:25';
+                || 'C:hat_trick:b:1:3 C:five_for:b:1:5 C:career_wickets:b:0:25 A:fifty:b:2:54';
   BEGIN
     SELECT count(*) INTO n FROM pg_proc p
      WHERE p.oid IN ('innings_runs_off_bat(uuid,uuid,smallint)'::regprocedure, 'career_runs_off_bat(uuid)'::regprocedure)

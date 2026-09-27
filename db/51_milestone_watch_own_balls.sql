@@ -300,6 +300,8 @@ BEGIN
   --     no wicket), a run out (not the bowler's), then twenty bowled: a
   --     hat-trick completed at the third, a five-for at the fifth and 25
   --     career wickets at the twentieth.
+  --   m_b, innings 2: A bats again, as a two-innings fixture has him do — 9
+  --     sixes, a fifty in THIS innings (54), with 402 already in the other.
   --   m_c, innings 0: B on strike, A run out at the other end — an innings of
   --     A's with no ball faced in it.
   BEGIN
@@ -335,7 +337,8 @@ BEGIN
           (10, m_b, 1, 'ball',   'W',   0,    p_b,  p_c,        NULL,       'lbw',         '{}'::jsonb,         1),
           (11, m_b, 1, 'ball',   'W',   0,    p_b,  p_c,        NULL,       'run_out',     '{}'::jsonb,         1),
           (12, m_b, 1, 'ball',   'W',   0,    p_b,  p_c,        NULL,       'bowled',      '{}'::jsonb,        20),
-          (13, m_c, 0, 'ball',   'W',   0,    p_b,  NULL,       p_a,        'run_out',     '{}'::jsonb,         1)
+          (13, m_b, 2, 'ball',   'run', 6,    p_a,  NULL,       NULL,       NULL,          '{}'::jsonb,         9),
+          (14, m_c, 0, 'ball',   'W',   0,    p_b,  NULL,       p_a,        'run_out',     '{}'::jsonb,         1)
         ) AS e(ord, m, inn, kind, bt, v, striker, bowler, dismissed, dis, pl, times)
         CROSS JOIN LATERAL generate_series(1, e.times) AS g
        ORDER BY e.m = m_c, e.m = m_b, e.ord, g
@@ -371,7 +374,7 @@ BEGIN
 
   fixture_want := 'A:fifty:a:0:54 A:hundred:a:0:102 C:hat_trick:a:1:3 C:five_for:a:1:5 '
                || 'A:fifty:b:0:54 A:hundred:b:0:102 A:career_runs:b:0:500 '
-               || 'C:hat_trick:b:1:3 C:five_for:b:1:5 C:career_wickets:b:0:25';
+               || 'C:hat_trick:b:1:3 C:five_for:b:1:5 C:career_wickets:b:0:25 A:fifty:b:2:54';
   IF fixture_got IS DISTINCT FROM fixture_want THEN
     RAISE EXCEPTION 'db/51: the fixture raised %, expected % — the trigger no longer calls the milestones it did', fixture_got, fixture_want;
   END IF;
