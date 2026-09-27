@@ -635,8 +635,7 @@ Retired hurt is "retired, not out" (Law 25.4.2): he may come back. The fold now 
 retirement the Laws read as out (an unmarked legacy `retire` "out", which wrote "retired out") is left as it was; the
 Laws refuse that return anyway. SQL never read the retirement (its figures come from the balls), so nothing there moves.
 
-**When he may come back.** Only "at the fall of a wicket or the retirement of another batter" (the Law's resuming
-clause, 25.4.4 in the 2017 Code). The fold records each retirement that is not out in `inn.retirements` — who, why,
+**When he may come back.** Only "at the fall of a wicket or the retirement of another batter" (Law 25.4.4). The fold records each retirement that is not out in `inn.retirements` — who, why,
 the innings' wickets when he went, and the ball — and `lawsRefusal` takes a `batters` event naming a batter retired
 hurt only if, since his latest retirement, the wickets have moved or another batter has retired; otherwise
 `resume_not_yet`. An end is only ever empty after a wicket or a retirement, so what this refuses is his walking

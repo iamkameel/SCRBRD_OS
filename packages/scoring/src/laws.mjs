@@ -117,7 +117,7 @@ export const REFUSAL_TEXT = Object.freeze({
   previous_innings_open: "the previous innings had not ended",
   same_batter_both_ends: "the same batter was named at both ends",
   batter_already_out: "that batter is already out",
-  // Law 25.4 — the resuming clause (25.4.4 in the 2017 Code). No clause number in the words.
+  // Law 25.4.4. No clause number in the words.
   resume_not_yet: "a batter who retired hurt may resume only after a wicket has fallen, or another batter has retired, since he went off",
   crease_occupied: "a batter who is not out was replaced",
   not_at_crease: "that batter is not at the crease",
@@ -446,9 +446,8 @@ function isOut(inn, id) {
 }
 
 /**
- * May a batter who retired hurt resume now? Law 25.4 (the resuming clause,
- * 25.4.4 in the 2017 Code): "only at the fall of a wicket or the retirement
- * of another batter". SCRBRD-071.
+ * May a batter who retired hurt resume now? Law 25.4.4: "only at the fall
+ * of a wicket or the retirement of another batter". SCRBRD-071.
  *
  * Read from the fold's own record of retirements (`inn.retirements`, in
  * order, each with the innings' wickets when he went): he may come back once,
