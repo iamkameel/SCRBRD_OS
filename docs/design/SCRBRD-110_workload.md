@@ -545,9 +545,11 @@ Each phase's `tables.mjs` entries regenerate `db/09`'s successor policies into t
 
 - **Nets counts are an estimate, not a tally (Q1).** "We're not trying to be 100% accurate on how many balls
   are bowled in the nets", and the coach's and the bowler's figures are not to be set against each other. So:
-  no disagreement flag; one figure per session, the bowler's own when he logged one, else the coach's. How the
-  estimate is entered (a number, or a band such as under 12 / 12–24 / 24–36 / 36+, with the effort) is still
-  to be confirmed. §1.3's reconciliation rule changes accordingly before phase 1 is built.
+  no disagreement flag; one figure per session, the bowler's own when he logged one, else the coach's.
+  **Entered as a band** (decided): under 12 / 12–24 / 24–36 / 36+ deliveries, with the effort (low, medium,
+  high). The windows read a band at its midpoint (6, 18, 30, 42) and say they are estimates; match deliveries
+  from the ball log stay exact. §1.3's record and reconciliation rule change accordingly before phase 1 is
+  built: `load_entry` carries the band, not a free count, for nets and training.
 - **The director of sport may read check-ins and flags, but is not alerted to them (Q2).** He can open a
   bowler's check-ins and flags when he asks for them: a level-3 read, so it is logged
   (`log_restricted_read()`), the same as the physio's. The flag's notification goes to the coach and the physio
