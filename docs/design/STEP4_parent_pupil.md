@@ -620,6 +620,16 @@ Phase A is the whole product for most families and needs no migration. Nothing i
 
 ## 9 · Open questions for Kameel
 
+### Decided (Kameel, 2026-09-27)
+
+Every recommendation below stands, except:
+- **Q10 — a parent sees the team sheet before the match.** Kameel: "it can allow for logistics between parents to
+  be arranged or communicated." The shape to build: signed in, her own child's side and fixture only, the named
+  players and their order — names only, no profiles, ages or photos. A narrow read over `match_squad`, not
+  `player.profile.read`; it needs a `db/NN` and an `ADDED_SINCE_01` line (Opus).
+- **Q6 — confirmed as drawn:** his disciplinary record on his Me screen, on request, behind a tap, never on Home.
+- **Q12 — confirmed:** no photo feature in step 4.
+
 Each with the recommendation the design assumes.
 
 | # | Question | Recommendation |

@@ -3967,6 +3967,8 @@ handwritten sheet is one of two kinds:
 2. Photograph to draft.
 3. Full scorebook (ball-by-ball) transcription.
 
+**Decided (Kameel, 2026-09-27): the recommendations below** — phase 1 (manual entry) first; backfilled records signed-in only until decided otherwise; summaries first.
+
 **Decisions for Kameel before building:**
 1. **Photos of pupils' names to the AI provider.** Live commentary masks names before they leave the platform
    (`maskNames`), but names written on a photo cannot be masked. Phase 2 needs either the school's agreement under
@@ -4020,7 +4022,7 @@ name reaches the provider, and it fails soft to a plain description (`descBall`)
 3. **Names follow the reader.** Signed-in readers see names under the usual read rules. A public page runs every
    name through `publicName()` (PUBLIC_DATA L2/L4): "D Erasmus" only with consent, otherwise the role ("the
    batter", "the bowler"). The generator takes the names from the caller and never reads them itself.
-4. **AI enrichment is optional and a separate decision.** If kept, it runs server-side, once per ball (never once
+4. **AI enrichment: kept (Kameel, 2026-09-27).** Spectators see commentary (his words; read as: the AI lines too, names through `publicName()` on a public page — to confirm). **AI enrichment is optional and a separate decision.** If kept, it runs server-side, once per ball (never once
    per device), is stored beside the ball it describes, and keeps the name tokenising. The model and cost are
    chosen deliberately (a smaller model is the likely trade), and whether AI lines appear to spectators at all is
    Kameel's call. Until he decides, spectators see the deterministic lines only.

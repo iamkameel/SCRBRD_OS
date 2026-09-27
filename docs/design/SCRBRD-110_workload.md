@@ -558,6 +558,28 @@ Each phase's `tables.mjs` entries regenerate `db/09`'s successor policies into t
   recipients), §6.1 (`directorofsport` gains `wellness.read`) and ADR 0002's reasoning, which a builder must
   revisit with it.
 
+### Decided, second round (Kameel, 2026-09-27)
+
+- **Q3 — a strength-and-conditioning coach is fitness, not medical.** He writes and reads fitness tests and does
+  not read the physio's clinical notes. That is the "real data-access difference" ADR 0003 allows a role for, so a
+  builder adds one (working name `fitness`) and records the exception in ADR 0003. Still to confirm with Kameel:
+  whether he reads the load figures and check-ins, or the tests only.
+- **Q5 — the nets count sits under the ordinary processing consent,** like attendance, not the health consent. The
+  check-in (how his body feels) stays under the health consent. §7's gates change accordingly: an unconsented boy
+  still has a nets count; he has no check-ins or flags.
+- **Q7 — at 18, a parent's consent stays valid while he is still in the school system.** Collection does not pause
+  at 18. **Flag for the information officer:** under POPIA a parent consents for a child; for an adult the consent
+  must be his own. The proposed shape (to confirm): the parent's consent carries on with no pause; at 18 the app
+  asks him once to confirm; until he answers collection continues; if he declines it stops. This also bears on
+  whether the parent's *access* continues past 18 while he is at school (today the guardian link ends by date).
+- **Q8 — personal limits are guidelines.** Exceeding one writes a line on his profile only: no breach row, no
+  notice.
+- **Q9, Q10, Q11, Q12 — as recommended.** No match intensity in phase 1; a share lasts 14 days by default, 30 at
+  most; an open flag never hides him from selection or marks him unavailable; the coaches and the physio see that a
+  share happened, the office does not.
+- **Q4 and Q6 — open.** Kameel asked for more context (2026-09-27). On Q6 his steer: "I don't think this needs to
+  run like the military."
+
 Each remaining question with the recommendation the design assumes.
 
 | # | question | recommendation |
