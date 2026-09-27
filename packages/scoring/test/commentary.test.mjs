@@ -13,12 +13,15 @@
  *   G. public mode: with role words for names, no pupil's name appears
  *   H. the vocabulary: every shot and sector the pad offers has its words
  *   I. foldSteps is the fold: its last step is deriveInnings()
+ *   J. a left-hander's sector-era ball is worded for HIS side of the ground
+ *      (SCRBRD-101): the stored seg is the screen's, mirrored for him
  */
 import { readFileSync } from "node:fs";
 import {
   deriveCommentary, COMMENTARY_KIND as K, ROLE_WORDS, SHOT_WORDS, SECTOR_WORDS,
   inningsStart, batters, bowler, ball, penalty, retire, inningsEnd, revision, voidEvent, shortRunning,
   sealInnings, deriveInnings, foldSteps, placementFromTap, BALL_TYPE, PENALTY_REASON_TEXT,
+  ANGULAR_FAMILIES, angularFamily,
 } from "../src/index.mjs";
 
 /** Words without a Law clause bracket, escaped for a RegExp. */
@@ -87,7 +90,7 @@ group("A. Every event kind has its line, with the fold's figures");
     I(ball({ type: BALL_TYPE.NO_BALL, value: 1 })),                       // off the bat: rotates
     I(ball({ type: BALL_TYPE.NO_BALL, value: 2, nbRuns: "byes" })),       // byes off a no-ball
     I(ball({ type: BALL_TYPE.NO_BALL, value: 1, nbRuns: "leg_byes" })),   // leg byes off a no-ball
-    run(6, { shot: "loft", seg: 4 }),
+    run(6, { shot: "loft", seg: 5 }),
     I(ball({ type: BALL_TYPE.BYE, value: 2 })),
     I(ball({ type: BALL_TYPE.LEG_BYE, value: 1, shot: "hit_body" })),
     I(ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: "caught", fielder: FIELDER, shot: "pull",
@@ -121,7 +124,9 @@ group("A. Every event kind has its line, with the fold's figures");
   ok("byes off a no-ball", at(/no-ball, and two byes off it\./));
   ok("leg byes off a no-ball", at(/no-ball, and one leg bye off it\./));
   const six = ofKind(out, K.SIX)[0];
-  ok("a six, over the sector the scorer tapped", six && /lofted over long-on\./.test(six.text), six?.text);
+  // Sector 5 is centred on 150°: mid on, for this right-hander (SCRBRD-101;
+  // it was named "deep mid-on", and sector 4, at 120°, "long-on").
+  ok("a six, over the sector the scorer tapped", six && /lofted over mid on\./.test(six.text), six?.text);
   ok("byes", at(/, two byes\.$/));
   ok("leg byes, with the body contact recorded", at(/, off the body, one leg bye\.$/));
   const w = ofKind(out, K.WICKET)[0];
@@ -496,12 +501,15 @@ group("H. Every shot and sector the pad offers has its words here");
   ok("the pad offers shots", ids.length >= 20, ids.length);
   const missing = ids.filter((id) => !Object.hasOwn(SHOT_WORDS, id));
   ok("each has its words", missing.length === 0, missing.join(", "));
+  // One source of truth (SCRBRD-101): the words are the families' names at
+  // each sector's centre, and the pad's wheel takes its names from the same
+  // table rather than typing a second list.
+  ok("twelve sectors, each named by the family at its centre", SECTOR_WORDS.length === 12
+    && SECTOR_WORDS.every((w, s) => w === ANGULAR_FAMILIES.find((f) => f.key === angularFamily(s * 30))?.label),
+    SECTOR_WORDS.join(", "));
   const fieldJs = readFileSync(new URL("../../../apps/web/src/scorer/field.js", import.meta.url), "utf8");
-  const segs = [...fieldJs.matchAll(/\{id:(\d+),label:"([^"]+)"/g)].map((m) => [Number(m[1]), m[2]]);
-  ok("the pad's twelve sectors", segs.length === 12 && segs.every(([i], k) => i === k));
-  ok("...each named here, in order", SECTOR_WORDS.length === 12 && segs.every(([i, label]) =>
-    SECTOR_WORDS[/** @type {number} */ (i)].replace(/-/g, " ") === String(label).toLowerCase().replace("sq ", "square ").replace("-", " ")),
-    segs.map(([i, l]) => `${l}=${SECTOR_WORDS[/** @type {number} */ (i)]}`).join(", "));
+  ok("...and the pad's wheel names its sectors from the same table, typing none",
+    /\bSECTORS\b/.test(fieldJs) && !/label:\s*"[A-Z]/.test(fieldJs));
   seq = 3100;
   const odd = deriveCommentary([...openA(), run(1, { shot: "not_a_shot", seg: 99 })], { nameOf });
   ok("an id the vocabulary does not know says nothing, never itself", !/not_a_shot|99/.test(texts(odd)), texts(odd));
@@ -519,6 +527,45 @@ group("I. foldSteps() walks the same fold as deriveInnings()");
   while (!r.done) { n++; r = it.next(); }
   ok("it steps over every event that counts, and no other", n === log.length - 1, n);
   ok("its settled innings is deriveInnings()'s, figure for figure", JSON.stringify(r.value) === JSON.stringify(deriveInnings(withVoid)));
+}
+
+// ── J. A left-hander's ball, in his own words ────────────
+group("J. A left-hander's ball is worded for his side of the ground (SCRBRD-101)");
+{
+  // One right-hander (H[0]) and one left-hander (H[1]); the squad carries the
+  // hand, as the pad's live squad does.
+  const hands = SQUAD.map((p, i) => ({ ...p, batHand: i === 1 ? "L" : "R" }));
+  seq = 3300;
+  /** @param {object} placed  the placement of one ball, faced by the left-hander */
+  const lefty = (placed) => deriveCommentary([
+    I(inningsStart({ battingTeam: "Hilton College", bowlingTeam: "Westville", squad: hands, overs: 2 })),
+    I(batters({ striker: H[1], nonStriker: H[0] })),
+    I(bowler({ bowler: TYPED[0] })),
+    run(4, { shot: "drive", ...placed }),
+  ], { nameOf });
+  const fourOf = (/** @type {CommentaryItem[]} */ out) => ofKind(out, K.FOUR)[0]?.text ?? "";
+  // A sector-era ball: the scorer tapped the screen's sector 3 (90°, the
+  // right of the screen). Under his mirrored field that is his point, not
+  // square leg: 12 − 3 = 9.
+  const sector = fourOf(lefty({ seg: 3, zone: "boundary", placementSource: "sector" }));
+  ok("a left-hander's sector tap on the screen's right is through point", /driven through point\./.test(sector), sector);
+  ok("...not square leg, which is where it is on a right-hander's screen", !/square leg/.test(sector), sector);
+  // His cover drive tapped at the screen's 120°: his 240°, cover.
+  const cover = fourOf(lefty({ seg: 4, zone: "boundary", placementSource: "sector" }));
+  ok("...and the screen's 120° is his cover", /driven through cover\./.test(cover), cover);
+  // A point: the same screen tap, captured as a point for him, is his point
+  // too — theta is batter-relative already, so the two eras agree.
+  const point = fourOf(lefty(placementFromTap({ angle: 90, radius: 0.6, batHand: "L" })));
+  ok("a point tapped at the same place is his deep point: the two eras agree", /driven to deep point\./.test(point), point);
+  // The right-hander's same screen sector stays square leg.
+  seq = 3400;
+  const righty = deriveCommentary([
+    I(inningsStart({ battingTeam: "Hilton College", bowlingTeam: "Westville", squad: hands, overs: 2 })),
+    I(batters({ striker: H[0], nonStriker: H[1] })),
+    I(bowler({ bowler: TYPED[0] })),
+    run(4, { shot: "drive", seg: 3, zone: "boundary", placementSource: "sector" }),
+  ], { nameOf });
+  ok("...while a right-hander's tap there is through square leg", /driven through square leg\./.test(fourOf(righty)), fourOf(righty));
 }
 
 console.log(`\n${"─".repeat(52)}\nCOMMENTARY SUITE: ${pass} passed, ${fail} failed`);

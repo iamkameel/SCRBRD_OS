@@ -12,6 +12,8 @@
  * commentary.test.mjs checks every id the pad offers has its words here.
  */
 
+import { SECTORS } from "./placement.mjs";
+
 /**
  * A shot, as a past participle or a phrase that reads after "Bowler to
  * Batter, …": "driven", "off the outside edge". Every id the pad's shot grid
@@ -37,12 +39,15 @@ export const SHOT_WORDS = Object.freeze({
 export const NO_STROKE = new Set(["missed", "padded", "hit_body", "hit_helmet", "hit_arm"]);
 
 /**
- * The twelve sectors of the sector era, by `seg` (field.js SEGS, in order):
- * how a line names where the ball went. `straight` reads as a phrase of its
- * own ("straight down the ground") rather than after "to".
+ * The twelve sectors, by BATTER-RELATIVE sector (placement.mjs SECTORS): how a
+ * line names where the ball went. `straight` reads as a phrase of its own
+ * ("straight down the ground") rather than after "to".
+ *
+ * Derived from the fielding families, never typed: the list this replaced was
+ * about 30° off ("mid-on" at 90°, which is square; "cover" at 270°, which is
+ * point), so a ball hit square read "through mid-on". Index it with
+ * sectorOf(ball, hand) — never with a stored `seg`, which is the screen's
+ * sector and is mirrored for a left-hander (batterSector()).
  * @type {ReadonlyArray<string>}
  */
-export const SECTOR_WORDS = Object.freeze([
-  "fine leg", "square leg", "mid-wicket", "mid-on", "long-on", "deep mid-on",
-  "straight", "long-off", "mid-off", "cover", "point", "third man",
-]);
+export const SECTOR_WORDS = Object.freeze(SECTORS.map((s) => s.label));

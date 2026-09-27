@@ -44,6 +44,9 @@ const SUITES = [
   // The commentary every viewer shares (SCRBRD-098): lines from the fold,
   // names only from the caller, a void has none, the same log the same words.
   ["commentary", "packages/scoring/test/commentary.test.mjs"],
+  // Where the ball went, relative to the batter (SCRBRD-101): the sectors
+  // named by the fielding families, and a stored seg read through the hand.
+  ["placement", "packages/scoring/test/placement.test.mjs"],
   ["spatial",  "packages/scoring/test/spatial.test.mjs"],
   ["wheel",    "apps/web/test/wheel.test.mjs"],
   ["roadmap",  "apps/web/test/roadmap.test.mjs"],
