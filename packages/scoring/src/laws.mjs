@@ -119,7 +119,8 @@ export const REFUSAL_TEXT = Object.freeze({
   crease_occupied: "a batter who is not out was replaced",
   not_at_crease: "that batter is not at the crease",
   consecutive_overs: "a bowler may not bowl two overs in a row",
-  mid_over_no_reason: "the bowler was changed during an over without saying why — injury or suspension (Law 17.8.1)",
+  // Law 17.8.1. No clause number in the words: Kameel is verifying them against the current Code.
+  mid_over_no_reason: "the bowler was changed during an over without saying why — injury or suspension",
   needs_a_delivery: "only retired out and timed out are recorded without a ball — every other way out needs a delivery",
   not_next_in: "a batter can be timed out only while an end is empty and he is the one due in",
   nb_runs_unknown: "runs off a no-ball were said to be something other than off the bat, byes or leg byes",

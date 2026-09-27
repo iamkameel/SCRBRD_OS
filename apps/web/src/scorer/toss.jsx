@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { battingFirst } from "@scrbrd/scoring";
-import { D } from "../design/tokens.js";
+import { D, T } from "../design/tokens.js";
 import { Btn, Lbl, Sheet } from "./ui.jsx";
 
 /**
@@ -25,17 +25,18 @@ export function TossSheet({ home, away, onConfirm, onClose }) {
   const name = (side) => (side === "home" ? home : away) || (side === "home" ? "Home" : "Away");
 
   const choice = (on, color) => ({
+    minHeight: "44px", display: "flex", alignItems: "center", justifyContent: "center",
     padding: "12px", borderRadius: D.md, cursor: "pointer",
-    fontFamily: D.body, fontSize: "13px", fontWeight: 600,
-    border: `1px solid ${on ? color + "66" : D.border}`,
-    background: on ? `${color}14` : D.surf2,
-    color: on ? color : D.textSecondary, transition: "all .2s",
+    fontFamily: T.type.body, fontSize: "15px", fontWeight: 600,
+    border: `1px solid ${on ? color + "66" : T.line.normal}`,
+    background: on ? `${color}14` : T.surface.interactive,
+    color: on ? color : T.content.secondary, transition: "all .2s",
   });
 
   return (
     <Sheet title="The toss" accent={D.emerald} onClose={onClose}>
       <div data-testid="toss-sheet" style={{ display: "flex", flexDirection: "column", gap: "16px", paddingBottom: "8px" }}>
-        <div style={{ fontFamily: D.body, fontSize: "13px", color: D.textSecondary, lineHeight: 1.5 }}>
+        <div style={{ fontFamily: T.type.body, fontSize: "13px", color: T.content.secondary, lineHeight: 1.5 }}>
           No toss is recorded for this match. Who won it, and what did they choose? The side batting
           first opens the innings, and that cannot be undone on the pad.
         </div>

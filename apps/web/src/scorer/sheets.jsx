@@ -28,7 +28,7 @@ function ShotSelectorSheet({onSelect,onSkip,onClose}){
               {cat.shots.map(shot=>(
                 <button key={shot.id} onClick={()=>setSel(shot.id)}
                   className={`pressBtn shotBtn${sel===shot.id?" active":""}`}
-                  style={{padding:"6px 12px",borderRadius:D.pill,cursor:"pointer",
+                  style={{minHeight:"44px",padding:"6px 14px",borderRadius:D.pill,cursor:"pointer",
                     fontFamily:D.body,fontSize:"12px",fontWeight:500,
                     background:sel===shot.id?`${cat.color}20`:D.surf2,
                     color:sel===shot.id?cat.color:D.textSecondary}}>
@@ -78,17 +78,17 @@ function NoBallSheet({onConfirm,onClose}){
       <div style={{paddingTop:"14px",display:"flex",flexDirection:"column",gap:"14px"}}>
         {types.map(t=>(
           <button key={t.id} onClick={()=>setNbType(t.id)} className="pressBtn" style={{
-            padding:"12px 14px",borderRadius:D.md,cursor:"pointer",textAlign:"left",width:"100%",
+            minHeight:"44px",padding:"12px 14px",borderRadius:D.md,cursor:"pointer",textAlign:"left",width:"100%",
             border:`1px solid ${nbType===t.id?D.amber+"66":D.border}`,
             background:nbType===t.id?`${D.amber}10`:D.surf2}}>
             <div style={{fontFamily:D.body,fontSize:"13px",fontWeight:600,color:nbType===t.id?D.amber:D.textPrimary,marginBottom:"3px"}}>{t.label}</div>
-            <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>{t.sub}</div>
+            <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{t.sub}</div>
           </button>
         ))}
         {/* Dismissal note */}
         <div style={{background:`${D.amber}0a`,border:`1px solid ${D.amber}22`,borderRadius:D.md,padding:"10px 14px"}}>
-          <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.amber,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:"5px"}}>Dismissals Allowed</div>
-          <div style={{color:D.textSecondary,fontSize:"11px",fontFamily:D.body,lineHeight:1.5}}>
+          <Lbl sx={{color:D.amber,marginBottom:"5px"}}>Dismissals Allowed</Lbl>
+          <div style={{color:D.textSecondary,fontSize:"12px",fontFamily:D.body,lineHeight:1.5}}>
             {types.find(t=>t.id===nbType)?.note}
           </div>
           {/* Every no-ball, whatever its kind: the fold gives the free hit
@@ -103,7 +103,7 @@ function NoBallSheet({onConfirm,onClose}){
           <div style={{display:"flex",gap:"6px"}}>
             {[0,1,2,3,4,5,6].map(r=>(
               <button key={r} data-testid={`nb-run-${r}`} onClick={()=>setRuns(r)} className="pressBtn" style={{
-                flex:1,padding:"11px 0",borderRadius:D.md,cursor:"pointer",
+                flex:1,minHeight:"44px",padding:"11px 0",borderRadius:D.md,cursor:"pointer",
                 fontFamily:D.mono,fontSize:"15px",fontWeight:500,
                 border:`1px solid ${runs===r?D.amber+"77":D.border}`,
                 background:runs===r?`${D.amber}1a`:D.surf2,
@@ -111,7 +111,7 @@ function NoBallSheet({onConfirm,onClose}){
               }}>{r}</button>
             ))}
           </div>
-          <div style={{marginTop:"6px",color:D.textMuted,fontSize:"11px",fontFamily:D.body}}>
+          <div style={{marginTop:"6px",color:D.textMuted,fontSize:"12px",fontFamily:D.body}}>
             +1 penalty run added automatically. Total: <span style={{color:D.amber,fontFamily:D.mono,fontWeight:500}}>{runs+1}</span> runs to batting team.
           </div>
         </div>
@@ -121,12 +121,12 @@ function NoBallSheet({onConfirm,onClose}){
             <div style={{display:"flex",gap:"6px"}}>
               {FROM.map(f=>(
                 <button key={f.label} type="button" data-testid={`nb-runs-${f.id??"bat"}`} onClick={()=>setFrom(f.id)} className="pressBtn" style={{
-                  flex:1,padding:"10px 0",borderRadius:D.md,cursor:"pointer",fontFamily:D.body,fontSize:"12px",fontWeight:600,
+                  flex:1,minHeight:"44px",padding:"10px 0",borderRadius:D.md,cursor:"pointer",fontFamily:D.body,fontSize:"12px",fontWeight:600,
                   border:`1px solid ${from===f.id?D.amber+"77":D.border}`,background:from===f.id?`${D.amber}1a`:D.surf2,
                   color:from===f.id?D.amber:D.textMuted}}>{f.label}</button>
               ))}
             </div>
-            <div style={{marginTop:"6px",color:D.textMuted,fontSize:"11px",fontFamily:D.body}}>
+            <div style={{marginTop:"6px",color:D.textMuted,fontSize:"12px",fontFamily:D.body}}>
               {from?"Not the batter's: no-ball extras, charged to the bowler.":"Credited to the batter."}
             </div>
           </div>
@@ -173,7 +173,7 @@ function RevisionSheet({overs,target,isChase,onConfirm,onClose}){
           <div style={{display:"flex",flexWrap:"wrap",gap:"6px"}}>
             {["rain","bad light","late start","ground unfit","other"].map(r=>(
               <button key={r} onClick={()=>setReason(r)} className="pressBtn" style={{
-                padding:"5px 10px",borderRadius:D.pill,cursor:"pointer",fontFamily:D.body,fontSize:"11px",fontWeight:500,
+                minHeight:"44px",padding:"5px 14px",borderRadius:D.pill,cursor:"pointer",fontFamily:D.body,fontSize:"12px",fontWeight:500,
                 border:`1px solid ${reason===r?D.amber+"55":D.border}`,background:reason===r?`${D.amber}14`:D.surf2,
                 color:reason===r?D.amber:D.textMuted,transition:"all .15s"}}>{r}</button>
             ))}
@@ -208,9 +208,9 @@ function HandoverSheet({ matchId, device, epoch, pending, held = 0, onShowHeld, 
         <div style={{display:"flex",gap:"6px"}}>
           {[["hand","Hand over"],["take","Take over"]].map(([id,label])=>(
             <button key={id} data-testid={`handover-tab-${id}`} onClick={()=>setTab(id)} className="pressBtn" style={{
-              flex:1,padding:"9px",borderRadius:D.pill,cursor:"pointer",border:"none",
-              fontFamily:D.head,fontSize:"11px",fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",
-              background:tab===id?D.grad:D.surf2,color:tab===id?T.light.ink:D.textMuted}}>
+              flex:1,minHeight:"44px",padding:"9px",borderRadius:D.pill,cursor:"pointer",border:"none",
+              fontFamily:T.type.body,fontSize:"13px",fontWeight:700,letterSpacing:"0.03em",textTransform:"uppercase",
+              background:tab===id?D.grad:T.surface.interactive,color:tab===id?T.light.ink:T.content.tertiary}}>
               {label}
             </button>
           ))}
@@ -436,16 +436,16 @@ function TakeOverTab({ matchId, device, onClaimed, onTakenOver, onClose }) {
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px"}}>
         <div><Lbl sx={{marginBottom:"6px"}}>Runs</Lbl>
           <input data-testid="handover-verify-runs" inputMode="numeric" value={runs} onChange={e=>setRuns(e.target.value.replace(/\D/g,""))}
-            style={{width:"100%",padding:"11px",borderRadius:D.md,background:D.surf2,border:`1px solid ${D.border}`,fontFamily:D.mono,fontSize:"18px",color:D.textPrimary,boxSizing:"border-box"}}/></div>
+            style={{width:"100%",minHeight:"44px",padding:"11px",borderRadius:D.md,background:D.surf2,border:`1px solid ${D.border}`,fontFamily:D.mono,fontSize:"18px",color:D.textPrimary,boxSizing:"border-box"}}/></div>
         <div><Lbl sx={{marginBottom:"6px"}}>Wickets</Lbl>
           <input data-testid="handover-verify-wickets" inputMode="numeric" value={wickets} onChange={e=>setWickets(e.target.value.replace(/\D/g,""))}
-            style={{width:"100%",padding:"11px",borderRadius:D.md,background:D.surf2,border:`1px solid ${D.border}`,fontFamily:D.mono,fontSize:"18px",color:D.textPrimary,boxSizing:"border-box"}}/></div>
+            style={{width:"100%",minHeight:"44px",padding:"11px",borderRadius:D.md,background:D.surf2,border:`1px solid ${D.border}`,fontFamily:D.mono,fontSize:"18px",color:D.textPrimary,boxSizing:"border-box"}}/></div>
         <div><Lbl sx={{marginBottom:"6px"}}>Overs</Lbl>
           <input data-testid="handover-verify-overs" inputMode="numeric" value={overs} onChange={e=>setOvers(e.target.value.replace(/\D/g,""))}
-            style={{width:"100%",padding:"11px",borderRadius:D.md,background:D.surf2,border:`1px solid ${D.border}`,fontFamily:D.mono,fontSize:"18px",color:D.textPrimary,boxSizing:"border-box"}}/></div>
+            style={{width:"100%",minHeight:"44px",padding:"11px",borderRadius:D.md,background:D.surf2,border:`1px solid ${D.border}`,fontFamily:D.mono,fontSize:"18px",color:D.textPrimary,boxSizing:"border-box"}}/></div>
         <div><Lbl sx={{marginBottom:"6px"}}>Balls (0–5)</Lbl>
           <input data-testid="handover-verify-balls" inputMode="numeric" value={ballsInOver} onChange={e=>setBallsInOver(e.target.value.replace(/\D/g,""))}
-            style={{width:"100%",padding:"11px",borderRadius:D.md,background:D.surf2,border:`1px solid ${D.border}`,fontFamily:D.mono,fontSize:"18px",color:D.textPrimary,boxSizing:"border-box"}}/></div>
+            style={{width:"100%",minHeight:"44px",padding:"11px",borderRadius:D.md,background:D.surf2,border:`1px solid ${D.border}`,fontFamily:D.mono,fontSize:"18px",color:D.textPrimary,boxSizing:"border-box"}}/></div>
       </div>
       {diff&&(
         <div data-testid="handover-verify-mismatch" style={{color:D.roseText,fontFamily:D.body,fontSize:"12px",lineHeight:1.6,
@@ -481,7 +481,7 @@ const entry = (p) => (typeof p === "string" ? { id: p, name: p } : { id: p?.id ?
  * It turns the sheet's pick into "this batter was timed out": a wicket with no
  * ball, recorded, and the sheet stays open for the batter who comes in.
  */
-function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,header=null,onTimedOut=null}){
+function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,header=null,onTimedOut=null,notResuming=null}){
   const[timedOut,setTimedOut]=useState(false);
   const send=timedOut&&onTimedOut?(id)=>{setTimedOut(false);onTimedOut(id);}:onSend;
   const teamInfo=INT_TEAMS[teamKey]||null;
@@ -498,8 +498,9 @@ function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,head
   // Retired hurt — "retired, not out" — may come back (Law 25.4.2), on the
   // same line: the fold carries his runs and balls on (SCRBRD-071). A
   // retirement the Laws read as out (an old unmarked "retired out") is not
-  // offered; the server would refuse it.
-  const mayResume=timedOut?[]:batsmen.filter(b=>b.status==="retired"&&b.dismissal!=="retired out");
+  // offered; the server would refuse it. Nor is `notResuming`, the batter
+  // who has just retired: this sheet is filling the end he left.
+  const mayResume=timedOut?[]:batsmen.filter(b=>b.status==="retired"&&b.dismissal!=="retired out"&&b.id!==notResuming);
   return (
     <Sheet title="Batting Order" accent={D.emerald} onClose={onClose}>
       <div style={{paddingTop:"12px"}}>
@@ -515,7 +516,7 @@ function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,head
                   background:`${D.emerald}0a`,border:`1px solid ${D.emerald}22`,borderRadius:D.md,marginBottom:"5px"}}>
                   <div className="liveDot" style={{width:"6px",height:"6px",borderRadius:"50%",background:D.emerald,flexShrink:0}}/>
                   <span style={{fontFamily:D.body,fontSize:"13px",fontWeight:500,color:D.textPrimary,flex:1}}>{b.name}</span>
-                  {ri&&<Badge color={ROLE_COLORS[ri.role]} sx={{fontSize:"8px"}}>{ri.role}</Badge>}
+                  {ri&&<Badge color={ROLE_COLORS[ri.role]}>{ri.role}</Badge>}
                   <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textSecondary}}>{b.runs}({b.balls})</span>
                 </div>
               );
@@ -527,7 +528,7 @@ function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,head
             width:"100%",marginBottom:"12px",padding:"9px 12px",borderRadius:D.md,cursor:"pointer",textAlign:"left",
             border:`1px solid ${timedOut?D.rose+"55":D.border}`,background:timedOut?`${D.rose}12`:"transparent",
             fontFamily:D.body,fontSize:"12px",fontWeight:500,color:timedOut?D.roseText:D.textSecondary}}>
-            {timedOut?"Timed out — tap the batter who did not arrive in time (Law 40)":"Incoming batter timed out?"}
+            {timedOut?"Timed out — tap the batter who did not arrive in time":"Incoming batter timed out?"}
           </button>
         )}
         {mayResume.length>0&&(
@@ -585,14 +586,13 @@ function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,head
             display:"flex",alignItems:"center",gap:"10px"}}>
             <Badge color={D.violet} sx={{flexShrink:0}}>12th Man</Badge>
             <span style={{fontFamily:D.body,fontSize:"13px",color:D.textSecondary,flex:1}}>{twelfthMan}</span>
-            <span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>fielding sub only</span>
+            <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>fielding sub only</span>
           </div>
         )}
         {/* Dismissed */}
         {dismissed.length>0&&(
           <details style={{marginBottom:"12px"}}>
-            <summary style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:"0.12em",
-              textTransform:"uppercase",color:D.textMuted,cursor:"pointer",marginBottom:"7px"}}>
+            <summary style={{...T.role.label,color:T.content.tertiary,cursor:"pointer",marginBottom:"7px",minHeight:"44px",display:"flex",alignItems:"center"}}>
               Dismissed ({dismissed.length})
             </summary>
             <div style={{display:"flex",flexDirection:"column",gap:"4px",paddingTop:"6px"}}>
@@ -600,7 +600,7 @@ function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,head
                 <div key={b.id} style={{display:"flex",alignItems:"center",gap:"10px",padding:"6px 10px",
                   borderRadius:D.md,background:`${D.rose}08`,border:`1px solid ${D.rose}15`}}>
                   <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,flex:1}}>{b.name}</span>
-                  <span style={{fontFamily:D.mono,fontSize:"11px",color:D.roseText}}>{b.runs}({b.balls})</span>
+                  <span style={{fontFamily:D.mono,fontSize:"12px",color:D.roseText}}>{b.runs}({b.balls})</span>
                 </div>
               ))}
             </div>
@@ -620,10 +620,10 @@ function CustomBatEntry({onSend}){
       <Lbl sx={{marginBottom:"7px",color:D.textMuted}}>Or Enter Unlisted Player</Lbl>
       <div style={{display:"flex",gap:"8px"}}>
         <input value={name} onChange={e=>setName(e.target.value)} placeholder="Player name…" aria-label="Player name"
-          style={{flex:1,background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,
+          style={{flex:1,minHeight:"44px",boxSizing:"border-box",background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,
             color:D.textPrimary,fontSize:"14px",fontFamily:D.body,fontWeight:500,padding:"10px 14px"}}
           onKeyDown={e=>{if(e.key==="Enter"&&name.trim())onSend(name.trim());}}/>
-        <Btn variant="live" disabled={!name.trim()} onClick={()=>name.trim()&&onSend(name.trim())} sx={{borderRadius:D.md,padding:"10px 18px"}}>Go</Btn>
+        <Btn variant="live" disabled={!name.trim()} onClick={()=>name.trim()&&onSend(name.trim())} sx={{borderRadius:D.md,padding:"10px 18px",minHeight:"44px"}}>Go</Btn>
       </div>
     </div>
   );
@@ -697,7 +697,7 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,onClose
             <button data-testid="wicket-who-nonstriker" onClick={()=>setWho(nonStriker.id)} className="pressBtn" style={pill(who===nonStriker.id)}>{nonStriker.name}</button>
           </div>
           {mode===DISMISSAL.RETIRED_OUT&&(
-            <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginTop:"6px"}}>
+            <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"6px"}}>
               Recorded between deliveries: no ball of the over, nothing to the bowler.
             </div>
           )}
@@ -720,7 +720,7 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,onClose
             <button data-testid="wicket-end-striker" onClick={()=>setEnd("striker_end")} className="pressBtn" style={pill(end==="striker_end")}>Striker's end</button>
             <button data-testid="wicket-end-bowler" onClick={()=>setEnd("bowler_end")} className="pressBtn" style={pill(end==="bowler_end")}>Bowler's end</button>
           </div>
-          <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginTop:"6px"}}>
+          <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"6px"}}>
             The batters crossed for the runs; the end where the wicket was broken is the one left empty.
           </div>
         </div>
@@ -731,7 +731,7 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,onClose
           <Lbl sx={{marginBottom:"4px",color:D.violetText}}>Wicketkeeper</Lbl>
           <div style={{fontFamily:D.body,fontSize:"13px",color:D.textPrimary,fontWeight:500}}>
             {wkName||"—"}
-            {wkName&&<span style={{color:D.textMuted,fontSize:"11px",marginLeft:"6px"}}>(auto-assigned)</span>}
+            {wkName&&<span style={{color:D.textMuted,fontSize:"12px",marginLeft:"6px"}}>(auto-assigned)</span>}
           </div>
         </div>
       )}
@@ -750,11 +750,11 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,onClose
                 background:fielder===p.name?D.sky+"12":D.surf2,
                 cursor:"pointer",textAlign:"left",transition:"all .12s"}}>
                 <span style={{fontFamily:D.body,fontSize:"13px",color:fielder===p.name?D.sky:D.textPrimary,fontWeight:500,flex:1}}>{p.name}</span>
-                <Badge color={p.role==="WK"?D.violet:p.role==="ALL"?D.amber:p.role==="BOWL"?D.orange:D.sky} sx={{fontSize:"8px"}}>{p.role}</Badge>
+                <Badge color={p.role==="WK"?D.violet:p.role==="ALL"?D.amber:p.role==="BOWL"?D.orange:D.sky}>{p.role}</Badge>
               </button>
             ))}
           </div>
-          {!fielder&&<div style={{fontFamily:D.body,fontSize:"11px",color:D.amber,marginTop:"6px"}}>Or type name below:</div>}
+          {!fielder&&<div style={{fontFamily:D.body,fontSize:"12px",color:D.amber,marginTop:"6px"}}>Or type name below:</div>}
           <input value={!fieldingSquad.find(p=>p.name===fielder)&&fielder?fielder:""} 
             onChange={e=>setFielder(e.target.value)} placeholder="Type any name…" aria-label="Fielder not in the squad"
             style={{width:"100%",background:D.surf2,border:"1px solid "+D.border,borderRadius:D.md,marginTop:"6px",
@@ -793,8 +793,8 @@ function NewOverSheet({ovNum,inn=null,prevBowlers,bowlingSquad,bowlingTeamKey,la
   const[filter,setFilter]=useState("");
   const[reason,setReason]=useState(null);
   const onConfirm=(id)=>{if(midOver&&!reason)return;confirm(id,midOver?reason:undefined);};
-  const reasonPill=(on)=>({flex:1,padding:"10px",borderRadius:D.md,cursor:"pointer",fontFamily:D.body,fontSize:"13px",fontWeight:600,
-    border:`1px solid ${on?D.amber+"77":D.border}`,background:on?`${D.amber}1a`:D.surf2,color:on?D.amber:D.textSecondary});
+  const reasonPill=(on)=>({flex:1,minHeight:"44px",padding:"10px",borderRadius:D.md,cursor:"pointer",fontFamily:T.type.body,fontSize:"15px",fontWeight:600,
+    border:`1px solid ${on?D.amber+"77":T.line.normal}`,background:on?`${D.amber}1a`:T.surface.interactive,color:on?D.amber:T.content.secondary});
   const teamInfo=INT_TEAMS[bowlingTeamKey]||null;
   // Build full list: team bowlers first, then all-rounders, then others
   // Same normalisation as the batting sheet: a demonstration squad is bare
@@ -833,8 +833,8 @@ function NewOverSheet({ovNum,inn=null,prevBowlers,bowlingSquad,bowlingTeamKey,la
                   suspension sheet takes it from here when there is one. */}
               <button type="button" data-testid="bowler-change-suspended" onClick={()=>onSuspended?onSuspended():setReason("suspended")} className="pressBtn" style={reasonPill(reason==="suspended")}>Suspended</button>
             </div>
-            <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginTop:"6px"}}>
-              Law 17.8.1: a bowler may be replaced during an over only when injured or suspended. Whoever finishes the over may not bowl the next.
+            <div style={{fontFamily:T.type.body,fontSize:"12px",color:T.content.tertiary,marginTop:"6px",lineHeight:1.4}}>
+              A bowler may be replaced during an over only when injured or suspended. Whoever finishes the over may not bowl the next.
             </div>
           </div>
         )}
@@ -848,7 +848,7 @@ function NewOverSheet({ovNum,inn=null,prevBowlers,bowlingSquad,bowlingTeamKey,la
         <div style={{marginBottom:"12px"}}>
           <input value={filter} onChange={e=>setFilter(e.target.value)} aria-label="Search bowlers"
             placeholder="Search bowler…"
-            style={{width:"100%",background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,
+            style={{width:"100%",minHeight:"44px",boxSizing:"border-box",background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,
               color:D.textPrimary,fontSize:"14px",fontFamily:D.body,padding:"9px 14px"}}
             onFocus={e=>e.target.style.borderColor=D.amber+"66"}
             onBlur={e=>e.target.style.borderColor=D.border}/>
@@ -899,11 +899,11 @@ function NewOverSheet({ovNum,inn=null,prevBowlers,bowlingSquad,bowlingTeamKey,la
         <Lbl sx={{marginBottom:"7px",color:D.textMuted}}>Or Type Name</Lbl>
         <div style={{display:"flex",gap:"8px"}}>
           <input value={name} onChange={e=>setName(e.target.value)} placeholder="Bowler name…" aria-label="Bowler name"
-            style={{flex:1,background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,
+            style={{flex:1,minHeight:"44px",boxSizing:"border-box",background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,
               color:D.textPrimary,fontSize:"14px",fontFamily:D.body,fontWeight:500,padding:"10px 14px"}}
             onFocus={e=>e.target.style.borderColor=D.amber+"66"} onBlur={e=>e.target.style.borderColor=D.border}
             onKeyDown={e=>{if(e.key==="Enter"&&name.trim()&&canBowl({name:name.trim()}))onConfirm(name.trim());}}/>
-          <Btn variant="amber" disabled={!name.trim()||!canBowl({name:name.trim()})} onClick={()=>name.trim()&&canBowl({name:name.trim()})&&onConfirm(name.trim())} sx={{borderRadius:D.md,padding:"10px 18px"}}>Go</Btn>
+          <Btn variant="amber" disabled={!name.trim()||!canBowl({name:name.trim()})} onClick={()=>name.trim()&&canBowl({name:name.trim()})&&onConfirm(name.trim())} sx={{borderRadius:D.md,padding:"10px 18px",minHeight:"44px"}}>Go</Btn>
         </div>
       </div>
     </Sheet>
@@ -1038,12 +1038,12 @@ function InningsReviewSheet({inn,inningsNo,onConfirm,onFixLastBall,onClose}){
             onClick={onConfirm} data-testid="review-confirm">
             That is right — close the innings
           </Btn>
-          <Btn variant="ghost" size="md" sx={{borderRadius:D.md}}
+          <Btn variant="ghost" size="md" sx={{borderRadius:D.md,minHeight:"44px"}}
             onClick={onFixLastBall} data-testid="review-fix">
             Take back the last ball
           </Btn>
         </div>
-        <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,textAlign:"center",marginTop:"10px"}}>
+        <div style={{fontFamily:T.type.body,fontSize:"12px",color:T.content.tertiary,textAlign:"center",marginTop:"10px",lineHeight:1.4}}>
           Once closed, changing this innings needs a correction the scorer cannot approve alone.
         </div>
       </div>

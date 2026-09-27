@@ -196,7 +196,12 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // SCRBRD-101: the wagon wheel — a point from the pad's Area step, OFF and
   // LEG by the batter's hand, the hub's event for the same tap, the Match
   // Centre's mixed-hand wheel and a left-hander's sector-era ball re-worded.
-  "browser-wagonwheel"];
+  "browser-wagonwheel",
+  // SCRBRD-071: a batter retired hurt from the pad's menu, mid-over — not a
+  // wicket; the next batter at once, the over finished, the scorecard's
+  // "retired hurt", and his return with his line going on — held to the
+  // API's live score and SQL's player_innings at 390 × 844.
+  "browser-retire"];
 
 // Walks that need no database, run by `pnpm smoke` instead. Named here only so
 // the completeness check below knows they are accounted for.

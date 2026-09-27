@@ -337,6 +337,11 @@ try {
   const hubShot = page.locator("button:not([disabled])", { hasText: /^Cut$/ }).first();
   await hubShot.click({ timeout: 3000 }).catch(() => {});
   await page.waitForTimeout(400);
+  // The hub's controls sit at the 44px floor, so the field is below the fold
+  // on a phone: the scorer scrolls it up clear of the bottom bar, and so do we.
+  await page.locator('[data-testid="wagon-wheel"] svg').first()
+    .evaluate((e) => e.scrollIntoView({ block: "center" })).catch(() => {});
+  await page.waitForTimeout(300);
   const hubTap = await fieldBox('[data-testid="wagon-wheel"]');
   if (hubTap) { await page.mouse.click(hubTap.cx + (hubTap.width / 2) * SQUARE_RIGHT, hubTap.cy); await page.waitForTimeout(500); }
   await page.locator("button:not([disabled])", { hasText: /^2$/ }).first().click({ timeout: 3000 }).catch(() => {});

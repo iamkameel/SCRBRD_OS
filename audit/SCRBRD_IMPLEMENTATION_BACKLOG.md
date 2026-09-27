@@ -2925,8 +2925,24 @@ after it refused too.
   the return) is left as it was. The batting-order sheet lists a retired-hurt batter under "Retired hurt — may resume".
   SQL never read the retirement, so nothing moved there: `smoke-fold-figures` now brings batters back from retired hurt
   in its generated logs (5 in its run) and every SQL figure still agrees. `replay.test` (two cases, each falsified: no
-  resume, and resuming the legacy "retired out"). Found, not fixed: the pad has no way to RECORD retired hurt (nothing
-  emits `retire` with reason `hurt`), so the resume list shows only for a log that came with one.
+  resume, and resuming the legacy "retired out"). ~~Found, not fixed: the pad has no way to RECORD retired hurt (nothing
+  emits `retire` with reason `hurt`), so the resume list shows only for a log that came with one.~~ **Built 2026-09-27**:
+  "Batter retired hurt" on the pad's menu, beside the suspension (never an interrupt, §1a). `scorer/retireSheet.jsx`
+  asks which batter — striker or non-striker, by name, end and figures — and records `retire({batter, reason: "hurt"})`
+  (`scorer/retire.js` `retireHurtEvent`, the events.mjs builder: no W marker, so not a wicket — no wicket moment, the
+  over and the bowler unmoved); the pad then opens the batting-order sheet at once for the end he left, which does not
+  offer him back to it (`BattingOrderSheet` `notResuming`). Mid-over works. The Laws are asked before anyone is offered
+  and again at the tap (`lawsRefusal`: someone not at the crease is `not_at_crease`), said in words
+  (`retireRefusalWords`). Also fixed: `fixBlock` sent `NEXT_BATTER` with the striker in to the OPENERS' sheet, which put
+  the arrival at the non-striker's end and then asked for the opening bowler; it opens the batting-order sheet now.
+  SQL: no disagreement, no migration — `smoke-fold-figures` now emits pad-style retirements (the builder, asked of the
+  Laws, mid-over; 12 in its run, 10 back later, plus a written-out innings); every figure agrees, each row is stored
+  with no W marker, and `ball_retired_batter()` / `ball_retirement_dismissal()` count none of them. Proof:
+  `apps/web/test/retire-sheet.test.mjs` (the event, the refusals, the fold after a mid-over retirement and a return,
+  the sheet at the floors; falsified five ways), `tools/smoke-browser-retire.mjs` (new, registered). Not modelled: Law
+  25.4.2's "only at the fall of a wicket or the retirement of another batter" — the Laws take a return at any empty
+  end; the pad only declines to offer him straight back to the end he left. The Laws also take a retirement in an
+  innings that is over or sealed.
 - ~~Timed out and retired out are recorded as `W` balls, which count as a legal delivery of the over.~~ **Already done by
   SCRBRD-081 (2026-09-24)**, checked 2026-09-27: both are a `retire` marked `type: "W"` (no ball, no bowler figure, no
   ball faced), through the `nonBallWickets` path; an old W *ball* naming either still folds as history
@@ -3517,6 +3533,20 @@ Two Law 41 questions Kameel is researching before deciding; nothing is built unt
    penalty-runs research gave repeated protected-area infractions as 41.14. The screens show the reason in words
    only, not clause numbers, until Kameel confirms them against the current Code.
 
+   **The clause list, 2026-09-27 — no screen shows a number any more.** The last three came off: the mid-over bowler
+   note on the new-over sheet ("Law 17.8.1: a bowler may be replaced…"), the timed-out toggle on the batting-order
+   sheet ("… did not arrive in time (Law 40)"), and `REFUSAL_TEXT.mid_over_no_reason` ("… injury or suspension (Law
+   17.8.1)", which the held sheet showed as it was). Each keeps its words; the clause stays in a code comment.
+   `apps/web/test/law-clauses.test.mjs` sweeps every string a scorer screen can show — `REFUSAL_TEXT`,
+   `REFUSAL_CAUSE` over folds and events, `PENALTY_REASON_TEXT` through `penaltyReasonWords`, the suspension words,
+   every pad helper that words a refusal over every code, and the literal text of every file in `apps/web/src/scorer`
+   with comments stripped — and was falsified by putting "(Law 40)" and "(Law 17.8.1)" back. Still to verify, cited
+   only in code (comments, and `PENALTY_REASON_TEXT`, which every screen reads through `penaltyReasonWords`):
+   17.8 and 17.8.1 (consecutive overs; the change during an over), 25.4.2 and 25.4.3 (retired hurt and retired out),
+   40 (timed out), 21 and 23 (the no-ball's runs), 18 and 38.2 (run out, which end), 28.2 and 28.3 (illegal fielding,
+   the helmet), and Law 41's 41.1, 41.3–41.9, 41.12, 41.13 or 41.14 (the protected area: the two researches differ),
+   41.15, 41.17 and 41.18.
+
    **Built 2026-09-27.** Engine: `bowler_suspended` (`bowlerSuspended()` in `events.mjs`): the bowler, a reason from
    `SUSPENSION_REASON` (beamers, short_pitched, deliberate_no_ball, protected_area, fielding_time_wasting,
    ball_tampering) with words in `SUSPENSION_REASON_TEXT`, and the scope the reason carries (`SUSPENSION_REASON_SCOPE`:
@@ -4087,10 +4117,40 @@ Built in redesign step 3b, with `Board`'s chip row. Opus (cross-cutting theme en
    records the point tapped (`placementFromTap`, profile `full`), the same event as the Pro hub's, so the default
    `full` declaration ("shot, exact point") is what the pad captures. Basic Scoring still records no placement
    (`quick` per ball), as the scorer chose.
-2. **Pro mode** keeps its old hub and cards styling with sub-12px text; smoke-a11y does not measure it.
-3. **The other sheets** (toss, openers, new over, innings end, handover) are not yet at the type and touch floors;
-   only the wicket sheet, the penalty runs sheet (SCRBRD-094) and the shared close button are.
-4. After choosing from the pad menu, the menu button keeps its focus ring.
+2. ~~**Pro mode** keeps its old hub and cards styling with sub-12px text; smoke-a11y does not measure it.~~ **Done
+   2026-09-27** in `e18610c`: `scoring.jsx`'s `ScoringHub`/`ScoringPanel`/`ScoringBlocked` and the cards the Pro hub
+   shows (`panels.jsx`'s `WagonWheel` legend, `ScorecardPanel`, `PartnershipCard`; `charts.jsx`'s `ManhattanChart`) are
+   onto the same 12px type floor and 44px tap floor as the rest of the pad. The last few (a "Wd"/"4"/"1" at 8.36px)
+   traced to one root cause: `BallDot` (`ui.jsx`) set its figure's size to `size*0.38` with no floor, so every small
+   caller — `CommentaryCard`'s `size={22}` inside the hub, and every other use of it — rendered under 12px; floored
+   at `Math.max(12, size*.38)`, the dot's own diameter untouched. `tools/smoke-a11y.mjs` now opens Pro mode after
+   every run, in both themes (`pro` joins `TYPE_FLOOR_CEILING`, `TAP_FLOOR_CEILING`, `EMOJI_CEILING`, all `0`), and
+   falsifies the new check on that exact screen (a planted 9px line, a 30×30 button and an emoji-carrying button,
+   confirmed seen and removed) before trusting the real measurement. 214 passed, 0 failed, both themes.
+3. ~~**The other sheets** (toss, openers, new over, innings end, handover) are not yet at the type and touch floors;
+   only the wicket sheet, the penalty runs sheet (SCRBRD-094) and the shared close button are.~~ **Done 2026-09-27**
+   in `93a6f45`: the root cause of most of it was the shared `Lbl` and `Badge` (`ui.jsx`, used by nearly every
+   sheet), set in the Syne display face at 10px/9px — under the floor and, per §3.2, the wrong face for it at that
+   size; both now spread `T.role.label` (12px, DM Sans 600). `Btn` gained a per-size `minHeight` (44px for
+   xs/sm/md, 48px for `lg`), since every non-`lg` size rendered under the 44px tap floor on its own padding alone.
+   That alone cleared most of toss.jsx, the batting-order sheet (openers), the new-over sheet's header and pills
+   (its bowler list already met the floor), the innings-review sheet ("innings end") and the handover sheet; the
+   rest were fixed by hand — the no-ball, revision and shot-selector sheets (this item's own catch-all), and the
+   wicket sheet's remaining 8px role badge and 11px notes. The wicket sheet's timed-out toggle (BattingOrderSheet)
+   and its own dismissal-mode text were left alone throughout — the scoring engine's own strings, not styling.
+4. ~~After choosing from the pad menu, the menu button keeps its focus ring.~~ **Done 2026-09-27** in `a3a76df`:
+   `:focus-visible`'s own heuristic rings any script-focused element the pointer never touched, and `close()`'s
+   `button.current.focus()` always lands on the "…" button, not on whichever menu item was tapped. Padmenu now
+   tracks the last input modality (`pointerdown` vs `keydown`) and, only when the close was pointer-driven, quiets
+   the ring on that one `focus()` inline — never in the stylesheet, so a keyboard close (Enter/Space on an item, or
+   Escape) still rings exactly as `:focus-visible` intends.
+
+**Verification (2026-09-27, this pass):** `pnpm typecheck` 0 errors · `pnpm lint` 0 errors/82 warnings (unchanged) ·
+`pnpm build` and `check:bundle` clean · `pnpm smoke` — `SMOKE: 8/0`, `SCORER SMOKE: 25/0`, `PERSISTENCE SMOKE: 16/0`,
+`ACCESSIBILITY SMOKE: 214/0` (both themes; was 198/0 before Pro mode was reachable by this walk at all). The
+database-backed suite (`migrate --reset --seed --verify`, `run-all-tests`, both `run-smoke-api` runs, the `LIE_FI`
+offline-day walk) ran separately against this worktree's own database; see that run for its own numbers. This pass
+is styling only — no event, capability or schema change, and the walks' event checks are unchanged.
 
 ### ~~SCRBRD-090~~ — CLOSED · The live score and the target leave out penalty runs
 **Closed 2026-09-26** in `2534bda` (#38): db/48 puts penalty runs in every SQL total where the fold puts them, with Law 41's cross-innings credit (SCRBRD-094 item 1); the door now refuses a penalty whose runs are not a whole number above nought.

@@ -108,9 +108,12 @@ const Card = ({ children, style, accent }) => (
   }}>{children}</div>
 );
 
+// §3.2's `label` role (12/1.3, DM Sans 600, +0.06em, uppercase) — this used
+// to be set in the display face (Syne) at 10px, which the design direction
+// calls out by name: "at 8px it is noise". Every sheet built on this
+// component picks up the floor and the right face at once.
 const Lbl = ({ children, sx }) => (
-  <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:"0.15em",
-    textTransform:"uppercase",color:D.textMuted,...sx}}>{children}</div>
+  <div style={{...T.role.label,color:T.content.tertiary,...sx}}>{children}</div>
 );
 
 const Sep = ({ sx }) => <div style={{height:"1px",background:D.border,...sx}} />;
@@ -119,8 +122,9 @@ const Sep = ({ sx }) => <div style={{height:"1px",background:D.border,...sx}} />
 // Sheet already do — without it, a data-testid passed to a Badge is
 // silently dropped, which is what left review-reason (InningsReviewSheet)
 // unfindable until SCRBRD-052's browser walk was the first thing to look.
+// Same floor as Lbl, and the same reason: 9px Syne read as noise, not a tag.
 const Badge = ({ children, color, sx, ...rest }) => (
-  <span {...rest} style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.12em",
+  <span {...rest} style={{fontFamily:T.type.body,fontSize:"12px",fontWeight:700,letterSpacing:"0.04em",
     textTransform:"uppercase",padding:"3px 8px",borderRadius:D.pill,
     background:`${color||D.indigo}1e`,color:textOn(color||D.indigo),
     border:`1px solid ${color||D.indigo}30`,flexShrink:0,...sx}}>{children}</span>
@@ -142,7 +146,12 @@ const BallDot = ({ ball, size=28 }) => {
   return (
     <div style={{width:size,height:size,borderRadius:"50%",background:bg,
       display:"flex",alignItems:"center",justifyContent:"center",
-      color:fg,fontSize:size*.38,fontFamily:D.mono,fontWeight:500,flexShrink:0,
+      // The dot's own diameter is decorative and stays whatever a caller
+      // asks for; the figure inside it is read, so it never drops below the
+      // §3.2 floor even where that makes the label tight against the dot's
+      // edge — the small dots (22-24px) were rendering their "Wd"/"4"/"W" at
+      // 8-9px before this.
+      color:fg,fontSize:Math.max(12,size*.38),fontFamily:D.mono,fontWeight:500,flexShrink:0,
       boxShadow:(ball.value===6||ball.value===4)?`0 0 10px ${bg}66`:"none"}}>
       {lbl}
     </div>
@@ -152,9 +161,13 @@ const BallDot = ({ ball, size=28 }) => {
 // `...rest` reaches the element, so a data-testid or an aria attribute on a
 // scorer button is not silently dropped — a walk that clicks a testid that
 // never rendered fails on a timeout, which says nothing about why.
+// Every size clears the §3.5 tap floor (44px) on its own padding now, not
+// only where a caller happened to add its own minHeight — `sx` can still
+// raise it further (WicketSheet's 48px confirm), never below.
 const Btn = ({ children, onClick, disabled, variant="primary", size="md", full, sx, ...rest }) => {
   const pad = size==="xs"?"5px 10px":size==="sm"?"8px 14px":size==="lg"?"15px 28px":"11px 20px";
-  const fs  = size==="xs"?"10px":size==="sm"?"12px":size==="lg"?"15px":"13px";
+  const fs  = size==="xs"?"12px":size==="sm"?"12px":size==="lg"?"15px":"13px";
+  const minH = size==="lg"?"48px":"44px";
   const V = {
     primary:{background:disabled?D.surf2:D.grad,color:disabled?D.textMuted:T.light.ink,border:"none",boxShadow:disabled?"none":`0 4px 24px ${clr(D.indigo,.4)}`},
     danger: {background:disabled?D.surf2:T.light.critical,color:disabled?D.textMuted:T.light.ink,border:"none",boxShadow:disabled?"none":`0 4px 20px ${D.rose}40`},
@@ -169,7 +182,7 @@ const Btn = ({ children, onClick, disabled, variant="primary", size="md", full, 
   const v=V[variant]||V.primary;
   return (
     <button className="pressBtn" disabled={!!disabled} onClick={!disabled?onClick:undefined} {...rest} style={{
-      ...v, padding:pad, borderRadius:D.pill, cursor:disabled?"not-allowed":"pointer",
+      ...v, padding:pad, minHeight:minH, boxSizing:"border-box", borderRadius:D.pill, cursor:disabled?"not-allowed":"pointer",
       fontFamily:D.body, fontSize:fs, fontWeight:600, letterSpacing:"0.01em",
       width:full?"100%":undefined, whiteSpace:"nowrap",
       opacity:disabled?0.42:1, transition:"all .15s", ...sx,

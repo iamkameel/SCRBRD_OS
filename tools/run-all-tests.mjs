@@ -78,6 +78,12 @@ const SUITES = [
   // The pad's "Umpire suspended the bowler": the Laws asked before a reason or
   // a replacement is offered, why-not in words, the report (SCRBRD-094 item 2).
   ["suspension-sheet", "apps/web/test/suspension-sheet.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // The pad's "Batter retired hurt": the event (not a wicket), the Laws asked
+  // before a batter is offered, the fold after it and his return (SCRBRD-071).
+  ["retire-sheet", "apps/web/test/retire-sheet.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // No Law clause number on any scorer screen: every words table, every
+  // refusal helper over every code, and the sheets' literal text (SCRBRD-094).
+  ["law-clauses", "apps/web/test/law-clauses.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The pad's premium feel (SCRBRD-100): every extra's two taps build the
   // event the pad always sent, byte for byte; the likely bowler and the next
   // batter first; undo in words; dot and 1 the biggest keys; the haptic tick.
