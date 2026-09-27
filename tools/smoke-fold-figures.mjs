@@ -36,6 +36,11 @@
  *     would have been: a ball with no type (a run, to the fold) and a wicket
  *     with no method (a wicket, nobody's — and saved on a free hit);
  *   - free hits, voids, retirements, typed-name bowlers;
+ *   - deliveries that do not count in the over (Law 17.3.2.5, SCRBRD-113,
+ *     db/54): a fielder's offence on the ball, marked `notInOver`, with the
+ *     five to the batting side — and bowler_over's overs held to the fold's;
+ *   - a declaration match (SCRBRD-113, db/54: the free hit follows the
+ *     format): a no-ball, then a wicket that stands, where a T20 saves it;
  *   - a batter retiring hurt as the pad records it (SCRBRD-071): the pad's
  *     own builder, retire({batter, reason: "hurt"}), asked of the Laws
  *     first, mid-over, his end filled at once, and — later, once a wicket
@@ -60,6 +65,7 @@ import {
   MatchFold, deriveInnings, deriveMatch, toRow, fromRow, isLegal, normaliseDismissal, chargedToBowler, runsOffBat,
   inningsStart, batters, bowler, ball, newEventId, retire, RETIRE_REASON, lawsRefusal,
 } from "@scrbrd/scoring";
+import { countsInOver, NOT_IN_OVER } from "@scrbrd/scoring";
 
 const PORT = port(8875);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -114,7 +120,13 @@ const rnd4 = () => (s4 = (s4 * 1103515245 + 12345) % 2147483648) / 2147483648;
 // is the one it was.
 let s5 = 5353;
 const rnd5 = () => (s5 = (s5 * 1103515245 + 12345) % 2147483648) / 2147483648;
-const gen = { suspensions: 0, splitOvers: 0, hurtReturns: 0, padRetires: 0, padMidOver: 0, padReturns: 0, hurtWaits: 0, hurtRefused: 0, consentReturns: 0 };
+// Deliveries that do not count in the over (SCRBRD-113, db/54) draw on a
+// sixth, for the same reason.
+let s6 = 1717;
+const rnd6 = () => (s6 = (s6 * 1103515245 + 12345) % 2147483648) / 2147483648;
+const NOT_IN_OVER_LIST = [...NOT_IN_OVER];
+const gen = { suspensions: 0, splitOvers: 0, hurtReturns: 0, padRetires: 0, padMidOver: 0, padReturns: 0, hurtWaits: 0, hurtRefused: 0,
+              consentReturns: 0, notInOver: 0 };
 /** @template T @param {T[]} xs @returns {T} */
 const pick = (xs) => xs[Math.floor(rnd() * xs.length)];
 /** @template T @param {T[]} xs */
@@ -128,7 +140,9 @@ let eventNo = 0;
  * One innings under construction. `order` is the batting order (openers
  * first); `bowling` the bowlers, a typed name among them.
  * `start` is carried on the innings_start: the sides and a target.
- * @param {number} no @param {number} overs @param {{order?: string[], bowling?: string[], start?: Record<string, any>}} [o]
+ * `ctx` is the fold's context — a declaration match's format (SCRBRD-113) —
+ * so each delivery is stamped with the crease the match's own fold has.
+ * @param {number} no @param {number} overs @param {{order?: string[], bowling?: string[], start?: Record<string, any>, ctx?: Record<string, any>}} [o]
  */
 function builder(no, overs, o = {}) {
   /** @type {any[]} */
@@ -138,7 +152,7 @@ function builder(no, overs, o = {}) {
   let next = 2, overIdx = 0;
   /** @param {any} e */
   const push = (e) => { const x = { id: `ff-${++eventNo}`, innings: no, ...e }; ev.push(x); return x; };
-  const now = () => deriveInnings(ev);
+  const now = () => deriveInnings(ev, o.ctx ?? {});
   /** @type {Set<string>} */ const suspended = new Set();
   // Retired hurt as the pad records it; and the one who just went off, whom
   // the pad's batting-order sheet does not offer back to the end he left.
@@ -320,6 +334,23 @@ function builder(no, overs, o = {}) {
       const batter = rnd5() < 0.5 ? at.striker : at.nonStriker;
       push({ kind: "retire", batter, reason: "out", type: "W", dismissal: "retired_out" });
     },
+    /**
+     * A fielder's offence on the delivery (Law 17.3.2.5, SCRBRD-113): the
+     * ball, of any kind but a wicket, marked with it — it does not count in
+     * the over — and the five to the batting side, as the pad records it
+     * (notInOverDelivery()). After a fielder obstructs a batter the batters
+     * may choose who faces.
+     */
+    notInOver() {
+      const at = now();
+      if (at.striker == null || at.nonStriker == null) return;
+      const reason = NOT_IN_OVER_LIST[Math.floor(rnd6() * NOT_IN_OVER_LIST.length)];
+      const type = ["run", "run", "B", "LB", "Nb", "Wd"][Math.floor(rnd6() * 6)];
+      const value = [0, 1, 2, 4][Math.floor(rnd6() * 4)];
+      const choose = reason === "obstructing_batter" && rnd6() < 0.5;
+      const d = b.deliver({ type, value, notInOver: reason, ...(choose ? { facesNext: "non_striker" } : {}) });
+      if (d) { push({ kind: "penalty", toBattingTeam: true, runs: 5, reason }); gen.notInOver++; }
+    },
     timedOut() {
       if (next >= order.length - 1 || now().wickets >= 9) return;
       push({ kind: "retire", batter: order[next++], reason: "timed_out", type: "W", dismissal: "timed_out" });
@@ -376,6 +407,8 @@ function generated(no, overs, legacy = false, start = undefined, awardFirst = fa
     if (rnd4() < 0.03 && b.now().balls % 6 > 0) b.padRetire();
     // A batter retires out, to come back later with consent (Law 25.4.3).
     if (rnd5() < 0.012 && b.now().wickets < 8) b.retireOut();
+    // A delivery that does not count in the over (SCRBRD-113).
+    if (rnd6() < 0.04) b.notInOver();
     if (start) {
       const p = rnd2();
       if (p < 0.02) b.award(false, rnd2() < 0.3 ? undefined : 5);
@@ -391,8 +424,9 @@ function generated(no, overs, legacy = false, start = undefined, awardFirst = fa
  * "LB:v", "W:method[:v]", "RO:ns|st:runs[:end]", "noType:v", "noMethod",
  * "void". The next batter comes in after a wicket that stood.
  */
-function scripted(/** @type {number} */ no, /** @type {string[]} */ steps, /** @type {string[] | undefined} */ order) {
-  const b = builder(no, 20, { order: order ?? shuffle(PLAYERS), bowling: [HIL_1XI[3], WES_1XI[0]] });
+function scripted(/** @type {number} */ no, /** @type {string[]} */ steps, /** @type {string[] | undefined} */ order,
+                  /** @type {Record<string, any>} */ ctx = {}) {
+  const b = builder(no, 20, { order: order ?? shuffle(PLAYERS), bowling: [HIL_1XI[3], WES_1XI[0]], ctx });
   for (const step of steps) {
     const [k, a, c, d] = step.split(":");
     const before = b.now().wickets;
@@ -558,13 +592,16 @@ function expected(byInnings) {
           }
         }
       }
+      // The balls of the over, as the fold counts them: not a delivery that
+      // does not count (Law 17.3.2.5, db/54).
+      const counts = countsInOver(x);
       if (isId(x.strikerId)) {
         hasFaced.add(x.strikerId);
-        if (legal && value === 0) oppOf(x.strikerId).dots++;
+        if (counts && value === 0) oppOf(x.strikerId).dots++;
         if (isId(x.bowlerId)) {
           const m = at(e.matchups, `${x.strikerId}|${x.bowlerId}`, muInit);
-          if (legal) m.balls++;
-          if (legal && value === 0) m.dots++;
+          if (counts) m.balls++;
+          if (counts && value === 0) m.dots++;
           m.runs += runsOffBat(x);
           if ((type === "run" || type === "Nb") && runsOffBat(x) === 4) m.fours++;
           if ((type === "run" || type === "Nb") && runsOffBat(x) === 6) m.sixes++;
@@ -668,7 +705,7 @@ async function verifyExpects() {
  * failure leaves it where it stood.
  * @param {any[][]} logs
  */
-async function writeLogs(logs, scorer) {
+async function writeLogs(logs, scorer, matchId = MATCH) {
   const c = await pool.connect();
   try {
     await c.query("BEGIN");
@@ -685,7 +722,7 @@ async function writeLogs(logs, scorer) {
       for (const ev of log) {
         const r = toRow(ev);
         seq++;
-        const row = [MATCH, HIL, seq, 1, r.innings, scorer, "device-fold-figures", ev.id, seq, r.client_ts, r.kind,
+        const row = [matchId, HIL, seq, 1, r.innings, scorer, "device-fold-figures", ev.id, seq, r.client_ts, r.kind,
                      r.ball_type, r.value, r.striker_id, r.non_striker_id, r.bowler_id, r.dismissed_id,
                      r.dismissal ?? null, JSON.stringify(r.payload)];
         values.push(`(${row.map((_, i) => `$${params.length + i + 1}`).join(",")})`);
@@ -769,6 +806,17 @@ try {
 
   const existing = Number((await q(`select count(*) n from ball_event where match_id = $1`, [MATCH]))[0].n);
   ok("the fixture this walk scores has no deliveries yet", existing === 0, `${existing}`);
+
+  // A DECLARATION MATCH (SCRBRD-113, db/54): no free hit after a no-ball.
+  // Written before the careers are read, so its figures are in "before" and
+  // "after" alike, and every delta below is the main fixture's alone.
+  const DECL = (await q(`insert into match (school_id, team_code, opponent, starts_at, format, overs, status)
+                         values ($1, '1XI', 'Declaration XI', now() - interval '2 days', 'One-Day Declaration', 100, 'complete')
+                         returning id`, [HIL]))[0].id;
+  const declLog = scripted(0, ["run:1", "Nb:0", "W:bowled", "Nb:1", "W:lbw", "run:0", "Nb:0", "Wd:0", "W:caught",
+                               "Nb:0", "RO:ns:0", "Nb:2:byes", "run:4", "Nb:0", "noMethod"], [P1, P2, P3, HIL_1XI[3], HIL_1XI[4], ...OTHERS],
+                         { format: "One-Day Declaration" });
+  await writeLogs([declLog], scorer, DECL);
 
   // ── Before ──
   const car0 = await career();
@@ -928,6 +976,64 @@ try {
     return !r || Number(r.runs) !== f.runs || Number(r.wickets) !== f.wickets || Number(r.legal_balls) !== f.balls;
   }).map(([n, f]) => `innings ${n}: fold ${f.runs}/${f.wickets} off ${f.balls}, SQL ${live.get(n)?.runs}/${live.get(n)?.wickets} off ${live.get(n)?.legal_balls}`);
   ok(`runs, wickets and legal balls agree in every innings (${e.live.size})`, liveBad.length === 0, show(liveBad));
+
+  group("The balls of the over: a delivery that does not count (Law 17.3.2.5, SCRBRD-113, db/54)");
+  {
+    const marked = rows.filter((r) => r.kind === "ball" && r.payload?.notInOver != null);
+    const chose = marked.filter((r) => r.payload?.facesNext != null).length;
+    console.log(`  ${marked.length} deliveries not in the over (${gen.notInOver} generated, ${chose} with the batters' choice of who faces)`);
+    ok(`...not vacuous: deliveries that do not count, of each offence (${marked.length})`,
+       marked.length >= 10 && NOT_IN_OVER_LIST.every((r) => marked.some((x) => x.payload.notInOver === r)));
+    // bowler_over: every bowler's balls of the over and deliveries, over by
+    // over, as the fold stamps them (the over each ball is in, and whether it
+    // counts) — the workload read, its spells and the day check.
+    /** @type {Map<string, {legal: number, deliveries: number}>} */
+    const want = new Map();
+    for (const [n, inn] of byInnings) {
+      for (const x of inn.ballLog) {
+        if (!isId(x.bowlerId)) continue;
+        const k = `${x.bowlerId}|${n}|${x.over}`;
+        const w = at(want, k, () => ({ legal: 0, deliveries: 0 }));
+        w.deliveries++; if (countsInOver(x)) w.legal++;
+      }
+    }
+    const got = new Map((await q(`select bowler_id, innings, over_no, legal_balls, deliveries from bowler_over where match_id = $1`, [MATCH]))
+      .map((r) => [`${r.bowler_id}|${r.innings}|${r.over_no}`, { legal: Number(r.legal_balls), deliveries: Number(r.deliveries) }]));
+    const bad = fieldDifferences(want, got, ["legal", "deliveries"]);
+    ok(`bowler_over is the fold's, over by over (${want.size} overs)`, bad.length === 0, show(bad));
+    // The hat-trick: none here that a delivery that does not count made or broke.
+    const hat = await q(`select count(*) n from bowler_hat_trick where match_id = $1`, [MATCH]);
+    ok("bowler_hat_trick reads (a count, whatever it is)", Number(hat[0].n) >= 0);
+  }
+
+  group("A declaration match: no free hit after a no-ball (SCRBRD-113, db/54)");
+  {
+    const drows = await q(`select * from ball_event where match_id = $1 order by seq`, [DECL]);
+    const dfold = new MatchFold(drows.map(fromRow), { format: "One-Day Declaration" }).view().innings[0];
+    const asT20 = new MatchFold(drows.map(fromRow), { format: "T20" }).view().innings[0];
+    console.log(`  the declaration fold: ${dfold.runs}/${dfold.wickets} off ${dfold.balls}; the same log as a T20: ${asT20.runs}/${asT20.wickets}`);
+    ok(`...not vacuous: the wickets after a no-ball stand here, and a T20 would save them (${dfold.wickets} against ${asT20.wickets})`,
+       dfold.wickets >= asT20.wickets + 3 && dfold.freeHits === false && asT20.freeHits === true);
+    const [live] = await q(`select runs, wickets, legal_balls from match_live_score where match_id = $1 and innings = 0`, [DECL]);
+    ok("match_live_score is the declaration fold", Number(live.runs) === dfold.runs && Number(live.wickets) === dfold.wickets
+       && Number(live.legal_balls) === dfold.balls, JSON.stringify(live));
+    const [folded] = await q(`select * from innings_score_as_folded($1, 0::smallint)`, [DECL]);
+    ok("...and so is the handover check's count", folded.runs === dfold.runs && folded.wickets === dfold.wickets && folded.legal_balls === dfold.balls,
+       JSON.stringify(folded));
+    const figs = new Map((await q(`select player_id, wickets, runs_conceded from bowler_innings_figures where match_id = $1`, [DECL]))
+      .map((r) => [r.player_id, { wickets: Number(r.wickets), runs: Number(r.runs_conceded) }]));
+    const fwant = new Map(dfold.bowlers.filter((w) => isId(w.id)).map((w) => [w.id, { wickets: w.wickets, runs: w.runs }]));
+    const fbad = fieldDifferences(fwant, figs, ["wickets", "runs"]);
+    ok("bowler_innings_figures: the bowler's wickets off the ball after a no-ball are his", fbad.length === 0 && fwant.size > 0, show(fbad));
+    const pinn = new Map((await q(`select player_id, runs, balls_faced, out from player_innings where match_id = $1`, [DECL]))
+      .map((r) => [r.player_id, { runs: Number(r.runs), balls: Number(r.balls_faced), out: r.out === true }]));
+    const pbad = dfold.batsmen.filter((x) => isId(x.id) && pinn.has(x.id))
+      .filter((x) => pinn.get(x.id).out !== (x.status === "out") || pinn.get(x.id).runs !== x.runs || pinn.get(x.id).balls !== x.balls)
+      .map((x) => `${x.id}: fold ${x.runs} (${x.balls}) ${x.status}, SQL ${JSON.stringify(pinn.get(x.id))}`);
+    ok("player_innings: the batters out off the ball after a no-ball are out", pbad.length === 0, show(pbad));
+    const [fh] = await q(`select count(*) filter (where ball_on_free_hit(match_id, innings, seq)) n from ball_event where match_id = $1`, [DECL]);
+    ok("ball_on_free_hit() finds no free hit in it", Number(fh.n) === 0);
+  }
 
   group("Per batter per innings: player_innings is the fold");
   const inn = new Map((await q(`select player_id, innings, runs, balls_faced, out from player_innings where match_id = $1`, [MATCH]))
