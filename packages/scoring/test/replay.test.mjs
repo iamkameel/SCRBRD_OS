@@ -358,6 +358,29 @@ group("D. Strike rotation and innings end");
   ok("retired batter marked",   r.batsmen.find(b => b.id === "p1")?.status === "retired");
   ok("retirement is not a wicket", r.wickets === 0);
 }
+{
+  // SCRBRD-071: a batter who retired hurt and comes back is batting again,
+  // on the same line — his figures go on from where he left them.
+  const hurtLog = [...open(), runs(1), runs(4), retire({ batter: "p2", reason: "hurt" }), batters({ striker: "p3" }), runs(2)];
+  const away = deriveInnings(hurtLog);
+  const p2Away = must(away.batsmen.find((b) => b.id === "p2"));
+  ok("retired hurt: off the field, 4 (1), retired hurt", p2Away.status === "retired" && p2Away.dismissal === "retired hurt"
+     && p2Away.runs === 4 && p2Away.balls === 1);
+  // p3 is out; p2 walks back in at the empty end.
+  const back = deriveInnings([...hurtLog, ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" }), batters({ striker: "p2" }), runs(6), runs(1)]);
+  const p2 = must(back.batsmen.find((b) => b.id === "p2"));
+  ok("...and back in: batting, no dismissal line", p2.status === "batting" && p2.dismissal === null);
+  ok("...his figures continue on the same line: 4 + 6 + 1 off 3", p2.runs === 11 && p2.balls === 3 && p2.sixes === 1 && p2.fours === 1);
+  ok("...one line on the card, not two", back.batsmen.filter((b) => b.id === "p2").length === 1);
+  ok("...and a retirement is still no wicket: one wicket, p3's", back.wickets === 1);
+  // A legacy unmarked retire "out" wrote "retired out" and is out to the
+  // Laws (nothing in the Laws brings him back); the fold leaves it alone.
+  /** @type {LogEvent} */
+  const legacyOut = { kind: "retire", batter: "p2", reason: "out" };
+  const stays = deriveInnings([...open(), runs(1), legacyOut, batters({ striker: "p2" })]);
+  ok("an unmarked retire 'out' named again keeps its line (the Laws refuse the return)",
+     must(stays.batsmen.find((b) => b.id === "p2")).status === "retired");
+}
 
 // ── D. Order-independence, given seq ─────────────────────
 //

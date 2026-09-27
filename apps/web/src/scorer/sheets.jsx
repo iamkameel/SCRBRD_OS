@@ -495,6 +495,11 @@ function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,head
   };
   const dismissed=batsmen.filter(b=>b.status==="out");
   const atCrease=batsmen.filter(b=>b.status==="batting");
+  // Retired hurt — "retired, not out" — may come back (Law 25.4.2), on the
+  // same line: the fold carries his runs and balls on (SCRBRD-071). A
+  // retirement the Laws read as out (an old unmarked "retired out") is not
+  // offered; the server would refuse it.
+  const mayResume=timedOut?[]:batsmen.filter(b=>b.status==="retired"&&b.dismissal!=="retired out");
   return (
     <Sheet title="Batting Order" accent={D.emerald} onClose={onClose}>
       <div style={{paddingTop:"12px"}}>
@@ -524,6 +529,20 @@ function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,head
             fontFamily:D.body,fontSize:"12px",fontWeight:500,color:timedOut?D.roseText:D.textSecondary}}>
             {timedOut?"Timed out — tap the batter who did not arrive in time (Law 40)":"Incoming batter timed out?"}
           </button>
+        )}
+        {mayResume.length>0&&(
+          <div data-testid="resume-list" style={{marginBottom:"12px"}}>
+            <Lbl sx={{marginBottom:"7px"}}>Retired hurt — may resume</Lbl>
+            {mayResume.map(b=>(
+              <button key={b.id} type="button" data-testid={`resume-${b.id}`} onClick={()=>send(b.id)} className="pressBtn" style={{
+                display:"flex",alignItems:"center",gap:"10px",minHeight:"44px",width:"100%",marginBottom:"4px",
+                padding:"8px 12px",borderRadius:D.md,cursor:"pointer",textAlign:"left",
+                border:`1px solid ${D.border}`,background:D.surf2}}>
+                <span style={{fontFamily:D.body,fontSize:"13px",fontWeight:500,color:D.textPrimary,flex:1}}>{b.name} resumes</span>
+                <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textSecondary}}>{b.runs}({b.balls})</span>
+              </button>
+            ))}
+          </div>
         )}
         {/* Available */}
         <Lbl sx={{marginBottom:"7px"}}>{timedOut?"Who was timed out?":"Available to Bat"}</Lbl>

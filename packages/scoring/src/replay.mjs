@@ -291,6 +291,20 @@ function inningsFolder(ctx = {}, carried = 0) {
 
   const rotate = () => { const s = inn.striker; inn.striker = inn.nonStriker; inn.nonStriker = s; };
 
+  // A batter who retired hurt and walks back in (Law 25.4.2: "retired, not
+  // out" may resume) is batting again, on the same line: his runs and balls
+  // go on from where he left them (SCRBRD-071). Only a retirement that was
+  // not a dismissal — a legacy unmarked retire "out" wrote "retired out" as
+  // its line and is out to the Laws (laws.mjs isOut), so it stays as it was;
+  // one marked W is status OUT already and never matches here.
+  /** @param {Batter | null} b */
+  const resume = (b) => {
+    if (b?.status === BAT_STATUS.RETIRED && b.dismissal !== "retired out") {
+      b.status = BAT_STATUS.NOT_OUT;
+      b.dismissal = null;
+    }
+  };
+
   // Whether the target now standing is one the umpires typed (a revision)
   // rather than the one the innings opened with. An award to the fielding
   // side moves the second; the first is the umpires' figure and stands until
@@ -380,8 +394,8 @@ function inningsFolder(ctx = {}, carried = 0) {
 
       case KIND.BATTERS: {
         const hadPair = inn.striker != null && inn.nonStriker != null;
-        if (ev.striker != null) { batterFor(ev.striker); inn.striker = ev.striker; }
-        if (ev.nonStriker != null) { batterFor(ev.nonStriker); inn.nonStriker = ev.nonStriker; }
+        if (ev.striker != null) { resume(batterFor(ev.striker)); inn.striker = ev.striker; }
+        if (ev.nonStriker != null) { resume(batterFor(ev.nonStriker)); inn.nonStriker = ev.nonStriker; }
         // Opening the innings, or a new arrival after a wicket: either way the
         // pair changed, so a fresh partnership starts here.
         if (!hadPair || ev.striker != null || ev.nonStriker != null) openPartnership();
