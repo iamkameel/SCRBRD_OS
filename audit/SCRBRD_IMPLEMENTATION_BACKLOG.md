@@ -2919,8 +2919,19 @@ after it refused too.
 - ~~`contact` and `trajectory` are mapped by `toRow` but not listed in the live INSERT or in `quarantine_resolve`, so they are dropped.~~ **Done** (db/37, `events-api.mjs`): both are written on the live path and on release, and read back. Old rows' fingerprints do not move (stored NULL, pad sends null, NULLs stripped); `tools/smoke-laws.mjs` retries a row written by the old insert.
 - ~~A ball released from quarantine (`quarantine_resolve`) is inserted without the Laws check.~~ **Done**: the release route calls `quarantine_resolve()` in a savepoint (it keeps the authority check and now takes the per-match lock), folds the log and asks `lawsRefusal()`; a refusal rolls back, keeps the ball held and returns `laws_refused` with the reason in words. The panel offers Discard or Leave it held.
 - ~~A key already held in quarantine and re-sent while the device holds the token is written live; a later release of the held copy then hits the unique key.~~ **Done**: writing it live is right (lease, epoch and Laws all pass), and db/37's trigger closes the held copy as `superseded` in the same statement; rows already left open are closed by the migration. (The old release did not actually hit the unique key — db/14's own check answered `already_recorded` and closed the row as `rejected` — but until then the row sat open in the approver's queue.)
-- A batter returning after retiring hurt keeps "retired" on his record in the fold.
-- Timed out and retired out are recorded as `W` balls, which count as a legal delivery of the over.
+- ~~A batter returning after retiring hurt keeps "retired" on his record in the fold.~~ **Done 2026-09-27**: a
+  `batters` event naming a batter retired hurt puts him back on his own line — status batting, no dismissal line, his
+  runs and balls going on (`replay.mjs` `resume`). An unmarked legacy `retire` "out" (the Laws read it as out and refuse
+  the return) is left as it was. The batting-order sheet lists a retired-hurt batter under "Retired hurt — may resume".
+  SQL never read the retirement, so nothing moved there: `smoke-fold-figures` now brings batters back from retired hurt
+  in its generated logs (5 in its run) and every SQL figure still agrees. `replay.test` (two cases, each falsified: no
+  resume, and resuming the legacy "retired out"). Found, not fixed: the pad has no way to RECORD retired hurt (nothing
+  emits `retire` with reason `hurt`), so the resume list shows only for a log that came with one.
+- ~~Timed out and retired out are recorded as `W` balls, which count as a legal delivery of the over.~~ **Already done by
+  SCRBRD-081 (2026-09-24)**, checked 2026-09-27: both are a `retire` marked `type: "W"` (no ball, no bowler figure, no
+  ball faced), through the `nonBallWickets` path; an old W *ball* naming either still folds as history
+  (`replay.test` J pins both). db/40 made SQL count them; `smoke-fold-figures` (timed out and retired out in its
+  generated logs) agrees. No change was needed.
 - ~~Undoing a refused event that is not the last one still appends a `void`, which the server refuses and holds too.~~ Done 2026-09-24: undo drops a held event wherever it sits and lets its held copy go (`undoLast` `isHeld`, `undoOnPad`; `held.test.mjs` group I, `smoke-browser-held.mjs` group F).
 - ~~`tools/smoke-a11y.mjs` and `tools/smoke-browser-read.mjs` both use port 4326~~ — fixed 2026-09-24 (smoke-a11y → 4331).
 - ~~`tools/check-imports` reads the word "can" in JSX text as a call to the `can()` helper~~ — fixed 2026-09-24.
@@ -3207,7 +3218,8 @@ keys: after the upgrade a re-offered, already-acknowledged ball reads as unsent 
 - **SCRBRD-080 — Mid-over bowler change records its reason.** Allowed (Law 17.8.1); the pad asks *Injury or suspended?* and records it on the `bowler` event. P2.
   **Built 2026-09-24:** `bowler({ bowler, reason: "injury" | "suspended" })`; a mid-over change with no reason is
   refused at commit (`mid_over_no_reason`); old logs replay. Not built: Law 41 says a suspended bowler does not bowl
-  again in the innings — nothing refuses him yet (a further product decision).
+  again in the innings — nothing refuses him yet (a further product decision). **Built 2026-09-27** as SCRBRD-094
+  item 2 (`bowler_suspended`); an over shared after an injury is now a maiden for neither bowler.
 - **SCRBRD-081 — Timed out and retired out are not deliveries.** A non-ball dismissal event; over count and bowler figures unaffected; old logs replay unchanged. P2.
   **Built 2026-09-24:** a `retire` marked `type: "W"` (docs/SCORING_RULES.md, "Timed out and retired out"). Left
   open: the career views (db/02, db/13) and the dismissal breakdown (db/26) read `kind = 'ball'`, so these
@@ -3412,7 +3424,7 @@ who won and what they chose. **Follow-up (UX):** an animation accompanies that r
 result the scorer entered and never decides it (no random or virtual coin anywhere in the app). Build with the pad's
 toss sheet (`scorer/toss.jsx`), reduced motion honoured, after step 2 of the redesign lands.
 
-### SCRBRD-094 — Law 41: penalty runs to the fielding side (item 1 built), and a bowler suspended mid-over (item 2, decided 2026-09-26; to build after the penalty sheet)
+### SCRBRD-094 — Law 41: penalty runs to the fielding side (item 1 built), and a bowler suspended mid-over (item 2, built 2026-09-27)
 **Priority:** P2 · **Domain:** Scoring · **Type:** decision needed (2026-09-26)
 Two Law 41 questions Kameel is researching before deciding; nothing is built until he does:
 1. Penalty runs awarded to the fielding side (SCRBRD-090's second point): the fold leaves them out of every innings,
@@ -3460,6 +3472,11 @@ Two Law 41 questions Kameel is researching before deciding; nothing is built unt
    discipline record, `db/25`) is NOT built: one line on the sheet says the umpires report it. Proof:
    `apps/web/test/penalty-sheet.test.mjs`, `tools/smoke-browser-penalty.mjs` (the board against the API's live
    score and target at every step), and every existing walk unchanged.
+   **Its three loose ends, 2026-09-27:** the Match Centre's scorecard already folds the whole match (step 3c replaced
+   `views/shared.jsx`'s per-innings fold with `deriveMatch`); the held sheet's reason words lost their clause numbers,
+   through one helper, `penaltyReasonWords()` in `events.mjs`, which the pad's sheet and the commentary now use too; and
+   a short run off a no-ball asks the no-ball's kind — `ball()` used to drop `nbType` on every no-ball and now keeps it
+   (the free hit was never the kind's: the fold gives one after every no-ball, and the pad's banner now reads it there).
 2. A bowler suspended mid-over (SCRBRD-080's unbuilt half): Law 41 says he may not bowl again in the innings.
    **Decided 2026-09-26 (Kameel's research, MCC Law 41, Unfair Play).** A bowler is suspended as soon as the ball is
    dead, on these grounds, as Kameel gives them:
@@ -3499,6 +3516,33 @@ Two Law 41 questions Kameel is researching before deciding; nothing is built unt
    **Clause numbers to verify before any words ship:** this research gives the protected area as 41.13, and the
    penalty-runs research gave repeated protected-area infractions as 41.14. The screens show the reason in words
    only, not clause numbers, until Kameel confirms them against the current Code.
+
+   **Built 2026-09-27.** Engine: `bowler_suspended` (`bowlerSuspended()` in `events.mjs`): the bowler, a reason from
+   `SUSPENSION_REASON` (beamers, short_pitched, deliberate_no_ball, protected_area, fielding_time_wasting,
+   ball_tampering) with words in `SUSPENSION_REASON_TEXT`, and the scope the reason carries (`SUSPENSION_REASON_SCOPE`:
+   ball tampering the match, the rest the innings — filled in, and a different one refused). `suspensionWords()` is the
+   sentence for the commentary generator (SCRBRD-098: `commentary.mjs` was not touched beyond the helper below; it has
+   no suspension line yet — the words are ready for it). No clause number in any shown text; they are in comments. The
+   fold records `inn.suspensions` (who, why, scope, over and ball) and moves no figure; the bowler stays on until
+   another is named, so the replacement is a change during the over (`bowlerChanges`, reason `suspended`). A split over
+   credits each his own balls and runs and is a maiden for neither (`isMaiden()` wants one bowler — this also changes an
+   over shared after an injury, SCRBRD-080, whose first bowler used to get the maiden). `lawsRefusal`: a ball from, or a
+   `bowler` naming, a bowler suspended this innings or for the match in an earlier one (`bowler_suspended`,
+   `suspendedBowlers()`); a suspension of anyone but the bowler on or of the last ball (`not_bowling`); an unknown
+   reason or a scope the reason does not carry (`suspension_unknown`); the same bowler twice. The replacement's two
+   rules are the existing Law 17.8 check (`bowledLastOver`), unchanged; the pad's gate blocks a ball while the
+   suspended man is on (`SCORING_BLOCK.BOWLER_SUSPENDED`). Pad: "Umpire suspended the bowler" on the menu (and
+   "Suspended" on the change-of-bowler sheet): the reason in words, how long, Record; then at once who finishes the
+   over, only the bowlers the Laws take, the rest with why not (`scorer/suspension.js`, `suspendSheet.jsx`); the new-over
+   sheet now says why each refused bowler is refused. The umpires' report: from the menu once recorded, and after the
+   match (under the board, and on the result screen) — never during play; filed through the existing discipline route
+   (`POST /api/players/:id/discipline`, db/25) with the bowler and the words filled in by an account that files conduct
+   (the pad now receives the role), else it says who files it and where (Match Centre → the fixture → Report an
+   incident). The scorecard lists the suspension in words. SQL: nothing moved, no migration — `smoke-fold-figures`
+   generates suspensions mid-over (17 in its run) and every SQL figure agrees with the fold. Proof: `laws.test` P (each
+   rule falsified), `replay.test` M, `apps/web/test/suspension-sheet.test.mjs`, `tools/smoke-browser-suspension.mjs`.
+   Not modelled: the Laws' two-innings reading refuses any ball in a third innings (MATCH_DECIDED), so "the rest of the
+   match" is proved for a bowler event there and for a ball in the second innings.
 
 ### SCRBRD-102 — A wagon-wheel analysis panel: filters, run chips, off and on side, areas per side
 **Priority:** P2 · **Domain:** Front-end / analytics · **Type:** feature (Kameel's earlier SCRBRD designs, 2026-09-27)
@@ -3969,8 +4013,16 @@ commits. Pass the token's device (the principal carries it) and refuse a batch t
   The spec's route for such events is quarantine for a supervisor; a forked device does not send its side there
   today. Decide whether it should (it needs a way to send as a non-holder on purpose), or whether a person
   reconciles from the device. (P2 — product decision)
-- **"For review N" is memory-only.** Quarantined events are counted on the pill for the session they were sent in;
-  after a reload the pad no longer says so (the server's quarantine panel still does). (P3)
+- ~~**"For review N" is memory-only.** Quarantined events are counted on the pill for the session they were sent in;
+  after a reload the pad no longer says so (the server's quarantine panel still does). (P3)~~ **Done 2026-09-27**: `GET
+  /matches/:id/events` — one of the pad's five routes, so no new route and nothing widened — answers `quarantined`, the
+  count of THIS device's events held for review and unresolved (`quarantinedHere()`: `device_id = app_device_id()`,
+  under the caller's own policies: a scorer's own rows, db/17; a resume credential's own match, db/50). The pad
+  (`lib/sync.js` `serverLog`) takes it at every read of the server's log — every attach — and the pill is that count
+  plus what this session sends to review after it, never one event twice; settled by a supervisor, the next read drops
+  it. Proof: `smoke-pad-resume` B (0, then 1 after a stale-generation ball, the same signed in, 0 on phone B) and
+  `smoke-browser-pad-resume` C2 (a held ball: "For review 1" after a reload with nobody signed in, read through the
+  pad's own route; settled: "Sent" after the next). Between reads the count is as of the last one.
 - **A toss conflict with play recorded under the pad's answer stops sending** and has no resolution on the pad —
   see SCRBRD-075. (P3 — product decision)
 - ~~**The 30-minute token and one-time office codes** mean a production scorer must be issued a new code to go on
