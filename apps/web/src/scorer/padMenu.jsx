@@ -38,11 +38,49 @@ export function PadMenu({ children }) {
     }
     setOpen((o) => !o);
   };
-  const close = () => { setOpen(false); button.current?.focus(); };
+
+  // Which kind of input is driving the page right now — read when the menu
+  // closes, to decide whether the button's returning focus should ring.
+  // Tracked globally rather than asked of the closing click itself: an item
+  // in the panel is a different element from the button focus is about to
+  // land back on, and by the time its onClick calls close() the pointerdown
+  // or keydown that led here has already happened.
+  const inputModality = useRef("keyboard");
+  useEffect(() => {
+    const onPointer = () => { inputModality.current = "pointer"; };
+    const onKeyDown = () => { inputModality.current = "keyboard"; };
+    document.addEventListener("pointerdown", onPointer, true);
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer, true);
+      document.removeEventListener("keydown", onKeyDown, true);
+    };
+  }, []);
+
+  const close = () => {
+    setOpen(false);
+    const btn = button.current;
+    if (!btn) return;
+    if (inputModality.current === "pointer") {
+      // A tap or a click already showed what happened. `:focus-visible`
+      // still rings a script-focused element the pointer itself never
+      // touched — this focus() lands on the "…" button, not on whatever was
+      // tapped in the panel — so this one return is quieted inline, never in
+      // the stylesheet, so a keyboard choice (Enter/Space on a menu item, or
+      // Escape) still gets its ring exactly as :focus-visible intends.
+      btn.style.outline = "none";
+      btn.style.boxShadow = "none";
+      btn.focus({ preventScroll: true });
+      const clear = () => { btn.style.outline = ""; btn.style.boxShadow = ""; };
+      btn.addEventListener("blur", clear, { once: true });
+    } else {
+      btn.focus({ preventScroll: true });
+    }
+  };
 
   useEffect(() => {
     if (!open) return;
-    const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); setOpen(false); button.current?.focus(); } };
+    const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); close(); } };
     const onDown = (e) => {
       if (panel.current?.contains(e.target) || button.current?.contains(e.target)) return;
       setOpen(false);
