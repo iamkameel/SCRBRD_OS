@@ -4,9 +4,9 @@ Project-level instructions for Claude Code working in this repository.
 
 ## Subagent routing
 
-When building out this project, use subagents. Route each subagent to Opus or
-Sonnet as appropriate for the task's complexity — never Fable, for any
-subagent, under any circumstances.
+When building out this project, use subagents. Route each subagent to Opus,
+Sonnet or Haiku as appropriate for the task's complexity — never Fable, for
+any subagent, under any circumstances.
 
 ### Opus 5.5 (`model: "opus"`) — where a mistake is expensive or silent
 
@@ -30,6 +30,13 @@ subagent, under any circumstances.
 - Screens over an API that already exists (the roadmap's `partial` items),
   styling and design-system work.
 - Smoke walks and unit tests for behaviour already designed.
-- Backlog, roadmap and documentation updates; codebase searches.
 
-When a task spans both, give it to Opus. When unsure, give it to Opus.
+### Haiku (`model: "haiku"`) — searches and docs
+
+- Codebase searches: finding where something lives, who calls it, what reads it.
+- Backlog, roadmap and documentation updates that record a decision already made.
+- Never code, tests, SQL or anything touching policy or minors' data — those go
+  to Sonnet or Opus above, even when the change is one line.
+
+When a task spans two tiers, give it to the higher one. When unsure, give it to
+Opus.
