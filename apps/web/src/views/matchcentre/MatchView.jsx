@@ -235,10 +235,13 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
 
       <header style={{ display: "grid", gap: T.space.sm }}>
         <div style={{ display: "flex", alignItems: "center", gap: T.space.sm, flexWrap: "wrap" }}>
-          <span data-testid="mc-status" style={{ ...T.role.label, color: isLive ? T.brand.accentText : T.content.secondary,
+          {/* The log decides the match before anyone finalises it (match.status
+              moves only through scoring.finalise), so a result the fold has
+              reached is the header's word: it never says Live over a result. */}
+          <span data-testid="mc-status" style={{ ...T.role.label, color: isLive && !log.result ? T.brand.accentText : T.content.secondary,
             display: "inline-flex", alignItems: "center", gap: T.space.xs }}>
-            {isLive && <span className="live-dot" aria-hidden="true"/>}
-            {isLive ? "Live" : match.status === "complete" ? "Result" : "Fixture"}
+            {isLive && !log.result && <span className="live-dot" aria-hidden="true"/>}
+            {log.result || match.status === "complete" ? "Result" : isLive ? "Live" : "Fixture"}
           </span>
           {log.demo && <span style={{ ...T.role.label, color: T.content.tertiary }}>Demonstration</span>}
         </div>

@@ -44,8 +44,8 @@ import { createServer } from "node:http";
 import { readFile, mkdir } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
-import { deriveMatch, deriveCommentary, runsOffBat, ball, placementFromTap } from "@scrbrd/scoring";
-import { buildMatchCentreFixture, writeEvents } from "./fixture-matchcentre.mjs";
+import { deriveMatch, deriveInnings, deriveCommentary, runsOffBat, ball, batters, bowler, inningsStart, revision, sealInnings, placementFromTap } from "@scrbrd/scoring";
+import { buildMatchCentreFixture, writeEvents, HIL } from "./fixture-matchcentre.mjs";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 
 const WEB_PORT = port(5361);
@@ -146,6 +146,89 @@ try {
     try { const r = await fetch(`${API}/api/health`); if ((await r.json()).db === "ok") break; } catch { /* not up */ }
     await new Promise((r) => setTimeout(r, 250));
   }
+
+  group("SCRBRD-100: no live matches — the list points onward, never a blank panel");
+  const pre = await open();
+  ok("the director of sport signs in", await signIn(pre.page, /sarah@example\.invalid|Director/));
+  await pre.page.locator('[data-testid="nav-matches"], [data-testid="mnav-matches"]').first().click({ timeout: 6000 }).catch(() => {});
+  await pre.page.waitForTimeout(1000);
+  await pre.page.locator('[data-testid="mc-filter-live"]').first().click({ timeout: 4000 }).catch(() => {});
+  await pre.page.waitForTimeout(500);
+  ok("nothing live on a freshly seeded database: no blank panel", await tid(pre.page, "mc-nomatches").count() === 1);
+  const noneText = await tid(pre.page, "mc-nomatches").innerText().catch(() => "");
+  ok("...points to the seeded upcoming fixtures", /Michaelhouse/.test(noneText) && /Kearsney College/.test(noneText), noneText.slice(0, 300));
+  ok("...and the seeded results", /Westville Boys' High/.test(noneText) && /Maritzburg College/.test(noneText), noneText.slice(0, 300));
+
+  group("SCRBRD-100: before the toss");
+  // Back to every fixture: the "live" filter above would hide one yet to be played.
+  await pre.page.locator('[data-testid="mc-filter-all"]').first().click({ timeout: 4000 }).catch(() => {});
+  await pre.page.waitForTimeout(300);
+  ok("a fixture yet to be played opens", await openMatch(pre.page, "77777777-0000-0000-0000-000000000002"));
+  ok("both sides and the status show", /Hilton College/.test(await tid(pre.page, "mc-title").innerText()) && (await tid(pre.page, "mc-status").textContent()) === "Fixture");
+  ok("ground and start, in place of a dead end", await tid(pre.page, "mc-pretoss").count() === 1);
+  const preToss = await tid(pre.page, "mc-pretoss").innerText();
+  ok("the ground is named", /Gordon Sherwood Oval/.test(preToss), preToss);
+  ok("no confirm-the-scorecard prompt on a fixture that has not been played", await tid(pre.page, "mc-confirm-prompt").count() === 0);
+  ok("no onward links either — there is nothing to be onward from yet", await tid(pre.page, "mc-onward").count() === 0);
+  ok("no console errors (before the toss)", pre.errors.length === 0, pre.errors.join(" | "));
+  await pre.ctx.close();
+
+  if (SHOTS) {
+    // Taken here, before any live or rain-delay fixture exists, so "nothing
+    // live" is the database's true state and not a screenshot of stale data.
+    group(`SCRBRD-100 screenshots (empty states) → ${SHOTS}`);
+    await mkdir(SHOTS, { recursive: true });
+    const FT_DESK = { width: 1280, height: 800 };
+    for (const [scheme, theme] of [["light", "daylight"], ["dark", "floodlit"]]) {
+      for (const [vp, w] of [[PHONE, 390], [FT_DESK, 1280]]) {
+        const s = await open({ viewport: vp, scheme });
+        await signIn(s.page, /sarah@example\.invalid|Director/);
+        await s.page.locator('[data-testid="nav-matches"], [data-testid="mnav-matches"]').first().click({ timeout: 6000 }).catch(() => {});
+        await s.page.waitForTimeout(1000);
+        await s.page.locator('[data-testid="mc-filter-live"]').first().click({ timeout: 4000 }).catch(() => {});
+        await s.page.waitForTimeout(500);
+        await s.page.screenshot({ path: join(SHOTS, `empty-nolive-${w}-${theme}.png`), fullPage: true });
+        await openMatch(s.page, "77777777-0000-0000-0000-000000000002");
+        await s.page.waitForTimeout(400);
+        await s.page.screenshot({ path: join(SHOTS, `empty-pretoss-${w}-${theme}.png`), fullPage: true });
+        await s.ctx.close();
+      }
+    }
+    ok("empty-state screenshots saved", true);
+  }
+
+  group("SCRBRD-100: a rain delay or interruption");
+  // The one signal the log actually carries: a revision. No "play stopped,
+  // resuming at…" event exists on the platform, so the banner says exactly
+  // what this is — a revised innings — and nothing it is not.
+  const GORDON = "ffffffff-0000-0000-0000-000000000001";
+  const revId = (await q(
+    `insert into match (school_id, team_code, opponent, ground_id, starts_at, sport, format, overs, status)
+     values ($1, '1XI', 'Rain Test Opponent', $2, now() - interval '40 minutes', 'cricket', 'T20', 20, 'live') returning id`,
+    [HIL, GORDON]))[0].id;
+  await q(`insert into match_toss (match_id, school_id, won_by, decision) values ($1, $2, 'home', 'bat')`, [revId, HIL]);
+  const revLog = [];
+  let rn = 0;
+  const addRev = (ev) => { const e = { ...ev, innings: 0, id: `mc-rev-${++rn}`, clientTs: Date.parse("2026-09-26T09:00:00Z") + rn * 20000 }; revLog.push(e); return e; };
+  addRev(inningsStart({ battingTeam: "1XI", bowlingTeam: "Rain Test Opponent", teamKey: "1XI", bowlingTeamKey: "Rain Test Opponent",
+    squad: [{ id: "rb1", name: "Rain One" }, { id: "rb2", name: "Rain Two" }], bowlingSquad: [], overs: 20 }));
+  addRev(batters({ striker: "rb1", nonStriker: "rb2" }));
+  addRev(bowler({ bowler: "Rain Bowler" }));
+  addRev(ball({ value: 1 }));
+  addRev(ball({ value: 4 }));
+  addRev(revision({ overs: 14, target: null, reason: "rain" }));
+  await writeEvents(q, revId, revLog);
+  const revS = await open();
+  ok("the director of sport signs in", await signIn(revS.page, /sarah@example\.invalid|Director/));
+  ok("the interrupted fixture opens", await openMatch(revS.page, revId));
+  ok("a clear status, in place of a frozen board", await tid(revS.page, "mc-revision").count() === 1);
+  const revText = await tid(revS.page, "mc-revision").textContent().catch(() => "");
+  ok('"Rain delay" and "Overs revised to 14" — the fold\'s own revision, in words', /Rain delay/.test(revText) && /Overs revised to 14/.test(revText), revText);
+  ok("no console errors (revision)", revS.errors.length === 0, revS.errors.join(" | "));
+  await revS.ctx.close();
+  // Done with it: taken out of "live" so the later "nothing live" screenshot
+  // still shows the true empty state rather than this one fixture.
+  await q(`update match set status = 'complete' where id = $1`, [revId]);
 
   group("A real, scored fixture on the ball log, folded here by the same package");
   const fx = await buildMatchCentreFixture(q);
@@ -301,7 +384,10 @@ try {
   await dos.ctx.close();
 
   group("The spectator's side: highlights, and nothing replayed on a fresh load");
-  const lv = await open({ liveMs: 1500 });
+  // 1280×800: the desktop size SCRBRD-100's screenshots ask for, so the one
+  // genuinely transient state — the result's moment — is captured at the
+  // right size the one time it fires, rather than re-derived per viewport.
+  const lv = await open({ liveMs: 1500, viewport: { width: 1280, height: 800 } });
   await signIn(lv.page, /sarah@example\.invalid|Director/);
   ok("the fixture opens, read every 1.5 s", await openMatch(lv.page, fx.live));
   const L = lv.page;
@@ -358,8 +444,101 @@ try {
   await tid(L, "mc-bigscreen-close").click();
   await L.waitForTimeout(300);
   ok("...and so does its button", await tid(L, "mc-bigscreen").count() === 0);
+
+  group("SCRBRD-100: the result, decided live, in one clear moment — never replayed, never hiding the score long");
+  // Finish the chase, live, with exactly the runs the fold says are needed —
+  // no invented score. The innings sits at an over's end (5.0, after the
+  // "late" balls above), so a bowler is named before the next delivery, the
+  // same as every over-start in the fixture itself.
+  const secondSoFar = [...fx.events[fx.live].filter((e) => e.innings === 1), ...late];
+  const chaseNow = deriveInnings(secondSoFar);
+  let owed = chaseNow.target - chaseNow.runs;
+  const closing = [];
+  let cN = 0;
+  const addClosing = (ev) => { const e = { ...ev, innings: 1, id: `mc-close-${++cN}`, clientTs: Date.now() + cN }; closing.push(e); return e; };
+  addClosing(bowler({ bowler: fx.players["A Dlamini"] }));
+  while (owed > 0) { const v = owed >= 6 ? 6 : owed >= 4 ? 4 : owed; addClosing(ball({ value: v })); owed -= v; }
+  const decided = deriveInnings([...secondSoFar, ...closing]);
+  addClosing(sealInnings(decided, decided.endReason ?? "target"));
+  await writeEvents(q, fx.live, closing, evs.length + late.length);
+  const finalMatch = deriveMatch([...evs, ...late, ...closing]);
+  ok("the chase is won", finalMatch.result?.winner === "Westville Boys' High 1XI", JSON.stringify(finalMatch.result));
+  ok("the result arrives as a moment on the board — held no longer than a milestone",
+     await until(L, () => document.querySelector('[data-testid="mc-moment"][data-kind="result"]')?.innerText.includes("won by"), 8000));
+  ok("...beside the total, which stays in view throughout", await tid(L, "mc-board-total").isVisible());
+  if (SHOTS) { await mkdir(SHOTS, { recursive: true }); await L.screenshot({ path: join(SHOTS, "fulltime-result-moment-1280-floodlit.png") }).catch(() => {}); }
+  ok("the moment clears within a second and a half — the score is never hidden for long (§3.6)",
+     await until(L, () => !document.querySelector('[data-testid="mc-moment"]'), 2500));
+  ok("the header now says Result, and gives the winner and the margin in words",
+     await until(L, () => document.querySelector('[data-testid="mc-status"]')?.textContent === "Result", 8000));
+  const resultLine = await tid(L, "mc-result").innerText().catch(() => "");
+  ok(`"${finalMatch.result.winner} won by ${finalMatch.result.margin}"`, resultLine === `${finalMatch.result.winner} won by ${finalMatch.result.margin}`, resultLine);
   ok("no console errors (live)", lv.errors.length === 0, lv.errors.join(" | "));
   await lv.ctx.close();
+
+  // The match is decided; nothing about `match.status` says so yet (that
+  // column only ever moves through `scoring.finalise`, never from the ball
+  // log by itself), so the onward links and the confirm-or-correct prompt —
+  // both gated on it — need it set, the way finishing a match for real would.
+  await q(`update match set status = 'complete' where id = $1`, [fx.live]);
+
+  group("SCRBRD-100: the full-time screen links onward");
+  const fin = await open();
+  ok("the director of sport signs in", await signIn(fin.page, /sarah@example\.invalid|Director/));
+  ok("the decided fixture opens", await openMatch(fin.page, fx.live));
+  await fin.page.waitForTimeout(2000);
+  ok("a fresh read plays no moment a second time — nothing is replayed on load", await tid(fin.page, "mc-moment").count() === 0);
+  ok("the onward links show", await tid(fin.page, "mc-onward").count() === 1);
+  ok("Hilton's own next fixture (the seeded one)", await tid(fin.page, "mc-onward-next-home").count() === 1);
+  ok("...never a link to Westville's — no fixture of theirs is on this list, and this never guesses one",
+     await tid(fin.page, "mc-onward-next-away").count() === 0);
+  ok("both sides' results are one tap away", await tid(fin.page, "mc-onward-results-home").count() === 1
+     && await tid(fin.page, "mc-onward-results-away").count() === 1);
+  await tid(fin.page, "mc-onward-results-away").click({ timeout: 4000 });
+  await fin.page.waitForTimeout(800);
+  ok("...opens the Match Centre list, filtered to that side's results", await tid(fin.page, "mc-team-filter-clear").count() === 1
+     && (await tid(fin.page, "mc-team-filter-clear").innerText()).includes("Westville"));
+  ok("...showing this very match, now a result", await tid(fin.page, `match-card-${fx.live}`).count() === 1);
+  ok("no console errors (onward)", fin.errors.length === 0, fin.errors.join(" | "));
+  await fin.ctx.close();
+
+  group("SCRBRD-100: coaches and scorers confirm or correct the final scorecard; others never see it");
+  const sc = await open();
+  ok("the scorer signs in", await signIn(sc.page, /scorer@example\.invalid|Scorer/));
+  ok("the decided fixture opens", await openMatch(sc.page, fx.live));
+  ok("the scorer is asked to confirm or correct it", await tid(sc.page, "mc-confirm-prompt").count() === 1);
+  ok("...and can open the amendment flow (scoring.amend.request)", await tid(sc.page, "mc-confirm-open").count() === 1);
+  await tid(sc.page, "mc-confirm-open").click();
+  await sc.page.waitForTimeout(300);
+  const delivered = await tid(sc.page, "mc-confirm-delivery").locator("option").count();
+  ok(`a delivery to name (${delivered - 1} on the log)`, delivered > 1);
+  await tid(sc.page, "mc-confirm-delivery").selectOption({ index: 1 });
+  await tid(sc.page, "mc-confirm-reason").fill("Smoke walk: this ball was never bowled the way the sheet has it.");
+  await tid(sc.page, "mc-confirm-submit").click();
+  ok("filed, and says so", await until(sc.page, () => /Filed|pending/i.test(document.querySelector('[data-testid="mc-confirm-said"]')?.textContent ?? ""), 6000),
+     await tid(sc.page, "mc-confirm-said").innerText().catch(() => "∅"));
+  await tid(sc.page, "mc-confirm-ok").click();
+  await sc.page.waitForTimeout(300);
+  ok('"Looks right" dismisses the prompt — on this device only; nothing is written for it', await tid(sc.page, "mc-confirm-prompt").count() === 0);
+  ok("no console errors (scorer)", sc.errors.length === 0, sc.errors.join(" | "));
+  await sc.ctx.close();
+
+  const ch = await open();
+  ok("the head coach signs in", await signIn(ch.page, /coach@example\.invalid|Head Coach/));
+  ok("the decided fixture opens", await openMatch(ch.page, fx.live));
+  ok("the coach is asked too (scoring.finalise)", await tid(ch.page, "mc-confirm-prompt").count() === 1);
+  ok("...but cannot open the amendment flow — only the scorer role holds scoring.amend.request",
+     await tid(ch.page, "mc-confirm-open").count() === 0 && /scorer/i.test(await tid(ch.page, "mc-confirm-prompt").innerText()));
+  ok("no console errors (coach)", ch.errors.length === 0, ch.errors.join(" | "));
+  await ch.ctx.close();
+
+  const watcher = await open();
+  ok("a spectator signs in", await signIn(watcher.page, /watcher@example\.invalid|Spectator/));
+  ok("the decided fixture opens", await openMatch(watcher.page, fx.live));
+  ok("a spectator never sees the confirm-or-correct prompt", await tid(watcher.page, "mc-confirm-prompt").count() === 0);
+  ok("...nor the amendment form it would have opened", await tid(watcher.page, "mc-confirm-open").count() === 0);
+  ok("no console errors (spectator)", watcher.errors.length === 0, watcher.errors.join(" | "));
+  await watcher.ctx.close();
 
   group("At 390 wide: the sides by code, and nothing wider than the screen");
   const ph = await open({ viewport: PHONE, scheme: "light" });
@@ -404,6 +583,34 @@ try {
       }
     }
     ok("screenshots saved", true);
+
+    group(`SCRBRD-100 screenshots (full time) → ${SHOTS}`);
+    // 1280×800 (desktop) and 390×844 (phone), in Daylight and Floodlit: the
+    // full-time links and the confirm prompt. The empty states were already
+    // saved above (before this fixture existed) and the result's own moment
+    // was saved the one time it actually fired.
+    const FT_DESK = { width: 1280, height: 800 };
+    for (const [scheme, theme] of [["light", "daylight"], ["dark", "floodlit"]]) {
+      for (const [vp, w] of [[PHONE, 390], [FT_DESK, 1280]]) {
+        const s = await open({ viewport: vp, scheme });
+        await signIn(s.page, /sarah@example\.invalid|Director/);
+        ok("the decided fixture opens for screenshots", await openMatch(s.page, fx.live));
+        await s.page.waitForTimeout(400);
+        await s.page.screenshot({ path: join(SHOTS, `fulltime-onward-${w}-${theme}.png`), fullPage: true });
+        await s.ctx.close();
+      }
+    }
+    for (const [scheme, theme] of [["light", "daylight"], ["dark", "floodlit"]]) {
+      for (const [vp, w] of [[PHONE, 390], [FT_DESK, 1280]]) {
+        const s = await open({ viewport: vp, scheme });
+        await signIn(s.page, /scorer@example\.invalid|Scorer/);
+        await openMatch(s.page, fx.live);
+        await s.page.waitForTimeout(400);
+        await s.page.screenshot({ path: join(SHOTS, `fulltime-confirm-${w}-${theme}.png`), fullPage: true });
+        await s.ctx.close();
+      }
+    }
+    ok("SCRBRD-100 screenshots saved", true);
   }
 } catch (e) {
   ok(`the Match Centre walk threw: ${e.message?.slice(0, 200)}`, false);
