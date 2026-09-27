@@ -603,6 +603,18 @@ data; Sonnet for screens over an existing API.
 
 ## 5. Questions for Kameel
 
+**Decided (Kameel, 2026-09-27): every recommendation below** ("all recommendations for the safeguarding
+questions"), and Q2 as **Fable's list** — safeguarding joined it in `CLAUDE.md` the same day. So: CSA's policy
+is the baseline for every tenant; a coach learns nothing of a concern by default (need-to-know shares, recorded,
+expiring); parents have no standing access; concerns about staff or leadership also route to the provincial DSO,
+are hidden from ordinary audit readers, and a principal cannot remove a DSO while a concern naming the principal
+is open; a pupil of 12 or more may take his own text name off public pages; school and age group stay on public
+pages (noted for the officer); CSA's retention periods are minimums (the officer is asked about the victim case);
+no masterkey or support read of concerns; no in-house anonymous channel (link to The Guardian's app); uncleared
+trips warn now and refuse once every school has a DSO; pupils lose `medical.status.read`; p52 and p63 read as the
+child's file and safeguarding records, written into PUBLIC_DATA for the officer to confirm.
+
+
 1. **Adopt the CSA policy as the platform's baseline for every tenant**, schools and
    clubs alike? *Recommendation: yes.* PUBLIC_DATA C7 already treats clubs and schools
    the same, and school cricket runs through CSA's unions and events. A school's own
