@@ -115,7 +115,8 @@ const board = async () => {
   return ((await l.textContent({ timeout: 1000 }).catch(() => "")) || "").trim();
 };
 const undo = async () => {
-  await page.getByRole("button", { name: "Undo the last ball" }).first().click({ timeout: 4000 });
+  // Undo's name says what it takes back since SCRBRD-100 ("Undo: 4 to R Pillay").
+  await page.getByRole("button", { name: /^Undo: / }).first().click({ timeout: 4000 });
   await page.waitForTimeout(900);
 };
 

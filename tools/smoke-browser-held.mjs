@@ -386,7 +386,8 @@ try {
   ok("the pill says Refused 1", /Refused 1/.test(await pill()), await pill());
   ok("...and the refused bowler is not the last event on the pad", (await padIds()).at(-1) === UNDO_CELE.id);
 
-  await page.getByRole("button", { name: "Undo the last ball" }).first().click({ timeout: 4000 });
+  // Undo's name says what it takes back since SCRBRD-100 ("Undo: 4 to R Pillay").
+  await page.getByRole("button", { name: /^Undo: / }).first().click({ timeout: 4000 });
   await page.waitForTimeout(3000);
   const afterUndo = (await readSaved())?.events?.[0] ?? [];
   ok("undo takes the refused bowler out of the pad's log", !afterUndo.some((e) => e.id === BOTHA_THIRD.id));
