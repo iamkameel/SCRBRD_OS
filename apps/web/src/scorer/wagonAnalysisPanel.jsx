@@ -106,7 +106,7 @@ function WagonAnalysisPanel({ balls = [], handOf = () => "R", batters = null, fi
       <span style={{ ...T.role.body, fontSize: "13px", color: T.content.primary }}>{label}</span>
       <span style={{ display: "flex", gap: T.space.sm, alignItems: "baseline" }}>
         <span style={{ ...T.role.figure.sm, fontSize: "13px", color: T.content.primary }}>{runs}</span>
-        {boundaries > 0 && <span style={{ ...T.role.figure.sm, fontSize: "11px", color: T.content.secondary }}>{boundaries} bdry</span>}
+        {boundaries > 0 && <span style={{ ...T.role.figure.sm, fontSize: "12px", color: T.content.secondary }}>{boundaries} {boundaries === 1 ? "boundary" : "boundaries"}</span>}
       </span>
     </div>
   );
