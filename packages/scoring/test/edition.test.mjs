@@ -17,6 +17,9 @@
  *      by penalty runs
  *   E. A delivery that does not count in the over (17.3.2.5, both)
  *   F. Runs disallowed on the delivery: 41.14.3 and 41.15.3 (both)
+ *   G. The free hit follows the match's format, not its date: a limited-
+ *      overs match has one after a no-ball, a declaration or timed match
+ *      none, a match with no format keeps one (a correction, Kameel)
  *
  *   node packages/scoring/test/edition.test.mjs
  */

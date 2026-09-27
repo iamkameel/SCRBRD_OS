@@ -187,8 +187,8 @@ Refused, with the reason named:
 |---|---|
 | A ball needs an innings, batters at both ends and a bowler; not in a closed or finished innings | `scoringReadiness()` (the pad's own gate) |
 | Striker and non-striker are different players | AntiGravity `validateDelivery` |
-| No bowler bowls two overs, or parts of two, running (Law 17.8) | AntiGravity; "parts thereof" added |
-| A bowler replaced during an over says why: injury or suspension (Law 17.8.1) | SCRBRD-080 |
+| No bowler bowls two overs, or parts of two, running (Law 17.6) | AntiGravity; "parts thereof" added |
+| A bowler replaced during an over says why: injury or suspension (Law 17.7.1) | SCRBRD-080 |
 | A bowler the umpires suspended does not bowl again in the innings — for ball tampering, in the match, later innings included; a suspension names the bowler on (or of the last ball), a reason from the list and the scope that reason carries | SCRBRD-094 item 2 |
 | Whoever is out on a wicket must be one of the two batting | AntiGravity |
 | No ball once the second innings is complete — the match is decided | AntiGravity `recordBallAction` |
@@ -230,7 +230,7 @@ or for it and every event held after it:
   bowler at the crease when it is recorded, as a fresh tap would be.
 
 Nothing is resent on its own. Discarding the cause of a cascade (a bowler
-refused under Law 17.8, and the balls after him refused for want of a bowler)
+refused under Law 17.6, and the balls after him refused for want of a bowler)
 does not make the rest legal — the server never had the bowler, so letting him
 go changes nothing it knows; the balls become legal only once the scorer names
 the right bowler, and then only by being recorded again. Undo that reaches a
@@ -323,11 +323,11 @@ Taken by the product owner on the rules the commit-time Laws check left open.
 
 1. **Dismissal on a free hit — record it, batter not out.** Unchanged from §6. The pad records the ball and the
    appeal as they happened; the fold saves the batter (`standsOnFreeHit`). The server does not refuse it.
-2. **Mid-over bowler change — allowed, with a reason.** Law 17.8.1: a bowler incapacitated or suspended may be
+2. **Mid-over bowler change — allowed, with a reason.** Law 17.7.1: a bowler incapacitated or suspended may be
    replaced mid-over. The pad asks *Injury or suspended?* and records it on the `bowler` event; the one who finishes
    the over may not bowl the next (already enforced as "or parts thereof"). Built as SCRBRD-080.
 3. **Run out with runs completed — ask which end.** One extra question on a run out that completed runs: out at the
-   striker's end or the bowler's end (Law 38.2). The fold places the survivor from that. Built as SCRBRD-069.
+   striker's end or the bowler's end (Law 38.4). The fold places the survivor from that. Built as SCRBRD-069.
 4. **No-ball byes — fix the model.** A no-ball records runs off the bat and runs not off the bat separately; only
    the first is the batter's (Law 21.15, Law 23). Old events replay unchanged. Built as SCRBRD-068; its scoring
    corrected to the current Code on 2026-09-27 (db/52, below).
@@ -338,7 +338,7 @@ Taken by the product owner on the rules the commit-time Laws check left open.
 ### Which end after a run out that completed runs (SCRBRD-069)
 
 **The shape.** A wicket may carry `outAt: "striker_end" | "bowler_end"` (`RUN_OUT_END`): the end the wicket was put down
-at (Law 38.2). Omitted otherwise. The constructor refuses any other value, or the field on anything but a wicket; so
+at (Law 38.4). Omitted otherwise. The constructor refuses any other value, or the field on anything but a wicket; so
 does the server (`out_at_unknown`).
 
 **The fold.** When the wicket stands and the end is recorded, that end is empty and the survivor is at the other one —
@@ -416,7 +416,7 @@ over is the same event it always was. The constructor refuses any other value.
 not a change, and nor is naming a bowler when nobody is on (a pad holding balls the server refused for want of one,
 SCRBRD-070's cascade): there is nobody to replace.
 
-**No reason: refused.** Law 17.8.1 lets a bowler be replaced during an over only when he is incapacitated or
+**No reason: refused.** Law 17.7.1 lets a bowler be replaced during an over only when he is incapacitated or
 suspended, so the reason is what makes the change lawful, and the pad always asks. A new mid-over `bowler` event with no
 reason, or one the model does not know, is refused at commit (`mid_over_no_reason`). Naming the bowler already on is
 no change and needs none. Only new events are judged: a log from before the pad asked replays unchanged, its change
@@ -424,7 +424,7 @@ recorded with the reason unknown. An older build's change arrives without one an
 refusal; its balls are still judged, against the bowler the server has.
 
 **The fold.** Unchanged figures — each man is credited with the balls he bowled — plus `inn.bowlerChanges`: the over,
-the legal balls of it already bowled, who left, who took over and why. "Or parts thereof" (Law 17.8) was already
+the legal balls of it already bowled, who left, who took over and why. "Or parts thereof" (Law 17.6) was already
 enforced and still is: neither the man who left nor the one who finished the over may bowl the next.
 
 **The pad.** "Chg Bowler" during an over opens the bowler sheet as *Change of Bowler*, which asks *Injury or
@@ -653,7 +653,7 @@ over credits each bowler with the balls he bowled and the runs off them, and is 
 bowler suspended in this innings, or for the match in an earlier one (`bowler_suspended`; `suspendedBowlers()` reads
 the match); a suspension of anyone but the bowler on, or — nobody on, at an over's end — the bowler of the last ball
 (`not_bowling`); a reason not on the list, or a scope the reason does not carry (`suspension_unknown`); the same bowler
-twice (`bowler_suspended`). The replacement's two rules are Law 17.8's "or parts thereof", which the check already
+twice (`bowler_suspended`). The replacement's two rules are Law 17.6's "parts of each of two consecutive overs", which the check already
 applied to every change: `bowledLastOver()` refuses a man who bowled any of the previous over, and the next over
 refuses both men who shared this one. Nothing new was needed for either. The pad's gate (`scoringReadiness`) blocks a
 ball while the suspended bowler is on (`bowler_suspended`, "Choose who finishes the over").

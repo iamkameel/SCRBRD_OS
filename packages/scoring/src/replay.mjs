@@ -232,7 +232,7 @@ export const fmtOvers = (balls) => `${Math.floor(balls / 6)}.${balls % 6}`;
 /**
  * Is an over under way, with a bowler on — has a delivery of the over the
  * next ball is in been bowled, by the bowler the fold has? A bowler named now
- * takes over from one who has started it (SCRBRD-080, Law 17.8.1); at an
+ * takes over from one who has started it (SCRBRD-080, Law 17.7.1); at an
  * over's start there is nobody to take over from. A wide or no-ball counts: it
  * is part of the over though not one of its six. The log is in order, so the
  * last entry answers.
@@ -816,7 +816,7 @@ function inningsFolder(ctx = {}, carried = 0) {
             closePartnership();
             // Which end is now empty. With the end recorded (SCRBRD-069, a
             // run out that completed runs: the batters have crossed, Law 18),
-            // it is that end, and the survivor is at the other (Law 38.2).
+            // it is that end, and the survivor is at the other (Law 38.4).
             // Without it — every log before the pad asked — the dismissed
             // batter's end before the ball, as it always was.
             const survivor = outId === inn.striker ? inn.nonStriker : outId === inn.nonStriker ? inn.striker : undefined;

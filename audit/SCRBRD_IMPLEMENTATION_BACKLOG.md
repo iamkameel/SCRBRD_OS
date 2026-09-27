@@ -2874,7 +2874,7 @@ hit), db/52's own block, db/99 §19/§22/§30 and db/43's fixture, `smoke-fold-f
 (`bat.runs += v` on a no-ball), the scorer pad's extras sheet
 **Found 2026-09-23** translating AntiGravity's `liveProjectionRules.test.ts` into `packages/scoring/test/laws-spec.test.mjs`.
 By the Laws, byes or leg byes taken off a no-ball are scored as no-ball extras and are not the striker's
-(Law 21.6, Law 23). OS's no-ball carries one number, defined as runs off the bat, so four byes off a no-ball either
+(Law 21.15, Law 23). OS's no-ball carries one number, defined as runs off the bat, so four byes off a no-ball either
 go into the batter's score or cannot be entered at all.
 **Expected behaviour:** a no-ball records runs off the bat and runs not off the bat separately; the batter is
 credited only with the first, the bowler charged per the Laws, and old logs replay unchanged.
@@ -2888,7 +2888,7 @@ credited only with the first, the bowler charged per the Laws, and old logs repl
 **Affected files:** `packages/scoring/src/replay.mjs` (`deriveInnings`, the wicket case)
 **Found 2026-09-23** in the same translation (kept as a named `KNOWN_GAP` in `laws-spec.test.mjs`). With runs
 completed before the run out, the batters have changed ends (Law 18), and which end the dismissed batter was out at
-decides which end is empty (Law 38.2). The fold cannot know the second from the event today; it assumes neither
+decides which end is empty (Law 38.4). The fold cannot know the second from the event today; it assumes neither
 changed. The next `batters` event names ends explicitly, so the scorecard is right; the live "who is facing" between
 the wicket and the new batter can be wrong.
 **Expected behaviour:** a run out records the end it happened at (or the scorer is asked), and the fold places the
@@ -3305,7 +3305,7 @@ keys: after the upgrade a re-offered, already-acknowledged ball reads as unsent 
 - **SCRBRD-069** (run-out end): decided — ask the scorer which end on a run out that completed runs — build.
   **Built 2026-09-24:** `outAt: "striker_end" | "bowler_end"` on the wicket; the laws-spec KNOWN_GAP is now passing
   cases for both ends (docs/SCORING_RULES.md, "Which end after a run out that completed runs").
-- **SCRBRD-080 — Mid-over bowler change records its reason.** Allowed (Law 17.8.1); the pad asks *Injury or suspended?* and records it on the `bowler` event. P2.
+- **SCRBRD-080 — Mid-over bowler change records its reason.** Allowed (Law 17.7.1); the pad asks *Injury or suspended?* and records it on the `bowler` event. P2.
   **Built 2026-09-24:** `bowler({ bowler, reason: "injury" | "suspended" })`; a mid-over change with no reason is
   refused at commit (`mid_over_no_reason`); old logs replay. Not built: Law 41 says a suspended bowler does not bowl
   again in the innings — nothing refuses him yet (a further product decision). **Built 2026-09-27** as SCRBRD-094

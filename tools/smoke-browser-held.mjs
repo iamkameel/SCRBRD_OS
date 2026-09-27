@@ -232,7 +232,7 @@ try {
   const NEL = w(bowler({ innings: 0, bowler: "A Nel" }));
   const prefix = [OPEN, PAIR, NEL];
   const OVER1 = attributed(prefix, [1, 0, 0, 4, 0, 0].map((v) => w(ball({ innings: 0, type: BALL_TYPE.RUN, value: v }))));
-  // Law 17.8: not two overs running. The pad's own new-over sheet would not
+  // Law 17.6: not two overs running. The pad's own new-over sheet would not
   // offer him; a log from anywhere else can still carry it.
   const NEL_AGAIN = w(bowler({ innings: 0, bowler: "A Nel" }));
   const [B1, B2] = attributed([...prefix, ...OVER1, NEL_AGAIN],
@@ -371,7 +371,7 @@ try {
   await exitScorer();
   const saved3 = await readSaved();
   const log3 = saved3.events[0];
-  // Botha a third over running (refused, Law 17.8); then C Cele, whom the
+  // Botha a third over running (refused, Law 17.6); then C Cele, whom the
   // server takes — it had nobody bowling — and the scorer's undo of Cele,
   // which it also takes (Cele was the latest). The next undo reaches Botha:
   // held, with two events the server accepted sitting after him.

@@ -267,7 +267,7 @@ group("H. A dismissal the free hit saved is not a phase wicket");
   ok("...while the ball itself still counts, legal and a dot",
      phaseSum(saved, "balls") === 1 && phaseSum(saved, "dots") === 1);
 
-  // Run out is out on a free hit (Law 21.19), so it stands in both.
+  // Run out is out on a free hit (Law 21.17, out from a No ball), so it stands in both.
   /** @type {LogEvent[]} */
   const runOut = [START, PAIR, BOWLER,
     { kind: "ball", type: "Nb", value: 0 },

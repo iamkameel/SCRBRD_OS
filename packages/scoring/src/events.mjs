@@ -128,7 +128,7 @@ export const NB_RUNS = Object.freeze({ BYES: "byes", LEG_BYES: "leg_byes" });
 
 /**
  * Where a batter was out, on a wicket that says (SCRBRD-069): the end the
- * wicket was put down at (Law 38.2). With runs completed before a run out the
+ * wicket was put down at (Law 38.4). With runs completed before a run out the
  * batters have changed ends (Law 18), and the pre-ball crease no longer says
  * which end is empty; this does. The survivor is at the other end.
  *
@@ -275,8 +275,10 @@ export const DISMISSAL_LABEL = Object.freeze({
 });
 /**
  * Not the bowler's, and not saved by a free hit: the six the bowler did not
- * take (Law 21.19 lists the ways out off a free hit — run out, handled,
- * obstructing, hit twice; timed out and retired out need no delivery at all).
+ * take (Law 21.17 lists the ways out from a No ball — hit the ball twice,
+ * obstructing the field, run out; the free hit itself is the playing
+ * conditions', not a Law. Handled stays in the set for old logs: it is out
+ * under obstructing now. Timed out and retired out need no delivery at all).
  * One set, both questions, so the two can never disagree again.
  * @type {ReadonlySet<unknown>}  asked of anything, like DISMISSALS
  */
@@ -1019,10 +1021,10 @@ export const batters = (o) => ({
 });
 
 /**
- * Why a bowler was replaced during an over. Law 17.8.1: only a bowler who is
+ * Why a bowler was replaced during an over. Law 17.7.1: only a bowler who is
  * incapacitated (injured, taken ill) or suspended (Law 41) may be; the
  * over is finished by another, who may not have bowled the previous over and
- * may not bowl the next (17.8, "or parts thereof").
+ * may not bowl the next (17.8; and 17.6, "parts of each of two consecutive overs").
  */
 export const BOWLER_CHANGE_REASON = Object.freeze({ INJURY: "injury", SUSPENDED: "suspended" });
 /** @typedef {typeof BOWLER_CHANGE_REASON[keyof typeof BOWLER_CHANGE_REASON]} BowlerChangeReason */
@@ -1062,8 +1064,8 @@ export const bowler = (o) => {
  *     later innings included;
  *   - if the over is not finished, another bowler finishes it: a `bowler`
  *     event with reason "suspended", who may not have bowled any part of the
- *     previous over and may not bowl any part of the next (Law 17.8, "or parts
- *     thereof" — the rule the Laws check already applies to every change).
+ *     previous over and may not bowl any part of the next (Law 17.6, "parts of
+ *     each of two consecutive overs" — the rule the Laws check already applies to every change).
  *
  * `scope` is the reason's under the Edition of the Laws the match is scored
  * under (suspensionScope(); SCRBRD-113), not a choice: omitted, it is filled

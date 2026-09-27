@@ -722,7 +722,7 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
   const modes=Object.keys(DISMISSAL_LABEL).filter(m=>m!==DISMISSAL.TIMED_OUT&&m!==DISMISSAL.HANDLED_BALL);
   // A run out: who, how many runs were completed first, and — when some
   // were, so the batters have crossed (Law 18) — at which end the wicket was
-  // put down (Law 38.2). That end is the one left empty (SCRBRD-069).
+  // put down (Law 38.4). That end is the one left empty (SCRBRD-069).
   const[runs,setRuns]=useState(0);
   const[end,setEnd]=useState(null);
   const isRunOut=mode===DISMISSAL.RUN_OUT;
@@ -882,7 +882,7 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
 ═══════════════════════════════════════════════════════ */
 /**
  * `midOver` (SCRBRD-080): the over is under way, so this is a bowler taking
- * over from one who cannot finish it. Law 17.8.1 allows that only for an
+ * over from one who cannot finish it. Law 17.7.1 allows that only for an
  * injured or suspended bowler, so the sheet asks which before it offers
  * anyone, and passes it on: onConfirm(id, reason).
  */
@@ -901,7 +901,7 @@ function NewOverSheet({ovNum,inn=null,prevBowlers,bowlingSquad,bowlingTeamKey,la
   const allBowlers=teamInfo
     ? teamInfo.players.filter(p=>p.bowl).map(p=>({...p,id:p.id??p.name}))
     : (bowlingSquad||[]).map(n=>({...entry(n),role:"BOWL"}));
-  // Can't bowl consecutive overs (Law 17.8). `refuses` is lawsRefusal() —
+  // Can't bowl consecutive overs (Law 17.6). `refuses` is lawsRefusal() —
   // the rule the server applies when the bowler event arrives — asked by the
   // id that will be emitted. The name comparison is kept only for a caller
   // that does not pass it.

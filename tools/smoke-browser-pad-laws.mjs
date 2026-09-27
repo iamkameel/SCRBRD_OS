@@ -16,7 +16,7 @@
  *               are retire events marked W, the ball count does not move and
  *               the bowler takes nothing.
  *   SCRBRD-080  "Chg Bowler" mid-over asks Injury or suspended?, the row
- *               carries it, Law 17.8 bars both men from the next over, and
+ *               carries it, Law 17.6 bars both men from the next over, and
  *               the scorecard says who took over and why.
  *   SCRBRD-068  The no-ball sheet asks off the bat, or byes / leg byes?; leg
  *               byes are the side's and not the striker's, a run off the bat
@@ -316,7 +316,7 @@ try {
   ok("the over ends and the pad asks for the next bowler", /Over \d+ Complete/i.test(await text()));
   const nextField = page.locator("input[aria-label='Bowler name']").first();
   await nextField.fill("B Zulu");
-  ok("...not the man who finished the last one (Law 17.8, or parts thereof)", await page.locator("button", { hasText: /^Go$/ }).first().isDisabled());
+  ok("...not the man who finished the last one (Law 17.6, parts of two overs running)", await page.locator("button", { hasText: /^Go$/ }).first().isDisabled());
   await nextField.fill("A Nel");
   ok("...nor the man he replaced", await page.locator("button", { hasText: /^Go$/ }).first().isDisabled());
   await nextField.fill("C Mthembu");

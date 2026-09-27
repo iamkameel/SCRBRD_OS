@@ -76,8 +76,8 @@ export const REFUSAL = Object.freeze({
   CONSENT_NOT_RETIRED_OUT: "consent_not_retired_out", // the captain's consent, for nobody who retired out (SCRBRD-071)
   CREASE_OCCUPIED:        "crease_occupied",        // a not-out batter replaced without leaving
   NOT_AT_CREASE:          "not_at_crease",          // dismissed / retiring batter is not batting
-  CONSECUTIVE_OVERS:      "consecutive_overs",      // Law 17.8: not two overs, or parts, running
-  MID_OVER_NO_REASON:     "mid_over_no_reason",     // Law 17.8.1: a change during an over says why (SCRBRD-080)
+  CONSECUTIVE_OVERS:      "consecutive_overs",      // Law 17.6: not two overs, or parts, running
+  MID_OVER_NO_REASON:     "mid_over_no_reason",     // Law 17.7.1: a change during an over says why (SCRBRD-080)
   // A dismissal with no delivery (SCRBRD-081).
   NEEDS_A_DELIVERY:       "needs_a_delivery",       // only retired out and timed out happen without a ball
   NOT_NEXT_IN:            "not_next_in",            // timed out: the batter was not the one due in
@@ -133,7 +133,7 @@ export const REFUSAL_TEXT = Object.freeze({
   crease_occupied: "a batter who is not out was replaced",
   not_at_crease: "that batter is not at the crease",
   consecutive_overs: "a bowler may not bowl two overs in a row",
-  // Law 17.8.1. No clause number in the words: Kameel is verifying them against the current Code.
+  // Law 17.7.1. No clause number in the words: Kameel is verifying them against the current Code.
   mid_over_no_reason: "the bowler was changed during an over without saying why — injury or suspension",
   needs_a_delivery: "only retired out and timed out are recorded without a ball — every other way out needs a delivery",
   not_next_in: "a batter can be timed out only while an end is empty and he is the one due in",
@@ -218,12 +218,14 @@ export function lawsRefusal(match, ev) {
       // this innings, or — where its scope is the match — in this match. Asked first: it
       // is the stronger rule, and the words the scorer needs.
       if (ev.bowler != null && suspendedBowlers(innings, i).has(ev.bowler)) return REFUSAL.BOWLER_SUSPENDED;
-      // Law 17.8, "or parts thereof". This is also the whole of the
+      // Law 17.6: not two overs running, "nor ... parts of each of two
+      // consecutive overs". With Law 17.8 (another bowler finishes the
+      // over) this is also the whole of the
       // suspension's rule for the man who finishes the over: he may not have
       // bowled any of the over before it, and — having bowled part of this
       // one — may not bowl the next. Nothing new is needed for either.
       if (bowledLastOver(inn, ev.bowler)) return REFUSAL.CONSECUTIVE_OVERS;
-      // Law 17.8.1: an over is finished by another bowler only when the one
+      // Law 17.7.1: an over is finished by another bowler only when the one
       // bowling it is incapacitated or suspended, and the event says which
       // (SCRBRD-080). One with no reason, or one the model does not know, is
       // refused: the reason is what makes the change lawful. A log from
@@ -647,8 +649,9 @@ function battersRefusal(inn, ev) {
 }
 
 /**
- * Did this bowler bowl any of the previous over? Law 17.8: "a bowler shall not
- * bowl two overs, or parts thereof, consecutively in the same innings". Read
+ * Did this bowler bowl any of the previous over? Law 17.6: a bowler may not
+ * "bowl two overs consecutively, nor bowl parts of each of two consecutive
+ * overs, in the same innings". Read
  * from the fold's own ball log, where every delivery carries the over it was
  * in and the bowler the fold had at the time — so a mid-over change is
  * covered: both men who shared the last over are barred from the next one.

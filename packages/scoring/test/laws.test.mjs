@@ -233,10 +233,10 @@ group("F. At the crease");
   ok("a batter retired out may not (Law 25.4.3)", judge(retOut, at(0, batters({ nonStriker: "p2" }))[0]) === REFUSAL.BATTER_ALREADY_OUT);
   ok("only a batter who is in can retire", judge(L, at(0, retire({ batter: "p4" }))[0]) === REFUSAL.NOT_AT_CREASE);
 
-  // Law 17.8, "or parts thereof": a mid-over change bars BOTH bowlers from the next over.
+  // Law 17.6, "parts of each of two consecutive overs": a mid-over change bars BOTH bowlers from the next over.
   const shared = [...open(0), ...runs(0, 0, 0, 0), ...at(0, bowler({ bowler: "w3" })), ...runs(0, 0, 0, 0)];
-  // SCRBRD-080: accepted with the reason Law 17.8.1 gives; refused without.
-  ok("a mid-over change of bowler is accepted with its reason (Law 17.8.1)",
+  // SCRBRD-080: accepted with the reason Law 17.7.1 gives; refused without.
+  ok("a mid-over change of bowler is accepted with its reason (Law 17.7.1)",
      judge([...open(0), ...runs(0, 0)], at(0, bowler({ bowler: "w3", reason: "injury" }))[0]) === null);
   ok("...and neither man who shared the over may bowl the next",
      judge(shared, at(0, bowler({ bowler: "w1" }))[0]) === REFUSAL.CONSECUTIVE_OVERS
@@ -339,7 +339,7 @@ group("K. Timed out and retired out: a retire marked W");
   const bowledNoBall = { kind: "retire", batter: "p1", reason: "out", type: "W", dismissal: "bowled" };
   ok("no other way out is recorded without a ball", judge(L, at(0, bowledNoBall)[0]) === REFUSAL.NEEDS_A_DELIVERY);
 
-  // The over does not move, so Law 17.8 reads the same after one.
+  // The over does not move, so Law 17.6 reads the same after one.
   const overDone = [...open(0), ...runs(0, 0, 0, 0, 0, 0, 0), ...at(0, retire({ batter: "p1", reason: "out" }), batters({ striker: "p3" }))];
   ok("the over is still over: the same bowler may not start the next",
      judge(overDone, at(0, bowler({ bowler: "w1" }))[0]) === REFUSAL.CONSECUTIVE_OVERS);
@@ -389,7 +389,7 @@ group("L. A bowler replaced during an over: injury or suspended");
   ok("with balls in the over and nobody on, naming a bowler needs no reason",
      deriveInnings(nobodyOn).bowler === null && judge(nobodyOn, at(0, bowler({ bowler: "w2" }))[0]) === null
      && deriveInnings([...nobodyOn, ...at(0, bowler({ bowler: "w2" }))]).bowlerChanges.length === 0);
-  // Law 17.8, "or parts thereof", still binds the man who finished the over.
+  // Law 17.6, "parts of each of two consecutive overs", still binds the man who finished the over.
   const finished = [...two, ...at(0, bowler({ bowler: "w3", reason: "injury" })), ...runs(0, 0, 0, 0)];
   ok("the replacement may not bowl the next over", judge(finished, at(0, bowler({ bowler: "w3" }))[0]) === REFUSAL.CONSECUTIVE_OVERS);
   ok("...nor the injured man", judge(finished, at(0, bowler({ bowler: "w1" }))[0]) === REFUSAL.CONSECUTIVE_OVERS);
@@ -620,7 +620,7 @@ group("P. A bowler suspended: not again this innings (the match, for ball tamper
   ok("once suspended, a ball from him is refused", judge(suspended, at(0, ball({}))[0]) === REFUSAL.BOWLER_SUSPENDED);
   ok("...and suspending him twice", judge(suspended, at(0, S("w2", "beamers"))[0]) === REFUSAL.BOWLER_SUSPENDED);
   ok("he may not be named again, whatever the reason", judge(suspended, at(0, bowler({ bowler: "w2", reason: "injury" }))[0]) === REFUSAL.BOWLER_SUSPENDED);
-  // The replacement: not one who bowled any part of the previous over (Law 17.8).
+  // The replacement: not one who bowled any part of the previous over (Law 17.6).
   ok("a replacement who bowled the previous over is refused",
      judge(suspended, at(0, bowler({ bowler: "w1", reason: "suspended" }))[0]) === REFUSAL.CONSECUTIVE_OVERS);
   ok("...one who did not is taken, with the reason", judge(suspended, at(0, bowler({ bowler: "w3", reason: "suspended" }))[0]) === null);

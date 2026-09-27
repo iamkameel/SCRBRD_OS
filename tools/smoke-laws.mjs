@@ -168,7 +168,7 @@ try {
   const noBowler = await post(stamp(0, ball({ value: 1 })));
   ok("a ball with nobody named to bowl the new over is refused", refusedAs(noBowler, REFUSAL.NEXT_BOWLER), JSON.stringify(noBowler));
   const same = await post(stamp(0, bowler({ bowler: DLAMINI })));
-  ok("the same bowler for a second over running is refused (Law 17.8)", refusedAs(same, REFUSAL.CONSECUTIVE_OVERS), JSON.stringify(same));
+  ok("the same bowler for a second over running is refused (Law 17.6)", refusedAs(same, REFUSAL.CONSECUTIVE_OVERS), JSON.stringify(same));
   const change = await post(stamp(0, bowler({ bowler: MOKOENA })));
   ok("a different bowler is accepted", change?.accepted?.length === 1);
   const over2 = await post(...[1, 0, 4, 0, 0, 1].map((v) => stamp(0, ball({ value: v }))));

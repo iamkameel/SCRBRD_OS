@@ -1454,9 +1454,9 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
   // arrives — lawsRefusal() over the same two arrays this screen already
   // folds — so a bowler it offers is one the server will take. It used to
   // compare names against the last bowler, a rule of its own that knew
-  // nothing of a mid-over change (Law 17.8: "or parts thereof").
+  // nothing of a mid-over change (Law 17.6: "parts of each of two consecutive overs").
   // Mid-over the sheet itself insists on the reason; what it asks the Laws
-  // here is the rest (Law 17.8), so it offers a reason the server will take.
+  // here is the rest (Law 17.6), so it offers a reason the server will take.
   const bowlerRefusal=id=>lawsRefusal({innings,events},bowlerEvent({innings:curIn,bowler:id,...(midOver?{reason:BOWLER_CHANGE_REASON.INJURY}:{})}));
 
   // Penalty runs (Law 41, SCRBRD-094): five, to the side the sheet chose, for

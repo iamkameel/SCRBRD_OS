@@ -170,7 +170,7 @@ function builder(no, overs, o = {}) {
     innings[no] = now();
     return lawsRefusal({ innings, events: [] }, { innings: no, ...e });
   };
-  /** Who bowled any of the over before the one the next ball is in (Law 17.8). */
+  /** Who bowled any of the over before the one the next ball is in (Law 17.6). */
   const lastOver = () => {
     const at = now(), over = Math.floor(at.balls / 6);
     return new Set(at.ballLog.filter((x) => x.over === over - 1).map((x) => x.bowlerId));
