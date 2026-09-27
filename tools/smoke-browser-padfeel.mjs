@@ -36,9 +36,8 @@
 import { chromium } from "playwright-core";
 import { launchOptions } from "./chromium.mjs";
 import { offline } from "./offline-browser.mjs";
-import {
-  deriveInnings, fromRow, toRow, ball, noPlacement, NO_CONTACT_SHOTS, PLACEMENT_NULL, CAPTURE_PROFILE,
-} from "@scrbrd/scoring";
+import { deriveInnings, fromRow, toRow } from "@scrbrd/scoring";
+import { deliveryEvents, noBallEvent } from "../apps/web/src/scorer/delivery.js";
 import { EVENT_COLUMNS } from "../services/api/write/events-api.mjs";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
@@ -142,14 +141,18 @@ const nameBowler = async (name) => {
   await page.locator("button:not([disabled])", { hasText: /^Go$/ }).first().click({ timeout: 3000 });
   await page.waitForTimeout(500);
 };
-/** The openers: the batting-order sheet's Next, twice. */
-const openers = async () => {
-  for (let i = 0; i < 4; i++) {
+/** Until the pad says nothing is missing: its fix button, the openers (Next, twice), A Nel to open the bowling. */
+const ready = async () => {
+  for (let i = 0; i < 10; i++) {
+    const sheet = (await page.locator('[role="dialog"]').count()) > 0;
     const next = page.locator("button:not([disabled])", { hasText: /Next\s*$/i });
-    if (!(await next.count())) break;
-    await next.first().click({ timeout: 2000 }).catch(() => {});
+    if (sheet && await next.count()) { await next.first().click({ timeout: 2000 }).catch(() => {}); await page.waitForTimeout(500); continue; }
+    if (sheet && /Opening Bowler/i.test(await text())) { await nameBowler("A Nel"); continue; }
+    if (!sheet && await has("scoring-blocked-fix")) { await tap("scoring-blocked-fix"); await page.waitForTimeout(400); continue; }
+    if (!sheet && !(await has("scoring-blocked"))) return true;
     await page.waitForTimeout(500);
   }
+  return false;
 };
 const settle = async () => { await page.waitForTimeout(2500); };
 /** The board, the server's fold and the API's live score say the same. */
@@ -165,25 +168,33 @@ const agree = async (label) => {
 };
 
 /**
- * The event the pad always sent for this extra — ball() from the old pad's
- * call — against the row the server stored, read back through fromRow().
- * Every field ball() writes, but the id, the clock and the free-hit flag
- * (the pad's own state; apps/web/test/pad-feel.test.mjs holds it).
+ * The event the pad's existing path builds for this extra — the engine's own
+ * delivery code (delivery.js: commitBall's events, and the no-ball sheet's
+ * confirm, which the old pad reached) given the old pad's call — against the
+ * row the server stored, read back through fromRow(). Built by the path, not
+ * written out here, so whatever that path emits (a field ball() comes to
+ * keep) is expected here too. Every field but the id, the clock, the
+ * server's seq and the free-hit flag (the pad's own state;
+ * apps/web/test/pad-feel.test.mjs holds it, byte for byte against the pad as
+ * it was).
  */
-const creaseOf = (inn) => ({ striker: inn.striker ?? null, nonStriker: inn.nonStriker ?? null, bowler: inn.bowler ?? null });
-const quick = (shot) => noPlacement(NO_CONTACT_SHOTS.has(shot) ? PLACEMENT_NULL.NO_CONTACT : PLACEMENT_NULL.NOT_REQUIRED, CAPTURE_PROFILE.QUICK);
 const expected = {
-  // engine commitBall(type, value, shot, null, null, approach) with no area: the quick placement.
-  commit: (before, type, value, shot = null) => ball({ type, value, shot, bowlerApproach: null, freeHit: false, ...creaseOf(before), ...quick(shot) }),
-  // the no-ball sheet's confirm: nbRuns only for runs that were not off the bat.
-  noBall: (before, nbType, value, nbRuns) => ball({ type: "Nb", value, shot: null, seg: null, zone: null, nbType, ...(nbRuns ? { nbRuns } : {}), ...creaseOf(before) }),
+  // commitBall(type, value, shot, null, null, approach): the one-tap wide
+  // (runs 0; with runs, the engine's onScore("Wd", n)), Basic Scoring's byes,
+  // the outcome phase's byes with their shot. No pro-hub approach here.
+  commit: (before, type, value, shot = null) =>
+    deliveryEvents({ curIn: 0, before, freeHit: false, type, value, shot, seg: null, zone: null, approach: null })[0],
+  // The no-ball sheet's confirm: whose the runs are only for runs taken.
+  noBall: (before, nbType, value, nbRuns) =>
+    noBallEvent({ inn: before, nbType, runs: value, nbRuns: value > 0 ? nbRuns : null, selShot: null, selSeg: null }),
 };
 const same = (want, got) => {
-  const norm = (e) => fromRow(toRow(e));
-  const w = norm(want);
-  const keys = Object.keys(w).filter((k) => !["id", "clientTs", "freeHit", "innings"].includes(k));
-  const pick = (e) => JSON.stringify(Object.fromEntries(keys.map((k) => [k, e?.[k] ?? null])));
-  return { ok: pick(w) === pick(got), want: pick(w), got: pick(got) };
+  const w = fromRow(toRow(want));
+  const keys = [...new Set([...Object.keys(w), ...Object.keys(got ?? {})])]
+    .filter((k) => !["id", "clientTs", "freeHit", "innings", "seq"].includes(k));
+  const diff = keys.filter((k) => JSON.stringify(w[k] ?? null) !== JSON.stringify(got?.[k] ?? null))
+    .map((k) => `${k}: want ${JSON.stringify(w[k] ?? null)} got ${JSON.stringify(got?.[k] ?? null)}`);
+  return { ok: diff.length === 0, diff: diff.join("; ") };
 };
 /** An extra in two taps, checked on the screen, on the wire and on the board. */
 const extra = async (label, kindKey, runsKey, { before, want, setup = null, kind }) => {
@@ -199,7 +210,7 @@ const extra = async (label, kindKey, runsKey, { before, want, setup = null, kind
   const s = await agree(label);
   const got = s.evs.at(-1);
   const cmp = same(want(before), got);
-  ok(`${label}: the server stored the event the pad always sent`, s.rows.length === rowsBefore + 1 && cmp.ok, `want ${cmp.want}\n     got  ${cmp.got}`);
+  ok(`${label}: the server stored the event the pad always sent`, s.rows.length === rowsBefore + 1 && cmp.ok, cmp.diff);
   return s;
 };
 
@@ -238,10 +249,11 @@ try {
   ok("the 1XI fixture offers the scorer", opened);
   await page.waitForTimeout(2500);
   await page.setViewportSize({ width: 390, height: 844 });
-  await openers();
-  if (/Opening Bowler/i.test(await text())) await nameBowler("A Nel");
+  const isReady = await ready();
   if (!(await has("basic-pad"))) { await tap("pad-menu"); await tap("pad-basic-scoring"); await page.waitForTimeout(300); }
-  ok("the pad is ready: openers in, A Nel to bowl, Basic Scoring", (await has("basic-pad")) && !(await has("scoring-blocked")));
+  ok("the pad is ready: openers in, A Nel to bowl, Basic Scoring", isReady && (await has("basic-pad")) && !(await has("scoring-blocked")),
+     (await text()).slice(0, 400));
+  if (!isReady) throw new Error("the pad never became ready");
 
   // ── A ────────────────────────────────────────────────────────
   group("A. Dot and 1: the biggest run keys, next to the strip, fixed ball to ball");
@@ -253,18 +265,29 @@ try {
   const runKeys = ["run-2", "run-3", "run-4", "run-6"];
   ok(`dot and 1 are the biggest run keys (${k0["run-0"].w}×${k0["run-0"].h} and ${k0["run-1"].w}×${k0["run-1"].h}; 4 is ${k0["run-4"].w}×${k0["run-4"].h})`,
      runKeys.every((k) => k0["run-0"].a > k0[k].a && k0["run-1"].a > k0[k].a && k0["run-0"].h > k0[k].h));
-  ok("...the lowest run keys, just above the strip, in the thumb's half of the screen",
-     runKeys.every((k) => k0["run-0"].y > k0[k].y) && k0["pad-strip"].y - (k0["run-0"].y + k0["run-0"].h) <= 16 && k0["run-0"].y > 844 / 2);
+  const gap = k0["pad-strip"].y - (k0["run-0"].y + k0["run-0"].h);
+  // The thumb's half: their centre below the middle of the screen. (Basic
+  // Scoring is top-anchored, so on a tall phone there is room below the
+  // strip; the keys follow the strip, not the bottom of the glass.)
+  const mid = k0["run-0"].y + k0["run-0"].h / 2;
+  ok(`...the lowest run keys, just above the strip (${gap}px), in the thumb's half of the screen (centre at ${mid} of 844)`,
+     runKeys.every((k) => k0["run-0"].y > k0[k].y) && gap >= 0 && gap <= 16 && mid > 844 / 2, JSON.stringify(k0));
   ok("...every key at least 44 × 44", Object.entries(k0).filter(([k]) => k !== "pad-strip").every(([, b]) => b && b.w >= 44 && b.h >= 44));
   await tap("run-1");
   const s1 = await agree("a single");
   ok("the haptic tick: one 10 ms buzz for the ball", JSON.stringify(await page.evaluate(() => window.__vib)) === "[10]");
-  const k1 = await keys();
-  ok("no key moved from one ball to the next", JSON.stringify(k0) === JSON.stringify(k1), JSON.stringify(k1));
+  // From one ball to the next within the over (the first ball of an over
+  // adds the board's row of chips, which moves the whole pad once).
+  const kA = await keys();
+  await tap("run-0");
+  const s1b = await agree("a dot");
+  const kB = await keys();
+  const movedKeys = Object.keys(kA).filter((k) => JSON.stringify(kA[k]) !== JSON.stringify(kB[k]));
+  ok("no key moved from one ball to the next", movedKeys.length === 0, movedKeys.map((k) => `${k} ${JSON.stringify(kA[k])}→${JSON.stringify(kB[k])}`).join("; "));
 
   // ── B ────────────────────────────────────────────────────────
   group("B. Every extra in two taps: the kind, then the runs — the event it always was");
-  let st = s1;
+  let st = s1b;
   await tap("key-wide");
   ok("the wide's runs: 0 is the likely one, marked", (await attr("extra-run-0", "data-likely")) === "true" && /the usual/.test(await attr("extra-run-0", "aria-label") ?? ""));
   ok("...and focused, so one more press takes it", await page.evaluate(() => document.activeElement?.dataset?.testid) === "extra-run-0");
@@ -272,7 +295,7 @@ try {
   await tap("extra-cancel");
   ok("Cancel puts the pad back", !(await has("extra-panel")) && (await has("run-0")));
   st = await extra("a wide", "key-wide", "extra-run-0", { kind: "Wd", before: st.inn, want: (b) => expected.commit(b, "Wd", 0) });
-  ok("...one tick per ball", (await vibes()) === 2);
+  ok("...one tick per ball", (await vibes()) === 3);
   st = await extra("a wide the batters ran two off", "key-wide", "extra-run-2", { kind: "Wd", before: st.inn, want: (b) => expected.commit(b, "Wd", 2) });
   st = await extra("a front-foot no-ball", "key-noball", "extra-run-0", { kind: "Nb", before: st.inn, want: (b) => expected.noBall(b, "front_foot", 0, null),
     setup: async () => {
@@ -312,11 +335,11 @@ try {
 
   // ── E ────────────────────────────────────────────────────────
   group("E. A refusal says its likely cause");
-  // Legal so far: 1, the bye, the leg byes. Three dots end the over.
+  // Legal so far: 1, a dot, the bye, the leg byes. Two dots end the over.
   const vBefore = await vibes();
-  for (let i = 0; i < 3; i++) { await tap("run-0"); await page.waitForTimeout(250); }
+  for (let i = 0; i < 2; i++) { await tap("run-0"); await page.waitForTimeout(250); }
   const endOver = await agree("the over's last balls");
-  ok("three dots, three ticks", (await vibes()) === vBefore + 3);
+  ok("two dots, two ticks", (await vibes()) === vBefore + 2);
   ok("the pad closes the over and asks for the next bowler", /Over 1 Complete/i.test(await text()));
   await page.keyboard.press("Escape");
   await page.waitForTimeout(500);
@@ -411,7 +434,7 @@ try {
   ok("no console errors on the pad", errors.length === 0, errors.slice(0, 3).join(" | "));
 } catch (e) {
   ok(`the walk threw: ${e.message?.slice(0, 200)}`, false);
-  if (DEBUG) console.log(e.stack?.split("\n").slice(0, 8).join("\n"));
+  console.log(e.stack?.split("\n").slice(0, 6).join("\n"));
   if (DEBUG) console.log("[debug] body:\n" + (await text().catch(() => "")).slice(0, 1500));
 } finally {
   await browser.close().catch(() => {});
