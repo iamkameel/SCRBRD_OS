@@ -3973,6 +3973,24 @@ per-competition setting is added only if a school's competition adopts the 4th E
    reasons the report lists (throwing, 21.3.2; Law 42).
 Then apply the report's renumbering map to the code's comments.
 
+### SCRBRD-114 — Playing conditions per competition (first target: KZN high schools, U13 to 1st XI)
+**Priority:** P1 · **Domain:** Scoring / competitions · **Type:** design, then build (Kameel, 2026-09-27)
+What varies between competitions becomes a setting on the competition, read by the pad, the fold, the Laws check
+and SQL, never a rule in the engine. The first pilot schools are KwaZulu-Natal high schools, U13 to 1st XI.
+Candidates, to be confirmed from the actual bye-laws (research so far is unverified):
+- the format and its limits: overs per innings (T20, 25-over, 50-over), declaration and timed matches;
+- free hits by format (built in SCRBRD-113 as the first case);
+- fast-bowling limits per spell and per day by age group: `bowling_directive` holds platform defaults "in the
+  absence of a published CSA schedule" (U13 5/10, U14–U15 6/12, U16 7/18); the union's figures replace them;
+- 1st XI under senior playing conditions; league points, bonus points, net run rate and over-rate penalties;
+- eligibility (bona fide scholars) on team sheets;
+- primary-only rules (maximum balls per over, mandatory retirement at 30 or 50, shortened pitches, lighter balls)
+  are out of scope for the high-school pilot and recorded for later.
+**Not built:** transformation quotas. They need each child's race, special personal information under POPIA;
+only with Kameel's explicit decision and the information officer's advice.
+**Needs first:** the KZN school bye-laws and playing conditions (the sites are blocked here; Kameel supplies the
+PDFs). Then an Opus design (a `competition_conditions` shape and where each rule reads it), then the build.
+
 ### SCRBRD-100 — The premium-feel checklist: what is left after step 3c
 **Priority:** P2 · **Domain:** Front-end · **Type:** product polish (Kameel, 2026-09-26; checklist at
 https://claude.ai/artifact/63zVkqVAotrYYQk9dGUhAp; the rule is DESIGN_DIRECTION §1a)
