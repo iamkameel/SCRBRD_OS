@@ -3778,16 +3778,22 @@ In flight:
    1. Was one of them a wide or no-ball?") and the held sheet (from the event alone). No clause numbers.
 
 **Guards:** `apps/web/test/pad-feel.test.mjs` builds 1424 extras both ways (the old pad's call through the delivery
-code as it stood at 0f31ee0, and the two taps through `delivery.js`) and compares the bytes, and reads the engine's
-wiring from its source; plus the ordering, the undo words, the key sizes and the tick. `packages/scoring/test/
-causes.test.mjs`. `tools/smoke-browser-padfeel.mjs` walks all six at 390 × 844 against the API's live score, each
-extra's stored row compared field for field with the event `ball()` builds from the old call. Every unit guard was
-falsified once. `smoke-a11y` and `smoke-browser-pad-laws` drive the two-tap extras.
+code as it stood at 0f31ee0, and the two taps through `delivery.js`, both through today's `ball()`) and compares the
+bytes, and reads the engine's wiring from its source; plus the ordering, the undo words, the key sizes and the tick.
+`packages/scoring/test/causes.test.mjs`. `tools/smoke-browser-padfeel.mjs` walks all six at 390 × 844 against the
+API's live score, each extra's stored row compared field for field with what the pad's own path (`delivery.js`)
+builds from the old call — the path, not a written-out shape, so a field `ball()` comes to keep (the Laws batch's
+`nbType`) is expected on both sides. Every unit guard was falsified once. `smoke-a11y` and
+`smoke-browser-pad-laws` drive the two-tap extras.
+Design calls to review: the idle three-phase pad's stepper gives its row to the extras; the wicket key heads the
+outcome block; Basic Scoring stays top-anchored, so on a 390 × 844 phone the strip ends about 140px above the bottom
+bar (dot and 1 centred at 455 of 844). Anchoring the pad to the bottom would bring them lower, and move the strip
+from where it sits on the three-phase pad.
 
 **Found, not fixed:**
-- `ball()` does not keep `nbType`: the no-ball type the pad asks is never recorded. The fold gives a free hit after
-  every no-ball, while the pad sets its own free-hit flag (the banner, and the next ball's `freeHit` field) only for
-  height and beamer. Kept as it was here: the events had to stay the same.
+- At this build `ball()` does not keep `nbType`: the no-ball type the pad asks is not recorded (the Laws batch adds
+  it). The fold gives a free hit after every no-ball, while the pad sets its own free-hit flag (the banner, and the
+  next ball's `freeHit` field) only for height and beamer. Kept as it was here: the events had to stay the same.
 - A no-ball is recorded outside commitBall, so when it wins a chase the review sheet does not open by itself (the
   innings-over banner does show). Older than this change.
 - The batting-order sheet does not offer a retired-hurt batter back (he can only be typed).

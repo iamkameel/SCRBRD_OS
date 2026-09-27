@@ -274,7 +274,7 @@ try {
      runKeys.every((k) => k0["run-0"].y > k0[k].y) && gap >= 0 && gap <= 16 && mid > 844 / 2, JSON.stringify(k0));
   ok("...every key at least 44 × 44", Object.entries(k0).filter(([k]) => k !== "pad-strip").every(([, b]) => b && b.w >= 44 && b.h >= 44));
   await tap("run-1");
-  const s1 = await agree("a single");
+  await agree("a single");
   ok("the haptic tick: one 10 ms buzz for the ball", JSON.stringify(await page.evaluate(() => window.__vib)) === "[10]");
   // From one ball to the next within the over (the first ball of an over
   // adds the board's row of chips, which moves the whole pad once).
