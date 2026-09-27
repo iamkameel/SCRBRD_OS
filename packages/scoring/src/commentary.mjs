@@ -407,7 +407,11 @@ export function deriveCommentary(events = [], options = {}) {
           for (const id of fresh) {
             const had = prev.bat.get(/** @type {string} */ (id));
             // Named only by the role, a new batter is simply that.
-            const text = had?.status === "retired"
+            // Retired out and back with the opposing captain's consent (Law
+            // 25.4.3): his wicket is taken back, and the line says why.
+            const text = had?.status === "out" && ev.captainConsent === true
+              ? `${who(id, "batter")} resumes with the opposing captain's consent, on ${had.runs} (${had.balls}).`
+              : had?.status === "retired"
               ? `${who(id, "batter")} resumes, on ${had.runs} (${had.balls}).`
               : who(id, "batter") === ROLE_WORDS.batter ? "A new batter comes in."
               : choose(key, `in:${fresh.indexOf(id)}`, [

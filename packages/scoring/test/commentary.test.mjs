@@ -106,6 +106,15 @@ group("A. Every event kind has its line, with the fold's figures");
     I(batters({ nonStriker: H[4] })),
     I(retire({ batter: H[4], reason: "out" })),
   ];
+  // Retired out, back with the captain's consent after the next wicket (Law 25.4.3).
+  {
+    const back = deriveCommentary([...log, I(batters({ nonStriker: H[1] })), run(0),
+      I(ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: "bowled" })), I(batters({ striker: H[4], captainConsent: true }))],
+      { nameOf, sensitive: true });
+    const line = back.at(-1)?.text ?? "";
+    ok("a batter retired out, back with consent: said so, on his runs", /resumes with the opposing captain's consent, on 0 \(0\)\.$/.test(line)
+       && !/\bLaws? \d/.test(line), line);
+  }
   const out = deriveCommentary(log, { nameOf, sensitive: true });
   const all = texts(out);
   const at = (/** @type {RegExp} */ re) => out.find((x) => re.test(x.text));
