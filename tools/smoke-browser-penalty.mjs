@@ -61,7 +61,7 @@ const BATTING_REASONS = ["helmet_struck", "illegal_fielding", "fielder_returning
                          "distracting_striker", "obstructing_batter", "fielding_time_wasting", "fielding_pitch_damage",
                          "fielding_restrictions", ...EITHER_REASONS];
 let HOME;
-const FIELDING_REASONS = ["time_wasting", "pitch_damage", "stealing_run", ...EITHER_REASONS];
+const FIELDING_REASONS = ["time_wasting", "pitch_damage", "stealing_run", "striker_position", ...EITHER_REASONS];
 
 let pass = 0, fail = 0;
 const ok = (n, c, d = "") => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${String(d).slice(0, 300)}` : ""); } };
@@ -260,6 +260,11 @@ try {
   }
   // The home side bats first (SCRBRD-067), and the board is published, so
   // broadcast_state() answers for the match (its target is the fold's).
+  // Dated 30 September 2026: a 3rd-Edition match — short running returns the
+  // batters to their ends, and an award to the fielding side after the result
+  // is refused — whatever day this walk runs on (SCRBRD-113; the 4th
+  // Edition's short running is smoke-browser-laws4.mjs).
+  await dbq(`update match set starts_at = '2026-09-30T08:00:00Z' where id = $1`, [MATCH]);
   await dbq(`insert into match_toss (match_id, school_id, won_by, decision)
              select id, school_id, 'home', 'bat' from match where id = $1 on conflict (match_id) do nothing`, [MATCH]);
   await dbq(`insert into match_broadcast (match_id, school_id, published)

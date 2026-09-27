@@ -93,10 +93,12 @@ function columnsFor(matchId, ev) {
  * format, which decides whether a no-ball gives a free hit (format.mjs). So
  * the server judges and folds by the date the school scheduled and the
  * format it stated, as the pad does for a fixture it opened from here, and
- * as SQL reads the same row (db/54). Read as the caller, under the match's
- * own read policy; a match the caller cannot see answers nulls, and the fold
- * then dates the match by its first event and gives a free hit after every
- * no-ball, as it does a match with no fixture.
+ * as SQL reads the same row (db/54). Asked of match_fold_context() (db/54),
+ * which answers a caller who may read the fixture — a scorer, and a pad's
+ * resume credential for that match, which cannot read the `match` row
+ * itself; anyone else gets nulls, and the fold then dates the match by its
+ * first event and gives a free hit after every no-ball, as it does a match
+ * with no fixture.
  * @param {{ query: Function }} client
  * @param {string | null | undefined} matchId
  * @returns {Promise<{startsAt: string | null, format: string | null}>}
@@ -104,7 +106,7 @@ function columnsFor(matchId, ev) {
 export async function matchFoldContext(client, matchId) {
   if (!matchId) return { startsAt: null, format: null };
   /** @type {{ rows: {starts_at: Date | string | null, format: string | null}[] }} */
-  const { rows } = await client.query(`select starts_at, format from match where id = $1`, [matchId]);
+  const { rows } = await client.query(`select starts_at, format from match_fold_context($1)`, [matchId]);
   const t = rows[0]?.starts_at ?? null;
   return { startsAt: t == null ? null : new Date(t).toISOString(), format: rows[0]?.format ?? null };
 }

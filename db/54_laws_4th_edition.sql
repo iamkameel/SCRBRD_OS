@@ -83,6 +83,22 @@
 --     reader of a wicket — the live score, the handover check, every career
 --     figure, the hat-trick, the opposition's squad — follows.
 --
+-- 3. HOW THE SERVER FOLDS A MATCH: ITS DATE AND ITS FORMAT.
+--
+-- The fold is told the fixture's start (which dates the match, and so
+-- decides the Edition of the Laws) and its format (the free hit) by whoever
+-- holds the fixture (FoldContext in replay.mjs). The server's write path and
+-- its events read ask them as the caller — and a pad's resume credential
+-- (db/50) reads its own match's log but not the `match` row, so it was
+-- folded as a match with no fixture: dated by its first event, a free hit
+-- after every no-ball. So:
+--
+--   match_fold_context(match)   the fixture's starts_at and format, for a
+--     caller who may read the fixture (fixture.read over its school, team
+--     and match — what a scorer, and a pad credential for that match, hold);
+--     no row for anyone else. SECURITY DEFINER, as match_school() is: two
+--     facts about the fixture, nothing about a person.
+--
 -- This is a correction, not a change of Edition: it follows the STORED
 -- format and not the match date. A stored declaration match (a fixture made
 -- as "Two-Day", say) now stands the wicket a bowler took off the ball after a
@@ -199,6 +215,19 @@ $$ LANGUAGE sql STABLE PARALLEL SAFE SECURITY DEFINER SET search_path = pg_catal
 
 REVOKE ALL ON FUNCTION match_free_hits_apply(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION match_free_hits_apply(uuid) TO scrbrd_app;
+
+-- How the server folds a match (header, 3): for a caller who may read the
+-- fixture, its start and its format; for anyone else, nothing.
+CREATE OR REPLACE FUNCTION match_fold_context(p_match uuid)
+RETURNS TABLE (starts_at timestamptz, format text) AS $$
+  SELECT m.starts_at, m.format
+    FROM match m
+   WHERE m.id = p_match
+     AND app_can('fixture.read', m.school_id, m.team_code, NULL, m.id)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+REVOKE ALL ON FUNCTION match_fold_context(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION match_fold_context(uuid) TO scrbrd_app;
 
 -- db/42's, with the match's format asked first: in a declaration or timed
 -- match no delivery is a free hit. Otherwise as db/42: the last live delivery

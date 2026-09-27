@@ -188,6 +188,11 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // and the replacement refused after, split-over figures on the scorecard,
   // the API and SQL, a reload, and the umpires' report.
   "browser-suspension",
+  // SCRBRD-113: the Laws' 4th Edition on a fixture dated 3 October 2026 —
+  // the bouncer over head height, how long each suspension is for, the
+  // fielding captain's choice of striker after short running and an
+  // obstructed catch, and a delivery that does not count in the over.
+  "browser-laws4",
   // SCRBRD-100 "Left, on the pad": dot and 1 the biggest keys, every extra in
   // two taps stored as the event it always was, undo in words, the likely
   // bowler and the next batter first, a refusal's likely cause, the haptic

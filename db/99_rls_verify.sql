@@ -5158,7 +5158,9 @@ BEGIN
        -- not app_can() itself (its guard names both), nor this file's own helpers
        AND p.proname <> 'app_can' AND p.proname !~ '^_'
        AND (p.prosrc LIKE '%''fixture.read''%' OR p.prosrc LIKE '%''scoring.edit''%' OR p.prosrc LIKE '%''scoring.start''%');
-    PERFORM _assert(detail = 'duty_status,duty_suspended,pad_resume_issue,pad_resume_reclaim,scoring_arm_handover,scoring_claim,'
+    -- match_fold_context (db/54): the fixture's start and format, the two
+    -- facts the fold is told, for the credential's own match only.
+    PERFORM _assert(detail = 'duty_status,duty_suspended,match_fold_context,pad_resume_issue,pad_resume_reclaim,scoring_arm_handover,scoring_claim,'
                              || 'scoring_claim_handover,scoring_lease_check,scoring_verify_takeover,trip_fixture_driver_only',
       format('db/50 (definers): the definer functions asking a pad capability by name are %s — a new one needs looking at', detail));
 
@@ -5629,6 +5631,15 @@ BEGIN
         JOIN (SELECT bowler_id, sum(legal_balls) AS balls FROM bowler_over GROUP BY bowler_id) o ON o.bowler_id = c.player_id
        WHERE c.legal_balls IS DISTINCT FROM o.balls) d;
     PERFORM _assert(n = 0, format('db/54 (same): %s figure(s) disagree between the readers — %s', n, left(coalesce(detail, ''), 600)));
+
+    -- (context) how the server folds a match: its start and format, for a
+    -- caller who may read the fixture, and nothing for one who may not
+    PERFORM _as(U_SCORER);
+    SELECT count(*), max(format) INTO n, detail FROM match_fold_context('77777777-0000-0000-0000-000000000002');
+    PERFORM _assert(n = 1 AND detail = 'T20', format('db/54 (context): the scorer reads %s row(s) of the fixture''s fold context (%s), expected its one', n, detail));
+    PERFORM _as(U_WES_ADM);
+    SELECT count(*) INTO n FROM match_fold_context('77777777-0000-0000-0000-000000000002');
+    PERFORM _assert(n = 0, format('db/54 (context): another school''s admin reads %s row(s) of a fixture he may not read', n));
   END;
 
   PERFORM set_config('app.user_id', '', true);

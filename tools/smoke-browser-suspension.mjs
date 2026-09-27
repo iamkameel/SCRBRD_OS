@@ -201,6 +201,10 @@ try {
   }
   // The home side wins the toss and BOWLS: its bowlers are the 1XI players
   // the pad loads, with ids, so SQL's figures can be read per bowler.
+  // Dated 30 September 2026: a 3rd-Edition match, whose suspensions for a
+  // deliberate front-foot no-ball are for the innings — whatever day this
+  // walk runs on (SCRBRD-113; the 4th Edition's are smoke-browser-laws4.mjs).
+  await dbq(`update match set starts_at = '2026-09-30T08:00:00Z' where id = $1`, [MATCH]);
   await dbq(`insert into match_toss (match_id, school_id, won_by, decision)
              select id, school_id, 'home', 'bowl' from match where id = $1 on conflict (match_id) do nothing`, [MATCH]);
   const P = Object.fromEntries((await dbq(`select id, full_name from player where id = any($1)`,
@@ -260,8 +264,8 @@ try {
   const sheet = await said("suspend-sheet");
   ok(`...naming the bowler on (${B})`, sheet.includes(`${B} may not bowl again`), sheet.slice(0, 120));
   ok("...Record disabled until a reason is chosen, saying so", await tid("suspend-confirm").isDisabled() && /Choose the reason the umpire gave/.test(await said("suspend-hint")));
-  ok("...six reasons, in words", (await page.locator('[data-testid^="suspend-reason-"]').count()) === 6
-     && /A deliberate front-foot no-ball/.test(sheet) && /Dangerous full tosses above waist height/.test(sheet));
+  ok("...nine reasons, in words (SCRBRD-113)", (await page.locator('[data-testid^="suspend-reason-"]').count()) === 9
+     && /A deliberate front-foot no-ball/.test(sheet) && /Dangerous non-landing deliveries above waist height/.test(sheet));
   ok("...with no Law clause numbers anywhere on it", !lawNumbers(sheet), sheet.match(/.{0,30}(Law|\d+\.\d+).{0,30}/)?.[0]);
   await tap("suspend-reason-ball_tampering");
   ok("ball tampering says the rest of the match", /for the rest of the match/.test(await said("suspend-scope")));
