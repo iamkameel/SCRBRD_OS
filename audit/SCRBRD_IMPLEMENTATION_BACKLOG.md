@@ -3668,7 +3668,7 @@ for the same tap), `design.test.mjs` (the wheel's colours), `tools/smoke-browser
 - The one-tap Dot mid-ball, with no area chosen, records `not_required` / `quick` as before, not `skipped`.
 
 ### SCRBRD-102 — A wagon-wheel analysis panel: filters, run chips, off and on side, areas per side
-**Priority:** P2 · **Domain:** Front-end / analytics · **Type:** feature (Kameel's earlier SCRBRD designs, 2026-09-27)
+**Built 2026-09-27.** **Priority:** P2 · **Domain:** Front-end / analytics · **Type:** feature (Kameel's earlier SCRBRD designs, 2026-09-27)
 Kameel's earlier designs had a wagon-wheel analysis panel. It should appear in the Match Centre's Performance tab and on a player's profile:
 - **Filters:** by batter and by bowler.
 - **Run chips:** All, 1s, 2s, 3s, 4s and 6s, each with its count. Tapping a chip shows only those spokes, in the chip colours.
@@ -3678,6 +3678,60 @@ Kameel's earlier designs had a wagon-wheel analysis panel. It should appear in t
   - The on side: fine leg, square leg, mid-wicket and long on.
 
 Everything is relative to the batter, so a left-hander's areas are his own (SCRBRD-101). Build it after SCRBRD-101 lands; it is screen work over the fold and the existing reads.
+
+**What was built.** The counting is a pure module, `apps/web/src/scorer/wagonAnalysis.mjs`, over `placement.mjs`'s
+`SECTORS`/`sectorOf` — nothing re-derives an angle. The twelve batter-relative sectors fold to the eight named areas
+SCRBRD-102 asks for: the two "backward" ones fold into the square neighbour they qualify (backward point → point,
+backward square leg → square leg — field.js's `RIM` already left both out of its eight, for the same reason), and
+the two dead-straight sectors (`sideOf` calls them neither off nor on) belong to no area and no side; they, and any
+ball with no placement at all, are counted separately (`excluded.straight` / `excluded.unplaced`) and said in words
+on the panel rather than folded into a total that would not add up. Area labels are `RIM`'s own words
+(`positionName`'s deep names for long off/long on) — nothing re-typed. A run chip folds a 5 into the 4's key and
+colour, matching the scorer's own legend (`field.js` `LK_COLS`); "All" is every ball with a placement, whatever its
+value.
+
+The panel (`apps/web/src/scorer/wagonAnalysisPanel.jsx`) is thin: a batter filter, a bowler filter, the run chips,
+the field itself (drawn with field.js's own helpers, so a chip's spokes are exactly the wheel's), off side against
+on side with each side's share of the CLASSIFIED total (off runs + on runs, not every run in the log), and the eight
+areas with their runs and boundaries, zero rather than omitted when nothing went there. 12px floor, 44px touch
+targets, tabular numerals (`T.role.figure`), both themes via `T` read at render (the design test's import-time
+rule holds for both new files).
+
+**Wired in:**
+- The Match Centre's Analytics tab (`AnalyticsTab`, matchcentre/tabs.jsx): every batter and bowler in the innings,
+  from the fold already in view. No match filter — one match is the whole point of the tab.
+- The player profile's Career tab (`CareerWagonWheel`, ProfilesView.jsx): the batter fixed to the boy himself, a
+  bowler filter from the existing `matchups` read (batterId narrows it to his own bowlers and their names — a read
+  this panel needed only for the label, since `player_shot_points` carries `bowlerId` but no name), and a match
+  filter built cheaply from the rows already in hand: `asShotPoint` (lib/live.js) now also surfaces `startsAt`,
+  which the query already selects (it orders the read) but never returned to the client — one field added to an
+  existing mapper, not a new read.
+
+Names are exactly what the caller passes in; nothing here adds a second name path. Never a photo, age or date of
+birth — the panel shows neither.
+
+**Guards:** `apps/web/test/wagon-analysis.test.mjs` (new, 37 assertions: a right-hander's and a left-hander's areas,
+both eras, the backward-sector fold, chips, filters, and what gets left out), registered in `run-all-tests.mjs`.
+Two falsifications run and reverted by hand — folding `backward_point` into `third` instead of `point`, and basing
+the side percentage on `sideRuns.off` alone — each broke exactly the assertion aimed at it, nothing else.
+`tools/smoke-browser-wagonwheel.mjs` gains group F: opens the panel on the real scored match the rest of the walk
+already built, filters to the left-hander, taps the 1s chip, and checks the area and chip counts against the
+server's own `ball_event` rows (`browser-wagonwheel`: 41 passed, up from 33, 0 failed). `smoke-a11y` stays at 0
+failures (198 passed) — it does not currently visit the Analytics tab or a profile's Career tab, so the panel is
+proved by its own walk and unit tests rather than the a11y ratchet.
+
+**Verification:** `pnpm -s typecheck` (0 errors), `pnpm -s lint` (0 errors, 82 warnings, at the ceiling but not over
+it), `pnpm -s build` + `check-bundle.mjs` (entry chunk 421 KB of 500), `run-all-tests.mjs` (4901 assertions, 61
+suites, all passed), `run-smoke-api.mjs` (2952 assertions, 70 walks) and `--browser` (1747 assertions, 29 walks,
+`browser-wagonwheel` among them), `pnpm -s smoke` (247 assertions across `smoke`/`smoke-scorer`/`smoke-persist`/
+`smoke-a11y`). Screenshots of the panel, both themes, on the Match Centre's Analytics tab and a player's Career tab.
+
+**Left open:**
+- No season filter — a season is not a field `player_shot_points` or the innings fold gives cheaply, and adding one
+  would be a read change, out of scope for screen work.
+- The bowler filter's names come from `matchups`, which only knows a bowler with a `bowler_id` (a SCRBRD player); a
+  fixture against a school with no roster names its bowler in the ball log but not in this filter (the same gap
+  `matchup_coverage` already states elsewhere).
 
 ### SCRBRD-103 — A run map and a catch map
 **Priority:** P3 · **Domain:** Front-end / analytics · **Type:** feature (Kameel's references, 2026-09-27)
