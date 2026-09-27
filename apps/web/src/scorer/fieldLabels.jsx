@@ -38,11 +38,18 @@ export function FieldLabels({ hand = "R", rim = true }) {
       </span>
       <span data-testid="field-end-batter" style={{ ...word, ...at([CX, CY - R_PITCH - 10]) }}>Batter</span>
       <span data-testid="field-end-bowler" style={{ ...word, ...at([CX, CY + R_PITCH + 10]) }}>Bowler</span>
-      {rim && RIM.map((r) => (
-        <span key={r.key} data-rim={r.key} style={{ ...word, ...at(toXY(/** @type {number} */ (screenAngle(r.theta, hand)), R_BND - 17)) }}>
-          {r.label}
-        </span>
-      ))}
+      {rim && RIM.map((r) => {
+        // Anchored just inside the rope and grown INWARD — a name on the right
+        // ends at its anchor, one at the top hangs below it — so on a small
+        // wheel "Square leg" never runs into LEG or off the field.
+        const a = /** @type {number} */ (screenAngle(r.theta, hand)), rad = (a * Math.PI) / 180;
+        const tx = -50 - 50 * Math.sin(rad), ty = -50 + 50 * Math.cos(rad);
+        return (
+          <span key={r.key} data-rim={r.key} style={{ ...word, ...at(toXY(a, R_BND - 6)), transform: `translate(${tx.toFixed(1)}%,${ty.toFixed(1)}%)` }}>
+            {r.label}
+          </span>
+        );
+      })}
     </div>
   );
 }
