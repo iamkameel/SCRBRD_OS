@@ -3919,6 +3919,25 @@ consent (POPIA: consent is specific to purpose; this is minors' special personal
 officer's sign-off, and a statement of what the pattern detection does and who sees its output. Nothing is built
 until those are settled.
 
+### SCRBRD-113 — The Laws, 4th Edition (2026): the behaviour changes
+**Priority:** P1 · **Domain:** Scoring · **Type:** Laws (Kameel supplied the 4th Edition, 2026-09-27; in force 1 October 2026)
+**Decided (Kameel, 2026-09-27): the Edition follows the match date.** A match starting before 1 October 2026 is
+scored under the 3rd Edition, from 1 October under the 4th, so old logs replay as they were played. A
+per-competition setting is added only if a school's competition adopts the 4th Edition later.
+**Build (Opus), after db/52:** the list in `docs/laws/CLAUSE_CHECK.md` "4th Edition: changes to build" —
+1. 41.8 and 41.7.6: a deliberate front-foot no-ball and a deliberate beamer suspend the bowler for the match; the
+   dangerous-series beamer (41.7.4) stays for the innings. Split `beamers`; key the suspension scope to the Edition.
+2. 22.1.3: a bouncer over head height is a Wide — words on the pad and the no-ball sheet (which wrongly says caught
+   and stumped are possible off a no-ball, in either Edition).
+3. 18.5.2 / 18.13.2 and 37.5.2: the fielding captain chooses who faces after deliberate short running and after an
+   obstruction that prevents a catch.
+4. 41.17.2 / 16.7: penalty awards until the umpires leave the field, even after a result; an award can reopen a
+   finished chase; a result can be a win by penalty runs.
+5. Not new, found in the text: deliveries under 24.4, 28.2, 41.4 and 41.5 do not count in the over (17.3.2.5); the
+   second offence under 41.14.3 and 41.15.3 also disallows the delivery's runs; the missing penalty and suspension
+   reasons the report lists (throwing, 21.3.2; Law 42).
+Then apply the report's renumbering map to the code's comments.
+
 ### SCRBRD-100 — The premium-feel checklist: what is left after step 3c
 **Priority:** P2 · **Domain:** Front-end · **Type:** product polish (Kameel, 2026-09-26; checklist at
 https://claude.ai/artifact/63zVkqVAotrYYQk9dGUhAp; the rule is DESIGN_DIRECTION §1a)
