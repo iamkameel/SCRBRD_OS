@@ -11,7 +11,7 @@ import { Icon } from "../ui/icons.jsx";
  * SCRBRD-082 — the Post-Match Report.
  *
  * Built entirely from what a signed-in reader already has: the same
- * `GET /matches/:id/events` ScorecardModal reads, folded by the same
+ * `GET /matches/:id/events` the Match Centre (views/matchcentre/) reads, folded by the same
  * `deriveMatch()`/`deriveInnings()` the live pad runs (packages/scoring), and
  * the same composed `/read/phases` AnalyticsView-adjacent screens already
  * consume (asPhases(), lib/live.js — "the phases read is COMPOSED on the
@@ -21,7 +21,7 @@ import { Icon } from "../ui/icons.jsx";
  * apps/web/src/lib/postMatchReport.js, which reads the fold's own output and
  * invents nothing beside it.
  *
- * NO MOCK FALLBACK, same rule as ScorecardModal: a signed-out session has no
+ * NO MOCK FALLBACK, same rule as the Match Centre: a signed-out session has no
  * ball_event rows to fetch for a real fixture, and this says so rather than
  * reconstructing one.
  *

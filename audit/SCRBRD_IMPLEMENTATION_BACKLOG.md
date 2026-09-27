@@ -3450,6 +3450,16 @@ Two Law 41 questions Kameel is researching before deciding; nothing is built unt
    toBattingTeam, reason })` with a `PENALTY_REASON` code, and short running as the two events of
    `shortRunning(ball)`; ask `lawsRefusal` before offering a reason; show `penaltyCredits().pending` ("Westville start
    on 5").
+   **Built 2026-09-26 (the pad's sheet):** the pad folds with `deriveInningsList` (`scorer/penalty.js` `foldPad`,
+   `projectPad`; the board, the seal, the break's target and every Laws question read it). `scorer/penaltySheet.jsx`:
+   the side first, then only that side's reasons, in words from `PENALTY_REASON_TEXT` with the Law clause numbers
+   taken off (Kameel is checking them); Award is `penalty({ runs: 5, toBattingTeam, reason })`, disabled with the
+   Laws' refusal said on the sheet when `lawsRefusal` refuses. Short run is its own action (the pad menu, and the
+   fielding side's list): the two events of `shortRunning()` through `commitBall`. A pending credit is said under
+   the board and on the innings break. At the type and touch floors. The umpires' report to the offending side (a
+   discipline record, `db/25`) is NOT built: one line on the sheet says the umpires report it. Proof:
+   `apps/web/test/penalty-sheet.test.mjs`, `tools/smoke-browser-penalty.mjs` (the board against the API's live
+   score and target at every step), and every existing walk unchanged.
 2. A bowler suspended mid-over (SCRBRD-080's unbuilt half): Law 41 says he may not bowl again in the innings.
    **Decided 2026-09-26 (Kameel's research, MCC Law 41, Unfair Play).** A bowler is suspended as soon as the ball is
    dead, on these grounds, as Kameel gives them:
@@ -3489,6 +3499,51 @@ Two Law 41 questions Kameel is researching before deciding; nothing is built unt
    **Clause numbers to verify before any words ship:** this research gives the protected area as 41.13, and the
    penalty-runs research gave repeated protected-area infractions as 41.14. The screens show the reason in words
    only, not clause numbers, until Kameel confirms them against the current Code.
+
+### SCRBRD-100 — The premium-feel checklist: what is left after step 3c
+**Priority:** P2 · **Domain:** Front-end · **Type:** product polish (Kameel, 2026-09-26; checklist at
+https://claude.ai/artifact/63zVkqVAotrYYQk9dGUhAp; the rule is DESIGN_DIRECTION §1a)
+Already true and ticked in the checklist: strike rotation, instant taps, fixed button positions, one icon style,
+fixed colour meanings, the innings break's target, offline scoring that says when it will sync, the Daylight theme,
+44px targets, the chase's required rate, the projected score, the partnership and bowler figures on the board, and
+motion timings as tokens.
+In flight:
+- the pad's full-screen celebration overlay becomes a flash on its own board (with the penalty sheet);
+- the scoreboard's moments, ticking run count, over summary, innings-break card, highlights list and big-screen
+  mode (step 3c).
+
+**Left, on the pad:**
+1. Dot and 1 are the largest, most reachable run keys.
+2. The new-bowler prompt lists the likely bowler first (from the rotation and the over-before-last rule). The
+   new-batter prompt lists the batting order's next name first.
+3. An extra takes two taps: the kind, then the runs.
+4. A haptic tick (`navigator.vibrate`, where the device has it) plus the visual change on every recorded ball.
+   Nothing more, and off when the device is set to reduce motion.
+5. Undo shows what it will reverse ("Undo: 4 to R Pillay").
+6. The Laws check's refusals say the likely cause in words ("7 balls in this over — was one a wide or no-ball?").
+
+**Left, on the scoreboard and the match summary:**
+1. **Empty states that never dead-end:**
+   - before the toss: teams, ground, start and "follow this match";
+   - a rain delay or interruption: its status and the expected restart (a revision already records the new
+     overs);
+   - no live matches: upcoming fixtures and recent results.
+2. **Sharing:**
+   - milestone cards and a match card sized for WhatsApp and Instagram stories;
+   - personal-best and season-first notes.
+
+   These are public by nature, so they wait for the public-data rule's step 3 and consent (PUBLIC_DATA,
+   SCRBRD-092). Names on a card follow `publicName()`.
+3. **The result revealed in one clear moment:** winner, margin, player of the match.
+4. **The full-time screen links onward:** the next fixture for both teams, each player's season, and the team's
+   results.
+5. **Coaches and scorers are prompted to confirm or correct the final scorecard** (the amendment flow exists).
+
+**Left, shared:**
+1. One type, spacing and icon scale everywhere. The admin screens migrate `D` to `T` in step 5.
+2. Every empty state offers a next step ("Add your first team", "Create your first fixture").
+3. Every error says what happened and how to fix it.
+4. Loading states show the layout's shape (skeletons), not a blank screen.
 
 ### SCRBRD-099 — Backfill handwritten scorecards into the historical record
 **Priority:** P2 · **Domain:** Scoring / history · **Type:** feature (Kameel, 2026-09-26: "a tool for
@@ -3534,6 +3589,23 @@ extended to add them in, proved against the fold for ball-by-ball backfills. The
 design direction.
 
 ### SCRBRD-098 — A commentary engine every viewer shares
+**Built 2026-09-26** (redesign step 3c), items 1–3; item 4 and the signed-out walk wait on their own decisions.
+`packages/scoring/src/commentary.mjs` `deriveCommentary(events, {nameOf, teamName, sensitive})` walks each innings
+with `foldSteps()` (the fold, one event at a time, in `replay.mjs`) and returns `{innings, over, ball, kind, text,
+key}` lines: every delivery, wickets (method, catcher, the end a run out fell at), milestones, bowlers on and back,
+a bowler taking over mid-over, new batters, the end of each over, the innings end and the result, revisions,
+penalty awards in `PENALTY_REASON_TEXT`'s words with the cross-innings credit ("Westville start their innings on
+5"), and short running. A void and whatever it undoes have no line; an amendment reads as the corrected history.
+Names come only from `nameOf` (a role word without one); health and discipline only with `sensitive`, which the
+pad passes and the Match Centre does not. Wording varies by a seed from the event key. `words.mjs` carries the
+shot and sector vocabulary out of the pad. The Match Centre's Commentary tab and the pad's Commentary card draw
+it; the pad's AI line is unchanged and spectators never see one. Guards: `packages/scoring/test/commentary.test.mjs`
+(every kind, void, amendment, free hit, penalty credits both ways, determinism, 60 generated matches with no id or
+typed name reaching a line, public mode) and `tools/smoke-browser-matchcentre.mjs`. Still open: the signed-out walk
+(with the public page, SCRBRD-083 step 3) and item 4.
+The same lines feed the Match Centre's spectator side (Kameel's premium-feel checklist, step 3c): the highlights on
+Summary, a moment on the board for a boundary, a wicket or a milestone (the hat-trick ball among them) that arrives
+while the page is open, the end-of-over line between overs, and big-screen mode (`views/matchcentre/spectator.jsx`).
 **Priority:** P2 · **Domain:** Scoring / Match Centre · **Type:** product gap (Kameel, 2026-09-26: fold into
 redesign step 3c)
 **Today:** the pad's Commentary card (`scorer/panels.jsx` `CommentaryCard`, in the Score tab) asks
@@ -3621,7 +3693,7 @@ Built in redesign step 3b, with `Board`'s chip row. Opus (cross-cutting theme en
    the second changes events, so decide first.
 2. **Pro mode** keeps its old hub and cards styling with sub-12px text; smoke-a11y does not measure it.
 3. **The other sheets** (toss, openers, new over, innings end, handover) are not yet at the type and touch floors;
-   only the wicket sheet and the shared close button are.
+   only the wicket sheet, the penalty runs sheet (SCRBRD-094) and the shared close button are.
 4. After choosing from the pad menu, the menu button keeps its focus ring.
 
 ### ~~SCRBRD-090~~ — CLOSED · The live score and the target leave out penalty runs

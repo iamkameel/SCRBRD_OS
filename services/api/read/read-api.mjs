@@ -96,6 +96,14 @@ export const READ_QUERIES = {
                   -- school table. It returns a name and nothing else.
                   fixture_side_label(m.school_id, m.team_code)           as home_label,
                   fixture_side_label(m.away_school_id, m.away_team_code) as away_label,
+                  -- Each side's short code (school.code, "HIL"), for where
+                  -- the full name does not fit (the Match Centre's board at
+                  -- phone width). Read through the school table's own policy,
+                  -- so a reader gets the code of a school they are attached
+                  -- to and NULL for the other; the screen then shortens the
+                  -- label itself. Nothing is disclosed that the label has not.
+                  (select s.code from school s where s.id = m.school_id)      as home_code,
+                  (select s.code from school s where s.id = m.away_school_id) as away_code,
                   -- WHICH END THIS READER IS AT, answered by the same decision
                   -- function the policy used to hand them the row. A reader who
                   -- holds fixture.read over the home side is at home; one who

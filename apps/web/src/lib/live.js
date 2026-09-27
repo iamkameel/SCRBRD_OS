@@ -62,6 +62,19 @@ function asMatch(r) {
     overs: r.overs,
     format: r.format,
     schoolId: r.school_id,
+    // Both sides named in full ("Hilton College 1XI"), and each side's short
+    // code where this reader's read returns one (school.code) — the Match
+    // Centre names a side in full where there is room and by code where not
+    // (lib/matchCentre.js sidesOf). The away side's label is null for an
+    // opponent that is not on SCRBRD; `awayTeam` (the free text) stands then.
+    homeLabel: r.home_label ?? null,
+    awayLabel: r.away_label ?? null,
+    homeCode: r.home_code ?? null,
+    awayCode: r.away_code ?? null,
+    awayTeamCode: r.away_team_code ?? null,
+    // The toss as the fixture read carries it: 'home' | 'away', 'bat' | 'bowl'.
+    tossWonBy: r.toss_won_by ?? null,
+    tossDecision: r.toss_decision ?? null,
     // The scorecard is DERIVED, never stored — a live score comes from
     // replaying ball_event, not from a column. The Match Centre shows a
     // placeholder until the live-score read is wired to the same view.

@@ -249,7 +249,7 @@ function ScoringHub({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selSeg
    The score itself is on the board above the pad (pad.jsx), drawn once;
    this panel no longer repeats it.
 ═══════════════════════════════════════════════════════ */
-function ScoringPanel({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selSeg,
+function ScoringPanel({inn,innings,events,curIn,match,hubStage,hubShot,hubApproach,selSeg,
   fieldView,setFieldView,hidden,toggleLine,setModal,
   onApproach,onShot,onShotSkip,onFieldSel,onRun,onBye,onLegBye,onWicket,onWide,onNoBall,onReset,onBack,onUndo}){
   const bat1=inn?.batsmen.find(b=>b.id===inn.striker);
@@ -316,7 +316,7 @@ function ScoringPanel({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selS
         onFieldSel={onFieldSel} onRun={onRun} onBye={onBye} onLegBye={onLegBye}
         onWicket={onWicket} onWide={onWide} onNoBall={onNoBall} onReset={onReset}
         onBack={onBack}/>
-      <CommentaryCard inn={inn}/>
+      <CommentaryCard inn={inn} innings={innings} events={events}/>
       {/* Undo last ball */}
       {inn?.ballLog?.length>0&&onUndo&&(
         <button onClick={onUndo} className="pressBtn" style={{

@@ -38,6 +38,9 @@ const SUITES = [
   // Who bats first on a live fixture: the recorded toss, never a default (SCRBRD-067).
   ["toss",     "packages/scoring/test/toss.test.mjs"],
   ["phases",   "packages/scoring/test/phases.test.mjs"],
+  // The commentary every viewer shares (SCRBRD-098): lines from the fold,
+  // names only from the caller, a void has none, the same log the same words.
+  ["commentary", "packages/scoring/test/commentary.test.mjs"],
   ["spatial",  "packages/scoring/test/spatial.test.mjs"],
   ["wheel",    "apps/web/test/wheel.test.mjs"],
   ["roadmap",  "apps/web/test/roadmap.test.mjs"],
@@ -45,6 +48,9 @@ const SUITES = [
   // (SCRBRD-082/084) — no DOM, no database, just the fold's own shapes.
   ["post-match-report", "apps/web/test/post-match-report.test.mjs"],
   ["season-awards",     "apps/web/test/season-awards.test.mjs"],
+  // The Match Centre's own derivations (redesign step 3c): sides named in
+  // full and by code, the match line, the scorecard's parts, the break.
+  ["match-centre",      "apps/web/test/match-centre.test.mjs"],
   // Renders components, so it needs the .jsx transform hook.
   ["system",   "apps/web/test/system.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Renders the scorer's review sheet, so it needs the same transform.
@@ -57,6 +63,9 @@ const SUITES = [
   ["dismissal-card", "apps/web/test/dismissal-breakdown.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Renders the placement charts and the capture-profile picker (SCRBRD-039).
   ["capture-profile", "apps/web/test/capture-profile.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // The pad's penalty runs: the match's fold, the Laws asked before an award
+  // is offered, and the sheet as drawn (SCRBRD-094), same transform.
+  ["penalty-sheet", "apps/web/test/penalty-sheet.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Renders the Board — always black, figures that flip (DESIGN_DIRECTION §1).
   ["board",    "apps/web/test/board.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // No emoji in the client outside a reasoned allow-list, every icon name

@@ -138,69 +138,7 @@ function NoBallSheet({onConfirm,onClose}){
   );
 }
 
-/* ═══════════════════════════════════════════════════════
-   PENALTY RUNS SHEET
-═══════════════════════════════════════════════════════ */
-function PenaltySheet({battingTeam,bowlingTeam,onConfirm,onClose}){
-  const[runs,setRuns]=useState(5);
-  const[to,setTo]=useState("batting");
-  const[reason,setReason]=useState("");
-  const reasons=["Ball hit helmet on field","Deliberate time wasting","Changing condition of ball","Ball hitting fielder's helmet on ground","Ball going into fielder's clothing","Dangerous/unfair play","Fielding restrictions violation","Other"];
-  return (
-    <Sheet title="Penalty Runs" accent={D.violet} onClose={onClose}>
-      <div style={{paddingTop:"14px",display:"flex",flexDirection:"column",gap:"14px"}}>
-        <div>
-          <Lbl sx={{marginBottom:"8px"}}>Awarded To</Lbl>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px"}}>
-            {[["batting","Batting Team",battingTeam],["bowling","Bowling Team",bowlingTeam]].map(([val,lbl,name])=>(
-              <button key={val} onClick={()=>setTo(val)} className="pressBtn" style={{
-                padding:"10px",borderRadius:D.md,cursor:"pointer",textAlign:"left",
-                border:`1px solid ${to===val?D.violet+"66":D.border}`,
-                background:to===val?`${D.violet}14`:D.surf2}}>
-                <div style={{fontFamily:D.body,fontSize:"11px",fontWeight:600,color:to===val?D.violet:D.textSecondary,marginBottom:"2px"}}>{lbl}</div>
-                <div style={{fontFamily:D.body,fontSize:"13px",fontWeight:500,color:to===val?D.textPrimary:D.textMuted}}>{name}</div>
-              </button>
-            ))}
-          </div>
-        </div>
-        <div>
-          <Lbl sx={{marginBottom:"8px"}}>Runs</Lbl>
-          <div style={{display:"flex",gap:"6px"}}>
-            {[5,3,1].map(r=>(
-              <button key={r} onClick={()=>setRuns(r)} className="pressBtn" style={{
-                flex:1,padding:"12px 0",borderRadius:D.md,cursor:"pointer",
-                fontFamily:D.mono,fontSize:"18px",fontWeight:500,
-                border:`1px solid ${runs===r?D.violet+"66":D.border}`,
-                background:runs===r?`${D.violet}1a`:D.surf2,
-                color:runs===r?D.violet:D.textMuted,transition:"all .2s"}}>
-                {r}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div>
-          <Lbl sx={{marginBottom:"8px"}}>Reason</Lbl>
-          <div style={{display:"flex",flexWrap:"wrap",gap:"6px"}}>
-            {reasons.map(r=>(
-              <button key={r} onClick={()=>setReason(r)} className="pressBtn" style={{
-                padding:"5px 10px",borderRadius:D.pill,cursor:"pointer",
-                fontFamily:D.body,fontSize:"11px",fontWeight:500,
-                border:`1px solid ${reason===r?D.violet+"55":D.border}`,
-                background:reason===r?`${D.violet}14`:D.surf2,
-                color:reason===r?D.violet:D.textMuted,transition:"all .15s"}}>
-                {r}
-              </button>
-            ))}
-          </div>
-        </div>
-        <Btn variant="primary" full onClick={()=>onConfirm(runs,to,reason||"Penalty runs")} sx={{
-          borderRadius:D.md,background:`linear-gradient(135deg,${D.violet},${D.indigo})`}}>
-          Award {runs} Penalty Runs to {to==="batting"?battingTeam:bowlingTeam}
-        </Btn>
-      </div>
-    </Sheet>
-  );
-}
+/* The penalty runs sheet is penaltySheet.jsx (SCRBRD-094). */
 
 /* ═══════════════════════════════════════════════════════
    REVISION SHEET — the umpires cut the overs / reset the target
@@ -981,7 +919,7 @@ function NewOverSheet({ovNum,prevBowlers,bowlingSquad,bowlingTeamKey,lastBowlerN
  * and from nothing when nothing was, so a scorer who presses Start without
  * touching it changes nothing about how the match reads.
  */
-function Innings2Sheet({target,teamName,overs,declared=null,onClose,onStart}){
+function Innings2Sheet({target,teamName,overs,declared=null,note=null,onClose,onStart}){
   const[profile,setProfile]=useState(declared);
   return (
     <Sheet title="Innings Break" accent={D.indigo} onClose={onClose}>
@@ -990,7 +928,10 @@ function Innings2Sheet({target,teamName,overs,declared=null,onClose,onStart}){
         <div style={{fontFamily:D.mono,fontSize:"clamp(56px,12vw,80px)",fontWeight:500,
           background:D.grad,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text",
           lineHeight:1,letterSpacing:"-0.02em",marginBottom:"6px"}}>{target}</div>
-        <div style={{fontFamily:D.body,fontSize:"14px",color:D.textMuted,marginBottom:"24px"}}>runs to win in {overs} overs</div>
+        <div style={{fontFamily:D.body,fontSize:"14px",color:D.textMuted,marginBottom:note?"12px":"24px"}}>runs to win in {overs} overs</div>
+        {/* Five penalty runs awarded to this side while it fielded, before it
+            had batted: its innings opens on them (SCRBRD-094). */}
+        {note&&<div data-testid="innings2-penalty-note" style={{fontFamily:T.type.body,fontSize:"15px",lineHeight:1.4,color:T.content.primary,marginBottom:"20px"}}>{note}</div>}
         <div style={{textAlign:"left",maxWidth:"360px",margin:"0 auto 20px"}}>
           <CaptureProfilePicker value={profile} onChange={setProfile}/>
         </div>
@@ -1109,4 +1050,4 @@ function InningsReviewSheet({inn,inningsNo,onConfirm,onFixLastBall,onClose}){
   );
 }
 
-export { BattingOrderSheet, CustomBatEntry, HandoverSheet, Innings2Sheet, InningsReviewSheet, NewOverSheet, NoBallSheet, PenaltySheet, RevisionSheet, ShotSelectorSheet, WicketSheet };
+export { BattingOrderSheet, CustomBatEntry, HandoverSheet, Innings2Sheet, InningsReviewSheet, NewOverSheet, NoBallSheet, RevisionSheet, ShotSelectorSheet, WicketSheet };

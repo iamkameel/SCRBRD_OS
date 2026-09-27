@@ -166,6 +166,9 @@ const WALKS = [
 const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-dossier", "browser-handover", "browser-innings-end", "browser-quarantine", "browser-drs", "browser-dismissals", "browser-discipline", "browser-support", "browser-seasons", "browser-rulebook", "browser-duties", "browser-fixture-create", "browser-held", "browser-toss", "browser-offline-undo", "browser-dayof",
   // SCRBRD-082 / SCRBRD-084: the Post-Match Report and the Season Awards tab.
   "browser-report", "browser-awards",
+  // Redesign step 3c / SCRBRD-098: the Match Centre's six tabs, the
+  // scorecard's layout and the shared commentary, on a real scored match.
+  "browser-matchcentre",
   // SCRBRD-068/069/080/081: the pad's four new Laws questions.
   "browser-pad-laws",
   // SCRBRD-078/075/079: a scorer's day with poor signal — the pad loads and
@@ -175,7 +178,11 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // SCRBRD-078 option B: a reloaded pad re-attaches with its resume
   // credential and sends by itself, nobody signed in; force-released, it
   // stops in words; signed in again, it goes on.
-  "browser-pad-resume"];
+  "browser-pad-resume",
+  // SCRBRD-094 item 1: the pad's penalty runs sheet — five to either side,
+  // a short run, a credit the next innings opens on, a target raised
+  // mid-chase, a refusal said in place — held to the API's live score.
+  "browser-penalty"];
 
 // Walks that need no database, run by `pnpm smoke` instead. Named here only so
 // the completeness check below knows they are accounted for.

@@ -73,7 +73,7 @@ const READY_SLOTS = [
 
 /**
  * The live match's own score, folded from the ball log — the same
- * `GET /matches/:id/events` read and `deriveMatch()` fold ScorecardModal and
+ * `GET /matches/:id/events` read and `deriveMatch()` fold the Match Centre (views/matchcentre/) and
  * the Post-Match Report already run (packages/scoring). A stored total is
  * never the source: asMatch() sets `scorecard: null` for every real fixture on
  * purpose, because a live score is derived, not a column.

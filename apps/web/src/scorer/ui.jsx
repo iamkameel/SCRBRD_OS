@@ -40,6 +40,12 @@ const GS = () => (
     .wagonLine{stroke-dasharray:320;animation:wagonDraw .38s ease both}
     .fadeIn{animation:fadeIn .22s ease both}
     .pressBtn{transition:transform .1s ease,opacity .1s ease}
+    /* The moment on the pad's board (pad.jsx BoardFlash): in, and held until
+       it is taken away at FLASH_MS. It never ends invisible, so with reduced
+       motion it is a cut, on and then off. */
+    @keyframes boardFlash{0%{opacity:0}25%{opacity:1}100%{opacity:1}}
+    .os-board-flash{animation:boardFlash 160ms ease-out both}
+    @media (prefers-reduced-motion: reduce){.os-board-flash{animation:none}}
     .pad-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:${T.space.sm};padding:${T.space.sm} ${T.space.lg};max-width:640px;margin:0 auto}
     .pad-head{display:grid;gap:${T.space.sm};align-content:start;min-width:0}
     .pad-main{min-width:0}

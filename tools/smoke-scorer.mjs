@@ -120,10 +120,10 @@ try {
 
   // Score six deliveries. Each tap appends an event, and the scoreboard —
   // which is a fold of the log — must move.
-  // A boundary fires a full-screen celebration overlay that swallows taps for
-  // about a second, and the end of an over opens the new-bowler sheet. Clear
-  // whatever is in the way before each delivery, or the run just stops after
-  // the first four.
+  // A boundary is a brief flash on the board (it was a full-screen overlay
+  // over the keys until 2026-09-26; see the check below), and the end of an
+  // over opens the new-bowler sheet. Clear whatever is in the way before each
+  // delivery, or the run just stops after the first four.
   // Between deliveries the app may open the new-bowler sheet (end of over) or
   // the batting-order sheet (wicket), both of which cover the pad. Detect the
   // SHEET, not the pad: the pad's keys stay in the DOM underneath, so testing
@@ -146,17 +146,58 @@ try {
     }
   };
 
+  // THE MOMENT STAYS ON THE BOARD (Kameel, 2026-09-26: nothing on the pad may
+  // ever delay or visually cover the next input). Measured a moment after the
+  // four is tapped: every fixed or absolutely placed element on the page that
+  // is visible, and is either larger than the board's box or lies over one of
+  // the pad's keys, is a failure — the old full-screen overlay was both.
+  const coverage = () => page.evaluate(() => {
+    const boardEl = document.querySelector('[data-testid="pad-board"]');
+    const board = boardEl?.getBoundingClientRect();
+    if (!board) return { board: false, hits: [], keys: 0 };
+    const keys = [...document.querySelectorAll('[data-testid="basic-pad"] button')]
+      .map((k) => k.getBoundingClientRect()).filter((r) => r.width && r.height);
+    const hits = [];
+    for (const el of document.body.querySelectorAll("*")) {
+      const cs = getComputedStyle(el);
+      if (cs.position !== "fixed" && cs.position !== "absolute") continue;
+      if (cs.visibility === "hidden" || cs.display === "none" || Number(cs.opacity) === 0) continue;
+      if (el.closest('[data-testid="basic-pad"]')) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width < 2 || r.height < 2) continue;
+      const bigger = r.width > board.width + 1 && r.height > board.height + 1 || r.width * r.height > board.width * board.height + 4;
+      const overKeys = keys.some((k) => r.left < k.right && r.right > k.left && r.top < k.bottom && r.bottom > k.top);
+      if (bigger || overKeys) hits.push(`${el.tagName.toLowerCase()}${el.dataset.testid ? `[${el.dataset.testid}]` : ""} ${Math.round(r.width)}x${Math.round(r.height)}${overKeys ? " over the keys" : ""}`);
+    }
+    const f = document.querySelector('[data-testid="board-flash"]')?.getBoundingClientRect();
+    const inside = !!f && f.left >= board.left - 1 && f.top >= board.top - 1 && f.right <= board.right + 1 && f.bottom <= board.bottom + 1;
+    return { board: true, hits, keys: keys.length, flash: !!f, inside,
+             label: document.querySelector('[data-testid="board-flash-label"]')?.textContent ?? "",
+             said: document.querySelector('[data-testid="pad-moment"]')?.textContent ?? "" };
+  });
+  let afterFour = null, laterFour = null;
+
   const errsBeforeScoring = errors.length;
   let scored = 0;
   for (const face of ["1", "2", "4", "1", "6", "2"]) {
     await clearBlockers();
     const hit = await click(new RegExp(`^${face}$`), 2500);
+    if (hit && face === "4" && !afterFour) {
+      afterFour = await coverage();
+      await page.waitForTimeout(700);
+      laterFour = await coverage();
+    }
     if (hit) scored++;
     else if (DEBUG) { console.log(`\n[stalled on "${face}"] score=${await scoreOf()}`); await dump("stalled"); }
     await page.waitForTimeout(700);
   }
   await clearBlockers();
   ok(`scored ${scored} deliveries through the pad`, scored >= 4);
+  ok(`after a four, nothing on the pad is larger than the board or over its keys (${afterFour?.keys ?? 0} keys measured${afterFour?.hits?.length ? `: ${afterFour.hits.slice(0, 3).join("; ")}` : ""})`,
+     !!afterFour?.board && afterFour.keys > 0 && afterFour.hits.length === 0);
+  ok(`...the four is a flash inside the board's box ("${afterFour?.label ?? ""}")`, !!afterFour?.flash && afterFour.inside && /FOUR/.test(afterFour.label));
+  ok(`...its words for a screen reader ("${afterFour?.said ?? ""}")`, /FOUR/.test(afterFour?.said ?? ""));
+  ok("...and gone within a second, nothing left over the pad", !!laterFour && !laterFour.flash && laterFour.hits.length === 0);
   ok("no errors while scoring", errors.length === errsBeforeScoring);
 
   const after = await scoreOf();
