@@ -126,6 +126,17 @@ for (const [name, what] of [
 ])
   ok(`${what} (${name})`, TRIGGERS.some((t) => t.name === name));
 
+group("Every role can be appointed by someone");
+{
+  // A role that exists and nobody may grant is a lockout: the first school to
+  // need one could never be given it. Kept here rather than as an export,
+  // because nothing but this check ever asked.
+  const { ROLES, GRANTABLE_ROLES } = await import("../src/roles.mjs");
+  const grantable = new Set(Object.values(GRANTABLE_ROLES).flat());
+  const lockedOut = ROLES.filter((r) => !grantable.has(r));
+  ok("no role is ungrantable", lockedOut.length === 0, lockedOut.join(", "));
+}
+
 console.log("\n" + "─".repeat(52));
 console.log(`INVARIANTS: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

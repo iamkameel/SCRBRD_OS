@@ -545,9 +545,6 @@ export function newEventId(deviceId, matchId) {
   return `${deviceId}:${matchId}:${Date.now().toString(36)}:${_monotonic.toString(36)}`;
 }
 
-/** Former name. The value was always the event's identity, not just a dedupe token. */
-export const newIdempotencyKey = newEventId;
-
 /**
  * @template {Kind} K
  * @param {K} kind

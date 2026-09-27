@@ -550,12 +550,6 @@ export function mayGrantRole(granter, role) {
   return (GRANTABLE_ROLES[granter] ?? []).includes(role);
 }
 
-/** Roles nobody can appoint. A role that exists and cannot be given is a lockout. */
-export function ungrantableRoles() {
-  const grantable = new Set(Object.values(GRANTABLE_ROLES).flat());
-  return ROLES.filter((r) => !grantable.has(r));
-}
-
 // ── What a role may NOT do, and who decides instead ──────────────
 //
 // SCRBRD-033. Every screen in this product tells a person what they can do.

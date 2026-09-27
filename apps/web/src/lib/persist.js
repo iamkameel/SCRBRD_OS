@@ -177,19 +177,6 @@ export async function saveAside(matchId, snapshot) {
   }
 }
 
-/** Every match this device has a saved log for, newest first. */
-export async function listMatches() {
-  try {
-    const b = await backend();
-    const keys = (await b.keys()).filter((k) => typeof k === "string" && k.startsWith("match:"));
-    const out = [];
-    for (const k of keys) { const v = await b.get(k); if (v) out.push(v); }
-    return out.sort((a, b2) => (b2.savedAt ?? 0) - (a.savedAt ?? 0));
-  } catch {
-    return [];
-  }
-}
-
 /**
  * The shell's own state — which role, which page, whether the scorer was open.
  *
