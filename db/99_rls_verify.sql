@@ -734,6 +734,64 @@ BEGIN
   RETURN v;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
+-- db/53 (section 31). A batter retired out who resumes with the opposing
+-- captain's consent (Law 25.4.3). Two Hilton 2XI fixtures, written as the
+-- owner when section 31 calls this and rolled back with everything else:
+--   M1  "the db/53 fixture" (replay.test.mjs): A hits 4 and retires out; C
+--       comes in, a dot, bowled; A back with consent (k6), hits 2.
+--   M2  A retires out and a consented return names somebody else (C) — the
+--       retirement stands; a typed-name batter retires out and returns with
+--       consent — his retirement is taken back as a player's is.
+-- _void_53() then undoes M1's return, as a scorer's undo would.
+CREATE OR REPLACE FUNCTION _seed_53() RETURNS void AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  A   uuid := 'aaaaaaaa-0000-0000-0000-00000000053a';
+  B   uuid := 'aaaaaaaa-0000-0000-0000-00000000053b';
+  C   uuid := 'aaaaaaaa-0000-0000-0000-00000000053c';
+  D   uuid := 'aaaaaaaa-0000-0000-0000-00000000053d';
+  M1  uuid := '77777777-0000-0000-0000-000000053001';
+  M2  uuid := '77777777-0000-0000-0000-000000053002';
+BEGIN
+  INSERT INTO player (id, school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (A, HIL, '2XI', 'V53 Opener',  53, 'batter', (current_date - interval '16 years')::date),
+    (B, HIL, '2XI', 'V53 Partner', 54, 'batter', (current_date - interval '16 years')::date),
+    (C, HIL, '2XI', 'V53 Three',   55, 'batter', (current_date - interval '16 years')::date),
+    (D, HIL, '2XI', 'V53 Seamer',  56, 'bowler', (current_date - interval '16 years')::date);
+  INSERT INTO match (id, school_id, team_code, opponent, starts_at, format, overs, status) VALUES
+    (M1, HIL, '2XI', 'Verify 053 (consent)',       '2026-03-14 09:00:00+02', 'T20', 20, 'complete'),
+    (M2, HIL, '2XI', 'Verify 053 (not his return)', '2026-03-21 09:00:00+02', 'T20', 20, 'complete');
+  INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                          idempotency_key, client_seq, client_ts, kind, ball_type, value,
+                          striker_id, non_striker_id, bowler_id, dismissal, payload)
+  SELECT x.m, HIL, x.k, 1, 0, '88888888-0000-0000-0000-000000000006', 'verify-053',
+         'verify:053:' || x.m || ':' || x.k, x.k, now(), x.kind, x.bt, x.v,
+         x.striker, x.ns, x.bowler, x.dis, x.pl
+    FROM (VALUES
+      (M1, 1, 'ball',    'run', 4,    A,    B,          D,          NULL,          '{}'::jsonb),
+      (M1, 2, 'retire',  'W',   NULL, NULL, NULL,       NULL,       'retired_out', jsonb_build_object('batter', A, 'reason', 'out')),
+      (M1, 3, 'batters', NULL,  NULL, C,    NULL::uuid, NULL::uuid, NULL,          '{}'::jsonb),
+      (M1, 4, 'ball',    'run', 0,    C,    B,          D,          NULL,          '{}'::jsonb),
+      (M1, 5, 'ball',    'W',   0,    C,    B,          D,          'bowled',      '{}'::jsonb),
+      (M1, 6, 'batters', NULL,  NULL, A,    NULL,       NULL,       NULL,          '{"captainConsent":true}'::jsonb),
+      (M1, 7, 'ball',    'run', 2,    A,    B,          D,          NULL,          '{}'::jsonb),
+      (M2, 1, 'ball',    'run', 1,    A,    B,          D,          NULL,          '{}'::jsonb),
+      (M2, 2, 'retire',  'W',   NULL, NULL, NULL,       NULL,       'retired_out', jsonb_build_object('batter', A, 'reason', 'out')),
+      (M2, 3, 'batters', NULL,  NULL, C,    NULL,       NULL,       NULL,          '{"captainConsent":true}'::jsonb),
+      (M2, 4, 'retire',  'W',   NULL, NULL, NULL,       NULL,       'retired_out', '{"batter":"A Typed Boy","reason":"out"}'::jsonb),
+      (M2, 5, 'batters', NULL,  NULL, NULL, NULL,       NULL,       NULL,          '{"nonStriker":"A Typed Boy","captainConsent":true}'::jsonb)
+    ) AS x(m, k, kind, bt, v, striker, ns, bowler, dis, pl);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+CREATE OR REPLACE FUNCTION _void_53() RETURNS void AS $$
+  INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                          idempotency_key, client_seq, client_ts, kind, payload)
+  VALUES ('77777777-0000-0000-0000-000000053001', '11111111-1111-1111-1111-111111111111', 8, 1, 0,
+          '88888888-0000-0000-0000-000000000006', 'verify-053',
+          'verify:053:77777777-0000-0000-0000-000000053001:8', 8, now(), 'void',
+          jsonb_build_object('target', 'verify:053:77777777-0000-0000-0000-000000053001:6'));
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -5377,6 +5435,65 @@ BEGIN
           ON f.player_id = l.player_id
        WHERE l.runs_conceded IS DISTINCT FROM f.runs) d;
     PERFORM _assert(n = 0, format('db/52 (same): %s bowler figure(s) disagree between the readers — %s', n, left(coalesce(detail, ''), 600)));
+  END;
+
+  -- ── 31. Retired out, back with the opposing captain's consent (Law 25.4.3, db/53) ──
+  -- A `retire` marked W is a wicket from the moment it is recorded; a later
+  -- live `batters` row naming the same batter with captainConsent takes it
+  -- back, as the fold does (replay.mjs). ball_event_live reads such a
+  -- retirement as no wicket (ball type and dismissal NULL), so every reader
+  -- follows: the live score, the handover's count, player_innings, the
+  -- dismissal readers. Read as the owner of the platform, under RLS.
+  -- _seed_53() writes the fixtures; _void_53() undoes M1's return. db/53 was
+  -- broken each of these ways and this file run:
+  --   the view's CASEs answering false (no retirement ever resumed) → (a) and (b)
+  --   retirement_resumed() ignoring voids                          → (c)
+  --   retirement_resumed() not checking the batter                 → (d)
+  --   retirement_resumed() reading payload ids only (not the columns) → (b)
+  PERFORM set_config('app.user_id', '', true);
+  PERFORM _seed_53();
+  PERFORM _as(U_OWNER);
+  DECLARE
+    A  uuid := 'aaaaaaaa-0000-0000-0000-00000000053a';
+    C  uuid := 'aaaaaaaa-0000-0000-0000-00000000053c';
+    M1 uuid := '77777777-0000-0000-0000-000000053001';
+    M2 uuid := '77777777-0000-0000-0000-000000053002';
+    got text;
+  BEGIN
+    -- (a) the view asks the rule
+    PERFORM _assert((SELECT count(*) FROM regexp_matches(pg_get_viewdef('ball_event_live'::regclass), 'retirement_resumed\(', 'g')) = 2,
+      'db/53 (a): ball_event_live does not read a resumed retirement through retirement_resumed()');
+
+    -- (b) M1, "the db/53 fixture": 6 for 1, A not out, his dismissal gone
+    SELECT concat_ws(' ',
+             (SELECT 'live' || row(s.runs, s.wickets, s.legal_balls)::text FROM match_live_score s WHERE s.match_id = M1 AND s.innings = 0),
+             (SELECT 'handover' || row(f.runs, f.wickets, f.legal_balls)::text FROM innings_score_as_folded(M1, 0::smallint) f),
+             (SELECT 'A' || row(i.runs, i.balls_faced, i.out)::text FROM player_innings i WHERE i.player_id = A AND i.match_id = M1),
+             (SELECT 'C' || row(i.runs, i.balls_faced, i.out)::text FROM player_innings i WHERE i.player_id = C AND i.match_id = M1),
+             'dismissals' || row(coalesce((SELECT d.dismissals FROM player_dismissals d WHERE d.player_id = A), 0),
+                                 coalesce((SELECT sum(d.dismissals) FROM player_dismissal_breakdown d WHERE d.player_id = A), 0))::text)
+      INTO got;
+    -- A's career: one dismissal, M2's retirement that stands — not M1's.
+    PERFORM _assert(got = 'live(6,1,4) handover(6,1,4) A(6,2,f) C(0,2,t) dismissals(1,1)',
+      format('db/53 (b): the consented return reads %s, the fold reads live(6,1,4) handover(6,1,4) A(6,2,f) C(0,2,t) dismissals(1,1)', got));
+
+    -- (d) M2: a consented return for somebody else leaves A's retirement
+    --     standing; a typed name's is taken back
+    SELECT concat_ws(' ',
+             (SELECT 'live' || row(s.wickets)::text FROM match_live_score s WHERE s.match_id = M2 AND s.innings = 0),
+             (SELECT 'A' || row(i.out)::text FROM player_innings i WHERE i.player_id = A AND i.match_id = M2),
+             (SELECT 'typed' || row(coalesce(l.ball_type, '-'))::text FROM ball_event_live l WHERE l.match_id = M2 AND l.seq = 4))
+      INTO got;
+    PERFORM _assert(got = 'live(1) A(t) typed(-)',
+      format('db/53 (d): a return naming another batter, or a typed name''s, reads %s; expected live(1) A(t) typed(-)', got));
+
+    -- (c) the return undone: A is out again
+    PERFORM _void_53();
+    SELECT concat_ws(' ',
+             (SELECT 'live' || row(s.wickets)::text FROM match_live_score s WHERE s.match_id = M1 AND s.innings = 0),
+             (SELECT 'A' || row(i.out)::text FROM player_innings i WHERE i.player_id = A AND i.match_id = M1))
+      INTO got;
+    PERFORM _assert(got = 'live(2) A(t)', format('db/53 (c): with the return voided, M1 reads %s; expected live(2) A(t)', got));
   END;
 
   PERFORM set_config('app.user_id', '', true);

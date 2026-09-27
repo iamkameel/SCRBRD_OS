@@ -438,6 +438,21 @@ group("D. Strike rotation and innings end");
   const again = deriveInnings([...bowledAfter, batters({ striker: "p1", captainConsent: true })]);
   ok("back, then bowled: consent does not take THAT wicket back", again.wickets === 2
      && must(again.batsmen.find((b) => b.id === "p1")).status === "out");
+
+  // "The db/53 fixture": the events db/53's proof and db/99 §31 write in
+  // SQL, folded. p1 (A) hits 4 and retires out; p3 (C) comes in, a dot,
+  // bowled; p1 back with consent, hits 2. Then the return undone.
+  const fx = [...open(), runs(4), retire({ batter: "p1", reason: "out" }), batters({ striker: "p3" }), runs(0),
+              ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" }), { ...batters({ striker: "p1", captainConsent: true }), id: "db53-6" },
+              runs(2)];
+  const f53 = deriveInnings(fx);
+  const a53 = must(f53.batsmen.find((b) => b.id === "p1")), c53 = must(f53.batsmen.find((b) => b.id === "p3"));
+  ok("the db/53 fixture: 6 for 1, 4 legal balls; A 6 (2) not out; C 0 (2) bowled",
+     f53.runs === 6 && f53.wickets === 1 && f53.balls === 4 && a53.runs === 6 && a53.balls === 2 && a53.status === "batting"
+     && c53.runs === 0 && c53.balls === 2 && c53.status === "out", [f53.runs, f53.wickets, f53.balls, a53, c53]);
+  const u53 = deriveInnings([...fx, voidEvent({ target: "db53-6" })]);
+  ok("...the return undone: 6 for 2, A out again", u53.runs === 6 && u53.wickets === 2
+     && must(u53.batsmen.find((b) => b.id === "p1")).status === "out", [u53.runs, u53.wickets]);
 }
 
 // ── D. Order-independence, given seq ─────────────────────
