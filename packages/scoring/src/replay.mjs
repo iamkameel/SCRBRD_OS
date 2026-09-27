@@ -34,6 +34,7 @@
  */
 
 import { KIND, BALL_TYPE, isLegal, normaliseDismissal, chargedToBowler, standsOnFreeHit, DISMISSAL, DISMISSAL_LABEL, INNINGS_END_REASON, DERIVED_END_REASONS, RETIREMENT_DISMISSAL, RUN_OUT_END, SUSPENSION_SCOPE, runsOffBat, inningsEnd } from "./events.mjs";
+import { NB_RUNS, runsToBowler } from "./events.mjs";
 import { CAPTURE_PROFILE } from "./placement.mjs";
 
 /** @import { LogEvent, SquadMember } from "./events.mjs" */
@@ -134,6 +135,14 @@ const BAT_STATUS = { NOT_OUT: "batting", OUT: "out", RETIRED: "retired" };
  *   why (SUSPENSION_REASON), for how long (SUSPENSION_SCOPE), and at which
  *   ball — the 0-based over the next delivery is in and the legal balls of it
  *   already bowled, as bowlerChanges. A suspension moves no figure.
+ * @property {{batter: string | null, reason: string, wickets: number, over: number, ballInOver: number}[]} retirements
+ *   batters who retired and were NOT out (retired hurt; a legacy unmarked
+ *   retire of any reason), in order: who, why, the innings' wickets when he
+ *   went, and at which ball, as suspensions. Retired out and timed out are
+ *   wickets, in nonBallWickets instead. It is what the Laws read to say when
+ *   a batter retired hurt may resume (laws.mjs, SCRBRD-071): only once a
+ *   wicket has fallen, or another batter has retired, since he went. It
+ *   moves no figure.
  * @property {{bat1: string, bat2: string, runs: number, balls: number, wicket: number}[]} partnerships
  * @property {{runs: number, balls: number, bat1: string | null, bat2: string | null}} curPartner
  * @property {BallLogEntry[]} ballLog
@@ -249,7 +258,7 @@ function inningsFolder(ctx = {}, carried = 0) {
     extras: { wide: 0, noBall: 0, bye: 0, legBye: 0, penalty: carried },
     penaltyToFielding: 0, penaltyCarried: carried,
 
-    batsmen: [], bowlers: [], fow: [], nonBallWickets: [], bowlerChanges: [], suspensions: [],
+    batsmen: [], bowlers: [], fow: [], nonBallWickets: [], bowlerChanges: [], suspensions: [], retirements: [],
     partnerships: [], curPartner: { runs: 0, balls: 0, bat1: null, bat2: null },
     ballLog: [], overLog: [],
 
@@ -436,7 +445,7 @@ function inningsFolder(ctx = {}, carried = 0) {
         });
         break;
 
-      // Law 41.18. To the batting side: in this total, now. To the fielding
+      // Law 41.17 (41.17.4). To the batting side: in this total, now. To the fielding
       // side (SCRBRD-094): in THEIR total — their most recently completed
       // innings, or their next if they have not batted — which is the match's
       // fold's to credit (penaltyCredits()); this innings only counts it.
@@ -483,6 +492,9 @@ function inningsFolder(ctx = {}, carried = 0) {
         }
         const b = batterFor(ev.batter);
         if (b) { b.status = BAT_STATUS.RETIRED; b.dismissal = `retired ${ev.reason ?? "hurt"}`; }
+        // When he went, for the Laws' "may he resume yet?" (laws.mjs).
+        inn.retirements.push({ batter: ev.batter ?? null, reason: String(ev.reason ?? "hurt"), wickets: inn.wickets,
+                               over: Math.floor(inn.balls / 6), ballInOver: inn.balls % 6 });
         closePartnership();
         if (inn.striker === ev.batter) inn.striker = null;
         if (inn.nonStriker === ev.batter) inn.nonStriker = null;
@@ -538,13 +550,16 @@ function inningsFolder(ctx = {}, carried = 0) {
 
           case BALL_TYPE.NO_BALL: {
             // `v` is the runs completed; they are the striker's only when they
-            // came off the bat (SCRBRD-068, NB_RUNS in events.mjs). Byes or
-            // leg byes off a no-ball are No-ball extras, and — like every run
-            // resulting from a no-ball — debited to the bowler (Law 21).
+            // came off the bat (SCRBRD-068, NB_RUNS in events.mjs). Law 21.15:
+            // the one-run penalty is a No-ball extra, debited to the bowler;
+            // runs off the bat are the striker's, debited to the bowler; runs
+            // not off the bat are Byes or Leg byes, and not the bowler's.
             const offBat = runsOffBat(ev);
             inn.runs += penaltyRun + v;
-            inn.extras.noBall += penaltyRun + (v - offBat);
-            bowlerCharged = penaltyRun + v;
+            inn.extras.noBall += penaltyRun;
+            if (ev.nbRuns === NB_RUNS.LEG_BYES) inn.extras.legBye += v - offBat;
+            else inn.extras.bye += v - offBat;
+            bowlerCharged = runsToBowler(ev);
             if (bow) bow.noBalls += 1;
             // A no-ball is a ball faced even when no run is scored off it.
             if (bat) {
@@ -794,11 +809,7 @@ export function isMaiden(balls) {
   if (legalCount < 6) return false;
   const by = new Set(balls.map((b) => ("bowlerId" in b ? b.bowlerId : b.bowler) ?? null).filter((x) => x != null));
   if (by.size > 1) return false;
-  const charged = balls.reduce((sum, b) => {
-    const t = b.type ?? BALL_TYPE.RUN;
-    if (t === BALL_TYPE.BYE || t === BALL_TYPE.LEG_BYE) return sum;
-    return sum + (isLegal(t) ? 0 : 1) + (b.value ?? 0);
-  }, 0);
+  const charged = balls.reduce((sum, b) => sum + runsToBowler(b), 0);
   return charged === 0;
 }
 
@@ -921,7 +932,7 @@ export function sealInnings(inn, reason = inn?.endReason ?? null) {
 // ── Match-level derivation ───────────────────────────────
 
 /*
- * PENALTY RUNS TO THE FIELDING SIDE CROSS INNINGS (SCRBRD-094, Law 41.18).
+ * PENALTY RUNS TO THE FIELDING SIDE CROSS INNINGS (SCRBRD-094, Law 41.17.4).
  *
  * Five runs awarded to the fielding side are added to the fielding side's
  * total: to its most recently completed innings, or, if it has not batted

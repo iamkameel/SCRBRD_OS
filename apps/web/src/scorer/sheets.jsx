@@ -56,18 +56,19 @@ function ShotSelectorSheet({onSelect,onSkip,onClose}){
 function NoBallSheet({onConfirm,onClose}){
   const[nbType,setNbType]=useState("front_foot");
   const[runs,setRuns]=useState(0);
-  // Whose the runs are (SCRBRD-068): off the bat they are the striker's; byes
-  // or leg byes off a no-ball are not (Law 23) — they are no-ball extras, and
-  // the bowler is charged every run of a no-ball either way (Law 21).
+  // Whose the runs are (SCRBRD-068): off the bat they are the striker's, and
+  // charged to the bowler; byes or leg byes off a no-ball are scored as byes
+  // or leg byes, and are neither the striker's nor the bowler's (Law 21.15,
+  // Law 23; db/52). The no-ball's own run is charged to the bowler either way.
   // null is off the bat, the event's default, so it is not written.
   const[from,setFrom]=useState(null);
   const FROM=[{id:null,label:"Off the bat"},{id:NB_RUNS.BYES,label:"Byes"},{id:NB_RUNS.LEG_BYES,label:"Leg byes"}];
-  // Front foot NB: batter CAN be caught (only bowled/LBW/hit wicket protected)
-  // Height NB (above shoulder): same + extra restrictions
-  // Both: 1 penalty run + any runs scored, bat gets credit, doesn't count as legal delivery
+  // Off any no-ball a batter is out only run out, hit the ball twice or
+  // obstructing the field (Law 21.17, 4th Edition; 21.18 in the 3rd).
+  // Both: 1 penalty run + any runs scored (the bat's only when off the bat), doesn't count as legal delivery
   const types=[
     {id:"front_foot",label:"Front Foot",sub:"Bowler overstepped the crease",
-      note:"Batter can be dismissed caught, run out, stumped, handled ball, hit ball twice, obstructing field"},
+      note:"Off a no ball a batter can be out only run out, hit the ball twice, or obstructing the field"},
     {id:"height",label:"Full Toss Height",sub:"Above waist height on the full",
       note:"Same dismissals as front foot. Free hit applies in limited overs."},
     {id:"beamer",label:"Beamer (Dangerous)",sub:"Full toss above waist — dangerous delivery",
@@ -127,7 +128,9 @@ function NoBallSheet({onConfirm,onClose}){
               ))}
             </div>
             <div style={{marginTop:"6px",color:D.textMuted,fontSize:"12px",fontFamily:D.body}}>
-              {from?"Not the batter's: no-ball extras, charged to the bowler.":"Credited to the batter."}
+              {from===NB_RUNS.LEG_BYES?"Scored as leg byes: not the batter's, and not charged to the bowler."
+                :from?"Scored as byes: not the batter's, and not charged to the bowler."
+                :"Credited to the batter, and charged to the bowler."}
             </div>
           </div>
         )}
@@ -480,8 +483,12 @@ const entry = (p) => (typeof p === "string" ? { id: p, name: p } : { id: p?.id ?
  * retirement — when Law 40 can apply (SCRBRD-081; the pad asks lawsRefusal).
  * It turns the sheet's pick into "this batter was timed out": a wicket with no
  * ball, recorded, and the sheet stays open for the batter who comes in.
+ *
+ * `resumable` is the batters retired hurt whom the Laws would take back at
+ * the end this sheet fills (retire.js resumeChoices, SCRBRD-071) — the
+ * engine asks; the sheet offers exactly those, and none when not told.
  */
-function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,header=null,onTimedOut=null,notResuming=null}){
+function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,header=null,onTimedOut=null,resumable=[]}){
   const[timedOut,setTimedOut]=useState(false);
   const send=timedOut&&onTimedOut?(id)=>{setTimedOut(false);onTimedOut(id);}:onSend;
   const teamInfo=INT_TEAMS[teamKey]||null;
@@ -495,12 +502,11 @@ function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,head
   };
   const dismissed=batsmen.filter(b=>b.status==="out");
   const atCrease=batsmen.filter(b=>b.status==="batting");
-  // Retired hurt — "retired, not out" — may come back (Law 25.4.2), on the
-  // same line: the fold carries his runs and balls on (SCRBRD-071). A
-  // retirement the Laws read as out (an old unmarked "retired out") is not
-  // offered; the server would refuse it. Nor is `notResuming`, the batter
-  // who has just retired: this sheet is filling the end he left.
-  const mayResume=timedOut?[]:batsmen.filter(b=>b.status==="retired"&&b.dismissal!=="retired out"&&b.id!==notResuming);
+  // Retired hurt — "retired, not out" — may come back, on the same line:
+  // the fold carries his runs and balls on (SCRBRD-071). Whom, and when, is
+  // the Laws' (`resumable`): not a retirement they read as out, and not
+  // straight back into the end he has just left.
+  const mayResume=timedOut?[]:resumable;
   return (
     <Sheet title="Batting Order" accent={D.emerald} onClose={onClose}>
       <div style={{paddingTop:"12px"}}>
@@ -644,8 +650,11 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,onClose
   // is not here: it is the INCOMING batter's (Law 40), who is never at the
   // crease while this sheet is open — the batting-order sheet offers it while
   // an end is empty (SCRBRD-081). Retired out is here, and is recorded as the
-  // dismissal with no ball it is, not as a delivery.
-  const modes=Object.keys(DISMISSAL_LABEL).filter(m=>m!==DISMISSAL.TIMED_OUT);
+  // dismissal with no ball it is, not as a delivery. Handled the ball is not
+  // offered: since the 2017 Code it is Obstructing the field (Law 37). The
+  // engine still reads it, for old logs and pre-2017 scorecards (Kameel,
+  // 2026-09-27).
+  const modes=Object.keys(DISMISSAL_LABEL).filter(m=>m!==DISMISSAL.TIMED_OUT&&m!==DISMISSAL.HANDLED_BALL);
   // A run out: who, how many runs were completed first, and — when some
   // were, so the batters have crossed (Law 18) — at which end the wicket was
   // put down (Law 38.2). That end is the one left empty (SCRBRD-069).

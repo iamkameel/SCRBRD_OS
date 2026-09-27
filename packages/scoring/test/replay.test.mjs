@@ -23,6 +23,7 @@ import {
   CAPTURE_PROFILE, PLACEMENT_FIELD, NOT_CAPTURED, evidenceLabel, placementEvidence, profileCollects,
   MatchFold, deriveInningsList, penaltyCredits, shortRunning, bowlerSuspended, suspensionWords,
 } from "../src/index.mjs";
+import { runsToBowler } from "../src/index.mjs";
 
 /** @import { LogEvent, Loose, BallEvent, BallInput, BattersEvent, BowlerEvent, InningsStartEvent, InningsStartInput } from "../src/events.mjs" */
 /** @import { Innings } from "../src/replay.mjs" */
@@ -380,6 +381,14 @@ group("D. Strike rotation and innings end");
   const stays = deriveInnings([...open(), runs(1), legacyOut, batters({ striker: "p2" })]);
   ok("an unmarked retire 'out' named again keeps its line (the Laws refuse the return)",
      must(stays.batsmen.find((b) => b.id === "p2")).status === "retired");
+  // The record the Laws read for "may he resume yet?" (laws.mjs, SCRBRD-071):
+  // each retirement not out, with the wickets when he went; a wicket with no
+  // ball (retired out) is a wicket, not one of these.
+  const rec = back.retirements;
+  ok("the fold records the retirement: who, why, the wickets then, the ball",
+     rec.length === 1 && rec[0].batter === "p2" && rec[0].reason === "hurt" && rec[0].wickets === 0
+     && rec[0].over === 0 && rec[0].ballInOver === 2, rec);
+  ok("...and a retired out is not in it", deriveInnings([...open(), runs(1), retire({ batter: "p1", reason: "out" })]).retirements.length === 0);
 }
 
 // ── D. Order-independence, given seq ─────────────────────
@@ -1191,9 +1200,32 @@ group("K. Whose the runs off a no-ball are (SCRBRD-068)");
   const withLb = deriveInnings([...open(), runs(1), lb]);
   const p2 = must(withLb.batsmen.find((b) => b.id === "p2"));
   ok("leg byes off a no-ball: the striker faced it and has none of them", p2.balls === 1 && p2.runs === 0);
-  ok("...the side has 1 + 1 + 2, three of them no-ball extras", withLb.runs === 4 && withLb.extras.noBall === 3);
-  ok("...the bowler is charged every run of the no-ball", withLb.bowlers[0].runs === 4);
+  // Law 21.15 (current Code, db/52): the penalty run is the no-ball extra,
+  // the two run are leg byes, and only the penalty run is the bowler's.
+  ok("...the side has 1 + 1 + 2: one no-ball extra, two leg byes", withLb.runs === 4
+     && withLb.extras.noBall === 1 && withLb.extras.legBye === 2 && withLb.extras.bye === 0);
+  ok("...the bowler is charged the single he conceded and the no-ball's penalty run, not the leg byes", withLb.bowlers[0].runs === 2);
   ok("...two run is even: the ends are as they were", withLb.striker === "p2");
+  // runsToBowler(): the rule the fold charges by, and ball_runs_to_bowler() in db/52 mirrors.
+  const charged = [
+    [{ type: "Nb", value: 4 }, 5], [{ type: "Nb", value: 4, nbRuns: "byes" }, 1], [{ type: "Nb", value: 3, nbRuns: "leg_byes" }, 1],
+    [{ type: "Nb", value: 0 }, 1], [{ type: "Wd", value: 2 }, 3], [{ type: "B", value: 4 }, 0], [{ type: "LB", value: 1 }, 0],
+    [{ type: "run", value: 6 }, 6], [{ type: "W", value: 1 }, 1], [{ value: 2 }, 2],
+  ];
+  // The db/52 fixture: db/52_noball_byes.sql's proof inserts these ten
+  // deliveries and holds every SQL bowler reader to what the fold says here.
+  const db52 = deriveInnings([...open(),
+    ball({ type: BALL_TYPE.NO_BALL, value: 0 }), ball({ type: BALL_TYPE.NO_BALL, value: 4 }),
+    ball({ type: BALL_TYPE.NO_BALL, value: 4, nbRuns: "byes" }), ball({ type: BALL_TYPE.NO_BALL, value: 3, nbRuns: "leg_byes" }),
+    ball({ type: BALL_TYPE.NO_BALL, value: 2, nbRuns: "byes" }), ball({ type: BALL_TYPE.WIDE, value: 1 }),
+    ball({ type: BALL_TYPE.BYE, value: 4 }), ball({ type: BALL_TYPE.LEG_BYE, value: 1 }),
+    runs(6), ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: "bowled" })]);
+  const w52 = db52.bowlers[0];
+  ok("the db/52 fixture: 17 conceded off 4 legal balls, 1 wide, 5 no-balls, 1 wicket (SQL reads the same)",
+     w52.runs === 17 && w52.balls === 4 && w52.wides === 1 && w52.noBalls === 5 && w52.wickets === 1);
+  const wrong = charged.filter(([e, want]) => runsToBowler(/** @type {any} */ (e)) !== want);
+  ok("runsToBowler(): a no-ball is its penalty run and the runs off the bat, never its byes or leg byes"
+     + (wrong.length ? ` — wrong for ${JSON.stringify(wrong)}` : ""), wrong.length === 0);
   const partnership = withLb.curPartner.runs;
   ok("...and the partnership has them, as it has every extra", partnership === 4);
 
@@ -1206,7 +1238,7 @@ group("K. Whose the runs off a no-ball are (SCRBRD-068)");
 }
 
 // ── L. Penalty runs to the fielding side (SCRBRD-094) ────
-group("L. Five to the fielding side: their last completed innings, or their next (Law 41.18)");
+group("L. Five to the fielding side: their last completed innings, or their next (Law 41.17.4)");
 {
   const A = SQ_A.concat([{ id: "p6", name: "P6" }, { id: "p7", name: "P7" }]);
   const B = SQ_B.concat([{ id: "w4", name: "W4" }, { id: "w5", name: "W5" }]);

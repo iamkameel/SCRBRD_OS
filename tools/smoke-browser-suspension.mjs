@@ -102,8 +102,7 @@ async function sqlBowling() {
   const rows = await dbq(
     `select b.bowler_id id,
             count(*) filter (where b.ball_type not in ('Wd','Nb'))::int balls,
-            coalesce(sum(case when b.ball_type in ('Wd','Nb') then 1 + coalesce(b.value,0)
-                              when b.ball_type in ('run','W') then coalesce(b.value,0) else 0 end),0)::int runs
+            coalesce(sum(ball_runs_to_bowler(b.ball_type, b.value, b.payload)),0)::int runs
        from ball_event_live b where b.match_id = $1 and b.kind = 'ball' and b.bowler_id is not null
       group by b.bowler_id`, [MATCH]);
   const figs = new Map((await dbq(`select player_id, wickets, runs_conceded from bowler_innings_figures where match_id = $1`, [MATCH]))

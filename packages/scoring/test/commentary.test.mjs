@@ -134,8 +134,10 @@ group("A. Every event kind has its line, with the fold's figures");
   ok("...the batter's figures from the fold, and the score", w && /R Pillay (goes for|is out for) \d+|R Pillay is out for a duck/.test(w.text) && /Hilton College \d+\/1\.$/.test(w.text), w?.text);
   ok("the new batter comes in", ofKind(out, K.NEW_BATTER).some((x) => /^S Naidoo (comes in|is the new batter|walks out to bat)\.$/.test(x.text)));
   const end1 = ofKind(out, K.OVER_END)[0];
+  // 18, not 24 less the byes and leg byes (21): the two byes and the leg bye
+  // off no-balls are not the bowler's either (Law 21.15, db/52).
   ok("the end of the over: its runs, the score, the batters, the bowler", end1 &&
-     /^End of over 1: 24 runs, one wicket\. Hilton College 24\/1\. D Erasmus \d+ \(\d+\)\. K Naidoo 1-0-21-1\.$/.test(end1.text), end1?.text);
+     /^End of over 1: 24 runs, one wicket\. Hilton College 24\/1\. D Erasmus \d+ \(\d+\)\. K Naidoo 1-0-18-1\.$/.test(end1.text), end1?.text);
   ok("...placed at the over's sixth ball, before the new batter", end1?.over === 0 && end1?.ball === 6
      && out.indexOf(end1) < out.findIndex((x) => /^S Naidoo/.test(x.text)));
   ok("a second bowler from the other end", at(/^L Botha to bowl from the other end\.$/));
@@ -355,6 +357,14 @@ group("D. Penalty runs to a fielding side, across innings");
   ok("an award to the side that batted goes on their total", /They go on Hilton College's total, now 13\./.test(p?.text ?? ""), p?.text);
   ok("...and the chase's target moves with it", /The target is now 14\.$/.test(p?.text ?? ""), p?.text);
   ok("...in words, with no Law clause number", p?.text.includes(noLaw(PENALTY_REASON_TEXT.time_wasting)) && !/\bLaws?\s+\d/.test(p?.text ?? ""));
+
+  // A stored award whose reason has since been withdrawn (2026-09-27) reads
+  // as it always did: the same line, its own words. The constructor will not
+  // build one now, so it is written as a stored row reads back.
+  const stored = /** @type {typeof log} */ (/** @type {unknown} */ (log.map((e) => (e.kind === "penalty" ? { ...e, reason: "obstruction_distraction" } : e))));
+  const q = ofKind(deriveCommentary(stored, { nameOf }), K.PENALTY).find((x) => x.innings === 1);
+  ok("a withdrawn reason, stored before, still reads: the same total and target, its own words",
+     q?.text === p?.text.replace(noLaw(PENALTY_REASON_TEXT.time_wasting), "distracting or obstructing the fielders"), q?.text);
 }
 
 // ── E. Determinism and keys ──────────────────────────────

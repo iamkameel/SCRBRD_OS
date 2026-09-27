@@ -81,6 +81,9 @@ group("This over as chips, in the palette in force (§10, §3.9)");
      kinds(["wd", "2wd", "nb", "5nb", "2b", "1lb"]) === "extra extra extra extra extra extra");
   ok("...and are said as words", ["wd", "2wd", "nb", "5nb", "2b", "1lb"].map((m) => chipFor(m).say).join("|")
      === "wide|2 wides|no ball|no ball, 5 runs|2 byes|1 leg bye");
+  ok("a no-ball's byes and leg byes are an extra chip, said as the no-ball and its byes (Law 21.15)",
+     ["nb+4b", "nb+1lb", "nb+2lb"].map((m) => `${chipFor(m).kind}:${chipFor(m).text}:${chipFor(m).say}`).join("|")
+     === "extra:nb+4b:no ball, 4 byes|extra:nb+1lb:no ball, 1 leg bye|extra:nb+2lb:no ball, 2 leg byes");
   // Every chip carries its figure or its word: colour is never the only signal.
   for (const m of ["1", "2", "3", "4", "5", "6", "W", "2wd", "nb", "2b", "1lb"])
     ok(`the ${m} chip shows "${m}" on it`, chipFor(m).text === m);
@@ -135,6 +138,9 @@ group("From the fold: one function for the pad and the day sheet");
      [{ type: "run", value: 0 }, { type: "run", value: 4 }, { type: "W", value: 0 }, { type: "Wd", value: 0 }, { type: "Wd", value: 1 },
       { type: "Nb", value: 0 }, { type: "Nb", value: 4 }, { type: "B", value: 2 }, { type: "LB", value: 1 }].map(boardBall).join(" ")
      === "· 4 W wd 2wd nb 5nb 2b 1lb");
+  ok("...a no-ball's byes and leg byes as the no-ball and its byes, not no-ball runs",
+     [{ type: "Nb", value: 4, nbRuns: "byes" }, { type: "Nb", value: 1, nbRuns: "leg_byes" }, { type: "Nb", value: 0, nbRuns: "byes" }]
+       .map(boardBall).join(" ") === "nb+4b nb+1lb nb");
   const inn = {
     battingTeam: "Hilton 1st XI", runs: 142, wickets: 3, balls: 86, striker: "a", nonStriker: "b", bowler: "k",
     batsmen: [{ id: "a", name: "D Erasmus", runs: 5, balls: 1 }, { id: "b", name: "R Pillay", runs: 17, balls: 12 }],

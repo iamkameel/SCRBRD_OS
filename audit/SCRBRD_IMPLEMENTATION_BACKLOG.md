@@ -2855,6 +2855,19 @@ with no toss recorded, the scorer is asked (toss winner and election) before the
 
 ### ~~SCRBRD-068~~ — CLOSED · Byes or leg byes run off a no-ball are credited to the batter
 **Closed 2026-09-25** in `105e467` (#37): `nbRuns` (NB_RUNS) on a no-ball says the runs were byes or leg byes, the fold and the Laws check read it (`events.mjs`, `laws.mjs`), and db/40 carries it into every SQL reader.
+**Reopened and corrected 2026-09-27 (Kameel, from `docs/laws/CLAUSE_CHECK.md`, mismatch 1).** It was built to the 2000
+Code (Law 24.13: every run of a no-ball a no-ball extra, all of them debited to the bowler). The Code in force — the
+2017 Code, 4th Edition from 1 October 2026, 21.15 and 18.10.2–18.10.3 (21.16 in the 3rd) — says: the one-run penalty
+is a no-ball extra, debited to the bowler; runs off the bat are the striker's, debited to the bowler; runs not off the
+bat are **byes or leg byes**, as appropriate, and **not** debited to the bowler. The no-ball is still not a legal ball,
+the striker has still faced it, and the runs completed still move the strike. The event is unchanged (`value` and
+`nbRuns`); what it means for the figures moved. Built: the fold (`extras.noBall` takes the penalty run only, the rest
+to `extras.bye`/`extras.legBye`; the bowler charged `runsToBowler()`), and `db/52_noball_byes.sql`
+(`ball_runs_to_bowler()`; `player_bowling_since`, `bowler_innings_figures`, `opposition_squad`,
+`player_bowling_by_season`, `player_bowling_career` redefined over it, and the `career` read), the board's chip
+("nb+4b"), the no-ball sheet's words. Stored rows are read under the new rule: a bowler's runs over an old no-ball
+bye fall by the byes; totals do not move. Proof: `laws-spec.test.mjs` D (byes, leg byes, four byes, hit, on a free
+hit), db/52's own block, db/99 §19/§22/§30 and db/43's fixture, `smoke-fold-figures`.
 **Title:** A no-ball's `value` is always runs off the bat, so the event model cannot record no-ball byes
 **Priority:** P2 · **Domain:** Scoring · **Type:** correctness (event model)
 **Affected files:** `packages/scoring/src/events.mjs` (`BALL_TYPE.NO_BALL`), `packages/scoring/src/replay.mjs`
@@ -2939,10 +2952,49 @@ after it refused too.
   Laws, mid-over; 12 in its run, 10 back later, plus a written-out innings); every figure agrees, each row is stored
   with no W marker, and `ball_retired_batter()` / `ball_retirement_dismissal()` count none of them. Proof:
   `apps/web/test/retire-sheet.test.mjs` (the event, the refusals, the fold after a mid-over retirement and a return,
-  the sheet at the floors; falsified five ways), `tools/smoke-browser-retire.mjs` (new, registered). Not modelled: Law
+  the sheet at the floors; falsified five ways), `tools/smoke-browser-retire.mjs` (new, registered). ~~Not modelled: Law
   25.4.2's "only at the fall of a wicket or the retirement of another batter" — the Laws take a return at any empty
   end; the pad only declines to offer him straight back to the end he left. The Laws also take a retirement in an
-  innings that is over or sealed.
+  innings that is over or sealed.~~ **Built 2026-09-27**: (1) *Resuming.* The fold records each retirement that is not
+  out in `inn.retirements` (who, why, the innings' wickets when he went, the ball; it moves no figure), and
+  `lawsRefusal` takes a `batters` event naming a batter retired hurt only if, since his LATEST retirement, the wickets
+  have moved or another batter has retired — otherwise the new `resume_not_yet` ("a batter who retired hurt may resume
+  only after a wicket has fallen, or another batter has retired, since he went off"; on the pad "He can resume only
+  once a wicket has fallen or another batter has retired."; a likely cause in `causes.mjs`). An end is only ever empty
+  after a wicket or a retirement, so this refuses exactly his walking straight back into the vacancy his own
+  retirement made. A wicket with no ball counts; two off at once — the first may return at the second's retirement.
+  The clause (Law 25.4.4, not 25.4.2) is in code comments only. (2) *Over or
+  sealed.* A retirement (hurt, or an unmarked legacy one) in an innings that is over is `innings_over`, sealed
+  `innings_closed` — the codes and order a dismissal with no ball already used. The pad: the batting-order sheet's
+  "Retired hurt — may resume" list is now the Laws' answer (`retire.js` `resumeChoices`/`resumeRefusal`, asked with
+  the event the sheet would send), passed to every `BattingOrderSheet` as `resumable`; `notResuming` is gone (the Laws
+  cover it, and it forgot nothing they do not). SQL: no change — no SQL judges events (the Laws run in JS at commit
+  and at quarantine release) and no SQL reads when a batter resumed; db/98 has no retirement; db/49's and db/99's
+  fixtures write rows past the Laws and contain no resume. Found in `smoke-fold-figures`' generator (a test bug, not a
+  legitimate case): 3 resumes straight back into the batter's own vacancy (its generic `retire("hurt")` never set
+  `justRetired`) and 2 retirements hurt after a chase was won (it plays on past a target). It now asks the Laws for
+  both, after its random draws, so its stream is identical up to the first event the rules refuse (event 179 of
+  1281) and differs after it only because a different batter is in; a new assertion asks the Laws of every retirement
+  hurt and every return in its logs (12 and 12 in its run, 0 refused). Proof: `laws.test` group Q (the server's fold and the pad's
+  agreeing), `replay.test` (the record), `retire-sheet.test` (the resume list, the sheet, the over), `smoke-browser-retire`
+  G (partner retires and is not offered back; next batter in; the first retires too; the partner, whose retirement came
+  first, is offered and the server takes him; the other is not). Falsified: the rule, its record, the over and sealed checks, the sheet and the generator,
+  each mutated in turn and failing its tests. Found, not fixed: the last batter retiring hurt with nobody
+  left to come in ends the innings under the Laws; `inningsOverReason` counts wickets only, so the fold does not derive
+  that ending (the pad never offered him straight back either, so nothing new is stranded).
+  **Not built, needs SQL (2026-09-27): resuming after retired out, with the opposing captain's consent (Law 25.4.3).**
+  Proposed model: a `batters` event carrying `captainConsent: true`, which the Laws take only for a batter retired
+  out (W-marked retire, reason out — never timed out), under the same 25.4.4 timing; the fold on it takes the
+  wicket back (wickets − 1, his `fow` and `nonBallWickets` entries removed, status batting, no dismissal line, his
+  line going on), and the 25.4.4 check moves from `inn.wickets` to a counter that only rises. Stopped before building:
+  every SQL reader counts a W-marked retire as a standing wicket and dismissal from the row alone
+  (`ball_wicket_stands` → `match_live_score`; `innings_score_as_folded` → the handover check; `ball_retired_batter()`
+  / `ball_retirement_dismissal()` → `player_innings`, `player_dismissals_since`, `player_dismissal_breakdown`,
+  `player_batting_since`, `player_*_by_season`, `player_batting_career`, `player_dismissals`, `milestone_watch`), so
+  a resume the Laws took would make the live score and the handover check disagree with the fold. It needs a
+  migration: a `retirement_resumed(match, innings, seq)` predicate (a later live consented `batters` row naming the
+  retire's `payload.batter`) and those readers redefined to leave a resumed retirement out. Sequencing with db/52 is
+  the coordinator's call.
 - ~~Timed out and retired out are recorded as `W` balls, which count as a legal delivery of the over.~~ **Already done by
   SCRBRD-081 (2026-09-24)**, checked 2026-09-27: both are a `retire` marked `type: "W"` (no ball, no bowler figure, no
   ball faced), through the `nonBallWickets` path; an old W *ball* naming either still folds as history
@@ -3493,6 +3545,28 @@ Two Law 41 questions Kameel is researching before deciding; nothing is built unt
    through one helper, `penaltyReasonWords()` in `events.mjs`, which the pad's sheet and the commentary now use too; and
    a short run off a no-ball asks the no-ball's kind — `ball()` used to drop `nbType` on every no-ball and now keeps it
    (the free hit was never the kind's: the fold gives one after every no-ball, and the pad's banner now reads it there).
+   **The penalty list corrected, 2026-09-27 (Kameel, from `docs/laws/CLAUSE_CHECK.md`, Law 41; the 4th Edition, in
+   force 1 October 2026).** The list above carried numbers from earlier research, put two fielders' offences on the
+   batting side's list and named one offence the Laws do not have. Now, each a plain five to one side:
+   to the fielding side `short_running` (18.5), `time_wasting` (41.10), `pitch_damage` (41.14, which takes in a batter
+   on the protected area without reasonable cause), `stealing_run` (41.16, new); to the batting side `helmet_struck`
+   (28.3), `illegal_fielding` (28.2), `fielder_returning` (24.4), `keeper_movement` (27.4.2), `fielder_movement`
+   (28.6.3), `distracting_striker` (41.4, a deliberate interception included), `obstructing_batter` (41.5),
+   `fielding_time_wasting` (41.9), `fielding_pitch_damage` (41.12), `fielding_restrictions`; either side
+   `ball_tampering` (41.3), `unfair_play` (41.2.1), `practice_on_field` (26.4.2), `player_conduct` (Law 42), `other`.
+   **Withdrawn** (`PENALTY_REASON_WITHDRAWN`): `obstruction_distraction` (a batter who obstructs is out, Law 37),
+   `striking_pitch` (no such offence), `protected_area` (merged into `pitch_damage`: one offence, one warning). A
+   stored award with one folds and reads as it did; a new one is refused (`penalty()`, and at commit
+   `penalty_reason_withdrawn`). No SQL constrains or reads the reason. Stealing a run is the award alone: no ball was
+   bowled, so nothing is disallowed. **Queued for the 4th Edition behaviour batch, not built:** the delivery that does
+   not count when 24.4, 28.2, 41.4 or 41.5 applies (17.3.2.5); a delivery's runs disallowed on a second offence
+   (41.14.3, 41.15.3); awards after the result (41.17.2). Open: 41.15 (the striker taking guard in the protected
+   area) has no reason of its own — `other` until Kameel says.
+   **With it, 2026-09-27: the pad no longer offers "handled the ball"** (Kameel). Since the 2017 Code it is
+   obstructing the field (Law 37). Gone from the wicket sheet (the basic pad's and the Pro hub's); the no-ball sheet's
+   note now lists only the Law's three ways out off a no-ball (run out, hit the ball twice, obstructing the field — it
+   also said caught and stumped). `DISMISSAL.HANDLED_BALL` stays in the engine: old events and pre-2017 scorecards
+   fold, read and count as before, and the server still takes one. Proof: `apps/web/test/ways-out.test.mjs`.
 2. A bowler suspended mid-over (SCRBRD-080's unbuilt half): Law 41 says he may not bowl again in the innings.
    **Decided 2026-09-26 (Kameel's research, MCC Law 41, Unfair Play).** A bowler is suspended as soon as the ball is
    dead, on these grounds, as Kameel gives them:
@@ -3629,7 +3703,7 @@ for the same tap), `design.test.mjs` (the wheel's colours), `tools/smoke-browser
 - The one-tap Dot mid-ball, with no area chosen, records `not_required` / `quick` as before, not `skipped`.
 
 ### SCRBRD-102 — A wagon-wheel analysis panel: filters, run chips, off and on side, areas per side
-**Priority:** P2 · **Domain:** Front-end / analytics · **Type:** feature (Kameel's earlier SCRBRD designs, 2026-09-27)
+**Built 2026-09-27.** **Priority:** P2 · **Domain:** Front-end / analytics · **Type:** feature (Kameel's earlier SCRBRD designs, 2026-09-27)
 Kameel's earlier designs had a wagon-wheel analysis panel. It should appear in the Match Centre's Performance tab and on a player's profile:
 - **Filters:** by batter and by bowler.
 - **Run chips:** All, 1s, 2s, 3s, 4s and 6s, each with its count. Tapping a chip shows only those spokes, in the chip colours.
@@ -3639,6 +3713,60 @@ Kameel's earlier designs had a wagon-wheel analysis panel. It should appear in t
   - The on side: fine leg, square leg, mid-wicket and long on.
 
 Everything is relative to the batter, so a left-hander's areas are his own (SCRBRD-101). Build it after SCRBRD-101 lands; it is screen work over the fold and the existing reads.
+
+**What was built.** The counting is a pure module, `apps/web/src/scorer/wagonAnalysis.mjs`, over `placement.mjs`'s
+`SECTORS`/`sectorOf` — nothing re-derives an angle. The twelve batter-relative sectors fold to the eight named areas
+SCRBRD-102 asks for: the two "backward" ones fold into the square neighbour they qualify (backward point → point,
+backward square leg → square leg — field.js's `RIM` already left both out of its eight, for the same reason), and
+the two dead-straight sectors (`sideOf` calls them neither off nor on) belong to no area and no side; they, and any
+ball with no placement at all, are counted separately (`excluded.straight` / `excluded.unplaced`) and said in words
+on the panel rather than folded into a total that would not add up. Area labels are `RIM`'s own words
+(`positionName`'s deep names for long off/long on) — nothing re-typed. A run chip folds a 5 into the 4's key and
+colour, matching the scorer's own legend (`field.js` `LK_COLS`); "All" is every ball with a placement, whatever its
+value.
+
+The panel (`apps/web/src/scorer/wagonAnalysisPanel.jsx`) is thin: a batter filter, a bowler filter, the run chips,
+the field itself (drawn with field.js's own helpers, so a chip's spokes are exactly the wheel's), off side against
+on side with each side's share of the CLASSIFIED total (off runs + on runs, not every run in the log), and the eight
+areas with their runs and boundaries, zero rather than omitted when nothing went there. 12px floor, 44px touch
+targets, tabular numerals (`T.role.figure`), both themes via `T` read at render (the design test's import-time
+rule holds for both new files).
+
+**Wired in:**
+- The Match Centre's Analytics tab (`AnalyticsTab`, matchcentre/tabs.jsx): every batter and bowler in the innings,
+  from the fold already in view. No match filter — one match is the whole point of the tab.
+- The player profile's Career tab (`CareerWagonWheel`, ProfilesView.jsx): the batter fixed to the boy himself, a
+  bowler filter from the existing `matchups` read (batterId narrows it to his own bowlers and their names — a read
+  this panel needed only for the label, since `player_shot_points` carries `bowlerId` but no name), and a match
+  filter built cheaply from the rows already in hand: `asShotPoint` (lib/live.js) now also surfaces `startsAt`,
+  which the query already selects (it orders the read) but never returned to the client — one field added to an
+  existing mapper, not a new read.
+
+Names are exactly what the caller passes in; nothing here adds a second name path. Never a photo, age or date of
+birth — the panel shows neither.
+
+**Guards:** `apps/web/test/wagon-analysis.test.mjs` (new, 37 assertions: a right-hander's and a left-hander's areas,
+both eras, the backward-sector fold, chips, filters, and what gets left out), registered in `run-all-tests.mjs`.
+Two falsifications run and reverted by hand — folding `backward_point` into `third` instead of `point`, and basing
+the side percentage on `sideRuns.off` alone — each broke exactly the assertion aimed at it, nothing else.
+`tools/smoke-browser-wagonwheel.mjs` gains group F: opens the panel on the real scored match the rest of the walk
+already built, filters to the left-hander, taps the 1s chip, and checks the area and chip counts against the
+server's own `ball_event` rows (`browser-wagonwheel`: 41 passed, up from 33, 0 failed). `smoke-a11y` stays at 0
+failures (198 passed) — it does not currently visit the Analytics tab or a profile's Career tab, so the panel is
+proved by its own walk and unit tests rather than the a11y ratchet.
+
+**Verification:** `pnpm -s typecheck` (0 errors), `pnpm -s lint` (0 errors, 82 warnings, at the ceiling but not over
+it), `pnpm -s build` + `check-bundle.mjs` (entry chunk 421 KB of 500), `run-all-tests.mjs` (4901 assertions, 61
+suites, all passed), `run-smoke-api.mjs` (2952 assertions, 70 walks) and `--browser` (1747 assertions, 29 walks,
+`browser-wagonwheel` among them), `pnpm -s smoke` (247 assertions across `smoke`/`smoke-scorer`/`smoke-persist`/
+`smoke-a11y`). Screenshots of the panel, both themes, on the Match Centre's Analytics tab and a player's Career tab.
+
+**Left open:**
+- No season filter — a season is not a field `player_shot_points` or the innings fold gives cheaply, and adding one
+  would be a read change, out of scope for screen work.
+- The bowler filter's names come from `matchups`, which only knows a bowler with a `bowler_id` (a SCRBRD player); a
+  fixture against a school with no roster names its bowler in the ball log but not in this filter (the same gap
+  `matchup_coverage` already states elsewhere).
 
 ### SCRBRD-103 — A run map and a catch map
 **Priority:** P3 · **Domain:** Front-end / analytics · **Type:** feature (Kameel's references, 2026-09-27)
@@ -3809,6 +3937,42 @@ It sits under `player.workload.read`.
 
 **Order:** an Opus design pass first (tables, policy, consent, the load model), for Kameel's review; then the build in phases 1 → 5.
 
+### SCRBRD-111 — Smart health devices: wearables feeding the workload record
+**Priority:** P3 · **Domain:** Health / integrations · **Type:** feature (Kameel, 2026-09-27: "at some point we want to
+introduce smart health devices and connect them into our system for a better homogenous ecosystem")
+Heart rate, sleep and training load from a bowler's own device, read into the SCRBRD-110 record beside his check-ins
+and the ball log. **Before any build:** it is health data about minors, so it sits under the health consent (and a
+device-specific one), a device vendor becomes a processor under POPIA, and each vendor needs a data processing
+agreement. Design pass first (Fable tier, with Kameel's say), after SCRBRD-110 phase 1 is in use.
+
+### SCRBRD-112 — Keep a pupil's health record for his whole time at school, for early detection
+**Priority:** P3 · **Domain:** Health / privacy · **Type:** decision, then feature (Kameel, 2026-09-27)
+Kameel's aim: with permission, keep the workload and health record for a player's whole time in the school system,
+so patterns across seasons can flag health risks early and support long-term health. Today's rule (SCRBRD-110 Q4) is
+twelve months hidden, then deleted, after consent ends or he leaves. **Needs:** its own purpose and its own explicit
+consent (POPIA: consent is specific to purpose; this is minors' special personal information), the information
+officer's sign-off, and a statement of what the pattern detection does and who sees its output. Nothing is built
+until those are settled.
+
+### SCRBRD-113 — The Laws, 4th Edition (2026): the behaviour changes
+**Priority:** P1 · **Domain:** Scoring · **Type:** Laws (Kameel supplied the 4th Edition, 2026-09-27; in force 1 October 2026)
+**Decided (Kameel, 2026-09-27): the Edition follows the match date.** A match starting before 1 October 2026 is
+scored under the 3rd Edition, from 1 October under the 4th, so old logs replay as they were played. A
+per-competition setting is added only if a school's competition adopts the 4th Edition later.
+**Build (Opus), after db/52:** the list in `docs/laws/CLAUSE_CHECK.md` "4th Edition: changes to build" —
+1. 41.8 and 41.7.6: a deliberate front-foot no-ball and a deliberate beamer suspend the bowler for the match; the
+   dangerous-series beamer (41.7.4) stays for the innings. Split `beamers`; key the suspension scope to the Edition.
+2. 22.1.3: a bouncer over head height is a Wide — words on the pad and the no-ball sheet (which wrongly says caught
+   and stumped are possible off a no-ball, in either Edition).
+3. 18.5.2 / 18.13.2 and 37.5.2: the fielding captain chooses who faces after deliberate short running and after an
+   obstruction that prevents a catch.
+4. 41.17.2 / 16.7: penalty awards until the umpires leave the field, even after a result; an award can reopen a
+   finished chase; a result can be a win by penalty runs.
+5. Not new, found in the text: deliveries under 24.4, 28.2, 41.4 and 41.5 do not count in the over (17.3.2.5); the
+   second offence under 41.14.3 and 41.15.3 also disallows the delivery's runs; the missing penalty and suspension
+   reasons the report lists (throwing, 21.3.2; Law 42).
+Then apply the report's renumbering map to the code's comments.
+
 ### SCRBRD-100 — The premium-feel checklist: what is left after step 3c
 **Priority:** P2 · **Domain:** Front-end · **Type:** product polish (Kameel, 2026-09-26; checklist at
 https://claude.ai/artifact/63zVkqVAotrYYQk9dGUhAp; the rule is DESIGN_DIRECTION §1a)
@@ -3967,6 +4131,8 @@ handwritten sheet is one of two kinds:
 2. Photograph to draft.
 3. Full scorebook (ball-by-ball) transcription.
 
+**Decided (Kameel, 2026-09-27): the recommendations below** — phase 1 (manual entry) first; backfilled records signed-in only until decided otherwise; summaries first.
+
 **Decisions for Kameel before building:**
 1. **Photos of pupils' names to the AI provider.** Live commentary masks names before they leave the platform
    (`maskNames`), but names written on a photo cannot be masked. Phase 2 needs either the school's agreement under
@@ -4020,7 +4186,7 @@ name reaches the provider, and it fails soft to a plain description (`descBall`)
 3. **Names follow the reader.** Signed-in readers see names under the usual read rules. A public page runs every
    name through `publicName()` (PUBLIC_DATA L2/L4): "D Erasmus" only with consent, otherwise the role ("the
    batter", "the bowler"). The generator takes the names from the caller and never reads them itself.
-4. **AI enrichment is optional and a separate decision.** If kept, it runs server-side, once per ball (never once
+4. **AI enrichment: kept (Kameel, 2026-09-27).** Spectators see the AI lines too (confirmed), with names through `publicName()` on a public page, and it can be switched off (a per-school setting, `feature_flag`-style). **AI enrichment is optional and a separate decision.** If kept, it runs server-side, once per ball (never once
    per device), is stored beside the ball it describes, and keeps the name tokenising. The model and cost are
    chosen deliberately (a smaller model is the likely trade), and whether AI lines appear to spectators at all is
    Kameel's call. Until he decides, spectators see the deterministic lines only.

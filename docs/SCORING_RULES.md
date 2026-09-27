@@ -130,8 +130,9 @@ Kept deliberately, listed so a future reader does not "fix" them back:
 
 - **Wides and no-balls do not consume a ball of the over.** `isLegal()`.
 - **Byes and leg byes are not charged to the bowler** but do count as balls
-  bowled, and are balls faced by the batter. Off a no-ball they are No-ball
-  extras and are charged to him, like every run of a no-ball (SCRBRD-068).
+  bowled, and are balls faced by the batter. Off a no-ball they are still byes
+  or leg byes and still not his; only the no-ball's penalty run, and runs off
+  the bat, are charged to him (Law 21.15; SCRBRD-068, corrected by db/52).
 - **Run outs and the other non-delivery dismissals are not credited to the
   bowler** — see `UNCREDITED` in `replay.mjs`.
 - **The bowler is cleared at the end of each over**, so the next `bowler` event
@@ -193,9 +194,9 @@ Refused, with the reason named:
 | No ball once the second innings is complete — the match is decided | AntiGravity `recordBallAction` |
 | An innings starts only when the one before it has ended (by the laws or a seal) | new, from the model |
 | No play in an innings once a later one has a delivery | new |
-| A dismissed batter, or one retired out, does not come back; retired hurt may (Law 25.4) | new |
+| A dismissed batter, or one retired out, does not come back; retired hurt may, but only at the fall of a wicket or another batter's retirement since he went (Law 25.4) | new; the timing SCRBRD-071 |
 | Once play starts, a not-out batter leaves only by dismissal or retirement — no replacing him; swapping ends is allowed | new |
-| Only a batter at the crease can retire; nothing is recorded for an innings nobody opened | new |
+| Only a batter at the crease can retire, and not once the innings is over or closed; nothing is recorded for an innings nobody opened | new; over/closed SCRBRD-071 |
 | A wicket with no ball is retired out (a batter who is in) or timed out (the batter due in, Law 40) — nothing else | SCRBRD-081 |
 | Runs off a no-ball are off the bat, byes or leg byes — nothing else | SCRBRD-068 |
 | The end a batter was out at is the striker's or the bowler's, and only on a wicket | SCRBRD-069 |
@@ -328,7 +329,8 @@ Taken by the product owner on the rules the commit-time Laws check left open.
 3. **Run out with runs completed — ask which end.** One extra question on a run out that completed runs: out at the
    striker's end or the bowler's end (Law 38.2). The fold places the survivor from that. Built as SCRBRD-069.
 4. **No-ball byes — fix the model.** A no-ball records runs off the bat and runs not off the bat separately; only
-   the first is the batter's (Law 21.6, Law 23). Old events replay unchanged. Built as SCRBRD-068.
+   the first is the batter's (Law 21.15, Law 23). Old events replay unchanged. Built as SCRBRD-068; its scoring
+   corrected to the current Code on 2026-09-27 (db/52, below).
 5. **Timed out and retired out are not deliveries.** Recorded as a dismissal event that is not a ball: the over's
    count and the bowler's figures are unaffected and the bowler gets no credit. Old matches replay unchanged.
    Built as SCRBRD-081 — see below.
@@ -358,26 +360,35 @@ This was `laws-spec.test.mjs`'s last KNOWN_GAP; it is now group E there, both en
 a bye or a leg bye. A new, optional field says whose they were: `nbRuns: "byes" | "leg_byes"` (`NB_RUNS`). Absent means
 off the bat. The constructor refuses any other value, and the field on anything but a no-ball.
 
-**Why not a second number beside `value`.** Every shipped SQL fold already reads a no-ball as `1 + value` — the live
-score, the handover check (`scoring_verify_takeover`), the bowler's career runs conceded. Splitting the runs into two
-numbers would have left all of them short by the byes, and a handover after a no-ball bye would have failed
-verification. With `value` still the runs completed, they stay right with no migration; the new field only decides the
-batter's share. And it is what old events already are: the pad asked for "runs scored off this ball", so a no-ball with
+**Why not a second number beside `value`.** Every shipped SQL total already reads a no-ball as `1 + value` — the live
+score, the handover check (`scoring_verify_takeover`). Splitting the runs into two numbers would have left all of them
+short by the byes, and a handover after a no-ball bye would have failed verification. With `value` still the runs
+completed, the totals stay right with no migration; the new field decides the batter's share and the bowler's. And it is what old events already are: the pad asked for "runs scored off this ball", so a no-ball with
 no `nbRuns` is off the bat and replays exactly as before.
 
-**How it is scored (MCC Laws, Law 21 — "Runs resulting from a No ball – how scored").** The one-run penalty is a
-No-ball extra. Runs completed off the bat are the striker's; otherwise they too are No-ball extras — not byes or leg
-byes. Apart from a five-run penalty award, every run resulting from a no-ball is debited to the bowler. So:
+**How it is scored (MCC Laws, 2017 Code 4th Edition 2026, in force from 1 October 2026: Law 21.15 — "Runs resulting
+from a No ball – how scored" — and 18.10.2–18.10.3; Law 23. The 3rd Edition had it at 21.16.)** 18.10.3: the bowler is
+debited the striker's runs, No-ball extras and Wides, and nothing else. The one-run penalty is a No-ball extra, debited to the bowler. Runs completed off the bat, or a boundary off
+the bat, are the striker's, and debited to the bowler. Runs completed, or a boundary allowance, when the ball was not
+hit are scored as Byes or Leg byes, as appropriate, and are not debited to the bowler. So:
 
 | No-ball, 2 run | Side | Extras | Striker | Bowler | Strike |
 |---|---|---|---|---|---|
 | off the bat | +3 | nb +1 | +2 runs, +1 ball | +3 | kept (2 is even) |
-| byes / leg byes | +3 | nb +3 | +0 runs, +1 ball | +3 | kept |
+| byes | +3 | nb +1, b +2 | +0 runs, +1 ball | +1 | kept |
+| leg byes | +3 | nb +1, lb +2 | +0 runs, +1 ball | +1 | kept |
 
-The team total and the bowler's figures do not depend on the answer; the batter's runs, fours and sixes do. A no-ball is
-a ball faced either way. Strike is rotated by the runs completed. The pad records which of byes or leg byes it was
-because that is what the scorer saw; the fold scores both as no-ball extras. (A competition playing conditions that
-score them as byes and leg byes, not debited to the bowler, would read `nbRuns` differently — not modelled.)
+The team total does not depend on the answer; the extras by type, the bowler's runs conceded and the batter's runs, fours
+and sixes do. A no-ball is a ball faced either way, is never a legal ball, and still earns a free hit. Strike is rotated
+by the runs completed.
+
+**Corrected 2026-09-27 (Kameel, from `docs/laws/CLAUSE_CHECK.md`).** SCRBRD-068 was first built to the rule of the 2000
+Code (Law 24.13): every run resulting from a no-ball a No-ball extra, and every one debited to the bowler. That is not
+the current Code. The fold now scores the runs not off the bat as byes or leg byes and charges the bowler only the
+penalty run and runs off the bat (`runsToBowler()` in `events.mjs`); `db/52_noball_byes.sql` does the same in every SQL
+reader of a bowler's runs (`ball_runs_to_bowler()`). Stored events are not rewritten: the same `value` and `nbRuns`
+now read under the current rule, so a bowler's figures over an old no-ball bye fall by the byes, and the extras line
+moves them from nb to b or lb. Totals do not move.
 
 **Consumers.** The fold (`runsOffBat()` in `events.mjs` is the one rule), the phases (fours and sixes, and their
 invariant), the scorecard and ball-by-ball text, the one-batter wagon wheel's run count, the held sheet, the Laws
@@ -388,8 +399,9 @@ used to count every ball worth four, four byes and five wides included.
 **The SQL career views (db/40).** They credited a no-ball's `value` to the striker. `db/40_career_follows_the_fold.sql`
 redefines every one that computes a batter's runs from the log (`player_batting_since`, `player_innings`,
 `opposition_squad`, and the milestone trigger) over `ball_runs_off_bat()`, which is `runsOffBat()` in SQL: a no-ball's
-byes and leg byes are not his runs, fours or sixes, are still a ball he faced, and are still every run debited to the
-bowler. A no-ball with no `nbRuns` scores exactly as before. The pad's no-ball, and its wicket ball, now carry the
+byes and leg byes are not his runs, fours or sixes, and are still a ball he faced. (db/40 left them debited to the
+bowler; db/52 takes them off — `ball_runs_to_bowler()` — in `player_bowling_since`, `player_bowling_career`,
+`player_bowling_by_season`, `bowler_innings_figures`, `opposition_squad` and the `career` read.) A no-ball with no `nbRuns` scores exactly as before. The pad's no-ball, and its wicket ball, now carry the
 striker, non-striker and bowler like every other delivery (they carried none, so neither was in any SQL career figure
 — balls faced, runs conceded, no-balls).
 
@@ -554,7 +566,7 @@ not move; they revise it again. A chase with no stamped target is judged against
 whole and event by event, over thousands of generated logs, against the fold before this change; the two new fields
 are 0.
 
-**Deliberate short running (Law 18.5.2, 41.5)** is two events, built by `shortRunning()`: the delivery as bowled with
+**Deliberate short running (Law 18.5.2)** is two events, built by `shortRunning()`: the delivery as bowled with
 no run completed (`value: 0`) and an award, reason `short_running`, to the fielding side. So the delivery needs nothing
 new anywhere: no run to the side, the batter or the bowler; the batters at the ends they started from; a legal ball
 of the over and a ball faced; a no-ball's or wide's one-run penalty stands. Every SQL reader of a delivery reads a dot
@@ -566,13 +578,42 @@ to in `PENALTY_REASON_SIDE`:
 
 | To the fielding side (the batting side's offence) | To the batting side (the fielding side's offence) | Either |
 |---|---|---|
-| `short_running` 41.5 · `obstruction_distraction` 41.4 · `pitch_damage` 41.12 · `protected_area` 41.14 · `striking_pitch` 41.15 · `time_wasting` 41.17 | `helmet_struck` 28.3 · `illegal_fielding` 28.2 · `ball_tampering` 41.3 · `fielding_time_wasting` 41.9 · `unfair_play` 41.1 · `fielding_restrictions` | `other` |
+| `short_running` 18.5 · `time_wasting` 41.10 · `pitch_damage` 41.14 · `stealing_run` 41.16 | `helmet_struck` 28.3 · `illegal_fielding` 28.2 · `fielder_returning` 24.4 · `keeper_movement` 27.4.2 · `fielder_movement` 28.6.3 · `distracting_striker` 41.4 · `obstructing_batter` 41.5 · `fielding_time_wasting` 41.9 · `fielding_pitch_damage` 41.12 · `fielding_restrictions` (a playing condition) | `ball_tampering` 41.3 · `unfair_play` 41.2.1 · `practice_on_field` 26.4.2 · `player_conduct` Law 42 · `other` |
 
-The batting side's reasons are the ones the pad's sheet already offered, under the Law each is. The pad's free text
+**Corrected 2026-09-27 (Kameel, from `docs/laws/CLAUSE_CHECK.md`, Law 41; the 2017 Code, 4th Edition 2026, in force
+from 1 October 2026; Law 18.6 lists every source of penalty runs).** The list first built (2026-09-26) carried numbers
+from earlier research, two fielders' offences on the batting side's list and one offence the Laws do not have. Now:
+
+- **Withdrawn** (`PENALTY_REASON_WITHDRAWN`): `obstruction_distraction` — a batter who obstructs or distracts the
+  fielders is out, Obstructing the field (Law 37), with no penalty runs; `striking_pitch` — no such offence;
+  `protected_area` — a batter on the protected area without reasonable cause is part of the one 41.14 offence, with
+  one first and final warning, so it is merged into `pitch_damage` (two reasons for one offence would read as two
+  warnings, and the name was also the bowler's suspension reason, 41.13). An award already stored with one of them
+  folds (the fold never reads a reason) and reads as it did, in words; a new award with one is refused — by the
+  constructor, and at commit (`penalty_reason_withdrawn`).
+- **Added**, each a plain five to one side: `stealing_run` (41.16: the batters attempting to steal a run during the
+  bowler's run-up — dead ball, the batters back at their ends, five to the fielding side; no ball was bowled, so there
+  is no delivery in the log and no run to disallow: the award alone is the whole of it, and the fold expresses it
+  completely, unlike short running). To the batting side: `fielder_returning` (24.4), `keeper_movement` (27.4.2),
+  `fielder_movement` (28.6.3), `distracting_striker` (41.4 — in the 4th Edition "distract or obstruct", which takes in
+  a fielder, the bowler included, deliberately intercepting a delivery, 21.9), `obstructing_batter` (41.5),
+  `fielding_pitch_damage` (41.12). Either side: `practice_on_field` (26.4.2), `player_conduct` (Law 42), and
+  `ball_tampering` (41.3), which was the batting side's award only and is either side's offence.
+- **Renumbered:** short running 18.5 (18.5.2), not 41.5; a batter wasting time 41.10, not 41.17; a batter damaging the
+  pitch 41.14, not 41.12; unfair actions 41.2.1 (41.2.2 in the 3rd Edition), not 41.1 — and either side's. Penalty
+  runs themselves are 41.17 (41.17.4 for the fielding side's), not 41.18.
+- **Not built here, queued for the 4th Edition behaviour batch** (the award is recorded; the rest is not): a delivery
+  that does not count when 24.4, 28.2, 41.4 or 41.5 is applied (17.3.2.5); a delivery's runs disallowed on a second
+  offence (41.14.3, 41.15.3); awards after the result (41.17.2). 41.15 (the striker taking guard in or too near the
+  protected area) has no reason of its own yet: `other`, or Kameel's call.
+
+The clause numbers are in code comments and `PENALTY_REASON_TEXT` only: `penaltyReasonWords()` takes them off for
+every screen. The pad's free text
 from before the list closed is read as the reason it is (`normalisePenaltyReason`: "Deliberate time wasting" by the
 side the runs went to); the constructor refuses anything else. At commit (`lawsRefusal`): runs that are not a whole
 number above nought (`penalty_runs_invalid` — SCRBRD-090's last point), a reason not on the list
-(`penalty_reason_unknown`), one awarded to the side that committed it (`penalty_reason_side`), and any award to the
+(`penalty_reason_unknown`), a withdrawn one (`penalty_reason_withdrawn`), one awarded to the side that committed it
+(`penalty_reason_side`), and any award to the
 fielding side but a short run's once the match is decided (`match_decided`: it would move a target nobody is chasing).
 
 **SQL (db/48).** Every total that must agree with the fold now counts penalty runs as it does: `match_live_score`
@@ -634,6 +675,23 @@ Retired hurt is "retired, not out" (Law 25.4.2): he may come back. The fold now 
 `batters` event names him — status batting, no dismissal line, his runs and balls going on from where he left them. A
 retirement the Laws read as out (an unmarked legacy `retire` "out", which wrote "retired out") is left as it was; the
 Laws refuse that return anyway. SQL never read the retirement (its figures come from the balls), so nothing there moves.
+
+**When he may come back.** Only "at the fall of a wicket or the retirement of another batter" (Law 25.4.4). The fold records each retirement that is not out in `inn.retirements` — who, why,
+the innings' wickets when he went, and the ball — and `lawsRefusal` takes a `batters` event naming a batter retired
+hurt only if, since his latest retirement, the wickets have moved or another batter has retired; otherwise
+`resume_not_yet`. An end is only ever empty after a wicket or a retirement, so what this refuses is his walking
+straight back into the vacancy his own retirement made. A wicket with no ball (retired out, timed out) counts; two
+batters off at once — the first may return at the second's retirement, the second may not. The pad's batting-order
+sheet lists under "Retired hurt — may resume" exactly those the Laws take (`resumeChoices()` in
+`apps/web/src/scorer/retire.js`); it used to leave out only "the one who has just retired", a rule of its own.
+
+**Not once the innings is over.** A retirement (hurt, or an unmarked legacy one) in an innings that is over is
+refused `innings_over`, and in one that is sealed `innings_closed` — the same codes, in the same order, as a
+dismissal with no ball.
+
+Not modelled: the last batter retiring hurt with nobody left to come in. The Laws end the innings there; the fold
+does not derive that ending (`inningsOverReason` counts wickets, not retirements), and the Laws now refuse his
+walking straight back, as the pad's sheet never offered it.
 
 ## What kind of no-ball (`nbType`)
 

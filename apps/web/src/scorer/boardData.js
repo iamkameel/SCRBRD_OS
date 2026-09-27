@@ -12,10 +12,13 @@ import { RR, fmtOv } from "./format.js";
  * a chip (ui/board.jsx chipFor): "·", "1"–"6", "W", and the extras with their
  * word — a wide or a no-ball alone is "wd" / "nb", with runs it shows the
  * delivery's runs ("2wd", "5nb"); byes and leg byes their runs ("2b", "1lb").
+ * A no-ball's byes or leg byes are byes or leg byes (Law 21.15, db/52), not
+ * no-ball runs, so that no-ball says both: "nb+4b", "nb+1lb".
  */
 export function boardBall(b) {
   if (b.type === "W") return "W";
   if (b.type === "Wd") return b.value ? `${1 + b.value}wd` : "wd";
+  if (b.type === "Nb" && b.value && (b.nbRuns === "byes" || b.nbRuns === "leg_byes")) return `nb+${b.value}${b.nbRuns === "byes" ? "b" : "lb"}`;
   if (b.type === "Nb") return b.value ? `${1 + b.value}nb` : "nb";
   if (b.type === "Pen") return `+${b.value}`;
   if (b.type === "B") return `${b.value}b`;

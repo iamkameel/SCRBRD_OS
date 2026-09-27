@@ -10,7 +10,10 @@
  *     is "retired hurt", not out; the partnership ends; his figures stop; the
  *     end he left must be filled before the next ball.
  *   - When he walks back in, his line goes on.
- *   - The batting-order sheet that fills his end does not offer him back to it.
+ *   - Who may resume is the Laws' answer: only once a wicket has fallen or
+ *     another batter has retired since he went; the batting-order sheet
+ *     offers exactly those, so never him straight back to the end he left.
+ *   - No retirement once the innings is over.
  *   - The sheet as drawn: 12px type floor, 44px touch floor, no Law numbers.
  *
  *   node --import ./tools/register-jsx.mjs apps/web/test/retire-sheet.test.mjs
@@ -21,7 +24,7 @@ import {
   inningsStart, batters, bowler, ball, BALL_TYPE, REFUSAL, KIND, RETIRE_REASON, lawsRefusal, scoringReadiness, SCORING_BLOCK,
 } from "@scrbrd/scoring";
 import { foldPad, withAppended } from "../src/scorer/penalty.js";
-import { END_WORDS, retireChoices, retireHurtEvent, retireRefusal, retireRefusalWords } from "../src/scorer/retire.js";
+import { END_WORDS, resumeChoices, resumeEvent, resumeRefusal, retireChoices, retireHurtEvent, retireRefusal, retireRefusalWords } from "../src/scorer/retire.js";
 import { RetireSheet } from "../src/scorer/retireSheet.jsx";
 import { BattingOrderSheet } from "../src/scorer/sheets.jsx";
 
@@ -116,16 +119,56 @@ group("The fold after a retirement mid-over, and after his return");
   ok("...and one wicket in the innings, a2's: the retirement never counted", fin.wickets === 1);
 }
 
-group("The sheet that fills his end");
+group("Who may resume: the Laws' answer, and the sheet that fills his end");
 {
   const logs = withEv([log0, []], retireHurtEvent(0, "a1"));
-  const inn = match(logs).innings[0];
+  const m = match(logs);
+  ok("straight back into the end he has just left: refused, in words",
+     resumeRefusal(m, 0, "a1") === REFUSAL.RESUME_NOT_YET
+     && retireRefusalWords(REFUSAL.RESUME_NOT_YET) === "He can resume only once a wicket has fallen or another batter has retired.");
+  ok("...so he is not among those who may resume", resumeChoices(m, 0).length === 0);
+  ok("...the event it would send goes to the empty end", resumeEvent(m, 0, "a1").striker === "a1"
+     && resumeEvent(m, 0, "a1", false).nonStriker === "a1");
+
+  const inn = m.innings[0];
   const props = { squad: SQ_A, batsmen: inn.batsmen, teamKey: null, twelfthMan: null, onSend() {}, onClose() {} };
-  const plain = renderToStaticMarkup(h(BattingOrderSheet, props));
-  ok("without being told, it lists him as able to resume", /data-testid="resume-a1"/.test(plain));
-  const filling = renderToStaticMarkup(h(BattingOrderSheet, { ...props, notResuming: "a1" }));
-  ok("filling the end he has just left, it does not offer him back to it", !/data-testid="resume-a1"/.test(filling)
-     && /data-testid="batter-choice"/.test(filling));
+  const filling = renderToStaticMarkup(h(BattingOrderSheet, { ...props, resumable: resumeChoices(m, 0) }));
+  ok("filling the end he has just left, the sheet does not offer him back to it", !/data-testid="resume-a1"/.test(filling)
+     && !/data-testid="resume-list"/.test(filling) && /data-testid="batter-choice"/.test(filling));
+  const untold = renderToStaticMarkup(h(BattingOrderSheet, props));
+  ok("...and not told whom the Laws take, it offers nobody", !/data-testid="resume-list"/.test(untold));
+
+  // a3 comes in; a2 is run out: a wicket has fallen since a1 went.
+  const on = withEv(logs, batters({ innings: 0, striker: "a3" }), runs(0),
+    ball({ innings: 0, type: BALL_TYPE.WICKET, dismissal: "run_out", dismissed: "a2" }));
+  const after = match(on);
+  ok("after a wicket he may resume", resumeRefusal(after, 0, "a1") === null
+     && resumeChoices(after, 0).map((b) => b.id).join() === "a1", resumeChoices(after, 0).map((b) => b.id));
+  const offered = renderToStaticMarkup(h(BattingOrderSheet, { ...props, batsmen: after.innings[0].batsmen, resumable: resumeChoices(after, 0) }));
+  ok("...and the sheet offers him", /data-testid="resume-a1"/.test(offered) && /R Pillay resumes/.test(offered));
+  const resume44 = [...offered.matchAll(/<button[^>]*data-testid="resume-[^"]*"[^>]*>/g)].map((x) => Number(x[0].match(/min-height:\s*(\d+)px/)?.[1] ?? 0));
+  ok("...at 44px or taller", resume44.length === 1 && resume44[0] >= 44, resume44);
+
+  // a3 retires hurt instead: another batter's retirement lets a1 back, not a3.
+  const a3Off = withEv(logs, batters({ innings: 0, striker: "a3" }), runs(0), retireHurtEvent(0, "a3"));
+  ok("after another batter retires, he may resume; the one who has just gone may not",
+     resumeChoices(match(a3Off), 0).map((b) => b.id).join() === "a1" && resumeRefusal(match(a3Off), 0, "a3") === REFUSAL.RESUME_NOT_YET);
+}
+
+group("No retirement once the innings is over");
+{
+  // Five overs of dots: over by the overs, both batters still in.
+  let full = [log0, []];
+  for (let o = 0; o < 5; o++) {
+    if (o > 0) full = withEv(full, bowler({ innings: 0, bowler: o % 2 ? "b2" : "b1" }));
+    const need = o === 0 ? 3 : 6;
+    for (let k = 0; k < need; k++) full = withEv(full, runs(0));
+  }
+  const m = match(full);
+  ok("the overs are done", m.innings[0].complete === true && m.innings[0].striker != null, [m.innings[0].balls, m.innings[0].complete]);
+  const choices = retireChoices(m, 0);
+  ok("each batter is refused: the innings is over, in words",
+     choices.length === 2 && choices.every((c) => c.code === REFUSAL.INNINGS_OVER && c.words === "This innings is over."), choices);
 }
 
 group("The sheet as drawn: floors, no Law numbers");

@@ -353,8 +353,12 @@ try {
      nbRow?.value === 2 && nbRow?.payload?.nbRuns === "leg_byes", JSON.stringify(nbRow && { value: nbRow.value, payload: nbRow.payload }));
   const faced = lb.inn.batsmen.find((b) => b.id === nbStriker);
   ok("...the striker faced it and has none of the two", faced?.runs === runsBefore && faced?.balls === ballsBefore + 1);
-  ok("...the side has three, all no-ball extras", lb.inn.runs === over2.inn.runs + 3 && lb.inn.extras.noBall === over2.inn.extras.noBall + 3);
-  ok("...the bowler is charged all three", lb.inn.bowlers.find((b) => b.id === "C Mthembu")?.runs === 3);
+  // Law 21.15 (db/52): the no-ball's run is a no-ball extra and the bowler's;
+  // the two run are leg byes, and not the bowler's.
+  ok("...the side has three: one no-ball extra and two leg byes", lb.inn.runs === over2.inn.runs + 3
+     && lb.inn.extras.noBall === over2.inn.extras.noBall + 1 && lb.inn.extras.legBye === over2.inn.extras.legBye + 2);
+  const mthembu = (/** @type {any} */ inn) => inn.bowlers.find((/** @type {any} */ b) => b.id === "C Mthembu")?.runs ?? 0;
+  ok("...the bowler is charged the no-ball's run only", mthembu(lb.inn) === mthembu(over2.inn) + 1);
   ok("...two run, so the striker kept strike", lb.inn.striker === nbStriker);
 
   await click(/^(NB|No ball)/, 3000);
@@ -474,6 +478,18 @@ try {
   ok(`the career read charges the bowler the no-ball: +${moved(careerMid, careerEnd, homeBowler, "runs_conceded")} conceded (the card says ${card?.runs}), no legal ball`,
      card?.runs === 2 && moved(careerMid, careerEnd, homeBowler, "runs_conceded") === card.runs
      && moved(careerMid, careerEnd, homeBowler, "balls_bowled") === 0);
+  // Two byes off the next no-ball (Law 21.15, db/52): the side's three, the
+  // bowler's one — on the card and in the career read alike.
+  await click(/^(NB|No ball)/, 3000);
+  await page.waitForTimeout(400);
+  await tap("nb-runs-byes");
+  await tap("extra-run-2");
+  const nb3 = await agree("after a no-ball and two byes in the second innings", 1);
+  const careerByes = await careerRead();
+  const card3 = nb3.inn.bowlers.find((b) => b.id === homeBowler);
+  ok(`...two byes off a no-ball are not his: +${moved(careerEnd, careerByes, homeBowler, "runs_conceded")} conceded (the card says ${card3?.runs})`,
+     card3?.runs === 3 && moved(careerEnd, careerByes, homeBowler, "runs_conceded") === 1
+     && nb3.inn.extras.bye === nb2.inn.extras.bye + 2 && nb3.inn.runs === nb2.inn.runs + 3);
 
   ok("no console errors on the pad", errors.length === 0, errors.slice(0, 3).join(" | "));
 } catch (e) {

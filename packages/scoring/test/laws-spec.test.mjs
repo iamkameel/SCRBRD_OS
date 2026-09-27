@@ -170,35 +170,83 @@ group("C. Crease occupancy after a wicket");
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// D. Byes and leg byes off a no-ball are not the striker's (SCRBRD-068)
-//    (AG: liveProjectionRules.test.ts; Law 21, Law 23)
+// D. Byes and leg byes off a no-ball are not the striker's, nor the bowler's
+//    (SCRBRD-068; AG: liveProjectionRules.test.ts; Law 21.15, Law 23)
 //
 // A no-ball records the runs completed in `value` and, when they did not
-// come off the bat, `nbRuns: "byes" | "leg_byes"`. By the Laws they are
-// No-ball extras, and every run of a no-ball is debited to the bowler; the
-// striker gets the ball faced and none of the runs.
+// come off the bat, `nbRuns: "byes" | "leg_byes"`. By the current Code
+// (2017 Code, 4th Edition 2026, 21.15 and 18.10.2–18.10.3; 21.16 in the
+// 3rd): the one-run penalty is a No-ball extra
+// debited to the bowler; runs off the bat are the striker's and debited to
+// the bowler; runs not off the bat are Byes or Leg byes, as appropriate, and
+// not debited to the bowler. The no-ball is not a legal ball, the striker has
+// faced it, and the runs completed move the strike. (SCRBRD-068 was first
+// built to the 2000 Code, where all of them were No-ball extras and the
+// bowler's; Kameel moved it to the current Code on 2026-09-27, db/52.)
 // ═══════════════════════════════════════════════════════════════════════
-group("D. No-ball byes and leg byes (SCRBRD-068)");
+group("D. No-ball byes and leg byes (SCRBRD-068, Law 21.15)");
 {
-  for (const nbRuns of /** @type {const} */ (["byes", "leg_byes"])) {
-    const inn = deriveInnings([...open(), ball({ type: BALL_TYPE.NO_BALL, value: 3, nbRuns })]);
-    const p1 = inn.batsmen.find((b) => b.id === "p1");
-    const w1 = inn.bowlers.find((b) => b.id === "w1");
-    ok(`${nbRuns}: the side has the penalty and the three`, inn.runs === 4);
-    ok(`${nbRuns}: all four are no-ball extras, none are byes`, inn.extras.noBall === 4 && inn.extras.bye === 0 && inn.extras.legBye === 0);
-    ok(`${nbRuns}: the striker faced it and scored none of it`, p1?.balls === 1 && p1?.runs === 0);
-    ok(`${nbRuns}: the bowler is charged all four, and no legal ball`, w1?.runs === 4 && w1?.balls === 0 && w1?.noBalls === 1);
-    ok(`${nbRuns}: three run is an odd number — they crossed`, inn.striker === "p2" && inn.nonStriker === "p1");
-    ok(`${nbRuns}: and it is still a free hit`, inn.freeHit === true);
+  /** The figures a check reads, from one innings. @param {ReturnType<typeof deriveInnings>} inn */
+  const read = (inn) => {
+    const p1 = inn.batsmen.find((b) => b.id === "p1"), w1 = inn.bowlers.find((b) => b.id === "w1");
+    return /** @type {Record<string, unknown>} */ ({
+      total: inn.runs, ...inn.extras, batRuns: p1?.runs, batBalls: p1?.balls, fours: p1?.fours,
+      bowlRuns: w1?.runs, bowlBalls: w1?.balls, noBalls: w1?.noBalls, striker: inn.striker, freeHit: inn.freeHit });
+  };
+  /** Only the named fields, so a case says what it is about — and prints them when it fails.
+   *  @param {string} n @param {Record<string, unknown>} got @param {Record<string, unknown>} want */
+  const is = (n, got, want) => {
+    const pass = Object.entries(want).every(([k, v]) => got[k] === v);
+    ok(pass ? n : `${n} — got ${JSON.stringify(Object.fromEntries(Object.keys(want).map((k) => [k, got[k]])))}`, pass);
+  };
+
+  // Three run, not off the bat: odd, so they crossed.
+  for (const [nbRuns, kind, other] of /** @type {const} */ ([["byes", "bye", "legBye"], ["leg_byes", "legBye", "bye"]])) {
+    const got = read(deriveInnings([...open(), ball({ type: BALL_TYPE.NO_BALL, value: 3, nbRuns })]));
+    is(`no-ball + 3 ${nbRuns}: the side has the penalty and the three`, got, { total: 4 });
+    is(`...one no-ball extra, and the three are ${nbRuns}`, got, { noBall: 1, [kind]: 3, [other]: 0, wide: 0 });
+    is(`...${nbRuns}: the striker faced it and scored none of it`, got, { batRuns: 0, batBalls: 1, fours: 0 });
+    is(`...${nbRuns}: the bowler is charged the penalty run only, no legal ball, one no-ball`, got, { bowlRuns: 1, bowlBalls: 0, noBalls: 1 });
+    is(`...${nbRuns}: three run is odd, they crossed; a free hit to come`, got, { striker: "p2", freeHit: true });
   }
-  const four = deriveInnings([...open(), ball({ type: BALL_TYPE.NO_BALL, value: 4, nbRuns: "byes" })]);
-  const p1 = four.batsmen.find((b) => b.id === "p1");
-  ok("four byes off a no-ball are not the striker's four", p1?.fours === 0 && p1?.runs === 0);
-  const hit = deriveInnings([...open(), ball({ type: BALL_TYPE.NO_BALL, value: 4 })]);
-  const h1 = hit.batsmen.find((b) => b.id === "p1");
-  ok("...a no-ball hit for four is, as it always was", h1?.fours === 1 && h1?.runs === 4 && hit.extras.noBall === 1);
-  ok("...and the side's total and the bowler's figures are the same either way",
-     four.runs === hit.runs && four.bowlers[0].runs === hit.bowlers[0].runs);
+
+  // Four byes and four leg byes to the rope: a boundary allowance, not his four.
+  for (const [nbRuns, kind] of /** @type {const} */ ([["byes", "bye"], ["leg_byes", "legBye"]])) {
+    const got = read(deriveInnings([...open(), ball({ type: BALL_TYPE.NO_BALL, value: 4, nbRuns })]));
+    is(`no-ball + four ${nbRuns}: five to the side, one no-ball extra and four ${nbRuns}`, got, { total: 5, noBall: 1, [kind]: 4 });
+    is(`...${nbRuns}: not the striker's four, and not the bowler's four`, got, { batRuns: 0, fours: 0, batBalls: 1, bowlRuns: 1 });
+    is(`...${nbRuns}: a boundary is not run, the ends are as they were`, got, { striker: "p1", freeHit: true });
+  }
+
+  // Hit: unchanged — the striker's, and debited to the bowler.
+  const hit4 = read(deriveInnings([...open(), ball({ type: BALL_TYPE.NO_BALL, value: 4 })]));
+  is("no-ball hit for four: his four, one no-ball extra, no byes", hit4, { total: 5, noBall: 1, bye: 0, legBye: 0, batRuns: 4, fours: 1, batBalls: 1 });
+  is("...and the bowler is charged all five", hit4, { bowlRuns: 5, bowlBalls: 0, noBalls: 1, striker: "p1" });
+  const hit1 = read(deriveInnings([...open(), ball({ type: BALL_TYPE.NO_BALL, value: 1 })]));
+  is("no-ball hit for one: his run, the bowler two, and they crossed", hit1, { total: 2, noBall: 1, bye: 0, batRuns: 1, bowlRuns: 2, striker: "p2" });
+
+  // The side's total is the same whichever it was; the rest is not.
+  const byes4 = read(deriveInnings([...open(), ball({ type: BALL_TYPE.NO_BALL, value: 4, nbRuns: "byes" })]));
+  ok("the side's total is the same, hit or byes", byes4.total === hit4.total);
+  ok("...the bowler's runs are not: 1 for four byes, 5 for a four off the bat", byes4.bowlRuns === 1 && hit4.bowlRuns === 5);
+
+  // On a free hit: a no-ball earns it; a no-ball on it (byes, leg byes, hit)
+  // keeps it; the next legal ball takes it.
+  const fh = read(deriveInnings([...open(),
+    ball({ type: BALL_TYPE.NO_BALL, value: 0 }),                         // earns the free hit
+    ball({ type: BALL_TYPE.NO_BALL, value: 2, nbRuns: "byes" }),         // on it: two byes
+    ball({ type: BALL_TYPE.NO_BALL, value: 4, nbRuns: "leg_byes" }),     // on it: four leg byes
+    ball({ type: BALL_TYPE.NO_BALL, value: 1 }),                         // on it: a single off the bat
+  ]));
+  is("free hit: four no-balls, 1 + 3 + 5 + 2 to the side", fh, { total: 11 });
+  is("...four no-ball extras, two byes, four leg byes", fh, { noBall: 4, bye: 2, legBye: 4, wide: 0 });
+  // Two byes are even and four leg byes a boundary, so p1 faced all four.
+  is("...p1 faced all four and has the single off the bat only", fh, { batRuns: 1, batBalls: 4, fours: 0 });
+  is("...the bowler: the four penalty runs and the single, no legal ball", fh, { bowlRuns: 5, bowlBalls: 0, noBalls: 4 });
+  is("...one run moved the strike, and it is still a free hit", fh, { striker: "p2", freeHit: true });
+  const taken = read(deriveInnings([...open(),
+    ball({ type: BALL_TYPE.NO_BALL, value: 0 }), ball({ type: BALL_TYPE.NO_BALL, value: 2, nbRuns: "byes" }), dot()]));
+  is("...and a legal ball takes the free hit", taken, { freeHit: false, bowlBalls: 1, bowlRuns: 2, bye: 2, noBall: 2, batBalls: 3 });
 }
 
 // ═══════════════════════════════════════════════════════════════════════

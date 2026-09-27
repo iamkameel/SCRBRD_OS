@@ -91,6 +91,7 @@ const EXTRA_WORD = { wd: ["wide", "wides"], nb: ["no ball", "no ball"], b: ["bye
  *   1 2 3 4 6   the prototype's colours; a 5 (and anything past 6) takes the four's
  *   W           a solid white chip, a black W — the strongest mark in every palette
  *   wd nb b lb  the wide's colour, with the word: "2wd", "nb", "5nb", "2b", "1lb"
+ *   nb+4b       a no-ball and the byes or leg byes run off it (Law 21.15): "nb+4b", "nb+1lb"
  *
  * Every chip carries its figure or its word, so colour is never the only
  * signal (WCAG 1.4.1).
@@ -103,6 +104,14 @@ export function chipFor(mark) {
     const n = Number(m);
     const kind = n === 1 ? "one" : n === 2 ? "two" : n === 3 ? "three" : n === 6 ? "six" : "four";
     return { kind, text: m, say: n === 1 ? "1 run" : `${n} runs` };
+  }
+  // A no-ball with byes or leg byes off it: its penalty run and those runs
+  // are different extras (Law 21.15), so the chip says both.
+  const nbx = m.match(/^nb\+(\d+)(lb|b)$/i);
+  if (nbx) {
+    const n = Number(nbx[1]);
+    const [one, many] = EXTRA_WORD[nbx[2].toLowerCase()];
+    return { kind: "extra", text: m, say: `no ball, ${n} ${n === 1 ? one : many}` };
   }
   const x = m.match(/^(\d*)(wd|nb|lb|b)$/i);
   if (x) {

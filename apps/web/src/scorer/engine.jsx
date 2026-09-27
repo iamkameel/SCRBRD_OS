@@ -22,7 +22,7 @@ import { crease, deliveryEvents, noBallEvent } from "./delivery.js";
 import { PenaltySheet } from "./penaltySheet.jsx";
 import { ReportOffer, SuspendSheet } from "./suspendSheet.jsx";
 import { RetireSheet } from "./retireSheet.jsx";
-import { retireHurtEvent } from "./retire.js";
+import { retireHurtEvent, resumeChoices } from "./retire.js";
 import { bowlerToSuspend, replacementEvent, suspendEvent, suspensionRefusalWords, suspensionsInMatch } from "./suspension.js";
 import { MenuItem, MenuSection, PadMenu } from "./padMenu.jsx";
 import { ExitKey, Pad, PadBoard } from "./pad.jsx";
@@ -1477,7 +1477,8 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
   // never an interrupt (§1a). retire() with reason "hurt" carries no W
   // marker, so it is not a wicket: the wickets, the over and the bowler do not
   // move, and no wicket moment plays. The end he left is filled at once
-  // through the batting-order sheet, which does not offer him back to it.
+  // through the batting-order sheet, which does not offer him back to it:
+  // the Laws do not take him until a wicket falls or another batter retires.
   // The sheet asked the Laws before it offered him; asked again here, at the
   // tap, against the log as it is — the server asks the same.
   const recordRetireHurt=(id)=>{
@@ -1485,7 +1486,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
     if(padLock||lawsRefusal({innings,events},ev))return;
     emit(ev);
     resetHub();
-    setModalCtx({justRetired:id});
+    setModalCtx({});
     setModal("newBatsman");
   };
   // The umpires' revision goes into the log like a ball. Everything that
@@ -1620,6 +1621,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
         twelfthMan={inn?.twelfthMan}
         header={canDeclare?<CaptureProfilePicker value={inn.declaredProfile} onChange={declareCapture}/>:null}
         onTimedOut={canTimeOut?recordTimedOut:null}
+        resumable={resumeChoices({innings,events},curIn)}
         onSend={name=>{
           const hasStriker=!!(inn?.striker);
           const hasNonStriker=!!(inn?.nonStriker);
@@ -1672,7 +1674,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
           teamKey={inn?.teamKey}
           twelfthMan={inn?.twelfthMan}
           onTimedOut={canTimeOut?recordTimedOut:null}
-          notResuming={modalCtx?.justRetired??null}
+          resumable={resumeChoices({innings,events},curIn)}
           onSend={name=>{
             // To the END THAT IS EMPTY. This sent every new batter to the
             // striker's end, which is right only when the striker was out
@@ -1772,6 +1774,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
         batsmen={inn?.batsmen||[]}
         teamKey={inn?.teamKey}
         twelfthMan={inn?.twelfthMan}
+        resumable={resumeChoices({innings,events},curIn,true)}
         onSend={name=>{addBatsman(name,true);setModal(null);}}
         onClose={()=>setModal(null)}/>
     );

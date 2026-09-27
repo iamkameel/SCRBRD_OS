@@ -28,15 +28,18 @@
  *   - a batter SCRBRD holds no row for — a typed name — at either end, and
  *     run out at the other one (payload.dismissed: nobody here, never the
  *     striker);
- *   - no-balls hit for four and six, their byes and leg byes to the rope,
- *     wides worth four, byes and leg byes worth four, a wicket ball with runs;
+ *   - no-balls hit for four and six, their byes and leg byes run and to the
+ *     rope, on a free hit and off it — byes and leg byes, not the bowler's
+ *     (Law 21.15, db/52) — wides worth four, byes and leg byes worth four, a
+ *     wicket ball with runs;
  *   - legacy rows, written past db/43's door as a row stored before it
  *     would have been: a ball with no type (a run, to the fold) and a wicket
  *     with no method (a wicket, nobody's — and saved on a free hit);
  *   - free hits, voids, retirements, typed-name bowlers;
  *   - a batter retiring hurt as the pad records it (SCRBRD-071): the pad's
  *     own builder, retire({batter, reason: "hurt"}), asked of the Laws
- *     first, mid-over, his end filled at once, and — later — him walking
+ *     first, mid-over, his end filled at once, and — later, once a wicket
+ *     has fallen or another batter has retired, as the Laws allow — him walking
  *     back in. Not a wicket, so no career may count it as a dismissal.
  *
  * And the door itself: a new ball with no type, or a wicket with no
@@ -106,7 +109,7 @@ const SUSPENSION_REASONS = ["beamers", "short_pitched", "deliberate_no_ball", "p
 // fourth, for the same reason.
 let s4 = 7171;
 const rnd4 = () => (s4 = (s4 * 1103515245 + 12345) % 2147483648) / 2147483648;
-const gen = { suspensions: 0, splitOvers: 0, hurtReturns: 0, padRetires: 0, padMidOver: 0, padReturns: 0 };
+const gen = { suspensions: 0, splitOvers: 0, hurtReturns: 0, padRetires: 0, padMidOver: 0, padReturns: 0, hurtWaits: 0, hurtRefused: 0 };
 /** @template T @param {T[]} xs @returns {T} */
 const pick = (xs) => xs[Math.floor(rnd() * xs.length)];
 /** @template T @param {T[]} xs */
@@ -134,8 +137,20 @@ function builder(no, overs, o = {}) {
   /** @type {Set<string>} */ const suspended = new Set();
   // Retired hurt as the pad records it; and the one who just went off, whom
   // the pad's batting-order sheet does not offer back to the end he left.
+  // (The Laws say that now — fill() asks them — but `justRetired` still
+  // gates the draw below, so the random stream is the one it always was.)
   /** @type {Set<string>} */ const padRetired = new Set();
   /** @type {string | null} */ let justRetired = null;
+  /**
+   * The Laws' answer for an event at this point of the innings, as the pad
+   * asks it: the fold so far, in its own innings' slot.
+   * @param {any} e
+   */
+  const refused = (e) => {
+    /** @type {any[]} */ const innings = [];
+    innings[no] = now();
+    return lawsRefusal({ innings, events: [] }, { innings: no, ...e });
+  };
   /** Who bowled any of the over before the one the next ball is in (Law 17.8). */
   const lastOver = () => {
     const at = now(), over = Math.floor(at.balls / 6);
@@ -203,14 +218,23 @@ function builder(no, overs, o = {}) {
       // Now and then a batter who retired hurt walks back in (SCRBRD-071):
       // his line goes on, and SQL — which never read the retirement — must
       // still agree with it.
-      const hurt = at.wickets < 10 && at.batsmen.find((x) => x.status === "retired" && x.dismissal === "retired hurt"
-        && x.id !== at.striker && x.id !== at.nonStriker && x.id !== justRetired);
-      if (hurt && (at.striker == null || at.nonStriker == null) && rnd3() < 0.6) {
-        push(at.striker == null ? { kind: "batters", striker: hurt.id } : { kind: "batters", nonStriker: hurt.id });
-        gen.hurtReturns++;
-        if (padRetired.has(hurt.id)) gen.padReturns++;
-        justRetired = null;
-        return;
+      // Only one the Laws take back: once a wicket has fallen or another
+      // batter has retired since he went (SCRBRD-071) — never straight back
+      // into the end he left. Asked after the draw, so the stream is as it
+      // was; one the Laws refuse waits, and the next batter in comes instead.
+      const hurtOnes = at.wickets < 10 ? at.batsmen.filter((x) => x.status === "retired" && x.dismissal === "retired hurt"
+        && x.id !== at.striker && x.id !== at.nonStriker && x.id !== justRetired) : [];
+      if (hurtOnes.length > 0 && (at.striker == null || at.nonStriker == null) && rnd3() < 0.6) {
+        const back = (/** @type {string} */ id) => (at.striker == null ? { kind: "batters", striker: id } : { kind: "batters", nonStriker: id });
+        const hurt = hurtOnes.find((x) => refused(back(x.id)) === null);
+        if (hurt) {
+          push(back(hurt.id));
+          gen.hurtReturns++;
+          if (padRetired.delete(hurt.id)) gen.padReturns++;   // back from THIS retirement: counted once
+          justRetired = null;
+          return;
+        }
+        gen.hurtWaits++;
       }
       justRetired = null;
       if (at.wickets >= 10 || next >= order.length) return;
@@ -222,6 +246,10 @@ function builder(no, overs, o = {}) {
       const at = now();
       if (at.striker == null || at.nonStriker == null) return;
       const batter = pick([at.striker, at.nonStriker]);
+      // Retired hurt is asked of the Laws (after the pick, so the stream is
+      // as it was): none once the innings is over — a chase won, here, which
+      // this generator plays on past.
+      if (how === "hurt" && refused({ kind: "retire", batter, reason: "hurt" }) !== null) { gen.hurtRefused++; return; }
       push(how === "out" ? { kind: "retire", batter, reason: "out", type: "W", dismissal: "retired_out" }
                          : { kind: "retire", batter, reason: "hurt" });
     },
@@ -245,12 +273,14 @@ function builder(no, overs, o = {}) {
       if (at.balls % 6 > 0) gen.padMidOver++;
       return push(ev);
     },
-    /** A batter back from retired hurt, at the empty end. @param {string} id */
+    /** A batter back from retired hurt, at the empty end — one the Laws take. @param {string} id */
     comeBack(id) {
       const at = now();
-      push(at.striker == null ? { kind: "batters", striker: id } : { kind: "batters", nonStriker: id });
+      const e = at.striker == null ? { kind: "batters", striker: id } : { kind: "batters", nonStriker: id };
+      if (refused(e) !== null) throw new Error(`the Laws refused the written-out return: ${refused(e)}`);
+      push(e);
       gen.hurtReturns++;
-      if (padRetired.has(id)) gen.padReturns++;
+      if (padRetired.delete(id)) gen.padReturns++;
     },
     timedOut() {
       if (next >= order.length - 1 || now().wickets >= 9) return;
@@ -353,6 +383,8 @@ const EDGES = [
   [["run:2", "RO:ns:0"],                          [P1, TYPED[0], P3], "a typed-name batter run out at the other end: not the striker's dismissal"],
   [["run:0", "RO:ns:1:bowler_end"],               [TYPED[0], P2, P3], "a typed-name striker, a player run out at the other end"],
   [["Nb:4", "Nb:4:byes", "Nb:6:leg_byes", "Nb:6"], [P1, P2, P3], "no-balls: four and six off the bat are his, byes to the rope are not"],
+  [["Nb:0", "Nb:1:byes", "Nb:2:leg_byes", "Nb:4:leg_byes", "Nb:3:byes", "run:0"], [P1, P2, P3],
+   "no-balls on a free hit, byes and leg byes run and to the rope: neither the batter's nor the bowler's (Law 21.15)"],
   [["Wd:4", "B:4", "LB:4", "run:4"],              [P1, P2, P3], "a wide worth four, byes and leg byes worth four: only the hit is a four"],
   [["W:run_out:3", "run:0"],                      [P1, P2, P3], "a wicket ball with three run: his runs, no boundary"],
   [["noType:2", "noType:4", "noType:0", "noType:6"], [P1, P2, P3], "balls with no type: runs, a four, a dot and a six"],
@@ -400,7 +432,8 @@ function expected(byInnings) {
     /** @type {Map<string, any>} */ opp: new Map(),
     /** @type {Map<string, any>} */ matchups: new Map(),
     totals: { runs: 0, wickets: 0, balls: 0 },
-    cases: { nsRunOut: 0, nsBeforeFacing: 0, typedOut: 0, nbBoundaryOffBat: 0, nbByesToRope: 0, wideFour: 0, byeFour: 0,
+    cases: { nsRunOut: 0, nsBeforeFacing: 0, typedOut: 0, nbBoundaryOffBat: 0, nbByesToRope: 0, nbByesRun: 0, nbLegByesRun: 0,
+             nbLegByesToRope: 0, nbByesOnFreeHit: 0, wideFour: 0, byeFour: 0,
              wicketWithRuns: 0, noType: 0, noMethod: 0, noMethodSaved: 0, saved: 0, voids: 0 },
   };
   const oppOf = (/** @type {string} */ p) => at(e.opp, p, () => ({ innings: 0, balls: 0, runs: 0, dismissals: 0, fours: 0, sixes: 0,
@@ -429,10 +462,17 @@ function expected(byInnings) {
       const o = oppOf(w.id); o.ballsBowled += w.balls; o.runsConceded += w.runs; o.wickets += w.wickets;
     }
     /** @type {Set<string>} */ const hasFaced = new Set();
+    let onFreeHit = false;   // the fold's rule: a no-ball earns it, a legal ball takes it
     for (const x of inn.ballLog) {
       const type = x.type ?? "run";
       const legal = isLegal(type);
       const value = x.value ?? 0;
+      if (type === "Nb" && x.nbRuns && value > 0) {
+        if (value < 4) { if (x.nbRuns === "byes") e.cases.nbByesRun++; else e.cases.nbLegByesRun++; }
+        else if (x.nbRuns === "leg_byes") e.cases.nbLegByesToRope++;
+        if (onFreeHit) e.cases.nbByesOnFreeHit++;
+      }
+      onFreeHit = type === "Nb" ? true : legal ? false : onFreeHit;
       if (x.type == null) e.cases.noType++;
       if (type === "Nb" && runsOffBat(x) >= 4) e.cases.nbBoundaryOffBat++;
       if (type === "Nb" && runsOffBat(x) === 0 && value >= 4) e.cases.nbByesToRope++;
@@ -728,12 +768,15 @@ try {
   console.log(`  ${e.totals.wickets} wickets: ${c.nsRunOut} of a player at the non-striker's end (${c.nsBeforeFacing} before he faced), ` +
               `${c.typedOut} of a typed name at the other end, ${c.wicketWithRuns} with runs; ${c.noMethod} with no method ` +
               `(${c.noMethodSaved} saved by a free hit), ${c.saved} saved in all; ${c.noType} balls with no type; ` +
-              `no-balls ${c.nbBoundaryOffBat} to the rope off the bat, ${c.nbByesToRope} in byes; ${c.wideFour} wides and ` +
+              `no-balls ${c.nbBoundaryOffBat} to the rope off the bat, ${c.nbByesToRope} in byes, ${c.nbLegByesToRope} of them leg byes; ` +
+              `${c.nbByesRun} no-balls with byes run and ${c.nbLegByesRun} with leg byes run, ${c.nbByesOnFreeHit} of all those on a free hit; ${c.wideFour} wides and ` +
               `${c.byeFour} byes worth four; ${c.voids} voids`);
   // Not vacuous: the logs hold every case db/43 is about.
   ok(`...run outs at the non-striker's end (${c.nsRunOut}), before he faced (${c.nsBeforeFacing})`, c.nsRunOut >= 20 && c.nsBeforeFacing >= 3);
   ok(`...a typed name run out at the other end (${c.typedOut})`, c.typedOut >= 1);
   ok(`...no-ball boundaries off the bat (${c.nbBoundaryOffBat}) and byes to the rope (${c.nbByesToRope})`, c.nbBoundaryOffBat >= 5 && c.nbByesToRope >= 5);
+  ok(`...no-ball byes run (${c.nbByesRun}), leg byes run (${c.nbLegByesRun}) and to the rope (${c.nbLegByesToRope}), on a free hit (${c.nbByesOnFreeHit})`,
+     c.nbByesRun >= 5 && c.nbLegByesRun >= 5 && c.nbLegByesToRope >= 3 && c.nbByesOnFreeHit >= 3);
   ok(`...wides worth four (${c.wideFour}), byes worth four (${c.byeFour})`, c.wideFour >= 5 && c.byeFour >= 5);
   ok(`...balls with no type (${c.noType}), wickets with no method (${c.noMethod}, ${c.noMethodSaved} on a free hit)`,
      c.noType >= 10 && c.noMethod >= 5 && c.noMethodSaved >= 1);
@@ -759,6 +802,30 @@ try {
      gen.hurtReturns >= 2 && [...byInnings.values()].some((inn) => inn.batsmen.some((x) => x.status !== "retired"
        && rows.some((r) => r.kind === "retire" && r.innings === [...byInnings.keys()].find((k) => byInnings.get(k) === inn)
          && (r.payload?.batter === x.id) && r.ball_type == null))));
+  // Every retirement hurt and every return from one in these logs is one the
+  // Laws take (SCRBRD-071): none once the innings is over, and nobody straight
+  // back into the end he left. Asked of each, at its own point in its log.
+  /** @type {string[]} */ const lawless = [];
+  let judgedRetire = 0, judgedReturn = 0;
+  for (const log of logs) {
+    for (let k = 0; k < log.length; k++) {
+      const x = log[k];
+      if (x.kind !== "retire" && x.kind !== "batters") continue;
+      if (x.kind === "retire" && x.type === "W") continue;
+      const before = deriveInnings(log.slice(0, k));
+      const returning = x.kind === "batters" && [x.striker, x.nonStriker].some((id) => before.batsmen.some((b) => b.id === id && b.status === "retired"));
+      if (x.kind === "batters" && !returning) continue;
+      if (x.kind === "retire") judgedRetire++; else judgedReturn++;
+      /** @type {any[]} */ const innings = [];
+      innings[x.innings] = before;
+      const why = lawsRefusal({ innings, events: [] }, x);
+      if (why) lawless.push(`${x.id} ${x.kind}: ${why}`);
+    }
+  }
+  console.log(`  ${judgedRetire} retirements hurt and ${judgedReturn} returns asked of the Laws; the generator held back ` +
+              `${gen.hurtWaits} returns the Laws would refuse and ${gen.hurtRefused} retirements in an innings already over`);
+  ok(`...every retirement hurt (${judgedRetire}) and every return (${judgedReturn}) is one the Laws take`,
+     lawless.length === 0 && judgedRetire >= 5 && judgedReturn >= 2, lawless.slice(0, 5));
 
   // SCRBRD-071: retired hurt as the pad records it. Stored as a retire with
   // no W marker, which every SQL reader of a career answers with nothing:

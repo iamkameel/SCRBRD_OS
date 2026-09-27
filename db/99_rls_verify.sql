@@ -456,7 +456,7 @@ BEGIN
   --    1  run 4                                    A 4, a four        -                 4
   --    2  no-ball, 4 off the bat                   A 4, a four        -                 5, a no-ball
   --    3  W lbw — on the free hit 2 earned         A faced it         SAVED             legal, no wicket
-  --    4  no-ball, 4 byes (nbRuns)                 A faced, 0         -                 5, a no-ball
+  --    4  no-ball, 4 byes (nbRuns)                 A faced, 0         -                 1, a no-ball (db/52)
   --    5  wide, 1                                  not faced          -                 2, a wide
   --    6  run 6 (the free hit, carried by 5)       A 6, a six         -                 6
   --    7  leg bye, 1                               A faced, 0         -                 legal, 0
@@ -469,7 +469,7 @@ BEGIN
   --   14  ... taken back by a void of 13           nothing            nothing           nothing
   --   15  retire, hurt, B (no W marker)            nothing            nothing           -
   -- One fixture: A 1 match, 14 runs, 7 balls, 2 fours, 1 six, 1 dismissal;
-  -- B 1 match, 2 runs, 2 balls, 2 dismissals; C 1 match, 25 conceded, 8 legal
+  -- B 1 match, 2 runs, 2 balls, 2 dismissals; C 1 match, 21 conceded, 8 legal
   -- balls, 1 wide, 2 no-balls, no wicket. 2025 holds one fixture, 2026 two.
   -- Rows 10 and 11 are the shapes db/43's door refuses, so they go in with the
   -- door lifted, as _insert_past_the_door() does: a legacy row, read as the
@@ -3451,11 +3451,12 @@ BEGIN
     --     too; a retirement is not.
     PERFORM _assert(bat1.balls - bat0.balls = 4,
       format('balls faced moved by %s, expected 4 (three no-balls and the old W ball; no retirement)', bat1.balls - bat0.balls));
-    -- (c) Every run of a no-ball is debited to the bowler (Law 21): 5 + 5 + 7;
-    --     the old timed-out W ball is a legal ball of his and not his wicket;
-    --     a retirement is no ball and nobody's wicket.
-    PERFORM _assert(bow1.runs - bow0.runs = 17 AND bow1.nb - bow0.nb = 3,
-      format('the bowler was charged %s runs for %s no-balls, expected 17 for 3 (byes off a no-ball are his too)',
+    -- (c) The bowler is debited a no-ball's penalty run and the runs off the
+    --     bat, not its byes or leg byes (Law 21.15, db/52): 5 + 1 + 1; the
+    --     old timed-out W ball is a legal ball of his and not his wicket; a
+    --     retirement is no ball and nobody's wicket.
+    PERFORM _assert(bow1.runs - bow0.runs = 7 AND bow1.nb - bow0.nb = 3,
+      format('the bowler was charged %s runs for %s no-balls, expected 7 for 3 (a no-ball''s byes and leg byes are not his, db/52)',
              bow1.runs - bow0.runs, bow1.nb - bow0.nb));
     PERFORM _assert(bow1.balls - bow0.balls = 1 AND bow1.wkts - bow0.wkts = 0 AND bw1 - bw0 = 0,
       format('the bowler''s legal balls / wickets / wicket breakdown moved by %s / %s / %s, expected 1 / 0 / 0',
@@ -3681,8 +3682,8 @@ BEGIN
   --    2  W run out, 1 run, bowler's end  S1       NF               NF out, having faced §20's over
   --    3  W run out, none run             S1       a typed name     nobody here; S1 not out
   --    4  no-ball, 4 off the bat          MK                        his four, a ball faced; 5 to BO
-  --    5  no-ball, 4 byes                 MK                        no four, a ball faced; 5 to BO
-  --    6  no-ball, 6 leg byes             MK                        no six, a ball faced; 7 to BO
+  --    5  no-ball, 4 byes                 MK                        no four, a ball faced; 1 to BO (db/52)
+  --    6  no-ball, 6 leg byes             MK                        no six, a ball faced; 1 to BO (db/52)
   --    7  wide, 4 run                     MK                        no ball faced, no four; 5 to BO
   --    8  4 byes                          MK                        a ball faced, no four; 0 to BO
   --    9  4 leg byes                      MK                        a ball faced, no four; 0 to BO
@@ -3857,8 +3858,8 @@ BEGIN
       format('db/43 (h) opposition_squad fours/sixes: %s fours, %s sixes and %s runs more, expected 1, 1 and 10 (off the bat only: no byes, leg byes, wide or no-ball byes to the rope)',
              o1.fours - o0.fours, o1.sixes - o0.sixes, o1.runs - o0.runs));
     -- (i) opposition_squad: runs conceded
-    PERFORM _assert(o1.runs_conceded - o0.runs_conceded = 30 AND o1.balls_bowled - o0.balls_bowled = 6,
-      format('db/43 (i) opposition_squad runs_conceded: the bowler conceded %s more off %s more balls, expected 30 off 6 (a wide or a no-ball is the penalty run and every run off it)',
+    PERFORM _assert(o1.runs_conceded - o0.runs_conceded = 20 AND o1.balls_bowled - o0.balls_bowled = 6,
+      format('db/43 (i) opposition_squad runs_conceded: the bowler conceded %s more off %s more balls, expected 20 off 6 (a wide is the penalty run and every run off it; a no-ball the penalty run and the runs off the bat, not its byes or leg byes, db/52)',
              o1.runs_conceded - o0.runs_conceded, o1.balls_bowled - o0.balls_bowled));
     -- (j) match_live_score: the legacy rows
     PERFORM _assert(l2.balls - l1.balls = 2 AND l2.runs - l1.runs = 3 AND l2.wickets - l1.wickets = 1,
@@ -4067,10 +4068,11 @@ BEGIN
              WHERE player_id = P44_C AND season = '2025') AS y2025,
            (SELECT row(matches, runs_conceded, legal_balls, wides, no_balls, wickets)::text FROM player_bowling_by_season
              WHERE player_id = P44_C AND season = '2026') AS y2026 INTO x;
-    -- (d4) bowling by season: every run of a wide or no-ball is his; a saved, a run-out or a methodless wicket is not
-    PERFORM _assert(x.y2025 = '(1,25,8,1,2,0)' AND x.y2026 = '(2,50,16,2,4,0)',
-      format('db/44 (d4) bowling by season: the seamer''s (matches, conceded, legal balls, wides, no-balls, wickets) are %s in 2025 and %s in 2026, expected (1,25,8,1,2,0) and (2,50,16,2,4,0) — '
-             || 'a delivery with no type is a legal ball and its runs his; an lbw the free hit saved, a run out and a W with no method are not his wickets (db/43)',
+    -- (d4) bowling by season: every run of a wide is his, a no-ball's run and its runs off the bat (not its byes,
+    --      db/52); a saved, a run-out or a methodless wicket is not
+    PERFORM _assert(x.y2025 = '(1,21,8,1,2,0)' AND x.y2026 = '(2,42,16,2,4,0)',
+      format('db/44 (d4) bowling by season: the seamer''s (matches, conceded, legal balls, wides, no-balls, wickets) are %s in 2025 and %s in 2026, expected (1,21,8,1,2,0) and (2,42,16,2,4,0) — '
+             || 'a no-ball''s byes are not his (db/52); a delivery with no type is a legal ball and its runs his; an lbw the free hit saved, a run out and a W with no method are not his wickets (db/43)',
              coalesce(x.y2025, 'no row'), coalesce(x.y2026, 'no row')));
 
     -- (e0) Its precondition, over the whole log: every delivery carries its
@@ -4693,7 +4695,7 @@ BEGIN
   PERFORM set_config('app.device_id', '', true);
 
   -- ── 26. Penalty runs to the fielding side, in every total (SCRBRD-094, db/48) ──
-  -- Law 41.18, as the fold credits it: five to the fielding side go to its
+  -- Law 41.17.4, as the fold credits it: five to the fielding side go to its
   -- most recently completed innings, or, if it has not batted, to its next,
   -- which opens on them; a chase's target rises with an award made after it
   -- was set, unless the umpires typed it. On §23's match, which it leaves at
@@ -5320,6 +5322,63 @@ BEGIN
     PERFORM _assert(n = 0,
       format('db/51 (same): %s figure(s) the milestone trigger reads are not what player_innings says — %s', n, left(detail, 600)));
   END;
+  -- ── 30. A no-ball's byes and leg byes are not the bowler's (Law 21.15, db/52) ──
+  -- The rule as the current Code has it: a no-ball's penalty run and the runs
+  -- off the bat are debited to the bowler; runs not off the bat are byes or
+  -- leg byes, and not his. ball_runs_to_bowler() is runsToBowler() in SQL
+  -- (packages/scoring/src/events.mjs), and every reader of a bowler's runs
+  -- asks it. §19, §22 and db/43's fixture above carry no-ball byes and leg
+  -- byes and were moved to it; this section holds the rule itself, that every
+  -- reader asks it, and that they agree over the whole log — the seed and
+  -- every fixture above. db/52 was broken each of these ways and this file
+  -- run: the no-ball arm charging 1 + value again (→ rule, and §19/§22/db/43's
+  -- figures); player_bowling_career summing the old CASE (→ readers, same).
+  DECLARE
+    n bigint;
+    detail text;
+  BEGIN
+    -- (rule) runsToBowler()'s table (replay.test.mjs, K)
+    PERFORM _assert(ball_runs_to_bowler('Nb', 4, '{"nbRuns":"byes"}') = 1
+                    AND ball_runs_to_bowler('Nb', 3, '{"nbRuns":"leg_byes"}') = 1
+                    AND ball_runs_to_bowler('Nb', 4, '{}') = 5 AND ball_runs_to_bowler('Nb', 0, '{}') = 1
+                    AND ball_runs_to_bowler('Wd', 2, '{}') = 3 AND ball_runs_to_bowler('B', 4, '{}') = 0
+                    AND ball_runs_to_bowler('LB', 1, '{}') = 0 AND ball_runs_to_bowler('run', 6, '{}') = 6
+                    AND ball_runs_to_bowler('W', 1, '{}') = 1,
+      'db/52 (rule): ball_runs_to_bowler() is not runsToBowler() — a no-ball is its penalty run and the runs off the bat, never its byes or leg byes');
+
+    -- (readers) the five that charge a bowler all ask it
+    SELECT count(*), string_agg(o, ', ') INTO n, detail FROM (
+      SELECT 'player_bowling_since' AS o, prosrc AS src FROM pg_proc WHERE oid = 'player_bowling_since(uuid,timestamptz)'::regprocedure
+      UNION ALL SELECT 'opposition_squad', prosrc FROM pg_proc WHERE oid = 'opposition_squad(uuid)'::regprocedure
+      UNION ALL SELECT 'bowler_innings_figures', pg_get_viewdef('bowler_innings_figures'::regclass)
+      UNION ALL SELECT 'player_bowling_by_season', pg_get_viewdef('player_bowling_by_season'::regclass)
+      UNION ALL SELECT 'player_bowling_career', pg_get_viewdef('player_bowling_career'::regclass)) d
+     WHERE d.src NOT LIKE '%ball_runs_to_bowler(%';
+    PERFORM _assert(n = 0, format('db/52 (readers): %s do(es) not charge the bowler through ball_runs_to_bowler(): %s', n, coalesce(detail, '')));
+
+    -- (same) over the whole log, as this reader sees it: the lifetime view,
+    -- the windowed function, the seasons summed and the innings summed
+    SELECT count(*), string_agg(k, '; ') INTO n, detail FROM (
+      SELECT 'career/since ' || coalesce(l.player_id, o.player_id) AS k
+        FROM player_bowling_career l
+        FULL JOIN (SELECT p.id AS player_id, c.* FROM player p CROSS JOIN LATERAL player_bowling_since(p.id, NULL) c
+                    WHERE c.matches > 0) o ON o.player_id = l.player_id
+       WHERE l.runs_conceded IS DISTINCT FROM o.runs_conceded
+      UNION ALL
+      SELECT 'career/seasons ' || l.player_id
+        FROM player_bowling_career l
+        JOIN (SELECT player_id, sum(runs_conceded) AS runs FROM player_bowling_by_season GROUP BY player_id) x
+          ON x.player_id = l.player_id
+       WHERE l.runs_conceded IS DISTINCT FROM x.runs
+      UNION ALL
+      SELECT 'career/innings ' || l.player_id
+        FROM player_bowling_career l
+        JOIN (SELECT player_id, sum(runs_conceded) AS runs FROM bowler_innings_figures GROUP BY player_id) f
+          ON f.player_id = l.player_id
+       WHERE l.runs_conceded IS DISTINCT FROM f.runs) d;
+    PERFORM _assert(n = 0, format('db/52 (same): %s bowler figure(s) disagree between the readers — %s', n, left(coalesce(detail, ''), 600)));
+  END;
+
   PERFORM set_config('app.user_id', '', true);
 
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';

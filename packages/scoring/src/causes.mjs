@@ -108,11 +108,18 @@ export const REFUSAL_CAUSE = Object.freeze({
     const id = ev?.striker ?? ev?.nonStriker ?? ev?.batter;
     return inn && id != null ? `${foldName(inn, id, "That batter")} is already out. Was it the other batter?` : null;
   },
+  resume_not_yet: ({ inn, ev }) => {
+    const id = [ev?.striker, ev?.nonStriker].find((x) => x != null && inn?.batsmen?.some((b) => b.id === x && b.status === "retired"));
+    return inn && id != null
+      ? `${foldName(inn, id, "That batter")} went off retired hurt, and no wicket has fallen and nobody else has retired since. Was the next batter in meant?`
+      : null;
+  },
   crease_occupied: () => "A batter who is not out was replaced. Was the wicket recorded first?",
   not_at_crease: () => "That batter is not in. Was it the other one?",
   void_not_latest: () => "Something was recorded after it. Undo that first, or ask for an amendment.",
   void_already_voided: () => "It was already undone, perhaps on another device.",
   short_run_unmatched: () => "The five for short running go straight after that delivery, recorded with no runs.",
+  penalty_reason_withdrawn: () => "An older copy of the pad offered that reason; the Laws do not give it. Award the runs again with another reason.",
 });
 
 /**

@@ -664,7 +664,7 @@ function countedAfter(evs) {
  * @property {string} key  @property {string} B  @property {string} S
  * @property {(ref: string | null | undefined, role: CommentaryRole) => string} who
  * @property {Snap} prev  @property {Snap} cur
- * @property {boolean} shortRun  the next event disallows this ball's runs (Law 41.5)
+ * @property {boolean} shortRun  the next event disallows this ball's runs (Law 18.5)
  * @property {string} score  "Hilton 43/3." after the ball
  * @property {"R" | "L"} hand  the striker's (batHandOf): which way a sector-era ball's seg reads
  */

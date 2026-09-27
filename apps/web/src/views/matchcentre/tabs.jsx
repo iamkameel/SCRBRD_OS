@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { batHandOf } from "@scrbrd/scoring";
 import { T, contrast } from "../../design/tokens.js";
 import { api, signedIn } from "../../lib/api.js";
 import { boardInnings, commentaryByOver, inningsBreak, oversOf, teamOf } from "../../lib/matchCentre.js";
@@ -7,6 +8,7 @@ import { Board, chipFill } from "../../ui/board.jsx";
 import { boardFromInnings } from "../../scorer/boardData.js";
 import { boardInsights } from "../../scorer/signals.js";
 import { BatsmanChart, BowlerChart, ManhattanChart, ShotHeatMap, ShotSpider, ShotWheel, WormChart } from "../../scorer/charts.jsx";
+import { WagonAnalysisPanel } from "../../scorer/wagonAnalysisPanel.jsx";
 import { WeatherChip } from "../shared.jsx";
 import { InningsToggle } from "./scorecard.jsx";
 import { CardHead, Panel, Quiet, SideName } from "./bits.jsx";
@@ -293,6 +295,17 @@ export function AnalyticsTab({ match, innings, inningsSel, setInningsSel, overs 
       <div style={{ display: "grid", gridTemplateColumns: "var(--g-2,1fr 1fr)", gap: T.space.md, marginTop: T.space.md }}>
         <ShotHeatMap inn={inn} playerId={wheelOf}/>
         <ShotSpider inn={inn} playerId={wheelOf}/>
+      </div>
+      {/* SCRBRD-102: filters by batter and bowler, run chips that isolate a
+          subset of spokes, off side against on side, and the eight named
+          areas with their runs and boundaries. */}
+      <div style={{ marginTop: T.space.lg }}>
+        <WagonAnalysisPanel
+          balls={inn.ballLog}
+          handOf={(strikerId) => batHandOf(inn, strikerId)}
+          batters={inn.batsmen.filter((b) => b.balls > 0).map((b) => ({ id: b.id, name: b.name }))}
+          bowlers={inn.bowlers.filter((b) => b.balls > 0).map((b) => ({ id: b.id, name: b.name }))}
+        />
       </div>
     </section>
   );
