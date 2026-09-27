@@ -1,7 +1,7 @@
 import { Fragment } from "react";
 import { D, T, inkOn, textOn } from "../design/tokens.js";
 import { BatsmanChart, BowlerChart, ManhattanChart, RunRateChart, WormChart } from "./charts.jsx";
-import { SEGS } from "./field.js";
+import { areaWords } from "./field.js";
 import { RR, SR, fmtOv } from "./format.js";
 import { batHandOf, positionName } from "@scrbrd/scoring";
 import { CommentaryCard, WagonWheel } from "./panels.jsx";
@@ -25,7 +25,8 @@ function ScoringHub({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selSeg
   // left-hander's cover drive comparable with a right-hander's.
   const batHand=batHandOf(inn);
   const shotInfo=hubShot?ALL_SHOTS_FLAT.find(s=>s.id===hubShot):null;
-  const segInfo=selSeg!=null?SEGS[selSeg.seg]:null;
+  // The hub's wheel records a point (onFieldSel): named for this striker (SCRBRD-101).
+  const segWords=selSeg!=null?areaWords(selSeg,batHand):null;
   const STAGE_LABELS=["Shot","Field","Runs"];
   return (
     <Card style={{overflow:"hidden"}}>
@@ -187,12 +188,12 @@ function ScoringHub({inn,innings,curIn,match,hubStage,hubShot,hubApproach,selSeg
                 <span style={{fontFamily:D.body,fontSize:"11px",color:textOn(shotInfo.color)}}>{shotInfo.label}</span>
               </div>
             )}
-            {segInfo&&(
+            {segWords&&(
               <div style={{display:"flex",alignItems:"center",gap:"5px",padding:"4px 10px",
                 borderRadius:D.md,background:D.indigo+"10",border:"1px solid "+D.indigo+"22"}}>
                 <span style={{fontSize:"11px",color:D.sky}}><Icon name="map-pin"/></span>
                 <span style={{fontFamily:D.body,fontSize:"11px",color:D.sky}}>
-                  {segInfo.label+(selSeg?.zone==="boundary"?" · Boundary":selSeg?.zone==="outer"?" · Outfield":"")}
+                  {segWords}
                 </span>
               </div>
             )}

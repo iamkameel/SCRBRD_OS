@@ -21,9 +21,17 @@
  * The assertions below are about SIDES OF THE GROUND rather than exact pixels:
  * a ball hit to the off side must never be drawn on the leg side, which is the
  * failure that matters and the one a coach would notice.
+ *
+ * SCRBRD-101 adds E–G: a view draws in ONE frame (the one hand in view, or a
+ * right-hander's with the left-handers mirrored) so OFF and LEG are true of
+ * every spoke; a sector-era left-hander's ball is worded for him; and the
+ * spokes are the ball chips' colours in every palette. Falsified by drawing
+ * each ball in its own frame again (E red), by wording a stored seg without
+ * the hand (F red), and by LK_COLS's 2 taking the three's colour (G red).
  */
-import { deriveInnings, batHandOf, screenAngle } from "@scrbrd/scoring";
-import { CX, CY, ballAngle, toXY, wagEnd } from "../src/scorer/field.js";
+import { deriveInnings, batHandOf, screenAngle, placementFromTap } from "@scrbrd/scoring";
+import { CX, CY, LK_COLS, SEGS, areaWords, ballAngle, frameOf, frameSeg, lineKey, placeWords, toXY, wagEnd } from "../src/scorer/field.js";
+import { CHIPS, T, THEMES, VISION_NAMES, applyTheme } from "../src/design/tokens.js";
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
@@ -127,6 +135,53 @@ group("D. Distance is drawn only where distance was recorded");
   const onTheRope = { theta: 180, radius: 1, placementSource: "point", value: 4, type: "run" };
   ok("a six that cleared the rope is drawn beyond it",
      out({ ...onTheRope, value: 6 }) > out(onTheRope));
+}
+
+group("E. One frame per view (SCRBRD-101): OFF and LEG are true of every spoke");
+{
+  const inn = mixedInnings();
+  const hands = inn.ballLog.map((b) => batHandOf(inn, b.strikerId));
+  const f = frameOf(hands);
+  ok("a view of both hands is laid out for a right-hander, and knows it is mixed", f.hand === "R" && f.mixed === true);
+  ok("one hand's view is his own", frameOf(["L", "L"]).hand === "L" && !frameOf(["L"]).mixed && frameOf(["R"]).hand === "R");
+  const drawn = inn.ballLog.map((b, i) => sideOf(ballAngle(b, hands[i], f.hand)));
+  ok("in the mixed view every cover drive is on the off side's label, the left-hander's mirrored to it",
+     drawn.every((s) => s === "off-for-RH"), drawn.join(","));
+  // A sector-era left-hander's ball: tapped at the screen's 90° (his point).
+  const old = { seg: 3, zone: "outer", value: 1, type: "run", placementSource: "sector" };
+  ok("his own view draws it where it was tapped", ballAngle(old, "L", "L") === 90);
+  ok("the mixed view mirrors it to the right-hander's point, on the left", ballAngle(old, "L", "R") === 270 && sideOf(270) === "off-for-RH");
+  ok("its wedge for the heat map moves with it", frameSeg(old, "L", "R") === 9 && frameSeg(old, "L", "L") === 3 && frameSeg(old, "R", "R") === 3);
+  ok("a point's wedge in a frame is its theta's", frameSeg(placementFromTap({ angle: 90, radius: 0.5, batHand: "L" }), "L", "R") === 9);
+}
+
+group("F. A sector-era left-hander's ball is re-worded for him");
+{
+  ok("the screen's sector 3 is a right-hander's square leg", areaWords({ seg: 3, zone: "outer", placementSource: "sector" }, "R") === "Square leg · outfield");
+  ok("...and a left-hander's point", areaWords({ seg: 3, zone: "outer", placementSource: "sector" }, "L") === "Point · outfield");
+  ok("the wedge names are the engine's, not typed: 90° is square leg", SEGS[3].label === "Square leg" && SEGS[9].label === "Point" && SEGS[8].label === "Cover");
+  ok("a point is named by its position, the same for either hand's own shot",
+     placeWords(placementFromTap({ angle: 90, radius: 0.95, batHand: "R" })) === "Deep square leg · boundary"
+       && placeWords(placementFromTap({ angle: 90, radius: 0.95, batHand: "L" })) === "Deep point · boundary");
+  ok("a close catch reads as a position", placeWords(placementFromTap({ angle: 15, radius: 0.06, batHand: "L" })) === "First slip");
+}
+
+group("G. The spokes are the chips, in every palette");
+{
+  const b = (o) => ({ type: "run", value: 0, ...o });
+  ok("each run value has its own key", [1, 2, 3, 4, 5, 6].every((v) => lineKey(b({ value: v })) === String(v)) && lineKey(b({ value: 0 })) === "0");
+  ok("every extra is an extra, as on the board: wide, no ball, bye, leg bye",
+     ["Wd", "Nb", "B", "LB"].every((t) => lineKey(b({ type: t, value: 2 })) === "extras") && lineKey(b({ type: "W" })) === "W");
+  let all = true;
+  for (const v of VISION_NAMES) for (const th of Object.keys(THEMES)) {
+    applyTheme(th, v);
+    const c = CHIPS[v];
+    const good = LK_COLS["1"] === c.one && LK_COLS["2"] === c.two && LK_COLS["3"] === c.three && LK_COLS["4"] === c.four
+      && LK_COLS["5"] === c.four && LK_COLS["6"] === c.six && LK_COLS.extras === c.extra && LK_COLS.W === T.run.wicket;
+    if (!good) { all = false; console.log(`   ${th}/${v}:`, JSON.stringify({ ...LK_COLS })); }
+  }
+  applyTheme("floodlit", "standard");
+  ok("in both themes and all three palettes, 1 2 3 4 6 and the extras are the chips' colours", all);
 }
 
 console.log(`\n${"─".repeat(52)}\nWHEEL SUITE: ${pass} passed, ${fail} failed`);
