@@ -83,11 +83,13 @@ export function RevisionBanner({ notice }) {
 
 // ── 4. The full-time screen links onward (item 4) ──
 
-const linkStyle = {
+// Functions, not constants: a token read at import time would never follow a
+// theme switch (design.test).
+const linkStyle = () => ({
   minHeight: "44px", padding: `0 ${T.space.lg}`, display: "inline-flex", alignItems: "center", gap: T.space.xs,
   cursor: "pointer", background: "transparent", border: `1px solid ${T.line.normal}`, borderRadius: T.radius.pill,
   color: T.content.primary, fontFamily: T.type.body, fontSize: "14px", fontWeight: 500,
-};
+});
 
 /**
  * Next fixture and results, for both sides — the onward links a full-time
@@ -119,12 +121,12 @@ export function OnwardLinks({ match, sides, matches, onOpenFixture, onTeamResult
             <div key={key} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: T.space.sm }}>
               <span style={{ ...T.role.body, fontWeight: 600, color: T.content.primary, minWidth: 0 }}><SideName side={side}/></span>
               {next && onOpenFixture && (
-                <button type="button" data-testid={`mc-onward-next-${key}`} onClick={() => onOpenFixture(next)} className="pressBtn os-state" style={linkStyle}>
+                <button type="button" data-testid={`mc-onward-next-${key}`} onClick={() => onOpenFixture(next)} className="pressBtn os-state" style={linkStyle()}>
                   <Icon name="calendar"/> Next: {next.date ? humanDateTime(next.date, next.time ?? null) : "TBC"}
                 </button>
               )}
               {tenant && onTeamResults && (
-                <button type="button" data-testid={`mc-onward-results-${key}`} onClick={() => onTeamResults(side.full)} className="pressBtn os-state" style={linkStyle}>
+                <button type="button" data-testid={`mc-onward-results-${key}`} onClick={() => onTeamResults(side.full)} className="pressBtn os-state" style={linkStyle()}>
                   <Icon name="scorebook"/> Results
                 </button>
               )}
@@ -143,11 +145,11 @@ const isDismissed = (matchId) => { try { return localStorage.getItem(confirmKey(
 const dismiss = (matchId) => { try { localStorage.setItem(confirmKey(matchId), "1"); } catch { /* private window or storage blocked:
   the prompt simply shows again next time, which is the safe side to fail on — never worse than a repeated question. */ } };
 
-const fieldStyle = {
+const fieldStyle = () => ({
   width: "100%", minHeight: "44px", padding: `${T.space.sm} ${T.space.md}`, borderRadius: T.radius.md,
   border: `1px solid ${T.line.normal}`, background: T.surface.raised, color: T.content.primary,
   fontFamily: T.type.body, fontSize: "14px", boxSizing: "border-box",
-};
+});
 const REQUEST_REFUSAL = {
   target_required: "Choose a delivery first.",
   reason_required: "Say what is wrong with it.",
@@ -202,12 +204,12 @@ export function ConfirmScorecardPrompt({ match, role, commentary, innings }) {
         <p style={{ ...T.role.body, color: T.content.primary, margin: 0 }}>Check the final scorecard.</p>
         <div style={{ display: "flex", gap: T.space.sm, flexWrap: "wrap" }}>
           <button type="button" data-testid="mc-confirm-ok" onClick={() => { dismiss(match.id); setHidden(true); }}
-            className="pressBtn os-state" style={{ ...linkStyle, borderColor: T.semantic.positive, color: T.semantic.positive }}>
+            className="pressBtn os-state" style={{ ...linkStyle(), borderColor: T.semantic.positive, color: T.semantic.positive }}>
             <Icon name="circle-check"/> Looks right
           </button>
           {canRequest && (
             <button type="button" data-testid="mc-confirm-open" aria-expanded={open} onClick={() => setOpen((o) => !o)}
-              className="pressBtn os-state" style={linkStyle}>
+              className="pressBtn os-state" style={linkStyle()}>
               <Icon name="pencil"/> Something to correct
             </button>
           )}
@@ -220,20 +222,20 @@ export function ConfirmScorecardPrompt({ match, role, commentary, innings }) {
         {open && canRequest && (
           <div data-testid="mc-confirm-form" style={{ display: "grid", gap: T.space.sm, borderTop: `1px solid ${T.line.subtle}`, paddingTop: T.space.sm }}>
             {innings.length > 1 && (
-              <select data-testid="mc-confirm-innings" value={innIdx} onChange={(e) => { setInnIdx(Number(e.target.value)); setTargetKey(""); }} style={fieldStyle}>
+              <select data-testid="mc-confirm-innings" value={innIdx} onChange={(e) => { setInnIdx(Number(e.target.value)); setTargetKey(""); }} style={fieldStyle()}>
                 {innings.map((_, i) => <option key={i} value={i}>Innings {i + 1}</option>)}
               </select>
             )}
             {options.length ? (
-              <select data-testid="mc-confirm-delivery" value={targetKey} onChange={(e) => setTargetKey(e.target.value)} style={fieldStyle}>
+              <select data-testid="mc-confirm-delivery" value={targetKey} onChange={(e) => setTargetKey(e.target.value)} style={fieldStyle()}>
                 <option value="">Which delivery?</option>
                 {options.map((o) => <option key={o.key} value={o.targetKey}>{o.over}.{o.ball} — {o.text}</option>)}
               </select>
             ) : <Quiet testid="mc-confirm-none">Nothing on the log for this innings to name.</Quiet>}
             <textarea data-testid="mc-confirm-reason" value={reason} onChange={(e) => setReason(e.target.value)}
-              placeholder="What is wrong with it?" style={{ ...fieldStyle, minHeight: "72px", resize: "vertical" }}/>
+              placeholder="What is wrong with it?" style={{ ...fieldStyle(), minHeight: "72px", resize: "vertical" }}/>
             <button type="button" data-testid="mc-confirm-submit" disabled={busy || !targetKey || !reason.trim()} onClick={submit}
-              className="pressBtn os-state" style={{ ...linkStyle, opacity: busy || !targetKey || !reason.trim() ? 0.5 : 1,
+              className="pressBtn os-state" style={{ ...linkStyle(), opacity: busy || !targetKey || !reason.trim() ? 0.5 : 1,
                 cursor: busy || !targetKey || !reason.trim() ? "not-allowed" : "pointer" }}>
               File a correction
             </button>
