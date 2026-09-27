@@ -58,7 +58,14 @@ group("Names come from the fold, never an id");
   const evs = [...open(), ...[0, 0, 0, 0, 0, 0].map(run)];
   const inn = deriveInnings(evs);
   ok("a bowler the fold names", foldName(inn, "b1", "the bowler") === "K Naidoo");
-  ok("a player it knows only by a UUID is a role", foldName(inn, UUID, "the batter") === "the batter");
+  const byId = deriveInnings([
+    inningsStart({ battingTeam: "Hilton", bowlingTeam: "Kearsney", squad: SQUAD, bowlingSquad: BOWLING, overs: 2 }),
+    batters({ striker: UUID, nonStriker: "a2" }), bowler({ bowler: BOWLING[2].id }), ...[0, 0, 0, 0, 0, 0].map(run)]);
+  ok("the fold names a player it holds no name for by his id (the case this guards)",
+     byId.batsmen.some((b) => b.name === UUID) && byId.bowlers.some((b) => b.name === BOWLING[2].id));
+  ok("a player it knows only by a UUID is a role", foldName(byId, UUID, "the batter") === "the batter");
+  const idCause = likelyCause(REFUSAL.CONSECUTIVE_OVERS, { inn: byId, ev: bowler({ bowler: BOWLING[2].id }) });
+  ok(`...and so in a cause ("${idCause}")`, idCause != null && !idCause.includes(BOWLING[2].id) && /^The same bowler/.test(idCause));
   ok("an event id is never a name", foldName({ batsmen: [{ id: "x", name: "dev:match:k9:1" }] }, "x", "the batter") === "the batter");
   ok("an unknown id is a role", foldName(inn, "nobody-here", "the bowler") === "the bowler");
   const cons = likelyCause(REFUSAL.CONSECUTIVE_OVERS, { inn, ev: bowler({ bowler: "b1" }) });

@@ -72,6 +72,10 @@ const SUITES = [
   // The pad's "Umpire suspended the bowler": the Laws asked before a reason or
   // a replacement is offered, why-not in words, the report (SCRBRD-094 item 2).
   ["suspension-sheet", "apps/web/test/suspension-sheet.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // The pad's premium feel (SCRBRD-100): every extra's two taps build the
+  // event the pad always sent, byte for byte; the likely bowler and the next
+  // batter first; undo in words; dot and 1 the biggest keys; the haptic tick.
+  ["pad-feel", "apps/web/test/pad-feel.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Renders the Board — always black, figures that flip (DESIGN_DIRECTION §1).
   ["board",    "apps/web/test/board.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // No emoji in the client outside a reasoned allow-list, every icon name

@@ -8,6 +8,7 @@ import { INT_TEAMS, ROLE_COLORS } from "./teams.js";
 import { Badge, Btn, CaptureProfilePicker, Lbl, Sep, Sheet } from "./ui.jsx";
 import { Select } from "../ui/primitives.jsx";
 import { Icon } from "../ui/icons.jsx";
+import { batterChoices, bowlerChoices, unavailableWords } from "./prompts.js";
 
 /* ═══════════════════════════════════════════════════════
    SHOT SELECTOR SHEET
@@ -484,11 +485,10 @@ function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,head
   const[timedOut,setTimedOut]=useState(false);
   const send=timedOut&&onTimedOut?(id)=>{setTimedOut(false);onTimedOut(id);}:onSend;
   const teamInfo=INT_TEAMS[teamKey]||null;
-  const roster=(squad||[]).map(entry);
-  const available=roster.filter(p=>{
-    const played=batsmen.find(b=>b.id===p.id);
-    return !played||(played.status==="dnb");
-  });
+  // The batting order's next name first, marked Next (SCRBRD-100 item 2):
+  // the squad's order is the batting order. A suggestion — one tap on any
+  // name sends him in (prompts.js batterChoices).
+  const available=batterChoices({squad:squad||[],batsmen});
   const getRoleInfo=(name)=>{
     if(!teamInfo)return null;
     return teamInfo.players.find(p=>p.name===name)||null;
@@ -547,28 +547,28 @@ function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,head
         {/* Available */}
         <Lbl sx={{marginBottom:"7px"}}>{timedOut?"Who was timed out?":"Available to Bat"}</Lbl>
         <div style={{display:"flex",flexDirection:"column",gap:"4px",marginBottom:"12px"}}>
-          {available.map((p,i)=>{
+          {available.map((p)=>{
             const ri=getRoleInfo(p.name);
-            const pos=roster.findIndex(r=>r.id===p.id)+1;
+            const first=p.next;
             return (
-              <button key={p.id} onClick={()=>send(p.id)} className="pressBtn" style={{
-                display:"flex",alignItems:"center",gap:"10px",
+              <button key={p.id} onClick={()=>send(p.id)} className="pressBtn" data-testid="batter-choice" data-next={first||undefined} style={{
+                display:"flex",alignItems:"center",gap:"10px",minHeight:"48px",flexShrink:0,
                 padding:"9px 12px",borderRadius:D.md,cursor:"pointer",textAlign:"left",width:"100%",
-                border:`1px solid ${i===0?D.emerald+"44":D.border}`,
-                background:i===0?`${D.emerald}0a`:D.surf2,transition:"all .15s",
+                border:`${first?2:1}px solid ${first?T.content.primary:D.border}`,
+                background:first?`${D.emerald}0a`:D.surf2,transition:"all .15s",
               }}>
-                <div style={{width:"22px",height:"22px",borderRadius:"50%",flexShrink:0,
-                  background:i===0?`${D.emerald}22`:D.surf3,
-                  border:`1px solid ${i===0?D.emerald+"44":D.border}`,
+                <div style={{minWidth:"26px",height:"26px",borderRadius:"50%",flexShrink:0,
+                  background:first?`${D.emerald}22`:D.surf3,
+                  border:`1px solid ${first?D.emerald+"44":D.border}`,
                   display:"flex",alignItems:"center",justifyContent:"center",
-                  fontFamily:D.mono,fontSize:"10px",fontWeight:600,
-                  color:i===0?D.emerald:D.textMuted}}>
-                  {pos}
+                  fontFamily:D.mono,fontSize:"12px",fontWeight:600,
+                  color:first?D.textPrimary:D.textSecondary}}>
+                  {p.pos}
                 </div>
-                <span style={{fontFamily:D.body,fontSize:"13px",fontWeight:i===0?600:400,
-                  color:i===0?D.textPrimary:D.textSecondary,flex:1}}>{p.name}</span>
-                {ri&&<Badge color={ROLE_COLORS[ri.role]} sx={{fontSize:"8px"}}>{ri.role}</Badge>}
-                {i===0&&<Badge color={D.emerald} sx={{fontSize:"8px",marginLeft:"2px"}}>Next</Badge>}
+                <span style={{fontFamily:D.body,fontSize:"15px",fontWeight:first?600:400,
+                  color:first?D.textPrimary:D.textSecondary,flex:1}}>{p.name}</span>
+                {ri&&<Badge color={ROLE_COLORS[ri.role]} sx={{fontSize:"12px"}}>{ri.role}</Badge>}
+                {first&&<Badge color={D.emerald} sx={{fontSize:"12px",marginLeft:"2px"}}>Next</Badge>}
               </button>
             );
           })}
@@ -788,7 +788,7 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,onClose
  * injured or suspended bowler, so the sheet asks which before it offers
  * anyone, and passes it on: onConfirm(id, reason).
  */
-function NewOverSheet({ovNum,prevBowlers,bowlingSquad,bowlingTeamKey,lastBowlerName,refuses,why=null,onSuspended=null,onClose,onConfirm:confirm,midOver=false}){
+function NewOverSheet({ovNum,inn=null,prevBowlers,bowlingSquad,bowlingTeamKey,lastBowlerName,refuses,why=null,onSuspended=null,onClose,onConfirm:confirm,midOver=false}){
   const[name,setName]=useState("");
   const[filter,setFilter]=useState("");
   const[reason,setReason]=useState(null);
@@ -803,18 +803,23 @@ function NewOverSheet({ovNum,prevBowlers,bowlingSquad,bowlingTeamKey,lastBowlerN
   const allBowlers=teamInfo
     ? teamInfo.players.filter(p=>p.bowl).map(p=>({...p,id:p.id??p.name}))
     : (bowlingSquad||[]).map(n=>({...entry(n),role:"BOWL"}));
-  const filtered=filter
-    ? allBowlers.filter(p=>p.name.toLowerCase().includes(filter.toLowerCase()))
-    : allBowlers;
-  const prevNames=new Set(prevBowlers.map(b=>b.name));
   // Can't bowl consecutive overs (Law 17.8). `refuses` is lawsRefusal() —
   // the rule the server applies when the bowler event arrives — asked by the
   // id that will be emitted. The name comparison is kept only for a caller
   // that does not pass it.
   // Mid-over, nobody is offered until the reason is chosen.
-  const canBowl=(p)=>(!midOver||!!reason)&&(refuses?!refuses(p.id??p.name):p.name!==lastBowlerName);
-  const prevBowlerMap={};
-  prevBowlers.forEach(b=>{prevBowlerMap[b.name]=b;});
+  const refusalOf=(id,nm)=>refuses?refuses(id??nm):(nm===lastBowlerName?"consecutive_overs":null);
+  const canBowl=(p)=>(!midOver||!!reason)&&!refusalOf(p.id,p.name);
+  // One list, the likely bowler first (SCRBRD-100 item 2): the one who bowled
+  // the over before last, if the Laws let him bowl this one; the rest of the
+  // rotation in the order they first bowled; then those who have not bowled.
+  // prompts.js bowlerChoices() orders it; the Laws' own answer marks who
+  // cannot bowl, and why, in words. A suggestion: one tap on anyone confirms.
+  const choices=bowlerChoices({inn:inn??{bowlers:prevBowlers},roster:allBowlers,midOver,
+    refuses:(id)=>refusalOf(id,allBowlers.find(p=>p.id===id)?.name??prevBowlers.find(p=>p.id===id)?.name??id)});
+  const rows=filter
+    ? choices.rows.filter(p=>String(p.name).toLowerCase().includes(filter.toLowerCase()))
+    : choices.rows;
   return (
     <Sheet title={midOver?"Change of Bowler":ovNum===0?"Opening Bowler":`Over ${ovNum} Complete`} accent={D.amber} onClose={onClose}>
       <div style={{paddingTop:"8px"}}>
@@ -848,70 +853,44 @@ function NewOverSheet({ovNum,prevBowlers,bowlingSquad,bowlingTeamKey,lastBowlerN
             onFocus={e=>e.target.style.borderColor=D.amber+"66"}
             onBlur={e=>e.target.style.borderColor=D.border}/>
         </div>
-        {/* Previously bowled this innings — quick pick */}
-        {prevBowlers.length>0&&(
-          <div style={{marginBottom:"12px"}}>
-            <Lbl sx={{marginBottom:"7px",color:D.amber}}>Already Bowled This Innings</Lbl>
-            <div style={{display:"flex",flexDirection:"column",gap:"4px"}}>
-              {prevBowlers.map(b=>{
-                const dis=!canBowl(b);
-                const ri=teamInfo?.players.find(p=>p.name===b.name);
-                return (
-                  <button key={b.id} onClick={()=>!dis&&onConfirm(b.id)} disabled={dis} className="pressBtn" style={{
-                    display:"flex",alignItems:"center",gap:"10px",padding:"9px 12px",
-                    borderRadius:D.md,cursor:dis?"not-allowed":"pointer",textAlign:"left",width:"100%",
-                    border:`1px solid ${dis?D.border:D.amber+"33"}`,
-                    background:dis?`${D.surf2}55`:`${D.amber}08`,opacity:dis?0.45:1,
-                  }}>
-                    <div style={{flex:1}}>
-                      <div style={{fontFamily:D.body,fontSize:"13px",fontWeight:500,
-                        color:dis?D.textMuted:D.textPrimary}}>{b.name}</div>
-                      {dis&&(!midOver||reason)&&<div data-testid={`bowler-why-${b.id}`} style={{fontFamily:D.body,fontSize:"12px",color:D.roseText,marginTop:"1px"}}>{(why&&refuses&&why(refuses(b.id)))||"Cannot bowl consecutive overs"}</div>}
-                    </div>
-                    {ri&&<Badge color={ROLE_COLORS[ri.role]} sx={{fontSize:"8px"}}>{ri.role}</Badge>}
-                    <div style={{display:"flex",gap:"12px",alignItems:"center"}}>
-                      <div style={{textAlign:"right"}}>
-                        <div style={{fontFamily:D.mono,fontSize:"11px",color:D.textSecondary}}>{fmtOv(b.balls)} ov</div>
-                        <div style={{fontFamily:D.mono,fontSize:"11px",color:b.wickets>0?D.rose:D.textMuted}}>{b.runs}r {b.wickets}w</div>
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-        {/* Full bowling roster */}
-        <Lbl sx={{marginBottom:"7px",color:D.textMuted}}>
+        {/* The bowlers, likely first (SCRBRD-100 item 2) */}
+        <Lbl sx={{marginBottom:"7px",color:D.textSecondary,fontSize:"12px"}}>
           {teamInfo?`${bowlingTeamKey} — Bowling Options`:bowlingSquad?.length?"Fielding Squad":"New Bowler"}
         </Lbl>
-        <div style={{display:"flex",flexDirection:"column",gap:"4px",marginBottom:"14px",maxHeight:"280px",overflowY:"auto"}}>
-          {filtered.map(player=>{
-            const alreadyBowled=prevBowlerMap[player.name];
-            const dis=!canBowl(player);
-            const rc=ROLE_COLORS[player.role]||D.orange;
+        <div data-testid="bowler-choices" style={{display:"flex",flexDirection:"column",gap:"4px",marginBottom:"14px",maxHeight:"320px",overflowY:"auto"}}>
+          {rows.map(p=>{
+            const asked=!midOver||!!reason;
+            // The Laws batch's words first (they know a suspension), else the generic ones.
+            const whyNot=asked&&p.refusal?((why&&why(p.refusal))||unavailableWords(p.refusal)):null;
+            const dis=!asked||!!p.refusal;
+            const role=p.role??(teamInfo?null:"BOWL");
+            const rc=ROLE_COLORS[role]||D.orange;
             return (
-              <button key={player.id??player.name} onClick={()=>!dis&&onConfirm(player.id??player.name)} disabled={dis} className="pressBtn" style={{
-                display:"flex",alignItems:"center",gap:"10px",padding:"9px 12px",
+              <button key={p.id} data-testid="bowler-choice" data-id={p.id} data-group={p.group} data-likely={p.likely||undefined}
+                onClick={()=>!dis&&onConfirm(p.id)} disabled={dis} className="pressBtn" style={{
+                display:"flex",alignItems:"center",gap:"10px",minHeight:"48px",flexShrink:0,padding:"8px 12px",
                 borderRadius:D.md,cursor:dis?"not-allowed":"pointer",textAlign:"left",width:"100%",
-                border:`1px solid ${dis?D.border:alreadyBowled?D.amber+"22":D.border}`,
-                background:dis?`${D.surf2}55`:alreadyBowled?`${D.amber}06`:D.surf2,
-                opacity:dis?0.4:1,transition:"all .15s",
+                border:`${p.likely?2:1}px solid ${p.likely?T.content.primary:dis?D.border:p.figures?D.amber+"33":D.border}`,
+                background:dis?`${D.surf2}55`:p.figures?`${D.amber}08`:D.surf2,opacity:dis?0.6:1,
               }}>
-                <span style={{fontFamily:D.body,fontSize:"13px",fontWeight:alreadyBowled?600:400,
-                  color:dis?D.textMuted:D.textPrimary,flex:1}}>{player.name}</span>
-                <Badge color={rc} sx={{fontSize:"8px"}}>{player.role}</Badge>
-                {alreadyBowled&&(
-                  <div style={{textAlign:"right",marginLeft:"6px"}}>
-                    <div style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>{fmtOv(alreadyBowled.balls)}ov {alreadyBowled.runs}r{alreadyBowled.wickets>0?` ${alreadyBowled.wickets}w`:""}</div>
-                  </div>
+                <span style={{flex:1,minWidth:0,display:"grid",gap:"2px"}}>
+                  <span style={{fontFamily:D.body,fontSize:"15px",fontWeight:p.figures?600:500,
+                    color:dis?D.textMuted:D.textPrimary}}>{p.name}</span>
+                  {p.likely&&<span data-testid="bowler-likely" style={{fontFamily:D.body,fontSize:"12px",fontWeight:600,color:T.content.secondary}}>Likely next · bowled the over before last</span>}
+                  {whyNot&&<span data-testid="bowler-unavailable" style={{fontFamily:D.body,fontSize:"12px",color:D.roseText}}>{whyNot}</span>}
+                </span>
+                {role&&<Badge color={rc} sx={{fontSize:"12px"}}>{role}</Badge>}
+                {p.figures&&(
+                  <span style={{textAlign:"right",fontFamily:D.mono,fontSize:"12px",color:D.textSecondary,flexShrink:0}}>
+                    {fmtOv(p.figures.balls)}ov {p.figures.runs}r{p.figures.wickets>0?` ${p.figures.wickets}w`:""}
+                  </span>
                 )}
               </button>
             );
           })}
-          {filtered.length===0&&(
+          {rows.length===0&&(
             <div style={{color:D.textMuted,fontSize:"13px",fontFamily:D.body,padding:"12px",textAlign:"center"}}>
-              No bowlers match "{filter}"
+              {filter?`No bowlers match "${filter}"`:"Nobody listed: type a name below."}
             </div>
           )}
         </div>

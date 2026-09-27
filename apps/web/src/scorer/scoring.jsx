@@ -348,7 +348,12 @@ function ScoringPanel({inn,innings,events,curIn,match,hubStage,hubShot,hubApproa
    given, or, with no innings open, nothing at all.
 ═══════════════════════════════════════════════════════ */
 const OVER_CODES=new Set(["innings_over","innings_closed"]);
-function ScoringBlocked({readiness,onFix}){
+/**
+ * `cause` is what probably happened, when it is knowable (likelyCause() in
+ * packages/scoring, SCRBRD-100 item 6): "7 balls in this over? …". A line
+ * of its own, under the reason.
+ */
+function ScoringBlocked({readiness,onFix,cause=null}){
   if(!readiness||readiness.ready||!readiness.blocked?.length)return null;
   const [first,...rest]=readiness.blocked;
   // An innings that is over is not waiting on setup, so it does not get "yet".
@@ -362,6 +367,11 @@ function ScoringBlocked({readiness,onFix}){
         <div style={{fontFamily:D.body,fontSize:"14px",fontWeight:600,color:D.textPrimary,lineHeight:1.35}}>
           {lead}: {first.says}.
         </div>
+        {cause&&(
+          <div data-testid="scoring-blocked-cause" style={{fontFamily:T.type.body,fontSize:"14px",color:T.content.primary,marginTop:"4px",lineHeight:1.4}}>
+            {cause}
+          </div>
+        )}
         {rest.length>0&&(
           <div style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,marginTop:"3px",lineHeight:1.35}}>
             Then: {rest.map(r=>r.says).join("; ")}.

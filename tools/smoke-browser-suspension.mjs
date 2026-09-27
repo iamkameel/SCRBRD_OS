@@ -174,7 +174,8 @@ const pickBowler = async (name) => {
   return true;
 };
 /** In the open bowler sheet, what a disabled bowler says about himself, by name. */
-const whyNot = async (id) => said(`bowler-why-${id}`);
+const whyNot = async (id) => ((await page.locator(`[data-testid="bowler-choice"][data-id="${id}"] [data-testid="bowler-unavailable"]`)
+  .first().innerText({ timeout: 2000 }).catch(() => "")) || "").trim();
 
 /** Screenshots of one sheet in both themes, at 390 × 844 (SUSPENSION_SHOTS only). */
 async function shoot(name, open) {

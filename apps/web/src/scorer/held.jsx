@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   heldInOrder, heldFrom, describeHeld, describeEvent, recordAgain, recordAgainRefusal, reasonWords,
 } from "@scrbrd/sync";
+import { likelyCause } from "@scrbrd/scoring";
 import { D } from "../design/tokens.js";
 import { Btn, Lbl, Sheet } from "./ui.jsx";
 
@@ -77,6 +78,13 @@ export function HeldSheet({ held = [], events, innings, live, onDiscard, onRecor
                 <Lbl sx={{flexShrink:0}}>{refused?"Refused":"Conflict"}{when?` · ${new Date(when).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}`:""}</Lbl>
               </div>
               <div data-testid="held-why" style={{fontFamily:D.body,fontSize:"12.5px",color:D.roseText,lineHeight:1.5}}>{d.why}</div>
+              {/* What probably happened (SCRBRD-100 item 6): from the event alone,
+                  since the log the server judged it against has moved on. */}
+              {refused&&likelyCause(h.reason,{ev:h.payload})&&(
+                <div data-testid="held-cause" style={{fontFamily:D.body,fontSize:"13px",color:D.textPrimary,lineHeight:1.5}}>
+                  {likelyCause(h.reason,{ev:h.payload})}
+                </div>
+              )}
               {!d.onBoard&&(
                 <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>
                   It is no longer on this board (it was undone), so discarding it changes nothing you can see.
