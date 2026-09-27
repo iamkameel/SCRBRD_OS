@@ -617,8 +617,8 @@ export const SUSPENSION_SCOPE_TEXT = Object.freeze({
  * }} InningsStartInput
  */
 
-/** @typedef {EventBase & {kind: "batters", striker: string | null, nonStriker: string | null}} BattersEvent */
-/** @typedef {BaseInput & {striker?: string | null, nonStriker?: string | null}} BattersInput */
+/** @typedef {EventBase & {kind: "batters", striker: string | null, nonStriker: string | null, captainConsent?: true}} BattersEvent */
+/** @typedef {BaseInput & {striker?: string | null, nonStriker?: string | null, captainConsent?: boolean}} BattersInput */
 
 /**
  * `reason` is present only on a change of bowler during an over (SCRBRD-080).
@@ -838,11 +838,24 @@ export const inningsStart = (o) => ({
   ...(o.captureProfile != null ? { captureProfile: checkedProfile(o.captureProfile) } : {}),
 });
 
-/** @param {BattersInput} o  @returns {BattersEvent} */
+/**
+ * The openers, a new batter, a change of ends — or a batter walking back in.
+ *
+ * `captainConsent: true` is a batter who RETIRED OUT resuming with the
+ * opposing captain's consent (Law 25.4.3; SCRBRD-071): the one return the
+ * Laws allow a retired-out batter, and only at the fall of a wicket or the
+ * retirement of another batter (25.4.4). The fold takes his wicket back
+ * (replay.mjs); ball_event_live does the same for every SQL reader (db/53).
+ * Present exactly when given as true, so every other batters event is the
+ * object it always was.
+ *
+ * @param {BattersInput} o  @returns {BattersEvent}
+ */
 export const batters = (o) => ({
   ...base(KIND.BATTERS, o),
   striker: o.striker ?? null,
   nonStriker: o.nonStriker ?? null,
+  ...(o.captainConsent === true ? { captainConsent: /** @type {true} */ (true) } : {}),
 });
 
 /**

@@ -388,7 +388,56 @@ group("D. Strike rotation and innings end");
   ok("the fold records the retirement: who, why, the wickets then, the ball",
      rec.length === 1 && rec[0].batter === "p2" && rec[0].reason === "hurt" && rec[0].wickets === 0
      && rec[0].over === 0 && rec[0].ballInOver === 2, rec);
-  ok("...and a retired out is not in it", deriveInnings([...open(), runs(1), retire({ batter: "p1", reason: "out" })]).retirements.length === 0);
+  const ro = deriveInnings([...open(), runs(1), retire({ batter: "p1", reason: "out" })]).retirements;
+  ok("...and a retired out is in it, marked out, his own wicket counted", ro.length === 1 && ro[0].out === true && ro[0].wickets === 1
+     && rec[0].out === false, ro);
+  ok("...a timed out is not", deriveInnings([...open(), ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" }),
+     retire({ batter: "p3", reason: "timed_out" })]).retirements.length === 0);
+}
+{
+  // SCRBRD-071, Law 25.4.3: a batter who retired out resumes with the
+  // opposing captain's consent. p1 hits a four and retires out; p3 comes in
+  // and is bowled; p1 walks back in with consent, and hits a two.
+  const outLog = [...open(), runs(4), retire({ batter: "p1", reason: "out" }), batters({ striker: "p3" }), runs(0),
+                  ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" })];
+  const before = deriveInnings(outLog);
+  ok("retired out, then a wicket: two down, two on the fall of wickets, one with no ball",
+     before.wickets === 2 && before.fow.length === 2 && before.fow[0].batsman === "James Whitfield" && before.fow[1].wickets === 2
+     && before.nonBallWickets.length === 1, before.fow);
+  const consentEv = batters({ striker: "p1", captainConsent: true });
+  ok("the event carries the consent, and only when given", consentEv.captainConsent === true && !("captainConsent" in batters({ striker: "p1" }))
+     && !("captainConsent" in batters({ striker: "p1", captainConsent: false })));
+  const back = deriveInnings([...outLog, consentEv, runs(2)]);
+  const p1 = must(back.batsmen.find((b) => b.id === "p1"));
+  ok("with consent his wicket is taken back: one down", back.wickets === 1, back.wickets);
+  ok("...off the fall of wickets, the later one renumbered", back.fow.length === 1 && back.fow[0].batsman === "S Naidoo"
+     && back.fow[0].wickets === 1 && back.fow[0].runs === 4, back.fow);
+  ok("...and off the wickets with no ball", back.nonBallWickets.length === 0);
+  ok("...his line batting again, no dismissal, 4 (1) then 2: 6 (2)", p1.status === "batting" && p1.dismissal === null
+     && p1.runs === 6 && p1.balls === 2, p1);
+  ok("...one line on the card", back.batsmen.filter((b) => b.id === "p1").length === 1);
+  ok("...the consented resume recorded", back.resumedWithConsent.length === 1 && back.resumedWithConsent[0].batter === "p1");
+  ok("...no bowler's figure moved", JSON.stringify(back.bowlers.map((b) => [b.id, b.wickets])) === JSON.stringify([["w1", 1]]));
+  const noConsent = deriveInnings([...outLog, batters({ striker: "p1" })]);
+  ok("named again without consent: still out, the wicket stands", noConsent.wickets === 2
+     && must(noConsent.batsmen.find((b) => b.id === "p1")).status === "out");
+  // A view handed out before the resume keeps its own fall of wickets.
+  const f = new MatchFold(outLog);
+  const earlier = f.view().innings[0];
+  f.push({ ...consentEv, innings: 0 });
+  ok("a view taken before it is not rewritten", earlier.fow.length === 2 && earlier.nonBallWickets.length === 1
+     && f.view().innings[0].fow.length === 1);
+  // Consent for anyone else moves nothing: a new batter, a batter timed out.
+  const timed = [...open(), ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" }), retire({ batter: "p3", reason: "timed_out" })];
+  const t = deriveInnings([...timed, batters({ striker: "p3", captainConsent: true })]);
+  ok("consent for a batter timed out takes nothing back", t.wickets === 2 && t.resumedWithConsent.length === 0);
+  const n = deriveInnings([...outLog, batters({ striker: "p4", captainConsent: true })]);
+  ok("...nor for a new batter", n.wickets === 2 && n.resumedWithConsent.length === 0);
+  // Retired out, back, bowled: out for good — a second consent does nothing.
+  const bowledAfter = [...outLog, consentEv, runs(0), ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" })];
+  const again = deriveInnings([...bowledAfter, batters({ striker: "p1", captainConsent: true })]);
+  ok("back, then bowled: consent does not take THAT wicket back", again.wickets === 2
+     && must(again.batsmen.find((b) => b.id === "p1")).status === "out");
 }
 
 // ── D. Order-independence, given seq ─────────────────────

@@ -735,6 +735,59 @@ group("Q. Retired hurt resumes only at a wicket or another's retirement; none on
   ok("...a retirement in play is taken as it always was", judge(L, at(0, hurt("p1"))[0]) === null);
 }
 
+// ── R. Retired out resumes with the opposing captain's consent (Law 25.4.3; SCRBRD-071) ──
+group("R. Retired out comes back only with the captain's consent, and only at a wicket or another's retirement");
+{
+  const L = [...open(0), ...runs(0, 0, 0)];
+  const consent = (/** @type {Record<string, string>} */ end) => batters({ ...end, captainConsent: true });
+  const roOff = [...L, ...at(0, retire({ batter: "p2", reason: "out" }))];
+  ok("with consent, straight back into his own vacancy: refused as too soon",
+     judge(roOff, at(0, consent({ nonStriker: "p2" }))[0]) === REFUSAL.RESUME_NOT_YET);
+  ok("...without it: out", judge(roOff, at(0, batters({ nonStriker: "p2" }))[0]) === REFUSAL.BATTER_ALREADY_OUT);
+
+  const p3In = [...roOff, ...at(0, batters({ nonStriker: "p3" })), ...runs(0, 0)];
+  const wicket = [...p3In, ...at(0, ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" }))];
+  ok("after a wicket, with consent: taken", judge(wicket, at(0, consent({ striker: "p2" }))[0]) === null);
+  ok("...without consent: still out", judge(wicket, at(0, batters({ striker: "p2" }))[0]) === REFUSAL.BATTER_ALREADY_OUT);
+  const hurtSince = [...p3In, ...at(0, retire({ batter: "p3", reason: "hurt" }))];
+  ok("after another batter retires hurt, with consent: taken", judge(hurtSince, at(0, consent({ nonStriker: "p2" }))[0]) === null);
+
+  ok("consent for a new batter: refused as a false record", judge(wicket, at(0, consent({ striker: "p4" }))[0]) === REFUSAL.CONSENT_NOT_RETIRED_OUT);
+  ok("consent for a batter bowled: out", judge(wicket, at(0, consent({ striker: "p1" }))[0]) === REFUSAL.BATTER_ALREADY_OUT);
+  const hurtWicket = [...L, ...at(0, retire({ batter: "p2", reason: "hurt" }), batters({ nonStriker: "p3" })), ...runs(0, 0),
+                      ...at(0, ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" }))];
+  ok("consent for a batter retired HURT: refused — he needs none", judge(hurtWicket, at(0, consent({ striker: "p2" }))[0]) === REFUSAL.CONSENT_NOT_RETIRED_OUT);
+  ok("...and he comes back without it", judge(hurtWicket, at(0, batters({ striker: "p2" }))[0]) === null);
+  const timed = [...L, ...at(0, ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" }), retire({ batter: "p3", reason: "timed_out" }),
+                                 retire({ batter: "p2", reason: "hurt" }))];
+  ok("consent for a batter timed out: out — timed out is not a retirement", judge(timed, at(0, consent({ striker: "p3" }))[0]) === REFUSAL.BATTER_ALREADY_OUT);
+  // An old W delivery naming retired out left no retirement on the record.
+  const oldShape = [...L, ...at(0, ball({ type: BALL_TYPE.WICKET, dismissal: "retired_out" }), batters({ striker: "p3" })), ...runs(0),
+                    ...at(0, ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" }))];
+  ok("the old shape (a W delivery) is not resumed with consent", judge(oldShape, at(0, consent({ striker: "p1" }))[0]) === REFUSAL.BATTER_ALREADY_OUT);
+
+  // Over, or closed.
+  const small = at(0, inningsStart({ battingTeam: "A", bowlingTeam: "B", squad: SQ_A.slice(0, 2), bowlingSquad: SQ_B, overs: 2 }),
+                   batters({ striker: "p1", nonStriker: "p2" }), bowler({ bowler: "w1" }), ball({}), retire({ batter: "p2", reason: "out" }));
+  ok("his retirement ended the innings: consent refused as over", deriveInnings(small).complete === true
+     && judge(small, at(0, consent({ nonStriker: "p2" }))[0]) === REFUSAL.INNINGS_OVER);
+  const played = [...roOff, ...at(0, batters({ nonStriker: "p3" })), ...runs(0, 0, 0, 0, 0), ...at(0, bowler({ bowler: "w2" })),
+                  ...runs(0, 0, 0, 0, 0, 0, 0)];
+  const sealed = [...played, ...at(0, sealInnings(deriveInnings(played)))];
+  ok("...and as closed once sealed", deriveInnings(sealed).sealed === true
+     && judge(sealed, at(0, consent({ striker: "p2" }))[0]) === REFUSAL.INNINGS_CLOSED);
+
+  // The 25.4.4 timing counts a wicket even after it is taken back: p2 retires
+  // out; p1 retires hurt; p2 comes back with consent (at p1's retirement) —
+  // one wicket fewer; then a wicket falls, and p1 may come back at it.
+  const chain = [...roOff, ...at(0, batters({ nonStriker: "p3" })), ...runs(0), ...at(0, retire({ batter: "p1", reason: "hurt" }))];
+  ok("p2 back with consent at p1's retirement", judge(chain, at(0, consent({ striker: "p2" }))[0]) === null);
+  const chain2 = [...chain, ...at(0, consent({ striker: "p2" }))];
+  const chain3 = [...chain2, ...runs(0), ...at(0, ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" }))];
+  ok("...then a wicket falls (wickets back to 1, as when p1 went) and p1 may resume at it",
+     deriveInnings(chain3).wickets === 1 && judge(chain3, at(0, batters({ striker: "p1" }))[0]) === null);
+}
+
 group("J. Every reason has words for the person who has to clear it");
 {
   const missing = Object.values(REFUSAL).filter((r) => typeof REFUSAL_TEXT[r] !== "string");

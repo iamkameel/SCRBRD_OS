@@ -202,6 +202,9 @@ group("G. In words");
      describeEvent(ball({ type: "W", value: 1, dismissal: "run_out", dismissed: "p2", outAt: "striker_end" }), innings[0])
      === "Wicket — K Naidoo Run Out at the striker's end, 1 run");
   ok("retired hurt, a retirement", describeEvent(retire({ batter: "p1", reason: "hurt" }), innings[0]) === "Retirement — S Dlamini (retired hurt)");
+  ok("a retired-out batter back with consent says so",
+     describeEvent(batters({ striker: "p1", captainConsent: true }), innings[0]) === "Batters — S Dlamini (on strike), resuming with the opposing captain's consent",
+     describeEvent(batters({ striker: "p1", captainConsent: true }), innings[0]));
 }
 
 group("H. The engine: a held event is not queued again when the pad re-offers its log");

@@ -332,7 +332,8 @@ export function describeEvent(ev, inn, find) {
     case "batters": {
       const who = [ev.striker != null ? `${n(ev.striker)} (on strike)` : null,
                    ev.nonStriker != null ? n(ev.nonStriker) : null].filter(Boolean);
-      return `Batters — ${who.length ? who.join(" and ") : "nobody named"}`;
+      // A retired-out batter back with the opposing captain's consent (SCRBRD-071).
+      return `Batters — ${who.length ? who.join(" and ") : "nobody named"}${ev.captainConsent === true ? ", resuming with the opposing captain's consent" : ""}`;
     }
     case "retire": {
       // SCRBRD-081: marked W, it is a dismissal with no ball.

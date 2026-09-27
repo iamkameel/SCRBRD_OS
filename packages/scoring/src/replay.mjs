@@ -135,14 +135,21 @@ const BAT_STATUS = { NOT_OUT: "batting", OUT: "out", RETIRED: "retired" };
  *   why (SUSPENSION_REASON), for how long (SUSPENSION_SCOPE), and at which
  *   ball — the 0-based over the next delivery is in and the legal balls of it
  *   already bowled, as bowlerChanges. A suspension moves no figure.
- * @property {{batter: string | null, reason: string, wickets: number, over: number, ballInOver: number}[]} retirements
- *   batters who retired and were NOT out (retired hurt; a legacy unmarked
- *   retire of any reason), in order: who, why, the innings' wickets when he
- *   went, and at which ball, as suspensions. Retired out and timed out are
- *   wickets, in nonBallWickets instead. It is what the Laws read to say when
- *   a batter retired hurt may resume (laws.mjs, SCRBRD-071): only once a
- *   wicket has fallen, or another batter has retired, since he went. It
- *   moves no figure.
+ * @property {{batter: string | null, reason: string, out: boolean, wickets: number, over: number, ballInOver: number}[]} retirements
+ *   every batter who retired, in order: retired hurt (and a legacy unmarked
+ *   retire of any reason), `out: false`; retired out, `out: true` (a wicket,
+ *   in nonBallWickets too). Timed out is not a retirement and is not here.
+ *   Who, why, the wickets that had FALLEN when he went (his own included —
+ *   counting any since taken back, see resumedWithConsent, so the number
+ *   only rises), and at which ball, as suspensions. It is what the Laws read
+ *   to say when a retired batter may resume (laws.mjs, SCRBRD-071): only
+ *   once a wicket has fallen, or another batter has retired, since he went
+ *   (Law 25.4.4). It moves no figure.
+ * @property {{batter: string, over: number, ballInOver: number}[]} resumedWithConsent
+ *   batters who retired out and resumed with the opposing captain's consent
+ *   (Law 25.4.3; a `batters` event with `captainConsent`): each took his
+ *   wicket back — out of `wickets`, `fow` and `nonBallWickets`, his line
+ *   batting again. SQL does the same through ball_event_live (db/53).
  * @property {{bat1: string, bat2: string, runs: number, balls: number, wicket: number}[]} partnerships
  * @property {{runs: number, balls: number, bat1: string | null, bat2: string | null}} curPartner
  * @property {BallLogEntry[]} ballLog
@@ -258,7 +265,7 @@ function inningsFolder(ctx = {}, carried = 0) {
     extras: { wide: 0, noBall: 0, bye: 0, legBye: 0, penalty: carried },
     penaltyToFielding: 0, penaltyCarried: carried,
 
-    batsmen: [], bowlers: [], fow: [], nonBallWickets: [], bowlerChanges: [], suspensions: [], retirements: [],
+    batsmen: [], bowlers: [], fow: [], nonBallWickets: [], bowlerChanges: [], suspensions: [], retirements: [], resumedWithConsent: [],
     partnerships: [], curPartner: { runs: 0, balls: 0, bat1: null, bat2: null },
     ballLog: [], overLog: [],
 
@@ -317,6 +324,41 @@ function inningsFolder(ctx = {}, carried = 0) {
       b.status = BAT_STATUS.NOT_OUT;
       b.dismissal = null;
     }
+  };
+
+  // Wickets fallen in this innings, counting any since taken back by a
+  // consented resume: the number the Laws' 25.4.4 timing reads, which must
+  // only rise (laws.mjs mayResume).
+  const fallen = () => inn.wickets + inn.resumedWithConsent.length;
+
+  // The wicket a retired out made — its fall-of-wicket entry and its
+  // nonBallWickets entry, by identity — for as long as it stands, so a
+  // consented resume (Law 25.4.3) can take exactly that wicket back.
+  /** @type {Map<string, {fow: object, nbw: object}>} */
+  const retiredOutWicket = new Map();
+
+  // A batter who retired out walks back in with the opposing captain's
+  // consent (Law 25.4.3; SCRBRD-071). His wicket is taken back: one fewer
+  // in `wickets`, his entry out of the fall of wickets (the later ones
+  // renumbered, so they count the wickets that stand) and out of
+  // nonBallWickets, and his line batting again, runs and balls going on.
+  // Only a wicket a retired out made and that still stands: anything else
+  // named with consent is left as the batters event always left it (the
+  // Laws refuse it at commit). New arrays, not edits in place: a view
+  // already handed out (MatchFold.view() copies shallowly) keeps its own.
+  /** @param {string} id */
+  const resumeWithConsent = (id) => {
+    const b = batterFor(id);
+    const w = retiredOutWicket.get(id);
+    if (!b || !w || b.status !== BAT_STATUS.OUT) return;
+    retiredOutWicket.delete(id);
+    const gone = /** @type {{wickets: number}} */ (w.fow);
+    inn.wickets -= 1;
+    inn.fow = inn.fow.filter((x) => x !== w.fow).map((x) => (x.wickets > gone.wickets ? { ...x, wickets: x.wickets - 1 } : x));
+    inn.nonBallWickets = inn.nonBallWickets.filter((x) => x !== w.nbw);
+    b.status = BAT_STATUS.NOT_OUT;
+    b.dismissal = null;
+    inn.resumedWithConsent = [...inn.resumedWithConsent, { batter: id, over: Math.floor(inn.balls / 6), ballInOver: inn.balls % 6 }];
   };
 
   // Whether the target now standing is one the umpires typed (a revision)
@@ -408,6 +450,11 @@ function inningsFolder(ctx = {}, carried = 0) {
 
       case KIND.BATTERS: {
         const hadPair = inn.striker != null && inn.nonStriker != null;
+        // With the opposing captain's consent, a batter who retired out is
+        // named: his wicket is taken back before he takes his end.
+        if (ev.captainConsent === true) {
+          for (const id of [ev.striker, ev.nonStriker]) if (id != null && id !== inn.striker && id !== inn.nonStriker) resumeWithConsent(id);
+        }
         if (ev.striker != null) { resume(batterFor(ev.striker)); inn.striker = ev.striker; }
         if (ev.nonStriker != null) { resume(batterFor(ev.nonStriker)); inn.nonStriker = ev.nonStriker; }
         // Opening the innings, or a new arrival after a wicket: either way the
@@ -476,9 +523,19 @@ function inningsFolder(ctx = {}, carried = 0) {
           const outBat = batterFor(ev.batter);
           inn.wickets += 1;
           if (outBat) { outBat.status = BAT_STATUS.OUT; outBat.dismissal = DISMISSAL_LABEL[how].toLowerCase(); }
-          inn.fow.push({ runs: inn.runs, wickets: inn.wickets, batsman: outBat?.name ?? "?", overs: fmtOvers(inn.balls) });
+          const fowEntry = { runs: inn.runs, wickets: inn.wickets, batsman: outBat?.name ?? "?", overs: fmtOvers(inn.balls) };
+          inn.fow.push(fowEntry);
           // The over the next delivery is in — where a phase breakdown files it.
-          inn.nonBallWickets.push({ over: Math.floor(inn.balls / 6), batter: ev.batter ?? null, dismissal: how });
+          const nbw = { over: Math.floor(inn.balls / 6), batter: ev.batter ?? null, dismissal: how };
+          inn.nonBallWickets.push(nbw);
+          // Retired out is a retirement too (Law 25.4.3): on the record the
+          // Laws read for when he may resume, and — while it stands — the
+          // wicket a consented resume would take back.
+          if (how === DISMISSAL.RETIRED_OUT && ev.batter != null) {
+            inn.retirements.push({ batter: ev.batter, reason: String(ev.reason ?? "out"), out: true, wickets: fallen(),
+                                   over: Math.floor(inn.balls / 6), ballInOver: inn.balls % 6 });
+            retiredOutWicket.set(ev.batter, { fow: fowEntry, nbw });
+          }
           // Retired out is a batter at the crease: his partnership ends and
           // his end empties, as on a wicket ball. Timed out is the batter due
           // in, who never reached it: nothing at the crease changes.
@@ -493,7 +550,7 @@ function inningsFolder(ctx = {}, carried = 0) {
         const b = batterFor(ev.batter);
         if (b) { b.status = BAT_STATUS.RETIRED; b.dismissal = `retired ${ev.reason ?? "hurt"}`; }
         // When he went, for the Laws' "may he resume yet?" (laws.mjs).
-        inn.retirements.push({ batter: ev.batter ?? null, reason: String(ev.reason ?? "hurt"), wickets: inn.wickets,
+        inn.retirements.push({ batter: ev.batter ?? null, reason: String(ev.reason ?? "hurt"), out: false, wickets: fallen(),
                                over: Math.floor(inn.balls / 6), ballInOver: inn.balls % 6 });
         closePartnership();
         if (inn.striker === ev.batter) inn.striker = null;

@@ -70,7 +70,8 @@ export const REFUSAL = Object.freeze({
   // At the crease.
   SAME_BATTER_BOTH_ENDS:  "same_batter_both_ends",
   BATTER_ALREADY_OUT:     "batter_already_out",     // dismissed, or retired out
-  RESUME_NOT_YET:         "resume_not_yet",         // retired hurt, and no wicket or other retirement since (SCRBRD-071)
+  RESUME_NOT_YET:         "resume_not_yet",         // retired, and no wicket or other retirement since (SCRBRD-071)
+  CONSENT_NOT_RETIRED_OUT: "consent_not_retired_out", // the captain's consent, for nobody who retired out (SCRBRD-071)
   CREASE_OCCUPIED:        "crease_occupied",        // a not-out batter replaced without leaving
   NOT_AT_CREASE:          "not_at_crease",          // dismissed / retiring batter is not batting
   CONSECUTIVE_OVERS:      "consecutive_overs",      // Law 17.8: not two overs, or parts, running
@@ -120,7 +121,9 @@ export const REFUSAL_TEXT = Object.freeze({
   same_batter_both_ends: "the same batter was named at both ends",
   batter_already_out: "that batter is already out",
   // Law 25.4.4. No clause number in the words.
-  resume_not_yet: "a batter who retired hurt may resume only after a wicket has fallen, or another batter has retired, since he went off",
+  resume_not_yet: "a batter who retired may resume only after a wicket has fallen, or another batter has retired, since he went off",
+  // Law 25.4.3. No clause number in the words.
+  consent_not_retired_out: "the opposing captain's consent was recorded for a batter who had not retired out",
   crease_occupied: "a batter who is not out was replaced",
   not_at_crease: "that batter is not at the crease",
   consecutive_overs: "a bowler may not bowl two overs in a row",
@@ -453,15 +456,18 @@ function isOut(inn, id) {
 }
 
 /**
- * May a batter who retired hurt resume now? Law 25.4.4: "only at the fall
- * of a wicket or the retirement of another batter". SCRBRD-071.
+ * May a batter who retired resume now? Law 25.4.4: "only at the fall of a
+ * wicket or the retirement of another batter". SCRBRD-071. The same for
+ * retired hurt and for retired out with the captain's consent (25.4.3).
  *
  * Read from the fold's own record of retirements (`inn.retirements`, in
- * order, each with the innings' wickets when he went): he may come back once,
- * since HIS LATEST retirement, a wicket has fallen (the wickets have moved) or
- * another batter has retired. Anything else is the end he left, straight
- * back: an end is only ever empty after a wicket or a retirement, so with
- * neither since he went, the vacancy he would fill is his own.
+ * order, each with the wickets fallen when he went): he may come back once,
+ * since HIS LATEST retirement, a wicket has fallen or another batter has
+ * retired. Anything else is the end he left, straight back: an end is only
+ * ever empty after a wicket or a retirement, so with neither since he went,
+ * the vacancy he would fill is his own. "Fallen" counts a wicket since
+ * taken back by a consented resume (it fell; a batter could have resumed at
+ * it), so it only rises.
  *
  *   - A wicket with no delivery (retired out, timed out) is a wicket: it
  *     counts, as the Law's "fall of a wicket" does.
@@ -485,9 +491,21 @@ function mayResume(inn, id) {
   let k = -1;
   for (let j = list.length - 1; j >= 0; j--) if (list[j].batter === id) { k = j; break; }
   if (k < 0) return true;
-  if ((inn.wickets ?? 0) > list[k].wickets) return true;
+  if ((inn.wickets ?? 0) + (inn.resumedWithConsent?.length ?? 0) > list[k].wickets) return true;
   // Any retirement after his latest is another batter's.
   return k < list.length - 1;
+}
+
+/**
+ * Retired out, and still out from it: the latest retirement on the record is
+ * his retired out, and his line still says so (not out since, by a ball).
+ * Timed out is not a retirement; an old W delivery naming retired out left
+ * no record, and stays out. @param {Innings} inn  @param {string} id
+ */
+function isRetiredOut(inn, id) {
+  const b = inn.batsmen?.find((x) => x.id === id);
+  const last = (inn.retirements ?? []).filter((r) => r.batter === id).at(-1);
+  return b?.status === "out" && b.dismissal === "retired out" && last?.out === true;
 }
 
 /** Retired, and not out: the batter mayResume() is asked about. @param {Innings} inn  @param {string} id */
@@ -508,13 +526,28 @@ function battersRefusal(inn, ev) {
   if (striker != null && striker === nonStriker) return REFUSAL.SAME_BATTER_BOTH_ENDS;
 
   const at = new Set([inn.striker, inn.nonStriker].filter((x) => x != null));
+  // The opposing captain's consent (Law 25.4.3): the one way a batter who
+  // retired out comes back. Not once the innings is over or closed — his
+  // retirement may have been its last wicket — and it must be for a batter
+  // who retired out: consent recorded for anyone else is a false record.
+  const consent = ev.captainConsent === true;
+  if (consent && inn.sealed) return REFUSAL.INNINGS_CLOSED;
+  if (consent && inn.complete) return REFUSAL.INNINGS_OVER;
+  let consented = 0;
   for (const id of [ev.striker, ev.nonStriker]) {
     if (id == null || at.has(id)) continue;
     // A new arrival. A dismissed batter does not come back; one retired hurt
-    // may (Law 25.4.2). isOut() says which — and mayResume() says when.
+    // may (Law 25.4.2), and one retired out with the captain's consent
+    // (25.4.3). isOut() says which — and mayResume() says when (25.4.4).
+    if (consent && isRetiredOut(inn, id)) {
+      if (!mayResume(inn, id)) return REFUSAL.RESUME_NOT_YET;
+      consented++;
+      continue;
+    }
     if (isOut(inn, id)) return REFUSAL.BATTER_ALREADY_OUT;
     if (isRetiredNotOut(inn, id) && !mayResume(inn, id)) return REFUSAL.RESUME_NOT_YET;
   }
+  if (consent && consented === 0) return REFUSAL.CONSENT_NOT_RETIRED_OUT;
 
   // Once play has started, a batter leaves the crease by being dismissed or
   // by retiring — both events the fold records, both of which empty the end.
