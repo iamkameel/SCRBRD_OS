@@ -879,6 +879,22 @@ BEGIN
     ('88888888-0000-0000-0000-000000000056', 'scorer', HIL, NULL);
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
+-- A police clearance recorded BEFORE db/56 to run five years, as db/08
+-- allowed: written with db/56's age rule off for this one insert (the owner,
+-- rolled back with everything else), so the section does not depend on which
+-- seed a database carries. On the seeded scorer, who holds none.
+CREATE OR REPLACE FUNCTION _legacy_56() RETURNS uuid AS $$
+DECLARE v_id uuid;
+BEGIN
+  ALTER TABLE adult_clearance DISABLE TRIGGER adult_clearance_csa_age;
+  INSERT INTO adult_clearance (person_id, school_id, kind, reference, issued_on, expires_on, note)
+    VALUES ('88888888-0000-0000-0000-000000000006', '11111111-1111-1111-1111-111111111111', 'police_clearance',
+            'PCC-V56-LEGACY', sa_today() - 400, sa_today() - 400 + 1825, 'Verify 056: before CSA''s 24 months')
+    RETURNING id INTO v_id;
+  ALTER TABLE adult_clearance ENABLE TRIGGER adult_clearance_csa_age;
+  RETURN v_id;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
 -- Put a driver on a trip for the seeded 1XI v Michaelhouse fixture, as the
 -- office would, and say what the driver guard answered: 'ok' or its refusal.
 CREATE OR REPLACE FUNCTION _trip_56(p_driver uuid) RETURNS text AS $$
@@ -5771,7 +5787,6 @@ BEGIN
     v_err   text;
     v_id    uuid;
     U_DRV   uuid := '88888888-0000-0000-0000-000000000017';  -- B Ngcobo, driver; police current
-    U_PHYS  uuid := '88888888-0000-0000-0000-000000000003';  -- the physio; a five-year police row
     U_V56   uuid := '88888888-0000-0000-0000-000000000056';  -- S Naidoo, eighteen: player and scorer
     d       date := sa_today();
   BEGIN
@@ -5850,18 +5865,20 @@ BEGIN
 
     -- (legacy) a five-year row recorded before db/56 reads current until its
     -- date, and is revoked like any other
-    SELECT id INTO v_id FROM adult_clearance
-     WHERE person_id = U_PHYS AND school_id = HIL AND kind = 'police_clearance' AND revoked_at IS NULL
-       AND expires_on - issued_on > 731 AND expires_on > d;
-    PERFORM _assert(v_id IS NOT NULL, 'db/56 (legacy): the seed''s five-year police clearance is not there to read');
+    PERFORM set_config('app.user_id', '', true);
+    v_id := _legacy_56();
+    PERFORM _as(U_REGISTRAR);
+    SELECT count(*) INTO n FROM adult_clearance
+     WHERE id = v_id AND expires_on - issued_on > 731 AND revoked_at IS NULL;
+    PERFORM _assert(n = 1, 'db/56 (legacy): the office cannot read the five-year police clearance recorded before db/56');
     SELECT count(*) INTO n FROM clearance_register(HIL)
-     WHERE person_id = U_PHYS AND kind = 'police_clearance' AND clearance_id = v_id AND status = 'current';
+     WHERE person_id = U_SCORER AND kind = 'police_clearance' AND clearance_id = v_id AND status = 'current';
     PERFORM _assert(n = 1, 'db/56 (legacy): a police clearance recorded before db/56 to run five years no longer reads current until its date');
     UPDATE adult_clearance SET revoked_at = now(), revoked_reason = 'Verify 056: re-checked under CSA' WHERE id = v_id;
     GET DIAGNOSTICS n = ROW_COUNT;
     PERFORM _assert(n = 1, 'db/56 (legacy): the office cannot revoke a row older than CSA''s 24 months');
     SELECT count(*) INTO n FROM clearance_register(HIL)
-     WHERE person_id = U_PHYS AND kind = 'police_clearance' AND status = 'revoked';
+     WHERE person_id = U_SCORER AND kind = 'police_clearance' AND status = 'revoked';
     PERFORM _assert(n = 1, 'db/56 (legacy): the revoked five-year row does not read revoked');
 
     -- (reference) the ages are readable by anyone signed in, and written by nobody
