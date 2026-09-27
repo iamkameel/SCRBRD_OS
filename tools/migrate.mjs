@@ -44,10 +44,11 @@ import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { ownerUrl } from "./db-url.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const DB_DIR = join(ROOT, "db");
-const URL = process.env.DATABASE_URL || "postgres://scrbrd:scrbrd@127.0.0.1:5432/scrbrd";
+const URL = ownerUrl();
 const args = new Set(process.argv.slice(2));
 
 const run = (sqlArgs) => {

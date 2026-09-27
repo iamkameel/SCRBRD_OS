@@ -26,11 +26,12 @@
  */
 import { spawn } from "node:child_process";
 import pg from "pg";
+import { ownerUrl, appUrl, port } from "./db-url.mjs";
 
-const PORT = 8846;
+const PORT = port(8846);
 const BASE = `http://127.0.0.1:${PORT}`;
-const DB = process.env.DATABASE_URL || "postgres://scrbrd:scrbrd@127.0.0.1:5432/scrbrd";
-const APP_DB = "postgres://scrbrd_app:scrbrd_app@127.0.0.1:5432/scrbrd";
+const DB = ownerUrl();
+const APP_DB = appUrl();
 
 let pass = 0, fail = 0;
 const ok = (n, c, detail = "") => {
@@ -49,7 +50,7 @@ const q = async (t, p) => (await pool.query(t, p)).rows;
 function boot() {
   return new Promise((resolve) => {
     const server = spawn(process.execPath, ["services/api/server.mjs"], {
-      env: { ...process.env, PORT: String(PORT), NODE_ENV: "development",
+      env: { ...process.env, DATABASE_URL: appUrl(), PORT: String(PORT), NODE_ENV: "development",
              SESSION_SECRET: "smoke-schema-guard-secret" },
       stdio: ["ignore", "pipe", "pipe"],
     });

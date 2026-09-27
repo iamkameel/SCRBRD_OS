@@ -67,6 +67,7 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
+import { ownerUrl, appUrl, port } from "./db-url.mjs";
 // The rankings the tab itself runs (unchanged by SCRBRD-086), so "All
 // seasons" can be held to what the `career` read ranks to — the tab's
 // behaviour before seasons. NOT the new season helpers: the expected season
@@ -75,10 +76,10 @@ import {
   bestBattingAverages, bestBowlingEconomies, mvpRanking, topRunScorers, topWicketTakers,
 } from "../apps/web/src/lib/seasonAwards.js";
 
-const WEB_PORT = 5303;
-const API_PORT = 8803;
+const WEB_PORT = port(5303);
+const API_PORT = port(8803);
 const API = `http://127.0.0.1:${API_PORT}`;
-const DB = process.env.DATABASE_URL || "postgres://scrbrd:scrbrd@127.0.0.1:5432/scrbrd";
+const DB = ownerUrl();
 const HIL = "11111111-1111-1111-1111-111111111111";
 const WES = "22222222-2222-2222-2222-222222222222";
 const DEBUG = !!process.env.BROWSER_AWARDS_DEBUG;
@@ -90,7 +91,7 @@ const ok = (n, c, d = "") => { if (c) pass++; else { fail++; console.log("  ✗"
 const group = (t) => console.log("\n" + t);
 
 const apiProc = spawn(process.execPath, ["services/api/server.mjs"], {
-  env: { ...process.env, PORT: String(API_PORT), NODE_ENV: "development",
+  env: { ...process.env, DATABASE_URL: appUrl(), PORT: String(API_PORT), NODE_ENV: "development",
          ALLOW_DEV_LOGIN: "1", SESSION_SECRET: "browser-awards-secret",
          WEB_ORIGIN: `http://localhost:${WEB_PORT}` },
   stdio: ["ignore", "pipe", "pipe"],

@@ -33,12 +33,13 @@
  *   node tools/smoke-handover.mjs
  */
 import { spawn } from "node:child_process";
+import { appUrl, port } from "./db-url.mjs";
 import {
   deriveInnings, fromRow, inningsStart, batters, bowler, ball, BALL_TYPE,
   newEventId, undoLast,
 } from "@scrbrd/scoring";
 
-const PORT = 8792;
+const PORT = port(8792);
 const BASE = `http://127.0.0.1:${PORT}`;
 const MATCH = "77777777-0000-0000-0000-000000000002";
 const SCORER = "scorer@example.invalid";   // device A — starts the match
@@ -58,7 +59,7 @@ const ok = (n, c, d = "") => { if (c) pass++; else { fail++; console.log("  ✗"
 const group = (t) => console.log("\n" + t);
 
 const server = spawn(process.execPath, ["services/api/server.mjs"], {
-  env: { ...process.env, PORT: String(PORT), NODE_ENV: "development", ALLOW_DEV_LOGIN: "1",
+  env: { ...process.env, DATABASE_URL: appUrl(), PORT: String(PORT), NODE_ENV: "development", ALLOW_DEV_LOGIN: "1",
          SESSION_SECRET: "smoke-handover-secret" },
   stdio: ["ignore", "pipe", "pipe"],
 });

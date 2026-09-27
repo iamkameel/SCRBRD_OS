@@ -44,11 +44,12 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
+import { ownerUrl, appUrl, port } from "./db-url.mjs";
 
-const WEB_PORT = 4329;
-const API_PORT = 8798;
+const WEB_PORT = port(4329);
+const API_PORT = port(8798);
 const API = `http://127.0.0.1:${API_PORT}`;
-const DB = process.env.DATABASE_URL || "postgres://scrbrd:scrbrd@127.0.0.1:5432/scrbrd";
+const DB = ownerUrl();
 const HIL = "11111111-1111-1111-1111-111111111111";
 const WES = "22222222-2222-2222-2222-222222222222";
 const MKHIZE = "bbbbbbbb-0000-0000-0000-000000000001";   // Westville 1XI
@@ -61,7 +62,7 @@ const ok = (n, c, detail) => { if (c) pass++; else { fail++; console.log("  ✗"
 const group = (t) => console.log("\n" + t);
 
 const api = spawn(process.execPath, ["services/api/server.mjs"], {
-  env: { ...process.env, PORT: String(API_PORT), NODE_ENV: "development",
+  env: { ...process.env, DATABASE_URL: appUrl(), PORT: String(API_PORT), NODE_ENV: "development",
          ALLOW_DEV_LOGIN: "1", SESSION_SECRET: "browser-dossier-secret",
          WEB_ORIGIN: `http://localhost:${WEB_PORT}` },
   stdio: ["ignore", "pipe", "pipe"],

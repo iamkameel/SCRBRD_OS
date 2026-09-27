@@ -19,12 +19,13 @@
  */
 import { spawn } from "node:child_process";
 import { SyncEngine, memoryStorage } from "@scrbrd/sync";
+import { appUrl, port } from "./db-url.mjs";
 import {
   deriveInnings, fromRow, inningsStart, batters, bowler, ball, BALL_TYPE,
   undoLast, newEventId, KIND, placementFromTap, positionName, hasPoint,
 } from "@scrbrd/scoring";
 
-const PORT = 8791;
+const PORT = port(8791);
 const BASE = `http://127.0.0.1:${PORT}`;
 const MATCH = "77777777-0000-0000-0000-000000000002";   // Hilton 1st XI v Michaelhouse, scheduled
 const SCORER = "scorer@example.invalid";
@@ -45,7 +46,7 @@ const group = (t) => console.log("\n" + t);
 
 // ── Boot the real server ─────────────────────────────────────────
 const server = spawn(process.execPath, ["services/api/server.mjs"], {
-  env: { ...process.env, PORT: String(PORT), NODE_ENV: "development", ALLOW_DEV_LOGIN: "1",
+  env: { ...process.env, DATABASE_URL: appUrl(), PORT: String(PORT), NODE_ENV: "development", ALLOW_DEV_LOGIN: "1",
          SESSION_SECRET: "smoke-sync-secret" },
   stdio: ["ignore", "pipe", "pipe"],
 });

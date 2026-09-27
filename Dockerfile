@@ -20,6 +20,12 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/web/package.json apps/web/
 COPY packages ./packages
 COPY services/api ./services/api
+# The one file server.mjs imports from tools/: connection-string and port
+# defaults (SCRBRD_DB, SCRBRD_PORT_OFFSET), shared with the CLI tools so a
+# worktree can run verification against its own database. It has no
+# dependencies of its own, so this stays a one-line addition rather than
+# pulling all of tools/ into the image.
+COPY tools/db-url.mjs ./tools/db-url.mjs
 RUN pnpm install --frozen-lockfile --prod --filter @scrbrd/api...
 
 ENV NODE_ENV=production

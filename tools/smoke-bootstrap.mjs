@@ -14,9 +14,10 @@
  */
 import { spawn, spawnSync } from "node:child_process";
 import pg from "pg";
+import { ownerUrl, appUrl, port } from "./db-url.mjs";
 
-const PORT = 8885, BASE = `http://127.0.0.1:${PORT}`;
-const DB = process.env.DATABASE_URL || "postgres://scrbrd:scrbrd@127.0.0.1:5432/scrbrd";
+const PORT = port(8885), BASE = `http://127.0.0.1:${PORT}`;
+const DB = ownerUrl();
 const SECRET = "smoke-bootstrap-secret";
 const EMAIL = "owner-of-record@example.invalid";
 
@@ -25,7 +26,7 @@ const ok = (n, c, d = "") => { if (c) pass++; else { fail++; console.log("  ✗"
 const group = (t) => console.log("\n" + t);
 
 const server = spawn(process.execPath, ["services/api/server.mjs"], {
-  env: { ...process.env, PORT: String(PORT), NODE_ENV: "development", ALLOW_DEV_LOGIN: "", SESSION_SECRET: SECRET },
+  env: { ...process.env, DATABASE_URL: appUrl(), PORT: String(PORT), NODE_ENV: "development", ALLOW_DEV_LOGIN: "", SESSION_SECRET: SECRET },
   stdio: ["ignore", "pipe", "pipe"],
 });
 const serverErr = [];

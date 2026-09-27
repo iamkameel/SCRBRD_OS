@@ -24,11 +24,12 @@
  */
 import { spawn } from "node:child_process";
 import pg from "pg";
+import { ownerUrl, appUrl, port } from "./db-url.mjs";
 
-const PORT = 8806;
+const PORT = port(8806);
 const BASE = `http://127.0.0.1:${PORT}`;
-const DB  = process.env.DATABASE_URL || "postgres://scrbrd:scrbrd@127.0.0.1:5432/scrbrd";
-const APP = process.env.APP_DATABASE_URL || "postgres://scrbrd_app:scrbrd_app@127.0.0.1:5432/scrbrd";
+const DB = ownerUrl();
+const APP = appUrl();
 const U_PARENT = "88888888-0000-0000-0000-000000000005";
 const U_REG    = "88888888-0000-0000-0000-00000000000c";
 
@@ -37,7 +38,7 @@ const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } 
 const group = (t) => console.log("\n" + t);
 
 const server = spawn(process.execPath, ["services/api/server.mjs"], {
-  env: { ...process.env, PORT: String(PORT), NODE_ENV: "development",
+  env: { ...process.env, DATABASE_URL: appUrl(), PORT: String(PORT), NODE_ENV: "development",
          ALLOW_DEV_LOGIN: "1", SESSION_SECRET: "smoke-login-secret" },
   stdio: ["ignore", "pipe", "pipe"],
 });
@@ -154,9 +155,9 @@ try {
 
   group("The development door is still shut in production");
   ok("dev-login is refused when it is not enabled", true === (await (async () => {
-    const p2 = 8807;
+    const p2 = port(8807);
     const s2 = spawn(process.execPath, ["services/api/server.mjs"], {
-      env: { ...process.env, PORT: String(p2), NODE_ENV: "production",
+      env: { ...process.env, DATABASE_URL: appUrl(), PORT: String(p2), NODE_ENV: "production",
              SESSION_SECRET: "smoke-login-secret-2", ALLOW_DEV_LOGIN: "" },
       stdio: ["ignore", "pipe", "pipe"] });
     try {

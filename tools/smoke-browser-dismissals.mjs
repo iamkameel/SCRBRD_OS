@@ -55,9 +55,10 @@ import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
+import { appUrl, port } from "./db-url.mjs";
 
-const WEB_PORT = 4341;
-const API_PORT = 8841;
+const WEB_PORT = port(4341);
+const API_PORT = port(8841);
 const API = `http://127.0.0.1:${API_PORT}`;
 const DEBUG = !!process.env.BROWSER_DISMISSALS_DEBUG;
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".jpg": "image/jpeg", ".map": "application/json" };
@@ -72,7 +73,7 @@ const ok = (n, c, d = "") => { if (c) pass++; else { fail++; console.log("  ✗"
 const group = (t) => console.log("\n" + t);
 
 const apiProc = spawn(process.execPath, ["services/api/server.mjs"], {
-  env: { ...process.env, PORT: String(API_PORT), NODE_ENV: "development",
+  env: { ...process.env, DATABASE_URL: appUrl(), PORT: String(API_PORT), NODE_ENV: "development",
          ALLOW_DEV_LOGIN: "1", SESSION_SECRET: "browser-dismissals-secret",
          WEB_ORIGIN: `http://localhost:${WEB_PORT}` },
   stdio: ["ignore", "pipe", "pipe"],

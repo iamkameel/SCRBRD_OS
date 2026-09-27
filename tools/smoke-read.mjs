@@ -27,8 +27,9 @@
  *   node tools/smoke-read.mjs
  */
 import { spawn } from "node:child_process";
+import { appUrl, port } from "./db-url.mjs";
 
-const PORT = 8793;
+const PORT = port(8793);
 const BASE = `http://127.0.0.1:${PORT}`;
 const HIL = "11111111-1111-1111-1111-111111111111";
 const WES = "22222222-2222-2222-2222-222222222222";
@@ -38,7 +39,7 @@ const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } 
 const group = (t) => console.log("\n" + t);
 
 const server = spawn(process.execPath, ["services/api/server.mjs"], {
-  env: { ...process.env, PORT: String(PORT), NODE_ENV: "development", ALLOW_DEV_LOGIN: "1",
+  env: { ...process.env, DATABASE_URL: appUrl(), PORT: String(PORT), NODE_ENV: "development", ALLOW_DEV_LOGIN: "1",
          SESSION_SECRET: "smoke-read-secret" },
   stdio: ["ignore", "pipe", "pipe"],
 });

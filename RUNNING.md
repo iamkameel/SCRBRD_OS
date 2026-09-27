@@ -231,6 +231,52 @@ unused binding starts with `_`.
 | `VITE_FCM_VAPID_KEY` | client | unset | web-push public key; without it the Alerts tab says push is not configured |
 | `FCM_PROJECT_ID` / `FCM_ACCESS_TOKEN` | API | unset | push fan-out answers `503 push_not_configured` and logs nothing; `PUSH_TRANSPORT=echo` in development records sends in memory |
 | `CHROMIUM_PATH` | browser walks | auto | see `tools/chromium.mjs` |
+| `SCRBRD_DB` | every tool, via `tools/db-url.mjs` | `scrbrd` | names the database; see "Running verification in parallel" below |
+| `SCRBRD_PORT_OFFSET` | every walk, via `tools/db-url.mjs`'s `port()` | `0` | added to every walk's hard-coded port |
+
+## Running verification in parallel
+
+Every tool builds its connection string from `tools/db-url.mjs` rather than
+hard-coding `postgres://…@127.0.0.1:5432/scrbrd`, and every walk gets its port
+from that module's `port()` helper rather than a bare number. Both read two
+environment variables, both default to exactly today's behaviour, and
+`tools/db-url-guard.test.mjs` (part of `pnpm test`) fails the build if a new
+file hard-codes the address again.
+
+- **`SCRBRD_DB`** (default `scrbrd`) — the database name. `DATABASE_URL` (the
+  schema owner) and `APP_DATABASE_URL` (the role the API connects as) still
+  win wherever a tool already honours them; this only changes what each
+  falls back to.
+- **`SCRBRD_PORT_OFFSET`** (default `0`) — added to every walk's port: the
+  API, the web server a browser walk serves `apps/web/dist` from, and so on.
+
+`tools/worktree-db.mjs` sets both up for a worktree in one step: it creates
+`scrbrd_<slug>` if it does not exist (the slug defaults to your worktree's
+directory name) and prints the `export` lines, including a stable
+`SCRBRD_PORT_OFFSET` derived from the slug, so re-running it for the same
+worktree always lands on the same database and ports.
+
+```sh
+eval "$(node tools/worktree-db.mjs)"     # or: node tools/worktree-db.mjs my-feature
+node tools/migrate.mjs --reset --seed --verify
+node tools/run-all-tests.mjs && node tools/run-smoke-api.mjs && node tools/run-smoke-api.mjs --browser
+```
+
+**The lock.** Nothing in this repository takes a lock itself — agents wrap the
+command above in `flock` by convention — but the lock is now per database:
+`/tmp/scrbrd-db-${SCRBRD_DB}.lock`, except for the default database, which
+keeps the original `/tmp/scrbrd-db.lock` so an existing `flock` command needs
+no change. `worktree-db.mjs` prints the exact path for the database it just
+created.
+
+With `SCRBRD_DB` and `SCRBRD_PORT_OFFSET` both set this way, two worktrees can
+run the block above — migrate, `run-all-tests`, `run-smoke-api`, and
+`run-smoke-api --browser` — against two different databases on the same
+Postgres cluster at the same time, each under its own lock, and neither
+touches the other's database or the default `scrbrd` one. CI needs none of
+this: every job leaves both variables unset, so it gets the same
+`postgres://scrbrd:scrbrd@127.0.0.1:5432/scrbrd` / `…scrbrd_app…` and the same
+ports as before.
 
 ## Troubleshooting
 

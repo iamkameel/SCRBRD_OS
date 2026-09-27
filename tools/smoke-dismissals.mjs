@@ -27,10 +27,11 @@
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import pg from "pg";
+import { ownerUrl, appUrl, port } from "./db-url.mjs";
 
-const PORT = 8804;
+const PORT = port(8804);
 const BASE = `http://127.0.0.1:${PORT}`;
-const DB = process.env.DATABASE_URL || "postgres://scrbrd:scrbrd@127.0.0.1:5432/scrbrd";
+const DB = ownerUrl();
 const HIL     = "11111111-1111-1111-1111-111111111111";
 const MATCH   = "77777777-0000-0000-0000-000000000001";     // smoke-rating's match; a scheduled/complete fixture is fine, this never touches its innings
 const BOWLER  = "aaaaaaaa-0000-0000-0000-000000000001";      // James Whitfield, 1XI
@@ -47,7 +48,7 @@ const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } 
 const group = (t) => console.log("\n" + t);
 
 const server = spawn(process.execPath, ["services/api/server.mjs"], {
-  env: { ...process.env, PORT: String(PORT), NODE_ENV: "development",
+  env: { ...process.env, DATABASE_URL: appUrl(), PORT: String(PORT), NODE_ENV: "development",
          ALLOW_DEV_LOGIN: "1", SESSION_SECRET: "smoke-dismissals-secret" },
   stdio: ["ignore", "pipe", "pipe"],
 });

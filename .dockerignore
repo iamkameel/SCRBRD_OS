@@ -4,6 +4,9 @@ apps/web/dist
 apps/web/src
 apps/web/public
 tools
+# ...except the one file the API server imports from it (connection-string and
+# port defaults); the Dockerfile copies it in, and the build fails without it.
+!tools/db-url.mjs
 docs
 db
 .git

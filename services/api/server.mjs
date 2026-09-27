@@ -73,11 +73,17 @@ import { trainingRoutes } from "./write/training-api.mjs";
 import { officialRegisterRoutes } from "./write/officials-register-api.mjs";
 import { MatchHub } from "./realtime/realtime.mjs";
 import { schemaRefusal } from "./schema-guard.mjs";
+import { appUrl, port } from "../../tools/db-url.mjs";
 /** @import { IncomingMessage, ServerResponse } from "node:http" */
 /** @import { Handler, IdHandler, ExactHandler } from "./api-types.mjs" */
 
-const PORT = Number(process.env.PORT || 8787);
-const ORIGIN = process.env.WEB_ORIGIN || "http://localhost:5173";
+// Every deployment and every walk that spawns this server sets PORT and
+// WEB_ORIGIN explicitly, so these two defaults are only ever read from a bare
+// `pnpm dev:api` in a worktree — port(...) keeps that default offset-aware
+// (SCRBRD_PORT_OFFSET) without changing it when the offset is 0, which it is
+// everywhere else, including production (Cloud Run always supplies PORT).
+const PORT = Number(process.env.PORT || port(8787));
+const ORIGIN = process.env.WEB_ORIGIN || `http://localhost:${port(5173)}`;
 // A batch of an over's balls is a few KB. A CSV roster is the biggest thing
 // that arrives here: four hundred boys with ten columns is about 40 KB, so
 // 256 KB carries a large school with room to spare — and a school sending
@@ -90,7 +96,10 @@ const DEV = process.env.NODE_ENV !== "production";
 // security does not apply to a table's owner, so an owner connection runs with
 // every policy in db/ silently inert. assertRlsApplies() below refuses to start
 // on such a connection; see db/05_app_role.sql for how this was found.
-const DATABASE_URL = process.env.DATABASE_URL || "postgres://scrbrd_app:scrbrd_app@127.0.0.1:5432/scrbrd";
+// DATABASE_URL first: it is how every deployment names the application role
+// (DEPLOYING.md, Cloud Run). appUrl() is only the local default — this
+// worktree's database when SCRBRD_DB is set, the plain local one otherwise.
+const DATABASE_URL = process.env.DATABASE_URL || appUrl();
 const pool = new pg.Pool({ connectionString: DATABASE_URL, max: 10 });
 
 /**

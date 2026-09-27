@@ -17,8 +17,9 @@
  */
 import pg from "pg";
 import { ageAtCutoff, isEligible, cutoffFor } from "@scrbrd/policy/teams";
+import { ownerUrl } from "./db-url.mjs";
 
-const DB = process.env.DATABASE_URL || "postgres://scrbrd:scrbrd@127.0.0.1:5432/scrbrd";
+const DB = ownerUrl();
 const HIL = "11111111-1111-1111-1111-111111111111";
 
 let pass = 0, fail = 0;

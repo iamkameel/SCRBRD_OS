@@ -30,14 +30,15 @@
 import { spawn } from "node:child_process";
 import pg from "pg";
 import { SyncEngine, memoryStorage } from "@scrbrd/sync";
+import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import {
   deriveInnings, deriveMatch, fromRow, inningsStart, batters, bowler, ball, voidEvent, sealInnings,
   BALL_TYPE, newEventId, REFUSAL, REFUSAL_TEXT, toRow, PLACEMENT_SOURCE, PLACEMENT_NULL, CAPTURE_PROFILE,
 } from "@scrbrd/scoring";
 
-const PORT = 8891;
+const PORT = port(8891);
 const BASE = `http://127.0.0.1:${PORT}`;
-const DB = process.env.DATABASE_URL || "postgres://scrbrd:scrbrd@127.0.0.1:5432/scrbrd";
+const DB = ownerUrl();
 const MATCH = "77777777-0000-0000-0000-000000000002";
 // A second fixture for the contact/trajectory walk, so its deliveries do not
 // change the over and innings counts the walk above asserts.
@@ -55,7 +56,7 @@ const ok = (n, c, d = "") => { if (c) pass++; else { fail++; console.log("  ✗"
 const group = (t) => console.log("\n" + t);
 
 const server = spawn(process.execPath, ["services/api/server.mjs"], {
-  env: { ...process.env, PORT: String(PORT), NODE_ENV: "development", ALLOW_DEV_LOGIN: "1",
+  env: { ...process.env, DATABASE_URL: appUrl(), PORT: String(PORT), NODE_ENV: "development", ALLOW_DEV_LOGIN: "1",
          SESSION_SECRET: "smoke-laws-secret" },
   stdio: ["ignore", "pipe", "pipe"],
 });

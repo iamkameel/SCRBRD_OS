@@ -33,6 +33,7 @@
  */
 import pg from "pg";
 import { newMagicCode } from "../services/api/auth/auth.mjs";
+import { ownerUrl } from "./db-url.mjs";
 
 const args = process.argv.slice(2);
 const opt = (k) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : null; };
@@ -42,7 +43,7 @@ const ROLE = owner ? "superadmin" : "platformadmin";
 const si = args.indexOf("--school");
 const school = si >= 0 ? { code: args[si + 1], name: args[si + 2], province: args[si + 3] || null } : null;
 const secret = process.env.SESSION_SECRET;
-const url = process.env.DATABASE_URL || "postgres://scrbrd:scrbrd@127.0.0.1:5432/scrbrd";
+const url = ownerUrl();
 
 if (!email || !name || !secret || (school && (!school.code || !school.name))) {
   console.error("usage: SESSION_SECRET=... node tools/bootstrap.mjs [--owner] --email E --name N [--school CODE \"Name\" [Province]]");

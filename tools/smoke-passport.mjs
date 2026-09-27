@@ -2,14 +2,15 @@
 /** A boy's cricket record travels on the family's say-so, and says where each line came from. */
 import { spawn } from "node:child_process";
 import pg from "pg";
-const PORT = 8872, BASE = `http://127.0.0.1:${PORT}`;
-const DB = process.env.DATABASE_URL || "postgres://scrbrd:scrbrd@127.0.0.1:5432/scrbrd";
+import { ownerUrl, appUrl, port } from "./db-url.mjs";
+const PORT = port(8872), BASE = `http://127.0.0.1:${PORT}`;
+const DB = ownerUrl();
 const WES = "22222222-2222-2222-2222-222222222222";
 const PILLAY = "aaaaaaaa-0000-0000-0000-000000000005", WHITFIELD = "aaaaaaaa-0000-0000-0000-000000000001";
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
 const group = (t) => console.log("\n" + t);
-const server = spawn(process.execPath, ["services/api/server.mjs"], { env: { ...process.env, PORT: String(PORT), NODE_ENV: "development", ALLOW_DEV_LOGIN: "1", SESSION_SECRET: "smoke-passport" }, stdio: ["ignore", "pipe", "pipe"] });
+const server = spawn(process.execPath, ["services/api/server.mjs"], { env: { ...process.env, DATABASE_URL: appUrl(), PORT: String(PORT), NODE_ENV: "development", ALLOW_DEV_LOGIN: "1", SESSION_SECRET: "smoke-passport" }, stdio: ["ignore", "pipe", "pipe"] });
 const serverErr = []; server.stderr.on("data", (d) => serverErr.push(d.toString()));
 const api = async (path, { method = "GET", token, body } = {}) => {
   const res = await fetch(BASE + path, { method, headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });

@@ -14,6 +14,7 @@
  *   node tools/smoke-owner-recovery.mjs
  */
 import { spawn } from "node:child_process";
+import { appUrl, port } from "./db-url.mjs";
 
 const OWNER = "owner@example.invalid";      // superadmin, school_id NULL — see db/98_seed_pilot.sql
 const NOT_OWNER = "coach@example.invalid";  // a real account, but not a platform-wide superadmin
@@ -25,7 +26,7 @@ const group = (t) => console.log("\n" + t);
 
 async function withServer(port, env, fn) {
   const server = spawn(process.execPath, ["services/api/server.mjs"], {
-    env: { ...process.env, PORT: String(port), NODE_ENV: "development", ...env },
+    env: { ...process.env, DATABASE_URL: appUrl(), PORT: String(port), NODE_ENV: "development", ...env },
     stdio: ["ignore", "pipe", "pipe"],
   });
   const serverErr = [];
@@ -59,12 +60,12 @@ const recover = (api, email, secretHeader) => api("/api/auth/owner/recover", {
 
 try {
   group("Off by default — the same posture as ALLOW_DEV_LOGIN");
-  await withServer(8890, { SESSION_SECRET: "smoke-recovery-a" }, async (api) => {
+  await withServer(port(8890), { SESSION_SECRET: "smoke-recovery-a" }, async (api) => {
     const noEnv = await recover(api, OWNER, RECOVERY_SECRET);
     ok("with OWNER_RECOVERY_SECRET unset on the server, the route is a 501", noEnv.status === 501 && noEnv.body?.error === "recovery_not_configured", JSON.stringify(noEnv.body));
   });
 
-  await withServer(8891, { SESSION_SECRET: "smoke-recovery-b", OWNER_RECOVERY_SECRET: RECOVERY_SECRET }, async (api) => {
+  await withServer(port(8891), { SESSION_SECRET: "smoke-recovery-b", OWNER_RECOVERY_SECRET: RECOVERY_SECRET }, async (api) => {
     group("Wrong key, no email, and no header are all refused before the database is asked");
     const wrongKey = await recover(api, OWNER, "not-the-secret");
     ok("the wrong recovery key is refused: not_permitted", wrongKey.status === 403 && wrongKey.body?.error === "not_permitted", JSON.stringify(wrongKey.body));

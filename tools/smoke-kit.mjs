@@ -2,8 +2,9 @@
 /** Drills are the platform's and the school's; kit is the school's, and a boy holds it until he gives it back. */
 import { spawn } from "node:child_process";
 import pg from "pg";
-const PORT = 8871, BASE = `http://127.0.0.1:${PORT}`;
-const DB = process.env.DATABASE_URL || "postgres://scrbrd:scrbrd@127.0.0.1:5432/scrbrd";
+import { ownerUrl, appUrl, port } from "./db-url.mjs";
+const PORT = port(8871), BASE = `http://127.0.0.1:${PORT}`;
+const DB = ownerUrl();
 const HIL = "11111111-1111-1111-1111-111111111111";
 const BATS = "e0170000-0000-0000-0000-000000000001";   // 3 bats
 const MACHINE = "e0170000-0000-0000-0000-000000000003";
@@ -12,7 +13,7 @@ const PILLAY = "aaaaaaaa-0000-0000-0000-000000000005", WESBOY = "bbbbbbbb-0000-0
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
 const group = (t) => console.log("\n" + t);
-const server = spawn(process.execPath, ["services/api/server.mjs"], { env: { ...process.env, PORT: String(PORT), NODE_ENV: "development", ALLOW_DEV_LOGIN: "1", SESSION_SECRET: "smoke-kit" }, stdio: ["ignore", "pipe", "pipe"] });
+const server = spawn(process.execPath, ["services/api/server.mjs"], { env: { ...process.env, DATABASE_URL: appUrl(), PORT: String(PORT), NODE_ENV: "development", ALLOW_DEV_LOGIN: "1", SESSION_SECRET: "smoke-kit" }, stdio: ["ignore", "pipe", "pipe"] });
 const serverErr = []; server.stderr.on("data", (d) => serverErr.push(d.toString()));
 const api = async (path, { method = "GET", token, body } = {}) => {
   const res = await fetch(BASE + path, { method, headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });

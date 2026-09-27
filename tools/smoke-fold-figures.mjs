@@ -48,14 +48,15 @@
  */
 import { spawn } from "node:child_process";
 import pg from "pg";
+import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import {
   MatchFold, deriveInnings, deriveMatch, toRow, fromRow, isLegal, normaliseDismissal, chargedToBowler, runsOffBat,
   inningsStart, batters, bowler, ball, newEventId,
 } from "@scrbrd/scoring";
 
-const PORT = 8875;
+const PORT = port(8875);
 const BASE = `http://127.0.0.1:${PORT}`;
-const DB = process.env.DATABASE_URL || "postgres://scrbrd:scrbrd@127.0.0.1:5432/scrbrd";
+const DB = ownerUrl();
 const HIL = "11111111-1111-1111-1111-111111111111";
 const WES = "22222222-2222-2222-2222-222222222222";
 // A complete fixture with a toss and no seeded deliveries; nothing else in
@@ -494,7 +495,7 @@ async function tryInsert(/** @type {string} */ matchId, /** @type {number} */ se
 }
 
 const server = spawn(process.execPath, ["services/api/server.mjs"], {
-  env: { ...process.env, PORT: String(PORT), NODE_ENV: "development", ALLOW_DEV_LOGIN: "1",
+  env: { ...process.env, DATABASE_URL: appUrl(), PORT: String(PORT), NODE_ENV: "development", ALLOW_DEV_LOGIN: "1",
          SESSION_SECRET: "smoke-fold-figures-secret" },
   stdio: ["ignore", "pipe", "pipe"],
 });

@@ -13,8 +13,9 @@
  */
 import { spawn } from "node:child_process";
 import { inningsStart, batters, bowler, ball, BALL_TYPE, fromRow, deriveInnings, sealInnings, REFUSAL, REFUSAL_TEXT } from "@scrbrd/scoring";
+import { appUrl, port } from "./db-url.mjs";
 
-const PORT = 8886, BASE = `http://127.0.0.1:${PORT}`;
+const PORT = port(8886), BASE = `http://127.0.0.1:${PORT}`;
 const MATCH = "77777777-0000-0000-0000-000000000002";
 // The submitter HOLDS the approval capability on purpose: the rule that you
 // may not release your own ball is only exercised by somebody who could
@@ -34,7 +35,7 @@ const ok = (n, c, d = "") => { if (c) pass++; else { fail++; console.log("  ✗"
 const group = (t) => console.log("\n" + t);
 
 const server = spawn(process.execPath, ["services/api/server.mjs"], {
-  env: { ...process.env, PORT: String(PORT), NODE_ENV: "development", ALLOW_DEV_LOGIN: "1", SESSION_SECRET: "smoke-quarantine-secret" },
+  env: { ...process.env, DATABASE_URL: appUrl(), PORT: String(PORT), NODE_ENV: "development", ALLOW_DEV_LOGIN: "1", SESSION_SECRET: "smoke-quarantine-secret" },
   stdio: ["ignore", "pipe", "pipe"],
 });
 const serverErr = [];
