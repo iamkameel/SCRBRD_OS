@@ -770,6 +770,7 @@ say what was decided (the rule document is the record, this design is not).
 ### Decided (Kameel, 2026-09-27)
 
 - **Q8 — no page-view counter.** Public pages count nothing per match or per visitor; a builder adds none.
+- **Q1–Q7, Q9, Q10, Q12, Q13 — as recommended** in the table below (Kameel: "all recommendations for the rest").
 - **Q11 — option C at 18 (§6).** A parent's standing consent from before 18 carries on; while he is at school she may take his name off but never newly put it on; the app asks him for his own answer at 18. §6.3's changes to `public_name_consent_set()` and `public_name_facts()` are the ones to build, and PUBLIC_DATA C6 is amended to say it.
 
 | # | Question | Recommendation |

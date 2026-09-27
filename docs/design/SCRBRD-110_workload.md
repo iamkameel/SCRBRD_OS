@@ -692,6 +692,8 @@ The body above (§0–§9) is written to these decisions. Where a decision named
 
 Each with the recommendation the body assumes.
 
+**Decided (Kameel, 2026-09-27): Q13–Q19 as recommended** ("all recommendations for the rest"). The table is kept as the record of what each one means.
+
 | # | question | recommendation |
 |---|---|---|
 | **Q13** | The `fitness` role's medical tier: `medical.status.read` only (available or not), or status **and** nature (the coach's tier under ADR 0002: "a hamstring strain", dates), still never the physio's notes? | **Status and nature.** A strength coach bringing a boy back needs to know it was a hamstring; that is the tier every coach already holds, and it is not the notes. §6.1 assumes it. |
