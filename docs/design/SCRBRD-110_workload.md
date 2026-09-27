@@ -541,7 +541,22 @@ Each phase's `tables.mjs` entries regenerate `db/09`'s successor policies into t
 
 ## 10 · Open questions for Kameel
 
-Each with the recommendation the design assumes.
+### Decided so far (Kameel, 2026-09-27)
+
+- **Nets counts are an estimate, not a tally (Q1).** "We're not trying to be 100% accurate on how many balls
+  are bowled in the nets", and the coach's and the bowler's figures are not to be set against each other. So:
+  no disagreement flag; one figure per session, the bowler's own when he logged one, else the coach's. How the
+  estimate is entered (a number, or a band such as under 12 / 12–24 / 24–36 / 36+, with the effort) is still
+  to be confirmed. §1.3's reconciliation rule changes accordingly before phase 1 is built.
+- **The director of sport may read check-ins and flags, but is not alerted to them (Q2).** He can open a
+  bowler's check-ins and flags when he asks for them: a level-3 read, so it is logged
+  (`log_restricted_read()`), the same as the physio's. The flag's notification goes to the coach and the physio
+  only, so it follows its own recipient rule rather than `wellness.read` as §3.3 has it. A coach or physio can
+  **recommend** a flag to him: one act that sends him that flag, recorded like a share. This changes §3.3 (the
+  recipients), §6.1 (`directorofsport` gains `wellness.read`) and ADR 0002's reasoning, which a builder must
+  revisit with it.
+
+Each remaining question with the recommendation the design assumes.
 
 | # | question | recommendation |
 |---|---|---|
