@@ -2925,8 +2925,24 @@ after it refused too.
   the return) is left as it was. The batting-order sheet lists a retired-hurt batter under "Retired hurt — may resume".
   SQL never read the retirement, so nothing moved there: `smoke-fold-figures` now brings batters back from retired hurt
   in its generated logs (5 in its run) and every SQL figure still agrees. `replay.test` (two cases, each falsified: no
-  resume, and resuming the legacy "retired out"). Found, not fixed: the pad has no way to RECORD retired hurt (nothing
-  emits `retire` with reason `hurt`), so the resume list shows only for a log that came with one.
+  resume, and resuming the legacy "retired out"). ~~Found, not fixed: the pad has no way to RECORD retired hurt (nothing
+  emits `retire` with reason `hurt`), so the resume list shows only for a log that came with one.~~ **Built 2026-09-27**:
+  "Batter retired hurt" on the pad's menu, beside the suspension (never an interrupt, §1a). `scorer/retireSheet.jsx`
+  asks which batter — striker or non-striker, by name, end and figures — and records `retire({batter, reason: "hurt"})`
+  (`scorer/retire.js` `retireHurtEvent`, the events.mjs builder: no W marker, so not a wicket — no wicket moment, the
+  over and the bowler unmoved); the pad then opens the batting-order sheet at once for the end he left, which does not
+  offer him back to it (`BattingOrderSheet` `notResuming`). Mid-over works. The Laws are asked before anyone is offered
+  and again at the tap (`lawsRefusal`: someone not at the crease is `not_at_crease`), said in words
+  (`retireRefusalWords`). Also fixed: `fixBlock` sent `NEXT_BATTER` with the striker in to the OPENERS' sheet, which put
+  the arrival at the non-striker's end and then asked for the opening bowler; it opens the batting-order sheet now.
+  SQL: no disagreement, no migration — `smoke-fold-figures` now emits pad-style retirements (the builder, asked of the
+  Laws, mid-over; 12 in its run, 10 back later, plus a written-out innings); every figure agrees, each row is stored
+  with no W marker, and `ball_retired_batter()` / `ball_retirement_dismissal()` count none of them. Proof:
+  `apps/web/test/retire-sheet.test.mjs` (the event, the refusals, the fold after a mid-over retirement and a return,
+  the sheet at the floors; falsified five ways), `tools/smoke-browser-retire.mjs` (new, registered). Not modelled: Law
+  25.4.2's "only at the fall of a wicket or the retirement of another batter" — the Laws take a return at any empty
+  end; the pad only declines to offer him straight back to the end he left. The Laws also take a retirement in an
+  innings that is over or sealed.
 - ~~Timed out and retired out are recorded as `W` balls, which count as a legal delivery of the over.~~ **Already done by
   SCRBRD-081 (2026-09-24)**, checked 2026-09-27: both are a `retire` marked `type: "W"` (no ball, no bowler figure, no
   ball faced), through the `nonBallWickets` path; an old W *ball* naming either still folds as history
@@ -3516,6 +3532,20 @@ Two Law 41 questions Kameel is researching before deciding; nothing is built unt
    **Clause numbers to verify before any words ship:** this research gives the protected area as 41.13, and the
    penalty-runs research gave repeated protected-area infractions as 41.14. The screens show the reason in words
    only, not clause numbers, until Kameel confirms them against the current Code.
+
+   **The clause list, 2026-09-27 — no screen shows a number any more.** The last three came off: the mid-over bowler
+   note on the new-over sheet ("Law 17.8.1: a bowler may be replaced…"), the timed-out toggle on the batting-order
+   sheet ("… did not arrive in time (Law 40)"), and `REFUSAL_TEXT.mid_over_no_reason` ("… injury or suspension (Law
+   17.8.1)", which the held sheet showed as it was). Each keeps its words; the clause stays in a code comment.
+   `apps/web/test/law-clauses.test.mjs` sweeps every string a scorer screen can show — `REFUSAL_TEXT`,
+   `REFUSAL_CAUSE` over folds and events, `PENALTY_REASON_TEXT` through `penaltyReasonWords`, the suspension words,
+   every pad helper that words a refusal over every code, and the literal text of every file in `apps/web/src/scorer`
+   with comments stripped — and was falsified by putting "(Law 40)" and "(Law 17.8.1)" back. Still to verify, cited
+   only in code (comments, and `PENALTY_REASON_TEXT`, which every screen reads through `penaltyReasonWords`):
+   17.8 and 17.8.1 (consecutive overs; the change during an over), 25.4.2 and 25.4.3 (retired hurt and retired out),
+   40 (timed out), 21 and 23 (the no-ball's runs), 18 and 38.2 (run out, which end), 28.2 and 28.3 (illegal fielding,
+   the helmet), and Law 41's 41.1, 41.3–41.9, 41.12, 41.13 or 41.14 (the protected area: the two researches differ),
+   41.15, 41.17 and 41.18.
 
    **Built 2026-09-27.** Engine: `bowler_suspended` (`bowlerSuspended()` in `events.mjs`): the bowler, a reason from
    `SUSPENSION_REASON` (beamers, short_pitched, deliberate_no_ball, protected_area, fielding_time_wasting,
