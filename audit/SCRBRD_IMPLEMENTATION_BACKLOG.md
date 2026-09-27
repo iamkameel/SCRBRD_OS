@@ -2855,6 +2855,19 @@ with no toss recorded, the scorer is asked (toss winner and election) before the
 
 ### ~~SCRBRD-068~~ — CLOSED · Byes or leg byes run off a no-ball are credited to the batter
 **Closed 2026-09-25** in `105e467` (#37): `nbRuns` (NB_RUNS) on a no-ball says the runs were byes or leg byes, the fold and the Laws check read it (`events.mjs`, `laws.mjs`), and db/40 carries it into every SQL reader.
+**Reopened and corrected 2026-09-27 (Kameel, from `docs/laws/CLAUSE_CHECK.md`, mismatch 1).** It was built to the 2000
+Code (Law 24.13: every run of a no-ball a no-ball extra, all of them debited to the bowler). The Code in force — the
+2017 Code, 4th Edition from 1 October 2026, 21.15 and 18.10.2–18.10.3 (21.16 in the 3rd) — says: the one-run penalty
+is a no-ball extra, debited to the bowler; runs off the bat are the striker's, debited to the bowler; runs not off the
+bat are **byes or leg byes**, as appropriate, and **not** debited to the bowler. The no-ball is still not a legal ball,
+the striker has still faced it, and the runs completed still move the strike. The event is unchanged (`value` and
+`nbRuns`); what it means for the figures moved. Built: the fold (`extras.noBall` takes the penalty run only, the rest
+to `extras.bye`/`extras.legBye`; the bowler charged `runsToBowler()`), and `db/52_noball_byes.sql`
+(`ball_runs_to_bowler()`; `player_bowling_since`, `bowler_innings_figures`, `opposition_squad`,
+`player_bowling_by_season`, `player_bowling_career` redefined over it, and the `career` read), the board's chip
+("nb+4b"), the no-ball sheet's words. Stored rows are read under the new rule: a bowler's runs over an old no-ball
+bye fall by the byes; totals do not move. Proof: `laws-spec.test.mjs` D (byes, leg byes, four byes, hit, on a free
+hit), db/52's own block, db/99 §19/§22/§30 and db/43's fixture, `smoke-fold-figures`.
 **Title:** A no-ball's `value` is always runs off the bat, so the event model cannot record no-ball byes
 **Priority:** P2 · **Domain:** Scoring · **Type:** correctness (event model)
 **Affected files:** `packages/scoring/src/events.mjs` (`BALL_TYPE.NO_BALL`), `packages/scoring/src/replay.mjs`
@@ -3532,6 +3545,28 @@ Two Law 41 questions Kameel is researching before deciding; nothing is built unt
    through one helper, `penaltyReasonWords()` in `events.mjs`, which the pad's sheet and the commentary now use too; and
    a short run off a no-ball asks the no-ball's kind — `ball()` used to drop `nbType` on every no-ball and now keeps it
    (the free hit was never the kind's: the fold gives one after every no-ball, and the pad's banner now reads it there).
+   **The penalty list corrected, 2026-09-27 (Kameel, from `docs/laws/CLAUSE_CHECK.md`, Law 41; the 4th Edition, in
+   force 1 October 2026).** The list above carried numbers from earlier research, put two fielders' offences on the
+   batting side's list and named one offence the Laws do not have. Now, each a plain five to one side:
+   to the fielding side `short_running` (18.5), `time_wasting` (41.10), `pitch_damage` (41.14, which takes in a batter
+   on the protected area without reasonable cause), `stealing_run` (41.16, new); to the batting side `helmet_struck`
+   (28.3), `illegal_fielding` (28.2), `fielder_returning` (24.4), `keeper_movement` (27.4.2), `fielder_movement`
+   (28.6.3), `distracting_striker` (41.4, a deliberate interception included), `obstructing_batter` (41.5),
+   `fielding_time_wasting` (41.9), `fielding_pitch_damage` (41.12), `fielding_restrictions`; either side
+   `ball_tampering` (41.3), `unfair_play` (41.2.1), `practice_on_field` (26.4.2), `player_conduct` (Law 42), `other`.
+   **Withdrawn** (`PENALTY_REASON_WITHDRAWN`): `obstruction_distraction` (a batter who obstructs is out, Law 37),
+   `striking_pitch` (no such offence), `protected_area` (merged into `pitch_damage`: one offence, one warning). A
+   stored award with one folds and reads as it did; a new one is refused (`penalty()`, and at commit
+   `penalty_reason_withdrawn`). No SQL constrains or reads the reason. Stealing a run is the award alone: no ball was
+   bowled, so nothing is disallowed. **Queued for the 4th Edition behaviour batch, not built:** the delivery that does
+   not count when 24.4, 28.2, 41.4 or 41.5 applies (17.3.2.5); a delivery's runs disallowed on a second offence
+   (41.14.3, 41.15.3); awards after the result (41.17.2). Open: 41.15 (the striker taking guard in the protected
+   area) has no reason of its own — `other` until Kameel says.
+   **With it, 2026-09-27: the pad no longer offers "handled the ball"** (Kameel). Since the 2017 Code it is
+   obstructing the field (Law 37). Gone from the wicket sheet (the basic pad's and the Pro hub's); the no-ball sheet's
+   note now lists only the Law's three ways out off a no-ball (run out, hit the ball twice, obstructing the field — it
+   also said caught and stumped). `DISMISSAL.HANDLED_BALL` stays in the engine: old events and pre-2017 scorecards
+   fold, read and count as before, and the server still takes one. Proof: `apps/web/test/ways-out.test.mjs`.
 2. A bowler suspended mid-over (SCRBRD-080's unbuilt half): Law 41 says he may not bowl again in the innings.
    **Decided 2026-09-26 (Kameel's research, MCC Law 41, Unfair Play).** A bowler is suspended as soon as the ball is
    dead, on these grounds, as Kameel gives them:
