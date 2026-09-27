@@ -1562,7 +1562,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
     }
 
     if(modal==="suspend"||modal==="suspendReplace"||modal==="suspendReport")return (
-      <SuspendSheet
+      <SuspendSheet key={modal}
         view={modal==="suspendReplace"?"replace":modal==="suspendReport"?"report":"reason"}
         innings={innings} events={events} curIn={curIn}
         role={role} matchId={live?matchId:null}
