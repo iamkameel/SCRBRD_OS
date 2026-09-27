@@ -527,7 +527,7 @@ function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,head
             width:"100%",marginBottom:"12px",padding:"9px 12px",borderRadius:D.md,cursor:"pointer",textAlign:"left",
             border:`1px solid ${timedOut?D.rose+"55":D.border}`,background:timedOut?`${D.rose}12`:"transparent",
             fontFamily:D.body,fontSize:"12px",fontWeight:500,color:timedOut?D.roseText:D.textSecondary}}>
-            {timedOut?"Timed out — tap the batter who did not arrive in time (Law 40)":"Incoming batter timed out?"}
+            {timedOut?"Timed out — tap the batter who did not arrive in time":"Incoming batter timed out?"}
           </button>
         )}
         {mayResume.length>0&&(
@@ -833,7 +833,7 @@ function NewOverSheet({ovNum,inn=null,prevBowlers,bowlingSquad,bowlingTeamKey,la
               <button type="button" data-testid="bowler-change-suspended" onClick={()=>onSuspended?onSuspended():setReason("suspended")} className="pressBtn" style={reasonPill(reason==="suspended")}>Suspended</button>
             </div>
             <div style={{fontFamily:T.type.body,fontSize:"12px",color:T.content.tertiary,marginTop:"6px",lineHeight:1.4}}>
-              Law 17.8.1: a bowler may be replaced during an over only when injured or suspended. Whoever finishes the over may not bowl the next.
+              A bowler may be replaced during an over only when injured or suspended. Whoever finishes the over may not bowl the next.
             </div>
           </div>
         )}
