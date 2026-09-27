@@ -481,7 +481,7 @@ const entry = (p) => (typeof p === "string" ? { id: p, name: p } : { id: p?.id ?
  * It turns the sheet's pick into "this batter was timed out": a wicket with no
  * ball, recorded, and the sheet stays open for the batter who comes in.
  */
-function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,header=null,onTimedOut=null}){
+function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,header=null,onTimedOut=null,notResuming=null}){
   const[timedOut,setTimedOut]=useState(false);
   const send=timedOut&&onTimedOut?(id)=>{setTimedOut(false);onTimedOut(id);}:onSend;
   const teamInfo=INT_TEAMS[teamKey]||null;
@@ -498,8 +498,9 @@ function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,head
   // Retired hurt — "retired, not out" — may come back (Law 25.4.2), on the
   // same line: the fold carries his runs and balls on (SCRBRD-071). A
   // retirement the Laws read as out (an old unmarked "retired out") is not
-  // offered; the server would refuse it.
-  const mayResume=timedOut?[]:batsmen.filter(b=>b.status==="retired"&&b.dismissal!=="retired out");
+  // offered; the server would refuse it. Nor is `notResuming`, the batter
+  // who has just retired: this sheet is filling the end he left.
+  const mayResume=timedOut?[]:batsmen.filter(b=>b.status==="retired"&&b.dismissal!=="retired out"&&b.id!==notResuming);
   return (
     <Sheet title="Batting Order" accent={D.emerald} onClose={onClose}>
       <div style={{paddingTop:"12px"}}>

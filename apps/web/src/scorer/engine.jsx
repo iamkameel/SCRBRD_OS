@@ -21,6 +21,8 @@ import { awardEvent, awardRefusal, foldPad, pendingCredits, projectPad } from ".
 import { crease, deliveryEvents, noBallEvent } from "./delivery.js";
 import { PenaltySheet } from "./penaltySheet.jsx";
 import { ReportOffer, SuspendSheet } from "./suspendSheet.jsx";
+import { RetireSheet } from "./retireSheet.jsx";
+import { retireHurtEvent } from "./retire.js";
 import { bowlerToSuspend, replacementEvent, suspendEvent, suspensionRefusalWords, suspensionsInMatch } from "./suspension.js";
 import { MenuItem, MenuSection, PadMenu } from "./padMenu.jsx";
 import { ExitKey, Pad, PadBoard } from "./pad.jsx";
@@ -896,7 +898,11 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
         setModal("opener");return;
       case SCORING_BLOCK.INNINGS_OVER: setModal("inningsReview");return;
       case SCORING_BLOCK.OPENERS: setModal("opener");return;
-      case SCORING_BLOCK.NEXT_BATTER: setModal(inn?.striker?"opener":"newBatsman");return;
+      // Never the openers' sheet: NEXT_BATTER is an end emptied after the
+      // opening pair (readiness.mjs), and the openers' sheet, given an empty
+      // non-striker's end, sends the arrival there and then asks for the
+      // OPENING bowler. The batting-order sheet fills whichever end is empty.
+      case SCORING_BLOCK.NEXT_BATTER: setModal("newBatsman");return;
       case SCORING_BLOCK.OPENING_BOWLER: setModal("bowler");return;
       case SCORING_BLOCK.NEXT_BOWLER:
         setModalCtx({lastBowlerId:inn?.ballLog?.[inn.ballLog.length-1]?.bowlerId??null});
@@ -1467,6 +1473,21 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
     setModal(null);
   };
   const suspensions=suspensionsInMatch(innings);
+  // A batter retired hurt (Law 25.4.2; SCRBRD-071), from the pad's menu —
+  // never an interrupt (§1a). retire() with reason "hurt" carries no W
+  // marker, so it is not a wicket: the wickets, the over and the bowler do not
+  // move, and no wicket moment plays. The end he left is filled at once
+  // through the batting-order sheet, which does not offer him back to it.
+  // The sheet asked the Laws before it offered him; asked again here, at the
+  // tap, against the log as it is — the server asks the same.
+  const recordRetireHurt=(id)=>{
+    const ev=retireHurtEvent(curIn,id);
+    if(padLock||lawsRefusal({innings,events},ev))return;
+    emit(ev);
+    resetHub();
+    setModalCtx({justRetired:id});
+    setModal("newBatsman");
+  };
   // The umpires' revision goes into the log like a ball. Everything that
   // reads the innings — the over count on the pad, the innings-over rule, the
   // result, the other device, the server — derives it from there.
@@ -1584,6 +1605,13 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
         onClose={()=>setModal(null)}/>
     );
 
+    if(modal==="retire")return (
+      <RetireSheet
+        innings={innings} events={events} curIn={curIn}
+        onRetire={recordRetireHurt}
+        onClose={()=>setModal(null)}/>
+    );
+
     if(modal==="opener")return (
       <BattingOrderSheet
         squad={getSquad()}
@@ -1644,6 +1672,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
           teamKey={inn?.teamKey}
           twelfthMan={inn?.twelfthMan}
           onTimedOut={canTimeOut?recordTimedOut:null}
+          notResuming={modalCtx?.justRetired??null}
           onSend={name=>{
             // To the END THAT IS EMPTY. This sent every new batter to the
             // striker's end, which is right only when the striker was out
@@ -1863,6 +1892,8 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
                   onClick={()=>{close();setModal("shortRun");}}/>
                 <MenuItem testid="pad-suspend" label="Umpire suspended the bowler" hint="He may not bowl again. Another bowler finishes the over."
                   onClick={()=>{close();setModal("suspend");}}/>
+                <MenuItem testid="pad-retire-hurt" label="Batter retired hurt" hint="Not out, and not a wicket. He may come back later. Then choose who comes in."
+                  onClick={()=>{close();setModal("retire");}}/>
                 {suspensions.length>0&&(
                   <MenuItem testid="pad-suspend-report" label="Umpires' report" hint="The suspension, for the school's discipline record"
                     onClick={()=>{close();setModal("suspendReport");}}/>
