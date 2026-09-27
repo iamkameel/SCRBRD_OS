@@ -584,7 +584,16 @@ try {
     const body = await text(head.page);
     ok("...with the gaps named", /missing/i.test(body) && /expired/i.test(body));
     ok("...and the unchecked coach on it", /P Moodley/.test(body));
-    ok("...but no reference numbers on the screen", !/PCC-2026|NRSO-11/.test(body));
+    ok("...but no reference numbers on the screen", !/PCC-202[46]|NRSO-11/.test(body));
+    // K4 (db/56): CSA's checks, by name, and the rule in the office's words.
+    ok("...asking for the Sexual Offences Register and the Safeguarding Awareness Certificate",
+       /Sexual Offences Register clearance/.test(body) && /Safeguarding Awareness Certificate/.test(body));
+    ok("...and saying CSA's rule beside it",
+       /24 months/.test(await head.page.locator('[data-testid="clearance-rule"]').innerText().catch(() => "")));
+    // The floors: no check chip drawn below 12px.
+    const chipSizes = await head.page.locator('[data-testid^="clearance-check-"]')
+      .evaluateAll((els) => els.map((e) => parseFloat(getComputedStyle(e).fontSize)));
+    ok("...with no check drawn below the 12px floor", chipSizes.length > 0 && chipSizes.every((px) => px >= 12), chipSizes.slice(0, 6).join(","));
     await head.ctx.close();
 
     const coach = await open();

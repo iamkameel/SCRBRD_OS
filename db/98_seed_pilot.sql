@@ -645,6 +645,14 @@ INSERT INTO match_weather (match_id, condition, temp_c, humidity_pct, wind_kph, 
 -- nothing on its coach — the register's loudest row. Dates that must sit a
 -- known distance from today are written relative to it. verified_by is NULL
 -- throughout: a seeded row, not a person who saw a document.
+--
+-- THESE ROWS STAND FOR RECORDS MADE BEFORE db/56 (K4), which leaves existing
+-- rows alone: they lapse on their own dates. So they go in with db/56's age
+-- rule switched off for the insert — several are a first police clearance
+-- issued more than six months ago, and the physio's is a five-year one, the
+-- legacy row db/99 reads as still current. Every row recorded after this
+-- goes through the rule; nothing else in the seed is exempt.
+ALTER TABLE adult_clearance DISABLE TRIGGER adult_clearance_csa_age;
 INSERT INTO adult_clearance (person_id, school_id, kind, reference, issued_on, expires_on, note) VALUES
   -- The 1XI coach: all three, first aid running out.
   ('88888888-0000-0000-0000-000000000004', '11111111-1111-1111-1111-111111111111', 'police_clearance', 'PCC-2026-041177', '2026-03-01', '2027-02-28', NULL),
@@ -657,13 +665,16 @@ INSERT INTO adult_clearance (person_id, school_id, kind, reference, issued_on, e
   ('88888888-0000-0000-0000-000000000007', '11111111-1111-1111-1111-111111111111', 'police_clearance', 'PCC-2026-002215', '2026-01-20', '2027-01-19', NULL),
   ('88888888-0000-0000-0000-000000000007', '11111111-1111-1111-1111-111111111111', 'child_protection', 'NRSO-11-70233',   '2025-06-01', '2027-05-31', NULL),
   ('88888888-0000-0000-0000-000000000007', '11111111-1111-1111-1111-111111111111', 'first_aid',        'FA-L2-2025-0871', '2025-10-10', '2027-10-09', 'Level 2'),
-  -- The physio.
-  ('88888888-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 'police_clearance', 'PCC-2026-019004', '2026-02-10', '2027-02-09', NULL),
+  -- The physio. Her police clearance was recorded to run five years, which
+  -- db/08 allowed and CSA's 24 months does not: a legacy row, still current
+  -- until its own date (db/56 leaves it alone; db/99 section 34 reads it).
+  ('88888888-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 'police_clearance', 'PCC-2024-019004', current_date - 400, current_date - 400 + 1825, 'Recorded before CSA''s 24 months applied'),
   ('88888888-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 'child_protection', 'NRSO-11-65510',   '2025-09-01', '2027-08-31', NULL),
   -- The driver: everything current, permit to January.
   ('88888888-0000-0000-0000-000000000017', '11111111-1111-1111-1111-111111111111', 'police_clearance', 'PCC-2026-030771', '2026-02-20', '2027-02-19', NULL),
   ('88888888-0000-0000-0000-000000000017', '11111111-1111-1111-1111-111111111111', 'child_protection', 'NRSO-11-71904',   '2025-12-01', '2027-11-30', NULL),
   ('88888888-0000-0000-0000-000000000017', '11111111-1111-1111-1111-111111111111', 'driving_permit',   'PrDP-G-4471820',  '2025-01-10', '2027-01-09', 'Goods and passengers');
+ALTER TABLE adult_clearance ENABLE TRIGGER adult_clearance_csa_age;
 
 -- ── Recognition ────────────────────────────────────────────────────
 -- The 1XI had awarded 411 caps before the platform; James Whitfield holds

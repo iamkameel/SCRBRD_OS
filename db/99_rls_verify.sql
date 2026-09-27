@@ -860,6 +860,36 @@ BEGIN
   RETURN v;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
+-- db/56 (K4). Two scorers at Hilton, owner-written and rolled back with
+-- everything else: R Pillay (the pupil, under eighteen, whose account already
+-- holds `player` and `selfaccess`) is also given `scorer`; and an account for
+-- S Naidoo (eighteen, seeded past majority on purpose) holds `player` and
+-- `scorer`. The register must leave the first off and keep the second on.
+CREATE OR REPLACE FUNCTION _seed_56() RETURNS void AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+BEGIN
+  INSERT INTO role_assignment (person_id, role, school_id, team_code) VALUES
+    ('88888888-0000-0000-0000-000000000009', 'scorer', HIL, NULL);
+  INSERT INTO app_user (id, school_id, email, name, role, player_id) VALUES
+    ('88888888-0000-0000-0000-000000000056', HIL, 'naidoo.v56@example.invalid', 'S Naidoo', 'player',
+     'aaaaaaaa-0000-0000-0000-000000000003');
+  INSERT INTO role_assignment (person_id, role, school_id, team_code) VALUES
+    ('88888888-0000-0000-0000-000000000056', 'player', HIL, '1XI'),
+    ('88888888-0000-0000-0000-000000000056', 'scorer', HIL, NULL);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Put a driver on a trip for the seeded 1XI v Michaelhouse fixture, as the
+-- office would, and say what the driver guard answered: 'ok' or its refusal.
+CREATE OR REPLACE FUNCTION _trip_56(p_driver uuid) RETURNS text AS $$
+BEGIN
+  INSERT INTO trip (match_id, school_id, driver_id, pickup)
+    VALUES ('77777777-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', p_driver, 'Verify 056');
+  RETURN 'ok';
+EXCEPTION WHEN check_violation THEN
+  RETURN SQLERRM;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -5722,6 +5752,152 @@ BEGIN
     PERFORM _assert(n = 1, 'db/55 (enquiry): the granted enquiry does not reach the boy''s profile — the refusal below proves nothing');
     SELECT count(*) INTO n FROM injury_masked WHERE player_id = P_INJURED;
     PERFORM _assert(n = 0, format('db/55 (enquiry): a granted enquiry reads %s of the boy''s injury row(s) — that he is out, and until when', n));
+  END;
+
+  -- ── 34. The clearance register to CSA's rules (K4, SG-7, db/56) ─────
+  -- CSA's Safeguarding Policy: the Sexual Offences Register, the Child
+  -- Protection Register and a criminal check for every adult coach,
+  -- administrator and official, each no older than 24 months (p19, p24–26),
+  -- a first criminal check no older than six months (p26), the Safeguarding
+  -- Awareness Certificate annually (p22). Written as the office writes them —
+  -- the registrar, under RLS, through db/08's stamp trigger and db/56's age
+  -- rule. db/56 was broken each of these ways and this file run: the ages
+  -- table emptied (→ (age), (first)); the first-police rule counting a
+  -- revoked row as held (→ (first)); clearance_register() without the pupil
+  -- exclusion (→ (pupil)); the requirement rows left out (→ (roles), and the
+  -- register's own counts).
+  DECLARE
+    n       bigint;
+    v_err   text;
+    v_id    uuid;
+    U_DRV   uuid := '88888888-0000-0000-0000-000000000017';  -- B Ngcobo, driver; police current
+    U_PHYS  uuid := '88888888-0000-0000-0000-000000000003';  -- the physio; a five-year police row
+    U_V56   uuid := '88888888-0000-0000-0000-000000000056';  -- S Naidoo, eighteen: player and scorer
+    d       date := sa_today();
+  BEGIN
+    -- (roles) every adult role is asked for the three checks, the SAC and the
+    -- acknowledgement; a pupil's and a parent's roles for nothing
+    PERFORM _as(U_REGISTRAR);
+    SELECT count(DISTINCT role) INTO n FROM clearance_requirement
+     WHERE kind = 'sexual_offences_register'
+       AND role IN ('coach', 'assistantcoach', 'teammanager', 'medical', 'driver', 'transportcoordinator',
+                    'official', 'scorer', 'facilities', 'media', 'scout', 'schooladmin', 'sportsadmin',
+                    'directorofsport', 'principal');
+    PERFORM _assert(n = 15, format('db/56 (roles): %s of the 15 adult roles are asked for the Sexual Offences Register', n));
+    SELECT count(*) INTO n FROM clearance_requirement
+     WHERE role IN ('player', 'selfaccess', 'guardian', 'spectator', 'enquiry');
+    PERFORM _assert(n = 0, 'db/56 (roles): a pupil''s or a parent''s role is asked for a clearance');
+    SELECT count(*) INTO n FROM clearance_register(HIL)
+     WHERE person_id = U_SCORER AND kind IN ('police_clearance', 'child_protection', 'sexual_offences_register',
+                                             'safeguarding_awareness', 'safeguarding_acknowledgement')
+       AND status = 'missing';
+    PERFORM _assert(n = 5, format('db/56 (roles): the scorer, an adult, is missing %s of the five checks CSA asks of him, expected all five', n));
+
+    -- (age) a check runs at most its kind's maximum; exactly the maximum is accepted
+    BEGIN
+      INSERT INTO adult_clearance (person_id, school_id, kind, reference, issued_on, expires_on)
+        VALUES (U_COACH2, HIL, 'child_protection', 'CPR-V56-001', d - 10, d - 10 + 761);
+      v_err := NULL;
+    EXCEPTION WHEN check_violation THEN v_err := SQLERRM; END;
+    PERFORM _assert(v_err LIKE '%runs at most 731 days%', format('db/56 (age): a 25-month Child Protection Register clearance was not refused (%s)', coalesce(v_err, 'accepted')));
+    BEGIN
+      INSERT INTO adult_clearance (person_id, school_id, kind, reference, issued_on, expires_on)
+        VALUES (U_COACH2, HIL, 'sexual_offences_register', 'NRSO-V56-001', d - 10, d - 10 + 732);
+      v_err := NULL;
+    EXCEPTION WHEN check_violation THEN v_err := SQLERRM; END;
+    PERFORM _assert(v_err LIKE '%runs at most 731 days%', format('db/56 (age): a Sexual Offences Register clearance of 732 days was not refused (%s)', coalesce(v_err, 'accepted')));
+    INSERT INTO adult_clearance (person_id, school_id, kind, reference, issued_on, expires_on)
+      VALUES (U_COACH2, HIL, 'sexual_offences_register', 'NRSO-V56-002', d - 10, d - 10 + 731) RETURNING id INTO v_id;
+    PERFORM _assert(v_id IS NOT NULL, 'db/56 (age): a Sexual Offences Register clearance of exactly 24 months was refused');
+    SELECT count(*) INTO n FROM clearance_register(HIL)
+     WHERE person_id = U_COACH2 AND kind = 'sexual_offences_register' AND status = 'current';
+    PERFORM _assert(n = 1, 'db/56 (age): the recorded Sexual Offences Register clearance does not read current on the register');
+    BEGIN
+      INSERT INTO adult_clearance (person_id, school_id, kind, reference, issued_on, expires_on)
+        VALUES (U_COACH2, HIL, 'safeguarding_awareness', 'SAC-V56-001', d, d + 367);
+      v_err := NULL;
+    EXCEPTION WHEN check_violation THEN v_err := SQLERRM; END;
+    PERFORM _assert(v_err LIKE '%runs at most 366 days%', format('db/56 (age): a Safeguarding Awareness Certificate of 367 days was not refused (%s)', coalesce(v_err, 'accepted')));
+    -- a kind with no CSA maximum keeps db/08's outer bound only
+    INSERT INTO adult_clearance (person_id, school_id, kind, reference, issued_on, expires_on)
+      VALUES (U_COACH2, HIL, 'safeguarding_acknowledgement', 'ANNEX-G-V56', d, d + 1000) RETURNING id INTO v_id;
+    PERFORM _assert(v_id IS NOT NULL, 'db/56 (age): a signed acknowledgement, which has no CSA maximum, was refused');
+
+    -- (first) a first police clearance at the school no older than six months;
+    -- a renewal is not held to it
+    BEGIN
+      INSERT INTO adult_clearance (person_id, school_id, kind, reference, issued_on, expires_on)
+        VALUES (U_BURSAR, HIL, 'police_clearance', 'PCC-V56-001', d - 214, d - 214 + 700);
+      v_err := NULL;
+    EXCEPTION WHEN check_violation THEN v_err := SQLERRM; END;
+    PERFORM _assert(v_err LIKE '%first police clearance must be no older than 183 days%',
+      format('db/56 (first): a first police clearance issued seven months ago was not refused (%s)', coalesce(v_err, 'accepted')));
+    INSERT INTO adult_clearance (person_id, school_id, kind, reference, issued_on, expires_on)
+      VALUES (U_DRV, HIL, 'police_clearance', 'PCC-V56-002', d - 214, d - 214 + 700) RETURNING id INTO v_id;
+    PERFORM _assert(v_id IS NOT NULL, 'db/56 (first): a renewal issued seven months ago was refused as though it were a first');
+    INSERT INTO adult_clearance (person_id, school_id, kind, reference, issued_on, expires_on)
+      VALUES (U_BURSAR, HIL, 'police_clearance', 'PCC-V56-003', d - 183, d - 183 + 700) RETURNING id INTO v_id;
+    PERFORM _assert(v_id IS NOT NULL, 'db/56 (first): a first police clearance exactly six months old was refused');
+    -- a revoked row is not a check held: revoke the bursar's, and a first rule applies again
+    UPDATE adult_clearance SET revoked_at = now(), revoked_reason = 'Verify 056: wrong person' WHERE id = v_id;
+    BEGIN
+      INSERT INTO adult_clearance (person_id, school_id, kind, reference, issued_on, expires_on)
+        VALUES (U_BURSAR, HIL, 'police_clearance', 'PCC-V56-004', d - 214, d - 214 + 700);
+      v_err := NULL;
+    EXCEPTION WHEN check_violation THEN v_err := SQLERRM; END;
+    PERFORM _assert(v_err LIKE '%first police clearance%',
+      format('db/56 (first): with only a revoked row held, a seven-month-old police clearance was taken as a renewal (%s)', coalesce(v_err, 'accepted')));
+
+    -- (legacy) a five-year row recorded before db/56 reads current until its
+    -- date, and is revoked like any other
+    SELECT id INTO v_id FROM adult_clearance
+     WHERE person_id = U_PHYS AND school_id = HIL AND kind = 'police_clearance' AND revoked_at IS NULL
+       AND expires_on - issued_on > 731 AND expires_on > d;
+    PERFORM _assert(v_id IS NOT NULL, 'db/56 (legacy): the seed''s five-year police clearance is not there to read');
+    SELECT count(*) INTO n FROM clearance_register(HIL)
+     WHERE person_id = U_PHYS AND kind = 'police_clearance' AND clearance_id = v_id AND status = 'current';
+    PERFORM _assert(n = 1, 'db/56 (legacy): a police clearance recorded before db/56 to run five years no longer reads current until its date');
+    UPDATE adult_clearance SET revoked_at = now(), revoked_reason = 'Verify 056: re-checked under CSA' WHERE id = v_id;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    PERFORM _assert(n = 1, 'db/56 (legacy): the office cannot revoke a row older than CSA''s 24 months');
+    SELECT count(*) INTO n FROM clearance_register(HIL)
+     WHERE person_id = U_PHYS AND kind = 'police_clearance' AND status = 'revoked';
+    PERFORM _assert(n = 1, 'db/56 (legacy): the revoked five-year row does not read revoked');
+
+    -- (reference) the ages are readable by anyone signed in, and written by nobody
+    SELECT count(*) INTO n FROM clearance_kind_max_days;
+    PERFORM _assert(n = 5, format('db/56 (reference): the office reads %s of the five CSA maxima', n));
+    BEGIN
+      INSERT INTO clearance_kind_max_days (kind, max_days, source) VALUES ('first_aid', 30, 'verify');
+      v_err := NULL;
+    EXCEPTION WHEN insufficient_privilege THEN v_err := SQLERRM; END;
+    PERFORM _assert(v_err IS NOT NULL, 'db/56 (reference): the office wrote a CSA maximum');
+    PERFORM set_config('app.user_id', '', true);
+    SELECT count(*) INTO n FROM clearance_kind_max_days;
+    PERFORM _assert(n = 0, format('db/56 (reference): a caller with no session reads %s CSA maxima', n));
+
+    -- (pupil) a pupil who scores is not an adult missing his checks; an
+    -- eighteen-year-old who plays and scores is
+    PERFORM _seed_56();
+    PERFORM _as(U_REGISTRAR);
+    SELECT count(*) INTO n FROM clearance_register(HIL) WHERE person_id = U_SELF;
+    PERFORM _assert(n = 0, format('db/56 (pupil): the register asks R Pillay, a pupil who scores, for %s clearance(s)', n));
+    SELECT count(*) INTO n FROM clearance_register(HIL) WHERE person_id = U_V56 AND role = 'scorer' AND status = 'missing';
+    PERFORM _assert(n = 5, format('db/56 (pupil): the register asks S Naidoo, eighteen, who plays and scores, for %s of the five checks — the pupil exclusion reaches an adult', n));
+
+    -- (trip) nothing refuses from the paste: the driver has none of the new
+    -- kinds, and the guard, which refuses only a KNOWN lapse, lets him drive
+    PERFORM set_config('app.user_id', '', true);
+    v_err := _trip_56(U_DRV);
+    PERFORM _assert(v_err = 'ok', format('db/56 (trip): a driver missing only the new CSA checks was refused a trip (%s)', v_err));
+    -- ...and a new kind he holds, once lapsed, refuses as a lapsed police clearance does (db/08's rule)
+    PERFORM _as(U_REGISTRAR);
+    INSERT INTO adult_clearance (person_id, school_id, kind, reference, issued_on, expires_on)
+      VALUES (U_DRV, HIL, 'safeguarding_awareness', 'SAC-V56-002', d - 400, d - 35);
+    PERFORM set_config('app.user_id', '', true);
+    v_err := _trip_56(U_DRV);
+    PERFORM _assert(v_err LIKE '%Safeguarding Awareness Certificate expired%',
+      format('db/56 (trip): a driver whose recorded certificate lapsed was not refused as db/08''s guard refuses (%s)', v_err));
   END;
 
   PERFORM set_config('app.user_id', '', true);

@@ -844,21 +844,24 @@ function MeTab({ role }) {
 // policy: these rows are mine, and nobody else's appear here whatever my role.
 function MyClearancesSection({ role }) {
   const rows = useLive("my_clearances", role).rows;
-  const tone = { missing: D.rose, expired: D.rose, revoked: D.amber, expiring: D.amber, current: D.emerald };
+  // Text-safe halves: criticalText, never critical (fill only).
+  const tone = { missing: T.semantic.criticalText, expired: T.semantic.criticalText, revoked: T.semantic.warning,
+                 expiring: T.semantic.warning, current: T.semantic.positive };
   return (
     <Panel data-testid="my-clearances">
       <CardHead title="My clearances"
-        sub="What the school has on record that it checked, and the date it will ask again. The office records these; if one is wrong, ask them."/>
+        sub="What the school has on record that it checked, and the date it will ask again. The office records these; if one is wrong, ask them. CSA's Safeguarding Policy asks every adult who works with children for a police clearance, the Children's Act register and the Sexual Offences Register, each within 24 months, and the Safeguarding Awareness Certificate every year."/>
       {rows.length === 0
         ? <EmptyState icon="id-card" message="Nothing recorded for you."/>
         : rows.map((r) => (
-          <div key={r.id} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 0", borderTop: `1px solid ${D.border}` }}>
+          <div key={r.id} style={{ display: "flex", alignItems: "center", gap: T.space.md, padding: `${T.space.sm} 0`, borderTop: `1px solid ${T.line.normal}` }}>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textPrimary, fontWeight: 600 }}>{r.kindLabel}</div>
-              <div style={{ fontFamily: D.body, fontSize: "10px", color: D.textMuted }}>{r.schoolName} · issued {r.issuedOn} · {r.status === "revoked" ? "revoked" : `lapses ${r.expiresOn}`}</div>
+              <div style={{ ...T.role.body, color: T.content.primary, fontWeight: 600 }}>{r.kindLabel}</div>
+              <div style={{ ...T.role.body, fontSize: `${T.floor.read}px`, color: T.content.secondary }}>{r.schoolName} · issued {r.issuedOn} · {r.status === "revoked" ? "revoked" : `lapses ${r.expiresOn}`}</div>
             </div>
-            <span style={{ fontFamily: D.mono, fontSize: "9px", textTransform: "uppercase", padding: "3px 8px", borderRadius: D.pill,
-                           background: tone[r.status] + "14", border: `1px solid ${tone[r.status]}33`, color: textOn(tone[r.status]) }}>{r.status}</span>
+            <span style={{ fontSize: `${T.floor.read}px`, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em",
+                           padding: `${T.space.xs} ${T.space.sm}`, borderRadius: T.radius.pill,
+                           border: `1px solid ${tone[r.status]}`, color: tone[r.status] }}>{r.status}</span>
           </div>
         ))}
     </Panel>

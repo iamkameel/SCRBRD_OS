@@ -21,7 +21,14 @@ import { runAsPrincipal } from "../auth/auth-db.mjs";
 // pg's carry a SQLSTATE `code`, this module's own carry an HTTP `status`.
 
 const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
-const KINDS = ["police_clearance", "child_protection", "first_aid", "driving_permit", "coaching_accreditation"];
+// db/08's five, and db/56's six (K4, SG-7): the National Register for Sex
+// Offenders check, CSA's Safeguarding Awareness Certificate, DSO training, the
+// declaration of good standing, the signed acknowledgement, and two references.
+// How long each may run is the table's rule (clearance_kind_max_days), refused
+// there with a sentence the office can act on — not repeated here.
+const KINDS = ["police_clearance", "child_protection", "first_aid", "driving_permit", "coaching_accreditation",
+               "sexual_offences_register", "safeguarding_awareness", "dso_training", "good_standing_declaration",
+               "safeguarding_acknowledgement", "references_checked"];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isoDate = (/** @type {unknown} */ v, /** @type {string} */ code) => {
   if (v == null || String(v).trim() === "") return null;
@@ -37,7 +44,8 @@ export function clearanceRoutes({ pool, secret }) {
     try { res.json(await fn(req)); }
     catch (/** @type {any} */ e) {
       // 23514 is one of the table's own rules — the vocabulary, the dates, an
-      // edit after verification — and its message names which.
+      // edit after verification, CSA's maximum age for the kind (db/56) — and
+      // its message names which.
       if (e.code === "23514") return res.status(422).json({ error: "invalid_clearance", detail: e.message });
       if (e.code === "23503") return res.status(404).json({ error: "no_such_person" });
       const status = e.code === "42501" ? 403 : (e.status || 500);
