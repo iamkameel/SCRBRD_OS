@@ -20,11 +20,12 @@
 import { spawn } from "node:child_process";
 import pg from "pg";
 import { statsMagicContext, askStatsMagic } from "../services/api/ai/ai-service.mjs";
+import { ownerUrl, appUrl, port } from "./db-url.mjs";
 
-const PORT = 8829;
+const PORT = port(8829);
 const BASE = `http://127.0.0.1:${PORT}`;
 const SECRET = "smoke-statsmagic-secret";
-const DB = process.env.DATABASE_URL || "postgres://scrbrd:scrbrd@127.0.0.1:5432/scrbrd";
+const DB = ownerUrl();
 
 let pass = 0, fail = 0;
 const ok = (n, c, d = "") => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${d}` : ""); } };
@@ -35,7 +36,7 @@ const group = (t) => console.log("\n" + t);
 // /api/ai/stats route calls, so what is asserted is the service and not a
 // second copy of it living in a walk.
 const server = spawn(process.execPath, ["services/api/server.mjs"], {
-  env: { ...process.env, PORT: String(PORT), NODE_ENV: "development",
+  env: { ...process.env, DATABASE_URL: appUrl(), PORT: String(PORT), NODE_ENV: "development",
          ALLOW_DEV_LOGIN: "1", SESSION_SECRET: SECRET },
   stdio: ["ignore", "pipe", "pipe"],
 });

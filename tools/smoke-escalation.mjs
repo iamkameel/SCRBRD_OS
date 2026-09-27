@@ -26,8 +26,9 @@
  *   node tools/smoke-escalation.mjs
  */
 import pg from "pg";
+import { ownerUrl } from "./db-url.mjs";
 
-const DB = process.env.DATABASE_URL || "postgres://scrbrd:scrbrd@127.0.0.1:5432/scrbrd";
+const DB = ownerUrl();
 const HIL = "11111111-1111-1111-1111-111111111111";
 const WES = "22222222-2222-2222-2222-222222222222";
 

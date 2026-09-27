@@ -24,8 +24,9 @@ import { connect } from "node:net";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { appUrl, port } from "./db-url.mjs";
 
-const PORT = 8873, BASE = `http://127.0.0.1:${PORT}`;
+const PORT = port(8873), BASE = `http://127.0.0.1:${PORT}`;
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
 const group = (t) => console.log("\n" + t);
@@ -44,7 +45,7 @@ await mkdir(`${dist}-evil`, { recursive: true });
 await writeFile(join(`${dist}-evil`, "index.html"), "EVIL-SIBLING");
 
 const start = (env) => spawn(process.execPath, ["services/api/server.mjs"], {
-  env: { ...process.env, PORT: String(PORT), NODE_ENV: "development",
+  env: { ...process.env, DATABASE_URL: appUrl(), PORT: String(PORT), NODE_ENV: "development",
          ALLOW_DEV_LOGIN: "1", SESSION_SECRET: "smoke-web", ...env },
   stdio: ["ignore", "pipe", "pipe"],
 });

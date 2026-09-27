@@ -15,9 +15,10 @@ import { offline } from "./offline-browser.mjs";
 import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { join, extname } from "node:path";
+import { port } from "./db-url.mjs";
 
 const ROOT = "apps/web/dist";
-const PORT = 4319;
+const PORT = port(4319);
 const TYPES = {
   ".html": "text/html", ".js": "text/javascript", ".css": "text/css",
   ".jpg": "image/jpeg", ".png": "image/png", ".svg": "image/svg+xml",

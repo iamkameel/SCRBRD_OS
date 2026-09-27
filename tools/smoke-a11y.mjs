@@ -42,8 +42,9 @@ import { offline } from "./offline-browser.mjs";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
+import { port } from "./db-url.mjs";
 
-const PORT = 4331;
+const PORT = port(4331);
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".jpg": "image/jpeg", ".map": "application/json" };
 
 /**

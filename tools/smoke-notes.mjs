@@ -25,23 +25,24 @@
  */
 import { spawn } from "node:child_process";
 import pg from "pg";
+import { ownerUrl, appUrl, port } from "./db-url.mjs";
 
-const PORT = 8804;
+const PORT = port(8804);
 const BASE = `http://127.0.0.1:${PORT}`;
-const DB = process.env.DATABASE_URL || "postgres://scrbrd:scrbrd@127.0.0.1:5432/scrbrd";
+const DB = ownerUrl();
 const P_OWN   = "aaaaaaaa-0000-0000-0000-000000000001";  // James Whitfield, 1XI
 const P_SELF  = "aaaaaaaa-0000-0000-0000-000000000005";  // R Pillay, 1XI, has an account
 const P_U16B  = "aaaaaaaa-0000-0000-0000-000000000006";  // K Dlamini, another side
 const U_COACH = "88888888-0000-0000-0000-000000000004";
 const U_HEAD  = "88888888-0000-0000-0000-000000000007";
-const APP_DB  = process.env.APP_DATABASE_URL || "postgres://scrbrd_app:scrbrd_app@127.0.0.1:5432/scrbrd";
+const APP_DB = appUrl();
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
 const group = (t) => console.log("\n" + t);
 
 const server = spawn(process.execPath, ["services/api/server.mjs"], {
-  env: { ...process.env, PORT: String(PORT), NODE_ENV: "development",
+  env: { ...process.env, DATABASE_URL: appUrl(), PORT: String(PORT), NODE_ENV: "development",
          ALLOW_DEV_LOGIN: "1", SESSION_SECRET: "smoke-notes-secret" },
   stdio: ["ignore", "pipe", "pipe"],
 });
