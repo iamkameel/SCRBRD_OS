@@ -3679,7 +3679,37 @@ name reaches the provider, and it fails soft to a plain description (`descBall`)
 its line); a browser walk for the Commentary tab signed in and, when the public page exists, signed out without
 consent.
 
-### SCRBRD-097 — The rest of the players × balls readers
+### ~~SCRBRD-097~~ — CLOSED · The rest of the players × balls readers
+**Closed 2026-09-27** on `worktree-agent-a1d43c359c21ee146` (to be cherry-picked): the read's text and
+`db/51_milestone_watch_own_balls.sql`, as the build note below records. The bowling-breach trigger it uncovered is
+SCRBRD-097's one open remainder, noted at the end.
+**Built 2026-09-27:**
+1. **The assessment read** (`READ_QUERIES.ratings`) is one pass in its own text, no migration: the deliveries the
+   reader may see are read once (a materialized CTE), attributed to players with the functions' own CASEs and db/49's
+   arms, and windowed by a predicate on the join to each player's anchors; `ball_wicket_stands()` is asked once per
+   delivery. The `*_since()` functions are untouched and are the reference. `tools/bench-assessment.mjs --check`
+   compares the read with the pre-change statement (verbatim) row for row, raw, as nine readers. As the director:
+   seed 90 ms / 18.8k shared hits → 25–36 ms / 1.7–2.2k; seed + eight walks (3,640 deliveries) 6.3–7.9 s / 1.57M →
+   1.37 s / 251k; bench (70 players, 4,967 deliveries) 34–42 s / 5.4–7.4M → 1.5 s / 95k.
+2. **`milestone_watch()`** (db/51) asks two owner-only invoker helpers, `innings_runs_off_bat()` and
+   `career_runs_off_bat()`, in place of `player_innings`: sums of runs off the bat over the balls he faced, the only
+   arm of `player_innings` that carries runs, so the same numbers decide the same notices. Three partial indexes
+   (striker, bowler, a void's target) bound those reads to the player's own balls. The trigger alone, bench load:
+   6.6–7.3 s → 1.0–1.2 s; a 10,109-row load with careers crossing 500 runs and 25 wickets: 22–42 s → 3.0–3.6 s.
+   db/51 proves the shape unchanged, the helpers equal to `player_innings` over the whole log, and ten notices on a
+   rolled-back fixture (sentinel `ZZ051`); db/99 §29 holds the same, and records which of seven breaks each
+   assertion caught.
+3. **Before/after diff**, a database built at `e2faf46` against one built with db/51, the read and every milestone
+   notice, notification and bowling breach in the order written, ids replaced by names: empty at the seed, the seed
+   plus eight walks, the bench volume, and the 12-boy/40-fixture volume. Plain `node tools/migrate.mjs` over the
+   `e2faf46` database applies only db/51, and `--verify` passes.
+
+**Open, found here:** `bowling_breach_watch()` (db/08) is most of a bulk load, not `milestone_watch()`: 13–80 s of
+the bench load, fivefold between identical runs (autovacuum's statistics land mid-load). Its day check reads
+`bowler_over` for the bowler, whose over numbering is a window per innings, so the bowler cannot be pushed below it:
+the whole log per delivery bowled. `ball_on_free_hit()` under a reader's policy costs ~2.5 ms per wicket in every
+reader that asks `ball_wicket_stands()`, db/49's views included.
+
 **Priority:** P2 · **Domain:** Scoring / performance · **Found 2026-09-26** building db/49
 db/49 made the lifetime career views one pass over the log: the career read at a school's volume (70 players,
 about 5,000 deliveries) went from 83 s to 2.2 s. Two readers keep the old shape, and the RLS check on `ball_event`
@@ -3690,6 +3720,8 @@ runs players × balls times in each:
 2. **`milestone_watch()`** reads `player_innings` for the striker on every inserted ball. Loading 5,000 balls took
    about 48 s, mostly in this per-row trigger. A live match inserts one ball at a time, so it is fine today; a bulk
    import or replay is not. Consider a statement-level trigger, or a check bounded to the ball's own match.
+   (Built: bounded to the striker's and bowler's own balls instead. A statement-level trigger would move every
+   milestone notification after the bowling-breach notifications a row-level one interleaves with.)
 
 Also: the comment on `career_by_season` (db/44) cites "db/99 §21" for the Σ-seasons check, which is §22.
 `tools/bench-career.mjs` measures the career read at volume; use it before and after either fix.

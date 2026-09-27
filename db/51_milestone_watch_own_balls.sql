@@ -16,15 +16,24 @@
 -- lookup on every wicket in the log included: players × balls again, as
 -- the career views were before db/49, but at write time.
 --
--- MEASURED (tools/bench-assessment.mjs --load: bench-career's 60 boys, 20
--- fixtures, 5,045 rows, one INSERT per fixture). SCRBRD-097 estimated the
--- load at 48 s, "mostly in this trigger". It was 34.4 s, and this trigger
--- was 6.9 s of it; 26.7 s was bowling_breach_watch() (db/08), which asks
--- bowler_spell and bowler_over for the bowler on every delivery, and no
--- index on ball_event names a bowler either. With this file: the load 12.3 s,
--- this trigger 1.0 s, bowling_breach_watch() 10.6 s (untouched, but it reads
--- through the bowler's index below), and the database's shared-buffer hits
--- across the load 8.3M → 1.27M.
+-- MEASURED (tools/bench-assessment.mjs --load, one INSERT per fixture, the
+-- trigger's own time from EXPLAIN ANALYZE). bench-career's log (60 boys, 20
+-- fixtures, 5,045 rows): this trigger 6.6–7.3 s before, 1.0–1.2 s after.
+-- Twelve boys over 40 fixtures (10,109 rows, so careers pass 500 runs and 25
+-- wickets): 21.8–42.3 s before, 3.0–3.6 s after. With the bowling-breach
+-- trigger held off so the load is this trigger's alone, the database's
+-- shared-buffer hits across the load: 2.1M → 0.78M and 5.8M–13.4M → 2.2M–3.6M.
+-- The rewrite without the indexes below saves little (5.7 s and 37.7 s):
+-- both halves are needed.
+--
+-- SCRBRD-097 put the 5,000-ball load at 48 s, "mostly in this trigger". It
+-- is mostly in bowling_breach_watch() (db/08), which this file does not
+-- touch: 13–80 s of the same load, varying fivefold between identical runs
+-- with or without this file, as autovacuum's statistics land mid-load and
+-- its cached plans change. Its day check asks bowler_over for the bowler,
+-- and bowler_over numbers overs with a window over each innings, so the
+-- bowler cannot be pushed below it: every delivery in the log, per
+-- delivery bowled. SCRBRD-097's build note records it as open.
 --
 -- WHAT THIS FILE DOES. Of player_innings' three arms only the first carries
 -- runs: the other two contribute rows whose `runs` is 0. So both figures the
@@ -147,8 +156,7 @@ END $revoke_platform_roles$;
 -- and nothing else. Partial, because both questions are only ever asked of
 -- one kind of row: a delivery (kind = 'ball') or a void. The bowler's index
 -- serves the trigger's bowling branch — bowler_innings_figures and
--- bowler_hat_trick for one bowler — and bowling_breach_watch() (db/08),
--- which asks the same of the same bowler on every delivery. An index moves
+-- bowler_hat_trick for one bowler. An index moves
 -- no row and no value; it takes ball_event's write lock while it builds,
 -- which at a school's volume is milliseconds.
 CREATE INDEX IF NOT EXISTS ball_event_striker_ball ON ball_event (striker_id) WHERE kind = 'ball';
