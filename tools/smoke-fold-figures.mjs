@@ -33,7 +33,11 @@
  *   - legacy rows, written past db/43's door as a row stored before it
  *     would have been: a ball with no type (a run, to the fold) and a wicket
  *     with no method (a wicket, nobody's — and saved on a free hit);
- *   - free hits, voids, retirements, typed-name bowlers.
+ *   - free hits, voids, retirements, typed-name bowlers;
+ *   - a batter retiring hurt as the pad records it (SCRBRD-071): the pad's
+ *     own builder, retire({batter, reason: "hurt"}), asked of the Laws
+ *     first, mid-over, his end filled at once, and — later — him walking
+ *     back in. Not a wicket, so no career may count it as a dismissal.
  *
  * And the door itself: a new ball with no type, or a wicket with no
  * method, is refused by the database — and through the API, one event
@@ -51,7 +55,7 @@ import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import {
   MatchFold, deriveInnings, deriveMatch, toRow, fromRow, isLegal, normaliseDismissal, chargedToBowler, runsOffBat,
-  inningsStart, batters, bowler, ball, newEventId,
+  inningsStart, batters, bowler, ball, newEventId, retire, RETIRE_REASON, lawsRefusal,
 } from "@scrbrd/scoring";
 
 const PORT = port(8875);
@@ -98,7 +102,11 @@ const rnd2 = () => (s2 = (s2 * 1103515245 + 12345) % 2147483648) / 2147483648;
 let s3 = 9494;
 const rnd3 = () => (s3 = (s3 * 1103515245 + 12345) % 2147483648) / 2147483648;
 const SUSPENSION_REASONS = ["beamers", "short_pitched", "deliberate_no_ball", "protected_area", "fielding_time_wasting", "ball_tampering"];
-const gen = { suspensions: 0, splitOvers: 0, hurtReturns: 0 };
+// Batters retiring hurt as the pad records them (SCRBRD-071) draw on a
+// fourth, for the same reason.
+let s4 = 7171;
+const rnd4 = () => (s4 = (s4 * 1103515245 + 12345) % 2147483648) / 2147483648;
+const gen = { suspensions: 0, splitOvers: 0, hurtReturns: 0, padRetires: 0, padMidOver: 0, padReturns: 0 };
 /** @template T @param {T[]} xs @returns {T} */
 const pick = (xs) => xs[Math.floor(rnd() * xs.length)];
 /** @template T @param {T[]} xs */
@@ -124,6 +132,10 @@ function builder(no, overs, o = {}) {
   const push = (e) => { const x = { id: `ff-${++eventNo}`, innings: no, ...e }; ev.push(x); return x; };
   const now = () => deriveInnings(ev);
   /** @type {Set<string>} */ const suspended = new Set();
+  // Retired hurt as the pad records it; and the one who just went off, whom
+  // the pad's batting-order sheet does not offer back to the end he left.
+  /** @type {Set<string>} */ const padRetired = new Set();
+  /** @type {string | null} */ let justRetired = null;
   /** Who bowled any of the over before the one the next ball is in (Law 17.8). */
   const lastOver = () => {
     const at = now(), over = Math.floor(at.balls / 6);
@@ -192,12 +204,15 @@ function builder(no, overs, o = {}) {
       // his line goes on, and SQL — which never read the retirement — must
       // still agree with it.
       const hurt = at.wickets < 10 && at.batsmen.find((x) => x.status === "retired" && x.dismissal === "retired hurt"
-        && x.id !== at.striker && x.id !== at.nonStriker);
+        && x.id !== at.striker && x.id !== at.nonStriker && x.id !== justRetired);
       if (hurt && (at.striker == null || at.nonStriker == null) && rnd3() < 0.6) {
         push(at.striker == null ? { kind: "batters", striker: hurt.id } : { kind: "batters", nonStriker: hurt.id });
         gen.hurtReturns++;
+        if (padRetired.has(hurt.id)) gen.padReturns++;
+        justRetired = null;
         return;
       }
+      justRetired = null;
       if (at.wickets >= 10 || next >= order.length) return;
       if (at.striker == null) push({ kind: "batters", striker: order[next++] });
       else if (at.nonStriker == null) push({ kind: "batters", nonStriker: order[next++] });
@@ -209,6 +224,33 @@ function builder(no, overs, o = {}) {
       const batter = pick([at.striker, at.nonStriker]);
       push(how === "out" ? { kind: "retire", batter, reason: "out", type: "W", dismissal: "retired_out" }
                          : { kind: "retire", batter, reason: "hurt" });
+    },
+    /**
+     * A batter retires hurt as the pad records it (SCRBRD-071): its builder,
+     * retire({batter, reason: "hurt"}) — no W marker — asked of the Laws
+     * first, as the pad asks. `end` names which; else either.
+     * @param {"striker" | "nonStriker"} [end]
+     */
+    padRetire(end) {
+      const at = now();
+      if (at.striker == null || at.nonStriker == null) return null;
+      const batter = (end ?? (rnd4() < 0.5 ? "striker" : "nonStriker")) === "striker" ? at.striker : at.nonStriker;
+      const ev = retire({ innings: no, batter, reason: RETIRE_REASON.HURT });
+      /** @type {any[]} */ const innings = [];
+      innings[no] = at;
+      if (lawsRefusal({ innings, events: [] }, ev) !== null) return null;
+      padRetired.add(batter);
+      justRetired = batter;
+      gen.padRetires++;
+      if (at.balls % 6 > 0) gen.padMidOver++;
+      return push(ev);
+    },
+    /** A batter back from retired hurt, at the empty end. @param {string} id */
+    comeBack(id) {
+      const at = now();
+      push(at.striker == null ? { kind: "batters", striker: id } : { kind: "batters", nonStriker: id });
+      gen.hurtReturns++;
+      if (padRetired.has(id)) gen.padReturns++;
     },
     timedOut() {
       if (next >= order.length - 1 || now().wickets >= 9) return;
@@ -262,6 +304,8 @@ function generated(no, overs, legacy = false, start = undefined, awardFirst = fa
     if (rnd() < 0.04) b.undo();
     // The umpires suspend the bowler now and then; another finishes the over.
     if (rnd3() < 0.03) b.suspend();
+    // A batter retires hurt, mid-over, as the pad records it (SCRBRD-071).
+    if (rnd4() < 0.03 && b.now().balls % 6 > 0) b.padRetire();
     if (start) {
       const p = rnd2();
       if (p < 0.02) b.award(false, rnd2() < 0.3 ? undefined : 5);
@@ -315,6 +359,26 @@ const EDGES = [
   [["run:0", "noMethod"],                         [P1, P2, P3], "a wicket with no method: the batter out, nobody's wicket"],
   [["Nb:0", "noMethod", "run:0"],                 [P1, P2, P3], "...and on a free hit it is saved"],
 ];
+
+/**
+ * The pad's retired hurt, written out (SCRBRD-071): P1 hits a four and
+ * retires hurt mid-over; P3 comes in at his end; P2 is bowled; P1 walks back
+ * in and hits two. His line: 6 (2), not out — and no dismissal anywhere.
+ */
+function padRetireEdge(/** @type {number} */ no) {
+  // Sides of its own: the Laws take no retirement in an innings nobody said
+  // was batting (no_innings), and no award in the walk is made to either.
+  const b = builder(no, 20, { order: [P1, P2, P3, HIL_1XI[3]], bowling: [WES_1XI[0], WES_1XI[1]],
+                              start: { battingTeam: "Retired Hurt XI", bowlingTeam: "Pad XI" } });
+  b.deliver({ type: "run", value: 4 });
+  if (!b.padRetire("striker")) throw new Error("the Laws refused the written-out retirement");
+  b.fill();
+  b.deliver({ type: "run", value: 1 });
+  b.deliver({ type: "W", value: 0, dismissal: "bowled" });
+  b.comeBack(P1);
+  b.deliver({ type: "run", value: 2 });
+  return b.ev;
+}
 
 // ── Expectations, from the fold ──────────────────────────────────
 /** @param {Map<string, any>} m @param {string} k @param {() => any} init */
@@ -624,6 +688,10 @@ try {
     no++; edgeInnings.push({ no, what: /** @type {string} */ (what) });
     logs.push(scripted(no, /** @type {string[]} */ (steps), /** @type {string[]} */ (order)));
   }
+  no++;
+  const padEdgeNo = no;
+  edgeInnings.push({ no, what: "a batter retired hurt by the pad, mid-over, and back after the next wicket" });
+  logs.push(padRetireEdge(no));
   // Sixteen generated innings, half of them carrying legacy rows. Enough for
   // every case above many times over; not so many that the per-row triggers
   // (the milestone and bowling-breach watches each read the whole log) make
@@ -692,6 +760,29 @@ try {
        && rows.some((r) => r.kind === "retire" && r.innings === [...byInnings.keys()].find((k) => byInnings.get(k) === inn)
          && (r.payload?.batter === x.id) && r.ball_type == null))));
 
+  // SCRBRD-071: retired hurt as the pad records it. Stored as a retire with
+  // no W marker, which every SQL reader of a career answers with nothing:
+  // the rule functions they all count dismissals through say no batter and
+  // no dismissal for each one.
+  const padIds = new Set(logs.flat().filter((x) => x.kind === "retire" && x.reason === "hurt" && x.clientTs != null).map((x) => x.id));
+  const padRows = rows.filter((r) => padIds.has(r.idempotency_key));
+  const ruled = await q(
+    `select count(*) filter (where ball_retired_batter(kind, ball_type, dismissal, payload) is not null) b,
+            count(*) filter (where ball_retirement_dismissal(kind, ball_type, dismissal, payload) is not null) d
+       from ball_event where match_id = $1 and idempotency_key = any($2)`, [MATCH, [...padIds]]);
+  console.log(`  ${gen.padRetires} retired hurt as the pad records it (${gen.padMidOver} mid-over), ${gen.padReturns} of them back later; ` +
+              `${padRows.length} such rows stored`);
+  ok(`...batters retired hurt by the pad, mid-over (${gen.padRetires}, ${gen.padMidOver}), and some back later (${gen.padReturns})`,
+     gen.padRetires >= 5 && gen.padMidOver >= 5 && gen.padReturns >= 2 && padRows.length === gen.padRetires);
+  ok("...stored with no W marker and no dismissal: not a wicket",
+     padRows.every((r) => r.ball_type == null && r.dismissal == null && r.dismissed_id == null && r.value == null));
+  ok("...and the career rule functions count none of them as a dismissal",
+     Number(ruled[0].b) === 0 && Number(ruled[0].d) === 0, `${ruled[0].b} batters, ${ruled[0].d} dismissals`);
+  const edge = byInnings.get(padEdgeNo);
+  const back = edge?.batsmen.find((/** @type {any} */ x) => x.id === P1);
+  ok("the written-out case: P1 is batting again, 6 (2), one wicket in the innings (P2's)",
+     back?.status === "batting" && back.runs === 6 && back.balls === 2 && edge.wickets === 1, JSON.stringify(back));
+
   group("Per innings: match_live_score is the fold");
   const live = new Map((await q(`select innings, runs, wickets, legal_balls from match_live_score where match_id = $1`, [MATCH]))
     .map((r) => [Number(r.innings), r]));
@@ -714,6 +805,9 @@ try {
   const rbBad = fieldDifferences(new Map([...e.inningsRows].filter(([k]) => inn.has(k))),
                                  new Map([...inn].filter(([k]) => e.inningsRows.has(k))), ["runs", "balls"]);
   ok("runs and balls faced agree on every innings row", rbBad.length === 0, show(rbBad));
+  const p1Row = inn.get(`${P1}|${padEdgeNo}`);
+  ok("the pad's retired hurt, back: player_innings says 6 off 2, not out", p1Row?.runs === 6 && p1Row.balls === 2 && p1Row.out === false,
+     JSON.stringify(p1Row));
 
   group("A career: what moved is what the fold did");
   const car1 = await career();
