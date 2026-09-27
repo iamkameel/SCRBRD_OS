@@ -162,6 +162,67 @@ jobs:
           git diff --exit-code db/01_authz.sql db/09_rls_policies.sql db/23_authz_time_box.sql db/35_authz_suspension.sql db/39_match_anchor_helpers.sql \
             || { echo "::error::db/01_authz.sql, db/09_rls_policies.sql, db/23_authz_time_box.sql, db/35_authz_suspension.sql or db/39_match_anchor_helpers.sql is stale — run 'pnpm rls:generate' and commit the result"; exit 1; }
 
+  image:
+    name: Production image
+    runs-on: ubuntu-latest
+    # The image was only ever built by the deploy, after a merge to main, so
+    # a Dockerfile or .dockerignore that broke it failed the deploy rather
+    # than the PR (found 2026-09-27: tools/db-url.mjs was copied in while
+    # .dockerignore excluded tools/, and the server read its database from a
+    # helper that ignored DATABASE_URL). This builds the image exactly as the
+    # deploy does, then boots it the way Cloud Run does — production mode,
+    # DATABASE_URL naming the application role, SESSION_SECRET set — against
+    # a migrated database, and asks /api/health whether it reached it.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: scrbrd
+          POSTGRES_PASSWORD: scrbrd
+          POSTGRES_DB: scrbrd
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U scrbrd -d scrbrd"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+      # No version here on purpose: package.json's packageManager field names
+      # the exact pnpm (see the walks job).
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install psql
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
+      # The server refuses to start on a database missing a migration it was
+      # built against (SCRBRD-066), so the schema goes on first, as the owner.
+      - name: Migrate
+        run: node tools/migrate.mjs --reset --seed
+
+      - name: Build the image
+        run: docker build -t scrbrd-api:ci .
+
+      - name: Boot it as Cloud Run does, and reach the database
+        run: |
+          docker run -d --name api --network host \
+            -e NODE_ENV=production \
+            -e PORT=8787 \
+            -e DATABASE_URL=postgres://scrbrd_app:scrbrd_app@127.0.0.1:5432/scrbrd \
+            -e SESSION_SECRET=ci-only-not-a-secret \
+            -e WEB_ORIGIN=http://localhost:5173 \
+            scrbrd-api:ci
+          for i in $(seq 1 60); do
+            if [ "$(docker inspect -f '{{.State.Running}}' api)" != "true" ]; then
+              echo "::error::the production image exited on start"; docker logs api; exit 1
+            fi
+            body=$(curl -fsS http://127.0.0.1:8787/api/health || true)
+            if echo "$body" | grep -q '"db":"ok"'; then echo "$body"; docker logs api | tail -5; exit 0; fi
+            sleep 1
+          done
+          echo "::error::/api/health never reported db ok"; echo "$body"; docker logs api; exit 1
+
   browser:
     name: Browser walks
     runs-on: ubuntu-latest
