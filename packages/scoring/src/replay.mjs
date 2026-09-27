@@ -34,6 +34,7 @@
  */
 
 import { KIND, BALL_TYPE, isLegal, normaliseDismissal, chargedToBowler, standsOnFreeHit, DISMISSAL, DISMISSAL_LABEL, INNINGS_END_REASON, DERIVED_END_REASONS, RETIREMENT_DISMISSAL, RUN_OUT_END, SUSPENSION_SCOPE, runsOffBat, inningsEnd } from "./events.mjs";
+import { NB_RUNS, runsToBowler } from "./events.mjs";
 import { CAPTURE_PROFILE } from "./placement.mjs";
 
 /** @import { LogEvent, SquadMember } from "./events.mjs" */
@@ -549,13 +550,16 @@ function inningsFolder(ctx = {}, carried = 0) {
 
           case BALL_TYPE.NO_BALL: {
             // `v` is the runs completed; they are the striker's only when they
-            // came off the bat (SCRBRD-068, NB_RUNS in events.mjs). Byes or
-            // leg byes off a no-ball are No-ball extras, and — like every run
-            // resulting from a no-ball — debited to the bowler (Law 21).
+            // came off the bat (SCRBRD-068, NB_RUNS in events.mjs). Law 21.16:
+            // the one-run penalty is a No-ball extra, debited to the bowler;
+            // runs off the bat are the striker's, debited to the bowler; runs
+            // not off the bat are Byes or Leg byes, and not the bowler's.
             const offBat = runsOffBat(ev);
             inn.runs += penaltyRun + v;
-            inn.extras.noBall += penaltyRun + (v - offBat);
-            bowlerCharged = penaltyRun + v;
+            inn.extras.noBall += penaltyRun;
+            if (ev.nbRuns === NB_RUNS.LEG_BYES) inn.extras.legBye += v - offBat;
+            else inn.extras.bye += v - offBat;
+            bowlerCharged = runsToBowler(ev);
             if (bow) bow.noBalls += 1;
             // A no-ball is a ball faced even when no run is scored off it.
             if (bat) {
@@ -805,11 +809,7 @@ export function isMaiden(balls) {
   if (legalCount < 6) return false;
   const by = new Set(balls.map((b) => ("bowlerId" in b ? b.bowlerId : b.bowler) ?? null).filter((x) => x != null));
   if (by.size > 1) return false;
-  const charged = balls.reduce((sum, b) => {
-    const t = b.type ?? BALL_TYPE.RUN;
-    if (t === BALL_TYPE.BYE || t === BALL_TYPE.LEG_BYE) return sum;
-    return sum + (isLegal(t) ? 0 : 1) + (b.value ?? 0);
-  }, 0);
+  const charged = balls.reduce((sum, b) => sum + runsToBowler(b), 0);
   return charged === 0;
 }
 

@@ -28,8 +28,10 @@
  *   - a batter SCRBRD holds no row for — a typed name — at either end, and
  *     run out at the other one (payload.dismissed: nobody here, never the
  *     striker);
- *   - no-balls hit for four and six, their byes and leg byes to the rope,
- *     wides worth four, byes and leg byes worth four, a wicket ball with runs;
+ *   - no-balls hit for four and six, their byes and leg byes run and to the
+ *     rope, on a free hit and off it — byes and leg byes, not the bowler's
+ *     (Law 21.16, db/52) — wides worth four, byes and leg byes worth four, a
+ *     wicket ball with runs;
  *   - legacy rows, written past db/43's door as a row stored before it
  *     would have been: a ball with no type (a run, to the fold) and a wicket
  *     with no method (a wicket, nobody's — and saved on a free hit);
@@ -381,6 +383,8 @@ const EDGES = [
   [["run:2", "RO:ns:0"],                          [P1, TYPED[0], P3], "a typed-name batter run out at the other end: not the striker's dismissal"],
   [["run:0", "RO:ns:1:bowler_end"],               [TYPED[0], P2, P3], "a typed-name striker, a player run out at the other end"],
   [["Nb:4", "Nb:4:byes", "Nb:6:leg_byes", "Nb:6"], [P1, P2, P3], "no-balls: four and six off the bat are his, byes to the rope are not"],
+  [["Nb:0", "Nb:1:byes", "Nb:2:leg_byes", "Nb:4:leg_byes", "Nb:3:byes", "run:0"], [P1, P2, P3],
+   "no-balls on a free hit, byes and leg byes run and to the rope: neither the batter's nor the bowler's (Law 21.16)"],
   [["Wd:4", "B:4", "LB:4", "run:4"],              [P1, P2, P3], "a wide worth four, byes and leg byes worth four: only the hit is a four"],
   [["W:run_out:3", "run:0"],                      [P1, P2, P3], "a wicket ball with three run: his runs, no boundary"],
   [["noType:2", "noType:4", "noType:0", "noType:6"], [P1, P2, P3], "balls with no type: runs, a four, a dot and a six"],
@@ -428,7 +432,8 @@ function expected(byInnings) {
     /** @type {Map<string, any>} */ opp: new Map(),
     /** @type {Map<string, any>} */ matchups: new Map(),
     totals: { runs: 0, wickets: 0, balls: 0 },
-    cases: { nsRunOut: 0, nsBeforeFacing: 0, typedOut: 0, nbBoundaryOffBat: 0, nbByesToRope: 0, wideFour: 0, byeFour: 0,
+    cases: { nsRunOut: 0, nsBeforeFacing: 0, typedOut: 0, nbBoundaryOffBat: 0, nbByesToRope: 0, nbByesRun: 0, nbLegByesRun: 0,
+             nbLegByesToRope: 0, nbByesOnFreeHit: 0, wideFour: 0, byeFour: 0,
              wicketWithRuns: 0, noType: 0, noMethod: 0, noMethodSaved: 0, saved: 0, voids: 0 },
   };
   const oppOf = (/** @type {string} */ p) => at(e.opp, p, () => ({ innings: 0, balls: 0, runs: 0, dismissals: 0, fours: 0, sixes: 0,
@@ -457,10 +462,17 @@ function expected(byInnings) {
       const o = oppOf(w.id); o.ballsBowled += w.balls; o.runsConceded += w.runs; o.wickets += w.wickets;
     }
     /** @type {Set<string>} */ const hasFaced = new Set();
+    let onFreeHit = false;   // the fold's rule: a no-ball earns it, a legal ball takes it
     for (const x of inn.ballLog) {
       const type = x.type ?? "run";
       const legal = isLegal(type);
       const value = x.value ?? 0;
+      if (type === "Nb" && x.nbRuns && value > 0) {
+        if (value < 4) { if (x.nbRuns === "byes") e.cases.nbByesRun++; else e.cases.nbLegByesRun++; }
+        else if (x.nbRuns === "leg_byes") e.cases.nbLegByesToRope++;
+        if (onFreeHit) e.cases.nbByesOnFreeHit++;
+      }
+      onFreeHit = type === "Nb" ? true : legal ? false : onFreeHit;
       if (x.type == null) e.cases.noType++;
       if (type === "Nb" && runsOffBat(x) >= 4) e.cases.nbBoundaryOffBat++;
       if (type === "Nb" && runsOffBat(x) === 0 && value >= 4) e.cases.nbByesToRope++;
@@ -756,12 +768,15 @@ try {
   console.log(`  ${e.totals.wickets} wickets: ${c.nsRunOut} of a player at the non-striker's end (${c.nsBeforeFacing} before he faced), ` +
               `${c.typedOut} of a typed name at the other end, ${c.wicketWithRuns} with runs; ${c.noMethod} with no method ` +
               `(${c.noMethodSaved} saved by a free hit), ${c.saved} saved in all; ${c.noType} balls with no type; ` +
-              `no-balls ${c.nbBoundaryOffBat} to the rope off the bat, ${c.nbByesToRope} in byes; ${c.wideFour} wides and ` +
+              `no-balls ${c.nbBoundaryOffBat} to the rope off the bat, ${c.nbByesToRope} in byes, ${c.nbLegByesToRope} of them leg byes; ` +
+              `${c.nbByesRun} no-balls with byes run and ${c.nbLegByesRun} with leg byes run, ${c.nbByesOnFreeHit} of all those on a free hit; ${c.wideFour} wides and ` +
               `${c.byeFour} byes worth four; ${c.voids} voids`);
   // Not vacuous: the logs hold every case db/43 is about.
   ok(`...run outs at the non-striker's end (${c.nsRunOut}), before he faced (${c.nsBeforeFacing})`, c.nsRunOut >= 20 && c.nsBeforeFacing >= 3);
   ok(`...a typed name run out at the other end (${c.typedOut})`, c.typedOut >= 1);
   ok(`...no-ball boundaries off the bat (${c.nbBoundaryOffBat}) and byes to the rope (${c.nbByesToRope})`, c.nbBoundaryOffBat >= 5 && c.nbByesToRope >= 5);
+  ok(`...no-ball byes run (${c.nbByesRun}), leg byes run (${c.nbLegByesRun}) and to the rope (${c.nbLegByesToRope}), on a free hit (${c.nbByesOnFreeHit})`,
+     c.nbByesRun >= 5 && c.nbLegByesRun >= 5 && c.nbLegByesToRope >= 3 && c.nbByesOnFreeHit >= 3);
   ok(`...wides worth four (${c.wideFour}), byes worth four (${c.byeFour})`, c.wideFour >= 5 && c.byeFour >= 5);
   ok(`...balls with no type (${c.noType}), wickets with no method (${c.noMethod}, ${c.noMethodSaved} on a free hit)`,
      c.noType >= 10 && c.noMethod >= 5 && c.noMethodSaved >= 1);

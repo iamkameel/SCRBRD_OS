@@ -134,8 +134,10 @@ group("A. Every event kind has its line, with the fold's figures");
   ok("...the batter's figures from the fold, and the score", w && /R Pillay (goes for|is out for) \d+|R Pillay is out for a duck/.test(w.text) && /Hilton College \d+\/1\.$/.test(w.text), w?.text);
   ok("the new batter comes in", ofKind(out, K.NEW_BATTER).some((x) => /^S Naidoo (comes in|is the new batter|walks out to bat)\.$/.test(x.text)));
   const end1 = ofKind(out, K.OVER_END)[0];
+  // 18, not 24 less the byes and leg byes (21): the two byes and the leg bye
+  // off no-balls are not the bowler's either (Law 21.16, db/52).
   ok("the end of the over: its runs, the score, the batters, the bowler", end1 &&
-     /^End of over 1: 24 runs, one wicket\. Hilton College 24\/1\. D Erasmus \d+ \(\d+\)\. K Naidoo 1-0-21-1\.$/.test(end1.text), end1?.text);
+     /^End of over 1: 24 runs, one wicket\. Hilton College 24\/1\. D Erasmus \d+ \(\d+\)\. K Naidoo 1-0-18-1\.$/.test(end1.text), end1?.text);
   ok("...placed at the over's sixth ball, before the new batter", end1?.over === 0 && end1?.ball === 6
      && out.indexOf(end1) < out.findIndex((x) => /^S Naidoo/.test(x.text)));
   ok("a second bowler from the other end", at(/^L Botha to bowl from the other end\.$/));

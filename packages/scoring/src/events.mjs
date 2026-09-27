@@ -95,25 +95,32 @@ export const OFF_THE_BAT = new Set([BALL_TYPE.RUN, BALL_TYPE.WICKET, BALL_TYPE.N
  * runs the batters completed, or the boundary allowance — as for a wide, a
  * bye or a leg bye. `nbRuns` says where they came from:
  *
- *   absent     off the bat — the striker's (Law 21.6). Every no-ball recorded
+ *   absent     off the bat — the striker's (Law 21.16). Every no-ball recorded
  *              before this has no `nbRuns`, and that is what they were: the
  *              pad's sheet asked for "runs scored off this ball", so an old
  *              no-ball replays exactly as it always did.
  *   "byes"     the ball did not touch the bat or the batter;
  *   "leg_byes" it came off the batter's person, not the bat.
  *
- * Runs not off the bat are not the striker's (Law 23). By the Laws they are
- * scored as No-ball extras, and every run resulting from a no-ball — the
- * penalty, runs off the bat, byes, leg byes — is debited to the bowler; only a
- * five-run penalty award is not (MCC Laws 2017, Law 21: "Runs resulting from
- * a No ball – how scored"). So the team's total and the bowler's figures are
- * the same whichever it is; the batter's runs, fours and sixes are not. The
- * pad still records which of the two it was, because it is what the scorer saw
- * and a competition playing other conditions can read it.
+ * How they are scored, by the current Code (MCC Laws 2017 Code, 3rd Edition
+ * 2022, Law 21.16 "Runs resulting from a No ball – how scored", and Law 23):
+ * the one-run penalty is a No-ball extra, debited to the bowler. Runs off the
+ * bat are the striker's, and debited to the bowler. Runs the batters complete,
+ * or a boundary, when the ball was NOT hit are Byes or Leg byes — extras of
+ * that kind, and NOT debited to the bowler. The no-ball is still not a legal
+ * ball, the striker has still faced it, and the runs completed still move the
+ * strike. (SCRBRD-068 was first built to the 2000 Code, Law 24.13, which made
+ * every run of a no-ball a No-ball extra debited to the bowler; Kameel moved
+ * it to the current Code on 2026-09-27, db/52.)
+ *
+ * So the team's total is the same whichever it is; the extras by type, the
+ * bowler's runs conceded and the batter's runs, fours and sixes are not.
+ * runsOffBat() and runsToBowler() below are the rule; every SQL reader asks
+ * the same of ball_runs_off_bat() (db/40) and ball_runs_to_bowler() (db/52).
  *
  * Carried as a new field rather than by reading `value` differently, so the
  * runs completed stay in one place — which is what strike is rotated by, and
- * what every SQL fold already adds to the total and the bowler (`1 + value`).
+ * what every SQL total already adds (`1 + value`).
  */
 export const NB_RUNS = Object.freeze({ BYES: "byes", LEG_BYES: "leg_byes" });
 
@@ -159,6 +166,23 @@ export function runsOffBat(ev) {
   const t = ev.type ?? BALL_TYPE.RUN;
   if (!OFF_THE_BAT.has(t)) return 0;
   if (t === BALL_TYPE.NO_BALL && NB_RUNS_VALUES.has(ev.nbRuns)) return 0;
+  return ev.value ?? 0;
+}
+
+/**
+ * The runs of a delivery debited to the bowler (Law 21.16, Law 22, Law 23):
+ * a wide's penalty run and every run off it; a no-ball's penalty run and the
+ * runs off the bat (not its byes or leg byes); a run or a wicket ball's runs;
+ * never a bye or a leg bye. A delivery with no type is a run, as the fold
+ * reads it.
+ * @param {{type?: string | null, value?: number | null, nbRuns?: unknown}} ev
+ * @returns {number}
+ */
+export function runsToBowler(ev) {
+  const t = ev.type ?? BALL_TYPE.RUN;
+  if (t === BALL_TYPE.WIDE) return 1 + (ev.value ?? 0);
+  if (t === BALL_TYPE.NO_BALL) return 1 + runsOffBat(ev);
+  if (t === BALL_TYPE.BYE || t === BALL_TYPE.LEG_BYE) return 0;
   return ev.value ?? 0;
 }
 

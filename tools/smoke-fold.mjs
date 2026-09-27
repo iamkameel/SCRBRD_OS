@@ -173,8 +173,8 @@ try {
   await record(ball({ type: BALL_TYPE.WIDE,   value: 0 }));
   await record(ball({ type: BALL_TYPE.NO_BALL, value: 2 }));
   // Two byes off a no-ball (SCRBRD-068): the side's three, the bowler's
-  // three, and none of them the batter's — the case the SQL career views
-  // got wrong until db/40.
+  // one (Law 21.16, db/52), and none of them the batter's — the case the SQL
+  // career views got wrong until db/40.
   await record(ball({ type: BALL_TYPE.NO_BALL, value: 2, nbRuns: NB_RUNS.BYES }));
   await record(ball({ type: BALL_TYPE.RUN,    value: 0 }));   // undone below
   await record(ball({ type: BALL_TYPE.RUN,    value: 6 }));   // undone below
@@ -286,13 +286,12 @@ try {
            from player_innings where match_id = $2 group by player_id
        ) bat on bat.striker_id = p.id
        left join (
-         -- Likewise player_bowling_career: an extra costs the bowler the run
-         -- plus the delivery, and neither counts towards his legal balls.
+         -- Likewise player_bowling_career's rule, ball_runs_to_bowler() (db/52):
+         -- a wide is its run and every run off it, a no-ball its run and the
+         -- runs off the bat, and neither counts towards his legal balls.
          select bowler_id,
                 sum(case when ball_type not in ('Wd','Nb') then 1 else 0 end)::int as balls_bowled,
-                sum(case when ball_type in ('Wd','Nb') then 1 + coalesce(value,0)
-                         when ball_type in ('run','W')  then coalesce(value,0)
-                         else 0 end)::int as runs_conceded
+                sum(ball_runs_to_bowler(ball_type, value, payload))::int as runs_conceded
            from ball_event_live where match_id = $2 and kind = 'ball' group by bowler_id
        ) bowl on bowl.bowler_id = p.id
       where p.id = any($1::uuid[])`, [P, MATCH]);

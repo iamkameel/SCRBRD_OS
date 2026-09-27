@@ -130,8 +130,9 @@ Kept deliberately, listed so a future reader does not "fix" them back:
 
 - **Wides and no-balls do not consume a ball of the over.** `isLegal()`.
 - **Byes and leg byes are not charged to the bowler** but do count as balls
-  bowled, and are balls faced by the batter. Off a no-ball they are No-ball
-  extras and are charged to him, like every run of a no-ball (SCRBRD-068).
+  bowled, and are balls faced by the batter. Off a no-ball they are still byes
+  or leg byes and still not his; only the no-ball's penalty run, and runs off
+  the bat, are charged to him (Law 21.16; SCRBRD-068, corrected by db/52).
 - **Run outs and the other non-delivery dismissals are not credited to the
   bowler** — see `UNCREDITED` in `replay.mjs`.
 - **The bowler is cleared at the end of each over**, so the next `bowler` event
@@ -328,7 +329,8 @@ Taken by the product owner on the rules the commit-time Laws check left open.
 3. **Run out with runs completed — ask which end.** One extra question on a run out that completed runs: out at the
    striker's end or the bowler's end (Law 38.2). The fold places the survivor from that. Built as SCRBRD-069.
 4. **No-ball byes — fix the model.** A no-ball records runs off the bat and runs not off the bat separately; only
-   the first is the batter's (Law 21.6, Law 23). Old events replay unchanged. Built as SCRBRD-068.
+   the first is the batter's (Law 21.16, Law 23). Old events replay unchanged. Built as SCRBRD-068; its scoring
+   corrected to the current Code on 2026-09-27 (db/52, below).
 5. **Timed out and retired out are not deliveries.** Recorded as a dismissal event that is not a ball: the over's
    count and the bowler's figures are unaffected and the bowler gets no credit. Old matches replay unchanged.
    Built as SCRBRD-081 — see below.
@@ -358,26 +360,34 @@ This was `laws-spec.test.mjs`'s last KNOWN_GAP; it is now group E there, both en
 a bye or a leg bye. A new, optional field says whose they were: `nbRuns: "byes" | "leg_byes"` (`NB_RUNS`). Absent means
 off the bat. The constructor refuses any other value, and the field on anything but a no-ball.
 
-**Why not a second number beside `value`.** Every shipped SQL fold already reads a no-ball as `1 + value` — the live
-score, the handover check (`scoring_verify_takeover`), the bowler's career runs conceded. Splitting the runs into two
-numbers would have left all of them short by the byes, and a handover after a no-ball bye would have failed
-verification. With `value` still the runs completed, they stay right with no migration; the new field only decides the
-batter's share. And it is what old events already are: the pad asked for "runs scored off this ball", so a no-ball with
+**Why not a second number beside `value`.** Every shipped SQL total already reads a no-ball as `1 + value` — the live
+score, the handover check (`scoring_verify_takeover`). Splitting the runs into two numbers would have left all of them
+short by the byes, and a handover after a no-ball bye would have failed verification. With `value` still the runs
+completed, the totals stay right with no migration; the new field decides the batter's share and the bowler's. And it is what old events already are: the pad asked for "runs scored off this ball", so a no-ball with
 no `nbRuns` is off the bat and replays exactly as before.
 
-**How it is scored (MCC Laws, Law 21 — "Runs resulting from a No ball – how scored").** The one-run penalty is a
-No-ball extra. Runs completed off the bat are the striker's; otherwise they too are No-ball extras — not byes or leg
-byes. Apart from a five-run penalty award, every run resulting from a no-ball is debited to the bowler. So:
+**How it is scored (MCC Laws, 2017 Code 3rd Edition, Law 21.16 — "Runs resulting from a No ball – how scored";
+Law 23).** The one-run penalty is a No-ball extra, debited to the bowler. Runs completed off the bat, or a boundary off
+the bat, are the striker's, and debited to the bowler. Runs completed, or a boundary allowance, when the ball was not
+hit are scored as Byes or Leg byes, as appropriate, and are not debited to the bowler. So:
 
 | No-ball, 2 run | Side | Extras | Striker | Bowler | Strike |
 |---|---|---|---|---|---|
 | off the bat | +3 | nb +1 | +2 runs, +1 ball | +3 | kept (2 is even) |
-| byes / leg byes | +3 | nb +3 | +0 runs, +1 ball | +3 | kept |
+| byes | +3 | nb +1, b +2 | +0 runs, +1 ball | +1 | kept |
+| leg byes | +3 | nb +1, lb +2 | +0 runs, +1 ball | +1 | kept |
 
-The team total and the bowler's figures do not depend on the answer; the batter's runs, fours and sixes do. A no-ball is
-a ball faced either way. Strike is rotated by the runs completed. The pad records which of byes or leg byes it was
-because that is what the scorer saw; the fold scores both as no-ball extras. (A competition playing conditions that
-score them as byes and leg byes, not debited to the bowler, would read `nbRuns` differently — not modelled.)
+The team total does not depend on the answer; the extras by type, the bowler's runs conceded and the batter's runs, fours
+and sixes do. A no-ball is a ball faced either way, is never a legal ball, and still earns a free hit. Strike is rotated
+by the runs completed.
+
+**Corrected 2026-09-27 (Kameel, from `docs/laws/CLAUSE_CHECK.md`).** SCRBRD-068 was first built to the rule of the 2000
+Code (Law 24.13): every run resulting from a no-ball a No-ball extra, and every one debited to the bowler. That is not
+the current Code. The fold now scores the runs not off the bat as byes or leg byes and charges the bowler only the
+penalty run and runs off the bat (`runsToBowler()` in `events.mjs`); `db/52_noball_byes.sql` does the same in every SQL
+reader of a bowler's runs (`ball_runs_to_bowler()`). Stored events are not rewritten: the same `value` and `nbRuns`
+now read under the current rule, so a bowler's figures over an old no-ball bye fall by the byes, and the extras line
+moves them from nb to b or lb. Totals do not move.
 
 **Consumers.** The fold (`runsOffBat()` in `events.mjs` is the one rule), the phases (fours and sixes, and their
 invariant), the scorecard and ball-by-ball text, the one-batter wagon wheel's run count, the held sheet, the Laws
@@ -388,8 +398,9 @@ used to count every ball worth four, four byes and five wides included.
 **The SQL career views (db/40).** They credited a no-ball's `value` to the striker. `db/40_career_follows_the_fold.sql`
 redefines every one that computes a batter's runs from the log (`player_batting_since`, `player_innings`,
 `opposition_squad`, and the milestone trigger) over `ball_runs_off_bat()`, which is `runsOffBat()` in SQL: a no-ball's
-byes and leg byes are not his runs, fours or sixes, are still a ball he faced, and are still every run debited to the
-bowler. A no-ball with no `nbRuns` scores exactly as before. The pad's no-ball, and its wicket ball, now carry the
+byes and leg byes are not his runs, fours or sixes, and are still a ball he faced. (db/40 left them debited to the
+bowler; db/52 takes them off — `ball_runs_to_bowler()` — in `player_bowling_since`, `player_bowling_career`,
+`player_bowling_by_season`, `bowler_innings_figures`, `opposition_squad` and the `career` read.) A no-ball with no `nbRuns` scores exactly as before. The pad's no-ball, and its wicket ball, now carry the
 striker, non-striker and bowler like every other delivery (they carried none, so neither was in any SQL career figure
 — balls faced, runs conceded, no-balls).
 

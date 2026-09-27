@@ -56,15 +56,16 @@ function ShotSelectorSheet({onSelect,onSkip,onClose}){
 function NoBallSheet({onConfirm,onClose}){
   const[nbType,setNbType]=useState("front_foot");
   const[runs,setRuns]=useState(0);
-  // Whose the runs are (SCRBRD-068): off the bat they are the striker's; byes
-  // or leg byes off a no-ball are not (Law 23) — they are no-ball extras, and
-  // the bowler is charged every run of a no-ball either way (Law 21).
+  // Whose the runs are (SCRBRD-068): off the bat they are the striker's, and
+  // charged to the bowler; byes or leg byes off a no-ball are scored as byes
+  // or leg byes, and are neither the striker's nor the bowler's (Law 21.16,
+  // Law 23; db/52). The no-ball's own run is charged to the bowler either way.
   // null is off the bat, the event's default, so it is not written.
   const[from,setFrom]=useState(null);
   const FROM=[{id:null,label:"Off the bat"},{id:NB_RUNS.BYES,label:"Byes"},{id:NB_RUNS.LEG_BYES,label:"Leg byes"}];
   // Front foot NB: batter CAN be caught (only bowled/LBW/hit wicket protected)
   // Height NB (above shoulder): same + extra restrictions
-  // Both: 1 penalty run + any runs scored, bat gets credit, doesn't count as legal delivery
+  // Both: 1 penalty run + any runs scored (the bat's only when off the bat), doesn't count as legal delivery
   const types=[
     {id:"front_foot",label:"Front Foot",sub:"Bowler overstepped the crease",
       note:"Batter can be dismissed caught, run out, stumped, handled ball, hit ball twice, obstructing field"},
@@ -127,7 +128,9 @@ function NoBallSheet({onConfirm,onClose}){
               ))}
             </div>
             <div style={{marginTop:"6px",color:D.textMuted,fontSize:"12px",fontFamily:D.body}}>
-              {from?"Not the batter's: no-ball extras, charged to the bowler.":"Credited to the batter."}
+              {from===NB_RUNS.LEG_BYES?"Scored as leg byes: not the batter's, and not charged to the bowler."
+                :from?"Scored as byes: not the batter's, and not charged to the bowler."
+                :"Credited to the batter, and charged to the bowler."}
             </div>
           </div>
         )}

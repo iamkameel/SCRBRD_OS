@@ -23,6 +23,7 @@ import {
   CAPTURE_PROFILE, PLACEMENT_FIELD, NOT_CAPTURED, evidenceLabel, placementEvidence, profileCollects,
   MatchFold, deriveInningsList, penaltyCredits, shortRunning, bowlerSuspended, suspensionWords,
 } from "../src/index.mjs";
+import { runsToBowler } from "../src/index.mjs";
 
 /** @import { LogEvent, Loose, BallEvent, BallInput, BattersEvent, BowlerEvent, InningsStartEvent, InningsStartInput } from "../src/events.mjs" */
 /** @import { Innings } from "../src/replay.mjs" */
@@ -1199,9 +1200,21 @@ group("K. Whose the runs off a no-ball are (SCRBRD-068)");
   const withLb = deriveInnings([...open(), runs(1), lb]);
   const p2 = must(withLb.batsmen.find((b) => b.id === "p2"));
   ok("leg byes off a no-ball: the striker faced it and has none of them", p2.balls === 1 && p2.runs === 0);
-  ok("...the side has 1 + 1 + 2, three of them no-ball extras", withLb.runs === 4 && withLb.extras.noBall === 3);
-  ok("...the bowler is charged every run of the no-ball", withLb.bowlers[0].runs === 4);
+  // Law 21.16 (current Code, db/52): the penalty run is the no-ball extra,
+  // the two run are leg byes, and only the penalty run is the bowler's.
+  ok("...the side has 1 + 1 + 2: one no-ball extra, two leg byes", withLb.runs === 4
+     && withLb.extras.noBall === 1 && withLb.extras.legBye === 2 && withLb.extras.bye === 0);
+  ok("...the bowler is charged the single he conceded and the no-ball's penalty run, not the leg byes", withLb.bowlers[0].runs === 2);
   ok("...two run is even: the ends are as they were", withLb.striker === "p2");
+  // runsToBowler(): the rule the fold charges by, and ball_runs_to_bowler() in db/52 mirrors.
+  const charged = [
+    [{ type: "Nb", value: 4 }, 5], [{ type: "Nb", value: 4, nbRuns: "byes" }, 1], [{ type: "Nb", value: 3, nbRuns: "leg_byes" }, 1],
+    [{ type: "Nb", value: 0 }, 1], [{ type: "Wd", value: 2 }, 3], [{ type: "B", value: 4 }, 0], [{ type: "LB", value: 1 }, 0],
+    [{ type: "run", value: 6 }, 6], [{ type: "W", value: 1 }, 1], [{ value: 2 }, 2],
+  ];
+  const wrong = charged.filter(([e, want]) => runsToBowler(/** @type {any} */ (e)) !== want);
+  ok("runsToBowler(): a no-ball is its penalty run and the runs off the bat, never its byes or leg byes"
+     + (wrong.length ? ` — wrong for ${JSON.stringify(wrong)}` : ""), wrong.length === 0);
   const partnership = withLb.curPartner.runs;
   ok("...and the partnership has them, as it has every extra", partnership === 4);
 
