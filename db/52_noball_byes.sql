@@ -70,10 +70,12 @@
 -- case by case against runsToBowler()'s table (replay.test.mjs, K); a
 -- fixture folded by hand — the same events replay.test.mjs folds as "the
 -- db/52 fixture" — read through all four bowler readers that take a player;
--- and, on every row the log holds, the five copies of the rule agreeing with
--- each other. db/99 §22, §db/43 and §db/44 carry fixtures with no-ball byes and
--- leg byes; tools/smoke-fold-figures.mjs compares every one of these readers
--- with the fold over generated logs.
+-- and, on every row the log holds, those four agreeing with each other.
+-- opposition_squad() needs a fixture with an opposition: db/99's db/43
+-- section has one. db/99 §19, §22 and that section carry no-ball byes and leg
+-- byes, and §30 holds the rule on every verify paste;
+-- tools/smoke-fold-figures.mjs compares every one of these readers with the
+-- fold over generated logs.
 
 -- ── The shape of everything this file replaces, before it does ─────
 DROP TABLE IF EXISTS _db52_before;
