@@ -250,15 +250,18 @@ group("The engine records a short run through its one ball funnel, as a short ru
      /const recordShortRun=\(type,nbType=null\)=>\{[\s\S]{0,120}?commitBall\(type,0,null,null,null,null,undefined,\{shortRun:true,nbType\}\)/.test(engine));
   // A short run off a no-ball asks its kind, as the no-ball sheet does, and
   // the delivery carries it (SCRBRD-094's loose end: nbType was null).
-  ok("...with a no-ball's kind, which commitBall puts on the delivery",
-     /\.\.\.\(type==="Nb"&&nbType\?\{nbType\}:\{\}\)/.test(engine));
+  // commitBall's event code lives in delivery.js since SCRBRD-100 (moved as it was).
+  const delivery = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "scorer", "delivery.js"), "utf8");
+  ok("...with a no-ball's kind, which the delivery carries",
+     /\.\.\.\(type === "Nb" && nbType \? \{ nbType \} : \{\}\)/.test(delivery) && /const evs=deliveryEvents\(\{[^}]*nbType\}\);/.test(engine));
   const [nbBall] = shortRunEvents(0, { type: "Nb", nbType: "height", striker: "a1", nonStriker: "a2", bowler: "b1" });
   ok("...and the short-run pair's delivery keeps it", nbBall.type === "Nb" && nbBall.nbType === "height" && nbBall.value === 0);
   const sheet = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "scorer", "penaltySheet.jsx"), "utf8");
   ok("the sheet asks the kind when the delivery is a no-ball, and passes it on",
      /delivery === "Nb" && \([\s\S]{0,200}What kind of no ball\?/.test(sheet) && /onShortRun\(delivery, kind\)/.test(sheet));
   ok("...and commitBall emits shortRunning's two events for it",
-     /shortRun\?shortRunEvents\(curIn,delivery\):\[ballEvent\(delivery\)\]/.test(engine) && /emit\(\.\.\.evs\);/.test(engine));
+     /return shortRun \? shortRunEvents\(curIn, delivery\) : \[ballEvent\(delivery\)\];/.test(delivery)
+     && /const evs=deliveryEvents\(\{[^}]*shortRun[^}]*\}\);/.test(engine) && /emit\(\.\.\.evs\);/.test(engine));
   ok("the pad folds the whole match", /const innings = useMemo\(\s*\(\) => foldPad\(events/.test(engine));
 }
 
