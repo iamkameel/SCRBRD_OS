@@ -265,7 +265,7 @@ try {
   ok("the voided delivery and the amended one have no line", voided.every((t) => !all.some((k) => k === `e:${t}` || k.startsWith(`e:${t}#`))));
   const body = await tid(p, "mc-commentary").innerText();
   ok("Westville start their innings on the five penalty runs", /Westville Boys' High 1XI start their innings on 5/.test(body));
-  ok("the short run is told, with the Law", /deliberate short running \(Law 41\.5\)/.test(body));
+  ok("the short run is told in words, with no Law clause number", /deliberate short running/.test(body) && !/\bLaws?\s+\d/.test(body));
   ok("the free hit is told, and the wicket it saved", /Free hit: .* bowled, but it's a free hit: not out\./.test(body));
   ok("no id reaches a line", !/[0-9a-f]{8}-[0-9a-f]{4}-/.test(body));
 
