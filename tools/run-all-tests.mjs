@@ -82,6 +82,10 @@ const SUITES = [
   ["csv",      "services/api/io/csv.test.mjs"],
   ["write",    "services/api/write/write.test.mjs"],
   ["migrate",  "tools/migrate.test.mjs"],
+  // No file under tools/, services/ or packages/ hard-codes the database
+  // address outside tools/db-url.mjs, which is what lets a worktree run
+  // verification against its own database.
+  ["db-url-guard", "tools/db-url-guard.test.mjs"],
   ["shipped",  "tools/shipped.test.mjs"],
   ["schema-guard", "services/api/schema-guard.test.mjs"],
   ["imports",  "tools/check-imports.test.mjs"],
