@@ -92,6 +92,13 @@ const rnd = () => (s = (s * 1103515245 + 12345) % 2147483648) / 2147483648;
 // innings, event for event, with them added.
 let s2 = 4848;
 const rnd2 = () => (s2 = (s2 * 1103515245 + 12345) % 2147483648) / 2147483648;
+// Bowlers suspended mid-over and batters back from retired hurt (SCRBRD-094
+// item 2, SCRBRD-071) draw on a third: an innings with neither is the same
+// innings, event for event, as before them.
+let s3 = 9494;
+const rnd3 = () => (s3 = (s3 * 1103515245 + 12345) % 2147483648) / 2147483648;
+const SUSPENSION_REASONS = ["beamers", "short_pitched", "deliberate_no_ball", "protected_area", "fielding_time_wasting", "ball_tampering"];
+const gen = { suspensions: 0, splitOvers: 0, hurtReturns: 0 };
 /** @template T @param {T[]} xs @returns {T} */
 const pick = (xs) => xs[Math.floor(rnd() * xs.length)];
 /** @template T @param {T[]} xs */
@@ -116,6 +123,21 @@ function builder(no, overs, o = {}) {
   /** @param {any} e */
   const push = (e) => { const x = { id: `ff-${++eventNo}`, innings: no, ...e }; ev.push(x); return x; };
   const now = () => deriveInnings(ev);
+  /** @type {Set<string>} */ const suspended = new Set();
+  /** Who bowled any of the over before the one the next ball is in (Law 17.8). */
+  const lastOver = () => {
+    const at = now(), over = Math.floor(at.balls / 6);
+    return new Set(at.ballLog.filter((x) => x.over === over - 1).map((x) => x.bowlerId));
+  };
+  /** The round robin's next bowler, passing over one suspended or who bowled the last over. */
+  const nextBowler = () => {
+    const barred = lastOver();
+    for (let k = 0; k < bowling.length; k++) {
+      const who = bowling[overIdx++ % bowling.length];
+      if (!suspended.has(who) && !barred.has(who)) return who;
+    }
+    return null;
+  };
   push({ kind: "innings_start", overs, squad: [], bowlingSquad: [], ...(o.start ?? {}) });
   push({ kind: "batters", striker: order[0], nonStriker: order[1] });
   const b = {
@@ -129,9 +151,32 @@ function builder(no, overs, o = {}) {
     revise(/** @type {number} */ target) { push({ kind: "revision", target, reason: "rain" }); },
     /** A delivery, stamped with who was on strike and bowling, as the pad stamps it. */
     deliver(/** @type {any} */ e) {
-      if (now().bowler == null) push({ kind: "bowler", bowler: bowling[overIdx++ % bowling.length] });
+      if (now().bowler == null) {
+        const who = suspended.size ? nextBowler() : bowling[overIdx++ % bowling.length];
+        if (who == null) return null;
+        push({ kind: "bowler", bowler: who });
+      }
       const at = now();
       return push({ kind: "ball", striker: at.striker, nonStriker: at.nonStriker, bowler: at.bowler, ...e });
+    },
+    /**
+     * The umpires suspend the bowler on, mid-over (SCRBRD-094 item 2), and
+     * another finishes it: one who bowled none of the last over. As the pad
+     * writes it: bowler_suspended, then a bowler with reason "suspended".
+     */
+    suspend() {
+      const at = now();
+      const over = Math.floor(at.balls / 6);
+      if (at.bowler == null || !at.ballLog.some((x) => x.over === over)) return;
+      const barred = lastOver();
+      const repl = bowling.find((x) => x !== at.bowler && !suspended.has(x) && !barred.has(x));
+      if (repl == null) return;
+      const reason = SUSPENSION_REASONS[Math.floor(rnd3() * SUSPENSION_REASONS.length)];
+      push({ kind: "bowler_suspended", bowler: at.bowler, reason, scope: reason === "ball_tampering" ? "match" : "innings" });
+      suspended.add(at.bowler);
+      push({ kind: "bowler", bowler: repl, reason: "suspended" });
+      gen.suspensions++;
+      if (at.balls % 6 > 0) gen.splitOvers++;
     },
     /** A run out: of the striker, or (`ns`) of the batter at the other end, with runs completed first. */
     runOut(/** @type {boolean} */ ns, /** @type {number} */ runs = 0) {
@@ -143,6 +188,16 @@ function builder(no, overs, o = {}) {
     /** Send the next batter in at whichever end is empty, if one is. */
     fill() {
       const at = now();
+      // Now and then a batter who retired hurt walks back in (SCRBRD-071):
+      // his line goes on, and SQL — which never read the retirement — must
+      // still agree with it.
+      const hurt = at.wickets < 10 && at.batsmen.find((x) => x.status === "retired" && x.dismissal === "retired hurt"
+        && x.id !== at.striker && x.id !== at.nonStriker);
+      if (hurt && (at.striker == null || at.nonStriker == null) && rnd3() < 0.6) {
+        push(at.striker == null ? { kind: "batters", striker: hurt.id } : { kind: "batters", nonStriker: hurt.id });
+        gen.hurtReturns++;
+        return;
+      }
       if (at.wickets >= 10 || next >= order.length) return;
       if (at.striker == null) push({ kind: "batters", striker: order[next++] });
       else if (at.nonStriker == null) push({ kind: "batters", nonStriker: order[next++] });
@@ -205,6 +260,8 @@ function generated(no, overs, legacy = false, start = undefined, awardFirst = fa
     else b.deliver({ type: "run", value: pick([0, 0, 0, 1, 1, 1, 2, 3, 4, 6]) });
     // Taken back: the last event, a wicket or a retirement as often as a run.
     if (rnd() < 0.04) b.undo();
+    // The umpires suspend the bowler now and then; another finishes the over.
+    if (rnd3() < 0.03) b.suspend();
     if (start) {
       const p = rnd2();
       if (p < 0.02) b.award(false, rnd2() < 0.3 ? undefined : 5);
@@ -620,6 +677,20 @@ try {
   for (const { no: n, what } of edgeInnings) {
     ok(`edge ${n} — ${what}: in the fold`, (byInnings.get(n)?.ballLog.length ?? 0) > 0);
   }
+  // SCRBRD-094 item 2 and SCRBRD-071: suspensions (a row of their own kind,
+  // bowler_id set, no ball) and split overs, and batters back from retired
+  // hurt. Every figure below is checked with them in the log.
+  const suspRows = rows.filter((r) => r.kind === "bowler_suspended");
+  const split = [...byInnings.values()].reduce((n, inn) => n + inn.bowlerChanges.filter((c) => c.reason === "suspended").length, 0);
+  const folded = [...byInnings.values()].reduce((n, inn) => n + inn.suspensions.length, 0);
+  console.log(`  ${suspRows.length} suspensions stored (${gen.splitOvers} mid-over), ${folded} in the fold, ${split} overs finished by another; ` +
+              `${gen.hurtReturns} batters back from retired hurt`);
+  ok(`...bowlers suspended mid-over and overs finished by another (${suspRows.length}, ${split})`,
+     suspRows.length >= 5 && split >= 3 && folded >= 3 && suspRows.every((r) => r.ball_type == null && r.value == null));
+  ok(`...batters back from retired hurt (${gen.hurtReturns}), batting again in the fold`,
+     gen.hurtReturns >= 2 && [...byInnings.values()].some((inn) => inn.batsmen.some((x) => x.status !== "retired"
+       && rows.some((r) => r.kind === "retire" && r.innings === [...byInnings.keys()].find((k) => byInnings.get(k) === inn)
+         && (r.payload?.batter === x.id) && r.ball_type == null))));
 
   group("Per innings: match_live_score is the fold");
   const live = new Map((await q(`select innings, runs, wickets, legal_balls from match_live_score where match_id = $1`, [MATCH]))

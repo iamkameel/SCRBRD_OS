@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { chargedToBowler, normaliseDismissal, placementFromTap, screenAngle } from "@scrbrd/scoring";
+import { chargedToBowler, normaliseDismissal, placementFromTap, screenAngle, suspensionWords } from "@scrbrd/scoring";
 import { deriveCommentary } from "@scrbrd/scoring/commentary";
 import { nameBook } from "../lib/matchCentre.js";
 import { D, T, clr, inkOn, px, textOn } from "../design/tokens.js";
@@ -380,7 +380,7 @@ function ScorecardPanel({innings,idx}){
       <Card>
         {thRow(["Bowler","O","M","R","W","Econ"],"1fr 38px 24px 32px 26px 42px")}
         {bowled.map((b,ii)=>(
-          <div key={b.id} style={{padding:"8px 14px",display:"grid",gridTemplateColumns:"1fr 38px 24px 32px 26px 42px",gap:"4px",
+          <div key={b.id} data-testid={`card-bowler-${b.id}`} style={{padding:"8px 14px",display:"grid",gridTemplateColumns:"1fr 38px 24px 32px 26px 42px",gap:"4px",
             background:ii%2?`${D.surf2}60`:"transparent",borderBottom:`1px solid ${D.border}`,alignItems:"center"}}>
             <span style={{color:D.textPrimary,fontSize:"13px",fontFamily:D.body,fontWeight:500}}>{b.name}</span>
             {[fmtOv(b.balls),b.maidens,b.runs,b.wickets,RR(b.runs,b.balls)].map((v,j)=>(
@@ -401,6 +401,17 @@ function ScorecardPanel({innings,idx}){
                 </span>
               );
             })}
+          </div>
+        )}
+        {/* A bowler the umpires suspended (SCRBRD-094 item 2): why, and for
+            how long, in words — no Law clause numbers. */}
+        {(i.suspensions||[]).length>0&&(
+          <div data-testid="bowler-suspensions" style={{padding:"7px 14px",display:"flex",flexDirection:"column",gap:"3px"}}>
+            {i.suspensions.map((s,si)=>(
+              <span key={si} style={{color:D.textSecondary,fontSize:"12px",fontFamily:D.body}}>
+                {i.bowlers.find(b=>b.id===s.bowler)?.name??s.bowler} {suspensionWords(s).replace(/^Suspended/,"suspended")}
+              </span>
+            ))}
           </div>
         )}
       </Card>

@@ -185,6 +185,20 @@ try {
   epoch = re.body?.epoch;
   const after = await A1.send(`/api/matches/${MATCH}/events`, { method: "POST", body: { events: [envelope(ball({ type: BALL_TYPE.RUN, value: 1 }), epoch)] } });
   ok("...and the next ball goes into the log under it", after.body?.accepted?.length === 1, JSON.stringify(after.body));
+  // SCRBRD-089: "For review N" survives a reload. The events read says how
+  // many of THIS device's events the server holds for review — through the
+  // pad-scoped route, with the credential, nothing widened.
+  const noneYet = await A1.send(`/api/matches/${MATCH}/events?since=0`);
+  ok("the events read says nothing is held for review yet (quarantined 0)", noneYet.body?.quarantined === 0, JSON.stringify(noneYet.body?.quarantined));
+  const staleBall = await A1.send(`/api/matches/${MATCH}/events`, { method: "POST", body: { events: [envelope(ball({ type: BALL_TYPE.RUN, value: 2 }), epoch - 1)] } });
+  ok("a ball sent under the old generation is held for review", staleBall.body?.quarantined?.length === 1, JSON.stringify(staleBall.body));
+  const review = await A1.send(`/api/matches/${MATCH}/events?since=0`);
+  ok("...and the events read, with the credential, says so: quarantined 1", review.status === 200 && review.body?.quarantined === 1,
+     JSON.stringify(review.body?.quarantined));
+  const reviewTok = await api(`/api/matches/${MATCH}/events?since=0`, { token: scorerA });
+  ok("...and the same read, signed in on phone A, says the same", reviewTok.body?.quarantined === 1, JSON.stringify(reviewTok.body?.quarantined));
+  const reviewB = await api(`/api/matches/${MATCH}/events?since=0`, { token: scorerB });
+  ok("...but on phone B, the same scorer: 0 — the count is this device's", reviewB.body?.quarantined === 0, JSON.stringify(reviewB.body?.quarantined));
   ok("the credential still holds after its own re-claim", (await row(rA1.id)).revoked_at === null);
 
   // ── C ──────────────────────────────────────────────────────────

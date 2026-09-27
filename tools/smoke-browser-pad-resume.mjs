@@ -340,6 +340,28 @@ try {
      (await quarantined()).length === 0 && (await dbq(`select epoch from scoring_session where match_id = $1`, [MATCH]))[0]?.epoch === epochB + 1);
   ok("the server's log is still the pad's", same(await serverIds(), await padIds()));
 
+  group("C2. \"For review N\" survives a reload: read from the server, with the credential (SCRBRD-089)");
+  // A ball of this phone's held for review, as the write path holds one sent
+  // under a stale token (the owner writes the row: provoking one live would
+  // take the token away from the phone this walk goes on with).
+  const scorerId = (await dbq(`select id from app_user where email = 'scorer@example.invalid'`))[0].id;
+  await dbq(`insert into ball_event_quarantine (match_id, school_id, submitted_epoch, current_epoch, scorer_user_id, device_id,
+                                                idempotency_key, body, fingerprint)
+             select id, school_id, 0, 1, $2, $3, 'pad-resume-held-1', '{}'::jsonb, 'walk' from match where id = $1`, [MATCH, scorerId, device]);
+  sent.length = 0;
+  await page.reload({ waitUntil: "networkidle" });
+  await page.waitForTimeout(2500);
+  ok("after a reload the pill says the server holds one of this phone's balls for review",
+     await until(async () => (await pill()) === "For review 1", 15000), await pill());
+  ok("...read through the pad's own route, signed with the phone's key",
+     sent.some((r) => r.path.endsWith(`/api/matches/${MATCH}/events`) && r.auth === "pad"), JSON.stringify(sent.slice(0, 6)));
+  // A supervisor settles it; the next read says so.
+  await dbq(`update ball_event_quarantine set resolved_at = now(), resolution = 'rejected' where idempotency_key = 'pad-resume-held-1'`);
+  await page.reload({ waitUntil: "networkidle" });
+  await page.waitForTimeout(2500);
+  ok("once it is settled, a reload says Sent again — the pill is the server's count, not a memory",
+     await until(async () => (await pill()) === "Sent", 15000), await pill());
+
   group("D. Force-released, then reloaded: the pad stops, in words");
   await dbq(`update scoring_session set lease_until = now() - interval '5 minutes' where match_id = $1`, [MATCH]);
   const sarah = (await (await fetch(`${API}/api/auth/dev-login`, { method: "POST", headers: { "content-type": "application/json" },
