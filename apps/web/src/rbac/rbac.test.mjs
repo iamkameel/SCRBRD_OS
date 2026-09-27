@@ -6,7 +6,7 @@
  * The point of testing both is that they are generated from one policy. If
  * these two ever disagree, the policy has been forked somewhere.
  */
-import { can, canScore, getData, filterRecord, countData, grantedBy, principalForRole, assignmentsForRole } from "./index.js";
+import { can, canScore, getData, filterRecord, grantedBy, principalForRole, assignmentsForRole } from "./index.js";
 // This suite is the one place outside rbac/ that may read the raw constants:
 // it needs the unscoped totals to prove that scoped reads are smaller.
 import { PLAYERS, INJURIES } from "../data/mock.js";
@@ -85,13 +85,13 @@ group("A2. Fixtures reach the people who need them");
 // ── B. Aggregates use the same scope ─────────────────────
 group("B. Aggregates cannot exceed row scope");
 {
-  const coachCount = countData("players", P("coach"));
-  ok("count matches the rows actually readable",
-     coachCount === getData("players", P("coach")).length);
+  // A count is the length of the scoped read — there is no second path that
+  // could count wider than the rows a viewer may read.
+  const coachCount = getData("players", P("coach")).length;
   ok("a team coach's count is below the school total",
      coachCount < PLAYERS.filter((p) => p.school === "HIL").length);
   ok("injury count is scoped too",
-     countData("injuries", P("coach")) <= INJURIES.length);
+     getData("injuries", P("coach")).length <= INJURIES.length);
 }
 
 // ── C. Column masking ────────────────────────────────────
@@ -252,12 +252,6 @@ group("H. A live session does not scope in the browser");
       ok(`getData("${resource}") refuses once a session exists`,
          getData(resource, principalForRole("superadmin")).length === 0);
     }
-    // countData feeds dashboard cards, and a count leaks as surely as a list —
-    // "3 injuries" is a disclosure about three children. It goes through
-    // getData(), so it must fall silent with it rather than counting mock rows
-    // that no server ever agreed to.
-    ok("countData falls silent too, so no card is built from mock rows",
-       countData("injuries", principalForRole("superadmin")) === 0);
 
     const { scopedSkills, scopedWeather } = await import("./index.js");
     // These two read the mock constants directly rather than through the choke

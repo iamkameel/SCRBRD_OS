@@ -388,16 +388,6 @@ export function filterRecord(role, resource, record) {
   return maskRow(resource, record, assignments);
 }
 
-/**
- * Count safely. Answers "how many, within what I may read" in one call, so a
- * dashboard card can never be built from a total computed over a wider scope
- * than the viewer's — the leak that shows a team coach a school-wide figure
- * without ever rendering a row.
- */
-export function countData(resource, principal) {
-  return getData(resource, principal).length;
-}
-
 /** Why a row is visible — for the "why am I seeing this?" affordance. */
 export function grantedBy(resource, row, principal) {
   const def = RESOURCE[resource];
@@ -498,4 +488,3 @@ export function scopedWeather(role) {
   return Object.fromEntries(Object.entries(WEATHER).filter(([id]) => visible.has(id)));
 }
 
-export { RESOURCE as RBAC_RESOURCES };

@@ -4,9 +4,25 @@ Project-level instructions for Claude Code working in this repository.
 
 ## Subagent routing
 
-When building out this project, use subagents. Route each subagent to Opus or
-Sonnet as appropriate for the task's complexity — never Fable, for any
-subagent, under any circumstances.
+When building out this project, use subagents. Route each subagent to Fable,
+Opus, Sonnet or Haiku as appropriate for the task's complexity. Tokens are a
+budget: spend the expensive tiers only where they change the outcome.
+
+### Fable (`model: "fable"`) — the hardest design problems, sparingly
+
+Brought in 2026-09-27 (Kameel), with cost still a constraint:
+
+- **Only design passes** on the cross-cutting problems where a wrong model is
+  expensive to unwind: SCRBRD-110 (fast-bowler workload: health data, POPIA
+  consent, the load model), redesign step 4 (parent and pupil screens) and
+  SCRBRD-083 (what minors' data may be public). A new problem joins this list
+  only with Kameel's say.
+- **The output is a design document** for Kameel's review. Opus builds from
+  it; Fable does not build, run test suites, wait on the database lock, write
+  screens or do searches.
+- **One Fable agent at a time**, with a tight brief that names what to read,
+  so it does not spend its budget exploring.
+- Reviewing another agent's work stays with Opus.
 
 ### Opus 5.5 (`model: "opus"`) — where a mistake is expensive or silent
 
@@ -30,6 +46,13 @@ subagent, under any circumstances.
 - Screens over an API that already exists (the roadmap's `partial` items),
   styling and design-system work.
 - Smoke walks and unit tests for behaviour already designed.
-- Backlog, roadmap and documentation updates; codebase searches.
 
-When a task spans both, give it to Opus. When unsure, give it to Opus.
+### Haiku (`model: "haiku"`) — searches and docs
+
+- Codebase searches: finding where something lives, who calls it, what reads it.
+- Backlog, roadmap and documentation updates that record a decision already made.
+- Never code, tests, SQL or anything touching policy or minors' data — those go
+  to Sonnet or Opus above, even when the change is one line.
+
+When a task spans two tiers, give it to the higher one. When unsure, give it to
+Opus.

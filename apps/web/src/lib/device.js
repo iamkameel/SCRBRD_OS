@@ -48,11 +48,3 @@ export function deviceId() {
   return cached;
 }
 
-/**
- * Forget this device. Only for signing out on a shared school device, where
- * the next person must not inherit the previous scorer's lease.
- */
-export function forgetDevice() {
-  cached = null;
-  try { localStorage.removeItem(KEY); } catch { /* nothing to forget */ }
-}

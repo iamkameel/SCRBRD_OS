@@ -574,97 +574,6 @@ function CommentaryCard({inn,innings,events}){
 /* ═══════════════════════════════════════════════════════
    UTIL
 ═══════════════════════════════════════════════════════ */
-/* ═══════════════════════════════════════════════════════
-   EVENT OVERLAY — fullscreen flash for 4, 6, WICKET, milestones
-═══════════════════════════════════════════════════════ */
-// event: {label,sub,color,glow,bg,icon?,isMilestone?}
-function EventOverlay({event,onDone,suppressBlur}){
-  const[phase,setPhase]=useState("in");
-  const duration=event?.isMilestone?2400:1700;
-  // Re-arm per event: when the parent chains a queued overlay (e.g. SIX →
-  // FIFTY) the component stays mounted with a new `event` prop. A mount-only
-  // effect would never schedule timers for the second overlay, leaving the
-  // blurred backdrop on screen permanently.
-  useEffect(()=>{
-    if(!event)return;
-    setPhase("in");
-    const t1=setTimeout(()=>setPhase("out"),duration-400);
-    const t2=setTimeout(onDone,duration);
-    return()=>{clearTimeout(t1);clearTimeout(t2);};
-  },[event]);
-  if(!event)return null;
-  const {label,sub,color,glow,bg,icon,isMilestone}=event;
-  // Confetti pieces for milestones
-  const confetti=isMilestone?Array.from({length:18},(_,i)=>({
-    x:Math.sin(i/18*Math.PI*2)*120,
-    delay:(i*0.08)%0.7,
-    col:[D.amber,D.sky,D.emerald,D.rose,D.violet,D.orange][i%6],
-    rot:i*23,
-  })):[];
-  // Blocking blur is suppressed whenever a sheet/modal is open, evaluated
-  // live at render time so it stays correct for queued overlays too.
-  const nb=event?.noBlur||suppressBlur;
-  return (
-    <div style={{
-      position:"fixed",inset:0,zIndex:nb?200:9999,pointerEvents:"none",
-      background:nb?"transparent":(bg||clr(T.surface.canvas,.1)),
-      backdropFilter:nb?"none":"blur(2px)",
-    }}>
-      <div style={{
-        position:"absolute",top:"50%",left:"50%",
-        animation:phase==="in"
-          ?(isMilestone?"milestoneIn .5s cubic-bezier(.22,1,.36,1) both":"overlayIn .4s cubic-bezier(.22,1,.36,1) both")
-          :"milestoneOut .45s ease forwards",
-        textAlign:"center",
-      }}>
-        {/* Icon for milestones */}
-        {icon&&<div style={{fontSize:"clamp(40px,8vw,70px)",lineHeight:1,marginBottom:"8px",color}}><Icon name={icon}/></div>}
-        <div style={{
-          fontFamily:D.mono,
-          fontSize:isMilestone?"clamp(52px,12vw,96px)":"clamp(60px,14vw,110px)",
-          fontWeight:700,lineHeight:1,
-          color,
-          textShadow:`0 0 40px ${glow||color+"88"},0 0 80px ${glow||color+"44"},0 4px 0 ${clr(T.surface.canvas,.5)}`,
-          letterSpacing:"-0.02em",
-          ...(isMilestone?{
-            background:"linear-gradient(135deg,"+color+","+color+"99,"+color+")",
-            backgroundSize:"200% auto",
-            WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text",
-            animation:"goldShimmer 1.2s linear infinite",
-          }:{}),
-        }}>{label}</div>
-        <div style={{
-          fontFamily:D.head,fontSize:"clamp(14px,3vw,22px)",fontWeight:700,
-          letterSpacing:"0.2em",color,opacity:.8,
-          textTransform:"uppercase",marginTop:"8px",
-          animation:isMilestone?"bounceIn .5s .2s cubic-bezier(.22,1,.36,1) both":"none",
-        }}>{sub}</div>
-        {/* Radiating rings */}
-        {[0,1,2].map(i=>(
-          <div key={i} style={{
-            position:"absolute",top:"50%",left:"50%",borderRadius:"50%",
-            transform:"translate(-50%,-50%)",
-            width:((i+1)*(isMilestone?220:180))+"px",height:((i+1)*(isMilestone?220:180))+"px",
-            border:"2px solid "+color,opacity:0,
-            animation:`fadeIn .1s ${0.05+i*0.12}s forwards, overlayOut .7s ${0.2+i*0.12}s forwards`,
-          }}/>
-        ))}
-        {/* Confetti for milestones */}
-        {confetti.map((c,i)=>(
-          <div key={i} style={{
-            position:"absolute",top:"50%",left:"50%",
-            width:"8px",height:"8px",borderRadius:"2px",
-            background:c.col,
-            transform:`translate(calc(-50% + ${c.x}px), -50%) rotate(${c.rot}deg)`,
-            opacity:0,
-            animation:`confetti .9s ${c.delay}s ease-out forwards`,
-          }}/>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 // Build event config from ball value or milestone object
 function buildEventCfg(ballValue,milestone){
   if(milestone)return{
@@ -824,4 +733,4 @@ function PartnershipCard({inn}){
   );
 }
 
-export { CommentaryCard, EventOverlay, FreeHitBanner, InningsOverBanner, IntelPanel, PartnershipCard, ScorecardPanel, WagonWheel, buildEventCfg, detectMilestone };
+export { CommentaryCard, FreeHitBanner, InningsOverBanner, IntelPanel, PartnershipCard, ScorecardPanel, WagonWheel, buildEventCfg, detectMilestone };

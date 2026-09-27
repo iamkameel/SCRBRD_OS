@@ -68,17 +68,6 @@ export const BANDS_OF_SCALE = Object.freeze([
 ]);
 
 /**
- * Where on the scale a score sits, in words.
- * @param {number | null | undefined} score
- * @returns {string | null}
- */
-export function scaleBand(score) {
-  if (!Number.isFinite(score)) return null;
-  const s = /** @type {number} */ (score);   // Number.isFinite, above, proves it
-  return BANDS_OF_SCALE.find((b) => s >= b.from && s <= b.to)?.label ?? null;
-}
-
-/**
  * Age benchmarks — the expected score at each band, used ONLY to derive the
  * age-relative view. They live on the rubric so a historical assessment can be
  * re-rendered against the benchmark that was current when it was made.

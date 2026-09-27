@@ -13,7 +13,7 @@
  */
 import { api, setToken, apiStatus, resetApi, getToken } from "./api.js";
 import { forgetAllPadCredentials } from "./padKey.js";
-import { resetFeatures } from "./features.js";
+import { resetFeatures, resetSports } from "./features.js";
 import { roleGrants } from "@scrbrd/policy/roles";
 import { deviceId } from "./device.js";
 
@@ -90,6 +90,7 @@ export function signOut() {
   // The module switches too. They are one school's settings, and a shared
   // device that kept them would draw the previous person's menu.
   resetFeatures();
+  resetSports();
 }
 
 /** The signed-in person, or null. Never an authorization answer. */

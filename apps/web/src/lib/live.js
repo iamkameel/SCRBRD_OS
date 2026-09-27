@@ -1447,37 +1447,3 @@ export function useDutyCoverage(matchIds, role, nonce = 0) {
 
   return state;
 }
-
-/**
- * Live rows for a resource, falling back to what was passed in.
- *
- * Kept for the Match Centre, which passes its own fallback. New call sites
- * should use useLive(), which owns the demo/live decision instead of taking a
- * pre-computed fallback that has already run the client-side filter.
- *
- * Returns `mockRows` immediately so the page paints without waiting, then
- * swaps once the server answers. On failure it keeps the fallback and reports
- * it: a fixture list that silently empties on a flaky connection looks like
- * "no matches today", which is a different and much worse statement.
- */
-export function useLiveRows(resource, mockRows) {
-  const [state, setState] = useState({ rows: mockRows, live: false, error: null });
-
-  useEffect(() => {
-    if (!signedIn() || !ADAPT[resource]) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const { rows } = await api(`/api/read/${resource}`);
-        if (!cancelled) setState({ rows: rows.map(ADAPT[resource]), live: true, error: null });
-      } catch (e) {
-        if (!cancelled) setState({ rows: mockRows, live: false, error: e.code || "unreachable" });
-      }
-    })();
-    return () => { cancelled = true; };
-    // mockRows is rebuilt on every render by the scoped() call above the hook;
-    // depending on it would refetch forever.
-  }, [resource]);
-
-  return state;
-}
