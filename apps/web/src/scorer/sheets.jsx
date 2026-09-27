@@ -58,17 +58,17 @@ function NoBallSheet({onConfirm,onClose}){
   const[runs,setRuns]=useState(0);
   // Whose the runs are (SCRBRD-068): off the bat they are the striker's, and
   // charged to the bowler; byes or leg byes off a no-ball are scored as byes
-  // or leg byes, and are neither the striker's nor the bowler's (Law 21.16,
+  // or leg byes, and are neither the striker's nor the bowler's (Law 21.15,
   // Law 23; db/52). The no-ball's own run is charged to the bowler either way.
   // null is off the bat, the event's default, so it is not written.
   const[from,setFrom]=useState(null);
   const FROM=[{id:null,label:"Off the bat"},{id:NB_RUNS.BYES,label:"Byes"},{id:NB_RUNS.LEG_BYES,label:"Leg byes"}];
-  // Front foot NB: batter CAN be caught (only bowled/LBW/hit wicket protected)
-  // Height NB (above shoulder): same + extra restrictions
+  // Off any no-ball a batter is out only run out, hit the ball twice or
+  // obstructing the field (Law 21.17, 4th Edition; 21.18 in the 3rd).
   // Both: 1 penalty run + any runs scored (the bat's only when off the bat), doesn't count as legal delivery
   const types=[
     {id:"front_foot",label:"Front Foot",sub:"Bowler overstepped the crease",
-      note:"Batter can be dismissed caught, run out, stumped, handled ball, hit ball twice, obstructing field"},
+      note:"Off a no ball a batter can be out only run out, hit the ball twice, or obstructing the field"},
     {id:"height",label:"Full Toss Height",sub:"Above waist height on the full",
       note:"Same dismissals as front foot. Free hit applies in limited overs."},
     {id:"beamer",label:"Beamer (Dangerous)",sub:"Full toss above waist — dangerous delivery",
@@ -650,8 +650,11 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,onClose
   // is not here: it is the INCOMING batter's (Law 40), who is never at the
   // crease while this sheet is open — the batting-order sheet offers it while
   // an end is empty (SCRBRD-081). Retired out is here, and is recorded as the
-  // dismissal with no ball it is, not as a delivery.
-  const modes=Object.keys(DISMISSAL_LABEL).filter(m=>m!==DISMISSAL.TIMED_OUT);
+  // dismissal with no ball it is, not as a delivery. Handled the ball is not
+  // offered: since the 2017 Code it is Obstructing the field (Law 37). The
+  // engine still reads it, for old logs and pre-2017 scorecards (Kameel,
+  // 2026-09-27).
+  const modes=Object.keys(DISMISSAL_LABEL).filter(m=>m!==DISMISSAL.TIMED_OUT&&m!==DISMISSAL.HANDLED_BALL);
   // A run out: who, how many runs were completed first, and — when some
   // were, so the batters have crossed (Law 18) — at which end the wicket was
   // put down (Law 38.2). That end is the one left empty (SCRBRD-069).

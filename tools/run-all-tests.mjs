@@ -84,6 +84,7 @@ const SUITES = [
   // The pad's "Batter retired hurt": the event (not a wicket), the Laws asked
   // before a batter is offered, the fold after it and his return (SCRBRD-071).
   ["retire-sheet", "apps/web/test/retire-sheet.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  ["ways-out", "apps/web/test/ways-out.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // No Law clause number on any scorer screen: every words table, every
   // refusal helper over every code, and the sheets' literal text (SCRBRD-094).
   ["law-clauses", "apps/web/test/law-clauses.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
