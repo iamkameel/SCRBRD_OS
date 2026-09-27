@@ -55,6 +55,7 @@ const SHEET_WORDS = Object.freeze({
   [REFUSAL.NO_INNINGS]: "Nobody has said who is batting in this innings yet.",
   [REFUSAL.LATER_INNINGS_STARTED]: "A later innings has already started.",
   [REFUSAL.RESUME_NOT_YET]: "He can resume only once a wicket has fallen or another batter has retired.",
+  [REFUSAL.CONSENT_NOT_RETIRED_OUT]: "The opposing captain's consent is only for a batter who retired out.",
 });
 
 /** @param {string | null | undefined} code  a lawsRefusal() answer */
@@ -91,16 +92,18 @@ export const END_WORDS = Object.freeze({ striker: "On strike", nonStriker: "Non-
  * The event the batting-order sheet sends when a retired batter walks back
  * in: to the striker's end when it is empty, else the non-striker's — the
  * pad's addBatsman() rule for the end that needs filling. `asStriker` says
- * otherwise, for a sheet that always sends to the striker's end.
+ * otherwise, for a sheet that always sends to the striker's end. `consent`:
+ * a batter who retired out, back with the opposing captain's consent.
  * @param {{innings: any[], events?: any[][]}} match
  * @param {number} curIn
  * @param {string} id
  * @param {boolean} [asStriker]
+ * @param {boolean} [consent]
  */
-export function resumeEvent(match, curIn, id, asStriker) {
+export function resumeEvent(match, curIn, id, asStriker, consent = false) {
   const inn = match.innings?.[curIn] ?? null;
   const striker = asStriker ?? inn?.striker == null;
-  return batters({ innings: curIn, ...(striker ? { striker: id } : { nonStriker: id }) });
+  return batters({ innings: curIn, ...(striker ? { striker: id } : { nonStriker: id }), ...(consent ? { captainConsent: true } : {}) });
 }
 
 /**
@@ -109,9 +112,10 @@ export function resumeEvent(match, curIn, id, asStriker) {
  * @param {number} curIn
  * @param {string} id
  * @param {boolean} [asStriker]
+ * @param {boolean} [consent]
  */
-export function resumeRefusal(match, curIn, id, asStriker) {
-  return lawsRefusal(match, resumeEvent(match, curIn, id, asStriker));
+export function resumeRefusal(match, curIn, id, asStriker, consent = false) {
+  return lawsRefusal(match, resumeEvent(match, curIn, id, asStriker, consent));
 }
 
 /**
@@ -128,4 +132,21 @@ export function resumeRefusal(match, curIn, id, asStriker) {
 export function resumeChoices(match, curIn, asStriker) {
   const inn = match.innings?.[curIn] ?? null;
   return (inn?.batsmen ?? []).filter((/** @type {any} */ b) => b.status === "retired" && resumeRefusal(match, curIn, b.id, asStriker) === null);
+}
+
+/**
+ * Whom the batting-order sheet offers under "Retired out — may resume with
+ * the opposing captain's consent" (Law 25.4.3): the batters retired out whom
+ * the Laws would take back now, with consent, at the end the sheet fills —
+ * once a wicket has fallen or another batter has retired since he went. The
+ * sheet asks the scorer to confirm the captain agreed before it sends.
+ * @param {{innings: any[], events?: any[][]}} match
+ * @param {number} curIn
+ * @param {boolean} [asStriker]
+ * @returns {any[]}  the fold's batter lines
+ */
+export function consentChoices(match, curIn, asStriker) {
+  const inn = match.innings?.[curIn] ?? null;
+  return (inn?.batsmen ?? []).filter((/** @type {any} */ b) => b.status === "out" && b.dismissal === "retired out"
+    && resumeRefusal(match, curIn, b.id, asStriker, true) === null);
 }

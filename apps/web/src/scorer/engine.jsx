@@ -22,7 +22,7 @@ import { crease, deliveryEvents, noBallEvent } from "./delivery.js";
 import { PenaltySheet } from "./penaltySheet.jsx";
 import { ReportOffer, SuspendSheet } from "./suspendSheet.jsx";
 import { RetireSheet } from "./retireSheet.jsx";
-import { retireHurtEvent, resumeChoices } from "./retire.js";
+import { retireHurtEvent, resumeChoices, consentChoices } from "./retire.js";
 import { bowlerToSuspend, replacementEvent, suspendEvent, suspensionRefusalWords, suspensionsInMatch } from "./suspension.js";
 import { MenuItem, MenuSection, PadMenu } from "./padMenu.jsx";
 import { ExitKey, Pad, PadBoard } from "./pad.jsx";
@@ -1421,9 +1421,12 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
   // A batter arriving and a bowler taking the ball are events, not mutations.
   // Without them in the log the log could not stand alone: a delivery record
   // says nothing about who walked in after the last wicket.
-  const addBatsman=(name,isStriker)=>{
+  // `opts.captainConsent`: a batter who retired out, back with the opposing
+  // captain's consent (Law 25.4.3; SCRBRD-071) — the batting-order sheet's
+  // confirm, offered only when the Laws take it (retire.js consentChoices).
+  const addBatsman=(name,isStriker,opts={})=>{
     const asStriker=isStriker||!inn?.striker;
-    emit(battersEvent(asStriker?{striker:name}:{nonStriker:name}));
+    emit(battersEvent({...(asStriker?{striker:name}:{nonStriker:name}),...(opts.captainConsent===true?{captainConsent:true}:{})}));
   };
 
   // `reason` only for a change during an over (SCRBRD-080): the sheet asks
@@ -1675,7 +1678,8 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
           twelfthMan={inn?.twelfthMan}
           onTimedOut={canTimeOut?recordTimedOut:null}
           resumable={resumeChoices({innings,events},curIn)}
-          onSend={name=>{
+          resumableWithConsent={consentChoices({innings,events},curIn)}
+          onSend={(name,opts)=>{
             // To the END THAT IS EMPTY. This sent every new batter to the
             // striker's end, which is right only when the striker was out
             // mid-over: after a wicket on the last ball the survivor has
@@ -1684,7 +1688,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
             // not-out batter from the crease, and the server refused it
             // (crease_occupied). Retired out and a run out's end make an
             // empty non-striker's end ordinary (SCRBRD-081, SCRBRD-069).
-            addBatsman(name,inn?.striker==null);
+            addBatsman(name,inn?.striker==null,opts);
             if(isThenOver)setModal("newOver");else setModal(null);
           }}
           onClose={()=>setModal(null)}/>
@@ -1775,7 +1779,8 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
         teamKey={inn?.teamKey}
         twelfthMan={inn?.twelfthMan}
         resumable={resumeChoices({innings,events},curIn,true)}
-        onSend={name=>{addBatsman(name,true);setModal(null);}}
+        resumableWithConsent={consentChoices({innings,events},curIn,true)}
+        onSend={(name,opts)=>{addBatsman(name,true,opts);setModal(null);}}
         onClose={()=>setModal(null)}/>
     );
 

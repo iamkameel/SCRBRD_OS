@@ -487,9 +487,15 @@ const entry = (p) => (typeof p === "string" ? { id: p, name: p } : { id: p?.id ?
  * `resumable` is the batters retired hurt whom the Laws would take back at
  * the end this sheet fills (retire.js resumeChoices, SCRBRD-071) — the
  * engine asks; the sheet offers exactly those, and none when not told.
+ *
+ * `resumableWithConsent` is the batters retired out whom the Laws would take
+ * back with the opposing captain's consent (retire.js consentChoices; Law
+ * 25.4.3). A tap asks the scorer to confirm the captain agreed; only the
+ * confirm sends, as onSend(id, {captainConsent: true}).
  */
-function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,header=null,onTimedOut=null,resumable=[]}){
+function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,header=null,onTimedOut=null,resumable=[],resumableWithConsent=[]}){
   const[timedOut,setTimedOut]=useState(false);
+  const[consentFor,setConsentFor]=useState(/** @type {string|null} */(null));
   const send=timedOut&&onTimedOut?(id)=>{setTimedOut(false);onTimedOut(id);}:onSend;
   const teamInfo=INT_TEAMS[teamKey]||null;
   // The batting order's next name first, marked Next (SCRBRD-100 item 2):
@@ -507,6 +513,8 @@ function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,head
   // the Laws' (`resumable`): not a retirement they read as out, and not
   // straight back into the end he has just left.
   const mayResume=timedOut?[]:resumable;
+  const mayResumeWithConsent=timedOut?[]:resumableWithConsent;
+  const asking=mayResumeWithConsent.find(b=>b.id===consentFor)??null;
   return (
     <Sheet title="Batting Order" accent={D.emerald} onClose={onClose}>
       <div style={{paddingTop:"12px"}}>
@@ -549,6 +557,40 @@ function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,head
                 <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textSecondary}}>{b.runs}({b.balls})</span>
               </button>
             ))}
+          </div>
+        )}
+        {mayResumeWithConsent.length>0&&(
+          <div data-testid="consent-list" style={{marginBottom:"12px"}}>
+            <Lbl sx={{marginBottom:"7px"}}>Retired out — may resume if the opposing captain agrees</Lbl>
+            {mayResumeWithConsent.map(b=>(
+              <button key={b.id} type="button" data-testid={`consent-${b.id}`} aria-pressed={consentFor===b.id}
+                onClick={()=>setConsentFor(v=>v===b.id?null:b.id)} className="pressBtn" style={{
+                display:"flex",alignItems:"center",gap:"10px",minHeight:"44px",width:"100%",marginBottom:"4px",
+                padding:"8px 12px",borderRadius:D.md,cursor:"pointer",textAlign:"left",
+                border:`${consentFor===b.id?2:1}px solid ${consentFor===b.id?T.content.primary:D.border}`,background:D.surf2}}>
+                <span style={{fontFamily:D.body,fontSize:"13px",fontWeight:500,color:D.textPrimary,flex:1}}>{b.name} resumes</span>
+                <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textSecondary}}>{b.runs}({b.balls})</span>
+              </button>
+            ))}
+            {asking&&(
+              <div data-testid="consent-confirm-panel" role="group" aria-label="The opposing captain's consent" style={{
+                marginTop:"8px",padding:"12px",borderRadius:D.md,border:`1px solid ${T.content.primary}`,background:T.surface.base}}>
+                <p style={{fontFamily:D.body,fontSize:"13px",lineHeight:1.45,color:D.textPrimary,margin:"0 0 10px"}}>
+                  {asking.name} retired out. He may come back only if the opposing captain agrees. His wicket is then taken back and his innings goes on.
+                </p>
+                <button type="button" data-testid="consent-confirm" onClick={()=>{setConsentFor(null);onSend(asking.id,{captainConsent:true});}}
+                  className="pressBtn" style={{width:"100%",minHeight:"48px",marginBottom:"6px",padding:"10px 12px",borderRadius:D.md,cursor:"pointer",
+                  border:`1px solid ${T.content.primary}`,background:T.content.primary,color:T.surface.canvas,
+                  fontFamily:D.body,fontSize:"14px",fontWeight:600}}>
+                  The opposing captain agreed — {asking.name} resumes
+                </button>
+                <button type="button" data-testid="consent-cancel" onClick={()=>setConsentFor(null)} className="pressBtn" style={{
+                  width:"100%",minHeight:"44px",padding:"8px 12px",borderRadius:D.md,cursor:"pointer",
+                  border:`1px solid ${D.border}`,background:"transparent",color:D.textSecondary,fontFamily:D.body,fontSize:"13px",fontWeight:500}}>
+                  Not agreed
+                </button>
+              </div>
+            )}
           </div>
         )}
         {/* Available */}

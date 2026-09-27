@@ -27,7 +27,15 @@
  *      then he retires too — and the partner, whose retirement came first,
  *      is offered and walks back in at HIS; he himself is not. The server
  *      takes the return, and no wicket moves;
- *   H  every step: the board and the API's live score (runs, wickets, legal
+ *   H  retired out, back with the opposing captain's consent (Law 25.4.3,
+ *      db/53): a batter retires out from the wicket sheet; the batting-order
+ *      sheet does not offer him (his own vacancy); the next batter comes in
+ *      and is bowled; now the sheet offers him under the captain's consent —
+ *      "Not agreed" sends nothing, the confirm sends a batters event with
+ *      captainConsent; his wicket is taken back on the board AND in SQL's
+ *      live score (db/53), player_innings says not out, and his career
+ *      dismissals lose that retirement;
+ *   I  every step: the board and the API's live score (runs, wickets, legal
  *      balls) agree.
  *
  *   node tools/migrate.mjs --reset --seed
@@ -384,6 +392,52 @@ try {
   ok("the server takes him back at the empty end", back2?.kind === "batters" && (back2.striker === P || back2.nonStriker === P), JSON.stringify(back2));
   ok("...nothing held: the pad can score", !(await has("scoring-blocked")), await said("scoring-blocked"));
   await agree("two retirements and a return: still one wicket", { runs: onStrike ? 9 : 10, wickets: 1, balls: onStrike ? 8 : 9 });
+
+  // ── H ────────────────────────────────────────────────────────
+  group("H. Retired out, and back with the opposing captain's consent");
+  const runsG = onStrike ? 9 : 10, ballsG = onStrike ? 8 : 9;
+  await tap("key-wicket");
+  await tap("wicket-mode-retired_out");
+  await tap("wicket-who-striker");
+  await tap("wicket-confirm");
+  await settle();
+  const roRow = (await serverEvents()).at(-1);
+  const RO = roRow?.batter;
+  ok("the server stored a retire marked W: retired out", roRow?.kind === "retire" && roRow?.type === "W" && !!RO, JSON.stringify(roRow));
+  // His career, with the retired out in it: the consent must take exactly that one back.
+  const careerRO = await dismissals(RO);
+  await agree("retired out: a wicket", { runs: runsG, wickets: 2, balls: ballsG });
+  ok("the batting-order sheet does not offer him back to his own vacancy, consent or not",
+     /Batting Order/.test(await dialog()) && !(await has("consent-list")) && !(await has(`consent-${RO}`)), (await dialog()).slice(0, 200));
+  ok("the next batter comes in", await sendNext());
+  await score(0);
+  await tap("key-wicket");
+  await tap("wicket-mode-bowled");
+  await tap("wicket-confirm");
+  await settle();
+  await agree("then bowled: three down", { runs: runsG, wickets: 3, balls: ballsG + 2 });
+  const offer = await dialog();
+  ok("after the wicket the sheet offers him under the captain's consent",
+     /Retired out — may resume if the opposing captain agrees/i.test(offer) && await has(`consent-${RO}`), offer.slice(0, 260));
+  const rowsBefore = (await serverEvents()).length;
+  await tap(`consent-${RO}`);
+  const panel = await said("consent-confirm-panel");
+  ok("...a tap asks the scorer to confirm the captain agreed; nothing is sent yet",
+     /opposing captain agrees/.test(panel) && /wicket is then taken back/.test(panel) && (await serverEvents()).length === rowsBefore, panel);
+  ok("...no Law clause numbers", !lawNumbers(panel) && !lawNumbers(offer));
+  await tap("consent-cancel");
+  ok("\"Not agreed\" closes the question and sends nothing", !(await has("consent-confirm-panel")) && (await serverEvents()).length === rowsBefore);
+  await tap(`consent-${RO}`);
+  await tap("consent-confirm");
+  await settle();
+  const cRow = (await serverEvents()).at(-1);
+  ok("the confirm sends him back with the captain's consent", cRow?.kind === "batters" && cRow?.captainConsent === true
+     && (cRow.striker === RO || cRow.nonStriker === RO), JSON.stringify(cRow));
+  await agree("his wicket taken back — on the board and in SQL's live score", { runs: runsG, wickets: 2, balls: ballsG + 2 });
+  const piRO = (await dbq(`select out from player_innings where match_id = $1 and player_id = $2 and innings = 0`, [MATCH, RO]))[0];
+  ok("SQL's player_innings: not out", piRO?.out === false, JSON.stringify(piRO));
+  ok("...and his career dismissals lose the retired out, and only it", careerRO >= 1 && (await dismissals(RO)) === careerRO - 1,
+     `${careerRO} → ${await dismissals(RO)}`);
 
   ok("no console errors across the walk", errors.length === 0, errors.slice(0, 3).join(" | "));
 } catch (e) {
