@@ -72,6 +72,8 @@ const PitchDeckView     = view(() => import("./views/PitchDeckView.jsx"),     "P
 const ProfilesView      = view(() => import("./views/ProfilesView.jsx"),      "ProfilesView");
 const ReadinessOverview = view(() => import("./views/ReadinessOverview.jsx"), "ReadinessOverview");
 const RulebookView      = view(() => import("./views/RulebookView.jsx"),      "RulebookView");
+// Everyone's (db/57): raising a concern with the DSO, and the DSO's inbox.
+const SafeguardingView  = view(() => import("./views/SafeguardingView.jsx"),  "SafeguardingView");
 const SettingsView      = view(() => import("./views/SettingsView.jsx"),      "SettingsView");
 const SkillsView        = view(() => import("./views/SkillsView.jsx"),        "SkillsView");
 const SquadView         = view(() => import("./views/SquadView.jsx"),         "SquadView");
@@ -465,6 +467,7 @@ export default function SCRBRD_OS() {
     modules:      <ModulesView       role={role}/>,
     news:         <NewsView          role={role}/>,
     notifications:<NotificationsView role={role}/>,
+    safeguarding: <SafeguardingView  role={role}/>,
     settings:     <SettingsView      role={role} users={users} setUsers={setUsersTracked} onDirectoryChanged={refreshDirectory}/>,
     management:   <ManagementView    role={role} users={users} setUsers={setUsersTracked}/>,
     rulebook:     <RulebookView      role={role}/>,

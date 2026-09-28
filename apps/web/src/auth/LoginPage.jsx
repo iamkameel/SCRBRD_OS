@@ -60,6 +60,9 @@ const PILOT_ACCOUNTS = [
   // an account on this list the whole onboarding path could only be walked
   // through the API.
   { email: "registrar@example.invalid", label: "Registrar",    role: "schooladmin" },
+  // Hilton's Designated Safeguarding Officer (db/57). The only account that
+  // reads a safeguarding concern, so the only one that can show the inbox.
+  { email: "dso@example.invalid",       label: "Safeguarding Officer", role: "dso" },
 ];
 
 // `liveOnly`: opened from the pad of a live fixture to send what it has saved

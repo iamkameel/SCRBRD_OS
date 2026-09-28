@@ -117,6 +117,12 @@ const ROLE_IDENTITY = {
   media:                  { label:"Media", icon:"newspaper", color:"#f59ec9", family:"media" },  // 7.58:1
   // competition — running a competition
   competitionadmin:       { label:"Competition Admin", icon:"trophy", color:"#07c8e9", family:"competition" },  // 7.46:1
+  // safeguarding — the Designated Safeguarding Officer (CSA p15–17; db/57).
+  // A family of its own: the DSO is nobody's boss, colleague or coach, and
+  // the colour should not borrow governance's. Violet-magenta, 29.0 dE from
+  // its nearest neighbour and 5.93:1 on the darkest surface — computed
+  // against the table, not chosen by eye.
+  dso:                    { label:"Safeguarding Officer", icon:"hand-heart", color:"#e77ef1", family:"safeguarding" },  // 5.93:1
 };
 
 /**
@@ -154,6 +160,7 @@ const ROLE_DAYLIGHT = {
   sponsorship:          "#464a00",  // 7.47:1
   media:                "#8e3e7c",  // 5.35:1
   competitionadmin:     "#00626d",  // 5.64:1
+  dso:                  "#7a0891",  // 7.37:1, 29.3 dE from its nearest
 };
 
 // `color` answers for the theme in force. A getter, so a screen that read the
@@ -210,6 +217,11 @@ const NAV_CAPABILITY = {
   // authoritatively, by the INSERT policy.
   sponsors:      "sponsorship.read",
   notifications: null,
+  // Everyone: raising a safeguarding concern is not a capability (db/57's
+  // safeguarding_concern_raise() needs a session and nothing else — CSA p18,
+  // p53), so the destination is everyone's. What a DSO sees there beside the
+  // form is the server's answer to safeguarding.concern.read, not this map's.
+  safeguarding:  null,
   settings:      null,
   management:    "user.role.assign",
   // The modules screen. Gated by the capability that can HIDE a module rather
@@ -241,7 +253,7 @@ const NAV_GROUPS = [
   { key:"develop", label:"Develop",    items:["analytics","skills","training"] },
   { key:"operate", label:"Operate",    items:["logistics","fields","sponsors","readiness"] },
   { key:"admin",   label:"Administer", items:["management","modules","pitchdeck"] },
-  { key:"you",     label:"You",        items:["notifications","settings","rulebook"] },
+  { key:"you",     label:"You",        items:["notifications","safeguarding","settings","rulebook"] },
 ];
 
 /** destination → group key */
@@ -323,6 +335,7 @@ const NAV_META = {
   sponsors:     { icon:"handshake", label:"Sponsors"     },
   news:         { icon:"newspaper", label:"Newsfeed"     },
   notifications:{ icon:"bell", label:"Alerts"       },
+  safeguarding: { icon:"hand-heart", label:"Safeguarding" },
   settings:     { icon:"settings", label:"Settings"     },
   management:   { icon:"user-cog", label:"Management"   },
   modules:      { icon:"sliders-horizontal", label:"Modules"      },

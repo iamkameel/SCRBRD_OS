@@ -53,8 +53,10 @@ const say = (e) => REFUSAL[e?.code] ?? (e?.status ? `Refused (${e.code || e.stat
 // (role_needs_subject), and not a pupil's own. Team-scoped roles are left out
 // because this form names no side, and the database would refuse them for it.
 const PLATFORM_CAPS = new Set(PLATFORM_ONLY);
+// Nor the DSO's (db/57): support_access_begin() refuses any role carrying a
+// safeguarding capability, because there is no support read of a concern.
 const SUPPORT_ROLES = POLICY_ROLES.filter((r) =>
-  !(ROLE_CAPABILITIES[r] ?? []).some((c) => PLATFORM_CAPS.has(c)) &&
+  !(ROLE_CAPABILITIES[r] ?? []).some((c) => PLATFORM_CAPS.has(c) || c.startsWith("safeguarding.")) &&
   !SUBJECT_SCOPED_ROLES.includes(r) && !TEAM_SCOPED_ROLES.includes(r) && r !== "player");
 
 const MINUTES = [15, 30, 60, 120, 240];

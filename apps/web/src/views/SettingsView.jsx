@@ -636,6 +636,7 @@ const DOMAIN_LABEL = {
   opposition: "Opposition", scouting: "Scouting", officiating: "Officials",
   recognition: "Recognition", discipline: "Discipline", availability: "Availability",
   audit: "Audit", broadcast: "Broadcast", guardian: "Guardians",
+  safeguarding: "Safeguarding",
 };
 const capsOf = (r) => [...(ROLE_CAPABILITIES[r] ?? [])];
 const domainsOf = (r) => {

@@ -813,8 +813,11 @@ ok("a coach who is also a parent gets both menus",
 // offered the injuries screen, whatever a hand-written list once said.
 ok("a scorer is not offered injuries", !ROLES.scorer.nav.includes("injuries"));
 ok("a physio is", ROLES.medical.nav.includes("injuries"));
+// Seven since SCRBRD's safeguarding phase 1 (db/57): anybody signed in,
+// a driver included, can raise a concern with the DSO, so the destination is
+// everyone's — it is the one entry a driver gained, and it had to be.
 ok("a driver sees logistics and little else",
-   ROLES.driver.nav.includes("logistics") && ROLES.driver.nav.length <= 6);
+   ROLES.driver.nav.includes("logistics") && ROLES.driver.nav.includes("safeguarding") && ROLES.driver.nav.length <= 7);
 
 group("Navigation is grouped, and the grouping adds nothing");
 // One ordered structure. The capability map says what a destination NEEDS;

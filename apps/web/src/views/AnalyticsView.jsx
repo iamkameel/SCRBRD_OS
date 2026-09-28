@@ -190,7 +190,7 @@ function AnalyticsView({ role }) {
                           ))}
                         </div>
                       </td>
-                      <td style={{padding:"10px 12px",textAlign:"center"}}><Badge color={fitnessColor(p.fitness)}>{p.fitness}</Badge></td>
+                      <td style={{padding:"10px 12px",textAlign:"center"}}>{/* NULL unless this reader holds the status tier over him (SCRBRD-117, db/58) */}{p.fitness&&<Badge color={fitnessColor(p.fitness)}>{p.fitness}</Badge>}</td>
                     </tr>
                   );
                 })}

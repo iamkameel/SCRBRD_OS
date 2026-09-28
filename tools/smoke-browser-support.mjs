@@ -192,6 +192,9 @@ try {
      roleOptions.includes("directorofsport") &&
      !["platformadmin", "superadmin", "guardian", "selfaccess", "enquiry", "coach"].some((r) => roleOptions.includes(r)),
      roleOptions.join(" "));
+  // db/57: a support session never reads a safeguarding concern, so the DSO's
+  // role is not offered (and support_access_begin() refuses it if asked).
+  ok("...and never the DSO's", !roleOptions.includes("dso"), roleOptions.join(" "));
 
   await tid(plat.page, "support-school").selectOption(HIL);
   await tid(plat.page, "support-role").selectOption("directorofsport");

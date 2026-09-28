@@ -62,6 +62,7 @@ import { supportAccessRoutes } from "./write/support-access-api.mjs";
 import { dutyAuthorityRoutes } from "./write/duty-authority-api.mjs";
 import { contactRoutes } from "./write/contacts-api.mjs";
 import { clearanceRoutes } from "./write/clearance-api.mjs";
+import { safeguardingRoutes } from "./write/safeguarding-api.mjs";
 import { recognitionRoutes } from "./write/recognition-api.mjs";
 import { competitionRoutes } from "./write/competitions-api.mjs";
 import { requestRoutes } from "./write/requests-api.mjs";
@@ -357,6 +358,8 @@ const duties = dutyAuthorityRoutes({ pool, secret: SECRET });
 // reaches the manifest through the trip, see trip_contacts() in db/08.
 const contacts = contactRoutes({ pool, secret: SECRET });
 const clearances = clearanceRoutes({ pool, secret: SECRET });
+// Safeguarding, phase 1 (db/57): raising a concern, and the DSO's record.
+const safeguarding = safeguardingRoutes({ pool, secret: SECRET });
 const recognition = recognitionRoutes({ pool, secret: SECRET });
 const competitions = competitionRoutes({ pool, secret: SECRET });
 const requests = requestRoutes({ pool, secret: SECRET });
@@ -637,6 +640,32 @@ const PLAYER_ROUTES = [
 // no id at all — it always means "me" — so its capture group is simply
 // absent; the dispatcher's params.id comes back undefined and the handler
 // never looks at it.
+/**
+ * Safeguarding (db/57, docs/design/SAFEGUARDING_DSO.md). Every route calls
+ * one SECURITY DEFINER function under the caller's identity; the function
+ * decides who may, and logs every read of the record under the institution
+ * that holds it. NEVER module-gated: a school cannot switch off a child's way
+ * to tell somebody. Raising takes an Idempotency-Key like any write, so a
+ * retry on a bad connection raises once.
+ * @type {Route[]}
+ */
+const SAFEGUARDING_ROUTES = [
+  [/^\/api\/safeguarding\/contacts$/,                    "GET",  safeguarding.contacts],
+  [/^\/api\/safeguarding\/concerns$/,                    "POST", safeguarding.raise],
+  [/^\/api\/safeguarding\/receipts$/,                    "GET",  safeguarding.receipts],
+  [/^\/api\/safeguarding\/inbox$/,                       "GET",  safeguarding.inbox],
+  [/^\/api\/safeguarding\/concerns\/([^/]+)$/,           "GET",  safeguarding.open],
+  [/^\/api\/safeguarding\/concerns\/([^/]+)\/family$/,   "GET",  safeguarding.family],
+  [/^\/api\/safeguarding\/concerns\/([^/]+)\/notes$/,    "POST", safeguarding.note],
+  [/^\/api\/safeguarding\/concerns\/([^/]+)\/assign$/,   "POST", safeguarding.assign],
+  [/^\/api\/safeguarding\/concerns\/([^/]+)\/shares$/,   "POST", safeguarding.share],
+  [/^\/api\/safeguarding\/concerns\/([^/]+)\/close$/,    "POST", safeguarding.close],
+  [/^\/api\/safeguarding\/shares$/,                      "GET",  safeguarding.shares],
+  [/^\/api\/safeguarding\/shares\/([^/]+)$/,             "GET",  safeguarding.shareOpen],
+  [/^\/api\/safeguarding\/shares\/([^/]+)\/revoke$/,     "POST", safeguarding.shareRevoke],
+  [/^\/api\/safeguarding\/appointments\/([^/]+)\/end$/,  "POST", safeguarding.endAppointment],
+];
+
 /** @type {Route[]} */
 const SCOUT_ROUTES = [
   [/^\/api\/scouts\/accreditation$/,                      "POST", scouting.registerAccreditation, "scouting"],
@@ -859,7 +888,7 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    for (const [pattern, method, handler, module] of [...MATCH_ROUTES, ...PLAYER_ROUTES, ...SCOUT_ROUTES]) {
+    for (const [pattern, method, handler, module] of [...MATCH_ROUTES, ...PLAYER_ROUTES, ...SCOUT_ROUTES, ...SAFEGUARDING_ROUTES]) {
       const m = req.method === method && pattern.exec(path);
       if (!m) continue;
       // The write side of the module gate, in the one place every write route
