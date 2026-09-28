@@ -101,32 +101,49 @@ export const NOT_FOUND = JSON.stringify({ error: "not_found" });
  */
 
 /**
+ * How many fixtures the cache holds at once. A request for any well-formed
+ * id makes an entry (a "not found" is cached like an answer, so a missing
+ * fixture and an unpublished one cost the same), so without a bound a script
+ * walking random ids from many addresses would grow it without end. The
+ * oldest entry goes first; a school's busy Saturday is a few hundred.
+ */
+export const MAX_ENTRIES = 5_000;
+
+/**
  * The per-fixture cache. `drop()` is what a notification calls.
  */
 export class PublicCache {
-  /** @param {() => number} now */
-  constructor(now) {
+  /** @param {() => number} now @param {number} [max] */
+  constructor(now, max = MAX_ENTRIES) {
     this.now = now;
+    this.max = max;
     /** @type {Map<string, Entry>} */
     this.entries = new Map();
-    /** @type {Map<string, {minute: number, n: number}>} */
+    /** @type {Map<string, number>} requests this minute, per fixture */
     this.hits = new Map();
+    this.minute = -1;
   }
 
   /** @param {string} matchId @returns {Entry} */
   entry(matchId) {
     let e = this.entries.get(matchId);
-    if (!e) { e = { players: new Set(), inflight: new Map() }; this.entries.set(matchId, e); }
+    if (!e) {
+      e = { players: new Set(), inflight: new Map() };
+      this.entries.set(matchId, e);
+      // A Map iterates in insertion order: the first key is the oldest.
+      while (this.entries.size > this.max) this.entries.delete(/** @type {string} */ (this.entries.keys().next().value));
+    }
     return e;
   }
 
   /** Count a request for a fixture; true while it is hot. @param {string} matchId */
   hit(matchId) {
     const minute = Math.floor(this.now() / 60_000);
-    const h = this.hits.get(matchId);
-    if (!h || h.minute !== minute) { this.hits.set(matchId, { minute, n: 1 }); return false; }
-    h.n += 1;
-    return h.n > HOT_PER_MINUTE;
+    // One minute's counts at a time, so the map never outlives the minute.
+    if (minute !== this.minute) { this.hits.clear(); this.minute = minute; }
+    const n = (this.hits.get(matchId) ?? 0) + 1;
+    this.hits.set(matchId, n);
+    return n > HOT_PER_MINUTE;
   }
 
   /**

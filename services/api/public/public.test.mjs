@@ -389,6 +389,14 @@ console.log("\n── The cache ──");
   d.drop({ k: "match", id: M1 });
   await p;
   ok("a change that arrives mid-read is not undone by that read's answer", !d.entries.get(M1)?.header);
+  const small = new PublicCache(() => clock, 3);
+  for (const id of ["a", "b", "c", "d"]) small.entry(id);
+  ok("the cache is bounded: past its size the oldest fixture goes", small.entries.size === 3 && !small.entries.has("a") && small.entries.has("d"));
+  const hot = new PublicCache(() => clock);
+  for (let i = 0; i < 2001; i++) hot.hit(M1);
+  ok("past 2,000 requests a minute a fixture is hot", hot.hit(M1) === true);
+  clock += 60_000;
+  ok("...and the next minute starts cold, with last minute's counts forgotten", hot.hit(M1) === false && hot.hits.size === 1);
 }
 
 console.log("\n── The rate limit ──");
