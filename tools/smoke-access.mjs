@@ -10,7 +10,9 @@
  *
  * The interesting assertions are all about what a granted request does NOT
  * buy: not the diagnosis, not the rest of the squad, not forever, and not to
- * anyone but the coach who asked.
+ * anyone but the coach who asked. What it does buy is whether that one boy is
+ * out and until when — coach to coach, both staff, which K3 left in place
+ * (Kameel, 2026-09-28) when it took the same thing away from pupils.
  *
  *   node tools/migrate.mjs --reset --seed
  *   node tools/smoke-access.mjs
@@ -56,6 +58,21 @@ const decide = (id, token, body) =>
 
 const pool = new pg.Pool({ connectionString: DB });
 const dbq = async (t, p) => (await pool.query(t, p)).rows;
+const COACH2 = "88888888-0000-0000-0000-00000000000a";   // coach2@example.invalid, 2XI
+// What app_can() answers for one person about one player, asked in the
+// database as that person — the grant's reach, independent of any screen.
+const canAs = async (user, cap, player) => {
+  const c = await pool.connect();
+  try {
+    await c.query("begin");
+    await c.query("select set_config('app.user_id', $1, true)", [user]);
+    const { rows } = await c.query(
+      `select app_can($1, player_school($2), player_team($2), $2, '00000000-0000-0000-0000-000000000000'::uuid) as ok`,
+      [cap, player]);
+    await c.query("rollback");
+    return rows[0].ok === true;
+  } finally { c.release(); }
+};
 
 try {
   for (let i = 0; i < 60; i++) {
@@ -80,6 +97,7 @@ try {
      rosterBefore.some((p) => p.id === P_FIRST));
   ok("...and the roster tells them nothing about his availability",
      !before.some((i) => i.player_id === P_FIRST));
+  ok("...nor do they hold his profile yet", !(await canAs(COACH2, "player.profile.read", P_FIRST)));
 
   group("So they ask");
   const asked = await ask(P_FIRST, second, {
@@ -128,16 +146,23 @@ try {
   group("What the grant bought");
   const after = await read("injuries", second);
   const mine = after.filter((i) => i.player_id === P_FIRST);
-  ok("the 2nd XI coach can now see that player is unavailable", mine.length === 1);
-  ok("...and read their name", (await read("players", second)).some((p) => p.id === P_FIRST));
+  ok("the 2nd XI coach holds the boy's profile, through the enquiry",
+     await canAs(COACH2, "player.profile.read", P_FIRST));
+  ok("...and reads his name", (await read("players", second)).some((p) => p.id === P_FIRST));
+  // Coach to coach, both staff (CSA p52: "staff and coaches who need it"):
+  // K3 took this from pupils and left it here (Kameel, 2026-09-28).
+  ok("...and can now see that he is unavailable, and until when",
+     mine.length === 1 && mine.every((i) => i.rtw_date != null) && await canAs(COACH2, "medical.status.read", P_FIRST));
 
   group("And what it did not");
-  ok("NOT what is wrong with them", mine.every((i) => i.injury_type == null));
-  ok("NOT the clinical notes", mine.every((i) => i.notes == null));
+  ok("NOT what is wrong with them",
+     mine.every((i) => i.injury_type == null) && !(await canAs(COACH2, "medical.nature.read", P_FIRST)));
+  ok("NOT the clinical notes",
+     mine.every((i) => i.notes == null) && !(await canAs(COACH2, "medical.details.read", P_FIRST)));
   ok("NOT the rest of the 1st XI — one player was asked about, one was granted",
-     !after.some((i) => i.player_id === P_MATE));
+     !after.some((i) => i.player_id === P_MATE) && !(await canAs(COACH2, "player.profile.read", P_MATE)));
   ok("NOT a U16B player either",
-     !after.some((i) => i.player_id === P_U16B));
+     !after.some((i) => i.player_id === P_U16B) && !(await canAs(COACH2, "player.profile.read", P_U16B)));
   // A WELL-FORMED assessment, deliberately. The body has to be valid on the
   // current vocabulary or the request is refused at 400 for being malformed
   // and the assertion passes without authorisation ever being consulted —
@@ -165,7 +190,8 @@ try {
   group("Revocation is immediate, because it is an assignment");
   await dbq(`update role_assignment set active = false where id = $1`, [granted.body.assignment]);
   ok("deactivating the assignment closes the access on the next statement",
-     !(await read("injuries", second)).some((i) => i.player_id === P_FIRST));
+     !(await read("injuries", second)).some((i) => i.player_id === P_FIRST)
+     && !(await canAs(COACH2, "player.profile.read", P_FIRST)));
 } catch (e) {
   ok(`the access walk threw: ${e.message?.slice(0, 160)}`, false);
 } finally {

@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { holdsCapability } from "../rbac/index.js";
 import { ROLES } from "../design/roles.js";
-import { D, textOn, themed } from "../design/tokens.js";
+import { D, T, textOn, themed } from "../design/tokens.js";
 import { roleColor } from "../lib/format.js";
 import { Avatar, Badge, Btn, Card, Pill, SectionHeader } from "../ui/primitives.jsx";
 import { useRows } from "../lib/live.js";
@@ -227,46 +227,62 @@ function StaffView({ role }) {
 }
 
 // One word per check, the server's word, in the server's order: the gaps
-// first. Nothing here derives a status from a date.
-const STATUS_TONE = themed(() => ({ missing:D.rose, expired:D.rose, revoked:D.amber, expiring:D.amber, current:D.emerald }));
+// first. Nothing here derives a status from a date. The tones are text-safe
+// halves (criticalText, not critical, which is fill only).
+const STATUS_TONE = themed(() => ({ missing:T.semantic.criticalText, expired:T.semantic.criticalText,
+                                    revoked:T.semantic.warning, expiring:T.semantic.warning, current:T.semantic.positive }));
+// What the register now asks, in the office's words (K4, db/56). The rule
+// itself is the database's: a record that breaks it is refused with a
+// sentence naming the date it should have carried.
+const CSA_RULE = "CSA's Safeguarding Policy: a police clearance, the Children's Act register and the "
+  + "Sexual Offences Register for every adult who works with children, each renewed within 24 months "
+  + "(a first police clearance no older than six months); the Safeguarding Awareness Certificate every "
+  + "year; and the signed acknowledgement. A check recorded before these rules stays current until its own date.";
 function ClearanceRegister({ rows }) {
   const [open, setOpen] = useState(true);
   const gaps = rows.filter(r=>r.status!=="current").length;
   const byPerson = rows.reduce((acc,r)=>{ (acc[r.personId] ??= { name:r.name, role:r.role, checks:[] }).checks.push(r); return acc; }, {});
+  const cell = { padding:`${T.space.sm} ${T.space.sm}`, ...T.role.body };
   return (
-    <Card sx={{padding:"16px",marginBottom:"20px"}} data-testid="clearance-register">
-      <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:open?"12px":0}}>
-        <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>Clearance register</div>
-        <Badge color={gaps?D.rose:D.emerald}>{gaps?`${gaps} to chase`:"all current"}</Badge>
-        <button onClick={()=>setOpen(!open)} className="pressBtn" aria-expanded={open} style={{marginLeft:"auto",background:"none",border:"none",cursor:"pointer",color:D.textMuted,fontSize:"12px"}}>{open?"Hide":"Show"}</button>
+    <Card sx={{padding:T.space.lg,marginBottom:T.space.xl}} data-testid="clearance-register">
+      <div style={{display:"flex",alignItems:"center",gap:T.space.md,marginBottom:open?T.space.md:0,flexWrap:"wrap"}}>
+        <div style={{...T.role.title.md,color:T.content.primary}}>Clearance register</div>
+        <Badge color={gaps?T.semantic.criticalText:T.semantic.positive}>{gaps?`${gaps} to chase`:"all current"}</Badge>
+        <button onClick={()=>setOpen(!open)} className="pressBtn" aria-expanded={open}
+          style={{marginLeft:"auto",minHeight:`${T.floor.target}px`,minWidth:`${T.floor.target}px`,padding:`0 ${T.space.md}`,
+                  background:"none",border:"none",cursor:"pointer",color:T.content.secondary,...T.role.label}}>{open?"Hide":"Show"}</button>
       </div>
       {open&&(
-        <div style={{overflowX:"auto"}}>
-          <table style={{width:"100%",borderCollapse:"collapse",fontFamily:D.body,fontSize:"11px"}}>
-            <thead><tr style={{color:D.textMuted,textAlign:"left"}}>
-              <th style={{padding:"4px 8px"}}>Adult</th><th style={{padding:"4px 8px"}}>Role</th><th style={{padding:"4px 8px"}}>Checks</th>
-            </tr></thead>
-            <tbody>
-              {Object.entries(byPerson).map(([id,p])=>(
-                <tr key={id} data-testid={`clearance-row-${id}`} style={{borderTop:`1px solid ${D.border}`}}>
-                  <td style={{padding:"7px 8px",color:D.textPrimary,fontWeight:600,whiteSpace:"nowrap"}}>{p.name}</td>
-                  <td style={{padding:"7px 8px",color:D.textSecondary,textTransform:"capitalize"}}>{ROLES[p.role]?.label ?? p.role}</td>
-                  <td style={{padding:"7px 8px"}}>
-                    <div style={{display:"flex",gap:"5px",flexWrap:"wrap"}}>
-                      {p.checks.map(c=>(
-                        <span key={c.kind} title={c.expiresOn?`${c.status} · lapses ${c.expiresOn}`:c.status}
-                          style={{display:"inline-flex",gap:"5px",alignItems:"center",padding:"3px 8px",borderRadius:D.pill,
-                                  background:STATUS_TONE[c.status]+"14",border:`1px solid ${STATUS_TONE[c.status]}33`,color:textOn(STATUS_TONE[c.status])}}>
-                          {c.kindLabel}<span style={{fontFamily:D.mono,fontSize:"9px",textTransform:"uppercase"}}>{c.status}</span>
-                        </span>
-                      ))}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <>
+          <p data-testid="clearance-rule" style={{...T.role.body,color:T.content.secondary,margin:`0 0 ${T.space.md}`,maxWidth:"72ch"}}>{CSA_RULE}</p>
+          <div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse"}}>
+              <thead><tr style={{color:T.content.secondary,textAlign:"left"}}>
+                <th style={{...cell,...T.role.label}}>Adult</th><th style={{...cell,...T.role.label}}>Role</th><th style={{...cell,...T.role.label}}>Checks</th>
+              </tr></thead>
+              <tbody>
+                {Object.entries(byPerson).map(([id,p])=>(
+                  <tr key={id} data-testid={`clearance-row-${id}`} style={{borderTop:`1px solid ${T.line.normal}`,verticalAlign:"top"}}>
+                    <td style={{...cell,color:T.content.primary,fontWeight:600,whiteSpace:"nowrap"}}>{p.name}</td>
+                    <td style={{...cell,color:T.content.secondary}}>{ROLES[p.role]?.label ?? p.role}</td>
+                    <td style={cell}>
+                      <div style={{display:"flex",gap:T.space.xs,flexWrap:"wrap"}}>
+                        {p.checks.map(c=>(
+                          <span key={c.kind} data-testid={`clearance-check-${id}-${c.kind}`} title={c.expiresOn?`${c.status} · lapses ${c.expiresOn}`:c.status}
+                            style={{display:"inline-flex",gap:T.space.xs,alignItems:"baseline",padding:`${T.space.xs} ${T.space.sm}`,borderRadius:T.radius.pill,
+                                    border:`1px solid ${STATUS_TONE[c.status]}`,color:T.content.primary,fontSize:`${T.floor.read}px`,lineHeight:1.4}}>
+                            {c.kindLabel}
+                            <span style={{color:STATUS_TONE[c.status],fontWeight:700,textTransform:"uppercase",letterSpacing:"0.04em"}}>{c.status}</span>
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </Card>
   );

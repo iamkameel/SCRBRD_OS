@@ -4,7 +4,7 @@ import { ROLES } from "../design/roles.js";
 import { D, inkOn, textOn, themed } from "../design/tokens.js";
 import { fitnessColor, humanDate } from "../lib/format.js";
 import { signedIn } from "../lib/api.js";
-import { can, filterRecord } from "../rbac/index.js";
+import { can, filterRecord, holdsCapability } from "../rbac/index.js";
 import { Avatar, Badge, Card, EmptyState, Pill, RadarChart, SectionHeader, Select } from "../ui/primitives.jsx";
 import { ShotHeatMap, ShotSpider, ShotWheel } from "../scorer/charts.jsx";
 import { WagonAnalysisPanel } from "../scorer/wagonAnalysisPanel.jsx";
@@ -29,6 +29,10 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
   // principal. Importing the raw constant here would bypass both.
   const COACHES = useRows("coaches", role);
   const INJURIES = useRows("injuries", role);
+  // A player's fitness is his health (K3, db/55; CSA p52): drawn only for a
+  // role that reads the injury status tier, never for a pupil looking at a
+  // team-mate. His own injury reaches him through selfaccess, on Injuries.
+  const seesFitness = holdsCapability(role, "medical.status.read");
   const PLAYERS = usePlayersWithCareer(role);
   const SKILLS_MATRIX = useSkills(role);
   const STAFF = useRows("staff", role);
@@ -99,7 +103,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
               <div style={{width:"72px",height:"72px",borderRadius:"50%",background:`linear-gradient(135deg,${rCol}40,${rCol}20)`,border:`3px solid ${rCol}55`,display:"flex",alignItems:"center",justifyContent:"center"}}>
                 <span style={{fontFamily:D.head,fontSize:"24px",fontWeight:800,color:rCol}}>{p.name.split(" ").map(w=>w[0]).join("").slice(0,2)}</span>
               </div>
-              <div style={{position:"absolute",bottom:0,right:0,width:"18px",height:"18px",borderRadius:"50%",background:p.fitness==="fit"?D.emerald:p.fitness==="injured"?D.rose:D.amber,border:`2px solid ${D.surf1}`}}/>
+              {seesFitness&&<div style={{position:"absolute",bottom:0,right:0,width:"18px",height:"18px",borderRadius:"50%",background:p.fitness==="fit"?D.emerald:p.fitness==="injured"?D.rose:D.amber,border:`2px solid ${D.surf1}`}}/>}
             </div>
             <div style={{flex:1}}>
               <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap",marginBottom:"4px"}}>
@@ -109,7 +113,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
               <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginBottom:"8px"}}>
                 <Badge color={rCol}>{p.role==="BAT"?"Batter":p.role==="BOWL"?"Bowler":p.role==="ALL"?"Allrounder":"WK Batter"}</Badge>
                 <Badge color={D.sky}>{schoolInfo} · {p.team}</Badge>
-                <Badge color={p.fitness==="fit"?D.emerald:p.fitness==="injured"?D.rose:D.orange}>{p.fitness}</Badge>
+                {seesFitness&&<Badge color={p.fitness==="fit"?D.emerald:p.fitness==="injured"?D.rose:D.orange}>{p.fitness}</Badge>}
                 {p.batHand&&<Badge color={D.textMuted}>{p.batHand}HB · {p.bowlArm}{p.bowlArm?"A":""} {p.bowlStyle==="F"?"Fast":p.bowlStyle==="S"?"Spin":"Medium"}</Badge>}
               </div>
               <div style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,maxWidth:"520px",lineHeight:1.5}}>{p.bio}</div>
@@ -484,7 +488,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                     <button key={p.id} onClick={()=>{handleSelect(p.id,"players");}} className="pressBtn" style={{
                       display:"flex",alignItems:"center",gap:"7px",padding:"6px 10px",background:D.surf2,borderRadius:D.md,border:`1px solid ${D.border}`,cursor:"pointer",
                     }}>
-                      <Avatar name={p.name} size={24} color={fitnessColor(p.fitness)}/>
+                      <Avatar name={p.name} size={24} color={seesFitness?fitnessColor(p.fitness):D.textMuted}/>
                       <div style={{textAlign:"left"}}>
                         <div style={{fontFamily:D.body,fontSize:"11px",fontWeight:500,color:D.textPrimary}}>{p.name}</div>
                         <div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>{p.role}</div>
@@ -577,8 +581,8 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                         }}>
                           <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
                             <div style={{position:"relative",flexShrink:0}}>
-                              <Avatar name={p.name} size={28} color={fitnessColor(p.fitness)}/>
-                              <div style={{position:"absolute",bottom:-1,right:-1,width:"8px",height:"8px",borderRadius:"50%",background:fitnessColor(p.fitness),border:`1.5px solid ${D.surf1}`}}/>
+                              <Avatar name={p.name} size={28} color={seesFitness?fitnessColor(p.fitness):D.textMuted}/>
+                              {seesFitness&&<div style={{position:"absolute",bottom:-1,right:-1,width:"8px",height:"8px",borderRadius:"50%",background:fitnessColor(p.fitness),border:`1.5px solid ${D.surf1}`}}/>}
                             </div>
                             <div style={{minWidth:0}}>
                               <div style={{fontFamily:D.body,fontSize:"11px",fontWeight:selId===p.id?600:400,color:D.textPrimary,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</div>

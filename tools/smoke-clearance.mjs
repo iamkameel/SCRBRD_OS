@@ -15,6 +15,10 @@
  *   5. A DRIVER WHOSE CHECK HAS LAPSED DOES NOT TAKE A SIDE; one nobody has
  *      recorded is missing on the register, not refused on the road.
  *   6. A REFERENCE NUMBER IS A RESTRICTED FIELD: every read of one is logged.
+ *   7. CSA'S RULES (K4, db/56): the Sexual Offences Register and the
+ *      safeguarding kinds; 24 months for the three checks; a first police
+ *      clearance no older than six months; a row recorded before db/56 left
+ *      to lapse on its own date; and nothing new refuses on the road.
  *
  *   node tools/migrate.mjs --reset --seed
  *   node tools/smoke-clearance.mjs
@@ -110,8 +114,10 @@ try {
     ok("a check with time left reads as current", row(reg, DRIVER, "driving_permit")?.status === "current");
     ok("...with the date it lapses", /^\d{4}-\d{2}-\d{2}/.test(String(row(reg, DRIVER, "driving_permit")?.expires_on ?? "")));
     ok("the gaps come first", ["missing", "expired"].includes(reg[0].status) && reg.at(-1).status === "current");
-    ok("a role with no requirement is not on it", !reg.some((r) => ["guardian", "player", "scout", "spectator"].includes(r.role)));
-    ok("the driver is on it three ways", reg.filter((r) => r.person_id === DRIVER).length === 3);
+    ok("a role with no requirement is not on it", !reg.some((r) => ["guardian", "player", "spectator", "finance"].includes(r.role)));
+    // db/08's three (police, Children's Act register, permit) and db/56's
+    // three (Sexual Offences Register, the SAC, the signed acknowledgement).
+    ok("the driver is on it six ways", reg.filter((r) => r.person_id === DRIVER).length === 6);
     // Only the seeded rows: no verifier, and the register says so rather than inventing one.
     ok("a seeded row has no verifier", (await q(`select count(*)::int c from adult_clearance where verified_by is not null`))[0].c === 0);
   }
@@ -218,6 +224,47 @@ try {
     ok("a driver nobody has checked is not refused", (await trip(m5, office, { vehicleId: veh.id, driverId: nobody, departAt: daysFromNow(5).toISOString(), seatsTaken: 10 })).status === 200);
     ok("...because the register is where that gap is loud", row(await register(HIL, registrar), DRIVER, "police_clearance")?.status === "current");
     ok("the refusal was not the driver's own read", (await mine(driver)).length >= 3);
+  }
+
+  group("CSA's rules: the Sexual Offences Register, 24 months, and a first check no older than six months (K4)");
+  {
+    const reg = await register(HIL, registrar);
+    ok("every coach is asked for the Sexual Offences Register", row(reg, COACH2, "sexual_offences_register")?.status === "missing");
+    ok("...and for the Safeguarding Awareness Certificate and the signed acknowledgement",
+       row(reg, COACH2, "safeguarding_awareness")?.status === "missing" && row(reg, COACH2, "safeguarding_acknowledgement")?.status === "missing");
+    ok("...by name, on the register", reg.some((r) => r.kind === "sexual_offences_register" && /Sexual Offences Register/.test(r.kind_label)));
+    ok("the office and its leadership are asked too",
+       reg.some((r) => r.role === "schooladmin" && r.kind === "sexual_offences_register")
+       && reg.some((r) => r.role === "principal" && r.kind === "police_clearance"));
+    // The driver above has none of db/56's kinds, and the first trip he was
+    // put on in the driver group went through: missing is loud here, never a
+    // refusal on the road.
+    ok("a driver missing the new checks is missing on the register, and drove", row(reg, DRIVER, "sexual_offences_register")?.status === "missing");
+
+    const base = { personId: COACH2, schoolId: HIL, reference: "NRSO-2026-555101" };
+    const sor = await record(registrar, { ...base, kind: "sexual_offences_register",
+                                          issuedOn: iso(daysFromNow(-2)), expiresOn: iso(daysFromNow(-2 + 731)) });
+    ok("the office records a Sexual Offences Register clearance to 24 months", sor.status === 200);
+    ok("...and the register reads it current", row(await register(HIL, registrar), COACH2, "sexual_offences_register")?.status === "current");
+    const long = await record(registrar, { ...base, kind: "child_protection", reference: "CPR-2026-555102",
+                                           issuedOn: iso(daysFromNow(-2)), expiresOn: iso(daysFromNow(-2 + 761)) });
+    ok("a 25-month Children's Act register clearance is refused", long.status === 422);
+    ok("...with a sentence the office can act on", /runs at most 731 days/.test(long.body?.detail ?? "") && /re-checked by/.test(long.body?.detail ?? ""));
+    ok("a Safeguarding Awareness Certificate runs a year, not more",
+       (await record(registrar, { ...base, kind: "safeguarding_awareness", reference: "SAC-2026-555103",
+                                  issuedOn: iso(daysFromNow(0)), expiresOn: iso(daysFromNow(367)) })).status === 422);
+    const nobody = await idOf("bursar@example.invalid");
+    const old = await record(registrar, { personId: nobody, schoolId: HIL, kind: "police_clearance", reference: "PCC-2026-555104",
+                                          issuedOn: iso(daysFromNow(-214)), expiresOn: iso(daysFromNow(-214 + 700)) });
+    ok("a first police clearance issued seven months ago is refused", old.status === 422 && /first police clearance/.test(old.body?.detail ?? ""));
+    ok("...while a renewal of the same age is not",
+       (await record(registrar, { personId: DRIVER, schoolId: HIL, kind: "police_clearance", reference: "PCC-2026-555105",
+                                  issuedOn: iso(daysFromNow(-214)), expiresOn: iso(daysFromNow(-214 + 700)) })).status === 200);
+    const legacy = row(await register(HIL, registrar), await idOf("medical@example.invalid"), "police_clearance");
+    ok("a five-year police clearance recorded before db/56 still reads current until its date",
+       legacy?.status === "current" && !!legacy.expires_on);
+    ok("a kind outside the widened vocabulary is still refused",
+       (await record(registrar, { ...base, kind: "cv", issuedOn: iso(daysFromNow(0)), expiresOn: iso(daysFromNow(30)) })).status === 400);
   }
 
   group("A reference number is a restricted field");

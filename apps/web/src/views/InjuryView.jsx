@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { D } from "../design/tokens.js";
 import { pctDays, severityColor, today, withheld } from "../lib/format.js";
-import { can } from "../rbac/index.js";
+import { can, holdsCapability } from "../rbac/index.js";
 import { Avatar, Badge, Btn, Card, Input, KPICard, Modal, ProgressBar, SectionHeader, Select } from "../ui/primitives.jsx";
 import { useRows } from "../lib/live.js";
 
@@ -16,6 +16,10 @@ function InjuryView({ role }) {
   const [sel, setSel] = useState(null);
   const canEdit = can(role,"injuries","update").allowed;
   const injV = useRows("injuries", role);
+  // A pupil reaches this screen through his own record (selfaccess) and reads
+  // his own injuries only; the side's fitness count is the team-mates' health
+  // (K3, db/55), drawn only for a role reading the status tier itself.
+  const seesSide = holdsCapability(role, "medical.status.read");
 
   return (
     <div className="os-page">
@@ -26,7 +30,7 @@ function InjuryView({ role }) {
         <KPICard label="Active Injuries" value={injV.filter(i=>i.restricted).length}  icon="bandage" color={D.rose}/>
         <KPICard label="In Rehab"        value={injV.filter(i=>i.phase==="Reconditioning"||i.phase==="Strengthening").length} icon="dumbbell" color={D.orange}/>
         <KPICard label="Returning Soon"  value={injV.filter(i=>{const d=(new Date(i.rtw)-today)/(1000*60*60*24);return d>=0&&d<=7;}).length} icon="circle-check" color={D.amber}/>
-        <KPICard label="Available"       value={PLAYERS.filter(p=>p.fitness==="fit").length} icon="footprints" color={D.emerald}/>
+        {seesSide&&<KPICard label="Available"       value={PLAYERS.filter(p=>p.fitness==="fit").length} icon="footprints" color={D.emerald}/>}
       </div>
 
       <div style={{display:"grid",gridTemplateColumns:"var(--g-side-r,1fr 340px)",gap:"16px",alignItems:"start"}}>

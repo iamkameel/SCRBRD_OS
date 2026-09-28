@@ -34,6 +34,10 @@ function SquadView({ role }) {
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
   const PLAYERS = usePlayersWithCareer(role, rosterNonce);
+  // A team-mate's fitness is his health (K3, db/55; CSA p52: not in general
+  // view to other children). Drawn only for a role that reads the injury
+  // status tier itself — staff who pick the side, not a pupil beside him.
+  const seesFitness = holdsCapability(role, "medical.status.read");
   const SKILLS_MATRIX = useSkills(role);
   const [team, setTeam]           = useState("1XI");
   const [selected, setSelected]   = useState(null);
@@ -115,13 +119,13 @@ function SquadView({ role }) {
             {players.map(p=>(
               <Card key={p.id} onClick={()=>setSelected(p)} sx={{
                 padding:"14px",cursor:"pointer",
-                border:`1px solid ${selected?.id===p.id?D.sky+"55":p.fitness==="injured"?D.rose+"22":D.border}`,
-                background:selected?.id===p.id?D.sky+"08":p.fitness==="injured"?D.rose+"05":D.surf1,
+                border:`1px solid ${selected?.id===p.id?D.sky+"55":seesFitness&&p.fitness==="injured"?D.rose+"22":D.border}`,
+                background:selected?.id===p.id?D.sky+"08":seesFitness&&p.fitness==="injured"?D.rose+"05":D.surf1,
               }}>
                 <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"10px"}}>
                   <div style={{position:"relative"}}>
                     <Avatar name={p.name} size={40} color={roleColor(p.role)}/>
-                    <div style={{position:"absolute",bottom:-2,right:-2,width:"11px",height:"11px",borderRadius:"50%",background:fitnessColor(p.fitness),border:`1.5px solid ${D.surf1}`}}/>
+                    {seesFitness&&<div style={{position:"absolute",bottom:-2,right:-2,width:"11px",height:"11px",borderRadius:"50%",background:fitnessColor(p.fitness),border:`1.5px solid ${D.surf1}`}}/>}
                   </div>
                   <div>
                     <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:600,color:D.textPrimary,lineHeight:1.2}}>
@@ -132,7 +136,7 @@ function SquadView({ role }) {
                 </div>
                 <div style={{display:"flex",gap:"5px",flexWrap:"wrap",marginBottom:"8px"}}>
                   <Badge color={roleColor(p.role)}>{p.role}</Badge>
-                  <Badge color={fitnessColor(p.fitness)}>{p.fitness}</Badge>
+                  {seesFitness&&<Badge color={fitnessColor(p.fitness)}>{p.fitness}</Badge>}
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"4px"}}>
                   <div style={{textAlign:"center",padding:"5px",background:D.surf2,borderRadius:D.sm}}>
@@ -170,7 +174,7 @@ function SquadView({ role }) {
             </div>
             <div style={{display:"flex",gap:"5px",flexWrap:"wrap",marginBottom:"14px"}}>
               <Badge color={roleColor(selected.role)}>{selected.role}</Badge>
-              <Badge color={fitnessColor(selected.fitness)}>{selected.fitness}</Badge>
+              {seesFitness&&<Badge color={fitnessColor(selected.fitness)}>{selected.fitness}</Badge>}
               <Badge color={selected.batHand==="L"?D.amber:D.sky}>{selected.batHand}HB</Badge>
               <Badge color={selected.bowlArm==="L"?D.violet:D.emerald}>{selected.bowlArm==="L"?"LA":"RA"}{selected.bowlStyle}</Badge>
             </div>

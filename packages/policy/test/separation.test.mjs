@@ -190,6 +190,32 @@ ok("the capability that opens the file is held by the roles that need it",
    others("medical.details.read").every((r) => ["medical", "guardian", "selfaccess"].includes(r)),
    others("medical.details.read").join(" "));
 
+// ── K3 · A child's medical needs are not in general view to other children ──
+// CSA Safeguarding Policy p52 item 6; docs/policy/CSA_SAFEGUARDING_CHECK.md K3;
+// db/55. A role held across a side by children reads no tier of a
+// team-mate's injury — not even that he is out and until when. A granted
+// enquiry is coach to coach, for one named player, and keeps the status tier
+// and nothing more (Kameel, 2026-09-28).
+group("K3  A pupil reads no team-mate's injury, at any tier");
+{
+  const tiers = ["medical.status.read", "medical.nature.read", "medical.details.read"];
+  ok("player holds no medical tier", reach("player", tiers).length === 0, reach("player", tiers).join(","));
+  ok("enquiry holds the status tier and no other",
+     reach("enquiry", tiers).join() === "medical.status.read", reach("enquiry", tiers).join(","));
+  ok("...while the pupil's own record reaches him at every tier, through selfaccess",
+     tiers.every((c) => caps("selfaccess").includes(c)));
+  ok("...and a guardian's, over his own children, likewise",
+     tiers.every((c) => caps("guardian").includes(c)));
+  // Who may know that a child is out: staff who need it, the child, his parent.
+  // A new holder of the status tier is a decision against p52, not a tidy-up.
+  const staff = ["principal", "directorofsport", "schooladmin", "sportsadmin",
+                 "coach", "assistantcoach", "teammanager", "medical", "enquiry", "guardian", "selfaccess"];
+  ok("the status tier is held by staff who need it, the child and his parent, and nobody else",
+     others("medical.status.read").every((r) => staff.includes(r))
+       && staff.every((r) => caps(r).includes("medical.status.read")),
+     others("medical.status.read").join(" "));
+}
+
 // ── §11.4 School administration vs safeguarding ──────────
 group("§11.4  Administering a school is not conducting a safeguarding case");
 ok("schooladmin sees that a disciplinary record exists and cannot write one",
