@@ -1114,6 +1114,197 @@ BEGIN
   RETURN ids;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
+-- db/60 (section 38). SCRBRD-110 phase 1: the nets band and the consent.
+-- Written as the owner and rolled back. Four U15A boys of their own at
+-- Hilton, so nothing earlier sections did to the seed's people can decide an
+-- answer here: a bowler (16) with no health consent, a boy about to turn
+-- eighteen, a boy for the constructed EWMA series and one more. Their own
+-- coach, a coach of another side, a physio, a strength-and-conditioning
+-- coach, a team-mate, an office, a platform account for support, the
+-- bowler's own account (self-access), the turning boy's account, and two
+-- parents: the turning boy's (her link is made in the section,
+-- through guardian_link_establish(), so it ends where that function ends it
+-- today) and one of the fourth boy. A training session today, a match the
+-- bowler bowled in two days ago (thirteen deliveries: twelve legal and a
+-- wide), and a hamstring on his record with a physio's note.
+-- workload_monitoring is NOT granted here: the section proves the switch first.
+CREATE OR REPLACE FUNCTION _seed_60() RETURNS jsonb AS $$
+DECLARE
+  HIL    uuid := '11111111-1111-1111-1111-111111111111';
+  SCORER uuid := '88888888-0000-0000-0000-000000000006';
+  ids    jsonb := '{}';
+  r      record;
+  v_u    uuid; v_a uuid; v_p uuid; v_m uuid; v_t uuid;
+  s      int := 0;
+BEGIN
+  FOR r IN SELECT * FROM (VALUES
+      ('bowler',  'Bongani Bowlsixty',     16, 'F'),
+      ('turning', 'Themba Turnseighteen',  17, 'F'),
+      ('ewma',    'Ewan Ewmasixty',        15, 'F'),
+      ('other',   'Oscar Othersixty',      15, 'M')) AS v(k, nm, age, style)
+  LOOP
+    INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born, bowling_style)
+    VALUES (HIL, 'U15A', r.nm, split_part(r.nm, ' ', 2), 60 + s, 'bowler',
+            (current_date - make_interval(years => r.age) - interval '40 days')::date, r.style)
+    RETURNING id INTO v_p;
+    s := s + 1;
+    ids := ids || jsonb_build_object('p_' || r.k, v_p);
+  END LOOP;
+
+  FOR r IN SELECT * FROM (VALUES
+      ('coach',  'coach',         'U15A', false),
+      ('coach2', 'coach',         'U16A', false),
+      ('physio', 'medical',       NULL,   false),
+      ('fit',    'fitness',       NULL,   false),
+      ('mate',   'player',        'U15A', false),
+      ('office', 'schooladmin',   NULL,   false),
+      ('plat',   'platformadmin', NULL,   true),
+      ('mum',    'guardian',      NULL,   false),
+      ('mum2',   'guardian',      NULL,   false),
+      ('boy',    'selfaccess',    NULL,   false),
+      ('turner', 'selfaccess',    NULL,   false)) AS v(k, role, team, platform)
+  LOOP
+    INSERT INTO app_user (school_id, email, name, role)
+    VALUES (CASE WHEN r.platform THEN NULL ELSE HIL END, 'v60.' || r.k || '@example.invalid', 'V60 ' || r.k, r.role)
+    RETURNING id INTO v_u;
+    -- The turning boy's mother is appointed by guardian_link_establish() in
+    -- the section; the rest hold their role now.
+    IF r.k <> 'mum' THEN
+      INSERT INTO role_assignment (person_id, role, school_id, team_code)
+      VALUES (v_u, r.role, CASE WHEN r.platform THEN NULL ELSE HIL END, r.team)
+      RETURNING id INTO v_a;
+      ids := ids || jsonb_build_object('a_' || r.k, v_a);
+    END IF;
+    ids := ids || jsonb_build_object('u_' || r.k, v_u);
+  END LOOP;
+  -- The bowler's own account plays in the side as well, as R Pillay's does.
+  INSERT INTO role_assignment (person_id, role, school_id, team_code)
+  VALUES ((ids->>'u_boy')::uuid, 'player', HIL, 'U15A');
+
+  -- Who each subject-scoped assignment is about. Verified by the office, the
+  -- terms agreed; a parent's link ends at his majority, as
+  -- guardian_link_establish() writes it today.
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from, valid_until)
+  VALUES
+    ((ids->>'a_boy')::uuid,    (ids->>'p_bowler')::uuid,  'self',   'verified', (ids->>'u_office')::uuid, now(), 'granted',
+     'popia-2026-01', now(), (ids->>'u_office')::uuid, current_date - 30, NULL),
+    ((ids->>'a_turner')::uuid, (ids->>'p_turning')::uuid, 'self',   'verified', (ids->>'u_office')::uuid, now(), 'granted',
+     'popia-2026-01', now(), (ids->>'u_office')::uuid, current_date - 30, NULL),
+    ((ids->>'a_mum2')::uuid,   (ids->>'p_other')::uuid,   'parent', 'verified', (ids->>'u_office')::uuid, now(), 'granted',
+     'popia-2026-01', now(), (ids->>'u_office')::uuid, current_date - 30,
+     majority_on((SELECT born FROM player WHERE id = (ids->>'p_other')::uuid)));
+
+  -- Today's nets, at six in the morning.
+  INSERT INTO training_session (school_id, team_code, title, starts_at, duration_min, session_type)
+  VALUES (HIL, 'U15A', 'Seamers at the nets', (sa_today()::timestamp + interval '6 hours') AT TIME ZONE 'Africa/Johannesburg',
+          60, 'bowling')
+  RETURNING id INTO v_t;
+  ids := ids || jsonb_build_object('ts', v_t);
+
+  -- Two days ago: a match the log scored, and two overs from the bowler, with
+  -- a wide in the first.
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, 'U15A', 'Sixty College U15A', ((sa_today() - 2)::timestamp + interval '10 hours') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'complete')
+  RETURNING id INTO v_m;
+  ids := ids || jsonb_build_object('m', v_m, 'm_on', sa_today() - 2);
+  FOR s IN 1..13 LOOP
+    INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key,
+                            client_seq, client_ts, kind, ball_type, value, bowler_id, striker_id)
+    VALUES (v_m, HIL, s, 0, 0, SCORER, 'v60', 'v60-' || s, s, now(), 'ball',
+            CASE WHEN s = 3 THEN 'Wd' ELSE 'run' END, CASE WHEN s = 3 THEN 1 ELSE 0 END,
+            (ids->>'p_bowler')::uuid, (ids->>'p_other')::uuid);
+  END LOOP;
+
+  -- A hamstring, with the physio's note on it.
+  INSERT INTO injury (school_id, player_id, injury_type, severity, date_injured, phase, restricted, notes, physio)
+  VALUES (HIL, (ids->>'p_bowler')::uuid, 'Hamstring strain', 'minor', current_date - 20, 'cleared', false,
+          'Grade 1; eccentric programme, review in two weeks', 'V60 physio');
+  RETURN ids;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The module switch for Hilton, as the platform would grant it.
+CREATE OR REPLACE FUNCTION _v60_grant(p_on boolean) RETURNS void AS $$
+  INSERT INTO feature_grant (key, school_id, granted, note)
+  VALUES ('workload_monitoring', '11111111-1111-1111-1111-111111111111', p_on, 'verify db/60')
+  ON CONFLICT (key, school_id) DO UPDATE SET granted = excluded.granted;
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- health_consent_live() and health_retention_due() are the database's own in
+-- this phase (not the application's), so the section asks through these.
+CREATE OR REPLACE FUNCTION _v60_live(p uuid) RETURNS boolean AS $$ SELECT health_consent_live(p) $$
+  LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v60_due(p uuid) RETURNS date AS $$ SELECT health_retention_due(p) $$
+  LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- load_day is not the application's either (db/60): one boy's day, as its owner reads it.
+CREATE OR REPLACE FUNCTION _v60_day(p uuid, d date) RETURNS SETOF load_day AS $$
+  SELECT * FROM load_day WHERE player_id = p AND on_date = d $$
+  LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Wind a boy's whole history back so that TODAY is his eighteenth birthday:
+-- his date of birth, his parents' links (dated as guardian_link_establish()
+-- dated them) and every consent recorded about him move back together, so
+-- a "yes" given at seventeen is still a yes given while he was a child.
+CREATE OR REPLACE FUNCTION _v60_turn_eighteen(p uuid) RETURNS void AS $$
+DECLARE d int;
+BEGIN
+  SELECT majority_on(born) - current_date INTO d FROM player WHERE id = p;
+  UPDATE player SET born = born - d WHERE id = p;
+  UPDATE assignment_subject SET valid_from = valid_from - d, valid_until = valid_until - d,
+                                verified_at = verified_at - make_interval(days => d), consent_at = consent_at - make_interval(days => d)
+   WHERE player_id = p AND relationship IS DISTINCT FROM 'self';
+  UPDATE health_monitoring_consent SET given_on = given_on - d, form_date = form_date - d,
+                                       recorded_at = recorded_at - make_interval(days => d)
+   WHERE player_id = p;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- What phase 0 (the link past eighteen, waiting on the information officer)
+-- will do to an enrolled pupil's parent: her link stays open.
+CREATE OR REPLACE FUNCTION _v60_phase0_open_link(p uuid) RETURNS void AS $$
+  UPDATE assignment_subject SET valid_until = NULL WHERE player_id = p AND relationship IS DISTINCT FROM 'self';
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- He leaves the school system (his last school membership closes today), and comes back.
+CREATE OR REPLACE FUNCTION _v60_leave(p uuid) RETURNS void AS $$
+  UPDATE team_membership SET left_on = current_date WHERE player_id = p AND left_on IS NULL;
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v60_rejoin(p uuid) RETURNS void AS $$
+  INSERT INTO team_membership (player_id, school_id, sport, team_code, joined_on, reason)
+  SELECT id, school_id, 'cricket', team_code, current_date, 'moved' FROM player WHERE id = p;
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The constructed series, recorded by his coach on the days named (days
+-- ago, band), through the table's own stamp.
+CREATE OR REPLACE FUNCTION _v60_series(p uuid, coach uuid) RETURNS void AS $$
+DECLARE r record;
+BEGIN
+  PERFORM set_config('app.user_id', coach::text, true);
+  FOR r IN SELECT * FROM (VALUES (40, '24_36'), (27, '24_36'), (20, '24_36'), (13, '24_36'),
+                                 (6, '36plus'), (3, '36plus'), (1, '36plus'), (0, '12_24')) AS v(ago, band) LOOP
+    INSERT INTO load_entry (player_id, kind, on_date, band, rpe, minutes)
+    VALUES (p, 'nets', sa_today() - r.ago, r.band, 6, 40);
+  END LOOP;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The same EWMA the other way: the recursion the design describes, seeded at
+-- zero ninety days back, one day at a time — against load_summary()'s closed
+-- form.
+CREATE OR REPLACE FUNCTION _v60_ewma(p uuid, OUT acute numeric, OUT chronic numeric) AS $$
+  WITH RECURSIVE days AS (
+    SELECT g AS k, (sa_today() - 89 + g) AS d FROM generate_series(0, 89) g),
+  series AS (
+    SELECT days.k, coalesce((SELECT sum(l.units) FROM load_day l
+                              WHERE l.player_id = p AND l.sport_code = 'cricket' AND l.on_date = days.d), 0)::numeric AS u
+      FROM days),
+  ew AS (
+    SELECT s.k, 0.25 * s.u AS a, (2.0 / 29) * s.u AS c FROM series s WHERE s.k = 0
+    UNION ALL
+    SELECT s.k, 0.25 * s.u + 0.75 * ew.a, (2.0 / 29) * s.u + (27.0 / 29) * ew.c
+      FROM ew JOIN series s ON s.k = ew.k + 1)
+  SELECT a, c FROM ew WHERE k = 89
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -6780,6 +6971,389 @@ BEGIN
                                          AND has_function_privilege(r.oid, t::regprocedure, 'EXECUTE')),
         format('db/59 (grants): %s is not the application''s alone', t));
     END LOOP;
+  END;
+
+  -- ── 38. Workload phase 1: consent and the count (SCRBRD-110, db/60) ──
+  -- The nets band is ordinary processing: a coach records it for a boy with no
+  -- health consent, and his figure is an estimate. The table refuses a count
+  -- for a net and a band for a paper-scored match. One figure per session,
+  -- the bowler's own over the coach's; a paper match on a day the log scored
+  -- is marked, not dropped. The EWMA word agrees with workload()'s thresholds
+  -- and with the recursion it is the closed form of. The consent: a parent's
+  -- yes for a boy of seventeen, and what happens on his eighteenth birthday —
+  -- TODAY'S RULE, before phase 0 (see the note at (18)). A team-mate, another
+  -- side's coach and a parent read and write no load; the fitness coach reads
+  -- a load chart and not an injury's notes; a support session reads no
+  -- consent and records none.
+  DECLARE
+    ids     jsonb := _seed_60();
+    P_B     uuid; P_T uuid; P_E uuid; P_O uuid;   -- bowler, turning 18, EWMA series, other
+    U_C     uuid; U_C2 uuid; U_PH uuid; U_FIT uuid; U_MATE uuid; U_OFF uuid; U_PL uuid;
+    U_MUM   uuid; U_MUM2 uuid; U_BOY uuid; U_TURN uuid;
+    TS      uuid;
+    D_MATCH date;
+    V       text := 'health-monitoring-2026-09';
+    e_staff uuid; e_self uuid; e_fix uuid;
+    rec     record;
+    c       record;
+    w       record;
+    v_con   text;
+    v_msg   text;
+    v_word  text;
+    v_ratio numeric;
+    ew      record;
+    S_ID    uuid;
+    k       int;
+  BEGIN
+    P_B := (ids->>'p_bowler')::uuid; P_T := (ids->>'p_turning')::uuid;
+    P_E := (ids->>'p_ewma')::uuid;   P_O := (ids->>'p_other')::uuid;
+    U_C := (ids->>'u_coach')::uuid;  U_C2 := (ids->>'u_coach2')::uuid; U_PH := (ids->>'u_physio')::uuid;
+    U_FIT := (ids->>'u_fit')::uuid;  U_MATE := (ids->>'u_mate')::uuid; U_OFF := (ids->>'u_office')::uuid;
+    U_PL := (ids->>'u_plat')::uuid;  U_MUM := (ids->>'u_mum')::uuid;   U_MUM2 := (ids->>'u_mum2')::uuid;
+    U_BOY := (ids->>'u_boy')::uuid;  U_TURN := (ids->>'u_turner')::uuid;
+    TS := (ids->>'ts')::uuid;        D_MATCH := (ids->>'m_on')::date;
+
+    -- (1) The switch arrives off: a coach's nets band is refused until the
+    -- platform grants workload_monitoring to his school.
+    PERFORM _as(U_C);
+    BEGIN
+      INSERT INTO load_entry (player_id, kind, training_session_id, band) VALUES (P_B, 'nets', TS, '12_24');
+      v_msg := 'accepted';
+    EXCEPTION WHEN check_violation THEN v_msg := SQLERRM;
+    END;
+    PERFORM _assert(v_msg = 'workload_monitoring_off', format('db/60 (switch): a nets band with the module off was %s', v_msg));
+    PERFORM _v60_grant(true);
+
+    -- (2) A nets band for a boy WITHOUT health consent is accepted, stamped
+    -- as the coach's (staff), dated by the session, and his figure says
+    -- "estimate".
+    PERFORM _assert(NOT _v60_live(P_B), 'db/60 (fixture): the bowler has a live health consent');
+    PERFORM _as(U_C);
+    INSERT INTO load_entry (player_id, kind, training_session_id, band, rpe, minutes)
+    VALUES (P_B, 'nets', TS, '12_24', 6, 45) RETURNING id INTO e_staff;
+    SELECT * INTO rec FROM load_entry WHERE id = e_staff;
+    PERFORM _assert(rec.recorded_as = 'staff' AND rec.recorded_by = U_C AND rec.on_date = sa_today()
+                    AND rec.school_id = HIL AND rec.units IS NULL,
+      format('db/60 (stamp): the coach''s row is %s', row(rec.recorded_as, rec.recorded_by = U_C, rec.on_date, rec.school_id = HIL)::text));
+    SELECT * INTO rec FROM load_summary(P_B);
+    PERFORM _assert(rec.units_7d = 18 + 13 AND rec.match_units_7d = 13 AND rec.estimated_7d AND NOT rec.monitored,
+      format('db/60 (estimate): the coach reads %s for the bowler', row(rec.units_7d, rec.match_units_7d, rec.estimated_7d, rec.monitored)::text));
+    SELECT count(*) INTO n FROM load_weeks(P_B) wk WHERE wk.week_start <= sa_today() AND wk.week_end >= sa_today() AND wk.estimated AND wk.units >= 18;
+    PERFORM _assert(n = 1, 'db/60 (chart): this week''s bar is not drawn as an estimate');
+
+    -- (3) A nets entry with a count is refused, and so is a paper-scored
+    -- match with a band: nobody can be asked to count a net.
+    v_con := NULL;
+    BEGIN
+      INSERT INTO load_entry (player_id, kind, training_session_id, band, units) VALUES (P_B, 'nets', TS, '12_24', 20);
+    EXCEPTION WHEN check_violation THEN GET STACKED DIAGNOSTICS v_con = CONSTRAINT_NAME;
+    END;
+    PERFORM _assert(v_con = 'load_entry_band_or_count', format('db/60 (count): a net with a count was %s', coalesce(v_con, 'accepted')));
+    v_con := NULL;
+    BEGIN
+      INSERT INTO load_entry (player_id, kind, on_date, units) VALUES (P_B, 'nets', sa_today(), 20);
+    EXCEPTION WHEN check_violation THEN GET STACKED DIAGNOSTICS v_con = CONSTRAINT_NAME;
+    END;
+    PERFORM _assert(v_con = 'load_entry_band_or_count', 'db/60 (count): a net with a count and no band was accepted');
+    v_con := NULL;
+    BEGIN
+      INSERT INTO load_entry (player_id, kind, on_date, band) VALUES (P_B, 'match_elsewhere', D_MATCH, '24_36');
+    EXCEPTION WHEN check_violation THEN GET STACKED DIAGNOSTICS v_con = CONSTRAINT_NAME;
+    END;
+    PERFORM _assert(v_con = 'load_entry_band_or_count', 'db/60 (count): a paper-scored match with a band was accepted');
+    v_msg := NULL;
+    BEGIN
+      INSERT INTO load_entry (player_id, kind, on_date, band) VALUES (P_B, 'nets', sa_today() + 1, '12_24');
+    EXCEPTION WHEN check_violation THEN v_msg := SQLERRM;
+    END;
+    PERFORM _assert(v_msg = 'load_entry_in_future', 'db/60 (stamp): a net tomorrow was accepted');
+
+    -- (4) The bowler's own band for the same session: the session counts
+    -- once, and it is HIS figure — not the coach's, not the two added, not
+    -- the larger.
+    PERFORM _as(U_BOY);
+    INSERT INTO load_entry (player_id, kind, training_session_id, band, rpe, minutes)
+    VALUES (P_B, 'nets', TS, '24_36', 9, 50) RETURNING id INTO e_self;
+    SELECT * INTO rec FROM load_entry WHERE id = e_self;
+    PERFORM _assert(rec.recorded_as = 'self' AND rec.recorded_by = U_BOY, format('db/60 (self): the boy''s row is %s', rec.recorded_as));
+    SELECT * INTO rec FROM _v60_day(P_B, sa_today());
+    PERFORM _assert(rec.entered_units = 30 AND rec.sessions = 1 AND rec.estimated AND rec.minutes = 50 AND rec.au = 450,
+      format('db/60 (one figure): today reads %s, expected his 30 once', row(rec.entered_units, rec.sessions, rec.minutes, rec.au)::text));
+    -- The coach corrects his own figure: still the boy's that counts.
+    PERFORM _as(U_C);
+    INSERT INTO load_entry (player_id, kind, training_session_id, band, supersedes)
+    VALUES (P_B, 'nets', TS, '36plus', e_staff) RETURNING id INTO e_fix;
+    SELECT * INTO rec FROM _v60_day(P_B, sa_today());
+    PERFORM _assert(rec.entered_units = 30, format('db/60 (one figure): a coach''s correction displaced the boy''s figure (%s)', rec.entered_units));
+    -- A correction replaces one's own figure only.
+    PERFORM _as(U_BOY);
+    v_msg := NULL;
+    BEGIN
+      INSERT INTO load_entry (player_id, kind, training_session_id, band, supersedes) VALUES (P_B, 'nets', TS, 'lt12', e_fix);
+    EXCEPTION WHEN check_violation THEN v_msg := SQLERRM;
+    END;
+    PERFORM _assert(v_msg = 'supersedes_another_session', 'db/60 (correction): the boy replaced the coach''s figure');
+    INSERT INTO load_entry (player_id, kind, training_session_id, band, supersedes) VALUES (P_B, 'nets', TS, 'lt12', e_self);
+    SELECT * INTO rec FROM _v60_day(P_B, sa_today());
+    PERFORM _assert(rec.entered_units = 6, format('db/60 (correction): his corrected figure reads %s, expected 6', rec.entered_units));
+    -- The row is never changed in place.
+    v_msg := NULL;
+    BEGIN
+      UPDATE load_entry SET band = '36plus' WHERE id = e_self;
+    EXCEPTION WHEN insufficient_privilege THEN v_msg := 'refused';
+    END;
+    PERFORM _assert(v_msg = 'refused', 'db/60 (never updated): the application changed a load entry');
+
+    -- (5) A paper-scored match on a day the log already scored for him is
+    -- marked, not refused and not dropped.
+    INSERT INTO load_entry (player_id, kind, on_date, units) VALUES (P_B, 'match_elsewhere', D_MATCH, 24);
+    SELECT * INTO rec FROM _v60_day(P_B, D_MATCH);
+    PERFORM _assert(rec.match_units = 13 AND rec.entered_units = 24 AND rec.units = 37 AND rec.possibly_doubled AND NOT rec.estimated,
+      format('db/60 (doubled): the scored day reads %s', row(rec.match_units, rec.entered_units, rec.possibly_doubled, rec.estimated)::text));
+    SELECT * INTO rec FROM load_summary(P_B);
+    PERFORM _assert(rec.possibly_doubled_7d AND D_MATCH = ANY (rec.possibly_doubled_on),
+      'db/60 (doubled): his summary does not mark the day');
+    SELECT count(*) INTO n FROM _v60_day(P_B, sa_today()) d WHERE d.possibly_doubled;
+    PERFORM _assert(n = 0, 'db/60 (doubled): a nets day was marked as possibly counted twice');
+
+    -- (6) workload(): the old columns, in their order, meaning what they meant.
+    PERFORM _assert(pg_get_function_result('workload(text)'::regprocedure) LIKE
+      'TABLE(player_id uuid, full_name text, team_code text, school_id uuid, age_band text, pace boolean, '
+      'max_overs_per_spell smallint, max_overs_per_day smallint, overs_7d integer, overs_28d integer, '
+      'longest_spell_7d integer, breaches_28d integer, last_bowled_on date, sessions_7d integer, minutes_7d integer, '
+      'sessions_28d integer, minutes_28d integer, acwr numeric, load_state text, units_7d integer, units_28d integer, '
+      'estimated_7d boolean, ewma_ratio numeric, load_word text, monitored boolean)',
+      'db/60 (workload): workload()''s row is not db/08''s with six columns after it');
+    PERFORM _as(U_C);
+    SELECT * INTO w FROM workload('U15A') x WHERE x.player_id = P_B;
+    PERFORM _assert(w.overs_7d = 2 AND w.overs_28d = 2 AND w.acwr = 4.00 AND w.load_state = 'spike'
+                    AND w.units_7d = 6 + 13 + 24 AND w.estimated_7d AND NOT w.monitored,
+      format('db/60 (workload): the bowler''s row is %s', row(w.overs_7d, w.overs_28d, w.acwr, w.load_state, w.units_7d, w.estimated_7d, w.monitored)::text));
+
+    -- (7) The EWMA and its word, on a constructed series: load_summary()'s
+    -- closed form against the recursion the design describes, and its word
+    -- against workload()'s own thresholds, copied here from db/08.
+    PERFORM _v60_series(P_E, U_C);
+    PERFORM _as(U_C);
+    SELECT * INTO ew FROM _v60_ewma(P_E);
+    SELECT * INTO rec FROM load_summary(P_E);
+    v_ratio := round(ew.acute / ew.chronic, 2);
+    PERFORM _assert(rec.ewma_ratio = v_ratio AND rec.ewma_acute = round(ew.acute, 2) AND rec.ewma_chronic = round(ew.chronic, 2),
+      format('db/60 (ewma): the summary reads %s, the recursion %s', row(rec.ewma_acute, rec.ewma_chronic, rec.ewma_ratio)::text,
+             row(round(ew.acute, 2), round(ew.chronic, 2), v_ratio)::text));
+    v_word := CASE WHEN v_ratio > 1.5 THEN 'spike' WHEN v_ratio >= 1.2 THEN 'rising' WHEN v_ratio < 0.8 THEN 'light' ELSE 'steady' END;
+    PERFORM _assert(rec.load_word = v_word AND rec.units_7d = 144 AND rec.units_28d = 234 AND rec.estimated_28d AND rec.ratio_estimated,
+      format('db/60 (word): %s at ratio %s, workload()''s thresholds say %s', rec.load_word, v_ratio, v_word));
+    SELECT * INTO w FROM workload('U15A') x WHERE x.player_id = P_E;
+    PERFORM _assert(w.ewma_ratio = rec.ewma_ratio AND w.load_word = rec.load_word AND w.units_7d = rec.units_7d,
+      format('db/60 (word): the list says %s and the profile %s', row(w.ewma_ratio, w.load_word)::text, row(rec.ewma_ratio, rec.load_word)::text));
+    SELECT count(*) INTO n FROM generate_series(0, 300) g
+     WHERE load_ratio_word(g / 100.0) IS DISTINCT FROM
+           CASE WHEN g / 100.0 > 1.5 THEN 'spike' WHEN g / 100.0 >= 1.2 THEN 'rising'
+                WHEN g / 100.0 < 0.8 THEN 'light' ELSE 'steady' END;
+    PERFORM _assert(n = 0, format('db/60 (word): %s ratios between 0 and 3 read a different word from workload()''s', n));
+    SELECT count(*) INTO n FROM load_summary(P_E) x
+     WHERE x.load_word ~* '(risk|danger|injur|unsafe)' OR x.baseline_word ~* '(risk|danger|injur|unsafe)';
+    PERFORM _assert(n = 0, 'db/60 (word): a word names the body');
+    -- A baseline needs six weeks with load: this one has three in weeks 3-14.
+    PERFORM _assert(rec.baseline_week IS NULL AND rec.baseline_weeks_needed = 3,
+      format('db/60 (baseline): %s', row(rec.baseline_week, rec.baseline_weeks_needed)::text));
+
+    -- (8) Who reads and writes a load: a team-mate nothing, another side's
+    -- coach nothing, a parent nothing.
+    PERFORM _as(U_MATE);
+    SELECT (SELECT count(*) FROM load_entry) + (SELECT count(*) FROM load_summary(P_B))
+         + (SELECT count(*) FROM load_weeks(P_B)) + (SELECT count(*) FROM workload('U15A'))
+         + (SELECT count(*) FROM health_monitoring_consent) + (SELECT count(*) FROM my_health_consents()) INTO n;
+    PERFORM _assert(n = 0, format('db/60 (team-mate): a player on the same side read %s rows', n));
+    v_msg := NULL;
+    BEGIN
+      INSERT INTO load_entry (player_id, kind, training_session_id, band) VALUES (P_B, 'nets', TS, '12_24');
+    EXCEPTION WHEN insufficient_privilege THEN v_msg := 'refused';
+    END;
+    PERFORM _assert(v_msg = 'refused', 'db/60 (team-mate): a player recorded a team-mate''s load');
+    v_msg := NULL;
+    BEGIN
+      PERFORM 1 FROM load_day;
+    EXCEPTION WHEN insufficient_privilege THEN v_msg := 'refused';
+    END;
+    PERFORM _assert(v_msg = 'refused', 'db/60 (load_day): the application reads load_day around the per-boy check');
+    PERFORM _as(U_C2);
+    SELECT (SELECT count(*) FROM load_entry WHERE player_id = P_B) + (SELECT count(*) FROM load_summary(P_B)) INTO n;
+    PERFORM _assert(n = 0, format('db/60 (other side): the U16A coach read %s rows of a U15A boy''s load', n));
+    v_msg := NULL;
+    BEGIN
+      INSERT INTO load_entry (player_id, kind, training_session_id, band) VALUES (P_B, 'nets', TS, '12_24');
+    EXCEPTION WHEN insufficient_privilege THEN v_msg := 'refused';
+    END;
+    PERFORM _assert(v_msg = 'refused', 'db/60 (other side): the U16A coach recorded a U15A boy''s load');
+    PERFORM _as(U_MUM2);
+    SELECT (SELECT count(*) FROM load_entry) + (SELECT count(*) FROM load_summary(P_O)) INTO n;
+    PERFORM _assert(n = 0, 'db/60 (parent): a parent reads her son''s nets load by standing');
+    v_msg := NULL;
+    BEGIN
+      INSERT INTO load_entry (player_id, kind, on_date, band) VALUES (P_O, 'nets', sa_today(), '12_24');
+    EXCEPTION WHEN insufficient_privilege THEN v_msg := 'refused';
+    END;
+    PERFORM _assert(v_msg = 'refused', 'db/60 (parent): a parent recorded a nets band');
+    -- The boy records his own and nobody else's.
+    PERFORM _as(U_BOY);
+    v_msg := NULL;
+    BEGIN
+      INSERT INTO load_entry (player_id, kind, on_date, band) VALUES (P_O, 'nets', sa_today(), '12_24');
+    EXCEPTION WHEN insufficient_privilege THEN v_msg := 'refused';
+    END;
+    PERFORM _assert(v_msg = 'refused', 'db/60 (self): a boy recorded another boy''s load');
+    SELECT count(*) INTO n FROM load_summary(P_B);
+    PERFORM _assert(n = 1, 'db/60 (self): the boy cannot read his own load');
+
+    -- (9) The fitness coach reads a load chart and records a band; of an
+    -- injury he reads what it is, never the physio's notes.
+    PERFORM _as(U_FIT);
+    SELECT (SELECT count(*) FROM load_summary(P_B)) INTO n;
+    SELECT count(*) INTO k FROM load_weeks(P_B);
+    PERFORM _assert(n = 1 AND k = 26, format('db/60 (fitness): the chart is %s summary, %s weeks', n, k));
+    INSERT INTO load_entry (player_id, kind, on_date, band) VALUES (P_O, 'training', sa_today(), 'lt12') RETURNING recorded_as INTO v_msg;
+    PERFORM _assert(v_msg = 'staff', 'db/60 (fitness): the fitness coach''s band is not staff');
+    SELECT count(*) INTO n FROM injury_masked i WHERE i.player_id = P_B AND i.injury_type = 'Hamstring strain' AND i.notes IS NULL AND i.physio IS NULL;
+    PERFORM _assert(n = 1, 'db/60 (fitness): the fitness coach reads the physio''s notes, or not the injury''s nature');
+    PERFORM _as(U_PH);
+    SELECT count(*) INTO n FROM injury_masked i WHERE i.player_id = P_B AND i.notes IS NOT NULL;
+    PERFORM _assert(n = 1, 'db/60 (fitness): the physio does not read her own note (the test would prove nothing)');
+
+    -- (10) The consent at seventeen. The office records the link and its
+    -- terms through db/08's own functions, so the link ends where
+    -- guardian_link_establish() ends it today.
+    PERFORM _as(U_OFF);
+    SELECT ok, reason INTO v_ok, v_reason FROM guardian_link_establish(U_MUM, P_T, 'parent');
+    PERFORM _assert(v_ok, format('db/60 (link): the office could not link the mother (%s)', v_reason));
+    SELECT ok, reason INTO v_ok, v_reason FROM guardian_link_verify(U_MUM, P_T, 'popia-2026-01');
+    PERFORM _assert(v_ok, format('db/60 (link): the office could not verify the mother (%s)', v_reason));
+    -- Who may not answer: another child's parent, his coach, the boy himself at seventeen.
+    PERFORM _as(U_MUM2);
+    SELECT ok, reason INTO v_ok, v_reason FROM health_monitoring_consent_set(P_T, true, V);
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted', format('db/60 (consent): another boy''s parent answered (%s)', v_reason));
+    PERFORM _as(U_C);
+    SELECT ok, reason INTO v_ok, v_reason FROM health_monitoring_consent_set(P_T, true, V);
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted', format('db/60 (consent): his coach answered (%s)', v_reason));
+    PERFORM _as(U_TURN);
+    SELECT ok, reason INTO v_ok, v_reason FROM health_monitoring_consent_set(P_T, true, V);
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_yet_eighteen', format('db/60 (consent): the boy answered at seventeen (%s)', v_reason));
+    SELECT * INTO c FROM my_health_consents() x WHERE x.player_id = P_T;
+    PERFORM _assert(c.relation = 'self' AND c.state = 'not_answered' AND NOT c.can_say_yes AND NOT c.can_say_no AND NOT c.ask_at_18,
+      format('db/60 (consent): the boy''s own row at seventeen is %s', row(c.relation, c.state, c.can_say_yes, c.ask_at_18)::text));
+    -- The office from the admission form: a yes names the form.
+    PERFORM _as(U_OFF);
+    SELECT ok, reason INTO v_ok, v_reason FROM health_monitoring_consent_set(P_T, true, V, U_MUM);
+    PERFORM _assert(NOT v_ok AND v_reason = 'form_required', format('db/60 (consent): the office said yes with no form (%s)', v_reason));
+    SELECT ok, reason INTO v_ok, v_reason FROM health_monitoring_consent_set(P_T, true, V, U_MUM, 'Admission form 2026', sa_today());
+    PERFORM _assert(v_ok, format('db/60 (consent): the office could not record the form (%s)', v_reason));
+    PERFORM _assert(_v60_live(P_T), 'db/60 (consent): a parent''s yes for a boy of seventeen is not live');
+    PERFORM _as(U_MUM);
+    SELECT * INTO c FROM my_health_consents() x WHERE x.player_id = P_T;
+    PERFORM _assert(c.relation = 'guardian' AND c.state = 'given' AND c.from_form AND c.can_say_no AND c.can_say_yes,
+      format('db/60 (consent): the mother''s row is %s', row(c.relation, c.state, c.from_form)::text));
+    -- She withdraws: dead on the next statement. She says yes again: live.
+    SELECT ok, reason INTO v_ok, v_reason FROM health_monitoring_consent_set(P_T, false, V);
+    PERFORM _assert(v_ok AND NOT _v60_live(P_T), format('db/60 (withdrawn): %s, live %s', v_reason, _v60_live(P_T)));
+    SELECT ok, reason INTO v_ok, v_reason FROM health_monitoring_consent_set(P_T, true, V);
+    PERFORM _assert(v_ok AND _v60_live(P_T), format('db/60 (consent): the mother''s own yes (%s)', v_reason));
+    SELECT * INTO c FROM my_health_consents() x WHERE x.player_id = P_T;
+    PERFORM _assert(c.state = 'given' AND c.by_you AND NOT c.from_form AND c.retention_due IS NULL,
+      format('db/60 (consent): after her yes, %s', row(c.state, c.by_you, c.from_form, c.retention_due)::text));
+    SELECT count(*) INTO n FROM health_monitoring_consent WHERE player_id = P_T;
+    PERFORM _assert(n = 2, format('db/60 (records): the mother reads %s of her own records, expected 2', n));
+    -- The records have one door.
+    v_msg := NULL;
+    BEGIN
+      UPDATE health_monitoring_consent SET ended_on = NULL WHERE player_id = P_T;
+    EXCEPTION WHEN insufficient_privilege THEN v_msg := 'refused';
+    END;
+    PERFORM _assert(v_msg = 'refused', 'db/60 (records): the application edited a consent record');
+    PERFORM _as(U_C);
+    SELECT count(*) INTO n FROM health_monitoring_consent;
+    PERFORM _assert(n = 0, 'db/60 (records): a coach reads who agreed to health monitoring');
+    SELECT x.monitored INTO v_ok FROM workload('U15A') x WHERE x.player_id = P_T;
+    PERFORM _assert(v_ok, 'db/60 (workload): the coach''s list does not show the boy as monitored');
+    -- The nets band never waited on any of it (2), and does not now.
+
+    -- (11) A support session, as the office, reads no consent and records none.
+    PERFORM _as(U_PL);
+    SELECT s.ok, s.reason, s.id INTO v_ok, v_reason, S_ID
+      FROM support_access_begin(HIL, 'schooladmin', 'ticket 6060: the consent screen shows the wrong date') s;
+    PERFORM _assert(v_ok, format('db/60 (support): the session did not begin (%s)', v_reason));
+    SELECT (SELECT count(*) FROM health_monitoring_consent) + (SELECT count(*) FROM my_health_consents()) INTO n;
+    PERFORM _assert(n = 0, format('db/60 (support): a support session read %s consent rows', n));
+    SELECT ok, reason INTO v_ok, v_reason FROM health_monitoring_consent_set(P_T, false, V, U_MUM);
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_under_support', format('db/60 (support): a support session recorded a consent (%s)', v_reason));
+    PERFORM support_access_end(S_ID);
+    PERFORM _assert(_v60_live(P_T), 'db/60 (support): the refused support write changed the consent');
+
+    -- (12) The eighteenth birthday. His whole history moves back together, so
+    -- the mother's yes was given while he was a child and today is the day.
+    PERFORM _v60_turn_eighteen(P_T);
+    -- ┌─ TODAY'S RULE (before phase 0). Her link ends on his birthday — that is
+    -- │  what guardian_link_establish() writes today — and her consent counts
+    -- │  only through a live link, so it ends with her access: collection
+    -- │  pauses until he says yes. THIS ASSERTION FLIPS WHEN PHASE 0 LANDS:
+    -- │  guardian_link_establish() will then write an open link for an enrolled
+    -- │  pupil, the consent will be live here (as (13) shows with the link held
+    -- │  open by hand), and this line becomes `_v60_live(P_T)`, with her row in
+    -- │  my_health_consents() still present and his row's `live` true.
+    PERFORM _assert(NOT _v60_live(P_T), 'db/60 (18, today''s rule): a parent''s consent outlived her link on his birthday');
+    PERFORM _as(U_MUM);
+    SELECT count(*) INTO n FROM my_health_consents() x WHERE x.player_id = P_T;
+    PERFORM _assert(n = 0, 'db/60 (18, today''s rule): the mother still answers for him after her link ended');
+    -- └─ end of the assertions phase 0 flips.
+    -- Her yes after eighteen is refused, for the reason, whatever her link says.
+    SELECT ok, reason INTO v_ok, v_reason FROM health_monitoring_consent_set(P_T, true, V || '-b');
+    PERFORM _assert(NOT v_ok AND v_reason = 'adult_consents_for_himself', format('db/60 (18): her yes after eighteen: %s', v_reason));
+    PERFORM _as(U_OFF);
+    SELECT ok, reason INTO v_ok, v_reason FROM health_monitoring_consent_set(P_T, true, V || '-b', U_MUM, 'Admission form 2026', sa_today());
+    PERFORM _assert(NOT v_ok AND v_reason = 'adult_consents_for_himself', format('db/60 (18): the office''s yes for her after eighteen: %s', v_reason));
+    -- He is asked, once.
+    PERFORM _as(U_TURN);
+    SELECT * INTO c FROM my_health_consents() x WHERE x.player_id = P_T;
+    PERFORM _assert(c.relation = 'self' AND c.adult AND c.ask_at_18 AND c.state = 'lapsed' AND NOT c.live AND c.can_say_yes AND c.parent_said_yes,
+      format('db/60 (18): his own row is %s', row(c.relation, c.adult, c.ask_at_18, c.state, c.live)::text));
+
+    -- (13) With the link open past the birthday, as phase 0 will leave it for
+    -- an enrolled pupil: her pre-18 yes is live while he is at school, dead
+    -- when he is not in the school system (a club member, or left), live
+    -- again when he is back; her yes is still refused; and once he declines,
+    -- only his record counts.
+    PERFORM _v60_phase0_open_link(P_T);
+    PERFORM _assert(_v60_live(P_T), 'db/60 (18, phase 0): her yes is not live on his birthday while he is at school');
+    PERFORM _v60_leave(P_T);
+    PERFORM _assert(NOT _v60_live(P_T), 'db/60 (18, phase 0): her yes is live for an adult out of the school system');
+    PERFORM _v60_rejoin(P_T);
+    PERFORM _assert(_v60_live(P_T), 'db/60 (18, phase 0): her yes is not live again when he is back at school');
+    PERFORM _as(U_MUM);
+    SELECT ok, reason INTO v_ok, v_reason FROM health_monitoring_consent_set(P_T, true, V || '-b');
+    PERFORM _assert(NOT v_ok AND v_reason = 'adult_consents_for_himself', format('db/60 (18, phase 0): her yes with a live link: %s', v_reason));
+    PERFORM _as(U_TURN);
+    SELECT ok, reason INTO v_ok, v_reason FROM health_monitoring_consent_set(P_T, false, V);
+    PERFORM _assert(v_ok AND NOT _v60_live(P_T), format('db/60 (18): he declines — %s, live %s', v_reason, _v60_live(P_T)));
+    SELECT * INTO c FROM my_health_consents() x WHERE x.player_id = P_T;
+    PERFORM _assert(c.state = 'refused' AND c.given_by = 'self' AND NOT c.ask_at_18,
+      format('db/60 (18): after he declines, %s', row(c.state, c.given_by, c.ask_at_18)::text));
+    -- Her "no" is still hers to give while her link is live; it changes nothing now.
+    PERFORM _as(U_MUM);
+    SELECT ok, reason INTO v_ok, v_reason FROM health_monitoring_consent_set(P_T, false, V);
+    PERFORM _assert(v_ok AND NOT _v60_live(P_T), format('db/60 (18): her no after eighteen: %s', v_reason));
+    PERFORM _as(U_TURN);
+    SELECT ok, reason INTO v_ok, v_reason FROM health_monitoring_consent_set(P_T, true, V);
+    PERFORM _assert(v_ok AND _v60_live(P_T), format('db/60 (18): his own yes (%s)', v_reason));
+
+    -- (14) When the rows would fall due: never while live or at school;
+    -- twelve months after the later of the consent's end and his leaving.
+    PERFORM _assert(_v60_due(P_T) IS NULL, 'db/60 (retention): a live consent has a due date');
+    SELECT ok, reason INTO v_ok, v_reason FROM health_monitoring_consent_set(P_T, false, V);
+    PERFORM _assert(v_ok AND _v60_due(P_T) IS NULL, 'db/60 (retention): a boy still at school has a due date');
+    PERFORM _v60_leave(P_T);
+    PERFORM _assert(_v60_due(P_T) = (current_date + interval '12 months')::date,
+      format('db/60 (retention): due %s, expected twelve months from today', _v60_due(P_T)));
+    PERFORM _assert(_v60_due(P_B) IS NULL, 'db/60 (retention): a boy with no consent recorded has a due date');
   END;
 
   PERFORM set_config('app.user_id', '', true);

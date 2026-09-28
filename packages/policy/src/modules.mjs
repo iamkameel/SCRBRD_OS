@@ -173,6 +173,18 @@ export const FEATURES = {
     kind: "feature", label: "Opposition intelligence",
     reads: ["opposition_context", "opposition_squad"],
   },
+  // SCRBRD-110 §8: fast-bowler workload, individually — the nets band and
+  // the load figures (phase 1), later the check-ins and the profile. A
+  // FEATURE, off until the platform grants it per school: it collects
+  // something new about children, and nothing collects by default. Owns the
+  // two load reads; NOT `workload` (the age-band directive's screen, which
+  // every school has had since db/08) and NOT `consents` (a family's answer
+  // is theirs to see and to withdraw whatever the school has switched on).
+  // The write is refused in the database as well (load_entry's trigger).
+  workload_monitoring: {
+    kind: "feature", label: "Workload monitoring",
+    reads: ["load", "load_weeks"],
+  },
 };
 
 /**

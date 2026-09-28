@@ -259,6 +259,42 @@ export const TABLES = {
     anchors: { school: "school_id" },
     masked: {},
   },
+  // ── SCRBRD-110, phase 1 (db/60): the load record ─────────────────────
+  // Added after db/09 shipped, so the generator emits these two into db/60
+  // (TABLES_ADDED_SINCE_09 in generate-rls.mjs) and leaves db/09 as it was.
+  load_unit: {
+    // The unit vocabulary, platform-owned like `sport`: 'delivery' for
+    // cricket. Readable by anyone signed in (a screen says "deliveries"
+    // rather than "units"); written only by the platform. The design wrote
+    // the read as a boolean expression, but a capability slot takes a NAME
+    // (or an expression computing one), so the open read is the named
+    // exception instead, and the capability is the platform's.
+    read:  "platform.feature.manage",
+    write: "platform.feature.manage",
+    anchors: {},
+    visibleWhen: "app_user_id() IS NOT NULL",
+    masked: {},
+  },
+  load_entry: {
+    // One recording of one session's load for one boy: a nets or training
+    // BAND (never a count), or a paper-scored match's exact deliveries. Read
+    // at the load tier (coach, assistant, director of sport, physio, fitness,
+    // the boy himself); written by the coach and the physio for his side, the
+    // fitness coach, and the boy for himself. Anchored through the player, as
+    // injury is, so a team-scoped coach reaches his own side and stops, and a
+    // self-access assignment reaches one boy. NOT under the health consent:
+    // a nets count is ordinary processing, like attendance (the design's Q5).
+    // Never updated — REVOKEd in db/60 — a correction is a new row naming the
+    // one it replaces.
+    read:  "player.workload.read",
+    write: "player.workload.write",
+    anchors: {
+      school: "school_id",
+      team:   "(SELECT p.team_code FROM player p WHERE p.id = load_entry.player_id)",
+      person: "player_id",
+    },
+    masked: {},
+  },
   emergency_contact: {
     // Who to ring when something happens to a child. Read by the people around
     // him on the day, kept by his family and the office. Anchored through the

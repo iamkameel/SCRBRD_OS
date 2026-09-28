@@ -93,6 +93,16 @@ capabilities nothing else should — different data access, test one, passed. An
 passes a test is a role, and this ADR is the argument *for* it rather than
 against it.
 
+The worked case of a title that passed is `fitness`, the strength-and-conditioning
+coach (SCRBRD-110 §5, decided Q3 and Q13; `db/60`). He must write and read
+capacity tests, which `coach` cannot, and must not read the physio's clinical
+notes, which `medical` does: no existing role has that shape, and "`medical`
+minus a withdrawal" is not available, because `WITHDRAWN_SINCE_01` takes a
+capability from a role, not from one person. So it passed test one, and is a
+role: the load, the check-ins and the tests; an injury at the coach's tier
+(status and nature); never `medical.details.read` or `player.note.read`, which
+`separation.test.mjs` holds.
+
 It also does not say a title is unimportant because it is not a role. A
 specialism on a coach, a captaincy honour and a scoped assignment are all
 first-class records. The question this ADR settles is only which of the four

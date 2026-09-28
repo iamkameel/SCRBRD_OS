@@ -641,6 +641,50 @@ function asWorkload(r) {
                                      severity: r.clause_severity, body: r.clause_body } : null,
            live: true };
 }
+/**
+ * One bowler's load (SCRBRD-110, db/60's load_summary). Every figure and the
+ * word are the server's; the screen draws them and says "estimate" where
+ * `estimated*` is true.
+ */
+function asLoad(r) {
+  const n = (v) => (v == null ? null : Number(v));
+  return { playerId: r.player_id, sport: r.sport_code, onDate: r.on_date ? String(r.on_date).slice(0, 10) : null,
+           units7d: r.units_7d, units14d: r.units_14d, units28d: r.units_28d, units42d: r.units_42d,
+           matchUnits7d: r.match_units_7d, matchUnits28d: r.match_units_28d,
+           estimated7d: r.estimated_7d, estimated14d: r.estimated_14d, estimated28d: r.estimated_28d, estimated42d: r.estimated_42d,
+           unitsPrev7d: r.units_prev_7d, weekChangePct: n(r.week_change_pct),
+           ewmaRatio: n(r.ewma_ratio), loadWord: r.load_word, ratioEstimated: r.ratio_estimated,
+           uncoupledRatio: n(r.uncoupled_ratio),
+           daysSinceBowled: r.days_since_bowled, longestGap42d: r.longest_gap_42d, usualGap28d: n(r.usual_gap_28d),
+           baselineWeek: n(r.baseline_week), baselineWeeksNeeded: r.baseline_weeks_needed,
+           baselineDeviation: n(r.baseline_deviation), baselineWord: r.baseline_word,
+           possiblyDoubled7d: r.possibly_doubled_7d, monitored: r.monitored, live: true };
+}
+/** One ISO week of his load, for the chart. */
+function asLoadWeek(r) {
+  const n = (v) => (v == null ? null : Number(v));
+  return { weekStart: String(r.week_start).slice(0, 10), weekEnd: String(r.week_end).slice(0, 10),
+           units: r.units, matchUnits: r.match_units, enteredUnits: r.entered_units, estimated: r.estimated,
+           sessions: r.sessions, minutes: r.minutes, au: r.au, mean13w: n(r.mean_13w), mean26w: n(r.mean_26w), live: true };
+}
+/**
+ * One consent a family (or the athlete himself) answers for. The server says
+ * who gave it only as "you", "the office" (a form) or the other side, and
+ * never names a guardian.
+ */
+function asConsent(r) {
+  const d = (v) => (v ? String(v).slice(0, 10) : null);
+  return { kind: r.kind, playerId: r.player_id, name: r.full_name, relation: r.relation, adult: r.adult,
+           live: r.live, state: r.state, givenBy: r.given_by, byYou: r.by_you, fromForm: r.from_form,
+           givenOn: d(r.given_on), endedOn: d(r.ended_on), version: r.version,
+           canSayYes: r.can_say_yes, canSayNo: r.can_say_no, parentSaidYes: r.parent_said_yes,
+           askAt18: r.ask_at_18, retentionDue: d(r.retention_due),
+           // Whether workload_monitoring is on for THIS CHILD'S school
+           // (SCRBRD-110 §9.1, Decided 2). Screens hide the toggle, the
+           // one-time card and the eighteen card when this is false;
+           // `!== false` below treats an older/missing value as on, never off.
+           moduleOn: r.module_on };
+}
 function asSpell(r) {
   return { matchId: r.match_id, innings: r.innings, bowlerId: r.bowler_id, name: r.full_name,
            spellNo: r.spell_no, firstOver: r.first_over, lastOver: r.last_over, overs: r.overs,
@@ -1044,6 +1088,9 @@ const ADAPT = {
   honours: asHonour,
   milestones: asMilestone,
   workload: asWorkload,
+  load: asLoad,
+  load_weeks: asLoadWeek,
+  consents: asConsent,
   bowling_spells: asSpell,
   bowling_breaches: asBreach,
   bowling_directives: asDirective,

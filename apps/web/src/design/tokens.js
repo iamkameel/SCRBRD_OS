@@ -127,6 +127,14 @@ const FLOODLIT = {
   semantic: {
     positive:     "#3ddc84",  // 8.06:1
     warning:      "#f9b233",  // 7.84:1
+    // warning reads on its own (7.84:1), but a Badge (ui/primitives.jsx,
+    // scorer/ui.jsx) draws its TEXT in the fill's own colour on a ~12%-opacity
+    // TINT of that same fill — "figure on a tint of itself", the same pattern
+    // critical and fielding are already paired against. Under lights that
+    // tint is still dark enough that warning itself reads on it (7.14:1,
+    // SCRBRD-102); identical here on purpose, so nothing about this theme's
+    // amber changes.
+    warningText:  "#f9b233",
     critical:     "#f4374f",  // 3.77:1 — FILL ONLY
     criticalText: "#ff9aa6",  // 7.14:1 — the readable half of critical
     info:         "#4fc3f7",  // 7.18:1
@@ -294,6 +302,14 @@ const DAYLIGHT = {
   semantic: {
     positive:     "#1e6b3a",  //  5.20:1
     warning:      "#8a5a00",  //  4.72:1
+    // The same "figure on a tint of itself" Badge as Floodlit's, above — but
+    // in daylight the tint sits on the LIGHT surfaces, which the same ink
+    // that reads at 4.72:1 on the raw surface reads at only 4.06:1 on (an
+    // economy Badge, scorer/charts.jsx, SCRBRD-102's daylight-only find):
+    // below AA. One step darker than warning clears both — 5.74:1 on the
+    // surfaces, 4.92:1 on the Badge's own tint — and is still recognisably
+    // the same amber, a shade off warning rather than a different hue.
+    warningText:  "#7a4e00",  //  5.74:1 · 4.92:1 on the Badge's own tint
     critical:     "#b3122a",  //  5.51:1 — reads AND fills in daylight
     criticalText: "#b3122a",
     info:         "#0a6897",  //  4.87:1
@@ -668,6 +684,7 @@ const textOn = (accent) => {
   const pair = {
     [T.brand.blue]:        T.brand.blueText,
     [T.semantic.critical]: T.semantic.criticalText,
+    [T.semantic.warning]:  T.semantic.warningText,
     [T.sport.fielding]:    T.sport.fieldingText,
     [T.brand.lime]:        T.brand.accentText,
   }[accent];

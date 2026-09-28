@@ -622,6 +622,8 @@ migration that `CREATE OR REPLACE`s two functions.
 
 ### 6.4 For the information officer
 
+**Signed off (2026-09-28).** Kameel, as information officer, confirmed in writing (a reply to the POPIA sign-off brief, https://claude.ai/code/artifact/4e924a72-6306-4666-8897-5065f9f3201a): PUBLIC_DATA.md and the position under C below. The link change it depends on (SCRBRD-110 §7.4) is confirmed with it.
+
 The position under C, in POPIA's terms: while he is a child, the ground for
 publishing his name is the prior consent of a competent person (s 35(1)(a)). From
 his eighteenth birthday he is the data subject in his own right; the platform

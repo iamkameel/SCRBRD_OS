@@ -72,6 +72,7 @@ import { requestRoutes } from "./write/requests-api.mjs";
 import { newsRoutes } from "./write/news-api.mjs";
 import { kitRoutes } from "./write/kit-api.mjs";
 import { workloadRoutes } from "./write/workload-api.mjs";
+import { loadRoutes } from "./write/load-api.mjs";
 import { rosterAddRoutes } from "./write/roster-add-api.mjs";
 import { trainingRoutes } from "./write/training-api.mjs";
 import { officialRegisterRoutes } from "./write/officials-register-api.mjs";
@@ -401,6 +402,7 @@ const requests = requestRoutes({ pool, secret: SECRET });
 const news = newsRoutes({ pool, secret: SECRET });
 const kit = kitRoutes({ pool, secret: SECRET });
 const workload = workloadRoutes({ pool, secret: SECRET });
+const load = loadRoutes({ pool, secret: SECRET });
 const rosterAdd = rosterAddRoutes({ pool, secret: SECRET });
 const training = trainingRoutes({ pool, secret: SECRET });
 const publication = publicationRoutes({ pool, secret: SECRET });
@@ -632,6 +634,20 @@ const PLAYER_ROUTES = [
   // A high school's own ceiling on an Open-band bowler's overs. Refused
   // outright for anything that is not kind = 'school' — see the trigger.
   [/^\/api\/bowling-ceiling$/,                       "POST", workload.ceiling],
+  // A nets or training session's load, as a band (SCRBRD-110 phase 1): the
+  // coach for his group, the boy for himself. load_entry's policy and stamp
+  // decide everything; the module gate is here and in the stamp.
+  [/^\/api\/load-entry$/,                           "POST", load.entry, "workload_monitoring"],
+  // Health monitoring's own consent, for one child: his guardian, the office
+  // from its forms, or he himself from eighteen. NOT module-gated, as the
+  // scouting consent below is not: a withdrawal a school could switch off by
+  // hiding a module is not a withdrawal. Where the module is off, the
+  // screens (the toggle, the one-time prompt, the eighteen card) simply do
+  // not draw — the `consents` read's `module_on` (SCRBRD-110 §9.1, Decided
+  // 2), not this route — so no family is asked to answer through the UI;
+  // this route still answers a direct POST, and its record counts again the
+  // day the school switches the module on.
+  [/^\/api\/players\/([^/]+)\/consents\/health$/,    "POST", load.healthConsent],
   // A boy joins the roster one at a time, under the same authority as the
   // bulk CSV import (player.profile.manage).
   [/^\/api\/players$/,                               "POST", rosterAdd.add],

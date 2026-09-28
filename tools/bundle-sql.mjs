@@ -181,9 +181,13 @@ const verify = readFileSync(join(DB, "99_rls_verify.sql"), "utf8")
 -- Every column below should read OK. Anything else is a real problem:
 -- send this table back rather than trying to interpret it.
 SELECT
+  -- Every key but safeguarding.*, which only the DSO holds (db/57).
   CASE WHEN (SELECT count(*) FROM role_capability WHERE role = 'superadmin')
-          = (SELECT count(*) FROM capability)
-       THEN 'OK — ' || (SELECT count(*) FROM capability) || ' capabilities'
+          = (SELECT count(*) FROM capability WHERE name NOT LIKE 'safeguarding.%')
+        AND NOT EXISTS (SELECT 1 FROM role_capability
+                         WHERE role = 'superadmin' AND capability LIKE 'safeguarding.%')
+       THEN 'OK — ' || (SELECT count(*) FROM capability WHERE name NOT LIKE 'safeguarding.%')
+            || ' capabilities; safeguarding is the DSO''s'
        ELSE 'PROBLEM' END                                       AS "Super Admin holds every key",
   -- A LIVE owner's key: a platform-wide superadmin assignment on an active
   -- account. On the demonstration database that is the seeded fixture owner;

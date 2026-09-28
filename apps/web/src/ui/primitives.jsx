@@ -75,20 +75,31 @@ const Btn = ({ children, onClick, variant="primary", size="md", disabled, ...res
 // above — without it, a data-testid passed to a Badge is silently dropped,
 // which is what let review-reason (InningsReviewSheet) go unfindable until
 // SCRBRD-052's browser walk was the first thing to actually look for it.
+//
+// §3.2's floor: nothing read below 12px. This was 9px — noise, not a tag —
+// with padding sized for it; both move together onto the floor, matching the
+// pill scorer/ui.jsx's own Badge already draws at 12px.
 const Badge = ({ children, color=D.indigo, ...rest }) => (
   <span {...rest} style={{
-    padding:"2px 8px",borderRadius:D.pill,fontFamily:D.mono,fontSize:"9px",fontWeight:500,
+    padding:"3px 8px",borderRadius:D.pill,fontFamily:D.mono,fontSize:"12px",fontWeight:500,
     background:color+"18",border:`1px solid ${color}30`,color:textOn(color),letterSpacing:"0.05em",textTransform:"uppercase",
   }}>{children}</span>
 );
 
-const Avatar = ({ name, size=32, color=D.indigo }) => (
-  <div style={{width:px(size),height:px(size),borderRadius:"50%",background:`linear-gradient(135deg,${color}33,${color}55)`,
-    border:`1px solid ${color}44`,display:"flex",alignItems:"center",justifyContent:"center",
-    fontFamily:D.mono,fontSize:px(Math.round(size*0.35)),fontWeight:700,color:textOn(color),flexShrink:0}}>
-    {initials(name)}
-  </div>
-);
+// §3.2's floor again: initials below ~34px would clip 12px — the circle
+// grows to fit the floor rather than the type shrinking under it, so a
+// caller's own `size` (down to 18, on the smallest inline chips) still reads.
+// Above 34 nothing changes: the proportion is the one this always drew.
+const Avatar = ({ name, size=32, color=D.indigo }) => {
+  const d = Math.max(size, 34);
+  return (
+    <div style={{width:px(d),height:px(d),borderRadius:"50%",background:`linear-gradient(135deg,${color}33,${color}55)`,
+      border:`1px solid ${color}44`,display:"flex",alignItems:"center",justifyContent:"center",
+      fontFamily:D.mono,fontSize:px(Math.round(d*0.35)),fontWeight:700,color:textOn(color),flexShrink:0}}>
+      {initials(name)}
+    </div>
+  );
+};
 
 const StatusDot = ({ status }) => {
   const c = status==="live"?D.emerald:status==="upcoming"?D.sky:status==="complete"?D.textMuted:D.amber;

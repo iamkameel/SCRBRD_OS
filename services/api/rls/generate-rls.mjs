@@ -30,6 +30,11 @@
  *                                        with the school/team anchor read
  *                                        through match_school()/match_team()
  *                                        (REANCHORED_IN_39)
+ *   8. the tables tables.mjs gained after db/09 shipped
+ *                                        (TABLES_ADDED_SINCE_09): their
+ *                                        policies, spliced between two marker
+ *                                        lines into the hand-written db/NN that
+ *                                        creates the table — db/60 first
  *
  * The decision is a SECURITY DEFINER lookup over role_assignment rather than
  * anything carried in the session. That is a deliberate choice (ADR 0001):
@@ -435,6 +440,8 @@ export const ROLES_ADDED_SINCE_01 = {
   sponsorship: "27_sponsorship_role.sql",
   // The Designated Safeguarding Officer (SAFEGUARDING_DSO §2, phase 1).
   dso: "57_safeguarding_dso.sql",
+  // The strength-and-conditioning coach (SCRBRD-110 §5, §6.1; phase 1).
+  fitness: "60_workload_consent_count.sql",
 };
 const roleIn01 = (/** @type {string} */ role) => !(role in ROLES_ADDED_SINCE_01);
 
@@ -465,6 +472,11 @@ export const ADDED_SINCE_01 = {
   "safeguarding.concern.manage": "57_safeguarding_dso.sql",
   "safeguarding.suspend":        "57_safeguarding_dso.sql",
   "safeguarding.authorise":      "57_safeguarding_dso.sql",
+  // SCRBRD-110 phase 1: the nets band, and the two capabilities the `fitness`
+  // role needs to be whole when it is appointed (§6.1).
+  "player.workload.write":       "60_workload_consent_count.sql",
+  "wellness.read":               "60_workload_consent_count.sql",
+  "fitness.test.write":          "60_workload_consent_count.sql",
 };
 const shippedIn01 = (/** @type {string} */ cap) => !(cap in ADDED_SINCE_01);
 
@@ -733,9 +745,59 @@ CREATE POLICY ${table}_update ON ${table}
   FOR UPDATE USING (${callCan(table, def, def.write)})
            WITH CHECK (${callCan(table, def, def.write)});`;
 
+/**
+ * Tables tables.mjs gained AFTER db/09 shipped, and the hand-written db/NN
+ * that creates each one.
+ *
+ * db/09 emits every table in TABLES, and db/09 is frozen — so a new table
+ * declared there would rewrite a shipped file. Each name here is LEFT OUT of
+ * db/09 entirely, and its policies (the same tablePolicy() db/09 would have
+ * emitted) are generated into the named file instead: between the two marker
+ * lines below, which `pnpm rls:generate` rewrites and nothing else touches.
+ * The file creates the table above the markers and may add hand-written
+ * policies (a RESTRICTIVE cut, a REVOKE) below them. rls.test.mjs holds both
+ * halves: db/09 does not name the table, and the file's generated block is
+ * exactly what this emits. Never retires, and once the file has shipped the
+ * block is as frozen as db/09 — a change to the table's entry is a new file.
+ * @type {Readonly<Record<string, string>>}
+ */
+export const TABLES_ADDED_SINCE_09 = Object.freeze({
+  load_unit:  "60_workload_consent_count.sql",
+  load_entry: "60_workload_consent_count.sql",
+});
+const tableIn09 = (/** @type {string} */ t) => !(t in TABLES_ADDED_SINCE_09);
+
+export const GENERATED_BEGIN = "-- ┌── GENERATED from packages/policy/src/tables.mjs by services/api/rls/generate-rls.mjs (TABLES_ADDED_SINCE_09). DO NOT EDIT BY HAND; `pnpm rls:generate` rewrites it.";
+export const GENERATED_END = "-- └── END GENERATED";
+
+/**
+ * The generated block for one hand-written file: every TABLES_ADDED_SINCE_09
+ * table it creates, in tables.mjs order, with the markers.
+ * @param {string} file
+ */
+export function tablesAddedIn(file) {
+  const tables = Object.keys(TABLES).filter((t) => TABLES_ADDED_SINCE_09[t] === file);
+  return [GENERATED_BEGIN, ...tables.map((t) => tablePolicy(t, TABLES[t])), "", GENERATED_END].join("\n");
+}
+
+/**
+ * Splice a file's generated block in place of whatever sits between its
+ * markers. Throws on a file with no markers, or two sets: a block that cannot
+ * be found cannot be kept in step.
+ * @param {string} text
+ * @param {string} file
+ */
+export function spliceTablesAdded(text, file) {
+  const a = text.indexOf(GENERATED_BEGIN), b = text.indexOf(GENERATED_END);
+  if (a === -1 || b === -1 || b < a || text.indexOf(GENERATED_BEGIN, a + 1) !== -1)
+    throw new Error(`db/${file}: the generated block's markers are missing or repeated`);
+  return text.slice(0, a) + tablesAddedIn(file) + text.slice(b + GENERATED_END.length);
+}
+
 function tablePolicies() {
   const out = [banner("Per-table row-level security")];
   for (const [table, def] of Object.entries(TABLES)) {
+    if (!tableIn09(table)) continue;
     out.push(tablePolicy(table, asShippedIn09(table, def)));
     // No DELETE policy anywhere: records about minors are deactivated, never
     // removed, so that an audit trail survives.
@@ -777,6 +839,7 @@ export function maskPairs(table, def) {
 function maskViews() {
   const out = [banner("Column-masking views")];
   for (const [table, current] of Object.entries(TABLES)) {
+    if (!tableIn09(table)) continue;
     const def = asShippedIn09(table, current);
     const masked = def.masked ?? {};
     const maskedAnyTeam = def.maskedAnyTeam ?? {};
@@ -1249,5 +1312,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   writeFileSync("db/23_authz_time_box.sql", timeBox());
   writeFileSync("db/35_authz_suspension.sql", suspension());
   writeFileSync(`db/${REANCHOR_FILE}`, matchAnchors());
-  console.log(`wrote db/01_authz.sql, db/09_rls_policies.sql, db/23_authz_time_box.sql, db/35_authz_suspension.sql and db/${REANCHOR_FILE}`);
+  const { readFileSync } = await import("node:fs");
+  const later = [...new Set(Object.values(TABLES_ADDED_SINCE_09))];
+  for (const file of later) writeFileSync(`db/${file}`, spliceTablesAdded(readFileSync(`db/${file}`, "utf8"), file));
+  console.log(`wrote db/01_authz.sql, db/09_rls_policies.sql, db/23_authz_time_box.sql, db/35_authz_suspension.sql and db/${REANCHOR_FILE}`
+    + (later.length ? `, and the generated block in ${later.map((f) => `db/${f}`).join(", ")}` : ""));
 }

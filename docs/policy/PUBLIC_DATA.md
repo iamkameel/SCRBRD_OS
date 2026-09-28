@@ -12,6 +12,8 @@ scorers, coaches named on a fixture) are outside this rule.
 rule against POPIA. The Act treats a child's personal information as special, and the
 ground for publishing it on these pages is the prior consent of a competent person.
 
+**Signed off (2026-09-28).** Kameel, as information officer, confirmed in writing (a reply to the POPIA sign-off brief, https://claude.ai/code/artifact/4e924a72-6306-4666-8897-5065f9f3201a): this rule, and public pages may be switched on (`PUBLIC_PAGES=on` with `PUBLIC_PSEUDONYM_SECRET` set; DEPLOYING.md). He also confirmed the link past 18 (SCRBRD-083 §6.4, SCRBRD-110 §7.4).
+
 ---
 
 ## 1. The rule

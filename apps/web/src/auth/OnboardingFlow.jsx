@@ -333,6 +333,20 @@ function OnboardingFlow({ onComplete }) {
               </div>
               <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.content.tertiary,marginBottom:"8px"}}>Child’s Name</div>
               <input value={data.playerLink} onChange={e=>set("playerLink",e.target.value)} placeholder="e.g. James Whitfield" style={INP}/>
+              {/* SCRBRD-092's "one sign-up flow, separate consents", for
+                  health monitoring (SCRBRD-110 §7). A consent is given through
+                  a VERIFIED link to the child, and at this step there is no
+                  link yet — so the row says where the switch is and that it is
+                  off, and takes no answer. Nothing here is recorded. */}
+              <div data-testid="signup-health-consent" role="note"
+                   style={{marginTop:"16px",padding:"12px 14px",borderRadius:T.radius.md,border:`1px solid ${T.line.normal}`,background:T.surface.base}}>
+                <div style={{fontFamily:T.type.body,fontSize:"15px",fontWeight:600,color:T.content.primary}}>Health monitoring — separate, and off</div>
+                <div style={{fontFamily:T.type.body,fontSize:"13px",lineHeight:1.5,color:T.content.secondary,marginTop:"4px"}}>
+                  It is not part of signing up. Once the school has checked that you are your child’s parent, you can
+                  turn it on — or leave it off — under Settings, Me. It covers check-ins about how your child’s body feels and
+                  fitness tests, never without your yes.
+                </div>
+              </div>
             </div>
           )}
 

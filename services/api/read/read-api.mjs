@@ -1274,6 +1274,51 @@ export const READ_QUERIES = {
   },
 
   /*
+   * ONE BOWLER'S LOAD (SCRBRD-110 §2, db/60): the 7/14/28/42-day windows with
+   * their "estimate" marks and the exact match share, the EWMA ratio and its
+   * word, the uncoupled 7:21, the gaps, his own baseline, and whether his
+   * health consent is live. One row, or none for a boy the reader may not read
+   * the load of — load_summary() asks player.workload.read per boy, as
+   * workload() does. Level 2, not logged (§2.3). Owned by the
+   * workload_monitoring feature.
+   */
+  load: {
+    text: `select * from load_summary($1::uuid, coalesce($2::text, 'cricket'))`,
+    params: q => [req(q, "playerId"), q?.sport || null],
+  },
+
+  /* His weekly totals for the chart, oldest first, with the 13- and 26-week means. */
+  load_weeks: {
+    text: `select * from load_weeks($1::uuid, $2::int, coalesce($3::text, 'cricket'))`,
+    params: q => [req(q, "playerId"), q?.weeks ? Number.parseInt(q.weeks, 10) || 26 : 26, q?.sport || null],
+  },
+
+  /*
+   * THE FAMILY'S CONSENTS (SCRBRD-110 §7; STEP 4 §4.3). Health monitoring, per
+   * child the caller answers for — her children as a guardian, himself through
+   * his own account — as words and dates, naming nobody. my_health_consents()
+   * finds the caller's own live links; it takes no id, so it cannot be asked
+   * about somebody else's child. Not module-gated: a family's answer is
+   * theirs to see and to withdraw whatever a school has switched on, and a
+   * record already given stays and counts again if the school switches the
+   * module back on (§9.1, Decided 2).
+   *
+   * `module_on` is the one addition (§9.1, Decided 2): whether
+   * workload_monitoring is on for THAT CHILD'S school, read with the two
+   * PUBLIC-granted functions the schema already has for exactly this shape —
+   * player_school() (a caller may know a child's school without being able to
+   * read the child) and feature_enabled(). It decides nothing here; the
+   * screens use it to hide the toggle, the one-time card and the eighteen
+   * card where the module is off, so no family is asked about something that
+   * is not in use. No new capability, no new function, no new endpoint.
+   */
+  consents: {
+    text: `select 'health' as kind, c.*,
+                  feature_enabled('workload_monitoring', player_school(c.player_id), null) as module_on
+             from my_health_consents() c`,
+  },
+
+  /*
    * ONE MATCH'S SPELLS, per bowler, from the log, with the directive that
    * applied to each boy beside it. The scorer's screen and the coach's both
    * read this; neither computes a spell of its own.

@@ -12,7 +12,7 @@
  *
  *   node packages/policy/test/modules.test.mjs
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { MODULES, FEATURES, SPORTS, SWITCHABLE, OWNER_OF_READ, MODULE_OF_NAV, sportFlagKey } from "../src/modules.mjs";
 import { ALL_CAPABILITIES } from "../src/capabilities.mjs";
 
@@ -20,7 +20,15 @@ let pass = 0, fail = 0;
 const ok = (/** @type {string} */ n, /** @type {unknown} */ c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
 const group = (/** @type {string} */ t) => console.log("\n" + t);
 
-const SCHEMA = readFileSync(new URL("../../../db/08_schema_programme.sql", import.meta.url), "utf8");
+// db/08 seeds the switches it shipped with; a later migration that adds one
+// (db/60's workload_monitoring) seeds it in its own file, the same row shape.
+// Every db/NN from 08 on is read, never the seed or the verifier.
+const DB_DIR = new URL("../../../db/", import.meta.url);
+const SCHEMA = readdirSync(DB_DIR)
+  .filter((f) => /^\d\d_.*\.sql$/.test(f) && Number(f.slice(0, 2)) >= 8 && !/^9[89]_/.test(f))
+  .sort()
+  .map((f) => readFileSync(new URL(f, DB_DIR), "utf8"))
+  .join("\n");
 // The sport catalogue lives in db/00, because `match` references it and that
 // file runs first. Read separately so the two-way drift check below can see
 // both halves: a sport with no switch, and a switch with no sport.
@@ -35,7 +43,7 @@ for (const key of Object.keys(SWITCHABLE)) {
   // Without this, an administrator's screen shows a module, they turn it off,
   // and nothing happens: feature_enabled() answers false for an unknown key,
   // so the module was never on and never will be.
-  ok(`${key} is seeded in db/08`, seeded.has(key));
+  ok(`${key} is seeded in db/08 or a later migration`, seeded.has(key));
 }
 
 group("B. Every seeded row has a declaration");

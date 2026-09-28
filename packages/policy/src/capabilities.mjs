@@ -86,6 +86,20 @@ export const CAPABILITIES = {
   // self-access; the physio holds it because this is injury prevention.
   "player.workload.read":        "See a player's bowling and training load",
   "player.workload.manage":      "Set the school's own ceiling on an Open-band bowler's overs",
+  // SCRBRD-110 phase 1 (db/60). Recording a nets or training session's load
+  // for a boy: a BAND of deliveries (under 12 / 12-24 / 24-36 / 36+), an
+  // effort and minutes — or, for a game scored on paper elsewhere, the
+  // scorebook's count. Ordinary processing under the guardian-link consent,
+  // like attendance (the design's Q5), and not a statement about his body.
+  // The coach and the physio for his side; the boy for himself.
+  "player.workload.write":       "Record a player's nets, training or unscored-match load",
+  // SCRBRD-110 §6.1. A child's own words about his body — the daily check-in
+  // and the "something doesn't feel right" flag — and a capacity test. POPIA
+  // special personal information, under the separate health consent (§7).
+  // Created with the `fitness` role in phase 1 so the role is whole when it is
+  // appointed; the tables it gates are phase 2 and phase 4.
+  "wellness.read":               "Read a player's check-ins, flags and capacity tests",
+  "fitness.test.write":          "Record a capacity test: a measurement of a player's strength or movement",
   // Awarding colours and honours, and keeping the caps ledger's starting
   // point. A school decision, not a coach's: honours are read by everyone
   // who reads the roster, and written by the people who sign the board.
@@ -442,6 +456,11 @@ export const LEVEL = Object.freeze({
   "player.workload.read": 2,
   // A school-wide ceiling, not a child's own data — the policy knob, not the load.
   "player.workload.manage": 1,
+  // A band, an effort and minutes — the same level as the load it adds to.
+  "player.workload.write": 2,
+  // His own words about his body, and a measurement of it: health
+  // information, candid, below the diagnosis tier only.
+  "wellness.read": 3, "fitness.test.write": 3,
   "recognition.manage": 0,
   "clearance.read": 2, "clearance.manage": 2,
   // Match figures: a scorecard, meant to be public.

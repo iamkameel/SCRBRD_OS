@@ -106,6 +106,8 @@ const WALKS = [
   "contacts",
   "clearance",
   "workload",
+  // SCRBRD-110 phase 1 (db/60): the nets band and the health consent, over HTTP.
+  "load",
   "recognition",
   "season",
   "requests",
@@ -216,7 +218,10 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // reference; the DSO finds it in her inbox; a coach sees nothing of it.
   "browser-safeguarding",
   // The public pages, phase 1 (db/59): signed out, names by the rule, noindex.
-  "browser-public"];
+  "browser-public",
+  // SCRBRD-110 phase 1 (db/60): the health-monitoring consent on Settings → Me,
+  // the eighteen card, and the sign-up row — both themes, 12px and 44px.
+  "browser-consent"];
 
 // Walks that need no database, run by `pnpm smoke` instead. Named here only so
 // the completeness check below knows they are accounted for.
