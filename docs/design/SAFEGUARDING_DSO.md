@@ -1,6 +1,7 @@
 # Safeguarding — the Designated Safeguarding Officer and the concern record: the design
 
-Status: **design, for Kameel's review** (2026-09-27). Nothing here is built. It follows
+Status: **design, decided** (2026-09-27, §10). **Built so far:** K3 (db/55), K4 and SG-7 (db/56), and phase 1, the
+role and the record (db/57, 2026-09-28; §9.1 says where the build departs from the letter). It follows
 `docs/policy/CSA_SAFEGUARDING_CHECK.md` (the check), whose §5 questions are all decided
 as recommended, and it designs what those decisions need: the DSO role, raising a
 concern, the concern record, suspension, the six conflicts' fixes and the smaller
@@ -819,6 +820,49 @@ honesty line, the receipt, the inbox clocks). `smoke-support.mjs` and
 **Go-live:** the pilot school's principal has appointed a DSO; the union tenant for the
 pilot's province exists (a `union` row with `province`) even if its DSO is not yet
 enrolled; The Guardian's app URL is set; the information officer has the §9.7 note.
+
+**Built 2026-09-28 (Opus): `db/57_safeguarding_dso.sql`** (backlog SCRBRD-119), with SCRBRD-117's fitness mask
+beside it in `db/58_player_fitness_masked.sql`. Everything this phase lists is in db/57: the role and
+its four capabilities (`ROLES_ADDED_SINCE_01`, `ADDED_SINCE_01`), `role_grantable` for the principal, the platform and
+the owner's key, the four tables, `school_union()`, `safeguarding_authority()`, `safeguarding_route()`, `_concern_raise()`,
+`_inbox()`, `_concern_open()`, `_family()`, `_share()`, `_share_open()`, `_close()`, `my_concern_receipts()`,
+`dso_contacts()`, the layers on every table, the `access_log` policy, `notification.recipient_id` and its policy
+(SCRBRD-110 had not added it), SG-9's pupil rule, `support_access_begin()` refusing any role that carries
+`safeguarding.*`, `dso_appointment_guard()`, the tenant trigger and the six `clearance_requirement` rows for `dso`. The
+owner's key is `ALL_CAPABILITIES` without `safeguarding.*`. The routes are `/api/safeguarding/*`
+(`services/api/write/safeguarding-api.mjs`), and The Guardian's link is `GUARDIAN_APP_URL` on the API (https only). The
+screen is **Safeguarding**, one destination for everybody in the "You" group. It has the DSO card, the form, the
+receipt and the reporter's references, plus the inbox and a concern's page for a DSO. Proof: `db/99` section 35,
+`separation.test.mjs` group SG, `rls.test.mjs` B2/B3/D2, `smoke-safeguarding` (76) and `smoke-browser-safeguarding`
+(38). Every separation class was falsified once, and the file header of section 35 lists how.
+
+**Where the build departs from this section, and why:**
+- **The read policy passes NULL for team and fixture, not ANY.** §4.2 wrote `app_can(…, tenant_id, '*', nil, nil)`.
+  With the nil UUID as the fixture, a fixture-scoped tour DSO (§2.1) would pass and read every concern at the school,
+  the opposite of "a tour DSO reads nothing else". NULL narrows, so only an institution-wide DSO reads. A tour DSO
+  reads nothing until phase 5 gives trips their own routing. The `dso` trigger also refuses a team-scoped DSO.
+- **A fourth RESTRICTIVE cut: the adult a concern names.** Routing sends a concern about a DSO upward, but with
+  nobody above it is held at the school. Principle 2 says the person it is about never reads it. So every table
+  also refuses the named adult, and so does every function. The `access_log` policy hides a row about a concern
+  that names the reader. The raise notice goes to each other DSO by `recipient_id` instead of the whole tenant. Such
+  a concern is also marked `unheld`, so the reporter is told to use The Guardian's app as well.
+- **The office may not end a DSO's appointment.** db/01's revoke policy admits `user.role.assign` at the school for
+  any role, so the guard as designed stopped only the principal, who could have asked the office. The guard also
+  requires `app_may_grant('dso')` (the principal, or the platform's recovery path), or the DSO above.
+- **Ending is any change that stops the assignment granting,** not only `active`. That covers `valid_from`,
+  `valid_until`, `expires_at`, `fixture_id` and `season`.
+- **Added doors:** `my_safeguarding_shares()` (a share's person must be able to find it),
+  `safeguarding_share_revoke()` ("closes on revocation"), `safeguarding_note()` and `_assign()` (§8's "notes" and
+  "assign"), and `safeguarding_dso_end()` (§2.3's "the PDSO may end it"; phase 5 replaces it with the notice period).
+- **`dso_contacts()` answers for the caller's own institutions,** not any school id somebody types.
+- **The notice is not pushed.** `fanOut()` pushes only what its caller may publish, and no system-written notice in
+  the product is pushed yet. The raise does not hand the reporter the notice ids to push with. The DSO sees it in
+  the app. A system fan-out is follow-up work.
+- **The 24- and 72-hour clocks stop** when the concern closes or a DSO records `ndso_informed`.
+- **A share to a pupil is refused** (`recipient_is_pupil`). SG-9 keeps a private notice to a pupil for the system
+  alone, and a share's notice is a DSO's.
+- **`safeguarding.suspend` gates nothing yet.** The capability ships with the role as this section lists, and
+  `sensitivity.test.mjs` records it as not yet implemented until phase 2.
 
 ### 9.2 Phase 2 — Suspension and the DSO register (P1)
 

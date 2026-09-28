@@ -267,6 +267,7 @@ In Secret Manager, on the project:
 | `WEB_ORIGIN` | `https://scrbrd-os.web.app` (or the custom domain) |
 | `ANTHROPIC_API_KEY` | optional; without it Stats-Magic and commentary answer null |
 | `OWNER_RECOVERY_SECRET` | optional; unset means /api/auth/owner/recover is a 501. Separate from SESSION_SECRET — see §3b |
+| `GUARDIAN_APP_URL` | The Guardian's app, CSA's anonymous-reporting partner, linked from Safeguarding (db/57). https only; unset, the screen says the link has not been set. Not a secret, but set here with the rest |
 
 ### 5 · Cloud Run, the first time
 
