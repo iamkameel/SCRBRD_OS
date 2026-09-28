@@ -4,6 +4,7 @@ import { api, signedIn } from "../lib/api.js";
 import { profile } from "../lib/session.js";
 import { useRows } from "../lib/live.js";
 import { Icon } from "../ui/icons.jsx";
+import { roleGrants } from "@scrbrd/policy/roles";
 
 /**
  * Safeguarding, phase 1 (db/57; docs/design/SAFEGUARDING_DSO.md §8).
@@ -244,7 +245,8 @@ function SafeguardingLive({ role }) {
   }, [nonce]);
 
   // Courtesy only: whether to draw the inbox heading when it is empty.
-  const isDso = (profile()?.assignments ?? []).some((a) => a.role === "dso");
+  // Read from the capability, never the role's name (separation.test §21.1).
+  const isDso = (profile()?.assignments ?? []).some((a) => roleGrants(a.role, "safeguarding.concern.read"));
   const home = () => { setScreen({ at: "home" }); again(); };
 
   if (screen.at === "raise") return <RaiseForm role={role} isDso={isDso} contacts={contacts} onSent={(r) => setScreen({ at: "sent", r })} onCancel={home}/>;
