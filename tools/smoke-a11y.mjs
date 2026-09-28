@@ -85,6 +85,20 @@ const TYPE_FLOOR_CEILING = {
   // this walk never opened before. Measured 2026-09-27 at 0, once the hub's
   // own Lbl/Badge eyebrows and pills were brought onto the shared floor.
   pro:         0,
+  // SCRBRD-102 (2026-09-28), the first time this walk opened either. Both
+  // carried their own sub-12px labels — the Analytics tab's WormChart legend
+  // and per-batter/bowler figures (scorer/charts.jsx), the Career tab's
+  // headings, roster list and tab strip (ProfilesView.jsx) — brought onto the
+  // floor here, same as dashboard's and Match Centre's own labels were.
+  // Analytics is left at 18, matching matchcentre/matchview exactly: the
+  // shell (Sidebar, TopBar) and nothing of the tab's own. Career is left at
+  // 30 — the same 18-item shell, plus 12 the fix above could not plainly
+  // reach: eight roster-row avatar initials (ui/primitives.jsx's Avatar,
+  // sized off the avatar itself) and four hero badges (that file's own
+  // Badge, 9px by default) — both shared by some 28 other screens, so
+  // lowering either's own floor is a design-system change, not this one.
+  analytics:   18,
+  career:      30,
 };                   // 80 in all
 
 /**
@@ -99,6 +113,14 @@ const TAP_FLOOR_CEILING = {
   padOver:     0,
   // SCRBRD-095 item 2: the Pro hub's own keys and pills, not only the pad's.
   pro:         0,
+  // SCRBRD-102 (2026-09-28) considered the Analytics and Career tabs for
+  // this ratchet too, and left them out: every tappable thing under 44px on
+  // either is the Sidebar/TopBar shell every screen carries (28 on
+  // Analytics, 36 on Career, mostly the same nav rail matchcentre and
+  // matchview also draw), not a control of the tab's own — the same reason
+  // matchcentre, matchview and dashboard are not in this map either. Tracked
+  // instead under the type floor below, which already prices the shell in
+  // at 18 per screen.
 };
 
 /**
@@ -115,8 +137,17 @@ const CONTRAST_CEILING = {
   // 2: "this over" is on the board now, board.dim on board.face (6.34:1).
   // padOver (step 3b): the chips' figures, black or white on the chip's own
   // fill, and the day sheet's board with its Tier 2 line, are in these.
-  floodlit: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, matchview: 0, pad: 0, padOver: 0 },
-  daylight: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, matchview: 0, pad: 0, padOver: 0 },
+  //
+  // SCRBRD-102 (2026-09-28): the Analytics tab's Bowling Economy figures,
+  // in daylight only — four amber Badges (an economy of 6–9, scorer/ui.jsx's
+  // Badge) at 4.06:1, short of 4.5. The Badge's ink is chosen for the full
+  // colour (textOn(color)) but drawn on a ~12%-opacity tint of it
+  // (background:${color}1e), the same "figure on a tint of itself" pattern
+  // padOver's own entry above names — reported here rather than re-tuned,
+  // since Badge is one shared primitive behind some 30 screens this walk has
+  // not audited. Career's own reads are clean in both themes.
+  floodlit: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, matchview: 0, pad: 0, padOver: 0, analytics: 0, career: 0 },
+  daylight: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, matchview: 0, pad: 0, padOver: 0, analytics: 4, career: 0 },
 };
 
 /**
@@ -142,6 +173,9 @@ const EMOJI_CEILING = {
   padOver:     0,
   // SCRBRD-095 item 2: the Pro hub was never opened by this walk before.
   pro:         0,
+  // SCRBRD-102: neither was the Analytics tab or the Career tab.
+  analytics:   0,
+  career:      0,
 };
 
 // Each theme's own surfaces and inks — values the other theme never uses — so
@@ -544,8 +578,65 @@ async function walk(theme) {
     await page.waitForTimeout(500);
     ok("the Match Centre opens a fixture into its own view", await page.locator('[data-testid="mc-scorecard"]').count() === 1);
     await measure(page, theme, "matchview");
+
+    // SCRBRD-102: the Analytics tab, on the same fixture — the wagon-wheel
+    // analysis panel (scorer/wagonAnalysisPanel.jsx's WagonAnalysisPanel),
+    // never opened by this walk before.
+    await page.locator('[data-testid="mc-tab-analytics"]').click({ timeout: 3000 }).catch(() => {});
+    await page.waitForTimeout(700);
+    ok("the Match Centre's Analytics tab is drawn", await page.locator('[data-testid="mc-analytics"]').count() === 1);
+    // The falsification: a 9px line, pale-on-white text and an emoji in a
+    // control, planted on THIS screen — proving the ratchets below would
+    // actually catch them, not just read a number they never had a chance to
+    // move (the same three probes the landing page's own floors get, §"landing
+    // and login" above).
+    await page.evaluate(() => {
+      const d = document.createElement("div");
+      d.innerHTML = '<p style="font-size:9px">analytics probe small</p>' +
+        '<p style="color:#eeeeee;background:#ffffff;font-size:14px">analytics probe pale</p>' +
+        '<button>🎯 Probe</button>';
+      document.body.appendChild(d);
+    });
+    const analyticsProbeText = await survey(page);
+    const analyticsProbeEmoji = await emojiInControls(page);
+    await page.evaluate(() => document.body.lastElementChild.remove());
+    ok("...the Analytics probe: a 9px line is seen", analyticsProbeText.some((i) => i.text === "analytics probe small" && i.size < 12));
+    ok("...pale-on-white text is seen", analyticsProbeText.some((i) => i.text === "analytics probe pale" && i.ratio != null && i.ratio < 4.5));
+    ok("...and an emoji in a control is seen", analyticsProbeEmoji.length > 0, analyticsProbeEmoji.join(" · "));
+    await measure(page, theme, "analytics");
+
     await page.locator('[data-testid="mc-back"]').click({ timeout: 3000 }).catch(() => {});
     await page.waitForTimeout(600);
+
+    // A player profile's Career tab — season and career figures, dismissal
+    // and wicket breakdowns, and the career wagon wheel — never opened by
+    // this walk before either.
+    group(`${T_} — a player profile's Career tab`);
+    await page.locator("nav button", { hasText: /Profiles/ }).first().click({ timeout: 6000 });
+    await page.waitForTimeout(700);
+    await page.locator('[data-testid^="roster-player-"]').first().click({ timeout: 4000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.locator('[data-testid="profile-tab-career"]').click({ timeout: 3000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    ok("the profile's Career tab is drawn", await page.locator('[data-testid="dismissal-breakdown-batting"]').count() === 1);
+    // The falsification, same as the Analytics tab's above.
+    await page.evaluate(() => {
+      const d = document.createElement("div");
+      d.innerHTML = '<p style="font-size:9px">career probe small</p>' +
+        '<p style="color:#eeeeee;background:#ffffff;font-size:14px">career probe pale</p>' +
+        '<button>🎯 Probe</button>';
+      document.body.appendChild(d);
+    });
+    const careerProbeText = await survey(page);
+    const careerProbeEmoji = await emojiInControls(page);
+    await page.evaluate(() => document.body.lastElementChild.remove());
+    ok("...the Career probe: a 9px line is seen", careerProbeText.some((i) => i.text === "career probe small" && i.size < 12));
+    ok("...pale-on-white text is seen", careerProbeText.some((i) => i.text === "career probe pale" && i.ratio != null && i.ratio < 4.5));
+    ok("...and an emoji in a control is seen", careerProbeEmoji.length > 0, careerProbeEmoji.join(" · "));
+    await measure(page, theme, "career");
+
+    await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
+    await page.waitForTimeout(800);
     await click(/^Live$/, 2500);
     await click(/Open Live Scorer|Start Scoring/i, 5000);
     await page.waitForTimeout(1600);
