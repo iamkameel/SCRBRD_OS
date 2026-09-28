@@ -2521,8 +2521,9 @@ function req(q, key) {
  * without being masked from anyone who can already reach the row.
  */
 export const RESTRICTED_FIELDS = Object.freeze(/** @type {Record<string, string[]>} */ ({
+  // `fitness` since SCRBRD-117 (db/58): the injury status tier, a health signal.
   players:  ["email", "phone", "born", "hometown", "houseatschool",
-             "address", "guardian", "height", "weight", "id_number"],
+             "address", "guardian", "height", "weight", "id_number", "fitness"],
   injuries: ["injury_type", "severity", "phase", "notes", "physio"],
   emergency_contacts: ["phone", "phone_alt", "email"],
   trip_contacts:      ["phone", "phone_alt", "email"],

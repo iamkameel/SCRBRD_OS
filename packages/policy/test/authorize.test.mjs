@@ -171,12 +171,19 @@ group("D. Medical access is bounded by scope, not by tier");
   // stops being "everything" locks the operator out of the thing they most
   // need, and a platform account that may appoint one makes the distinction
   // between the two roles decorative.
-  ok("the owner's key holds every capability",
-     ALL_CAPABILITIES.every((c) => roleGrants("superadmin", c)));
+  // ONE CARVE-OUT: safeguarding.* (roles.mjs; CSA Safeguarding Policy p63;
+  // SAFEGUARDING_DSO §2.2, decided Q9). A key that reads every concern at
+  // every school and records nothing is the reader CSA forbids.
+  const outsideSafeguarding = ALL_CAPABILITIES.filter((c) => !c.startsWith("safeguarding."));
+  ok("the owner's key holds every capability outside safeguarding.*",
+     outsideSafeguarding.every((c) => roleGrants("superadmin", c)));
+  ok("...and none inside it",
+     ALL_CAPABILITIES.filter((c) => c.startsWith("safeguarding.")).every((c) => !roleGrants("superadmin", c))
+     && ALL_CAPABILITIES.some((c) => c.startsWith("safeguarding.")));
   ok("...including the ones platform admin deliberately does not",
      roleGrants("superadmin", "medical.details.read") && roleGrants("superadmin", "discipline.read"));
-  ok("...and it is derived, not typed — count matches the catalogue",
-     ROLE_CAPABILITIES.superadmin.length === ALL_CAPABILITIES.length);
+  ok("...and it is derived, not typed — count matches the catalogue less the carve-out",
+     ROLE_CAPABILITIES.superadmin.length === outsideSafeguarding.length);
   ok("no platform account can appoint an owner's key",
      !mayGrantRole("platformadmin", "superadmin"));
   ok("...and no school role can either",

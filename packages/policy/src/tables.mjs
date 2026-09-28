@@ -181,6 +181,16 @@ export const TABLES = {
       // list. A role that needs a bowler's height for load management does not
       // thereby need his home address.
       "player.biometric.read": ["height", "weight"],
+      // SCRBRD-117. 'fit', 'injured', 'rehab', 'unavailable' is his health —
+      // PUBLIC_DATA N2 treats even "unavailable" as health, and CSA p52 keeps
+      // a child's medical needs out of "general view to other ... children"
+      // (K3, db/55). It sat unmasked under player.profile.read, which a pupil
+      // holds across his side. Behind the injury row's own tier now, anchored
+      // to his team as the injury row is. db/09 shipped without it:
+      // MASKED_SINCE_09 in generate-rls.mjs keeps db/09 as it shipped, and
+      // db/58 rebuilds player_masked with it. A later file that rebuilds
+      // player_masked must carry it too (rls.test.mjs checks db/58's list).
+      "medical.status.read": ["fitness"],
     },
   },
 

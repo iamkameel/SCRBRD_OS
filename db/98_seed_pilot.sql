@@ -878,3 +878,22 @@ INSERT INTO role_assignment (id, person_id, role, school_id, team_code, fixture_
 -- the API and the policy, not a screen), and the walk that exercises it
 -- asserts on counts — so it owns its own fixture rather than working around
 -- rows that arrived here.
+
+-- ── Hilton's Designated Safeguarding Officer (db/57) ──────────────
+--
+-- CSA's Safeguarding Policy asks every school for one (p15–17), appointed by
+-- the chairperson — here the principal would, and the seed does it for him.
+-- Without an account holding `dso`, the concern record could only ever be
+-- observed refusing: every reader in this fixture reads nothing of it, which
+-- on its own is indistinguishable from a record nobody wrote. No concern is
+-- seeded: the walks raise their own, and a seeded account of abuse about an
+-- invented child is not a fixture anybody needs to read. Her clearances are
+-- left unrecorded on purpose, so the register shows a DSO "missing" as it
+-- shows any adult.
+INSERT INTO app_user (id, school_id, email, name, role) VALUES
+  ('88888888-0000-0000-0000-000000000057', '11111111-1111-1111-1111-111111111111',
+   'dso@example.invalid', 'N Dube', 'dso');
+
+INSERT INTO role_assignment (id, person_id, role, school_id, team_code) VALUES
+  ('a5510000-0000-0000-0000-000000000057', '88888888-0000-0000-0000-000000000057', 'dso',
+   '11111111-1111-1111-1111-111111111111', NULL);

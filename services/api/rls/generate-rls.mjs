@@ -433,6 +433,8 @@ export const WITHDRAWN_SINCE_01 = {
  */
 export const ROLES_ADDED_SINCE_01 = {
   sponsorship: "27_sponsorship_role.sql",
+  // The Designated Safeguarding Officer (SAFEGUARDING_DSO §2, phase 1).
+  dso: "57_safeguarding_dso.sql",
 };
 const roleIn01 = (/** @type {string} */ role) => !(role in ROLES_ADDED_SINCE_01);
 
@@ -458,6 +460,11 @@ const roleIn01 = (/** @type {string} */ role) => !(role in ROLES_ADDED_SINCE_01)
 export const ADDED_SINCE_01 = {
   "scoring.amend.request": "24_amend_request.sql",
   "player.public.withhold": "47_public_data.sql",
+  // Safeguarding, phase 1 (SAFEGUARDING_DSO §9.1): held by `dso` alone.
+  "safeguarding.concern.read":   "57_safeguarding_dso.sql",
+  "safeguarding.concern.manage": "57_safeguarding_dso.sql",
+  "safeguarding.suspend":        "57_safeguarding_dso.sql",
+  "safeguarding.authorise":      "57_safeguarding_dso.sql",
 };
 const shippedIn01 = (/** @type {string} */ cap) => !(cap in ADDED_SINCE_01);
 
@@ -663,11 +670,49 @@ export const REANCHOR_FILE = "39_match_anchor_helpers.sql";
  * subqueries they were, whatever tables.mjs says today.
  * @param {string} table @param {TableDef} def @returns {TableDef}
  */
-const asShippedIn09 = (table, def) => (REANCHORED_IN_39.includes(table)
+const asShippedIn09 = (table, def) => withoutLaterMasks(table, REANCHORED_IN_39.includes(table)
   ? { ...def, anchors: { ...def.anchors,
       school: `(SELECT m.school_id FROM match m WHERE m.id = ${table}.match_id)`,
       team:   `(SELECT m.team_code FROM match m WHERE m.id = ${table}.match_id)` } }
   : def);
+
+/**
+ * Columns masked AFTER db/09 shipped, and the hand-written file that masks
+ * them on a live database.
+ *
+ * The same discipline as WITHDRAWN_SINCE_01 and REANCHORED_IN_39: tables.mjs
+ * is the truth for the client, the tests and the next generated file, and
+ * db/09 keeps being emitted exactly as it shipped — so a mask added to
+ * tables.mjs is taken out again here before db/09's view is built, and the
+ * db/NN named rebuilds the view with it (db/47's shape). rls.test.mjs holds
+ * both halves: db/09 does not carry the column's tuple, and the named file
+ * carries the WHOLE of the table's current mask list, verbatim, so the two
+ * cannot drift. Never retires.
+ *
+ * SCRBRD-117: player.fitness ('fit', 'injured', 'rehab', 'unavailable') is a
+ * health signal — PUBLIC_DATA N2 treats even "unavailable" as health — and
+ * sat unmasked under player.profile.read, which a pupil holds across his
+ * side. Masked behind the injury status tier, anchored to the boy's own team
+ * like the injury row: his coach, the physio, the office, his parent and he
+ * himself read it; a team-mate and another side's coach do not.
+ * @type {Readonly<Record<string, { file: string, masked: Record<string, string[]> }>>}
+ */
+export const MASKED_SINCE_09 = Object.freeze({
+  player: { file: "58_player_fitness_masked.sql", masked: { "medical.status.read": ["fitness"] } },
+});
+
+/** @param {string} table @param {TableDef} def @returns {TableDef} */
+function withoutLaterMasks(table, def) {
+  const later = MASKED_SINCE_09[table]?.masked;
+  if (!later) return def;
+  /** @type {Record<string, string[]>} */
+  const masked = {};
+  for (const [cap, cols] of Object.entries(def.masked ?? {})) {
+    const kept = cols.filter((c) => !(later[cap] ?? []).includes(c));
+    if (kept.length) masked[cap] = kept;
+  }
+  return { ...def, masked };
+}
 
 /** One table's four DROPs and three policies. @param {string} table @param {TableDef} def */
 const tablePolicy = (table, def) => `
@@ -698,6 +743,37 @@ function tablePolicies() {
   return out.join("\n");
 }
 
+/**
+ * A table's masks as the VALUES tuples its *_masked view is built from:
+ * (column, capability, team anchor). The TEAM anchor varies per capability,
+ * which is what lets one table show more of a row to the people it belongs
+ * to and less to everyone else:
+ *
+ *   masked        — anchored to the row's own team. A coach unmasks their
+ *                   own squad and nothing else.
+ *   maskedAnyTeam — the team dimension does not apply. Anyone holding the
+ *                   capability anywhere in the school reads it, which is
+ *                   what a school-wide roster needs: every coach can see
+ *                   how old a boy is, and only his own coach can see his
+ *                   home address.
+ *
+ * Exported for rls.test.mjs, which holds a hand-written rebuild of a view
+ * (MASKED_SINCE_09) to the table's current list, verbatim.
+ * @param {string} table @param {TableDef} def
+ */
+export function maskPairs(table, def) {
+  const teamAnchored = anchor(table, def, "team", "text");
+  /** @type {Record<string, { cap: string, team: string }>} */
+  const guard = {};
+  for (const [cap, cols] of Object.entries(def.masked ?? {}))
+    for (const c of cols) guard[c.toLowerCase()] = { cap, team: teamAnchored };
+  for (const [cap, cols] of Object.entries(def.maskedAnyTeam ?? {}))
+    for (const c of cols) guard[c.toLowerCase()] = { cap, team: ANY.text };
+  return Object.entries(guard)
+    .map(([col, g]) => `(${q(col)}, ${q(g.cap)}, ${q(g.team)})`)
+    .join(", ");
+}
+
 function maskViews() {
   const out = [banner("Column-masking views")];
   for (const [table, current] of Object.entries(TABLES)) {
@@ -718,17 +794,7 @@ function maskViews() {
     //                   what a school-wide roster needs: every coach can see
     //                   how old a boy is, and only his own coach can see his
     //                   home address.
-    const teamAnchored = anchor(table, def, "team", "text");
-    /** @type {Record<string, { cap: string, team: string }>} */
-    const guard = {};
-    for (const [cap, cols] of Object.entries(masked))
-      for (const c of cols) guard[c.toLowerCase()] = { cap, team: teamAnchored };
-    for (const [cap, cols] of Object.entries(maskedAnyTeam))
-      for (const c of cols) guard[c.toLowerCase()] = { cap, team: ANY.text };
-
-    const pairs = Object.entries(guard)
-      .map(([col, g]) => `(${q(col)}, ${q(g.cap)}, ${q(g.team)})`)
-      .join(", ");
+    const pairs = maskPairs(table, def);
 
     out.push(`
 -- ${table}_masked — every column listed explicitly, each sensitive one gated

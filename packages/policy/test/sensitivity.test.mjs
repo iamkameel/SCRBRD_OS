@@ -97,6 +97,12 @@ const NOT_YET_IMPLEMENTED = {
   "invoice.manage": "The same from the writing end, held by finance alone — no " +
     "table for it to raise or reconcile a row in, so the write side is " +
     "exactly as unimplemented as the read side.",
+  // Safeguarding phase 1 (db/57) creates the capability with the `dso` role,
+  // as SAFEGUARDING_DSO §9.1 lists it, so that phase 2 is a table and its
+  // functions rather than a catalogue change as well.
+  "safeguarding.suspend": "Held by dso alone since db/57 and gating nothing yet: " +
+    "safeguarding_suspension, safeguarding_suspend() and the liveness clause in " +
+    "the decision functions are SAFEGUARDING_DSO phase 2 (§5, §9.2).",
 };
 
 // ── The two lists agree ──────────────────────────────────

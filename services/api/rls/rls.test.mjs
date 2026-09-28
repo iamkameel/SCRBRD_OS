@@ -10,7 +10,7 @@
 import { ROLES, ROLE_CAPABILITIES, roleGrants, SCORING_ROLES, SUBJECT_SCOPED_ROLES } from "@scrbrd/policy/roles";
 import { TABLES, referencedCapabilities, isCapabilityExpression, maskedColumns } from "@scrbrd/policy/tables";
 import { ALL_CAPABILITIES, SENSITIVE, isCapability } from "@scrbrd/policy/capabilities";
-import { main, authz, policies, timeBox, suspension, matchAnchors, REANCHORED_IN_39, REANCHOR_FILE, WITHDRAWN_SINCE_01, ADDED_SINCE_01, ROLES_ADDED_SINCE_01 } from "./generate-rls.mjs";
+import { main, authz, policies, timeBox, suspension, matchAnchors, REANCHORED_IN_39, REANCHOR_FILE, WITHDRAWN_SINCE_01, ADDED_SINCE_01, ROLES_ADDED_SINCE_01, MASKED_SINCE_09, maskPairs } from "./generate-rls.mjs";
 import { GRANTABLE_ROLES } from "@scrbrd/policy/roles";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -128,7 +128,11 @@ group("B2. Capabilities added after db/01 shipped");
     const ledger = existsSync(path) ? readFileSync(path, "utf8") : "";
     ok(`${file} inserts the catalogue row`,
        new RegExp(`INSERT INTO capability \\(name\\) VALUES \\('${cap.replaceAll(".", "\\.")}'\\)`).test(ledger));
-    const holders = ROLES.filter((r) => roleGrants(r, cap));
+    // A role added after db/01 is granted its WHOLE bundle by its own file
+    // (group B3), so a capability that file's role holds is checked there,
+    // not in the file that introduced the capability.
+    const holders = ROLES.filter((r) => roleGrants(r, cap)
+      && (!(r in ROLES_ADDED_SINCE_01) || /** @type {Record<string, string>} */ (ROLES_ADDED_SINCE_01)[r] === file));
     // A ledger file may align its rows; the emitted db/01 never does.
     const grants = (/** @type {string} */ r) => new RegExp(`\\('${r}',\\s+'${cap.replaceAll(".", "\\.")}'\\)`).test(ledger);
     const unlisted = holders.filter((r) => !grants(r));
@@ -232,7 +236,12 @@ for (const [table, def] of Object.entries(TABLES)) {
      new RegExp(`\\$mask_${table}\\$[\\s\\S]*information_schema\\.columns`).test(SQL));
   ok(`${table}_masked fails loudly without its table`,
      new RegExp(`cannot build ${table}_masked`).test(SQL));
-  for (const [cap, cols] of Object.entries(masked)) {
+  // A mask added after db/09 shipped is not in db/09 (MASKED_SINCE_09);
+  // group D2 holds it to the file that adds it.
+  const later = MASKED_SINCE_09[table]?.masked ?? {};
+  for (const [cap, all] of Object.entries(masked)) {
+    const cols = all.filter((c) => !(later[cap] ?? []).includes(c));
+    if (!cols.length) continue;
     ok(`${table}: ${cols.length} column(s) gated by ${cap}`,
        // The generated tuple carries a THIRD element now — the team anchor for
        // that capability — because a column can be masked against the row's own
@@ -241,6 +250,34 @@ for (const [table, def] of Object.entries(TABLES)) {
        cols.every((c) => new RegExp(`\\('${c.toLowerCase()}', '${cap.replace(/\./g, "\\.")}', `).test(SQL)));
   }
 }
+// ── D2. Masks added after db/09 shipped ──────────────────
+// The mirror of WITHDRAWN_SINCE_01 for a column mask: db/09 must keep
+// emitting the view it shipped, and the db/NN named must rebuild the view
+// with the table's WHOLE current mask list — the generator's own tuples,
+// verbatim — so a later edit to tables.mjs cannot leave the live view behind.
+group("D2. Masks added after db/09 shipped (SCRBRD-117)");
+{
+  const DB = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "db");
+  ok("the list is in use, so this group is testing something", Object.keys(MASKED_SINCE_09).length > 0);
+  for (const [table, { file, masked }] of Object.entries(MASKED_SINCE_09)) {
+    const path = join(DB, file);
+    ok(`${file} exists`, existsSync(path));
+    const ledger = existsSync(path) ? readFileSync(path, "utf8") : "";
+    const expected = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../expected-migrations.json"), "utf8"));
+    ok(`${file} is a migration the API expects`, expected.includes(file));
+    ok(`${file} rebuilds ${table}_masked with the table's whole current mask list, verbatim`,
+       ledger.includes(`LEFT JOIN (VALUES ${maskPairs(table, TABLES[table])}) AS g(column_name, capability, team_anchor)`));
+    for (const [cap, cols] of Object.entries(masked))
+      for (const c of cols) {
+        ok(`${table}.${c} is masked by ${cap} in tables.mjs`, (maskedColumns(TABLES[table])[cap] ?? []).includes(c));
+        ok(`...and db/09 still emits ${table}_masked without it, as it shipped`,
+           !new RegExp(`\\('${c}', '${cap.replace(/\./g, "\\.")}', `).test(SQL));
+      }
+  }
+  ok("fitness is masked behind the injury status tier, on the boy's own team",
+     maskPairs("player", TABLES.player).includes("('fitness', 'medical.status.read', 'player.team_code')"));
+}
+
 // Masking is decided per row via app_can, not once per role for the query.
 ok("masking calls app_can per row", /app_can\(%L, %s, %s, %s, NULL\)/.test(SQL));
 ok("clinical notes are gated by medical.details.read",
