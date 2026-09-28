@@ -103,6 +103,24 @@ export function playingConditionsRoutes({ pool, secret }) {
       };
     })),
 
+    // GET /api/competitions/entered?schoolId=&teamCode=
+    //   → { rows: [{ id, name, format, ageGroup }] }
+    //   The competitions a side has entered, as the reader may see them — what
+    //   the fixture screen offers beside "a friendly" (db/61 refuses any other).
+    entered: handle(async (req) => {
+      const school = String(req.query?.schoolId ?? "");
+      if (!UUID.test(school)) throw err("school_required");
+      const team = req.query?.teamCode ? String(req.query.teamCode) : null;
+      return runAsPrincipal(pool, secret, as(req), async (client) => {
+        const { rows } = await client.query(
+          `select distinct c.id, c.name, c.format, c.age_group
+             from competition_entrant e join competition c on c.id = e.competition_id
+            where e.school_id = $1 and e.team_code is not distinct from $2
+            order by c.name`, [school, team]);
+        return { rows: rows.map((r) => ({ id: r.id, name: r.name, format: r.format ?? null, ageGroup: r.age_group ?? null })) };
+      });
+    }),
+
     // GET /api/competitions/:id/playing-conditions
     //   → { competitionId, canManage, inForceToday: setId | null, sets: [version, newest first] }
     //   Drafts appear only for a conditions manager.

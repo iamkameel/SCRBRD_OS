@@ -88,6 +88,9 @@ export const REFUSAL_WORDS = {
   handover_pending: "A handover is waiting — enter the code from the outgoing scorer.",
   verifying: "A handover is being confirmed on another device.",
   no_capability: "You are not appointed to score this match.",
+  // SCRBRD-114: this device folded the log under other playing conditions
+  // than the match's; its figures prove nothing until it reads them again.
+  conditions_changed: "This match's playing conditions changed since the pad opened it. Reopen the match to read them, then check the scoreboard again.",
   not_pending: "There is no handover waiting on this match.",
   not_token_holder: "This device does not hold the scoring token.",
   unreachable: "Could not reach the server.",
@@ -106,7 +109,9 @@ export const claimHandover = (matchId, { device, code }) =>
  * (overs × 6 + balls in the current over), not an "14.2" string — the server
  * counts the same way (`ball_event_live`, legal deliveries only).
  */
-export const verifyTakeover = (matchId, { device, runs, wickets, balls }) =>
+export const verifyTakeover = (matchId, { device, runs, wickets, balls, conditionsHash }) =>
   api(`/api/matches/${matchId}/session/handover/verify`, {
-    method: "POST", body: { device, runs, wickets, balls },
+    // The playing conditions this device folded the log under (SCRBRD-114):
+    // the server asks them first. Sent only when the device read them.
+    method: "POST", body: { device, runs, wickets, balls, ...(conditionsHash !== undefined ? { conditionsHash } : {}) },
   });

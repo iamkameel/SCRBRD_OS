@@ -670,6 +670,7 @@ const PLAYER_ROUTES = [
   // the fixture: the pad folds every match by them. Every decision is a
   // db/61 definer function's (playing-conditions-api.mjs).
   [/^\/api\/playing-conditions\/catalogue$/,                   "GET",  playing.catalogue],
+  [/^\/api\/competitions\/entered$/,                           "GET",  playing.entered],
   [/^\/api\/competitions\/([^/]+)\/playing-conditions$/,        "GET",  playing.list],
   [/^\/api\/competitions\/([^/]+)\/playing-conditions$/,        "POST", playing.draft],
   [/^\/api\/competitions\/([^/]+)\/playing-conditions\/preview$/, "GET", playing.preview],

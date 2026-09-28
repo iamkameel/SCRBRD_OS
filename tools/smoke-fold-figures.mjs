@@ -837,6 +837,27 @@ try {
                          { format: "One-Day Declaration" });
   await writeLogs([declLog], scorer, DECL);
 
+  // UNDER A COMPETITION'S PLAYING CONDITIONS (SCRBRD-114, db/61): the match's
+  // frozen document decides the free hit, not its format — a T20 whose
+  // league says no free hit, and a declaration match whose league says one.
+  // Written before the careers are read, like DECL, so no delta moves. The
+  // documents are written as the owner, as the fix would have written them.
+  const CONDITIONED = [];
+  for (const [format, overs, free] of /** @type {const} */ ([["T20", 20, false], ["One-Day Declaration", 100, true]])) {
+    const id = (await q(`insert into match (school_id, team_code, opponent, starts_at, format, overs, status)
+                         values ($1, '1XI', $2, now() - interval '2 days', $3, $4, 'complete') returning id`,
+                       [HIL, `Conditions XI (${format})`, format, overs]))[0].id;
+    const doc = { v: 1, play: { "format.free_hit": free }, table: {}, sheet: {} };
+    const [{ doc_hash }] = await q(`insert into match_conditions (match_id, doc, sources, doc_hash) values ($1, $2, '{}', '') returning doc_hash`,
+                                   [id, JSON.stringify(doc)]);
+    const ctx = { format, conditions: doc.play, conditionsHash: doc_hash };
+    const log = scripted(0, ["run:1", "Nb:0", "W:bowled", "Nb:1", "W:lbw", "run:0", "Nb:0", "Wd:0", "W:caught",
+                             "Nb:0", "RO:ns:0", "Nb:2:byes", "run:4", "Nb:0", "W:bowled"],
+                         [P1, P2, P3, HIL_1XI[3], HIL_1XI[4], ...OTHERS], ctx);
+    await writeLogs([log], scorer, id);
+    CONDITIONED.push({ id, format, free, ctx });
+  }
+
   // ── Before ──
   const car0 = await career();
   const oppH0 = await opposition(HIL, WES, "coach@example.invalid");
@@ -1064,6 +1085,33 @@ try {
     ok("player_innings: the batters out off the ball after a no-ball are out", pbad.length === 0, show(pbad));
     const [fh] = await q(`select count(*) filter (where ball_on_free_hit(match_id, innings, seq)) n from ball_event where match_id = $1`, [DECL]);
     ok("ball_on_free_hit() finds no free hit in it", Number(fh.n) === 0);
+  }
+
+  group("Under a competition's conditions: the document's free hit, both ways round (SCRBRD-114, db/61)");
+  for (const c of CONDITIONED) {
+    const rows = await q(`select * from ball_event where match_id = $1 order by seq`, [c.id]);
+    const fold = new MatchFold(rows.map(fromRow), c.ctx).view().innings[0];
+    const byFormat = new MatchFold(rows.map(fromRow), { format: c.format }).view().innings[0];
+    const label = `${c.format} under free_hit = ${c.free}`;
+    console.log(`  ${label}: the fold ${fold.runs}/${fold.wickets} off ${fold.balls}; by its format alone ${byFormat.runs}/${byFormat.wickets}`);
+    ok(`${label}: not vacuous — the document and the format disagree on the wickets`, fold.wickets !== byFormat.wickets
+       && fold.freeHits === c.free && fold.conditionsHash === c.ctx.conditionsHash);
+    const [live] = await q(`select runs, wickets, legal_balls from match_live_score where match_id = $1 and innings = 0`, [c.id]);
+    ok(`${label}: match_live_score is the fold`, Number(live.runs) === fold.runs && Number(live.wickets) === fold.wickets
+       && Number(live.legal_balls) === fold.balls, JSON.stringify(live));
+    const [folded] = await q(`select * from innings_score_as_folded($1, 0::smallint)`, [c.id]);
+    ok(`${label}: innings_score_as_folded() is the fold`, folded.runs === fold.runs && folded.wickets === fold.wickets
+       && folded.legal_balls === fold.balls, JSON.stringify(folded));
+    const overs = new Map((await q(`select bowler_id, sum(legal_balls)::int n from bowler_over where match_id = $1 group by bowler_id`, [c.id]))
+      .map((r) => [r.bowler_id, r.n]));
+    const obad = fold.bowlers.filter((w) => isId(w.id) && (overs.get(w.id) ?? 0) !== w.balls).map((w) => `${w.id}: fold ${w.balls}, SQL ${overs.get(w.id)}`);
+    ok(`${label}: bowler_over holds each bowler's balls of the over as the fold does`, obad.length === 0 && overs.size > 0, show(obad));
+    const figs = new Map((await q(`select player_id, wickets, runs_conceded from bowler_innings_figures where match_id = $1`, [c.id]))
+      .map((r) => [r.player_id, { wickets: Number(r.wickets), runs: Number(r.runs_conceded) }]));
+    const fbad = fieldDifferences(new Map(fold.bowlers.filter((w) => isId(w.id)).map((w) => [w.id, { wickets: w.wickets, runs: w.runs }])), figs, ["wickets", "runs"]);
+    ok(`${label}: bowler_innings_figures: the wickets after a no-ball are the document's`, fbad.length === 0, show(fbad));
+    const [fh] = await q(`select count(*) filter (where ball_on_free_hit(match_id, innings, seq))::int n from ball_event where match_id = $1`, [c.id]);
+    ok(`${label}: ball_on_free_hit() ${c.free ? "finds the free hits" : "finds none"}`, c.free ? fh.n > 0 : fh.n === 0);
   }
 
   group("Per batter per innings: player_innings is the fold");

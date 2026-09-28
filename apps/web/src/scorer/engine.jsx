@@ -9,6 +9,7 @@ import {
   lastUndoableIndex, likelyCause,
 } from "@scrbrd/scoring";
 import { lawsEdition } from "@scrbrd/scoring";
+import { ConditionsLine, bowlerCapWords } from "./conditionsLine.jsx";
 import { D, T, inkOn } from "../design/tokens.js";
 import { deviceId } from "../lib/device.js";
 import { loadMatch, saveMatch, saveAside, storageKind } from "../lib/persist.js";
@@ -157,6 +158,23 @@ async function liveLog(cfg) {
   try {
     const r = await api(`/api/matches/${cfg.matchId}/events`);
     return (r?.events ?? []).map(fromRow);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * How the server folds this fixture (SCRBRD-113/114): the `fold` of the
+ * events read — its start and format, and the match's playing conditions
+ * with their hash — without the log (no event after the largest seq there
+ * can be). Null with no session or no answer; the pad then folds by what it
+ * saved, or by the fixture's format as before.
+ */
+async function liveFold(cfg) {
+  if (!cfg?.matchId || !signedIn()) return null;
+  try {
+    const r = await api(`/api/matches/${cfg.matchId}/events?since=2147483647`);
+    return r?.fold ?? null;
   } catch {
     return null;
   }
@@ -385,9 +403,31 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
   // refused (figures_moved) and a chase its target stamped short. With no
   // such award in the log, every innings is exactly what deriveInnings gave.
   const scoringCtxRef = useRef({ flagFor: k => INT_TEAMS[k]?.flag });
+  // The match's playing conditions (SCRBRD-114): the play part of its
+  // document and its hash go into the fold's context (conditions.mjs reads
+  // them: the free hit, an innings_start with no overs); the rest is for the
+  // pad's words. `foldRef` is what the server said, kept with the match on
+  // disk; `ctxVersion` re-folds when it changes.
+  const foldRef = useRef(null);
+  const [conditionsInfo, setConditionsInfo] = useState(null);
+  const [ctxVersion, setCtxVersion] = useState(0);
+  const applyFold = (fold) => {
+    if (!fold || typeof fold !== "object") return;
+    foldRef.current = fold;
+    const next = { ...scoringCtxRef.current };
+    if (fold.conditions && typeof fold.conditions === "object") {
+      next.conditions = fold.conditions; next.conditionsHash = fold.conditionsHash ?? null;
+    } else { delete next.conditions; next.conditionsHash = null; }
+    scoringCtxRef.current = next;
+    setConditionsInfo(fold.conditions ? { conditions: fold.conditions, sources: fold.conditionsSources ?? null,
+      title: fold.conditionsTitle ?? null, version: fold.conditionsVersion ?? null, fixed: fold.conditionsFixed === true } : null);
+    setCtxVersion((v) => v + 1);
+  };
   const innings = useMemo(
     () => foldPad(events, scoringCtxRef.current),
-    [events],
+    // ctxVersion: the context changed under the same log (the conditions read).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [events, ctxVersion],
   );
   eventsRef.current = events;
 
@@ -515,6 +555,13 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
 
       const saved = id ? await loadMatch(id) : null;
       if (cancelled) return;
+      // The match's playing conditions (SCRBRD-114): what this device saved
+      // with the log, then what the server says now, before the log is set,
+      // so the first fold has them.
+      if (saved?.fold) applyFold(saved.fold);
+      const fresh = live ? await liveFold(resume.cfg) : null;
+      if (cancelled) return;
+      if (fresh) applyFold(fresh);
       if (saved?.events?.some(e => e.length)) {
         // A finished match whose outbox was cleared (SCRBRD-079): what was on
         // the server then is known to be there, and is never queued again.
@@ -685,7 +732,10 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
     (async () => {
       if (!(await gate).every(Boolean)) return;
       const ok = await saveMatch(matchId, { events, curIn, cfg: match,
-        ...(serverHasRef.current ? { serverHas: serverHasRef.current } : {}) });
+        ...(serverHasRef.current ? { serverHas: serverHasRef.current } : {}),
+        // The playing conditions the log is folded under (SCRBRD-114), for a
+        // reload with no session to ask.
+        ...(foldRef.current ? { fold: foldRef.current } : {}) });
       if (!cancelled && ok) setSaveState(s => ({ ...s, savedAt: Date.now() }));
     })();
     return () => { cancelled = true; };
@@ -1230,7 +1280,10 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
   const handoverLogRef=useRef(null);
   const handoverRebaseRef=useRef(false);
   const [asideCount,setAsideCount]=useState(0);
-  const takeHandedOverLog=async(rows)=>{
+  const takeHandedOverLog=async(rows,fold)=>{
+    // The claim hands over how to fold the log too (SCRBRD-114): the match's
+    // playing conditions and their hash, which the verify step asks back.
+    if(fold)applyFold(fold);
     const server=(rows??[]).map(fromRow);
     handoverLogRef.current=server;
     const engine=syncRef.current?.engine;
@@ -1599,6 +1652,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
           setModal(null);
         }}
         onClaimed={takeHandedOverLog}
+        conditionsHash={()=>foldRef.current?(scoringCtxRef.current.conditionsHash??null):undefined}
         onTakenOver={(newEpoch)=>{
           // The token is this device's, under the generation the transfer
           // made — no claim of its own, which would only burn another. What
@@ -1677,6 +1731,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
           bowlingTeamKey={inn?.bowlingTeamKey}
           lastBowlerName={lastBowler?.name||null}
           refuses={bowlerRefusal}
+          capWordsFor={conditionsInfo?(balls)=>bowlerCapWords(conditionsInfo,balls):null}
           onClose={()=>setModal(null)}
           onConfirm={name=>{addBowler(name);setModal(null);}}/>
       );
@@ -1738,6 +1793,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
           bowlingTeamKey={inn?.bowlingTeamKey}
           lastBowlerName={lastBowler?.name||null}
           refuses={bowlerRefusal}
+          capWordsFor={conditionsInfo?(balls)=>bowlerCapWords(conditionsInfo,balls):null}
           why={suspensionRefusalWords}
           // "Suspended" mid-over is the umpires' suspension: its own sheet,
           // which records it and then asks who finishes the over.
@@ -1969,6 +2025,10 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
             <div data-testid="pad-state" style={{display:"flex",alignItems:"center",gap:T.space.sm,flexWrap:"wrap"}}>
               <SyncPill sync={sync} storage={saveState.kind} onOpenHeld={()=>setModal("held")}/>
             </div>
+            {/* The match's playing conditions, in words (SCRBRD-114): the
+                version, the free hit, the innings cap, and the bowler on
+                against it. Words only: nothing is refused (D1). */}
+            {conditionsInfo&&<ConditionsLine info={conditionsInfo} inn={inn}/>}
             {/* Five penalty runs awarded to a side that has not batted, whose
                 innings is not in the log yet: it opens on them (SCRBRD-094). */}
             {pendingPenalty.map(p=>(

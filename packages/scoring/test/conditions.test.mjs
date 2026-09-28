@@ -249,7 +249,7 @@ group("G. The pad's words (never a refusal) and the fixture screen's pre-fill");
   ok("past it: recorded, and said", capWords(26, c4) === "4.2 overs; the conditions allow 4" && capWords(30, c4) === "5 overs; the conditions allow 4");
   ok("nothing to say earlier in his spell", capWords(12, c4) === null && capWords(20, c4) === null);
   ok("an unconfirmed figure says so", capWords(24, c4, { unconfirmed: true }) === "Has bowled his 4 overs (platform default, unconfirmed)");
-  const pre = (/** @type {any} */ c, /** @type {any} */ f) => JSON.stringify(fixtureFormatFrom(c, f));
+  const pre = (/** @type {any} */ c, /** @type {any} */ f = null) => JSON.stringify(fixtureFormatFrom(c, f));
   ok("20 overs, limited: T20", pre({ "format.kind": "limited", "format.overs_per_innings": 20 }) === '{"format":"T20","overs":20}');
   ok("50 overs: One-Day", pre({ "format.overs_per_innings": 50 }) === '{"format":"One-Day","overs":50}');
   ok("25 overs in a T20 league: T20 at 25", pre({ "format.kind": "limited", "format.overs_per_innings": 25 }, "T20") === '{"format":"T20","overs":25}');

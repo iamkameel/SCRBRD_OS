@@ -218,7 +218,7 @@ function RevisionSheet({overs,target,isChase,onConfirm,onClose}){
 // tab of their own screen.
 const HANDOVER_POLL_MS = 2500;
 
-function HandoverSheet({ matchId, device, epoch, pending, held = 0, onShowHeld, ballInFlight, startTab = "hand", onHandedOver, onClaimed, onTakenOver, onCancelled, onClose }) {
+function HandoverSheet({ matchId, device, epoch, pending, held = 0, onShowHeld, ballInFlight, startTab = "hand", onHandedOver, onClaimed, onTakenOver, onCancelled, onClose, conditionsHash }) {
   const [tab, setTab] = useState(startTab);
   return (
     <Sheet title="Handover" accent={D.sky} onClose={onClose}>
@@ -236,7 +236,7 @@ function HandoverSheet({ matchId, device, epoch, pending, held = 0, onShowHeld, 
         {tab==="hand"
           ? <HandOverTab matchId={matchId} device={device} epoch={epoch} pending={pending} held={held} onShowHeld={onShowHeld} ballInFlight={ballInFlight}
               onHandedOver={onHandedOver} onCancelled={onCancelled} onClose={onClose}/>
-          : <TakeOverTab matchId={matchId} device={device} onClaimed={onClaimed} onTakenOver={onTakenOver} onClose={onClose}/>}
+          : <TakeOverTab matchId={matchId} device={device} onClaimed={onClaimed} onTakenOver={onTakenOver} onClose={onClose} conditionsHash={conditionsHash}/>}
       </div>
     </Sheet>
   );
@@ -372,10 +372,10 @@ function HandOverTab({ matchId, device, epoch, pending, held = 0, onShowHeld, ba
 }
 
 // Refusals the takeover can meet that are not a figure mismatch, said in words.
-const REASON_FIELDS = { match_complete: 1, not_pending: 1, no_capability: 1, unreachable: 1 };
+const REASON_FIELDS = { match_complete: 1, not_pending: 1, no_capability: 1, unreachable: 1, conditions_changed: 1 };
 
 /** The incoming scorer: the code, then an INDEPENDENT read of the physical scoreboard. */
-function TakeOverTab({ matchId, device, onClaimed, onTakenOver, onClose }) {
+function TakeOverTab({ matchId, device, onClaimed, onTakenOver, onClose, conditionsHash }) {
   const [code, setCode] = useState("");
   const [claimed, setClaimed] = useState(false);
   const [claimError, setClaimError] = useState(null);
@@ -391,7 +391,9 @@ function TakeOverTab({ matchId, device, onClaimed, onTakenOver, onClose }) {
       // The claim answers with the server's log (spec §4 step 2): the pad
       // rebuilds from it before the scorer is asked to confirm anything, and
       // never scores on over one of its own (SCRBRD-075).
-      if (r.ok) { await onClaimed?.(r.events ?? []); setClaimed(true); }
+      // ...and how to fold it (SCRBRD-113/114): the fixture's start and
+      // format and the match's playing conditions, adopted with the log.
+      if (r.ok) { await onClaimed?.(r.events ?? [], r.fold ?? null); setClaimed(true); }
       else setClaimError(r.reason);
     } catch { setClaimError("unreachable"); }
     setBusy(false);
@@ -405,7 +407,9 @@ function TakeOverTab({ matchId, device, onClaimed, onTakenOver, onClose }) {
     setBusy(true); setDiff(null);
     const entered = { runs: parseInt(runs, 10), wickets: parseInt(wickets, 10), balls: ballsTotal };
     try {
-      const r = await verifyTakeover(matchId, { device, ...entered });
+      // The playing conditions this device folded under go first (SCRBRD-114):
+      // the server refuses a stale set in words before it reads the board.
+      const r = await verifyTakeover(matchId, { device, ...entered, conditionsHash: typeof conditionsHash === "function" ? conditionsHash() : conditionsHash });
       if (r.ok) { onTakenOver?.(r.epoch); onClose?.(); }
       else if (r.reason === "verify_mismatch" && r.exp_runs != null) {
         // scoring_verify_takeover returns exp_runs/exp_wkts/exp_balls flat,
@@ -886,7 +890,7 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
  * injured or suspended bowler, so the sheet asks which before it offers
  * anyone, and passes it on: onConfirm(id, reason).
  */
-function NewOverSheet({ovNum,inn=null,prevBowlers,bowlingSquad,bowlingTeamKey,lastBowlerName,refuses,why=null,onSuspended=null,onClose,onConfirm:confirm,midOver=false}){
+function NewOverSheet({ovNum,inn=null,prevBowlers,bowlingSquad,bowlingTeamKey,lastBowlerName,refuses,why=null,onSuspended=null,onClose,onConfirm:confirm,midOver=false,capWordsFor=null}){
   const[name,setName]=useState("");
   const[filter,setFilter]=useState("");
   const[reason,setReason]=useState(null);
@@ -976,6 +980,12 @@ function NewOverSheet({ovNum,inn=null,prevBowlers,bowlingSquad,bowlingTeamKey,la
                     color:dis?D.textMuted:D.textPrimary}}>{p.name}</span>
                   {p.likely&&<span data-testid="bowler-likely" style={{fontFamily:D.body,fontSize:"12px",fontWeight:600,color:T.content.secondary}}>Likely next · bowled the over before last</span>}
                   {whyNot&&<span data-testid="bowler-unavailable" style={{fontFamily:D.body,fontSize:"12px",color:D.roseText}}>{whyNot}</span>}
+                  {/* The competition's innings cap (SCRBRD-114): words, and
+                      the choice stays open — the umpires decide (D1). */}
+                  {capWordsFor&&p.figures&&capWordsFor(p.figures.balls)&&(
+                    <span data-testid="bowler-cap" style={{fontFamily:D.body,fontSize:"12px",fontWeight:600,color:T.content.secondary}}>
+                      {capWordsFor(p.figures.balls)}</span>
+                  )}
                 </span>
                 {role&&<Badge color={rc} sx={{fontSize:"12px"}}>{role}</Badge>}
                 {p.figures&&(

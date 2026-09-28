@@ -225,7 +225,11 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   "browser-public",
   // SCRBRD-110 phase 1 (db/60): the health-monitoring consent on Settings → Me,
   // the eighteen card, and the sign-up row — both themes, 12px and 44px.
-  "browser-consent"];
+  "browser-consent",
+  // Playing conditions, phase 1 (db/61, SCRBRD-114): a fixture arranged in a
+  // league pre-filled from its conditions; the pad's words; the bowled after
+  // a no-ball standing where the league says no free hit.
+  "browser-playing-conditions"];
 
 // Walks that need no database, run by `pnpm smoke` instead. Named here only so
 // the completeness check below knows they are accounted for.
