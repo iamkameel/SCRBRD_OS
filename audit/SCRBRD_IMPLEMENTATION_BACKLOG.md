@@ -4149,7 +4149,8 @@ hand-written `player_masked` re-emission (db/47 rebuilds that view the same way)
 stays as shipped. Or drop the column, since the injury rows are the clinical truth and `read-api.mjs` already refuses
 to read it.
 
-### SCRBRD-118 — db/99's db/54 "(same)" check fails on the db/45 fixture: the live score and the fold disagree
+### ~~SCRBRD-118~~ — CLOSED · db/99's db/54 "(same)" check fails on the db/45 fixture: the live score and the fold disagree
+**Closed 2026-09-28** by `8ab1c59` (db/54 section 4, PR #48): `match_live_score` now counts runs and wickets with `innings_score_as_folded`'s expressions, so the two agree on any log, and §32 sets its own principal. Found independently while the K3/K4 work was on the older base.
 **Priority:** P1 · **Domain:** Scoring · **Type:** found 2026-09-28 (it blocks `--verify` and `run-smoke-api`)
 At `d42b56c`, before any K3 or K4 change, `migrate --reset --seed --verify` stops at section 32's "(same)" check:
 `live/folded 77777777-…-0003/0` reads live (81,15,20) and folded (78,14,20). Section 23 (db/45) writes two
