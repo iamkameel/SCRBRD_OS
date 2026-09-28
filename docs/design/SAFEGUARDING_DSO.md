@@ -652,15 +652,13 @@ the same reason — an enquiring family is not staff — unless Kameel says othe
 (**Q8**). STEP4 phase A's pupil walk flips its assertion ("the Squad shows a team-mate's
 `rtw_date`" becomes "shows none"). His own injury still reaches him through `selfaccess`.
 
-**Built 2026-09-28 (Opus): `db/55_medical_status_withdrawn.sql`**, from `player` and `enquiry` as decided, with db/99
-section 33 and SCRBRD-115 in the backlog. **Where the code differs from this section's reading:** `enquiry` is not "an
-enquiring family". In the code it is a coach at the same school, granted one named player for up to fourteen days by
-that player's own coach, through `access_request_decide()` (`db/08` ~742; "can I have him for the 2nd XI on
-Saturday"). CSA p52 allows "staff and coaches who need it", so the premise of Q8 did not hold. The withdrawal was built
-as decided, since it is the fail-closed direction. A granted enquiry now carries only `player.profile.read`, and the
-coach who answers says whether the boy is available in the decision's note. For a same-school coach, who already sees
-the roster, the grant now buys nothing new on screen. The file header says how to restore it: one INSERT, the line
-back in `roles.mjs`, and the entry out of `WITHDRAWN_SINCE_01`. Kameel should confirm Q8 knowing this. One more health
+**Built 2026-09-28 (Opus): `db/55_medical_status_withdrawn.sql`**, from `player` only, with db/99 section 33 and
+SCRBRD-115 in the backlog. **Where the code differs from this section's reading:** `enquiry` is not "an enquiring
+family". In the code it is a coach at the same school, granted one named player for a limited time by that player's own
+coach, through `access_request_decide()` (`db/08` ~742; "can I have him for the 2nd XI on Saturday"). CSA p52 allows
+"staff and coaches who need it", so the premise of Q8 did not hold. **Decided (Kameel, 2026-09-28): `enquiry` keeps
+`medical.status.read`.** It is a coach-to-coach grant for one named player, and both ends are staff, so the grant
+shows whether the boy is out and until when, and never what is wrong with him. Only `player` loses it. One more health
 signal was found that this section does not name: `player.fitness` (`fit`, `injured`, `rehab`, `unavailable`) is
 unmasked in `player_masked` under `player.profile.read`. No route writes it, but the seed does. The screens now draw it
 only for a role holding the status tier. The column mask is SCRBRD-117.
@@ -704,7 +702,8 @@ the points above, with four readings made explicit:
 - **The trip guard.** `trip_driver_cleared()` is unchanged. From the paste nothing refuses that did not refuse before:
   every new requirement starts as missing, and missing never refuses. Once a new kind is recorded for a driver and
   later lapses or is revoked, the guard refuses him, as it does today for a lapsed police clearance. That is db/08's
-  existing rule reading the requirement table, not a new one.
+  existing rule reading the requirement table, not a new one. **Decided (Kameel, 2026-09-28): keep this behaviour**;
+  no code change.
 
 ### 6.5 K5 · The emergency-contact role list, approved by the DSO
 
@@ -909,7 +908,8 @@ suspension reaches one tenant, and the provincial DSO acts elsewhere by hand; th
 an open concern, logged; one union per province, with a test; Kameel makes the first union and federation
 principal assignments with CSA's names, and they appoint the DSOs; purge is pressed by the tenant's DSO from a due
 list, never a job; the office records a pupil's own consent from the signed Annexure C form; `enquiry` loses
-`medical.status.read` in K3's file too.
+`medical.status.read` in K3's file too. **Revised (Kameel, 2026-09-28):** Q8 is reversed, and `enquiry` keeps it (see
+Q8 below and §6.3). K4's trip guard keeps refusing a driver whose recorded new-kind check has lapsed (§6.4).
 
 Only what the decisions leave open. Each has a recommendation.
 
@@ -949,6 +949,9 @@ Only what the decisions leave open. Each has a recommendation.
 8. **`enquiry` and `medical.status.read`.** K3 withdraws it from `player`; `enquiry` (a
    family asking about admission) holds it too. *Recommendation:* withdraw it there as
    well, in the same file — an enquiring family is not staff (p52 item 6).
+   **Reversed (Kameel, 2026-09-28):** `enquiry` is a coach-to-coach grant for one named
+   player, not a family; both ends are staff, so it keeps the status tier. Only `player`
+   loses it.
 
 ---
 

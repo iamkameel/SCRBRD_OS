@@ -137,7 +137,7 @@ group("§11.1  Viewing a match does not grant scoring rights");
        caps(r).includes("fixture.read") && reach(r, scoring).length === 0,
        reach(r, scoring).join(","));
   ok("enquiry — the narrowest role there is — reaches neither",
-     caps("enquiry").length === 1 && reach("enquiry", scoring).length === 0, caps("enquiry").join(" "));
+     caps("enquiry").length === 2 && reach("enquiry", scoring).length === 0, caps("enquiry").join(" "));
 }
 
 // ── §11.2 Scorer vs match authority ──────────────────────
@@ -192,13 +192,16 @@ ok("the capability that opens the file is held by the roles that need it",
 
 // ── K3 · A child's medical needs are not in general view to other children ──
 // CSA Safeguarding Policy p52 item 6; docs/policy/CSA_SAFEGUARDING_CHECK.md K3;
-// db/55. A role held across a side, or granted to another side's coach, reads
-// no tier of a team-mate's injury — not even that he is out and until when.
+// db/55. A role held across a side by children reads no tier of a
+// team-mate's injury — not even that he is out and until when. A granted
+// enquiry is coach to coach, for one named player, and keeps the status tier
+// and nothing more (Kameel, 2026-09-28).
 group("K3  A pupil reads no team-mate's injury, at any tier");
 {
   const tiers = ["medical.status.read", "medical.nature.read", "medical.details.read"];
-  for (const r of ["player", "enquiry"])
-    ok(`${r} holds no medical tier`, reach(r, tiers).length === 0, reach(r, tiers).join(","));
+  ok("player holds no medical tier", reach("player", tiers).length === 0, reach("player", tiers).join(","));
+  ok("enquiry holds the status tier and no other",
+     reach("enquiry", tiers).join() === "medical.status.read", reach("enquiry", tiers).join(","));
   ok("...while the pupil's own record reaches him at every tier, through selfaccess",
      tiers.every((c) => caps("selfaccess").includes(c)));
   ok("...and a guardian's, over his own children, likewise",
@@ -206,7 +209,7 @@ group("K3  A pupil reads no team-mate's injury, at any tier");
   // Who may know that a child is out: staff who need it, the child, his parent.
   // A new holder of the status tier is a decision against p52, not a tidy-up.
   const staff = ["principal", "directorofsport", "schooladmin", "sportsadmin",
-                 "coach", "assistantcoach", "teammanager", "medical", "guardian", "selfaccess"];
+                 "coach", "assistantcoach", "teammanager", "medical", "enquiry", "guardian", "selfaccess"];
   ok("the status tier is held by staff who need it, the child and his parent, and nobody else",
      others("medical.status.read").every((r) => staff.includes(r))
        && staff.every((r) => caps(r).includes("medical.status.read")),

@@ -9,9 +9,10 @@
  * is how we know it is bounded.
  *
  * The interesting assertions are all about what a granted request does NOT
- * buy: not whether he is out (K3, db/55 — that is his own coach's answer, in
- * the decision's note), not the diagnosis, not the rest of the squad, not
- * forever, and not to anyone but the coach who asked.
+ * buy: not the diagnosis, not the rest of the squad, not forever, and not to
+ * anyone but the coach who asked. What it does buy is whether that one boy is
+ * out and until when — coach to coach, both staff, which K3 left in place
+ * (Kameel, 2026-09-28) when it took the same thing away from pupils.
  *
  *   node tools/migrate.mjs --reset --seed
  *   node tools/smoke-access.mjs
@@ -144,18 +145,20 @@ try {
 
   group("What the grant bought");
   const after = await read("injuries", second);
+  const mine = after.filter((i) => i.player_id === P_FIRST);
   ok("the 2nd XI coach holds the boy's profile, through the enquiry",
      await canAs(COACH2, "player.profile.read", P_FIRST));
   ok("...and reads his name", (await read("players", second)).some((p) => p.id === P_FIRST));
+  // Coach to coach, both staff (CSA p52: "staff and coaches who need it"):
+  // K3 took this from pupils and left it here (Kameel, 2026-09-28).
+  ok("...and can now see that he is unavailable, and until when",
+     mine.length === 1 && mine.every((i) => i.rtw_date != null) && await canAs(COACH2, "medical.status.read", P_FIRST));
 
   group("And what it did not");
-  // K3 (db/55, CSA p52): whether a boy is out, and until when, stays with the
-  // coach who coaches him. The answer to "is he available on Saturday" is the
-  // decision and its note ("Yes, he is fit."), not a read of his injury.
-  ok("NOT whether he is out, or until when (K3)",
-     !after.some((i) => i.player_id === P_FIRST) && !(await canAs(COACH2, "medical.status.read", P_FIRST)));
-  ok("NOT what is wrong with them", !(await canAs(COACH2, "medical.nature.read", P_FIRST)));
-  ok("NOT the clinical notes", !(await canAs(COACH2, "medical.details.read", P_FIRST)));
+  ok("NOT what is wrong with them",
+     mine.every((i) => i.injury_type == null) && !(await canAs(COACH2, "medical.nature.read", P_FIRST)));
+  ok("NOT the clinical notes",
+     mine.every((i) => i.notes == null) && !(await canAs(COACH2, "medical.details.read", P_FIRST)));
   ok("NOT the rest of the 1st XI — one player was asked about, one was granted",
      !after.some((i) => i.player_id === P_MATE) && !(await canAs(COACH2, "player.profile.read", P_MATE)));
   ok("NOT a U16B player either",
@@ -187,7 +190,8 @@ try {
   group("Revocation is immediate, because it is an assignment");
   await dbq(`update role_assignment set active = false where id = $1`, [granted.body.assignment]);
   ok("deactivating the assignment closes the access on the next statement",
-     !(await canAs(COACH2, "player.profile.read", P_FIRST)));
+     !(await read("injuries", second)).some((i) => i.player_id === P_FIRST)
+     && !(await canAs(COACH2, "player.profile.read", P_FIRST)));
 } catch (e) {
   ok(`the access walk threw: ${e.message?.slice(0, 160)}`, false);
 } finally {

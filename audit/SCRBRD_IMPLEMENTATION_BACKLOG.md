@@ -4077,23 +4077,23 @@ PDFs). Then an Opus design (a `competition_conditions` shape and where each rule
 **Priority:** P1 · **Domain:** RBAC / Privacy · **Type:** safeguarding (CSA_SAFEGUARDING_CHECK K3; SAFEGUARDING_DSO §6.3)
 **Decided (Kameel, 2026-09-27):** withdraw `medical.status.read` from `player` and `enquiry` (check §5 Q12; design
 §10 Q8). CSA's Safeguarding Policy p52 item 6 says a child's medical needs are "not in general view to other ...
-children".
+children". **Revised (Kameel, 2026-09-28): `enquiry` keeps it.** It is a coach-to-coach grant for one named player,
+and both ends are staff. Only `player` loses it.
 
-**Built 2026-09-28 (Opus).** `db/55_medical_status_withdrawn.sql` deletes the two `role_capability` rows. `roles.mjs`
-drops the capability from both bundles, and `WITHDRAWN_SINCE_01` keeps `db/01` as shipped (db/21's shape). Regenerating
+**Built 2026-09-28 (Opus).** `db/55_medical_status_withdrawn.sql` deletes the `player` row from `role_capability`.
+`roles.mjs` drops the capability from `player`, and `WITHDRAWN_SINCE_01` (the `player` row only) keeps `db/01` as
+shipped (db/21's shape). Regenerating
 leaves `db/` unchanged. A pupil now reads no team-mate's injury row at any tier. That covers date injured, return date
 and restricted; the Dashboard's "Who is out"; the status-tier injury notice; and the readiness read's clinical half.
 His own injury, at every tier, still reaches him through `selfaccess`. The screens (Squad, Profiles, the profile
 modal, Injuries' "Available" count) draw `player.fitness` only for a role holding the status tier.
 **Proof:** db/99 section 33, with sections 3b, 3c and 11 flipped. It covers the catalogue, R Pillay beside T Bekker,
 a school-wide pupil, the physio and the director of sport still reading, and a real `access_request_decide()` grant to
-the 2XI coach that reaches the boy's profile and not his injury. There is a K3 group in `separation.test.mjs`, which
-pins the status tier's holders. `smoke-read` and `smoke-access` are updated, and the browser day sheet has a pupil
-case. Falsified: putting each row back turns 3b and 33 (pupil), 33 (enquiry), the separation group and both walks red.
-**Review (Kameel):** in the code, `enquiry` is not a family. It is a same-school coach granted one boy by that boy's
-own coach. After K3 the grant carries only his profile, which that coach already sees on the roster, so asking
-another coach now buys nothing on screen, and the answer travels in the decision's note. The design's Q8 premise did
-not hold. Restoring it is one file (db/55's header says how).
+the 2XI coach. That grant reads the boy's profile and whether he is out and until when, and not what is wrong with him
+or anyone else's injury. There is a K3 group in `separation.test.mjs`, which pins the status tier's holders
+(`enquiry` included). `smoke-read` and `smoke-access` are updated, and the browser day sheet has a pupil case.
+Falsified: putting the pupil's row back turns 3b and 33 (pupil), the separation group and `smoke-read` red; deleting
+the enquiry's row turns 33 (enquiry) red.
 
 ### SCRBRD-116 — K4 and SG-7: the clearance register to CSA's rules
 **Priority:** P1 · **Domain:** RBAC / Privacy · **Type:** safeguarding (CSA_SAFEGUARDING_CHECK K4, SG-7; SAFEGUARDING_DSO
@@ -4119,7 +4119,7 @@ and the acknowledgement until the office records them. Administrators, officials
 for the first time. A check recorded before db/56 reads as it did (current, then expiring) until its own date.
 **What does not:** nothing refuses more from the paste. `trip_driver_cleared()` is unchanged and never refuses a
 missing check. Once a new kind is recorded for a driver and later lapses or is revoked, it refuses him, as it does
-today for a lapsed police clearance.
+today for a lapsed police clearance. **Decided (Kameel, 2026-09-28): keep this behaviour**; no code change.
 **Proof:** db/99 section 34 covers roles, age, first check, legacy row, reference data, pupil and trip. The
 `smoke-clearance` walk has a CSA group (85), and the browser register walk checks the new names, the rule line and
 the 12px floor on every chip. Falsified: the ages table emptied, "first" counting a revoked row, the register without

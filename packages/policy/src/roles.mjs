@@ -299,15 +299,17 @@ const BUNDLES = {
   // app_can() as everything else, revocation is immediate, and it expires on
   // its own without anybody remembering to tidy up.
   //
-  // The bundle is one capability: his profile. It used to carry
-  // medical.status.read as well — the question being "is this boy available
-  // on Saturday" — and K3 (db/55, Kameel 2026-09-27, SAFEGUARDING_DSO §10
-  // Q8) withdrew it: whether a boy is out, and until when, is his health,
-  // and it stays with the coach who actually coaches him, who answers the
-  // request. A granted enquiry never carried medical.nature.read either,
-  // because the role does not name it and a grant cannot exceed the role it
-  // grants.
-  enquiry: ["player.profile.read"],
+  // The bundle is deliberately two capabilities. The question being answered
+  // is "is this boy available on Saturday" — availability and a name — and NOT
+  // what is wrong with him, which stays with the coach who actually coaches
+  // him. A granted enquiry can never carry medical.nature.read, because the
+  // role does not name it and a grant cannot exceed the role it grants.
+  //
+  // It KEEPS medical.status.read through K3 (Kameel, 2026-09-28): a grant is
+  // coach to coach, for one named player, time-boxed, and both ends are staff
+  // — CSA p52's "staff and coaches who need it". Only `player`, held across a
+  // side by children, loses it (db/55).
+  enquiry: ["player.profile.read", "medical.status.read"],
 
   // YOUR OWN FILE.
   //

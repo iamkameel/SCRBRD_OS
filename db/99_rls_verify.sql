@@ -5702,11 +5702,13 @@ BEGIN
   -- CSA Safeguarding Policy p52 item 6: a child's medical needs are for
   -- "staff and coaches who need it, but not in general view to other ...
   -- children". db/55 withdrew medical.status.read from `player` (held across
-  -- a side) and from `enquiry` (another side's coach, granted one boy). Each
+  -- a side, by children). `enquiry` keeps it (Kameel, 2026-09-28): a grant is
+  -- coach to coach, for one named player, and both ends are staff. Each
   -- refusal below is paired with a read that proves the principal is live,
   -- so a zero is the capability refusing and not an empty fixture. db/55 was
-  -- undone (its two role_capability rows put back) and this file run: (pupil)
-  -- and (enquiry) failed, and 3b and 11 above with them.
+  -- undone (its role_capability row put back) and this file run: (pupil)
+  -- failed, and 3b and 11 above with it; the enquiry's row was deleted and
+  -- (enquiry) failed.
   DECLARE
     n       bigint;
     v_req   uuid;
@@ -5715,14 +5717,14 @@ BEGIN
     v_asg   uuid;
     I_OTHER uuid := 'cccccccc-0000-0000-0000-000000000002';  -- T Bekker's injury, 1XI
   BEGIN
-    -- (catalogue) the two rows are gone, and nobody else's went with them
+    -- (catalogue) the pupil's row is gone, and nobody else's went with it
     PERFORM _assert(NOT EXISTS (SELECT 1 FROM role_capability
-                                 WHERE role IN ('player', 'enquiry') AND capability = 'medical.status.read'),
-      'db/55 (catalogue): player or enquiry still holds medical.status.read');
+                                 WHERE role = 'player' AND capability = 'medical.status.read'),
+      'db/55 (catalogue): player still holds medical.status.read');
     PERFORM _assert((SELECT count(*) FROM role_capability
                       WHERE capability = 'medical.status.read'
-                        AND role IN ('coach', 'assistantcoach', 'teammanager', 'medical', 'guardian', 'selfaccess',
-                                     'principal', 'directorofsport', 'schooladmin', 'sportsadmin')) = 10,
+                        AND role IN ('coach', 'assistantcoach', 'teammanager', 'medical', 'enquiry', 'guardian', 'selfaccess',
+                                     'principal', 'directorofsport', 'schooladmin', 'sportsadmin')) = 11,
       'db/55 (catalogue): a role that needs the status tier lost it');
 
     -- (pupil) R Pillay, 1XI, injured, beside T Bekker, 1XI, also injured. His
@@ -5754,7 +5756,8 @@ BEGIN
     -- the file earlier sections have moved U_PARENT's link.)
 
     -- (enquiry) the 2XI coach asks for R Pillay (1XI) and is told yes: the
-    -- granted assignment reaches his profile and not whether he is out
+    -- granted assignment reaches his profile and whether he is out, and until
+    -- when — and not what is wrong with him, nor any team-mate of his
     PERFORM _as(U_COACH2);
     SELECT count(*) INTO n FROM injury_masked WHERE player_id = P_INJURED;
     PERFORM _assert(n = 0, 'db/55 (enquiry): the 2XI coach reads a 1XI injury before any grant');
@@ -5765,9 +5768,13 @@ BEGIN
     PERFORM _assert(v_ok AND v_asg IS NOT NULL, format('db/55 (enquiry): the grant was refused (%s)', v_why));
     PERFORM _as(U_COACH2);
     SELECT count(*) INTO n FROM player_masked WHERE id = P_INJURED;
-    PERFORM _assert(n = 1, 'db/55 (enquiry): the granted enquiry does not reach the boy''s profile — the refusal below proves nothing');
-    SELECT count(*) INTO n FROM injury_masked WHERE player_id = P_INJURED;
-    PERFORM _assert(n = 0, format('db/55 (enquiry): a granted enquiry reads %s of the boy''s injury row(s) — that he is out, and until when', n));
+    PERFORM _assert(n = 1, 'db/55 (enquiry): the granted enquiry does not reach the boy''s profile');
+    SELECT count(*) INTO n FROM injury_masked WHERE player_id = P_INJURED AND rtw_date IS NOT NULL;
+    PERFORM _assert(n = 1, format('db/55 (enquiry): a granted enquiry reads %s of the boy''s injury status rows, expected 1 — that he is out, and until when (Kameel, 2026-09-28)', n));
+    SELECT count(*) INTO n FROM injury_masked WHERE player_id = P_INJURED AND (injury_type IS NOT NULL OR notes IS NOT NULL);
+    PERFORM _assert(n = 0, 'db/55 (enquiry): a granted enquiry reads what is wrong with the boy');
+    SELECT count(*) INTO n FROM injury_masked WHERE player_id <> P_INJURED;
+    PERFORM _assert(n = 0, format('db/55 (enquiry): a granted enquiry reads %s injury row(s) about somebody other than the boy granted', n));
   END;
 
   -- ── 34. The clearance register to CSA's rules (K4, SG-7, db/56) ─────

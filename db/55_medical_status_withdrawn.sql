@@ -20,22 +20,19 @@
 --      his `selfaccess` assignment, which names him and nobody else, and
 --      which this file does not touch.
 --
---   2. `enquiry` loses it too (Kameel, 2026-09-27, SAFEGUARDING_DSO §10 Q8).
---      NOTE for the reader: the design reasoned "an enquiring family is not
---      staff", but `enquiry` is not a family. access_request_decide() (db/08)
---      grants it to a COACH at the same school, about one named player on
---      another side, for fourteen days, when that player's own coach says yes
---      ("can I have him for the 2nd XI on Saturday"). The decision stands as
---      Kameel made it: the granted coach now reads the boy's profile and not
---      whether he is out; whether he is available is the answer his own coach
---      gives, in the request's decided_note. Restoring it is one file (an
---      INSERT of the row this DELETE removes), the line back in roles.mjs,
---      and the entry out of WITHDRAWN_SINCE_01.
+--   2. `enquiry` KEEPS it (Kameel, 2026-09-28). The design (§10 Q8) proposed
+--      withdrawing it too, reasoning "an enquiring family is not staff"; but
+--      `enquiry` is not a family. access_request_decide() (db/08) grants it
+--      to a COACH at the same school, about one named player on another side,
+--      time-boxed, when that player's own coach says yes ("can I have him for
+--      the 2nd XI on Saturday"). Both ends are staff — CSA p52's "staff and
+--      coaches who need it" — so the grant still shows whether the boy is out
+--      and until when, and still never what is wrong with him.
 --
 -- Who still holds it, unchanged: superadmin, principal, directorofsport,
 -- schooladmin, sportsadmin, coach, assistantcoach, teammanager, medical, and —
--- each scoped to the children their assignment names — guardian and
--- selfaccess.
+-- each scoped to the one player or the children their assignment names —
+-- enquiry, guardian and selfaccess.
 --
 -- WHAT ELSE FOLLOWS, with no further SQL: the injury read (db/09 injury_read,
 -- app_can('medical.status.read', ...)), so injury_masked and the readiness
@@ -51,7 +48,7 @@
 -- Safe to run twice: it deletes the rows if they are there.
 
 DELETE FROM role_capability
- WHERE role IN ('player', 'enquiry') AND capability = 'medical.status.read';
+ WHERE role = 'player' AND capability = 'medical.status.read';
 
 
 -- ── Refuse to commit a file that did not do what it says ───────────
@@ -60,15 +57,15 @@ DECLARE
   v_holders text;
 BEGIN
   IF EXISTS (SELECT 1 FROM role_capability
-              WHERE role IN ('player', 'enquiry') AND capability = 'medical.status.read') THEN
-    RAISE EXCEPTION 'db/55: player or enquiry still holds medical.status.read';
+              WHERE role = 'player' AND capability = 'medical.status.read') THEN
+    RAISE EXCEPTION 'db/55: player still holds medical.status.read';
   END IF;
   -- And nobody else lost it: the holders are exactly roles.mjs's.
   SELECT string_agg(role, ' ' ORDER BY role) INTO v_holders
     FROM role_capability WHERE capability = 'medical.status.read';
   IF v_holders IS DISTINCT FROM
-     'assistantcoach coach directorofsport guardian medical principal schooladmin selfaccess sportsadmin superadmin teammanager' THEN
-    RAISE EXCEPTION 'db/55: medical.status.read is held by [%], expected the eleven roles of roles.mjs', v_holders;
+     'assistantcoach coach directorofsport enquiry guardian medical principal schooladmin selfaccess sportsadmin superadmin teammanager' THEN
+    RAISE EXCEPTION 'db/55: medical.status.read is held by [%], expected the twelve roles of roles.mjs', v_holders;
   END IF;
   -- The pupil's own record still reaches him: selfaccess keeps every tier.
   IF (SELECT count(*) FROM role_capability
