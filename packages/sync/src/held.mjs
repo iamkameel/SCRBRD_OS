@@ -199,12 +199,17 @@ function asRecordedNow(view, payload) {
  * and why. A conflict, or an event no longer on the board, is never recorded
  * again and answers with its own reason.
  *
+ * `ctx` is the pad's fold context: its `startsAt` (the fixture's start) or
+ * `edition` dates the match for the Laws that differ by Edition (SCRBRD-113),
+ * as the server's fold is dated; without either, the log's first event does.
+ *
  * @param {PadLog} log
  * @param {HeldEvent[]} held       everything held (to take out of the view)
  * @param {HeldEvent[]} evs        the ones to record again, in order
+ * @param {import("@scrbrd/scoring").FoldContext} [ctx]
  * @returns {{key: string, reason: string}|null}
  */
-export function recordAgainRefusal(log, held, evs) {
+export function recordAgainRefusal(log, held, evs, ctx = {}) {
   const view = serverView(log, held).map((a) => [...(a ?? [])]);
   for (const h of evs) {
     if (h.state !== "refused") return { key: h.idempotencyKey, reason: "idempotency_conflict" };
@@ -213,7 +218,7 @@ export function recordAgainRefusal(log, held, evs) {
     const i = ev.innings ?? 0;
     // The match's fold, as the server's: an award to a fielding side is in
     // that side's own innings (SCRBRD-094).
-    const innings = deriveInningsList(view);
+    const innings = deriveInningsList(view, ctx);
     const why = lawsRefusal({ innings, events: view }, ev);
     if (why) return { key: h.idempotencyKey, reason: why };
     while (view.length <= i) view.push([]);
@@ -332,7 +337,8 @@ export function describeEvent(ev, inn, find) {
     case "batters": {
       const who = [ev.striker != null ? `${n(ev.striker)} (on strike)` : null,
                    ev.nonStriker != null ? n(ev.nonStriker) : null].filter(Boolean);
-      return `Batters — ${who.length ? who.join(" and ") : "nobody named"}`;
+      // A retired-out batter back with the opposing captain's consent (SCRBRD-071).
+      return `Batters — ${who.length ? who.join(" and ") : "nobody named"}${ev.captainConsent === true ? ", resuming with the opposing captain's consent" : ""}`;
     }
     case "retire": {
       // SCRBRD-081: marked W, it is a dismissal with no ball.

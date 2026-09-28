@@ -8,6 +8,7 @@ import {
   DISMISSAL, DISMISSAL_LABEL, RETIRE_REASON, BOWLER_CHANGE_REASON, isMidOver, scoringReadiness, SCORING_BLOCK, lawsRefusal, REFUSAL_TEXT, LOCAL_ONLY,
   lastUndoableIndex, likelyCause,
 } from "@scrbrd/scoring";
+import { lawsEdition } from "@scrbrd/scoring";
 import { D, T, inkOn } from "../design/tokens.js";
 import { deviceId } from "../lib/device.js";
 import { loadMatch, saveMatch, saveAside, storageKind } from "../lib/persist.js";
@@ -22,7 +23,7 @@ import { crease, deliveryEvents, noBallEvent } from "./delivery.js";
 import { PenaltySheet } from "./penaltySheet.jsx";
 import { ReportOffer, SuspendSheet } from "./suspendSheet.jsx";
 import { RetireSheet } from "./retireSheet.jsx";
-import { retireHurtEvent, resumeChoices } from "./retire.js";
+import { retireHurtEvent, resumeChoices, consentChoices } from "./retire.js";
 import { bowlerToSuspend, replacementEvent, suspendEvent, suspensionRefusalWords, suspensionsInMatch } from "./suspension.js";
 import { MenuItem, MenuSection, PadMenu } from "./padMenu.jsx";
 import { ExitKey, Pad, PadBoard } from "./pad.jsx";
@@ -502,6 +503,15 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
       setMatch(resume.cfg);
       setMatchId(id);
       matchIdRef.current = id;
+      // The fixture's start dates the match, and the date decides the
+      // Edition of the Laws it is scored under; its format says whether a
+      // no-ball gives a free hit (SCRBRD-113) — for the fold and every
+      // question the pad asks the Laws, as the server folds it. Set before
+      // the log is, so the first fold has them. Without them (the pad's own
+      // match, a session saved before this), the log's first event dates it
+      // and every no-ball gives a free hit, as before.
+      if(resume.cfg.startsAt)scoringCtxRef.current={...scoringCtxRef.current,startsAt:resume.cfg.startsAt};
+      if(resume.cfg.format)scoringCtxRef.current={...scoringCtxRef.current,format:resume.cfg.format};
 
       const saved = id ? await loadMatch(id) : null;
       if (cancelled) return;
@@ -1196,7 +1206,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
     const scope=heldInOrder(outbox.held).filter(h=>keys.includes(h.idempotencyKey));
     // Judged again at the moment of the tap, not when the sheet drew: the
     // log may have moved since.
-    if(!scope.length||recordAgainRefusal(events,outbox.held,scope))return;
+    if(!scope.length||recordAgainRefusal(events,outbox.held,scope,scoringCtxRef.current))return;
     const {log}=recordAgain(events,outbox.held,scope,
       ()=>{const id=newEventId(deviceIdRef.current,matchIdRef.current??"local");mintedRef.current.add(id);return id;});
     setEvents(log);
@@ -1276,7 +1286,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
    * one-tap pad, which never asks where the ball went) get an explicit
    * "not required" rather than a silent blank.
    */
-  const commitBall=(type,value,shot,seg,zone,approach,placement,{shortRun=false,nbType=null}={})=>{
+  const commitBall=(type,value,shot,seg,zone,approach,placement,{shortRun=false,nbType=null,facesNext=null,disallowed=null,notInOver=null}={})=>{
     // Every delivery comes through here, including the hub's stage-2 paths
     // that were only checked at stage 0. The same answer the pad shows.
     if(!readiness.ready||padLock)return;
@@ -1303,7 +1313,11 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
     // five penalty runs to the fielding side: the two events of shortRunning(),
     // recorded together, in order, in this innings — so what follows the ball
     // (the over, the innings) is read from the projection with both in it.
-    const evs=deliveryEvents({curIn,before,freeHit,type,value,shot,seg,zone,approach,placement,shortRun,nbType});
+    // SCRBRD-113: the same for the runs disallowed after a batter's further
+    // offence on the pitch (`disallowed`), and for a delivery that does not
+    // count in the over, with five to the batting side (`notInOver`); and
+    // who was chosen to face next (`facesNext`) where the Laws give a choice.
+    const evs=deliveryEvents({curIn,before,freeHit,type,value,shot,seg,zone,approach,placement,shortRun,nbType,facesNext,disallowed,notInOver});
     const ev=evs[0];
     const after=project(...evs);
     const endedOver=after.balls>before.balls&&after.balls%6===0;
@@ -1389,7 +1403,10 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
       dismissal:mode,fielder:fielder||null,freeHit,
       ...crease(inn),
       ...(extra.dismissed?{dismissed:extra.dismissed}:{}),
-      ...(extra.outAt?{outAt:extra.outAt}:{})});
+      ...(extra.outAt?{outAt:extra.outAt}:{}),
+      // Who the fielding captain chose to face after an obstruction that
+      // stopped a catch (4th Edition, SCRBRD-113): the fold places him.
+      ...(extra.facesNext?{facesNext:extra.facesNext}:{})});
     const before=inn;
     const after=project(ev);
     const endedOver=after.balls>before.balls&&after.balls%6===0;
@@ -1421,9 +1438,12 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
   // A batter arriving and a bowler taking the ball are events, not mutations.
   // Without them in the log the log could not stand alone: a delivery record
   // says nothing about who walked in after the last wicket.
-  const addBatsman=(name,isStriker)=>{
+  // `opts.captainConsent`: a batter who retired out, back with the opposing
+  // captain's consent (Law 25.4.3; SCRBRD-071) — the batting-order sheet's
+  // confirm, offered only when the Laws take it (retire.js consentChoices).
+  const addBatsman=(name,isStriker,opts={})=>{
     const asStriker=isStriker||!inn?.striker;
-    emit(battersEvent(asStriker?{striker:name}:{nonStriker:name}));
+    emit(battersEvent({...(asStriker?{striker:name}:{nonStriker:name}),...(opts.captainConsent===true?{captainConsent:true}:{})}));
   };
 
   // `reason` only for a change during an over (SCRBRD-080): the sheet asks
@@ -1434,9 +1454,9 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
   // arrives — lawsRefusal() over the same two arrays this screen already
   // folds — so a bowler it offers is one the server will take. It used to
   // compare names against the last bowler, a rule of its own that knew
-  // nothing of a mid-over change (Law 17.8: "or parts thereof").
+  // nothing of a mid-over change (Law 17.6: "parts of each of two consecutive overs").
   // Mid-over the sheet itself insists on the reason; what it asks the Laws
-  // here is the rest (Law 17.8), so it offers a reason the server will take.
+  // here is the rest (Law 17.6), so it offers a reason the server will take.
   const bowlerRefusal=id=>lawsRefusal({innings,events},bowlerEvent({innings:curIn,bowler:id,...(midOver?{reason:BOWLER_CHANGE_REASON.INJURY}:{})}));
 
   // Penalty runs (Law 41, SCRBRD-094): five, to the side the sheet chose, for
@@ -1451,9 +1471,22 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
   // A short run: the delivery, with no runs, and five to the fielding side —
   // through commitBall, the one funnel every delivery goes through. Off a
   // no-ball the sheet asks its type, as the no-ball sheet does.
-  const recordShortRun=(type,nbType=null)=>{
+  // The sheet also says why (short running, or a batter's further offence on
+  // the pitch or in the protected area: the runs are disallowed the same
+  // way) and, after short running under the 4th Edition, whom the fielding
+  // captain chose to face next (SCRBRD-113).
+  const recordShortRun=(type,nbType=null,{reason=null,facesNext=null}={})=>{
     setModal(null);
-    commitBall(type,0,null,null,null,null,undefined,{shortRun:true,nbType});
+    commitBall(type,0,null,null,null,null,undefined,{shortRun:true,nbType,disallowed:reason,facesNext});
+  };
+  // A delivery that does not count in the over (Law 17.3.2.5, SCRBRD-113): a
+  // fielder's offence on it, five to the batting side, the runs that stand;
+  // after a fielder obstructs a batter, whom the batters chose to face.
+  // Through commitBall, the one funnel, so the over and the innings that
+  // follow are read from the projection with both events in it.
+  const recordNotInOver=({type,value=0,nbType=null,reason,facesNext=null})=>{
+    setModal(null);
+    commitBall(type,value,null,null,null,null,undefined,{nbType,notInOver:reason,facesNext});
   };
   // A bowler suspended by the umpires (Law 41, SCRBRD-094 item 2): the
   // event, for whoever is bowling (or bowled the last ball), then — the
@@ -1462,7 +1495,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
   // either; asked again here, at the tap, against the log as it is.
   const recordSuspension=(reason)=>{
     const who=bowlerToSuspend(inn);
-    const ev=suspendEvent(curIn,who,reason);
+    const ev=suspendEvent(curIn,who,reason,lawsEdition({innings,events}));
     if(padLock||lawsRefusal({innings,events},ev))return;
     emit(ev);
   };
@@ -1515,6 +1548,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
 
     if(modal==="noBall")return (
       <NoBallSheet
+        edition={lawsEdition({innings,events})} freeHits={inn?.freeHits!==false}
         onConfirm={recordNoBall}
         onClose={()=>setModal(null)}/>
     );
@@ -1592,6 +1626,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
           names={{striker:nameOf(inn?.striker),nonStriker:nameOf(inn?.nonStriker),bowler:nameOf(inn?.bowler)}}
           onAward={awardPenalty}
           onShortRun={recordShortRun}
+          onNotInOver={recordNotInOver}
           onClose={()=>setModal(null)}/>
       );
     }
@@ -1660,6 +1695,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
           striker={inn?.striker!=null?{id:inn.striker,name:inn.batsmen.find(b=>b.id===inn.striker)?.name??String(inn.striker)}:null}
           nonStriker={inn?.nonStriker!=null?{id:inn.nonStriker,name:inn.batsmen.find(b=>b.id===inn.nonStriker)?.name??String(inn.nonStriker)}:null}
           fieldingSquad={fieldingSquad}
+          edition={lawsEdition({innings,events})}
           onClose={()=>{setModal(null);setScoringCtx(null);setSelShot(null);resetHub();}}
           onConfirm={(mode,fielder,extra)=>{confirmWicket(mode,fielder,extra);}}/>
       );
@@ -1675,7 +1711,8 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
           twelfthMan={inn?.twelfthMan}
           onTimedOut={canTimeOut?recordTimedOut:null}
           resumable={resumeChoices({innings,events},curIn)}
-          onSend={name=>{
+          resumableWithConsent={consentChoices({innings,events},curIn)}
+          onSend={(name,opts)=>{
             // To the END THAT IS EMPTY. This sent every new batter to the
             // striker's end, which is right only when the striker was out
             // mid-over: after a wicket on the last ball the survivor has
@@ -1684,7 +1721,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
             // not-out batter from the crease, and the server refused it
             // (crease_occupied). Retired out and a run out's end make an
             // empty non-striker's end ordinary (SCRBRD-081, SCRBRD-069).
-            addBatsman(name,inn?.striker==null);
+            addBatsman(name,inn?.striker==null,opts);
             if(isThenOver)setModal("newOver");else setModal(null);
           }}
           onClose={()=>setModal(null)}/>
@@ -1775,7 +1812,8 @@ function SCRBRD({resume,onSignIn,onExit,role=null}={}){
         teamKey={inn?.teamKey}
         twelfthMan={inn?.twelfthMan}
         resumable={resumeChoices({innings,events},curIn,true)}
-        onSend={name=>{addBatsman(name,true);setModal(null);}}
+        resumableWithConsent={consentChoices({innings,events},curIn,true)}
+        onSend={(name,opts)=>{addBatsman(name,true,opts);setModal(null);}}
         onClose={()=>setModal(null)}/>
     );
 

@@ -388,7 +388,71 @@ group("D. Strike rotation and innings end");
   ok("the fold records the retirement: who, why, the wickets then, the ball",
      rec.length === 1 && rec[0].batter === "p2" && rec[0].reason === "hurt" && rec[0].wickets === 0
      && rec[0].over === 0 && rec[0].ballInOver === 2, rec);
-  ok("...and a retired out is not in it", deriveInnings([...open(), runs(1), retire({ batter: "p1", reason: "out" })]).retirements.length === 0);
+  const ro = deriveInnings([...open(), runs(1), retire({ batter: "p1", reason: "out" })]).retirements;
+  ok("...and a retired out is in it, marked out, his own wicket counted", ro.length === 1 && ro[0].out === true && ro[0].wickets === 1
+     && rec[0].out === false, ro);
+  ok("...a timed out is not", deriveInnings([...open(), ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" }),
+     retire({ batter: "p3", reason: "timed_out" })]).retirements.length === 0);
+}
+{
+  // SCRBRD-071, Law 25.4.3: a batter who retired out resumes with the
+  // opposing captain's consent. p1 hits a four and retires out; p3 comes in
+  // and is bowled; p1 walks back in with consent, and hits a two.
+  const outLog = [...open(), runs(4), retire({ batter: "p1", reason: "out" }), batters({ striker: "p3" }), runs(0),
+                  ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" })];
+  const before = deriveInnings(outLog);
+  ok("retired out, then a wicket: two down, two on the fall of wickets, one with no ball",
+     before.wickets === 2 && before.fow.length === 2 && before.fow[0].batsman === "James Whitfield" && before.fow[1].wickets === 2
+     && before.nonBallWickets.length === 1, before.fow);
+  const consentEv = batters({ striker: "p1", captainConsent: true });
+  ok("the event carries the consent, and only when given", consentEv.captainConsent === true && !("captainConsent" in batters({ striker: "p1" }))
+     && !("captainConsent" in batters({ striker: "p1", captainConsent: false })));
+  const back = deriveInnings([...outLog, consentEv, runs(2)]);
+  const p1 = must(back.batsmen.find((b) => b.id === "p1"));
+  ok("with consent his wicket is taken back: one down", back.wickets === 1, back.wickets);
+  ok("...off the fall of wickets, the later one renumbered", back.fow.length === 1 && back.fow[0].batsman === "S Naidoo"
+     && back.fow[0].wickets === 1 && back.fow[0].runs === 4, back.fow);
+  ok("...and off the wickets with no ball", back.nonBallWickets.length === 0);
+  ok("...his line batting again, no dismissal, 4 (1) then 2: 6 (2)", p1.status === "batting" && p1.dismissal === null
+     && p1.runs === 6 && p1.balls === 2, p1);
+  ok("...one line on the card", back.batsmen.filter((b) => b.id === "p1").length === 1);
+  ok("...the consented resume recorded", back.resumedWithConsent.length === 1 && back.resumedWithConsent[0].batter === "p1");
+  ok("...no bowler's figure moved", JSON.stringify(back.bowlers.map((b) => [b.id, b.wickets])) === JSON.stringify([["w1", 1]]));
+  const noConsent = deriveInnings([...outLog, batters({ striker: "p1" })]);
+  ok("named again without consent: still out, the wicket stands", noConsent.wickets === 2
+     && must(noConsent.batsmen.find((b) => b.id === "p1")).status === "out");
+  // A view handed out before the resume keeps its own fall of wickets.
+  const f = new MatchFold(outLog);
+  const earlier = f.view().innings[0];
+  f.push({ ...consentEv, innings: 0 });
+  ok("a view taken before it is not rewritten", earlier.fow.length === 2 && earlier.nonBallWickets.length === 1
+     && f.view().innings[0].fow.length === 1);
+  // Consent for anyone else moves nothing: a new batter, a batter timed out.
+  const timed = [...open(), ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" }), retire({ batter: "p3", reason: "timed_out" })];
+  const t = deriveInnings([...timed, batters({ striker: "p3", captainConsent: true })]);
+  ok("consent for a batter timed out takes nothing back", t.wickets === 2 && t.resumedWithConsent.length === 0);
+  const n = deriveInnings([...outLog, batters({ striker: "p4", captainConsent: true })]);
+  ok("...nor for a new batter", n.wickets === 2 && n.resumedWithConsent.length === 0);
+  // Retired out, back, bowled: out for good — a second consent does nothing.
+  const bowledAfter = [...outLog, consentEv, runs(0), ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" })];
+  const again = deriveInnings([...bowledAfter, batters({ striker: "p1", captainConsent: true })]);
+  ok("back, then bowled: consent does not take THAT wicket back", again.wickets === 2
+     && must(again.batsmen.find((b) => b.id === "p1")).status === "out");
+
+  // "The db/53 fixture": the events db/53's proof and db/99 §31 write in
+  // SQL, folded. p1 (A) hits 4 and retires out; p3 (C) comes in, a dot,
+  // bowled; p1 back with consent, hits 2. Then the return undone.
+  const fx = [...open(), runs(4), retire({ batter: "p1", reason: "out" }), batters({ striker: "p3" }), runs(0),
+              ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" }), { ...batters({ striker: "p1", captainConsent: true }), id: "db53-6" },
+              runs(2)];
+  const f53 = deriveInnings(fx);
+  const a53 = must(f53.batsmen.find((b) => b.id === "p1")), c53 = must(f53.batsmen.find((b) => b.id === "p3"));
+  ok("the db/53 fixture: 6 for 1, 4 legal balls; A 6 (2) not out; C 0 (2) bowled",
+     f53.runs === 6 && f53.wickets === 1 && f53.balls === 4 && a53.runs === 6 && a53.balls === 2 && a53.status === "batting"
+     && c53.runs === 0 && c53.balls === 2 && c53.status === "out", [f53.runs, f53.wickets, f53.balls, a53, c53]);
+  const u53 = deriveInnings([...fx, voidEvent({ target: "db53-6" })]);
+  ok("...the return undone: 6 for 2, A out again", u53.runs === 6 && u53.wickets === 2
+     && must(u53.batsmen.find((b) => b.id === "p1")).status === "out", [u53.runs, u53.wickets]);
 }
 
 // ── D. Order-independence, given seq ─────────────────────
@@ -1413,7 +1477,7 @@ group("M. A bowler suspended: the fold records it; a split over credits each his
   // suspended; w3 finishes it with 4 legal balls.
   const log = [...open(), runs(0), runs(0), runs(0), runs(0), runs(0), runs(0),
     bowler({ bowler: "w2" }), runs(0), runs(1), ball({ type: BALL_TYPE.NO_BALL }),
-    bowlerSuspended({ bowler: "w2", reason: "deliberate_no_ball" }),
+    bowlerSuspended({ bowler: "w2", reason: "deliberate_no_ball", edition: 3 }),
     bowler({ bowler: "w3", reason: "suspended" }), runs(0), runs(2), runs(0), runs(0)];
   const inn = deriveInnings(log);
   ok("the fold records the suspension: who, why, for how long, at which ball",
@@ -1472,6 +1536,32 @@ group("N. A no-ball's kind is recorded as asked, and decides nothing in the fold
   const b = deriveInnings([...open(), ball({ type: BALL_TYPE.NO_BALL })]);
   ok("a front-foot no-ball gives the free hit, as every no-ball does", a.freeHit === true && b.freeHit === true && a.runs === b.runs);
   ok("...and rides in the payload", toRow({ ...nb, innings: 0 }).payload.nbType === "front_foot");
+}
+
+group("O. Rows the Laws refuse, as the database can still hold them: what the fold reads (db/54, 4)");
+{
+  // A retire marked W whose method is neither retired out nor timed out (the
+  // row db/99's db/45 section writes: `bowled`, reason hurt). Every other way
+  // out needs a delivery, so it is a retirement, not a wicket: his line
+  // "retired hurt", the wickets unmoved, and he may come back. SQL reads it
+  // the same way in every reader (ball_retirement_dismissal(), db/40; the
+  // live score since db/54).
+  const odd = { kind: KIND.RETIRE, batter: "p2", reason: "hurt", type: BALL_TYPE.WICKET, dismissal: "bowled" };
+  const inn = deriveInnings([...open(), runs(1), /** @type {any} */ (odd)]);
+  const p2 = inn.batsmen.find((/** @type {any} */ b) => b.id === "p2");
+  ok("a retire marked W, method bowled, reason hurt: no wicket, no fall of wicket",
+     inn.wickets === 0 && inn.fow.length === 0 && inn.nonBallWickets.length === 0);
+  ok("...his line retired hurt, and on the record of retirements not out",
+     p2?.dismissal === "retired hurt" && inn.retirements.some((r) => r.batter === "p2" && !r.out));
+  const back = deriveInnings([...open(), runs(1), /** @type {any} */ (odd), batters({ nonStriker: "p3" }),
+                              ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" }), batters({ striker: "p2" }), runs(2)]);
+  ok("...and he may come back, as a batter retired hurt does",
+     back.wickets === 1 && back.batsmen.find((/** @type {any} */ b) => b.id === "p2")?.runs === 2);
+  // A penalty row carrying a `value`: the fold reads a row's value on a
+  // delivery only, so the award is its own `runs` (db/45; the live score
+  // since db/54).
+  const pen = deriveInnings([...open(), runs(1), /** @type {any} */ ({ ...penalty({ runs: 2 }), value: 3 })]);
+  ok("a penalty row's value is not runs: 1 + 2, not 1 + 3 + 2", pen.runs === 3);
 }
 
 console.log(`\n${"─".repeat(52)}\nSCORING SUITE: ${pass} passed, ${fail} failed`);

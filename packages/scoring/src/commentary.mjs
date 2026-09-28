@@ -51,6 +51,7 @@
 import { KIND, BALL_TYPE, ILLEGAL, NB_RUNS, RUN_OUT_END, DISMISSAL, INNINGS_END_REASON, PENALTY_REASON,
   penaltyReasonWords, BOWLER_CHANGE_REASON, normaliseDismissal, normalisePenaltyReason, runsOffBat, chargedToBowler } from "./events.mjs";
 import { deriveMatch, foldSteps, penaltyCredits, retirementDismissal, isMaiden, fmtOvers } from "./replay.mjs";
+import { countsInOver } from "./events.mjs";
 import { positionName, sectorOf, batHandOf } from "./placement.mjs";
 import { SHOT_WORDS, NO_STROKE, SECTOR_WORDS } from "./words.mjs";
 
@@ -116,6 +117,10 @@ export const ROLE_WORDS = Object.freeze({
  *   the side. Defaults to the name.
  * @property {boolean} [sensitive]  say "retires hurt", and why a bowler was taken off
  *   (injured, suspended). Signed-in readers only; never a public page.
+ * @property {import("./replay.mjs").FoldContext} [ctx]  the fold's context — the
+ *   fixture's start and format (SCRBRD-113) — where the caller holds the
+ *   fixture: the same match folds the same way for the commentary as for the
+ *   scorecard beside it (a declaration match gives no free hit)
  */
 
 // ── Words ────────────────────────────────────────────────
@@ -259,6 +264,18 @@ function byInningsOf(events) {
 }
 
 /**
+ * The context each innings is walked with: the caller's, with the Edition the
+ * match's fold resolved (the first innings' date), so a later innings is not
+ * dated by its own first event (SCRBRD-113).
+ * @param {import("./replay.mjs").FoldContext} ctx  @param {(Innings | null | undefined)[]} innings
+ * @returns {import("./replay.mjs").FoldContext}
+ */
+function withMatchEdition(ctx, innings) {
+  const edition = innings.find((x) => x != null)?.lawsEdition;
+  return edition == null ? ctx : { ...ctx, edition };
+}
+
+/**
  * The commentary of a match, in the order it happened.
  *
  * @param {LogEvent[] | LogEvent[][]} events  the match's log (flat, or by innings)
@@ -285,7 +302,8 @@ export function deriveCommentary(events = [], options = {}) {
   // fielding side credited, and the result. Folded once more below, event by
   // event, for the lines; these are what the lines say at the end.
   const flat = [...byInnings].flatMap(([i, evs]) => evs.map((e) => ((e.innings ?? 0) === i ? e : { ...e, innings: i })));
-  const match = deriveMatch(flat);
+  const foldCtx = options.ctx ?? {};
+  const match = deriveMatch(flat, foldCtx);
   /** @type {Map<number, Innings>} */
   const final = new Map(numbers.map((n, j) => [n, match.innings[j]]));
   const credits = penaltyCredits(final);
@@ -305,7 +323,7 @@ export function deriveCommentary(events = [], options = {}) {
   numbers.forEach((n, j) => {
     const evs = /** @type {LogEvent[]} */ (byInnings.get(n));
     const carried = credits.carried.get(n) ?? 0;
-    const steps = foldSteps(evs, { carried });
+    const steps = foldSteps(evs, { carried, ctx: withMatchEdition(foldCtx, match.innings) });
     const counted = countedAfter(evs);
 
     let prev = openingSnap(carried);
@@ -407,7 +425,11 @@ export function deriveCommentary(events = [], options = {}) {
           for (const id of fresh) {
             const had = prev.bat.get(/** @type {string} */ (id));
             // Named only by the role, a new batter is simply that.
-            const text = had?.status === "retired"
+            // Retired out and back with the opposing captain's consent (Law
+            // 25.4.3): his wicket is taken back, and the line says why.
+            const text = had?.status === "out" && ev.captainConsent === true
+              ? `${who(id, "batter")} resumes with the opposing captain's consent, on ${had.runs} (${had.balls}).`
+              : had?.status === "retired"
               ? `${who(id, "batter")} resumes, on ${had.runs} (${had.balls}).`
               : who(id, "batter") === ROLE_WORDS.batter ? "A new batter comes in."
               : choose(key, `in:${fresh.indexOf(id)}`, [
@@ -508,7 +530,10 @@ export function deriveCommentary(events = [], options = {}) {
               push(key, pos.over, pos.ball, COMMENTARY_KIND.MILESTONE,
                 `${cap(words(b.wickets))} wickets for ${who(bowlerId, "bowler")}: ${b.wickets}/${b.runs}.`);
             }
-            if (!ILLEGAL.has(ev.type ?? BALL_TYPE.RUN)) {
+            // A hat-trick is three of the bowler's balls of the over in a
+            // row: one that does not count (a wide, a no-ball, 17.3.2.5)
+            // neither makes nor breaks it, as SQL's bowler_hat_trick reads it.
+            if (countsInOver(ev)) {
               const mine = ev.type === BALL_TYPE.WICKET && !entry.freeHitSaved && chargedToBowler(normaliseDismissal(ev.dismissal));
               const run = bowlerRun.get(bowlerId) ?? [];
               run.push(mine);
@@ -522,7 +547,7 @@ export function deriveCommentary(events = [], options = {}) {
             }
           }
           // The over is done: its summary goes out with whatever happens next.
-          if (!ILLEGAL.has(ev.type ?? BALL_TYPE.RUN) && cur.balls % 6 === 0) {
+          if (countsInOver(ev) && cur.balls % 6 === 0) {
             overDue = { over: entry.over, wicketsAtStart: wicketsAtOverStart };
           }
           break;
@@ -681,7 +706,9 @@ function deliveryLine(ev, entry, c) {
   const type = ev.type ?? BALL_TYPE.RUN;
   const v = ev.value ?? 0;
   const lead = `${prev.freeHit ? "Free hit: " : ""}${B} to ${S}`;
-  const free = type === BALL_TYPE.NO_BALL ? " Free hit to come." : "";
+  // The fold's own answer, after the ball: a no-ball gives a free hit only
+  // where the match's format does (SCRBRD-113).
+  const free = type === BALL_TYPE.NO_BALL && cur.freeHit ? " Free hit to come." : "";
   const sa = shotPhrase(entry, "to", hand);
   /** @param {string} body */
   const line = (body) => `${lead}, ${body}`;

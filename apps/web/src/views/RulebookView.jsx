@@ -65,8 +65,8 @@ function RulebookView({ role }) {
         { rule:"A run is scored each time both batsmen complete a run between the wickets after the ball has been struck by the bat or body of the striker." },
         { rule:"Boundaries: The ball reaching or crossing the boundary rope scores 4 runs (ground) or 6 runs (without touching the ground) in addition to any runs completed." },
         { rule:"Extras (Wide, No-Ball, Bye, Leg Bye, Penalty) are credited to the batting team but not to the individual batsman's score, except for No-Ball runs off the bat." },
-        { rule:"No-Ball: Bowler overstepping the crease (front foot), ball above waist height (full toss), ball bouncing more than twice, or dangerous bowling — adds 1 run and a free hit in limited-overs cricket." },
-        { rule:"Wide: A ball passing the striker outside the reach of the batsman's normal stance adds 1 run and is re-bowled. No wide in Tests — only in limited-overs formats." },
+        { rule:"No-Ball: Bowler overstepping the crease (front foot), a full toss passing above waist height without landing, ball bouncing more than twice, or dangerous bowling — adds 1 run and a free hit in limited-overs cricket." },
+        { rule:"Wide: A ball passing the striker outside the reach of the batsman's normal stance adds 1 run and is re-bowled. From 1 October 2026 a bouncer passing over head height is a wide, not a no-ball. No wide in Tests — only in limited-overs formats." },
         { rule:"Penalty runs: 5 penalty runs can be awarded for deliberate time-wasting, ball-tampering, or deliberate distraction." },
       ]
     },

@@ -260,7 +260,7 @@ group("D. No-ball byes and leg byes (SCRBRD-068, Law 21.15)");
 // The run is credited on the same wicket delivery (`value`), and because it
 // was completed the batters have crossed (Law 18), so "the dismissed
 // batter's end before the ball" is no longer the empty end. Which end is
-// depends on where the wicket was put down (Law 38.2), which the fold cannot
+// depends on where the wicket was put down (Law 38.4), which the fold cannot
 // know from the runs: the pad now asks, on a run out that completed runs,
 // and records it as `outAt: "striker_end" | "bowler_end"`. The survivor goes
 // to the other end.

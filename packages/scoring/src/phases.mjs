@@ -61,6 +61,7 @@
  * worth more than one that says "par: 48" and cannot say why.
  */
 import { isLegal, BALL_TYPE, runsOffBat } from "./events.mjs";
+import { countsInOver } from "./events.mjs";
 
 /** @import { Innings } from "./replay.mjs" */
 
@@ -230,7 +231,9 @@ export function derivePhases(inn, { opposing = null } = {}) {
     // anything run off it. Same arithmetic as the fold in replay.mjs, so the
     // phases add up to the innings total (penalty runs apart — see the top).
     acc.runs += value + (legal ? 0 : 1);
-    if (legal) {
+    // The balls of the over: a delivery that does not count (Law 17.3.2.5,
+    // SCRBRD-113) is not one of them, as the fold's over count has it.
+    if (countsInOver(b)) {
       acc.balls += 1;
       if (value === 0) acc.dots += 1;
       if (value === 1 || value === 3) acc.singles += 1;

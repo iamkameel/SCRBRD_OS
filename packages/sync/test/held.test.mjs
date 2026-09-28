@@ -58,7 +58,7 @@ const outboxOf = (held, isSynced) => ({
   isUnsent: (/** @type {string} */ k) => !isSynced({ id: k }),
 });
 
-// One over by A Nel, then A Nel again — Law 17.8 — and two balls after it.
+// One over by A Nel, then A Nel again — Law 17.6 — and two balls after it.
 const OPEN = withId(inningsStart({ battingTeam: "HIL", bowlingTeam: "MHS", squad: SQUAD, bowlingSquad: [], overs: 20 }));
 const PAIR = withId(batters({ striker: "p1", nonStriker: "p2" }));
 const NEL = withId(bowler({ bowler: "A Nel" }));
@@ -82,7 +82,7 @@ group("B. The cascade, as the server sees it");
 const served = serve(LOG[0]);
 const HELD = asHeld(LOG, served.refused);
 {
-  ok("the second over by the same bowler is refused (Law 17.8)",
+  ok("the second over by the same bowler is refused (Law 17.6)",
      served.refused[0]?.idempotencyKey === NEL_AGAIN.id && served.refused[0]?.reason === "consecutive_overs", served.refused);
   ok("...and so is every ball after it: the server never had a bowler for them",
      served.refused.length === 3 && served.refused.slice(1).every((r) => r.reason === "next_bowler"), served.refused);
@@ -202,6 +202,9 @@ group("G. In words");
      describeEvent(ball({ type: "W", value: 1, dismissal: "run_out", dismissed: "p2", outAt: "striker_end" }), innings[0])
      === "Wicket — K Naidoo Run Out at the striker's end, 1 run");
   ok("retired hurt, a retirement", describeEvent(retire({ batter: "p1", reason: "hurt" }), innings[0]) === "Retirement — S Dlamini (retired hurt)");
+  ok("a retired-out batter back with consent says so",
+     describeEvent(batters({ striker: "p1", captainConsent: true }), innings[0]) === "Batters — S Dlamini (on strike), resuming with the opposing captain's consent",
+     describeEvent(batters({ striker: "p1", captainConsent: true }), innings[0]));
 }
 
 group("H. The engine: a held event is not queued again when the pad re-offers its log");
@@ -245,7 +248,7 @@ group("H. The engine: a held event is not queued again when the pad re-offers it
 
 group("I. Undo of a held event drops it, wherever it sits — never a void (SCRBRD-071)");
 {
-  // Nel again (refused, Law 17.8); the scorer names Botha (accepted — the
+  // Nel again (refused, Law 17.6); the scorer names Botha (accepted — the
   // server had nobody bowling), thinks better of it and undoes him (a void,
   // accepted: Botha was synced and last). The next undo reaches Nel: held,
   // and NOT the last event in the log.

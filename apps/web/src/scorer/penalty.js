@@ -27,6 +27,7 @@ import {
   PENALTY_REASON, PENALTY_REASON_SIDE, REFUSAL, REFUSAL_TEXT,
   deriveInningsList, lawsRefusal, penalty, penaltyCredits, shortRunning, withoutLawClause, penaltyReasonWords,
 } from "@scrbrd/scoring";
+import { NOT_IN_OVER, RUNS_DISALLOWED, notInOverDelivery, runsDisallowed } from "@scrbrd/scoring";
 
 /** Each innings of the pad's log, credits across innings applied. */
 export function foldPad(events, ctx) {
@@ -95,7 +96,40 @@ export function shortRunEvents(curIn, delivery) {
  * one after the other.
  */
 export function shortRunRefusal(match, curIn, delivery, ctx) {
-  const [ball, award] = shortRunEvents(curIn, delivery);
+  return pairRefusal(match, curIn, shortRunEvents(curIn, delivery), ctx);
+}
+
+/**
+ * The reasons whose delivery is recorded with no runs (SCRBRD-113;
+ * RUNS_DISALLOWED): deliberate short running, and a further offence on the
+ * pitch or in the protected area by a batter. In the order the sheet offers
+ * them, short running first.
+ */
+export const DISALLOWED_REASONS = Object.freeze([...RUNS_DISALLOWED]);
+
+/**
+ * The offences whose delivery does not count in the over (SCRBRD-113;
+ * NOT_IN_OVER, Law 17.3.2.5), in the order the sheet offers them.
+ */
+export const NOT_IN_OVER_REASONS = Object.freeze([...NOT_IN_OVER]);
+
+/** The two events of a delivery whose runs were disallowed for `reason`, for innings `curIn`. */
+export function disallowedEvents(curIn, delivery, reason) {
+  return runsDisallowed({ ...delivery, innings: curIn }, reason);
+}
+
+/** The two events of a delivery that does not count in the over, for `reason`, for innings `curIn`. */
+export function notInOverEvents(curIn, delivery, reason) {
+  return notInOverDelivery({ ...delivery, innings: curIn }, reason);
+}
+
+/**
+ * Why the Laws would refuse a delivery and the award that goes with it, or
+ * null: the delivery against the match as it is, then the award against the
+ * match with the delivery in it — as the server judges them, one after the
+ * other.
+ */
+export function pairRefusal(match, curIn, [ball, award], ctx) {
   const first = lawsRefusal(match, ball);
   if (first) return first;
   const events = withAppended(match.events, curIn, [ball]);

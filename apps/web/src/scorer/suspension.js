@@ -21,10 +21,11 @@
  * filled in — reportFor() below.
  */
 import {
-  SUSPENSION_REASON, SUSPENSION_REASON_SCOPE, SUSPENSION_REASON_TEXT, SUSPENSION_SCOPE_TEXT, REFUSAL,
+  SUSPENSION_REASON, SUSPENSION_REASON_TEXT, SUSPENSION_SCOPE_TEXT, REFUSAL,
   bowlerSuspended, bowler, isMidOver, lawsRefusal, fmtOvers,
 } from "@scrbrd/scoring";
 import { refusalWords } from "./penalty.js";
+import { lawsEdition, suspensionScope } from "@scrbrd/scoring";
 
 const upperFirst = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 
@@ -34,8 +35,18 @@ export const SUSPENSION_REASONS_OFFERED = Object.freeze(Object.values(SUSPENSION
 /** A reason in words, for a button. */
 export const suspensionReasonWords = (reason) => upperFirst(SUSPENSION_REASON_TEXT[reason] ?? String(reason ?? ""));
 
-/** How long it is for, in words, for the reason chosen: "for the rest of the innings". */
-export const scopeWords = (reason) => SUSPENSION_SCOPE_TEXT[SUSPENSION_REASON_SCOPE[reason] ?? "innings"];
+/**
+ * How long it is for, in words, for the reason chosen, under the Edition of
+ * the Laws the match is scored under (SCRBRD-113): "for the rest of the
+ * innings", or — a deliberate front-foot no-ball or a deliberate beamer from
+ * 1 October 2026, ball tampering, a Level 4 conduct offence — "for the rest
+ * of the match". `edition` is lawsEdition(match).
+ * @param {string} reason  @param {3 | 4} edition
+ */
+export const scopeWords = (reason, edition) => SUSPENSION_SCOPE_TEXT[suspensionScope(reason, edition)];
+
+/** How long a suspension already recorded is for, in words: the scope it carries. */
+export const recordedScopeWords = (scope) => SUSPENSION_SCOPE_TEXT[scope] ?? SUSPENSION_SCOPE_TEXT.innings;
 
 /**
  * The bowler a suspension now would be of: the one on, or — the ball dead on
@@ -51,8 +62,11 @@ export function bowlerToSuspend(inn) {
   return log[log.length - 1]?.bowlerId ?? null;
 }
 
-/** The event the sheet sends. */
-export const suspendEvent = (curIn, bowlerId, reason) => bowlerSuspended({ innings: curIn, bowler: bowlerId, reason });
+/**
+ * The event the sheet sends: the scope is the reason's under the match's
+ * Edition (`edition`, lawsEdition(match)) — the one the server will demand.
+ */
+export const suspendEvent = (curIn, bowlerId, reason, edition) => bowlerSuspended({ innings: curIn, bowler: bowlerId, reason, edition });
 
 /**
  * Why the Laws would refuse this suspension, or null. `match` is `{innings,
@@ -60,13 +74,13 @@ export const suspendEvent = (curIn, bowlerId, reason) => bowlerSuspended({ innin
  * alone is judged (any reason on the list says the same about him).
  */
 export function suspendRefusal(match, curIn, bowlerId, reason) {
-  return lawsRefusal(match, suspendEvent(curIn, bowlerId, reason ?? SUSPENSION_REASON.BEAMERS));
+  return lawsRefusal(match, suspendEvent(curIn, bowlerId, reason ?? SUSPENSION_REASON.BEAMERS, lawsEdition(match)));
 }
 
 /** The pad's words for a refusal on this sheet: present tense, no clause numbers. */
 const SHEET_WORDS = Object.freeze({
   [REFUSAL.NOT_BOWLING]: "Nobody is bowling to be suspended yet.",
-  [REFUSAL.BOWLER_SUSPENDED]: "Suspended by the umpires. He may not bowl again this innings (after ball tampering, this match).",
+  [REFUSAL.BOWLER_SUSPENDED]: "Suspended by the umpires. He may not bowl again this innings, or, for some offences, this match.",
   [REFUSAL.CONSECUTIVE_OVERS]: "Bowled part of the last over. He may not bowl this one.",
   [REFUSAL.SUSPENSION_UNKNOWN]: "The scorebook does not know that reason.",
   [REFUSAL.MID_OVER_NO_REASON]: "A change during an over needs its reason.",

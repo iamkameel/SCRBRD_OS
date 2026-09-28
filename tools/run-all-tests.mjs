@@ -28,6 +28,9 @@ const SUITES = [
   ["readiness","packages/scoring/test/readiness.test.mjs"],
   // What a scoring command may be: the Laws the server enforces at commit.
   ["laws",     "packages/scoring/test/laws.test.mjs"],
+  // The Laws' 4th Edition from 1 October 2026, by the match date (SCRBRD-113):
+  // every rule that differs, asked of a match on 30 September and 1 October.
+  ["edition",  "packages/scoring/test/edition.test.mjs"],
   // A refusal's likely cause, in words beside REFUSAL_TEXT (SCRBRD-100): names
   // from the fold and never an id, no Law clause numbers.
   ["causes",   "packages/scoring/test/causes.test.mjs"],

@@ -32,10 +32,16 @@ export const EXTRAS = Object.freeze([
 ]);
 export const extraOf = (kind) => EXTRAS.find((e) => e.kind === kind) ?? null;
 
-/** The no-ball's two questions, each with its commonest answer first. */
+/**
+ * The no-ball's two questions, each with its commonest answer first.
+ * "Waist high" is a full toss that passed above the striker's waist without
+ * landing — never a bouncer: from 1 October 2026 (the Laws' 4th Edition,
+ * SCRBRD-113) a bouncer over head height is a wide, and the Wide panel says
+ * so. The bare "Height" read as either.
+ */
 export const NB_TYPES = Object.freeze([
   { id: "front_foot", label: "Front foot" },
-  { id: "height", label: "Height" },
+  { id: "height", label: "Waist high" },
   { id: "beamer", label: "Beamer" },
 ]);
 export const NB_FROM = Object.freeze([

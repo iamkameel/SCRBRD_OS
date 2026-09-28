@@ -21,10 +21,10 @@
 import { createElement as h } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
-  inningsStart, batters, bowler, ball, BALL_TYPE, REFUSAL, KIND, RETIRE_REASON, lawsRefusal, scoringReadiness, SCORING_BLOCK,
+  inningsStart, batters, bowler, ball, retire, deriveInnings, BALL_TYPE, REFUSAL, KIND, RETIRE_REASON, lawsRefusal, scoringReadiness, SCORING_BLOCK,
 } from "@scrbrd/scoring";
 import { foldPad, withAppended } from "../src/scorer/penalty.js";
-import { END_WORDS, resumeChoices, resumeEvent, resumeRefusal, retireChoices, retireHurtEvent, retireRefusal, retireRefusalWords } from "../src/scorer/retire.js";
+import { END_WORDS, consentChoices, resumeChoices, resumeEvent, resumeRefusal, retireChoices, retireHurtEvent, retireRefusal, retireRefusalWords } from "../src/scorer/retire.js";
 import { RetireSheet } from "../src/scorer/retireSheet.jsx";
 import { BattingOrderSheet } from "../src/scorer/sheets.jsx";
 
@@ -153,6 +153,40 @@ group("Who may resume: the Laws' answer, and the sheet that fills his end");
   const a3Off = withEv(logs, batters({ innings: 0, striker: "a3" }), runs(0), retireHurtEvent(0, "a3"));
   ok("after another batter retires, he may resume; the one who has just gone may not",
      resumeChoices(match(a3Off), 0).map((b) => b.id).join() === "a1" && resumeRefusal(match(a3Off), 0, "a3") === REFUSAL.RESUME_NOT_YET);
+}
+
+group("Retired out: back only with the opposing captain's consent, when the Laws take it");
+{
+  const out = withEv([log0, []], retire({ innings: 0, batter: "a1", reason: RETIRE_REASON.OUT }));
+  const m = match(out);
+  ok("straight back into his own vacancy, even with consent: refused as too soon",
+     resumeRefusal(m, 0, "a1", undefined, true) === REFUSAL.RESUME_NOT_YET && consentChoices(m, 0).length === 0);
+  ok("...without consent: out", resumeRefusal(m, 0, "a1") === REFUSAL.BATTER_ALREADY_OUT && resumeChoices(m, 0).length === 0);
+  ok("the event it would send carries the consent", resumeEvent(m, 0, "a1", undefined, true).captainConsent === true
+     && resumeEvent(m, 0, "a1", undefined, true).striker === "a1" && !("captainConsent" in resumeEvent(m, 0, "a1")));
+  // a3 comes in; a2 is run out: a wicket has fallen since a1 went.
+  const on = withEv(out, batters({ innings: 0, striker: "a3" }), runs(0),
+    ball({ innings: 0, type: BALL_TYPE.WICKET, dismissal: "run_out", dismissed: "a2" }));
+  const after = match(on);
+  ok("after a wicket he may come back with consent, and is offered for it",
+     consentChoices(after, 0).map((b) => b.id).join() === "a1" && resumeChoices(after, 0).length === 0,
+     consentChoices(after, 0).map((b) => b.id));
+  ok("consent for a batter who did not retire out: refused, in words",
+     resumeRefusal(after, 0, "a4", undefined, true) === REFUSAL.CONSENT_NOT_RETIRED_OUT
+     && retireRefusalWords(REFUSAL.CONSENT_NOT_RETIRED_OUT) === "The opposing captain's consent is only for a batter who retired out.");
+  const props = { squad: SQ_A, batsmen: after.innings[0].batsmen, teamKey: null, twelfthMan: null, onSend() {}, onClose() {},
+                  resumable: resumeChoices(after, 0), resumableWithConsent: consentChoices(after, 0) };
+  const html = renderToStaticMarkup(h(BattingOrderSheet, props));
+  ok("the sheet lists him under the captain's consent, and not as retired hurt",
+     /data-testid="consent-list"/.test(html) && /data-testid="consent-a1"/.test(html) && /R Pillay resumes/.test(html)
+     && /Retired out — may resume if the opposing captain agrees/.test(html) && !/data-testid="resume-list"/.test(html));
+  ok("...nothing sends until the scorer confirms: no confirm drawn before a tap", !/data-testid="consent-confirm"/.test(html));
+  const btn = html.match(/<button[^>]*data-testid="consent-a1"[^>]*>/)?.[0] ?? "";
+  ok("...at 44px or taller, no Law clause numbers", Number(btn.match(/min-height:\s*(\d+)px/)?.[1] ?? 0) >= 44
+     && !/\bLaws? \d/.test(html) && !/\(Law/.test(html), btn);
+  const back = deriveInnings(withEv(on, resumeEvent(after, 0, "a1", undefined, true))[0]);
+  ok("the event, folded: his wicket taken back, one down (a2's), a1 batting",
+     back.wickets === 1 && back.batsmen.find((b) => b.id === "a1")?.status === "batting", [back.wickets]);
 }
 
 group("No retirement once the innings is over");

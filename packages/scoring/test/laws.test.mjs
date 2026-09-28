@@ -54,12 +54,21 @@ const SQ_B = ["w1", "w2", "w3", "w4", "w5"].map((id) => ({ id, name: id.toUpperC
 
 let n = 0;
 /**
- * Give every event an id and an innings, the way the scorer's emit() does.
+ * Every match here is dated 15 September 2026, under the 3rd Edition of the
+ * Laws (SCRBRD-113: the Edition follows the match date, and the fold dates a
+ * match with no fixture by its first event), so what these groups prove does
+ * not change on 1 October. The 4th Edition's rules, and both Editions side by
+ * side, are edition.test.mjs.
+ */
+const THIRD_EDITION_DAY = Date.parse("2026-09-15T08:00:00Z");
+/**
+ * Give every event an id and an innings, the way the scorer's emit() does,
+ * and the match's date.
  * @param {number} innings
  * @param {...LogEvent} evs
  * @returns {(LogEvent & {innings: number, id: string})[]}
  */
-const at = (innings, ...evs) => evs.map((e) => ({ ...e, innings, id: e.id ?? `e${++n}` }));
+const at = (innings, ...evs) => evs.map((e) => ({ ...e, innings, id: e.id ?? `e${++n}`, clientTs: THIRD_EDITION_DAY }));
 const open = (innings = 0, /** @type {InningsStartInput} */ o = {}) => at(innings,
   inningsStart({ battingTeam: innings ? "B" : "A", bowlingTeam: innings ? "A" : "B",
                  squad: innings ? SQ_B : SQ_A, bowlingSquad: innings ? SQ_A : SQ_B, overs: 2, ...o }),
@@ -224,10 +233,10 @@ group("F. At the crease");
   ok("a batter retired out may not (Law 25.4.3)", judge(retOut, at(0, batters({ nonStriker: "p2" }))[0]) === REFUSAL.BATTER_ALREADY_OUT);
   ok("only a batter who is in can retire", judge(L, at(0, retire({ batter: "p4" }))[0]) === REFUSAL.NOT_AT_CREASE);
 
-  // Law 17.8, "or parts thereof": a mid-over change bars BOTH bowlers from the next over.
+  // Law 17.6, "parts of each of two consecutive overs": a mid-over change bars BOTH bowlers from the next over.
   const shared = [...open(0), ...runs(0, 0, 0, 0), ...at(0, bowler({ bowler: "w3" })), ...runs(0, 0, 0, 0)];
-  // SCRBRD-080: accepted with the reason Law 17.8.1 gives; refused without.
-  ok("a mid-over change of bowler is accepted with its reason (Law 17.8.1)",
+  // SCRBRD-080: accepted with the reason Law 17.7.1 gives; refused without.
+  ok("a mid-over change of bowler is accepted with its reason (Law 17.7.1)",
      judge([...open(0), ...runs(0, 0)], at(0, bowler({ bowler: "w3", reason: "injury" }))[0]) === null);
   ok("...and neither man who shared the over may bowl the next",
      judge(shared, at(0, bowler({ bowler: "w1" }))[0]) === REFUSAL.CONSECUTIVE_OVERS
@@ -330,7 +339,7 @@ group("K. Timed out and retired out: a retire marked W");
   const bowledNoBall = { kind: "retire", batter: "p1", reason: "out", type: "W", dismissal: "bowled" };
   ok("no other way out is recorded without a ball", judge(L, at(0, bowledNoBall)[0]) === REFUSAL.NEEDS_A_DELIVERY);
 
-  // The over does not move, so Law 17.8 reads the same after one.
+  // The over does not move, so Law 17.6 reads the same after one.
   const overDone = [...open(0), ...runs(0, 0, 0, 0, 0, 0, 0), ...at(0, retire({ batter: "p1", reason: "out" }), batters({ striker: "p3" }))];
   ok("the over is still over: the same bowler may not start the next",
      judge(overDone, at(0, bowler({ bowler: "w1" }))[0]) === REFUSAL.CONSECUTIVE_OVERS);
@@ -380,7 +389,7 @@ group("L. A bowler replaced during an over: injury or suspended");
   ok("with balls in the over and nobody on, naming a bowler needs no reason",
      deriveInnings(nobodyOn).bowler === null && judge(nobodyOn, at(0, bowler({ bowler: "w2" }))[0]) === null
      && deriveInnings([...nobodyOn, ...at(0, bowler({ bowler: "w2" }))]).bowlerChanges.length === 0);
-  // Law 17.8, "or parts thereof", still binds the man who finished the over.
+  // Law 17.6, "parts of each of two consecutive overs", still binds the man who finished the over.
   const finished = [...two, ...at(0, bowler({ bowler: "w3", reason: "injury" })), ...runs(0, 0, 0, 0)];
   ok("the replacement may not bowl the next over", judge(finished, at(0, bowler({ bowler: "w3" }))[0]) === REFUSAL.CONSECUTIVE_OVERS);
   ok("...nor the injured man", judge(finished, at(0, bowler({ bowler: "w1" }))[0]) === REFUSAL.CONSECUTIVE_OVERS);
@@ -488,8 +497,8 @@ group("O. Penalty runs: whole runs, a reason from the list, the right side (SCRB
   // The list as the 4th Edition (in force 1 October 2026) has it: docs/laws/CLAUSE_CHECK.md,
   // Law 41 and Law 18.6's sources of penalty runs (Kameel, 2026-09-27).
   const side = (/** @type {boolean | null} */ v) => JSON.stringify(Object.values(PENALTY_REASON).filter((r) => PENALTY_REASON_SIDE[r] === v).sort());
-  ok("the batting side's offences, five to the fielding side: short running (18.5), time wasting (41.10), the pitch (41.14), stealing a run (41.16)",
-     side(false) === JSON.stringify(["pitch_damage", "short_running", "stealing_run", "time_wasting"]), side(false));
+  ok("the batting side's offences, five to the fielding side: short running (18.5), time wasting (41.10), the pitch (41.14), the striker's position (41.15), stealing a run (41.16)",
+     side(false) === JSON.stringify(["pitch_damage", "short_running", "stealing_run", "striker_position", "time_wasting"]), side(false));
   ok("the fielding side's, five to the batting side: 24.4, 27.4.2, 28.2, 28.3, 28.6.3, 41.4, 41.5, 41.9, 41.12 and the fielding restrictions",
      side(true) === JSON.stringify(["distracting_striker", "fielder_movement", "fielder_returning", "fielding_pitch_damage",
                                     "fielding_restrictions", "fielding_time_wasting", "helmet_struck", "illegal_fielding",
@@ -576,10 +585,12 @@ group("P. A bowler suspended: not again this innings (the match, for ball tamper
 {
   const S = (/** @type {string} */ who, /** @type {string} */ reason) => bowlerSuspended({ bowler: who, reason });
   // The constructor: the scope is the reason's.
-  ok("ball tampering is for the match", bowlerSuspended({ bowler: "w1", reason: "ball_tampering" }).scope === "match");
+  // Under the 3rd Edition, which this group is (the 4th's: edition.test.mjs).
+  ok("ball tampering is for the match", bowlerSuspended({ bowler: "w1", reason: "ball_tampering", edition: 3 }).scope === "match"
+     && bowlerSuspended({ bowler: "w1", reason: "conduct", edition: 3 }).scope === "match");
   ok("...every other reason for the innings",
-     ["beamers", "short_pitched", "deliberate_no_ball", "protected_area", "fielding_time_wasting"]
-       .every((r) => bowlerSuspended({ bowler: "w1", reason: r }).scope === "innings"));
+     ["beamers", "deliberate_beamer", "short_pitched", "deliberate_no_ball", "protected_area", "fielding_time_wasting", "throwing"]
+       .every((r) => bowlerSuspended({ bowler: "w1", reason: r, edition: 3 }).scope === "innings"));
   let threw = 0;
   try { bowlerSuspended({ bowler: "w1", reason: "rudeness" }); } catch { threw++; }
   try { bowlerSuspended({ bowler: "w1", reason: "beamers", scope: "match" }); } catch { threw++; }
@@ -609,7 +620,7 @@ group("P. A bowler suspended: not again this innings (the match, for ball tamper
   ok("once suspended, a ball from him is refused", judge(suspended, at(0, ball({}))[0]) === REFUSAL.BOWLER_SUSPENDED);
   ok("...and suspending him twice", judge(suspended, at(0, S("w2", "beamers"))[0]) === REFUSAL.BOWLER_SUSPENDED);
   ok("he may not be named again, whatever the reason", judge(suspended, at(0, bowler({ bowler: "w2", reason: "injury" }))[0]) === REFUSAL.BOWLER_SUSPENDED);
-  // The replacement: not one who bowled any part of the previous over (Law 17.8).
+  // The replacement: not one who bowled any part of the previous over (Law 17.6).
   ok("a replacement who bowled the previous over is refused",
      judge(suspended, at(0, bowler({ bowler: "w1", reason: "suspended" }))[0]) === REFUSAL.CONSECUTIVE_OVERS);
   ok("...one who did not is taken, with the reason", judge(suspended, at(0, bowler({ bowler: "w3", reason: "suspended" }))[0]) === null);
@@ -733,6 +744,59 @@ group("Q. Retired hurt resumes only at a wicket or another's retirement; none on
   const early = [...L, ...at(0, inningsEnd({ reason: INNINGS_END_REASON.DECLARED, confirmed: { runs: 0, wickets: 0, balls: 2 } }))];
   ok("declared: refused as closed", judge(early, at(0, hurt("p1"))[0]) === REFUSAL.INNINGS_CLOSED);
   ok("...a retirement in play is taken as it always was", judge(L, at(0, hurt("p1"))[0]) === null);
+}
+
+// ── R. Retired out resumes with the opposing captain's consent (Law 25.4.3; SCRBRD-071) ──
+group("R. Retired out comes back only with the captain's consent, and only at a wicket or another's retirement");
+{
+  const L = [...open(0), ...runs(0, 0, 0)];
+  const consent = (/** @type {Record<string, string>} */ end) => batters({ ...end, captainConsent: true });
+  const roOff = [...L, ...at(0, retire({ batter: "p2", reason: "out" }))];
+  ok("with consent, straight back into his own vacancy: refused as too soon",
+     judge(roOff, at(0, consent({ nonStriker: "p2" }))[0]) === REFUSAL.RESUME_NOT_YET);
+  ok("...without it: out", judge(roOff, at(0, batters({ nonStriker: "p2" }))[0]) === REFUSAL.BATTER_ALREADY_OUT);
+
+  const p3In = [...roOff, ...at(0, batters({ nonStriker: "p3" })), ...runs(0, 0)];
+  const wicket = [...p3In, ...at(0, ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" }))];
+  ok("after a wicket, with consent: taken", judge(wicket, at(0, consent({ striker: "p2" }))[0]) === null);
+  ok("...without consent: still out", judge(wicket, at(0, batters({ striker: "p2" }))[0]) === REFUSAL.BATTER_ALREADY_OUT);
+  const hurtSince = [...p3In, ...at(0, retire({ batter: "p3", reason: "hurt" }))];
+  ok("after another batter retires hurt, with consent: taken", judge(hurtSince, at(0, consent({ nonStriker: "p2" }))[0]) === null);
+
+  ok("consent for a new batter: refused as a false record", judge(wicket, at(0, consent({ striker: "p4" }))[0]) === REFUSAL.CONSENT_NOT_RETIRED_OUT);
+  ok("consent for a batter bowled: out", judge(wicket, at(0, consent({ striker: "p1" }))[0]) === REFUSAL.BATTER_ALREADY_OUT);
+  const hurtWicket = [...L, ...at(0, retire({ batter: "p2", reason: "hurt" }), batters({ nonStriker: "p3" })), ...runs(0, 0),
+                      ...at(0, ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" }))];
+  ok("consent for a batter retired HURT: refused — he needs none", judge(hurtWicket, at(0, consent({ striker: "p2" }))[0]) === REFUSAL.CONSENT_NOT_RETIRED_OUT);
+  ok("...and he comes back without it", judge(hurtWicket, at(0, batters({ striker: "p2" }))[0]) === null);
+  const timed = [...L, ...at(0, ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" }), retire({ batter: "p3", reason: "timed_out" }),
+                                 retire({ batter: "p2", reason: "hurt" }))];
+  ok("consent for a batter timed out: out — timed out is not a retirement", judge(timed, at(0, consent({ striker: "p3" }))[0]) === REFUSAL.BATTER_ALREADY_OUT);
+  // An old W delivery naming retired out left no retirement on the record.
+  const oldShape = [...L, ...at(0, ball({ type: BALL_TYPE.WICKET, dismissal: "retired_out" }), batters({ striker: "p3" })), ...runs(0),
+                    ...at(0, ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" }))];
+  ok("the old shape (a W delivery) is not resumed with consent", judge(oldShape, at(0, consent({ striker: "p1" }))[0]) === REFUSAL.BATTER_ALREADY_OUT);
+
+  // Over, or closed.
+  const small = at(0, inningsStart({ battingTeam: "A", bowlingTeam: "B", squad: SQ_A.slice(0, 2), bowlingSquad: SQ_B, overs: 2 }),
+                   batters({ striker: "p1", nonStriker: "p2" }), bowler({ bowler: "w1" }), ball({}), retire({ batter: "p2", reason: "out" }));
+  ok("his retirement ended the innings: consent refused as over", deriveInnings(small).complete === true
+     && judge(small, at(0, consent({ nonStriker: "p2" }))[0]) === REFUSAL.INNINGS_OVER);
+  const played = [...roOff, ...at(0, batters({ nonStriker: "p3" })), ...runs(0, 0, 0, 0, 0), ...at(0, bowler({ bowler: "w2" })),
+                  ...runs(0, 0, 0, 0, 0, 0, 0)];
+  const sealed = [...played, ...at(0, sealInnings(deriveInnings(played)))];
+  ok("...and as closed once sealed", deriveInnings(sealed).sealed === true
+     && judge(sealed, at(0, consent({ striker: "p2" }))[0]) === REFUSAL.INNINGS_CLOSED);
+
+  // The 25.4.4 timing counts a wicket even after it is taken back: p2 retires
+  // out; p1 retires hurt; p2 comes back with consent (at p1's retirement) —
+  // one wicket fewer; then a wicket falls, and p1 may come back at it.
+  const chain = [...roOff, ...at(0, batters({ nonStriker: "p3" })), ...runs(0), ...at(0, retire({ batter: "p1", reason: "hurt" }))];
+  ok("p2 back with consent at p1's retirement", judge(chain, at(0, consent({ striker: "p2" }))[0]) === null);
+  const chain2 = [...chain, ...at(0, consent({ striker: "p2" }))];
+  const chain3 = [...chain2, ...runs(0), ...at(0, ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" }))];
+  ok("...then a wicket falls (wickets back to 1, as when p1 went) and p1 may resume at it",
+     deriveInnings(chain3).wickets === 1 && judge(chain3, at(0, batters({ striker: "p1" }))[0]) === null);
 }
 
 group("J. Every reason has words for the person who has to clear it");

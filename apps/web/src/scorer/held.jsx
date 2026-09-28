@@ -3,6 +3,7 @@ import {
   heldInOrder, heldFrom, describeHeld, describeEvent, recordAgain, recordAgainRefusal, reasonWords,
 } from "@scrbrd/sync";
 import { likelyCause } from "@scrbrd/scoring";
+import { lawsEdition } from "@scrbrd/scoring";
 import { D } from "../design/tokens.js";
 import { Btn, Lbl, Sheet } from "./ui.jsx";
 
@@ -62,9 +63,9 @@ export function HeldSheet({ held = [], events, innings, live, onDiscard, onRecor
           const refused = h.state === "refused";
           // Would the server take it, recorded again now? Asked of the same
           // Laws the server asks, against the log as the server holds it.
-          const oneWhy = live && refused && d.onBoard ? recordAgainRefusal(events, held, [h]) : null;
+          const oneWhy = live && refused && d.onBoard ? recordAgainRefusal(events, held, [h], { edition: lawsEdition({ innings }) }) : null;
           const canOne = live && refused && d.onBoard && !oneWhy;
-          const canAll = canOne && after.length > 0 && !recordAgainRefusal(events, held, scope);
+          const canAll = canOne && after.length > 0 && !recordAgainRefusal(events, held, scope, { edition: lawsEdition({ innings }) });
           const preview = canOne ? recordAgain(events, held, [h], () => "preview").copies[0] : null;
           const when = h.payload?.clientTs ?? h.clientTs;
           const armed = confirm && confirm.keys[0] === h.idempotencyKey ? confirm : null;

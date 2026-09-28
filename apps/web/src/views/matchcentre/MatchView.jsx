@@ -70,8 +70,10 @@ function useMatchLog(match, players) {
     setState((s) => ({ ...s, loading: s.events == null, error: null }));
     (async () => {
       try {
-        const { events: rows } = await api(`/api/matches/${match.id}/events`);
-        if (!cancelled) setState({ loading: false, error: null, events: (rows || []).map(fromRow) });
+        // `fold`: how the server folds this match — the fixture's start and
+        // format (SCRBRD-113) — so the scorecard here folds it alike.
+        const { events: rows, fold } = await api(`/api/matches/${match.id}/events`);
+        if (!cancelled) setState({ loading: false, error: null, events: (rows || []).map(fromRow), fold: fold ?? {} });
       } catch (e) {
         if (!cancelled) setState((s) => ({ ...s, loading: false, error: e.code || "unreachable" }));
       }
@@ -93,9 +95,9 @@ function useMatchLog(match, players) {
     });
   }, [match, players]);
 
-  const folded = useMemo(() => (state.events ? deriveMatch(state.events) : null), [state.events]);
+  const folded = useMemo(() => (state.events ? deriveMatch(state.events, state.fold ?? {}) : null), [state.events, state.fold]);
   return {
-    loading: state.loading, error: state.error, events: state.events, demo: !!demo,
+    loading: state.loading, error: state.error, events: state.events, fold: state.fold ?? {}, demo: !!demo,
     innings: folded ? folded.innings : (demo?.innings ?? []),
     result: folded ? folded.result : null,
     overs: match.overs || folded?.innings?.[0]?.overs || demo?.cfg?.overs || 20,
@@ -164,6 +166,7 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
     if (!log.events) return [];
     const nameOf = nameBook(played, PLAYERS);
     return deriveCommentary(log.events, {
+      ctx: log.fold,
       nameOf: (ref) => nameOf(ref),
       teamName: (_key, name) => teamOf(match, name).full,
     });

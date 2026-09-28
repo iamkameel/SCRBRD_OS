@@ -693,7 +693,7 @@ export const READ_QUERIES = {
                   b.contact, b.trajectory,
                   b.striker_id, b.non_striker_id, b.bowler_id, b.dismissed_id,
                   b.dismissal, b.payload,
-                  m.overs
+                  m.overs, m.format
              from ball_event_live b
              join match m on m.id = b.match_id
             where b.match_id = $1
@@ -1804,7 +1804,10 @@ export const READ_QUERIES = {
                   b.bowler_id,
                   bowl.full_name                        as bowler_name,
                   bowl.bowling_style,
-                  count(*) filter (where b.ball_type not in ('Wd','Nb'))::int  as balls,
+                  -- The balls of the over: not a wide or a no-ball, nor a
+                  -- delivery that does not count (Law 17.3.2.5; db/54's
+                  -- ball_counts_in_over(), countsInOver() in packages/scoring).
+                  count(*) filter (where ball_counts_in_over(b.ball_type, b.payload))::int  as balls,
                   -- Runs off the bat. Byes and leg byes are not the batter's,
                   -- which is the same split runs_conceded makes on the bowling
                   -- side of the same delivery — nor are byes or leg byes off a
@@ -1819,7 +1822,7 @@ export const READ_QUERIES = {
                   -- give a phase breakdown and a matchup two different dot
                   -- counts for the same over. One definition, or neither means
                   -- anything.
-                  count(*) filter (where b.ball_type not in ('Wd','Nb')
+                  count(*) filter (where ball_counts_in_over(b.ball_type, b.payload)
                                      and coalesce(b.value,0) = 0)::int          as dots,
                   -- The batter's fours and sixes, as the fold and the phases
                   -- count them: off the bat. Counting every ball worth four
@@ -2351,7 +2354,8 @@ function ratingsQuery() {
                  ('bowl', case when b.kind = 'ball' then b.bowler_id end,
                           -- runsToBowler(): a no-ball's byes and leg byes are not his (Law 21.15, db/52)
                           ball_runs_to_bowler(b.ball_type, b.value, b.payload),
-                          case when b.ball_type not in ('Wd','Nb') then 1 else 0 end,
+                          -- the balls of the over, as db/54 counts them (17.3.2.5)
+                          case when ball_counts_in_over(b.ball_type, b.payload) then 1 else 0 end,
                           case when b.ball_type = 'W' and dismissal_is_bowlers(b.dismissal)
                                 and s.stands then 1 else 0 end)
                ) as who(fam, player_id, runs, balls, wickets)
@@ -2426,10 +2430,13 @@ function composePhases(rows) {
     if (!byInnings.has(n)) byInnings.set(n, []);
     /** @type {any[]} */ (byInnings.get(n)).push(fromRow(r));   // set just above when absent
   }
+  // The match's format, joined the same way: whether a no-ball gives a free
+  // hit, and so whether a wicket off the next ball stands (SCRBRD-113).
+  const ctx = { format: rows[0]?.format ?? null };
   const innings = [...byInnings.keys()].sort((a, b) => a - b)
     .map((n) => deriveInnings(
       // n came from byInnings.keys(), so get() finds it.
-      [{ kind: "innings_start", overs, squad: [], bowlingSquad: [] }, .../** @type {any[]} */ (byInnings.get(n))]));
+      [{ kind: "innings_start", overs, squad: [], bowlingSquad: [] }, .../** @type {any[]} */ (byInnings.get(n))], ctx));
   const { first, second } = deriveMatchPhases(innings);
   // One row per innings, so the shape matches every other read: a list.
   return [first, second]

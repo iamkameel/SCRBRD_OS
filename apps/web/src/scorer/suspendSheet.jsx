@@ -8,6 +8,8 @@ import {
   SUSPENSION_REASONS_OFFERED, bowlerToSuspend, bowlingCandidates, replacementOptions, scopeWords,
   suspendRefusal, suspensionReasonWords, suspensionRefusalWords, suspensionsInMatch,
 } from "./suspension.js";
+import { recordedScopeWords } from "./suspension.js";
+import { lawsEdition } from "@scrbrd/scoring";
 import { Sheet } from "./ui.jsx";
 
 /**
@@ -188,7 +190,7 @@ export function SuspendSheet({ view: startView = "reason", innings, events, curI
           </div>
           {reason != null && (
             <p data-testid="suspend-scope" style={{ ...body(), color: T.content.primary, marginTop: T.space.sm }}>
-              He may not bowl again {scopeWords(reason)}.
+              He may not bowl again {scopeWords(reason, lawsEdition(match))}.
             </p>
           )}
         </section>
@@ -288,7 +290,7 @@ function ReportItem({ s, canFile, matchId }) {
       <h3 style={{ margin: 0, fontFamily: T.type.body, fontSize: "16px", fontWeight: 600, color: T.content.primary }}>
         {s.name} · innings {s.innings + 1}, {s.at}
       </h3>
-      <p style={body()}>{suspensionReasonWords(s.reason)}. He may not bowl again {scopeWords(s.reason)}.</p>
+      <p style={body()}>{suspensionReasonWords(s.reason)}. He may not bowl again {recordedScopeWords(s.scope)}.</p>
       {canFile && s.playerId && !state.done && (
         <>
           <label style={{ ...label(), margin: 0 }} htmlFor={`sr-${s.key}`}>The record</label>

@@ -53,7 +53,7 @@ function ShotSelectorSheet({onSelect,onSkip,onClose}){
 /* ═══════════════════════════════════════════════════════
    NO BALL SHEET — different rules for front foot vs height
 ═══════════════════════════════════════════════════════ */
-function NoBallSheet({onConfirm,onClose}){
+function NoBallSheet({onConfirm,onClose,edition=3,freeHits=true}){
   const[nbType,setNbType]=useState("front_foot");
   const[runs,setRuns]=useState(0);
   // Whose the runs are (SCRBRD-068): off the bat they are the striker's, and
@@ -69,7 +69,7 @@ function NoBallSheet({onConfirm,onClose}){
   const types=[
     {id:"front_foot",label:"Front Foot",sub:"Bowler overstepped the crease",
       note:"Off a no ball a batter can be out only run out, hit the ball twice, or obstructing the field"},
-    {id:"height",label:"Full Toss Height",sub:"Above waist height on the full",
+    {id:"height",label:"Waist-high Full Toss",sub:"Passed above waist height without landing",
       note:"Same dismissals as front foot. Free hit applies in limited overs."},
     {id:"beamer",label:"Beamer (Dangerous)",sub:"Full toss above waist — dangerous delivery",
       note:"Umpire warning issued. Bowler may be removed. Same dismissal rules apply."},
@@ -94,9 +94,24 @@ function NoBallSheet({onConfirm,onClose}){
           </div>
           {/* Every no-ball, whatever its kind: the fold gives the free hit
               (SCORING_RULES §6), so the sheet says so for each. */}
-          <div style={{marginTop:"6px",color:D.orange,fontSize:"12px",fontFamily:D.body,fontWeight:500}}>
-            <Icon name="zap"/> Free hit on the next delivery
-          </div>
+          {/* The fold's answer (inn.freeHits): a free hit is a limited-overs
+              playing condition, not given in a declaration or timed match
+              (SCRBRD-113). */}
+          {freeHits?(
+            <div style={{marginTop:"6px",color:D.orange,fontSize:"12px",fontFamily:D.body,fontWeight:500}}>
+              <Icon name="zap"/> Free hit on the next delivery
+            </div>
+          ):(
+            <div data-testid="nb-no-free-hit" style={{marginTop:"6px",color:D.textSecondary,fontSize:"12px",fontFamily:D.body}}>
+              No free hit in this match: the no ball is its run and another delivery.
+            </div>
+          )}
+          {/* The Laws' 4th Edition (from 1 October 2026, SCRBRD-113). */}
+          {edition===4&&(
+            <div data-testid="nb-head-height" style={{marginTop:"6px",color:D.textSecondary,fontSize:"12px",fontFamily:D.body}}>
+              A bouncer over head height is a wide, not a no ball.
+            </div>
+          )}
         </div>
         {/* Runs off the no ball */}
         <div>
@@ -487,9 +502,15 @@ const entry = (p) => (typeof p === "string" ? { id: p, name: p } : { id: p?.id ?
  * `resumable` is the batters retired hurt whom the Laws would take back at
  * the end this sheet fills (retire.js resumeChoices, SCRBRD-071) — the
  * engine asks; the sheet offers exactly those, and none when not told.
+ *
+ * `resumableWithConsent` is the batters retired out whom the Laws would take
+ * back with the opposing captain's consent (retire.js consentChoices; Law
+ * 25.4.3). A tap asks the scorer to confirm the captain agreed; only the
+ * confirm sends, as onSend(id, {captainConsent: true}).
  */
-function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,header=null,onTimedOut=null,resumable=[]}){
+function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,header=null,onTimedOut=null,resumable=[],resumableWithConsent=[]}){
   const[timedOut,setTimedOut]=useState(false);
+  const[consentFor,setConsentFor]=useState(/** @type {string|null} */(null));
   const send=timedOut&&onTimedOut?(id)=>{setTimedOut(false);onTimedOut(id);}:onSend;
   const teamInfo=INT_TEAMS[teamKey]||null;
   // The batting order's next name first, marked Next (SCRBRD-100 item 2):
@@ -507,6 +528,8 @@ function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,head
   // the Laws' (`resumable`): not a retirement they read as out, and not
   // straight back into the end he has just left.
   const mayResume=timedOut?[]:resumable;
+  const mayResumeWithConsent=timedOut?[]:resumableWithConsent;
+  const asking=mayResumeWithConsent.find(b=>b.id===consentFor)??null;
   return (
     <Sheet title="Batting Order" accent={D.emerald} onClose={onClose}>
       <div style={{paddingTop:"12px"}}>
@@ -549,6 +572,40 @@ function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,head
                 <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textSecondary}}>{b.runs}({b.balls})</span>
               </button>
             ))}
+          </div>
+        )}
+        {mayResumeWithConsent.length>0&&(
+          <div data-testid="consent-list" style={{marginBottom:"12px"}}>
+            <Lbl sx={{marginBottom:"7px"}}>Retired out — may resume if the opposing captain agrees</Lbl>
+            {mayResumeWithConsent.map(b=>(
+              <button key={b.id} type="button" data-testid={`consent-${b.id}`} aria-pressed={consentFor===b.id}
+                onClick={()=>setConsentFor(v=>v===b.id?null:b.id)} className="pressBtn" style={{
+                display:"flex",alignItems:"center",gap:"10px",minHeight:"44px",width:"100%",marginBottom:"4px",
+                padding:"8px 12px",borderRadius:D.md,cursor:"pointer",textAlign:"left",
+                border:`${consentFor===b.id?2:1}px solid ${consentFor===b.id?T.content.primary:D.border}`,background:D.surf2}}>
+                <span style={{fontFamily:D.body,fontSize:"13px",fontWeight:500,color:D.textPrimary,flex:1}}>{b.name} resumes</span>
+                <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textSecondary}}>{b.runs}({b.balls})</span>
+              </button>
+            ))}
+            {asking&&(
+              <div data-testid="consent-confirm-panel" role="group" aria-label="The opposing captain's consent" style={{
+                marginTop:"8px",padding:"12px",borderRadius:D.md,border:`1px solid ${T.content.primary}`,background:T.surface.base}}>
+                <p style={{fontFamily:D.body,fontSize:"13px",lineHeight:1.45,color:D.textPrimary,margin:"0 0 10px"}}>
+                  {asking.name} retired out. He may come back only if the opposing captain agrees. His wicket is then taken back and his innings goes on.
+                </p>
+                <button type="button" data-testid="consent-confirm" onClick={()=>{setConsentFor(null);onSend(asking.id,{captainConsent:true});}}
+                  className="pressBtn" style={{width:"100%",minHeight:"48px",marginBottom:"6px",padding:"10px 12px",borderRadius:D.md,cursor:"pointer",
+                  border:`1px solid ${T.content.primary}`,background:T.content.primary,color:T.surface.canvas,
+                  fontFamily:D.body,fontSize:"14px",fontWeight:600}}>
+                  The opposing captain agreed — {asking.name} resumes
+                </button>
+                <button type="button" data-testid="consent-cancel" onClick={()=>setConsentFor(null)} className="pressBtn" style={{
+                  width:"100%",minHeight:"44px",padding:"8px 12px",borderRadius:D.md,cursor:"pointer",
+                  border:`1px solid ${D.border}`,background:"transparent",color:D.textSecondary,fontFamily:D.body,fontSize:"13px",fontWeight:500}}>
+                  Not agreed
+                </button>
+              </div>
+            )}
           </div>
         )}
         {/* Available */}
@@ -638,8 +695,16 @@ function CustomBatEntry({onSend}){
 /* ═══════════════════════════════════════════════════════
    WICKET SHEET
 ═══════════════════════════════════════════════════════ */
-function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,onClose,onConfirm}){
+function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition=3,onClose,onConfirm}){
   const[mode,setMode]=useState(DISMISSAL.BOWLED);
+  // An obstruction that stopped a catch (4th Edition, from 1 October 2026;
+  // SCRBRD-113): no runs count, and the fielding captain chooses whether the
+  // non-striker or the incoming batter faces the next ball. The 3rd Edition
+  // gave no choice: the incoming batter takes the striker's end, as before.
+  const[stopped,setStopped]=useState(false);
+  const[faces,setFaces]=useState(null);
+  const asksCatch=mode===DISMISSAL.OBSTRUCTING_FIELD&&edition===4&&!!striker&&!!nonStriker;
+  const asksFaces=asksCatch&&stopped;
   const[fielder,setFielder]=useState("");
   const[fielterFilter,setFielderFilter]=useState("");
   // Whose wicket, where the mode leaves it open. Retired out is either
@@ -657,7 +722,7 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,onClose
   const modes=Object.keys(DISMISSAL_LABEL).filter(m=>m!==DISMISSAL.TIMED_OUT&&m!==DISMISSAL.HANDLED_BALL);
   // A run out: who, how many runs were completed first, and — when some
   // were, so the batters have crossed (Law 18) — at which end the wicket was
-  // put down (Law 38.2). That end is the one left empty (SCRBRD-069).
+  // put down (Law 38.4). That end is the one left empty (SCRBRD-069).
   const[runs,setRuns]=useState(0);
   const[end,setEnd]=useState(null);
   const isRunOut=mode===DISMISSAL.RUN_OUT;
@@ -677,6 +742,7 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,onClose
     setFielderFilter("");
     setWho(striker?.id??null);
     setRuns(0);setEnd(null);
+    setStopped(false);setFaces(null);
     if(m===DISMISSAL.STUMPED&&wkName)setFielder(wkName);
   };
   const whoName=who===nonStriker?.id?nonStriker?.name:(striker?.name??batName);
@@ -734,6 +800,29 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,onClose
           </div>
         </div>
       )}
+      {asksCatch&&(
+        <div data-testid="wicket-obstruct-catch" style={{marginBottom:"12px"}}>
+          <Lbl sx={{marginBottom:"7px"}}>Did the obstruction stop a catch?</Lbl>
+          <div style={{display:"flex",gap:"7px"}}>
+            <button data-testid="wicket-catch-no" onClick={()=>{setStopped(false);setFaces(null);}} className="pressBtn" style={pill(!stopped)}>No</button>
+            <button data-testid="wicket-catch-yes" onClick={()=>setStopped(true)} className="pressBtn" style={pill(stopped)}>Yes</button>
+          </div>
+          {stopped&&(
+            <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"6px"}}>
+              No runs count. The fielding captain chooses who faces the next ball.
+            </div>
+          )}
+        </div>
+      )}
+      {asksFaces&&(
+        <div data-testid="wicket-faces" style={{marginBottom:"12px"}}>
+          <Lbl sx={{marginBottom:"7px"}}>Who faces the next ball?</Lbl>
+          <div style={{display:"flex",gap:"7px"}}>
+            <button data-testid="wicket-faces-non_striker" onClick={()=>setFaces("non_striker")} className="pressBtn" style={pill(faces==="non_striker")}>{nonStriker.name}</button>
+            <button data-testid="wicket-faces-incoming" onClick={()=>setFaces("incoming")} className="pressBtn" style={pill(faces==="incoming")}>The incoming batter</button>
+          </div>
+        </div>
+      )}
       {isStumped&&(
         <div style={{marginBottom:"12px",padding:"10px 13px",borderRadius:D.md,
           background:D.violet+"0e",border:"1px solid "+D.violet+"33"}}>
@@ -780,9 +869,9 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,onClose
       )}
       <div style={{display:"flex",gap:"10px",marginTop:"4px"}}>
         <Btn variant="ghost" sx={{flex:1,minHeight:"48px",fontSize:"15px",borderRadius:D.md}} onClick={onClose}>Cancel</Btn>
-        <Btn variant="danger" sx={{flex:2,minHeight:"48px",fontSize:"16px",borderRadius:D.md}} data-testid="wicket-confirm" disabled={asksEnd&&!end}
-          onClick={()=>{if(asksEnd&&!end)return;onConfirm(mode,displayFielder,{dismissed:asksWho&&who!==striker?.id?who:null,
-            runs:isRunOut?runs:0,outAt:asksEnd?end:null});}}>Confirm Out</Btn>
+        <Btn variant="danger" sx={{flex:2,minHeight:"48px",fontSize:"16px",borderRadius:D.md}} data-testid="wicket-confirm" disabled={(asksEnd&&!end)||(asksFaces&&!faces)}
+          onClick={()=>{if(asksEnd&&!end)return;if(asksFaces&&!faces)return;onConfirm(mode,displayFielder,{dismissed:asksWho&&who!==striker?.id?who:null,
+            runs:isRunOut?runs:0,outAt:asksEnd?end:null,facesNext:asksFaces?faces:null});}}>Confirm Out</Btn>
       </div>
     </Sheet>
   );
@@ -793,7 +882,7 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,onClose
 ═══════════════════════════════════════════════════════ */
 /**
  * `midOver` (SCRBRD-080): the over is under way, so this is a bowler taking
- * over from one who cannot finish it. Law 17.8.1 allows that only for an
+ * over from one who cannot finish it. Law 17.7.1 allows that only for an
  * injured or suspended bowler, so the sheet asks which before it offers
  * anyone, and passes it on: onConfirm(id, reason).
  */
@@ -812,7 +901,7 @@ function NewOverSheet({ovNum,inn=null,prevBowlers,bowlingSquad,bowlingTeamKey,la
   const allBowlers=teamInfo
     ? teamInfo.players.filter(p=>p.bowl).map(p=>({...p,id:p.id??p.name}))
     : (bowlingSquad||[]).map(n=>({...entry(n),role:"BOWL"}));
-  // Can't bowl consecutive overs (Law 17.8). `refuses` is lawsRefusal() —
+  // Can't bowl consecutive overs (Law 17.6). `refuses` is lawsRefusal() —
   // the rule the server applies when the bowler event arrives — asked by the
   // id that will be emitted. The name comparison is kept only for a caller
   // that does not pass it.

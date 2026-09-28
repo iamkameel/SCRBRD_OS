@@ -112,7 +112,8 @@ on the event, and `describeDismissal()` renders proper scorecard notation.
 The artifact tracked a free-hit banner in UI state but did not apply the rule to
 dismissals. A free hit now saves the batter from every mode of dismissal except
 those that stand on a free hit — run out, and the other non-delivery
-dismissals — and is consumed by the next legal delivery.
+dismissals — and is consumed by the next legal delivery. Only in a limited-overs match: a declaration or timed match
+has no free hit (SCRBRD-113, below).
 
 **In SQL (db/42).** Every SQL reader of `ball_event` that counts a wicket asks `ball_wicket_stands()`, the fold's
 rule in SQL: a W ball on a free hit stands only when its method is one of `NON_DELIVERY` (run out, handled the ball,
@@ -187,14 +188,14 @@ Refused, with the reason named:
 |---|---|
 | A ball needs an innings, batters at both ends and a bowler; not in a closed or finished innings | `scoringReadiness()` (the pad's own gate) |
 | Striker and non-striker are different players | AntiGravity `validateDelivery` |
-| No bowler bowls two overs, or parts of two, running (Law 17.8) | AntiGravity; "parts thereof" added |
-| A bowler replaced during an over says why: injury or suspension (Law 17.8.1) | SCRBRD-080 |
+| No bowler bowls two overs, or parts of two, running (Law 17.6) | AntiGravity; "parts thereof" added |
+| A bowler replaced during an over says why: injury or suspension (Law 17.7.1) | SCRBRD-080 |
 | A bowler the umpires suspended does not bowl again in the innings — for ball tampering, in the match, later innings included; a suspension names the bowler on (or of the last ball), a reason from the list and the scope that reason carries | SCRBRD-094 item 2 |
 | Whoever is out on a wicket must be one of the two batting | AntiGravity |
 | No ball once the second innings is complete — the match is decided | AntiGravity `recordBallAction` |
 | An innings starts only when the one before it has ended (by the laws or a seal) | new, from the model |
 | No play in an innings once a later one has a delivery | new |
-| A dismissed batter, or one retired out, does not come back; retired hurt may, but only at the fall of a wicket or another batter's retirement since he went (Law 25.4) | new; the timing SCRBRD-071 |
+| A dismissed batter does not come back; retired hurt may, and retired out only with the opposing captain's consent — either only at the fall of a wicket or another batter's retirement since he went (Law 25.4) | new; the timing and the consent SCRBRD-071 |
 | Once play starts, a not-out batter leaves only by dismissal or retirement — no replacing him; swapping ends is allowed | new |
 | Only a batter at the crease can retire, and not once the innings is over or closed; nothing is recorded for an innings nobody opened | new; over/closed SCRBRD-071 |
 | A wicket with no ball is retired out (a batter who is in) or timed out (the batter due in, Law 40) — nothing else | SCRBRD-081 |
@@ -230,7 +231,7 @@ or for it and every event held after it:
   bowler at the crease when it is recorded, as a fresh tap would be.
 
 Nothing is resent on its own. Discarding the cause of a cascade (a bowler
-refused under Law 17.8, and the balls after him refused for want of a bowler)
+refused under Law 17.6, and the balls after him refused for want of a bowler)
 does not make the rest legal — the server never had the bowler, so letting him
 go changes nothing it knows; the balls become legal only once the scorer names
 the right bowler, and then only by being recorded again. Undo that reaches a
@@ -323,11 +324,11 @@ Taken by the product owner on the rules the commit-time Laws check left open.
 
 1. **Dismissal on a free hit — record it, batter not out.** Unchanged from §6. The pad records the ball and the
    appeal as they happened; the fold saves the batter (`standsOnFreeHit`). The server does not refuse it.
-2. **Mid-over bowler change — allowed, with a reason.** Law 17.8.1: a bowler incapacitated or suspended may be
+2. **Mid-over bowler change — allowed, with a reason.** Law 17.7.1: a bowler incapacitated or suspended may be
    replaced mid-over. The pad asks *Injury or suspended?* and records it on the `bowler` event; the one who finishes
    the over may not bowl the next (already enforced as "or parts thereof"). Built as SCRBRD-080.
 3. **Run out with runs completed — ask which end.** One extra question on a run out that completed runs: out at the
-   striker's end or the bowler's end (Law 38.2). The fold places the survivor from that. Built as SCRBRD-069.
+   striker's end or the bowler's end (Law 38.4). The fold places the survivor from that. Built as SCRBRD-069.
 4. **No-ball byes — fix the model.** A no-ball records runs off the bat and runs not off the bat separately; only
    the first is the batter's (Law 21.15, Law 23). Old events replay unchanged. Built as SCRBRD-068; its scoring
    corrected to the current Code on 2026-09-27 (db/52, below).
@@ -338,7 +339,7 @@ Taken by the product owner on the rules the commit-time Laws check left open.
 ### Which end after a run out that completed runs (SCRBRD-069)
 
 **The shape.** A wicket may carry `outAt: "striker_end" | "bowler_end"` (`RUN_OUT_END`): the end the wicket was put down
-at (Law 38.2). Omitted otherwise. The constructor refuses any other value, or the field on anything but a wicket; so
+at (Law 38.4). Omitted otherwise. The constructor refuses any other value, or the field on anything but a wicket; so
 does the server (`out_at_unknown`).
 
 **The fold.** When the wicket stands and the end is recorded, that end is empty and the survivor is at the other one —
@@ -416,7 +417,7 @@ over is the same event it always was. The constructor refuses any other value.
 not a change, and nor is naming a bowler when nobody is on (a pad holding balls the server refused for want of one,
 SCRBRD-070's cascade): there is nobody to replace.
 
-**No reason: refused.** Law 17.8.1 lets a bowler be replaced during an over only when he is incapacitated or
+**No reason: refused.** Law 17.7.1 lets a bowler be replaced during an over only when he is incapacitated or
 suspended, so the reason is what makes the change lawful, and the pad always asks. A new mid-over `bowler` event with no
 reason, or one the model does not know, is refused at commit (`mid_over_no_reason`). Naming the bowler already on is
 no change and needs none. Only new events are judged: a log from before the pad asked replays unchanged, its change
@@ -424,7 +425,7 @@ recorded with the reason unknown. An older build's change arrives without one an
 refusal; its balls are still judged, against the bowler the server has.
 
 **The fold.** Unchanged figures — each man is credited with the balls he bowled — plus `inn.bowlerChanges`: the over,
-the legal balls of it already bowled, who left, who took over and why. "Or parts thereof" (Law 17.8) was already
+the legal balls of it already bowled, who left, who took over and why. "Or parts thereof" (Law 17.6) was already
 enforced and still is: neither the man who left nor the one who finished the over may bowl the next.
 
 **The pad.** "Chg Bowler" during an over opens the bowler sheet as *Change of Bowler*, which asks *Injury or
@@ -628,7 +629,8 @@ with awards to both sides; db/99 §26 holds each rule.
 **Decided (Kameel, from MCC Law 41).** The umpire suspends a bowler as soon as the ball is dead, for beamers (a second,
 or at once if deliberate), dangerous short-pitched bowling repeated after a warning, a deliberate front-foot no-ball,
 running on the protected area after a first and final warning, the fielding side wasting time after warnings, or ball
-tampering. He may not bowl again for the rest of the innings — for ball tampering, the rest of the match. Another bowler
+tampering. He may not bowl again for the rest of the innings — for ball tampering, the rest of the match (and, in a
+match under the Laws' 4th Edition, for a deliberate front-foot no-ball or a deliberate beamer: SCRBRD-113). Another bowler
 finishes the over; he may not have bowled any part of the previous over and may not bowl any part of the next. Warnings
 are not tracked: the umpire decides when a suspension is due, and the scorer records it.
 
@@ -653,7 +655,7 @@ over credits each bowler with the balls he bowled and the runs off them, and is 
 bowler suspended in this innings, or for the match in an earlier one (`bowler_suspended`; `suspendedBowlers()` reads
 the match); a suspension of anyone but the bowler on, or — nobody on, at an over's end — the bowler of the last ball
 (`not_bowling`); a reason not on the list, or a scope the reason does not carry (`suspension_unknown`); the same bowler
-twice (`bowler_suspended`). The replacement's two rules are Law 17.8's "or parts thereof", which the check already
+twice (`bowler_suspended`). The replacement's two rules are Law 17.6's "parts of each of two consecutive overs", which the check already
 applied to every change: `bowledLastOver()` refuses a man who bowled any of the previous over, and the next over
 refuses both men who shared this one. Nothing new was needed for either. The pad's gate (`scoringReadiness`) blocks a
 ball while the suspended bowler is on (`bowler_suspended`, "Choose who finishes the over").
@@ -689,6 +691,21 @@ sheet lists under "Retired hurt — may resume" exactly those the Laws take (`re
 refused `innings_over`, and in one that is sealed `innings_closed` — the same codes, in the same order, as a
 dismissal with no ball.
 
+**Retired out, back with the opposing captain's consent (Law 25.4.3).** A batter who retires for any reason other
+than illness, injury or another unavoidable cause is recorded retired out at once — a `retire` marked W, a wicket
+with no ball (SCRBRD-081) — and may resume only with the opposing captain's consent. The return is
+`batters({ ..., captainConsent: true })`. `lawsRefusal` takes it only for a batter whose latest retirement is a
+retired out that still stands, under the same 25.4.4 timing, and not once the innings is over or sealed; consent
+recorded for anyone else (a new batter, one retired hurt, one timed out, an old W delivery naming retired out) is
+`consent_not_retired_out` or `batter_already_out`. The fold takes his wicket back: one fewer in `wickets`, his
+entry off the fall of wickets (the later ones renumbered) and off `nonBallWickets`, his line batting again with
+his runs and balls going on, and the return in `inn.resumedWithConsent`. The 25.4.4 timing counts wickets fallen,
+including any taken back, so it only rises. SQL does the same in one place (`db/53`): `ball_event_live` reads a
+retirement that a later live consented return names with ball type and dismissal NULL, so the live score, the
+handover's count, `player_innings` and every dismissal and career reader follow. The pad: the batting-order sheet
+lists "Retired out — may resume if the opposing captain agrees" (`consentChoices()` in `retire.js`); a tap asks the
+scorer to confirm the captain agreed, and only the confirm sends.
+
 Not modelled: the last batter retiring hurt with nobody left to come in. The Laws end the innings there; the fold
 does not derive that ending (`inningsOverReason` counts wickets, not retirements), and the Laws now refuse his
 walking straight back, as the pad's sheet never offered it.
@@ -697,5 +714,93 @@ walking straight back, as the pad's sheet never offered it.
 
 The pad's no-ball sheet always asked front foot, full toss height or beamer, and passed the answer to `ball()` — which
 dropped it. `ball()` now keeps it (`NB_TYPE`, on a no-ball only; omitted when not asked). The fold decides nothing by it:
-every no-ball is followed by a free hit (§6), and the pad's free-hit banner now reads that from the fold, as after any
+every no-ball in a limited-overs match is followed by a free hit (§6), and the pad's free-hit banner now reads that from the fold, as after any
 ball (it used to appear only for height and beamers). A short run off a no-ball asks the kind too.
+
+## The Laws' 4th Edition (SCRBRD-113)
+
+**Decided (Kameel, 2026-09-27).** The MCC Laws, 2017 Code, 4th Edition (2026), are in force from 1 October 2026. **The
+Edition follows the match date**: a match that starts before 1 October 2026 is scored under the 3rd Edition, one that
+starts on or after it under the 4th. Old logs replay exactly as they were scored. There is no per-competition setting.
+
+**One helper.** `lawsEdition(match)` (`packages/scoring/src/edition.mjs`) answers 3 or 4, and every rule that differs
+by Edition reads it. It dates the match, in South African time, by the first of: the fixture's `starts_at` (the fold is
+told it: `FoldContext.startsAt`); the Edition an innings was already folded under (`inn.lawsEdition`); the log's first
+event; today. The pad takes `starts_at` from the fixture; the server asks `match_fold_context()` (db/54), which answers
+a caller who may read the fixture — a pad's resume credential for that match included, which cannot read the `match`
+row itself — and nobody else. A log with no fixture is dated by its first event.
+
+| Rule | 3rd Edition (before 1 Oct 2026) | 4th Edition (from 1 Oct 2026) |
+|---|---|---|
+| A deliberate front-foot no-ball (41.8) | bowler suspended for the innings | for the **match** |
+| A deliberate beamer (41.7.6) | for the innings | for the **match** |
+| Dangerous beamers after a caution (41.7.4) | the innings | the innings |
+| Deliberate short running (18.5.2) | batters back to their original ends | the **fielding captain** chooses who faces |
+| An obstruction that stops a catch (37.5.2) | the not-out batter at his end | the **fielding captain** chooses who faces |
+| Penalty runs after the result (41.17.2, 16.7) | refused once the match is decided | taken until the umpires leave the field |
+
+**Suspensions.** `SUSPENSION_REASON` splits beamers in two: `beamers` (dangerous non-landing deliveries after a
+caution, the innings in both) and `deliberate_beamer`. `SUSPENSION_REASON_SCOPE` is keyed by Edition and
+`suspensionScope(reason, edition)` answers it; `bowlerSuspended()` fills the scope in from the Edition of its own
+`clientTs` when not told, the pad passes the match's, and the Laws check refuses a scope the reason does not carry
+under the match's Edition. A stored event keeps the scope it was recorded with, and `suspensionWords()` says that one.
+Two reasons were added for both Editions: `throwing` (21.3.2, the innings) and `conduct` (a Level 4 conduct offence
+under Law 42, the match). Law 42's Level 3 (a player suspended for a number of overs) is not modelled.
+
+**Who faces next.** `ball()` takes `facesNext` — `striker`, `non_striker`, or `incoming` (on a wicket only) — and the
+fold places the batters by it last, after the runs and the dismissal. Under the 4th the Laws check takes it on a
+delivery whose runs are nothing (a deliberate short run's, `runsDisallowed()`) and on an obstructing-the-field or run-out
+wicket with no runs (the obstruction that stopped a catch), and refuses it anywhere else; under the 3rd it is refused
+everywhere but a 41.5 delivery, where in both Editions the batters decide who faces. The pad asks for it and will not
+record without it: the short-run sheet's "Who faces the next ball?" under the 4th, and the wicket sheet's "Did the
+obstruction stop a catch?" and then the captain's choice.
+
+**Penalty runs after the result.** "Until the umpires leave the field" is represented as **the match concluded**:
+`match.status = 'complete'`, after which the write path quarantines every event (db/33). Until then, under the 4th, a
+fielding-side award is taken after the result. An award to the fielding side that lifts the target above a chase already
+reached reopens it (`sealed` and `complete` cleared, `endReason` null) and play goes on; an award to the chasing side
+after its innings ended short — all out, or its overs bowled — that makes its total enough is a win **by penalty runs**
+(`inn.penaltyWin`; `describeResult()` margin "penalty runs"). Under the 3rd, a fielding-side award after the result is
+still refused (`match_decided`), and neither follows.
+
+**Both Editions: a delivery that does not count in the over (17.3.2.5).** When 24.4, 28.2, 41.4 or 41.5 is applied the
+delivery is not one of the over. `ball()` takes `notInOver` (one of `NOT_IN_OVER`), and `notInOverDelivery()` records it
+with its five penalty runs to the batting side. `countsInOver()` is the fold's one question: not a wide or a no-ball and
+not so marked. Balls of the over, the bowler's balls, maidens, dots, the hat-trick run and the end of the over read it;
+the striker still received the ball. SQL asks `ball_counts_in_over()` (db/54).
+
+**Both Editions: runs disallowed (41.14.3, 41.15.3).** A second offence of damaging the pitch or of the striker taking
+guard in the protected area disallows the delivery's runs and returns the batters to their ends, as short running
+does: `runsDisallowed(delivery, reason)` records the delivery with no runs and the award to the fielding side
+(`striker_position` joined the fielding side's penalty reasons).
+
+**The bouncer over head height is a Wide (22.1.3, 4th).** Words only: the fold never judged height. The pad's quick
+no-ball pad and its sheet speak of a waist-high full toss and a beamer, and under the 4th say a bouncer over head
+height is a Wide; the rulebook says so.
+
+**The free hit follows the match's format (Kameel, 2026-09-27).** Not an Edition rule, and not keyed to a date: a
+correction, applied to every match by its stored format. A limited-overs match (T20, 50-over, any overs-limited
+format) gives a free hit after a no-ball; a declaration or timed match, of one day or more, does not. `freeHitsApply(format)`
+(`packages/scoring/src/format.mjs`) answers it and the fold stamps it on the innings (`inn.freeHits`); the Laws check,
+the pad's banner and no-ball sheet, and the commentary read the fold. A match with **no format** keeps today's
+behaviour: a free hit after every no-ball. "One-Day Declaration" was added to the fixture screen's formats (a one-day
+timed match). SQL asks `free_hits_apply()` of `match.format` inside `ball_on_free_hit()` (db/54), so every reader of a
+wicket stands a bowled off the ball after a no-ball in a declaration match.
+
+**SQL (db/54).** The balls of the over and the free hit by format, as the fold has them; `match_fold_context()`. Its
+proof block, db/99 section 32 and `tools/smoke-fold-figures.mjs` hold live score, handover count, bowler overs,
+hat-trick, player and season and career figures, opposition and matchups to the fold.
+
+**The live score counts what the handover check counts, on any log (db/54, 4).** Two rows the Laws refuse at commit
+can still sit in the table (a direct insert, an old build, a release from quarantine). A `retire` marked W whose method
+is neither retired out nor timed out (say `bowled`, reason hurt) is, to the fold, a retirement not out: no wicket, his
+line "retired hurt", and he may come back — every other way out needs a delivery (`retirementDismissal()`). A row that
+is not a delivery carrying a `value` (a penalty row, say) adds only its own `runs`: the fold reads `value` on
+deliveries only. The handover's count and the player readers already read both so; `match_live_score` counted the
+first as a wicket and added the second's value, so the board and the handover check disagreed on such a log. It now
+uses the handover's own expressions. db/99 section 32 compares every innings' runs, wickets and balls of the over
+between the two, as the platform owner (it had run as whoever the section before left, once nobody, and compared
+nothing); `replay.test.mjs` group O and a `smoke-fold-figures` innings hold the fold's reading.
+
+**To be decided (recorded, not built).** Some primary-school leagues cap an over at a maximum number of balls (for
+example 8), and a free hit earned on the last allowed ball falls away. See SCRBRD-113 in the backlog.

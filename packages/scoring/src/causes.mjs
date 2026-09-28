@@ -24,6 +24,7 @@
  *   - a question where it is a guess.
  */
 
+import { countsInOver } from "./events.mjs";
 /** @import { Innings } from "./replay.mjs" */
 
 /**
@@ -58,7 +59,7 @@ function lastOver(inn) {
   if (balls === 0 || balls % 6 !== 0) return null;
   const over = balls / 6 - 1;
   const log = (inn.ballLog ?? []).filter((b) => b.over === over);
-  return { number: over + 1, deliveries: log.length, extras: log.filter((b) => b.type === "Wd" || b.type === "Nb").length };
+  return { number: over + 1, deliveries: log.length, extras: log.filter((b) => !countsInOver(b)).length };
 }
 
 /**
@@ -109,11 +110,13 @@ export const REFUSAL_CAUSE = Object.freeze({
     return inn && id != null ? `${foldName(inn, id, "That batter")} is already out. Was it the other batter?` : null;
   },
   resume_not_yet: ({ inn, ev }) => {
-    const id = [ev?.striker, ev?.nonStriker].find((x) => x != null && inn?.batsmen?.some((b) => b.id === x && b.status === "retired"));
+    const id = [ev?.striker, ev?.nonStriker].find((x) => x != null && inn?.batsmen?.some((b) => b.id === x
+      && (b.status === "retired" || (b.status === "out" && b.dismissal === "retired out"))));
     return inn && id != null
-      ? `${foldName(inn, id, "That batter")} went off retired hurt, and no wicket has fallen and nobody else has retired since. Was the next batter in meant?`
+      ? `${foldName(inn, id, "That batter")} retired, and no wicket has fallen and nobody else has retired since. Was the next batter in meant?`
       : null;
   },
+  consent_not_retired_out: () => "The opposing captain's consent is only for a batter who retired out. Was it recorded for the wrong batter?",
   crease_occupied: () => "A batter who is not out was replaced. Was the wicket recorded first?",
   not_at_crease: () => "That batter is not in. Was it the other one?",
   void_not_latest: () => "Something was recorded after it. Undo that first, or ask for an amendment.",

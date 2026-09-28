@@ -86,8 +86,8 @@ group("C. The engine is wired the way this test assumes");
      /const onCommitDetailed=\(type,value,shot,seg,zone,placement\)=>\{[^}]*commitBall\(type,value,shot,seg,zone,null,placement\);/.test(engine));
   ok("the hub records its held point the same way", /commitBall\(effectiveType,value,hubShot,null,null,hubApproach,selSeg\)/.test(engine));
   ok("commitBall builds every delivery through deliveryEvents(), which is deliveryOf()",
-     /const evs=deliveryEvents\(\{curIn,before,freeHit,type,value,shot,seg,zone,approach,placement,shortRun,nbType\}\);/.test(engine)
-     && /const delivery = deliveryOf\(\{ type, value, shot, approach, freeHit, crease: crease\(before\), seg, zone, placement, nbType \}\);/.test(src("delivery.js")));
+     /const evs=deliveryEvents\(\{curIn,before,freeHit,type,value,shot,seg,zone,approach,placement,shortRun,nbType,facesNext,disallowed,notInOver\}\);/.test(engine)
+     && /const bowled = deliveryOf\(\{ type, value, shot, approach, freeHit, crease: crease\(before\), seg, zone, placement, nbType \}\);/.test(src("delivery.js")));
   ok("a wicket keeps the whole placement, from the pad (onWicketCtx) and the hub",
      /const onWicketCtx=\(shot,seg,zone,placement\)=>\{[^}]*placement:placement\?\?null/.test(engine)
        && /placement:selSeg\?\.placementSource\?selSeg:null/.test(engine)

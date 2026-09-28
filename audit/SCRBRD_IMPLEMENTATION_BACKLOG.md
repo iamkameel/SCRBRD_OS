@@ -2874,7 +2874,7 @@ hit), db/52's own block, db/99 §19/§22/§30 and db/43's fixture, `smoke-fold-f
 (`bat.runs += v` on a no-ball), the scorer pad's extras sheet
 **Found 2026-09-23** translating AntiGravity's `liveProjectionRules.test.ts` into `packages/scoring/test/laws-spec.test.mjs`.
 By the Laws, byes or leg byes taken off a no-ball are scored as no-ball extras and are not the striker's
-(Law 21.6, Law 23). OS's no-ball carries one number, defined as runs off the bat, so four byes off a no-ball either
+(Law 21.15, Law 23). OS's no-ball carries one number, defined as runs off the bat, so four byes off a no-ball either
 go into the batter's score or cannot be entered at all.
 **Expected behaviour:** a no-ball records runs off the bat and runs not off the bat separately; the batter is
 credited only with the first, the bowler charged per the Laws, and old logs replay unchanged.
@@ -2888,7 +2888,7 @@ credited only with the first, the bowler charged per the Laws, and old logs repl
 **Affected files:** `packages/scoring/src/replay.mjs` (`deriveInnings`, the wicket case)
 **Found 2026-09-23** in the same translation (kept as a named `KNOWN_GAP` in `laws-spec.test.mjs`). With runs
 completed before the run out, the batters have changed ends (Law 18), and which end the dismissed batter was out at
-decides which end is empty (Law 38.2). The fold cannot know the second from the event today; it assumes neither
+decides which end is empty (Law 38.4). The fold cannot know the second from the event today; it assumes neither
 changed. The next `batters` event names ends explicitly, so the scorecard is right; the live "who is facing" between
 the wicket and the new batter can be wrong.
 **Expected behaviour:** a run out records the end it happened at (or the scorer is asked), and the fold places the
@@ -2982,7 +2982,7 @@ after it refused too.
   each mutated in turn and failing its tests. Found, not fixed: the last batter retiring hurt with nobody
   left to come in ends the innings under the Laws; `inningsOverReason` counts wickets only, so the fold does not derive
   that ending (the pad never offered him straight back either, so nothing new is stranded).
-  **Not built, needs SQL (2026-09-27): resuming after retired out, with the opposing captain's consent (Law 25.4.3).**
+  ~~**Not built, needs SQL (2026-09-27): resuming after retired out, with the opposing captain's consent (Law 25.4.3).**
   Proposed model: a `batters` event carrying `captainConsent: true`, which the Laws take only for a batter retired
   out (W-marked retire, reason out — never timed out), under the same 25.4.4 timing; the fold on it takes the
   wicket back (wickets − 1, his `fow` and `nonBallWickets` entries removed, status batting, no dismissal line, his
@@ -2994,7 +2994,29 @@ after it refused too.
   a resume the Laws took would make the live score and the handover check disagree with the fold. It needs a
   migration: a `retirement_resumed(match, innings, seq)` predicate (a later live consented `batters` row naming the
   retire's `payload.batter`) and those readers redefined to leave a resumed retirement out. Sequencing with db/52 is
-  the coordinator's call.
+  the coordinator's call.~~ **Built 2026-09-27, after db/52.** The event and the Laws: `batters({..., captainConsent:
+  true})`, taken only for a batter whose latest retirement is a retired out still standing, at a wicket or another's
+  retirement since (25.4.4), not in an innings over or sealed; consent for anyone else is `consent_not_retired_out`.
+  The fold takes the wicket back as proposed, with new arrays (a view already handed out keeps its own); retired out
+  is now on `inn.retirements` (`out: true`), and the 25.4.4 timing reads wickets fallen (`wickets` +
+  `resumedWithConsent.length`). SQL, simpler than proposed: not twelve readers redefined but one view —
+  `db/53_retired_out_resume.sql` adds `retirement_resumed(match, innings, seq, batter)` (invoker, STABLE: a later
+  live consented `batters` row naming him, by id column or typed name) and redefines `ball_event_live` (db/43's text,
+  same columns, options, owner and grants, checked against a snapshot) to read such a retirement with ball type and
+  dismissal NULL; every reader already reads `ball_event_live`, so the live score, the handover's count,
+  `player_innings`, the dismissal, career and season readers and `milestone_watch` follow unchanged. Nothing in db/52
+  is redefined. The pad: "Retired out — may resume if the opposing captain agrees" on the batting-order sheet
+  (`retire.js` `consentChoices`, the Laws' answer), a confirm step, "Not agreed". Proof: `laws.test` R, `replay.test`
+  (the fold, and "the db/53 fixture"), `held.test`, `retire-sheet.test`, db/53's own proof (the fixture through every
+  reader, then the return voided), db/99 §31 (as the platform owner under RLS; a return naming somebody else; a typed
+  name; the void), `smoke-fold-figures` (a fifth random stream: 7 consented returns generated plus a written-out
+  innings, every SQL figure agreeing with the fold, every return asked of the Laws), `smoke-browser-retire` H (from
+  the wicket sheet to the confirm; the board and SQL's live score take the wicket back; player_innings not out).
+  Falsified: nine mutations of the Laws, the fold and the pad's choices; four of db/53 (each refused by db/53's own
+  proof but one, and each turning db/99 §31 red with that proof lifted); the pad's confirm sending no consent (walk
+  H, four failures); the smoke's SQL agreement with db/53's view disabled (seven failures). Paste rehearsed on a
+  database built from origin/main (01–51, seeded): apply-53 before apply-52 refuses; apply-52, apply-53, verify —
+  `ALL RLS LIVE ASSERTIONS PASSED`; the migrator then reports 0 to apply.
 - ~~Timed out and retired out are recorded as `W` balls, which count as a legal delivery of the over.~~ **Already done by
   SCRBRD-081 (2026-09-24)**, checked 2026-09-27: both are a `retire` marked `type: "W"` (no ball, no bowler figure, no
   ball faced), through the `nonBallWickets` path; an old W *ball* naming either still folds as history
@@ -3283,7 +3305,7 @@ keys: after the upgrade a re-offered, already-acknowledged ball reads as unsent 
 - **SCRBRD-069** (run-out end): decided — ask the scorer which end on a run out that completed runs — build.
   **Built 2026-09-24:** `outAt: "striker_end" | "bowler_end"` on the wicket; the laws-spec KNOWN_GAP is now passing
   cases for both ends (docs/SCORING_RULES.md, "Which end after a run out that completed runs").
-- **SCRBRD-080 — Mid-over bowler change records its reason.** Allowed (Law 17.8.1); the pad asks *Injury or suspended?* and records it on the `bowler` event. P2.
+- **SCRBRD-080 — Mid-over bowler change records its reason.** Allowed (Law 17.7.1); the pad asks *Injury or suspended?* and records it on the `bowler` event. P2.
   **Built 2026-09-24:** `bowler({ bowler, reason: "injury" | "suspended" })`; a mid-over change with no reason is
   refused at commit (`mid_over_no_reason`); old logs replay. Not built: Law 41 says a suspended bowler does not bowl
   again in the innings — nothing refuses him yet (a further product decision). **Built 2026-09-27** as SCRBRD-094
@@ -3972,6 +3994,84 @@ per-competition setting is added only if a school's competition adopts the 4th E
    second offence under 41.14.3 and 41.15.3 also disallows the delivery's runs; the missing penalty and suspension
    reasons the report lists (throwing, 21.3.2; Law 42).
 Then apply the report's renumbering map to the code's comments.
+**Added (Kameel, 2026-09-27): the free hit follows the match format.** Limited overs (T20, 50-over, any
+overs-limited format): a free hit after a no-ball. A declaration or timed match, one day or more: none. Not keyed to
+the date: every match follows its stored format.
+
+**Built 2026-09-27 (Opus).** How each rule reads the Edition: `lawsEdition(match)` (`packages/scoring/src/edition.mjs`)
+dates the match in SAST by the fixture's `starts_at`, else the Edition an innings was folded under, else the log's
+first event, else today; 3 before 1 October 2026, 4 from it. The pad passes the fixture's start and format to every
+fold (`FoldContext`); the server asks `match_fold_context()` (db/54), since a pad's resume credential cannot read the
+`match` row. Detail in `docs/SCORING_RULES.md`, "The Laws' 4th Edition".
+1. **Suspensions.** `SUSPENSION_REASON_SCOPE` keyed by Edition, `suspensionScope(reason, edition)`: a deliberate
+   front-foot no-ball and a deliberate beamer (new reason, split from `beamers`) are the match under the 4th, the
+   innings under the 3rd; `beamers` (after a caution) the innings in both. `bowlerSuspended()`, the pad's sheet and the
+   Laws check use the match's Edition; a stored event keeps its scope. New in both: `throwing` (innings) and `conduct`
+   (Level 4, the match). The sheet says how long in words.
+2. **Head height.** Words only: the no-ball pad's "Waist high", the sheet's "Waist-high Full Toss", and under the 4th
+   "a bouncer over head height is a Wide"; the rulebook's No-ball and Wide.
+3. **Who faces.** `ball()` takes `facesNext` (`striker`, `non_striker`, `incoming` on a wicket); the fold places the
+   batters by it. Under the 4th the Laws take it after deliberate short running and on an obstructing-the-field or
+   run-out wicket that stopped a catch; the pad's short-run sheet and the wicket sheet ("Did the obstruction stop a
+   catch?") ask the fielding captain's choice and will not record without it. Under the 3rd it is refused (41.5, the
+   batters' choice, in both).
+4. **Penalty runs after the result.** "Until the umpires leave the field" = the match concluded (`status =
+   'complete'`, after which the write path quarantines every event, db/33). Under the 4th a fielding-side award after the
+   result is taken; one that lifts the target above a reached chase reopens it; an award that makes a chase ended short
+   enough is a win "by penalty runs" (`inn.penaltyWin`, `describeResult()`). The 3rd still refuses (`match_decided`).
+5. **Both Editions.** A delivery under 24.4, 28.2, 41.4 or 41.5 does not count in the over: `notInOver` on the ball,
+   `notInOverDelivery()`, `countsInOver()` read by the fold, phases, commentary and causes; the pad's penalty sheet
+   records it ("a fielder's offence, and the ball does not count"). A second offence under 41.14.3 or 41.15.3 disallows the delivery's runs
+   (`runsDisallowed(delivery, reason)`; `striker_position` joined the fielding side's reasons).
+6. **The free hit by format.** `freeHitsApply(format)` (`packages/scoring/src/format.mjs`), stamped on the innings
+   (`inn.freeHits`) and read by the fold, the Laws check, the pad's banner and no-ball sheet ("No free hit in this
+   match") and the commentary. Declaration and timed spellings (`DECLARATION_FORMATS`) give none; a match with no
+   format keeps a free hit after every no-ball, as before. "One-Day Declaration" added to the fixture screen's formats.
+7. **Renumbering** applied from CLAUSE_CHECK.md's map (17.8 to 17.6, 17.8.1 to 17.7.1, 38.2 to 38.4, 21.19 to 21.17);
+   the backlog's 25.4.2 line in the retirement entry left to the retirement work. No clause numbers on screen.
+**SQL: `db/54_laws_4th_edition.sql`.** `ball_counts_in_over()` in every reader that counted balls of the over
+(`match_live_score`, `innings_score_as_folded`, `bowler_over`, `bowler_hat_trick`, `player_bowling_since`,
+`opposition_squad`, `player_bowling_by_season`, `player_bowling_career`; the matchups and career reads in read-api);
+`free_hits_apply()` and `match_free_hits_apply()` inside `ball_on_free_hit()`; `match_fold_context()`. Idempotent, with a
+proof block; db/99 section 32. **Found on the combined branch (with db/53):** §32 ran as whoever §31 left, and once it
+compared every match it found the live score counting a `retire` marked W with method bowled (the fold: retired hurt,
+no wicket) and a penalty row's `value` (the fold: its `runs` only), where the handover's count did not. db/54 (4) makes
+`match_live_score` count as `innings_score_as_folded()` does; §32 now sets its principal, compares runs too, and
+refuses an empty comparison. Falsified: the old live score, its wickets alone, its runs alone, and §32 with no
+principal, each red; `replay.test.mjs` O and a `smoke-fold-figures` innings hold the fold's reading.
+**Proof:** `packages/scoring/test/edition.test.mjs` (220, both Editions side by side, 30 September against 1 October
+2026, pad and server folds agreeing); 18 JS and 7 SQL falsifications, each caught; `tools/smoke-fold-figures.mjs` (113,
+with deliveries that do not count and a declaration match whose bowled off the ball after a no-ball stands);
+`tools/smoke-browser-laws4.mjs` (43, a fixture dated 3 October 2026); the suspension and penalty walks dated 30
+September 2026. Rehearsed: origin/main's db/ (to 51), then db/52, then db/54 alone, then this branch's db/99: all
+assertions passed. Full run: typecheck 0 errors, lint 0 errors and 82 warnings, build and bundle check, migrate
+--reset --seed --verify, generate-rls (db/ unchanged), shipped 53/0, run-all-tests 5364 across 65 suites,
+run-smoke-api 2970 across 70 walks, run-smoke-api --browser 1838 across 31 walks, the offline-day walk under LIE_FI 56/56, pnpm smoke (8, 25, 16, 214).
+**Not built:** Law 42 Level 3 (suspended for a number of overs); the analytics screens (charts, signals, the match
+centre's tabs, the post-match report) still count legal balls by type, not `countsInOver()`; the handover model
+(`scoring-session.mjs`) folds without the fixture's context; a non-striker's obstruction is not recordable on the wicket
+sheet (as before).
+**To be decided (recorded, not built):** some primary-school leagues cap an over at a maximum number of balls (for
+example 8, wides and no-balls included), and a free hit earned on the last allowed ball falls away. Needs: which
+leagues, the cap, and whether it is a fixture setting beside the format.
+
+### SCRBRD-114 — Playing conditions per competition (first target: KZN high schools, U13 to 1st XI)
+**Priority:** P1 · **Domain:** Scoring / competitions · **Type:** design, then build (Kameel, 2026-09-27)
+What varies between competitions becomes a setting on the competition, read by the pad, the fold, the Laws check
+and SQL, never a rule in the engine. The first pilot schools are KwaZulu-Natal high schools, U13 to 1st XI.
+Candidates, to be confirmed from the actual bye-laws (research so far is unverified):
+- the format and its limits: overs per innings (T20, 25-over, 50-over), declaration and timed matches;
+- free hits by format (built in SCRBRD-113 as the first case);
+- fast-bowling limits per spell and per day by age group: `bowling_directive` holds platform defaults "in the
+  absence of a published CSA schedule" (U13 5/10, U14–U15 6/12, U16 7/18); the union's figures replace them;
+- 1st XI under senior playing conditions; league points, bonus points, net run rate and over-rate penalties;
+- eligibility (bona fide scholars) on team sheets;
+- primary-only rules (maximum balls per over, mandatory retirement at 30 or 50, shortened pitches, lighter balls)
+  are out of scope for the high-school pilot and recorded for later.
+**Not built:** transformation quotas. They need each child's race, special personal information under POPIA;
+only with Kameel's explicit decision and the information officer's advice.
+**Needs first:** the KZN school bye-laws and playing conditions (the sites are blocked here; Kameel supplies the
+PDFs). Then an Opus design (a `competition_conditions` shape and where each rule reads it), then the build.
 
 ### SCRBRD-100 — The premium-feel checklist: what is left after step 3c
 **Priority:** P2 · **Domain:** Front-end · **Type:** product polish (Kameel, 2026-09-26; checklist at
