@@ -203,6 +203,10 @@ export const NEVER_PUBLIC = Object.freeze({
   "player.houseatschool": "N4",
   "player.height": "N4",
   "player.weight": "N4",
+  // NOT here, on purpose: player.batting_style. A batting hand is on no list
+  // in §3, and the public log keeps it (SCRBRD-083 design §9 Q7, decided:
+  // keep) — it turns the team wagon wheel the right way round and is on every
+  // broadcast in the game. Do not add it here by analogy with height.
   // N3. Colours are withdrawn with a reason, and the reason can be a conduct
   // matter. A public honours board (A5) shows live honours; never why one went.
   "honour.withdrawn_reason": "N3",

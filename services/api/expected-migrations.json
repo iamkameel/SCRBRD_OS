@@ -56,5 +56,6 @@
   "55_medical_status_withdrawn.sql",
   "56_clearance_csa.sql",
   "57_safeguarding_dso.sql",
-  "58_player_fitness_masked.sql"
+  "58_player_fitness_masked.sql",
+  "59_public_read_path.sql"
 ]
