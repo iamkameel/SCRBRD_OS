@@ -17,8 +17,10 @@ Brought in 2026-09-27 (Kameel), with cost still a constraint:
   consent, the load model), redesign step 4 (parent and pupil screens),
   SCRBRD-083 (what minors' data may be public) and safeguarding (added
   2026-09-27: Designated Safeguarding Officers, raising and routing a concern,
-  and who may see it, under CSA's Safeguarding Policy). A new problem joins
-  this list only with Kameel's say.
+  and who may see it, under CSA's Safeguarding Policy) and SCRBRD-114 (added
+  2026-09-28: playing conditions per competition, one model read by the pad,
+  the fold, the Laws check and SQL). A new problem joins this list only with
+  Kameel's say.
 - **The output is a design document** for Kameel's review. Opus builds from
   it; Fable does not build, run test suites, wait on the database lock, write
   screens or do searches.
