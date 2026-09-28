@@ -33,5 +33,20 @@ export default defineConfig({
     // the convenience and throws away the protection.
     allowedHosts: [".cloudshell.dev", ".github.dev", ".gitpod.io", ".repl.co"],
   },
-  build: { outDir: "dist", sourcemap: true },
+  build: {
+    outDir: "dist",
+    sourcemap: true,
+    // Two entries. `index` is the app (index.html). `public` is the signed-out
+    // pages' bundle (SCRBRD-083): the API serves their HTML shells itself, with
+    // the robots meta and a title per fixture, and those shells load it by a
+    // FIXED name, /public-app.js — the API image does not carry dist/ and so
+    // cannot know a hashed one. It is served no-cache (server.mjs serveClient,
+    // and firebase.json's header), and everything it imports is hashed as usual.
+    rollupOptions: {
+      input: { index: "index.html", public: "src/public/main.jsx" },
+      output: {
+        entryFileNames: (chunk) => (chunk.name === "public" ? "public-app.js" : "assets/[name]-[hash].js"),
+      },
+    },
+  },
 });

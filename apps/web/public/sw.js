@@ -45,6 +45,11 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return; // fonts, and anything third-party
   if (url.pathname.startsWith("/api/")) return;    // never serve a stale score
+  // The public match pages (SCRBRD-083) are not the app: their shells are
+  // served by the API per fixture, and their bundle has a fixed name. Left to
+  // the network, so a public page is never cached as the app's offline shell
+  // below, and a stale public bundle is never served from cache.
+  if (/^\/(live|scorecard|table|fixtures)\//.test(url.pathname) || url.pathname === "/public-app.js") return;
 
   // Navigations: network first, cached shell when offline.
   if (request.mode === "navigate") {

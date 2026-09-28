@@ -153,6 +153,7 @@ const WALKS = [
   // The API refuses to start on a database missing a migration it was built
   // against, and starts on one that is ahead of it (SCRBRD-066).
   "schema-guard",
+  "public",
 ];
 
 // Walks that drive a real browser AND need a database. They need two things
@@ -213,7 +214,9 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   "browser-retire",
   // Safeguarding, phase 1 (db/57): a parent raises a concern and keeps a
   // reference; the DSO finds it in her inbox; a coach sees nothing of it.
-  "browser-safeguarding"];
+  "browser-safeguarding",
+  // The public pages, phase 1 (db/59): signed out, names by the rule, noindex.
+  "browser-public"];
 
 // Walks that need no database, run by `pnpm smoke` instead. Named here only so
 // the completeness check below knows they are accounted for.

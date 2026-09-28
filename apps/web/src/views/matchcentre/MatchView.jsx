@@ -7,7 +7,9 @@ import { api, signedIn } from "../../lib/api.js";
 import { useRows, useWeather } from "../../lib/live.js";
 import { boardInnings, inningsPhase, matchLine, nameBook, resultText, revisionNotice, sidesOf, teamOf } from "../../lib/matchCentre.js";
 import { seedCompletedMatch } from "../../scorer/seed.js";
-import { parseBalls, parseScore, teamSquad } from "../shared.jsx";
+import { PlayerProfileModal, parseBalls, parseScore, teamSquad } from "../shared.jsx";
+import { can, filterRecord } from "../../rbac/index.js";
+import { ShotWheel } from "../../scorer/charts.jsx";
 import { useIsMobile } from "../../shell/MobileNav.jsx";
 import { Icon } from "../../ui/icons.jsx";
 import { AnalyticsTab, CommentaryTab, DetailsTab, PartnershipsTab, SummaryTab } from "./tabs.jsx";
@@ -202,9 +204,20 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
   const notice = revisionNotice(boardInn);
   const isLive = match.status === "live";
 
+  // What the Scorecard's rows open to, which only a signed-in reader has
+  // (scorecard.jsx takes these rather than importing them, so the public page
+  // can share the tab): the row opens, with the batter's wagon wheel, and his
+  // profile where the reader's role reads profiles at all.
+  const [prof, setProf] = useState(null);
+  const profileOf = (id) => {
+    if (!can(role, "players", "r").allowed) return null;
+    const p = PLAYERS.find((x) => x.id === id);
+    return p ? () => setProf(filterRecord(role, "players", p)) : null;
+  };
+
   const ctx = { match, role, innings: played, result, commentary, events: log.events, demo: log.demo, overs: log.overs,
     inningsSel, setInningsSel: setPicked, phone, players: PLAYERS, weather, competition: comp, onNavProfile, setTab,
-    moment, overSummary, shownRuns };
+    moment, overSummary, shownRuns, opens: signedIn() && !log.demo, profileOf, Wheel: ShotWheel };
 
   return (
     <div className="os-page" data-testid="match-view" data-match={match.id}>
@@ -300,6 +313,8 @@ function MatchView({ match, role, onClose, onNavProfile, onOpenScorer, canScoreI
           : tab === "analytics" ? <AnalyticsTab {...ctx}/>
           : <DetailsTab {...ctx}/>}
       </div>
+      {prof && <PlayerProfileModal player={prof} role={role} onClose={() => setProf(null)}
+        onFullProfile={onNavProfile ? (id) => { setProf(null); onNavProfile(id); } : null}/>}
     </div>
   );
 }

@@ -1,0 +1,9 @@
+# SCRBRD's public match pages are found by link, not by search
+# (docs/policy/PUBLIC_DATA.md §1.7, D1). Every one of them also answers
+# X-Robots-Tag: noindex and carries <meta name="robots" content="noindex, nofollow">.
+User-agent: *
+Disallow: /live/
+Disallow: /scorecard/
+Disallow: /table/
+Disallow: /fixtures/
+Disallow: /api/public/
