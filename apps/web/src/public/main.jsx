@@ -13,8 +13,10 @@ import { PublicMatch } from "./PublicMatch.jsx";
  * fails the build if a static import ever brings one in.
  */
 const root = document.getElementById("root");
+const matchId = root?.dataset.match ?? "";
+const view = root?.dataset.view === "scorecard" ? "scorecard" : "live";
 createRoot(root).render(
   <StrictMode>
-    <PublicMatch matchId={root?.dataset.match ?? ""} view={root?.dataset.view ?? "live"}/>
+    <PublicMatch matchId={matchId} view={view}/>
   </StrictMode>,
 );

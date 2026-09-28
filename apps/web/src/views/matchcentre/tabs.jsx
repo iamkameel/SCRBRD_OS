@@ -19,7 +19,8 @@ import { Panel, Quiet } from "./bits.jsx";
  * officials, neither of which a public page shows. Every figure is the
  * fold's; every line of commentary is the shared generator's.
  */
-export { SummaryTab, CommentaryTab, PartnershipsTab } from "./tabs-core.jsx";
+import { SummaryTab, CommentaryTab, PartnershipsTab } from "./tabs-core.jsx";
+export { SummaryTab, CommentaryTab, PartnershipsTab };
 
 
 // ── Analytics ───────────────────────────────────────────

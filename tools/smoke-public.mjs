@@ -30,7 +30,7 @@
 import { spawn } from "node:child_process";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
-import { buildPublicFixture, PEOPLE, TYPED_FIELDER, KEARSNEY, EXPECTED, HIL, WES } from "./fixture-public.mjs";
+import { buildPublicFixture, PEOPLE, TYPED_FIELDER, KEARSNEY, EXPECTED, HIL } from "./fixture-public.mjs";
 
 const PORT = port(8846), OFF_PORT = port(8847);
 const BASE = `http://127.0.0.1:${PORT}`, OFF = `http://127.0.0.1:${OFF_PORT}`;
@@ -137,7 +137,6 @@ try {
   ALL = await q(`select id::text, full_name, known_as, to_char(born, 'YYYY-MM-DD') as born from player`);
   const SARAH = await userId("sarah@example.invalid");          // director of sport, Hilton
   const REGISTRAR = await userId("registrar@example.invalid");  // the office, Hilton
-  const WES_PUB = await userId("publisher.wes@example.invalid");
   const login = async (/** @type {string} */ email) => (await (await fetch(`${BASE}/api/auth/dev-login`, { method: "POST",
     headers: { "content-type": "application/json" }, body: JSON.stringify({ email, deviceId: "smoke-public" }) })).json()).token;
   const sarahToken = await login("sarah@example.invalid");

@@ -16,7 +16,8 @@ import { CardHead, Panel, Quiet, SideName } from "./bits.jsx";
  * that file draws the shell, not the words.
  */
 
-export { PreTossCard, RevisionBanner } from "./banners.jsx";
+import { PreTossCard, RevisionBanner } from "./banners.jsx";
+export { PreTossCard, RevisionBanner };
 
 // ── 4. The full-time screen links onward (item 4) ──
 
